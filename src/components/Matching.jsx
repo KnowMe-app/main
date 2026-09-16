@@ -222,7 +222,8 @@ import ProfileRow, {
   CommentBlock,
   PublicCommentBlock,
   ProfileNotes,
-  REVIEWS_GATE_LABEL,
+  enrichGateLabel,
+  reviewsGateLabel,
   describeReviewsState,
   renderFacts as renderProfileFacts,
   splitFactsByGroup as splitProfileFactsByGroup,
@@ -242,8 +243,9 @@ import {
   MATCHING_SEARCH_STORAGE_KEY,
 } from 'utils/matchingSearchLocation';
 import { useAppSettings } from 'hooks/useAppSettings';
+import { uiText } from 'utils/uiTranslations';
 import { keepDonorCounterpartyCards, isDonorViewer, viewerRoleSignature } from 'utils/matchingPeerVisibility';
-import { profileUiText, translateProfileLabel } from 'utils/profileTexts';
+import { profileUiText, resolveProfileLanguage, translateProfileLabel } from 'utils/profileTexts';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
 import {
@@ -1098,10 +1100,10 @@ const SwipeableCard = ({
   // проєкції не належить ні те, ні те — правити в ній нема чого.
   const editProfileAction = useMemo(() => {
     if (user?.__limitedProfile) return null;
-    if (onEnrich) return { title: 'Доповнити дані', onClick: () => onEnrich(user) };
-    if (isAdmin && onAdminEdit) return { title: 'Редагувати анкету', onClick: onAdminEdit };
+    if (onEnrich) return { title: uiText('Доповнити дані', language), onClick: () => onEnrich(user) };
+    if (isAdmin && onAdminEdit) return { title: uiText('Редагувати анкету', language), onClick: onAdminEdit };
     return null;
-  }, [isAdmin, onAdminEdit, onEnrich, user]);
+  }, [isAdmin, language, onAdminEdit, onEnrich, user]);
   const locationInfo = getProfileLocation(user);
   const identityAndLocationKeys = [
     'name',
@@ -1314,7 +1316,7 @@ const SwipeableCard = ({
                 type="button"
                 $active={item === activeHeroPhoto}
                 style={{ backgroundImage: `url(${item})` }}
-                aria-label={`Фото ${index + 1} з ${allPhotos.length}`}
+                aria-label={uiText('Фото {index} з {total}', language, { index: index + 1, total: allPhotos.length })}
                 aria-pressed={item === activeHeroPhoto}
                 onClick={event => { event.stopPropagation(); setActiveHeroPhoto(item); }}
               />
@@ -1516,8 +1518,12 @@ const MATCHING_BATCH_SUMMARY_VISIBLE_MS = 6000;
 
 // «1 картка», «2 картки», «5 карток» — рядок читає людина, і число в ньому
 // однозначне, тож форма слова має з ним збігатись.
-const pluralizeCards = count => {
-  const tail = Math.abs(Number(count) || 0) % 100;
+const pluralizeCards = (count, language) => {
+  const total = Math.abs(Number(count) || 0);
+  // Англійській вистачає двох форм, українській — трьох, тож рахує їх кожна
+  // мова сама, а не спільна таблиця з «картка(и)» в дужках.
+  if (resolveProfileLanguage(language) === 'en') return total === 1 ? 'card' : 'cards';
+  const tail = total % 100;
   if (tail >= 11 && tail <= 14) return 'карток';
   const last = tail % 10;
   if (last === 1) return 'картка';
@@ -1688,8 +1694,8 @@ const GalleryCard = React.memo(({
         <GalleryPublishDot
           type="button"
           $published={isPublished}
-          title={isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці'}
-          aria-label={isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці'}
+          title={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
+          aria-label={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
           aria-pressed={isPublished}
           onClick={event => { event.stopPropagation(); onTogglePublish(user); }}
         />
@@ -1697,7 +1703,7 @@ const GalleryCard = React.memo(({
       {photo && (
         <GalleryPhotoBox>
           <img src={photo} alt="" loading="lazy" decoding="async" />
-          {isHidden && <GalleryHiddenBadge>Приховано</GalleryHiddenBadge>}
+          {isHidden && <GalleryHiddenBadge>{uiText('Приховано', language)}</GalleryHiddenBadge>}
           {photos.length > 1 && <GalleryPhotoCount>{photos.length}</GalleryPhotoCount>}
         </GalleryPhotoBox>
       )}
@@ -1740,16 +1746,16 @@ const GalleryCard = React.memo(({
         {!isLimited && (
           <GalleryActions>
             {onEnrich && (
-              <GalleryActionButton type="button" aria-label="Доповнити дані" title="Доповнити дані" onClick={event => { event.stopPropagation(); onEnrich(user); }}>
+              <GalleryActionButton type="button" aria-label={enrichGateLabel(language)} title={enrichGateLabel(language)} onClick={event => { event.stopPropagation(); onEnrich(user); }}>
                 <FaPencilAlt />
               </GalleryActionButton>
             )}
             <GalleryActionButton
               type="button"
               $on={isFavorite}
-              aria-label="В обране"
+              aria-label={uiText('В обране', language)}
               aria-pressed={isFavorite}
-              title="В обране"
+              title={uiText('В обране', language)}
               onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
             >
               {isFavorite ? <FaHeart /> : <FaRegHeart />}
@@ -1757,9 +1763,9 @@ const GalleryCard = React.memo(({
             <GalleryActionButton
               type="button"
               $on={isHidden}
-              aria-label={isHidden ? 'Повернути зі схованих' : 'Приховати'}
+              aria-label={uiText(isHidden ? 'Повернути зі схованих' : 'Приховати', language)}
               aria-pressed={isHidden}
-              title={isHidden ? 'Повернути зі схованих' : 'Приховати'}
+              title={uiText(isHidden ? 'Повернути зі схованих' : 'Приховати', language)}
               onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
             >
               {isHidden ? <FaUndoAlt /> : <FaTimes />}
@@ -1769,8 +1775,8 @@ const GalleryCard = React.memo(({
                 type="button"
                 $on={reviewsRequested}
                 disabled={Boolean(reviewsAction.loading)}
-                aria-label={REVIEWS_GATE_LABEL}
-                title={REVIEWS_GATE_LABEL}
+                aria-label={reviewsGateLabel(language)}
+                title={reviewsGateLabel(language)}
                 onClick={event => {
                   event.stopPropagation();
                   setReviewsRequested(true);
@@ -1795,7 +1801,8 @@ const GalleryCard = React.memo(({
               requested: reviewsRequested,
               loading: Boolean(reviewsAction?.loading),
               loaded: Boolean(reviewsAction?.loaded),
-            })}
+              count: reviewsAction?.count || 0,
+            }, language)}
             privateSlot={(
               <CommentBlock
                 text={clientComment}
@@ -1933,7 +1940,8 @@ const Matching = () => {
   const [debugShowAllIndexedCards, setDebugShowAllIndexedCards] = useState(getStoredDebugShowAllIndexedCards);
   const [matchingDataSourceMode] = useState(getStoredMatchingDataSourceMode);
   // Тема тепер глобальна: перемикається в меню трьох крапок (ProfileDotsMenu).
-  const { themeMode } = useAppSettings();
+  // Звідти ж береться й мова: нею говорять і підписи екрана, і його тости.
+  const { language, themeMode } = useAppSettings();
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
@@ -2143,8 +2151,8 @@ const Matching = () => {
     [filters, matchingDefaultFilters],
   );
   const filterDrawerSubtitle = activeFilterGroupCount > 0
-    ? `Активно змінено груп: ${activeFilterGroupCount}`
-    : 'Всі профілі показані за поточними правилами доступу';
+    ? uiText('Активно змінено груп: {count}', language, { count: activeFilterGroupCount })
+    : uiText('Всі профілі показані за поточними правилами доступу', language);
   const isIndexedDebugTestUser = String(auth.currentUser?.uid || ownerId || '').trim() === MATCHING_LOG_MODE_TEST_USER_ID;
   const parsedAdditionalAccessRules = useMemo(
     () => parseAdditionalAccessRuleGroups(currentAdditionalAccessRules),
@@ -2313,11 +2321,11 @@ const Matching = () => {
   const announcePublicFeedUnavailable = React.useCallback(error => {
     if (!error) return;
     const detail = String(error?.code || error?.message || error || '').trim();
-    toast(`Загальна стрічка недоступна${detail ? `: ${detail}` : ''}. Показані лише картки з додаткового доступу.`, {
+    toast(uiText('Загальна стрічка недоступна{detail}. Показані лише картки з додаткового доступу.', language, { detail: detail ? `: ${detail}` : '' }), {
       id: 'matching-public-feed-unavailable',
       icon: '⚠️',
     });
-  }, []);
+  }, [language]);
   const resetReactionPaginationState = React.useCallback((reactionType = null) => {
     if (reactionType === 'favorites' || reactionType === 'dislikes') {
       reactionLoadedIdsRef.current[reactionType] = new Set();
@@ -4004,8 +4012,8 @@ const Matching = () => {
     }
 
     loadInitial();
-    toast.success('Фільтри та кеш скинуто');
-  }, [invalidateReactionAsyncWork, isAdmin, loadInitial, ownerId, resetReactionPaginationState]);
+    toast.success(uiText('Фільтри та кеш скинуто', language));
+  }, [invalidateReactionAsyncWork, isAdmin, language, loadInitial, ownerId, resetReactionPaginationState]);
 
   // Чи картка є в загальній стрічці. Та, що є, видна всім, кому взагалі
   // відкрито матчинг; та, якої немає, — лише тим, кому її відкрили правилами
@@ -4732,11 +4740,11 @@ const Matching = () => {
     const keyLabel = formatMatchingSearchKeyLabel(searchKey);
     const suffix = keyLabel ? `: ${keyLabel}` : '';
 
-    if (status === 'found') return `Знайшов у searchId${suffix}`;
-    if (status === 'notFound') return `Не знайшов у searchId${suffix}`;
-    if (status === 'searching') return `Шукаю в searchId${suffix}`;
+    if (status === 'found') return uiText('Знайшов у searchId{suffix}', language, { suffix });
+    if (status === 'notFound') return uiText('Не знайшов у searchId{suffix}', language, { suffix });
+    if (status === 'searching') return uiText('Шукаю в searchId{suffix}', language, { suffix });
     return '';
-  }, []);
+  }, [language]);
 
   const handleMatchingSearchKey = React.useCallback(nextSearchKey => {
     matchingSearchKeyRef.current = nextSearchKey;
@@ -4746,8 +4754,8 @@ const Matching = () => {
   const handleMatchingSearchExecuted = React.useCallback(value => {
     const normalizedValue = String(value || '').trim();
     matchingSearchKeyRef.current = null;
-    setMatchingSearchStatus(normalizedValue ? 'Шукаю в searchId...' : '');
-  }, []);
+    setMatchingSearchStatus(normalizedValue ? uiText('Шукаю в searchId...', language) : '');
+  }, [language]);
 
   // Історію пише лише завершений пошук: прогони на паузах у наборі тексту
   // лишили б у базі ланцюг початків одного слова.
@@ -4798,8 +4806,8 @@ const Matching = () => {
   }, [reloadDefault]);
 
   const handleMatchingSearchError = React.useCallback(() => {
-    setMatchingSearchStatus('Не вдалося виконати пошук. Спробуйте ще раз.');
-  }, []);
+    setMatchingSearchStatus(uiText('Не вдалося виконати пошук. Спробуйте ще раз.', language));
+  }, [language]);
 
   const searchUsers = async (params, options = {}) => {
     const cacheEpoch = getMatchingLocalStorageCacheEpoch();
@@ -7169,7 +7177,7 @@ const Matching = () => {
     const detected = detectSearchParams(trimmed);
     const field = detected?.key || 'name';
     const value = detected?.value || trimmed;
-    const label = getFieldLabel(pickerFields.find(item => item?.name === field)) || 'Запит';
+    const label = getFieldLabel(pickerFields.find(item => item?.name === field), language) || uiText('Запит', language);
     const claimsIdentity = field !== 'name' && field !== 'surname' && field !== 'userId';
     const taken = claimsIdentity && visibleUsers.length > 0;
 
@@ -7178,10 +7186,10 @@ const Matching = () => {
       value,
       label,
       note: taken
-        ? 'Це значення вже стоїть у знайденій картці — нова відкриється без нього'
+        ? uiText('Це значення вже стоїть у знайденій картці — нова відкриється без нього', language)
         : '',
     };
-  }, [searchQuery, visibleUsers.length]);
+  }, [language, searchQuery, visibleUsers.length]);
 
   const handleCreateFromQuery = React.useCallback(() => {
     saveScrollPosition();
@@ -7199,8 +7207,8 @@ const Matching = () => {
   const searchChips = useMemo(() => [
     {
       key: 'results',
-      label: 'Знайдено',
-      title: 'Результати пошуку',
+      label: uiText('Знайдено', language),
+      title: uiText('Результати пошуку', language),
       // Уся видача, а не її вікно показу: «Знайдено 2» на чотирьохстах
       // знайдених було б відповіддю не на те питання.
       count: searchRefinedUsers.length,
@@ -7208,8 +7216,8 @@ const Matching = () => {
     },
     {
       key: 'create',
-      label: 'Створити нову',
-      title: 'Створити картку з цього запиту',
+      label: uiText('Створити нову', language),
+      title: uiText('Створити картку з цього запиту', language),
       // Чіп несе намір, а не адресу екрана пошуку. Раніше він вів на
       // `create-profile` із самим лише `state.query`, якого той екран не
       // читав, — і читач, який щойно переглянув видачу, потрапляв у другий
@@ -7221,18 +7229,18 @@ const Matching = () => {
     },
     {
       key: 'similar',
-      label: 'Схожі',
-      title: 'Схожі з локального кешу',
+      label: uiText('Схожі', language),
+      title: uiText('Схожі з локального кешу', language),
       count: similarUsers.length,
       onSelect: () => setSearchTab('similar'),
     },
-  ], [handleCreateFromQuery, searchRefinedUsers.length, similarUsers.length]);
+  ], [handleCreateFromQuery, language, searchRefinedUsers.length, similarUsers.length]);
 
   // Згорнутий ряд показує три чіпи, решта ховається за «+N». Але «+N» тепер
   // розгортає ряд на місці, а не веде в шухляду фільтрів: читач питає «що це за
   // фільтри», і відповідь на це — самі підписи, а не форма, де їх треба шукати
   // заново. Розгорнутий ряд переноситься на кілька рядків і нічого не обрізає.
-  const filterChips = useMemo(() => buildMatchingFilterChips(filters), [filters]);
+  const filterChips = useMemo(() => buildMatchingFilterChips(filters, language), [filters, language]);
   const [showAllFilterChips, setShowAllFilterChips] = useState(false);
   const visibleFilterChips = showAllFilterChips ? filterChips : filterChips.slice(0, MAX_FILTER_CHIPS);
   const hiddenFilterChipCount = filterChips.length - visibleFilterChips.length;
@@ -7331,22 +7339,22 @@ const Matching = () => {
   const collectionChips = useMemo(() => [
     {
       key: 'default',
-      label: 'Усі',
-      title: 'До загального списку',
+      label: uiText('Усі', language),
+      title: uiText('До загального списку', language),
       count: viewMode === 'default' ? filteredUsers.length : users.length,
       onSelect: handleDefaultModeClick,
     },
     {
       key: 'favorites',
       label: '♥',
-      title: 'Показати обране',
+      title: uiText('Показати обране', language),
       count: Object.keys(favoriteUsers || {}).length,
       onSelect: handleFavoriteModeClick,
     },
     {
       key: 'dislikes',
-      label: 'Приховані',
-      title: 'Показати приховані',
+      label: uiText('Приховані', language),
+      title: uiText('Показати приховані', language),
       count: Object.keys(dislikeUsers || {}).length,
       onSelect: handleDislikeModeClick,
     },
@@ -7354,6 +7362,7 @@ const Matching = () => {
     dislikeUsers,
     favoriteUsers,
     filteredUsers.length,
+    language,
     handleDefaultModeClick,
     handleDislikeModeClick,
     handleFavoriteModeClick,
@@ -7504,9 +7513,9 @@ const Matching = () => {
     } catch (error) {
       dispatchedCommentSaveRef.current = null;
       const details = error?.message || String(error);
-      toast.error(`Не вдалося зберегти коментар: ${details}`);
+      toast.error(uiText('Не вдалося зберегти коментар: {details}', language, { details }));
     }
-  }, [ownerId]);
+  }, [language, ownerId]);
 
   const handleRowContactsOpened = React.useCallback(user => {
     if (!user?.userId || !ownerId) return;
@@ -7570,13 +7579,13 @@ const Matching = () => {
   const resolveEmptyFeedMessage = () => {
     // An empty group is a different problem from "nothing matched", and saying so
     // is the difference between the reader fixing it and giving up (spec §3).
-    if (emptyFilterGroup) return `Група «${emptyFilterGroup.groupLabel}» порожня — увімкніть хоча б один діапазон`;
+    if (emptyFilterGroup) return uiText('Група «{group}» порожня — увімкніть хоча б один діапазон', language, { group: emptyFilterGroup.groupLabel });
     // Стрічка, з якої фільтри прибрали все, — теж окрема причина, і мовчати про
     // неї найдорожче: екран каже «немає профілів» там, де насправді «є, але не
     // показані». Пошуку це вже не стосується — його видачу чіпи не звужують.
     const isReactionTab = viewMode === 'favorites' || viewMode === 'dislikes';
     if (!isReactionTab && !isSearching && visibleUsers.length > 0) {
-      return `Фільтри приховали всі завантажені профілі (${visibleUsers.length})`;
+      return uiText('Фільтри приховали всі завантажені профілі ({count})', language, { count: visibleUsers.length });
     }
     // Уточнення переживає запит, тож воно ж може виявитись єдиною причиною
     // порожнього екрана на видачі, де насправді знайшлося чотириста. Це рівно
@@ -7587,7 +7596,11 @@ const Matching = () => {
       const spec = getRefineKeySpec(refineKey);
       const label = spec.buckets?.find(bucket => bucket.value === searchRefineValue)?.label
         || searchRefineValue;
-      return `Уточнення «${spec.label} · ${label}» не лишило нічого зі знайдених (${visibleUsers.length})`;
+      return uiText('Уточнення «{spec} · {label}» не лишило нічого зі знайдених ({count})', language, {
+        spec: spec.label,
+        label,
+        count: visibleUsers.length,
+      });
     }
     // Донорці стрічка показує самих контрагентів, і на порожньому екрані про це
     // треба сказати вголос: інакше «немає доступних профілів» читається як
@@ -7599,9 +7612,9 @@ const Matching = () => {
     // читачку те, чого вона не побачить, — тож `users` у неї буває порожній
     // саме тоді, коли пояснення й потрібне.
     if (!isReactionTab && !isSearching && isDonorViewer(currentUserRole)) {
-      return 'У стрічці немає анкет агенцій, клінік чи батьків — інших вона донорці не показує. Конкретну людину можна знайти пошуком';
+      return uiText('У стрічці немає анкет агенцій, клінік чи батьків — інших вона донорці не показує. Конкретну людину можна знайти пошуком', language);
     }
-    return 'Немає доступних профілів';
+    return uiText('Немає доступних профілів', language);
   };
   const emptyFeedMessage = resolveEmptyFeedMessage();
 
@@ -7679,8 +7692,11 @@ const Matching = () => {
 
   const feedBatchSummaryText = lastBatchSummary && !throttledCycle && !loading
     ? (lastBatchSummary.added > 0
-      ? `Додано ${lastBatchSummary.added} ${pluralizeCards(lastBatchSummary.added)} — вони в кінці списку`
-      : 'Порція не дала нових карток — під ці фільтри більше нічого не підійшло')
+      ? uiText('Додано {added} {cards} — вони в кінці списку', language, {
+        added: lastBatchSummary.added,
+        cards: pluralizeCards(lastBatchSummary.added, language),
+      })
+      : uiText('Порція не дала нових карток — під ці фільтри більше нічого не підійшло', language))
     : '';
   // Окремим рядком підсумок показується лише там, де запрошення немає: інакше
   // два написи про одне й те саме стояли б один під одним.
@@ -7892,7 +7908,7 @@ const Matching = () => {
     reviewsSlot: buildRowReviewsSlot(user.userId),
     secondaryAction: {
       icon: favoriteUsers[user.userId] ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
-      title: 'В обране',
+      title: uiText('В обране', language),
       accent: true,
       active: Boolean(favoriteUsers[user.userId]),
       onClick: toggleRowFavorite,
@@ -7906,6 +7922,7 @@ const Matching = () => {
     handleRequestRowContacts,
     handleRowEnrichProfile,
     isAdmin,
+    language,
     ownerId,
     rowContactsLoading,
     toggleRowFavorite,
@@ -8050,29 +8067,29 @@ const Matching = () => {
   // Кнопка називає те, куди веде, а не те, де стоїмо: так один значок
   // перебирає обидві розкладки, і читач бачить наступну наперед.
   const nextViewLayout = nextMatchingViewLayout(viewLayout);
-  const nextViewLayoutLabel = MATCHING_VIEW_LAYOUT_LABELS[nextViewLayout];
+  const nextViewLayoutLabel = uiText(MATCHING_VIEW_LAYOUT_LABELS[nextViewLayout], language);
   const nextViewLayoutIcon = nextViewLayout === 'list' ? <FaListUl /> : <FaThLarge />;
 
   const matchingMenuActions = [
     {
       key: 'viewLayout',
       label: nextViewLayoutLabel,
-      description: 'Перемкнути вигляд стрічки',
+      description: uiText('Перемкнути вигляд стрічки', language),
       icon: nextViewLayoutIcon,
       onClick: toggleViewLayout,
     },
     ...(isAdmin ? [{
       key: 'diagnostics',
-      label: 'Діагностика',
-      description: 'Показати проблеми в даних анкет',
+      label: uiText('Діагностика', language),
+      description: uiText('Показати проблеми в даних анкет', language),
       icon: <FaStethoscope />,
       active: diagnosticsEnabled,
       onClick: () => setDiagnosticsEnabled(current => !current),
     }] : []),
     {
       key: 'refreshCache',
-      label: 'Оновити кеш',
-      description: 'Скинути фільтри й перезавантажити анкети',
+      label: uiText('Оновити кеш', language),
+      description: uiText('Скинути фільтри й перезавантажити анкети', language),
       icon: <FaSyncAlt />,
       onClick: resetFiltersAndCache,
     },
@@ -8104,13 +8121,13 @@ const Matching = () => {
       >
         <FilterDrawerHeader>
           <FilterDrawerTitle>
-            <FilterDrawerHeading id="matching-filter-title">Фільтри matching</FilterDrawerHeading>
+            <FilterDrawerHeading id="matching-filter-title">{uiText('Фільтри matching', language)}</FilterDrawerHeading>
             <FilterDrawerSubtitle>{filterDrawerSubtitle}</FilterDrawerSubtitle>
           </FilterDrawerTitle>
           <FilterDrawerClose
             type="button"
-            aria-label="Закрити фільтри"
-            title="Закрити фільтри"
+            aria-label={uiText('Закрити фільтри', language)}
+            title={uiText('Закрити фільтри', language)}
             onClick={() => setShowFilters(false)}
           >
             <FaTimes />
@@ -8155,8 +8172,8 @@ const Matching = () => {
                 setUserNotFound={handleMatchingSearchNotFound}
                 wrapperStyle={{ width: '100%', margin: 0, border: 'none', background: 'transparent', padding: 0, boxShadow: 'none' }}
                 leftIcon={null}
-                placeholder="Пошук"
-                inputAriaLabel="Пошук профілів"
+                placeholder={uiText('Пошук', language)}
+                inputAriaLabel={uiText('Пошук профілів', language)}
                 storageKey={SEARCH_KEY}
                 onSearchKey={handleMatchingSearchKey}
                 onSearchExecuted={handleMatchingSearchExecuted}
@@ -8176,20 +8193,20 @@ const Matching = () => {
               />
             </SearchField>
             <TopActions>
-              <TopActionGroup aria-label="Фільтри matching">
+              <TopActionGroup aria-label={uiText('Фільтри matching', language)}>
                 <ActionButton
                   type="button"
                   onClick={() => setShowFilters(s => !s)}
                   $active={showFilters || activeFilterGroupCount > 0}
-                  aria-label={showFilters ? 'Закрити фільтри' : 'Відкрити фільтри'}
-                  title={showFilters ? 'Закрити фільтри' : 'Відкрити фільтри'}
+                  aria-label={uiText(showFilters ? 'Закрити фільтри' : 'Відкрити фільтри', language)}
+                  title={uiText(showFilters ? 'Закрити фільтри' : 'Відкрити фільтри', language)}
                 >
                   <FaFilter />
                   {activeFilterGroupCount > 0 && <ActionBadge>{activeFilterGroupCount}</ActionBadge>}
                 </ActionButton>
               </TopActionGroup>
               {(showBackendTrafficToggle || isIndexedDebugTestUser) && (
-                <TopActionGroup aria-label="Адміністративні дії matching">
+                <TopActionGroup aria-label={uiText('Адміністративні дії matching', language)}>
                   {showBackendTrafficToggle && (
                     <BackendTrafficToggleButton
                     type="button"
@@ -8235,8 +8252,8 @@ const Matching = () => {
                   it sits on its own, right after them, not inside a TopActionGroup pill. */}
               <ActionButton
                 type="button"
-                aria-label="Відкрити меню профілю"
-                title="Відкрити меню профілю"
+                aria-label={uiText('Відкрити меню профілю', language)}
+                title={uiText('Відкрити меню профілю', language)}
                 onClick={() => setShowInfoModal('dotsMenu')}
               >
                 <FaEllipsisV />
@@ -8248,7 +8265,7 @@ const Matching = () => {
               {matchingSearchStatus}
             </MatchingSearchStatusMessage>
           )}
-          <ChipsRow role="group" aria-label={isSearching ? 'Результати пошуку' : 'Колекції matching'}>
+          <ChipsRow role="group" aria-label={uiText(isSearching ? 'Результати пошуку' : 'Колекції matching', language)}>
             <ChipsGroup>
               {(isSearching ? searchChips : collectionChips).map(chip => {
                 const active = isSearching ? searchTab === chip.key : viewMode === chip.key;
@@ -8273,7 +8290,7 @@ const Matching = () => {
                   type="button"
                   $active
                   $danger={chip.danger}
-                  title={`${chip.text} — повернути групу в дефолт`}
+                  title={uiText('{text} — повернути групу в дефолт', language, { text: chip.text })}
                   onClick={() => resetFilterGroup(chip.filterName)}
                 >
                   <span>{chip.text}</span>
@@ -8284,7 +8301,7 @@ const Matching = () => {
                 <Chip
                   type="button"
                   aria-expanded={false}
-                  title={`Показати ще ${hiddenFilterChipCount} активних фільтрів`}
+                  title={uiText('Показати ще {count} активних фільтрів', language, { count: hiddenFilterChipCount })}
                   onClick={() => setShowAllFilterChips(true)}
                 >
                   <span>+{hiddenFilterChipCount}</span>
@@ -8294,10 +8311,10 @@ const Matching = () => {
                 <Chip
                   type="button"
                   aria-expanded
-                  title="Згорнути список активних фільтрів"
+                  title={uiText('Згорнути список активних фільтрів', language)}
                   onClick={() => setShowAllFilterChips(false)}
                 >
-                  <span>Згорнути</span>
+                  <span>{uiText('Згорнути', language)}</span>
                 </Chip>
               )}
             </ChipsGroup>
@@ -8321,7 +8338,7 @@ const Matching = () => {
               keysAvailableInFeedOnly={!isSearching}
               // У стрічці числа рахуються по завантаженому, а не по всій базі —
               // і рядок каже це прямо, а не вдає точність, якої не має.
-              scanNote={isSearching ? '' : 'серед завантажених'}
+              scanNote={isSearching ? '' : uiText('серед завантажених', language)}
             />
           )}
           {!ownerId && (
@@ -8367,7 +8384,7 @@ const Matching = () => {
                   <QueryDraftButton
                     type="button"
                     onClick={handleCreateFromQuery}
-                    title="Створити картку з набраного"
+                    title={uiText('Створити картку з набраного', language)}
                   >
                     Створити
                   </QueryDraftButton>
@@ -8432,14 +8449,14 @@ const Matching = () => {
                       reviewsAction={buildRowReviewsAction(user.userId)}
                       primaryAction={{
                         icon: favoriteUsers[user.userId] ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
-                        title: 'В обране',
+                        title: uiText('В обране', language),
                         accent: true,
                         active: Boolean(favoriteUsers[user.userId]),
                         onClick: toggleRowFavorite,
                       }}
                       secondaryAction={{
                         icon: dislikeUsers[user.userId] ? <FaUndoAlt size={13} /> : <FaTimes size={14} />,
-                        title: dislikeUsers[user.userId] ? 'Повернути зі схованих' : 'Приховати',
+                        title: uiText(dislikeUsers[user.userId] ? 'Повернути зі схованих' : 'Приховати', language),
                         active: Boolean(dislikeUsers[user.userId]),
                         onClick: toggleRowHidden,
                       }}
@@ -8453,9 +8470,9 @@ const Matching = () => {
               )}
               {loadError && feedRows.length === 0 && (
                 <FeedNotice role="alert">
-                  <div>Не вдалося завантажити профілі.</div>
+                  <div>{uiText('Не вдалося завантажити профілі.', language)}</div>
                   <div>{loadError.userMessage}</div>
-                  <ActionButton type="button" onClick={reloadDefault} aria-label="Повторити завантаження">
+                  <ActionButton type="button" onClick={reloadDefault} aria-label={uiText('Повторити завантаження', language)}>
                     Спробувати ще раз
                   </ActionButton>
                 </FeedNotice>
@@ -8468,15 +8485,15 @@ const Matching = () => {
               {showFeedLoadPrompt && (
                 <FeedCountdown>
                   <FeedLoadPromptButton type="button" onClick={handleArmFeedPaging}>
-                    {`Показати ще ${MATCHING_THROTTLED_LOAD_BATCH}`}
+                    {uiText('Показати ще {count}', language, { count: MATCHING_THROTTLED_LOAD_BATCH })}
                   </FeedLoadPromptButton>
                   {/* Підсумок щойно завершеної порції говорить із того самого
                       місця, де стоїть наступний жест: спершу «що приїхало», і
                       лише коли сказати нема чого — звична підказка. */}
                   <FeedCountdownHint data-testid={feedBatchSummaryText ? 'feed-batch-summary' : undefined}>
                     {feedBatchSummaryText || (lastLoadAddedNothing
-                      ? 'Минула порція не дала нових карток — під ці фільтри більше нічого не підійшло'
-                      : 'Прокрутіть донизу, щоб запустити відлік')}
+                      ? uiText('Минула порція не дала нових карток — під ці фільтри більше нічого не підійшло', language)
+                      : uiText('Прокрутіть донизу, щоб запустити відлік', language))}
                   </FeedCountdownHint>
                 </FeedCountdown>
               )}
@@ -8492,7 +8509,7 @@ const Matching = () => {
                   і пауза читалась би як «зламалось». */}
               {isThrottledFeedPaging && loading && renderedCardsLength > 0 && (
                 <FeedCountdown>
-                  <FeedCountdownHint>Завантажую…</FeedCountdownHint>
+                  <FeedCountdownHint>{uiText('Завантажую…', language)}</FeedCountdownHint>
                 </FeedCountdown>
               )}
               <FeedSentinel ref={feedSentinelRef} />
@@ -8507,15 +8524,15 @@ const Matching = () => {
             $bounce={detailBounce}
             role="dialog"
             aria-modal="true"
-            aria-label="Профіль"
+            aria-label={uiText('Профіль', language)}
           >
             <DetailInner>
               <DetailBar>
                 <DetailCloseButton
                   type="button"
                   onClick={closeDetail}
-                  aria-label="Закрити профіль"
-                  title="Закрити профіль"
+                  aria-label={uiText('Закрити профіль', language)}
+                  title={uiText('Закрити профіль', language)}
                 >
                   <FaChevronLeft />
                 </DetailCloseButton>
@@ -8540,7 +8557,7 @@ const Matching = () => {
                       $side="left"
                       onClick={e => { e.stopPropagation(); navigateActiveProfile(-1); }}
                       disabled={activeProfileIndex === 0}
-                      aria-label="Previous profile" title="Попередній профіль"
+                      aria-label="Previous profile" title={uiText('Попередній профіль', language)}
                     >
                       <FaChevronLeft />
                     </ModernDesktopNavButton>
@@ -8549,7 +8566,7 @@ const Matching = () => {
                       $side="right"
                       onClick={e => { e.stopPropagation(); navigateActiveProfile(1); }}
                       disabled={activeProfileIndex >= filteredUsers.length - 1 && (!hasMore || loading)}
-                      aria-label="Next profile" title="Наступний профіль"
+                      aria-label="Next profile" title={uiText('Наступний профіль', language)}
                     >
                       <FaChevronRight />
                     </ModernDesktopNavButton>
@@ -8602,7 +8619,7 @@ const Matching = () => {
                           } catch (error) {
                             dispatchedCommentSaveRef.current = null;
                             const details = error?.message || String(error);
-                            toast.error(`Не вдалося зберегти коментар: ${details}`);
+                            toast.error(uiText('Не вдалося зберегти коментар: {details}', language, { details }));
                           }
                         }
                       }}
@@ -8643,20 +8660,20 @@ const Matching = () => {
               );
             })() : loadError ? (
               <OwnerStatusMessage role="alert">
-                <div>Не вдалося завантажити профілі.</div>
+                <div>{uiText('Не вдалося завантажити профілі.', language)}</div>
                 <div>{loadError.userMessage}</div>
-                <div>Етап: {loadError.requestLabel}</div>
+                <div>{uiText('Етап:', language)} {loadError.requestLabel}</div>
                 <details>
-                  <summary>Технічні деталі</summary>
-                  <div>Етап: {loadError.requestLabel}</div>
-                  <div>Код: {loadError.code}</div>
-                  <div>Тип: {loadError.name}</div>
-                  <div>Повідомлення: {loadError.message}</div>
-                  <div>Спроба: {loadError.requestId}</div>
-                  <div>Мережа: {loadError.online === false ? 'offline' : 'online'}</div>
-                  <div>Час: {loadError.timestamp}</div>
+                  <summary>{uiText('Технічні деталі', language)}</summary>
+                  <div>{uiText('Етап:', language)} {loadError.requestLabel}</div>
+                  <div>{uiText('Код:', language)} {loadError.code}</div>
+                  <div>{uiText('Тип:', language)} {loadError.name}</div>
+                  <div>{uiText('Повідомлення:', language)} {loadError.message}</div>
+                  <div>{uiText('Спроба:', language)} {loadError.requestId}</div>
+                  <div>{uiText('Мережа:', language)} {loadError.online === false ? 'offline' : 'online'}</div>
+                  <div>{uiText('Час:', language)} {loadError.timestamp}</div>
                   <div>
-                    Trace: {(loadError.trace || initialLoadTrace).map(item => `${item.stage} ${item.status === 'completed' ? '✓' : item.status === 'failed' ? '✕' : '…'}`).join(' → ') || 'немає подій'}
+                    Trace: {(loadError.trace || initialLoadTrace).map(item => `${item.stage} ${item.status === 'completed' ? '✓' : item.status === 'failed' ? '✕' : '…'}`).join(' → ') || uiText('немає подій', language)}
                   </div>
                   <ActionButton
                     type="button"
@@ -8664,17 +8681,17 @@ const Matching = () => {
                       try {
                         if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
                         await navigator.clipboard.writeText(JSON.stringify(loadError, null, 2));
-                        toast.success('Діагностику скопійовано');
+                        toast.success(uiText('Діагностику скопійовано', language));
                       } catch {
-                        toast.error('Не вдалося скопіювати діагностику');
+                        toast.error(uiText('Не вдалося скопіювати діагностику', language));
                       }
                     }}
-                    aria-label="Копіювати діагностику"
+                    aria-label={uiText('Копіювати діагностику', language)}
                   >
                     Копіювати діагностику
                   </ActionButton>
                 </details>
-                <ActionButton type="button" onClick={reloadDefault} aria-label="Повторити завантаження">
+                <ActionButton type="button" onClick={reloadDefault} aria-label={uiText('Повторити завантаження', language)}>
                   Спробувати ще раз
                 </ActionButton>
               </OwnerStatusMessage>

@@ -116,7 +116,7 @@ describe('заготовка нової картки першим рядком �
     // Нерозпізнане — це імʼя: так каже сам розпізнавач, і заготовка не вигадує
     // власного правила.
     expect(source).toContain("const field = detected?.key || 'name';");
-    expect(source).toContain("const label = getFieldLabel(pickerFields.find(item => item?.name === field)) || 'Запит';");
+    expect(source).toContain("const label = getFieldLabel(pickerFields.find(item => item?.name === field), language) || uiText('Запит', language);");
   });
 
   it('називає зайняте значення зайнятим, а не мовчить про нього', () => {

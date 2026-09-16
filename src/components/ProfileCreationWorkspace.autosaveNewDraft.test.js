@@ -11,6 +11,7 @@ import {
   reserveProfileCardId,
   saveCreateProfileMutation,
 } from 'utils/profileMutations';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 // Regression test for: clicking "Додати профіль" only updated local React
 // state (reserveProfileCardId merely allocates a key, it writes nothing) -
@@ -119,6 +120,9 @@ beforeEach(() => {
     status: 'pendingReview',
   }));
 });
+
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
 
 it('persists a brand new draft immediately, without waiting for a field blur', async () => {
   render(<ProfileCreationWorkspace />);

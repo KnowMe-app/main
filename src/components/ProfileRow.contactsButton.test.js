@@ -2,6 +2,7 @@ import React from 'react';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ProfileRow from './ProfileRow';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 // Картка стрічки — це проєкція `matchingCards`, і контактів у ній немає: вони
 // живуть в окремому вузлі за межею приватності. Кнопка контактів тому нічого
@@ -35,6 +36,9 @@ const renderRow = (user, props = {}) => render(
     {...props}
   />
 );
+
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
 
 describe('кнопка контактів у рядку стрічки', () => {
   it('малюється без жодного читання і мовчить, поки її не натиснули', () => {

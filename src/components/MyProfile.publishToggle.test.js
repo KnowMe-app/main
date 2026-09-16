@@ -4,6 +4,10 @@ import {
   MATCHING_CARD_FEED_FIELD,
   buildMatchingCardProjection,
 } from '../utils/matchingCardIndex';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
+
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
 
 describe('my-profile publication toggle', () => {
   const source = fs.readFileSync(path.join(__dirname, 'MyProfile.jsx'), 'utf8');
@@ -35,7 +39,7 @@ describe('my-profile publication toggle', () => {
 
   it('shows the action matching the current publication state', () => {
     expect(source).toContain('onClick={state.publish ? hideProfile : publishProfile}');
-    expect(source).toContain("{state.publish ? 'Приховати анкету' : 'Опублікувати анкету'}");
+    expect(source).toContain("{uiText(state.publish ? 'Приховати анкету' : 'Опублікувати анкету', language)}");
   });
 
   it('uses the current publish state for the profile status marker', () => {
@@ -44,6 +48,6 @@ describe('my-profile publication toggle', () => {
   });
 
   it('keeps the failed login status for profiles without confirmed access', () => {
-    expect(source).toContain(": 'Логін не відбувся'");
+    expect(source).toContain("uiText('Логін не відбувся', language)");
   });
 });

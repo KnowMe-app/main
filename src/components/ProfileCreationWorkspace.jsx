@@ -16,7 +16,11 @@ import BackButton from './BackButton';
 import InfoModal from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { ContactLinks } from './ProfileRow';
+import { NoteLane, NoteLaneHead, NoteLaneHint, NoteLanes } from './Matching.styled';
+import { profileUiText } from 'utils/profileTexts';
 import { useAppSettings } from '../hooks/useAppSettings';
+import { uiText } from 'utils/uiTranslations';
+import { formatDateTime } from 'utils/formatDateTime';
 import { FieldComment } from './smallCard/FieldComment';
 import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
@@ -201,6 +205,10 @@ const FormSectionTitle = styled.h3`margin:0 0 14px; font-size:16.5px; font-weigh
 const FieldRow = styled.div`
   padding:13px 0; border-bottom:1px solid var(--km-border);
   &:last-child { border-bottom:none; }
+  /* Поле всередині доріжки нотатки: підпис уже стоїть над ним, і власного
+     відступу воно не додає — інакше два сусідні порожні поля стояли б на
+     різній висоті від своїх підписів. */
+  ${({ $bare }) => ($bare ? 'padding:0; border-bottom:none;' : '')}
   ${({ $pending }) => ($pending ? `
     margin:0 -10px; padding-left:10px; padding-right:10px; border-radius:14px;
     background:color-mix(in srgb, var(--km-accent) 5%, transparent);
@@ -261,7 +269,27 @@ const FieldChip = styled.button`
   background: ${({ $selected }) => ($selected ? 'var(--km-accent-light)' : 'var(--km-card)')};
   color: ${({ $selected }) => ($selected ? 'var(--km-accent)' : 'var(--km-muted)')};
 `;
-const CommentCard = styled(Card)`background:color-mix(in srgb, var(--km-accent) 6%, var(--km-card));`;
+const NotesCard = styled(Card)`display:grid; gap:10px;`;
+/*
+ * Приватна нотатка малюється чужим компонентом (`FieldComment` — той самий, що
+ * в картці адміна), і всередині в неї гола `textarea` з рамкою браузера. Поруч
+ * із публічною, яку малює ця сама форма, це виглядало як два різні механізми:
+ * одне поле заокруглене й залите, друге — квадратна коробка. Пара мусить
+ * виглядати парою, тож оболонка приводить внутрішнє поле до вигляду сусіднього.
+ */
+const NoteFieldShell = styled.div`
+  textarea {
+    width:100%; box-sizing:border-box; min-height:74px;
+    background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:14px;
+    padding:13px 40px 13px 16px; font:600 15.5px/1.4 var(--km-font); color:var(--km-text);
+    outline:none; resize:vertical;
+    transition:border-color 150ms ease, box-shadow 150ms ease;
+  }
+  textarea:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
+  /* Хрестик усередині поля — той самий жест, що й у решти рядків форми. */
+  button { color:var(--km-muted); }
+  button:hover { color:var(--km-accent); }
+`;
 const ReviewCard = styled(Card)`background:color-mix(in srgb, var(--km-accent-mid) 8%, var(--km-card));`;
 const AuthorLink = styled.button`
   padding:0; border:0; background:none; color:var(--km-accent); font:inherit; text-decoration:underline; cursor:pointer;
@@ -345,6 +373,7 @@ const DraftContacts = styled.div`
 // stores exactly what is in it - "редакція означає, що приймаємо саме
 // відредагований формат".
 const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete, onOpenAuthor }) => {
+  const { language } = useAppSettings();
   const [value, setValue] = useState(row.value);
   const isRemoval = row.sourceKind === 'removed' || row.kind === 'removed';
 
@@ -354,7 +383,7 @@ const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete, 
 
   return <EditCard $kind={row.kind}>
     {row.previousValue ? <EditHead>
-      <EditWas>замість <s>{row.previousValue}</s></EditWas>
+      <EditWas>{uiText('замість', language)} <s>{row.previousValue}</s></EditWas>
     </EditHead> : null}
     <EditControl>
       <InputShell>
@@ -362,7 +391,7 @@ const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete, 
           value={value}
           $kind={row.kind}
           readOnly={isRemoval}
-          aria-label={`${label}: запропоноване значення`}
+          aria-label={uiText('{label}: запропоноване значення', language, { label })}
           onChange={event => setValue(event.target.value)}
           onKeyDown={event => {
             if (event.key !== 'Enter') return;
@@ -373,8 +402,8 @@ const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete, 
         <InlineClearButton
           type="button"
           disabled={disabled}
-          title="Видалити правку — не залишиться ні в анкеті, ні в історії"
-          aria-label={`Видалити правку: ${label}`}
+          title={uiText('Видалити правку — не залишиться ні в анкеті, ні в історії', language)}
+          aria-label={uiText('Видалити правку: {label}', language, { label })}
           onMouseDown={event => event.preventDefault()}
           onClick={onDelete}
         ><FiX size={16} aria-hidden="true" /></InlineClearButton>
@@ -383,8 +412,8 @@ const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete, 
         type="button"
         $tone="accept"
         disabled={disabled}
-        title={isEdited ? 'Зберегти виправлене значення' : 'Зберегти правку в анкету'}
-        aria-label={`Зберегти правку: ${label}`}
+        title={uiText(isEdited ? 'Зберегти виправлене значення' : 'Зберегти правку в анкету', language)}
+        aria-label={uiText('Зберегти правку: {label}', language, { label })}
         onClick={() => onSave(value)}
       ><FiSave aria-hidden="true" /></FieldActionButton>
     </EditControl>
@@ -392,13 +421,14 @@ const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete, 
       {row.editorUserId
         ? <AuthorLink type="button" onClick={onOpenAuthor}>{authorName}</AuthorLink>
         : <span>{authorName}</span>}
-      {row.updatedAt ? <span>· {new Date(row.updatedAt).toLocaleString('uk-UA')}</span> : null}
+      {row.updatedAt ? <span>· {formatDateTime(row.updatedAt, language)}</span> : null}
     </EditMeta>
-    {isEdited && <EditHint>Буде збережено виправлене значення: {value.trim() || '—'}</EditHint>}
+    {isEdited && <EditHint>{uiText('Буде збережено виправлене значення: {value}', language, { value: value.trim() || '—' })}</EditHint>}
   </EditCard>;
 };
 
 export const HistoricalFieldEdit = ({ row, label, authorName, disabled, onRestore, onDelete, onOpenAuthor }) => {
+  const { language } = useAppSettings();
   const [value, setValue] = useState(row.value);
   const currentKind = row.currentKind || row.kind;
 
@@ -410,7 +440,7 @@ export const HistoricalFieldEdit = ({ row, label, authorName, disabled, onRestor
         <EditValueInput
           value={value}
           $kind={currentKind}
-          aria-label={`${label}: значення з історії`}
+          aria-label={uiText('{label}: значення з історії', language, { label })}
           onChange={event => setValue(event.target.value)}
           onKeyDown={event => {
             if (event.key !== 'Enter') return;
@@ -421,8 +451,8 @@ export const HistoricalFieldEdit = ({ row, label, authorName, disabled, onRestor
         <InlineClearButton
           type="button"
           disabled={disabled}
-          title="Видалити запис з історії"
-          aria-label={`Видалити з історії: ${row.value}`}
+          title={uiText('Видалити запис з історії', language)}
+          aria-label={uiText('Видалити з історії: {value}', language, { value: row.value })}
           onMouseDown={event => event.preventDefault()}
           onClick={onDelete}
         ><FiX size={16} aria-hidden="true" /></InlineClearButton>
@@ -431,13 +461,13 @@ export const HistoricalFieldEdit = ({ row, label, authorName, disabled, onRestor
         type="button"
         $tone="restore"
         disabled={disabled || !value.trim()}
-        title="Зберегти цю редакцію в анкету"
-        aria-label={`Зберегти редакцію в анкету: ${row.value}`}
+        title={uiText('Зберегти цю редакцію в анкету', language)}
+        aria-label={uiText('Зберегти редакцію в анкету: {value}', language, { value: row.value })}
         onClick={() => onRestore(value)}
       ><FiSave aria-hidden="true" /></FieldActionButton>
     </EditControl>
     <VersionMeta>
-      <span>{row.at ? new Date(row.at).toLocaleString('uk-UA') : '—'}</span>
+      <span>{row.at ? formatDateTime(row.at, language) : '—'}</span>
       <span>·</span>
       {row.editorUserId
         ? <AuthorLink type="button" onClick={onOpenAuthor}>{authorName}</AuthorLink>
@@ -545,6 +575,7 @@ export const buildOverlayPrefill = (canonical, cardUserId) => [
  * виглядало однаково, звідки б його не відкрили.
  */
 const ProfileResultCard = ({ card, name, note, status, statusVariant, actionLabel, onAction }) => {
+  const { language } = useAppSettings();
   const facts = [
     getRoleCode(getProfileRole(card)),
     getProfileAge(card) ? String(getProfileAge(card)) : '',
@@ -558,10 +589,10 @@ const ProfileResultCard = ({ card, name, note, status, statusVariant, actionLabe
     <ResultBody>
       <ResultName>{name}</ResultName>
       {facts ? <ResultMeta>{facts}</ResultMeta> : null}
-      {note ? <ResultMeta>{note}</ResultMeta> : null}
-      {status ? <span><Status $variant={statusVariant}>{status}</Status></span> : null}
+      {note ? <ResultMeta>{uiText(note, language)}</ResultMeta> : null}
+      {status ? <span><Status $variant={statusVariant}>{uiText(status, language)}</Status></span> : null}
     </ResultBody>
-    <ResultAction type="button" onClick={onAction}>{actionLabel}</ResultAction>
+    <ResultAction type="button" onClick={onAction}>{uiText(actionLabel, language)}</ResultAction>
   </ResultCard>;
 };
 
@@ -858,12 +889,12 @@ export const ProfileCreationWorkspace = () => {
     return {
       field,
       value,
-      label: (fieldDefinition && getFieldLabel(fieldDefinition)) || 'Запит',
+      label: (fieldDefinition && getFieldLabel(fieldDefinition, language)) || uiText('Запит', language),
       note: claimsIdentity && hasExistingMatches
-        ? 'Це значення вже стоїть у знайденій картці — нова відкриється без нього'
+        ? uiText('Це значення вже стоїть у знайденій картці — нова відкриється без нього', language)
         : '',
     };
-  }, [hasExistingMatches, search]);
+  }, [hasExistingMatches, language, search]);
 
   /**
    * Закрита форма повертає туди, звідки її відкрили.
@@ -1087,6 +1118,7 @@ export const ProfileCreationWorkspace = () => {
   // failing with a false REVISION_CONFLICT.
   const saveQueueRef = useRef(Promise.resolve());
 
+  // Етапи й цілі збереження — теж напис на екрані, тож ідуть мовою інтерфейсу.
   const safeSaveStageNames = {
     'identity-claim': 'перевірка унікальності',
     'search-id-index': 'індекс ідентифікаторів',
@@ -1124,30 +1156,31 @@ export const ProfileCreationWorkspace = () => {
       error,
     });
     const detail = safeSaveErrorCode(error);
-    const stage = safeSaveStageNames[error?.profileSaveStage] || 'невідомий етап';
+    const stage = uiText(safeSaveStageNames[error?.profileSaveStage] || 'невідомий етап', language);
     const targets = (error?.profileSaveTargets || [])
       .map(target => safeSaveTargetNames[target])
       .filter(Boolean)
+      .map(target => uiText(target, language))
       .join(' + ');
     const recovery = error?.profileSaveRecovered === true
-      ? 'Чернетку повернено в режим редагування — можна повторити.'
+      ? uiText('Чернетку повернено в режим редагування — можна повторити.', language)
       : error?.profileSaveRecovered === false
-        ? 'Не вдалося автоматично розблокувати чернетку. Оновіть сторінку.'
+        ? uiText('Не вдалося автоматично розблокувати чернетку. Оновіть сторінку.', language)
         : '';
     toast.error(
       <div>
         <div style={{ fontWeight: 700 }}>{fallbackMessage}</div>
         {detail ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{stage}: {detail}</div> : null}
-        {targets ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>Перевірте rules для: {targets}.</div> : null}
+        {targets ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{uiText('Перевірте rules для: {targets}.', language, { targets })}</div> : null}
         {recovery ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{recovery}</div> : null}
       </div>,
       { duration: 8000 },
     );
   };
 
-  const describeSaveError = error => (error?.message === 'REVISION_CONFLICT'
+  const describeSaveError = error => uiText(error?.message === 'REVISION_CONFLICT'
     ? 'Профіль уже змінено. Оновіть сторінку.'
-    : error?.message === 'DUPLICATE_PROFILE' ? 'Профіль з такими контактами вже існує або очікує перевірки.' : 'Не вдалося зберегти профіль');
+    : error?.message === 'DUPLICATE_PROFILE' ? 'Профіль з такими контактами вже існує або очікує перевірки.' : 'Не вдалося зберегти профіль', language);
 
   const persistDraft = useCallback(nextDraft => {
     const run = async () => {
@@ -1313,9 +1346,9 @@ export const ProfileCreationWorkspace = () => {
     setSaving(true);
     try {
       await purgeFieldVersionEverywhere(row, [row.value]);
-      toast.success('Значення видалено з усієї історії');
+      toast.success(uiText('Значення видалено з усієї історії', language));
     } catch (error) {
-      reportSaveError(error, 'Не вдалося видалити запис з історії');
+      reportSaveError(error, uiText('Не вдалося видалити запис з історії', language));
     } finally {
       setSaving(false);
     }
@@ -1401,8 +1434,8 @@ export const ProfileCreationWorkspace = () => {
         historyAction: 'accept',
       });
     },
-    `Правку збережено: ${label}`,
-    'Не вдалося зберегти правку',
+    uiText('Правку збережено: {label}', language, { label }),
+    uiText('Не вдалося зберегти правку', language),
   );
 
   const deleteFieldEdit = (row, label) => runOverlayReviewAction(
@@ -1414,8 +1447,8 @@ export const ProfileCreationWorkspace = () => {
         historyAction: 'discard',
       });
     },
-    `Правку видалено: ${label}`,
-    'Не вдалося видалити правку',
+    uiText('Правку видалено: {label}', language, { label }),
+    uiText('Не вдалося видалити правку', language),
   );
 
   // "Зберегти чернетку" is the one action that turns the accepted base draft
@@ -1440,7 +1473,7 @@ export const ProfileCreationWorkspace = () => {
         // visible stacked draft may also contain unaccepted editor overlays.
         finalData: draftBaseRef.current || current.data,
       });
-      toast.success('Чернетку збережено як картку — вона у вузлах анкети і проіндексована');
+      toast.success(uiText('Чернетку збережено як картку — вона у вузлах анкети і проіндексована', language));
       closeEditor();
       await refresh(uid, access);
     } catch (error) {
@@ -1448,8 +1481,8 @@ export const ProfileCreationWorkspace = () => {
       // allow-listed fallback for an unexpected publication failure too.
       if (publishing && !error.profileSaveStage) error.profileSaveStage = 'publication-update';
       reportSaveError(error, error?.message === 'REVISION_CONFLICT'
-        ? 'Автор уже оновив чернетку. Перевірте нову версію.'
-        : 'Не вдалося зберегти чернетку як картку');
+        ? uiText('Автор уже оновив чернетку. Перевірте нову версію.', language)
+        : uiText('Не вдалося зберегти чернетку як картку', language));
     } finally { setSaving(false); }
   };
 
@@ -1547,7 +1580,7 @@ export const ProfileCreationWorkspace = () => {
     </FieldTimeline>;
   };
 
-  const renderCreateField = (fieldName, { allowUnknown = false } = {}) => {
+  const renderCreateField = (fieldName, { allowUnknown = false, hideLabel = false, placeholder } = {}) => {
     // A field with edits but no entry in the create catalogue still has to be
     // reviewable, so those fall back to a plain text row named after the field.
     const field = fieldsMap.get(fieldName) || (allowUnknown ? { name: fieldName } : null);
@@ -1561,11 +1594,11 @@ export const ProfileCreationWorkspace = () => {
     // перша половина відгуку мовчки зникла б з усіх екранів. Правило тут те
     // саме, що й у формі анкети (`fieldAcceptsMultipleValues`).
     const canAddAnotherValue = fieldAcceptsMultipleValues(fieldName);
-    const label = getFieldLabel(field) || fieldName;
+    const label = getFieldLabel(field, language) || fieldName;
     const currentValues = toFieldValues(value).map(item => String(item ?? '').trim()).filter(Boolean);
 
-    return <FieldRow key={fieldName} $pending={Boolean(pendingFieldEdits[fieldName]?.length)}>
-      <FieldLabel>{label}</FieldLabel>
+    return <FieldRow key={fieldName} $pending={Boolean(pendingFieldEdits[fieldName]?.length)} $bare={hideLabel}>
+      {!hideLabel && <FieldLabel>{label}</FieldLabel>}
       {Array.isArray(field.options) && field.options.length > 0 ? (
         <FieldChipRow>
           {field.options.map(option => {
@@ -1577,7 +1610,7 @@ export const ProfileCreationWorkspace = () => {
               $selected={selected}
               onClick={() => commitFieldValue(fieldName, selected ? '' : optionValue)}
             >
-              {getOptionLabel(option)}
+              {getOptionLabel(option, language)}
             </FieldChip>;
           })}
         </FieldChipRow>
@@ -1587,13 +1620,13 @@ export const ProfileCreationWorkspace = () => {
             <InputShell>
               <FieldTextArea
                 value={item}
-                placeholder={getFieldPlaceholder(field)}
+                placeholder={placeholder ?? getFieldPlaceholder(field, language)}
                 onChange={e => updateDraftFieldItem(fieldName, index, e.target.value)}
                 onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
               />
-              <InlineClearButton type="button" aria-label={`Очистити ${getFieldLabel(field)}`} title="Очистити рядок" onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
+              <InlineClearButton type="button" aria-label={uiText('Очистити {label}', language, { label })} title={uiText('Очистити рядок', language)} onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
             </InputShell>
-            {canAddAnotherValue && <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
+            {canAddAnotherValue && <AddValueButton type="button" aria-label={uiText('Додати ще одне значення: {label}', language, { label })} title={uiText('Додати ще один рядок', language)} onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
           </FieldControl>)}
         </FieldControls>
       ) : (
@@ -1602,13 +1635,13 @@ export const ProfileCreationWorkspace = () => {
             <InputShell>
               <FieldInput
                 value={item}
-                placeholder={getFieldPlaceholder(field)}
+                placeholder={placeholder ?? getFieldPlaceholder(field, language)}
                 onChange={e => updateDraftFieldItem(fieldName, index, e.target.value)}
                 onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
               />
-              <InlineClearButton type="button" aria-label={`Очистити ${getFieldLabel(field)}`} title="Очистити рядок" onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
+              <InlineClearButton type="button" aria-label={uiText('Очистити {label}', language, { label })} title={uiText('Очистити рядок', language)} onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
             </InputShell>
-            {canAddAnotherValue && <AddValueButton type="button" aria-label={`Додати ще одне значення: ${getFieldLabel(field)}`} title="Додати ще один рядок" onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
+            {canAddAnotherValue && <AddValueButton type="button" aria-label={uiText('Додати ще одне значення: {label}', language, { label })} title={uiText('Додати ще один рядок', language)} onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
           </FieldControl>)}
         </FieldControls>
       )}
@@ -1621,8 +1654,8 @@ export const ProfileCreationWorkspace = () => {
   // видно (або не показано цьому читачеві), і «Новий профіль» над нею брехав би.
   const draftName = useMemo(() => (
     describeProfileName(draft?.surname, draft?.name, draft?.fathersname)
-      || (overlayTarget ? 'Картка без імені' : 'Новий профіль')
-  ), [draft, overlayTarget]);
+      || uiText(overlayTarget ? 'Картка без імені' : 'Новий профіль', language)
+  ), [draft, language, overlayTarget]);
 
   /**
    * Факти, за якими картку впізнають: роль, вік, локація.
@@ -1684,11 +1717,11 @@ export const ProfileCreationWorkspace = () => {
   // Відкрита форма — це вже не список, і шапка каже, що саме відкрито: назва
   // екрана над чужою карткою читалась як обіцянка, що це одна з моїх.
   const heading = useMemo(() => {
-    if (overlayTarget) return 'Доповнення картки';
-    if (draft) return 'Чернетка';
-    return access?.isAdmin ? 'Нові профілі' : 'Створені мною';
-  }, [access, draft, overlayTarget]);
-  if (!access) return <Page><Shell>Завантаження…</Shell></Page>;
+    if (overlayTarget) return uiText('Доповнення картки', language);
+    if (draft) return uiText('Чернетка', language);
+    return uiText(access?.isAdmin ? 'Нові профілі' : 'Створені мною', language);
+  }, [access, draft, language, overlayTarget]);
+  if (!access) return <Page><Shell>{uiText('Завантаження…', language)}</Shell></Page>;
 
   return <Page><Shell>
     <Header>
@@ -1702,8 +1735,8 @@ export const ProfileCreationWorkspace = () => {
           не-адмін натискав їх і лишався на місці без жодного пояснення. */}
       <MenuButton
         type="button"
-        aria-label="Відкрити меню профілю"
-        title="Відкрити меню профілю"
+        aria-label={uiText('Відкрити меню профілю', language)}
+        title={uiText('Відкрити меню профілю', language)}
         onClick={() => setShowProfileMenu(true)}
       >
         <FaEllipsisV />
@@ -1729,11 +1762,19 @@ export const ProfileCreationWorkspace = () => {
             Над доповненням знайденої картки стояв підпис «Власні дані», який не
             називав ані людини, ані стану, — і разом з памʼяткою про те, як
             влаштований оверлей, з'їдав увесь перший екран форми. */}
-        {!overlayTarget && <DraftBadges>
-          <Status $variant={editingSharedDraft ? 'overlay' : activeMutation.status === 'private' ? 'private' : 'pending'}>
-            {editingSharedDraft ? 'Спільна чернетка' : activeMutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
-          </Status>
-          {reviewingAsAdmin && pendingEditsCount > 0 && <Status $variant="overlay">{pendingEditsCount} непідтверджених правок</Status>}
+        {/* «Очікує підтвердження» звідси пішло: воно обіцяло гейт, якого немає.
+            Заведена картка вже лежить у пошуку — її знаходять, читають і
+            пишуть під нею публічні відгуки, — тож чіп над нею казав авторові,
+            що його робота кудись не доїхала, і тим єдиним, що стояло першим
+            рядком чернетки, був цей неправдивий стан. Лишились ті два підписи,
+            які справді щось міняють для того, хто дивиться: спільна чернетка
+            (правки бачить наступний редактор) і приватна картка. */}
+        {!overlayTarget && (editingSharedDraft || activeMutation.status === 'private'
+          || (reviewingAsAdmin && pendingEditsCount > 0)) && <DraftBadges>
+          {editingSharedDraft && <Status $variant="overlay">{uiText('Спільна чернетка', language)}</Status>}
+          {!editingSharedDraft && activeMutation.status === 'private'
+            && <Status $variant="private">{uiText('Приватний', language)}</Status>}
+          {reviewingAsAdmin && pendingEditsCount > 0 && <Status $variant="overlay">{uiText('{count} непідтверджених правок', language, { count: pendingEditsCount })}</Status>}
         </DraftBadges>}
         <DraftIdentity>
           {draftPhoto
@@ -1750,31 +1791,31 @@ export const ProfileCreationWorkspace = () => {
         {!overlayTarget && access.isAdmin && <>
           <TechnicalMeta>
             cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}
-            {activeMutation.updatedAt ? ` · оновлено ${new Date(activeMutation.updatedAt).toLocaleString('uk-UA')}` : ''}
+            {activeMutation.updatedAt ? ` · ${uiText('Оновлено:', language)} ${formatDateTime(activeMutation.updatedAt, language)}` : ''}
           </TechnicalMeta>
           {activeMutation.createdBy && <TechnicalMeta>
-            Автор:{' '}
+            {uiText('Автор:', language)}{' '}
             <AuthorLink type="button" onClick={() => navigate(`/edit/${activeMutation.createdBy}`)}>
               {describeAuthor(activeMutation.createdBy, historyAuthors)}
             </AuthorLink>
           </TechnicalMeta>}
         </>}
-        {editingSharedDraft && <Meta>
-          Ви бачите останні дані цієї чернетки — правки всіх редакторів накладені одна на одну.
-          Ваші зміни зберігаються окремо, у вашому оверлеї, і стають видимими наступному редактору.
-          Рішення про те, які правки залишити, ухвалює адміністратор.
-        </Meta>}
+        {editingSharedDraft && <Meta>{uiText(
+          'Ви бачите останні дані цієї чернетки — правки всіх редакторів накладені одна на одну. '
+          + 'Ваші зміни зберігаються окремо, у вашому оверлеї, і стають видимими наступному редактору. '
+          + 'Рішення про те, які правки залишити, ухвалює адміністратор.',
+          language
+        )}</Meta>}
         {!access.isAdmin && !overlayTarget && <>
           <ProgressRow>
-            <span>Заповнено анкету</span>
+            <span>{uiText('Заповнено анкету', language)}</span>
             <span style={{ color: 'var(--km-accent)', fontWeight: 700 }}>{draftFilledPct}%</span>
           </ProgressRow>
           <ProgressTrack><ProgressFill $pct={draftFilledPct} /></ProgressTrack>
+          {/* Нотатка звідси пішла до публічної — вони пара, і стоять разом
+              унизу форми (`NoteLanes`). Реакція лишається тут: це рішення про
+              картку, а не запис про людину. */}
           {!editingSharedDraft && activeMutation.updatedAt && <PersonalDraftMeta>
-            <FieldComment
-              userData={{ ...draft, userId: draft.userId || activeMutation.cardId }}
-              onLegacyCommentMigrated={() => commitFieldValue('myComment', '')}
-            />
             <ReactionButtons>
               <BtnFavorite
                 userId={activeMutation.cardId}
@@ -1802,51 +1843,72 @@ export const ProfileCreationWorkspace = () => {
       </DraftHeaderCard>
       {reviewingAsAdmin && (pendingEditsCount > 0 || draftHistory.length > 0) && <ReviewCard>
         <SectionHeader>
-          <span>Правки редакторів</span>
-          <Count aria-label={`${pendingEditsCount} правок`}>{pendingEditsCount}</Count>
+          <span>{uiText('Правки редакторів', language)}</span>
+          <Count aria-label={uiText('{count} правок', language, { count: pendingEditsCount })}>{pendingEditsCount}</Count>
         </SectionHeader>
-        <Meta>{pendingEditsCount === 0
+        <Meta>{uiText(pendingEditsCount === 0
           ? 'Немає непідтверджених правок — усі зміни вже опрацьовано.'
-          : 'Кожну зміну показано біля її поля: актуальне значення розташоване вгорі, а попередні — нижче, від найновішого до оригінального. Неприйняті зміни не потраплять у профіль і залишаться в черзі.'}</Meta>
+          : 'Кожну зміну показано біля її поля: актуальне значення розташоване вгорі, а попередні — нижче, від найновішого до оригінального. Неприйняті зміни не потраплять у профіль і залишаться в черзі.', language)}</Meta>
         <DisclosureToggle
           type="button"
           aria-expanded={showDraftHistory}
           onClick={() => setShowDraftHistory(previous => !previous)}
         >
-          <FiClock aria-hidden="true" /> Історія правок ({draftHistory.length})
+          <FiClock aria-hidden="true" /> {uiText('Історія правок ({count})', language, { count: draftHistory.length })}
           <FiChevronDown aria-hidden="true" style={{ transform: showDraftHistory ? 'rotate(180deg)' : 'none' }} />
         </DisclosureToggle>
         {showDraftHistory && <Meta>
-          {draftHistory.length === 0
+          {uiText(draftHistory.length === 0
             ? 'Історія порожня.'
-            : 'Для кожного поля показано окреме дерево: актуальне значення вгорі, оригінальне — внизу.'}
+            : 'Для кожного поля показано окреме дерево: актуальне значення вгорі, оригінальне — внизу.', language)}
         </Meta>}
       </ReviewCard>}
-      {/* «Ваш коментар» має означати одне й те саме скрізь — особисту нотатку,
-          яку бачить лише той, хто її написав (`multiData/comments`). Тут це
-          поле їхало в оверлей, тобто до адміністратора, а підпис під ним
-          («що варто знати адміністратору») пояснював технічний шлях запису
-          замість того, щоб назвати річ. Тепер тут той самий редактор нотатки,
-          що й у стрічці та у власній чернетці, а вже написане в оверлеї
-          переїжджає в нотатку при першому відкритті. */}
-      {overlayTarget && <CommentCard>
-        <FieldLabel>Ваш коментар</FieldLabel>
-        <FieldComment
-          userData={{ ...draft, userId: overlayTarget.userId }}
-          onLegacyCommentMigrated={() => commitFieldValue('myComment', '')}
-        />
-      </CommentCard>}
-      {CREATE_FORM_SECTIONS.map(section => (
+      {CREATE_FORM_SECTIONS.filter(section => section.key !== 'comment').map(section => (
         <FormSectionCard key={section.key}>
-          <FormSectionTitle>{section.title}</FormSectionTitle>
+          <FormSectionTitle>{uiText(section.title, language)}</FormSectionTitle>
           {section.fields.map(fieldName => renderCreateField(fieldName))}
           {section.key === 'contacts' && extraContactFields.map(fieldName => (
             renderCreateField(fieldName, { allowUnknown: true })
           ))}
         </FormSectionCard>
       ))}
+      {/* Публічна нотатка й приватна — пара, і стоять вони парою.
+          Досі це були два різні місця екрана: публічний коментар — останньою
+          секцією форми, приватна нотатка — у шапці (а в доповненні картки ще
+          й окремою плашкою «Ваш коментар»), тож два записи про ту саму людину
+          читались як дві незвʼязані речі, та ще й іншою розкладкою, ніж у
+          стрічці й у відкритій картці. Тут та сама пара доріжок, що й там:
+          публічне зверху (відгук читають), власне знизу (нотатку пишуть), з
+          тими самими підписами й плейсхолдерами. */}
+      <NotesCard>
+        <NoteLanes>
+          <NoteLane $public>
+            <NoteLaneHead>
+              <b>{profileUiText('publicComment', language)}</b>
+              <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
+            </NoteLaneHead>
+            {renderCreateField('publicComment', {
+              hideLabel: true,
+              placeholder: profileUiText('publicCommentPlaceholder', language),
+            })}
+          </NoteLane>
+          <NoteLane>
+            <NoteLaneHead>
+              <b>{profileUiText('personalNote', language)}</b>
+              <NoteLaneHint>{profileUiText('personalNoteHint', language)}</NoteLaneHint>
+            </NoteLaneHead>
+            <NoteFieldShell>
+              <FieldComment
+                userData={{ ...draft, userId: overlayTarget ? overlayTarget.userId : (draft.userId || activeMutation.cardId) }}
+                placeholder={profileUiText('personalNotePlaceholder', language)}
+                onLegacyCommentMigrated={() => commitFieldValue('myComment', '')}
+              />
+            </NoteFieldShell>
+          </NoteLane>
+        </NoteLanes>
+      </NotesCard>
       {extraEditedFields.length > 0 && <FormSectionCard>
-        <FormSectionTitle>🗂 Інші поля з правками</FormSectionTitle>
+        <FormSectionTitle>{uiText('🗂 Інші поля з правками', language)}</FormSectionTitle>
         {extraEditedFields.map(fieldName => renderCreateField(fieldName, { allowUnknown: true }))}
       </FormSectionCard>}
       {/* Every field already saves itself on blur, so the old Зберегти /
@@ -1857,18 +1919,18 @@ export const ProfileCreationWorkspace = () => {
       {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <Card>
         <Actions>
           <SaveButton disabled={saving} onClick={saveDraftAsCard}>
-            {saving ? 'Збереження…' : 'Зберегти чернетку'}
+            {uiText(saving ? 'Збереження…' : 'Зберегти чернетку', language)}
           </SaveButton>
         </Actions>
       </Card>}
-    </> : overlayLoading ? <Card><Meta>Відкриваємо картку…</Meta></Card> : <>
+    </> : overlayLoading ? <Card><Meta>{uiText('Відкриваємо картку…', language)}</Meta></Card> : <>
       {!access.isAdmin && <>
         {/* Екран питає одне — чи є вже така людина, — і має для цього один
             рядок і один рядок пояснення. Розкривний перелік пошукових ключів,
             памʼятка про чернетки й три підказки під кнопкою жили тут раніше:
             разом вони з'їдали перший екран, відповідаючи на питання, якого
             ніхто не ставив. */}
-        <SearchSection aria-label="Пошук анкети">
+        <SearchSection aria-label={uiText('Пошук анкети', language)}>
           <SearchBar
             searchFunc={searchUsersOnly}
             search={search}
@@ -1903,15 +1965,16 @@ export const ProfileCreationWorkspace = () => {
             debounceMs={PROFILE_SEARCH_DEBOUNCE_MS}
             wrapperStyle={{ width: '100%' }}
             leftIcon={<FiSearch size={21} aria-hidden="true" />}
-            placeholder="Телефон, email, нік або посилання"
-            inputAriaLabel="Пошук анкети"
+            placeholder={uiText('Телефон, email, нік або посилання', language)}
+            inputAriaLabel={uiText('Пошук анкети', language)}
           />
-          <SearchHint>
-            Почніть із відомого контакту людини — телефона, пошти, ніка чи посилання на соцмережу.
-            Перевіримо, чи така анкета вже існує.
-          </SearchHint>
+          <SearchHint>{uiText(
+            'Почніть із відомого контакту людини — телефона, пошти, ніка чи посилання на соцмережу. '
+            + 'Перевіримо, чи така анкета вже існує.',
+            language
+          )}</SearchHint>
         </SearchSection>
-        {searchExecuted ? <ResultsSection aria-label="Результати пошуку">
+        {searchExecuted ? <ResultsSection aria-label={uiText('Результати пошуку', language)}>
           {/* Перший рядок видачі — заготовка нової картки, як і у стрічці:
               набране вже розкладене в поле, і кнопка веде просто у форму з ним. */}
           {queryDraft && <QueryDraftCard data-testid="query-draft-card">
@@ -1929,15 +1992,15 @@ export const ProfileCreationWorkspace = () => {
               disabled={!search.trim() || !searchExecuted || searchLoading || searchFailed}
               onClick={() => startNew(search, { allowContactPrefill: !hasExistingMatches })}
             >
-              <FiPlus size={16} aria-hidden="true" /> {hasExistingMatches ? 'Створити нову' : 'Створити'}
+              <FiPlus size={16} aria-hidden="true" /> {uiText(hasExistingMatches ? 'Створити нову' : 'Створити', language)}
             </QueryDraftButton>
           </QueryDraftCard>}
-          {searchLoading && <Meta>Шукаємо…</Meta>}
-          {searchFailed && <Meta>Не вдалося виконати пошук. Спробуйте ще раз.</Meta>}
+          {searchLoading && <Meta>{uiText('Шукаємо…', language)}</Meta>}
+          {searchFailed && <Meta>{uiText('Не вдалося виконати пошук. Спробуйте ще раз.', language)}</Meta>}
           {searchResults.map(profile => <ProfileResultCard
             key={profile.userId}
             card={profile}
-            name={describeProfileName(profile.name, profile.surname) || 'Профіль знайдено'}
+            name={describeProfileName(profile.name, profile.surname) || uiText('Профіль знайдено', language)}
             status="Вже існує"
             actionLabel="Доповнити дані"
             onAction={() => startExistingProfileOverlay(profile)}
@@ -1945,7 +2008,7 @@ export const ProfileCreationWorkspace = () => {
           {matchingOwnDrafts.map(mutation => <ProfileResultCard
             key={mutation.cardId}
             card={mutation.data}
-            name={describeProfileName(mutation.data?.name, mutation.data?.surname) || 'Ваша чернетка'}
+            name={describeProfileName(mutation.data?.name, mutation.data?.surname) || uiText('Ваша чернетка', language)}
             note="Ваша чернетка, чекає на перевірку"
             actionLabel="Відкрити"
             onAction={() => openMutation(mutation)}
@@ -1953,33 +2016,33 @@ export const ProfileCreationWorkspace = () => {
           {matchingSharedDrafts.map(mutation => <ProfileResultCard
             key={mutation.cardId}
             card={mutation.data}
-            name={describeProfileName(mutation.data?.name, mutation.data?.surname) || 'Спільна чернетка'}
+            name={describeProfileName(mutation.data?.name, mutation.data?.surname) || uiText('Спільна чернетка', language)}
             note="Спільна чернетка, можна додати правки"
             actionLabel="Відкрити"
             onAction={() => openMutation(mutation)}
           />)}
           {!searchLoading && !searchFailed && !hasExistingMatches && searchNotFound
-            && <Meta>Такої анкети ще немає — заведіть її першим рядком.</Meta>}
+            && <Meta>{uiText('Такої анкети ще немає — заведіть її першим рядком.', language)}</Meta>}
         </ResultsSection> : <>
           {/* Порожній рядок пошуку — це не порожній екран: назва обіцяє власні
               картки, і вони тут і лежать, разом із уже прийнятими. */}
           <SectionHeader>
-            <span>Мої картки</span>
-            <Count aria-label={`${ownCreatedCards.length} карток`}>{ownCreatedCards.length}</Count>
+            <span>{uiText('Мої картки', language)}</span>
+            <Count aria-label={uiText('{count} карток', language, { count: ownCreatedCards.length })}>{ownCreatedCards.length}</Count>
           </SectionHeader>
           {ownCreatedCards.length === 0 ? <EmptyState>
             <EmptyIcon><FiFolder aria-hidden="true" /></EmptyIcon>
-            <EmptyTitle>Ви ще не завели жодної картки.</EmptyTitle>
-            <Meta>Почніть із контакту: пошук покаже, чи є така людина в базі, а перший рядок видачі заведе нову картку.</Meta>
+            <EmptyTitle>{uiText('Ви ще не завели жодної картки.', language)}</EmptyTitle>
+            <Meta>{uiText('Почніть із контакту: пошук покаже, чи є така людина в базі, а перший рядок видачі заведе нову картку.', language)}</Meta>
           </EmptyState> : ownCreatedCards.map(mutation => {
             const published = mutation.status === 'accepted';
             return <ProfileResultCard
               key={mutation.cardId}
               card={mutation.data}
-              name={describeProfileName(mutation.data?.name, mutation.data?.surname) || 'Без імені'}
+              name={describeProfileName(mutation.data?.name, mutation.data?.surname) || uiText('Без імені', language)}
               status={published ? 'Опубліковано' : mutation.status === 'private' ? 'Приватна' : 'Очікує перевірки'}
               statusVariant={published ? undefined : mutation.status === 'private' ? 'private' : 'overlay'}
-              note={mutation.updatedAt ? `Оновлено ${new Date(mutation.updatedAt).toLocaleString('uk-UA')}` : ''}
+              note={mutation.updatedAt ? uiText('Оновлено {date}', language, { date: formatDateTime(mutation.updatedAt, language) }) : ''}
               actionLabel={published ? 'Доповнити' : 'Відкрити'}
               onAction={() => (published
                 ? startExistingProfileOverlay({ userId: mutation.cardId })
@@ -1990,41 +2053,41 @@ export const ProfileCreationWorkspace = () => {
       </>}
       {access.isAdmin && <>
         <SectionHeader>
-          <span>Черга на перевірку</span>
-          <Count aria-label={`${mutations.length} карток`}>{mutations.length}</Count>
+          <span>{uiText('Черга на перевірку', language)}</span>
+          <Count aria-label={uiText('{count} карток', language, { count: mutations.length })}>{mutations.length}</Count>
         </SectionHeader>
         {mutations.length === 0 && <EmptyState>
           <EmptyIcon><FiFolder aria-hidden="true" /></EmptyIcon>
-          <EmptyTitle>Нових профілів поки немає.</EmptyTitle>
-          <Meta>Нові картки від користувачів з’являться тут.</Meta>
+          <EmptyTitle>{uiText('Нових профілів поки немає.', language)}</EmptyTitle>
+          <Meta>{uiText('Нові картки від користувачів з’являться тут.', language)}</Meta>
         </EmptyState>}
         {mutations.map(mutation => <ProfileCard key={mutation.cardId}>
           <div>
             <Status $variant={mutation.status === 'private' ? 'private' : 'pending'}>
-              {mutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження'}
+              {uiText(mutation.status === 'private' ? 'Приватний' : 'Очікує підтвердження', language)}
             </Status>
-            <h2>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || 'Новий профіль'}</h2>
-            <Meta>Автор: {mutation.createdBy}</Meta>
+            <h2>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || uiText('Новий профіль', language)}</h2>
+            <Meta>{uiText('Автор:', language)} {mutation.createdBy}</Meta>
             <Meta>
-              Оновлено: {mutation.updatedAt ? new Date(mutation.updatedAt).toLocaleString('uk-UA') : '—'} · revision {mutation.revision}
+              {uiText('Оновлено:', language)} {mutation.updatedAt ? formatDateTime(mutation.updatedAt, language) : '—'} · revision {mutation.revision}
             </Meta>
           </div>
-          <Button onClick={() => openMutation(mutation)}>Відкрити профіль</Button>
+          <Button onClick={() => openMutation(mutation)}>{uiText('Відкрити профіль', language)}</Button>
         </ProfileCard>)}
         {sharedMutations.length > 0 && <>
           <SectionHeader>
-            <span>Спільні чернетки</span>
-            <Count aria-label={`${sharedMutations.length} спільних чернеток`}>{sharedMutations.length}</Count>
+            <span>{uiText('Спільні чернетки', language)}</span>
+            <Count aria-label={uiText('{count} спільних чернеток', language, { count: sharedMutations.length })}>{sharedMutations.length}</Count>
           </SectionHeader>
           {sharedMutations.map(mutation => <ProfileCard key={mutation.cardId}>
             <div>
-              <Status $variant="overlay">Спільна чернетка</Status>
-              <h2>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || 'Новий профіль'}</h2>
+              <Status $variant="overlay">{uiText('Спільна чернетка', language)}</Status>
+              <h2>{[mutation.data?.name, mutation.data?.surname].filter(Boolean).join(' ') || uiText('Новий профіль', language)}</h2>
               <Meta>
-                Оновлено: {mutation.updatedAt ? new Date(mutation.updatedAt).toLocaleString('uk-UA') : '—'}
+                {uiText('Оновлено:', language)} {mutation.updatedAt ? formatDateTime(mutation.updatedAt, language) : '—'}
               </Meta>
             </div>
-            <Button onClick={() => openMutation(mutation)}><FiUsers aria-hidden="true" /> Додати свої правки</Button>
+            <Button onClick={() => openMutation(mutation)}><FiUsers aria-hidden="true" /> {uiText('Додати свої правки', language)}</Button>
           </ProfileCard>)}
         </>}
       </>}

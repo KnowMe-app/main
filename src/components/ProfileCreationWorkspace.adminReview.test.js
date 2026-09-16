@@ -13,6 +13,7 @@ import {
   loadSharedProfileMutations,
   saveCreateProfileMutation,
 } from 'utils/profileMutations';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 jest.mock('firebase/auth', () => ({
   onAuthStateChanged: (_auth, callback) => {
@@ -30,6 +31,11 @@ jest.mock('./config', () => ({
   searchUsersOnly: jest.fn(),
   addMatchingSearchQuery: jest.fn(),
 }));
+
+// Приватна нотатка стоїть у парі з публічною в кожній відкритій чернетці — і
+// читає власний вузол `multiData/comments`. Ця сюїта про чергу правок, тож
+// сам редактор нотатки тут заглушений, як і в решті сюїт форми.
+jest.mock('./smallCard/FieldComment', () => ({ FieldComment: () => null }));
 
 jest.mock('./SearchBar', () => ({
   __esModule: true,
@@ -125,6 +131,9 @@ beforeEach(() => {
   purgeProfileMutationHistoryValue.mockResolvedValue(undefined);
 });
 
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
+
 describe('ProfileCreationWorkspace admin review', () => {
   it('lets an admin review and correct the public comment before publication', async () => {
     loadAllCreateProfileMutations.mockResolvedValue([{
@@ -137,7 +146,10 @@ describe('ProfileCreationWorkspace admin review', () => {
 
     const comment = await screen.findByDisplayValue('Авторський коментар');
     expect(comment).toBeInTheDocument();
-    expect(comment).toHaveAttribute('placeholder', 'Будьте чемні, Ваш коментар побачать усі');
+    // Публічний коментар стоїть у доріжці нотаток поруч із приватною, тож і
+    // запрошення в порожньому полі в нього те саме, що в стрічці й у відкритій
+    // картці (`profileTexts`), а не власний текст цієї форми.
+    expect(comment).toHaveAttribute('placeholder', 'Додати публічну нотатку');
     expect(screen.queryByText(/анкета зникає із загального списку Matching/)).not.toBeInTheDocument();
 
     fireEvent.change(comment, { target: { value: 'Виправлений коментар' } });

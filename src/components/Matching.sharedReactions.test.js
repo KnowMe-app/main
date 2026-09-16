@@ -113,11 +113,12 @@ describe('Matching shared reaction card UI', () => {
     expect(matchingSource).not.toContain('<LoadMoreButton');
     expect(matchingSource).not.toContain('ModernGallery');
     expect(matchingSource).not.toContain('Gallery</ModernSectionTitle>');
-    // Фото більше не забирає старі 55% екрана, але й не стискається до
-    // неінформативної смуги: 320 px вистачає, щоб cover не лишав саме чоло.
-    // Під ним стоїть стрічка мініатюр, а дані доступні в тій самій прокрутці.
-    expect(styledSource).toContain('min-height: clamp(320px, 46%, 420px);');
-    expect(styledSource).toContain('height: 46%;');
+    // Висоту фото задає пропорція знімка, а не частка екрана: частка робила з
+    // портретного кадру горизонтальну смугу, і cover лишав від обличчя саме
+    // чоло. Під фото в тій самій прокрутці стоять мініатюри й дані анкети.
+    expect(styledSource).toContain('aspect-ratio: 4 / 5;\n  height: auto;');
+    expect(styledSource).toContain('min-height: clamp(320px, 52%, 460px);');
+    expect(styledSource).toContain('max-height: min(64dvh, 560px);');
     expect(styledSource).toContain('top: 14px;\n  left: 14px;');
     // Смуга показників переноситься в два ряди, а комірки розтягуються, щоб
     // останній ряд не лишав порожнього місця. Роздільник малює сама комірка.

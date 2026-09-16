@@ -13,6 +13,7 @@ import {
   saveMyCardComment,
 } from './config';
 import { loadOwnProfileMutations, loadSharedProfileMutations } from 'utils/profileMutations';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 jest.mock('firebase/auth', () => ({
   onAuthStateChanged: (_auth, callback) => {
@@ -54,7 +55,12 @@ jest.mock('./SearchBar', () => ({
   detectSearchParams: () => ({ key: 'name', value: 'Олена' }),
 }));
 jest.mock('./formFields', () => ({
-  pickerFields: [{ name: 'name', ukrainian: "Ім'я" }],
+  // Публічна нотатка — таке саме поле форми, як решта, тож у переліку вона є:
+  // саме його форма показує в доріжці поруч із приватною.
+  pickerFields: [
+    { name: 'name', ukrainian: "Ім'я" },
+    { name: 'publicComment', ukrainian: 'Публічний коментар' },
+  ],
   getFieldLabel: field => field.ukrainian,
   getFieldPlaceholder: () => '',
   getOptionLabel: value => value,
@@ -104,7 +110,15 @@ const openOwnDraft = async () => {
   render(<ProfileCreationWorkspace />);
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Відкрити' }));
-  await screen.findByPlaceholderText('Додайте свій коментар');
+  await screen.findByPlaceholderText('Нотатка для себе');
+};
+
+// Той самий шлях англійською: кнопки видачі підписані тим самим словником.
+const openOwnDraftInEnglish = async () => {
+  render(<ProfileCreationWorkspace />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Open' }));
+  await screen.findByPlaceholderText('A note for yourself');
 };
 
 beforeEach(() => {
@@ -118,10 +132,13 @@ beforeEach(() => {
   loadSharedProfileMutations.mockResolvedValue([]);
 });
 
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
+
 it('replaces regular-user draft status and progress with personal metadata controls', async () => {
   await openOwnDraft();
 
-  expect(screen.getByPlaceholderText('Додайте свій коментар')).toBeInTheDocument();
+  expect(screen.getByPlaceholderText('Нотатка для себе')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'В обране' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Дизлайк' })).toBeInTheDocument();
   expect(screen.queryByText(/Чернетка · оновлено/)).not.toBeInTheDocument();
@@ -136,13 +153,13 @@ it('shows personal metadata for persisted drafts without revision metadata', asy
 
   await openOwnDraft();
 
-  expect(screen.getByPlaceholderText('Додайте свій коментар')).toBeInTheDocument();
+  expect(screen.getByPlaceholderText('Нотатка для себе')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'В обране' })).toBeInTheDocument();
 });
 
 it('saves a personal comment on blur using the draft card id fallback', async () => {
   await openOwnDraft();
-  const comment = screen.getByPlaceholderText('Додайте свій коментар');
+  const comment = screen.getByPlaceholderText('Нотатка для себе');
 
   fireEvent.change(comment, { target: { value: 'Моя нотатка' } });
   fireEvent.blur(comment);
@@ -164,4 +181,48 @@ it('switches mutually exclusive reactions through the reused controls', async ()
   expect(favorite).toHaveAttribute('aria-pressed', 'false');
   expect(addDislikeUser).toHaveBeenCalledWith('draft-card', undefined);
   expect(removeFavoriteUser).toHaveBeenCalledWith('draft-card', undefined);
+});
+
+// Публічна нотатка й приватна — два записи про ту саму людину, і читають їх
+// разом. Досі це були два різні місця екрана: публічний коментар останньою
+// секцією форми, приватна нотатка — у шапці чернетки (а в доповненні картки ще
+// й окремою плашкою «Ваш коментар»). Тепер тут та сама пара доріжок, що в рядку
+// стрічки й у відкритій картці: публічне зверху, власне під ним.
+it('ставить публічну й приватну нотатки парою, з тими самими підписами', async () => {
+  await openOwnDraft();
+
+  const publicLabel = screen.getByText('Публічна нотатка');
+  const privateLabel = screen.getByText('Приватна нотатка');
+
+  expect(screen.getByText('Бачать усі')).toBeInTheDocument();
+  expect(screen.getByText('Бачите тільки ви')).toBeInTheDocument();
+  // Публічне стоїть над власним: відгук читають, а нотатку пишуть.
+  expect(publicLabel.compareDocumentPosition(privateLabel))
+    .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  // Плейсхолдери — ті самі, що в стрічці й у відкритій картці.
+  expect(screen.getByPlaceholderText('Додати публічну нотатку')).toBeInTheDocument();
+  expect(screen.getByPlaceholderText('Нотатка для себе')).toBeInTheDocument();
+  // Власного заголовка секції в публічного коментаря більше немає — його
+  // називає підпис доріжки.
+  expect(screen.queryByText('💬 Публічний коментар')).not.toBeInTheDocument();
+});
+
+// Чіп «Очікує підтвердження» обіцяв гейт, якого немає: заведена картка вже
+// лежить у пошуку, її знаходять і читають.
+it('не показує над чернеткою стану, якого не існує', async () => {
+  await openOwnDraft();
+
+  expect(screen.queryByText('Очікує підтвердження')).not.toBeInTheDocument();
+});
+
+// Мова інтерфейсу перемикається в меню трьох крапок, і форма створення та
+// доповнення картки її виконує — раніше вона лишалась українською хай що
+// вибрано.
+it('говорить мовою інтерфейсу', async () => {
+  localStorage.setItem('appLanguage', 'en');
+  await openOwnDraftInEnglish();
+
+  expect(screen.getByText('Profile filled in')).toBeInTheDocument();
+  expect(screen.getByText('Public note')).toBeInTheDocument();
+  expect(screen.getByText('Private note')).toBeInTheDocument();
 });

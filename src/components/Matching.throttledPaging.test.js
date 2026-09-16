@@ -192,7 +192,7 @@ describe('публічні коментарі', () => {
     expect(tile).toContain('publicSlot={reviewsSlot}');
     expect(tile).toContain('<CommentBlock');
     // І той самий значок, яким рядок просить прочитати чужі відгуки.
-    expect(tile).toContain('aria-label={REVIEWS_GATE_LABEL}');
+    expect(tile).toContain('aria-label={reviewsGateLabel(language)}');
   });
 
   // Нотатка видна всім показаним карткам, а не самій активній: інакше читач
@@ -381,7 +381,7 @@ describe('дії та роль на картці стрічки', () => {
     // питає. Питання тут одне — чи є в плитці саме «приховати».
     const source = read('Matching.jsx');
     expect(source).toContain('<GalleryActionButton');
-    expect(source).toContain("aria-label={isHidden ? 'Повернути зі схованих' : 'Приховати'}");
+    expect(source).toContain("aria-label={uiText(isHidden ? 'Повернути зі схованих' : 'Приховати', language)}");
     expect(source).toContain('onToggleHidden={toggleRowHidden}');
   });
 

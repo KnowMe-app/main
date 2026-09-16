@@ -1,3 +1,6 @@
+import { uiText } from '../utils/uiTranslations';
+import { resolveProfileLanguage } from '../utils/profileTexts';
+
 export const yesNoOptions = [
   { placeholder: 'No', ukrainian: 'Ні' },
   { placeholder: 'Yes', ukrainian: 'Так' },
@@ -9,19 +12,46 @@ export const inputFields = [
 
 const hasDisplayText = value => typeof value === 'string' ? value.trim() !== '' : value != null;
 
-export const getFieldLabel = field => {
+/*
+ * Підпис, підказка й варіант списку знають мову інтерфейсу — але лише там, де
+ * її передали.
+ *
+ * Мова тут необовʼязковий аргумент навмисно: ці ж поля малює десяток екранів
+ * поза матчингом (анкета адміна, редагування, імпорт), і всі вони лишаються
+ * українськими, як були. Екран, який мову вже знає, передає її — і той самий
+ * підпис їде обраною мовою.
+ *
+ * Варіант списку перекладати не треба взагалі: у формі він уже лежить парою
+ * (`placeholder` англійською, `ukrainian` українською), тож англійський бік
+ * просто береться з пари.
+ */
+export const getFieldLabel = (field, language) => {
   const candidates = [field?.ukrainian, field?.label, field?.name];
   const firstValue = candidates.find(hasDisplayText);
+  const label = firstValue ?? '';
 
-  return firstValue ?? '';
+  return language ? uiText(label, language) : label;
 };
 
-export const getFieldPlaceholder = field => field?.placeholder ?? '';
+export const getFieldPlaceholder = (field, language) => {
+  const placeholder = field?.placeholder ?? '';
 
-export const getFieldHint = field => field?.ukrainianHint ?? field?.hint ?? '';
+  return language ? uiText(placeholder, language) : placeholder;
+};
 
-export const getOptionLabel = option =>
-  option?.label ?? option?.ukrainian ?? option?.placeholder ?? option?.value ?? '';
+export const getFieldHint = (field, language) => {
+  const hint = field?.ukrainianHint ?? field?.hint ?? '';
+
+  return language ? uiText(hint, language) : hint;
+};
+
+export const getOptionLabel = (option, language) => {
+  if (language && resolveProfileLanguage(language) === 'en') {
+    return option?.placeholder ?? option?.label ?? option?.value ?? '';
+  }
+
+  return option?.label ?? option?.ukrainian ?? option?.placeholder ?? option?.value ?? '';
+};
 
 export const getOptionValue = option =>
   option?.value ?? option?.placeholder ?? option?.label ?? '';

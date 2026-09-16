@@ -15,6 +15,8 @@ import {
   getRefineKeySpec,
   isRefineKeyAvailableInFeed,
 } from '../utils/matchingRefineKey';
+import { uiText } from '../utils/uiTranslations';
+import { useAppSettings } from '../hooks/useAppSettings';
 
 /**
  * Один рядок, яким звужують довгу видачу.
@@ -63,7 +65,11 @@ export const SearchRefineBar = ({
     };
   }, [menuOpen]);
 
+  // Рядок уточнення стоїть просто під шапкою матчингу й мусить говорити тією
+  // самою мовою: підпис ключа, слова-звʼязки в підсумку й підказки кнопок.
+  const { language } = useAppSettings();
   const spec = getRefineKeySpec(activeKey);
+  const specLabel = uiText(spec.label, language);
   const options = useMemo(() => buildRefineOptions(activeKey, users), [activeKey, users]);
   const activeOption = options.find(option => option.value === activeValue) || null;
 
@@ -74,7 +80,7 @@ export const SearchRefineBar = ({
   };
 
   const keyMenu = menuOpen ? (
-    <RefineKeyMenu role="radiogroup" aria-label="Ключ уточнення">
+    <RefineKeyMenu role="radiogroup" aria-label={uiText('Ключ уточнення', language)}>
       {MATCHING_REFINE_KEYS.map(candidate => {
         const unavailable = keysAvailableInFeedOnly && !isRefineKeyAvailableInFeed(candidate.key);
         return (
@@ -87,13 +93,15 @@ export const SearchRefineBar = ({
             // Ім'я пункту називає ключ, а причину недоступності несе воно ж —
             // інакше підказку `title` браузер підставляє замість імені, і
             // пункт озвучується як «У стрічці цей ключ потребує індексу».
-            aria-label={unavailable ? `${candidate.label} — потрібен індекс searchKey` : candidate.label}
-            title={unavailable ? 'У стрічці цей ключ потребує індексу searchKey' : candidate.label}
+            aria-label={unavailable
+              ? uiText('{label} — потрібен індекс searchKey', language, { label: uiText(candidate.label, language) })
+              : uiText(candidate.label, language)}
+            title={unavailable ? uiText('У стрічці цей ключ потребує індексу searchKey', language) : uiText(candidate.label, language)}
             onClick={() => selectKey(candidate.key)}
           >
             <span aria-hidden="true" style={{ width: 12 }}>{candidate.key === activeKey ? '✓' : ''}</span>
-            <span>{candidate.label}</span>
-            {unavailable && <small>потрібен індекс</small>}
+            <span>{uiText(candidate.label, language)}</span>
+            {unavailable && <small>{uiText('потрібен індекс', language)}</small>}
           </RefineKeyMenuItem>
         );
       })}
@@ -107,24 +115,27 @@ export const SearchRefineBar = ({
     // а не як власне уточнення читача.
     const overall = users.length;
     const shown = shownCount !== undefined && shownCount < total
-      ? `показано ${shownCount} з ${total}`
-      : `${total}${scanNote ? ` ${scanNote}` : ' у видачі'}`;
+      ? uiText('показано {shown} з {total}', language, { shown: shownCount, total })
+      : `${total}${scanNote ? ` ${scanNote}` : uiText(' у видачі', language)}`;
     return (
       <RefineBar ref={barRef} data-testid="search-refine-bar">
         <RefineValueChip
           type="button"
           $active
           aria-pressed
-          aria-label={`Зняти уточнення ${spec.label}: ${activeOption?.label || activeValue}`}
-          title="Зняти уточнення"
+          aria-label={uiText('Зняти уточнення {spec}: {value}', language, {
+            spec: specLabel,
+            value: activeOption?.label || activeValue,
+          })}
+          title={uiText('Зняти уточнення', language)}
           onClick={() => onSelectValue(null)}
         >
-          <span>{`${spec.label} · ${activeOption?.label || activeValue}`}</span>
+          <span>{`${specLabel} · ${activeOption?.label || activeValue}`}</span>
           <RefineValueCount>{total}</RefineValueCount>
           <span aria-hidden="true">✕</span>
         </RefineValueChip>
         <RefineSummary>
-          {overall > total ? `${shown} · знайдено ${overall}` : shown}
+          {overall > total ? uiText('{shown} · знайдено {overall}', language, { shown, overall }) : shown}
         </RefineSummary>
       </RefineBar>
     );
@@ -132,15 +143,15 @@ export const SearchRefineBar = ({
 
   return (
     <RefineBar ref={barRef} data-testid="search-refine-bar">
-      <RefineScroller role="group" aria-label={`Уточнити: ${spec.label}`}>
+      <RefineScroller role="group" aria-label={uiText('Уточнити: {label}', language, { label: specLabel })}>
         <RefineKeyChip
           type="button"
           aria-expanded={menuOpen}
           aria-haspopup="true"
-          title="Обрати ключ уточнення"
+          title={uiText('Обрати ключ уточнення', language)}
           onClick={() => setMenuOpen(open => !open)}
         >
-          <span>{spec.label}</span>
+          <span>{specLabel}</span>
           <span aria-hidden="true">▾</span>
         </RefineKeyChip>
         {options.map(option => (
@@ -151,7 +162,7 @@ export const SearchRefineBar = ({
             // Нульове значення гасне, а не зникає: чіп, що пропадає під пальцем,
             // смикає ряд саме тоді, коли в нього цілять.
             disabled={option.count === 0}
-            title={`${spec.label}: ${option.label} — ${option.count}`}
+            title={`${specLabel}: ${option.label} — ${option.count}`}
             onClick={() => onSelectValue(option.value)}
           >
             <span>{option.label}</span>

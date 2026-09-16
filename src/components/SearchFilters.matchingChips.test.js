@@ -1,4 +1,5 @@
 import { MATCHING_FILTER_GROUPS, buildMatchingFilterChipLabel, buildMatchingFilterChips } from './SearchFilters';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 const groupByName = name => MATCHING_FILTER_GROUPS.find(group => group.filterName === name);
 
@@ -8,6 +9,9 @@ const withOff = (group, offVals) => {
   offVals.forEach(val => { values[val] = false; });
   return values;
 };
+
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
 
 describe('matching active-filter chips', () => {
   const age = groupByName('age');

@@ -7,6 +7,7 @@ import {
   readStoredCanCreateProfiles,
   resolveAccess,
 } from 'utils/accessLevel';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 jest.mock('./VerifyEmail', () => ({ VerifyEmail: () => null }));
 
@@ -21,8 +22,16 @@ const renderMenu = props => render(
   </MemoryRouter>,
 );
 
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
+
 describe('ProfileDotsMenu logout confirmation', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    // Мова інтерфейсу лежить у тому ж сховищі, тож після очищення її ставимо
+    // знову: сюїта описує український бік меню.
+    localStorage.setItem('appLanguage', 'uk');
+  });
 
   it.each([
     ['false', { canCreateProfiles: false }],

@@ -18,6 +18,8 @@ import {
 import { setDislike, cacheDislikedUsers } from 'utils/dislikesStorage';
 import { loadComments, saveComments, setLocalComment } from 'utils/commentsStorage';
 import { removeCardFromList } from 'utils/cardsStorage';
+import { uiText } from 'utils/uiTranslations';
+import { useAppSettings } from 'hooks/useAppSettings';
 import ProfileRow from './ProfileRow';
 import * as S from './MatchingHiddenList.styled';
 
@@ -91,6 +93,8 @@ const MatchingHiddenList = ({
    */
   buildRowExtras,
 }) => {
+  // Список прихованих — теж екран матчингу, тож говорить мовою інтерфейсу.
+  const { language } = useAppSettings();
   const [expandedIds, setExpandedIds] = useState(() => loadPersistedExpandedIds());
   const [photosByUserId, setPhotosByUserId] = useState({});
   const [commentsByUserId, setCommentsByUserId] = useState({});
@@ -184,9 +188,9 @@ const MatchingHiddenList = ({
       setLocalComment(ownerId, userId, text, res?.lastAction);
     } catch (error) {
       console.error('[MatchingHiddenList] Failed to save comment', error);
-      toast.error('Не вдалося зберегти коментар');
+      toast.error(uiText('Не вдалося зберегти коментар', language));
     }
-  }, [ownerId]);
+  }, [language, ownerId]);
 
   const handleToggleExpand = useCallback(userId => {
     setExpandedIds(prev => {
@@ -246,24 +250,24 @@ const MatchingHiddenList = ({
 
     toast.custom(t => (
       <S.ToastWrap>
-        <span>Анкету повернуто</span>
+        <span>{uiText('Анкету повернуто', language)}</span>
         <S.ToastUndo
           onClick={() => {
             handleUndo(user, previousDislikedAt);
             toast.dismiss(t.id);
           }}
         >
-          Скасувати
+          {uiText('Скасувати', language)}
         </S.ToastUndo>
       </S.ToastWrap>
     ), { duration: NOTE_TOAST_UNDO_MS });
-  }, [dislikeUsers, handleUndo, ownerId, setDislikeUsers, setOwnDislikeUsers]);
+  }, [dislikeUsers, handleUndo, language, ownerId, setDislikeUsers, setOwnDislikeUsers]);
 
   const returnAction = useMemo(() => ({
     icon: <FaUndo size={13} />,
-    title: 'Повернути в загальний список',
+    title: uiText('Повернути в загальний список', language),
     onClick: handleReturn,
-  }), [handleReturn]);
+  }), [handleReturn, language]);
 
   const fetchNextPage = useCallback(async () => {
     if (isLoadingMore || !hasMore) return;
@@ -310,10 +314,10 @@ const MatchingHiddenList = ({
     <S.Wrap>
       {showEmptyState ? (
         <S.EmptyState>
-          <S.EmptyStateTitle>Тут поки порожньо</S.EmptyStateTitle>
-          <S.EmptyStateText>Тут зберігаються анкети, які ви прибрали зі стрічки.</S.EmptyStateText>
+          <S.EmptyStateTitle>{uiText('Тут поки порожньо', language)}</S.EmptyStateTitle>
+          <S.EmptyStateText>{uiText('Тут зберігаються анкети, які ви прибрали зі стрічки.', language)}</S.EmptyStateText>
           {onGoToFeed && (
-            <S.EmptyStateButton type="button" onClick={onGoToFeed}>До стрічки</S.EmptyStateButton>
+            <S.EmptyStateButton type="button" onClick={onGoToFeed}>{uiText('До стрічки', language)}</S.EmptyStateButton>
           )}
         </S.EmptyState>
       ) : (
@@ -340,15 +344,15 @@ const MatchingHiddenList = ({
 
           {loadError && (
             <S.ErrorRow>
-              Не вдалося завантажити
-              <S.RetryButton type="button" onClick={fetchNextPage}>Спробувати ще</S.RetryButton>
+              {uiText('Не вдалося завантажити', language)}
+              <S.RetryButton type="button" onClick={fetchNextPage}>{uiText('Спробувати ще', language)}</S.RetryButton>
             </S.ErrorRow>
           )}
 
           <S.Sentinel ref={sentinelRef} />
 
           {!hasMore && rows.length > 0 && (
-            <S.FooterNote>Приховані анкети бачите тільки ви</S.FooterNote>
+            <S.FooterNote>{uiText('Приховані анкети бачите тільки ви', language)}</S.FooterNote>
           )}
         </S.List>
       )}

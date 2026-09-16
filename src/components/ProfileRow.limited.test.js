@@ -2,6 +2,7 @@ import React from 'react';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ProfileRow from './ProfileRow';
+import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 const thisYear = new Date().getFullYear();
 
@@ -42,6 +43,9 @@ const renderRow = (user, props = {}) => render(
     {...props}
   />
 );
+
+// Ці перевірки описують український бік екрана — мову задаємо явно.
+applyUkrainianInterface();
 
 describe('limited profile row', () => {
   it('shows the name, age and location it is allowed to show', () => {
