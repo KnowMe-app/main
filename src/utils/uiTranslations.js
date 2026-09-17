@@ -461,6 +461,9 @@ const EN_BY_UK = {
   'Оберіть варіант': 'Choose an option',
   'Будьте чемні, Ваш коментар побачать усі': 'Please be kind — everyone will see this note',
   'внутрішній коментар': 'internal note',
+  'Щоб бачити анкети, увійдіть у застосунок': 'Sign in to see the profiles',
+  'Увійти': 'Sign in',
+  'Перевіряємо сесію…': 'Checking your session…',
 };
 
 /**

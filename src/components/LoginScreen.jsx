@@ -4,7 +4,7 @@ import { FaUser, FaLock } from 'react-icons/fa';
 import { auth } from './config';
 import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { authNotifications } from './authNotifications';
 import {
   buildAuthProfilePayload,
@@ -13,6 +13,7 @@ import {
   normalizeAuthEmail,
   persistUserWithFallback,
 } from './authProfilePersistence';
+import { readReturnToFromState } from 'utils/authRedirect';
 
 const Container = styled.div`
   --accent: var(--km-accent);
@@ -290,7 +291,10 @@ const Spinner = styled.div`
   }
 `;
 
-export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
+// `authStatus` за замовчуванням — `'pending'`, а не `'in'`: «не сказали» мусить
+// означати «нічого не робимо». Значення `'in'` тут відсилало б читача геть з
+// форми входу в того, хто змонтував її без цього пропа.
+export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   const [isChecked, setIsChecked] = useState(false);
   const [selectedRole, setSelectedRole] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -307,6 +311,11 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   const [focused, setFocused] = useState(null);
 
   const navigate = useNavigate();
+  const location = useLocation();
+  // Адреса, з якої читача сюди привела межа входу. Посилання зазвичай ведуть
+  // усередину застосунку, і після входу людина мусить опинитись там, куди їй
+  // надіслали, а не в «Моєму профілі» з пошуком наосліп.
+  const returnTo = readReturnToFromState(location.state);
 
   useEffect(() => {
     const checkAutofill = () => {
@@ -344,7 +353,7 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
   const { todayDays, todayDash } = getCurrentDate();
 
   const navigateAfterAuth = () => {
-    navigate(MY_PROFILE_ROUTE);
+    navigate(returnTo || MY_PROFILE_ROUTE, { replace: true });
   };
 
   const handleLogin = async email => {
@@ -458,14 +467,15 @@ export const LoginScreen = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
+  // Читача, який уже увійшов, форма входу не показує — але питає про це саме
+  // Firebase, а не позначку в `localStorage`. Поки питали позначку, вкладка з
+  // протухлою сесією їхала звідси на захищений екран, той вертав її назад сюди,
+  // і людина бачила два редиректи по колу замість форми.
   useEffect(() => {
-    const loggedIn = localStorage.getItem('isLoggedIn');
-    if (isLoggedIn || loggedIn) {
-      setIsLoggedIn(true);
-      navigate(MY_PROFILE_ROUTE);
-    }
-    // eslint-disable-next-line
-  }, []);
+    if (authStatus !== 'in') return;
+    setIsLoggedIn(true);
+    navigate(returnTo || MY_PROFILE_ROUTE, { replace: true });
+  }, [authStatus, navigate, returnTo, setIsLoggedIn]);
 
   return (
     <Container>

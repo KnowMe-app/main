@@ -16,6 +16,7 @@ import InvoiceBuilderPage from './InvoiceBuilderPage';
 import DocumentsPage from './DocumentsPage';
 import PartiesPage from './PartiesPage';
 import ProfileCreationWorkspace from './ProfileCreationWorkspace';
+import { RequireAuth } from './RequireAuth';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, fetchUserById, resetViewerAccessLevelCache } from './config';
 import { clearStoredAccessRights, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
@@ -29,6 +30,10 @@ export const App = () => {
   const [canAccessInvoices, setCanAccessInvoices] = useState(false);
   const [canCreateProfiles, setCanCreateProfiles] = useState(false);
   const [isAccessResolved, setIsAccessResolved] = useState(false);
+  // Стан входу окремо від рівня доступу: рівень читається з бази, тобто вже
+  // після відповіді Firebase, а межа входу мусить спрацювати одразу — інакше
+  // захищений екран устигне змонтуватись і почати читати базу без uid.
+  const [authStatus, setAuthStatus] = useState('pending');
   // console.log('isLoggedIn :>> ', isLoggedIn);
 
   const navigate = useNavigate();
@@ -59,6 +64,7 @@ export const App = () => {
   // Special page for admin
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
+      setAuthStatus(user ? 'in' : 'out');
       if (user) {
         localStorage.setItem('ownerId', user.uid);
         let accessLevel = '';
@@ -86,6 +92,10 @@ export const App = () => {
         localStorage.removeItem('ownerId');
         localStorage.removeItem('accessLevel');
         localStorage.removeItem('userRole');
+        // Позначка входу — теж стан сесії. Поки вона лишалась від попереднього
+        // читача, форма входу бачила «вже увійшли» й відсилала його на
+        // захищений екран, а той — назад на форму: два редиректи по колу.
+        localStorage.removeItem('isLoggedIn');
         clearStoredAccessRights();
         // Прочитаний рівень доступу — теж стан входу: без цього наступний
         // читач у тій самій вкладці дістав би обіцянку, видану попередньому.
@@ -100,31 +110,48 @@ export const App = () => {
     return () => unsubscribe();
   }, []);
 
+  // Доки права не прочитані, адмінських маршрутів у таблиці ще немає — і
+  // «такого маршруту немає» не можна плутати з «ще не знаємо». Інакше
+  // адміністраторка, що відкрила посилання на `/edit/...`, поїхала б у «Мій
+  // профіль» за мить до того, як її права приїхали з бази.
+  const catchAllStatus = authStatus === 'in' && !isAccessResolved ? 'pending' : authStatus;
+
   return (
     <Routes>
-      <Route path="/" element={canAccessAdd ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <PrivacyPolicy />} />
-      <Route path="/login" element={<LoginScreen isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />
+      {/* Публічних екранів три, і всі вони не читають бази: форма входу,
+          текст угоди (на нього веде кнопка «Умови» з самої форми) і зовнішня
+          анкета подачі. Решта застосунку — про конкретних людей, тож стоїть за
+          межею входу. */}
+      <Route path="/login" element={<LoginScreen setIsLoggedIn={setIsLoggedIn} authStatus={authStatus} />} />
+      <Route path="/policy" element={<PrivacyPolicy />} />
       <Route path="/submit" element={<SubmitForm />} />
-      <Route path="/my-profile" element={<MyProfile />} />
+
+      <Route path="/" element={<RequireAuth status={authStatus}>{canAccessAdd ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <PrivacyPolicy />}</RequireAuth>} />
+      <Route path="/my-profile" element={<RequireAuth status={authStatus}><MyProfile /></RequireAuth>} />
       <Route path="/my-profile-new" element={<Navigate to="/my-profile" replace />} />
-      {isAdmin && <Route path="/my-profile-old" element={<MyProfileOld isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
-      {canAccessAdd && <Route path="/add" element={<AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} />} />}
-      <Route path="/matching" element={<Matching />} />
-      {canCreateProfiles && <Route path="/matching/create-profile" element={<ProfileCreationWorkspace />} />}
-      {isAdmin && <Route path="/edit/:userId" element={<EditProfile />} />}
-      {isAdmin && <Route path="/medications/:userId" element={<MedicationsPage />} />}
-      {isAdmin && <Route path="/flow" element={<FlowManager ownerId={auth.currentUser?.uid} />} />}
+      {isAdmin && <Route path="/my-profile-old" element={<RequireAuth status={authStatus}><MyProfileOld isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /></RequireAuth>} />}
+      {canAccessAdd && <Route path="/add" element={<RequireAuth status={authStatus}><AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /></RequireAuth>} />}
+      <Route path="/matching" element={<RequireAuth status={authStatus}><Matching /></RequireAuth>} />
+      {canCreateProfiles && <Route path="/matching/create-profile" element={<RequireAuth status={authStatus}><ProfileCreationWorkspace /></RequireAuth>} />}
+      {isAdmin && <Route path="/edit/:userId" element={<RequireAuth status={authStatus}><EditProfile /></RequireAuth>} />}
+      {isAdmin && <Route path="/medications/:userId" element={<RequireAuth status={authStatus}><MedicationsPage /></RequireAuth>} />}
+      {isAdmin && <Route path="/flow" element={<RequireAuth status={authStatus}><FlowManager ownerId={auth.currentUser?.uid} /></RequireAuth>} />}
       {/*
         Інструмент міграції нічого не пише у Firebase, але читає локальні копії
         обох колекцій цілком — тобто показує контакти всіх анкет. Тож маршрут
         адмінський, як і решта інструментів роботи з сирими даними.
       */}
-      {isAdmin && <Route path="/rtdb-migration" element={<RtdbMigrationTool />} />}
-      {isAdmin && <Route path="/budget" element={<BudgetPage isAdmin={isAdmin} />} />}
-      {canAccessInvoices && <Route path="/invoices" element={<InvoiceBuilderPage isAdmin={canAccessInvoices} />} />}
-      {canAccessInvoices && <Route path="/documents" element={<DocumentsPage isAdmin={canAccessInvoices} />} />}
-      {canAccessInvoices && <Route path="/parties" element={<PartiesPage isAdmin={canAccessInvoices} />} />}
-      <Route path="/policy" element={<PrivacyPolicy />} />
+      {isAdmin && <Route path="/rtdb-migration" element={<RequireAuth status={authStatus}><RtdbMigrationTool /></RequireAuth>} />}
+      {isAdmin && <Route path="/budget" element={<RequireAuth status={authStatus}><BudgetPage isAdmin={isAdmin} /></RequireAuth>} />}
+      {canAccessInvoices && <Route path="/invoices" element={<RequireAuth status={authStatus}><InvoiceBuilderPage isAdmin={canAccessInvoices} /></RequireAuth>} />}
+      {canAccessInvoices && <Route path="/documents" element={<RequireAuth status={authStatus}><DocumentsPage isAdmin={canAccessInvoices} /></RequireAuth>} />}
+      {canAccessInvoices && <Route path="/parties" element={<RequireAuth status={authStatus}><PartiesPage isAdmin={canAccessInvoices} /></RequireAuth>} />}
+
+      {/* Маршрут, якого немає в цій таблиці, — це або чуже посилання, або
+          екран, на який у читача немає прав. Обидва випадки закінчуються
+          осмисленим екраном, а не білою сторінкою: незалогінений іде на вхід
+          (і адреса їде з ним), залогінений — у «Мій профіль». */}
+      <Route path="*" element={<RequireAuth status={catchAllStatus}><Navigate to="/my-profile" replace /></RequireAuth>} />
     </Routes>
   );
 };
