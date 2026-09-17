@@ -47,15 +47,12 @@ describe('приховані анкети не пробиваються в де�
     expect(similar).not.toContain('applyMatchingUiFiltersToUsers');
   });
 
-  it('плашка з причиною відсіву показується лише в режимі діагностики', () => {
+  it('тимчасова діагностична плашка більше не входить до картки', () => {
     const source = matchingSource();
 
-    expect(source).toContain('const showDebugOverlay = Boolean(showDebugRejectReasons);');
-    expect(source).toContain('{showDebugOverlay && (debugFilteredOutReason || debugReasons.length > 0) && (');
-    expect(source).toContain(
-      "style={showDebugOverlay && debugFilteredOutReason ? { opacity: 0.58, filter: 'grayscale(0.85)' } : undefined}",
-    );
-    expect(source).toContain('const debugDiagnosticsRows = showDebugOverlay && diagnostics ? [');
-    expect(source).not.toContain('{(debugFilteredOutReason || (showDebugRejectReasons && debugReasons.length > 0)) && (');
+    expect(source).not.toContain('showDebugRejectReasons');
+    expect(source).not.toContain('debugFilteredOutReason');
+    expect(source).not.toContain('debugDiagnosticsRows');
+    expect(source).not.toContain('DEBUG: normally hidden');
   });
 });

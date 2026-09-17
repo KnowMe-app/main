@@ -371,10 +371,8 @@ const FEED_SOURCE_FALLBACK_REASONS = {
 };
 
 const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
-const MATCHING_LOG_MODE_TEST_USER_ID = 'S0VhDLCYjuTFDNLalRa85u7fPcg2';
 const MATCHING_DATA_SOURCE_MODE_KEY = 'matchingDataSourceMode';
 const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
-const MATCHING_DEBUG_SHOW_ALL_INDEXED_CARDS_KEY = 'matchingDebugShowAllIndexedCards';
 const MATCHING_DEBUG_VERSION = 'autoload-diagnostics-v2';
 const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 const DEBUG_SHARED_CARD_ID = 'ID0001';
@@ -392,7 +390,7 @@ const MATCHING_DISLIKE_IDLE_STYLE = {
 const shouldDebugAdditionalMatching = (...ids) =>
   ids.some(id => {
     const normalizedId = String(id || '').trim();
-    return normalizedId === DEBUG_ADDITIONAL_MATCHING_USER_ID || normalizedId === MATCHING_LOG_MODE_TEST_USER_ID;
+    return normalizedId === DEBUG_ADDITIONAL_MATCHING_USER_ID;
   });
 
 const getStoredMatchingDebugLogMode = () => {
@@ -403,11 +401,6 @@ const getStoredMatchingDebugLogMode = () => {
 const getStoredMatchingDataSourceMode = () => {
   if (typeof localStorage === 'undefined') return 'localFirst';
   return localStorage.getItem(MATCHING_DATA_SOURCE_MODE_KEY) === 'backend' ? 'backend' : 'localFirst';
-};
-
-const getStoredDebugShowAllIndexedCards = () => {
-  if (typeof localStorage === 'undefined') return false;
-  return localStorage.getItem(MATCHING_DEBUG_SHOW_ALL_INDEXED_CARDS_KEY) === 'true';
 };
 
 const isMatchingDebugFileMode = () => {
@@ -1050,12 +1043,6 @@ const SwipeableCard = ({
   publicCommentSlot = null,
   onAdminEdit,
   onEnrich,
-  debugRejectReasons = [],
-  showDebugRejectReasons = false,
-  debugFilteredOutReason = '',
-  debugUiFilterSummary = '',
-  debugUiFilterFailedFilters = '',
-  debugCardDiagnostics = null,
 }) => {
   const resolvedRole = getProfileRole(user) || role;
   const photos = getProfilePhotos(user);
@@ -1139,51 +1126,6 @@ const SwipeableCard = ({
     .map(part => part[0]?.toUpperCase())
     .join('');
   const shouldShowHeroContent = Boolean(title || locationInfo || heroFields.length > 0);
-  const debugReasons = Array.isArray(debugRejectReasons) ? debugRejectReasons.filter(Boolean) : [];
-  // Плашка з причиною відсіву — інструмент режиму діагностики, а не частина
-  // картки. Поки вона малювалась із самої лише наявності причини, звичайний
-  // читач бачив і внутрішні назви функцій та умов, і — головне — саму картку,
-  // яку та причина забороняла показувати.
-  const showDebugOverlay = Boolean(showDebugRejectReasons);
-  const debugReasonText = showDebugOverlay
-    ? (debugFilteredOutReason || (debugReasons.length > 0 ? debugReasons.join(', ') : ''))
-    : '';
-  const debugReasonLabel = !showDebugOverlay
-    ? ''
-    : (debugFilteredOutReason
-      ? `Filtered: ${debugFilteredOutReason}`
-      : (debugReasons.length > 0 ? 'DEBUG: normally hidden' : ''));
-  const debugReasonHint = debugReasonText === 'blocked_by_ui_filter'
-    ? `Картка прихована активними UI-фільтрами${debugUiFilterSummary ? `: ${debugUiFilterSummary}` : ''}`
-    : '';
-  const debugFailedFiltersHint = debugUiFilterFailedFilters
-    ? `Blocked by: ${debugUiFilterFailedFilters}`
-    : '';
-  const debugContext = [
-    user?.userId ? `userId=${user.userId}` : '',
-    typeof user?.__matchingAccessAllowed === 'boolean' ? `matchingAccess=${user.__matchingAccessAllowed ? 'allowed' : 'blocked'}` : '',
-  ].filter(Boolean).join(' · ');
-  const diagnostics = debugCardDiagnostics && typeof debugCardDiagnostics === 'object' ? debugCardDiagnostics : null;
-  const matchingDebugTrace = diagnostics?.__matchingDebugTrace && typeof diagnostics.__matchingDebugTrace === 'object'
-    ? diagnostics.__matchingDebugTrace
-    : null;
-  const debugDiagnosticsRows = showDebugOverlay && diagnostics ? [
-    `role=${diagnostics.role || '-'}`,
-    `userRole=${diagnostics.userRole || '-'}`,
-    `inVisible=${diagnostics.inVisibleCardIds ? 'yes' : 'no'}`,
-    `inFiltered=${diagnostics.inFilteredUsers ? 'yes' : 'no'}`,
-    `hiddenByUiFilter=${diagnostics.hiddenByUiFilter ? 'yes' : 'no'}`,
-    `failedFilters=${Array.isArray(diagnostics.failedFilters) && diagnostics.failedFilters.length ? diagnostics.failedFilters.join('|') : '-'}`,
-    `excludedBy=${diagnostics.excludedBy || '-'}`,
-    `excludedAtStage=${diagnostics.excludedAtStage || '-'}`,
-    `excludedReason=${diagnostics.excludedReason || '-'}`,
-    `excludedFunction=${diagnostics.excludedFunction || '-'}`,
-    `excludedCondition=${diagnostics.excludedCondition || '-'}`,
-    `exactReason=${diagnostics.exactReason || '-'}`,
-    `uiFailedFilters=${Array.isArray(diagnostics.uiFailedFilters) && diagnostics.uiFailedFilters.length ? diagnostics.uiFailedFilters.join('|') : '-'}`,
-    `searchKeyFailedFilters=${Array.isArray(diagnostics.searchKeyFailedFilters) && diagnostics.searchKeyFailedFilters.length ? diagnostics.searchKeyFailedFilters.join('|') : '-'}`,
-  ] : [];
-
   const handleContactsToggle = e => {
     e.stopPropagation();
     const owner = auth.currentUser;
@@ -1261,7 +1203,6 @@ const SwipeableCard = ({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       $activeProfile
-      style={showDebugOverlay && debugFilteredOutReason ? { opacity: 0.58, filter: 'grayscale(0.85)' } : undefined}
     >
       <ModernProfileShell $role={resolvedRole}>
         <ModernProfileScroll>
@@ -1278,37 +1219,6 @@ const SwipeableCard = ({
           {activeHeroPhoto && <ModernHeroImage src={activeHeroPhoto} alt={`${name || 'Matching'} profile hero`} onError={() => setActiveHeroPhoto('')} />}
           {shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleCode}</ModernRoleBadge>}
         </ModernHero>
-        {showDebugOverlay && (debugFilteredOutReason || debugReasons.length > 0) && (
-          <div style={{ margin: '10px 14px 0', padding: '8px 10px', borderRadius: 10, background: '#5a1325', color: '#fff', fontSize: 12, fontWeight: 700 }}>
-            {debugReasonLabel && <div>{debugReasonLabel}</div>}
-            {debugReasonText && <div style={{ marginTop: 4, fontWeight: 600 }}>Reason: {debugReasonText}</div>}
-            {debugReasonHint && <div style={{ marginTop: 4, fontWeight: 500 }}>Hint: {debugReasonHint}</div>}
-            {debugFailedFiltersHint && <div style={{ marginTop: 4, fontWeight: 500 }}>Filters: {debugFailedFiltersHint}</div>}
-            {debugContext && <div style={{ marginTop: 4, opacity: 0.9, fontWeight: 500 }}>Context: {debugContext}</div>}
-            {diagnostics && (
-              <>
-                <div style={{ marginTop: 4, fontWeight: 600 }}>Function: {diagnostics.excludedFunction || '-'}</div>
-                <div style={{ marginTop: 2, fontWeight: 600 }}>Condition: {diagnostics.excludedCondition || '-'}</div>
-                <div style={{ marginTop: 2, fontWeight: 600 }}>Exact reason: {diagnostics.exactReason || '-'}</div>
-                <div style={{ marginTop: 2, fontWeight: 600 }}>Stage: {diagnostics.excludedAtStage || '-'}</div>
-              </>
-            )}
-            {matchingDebugTrace && (
-              <>
-                <div style={{ marginTop: 4, fontWeight: 600 }}>Function: {matchingDebugTrace.excludedByFunction || '-'}</div>
-                <div style={{ marginTop: 2, fontWeight: 600 }}>Condition: {matchingDebugTrace.excludedCondition || '-'}</div>
-                <div style={{ marginTop: 2, fontWeight: 600 }}>Exact reason: {matchingDebugTrace.exactReason || '-'}</div>
-                <div style={{ marginTop: 2, fontWeight: 600 }}>Stage: {matchingDebugTrace.excludedAtStage || '-'}</div>
-                <div style={{ marginTop: 2, fontWeight: 600 }}>Failed filters: {Array.isArray(matchingDebugTrace.failedFilters) && matchingDebugTrace.failedFilters.length ? matchingDebugTrace.failedFilters.join('|') : '-'}</div>
-                <div style={{ marginTop: 2, fontWeight: 600 }}>Active filters: {matchingDebugTrace.activeFiltersSnapshot || '-'}</div>
-                <div style={{ marginTop: 2, fontWeight: 600 }}>Card values: {matchingDebugTrace.cardValuesSnapshot || '-'}</div>
-              </>
-            )}
-            {debugDiagnosticsRows.map(row => (
-              <div key={row} style={{ marginTop: 2, opacity: 0.92, fontWeight: 500 }}>Diag: {row}</div>
-            ))}
-          </div>
-        )}
         {allPhotos.length > 1 && (
           <ModernPhotoStrip onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
             {allPhotos.map((item, index) => (
@@ -1939,7 +1849,6 @@ const Matching = () => {
   const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(false);
   const [diagnosticsModule, setDiagnosticsModule] = useState(null);
   const [matchingDebugLogMode, setMatchingDebugLogMode] = useState(getStoredMatchingDebugLogMode);
-  const [debugShowAllIndexedCards, setDebugShowAllIndexedCards] = useState(getStoredDebugShowAllIndexedCards);
   const [matchingDataSourceMode] = useState(getStoredMatchingDataSourceMode);
   // Тема тепер глобальна: перемикається в меню трьох крапок (ProfileDotsMenu).
   // Звідти ж береться й мова: нею говорять і підписи екрана, і його тости.
@@ -2155,7 +2064,6 @@ const Matching = () => {
   const filterDrawerSubtitle = activeFilterGroupCount > 0
     ? uiText('Активно змінено груп: {count}', language, { count: activeFilterGroupCount })
     : uiText('Всі профілі показані за поточними правилами доступу', language);
-  const isIndexedDebugTestUser = String(auth.currentUser?.uid || ownerId || '').trim() === MATCHING_LOG_MODE_TEST_USER_ID;
   const parsedAdditionalAccessRules = useMemo(
     () => parseAdditionalAccessRuleGroups(currentAdditionalAccessRules),
     [currentAdditionalAccessRules]
@@ -5753,7 +5661,6 @@ const Matching = () => {
 
   const filteredUsers = useMemo(() => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers;
-    if (debugShowAllIndexedCards && isIndexedDebugTestUser) return users;
     // Пошук — не стрічка, і фільтри його не звужують. Чіпи описують, кого
     // показувати в деці; запит називає конкретну людину, і сховати її через
     // те, що вона не того типу, означає відповісти «немає» на питання «де
@@ -5776,11 +5683,9 @@ const Matching = () => {
       viewMode,
     });
   }, [
-    debugShowAllIndexedCards,
     dislikeUsers,
     favoriteUsers,
     filters,
-    isIndexedDebugTestUser,
     reactionTabUsers,
     roleIndexSets,
     searchRefinedUsers,
@@ -6299,60 +6204,6 @@ const Matching = () => {
   const pagedCardsLength = viewMode === 'default' ? filteredUsers.length : publicCardsLength;
   const pagedCardsLengthRef = useRef(pagedCardsLength);
   useEffect(() => { pagedCardsLengthRef.current = pagedCardsLength; }, [pagedCardsLength]);
-  const debugFilteredOutReasonById = useMemo(() => {
-    if (!(debugShowAllIndexedCards && isIndexedDebugTestUser)) return new Map();
-    const map = new Map();
-    (debugFilterPipelineDiagnostics.filteredOutCards || []).forEach(item => {
-      if (!item?.userId || map.has(item.userId)) return;
-      map.set(item.userId, item.reason || 'unknown_final_render_exclusion');
-    });
-    return map;
-  }, [debugFilterPipelineDiagnostics.filteredOutCards, debugShowAllIndexedCards, isIndexedDebugTestUser]);
-  const debugUiFilterFailedFiltersById = useMemo(() => {
-    if (!(debugShowAllIndexedCards && isIndexedDebugTestUser)) return new Map();
-    const map = new Map();
-    (debugFilterPipelineDiagnostics.filteredOutCards || []).forEach(item => {
-      if (!item?.userId || map.has(item.userId)) return;
-      const failed = Array.isArray(item?.details?.failedFilters) ? item.details.failedFilters.filter(Boolean) : [];
-      if (failed.length > 0) map.set(item.userId, failed.join(', '));
-    });
-    return map;
-  }, [debugFilterPipelineDiagnostics.filteredOutCards, debugShowAllIndexedCards, isIndexedDebugTestUser]);
-  const debugCardDiagnosticsById = useMemo(() => {
-    if (!(debugShowAllIndexedCards && isIndexedDebugTestUser)) return new Map();
-    const map = new Map();
-    (debugFilterPipelineDiagnostics.cardsDebug || []).forEach(item => {
-      if (!item?.userId || map.has(item.userId)) return;
-      map.set(item.userId, item);
-    });
-    return map;
-  }, [debugFilterPipelineDiagnostics.cardsDebug, debugShowAllIndexedCards, isIndexedDebugTestUser]);
-  const debugHiddenStats = useMemo(() => {
-    if (!(debugShowAllIndexedCards && isIndexedDebugTestUser)) return null;
-    const visibleSet = new Set(applyMatchingUiFiltersToUsers({
-      users: visibleUsers,
-      filters,
-      filterMainFn: filterMain,
-      favoriteUsers,
-      dislikeUsers,
-      excludeReactionUsers: viewMode === 'default',
-      roleIndexSets,
-      viewMode,
-    }).map(card => card?.userId).filter(Boolean));
-    const normallyHidden = renderedCards.filter(card => card?.userId && !visibleSet.has(card.userId));
-    return {
-      indexedIdsTotal: renderedCards.length,
-      displayedCardsTotal: renderedCards.length,
-      normallyVisibleCardsTotal: visibleSet.size,
-      normallyHiddenCardsTotal: normallyHidden.length,
-    };
-  }, [debugShowAllIndexedCards, dislikeUsers, favoriteUsers, filters, isIndexedDebugTestUser, renderedCards, roleIndexSets, viewMode, visibleUsers]);
-
-  useEffect(() => {
-    if (!debugHiddenStats) return;
-    console.info('[Matching][debugShowAllIndexedCardsEnabled]', debugHiddenStats);
-  }, [debugHiddenStats]);
-
   useEffect(() => {
     writeMatchingDebugLog('matching:filterPipelineSummary', {
       viewMode,
@@ -8256,10 +8107,9 @@ const Matching = () => {
                   {activeFilterGroupCount > 0 && <ActionBadge>{activeFilterGroupCount}</ActionBadge>}
                 </ActionButton>
               </TopActionGroup>
-              {(showBackendTrafficToggle || isIndexedDebugTestUser) && (
+              {showBackendTrafficToggle && (
                 <TopActionGroup aria-label={uiText('Адміністративні дії matching', language)}>
-                  {showBackendTrafficToggle && (
-                    <BackendTrafficToggleButton
+                  <BackendTrafficToggleButton
                     type="button"
                     $active={downloadSizeToastsEnabled}
                     aria-pressed={downloadSizeToastsEnabled}
@@ -8278,25 +8128,6 @@ const Matching = () => {
                     📦
                     <BackendTrafficToggleStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</BackendTrafficToggleStatus>
                   </BackendTrafficToggleButton>
-                )}
-                {isIndexedDebugTestUser && (
-                  <BackendTrafficToggleButton
-                    type="button"
-                    $active={debugShowAllIndexedCards}
-                    aria-pressed={debugShowAllIndexedCards}
-                    title="Show filtered cards"
-                    aria-label="Show filtered cards"
-                    onClick={() => {
-                      const next = !debugShowAllIndexedCards;
-                      setDebugShowAllIndexedCards(next);
-                      localStorage.setItem(MATCHING_DEBUG_SHOW_ALL_INDEXED_CARDS_KEY, next ? 'true' : 'false');
-                      console.info('[Matching][debugShowAllIndexedCardsChanged]', { enabled: next });
-                    }}
-                  >
-                    🪲
-                    <BackendTrafficToggleStatus>{debugShowAllIndexedCards ? 'ALL' : 'NORMAL'}</BackendTrafficToggleStatus>
-                  </BackendTrafficToggleButton>
-                )}
                 </TopActionGroup>
               )}
               {/* The "⋮" menu never shares a button group with the page's other action buttons -
@@ -8699,31 +8530,6 @@ const Matching = () => {
                         navigate(`/edit/${user.userId}`, { state: user });
                       }}
                       onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
-                      showDebugRejectReasons={debugShowAllIndexedCards && isIndexedDebugTestUser}
-                      debugFilteredOutReason={(() => {
-                        const canShowDebug = getCanShowMatchingUserDebug(user, { isAdmin });
-                        const reasonFromPipeline = debugFilteredOutReasonById.get(user?.userId) || '';
-                        if (!canShowDebug.canShow) return 'blocked_by_canShowMatchingUser';
-                        if (reasonFromPipeline === 'excluded_by_ui_filter') {
-                          const failedFilters = debugUiFilterFailedFiltersById.get(user?.userId) || '';
-                          return failedFilters ? 'blocked_by_ui_filter' : 'blocked_by_final_render_guard';
-                        }
-                        return reasonFromPipeline;
-                      })()}
-                      debugRejectReasons={[]}
-                      debugUiFilterSummary={getMatchingUiFilterDebugSummary(filters)}
-                      debugUiFilterFailedFilters={debugUiFilterFailedFiltersById.get(user?.userId) || ''}
-                      debugCardDiagnostics={(() => {
-                        const oldDiagnostics = debugCardDiagnosticsById.get(user?.userId) || null;
-                        const canShowDebug = getCanShowMatchingUserDebug(user, { isAdmin });
-                        return {
-                          ...(oldDiagnostics && typeof oldDiagnostics === 'object' ? oldDiagnostics : {}),
-                          excludedFunction: canShowDebug.excludedFunction,
-                          excludedCondition: canShowDebug.excludedCondition,
-                          exactReason: canShowDebug.exactReason,
-                          excludedAtStage: canShowDebug.excludedAtStage,
-                        };
-                      })()}
                     />
                   </CardWrapper>
                 </CardContainer>
