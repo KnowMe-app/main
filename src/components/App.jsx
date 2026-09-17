@@ -18,6 +18,7 @@ import PartiesPage from './PartiesPage';
 import ProfileCreationWorkspace from './ProfileCreationWorkspace';
 import { RequireAuth } from './RequireAuth';
 import { onAuthStateChanged } from 'firebase/auth';
+import toast from 'react-hot-toast';
 import { auth, fetchUserById, resetViewerAccessLevelCache } from './config';
 import { clearStoredAccessRights, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
@@ -57,6 +58,17 @@ export const App = () => {
     const isUnauthorizedCreateRoute = location.pathname === '/matching/create-profile' && !canCreateProfiles;
 
     if (isRootRoute || isUnauthorizedAddRoute || isUnauthorizedCreateRoute) {
+      // Екран, на який немає прав, не мовчить. Мовчазний редірект у «Мій
+      // профіль» читався як поломка: людина натискала «Створити нову», а
+      // застосунок без жодного слова показував їй її власну анкету — і
+      // відрізнити «прав немає» від «щось зламалось» було ніяк. Право тут
+      // одне й зветься `canCreateProfiles`; видає його адміністраторка в
+      // анкеті («Дозволити створення карток»), і саме це треба сказати.
+      if (isUnauthorizedAddRoute || isUnauthorizedCreateRoute) {
+        toast.error('Немає права на цей екран. Попросіть адміністратора відкрити доступ.', {
+          id: 'route-access-denied',
+        });
+      }
       navigate('/my-profile');
     }
   }, [isLoggedIn, isAccessResolved, navigate, isAdmin, location.pathname, canAccessAdd, canCreateProfiles]);
