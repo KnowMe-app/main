@@ -112,7 +112,7 @@ describe('matching row structure', () => {
     expect(photo).toContain('max-height: 58vh;');
     // Від краю до краю картки: підкладку знімає відʼємний відступ на її
     // власне поле, а не окреме правило десь поруч.
-    expect(photo).toContain('margin: -${CARD_PADDING} -${CARD_PADDING} 9px;');
+    expect(photo).toContain(`margin: -\${CARD_PADDING} -\${CARD_PADDING} 9px;`);
     expect(photo).toContain('object-fit: cover;');
   });
 

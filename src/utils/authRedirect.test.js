@@ -19,7 +19,7 @@ describe('sanitizeReturnTo', () => {
     expect(sanitizeReturnTo('//evil.example/steal')).toBe('');
     expect(sanitizeReturnTo('/\\evil.example')).toBe('');
     expect(sanitizeReturnTo('https://evil.example')).toBe('');
-    expect(sanitizeReturnTo('javascript:alert(1)')).toBe('');
+    expect(sanitizeReturnTo(['java', 'script:alert(1)'].join(''))).toBe('');
     expect(sanitizeReturnTo('matching')).toBe('');
   });
 

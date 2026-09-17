@@ -52,7 +52,7 @@ describe('позначки власника читаються і пишутьс
       configSource.indexOf('const setOwnerValue = async ('),
       configSource.indexOf('export const readOwnerGetInTouchMap ='),
     );
-    expect(setter).toContain('await set(ref2(database, `${path}/${owner}/${id}`), hasValue ? nextValue : null)');
+    expect(setter).toContain(`await set(ref2(database, \`\${path}/\${owner}/\${id}\`), hasValue ? nextValue : null)`);
     expect(setter).not.toContain('previousKey');
   });
 
@@ -105,7 +105,7 @@ describe('позначки власника читаються і пишутьс
 
   it('мапи двох полів не діляться кешем', () => {
     // Один Map на обидва шляхи — і `writer` віддавав би дати `getInTouch`.
-    expect(configSource).toContain('const cacheKey = `${path}::${owner}`');
+    expect(configSource).toContain(`const cacheKey = \`\${path}::\${owner}\``);
   });
 });
 
