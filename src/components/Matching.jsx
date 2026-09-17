@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useLayoutEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
 import {
@@ -242,6 +242,7 @@ import {
   MATCHING_SEARCH_QUERY_PARAM,
   MATCHING_SEARCH_STORAGE_KEY,
 } from 'utils/matchingSearchLocation';
+import { LOGIN_ROUTE, buildReturnToFromLocation } from 'utils/authRedirect';
 import { useAppSettings } from 'hooks/useAppSettings';
 import { uiText } from 'utils/uiTranslations';
 import { keepDonorCounterpartyCards, isDonorViewer, viewerRoleSignature } from 'utils/matchingPeerVisibility';
@@ -1834,6 +1835,7 @@ const GalleryCard = React.memo(({
 
 const Matching = () => {
   const navigate = useNavigate();
+  const routeLocation = useLocation();
   const [users, setUsers] = useState([]);
   const usersRef = useRef(users);
   // Public source readiness is deliberately separate from the rendered deck:
@@ -3187,7 +3189,13 @@ const Matching = () => {
         setCurrentUserRole('');
         setCurrentAdditionalAccessRules('');
         setCurrentSearchKeySetKeys([]);
-        resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });
+        // `resetHasMore` тут саме `false`: вихід із сесії — це не «деку ще не
+        // гортали», а «читати більше нема кому». Поки скид ставив `hasMore`
+        // назад у `true`, довантаження бачило незакінчену деку й питало базу
+        // знову, вже без жодного uid.
+        resetAdditionalMatchingState({ resetHasMore: false, resetLoading: true });
+        hasMoreRef.current = false;
+        setHasMore(false);
         return;
       }
 
@@ -3548,6 +3556,19 @@ const Matching = () => {
     loadInitialVersionRef.current = loadInitialVersion;
     const initialRequest = beginInitialRequest();
     debugReactionFlowLog('loadInitial:start', { viewMode: viewModeRef.current });
+    // Той самий висновок, що й у `loadMore`: без читача питати базу нема про
+    // що, і скелетон мусить закінчитись повідомленням, а не крутитись вічно.
+    if (!getOwnerId()) {
+      writeMatchingDebugLog('initialLoad:blocked:noViewer', { viewMode: viewModeRef.current });
+      if (initialRequest === initialRequestIdRef.current) {
+        hasMoreRef.current = false;
+        setHasMore(false);
+        loadingRef.current = false;
+        loadingStateRef.current = false;
+        setLoading(false);
+      }
+      return;
+    }
     const startMode = viewModeRef.current;
     const canApplyInitialLoad = () => loadInitialVersion === loadInitialVersionRef.current && viewModeRef.current === startMode && cacheEpoch === getMatchingLocalStorageCacheEpoch();
     const canApplyInitialLoadWithFilters = () => canApplyInitialLoad() && requestFiltersSignature === stableAdditionalSignature(filtersRef.current || {});
@@ -4966,6 +4987,25 @@ const Matching = () => {
       });
     };
     writeMatchingDebugLog('loadMore:start', buildLoadMoreDebugPayload(commonDebug));
+    // Без читача деку збирати нема з чого: правила бази відкривають навіть
+    // картку лише авторизованому. Запит без uid — це не порожня сторінка, а
+    // `Permission denied`, і `hasMore` після нього лишався `true`: довантаження
+    // питало знову, і незалогінена вкладка слала десятки запитів на секунду в
+    // нескінченному циклі, показуючи людині вічний скелетон. Межа входу стоїть
+    // на маршруті (`RequireAuth`), а це — той самий висновок у самому читачі:
+    // сесія протухає і посеред перегляду, вже після монтування екрана.
+    if (!getOwnerId()) {
+      markBlockedLoadMore('blocked-no-viewer', { guard: 'no signed-in viewer' });
+      writeMatchingDebugLog('loadMore:blocked:noViewer', buildLoadMoreDebugPayload(commonDebug));
+      hasMoreRef.current = false;
+      additionalHasMoreRef.current = false;
+      setHasMore(false);
+      setAdditionalHasMore(false);
+      loadingRef.current = false;
+      loadingStateRef.current = false;
+      setLoading(false);
+      return 0;
+    }
     if (!hasMoreRef.current && !(viewMode === 'default' && additionalHasMoreRef.current)) {
       markBlockedLoadMore('blocked-no-hasMore', { guard: 'hasMore === false' });
       writeMatchingDebugLog('loadMore:blocked:noHasMore', buildLoadMoreDebugPayload(commonDebug));
@@ -6648,6 +6688,14 @@ const Matching = () => {
     console.log('[Matching][autoLoadMore] trigger', commonDebug);
     autoLoadMoreSignatureRef.current = signature;
     autoLoadMoreLastRunRef.current = now;
+    const countAutoLoadMoreAttempt = visibleAdded => {
+      if (visibleAdded > 0) {
+        emptyAutoLoadMoreAttemptsRef.current = 0;
+      } else {
+        emptyAutoLoadMoreAttemptsRef.current += 1;
+        incrementMatchingLoadStat('emptyLoadMoreAttempts');
+      }
+    };
     Promise.resolve(loadMore(payload)).then(addedCount => {
       const visibleAdded = Math.max(0, Number(addedCount) || 0);
       incrementMatchingLoadStat('visibleCardsAdded', visibleAdded);
@@ -6655,14 +6703,17 @@ const Matching = () => {
       // вголос: мовчазний відлік, після якого нічого не змінюється, читається як
       // зламана сторінка, а не як «під ці фільтри більше нічого не підійшло».
       setLastLoadAddedNothing(visibleAdded === 0);
-      if (visibleAdded > 0) {
-        emptyAutoLoadMoreAttemptsRef.current = 0;
-      } else {
-        emptyAutoLoadMoreAttemptsRef.current += 1;
-        incrementMatchingLoadStat('emptyLoadMoreAttempts');
-      }
+      countAutoLoadMoreAttempt(visibleAdded);
       const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
       if (stats && typeof console.table === 'function') console.table([stats]);
+    }).catch(error => {
+      // Відмова сторінки — теж витрачена спроба. Поки її ніхто не ловив,
+      // `loadMore` віддавав відмову назовні, лічильник порожніх спроб не
+      // рухався, і стеля, яка стереже самохідний цикл, не спрацьовувала
+      // ніколи: одна помилка бази перетворювала довантаження на нескінченний
+      // цикл запитів. Причину показує вже той, хто вантажив.
+      console.warn('[Matching][autoLoadMore] load failed', error);
+      countAutoLoadMoreAttempt(0);
     });
   }, [loadMore]);
 
@@ -8341,9 +8392,28 @@ const Matching = () => {
               scanNote={isSearching ? '' : uiText('серед завантажених', language)}
             />
           )}
+          {/* «Owner not found» стояло тут англійським рядком у коді й нічого
+              читачеві не пояснювало: незалогінений бачив цей напис під вічним
+              скелетоном і не мав звідси жодного виходу. Порожній `ownerId`
+              означає «сесії немає» — і каже про це словом, з кнопкою на вхід;
+              `null` означає «ще питаємо Firebase». */}
+          {/* `as="div"`, бо всередині кнопка: `OwnerStatusMessage` — це `p`, а
+              браузер розриває абзац на першому ж блоковому нащадку, і кнопка
+              поїхала б з-під власного тексту. */}
           {!ownerId && (
-            <OwnerStatusMessage>
-              {ownerId === '' ? 'Owner not found' : 'Loading owner...'}
+            <OwnerStatusMessage as="div">
+              {ownerId === '' ? (
+                <>
+                  <div>{uiText('Щоб бачити анкети, увійдіть у застосунок', language)}</div>
+                  <ActionButton
+                    type="button"
+                    onClick={() => navigate(LOGIN_ROUTE, { state: { returnTo: buildReturnToFromLocation(routeLocation) } })}
+                    aria-label={uiText('Увійти', language)}
+                  >
+                    {uiText('Увійти', language)}
+                  </ActionButton>
+                </>
+              ) : uiText('Перевіряємо сесію…', language)}
             </OwnerStatusMessage>
           )}
 
