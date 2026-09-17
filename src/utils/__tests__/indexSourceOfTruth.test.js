@@ -90,7 +90,7 @@ describe('індекси будуються з нових вузлів', () => {
       'export const getMedicationPhotos',
     );
 
-    expect(builder).toContain('if (!usersData[id]) stalePayload[`${MATCHING_CARDS_ROOT}/${id}`] = null;');
+    expect(builder).toContain(`if (!usersData[id]) stalePayload[\`\${MATCHING_CARDS_ROOT}/\${id}\`] = null;`);
     expect(builder).not.toContain('card?.source');
   });
 

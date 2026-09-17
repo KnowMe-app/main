@@ -68,7 +68,7 @@ describe('збереження анкети не залежить від legacy-
     const reader = sliceFn('const readProfileForMatchingCard = async', 'const runMatchingCardRefresh');
 
     expect(reader).toContain('readProfileFromNodes(id, { includeTechnical: true })');
-    expect(reader).not.toContain('`users/${id}`');
+    expect(reader).not.toContain(`\`users/\${id}\``);
   });
 
   it('щойно збережене перекриває перечитане', () => {
@@ -97,7 +97,7 @@ describe('дзеркалення читається і в зворотний б�
     const reader = sliceFn('export const fetchUserById =', 'export const removeKeyFromFirebase');
     expect(reader).toContain('await readProfileFromNodes(userId, { includeTechnical: true })');
     expect(reader).not.toContain('withLegacy');
-    expect(reader).not.toContain('users/${userId}');
+    expect(reader).not.toContain(`users/\${userId}`);
   });
 
   it('читач вузлів сам у legacy не ходить', () => {

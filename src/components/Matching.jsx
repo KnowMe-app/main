@@ -5691,7 +5691,6 @@ const Matching = () => {
     searchRefinedUsers,
     searchRevealCount,
     stickyReactedUserIds,
-    users,
     viewMode,
     visibleUsers,
   ]);
