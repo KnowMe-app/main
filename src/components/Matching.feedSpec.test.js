@@ -36,11 +36,15 @@ describe('matching feed structure', () => {
     // Пошук і далі не звужується чіпами — але показується вікном, а не цілком:
     // 400 знайдених це 400 рядків у DOM і стільки ж гідратацій.
     expect(memo).toContain("if (viewMode === 'search') return searchRefinedUsers.slice(0, searchRevealCount);");
-    expect(source).toContain("const feedSourceWithoutOwnEdits = isSearching && searchTab === 'similar' ? similarUsers : filteredUsers;");
+    expect(source).toContain('const feedSourceWithoutOwnEdits = filteredUsers;');
     // Поверх списку лягає лише власне доповнення читача — і лише там, де воно є:
     // порожня мапа віддає той самий масив, бо від нього залежать і гідратація
     // фото, і пагінація, і шар деталей.
-    expect(source).toContain('if (!Object.keys(ownOverlayFieldsByCardId).length) return feedSourceWithoutOwnEdits;');
+    // Шар доповнення накладається і власний, і — в адміна — стос усіх авторів,
+    // тож «накладати нічого» означає, що порожні обидві мапи.
+    expect(source).toContain('const hasOverlays = Object.keys(ownOverlayFieldsByCardId).length');
+    expect(source).toContain('|| Object.keys(stackedOverlaysByCardId).length;');
+    expect(source).toContain('if (!hasOverlays) return feedSourceWithoutOwnEdits;');
     expect(source).toContain('return feedSourceWithoutOwnEdits.map(withOwnEdits);');
     expect(source).toContain('return applyOverlayToCard(user, fields);');
   });
@@ -88,7 +92,7 @@ describe('matching feed structure', () => {
     const source = matching();
     expect(source).not.toContain('hasFullProfileAccessRef');
     expect(source).not.toContain('accessScopedOnly');
-    expect(source).toContain('(isSearching ? searchChips : collectionChips).map');
+    expect(source).toContain('(isSearching ? [] : collectionChips).map');
   });
 });
 

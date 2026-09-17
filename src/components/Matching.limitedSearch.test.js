@@ -116,6 +116,6 @@ describe('limited search projection', () => {
   it('loads the public feed independently from full-profile access', () => {
     const matching = read('Matching.jsx');
     expect(matching).not.toContain('hasFullProfileAccessRef');
-    expect(matching).toContain('(isSearching ? searchChips : collectionChips).map');
+    expect(matching).toContain('(isSearching ? [] : collectionChips).map');
   });
 });

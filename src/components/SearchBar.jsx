@@ -902,13 +902,28 @@ export const doesCardMatchSearchParams = (card, params = {}, options = {}) => {
   const [[key, value]] = Object.entries(params || {});
   if (!key || value === undefined || value === null || String(value).trim() === '') return true;
 
-  if (key === 'searchId') {
-    const prefixes = Array.isArray(options.searchIdPrefixes) && options.searchIdPrefixes.length > 0
-      ? options.searchIdPrefixes
-      : [inferSearchIdPrefix(value)].filter(Boolean);
-    if (prefixes.length === 0) return true;
-    return prefixes.some(prefix => doesCardMatchSearchParams(card, { [prefix]: value }, options));
-  }
+  // Влучання в `searchId` не перевіряють анкетою: індекс знає більше за неї.
+  //
+  // Ключ індексу — саме значення, а поле лежить у записі, і читаються лише
+  // дозволені поля (`fields` у `collectUserIdsBySearchIdKeys`), тож id, що
+  // лежить у такому ключі, — це вже доведений збіг. Анкета ж того значення
+  // може не нести зовсім, і то не помилка індексу:
+  //
+  // - **доповнення читача** (`multiData/edits/{картка}/{читач}`) пишеться і в
+  //   `searchId` (`saveOverlayForUserCard`), а в самій картці його немає й не
+  //   буде: шар лягає поверх картки, а не в неї. Дописаний телефон знаходився
+  //   в індексі — і тут же зникав, бо в анкеті стоїть інший;
+  //
+  // - **попередня версія поля** лишається в індексі навмисно: ключ знімає лише
+  //   явний намір (`deletedKeys`, `pruneSearchIdValues`), а заміна значення —
+  //   не стирання.
+  //
+  // Поки збіг звіряли з полями анкети, обидва випадки закінчувались однаково:
+  // видача пошуку на сторінці matching показувала картку (там вона проєкція,
+  // і перевірку пропущено), а `AddNewProfile` на той самий запит відповідав
+  // «Не знайшов» — бо читає повну анкету. Тобто адмін, у якого прав більше за
+  // всіх, єдиний і не бачив знайденого.
+  if (key === 'searchId') return true;
 
   if (key === 'userId') {
     const cardUserId = String(card?.userId || '').trim();

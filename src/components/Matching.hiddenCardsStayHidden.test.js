@@ -7,16 +7,12 @@ const { canShowMatchingUser } = require('utils/reactionPriority');
 
 const matchingSource = () => fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
-const similarBlock = source => source.slice(
-  source.indexOf('  const similarUsers = useMemo(() => {'),
-  source.indexOf('  const feedSource = '),
-);
-
 // Локальний кеш — це історія пристрою, а не право показу. У ньому лежить усе,
 // що застосунок колись читав, зокрема неопубліковані анкети, і вкладка «Схожі»
 // віддавала цей кеш читачеві як є: картка, яку `canShowMatchingUser` забороняє,
 // доїжджала до `feedSource` і малювалась із діагностичною плашкою замість того,
-// щоб зникнути.
+// щоб зникнути. Саму вкладку прибрано — видача пошуку тепер одна, — але
+// правило лишається за самим кешем: усе, що з нього беруть, проходить рубіж.
 describe('приховані анкети не пробиваються в деку через локальний кеш', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -38,13 +34,14 @@ describe('приховані анкети не пробиваються в де�
     expect(forAdmin).toHaveLength(2);
   });
 
-  it('вкладка «Схожі» проганяє кандидатів з кешу через canShowMatchingUser', () => {
-    const similar = similarBlock(matchingSource());
+  it('другої видачі з локального кеша в матчингу більше немає', () => {
+    // Вкладка «Схожі» пропонувала другу відповідь на той самий запит — з того
+    // самого кеша, який правом показу не є. Пішла вкладка — пішов і шлях,
+    // яким кеш потрапляв у деку повз відповідь бекенду.
+    const source = matchingSource();
 
-    expect(similar).toContain('return candidates.filter(user => canShowMatchingUser(user, { isAdmin }));');
-    expect(similar).toContain('}, [filteredUsers, isAdmin, isSearching, searchQuery]);');
-    // Чіпи стрічки пошук так само не звужують — правило з попереднього фікса лишається.
-    expect(similar).not.toContain('applyMatchingUiFiltersToUsers');
+    expect(source).not.toContain('similarUsers');
+    expect(source).not.toContain('findCachedCardsByText');
   });
 
   it('тимчасова діагностична плашка більше не входить до картки', () => {

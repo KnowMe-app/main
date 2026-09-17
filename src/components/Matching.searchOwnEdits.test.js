@@ -125,10 +125,36 @@ describe('заготовка нової картки першим рядком �
     expect(source).toContain('Це значення вже стоїть у знайденій картці — нова відкриється без нього');
   });
 
-  it('веде тим самим шляхом, що й чіп «Створити нову»', () => {
+  it('веде у форму створення разом із набраним', () => {
     expect(source).toContain('<QueryDraftCard data-testid="query-draft-card">');
     expect(source).toContain('onClick={handleCreateFromQuery}');
-    expect(source).toContain('onSelect: handleCreateFromQuery,');
     expect(source).toContain('createFromQuery: searchQuery.trim(),');
+  });
+});
+
+// Шар доповнення пише не адмін, а той, кому дозволено заводити картки. Але
+// рішення по дописаному — адмінське: прийняти номер в анкету чи прибрати як
+// хибний. Поки шар бачив лише його автор, адміністраторка була єдиною, хто
+// дивився на канонічну картку — тобто на все, крім того, заради чого відкривав.
+describe('адмін бачить шари всіх дописувачів', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+
+  it('читає вузол картки цілком, а не гілку одного читача', () => {
+    expect(source).toContain('getOverlaysForCard(cardUserId)');
+    expect(source).toContain('setStackedOverlaysByCardId(previous => ({ ...previous, [cardUserId]: overlaysByEditor }));');
+    // Стос накладається в порядку збереження — це вже вміє `applyOverlaysToCard`.
+    expect(source).toContain('if (stacked && Object.keys(stacked).length) return applyOverlaysToCard(user, stacked);');
+  });
+
+  it('питає про картку на дотик і про видачу пошуку — але не про стрічку', () => {
+    // Власного переліку доповнень в адміна немає й бути не може: шари лежать
+    // під картками, а не під ним. Тож стрічку цим запитом не здорожчуємо.
+    expect(source).toContain('ensureOwnOverlayRef.current = ensureStackedOverlay;');
+    expect(source).toContain('if (!isAdmin || !isSearching) return undefined;');
+    expect(source).toContain('feedSourceWithoutOwnEdits.forEach(user => ensureStackedOverlay(user?.userId));');
+  });
+
+  it('відмову не рахує за «шарів немає»', () => {
+    expect(source).toContain('requestedStackedOverlayIdsRef.current.delete(cardUserId);');
   });
 });
