@@ -5781,16 +5781,16 @@ const Matching = () => {
    * (`multiData/editsByEditor` плюс памʼять браузера), і вже за ним читаються
    * самі шари — стільки, скільки читач насправді дописував.
    *
-   * Доповнювати картку вміє той, кому дозволено заводити картки, і саме його
-   * рядок несе олівець «Доповнити дані» — тож і питати є сенс лише в нього.
-   * Адмін править картку напряму, і його правка їде в саму картку.
+   * Доповнювати картку вміє кожен, хто увійшов, — олівець «Доповнити дані»
+   * стоїть у рядку в усіх. Адмін править картку напряму, і його правка їде в
+   * саму картку, тож перелік власних доповнень йому не про що.
    */
   useEffect(() => {
     // Читач береться з `ownerId`, а не з `auth.currentUser`: на першому рендері
     // сторінки того ще немає, а перезапустити ефект нема на що — рівень
     // доступу відтоді не змінюється. Саме так перелік і не читався б узагалі.
     const editorUserId = ownerId;
-    if (isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;
+    if (isAdmin || !editorUserId) return undefined;
 
     getOwnOverlayCardIndex(editorUserId)
       .then(({ cardUserIds, remoteCardUserIds }) => {
@@ -5801,7 +5801,7 @@ const Matching = () => {
       .catch(error => console.warn('[Matching] own overlay index unavailable', error));
 
     return undefined;
-  }, [access.canCreateProfiles, isAdmin, ownerId]);
+  }, [isAdmin, ownerId]);
 
   /**
    * Власне доповнення до однієї картки, про яку читач спитав прямо.
@@ -5825,8 +5825,7 @@ const Matching = () => {
   /**
    * Те саме питання від адміна — і відповідь на нього ширша.
    *
-   * Дописують картку ті, кому дозволено заводити картки, а вирішує по
-   * дописаному адміністраторка: чи прийняти номер в анкету, чи прибрати його як
+   * Дописують картку читачі, а вирішує по дописаному адміністраторка: чи прийняти номер в анкету, чи прибрати його як
    * хибний. Поки шар бачив лише його автор, вона єдина й дивилась на канонічну
    * картку — тобто на все, крім того, заради чого відкривала. Тому тут
    * читається вузол картки цілком (`multiData/edits/{картка}`), з усіма
@@ -5880,7 +5879,7 @@ const Matching = () => {
       ensureOwnOverlayRef.current = ensureStackedOverlay;
       return;
     }
-    if (!access.canCreateProfiles || !editorUserId) {
+    if (!editorUserId) {
       ensureOwnOverlayRef.current = () => {};
       return;
     }
@@ -5902,7 +5901,7 @@ const Matching = () => {
           console.warn('[Matching] own overlay unavailable', cardUserId, error);
         });
     };
-  }, [access.canCreateProfiles, ensureStackedOverlay, isAdmin, ownerId]);
+  }, [ensureStackedOverlay, isAdmin, ownerId]);
 
   /**
    * Читається лише те, що на екрані, — і в стрічці лише те, що читач дописував.
@@ -5922,7 +5921,7 @@ const Matching = () => {
    */
   useEffect(() => {
     const editorUserId = ownerId;
-    if (isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;
+    if (isAdmin || !editorUserId) return undefined;
     // Поки перелік не приїхав, стрічка не питає нічого: інакше перший її
     // рендер устиг би зробити той самий круг на кожен рядок.
     const currentOwnerOverlayCardIds = ownOverlayStateOwnerId === editorUserId ? ownOverlayCardIds : null;
@@ -5958,7 +5957,7 @@ const Matching = () => {
     // доповнення приходило рівно тоді, коли його вже нема кому прийняти.
     // Лишається одна причина не писати в стан — розмонтована сторінка.
     return undefined;
-  }, [access.canCreateProfiles, feedSourceWithoutOwnEdits, isAdmin, isSearching, ownOverlayCardIds, ownOverlayStateOwnerId, ownerId, remoteOwnOverlayCardIds]);
+  }, [feedSourceWithoutOwnEdits, isAdmin, isSearching, ownOverlayCardIds, ownOverlayStateOwnerId, ownerId, remoteOwnOverlayCardIds]);
 
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {
@@ -7819,7 +7818,7 @@ const Matching = () => {
    * лишаються в одній рамці, як серце з хрестиком у стрічці.
    */
   const buildHiddenRowExtras = React.useCallback(user => ({
-    onEnrich: !isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined,
+    onEnrich: isAdmin ? undefined : handleRowEnrichProfile,
     onRequestContacts: handleRequestRowContacts,
     canViewContacts: canOfferProfileContacts({
       card: user,
@@ -7837,7 +7836,6 @@ const Matching = () => {
       onClick: toggleRowFavorite,
     },
   }), [
-    access.canCreateProfiles,
     buildRowReviewsAction,
     buildRowReviewsSlot,
     currentAccessLevel,
@@ -8301,7 +8299,7 @@ const Matching = () => {
                   ним. Доти ця відповідь жила чіпом над видачею, тобто там, де
                   її читають фільтром, а в яке поле ляже набране, читач бачив
                   аж у формі. */}
-              {isSearching && queryDraft && access.canCreateProfiles && (
+              {isSearching && queryDraft && (
                 <QueryDraftCard data-testid="query-draft-card">
                   <QueryDraftBody>
                     <QueryDraftLabel>{queryDraft.label}</QueryDraftLabel>
@@ -8333,7 +8331,7 @@ const Matching = () => {
                             onToggleFavorite={toggleRowFavorite}
                             onToggleHidden={toggleRowHidden}
                             onTogglePublish={togglePublish}
-                            onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
+                            onEnrich={isAdmin ? undefined : handleRowEnrichProfile}
                             clientComment={comments[user.userId] || ''}
                             onCommentSave={handleRowCommentSave}
                             reviewsSlot={buildRowReviewsSlot(user.userId)}
@@ -8369,7 +8367,7 @@ const Matching = () => {
                       onSwipeRight={toggleRowFavorite}
                       onSwipeLeft={toggleRowHidden}
                       diagnosticsSlot={renderDiagnosticsFor(user)}
-                      onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
+                      onEnrich={isAdmin ? undefined : handleRowEnrichProfile}
                       clientComment={comments[user.userId] || ''}
                       onCommentSave={handleRowCommentSave}
                       reviewsSlot={buildRowReviewsSlot(user.userId)}
@@ -8555,7 +8553,7 @@ const Matching = () => {
                         saveScrollPosition();
                         navigate(`/edit/${user.userId}`, { state: user });
                       }}
-                      onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
+                      onEnrich={isAdmin ? undefined : handleRowEnrichProfile}
                     />
                   </CardWrapper>
                 </CardContainer>

@@ -30,7 +30,7 @@ const NAV_LINKS = [
   { path: '/matching', label: 'Matching' },
   // «Створені мною» — той самий екран, що й `ProfileDotsMenu` називає так само:
   // підпис мусить обіцяти читачеві його власні картки, а не дію «додати».
-  { path: '/matching/create-profile', label: 'Створені мною', right: 'canCreateProfiles' },
+  { path: '/matching/create-profile', label: 'Створені мною' },
   { path: '/my-profile', label: 'My profile' },
   { path: '/flow', label: 'Flow', right: 'isAdmin' },
   { path: '/budget', label: 'Budget', right: 'isAdmin' },

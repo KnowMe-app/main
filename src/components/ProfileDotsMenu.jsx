@@ -306,14 +306,12 @@ export const ProfileDotsMenu = ({
     // Пункт названий місцем, а не дією: за ним лежать картки, які завів цей
     // читач, і лише потім — рядок, яким заводять наступну. «Додати профіль»
     // обіцяло форму, тож вертатись туди по вже заведену картку не було підстав.
-    ...((isAdmin || resolvedAccess.canCreateProfiles)
-      ? [{
-        path: '/matching/create-profile',
-        label: uiText(isAdmin ? 'Нові профілі' : 'Створені мною', language),
-        description: uiText(isAdmin ? 'Перевірка нових карток' : 'Ваші картки та створення нових', language),
-        icon: <MdPersonAddAlt1 />,
-      }]
-      : []),
+    {
+      path: '/matching/create-profile',
+      label: uiText(isAdmin ? 'Нові профілі' : 'Створені мною', language),
+      description: uiText(isAdmin ? 'Перевірка нових карток' : 'Ваші картки та створення нових', language),
+      icon: <MdPersonAddAlt1 />,
+    },
     ...(isAdmin ? [{ path: '/flow', label: 'Flow', icon: <FaProjectDiagram /> }] : []),
     ...(isAdmin ? [{ path: '/budget', label: 'Budget', description: 'Program budget and other expenses', icon: <FaEuroSign /> }] : []),
     ...(isAdmin ? [{ path: '/invoices', label: 'Invoices', description: 'Create and export client invoices', icon: <FaFileInvoiceDollar /> }] : []),

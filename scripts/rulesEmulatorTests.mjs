@@ -786,6 +786,94 @@ await it('не переписує чужий id у своєму полі', async
 // наступний пошук за ним не знаходить нічого, і той самий читач заводить дубль.
 // Право дає рівно наявність власного оверлея на цій картці — не рівень доступу
 // й не сам лише `canCreateProfiles`.
+/**
+ * Заводити й доповнювати картки може кожен, хто увійшов.
+ *
+ * Право `canCreateProfiles` цього більше не стереже: воно лишилось на самі лише
+ * службові читання цілих вузлів — перелік усіх чернеток, усі шари однієї
+ * картки, перелік заявок на унікальність. Тобто «створити» і «дописати» відкриті
+ * всім, а «переглянути, хто що створив і дописав» — ні.
+ *
+ * Перевіряється це звичайним читачем (`ORDINARY_VIEWER`): жодного рівня доступу
+ * й жодного прапорця в нього немає.
+ */
+describe('чернетки й доповнення — кожному, хто увійшов');
+
+await it('звичайний читач заводить власну чернетку й читає її', async () => {
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), `multiData/profileMutations/${ORDINARY_VIEWER}/newCardId0001`), {
+    cardId: 'newCardId0001',
+    operation: 'create',
+    createdBy: ORDINARY_VIEWER,
+    status: 'pendingReview',
+    revision: 1,
+  }));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `multiData/profileMutations/${ORDINARY_VIEWER}`)));
+});
+
+await it('у чужу гілку чернеток не пише й чужих чернеток не читає', async () => {
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `multiData/profileMutations/${CARD_CREATOR}/newCardId0002`), {
+    cardId: 'newCardId0002',
+    operation: 'create',
+    createdBy: CARD_CREATOR,
+    status: 'pendingReview',
+    revision: 1,
+  }));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `multiData/profileMutations/${CARD_CREATOR}`)));
+  // Перелік усіх чернеток — службове читання, і воно лишилось за прапорцем.
+  await assertFails(get(ref(db(ORDINARY_VIEWER), 'multiData/profileMutations')));
+});
+
+await it('заявляє контакт на унікальність — інакше дубль ловити нічим', async () => {
+  // Писач читає ключ перед транзакцією, тож читання тут таке саме потрібне,
+  // як і запис.
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), 'multiData/profileIdentityClaims/phone_380501110022'), 'newCardId0001'));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), 'multiData/profileIdentityClaims/phone_380501110022')));
+  // А перелічити всі заявки не може: ключ заявки — це сам контакт.
+  await assertFails(get(ref(db(ORDINARY_VIEWER), 'multiData/profileIdentityClaims')));
+});
+
+await it('дописує чужу картку власним шаром і читає свій шар назад', async () => {
+  const overlay = {
+    cardUserId: CARD,
+    editorUserId: ORDINARY_VIEWER,
+    updatedAt: 1764000000000,
+    fields: { phone: { added: ['380501110033'] } },
+  };
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), `multiData/edits/${CARD}/${ORDINARY_VIEWER}`), overlay));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `multiData/edits/${CARD}/${ORDINARY_VIEWER}/fields`)));
+});
+
+await it('чужого шару не пише й усіх шарів картки не читає', async () => {
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `multiData/edits/${CARD}/${CARD_CREATOR}`), {
+    cardUserId: CARD,
+    editorUserId: CARD_CREATOR,
+    updatedAt: 1764000000000,
+    fields: { phone: { added: ['380501110044'] } },
+  }));
+  // Вузол картки цілком — це «хто ще її дописував»; його читають адмін і
+  // службовий доступ, і саме звідти адмін бачить стос усіх правок.
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `multiData/edits/${CARD}`)));
+  await assertSucceeds(get(ref(db(SUPERADMIN), `multiData/edits/${CARD}`)));
+});
+
+await it('пише власний запис у журнал правок, а стирає його лише адмін', async () => {
+  const entry = {
+    cardUserId: CARD,
+    editorUserId: ORDINARY_VIEWER,
+    action: 'edit',
+    fieldName: 'phone',
+    change: { added: ['380501110033'] },
+    at: 1764000000000,
+  };
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), `multiData/editsHistory/${CARD}/entryOrdinary1`), entry));
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `multiData/editsHistory/${CARD}/entryOrdinary2`), {
+    ...entry,
+    editorUserId: CARD_CREATOR,
+  }));
+  await assertFails(remove(ref(db(ORDINARY_VIEWER), `multiData/editsHistory/${CARD}/entryOrdinary1`)));
+  await assertSucceeds(remove(ref(db(SUPERADMIN), `multiData/editsHistory/${CARD}/entryOrdinary1`)));
+});
+
 describe('searchId — дописане в доповненні індексується його автором');
 
 await it('редактор з оверлеєм заводить ключ на картку, яку доповнює', async () => {
