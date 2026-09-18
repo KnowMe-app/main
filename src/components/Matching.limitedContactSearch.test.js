@@ -133,25 +133,13 @@ describe('пошук за контактом у читача без повног
     )).toBe(true);
   });
 
-  it('лишає перевірку там, де проєкція несе значення повністю', async () => {
-    const result = await searchUsersOnly({ searchId: EMAIL }, searchOptions);
-    // Імʼя в картці лежить як є, тож ним ще можна спростувати збіг — і цим
-    // перевірка захищає від застарілого запису в індексі.
-    expect(doesCardMatchSearchParams(
-      result,
-      { searchId: 'Тетяна' },
-      { searchIdPrefixes: ['name'], limitedFields: true },
-    )).toBe(false);
-    expect(doesCardMatchSearchParams(
-      result,
-      { searchId: 'Ольга' },
-      { searchIdPrefixes: ['name'], limitedFields: true },
-    )).toBe(true);
-  });
-
-  it('повна анкета перевіряється по-старому', () => {
+  it('влучання в індекс приймається і тоді, коли поля в анкеті немає', () => {
+    // Значення могло прийти не з анкети: доповнення читача
+    // (`multiData/edits/{картка}/{читач}`) теж пишеться в `searchId`, а в самій
+    // анкеті його немає. Перевірка полем викидала рівно такі влучання — і саме
+    // в того, хто читає повну анкету, тобто в адміна.
     const fullProfile = { userId: CARD_ID, name: 'Ольга', surname: 'Шевченко', email: 'other@gmail.com' };
-    expect(doesCardMatchSearchParams(fullProfile, { searchId: EMAIL }, { searchIdPrefixes: ['email'] })).toBe(false);
+    expect(doesCardMatchSearchParams(fullProfile, { searchId: EMAIL }, { searchIdPrefixes: ['email'] })).toBe(true);
     expect(doesCardMatchSearchParams(
       { ...fullProfile, email: EMAIL },
       { searchId: EMAIL },

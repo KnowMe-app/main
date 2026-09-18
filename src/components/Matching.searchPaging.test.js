@@ -89,9 +89,12 @@ describe('видача пошуку гортається так само, як �
     expect(matching()).toContain('void loadCommentsFor(refined.slice(0, FEED_PHOTO_HYDRATION_LIMIT));');
   });
 
-  it('«Знайдено» рахує всю видачу, а не її вікно', () => {
-    // Інакше чіп казав би «Знайдено 2» на чотирьохстах знайдених.
-    expect(matching()).toContain('count: searchRefinedUsers.length,');
+  it('чіпів пошуку над видачею немає', () => {
+    // «Знайдено N» повторювало довжину списку під ним, «Створити нову»
+    // дублювало заготовку першим рядком, «Схожі» — другу відповідь на той
+    // самий запит. Лишився список і заготовка.
+    expect(matching()).not.toContain('searchChips');
+    expect(matching()).not.toContain('searchTab');
   });
 });
 

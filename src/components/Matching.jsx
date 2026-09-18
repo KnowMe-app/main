@@ -182,7 +182,7 @@ import {
   cleanupMatchingLocalStorageCache,
   logMatchingLocalStorageDebugStats,
 } from '../utils/searchKeyCache';
-import { findCachedCardsByText, getCardsByList, updateCard } from '../utils/cardsStorage';
+import { getCardsByList, updateCard } from '../utils/cardsStorage';
 import { getCachedPhotoUrlsMap, setCachedPhotoUrls } from '../utils/photoUrlCache';
 import {
   MATCHING_CARDS_ROOT,
@@ -236,7 +236,13 @@ import { getContactEntries } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
-import { applyOverlayToCard, getOwnOverlayCardIndex, getOwnOverlayFieldsForCards } from 'utils/multiAccountEdits';
+import {
+  applyOverlayToCard,
+  applyOverlaysToCard,
+  getOverlaysForCard,
+  getOwnOverlayCardIndex,
+  getOwnOverlayFieldsForCards,
+} from 'utils/multiAccountEdits';
 import {
   buildMatchingSearchPath,
   MATCHING_SEARCH_QUERY_PARAM,
@@ -344,13 +350,6 @@ const MATCHING_SEARCH_BAR_ENABLED_KEYS = {
   partialUserId: false,
 };
 
-const getMatchingSearchResultCount = result => {
-  if (!result) return 0;
-  if (Array.isArray(result)) return result.filter(Boolean).length;
-  if (result.userId) return 1;
-  if (typeof result === 'object') return Object.keys(result).length;
-  return 0;
-};
 
 // Підпис статусу називає лише сам запит. Ключ звідси прибрано свідомо: пошук
 // пробує всі префікси індексу одразу, тож назвати один із них («phone: Ольга»)
@@ -1789,7 +1788,6 @@ const Matching = () => {
   // Spec §1-§2: the search input is what switches the screen between the feed and
   // results, and the query lives in the URL so a reload keeps the context.
   const [searchQuery, setSearchQuery] = useState(readQueryFromUrl);
-  const [searchTab, setSearchTab] = useState('results');
   // Дофільтр: один ключ, одне значення. У пошуку значення живе тут; у стрічці
   // воно виводиться з `filters` — інакше рядок і шухляда розійшлися б, щойно
   // читач відкриє другу.
@@ -1931,6 +1929,14 @@ const Matching = () => {
   // памʼять браузера). Один запит на таб — і стрічка знає, у котрих зі своїх
   // сотень рядків є що накладати, не читаючи вузол на кожен.
   const [ownOverlayCardIds, setOwnOverlayCardIds] = useState(null);
+  // Шари **всіх** дописувачів — для адміна. Картку дописують ті, кому дозволено
+  // заводити картки, а вирішує по дописаному адміністраторка: поки вона бачила
+  // саму лише канонічну анкету, дописаний телефон був видимий геть усім, крім
+  // неї. Тому мапа окрема від власної: у власній лежать `fields` одного читача,
+  // тут — вузол `multiData/edits/{картка}` цілком, з автором і часом кожного
+  // шару (`applyOverlaysToCard` розкладає їх у порядку збереження).
+  const [stackedOverlaysByCardId, setStackedOverlaysByCardId] = useState({});
+  const requestedStackedOverlayIdsRef = useRef(new Set());
   // На відміну від переліку вище, тут лише підтверджені Firebase id. Локальна
   // позначка могла лишитися після відхиленого правилами запису й не повинна
   // забороняти повторну best-effort міграцію оберненого індексу.
@@ -1966,7 +1972,9 @@ const Matching = () => {
     setOwnOverlayFieldsByCardId({});
     setOwnOverlayCardIds(null);
     setRemoteOwnOverlayCardIds(null);
+    setStackedOverlaysByCardId({});
     requestedOwnOverlayIdsRef.current = new Set();
+    requestedStackedOverlayIdsRef.current = new Set();
     touchedOwnOverlayIdsRef.current = new Set();
   }, [ownerId]);
   const [roleIndexSets] = useState(null);
@@ -4665,19 +4673,24 @@ const Matching = () => {
     loadFavoriteCards();
   }, [loadFavoriteCards, viewMode]);
 
-  const buildMatchingSearchStatusText = React.useCallback((status, searchKey = matchingSearchKeyRef.current) => {
+  /**
+   * Рядок стану каже лише про те, що ще триває або вже впало.
+   *
+   * «Знайшов у searchId: 380505554433» не казало нічого: що знайшлось — видно
+   * зі списку під ним, а що не знайшлось — з порожнього списку й заготовки
+   * нової картки першим рядком. Лишились два стани, на які подивитись нема
+   * куди: пошук триває і пошук упав.
+   */
+  const buildMatchingSearchStatusText = React.useCallback((searchKey = matchingSearchKeyRef.current) => {
     const keyLabel = formatMatchingSearchKeyLabel(searchKey);
     const suffix = keyLabel ? `: ${keyLabel}` : '';
 
-    if (status === 'found') return uiText('Знайшов у searchId{suffix}', language, { suffix });
-    if (status === 'notFound') return uiText('Не знайшов у searchId{suffix}', language, { suffix });
-    if (status === 'searching') return uiText('Шукаю в searchId{suffix}', language, { suffix });
-    return '';
+    return uiText('Шукаю в searchId{suffix}', language, { suffix });
   }, [language]);
 
   const handleMatchingSearchKey = React.useCallback(nextSearchKey => {
     matchingSearchKeyRef.current = nextSearchKey;
-    setMatchingSearchStatus(buildMatchingSearchStatusText('searching', nextSearchKey));
+    setMatchingSearchStatus(buildMatchingSearchStatusText(nextSearchKey));
   }, [buildMatchingSearchStatusText]);
 
   const handleMatchingSearchExecuted = React.useCallback(value => {
@@ -4692,10 +4705,10 @@ const Matching = () => {
     addMatchingSearchQuery(value);
   }, []);
 
-  const handleMatchingSearchResultStatus = React.useCallback(result => {
-    const resultCount = getMatchingSearchResultCount(result);
-    setMatchingSearchStatus(buildMatchingSearchStatusText(resultCount > 0 ? 'found' : 'notFound'));
-  }, [buildMatchingSearchStatusText]);
+  // Пошук завершився — і далі говорить сам список, а не рядок над ним.
+  const handleMatchingSearchResultStatus = React.useCallback(() => {
+    setMatchingSearchStatus('');
+  }, []);
 
   const handleMatchingSearchStateStatus = React.useCallback(nextState => {
     if (!nextState || Object.keys(nextState).length === 0) return;
@@ -4703,14 +4716,11 @@ const Matching = () => {
   }, [handleMatchingSearchResultStatus]);
 
   const handleMatchingSearchNotFound = React.useCallback(isNotFound => {
-    if (isNotFound) {
-      setMatchingSearchStatus(buildMatchingSearchStatusText('notFound'));
-    }
-  }, [buildMatchingSearchStatusText]);
+    if (isNotFound) setMatchingSearchStatus('');
+  }, []);
 
   const handleMatchingSearchResults = React.useCallback(result => {
     handleMatchingSearchResultStatus(result);
-    setSearchTab('results');
     void applySearchResults(result);
     // applySearchResults closes over setters and refs only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4722,7 +4732,6 @@ const Matching = () => {
     if (searchQuery.trim() || viewModeRef.current !== 'search') return;
     setMatchingSearchStatus('');
     matchingSearchKeyRef.current = null;
-    setSearchTab('results');
     reloadDefault();
   }, [reloadDefault, searchQuery]);
 
@@ -4730,7 +4739,6 @@ const Matching = () => {
     setMatchingSearchStatus('');
     matchingSearchKeyRef.current = null;
     setSearchQuery('');
-    setSearchTab('results');
     reloadDefault();
   }, [reloadDefault]);
 
@@ -5722,30 +5730,11 @@ const Matching = () => {
 
   const isSearching = searchQuery.trim().length > 0;
 
-  // Spec §3's "Схожі": a second pass over what this device already holds, so the
-  // chip's count is honest without another round trip.
-  const similarUsers = useMemo(() => {
-    if (!isSearching) return [];
-    const candidates = findCachedCardsByText(searchQuery, {
-      excludeIds: filteredUsers.map(user => user?.userId).filter(Boolean),
-    });
-    // «Схожі» — та сама відповідь на запит, тільки з локального кешу, тож і
-    // правило те саме: чіпи стрічки її не звужують. Інакше вкладка «Знайдено»
-    // показувала б людину, а «Схожі» ховали б її двійника.
-    //
-    // Але кеш — це не право показу. У локальному сховищі лежить усе, що пристрій
-    // колись бачив (власні чернетки, картки з реакцій, залишки від іншого
-    // сеансу), і віддавати його читачеві як є означало показувати неопубліковані
-    // анкети: саме так приховані картки й пробивались у деку повз
-    // `canShowMatchingUser`. Кожен кандидат проходить той самий останній рубіж,
-    // що й картка зі стрічки чи з відповіді бекенду.
-    return candidates.filter(user => canShowMatchingUser(user, { isAdmin }));
-  }, [filteredUsers, isAdmin, isSearching, searchQuery]);
 
   // Spec §1: whatever the reader is looking at, the list, the gallery and the
   // detail layer all index into this one array - so opening row N and paging
   // from it can never disagree about which card is which.
-  const feedSourceWithoutOwnEdits = isSearching && searchTab === 'similar' ? similarUsers : filteredUsers;
+  const feedSourceWithoutOwnEdits = filteredUsers;
 
   /**
    * Картка показується разом із тим, що читач сам у неї дописав.
@@ -5760,19 +5749,28 @@ const Matching = () => {
    */
   const withOwnEdits = React.useCallback(user => {
     if (ownOverlayStateOwnerId !== ownerId) return user;
-    const fields = user?.userId ? ownOverlayFieldsByCardId[user.userId] : null;
+    if (!user?.userId) return user;
+    // Адмінові лягають шари всіх дописувачів, решті — власний. Порядок тут
+    // роздільний, а не накопичувальний: власний шар адміна теж лежить у вузлі
+    // картки, тож стос уже несе його, і накладати його вдруге означало б
+    // рахувати ту саму правку двічі.
+    const stacked = stackedOverlaysByCardId[user.userId];
+    if (stacked && Object.keys(stacked).length) return applyOverlaysToCard(user, stacked);
+    const fields = ownOverlayFieldsByCardId[user.userId];
     if (!fields || !Object.keys(fields).length) return user;
     return applyOverlayToCard(user, fields);
-  }, [ownOverlayFieldsByCardId, ownOverlayStateOwnerId, ownerId]);
+  }, [ownOverlayFieldsByCardId, ownOverlayStateOwnerId, ownerId, stackedOverlaysByCardId]);
 
   /**
    * Порожня мапа віддає той самий масив, а не його копію: від `feedSource`
    * залежить і гідратація фото, і пагінація, і шар деталей.
    */
   const feedSource = useMemo(() => {
-    if (!Object.keys(ownOverlayFieldsByCardId).length) return feedSourceWithoutOwnEdits;
+    const hasOverlays = Object.keys(ownOverlayFieldsByCardId).length
+      || Object.keys(stackedOverlaysByCardId).length;
+    if (!hasOverlays) return feedSourceWithoutOwnEdits;
     return feedSourceWithoutOwnEdits.map(withOwnEdits);
-  }, [feedSourceWithoutOwnEdits, ownOverlayFieldsByCardId, withOwnEdits]);
+  }, [feedSourceWithoutOwnEdits, ownOverlayFieldsByCardId, stackedOverlaysByCardId, withOwnEdits]);
 
   /**
    * Перелік власних доповнень — раз на таб.
@@ -5783,16 +5781,16 @@ const Matching = () => {
    * (`multiData/editsByEditor` плюс памʼять браузера), і вже за ним читаються
    * самі шари — стільки, скільки читач насправді дописував.
    *
-   * Доповнювати картку вміє той, кому дозволено заводити картки, і саме його
-   * рядок несе олівець «Доповнити дані» — тож і питати є сенс лише в нього.
-   * Адмін править картку напряму, і його правка їде в саму картку.
+   * Доповнювати картку вміє кожен, хто увійшов, — олівець «Доповнити дані»
+   * стоїть у рядку в усіх. Адмін править картку напряму, і його правка їде в
+   * саму картку, тож перелік власних доповнень йому не про що.
    */
   useEffect(() => {
     // Читач береться з `ownerId`, а не з `auth.currentUser`: на першому рендері
     // сторінки того ще немає, а перезапустити ефект нема на що — рівень
     // доступу відтоді не змінюється. Саме так перелік і не читався б узагалі.
     const editorUserId = ownerId;
-    if (isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;
+    if (isAdmin || !editorUserId) return undefined;
 
     getOwnOverlayCardIndex(editorUserId)
       .then(({ cardUserIds, remoteCardUserIds }) => {
@@ -5803,7 +5801,7 @@ const Matching = () => {
       .catch(error => console.warn('[Matching] own overlay index unavailable', error));
 
     return undefined;
-  }, [access.canCreateProfiles, isAdmin, ownerId]);
+  }, [isAdmin, ownerId]);
 
   /**
    * Власне доповнення до однієї картки, про яку читач спитав прямо.
@@ -5824,9 +5822,64 @@ const Matching = () => {
    * той самий дотик стрічку не здорожчує, бо дотиків стільки, скільки їх
    * зробила людина, а не скільки рядків у списку.
    */
+  /**
+   * Те саме питання від адміна — і відповідь на нього ширша.
+   *
+   * Дописують картку читачі, а вирішує по дописаному адміністраторка: чи прийняти номер в анкету, чи прибрати його як
+   * хибний. Поки шар бачив лише його автор, вона єдина й дивилась на канонічну
+   * картку — тобто на все, крім того, заради чого відкривала. Тому тут
+   * читається вузол картки цілком (`multiData/edits/{картка}`), з усіма
+   * авторами, а не гілка одного читача.
+   *
+   * Ціну тримає той самий дотик: власного переліку доповнень в адміна немає й
+   * бути не може (шари лежать під картками, а не під ним), тож стрічку цим
+   * запитом не здорожчуємо — питаємо про картку, яку відкрили, розгорнули або
+   * знайшли.
+   */
+  const ensureStackedOverlay = React.useCallback(cardUserId => {
+    const viewerId = ownerId;
+    if (!isAdmin || !viewerId || !cardUserId) return;
+    if (requestedStackedOverlayIdsRef.current.has(cardUserId)) return;
+    requestedStackedOverlayIdsRef.current.add(cardUserId);
+
+    getOverlaysForCard(cardUserId)
+      .then(overlaysByEditor => {
+        if (!overlaysByEditor || !Object.keys(overlaysByEditor).length) return;
+        if (!ownOverlaysMountedRef.current || ownOverlayOwnerIdRef.current !== viewerId) return;
+        setStackedOverlaysByCardId(previous => ({ ...previous, [cardUserId]: overlaysByEditor }));
+      })
+      .catch(error => {
+        // Відмова — це мережа або невикочені правила, а не «шарів немає»:
+        // наступний дотик мусить мати право спитати ще раз.
+        requestedStackedOverlayIdsRef.current.delete(cardUserId);
+        console.warn('[Matching] stacked overlays unavailable', cardUserId, error);
+      });
+  }, [isAdmin, ownerId]);
+
+  /**
+   * Видача пошуку в адміна: шари читаються про кожен показаний рядок.
+   *
+   * Рядків тут десяток і вони — відповідь на явний запит, тож читання на кожен
+   * лишається в тій самій межі, що й для автора шару. Стрічка ж гортається
+   * сотнями рядків, і її цей запит не торкається: адмінові шари приїжджають на
+   * дотик (`ensureStackedOverlay`), а не наперед.
+   *
+   * Саме сюди й веде знайдене за дописаним контактом: у `searchId` значення
+   * лежить, картку пошук віддає, а номера в ній немає — він у шарі.
+   */
+  useEffect(() => {
+    if (!isAdmin || !isSearching) return undefined;
+    feedSourceWithoutOwnEdits.forEach(user => ensureStackedOverlay(user?.userId));
+    return undefined;
+  }, [ensureStackedOverlay, feedSourceWithoutOwnEdits, isAdmin, isSearching]);
+
   useEffect(() => {
     const editorUserId = ownerId;
-    if (isAdmin || !access.canCreateProfiles || !editorUserId) {
+    if (isAdmin) {
+      ensureOwnOverlayRef.current = ensureStackedOverlay;
+      return;
+    }
+    if (!editorUserId) {
       ensureOwnOverlayRef.current = () => {};
       return;
     }
@@ -5848,7 +5901,7 @@ const Matching = () => {
           console.warn('[Matching] own overlay unavailable', cardUserId, error);
         });
     };
-  }, [access.canCreateProfiles, isAdmin, ownerId]);
+  }, [ensureStackedOverlay, isAdmin, ownerId]);
 
   /**
    * Читається лише те, що на екрані, — і в стрічці лише те, що читач дописував.
@@ -5868,7 +5921,7 @@ const Matching = () => {
    */
   useEffect(() => {
     const editorUserId = ownerId;
-    if (isAdmin || !access.canCreateProfiles || !editorUserId) return undefined;
+    if (isAdmin || !editorUserId) return undefined;
     // Поки перелік не приїхав, стрічка не питає нічого: інакше перший її
     // рендер устиг би зробити той самий круг на кожен рядок.
     const currentOwnerOverlayCardIds = ownOverlayStateOwnerId === editorUserId ? ownOverlayCardIds : null;
@@ -5904,7 +5957,7 @@ const Matching = () => {
     // доповнення приходило рівно тоді, коли його вже нема кому прийняти.
     // Лишається одна причина не писати в стан — розмонтована сторінка.
     return undefined;
-  }, [access.canCreateProfiles, feedSourceWithoutOwnEdits, isAdmin, isSearching, ownOverlayCardIds, ownOverlayStateOwnerId, ownerId, remoteOwnOverlayCardIds]);
+  }, [feedSourceWithoutOwnEdits, isAdmin, isSearching, ownOverlayCardIds, ownOverlayStateOwnerId, ownerId, remoteOwnOverlayCardIds]);
 
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {
@@ -6453,7 +6506,6 @@ const Matching = () => {
   useEffect(() => {
     setActiveProfileIndex(0);
   }, [
-    searchTab,
     reactionPaginationByType.favorites.ids,
     reactionPaginationByType.dislikes.ids,
     viewMode,
@@ -7105,37 +7157,6 @@ const Matching = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate, searchQuery, visibleUsers.length]);
 
-  const searchChips = useMemo(() => [
-    {
-      key: 'results',
-      label: uiText('Знайдено', language),
-      title: uiText('Результати пошуку', language),
-      // Уся видача, а не її вікно показу: «Знайдено 2» на чотирьохстах
-      // знайдених було б відповіддю не на те питання.
-      count: searchRefinedUsers.length,
-      onSelect: () => setSearchTab('results'),
-    },
-    {
-      key: 'create',
-      label: uiText('Створити нову', language),
-      title: uiText('Створити картку з цього запиту', language),
-      // Чіп несе намір, а не адресу екрана пошуку. Раніше він вів на
-      // `create-profile` із самим лише `state.query`, якого той екран не
-      // читав, — і читач, який щойно переглянув видачу, потрапляв у другий
-      // пошук за тим самим набраним, тільки з іншою розкладкою відповіді.
-      // Тепер запит їде разом із тим, що вже відомо про видачу, і форма нової
-      // картки відкривається одразу — тим самим шляхом, що й заготовка першим
-      // рядком видачі.
-      onSelect: handleCreateFromQuery,
-    },
-    {
-      key: 'similar',
-      label: uiText('Схожі', language),
-      title: uiText('Схожі з локального кешу', language),
-      count: similarUsers.length,
-      onSelect: () => setSearchTab('similar'),
-    },
-  ], [handleCreateFromQuery, language, searchRefinedUsers.length, similarUsers.length]);
 
   // Згорнутий ряд показує три чіпи, решта ховається за «+N». Але «+N» тепер
   // розгортає ряд на місці, а не веде в шухляду фільтрів: читач питає «що це за
@@ -7797,7 +7818,7 @@ const Matching = () => {
    * лишаються в одній рамці, як серце з хрестиком у стрічці.
    */
   const buildHiddenRowExtras = React.useCallback(user => ({
-    onEnrich: !isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined,
+    onEnrich: isAdmin ? undefined : handleRowEnrichProfile,
     onRequestContacts: handleRequestRowContacts,
     canViewContacts: canOfferProfileContacts({
       card: user,
@@ -7815,7 +7836,6 @@ const Matching = () => {
       onClick: toggleRowFavorite,
     },
   }), [
-    access.canCreateProfiles,
     buildRowReviewsAction,
     buildRowReviewsSlot,
     currentAccessLevel,
@@ -8146,10 +8166,15 @@ const Matching = () => {
               {matchingSearchStatus}
             </MatchingSearchStatusMessage>
           )}
+          {/* Під час пошуку чіпів колекцій тут немає, і чіпів пошуку теж:
+              «Знайдено N» повторювало довжину списку під ним, «Створити нову»
+              дублювало заготовку першим рядком видачі, а «Схожі» пропонували
+              другу відповідь на той самий запит із локального кеша. Лишаються
+              активні фільтри — вони й у пошуку чинні. */}
           <ChipsRow role="group" aria-label={uiText(isSearching ? 'Результати пошуку' : 'Колекції matching', language)}>
             <ChipsGroup>
-              {(isSearching ? searchChips : collectionChips).map(chip => {
-                const active = isSearching ? searchTab === chip.key : viewMode === chip.key;
+              {(isSearching ? [] : collectionChips).map(chip => {
+                const active = viewMode === chip.key;
                 return (
                   <Chip
                     key={chip.key}
@@ -8274,7 +8299,7 @@ const Matching = () => {
                   ним. Доти ця відповідь жила чіпом над видачею, тобто там, де
                   її читають фільтром, а в яке поле ляже набране, читач бачив
                   аж у формі. */}
-              {isSearching && queryDraft && access.canCreateProfiles && (
+              {isSearching && queryDraft && (
                 <QueryDraftCard data-testid="query-draft-card">
                   <QueryDraftBody>
                     <QueryDraftLabel>{queryDraft.label}</QueryDraftLabel>
@@ -8286,7 +8311,7 @@ const Matching = () => {
                     onClick={handleCreateFromQuery}
                     title={uiText('Створити картку з набраного', language)}
                   >
-                    Створити
+                    {uiText('Створити', language)}
                   </QueryDraftButton>
                 </QueryDraftCard>
               )}
@@ -8306,7 +8331,7 @@ const Matching = () => {
                             onToggleFavorite={toggleRowFavorite}
                             onToggleHidden={toggleRowHidden}
                             onTogglePublish={togglePublish}
-                            onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
+                            onEnrich={isAdmin ? undefined : handleRowEnrichProfile}
                             clientComment={comments[user.userId] || ''}
                             onCommentSave={handleRowCommentSave}
                             reviewsSlot={buildRowReviewsSlot(user.userId)}
@@ -8342,7 +8367,7 @@ const Matching = () => {
                       onSwipeRight={toggleRowFavorite}
                       onSwipeLeft={toggleRowHidden}
                       diagnosticsSlot={renderDiagnosticsFor(user)}
-                      onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
+                      onEnrich={isAdmin ? undefined : handleRowEnrichProfile}
                       clientComment={comments[user.userId] || ''}
                       onCommentSave={handleRowCommentSave}
                       reviewsSlot={buildRowReviewsSlot(user.userId)}
@@ -8528,7 +8553,7 @@ const Matching = () => {
                         saveScrollPosition();
                         navigate(`/edit/${user.userId}`, { state: user });
                       }}
-                      onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}
+                      onEnrich={isAdmin ? undefined : handleRowEnrichProfile}
                     />
                   </CardWrapper>
                 </CardContainer>

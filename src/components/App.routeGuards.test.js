@@ -29,6 +29,27 @@ const parseRoutes = () => {
 };
 
 describe('App route guards', () => {
+  it('каже вголос, коли прав на екран немає', () => {
+    // Мовчазний редірект у «Мій профіль» читався як поломка: людина відкривала
+    // адресу, а застосунок без слова показував їй її власну анкету.
+    const source = appSource();
+
+    expect(source).toContain('if (isUnauthorizedAddRoute) {');
+    expect(source).toContain('Немає права на цей екран. Попросіть адміністратора відкрити доступ.');
+    // Один тост на всі спроби: інакше повернення «назад» складало б вежу.
+    expect(source).toContain("id: 'route-access-denied',");
+  });
+
+  it('заводити картки може кожен, хто увійшов', () => {
+    // Екран створення більше не реєструється за правом: `canCreateProfiles`
+    // лишився стерегти самі лише службові читання цілих вузлів.
+    const source = appSource();
+
+    expect(source).toContain('<Route path="/matching/create-profile"');
+    expect(source).not.toContain("location.pathname === '/matching/create-profile'");
+    expect(source).not.toContain('{canCreateProfiles && <Route');
+  });
+
   it('reads every route in the table', () => {
     const paths = parseRoutes().map(route => route.path);
     expect(paths).toEqual(expect.arrayContaining(['/login', '/matching', '/my-profile', '*']));

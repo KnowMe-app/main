@@ -106,17 +106,20 @@ describe('SearchBar result validation', () => {
     });
   });
 
-  it('validates searchId results against the selected telegram prefix', () => {
+  // Влучання в `searchId` більше не звіряють з полями картки: поле відсіює сам
+  // індекс (`fields` у `collectUserIdsBySearchIdKeys`), а значення може лежати
+  // в оверлеї читача, якого в анкеті немає взагалі.
+  it('trusts searchId hits whatever field the card itself carries', () => {
     expect(doesCardMatchSearchParams(
       { userId: 'valid', telegram: 'УК СМ ALIA 09.10.2025' },
       { searchId: 'УК СМ ALIA 09.10.2025' },
       { searchIdPrefixes: ['telegram'] },
     )).toBe(true);
     expect(doesCardMatchSearchParams(
-      { userId: 'wrong', instagram: 'УК СМ ALIA 09.10.2025' },
+      { userId: 'overlay-only', name: 'Аліна' },
       { searchId: 'УК СМ ALIA 09.10.2025' },
       { searchIdPrefixes: ['telegram'] },
-    )).toBe(false);
+    )).toBe(true);
   });
 
 

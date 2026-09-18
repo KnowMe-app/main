@@ -18,11 +18,11 @@ describe('Matching: продовження пошуку без другого п
 
   it('дає рядку кнопку доповнення, яка несе лише id картки', () => {
     expect(source).toContain("navigate('/matching/create-profile', { state: { enrichCardId: user.userId, returnTo } })");
-    // Адмін правит картку олівцем, тож другої кнопки з тим самим наслідком
-    // у його рядку немає.
-    expect(source).toContain('onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}');
+    // Доповнити картку може кожен, хто увійшов. Адмін править її олівцем
+    // напряму, тож другої кнопки з тим самим наслідком у його рядку немає.
+    expect(source).toContain('onEnrich={isAdmin ? undefined : handleRowEnrichProfile}');
     expect(source).toContain("user.__profileMutationOperation === 'create'");
-    expect(source).toContain('onEnrich={!isAdmin && access.canCreateProfiles ? handleRowEnrichProfile : undefined}');
+    expect(source).not.toContain('access.canCreateProfiles');
   });
 
   it('не читає картку наперед заради цієї кнопки', () => {

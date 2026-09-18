@@ -271,7 +271,7 @@
         "$creatorUid": {
           ".read": "auth != null && auth.uid == $creatorUid",
           "$cardId": {
-            ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (auth.uid == $creatorUid && (root.child('users').child(auth.uid).child('canCreateProfiles').val() == true || root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true)))",
+            ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == $creatorUid)",
             ".validate": "!newData.exists() || (newData.hasChildren(['cardId', 'operation', 'createdBy', 'status', 'revision']) && newData.child('cardId').val() == $cardId && newData.child('createdBy').val() == $creatorUid)",
             "data": {
               "$field": {
@@ -284,7 +284,8 @@
       "profileIdentityClaims": {
         ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('canCreateProfiles').val() == true || root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))",
         "$claimKey": {
-          ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('canCreateProfiles').val() == true || root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))"
+          ".read": "auth != null",
+          ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || !data.exists() || (data.isString() && root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).exists()))"
         }
       },
       "searchQueries": {
@@ -352,7 +353,8 @@
         "$cardUserId": {
           ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || ((root.child('users').child(auth.uid).child('accessLevel').isString() && root.child('users').child(auth.uid).child('accessLevel').val().contains('matching')) || (root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching'))) || (root.child('users').child(auth.uid).child('canCreateProfiles').val() == true || root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))",
           "$editorUserId": {
-            ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (auth.uid == $editorUserId && (((root.child('users').child(auth.uid).child('accessLevel').isString() && root.child('users').child(auth.uid).child('accessLevel').val().contains('matching') && root.child('users').child(auth.uid).child('accessLevel').val().contains('view&write')) || (root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching') && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('view&write'))) || (root.child('users').child(auth.uid).child('canCreateProfiles').val() == true || root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))))",
+            ".read": "auth != null && auth.uid == $editorUserId",
+            ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == $editorUserId)",
             ".validate": "!newData.exists() || (newData.hasChildren(['fields', 'updatedAt', 'cardUserId', 'editorUserId']) && newData.child('editorUserId').val() == $editorUserId && newData.child('cardUserId').val() == $cardUserId)",
             "fields": {
               "$fieldName": {
@@ -375,7 +377,7 @@
         "$cardId": {
           ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
           "$entryId": {
-            ".write": "auth != null && ((!data.exists() && newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (newData.child('editorUserId').val() == auth.uid && (((root.child('users').child(auth.uid).child('accessLevel').isString() && root.child('users').child(auth.uid).child('accessLevel').val().contains('matching') && root.child('users').child(auth.uid).child('accessLevel').val().contains('view&write')) || (root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching') && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('view&write'))) || (root.child('users').child(auth.uid).child('canCreateProfiles').val() == true || root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))))) || (data.exists() && !newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')))",
+            ".write": "auth != null && ((!data.exists() && newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (newData.child('editorUserId').val() == auth.uid && root.child('multiData').child('edits').child($cardId).child(auth.uid).exists()))) || (data.exists() && !newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')))",
             ".validate": "newData.hasChildren(['cardUserId', 'editorUserId', 'action', 'fieldName', 'change', 'at']) && newData.child('cardUserId').val() == $cardId && newData.child('editorUserId').isString() && newData.child('editorUserId').val().length > 0 && newData.child('action').isString() && (newData.child('action').val() == 'edit' || newData.child('action').val() == 'accept' || newData.child('action').val() == 'discard') && newData.child('fieldName').isString() && newData.child('fieldName').val().length > 0 && newData.child('change').exists() && newData.child('at').isNumber()"
           }
         }
@@ -384,7 +386,7 @@
         "$cardId": {
           ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
           "$entryId": {
-            ".write": "auth != null && ((!data.exists() && newData.exists() && newData.child('editorUserId').val() == auth.uid && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('canCreateProfiles').val() == true || root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))) || (data.exists() && !newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')))",
+            ".write": "auth != null && ((!data.exists() && newData.exists() && newData.child('editorUserId').val() == auth.uid) || (data.exists() && !newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')))",
             ".validate": "newData.hasChildren(['cardId', 'actorUid', 'editorUserId', 'action', 'fieldName', 'change', 'at', 'revision']) && newData.child('cardId').val() == $cardId && newData.child('actorUid').val() == auth.uid && newData.child('editorUserId').val() == auth.uid && newData.child('action').val() == 'edit' && newData.child('fieldName').isString() && newData.child('fieldName').val().length > 0 && newData.child('change').exists() && newData.child('at').isNumber() && newData.child('revision').isNumber()"
           }
         }

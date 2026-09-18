@@ -765,10 +765,6 @@ export const ProfileCreationWorkspace = () => {
       userRole: profile?.userRole || profile?.role,
       canCreateProfiles: profile?.canCreateProfiles,
     });
-    if (!resolved.canCreateProfiles) {
-      navigate('/matching', { replace: true });
-      return;
-    }
     setUid(user.uid);
     accessRef.current = resolved;
     setAccess(resolved);

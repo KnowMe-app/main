@@ -37,7 +37,6 @@ describe('spec (batch 26 §10): PageNavMenu lists every top-level screen', () =>
 
   it('показує звичайному читачеві лише ті екрани, куди його пустить App', () => {
     localStorage.setItem('ownerId', 'plain-user');
-    localStorage.setItem('canCreateProfiles', 'true');
     openMenu();
 
     expect(screen.getByText('Matching')).toBeInTheDocument();
@@ -47,11 +46,13 @@ describe('spec (batch 26 §10): PageNavMenu lists every top-level screen', () =>
       .forEach(label => expect(screen.queryByText(label)).toBeNull());
   });
 
-  it('не пропонує створення карток тому, кому його не дали', () => {
+  it('пропонує створення карток кожному, хто увійшов', () => {
+    // Заводити й доповнювати картки може будь-який читач: `canCreateProfiles`
+    // лишився стерегти самі лише службові читання цілих вузлів, а не цей екран.
     localStorage.setItem('ownerId', 'plain-user');
     openMenu();
 
-    expect(screen.queryByText('Створені мною')).toBeNull();
+    expect(screen.getByText('Створені мною')).toBeInTheDocument();
     expect(screen.getByText('Matching')).toBeInTheDocument();
   });
 });

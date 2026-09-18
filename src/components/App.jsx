@@ -18,6 +18,7 @@ import PartiesPage from './PartiesPage';
 import ProfileCreationWorkspace from './ProfileCreationWorkspace';
 import { RequireAuth } from './RequireAuth';
 import { onAuthStateChanged } from 'firebase/auth';
+import toast from 'react-hot-toast';
 import { auth, fetchUserById, resetViewerAccessLevelCache } from './config';
 import { clearStoredAccessRights, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
@@ -28,7 +29,6 @@ export const App = () => {
   const [isAdmin, setIsAdmin] = useState(null);
   const [canAccessAdd, setCanAccessAdd] = useState(false);
   const [canAccessInvoices, setCanAccessInvoices] = useState(false);
-  const [canCreateProfiles, setCanCreateProfiles] = useState(false);
   const [isAccessResolved, setIsAccessResolved] = useState(false);
   // Стан входу окремо від рівня доступу: рівень читається з бази, тобто вже
   // після відповіді Firebase, а межа входу мусить спрацювати одразу — інакше
@@ -54,12 +54,22 @@ export const App = () => {
 
     const isRootRoute = location.pathname === '/';
     const isUnauthorizedAddRoute = location.pathname === '/add' && !canAccessAdd;
-    const isUnauthorizedCreateRoute = location.pathname === '/matching/create-profile' && !canCreateProfiles;
 
-    if (isRootRoute || isUnauthorizedAddRoute || isUnauthorizedCreateRoute) {
+    if (isRootRoute || isUnauthorizedAddRoute) {
+      // Екран, на який немає прав, не мовчить. Мовчазний редірект у «Мій
+      // профіль» читався як поломка: людина відкривала адресу, а застосунок
+      // без жодного слова показував їй її власну анкету — і відрізнити «прав
+      // немає» від «щось зламалось» було ніяк. Лишився тут один такий екран —
+      // адмінське `/add`; заводити картки може кожен, і `/matching/create-profile`
+      // більше нікого не відсилає.
+      if (isUnauthorizedAddRoute) {
+        toast.error('Немає права на цей екран. Попросіть адміністратора відкрити доступ.', {
+          id: 'route-access-denied',
+        });
+      }
       navigate('/my-profile');
     }
-  }, [isLoggedIn, isAccessResolved, navigate, isAdmin, location.pathname, canAccessAdd, canCreateProfiles]);
+  }, [isLoggedIn, isAccessResolved, navigate, isAdmin, location.pathname, canAccessAdd]);
 
   // Special page for admin
   useEffect(() => {
@@ -83,7 +93,6 @@ export const App = () => {
         setIsAdmin(access.isAdmin);
         setCanAccessAdd(access.canAccessAdd);
         setCanAccessInvoices(access.canAccessInvoices);
-        setCanCreateProfiles(access.canCreateProfiles);
         localStorage.setItem('accessLevel', accessLevel);
         localStorage.setItem('userRole', userRole);
         persistCanCreateProfiles(canCreateProfilesForUser);
@@ -103,7 +112,6 @@ export const App = () => {
         setIsAdmin(false);
         setCanAccessAdd(false);
         setCanAccessInvoices(false);
-        setCanCreateProfiles(false);
         setIsAccessResolved(true);
       }
     });
@@ -132,7 +140,11 @@ export const App = () => {
       {isAdmin && <Route path="/my-profile-old" element={<RequireAuth status={authStatus}><MyProfileOld isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /></RequireAuth>} />}
       {canAccessAdd && <Route path="/add" element={<RequireAuth status={authStatus}><AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /></RequireAuth>} />}
       <Route path="/matching" element={<RequireAuth status={authStatus}><Matching /></RequireAuth>} />
-      {canCreateProfiles && <Route path="/matching/create-profile" element={<RequireAuth status={authStatus}><ProfileCreationWorkspace /></RequireAuth>} />}
+      {/* Заводити й доповнювати картки може кожен, хто увійшов: право
+          `canCreateProfiles` більше цього екрана не стереже. За ним лишились
+          лише службові читання цілих вузлів (перелік усіх чернеток, усі шари
+          картки, перелік заявок) — вони й далі за прапорцем. */}
+      <Route path="/matching/create-profile" element={<RequireAuth status={authStatus}><ProfileCreationWorkspace /></RequireAuth>} />
       {isAdmin && <Route path="/edit/:userId" element={<RequireAuth status={authStatus}><EditProfile /></RequireAuth>} />}
       {isAdmin && <Route path="/medications/:userId" element={<RequireAuth status={authStatus}><MedicationsPage /></RequireAuth>} />}
       {isAdmin && <Route path="/flow" element={<RequireAuth status={authStatus}><FlowManager ownerId={auth.currentUser?.uid} /></RequireAuth>} />}

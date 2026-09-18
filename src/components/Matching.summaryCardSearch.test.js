@@ -128,23 +128,32 @@ describe('видача matching — це картка, і перевірка з�
     expect(filtered.email).toBeUndefined();
   });
 
-  it('імʼя картка несе повністю — і ним досі можна спростувати збіг', async () => {
-    // Саме цим перевірка й захищає від застарілого запису в індексі, і там, де
-    // проєкція має чим відповісти, вона лишається на місці.
-    seedIndex('name', 'Оксана');
-    const result = await searchUsersOnly({ searchId: 'Оксана' }, withMatchingAccess('name'));
-    expect(doesCardMatchSearchParams(result, { searchId: 'Тетяна' }, withMatchingAccess('name'))).toBe(false);
-    expect(doesCardMatchSearchParams(result, { searchId: 'Оксана' }, withMatchingAccess('name'))).toBe(true);
+  it('влучання в індекс не спростовується анкетою — значення може бути в оверлеї', () => {
+    // Доповнення читача (`multiData/edits/{картка}/{читач}`) пишеться і в
+    // `searchId`, а в самій анкеті його немає: шар лягає поверх картки, а не в
+    // неї. Поки збіг звіряли з полем анкети, дописаний телефон знаходився в
+    // індексі й тут же зникав — і зникав саме в адміна, бо лише він читає
+    // повну анкету, а не проєкцію.
+    const fullProfile = { userId: CARD_ID, name: 'Оксана', surname: 'Бугаренко', phone: '380931120678' };
+
+    expect(doesCardMatchSearchParams(
+      fullProfile,
+      { searchId: '380505554433' },
+      { searchIdPrefixes: ['phone'] },
+    )).toBe(true);
+    expect(doesCardMatchSearchParams(fullProfile, { searchId: EMAIL }, { searchIdPrefixes: ['email'] })).toBe(true);
   });
 
-  it('повна анкета перевіряється по-старому — виняток лише для проєкції', () => {
-    const fullProfile = { userId: CARD_ID, name: 'Оксана', surname: 'Бугаренко', email: 'other@gmail.com' };
+  it('поза `searchId` перевірка поля лишається на місці', () => {
+    // Точний пошук по вузлах (`equalTo`) читає саме поле анкети, тож і
+    // спростувати збіг має чим. Довіра тут була б не до індексу, а до нічого.
+    const fullProfile = { userId: CARD_ID, name: 'Оксана', email: 'other@gmail.com' };
 
-    expect(doesCardMatchSearchParams(fullProfile, { searchId: EMAIL }, { searchIdPrefixes: ['email'] })).toBe(false);
+    expect(doesCardMatchSearchParams(fullProfile, { email: EMAIL }, { forceEqualToAllCards: true })).toBe(false);
     expect(doesCardMatchSearchParams(
       { ...fullProfile, email: EMAIL },
-      { searchId: EMAIL },
-      { searchIdPrefixes: ['email'] },
+      { email: EMAIL },
+      { forceEqualToAllCards: true },
     )).toBe(true);
   });
 });
