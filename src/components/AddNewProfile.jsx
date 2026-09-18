@@ -5789,10 +5789,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [searchQueriesByOwner, setSearchQueriesByOwner] = useState({});
   const [isLoadingSearchers, setIsLoadingSearchers] = useState(false);
   const [isSearchersView, setIsSearchersView] = useState(false);
+  const searchersRequestRef = useRef(0);
 
   const SEARCHERS_LIMIT = 60;
 
   const handleShowSearchers = async () => {
+    const requestId = searchersRequestRef.current + 1;
+    searchersRequestRef.current = requestId;
     setIsLoadingSearchers(true);
     const toastId = 'searchers-load';
     toast.loading('Читаємо, хто що шукав…', { id: toastId });
@@ -5810,23 +5813,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         return [owner.ownerId, profile || { userId: owner.ownerId }];
       }));
 
+      if (searchersRequestRef.current !== requestId) return;
+
       setSearchQueriesByOwner(Object.fromEntries(owners.map(owner => [owner.ownerId, owner.queries])));
       setUsers(Object.fromEntries(profiles));
       setIsSearchersView(true);
       setIsDuplicateView(false);
+      setUserNotFound(false);
+      setHasMore(false);
       setCurrentPage(1);
       toast.success(`Читачів із запитами: ${owners.length}`, { id: toastId });
     } catch (error) {
       console.error('[searchers] не вдалося прочитати історію пошуку', error);
       toast.error(`Не вдалося прочитати історію пошуку: ${error?.code || error?.message || 'помилка'}`, { id: toastId });
     } finally {
-      setIsLoadingSearchers(false);
+      if (searchersRequestRef.current === requestId) setIsLoadingSearchers(false);
     }
   };
 
   // Наступний пошук чи фільтр — це вже інше питання, тож перелік читачів іде
   // з екрана разом з ним.
   useEffect(() => {
+    searchersRequestRef.current += 1;
+    setIsLoadingSearchers(false);
     setIsSearchersView(false);
   }, [search, currentFilter]);
 
@@ -5851,7 +5860,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           // Номер тут — це не текст, а контакт: поруч із ним стоять ті самі
           // три канали, якими з нього й пишуть.
           const detected = detectSearchParams(row.query);
-          const phone = detected?.key === 'phone' ? detected.value : '';
+          const detectedPhone = detected?.key === 'phone' ? detected.value : '';
+          const phone = String(detectedPhone || '').replace(/\D/g, '').length >= 10
+            ? detectedPhone
+            : '';
           return (
             <SearcherQueryRow key={`${ownerId}-${row.query}`}>
               <SearcherQueryButton
@@ -5863,7 +5875,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </SearcherQueryButton>
               {phone && (
                 <>
-                  <SearcherQueryLink href={CONTACT_LINK_BUILDERS.telegramFromPhone(phone)} target="_blank" rel="noopener noreferrer" title="Telegram">TG</SearcherQueryLink>
+                  <SearcherQueryLink href={CONTACT_LINK_BUILDERS.telegramFromPhone(`+${phone}`)} target="_blank" rel="noopener noreferrer" title="Telegram">TG</SearcherQueryLink>
                   <SearcherQueryLink href={CONTACT_LINK_BUILDERS.viberFromPhone(phone)} target="_blank" rel="noopener noreferrer" title="Viber">VB</SearcherQueryLink>
                   <SearcherQueryLink href={CONTACT_LINK_BUILDERS.whatsappFromPhone(phone)} target="_blank" rel="noopener noreferrer" title="WhatsApp">WA</SearcherQueryLink>
                 </>

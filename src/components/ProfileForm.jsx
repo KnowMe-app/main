@@ -1244,6 +1244,21 @@ export const ProfileForm = ({
     setOverlayEntryDrafts({});
   }, [state?.userId]);
 
+  // A dismissal only suppresses the currently loaded overlay entry. Once a
+  // refresh confirms that entry is gone, forget its signature so a later,
+  // identical suggestion from the editor can be reviewed again.
+  useEffect(() => {
+    setDismissedOverlayEntries(previous => Object.entries(previous).reduce((next, [fieldName, signatures]) => {
+      const liveSignatures = new Set((overlayFieldAdditions[fieldName] || []).map(entry => {
+        const value = sanitizeOverlayValue(entry?.value);
+        return `${value}::${entry?.editorUserId || ''}::${entry?.isDeleted ? '1' : '0'}`;
+      }));
+      const stillPresent = signatures.filter(signature => liveSignatures.has(signature));
+      if (stillPresent.length) next[fieldName] = stillPresent;
+      return next;
+    }, {}));
+  }, [overlayFieldAdditions]);
+
   const normalizeGetInTouchForSubmit = draftState => {
     if (!draftState || typeof draftState !== 'object') {
       return draftState;
@@ -2132,7 +2147,7 @@ export const ProfileForm = ({
    * ще й з `searchId`: ключ туди завів сам шар, і поки він там лишався,
    * прибраний номер далі знаходився пошуком.
    */
-  const settleOverlayEntryInBackend = useCallback(async (fieldName, entry, action) => {
+  const settleOverlayEntryInBackend = useCallback(async (fieldName, entry, action, acceptedValue) => {
     if (!fieldName || !entry?.editorUserId || !state?.userId) return;
 
     try {
@@ -2141,6 +2156,7 @@ export const ProfileForm = ({
         cardUserId: state.userId,
         fieldName,
         value: entry.value,
+        acceptedValue,
         action,
       });
       // Після запису перечитуємо шари картки: доти список пропозицій жив із
@@ -2201,10 +2217,11 @@ export const ProfileForm = ({
     // Приймається при цьому виправлене в рядку значення, а не сире надіслане:
     // рядок пропозиції — звичайний інпут, і зайвий пробіл чи плюс адмін
     // прибирає просто в ньому.
+    const acceptedValue = getOverlayEntryDraftValue(fieldName, entry);
     if (entry?.isDeleted) removeOverlayValueFromState(fieldName, entry?.value);
-    else adoptOverlayValue(fieldName, getOverlayEntryDraftValue(fieldName, entry));
+    else adoptOverlayValue(fieldName, acceptedValue);
     dismissOverlayEntry(fieldName, entry);
-    await settleOverlayEntryInBackend(fieldName, entry, 'accept');
+    await settleOverlayEntryInBackend(fieldName, entry, 'accept', acceptedValue);
   };
 
   const mergeOverlayValueIntoState = (prevState, fieldName, value) => {

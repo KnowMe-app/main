@@ -60,10 +60,17 @@ describe('перелік читачів із їхніми запитами', () 
   });
 
   it('біля номера стоять Telegram, Viber і WhatsApp', () => {
-    expect(source).toContain("const phone = detected?.key === 'phone' ? detected.value : '';");
-    expect(source).toContain('CONTACT_LINK_BUILDERS.telegramFromPhone(phone)');
+    expect(source).toContain("const detectedPhone = detected?.key === 'phone' ? detected.value : '';");
+    expect(source).toContain("String(detectedPhone || '').replace(/\\D/g, '').length >= 10");
+    expect(source).toMatch(/CONTACT_LINK_BUILDERS\.telegramFromPhone\(`\+\$\{phone\}`\)/);
     expect(source).toContain('CONTACT_LINK_BUILDERS.viberFromPhone(phone)');
     expect(source).toContain('CONTACT_LINK_BUILDERS.whatsappFromPhone(phone)');
+  });
+
+  it('скидає стан звичайного списку і не застосовує застаріле читання', () => {
+    expect(source).toContain('if (searchersRequestRef.current !== requestId) return;');
+    expect(source).toContain('setUserNotFound(false);');
+    expect(source).toContain('setHasMore(false);');
   });
 
   it('список живе під карткою, а не всередині неї', () => {
