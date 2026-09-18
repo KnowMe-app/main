@@ -49,11 +49,30 @@ describe('ProfileForm settles one overlay value at a time', () => {
   it('рішення йде через settleOverlayValueForCard із самим значенням', () => {
     expect(formSource).toContain('await settleOverlayValueForCard({');
     expect(formSource).toContain('value: entry.value,');
-    expect(formSource).toContain("await settleOverlayEntryInBackend(fieldName, entry, 'discard');");
-    expect(formSource).toContain("await settleOverlayEntryInBackend(fieldName, entry, 'accept');");
+    expect(formSource).toContain("await enqueueOverlaySettlement(fieldName, entry, 'discard');");
+    expect(formSource).toContain("await enqueueOverlaySettlement(fieldName, entry, 'accept', acceptedValue);");
     // Зняття поля цілком (`change: null`) тут більше немає — саме воно й
     // зносило друге значення разом із першим.
     expect(formSource).not.toContain('patchOverlayField({');
+  });
+
+  it('ховає відхилену пропозицію до відповіді бекенду та серіалізує запити', () => {
+    const dismissBody = formSource.slice(
+      formSource.indexOf('const handleOverlayDismiss = async (fieldName, entry) => {'),
+      formSource.indexOf('const getOverlayEntryDraftKey =', formSource.indexOf('const handleOverlayDismiss = async (fieldName, entry) => {')),
+    );
+    expect(dismissBody.indexOf('dismissOverlayEntry(fieldName, entry);')).toBeLessThan(
+      dismissBody.indexOf("await enqueueOverlaySettlement(fieldName, entry, 'discard');"),
+    );
+    expect(dismissBody).toContain('restoreOverlayEntry(fieldName, entry);');
+
+    const queueBody = formSource.slice(
+      formSource.indexOf('const enqueueOverlaySettlement = useCallback'),
+      formSource.indexOf('const removeOverlayValueFromState', formSource.indexOf('const enqueueOverlaySettlement = useCallback')),
+    );
+    expect(queueBody).toContain('overlaySettlementQueueRef.current');
+    expect(queueBody).toContain('.then(() => settleOverlayEntryInBackend(fieldName, entry, action, acceptedValue))');
+    expect(queueBody).toContain('overlaySettlementQueueRef.current = queuedSettlement.catch(() => {});');
   });
 
   it('пропозиції будує той самий розкладач, що й форма адміна', () => {
@@ -67,7 +86,7 @@ describe('ProfileForm settles one overlay value at a time', () => {
     expect(formSource).not.toContain('value={entry.value}\n                      readOnly');
     expect(formSource).toContain('onClick={() => handleOpenSearchIdBackend(field.name, entry.value)}');
     // В анкету їде виправлене, а з шару й індексу знімається надіслане.
-    expect(formSource).toContain('adoptOverlayValue(fieldName, getOverlayEntryDraftValue(fieldName, entry));');
+    expect(formSource).toContain('adoptOverlayValue(fieldName, acceptedValue);');
   });
 
   it('відхилене лишається відхиленим і після перечитування шарів', () => {
