@@ -45,6 +45,7 @@ import {
   fetchUsersByIds,
   lazyLoadProfilePhotos,
   addMatchingSearchQuery,
+  fetchMatchingCardsPage,
 } from './config';
 import { fetchUsersBySearchKeyGitNewPaged } from './gitNewLoad';
 import {
@@ -57,6 +58,35 @@ import {
   normalizeOfflineLoadMode,
   loadMoreUsersOffline as loadMoreUsersOfflineMode,
 } from './AddNewProfileOfflineLoad';
+import {
+  BucketChip,
+  BucketGrid,
+  CheckGroup,
+  CheckGroupNote,
+  CheckGroupTitle,
+  CheckHint,
+  CheckRow,
+  ConsoleBody,
+  ConsoleChevron,
+  ConsoleHeader,
+  ConsoleHint,
+  ConsolePanel,
+  ConsoleTitle,
+  StepButton,
+  StepHint,
+  ModalTitleRow,
+  ToolButton,
+  ToolCount,
+  ToolDrawer,
+  ToolDrawerNote,
+  ToolDrawerTitle,
+  ToolGroup,
+  ToolGroupNote,
+  ToolGroupTitle,
+  ToolIconButton,
+  ToolRow,
+} from './AddNewProfileAdminPanel.styled';
+import { OverlayReviewQueue } from './AddNewProfileOverlayReview';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -511,52 +541,89 @@ const DownloadSizeToastStatus = styled.span`
 // };
 
 
-const Button = styled.button`
-  padding: 0 12px;
-  height: 30px;
-  border: 1.5px solid var(--km-border);
-  background: var(--km-card);
-  color: var(--km-text);
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  white-space: nowrap;
-  transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.15s;
-
-  &:hover {
-    background: var(--km-accent-light);
-    border-color: var(--km-accent);
-    color: var(--km-accent);
-  }
-
-  &:active {
-    transform: scale(0.97);
-  }
-
-  &:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-    transform: none;
-  }
-`;
 
 const LONG_PRESS_MS = 600;
 
-const ButtonsContainer = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 10px 12px;
-  background: var(--km-card);
-  border: 1px solid var(--km-border);
-  border-radius: 10px;
-  margin: 8px 0;
-`;
+// Дві добірки, які не гортають колекцію, а відповідають на окреме адмінське
+// питання. `OVERLAY_REVIEW` показує не список анкет, а чергу доповнень (власний
+// компонент), тож у пагінацію й у завантажувачі він не заходить зовсім;
+// `FEED_DATE` — навпаки, звичайний список, тільки в порядку стрічки матчингу.
+const OVERLAY_REVIEW_FILTER = 'OVERLAY_REVIEW';
+const FEED_DATE_FILTER = 'FEED_DATE';
+
+// Роботи індексації, згруповані за тим, **що вони роблять**, а не за тим, коли
+// їх дописали. Локальні читають вибрані JSON-файли й лишають результат у
+// браузері; бекендні переписують вузол на всю колекцію, і саме тому стоять
+// окремо й під власним підписом.
+const INDEX_JOB_GROUPS = [
+  {
+    id: 'local',
+    title: 'Локально, з JSON',
+    note: 'нічого не пише в базу',
+    jobs: [
+      {
+        key: 'searchLocalIdAndKey',
+        label: 'searchId + searchKey',
+        hint: 'з обраних файлів вузлів анкет',
+      },
+      {
+        key: 'searchLocalImtHeightWeight',
+        label: 'imt + height + weight',
+        hint: 'з users.json',
+      },
+    ],
+  },
+  {
+    id: 'backend',
+    title: 'На бекенді',
+    note: 'переписує вузол цілком',
+    jobs: [
+      {
+        key: 'searchKeyUsersAll',
+        label: 'Усі searchKey для users',
+        hint: '→ searchKey/users',
+      },
+      {
+        key: 'searchKeySetReindex',
+        label: 'Набори фільтрів searchKeySet',
+        hint: 'перебудувати з нуля',
+      },
+      {
+        key: 'stimulationShortcuts',
+        label: 'Ярлики стимуляції',
+        hint: '',
+      },
+    ],
+  },
+];
+
+// Стан панелі памʼятає браузер: адмін або тримає її розгорнутою весь день, або
+// не відкриває зовсім, і питати про це на кожному вході — зайве.
+const ADMIN_CONSOLE_OPEN_KEY = 'addAdminConsoleOpen';
+
+// Підпис сортування на самій кнопці налаштувань: режим міняє те, звідки
+// береться список, а дізнатись про нього можна було лише розгорнувши панель.
+const LOAD_SORT_MODE_LABELS = {
+  GIT: 'GIT',
+  GITnew: 'GITnew',
+  LA: 'lastAction',
+  NoGIT: 'NoGIT',
+  SearchIdKeyOnly: 'NoGIT+IdKey',
+  [OFFLINE_LOAD_MODE]: 'offline',
+  [LAST_ACTION2_SORT_MODE]: 'lastAction 2',
+};
+
+const describeLoadSortMode = mode => LOAD_SORT_MODE_LABELS[mode] || String(mode || '');
+
+// Добірка, відкрита зараз, — те єдине, що варто бачити в згорнутій панелі:
+// інакше згорнута панель мовчить, і незрозуміло, чому в списку саме ці картки.
+const CARD_COLLECTION_LABELS = {
+  FAVORITE: 'обрані',
+  CYCLE_FAVORITE: 'цикл',
+  [FEED_DATE_FILTER]: 'стрічка · lastLogin',
+  [OVERLAY_REVIEW_FILTER]: 'черга доповнень',
+};
+
 
 const SortModeContainer = styled.div`
   display: flex;
@@ -570,41 +637,10 @@ const SortModeContainer = styled.div`
   border-radius: 10px;
 `;
 
-const LoadControlsContainer = styled.div`
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-`;
 
-const LoadControlsHeader = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-`;
 
-const GearButton = styled(Button)`
-  width: 30px;
-  padding: 0;
-  font-size: 15px;
-`;
 
-const LoadOptionsPopover = styled.div`
-  width: 100%;
-  background: var(--km-card);
-  border: 1px solid var(--km-border);
-  border-radius: 10px;
-  padding: 8px;
-`;
 
-const SortModeTitle = styled.span`
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--km-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-right: 4px;
-`;
 
 const SortModeLabel = styled.label`
   display: inline-flex;
@@ -682,19 +718,7 @@ const SearchScopeDivider = styled.hr`
   margin: 4px 0;
 `;
 
-const SearchScopeLabel = styled.label`
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--km-text);
-`;
 
-const SearchScopeLabelTextGroup = styled.span`
-  display: inline-flex;
-  flex-direction: column;
-  line-height: 1.2;
-`;
 
 const ScopeChip = styled.button`
   padding: 3px 9px;
@@ -764,21 +788,7 @@ const SearchSettingsButton = styled.button`
   }
 `;
 
-const IndexModal = styled.div`
-  width: 100%;
-  margin: 6px 0 10px;
-  padding: 10px;
-  border: 1px solid var(--km-border);
-  border-radius: 8px;
-  background: var(--km-card);
-`;
 
-const IndexModalList = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  margin-bottom: 10px;
-`;
 
 const LocalIndexOverlay = styled.div`
   position: fixed;
@@ -2496,9 +2506,27 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentFilter, setCurrentFilter] = useState('');
   const [loadSortMode, setLoadSortMode] = useState(LOAD_SORT_MODES.GIT_NEW);
   const [isLoadOptionsOpen, setIsLoadOptionsOpen] = useState(false);
+  const [isAdminConsoleOpen, setIsAdminConsoleOpen] = useState(() => {
+    try {
+      return localStorage.getItem(ADMIN_CONSOLE_OPEN_KEY) !== 'false';
+    } catch (error) {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ADMIN_CONSOLE_OPEN_KEY, isAdminConsoleOpen ? 'true' : 'false');
+    } catch (error) {
+      // Памʼять браузера може бути закрита — панель просто відкриється знову.
+    }
+  }, [isAdminConsoleOpen]);
   const [loadRequestId, setLoadRequestId] = useState(0);
   const [dateOffset2, setDateOffset2] = useState(0);
   const dateOffset2Ref = useRef(0);
+  // Курсор стрічки — пара (дата, id), а не ключ вузла, тож власний ref:
+  // див. `loadMoreUsersFeedDate`.
+  const feedCursorRef = useRef(null);
   const [dateAfterKeys2, setDateAfterKeys2] = useState(null);
   const dateAfterKeys2Ref = useRef(null);
   const [dateOffset21, setDateOffset21] = useState(0);
@@ -3287,7 +3315,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return surname.slice(0, 2).toUpperCase();
   }, []);
 
-  const handleOpenScheduleProfile = useCallback(
+  const handleOpenProfileById = useCallback(
     async userData => {
       const id =
         typeof userData === 'string' || typeof userData === 'number'
@@ -3306,7 +3334,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       saveCard(fallback);
       setState(fallback, {
         source: getCard(id) ? 'localStorage' : 'userChange',
-        caller: 'handleOpenScheduleProfile',
+        caller: 'handleOpenProfileById',
         reason: 'open-profile-local-first',
       });
     },
@@ -3612,6 +3640,36 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         .then(({ cacheCount, backendCount }) => {
           setCacheCount(cacheCount);
           setBackendCount(backendCount);
+        })
+        .finally(() => setSearchLoading(false));
+      return;
+    }
+
+    if (currentFilter === OVERLAY_REVIEW_FILTER) {
+      // Черга доповнень читає базу сама (`OverlayReviewQueue`) і списку анкет
+      // не наповнює: тут лишається тільки зняти скелетон списку, інакше екран
+      // показував би вічне «Знайдено …» над чергою.
+      appendLoadDebugLog('reload-effect:branch', { branch: OVERLAY_REVIEW_FILTER, loader: 'OverlayReviewQueue' });
+      setUsers({});
+      setHasMore(false);
+      setSearchLoading(false);
+      return;
+    }
+
+    if (currentFilter === FEED_DATE_FILTER) {
+      appendLoadDebugLog('reload-effect:branch', { branch: FEED_DATE_FILTER, loader: 'loadMoreUsersFeedDate' });
+      loadMoreUsersFeedDate()
+        .then(({ cacheCount, backendCount }) => {
+          setCacheCount(cacheCount);
+          setBackendCount(backendCount);
+        })
+        .catch(error => {
+          appendLoadDebugLog('reload-effect:feedDate-error', {
+            message: error?.message || String(error),
+          });
+          toast.error(`Стрічка недоступна: ${error?.code || error?.message || 'unknown'}`);
+          setCacheCount(0);
+          setBackendCount(0);
         })
         .finally(() => setSearchLoading(false));
       return;
@@ -4328,6 +4386,82 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const loadMoreUsers2 = async (currentFilters = filters) => loadMoreUsersGitSimple(currentFilters);
+
+  /**
+   * Сторінка карток у **порядку стрічки матчингу** — той самий вузол, той самий
+   * ключ, той самий курсор.
+   *
+   * На `/matching` список упорядковує `feedDate` (у розгорнутій картці це
+   * `lastLogin2`), і адмінові регулярно треба подивитись рівно те, що зараз
+   * бачить читач: «хто вгорі стрічки». Решта режимів цього екрана гортає
+   * `getInTouch`, `lastAction` чи ключ вузла — жоден з них порядку стрічки не
+   * повторює, і зводити їх до нього вручну означало б другу реалізацію тієї
+   * самої пагінації. Тому тут викликається та сама `fetchMatchingCardsPage`,
+   * що й у стрічці: збіг порядку гарантує спільний код, а не домовленість.
+   *
+   * Курсор у неї — пара (дата, id), а не ключ, тож він лягає в той самий
+   * `lastKey`, яким користуються інші режими: стан скидає `handleLoadUsers`.
+   *
+   * Картки догідратовуються повними анкетами, як і в решті режимів цього
+   * екрана: список тут показує `UsersList`, якому потрібна анкета, а не
+   * проєкція.
+   */
+  const loadMoreUsersFeedDate = async (currentFilters = filters) => {
+    if (isEditingRef.current) {
+      appendLoadDebugLog('loadMoreUsersFeedDate:return-zero', {
+        reason: 'isEditingRef.current is true',
+      });
+      return { cacheCount: 0, backendCount: 0, hasMore };
+    }
+
+    // Курсор живе в ref, а не в стані: ефект перезавантаження читає стан із
+    // замикання того рендеру, у якому його призначили, тож щойно скинутий
+    // `lastKey` приїхав би сюди старим — і перша сторінка почалася б із
+    // середини стрічки. Та сама причина, що й у `dateOffset2Ref`.
+    const cursor = feedCursorRef.current;
+    appendLoadDebugLog('loadMoreUsersFeedDate:start', { cursor, pageSize: PAGE_SIZE });
+
+    const page = await fetchMatchingCardsPage({ limit: PAGE_SIZE, cursor });
+    const pageIds = (page?.users || []).map(card => card?.userId).filter(Boolean);
+
+    if (!pageIds.length) {
+      setHasMore(false);
+      appendLoadDebugLog('loadMoreUsersFeedDate:empty-page', { cursor });
+      return { cacheCount: 0, backendCount: 0, hasMore: false };
+    }
+
+    const hydrated = await fetchUsersByIds(pageIds);
+    // Порядок сторінки — це і є відповідь: `fetchUsersByIds` віддає мапу, у якій
+    // його немає, тож список збирається за `pageIds`, а не за ключами мапи.
+    const orderedUsers = pageIds.reduce((acc, id) => {
+      const card = (page.users || []).find(item => item?.userId === id);
+      const full = hydrated?.[id];
+      if (!card && !full) return acc;
+      acc[id] = { ...(card || {}), ...(full || {}), userId: id };
+      return acc;
+    }, {});
+
+    cacheFetchedUsers(orderedUsers, cacheLoad2Users, currentFilters);
+    if (canApplyLoadResultsToUsers()) {
+      setUsers(prev => mergeWithoutOverwrite(prev, orderedUsers));
+    }
+
+    const nextHasMore = Boolean(page?.hasMore);
+    feedCursorRef.current = page?.lastKey || null;
+    setHasMore(nextHasMore);
+
+    const queryKey = buildListQueryKey(FEED_DATE_FILTER, currentFilters);
+    const existingIds = getIdsByQuery(queryKey);
+    setIdsForQuery(queryKey, [...new Set([...existingIds, ...Object.keys(orderedUsers)])]);
+
+    appendLoadDebugLog('loadMoreUsersFeedDate:result', {
+      backendCount: Object.keys(orderedUsers).length,
+      hasMore: nextHasMore,
+      nextCursor: page?.lastKey || null,
+    });
+
+    return { cacheCount: 0, backendCount: Object.keys(orderedUsers).length, hasMore: nextHasMore };
+  };
 
   const loadMoreUsers21 = async (currentFilters = filters) => {
     return loadMoreUsers2Base(currentFilters, {
@@ -5327,6 +5461,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           ? await loadMoreUsersLastAction()
           : currentFilter === LAST_ACTION2_FILTER
           ? await loadMoreUsersLastAction2()
+          : currentFilter === FEED_DATE_FILTER
+          ? await loadMoreUsersFeedDate()
           : await loadMoreUsers(currentFilter);
       if (ignored) return;
       cacheLoaded += cacheCount;
@@ -7032,6 +7168,37 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     fromRenderFallback: !cachedPaginatedUsers[c.userId],
   })));
 
+  /**
+   * Відкрити добірку — тобто список, зібраний не фільтрами панелі, а самим
+   * питанням: обрані, цикл, черга доповнень, стрічка.
+   *
+   * Кнопки цих добірок раніше ставили `currentFilter` кожна по-своєму й забували
+   * то курсор, то перегляд дублікатів — і друга добірка поспіль показувала хвіст
+   * першої. Скидання тут одне на всіх.
+   */
+  const describeAdminConsoleState = () =>
+    CARD_COLLECTION_LABELS[currentFilter] || `сортування ${describeLoadSortMode(loadSortMode)}`;
+
+  const selectedIndexCount =
+    Object.values(selectedIndexJobs || {}).filter(Boolean).length
+    + Object.values(selectedSearchKeyIndexes || {}).filter(Boolean).length;
+
+  const openCardCollection = nextFilter => {
+    searchListIsolationRef.current = false;
+    setSearch('');
+    setSearchBarQueryActive(false);
+    setLastSearchBarQuery('');
+    setUserNotFound(false);
+    setUsers({});
+    setHasMore(true);
+    setCurrentPage(1);
+    setLastKey(null);
+    feedCursorRef.current = null;
+    setDuplicates('');
+    setIsDuplicateView(false);
+    setCurrentFilter(nextFilter);
+  };
+
   const handleLoadUsers = () => {
     searchListIsolationRef.current = false;
     setSearch('');
@@ -7057,6 +7224,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setDateOffsetLA(0);
     resetLA2StateRef(la2StateRef);
     setLastKey21(null);
+    feedCursorRef.current = null;
     setDuplicates('');
     setIsDuplicateView(false);
 
@@ -7586,7 +7754,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           </>
         ) : (
           <div>
-            {(searchLoading || hasSearched) && !userNotFound && (
+            {/*
+              Черга доповнень рахує себе сама й показує свій лічильник: «Знайдено
+              0 карток» над нею означало б, що доповнень немає, тоді як список
+              анкет тут просто не наповнюється.
+            */}
+            {(searchLoading || hasSearched) && !userNotFound && currentFilter !== OVERLAY_REVIEW_FILTER && (
               <p style={{ textAlign: 'center', color: 'var(--km-text)' }}>
                 Знайдено{' '}
                 {searchLoading ? (
@@ -7600,340 +7773,457 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             {userNotFound && hasSearched && (
               <p style={{ textAlign: 'center', color: 'var(--km-text)' }}>No result</p>
             )}
-            <ButtonsContainer>
-              {userNotFound && (
-                <Button onClick={handleAddUser} disabled={adding}>
-                  {adding ? (
-                    <span className="spinner" />
-                  ) : (
-                    '+'
-                  )}
-                </Button>
-              )}
-              <Button onClick={handleInfo} {...createLongPressHandlers('Показує кількість завантажених карток')}>
-                Info
-              </Button>
-              <Button onClick={handleClearCache} {...createLongPressHandlers('Очищає локальний кеш карток')}>
-                ClearCache
-              </Button>
-              {stimulationScheduleProfiles.map(user => (
-                <Button
-                  key={`schedule-${user.userId}`}
-                  onClick={() => handleOpenScheduleProfile(user)}
-                  title={user?.surname || ''}
-                >
-                  {getSurnameLabel(user)}
-                </Button>
-              ))}
-              <LoadControlsContainer>
-                <LoadControlsHeader>
-                  <Button onClick={handleLoadUsers} {...createLongPressHandlers('Завантажує список анкет за поточними фільтрами')}>
-                    Load
-                  </Button>
-                  <GearButton
-                    type="button"
-                    onClick={() => setIsLoadOptionsOpen(prev => !prev)}
-                    aria-label="Показати налаштування load"
-                    aria-expanded={isLoadOptionsOpen}
-                    title="Налаштування load"
-                  >
-                    ⚙
-                  </GearButton>
-                  <GearButton
-                    type="button"
-                    onClick={downloadLoadDebugLogs}
-                    aria-label="Зберегти load debug log у файл"
-                    title="Зберегти load debug log у файл"
-                  >
-                    🧾
-                  </GearButton>
-                </LoadControlsHeader>
-                {isLoadOptionsOpen && (
-                  <LoadOptionsPopover>
-                    <SortModeContainer>
-                      <SortModeTitle>Сортування</SortModeTitle>
-                      <SortModeLabel>
-                        <input
-                          type="radio"
-                          name="load-sort-mode"
-                          value={LOAD_SORT_MODES.GIT}
-                          checked={loadSortMode === LOAD_SORT_MODES.GIT}
-                          onChange={event => handleLoadSortModeChange(event.target.value)}
-                        />
-                        GIT
-                      </SortModeLabel>
-                      <SortModeLabel>
-                        <input
-                          type="radio"
-                          name="load-sort-mode"
-                          value={LOAD_SORT_MODES.GIT_NEW}
-                          checked={loadSortMode === LOAD_SORT_MODES.GIT_NEW}
-                          onChange={event => handleLoadSortModeChange(event.target.value)}
-                        />
-                        GITnew
-                      </SortModeLabel>
-                      <SortModeLabel>
-                        <input
-                          type="radio"
-                          name="load-sort-mode"
-                          value={LOAD_SORT_MODES.LAST_ACTION}
-                          checked={loadSortMode === LOAD_SORT_MODES.LAST_ACTION}
-                          onChange={event => handleLoadSortModeChange(event.target.value)}
-                        />
-                        LA
-                      </SortModeLabel>
-                      <LastAction2SortModeButton
-                        SortModeLabel={SortModeLabel}
-                        loadSortMode={loadSortMode}
-                        onChange={handleLoadSortModeChange}
-                      />
-                      <SortModeLabel>
-                        <input
-                          type="radio"
-                          name="load-sort-mode"
-                          value={LOAD_SORT_MODES.NO_GIT}
-                          checked={loadSortMode === LOAD_SORT_MODES.NO_GIT}
-                          onChange={event => handleLoadSortModeChange(event.target.value)}
-                        />
-                        NoGIT
-                      </SortModeLabel>
-                      <SortModeLabel>
-                        <input
-                          type="radio"
-                          name="load-sort-mode"
-                          value={LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
-                          checked={loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
-                          onChange={event => handleLoadSortModeChange(event.target.value)}
-                        />
-                        NoGIT+IdKey
-                      </SortModeLabel>
-                      <AddNewProfileOfflineLoadControls
-                        SortModeLabel={SortModeLabel}
-                        LocalIndexActions={LocalIndexActions}
-                        loadSortMode={loadSortMode}
-                        onModeChange={handleLoadSortModeChange}
-                        onPickUsersFile={handlePickUsersFileForLocalExport}
-                        onClearSavedFiles={handleClearSavedOfflineCollections}
-                        hasUsersFile={Boolean(localExportUsersData)}
-                      />
-                    </SortModeContainer>
-                    <FilterPanel
-                      key={filterStorageKey}
-                      onChange={handleFilterChange}
-                      storageKey={filterStorageKey}
-                      bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode || offlineLoadMode}
-                      reactionFilterOptions={offlineLoadMode ? OFFLINE_REACTION_FILTER_OPTIONS : undefined}
-                      allowedFilterNames={(searchIdAndSearchKeyOnlyMode || offlineLoadMode) ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'getInTouch', 'bmi', 'country'] : undefined}
-                    />
-                  </LoadOptionsPopover>
-                )}
-              </LoadControlsContainer>
-              <Button
-                onClick={() => {
-                  setCurrentFilter('FAVORITE');
-                  setDuplicates('');
-                  setIsDuplicateView(false);
-                }}
+            <ConsolePanel>
+              <ConsoleHeader
+                type="button"
+                $open={isAdminConsoleOpen}
+                aria-expanded={isAdminConsoleOpen}
+                onClick={() => setIsAdminConsoleOpen(prev => !prev)}
               >
-                ❤
-              </Button>
-              <Button
-                onClick={() => {
-                  setCurrentFilter('CYCLE_FAVORITE');
-                  setDuplicates('');
-                  setIsDuplicateView(false);
-                }}
-                aria-label="Cycle favorites"
-              >
-                <BabyIcon style={{ width: '100%', height: '100%' }} />
-              </Button>
-              {searchIdAndSearchKeyOnlyMode && (
-                <>
-                  <Button
-                    onClick={() => setShowSearchKeyIndexPanel(prev => !prev)}
-                    title="Меню індексації"
-                  >
-                    Індекси
-                  </Button>
-                </>
-              )}
-              {isAdmin && (
-                <Button
-                  onClick={openMatchingCardsModal}
-                  disabled={isMatchingCardsIndexing}
-                  title="Зібрати урізані картки matchingCards для швидкої стрічки матчингу"
-                  {...createLongPressHandlers('Збирає matchingCards.json локально для ручного імпорту — або будує вузол одразу на бекенді')}
-                >
-                  {isMatchingCardsIndexing ? '...' : 'Картки'}
-                </Button>
-              )}
-              {isAdmin && (
-                <Button
-                  onClick={handleShowSearchers}
-                  disabled={isLoadingSearchers}
-                  title="Показати картки тих, хто шукав, разом з їхніми запитами"
-                  {...createLongPressHandlers(
-                    'Читає multiData/searchQueries і малює картки читачів; під карткою — їхні запити, '
-                      + 'натискання повторює той самий пошук',
-                  )}
-                >
-                  {isLoadingSearchers ? '...' : '🔎Хто'}
-                </Button>
-              )}
-              {isAdmin && LEGACY_IMPORT_ID_PREFIXES.map(prefix => (
-                <Button
-                  key={`migrate-comments-${prefix}`}
-                  onClick={() => handleMigrateLegacyComments(prefix)}
-                  disabled={Boolean(migratingCommentsPrefix)}
-                  title={`Перенести коментарі карток ${prefix}… у публічні відгуки`}
-                  {...createLongPressHandlers(
-                    `Переносить приватні коментарі карток ${prefix}… у публічні відгуки: `
-                      + 'автор — з поля writer, текст лишається той самий',
-                  )}
-                >
-                  {migratingCommentsPrefix === prefix ? '...' : `${prefix}💬`}
-                </Button>
-              ))}
-              {<Button onClick={searchDuplicates} {...createLongPressHandlers('Шукає дублікати карток')}>DPL</Button>}
-              <Button
-                onClick={() => setShowSaveModal(true)}
-                {...createLongPressHandlers('Відкриває меню з варіантами збереження контактів')}
-              >
-                Save
-              </Button>
-              {
-                <Button
-                  onClick={() => {
-                    btnMerge(users, setUsers, setDuplicates);
-                  }}
-                  {...createLongPressHandlers('Об’єднує знайдені дублікати в локальному списку')}
-                >
-                  Merg
-                </Button>
-              }
-              <input
-                ref={excelImportInputRef}
-                type="file"
-                accept=".xls,.xlsx"
-                style={{ display: 'none' }}
-                onChange={handleExcelProfilesUpload}
-              />
-              <input
-                ref={jsonImportInputRef}
-                type="file"
-                accept="application/json,.json"
-                style={{ display: 'none' }}
-                onChange={handleProfileCardsJsonUpload}
-              />
-              <input
-                ref={localNodeFilesInputRef}
-                type="file"
-                accept="application/json,.json"
-                multiple
-                style={{ display: 'none' }}
-                onChange={handleLocalNodeFilesSelected}
-              />
-              <input
-                ref={localExportUsersFileInputRef}
-                type="file"
-                accept="application/json,.json"
-                style={{ display: 'none' }}
-                onChange={event => handleLocalExportCollectionFileSelected(event, 'users')}
-              />
-              <Button
-                onClick={() => excelImportInputRef.current?.click()}
-                disabled={isExcelImporting}
-                title="Імпорт Excel в 3 JSON"
-                {...createLongPressHandlers('Імпортує Excel і конвертує в JSON формати')}
-              >
-                {isExcelImporting ? '...' : 'XLSX'}
-              </Button>
-              <Button
-                onClick={() => jsonImportInputRef.current?.click()}
-                disabled={isJsonImporting}
-                title="Додати картки з JSON у users"
-                {...createLongPressHandlers('Завантажує картки з JSON та доповнює колекцію users')}
-              >
-                {isJsonImporting ? '...' : 'JSON'}
-              </Button>
+                <ConsoleTitle>Панель адміністратора</ConsoleTitle>
+                <ConsoleHint>{describeAdminConsoleState()}</ConsoleHint>
+                <ConsoleChevron $open={isAdminConsoleOpen} aria-hidden="true">▼</ConsoleChevron>
+              </ConsoleHeader>
 
-              {/* <ExcelToJson/> */}
-              {/* <UploadJson/> */}
-              {/* <JsonToExcelButton/> */}
-              {/* {users && <div>Знайдено {Object.keys(users).length}</div>} */}
-            </ButtonsContainer>
-            {searchIdAndSearchKeyOnlyMode && showSearchKeyIndexPanel && (
-              <IndexModal>
-                <IndexModalList>
-                  <SearchScopeLabel>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(selectedIndexJobs.stimulationShortcuts)}
-                      onChange={() => toggleIndexJobSelection('stimulationShortcuts')}
-                    />
-                    <SearchScopeLabelTextGroup>
-                      <span>Індексувати ярлики стимуляції</span>
-                    </SearchScopeLabelTextGroup>
-                  </SearchScopeLabel>
-                  <SearchScopeLabel>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(selectedIndexJobs.searchLocalIdAndKey)}
-                      onChange={() => toggleIndexJobSelection('searchLocalIdAndKey')}
-                    />
-                    <SearchScopeLabelTextGroup>
-                      <span>Локальна індексація searchId+searchKey (через JSON)</span>
-                    </SearchScopeLabelTextGroup>
-                  </SearchScopeLabel>
-                  <SearchScopeLabel>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(selectedIndexJobs.searchLocalImtHeightWeight)}
-                      onChange={() => toggleIndexJobSelection('searchLocalImtHeightWeight')}
-                    />
-                    <SearchScopeLabelTextGroup>
-                      <span>Локальна індексація imt+height+weight (users JSON)</span>
-                    </SearchScopeLabelTextGroup>
-                  </SearchScopeLabel>
-                  <SearchScopeLabel>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(selectedIndexJobs.searchKeyUsersAll)}
-                      onChange={() => toggleIndexJobSelection('searchKeyUsersAll')}
-                    />
-                    <SearchScopeLabelTextGroup>
-                      <span>Всі searchKey індекси лише для users → searchKey/users</span>
-                    </SearchScopeLabelTextGroup>
-                  </SearchScopeLabel>
-                  <SearchScopeLabel>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(selectedIndexJobs.searchKeySetReindex)}
-                      onChange={() => toggleIndexJobSelection('searchKeySetReindex')}
-                    />
-                    <SearchScopeLabelTextGroup>
-                      <span>Перебудувати searchKeySet набори фільтрів</span>
-                    </SearchScopeLabelTextGroup>
-                  </SearchScopeLabel>
-                  {SEARCH_KEY_INDEX_OPTIONS.map(option => (
-                    <SearchScopeLabel key={option.key}>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(selectedSearchKeyIndexes[option.key])}
-                        onChange={() => toggleSearchKeyIndexSelection(option.key)}
-                      />
-                      <SearchScopeLabelTextGroup>
-                        <span>{option.label}</span>
-                      </SearchScopeLabelTextGroup>
-                    </SearchScopeLabel>
-                  ))}
-                </IndexModalList>
-                <Button onClick={runSelectedIndexes} title="Запустити індексацію обраних чекбоксів">
-                  Індексувати обране
-                </Button>
-              </IndexModal>
+              {isAdminConsoleOpen && (
+                <ConsoleBody>
+                  <ToolGroup>
+                    <ToolGroupTitle>
+                      Список
+                      <ToolGroupNote>що показати й у якому порядку</ToolGroupNote>
+                    </ToolGroupTitle>
+                    <ToolRow>
+                      {userNotFound && (
+                        <ToolButton
+                          type="button"
+                          $tone="primary"
+                          onClick={handleAddUser}
+                          disabled={adding}
+                          title="Завести картку з набраного в пошуку"
+                        >
+                          {adding ? <span className="spinner" /> : '+ Створити картку'}
+                        </ToolButton>
+                      )}
+                      <ToolButton
+                        type="button"
+                        $tone="primary"
+                        onClick={handleLoadUsers}
+                        {...createLongPressHandlers('Завантажує список анкет за поточними фільтрами')}
+                      >
+                        Завантажити
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        $active={isLoadOptionsOpen}
+                        onClick={() => setIsLoadOptionsOpen(prev => !prev)}
+                        aria-expanded={isLoadOptionsOpen}
+                        title="Сортування й фільтри завантаження"
+                      >
+                        ⚙ {describeLoadSortMode(loadSortMode)}
+                      </ToolButton>
+                      <ToolIconButton
+                        type="button"
+                        onClick={downloadLoadDebugLogs}
+                        aria-label="Зберегти load debug log у файл"
+                        title="Зберегти load debug log у файл"
+                      >
+                        🧾
+                      </ToolIconButton>
+                    </ToolRow>
+
+                    {isLoadOptionsOpen && (
+                      <ToolDrawer>
+                        <ToolDrawerTitle>Сортування</ToolDrawerTitle>
+                        <SortModeContainer>
+                          <SortModeLabel>
+                            <input
+                              type="radio"
+                              name="load-sort-mode"
+                              value={LOAD_SORT_MODES.GIT}
+                              checked={loadSortMode === LOAD_SORT_MODES.GIT}
+                              onChange={event => handleLoadSortModeChange(event.target.value)}
+                            />
+                            GIT
+                          </SortModeLabel>
+                          <SortModeLabel>
+                            <input
+                              type="radio"
+                              name="load-sort-mode"
+                              value={LOAD_SORT_MODES.GIT_NEW}
+                              checked={loadSortMode === LOAD_SORT_MODES.GIT_NEW}
+                              onChange={event => handleLoadSortModeChange(event.target.value)}
+                            />
+                            GITnew
+                          </SortModeLabel>
+                          <SortModeLabel>
+                            <input
+                              type="radio"
+                              name="load-sort-mode"
+                              value={LOAD_SORT_MODES.LAST_ACTION}
+                              checked={loadSortMode === LOAD_SORT_MODES.LAST_ACTION}
+                              onChange={event => handleLoadSortModeChange(event.target.value)}
+                            />
+                            LA
+                          </SortModeLabel>
+                          <LastAction2SortModeButton
+                            SortModeLabel={SortModeLabel}
+                            loadSortMode={loadSortMode}
+                            onChange={handleLoadSortModeChange}
+                          />
+                          <SortModeLabel>
+                            <input
+                              type="radio"
+                              name="load-sort-mode"
+                              value={LOAD_SORT_MODES.NO_GIT}
+                              checked={loadSortMode === LOAD_SORT_MODES.NO_GIT}
+                              onChange={event => handleLoadSortModeChange(event.target.value)}
+                            />
+                            NoGIT
+                          </SortModeLabel>
+                          <SortModeLabel>
+                            <input
+                              type="radio"
+                              name="load-sort-mode"
+                              value={LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
+                              checked={loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
+                              onChange={event => handleLoadSortModeChange(event.target.value)}
+                            />
+                            NoGIT+IdKey
+                          </SortModeLabel>
+                          <AddNewProfileOfflineLoadControls
+                            SortModeLabel={SortModeLabel}
+                            LocalIndexActions={LocalIndexActions}
+                            loadSortMode={loadSortMode}
+                            onModeChange={handleLoadSortModeChange}
+                            onPickUsersFile={handlePickUsersFileForLocalExport}
+                            onClearSavedFiles={handleClearSavedOfflineCollections}
+                            hasUsersFile={Boolean(localExportUsersData)}
+                          />
+                        </SortModeContainer>
+                        <ToolDrawerTitle>Фільтри</ToolDrawerTitle>
+                        <FilterPanel
+                          key={filterStorageKey}
+                          onChange={handleFilterChange}
+                          storageKey={filterStorageKey}
+                          bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode || offlineLoadMode}
+                          reactionFilterOptions={offlineLoadMode ? OFFLINE_REACTION_FILTER_OPTIONS : undefined}
+                          allowedFilterNames={(searchIdAndSearchKeyOnlyMode || offlineLoadMode) ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'getInTouch', 'bmi', 'country'] : undefined}
+                        />
+                      </ToolDrawer>
+                    )}
+                  </ToolGroup>
+
+                  <ToolGroup>
+                    <ToolGroupTitle>
+                      Добірки
+                      <ToolGroupNote>списки, зібрані питанням, а не фільтрами</ToolGroupNote>
+                    </ToolGroupTitle>
+                    <ToolRow>
+                      <ToolButton
+                        type="button"
+                        $active={currentFilter === 'FAVORITE'}
+                        onClick={() => openCardCollection('FAVORITE')}
+                        title="Картки, які ви вподобали"
+                      >
+                        ❤ Обрані
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        $active={currentFilter === 'CYCLE_FAVORITE'}
+                        onClick={() => openCardCollection('CYCLE_FAVORITE')}
+                        aria-label="Cycle favorites"
+                        title="Анкети в стимуляції та вагітності"
+                      >
+                        <BabyIcon style={{ width: '14px', height: '14px' }} /> Цикл
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        $active={currentFilter === FEED_DATE_FILTER}
+                        onClick={() => openCardCollection(FEED_DATE_FILTER)}
+                        title="Той самий порядок, що й у стрічці matching: за lastLogin (feedDate), від найновіших"
+                        {...createLongPressHandlers(
+                          'Показує картки в порядку стрічки matching — за lastLogin, найновіші зверху',
+                        )}
+                      >
+                        🕒 Стрічка
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        onClick={searchDuplicates}
+                        {...createLongPressHandlers('Шукає дублікати карток')}
+                      >
+                        Дублікати
+                      </ToolButton>
+                      {isAdmin && (
+                        <ToolButton
+                          type="button"
+                          $active={isSearchersView}
+                          onClick={handleShowSearchers}
+                          disabled={isLoadingSearchers}
+                          title="Показати картки тих, хто шукав, разом з їхніми запитами"
+                          {...createLongPressHandlers(
+                            'Читає multiData/searchQueries і малює картки читачів; під карткою — їхні запити, '
+                              + 'натискання повторює той самий пошук',
+                          )}
+                        >
+                          {isLoadingSearchers ? '...' : '🔎 Хто шукав'}
+                        </ToolButton>
+                      )}
+                      {isAdmin && (
+                        <ToolButton
+                          type="button"
+                          $active={currentFilter === OVERLAY_REVIEW_FILTER}
+                          onClick={() => openCardCollection(OVERLAY_REVIEW_FILTER)}
+                          title="Усі картки, у які читачі дописали дані й це ще ніхто не розсудив"
+                          {...createLongPressHandlers(
+                            'Черга доповнень: кожне дописане значення окремо, з кнопками «прийняти» і «видалити»',
+                          )}
+                        >
+                          ✎ Доповнення
+                        </ToolButton>
+                      )}
+                      {stimulationScheduleProfiles.map(user => (
+                        <ToolButton
+                          key={`schedule-${user.userId}`}
+                          type="button"
+                          onClick={() => handleOpenProfileById(user)}
+                          title={user?.surname || ''}
+                        >
+                          {getSurnameLabel(user)}
+                        </ToolButton>
+                      ))}
+                    </ToolRow>
+                  </ToolGroup>
+
+                  {(searchIdAndSearchKeyOnlyMode || isAdmin) && (
+                    <ToolGroup>
+                      <ToolGroupTitle>
+                        Індексація
+                        <ToolGroupNote>перебудова індексів і карток стрічки</ToolGroupNote>
+                      </ToolGroupTitle>
+                      <ToolRow>
+                        {searchIdAndSearchKeyOnlyMode && (
+                          <ToolButton
+                            type="button"
+                            $active={showSearchKeyIndexPanel}
+                            aria-expanded={showSearchKeyIndexPanel}
+                            onClick={() => setShowSearchKeyIndexPanel(prev => !prev)}
+                            title="Меню індексації"
+                          >
+                            Індекси
+                          </ToolButton>
+                        )}
+                        {isAdmin && (
+                          <ToolButton
+                            type="button"
+                            $tone="danger"
+                            onClick={openMatchingCardsModal}
+                            disabled={isMatchingCardsIndexing}
+                            title="Зібрати урізані картки matchingCards для швидкої стрічки матчингу"
+                            {...createLongPressHandlers('Збирає matchingCards.json локально для ручного імпорту — або будує вузол одразу на бекенді')}
+                          >
+                            {isMatchingCardsIndexing ? '...' : 'Картки стрічки'}
+                          </ToolButton>
+                        )}
+                      </ToolRow>
+
+                      {searchIdAndSearchKeyOnlyMode && showSearchKeyIndexPanel && (
+                        <ToolDrawer>
+                          <ToolDrawerNote>
+                            Обране нижче запускається однією кнопкою. Локальні роботи читають
+                            вибрані JSON-файли й нічого не пишуть у базу; бекендні переписують
+                            вузол цілком.
+                          </ToolDrawerNote>
+
+                          {INDEX_JOB_GROUPS.map(group => (
+                            <CheckGroup key={group.id}>
+                              <CheckGroupTitle>
+                                {group.title}
+                                <CheckGroupNote>{group.note}</CheckGroupNote>
+                              </CheckGroupTitle>
+                              {group.jobs.map(job => (
+                                <CheckRow key={job.key}>
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(selectedIndexJobs[job.key])}
+                                    onChange={() => toggleIndexJobSelection(job.key)}
+                                  />
+                                  <span>
+                                    {job.label}
+                                    {job.hint && <CheckHint>{job.hint}</CheckHint>}
+                                  </span>
+                                </CheckRow>
+                              ))}
+                            </CheckGroup>
+                          ))}
+
+                          <CheckGroup>
+                            <CheckGroupTitle>
+                              Бакети searchKey
+                              <CheckGroupNote>по одному вузлу на фільтр</CheckGroupNote>
+                            </CheckGroupTitle>
+                            <BucketGrid>
+                              {SEARCH_KEY_INDEX_OPTIONS.map(option => (
+                                <BucketChip
+                                  key={option.key}
+                                  type="button"
+                                  $active={Boolean(selectedSearchKeyIndexes[option.key])}
+                                  aria-pressed={Boolean(selectedSearchKeyIndexes[option.key])}
+                                  onClick={() => toggleSearchKeyIndexSelection(option.key)}
+                                >
+                                  {option.label}
+                                </BucketChip>
+                              ))}
+                            </BucketGrid>
+                          </CheckGroup>
+
+                          <ToolRow style={{ marginTop: '10px' }}>
+                            <ToolButton
+                              type="button"
+                              $tone="danger"
+                              onClick={runSelectedIndexes}
+                              title="Запустити індексацію обраних чекбоксів"
+                            >
+                              Індексувати обране
+                              {selectedIndexCount > 0 && <ToolCount>{selectedIndexCount}</ToolCount>}
+                            </ToolButton>
+                          </ToolRow>
+                        </ToolDrawer>
+                      )}
+                    </ToolGroup>
+                  )}
+
+                  <ToolGroup>
+                    <ToolGroupTitle>
+                      Дані
+                      <ToolGroupNote>імпорт, експорт, міграція</ToolGroupNote>
+                    </ToolGroupTitle>
+                    <ToolRow>
+                      <ToolButton
+                        type="button"
+                        onClick={() => setShowSaveModal(true)}
+                        {...createLongPressHandlers('Відкриває меню з варіантами збереження контактів')}
+                      >
+                        Зберегти контакти
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        onClick={() => excelImportInputRef.current?.click()}
+                        disabled={isExcelImporting}
+                        title="Імпорт Excel в 3 JSON"
+                        {...createLongPressHandlers('Імпортує Excel і конвертує в JSON формати')}
+                      >
+                        {isExcelImporting ? '...' : 'Імпорт XLSX'}
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        onClick={() => jsonImportInputRef.current?.click()}
+                        disabled={isJsonImporting}
+                        title="Додати картки з JSON у users"
+                        {...createLongPressHandlers('Завантажує картки з JSON та доповнює колекцію users')}
+                      >
+                        {isJsonImporting ? '...' : 'Імпорт JSON'}
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        onClick={() => {
+                          btnMerge(users, setUsers, setDuplicates);
+                        }}
+                        {...createLongPressHandlers('Об’єднує знайдені дублікати в локальному списку')}
+                      >
+                        Об’єднати
+                      </ToolButton>
+                      {isAdmin && LEGACY_IMPORT_ID_PREFIXES.map(prefix => (
+                        <ToolButton
+                          key={`migrate-comments-${prefix}`}
+                          type="button"
+                          $tone="danger"
+                          onClick={() => handleMigrateLegacyComments(prefix)}
+                          disabled={Boolean(migratingCommentsPrefix)}
+                          title={`Перенести коментарі карток ${prefix}… у публічні відгуки`}
+                          {...createLongPressHandlers(
+                            `Переносить приватні коментарі карток ${prefix}… у публічні відгуки: `
+                              + 'автор — з поля writer, текст лишається той самий',
+                          )}
+                        >
+                          {migratingCommentsPrefix === prefix ? '...' : `${prefix} 💬 у відгуки`}
+                        </ToolButton>
+                      ))}
+                      {isAdmin && (
+                        <ToolButton
+                          type="button"
+                          $tone="danger"
+                          onClick={() => navigate('/rtdb-migration')}
+                          title="Окремий екран міграції RTDB: розкладка users/newUsers по нових вузлах"
+                          {...createLongPressHandlers(
+                            'Міграція RTDB — окремий екран: рахує локально, у базу пише лише кнопкою «Залити»',
+                          )}
+                        >
+                          Міграція RTDB ↗
+                        </ToolButton>
+                      )}
+                    </ToolRow>
+                  </ToolGroup>
+
+                  <ToolGroup>
+                    <ToolGroupTitle>
+                      Сервіс
+                      <ToolGroupNote>кеш браузера, без бекенду</ToolGroupNote>
+                    </ToolGroupTitle>
+                    <ToolRow>
+                      <ToolButton
+                        type="button"
+                        onClick={handleInfo}
+                        {...createLongPressHandlers('Показує кількість завантажених карток')}
+                      >
+                        Інфо
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        onClick={handleClearCache}
+                        {...createLongPressHandlers('Очищає локальний кеш карток')}
+                      >
+                        Очистити кеш
+                      </ToolButton>
+                    </ToolRow>
+                  </ToolGroup>
+                </ConsoleBody>
+              )}
+            </ConsolePanel>
+
+            <input
+              ref={excelImportInputRef}
+              type="file"
+              accept=".xls,.xlsx"
+              style={{ display: 'none' }}
+              onChange={handleExcelProfilesUpload}
+            />
+            <input
+              ref={jsonImportInputRef}
+              type="file"
+              accept="application/json,.json"
+              style={{ display: 'none' }}
+              onChange={handleProfileCardsJsonUpload}
+            />
+            <input
+              ref={localNodeFilesInputRef}
+              type="file"
+              accept="application/json,.json"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleLocalNodeFilesSelected}
+            />
+            <input
+              ref={localExportUsersFileInputRef}
+              type="file"
+              accept="application/json,.json"
+              style={{ display: 'none' }}
+              onChange={event => handleLocalExportCollectionFileSelected(event, 'users')}
+            />
+            {currentFilter === OVERLAY_REVIEW_FILTER && (
+              <OverlayReviewQueue onOpenCard={handleOpenProfileById} />
             )}
-            {!userNotFound && (
+            {!userNotFound && currentFilter !== OVERLAY_REVIEW_FILTER && (
               <>
                 <UsersList
                   setCompare={setCompare}
@@ -8107,59 +8397,83 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       {showLocalIndexModal && (
         <LocalIndexOverlay onClick={() => setShowLocalIndexModal(false)}>
           <LocalIndexModal onClick={event => event.stopPropagation()}>
-            <h3>Локальна індексація</h3>
-            <p>
+            <ModalTitleRow>Локальна індексація</ModalTitleRow>
+            <ToolDrawerNote>
               Той самий індекс, що й на бекенді, тільки зібраний у браузері з уже викачаних
-              файлів: 1) викачайте вузли анкет, 2) оберіть їх локально, 3) зберіть потрібний
-              JSON і залийте його в базу вручну. Бекенд при цьому читається один раз, а не
-              на кожну перебудову.
-            </p>
+              файлів. Бекенд при цьому читається один раз, а не на кожну перебудову, і жоден
+              крок нижче в базу не пише — готовий JSON заливається вручну.
+            </ToolDrawerNote>
+
+            <ToolDrawerTitle>Джерела</ToolDrawerTitle>
             <LocalIndexActions>
-              <button type="button" onClick={handleDownloadProfileNodesForLocalIndex}>
-                1) Викачати вузли анкет (matchingCards, profileDetails, …) і чернетки
-              </button>
-              <button type="button" onClick={handlePickLocalNodeFiles}>
-                2) Обрати файли вузлів {localIndexSources.loadedNodes.length
-                  ? `✅ ${localIndexSources.loadedNodes.join(', ')}`
-                  : ''}{Object.keys(localDraftProfiles).length
-                  ? ` + чернетки (${Object.keys(localDraftProfiles).length})`
-                  : ''}
-              </button>
-              <button type="button" onClick={handleDownloadCollectionsForLocalIndex}>
-                Додатково: викачати legacy users
-              </button>
-              <button type="button" onClick={handlePickUsersFileForLocalIndex}>
-                Додатково: обрати users.json {pendingLocalUsersData ? '✅' : ''}
-              </button>
-              <button type="button" onClick={handleBuildLocalMatchingCards}>
-                3) Зібрати matchingCards.json → імпорт у вузол matchingCards
-              </button>
-              <button type="button" onClick={handleApplyLocalIndexing}>
-                4) Побудувати і скачати JSON індекси searchId/searchKey
-              </button>
-              <button type="button" onClick={buildFullKeySetFromCollections}>
-                5) Перебрати всі картки й знайти повну карту ключів
-              </button>
-              {isAdmin && (
-                <button type="button" onClick={handleBuildMatchingCards} disabled={isMatchingCardsIndexing}>
-                  {isMatchingCardsIndexing ? '...' : 'Або: побудувати matchingCards одразу на бекенді (повільно)'}
-                </button>
-              )}
-              <button type="button" onClick={() => setShowLocalIndexModal(false)}>
-                Скасувати
-              </button>
+              <StepButton type="button" onClick={handleDownloadProfileNodesForLocalIndex}>
+                1 · Викачати вузли анкет
+                <StepHint>matchingCards, profileDetails, … і чернетки</StepHint>
+              </StepButton>
+              <StepButton type="button" onClick={handlePickLocalNodeFiles}>
+                2 · Обрати файли вузлів
+                <StepHint>
+                  {localIndexSources.loadedNodes.length
+                    ? `✅ ${localIndexSources.loadedNodes.join(', ')}`
+                    : 'файли ще не обрані'}
+                  {Object.keys(localDraftProfiles).length
+                    ? ` + чернетки (${Object.keys(localDraftProfiles).length})`
+                    : ''}
+                </StepHint>
+              </StepButton>
+              <StepButton type="button" onClick={handleDownloadCollectionsForLocalIndex}>
+                Додатково · Викачати legacy users
+                <StepHint>потрібне лише для полів, яких немає у вузлах</StepHint>
+              </StepButton>
+              <StepButton type="button" onClick={handlePickUsersFileForLocalIndex}>
+                Додатково · Обрати users.json
+                <StepHint>{pendingLocalUsersData ? '✅ файл обрано' : 'файл не обрано'}</StepHint>
+              </StepButton>
             </LocalIndexActions>
+
+            <ToolDrawerTitle>Збірка</ToolDrawerTitle>
+            <LocalIndexActions>
+              <StepButton type="button" onClick={handleBuildLocalMatchingCards}>
+                3 · Зібрати matchingCards.json
+                <StepHint>далі — ручний імпорт у вузол matchingCards</StepHint>
+              </StepButton>
+              <StepButton type="button" onClick={handleApplyLocalIndexing}>
+                4 · Побудувати JSON індексів searchId / searchKey
+                <StepHint>файли качаються в браузер</StepHint>
+              </StepButton>
+              <StepButton type="button" onClick={buildFullKeySetFromCollections}>
+                5 · Повна карта ключів
+                <StepHint>перебирає всі картки й показує, які ключі взагалі є</StepHint>
+              </StepButton>
+              {isAdmin && (
+                <StepButton
+                  type="button"
+                  onClick={handleBuildMatchingCards}
+                  disabled={isMatchingCardsIndexing}
+                >
+                  {isMatchingCardsIndexing ? 'Будуємо…' : 'Або: побудувати matchingCards одразу на бекенді'}
+                  <StepHint>повільно: один рекурсивний обхід Storage на анкету</StepHint>
+                </StepButton>
+              )}
+            </LocalIndexActions>
+
             {localIndexSources.isLegacyOnly && (
-              <p>
+              <ToolDrawerNote>
                 Завантажено лише legacy-колекцію. Індекс збереться зі старого джерела — того,
                 чого веб уже не показує. Додайте файли вузлів.
-              </p>
+              </ToolDrawerNote>
             )}
-            <p>
+            <ToolDrawerNote>
               Офлайн-збірка не ходить у Storage, тож аватар беруть лише анкети з полем
-              <code> photos</code>. Побудова на бекенді може дошукати решту, але це один
-              рекурсивний обхід Storage на анкету.
-            </p>
+              <code> photos</code>.
+            </ToolDrawerNote>
+
+            <ToolRow>
+              <ToolButton type="button" onClick={() => setShowLocalIndexModal(false)}>
+                Закрити
+              </ToolButton>
+            </ToolRow>
+
             <input
               ref={localUsersFileInputRef}
               type="file"

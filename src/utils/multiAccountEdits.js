@@ -1221,3 +1221,54 @@ export const removeAllOverlaysForCard = async (cardUserId, { historyAction = 'di
 
   return { overlays };
 };
+
+// ---------------------------------------------------------------------------
+// Черга доповнень цілком — вхід адміна в перегляд «усе, що дописали».
+// ---------------------------------------------------------------------------
+
+/**
+ * Усі картки, під якими зараз лежить бодай один шар, одним читанням.
+ *
+ * Оберненого індексу «картка → є шар» немає й не буде: шари лежать **під
+ * карткою** (`multiData/edits/{картка}/{редактор}`), а перелік власних
+ * доповнень (`editsByEditor`) знає лише свого редактора — щоб зібрати з нього
+ * чергу, довелось би спершу перелічити всіх редакторів, тобто прочитати той
+ * самий корінь. Тому черга береться прямо з кореня, і `.read` на ньому в
+ * `database.rules.json` має рівно адмін: доповнити картку може кожен, а
+ * «подивитись, хто що дописав» — ні (та сама межа, що й для переліку чернеток).
+ *
+ * Читання дороге, тож воно **на дотик**: його робить кнопка перегляду черги, а
+ * не стрічка й не пошук. Відмова тут — це не порожня черга: викликач мусить
+ * показати причину (найімовірніша — нерозгорнуті правила), інакше «черга
+ * порожня» бреше рівно тоді, коли доповнень найбільше.
+ */
+export const listPendingOverlayCards = async () => {
+  const snapshot = await get(ref2(database, EDITS_ROOT));
+  if (!snapshot.exists()) return [];
+
+  const byCard = snapshot.val() || {};
+
+  return Object.entries(byCard)
+    .map(([cardUserId, editors]) => {
+      const overlaysByEditor = {};
+      Object.entries(editors || {}).forEach(([editorUserId, overlay]) => {
+        const normalized = normalizeEditorNode(overlay, cardUserId, editorUserId);
+        if (normalized) overlaysByEditor[editorUserId] = normalized;
+      });
+
+      const editorIds = Object.keys(overlaysByEditor);
+      if (!editorIds.length) return null;
+
+      const fieldNames = getStackedOverlayFieldNames(overlaysByEditor);
+      if (!fieldNames.length) return null;
+
+      const updatedAt = editorIds.reduce(
+        (latest, editorUserId) => Math.max(latest, Number(overlaysByEditor[editorUserId]?.updatedAt) || 0),
+        0,
+      );
+
+      return { cardUserId, overlaysByEditor, editorIds, fieldNames, updatedAt };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.updatedAt - a.updatedAt || a.cardUserId.localeCompare(b.cardUserId));
+};
