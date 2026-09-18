@@ -70,4 +70,9 @@ describe('стрілка «відкрити запис searchId»', () => {
     expect(source).not.toMatch(/const SEARCH_ID_INDEXED_FIELDS = new Set\(/);
     expect(SEARCH_ID_INDEXED_FIELDS.has('ameblo')).toBe(true);
   });
+
+  it('малює однакову іконку стрілки у звичайному й оверлейному рядках', () => {
+    expect(source).not.toMatch(/>\s*→\s*<\/SearchIdBackendButton>/);
+    expect((source.match(/<FaArrowRight size=\{14\} \/>/g) || []).length).toBeGreaterThanOrEqual(3);
+  });
 });

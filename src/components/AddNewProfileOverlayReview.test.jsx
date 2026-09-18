@@ -4,8 +4,9 @@
 // Три речі, заради яких цей тест і стоїть:
 //  1) прийняте значення справді доїжджає до анкети (`persistCanonicalCard`), а
 //     не лише зникає з черги — інакше «прийняв» означало б «загубив»;
-//  2) прийняте прибирається з журналу, а відхилене лишається: «чому цього немає
-//     в анкеті» — питання, на яке адмінові доводиться відповідати;
+//  2) рішення ухвалюється тим самим `settleOverlayValueForCard`, що й у формі
+//     редагування: він транзакційний і знімає відхилене значення ще й з
+//     `searchId` — інакше прибраний номер далі знаходився б пошуком;
 //  3) відмова читання показує причину, а не порожню чергу: найімовірніша
 //     причина — нерозгорнуті правила бази, і тоді «доповнень немає» бреше рівно
 //     тоді, коли їх найбільше.
@@ -28,16 +29,16 @@ jest.mock('utils/persistCanonicalCard', () => ({
 jest.mock('utils/multiAccountEdits', () => ({
   ...jest.requireActual('utils/multiAccountEdits'),
   listPendingOverlayCards: jest.fn(),
-  getCanonicalCard: jest.fn(async () => ({ userId: 'CARD1', phone: '380500000000' })),
-  settleOverlayFieldValue: jest.fn(async () => undefined),
-  acceptAllOverlaysForCard: jest.fn(async () => ({})),
-  removeAllOverlaysForCard: jest.fn(async () => ({})),
+  getCanonicalCard: jest.fn(),
+  settleOverlayValueForCard: jest.fn(),
+  acceptAllOverlaysForCard: jest.fn(),
+  removeAllOverlaysForCard: jest.fn(),
 }));
 
 const {
   listPendingOverlayCards,
   getCanonicalCard,
-  settleOverlayFieldValue,
+  settleOverlayValueForCard,
   removeAllOverlaysForCard,
 } = require('utils/multiAccountEdits');
 const { persistCanonicalCard } = require('utils/persistCanonicalCard');
@@ -66,6 +67,8 @@ describe('OverlayReviewQueue', () => {
     jest.clearAllMocks();
     listPendingOverlayCards.mockResolvedValue([QUEUE_ENTRY]);
     getCanonicalCard.mockResolvedValue({ userId: 'CARD1', phone: '380500000000' });
+    settleOverlayValueForCard.mockResolvedValue({ settledChange: {}, remainingChange: null });
+    removeAllOverlaysForCard.mockResolvedValue({});
     fetchMatchingCardsByIds.mockResolvedValue({
       cards: { CARD1: { userId: 'CARD1', name: 'Оксана', surname: 'Коваленко' } },
       missingIds: [],
@@ -81,31 +84,64 @@ describe('OverlayReviewQueue', () => {
     expect(fetchMatchingCardsByIds).toHaveBeenCalledWith(['CARD1']);
   });
 
-  it('writes an accepted value into the card and purges its journal rows', async () => {
+  it('writes an accepted value into the card before taking it off the queue', async () => {
+    render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Прийняти' }));
+
+    await waitFor(() => expect(settleOverlayValueForCard).toHaveBeenCalled());
+    // Анкета записується першою: шар після settle уже не існує, і значення,
+    // записане б після нього, не лишило б сліду ніде.
+    expect(persistCanonicalCard.mock.invocationCallOrder[0])
+      .toBeLessThan(settleOverlayValueForCard.mock.invocationCallOrder[0]);
+    expect(persistCanonicalCard.mock.calls[0][0].phone).toEqual(['380500000000', '380501112233']);
+    expect(settleOverlayValueForCard).toHaveBeenCalledWith({
+      cardUserId: 'CARD1',
+      editorUserId: 'editorA',
+      fieldName: 'phone',
+      value: '380501112233',
+      action: 'accept',
+    });
+  });
+
+  it('settles a discarded value through the shared path and never touches the card', async () => {
+    render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Видалити' }));
+
+    await waitFor(() => expect(settleOverlayValueForCard).toHaveBeenCalled());
+    expect(settleOverlayValueForCard).toHaveBeenCalledWith({
+      cardUserId: 'CARD1',
+      editorUserId: 'editorA',
+      fieldName: 'phone',
+      value: '380501112233',
+      action: 'discard',
+    });
+    expect(persistCanonicalCard).not.toHaveBeenCalled();
+  });
+
+  it('keeps a replacement a replacement instead of adding a second value', async () => {
+    // Зведена до `added`, заміна дописала б нове значення поруч зі старим — і
+    // в анкеті замість «Львів» стояло б «Київ, Львів».
+    listPendingOverlayCards.mockResolvedValue([{
+      cardUserId: 'CARD1',
+      editorIds: ['editorA'],
+      fieldNames: ['city'],
+      updatedAt: 1764000000000,
+      overlaysByEditor: {
+        editorA: {
+          cardUserId: 'CARD1',
+          editorUserId: 'editorA',
+          updatedAt: 1764000000000,
+          fields: { city: { from: 'Київ', to: 'Львів' } },
+        },
+      },
+    }]);
+    getCanonicalCard.mockResolvedValue({ userId: 'CARD1', city: 'Київ' });
+
     render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Прийняти' }));
 
     await waitFor(() => expect(persistCanonicalCard).toHaveBeenCalled());
-    expect(persistCanonicalCard.mock.calls[0][0].phone).toEqual(['380500000000', '380501112233']);
-    expect(settleOverlayFieldValue).toHaveBeenCalledWith(expect.objectContaining({
-      cardUserId: 'CARD1',
-      editorUserId: 'editorA',
-      fieldName: 'phone',
-      historyAction: 'accept',
-      purgeHistory: true,
-    }));
-  });
-
-  it('keeps a discarded value in the journal and never touches the card', async () => {
-    render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Видалити' }));
-
-    await waitFor(() => expect(settleOverlayFieldValue).toHaveBeenCalled());
-    expect(settleOverlayFieldValue).toHaveBeenCalledWith(expect.objectContaining({
-      historyAction: 'discard',
-    }));
-    expect(settleOverlayFieldValue.mock.calls[0][0].purgeHistory).toBeUndefined();
-    expect(persistCanonicalCard).not.toHaveBeenCalled();
+    expect(persistCanonicalCard.mock.calls[0][0].city).toBe('Львів');
   });
 
   it('clears the whole card queue on "Видалити все"', async () => {

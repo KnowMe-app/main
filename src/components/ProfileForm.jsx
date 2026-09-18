@@ -23,7 +23,7 @@ import {
 import { parseUkTriggerQuery } from 'utils/parseUkTrigger';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { resolvePpTechnicalInputTarget } from 'utils/ppTechnicalInputTarget';
-import { patchOverlayField } from 'utils/multiAccountEdits';
+import { buildOverlayFieldEntries, settleOverlayValueForCard } from 'utils/multiAccountEdits';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
 import { FaArrowRight, FaTimes } from 'react-icons/fa';
@@ -117,6 +117,13 @@ const PROFILE_FORM_TECHNICAL_FIELDS = new Set([
   'additionalAccessRules',
   MULTI_DATA_ACCESS_FIELD,
 ]);
+
+const buildOverlayPaths = cardUserId => {
+  const normalizedCardId = String(cardUserId || '').trim();
+  if (!normalizedCardId) return [];
+
+  return [`multiData/edits/${normalizedCardId}`];
+};
 
 const PROFILE_FORM_LABELS = {
   lastLogin: 'Останній логін',
@@ -653,7 +660,6 @@ const sanitizeOverlayValue = value => {
   return String(value).trim();
 };
 
-const isEmptyOverlayValue = value => sanitizeOverlayValue(value) === '';
 const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction', 'cacheVersion']);
 const resolveOverlayIncomingValue = change => {
   if (!change || typeof change !== 'object') return undefined;
@@ -1073,6 +1079,15 @@ export const ProfileForm = ({
   const [ppTechnicalInput, setPpTechnicalInput] = useState('');
   const [autoOverlayFieldAdditions, setAutoOverlayFieldAdditions] = useState({});
   const [dismissedOverlayEntries, setDismissedOverlayEntries] = useState({});
+  // Пропозицію можна поправити перед тим, як прийняти: у ній буває зайвий
+  // пробіл чи плюс, і доти адмін мусив прийняти як є, а потім правити поле
+  // вручну. Виправлене лежить тут і тільки тут — у шарі редактора й в індексі
+  // далі стоїть те, що він справді надіслав.
+  const [overlayEntryDrafts, setOverlayEntryDrafts] = useState({});
+  // Рішення по оверлеях можуть містити кілька послідовних RTDB-запитів.
+  // Тримаємо їх у тому самому promise-ланцюжку, що й звичайні збереження
+  // анкети: хрестик реагує одразу, а швидкі кліки не перетинають транзакції.
+  const overlaySettlementQueueRef = useRef(Promise.resolve());
   const [showAdditionalRulesModal, setShowAdditionalRulesModal] = useState(false);
   const [activeAdditionalRuleInputIndex, setActiveAdditionalRuleInputIndex] = useState(0);
   const [additionalRuleBuilder, setAdditionalRuleBuilder] = useState([]);
@@ -1231,9 +1246,29 @@ export const ProfileForm = ({
     additionalRuleBuilder,
   ]);
 
+  // Відхилене лишається відхиленим до зміни картки. Поки скидання висіло ще й
+  // на `overlayFieldAdditions`, воно спрацьовувало на кожному оновленні
+  // пропса — а пропс перебудовується щоразу, коли `EditProfile` перечитує
+  // шари, — і щойно прибраний хрестиком рядок повертався на екран сам собою.
   useEffect(() => {
     setDismissedOverlayEntries({});
-  }, [state?.userId, overlayFieldAdditions]);
+    setOverlayEntryDrafts({});
+  }, [state?.userId]);
+
+  // A dismissal only suppresses the currently loaded overlay entry. Once a
+  // refresh confirms that entry is gone, forget its signature so a later,
+  // identical suggestion from the editor can be reviewed again.
+  useEffect(() => {
+    setDismissedOverlayEntries(previous => Object.entries(previous).reduce((next, [fieldName, signatures]) => {
+      const liveSignatures = new Set((overlayFieldAdditions[fieldName] || []).map(entry => {
+        const value = sanitizeOverlayValue(entry?.value);
+        return `${value}::${entry?.editorUserId || ''}::${entry?.isDeleted ? '1' : '0'}`;
+      }));
+      const stillPresent = signatures.filter(signature => liveSignatures.has(signature));
+      if (stillPresent.length) next[fieldName] = stillPresent;
+      return next;
+    }, {}));
+  }, [overlayFieldAdditions]);
 
   const normalizeGetInTouchForSubmit = draftState => {
     if (!draftState || typeof draftState !== 'object') {
@@ -2114,20 +2149,107 @@ export const ProfileForm = ({
     });
   }, []);
 
-  const removeOverlayEntryFromBackend = useCallback(async (fieldName, entry) => {
+  const restoreOverlayEntry = useCallback((fieldName, entry) => {
+    const signature = getOverlayEntrySignature(entry);
+
+    setDismissedOverlayEntries(prev => {
+      const nextSignatures = (prev[fieldName] || []).filter(candidate => candidate !== signature);
+      if (nextSignatures.length === (prev[fieldName] || []).length) return prev;
+      if (!nextSignatures.length) {
+        const { [fieldName]: _omit, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [fieldName]: nextSignatures };
+    });
+
+    setAutoOverlayFieldAdditions(prev => {
+      const currentEntries = prev[fieldName] || [];
+      if (currentEntries.some(candidate => getOverlayEntrySignature(candidate) === signature)) return prev;
+      return { ...prev, [fieldName]: [...currentEntries, entry] };
+    });
+  }, []);
+
+  const readOverlayFieldAdditions = useCallback(async cardUserId => {
+    const paths = buildOverlayPaths(cardUserId);
+    if (!paths.length) return { paths: [], result: {} };
+
+    const debugResults = await Promise.all(
+      paths.map(async path => {
+        const snapshot = await get(refDb(database, path));
+        const rawValue = snapshot.exists() ? snapshot.val() : null;
+
+        // Пропозиції розкладає одне місце на всі екрани — по рядку на
+        // значення, а не по рядку на поле.
+        return { path, exists: snapshot.exists(), fieldMap: buildOverlayFieldEntries(rawValue) };
+      })
+    );
+
+    const result = {};
+    debugResults.forEach(item => {
+      Object.entries(item.fieldMap || {}).forEach(([fieldName, entries]) => {
+        result[fieldName] = [...(result[fieldName] || []), ...(entries || [])];
+      });
+    });
+
+    return { paths, result };
+  }, []);
+
+  const reconcileOverlayEntriesFromBackend = useCallback(async cardUserId => {
+    const { result } = await readOverlayFieldAdditions(cardUserId);
+    setAutoOverlayFieldAdditions(result);
+    setDismissedOverlayEntries(previous => Object.entries(previous).reduce((next, [fieldName, signatures]) => {
+      const backendSignatures = new Set(
+        (result[fieldName] || []).map(getOverlayEntrySignature)
+      );
+      const stillDismissed = signatures.filter(signature => !backendSignatures.has(signature));
+      if (stillDismissed.length) next[fieldName] = stillDismissed;
+      return next;
+    }, {}));
+  }, [readOverlayFieldAdditions]);
+
+  /**
+   * Рішення адмінки стосується **одного** значення, а не всієї правки поля.
+   *
+   * Шар зберігає зміну поля цілком, тож зняття поля (`change: null`) зносило
+   * й ті значення, яких адмін не чіпав: дописав редактор два номери, адмін
+   * прибрав один хрестиком — зникали обидва. Відхилене значення при цьому йде
+   * ще й з `searchId`: ключ туди завів сам шар, і поки він там лишався,
+   * прибраний номер далі знаходився пошуком.
+   */
+  const settleOverlayEntryInBackend = useCallback(async (fieldName, entry, action, acceptedValue) => {
     if (!fieldName || !entry?.editorUserId || !state?.userId) return;
 
     try {
-      await patchOverlayField({
+      const result = await settleOverlayValueForCard({
         editorUserId: entry.editorUserId,
         cardUserId: state.userId,
         fieldName,
-        change: null,
+        value: entry.value,
+        acceptedValue,
+        action,
       });
+      if (!result) throw new Error('Overlay value was not settled');
+      // Після запису перечитуємо шари картки: доти список пропозицій жив із
+      // пропса, який лишався тим самим, і прибраний рядок повертався на екран
+      // з наступним перемальовуванням.
+      if (typeof refreshOverlayForEditor === 'function') await refreshOverlayForEditor();
+      return true;
     } catch {
-      toast.error('Не вдалося видалити оверлей-поле');
+      toast.error(action === 'accept' ? 'Не вдалося прийняти пропозицію' : 'Не вдалося видалити пропозицію');
+      return false;
     }
-  }, [state?.userId]);
+  }, [refreshOverlayForEditor, state?.userId]);
+
+  const enqueueOverlaySettlement = useCallback((fieldName, entry, action, acceptedValue) => {
+    const queuedSettlement = overlaySettlementQueueRef.current
+      .catch(error => {
+        console.error('Previous overlay settlement failed', error);
+      })
+      .then(() => settleOverlayEntryInBackend(fieldName, entry, action, acceptedValue));
+
+    overlaySettlementQueueRef.current = queuedSettlement.catch(() => {});
+    return queuedSettlement;
+  }, [settleOverlayEntryInBackend]);
 
   const removeOverlayValueFromState = useCallback((fieldName, entryValue) => {
     if (!fieldName) return;
@@ -2148,15 +2270,55 @@ export const ProfileForm = ({
   }, [handleClear, handleDelKeyValue, state]);
 
   const handleOverlayDismiss = async (fieldName, entry) => {
-    removeOverlayValueFromState(fieldName, entry?.value);
+    // Rejecting a deletion keeps/restores the canonical value; rejecting an
+    // addition removes the proposed value from the form.
+    // Рядок ховається до мережевого round trip. Сам запис іде в послідовну
+    // чергу, а при відмові рядок повертається без перезавантаження сторінки.
     dismissOverlayEntry(fieldName, entry);
-    await removeOverlayEntryFromBackend(fieldName, entry);
+    const settled = await enqueueOverlaySettlement(fieldName, entry, 'discard');
+    if (!settled) {
+      try {
+        // The queued proposal may already have been settled elsewhere. Re-read
+        // the backend instead of resurrecting that stale row in the local cache.
+        await reconcileOverlayEntriesFromBackend(state?.userId);
+      } catch {
+        // Only restore optimistically when even the authoritative read failed.
+        restoreOverlayEntry(fieldName, entry);
+      }
+      return;
+    }
+    if (entry?.isDeleted) adoptOverlayValue(fieldName, entry?.value);
+    else removeOverlayValueFromState(fieldName, entry?.value);
   };
 
+  const getOverlayEntryDraftKey = (fieldName, entry) => `${fieldName}::${getOverlayEntrySignature(entry)}`;
+
+  const getOverlayEntryDraftValue = (fieldName, entry) => {
+    const draftKey = getOverlayEntryDraftKey(fieldName, entry);
+    return Object.prototype.hasOwnProperty.call(overlayEntryDrafts, draftKey)
+      ? overlayEntryDrafts[draftKey]
+      : entry?.value ?? '';
+  };
+
+  const setOverlayEntryDraftValue = (fieldName, entry, nextValue) => {
+    const draftKey = getOverlayEntryDraftKey(fieldName, entry);
+    setOverlayEntryDrafts(prev => ({ ...prev, [draftKey]: nextValue }));
+  };
+
+  // В анкету їде виправлене, а з шару й індексу знімається надіслане: у шарі
+  // редактора лежить саме його значення, і ключ `searchId` заведено на нього ж.
   const handleOverlayApply = async (fieldName, entry) => {
-    adoptOverlayValue(fieldName, entry?.value);
+    // Accepting a deletion removes the canonical value; accepting an addition
+    // adopts it. Deletion suggestions therefore invert the usual row action.
+    // Приймається при цьому виправлене в рядку значення, а не сире надіслане:
+    // рядок пропозиції — звичайний інпут, і зайвий пробіл чи плюс адмін
+    // прибирає просто в ньому.
+    const acceptedValue = getOverlayEntryDraftValue(fieldName, entry);
+    const settled = await enqueueOverlaySettlement(fieldName, entry, 'accept', acceptedValue);
+    if (!settled) return;
+    if (entry?.isDeleted) removeOverlayValueFromState(fieldName, entry?.value);
+    else adoptOverlayValue(fieldName, acceptedValue);
     dismissOverlayEntry(fieldName, entry);
-    await removeOverlayEntryFromBackend(fieldName, entry);
   };
 
   const mergeOverlayValueIntoState = (prevState, fieldName, value) => {
@@ -2193,13 +2355,6 @@ export const ProfileForm = ({
       submitWithNormalization(mergedState, 'overwrite');
       return mergedState;
     });
-  };
-
-  const buildOverlayPaths = cardUserId => {
-    const normalizedCardId = String(cardUserId || '').trim();
-    if (!normalizedCardId) return [];
-
-    return [`multiData/edits/${normalizedCardId}`];
   };
 
   const collectEditorOverlayReplacements = useCallback(async () => {
@@ -2282,66 +2437,6 @@ export const ProfileForm = ({
     },
     [setState, submitWithNormalization]
   );
-
-  const readOverlayFieldAdditions = useCallback(async cardUserId => {
-    const paths = buildOverlayPaths(cardUserId);
-    if (!paths.length) return { paths: [], result: {} };
-
-    const debugResults = await Promise.all(
-      paths.map(async path => {
-        const snapshot = await get(refDb(database, path));
-        const rawValue = snapshot.exists() ? snapshot.val() : null;
-        const fieldMap = {};
-
-        Object.entries(rawValue || {}).forEach(([editorUserId, overlay]) => {
-          const allFields = overlay?.fields || {};
-
-          Object.entries(allFields).forEach(([fieldName, change]) => {
-            if (technicalOverlayFields.has(fieldName)) return;
-            if (!change || typeof change !== 'object') return;
-
-            const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
-            const hasAdd = Object.prototype.hasOwnProperty.call(change, 'add');
-            const hasAdded = Object.prototype.hasOwnProperty.call(change, 'added');
-            const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
-            const incomingValue = resolveOverlayIncomingValue(change);
-            const normalizedTo = sanitizeOverlayValue(incomingValue);
-            const normalizedFrom = sanitizeOverlayValue(change?.from);
-            const fieldEntries = fieldMap[fieldName] || [];
-            const hasIncomingValue = hasTo || hasAdded || hasAdd;
-
-            if (hasIncomingValue && !isEmptyOverlayValue(incomingValue)) {
-              if (!fieldEntries.some(entry => entry.value === normalizedTo && entry.editorUserId === editorUserId)) {
-                fieldMap[fieldName] = [...fieldEntries, { value: normalizedTo, editorUserId, isDeleted: false }];
-              }
-              return;
-            }
-
-            if (hasIncomingValue && hasFrom && !isEmptyOverlayValue(change?.from)) {
-              if (!fieldEntries.some(entry => entry.value === normalizedFrom && entry.editorUserId === editorUserId)) {
-                fieldMap[fieldName] = [...fieldEntries, { value: normalizedFrom, editorUserId, isDeleted: true }];
-              }
-            }
-          });
-        });
-
-        return {
-          path,
-          exists: snapshot.exists(),
-          fieldMap,
-        };
-      })
-    );
-
-    const result = {};
-    debugResults.forEach(item => {
-      Object.entries(item.fieldMap || {}).forEach(([fieldName, entries]) => {
-        result[fieldName] = [...(result[fieldName] || []), ...(entries || [])];
-      });
-    });
-
-    return { paths, result };
-  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -3057,9 +3152,15 @@ ${entries.join('\n')}`;
 
                     {field.name !== 'accessLevel' && (
                       <>
-                        <Hint fieldName={field.name} isActive={value}>
-                          {getFieldDisplayLabel(field)}
-                        </Hint>
+                        {/* Підпис стоїть над першим рядком і більше не
+                            повторюється: два телефони давали два однакові
+                            «Телефон», і кожен з'їдав рядок екрана. Що це за
+                            поле, каже перший — решта під ним і так його. */}
+                        {idx === 0 && (
+                          <Hint fieldName={field.name} isActive={value}>
+                            {getFieldDisplayLabel(field)}
+                          </Hint>
+                        )}
                         <Placeholder isActive={value}>{getFieldPlaceholderText(field)}</Placeholder>
                       </>
                     )}
@@ -3461,20 +3562,38 @@ ${entries.join('\n')}`;
             ) : null}
               </FieldMainRow>
 
-            {overlayEntries.map((entry, idx) => (
+            {overlayEntries.map((entry, idx) => {
+              // Пропозицію видно, її можна поправити перед «ОК» і відкрити її
+              // запис у `searchId` тією самою стрілкою, що й у звичайного
+              // рядка: ключ туди завів сам шар, і питання «а що там лежить»
+              // виникає саме на цьому рядку.
+              const draftValue = getOverlayEntryDraftValue(field.name, entry);
+              return (
               <OverlayEntryRow key={`overlay-${field.name}-${idx}`}>
                 <InputDiv $isOverlaySuggestion $isDeletedOverlay={entry.isDeleted}>
-                  <InputFieldContainer fieldName={field.name} value={entry.value}>
+                  <InputFieldContainer fieldName={field.name} value={draftValue}>
                     <InputField
                       fieldName={field.name}
                       name={`overlay-${field.name}-${idx}`}
                       aria-label={`Пропозиція: ${getFieldDisplayLabel(field)}`}
-                      value={entry.value}
-                      readOnly
+                      value={draftValue}
                       $isOverlaySuggestion
                       $isDeletedOverlay={entry.isDeleted}
                       onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
+                      onChange={e => setOverlayEntryDraftValue(field.name, entry, e.target.value)}
                     />
+                    {extendedMode && canOpenSearchIdBackendShortcut(field.name, entry.value) && (
+                      <SearchIdBackendButton
+                        type="button"
+                        title="Відкрити запис searchId у Firebase"
+                        aria-label={`Відкрити запис searchId: ${getFieldDisplayLabel(field)}`}
+                        $rightOffset="35px"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => handleOpenSearchIdBackend(field.name, entry.value)}
+                      >
+                        <FaArrowRight size={14} />
+                      </SearchIdBackendButton>
+                    )}
                     <ClearButton
                       type="button"
                       aria-label={`Відхилити пропозицію: ${getFieldDisplayLabel(field)}`}
@@ -3484,16 +3603,13 @@ ${entries.join('\n')}`;
                       &times;
                     </ClearButton>
                   </InputFieldContainer>
-                  <Hint fieldName={field.name} isActive={entry.value}>
-                    {getFieldDisplayLabel(field)}
-                  </Hint>
-                  <Placeholder isActive={entry.value}>{getFieldDisplayLabel(field)}</Placeholder>
                 </InputDiv>
                 <Button type="button" onClick={() => handleOverlayApply(field.name, entry)}>
                   ОК
                 </Button>
               </OverlayEntryRow>
-            ))}
+              );
+            })}
             </PickerContainer>
             </FieldGroup>
           );

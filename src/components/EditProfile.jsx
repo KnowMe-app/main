@@ -38,6 +38,7 @@ import {
   acceptOverlayForUserCard,
   applyOverlayToCard,
   applyOverlaysToCard,
+  buildOverlayFieldEntries,
   buildOverlayFromDraft,
   getCardLegacyCollection,
   getCanonicalCard,
@@ -172,19 +173,6 @@ const TopBlockSkeleton = () => (
   </SkeletonCard>
 );
 
-const sanitizeOverlayValue = value => {
-  if (Array.isArray(value)) {
-    const normalized = value.map(item => sanitizeOverlayValue(item)).filter(item => item !== '');
-    return normalized.join(', ');
-  }
-
-  if (value === null || value === undefined) return '';
-  return String(value).trim();
-};
-
-const isEmptyOverlayValue = value => sanitizeOverlayValue(value) === '';
-const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction', 'cacheVersion']);
-
 
 const normalizeDeletedKeys = (...sources) => {
   const deleted = new Set();
@@ -271,24 +259,6 @@ const debugProfileSave = (step, data = {}) => {
   console.groupEnd();
 };
 
-
-const resolveOverlayIncomingValue = change => {
-  if (!change || typeof change !== 'object') return undefined;
-
-  if (Object.prototype.hasOwnProperty.call(change, 'to')) {
-    return change.to;
-  }
-
-  if (Object.prototype.hasOwnProperty.call(change, 'added')) {
-    return change.added;
-  }
-
-  if (Object.prototype.hasOwnProperty.call(change, 'add')) {
-    return change.add;
-  }
-
-  return undefined;
-};
 
 const normalizeEditorOverlayFields = fields => {
   if (!fields || typeof fields !== 'object') return {};
@@ -1220,41 +1190,9 @@ const EditProfile = () => {
     setIsStimulationScheduleVisible(false);
   }, [state?.userId, shouldShowSchedule]);
 
-  const overlayFieldAdditions = useMemo(() => {
-    const result = {};
-
-    Object.entries(pendingOverlays || {}).forEach(([editorUserId, overlay]) => {
-      Object.entries(overlay?.fields || {}).forEach(([fieldName, change]) => {
-        if (technicalOverlayFields.has(fieldName)) return;
-        if (!change || typeof change !== 'object') return;
-
-        const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
-        const hasAdd = Object.prototype.hasOwnProperty.call(change, 'add');
-        const hasAdded = Object.prototype.hasOwnProperty.call(change, 'added');
-        const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
-        const incomingValue = resolveOverlayIncomingValue(change);
-        const normalizedTo = sanitizeOverlayValue(incomingValue);
-        const normalizedFrom = sanitizeOverlayValue(change?.from);
-        const fieldEntries = result[fieldName] || [];
-        const hasIncomingValue = hasTo || hasAdded || hasAdd;
-
-        if (hasIncomingValue && !isEmptyOverlayValue(incomingValue)) {
-          if (!fieldEntries.some(entry => entry.value === normalizedTo && entry.editorUserId === editorUserId)) {
-            result[fieldName] = [...fieldEntries, { value: normalizedTo, editorUserId, isDeleted: false }];
-          }
-          return;
-        }
-
-        if (hasIncomingValue && hasFrom && !isEmptyOverlayValue(change?.from)) {
-          if (!fieldEntries.some(entry => entry.value === normalizedFrom && entry.editorUserId === editorUserId)) {
-            result[fieldName] = [...fieldEntries, { value: normalizedFrom, editorUserId, isDeleted: true }];
-          }
-        }
-      });
-    });
-
-    return result;
-  }, [pendingOverlays]);
+  // Пропозиції редакторів розкладає одне місце на всі екрани: кожне значення
+  // окремим рядком, а не вся зміна поля одним склеєним інпутом.
+  const overlayFieldAdditions = useMemo(() => buildOverlayFieldEntries(pendingOverlays), [pendingOverlays]);
 
 
   if (!state) return null;

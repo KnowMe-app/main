@@ -37,6 +37,7 @@ import {
   normalizeSearchQuery,
   shouldStoreSearchQuery,
   toSearchQueryRows,
+  toSearchQueryOwnerRows,
 } from '../utils/searchQueryStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { getReactionCategory, isGetInTouchDateOnOrBeforeToday } from 'utils/reactionCategory';
@@ -707,6 +708,32 @@ export const fetchOwnSearchQueries = async (ownerId, { force = false } = {}) => 
 
   ownSearchQueriesCache = { ownerId: owner, rows: null, promise };
   return promise;
+};
+
+/**
+ * Хто що шукав — весь вузол історії, і тільки адмінові.
+ *
+ * Запит людини — це слід її роботи: за ким вона ходила, чий номер набирала,
+ * що не знайшла. Адмінка малює за цим списком картки самих читачів разом з
+ * їхніми запитами, щоб повторити той самий пошук одним дотиком. Читання
+ * службове й дороге (вузол цілком), тож воно за окремим правилом бази
+ * (`multiData/searchQueries/.read` — адміни) і робиться лише на явне
+ * натискання, а не при відкритті екрана.
+ */
+export const fetchAllSearchQueryOwners = async () => {
+  if (!isAdminUid(auth.currentUser?.uid)) return [];
+
+  const snapshot = await get(ref2(database, SEARCH_QUERIES_ROOT_PATH));
+  if (!snapshot.exists()) return [];
+
+  return toSearchQueryOwnerRows(snapshot.val());
+};
+
+export const removeMatchingSearchQuery = async ({ ownerId, queryId }) => {
+  if (!isAdminUid(auth.currentUser?.uid) || !ownerId || !queryId) return false;
+
+  await remove(ref2(database, `${SEARCH_QUERIES_ROOT_PATH}/${ownerId}/${queryId}`));
+  return true;
 };
 
 export const addMatchingSearchQuery = async searchQuery => {

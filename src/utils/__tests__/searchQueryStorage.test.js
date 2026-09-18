@@ -7,6 +7,7 @@ import {
   isTypingContinuation,
   normalizeSearchQuery,
   shouldStoreSearchQuery,
+  toSearchQueryOwnerRows,
   toSearchQueryRows,
 } from '../searchQueryStorage';
 
@@ -162,5 +163,33 @@ describe('buildSearchSuggestions', () => {
   it('однакові рядки з різних джерел не двояться', () => {
     const merged = [...toSearchQueryRows(entries), { query: 'марія коваленко', updatedAt: 99, count: 1 }];
     expect(buildSearchSuggestions(merged, 'мар')).toEqual(['Марія Коваленко', 'Марія', 'Оксана Марія']);
+  });
+});
+
+// «Хто що шукав» — картки читачів разом з їхніми запитами. Запит людини лежить
+// у її гілці історії і досі був видний лише їй самій, підказкою при наборі;
+// адмінці ж він каже те, чого не каже анкета: кого шукали й чого не знайшли.
+describe('toSearchQueryOwnerRows', () => {
+  const node = {
+    'reader-a': {
+      'марія': { query: 'Марія', updatedAt: 10, count: 1 },
+      '380501110011': { query: '380501110011', updatedAt: 30, count: 2 },
+    },
+    'reader-b': { 'оксана': { query: 'Оксана', updatedAt: 20, count: 1 } },
+    'reader-empty': {},
+  };
+
+  it('читачі йдуть за свіжістю останнього запиту, запити всередині — теж', () => {
+    const owners = toSearchQueryOwnerRows(node);
+
+    expect(owners.map(owner => owner.ownerId)).toEqual(['reader-a', 'reader-b']);
+    expect(owners[0].queries.map(row => row.query)).toEqual(['380501110011', 'Марія']);
+    expect(owners[0].queries.map(row => row.queryId)).toEqual(['380501110011', 'марія']);
+    expect(owners[0].lastSearchAt).toBe(30);
+  });
+
+  it('читач без жодного запиту в перелік не потрапляє — картку показувати нема за що', () => {
+    expect(toSearchQueryOwnerRows(node).some(owner => owner.ownerId === 'reader-empty')).toBe(false);
+    expect(toSearchQueryOwnerRows(null)).toEqual([]);
   });
 });

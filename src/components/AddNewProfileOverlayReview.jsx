@@ -24,13 +24,14 @@ import styled from 'styled-components';
 
 import {
   applyOverlayToCard,
+  buildOverlayFieldEntries,
   getCanonicalCard,
   listPendingOverlayCards,
+  normalizeOverlayFields,
   removeAllOverlaysForCard,
   acceptAllOverlaysForCard,
-  settleOverlayFieldValue,
+  settleOverlayValueForCard,
 } from 'utils/multiAccountEdits';
-import { buildPendingFieldEdits, splitOverlayChangeValue } from 'utils/draftFieldEdits';
 import { persistCanonicalCard } from 'utils/persistCanonicalCard';
 import { getFieldLabel, pickerFields } from './formFields';
 import { fetchMatchingCardsByIds } from './config';
@@ -161,6 +162,22 @@ const CardActions = styled.footer`
 
 const fieldsMap = new Map((pickerFields || []).map(field => [field?.name, field]));
 
+/**
+ * Що саме записати в анкету, приймаючи **одне** значення.
+ *
+ * Заміна (`{ from, to }`) мусить лишитись заміною: зведена до `added`, вона
+ * дописала б нове значення поруч зі старим, і в анкеті замість «Львів» стояло
+ * б «Київ, Львів» — тобто прийняття правки додавало б людині друге місто.
+ * Дописування й прибирання окремих значень масиву, навпаки, стосуються рівно
+ * того значення, на яке натиснули: сусідні пропозиції того ж поля лишаються
+ * в черзі.
+ */
+const acceptedChangeForEntry = (overlaysByEditor, fieldName, entry) => {
+  const change = normalizeOverlayFields(overlaysByEditor?.[entry.editorUserId]?.fields)[fieldName];
+  if (change && 'to' in change) return { from: change.from ?? '', to: change.to ?? '' };
+  return entry.isDeleted ? { removed: [entry.value] } : { added: [entry.value] };
+};
+
 const labelForField = fieldName => getFieldLabel(fieldsMap.get(fieldName) || { name: fieldName }) || fieldName;
 
 // Кількість дописувачів пишеться словом, а «2 дописувачів» — не слово: рядок
@@ -210,8 +227,11 @@ export const loadOverlayReviewQueue = async () => {
 };
 
 const OverlayCard = ({ entry, card, busy, onAcceptValue, onDiscardValue, onAcceptAll, onDiscardAll, onOpen }) => {
+  // Та сама розкладка «по значенню», що й у формі редагування
+  // (`buildOverlayFieldEntries`): рішення ухвалюють про значення, тож і список
+  // мусить бути списком значень, а не полів.
   const pendingByField = useMemo(
-    () => buildPendingFieldEdits(entry.overlaysByEditor),
+    () => buildOverlayFieldEntries(entry.overlaysByEditor),
     [entry.overlaysByEditor],
   );
   const fieldNames = Object.keys(pendingByField);
@@ -239,17 +259,16 @@ const OverlayCard = ({ entry, card, busy, onAcceptValue, onDiscardValue, onAccep
         <FieldBlock key={fieldName}>
           <FieldName>{labelForField(fieldName)}</FieldName>
           {pendingByField[fieldName].map(row => (
-            <ValueRow key={row.key}>
+            <ValueRow key={`${row.editorUserId}::${row.value}`}>
               <ValueText>
-                {row.kind === 'removed' && <RemovalMark aria-hidden="true">−</RemovalMark>}
-                {row.previousValue && <PreviousValue>{row.previousValue}</PreviousValue>}
-                {row.value}
+                {row.isDeleted && <RemovalMark aria-hidden="true">−</RemovalMark>}
+                {row.isDeleted ? <PreviousValue>{row.value}</PreviousValue> : row.value}
               </ValueText>
               <ToolButton
                 type="button"
                 $tone="primary"
                 disabled={busy}
-                onClick={() => onAcceptValue(entry, row)}
+                onClick={() => onAcceptValue(entry, fieldName, row)}
                 title="Записати значення в анкету і прибрати з черги"
               >
                 Прийняти
@@ -258,7 +277,7 @@ const OverlayCard = ({ entry, card, busy, onAcceptValue, onDiscardValue, onAccep
                 type="button"
                 $tone="danger"
                 disabled={busy}
-                onClick={() => onDiscardValue(entry, row)}
+                onClick={() => onDiscardValue(entry, fieldName, row)}
                 title="Прибрати доповнення, анкету не міняти"
               >
                 Видалити
@@ -319,41 +338,51 @@ export const OverlayReviewQueue = ({ onOpenCard }) => {
     }
   }, [refresh]);
 
-  const acceptValue = useCallback((entry, row) => runAction(
+  /**
+   * Прийняти одне значення: спершу воно стає канонічним в анкеті, і лише
+   * потім іде з черги.
+   *
+   * Порядок саме такий, бо `settleOverlayValueForCard` шар **прибирає** — і
+   * прибране до запису анкети не лишило б сліду ніде: ані в картці, ані в
+   * черзі. Записує його той самий писач, що й форма
+   * (`utils/persistCanonicalCard`): шлях запису анкети мусить бути один, а тут
+   * форми на екрані немає взагалі.
+   */
+  const acceptValue = useCallback((entry, fieldName, row) => runAction(
     async () => {
-      const { settled, remaining } = splitOverlayChangeValue(row.change, row);
+      const change = acceptedChangeForEntry(entry.overlaysByEditor, fieldName, row);
       const canonical = await getCanonicalCard(entry.cardUserId);
-      await persistCanonicalCard(applyOverlayToCard(canonical, { [row.fieldName]: settled }));
-      // Прийняте значення тепер канонічне, тож рядки журналу про нього
-      // прибираються, а не доповнюються ще одним «accept» назавжди — так само,
-      // як це робить прийняття всієї черги картки.
-      await settleOverlayFieldValue({
+      await persistCanonicalCard(applyOverlayToCard(canonical, { [fieldName]: change }));
+      const settled = await settleOverlayValueForCard({
         editorUserId: row.editorUserId,
         cardUserId: entry.cardUserId,
-        fieldName: row.fieldName,
-        settledChange: settled,
-        remainingChange: remaining,
-        historyAction: 'accept',
-        purgeHistory: true,
+        fieldName,
+        value: row.value,
+        action: 'accept',
       });
+      if (!settled) throw new Error('Пропозицію не вдалося зняти з черги');
     },
     `Прийнято: ${row.value}`,
     'Не вдалося прийняти доповнення',
   ), [runAction]);
 
-  const discardValue = useCallback((entry, row) => runAction(
+  /**
+   * Відхилити одне значення. Анкету це не міняє, але `searchId` — так:
+   * ключ туди завів сам шар (`saveOverlayForUserCard`), і поки він там
+   * лишається, прибраний номер далі знаходиться пошуком. Знімає його
+   * `settleOverlayValueForCard`, і лише тоді, коли значення не стоїть ані в
+   * анкеті, ані в чужому шарі на цій картці.
+   */
+  const discardValue = useCallback((entry, fieldName, row) => runAction(
     async () => {
-      const { settled, remaining } = splitOverlayChangeValue(row.change, row);
-      // Відхилене лишається в журналі: «чому цього немає в анкеті» — питання,
-      // на яке адмінові доводиться відповідати.
-      await settleOverlayFieldValue({
+      const settled = await settleOverlayValueForCard({
         editorUserId: row.editorUserId,
         cardUserId: entry.cardUserId,
-        fieldName: row.fieldName,
-        settledChange: settled,
-        remainingChange: remaining,
-        historyAction: 'discard',
+        fieldName,
+        value: row.value,
+        action: 'discard',
       });
+      if (!settled) throw new Error('Пропозицію не вдалося зняти з черги');
     },
     `Видалено: ${row.value}`,
     'Не вдалося видалити доповнення',

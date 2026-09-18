@@ -209,17 +209,41 @@ export const toSearchQueryRows = entries => {
     return entries
       .map(entry => (typeof entry === 'string'
         ? { query: entry, updatedAt: 0, count: 1 }
-        : { query: readEntryText(entry), updatedAt: Number(entry?.updatedAt) || 0, count: Number(entry?.count) || 1 }))
+        : {
+            queryId: entry?.queryId || '',
+            query: readEntryText(entry),
+            updatedAt: Number(entry?.updatedAt) || 0,
+            count: Number(entry?.count) || 1,
+          }))
       .filter(row => row.query);
   }
   return Object.entries(entries || {})
     .map(([key, value]) => ({
+      queryId: key,
       query: readEntryText(value) || decodeSearchQueryKey(key),
       updatedAt: readEntryTime(key, value),
       count: Number(value?.count) > 0 ? Number(value.count) : 1,
     }))
     .filter(row => row.query);
 };
+
+/**
+ * Вузол історії, розкладений по читачах: хто, що шукав і коли востаннє.
+ *
+ * Порядок і тут, і всередині читача — за свіжістю: питання «що шукали щойно»
+ * ставлять частіше за «що шукали колись». Читачі без жодного запиту випадають
+ * — картку показувати нема за що.
+ */
+export const toSearchQueryOwnerRows = (node = {}) => Object.entries(node || {})
+  .map(([ownerId, entries]) => {
+    const queries = toSearchQueryRows(entries)
+      .map(row => ({ ...row, query: normalizeSearchQuery(row.query) }))
+      .filter(row => row.query)
+      .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0));
+    return { ownerId, queries, lastSearchAt: queries[0]?.updatedAt || 0 };
+  })
+  .filter(owner => owner.ownerId && owner.queries.length)
+  .sort((left, right) => right.lastSearchAt - left.lastSearchAt);
 
 export const buildSearchSuggestions = (entries, typed = '', limit = SEARCH_SUGGESTION_LIMIT) => {
   const needle = normalizeSearchQuery(typed).toLowerCase();

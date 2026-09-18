@@ -1,10 +1,11 @@
-const { get, push, ref, remove, set, update } = require('firebase/database');
+const { get, push, ref, remove, runTransaction, set, update } = require('firebase/database');
 
 jest.mock('firebase/database', () => ({
   get: jest.fn(),
   push: jest.fn(),
   ref: jest.fn((db, path) => ({ db, path })),
   remove: jest.fn(),
+  runTransaction: jest.fn(),
   set: jest.fn(),
   update: jest.fn(),
 }));
@@ -14,9 +15,14 @@ jest.mock('components/config', () => ({
   updateSearchId: jest.fn(async () => undefined),
 }));
 
+const { updateSearchId } = require('components/config');
+
 const {
   acceptAllOverlaysForCard,
   acceptOverlayFieldForUserCard,
+  buildOverlayFieldEntries,
+  settleOverlayValueForCard,
+  splitOverlayChangeByValue,
   applyOverlaysToCard,
   buildOverlayFromDraft,
   getOverlayHistoryForCard,
@@ -279,5 +285,215 @@ describe('admin review actions', () => {
       .map(entry => entry.action);
     expect(journalled.every(action => action === 'discard')).toBe(true);
     expect(journalled.length).toBeGreaterThan(0);
+  });
+});
+
+// Рішення адміна стосується одного значення, а не всієї правки поля. Доти шар
+// із двома дописаними номерами показувався одним інпутом («A, B»), «ОК»
+// записував той склеєний рядок в анкету як один номер, а хрестик зносив геть
+// увесь шар поля — разом зі значенням, якого адмін не чіпав.
+describe('пропозиція редактора — по рядку на значення', () => {
+  it('розкладає дописані значення окремо, а стирання позначає як стирання', () => {
+    const entries = buildOverlayFieldEntries({
+      editorA: { updatedAt: 1, fields: { phone: { added: ['380501110011', '380501110022'] } } },
+      editorB: { updatedAt: 2, fields: { name: { from: 'Ірина', to: 'Ірина Б.' }, city: { from: 'Київ', to: '' } } },
+    });
+
+    expect(entries.phone).toEqual([
+      { value: '380501110011', editorUserId: 'editorA', isDeleted: false },
+      { value: '380501110022', editorUserId: 'editorA', isDeleted: false },
+    ]);
+    expect(entries.name).toEqual([{ value: 'Ірина Б.', editorUserId: 'editorB', isDeleted: false }]);
+    expect(entries.city).toEqual([{ value: 'Київ', editorUserId: 'editorB', isDeleted: true }]);
+  });
+
+  it('ділить зміну поля на вирішене значення й недоторкану решту', () => {
+    expect(splitOverlayChangeByValue({ added: ['A', 'B'] }, 'A')).toEqual({
+      settledChange: { added: ['A'] },
+      remainingChange: { added: ['B'] },
+    });
+    expect(splitOverlayChangeByValue({ added: ['A'] }, 'A')).toEqual({
+      settledChange: { added: ['A'] },
+      remainingChange: {},
+    });
+    expect(splitOverlayChangeByValue({ added: ['A'] }, 'C').settledChange).toBeNull();
+  });
+});
+
+describe('відхилене значення йде і з шару, і з searchId', () => {
+  const OVERLAY_TWO_PHONES = {
+    editorA: { updatedAt: 1, fields: { phone: { added: ['380501110011', '380501110022'] } } },
+  };
+
+  const mockReads = ({ canonical = { userId: 'card-1', name: 'Ірина' }, overlays = OVERLAY_TWO_PHONES } = {}) => {
+    get.mockImplementation(async ({ path }) => {
+      if (path === 'multiData/edits/card-1/editorA') {
+        return { exists: () => Boolean(overlays.editorA), val: () => overlays.editorA || null };
+      }
+      if (path === 'multiData/edits/card-1') return { exists: () => true, val: () => overlays };
+      if (path === 'profileContacts/card-1') return { exists: () => true, val: () => canonical };
+      return { exists: () => false, val: () => null };
+    });
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    ref.mockImplementation((db, path) => ({ db, path }));
+    push.mockImplementation(() => ({ key: 'entry-1' }));
+    runTransaction.mockImplementation(async (refObject, updater) => {
+      updater(OVERLAY_TWO_PHONES.editorA);
+      return { committed: true };
+    });
+    mockReads();
+  });
+
+  it('прибирає одне значення, лишаючи друге на місці', async () => {
+    await settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380501110011',
+      action: 'discard',
+    });
+
+    expect(runTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/edits/card-1/editorA' }),
+      expect.any(Function),
+    );
+    expect(get).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/edits/card-1/editorA' }),
+    );
+    expect(runTransaction.mock.calls[0][1](OVERLAY_TWO_PHONES.editorA)).toEqual({
+      updatedAt: 1,
+      fields: { phone: { added: ['380501110022'] } },
+    });
+    // Поле зносять лише тоді, коли після рішення в ньому нічого не лишилось.
+    expect(remove).not.toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/edits/card-1/editorA/fields/phone' }),
+    );
+    expect(updateSearchId).toHaveBeenCalledWith('phone', '380501110011', 'card-1', 'remove');
+  });
+
+  it('використовує попередньо прочитаний шар, якщо перший transaction callback отримав null', async () => {
+    let transactionResult;
+    runTransaction.mockImplementationOnce(async (refObject, updater) => {
+      transactionResult = updater(null);
+      return { committed: true };
+    });
+
+    await settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380501110011',
+      action: 'accept',
+    });
+
+    expect(transactionResult).toEqual({
+      updatedAt: 1,
+      fields: { phone: { added: ['380501110022'] } },
+    });
+  });
+
+  it('не чіпає індекс, коли значення стоїть в анкеті — хай яким написанням', async () => {
+    // Ключ `searchId` — це нормалізоване значення, тож «38 050 111 00 11» в
+    // анкеті і «380501110011» у шарі — один ключ. Порівняння сирих рядків тут
+    // казало б «ніхто більше не тримає» і зносило з пошуку саму анкету.
+    mockReads({ canonical: { userId: 'card-1', phone: '38 050 111 00 11' } });
+
+    await settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380501110011',
+      action: 'discard',
+    });
+
+    expect(updateSearchId).not.toHaveBeenCalled();
+  });
+
+  it('порівнює значення за нормалізованим ключем searchId', async () => {
+    mockReads({ canonical: { userId: 'card-1', phone: '+38 (050) 111-00-11' } });
+
+    await settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380501110011',
+      action: 'discard',
+    });
+
+    expect(updateSearchId).not.toHaveBeenCalled();
+  });
+
+  it('не видаляє індекс, якщо канонічну анкету не вдалося прочитати', async () => {
+    get.mockImplementation(async ({ path }) => {
+      if (path === 'multiData/edits/card-1/editorA') {
+        return { exists: () => true, val: () => OVERLAY_TWO_PHONES.editorA };
+      }
+      if (path === 'multiData/edits/card-1') return { exists: () => true, val: () => OVERLAY_TWO_PHONES };
+      throw new Error('PERMISSION_DENIED');
+    });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380501110011',
+      action: 'discard',
+    });
+
+    expect(updateSearchId).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('не запускає транзакцію, якщо пропозицію вже прибрали', async () => {
+    mockReads({ overlays: {} });
+
+    await expect(settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380501110011',
+      action: 'discard',
+    })).resolves.toBeNull();
+
+    expect(runTransaction).not.toHaveBeenCalled();
+  });
+
+  it('не чіпає індекс, коли те саме значення пропонує ще один редактор', async () => {
+    mockReads({
+      overlays: {
+        ...OVERLAY_TWO_PHONES,
+        editorB: { updatedAt: 2, fields: { phone: { added: ['380501110011'] } } },
+      },
+    });
+
+    await settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380501110011',
+      action: 'discard',
+    });
+
+    expect(updateSearchId).not.toHaveBeenCalled();
+  });
+
+  it('прийняте значення з індексу не знімається — воно їде в анкету', async () => {
+    await settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380501110011',
+      action: 'accept',
+    });
+
+    expect(runTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/edits/card-1/editorA' }),
+      expect.any(Function),
+    );
+    expect(updateSearchId).not.toHaveBeenCalled();
   });
 });
