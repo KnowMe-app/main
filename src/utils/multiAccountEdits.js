@@ -3,7 +3,7 @@ import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 import { isLongFormatUserId } from 'utils/userIdFormat';
 import { mergeProfileNodes } from 'utils/profileNodeMerge';
 import { PROFILE_NODES } from 'utils/profileNodeSchema';
-import { SEARCH_ID_INDEXED_FIELDS } from 'utils/searchKeyUtils';
+import { SEARCH_ID_INDEXED_FIELDS, buildSearchIdValueKey } from 'utils/searchKeyUtils';
 import {
   forgetOwnOverlayCardLocally,
   readOwnOverlayCardIds,
@@ -1001,10 +1001,16 @@ export const splitOverlayChangeByValue = (change, value) => {
  * стоїть.
  */
 const isValueStillClaimedByCard = ({ canonical, overlaysByEditor, fieldName, value, editorUserId }) => {
-  const normalizedValue = String(value ?? '').trim().toLowerCase();
+  // Порівнюємо тим самим ключем, яким індекс і ключується
+  // (`buildSearchIdValueKey` = нормалізація поля + кодування). Сире порівняння
+  // рядків тут брехало на кожному записі, збереженому в іншому написанні:
+  // в анкеті «38 093 112 06 78», у шарі «380931120678» — це один ключ
+  // `searchId`, але різні рядки, тож «ніхто більше не тримає» спрацьовувало б
+  // на значенні, яке в анкеті стоїть, і зносило з пошуку саму анкету.
+  const normalizedValue = buildSearchIdValueKey(fieldName, value);
   if (!normalizedValue) return true;
 
-  const matches = candidate => String(candidate ?? '').trim().toLowerCase() === normalizedValue;
+  const matches = candidate => buildSearchIdValueKey(fieldName, candidate) === normalizedValue;
   if (normalizeArray(canonical?.[fieldName]).some(matches)) return true;
 
   return Object.entries(overlaysByEditor || {}).some(([otherEditorUserId, overlay]) => {
