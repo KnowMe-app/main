@@ -890,6 +890,184 @@ export const settleOverlayFieldValue = async ({
   });
 };
 
+/**
+ * Пропозиції редакторів — по одній на **значення**, а не на поле.
+ *
+ * Шар зберігає зміну поля цілком (`{ phone: { added: ['A', 'B'] } }`), і
+ * форма адміна показувала її одним рядком: два дописані номери зліплювались в
+ * «A, B» в одному інпуті. Звідси йшло дві поломки поспіль — «ОК» записував у
+ * анкету той склеєний рядок як один номер, а «×» зносив геть увесь шар поля,
+ * тобто й друге значення, якого адмін не чіпав.
+ *
+ * Тому розкладка тут одна на всі екрани: кожне значення — окремий запис із
+ * автором, і саме на нього дивиться і кнопка «ОК», і хрестик.
+ */
+export const buildOverlayFieldEntries = (overlaysByEditor = {}) => {
+  const result = {};
+
+  const pushEntry = (fieldName, entry) => {
+    const fieldEntries = result[fieldName] || [];
+    if (fieldEntries.some(item => item.value === entry.value && item.editorUserId === entry.editorUserId)) return;
+    result[fieldName] = [...fieldEntries, entry];
+  };
+
+  Object.entries(overlaysByEditor || {}).forEach(([editorUserId, overlay]) => {
+    const fields = normalizeOverlayFields(overlay?.fields);
+
+    Object.entries(fields).forEach(([fieldName, change]) => {
+      if (TECHNICAL_FIELD_NAMES.has(fieldName) || fieldName === 'editor') return;
+      if (!isPlainObject(change)) return;
+
+      if ('to' in change) {
+        const to = String(change.to ?? '').trim();
+        if (to) {
+          pushEntry(fieldName, { value: to, editorUserId, isDeleted: false });
+          return;
+        }
+        // Порожнє `to` — це стирання: пропозиція прибрати те, що стоїть у
+        // `from`. Значення показується як закреслене, а не як нове.
+        const from = String(change.from ?? '').trim();
+        if (from) pushEntry(fieldName, { value: from, editorUserId, isDeleted: true });
+        return;
+      }
+
+      normalizeArray(change.added).forEach(value => {
+        const normalized = String(value ?? '').trim();
+        if (normalized) pushEntry(fieldName, { value: normalized, editorUserId, isDeleted: false });
+      });
+
+      normalizeArray(change.removed).forEach(value => {
+        const normalized = String(value ?? '').trim();
+        if (normalized) pushEntry(fieldName, { value: normalized, editorUserId, isDeleted: true });
+      });
+    });
+  });
+
+  return result;
+};
+
+/**
+ * Одне значення зі зміни поля — окремо від решти.
+ *
+ * `settledChange` — те, що адмін щойно вирішив (прийняв або відхилив),
+ * `remainingChange` — усе, чого він не чіпав. Порожній залишок означає, що
+ * поле з шару йде цілком: саме це й розрізняє «прибрати один номер» від
+ * «прибрати правку».
+ */
+export const splitOverlayChangeByValue = (change, value) => {
+  if (!isPlainObject(change)) return { settledChange: null, remainingChange: null };
+
+  const normalizedValue = String(value ?? '').trim();
+  if (!normalizedValue) return { settledChange: null, remainingChange: change };
+
+  if ('to' in change) {
+    const to = String(change.to ?? '').trim();
+    const from = String(change.from ?? '').trim();
+    if (to === normalizedValue || (!to && from === normalizedValue)) {
+      return { settledChange: change, remainingChange: null };
+    }
+    return { settledChange: null, remainingChange: change };
+  }
+
+  const added = normalizeArray(change.added).map(item => String(item ?? '').trim());
+  const removed = normalizeArray(change.removed).map(item => String(item ?? '').trim());
+  const settledAdded = added.filter(item => item === normalizedValue);
+  const settledRemoved = removed.filter(item => item === normalizedValue);
+  if (!settledAdded.length && !settledRemoved.length) {
+    return { settledChange: null, remainingChange: change };
+  }
+
+  const remainingAdded = added.filter(item => item !== normalizedValue);
+  const remainingRemoved = removed.filter(item => item !== normalizedValue);
+
+  return {
+    settledChange: {
+      ...(settledAdded.length ? { added: settledAdded } : {}),
+      ...(settledRemoved.length ? { removed: settledRemoved } : {}),
+    },
+    remainingChange: {
+      ...(remainingAdded.length ? { added: remainingAdded } : {}),
+      ...(remainingRemoved.length ? { removed: remainingRemoved } : {}),
+    },
+  };
+};
+
+/**
+ * Чи лишається кому тримати це значення в `searchId` після відхилення.
+ *
+ * Ключ індексу веде на картку, а не на шар, тож знімати його можна лише тоді,
+ * коли значення не лишилось ані в самій анкеті, ані в чужому шарі на цій
+ * картці. Інакше відхилений дубль зносив би з пошуку номер, який в анкеті
+ * стоїть.
+ */
+const isValueStillClaimedByCard = ({ canonical, overlaysByEditor, fieldName, value, editorUserId }) => {
+  const normalizedValue = String(value ?? '').trim().toLowerCase();
+  if (!normalizedValue) return true;
+
+  const matches = candidate => String(candidate ?? '').trim().toLowerCase() === normalizedValue;
+  if (normalizeArray(canonical?.[fieldName]).some(matches)) return true;
+
+  return Object.entries(overlaysByEditor || {}).some(([otherEditorUserId, overlay]) => {
+    if (otherEditorUserId === editorUserId) return false;
+    const change = normalizeOverlayFields(overlay?.fields)[fieldName];
+    if (!isPlainObject(change)) return false;
+    if ('to' in change) return matches(change.to);
+    return normalizeArray(change.added).some(matches);
+  });
+};
+
+/**
+ * Рішення адміна про **одне** значення чужого шару.
+ *
+ * Прийняте значення лишається в анкеті — його туди кладе сама форма, — а
+ * відхилене мусить піти звідусіль, куди його поклав шар: із вузла шару
+ * (решта значень лишається на місці) і з `searchId`, бо саме шар і завів там
+ * ключ (`saveOverlayForUserCard`). Поки хрестик знімав лише рядок у формі,
+ * прибраний номер далі знаходився пошуком і повертався в наступний перегляд.
+ */
+export const settleOverlayValueForCard = async ({
+  editorUserId,
+  cardUserId,
+  fieldName,
+  value,
+  action = 'discard',
+}) => {
+  if (!editorUserId || !cardUserId || !fieldName) return null;
+
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return null;
+
+  const overlaysByEditor = await getOverlaysForCard(normalizedCardId);
+  const change = normalizeOverlayFields(overlaysByEditor?.[editorUserId]?.fields)[fieldName];
+  const { settledChange, remainingChange } = splitOverlayChangeByValue(change, value);
+  if (!settledChange) return null;
+
+  await settleOverlayFieldValue({
+    editorUserId,
+    cardUserId: normalizedCardId,
+    fieldName,
+    settledChange,
+    remainingChange,
+    historyAction: action === 'accept' ? 'accept' : 'discard',
+  });
+
+  if (action === 'accept') return { settledChange, remainingChange };
+
+  if (!SEARCH_ID_INDEXED_FIELDS.has(fieldName)) return { settledChange, remainingChange };
+
+  const canonical = await getCanonicalCard(normalizedCardId).catch(() => null);
+  const stillClaimed = isValueStillClaimedByCard({
+    canonical,
+    overlaysByEditor,
+    fieldName,
+    value,
+    editorUserId,
+  });
+  if (!stillClaimed) await updateSearchId(fieldName, value, normalizedCardId, 'remove');
+
+  return { settledChange, remainingChange };
+};
+
 // ---------------------------------------------------------------------------
 // Admin review operations. An admin is the only role that can turn a pending
 // overlay into canonical data, and the only one who gets to see the journal

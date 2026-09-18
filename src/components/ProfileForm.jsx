@@ -23,7 +23,7 @@ import {
 import { parseUkTriggerQuery } from 'utils/parseUkTrigger';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { resolvePpTechnicalInputTarget } from 'utils/ppTechnicalInputTarget';
-import { patchOverlayField } from 'utils/multiAccountEdits';
+import { buildOverlayFieldEntries, settleOverlayValueForCard } from 'utils/multiAccountEdits';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
 import { FaArrowRight, FaTimes } from 'react-icons/fa';
@@ -653,7 +653,6 @@ const sanitizeOverlayValue = value => {
   return String(value).trim();
 };
 
-const isEmptyOverlayValue = value => sanitizeOverlayValue(value) === '';
 const technicalOverlayFields = new Set(['editor', 'cachedAt', 'lastAction', 'cacheVersion']);
 const resolveOverlayIncomingValue = change => {
   if (!change || typeof change !== 'object') return undefined;
@@ -2114,18 +2113,28 @@ export const ProfileForm = ({
     });
   }, []);
 
-  const removeOverlayEntryFromBackend = useCallback(async (fieldName, entry) => {
+  /**
+   * Рішення адмінки стосується **одного** значення, а не всієї правки поля.
+   *
+   * Шар зберігає зміну поля цілком, тож зняття поля (`change: null`) зносило
+   * й ті значення, яких адмін не чіпав: дописав редактор два номери, адмін
+   * прибрав один хрестиком — зникали обидва. Відхилене значення при цьому йде
+   * ще й з `searchId`: ключ туди завів сам шар, і поки він там лишався,
+   * прибраний номер далі знаходився пошуком.
+   */
+  const settleOverlayEntryInBackend = useCallback(async (fieldName, entry, action) => {
     if (!fieldName || !entry?.editorUserId || !state?.userId) return;
 
     try {
-      await patchOverlayField({
+      await settleOverlayValueForCard({
         editorUserId: entry.editorUserId,
         cardUserId: state.userId,
         fieldName,
-        change: null,
+        value: entry.value,
+        action,
       });
     } catch {
-      toast.error('Не вдалося видалити оверлей-поле');
+      toast.error(action === 'accept' ? 'Не вдалося прийняти пропозицію' : 'Не вдалося видалити пропозицію');
     }
   }, [state?.userId]);
 
@@ -2150,13 +2159,13 @@ export const ProfileForm = ({
   const handleOverlayDismiss = async (fieldName, entry) => {
     removeOverlayValueFromState(fieldName, entry?.value);
     dismissOverlayEntry(fieldName, entry);
-    await removeOverlayEntryFromBackend(fieldName, entry);
+    await settleOverlayEntryInBackend(fieldName, entry, 'discard');
   };
 
   const handleOverlayApply = async (fieldName, entry) => {
     adoptOverlayValue(fieldName, entry?.value);
     dismissOverlayEntry(fieldName, entry);
-    await removeOverlayEntryFromBackend(fieldName, entry);
+    await settleOverlayEntryInBackend(fieldName, entry, 'accept');
   };
 
   const mergeOverlayValueIntoState = (prevState, fieldName, value) => {
@@ -2291,45 +2300,10 @@ export const ProfileForm = ({
       paths.map(async path => {
         const snapshot = await get(refDb(database, path));
         const rawValue = snapshot.exists() ? snapshot.val() : null;
-        const fieldMap = {};
 
-        Object.entries(rawValue || {}).forEach(([editorUserId, overlay]) => {
-          const allFields = overlay?.fields || {};
-
-          Object.entries(allFields).forEach(([fieldName, change]) => {
-            if (technicalOverlayFields.has(fieldName)) return;
-            if (!change || typeof change !== 'object') return;
-
-            const hasTo = Object.prototype.hasOwnProperty.call(change, 'to');
-            const hasAdd = Object.prototype.hasOwnProperty.call(change, 'add');
-            const hasAdded = Object.prototype.hasOwnProperty.call(change, 'added');
-            const hasFrom = Object.prototype.hasOwnProperty.call(change, 'from');
-            const incomingValue = resolveOverlayIncomingValue(change);
-            const normalizedTo = sanitizeOverlayValue(incomingValue);
-            const normalizedFrom = sanitizeOverlayValue(change?.from);
-            const fieldEntries = fieldMap[fieldName] || [];
-            const hasIncomingValue = hasTo || hasAdded || hasAdd;
-
-            if (hasIncomingValue && !isEmptyOverlayValue(incomingValue)) {
-              if (!fieldEntries.some(entry => entry.value === normalizedTo && entry.editorUserId === editorUserId)) {
-                fieldMap[fieldName] = [...fieldEntries, { value: normalizedTo, editorUserId, isDeleted: false }];
-              }
-              return;
-            }
-
-            if (hasIncomingValue && hasFrom && !isEmptyOverlayValue(change?.from)) {
-              if (!fieldEntries.some(entry => entry.value === normalizedFrom && entry.editorUserId === editorUserId)) {
-                fieldMap[fieldName] = [...fieldEntries, { value: normalizedFrom, editorUserId, isDeleted: true }];
-              }
-            }
-          });
-        });
-
-        return {
-          path,
-          exists: snapshot.exists(),
-          fieldMap,
-        };
+        // Пропозиції розкладає одне місце на всі екрани — по рядку на
+        // значення, а не по рядку на поле.
+        return { path, exists: snapshot.exists(), fieldMap: buildOverlayFieldEntries(rawValue) };
       })
     );
 

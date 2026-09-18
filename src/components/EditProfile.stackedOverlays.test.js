@@ -30,4 +30,33 @@ describe('EditProfile shows non-admin editors the stacked card', () => {
   it('keeps the per-editor breakdown out of a non-admin session', () => {
     expect(source).toContain('if (!isAdmin) {\n      setPendingOverlays({});');
   });
+
+  // Шар зберігає зміну поля цілком, і форма показувала її одним рядком: два
+  // дописані номери зліплювались в «A, B» в одному інпуті. Розкладає
+  // пропозиції одне місце на всі екрани — по рядку на значення.
+  it('розкладає пропозиції редакторів по значеннях, а не по полях', () => {
+    expect(source).toContain('const overlayFieldAdditions = useMemo(() => buildOverlayFieldEntries(pendingOverlays), [pendingOverlays]);');
+    expect(source).not.toContain("const normalizedTo = sanitizeOverlayValue(incomingValue);");
+  });
+});
+
+// «ОК» і «×» стосуються одного значення, а не всієї правки поля: шар із двома
+// номерами зносився цілком від одного хрестика, а відхилений номер лишався в
+// `searchId` і далі знаходився пошуком.
+describe('ProfileForm settles one overlay value at a time', () => {
+  const formSource = fs.readFileSync(path.join(__dirname, 'ProfileForm.jsx'), 'utf8');
+
+  it('рішення йде через settleOverlayValueForCard із самим значенням', () => {
+    expect(formSource).toContain('await settleOverlayValueForCard({');
+    expect(formSource).toContain('value: entry.value,');
+    expect(formSource).toContain("await settleOverlayEntryInBackend(fieldName, entry, 'discard');");
+    expect(formSource).toContain("await settleOverlayEntryInBackend(fieldName, entry, 'accept');");
+    // Зняття поля цілком (`change: null`) тут більше немає — саме воно й
+    // зносило друге значення разом із першим.
+    expect(formSource).not.toContain('patchOverlayField({');
+  });
+
+  it('пропозиції будує той самий розкладач, що й форма адміна', () => {
+    expect(formSource).toContain('fieldMap: buildOverlayFieldEntries(rawValue)');
+  });
 });
