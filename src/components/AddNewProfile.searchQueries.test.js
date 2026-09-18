@@ -77,4 +77,10 @@ describe('перелік читачів із їхніми запитами', () 
     expect(source).toContain('renderCardFooter={renderSearcherFooter}');
     expect(read('UsersList.jsx')).toContain("typeof renderCardFooter === 'function' && renderCardFooter(userId, userData)");
   });
+
+  it('кожен запит можна видалити з бекенду окремим хрестиком', () => {
+    expect(source).toContain('removeMatchingSearchQuery({ ownerId, queryId })');
+    expect(source).toMatch(/aria-label=\{`Видалити пошуковий запит: \$\{row\.query\}`\}/);
+    expect(source).toContain('query.queryId !== queryId');
+  });
 });

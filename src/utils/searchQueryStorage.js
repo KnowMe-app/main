@@ -209,11 +209,17 @@ export const toSearchQueryRows = entries => {
     return entries
       .map(entry => (typeof entry === 'string'
         ? { query: entry, updatedAt: 0, count: 1 }
-        : { query: readEntryText(entry), updatedAt: Number(entry?.updatedAt) || 0, count: Number(entry?.count) || 1 }))
+        : {
+            queryId: entry?.queryId || '',
+            query: readEntryText(entry),
+            updatedAt: Number(entry?.updatedAt) || 0,
+            count: Number(entry?.count) || 1,
+          }))
       .filter(row => row.query);
   }
   return Object.entries(entries || {})
     .map(([key, value]) => ({
+      queryId: key,
       query: readEntryText(value) || decodeSearchQueryKey(key),
       updatedAt: readEntryTime(key, value),
       count: Number(value?.count) > 0 ? Number(value.count) : 1,

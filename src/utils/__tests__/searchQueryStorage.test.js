@@ -184,6 +184,7 @@ describe('toSearchQueryOwnerRows', () => {
 
     expect(owners.map(owner => owner.ownerId)).toEqual(['reader-a', 'reader-b']);
     expect(owners[0].queries.map(row => row.query)).toEqual(['380501110011', 'Марія']);
+    expect(owners[0].queries.map(row => row.queryId)).toEqual(['380501110011', 'марія']);
     expect(owners[0].lastSearchAt).toBe(30);
   });
 

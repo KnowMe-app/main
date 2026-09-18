@@ -1048,23 +1048,37 @@ export const settleOverlayValueForCard = async ({
     database,
     `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`,
   );
+  // RTDB transactions invoke their updater with the locally cached value
+  // first.  On an admin screen this exact editor node normally has not been
+  // read yet, so that first value is `null`; returning `undefined` below then
+  // aborts the transaction before Firebase ever supplies the server value.
+  // Prime the cache and fail explicitly when the proposal really disappeared.
+  const editorSnapshot = await get(editorRef);
+  if (!editorSnapshot?.exists?.()) return null;
+  const prefetchedOverlay = editorSnapshot.val();
+
   let settledChange = null;
   let remainingChange = null;
   let removedEditorOverlay = false;
   const transaction = await runTransaction(editorRef, currentOverlay => {
-    const currentChange = normalizeOverlayFields(currentOverlay?.fields)[fieldName];
+    // `get()` normally primes the cache, but using its value as the first
+    // transaction baseline also makes the behavior explicit and testable.
+    // If the server changed meanwhile, RTDB retries this callback with the
+    // newer value before committing.
+    const effectiveOverlay = currentOverlay || prefetchedOverlay;
+    const currentChange = normalizeOverlayFields(effectiveOverlay?.fields)[fieldName];
     const split = splitOverlayChangeByValue(currentChange, value);
     settledChange = split.settledChange;
     remainingChange = split.remainingChange;
     if (!settledChange) return undefined;
 
-    const nextFields = { ...(currentOverlay?.fields || {}) };
+    const nextFields = { ...(effectiveOverlay?.fields || {}) };
     if (hasOverlayChangeValues(remainingChange)) nextFields[fieldName] = remainingChange;
     else delete nextFields[fieldName];
 
     removedEditorOverlay = shouldDropOverlayByFieldNames(Object.keys(nextFields));
     if (removedEditorOverlay) return null;
-    return { ...currentOverlay, fields: nextFields };
+    return { ...effectiveOverlay, fields: nextFields };
   });
   if (!transaction.committed || !settledChange) return null;
 

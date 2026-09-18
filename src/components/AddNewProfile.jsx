@@ -23,6 +23,7 @@ import {
   // createSearchIdsForAllUsers,
   fetchUserById,
   fetchAllSearchQueryOwners,
+  removeMatchingSearchQuery,
   loadDuplicateUsers,
   removeCardAndSearchId,
   fetchAllUsersFromRTDB,
@@ -882,6 +883,23 @@ const SearcherQueryMeta = styled.span`
   flex: 0 0 auto;
   font-size: 11px;
   color: var(--km-muted);
+`;
+
+const SearcherQueryRemoveButton = styled.button`
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--km-muted);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    color: var(--km-danger, #c62828);
+    background: var(--km-hover, rgba(0, 0, 0, 0.06));
+  }
 `;
 
 const SaveModalSectionTitle = styled.div`
@@ -5789,6 +5807,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [searchQueriesByOwner, setSearchQueriesByOwner] = useState({});
   const [isLoadingSearchers, setIsLoadingSearchers] = useState(false);
   const [isSearchersView, setIsSearchersView] = useState(false);
+  const [deletingSearcherQuery, setDeletingSearcherQuery] = useState('');
   const searchersRequestRef = useRef(0);
 
   const SEARCHERS_LIMIT = 60;
@@ -5849,6 +5868,37 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setSearchBarResetVersion(version => version + 1);
   };
 
+  const handleRemoveSearcherQuery = async (ownerId, row) => {
+    const queryId = row?.queryId;
+    if (!ownerId || !queryId) return;
+
+    const pendingKey = `${ownerId}/${queryId}`;
+    setDeletingSearcherQuery(pendingKey);
+    try {
+      const removed = await removeMatchingSearchQuery({ ownerId, queryId });
+      if (!removed) throw new Error('Запит не видалено');
+
+      setSearchQueriesByOwner(previous => {
+        const remaining = (previous[ownerId] || []).filter(query => query.queryId !== queryId);
+        if (!remaining.length) {
+          const { [ownerId]: _removedOwner, ...rest } = previous;
+          return rest;
+        }
+        return { ...previous, [ownerId]: remaining };
+      });
+      setUsers(previous => {
+        const remainingQueries = (searchQueriesByOwner[ownerId] || []).filter(query => query.queryId !== queryId);
+        if (remainingQueries.length) return previous;
+        const { [ownerId]: _removedOwner, ...rest } = previous;
+        return rest;
+      });
+    } catch (error) {
+      toast.error(`Не вдалося видалити пошуковий запит: ${error?.code || error?.message || 'помилка'}`);
+    } finally {
+      setDeletingSearcherQuery(current => current === pendingKey ? '' : current);
+    }
+  };
+
   const renderSearcherFooter = ownerId => {
     const queries = searchQueriesByOwner[ownerId];
     if (!isSearchersView || !queries?.length) return null;
@@ -5881,6 +5931,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 </>
               )}
               {row.count > 1 && <SearcherQueryMeta>×{row.count}</SearcherQueryMeta>}
+              <SearcherQueryRemoveButton
+                type="button"
+                aria-label={`Видалити пошуковий запит: ${row.query}`}
+                title="Видалити пошуковий запит із бекенду"
+                disabled={deletingSearcherQuery === `${ownerId}/${row.queryId}`}
+                onClick={event => {
+                  event.stopPropagation();
+                  handleRemoveSearcherQuery(ownerId, row);
+                }}
+              >
+                &times;
+              </SearcherQueryRemoveButton>
             </SearcherQueryRow>
           );
         })}

@@ -327,6 +327,9 @@ describe('відхилене значення йде і з шару, і з searc
 
   const mockReads = ({ canonical = { userId: 'card-1', name: 'Ірина' }, overlays = OVERLAY_TWO_PHONES } = {}) => {
     get.mockImplementation(async ({ path }) => {
+      if (path === 'multiData/edits/card-1/editorA') {
+        return { exists: () => Boolean(overlays.editorA), val: () => overlays.editorA || null };
+      }
       if (path === 'multiData/edits/card-1') return { exists: () => true, val: () => overlays };
       if (path === 'profileContacts/card-1') return { exists: () => true, val: () => canonical };
       return { exists: () => false, val: () => null };
@@ -357,6 +360,9 @@ describe('відхилене значення йде і з шару, і з searc
       expect.objectContaining({ path: 'multiData/edits/card-1/editorA' }),
       expect.any(Function),
     );
+    expect(get).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/edits/card-1/editorA' }),
+    );
     expect(runTransaction.mock.calls[0][1](OVERLAY_TWO_PHONES.editorA)).toEqual({
       updatedAt: 1,
       fields: { phone: { added: ['380501110022'] } },
@@ -366,6 +372,27 @@ describe('відхилене значення йде і з шару, і з searc
       expect.objectContaining({ path: 'multiData/edits/card-1/editorA/fields/phone' }),
     );
     expect(updateSearchId).toHaveBeenCalledWith('phone', '380501110011', 'card-1', 'remove');
+  });
+
+  it('використовує попередньо прочитаний шар, якщо перший transaction callback отримав null', async () => {
+    let transactionResult;
+    runTransaction.mockImplementationOnce(async (refObject, updater) => {
+      transactionResult = updater(null);
+      return { committed: true };
+    });
+
+    await settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380501110011',
+      action: 'accept',
+    });
+
+    expect(transactionResult).toEqual({
+      updatedAt: 1,
+      fields: { phone: { added: ['380501110022'] } },
+    });
   });
 
   it('не чіпає індекс, коли значення стоїть в анкеті — хай яким написанням', async () => {
@@ -401,6 +428,9 @@ describe('відхилене значення йде і з шару, і з searc
 
   it('не видаляє індекс, якщо канонічну анкету не вдалося прочитати', async () => {
     get.mockImplementation(async ({ path }) => {
+      if (path === 'multiData/edits/card-1/editorA') {
+        return { exists: () => true, val: () => OVERLAY_TWO_PHONES.editorA };
+      }
       if (path === 'multiData/edits/card-1') return { exists: () => true, val: () => OVERLAY_TWO_PHONES };
       throw new Error('PERMISSION_DENIED');
     });
@@ -416,6 +446,20 @@ describe('відхилене значення йде і з шару, і з searc
 
     expect(updateSearchId).not.toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it('не запускає транзакцію, якщо пропозицію вже прибрали', async () => {
+    mockReads({ overlays: {} });
+
+    await expect(settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380501110011',
+      action: 'discard',
+    })).resolves.toBeNull();
+
+    expect(runTransaction).not.toHaveBeenCalled();
   });
 
   it('не чіпає індекс, коли те саме значення пропонує ще один редактор', async () => {
