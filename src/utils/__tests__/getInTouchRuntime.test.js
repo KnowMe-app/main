@@ -62,7 +62,26 @@ describe('позначки власника читаються і пишутьс
     expect(configSource).toContain('export const readOwnerGetInTouchSorted');
     expect(configSource).toContain('const constraints = [orderByValue()]');
     expect(configSource).toContain('constraints.push(startAt(from))');
-    expect(configSource).toContain('constraints.push(limitToFirst(limit))');
+    expect(configSource).toContain('constraints.push(latestFirst ? limitToLast(limit) : limitToFirst(limit))');
+  });
+
+  it('список «кому дзвонити» гортається курсором, а не денними бакетами', () => {
+    // Дата в `searchKey/getInTouch` сидить у назві денного бакета, тож діапазон
+    // по ній не береться, і код ішов календарем по одному дню за круг. Тепер
+    // межу і порядок робить база на вузлі власника, а гортання назад просить
+    // пару (значення, ключ).
+    expect(configSource).toContain('const collectOwnerGetInTouchCandidateIds');
+    expect(configSource).toContain('constraints.push(endBefore(before.value, String(before.key || \'\')))');
+    expect(configSource).not.toContain('collectSearchKeyGetInTouchCandidateIds');
+    expect(configSource).not.toContain('SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE');
+  });
+
+  it('стара форма запису не лишається непоміченою', () => {
+    // Обʼєкт при `orderByValue()` сортується після всіх скалярів, тож
+    // впорядкований запит перевернутої форми не бачить узагалі. Один рядок на
+    // сесію — і мовчазної втрати немає.
+    expect(configSource).toContain('const ownerGetInTouchHasLegacyGroups');
+    expect(configSource).toContain('const sliceOwnerGetInTouchMapPage');
   });
 
   it('графік стимуляції ходить тією самою реалізацією', () => {
