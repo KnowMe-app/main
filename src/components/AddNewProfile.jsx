@@ -22,6 +22,7 @@ import {
   // removeSearchId,
   // createSearchIdsForAllUsers,
   fetchUserById,
+  fetchAllSearchQueryOwners,
   loadDuplicateUsers,
   removeCardAndSearchId,
   fetchAllUsersFromRTDB,
@@ -117,6 +118,7 @@ import {
   sanitizeTechnicalPayload,
 } from './formFields';
 import { PAGE_SIZE, database } from './config';
+import { CONTACT_LINK_BUILDERS } from './contactMethods';
 import { get as firebaseGet, ref, update } from 'firebase/database';
 import { parseProfileCardsJson } from 'utils/profileCardsJsonImport';
 import {
@@ -818,6 +820,68 @@ const SaveModalHint = styled.p`
 const SaveModalSection = styled.div`
   padding: 10px 0;
   border-top: 1px solid var(--km-border);
+`;
+
+/* Запити читача під його карткою: список того, що він шукав. Кожен рядок —
+   кнопка, бо натискання повторює той самий пошук, а поруч із номером стоять
+   ті самі три канали, якими з нього й пишуть. */
+const SearcherQueries = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 10px;
+  background: var(--km-card);
+  border-radius: 0 0 10px 10px;
+`;
+
+const SearcherQueriesTitle = styled.div`
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--km-muted);
+`;
+
+const SearcherQueryRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+`;
+
+const SearcherQueryButton = styled.button`
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  padding: 4px 8px;
+  border: 1px solid var(--km-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--km-text);
+  font-size: 13px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+
+  &:hover {
+    border-color: var(--km-accent);
+    color: var(--km-accent);
+  }
+`;
+
+const SearcherQueryLink = styled.a`
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid var(--km-border);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--km-accent);
+  text-decoration: none;
+`;
+
+const SearcherQueryMeta = styled.span`
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--km-muted);
 `;
 
 const SaveModalSectionTitle = styled.div`
@@ -5710,6 +5774,107 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [, setDuplicates] = useState('');
   const [isDuplicateView, setIsDuplicateView] = useState(false);
+  /**
+   * «Хто що шукав» — картки читачів разом з їхніми запитами.
+   *
+   * Запит людини лежить у `multiData/searchQueries/{читач}` і досі був видний
+   * лише їй самій — підказкою при наборі. Адмінці ж він каже те, чого не каже
+   * жодна анкета: кого ця людина шукала й чого не знайшла. Тому тут і картка
+   * читача, і його запити під нею: натиснув запит — той самий пошук
+   * повторився, і видно, що бачив він.
+   *
+   * Читання службове й дороге (вузол цілком), тож воно робиться на явне
+   * натискання, а не при відкритті екрана.
+   */
+  const [searchQueriesByOwner, setSearchQueriesByOwner] = useState({});
+  const [isLoadingSearchers, setIsLoadingSearchers] = useState(false);
+  const [isSearchersView, setIsSearchersView] = useState(false);
+
+  const SEARCHERS_LIMIT = 60;
+
+  const handleShowSearchers = async () => {
+    setIsLoadingSearchers(true);
+    const toastId = 'searchers-load';
+    toast.loading('Читаємо, хто що шукав…', { id: toastId });
+    try {
+      const owners = (await fetchAllSearchQueryOwners()).slice(0, SEARCHERS_LIMIT);
+      if (!owners.length) {
+        toast('Записів пошуку ще немає', { id: toastId });
+        return;
+      }
+
+      // Анкети читаються по одній на читача — їх десятки, а не сотні, і це
+      // явна дія адміна, а не фонове довантаження.
+      const profiles = await Promise.all(owners.map(async owner => {
+        const profile = await fetchUserById(owner.ownerId).catch(() => null);
+        return [owner.ownerId, profile || { userId: owner.ownerId }];
+      }));
+
+      setSearchQueriesByOwner(Object.fromEntries(owners.map(owner => [owner.ownerId, owner.queries])));
+      setUsers(Object.fromEntries(profiles));
+      setIsSearchersView(true);
+      setIsDuplicateView(false);
+      setCurrentPage(1);
+      toast.success(`Читачів із запитами: ${owners.length}`, { id: toastId });
+    } catch (error) {
+      console.error('[searchers] не вдалося прочитати історію пошуку', error);
+      toast.error(`Не вдалося прочитати історію пошуку: ${error?.code || error?.message || 'помилка'}`, { id: toastId });
+    } finally {
+      setIsLoadingSearchers(false);
+    }
+  };
+
+  // Наступний пошук чи фільтр — це вже інше питання, тож перелік читачів іде
+  // з екрана разом з ним.
+  useEffect(() => {
+    setIsSearchersView(false);
+  }, [search, currentFilter]);
+
+  const applySearcherQuery = value => {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) return;
+    setSearch(normalizedValue);
+    localStorage.setItem(SEARCH_KEY, normalizedValue);
+    // Той самий шлях, яким пошук іде з рядка: перемонтований `SearchBar`
+    // виконує набране на старті сам (`suppressInitialSearchExecution`).
+    setSearchBarResetVersion(version => version + 1);
+  };
+
+  const renderSearcherFooter = ownerId => {
+    const queries = searchQueriesByOwner[ownerId];
+    if (!isSearchersView || !queries?.length) return null;
+
+    return (
+      <SearcherQueries>
+        <SearcherQueriesTitle>Шукали ({queries.length})</SearcherQueriesTitle>
+        {queries.map(row => {
+          // Номер тут — це не текст, а контакт: поруч із ним стоять ті самі
+          // три канали, якими з нього й пишуть.
+          const detected = detectSearchParams(row.query);
+          const phone = detected?.key === 'phone' ? detected.value : '';
+          return (
+            <SearcherQueryRow key={`${ownerId}-${row.query}`}>
+              <SearcherQueryButton
+                type="button"
+                title="Повторити цей пошук"
+                onClick={() => applySearcherQuery(row.query)}
+              >
+                {row.query}
+              </SearcherQueryButton>
+              {phone && (
+                <>
+                  <SearcherQueryLink href={CONTACT_LINK_BUILDERS.telegramFromPhone(phone)} target="_blank" rel="noopener noreferrer" title="Telegram">TG</SearcherQueryLink>
+                  <SearcherQueryLink href={CONTACT_LINK_BUILDERS.viberFromPhone(phone)} target="_blank" rel="noopener noreferrer" title="Viber">VB</SearcherQueryLink>
+                  <SearcherQueryLink href={CONTACT_LINK_BUILDERS.whatsappFromPhone(phone)} target="_blank" rel="noopener noreferrer" title="WhatsApp">WA</SearcherQueryLink>
+                </>
+              )}
+              {row.count > 1 && <SearcherQueryMeta>×{row.count}</SearcherQueryMeta>}
+            </SearcherQueryRow>
+          );
+        })}
+      </SearcherQueries>
+    );
+  };
 
   useEffect(() => {
     let backendDupData;
@@ -6559,7 +6724,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const ids = Object.keys(users);
     const currentCardsById = loadCards();
     const getVisibleCard = id => currentCardsById[id] || users[id] || {};
-    if (isDuplicateView || currentFilter === 'CYCLE_FAVORITE') {
+    if (isDuplicateView || isSearchersView || currentFilter === 'CYCLE_FAVORITE') {
       return ids;
     }
 
@@ -6614,7 +6779,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return mergedCard?.userId ? mergedCard : null;
   };
   const filterRenderCards = cards => {
-    if (isDuplicateView) return cards;
+    // Перелік читачів — це відповідь на питання «хто що шукав», а не зріз
+    // стрічки: фільтри картотеки його не звужують.
+    if (isDuplicateView || isSearchersView) return cards;
     if (searchBarQueryActive && !useSearchResultFilters) return cards;
 
     return filterMain(
@@ -7526,6 +7693,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   {isMatchingCardsIndexing ? '...' : 'Картки'}
                 </Button>
               )}
+              {isAdmin && (
+                <Button
+                  onClick={handleShowSearchers}
+                  disabled={isLoadingSearchers}
+                  title="Показати картки тих, хто шукав, разом з їхніми запитами"
+                  {...createLongPressHandlers(
+                    'Читає multiData/searchQueries і малює картки читачів; під карткою — їхні запити, '
+                      + 'натискання повторює той самий пошук',
+                  )}
+                >
+                  {isLoadingSearchers ? '...' : '🔎Хто'}
+                </Button>
+              )}
               {isAdmin && LEGACY_IMPORT_ID_PREFIXES.map(prefix => (
                 <Button
                   key={`migrate-comments-${prefix}`}
@@ -7697,6 +7877,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 setUserIdToDelete={setUserIdToDelete}
                 currentFilter={currentFilter}
                 isDateInRange={isDateInRange}
+                renderCardFooter={renderSearcherFooter}
               />
                 <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
               </>

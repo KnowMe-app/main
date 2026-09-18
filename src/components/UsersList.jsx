@@ -148,6 +148,9 @@ const UsersList = ({
   currentFilter,
   isDateInRange,
   onOpenMoreActions,
+  // Додаток під карткою: список того, що ця людина шукала. Список належить
+  // екрану, який його й читав, а не картці — картка про запити нічого не знає.
+  renderCardFooter,
 }) => {
   const usersRef = React.useRef(users);
   usersRef.current = users;
@@ -240,6 +243,7 @@ const UsersList = ({
               }
             />
           )}
+          {typeof renderCardFooter === 'function' && renderCardFooter(userId, userData)}
         </FadeContainer>
         );
       })}
