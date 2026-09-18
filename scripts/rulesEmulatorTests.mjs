@@ -828,8 +828,28 @@ await it('заявляє контакт на унікальність — іна
   // як і запис.
   await assertSucceeds(set(ref(db(ORDINARY_VIEWER), 'multiData/profileIdentityClaims/phone_380501110022'), 'newCardId0001'));
   await assertSucceeds(get(ref(db(ORDINARY_VIEWER), 'multiData/profileIdentityClaims/phone_380501110022')));
+  // Власну заявку знімає сам — контакт прибрали з чернетки, і значення
+  // мусить звільнитись, інакше людина не зможе вписати його назад.
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), 'multiData/profileIdentityClaims/phone_380501110022'), null));
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), 'multiData/profileIdentityClaims/phone_380501110022'), 'newCardId0001'));
   // А перелічити всі заявки не може: ключ заявки — це сам контакт.
   await assertFails(get(ref(db(ORDINARY_VIEWER), 'multiData/profileIdentityClaims')));
+});
+
+// Заявка — це замок на контакті, і зняти його може лише той, чия картка за ним
+// стоїть. Інакше «створювати може кожен» означало б і «кожен може забрати
+// чужий номер собі»: перезаписати заявку — це відв'язати контакт від чужої
+// картки й завести з ним дубль.
+await it('чужої заявки не перебиває — замок знімає лише власник картки', async () => {
+  await testEnv.withSecurityRulesDisabled(context => set(
+    ref(context.database(), 'multiData/profileIdentityClaims/phone_380501110099'),
+    CARD,
+  ));
+  await assertFails(set(ref(db(ORDINARY_VIEWER), 'multiData/profileIdentityClaims/phone_380501110099'), 'newCardId0001'));
+  await assertFails(set(ref(db(ORDINARY_VIEWER), 'multiData/profileIdentityClaims/phone_380501110099'), null));
+  // Адмін перепризначає: заявку лишила картка, якої вже немає, і розплутувати
+  // це нема кому, крім нього.
+  await assertSucceeds(set(ref(db(SUPERADMIN), 'multiData/profileIdentityClaims/phone_380501110099'), 'newCardId0001'));
 });
 
 await it('дописує чужу картку власним шаром і читає свій шар назад', async () => {
@@ -857,6 +877,10 @@ await it('чужого шару не пише й усіх шарів картк�
 });
 
 await it('пише власний запис у журнал правок, а стирає його лише адмін', async () => {
+  // Журнал веде той, хто справді дописував цю картку: запис лягає одразу після
+  // самого шару (`saveOverlayForUserCard`), тож шар на момент запису вже є.
+  // Інакше будь-хто міг би наповнювати чужий журнал записами про картки, яких
+  // не торкався, — а читає той журнал адмін, вирішуючи по ньому.
   const entry = {
     cardUserId: CARD,
     editorUserId: ORDINARY_VIEWER,
@@ -872,6 +896,17 @@ await it('пише власний запис у журнал правок, а с
   }));
   await assertFails(remove(ref(db(ORDINARY_VIEWER), `multiData/editsHistory/${CARD}/entryOrdinary1`)));
   await assertSucceeds(remove(ref(db(SUPERADMIN), `multiData/editsHistory/${CARD}/entryOrdinary1`)));
+});
+
+await it('у журнал картки, якої не торкався, не пише', async () => {
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `multiData/editsHistory/${HIDDEN_CARD}/entryOrdinary3`), {
+    cardUserId: HIDDEN_CARD,
+    editorUserId: ORDINARY_VIEWER,
+    action: 'edit',
+    fieldName: 'phone',
+    change: { added: ['380501110055'] },
+    at: 1764000000000,
+  }));
 });
 
 describe('searchId — дописане в доповненні індексується його автором');

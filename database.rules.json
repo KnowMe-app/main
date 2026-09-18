@@ -285,7 +285,7 @@
         ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('canCreateProfiles').val() == true || root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))",
         "$claimKey": {
           ".read": "auth != null",
-          ".write": "auth != null"
+          ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || !data.exists() || (data.isString() && root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).exists()))"
         }
       },
       "searchQueries": {
@@ -377,7 +377,7 @@
         "$cardId": {
           ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
           "$entryId": {
-            ".write": "auth != null && ((!data.exists() && newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || newData.child('editorUserId').val() == auth.uid)) || (data.exists() && !newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')))",
+            ".write": "auth != null && ((!data.exists() && newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (newData.child('editorUserId').val() == auth.uid && root.child('multiData').child('edits').child($cardId).child(auth.uid).exists()))) || (data.exists() && !newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')))",
             ".validate": "newData.hasChildren(['cardUserId', 'editorUserId', 'action', 'fieldName', 'change', 'at']) && newData.child('cardUserId').val() == $cardId && newData.child('editorUserId').isString() && newData.child('editorUserId').val().length > 0 && newData.child('action').isString() && (newData.child('action').val() == 'edit' || newData.child('action').val() == 'accept' || newData.child('action').val() == 'discard') && newData.child('fieldName').isString() && newData.child('fieldName').val().length > 0 && newData.child('change').exists() && newData.child('at').isNumber()"
           }
         }
