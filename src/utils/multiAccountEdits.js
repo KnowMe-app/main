@@ -1036,6 +1036,7 @@ export const settleOverlayValueForCard = async ({
   cardUserId,
   fieldName,
   value,
+  acceptedValue,
   action = 'discard',
 }) => {
   if (!editorUserId || !cardUserId || !fieldName) return null;
@@ -1075,7 +1076,22 @@ export const settleOverlayValueForCard = async ({
     fields: { [fieldName]: settledChange },
   });
 
-  if (action === 'accept') return { settledChange, remainingChange };
+  if (action === 'accept') {
+    const normalizedAcceptedValue = String(acceptedValue ?? value ?? '').trim();
+    const normalizedOriginalValue = String(value ?? '').trim();
+    if (
+      SEARCH_ID_INDEXED_FIELDS.has(fieldName) &&
+      normalizedAcceptedValue &&
+      normalizedAcceptedValue !== normalizedOriginalValue
+    ) {
+      // The overlay claimed the submitted value. If an admin corrects it in
+      // the review input, transfer that claim instead of leaving the stale
+      // identifier searchable for this card.
+      await updateSearchId(fieldName, normalizedOriginalValue, normalizedCardId, 'remove');
+      await updateSearchId(fieldName, normalizedAcceptedValue, normalizedCardId, 'add');
+    }
+    return { settledChange, remainingChange };
+  }
 
   if (!SEARCH_ID_INDEXED_FIELDS.has(fieldName)) return { settledChange, remainingChange };
 
