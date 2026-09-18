@@ -118,6 +118,13 @@ const PROFILE_FORM_TECHNICAL_FIELDS = new Set([
   MULTI_DATA_ACCESS_FIELD,
 ]);
 
+const buildOverlayPaths = cardUserId => {
+  const normalizedCardId = String(cardUserId || '').trim();
+  if (!normalizedCardId) return [];
+
+  return [`multiData/edits/${normalizedCardId}`];
+};
+
 const PROFILE_FORM_LABELS = {
   lastLogin: 'Останній логін',
   lastLogin2: 'Останній логін',
@@ -2162,6 +2169,44 @@ export const ProfileForm = ({
     });
   }, []);
 
+  const readOverlayFieldAdditions = useCallback(async cardUserId => {
+    const paths = buildOverlayPaths(cardUserId);
+    if (!paths.length) return { paths: [], result: {} };
+
+    const debugResults = await Promise.all(
+      paths.map(async path => {
+        const snapshot = await get(refDb(database, path));
+        const rawValue = snapshot.exists() ? snapshot.val() : null;
+
+        // Пропозиції розкладає одне місце на всі екрани — по рядку на
+        // значення, а не по рядку на поле.
+        return { path, exists: snapshot.exists(), fieldMap: buildOverlayFieldEntries(rawValue) };
+      })
+    );
+
+    const result = {};
+    debugResults.forEach(item => {
+      Object.entries(item.fieldMap || {}).forEach(([fieldName, entries]) => {
+        result[fieldName] = [...(result[fieldName] || []), ...(entries || [])];
+      });
+    });
+
+    return { paths, result };
+  }, []);
+
+  const reconcileOverlayEntriesFromBackend = useCallback(async cardUserId => {
+    const { result } = await readOverlayFieldAdditions(cardUserId);
+    setAutoOverlayFieldAdditions(result);
+    setDismissedOverlayEntries(previous => Object.entries(previous).reduce((next, [fieldName, signatures]) => {
+      const backendSignatures = new Set(
+        (result[fieldName] || []).map(getOverlayEntrySignature)
+      );
+      const stillDismissed = signatures.filter(signature => !backendSignatures.has(signature));
+      if (stillDismissed.length) next[fieldName] = stillDismissed;
+      return next;
+    }, {}));
+  }, [readOverlayFieldAdditions]);
+
   /**
    * Рішення адмінки стосується **одного** значення, а не всієї правки поля.
    *
@@ -2232,7 +2277,14 @@ export const ProfileForm = ({
     dismissOverlayEntry(fieldName, entry);
     const settled = await enqueueOverlaySettlement(fieldName, entry, 'discard');
     if (!settled) {
-      restoreOverlayEntry(fieldName, entry);
+      try {
+        // The queued proposal may already have been settled elsewhere. Re-read
+        // the backend instead of resurrecting that stale row in the local cache.
+        await reconcileOverlayEntriesFromBackend(state?.userId);
+      } catch {
+        // Only restore optimistically when even the authoritative read failed.
+        restoreOverlayEntry(fieldName, entry);
+      }
       return;
     }
     if (entry?.isDeleted) adoptOverlayValue(fieldName, entry?.value);
@@ -2303,13 +2355,6 @@ export const ProfileForm = ({
       submitWithNormalization(mergedState, 'overwrite');
       return mergedState;
     });
-  };
-
-  const buildOverlayPaths = cardUserId => {
-    const normalizedCardId = String(cardUserId || '').trim();
-    if (!normalizedCardId) return [];
-
-    return [`multiData/edits/${normalizedCardId}`];
   };
 
   const collectEditorOverlayReplacements = useCallback(async () => {
@@ -2392,31 +2437,6 @@ export const ProfileForm = ({
     },
     [setState, submitWithNormalization]
   );
-
-  const readOverlayFieldAdditions = useCallback(async cardUserId => {
-    const paths = buildOverlayPaths(cardUserId);
-    if (!paths.length) return { paths: [], result: {} };
-
-    const debugResults = await Promise.all(
-      paths.map(async path => {
-        const snapshot = await get(refDb(database, path));
-        const rawValue = snapshot.exists() ? snapshot.val() : null;
-
-        // Пропозиції розкладає одне місце на всі екрани — по рядку на
-        // значення, а не по рядку на поле.
-        return { path, exists: snapshot.exists(), fieldMap: buildOverlayFieldEntries(rawValue) };
-      })
-    );
-
-    const result = {};
-    debugResults.forEach(item => {
-      Object.entries(item.fieldMap || {}).forEach(([fieldName, entries]) => {
-        result[fieldName] = [...(result[fieldName] || []), ...(entries || [])];
-      });
-    });
-
-    return { paths, result };
-  }, []);
 
   useEffect(() => {
     let isMounted = true;

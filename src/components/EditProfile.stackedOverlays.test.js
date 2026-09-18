@@ -64,7 +64,10 @@ describe('ProfileForm settles one overlay value at a time', () => {
     expect(dismissBody.indexOf('dismissOverlayEntry(fieldName, entry);')).toBeLessThan(
       dismissBody.indexOf("await enqueueOverlaySettlement(fieldName, entry, 'discard');"),
     );
-    expect(dismissBody).toContain('restoreOverlayEntry(fieldName, entry);');
+    expect(dismissBody).toContain('await reconcileOverlayEntriesFromBackend(state?.userId);');
+    expect(dismissBody.indexOf('await reconcileOverlayEntriesFromBackend(state?.userId);')).toBeLessThan(
+      dismissBody.indexOf('restoreOverlayEntry(fieldName, entry);'),
+    );
 
     const queueBody = formSource.slice(
       formSource.indexOf('const enqueueOverlaySettlement = useCallback'),
