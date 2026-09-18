@@ -1,10 +1,11 @@
-const { get, push, ref, remove, set, update } = require('firebase/database');
+const { get, push, ref, remove, runTransaction, set, update } = require('firebase/database');
 
 jest.mock('firebase/database', () => ({
   get: jest.fn(),
   push: jest.fn(),
   ref: jest.fn((db, path) => ({ db, path })),
   remove: jest.fn(),
+  runTransaction: jest.fn(),
   set: jest.fn(),
   update: jest.fn(),
 }));
@@ -336,6 +337,10 @@ describe('відхилене значення йде і з шару, і з searc
     jest.clearAllMocks();
     ref.mockImplementation((db, path) => ({ db, path }));
     push.mockImplementation(() => ({ key: 'entry-1' }));
+    runTransaction.mockImplementation(async (refObject, updater) => {
+      updater(OVERLAY_TWO_PHONES.editorA);
+      return { committed: true };
+    });
     mockReads();
   });
 
@@ -348,10 +353,14 @@ describe('відхилене значення йде і з шару, і з searc
       action: 'discard',
     });
 
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({ path: 'multiData/edits/card-1/editorA/fields' }),
-      { phone: { added: ['380501110022'] } },
+    expect(runTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/edits/card-1/editorA' }),
+      expect.any(Function),
     );
+    expect(runTransaction.mock.calls[0][1](OVERLAY_TWO_PHONES.editorA)).toEqual({
+      updatedAt: 1,
+      fields: { phone: { added: ['380501110022'] } },
+    });
     // Поле зносять лише тоді, коли після рішення в ньому нічого не лишилось.
     expect(remove).not.toHaveBeenCalledWith(
       expect.objectContaining({ path: 'multiData/edits/card-1/editorA/fields/phone' }),
@@ -374,6 +383,39 @@ describe('відхилене значення йде і з шару, і з searc
     });
 
     expect(updateSearchId).not.toHaveBeenCalled();
+  });
+
+  it('порівнює значення за нормалізованим ключем searchId', async () => {
+    mockReads({ canonical: { userId: 'card-1', phone: '+38 (050) 111-00-11' } });
+
+    await settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380501110011',
+      action: 'discard',
+    });
+
+    expect(updateSearchId).not.toHaveBeenCalled();
+  });
+
+  it('не видаляє індекс, якщо канонічну анкету не вдалося прочитати', async () => {
+    get.mockImplementation(async ({ path }) => {
+      if (path === 'multiData/edits/card-1') return { exists: () => true, val: () => OVERLAY_TWO_PHONES };
+      throw new Error('PERMISSION_DENIED');
+    });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380501110011',
+      action: 'discard',
+    });
+
+    expect(updateSearchId).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('не чіпає індекс, коли те саме значення пропонує ще один редактор', async () => {
@@ -404,9 +446,9 @@ describe('відхилене значення йде і з шару, і з searc
       action: 'accept',
     });
 
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({ path: 'multiData/edits/card-1/editorA/fields' }),
-      { phone: { added: ['380501110022'] } },
+    expect(runTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/edits/card-1/editorA' }),
+      expect.any(Function),
     );
     expect(updateSearchId).not.toHaveBeenCalled();
   });

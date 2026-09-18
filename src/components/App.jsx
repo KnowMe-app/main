@@ -4,7 +4,6 @@ import { PrivacyPolicy } from './PrivacyPolicy';
 import { MyProfile } from './MyProfile';
 import { MyProfileOld } from './MyProfileOld';
 import { LoginScreen } from './LoginScreen';
-import { SubmitForm } from './SubmitForm';
 import { AddNewProfile } from './AddNewProfile';
 import Matching from './Matching';
 import EditProfile from './EditProfile';
@@ -126,13 +125,11 @@ export const App = () => {
 
   return (
     <Routes>
-      {/* Публічних екранів три, і всі вони не читають бази: форма входу,
-          текст угоди (на нього веде кнопка «Умови» з самої форми) і зовнішня
-          анкета подачі. Решта застосунку — про конкретних людей, тож стоїть за
-          межею входу. */}
+      {/* Публічні екрани не читають бази: це форма входу та текст угоди, на
+          який веде кнопка «Умови» з самої форми. Решта застосунку — про
+          конкретних людей, тож стоїть за межею входу. */}
       <Route path="/login" element={<LoginScreen setIsLoggedIn={setIsLoggedIn} authStatus={authStatus} />} />
       <Route path="/policy" element={<PrivacyPolicy />} />
-      <Route path="/submit" element={<SubmitForm />} />
 
       <Route path="/" element={<RequireAuth status={authStatus}>{canAccessAdd ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <PrivacyPolicy />}</RequireAuth>} />
       <Route path="/my-profile" element={<RequireAuth status={authStatus}><MyProfile /></RequireAuth>} />

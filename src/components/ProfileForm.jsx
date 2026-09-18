@@ -2171,7 +2171,10 @@ export const ProfileForm = ({
   }, [handleClear, handleDelKeyValue, state]);
 
   const handleOverlayDismiss = async (fieldName, entry) => {
-    removeOverlayValueFromState(fieldName, entry?.value);
+    // Rejecting a deletion keeps/restores the canonical value; rejecting an
+    // addition removes the proposed value from the form.
+    if (entry?.isDeleted) adoptOverlayValue(fieldName, entry?.value);
+    else removeOverlayValueFromState(fieldName, entry?.value);
     dismissOverlayEntry(fieldName, entry);
     await settleOverlayEntryInBackend(fieldName, entry, 'discard');
   };
@@ -2193,7 +2196,13 @@ export const ProfileForm = ({
   // В анкету їде виправлене, а з шару й індексу знімається надіслане: у шарі
   // редактора лежить саме його значення, і ключ `searchId` заведено на нього ж.
   const handleOverlayApply = async (fieldName, entry) => {
-    adoptOverlayValue(fieldName, getOverlayEntryDraftValue(fieldName, entry));
+    // Accepting a deletion removes the canonical value; accepting an addition
+    // adopts it. Deletion suggestions therefore invert the usual row action.
+    // Приймається при цьому виправлене в рядку значення, а не сире надіслане:
+    // рядок пропозиції — звичайний інпут, і зайвий пробіл чи плюс адмін
+    // прибирає просто в ньому.
+    if (entry?.isDeleted) removeOverlayValueFromState(fieldName, entry?.value);
+    else adoptOverlayValue(fieldName, getOverlayEntryDraftValue(fieldName, entry));
     dismissOverlayEntry(fieldName, entry);
     await settleOverlayEntryInBackend(fieldName, entry, 'accept');
   };
