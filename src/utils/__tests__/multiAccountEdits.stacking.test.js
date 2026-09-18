@@ -368,8 +368,11 @@ describe('відхилене значення йде і з шару, і з searc
     expect(updateSearchId).toHaveBeenCalledWith('phone', '380501110011', 'card-1', 'remove');
   });
 
-  it('не чіпає індекс, коли значення стоїть в анкеті', async () => {
-    mockReads({ canonical: { userId: 'card-1', phone: '380501110011' } });
+  it('не чіпає індекс, коли значення стоїть в анкеті — хай яким написанням', async () => {
+    // Ключ `searchId` — це нормалізоване значення, тож «38 050 111 00 11» в
+    // анкеті і «380501110011» у шарі — один ключ. Порівняння сирих рядків тут
+    // казало б «ніхто більше не тримає» і зносило з пошуку саму анкету.
+    mockReads({ canonical: { userId: 'card-1', phone: '38 050 111 00 11' } });
 
     await settleOverlayValueForCard({
       editorUserId: 'editorA',

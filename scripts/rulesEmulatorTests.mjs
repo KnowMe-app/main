@@ -1136,6 +1136,17 @@ await it('чужу історію пошуку сторонній не пише 
   await assertFails(get(ref(db(OUTSIDER), `multiData/searchQueries/${SELF_SERVE}`)));
 });
 
+// Вузол цілком — це питання «хто що шукав», і ставить його адмінка: за
+// відповіддю вона малює картки тих, хто шукав, разом з їхніми запитами. Читання
+// це службове, тож воно адмінське: історія запитів каже, кого людина шукала.
+await it('вузол історії цілком читає лише адмін', async () => {
+  await assertSucceeds(get(ref(db(SUPERADMIN), 'multiData/searchQueries')));
+  await assertFails(get(ref(db(SELF_SERVE), 'multiData/searchQueries')));
+  await assertFails(get(ref(db(MATCHING_VIEWER), 'multiData/searchQueries')));
+  // Власну гілку власник читає, як і читав.
+  await assertSucceeds(get(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}`)));
+});
+
 /*
  * Поза стрічкою звичайний користувач бачить рівно картку.
  *

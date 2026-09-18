@@ -1008,7 +1008,8 @@ const isValueStillClaimedByCard = ({ canonical, overlaysByEditor, fieldName, val
   // `searchId` owns normalized keys (digits-only phones, normalized social
   // handles, etc.), so ownership must be compared in exactly that domain.
   // Comparing display strings can treat two spellings of the same key as
-  // different and remove an index entry still used by the canonical card.
+  // different and remove an index entry still used by the canonical card:
+  // «38 093 112 06 78» в анкеті і «380931120678» у шарі — це один ключ.
   const matches = candidate => buildSearchIdValueKey(fieldName, candidate) === normalizedValueKey;
   if (normalizeArray(canonical?.[fieldName]).some(matches)) return true;
 

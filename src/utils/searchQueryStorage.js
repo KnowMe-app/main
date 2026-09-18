@@ -221,6 +221,24 @@ export const toSearchQueryRows = entries => {
     .filter(row => row.query);
 };
 
+/**
+ * Вузол історії, розкладений по читачах: хто, що шукав і коли востаннє.
+ *
+ * Порядок і тут, і всередині читача — за свіжістю: питання «що шукали щойно»
+ * ставлять частіше за «що шукали колись». Читачі без жодного запиту випадають
+ * — картку показувати нема за що.
+ */
+export const toSearchQueryOwnerRows = (node = {}) => Object.entries(node || {})
+  .map(([ownerId, entries]) => {
+    const queries = toSearchQueryRows(entries)
+      .map(row => ({ ...row, query: normalizeSearchQuery(row.query) }))
+      .filter(row => row.query)
+      .sort((left, right) => (right.updatedAt || 0) - (left.updatedAt || 0));
+    return { ownerId, queries, lastSearchAt: queries[0]?.updatedAt || 0 };
+  })
+  .filter(owner => owner.ownerId && owner.queries.length)
+  .sort((left, right) => right.lastSearchAt - left.lastSearchAt);
+
 export const buildSearchSuggestions = (entries, typed = '', limit = SEARCH_SUGGESTION_LIMIT) => {
   const needle = normalizeSearchQuery(typed).toLowerCase();
   if (!needle) return [];
