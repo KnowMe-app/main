@@ -1,9 +1,9 @@
-import { get as firebaseGet, push, ref as ref2, remove, set, update } from 'firebase/database';
+import { get as firebaseGet, push, ref as ref2, remove, runTransaction, set, update } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 import { isLongFormatUserId } from 'utils/userIdFormat';
 import { mergeProfileNodes } from 'utils/profileNodeMerge';
 import { PROFILE_NODES } from 'utils/profileNodeSchema';
-import { SEARCH_ID_INDEXED_FIELDS } from 'utils/searchKeyUtils';
+import { buildSearchIdValueKey, SEARCH_ID_INDEXED_FIELDS } from 'utils/searchKeyUtils';
 import {
   forgetOwnOverlayCardLocally,
   readOwnOverlayCardIds,
@@ -956,25 +956,26 @@ export const buildOverlayFieldEntries = (overlaysByEditor = {}) => {
  */
 export const splitOverlayChangeByValue = (change, value) => {
   if (!isPlainObject(change)) return { settledChange: null, remainingChange: null };
+  const normalizedChange = normalizeOverlayFields({ value: change }).value;
 
   const normalizedValue = String(value ?? '').trim();
-  if (!normalizedValue) return { settledChange: null, remainingChange: change };
+  if (!normalizedValue) return { settledChange: null, remainingChange: normalizedChange };
 
-  if ('to' in change) {
-    const to = String(change.to ?? '').trim();
-    const from = String(change.from ?? '').trim();
+  if ('to' in normalizedChange) {
+    const to = String(normalizedChange.to ?? '').trim();
+    const from = String(normalizedChange.from ?? '').trim();
     if (to === normalizedValue || (!to && from === normalizedValue)) {
-      return { settledChange: change, remainingChange: null };
+      return { settledChange: normalizedChange, remainingChange: null };
     }
-    return { settledChange: null, remainingChange: change };
+    return { settledChange: null, remainingChange: normalizedChange };
   }
 
-  const added = normalizeArray(change.added).map(item => String(item ?? '').trim());
-  const removed = normalizeArray(change.removed).map(item => String(item ?? '').trim());
+  const added = normalizeArray(normalizedChange.added).map(item => String(item ?? '').trim());
+  const removed = normalizeArray(normalizedChange.removed).map(item => String(item ?? '').trim());
   const settledAdded = added.filter(item => item === normalizedValue);
   const settledRemoved = removed.filter(item => item === normalizedValue);
   if (!settledAdded.length && !settledRemoved.length) {
-    return { settledChange: null, remainingChange: change };
+    return { settledChange: null, remainingChange: normalizedChange };
   }
 
   const remainingAdded = added.filter(item => item !== normalizedValue);
@@ -1001,10 +1002,14 @@ export const splitOverlayChangeByValue = (change, value) => {
  * стоїть.
  */
 const isValueStillClaimedByCard = ({ canonical, overlaysByEditor, fieldName, value, editorUserId }) => {
-  const normalizedValue = String(value ?? '').trim().toLowerCase();
-  if (!normalizedValue) return true;
+  const normalizedValueKey = buildSearchIdValueKey(fieldName, value);
+  if (!normalizedValueKey) return true;
 
-  const matches = candidate => String(candidate ?? '').trim().toLowerCase() === normalizedValue;
+  // `searchId` owns normalized keys (digits-only phones, normalized social
+  // handles, etc.), so ownership must be compared in exactly that domain.
+  // Comparing display strings can treat two spellings of the same key as
+  // different and remove an index entry still used by the canonical card.
+  const matches = candidate => buildSearchIdValueKey(fieldName, candidate) === normalizedValueKey;
   if (normalizeArray(canonical?.[fieldName]).some(matches)) return true;
 
   return Object.entries(overlaysByEditor || {}).some(([otherEditorUserId, overlay]) => {
@@ -1037,25 +1042,53 @@ export const settleOverlayValueForCard = async ({
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return null;
 
-  const overlaysByEditor = await getOverlaysForCard(normalizedCardId);
-  const change = normalizeOverlayFields(overlaysByEditor?.[editorUserId]?.fields)[fieldName];
-  const { settledChange, remainingChange } = splitOverlayChangeByValue(change, value);
-  if (!settledChange) return null;
+  const editorRef = ref2(
+    database,
+    `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`,
+  );
+  let settledChange = null;
+  let remainingChange = null;
+  let removedEditorOverlay = false;
+  const transaction = await runTransaction(editorRef, currentOverlay => {
+    const currentChange = normalizeOverlayFields(currentOverlay?.fields)[fieldName];
+    const split = splitOverlayChangeByValue(currentChange, value);
+    settledChange = split.settledChange;
+    remainingChange = split.remainingChange;
+    if (!settledChange) return undefined;
 
-  await settleOverlayFieldValue({
-    editorUserId,
+    const nextFields = { ...(currentOverlay?.fields || {}) };
+    if (hasOverlayChangeValues(remainingChange)) nextFields[fieldName] = remainingChange;
+    else delete nextFields[fieldName];
+
+    removedEditorOverlay = shouldDropOverlayByFieldNames(Object.keys(nextFields));
+    if (removedEditorOverlay) return null;
+    return { ...currentOverlay, fields: nextFields };
+  });
+  if (!transaction.committed || !settledChange) return null;
+
+  if (removedEditorOverlay) await forgetOwnOverlayCard({ editorUserId, cardUserId: normalizedCardId });
+  await appendOverlayHistory({
     cardUserId: normalizedCardId,
-    fieldName,
-    settledChange,
-    remainingChange,
-    historyAction: action === 'accept' ? 'accept' : 'discard',
+    editorUserId,
+    action: action === 'accept' ? 'accept' : 'discard',
+    fields: { [fieldName]: settledChange },
   });
 
   if (action === 'accept') return { settledChange, remainingChange };
 
   if (!SEARCH_ID_INDEXED_FIELDS.has(fieldName)) return { settledChange, remainingChange };
 
-  const canonical = await getCanonicalCard(normalizedCardId).catch(() => null);
+  let canonical;
+  try {
+    canonical = await getCanonicalCard(normalizedCardId);
+  } catch (error) {
+    // Absence of a readable canonical card is not evidence that it no longer
+    // claims the key. Keep the append-only index rather than destructively
+    // guessing after a transient/permission failure.
+    console.warn('[multiAccountEdits] canonical card unavailable during searchId cleanup', error);
+    return { settledChange, remainingChange };
+  }
+  const overlaysByEditor = await getOverlaysForCard(normalizedCardId);
   const stillClaimed = isValueStillClaimedByCard({
     canonical,
     overlaysByEditor,
