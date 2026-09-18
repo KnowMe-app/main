@@ -729,6 +729,13 @@ export const fetchAllSearchQueryOwners = async () => {
   return toSearchQueryOwnerRows(snapshot.val());
 };
 
+export const removeMatchingSearchQuery = async ({ ownerId, queryId }) => {
+  if (!isAdminUid(auth.currentUser?.uid) || !ownerId || !queryId) return false;
+
+  await remove(ref2(database, `${SEARCH_QUERIES_ROOT_PATH}/${ownerId}/${queryId}`));
+  return true;
+};
+
 export const addMatchingSearchQuery = async searchQuery => {
   try {
     const owner = auth.currentUser;

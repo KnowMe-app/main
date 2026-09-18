@@ -2151,7 +2151,7 @@ export const ProfileForm = ({
     if (!fieldName || !entry?.editorUserId || !state?.userId) return;
 
     try {
-      await settleOverlayValueForCard({
+      const result = await settleOverlayValueForCard({
         editorUserId: entry.editorUserId,
         cardUserId: state.userId,
         fieldName,
@@ -2159,12 +2159,15 @@ export const ProfileForm = ({
         acceptedValue,
         action,
       });
+      if (!result) throw new Error('Overlay value was not settled');
       // Після запису перечитуємо шари картки: доти список пропозицій жив із
       // пропса, який лишався тим самим, і прибраний рядок повертався на екран
       // з наступним перемальовуванням.
       if (typeof refreshOverlayForEditor === 'function') await refreshOverlayForEditor();
+      return true;
     } catch {
       toast.error(action === 'accept' ? 'Не вдалося прийняти пропозицію' : 'Не вдалося видалити пропозицію');
+      return false;
     }
   }, [refreshOverlayForEditor, state?.userId]);
 
@@ -2189,10 +2192,11 @@ export const ProfileForm = ({
   const handleOverlayDismiss = async (fieldName, entry) => {
     // Rejecting a deletion keeps/restores the canonical value; rejecting an
     // addition removes the proposed value from the form.
+    const settled = await settleOverlayEntryInBackend(fieldName, entry, 'discard');
+    if (!settled) return;
     if (entry?.isDeleted) adoptOverlayValue(fieldName, entry?.value);
     else removeOverlayValueFromState(fieldName, entry?.value);
     dismissOverlayEntry(fieldName, entry);
-    await settleOverlayEntryInBackend(fieldName, entry, 'discard');
   };
 
   const getOverlayEntryDraftKey = (fieldName, entry) => `${fieldName}::${getOverlayEntrySignature(entry)}`;
@@ -2218,10 +2222,11 @@ export const ProfileForm = ({
     // рядок пропозиції — звичайний інпут, і зайвий пробіл чи плюс адмін
     // прибирає просто в ньому.
     const acceptedValue = getOverlayEntryDraftValue(fieldName, entry);
+    const settled = await settleOverlayEntryInBackend(fieldName, entry, 'accept', acceptedValue);
+    if (!settled) return;
     if (entry?.isDeleted) removeOverlayValueFromState(fieldName, entry?.value);
     else adoptOverlayValue(fieldName, acceptedValue);
     dismissOverlayEntry(fieldName, entry);
-    await settleOverlayEntryInBackend(fieldName, entry, 'accept', acceptedValue);
   };
 
   const mergeOverlayValueIntoState = (prevState, fieldName, value) => {
@@ -3526,7 +3531,7 @@ ${entries.join('\n')}`;
                         onMouseDown={e => e.preventDefault()}
                         onClick={() => handleOpenSearchIdBackend(field.name, entry.value)}
                       >
-                        →
+                        <FaArrowRight size={14} />
                       </SearchIdBackendButton>
                     )}
                     <ClearButton
@@ -3538,12 +3543,6 @@ ${entries.join('\n')}`;
                       &times;
                     </ClearButton>
                   </InputFieldContainer>
-                  {idx === 0 && (
-                    <Hint fieldName={field.name} isActive={draftValue}>
-                      {getFieldDisplayLabel(field)}
-                    </Hint>
-                  )}
-                  <Placeholder isActive={draftValue}>{getFieldDisplayLabel(field)}</Placeholder>
                 </InputDiv>
                 <Button type="button" onClick={() => handleOverlayApply(field.name, entry)}>
                   ОК

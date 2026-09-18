@@ -128,4 +128,16 @@ describe('блоки форми анкети', () => {
     renderForm({ overlayFieldAdditions: { phone: '+380671112233' } });
     expect(hasField('phone')).toBe(true);
   });
+
+  it('показує один лейбл для канонічного поля та його оверлеїв', () => {
+    renderForm({
+      state: { userId: 'AC00042', phone: '+380501110011' },
+      overlayFieldAdditions: {
+        phone: [{ value: '+380671112233', editorUserId: 'editor-a', isDeleted: false }],
+      },
+    });
+
+    expect(screen.getAllByText('Телефон')).toHaveLength(1);
+    expect(screen.getByRole('textbox', { name: 'Пропозиція: Телефон' })).toBeTruthy();
+  });
 });
