@@ -362,6 +362,15 @@ describe('what the reader gets back', () => {
       filters: { bloodGroup: { 1: true, 2: false, 3: false, 4: false, other: true } },
     },
     {
+      // Проєкція стрічки групу крові не носить, тож пост-фільтр картку «резус
+      // є, групи немає» відкинути не може — і індекс не має права відкидати її
+      // теж. Поки він звав її `other`, знятий «?» викидав її з плану, дека
+      // вичерпувала індексний список і закривала `hasMore`: фільтри ховали все
+      // завантажене, а нового не приїжджало.
+      name: 'a blood group filter that drops "?" still reaches the card with an Rh but no group',
+      filters: { bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: false } },
+    },
+    {
       name: 'a marital status filter that drops "?"',
       filters: { maritalStatus: { married: true, unmarried: true, other: false } },
     },

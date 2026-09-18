@@ -38,6 +38,12 @@ jest.mock('./config', () => ({
   addDislikeUser: jest.fn(async () => undefined),
   removeDislikeUser: jest.fn(async () => undefined),
   addMatchingSearchQuery: jest.fn(),
+  // Форма доповнення показує ще й публічні відгуки картки — вони приїжджають
+  // разом з нею, тією самою воронкою, що й у стрічці.
+  fetchPublicProfileComments: jest.fn(async () => ({})),
+  addPublicProfileComment: jest.fn(async () => ({})),
+  updatePublicProfileComment: jest.fn(async () => ({})),
+  deletePublicProfileComment: jest.fn(async () => undefined),
 }));
 
 // Drafts no longer appear in an always-visible list - they only surface
@@ -200,7 +206,7 @@ it('ставить публічну й приватну нотатки паро�
   expect(publicLabel.compareDocumentPosition(privateLabel))
     .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   // Плейсхолдери — ті самі, що в стрічці й у відкритій картці.
-  expect(screen.getByPlaceholderText('Додати публічну нотатку')).toBeInTheDocument();
+  expect(screen.getByPlaceholderText('Додати публічну нотатку або перевірити їх наявність')).toBeInTheDocument();
   expect(screen.getByPlaceholderText('Нотатка для себе')).toBeInTheDocument();
   // Власного заголовка секції в публічного коментаря більше немає — його
   // називає підпис доріжки.

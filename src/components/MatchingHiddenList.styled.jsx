@@ -1020,6 +1020,9 @@ export const CommentsMoreButton = styled.button`
 // і виглядає воно як плейсхолдер приватного поля поруч, а не як окрема кнопка:
 // різні розміри в двох сусідніх порожніх полях і читались як недоробка.
 export const AddCommentTrigger = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 5px;
   margin-top: 4px;
   padding: 2px 0;
   border: 0;
@@ -1029,6 +1032,15 @@ export const AddCommentTrigger = styled.div`
   color: var(--matching-muted-text);
   opacity: 0.75;
   cursor: text;
+
+  /* Значок тут не прикраса, а адреса: напис каже, що відгуки можна перевірити,
+     і цей самий значок стоїть у ряду рішень, де перевірка й починається. Тож
+     він не стискається разом із текстом — інакше в вузькій картці зникав би
+     саме той натяк, заради якого стоїть. */
+  svg {
+    flex: none;
+    opacity: 0.9;
+  }
 `;
 
 export const CommentEditor = styled.div`

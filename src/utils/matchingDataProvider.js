@@ -151,11 +151,24 @@ const buildRoleBuckets = filters => {
 // `1` means the group is on record without an Rh, `+`/`-` the other way round, and
 // `no`/`?` mean nothing usable is on record — the same categories the hydrated-card
 // post-filter derives in toBloodGroupCategory/toRhCategory.
+//
+// «Резус є, групи немає» — це саме `unknown`, а не `other`.
+//
+// Так називає цю картку пост-фільтр (`toBloodGroupCategory` на `'+'` віддає
+// `BLOOD_GROUP_UNKNOWN`), і називає навмисно: проєкція стрічки групу крові не
+// носить взагалі (`bloodGroup` у `MATCHING_CARD_FORBIDDEN_FIELDS`), тож
+// відкидати за нею картку він не має чим. Індекс же звав ту саму картку `other`
+// — і при знятому «?» у групі крові її бакет у план не потрапляв. Виходило, що
+// індекс віддає **менше**, ніж лишає пост-фільтр, тобто рівно те, чого цей
+// модуль не має права робити: кандидатів, яких індекс не назвав, дека не
+// побачить ніколи, а вичерпавши індексний список, вона ще й закриє `hasMore`.
+// На екрані це «фільтри сховали всі завантажені анкети» й жодної нової картки
+// скільки б не гортали.
 const getBloodMeta = bucket => {
   const normalized = String(bucket || '').trim().toLowerCase();
   if (/^[1-4][+-]$/.test(normalized)) return { bloodGroup: normalized[0], rh: normalized[1] };
   if (/^[1-4]$/.test(normalized)) return { bloodGroup: normalized, rh: 'empty' };
-  if (normalized === '+' || normalized === '-') return { bloodGroup: 'other', rh: normalized };
+  if (normalized === '+' || normalized === '-') return { bloodGroup: BLOOD_GROUP_UNKNOWN, rh: normalized };
   if (normalized === 'no') return { bloodGroup: 'empty', rh: 'empty' };
   return { bloodGroup: 'other', rh: 'other' };
 };
@@ -167,7 +180,9 @@ const buildBloodBuckets = filters => {
 
   return BLOOD_BUCKETS.filter(bucket => {
     const meta = getBloodMeta(bucket);
-    const bloodAllowed = bloodGroupActive
+    // Той самий виняток, що й у пост-фільтрі: `unknown` означає «картка не
+    // носить групи», а не «група не підійшла», тож знятий «?» його не знімає.
+    const bloodAllowed = bloodGroupActive && meta.bloodGroup !== BLOOD_GROUP_UNKNOWN
       ? isBucketSelectedByFilterGroup(filters?.bloodGroup, meta.bloodGroup)
       : true;
     const rhAllowed = rhActive ? isBucketSelectedByFilterGroup(filters?.rh, meta.rh) : true;

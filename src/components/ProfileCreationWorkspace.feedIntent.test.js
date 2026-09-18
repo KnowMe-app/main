@@ -6,6 +6,7 @@ import { buildOverlayPrefill, ProfileCreationWorkspace } from './ProfileCreation
 import {
   fetchDislikeUsers,
   fetchFavoriteUsers,
+  fetchPublicProfileComments,
   fetchUserById,
   fetchUserComment,
   fetchUsersByIds,
@@ -45,6 +46,12 @@ jest.mock('./config', () => ({
   addDislikeUser: jest.fn(async () => undefined),
   removeDislikeUser: jest.fn(async () => undefined),
   addMatchingSearchQuery: jest.fn(),
+  // Форма доповнення показує ще й публічні відгуки картки — вони приїжджають
+  // разом з нею, тією самою воронкою, що й у стрічці.
+  fetchPublicProfileComments: jest.fn(async () => ({})),
+  addPublicProfileComment: jest.fn(async () => ({})),
+  updatePublicProfileComment: jest.fn(async () => ({})),
+  deletePublicProfileComment: jest.fn(async () => undefined),
 }));
 
 jest.mock('./SearchBar', () => ({
@@ -124,6 +131,7 @@ beforeEach(() => {
   fetchFavoriteUsers.mockResolvedValue({});
   fetchDislikeUsers.mockResolvedValue({});
   fetchUserComment.mockResolvedValue(null);
+  fetchPublicProfileComments.mockResolvedValue({});
   readProfileFromNodes.mockResolvedValue(null);
   loadOwnProfileMutations.mockResolvedValue([]);
   loadSharedProfileMutations.mockResolvedValue([]);

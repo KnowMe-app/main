@@ -174,7 +174,14 @@ const UI_TEXTS = {
   // лишається як є: перейменування підпису не зачіпає назви ключа в базі.
   publicComment: { en: 'Public note', uk: 'Публічна нотатка' },
   publicCommentHint: { en: 'Everyone sees it', uk: 'Бачать усі' },
-  publicCommentPlaceholder: { en: 'Add a public note', uk: 'Додати публічну нотатку' },
+  // Плейсхолдер каже і про запис, і про читання: доріжка робить обидва, але
+  // читання починається не тут, а зі значка відгуків у ряду рішень — тому
+  // поруч із написом стоїть рівно той самий значок (`FaRegCommentDots`), і
+  // видно, куди натиснути, щоб перевірити.
+  publicCommentPlaceholder: {
+    en: 'Add a public note or check for existing ones',
+    uk: 'Додати публічну нотатку або перевірити їх наявність',
+  },
   notes: { en: 'Notes', uk: 'Нотатки' },
   about: { en: 'About', uk: 'Про себе' },
   keyDetails: { en: 'Key details', uk: 'Головне' },

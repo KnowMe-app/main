@@ -8,6 +8,7 @@ import {
 } from 'components/config';
 import { getCurrentValue } from 'components/getCurrentValue';
 import { ADMIN_UIDS, isAdminUid } from './accessLevel';
+import { dropCachedPublicComments } from './publicCommentsMemory';
 
 /**
  * Відгуки про картки, заведені імпортом, лежать не там, де мали б.
@@ -425,6 +426,13 @@ export const migrateLegacyImportCommentsToPublic = async ({
     if (removePrivate) removed += (await removePrivateOriginals(entry)).length;
   }
 
+  // Памʼять таба про відгуки нічого про цей перенос не знає: писався він не
+  // через картку. Поки її не знімали, перенесений відгук не показувався взагалі
+  // — картка малювала те, що прочитала до переносу, — і виглядало це як
+  // невдалий перенос, хоча в базі відгук уже лежав. Лікувало тільки «Очистити
+  // кеш».
+  if (written || removed) dropCachedPublicComments();
+
   return {
     prefix,
     includedWithoutWriter,
@@ -484,6 +492,11 @@ export const copyPublicCommentsBetweenCards = async ({ sourceProfileId, targetPr
     targetKeys.add(textKey);
     copied += 1;
   }
+
+  // Та сама причина, що й у партійному переносі: картка-отримувач уже могла
+  // прочитати свої відгуки, і без цього скопійовані зʼявились би на ній аж
+  // через строк памʼяті.
+  if (copied) dropCachedPublicComments();
 
   return { copied, skipped };
 };
