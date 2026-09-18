@@ -876,6 +876,19 @@ await it('чужого шару не пише й усіх шарів картк�
   await assertSucceeds(get(ref(db(SUPERADMIN), `multiData/edits/${CARD}`)));
 });
 
+// Черга доповнень цілком — те, з чого адмін починає перегляд «усе, що дописали».
+// Оберненого індексу «картка → є шар» немає: шари лежать під карткою, тож перелік
+// береться з кореня `multiData/edits`. Кому відкрито корінь — тому відкриті шари
+// **всіх** карток разом, тобто хто кого дописував по всій базі; тому тут рівно
+// адмін, як і в переліку чернеток. Службовий доступ і той, хто вміє створювати
+// картки, читають вузол **однієї** картки — і не більше.
+await it('корінь усіх шарів читає лише адмін', async () => {
+  await assertSucceeds(get(ref(db(SUPERADMIN), 'multiData/edits')));
+  await assertFails(get(ref(db(MATCHING_EDITOR), 'multiData/edits')));
+  await assertFails(get(ref(db(CARD_CREATOR), 'multiData/edits')));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), 'multiData/edits')));
+});
+
 await it('пише власний запис у журнал правок, а стирає його лише адмін', async () => {
   // Журнал веде той, хто справді дописував цю картку: запис лягає одразу після
   // самого шару (`saveOverlayForUserCard`), тож шар на момент запису вже є.

@@ -28,6 +28,7 @@ import {
   formatDateToServer,
 } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
+import { persistCanonicalCard } from 'utils/persistCanonicalCard';
 import { normalizePhoneState } from './inputValidations';
 import toast from 'react-hot-toast';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
@@ -1152,23 +1153,11 @@ const EditProfile = () => {
     handleSubmit(capturedNewState, 'overwrite', { [fieldName]: capturedDeletedValue });
   };
 
+  // Сама послідовність (індекс → дзеркало або вузли) живе в
+  // `utils/persistCanonicalCard`: той самий запис робить перегляд черги
+  // доповнень на `AddNewProfile`, де форми анкети на екрані немає взагалі.
   const persistCanonicalByRules = async mergedCard => {
-    if (mergedCard?.userId?.length > 20) {
-      const existingData = await fetchUserById(mergedCard.userId) || {};
-      await syncUserSearchIdIndex(mergedCard.userId, existingData, mergedCard);
-
-      const cleanedState = { ...mergedCard };
-      delete cleanedState.cacheVersion;
-      await updateDataInRealtimeDB(mergedCard.userId, cleanedState, 'update');
-      await updateDataInFiresoreDB(mergedCard.userId, cleanedState, 'check');
-      return;
-    }
-
-    const existingData = await fetchUserById(mergedCard.userId) || {};
-    await syncUserSearchIdIndex(mergedCard.userId, existingData, mergedCard);
-    const sanitizedMergedCard = { ...mergedCard };
-    delete sanitizedMergedCard.cacheVersion;
-    await updateProfileNodesInRTDB(mergedCard.userId, sanitizedMergedCard, 'update', true);
+    await persistCanonicalCard(mergedCard);
   };
 
   // Bulk review of everything editors have pending on this card. Accepting

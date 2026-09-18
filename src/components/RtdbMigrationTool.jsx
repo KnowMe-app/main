@@ -2,6 +2,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import { ref as dbRef, update as dbUpdate } from 'firebase/database';
+import { useNavigate } from 'react-router-dom';
 
 import {
   MIGRATION_GROUPS,
@@ -134,6 +135,28 @@ const Row = styled.div`
   flex-wrap: wrap;
   align-items: center;
   margin-bottom: 10px;
+`;
+
+// Вихід на панель анкет: та сама пара екранів, той самий токен-набір.
+const BackLink = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 5px 10px;
+  border: 1px solid var(--km-border);
+  border-radius: 9px;
+  background: var(--km-card);
+  color: var(--km-muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--km-accent);
+    color: var(--km-accent);
+  }
 `;
 
 const SmallGhost = styled(KmGhostButton)`
@@ -536,6 +559,7 @@ export const EXPORT_TARGETS = [
 ];
 
 export const RtdbMigrationTool = () => {
+  const navigate = useNavigate();
   const stateRef = useRef(null);
   const [loaded, setLoaded] = useState(false);
   const [usersInventory, setUsersInventory] = useState(null);
@@ -837,6 +861,15 @@ export const RtdbMigrationTool = () => {
 
       <Shell>
         <PageTitle>Локальна міграція RTDB</PageTitle>
+        {/*
+          Міграція — окремий екран, але робота на ньому продовжує ту саму, що й
+          адмінська панель на `/add`: панель веде сюди кнопкою «Міграція RTDB»,
+          і зворотний шлях мусить бути такий самий очевидний. Доти вийти звідси
+          можна було лише через меню «⋮».
+        */}
+        <BackLink type="button" onClick={() => navigate('/add')}>
+          ← До панелі анкет
+        </BackLink>
         <Note>
           Інструмент не звертається до Firebase. Він читає локальні JSON-копії, розкладає їх по нових
           вузлах і віддає файли для ручного імпорту. Локальний <code>users</code> не змінюється взагалі;
