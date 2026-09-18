@@ -212,6 +212,51 @@ describe('сторінка getInTouch береться з вузла власн�
     expect(firstIds.filter(id => secondIds.includes(id))).toEqual([]);
   });
 
+  it('проба форми запису не стоїть перед сторінкою', async () => {
+    // Поставлена попереду, вона додає зайвий послідовний круг на перше
+    // малювання — кожній сесії, заради випадку, якого в переважної більшості
+    // власників немає. Тому сторінка мусить вилетіти, не чекаючи на пробу.
+    //
+    // Модуль тут свіжий навмисно: проба кешується на сесію, тож у вже
+    // прогрітому модулі вона не робить запиту взагалі — і перевіряти було б
+    // нічого.
+    let releaseProbe = () => {};
+    const probeGate = new Promise(resolve => { releaseProbe = resolve; });
+    const issued = [];
+
+    mockGet.mockImplementation(async request => {
+      const [path, ...constraints] = Array.isArray(request) ? request : [request];
+      if (String(path) === `multiData/getInTouch/${OWNER}`) {
+        const isProbe = constraints.length > 0
+          && !constraints.some(part => part?.t === 'endAt' || part?.t === 'endBefore');
+        issued.push(isProbe ? 'probe' : constraints.length ? 'page' : 'map');
+        if (isProbe) {
+          await probeGate;
+          return runOwnerQuery(constraints);
+        }
+        if (constraints.length) return runOwnerQuery(constraints);
+        return snapshotOf(OWNER_MARKS);
+      }
+      if (String(path) === `multiData/writer/${OWNER}`) return snapshotOf({});
+      return snapshotOf(nodes[String(path)] ?? null);
+    });
+
+    jest.resetModules();
+    // eslint-disable-next-line global-require
+    const { fetchUsersBySearchKeyPaged: pagedFresh } = require('./config');
+
+    const pending = pagedFresh({ limit: 2 });
+    // Проба ще висить — а запит сторінки вже пішов.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(issued).toContain('probe');
+    expect(issued).toContain('page');
+
+    releaseProbe();
+    const page = await pending;
+    expect(Object.keys(page.users)).toEqual(['today2', 'today1']);
+  });
+
   it('сторінку збирає один запит кандидатів, а не обхід календаря', async () => {
     await fetchUsersBySearchKeyPaged({ limit: 3 });
 

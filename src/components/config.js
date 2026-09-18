@@ -7193,10 +7193,19 @@ const collectOwnerGetInTouchCandidateIds = async ({ cursor, limit = PAGE_SIZE })
   // стільки ж, скільки другий запит коштував би круга.
   const readLimit = safeLimit + 1;
 
-  const hasLegacyGroups = await ownerGetInTouchHasLegacyGroups(ownerId);
+  // Проба форми запису йде **разом** зі сторінкою, а не перед нею: поставлена
+  // попереду, вона додавала б зайвий послідовний круг на перше малювання —
+  // кожній сесії, заради випадку, якого в переважної більшості власників немає.
+  // Ціна помилкової ставки нульова: на старій формі впорядкований запит однаково
+  // вертає порожньо (обʼєкти лежать за межею), тож викидати нічого.
+  const [hasLegacyGroups, sortedRows] = await Promise.all([
+    ownerGetInTouchHasLegacyGroups(ownerId),
+    readOwnerGetInTouchSorted(ownerId, { to: today, before, limit: readLimit, latestFirst: true }),
+  ]);
+
   const rows = hasLegacyGroups
     ? sliceOwnerGetInTouchMapPage(await readOwnerGetInTouchMap(ownerId), { before, today, readLimit })
-    : await readOwnerGetInTouchSorted(ownerId, { to: today, before, limit: readLimit, latestFirst: true });
+    : sortedRows;
 
   // Сторінка — це перші `safeLimit` рядків, і курсор іде рівно по ній. Зайвий
   // рядок питався лише для того, щоб відповісти на «чи є далі», тож у видачу
