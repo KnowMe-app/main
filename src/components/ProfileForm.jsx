@@ -1072,6 +1072,11 @@ export const ProfileForm = ({
   const [ppTechnicalInput, setPpTechnicalInput] = useState('');
   const [autoOverlayFieldAdditions, setAutoOverlayFieldAdditions] = useState({});
   const [dismissedOverlayEntries, setDismissedOverlayEntries] = useState({});
+  // Пропозицію можна поправити перед тим, як прийняти: у ній буває зайвий
+  // пробіл чи плюс, і доти адмін мусив прийняти як є, а потім правити поле
+  // вручну. Виправлене лежить тут і тільки тут — у шарі редактора й в індексі
+  // далі стоїть те, що він справді надіслав.
+  const [overlayEntryDrafts, setOverlayEntryDrafts] = useState({});
   const [showAdditionalRulesModal, setShowAdditionalRulesModal] = useState(false);
   const [activeAdditionalRuleInputIndex, setActiveAdditionalRuleInputIndex] = useState(0);
   const [additionalRuleBuilder, setAdditionalRuleBuilder] = useState([]);
@@ -1230,9 +1235,14 @@ export const ProfileForm = ({
     additionalRuleBuilder,
   ]);
 
+  // Відхилене лишається відхиленим до зміни картки. Поки скидання висіло ще й
+  // на `overlayFieldAdditions`, воно спрацьовувало на кожному оновленні
+  // пропса — а пропс перебудовується щоразу, коли `EditProfile` перечитує
+  // шари, — і щойно прибраний хрестиком рядок повертався на екран сам собою.
   useEffect(() => {
     setDismissedOverlayEntries({});
-  }, [state?.userId, overlayFieldAdditions]);
+    setOverlayEntryDrafts({});
+  }, [state?.userId]);
 
   const normalizeGetInTouchForSubmit = draftState => {
     if (!draftState || typeof draftState !== 'object') {
@@ -2133,10 +2143,14 @@ export const ProfileForm = ({
         value: entry.value,
         action,
       });
+      // Після запису перечитуємо шари картки: доти список пропозицій жив із
+      // пропса, який лишався тим самим, і прибраний рядок повертався на екран
+      // з наступним перемальовуванням.
+      if (typeof refreshOverlayForEditor === 'function') await refreshOverlayForEditor();
     } catch {
       toast.error(action === 'accept' ? 'Не вдалося прийняти пропозицію' : 'Не вдалося видалити пропозицію');
     }
-  }, [state?.userId]);
+  }, [refreshOverlayForEditor, state?.userId]);
 
   const removeOverlayValueFromState = useCallback((fieldName, entryValue) => {
     if (!fieldName) return;
@@ -2162,8 +2176,24 @@ export const ProfileForm = ({
     await settleOverlayEntryInBackend(fieldName, entry, 'discard');
   };
 
+  const getOverlayEntryDraftKey = (fieldName, entry) => `${fieldName}::${getOverlayEntrySignature(entry)}`;
+
+  const getOverlayEntryDraftValue = (fieldName, entry) => {
+    const draftKey = getOverlayEntryDraftKey(fieldName, entry);
+    return Object.prototype.hasOwnProperty.call(overlayEntryDrafts, draftKey)
+      ? overlayEntryDrafts[draftKey]
+      : entry?.value ?? '';
+  };
+
+  const setOverlayEntryDraftValue = (fieldName, entry, nextValue) => {
+    const draftKey = getOverlayEntryDraftKey(fieldName, entry);
+    setOverlayEntryDrafts(prev => ({ ...prev, [draftKey]: nextValue }));
+  };
+
+  // В анкету їде виправлене, а з шару й індексу знімається надіслане: у шарі
+  // редактора лежить саме його значення, і ключ `searchId` заведено на нього ж.
   const handleOverlayApply = async (fieldName, entry) => {
-    adoptOverlayValue(fieldName, entry?.value);
+    adoptOverlayValue(fieldName, getOverlayEntryDraftValue(fieldName, entry));
     dismissOverlayEntry(fieldName, entry);
     await settleOverlayEntryInBackend(fieldName, entry, 'accept');
   };
@@ -3031,9 +3061,15 @@ ${entries.join('\n')}`;
 
                     {field.name !== 'accessLevel' && (
                       <>
-                        <Hint fieldName={field.name} isActive={value}>
-                          {getFieldDisplayLabel(field)}
-                        </Hint>
+                        {/* Підпис стоїть над першим рядком і більше не
+                            повторюється: два телефони давали два однакові
+                            «Телефон», і кожен з'їдав рядок екрана. Що це за
+                            поле, каже перший — решта під ним і так його. */}
+                        {idx === 0 && (
+                          <Hint fieldName={field.name} isActive={value}>
+                            {getFieldDisplayLabel(field)}
+                          </Hint>
+                        )}
                         <Placeholder isActive={value}>{getFieldPlaceholderText(field)}</Placeholder>
                       </>
                     )}
@@ -3435,20 +3471,38 @@ ${entries.join('\n')}`;
             ) : null}
               </FieldMainRow>
 
-            {overlayEntries.map((entry, idx) => (
+            {overlayEntries.map((entry, idx) => {
+              // Пропозицію видно, її можна поправити перед «ОК» і відкрити її
+              // запис у `searchId` тією самою стрілкою, що й у звичайного
+              // рядка: ключ туди завів сам шар, і питання «а що там лежить»
+              // виникає саме на цьому рядку.
+              const draftValue = getOverlayEntryDraftValue(field.name, entry);
+              return (
               <OverlayEntryRow key={`overlay-${field.name}-${idx}`}>
                 <InputDiv $isOverlaySuggestion $isDeletedOverlay={entry.isDeleted}>
-                  <InputFieldContainer fieldName={field.name} value={entry.value}>
+                  <InputFieldContainer fieldName={field.name} value={draftValue}>
                     <InputField
                       fieldName={field.name}
                       name={`overlay-${field.name}-${idx}`}
                       aria-label={`Пропозиція: ${getFieldDisplayLabel(field)}`}
-                      value={entry.value}
-                      readOnly
+                      value={draftValue}
                       $isOverlaySuggestion
                       $isDeletedOverlay={entry.isDeleted}
                       onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
+                      onChange={e => setOverlayEntryDraftValue(field.name, entry, e.target.value)}
                     />
+                    {extendedMode && canOpenSearchIdBackendShortcut(field.name, entry.value) && (
+                      <SearchIdBackendButton
+                        type="button"
+                        title="Відкрити запис searchId у Firebase"
+                        aria-label={`Відкрити запис searchId: ${getFieldDisplayLabel(field)}`}
+                        $rightOffset="35px"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => handleOpenSearchIdBackend(field.name, entry.value)}
+                      >
+                        →
+                      </SearchIdBackendButton>
+                    )}
                     <ClearButton
                       type="button"
                       aria-label={`Відхилити пропозицію: ${getFieldDisplayLabel(field)}`}
@@ -3458,16 +3512,19 @@ ${entries.join('\n')}`;
                       &times;
                     </ClearButton>
                   </InputFieldContainer>
-                  <Hint fieldName={field.name} isActive={entry.value}>
-                    {getFieldDisplayLabel(field)}
-                  </Hint>
-                  <Placeholder isActive={entry.value}>{getFieldDisplayLabel(field)}</Placeholder>
+                  {idx === 0 && (
+                    <Hint fieldName={field.name} isActive={draftValue}>
+                      {getFieldDisplayLabel(field)}
+                    </Hint>
+                  )}
+                  <Placeholder isActive={draftValue}>{getFieldDisplayLabel(field)}</Placeholder>
                 </InputDiv>
                 <Button type="button" onClick={() => handleOverlayApply(field.name, entry)}>
                   ОК
                 </Button>
               </OverlayEntryRow>
-            ))}
+              );
+            })}
             </PickerContainer>
             </FieldGroup>
           );

@@ -59,4 +59,26 @@ describe('ProfileForm settles one overlay value at a time', () => {
   it('пропозиції будує той самий розкладач, що й форма адміна', () => {
     expect(formSource).toContain('fieldMap: buildOverlayFieldEntries(rawValue)');
   });
+
+  it('рядок пропозиції — справжній інпут зі стрілкою на searchId', () => {
+    // Пропозицію можна поправити перед «ОК» (зайвий пробіл, плюс), а стрілка
+    // відкриває її запис в індексі — ключ туди завів сам шар.
+    expect(formSource).toContain('onChange={e => setOverlayEntryDraftValue(field.name, entry, e.target.value)}');
+    expect(formSource).not.toContain('value={entry.value}\n                      readOnly');
+    expect(formSource).toContain('onClick={() => handleOpenSearchIdBackend(field.name, entry.value)}');
+    // В анкету їде виправлене, а з шару й індексу знімається надіслане.
+    expect(formSource).toContain('adoptOverlayValue(fieldName, getOverlayEntryDraftValue(fieldName, entry));');
+  });
+
+  it('відхилене лишається відхиленим і після перечитування шарів', () => {
+    // Скидання висіло ще й на пропсі, а пропс перебудовується щоразу, коли
+    // `EditProfile` перечитує шари: прибраний хрестиком рядок повертався сам.
+    expect(formSource).toContain('setDismissedOverlayEntries({});\n    setOverlayEntryDrafts({});\n  }, [state?.userId]);');
+    expect(formSource).toContain('if (typeof refreshOverlayForEditor === \'function\') await refreshOverlayForEditor();');
+  });
+
+  it('підпис поля стоїть над першим рядком, а не над кожним', () => {
+    // Два телефони давали два однакові «Телефон», і кожен з'їдав рядок екрана.
+    expect(formSource).toContain('{idx === 0 && (\n                          <Hint fieldName={field.name} isActive={value}>');
+  });
 });
