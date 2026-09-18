@@ -1077,6 +1077,10 @@ export const ProfileForm = ({
   // вручну. Виправлене лежить тут і тільки тут — у шарі редактора й в індексі
   // далі стоїть те, що він справді надіслав.
   const [overlayEntryDrafts, setOverlayEntryDrafts] = useState({});
+  // Рішення по оверлеях можуть містити кілька послідовних RTDB-запитів.
+  // Тримаємо їх у тому самому promise-ланцюжку, що й звичайні збереження
+  // анкети: хрестик реагує одразу, а швидкі кліки не перетинають транзакції.
+  const overlaySettlementQueueRef = useRef(Promise.resolve());
   const [showAdditionalRulesModal, setShowAdditionalRulesModal] = useState(false);
   const [activeAdditionalRuleInputIndex, setActiveAdditionalRuleInputIndex] = useState(0);
   const [additionalRuleBuilder, setAdditionalRuleBuilder] = useState([]);
@@ -2138,6 +2142,26 @@ export const ProfileForm = ({
     });
   }, []);
 
+  const restoreOverlayEntry = useCallback((fieldName, entry) => {
+    const signature = getOverlayEntrySignature(entry);
+
+    setDismissedOverlayEntries(prev => {
+      const nextSignatures = (prev[fieldName] || []).filter(candidate => candidate !== signature);
+      if (nextSignatures.length === (prev[fieldName] || []).length) return prev;
+      if (!nextSignatures.length) {
+        const { [fieldName]: _omit, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [fieldName]: nextSignatures };
+    });
+
+    setAutoOverlayFieldAdditions(prev => {
+      const currentEntries = prev[fieldName] || [];
+      if (currentEntries.some(candidate => getOverlayEntrySignature(candidate) === signature)) return prev;
+      return { ...prev, [fieldName]: [...currentEntries, entry] };
+    });
+  }, []);
+
   /**
    * Рішення адмінки стосується **одного** значення, а не всієї правки поля.
    *
@@ -2171,6 +2195,17 @@ export const ProfileForm = ({
     }
   }, [refreshOverlayForEditor, state?.userId]);
 
+  const enqueueOverlaySettlement = useCallback((fieldName, entry, action, acceptedValue) => {
+    const queuedSettlement = overlaySettlementQueueRef.current
+      .catch(error => {
+        console.error('Previous overlay settlement failed', error);
+      })
+      .then(() => settleOverlayEntryInBackend(fieldName, entry, action, acceptedValue));
+
+    overlaySettlementQueueRef.current = queuedSettlement.catch(() => {});
+    return queuedSettlement;
+  }, [settleOverlayEntryInBackend]);
+
   const removeOverlayValueFromState = useCallback((fieldName, entryValue) => {
     if (!fieldName) return;
 
@@ -2192,11 +2227,16 @@ export const ProfileForm = ({
   const handleOverlayDismiss = async (fieldName, entry) => {
     // Rejecting a deletion keeps/restores the canonical value; rejecting an
     // addition removes the proposed value from the form.
-    const settled = await settleOverlayEntryInBackend(fieldName, entry, 'discard');
-    if (!settled) return;
+    // Рядок ховається до мережевого round trip. Сам запис іде в послідовну
+    // чергу, а при відмові рядок повертається без перезавантаження сторінки.
+    dismissOverlayEntry(fieldName, entry);
+    const settled = await enqueueOverlaySettlement(fieldName, entry, 'discard');
+    if (!settled) {
+      restoreOverlayEntry(fieldName, entry);
+      return;
+    }
     if (entry?.isDeleted) adoptOverlayValue(fieldName, entry?.value);
     else removeOverlayValueFromState(fieldName, entry?.value);
-    dismissOverlayEntry(fieldName, entry);
   };
 
   const getOverlayEntryDraftKey = (fieldName, entry) => `${fieldName}::${getOverlayEntrySignature(entry)}`;
@@ -2222,7 +2262,7 @@ export const ProfileForm = ({
     // рядок пропозиції — звичайний інпут, і зайвий пробіл чи плюс адмін
     // прибирає просто в ньому.
     const acceptedValue = getOverlayEntryDraftValue(fieldName, entry);
-    const settled = await settleOverlayEntryInBackend(fieldName, entry, 'accept', acceptedValue);
+    const settled = await enqueueOverlaySettlement(fieldName, entry, 'accept', acceptedValue);
     if (!settled) return;
     if (entry?.isDeleted) removeOverlayValueFromState(fieldName, entry?.value);
     else adoptOverlayValue(fieldName, acceptedValue);
