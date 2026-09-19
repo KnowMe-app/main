@@ -20,7 +20,13 @@ import {
   signOut,
 } from 'firebase/auth';
 import Photos from './Photos';
-import InfoModal from './InfoModal';
+import InfoModal, {
+  ModalActionRow,
+  ModalDangerButton,
+  ModalGhostButton,
+  ModalText,
+  ModalTitle,
+} from './InfoModal';
 import { uiText } from 'utils/uiTranslations';
 import { useAppSettings } from 'hooks/useAppSettings';
 import { resolveAccess } from 'utils/accessLevel';
@@ -200,6 +206,23 @@ const PhotoSection = styled.div`
   scroll-margin-top: ${CONTENT_SECTION_TOP_GAP}px;
 `;
 const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
+// «Очистити все» — теж дія з анкетою цілком, тож і ширина в неї та сама, а
+// різницю несе тон: стирання незворотне, і виглядати воно як «опублікувати» не
+// має права.
+const ClearAllBtn = styled.button`
+  width:100%;
+  margin-top:10px;
+  padding:14px;
+  background:var(--km-danger-bg, #FDECEA);
+  color:var(--km-danger, #B42318);
+  border:1px solid var(--km-danger-border, rgba(180,35,24,.24));
+  border-radius:var(--radius);
+  font-size:15px;
+  font-weight:700;
+  cursor:pointer;
+
+  &:disabled { opacity:.6; cursor:not-allowed; }
+`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
 const DotsButton = styled.button`
   display:flex;align-items:center;justify-content:center;
@@ -340,6 +363,25 @@ const baseSections = [
 
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','vk','country','region','city','moreInfo_main']);
 
+/**
+ * Чого «очистити все» не чіпає.
+ *
+ * Пошта — це логін, а не поле анкети: стерши її, людина втратила б вхід у
+ * власний профіль, і «очистити» перетворилось би на «видалити акаунт», якого
+ * ніхто не просив. Пароль і `userId` тут узагалі не поля форми, а роль
+ * зберігається окремим шляхом (`updateProfileRole`) і порожнім рядком не
+ * буває.
+ */
+const CLEAR_ALL_PROTECTED_FIELDS = new Set([
+  'email',
+  'password',
+  'userId',
+  'userRole',
+  'role',
+  'publish',
+  'accessLevel',
+]);
+
 // Ким людина заявляє себе в матчингу. Перелік той самий, що знають картка
 // (`ROLE_CODES` у `profileLayoutConfig`) і фільтри стрічки, — інакше анкета
 // отримала б роль, якої пошук не вміє шукати.
@@ -392,6 +434,7 @@ export const MyProfile = () => {
   });
   const isAdmin = access.isAdmin;
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [isClearingProfile, setIsClearingProfile] = useState(false);
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [userId, setUserId] = useState('');
   const [activeTab, setActiveTab] = useState('auth');
@@ -688,6 +731,14 @@ export const MyProfile = () => {
       showVerifyEmail
       isSessionActive={isProfileAccessConfirmed}
       onExit={handleExit}
+      // Пункти «Переглянути анкету» й «Видалити анкету» стоять у меню всюди,
+      // де є анкета (`ProfileScreen`, `MyProfileOld`, `AddNewProfile`), і саме
+      // тут їх не передавали — тож `ProfileDotsMenu` цілу секцію «Анкета» не
+      // малював. Видалення профілю — це лист на пошту з темою «Видаліть мою
+      // анкету» (`delProfile` в `InfoModal`): акаунт і сліди в чужих списках
+      // знімає людина, а не кнопка.
+      onDeleteProfile={() => setShowInfoModal('delProfile')}
+      onViewProfile={() => setShowInfoModal('viewProfile')}
       onSelect={() => setShowInfoModal(false)}
     />
   );
@@ -1051,6 +1102,50 @@ export const MyProfile = () => {
     }
   };
 
+  /**
+   * «Очистити все» — це стирання полів, а не видалення анкети.
+   *
+   * Видалення профілю робить пошта (пункт меню «Видалити анкету»): акаунт,
+   * реакції й сліди в чужих списках знімає людина, а не кнопка. А тут відповідь
+   * на інше питання — «я більше не хочу, щоб про мене це знали»: поля
+   * забиваються порожніми рядками, і анкета йде зі стрічки.
+   *
+   * Порожній рядок їде звичайним шляхом збереження, **без** `directFields`:
+   * саме так `makeUploadedInfo` дописує його останньою версією поля
+   * (`['Оксана', '']`) — тобто позначкою стирання, яку розуміють і картка
+   * стрічки, і відкрита анкета. Прямий запис поклав би туди сам рядок і
+   * загубив би історію, якої людина не просила знищувати.
+   *
+   * `publish` навпаки лишається прямим: `false` мусить доїхати до писача, бо
+   * саме він перебудовує проєкцію, де знятій публікації відповідає `feedDate:
+   * false` (див. `hideProfile`).
+   */
+  const clearProfileFields = async () => {
+    const currentState = stateRef.current || {};
+    const clearableFields = visibleSections
+      .flatMap(section => section.fields)
+      .filter(name => !CLEAR_ALL_PROTECTED_FIELDS.has(name))
+      .filter(name => String(currentState[name] ?? '').trim() !== '');
+
+    setIsClearingProfile(true);
+    const nextState = { ...currentState, publish: false };
+    clearableFields.forEach(name => { nextState[name] = ''; });
+    stateRef.current = nextState;
+    setState(nextState);
+
+    try {
+      await saveState(nextState, { directFields: ['publish'] });
+      localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
+      setShowInfoModal(false);
+      toast.success(uiText('Анкету очищено і приховано', language));
+    } catch (error) {
+      console.error('clear profile error', error);
+      toast.error(uiText('Не вдалося очистити анкету. Спробуйте ще раз', language));
+    } finally {
+      setIsClearingProfile(false);
+    }
+  };
+
   const renderField = (name) => {
     const field = fieldsMap.get(name);
     if (!field) return null;
@@ -1377,9 +1472,34 @@ export const MyProfile = () => {
 
     {showInfoModal && (
       <InfoModal
-        onClose={() => setShowInfoModal(false)}
+        onClose={() => { if (!isClearingProfile) setShowInfoModal(false); }}
         text={showInfoModal}
         Context={dotsMenu}
+        DelConfirm={() => (
+          <>
+            <ModalTitle>{uiText('Очистити анкету?', language)}</ModalTitle>
+            <ModalText>
+              {uiText(
+                'Усі заповнені поля стануть порожніми, а анкету буде приховано зі стрічки. '
+                + 'Пошта й доступ до акаунта лишаються — щоб видалити профіль, скористайтесь '
+                + 'пунктом «Видалити анкету» в меню.',
+                language,
+              )}
+            </ModalText>
+            <ModalActionRow>
+              <ModalGhostButton
+                type="button"
+                disabled={isClearingProfile}
+                onClick={() => setShowInfoModal(false)}
+              >
+                {uiText('Відмінити', language)}
+              </ModalGhostButton>
+              <ModalDangerButton type="button" disabled={isClearingProfile} onClick={clearProfileFields}>
+                {uiText(isClearingProfile ? 'Очищення…' : 'Очистити все', language)}
+              </ModalDangerButton>
+            </ModalActionRow>
+          </>
+        )}
       />
     )}
 
@@ -1387,6 +1507,14 @@ export const MyProfile = () => {
       <SubmitBtn type="button" onClick={state.publish ? hideProfile : publishProfile}>
         {uiText(state.publish ? 'Приховати анкету' : 'Опублікувати анкету', language)}
       </SubmitBtn>
+      {/* Друга дія з анкетою цілком — і вона поруч із першою, а не в меню:
+          «приховати» й «очистити все» відповідають на те саме питання, просто
+          різною мірою. Тон у неї інший, бо стирання незворотне. */}
+      {isProfileAccessConfirmed && (
+        <ClearAllBtn type="button" disabled={isClearingProfile} onClick={() => setShowInfoModal('delConfirm')}>
+          {uiText('Очистити все', language)}
+        </ClearAllBtn>
+      )}
       <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>{uiText('Анкету можна приховати або видалити будь-коли в налаштуваннях профілю.', language)}</p>
     </SubmitWrap>
   </Page>;

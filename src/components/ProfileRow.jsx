@@ -898,7 +898,8 @@ export const PublicCommentBlock = ({
             setEditing({ commentId: null, draftId: `draft-${Date.now()}` });
           }}
         >
-          {publicCommentPlaceholder(language)}
+          <FaRegCommentDots size={12} aria-hidden="true" />
+          <span>{publicCommentPlaceholder(language)}</span>
         </S.AddCommentTrigger>
       )}
 

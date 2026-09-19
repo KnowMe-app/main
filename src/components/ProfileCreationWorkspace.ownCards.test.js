@@ -37,6 +37,12 @@ jest.mock('./config', () => ({
   fetchDislikeUsers: jest.fn(async () => ({})),
   readProfileFromNodes: jest.fn(async () => null),
   addMatchingSearchQuery: jest.fn(),
+  // Форма доповнення показує ще й публічні відгуки картки — вони приїжджають
+  // разом з нею, тією самою воронкою, що й у стрічці.
+  fetchPublicProfileComments: jest.fn(async () => ({})),
+  addPublicProfileComment: jest.fn(async () => ({})),
+  updatePublicProfileComment: jest.fn(async () => ({})),
+  deletePublicProfileComment: jest.fn(async () => undefined),
 }));
 jest.mock('./smallCard/FieldComment', () => ({ FieldComment: () => null }));
 

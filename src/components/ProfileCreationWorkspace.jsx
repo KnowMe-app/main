@@ -6,16 +6,35 @@ import styled from 'styled-components';
 import { FiChevronDown, FiClock, FiFolder, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
 import { FaEllipsisV } from 'react-icons/fa';
 
-import { addMatchingSearchQuery, auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, readProfileFromNodes, searchUsersOnly } from './config';
+import {
+  addMatchingSearchQuery,
+  addPublicProfileComment,
+  auth,
+  deletePublicProfileComment,
+  fetchDislikeUsers,
+  fetchFavoriteUsers,
+  fetchPublicProfileComments,
+  fetchUserById,
+  fetchUsersByIds,
+  readProfileFromNodes,
+  searchUsersOnly,
+  updatePublicProfileComment,
+} from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { getCurrentValue, hasCurrentValue } from './getCurrentValue';
 import { CONTACT_FIELDS, getContactEntries } from './contactMethods';
 import { fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
 import BackButton from './BackButton';
-import InfoModal from './InfoModal';
+import InfoModal, {
+  ModalActionRow,
+  ModalDangerButton,
+  ModalGhostButton,
+  ModalText,
+  ModalTitle,
+} from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
-import { ContactLinks } from './ProfileRow';
+import { ContactLinks, PublicCommentBlock } from './ProfileRow';
 import { NoteLane, NoteLaneHead, NoteLaneHint, NoteLanes } from './Matching.styled';
 import { profileUiText } from 'utils/profileTexts';
 import { useAppSettings } from '../hooks/useAppSettings';
@@ -29,7 +48,7 @@ import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
 import { buildMatchingSearchPath, MATCHING_PATH, readStoredMatchingSearchQuery } from 'utils/matchingSearchLocation';
 import { goBackOrTo } from 'utils/appBackNavigation';
-import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleCode } from './profileLayoutConfig';
+import { getProfileAge, getProfileLocation, getProfileName, getProfilePhotos, getProfileRole, getRoleCode } from './profileLayoutConfig';
 import {
   applyOverlayToCard,
   applyOverlaysToCard,
@@ -50,6 +69,7 @@ import {
 } from 'utils/draftFieldEdits';
 import {
   acceptCreateProfileMutation,
+  deleteCreateProfileMutation,
   getEffectiveProfile,
   loadAllCreateProfileMutations,
   loadOwnProfileMutations,
@@ -109,6 +129,17 @@ const SaveButton = styled(Button)`
   border-color: transparent;
   color: #fff;
   box-shadow: 0 10px 24px var(--km-accent-ring);
+`;
+// Видалення чернетки стоїть поруч зі збереженням, але тоном сказано, що воно
+// незворотне: «зберегти» робить із чернетки картку, «видалити» зносить її з
+// усіх колекцій та індексів, і сплутати їх не можна.
+const DeleteDraftButton = styled(Button)`
+  border-color: var(--km-danger-border);
+  background: var(--km-danger-bg);
+  color: var(--km-danger);
+
+  &:hover:not(:disabled) { border-color: var(--km-danger); }
+  &:focus-visible { outline-color: rgba(180, 35, 24, 0.24); border-color: var(--km-danger); }
 `;
 // «Закрити» внизу форми не стало: вихід — це жест «назад», а не кнопка серед
 // дій анкети. Доти їх було два з різним наслідком — кнопка вела до видачі
@@ -631,8 +662,17 @@ export const ProfileCreationWorkspace = () => {
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [searchFailed, setSearchFailed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [deletingDraft, setDeletingDraft] = useState(false);
+  const [confirmDeleteDraft, setConfirmDeleteDraft] = useState(false);
   const [favoriteUsers, setFavoriteUsers] = useState({});
   const [dislikeUsers, setDislikeUsers] = useState({});
+  // Публічні відгуки картки, яку доповнюють. Це інше сховище, ніж поле
+  // `publicComment` анкети: відгук підписаний автором і лежить у
+  // `comments/{cardId}`. Форма доповнення про них мовчала взагалі — людина
+  // дописувала картку, не бачачи, що про цю людину вже написали, — хоча в
+  // стрічці й у відкритій картці та сама доріжка їх показує.
+  const [publicComments, setPublicComments] = useState([]);
+  const [viewerName, setViewerName] = useState('');
   const draftRef = useRef(draft);
   const persistedDraftRef = useRef(draft);
   // The draft as its author stored it, before anybody's overlay is replayed
@@ -766,6 +806,9 @@ export const ProfileCreationWorkspace = () => {
       canCreateProfiles: profile?.canCreateProfiles,
     });
     setUid(user.uid);
+    // Імʼя автора відгуку резолвиться один раз тут, а не на кожен запис: та
+    // сама анкета читача вже прочитана рядком вище.
+    setViewerName(getProfileName(profile) || user.displayName || '');
     accessRef.current = resolved;
     setAccess(resolved);
     await refresh(user.uid, resolved);
@@ -781,6 +824,55 @@ export const ProfileCreationWorkspace = () => {
     });
     return () => { cancelled = true; };
   }, [uid]);
+
+  /**
+   * Відгуки картки, яку доповнюють, приїжджають разом з нею.
+   *
+   * Доріжка публічних нотаток у формі стоїть та сама, що в стрічці й у
+   * відкритій картці, а показувала вона лише поле анкети `publicComment` —
+   * тобто мовчала про все, що про цю людину вже написали інші. Дописувати
+   * картку, не бачачи чужих відгуків, означає дописувати наосліп: рівно те, від
+   * чого форму й відмивали, коли вона перестала бути порожньою.
+   *
+   * Читання одне на відкриту форму: картка тут одна, а не список.
+   */
+  useEffect(() => {
+    const cardId = overlayTarget?.userId;
+    if (!cardId) {
+      setPublicComments([]);
+      return undefined;
+    }
+    let cancelled = false;
+    fetchPublicProfileComments([cardId])
+      .then(byProfile => {
+        if (!cancelled) setPublicComments(byProfile?.[cardId] || []);
+      })
+      .catch(error => {
+        // Відгуки — доповнення до форми, а не її умова: відмова читання не має
+        // коштувати самої форми, тож вона лишається в консолі.
+        console.warn('[ProfileCreationWorkspace] public comments unavailable', error);
+      });
+    return () => { cancelled = true; };
+  }, [overlayTarget?.userId]);
+
+  const handleCreatePublicComment = useCallback(async (profileId, text) => {
+    const created = await addPublicProfileComment({ profileId, text, authorName: viewerName });
+    setPublicComments(previous => [...previous, created]);
+  }, [viewerName]);
+
+  const handleUpdatePublicComment = useCallback(async (profileId, commentId, text) => {
+    const updated = await updatePublicProfileComment({ profileId, commentId, text });
+    setPublicComments(previous => (updated
+      ? previous.map(comment => (comment.id === commentId
+        ? { ...comment, text: updated.text, updatedAt: updated.updatedAt }
+        : comment))
+      : previous.filter(comment => comment.id !== commentId)));
+  }, []);
+
+  const handleDeletePublicComment = useCallback(async (profileId, commentId) => {
+    await deletePublicProfileComment({ profileId, commentId });
+    setPublicComments(previous => previous.filter(comment => comment.id !== commentId));
+  }, []);
 
   useEffect(() => {
     const requestedCardId = searchParams.get('cardId');
@@ -1482,6 +1574,44 @@ export const ProfileCreationWorkspace = () => {
     } finally { setSaving(false); }
   };
 
+  /**
+   * Видалити чернетку начисто.
+   *
+   * «Відхилити» повертає чернетку авторові — це відповідь на «ще не готова».
+   * А дублеві, тестовій і випадково збереженій порожнечі місця немає взагалі,
+   * і доти прибрати їх з черги було нічим: чернетка не зникає сама ніколи.
+   * Зносить її `deleteCreateProfileMutation` — разом із заявками на
+   * унікальність, записами в `searchId`, шарами доповнень, відгуками й
+   * вузлами анкети, якщо чернетку вже публікували. Що саме не доїхало, звіт
+   * називає поіменно: «видалено» на половині слідів гірше за чесну відмову.
+   */
+  const deleteDraft = async () => {
+    const current = activeMutationRef.current;
+    if (!current?.cardId) return;
+    setDeletingDraft(true);
+    try {
+      const { failures } = await deleteCreateProfileMutation({
+        cardId: current.cardId,
+        creatorUid: current.createdBy,
+      });
+      setConfirmDeleteDraft(false);
+      if (failures.length) {
+        toast.error(uiText('Чернетку видалено не повністю: {steps}', language, {
+          steps: failures.map(failure => failure.step).join(', '),
+        }));
+      } else {
+        toast.success(uiText('Чернетку видалено з усіх колекцій та індексів', language));
+      }
+      closeEditor();
+      await refresh(uid, access);
+    } catch (error) {
+      console.error('[ProfileCreationWorkspace] draft deletion failed', error);
+      toast.error(uiText('Не вдалося видалити чернетку', language));
+    } finally {
+      setDeletingDraft(false);
+    }
+  };
+
   const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
   const draftFilledPct = useMemo(() => {
     const filledFields = [...FORM_FIELD_NAMES].filter(fieldName => (
@@ -1883,6 +2013,26 @@ export const ProfileCreationWorkspace = () => {
               <b>{profileUiText('publicComment', language)}</b>
               <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
             </NoteLaneHead>
+            {/* У доповненні знайденої картки доріжка показує те саме, що
+                показує вона ж у стрічці й у відкритій картці: підписані
+                автором відгуки з `comments/{cardId}`. Поле анкети
+                `publicComment` лишається під ними — доповнювач може
+                запропонувати й його, — але першим стоїть уже написане: доріжку
+                читають згори вниз, і відповідь мусить бути над полем для
+                питання. У новій чернетці картки ще немає, тож і відгуків бути
+                не може: там лишається саме поле. */}
+            {overlayTarget && (
+              <PublicCommentBlock
+                flush
+                profileId={overlayTarget.userId}
+                comments={publicComments}
+                viewerId={uid}
+                canModerate={Boolean(access?.isAdmin)}
+                onCreate={handleCreatePublicComment}
+                onUpdate={handleUpdatePublicComment}
+                onDelete={handleDeletePublicComment}
+              />
+            )}
             {renderCreateField('publicComment', {
               hideLabel: true,
               placeholder: profileUiText('publicCommentPlaceholder', language),
@@ -1914,11 +2064,49 @@ export const ProfileCreationWorkspace = () => {
           шапці: вихід — це жест «назад», а не дія серед дій анкети. */}
       {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <Card>
         <Actions>
-          <SaveButton disabled={saving} onClick={saveDraftAsCard}>
+          <SaveButton disabled={saving || deletingDraft} onClick={saveDraftAsCard}>
             {uiText(saving ? 'Збереження…' : 'Зберегти чернетку', language)}
           </SaveButton>
+          {/* Друга відповідь черги: цій чернетці жити не треба. Питання
+              підтвердження стоїть окремою модалкою — дія незворотна й
+              торкається не одного вузла. */}
+          <DeleteDraftButton
+            disabled={saving || deletingDraft}
+            onClick={() => setConfirmDeleteDraft(true)}
+          >
+            {uiText(deletingDraft ? 'Видалення…' : 'Видалити чернетку', language)}
+          </DeleteDraftButton>
         </Actions>
       </Card>}
+      {confirmDeleteDraft && <InfoModal
+        onClose={() => { if (!deletingDraft) setConfirmDeleteDraft(false); }}
+        text="delConfirm"
+        DelConfirm={() => (
+          <>
+            <ModalTitle>{uiText('Видалити чернетку?', language)}</ModalTitle>
+            <ModalText>
+              {uiText(
+                'Чернетку буде знято з усіх колекцій та індексів — разом із заявками на унікальність, '
+                + 'записами в пошуку, доповненнями інших редакторів і публічними відгуками. '
+                + 'Цю дію не можна скасувати.',
+                language,
+              )}
+            </ModalText>
+            <ModalActionRow>
+              <ModalGhostButton
+                type="button"
+                disabled={deletingDraft}
+                onClick={() => setConfirmDeleteDraft(false)}
+              >
+                {uiText('Відмінити', language)}
+              </ModalGhostButton>
+              <ModalDangerButton type="button" disabled={deletingDraft} onClick={deleteDraft}>
+                {uiText(deletingDraft ? 'Видалення…' : 'Видалити', language)}
+              </ModalDangerButton>
+            </ModalActionRow>
+          </>
+        )}
+      />}
     </> : overlayLoading ? <Card><Meta>{uiText('Відкриваємо картку…', language)}</Meta></Card> : <>
       {!access.isAdmin && <>
         {/* Екран питає одне — чи є вже така людина, — і має для цього один

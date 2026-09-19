@@ -40,9 +40,15 @@ describe('smallCard comment UI fixes', () => {
 // стоять поруч, тож різницю мусить нести і рядок, і кожен шлях запису.
 describe('публічні відгуки в блоці картки', () => {
   const source = fs.readFileSync(path.join(__dirname, 'renderTopBlock.js'), 'utf8');
+  // Памʼять таба про відгуки живе окремим модулем: знімати позначку мусить не
+  // лише той, хто малює картку, а й перенос відгуків із приватних нотаток.
+  const memorySource = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'utils', 'publicCommentsMemory.js'),
+    'utf8',
+  );
 
   it('читає відгуки разом із карткою, а не на окремий дотик', () => {
-    expect(source).toContain('fetchPublicProfileCommentsStrict([profileId])');
+    expect(memorySource).toContain('fetchPublicProfileCommentsStrict([profileId])');
     // Завантаження висить на самому відкритті картки: кнопки «перевірити, чи є
     // відгуки» в звичайному шляху більше немає.
     expect(source).toContain('React.useEffect(() => {\n    loadPublicComments();\n  }, [loadPublicComments]);');
@@ -53,11 +59,11 @@ describe('публічні відгуки в блоці картки', () => {
   });
 
   it('тримає ціну цього читання памʼяттю таба, а не повторним запитом на кожен показ', () => {
-    expect(source).toContain('const publicCommentsMemoryCache = new Map();');
+    expect(memorySource).toContain('const publicCommentsMemoryCache = new Map();');
     expect(source).toContain('readPublicCommentsCached(profileId, { force })');
     // Відмова в кеші не лишається, інакше одна мережева помилка тримала б
     // картку порожньою весь строк памʼяті.
-    expect(source).toContain('publicCommentsMemoryCache.delete(profileId);');
+    expect(memorySource).toContain('publicCommentsMemoryCache.delete(profileId);');
     // Свій же запис робить кеш застарілим — інакше правка відгуку зникала б
     // при наступному відкритті тієї ж картки.
     expect(source).toContain('dropCachedPublicComments(cardData.userId);');

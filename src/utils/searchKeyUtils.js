@@ -444,3 +444,56 @@ export const getEqualToCandidates = (searchKey, rawSearchValue) => {
 
   return [trimmed];
 };
+
+/**
+ * Поля, за значеннями яких дублікат не шукають.
+ *
+ * Імʼя й прізвище збігаються в різних людей постійно, а `other`, `getInTouch`
+ * і `lastAction` — це не ідентифікатор людини взагалі. Дублікатом картку робить
+ * спільний **контакт**: той самий телефон чи той самий нік.
+ */
+const NON_IDENTIFYING_SEARCH_ID_FIELDS = new Set([
+  'name',
+  'surname',
+  'other',
+  'getInTouch',
+  'lastAction',
+]);
+
+/**
+ * Пари карток, що ділять одне значення в `searchId`.
+ *
+ * Формат індексу — `searchId/{значення}/{поле}` = `id | [id, ...]`, тож
+ * дублікат — це поле, під яким лежить **список**: два різні id на одне й те
+ * саме значення. Поки цей збирач питав ключі старої форми
+ * (`{поле}_{значення}` зі списком одразу під ключем), він не знаходив нічого:
+ * під ключем тепер лежить обʼєкт полів, `Array.isArray` на ньому завжди хибний,
+ * а `startsWith('name')` перевіряв уже не поле, а саме значення — тобто відсіював
+ * випадкових «Назарів» замість імен. Кнопка «Дублікати» через це повертала
+ * порожній список на базі, повній дублікатів.
+ *
+ * Стара форма читається теж: під час переходу обидві лежать поруч, і поле в ній
+ * стоїть у назві ключа — звідти його й беремо.
+ */
+export const collectSearchIdDuplicatePairs = (searchIdData = {}) => {
+  const pairs = [];
+
+  Object.entries(searchIdData || {}).forEach(([valueKey, entryValue]) => {
+    if (entryValue && typeof entryValue === 'object' && !Array.isArray(entryValue)) {
+      Object.entries(entryValue).forEach(([field, ids]) => {
+        if (NON_IDENTIFYING_SEARCH_ID_FIELDS.has(field)) return;
+        const list = readSearchIdEntryIds({ [field]: ids });
+        if (list.length > 1) pairs.push(list);
+      });
+      return;
+    }
+
+    // Стара форма: поле стоїть у назві ключа, список — одразу під ним.
+    if (!Array.isArray(entryValue)) return;
+    if ([...NON_IDENTIFYING_SEARCH_ID_FIELDS].some(field => valueKey.startsWith(field))) return;
+    const list = readSearchIdEntryIds(entryValue);
+    if (list.length > 1) pairs.push(list);
+  });
+
+  return pairs;
+};

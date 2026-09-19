@@ -53,6 +53,7 @@ import {
   buildSearchIdEntryPath,
   buildSearchIdRecordKey,
   buildSearchIdValueKey,
+  collectSearchIdDuplicatePairs,
   getEqualToCandidates,
   getSearchIdPrefixes,
   makeSearchKeyValue,
@@ -64,6 +65,7 @@ import {
   splitSearchIdCandidateKeys,
 } from '../utils/searchKeyUtils';
 import { isAdminUid, readStoredAccessLevel } from '../utils/accessLevel';
+import { flattenOwnerValueToString } from '../utils/rtdbMigrationDerive';
 import { isLongFormatUserId } from '../utils/userIdFormat';
 import {
   canReadProfileOutsideFeed,
@@ -3841,14 +3843,29 @@ const invalidateOwnerValueMap = (path, ownerId) => {
  * Один запис в одну адресу: значення лежить значенням, тож зміна позначки —
  * це запис, а не переїзд між ключами. Зняття — `null` у тій самій адресі.
  */
-const setOwnerValue = async (path, ownerId, profileId, value) => {
+const setOwnerValue = async (path, ownerId, profileId, value, { stringOnly = false } = {}) => {
   const owner = String(ownerId || '').trim();
   const id = String(profileId || '').trim();
   if (!owner || !id) return false;
 
-  const hasValue = value !== null && value !== undefined
-    && (typeof value !== 'string' || value.trim() !== '');
-  const nextValue = hasValue && typeof value === 'string' ? value.trim() : value;
+  // Скаляр мусить доїхати скаляром.
+  //
+  // На `multiData/getInTouch/$ownerId/$userId` і `multiData/writer/...` у
+  // правилах стоїть `.validate: newData.isString()`, а значення сюди приходить
+  // і масивом: `writer` у старих анкетах лежить списком кодів, та й таблиця
+  // порівняння дублікатів розбиває значення з комою («Т, Ik») на масив ще до
+  // запису. База таку заливку відхиляє — провалена `.validate` повертається
+  // PERMISSION_DENIED, — а відмову нижче ковтає `catch`, тож позначка тихо
+  // не переносилась: на екрані її скопійовано, у базі немає. Зводимо до того
+  // самого рядка, який дала б форма картки (`join(', ')`), — так само, як це
+  // робить міграція на етапі плану.
+  const scalarValue = stringOnly && value !== null && value !== undefined && typeof value !== 'string'
+    ? flattenOwnerValueToString(value)
+    : value;
+
+  const hasValue = scalarValue !== null && scalarValue !== undefined
+    && (typeof scalarValue !== 'string' || scalarValue.trim() !== '');
+  const nextValue = hasValue && typeof scalarValue === 'string' ? scalarValue.trim() : scalarValue;
 
   const map = await readOwnerValueMap(path, owner);
   const previous = map[id];
@@ -3877,7 +3894,7 @@ export const invalidateOwnerGetInTouchMap = ownerId => (
 );
 
 export const setOwnerGetInTouch = (ownerId, profileId, value) => (
-  setOwnerValue(OWNER_GET_IN_TOUCH_PATH, ownerId, profileId, value)
+  setOwnerValue(OWNER_GET_IN_TOUCH_PATH, ownerId, profileId, value, { stringOnly: true })
 );
 
 export const readOwnerWriterMap = ownerId => readOwnerValueMap(OWNER_WRITER_PATH, ownerId);
@@ -3902,7 +3919,7 @@ export const readOwnerWriterMapStrict = async ownerId => {
 export const invalidateOwnerWriterMap = ownerId => invalidateOwnerValueMap(OWNER_WRITER_PATH, ownerId);
 
 export const setOwnerWriter = (ownerId, profileId, value) => (
-  setOwnerValue(OWNER_WRITER_PATH, ownerId, profileId, value)
+  setOwnerValue(OWNER_WRITER_PATH, ownerId, profileId, value, { stringOnly: true })
 );
 
 export const readOwnerStimulationScheduleMap = ownerId => (
@@ -8789,25 +8806,12 @@ export const loadDuplicateUsers = async () => {
       return {};
     }
 
-    const pairs = []; // Масив для зберігання пар (userIdOrArray)
-    for (const [searchKey, userIdOrArray] of Object.entries(searchIdData)) {
-      if (
-        searchKey.startsWith('name') ||
-        searchKey.startsWith('surname') ||
-        searchKey.startsWith('other') ||
-        searchKey.startsWith('getInTouch') ||
-        searchKey.startsWith('lastAction')
-      ) {
-        continue; // Пропускаємо ключі, які починаються на "name" або "surname"
-      }
-
-      if (Array.isArray(userIdOrArray)) {
-        console.log('Duplicate found in searchId:', { searchKey, userIdOrArray });
-        // Зберігаємо пару в масив pairs
-        // Припускаємо, що це завжди пара (2 значення), якщо буває більше — можна додати перевірку.
-        pairs.push(userIdOrArray);
-      }
-    }
+    // Форму індексу знає одне місце (`collectSearchIdDuplicatePairs`), і саме
+    // тому кнопка знову щось повертає: тут стояв розбір старої форми
+    // (`{поле}_{значення}` зі списком id одразу під ключем), а в базі вже років
+    // як `searchId/{значення}/{поле}` — список лежить на рівень глибше, і
+    // жодна пара не впізнавалась.
+    const pairs = collectSearchIdDuplicatePairs(searchIdData);
 
     console.log('All pairs of duplicates:', pairs);
 
@@ -8872,23 +8876,10 @@ export const mergeDuplicateUsers = async () => {
       return {};
     }
 
-    const pairs = [];
-    for (const [searchKey, userIdOrArray] of Object.entries(searchIdData)) {
-      if (
-        searchKey.startsWith('name') ||
-        searchKey.startsWith('surname') ||
-        searchKey.startsWith('other') ||
-        searchKey.startsWith('getInTouch') ||
-        searchKey.startsWith('lastAction')
-      ) {
-        continue;
-      }
-
-      if (Array.isArray(userIdOrArray)) {
-        console.log('Duplicate found in searchId:', { searchKey, userIdOrArray });
-        pairs.push(userIdOrArray);
-      }
-    }
+    // Той самий збирач, що й у `loadDuplicateUsers`: злиття мусить бачити рівно
+    // ті пари, які показав перегляд, інакше кнопка «Merg» працювала б з іншим
+    // списком, ніж кнопка «Дублікати».
+    const pairs = collectSearchIdDuplicatePairs(searchIdData);
 
     console.log('All pairs of duplicates:', pairs);
 

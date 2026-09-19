@@ -9,7 +9,12 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
   const source = fs.readFileSync(path.join(__dirname, 'ProfileCreationWorkspace.jsx'), 'utf8');
 
   it('reuses Matching search primitives and keeps creation available once a search completed', () => {
-    expect(source).toContain("import { addMatchingSearchQuery, auth, fetchDislikeUsers, fetchFavoriteUsers, fetchUserById, fetchUsersByIds, readProfileFromNodes, searchUsersOnly } from './config'");
+    // Імпорт із `config` перевіряється по іменах, а не по одному рядку: список
+    // росте (форма доповнення читає ще й публічні відгуки), і рядковий збіг
+    // ламався б на кожному дописаному імені, нічого не кажучи про поведінку.
+    const configImport = source.slice(source.indexOf('} from \'./config\';') - 600, source.indexOf('} from \'./config\';'));
+    ['addMatchingSearchQuery', 'auth', 'fetchDislikeUsers', 'fetchFavoriteUsers', 'fetchUserById', 'fetchUsersByIds', 'readProfileFromNodes', 'searchUsersOnly']
+      .forEach(name => expect(configImport).toContain(name));
     expect(source).toContain("import SearchBar, { detectSearchParams } from './SearchBar'");
     expect(source).toContain('searchFunc={searchUsersOnly}');
     expect(source).toContain('onSearchError={() => {');

@@ -30,6 +30,12 @@ jest.mock('./config', () => ({
   fetchDislikeUsers: jest.fn(async () => ({})),
   searchUsersOnly: jest.fn(),
   addMatchingSearchQuery: jest.fn(),
+  // Форма доповнення показує ще й публічні відгуки картки — вони приїжджають
+  // разом з нею, тією самою воронкою, що й у стрічці.
+  fetchPublicProfileComments: jest.fn(async () => ({})),
+  addPublicProfileComment: jest.fn(async () => ({})),
+  updatePublicProfileComment: jest.fn(async () => ({})),
+  deletePublicProfileComment: jest.fn(async () => undefined),
 }));
 
 // Приватна нотатка стоїть у парі з публічною в кожній відкритій чернетці — і
@@ -149,7 +155,7 @@ describe('ProfileCreationWorkspace admin review', () => {
     // Публічний коментар стоїть у доріжці нотаток поруч із приватною, тож і
     // запрошення в порожньому полі в нього те саме, що в стрічці й у відкритій
     // картці (`profileTexts`), а не власний текст цієї форми.
-    expect(comment).toHaveAttribute('placeholder', 'Додати публічну нотатку');
+    expect(comment).toHaveAttribute('placeholder', 'Додати публічну нотатку або перевірити їх наявність');
     expect(screen.queryByText(/анкета зникає із загального списку Matching/)).not.toBeInTheDocument();
 
     fireEvent.change(comment, { target: { value: 'Виправлений коментар' } });

@@ -4,6 +4,7 @@ import { auth, fetchPublicProfileComments, fetchUserComment, saveMyCardComment }
 import { setLocalComment } from '../../utils/commentsStorage';
 import { copyPublicCommentsBetweenCards } from '../../utils/legacyImportCommentMigration';
 import { isAdminUid } from '../../utils/accessLevel';
+import { OWNER_MULTI_DATA_STRING_FIELDS } from '../../utils/profileNodeSchema';
 import { handleSubmitAll } from './actions';
 
 let latestCompareRequest = 0;
@@ -44,6 +45,15 @@ const combineComments = (legacyValue, storedValue) => [legacyValue, storedValue]
 // нею. Значення в рядку — самі тексти; переносить їх окремий шлях, який
 // зберігає автора й дату (`copyPublicCommentsBetweenCards`).
 const PUBLIC_COMMENTS_KEY = 'publicComments';
+
+/**
+ * Позначки власника, які база тримає рядком.
+ *
+ * Перелік не здогад, а копія схеми: `OWNER_MULTI_DATA_STRING_FIELDS` у
+ * `profileNodeSchema` перелічує ті самі поля, і саме на них у
+ * `database.rules.json` стоїть `.validate: newData.isString()`.
+ */
+const OWNER_STRING_KEYS = new Set(OWNER_MULTI_DATA_STRING_FIELDS);
 
 const formatValue = val => {
   if (Array.isArray(val)) return new Set(val.map(String));
@@ -128,6 +138,14 @@ export const btnCompare = (
     const updatedTargetUser = { ...updatedUsers[targetUserId] };
     if (key === 'getInTouch' || key === 'lastCycle') {
       updatedTargetUser[key] = sourceValue;
+    } else if (OWNER_STRING_KEYS.has(key)) {
+      // Позначка власника — скаляр, і кома в ній не роздільник, а частина
+      // рядка: `writer` збирається як «Т, Ik, V». Загальна гілка нижче
+      // розбивала такий рядок на масив, а база приймає сюди лише рядок
+      // (`.validate: newData.isString()` на `multiData/writer/$owner/$card`),
+      // тож перенос відповідав PERMISSION_DENIED — мовчки, бо відмову
+      // позначки ковтає `catch`. На екрані значення переїжджало, у базі — ні.
+      updatedTargetUser[key] = mergeValues(sourceValue, updatedTargetUser[key]);
     } else {
       const mergedValue = mergeValues(sourceValue, updatedTargetUser[key]);
       updatedTargetUser[key] = mergedValue.includes(',')

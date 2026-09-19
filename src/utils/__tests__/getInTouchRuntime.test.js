@@ -29,7 +29,7 @@ describe('позначки власника читаються і пишутьс
   it('обидва поля ходять однією реалізацією, а не двома копіями', () => {
     // Дві копії того самого коду розійшлись би на першій же правці, і одне з
     // полів тихо лишилось би зі старою поведінкою.
-    expect(configSource).toContain('const setOwnerValue = async (path, ownerId, profileId, value)');
+    expect(configSource).toContain('const setOwnerValue = async (path, ownerId, profileId, value,');
     expect(configSource).toContain('const readOwnerValueMap = async (path, ownerId)');
   });
 

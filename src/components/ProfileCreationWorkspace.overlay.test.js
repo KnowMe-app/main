@@ -22,6 +22,12 @@ jest.mock('./config', () => ({
   fetchFavoriteUsers: jest.fn(async () => ({})),
   fetchDislikeUsers: jest.fn(async () => ({})),
   addMatchingSearchQuery: jest.fn(),
+  // Форма доповнення показує ще й публічні відгуки картки — вони приїжджають
+  // разом з нею, тією самою воронкою, що й у стрічці.
+  fetchPublicProfileComments: jest.fn(async () => ({})),
+  addPublicProfileComment: jest.fn(async () => ({})),
+  updatePublicProfileComment: jest.fn(async () => ({})),
+  deletePublicProfileComment: jest.fn(async () => undefined),
 }));
 
 // Drafts no longer appear in an always-visible list - they only surface

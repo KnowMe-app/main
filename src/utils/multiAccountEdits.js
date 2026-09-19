@@ -1187,6 +1187,55 @@ export const acceptAllOverlaysForCard = async ({ cardUserId, persistCard }) => {
 // Clears the whole queue for a card in one write. `historyAction` records
 // why: 'accept' when the values were just written to the card, 'discard'
 // when the admin threw them away.
+/**
+ * Знести все, що про цю картку знає шар доповнень, — разом із карткою.
+ *
+ * `removeAllOverlaysForCard` знімає самі шари, але лишає журнал, перелік
+ * дописувачів і позначки в переліках самих редакторів: там це сліди правок
+ * живої картки, і знімати їх при звичайному «розсудили» не можна. А коли
+ * картки більше немає, ці сліди вказують у порожнечу: журнал під `cardId`,
+ * якого не існує, і рядок у власному переліку доповнень, що відкриває
+ * неіснуючу анкету.
+ *
+ * Перелік редакторів береться з `getCardContributorIds` — оберненого індексу
+ * «картка → хто дописував» немає (див. `listPendingOverlayCards`), тож читаємо
+ * вузол картки, поки він ще є, і аж потім зносимо.
+ */
+export const purgeCardOverlays = async cardUserId => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return { editorUserIds: [] };
+
+  // Перелік уже зводить обидва джерела — вузол дописувачів і самі шари — і
+  // відмову кожного з них переживає окремо: прочитати їх може не вийти
+  // (правила), і це не привід лишити картку напівживою.
+  const editorUserIds = await getCardContributorIds(normalizedCardId);
+  const historyEntries = await getOverlayHistoryForCard(normalizedCardId).catch(error => {
+    console.warn('[multiAccountEdits] журнал правок не прочитано', error);
+    return [];
+  });
+
+  // Зноситься поіменно, а не вузлом картки, і це не про акуратність, а про
+  // права: у `database.rules.json` `.write` стоїть на `edits/$картка/$редактор`
+  // і на `editsHistory/$картка/$запис`, а на самій картці його немає — запис у
+  // батьківський вузол відхиляється цілком. Один `remove` по картці виглядав би
+  // як «видалено», лишаючи і шари, і журнал на місці.
+  await Promise.allSettled([
+    ...editorUserIds.map(editorUserId => remove(
+      ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`),
+    )),
+    ...historyEntries.map(entry => remove(
+      ref2(database, `${EDITS_HISTORY_ROOT}/${normalizedCardId}/${entry.backendEntryId}`),
+    )),
+    remove(ref2(database, `${EDITS_CONTRIBUTORS_ROOT}/${normalizedCardId}`)),
+    ...editorUserIds.map(editorUserId => forgetOwnOverlayCard({
+      editorUserId,
+      cardUserId: normalizedCardId,
+    })),
+  ]);
+
+  return { editorUserIds };
+};
+
 export const removeAllOverlaysForCard = async (cardUserId, { historyAction = 'discard' } = {}) => {
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return null;

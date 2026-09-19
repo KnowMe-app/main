@@ -1,7 +1,13 @@
 import { get, push, ref, remove, runTransaction, update } from 'firebase/database';
 
-import { database, syncUserSearchKeyIndex, syncMatchingCardIndex } from 'components/config';
-import { buildOverlayFromDraft, getOverlaysForCard } from './multiAccountEdits';
+import {
+  PUBLIC_COMMENTS_ROOT_PATH,
+  database,
+  removeCardAndSearchId,
+  syncUserSearchKeyIndex,
+  syncMatchingCardIndex,
+} from 'components/config';
+import { buildOverlayFromDraft, getOverlaysForCard, purgeCardOverlays } from './multiAccountEdits';
 import { buildProfileNodePatch } from './profileNodeWriter';
 import {
   SEARCH_ID_INDEXED_FIELDS,
@@ -10,6 +16,7 @@ import {
   buildSearchIdEntryPath,
   describeSearchIdRecord,
   readSearchIdEntryIds,
+  removeSearchIdEntryId,
 } from './searchKeyUtils';
 
 export const PROFILE_MUTATIONS_ROOT = 'multiData/profileMutations';
@@ -513,4 +520,94 @@ export const rejectCreateProfileMutation = async ({ cardId, creatorUid, expected
   const mutation = result.snapshot.val();
   releaseProfileIdentities(cardId, mutation.identityKeys || []).catch(() => {});
   return mutation;
+};
+
+/**
+ * Видалити чернетку начисто — з усіх колекцій та індексів.
+ *
+ * «Відхилити» (`rejectCreateProfileMutation`) повертає чернетку авторові: вона
+ * лишається жити, і це правильна відповідь на «ще не готова». Але серед
+ * чернеток трапляються й такі, яким жити не треба взагалі — дубль, тест,
+ * випадково збережена порожнеча, — і доти єдиним способом їх прибрати було
+ * не прибирати: черга адміна кнопки видалення не мала, а сама чернетка не
+ * зникає ніколи.
+ *
+ * Чистити доводиться **всі** сліди, і це не перелік «про всяк випадок»:
+ * кожен з них — місце, звідки видалена картка повертається на екран.
+ *
+ *   — `multiData/profileMutations/{автор}/{картка}` — сама чернетка;
+ *   — `multiData/profileMutationHistory/{картка}` — журнал її ревізій;
+ *   — `multiData/profileIdentityClaims/*` — заявки на унікальність. Поки вони
+ *     стоять, номер видаленої чернетки лишається зайнятим, і наступна спроба
+ *     завести з ним картку відповідає `DUPLICATE_PROFILE` — тобто видалення
+ *     блокує саме те, заради чого видаляли;
+ *   — `searchId` — чернетка лежить **тільки** там (картки стрічки в неї
+ *     немає), тож без цього кроку пошук і далі знаходить те, чого немає;
+ *   — шари доповнень, журнал і переліки редакторів (`purgeCardOverlays`);
+ *   — публічні відгуки `comments/{картка}`: під заведеною карткою вже могли
+ *     написати, і залишений відгук пережив би саму людину;
+ *   — вузли анкети й `searchKey` (`removeCardAndSearchId`) — на випадок, коли
+ *     чернетку вже опублікували, а видаляють картку, що з неї вийшла.
+ *
+ * Жоден крок не скасовує решти: права на ці вузли різні, і відмова на одному
+ * не має лишати персональні дані в усіх інших. Звіт називає, що не доїхало, —
+ * мовчазне «видалено» на половині видалених слідів уже коштувало б розбору.
+ */
+export const deleteCreateProfileMutation = async ({ cardId, creatorUid }) => {
+  if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
+
+  const mutationRef = ref(database, getProfileMutationPath(creatorUid, cardId));
+  const snapshot = await get(mutationRef);
+  const mutation = snapshot.exists() ? snapshot.val() : null;
+  const data = mutation?.data || {};
+
+  const failures = [];
+  const step = async (name, run) => {
+    try {
+      await run();
+    } catch (error) {
+      failures.push({ step: name, message: error?.message || String(error) });
+    }
+  };
+
+  // Заявки знімаються за тим переліком, який чернетка сама про себе зберегла;
+  // якщо його немає (стара чернетка), виводимо його з даних — так само, як це
+  // робить збереження.
+  const identityKeys = mutation?.identityKeys?.length
+    ? mutation.identityKeys
+    : getSearchIdRecords(data, { contactsOnly: true }).map(getIdentityClaimKey);
+
+  await step('identityClaims', () => releaseProfileIdentities(cardId, identityKeys));
+
+  await step('searchId', () => Promise.all(
+    getSearchIdRecords(data)
+      .filter(record => keyByteLength(record.valueKey) <= 768)
+      .map(record => runTransaction(
+        ref(database, buildSearchIdEntryPath(record.valueKey, record.field)),
+        current => removeSearchIdEntryId(current, cardId),
+        { applyLocally: false },
+      )),
+  ));
+
+  await step('overlays', () => purgeCardOverlays(cardId));
+  await step('publicComments', () => remove(ref(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${cardId}`)));
+  // Вузли анкети, `searchKey` і проєкція стрічки — там же, де їх чистить
+  // звичайне видалення картки. Для неопублікованої чернетки це no-op.
+  await step('profileNodes', () => removeCardAndSearchId(cardId));
+  // Журнал ревізій зноситься поштучно: `.write` у правилах стоїть на
+  // `profileMutationHistory/$картка/$запис`, а на самій картці його немає, тож
+  // один `remove` по вузлу відхиляється цілком — і мовчки, бо кроки тут
+  // ізольовані.
+  await step('mutationHistory', async () => {
+    const historySnapshot = await get(ref(database, getProfileMutationHistoryPath(cardId)));
+    if (!historySnapshot.exists()) return;
+    await Promise.all(Object.keys(historySnapshot.val() || {}).map(entryId => (
+      remove(ref(database, `${getProfileMutationHistoryPath(cardId)}/${entryId}`))
+    )));
+  });
+  // Сама чернетка йде останньою: поки вона є, за нею можна відновити, що ще не
+  // дочищено. Знята першою, вона забрала б із собою і перелік заявок.
+  await step('mutation', () => remove(mutationRef));
+
+  return { cardId, creatorUid, existed: Boolean(mutation), failures };
 };

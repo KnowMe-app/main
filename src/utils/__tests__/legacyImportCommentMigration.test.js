@@ -1,3 +1,5 @@
+jest.mock('../publicCommentsMemory', () => ({ dropCachedPublicComments: jest.fn() }));
+
 jest.mock('components/config', () => ({
   addPublicProfileCommentAs: jest.fn(),
   auth: { currentUser: { uid: '0ghb1LphfASV0Y3b6J010v4CDyD2' } },
@@ -15,6 +17,8 @@ const {
   fetchPublicProfileCommentsStrict,
   readOwnerWriterMapStrict,
 } = require('components/config');
+
+const { dropCachedPublicComments } = require('../publicCommentsMemory');
 
 const {
   LEGACY_COMMENT_AUTHOR_ID_PREFIX,
@@ -384,6 +388,17 @@ describe('перенос', () => {
 
     expect(stats.permissionDenied).toBe(false);
     expect(isPermissionDeniedFailure(stats.failures[0])).toBe(false);
+  });
+
+  // Перенос пише не через картку, тож памʼять таба про відгуки нічого про нього
+  // не знає: поки її не знімали, перенесений відгук не показувався взагалі, і
+  // лікувало це лише «Очистити кеш».
+  it('знімає памʼять таба про відгуки, щойно щось перенесено', async () => {
+    fetchOwnerCommentsSubtree.mockResolvedValue({ TG0001: { text: 'відгук', updatedAt: 7 } });
+
+    await migrateLegacyImportCommentsToPublic();
+
+    expect(dropCachedPublicComments).toHaveBeenCalled();
   });
 
   it('копія лишає приватну нотатку на місці', async () => {

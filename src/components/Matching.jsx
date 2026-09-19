@@ -1954,6 +1954,10 @@ const Matching = () => {
   // сторінки, і перестворювати їх щоразу, коли приїхав черговий оверлей,
   // означало б перемальовувати всю стрічку.
   const ensureOwnOverlayRef = useRef(() => {});
+  // Відгуки — з тієї самої причини й тим самим способом: `ensureFullProfile`
+  // мусить уміти їх попросити, не потягнувши за собою залежність від стану
+  // прочитаних відгуків.
+  const requestPublicCommentsRef = useRef(() => {});
   // Про які картки вже питали саме цим шляхом. Окремо від
   // `requestedOwnOverlayIdsRef`: та памʼять належить стрічці й лишається
   // поставленою й після порожньої відповіді, а дотик мусить мати право
@@ -6358,6 +6362,14 @@ const Matching = () => {
     // доповнення. Стрічка перелік і далі питає: там рядків сотні, і читати
     // вузол на кожен з них — рівно те, від чого її відмивали.
     ensureOwnOverlayRef.current(userId);
+    // Відгуки — така сама частина відповіді на дотик, як контакти чи освіта:
+    // під відкритою карткою й під розгорнутим рядком стоїть доріжка публічних
+    // нотаток, і поки читання висіло на самому лише значку в ряду рішень, вона
+    // лишалась порожньою — відкрита анкета мовчала про написане про людину,
+    // доки читач не здогадався натиснути ще й туди. Стрічку це не здорожчує:
+    // дотиків стільки, скільки їх зробила людина, а не скільки рядків у
+    // списку, а повторний дотик читання не повторює (памʼять таба).
+    requestPublicCommentsRef.current(userId);
     if (!isMatchingSummaryCard(user)) return Promise.resolve();
     if (fullProfileRequestsRef.current.has(userId)) return Promise.resolve();
     fullProfileRequestsRef.current.add(userId);
@@ -7718,6 +7730,10 @@ const Matching = () => {
     if (!ownerId || !detailOpen) return;
     requestPublicComments(activeProfile?.userId);
   }, [activeProfile?.userId, detailOpen, ownerId, requestPublicComments]);
+
+  useEffect(() => {
+    requestPublicCommentsRef.current = requestPublicComments;
+  }, [requestPublicComments]);
 
   /**
    * Усе, чого ряду рішень треба знати про відгуки цієї картки.

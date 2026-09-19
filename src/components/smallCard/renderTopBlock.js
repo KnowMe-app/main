@@ -45,12 +45,12 @@ import {
   getUserStorageAvatarPhotoFiles,
   setUserComment as persistUserComment,
   fetchAllCommentsByCardId,
-  fetchPublicProfileCommentsStrict,
   updateCommentByOwner,
   updatePublicProfileComment,
   deleteCommentByOwner,
   deletePublicProfileComment,
 } from '../config';
+import { dropCachedPublicComments, readPublicCommentsCached } from 'utils/publicCommentsMemory';
 import { updateCard, clearCardCache } from 'utils/cardsStorage';
 import { getCard } from 'utils/cardIndex';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
@@ -550,39 +550,6 @@ const publicCommentsRetryButtonStyle = {
   lineHeight: 1.5,
 };
 
-// Відгуки читаються на кожну відкриту картку, тож ціну цього читання тримає
-// памʼять таба — рівно те саме, що `ownerCommentsSubtreeCache` робить для
-// нотаток: список карток згортають, розгортають і перемальовують десятки разів
-// за сеанс, і без кеша кожен показ коштував би ще одного запиту на картку.
-//
-// Кеш живе тут, а не в `config.js`, навмисно: тим самим
-// `fetchPublicProfileCommentsStrict` перенос легасі-відгуків питає базу, чи
-// цей текст у ній уже є, і відповідь із памʼяті означала б другу копію відгуку.
-const PUBLIC_COMMENTS_MEMORY_TTL_MS = 2 * 60 * 1000;
-const publicCommentsMemoryCache = new Map();
-
-const readPublicCommentsCached = (profileId, { force = false } = {}) => {
-  const cached = publicCommentsMemoryCache.get(profileId);
-  if (!force && cached && Date.now() - cached.cachedAt <= PUBLIC_COMMENTS_MEMORY_TTL_MS) {
-    return cached.promise;
-  }
-  const promise = fetchPublicProfileCommentsStrict([profileId])
-    .then(byProfile => byProfile?.[profileId] || [])
-    .catch(error => {
-      // Відмова в кеші не лишається: інакше наступна картка тієї ж людини
-      // отримала б ту саму помилку, не спробувавши читання ще раз.
-      publicCommentsMemoryCache.delete(profileId);
-      throw error;
-    });
-  publicCommentsMemoryCache.set(profileId, { promise, cachedAt: Date.now() });
-  return promise;
-};
-
-// Свій же запис робить кеш застарілим: правку й зняття відгуку видно одразу,
-// а не через строк памʼяті.
-const dropCachedPublicComments = profileId => {
-  publicCommentsMemoryCache.delete(profileId);
-};
 
 const inlineModalOverlayStyle = {
   position: 'fixed',
