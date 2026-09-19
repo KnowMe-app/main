@@ -780,6 +780,20 @@ await it('не переписує чужий id у своєму полі', async
   await assertSucceeds(set(ref(db(SELF_SERVE), `searchId/380999999999/phone`), [CARD, SELF_SERVE]));
 });
 
+await it('власник прибирає себе зі спільного індексу з двох анкет', async () => {
+  const indexRef = ref(db(SELF_SERVE), 'searchId/380999999998/phone');
+  await assertSucceeds(set(indexRef, SELF_SERVE));
+  await assertSucceeds(set(indexRef, [SELF_SERVE, CARD]));
+  await assertSucceeds(set(indexRef, CARD));
+});
+
+await it('сторонній не перетворює чужий спільний індекс на один id', async () => {
+  const indexPath = 'searchId/380999999997/phone';
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), indexPath), [SELF_SERVE, CARD]));
+  await assertFails(set(ref(db(OUTSIDER), indexPath), CARD));
+});
+
 // Доповнення знайденої картки (`multiData/edits/{картка}/{редактор}`) — це те,
 // що читач знає про людину понад картку, і знає він це зазвичай саме тому, що
 // шукав її за цим значенням. Тож дописане має потрапити в `searchId`: інакше

@@ -19,7 +19,8 @@ describe('persistUserWithFallback', () => {
 describe('MyProfile phone autosave', () => {
   const source = fs.readFileSync(path.join(__dirname, 'MyProfile.jsx'), 'utf8');
 
-  it('normalizes phone input before putting it into profile state', () => {
+  it('keeps an incomplete phone prefix while editing and normalizes it on save', () => {
+    expect(source).toContain("const updatedValue = name === 'phone' ? value : inputUpdateValue(value, field);");
     expect(source).toContain("name === 'phone' ? normalizePhoneValue(value) : inputUpdateValue(value, field)");
   });
 
