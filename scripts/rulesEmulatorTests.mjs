@@ -968,6 +968,38 @@ await it('без оверлея на картці ключ на неї не за
   await assertFails(set(ref(db(SELF_SERVE), 'searchId/380505553347/phone'), CARD));
 });
 
+// Чернетка теж мусить потрапити в `searchId`, і кладе її туди сам автор —
+// одразу на збереженні (`saveCreateProfileMutation`), а не аж на публікації.
+// Це єдиний індекс, у якому чернетка взагалі є: картки стрічки й вузлів анкети
+// в неї немає, тож доти заведений номер не знаходив ніхто, крім самого автора
+// на `/matching`, і то окремим шляхом повз індекс. Право дає рівно наявність
+// власної чернетки під цим id — не рівень доступу й не `canCreateProfiles`.
+describe('searchId — чернетка індексується своїм автором');
+
+await it('автор чернетки заводить ключ на неї', async () => {
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), `multiData/profileMutations/${ORDINARY_VIEWER}/draftCardId001`), {
+    cardId: 'draftCardId001',
+    operation: 'create',
+    createdBy: ORDINARY_VIEWER,
+    status: 'pendingReview',
+    revision: 1,
+  }));
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), 'searchId/380505559911/phone'), 'draftCardId001'));
+  // Та сама форма запису, якою пише сам індексатор.
+  await assertSucceeds(update(ref(db(ORDINARY_VIEWER), 'searchId/380505559912'), { phone: 'draftCardId001' }));
+});
+
+await it('без власної чернетки під цим id ключ на неї не заводиться', async () => {
+  // Чужа чернетка: вона є, але лежить не в гілці цього читача.
+  await testEnv.withSecurityRulesDisabled(context => set(
+    ref(context.database(), `multiData/profileMutations/${CARD_CREATOR}/draftCardId002`),
+    { cardId: 'draftCardId002', operation: 'create', createdBy: CARD_CREATOR, status: 'pendingReview', revision: 1 },
+  ));
+  await assertFails(set(ref(db(ORDINARY_VIEWER), 'searchId/380505559913/phone'), 'draftCardId002'));
+  // І чернетки під таким id немає взагалі.
+  await assertFails(set(ref(db(ORDINARY_VIEWER), 'searchId/380505559914/phone'), 'draftCardId003'));
+});
+
 // Перелік власних доповнень (`multiData/editsByEditor/{редактор}`) — це
 // відповідь на питання «у яких картках лежить мій шар». Стрічка ставить його
 // раз на таб замість читання оверлея на кожен свій рядок, тож вузол мусить

@@ -24,8 +24,11 @@ describe('MyProfile phone autosave', () => {
     expect(source).toContain("name === 'phone' ? normalizePhoneValue(value) : inputUpdateValue(value, field)");
   });
 
-  it('reindexes a saved phone without replacing its accumulated history', () => {
-    expect(source).toContain("triggerAutosave(nextState, { searchIdFields: name === 'phone' ? ['phone'] : [] });");
+  it('reindexes every saved searchId field without replacing its accumulated history', () => {
+    // Телефон тут був єдиним індексованим полем, і прізвище, набране в «Моєму
+    // профілі», у `searchId` не потрапляло взагалі.
+    expect(source).toContain('triggerAutosave(nextState, { searchIdFields: isSearchIdIndexedField(name) ? [name] : [] });');
+    expect(source).not.toContain("searchIdFields: name === 'phone'");
     expect(source).toContain('await syncUserSearchIdIndex(targetUserId, existingData, uploadedInfo, searchIdFields);');
 
     const saveStateBody = source.slice(
