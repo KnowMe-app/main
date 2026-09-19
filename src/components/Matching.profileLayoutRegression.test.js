@@ -130,4 +130,43 @@ describe('Matching redesigned profile regressions', () => {
     expect(matchingSource).toContain('onNavigate(direction === \'left\' ? 1 : -1);');
     expect(matchingSource).not.toContain('swipedRef.current = true;\n    setDir(direction);\n    handleRemove');
   });
+
+  /*
+   * Відкрита картка читає відгуки сама (ефект на `detailOpen`), тож доріжка
+   * публічної нотатки не кличе їх перевіряти, а про порожню відповідь каже
+   * словом. Мовчати не можна: поле для власного запису стоїть у доріжці
+   * завжди, тож «ще не читали» й «прочитали, відгуків немає» виглядали б
+   * однаково — порожнім місцем під плейсхолдером.
+   */
+  it('каже у відкритій картці, чим скінчилось читання відгуків', () => {
+    const matchingSource = source();
+
+    expect(matchingSource).toContain('<ReviewsStateNote>{publicCommentStatus}</ReviewsStateNote>');
+    expect(matchingSource).toContain('publicCommentStatus={describeReviewsState({');
+    // Блок знає, що читати його вже не просять: плейсхолдер лишається самою
+    // роботою, а стрілка до значка в ряду рішень зникає разом із закликом.
+    expect(matchingSource).toContain('preloaded\n                          profileId={user.userId}');
+  });
+
+  /*
+   * Розкладка відкритої картки на один екран: порожня смуга фото не займає
+   * пів екрана, а смужка дій — рівно рядок кнопок.
+   */
+  it('не віддає екран порожньому фото й не роздуває смужку дій', () => {
+    const matchingSource = source();
+    const styledSource = fs.readFileSync(path.join(__dirname, 'Matching.styled.jsx'), 'utf8');
+
+    // Без знімка смуга вузька — портретні 4/5 лишаються там, де є що
+    // показувати.
+    expect(matchingSource).toContain('$empty={!activeHeroPhoto}');
+    expect(styledSource).toContain('($empty ? css`');
+    // Монограма читається: біла по кремовому градієнту світлої теми не
+    // читалась узагалі, тож смуга й виглядала просто порожньою.
+    expect(styledSource).toContain('color: var(--matching-role-accent);');
+    // Смужка дій має висоту своїх кнопок, а не власний мінімум у 80 px.
+    expect(styledSource).toContain('min-height: 0;\n  box-sizing: border-box;');
+    // І жолоба смужки прокрутки, який різав фото світлою полосою праворуч,
+    // у картці немає.
+    expect(styledSource).not.toContain('scrollbar-width: thin;');
+  });
 });

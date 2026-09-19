@@ -222,6 +222,7 @@ import ProfileRow, {
   CommentBlock,
   PublicCommentBlock,
   ProfileNotes,
+  ReviewsStateNote,
   enrichGateLabel,
   reviewsGateLabel,
   describeReviewsState,
@@ -1047,6 +1048,11 @@ const SwipeableCard = ({
   onCommentChange,
   onCommentBlur,
   publicCommentSlot = null,
+  // Що сказати про читання відгуків, крім самих відгуків. Відкрита картка
+  // питає їх одразу на відкритті, тож мовчати про порожню відповідь не можна:
+  // без цього рядка «прочитали, відгуків немає» виглядало так само, як
+  // «читання ще не починалось» — порожньою доріжкою під полем запису.
+  publicCommentStatus = '',
   onAdminEdit,
   onEnrich,
 }) => {
@@ -1214,6 +1220,7 @@ const SwipeableCard = ({
         <ModernProfileScroll>
         <ModernHero
           $image={activeHeroPhoto}
+          $empty={!activeHeroPhoto}
           $clickable={!!activeHeroPhoto}
           role={activeHeroPhoto ? 'button' : undefined}
           tabIndex={activeHeroPhoto ? 0 : undefined}
@@ -1320,6 +1327,7 @@ const SwipeableCard = ({
                     <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
                   </NoteLaneHead>
                   {publicCommentSlot}
+                  <ReviewsStateNote>{publicCommentStatus}</ReviewsStateNote>
                 </NoteLane>
               )}
               <NoteLane>
@@ -8604,9 +8612,18 @@ const Matching = () => {
                         commentsRef.current = { ...commentsRef.current, [user.userId]: val };
                         setComments(prev => ({ ...prev, [user.userId]: val }));
                       }}
+                      publicCommentStatus={describeReviewsState({
+                        requested: true,
+                        loading: Boolean(publicCommentsLoading[user.userId]),
+                        loaded: Boolean(publicComments[user.userId]),
+                        count: (publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS).length,
+                      }, language)}
                       publicCommentSlot={(
                         <PublicCommentBlock
                           flush
+                          // Відкрита картка читає відгуки сама — див.
+                          // `requestPublicComments` в ефекті `detailOpen`.
+                          preloaded
                           profileId={user.userId}
                           backendHref={publicCommentsBackendHref(user.userId)}
                           comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}

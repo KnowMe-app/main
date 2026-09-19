@@ -206,7 +206,9 @@ it('ставить публічну й приватну нотатки паро�
   expect(publicLabel.compareDocumentPosition(privateLabel))
     .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   // Плейсхолдери — ті самі, що в стрічці й у відкритій картці.
-  expect(screen.getByPlaceholderText('Додати публічну нотатку або перевірити їх наявність')).toBeInTheDocument();
+  // У чернетці відгуки читати нема де — картки ще немає, — тож плейсхолдер
+  // каже саму роботу, без заклику перевіряти чуже.
+  expect(screen.getByPlaceholderText('Додати публічну нотатку')).toBeInTheDocument();
   expect(screen.getByPlaceholderText('Нотатка для себе')).toBeInTheDocument();
   // Власного заголовка секції в публічного коментаря більше немає — його
   // називає підпис доріжки.

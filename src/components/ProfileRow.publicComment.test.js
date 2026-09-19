@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import {
   PublicCommentBlock,
   publicCommentPlaceholder,
+  publicCommentPlainPlaceholder,
   describeReviewsState,
 } from './ProfileRow';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
@@ -18,6 +19,7 @@ const setup = (props = {}) => {
       viewerId="viewer-1"
       comments={props.comments || []}
       canModerate={props.canModerate || false}
+      preloaded={props.preloaded || false}
       backendHref={props.backendHref || ''}
       onCreate={onCreate}
       onUpdate={onUpdate}
@@ -277,5 +279,37 @@ describe('поле відгуку без жодного читання', () => {
   it('пропонує написати відгук у порожньому блоці', () => {
     setup({ comments: [] });
     expect(screen.getByText(publicCommentPlaceholder())).toBeInTheDocument();
+  });
+});
+
+/*
+ * Плейсхолдер каже про читання рівно там, де читання ще треба попросити.
+ *
+ * У стрічці відгуки коштують дотик до значка в ряду рішень, тож напис і кличе
+ * перевірити, а стрілка веде до того значка. Відкрита картка й обидві форми
+ * питають відгуки самі, щойно відкрились, — і той самий напис просив там
+ * зробити вже зроблене, ще й вказував на значок, якого на цих екранах немає.
+ */
+describe('плейсхолдер там, де відгуки вже прочитані', () => {
+  it('кличе перевірити лише доти, доки читання коштує окремий жест', () => {
+    setup({ comments: [] });
+    expect(screen.getByText(publicCommentPlaceholder())).toBeInTheDocument();
+  });
+
+  it('у preloaded-блоці лишає саму роботу — написати', () => {
+    setup({ comments: [], preloaded: true });
+    expect(screen.getByText(publicCommentPlainPlaceholder())).toBeInTheDocument();
+    expect(screen.queryByText(publicCommentPlaceholder())).not.toBeInTheDocument();
+  });
+
+  it('несе той самий напис і в саме поле, коли його відкрили', () => {
+    setup({ comments: [], preloaded: true });
+    fireEvent.click(screen.getByText(publicCommentPlainPlaceholder()));
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', publicCommentPlainPlaceholder());
+  });
+
+  it('говорить мовою інтерфейсу', () => {
+    expect(publicCommentPlainPlaceholder('en')).toBe('Add a public note');
+    expect(publicCommentPlainPlaceholder('uk')).toBe('Додати публічну нотатку');
   });
 });

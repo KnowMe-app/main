@@ -116,7 +116,9 @@ describe('Matching shared reaction card UI', () => {
     // Висоту фото задає пропорція знімка, а не частка екрана: частка робила з
     // портретного кадру горизонтальну смугу, і cover лишав від обличчя саме
     // чоло. Під фото в тій самій прокрутці стоять мініатюри й дані анкети.
-    expect(styledSource).toContain('aspect-ratio: 4 / 5;\n  height: auto;');
+    // Правило тепер умовне (без знімка смуга вузька), тож і відступ у нього
+    // глибший — сама пропорція лишилась та сама.
+    expect(styledSource).toContain('aspect-ratio: 4 / 5;\n    height: auto;');
     expect(styledSource).toContain('min-height: clamp(320px, 52%, 460px);');
     expect(styledSource).toContain('max-height: min(64dvh, 560px);');
     expect(styledSource).toContain('top: 14px;\n  left: 14px;');
