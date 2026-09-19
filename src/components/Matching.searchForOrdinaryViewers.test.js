@@ -149,7 +149,9 @@ describe('порожній екран називає свою причину', (
     // Дека мала свій зашитий рядок і не знала ані про порожню групу, ані про
     // фільтри — той самий екран пояснював причину лише в одному з двох виглядів.
     expect(source).toContain('<OwnerStatusMessage>{emptyFeedMessage}</OwnerStatusMessage>');
-    expect(source).toContain('<FeedNotice>{emptyFeedMessage}</FeedNotice>');
+    // У стрічці той самий текст стоїть уже не сам: під ним буває жест, яким
+    // знімається умова, що спорожнила деку (`donorRoleFilterBlocksFeed`).
+    expect(source).toContain('<div>{emptyFeedMessage}</div>');
     expect(source).not.toContain('<OwnerStatusMessage>Немає доступних профілів</OwnerStatusMessage>');
   });
 });
