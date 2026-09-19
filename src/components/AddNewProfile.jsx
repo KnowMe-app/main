@@ -38,6 +38,7 @@ import {
   syncUserSearchIdIndex,
   syncUserSearchKeyIndex,
   createMatchingCardsIndex,
+  backfillProfileDraftOwners,
   createSelectedSearchKeyIndexes,
   buildSearchIdIndexPayloadFromCollections,
   buildSearchKeyIndexPayloadFromCollections,
@@ -592,6 +593,14 @@ const INDEX_JOB_GROUPS = [
         key: 'stimulationShortcuts',
         label: 'Ярлики стимуляції',
         hint: '',
+      },
+      {
+        // Чернетка пише свою пару сама, на збереженні. Ця робота потрібна
+        // рівно для тих, що заведені до появи мапи: без пари знайдену чужу
+        // чернетку відкриває самий лише службовий читач.
+        key: 'profileMutationOwners',
+        label: 'Автори чернеток',
+        hint: '→ multiData/profileMutationOwners',
       },
     ],
   },
@@ -6570,6 +6579,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     if (
       !selectedIndexJobs.stimulationShortcuts &&
+      !selectedIndexJobs.profileMutationOwners &&
       !selectedIndexJobs.searchKeyUsersAll &&
       !selectedIndexJobs.searchKeySetReindex &&
       !selectedIndexJobs.searchLocalIdAndKey &&
@@ -6607,6 +6617,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         const failed = stats.errors?.length ? `, помилок: ${stats.errors.length}` : '';
         toast.success(
           `searchKeySet оновлено: ${stats.indexedRuleSets}/${stats.totalRuleSets} наборів${failed}.`,
+          { id: toastId },
+        );
+      }
+
+      if (selectedIndexJobs.profileMutationOwners) {
+        const toastId = 'index-profile-mutation-owners-progress';
+        toast.loading('Дописуємо авторів чернеток...', { id: toastId });
+        const written = await backfillProfileDraftOwners();
+        toast.success(
+          written
+            ? `Авторів дописано: ${written}`
+            : 'Усі чернетки вже мають автора',
           { id: toastId },
         );
       }

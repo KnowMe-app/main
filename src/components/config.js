@@ -339,8 +339,14 @@ export const loadProfileDraftsForIndexing = async () => {
  * Сама чернетка пише свою пару на кожному збереженні (`indexDraftOwner`), тож
  * нові картки мапа дістає сама. Старі ж лежать без неї — і доти знайти їх може
  * лише автор та службовий читач, тобто рівно та поломка, заради якої мапа й
- * зʼявилась. Читання кореня `multiData/profileMutations` адмінське, як і решта
- * перебудови індексу, тому місце цьому шматку саме тут — у `createSearchIds`.
+ * зʼявилась. Читання кореня `multiData/profileMutations` адмінське, тож запускає
+ * це адмін — чекбоксом «Автори чернеток» у панелі індексації на
+ * `AddNewProfile`.
+ *
+ * Стояло це спершу в `createSearchIds` — і не запускалось **ніколи**: ту
+ * функцію не викликає ніхто, імпорт у `AddNewProfile` закоментований, а живої
+ * перебудови `searchId` на бекенді в панелі немає взагалі. Перш ніж вішати
+ * щось на «перебудову індексу», звірте, чи ту перебудову хтось запускає.
  *
  * Пишеться одним `update` і **лише те, чого в мапі ще немає**: автор чернетки
  * не міняється ніколи, тож переписувати наявні пари означало б платити за
@@ -8261,9 +8267,6 @@ export const createSearchIds = async onProgress => {
   // `searchId`, живуть у `profileContacts`, а не в legacy-анкеті.
   const profilesData = await loadProfilesFromNodesForIndexing();
   const draftsData = await loadProfileDraftsForIndexing();
-  // Та сама перебудова дописує й «хто автор»: без цієї пари чужу чернетку
-  // знаходить лише службовий читач (див. `backfillProfileDraftOwners`).
-  await backfillProfileDraftOwners();
   if (!profilesData && !Object.keys(draftsData).length) return;
 
   // Анкета перекриває чернетку: після публікації id той самий, і значення
