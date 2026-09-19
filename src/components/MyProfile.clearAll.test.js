@@ -34,6 +34,8 @@ describe('my-profile: видалення і очищення анкети', () =
 
   it('питає підтвердження перед стиранням', () => {
     expect(source).toContain("uiText('Очистити анкету?', language)");
+    expect(source).toContain('Пошта й доступ до акаунта лишаються.');
+    expect(source).not.toContain('щоб видалити профіль, скористайтесь');
     expect(source).toContain('onClick={clearProfileFields}');
   });
 
