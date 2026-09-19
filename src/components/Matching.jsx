@@ -1416,6 +1416,7 @@ const FEED_PHOTO_HYDRATION_LIMIT = 24;
 // A stable identity so a row without public comments doesn't re-render on it.
 const EMPTY_PUBLIC_COMMENTS = [];
 const EMPTY_USERS = [];
+const EMPTY_MATCHING_FILTERS = Object.freeze({});
 // Скільки чіпів фільтрів ряд показує згорнутим. Решта — за «+N», яке розгортає
 // ряд на місці; ряд не скролиться вбік, він переноситься.
 const MAX_FILTER_CHIPS = 3;
@@ -1905,6 +1906,7 @@ const Matching = () => {
   const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
   const [currentUserRole, setCurrentUserRole] = useState(() => localStorage.getItem('userRole') || '');
+  const canUseMatchingFilters = !isDonorViewer(currentUserRole);
   // A cached role is useful for rendering, but it cannot start a deck: the
   // authenticated profile also owns the shared reaction scope that must be
   // snapshotted by the initial request.
@@ -1913,6 +1915,13 @@ const Matching = () => {
   // рахувався б по картках, які до екрана не доходять (`fetchChunk`).
   const currentUserRoleRef = useRef(currentUserRole);
   currentUserRoleRef.current = currentUserRole;
+  // A donor has no filter controls. Keep persisted filters out of every async
+  // loading path too, so a hidden localStorage value cannot narrow the deck.
+  const matchingUiFilters = canUseMatchingFilters ? filters : EMPTY_MATCHING_FILTERS;
+  filtersRef.current = matchingUiFilters;
+  useEffect(() => {
+    if (!canUseMatchingFilters) setShowFilters(false);
+  }, [canUseMatchingFilters]);
   const [currentCanCreateProfiles, setCurrentCanCreateProfiles] = useState(() => localStorage.getItem('canCreateProfiles') === 'true');
   const [currentAdditionalAccessRules, setCurrentAdditionalAccessRules] = useState(
     () => localStorage.getItem('additionalAccessRules') || ''
@@ -2658,10 +2667,6 @@ const Matching = () => {
     // екран іде вже звужене, тож і читати їх для відсіяного нема за що.
     void loadCommentsFor(refined.slice(0, FEED_PHOTO_HYDRATION_LIMIT));
   };
-
-  useEffect(() => {
-    filtersRef.current = filters;
-  }, [filters]);
 
   useEffect(() => {
     additionalAccessUsersRef.current = additionalAccessUsers;
@@ -3676,9 +3681,10 @@ const Matching = () => {
           mode: matchingDataSourceMode,
         });
         console.log('[loadInitial] using cache', cached.length);
+        const cachedCandidates = cached.filter(u => isMatchingCardId(u.userId) && !exclude.has(u.userId));
         const filteredCached = keepDonorCounterpartyCards({
-          users: applyMatchingUiFiltersToUsers({
-            users: cached.filter(u => isMatchingCardId(u.userId) && !exclude.has(u.userId)),
+          users: isDonorViewer(currentUserRoleRef.current) ? cachedCandidates : applyMatchingUiFiltersToUsers({
+            users: cachedCandidates,
             filters: filtersRef.current || {},
             filterMainFn: filterMain,
             favoriteUsers: favoriteUsersRef.current,
@@ -5507,9 +5513,9 @@ const Matching = () => {
   // інакше цикл відліку обіцяв би дві картки, а дорахувати їх на екрані було б
   // нічим — картки колег до нього не доходять.
   const publicVisibleUsers = useMemo(() => keepDonorCounterpartyCards({
-    users: applyMatchingUiFiltersToUsers({
+    users: canUseMatchingFilters ? applyMatchingUiFiltersToUsers({
       users,
-      filters,
+      filters: matchingUiFilters,
       filterMainFn: filterMain,
       favoriteUsers,
       dislikeUsers,
@@ -5517,10 +5523,10 @@ const Matching = () => {
       keepReactedUserIds: stickyReactedUserIds,
       roleIndexSets,
       viewMode,
-    }),
+    }) : users,
     viewerRole: viewMode === 'default' ? currentUserRole : '',
     viewerId: ownerId,
-  }), [currentUserRole, dislikeUsers, favoriteUsers, filters, ownerId, roleIndexSets, stickyReactedUserIds, users, viewMode]);
+  }), [canUseMatchingFilters, currentUserRole, dislikeUsers, favoriteUsers, matchingUiFilters, ownerId, roleIndexSets, stickyReactedUserIds, users, viewMode]);
 
   /**
    * Власна чернетка, яку питали по імені чи контакту, — теж відповідь пошуку.
@@ -5690,9 +5696,10 @@ const Matching = () => {
     // DOM і стільки ж гідратацій, і саме тому пошук не мав ані відліку, ані
     // способу дочекатись кінця списку.
     if (viewMode === 'search') return searchRefinedUsers.slice(0, searchRevealCount);
+    if (!canUseMatchingFilters && viewMode === 'default') return visibleUsers;
     return applyMatchingUiFiltersToUsers({
       users: visibleUsers,
-      filters,
+      filters: matchingUiFilters,
       filterMainFn: filterMain,
       favoriteUsers,
       dislikeUsers,
@@ -5702,9 +5709,10 @@ const Matching = () => {
       viewMode,
     });
   }, [
+    canUseMatchingFilters,
     dislikeUsers,
     favoriteUsers,
-    filters,
+    matchingUiFilters,
     reactionTabUsers,
     roleIndexSets,
     searchRefinedUsers,
@@ -7189,8 +7197,10 @@ const Matching = () => {
     [currentUserRole],
   );
   const filterChips = useMemo(
-    () => buildMatchingFilterChips(filters, language, { roleOptionKeys }),
-    [filters, language, roleOptionKeys],
+    () => canUseMatchingFilters
+      ? buildMatchingFilterChips(filters, language, { roleOptionKeys })
+      : [],
+    [canUseMatchingFilters, filters, language, roleOptionKeys],
   );
   const [showAllFilterChips, setShowAllFilterChips] = useState(false);
   const visibleFilterChips = showAllFilterChips ? filterChips : filterChips.slice(0, MAX_FILTER_CHIPS);
@@ -7274,11 +7284,11 @@ const Matching = () => {
    * Смикання, від якого стеріг поріг, від цього не повертається: рядок
    * зʼявляється один раз, з першою карткою, і далі лишається на місці.
    */
-  const showRefineBar = Boolean(refineActiveValue) || (
+  const showRefineBar = (isSearching || canUseMatchingFilters) && (Boolean(refineActiveValue) || (
     isSearching
       ? searchRefinedUsers.length >= REFINE_MIN_RESULTS
       : viewMode === 'default' && visibleUsers.length > 0
-  );
+  ));
 
   // Ключ без індексу `searchKey` у стрічці не пропонується: там ключ мусить
   // називати кандидатів, а не проріджувати завантажене.
@@ -8094,8 +8104,8 @@ const Matching = () => {
 
   return (
     <>
-      {showFilters && <FilterOverlay show={showFilters} onClick={() => setShowFilters(false)} />}
-      <FilterContainer
+      {canUseMatchingFilters && showFilters && <FilterOverlay show={showFilters} onClick={() => setShowFilters(false)} />}
+      {canUseMatchingFilters && <FilterContainer
         show={showFilters}
         $themeMode={themeMode}
         onClick={e => e.stopPropagation()}
@@ -8142,7 +8152,7 @@ const Matching = () => {
             Показати {draftFilteredCount}
           </FilterApplyButton>
         </FilterDrawerFooter>
-      </FilterContainer>
+      </FilterContainer>}
       <Container $themeMode={themeMode}>
         <InnerContainer>
           <MatchingTopBar>
@@ -8179,7 +8189,7 @@ const Matching = () => {
               />
             </SearchField>
             <TopActions>
-              <TopActionGroup aria-label={uiText('Фільтри matching', language)}>
+              {canUseMatchingFilters && <TopActionGroup aria-label={uiText('Фільтри matching', language)}>
                 <ActionButton
                   type="button"
                   onClick={() => setShowFilters(s => !s)}
@@ -8190,7 +8200,7 @@ const Matching = () => {
                   <FaFilter />
                   {activeFilterGroupCount > 0 && <ActionBadge>{activeFilterGroupCount}</ActionBadge>}
                 </ActionButton>
-              </TopActionGroup>
+              </TopActionGroup>}
               {showBackendTrafficToggle && (
                 <TopActionGroup aria-label={uiText('Адміністративні дії matching', language)}>
                   <BackendTrafficToggleButton

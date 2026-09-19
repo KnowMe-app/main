@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   isCounterpartyCard,
+  isNotEggDonorCard,
   isDonorViewer,
   keepDonorCounterpartyCards,
   listProfileRoles,
@@ -13,7 +14,7 @@ const donor = (userId, extra = {}) => ({ userId, publish: true, userRole: 'ed', 
 const agency = (userId, extra = {}) => ({ userId, publish: true, userRole: 'ag', ...extra });
 const unroled = (userId, extra = {}) => ({ userId, publish: true, ...extra });
 
-describe('у стрічці донорки лишаються самі контрагенти', () => {
+describe('у стрічці донорки ховаються лише донорки', () => {
   it('впізнає роль читача за будь-яким її написанням', () => {
     expect(isDonorViewer('ed')).toBe(true);
     expect(isDonorViewer('Egg donor')).toBe(true);
@@ -43,20 +44,32 @@ describe('у стрічці донорки лишаються самі конт�
   // Саме через це донорка й бачила в стрічці «незрозуміло що»: ролі в картки
   // немає (вона зʼявилась пізніше за самі анкети), а правило ховало лише те, що
   // впізнане як колега.
-  it('картку без ролі в стрічку донорки не пускає', () => {
-    const users = [unroled('noRole'), agency('ag1')];
+  it('лишає всі інші, невідомі та відсутні ролі', () => {
+    const users = [
+      donor('ed'), agency('ag'),
+      { userId: 'ip', role: 'ip' }, { userId: 'cl', role: 'cl' },
+      { userId: 'pp', role: 'pp' }, { userId: 'other', role: 'something-new' },
+      unroled('noRole'),
+    ];
+
+    const visible = keepDonorCounterpartyCards({ users, viewerRole: 'ed', viewerId: 'own' });
+
+    expect(visible.map(user => user.userId)).toEqual(['ag', 'ip', 'cl', 'pp', 'other', 'noRole']);
+  });
+
+  it('не повертає донорку через власну анкету чи наданий доступ', () => {
+    const users = [donor('own'), donor('peer'), donor('granted', { __matchingAccessAllowed: true }), agency('ag1')];
 
     const visible = keepDonorCounterpartyCards({ users, viewerRole: 'ed', viewerId: 'own' });
 
     expect(visible.map(user => user.userId)).toEqual(['ag1']);
   });
 
-  it('лишає власну анкету і явно надані картки', () => {
-    const users = [donor('own'), donor('peer'), donor('granted', { __matchingAccessAllowed: true }), agency('ag1')];
-
-    const visible = keepDonorCounterpartyCards({ users, viewerRole: 'ed', viewerId: 'own' });
-
-    expect(visible.map(user => user.userId)).toEqual(['own', 'granted', 'ag1']);
+  it('нормалізує Egg Donor у рядках і масивах ролей', () => {
+    expect(isNotEggDonorCard({ role: ' Egg Donor ' })).toBe(false);
+    expect(isNotEggDonorCard({ role: ['ag', 'egg donor'] })).toBe(false);
+    expect(isNotEggDonorCard({ userRole: ['ip', 'ED'] })).toBe(false);
+    expect(isNotEggDonorCard({ role: ['ag', 'unknown'] })).toBe(true);
   });
 
   it('читачеві іншої ролі не прибирає нічого', () => {
@@ -93,12 +106,7 @@ describe('правило діє у стрічці, але не в пошуку �
       viewerId: 'own',
     });
 
-    expect(merged).toEqual([expect.objectContaining({
-      userId: 'granted',
-      name: 'Оновлена картка',
-      __matchingAccessAllowed: true,
-      __matchingAccessInitialBatch: true,
-    })]);
+    expect(merged).toEqual([]);
   });
 
   it('видача пошуку показує їх — там питають про конкретну людину', () => {
