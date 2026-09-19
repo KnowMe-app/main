@@ -236,6 +236,9 @@ const EN_BY_UK = {
   'Група «{group}» порожня — увімкніть хоча б один діапазон':
     'The «{group}» group is empty — switch on at least one range',
   'Фільтри приховали всі завантажені профілі ({count})': 'The filters hid every loaded profile ({count})',
+  'У стрічці донорки бувають лише агенції, клініки й батьки, а фільтр «Тип профілю» зняв і AG, і IP — під таку умову не підійде жодна анкета':
+    'A donor\'s feed only ever holds agencies, clinics and parents, and the profile-type filter has both AG and IP switched off — nothing can match that',
+  'Увімкнути AG та IP': 'Turn AG and IP back on',
   'Уточнення «{spec} · {label}» не лишило нічого зі знайдених ({count})':
     'The «{spec} · {label}» refinement left nothing among the results ({count})',
   'У стрічці немає анкет агенцій, клінік чи батьків — інших вона донорці не показує. Конкретну людину можна знайти пошуком':

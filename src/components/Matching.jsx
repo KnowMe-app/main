@@ -251,7 +251,14 @@ import {
 import { LOGIN_ROUTE, buildReturnToFromLocation } from 'utils/authRedirect';
 import { useAppSettings } from 'hooks/useAppSettings';
 import { uiText } from 'utils/uiTranslations';
-import { keepDonorCounterpartyCards, isDonorViewer, viewerRoleSignature } from 'utils/matchingPeerVisibility';
+import {
+  keepDonorCounterpartyCards,
+  isDonorViewer,
+  viewerRoleSignature,
+  donorFeedRoleFilterLeavesNothing,
+  listFeedRoleFilterKeysForViewer,
+  DONOR_FEED_ROLE_FILTER_KEYS,
+} from 'utils/matchingPeerVisibility';
 import { profileUiText, resolveProfileLanguage, translateProfileLabel } from 'utils/profileTexts';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
@@ -7174,7 +7181,17 @@ const Matching = () => {
   // розгортає ряд на місці, а не веде в шухляду фільтрів: читач питає «що це за
   // фільтри», і відповідь на це — самі підписи, а не форма, де їх треба шукати
   // заново. Розгорнутий ряд переноситься на кілька рядків і нічого не обрізає.
-  const filterChips = useMemo(() => buildMatchingFilterChips(filters, language), [filters, language]);
+  // Чіпи «Типу профілю» показують рівно те, що пропонує шухляда цьому читачеві:
+  // перелік один на обидва місця, інакше ряд чіпів казав би про позначку, якої
+  // в шухляді вже немає.
+  const roleOptionKeys = useMemo(
+    () => listFeedRoleFilterKeysForViewer(currentUserRole),
+    [currentUserRole],
+  );
+  const filterChips = useMemo(
+    () => buildMatchingFilterChips(filters, language, { roleOptionKeys }),
+    [filters, language, roleOptionKeys],
+  );
   const [showAllFilterChips, setShowAllFilterChips] = useState(false);
   const visibleFilterChips = showAllFilterChips ? filterChips : filterChips.slice(0, MAX_FILTER_CHIPS);
   const hiddenFilterChipCount = filterChips.length - visibleFilterChips.length;
@@ -7510,7 +7527,37 @@ const Matching = () => {
     });
   }, [dislikeUsers, favoriteUsers, feedSourceWithoutOwnEdits, ownDislikeUsers, ownFavoriteUsers, ownerId, rememberReactedCard, withLazyPhotos]);
 
+  /**
+   * Порожня дека донорки, у якої знято «AG» і «IP», — це не «не знайшлось».
+   *
+   * Її стрічка складається з контрагентів, і ці два чіпи — єдині, під якими в
+   * ній хоч щось буває. Знявши обидва, читачка задає умову, якої стрічка не
+   * може виконати ніколи: код чесно обходить усю стрічку, не набирає жодної
+   * картки, закриває `hasMore` — а разом з ним гасне й спостерігач за кінцем
+   * списку, тобто зникає і «Показати ще», і відлік. Лишалось «Фільтри
+   * приховали всі завантажені профілі (N)», де N — картки наданого доступу,
+   * тобто напис про іншу причину, і жодного виходу звідси, крім
+   * перезавантаження сторінки.
+   */
+  const donorRoleFilterBlocksFeed = viewMode === 'default'
+    && !isSearching
+    && donorFeedRoleFilterLeavesNothing({ viewerRole: currentUserRole, filters });
+
+  const restoreDonorRoleFilter = React.useCallback(() => {
+    const roleFilters = filtersRef.current?.userRole || filtersRef.current?.role || {};
+    applyFilters({
+      ...(filtersRef.current || {}),
+      userRole: {
+        ...roleFilters,
+        ...Object.fromEntries(DONOR_FEED_ROLE_FILTER_KEYS.map(key => [key, true])),
+      },
+    });
+  }, [applyFilters]);
+
   const resolveEmptyFeedMessage = () => {
+    if (donorRoleFilterBlocksFeed) {
+      return uiText('У стрічці донорки бувають лише агенції, клініки й батьки, а фільтр «Тип профілю» зняв і AG, і IP — під таку умову не підійде жодна анкета', language);
+    }
     // An empty group is a different problem from "nothing matched", and saying so
     // is the difference between the reader fixing it and giving up (spec §3).
     if (emptyFilterGroup) return uiText('Група «{group}» порожня — увімкніть хоча б один діапазон', language, { group: emptyFilterGroup.groupLabel });
@@ -8083,6 +8130,8 @@ const Matching = () => {
             groupSelectName={filterGroupSelect.name}
             groupSelectValue={filterGroupSelect.value}
             nonAdminAllActive={!isAdmin}
+            roleOptionKeys={roleOptionKeys}
+            viewerRole={currentUserRole}
           />
         </FilterDrawerBody>
         <FilterDrawerFooter>
@@ -8407,7 +8456,16 @@ const Matching = () => {
               )}
               {loading && feedRows.length === 0 && <MatchingSkeleton />}
               {!loading && feedRows.length === 0 && !loadError && (
-                <FeedNotice>{emptyFeedMessage}</FeedNotice>
+                <FeedNotice>
+                  <div>{emptyFeedMessage}</div>
+                  {/* Назвати причину мало: кінець списку тут не видно нікому,
+                      тож жодного іншого жесту на цьому екрані не лишається. */}
+                  {donorRoleFilterBlocksFeed && (
+                    <ActionButton type="button" onClick={restoreDonorRoleFilter}>
+                      {uiText('Увімкнути AG та IP', language)}
+                    </ActionButton>
+                  )}
+                </FeedNotice>
               )}
               {loadError && feedRows.length === 0 && (
                 <FeedNotice role="alert">
