@@ -23,9 +23,14 @@ describe('MyProfile phone autosave', () => {
     expect(source).toContain("name === 'phone' ? normalizePhoneValue(value) : inputUpdateValue(value, field)");
   });
 
-  it('replaces and reindexes a saved phone using the server profile as the previous value', () => {
+  it('reindexes a saved phone without replacing its accumulated history', () => {
     expect(source).toContain("triggerAutosave(nextState, { searchIdFields: name === 'phone' ? ['phone'] : [] });");
-    expect(source).toContain('uploadedInfo[field] = normalizedProfileData[field];');
     expect(source).toContain('await syncUserSearchIdIndex(targetUserId, existingData, uploadedInfo, searchIdFields);');
+
+    const saveStateBody = source.slice(
+      source.indexOf('const saveState = (nextState,'),
+      source.indexOf('const triggerAutosave = (nextState, options)')
+    );
+    expect(saveStateBody).not.toContain('searchIdFields.forEach');
   });
 });
