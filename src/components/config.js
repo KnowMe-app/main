@@ -19,6 +19,7 @@ import {
   limitToLast,
   startAt,
   endAt,
+  endBefore,
   equalTo,
   serverTimestamp,
   runTransaction,
@@ -3923,29 +3924,106 @@ export const setOwnerStimulationSchedule = (ownerId, profileId, value) => (
  * `.value` віддає картки вже в потрібному порядку — і, за потреби, лише
  * потрібний діапазон дат. Раніше для цього довелось би прочитати весь вузол
  * власника і сортувати його в памʼяті браузера.
+ *
+ * Напрямків два, і другий — це і є список «кому дзвонити». `latestFirst`
+ * бере не початок словника, а **хвіст** (`limitToLast`), тобто найбільші
+ * значення, які ще влізли в межу: з `to: сьогодні` це сьогоднішня дата і далі
+ * назад у часі. Гортання назад просить не зсув, а курсор `before` — пару
+ * (значення, ключ) останнього відданого рядка: `endBefore` відсікає по ній
+ * саме там, де сторінка скінчилась, тож однакові дати не задвоюються між
+ * сторінками і не гублять хвіст.
  */
-export const readOwnerGetInTouchSorted = async (ownerId, { from, to, limit } = {}) => {
+export const readOwnerGetInTouchSorted = async (
+  ownerId,
+  { from, to, limit, before = null, latestFirst = false } = {},
+) => {
   const owner = String(ownerId || '').trim();
   if (!owner) return [];
 
   const constraints = [orderByValue()];
   if (from) constraints.push(startAt(from));
-  if (to) constraints.push(endAt(to));
-  if (limit) constraints.push(limitToFirst(limit));
+  // Курсор сильніший за верхню межу: він уже стоїть усередині неї, а два
+  // обмеження зверху в одному запиті база не приймає.
+  if (before && before.value !== undefined && before.value !== null) {
+    constraints.push(endBefore(before.value, String(before.key || '')));
+  } else if (to) {
+    constraints.push(endAt(to));
+  }
+  if (limit) constraints.push(latestFirst ? limitToLast(limit) : limitToFirst(limit));
 
   try {
     const snapshot = await get(query(ref2(database, `${OWNER_GET_IN_TOUCH_PATH}/${owner}`), ...constraints));
     const rows = [];
     // `forEach` знімка — єдиний спосіб не втратити порядок: звичайний обʼєкт
-    // його не тримає.
+    // його не тримає. Тіло в колбека **блокове** навмисно: `forEach` знімка
+    // перериває обхід, щойно колбек вернув truthy, а `rows.push(...)` вертає
+    // нову довжину, тобто `1`. Стислий колбек (`child => rows.push(…)`) тут
+    // прочитав би рівно перший рядок і виглядало б це як порожня база.
     snapshot.forEach(child => {
       rows.push({ userId: child.key, getInTouch: child.val() });
     });
-    return rows;
+    // База завжди віддає за зростанням — навіть `limitToLast`, який лише
+    // вибирає, *які* рядки взяти. Перевертаємо тут, а не у викликача: інакше
+    // кожен читач домовлявся б із цим окремо.
+    return latestFirst ? rows.reverse() : rows;
   } catch (error) {
     console.warn('[multiData] не вдалося прочитати впорядковані позначки', { ownerId: owner, error });
     return [];
   }
+};
+
+/**
+ * Чи лежить під власником ще стара, перевернута форма запису.
+ *
+ * `readOwnerValueMap` розуміє обидві (`{owner}/{значення}/{картка}: true`), бо
+ * інакше все, поставлене до переїзду, зникло б з карток мовчки. Але
+ * **впорядкований** запит її не бачить взагалі: у RTDB обʼєкт при
+ * `orderByValue()` сортується після всіх скалярів, тож `endAt('2026-09-18')`
+ * відсікає такий вузол разом з усіма позначками, які в ньому лежать.
+ *
+ * Тому перед першою сторінкою питаємо рівно один рядок — найбільший. Якщо він
+ * обʼєкт, значить обʼєкти тут є (нічого іншого після них бути не може), і
+ * сторінки треба збирати з мапи, а не запитом. Один рядок на сесію — і
+ * мовчазної втрати немає.
+ */
+const ownerGetInTouchLegacyProbes = new Map();
+
+const ownerGetInTouchHasLegacyGroups = ownerId => {
+  const owner = String(ownerId || '').trim();
+  if (!owner) return Promise.resolve(false);
+
+  const cached = ownerGetInTouchLegacyProbes.get(owner);
+  if (cached) return cached;
+
+  const pending = (async () => {
+    try {
+      const snapshot = await get(query(
+        ref2(database, `${OWNER_GET_IN_TOUCH_PATH}/${owner}`),
+        orderByValue(),
+        limitToLast(1),
+      ));
+      let hasLegacy = false;
+      snapshot.forEach(child => {
+        hasLegacy = isLegacyOwnerValueGroup(child.val());
+      });
+      if (hasLegacy) {
+        console.warn(
+          '[multiData] під власником лишилась стара форма позначок — список збирається з мапи, а не запитом;'
+          + ' перезалийте multiData-getInTouch з екрана міграції',
+          { ownerId: owner },
+        );
+      }
+      return hasLegacy;
+    } catch (error) {
+      // Відмова — не доказ відсутності, але й не привід качати весь вузол на
+      // кожному завантаженні: працюємо швидким шляхом і кажемо про це.
+      console.warn('[multiData] не вдалося перевірити форму позначок', { ownerId: owner, error });
+      return false;
+    }
+  })();
+
+  ownerGetInTouchLegacyProbes.set(owner, pending);
+  return pending;
 };
 
 const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) => {
@@ -7020,135 +7098,132 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
   return payload;
 };
 
-const SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE = 45;
 const SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY = 12;
 const SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE = 25;
 
-const getTodaySearchKeyDateBucket = () => {
-  const today = new Date();
-  return `${AGE_DATE_PREFIX}${toIsoDate(new Date(today.getFullYear(), today.getMonth(), today.getDate()))}`;
+const toIsoToday = () => {
+  const now = new Date();
+  return toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
 };
 
-const getPreviousSearchKeyDateBucket = bucket => {
-  const normalized = String(bucket || '').trim();
-  const datePart = normalized.startsWith(AGE_DATE_PREFIX)
-    ? normalized.slice(AGE_DATE_PREFIX.length)
-    : normalized;
-  const parsed = parseLastActionDate(datePart);
-  if (parsed.status !== 'valid') return null;
-  const previous = new Date(parsed.date.getFullYear(), parsed.date.getMonth(), parsed.date.getDate() - 1);
-  return `${AGE_DATE_PREFIX}${toIsoDate(previous)}`;
-};
+/**
+ * Курсор списку «кому дзвонити» — пара (значення, ключ), а не зсув.
+ *
+ * Зсув тут не годиться: між двома сторінками адмін ставить і знімає позначки,
+ * і список зсувається під ним. Пара ж називає точку в самому впорядкованому
+ * вузлі, тож наступна сторінка починається рівно там, де скінчилась попередня,
+ * хай що сталося вище.
+ *
+ * Старі значення (число `0`, JSON денного бакета) приходять зі збереженого
+ * стану екрана і означають «з початку».
+ */
+const normalizeOwnerGetInTouchCursor = cursor => {
+  if (!cursor || typeof cursor === 'number') return null;
+  if (typeof cursor === 'object') {
+    return cursor.value ? { value: String(cursor.value), key: String(cursor.key || '') } : null;
+  }
 
-const normalizeSearchKeyGetInTouchCursor = cursor => {
-  if (!cursor) return { bucket: getTodaySearchKeyDateBucket(), userId: '' };
-  if (typeof cursor === 'number') return { bucket: getTodaySearchKeyDateBucket(), userId: '' };
-  const normalized = String(cursor || '').trim();
-  if (!normalized || normalized === '0') return { bucket: getTodaySearchKeyDateBucket(), userId: '' };
+  const normalized = String(cursor).trim();
+  if (!normalized || normalized === '0') return null;
 
   try {
     const parsed = JSON.parse(normalized);
-    if (parsed?.bucket) {
-      return {
-        bucket: String(parsed.bucket),
-        userId: parsed.userId ? String(parsed.userId) : '',
-      };
-    }
+    if (parsed?.value) return { value: String(parsed.value), key: String(parsed.key || '') };
   } catch {
-    // Старі значення курсора можуть бути простим bucket key.
+    // Не наш курсор — попередня форма гортала денні бакети `searchKey`.
   }
-
-  return normalized.startsWith(AGE_DATE_PREFIX)
-    ? { bucket: normalized, userId: '' }
-    : { bucket: getTodaySearchKeyDateBucket(), userId: normalized };
+  return null;
 };
 
-const serializeSearchKeyGetInTouchCursor = ({ bucket, userId }) => JSON.stringify({ bucket, userId: userId || '' });
+const serializeOwnerGetInTouchCursor = row => JSON.stringify({ value: row.getInTouch, key: row.userId });
 
-const readSearchKeyGetInTouchBucketIds = async ({ bucket, afterUserId = '', limit = PAGE_SIZE }) => {
-  const readLimit = Math.max(limit * 2 + 1, limit + 1);
-  const snapshots = await Promise.all(
-    [SEARCH_KEY_INDEX_ROOT, SEARCH_KEY_USERS_INDEX_ROOT].map(rootPath => {
-      const bucketRef = ref2(database, `${rootPath}/${GET_IN_TOUCH_SEARCH_KEY_INDEX}/${bucket}`);
-      const bucketQuery = afterUserId
-        ? query(bucketRef, orderByKey(), startAfter(afterUserId), limitToFirst(readLimit))
-        : query(bucketRef, orderByKey(), limitToFirst(readLimit));
-      return get(bucketQuery);
-    })
-  );
+/**
+ * Та сама сторінка, але з мапи власника — шлях для вузла, у якому ще лежить
+ * стара, перевернута форма запису (див. `ownerGetInTouchHasLegacyGroups`).
+ *
+ * Мапа тут не зайве читання: `readProfileFromNodes` бере її на кожну показану
+ * анкету, тож вона вже в памʼяті таба. Нарізка повторює те, що в швидкому
+ * шляху робить база, — сортування за парою (значення, ключ) і відсікання
+ * строго до курсора.
+ */
+const sliceOwnerGetInTouchMapPage = (map, { before, today, readLimit }) => {
+  const rows = Object.entries(map || {})
+    .filter(([, value]) => typeof value === 'string' && value <= today)
+    .map(([userId, getInTouch]) => ({ userId, getInTouch }))
+    .sort((a, b) => (
+      b.getInTouch.localeCompare(a.getInTouch) || b.userId.localeCompare(a.userId)
+    ));
 
-  const ids = new Set();
-  let reachedReadLimit = false;
-  snapshots.forEach(snapshot => {
-    if (!snapshot.exists()) return;
-    let snapshotCount = 0;
-    snapshot.forEach(child => {
-      snapshotCount += 1;
-      if (child.key) ids.add(child.key);
-    });
-    if (snapshotCount >= readLimit) reachedReadLimit = true;
-  });
+  const afterCursor = before
+    ? rows.filter(row => (
+      row.getInTouch < before.value
+      || (row.getInTouch === before.value && row.userId < before.key)
+    ))
+    : rows;
 
-  const sortedIds = [...ids].sort((a, b) => a.localeCompare(b));
+  return afterCursor.slice(0, readLimit);
+};
+
+/**
+ * Сторінка id для списку `getInTouch` — від сьогодні й назад у часі.
+ *
+ * Джерело — вузол самого читача `multiData/getInTouch/{owner}`, де позначка
+ * лежить **значенням** під карткою, а правила оголошують на ньому
+ * `".indexOn": ".value"`. Тому порядок і межу дати робить база: один запит
+ * `orderByValue() + endAt(сьогодні) + limitToLast(сторінка)` віддає рівно ту
+ * сторінку, яку показують, і нічого понад неї.
+ *
+ * Доти те саме питання ставилось глобальному індексу `searchKey/getInTouch`,
+ * де дата сидить у **назві** денного бакета. Діапазон по назвах ключів на два
+ * рівні вглиб не береться, тож код ішов календарем по одному дню за круг — до
+ * 45 днів на батч і до 25 батчів на сторінку, і порожній день коштував рівно
+ * стільки ж, скільки заповнений. Тобто одна сторінка з двадцяти карток могла
+ * впертись у понад тисячу послідовних кругів до бази — звідси й «крутиться».
+ * Заразом зникла розбіжність: `getInTouch` — позначка **того, хто її
+ * поставив**, а той індекс глобальний і зберігав чиюсь чужу.
+ */
+const collectOwnerGetInTouchCandidateIds = async ({ cursor, limit = PAGE_SIZE }) => {
+  const ownerId = auth.currentUser?.uid || '';
+  if (!ownerId) return { ids: [], nextCursor: null, hasMore: false };
+
+  const safeLimit = Math.max(1, Number(limit) || PAGE_SIZE);
+  const before = normalizeOwnerGetInTouchCursor(cursor);
+  const today = toIsoToday();
+  // +1 рядок понад сторінку: він і є відповіддю на «чи є далі», і коштує
+  // стільки ж, скільки другий запит коштував би круга.
+  const readLimit = safeLimit + 1;
+
+  // Проба форми запису йде **разом** зі сторінкою, а не перед нею: поставлена
+  // попереду, вона додавала б зайвий послідовний круг на перше малювання —
+  // кожній сесії, заради випадку, якого в переважної більшості власників немає.
+  // Ціна помилкової ставки нульова: на старій формі впорядкований запит однаково
+  // вертає порожньо (обʼєкти лежать за межею), тож викидати нічого.
+  const [hasLegacyGroups, sortedRows] = await Promise.all([
+    ownerGetInTouchHasLegacyGroups(ownerId),
+    readOwnerGetInTouchSorted(ownerId, { to: today, before, limit: readLimit, latestFirst: true }),
+  ]);
+
+  const rows = hasLegacyGroups
+    ? sliceOwnerGetInTouchMapPage(await readOwnerGetInTouchMap(ownerId), { before, today, readLimit })
+    : sortedRows;
+
+  // Сторінка — це перші `safeLimit` рядків, і курсор іде рівно по ній. Зайвий
+  // рядок питався лише для того, щоб відповісти на «чи є далі», тож у видачу
+  // він не потрапляє: інакше id за курсором приїхав би зараз і ще раз на
+  // наступній сторінці.
+  const page = rows.slice(0, safeLimit);
+  const lastRow = page[page.length - 1] || null;
+
   return {
-    ids: sortedIds.slice(0, limit),
-    bucketHasMore: reachedReadLimit || sortedIds.length > limit,
+    // Дату — і тільки дату: у вузлі буває й нотатка («99», текст), а список
+    // обіцяє «кому дзвонити сьогодні й раніше». Верхню межу вже поставила
+    // база, тут лишається форма значення. Відкинутий рядок курсор усе одно
+    // проходить — інакше сторінка застрягла б на ньому.
+    ids: page.filter(row => isGetInTouchDateOnOrBeforeToday(row.getInTouch)).map(row => row.userId),
+    nextCursor: lastRow ? serializeOwnerGetInTouchCursor(lastRow) : null,
+    hasMore: rows.length > safeLimit,
   };
 };
-
-const collectSearchKeyGetInTouchCandidateIds = async ({ cursor, limit = PAGE_SIZE }) => {
-  let { bucket, userId } = normalizeSearchKeyGetInTouchCursor(cursor);
-  const ids = [];
-  const seen = new Set();
-  let lookups = 0;
-  let hasMore = true;
-  let nextCursor = null;
-
-  while (ids.length < limit && bucket && lookups < SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE) {
-    // Читаємо лише поточний bucket: паралельний lookahead між датами порушує послідовність курсора.
-    lookups += 1;
-    // eslint-disable-next-line no-await-in-loop
-    const bucketResult = await readSearchKeyGetInTouchBucketIds({
-      bucket,
-      afterUserId: userId,
-      limit: limit - ids.length,
-    });
-
-    const remaining = limit - ids.length;
-    const pageIds = bucketResult.ids.slice(0, remaining);
-
-    pageIds.forEach(id => {
-      if (!id || seen.has(id)) return;
-      seen.add(id);
-      ids.push(id);
-    });
-
-    if ((bucketResult.bucketHasMore || bucketResult.ids.length > remaining) && pageIds.length > 0) {
-      userId = pageIds[pageIds.length - 1];
-      nextCursor = serializeSearchKeyGetInTouchCursor({ bucket, userId });
-      break;
-    }
-
-    bucket = getPreviousSearchKeyDateBucket(bucket);
-    userId = '';
-    nextCursor = bucket ? serializeSearchKeyGetInTouchCursor({ bucket, userId: '' }) : null;
-  }
-
-  if (!bucket) {
-    hasMore = false;
-    nextCursor = null;
-  } else if (ids.length === 0 && lookups >= SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE) {
-    hasMore = false;
-    nextCursor = null;
-  } else if (ids.length < limit && lookups >= SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE) {
-    hasMore = true;
-  } else if (!nextCursor) {
-    hasMore = false;
-  }
-
-  return { ids, nextCursor, hasMore };
-};
-
 
 // The getInTouch deck pages both collections at once, so its bulk reads span both
 // roots. Per-card checks must not: they resolve the one root that can hold the id
@@ -7724,6 +7799,25 @@ const summarizeSearchKeyFilterSettingsForLog = filterSettings => ({
   raw: filterSettings || {},
 });
 
+/**
+ * Сторінка списку `getInTouch` — кандидати з вузла власника, фільтри з двох
+ * сторін, анкети наприкінці.
+ *
+ * Порядок кроків тут і є ціною сторінки:
+ *
+ * 1. `collectOwnerGetInTouchCandidateIds` — **один** запит, який база вже
+ *    впорядкувала і обрізала до сторінки;
+ * 2. `filterIdsBySearchKeyPointGroups` — групи, на які вміє відповісти
+ *    `searchKey`, питаються поточково **до** гідратації: відкинута тут картка
+ *    не коштує анкети;
+ * 3. `fetchUsersByIds` — анкети лише для тих, хто дожив; список на цьому екрані
+ *    показує `UsersList`, якому потрібна анкета, а не проєкція стрічки;
+ * 4. `filterMain` — решта фільтрів, які живуть у самій картці.
+ *
+ * Гілка була дві — з індексними групами й без них, — і вони розійшлися б на
+ * першій же правці. Різниця між ними рівно одна: без груп крок 2 нічого не
+ * відкидає, тож він і лишився один на обидва випадки.
+ */
 export const fetchUsersBySearchKeyPaged = async ({
   filterSettings = {},
   offset = 0,
@@ -7742,7 +7836,7 @@ export const fetchUsersBySearchKeyPaged = async ({
   try {
     const targetLimit = Math.max(1, Number(limit) || PAGE_SIZE);
     const collectedUsers = {};
-    const loadedIds = [];
+    const loadedIds = new Set();
     let cursor = offset;
     let hasMore = true;
     let batches = 0;
@@ -7762,262 +7856,96 @@ export const fetchUsersBySearchKeyPaged = async ({
     });
 
     const activeSearchKeyGroups = buildActiveSearchKeyFilterGroups(filterSettings, { favoritesMap, dislikedMap });
+    // Широка група (майже вся база в одному бакеті) поточковою перевіркою
+    // нічого не економить: вона прийме майже всіх, а коштуватиме читання на
+    // кожну картку. Такі лишаються `filterMain` уже на гідратованій анкеті.
+    const pointCheckGroups = activeSearchKeyGroups
+      .filter(group => group.supportsPointCheck && !isBroadSearchKeyPointGroup(group));
+
     debugLog('activeSearchKeyGroups', {
       count: activeSearchKeyGroups.length,
+      pointCheckCount: pointCheckGroups.length,
+      deferredCount: activeSearchKeyGroups.length - pointCheckGroups.length,
+      source: 'ownerGetInTouchOrdered',
       groups: activeSearchKeyGroups.map(group => ({
         key: group.key,
         indexName: group.indexName,
         bucketsCount: (group.buckets || []).length,
         bucketsSample: (group.buckets || []).slice(0, 20),
+        supportsPointCheck: Boolean(group.supportsPointCheck),
+        readMode: group.readMode || 'include',
+        readBuckets: group.readBuckets || [],
       })),
     });
-    debugLog('searchKeyBucketDiagnostics', {
-      groups: activeSearchKeyGroups.map(group => ({
-        group: group.key,
-        indexName: group.indexName,
-        allowedBuckets: group.buckets || [],
-        knownIndexedBuckets: group.allBuckets || group.buckets || [],
-      })),
-      normalizationNotes: {
-        maritalStatus: { married: '+', unmarried: '-', empty: 'no', unknown: '?' },
-        bloodRh: { plus: '+', minus: '-', empty: 'no', unknown: '?' },
-      },
-    });
 
-    if (activeSearchKeyGroups.length > 0) {
-      const broadPointCheckGroups = activeSearchKeyGroups
-        .filter(group => group.supportsPointCheck && isBroadSearchKeyPointGroup(group));
-      const pointCheckGroups = activeSearchKeyGroups
-        .filter(group => group.supportsPointCheck && !isBroadSearchKeyPointGroup(group));
-      const deferredGroups = activeSearchKeyGroups
-        .filter(group => !group.supportsPointCheck || isBroadSearchKeyPointGroup(group));
-
-      debugLog('indexedSearchKeyGroups', {
-        count: activeSearchKeyGroups.length,
-        pointCheckCount: pointCheckGroups.length,
-        broadDeferredPointCheckCount: broadPointCheckGroups.length,
-        deferredCount: deferredGroups.length,
-        source: 'indexedGetInTouchPointMembership',
-        groups: activeSearchKeyGroups.map(group => ({
-          key: group.key,
-          indexName: group.indexName,
-          bucketsCount: (group.buckets || []).length,
-          allBucketsCount: (group.allBuckets || []).length,
-          bucketsSample: (group.buckets || []).slice(0, 20),
-          supportsPointCheck: Boolean(group.supportsPointCheck),
-          readMode: group.readMode || 'include',
-          readBuckets: group.readBuckets || [],
-          deferredBecauseBroad: broadPointCheckGroups.includes(group),
-        })),
-      });
-
-      if (pointCheckGroups.some(group => !(group.buckets || []).length)) {
-        logFilterSummary();
-        debugLog('return', {
-          collectedUsersCount: 0,
-          loadedIdsCount: 0,
-          lastKey: null,
-          hasMore: false,
-          batches,
-          source: 'indexedGetInTouchPointMembership',
-          zeroReason: 'one of active point-check filters has no selected buckets',
-        });
-
-        return {
-          users: collectedUsers,
-          lastKey: null,
-          hasMore: false,
-          loadedIds,
-        };
-      }
-
-      while (Object.keys(collectedUsers).length < targetLimit && hasMore && batches < SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE) {
-        debugLog('indexedGetInTouch:loop:start', {
-          batch: batches + 1,
-          cursorBefore: cursor,
-          collectedUsersCount: Object.keys(collectedUsers).length,
-          loadedIdsCount: loadedIds.length,
-          hasMore,
-        });
-
-        batches += 1;
-        // Беремо наступну невелику сторінку userId з getInTouch,
-        // перетинаємо її з активними індексними фільтрами і лише тоді тягнемо повні анкети.
-        // eslint-disable-next-line no-await-in-loop
-        const candidatePage = await collectSearchKeyGetInTouchCandidateIds({
-          cursor,
-          limit: targetLimit,
-        });
-
-        cursor = candidatePage.nextCursor;
-        hasMore = Boolean(candidatePage.hasMore);
-
-        const pageIds = (candidatePage.ids || []).filter(id => id && !loadedIds.includes(id));
-        loadedIds.push(...pageIds);
-        filterSummary.pageIdsCount += pageIds.length;
-
-        const candidateIds = await filterIdsBySearchKeyPointGroups({
-          ids: pageIds,
-          groups: pointCheckGroups,
-          debugLog,
-          // Детальні повторні читання bucket-ів лишаємо вимкненими у звичайній видачі.
-          collectDiagnostics: false,
-        });
-        filterSummary.pointMembershipRejected += pageIds.length - candidateIds.length;
-        debugLog('indexedGetInTouch:candidatePage', {
-          batch: batches,
-          nextCursor: cursor,
-          hasMore,
-          pageIdsCount: pageIds.length,
-          pageIdsSample: pageIds.slice(0, 10),
-          candidateIdsCount: candidateIds.length,
-          candidateIdsSample: candidateIds.slice(0, 10),
-        });
-
-        if (candidateIds.length === 0) {
-          debugLog('indexedGetInTouch:loop:end', {
-            batch: batches,
-            reason: hasMore ? 'page ids did not match active indexed filters, continue' : 'no matching ids and no more pages',
-            collectedUsersCount: Object.keys(collectedUsers).length,
-            loadedIdsCount: loadedIds.length,
-            cursor,
-            hasMore,
-          });
-          if (!hasMore) break;
-          continue;
-        }
-
-        debugLog('fetchUsersByIds:before', {
-          idsCount: candidateIds.length,
-          idsSample: candidateIds.slice(0, 10),
-          source: 'indexedGetInTouchPointMembership',
-        });
-
-        // eslint-disable-next-line no-await-in-loop
-        const candidateUsers = await fetchUsersByIds(candidateIds);
-        const candidateUsersEntries = Object.entries(candidateUsers || {});
-
-        debugLog('fetchUsersByIds:after', {
-          fetchedCount: candidateUsersEntries.length,
-          fetchedIdsSample: candidateUsersEntries.map(([id, user]) => user?.userId || id).slice(0, 10),
-          source: 'indexedGetInTouchPointMembership',
-        });
-
-        const filteredEntries = filterMain(
-          candidateUsersEntries,
-          'DATE2.1',
-          filterSettings,
-          favoritesMap,
-          dislikedMap,
-          // Без per-card debug filterMain завершується одразу після першого false.
-          { requireCurrentOrPastGetInTouch: true },
-        );
-        filterSummary.filterMainRejected += candidateUsersEntries.length - filteredEntries.length;
-        filterSummary.accepted += filteredEntries.length;
-
-        filteredEntries.forEach(([id, user]) => {
-          const userId = user?.userId || id;
-          if (!userId || collectedUsers[userId]) return;
-          if (Object.keys(collectedUsers).length >= targetLimit) return;
-          collectedUsers[userId] = { ...user, userId };
-        });
-        if (typeof onProgress === 'function') onProgress({ ...collectedUsers });
-
-        debugLog('filterMain:after', {
-          beforeCount: candidateUsersEntries.length,
-          afterCount: filteredEntries.length,
-          collectedUsersCount: Object.keys(collectedUsers).length,
-          removedCount: candidateUsersEntries.length - filteredEntries.length,
-          filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
-          source: 'indexedGetInTouchPointMembership',
-          zeroReason: filteredEntries.length === 0
-            ? candidateUsersEntries.length === 0
-              ? 'fetchUsersByIds returned 0 users from indexed getInTouch page'
-              : 'filterMain removed all indexed getInTouch users'
-            : null,
-        });
-
-        debugLog('indexedGetInTouch:loop:end', {
-          batch: batches,
-          collectedUsersCount: Object.keys(collectedUsers).length,
-          loadedIdsCount: loadedIds.length,
-          cursor,
-          hasMore,
-        });
-      }
-
-      const reachedBatchLimit = batches >= SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE && Object.keys(collectedUsers).length === 0;
-
+    // Група без жодного обраного бакета не звужує видачу, а обнуляє її: питати
+    // за неї нема чого, і сторінка порожня без жодного запиту.
+    if (pointCheckGroups.some(group => !(group.buckets || []).length)) {
       logFilterSummary();
       debugLog('return', {
-        collectedUsersCount: Object.keys(collectedUsers).length,
-        loadedIdsCount: loadedIds.length,
-        lastKey: reachedBatchLimit ? null : cursor,
-        hasMore: reachedBatchLimit ? false : hasMore,
+        collectedUsersCount: 0,
+        loadedIdsCount: 0,
+        lastKey: null,
+        hasMore: false,
         batches,
-        reachedBatchLimit,
-        source: 'indexedGetInTouchPointMembership',
+        source: 'ownerGetInTouchOrdered',
+        zeroReason: 'one of active point-check filters has no selected buckets',
       });
 
-      return {
-        users: collectedUsers,
-        lastKey: reachedBatchLimit ? null : cursor,
-        hasMore: reachedBatchLimit ? false : hasMore,
-        loadedIds,
-      };
+      return { users: collectedUsers, lastKey: null, hasMore: false, loadedIds: [] };
     }
 
     while (Object.keys(collectedUsers).length < targetLimit && hasMore && batches < SEARCH_KEY_GET_IN_TOUCH_MAX_BATCHES_PER_PAGE) {
+      batches += 1;
       debugLog('loop:start', {
-        batch: batches + 1,
+        batch: batches,
         cursorBefore: cursor,
         collectedUsersCount: Object.keys(collectedUsers).length,
-        loadedIdsCount: loadedIds.length,
+        loadedIdsCount: loadedIds.size,
         hasMore,
       });
 
-      batches += 1;
-      // Беремо маленьку сторінку userId з getInTouch bucket-ів від сьогодні назад,
-      // а не викачуємо великі searchKey buckets перед пагінацією.
       // eslint-disable-next-line no-await-in-loop
-      const candidatePage = await collectSearchKeyGetInTouchCandidateIds({
-        cursor,
-        limit: targetLimit,
-      });
-
-      debugLog('candidatePage:response', {
-        cursorBefore: cursor,
-        nextCursor: candidatePage.nextCursor,
-        hasMore: Boolean(candidatePage.hasMore),
-        idsCount: (candidatePage.ids || []).length,
-        idsSample: (candidatePage.ids || []).slice(0, 10),
-      });
-
+      const candidatePage = await collectOwnerGetInTouchCandidateIds({ cursor, limit: targetLimit });
       cursor = candidatePage.nextCursor;
       hasMore = Boolean(candidatePage.hasMore);
 
-      const candidateIds = (candidatePage.ids || []).filter(id => id && !loadedIds.includes(id));
-      debugLog('candidateIds:normalized', {
+      const pageIds = (candidatePage.ids || []).filter(id => id && !loadedIds.has(id));
+      pageIds.forEach(id => loadedIds.add(id));
+      filterSummary.pageIdsCount += pageIds.length;
+
+      // eslint-disable-next-line no-await-in-loop
+      const candidateIds = await filterIdsBySearchKeyPointGroups({
+        ids: pageIds,
+        groups: pointCheckGroups,
+        debugLog,
+        // Детальні повторні читання bucket-ів лишаємо вимкненими у звичайній видачі.
+        collectDiagnostics: false,
+      });
+      filterSummary.pointMembershipRejected += pageIds.length - candidateIds.length;
+
+      debugLog('candidatePage', {
+        batch: batches,
+        nextCursor: cursor,
+        hasMore,
+        pageIdsCount: pageIds.length,
+        pageIdsSample: pageIds.slice(0, 10),
         candidateIdsCount: candidateIds.length,
         candidateIdsSample: candidateIds.slice(0, 10),
-        loadedIdsCountBeforePush: loadedIds.length,
       });
-      filterSummary.pageIdsCount += candidateIds.length;
 
       if (candidateIds.length === 0) {
         debugLog('loop:end', {
           batch: batches,
-          reason: hasMore ? 'empty candidateIds, continue' : 'empty candidateIds and no more pages',
+          reason: hasMore ? 'page ids did not match active indexed filters, continue' : 'no matching ids and no more pages',
           collectedUsersCount: Object.keys(collectedUsers).length,
-          loadedIdsCount: loadedIds.length,
+          loadedIdsCount: loadedIds.size,
           cursor,
           hasMore,
         });
         if (!hasMore) break;
         continue;
       }
-
-      loadedIds.push(...candidateIds);
 
       debugLog('fetchUsersByIds:before', {
         idsCount: candidateIds.length,
@@ -8033,11 +7961,6 @@ export const fetchUsersBySearchKeyPaged = async ({
         fetchedIdsSample: candidateUsersEntries.map(([id, user]) => user?.userId || id).slice(0, 10),
       });
 
-      debugLog('filterMain:before', {
-        beforeCount: candidateUsersEntries.length,
-        filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
-      });
-
       const filteredEntries = filterMain(
         candidateUsersEntries,
         'DATE2.1',
@@ -8050,31 +7973,37 @@ export const fetchUsersBySearchKeyPaged = async ({
       filterSummary.filterMainRejected += candidateUsersEntries.length - filteredEntries.length;
       filterSummary.accepted += filteredEntries.length;
 
-      debugLog('filterMain:after', {
-        beforeCount: candidateUsersEntries.length,
-        afterCount: filteredEntries.length,
-        removedCount: candidateUsersEntries.length - filteredEntries.length,
-        filterSettings: summarizeSearchKeyFilterSettingsForLog(filterSettings),
-        zeroReason: filteredEntries.length === 0
-          ? candidateUsersEntries.length === 0
-            ? 'fetchUsersByIds returned 0 users'
-            : 'filterMain removed all fetched users'
-          : null,
-      });
-
-      filteredEntries.forEach(([id, user]) => {
+      // Порядок сторінки — це і є відповідь, а `fetchUsersByIds` віддає мапу,
+      // у якій його немає. Тому картки складаються за `candidateIds`, а не за
+      // ключами мапи: інакше «від сьогодні й назад» розсипалось би на кожній
+      // сторінці.
+      const acceptedById = filteredEntries.reduce((acc, [id, user]) => {
         const userId = user?.userId || id;
-        if (!userId || collectedUsers[userId]) return;
-        collectedUsers[userId] = { ...user, userId };
+        if (userId) acc[userId] = { ...user, userId };
+        return acc;
+      }, {});
+      candidateIds.forEach(id => {
+        const user = acceptedById[id];
+        if (!user || collectedUsers[id]) return;
+        if (Object.keys(collectedUsers).length >= targetLimit) return;
+        collectedUsers[id] = user;
       });
       if (typeof onProgress === 'function') onProgress({ ...collectedUsers });
 
       debugLog('loop:end', {
         batch: batches,
+        beforeCount: candidateUsersEntries.length,
+        afterCount: filteredEntries.length,
+        removedCount: candidateUsersEntries.length - filteredEntries.length,
         collectedUsersCount: Object.keys(collectedUsers).length,
-        loadedIdsCount: loadedIds.length,
+        loadedIdsCount: loadedIds.size,
         cursor,
         hasMore,
+        zeroReason: filteredEntries.length === 0
+          ? candidateUsersEntries.length === 0
+            ? 'fetchUsersByIds returned 0 users from the ordered getInTouch page'
+            : 'filterMain removed all users of the ordered getInTouch page'
+          : null,
       });
     }
 
@@ -8083,18 +8012,19 @@ export const fetchUsersBySearchKeyPaged = async ({
     logFilterSummary();
     debugLog('return', {
       collectedUsersCount: Object.keys(collectedUsers).length,
-      loadedIdsCount: loadedIds.length,
+      loadedIdsCount: loadedIds.size,
       lastKey: reachedBatchLimit ? null : cursor,
       hasMore: reachedBatchLimit ? false : hasMore,
       batches,
       reachedBatchLimit,
+      source: 'ownerGetInTouchOrdered',
     });
 
     return {
       users: collectedUsers,
       lastKey: reachedBatchLimit ? null : cursor,
       hasMore: reachedBatchLimit ? false : hasMore,
-      loadedIds,
+      loadedIds: [...loadedIds],
     };
   } catch (error) {
     debugLog('error', {
