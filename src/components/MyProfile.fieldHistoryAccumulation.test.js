@@ -19,12 +19,12 @@ import path from 'path';
 describe('editing a field on my-profile does not force it through as a plain overwrite', () => {
   const source = fs.readFileSync(path.join(__dirname, 'MyProfile.jsx'), 'utf8');
 
-  it('saveFieldValue (used by every plain text/textarea input) calls triggerAutosave without directFields', () => {
+  it('saveFieldValue preserves history without forcing fields through directFields', () => {
     const fnBody = source.slice(
       source.indexOf('const saveFieldValue = (name, value, field) => {'),
       source.indexOf('const clearFieldValue = (name, field) => {')
     );
-    expect(fnBody).toContain('triggerAutosave(nextState);');
+    expect(fnBody).toContain('triggerAutosave(nextState');
     expect(fnBody).not.toContain('directFields');
   });
 

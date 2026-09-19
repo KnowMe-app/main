@@ -6,11 +6,13 @@ import styled, { css, keyframes } from 'styled-components';
 import {
   auth,
   fetchUserData,
+  syncUserSearchIdIndex,
   updateProfileRole,
 } from './config';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { inputUpdateValue } from './inputUpdatedValue';
+import { normalizePhoneValue } from './inputValidations';
 import {
   createUserWithEmailAndPassword,
   fetchSignInMethodsForEmail,
@@ -577,8 +579,12 @@ export const MyProfile = () => {
     }
   }, [mergeLoadedProfileData, normalizeProfileData, restoreLocalDraft]);
 
+  const normalizeFieldValue = (name, value, field) => (
+    name === 'phone' ? normalizePhoneValue(value) : inputUpdateValue(value, field)
+  );
+
   const updateFieldValue = (name, value, field) => {
-    const updatedValue = inputUpdateValue(value, field);
+    const updatedValue = normalizeFieldValue(name, value, field);
     editedFieldsRef.current.add(name);
     setMissing(prev => ({ ...prev, [name]: false }));
 
@@ -594,7 +600,7 @@ export const MyProfile = () => {
   };
 
   const saveFieldValue = (name, value, field) => {
-    const updatedValue = inputUpdateValue(value, field);
+    const updatedValue = normalizeFieldValue(name, value, field);
     editedFieldsRef.current.add(name);
     setMissing(prev => ({ ...prev, [name]: false }));
 
@@ -605,7 +611,7 @@ export const MyProfile = () => {
 
     stateRef.current = nextState;
     setState(nextState);
-    triggerAutosave(nextState);
+    triggerAutosave(nextState, { searchIdFields: name === 'phone' ? ['phone'] : [] });
   };
 
   const clearFieldValue = (name, field) => {
@@ -988,7 +994,7 @@ export const MyProfile = () => {
     }
   };
 
-  const saveState = (nextState, { directFields = [] } = {}) => {
+  const saveState = (nextState, { directFields = [], searchIdFields = [] } = {}) => {
     const targetUserId = userId || nextState?.userId || stateRef.current.userId;
     if (!targetUserId) return Promise.resolve();
     const sessionGeneration = authSessionGenerationRef.current;
@@ -1017,6 +1023,14 @@ export const MyProfile = () => {
           }
         });
         delete uploadedInfo.password;
+        searchIdFields.forEach(field => {
+          if (Object.prototype.hasOwnProperty.call(normalizedProfileData, field)) {
+            uploadedInfo[field] = normalizedProfileData[field];
+          }
+        });
+        if (searchIdFields.length > 0) {
+          await syncUserSearchIdIndex(targetUserId, existingData, uploadedInfo, searchIdFields);
+        }
         await persistUserProfile(targetUserId, uploadedInfo, 'check');
       });
 
