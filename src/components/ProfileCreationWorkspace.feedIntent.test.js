@@ -178,6 +178,37 @@ describe('доповнення знайденої картки зі стрічк
     expect(await screen.findByPlaceholderText('Нотатка для себе')).toBeInTheDocument();
   });
 
+  /*
+   * Публічна нотатка в доповненні одна, а не дві.
+   *
+   * Під підписом «Публічна нотатка» стояли поруч два різні записники:
+   * підписані відгуки з `comments/{cardId}` і поле анкети `publicComment` з
+   * тим самим підписом і тим самим плейсхолдером. Що між ними різниця,
+   * екран не пояснював ніяк — та сама нотатка писалась двічі.
+   */
+  it('пропонує написати публічну нотатку рівно один раз', async () => {
+    render(<ProfileCreationWorkspace />);
+    await screen.findByDisplayValue('Бугаренко');
+
+    expect(screen.getAllByText('Публічна нотатка')).toHaveLength(1);
+    expect(screen.getAllByText('Додати публічну нотатку')).toHaveLength(1);
+    // Поля анкети під доріжкою більше немає — саме воно й було другою копією.
+    expect(screen.queryByPlaceholderText('Додати публічну нотатку')).not.toBeInTheDocument();
+  });
+
+  /*
+   * Відгуки тут читаються разом із карткою, тож заклику перевіряти в
+   * плейсхолдері немає, а прочитана порожнеча каже про себе словом: інакше
+   * «не прочитали» й «прочитали, нічого немає» виглядали б однаково.
+   */
+  it('не кличе перевіряти те, що прочитала сама, і називає порожню відповідь', async () => {
+    render(<ProfileCreationWorkspace />);
+    await screen.findByDisplayValue('Бугаренко');
+
+    expect(screen.queryByText(/перевірити їх наявність/)).not.toBeInTheDocument();
+    expect(await screen.findByText('Публічних відгуків ще немає')).toBeInTheDocument();
+  });
+
   it('записує в оверлей лише дописане, а не підставлене з картки', async () => {
     render(<ProfileCreationWorkspace />);
     const existing = await screen.findByDisplayValue('380930001122');

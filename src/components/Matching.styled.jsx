@@ -1080,31 +1080,34 @@ export const ModernProfileScroll = styled.div`
   overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scroll-padding-bottom: 96px;
-  padding-bottom: 96px;
+  /* Смужка прокрутки місця не займає.
+   *
+   * Значення thin у Chrome (зокрема на Android) — це **класична**
+   * смужка, тобто жолоб у розкладці: вміст картки ставав вужчим за саму
+   * картку, і вздовж усього фото йшла світла полоса праворуч, якої ніхто не
+   * малював. Помітно її саме на фото — решта блоків білі на світлому тлі.
+   * Картка й так прокручується пальцем, а межі вмісту тут не губляться:
+   * під смугою фото одразу йде імʼя. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Під смужкою дій (ModernActionRail) — рівно її висота: кнопка 44 px,
+     відступи по 9 px і безпечна зона. Сталі 96 px лишали під нотатками
+     порожнечу заввишки в третину блока. */
+  scroll-padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
 `;
 
 export const ModernHero = styled.div`
   position: relative;
-  /* Висоту фото задає **пропорція знімка**, а не частка екрана.
-   *
-   * Частка й була причиною того, що у відкритій картці видно саме чоло: 46%
-   * висоти при повній ширині — це смуга, ширша за висоту, а всі знімки в
-   * анкетах портретні, тож cover зрізав обличчя вже під очима. Тепер
-   * оболонка тримає портретні 4/5 — ту саму пропорцію, що й фото в рядку
-   * стрічки, — і обличчя вміщається цілком. Стеля лишилась, щоб на високому
-   * екрані фото не з'їло всю картку: під ним у тій самій прокрутці стоять
-   * мініатюри, імʼя й метрики. */
-  aspect-ratio: 4 / 5;
-  height: auto;
-  min-height: clamp(320px, 52%, 460px);
-  max-height: min(64dvh, 560px);
   background: var(--matching-hero-fallback);
   background-size: cover;
   background-position: center 18%;
-  padding: 0;
   box-sizing: border-box;
   overflow: hidden;
   cursor: ${({ $clickable }) => ($clickable ? 'zoom-in' : 'default')};
@@ -1122,6 +1125,50 @@ export const ModernHero = styled.div`
     outline: 3px solid rgba(232, 121, 26, 0.75);
     outline-offset: -5px;
   }
+
+  /* Висоту фото задає **пропорція знімка**, а не частка екрана.
+   *
+   * Частка й була причиною того, що у відкритій картці видно саме чоло: 46%
+   * висоти при повній ширині — це смуга, ширша за висоту, а всі знімки в
+   * анкетах портретні, тож cover зрізав обличчя вже під очима. Тепер
+   * оболонка тримає портретні 4/5 — ту саму пропорцію, що й фото в рядку
+   * стрічки, — і обличчя вміщається цілком. Стеля лишилась, щоб на високому
+   * екрані фото не з'їло всю картку: під ним у тій самій прокрутці стоять
+   * мініатюри, імʼя й метрики.
+   *
+   * **Без знімка пропорція не тримає нічого — тримати нема чого.** Порожня
+   * смуга 4/5 при повній ширині це понад пів екрана градієнта, у якому не
+   * видно навіть монограми, і анкета без фото починалася з прокрутки повз
+   * ніщо: імʼя, контакти й нотатки лежали вже за межею екрана. Там лишається
+   * вузька смуга — рівно на те, що в ній справді є: плашку ролі й монограму.
+   *
+   * Обидві гілки стоять **після** базових правил: інакше загальне padding: 0
+   * знімало б відступи вузької смуги, а її ::after — той, що ховає затемнення
+   * під фото, — переписувався б правилом нижче. */
+  ${({ $empty }) => ($empty ? css`
+    aspect-ratio: auto;
+    height: auto;
+    /* Рівно на монограму з відступами; без неї — на плашку ролі, яка лежить
+       тут абсолютно (top: 14) і без цієї межі висіла б за межами смуги. */
+    min-height: 56px;
+    max-height: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 14px;
+
+    /* Затемнення знизу підводить світлий текст до фото. Фото немає — і
+       підводити нема чого, а смуга від нього виглядала брудною. */
+    &::after {
+      display: none;
+    }
+  ` : css`
+    aspect-ratio: 4 / 5;
+    height: auto;
+    min-height: clamp(320px, 52%, 460px);
+    max-height: min(64dvh, 560px);
+    padding: 0;
+  `)}
 `;
 
 export const ModernPhotoStrip = styled.div`
@@ -1169,24 +1216,32 @@ export const ModernHeroImage = styled.img`
   display: block;
 `;
 
+/*
+ * Монограма замість знімка.
+ *
+ * Колір у неї — акцент ролі, а не біле по прозорому: у світлій темі
+ * `--matching-hero-fallback` це кремовий градієнт, тож біла монограма на ньому
+ * не читалась узагалі — смуга виглядала просто порожньою, і питання «чому
+ * порожнє фото займає стільки місця» було рівно про це.
+ */
 export const ModernHeroFallbackMark = styled.div`
-  position: absolute;
-  inset: 58px 0 auto;
-  margin: auto;
-  width: 112px;
-  height: 112px;
-  border-radius: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 38px;
   font-weight: 900;
   letter-spacing: 1px;
-  background: linear-gradient(145deg, rgba(255,255,255,0.16), rgba(232,121,26,0.16));
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(14px);
+  color: var(--matching-role-accent);
+  background: color-mix(in srgb, var(--matching-role-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--matching-role-accent) 34%, transparent);
+
+  /* Монограма стоїть у потоці смуги, а не поверх неї. Абсолютний блок на
+     112 px повертав би смузі рівно ту висоту, заради якої вона й стала
+     вузькою, — і тримав би її навіть тоді, коли показувати нема чого. */
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 17px;
+  font-size: 21px;
 `;
 
 export const ModernHeroContent = styled.div`
@@ -1687,10 +1742,19 @@ export const ModernActionRail = styled.div`
   z-index: 8;
   display: flex;
   justify-content: space-between;
-  min-height: 80px;
+  /* Смужка — це рівно рядок кнопок, і висоти в ній стільки ж.
+   *
+   * 80 px мінімальної висоти під 46-піксельні кола плюс нижній відступ
+   * безпечної зони давали блок майже вдвічі вищий за самі кнопки: на екрані
+   * це читалось як окрема порожня секція під анкетою. Тепер висоту задають
+   * кнопки й однакові відступи над і під ними, а безпечна зона додається
+   * **понад** відступ, а не замість нього — інакше на телефоні з жестовою
+   * навігацією кнопки сиділи б нижче за середину смужки. */
+  min-height: 0;
   box-sizing: border-box;
   align-items: center;
-  padding: 10px 54px max(10px, env(safe-area-inset-bottom));
+  padding: 9px 54px;
+  padding-bottom: calc(9px + env(safe-area-inset-bottom, 0px));
   pointer-events: none;
   background: var(--matching-rail-bg);
   border-top: 1px solid var(--matching-rail-border);
@@ -1703,12 +1767,17 @@ export const ModernActionRail = styled.div`
      нічого. */
   & > * {
     pointer-events: auto;
+    /* Реакції загорнуті в span. Інлайновий span під кнопкою лишає під нею
+       місце на нижні виносні елементи шрифту, тож смужка виходила вищою за
+       свої ж відступи, а кнопки сиділи вище за її середину. */
+    display: flex;
+    align-items: center;
   }
 
   button {
     position: static !important;
-    width: 46px !important;
-    height: 46px !important;
+    width: 44px !important;
+    height: 44px !important;
     border-radius: 50% !important;
     box-shadow: 0 10px 24px rgba(22, 22, 22, 0.18) !important;
   }

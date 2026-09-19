@@ -153,9 +153,10 @@ describe('ProfileCreationWorkspace admin review', () => {
     const comment = await screen.findByDisplayValue('Авторський коментар');
     expect(comment).toBeInTheDocument();
     // Публічний коментар стоїть у доріжці нотаток поруч із приватною, тож і
-    // запрошення в порожньому полі в нього те саме, що в стрічці й у відкритій
-    // картці (`profileTexts`), а не власний текст цієї форми.
-    expect(comment).toHaveAttribute('placeholder', 'Додати публічну нотатку або перевірити їх наявність');
+    // запрошення в порожньому полі в нього зі спільного словника
+    // (`profileTexts`), а не власний текст цієї форми. Заклику перевірити
+    // відгуки в ньому немає: у чернетці картки ще немає, читати нема чого.
+    expect(comment).toHaveAttribute('placeholder', 'Додати публічну нотатку');
     expect(screen.queryByText(/анкета зникає із загального списку Matching/)).not.toBeInTheDocument();
 
     fireEvent.change(comment, { target: { value: 'Виправлений коментар' } });

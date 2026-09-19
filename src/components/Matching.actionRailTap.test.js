@@ -26,7 +26,9 @@ describe('кнопки смужки дій ловлять дотик', () => {
   });
 
   it('а кожен її нащадок — ні', () => {
-    expect(rail()).toContain('& > * {\n    pointer-events: auto;\n  }');
+    // Селектор саме «всі нащадки», а не один їх тип; що ще стоїть у цьому
+    // блоці (вирівнювання span-обгорток реакцій), тесту байдуже.
+    expect(rail()).toContain('& > * {\n    pointer-events: auto;');
     expect(rail()).not.toContain('& > span {');
   });
 

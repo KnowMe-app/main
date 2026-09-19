@@ -34,7 +34,7 @@ import InfoModal, {
   ModalTitle,
 } from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
-import { ContactLinks, PublicCommentBlock } from './ProfileRow';
+import { ContactLinks, PublicCommentBlock, ReviewsStateNote, describeReviewsState } from './ProfileRow';
 import { NoteLane, NoteLaneHead, NoteLaneHint, NoteLanes } from './Matching.styled';
 import { profileUiText } from 'utils/profileTexts';
 import { useAppSettings } from '../hooks/useAppSettings';
@@ -672,6 +672,10 @@ export const ProfileCreationWorkspace = () => {
   // дописувала картку, не бачачи, що про цю людину вже написали, — хоча в
   // стрічці й у відкритій картці та сама доріжка їх показує.
   const [publicComments, setPublicComments] = useState([]);
+  // Чи відповідь про відгуки взагалі приїхала. Порожній список сам по собі про
+  // це не каже: «читаємо», «не змогли прочитати» й «прочитали, відгуків
+  // немає» виглядали б однаково — порожньою доріжкою під полем запису.
+  const [publicCommentsState, setPublicCommentsState] = useState({ loading: false, loaded: false });
   const [viewerName, setViewerName] = useState('');
   const draftRef = useRef(draft);
   const persistedDraftRef = useRef(draft);
@@ -840,16 +844,23 @@ export const ProfileCreationWorkspace = () => {
     const cardId = overlayTarget?.userId;
     if (!cardId) {
       setPublicComments([]);
+      setPublicCommentsState({ loading: false, loaded: false });
       return undefined;
     }
     let cancelled = false;
+    setPublicCommentsState({ loading: true, loaded: false });
     fetchPublicProfileComments([cardId])
       .then(byProfile => {
-        if (!cancelled) setPublicComments(byProfile?.[cardId] || []);
+        if (cancelled) return;
+        setPublicComments(byProfile?.[cardId] || []);
+        setPublicCommentsState({ loading: false, loaded: true });
       })
       .catch(error => {
         // Відгуки — доповнення до форми, а не її умова: відмова читання не має
-        // коштувати самої форми, тож вона лишається в консолі.
+        // коштувати самої форми, тож вона лишається в консолі. А от мовчати про
+        // неї на екрані не можна: порожня доріжка інакше означала б «відгуків
+        // немає» там, де їх просто не прочитали.
+        if (!cancelled) setPublicCommentsState({ loading: false, loaded: false });
         console.warn('[ProfileCreationWorkspace] public comments unavailable', error);
       });
     return () => { cancelled = true; };
@@ -2015,27 +2026,44 @@ export const ProfileCreationWorkspace = () => {
             </NoteLaneHead>
             {/* У доповненні знайденої картки доріжка показує те саме, що
                 показує вона ж у стрічці й у відкритій картці: підписані
-                автором відгуки з `comments/{cardId}`. Поле анкети
-                `publicComment` лишається під ними — доповнювач може
-                запропонувати й його, — але першим стоїть уже написане: доріжку
-                читають згори вниз, і відповідь мусить бути над полем для
-                питання. У новій чернетці картки ще немає, тож і відгуків бути
-                не може: там лишається саме поле. */}
-            {overlayTarget && (
-              <PublicCommentBlock
-                flush
-                profileId={overlayTarget.userId}
-                comments={publicComments}
-                viewerId={uid}
-                canModerate={Boolean(access?.isAdmin)}
-                onCreate={handleCreatePublicComment}
-                onUpdate={handleUpdatePublicComment}
-                onDelete={handleDeletePublicComment}
-              />
-            )}
-            {renderCreateField('publicComment', {
+                автором відгуки з `comments/{cardId}`.
+                **Поля анкети `publicComment` під ними більше немає.** Воно
+                стояло там разом із доріжкою, і та сама публічна нотатка
+                писалась на екрані двічі: спершу підписаним відгуком, а одразу
+                під ним — порожнім полем із тим самим підписом і тим самим
+                плейсхолдером. Два поля під одним заголовком «Публічна
+                нотатка» не пояснюють, чим вони різні, і людина дописувала те
+                саме двічі. Лишився підписаний відгук — його видно всім
+                екранам застосунку, тоді як поле анкети видно самій анкеті.
+                У новій чернетці картки ще немає, тож і відгуків бути не може:
+                там лишається саме поле. */}
+            {overlayTarget ? (
+              <>
+                <PublicCommentBlock
+                  flush
+                  // Відгуки цієї картки форма читає сама, щойно відкрилась,
+                  // тож кликати «перевірити їх наявність» тут нема чого.
+                  preloaded
+                  profileId={overlayTarget.userId}
+                  comments={publicComments}
+                  viewerId={uid}
+                  canModerate={Boolean(access?.isAdmin)}
+                  onCreate={handleCreatePublicComment}
+                  onUpdate={handleUpdatePublicComment}
+                  onDelete={handleDeletePublicComment}
+                />
+                <ReviewsStateNote>
+                  {describeReviewsState({
+                    requested: true,
+                    loading: publicCommentsState.loading,
+                    loaded: publicCommentsState.loaded,
+                    count: publicComments.length,
+                  }, language)}
+                </ReviewsStateNote>
+              </>
+            ) : renderCreateField('publicComment', {
               hideLabel: true,
-              placeholder: profileUiText('publicCommentPlaceholder', language),
+              placeholder: profileUiText('publicCommentPlaceholderPlain', language),
             })}
           </NoteLane>
           <NoteLane>

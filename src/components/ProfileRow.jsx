@@ -621,6 +621,10 @@ const COMMENT_SAVED_STATUS_MS = 3000;
 // запрошення написати. Стара константа лишається — рядок стрічки й тести
 // звертаються до неї за замовчуванням, — але текст у ній іде мовою інтерфейсу.
 export const publicCommentPlaceholder = language => profileUiText('publicCommentPlaceholder', language);
+// Там, де відгуки приїжджають разом з екраном (відкрита картка, форма
+// чернетки, форма доповнення), заклику перевіряти в плейсхолдері немає:
+// перевірка вже відбулась, і те, що вона дала, каже `describeReviewsState`.
+export const publicCommentPlainPlaceholder = language => profileUiText('publicCommentPlaceholderPlain', language);
 
 const autoGrowComment = el => {
   if (!el) return;
@@ -646,7 +650,7 @@ const formatCommentDate = timestamp => {
   return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getFullYear()).slice(2)}`;
 };
 
-const CommentComposer = ({ initialText, onCancel, onCommit, language }) => {
+const CommentComposer = ({ initialText, onCancel, onCommit, language, preloaded = false }) => {
   const ref = useRef(null);
   const cancelledRef = useRef(false);
   const [draft, setDraft] = useState(initialText || '');
@@ -666,7 +670,7 @@ const CommentComposer = ({ initialText, onCancel, onCommit, language }) => {
         ref={ref}
         rows={COMMENT_MIN_ROWS}
         value={draft}
-        placeholder={publicCommentPlaceholder(language)}
+        placeholder={(preloaded ? publicCommentPlainPlaceholder : publicCommentPlaceholder)(language)}
         onTouchStart={e => e.stopPropagation()}
         onChange={e => {
           setDraft(e.target.value);
@@ -718,6 +722,14 @@ export const PublicCommentBlock = ({
   viewerId,
   // Блок живе у двох місцях із різними відступами — див. `PublicComments`.
   flush = false,
+  // Чи відгуки цього екрана вже прочитані (або читаються) без окремого жесту.
+  //
+  // У стрічці читання коштує дотик до значка в ряду рішень, тож плейсхолдер
+  // там і кличе перевірити, і стрілкою показує, куди натиснути. А відкрита
+  // картка й обидві форми питають `comments` одразу на відкритті — там той
+  // самий напис просив зробити вже зроблене, та ще й вказував стрілкою на
+  // значок, якого на цих екранах немає.
+  preloaded = false,
   // Адреса вузла `comments/{profileId}` у консолі Firebase. Складає її та сторона,
   // що знає і читача, і режим (`Matching`), — сам блок не вирішує, кому службова
   // навігація належить: порожній рядок означає «не показувати».
@@ -817,6 +829,7 @@ export const PublicCommentBlock = ({
               key={comment.id}
               language={language}
               initialText={comment.text}
+              preloaded={preloaded}
               onCancel={() => setEditing(null)}
               onCommit={text => submit(editing.draftId, text, comment.id)}
             />
@@ -883,6 +896,7 @@ export const PublicCommentBlock = ({
       {editing?.commentId === null ? (
         <CommentComposer
           language={language}
+          preloaded={preloaded}
           initialText=""
           onCancel={() => setEditing(null)}
           onCommit={text => submit(editing.draftId, text, null)}
@@ -898,9 +912,11 @@ export const PublicCommentBlock = ({
             setEditing({ commentId: null, draftId: `draft-${Date.now()}` });
           }}
         >
-          <span>{publicCommentPlaceholder(language)}</span>
-          <FaArrowRight size={10} aria-hidden="true" />
-          <FaRegCommentDots size={12} aria-hidden="true" />
+          <span>{(preloaded ? publicCommentPlainPlaceholder : publicCommentPlaceholder)(language)}</span>
+          {/* Стрілка й значок ведуть погляд до кнопки «перевірити відгуки» в
+              ряду рішень. Де читання вже сталось саме, вести нема куди. */}
+          {!preloaded && <FaArrowRight size={10} aria-hidden="true" />}
+          {!preloaded && <FaRegCommentDots size={12} aria-hidden="true" />}
         </S.AddCommentTrigger>
       )}
 
@@ -955,7 +971,7 @@ export const ProfileNotes = ({ language, publicSlot, privateSlot, reviewsStatus 
         <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
       </NoteLaneHead>
       {publicSlot}
-      {reviewsStatus && <S.ReviewsGateNote aria-live="polite">{reviewsStatus}</S.ReviewsGateNote>}
+      <ReviewsStateNote>{reviewsStatus}</ReviewsStateNote>
     </NoteLane>
     <NoteLane $flush>
       <NoteLaneHead>
@@ -982,6 +998,17 @@ export const ProfileNotes = ({ language, publicSlot, privateSlot, reviewsStatus 
  * запису — тим самим приглушеним написом, тобто місця в рядку не додається,
  * а невідповіді більше немає.
  */
+/**
+ * Один вигляд у стану читання відгуків — на всі екрани, де він показується.
+ *
+ * Рядок той самий і в картці стрічки, і у відкритій анкеті, і у формі
+ * доповнення: «прочитали, відгуків немає» не мусить виглядати по-різному
+ * залежно від того, звідки на ту саму людину дивляться.
+ */
+export const ReviewsStateNote = ({ children }) => (children
+  ? <S.ReviewsGateNote aria-live="polite">{children}</S.ReviewsGateNote>
+  : null);
+
 export const describeReviewsState = ({ requested, loading, loaded, count = 0 }, language) => {
   if (loading) return uiText('Шукаємо відгуки…', language);
   if (requested && !loaded) return uiText('Не вдалося прочитати відгуки', language);
