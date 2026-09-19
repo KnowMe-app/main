@@ -44,7 +44,11 @@ import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
 import { getReactionCategory, isGetInTouchDateOnOrBeforeToday } from 'utils/reactionCategory';
 import { buildSearchIndexCandidates, encodeKey } from '../utils/searchIndexCandidates';
 import { getExplicitlyDeletedKeys, getSubmittedSearchIndexKeys } from '../utils/searchIndexSync';
-import { PROFILE_DRAFTS_INDEX_NODE, collectDraftProfilesForIndexing } from '../utils/profileDraftIndexing';
+import {
+  INDEXABLE_DRAFT_STATUSES,
+  PROFILE_DRAFTS_INDEX_NODE,
+  collectDraftProfilesForIndexing,
+} from '../utils/profileDraftIndexing';
 import {
   SEARCH_ID_INDEXED_FIELDS,
   SEARCH_ID_ROOT,
@@ -2604,9 +2608,98 @@ const addLimitedUser = async (userId, users) => {
  */
 const readProfileForSearchHit = async userId => readProfileFromNodes(userId);
 
+/**
+ * Чернетка, знайдена в `searchId`, показується з самої чернетки.
+ *
+ * Анкети в неї ще немає: картки стрічки немає зовсім, а `profileDetails` і
+ * `profileContacts` під неопублікованою карткою закриті правилами. Тож
+ * `readProfileFromNodes` віддає про такий id `null` — і пошук, який щойно
+ * знайшов id за набраним номером, відповідав «Не знайшов», та ще й клав у кеш
+ * **негативне** влучання, тобто мовчав і на наступний той самий запит. Видно
+ * чернетку було рівно її авторові й рівно на `/matching`, де її доливає
+ * окремий шлях (`personalDraftSearchMatches`); адмінка ж на той самий номер
+ * відповідала порожнечею.
+ *
+ * Читається лише те, що читачеві й так відкрито правилами: спершу власна
+ * чернетка (точкове читання `multiData/profileMutations/{читач}/{картка}` —
+ * це піддерево відкрите самому авторові), а потім, якщо читач має право на
+ * вузол цілком (адмін і службовий доступ), весь перелік. Перелік читається
+ * **раз на таб** — і відмова в правах теж запамʼятовується, щоб звичайний
+ * читач не платив за нього повторно на кожному влучанні.
+ *
+ * Показане звідси несе ту саму позначку, що й власні чернетки в стрічці
+ * (`__profileMutationOperation`), — за нею рядок і вирішує, що це чернетка, а
+ * не анкета.
+ */
+let allProfileDraftsPromise = null;
+const readAllProfileDraftsOnce = () => {
+  if (!allProfileDraftsPromise) {
+    allProfileDraftsPromise = get(ref2(database, PROFILE_DRAFTS_INDEX_NODE))
+      .then(snapshot => (snapshot.exists() ? collectDraftMutationsByCardId(snapshot.val()) : {}))
+      .catch(error => {
+        if (!isSearchIdPermissionDenied(error)) {
+          console.warn('[config] перелік чернеток не прочитано', error);
+        }
+        return {};
+      });
+  }
+  return allProfileDraftsPromise;
+};
+
+const collectDraftMutationsByCardId = (mutationsByCreator = {}) => {
+  const byCardId = {};
+  Object.values(mutationsByCreator || {}).forEach(creatorMutations => {
+    if (!creatorMutations || typeof creatorMutations !== 'object') return;
+    Object.entries(creatorMutations).forEach(([cardId, mutation]) => {
+      if (cardId && isIndexableProfileDraft(mutation)) byCardId[cardId] = mutation;
+    });
+  });
+  return byCardId;
+};
+
+const isIndexableProfileDraft = mutation => Boolean(
+  mutation
+  && typeof mutation === 'object'
+  && mutation.operation === 'create'
+  && INDEXABLE_DRAFT_STATUSES.has(mutation.status)
+  && mutation.data
+  && typeof mutation.data === 'object',
+);
+
+const expandProfileDraft = (cardId, mutation) => ({
+  ...mutation.data,
+  userId: cardId,
+  __profileMutationOperation: 'create',
+  __profileMutationStatus: mutation.status,
+});
+
+const readProfileDraftForSearchHit = async cardId => {
+  const viewerId = String(auth.currentUser?.uid || '').trim();
+  if (!viewerId) return null;
+
+  try {
+    const ownSnapshot = await get(ref2(database, `${PROFILE_DRAFTS_INDEX_NODE}/${viewerId}/${cardId}`));
+    const own = ownSnapshot.exists() ? ownSnapshot.val() : null;
+    if (isIndexableProfileDraft(own)) return expandProfileDraft(cardId, own);
+  } catch (error) {
+    if (!isSearchIdPermissionDenied(error)) {
+      console.warn('[config] власну чернетку не прочитано', { cardId, error });
+    }
+  }
+
+  const all = await readAllProfileDraftsOnce();
+  const mutation = all[cardId];
+  return mutation ? expandProfileDraft(cardId, mutation) : null;
+};
+
 const addSearchHit = async (userId, users) => {
   const profile = await readProfileForSearchHit(userId);
-  if (profile) users[userId] = profile;
+  if (profile) {
+    users[userId] = profile;
+    return;
+  }
+  const draft = await readProfileDraftForSearchHit(userId);
+  if (draft) users[userId] = draft;
 };
 
 /**
@@ -5011,7 +5104,7 @@ const rememberConfirmedSearchIdEntry = entryToken => {
  * скласти вежу з однакових.
  */
 const SEARCH_ID_INDEX_FAILURE_TOAST_ID = 'searchId-index-failure';
-const reportSearchIdIndexFailure = ({ searchIdKey, action, error }) => {
+export const reportSearchIdIndexFailure = ({ searchIdKey, action, error }) => {
   if (!isAdminUid(auth.currentUser?.uid)) return;
 
   const details = error?.message || String(error);

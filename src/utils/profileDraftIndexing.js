@@ -20,7 +20,7 @@
 export const PROFILE_DRAFTS_INDEX_NODE = 'multiData/profileMutations';
 
 /** Чернетка, яку вже прийняли або здали в архів, живе далі як звичайна анкета. */
-const INDEXABLE_DRAFT_STATUSES = new Set(['private', 'pendingReview', 'publishing']);
+export const INDEXABLE_DRAFT_STATUSES = new Set(['private', 'pendingReview', 'publishing']);
 
 export const collectDraftProfilesForIndexing = (mutationsByCreator = {}) => {
   const drafts = {};

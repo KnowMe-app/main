@@ -4,6 +4,7 @@ import {
   PUBLIC_COMMENTS_ROOT_PATH,
   database,
   removeCardAndSearchId,
+  reportSearchIdIndexFailure,
   syncUserSearchKeyIndex,
   syncMatchingCardIndex,
 } from 'components/config';
@@ -163,6 +164,48 @@ const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
     )),
 );
 
+/**
+ * Те саме, що `syncProfileSearchIdIndex`, але для чернетки — і без права впасти.
+ *
+ * Публікація на відмову індексації відкочує перехід (`acceptCreateProfileMutation`):
+ * там ключ уже частина того, що обіцяно показати. Автозбереження чернетки —
+ * навпаки: воно спрацьовує на кожному blur, і загублена анкета коштує людині
+ * більше, ніж ненаписаний ключ. Тож кожен ключ падає окремо й називає себе —
+ * і в консолі, і тостом адмінові, бо правила під цей запис викочуються руками.
+ *
+ * Памʼять таба тут не оптимізація, а умова. Збереження йде на **кожен** blur, а
+ * значень у чернетці десяток: без неї заповнення однієї картки коштувало б
+ * сотень транзакцій по тих самих ключах. Це та сама памʼять, що й
+ * `confirmedSearchIdEntries` в `config.js`, і ставиться вона так само — **після**
+ * вдалого запису, тож ключ, що не записався (нерозгорнуті правила), наступне
+ * збереження пробує знову.
+ */
+const confirmedDraftSearchIdEntries = new Set();
+
+const indexDraftSearchIdEntries = (cardId, profile) => Promise.all(
+  getSearchIdRecords(profile)
+    .filter(record => keyByteLength(record.valueKey) <= 768)
+    .filter(record => !confirmedDraftSearchIdEntries.has(`${record.path}|${cardId}`))
+    .map(record => runTransaction(
+      ref(database, record.path),
+      current => appendSearchIdEntryId(current, cardId),
+      { applyLocally: false },
+    ).then(() => {
+      confirmedDraftSearchIdEntries.add(`${record.path}|${cardId}`);
+    }).catch(error => {
+      console.warn('[profileMutations] ключ чернетки не записано в searchId', {
+        cardId,
+        path: record.path,
+        error,
+      });
+      reportSearchIdIndexFailure({
+        searchIdKey: `${record.valueKey}/${record.field}`,
+        action: 'add',
+        error,
+      });
+    })),
+);
+
 export const saveCreateProfileMutation = async ({
   cardId,
   creatorUid,
@@ -249,6 +292,25 @@ export const saveCreateProfileMutation = async ({
     }, {});
     if (Object.keys(historyUpdates).length) await update(historyRef, historyUpdates);
   }
+  // Чернетка потрапляє в `searchId` тут, а не аж на публікації.
+  //
+  // Це єдине місце, де чернетку взагалі видно пошуку: картки стрічки й вузлів
+  // анкети в неї немає, тож зведення з пʼятьох вузлів її не бачить. Поки запис
+  // стояв самим лише в `acceptCreateProfileMutation`, заведений номер до
+  // індексу не доїжджав узагалі — на нього ставили тільки заявку на
+  // унікальність (`profileIdentityClaims`), а вона стереже дубль і пошуку не
+  // відповідає. Знаходилась така чернетка рівно в одному випадку: коли адмін
+  // руками перебудовував індекс (`loadProfileDraftsForIndexing`), тобто дні по
+  // тому, як її завели, — а до того автор бачив свою картку (її доливає
+  // `personalCreateProfiles`), і більше не бачив її ніхто.
+  //
+  // Відмова індексації збереження не валить — рівно з тієї ж причини, з якої
+  // її ковтає `updateSearchId`: ключ це прискорення пошуку, а не частина
+  // анкети, і `PERMISSION_DENIED` на ньому не має коштувати людині набраного.
+  // Але й мовчати про неї не можна: правила бази під цей запис викочуються
+  // руками (`npx firebase deploy --only database`), і поки їх немає, кожна
+  // нова чернетка тихо лишалась би поза пошуком.
+  await indexDraftSearchIdEntries(cardId, mutation.data);
   // Cleanup is idempotent bookkeeping after the revision is already committed.
   releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
   return mutation;

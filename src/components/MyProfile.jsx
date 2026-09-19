@@ -30,6 +30,7 @@ import InfoModal, {
   ModalTitle,
 } from './InfoModal';
 import { uiText } from 'utils/uiTranslations';
+import { isSearchIdIndexedField } from 'utils/searchKeyUtils';
 import { useAppSettings } from 'hooks/useAppSettings';
 import { resolveAccess } from 'utils/accessLevel';
 import { getCurrentDate } from './foramtDate';
@@ -613,7 +614,12 @@ export const MyProfile = () => {
 
     stateRef.current = nextState;
     setState(nextState);
-    triggerAutosave(nextState, { searchIdFields: name === 'phone' ? ['phone'] : [] });
+    // Індексується кожне поле, яке в `searchId` взагалі живе, а не сам лише
+    // телефон. Умова була саме про телефон — і анкета з прізвищем, поштою чи
+    // телеграмом, набраними тут, за ними не знаходилась: поза цією гілкою
+    // `syncUserSearchIdIndex` з «Мого профілю» не викликається ніде, а
+    // `updateDataInRealtimeDB` індексу не чіпає взагалі.
+    triggerAutosave(nextState, { searchIdFields: isSearchIdIndexedField(name) ? [name] : [] });
   };
 
   const clearFieldValue = (name, field) => {
