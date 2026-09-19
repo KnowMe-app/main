@@ -256,6 +256,7 @@ import {
   isDonorViewer,
   viewerRoleSignature,
   donorFeedRoleFilterLeavesNothing,
+  listFeedRoleFilterKeysForViewer,
   DONOR_FEED_ROLE_FILTER_KEYS,
 } from 'utils/matchingPeerVisibility';
 import { profileUiText, resolveProfileLanguage, translateProfileLabel } from 'utils/profileTexts';
@@ -7180,7 +7181,17 @@ const Matching = () => {
   // розгортає ряд на місці, а не веде в шухляду фільтрів: читач питає «що це за
   // фільтри», і відповідь на це — самі підписи, а не форма, де їх треба шукати
   // заново. Розгорнутий ряд переноситься на кілька рядків і нічого не обрізає.
-  const filterChips = useMemo(() => buildMatchingFilterChips(filters, language), [filters, language]);
+  // Чіпи «Типу профілю» показують рівно те, що пропонує шухляда цьому читачеві:
+  // перелік один на обидва місця, інакше ряд чіпів казав би про позначку, якої
+  // в шухляді вже немає.
+  const roleOptionKeys = useMemo(
+    () => listFeedRoleFilterKeysForViewer(currentUserRole),
+    [currentUserRole],
+  );
+  const filterChips = useMemo(
+    () => buildMatchingFilterChips(filters, language, { roleOptionKeys }),
+    [filters, language, roleOptionKeys],
+  );
   const [showAllFilterChips, setShowAllFilterChips] = useState(false);
   const visibleFilterChips = showAllFilterChips ? filterChips : filterChips.slice(0, MAX_FILTER_CHIPS);
   const hiddenFilterChipCount = filterChips.length - visibleFilterChips.length;
@@ -8119,6 +8130,8 @@ const Matching = () => {
             groupSelectName={filterGroupSelect.name}
             groupSelectValue={filterGroupSelect.value}
             nonAdminAllActive={!isAdmin}
+            roleOptionKeys={roleOptionKeys}
+            viewerRole={currentUserRole}
           />
         </FilterDrawerBody>
         <FilterDrawerFooter>

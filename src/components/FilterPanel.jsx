@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { SearchFilters } from './SearchFilters';
 import { REACTION_FILTER_DEFAULTS } from 'utils/reactionCategory';
+import { alignRoleFilterGroupWithViewer, viewerRoleSignature } from 'utils/matchingPeerVisibility';
 
 const defaultsAdd = {
   csection: { cs2plus: true, cs1: true, cs0: true, no: true, other: true },
@@ -133,6 +134,8 @@ const FilterPanel = ({
   groupSelectValue,
   nonAdminAllActive = false,
   allowedFilterNames,
+  roleOptionKeys,
+  viewerRole,
   bloodSearchKeyMode = false,
   reactionFilterOptions,
 }) => {
@@ -168,6 +171,33 @@ const FilterPanel = ({
     localStorage.setItem(storageKey, JSON.stringify(filters));
     notifyFiltersChange(filters);
   }, [filters, notifyFiltersChange, storageKey]);
+
+  /**
+   * Зміна ролі читача перебирає «Тип профілю» за нього.
+   *
+   * Фільтри лежать у `localStorage` і переживають зміну ролі, тож агенція, яка
+   * гортала самих донорок, ставала доноркою — і діставала умову, якої її дека
+   * виконати не може: порожній екран замість стрічки. Правило рішення живе в
+   * `alignRoleFilterGroupWithViewer`; тут лише місце, де воно спрацьовує, і
+   * спрацьовує рівно раз на зміну ролі.
+   *
+   * Стан переписується, а не лише показ: інакше збережена позначка лишалась би
+   * в `localStorage` і діяла б невидимо — читач не бачить чіпа, а дека з ним
+   * звужена.
+   */
+  // Роль приїжджає новим масивом на кожну відповідь про профіль, тож ефект
+  // тримається її підпису, а не посилання: інакше він ходив би щоразу.
+  const viewerRoleKey = viewerRoleSignature(viewerRole);
+  const alignRoleFilterRef = useRef(viewerRole);
+  alignRoleFilterRef.current = viewerRole;
+  useEffect(() => {
+    if (mode !== 'matching') return;
+    setFilters(current => {
+      const roleFilters = current?.userRole;
+      const aligned = alignRoleFilterGroupWithViewer(roleFilters, alignRoleFilterRef.current);
+      return aligned === roleFilters ? current : { ...current, userRole: aligned };
+    });
+  }, [mode, viewerRoleKey]);
 
   useEffect(() => {
     if (prevResetTokenRef.current === resetToken) return;
@@ -226,6 +256,7 @@ const FilterPanel = ({
       bloodSearchKeyMode={bloodSearchKeyMode}
       reactionFilterOptions={reactionFilterOptions}
       allowedFilterNames={allowedFilterNames}
+      roleOptionKeys={roleOptionKeys}
     />
   );
 };

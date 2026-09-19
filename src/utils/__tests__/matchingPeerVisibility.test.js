@@ -168,11 +168,16 @@ describe('дочитування сторінок рахує те, що доно
  * скелетон і знову картки.
  */
 describe('підпис ролі читача', () => {
-  it('однаковий для того самого набору ролей, як би його не подали', () => {
-    expect(viewerRoleSignature(['ag', 'ed'])).toBe(viewerRoleSignature(['ed', 'ag']));
+  it('однаковий для тієї самої ролі, як би її не подали', () => {
     // Рядок із localStorage і масив із бази — це та сама роль.
     expect(viewerRoleSignature('ag,ed')).toBe(viewerRoleSignature(['ag', 'ed']));
     expect(viewerRoleSignature(' AG , ed ')).toBe(viewerRoleSignature(['ag', 'ed']));
+  });
+
+  it('порядок зберігає, бо поточна роль — остання', () => {
+    // Сортування робило ці дві ролі однаковими, тож перехід з агенції в
+    // донорки не читався як зміна ролі: дека й чіпи лишались від попередньої.
+    expect(viewerRoleSignature(['ag', 'ed'])).not.toBe(viewerRoleSignature(['ed', 'ag']));
   });
 
   it('розрізняє різні набори', () => {

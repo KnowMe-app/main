@@ -157,7 +157,25 @@ export const buildMatchingFilterChipLabel = (group, values, language) => {
   };
 };
 
-export const buildMatchingFilterChips = (filters, language) => MATCHING_FILTER_GROUPS
+/**
+ * Ті самі групи, але без опцій, яких цьому читачеві не показують.
+ *
+ * Джерело переліку одне на шухляду і на чіпи: інакше донорці, якій `ED` у
+ * шухляді вже не малюють, ряд чіпів однаково писав би «Тип профілю: крім ED» —
+ * про позначку, якої вона не бачить і зняти не може.
+ */
+export const resolveMatchingFilterGroups = ({ roleOptionKeys } = {}) => {
+  if (!Array.isArray(roleOptionKeys)) return MATCHING_FILTER_GROUPS;
+  const allowed = new Set(roleOptionKeys);
+  return MATCHING_FILTER_GROUPS.map(group => (
+    group.filterName === 'userRole'
+      ? { ...group, options: group.options.filter(option => allowed.has(option.val)) }
+      : group
+  ));
+};
+
+export const buildMatchingFilterChips = (filters, language, { roleOptionKeys } = {}) =>
+  resolveMatchingFilterGroups({ roleOptionKeys })
   .map(group => {
     const label = buildMatchingFilterChipLabel(group, filters?.[group.filterName], language);
     if (!label) return null;
@@ -172,6 +190,7 @@ export const SearchFilters = ({
   hideCommentLength = false,
   mode = 'default',
   allowedFilterNames,
+  roleOptionKeys,
   bloodSearchKeyMode = false,
   reactionFilterOptions,
 }) => {
@@ -190,7 +209,7 @@ export const SearchFilters = ({
     : REACTION_FILTER_OPTIONS);
 
   if (mode === 'matching') {
-    groups = MATCHING_FILTER_GROUPS;
+    groups = resolveMatchingFilterGroups({ roleOptionKeys });
   } else {
     groups = [
       {
