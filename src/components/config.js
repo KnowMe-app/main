@@ -47,7 +47,9 @@ import { getExplicitlyDeletedKeys, getSubmittedSearchIndexKeys } from '../utils/
 import {
   INDEXABLE_DRAFT_STATUSES,
   PROFILE_DRAFTS_INDEX_NODE,
+  PROFILE_MUTATION_OWNERS_NODE,
   collectDraftProfilesForIndexing,
+  getProfileMutationOwnerPath,
 } from '../utils/profileDraftIndexing';
 import {
   SEARCH_ID_INDEXED_FIELDS,
@@ -329,6 +331,57 @@ export const loadProfileDraftsForIndexing = async () => {
     console.warn('[config] Чернетки не прочитано, індекс збереться без них', error);
     return {};
   }
+};
+
+/**
+ * Дописати «хто автор» чернеткам, заведеним до появи цієї мапи.
+ *
+ * Сама чернетка пише свою пару на кожному збереженні (`indexDraftOwner`), тож
+ * нові картки мапа дістає сама. Старі ж лежать без неї — і доти знайти їх може
+ * лише автор та службовий читач, тобто рівно та поломка, заради якої мапа й
+ * зʼявилась. Читання кореня `multiData/profileMutations` адмінське, як і решта
+ * перебудови індексу, тому місце цьому шматку саме тут — у `createSearchIds`.
+ *
+ * Пишеться одним `update` і **лише те, чого в мапі ще немає**: автор чернетки
+ * не міняється ніколи, тож переписувати наявні пари означало б платити за
+ * нічого.
+ */
+export const backfillProfileDraftOwners = async () => {
+  let mutationsByCreator = null;
+  try {
+    const snapshot = await get(ref2(database, PROFILE_DRAFTS_INDEX_NODE));
+    mutationsByCreator = snapshot.exists() ? snapshot.val() : null;
+  } catch (error) {
+    console.warn('[config] чернетки не прочитано, авторів не дописано', error);
+    return 0;
+  }
+  if (!mutationsByCreator) return 0;
+
+  let known = {};
+  try {
+    const snapshot = await get(ref2(database, PROFILE_MUTATION_OWNERS_NODE));
+    known = snapshot.exists() ? snapshot.val() || {} : {};
+  } catch (error) {
+    console.warn('[config] мапу авторів не прочитано, дописуємо наосліп', error);
+  }
+
+  const updates = {};
+  Object.entries(mutationsByCreator).forEach(([creatorUid, creatorMutations]) => {
+    if (!creatorUid || !creatorMutations || typeof creatorMutations !== 'object') return;
+    Object.keys(creatorMutations).forEach(cardId => {
+      if (cardId && known[cardId] !== creatorUid) updates[cardId] = creatorUid;
+    });
+  });
+
+  const count = Object.keys(updates).length;
+  if (!count) return 0;
+  try {
+    await update(ref2(database, PROFILE_MUTATION_OWNERS_NODE), updates);
+  } catch (error) {
+    console.warn('[config] авторів чернеток не дописано', error);
+    return 0;
+  }
+  return count;
 };
 
 // Відмова в правах приходить то кодом, то текстом — залежно від виклику.
@@ -2673,18 +2726,61 @@ const expandProfileDraft = (cardId, mutation) => ({
   __profileMutationStatus: mutation.status,
 });
 
+/**
+ * Чужа чернетка читається точково — через «хто її завів».
+ *
+ * Шлях до чернетки починається з автора, а пошук дає самий лише id картки,
+ * тож доти прочитати знайдену **чужу** чернетку можна було єдиним способом:
+ * узяти `multiData/profileMutations` цілим вузлом. Право на це має адмін і
+ * власник `canCreateProfiles` — тобто рівно ті, кому відкрито «хто що завів по
+ * всій базі». Звичайний читач на той самий точний номер бачив «Не знайшов» і
+ * заготовку «Створити нову», а натиснувши її, діставав `DUPLICATE_PROFILE`:
+ * номер тримає заявка на унікальність. Пошук казав «такої немає» рівно там, де
+ * вона є.
+ *
+ * Тепер автора називає `multiData/profileMutationOwners/{картка}` (ключ
+ * відкритий кожному авторизованому, перелік — ні), і читання коштує два
+ * точкові запити замість вузла на всю базу. Вузол цілком лишився **запасним
+ * шляхом**: чернетки, заведені до появи цієї мапи, автора в ній ще не мають, і
+ * службовий читач мусить знаходити їх як і раніше.
+ */
+const readProfileDraftOwnerId = async cardId => {
+  try {
+    const snapshot = await get(ref2(database, getProfileMutationOwnerPath(cardId)));
+    const ownerId = snapshot.exists() ? snapshot.val() : null;
+    return typeof ownerId === 'string' && ownerId ? ownerId : null;
+  } catch (error) {
+    if (!isSearchIdPermissionDenied(error)) {
+      console.warn('[config] автора чернетки не прочитано', { cardId, error });
+    }
+    return null;
+  }
+};
+
+const readProfileDraftAt = async (creatorUid, cardId) => {
+  try {
+    const snapshot = await get(ref2(database, `${PROFILE_DRAFTS_INDEX_NODE}/${creatorUid}/${cardId}`));
+    const mutation = snapshot.exists() ? snapshot.val() : null;
+    return isIndexableProfileDraft(mutation) ? mutation : null;
+  } catch (error) {
+    if (!isSearchIdPermissionDenied(error)) {
+      console.warn('[config] чернетку не прочитано', { cardId, creatorUid, error });
+    }
+    return null;
+  }
+};
+
 const readProfileDraftForSearchHit = async cardId => {
   const viewerId = String(auth.currentUser?.uid || '').trim();
   if (!viewerId) return null;
 
-  try {
-    const ownSnapshot = await get(ref2(database, `${PROFILE_DRAFTS_INDEX_NODE}/${viewerId}/${cardId}`));
-    const own = ownSnapshot.exists() ? ownSnapshot.val() : null;
-    if (isIndexableProfileDraft(own)) return expandProfileDraft(cardId, own);
-  } catch (error) {
-    if (!isSearchIdPermissionDenied(error)) {
-      console.warn('[config] власну чернетку не прочитано', { cardId, error });
-    }
+  const own = await readProfileDraftAt(viewerId, cardId);
+  if (own) return expandProfileDraft(cardId, own);
+
+  const ownerId = await readProfileDraftOwnerId(cardId);
+  if (ownerId && ownerId !== viewerId) {
+    const foreign = await readProfileDraftAt(ownerId, cardId);
+    if (foreign) return expandProfileDraft(cardId, foreign);
   }
 
   const all = await readAllProfileDraftsOnce();
@@ -8165,6 +8261,9 @@ export const createSearchIds = async onProgress => {
   // `searchId`, живуть у `profileContacts`, а не в legacy-анкеті.
   const profilesData = await loadProfilesFromNodesForIndexing();
   const draftsData = await loadProfileDraftsForIndexing();
+  // Та сама перебудова дописує й «хто автор»: без цієї пари чужу чернетку
+  // знаходить лише службовий читач (див. `backfillProfileDraftOwners`).
+  await backfillProfileDraftOwners();
   if (!profilesData && !Object.keys(draftsData).length) return;
 
   // Анкета перекриває чернетку: після публікації id той самий, і значення

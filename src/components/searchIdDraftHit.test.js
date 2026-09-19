@@ -10,6 +10,7 @@ jest.mock('firebase/app', () => ({ initializeApp: () => ({}) }));
 
 const VIEWER_UID = 'viewerUid0000000000000000000';
 const DRAFT_CARD_ID = '-P-PqwxOwPUzBzPccSLs';
+const OTHER_UID = 'otherAuthorUid00000000000000';
 const mockAuth = { currentUser: { uid: VIEWER_UID } };
 jest.mock('firebase/auth', () => ({ getAuth: () => mockAuth }));
 
@@ -105,6 +106,33 @@ describe('пошук показує чернетку, знайдену в search
       // нею, що це чернетка, а не анкета.
       __profileMutationOperation: 'create',
     }));
+  });
+
+  it('чужу чернетку бере точково, за мапою авторів', async () => {
+    // Шлях до чернетки починається з автора, а пошук дав самий лише id
+    // картки. Доти чужу чернетку читав тільки той, кому відкрито вузол
+    // цілком, — звичайний читач діставав «Не знайшов» на точний номер і
+    // заготовку «створити», яку база відхиляла з DUPLICATE_PROFILE.
+    mockStore[`multiData/profileMutationOwners/${DRAFT_CARD_ID}`] = OTHER_UID;
+    mockStore[`multiData/profileMutations/${OTHER_UID}/${DRAFT_CARD_ID}`] = {
+      cardId: DRAFT_CARD_ID,
+      operation: 'create',
+      status: 'pendingReview',
+      createdBy: OTHER_UID,
+      revision: 3,
+      data: { userId: DRAFT_CARD_ID, surname: ['Чужа'], phone: ['380505990799'] },
+    };
+
+    const result = await searchUsersOnly({ searchId: '380505990799' });
+
+    expect(result?.[DRAFT_CARD_ID] || result).toEqual(expect.objectContaining({
+      userId: DRAFT_CARD_ID,
+      surname: ['Чужа'],
+      __profileMutationOperation: 'create',
+    }));
+    // Вузол цілком при цьому не питається: це службове читання «хто що завів
+    // по всій базі», і звичайному читачеві воно й далі закрите.
+    expect(mockReads).not.toContain('multiData/profileMutations');
   });
 
   it('прийнятої чернетки звідси не бере — вона вже звичайна анкета', async () => {
