@@ -1,10 +1,11 @@
-const { get, ref, runTransaction } = require('firebase/database');
+const { get, ref, runTransaction, set } = require('firebase/database');
 
 jest.mock('firebase/database', () => ({
   get: jest.fn(),
   push: jest.fn(() => ({ key: 'history-1' })),
   ref: jest.fn((db, path) => ({ db, path })),
   runTransaction: jest.fn(),
+  set: jest.fn(() => Promise.resolve()),
   update: jest.fn(),
 }));
 
@@ -125,6 +126,23 @@ describe('чернетка потрапляє в searchId на збережен�
 
     // Перервати тут означало б лишити картку поза індексом: id у записі немає.
     expect(written).toEqual([['searchId/380501112277/phone', ['other-card', 'card-second']]]);
+  });
+
+  it('називає автора картки, щоб чернетку знайшов не лише він сам', async () => {
+    // Шлях до чернетки починається з автора, а пошук дає самий лише id
+    // картки: без цієї пари знайдену чужу чернетку читає лише той, кому
+    // відкрито вузол цілком, тобто службовий читач.
+    await saveCreateProfileMutation({
+      cardId: 'card-owned',
+      creatorUid: 'author-1',
+      actorUid: 'author-1',
+      data: { phone: ['380501112288'] },
+    });
+
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/profileMutationOwners/card-owned' }),
+      'author-1',
+    );
   });
 
   it('відмова на ключі не валить збереження, але називає ключ', async () => {

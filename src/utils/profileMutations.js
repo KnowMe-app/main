@@ -1,4 +1,4 @@
-import { get, push, ref, remove, runTransaction, update } from 'firebase/database';
+import { get, push, ref, remove, runTransaction, set, update } from 'firebase/database';
 
 import {
   PUBLIC_COMMENTS_ROOT_PATH,
@@ -9,6 +9,7 @@ import {
   syncMatchingCardIndex,
 } from 'components/config';
 import { buildOverlayFromDraft, getOverlaysForCard, purgeCardOverlays } from './multiAccountEdits';
+import { getProfileMutationOwnerPath } from './profileDraftIndexing';
 import { buildProfileNodePatch } from './profileNodeWriter';
 import {
   SEARCH_ID_INDEXED_FIELDS,
@@ -240,6 +241,35 @@ const indexDraftSearchIdEntries = (cardId, profile) => Promise.all(
     })),
 );
 
+/**
+ * Записати «цю картку завів я» — щоб знайдену чернетку міг прочитати не лише
+ * її автор і не лише службовий читач.
+ *
+ * Пишеться **раз на таб на картку**: значення не міняється ніколи (автор
+ * чернетки один), а збереження йде на кожен blur. Памʼять та сама за змістом,
+ * що й у `indexDraftSearchIdEntries`, і ставиться так само — після круга, що
+ * скінчився без відмови.
+ *
+ * Відмова збереження не валить з тієї самої причини: без цього запису
+ * чернетку й далі знайде автор та адмін, тобто рівно те, що було, — а
+ * загублена анкета коштує людині більше. Але мовчати не можна: правила під
+ * цей вузол викочуються руками (`npx firebase deploy --only database`), і
+ * поки їх немає, кожна нова чернетка лишається невидимою звичайному читачеві.
+ */
+const confirmedDraftOwners = new Set();
+
+const indexDraftOwner = async (cardId, creatorUid) => {
+  const path = getProfileMutationOwnerPath(cardId);
+  if (!path || !creatorUid || confirmedDraftOwners.has(`${path}|${creatorUid}`)) return;
+  try {
+    await set(ref(database, path), creatorUid);
+    confirmedDraftOwners.add(`${path}|${creatorUid}`);
+  } catch (error) {
+    console.warn('[profileMutations] автора чернетки не записано', { cardId, path, error });
+    reportSearchIdIndexFailure({ searchIdKey: path, action: 'add', error });
+  }
+};
+
 export const saveCreateProfileMutation = async ({
   cardId,
   creatorUid,
@@ -345,6 +375,10 @@ export const saveCreateProfileMutation = async ({
   // руками (`npx firebase deploy --only database`), і поки їх немає, кожна
   // нова чернетка тихо лишалась би поза пошуком.
   await indexDraftSearchIdEntries(cardId, mutation.data);
+  // Той самий крок, але для «хто автор»: без нього знайдена чернетка
+  // відкривається рівно авторові й службовому читачеві (див.
+  // `PROFILE_MUTATION_OWNERS_NODE`).
+  await indexDraftOwner(cardId, mutation.createdBy || creatorUid);
   // Cleanup is idempotent bookkeeping after the revision is already committed.
   releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
   return mutation;

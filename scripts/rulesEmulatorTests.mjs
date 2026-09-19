@@ -1000,6 +1000,60 @@ await it('без власної чернетки під цим id ключ на 
   await assertFails(set(ref(db(ORDINARY_VIEWER), 'searchId/380505559914/phone'), 'draftCardId003'));
 });
 
+// Знайдена чернетка мусить відкритись не лише авторові.
+//
+// Шлях до чернетки починається з автора (`profileMutations/{автор}/{картка}`),
+// а пошук дає з `searchId` самий лише id картки. Доти прочитати знайдену чужу
+// чернетку можна було єдиним способом — узяти вузол цілком, тобто службовим
+// читанням «хто що завів по всій базі». Звичайному читачеві пошук за точним
+// номером відповідав «немає такої» і пропонував завести картку, яку база тут
+// же відхиляла з `DUPLICATE_PROFILE`.
+//
+// Тому автора називає окрема мапа, і форма в неї та сама, що й у заявок на
+// унікальність: ключ відкритий кожному авторизованому, перелік — службовий.
+describe('profileMutationOwners — хто завів знайдену картку');
+
+await it('автор називає себе, а чужу картку — ні', async () => {
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), `multiData/profileMutations/${ORDINARY_VIEWER}/ownedCardId01`), {
+    cardId: 'ownedCardId01',
+    operation: 'create',
+    createdBy: ORDINARY_VIEWER,
+    status: 'pendingReview',
+    revision: 1,
+  }));
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), 'multiData/profileMutationOwners/ownedCardId01'), ORDINARY_VIEWER));
+  // Чернетки під цим id у нього немає — отже, і автором він не є.
+  await assertFails(set(ref(db(ORDINARY_VIEWER), 'multiData/profileMutationOwners/foreignCardId01'), ORDINARY_VIEWER));
+  // І чужим автором назватись не можна: інакше будь-хто перенаправив би
+  // читача чужої картки у власну гілку.
+  await assertFails(set(ref(db(ORDINARY_VIEWER), 'multiData/profileMutationOwners/ownedCardId01'), CARD_CREATOR));
+});
+
+await it('ключ читає кожен авторизований, а перелік — ні', async () => {
+  await assertSucceeds(get(ref(db(OUTSIDER), 'multiData/profileMutationOwners/ownedCardId01')));
+  // Перелік — це «всі id чернеток у базі», тобто те саме службове читання.
+  await assertFails(get(ref(db(OUTSIDER), 'multiData/profileMutationOwners')));
+});
+
+await it('знайдена чужа чернетка читається точково', async () => {
+  await testEnv.withSecurityRulesDisabled(context => set(
+    ref(context.database(), `multiData/profileMutations/${CARD_CREATOR}/foundCardId01`),
+    { cardId: 'foundCardId01', operation: 'create', createdBy: CARD_CREATOR, status: 'pendingReview', revision: 1 },
+  ));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `multiData/profileMutations/${CARD_CREATOR}/foundCardId01`)));
+  // Гілка автора цілком лишається закритою: одна знайдена картка — не
+  // «покажіть усе, що ця людина заводила».
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `multiData/profileMutations/${CARD_CREATOR}`)));
+});
+
+await it('адмін дописує пари за старі чернетки', async () => {
+  // Перебудова індексу (`backfillProfileDraftOwners`) пише одним `update` і
+  // називає чужих авторів — чернеток, заведених до появи мапи.
+  await assertSucceeds(update(ref(db(SUPERADMIN), 'multiData/profileMutationOwners'), {
+    foundCardId01: CARD_CREATOR,
+  }));
+});
+
 // Перелік власних доповнень (`multiData/editsByEditor/{редактор}`) — це
 // відповідь на питання «у яких картках лежить мій шар». Стрічка ставить його
 // раз на таб замість читання оверлея на кожен свій рядок, тож вузол мусить
