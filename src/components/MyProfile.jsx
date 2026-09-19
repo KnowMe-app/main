@@ -1023,11 +1023,6 @@ export const MyProfile = () => {
           }
         });
         delete uploadedInfo.password;
-        searchIdFields.forEach(field => {
-          if (Object.prototype.hasOwnProperty.call(normalizedProfileData, field)) {
-            uploadedInfo[field] = normalizedProfileData[field];
-          }
-        });
         if (searchIdFields.length > 0) {
           await syncUserSearchIdIndex(targetUserId, existingData, uploadedInfo, searchIdFields);
         }
