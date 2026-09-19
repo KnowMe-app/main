@@ -154,12 +154,44 @@ const releaseProfileIdentities = (cardId, keys) => Promise.all((keys || []).map(
   { applyLocally: false },
 )));
 
+/**
+ * Запис, який нічого не міняє, — це не дешевий запис, а відмова.
+ *
+ * Правила дають авторові чернетки рівно право **завести** запис у `searchId`
+ * (`newData.isString() && !data.exists() && ...` у `database.rules.json`), а не
+ * переписати вже заведений. Тож транзакція, яка повертала те саме значення, що
+ * вже лежить у базі, відлітала з `PERMISSION_DENIED` — на **кожному** blur, по
+ * ключу на кожне індексоване значення чернетки. Памʼять таба від цього не
+ * рятувала: вона ставиться після вдалого запису, а цей не вдавався ніколи.
+ *
+ * Коштувало це не лише круга до бази на дотик. Відмову видно людині: адмінові
+ * тостом, решті — `console.warn`, обидва зі словами «ключ чернетки не записано
+ * в searchId». Тобто застосунок на кожному дотику повідомляв, що набраний
+ * телефон не потрапив в індекс, хоч той лежав там з першого ж збереження, —
+ * і виглядало це рівно як «номер із чернетки не індексується».
+ *
+ * `undefined` перериває транзакцію без запису, тож ключ, у якому цієї картки
+ * ще немає, пишеться як писався: додати id в одиночний рядок чи в масив —
+ * зміна, і правила її пропускають.
+ */
+const sameSearchIdEntry = (current, next) => {
+  if (Array.isArray(current) && Array.isArray(next)) {
+    return current.length === next.length && current.every((id, index) => id === next[index]);
+  }
+  return current === next;
+};
+
+const addCardIdToSearchIdEntry = cardId => current => {
+  const next = appendSearchIdEntryId(current, cardId);
+  return sameSearchIdEntry(current, next) ? undefined : next;
+};
+
 const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
   getSearchIdRecords(profile)
     .filter(record => keyByteLength(record.valueKey) <= 768)
     .map(record => runTransaction(
       ref(database, buildSearchIdEntryPath(record.valueKey, record.field)),
-      current => appendSearchIdEntryId(current, cardId),
+      addCardIdToSearchIdEntry(cardId),
       { applyLocally: false },
     )),
 );
@@ -177,8 +209,10 @@ const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
  * значень у чернетці десяток: без неї заповнення однієї картки коштувало б
  * сотень транзакцій по тих самих ключах. Це та сама памʼять, що й
  * `confirmedSearchIdEntries` в `config.js`, і ставиться вона так само — **після**
- * вдалого запису, тож ключ, що не записався (нерозгорнуті правила), наступне
- * збереження пробує знову.
+ * того, як круг до бази скінчився без відмови, тож ключ, що не записався
+ * (нерозгорнуті правила), наступне збереження пробує знову. Перервана
+ * транзакція (`addCardIdToSearchIdEntry`) теж лишає позначку: id у записі вже
+ * стоїть, і питати про нього ще раз нема чого.
  */
 const confirmedDraftSearchIdEntries = new Set();
 
@@ -188,7 +222,7 @@ const indexDraftSearchIdEntries = (cardId, profile) => Promise.all(
     .filter(record => !confirmedDraftSearchIdEntries.has(`${record.path}|${cardId}`))
     .map(record => runTransaction(
       ref(database, record.path),
-      current => appendSearchIdEntryId(current, cardId),
+      addCardIdToSearchIdEntry(cardId),
       { applyLocally: false },
     ).then(() => {
       confirmedDraftSearchIdEntries.add(`${record.path}|${cardId}`);
