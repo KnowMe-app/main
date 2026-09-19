@@ -46,10 +46,7 @@ applyUkrainianInterface();
 describe('quick public comment', () => {
   it('offers a plain line of text, not a field, until it is clicked', () => {
     setup();
-    const placeholder = screen.getByText(publicCommentPlaceholder());
-    expect(placeholder).toBeInTheDocument();
-    expect(Array.from(placeholder.parentElement.children, child => child.tagName))
-      .toEqual(['SPAN', 'svg', 'svg']);
+    expect(screen.getByRole('button', { name: publicCommentPlaceholder() })).toBeInTheDocument();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
