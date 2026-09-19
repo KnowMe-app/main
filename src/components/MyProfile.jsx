@@ -584,7 +584,9 @@ export const MyProfile = () => {
   );
 
   const updateFieldValue = (name, value, field) => {
-    const updatedValue = normalizeFieldValue(name, value, field);
+    // Keep a phone number exactly as entered until blur so incomplete prefixes
+    // such as `00` are not rewritten before the user can finish typing them.
+    const updatedValue = name === 'phone' ? value : inputUpdateValue(value, field);
     editedFieldsRef.current.add(name);
     setMissing(prev => ({ ...prev, [name]: false }));
 
