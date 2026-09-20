@@ -61,9 +61,13 @@ describe('видача пошуку гортається так само, як �
     // видавати картки по дві. Значення описує не цю видачу, а те, що читачеві
     // цікаво, — тож воно й лишається.
     const source = matching();
+    // Кінець зрізу — наступне оголошення після цієї функції. Стояв тут
+    // якор, якого в коді немає вже давно: `indexOf` вертав -1, зріз йшов до
+    // кінця файлу, і `not.toContain` питав про весь `Matching.jsx`, а не про цей
+    // шматок — тобто стерегло не те, про що написане.
     const applier = source.slice(
       source.indexOf('const applySearchResults = async res => {'),
-      source.indexOf('useEffect(() => {\n    filtersRef.current = filters;'),
+      source.indexOf('const ensureFreshAdditionalMatchingProfile'),
     );
 
     expect(applier).not.toContain('setSearchRefineValue(null)');
@@ -204,30 +208,29 @@ describe('видача пошуку кешується і читається з 
 });
 
 /**
- * Дофільтр у стрічці не заводить другої моделі стану.
+ * Звужує стрічку одна поверхня, а не дві.
+ *
+ * Рядок уточнення стояв і в стрічці, і писав у ті самі групи фільтра,
+ * що й шухляда, але протилежною моделлю: там — «лише це значення»,
+ * тут — «усе, крім знятого». Тепер у стрічці це робить рейка фільтрів, а
+ * рядок лишився там, де він звужує власне видачу, а не фільтри, — у пошуку.
  */
-describe('дофільтр у стрічці пише в наявні фільтри', () => {
-  it('тап звужує групу шухляди, а не окремий стан сторінки', () => {
-    expect(read('Matching.jsx')).toContain(
-      'setFilterGroupSelect(previous => ({ token: previous.token + 1, name: spec.filterName, value }));'
-    );
-  });
-
-  it('активне значення виводиться з фільтрів, а не зберігається окремо', () => {
-    // Інакше рядок і шухляда розійшлися б від першого дотику до другої.
+describe('стрічку звужує рейка, а видачу — рядок уточнення', () => {
+  it('не малює рядка уточнення поза пошуком', () => {
     const source = read('Matching.jsx');
-    const derived = source.slice(
-      source.indexOf('const feedRefineValue = useMemo(() => {'),
-      source.indexOf('const refineActiveValue'),
-    );
-
-    expect(derived).toContain('const group = filters?.[spec.filterName];');
-    expect(derived).toContain('return enabled.length === 1 ? enabled[0] : null;');
+    expect(source).toContain('const showRefineBar = isSearching');
+    // У стрічці тап більше не пише в групу фільтра в обхід рейки.
+    expect(source).not.toContain('setFilterGroupSelect');
+    expect(source).not.toContain('const feedRefineValue');
   });
 
-  it('«лише це значення» вміє й сама панель фільтрів', () => {
-    const panel = read('FilterPanel.jsx');
-    expect(panel).toContain('const prevGroupSelectTokenRef = useRef(groupSelectToken);');
-    expect(panel).toContain('(acc, option) => ({ ...acc, [option]: option === groupSelectValue }),');
+  it('віддає звуження стрічки рейці, і тій самій панелі фільтрів', () => {
+    const source = read('Matching.jsx');
+    expect(source).toContain('<MatchingFilterRail');
+    // Панель стану лишається змонтованою й із закритою рейкою: в ній живуть
+    // самі фільтри, їхнє сховище й перебір групи ролі при зміні ролі.
+    expect(source).toContain(
+      'allowedFilterNames={openFilterGroup ? [openFilterGroup] : MATCHING_FILTER_GROUP_NAMES}'
+    );
   });
 });

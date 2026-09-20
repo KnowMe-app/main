@@ -156,10 +156,19 @@ describe('ряд чіпів', () => {
     expect(chip).toContain('flex: 0 0 auto;');
   });
 
-  it('розгортає приховані чіпи на місці, а не веде в шухляду фільтрів', () => {
+  /* Ряд колекцій більше не несе чіпів фільтра.
+   *
+   * Вони там стояли разом із «Усі / Вподобані / Приховані», тобто дві
+   * різні вісі (яка дека і які картки в ній) в одному ряду, ще й за «+N».
+   * Тепер фільтри стоять своєю рейкою під ним — усі сім груп одразу,
+   * нічого ховати за лічильник. */
+  it('не змішує чіпи фільтра з чіпами колекцій', () => {
     const source = read('Matching.jsx');
-    expect(source).toContain('onClick={() => setShowAllFilterChips(true)}');
-    expect(source).toContain('onClick={() => setShowAllFilterChips(false)}');
+    expect(source).not.toContain('setShowAllFilterChips');
+    expect(source).not.toContain('visibleFilterChips');
+    const row = source.slice(source.indexOf('<ChipsRow role="group"'), source.indexOf('</ChipsRow>'));
+    expect(row).toContain('collectionChips).map');
+    expect(row).not.toContain('resetFilterGroup');
   });
 });
 
@@ -365,7 +374,7 @@ describe('перший екран зі стрічкового кеша', () => {
     const source = matching();
     const helper = source.slice(
       source.indexOf('export const buildMatchingCursorFromCard'),
-      source.indexOf('const countChangedMatchingFilterGroups'),
+      source.indexOf('// Плитка галереї — це картка'),
     );
     expect(helper).toContain('MATCHING_CARD_ORDER_FIELD');
     expect(helper).toContain('if (!date || !userId) return null;');

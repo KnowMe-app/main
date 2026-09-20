@@ -2,7 +2,9 @@ import React from 'react';
 import styled from 'styled-components';
 
 const GroupWrapper = styled.div`
-  margin-bottom: 12px;
+  & + & {
+    margin-top: 12px;
+  }
 `;
 
 const GroupLabel = styled.span`
@@ -22,26 +24,55 @@ const ChipsRow = styled.div`
   gap: 6px;
 `;
 
+/*
+ * Три стани, а не два, і третій — увесь сенс цієї правки.
+ *
+ * Фільтри тут відніманні: група стартує з усім увімкненим, і читач гасить
+ * зайве. Поки «увімкнено» малювалось акцентом завжди, незаймана група крові
+ * стояла пʼятьма жовтогарячими кружками — тобто найгучніше на екрані кричало
+ * рівно те, що не фільтрує нічого. Тепер акцент носить лише **звужена** група:
+ *
+ *   $calm  — увімкнено, але в групі увімкнено все: фільтр не діє, і виглядає
+ *            він як звичайний спокійний чіп;
+ *   акцент — увімкнено в групі, де щось уже знято: саме ці значення й лишають
+ *            картки в деці;
+ *   off    — знято: пунктир і приглушений текст, щоб різниця читалась і без
+ *            кольору (пунктир видно й у чорно-білому, і дальтоніку).
+ */
 const Chip = styled.button`
   min-height: 36px;
+  min-width: 40px;
   padding: 7px 12px;
   border-radius: 20px;
-  border: 1.5px solid ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--matching-chip-border, var(--km-border))')};
-  background: ${({ $active }) => ($active ? 'var(--km-accent-light)' : 'var(--matching-chip-bg, var(--km-card))')};
-  color: ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--matching-chip-text, var(--km-muted))')};
+  border: 1.5px ${({ $active }) => ($active ? 'solid' : 'dashed')}
+    ${({ $active, $calm }) => {
+    if (!$active) return 'var(--matching-chip-border, var(--km-border))';
+    return $calm ? 'var(--matching-chip-border, var(--km-border))' : 'var(--km-accent)';
+  }};
+  background: ${({ $active, $calm }) => {
+    if (!$active) return 'transparent';
+    return $calm ? 'var(--matching-chip-bg, var(--km-card))' : 'var(--km-accent-light)';
+  }};
+  color: ${({ $active, $calm }) => {
+    if (!$active) return 'var(--matching-chip-label, var(--km-muted))';
+    return $calm ? 'var(--matching-chip-text, var(--km-text))' : 'var(--km-accent)';
+  }};
+  opacity: ${({ $active }) => ($active ? 1 : 0.62)};
   font-family: var(--km-font);
   font-size: 12px;
-  font-weight: ${({ $active }) => ($active ? '600' : '400')};
+  font-weight: ${({ $active, $calm }) => (($active && !$calm) ? '600' : '400')};
   cursor: pointer;
   line-height: 1.5;
-  transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.15s;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, opacity 0.15s, transform 0.15s;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
 
   &:hover {
     border-color: var(--km-accent);
     color: var(--km-accent);
+    opacity: 1;
     transform: translateY(-1px);
   }
 
@@ -51,13 +82,27 @@ const Chip = styled.button`
   }
 `;
 
-export const CheckboxGroup = ({ label, filterName, options, filters, onChange }) => {
+/* Число «скільки таких серед завантажених». Воно каже, що буде після тапу, —
+ * без нього «31–33» не каже нічого. Нуль лишається на екрані, а не ховається:
+ * чіп, що зникає під пальцем, смикає ряд саме тоді, коли в нього цілять. */
+const ChipCount = styled.b`
+  font-weight: 600;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.62;
+`;
+
+export const CheckboxGroup = ({ label, filterName, options, filters, onChange, optionCounts }) => {
+  const groupValues = filters[filterName] || {};
+  // Незаймана група — та, у якій увімкнено все. Саме вона нічого не фільтрує.
+  const groupIsCalm = options.every(({ val }) => Boolean(groupValues[val]));
+
   const handleToggle = option => {
     onChange({
       ...filters,
       [filterName]: {
-        ...filters[filterName],
-        [option]: !filters[filterName][option],
+        ...groupValues,
+        [option]: !groupValues[option],
       },
     });
   };
@@ -67,20 +112,25 @@ export const CheckboxGroup = ({ label, filterName, options, filters, onChange })
       {label && <GroupLabel>{label}</GroupLabel>}
       <ChipsRow>
         {options.map(({ val, label: optionLabel }) => {
-          const isActive = Boolean(filters[filterName][val]);
+          const isActive = Boolean(groupValues[val]);
           const readableLabel = typeof optionLabel === 'string' ? optionLabel : val;
           const groupLabel = label || filterName;
+          const count = optionCounts ? optionCounts[val] || 0 : null;
 
           return (
             <Chip
               key={val}
               $active={isActive}
+              $calm={groupIsCalm}
               aria-pressed={isActive}
-              aria-label={`${groupLabel}: ${readableLabel}`}
+              aria-label={count === null
+                ? `${groupLabel}: ${readableLabel}`
+                : `${groupLabel}: ${readableLabel}, ${count}`}
               onClick={() => handleToggle(val)}
               type="button"
             >
               {optionLabel}
+              {count !== null && <ChipCount aria-hidden="true">{count}</ChipCount>}
             </Chip>
           );
         })}
