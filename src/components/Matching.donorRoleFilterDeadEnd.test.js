@@ -93,19 +93,19 @@ describe('екран порожньої деки', () => {
 describe('доступність UI-фільтрів за поточною роллю', () => {
   const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
-  it('має єдину ознаку, яка закриває панель для ed', () => {
+  it('має єдину ознаку, яка закриває рейку фільтрів для ed', () => {
     expect(source).toContain('const canUseMatchingFilters = !isDonorViewer(currentUserRole);');
-    expect(source).toContain('if (!canUseMatchingFilters) setShowFilters(false);');
-    expect(source).toContain('{canUseMatchingFilters && showFilters && <FilterOverlay');
-    expect(source).toContain('{canUseMatchingFilters && <FilterContainer');
-    expect(source).toContain("{canUseMatchingFilters && <TopActionGroup aria-label={uiText('Фільтри matching'");
+    expect(source).toContain('if (!canUseMatchingFilters) setOpenFilterGroup(null);');
+    expect(source).toContain('{canUseMatchingFilters && !isSearching && (\n            <MatchingFilterRail');
   });
 
-  it('не показує чіпи і feed refine bar та не звужує деку ed', () => {
+  it('не показує чіпів і не звужує деку ed', () => {
     expect(source).toContain('const matchingUiFilters = canUseMatchingFilters ? filters : EMPTY_MATCHING_FILTERS;');
     expect(source).toContain('if (!canUseMatchingFilters && viewMode === \'default\') return visibleUsers;');
     expect(source).toContain('() => canUseMatchingFilters\n      ? buildMatchingFilterChips');
-    expect(source).toContain('const showRefineBar = (isSearching || canUseMatchingFilters)');
+    // Рядок уточнення живе тепер саме в пошуку, тож донорці він нічого
+    // не звужує в стрічці вже за місцем, а не за роллю.
+    expect(source).toContain('const showRefineBar = isSearching');
   });
 
   it('передає чинні фільтри в індексний план для інших ролей', () => {
