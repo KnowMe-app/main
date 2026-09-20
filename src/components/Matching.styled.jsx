@@ -345,6 +345,21 @@ export const SkeletonLine = styled.div`
   background-image: linear-gradient(90deg, ${color.paleAccent2} 25%, ${color.paleAccent5} 50%, ${color.paleAccent2} 75%);
 `;
 
+/*
+ * Ряд кнопок шапки. Він **не прокручується** — і це не спрощення, а виправлення.
+ *
+ * Прокрутка тут коштувала сірого прямокутника навколо кнопок: вузол із
+ * overflow-x: auto обрізає тінь кожного свого нащадка своєю ж рамкою, а тіней
+ * тут три (дві плашки груп і сама кнопка «⋮»), тож замість мʼякого ореолу під
+ * кожним колом виходила суцільна сіра пляма з різкими краями рівно по межах
+ * ряду. На екрані це читалось як прозорий квадрат, якого ніхто не малював, —
+ * найгірший різновид помилки: у коді її немає, вона є в тому, як код обрізали.
+ *
+ * Гортати тут однаково не було чого: кнопок щонайбільше три, смужка прокрутки
+ * прихована (scrollbar-width: none), тобто того, що не влізло, не було б як
+ * дістати. Ряд тримає свою ширину (flex: 0 0 auto), а звужується натомість
+ * поле пошуку — воно для того й еластичне.
+ */
 export const TopActions = styled.div`
   position: static;
   display: flex;
@@ -352,14 +367,9 @@ export const TopActions = styled.div`
   align-items: center;
   gap: 8px;
   z-index: 10;
+  flex: 0 0 auto;
   max-width: 100%;
-  overflow-x: auto;
   padding: 2px;
-  scrollbar-width: none;
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
 `;
 
 export const TopActionGroup = styled.div`
@@ -1095,11 +1105,11 @@ export const ModernProfileScroll = styled.div`
     display: none;
   }
 
-  /* Під смужкою дій (ModernActionRail) — рівно її висота: кнопка 44 px,
-     відступи по 9 px і безпечна зона. Сталі 96 px лишали під нотатками
-     порожнечу заввишки в третину блока. */
-  scroll-padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
-  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  /* Під смужкою дій (ModernActionRail) — рівно її висота: кнопка 44 px і
+     відступи по 9 px. Сталі 96 px лишали під нотатками порожнечу заввишки
+     в третину блока. */
+  scroll-padding-bottom: 72px;
+  padding-bottom: 72px;
   box-sizing: border-box;
 `;
 
@@ -1163,6 +1173,13 @@ export const ModernHero = styled.div`
       display: none;
     }
   ` : css`
+    /* Ширина задана явно — рівно з тієї самої причини, що й у рядку стрічки
+       (Photo у MatchingHiddenList.styled): блок із пропорцією і автоматичною
+       шириною Chromium стискає по обох боках, щойно спрацювала стеля висоти,
+       і смуга фото відʼїжджає від правого краю картки. Тут це видно лише на
+       низькому екрані, де 64dvh менші за пропорцію, — тобто зрідка й
+       незрозуміло чому. */
+    width: 100%;
     aspect-ratio: 4 / 5;
     height: auto;
     min-height: clamp(320px, 52%, 460px);
@@ -1753,8 +1770,16 @@ export const ModernActionRail = styled.div`
   min-height: 0;
   box-sizing: border-box;
   align-items: center;
+  /* Безпечної зони в цих відступах немає, і це навмисно.
+   *
+   * Змінна safe-area-inset-bottom описує край **вікна**, а смужка стоїть
+   * усередині картки, під якою ще йде сторінка: до краю вікна вона не
+   * дотикається ніде. Firefox для Android при цьому віддає в цій змінній
+   * висоту своєї нижньої панелі, тож смужка там набирала майже 120 px —
+   * удвічі більше за власні кнопки — і накривала собою нотатки. Chrome і
+   * Samsung віддавали нуль, тож та сама розмітка в них виглядала правильно,
+   * і причину було видно лише в одному браузері з трьох. */
   padding: 9px 54px;
-  padding-bottom: calc(9px + env(safe-area-inset-bottom, 0px));
   pointer-events: none;
   background: var(--matching-rail-bg);
   border-top: 1px solid var(--matching-rail-border);

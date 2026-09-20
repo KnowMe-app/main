@@ -169,4 +169,59 @@ describe('Matching redesigned profile regressions', () => {
     // у картці немає.
     expect(styledSource).not.toContain('scrollbar-width: thin;');
   });
+
+  /*
+   * Безпечна зона — про край вікна, а смужка дій до нього не дотикається:
+   * вона лежить усередині картки, під якою йде сторінка. Firefox для Android
+   * віддає в цій змінній висоту своєї нижньої панелі, тож смужка там набирала
+   * майже вдвічі більше за власні кнопки й накривала нотатки, а Chrome із
+   * Samsung віддавали нуль — і те саме правило виглядало правильним.
+   */
+  it('не додає до смужки дій відступу на безпечну зону', () => {
+    const styledSource = fs.readFileSync(path.join(__dirname, 'Matching.styled.jsx'), 'utf8');
+    const rail = styledSource.slice(
+      styledSource.indexOf('export const ModernActionRail'),
+      styledSource.indexOf('export const ModernSwipeHint'),
+    );
+
+    expect(rail).toContain('padding: 9px 54px;');
+    expect(rail).not.toContain('env(safe-area-inset-bottom');
+  });
+
+  /*
+   * Блок із пропорцією і автоматичною шириною Chromium стискає **по обох**
+   * боках, щойно спрацювала стеля висоти: фото сідало під пропорцію й
+   * відходило від правого краю картки світлою смугою. У рядку стрічки стеля
+   * спрацьовує завжди, у відкритій картці — лише на низькому екрані, тож на
+   * око це виглядало як «у списку фото зміщене, а у відкритій картці ні».
+   */
+  it('тримає ширину фото заданою там, де висоту обмежує стеля', () => {
+    const styledSource = fs.readFileSync(path.join(__dirname, 'Matching.styled.jsx'), 'utf8');
+    const rowStyled = fs.readFileSync(path.join(__dirname, 'MatchingHiddenList.styled.jsx'), 'utf8');
+    const photo = rowStyled.slice(rowStyled.indexOf('export const Photo'), rowStyled.indexOf('export const PhotoRoleBadge'));
+
+    // Рядок стрічки: фото виходить за відступ картки, тож і ширина на два
+    // відступи більша — інакше стеля 58vh сідала б і на неї.
+    expect(photo).toContain('width: calc(100% + ${CARD_PADDING} * 2);');
+    expect(photo).toContain('max-height: 58vh;');
+    // Відкрита картка: та сама пара правил, та сама причина.
+    expect(styledSource).toContain('width: 100%;\n    aspect-ratio: 4 / 5;');
+  });
+
+  /*
+   * Ряд кнопок шапки не прокручується: вузол з overflow обрізає тінь кожного
+   * свого нащадка своєю ж рамкою, а тіней там три — виходила суцільна сіра
+   * пляма з різкими краями рівно по межах ряду, тобто квадрат, якого ніхто не
+   * малював.
+   */
+  it('не обрізає тіней кнопок шапки прокруткою', () => {
+    const styledSource = fs.readFileSync(path.join(__dirname, 'Matching.styled.jsx'), 'utf8');
+    const actions = styledSource.slice(
+      styledSource.indexOf('export const TopActions'),
+      styledSource.indexOf('export const TopActionGroup'),
+    );
+
+    expect(actions).not.toContain('overflow');
+    expect(actions).toContain('flex: 0 0 auto;');
+  });
 });

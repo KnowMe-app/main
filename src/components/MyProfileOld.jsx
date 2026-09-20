@@ -962,7 +962,6 @@ export const MyProfileOld = ({ isLoggedIn, setIsLoggedIn }) => {
       showVerifyEmail
       isSessionActive={isSessionActive}
       onDeleteProfile={() => setShowInfoModal('delProfile')}
-      onViewProfile={() => setShowInfoModal('viewProfile')}
       onExit={handleExit}
       onSelect={() => setShowInfoModal(false)}
     />

@@ -63,7 +63,11 @@ const defaultsAdd = {
 const defaultsMatching = {
   userRole: { ed: true, ag: false, ip: false, other: false },
   maritalStatus: { married: true, unmarried: true, other: true },
-  bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true },
+  // Групи крові тут немає — у матчингу лишився самий резус
+  // (`MATCHING_FILTER_GROUPS` у `SearchFilters`). Ключа немає і в переліку
+  // за замовчуванням навмисно: `getInitialFilters` переносить зі сховища
+  // лише перелічені тут групи, тож позначка, знята колись у старій шухляді,
+  // не лишається різати деку тоді, коли зняти її вже нема де.
   rh: { '+': true, '-': true, other: true },
   age: {
     le25: true,

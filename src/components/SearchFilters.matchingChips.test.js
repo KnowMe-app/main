@@ -1,4 +1,5 @@
 import { MATCHING_FILTER_GROUPS, buildMatchingFilterChipLabel, buildMatchingFilterChips } from './SearchFilters';
+import { getDefaultFilters } from './FilterPanel';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 const groupByName = name => MATCHING_FILTER_GROUPS.find(group => group.filterName === name);
@@ -76,5 +77,29 @@ describe('matching active-filter chips', () => {
 
   it('ignores a group with no stored value', () => {
     expect(buildMatchingFilterChips({})).toEqual([]);
+  });
+});
+
+/*
+ * Групи крові в матчингу немає — лишився самий резус.
+ *
+ * Перелік груп один на шухляду й на ряд чіпів (`resolveMatchingFilterGroups`),
+ * тож прибрана звідси група зникає з обох місць одразу. Резус при цьому
+ * лишається робочим сам по собі: індекс тримає обидва в одному бакеті, а
+ * `buildBloodBuckets` у провайдері вміє звужувати за самим лише резусом.
+ */
+describe('матчинг питає резус, а не групу крові', () => {
+  it('не показує групи крові ні в шухляді, ні в чіпах', () => {
+    expect(MATCHING_FILTER_GROUPS.some(group => group.filterName === 'bloodGroup')).toBe(false);
+    expect(MATCHING_FILTER_GROUPS.some(group => group.filterName === 'rh')).toBe(true);
+  });
+
+  it('не лишає збереженої позначки групи крові в типових фільтрах', () => {
+    // `getInitialFilters` переносить зі сховища лише перелічені тут групи, тож
+    // знятої колись позначки, якої більше не показують, дека не успадковує.
+    expect(getDefaultFilters({ mode: 'matching' }).bloodGroup).toBeUndefined();
+    expect(getDefaultFilters({ mode: 'matching' }).rh).toBeTruthy();
+    // В адмінській картотеці група крові лишається як була.
+    expect(getDefaultFilters({ mode: 'default' }).bloodGroup).toBeTruthy();
   });
 });

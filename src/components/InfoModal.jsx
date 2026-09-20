@@ -249,17 +249,6 @@ export const InfoModal = ({
     </>
   );
 
-  const viewProfile = (
-    <>
-      <ModalTitle>Перегляд анкети</ModalTitle>
-      <ModalText>Щоб переглянути анкету, встановіть застосунок</ModalText>
-      <a href="https://play.google.com/store/apps/details?id=com.xanderkiev.MyApp" style={{ color: 'inherit', textDecoration: 'none' }}>
-        <OrangeStrong>KnowMe: Egg donor</OrangeStrong>
-      </a>
-      <ModalText style={{ marginTop: 4 }}>в Google Play</ModalText>
-    </>
-  );
-
   const delConfirm = (
     <>{DelConfirm && <DelConfirm/>}
   </>
@@ -362,9 +351,6 @@ export const InfoModal = ({
   switch (text) {
     case 'delProfile':
       body = delProfile;
-      break;
-    case 'viewProfile':
-      body = viewProfile;
       break;
     case 'pickerOptions':
       body = pickerOptions;

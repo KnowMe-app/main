@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useLocation } from 'react-router-dom';
-import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEye, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaDatabase, FaMoon, FaSun, FaGlobe } from 'react-icons/fa';
+import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaDatabase, FaMoon, FaSun, FaGlobe } from 'react-icons/fa';
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
 import { useAppSettings } from 'hooks/useAppSettings';
@@ -216,7 +216,6 @@ export const ProfileDotsMenu = ({
   isSessionActive = true,
   onExit,
   onDeleteProfile,
-  onViewProfile,
   onSelect,
   beforeNavigate,
   extraActions,
@@ -428,27 +427,20 @@ export const ProfileDotsMenu = ({
         </SettingRow>
       </MenuSection>
 
-      {(onDeleteProfile || onViewProfile) && (
+      {/* «Переглянути анкету» звідси прибрано: той пункт відкривав інструкцію
+          «встановіть застосунок у Google Play», а мобільного застосунку більше
+          немає — його власна заставка каже про це першою ж карткою стрічки.
+          Пункт, який веде в нікуди, гірший за відсутній: він обіцяє дію. */}
+      {onDeleteProfile && (
         <MenuSection>
           <SectionLabel>{uiText('Анкета', language)}</SectionLabel>
-          {onViewProfile && (
-            <MenuItem type="button" role="menuitem" onClick={() => handleAction(onViewProfile)}>
-              <ItemIcon><FaEye /></ItemIcon>
-              <span>
-                <ItemLabel>{uiText('Переглянути анкету', language)}</ItemLabel>
-                <ItemDescription>{uiText('Відкрити інструкцію перегляду у застосунку', language)}</ItemDescription>
-              </span>
-            </MenuItem>
-          )}
-          {onDeleteProfile && (
-            <MenuItem type="button" role="menuitem" $danger onClick={() => handleAction(onDeleteProfile)}>
-              <ItemIcon $danger><FaTrashAlt /></ItemIcon>
-              <span>
-                <ItemLabel>{uiText('Видалити анкету', language)}</ItemLabel>
-                <ItemDescription>{uiText('Надіслати запит на видалення профілю', language)}</ItemDescription>
-              </span>
-            </MenuItem>
-          )}
+          <MenuItem type="button" role="menuitem" $danger onClick={() => handleAction(onDeleteProfile)}>
+            <ItemIcon $danger><FaTrashAlt /></ItemIcon>
+            <span>
+              <ItemLabel>{uiText('Видалити анкету', language)}</ItemLabel>
+              <ItemDescription>{uiText('Надіслати запит на видалення профілю', language)}</ItemDescription>
+            </span>
+          </MenuItem>
         </MenuSection>
       )}
 

@@ -7350,7 +7350,9 @@ const Matching = () => {
       return Object.keys(defaults).some(option => Boolean(current[option]) !== Boolean(defaults[option]));
     };
     if (isChanged('bmi')) keys.push('bmi', 'hw');
-    if (isChanged('bloodGroup') || isChanged('rh')) keys.push('blood');
+    // Група крові з фільтрів пішла — лишився резус, і саме він виводить
+    // метрику «blood» наперед.
+    if (isChanged('rh')) keys.push('blood');
     if (isChanged('maritalStatus')) keys.push('marital');
     return keys;
   }, [filters, matchingDefaultFilters]);

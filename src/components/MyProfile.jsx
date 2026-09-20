@@ -745,14 +745,13 @@ export const MyProfile = () => {
       showVerifyEmail
       isSessionActive={isProfileAccessConfirmed}
       onExit={handleExit}
-      // Пункти «Переглянути анкету» й «Видалити анкету» стоять у меню всюди,
-      // де є анкета (`ProfileScreen`, `MyProfileOld`, `AddNewProfile`), і саме
-      // тут їх не передавали — тож `ProfileDotsMenu` цілу секцію «Анкета» не
-      // малював. Видалення профілю — це лист на пошту з темою «Видаліть мою
-      // анкету» (`delProfile` в `InfoModal`): акаунт і сліди в чужих списках
-      // знімає людина, а не кнопка.
+      // «Видалити анкету» стоїть у меню всюди, де є анкета (`ProfileScreen`,
+      // `MyProfileOld`, `AddNewProfile`), і саме тут його не передавали — тож
+      // `ProfileDotsMenu` цілу секцію «Анкета» не малював. Видалення профілю —
+      // це лист на пошту з темою «Видаліть мою анкету» (`delProfile` в
+      // `InfoModal`): акаунт і сліди в чужих списках знімає людина, а не
+      // кнопка.
       onDeleteProfile={() => setShowInfoModal('delProfile')}
-      onViewProfile={() => setShowInfoModal('viewProfile')}
       onSelect={() => setShowInfoModal(false)}
     />
   );

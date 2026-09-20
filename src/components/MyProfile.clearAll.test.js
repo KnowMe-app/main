@@ -16,13 +16,17 @@ applyUkrainianInterface();
  *
  * «Очистити все» відповідає на інше питання — «я більше не хочу, щоб про мене
  * це знали»: поля забиваються порожніми рядками, анкета йде зі стрічки.
+ *
+ * Третього пункту в тій секції більше немає: «Переглянути анкету» відкривало
+ * інструкцію «встановіть застосунок у Google Play», а мобільного застосунку
+ * вже немає.
  */
 describe('my-profile: видалення і очищення анкети', () => {
   const source = fs.readFileSync(path.join(__dirname, 'MyProfile.jsx'), 'utf8');
 
-  it('повертає в меню пункти «Переглянути анкету» й «Видалити анкету»', () => {
+  it('повертає в меню пункт «Видалити анкету» й не кличе в застосунок', () => {
     expect(source).toContain("onDeleteProfile={() => setShowInfoModal('delProfile')}");
-    expect(source).toContain("onViewProfile={() => setShowInfoModal('viewProfile')}");
+    expect(source).not.toContain('viewProfile');
   });
 
   it('ставить «Очистити все» поруч з «Приховати анкету», а не в меню', () => {

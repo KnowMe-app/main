@@ -600,7 +600,6 @@ export const ProfileScreen = ({ isLoggedIn, setIsLoggedIn }) => {
       showVerifyEmail
       isSessionActive={isLoggedIn}
       onDeleteProfile={() => setShowInfoModal('delProfile')}
-      onViewProfile={() => setShowInfoModal('viewProfile')}
       onExit={handleExit}
       onSelect={() => setShowInfoModal(false)}
     />

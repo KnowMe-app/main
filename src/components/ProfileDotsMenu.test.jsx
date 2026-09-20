@@ -100,3 +100,29 @@ describe('ProfileDotsMenu logout confirmation', () => {
     expect(screen.queryByRole('dialog', { name: 'Вийти з акаунта?' })).toBeNull();
   });
 });
+
+/*
+ * «Переглянути анкету» вело в інструкцію «встановіть застосунок у Google
+ * Play», а мобільного застосунку більше немає — про це каже й сама заставка,
+ * яку агенція KnowMe поставила собі замість фото. Пункт, за яким нічого немає,
+ * гірший за відсутній: він обіцяє дію.
+ */
+describe('ProfileDotsMenu: секція «Анкета»', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('appLanguage', 'uk');
+  });
+
+  it('не пропонує переглянути анкету у застосунку', () => {
+    renderMenu({ onDeleteProfile: jest.fn() });
+
+    expect(screen.queryByRole('menuitem', { name: /Переглянути анкету/ })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: /Видалити анкету/ })).toBeTruthy();
+  });
+
+  it('без «Видалити анкету» не малює й самої секції', () => {
+    renderMenu();
+
+    expect(screen.queryByText('Анкета')).toBeNull();
+  });
+});

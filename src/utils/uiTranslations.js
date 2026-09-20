@@ -310,8 +310,6 @@ const EN_BY_UK = {
   'Мова документів, правил і карток анкет': 'Language of the documents, rules and profile cards',
   'Перемкнути мову': 'Switch the language',
   Анкета: 'Profile',
-  'Переглянути анкету': 'View the profile',
-  'Відкрити інструкцію перегляду у застосунку': 'Open the in-app viewing guide',
   'Видалити анкету': 'Delete the profile',
   'Надіслати запит на видалення профілю': 'Send a profile deletion request',
   Акаунт: 'Account',
