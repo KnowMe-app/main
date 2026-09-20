@@ -1254,8 +1254,18 @@ const SwipeableCard = ({
             )}
           </ModernHeroContent>
         )}
+        {/* Стан цятки питається в картки, а не в `publish` — тим самим
+            `isMatchingCardPublished`, що й у рядку стрічки. Причина не в
+            однаковості: відкриту картку показують уже догідратованою
+            (`ensureFullProfile` → `withLazyPhotos`), а анкета накривається
+            зверху й несе `publish` таким, яким він лежав у базі на час
+            читання. Тобто оптимістичне `publish` з `togglePublish` тут
+            затиралось анкетою, і цятка не перефарбовувалась **ніколи**: у
+            списку дотик діяв, а у відкритій картці виглядав як зламана
+            кнопка. `feedDate` анкета не несе (його знімає
+            `expandMatchingCard`), тож позначка дотику доживає саме в ньому. */}
         {isAdmin && (
-          <AdminToggle published={user.publish} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
+          <AdminToggle published={isMatchingCardPublished(user)} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
         )}
         <ModernProfileBody>
           <ProfileBio text={bio} language={language} />
@@ -2564,19 +2574,32 @@ const Matching = () => {
   const togglePublish = React.useCallback(async user => {
     if (!isAdmin || !user?.userId) return;
     const newValue = !isMatchingCardPublished(user);
+    // Дата повернення в стрічку — та сама, яку показує екран, і їде вона в
+    // базу разом з `publish`.
+    //
+    // Доти в базу летіло саме лише `publish: true`, а дату писач шукав у
+    // перечитаній анкеті — і не знаходив: сховану картку він же й позначив
+    // `feedDate: false`, тобто дату зняв. Далі `resolveFeedDate` брав, що
+    // лишилось, — `createdAt` часів заведення картки, — і анкета поверталась
+    // у стрічку на своє давнє місце, за сотні рядків від початку; а картці
+    // без жодної дати у вузлах не діставалось і того: ключ не писався
+    // взагалі, дотик не міняв у базі нічого. На екрані при цьому цятка
+    // зеленіла сьогоднішнім числом, тож розбіжність було видно аж після
+    // перезавантаження.
+    const nextFeedDate = normalizeFeedDateValue(user[MATCHING_CARD_FEED_FIELD]) || todayFeedDate();
     setUsers(prev =>
       prev.map(u => (u.userId === user.userId
         ? {
           ...u,
           publish: newValue,
-          [MATCHING_CARD_FEED_FIELD]: newValue
-            ? (normalizeFeedDateValue(u[MATCHING_CARD_FEED_FIELD]) || todayFeedDate())
-            : false,
+          [MATCHING_CARD_FEED_FIELD]: newValue ? nextFeedDate : false,
         }
         : u))
     );
     try {
-      const backendPayload = sanitizeCardForBackend({ publish: newValue });
+      const backendPayload = sanitizeCardForBackend(
+        newValue ? { publish: true, lastLogin2: nextFeedDate } : { publish: false },
+      );
       await updateDataInRealtimeDB(user.userId, backendPayload, 'update');
       await updateDataInFiresoreDB(user.userId, backendPayload, 'update');
     } catch (err) {
