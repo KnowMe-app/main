@@ -109,7 +109,7 @@ export const Photo = styled.div`
    *
    * Із заданою шириною стеля ріже саму лише висоту, а знімок під нею
    * підрізає cover. */
-  width: calc(100% + ${CARD_PADDING} * 2);
+  width: calc(100% + 22px);
   aspect-ratio: 4 / 5;
   max-height: 58vh;
   background: var(--matching-section-bg);
