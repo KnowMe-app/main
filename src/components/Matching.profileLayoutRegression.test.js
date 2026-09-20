@@ -202,7 +202,10 @@ describe('Matching redesigned profile regressions', () => {
 
     // Рядок стрічки: фото виходить за відступ картки, тож і ширина на два
     // відступи більша — інакше стеля 58vh сідала б і на неї.
-    expect(photo).toContain('width: calc(100% + ' + '${CARD_PADDING}' + ' * 2);');
+    // Подвоєну довжину записуємо готовим значенням: множення одиниць у calc()
+    // не підтримують старі браузери з production Browserslist.
+    expect(photo).toContain('width: calc(100% + 22px);');
+    expect(photo).not.toMatch(/CARD_PADDING\} \* 2/);
     expect(photo).toContain('max-height: 58vh;');
     // Відкрита картка: та сама пара правил, та сама причина.
     expect(styledSource).toContain('width: 100%;\n    aspect-ratio: 4 / 5;');
