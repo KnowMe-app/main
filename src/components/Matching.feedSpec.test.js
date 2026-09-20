@@ -83,9 +83,16 @@ describe('matching feed structure', () => {
   });
 
   it('defers filter application to "Показати N"', () => {
+    // Кнопка переїхала з підвалу шухляди в поповер рейки, але правило те
+    // саме: зміна фільтра — чернетка, доки читач не закрив групу, а число на
+    // кнопці рахується по кешу й не коштує жодного круга до бази.
     const source = matching();
     expect(source).toContain('const applyDraftFilters = React.useCallback(() => {');
-    expect(source).toContain('Показати {draftFilteredCount}');
+    expect(source).toContain('applyCount={draftFilteredCount}');
+    expect(source).toContain('onApply={applyDraftFilters}');
+    expect(read('MatchingFilterRail.jsx')).toContain(
+      "uiText('Показати {count}', language, { count: applyCount })"
+    );
   });
 
   it('loads the public feed without an access-level guard', () => {

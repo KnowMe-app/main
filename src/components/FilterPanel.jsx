@@ -66,8 +66,8 @@ const defaultsMatching = {
   // Групи крові тут немає — у матчингу лишився самий резус
   // (`MATCHING_FILTER_GROUPS` у `SearchFilters`). Ключа немає і в переліку
   // за замовчуванням навмисно: `getInitialFilters` переносить зі сховища
-  // лише перелічені тут групи, тож позначка, знята колись у старій шухляді,
-  // не лишається різати деку тоді, коли зняти її вже нема де.
+  // лише перелічені тут групи, тож позначка, знята колись, коли цей чіп ще
+  // показували, не лишається різати деку тоді, коли зняти її вже нема де.
   rh: { '+': true, '-': true, other: true },
   age: {
     le25: true,
@@ -133,15 +133,14 @@ const FilterPanel = ({
   resetToken,
   groupResetToken,
   groupResetName,
-  groupSelectToken,
-  groupSelectName,
-  groupSelectValue,
   nonAdminAllActive = false,
   allowedFilterNames,
   roleOptionKeys,
   viewerRole,
   bloodSearchKeyMode = false,
   reactionFilterOptions,
+  optionCounts,
+  bare = false,
 }) => {
   const defaultFilters = useMemo(
     () => getDefaultFilters({ mode, nonAdminAllActive }),
@@ -224,32 +223,6 @@ const FilterPanel = ({
     });
   }, [groupResetName, groupResetToken]);
 
-  // Дзеркало скидання: рядок дофільтрації просить «лише це значення».
-  //
-  // Фільтри matching відніманні — група стартує з усім увімкненим, і читач
-  // гасить зайве. Тож «лише 31–33» не є новим видом стану: це та сама група з
-  // однією увімкненою опцією. Саме тому дофільтр у стрічці не заводить другої
-  // моделі й нічого нового не читає — план будує наявний планувальник, і
-  // виходить він найдешевшим (`include`).
-  //
-  // Значення, якого група не пропонує, ігнорується: увімкнути нуль опцій
-  // означало б фільтр «нічого», а не уточнення.
-  const prevGroupSelectTokenRef = useRef(groupSelectToken);
-  useEffect(() => {
-    if (prevGroupSelectTokenRef.current === groupSelectToken) return;
-    prevGroupSelectTokenRef.current = groupSelectToken;
-    if (!groupSelectName || !groupSelectValue) return;
-    setFilters(current => {
-      const group = current?.[groupSelectName];
-      if (!group || !Object.prototype.hasOwnProperty.call(group, groupSelectValue)) return current;
-      const narrowed = Object.keys(group).reduce(
-        (acc, option) => ({ ...acc, [option]: option === groupSelectValue }),
-        {},
-      );
-      return { ...current, [groupSelectName]: narrowed };
-    });
-  }, [groupSelectName, groupSelectToken, groupSelectValue]);
-
   return (
     <SearchFilters
       filters={filters}
@@ -261,6 +234,8 @@ const FilterPanel = ({
       reactionFilterOptions={reactionFilterOptions}
       allowedFilterNames={allowedFilterNames}
       roleOptionKeys={roleOptionKeys}
+      optionCounts={optionCounts}
+      bare={bare}
     />
   );
 };

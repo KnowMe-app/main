@@ -10,18 +10,32 @@ import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
 import { uiText } from 'utils/uiTranslations';
 import { useAppSettings } from '../hooks/useAppSettings';
 
+/* Оболонка груп. У поповері рейки вона гола (`$bare`): поповер сам уже
+ * картка з рамкою, і друга рамка всередині читалась би наліпкою — та сама
+ * помилка, що й з вкладеними плашками в рядку стрічки. */
 const FiltersCard = styled.div`
-  background: var(--matching-section-bg, var(--km-card));
-  border: 1px solid var(--matching-section-border, var(--km-border));
+  background: ${({ $bare }) => ($bare ? 'transparent' : 'var(--matching-section-bg, var(--km-card))')};
+  border: ${({ $bare }) => ($bare ? 'none' : '1px solid var(--matching-section-border, var(--km-border))')};
   color: var(--matching-panel-text, var(--km-text));
   font-family: var(--km-font);
-  border-radius: var(--km-radius);
-  padding: 10px 12px 6px;
-  margin: 0 0 8px;
+  border-radius: ${({ $bare }) => ($bare ? '0' : 'var(--km-radius)')};
+  padding: ${({ $bare }) => ($bare ? '0' : '10px 12px 6px')};
+  margin: ${({ $bare }) => ($bare ? '0' : '0 0 8px')};
 `;
 
-// The matching drawer's filter groups, exported so the chips row can build its
-// labels from the same option labels the drawer shows (spec §3).
+/*
+ * Групи фільтрів стрічки — один перелік на рейку чіпів і на поповер групи.
+ *
+ * Підписи тут українські, бо український рядок — це ключ словника
+ * (`uiTranslations`), а не переклад. Поки тут стояло `Blood group`, `Rh`, `Age`
+ * і `BMI`, словник не мав що перекладати в інший бік: українська шухляда
+ * показувала чотири англійські підписи між трьома українськими — половина
+ * одного екрана однією мовою, половина іншою.
+ *
+ * Те саме з підписами опцій: вони йдуть крізь той самий `uiText`
+ * (`localizeMatchingOptionLabel`), а код ролі чи межа діапазону (`ED`, `≤25`,
+ * `Rh+`) проходять незмінними — словник вертає ключ, якого в ньому немає.
+ */
 export const MATCHING_FILTER_GROUPS = [
     {
       filterName: 'userRole',
@@ -40,23 +54,29 @@ export const MATCHING_FILTER_GROUPS = [
       filterName: 'maritalStatus',
       label: 'Статус',
       options: [
-        { val: 'married', label: 'Married' },
-        { val: 'unmarried', label: 'Single' },
+        { val: 'married', label: 'Заміжня' },
+        { val: 'unmarried', label: 'Не заміжня' },
         { val: 'other', label: '?' },
       ],
     },
-    // Групи крові в матчингу немає навмисно: лишився самий резус.
+    // Групи крові в цьому переліку немає навмисно: лишився самий резус.
+    //
+    // Це та сама причина, з якої в неї не рахуються числа біля опцій: картка
+    // стрічки носить сам лише знак резуса (`bloodGroup` у
+    // `MATCHING_CARD_FORBIDDEN_FIELDS`), тож група крові в рейці була чіпом,
+    // під яким усі опції показували нуль, а звуження за ним відрізало б деку
+    // за тим, чого в ній не видно.
     //
     // Індекс `searchKey` тримає обидва в одному бакеті (`1+`, `2-`, `+`, `no`),
     // і провайдер це вміє — `buildBloodBuckets` бере резус і без групи, — тож
-    // прибрана з шухляди група нічого не ламає: бакети просто перестають
-    // звужуватись за першим символом. Стара збережена позначка теж не
-    // переживає цього: `getInitialFilters` переносить лише ті ключі, які є в
-    // переліку за замовчуванням, а фільтр, якого читачеві більше не
-    // показують, не має права далі різати деку мовчки.
+    // прибраний чіп нічого не ламає: бакети просто перестають звужуватись за
+    // першим символом. Стара збережена позначка теж не переживає цього:
+    // `getInitialFilters` переносить лише ті ключі, які є в переліку за
+    // замовчуванням, а фільтр, якого читачеві більше не показують, не має
+    // права далі різати деку мовчки.
     {
       filterName: 'rh',
-      label: 'Rh',
+      label: 'Резус',
       options: [
         { val: '+', label: 'Rh+' },
         { val: '-', label: 'Rh-' },
@@ -65,7 +85,7 @@ export const MATCHING_FILTER_GROUPS = [
     },
     {
       filterName: 'age',
-      label: 'Age',
+      label: 'Вік',
       compact: true,
       options: [
         { val: 'le25', label: '≤25' },
@@ -78,7 +98,7 @@ export const MATCHING_FILTER_GROUPS = [
     },
     {
       filterName: 'bmi',
-      label: 'BMI',
+      label: 'ІМТ',
       compact: true,
       options: [
         { val: 'lt18_5', label: '<18.5' },
@@ -92,8 +112,8 @@ export const MATCHING_FILTER_GROUPS = [
       filterName: 'country',
       label: 'Країна',
       options: [
-        { val: 'ua', label: 'Ukraine' },
-        { val: 'other', label: 'Other country' },
+        { val: 'ua', label: 'Україна' },
+        { val: 'other', label: 'Інша країна' },
         { val: 'unknown', label: '?' },
       ],
     },
@@ -107,6 +127,16 @@ export const MATCHING_FILTER_GROUPS = [
 // The "?" option (no data on record) is deliberately left out of the "крім"
 // count: dropping unknowns is a different intent from excluding a real value,
 // and a group where only "?" is off reads as "лише заповнені".
+/*
+ * Підпис опції мовою інтерфейсу.
+ *
+ * Словник вертає ключ незмінним, коли перекладу немає, тож через нього
+ * можна пропускати все підряд: дволітерний код ролі й межа діапазону
+ * лишаються собою, а «Заміжня» чи «Інша країна» перекладаються.
+ */
+export const localizeMatchingOptionLabel = (label, language) =>
+  (typeof label === 'string' ? uiText(label, language) : label);
+
 export const buildMatchingFilterChipLabel = (group, values, language) => {
   const options = group.options || [];
   if (!values || typeof values !== 'object') return null;
@@ -130,7 +160,7 @@ export const buildMatchingFilterChipLabel = (group, values, language) => {
     return {
       text: uiText('{group}: крім {values}', language, {
         group: groupName,
-        values: offWithoutUnknown.map(option => option.label).join(', '),
+        values: offWithoutUnknown.map(option => localizeMatchingOptionLabel(option.label, language)).join(', '),
       }),
       danger: false,
     };
@@ -139,7 +169,7 @@ export const buildMatchingFilterChipLabel = (group, values, language) => {
     return {
       text: uiText('{group}: {values}', language, {
         group: groupName,
-        values: on.map(option => option.label).join(', '),
+        values: on.map(option => localizeMatchingOptionLabel(option.label, language)).join(', '),
       }),
       danger: false,
     };
@@ -171,6 +201,46 @@ export const resolveMatchingFilterGroups = ({ roleOptionKeys } = {}) => {
   ));
 };
 
+/*
+ * Ряд чіпів рейки — чіп на кожну групу, а не лише на змінені.
+ *
+ * Раніше над стрічкою стояли самі лише активні фільтри, і ряд умів рівно
+ * одне: зняти групу. Що ще можна звузити, було видно лише відкривши
+ * шухляду — тобто інструмент називав себе тільки тоді, коли ним уже
+ * скористались. Тепер група стоїть у ряду завжди: незаймана показує саму
+ * назву (`Вік`), звужена — той самий підпис, що й старий чіп (`Вік: крім ≤25`).
+ *
+ * Перелік груп той самий, що й у поповера (`resolveMatchingFilterGroups`), тож
+ * чіп, якого цьому читачеві не показують, не з’являється й тут.
+ */
+export const buildMatchingFilterRailChips = (filters, language, { roleOptionKeys } = {}) => {
+  const chips = resolveMatchingFilterGroups({ roleOptionKeys }).map(group => {
+    const groupLabel = uiText(group.label, language);
+    const summary = buildMatchingFilterChipLabel(group, filters?.[group.filterName], language);
+    return {
+      filterName: group.filterName,
+      groupLabel,
+      text: summary ? summary.text : groupLabel,
+      narrowed: Boolean(summary),
+      danger: Boolean(summary?.danger),
+    };
+  });
+
+  /*
+   * Звужені групи йдуть першими, і це не оздоблення.
+   *
+   * Ряд прокручується вбік — груп сім, на екран телефона влазить чотири. Зі
+   * сталим порядком «Країна: лише Україна» лишалась за межею екрана саме
+   * тоді, коли пояснює, чому в деці п’ять карток замість сімнадцяти, — тобто
+   * читач бачив порожнішу стрічку й жодного пояснення поруч.
+   *
+   * Смикання від цього немає: порядок рахується зі **застосованих** фільтрів,
+   * а вони міняються лише на закритті поповера. Чіп під пальцем ніколи не
+   * зрушається, а порядок всередині кожної половини лишається сталим.
+   */
+  return [...chips.filter(chip => chip.narrowed), ...chips.filter(chip => !chip.narrowed)];
+};
+
 export const buildMatchingFilterChips = (filters, language, { roleOptionKeys } = {}) =>
   resolveMatchingFilterGroups({ roleOptionKeys })
   .map(group => {
@@ -190,6 +260,8 @@ export const SearchFilters = ({
   roleOptionKeys,
   bloodSearchKeyMode = false,
   reactionFilterOptions,
+  optionCounts,
+  bare = false,
 }) => {
   const { language } = useAppSettings();
   let groups = [];
@@ -427,13 +499,23 @@ export const SearchFilters = ({
   }
 
   return (
-    <FiltersCard>
+    <FiltersCard $bare={bare}>
       {groups.map(group => (
         <CheckboxGroup
           key={group.filterName}
-          label={mode === 'matching' ? uiText(group.label, language) : group.label}
+          // У поповері рейки (`bare`) назва групи вже стоїть у шапці, і другий
+          // такий самий підпис під нею читався як два різні заголовки.
+          label={bare ? '' : (mode === 'matching' ? uiText(group.label, language) : group.label)}
           filterName={group.filterName}
-          options={group.options}
+          options={mode === 'matching'
+            ? group.options.map(option => ({
+              ...option,
+              label: localizeMatchingOptionLabel(option.label, language),
+            }))
+            : group.options}
+          // Числа «серед завантажених» — рахує їх сторінка, бо лише вона
+          // знає, яка саме дека зараз на екрані.
+          optionCounts={optionCounts?.[group.filterName]}
           filters={filters}
           onChange={onChange}
           compact={group.compact}

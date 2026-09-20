@@ -254,10 +254,32 @@ const EN_BY_UK = {
   'Шукаю в searchId{suffix}': 'Searching searchId{suffix}',
   'Шукаю в searchId...': 'Searching searchId…',
 
+  // --- меню трьох крапок: підтвердження пошти ---
+  'Підтвердити email': 'Verify your email',
+  'Надіслати лист із підтвердженням на вашу пошту': 'Send a confirmation letter to your inbox',
+  'Лист надіслано — повторити через {time} хв': 'Letter sent — you can try again in {time} min',
+
   // --- фільтри й чіпи ---
   'Тип профілю': 'Profile type',
   Статус: 'Status',
+  'Група крові': 'Blood group',
+  ІМТ: 'BMI',
+  Заміжня: 'Married',
+  'Не заміжня': 'Single',
+  'Інша країна': 'Other country',
   'Все інше': 'Everything else',
+  // Рейка фільтрів: ряд чіпів під пошуком, поповер на групу.
+  Фільтри: 'Filters',
+  'Фільтри стрічки': 'Feed filters',
+  'Скинути все': 'Reset all',
+  'Скинути всі фільтри': 'Reset every filter',
+  'Скинути групу «{group}»': 'Reset the «{group}» group',
+  'Налаштувати: {group}': 'Adjust: {group}',
+  'Закрити групу фільтра': 'Close this filter group',
+  'Числа — серед уже завантажених карток': 'The counts are among the cards already loaded',
+  'Групу звужує індекс, а не картка — чисел тут немає':
+    'This group is narrowed by the index rather than by the card, so it shows no counts',
+  'Показати {count}': 'Show {count}',
   '{group}: нічого': '{group}: nothing',
   '{group}: лише заповнені': '{group}: only filled in',
   '{group}: крім {values}': '{group}: except {values}',

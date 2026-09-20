@@ -349,16 +349,17 @@ export const SkeletonLine = styled.div`
  * Ряд кнопок шапки. Він **не прокручується** — і це не спрощення, а виправлення.
  *
  * Прокрутка тут коштувала сірого прямокутника навколо кнопок: вузол із
- * overflow-x: auto обрізає тінь кожного свого нащадка своєю ж рамкою, а тіней
- * тут три (дві плашки груп і сама кнопка «⋮»), тож замість мʼякого ореолу під
- * кожним колом виходила суцільна сіра пляма з різкими краями рівно по межах
- * ряду. На екрані це читалось як прозорий квадрат, якого ніхто не малював, —
- * найгірший різновид помилки: у коді її немає, вона є в тому, як код обрізали.
+ * overflow-x: auto обрізає тінь кожного свого нащадка своєю ж рамкою, тож
+ * замість мʼякого ореолу під кожним колом виходила суцільна сіра пляма з
+ * різкими краями рівно по межах ряду. На екрані це читалось як прозорий
+ * квадрат, якого ніхто не малював, — найгірший різновид помилки: у коді її
+ * немає, вона є в тому, як код обрізали.
  *
- * Гортати тут однаково не було чого: кнопок щонайбільше три, смужка прокрутки
- * прихована (scrollbar-width: none), тобто того, що не влізло, не було б як
- * дістати. Ряд тримає свою ширину (flex: 0 0 auto), а звужується натомість
- * поле пошуку — воно для того й еластичне.
+ * Гортати тут однаково не було чого: кнопок тут щонайбільше дві — плашка
+ * адмінських дій і «⋮», — а смужка прокрутки прихована
+ * (scrollbar-width: none), тобто того, що не влізло, не було б як дістати.
+ * Ряд тримає свою ширину (flex: 0 0 auto), а звужується натомість поле
+ * пошуку — воно для того й еластичне.
  */
 export const TopActions = styled.div`
   position: static;
@@ -564,115 +565,258 @@ export const ExitButton = styled(SubmitButton)`
   }
 `;
 
-export const FilterOverlay = styled.div`
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.42);
-  z-index: 15;
-  display: ${props => (props.show ? 'block' : 'none')};
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+/* ===== Рейка фільтрів =====================================================
+ *
+ * Фільтри стоять на першому екрані, а не за кнопкою.
+ *
+ * Доти той самий стан мав три поверхні: лійка з шухлядою на весь
+ * екран, ряд активних чіпів (яким можна було лише **знімати** групи) і
+ * рядок уточнення, який писав у ті самі групи, але протилежною
+ * логікою («лише це значення» проти «усе, крім»).
+ *
+ * Викласти всі сім груп на екран розгорнутими було б гірше за лійку:
+ * це рівно екран телефона, і стрічка — те, заради чого сюди заходять, —
+ * щоразу опинялась під згином. Тож рейка коштує один рядок висоти:
+ * чіп на групу, а опції саме цієї групи розкриваються під нею.
+ */
+export const FilterRail = styled.div`
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 12px 8px;
+  z-index: 12;
+
+  @media (max-width: 768px) {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
 `;
 
-export const FilterContainer = styled.aside`
+/* Чіпи їдуть убік, а не переносяться: груп рівно сім, їхній порядок
+ * сталий, і ряд, який то на один рядок, то на три, сунув би сітку карток
+ * при кожному виборі. Скрол лишається всередині ряда — сторінка убік
+ * не їде. */
+export const FilterRailScroller = styled.div`
+  /* Ряд лежить **над** ловцем тапів повз поповер. Інакше перехід з
+   * групи в групу коштує два тапи: перший забирає ловець, щоб закрити
+   * відкрите, і палець потрапляє в чіп, який нічого не робить. */
+  position: relative;
+  z-index: 14;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 2px 0;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  > * {
+    scroll-snap-align: start;
+  }
+`;
+
+export const FilterRailChip = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  max-width: 62vw;
+  height: 30px;
+  padding: 0 11px;
+  box-sizing: border-box;
+  /* Зі зняттям поруч чіп віддає йому свій правий край: два окремі
+   * заокруглені краї, накладені один на одний, читались як дві кнопки,
+   * що наїхали одна на одну, а не як одна річ із двома діями. */
+  border-radius: ${({ $clearable }) => ($clearable ? '999px 0 0 999px' : '999px')};
+  border-right-width: ${({ $clearable }) => ($clearable ? '0' : '1px')};
+  padding-right: ${({ $clearable }) => ($clearable ? '7px' : '11px')};
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: ${({ $narrowed }) => ($narrowed ? '700' : '500')};
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid ${({ $danger, $narrowed, $open }) => {
+    if ($danger) return 'color-mix(in srgb, #d64545 55%, transparent)';
+    if ($open) return 'var(--matching-accent)';
+    return $narrowed ? 'var(--matching-accent)' : 'var(--matching-chip-border)';
+  }};
+  background: ${({ $danger, $narrowed, $open }) => {
+    if ($danger) return 'color-mix(in srgb, #d64545 10%, transparent)';
+    if ($open) return 'color-mix(in srgb, var(--matching-accent) 22%, transparent)';
+    return $narrowed
+      ? 'color-mix(in srgb, var(--matching-accent) 12%, transparent)'
+      : 'var(--matching-chip-bg)';
+  }};
+  color: ${({ $danger, $narrowed }) => {
+    if ($danger) return '#d64545';
+    return $narrowed ? 'var(--matching-accent)' : 'var(--matching-chip-text)';
+  }};
+  /* Відкриту групу позначає заливка, а не кільце тіні: ряд прокручується
+   * (overflow-x: auto), і тінь за межами чіпа він підрізав — чіп виглядав
+   * обрізаним, а не підсвіченим. Зворотні лапки в такому коментарі
+   * ставити не можна взагалі: це тегований шаблон, і вони його закривають. */
+
+  > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
+  }
+`;
+
+/* Стрілка каже, що чіп розкривається, а не перемикається: без неї ряд
+ * читався як сім незалежних перемикачів. */
+export const FilterRailChipCaret = styled.span`
+  font-size: 9px;
+  opacity: 0.7;
+  transform: translateY(1px);
+`;
+
+/* Хрестик живе всередині чіпа, але є окремою кнопкою: тап по чіпу
+ * розкриває групу, тап по хрестику — знімає звуження. Дві дії на одній
+ * кнопці розрізнятись не можуть, а вкладена `button` у `button` невалідна, тож
+ * це сусід у спільній оболонці. */
+export const FilterRailChipShell = styled.div`
+  display: inline-flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  max-width: 100%;
+`;
+
+export const FilterRailChipClear = styled.button`
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid ${({ $danger }) => ($danger ? 'color-mix(in srgb, #d64545 55%, transparent)' : 'var(--matching-accent)')};
+  border-left: none;
+  border-radius: 0 999px 999px 0;
+  background: ${({ $danger }) => ($danger
+    ? 'color-mix(in srgb, #d64545 10%, transparent)'
+    : 'color-mix(in srgb, var(--matching-accent) 12%, transparent)')};
+  color: ${({ $danger }) => ($danger ? '#d64545' : 'var(--matching-accent)')};
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
+  }
+`;
+
+/* Прозорий ловець тапів повз поповер. Затемнювати екран тут не можна:
+ * числа в поповері рахуються по тих самих картках, які лежать під ним,
+ * і читач мусить бачити, як стрічка відгукується. */
+export const FilterPopoverScrim = styled.div`
   position: fixed;
-  top: 0;
-  right: 0;
-  height: 100%;
-  width: min(390px, 92vw);
-  ${matchingThemeVars}
+  inset: 0;
+  z-index: 11;
+  background: transparent;
+`;
+
+export const FilterPopover = styled.div`
+  position: absolute;
+  z-index: 13;
+  top: calc(100% - 4px);
+  left: 12px;
+  right: 12px;
+  max-width: 460px;
+  border-radius: 16px;
+  border: 1px solid var(--matching-section-border);
   background: var(--matching-panel-bg);
   color: var(--matching-panel-text);
-  z-index: 20;
-  transform: translateX(${props => (props.show ? '0' : '100%')});
-  transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  box-shadow: ${props => (props.show ? '-24px 0 48px rgba(0, 0, 0, 0.24)' : 'none')};
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  display: ${({ $open }) => ($open ? 'block' : 'none')};
 
-  input,
-  textarea,
-  select {
-    background: var(--matching-chip-bg);
-    color: var(--matching-panel-text);
-    border-color: var(--matching-chip-border);
-  }
-
-  button {
-    transition: background 220ms cubic-bezier(0.4, 0, 0.2, 1), color 220ms cubic-bezier(0.4, 0, 0.2, 1), border-color 220ms cubic-bezier(0.4, 0, 0.2, 1), transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  @media (max-width: 768px) {
+    left: 8px;
+    right: 8px;
   }
 `;
 
-export const FilterDrawerHeader = styled.div`
-  position: sticky;
-  top: 0;
-  z-index: 2;
+export const FilterPopoverHeader = styled.div`
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 14px;
-  padding: max(16px, env(safe-area-inset-top)) 16px 12px;
-  border-bottom: 1px solid var(--matching-section-border, #eee);
-  background: var(--matching-panel-bg, #fff);
+  gap: 10px;
+  padding: 11px 13px 9px;
+  border-bottom: 1px solid var(--matching-section-border);
 `;
 
-export const FilterDrawerTitle = styled.div`
-  display: flex;
-  flex-direction: column;
+export const FilterPopoverTitle = styled.h2`
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--matching-header-text);
+`;
+
+export const FilterPopoverHeaderActions = styled.div`
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
 `;
 
-export const FilterDrawerHeading = styled.h2`
-  margin: 0;
-  color: var(--matching-header-text, #161616);
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1.2;
-`;
-
-export const FilterDrawerSubtitle = styled.p`
-  margin: 0;
-  color: var(--matching-muted-text, #6B7280);
-  font-size: 12px;
-  line-height: 1.35;
-`;
-
-export const FilterDrawerClose = styled.button`
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--matching-section-border, #E8E2D8);
+export const FilterPopoverGhostButton = styled.button`
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--matching-action-bg, #fff);
-  color: var(--matching-action-color, #E8791A);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  background: none;
+  color: var(--matching-muted-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  flex: 0 0 auto;
 
-  &:hover,
-  &:focus-visible {
-    border-color: var(--matching-accent, #E8791A);
-    transform: translateY(-1px);
+  &:hover {
+    border-color: var(--matching-chip-border);
+    color: var(--matching-header-text);
   }
 
   &:focus-visible {
-    outline: 3px solid rgba(232, 121, 26, 0.38);
-    outline-offset: 2px;
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
   }
 `;
 
-export const FilterDrawerBody = styled.div`
-  flex: 1 1 auto;
-  padding: 12px 14px 96px;
+export const FilterPopoverBody = styled.div`
+  padding: 11px 13px;
+  max-height: min(46vh, 340px);
+  overflow-y: auto;
 `;
 
-export const FilterDrawerSection = styled.section`
-  margin: 0 0 12px;
+/* Числа біля опцій — по завантаженому, а не по всій базі, і рядок каже
+ * це прямо, а не вдає точності, якої не має. */
+export const FilterPopoverNote = styled.p`
+  margin: 9px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--matching-chip-label);
+`;
+
+export const FilterPopoverFooter = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 13px max(11px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--matching-section-border);
 `;
 
 export const MatchingSearchStatusMessage = styled.p`
@@ -684,40 +828,6 @@ export const MatchingSearchStatusMessage = styled.p`
   font-size: 13px;
   font-weight: 700;
 `;
-
-export const FilterDrawerFooter = styled.div`
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  padding: 12px 14px max(14px, env(safe-area-inset-bottom));
-  border-top: 1px solid var(--matching-section-border, #eee);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0), var(--matching-panel-bg, #fff) 18%);
-`;
-
-
-export const FilterResetButton = styled.button`
-  width: 100%;
-  padding: 12px 14px;
-  margin: 0;
-  border: 1px solid rgba(220, 38, 38, 0.28);
-  border-radius: 14px;
-  background: rgba(220, 38, 38, 0.06);
-  color: #b42318;
-  font-weight: 700;
-  cursor: pointer;
-
-  &:hover,
-  &:focus-visible {
-    background: rgba(220, 38, 38, 0.1);
-    border-color: rgba(220, 38, 38, 0.42);
-  }
-
-  &:focus-visible {
-    outline: 3px solid rgba(220, 38, 38, 0.22);
-    outline-offset: 2px;
-  }
-`;
-
 
 export const Title = styled.span`
   color: ${props => getRoleColors(props.$role).text};
@@ -1986,21 +2096,6 @@ export const ChipCount = styled.b`
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--matching-chip-label);
-`;
-
-export const ChipRemove = styled.span`
-  display: inline-grid;
-  place-items: center;
-  width: 14px;
-  height: 14px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  font-size: 9px;
-  opacity: 0.75;
-
-  &:hover {
-    opacity: 1;
-  }
 `;
 
 // Spec §4: a single icon button, never a segmented control. It shows the mode

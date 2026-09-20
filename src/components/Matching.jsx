@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
 import {
-  ActionBadge,
   ActionButton,
   AdminToggle,
   AnimatedCard,
@@ -18,16 +17,6 @@ import {
   NoteLaneHint,
   NoteLanes,
   Container,
-  FilterContainer,
-  FilterDrawerBody,
-  FilterDrawerClose,
-  FilterDrawerFooter,
-  FilterDrawerHeader,
-  FilterDrawerHeading,
-  FilterDrawerSubtitle,
-  FilterDrawerTitle,
-  FilterOverlay,
-  FilterResetButton,
   Grid,
   InnerContainer,
   OwnerStatusMessage,
@@ -75,7 +64,6 @@ import {
   MatchingSearchStatusMessage,
   Chip,
   ChipCount,
-  ChipRemove,
   ChipsGroup,
   ChipsRow,
   FeedCountdown,
@@ -92,7 +80,6 @@ import {
   QueryDraftNote,
   QueryDraftValue,
   MatchingTopBar,
-  FilterApplyButton,
   SearchField,
   GalleryActionButton,
   GalleryActions,
@@ -158,7 +145,9 @@ import { BtnDislike, toggleDislikeUser } from './smallCard/btnDislike';
 import SearchBar, { detectSearchParams, getSearchCacheKeyForParams } from './SearchBar';
 import PhotoViewer from './PhotoViewer';
 import FilterPanel, { getDefaultFilters } from './FilterPanel';
-import { buildMatchingFilterChips } from './SearchFilters';
+import MatchingFilterRail from './MatchingFilterRail';
+import { MATCHING_FILTER_GROUPS, buildMatchingFilterChips } from './SearchFilters';
+import { countMatchingFilterOptions } from '../utils/matchingFilterCounts';
 import { getFieldLabel, pickerFields } from './formFields';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
@@ -212,7 +201,6 @@ import {
   REFINE_MIN_RESULTS,
   applyRefineSelection,
   getRefineKeySpec,
-  isRefineKeyAvailableInFeed,
 } from '../utils/matchingRefineKey';
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
@@ -229,7 +217,7 @@ import ProfileRow, {
   renderFacts as renderProfileFacts,
   splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
-import { FaFilter, FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
+import { FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
 import { FaRegHeart, FaUndoAlt, FaChevronDown, FaPencilAlt, FaRegCommentDots } from 'react-icons/fa';
 import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
 import { CONTACT_ICONS, PHONE_QUICK_LINKS, getContactIcon, isExternalContact } from './contactIcons';
@@ -1427,7 +1415,9 @@ const EMPTY_USERS = [];
 const EMPTY_MATCHING_FILTERS = Object.freeze({});
 // Скільки чіпів фільтрів ряд показує згорнутим. Решта — за «+N», яке розгортає
 // ряд на місці; ряд не скролиться вбік, він переноситься.
-const MAX_FILTER_CHIPS = 3;
+/* Імена всіх груп фільтра — це те, що дістає панель, коли рейка закрита:
+ * вона лишається змонтованою (в ній живе стан фільтрів), але не малюється. */
+const MATCHING_FILTER_GROUP_NAMES = MATCHING_FILTER_GROUPS.map(group => group.filterName);
 // Spec §2: the screen switches state a beat after typing stops, not on Enter.
 const MATCHING_SEARCH_DEBOUNCE_MS = 250;
 const MATCHING_QUERY_PARAM = MATCHING_SEARCH_QUERY_PARAM;
@@ -1543,19 +1533,6 @@ export const buildMatchingCursorFromCard = card => {
   const userId = String(card?.userId || '').trim();
   if (!date || !userId) return null;
   return { date, userId };
-};
-
-const countChangedMatchingFilterGroups = (currentFilters, defaultFilters) => {
-  if (!currentFilters || !defaultFilters) return 0;
-
-  return Object.keys(defaultFilters).reduce((count, groupName) => {
-    const defaultGroup = defaultFilters[groupName] || {};
-    const currentGroup = currentFilters[groupName] || {};
-    const changed = Object.keys(defaultGroup).some(optionName =>
-      Boolean(currentGroup[optionName]) !== Boolean(defaultGroup[optionName])
-    );
-    return changed ? count + 1 : count;
-  }, 0);
 };
 
 // Плитка галереї — це картка, а не рамка під фото.
@@ -1823,7 +1800,6 @@ const Matching = () => {
   useEffect(() => {
     refineStateRef.current = { key: refineKey, value: searchRefineValue };
   }, [refineKey, searchRefineValue]);
-  const [filterGroupSelect, setFilterGroupSelect] = useState({ token: 0, name: '', value: '' });
   // Скільки знайдених уже на екрані. Видача більше не приїжджає одним шматком:
   // її показує той самий притишений відлік, що й стрічку.
   const [searchRevealCount, setSearchRevealCount] = useState(MATCHING_FIRST_PAGE_BATCH);
@@ -1886,7 +1862,17 @@ const Matching = () => {
   commentsRef.current = comments;
   const dispatchedCommentSaveRef = useRef(null);
   const [sharedComments, setSharedComments] = useState({});
-  const [showFilters, setShowFilters] = useState(false);
+  /*
+   * Яка група фільтра зараз розкрита в рейці (`null` — жодна).
+   *
+   * Доти тут стояв булеан на шухляду цілком: відкрито — відкриті всі сім
+   * груп. Ім’я групи несе рівно те саме знання плюс одне: що саме зараз
+   * налаштовують. Чернетка фільтрів (`draftFilters`) живе рівно доки тут
+   * не `null`, тож похідний `showFilters` лишається тим самим прапорцем
+   * «зміна ще не застосована», що й був.
+   */
+  const [openFilterGroup, setOpenFilterGroup] = useState(null);
+  const showFilters = Boolean(openFilterGroup);
   const showFiltersRef = useRef(showFilters);
   showFiltersRef.current = showFilters;
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -1928,7 +1914,7 @@ const Matching = () => {
   const matchingUiFilters = canUseMatchingFilters ? filters : EMPTY_MATCHING_FILTERS;
   filtersRef.current = matchingUiFilters;
   useEffect(() => {
-    if (!canUseMatchingFilters) setShowFilters(false);
+    if (!canUseMatchingFilters) setOpenFilterGroup(null);
   }, [canUseMatchingFilters]);
   const [currentCanCreateProfiles, setCurrentCanCreateProfiles] = useState(() => localStorage.getItem('canCreateProfiles') === 'true');
   const [currentAdditionalAccessRules, setCurrentAdditionalAccessRules] = useState(
@@ -2093,13 +2079,6 @@ const Matching = () => {
   // child paths the rules let them read.
   const hasFullProfileAccess = access.isAdmin || access.canAccessMatching;
 
-  const activeFilterGroupCount = useMemo(
-    () => countChangedMatchingFilterGroups(filters, matchingDefaultFilters),
-    [filters, matchingDefaultFilters],
-  );
-  const filterDrawerSubtitle = activeFilterGroupCount > 0
-    ? uiText('Активно змінено груп: {count}', language, { count: activeFilterGroupCount })
-    : uiText('Всі профілі показані за поточними правилами доступу', language);
   const parsedAdditionalAccessRules = useMemo(
     () => parseAdditionalAccessRuleGroups(currentAdditionalAccessRules),
     [currentAdditionalAccessRules]
@@ -3921,7 +3900,7 @@ const Matching = () => {
 
   const applyDraftFilters = React.useCallback(() => {
     applyFilters(draftFiltersRef.current);
-    setShowFilters(false);
+    setOpenFilterGroup(null);
   }, [applyFilters]);
 
   const resetFiltersAndCache = React.useCallback(() => {
@@ -5755,6 +5734,32 @@ const Matching = () => {
     visibleUsers,
   ]);
 
+  /*
+   * Числа біля опцій розкритої групи.
+   *
+   * Рахуються по вже завантаженій деці й тільки для тієї групи, яка зараз
+   * на екрані: жодного додаткового читання з бекенду це не коштує, а сім
+   * груп наперед коштували б семи обходів деки на кожен перемальований
+   * кадр. Береться `visibleUsers` — дека **до** UI-фільтрів: інакше знята
+   * опція показувала б нуль і читач ніколи б не дізнався, що він втратив.
+   */
+  const openFilterGroupCounts = useMemo(() => {
+    if (!openFilterGroup) return undefined;
+    const counts = countMatchingFilterOptions({
+      filterName: openFilterGroup,
+      users: visibleUsers,
+      roleIndexSets,
+    });
+    return counts ? { [openFilterGroup]: counts } : undefined;
+  }, [openFilterGroup, roleIndexSets, visibleUsers]);
+
+  const openFilterGroupCountsNote = useMemo(() => {
+    if (!openFilterGroup) return '';
+    return openFilterGroupCounts
+      ? uiText('Числа — серед уже завантажених карток', language)
+      : uiText('Групу звужує індекс, а не картка — чисел тут немає', language);
+  }, [language, openFilterGroup, openFilterGroupCounts]);
+
   const isSearching = searchQuery.trim().length > 0;
 
 
@@ -7193,37 +7198,53 @@ const Matching = () => {
   }, [navigate, searchQuery, visibleUsers.length]);
 
 
-  // Згорнутий ряд показує три чіпи, решта ховається за «+N». Але «+N» тепер
-  // розгортає ряд на місці, а не веде в шухляду фільтрів: читач питає «що це за
-  // фільтри», і відповідь на це — самі підписи, а не форма, де їх треба шукати
-  // заново. Розгорнутий ряд переноситься на кілька рядків і нічого не обрізає.
-  // Чіпи «Типу профілю» показують рівно те, що пропонує шухляда цьому читачеві:
-  // перелік один на обидва місця, інакше ряд чіпів казав би про позначку, якої
-  // в шухляді вже немає.
+  // Чіпи «Типу профілю» показують рівно те, що пропонує поповер цьому читачеві:
+  // перелік один на обидва місця, інакше рейка казала б про позначку, якої в
+  // групі вже немає.
   const roleOptionKeys = useMemo(
     () => listFeedRoleFilterKeysForViewer(currentUserRole),
     [currentUserRole],
   );
+  // Рейка будує свої чіпи сама; тут вони потрібні рівно заради одного
+  // питання — чи не порожня якась група: саме вона є причиною порожнього
+  // екрана, і порожній екран мусить називати її словом.
   const filterChips = useMemo(
     () => canUseMatchingFilters
       ? buildMatchingFilterChips(filters, language, { roleOptionKeys })
       : [],
     [canUseMatchingFilters, filters, language, roleOptionKeys],
   );
-  const [showAllFilterChips, setShowAllFilterChips] = useState(false);
-  const visibleFilterChips = showAllFilterChips ? filterChips : filterChips.slice(0, MAX_FILTER_CHIPS);
-  const hiddenFilterChipCount = filterChips.length - visibleFilterChips.length;
   const emptyFilterGroup = filterChips.find(chip => chip.danger) || null;
-
-  // Розгорнутий ряд, з якого зняли фільтри, не має лишатись розгорнутим назавжди.
-  useEffect(() => {
-    if (filterChips.length > MAX_FILTER_CHIPS) return;
-    setShowAllFilterChips(false);
-  }, [filterChips.length]);
 
   const resetFilterGroup = React.useCallback(filterName => {
     setFilterGroupReset(previous => ({ token: previous.token + 1, name: filterName }));
   }, []);
+
+  /*
+   * «Скинути все» скидає фільтри, а не кеш.
+   *
+   * У шухляді єдина кнопка скидання зносила заразом увесь кеш карток
+   * і тягла стрічку з бази заново — тобто за «покажіть усех» платили
+   * повним перезавантаженням. Скинути звуження й скинути кеш — це два
+   * різних наміри, і другий лишився там, де йому місце: у меню трьох
+   * крапок («Оновити кеш»), де й стояв увесь цей час другою копією.
+   */
+  const resetAllFilters = React.useCallback(() => {
+    setFilterResetToken(previous => previous + 1);
+    setOpenFilterGroup(null);
+  }, []);
+
+  /*
+   * Відкрити іншу групу — це застосувати попередню.
+   *
+   * Чернетка тут одна на всі групи, тож перехід з групи в групу без
+   * застосування лишав би набране висіти невидимим: чіп у рейці казав би
+   * старе, а «Показати N» у новій групі рахувало б разом із незастосованим.
+   */
+  const handleOpenFilterGroup = React.useCallback(nextGroup => {
+    if (showFiltersRef.current) applyFilters(draftFiltersRef.current);
+    setOpenFilterGroup(nextGroup);
+  }, [applyFilters]);
 
   /**
    * Значення дофільтра у стрічці не зберігається окремо — воно виводиться з
@@ -7234,76 +7255,40 @@ const Matching = () => {
    * увімкнена опція групи» і є тим станом, який рядок уміє показати; будь-який
    * інший — це вже не уточнення, і рядок чесно показує себе порожнім.
    */
-  const feedRefineValue = useMemo(() => {
-    const spec = getRefineKeySpec(refineKey);
-    if (!spec.filterName) return null;
-    const group = filters?.[spec.filterName];
-    if (!group || typeof group !== 'object') return null;
-    const enabled = Object.keys(group).filter(option => group[option]);
-    return enabled.length === 1 ? enabled[0] : null;
-  }, [filters, refineKey]);
-
-  const refineActiveValue = isSearching ? searchRefineValue : feedRefineValue;
+  /*
+   * Дофільтр належить видачі пошуку, а не стрічці.
+   *
+   * У стрічці цей рядок стояв і писав у ті самі групи фільтра, що й
+   * шухляда, але протилежною логікою: там тап означав «лише це
+   * значення», тут — «усе, крім знятого». Два керма на один стан, і з
+   * протилежними моделями в голові читача. Те саме, що вмів рядок у
+   * стрічці, тепер робить поповер групи в рейці — і з тими самими числами
+   * біля значень. У видачі ж він лишається: там він звужує саму видачу
+   * (`searchRefineValue`), а не фільтри стрічки, і другого керма на це немає.
+   */
+  const refineActiveValue = searchRefineValue;
 
   const handleRefineKeyChange = React.useCallback(nextKey => {
-    const previous = getRefineKeySpec(refineKey);
     setRefineKey(nextKey);
     setSearchRefineValue(null);
     setSearchRevealCount(MATCHING_FIRST_PAGE_BATCH);
-    // Ключ змінився — попереднє звуження знімається разом з ним, інакше
-    // стрічка лишилась би відфільтрованою тим, чого рядок уже не показує.
-    if (!isSearching && previous.filterName) resetFilterGroup(previous.filterName);
-  }, [isSearching, refineKey, resetFilterGroup]);
+  }, []);
 
   const handleRefineSelect = React.useCallback(value => {
-    if (isSearching) {
-      setSearchRefineValue(value);
-      // Уточнення відкриває перший екран заново: звужена видача — це новий
-      // перший результат, а не продовження попереднього. Набір, менший за
-      // сторінку, від цього показується цілком — чекати десять секунд заради
-      // третьої з трьох означало б притишувати те, за що пошук уже заплатив.
-      setSearchRevealCount(MATCHING_FIRST_PAGE_BATCH);
-      return;
-    }
-    const spec = getRefineKeySpec(refineKey);
-    if (!spec.filterName) return;
-    if (!value) {
-      resetFilterGroup(spec.filterName);
-      return;
-    }
-    // У стрічці тап пише в ту саму групу, яку відкриває шухляда: жодного нового
-    // шляху читання: план будує наявний планувальник, і виходить він
-    // найдешевшим — `include`.
-    setFilterGroupSelect(previous => ({ token: previous.token + 1, name: spec.filterName, value }));
-  }, [isSearching, refineKey, resetFilterGroup]);
+    setSearchRefineValue(value);
+    // Уточнення відкриває перший екран заново: звужена видача — це новий
+    // перший результат, а не продовження попереднього. Набір, менший за
+    // сторінку, від цього показується цілком — чекати десять секунд заради
+    // третьої з трьох означало б притишувати те, за що пошук уже заплатив.
+    setSearchRevealCount(MATCHING_FIRST_PAGE_BATCH);
+  }, []);
 
   /*
-   * Коли рядок уточнення на екрані.
-   *
-   * У видачі пошуку — на довгій: десять знайдених видно й так, а рядок над
-   * ними лише забирає висоту.
-   *
-   * У стрічці — щойно в ній є перша картка. Поріг у 24 стояв і тут, але стрічка
-   * віддає першу сторінку по десять: рядок не зʼявлявся взагалі, доки читач не
-   * прогорне вниз, підвантажить другу сторінку й **повернеться вгору**. Тобто
-   * інструмент, яким звужують видачу, знаходився випадково — і саме тоді, коли
-   * звужувати вже пізно.
-   *
-   * Смикання, від якого стеріг поріг, від цього не повертається: рядок
-   * зʼявляється один раз, з першою карткою, і далі лишається на місці.
+   * Коли рядок уточнення на екрані: на довгій видачі. Десять знайдених
+   * видно й так, а рядок над ними лише забирає висоту.
    */
-  const showRefineBar = (isSearching || canUseMatchingFilters) && (Boolean(refineActiveValue) || (
-    isSearching
-      ? searchRefinedUsers.length >= REFINE_MIN_RESULTS
-      : viewMode === 'default' && visibleUsers.length > 0
-  ));
-
-  // Ключ без індексу `searchKey` у стрічці не пропонується: там ключ мусить
-  // називати кандидатів, а не проріджувати завантажене.
-  useEffect(() => {
-    if (isSearching || isRefineKeyAvailableInFeed(refineKey)) return;
-    setRefineKey(DEFAULT_REFINE_KEY);
-  }, [isSearching, refineKey]);
+  const showRefineBar = isSearching
+    && (Boolean(refineActiveValue) || searchRefinedUsers.length >= REFINE_MIN_RESULTS);
 
   const collectionChips = useMemo(() => [
     {
@@ -8114,55 +8099,6 @@ const Matching = () => {
 
   return (
     <>
-      {canUseMatchingFilters && showFilters && <FilterOverlay show={showFilters} onClick={() => setShowFilters(false)} />}
-      {canUseMatchingFilters && <FilterContainer
-        show={showFilters}
-        $themeMode={themeMode}
-        onClick={e => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="matching-filter-title"
-      >
-        <FilterDrawerHeader>
-          <FilterDrawerTitle>
-            <FilterDrawerHeading id="matching-filter-title">{uiText('Фільтри matching', language)}</FilterDrawerHeading>
-            <FilterDrawerSubtitle>{filterDrawerSubtitle}</FilterDrawerSubtitle>
-          </FilterDrawerTitle>
-          <FilterDrawerClose
-            type="button"
-            aria-label={uiText('Закрити фільтри', language)}
-            title={uiText('Закрити фільтри', language)}
-            onClick={() => setShowFilters(false)}
-          >
-            <FaTimes />
-          </FilterDrawerClose>
-        </FilterDrawerHeader>
-        <FilterDrawerBody>
-          <FilterPanel
-            mode="matching"
-            hideUserId
-            hideCommentLength
-            onChange={handleFiltersChange}
-            resetToken={filterResetToken}
-            groupResetToken={filterGroupReset.token}
-            groupResetName={filterGroupReset.name}
-            groupSelectToken={filterGroupSelect.token}
-            groupSelectName={filterGroupSelect.name}
-            groupSelectValue={filterGroupSelect.value}
-            nonAdminAllActive={!isAdmin}
-            roleOptionKeys={roleOptionKeys}
-            viewerRole={currentUserRole}
-          />
-        </FilterDrawerBody>
-        <FilterDrawerFooter>
-          <FilterResetButton type="button" onClick={resetFiltersAndCache}>
-            Скинути фільтри й оновити кеш
-          </FilterResetButton>
-          <FilterApplyButton type="button" onClick={applyDraftFilters}>
-            Показати {draftFilteredCount}
-          </FilterApplyButton>
-        </FilterDrawerFooter>
-      </FilterContainer>}
       <Container $themeMode={themeMode}>
         <InnerContainer>
           <MatchingTopBar>
@@ -8199,18 +8135,6 @@ const Matching = () => {
               />
             </SearchField>
             <TopActions>
-              {canUseMatchingFilters && <TopActionGroup aria-label={uiText('Фільтри matching', language)}>
-                <ActionButton
-                  type="button"
-                  onClick={() => setShowFilters(s => !s)}
-                  $active={showFilters || activeFilterGroupCount > 0}
-                  aria-label={uiText(showFilters ? 'Закрити фільтри' : 'Відкрити фільтри', language)}
-                  title={uiText(showFilters ? 'Закрити фільтри' : 'Відкрити фільтри', language)}
-                >
-                  <FaFilter />
-                  {activeFilterGroupCount > 0 && <ActionBadge>{activeFilterGroupCount}</ActionBadge>}
-                </ActionButton>
-              </TopActionGroup>}
               {showBackendTrafficToggle && (
                 <TopActionGroup aria-label={uiText('Адміністративні дії matching', language)}>
                   <BackendTrafficToggleButton
@@ -8275,39 +8199,6 @@ const Matching = () => {
                   </Chip>
                 );
               })}
-              {visibleFilterChips.map(chip => (
-                <Chip
-                  key={chip.filterName}
-                  type="button"
-                  $active
-                  $danger={chip.danger}
-                  title={uiText('{text} — повернути групу в дефолт', language, { text: chip.text })}
-                  onClick={() => resetFilterGroup(chip.filterName)}
-                >
-                  <span>{chip.text}</span>
-                  <ChipRemove aria-hidden="true">✕</ChipRemove>
-                </Chip>
-              ))}
-              {hiddenFilterChipCount > 0 && (
-                <Chip
-                  type="button"
-                  aria-expanded={false}
-                  title={uiText('Показати ще {count} активних фільтрів', language, { count: hiddenFilterChipCount })}
-                  onClick={() => setShowAllFilterChips(true)}
-                >
-                  <span>+{hiddenFilterChipCount}</span>
-                </Chip>
-              )}
-              {showAllFilterChips && filterChips.length > MAX_FILTER_CHIPS && (
-                <Chip
-                  type="button"
-                  aria-expanded
-                  title={uiText('Згорнути список активних фільтрів', language)}
-                  onClick={() => setShowAllFilterChips(false)}
-                >
-                  <span>{uiText('Згорнути', language)}</span>
-                </Chip>
-              )}
             </ChipsGroup>
             <LayoutToggleButton
               type="button"
@@ -8318,18 +8209,51 @@ const Matching = () => {
               {nextViewLayoutIcon}
             </LayoutToggleButton>
           </ChipsRow>
+          {/* Фільтри стоять під колекціями, а не навпаки: спершу читач
+              обирає деку (усі / вподобані / приховані), а вже потім звужує
+              її вміст. У пошуку рейки немає зовсім: видача — це відповідь на
+              набране, і звужує її рядок уточнення, а не фільтри стрічки. */}
+          {canUseMatchingFilters && !isSearching && (
+            <MatchingFilterRail
+              filters={filters}
+              language={language}
+              roleOptionKeys={roleOptionKeys}
+              openGroup={openFilterGroup}
+              onOpenGroup={handleOpenFilterGroup}
+              onResetGroup={resetFilterGroup}
+              onResetAll={resetAllFilters}
+              applyCount={draftFilteredCount}
+              onApply={applyDraftFilters}
+              countsNote={openFilterGroupCountsNote}
+            >
+              <FilterPanel
+                mode="matching"
+                hideUserId
+                hideCommentLength
+                bare
+                onChange={handleFiltersChange}
+                resetToken={filterResetToken}
+                groupResetToken={filterGroupReset.token}
+                groupResetName={filterGroupReset.name}
+                nonAdminAllActive={!isAdmin}
+                roleOptionKeys={roleOptionKeys}
+                viewerRole={currentUserRole}
+                // Закрита рейка все одно тримає панель змонтованою — вона й є
+                // сховищем фільтрів, тож зняти її з дерева означало б губити
+                // чернетку й ганяти ефект перебору групи ролі на кожне відкриття.
+                allowedFilterNames={openFilterGroup ? [openFilterGroup] : MATCHING_FILTER_GROUP_NAMES}
+                optionCounts={openFilterGroupCounts}
+              />
+            </MatchingFilterRail>
+          )}
           {showRefineBar && (
             <SearchRefineBar
               users={visibleUsers}
               activeKey={refineKey}
               activeValue={refineActiveValue}
-              shownCount={isSearching ? filteredUsers.length : undefined}
+              shownCount={filteredUsers.length}
               onChangeKey={handleRefineKeyChange}
               onSelectValue={handleRefineSelect}
-              keysAvailableInFeedOnly={!isSearching}
-              // У стрічці числа рахуються по завантаженому, а не по всій базі —
-              // і рядок каже це прямо, а не вдає точність, якої не має.
-              scanNote={isSearching ? '' : uiText('серед завантажених', language)}
             />
           )}
           {/* «Owner not found» стояло тут англійським рядком у коді й нічого
