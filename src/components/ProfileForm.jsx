@@ -26,6 +26,7 @@ import { resolvePpTechnicalInputTarget } from 'utils/ppTechnicalInputTarget';
 import { buildOverlayFieldEntries, settleOverlayValueForCard } from 'utils/multiAccountEdits';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
+import { StoredCommentsSection } from './smallCard/StoredCommentsSection';
 import { FaArrowRight, FaTimes } from 'react-icons/fa';
 import { InfoModal } from './InfoModal';
 import { auth, database } from './config';
@@ -817,7 +818,11 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
     'city',
   ];
 
-  const sortedKeys = Object.keys(extendedData).sort((a, b) => {
+  // Службові позначки застосунку полями анкети не є: `__photosHydrated`,
+  // `__matchingSummary`, `__limitedProfile` ставить сам код — у базі їх немає,
+  // і хрестик проти них пропонує стерти те, чого не існує. Дамп мусить
+  // показувати бекенд, а не свою памʼять про нього.
+  const sortedKeys = Object.keys(extendedData).filter(key => !key.startsWith('__')).sort((a, b) => {
     const indexA = priority.indexOf(a);
     const indexB = priority.indexOf(b);
 
@@ -827,7 +832,7 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
     return indexA - indexB;
   });
 
-  return sortedKeys.map(key => {
+  const fieldRows = sortedKeys.map(key => {
     const nestedKey = parentKey ? `${parentKey}.${key}` : key;
     const value = extendedData[key];
 
@@ -952,6 +957,24 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
       </div>
     );
   });
+
+  // Коментарі до анкети не належать: вони лежать у двох окремих сховищах
+  // (приватна нотатка під власником, публічні відгуки під карткою), тож у дамп
+  // полів не потрапляли взагалі — хоча це те саме «все, що база знає про цю
+  // людину». Секція стоїть рівно на корені: у вкладених обʼєктах картки немає.
+  if (parentKey) return fieldRows;
+
+  const commentsCardId = String(userId || data?.userId || '').trim();
+  if (!commentsCardId || options.showStoredComments === false) return fieldRows;
+
+  return [
+    ...fieldRows,
+    <StoredCommentsSection
+      key="__storedComments"
+      cardId={commentsCardId}
+      load={Boolean(options.loadStoredComments)}
+    />,
+  ];
 };
 
 /**
@@ -2937,6 +2960,10 @@ ${entries.join('\n')}`;
             userId: state?.userId,
             setUsers: setState,
             onRemoveKey: handleProfileViewRemove,
+            // Відкрита картка одна, і коментарі до неї читаються тут-таки:
+            // саме за ними сюди й заходять. У списку (UsersList) блок стоїть
+            // під кожним рядком, тож там він показує вже прочитане.
+            loadStoredComments: true,
           })}
         </div>
       )}

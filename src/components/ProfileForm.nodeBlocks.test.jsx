@@ -10,6 +10,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 jest.mock('./config', () => ({
   auth: { currentUser: { uid: 'admin-uid' } },
   database: {},
+  // Блок «усі поля» показує ще й коментарі до картки — обидва сховища.
+  fetchUserComment: jest.fn(async () => null),
+  fetchPublicProfileCommentsStrict: jest.fn(async () => ({})),
 }));
 
 jest.mock('firebase/database', () => ({

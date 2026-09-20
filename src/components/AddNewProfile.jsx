@@ -181,7 +181,8 @@ import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { sortUsersByStimulationSchedule } from 'utils/stimulationScheduleSort';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
 import { rebuildAllFilterSetIndexes } from 'utils/filterSetsIndex';
-import { buildMatchingCardsPayloadFromCollections } from 'utils/matchingCardIndex';
+import { buildMatchingCardsPayloadFromCollections, isMatchingSummaryCard } from 'utils/matchingCardIndex';
+import { useHardwareBackClose } from '../hooks/useHardwareBackClose';
 import {
   LEGACY_IMPORT_COMMENT_OWNER_ID,
   LEGACY_IMPORT_ID_PREFIXES,
@@ -1239,6 +1240,17 @@ const applyDeletedKeysToPayload = (payload, deletedKeys = []) => {
 
   return payload;
 };
+
+/**
+ * Чи це проєкція, а не анкета.
+ *
+ * Рядок списку може приїхати з `matchingCards` (позначка `__matchingSummary`)
+ * або з урізаного читання за правами (`__limitedProfile`) — в обох випадках це
+ * десяток полів, яких досить рядку й мало відкритій картці.
+ */
+const isSummaryProfileSnapshot = card => (
+  isMatchingSummaryCard(card) || card?.__limitedProfile === true
+);
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const cloneProfileState = useCallback(profileState => JSON.parse(JSON.stringify(profileState || {})), []);
@@ -2941,7 +2953,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       stateKeysCount: Object.keys(currentState).length,
     });
 
-    if (Object.keys(currentState).length > 1) {
+    // Картка стрічки — це проєкція `matchingCards`, а не анкета: десяток
+    // скалярів, з яких малюють рядок. Відкрита анкета мусить показати все, що
+    // в базі є, — і «всі поля», і форма беруть її з того самого `state`, тож
+    // поки проєкція рахувалась за готову анкету, адмін бачив у відкритій
+    // картці рівно те, що й у рядку списку, а решта полів (освіта, зовнішність,
+    // технічні, контакти) не приїжджала ніколи: читання з бекенду тут
+    // пропускалось саме тому, що «стан уже наповнений». Читати повну анкету
+    // на кожен рядок списку не можна, а на відкриту картку — рівно те, заради
+    // чого її відкривають.
+    const stateIsSummaryOnly = isSummaryProfileSnapshot(currentState);
+
+    if (Object.keys(currentState).length > 1 && !stateIsSummaryOnly) {
       if (!currentProfileSource) {
         logProfileRestoreStep('profile-data:state-already-hydrated-set-cache-source', {
           requestId,
@@ -2962,7 +2985,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
-    const cached = getCard(activeUserId);
+    // Кеш теж буває проєкцією: у нього лягає те, що показував список. Для
+    // відкритої картки це не «свіжі дані», а та сама неповна анкета, тож такий
+    // кеш іде в діло лише як миттєвий показ, а по анкету однаково йдемо в базу.
+    const cachedCard = getCard(activeUserId);
+    const cached = cachedCard && !isSummaryProfileSnapshot(cachedCard) ? cachedCard : null;
     if (cached) {
       logProfileRestoreStep('profile-data:cache-hit-hydrate-state', {
         requestId,
@@ -3006,7 +3033,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               profileFetchRequestRef.current !== requestId ||
               latestUserId !== activeUserId ||
               profileSnapshotVersionRef.current !== startedVersion ||
-              Object.keys(latestState).length > 1;
+              // Наповнений стан означає «локальне свіжіше» — але проєкція
+              // стрічки наповненою анкетою не є, і відповідь бекенду мусить її
+              // перекрити. Справжню правку, зроблену поки читалась анкета,
+              // ловить версія знімка вище.
+              (Object.keys(latestState).length > 1 && !isSummaryProfileSnapshot(latestState));
 
             if (isStaleResponse) {
               logProfileSnapshotUpdate('backend', {
@@ -7361,6 +7392,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
     setState({});
   }, [buildListQueryKey, filters, location.pathname, location.search, navigate, setSearch, setState, state?.userId]);
+
+  /**
+   * Відкрита картка закривається апаратною кнопкою «назад».
+   *
+   * Адреса екрана при відкритті картки переписується через `replace`
+   * (`url-sync:write-user-id`), тобто власного запису в історії картка не
+   * лишала — і кнопка андроїда виносила читача з усього екрана анкет замість
+   * того, щоб повернути його до списку, з якого він картку й відкрив.
+   * Стрілка в шапці (`topBlueAction`) веде туди ж, тож обидва жести тепер
+   * роблять одне й те саме.
+   *
+   * Два випадки жест уже обслуговують інші обробники, і другий запис в
+   * історію зламав би їх: перегляд дублів кладе свій власний
+   * (`isDuplicateView`), а повернення в модалку «Ще» слухає той самий
+   * `popstate` і має відновити саме її, а не список.
+   */
+  const handleHardwareBackFromProfile = useCallback(() => {
+    if (shouldReturnToMoreActionsRef.current) return;
+    handleBackToPreviousList();
+  }, [handleBackToPreviousList]);
+
+  useHardwareBackClose(
+    Boolean(state?.userId) && !isDuplicateView,
+    handleHardwareBackFromProfile,
+    'addNewProfileCard',
+  );
 
   useEffect(() => {
     if (!state?.userId) {
