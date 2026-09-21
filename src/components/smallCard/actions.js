@@ -1,5 +1,7 @@
 import {
   fetchUserById,
+  syncUserSearchIdIndex,
+  syncUserSearchKeyIndex,
   updateDataInRealtimeDB,
   updateProfileNodesInRTDB,
   updateDataInFiresoreDB
@@ -549,8 +551,26 @@ export const handleSubmit = async (userData, condition, removeKeys = []) => {
   }
 };
 
+/**
+ * Перенесення значення з картки в картку (таблиця порівняння дублікатів).
+ *
+ * Два місця тут коштували пошуку.
+ *
+ * Перше: анкету читали як `const { existingData } = await fetchUserById(...)`,
+ * а той віддає саму анкету, не обгортку, — тобто `existingData` був
+ * `undefined` **завжди**, і зведення йшло проти порожнечі.
+ *
+ * Друге, важливіше: перенесене значення не потрапляло в пошук. Індекс
+ * `searchId` наповнює `updateProfileNodesInRTDB` — і тільки він, тож картка
+ * адміністраторки індексувалась, а анкета акаунта (довгий id) іде через
+ * `updateDataInRealtimeDB`, який індексу не чіпає взагалі. Перенесений туди
+ * телефон чи імʼя не знаходились пошуком **ніколи**. `searchKey` при цьому не
+ * рухався в жодному з двох шляхів: перенесена група крові чи роль лишались у
+ * старому бакеті. Тепер обидва індекси зводяться тут, як це робить звичайне
+ * збереження анкети (`remoteUpdate` в `AddNewProfile`).
+ */
 export const handleSubmitAll = async (userData, overwrite) => {
-  const { existingData } = await fetchUserById(userData.userId);
+  const existingData = (await fetchUserById(userData.userId)) || {};
   const uploadedInfo =
     makeUploadedInfo(existingData, userData, overwrite) || {};
   if (uploadedInfo.lastDelivery) {
@@ -570,4 +590,18 @@ export const handleSubmitAll = async (userData, overwrite) => {
   } else {
     await updateProfileNodesInRTDB(userData.userId, uploadedInfo, 'update');
   }
+
+  // Індекси — після запису: ключ, що веде на значення, якого в картці не
+  // лежить, нікому не потрібен. Повторів тут не бояться — `searchId` пропускає
+  // вже підтверджену пару «ключ → картка» без жодного запиту, — а от відмова
+  // індексації не має скасовувати саме перенесення: значення вже в анкеті, і
+  // наступне збереження спробує проіндексувати його знову.
+  await Promise.all([
+    syncUserSearchIdIndex(userData.userId, existingData, uploadedInfo).catch(error => {
+      console.warn('[compare] не вдалося оновити searchId після перенесення', error);
+    }),
+    syncUserSearchKeyIndex(userData.userId, existingData, uploadedInfo).catch(error => {
+      console.warn('[compare] не вдалося оновити searchKey після перенесення', error);
+    }),
+  ]);
 };
