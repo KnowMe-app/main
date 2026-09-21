@@ -183,6 +183,7 @@ import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
 import { rebuildAllFilterSetIndexes } from 'utils/filterSetsIndex';
 import { buildMatchingCardsPayloadFromCollections, isMatchingSummaryCard } from 'utils/matchingCardIndex';
 import { useHardwareBackClose } from '../hooks/useHardwareBackClose';
+import { listKeysAddedSince } from 'utils/profileHistoryDiff';
 import {
   LEGACY_IMPORT_COMMENT_OWNER_ID,
   LEGACY_IMPORT_ID_PREFIXES,
@@ -7458,19 +7459,45 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     [registerHistorySnapshot],
   );
 
+  /**
+   * Повернутись до знімка — це і записати його значення, і зняти те, чого в
+   * ньому немає.
+   *
+   * Обидві кнопки зберігали знімок звичайним `handleSubmit(знімок)`, а це
+   * `update`: він уміє лише записати те, що в payload є. Тож поле, заведене
+   * **після** знімка (уперше набрана пошта, telegram, нотатка), відміну
+   * переживало — на екрані воно зникало разом зі станом, а в базі лишалось і
+   * поверталось у картку з першим же перечитуванням. Виглядало це як кнопка,
+   * що спрацювала наполовину, причому саме на щойно введеному полі.
+   *
+   * Тепер такі ключі їдуть тим самим шляхом, що й хрестик у «всіх полях», —
+   * через `pendingDeletedKeysRef`, тобто `null` у payload. А `overwrite`
+   * потрібен для анкети акаунта: там писач зводить payload із перечитаною
+   * копією (`makeUploadedInfo`), і без нього відмінене значення лягло б у
+   * історію поля **новою** версією поруч зі старою замість того, щоб її
+   * замінити.
+   */
+  const applyProfileHistorySnapshot = async (target, previousSnapshot) => {
+    listKeysAddedSince(target, previousSnapshot).forEach(key => {
+      pendingDeletedKeysRef.current.add(key);
+    });
+    await handleSubmit(target, 'overwrite');
+  };
+
   const handleUndoProfileChanges = async () => {
     if (!state?.userId) return;
     const history = editHistoryRef.current;
     if (!history.undoStack.length) return;
 
     const previous = history.undoStack.pop();
-    history.redoStack.push(cloneProfileState(history.current));
+    const undoneState = cloneProfileState(history.current);
+    history.redoStack.push(undoneState);
     history.current = cloneProfileState(previous);
     historyNavigationRef.current = true;
     setState(previous);
     setUsers(prev => ({ ...prev, [previous.userId]: previous }));
     setHistoryVersion(prev => prev + 1);
-    await handleSubmit(previous);
+    await applyProfileHistorySnapshot(previous, undoneState);
   };
 
   const handleRedoProfileChanges = async () => {
@@ -7479,13 +7506,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (!history.redoStack.length) return;
 
     const next = history.redoStack.pop();
-    history.undoStack.push(cloneProfileState(history.current));
+    const undoneState = cloneProfileState(history.current);
+    history.undoStack.push(undoneState);
     history.current = cloneProfileState(next);
     historyNavigationRef.current = true;
     setState(next);
     setUsers(prev => ({ ...prev, [next.userId]: next }));
     setHistoryVersion(prev => prev + 1);
-    await handleSubmit(next);
+    await applyProfileHistorySnapshot(next, undoneState);
   };
 
   const canUndoChanges = Boolean(state?.userId) && editHistoryRef.current.undoStack.length > 0;
