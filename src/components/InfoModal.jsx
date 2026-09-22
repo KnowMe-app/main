@@ -7,6 +7,7 @@ const ModalOverlay = styled.div`
   left: 0;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   background-color: rgba(20, 16, 12, 0.55);
   backdrop-filter: blur(2px);
   display: flex;
@@ -159,6 +160,14 @@ const LargeModalContent = styled(ModalContent)`
   overflow: auto;
 `;
 
+const ComparisonModalContent = styled(LargeModalContent)`
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+`;
+
 const MenuModalContent = styled(ModalContent)`
   width: min(92vw, 380px);
   padding: 14px;
@@ -235,8 +244,23 @@ export const InfoModal = ({
   MoreActions,
   FlowComposer,
   initialCustomInput = '',
+  comparisonScrollRef,
 }) => {
   const openedAtRef = useRef(Date.now());
+  const comparisonContentRef = useRef(null);
+  useEffect(() => {
+    if (text !== 'compareCards') return undefined;
+    const body = document.body;
+    const previousStyle = body.getAttribute('style');
+    const scrollY = window.scrollY;
+    Object.assign(body.style, { position: 'fixed', top: `-${scrollY}px`, width: '100%', overflow: 'hidden' });
+    if (comparisonContentRef.current) comparisonContentRef.current.scrollTop = comparisonScrollRef?.current || 0;
+    return () => {
+      if (previousStyle === null) body.removeAttribute('style');
+      else body.setAttribute('style', previousStyle);
+      window.scrollTo(0, scrollY);
+    };
+  }, [text, comparisonScrollRef]);
 
   const delProfile = (
     <>
@@ -381,6 +405,7 @@ export const InfoModal = ({
   if (text === 'dotsMenu') {
     ContentComponent = MenuModalContent;
   }
+  if (text === 'compareCards') ContentComponent = ComparisonModalContent;
 
   const handleOverlayClick = event => {
     if (Date.now() - openedAtRef.current < 250) {
@@ -395,7 +420,16 @@ export const InfoModal = ({
 
   return (
     <ModalOverlay onClick={handleOverlayClick}>
-      <ContentComponent onClick={event => event.stopPropagation()}>{body}</ContentComponent>
+      <ContentComponent
+        role={text === 'compareCards' ? 'dialog' : undefined}
+        aria-modal={text === 'compareCards' ? true : undefined}
+        aria-label={text === 'compareCards' ? 'Порівняти картки' : undefined}
+        ref={comparisonContentRef}
+        onScroll={event => {
+          if (text === 'compareCards' && comparisonScrollRef) comparisonScrollRef.current = event.currentTarget.scrollTop;
+        }}
+        onClick={event => event.stopPropagation()}
+      >{body}</ContentComponent>
     </ModalOverlay>
   );
 };

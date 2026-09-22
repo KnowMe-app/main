@@ -1693,6 +1693,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [userIdToDelete, setUserIdToDelete] = useState(null);
   const navigate = useNavigate();
+  const comparisonReturnRef = useRef(null);
+  const comparisonScrollRef = useRef(0);
   const access = resolveAccess({
     uid: auth.currentUser?.uid,
     accessLevel: state.accessLevel || localStorage.getItem('accessLevel'),
@@ -2740,6 +2742,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const currentUserIdInUrl = params.get('userId') || '';
     const activeUserId = String(state.userId || '').trim();
 
+    // Back has reached the list entry; do not replace it with the card URL
+    // before the comparison restoration effect clears the active card.
+    if (comparisonReturnRef.current?.key === location.key && !currentUserIdInUrl) return;
+
     if (activeUserId) {
       if (currentUserIdInUrl === activeUserId) return;
       logProfileRestoreStep('url-sync:write-user-id', {
@@ -2766,7 +2772,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       { pathname: location.pathname, search: nextSearch ? `?${nextSearch}` : '' },
       { replace: true }
     );
-  }, [canAccessAdd, location.pathname, location.search, navigate, state.userId]);
+  }, [canAccessAdd, location.key, location.pathname, location.search, navigate, state.userId]);
 
   useEffect(() => {
     const normalized = (search || '').trim();
@@ -3858,6 +3864,25 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const [compare, setCompare] = useState('');
+  const openComparedCard = (user, refresh) => {
+    comparisonReturnRef.current = { key: location.key, search, refresh };
+    const params = new URLSearchParams(location.search);
+    params.set('userId', user.userId);
+    if (search) params.set('search', search);
+    setState(user);
+    setShowInfoModal(false);
+    navigate({ pathname: location.pathname, search: `?${params.toString()}` });
+  };
+
+  useEffect(() => {
+    const previous = comparisonReturnRef.current;
+    if (!previous || previous.key !== location.key) return;
+    setState({});
+    setSearch(previous.search);
+    setShowInfoModal('compareCards');
+    comparisonReturnRef.current = null;
+    previous.refresh?.().catch(error => toast.error(`Не вдалося оновити порівняння: ${error?.message || error}`));
+  }, [location.key, setState, setSearch]);
   const [moreActionsState, setMoreActionsState] = useState({
     user: null,
     cards: [],
@@ -6121,6 +6146,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   useEffect(() => {
     if (isDuplicateView && state.userId) {
+      if (comparisonReturnRef.current) return undefined;
       const currentId = state.userId;
       const handlePopState = () => {
         setState({});
@@ -8247,7 +8273,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             {!userNotFound && currentFilter !== OVERLAY_REVIEW_FILTER && (
               <>
                 <UsersList
-                  setCompare={setCompare}
+                  setCompare={value => {
+                    if (value === null) comparisonScrollRef.current = 0;
+                    setCompare(value);
+                  }}
+                  onOpenComparedCard={openComparedCard}
                   setShowInfoModal={setShowInfoModal}
                   onOpenMoreActions={openMoreActionsModal}
                   users={paginatedUsersWithPhotos}
@@ -8281,6 +8311,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           Context={dotsMenu}
           DelConfirm={delConfirm}
           CompareCards={compareCards}
+          comparisonScrollRef={comparisonScrollRef}
           MoreActions={moreActions}
         />
       )}

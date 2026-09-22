@@ -9,13 +9,10 @@ import {
   saveMyCardComment,
 } from '../config';
 import toast from 'react-hot-toast';
+import { currentPersonalComment } from '../../utils/comparisonValues';
 import { COMMENTS_UPDATED_EVENT } from '../../utils/commentsStorage';
 
 const FALLBACK_FIREBASE_PROJECT_ID = 'webringitapp';
-const combineComments = (legacyValue, storedValue) => [legacyValue, storedValue]
-  .map(value => String(value || '').trim())
-  .filter(Boolean)
-  .join('\n\n');
 const getFirebaseConsoleProjectId = () => process.env.REACT_APP_PROJECT_ID || FALLBACK_FIREBASE_PROJECT_ID;
 const getFirebaseRealtimeDatabaseName = () => {
   const fallbackProjectId = getFirebaseConsoleProjectId();
@@ -69,7 +66,7 @@ export const FieldComment = ({ userData, extendedMode = false, placeholder, onLe
 
     initialCommentReadRef.current = fetchUserComment(ownerId, cardId).then(existing => {
       const storedText = String(existing?.text || '').trim();
-      const combinedText = combineComments(legacyComment, storedText);
+      const combinedText = currentPersonalComment(legacyComment, existing);
       if (!cancelled) {
         if (!dirtyRef.current) {
           setText(combinedText);
@@ -87,7 +84,7 @@ export const FieldComment = ({ userData, extendedMode = false, placeholder, onLe
   useEffect(() => {
     const syncCopiedComment = event => {
       if (event.detail?.ownerId !== ownerId || event.detail?.cardId !== cardId) return;
-      const combined = combineComments(legacyComment, event.detail.text);
+      const combined = String(event.detail.text ?? '');
       setText(combined);
       initialTextRef.current = combined;
     };
@@ -95,7 +92,7 @@ export const FieldComment = ({ userData, extendedMode = false, placeholder, onLe
     return () => window.removeEventListener(COMMENTS_UPDATED_EVENT, syncCopiedComment);
   }, [ownerId, cardId, legacyComment]);
 
-  const persist = async (value, force = false, mergeInitialComment = true) => {
+  const persist = async (value, force = false) => {
     if (!ownerId || !cardId) {
       toast.error('Не вдалося зберегти коментар: користувач або картка не визначені');
       return false;
@@ -108,15 +105,12 @@ export const FieldComment = ({ userData, extendedMode = false, placeholder, onLe
       const initialText = initialTextRef.current;
       const hasLegacyComment = hasLegacyCommentRef.current;
       const wasDirty = dirtyRef.current;
-      const { storedText, combinedText } = await initialCommentRead;
+      const { combinedText } = await initialCommentRead;
 
       // Focusing and blurring while the initial read is pending is not an edit.
       if (!force && !wasDirty) return true;
 
-      const shouldMergeStoredText = mergeInitialComment && initialText !== combinedText;
-      const valueToPersist = shouldMergeStoredText
-        ? combineComments(value, storedText)
-        : value;
+      const valueToPersist = force && !wasDirty ? combinedText : value;
       if (!force && valueToPersist === initialText) return true;
 
       if (hasLegacyComment) {

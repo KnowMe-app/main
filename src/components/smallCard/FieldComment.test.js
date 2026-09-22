@@ -28,14 +28,14 @@ describe('FieldComment', () => {
     toast.error.mockReset();
   });
 
-  it("combines the legacy card comment and current admin's multiData comment", async () => {
+  it("prefers the current personal comment over the stale legacy copy", async () => {
     fetchUserComment.mockResolvedValue({ text: 'my private note', updatedAt: 123 });
 
     render(<FieldComment userData={{ userId: 'user-1', myComment: 'legacy card value' }} />);
 
     expect(fetchUserComment).toHaveBeenCalledWith('admin-1', 'user-1');
     await waitFor(() => {
-      expect(screen.getByPlaceholderText('Додайте свій коментар').value).toBe('legacy card value\n\nmy private note');
+      expect(screen.getByPlaceholderText('Додайте свій коментар').value).toBe('my private note');
     });
   });
 
@@ -73,7 +73,7 @@ describe('FieldComment', () => {
     ));
   });
 
-  it('merges a backend comment that arrives while the user is editing', async () => {
+  it('does not append a stale backend version to an active edit', async () => {
     let resolveComment;
     fetchUserComment.mockReturnValue(new Promise(resolve => { resolveComment = resolve; }));
     render(<FieldComment userData={{ userId: 'user-1' }} />);
@@ -89,7 +89,7 @@ describe('FieldComment', () => {
 
     await waitFor(() => expect(saveMyCardComment).toHaveBeenCalledWith(
       'user-1',
-      'active edit\n\nexisting backend note',
+      'active edit',
       'admin-1',
     ));
   });
@@ -111,7 +111,7 @@ describe('FieldComment', () => {
 
     await waitFor(() => expect(saveMyCardComment).toHaveBeenCalledWith(
       'user-1',
-      'active edit\n\nexisting backend note',
+      'active edit',
       'admin-1',
     ));
   });
@@ -169,7 +169,7 @@ describe('FieldComment', () => {
 
     await waitFor(() => expect(saveMyCardComment).toHaveBeenCalledWith(
       'user-1',
-      'first card edit\n\nfirst card stored note',
+      'first card edit',
       'admin-1',
     ));
     expect(saveMyCardComment).not.toHaveBeenCalledWith(

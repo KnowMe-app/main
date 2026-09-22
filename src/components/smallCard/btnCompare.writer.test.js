@@ -1,7 +1,6 @@
 import React from 'react';
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-
 jest.mock('react-hot-toast', () => ({ success: jest.fn(), error: jest.fn() }));
 
 jest.mock('../config', () => ({
@@ -9,6 +8,7 @@ jest.mock('../config', () => ({
   fetchPublicProfileComments: jest.fn(),
   fetchUserComment: jest.fn(),
   saveMyCardComment: jest.fn(),
+  saveComparisonField: jest.fn(),
 }));
 
 jest.mock('../../utils/legacyImportCommentMigration', () => ({
@@ -18,7 +18,7 @@ jest.mock('../../utils/legacyImportCommentMigration', () => ({
 jest.mock('./actions', () => ({ handleSubmitAll: jest.fn() }));
 
 const { fetchPublicProfileComments, fetchUserComment } = require('../config');
-const { handleSubmitAll } = require('./actions');
+const { saveComparisonField } = require('../config');
 const { btnCompare } = require('./btnCompare');
 
 /**
@@ -36,7 +36,7 @@ describe('btnCompare — перенос позначки writer', () => {
   beforeEach(() => {
     fetchUserComment.mockReset().mockResolvedValue(null);
     fetchPublicProfileComments.mockReset().mockResolvedValue({});
-    handleSubmitAll.mockReset().mockResolvedValue(undefined);
+    saveComparisonField.mockReset().mockResolvedValue('Т, Ik');
   });
 
   it('лишає writer рядком, а не розбиває його комою на масив', async () => {
@@ -51,8 +51,8 @@ describe('btnCompare — перенос позначки writer', () => {
 
     fireEvent.click(screen.getByText('Т, Ik'));
 
-    await waitFor(() => expect(handleSubmitAll).toHaveBeenCalled());
+    await waitFor(() => expect(saveComparisonField).toHaveBeenCalledWith('card-next', 'writer', 'Т, Ik'));
     expect(usersRef.current['card-next'].writer).toBe('Т, Ik');
-    expect(handleSubmitAll.mock.calls[0][0].writer).toBe('Т, Ik');
+
   });
 });

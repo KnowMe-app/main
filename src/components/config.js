@@ -83,7 +83,7 @@ import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
 import { buildProfileNodePatch } from '../utils/profileNodeWriter';
 import { mergeProfileNodes, hasAnyProfileNode } from '../utils/profileNodeMerge';
 import { mergeProfileNodeCollections, PROFILE_NODE_NAMES } from '../utils/profileNodeCollections';
-import { PROFILE_CONTACT_FIELDS, PROFILE_NODES, resolveFieldOwnerNode } from '../utils/profileNodeSchema';
+import { PROFILE_CONTACT_FIELDS, PROFILE_NODES, resolveFieldOwnerNode, resolveCanonicalFieldName } from '../utils/profileNodeSchema';
 import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_FEED_FIELD,
@@ -1478,7 +1478,7 @@ export const setUserComment = async (cardId, text, ownerId) => {
     const updatedAt = Date.now();
     await set(ref2(database, getCommentPath(commentsOwnerId, cardId)), { text, updatedAt });
     invalidateOwnerCommentsCache(commentsOwnerId);
-    return { lastAction: updatedAt };
+    return { lastAction: updatedAt, text };
   } catch (error) {
     console.error('Error setting comment:', error);
     // A comment is saved outside the card payload, so callers cannot infer a
@@ -3777,9 +3777,9 @@ const normalizePhoneForStorage = value => {
   if (value === undefined || value === null) return value;
 
   if (Array.isArray(value)) {
-    return value
+    return [...new Set(value.flat(Infinity)
       .map(item => normalizePhoneForStorage(item))
-      .filter(item => item !== '' && item !== undefined && item !== null);
+      .filter(item => item !== '' && item !== undefined && item !== null))];
   }
 
   const digitsOnly = String(value).replace(/\D/g, '');
@@ -4349,6 +4349,48 @@ const throwProfileWriteFailure = (userId, targets) => {
  * фільтрує стрічка, і без нього анкета фільтрувалась би за роллю, з якої її
  * щойно перевели.
  */
+// Comparison transfers one field, not an outdated snapshot of the whole card.
+// Read its canonical path after an acknowledged write; a partial profile write
+// or a swallowed projection error must never produce a success toast.
+export const saveComparisonField = async (userId, field, value) => {
+  const ownerId = auth.currentUser?.uid;
+  if (!ownerId || !userId) throw new Error('Користувач або картка не визначені');
+  const canonical = resolveCanonicalFieldName(field);
+  let path;
+  const payload = normalizeStoredDates(sanitizeUploadedInfoPhones({ [field]: value }));
+  let savedValue = payload[field];
+  if (field === 'writer' || field === 'getInTouch') {
+    path = `multiData/${field}/${ownerId}/${userId}`;
+    const saved = field === 'writer'
+      ? await setOwnerWriter(ownerId, userId, savedValue)
+      : await setOwnerGetInTouch(ownerId, userId, savedValue);
+    if (!saved) throw new Error('Позначку не збережено');
+  } else {
+    const node = resolveFieldOwnerNode(field);
+    if (!node) throw new Error(`Поле ${field} не підтримує перенесення`);
+    path = `${node}/${userId}/${canonical}`;
+    if (node === PROFILE_NODES.matchingCards) {
+      savedValue = buildMatchingCardProjection(userId, payload)?.[canonical];
+      if (savedValue === undefined) throw new Error(`Некоректне значення ${field}`);
+    }
+    // In particular, height and weight live only in matchingCards. The generic
+    // node writer excludes that node and its projection refresh is best-effort.
+    const previous = (await readProfileFromNodes(userId, { includeTechnical: true })) || {};
+    await set(ref2(database, path), savedValue);
+    const next = { ...previous, [field]: savedValue };
+    await syncUserSearchIdIndex(userId, previous, next);
+    await syncUserSearchKeyIndex(userId, previous, next);
+    if (node !== PROFILE_NODES.matchingCards) {
+      await refreshMatchingCardAfterProfileWrite(userId, { [field]: savedValue }, 'update');
+    }
+    await mirrorProfileToLegacyUsers(userId, { [field]: savedValue }, 'update');
+  }
+  const snapshot = await get(ref2(database, path));
+  if (!snapshot.exists()) throw new Error(`Не підтверджено збереження ${field}`);
+  clearMatchingSearchResultCache();
+  return snapshot.val();
+};
+
 export const updateProfileRole = async (userId, nextRole) => {
   const id = String(userId || '').trim();
   const role = String(nextRole || '').trim().toLowerCase();
@@ -9102,9 +9144,6 @@ export const mergeDuplicateUsers = async () => {
           .filter(item => item !== '');
       };
 
-      if (!currentVal) return nextVal || '';
-      if (!nextVal) return currentVal;
-
       const currentArray = toArray(currentVal).flatMap(toArray);
       const nextArray = toArray(nextVal).flatMap(toArray);
 
@@ -9118,8 +9157,7 @@ export const mergeDuplicateUsers = async () => {
         return true;
       });
 
-      // Якщо залишилось одне значення – повертаємо його як рядок, якщо більше – як масив
-      return uniqueValues.length === 1 ? uniqueValues[0] : uniqueValues;
+      return uniqueValues;
     };
 
     const delKeys = [
