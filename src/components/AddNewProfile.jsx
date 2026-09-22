@@ -3864,10 +3864,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const [compare, setCompare] = useState('');
-  const openComparedCard = (user, refresh) => {
+  const openComparedCard = async (userId, refresh) => {
+    const user = await fetchUserById(userId);
+    if (!user) {
+      toast.error('Не вдалося завантажити анкету');
+      return;
+    }
     comparisonReturnRef.current = { key: location.key, search, refresh };
     const params = new URLSearchParams(location.search);
-    params.set('userId', user.userId);
+    params.set('userId', userId);
     if (search) params.set('search', search);
     setState(user);
     setShowInfoModal(false);

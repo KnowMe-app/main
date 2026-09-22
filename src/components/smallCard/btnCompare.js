@@ -188,7 +188,7 @@ export const btnCompare = (
         <table border="1" cellSpacing="0" cellPadding="5" style={{ borderCollapse: 'collapse', width: '100%' }}>
           <thead><tr><th style={{ width: '20%' }}>Key</th>{[currentUser, nextUser].map(user => (
             <th key={user.userId} style={{ width: '40%' }}>
-              {onOpenCard ? <button type="button" onClick={() => onOpenCard(user, () => refreshComparison(true))}>{user.userId}</button> : user.userId}
+              {onOpenCard ? <button type="button" onClick={() => onOpenCard(user.userId, () => refreshComparison(true))}>{user.userId}</button> : user.userId}
             </th>
           ))}</tr></thead>
           <tbody>{rows}</tbody>

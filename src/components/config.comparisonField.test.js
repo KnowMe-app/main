@@ -21,6 +21,7 @@ const setup = () => {
     readProfileFromNodes: jest.fn(async () => ({ height: ['160'], weight: ['50'] })),
     syncUserSearchIdIndex: jest.fn(), syncUserSearchKeyIndex: jest.fn(),
     refreshMatchingCardAfterProfileWrite: jest.fn(), mirrorProfileToLegacyUsers: jest.fn(),
+    updateDataInFiresoreDB: jest.fn(),
     clearMatchingSearchResultCache: jest.fn(), setOwnerWriter: jest.fn(), setOwnerGetInTouch: jest.fn(),
   };
   return { db, deps, save: new Function(...Object.keys(deps), body)(...Object.values(deps)) };
@@ -33,6 +34,29 @@ it.each(['height', 'weight'])('writes %s to its canonical node and confirms it b
   expect(deps.get).toHaveBeenCalledWith(`matchingCards/B/${field}`);
   expect(db[`matchingCards/B/${field === 'height' ? 'weight' : 'height'}`]).toEqual([field === 'height' ? '50' : '160']);
   expect(deps.syncUserSearchKeyIndex).toHaveBeenCalled();
+  expect(deps.set).toHaveBeenCalledWith('profileWorkflow/B/lastAction', expect.any(Number));
+});
+
+it.each([
+  ['state', 'region', 'Kyiv'],
+  ['cSection', 'csection', 'yes'],
+  ['c_section', 'csection', 'yes'],
+  ['cesareanSection', 'csection', 'yes'],
+])('normalizes legacy alias %s before routing it to %s', async (field, canonical, value) => {
+  const { deps, save } = setup();
+  await save('B', field, value);
+  expect(deps.set).toHaveBeenCalledWith(`matchingCards/B/${canonical}`, value);
+});
+
+it('updates the Firestore mirror when the legacy RTDB body was updated', async () => {
+  const { deps, save } = setup();
+  deps.mirrorProfileToLegacyUsers.mockResolvedValue(true);
+  await save('B', 'phone', '380671234567');
+  expect(deps.updateDataInFiresoreDB).toHaveBeenCalledWith(
+    'B',
+    expect.objectContaining({ phone: '380671234567', lastAction: expect.any(Number) }),
+    'check',
+  );
 });
 
 it('does not hide a rejected matchingCards write behind another successful node', async () => {
@@ -67,4 +91,7 @@ it('bulk duplicate merging also returns a unique array for a single value', () =
   const merge = new Function(`${mergeSource}\nreturn mergeValues;`)();
   expect(merge('phone', '123', ['123', '123'])).toEqual(['123']);
   expect(merge('phone', null, ['123', '123'])).toEqual(['123']);
+  expect(merge('cycleStatus', 'pregnant', 'pregnant')).toBe('pregnant');
+  expect(merge('lastCycle', null, '2026-08-01')).toBe('2026-08-01');
+  expect(merge('cycleStatus', 'pregnant', 'stimulation')).toBe('pregnant');
 });

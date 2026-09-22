@@ -3644,6 +3644,7 @@ const transientUserDataKeys = [
   '__profileSnapshotSource',
   '__profileSnapshotUpdatedAt',
   'myComment',
+  'publicComments',
 ];
 
 /**
@@ -4267,7 +4268,8 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) 
 };
 
 /**
- * Кого дзеркалити в legacy — питання, на яке відповідає сам id.
+ * Кого дзеркалити в legacy: акаунти впізнаються за форматом id, а для старих
+ * коротких карток перевіряємо, чи legacy-тіло вже існує.
  *
  * `/users` — вузол акаунтів: там лежать анкети тих, хто завів акаунт сам.
  * Картка, яку завела адміністраторка, акаунта не має — дзеркалити її нема для
@@ -4276,16 +4278,15 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) 
  * `getCardLegacyCollection` після цього назавжди вважає таку картку
  * legacy-анкетою і жене в `/users` кожне наступне збереження.
  *
- * Раніше на це відповідало читання самого `/users`: «тіло вже є — оновлюємо».
- * Читань legacy у вебі більше немає жодного, тож відповідь дає формат id:
- * довгий — це Firebase-Auth UID, тобто акаунт; короткий — картка, заведена в
- * застосунку, і legacy-тіла вона не отримує ані тепер, ані раніше.
- *
- * Наслідок свідомий: коротка картка, чиє тіло колись потрапило в `/users`,
- * більше не оновлюється там. Дані веб бере з вузлів, і застаріла копія в
- * дзеркалі на показ не впливає.
+ * Довгий id — Firebase-Auth UID, тому його дзеркало гарантоване. Нового тіла
+ * для короткої картки не створюємо, але вже наявне мусимо підтримувати: його
+ * досі можуть читати мобільний застосунок і старі профільні потоки.
  */
-const hasLegacyUsersBody = userId => isLongFormatUserId(userId);
+const hasLegacyUsersBody = async userId => {
+  if (isLongFormatUserId(userId)) return true;
+  const snapshot = await get(ref2(database, `users/${userId}`));
+  return snapshot.exists();
+};
 
 /**
  * Дзеркалення анкети в legacy-колекцію.
@@ -4303,9 +4304,8 @@ const hasLegacyUsersBody = userId => isLongFormatUserId(userId);
  * @returns {Promise<boolean>} чи прийняла legacy-колекція запис.
  */
 const mirrorProfileToLegacyUsers = async (userId, payload, condition) => {
-  if (!hasLegacyUsersBody(userId)) return false;
-
   try {
+    if (!(await hasLegacyUsersBody(userId))) return false;
     const legacyRef = ref2(database, `users/${userId}`);
     // Дати переписуються у формат мобільного застосунку рівно тут — на єдиному
     // вході в legacy. Вузли й картка стрічки лишаються в ISO.
@@ -4357,8 +4357,8 @@ export const saveComparisonField = async (userId, field, value) => {
   if (!ownerId || !userId) throw new Error('Користувач або картка не визначені');
   const canonical = resolveCanonicalFieldName(field);
   let path;
-  const payload = normalizeStoredDates(sanitizeUploadedInfoPhones({ [field]: value }));
-  let savedValue = payload[field];
+  const payload = normalizeStoredDates(sanitizeUploadedInfoPhones({ [canonical]: value }));
+  let savedValue = payload[canonical];
   if (field === 'writer' || field === 'getInTouch') {
     path = `multiData/${field}/${ownerId}/${userId}`;
     const saved = field === 'writer'
@@ -4376,14 +4376,18 @@ export const saveComparisonField = async (userId, field, value) => {
     // In particular, height and weight live only in matchingCards. The generic
     // node writer excludes that node and its projection refresh is best-effort.
     const previous = (await readProfileFromNodes(userId, { includeTechnical: true })) || {};
+    const lastAction = Date.now();
     await set(ref2(database, path), savedValue);
-    const next = { ...previous, [field]: savedValue };
+    await set(ref2(database, `${PROFILE_NODES.profileWorkflow}/${userId}/lastAction`), lastAction);
+    const changed = { [canonical]: savedValue, lastAction };
+    const next = { ...previous, ...changed };
     await syncUserSearchIdIndex(userId, previous, next);
     await syncUserSearchKeyIndex(userId, previous, next);
     if (node !== PROFILE_NODES.matchingCards) {
-      await refreshMatchingCardAfterProfileWrite(userId, { [field]: savedValue }, 'update');
+      await refreshMatchingCardAfterProfileWrite(userId, changed, 'update');
     }
-    await mirrorProfileToLegacyUsers(userId, { [field]: savedValue }, 'update');
+    const legacyWritten = await mirrorProfileToLegacyUsers(userId, changed, 'update');
+    if (legacyWritten) await updateDataInFiresoreDB(userId, changed, 'check');
   }
   const snapshot = await get(ref2(database, path));
   if (!snapshot.exists()) throw new Error(`Не підтверджено збереження ${field}`);
@@ -9157,7 +9161,10 @@ export const mergeDuplicateUsers = async () => {
         return true;
       });
 
-      return uniqueValues;
+      const scalarWorkflowFields = new Set(['cycleStatus', 'lastCycle']);
+      return scalarWorkflowFields.has(key)
+        ? uniqueValues[0]
+        : uniqueValues;
     };
 
     const delKeys = [

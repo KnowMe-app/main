@@ -90,9 +90,19 @@ export const TWIN_FIELD_SOURCES = Object.freeze({
  * ім'ям `lastLogin` — тим самим, під яким його поклала міграція. Інакше вузол
  * знову розʼїхався б на дві копії однієї дати, тільки вже після переїзду.
  */
-const CANONICAL_BY_SOURCE_FIELD = Object.freeze(Object.fromEntries(
-  Object.entries(TWIN_FIELD_SOURCES).flatMap(([field, keys]) => keys.map(key => [key, field])),
-));
+const LEGACY_FIELD_ALIASES = Object.freeze({
+  state: 'region',
+  cSection: 'csection',
+  c_section: 'csection',
+  cesareanSection: 'csection',
+});
+
+const CANONICAL_BY_SOURCE_FIELD = Object.freeze({
+  ...Object.fromEntries(
+    Object.entries(TWIN_FIELD_SOURCES).flatMap(([field, keys]) => keys.map(key => [key, field])),
+  ),
+  ...LEGACY_FIELD_ALIASES,
+});
 
 export const resolveCanonicalFieldName = field => CANONICAL_BY_SOURCE_FIELD[field] || field;
 
