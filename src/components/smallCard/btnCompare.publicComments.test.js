@@ -7,6 +7,7 @@ jest.mock('react-hot-toast', () => ({ success: jest.fn(), error: jest.fn() }));
 jest.mock('../config', () => ({
   auth: { currentUser: { uid: '0ghb1LphfASV0Y3b6J010v4CDyD2' } },
   fetchPublicProfileComments: jest.fn(),
+  fetchPublicProfileCommentsStrict: jest.fn(async () => ({})),
   fetchUserComment: jest.fn(),
   saveMyCardComment: jest.fn(),
 }));

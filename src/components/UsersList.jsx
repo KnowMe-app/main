@@ -140,6 +140,7 @@ const UsersList = ({
   setShowInfoModal,
   onOpenMedications,
   setCompare,
+  onOpenComparedCard,
   setUserIdToDelete,
   favoriteUsers = {},
   setFavoriteUsers,
@@ -233,6 +234,8 @@ const UsersList = ({
                     setCompare,
                     usersRef,
                     { ...cardActionButtonStyle, backgroundColor: 'purple' },
+                    undefined,
+                    onOpenComparedCard,
                   )}
                   {btnMore(
                     userData,
