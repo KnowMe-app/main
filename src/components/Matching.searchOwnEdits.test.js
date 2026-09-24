@@ -70,7 +70,9 @@ describe('список показує власне доповнення чита
       source.indexOf('const withLazyPhotos = React.useCallback(user => {'),
     );
     expect(ensureFullProfile.indexOf('ensureOwnOverlayRef.current(userId);'))
-      .toBeLessThan(ensureFullProfile.indexOf('if (!isMatchingSummaryCard(user)) return Promise.resolve();'));
+      .toBeLessThan(ensureFullProfile.indexOf(
+        'if (!isMatchingSummaryCard(user) && !user?.__limitedProfile) return Promise.resolve();',
+      ));
     // Памʼять дотиків окрема від памʼяті стрічки: та лишається поставленою й
     // після порожньої відповіді, а дотик мусить мати право спитати про картку,
     // якої перелік не називав. Відмова знімає позначку — читання, яке впало,

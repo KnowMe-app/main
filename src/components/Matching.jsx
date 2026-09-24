@@ -6421,7 +6421,15 @@ const Matching = () => {
     // дотиків стільки, скільки їх зробила людина, а не скільки рядків у
     // списку, а повторний дотик читання не повторює (памʼять таба).
     requestPublicCommentsRef.current(userId);
-    if (!isMatchingSummaryCard(user)) return Promise.resolve();
+    // Проєкція — це і картка стрічки (`__matchingSummary`), і урізана видача
+    // пошуку (`__limitedProfile`, `fetchLimitedProfileById` — той самий поділ,
+    // що й у `SearchBar.isCardProjection`). Поки тут питали лише перший
+    // прапорець, дотик до знайденої пошуком картки не читав вузли анкети
+    // взагалі: звичайний читач бачив у відкритій **опублікованій** картці той
+    // самий ініціал (`surnameShort`), що й у видачі, — `ensureFullProfile`
+    // мовчки виходив на першій умові, і `fetchUsersByIds`/`readProfileFromNodes`
+    // не викликались, хоча право на повне прізвище картка вже мала.
+    if (!isMatchingSummaryCard(user) && !user?.__limitedProfile) return Promise.resolve();
     if (fullProfileRequestsRef.current.has(userId)) return Promise.resolve();
     fullProfileRequestsRef.current.add(userId);
 
