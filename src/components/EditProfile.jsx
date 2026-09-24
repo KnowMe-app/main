@@ -20,6 +20,7 @@ import StimulationSchedule from './StimulationSchedule';
 import { coloredCard } from './styles';
 import { KmPage, KmGhostButton } from './styles/knowme';
 import { FaArrowLeft } from 'react-icons/fa';
+import { PROFILE_FORM_EXTENDED_MODE_KEY, readBackendLinksEnabled } from 'utils/backendLinksMode';
 import { updateCachedUser } from '../utils/cache';
 import { getCard } from '../utils/cardIndex';
 import {
@@ -49,22 +50,88 @@ import {
   saveOverlayForUserCard,
 } from 'utils/multiAccountEdits';
 
+// Той самий каркас, що й у AddNewProfile (Container + InnerContainer): вузька
+// картка на сторінковому фоні, а не форма впритул до країв екрана — інакше та
+// сама анкета виглядала б по-різному лише залежно від того, звідки її відкрили.
 const Container = styled(KmPage)`
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 16px;
+  padding: 5px;
   box-sizing: border-box;
+
+  @media (max-width: 768px) {
+    padding: 10px;
+  }
+`;
+
+const CardPanel = styled.div`
   max-width: 560px;
   width: 100%;
-  margin: 0 auto;
+  box-sizing: border-box;
+  background-color: var(--km-card);
+  padding: 16px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+
+  @media (max-width: 768px) {
+    background-color: var(--km-bg);
+    box-shadow: 0 4px 8px var(--km-border);
+    border-radius: 0;
+    padding: 0;
+  }
+`;
+
+const TopRow = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 10px;
 `;
 
 const BackButton = styled(KmGhostButton)`
-  align-self: flex-start;
   min-height: 36px;
   padding: 6px 14px;
-  margin-bottom: 10px;
+`;
+
+// Той самий тумблер стрілок до backend, що й на AddNewProfile — і той самий
+// ключ localStorage (`PROFILE_FORM_EXTENDED_MODE_KEY`), тож стан переживає
+// перехід між екранами: увімкнули розбір на одному, стрілки не гаснуть на
+// іншому.
+const ExtendedModeToggleButton = styled.button`
+  width: auto;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 12px;
+  border: 1px solid ${({ $active }) => ($active ? 'var(--km-accent-mid)' : 'transparent')};
+  background-color: ${({ $active }) => ($active ? 'var(--km-accent-light)' : 'transparent')};
+  color: var(--km-accent);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+
+  &:hover {
+    background-color: var(--km-accent-light);
+    border-color: var(--km-accent-mid);
+    transform: translateY(-1px);
+  }
+`;
+
+const ExtendedModeStatus = styled.span`
+  font-size: 11px;
+  font-weight: 700;
 `;
 
 const SkeletonCard = styled.div`
@@ -348,6 +415,7 @@ const EditProfile = () => {
   const [isOverlayHistoryVisible, setIsOverlayHistoryVisible] = useState(false);
   const [isReviewingOverlays, setIsReviewingOverlays] = useState(false);
   const [isOverlayResolved, setIsOverlayResolved] = useState(isAdminUid(auth.currentUser?.uid));
+  const [extendedMode, setExtendedMode] = useState(readBackendLinksEnabled);
   const lastSyncedSnapshotRef = useRef(prepareSyncedSnapshot(state || {}));
   const syncedSnapshotVersionRef = useRef(0);
   const overlayRefreshSequenceRef = useRef(0);
@@ -544,6 +612,14 @@ const EditProfile = () => {
         setTimeout(clearDeletingField, 0);
       })
       .catch(() => {});
+  }, []);
+
+  const handleExtendedModeToggle = useCallback(() => {
+    setExtendedMode(prev => {
+      const next = !prev;
+      if (typeof localStorage !== 'undefined') localStorage.setItem(PROFILE_FORM_EXTENDED_MODE_KEY, String(next));
+      return next;
+    });
   }, []);
 
   const handleOpenMedications = useCallback(
@@ -1201,9 +1277,23 @@ const EditProfile = () => {
 
   return (
     <Container>
-      <BackButton type="button" onClick={() => navigate(-1)}>
-        <FaArrowLeft size={12} /> Back
-      </BackButton>
+      <CardPanel>
+      <TopRow>
+        <BackButton type="button" onClick={() => navigate(-1)}>
+          <FaArrowLeft size={12} /> Back
+        </BackButton>
+        <ExtendedModeToggleButton
+          type="button"
+          $active={extendedMode}
+          aria-pressed={extendedMode}
+          title={extendedMode ? 'Сховати стрілки переходу до backend на полях' : 'Показати стрілки переходу до backend на полях'}
+          aria-label={extendedMode ? 'Сховати стрілки переходу до backend на полях' : 'Показати стрілки переходу до backend на полях'}
+          onClick={handleExtendedModeToggle}
+        >
+          🧭
+          <ExtendedModeStatus>{extendedMode ? 'EXT' : 'STD'}</ExtendedModeStatus>
+        </ExtendedModeToggleButton>
+      </TopRow>
       {isAdmin && (pendingOverlayEditorCount > 0 || isOverlayHistoryVisible) && (
         <OverlayReviewBar>
           <OverlayReviewLabel>
@@ -1253,6 +1343,7 @@ const EditProfile = () => {
             setState={setState}
             setUserIdToDelete={() => {}}
             onOpenMedications={handleOpenMedications}
+            extendedMode={extendedMode}
             overlayFieldAdditions={overlayFieldAdditions}
             stimulationScheduleToggle={shouldShowSchedule
               ? {
@@ -1300,6 +1391,7 @@ const EditProfile = () => {
           highlightedFields={highlightedFields}
           deletedOverlayFields={deletedOverlayFields}
           isAdmin={isAdmin}
+          extendedMode={extendedMode}
           overlayFieldAdditions={overlayFieldAdditions}
           refreshOverlayForEditor={refreshOverlays}
           overlayDebugData={pendingOverlays}
@@ -1309,6 +1401,7 @@ const EditProfile = () => {
       )}
 
       {isSyncing && <div>Syncing...</div>}
+      </CardPanel>
     </Container>
   );
 };
