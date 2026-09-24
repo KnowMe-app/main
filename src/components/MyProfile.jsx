@@ -358,10 +358,10 @@ const AuthActionButton = styled(SubmitBtn)`
 
 const baseSections = [
   { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'phone', 'birth', 'country', 'region', 'city', 'maritalStatus'] },
-  { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'ownKids', 'lastDelivery', 'csection', 'reward'] },
+  { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'surrogacyExperience', 'ownKids', 'lastDelivery', 'csection', 'experience', 'reward'] },
   { key: 'appearance', title: '✨ Зовнішність', fields: ['eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'faceShape', 'noseShape', 'lipsShape', 'chin', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race'] },
   { key: 'social', title: '📱 Соцмережі', fields: ['telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'vk'] },
-  { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'education', 'profession', 'hobbies', 'twinsInFamily', 'moreInfo_main', 'surrogacyProgramInterest'] },
+  { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'sport', 'education', 'profession', 'hobbies', 'twinsInFamily', 'moreInfo_main', 'surrogacyProgramInterest'] },
 ];
 
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','vk','country','region','city','moreInfo_main']);
