@@ -48,6 +48,21 @@ describe('searchKeyUtils exact searchId behavior', () => {
   });
 });
 
+// Хендл лежить у базі без `@` (`buildSearchIdValueKey` бере те саме поле і на
+// запис, і на пошук), а набирають його часто так, як Telegram сам його
+// показує — з `@`. Без цього два написання того самого хендла давали два різні
+// ключі індексу, і пошук за «@handle» не знаходив запис, збережений як
+// «handle».
+describe('соцмережевий хендл із @ на початку', () => {
+  it.each(['telegram', 'instagram', 'facebook', 'tiktok', 'twitter'])(
+    '%s: @handle і handle дають той самий ключ',
+    field => {
+      expect(normalizeSearchIdInput(field, '@nadiyka1993')).toBe('nadiyka1993');
+      expect(normalizeSearchIdInput(field, 'nadiyka1993')).toBe('nadiyka1993');
+    },
+  );
+});
+
 describe('форма запису індексу', () => {
   it('поле живе в значенні, а не в ключі', () => {
     expect(describeSearchIdRecord({ phone: '+38 067 111 22 33' })).toEqual({

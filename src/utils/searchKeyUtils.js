@@ -131,7 +131,14 @@ const normalizeSocialSearchValue = (searchKey, baseValue) => {
     return normalizeAmebloValue(baseValue) || baseValue.replace(/\s+/g, ' ');
   }
 
-  return baseValue.replace(/\s+/g, ' ');
+  // Решта соцмереж (telegram, instagram, facebook, tiktok, twitter) не мають
+  // власного нормалізатора, і без цього рядка ключ будувався просто з
+  // пробілами, згорнутими в один — з `@` включно. У базі ж хендл лежить без
+  // нього (`buildSearchIdValueKey` при записі бере те саме поле), тож пошук
+  // за «@handle», набраним так, як його показує сам Telegram, не знаходив
+  // запис, збережений як «handle»: два написання того самого хендла давали
+  // два різні ключі індексу.
+  return baseValue.replace(/^@/, '').replace(/\s+/g, ' ');
 };
 export const normalizeSearchIdInput = (searchKey, rawValue) => {
   const baseValue = String(rawValue || '').trim();

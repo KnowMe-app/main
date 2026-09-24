@@ -89,3 +89,15 @@ it('copies only the current personal comment and uses the acknowledged text', as
   expect(saveMyCardComment).toHaveBeenCalledWith('B', 'current', 'admin');
   expect(usersRef.current.B.myComment).toBe('confirmed');
 });
+
+it('keeps the receiving card\'s own note instead of overwriting it', async () => {
+  fetchUserComment.mockImplementation(async (_, id) => (
+    id === 'A' ? { text: 'from A' } : id === 'B' ? { text: 'already on B' } : null
+  ));
+  saveMyCardComment.mockResolvedValue({ text: 'already on B\n\nfrom A', lastAction: 123 });
+  const { usersRef } = await open({ myComment: 'stale A' }, { myComment: 'stale B' });
+  fireEvent.click(screen.getByText('from A'));
+  await waitFor(() => expect(saveMyCardComment).toHaveBeenCalled());
+  expect(saveMyCardComment).toHaveBeenCalledWith('B', 'already on B\n\nfrom A', 'admin');
+  expect(usersRef.current.B.myComment).toBe('already on B\n\nfrom A');
+});

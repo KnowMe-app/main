@@ -68,7 +68,7 @@ export const btnCompare = (
 
   let pairIds = [];
   let requestId;
-  const copyValue = async (key, sourceValue, targetUserId, sourceUserId) => {
+  const copyValue = async (key, sourceValue, targetUserId, sourceUserId, targetValue) => {
     if (!targetUserId) return;
     try {
       await queueCardSave(targetUserId, async () => {
@@ -80,7 +80,18 @@ export const btnCompare = (
         } else if (key === 'myComment') {
           const ownerId = auth.currentUser?.uid;
           if (!ownerId) throw new Error('Користувач не визначений');
-          const result = await saveMyCardComment(targetUserId, sourceValue, ownerId);
+          const incoming = String(sourceValue || '').trim();
+          const existing = String(targetValue || '').trim();
+          // Перенесення не має стирати те, що адмін уже написав на картці-
+          // отримувачі: це особиста нотатка, іншого запису цього тексту
+          // ніде немає. Порожній рядок між ними — не той самий текст двічі,
+          // якщо джерело там уже є.
+          const merged = !existing || existing === incoming
+            ? incoming
+            : !incoming
+              ? existing
+              : `${existing}\n\n${incoming}`;
+          const result = await saveMyCardComment(targetUserId, merged, ownerId);
           if (!result || typeof result.text !== 'string') throw new Error('Не підтверджено збереження коментаря');
           savedValue = result.text;
           setLocalComment(ownerId, targetUserId, savedValue, result.lastAction);
@@ -166,7 +177,7 @@ export const btnCompare = (
           <td
             style={{ ...cellStyle, cursor: canCopyCurrent ? 'pointer' : 'default' }}
             onClick={canCopyCurrent
-              ? () => copyValue(key, currentUser[key], nextUser.userId, currentUser.userId)
+              ? () => copyValue(key, currentUser[key], nextUser.userId, currentUser.userId, nextUser[key])
               : undefined}
           >
             {uniqueCurrent.join(', ')}
@@ -174,7 +185,7 @@ export const btnCompare = (
           <td
             style={{ ...cellStyle, cursor: canCopyNext ? 'pointer' : 'default' }}
             onClick={canCopyNext
-              ? () => copyValue(key, nextUser[key], currentUser.userId, nextUser.userId)
+              ? () => copyValue(key, nextUser[key], currentUser.userId, nextUser.userId, currentUser[key])
               : undefined}
           >
             {uniqueNext.join(', ')}
