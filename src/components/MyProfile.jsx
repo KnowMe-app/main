@@ -6,13 +6,14 @@ import styled, { css, keyframes } from 'styled-components';
 import {
   auth,
   fetchUserData,
+  normalizeStoredDates,
   syncUserSearchIdIndex,
   updateProfileRole,
 } from './config';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { inputUpdateValue } from './inputUpdatedValue';
-import { normalizePhoneValue } from './inputValidations';
+import { formatDateToDisplay, normalizePhoneValue } from './inputValidations';
 import {
   createUserWithEmailAndPassword,
   fetchSignInMethodsForEmail,
@@ -358,11 +359,13 @@ const AuthActionButton = styled(SubmitBtn)`
 
 const baseSections = [
   { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'phone', 'birth', 'country', 'region', 'city', 'maritalStatus'] },
-  { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'surrogacyExperience', 'ownKids', 'lastDelivery', 'csection', 'experience', 'reward'] },
+  { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'surrogacyExperience', 'ownKids', 'lastDelivery', 'csection', 'reward'] },
   { key: 'appearance', title: '✨ Зовнішність', fields: ['eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'faceShape', 'noseShape', 'lipsShape', 'chin', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race'] },
   { key: 'social', title: '📱 Соцмережі', fields: ['telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'vk'] },
   { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'sport', 'education', 'profession', 'hobbies', 'twinsInFamily', 'moreInfo_main', 'surrogacyProgramInterest'] },
 ];
+
+const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery']);
 
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','vk','country','region','city','moreInfo_main']);
 
@@ -531,12 +534,15 @@ export const MyProfile = () => {
       return acc;
     }
 
-    if (Array.isArray(value)) {
-      acc[key] = value.length > 0 ? value[value.length - 1] : '';
-      return acc;
-    }
-
-    acc[key] = value;
+    const current = Array.isArray(value)
+      ? (value.length > 0 ? value[value.length - 1] : '')
+      : value;
+    // У базі дата лежить як `РРРР-ММ-ДД`, а поле просить `дд.мм.рррр` — і
+    // саме в ньому людина її вводила. Показувати ISO означало б і збивати
+    // людину з пантелику, і віддавати в розбір поля формат, якого воно не чекає.
+    acc[key] = MY_PROFILE_DATE_FIELDS.has(key) && typeof current === 'string'
+      ? formatDateToDisplay(current)
+      : current;
     return acc;
   }, {}), []);
 
@@ -1019,10 +1025,16 @@ export const MyProfile = () => {
           auth.currentUser?.uid !== targetUserId
         ) return;
         const { password: _password, ...profileData } = nextState;
-        const normalizedProfileData = {
+        // Дата у формі — `дд.мм.рррр`, у базі — `РРРР-ММ-ДД`. Порівнювати їх
+        // у `makeUploadedInfo` без зведення до одного написання означало
+        // бачити «нове значення» там, де людина нічого не міняла: після
+        // першого ж автозбереження будь-якого поля `birth` щойно створеного
+        // акаунта ставав масивом `['1993-04-15', '1993-04-15']`, і картка
+        // показувала нерозібрану дату замість віку.
+        const normalizedProfileData = normalizeStoredDates({
           ...profileData,
           userRole: profileData.userRole || 'ed',
-        };
+        });
         const uploadedInfo = makeUploadedInfo(existingData, normalizedProfileData);
         directFields.forEach(field => {
           if (Object.prototype.hasOwnProperty.call(normalizedProfileData, field)) {

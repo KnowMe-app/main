@@ -101,3 +101,37 @@ it('keeps the receiving card\'s own note instead of overwriting it', async () =>
   expect(saveMyCardComment).toHaveBeenCalledWith('B', 'already on B\n\nfrom A', 'admin');
   expect(usersRef.current.B.myComment).toBe('already on B\n\nfrom A');
 });
+
+it('does not append the same note twice when the transfer is repeated', async () => {
+  fetchUserComment.mockImplementation(async (_, id) => (
+    id === 'A' ? { text: 'from A' } : id === 'B' ? { text: 'already on B\n\nfrom A' } : null
+  ));
+  saveMyCardComment.mockResolvedValue({ text: 'already on B\n\nfrom A', lastAction: 123 });
+  await open({ myComment: 'stale A' }, { myComment: 'stale B' });
+  fireEvent.click(screen.getByText('from A'));
+  await waitFor(() => expect(saveMyCardComment).toHaveBeenCalled());
+  expect(saveMyCardComment).toHaveBeenCalledWith('B', 'already on B\n\nfrom A', 'admin');
+});
+
+it('keeps a free-text field whole and appends the transferred text instead of splitting it on commas', async () => {
+  saveComparisonField.mockImplementation(async (_, __, value) => value);
+  await open({ moreInfo_main: 'Працюю вчителем, маю двох дітей' }, { moreInfo_main: 'Люблю спорт, читання' });
+  fireEvent.click(screen.getByText('Працюю вчителем, маю двох дітей'));
+  await waitFor(() => expect(saveComparisonField).toHaveBeenCalled());
+  expect(saveComparisonField).toHaveBeenCalledWith('B', 'moreInfo_main', [
+    'Люблю спорт, читання',
+    'Люблю спорт, читання\n\nПрацюю вчителем, маю двох дітей',
+  ]);
+});
+
+it('keeps the receiving card\'s text history when appending', async () => {
+  saveComparisonField.mockImplementation(async (_, __, value) => value);
+  await open({ allergy: 'пеніцилін' }, { allergy: ['пил', 'пилок, шерсть'] });
+  fireEvent.click(screen.getByText('пеніцилін'));
+  await waitFor(() => expect(saveComparisonField).toHaveBeenCalled());
+  expect(saveComparisonField).toHaveBeenCalledWith('B', 'allergy', [
+    'пил',
+    'пилок, шерсть',
+    'пилок, шерсть\n\nпеніцилін',
+  ]);
+});

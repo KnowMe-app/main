@@ -501,9 +501,20 @@ const resolveSelectedSearchKeys = (searchOptions = {}, optionKey, allKeys) => {
 const hasExplicitEmptySearchKeyList = (searchOptions = {}, optionKey) =>
   Array.isArray(searchOptions?.[optionKey]) && searchOptions[optionKey].length === 0;
 
+/**
+ * `input` — те, що людина набрала, а не вже розібране значення: `@handle`
+ * після `parseSearchIdExact` стає голим `handle`, і в ньому вже нема з чого
+ * впізнати Telegram.
+ *
+ * `detectedField` — поле, яке справді впізнали в набраному, або `null`.
+ * Першим обраним префіксом його не підміняти: поле вирішує нормалізацію ключа
+ * (`normalizeExactSearchIdInput`), і коли першим у списку стояв `phone`,
+ * `@nadiyka1993` зводилось до цифр і читався ключ `1993` — пошук відповідав
+ * «не знайшов» на хендл, що лежав в індексі.
+ */
 const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
   if (hasExplicitEmptySearchKeyList(searchOptions, 'searchIdPrefixes')) {
-    return { primaryPrefixes: [], fallbackPrefixes: [], shouldRetryWithFallbackPrefixes: false };
+    return { primaryPrefixes: [], fallbackPrefixes: [], shouldRetryWithFallbackPrefixes: false, detectedField: null };
   }
 
   const configuredPrefixes = resolveSelectedSearchKeys(
@@ -511,11 +522,12 @@ const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
     'searchIdPrefixes',
     SEARCH_ID_PREFIX_KEYS,
   );
+  const inferredField = inferSearchIdPrefix(input);
 
   const executionPlan = resolveExecutionPlan({
     allKeys: SEARCH_ID_PREFIX_KEYS,
     selectedKeys: configuredPrefixes,
-    detectedKey: inferSearchIdPrefix(input),
+    detectedKey: inferredField,
     rawQuery: input,
   });
 
@@ -523,6 +535,7 @@ const resolveSearchIdPrefixStrategy = (input, searchOptions = {}) => {
     primaryPrefixes: executionPlan.primaryKeys,
     fallbackPrefixes: executionPlan.fallbackKeys,
     shouldRetryWithFallbackPrefixes: executionPlan.fallbackKeys.length > 0,
+    detectedField: SEARCH_ID_INDEXED_FIELDS.has(inferredField) ? inferredField : null,
   };
 };
 
@@ -1674,7 +1687,7 @@ const SearchBar = ({
     const searchIdInput = parseSearchIdExact(rawQuery);
 
     if (isSearchEnabled('searchId') && searchIdInput) {
-      const searchIdPrefixStrategy = resolveSearchIdPrefixStrategy(searchIdInput, searchOptions);
+      const searchIdPrefixStrategy = resolveSearchIdPrefixStrategy(rawQuery, searchOptions);
       const prefixesToIterate =
         searchIdPrefixStrategy.primaryPrefixes?.length > 0
           ? searchIdPrefixStrategy.primaryPrefixes
@@ -1702,7 +1715,7 @@ const SearchBar = ({
           {
             forceEqualToAllCards: false,
             searchIdPrefixes: prefixesToIterate,
-            searchIdDetectedField: primarySearchIdPrefix,
+            searchIdDetectedField: searchIdPrefixStrategy.detectedField || undefined,
             ...getTelegramPrefixMatchOptions(searchIdInput, prefixesToIterate),
           },
         )
@@ -1954,7 +1967,7 @@ const SearchBar = ({
           ? await cachedSearch(result, {
             forceEqualToAllCards: false,
             searchIdPrefixes: prefixesToIterate,
-            searchIdDetectedField: detectedSearchIdField,
+            searchIdDetectedField: searchIdPrefixStrategy?.detectedField || undefined,
             ...getTelegramPrefixMatchOptions(id, prefixesToIterate),
           })
           : null;

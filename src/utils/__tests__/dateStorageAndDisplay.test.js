@@ -143,3 +143,46 @@ describe('запис у базу приводить дату до формату
     expect(indexer).toContain('-(');
   });
 });
+
+/**
+ * «Мій профіль»: дата в полі — `дд.мм.рррр`, у базі — `РРРР-ММ-ДД`.
+ *
+ * Поломка була подвійна. Поле розбирало будь-яке введення як цифри підряд у
+ * порядку ДД.ММ.РРРР, тож ISO-дата з бази ставала `19.93.0415`. А автозбереження
+ * зливало всю форму з базою, порівнюючи `15.04.1993` з `1993-04-15`, — і вже
+ * після першого збереження будь-якого поля `birth` щойно створеного акаунта
+ * ставав масивом версій, з якого картка не вміла дістати ні дату, ні вік.
+ */
+describe('дата в «Моєму профілі»', () => {
+  // eslint-disable-next-line global-require
+  const { formatDate } = require('components/inputValidations');
+  // eslint-disable-next-line global-require
+  const { makeUploadedInfo } = require('components/makeUploadedInfo');
+
+  it('розбирає дату з роздільниками за порядком частин, а не за цифрами', () => {
+    expect(formatDate('1993-04-15')).toBe('15.04.1993');
+    expect(formatDate('1993.4.5')).toBe('05.04.1993');
+    expect(formatDate('15/4/1993')).toBe('15.04.1993');
+    expect(formatDate('15-04-1993')).toBe('15.04.1993');
+  });
+
+  it('набір цифрами підряд працює як і раніше', () => {
+    expect(formatDate('15041993')).toBe('15.04.1993');
+    expect(formatDate('1504')).toBe('15.04');
+  });
+
+  it('та сама дата в двох написаннях не стає новою версією поля', () => {
+    const existing = { birth: '1993-04-15', name: 'Надія' };
+    const fromForm = { birth: formatDateToServer('15.04.1993'), name: 'Надія' };
+    expect(makeUploadedInfo(existing, fromForm).birth).toBe('1993-04-15');
+  });
+
+  it('форма зводить дати до написання бази перед злиттям і показує крапками', () => {
+    const myProfileSource = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'components', 'MyProfile.jsx'),
+      'utf8',
+    );
+    expect(myProfileSource).toContain('const normalizedProfileData = normalizeStoredDates({');
+    expect(myProfileSource).toContain('? formatDateToDisplay(current)');
+  });
+});

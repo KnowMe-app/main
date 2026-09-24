@@ -6,7 +6,14 @@ import { copyPublicCommentsBetweenCards } from '../../utils/legacyImportCommentM
 import { isAdminUid } from '../../utils/accessLevel';
 import { OWNER_MULTI_DATA_STRING_FIELDS } from '../../utils/profileNodeSchema';
 import { updateCachedUser } from '../../utils/cache';
-import { comparisonValues, mergeComparisonValues, currentPersonalComment } from '../../utils/comparisonValues';
+import {
+  appendComparisonText,
+  comparisonValuesForKey,
+  currentPersonalComment,
+  isFreeTextComparisonKey,
+  mergeComparisonText,
+  mergeComparisonValues,
+} from '../../utils/comparisonValues';
 
 let latestCompareRequest = 0;
 const pendingCardSaves = new Map();
@@ -44,7 +51,7 @@ const PUBLIC_COMMENTS_KEY = 'publicComments';
  */
 const OWNER_STRING_KEYS = new Set(OWNER_MULTI_DATA_STRING_FIELDS);
 
-const formatValue = value => new Set(comparisonValues(value));
+const formatValue = (key, value) => new Set(comparisonValuesForKey(key, value));
 
 export const btnCompare = (
   index,
@@ -80,17 +87,10 @@ export const btnCompare = (
         } else if (key === 'myComment') {
           const ownerId = auth.currentUser?.uid;
           if (!ownerId) throw new Error('Користувач не визначений');
-          const incoming = String(sourceValue || '').trim();
-          const existing = String(targetValue || '').trim();
           // Перенесення не має стирати те, що адмін уже написав на картці-
           // отримувачі: це особиста нотатка, іншого запису цього тексту
-          // ніде немає. Порожній рядок між ними — не той самий текст двічі,
-          // якщо джерело там уже є.
-          const merged = !existing || existing === incoming
-            ? incoming
-            : !incoming
-              ? existing
-              : `${existing}\n\n${incoming}`;
+          // ніде немає.
+          const merged = appendComparisonText(targetValue, sourceValue);
           const result = await saveMyCardComment(targetUserId, merged, ownerId);
           if (!result || typeof result.text !== 'string') throw new Error('Не підтверджено збереження коментаря');
           savedValue = result.text;
@@ -98,7 +98,9 @@ export const btnCompare = (
         } else {
           const target = (usersRef?.current || users)[targetUserId];
           if (!target) throw new Error('Картку не знайдено');
-          const merged = mergeComparisonValues(sourceValue, target[key]);
+          const merged = isFreeTextComparisonKey(key)
+            ? mergeComparisonText(sourceValue, target[key])
+            : mergeComparisonValues(sourceValue, target[key]);
           const value = key === 'getInTouch' || key === 'lastCycle'
             ? sourceValue
             : OWNER_STRING_KEYS.has(key) ? merged.join(', ') : merged;
@@ -159,8 +161,8 @@ export const btnCompare = (
     ]);
 
     const rows = [...filteredKeys].map(key => {
-      const currentSet = formatValue(currentUser[key]);
-      const nextSet = formatValue(nextUser[key]);
+      const currentSet = formatValue(key, currentUser[key]);
+      const nextSet = formatValue(key, nextUser[key]);
       if (!currentSet.size && !nextSet.size) return null;
       if ([...currentSet].every(value => nextSet.has(value)) && [...nextSet].every(value => currentSet.has(value))) return null;
 
