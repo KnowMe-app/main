@@ -1655,16 +1655,6 @@ const GalleryCard = React.memo(({
             )}
             <GalleryActionButton
               type="button"
-              $on={isFavorite}
-              aria-label={uiText('В обране', language)}
-              aria-pressed={isFavorite}
-              title={uiText('В обране', language)}
-              onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
-            >
-              {isFavorite ? <FaHeart /> : <FaRegHeart />}
-            </GalleryActionButton>
-            <GalleryActionButton
-              type="button"
               $on={isHidden}
               aria-label={uiText(isHidden ? 'Повернути зі схованих' : 'Приховати', language)}
               aria-pressed={isHidden}
@@ -1672,6 +1662,16 @@ const GalleryCard = React.memo(({
               onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
             >
               {isHidden ? <FaUndoAlt /> : <FaTimes />}
+            </GalleryActionButton>
+            <GalleryActionButton
+              type="button"
+              $on={isFavorite}
+              aria-label={uiText('В обране', language)}
+              aria-pressed={isFavorite}
+              title={uiText('В обране', language)}
+              onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
+            >
+              {isFavorite ? <FaHeart /> : <FaRegHeart />}
             </GalleryActionButton>
             {reviewsAction && (
               <GalleryActionButton
@@ -5624,6 +5624,11 @@ const Matching = () => {
     });
 
     const uniqueIds = new Set();
+    // `reactionIds` — це порядок ключів у вузлі реакцій (коли читач лайкнув чи
+    // дизлайкнув), а не порядок стрічки. Список лайкнутих/дизлайкнутих мусить
+    // йти в тому самому порядку, що й загальний список, — тож сортуємо тим
+    // самим компаратором, яким сортується кожна сторінка стрічки
+    // (`compareUsersByLastLogin2`), а не лишаємо порядок реакції.
     return reactionIds
       .map(id => candidateUsersById.get(id))
       .filter(card => Boolean(card))
@@ -5632,7 +5637,8 @@ const Matching = () => {
         if (!canShowReactionTabCard(card, { isAdmin })) return false;
         uniqueIds.add(card.userId);
         return true;
-      });
+      })
+      .sort(compareUsersByLastLogin2);
   }, [
     additionalAccessUsers,
     dislikeUsers,
@@ -8399,17 +8405,17 @@ const Matching = () => {
                       reviewsSlot={buildRowReviewsSlot(user.userId)}
                       reviewsAction={buildRowReviewsAction(user.userId)}
                       primaryAction={{
+                        icon: dislikeUsers[user.userId] ? <FaUndoAlt size={13} /> : <FaTimes size={14} />,
+                        title: uiText(dislikeUsers[user.userId] ? 'Повернути зі схованих' : 'Приховати', language),
+                        active: Boolean(dislikeUsers[user.userId]),
+                        onClick: toggleRowHidden,
+                      }}
+                      secondaryAction={{
                         icon: favoriteUsers[user.userId] ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
                         title: uiText('В обране', language),
                         accent: true,
                         active: Boolean(favoriteUsers[user.userId]),
                         onClick: toggleRowFavorite,
-                      }}
-                      secondaryAction={{
-                        icon: dislikeUsers[user.userId] ? <FaUndoAlt size={13} /> : <FaTimes size={14} />,
-                        title: uiText(dislikeUsers[user.userId] ? 'Повернути зі схованих' : 'Приховати', language),
-                        active: Boolean(dislikeUsers[user.userId]),
-                        onClick: toggleRowHidden,
                       }}
                     />
                   ))}

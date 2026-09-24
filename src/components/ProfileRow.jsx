@@ -1236,6 +1236,20 @@ const ProfileRow = ({
               у двох різних місцях. */}
           {roleCode && <S.PhotoRoleBadge $role={rowRole}>{roleCode}</S.PhotoRoleBadge>}
           {photos.length > 1 && <S.PhotoCount>{photos.length}</S.PhotoCount>}
+          {/* Цятка публікації — на фото, у правому верхньому куті, так само,
+              як у плитці галереї (`GalleryPublishDot`). Це стан картки, а не
+              дія над нею, і адмін читає його одним поглядом по фото, а не
+              шукає в стовпчику кнопок під ним. */}
+          {isAdmin && onTogglePublish && !isLimited && (
+            <S.PhotoPublishDot
+              type="button"
+              $published={isPublished}
+              title={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
+              aria-label={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
+              aria-pressed={isPublished}
+              onClick={e => { e.stopPropagation(); onTogglePublish(user); }}
+            />
+          )}
         </S.Photo>
       )}
       <S.Top>
@@ -1261,9 +1275,9 @@ const ProfileRow = ({
         </S.Body>
         <S.Ctrl>
           <S.RowActionStack>
-            {/* Цятка публікації — перша в стовпчику: це не дія над карткою, а
-                її стан, і адмін читає його одним поглядом по всьому списку. */}
-            {isAdmin && onTogglePublish && !isLimited && (
+            {/* Цятці публікації нема на чому лежати без фото — тут вона
+                лишається запасним шляхом (див. `S.PhotoPublishDot` вище). */}
+            {!photo && isAdmin && onTogglePublish && !isLimited && (
               <PublishDot
                 type="button"
                 $published={isPublished}

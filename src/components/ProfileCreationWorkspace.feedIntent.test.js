@@ -305,7 +305,7 @@ describe('доповнення знайденої картки зі стрічк
 
   // Верхній блок був скороченою карткою з самих лише імені й прізвища — тобто
   // не казав про людину нічого, чого не сказала б форма під ним.
-  it('показує у верхньому блоці роль, вік і локацію картки', async () => {
+  it('показує у верхньому блоці вік поруч з іменем і локацію під ним', async () => {
     readProfileFromNodes.mockResolvedValue({
       ...canonicalCard,
       role: 'sm',
@@ -316,8 +316,9 @@ describe('доповнення знайденої картки зі стрічк
     render(<ProfileCreationWorkspace />);
 
     await screen.findByDisplayValue('Бугаренко');
-    // Роль тут — той самий дволітерний код, що й на картці у стрічці.
-    expect(screen.getByText(/SM/)).toBeInTheDocument();
+    // Роль (двобуквений код) тут більше не пишеться — це вже сказано розділом
+    // «Категорія» нижче у формі, а тут лише займало рядок поруч з іменем.
+    expect(screen.queryByText(/^SM$/)).not.toBeInTheDocument();
     expect(screen.getByText(/Київ/)).toBeInTheDocument();
   });
 
