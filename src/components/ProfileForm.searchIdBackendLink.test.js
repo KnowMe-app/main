@@ -51,10 +51,15 @@ describe('стрілка «відкрити запис searchId»', () => {
     // значення; поле веде вглиб (`searchId/{значення}/{поле}`).
     expect(buildSearchIdRecordKey({ phone: '+38 050 327 74 13' }))
       .toBe(buildSearchIdRecordKey({ phone: '+380503277413' }));
+    // `@` на початку хендла — це те саме значення, що й без нього: людина
+    // пише Telegram- чи Instagram-хендл із `@` рівно так, як його показує сам
+    // застосунок, а в базі він лежить без нього. Два написання мусять давати
+    // один ключ — інакше пошук за «@handle» не знаходив запис, збережений як
+    // «handle».
     expect(buildSearchIdRecordKey({ instagram: '@viktoriyail4enko' }))
-      .toBe('_at_viktoriyail4enko');
+      .toBe('viktoriyail4enko');
     expect(describeSearchIdRecord({ instagram: '@viktoriyail4enko' }).path)
-      .toBe('searchId/_at_viktoriyail4enko/instagram');
+      .toBe('searchId/viktoriyail4enko/instagram');
     expect(buildSearchIdRecordKey({ instagram: 'https://instagram.com/viktoriyail4enko' }))
       .toBe('https:_slash__slash_instagram_dot_com_slash_viktoriyail4enko');
   });

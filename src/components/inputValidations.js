@@ -363,8 +363,33 @@ export const normalizePhoneState = currentState => {
     return valueToUpdate;
   };
   
+  // Повна дата з роздільниками розбирається за порядком частин, а не за
+  // цифрами підряд. Без цього `1993-04-15` — саме так дата лежить у базі й
+  // приходить назад у форму — ставала `19.93.0415`: цифри різались по два
+  // зліва, як для `ДД.ММ.РРРР`. Так само `5/4/1993` ставало `54.19.93`.
+  const parseSeparatedDate = raw => {
+    const text = String(raw ?? '').trim();
+    const yearFirst = text.match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})$/);
+    if (yearFirst) return { year: yearFirst[1], month: yearFirst[2], day: yearFirst[3] };
+    const dayFirst = text.match(/^(\d{1,2})\D+(\d{1,2})\D+(\d{4})$/);
+    if (dayFirst) return { day: dayFirst[1], month: dayFirst[2], year: dayFirst[3] };
+    return null;
+  };
+
   export const formatDate = (value, option) => {
-    let cleaned = removeNotNumbers(value);
+    const separated = parseSeparatedDate(value);
+    if (separated) {
+      const day = separated.day.padStart(2, '0');
+      const month = separated.month.padStart(2, '0');
+      const age = !option && calculateAge(`${day}.${month}.${separated.year}`);
+      if (age && (age > 90 || age < 15)) {
+        alert(`Перевірте правильність введення дати, Вам ${age}?`);
+        return '';
+      }
+      return `${day}.${month}.${separated.year}`;
+    }
+
+    let cleaned = removeNotNumbers(String(value ?? ''));
     cleaned = removeSpaceAndNewLine(cleaned);
     const match = cleaned.match(/^(\d{0,2})(\d{0,2})(\d{0,4})$/); // Розбиваємо на групи (DD, MM, YYYY)
     let formattedDate = '';

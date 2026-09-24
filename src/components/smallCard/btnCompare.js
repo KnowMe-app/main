@@ -6,7 +6,14 @@ import { copyPublicCommentsBetweenCards } from '../../utils/legacyImportCommentM
 import { isAdminUid } from '../../utils/accessLevel';
 import { OWNER_MULTI_DATA_STRING_FIELDS } from '../../utils/profileNodeSchema';
 import { updateCachedUser } from '../../utils/cache';
-import { comparisonValues, mergeComparisonValues, currentPersonalComment } from '../../utils/comparisonValues';
+import {
+  appendComparisonText,
+  comparisonValuesForKey,
+  currentPersonalComment,
+  isFreeTextComparisonKey,
+  mergeComparisonText,
+  mergeComparisonValues,
+} from '../../utils/comparisonValues';
 
 let latestCompareRequest = 0;
 const pendingCardSaves = new Map();
@@ -44,7 +51,7 @@ const PUBLIC_COMMENTS_KEY = 'publicComments';
  */
 const OWNER_STRING_KEYS = new Set(OWNER_MULTI_DATA_STRING_FIELDS);
 
-const formatValue = value => new Set(comparisonValues(value));
+const formatValue = (key, value) => new Set(comparisonValuesForKey(key, value));
 
 export const btnCompare = (
   index,
@@ -68,7 +75,7 @@ export const btnCompare = (
 
   let pairIds = [];
   let requestId;
-  const copyValue = async (key, sourceValue, targetUserId, sourceUserId) => {
+  const copyValue = async (key, sourceValue, targetUserId, sourceUserId, targetValue) => {
     if (!targetUserId) return;
     try {
       await queueCardSave(targetUserId, async () => {
@@ -80,14 +87,20 @@ export const btnCompare = (
         } else if (key === 'myComment') {
           const ownerId = auth.currentUser?.uid;
           if (!ownerId) throw new Error('Користувач не визначений');
-          const result = await saveMyCardComment(targetUserId, sourceValue, ownerId);
+          // Перенесення не має стирати те, що адмін уже написав на картці-
+          // отримувачі: це особиста нотатка, іншого запису цього тексту
+          // ніде немає.
+          const merged = appendComparisonText(targetValue, sourceValue);
+          const result = await saveMyCardComment(targetUserId, merged, ownerId);
           if (!result || typeof result.text !== 'string') throw new Error('Не підтверджено збереження коментаря');
           savedValue = result.text;
           setLocalComment(ownerId, targetUserId, savedValue, result.lastAction);
         } else {
           const target = (usersRef?.current || users)[targetUserId];
           if (!target) throw new Error('Картку не знайдено');
-          const merged = mergeComparisonValues(sourceValue, target[key]);
+          const merged = isFreeTextComparisonKey(key)
+            ? mergeComparisonText(sourceValue, target[key])
+            : mergeComparisonValues(sourceValue, target[key]);
           const value = key === 'getInTouch' || key === 'lastCycle'
             ? sourceValue
             : OWNER_STRING_KEYS.has(key) ? merged.join(', ') : merged;
@@ -148,8 +161,8 @@ export const btnCompare = (
     ]);
 
     const rows = [...filteredKeys].map(key => {
-      const currentSet = formatValue(currentUser[key]);
-      const nextSet = formatValue(nextUser[key]);
+      const currentSet = formatValue(key, currentUser[key]);
+      const nextSet = formatValue(key, nextUser[key]);
       if (!currentSet.size && !nextSet.size) return null;
       if ([...currentSet].every(value => nextSet.has(value)) && [...nextSet].every(value => currentSet.has(value))) return null;
 
@@ -166,7 +179,7 @@ export const btnCompare = (
           <td
             style={{ ...cellStyle, cursor: canCopyCurrent ? 'pointer' : 'default' }}
             onClick={canCopyCurrent
-              ? () => copyValue(key, currentUser[key], nextUser.userId, currentUser.userId)
+              ? () => copyValue(key, currentUser[key], nextUser.userId, currentUser.userId, nextUser[key])
               : undefined}
           >
             {uniqueCurrent.join(', ')}
@@ -174,7 +187,7 @@ export const btnCompare = (
           <td
             style={{ ...cellStyle, cursor: canCopyNext ? 'pointer' : 'default' }}
             onClick={canCopyNext
-              ? () => copyValue(key, nextUser[key], currentUser.userId, nextUser.userId)
+              ? () => copyValue(key, nextUser[key], currentUser.userId, nextUser.userId, currentUser[key])
               : undefined}
           >
             {uniqueNext.join(', ')}

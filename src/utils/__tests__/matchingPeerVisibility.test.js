@@ -138,12 +138,12 @@ describe('екран пояснює порожню стрічку донорки
   const source = fs.readFileSync(path.join(__dirname, '..', '..', 'components', 'Matching.jsx'), 'utf8');
 
   it('називає причину замість «немає доступних профілів»', () => {
-    expect(source).toContain('isDonorViewer(currentUserRole)');
+    expect(source).toContain('isDonorViewer(donorRestrictionViewerRole)');
     expect(source).toContain('Конкретну людину можна знайти пошуком');
   });
 
   it('передає роль читача в деку, а не тільки в лічильник', () => {
-    expect(source).toContain('viewerRole: currentUserRole,');
+    expect(source).toContain('viewerRole: donorRestrictionViewerRole,');
     expect(source).toContain('viewerId: ownerId,');
   });
 });
@@ -159,7 +159,7 @@ describe('дочитування сторінок рахує те, що доно
   );
 
   it('сторінка джерела отримує роль читача', () => {
-    expect(matchingSource).toContain('viewerRole: currentUserRoleRef.current,');
+    expect(matchingSource).toContain('viewerRole: donorRestrictionViewerRoleRef.current,');
   });
 
   // Запас рахується по картках, які дійдуть до екрана. Без цього відлік обіцяв

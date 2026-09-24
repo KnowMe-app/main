@@ -94,7 +94,7 @@ describe('доступність UI-фільтрів за поточною ро�
   const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
   it('має єдину ознаку, яка закриває рейку фільтрів для ed', () => {
-    expect(source).toContain('const canUseMatchingFilters = !isDonorViewer(currentUserRole);');
+    expect(source).toContain('const canUseMatchingFilters = !isDonorViewer(donorRestrictionViewerRole);');
     expect(source).toContain('if (!canUseMatchingFilters) setOpenFilterGroup(null);');
     expect(source).toContain('{canUseMatchingFilters && !isSearching && (\n            <MatchingFilterRail');
   });

@@ -3679,7 +3679,7 @@ const STORAGE_DATE_FIELDS = [
  * хронологічним, тож база вміє і сортувати, і брати діапазон; у крапковому
  * першим стоїть день, і `01.09.2026` виявляється «меншим» за `02.01.2020`.
  */
-const normalizeStoredDates = payload => {
+export const normalizeStoredDates = payload => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
 
   const toStorage = value => {

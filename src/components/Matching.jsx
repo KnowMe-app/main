@@ -1900,7 +1900,6 @@ const Matching = () => {
   const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
   const [currentUserRole, setCurrentUserRole] = useState(() => localStorage.getItem('userRole') || '');
-  const canUseMatchingFilters = !isDonorViewer(currentUserRole);
   // A cached role is useful for rendering, but it cannot start a deck: the
   // authenticated profile also owns the shared reaction scope that must be
   // snapshotted by the initial request.
@@ -1909,13 +1908,6 @@ const Matching = () => {
   // рахувався б по картках, які до екрана не доходять (`fetchChunk`).
   const currentUserRoleRef = useRef(currentUserRole);
   currentUserRoleRef.current = currentUserRole;
-  // A donor has no filter controls. Keep persisted filters out of every async
-  // loading path too, so a hidden localStorage value cannot narrow the deck.
-  const matchingUiFilters = canUseMatchingFilters ? filters : EMPTY_MATCHING_FILTERS;
-  filtersRef.current = matchingUiFilters;
-  useEffect(() => {
-    if (!canUseMatchingFilters) setOpenFilterGroup(null);
-  }, [canUseMatchingFilters]);
   const [currentCanCreateProfiles, setCurrentCanCreateProfiles] = useState(() => localStorage.getItem('canCreateProfiles') === 'true');
   const [currentAdditionalAccessRules, setCurrentAdditionalAccessRules] = useState(
     () => localStorage.getItem('additionalAccessRules') || ''
@@ -1999,6 +1991,31 @@ const Matching = () => {
     canCreateProfiles: currentCanCreateProfiles,
   });
   const isAdmin = access.isAdmin;
+
+  /**
+   * Роль, за якою деку й фільтри звужують до «донорка бачить лише
+   * контрагентів» (`isDonorViewer`, `keepDonorCounterpartyCards`,
+   * `listFeedRoleFilterKeysForViewer`).
+   *
+   * Це правило написане для донорки-читачки, а не для адміністраторки, чия
+   * власна анкета теж може мати роль `ed` — адмінка не перестає бути
+   * адмінкою від того, що завела собі анкету донорки. Без цього адмін із
+   * такою анкетою отримував ту саму дірку в стрічці, що й звичайна донорка:
+   * рейка фільтрів ховалась узагалі, а донорські картки прибирались із деки
+   * — хоча для адміна стрічка робочий інструмент, який мусить показувати
+   * все й пускати звужувати чим завгодно.
+   */
+  const donorRestrictionViewerRole = isAdmin ? '' : currentUserRole;
+  const donorRestrictionViewerRoleRef = useRef(donorRestrictionViewerRole);
+  donorRestrictionViewerRoleRef.current = donorRestrictionViewerRole;
+  const canUseMatchingFilters = !isDonorViewer(donorRestrictionViewerRole);
+  // A donor has no filter controls. Keep persisted filters out of every async
+  // loading path too, so a hidden localStorage value cannot narrow the deck.
+  const matchingUiFilters = canUseMatchingFilters ? filters : EMPTY_MATCHING_FILTERS;
+  filtersRef.current = matchingUiFilters;
+  useEffect(() => {
+    if (!canUseMatchingFilters) setOpenFilterGroup(null);
+  }, [canUseMatchingFilters]);
 
   // Стрілка «відкрити вузол у Firebase» біля публічних нотаток: та сама службова
   // навігація, що в блоках форми анкети, і той самий тумблер (EXT на
@@ -3351,7 +3368,7 @@ const Matching = () => {
       // Дека донорки — це самі контрагенти, і рахувати запас треба по них.
       // Інакше сторінка джерела виглядає повною з карток, які на екран не
       // потраплять: відлік обіцяв би дві картки, а дорахувати їх було б нічим.
-      viewerRole: currentUserRoleRef.current,
+      viewerRole: donorRestrictionViewerRoleRef.current,
       viewerId: getOwnerId(),
       onPart,
       onDiagnosticEvent: recordInitialLoadDiagnostic,
@@ -3607,7 +3624,7 @@ const Matching = () => {
           filters: filtersRef.current || {},
           viewMode: viewModeRef.current,
           ownerId: getOwnerId(),
-          viewerRole: currentUserRoleRef.current,
+          viewerRole: donorRestrictionViewerRoleRef.current,
           viewerId: getOwnerId(),
           offset: 0,
           limit: INITIAL_LOAD,
@@ -3670,7 +3687,7 @@ const Matching = () => {
         console.log('[loadInitial] using cache', cached.length);
         const cachedCandidates = cached.filter(u => isMatchingCardId(u.userId) && !exclude.has(u.userId));
         const filteredCached = keepDonorCounterpartyCards({
-          users: isDonorViewer(currentUserRoleRef.current) ? cachedCandidates : applyMatchingUiFiltersToUsers({
+          users: isDonorViewer(donorRestrictionViewerRoleRef.current) ? cachedCandidates : applyMatchingUiFiltersToUsers({
             users: cachedCandidates,
             filters: filtersRef.current || {},
             filterMainFn: filterMain,
@@ -3680,7 +3697,7 @@ const Matching = () => {
             roleIndexSets,
             viewMode: 'default',
           }),
-          viewerRole: currentUserRoleRef.current,
+          viewerRole: donorRestrictionViewerRoleRef.current,
           viewerId: getOwnerId(),
         });
         loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
@@ -5199,7 +5216,7 @@ const Matching = () => {
           filters: filtersRef.current || {},
           viewMode,
           ownerId: getOwnerId(),
-          viewerRole: currentUserRoleRef.current,
+          viewerRole: donorRestrictionViewerRoleRef.current,
           viewerId: getOwnerId(),
           fetchMatchingIndexedCandidates,
           hydrateUsersByIds: hydrateMatchingFeedCards,
@@ -5511,9 +5528,9 @@ const Matching = () => {
       roleIndexSets,
       viewMode,
     }) : users,
-    viewerRole: viewMode === 'default' ? currentUserRole : '',
+    viewerRole: viewMode === 'default' ? donorRestrictionViewerRole : '',
     viewerId: ownerId,
-  }), [canUseMatchingFilters, currentUserRole, dislikeUsers, favoriteUsers, matchingUiFilters, ownerId, roleIndexSets, stickyReactedUserIds, users, viewMode]);
+  }), [canUseMatchingFilters, donorRestrictionViewerRole, dislikeUsers, favoriteUsers, matchingUiFilters, ownerId, roleIndexSets, stickyReactedUserIds, users, viewMode]);
 
   /**
    * Власна чернетка, яку питали по імені чи контакту, — теж відповідь пошуку.
@@ -5562,7 +5579,7 @@ const Matching = () => {
     ownDislikeUsers,
     favoriteUsers,
     dislikeUsers,
-    viewerRole: currentUserRole,
+    viewerRole: donorRestrictionViewerRole,
     viewerId: ownerId,
     // Реакція прибирає картку двічі — тут і в `applyMatchingUiFiltersToUsers`,
     // — тож набір «відповіли просто зараз» мусять знати обидва прибирання.
@@ -5584,7 +5601,7 @@ const Matching = () => {
     users,
     personalCreateProfiles,
     viewMode,
-    currentUserRole,
+    donorRestrictionViewerRole,
     ownerId,
   ]);
 
@@ -7202,8 +7219,8 @@ const Matching = () => {
   // перелік один на обидва місця, інакше рейка казала б про позначку, якої в
   // групі вже немає.
   const roleOptionKeys = useMemo(
-    () => listFeedRoleFilterKeysForViewer(currentUserRole),
-    [currentUserRole],
+    () => listFeedRoleFilterKeysForViewer(donorRestrictionViewerRole),
+    [donorRestrictionViewerRole],
   );
   // Рейка будує свої чіпи сама; тут вони потрібні рівно заради одного
   // питання — чи не порожня якась група: саме вона є причиною порожнього
@@ -7546,7 +7563,7 @@ const Matching = () => {
    */
   const donorRoleFilterBlocksFeed = viewMode === 'default'
     && !isSearching
-    && donorFeedRoleFilterLeavesNothing({ viewerRole: currentUserRole, filters });
+    && donorFeedRoleFilterLeavesNothing({ viewerRole: donorRestrictionViewerRole, filters });
 
   const restoreDonorRoleFilter = React.useCallback(() => {
     const roleFilters = filtersRef.current?.userRole || filtersRef.current?.role || {};
@@ -7597,7 +7614,7 @@ const Matching = () => {
     // відсіюються вже на сторінці джерела (`fetchChunk`), щоб не гортати за
     // читачку те, чого вона не побачить, — тож `users` у неї буває порожній
     // саме тоді, коли пояснення й потрібне.
-    if (!isReactionTab && !isSearching && isDonorViewer(currentUserRole)) {
+    if (!isReactionTab && !isSearching && isDonorViewer(donorRestrictionViewerRole)) {
       return uiText('У стрічці немає анкет агенцій, клінік чи батьків — інших вона донорці не показує. Конкретну людину можна знайти пошуком', language);
     }
     return uiText('Немає доступних профілів', language);
@@ -8237,7 +8254,7 @@ const Matching = () => {
                 groupResetName={filterGroupReset.name}
                 nonAdminAllActive={!isAdmin}
                 roleOptionKeys={roleOptionKeys}
-                viewerRole={currentUserRole}
+                viewerRole={donorRestrictionViewerRole}
                 // Закрита рейка все одно тримає панель змонтованою — вона й є
                 // сховищем фільтрів, тож зняти її з дерева означало б губити
                 // чернетку й ганяти ефект перебору групи ролі на кожне відкриття.

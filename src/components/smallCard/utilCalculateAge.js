@@ -1,4 +1,5 @@
 import { formatDateToDisplay } from 'components/inputValidations';
+import { getCurrentValue } from '../getCurrentValue';
 
 /**
  * Вік з дати народження, у якому б написанні вона не лежала.
@@ -7,12 +8,18 @@ import { formatDateToDisplay } from 'components/inputValidations';
  * — тож рахувати вік доводиться з обох: нові вузли несуть ISO, legacy-анкети
  * ще й крапкову форму. `formatDateToDisplay` зводить їх до одного написання,
  * а далі рахунок той самий, що й був.
+ *
+ * `birth` — теж поле з історією версій (`getCurrentValue`): після редагування
+ * дати в базі лежить масив, а не сам рядок. Без розгортання масив не впізнавав
+ * жоден із регулярних виразів нижче — картка показувала нерозібрану дату
+ * замість віку.
  */
 export const utilCalculateAge = birthDateString => {
-  if (!birthDateString) return null;
-  if (typeof birthDateString !== 'string') return birthDateString;
+  const current = getCurrentValue(birthDateString);
+  if (!current) return null;
+  if (typeof current !== 'string') return current;
 
-  const display = formatDateToDisplay(birthDateString);
+  const display = formatDateToDisplay(current);
   const [day, month, year] = String(display).split('.').map(Number);
   if (!day || !month || !year) return null;
 
