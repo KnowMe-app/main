@@ -2228,8 +2228,12 @@ export const TopBlock = ({
             cardData.birth && (
               <span key="birth" style={factChipStyle}>
                 {/* У базі дата лежить у `РРРР-ММ-ДД`; людині вона показується
-                    крапками — так само, як усюди в застосунку. */}
-                {formatDateToDisplay(cardData.birth)} {fieldBirth(cardData.birth)}
+                    крапками — так само, як усюди в застосунку. `birth` — теж
+                    поле з історією (`getCurrentValue`): масив версій сюди
+                    приїжджає, коли дату вже редагували, і без розгортання
+                    `formatDateToDisplay` не впізнавав у ньому рядок — дата
+                    лишалась нечитаною, а вік узагалі не рахувався. */}
+                {formatDateToDisplay(getCurrentValue(cardData.birth))} {fieldBirth(cardData.birth)}
               </span>
             ),
             identityMeta.length > 0 && (
