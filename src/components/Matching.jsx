@@ -7824,6 +7824,17 @@ const Matching = () => {
     });
   }, [ownerId, requestPublicComments, users]);
 
+  // Видача пошуку прапорцю не вірить: відгук, записаний до появи
+  // `hasPublicReview` (або перенесений імпортом), прапорця в картці не має, і
+  // рядок показував порожню доріжку там, де відкрита картка показувала відгук.
+  // Рядків тут десяток (`searchRevealCount`), і вони — відповідь на явний
+  // запит, тож читання на кожен лишається в тій самій межі, що й шари
+  // доповнень адміна вище. Стрічку це не здорожчує: там лишається прапорець.
+  useEffect(() => {
+    if (!ownerId || !isSearching) return;
+    feedSourceWithoutOwnEdits.forEach(user => requestPublicComments(user?.userId));
+  }, [feedSourceWithoutOwnEdits, isSearching, ownerId, requestPublicComments]);
+
   useEffect(() => {
     requestPublicCommentsRef.current = requestPublicComments;
   }, [requestPublicComments]);

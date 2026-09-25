@@ -4948,15 +4948,25 @@ export const backfillMatchingCardPublicReviewFlags = async () => {
     updates[`${profileId}/${MATCHING_CARD_REVIEW_FLAG_FIELD}`] = true;
   });
 
-  const count = Object.keys(updates).length;
-  if (!count) return 0;
+  const paths = Object.keys(updates);
+  if (!paths.length) return 0;
   try {
     await update(ref2(database, MATCHING_CARDS_ROOT), updates);
+    return paths.length;
   } catch (error) {
-    console.warn('[matchingCards] прапорець відгуків не дописано', error);
-    return 0;
+    // Багатошляховий запис атомарний: одна картка, яку правило відхилило
+    // (`$uid.validate` — картка без жодного вузла анкети), валила весь прогін.
+    // Дописуємо поштучно, щоб решта карток таки отримала прапорець.
+    console.warn('[matchingCards] пакетний запис прапорця відхилено, пишемо поштучно', error);
   }
-  return count;
+  const results = await Promise.allSettled(
+    paths.map(path => set(ref2(database, `${MATCHING_CARDS_ROOT}/${path}`), true)),
+  );
+  const failed = paths.filter((_, index) => results[index].status === 'rejected');
+  if (failed.length) {
+    console.warn('[matchingCards] прапорець відгуків не дописано карткам', failed);
+  }
+  return paths.length - failed.length;
 };
 
 /**
