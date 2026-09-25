@@ -39,6 +39,7 @@ import {
   syncUserSearchKeyIndex,
   createMatchingCardsIndex,
   backfillProfileDraftOwners,
+  backfillMatchingCardPublicReviewFlags,
   createSelectedSearchKeyIndexes,
   buildSearchIdIndexPayloadFromCollections,
   buildSearchKeyIndexPayloadFromCollections,
@@ -601,6 +602,15 @@ const INDEX_JOB_GROUPS = [
         key: 'profileMutationOwners',
         label: 'Автори чернеток',
         hint: '→ multiData/profileMutationOwners',
+      },
+      {
+        // Разова робота: `hasPublicReview` пишуть самі писачі коментарів, але
+        // лише на нове створення чи зняття відгуку — цей чекбокс наздоганяє
+        // картки, чиї відгуки вже лежали в comments/{id} до появи прапорця.
+        // TODO: прибрати після одного запуску в проді.
+        key: 'matchingCardPublicComments',
+        label: 'Публічні коментарі',
+        hint: '→ matchingCards/{id}/hasPublicReview',
       },
     ],
   },
@@ -6610,6 +6620,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (
       !selectedIndexJobs.stimulationShortcuts &&
       !selectedIndexJobs.profileMutationOwners &&
+      !selectedIndexJobs.matchingCardPublicComments &&
       !selectedIndexJobs.searchKeyUsersAll &&
       !selectedIndexJobs.searchKeySetReindex &&
       !selectedIndexJobs.searchLocalIdAndKey &&
@@ -6659,6 +6670,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           written
             ? `Авторів дописано: ${written}`
             : 'Усі чернетки вже мають автора',
+          { id: toastId },
+        );
+      }
+
+      if (selectedIndexJobs.matchingCardPublicComments) {
+        const toastId = 'index-matching-card-public-comments-progress';
+        toast.loading('Дописуємо hasPublicReview за наявними відгуками...', { id: toastId });
+        const written = await backfillMatchingCardPublicReviewFlags();
+        toast.success(
+          written
+            ? `Прапорець дописано карткам: ${written}`
+            : 'Усі картки з відгуками вже мають прапорець',
           { id: toastId },
         );
       }
