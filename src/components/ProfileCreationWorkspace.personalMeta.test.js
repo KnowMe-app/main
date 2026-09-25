@@ -116,7 +116,7 @@ const openOwnDraft = async () => {
   render(<ProfileCreationWorkspace />);
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Відкрити' }));
-  await screen.findByPlaceholderText('Нотатка для себе');
+  await screen.findByPlaceholderText('Додати памʼятку');
 };
 
 // Той самий шлях англійською: кнопки видачі підписані тим самим словником.
@@ -124,7 +124,7 @@ const openOwnDraftInEnglish = async () => {
   render(<ProfileCreationWorkspace />);
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Open' }));
-  await screen.findByPlaceholderText('A note for yourself');
+  await screen.findByPlaceholderText('Add a note');
 };
 
 beforeEach(() => {
@@ -144,7 +144,7 @@ applyUkrainianInterface();
 it('replaces regular-user draft status and progress with personal metadata controls', async () => {
   await openOwnDraft();
 
-  expect(screen.getByPlaceholderText('Нотатка для себе')).toBeInTheDocument();
+  expect(screen.getByPlaceholderText('Додати памʼятку')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'В обране' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Дизлайк' })).toBeInTheDocument();
   expect(screen.queryByText(/Чернетка · оновлено/)).not.toBeInTheDocument();
@@ -159,13 +159,13 @@ it('shows personal metadata for persisted drafts without revision metadata', asy
 
   await openOwnDraft();
 
-  expect(screen.getByPlaceholderText('Нотатка для себе')).toBeInTheDocument();
+  expect(screen.getByPlaceholderText('Додати памʼятку')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'В обране' })).toBeInTheDocument();
 });
 
 it('saves a personal comment on blur using the draft card id fallback', async () => {
   await openOwnDraft();
-  const comment = screen.getByPlaceholderText('Нотатка для себе');
+  const comment = screen.getByPlaceholderText('Додати памʼятку');
 
   fireEvent.change(comment, { target: { value: 'Моя нотатка' } });
   fireEvent.blur(comment);
@@ -197,19 +197,21 @@ it('switches mutually exclusive reactions through the reused controls', async ()
 it('ставить публічну й приватну нотатки парою, з тими самими підписами', async () => {
   await openOwnDraft();
 
-  const publicLabel = screen.getByText('Публічна нотатка');
-  const privateLabel = screen.getByText('Приватна нотатка');
+  const publicLabel = screen.getByText('Публічний відгук');
+  const privateLabel = screen.getByText('Памʼятка для себе');
 
-  expect(screen.getByText('Бачать усі')).toBeInTheDocument();
-  expect(screen.getByText('Бачите тільки ви')).toBeInTheDocument();
+  // Третього рядка («Бачать усі», «Бачите тільки ви») немає: підпис і
+  // плейсхолдер уже кажуть, хто запис побачить.
+  expect(screen.queryByText('Бачать усі')).not.toBeInTheDocument();
+  expect(screen.queryByText('Бачите тільки ви')).not.toBeInTheDocument();
   // Публічне стоїть над власним: відгук читають, а нотатку пишуть.
   expect(publicLabel.compareDocumentPosition(privateLabel))
     .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   // Плейсхолдери — ті самі, що в стрічці й у відкритій картці.
   // У чернетці відгуки читати нема де — картки ще немає, — тож плейсхолдер
   // каже саму роботу, без заклику перевіряти чуже.
-  expect(screen.getByPlaceholderText('Додати публічну нотатку')).toBeInTheDocument();
-  expect(screen.getByPlaceholderText('Нотатка для себе')).toBeInTheDocument();
+  expect(screen.getByPlaceholderText('Додати анонімний відгук, його побачать усі')).toBeInTheDocument();
+  expect(screen.getByPlaceholderText('Додати памʼятку')).toBeInTheDocument();
   // Власного заголовка секції в публічного коментаря більше немає — його
   // називає підпис доріжки.
   expect(screen.queryByText('💬 Публічний коментар')).not.toBeInTheDocument();
@@ -231,6 +233,6 @@ it('говорить мовою інтерфейсу', async () => {
   await openOwnDraftInEnglish();
 
   expect(screen.getByText('Profile filled in')).toBeInTheDocument();
-  expect(screen.getByText('Public note')).toBeInTheDocument();
-  expect(screen.getByText('Private note')).toBeInTheDocument();
+  expect(screen.getByText('Public review')).toBeInTheDocument();
+  expect(screen.getByText('Note to self')).toBeInTheDocument();
 });

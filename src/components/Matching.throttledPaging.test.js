@@ -19,8 +19,10 @@ describe('пауза між сторінками стрічки — тільки
   });
 
   it('вантажить рівно домовлену порцію, коли відлік добіг нуля', () => {
+    // Звужена дека питає джерело більшими сторінками: порція там — дві
+    // картки після фільтрів, а не дві сирі.
     expect(matching()).toContain(
-      "endOfDeckLoadRef.current('feed-countdown', { limit: MATCHING_THROTTLED_LOAD_BATCH });"
+      'limit: feedFiltersNarrowedRef.current ? MATCHING_REFILL_LIMIT : MATCHING_THROTTLED_LOAD_BATCH,'
     );
   });
 
@@ -231,8 +233,9 @@ describe('публічні коментарі', () => {
       source.indexOf('</ModernProfileBody>'),
     );
     expect(card).toContain("{profileUiText('personalNote', language)}");
-    expect(card).toContain("{profileUiText('personalNoteHint', language)}");
-    expect(card).toContain("{profileUiText('publicCommentHint', language)}");
+    expect(card).toContain("{profileUiText('publicComment', language)}");
+    // Підказок «Бачите тільки ви» / «Бачать усі» більше немає.
+    expect(card).not.toContain('Hint');
     expect(card.indexOf('{publicCommentSlot}'))
       .toBeLessThan(card.indexOf("profileUiText('personalNotePlaceholder', language)"));
   });
@@ -271,7 +274,10 @@ describe('одна порція — один жест, і рівно дві ка
     );
     expect(effect).toContain('publicCardsLength >= throttledCycle.target');
     // Зі стелею на спроби, інакше добір сам став би потоком.
-    expect(effect).toContain('throttledCycle.attempts >= MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS');
+    expect(effect).toContain('throttledCycle.attempts >= maxAttempts');
+    expect(effect).toContain('MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS');
+    // Під фільтрами порцію рахують картки, що пройшли фільтри.
+    expect(effect).toContain('MATCHING_THROTTLED_FILTERED_MAX_ATTEMPTS');
   });
 
   // Відлік добігає нуля, картки лягають у кінець — і кінець списку виглядає так
@@ -415,7 +421,10 @@ describe('дії та роль на картці стрічки', () => {
   // інтерфейсу — «Донорка» в рядку, «Донорка яйцектилін» у відкритій картці,
   // «Donor» англійською. Плашка лишилась на знімку, чіпа під іменем немає.
   it('показує роль кодом на обох виглядах', () => {
-    expect(read('Matching.jsx')).toContain('<GalleryRoleTag');
+    // Плитка галереї кладе роль на знімок тією самою плашкою, що й рядок.
+    const gallerySource = read('Matching.jsx');
+    expect(gallerySource).toContain('<PhotoRoleBadge $role={role}>{roleCode}</PhotoRoleBadge>');
+    expect(gallerySource).toContain('{!photo && roleCode && <RowRoleCode $role={role}>{roleCode}</RowRoleCode>}');
     const rowSource = read('ProfileRow.jsx');
     expect(rowSource).toContain('<S.PhotoRoleBadge $role={rowRole}>{roleCode}</S.PhotoRoleBadge>');
     expect(rowSource).not.toContain('<S.RoleTag');

@@ -43,7 +43,12 @@ const buildCommentBackendUrl = (ownerId, cardId) => {
 // (форма доповнення картки): підпис у порожньому полі мусить бути той самий, що
 // в стрічці й у відкритій картці, — два сусідні порожні поля з різними
 // запрошеннями читаються як два різні механізми.
-export const FieldComment = ({ userData, extendedMode = false, placeholder, onLegacyCommentMigrated }) => {
+//
+// `ClearButton` — для екранів матчингу: там памʼятка стоїть поруч із
+// публічним відгуком і мусить виглядати так само — текстом без рамки поля й
+// тим самим хрестиком (`NoteClearButton`). Поле тоді лишається голим, а
+// вигляд йому дає оболонка того екрана.
+export const FieldComment = ({ userData, extendedMode = false, placeholder, onLegacyCommentMigrated, ClearButton }) => {
   const textareaRef = useRef(null);
   const [text, setText] = useState('');
   const autoResize = useAutoResize(textareaRef, text);
@@ -135,6 +140,44 @@ export const FieldComment = ({ userData, extendedMode = false, placeholder, onLe
 
   const showBackendShortcut = extendedMode && Boolean(ownerId && cardId);
 
+  const clearComment = async event => {
+    event.stopPropagation();
+    dirtyRef.current = true;
+    setText('');
+    const initialCommentRead = initialCommentReadRef.current;
+    const cleared = await persist('', false, false);
+    if (cleared && initialCommentReadRef.current === initialCommentRead) {
+      dirtyRef.current = false;
+    }
+  };
+
+  if (ClearButton) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '4px', width: '100%' }}>
+        <textarea
+          ref={textareaRef}
+          rows={1}
+          placeholder={placeholder || 'Додайте свій коментар'}
+          value={text}
+          onChange={e => {
+            dirtyRef.current = true;
+            setText(e.target.value);
+            autoResize(e.target);
+          }}
+          onBlur={() => {
+            void persist(textareaRef.current?.value ?? '');
+          }}
+          style={{ flex: '1 1 auto', minWidth: 0, resize: 'none', overflowY: 'hidden' }}
+        />
+        {text && (
+          <ClearButton type="button" aria-label="Очистити коментар" title="Очистити коментар" onClick={clearComment}>
+            ×
+          </ClearButton>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -208,16 +251,7 @@ export const FieldComment = ({ userData, extendedMode = false, placeholder, onLe
         <button
           type="button"
           aria-label="Очистити коментар"
-          onClick={async event => {
-            event.stopPropagation();
-            dirtyRef.current = true;
-            setText('');
-            const initialCommentRead = initialCommentReadRef.current;
-            const cleared = await persist('', false, false);
-            if (cleared && initialCommentReadRef.current === initialCommentRead) {
-              dirtyRef.current = false;
-            }
-          }}
+          onClick={clearComment}
           style={{
             position: 'absolute',
             top: '50%',

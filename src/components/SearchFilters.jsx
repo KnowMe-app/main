@@ -518,6 +518,7 @@ export const SearchFilters = ({
           optionCounts={optionCounts?.[group.filterName]}
           filters={filters}
           onChange={onChange}
+          selectOnly={mode === 'matching'}
           compact={group.compact}
         />
       ))}

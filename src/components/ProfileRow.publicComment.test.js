@@ -32,9 +32,9 @@ const setup = (props = {}) => {
 const ownComment = { id: 'c1', text: 'мій запис', authorId: 'viewer-1', authorName: 'Ольга Петрів', createdAt: Date.now() };
 const otherComment = { id: 'c2', text: 'чужий запис', authorId: 'viewer-2', authorName: 'Ігор Ковальчук', createdAt: Date.now() };
 
+// Хрестик знімає запис одним дотиком — другого кроку «Видалити?» немає.
 const removeComment = async () => {
   fireEvent.click(screen.getByLabelText('Видалити коментар'));
-  fireEvent.click(await screen.findByLabelText('Підтвердити видалення'));
 };
 
 const openComposer = () => {
@@ -141,13 +141,10 @@ describe('quick public comment', () => {
     expect(screen.getByRole('textbox')).toHaveValue('мій запис');
   });
 
-  it('lets the author take their own record down, after one confirmation', async () => {
+  it('lets the author take their own record down with one tap on the cross', async () => {
     const { onDelete } = setup({ comments: [ownComment] });
 
     fireEvent.click(screen.getByLabelText('Видалити коментар'));
-    expect(onDelete).not.toHaveBeenCalled();
-
-    fireEvent.click(await screen.findByLabelText('Підтвердити видалення'));
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith('profile-1', 'c1'));
   });
 
@@ -203,13 +200,15 @@ describe('quick public comment', () => {
     expect(screen.queryByLabelText('Видалити коментар')).not.toBeInTheDocument();
   });
 
-  it('labels each comment with its author initials', () => {
+  // Відгук анонімний: ні імені, ні ініціалів автора під ним немає.
+  it('never names the author of a review', () => {
     setup({
       comments: [
         { id: 'c1', text: 'запис', authorId: 'viewer-2', authorName: 'Ігор Ковальчук', createdAt: Date.now() },
       ],
     });
-    expect(screen.getByText('ІК')).toBeInTheDocument();
+    expect(screen.queryByText('ІК')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Ковальчук/)).not.toBeInTheDocument();
   });
 
   // Публічні нотатки лежать не в анкеті, а в окремому корені `comments/{id}`, і
@@ -255,12 +254,11 @@ describe('стан читання відгуків', () => {
     expect(describeReviewsState({ requested: true, loading: false, loaded: true, count: 2 })).toBe('');
   });
 
-  // Прочитана порожнеча — теж відповідь, і вона лишається на екрані. Доти дотик
-  // до значка давав «Шукаємо відгуки…» на частку секунди й тишу після: напис
-  // блимав і зникав, а чи прочитано бодай щось — лишалось невідомим.
-  it('каже, що відгуків немає, коли прочитана відповідь порожня', () => {
+  // Прочитана порожнеча мовчить: відгуки приїжджають самі, і рядок
+  // «Публічних відгуків ще немає» в кожній картці лише займав місце.
+  it('мовчить, коли прочитана відповідь порожня', () => {
     expect(describeReviewsState({ requested: true, loading: false, loaded: true, count: 0 }))
-      .toBe('Публічних відгуків ще немає');
+      .toBe('');
   });
 
   // Англійський бік — тими самими словами: доріжка стоїть у стрічці, і мову
@@ -268,8 +266,8 @@ describe('стан читання відгуків', () => {
   it('говорить мовою інтерфейсу', () => {
     expect(describeReviewsState({ requested: true, loading: true, loaded: false }, 'en'))
       .toBe('Looking for public notes…');
-    expect(describeReviewsState({ requested: true, loading: false, loaded: true, count: 0 }, 'en'))
-      .toBe('No public notes yet');
+    expect(describeReviewsState({ requested: true, loading: false, loaded: false }, 'en'))
+      .toBe('Could not read the public notes');
   });
 });
 
@@ -296,10 +294,12 @@ describe('плейсхолдер там, де відгуки вже прочит
     expect(screen.getByText(publicCommentPlaceholder())).toBeInTheDocument();
   });
 
-  it('у preloaded-блоці лишає саму роботу — написати', () => {
+  // Текст плейсхолдера тепер один скрізь: відгуки всюди приїжджають самі, і
+  // кликати «перевірити їх наявність» нема куди.
+  it('у preloaded-блоці пише той самий напис, що й скрізь', () => {
     setup({ comments: [], preloaded: true });
     expect(screen.getByText(publicCommentPlainPlaceholder())).toBeInTheDocument();
-    expect(screen.queryByText(publicCommentPlaceholder())).not.toBeInTheDocument();
+    expect(publicCommentPlainPlaceholder()).toBe(publicCommentPlaceholder());
   });
 
   it('несе той самий напис і в саме поле, коли його відкрили', () => {
@@ -309,7 +309,7 @@ describe('плейсхолдер там, де відгуки вже прочит
   });
 
   it('говорить мовою інтерфейсу', () => {
-    expect(publicCommentPlainPlaceholder('en')).toBe('Add a public note');
-    expect(publicCommentPlainPlaceholder('uk')).toBe('Додати публічну нотатку');
+    expect(publicCommentPlainPlaceholder('en')).toBe('Add an anonymous review, everyone will see it');
+    expect(publicCommentPlainPlaceholder('uk')).toBe('Додати анонімний відгук, його побачать усі');
   });
 });

@@ -955,11 +955,19 @@ export const ReviewsGateNote = styled.div`
 `;
 
 export const CommentEntry = styled.div`
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
   padding: 3px 0;
   border-left: ${({ $failed }) => ($failed
     ? '1px solid color-mix(in srgb, #d64545 70%, transparent)'
     : '1px solid transparent')};
   cursor: ${({ $editable }) => ($editable ? 'text' : 'pointer')};
+`;
+
+export const CommentBody = styled.div`
+  flex: 1 1 auto;
+  min-width: 0;
 `;
 
 /* Підпис стоїть під написаним, а не над ним: три відгуки поспіль інакше
@@ -1008,26 +1016,6 @@ export const CommentRetry = styled.button`
   text-decoration: underline;
 `;
 
-// Публічний запис про третю особу мусить мати кому зняти: хрестик бачить автор
-// запису і адмін. Він тримається в рядку підпису, щоб не важити більше за сам
-// коментар, і питає підтвердження перш ніж видалити.
-export const CommentDelete = styled.button`
-  font: inherit;
-  font-size: 11px;
-  font-weight: ${({ $confirming }) => ($confirming ? 700 : 600)};
-  margin-left: auto;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: ${({ $confirming }) => ($confirming ? '#d64545' : 'var(--matching-muted-text)')};
-  cursor: pointer;
-  opacity: ${({ $confirming }) => ($confirming ? 1 : 0.7)};
-
-  &:hover {
-    opacity: 1;
-  }
-`;
-
 export const CommentsMoreButton = styled.button`
   display: inline-flex;
   align-items: center;
@@ -1061,7 +1049,9 @@ export const AddCommentTrigger = styled.div`
   background: none;
   font-size: ${NOTE_TEXT_SIZE};
   line-height: ${NOTE_TEXT_LINE_HEIGHT};
-  color: var(--matching-muted-text);
+  /* Запасні значення — для форми доповнення, де --matching-* не оголошені:
+     без них плейсхолдер відгуку виходив темнішим за плейсхолдер памʼятки. */
+  color: var(--matching-muted-text, var(--km-muted, #8a8178));
   opacity: 0.75;
   cursor: text;
 
@@ -1113,8 +1103,10 @@ export const PublicCommentInput = styled.textarea`
   box-sizing: border-box;
   margin-top: 2px;
   padding: 2px 0 4px;
+  /* Без рамки й без риски під полем: відгук набирається просто текстом, як
+     і памʼятка поруч. Будь-яка обводка робила з двох однакових доріжок
+     «поле» й «текст». */
   border: 0;
-  border-bottom: 1px solid var(--matching-card-border);
   border-radius: 0;
   resize: none;
   overflow-y: auto;
@@ -1126,7 +1118,11 @@ export const PublicCommentInput = styled.textarea`
 
   &:focus {
     outline: 0;
-    border-bottom-color: color-mix(in srgb, var(--matching-accent) 45%, transparent);
+  }
+
+  &::placeholder {
+    color: var(--matching-muted-text, var(--km-muted, #8a8178));
+    opacity: 0.75;
   }
 `;
 
@@ -1214,10 +1210,13 @@ export const RowReactionPair = styled.div`
  * вкладена в неї друга заокруглена коробка з іншим фоном виглядала наліпкою:
  * єдине закруглення в картці, де всі інші секції (контакти, «всі дані») —
  * пласкі й розділені волосяною рискою. Тепер нотатки розділені так само, а
- * «хто побачить запис» каже смужка доріжки (`NoteLane` з `$flush`) і підпис
- * над нею.
+ * «хто побачить запис» каже смужка доріжки (`NoteLane`) і підпис над нею —
+ * так само, як у відкритій картці й у формі чернетки.
  */
 export const RowNotes = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   margin-top: 10px;
   padding-top: 9px;
   border-top: 1px solid var(--matching-card-border);
