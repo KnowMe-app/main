@@ -381,16 +381,15 @@ const DraftAvatarFallback = styled.span`
   background:var(--km-accent-light); color:var(--km-accent); font:800 22px/1 var(--km-font);
 `;
 const DraftName = styled.h2`margin:0; font-size:clamp(20px, 5.5vw, 24px); line-height:1.2; overflow-wrap:anywhere;`;
-// Вік поруч з іменем нести нема чому окремо: `DraftNameRow` лишається, щоб і
-// вік, і саме імʼя перенослись рядком разом, а не розповзались по ширині.
+// Вік стоїть в одному рядку з іменем, як у рядку стрічки (`ProfileRow`), а
+// довге імʼя переносить його нижче, а не вилазить за край.
 const DraftNameRow = styled.div`display:flex; align-items:baseline; flex-wrap:wrap; gap:6px; min-width:0;`;
 const DraftAge = styled.span`font-size:clamp(16px, 4.5vw, 19px); font-weight:600; color:var(--km-muted);`;
-// Локація — рядком під іменем, жирним текстом зі значком, як у рядку стрічки
-// (`ProfileRow`): дві картки тієї самої людини мусять називати одне й те саме
-// однаково, а не одна плашкою ролі, інша словом.
+// Локація — рядком під іменем, жирним текстом зі значком, як у рядку стрічки:
+// дві картки тієї самої людини мусять виглядати однаково.
 const DraftLocation = styled.div`
   display:flex; align-items:center; gap:6px; min-width:0;
-  font-size:14px; font-weight:700; color:var(--km-header-text, var(--km-text));
+  font-size:14px; font-weight:700; color:var(--km-text);
   overflow-wrap:anywhere;
 
   svg { flex:0 0 auto; color:var(--km-muted); }
@@ -1973,17 +1972,8 @@ export const ProfileCreationWorkspace = () => {
               унизу форми (`NoteLanes`). Реакція лишається тут: це рішення про
               картку, а не запис про людину. */}
           {!editingSharedDraft && activeMutation.updatedAt && <PersonalDraftMeta>
+            {/* Дизлайк ліворуч, лайк праворуч — як у рядку стрічки й у відкритій картці. */}
             <ReactionButtons>
-              <BtnFavorite
-                userId={activeMutation.cardId}
-                userData={null}
-                cacheUserData={false}
-                favoriteUsers={favoriteUsers}
-                setFavoriteUsers={setFavoriteUsers}
-                dislikeUsers={dislikeUsers}
-                setDislikeUsers={setDislikeUsers}
-                customStyle={{ position: 'static' }}
-              />
               <BtnDislike
                 userId={activeMutation.cardId}
                 userData={null}
@@ -1992,6 +1982,16 @@ export const ProfileCreationWorkspace = () => {
                 setDislikeUsers={setDislikeUsers}
                 favoriteUsers={favoriteUsers}
                 setFavoriteUsers={setFavoriteUsers}
+                customStyle={{ position: 'static' }}
+              />
+              <BtnFavorite
+                userId={activeMutation.cardId}
+                userData={null}
+                cacheUserData={false}
+                favoriteUsers={favoriteUsers}
+                setFavoriteUsers={setFavoriteUsers}
+                dislikeUsers={dislikeUsers}
+                setDislikeUsers={setDislikeUsers}
                 customStyle={{ position: 'static' }}
               />
             </ReactionButtons>

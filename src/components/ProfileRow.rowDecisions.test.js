@@ -14,9 +14,11 @@ const card = {
   lastLogin2: '2026-09-01',
 };
 
+// Так пару передає стрічка (`Matching`): хрестик першим, серце другим — лайк
+// стоїть праворуч, як і у відкритій картці.
 const reactions = {
-  primaryAction: { icon: <span>♥</span>, title: 'В обране', accent: true, active: false, onClick: jest.fn() },
-  secondaryAction: { icon: <span>✕</span>, title: 'Приховати', active: false, onClick: jest.fn() },
+  primaryAction: { icon: <span>✕</span>, title: 'Приховати', active: false, onClick: jest.fn() },
+  secondaryAction: { icon: <span>♥</span>, title: 'В обране', accent: true, active: false, onClick: jest.fn() },
 };
 
 const renderRow = (props = {}) => render(
@@ -38,14 +40,14 @@ const standsBefore = (first, second) =>
   first.compareDocumentPosition(second) === Node.DOCUMENT_POSITION_FOLLOWING;
 
 // Рішення про людину стоять одним рядом унизу картки, у сталому порядку:
-// олівець (дописати анкету) → серце й хрестик → відгуки. Раніше вони жили в
+// олівець (дописати анкету) → хрестик і серце → відгуки. Раніше вони жили в
 // трьох різних місцях: два широкі рядки з написами під фактами, стовпчик
 // значків праворуч і сам ряд реакцій.
 // Ці перевірки описують український бік екрана — мову задаємо явно.
 applyUkrainianInterface();
 
 describe('ряд рішень у рядку стрічки', () => {
-  it('шикує олівець, лайк, дизлайк і відгуки саме в цьому порядку', () => {
+  it('шикує олівець, дизлайк, лайк і відгуки саме в цьому порядку', () => {
     renderRow({ onEnrich: jest.fn(), reviewsAction: { count: 0, loading: false, onRequest: jest.fn() } });
 
     const pencil = screen.getByTitle(enrichGateLabel());
@@ -53,9 +55,9 @@ describe('ряд рішень у рядку стрічки', () => {
     const hide = screen.getByTitle('Приховати');
     const reviews = screen.getByTitle(reviewsGateLabel());
 
-    expect(standsBefore(pencil, like)).toBe(true);
-    expect(standsBefore(like, hide)).toBe(true);
-    expect(standsBefore(hide, reviews)).toBe(true);
+    expect(standsBefore(pencil, hide)).toBe(true);
+    expect(standsBefore(hide, like)).toBe(true);
+    expect(standsBefore(like, reviews)).toBe(true);
   });
 
   it('ставить серце й хрестик у спільну рамку — це два боки одного вибору', () => {

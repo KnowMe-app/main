@@ -1278,129 +1278,129 @@ const EditProfile = () => {
   return (
     <Container>
       <CardPanel>
-      <TopRow>
-        <BackButton type="button" onClick={() => navigate(-1)}>
-          <FaArrowLeft size={12} /> Back
-        </BackButton>
-        <ExtendedModeToggleButton
-          type="button"
-          $active={extendedMode}
-          aria-pressed={extendedMode}
-          title={extendedMode ? 'Сховати стрілки переходу до backend на полях' : 'Показати стрілки переходу до backend на полях'}
-          aria-label={extendedMode ? 'Сховати стрілки переходу до backend на полях' : 'Показати стрілки переходу до backend на полях'}
-          onClick={handleExtendedModeToggle}
-        >
-          🧭
-          <ExtendedModeStatus>{extendedMode ? 'EXT' : 'STD'}</ExtendedModeStatus>
-        </ExtendedModeToggleButton>
-      </TopRow>
-      {isAdmin && (pendingOverlayEditorCount > 0 || isOverlayHistoryVisible) && (
-        <OverlayReviewBar>
-          <OverlayReviewLabel>
-            Правки редакторів: {highlightedFields.length} у {pendingOverlayEditorCount} редакторів
-          </OverlayReviewLabel>
-          <OverlayReviewButton
+        <TopRow>
+          <BackButton type="button" onClick={() => navigate(-1)}>
+            <FaArrowLeft size={12} /> Back
+          </BackButton>
+          <ExtendedModeToggleButton
             type="button"
-            disabled={isReviewingOverlays || pendingOverlayEditorCount === 0}
-            onClick={handleAcceptAllOverlays}
+            $active={extendedMode}
+            aria-pressed={extendedMode}
+            title={extendedMode ? 'Сховати стрілки переходу до backend на полях' : 'Показати стрілки переходу до backend на полях'}
+            aria-label={extendedMode ? 'Сховати стрілки переходу до backend на полях' : 'Показати стрілки переходу до backend на полях'}
+            onClick={handleExtendedModeToggle}
           >
-            Прийняти всі
-          </OverlayReviewButton>
-          <OverlayReviewButton
-            type="button"
-            disabled={isReviewingOverlays || pendingOverlayEditorCount === 0}
-            onClick={handleDiscardAllOverlays}
-          >
-            Видалити всі
-          </OverlayReviewButton>
-          <OverlayReviewButton type="button" onClick={toggleOverlayHistory}>
-            {isOverlayHistoryVisible ? 'Сховати історію' : 'Історія правок'}
-          </OverlayReviewButton>
-          {isOverlayHistoryVisible && (
-            <OverlayHistoryList>
-              {overlayHistory.length === 0
-                ? <span>Історія порожня.</span>
-                : overlayHistory.map(entry => (
-                  <span key={entry.entryId}>
-                    {entry.at ? new Date(entry.at).toLocaleString('uk-UA') : '—'}
-                    {' · '}{OVERLAY_HISTORY_ACTION_LABELS[entry.action] || entry.action}
-                    {' · '}{entry.fieldName}: {describeOverlayHistoryChange(entry.change)}
-                    {' · '}{entry.editorUserId}
-                  </span>
-                ))}
-            </OverlayHistoryList>
-          )}
-        </OverlayReviewBar>
-      )}
-      {shouldShowEditorSkeleton ? (
-        <TopBlockSkeleton />
-      ) : (
-        <div style={{ ...coloredCard(), marginBottom: '8px' }}>
-          <TopBlock
-            userData={state}
-            setUsers={() => {}}
-            setShowInfoModal={() => {}}
+            🧭
+            <ExtendedModeStatus>{extendedMode ? 'EXT' : 'STD'}</ExtendedModeStatus>
+          </ExtendedModeToggleButton>
+        </TopRow>
+        {isAdmin && (pendingOverlayEditorCount > 0 || isOverlayHistoryVisible) && (
+          <OverlayReviewBar>
+            <OverlayReviewLabel>
+              Правки редакторів: {highlightedFields.length} у {pendingOverlayEditorCount} редакторів
+            </OverlayReviewLabel>
+            <OverlayReviewButton
+              type="button"
+              disabled={isReviewingOverlays || pendingOverlayEditorCount === 0}
+              onClick={handleAcceptAllOverlays}
+            >
+              Прийняти всі
+            </OverlayReviewButton>
+            <OverlayReviewButton
+              type="button"
+              disabled={isReviewingOverlays || pendingOverlayEditorCount === 0}
+              onClick={handleDiscardAllOverlays}
+            >
+              Видалити всі
+            </OverlayReviewButton>
+            <OverlayReviewButton type="button" onClick={toggleOverlayHistory}>
+              {isOverlayHistoryVisible ? 'Сховати історію' : 'Історія правок'}
+            </OverlayReviewButton>
+            {isOverlayHistoryVisible && (
+              <OverlayHistoryList>
+                {overlayHistory.length === 0
+                  ? <span>Історія порожня.</span>
+                  : overlayHistory.map(entry => (
+                    <span key={entry.entryId}>
+                      {entry.at ? new Date(entry.at).toLocaleString('uk-UA') : '—'}
+                      {' · '}{OVERLAY_HISTORY_ACTION_LABELS[entry.action] || entry.action}
+                      {' · '}{entry.fieldName}: {describeOverlayHistoryChange(entry.change)}
+                      {' · '}{entry.editorUserId}
+                    </span>
+                  ))}
+              </OverlayHistoryList>
+            )}
+          </OverlayReviewBar>
+        )}
+        {shouldShowEditorSkeleton ? (
+          <TopBlockSkeleton />
+        ) : (
+          <div style={{ ...coloredCard(), marginBottom: '8px' }}>
+            <TopBlock
+              userData={state}
+              setUsers={() => {}}
+              setShowInfoModal={() => {}}
+              setState={setState}
+              setUserIdToDelete={() => {}}
+              onOpenMedications={handleOpenMedications}
+              extendedMode={extendedMode}
+              overlayFieldAdditions={overlayFieldAdditions}
+              stimulationScheduleToggle={shouldShowSchedule
+                ? {
+                    visible: isStimulationScheduleVisible,
+                    onToggle: () => setIsStimulationScheduleVisible(prev => !prev),
+                  }
+                : null}
+            />
+          </div>
+        )}
+        {shouldShowSchedule && isStimulationScheduleVisible && state && (
+          <div style={{ ...coloredCard(), marginBottom: '8px' }}>
+            <StimulationSchedule
+              userData={scheduleUserData}
+              setState={setState}
+              onLastCyclePersisted={({ lastCycle, lastDelivery, needsSync }) => {
+                if (!needsSync) return;
+                const updates = {};
+                if (lastCycle) updates.lastCycle = lastCycle;
+                if (lastDelivery) updates.lastDelivery = lastDelivery;
+                if (!Object.keys(updates).length) return;
+                setState(prev => ({ ...prev, ...updates }));
+              }}
+            />
+          </div>
+        )}
+        {shouldShowEditorSkeleton ? (
+          <SkeletonCard>
+            <SkeletonLine width="55%" height={18} />
+            <SkeletonLine width="100%" />
+            <SkeletonLine width="92%" />
+            <SkeletonLine width="75%" />
+            <SkeletonLine width="38%" height={34} />
+          </SkeletonCard>
+        ) : (
+          <ProfileForm
+            state={state}
             setState={setState}
-            setUserIdToDelete={() => {}}
-            onOpenMedications={handleOpenMedications}
+            handleBlur={handleBlur}
+            handleSubmit={handleSubmit}
+            handleClear={handleClear}
+            handleDelKeyValue={handleDelKeyValue}
+            handleFieldFocus={handleFieldFocus}
+            dataSource={dataSource}
+            highlightedFields={highlightedFields}
+            deletedOverlayFields={deletedOverlayFields}
+            isAdmin={isAdmin}
             extendedMode={extendedMode}
             overlayFieldAdditions={overlayFieldAdditions}
-            stimulationScheduleToggle={shouldShowSchedule
-              ? {
-                  visible: isStimulationScheduleVisible,
-                  onToggle: () => setIsStimulationScheduleVisible(prev => !prev),
-                }
-              : null}
+            refreshOverlayForEditor={refreshOverlays}
+            overlayDebugData={pendingOverlays}
+            overlayDebugError={overlayReadError}
+            deletingFieldsRef={deletingFieldsRef}
           />
-        </div>
-      )}
-      {shouldShowSchedule && isStimulationScheduleVisible && state && (
-        <div style={{ ...coloredCard(), marginBottom: '8px' }}>
-          <StimulationSchedule
-            userData={scheduleUserData}
-            setState={setState}
-            onLastCyclePersisted={({ lastCycle, lastDelivery, needsSync }) => {
-              if (!needsSync) return;
-              const updates = {};
-              if (lastCycle) updates.lastCycle = lastCycle;
-              if (lastDelivery) updates.lastDelivery = lastDelivery;
-              if (!Object.keys(updates).length) return;
-              setState(prev => ({ ...prev, ...updates }));
-            }}
-          />
-        </div>
-      )}
-      {shouldShowEditorSkeleton ? (
-        <SkeletonCard>
-          <SkeletonLine width="55%" height={18} />
-          <SkeletonLine width="100%" />
-          <SkeletonLine width="92%" />
-          <SkeletonLine width="75%" />
-          <SkeletonLine width="38%" height={34} />
-        </SkeletonCard>
-      ) : (
-        <ProfileForm
-          state={state}
-          setState={setState}
-          handleBlur={handleBlur}
-          handleSubmit={handleSubmit}
-          handleClear={handleClear}
-          handleDelKeyValue={handleDelKeyValue}
-          handleFieldFocus={handleFieldFocus}
-          dataSource={dataSource}
-          highlightedFields={highlightedFields}
-          deletedOverlayFields={deletedOverlayFields}
-          isAdmin={isAdmin}
-          extendedMode={extendedMode}
-          overlayFieldAdditions={overlayFieldAdditions}
-          refreshOverlayForEditor={refreshOverlays}
-          overlayDebugData={pendingOverlays}
-          overlayDebugError={overlayReadError}
-          deletingFieldsRef={deletingFieldsRef}
-        />
-      )}
+        )}
 
-      {isSyncing && <div>Syncing...</div>}
+        {isSyncing && <div>Syncing...</div>}
       </CardPanel>
     </Container>
   );
