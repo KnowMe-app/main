@@ -450,6 +450,16 @@ export const expandMatchingCard = (userId, card) => {
 export const isMatchingSummaryCard = user => Boolean(user?.[MATCHING_SUMMARY_FLAG]);
 
 /**
+ * Проєкція будь-якого походження: рядок стрічки (`__matchingSummary`) чи
+ * урізана видача пошуку (`__limitedProfile`). У кеш анкет вона не лягає:
+ * `sanitizeMatchingCardForCache` знімає обидві позначки, і збережена проєкція
+ * далі читалась би як повна анкета — з ініціалом замість прізвища.
+ */
+export const isMatchingProfileProjection = user => (
+  isMatchingSummaryCard(user) || Boolean(user?.__limitedProfile)
+);
+
+/**
  * Порівняння значень, яке розуміє поле з кількох значень.
  *
  * `!==` на двох масивах істинний завжди, тож без цього писач вважав би картку

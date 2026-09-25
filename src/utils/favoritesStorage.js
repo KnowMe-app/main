@@ -1,5 +1,6 @@
 import { addCardToList, updateCard, getCardsByList } from './cardsStorage';
 import { loadCards, loadQueries, saveQueries } from './cardIndex';
+import { isMatchingProfileProjection } from './matchingCardIndex';
 
 const FAVORITE_LIST_KEY = 'favorite';
 
@@ -41,8 +42,12 @@ export const syncFavorites = remoteFavs => {
 export const cacheFavoriteUsers = usersObj => {
   const existing = loadCards();
   Object.entries(usersObj).forEach(([id, data]) => {
-    const merged = existing[id] ? { ...existing[id], ...data } : data;
-    updateCard(id, merged);
+    // Проєкція в кеш анкет не лягає (`isMatchingProfileProjection`): злита
+    // поверх збереженої анкети, вона затерла б прізвище ініціалом.
+    if (!isMatchingProfileProjection(data)) {
+      const merged = existing[id] ? { ...existing[id], ...data } : data;
+      updateCard(id, merged);
+    }
     addCardToList(id, FAVORITE_LIST_KEY);
   });
 };

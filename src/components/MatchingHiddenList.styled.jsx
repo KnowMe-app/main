@@ -7,6 +7,9 @@ import {
 } from './noteTypography';
 // Кольори ролей спільні з відкритою карткою — див. `matchingRoleColors`.
 import { ROLE_STRIPE_COLORS } from './matchingRoleColors';
+// Сама цятка публікації спільна з плиткою галереї — колір і форма мають бути
+// тими самими, міняється лише місце, де вона лежить.
+import { PublishDot } from './Matching.styled';
 
 export const Wrap = styled.div`
   display: flex;
@@ -160,6 +163,21 @@ export const PhotoRoleBadge = styled.span`
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+`;
+
+/*
+ * Цятка публікації лежить на фото, у правому верхньому куті — так само, як
+ * плашка ролі лежить у лівому. Досі вона стояла в стовпчику кнопок під
+ * фото, поруч із трубкою контактів: адмін читає стан публікації одним
+ * поглядом по стрічці, а очі в цей момент дивляться на фото, не під нього.
+ */
+export const PhotoPublishDot = styled(PublishDot)`
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 2;
+  width: 26px;
+  height: 26px;
 `;
 
 /* Скільки фото в анкеті — видно з рядка, ще до її відкриття. */

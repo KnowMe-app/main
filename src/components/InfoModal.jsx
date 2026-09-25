@@ -168,6 +168,43 @@ const ComparisonModalContent = styled(LargeModalContent)`
   -webkit-overflow-scrolling: touch;
 `;
 
+/*
+ * Хрестик закриття — таблиця порівняння займає майже весь екран на телефоні,
+ * і білого поля навколо неї, куди можна тапнути, щоб закрити модалку через
+ * `ModalOverlay`, майже не лишається. Кнопка стоїть над скролом контенту
+ * (`position: sticky`), а не просто зверху розмітки, — інакше вона проскролила б
+ * разом з таблицею.
+ */
+const ComparisonCloseButton = styled.button`
+  position: sticky;
+  top: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -6px -6px 8px auto;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--km-card);
+  color: var(--km-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 1;
+
+  &:hover {
+    color: var(--km-text);
+    background-color: var(--km-accent-light);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--km-accent);
+    outline-offset: 1px;
+  }
+`;
+
 const MenuModalContent = styled(ModalContent)`
   width: min(92vw, 380px);
   padding: 14px;
@@ -429,7 +466,14 @@ export const InfoModal = ({
           if (text === 'compareCards' && comparisonScrollRef) comparisonScrollRef.current = event.currentTarget.scrollTop;
         }}
         onClick={event => event.stopPropagation()}
-      >{body}</ContentComponent>
+      >
+        {text === 'compareCards' && (
+          <ComparisonCloseButton type="button" onClick={onClose} aria-label="Закрити порівняння">
+            &times;
+          </ComparisonCloseButton>
+        )}
+        {body}
+      </ContentComponent>
     </ModalOverlay>
   );
 };

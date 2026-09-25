@@ -1655,16 +1655,6 @@ const GalleryCard = React.memo(({
             )}
             <GalleryActionButton
               type="button"
-              $on={isFavorite}
-              aria-label={uiText('В обране', language)}
-              aria-pressed={isFavorite}
-              title={uiText('В обране', language)}
-              onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
-            >
-              {isFavorite ? <FaHeart /> : <FaRegHeart />}
-            </GalleryActionButton>
-            <GalleryActionButton
-              type="button"
               $on={isHidden}
               aria-label={uiText(isHidden ? 'Повернути зі схованих' : 'Приховати', language)}
               aria-pressed={isHidden}
@@ -1672,6 +1662,16 @@ const GalleryCard = React.memo(({
               onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
             >
               {isHidden ? <FaUndoAlt /> : <FaTimes />}
+            </GalleryActionButton>
+            <GalleryActionButton
+              type="button"
+              $on={isFavorite}
+              aria-label={uiText('В обране', language)}
+              aria-pressed={isFavorite}
+              title={uiText('В обране', language)}
+              onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
+            >
+              {isFavorite ? <FaHeart /> : <FaRegHeart />}
             </GalleryActionButton>
             {reviewsAction && (
               <GalleryActionButton
@@ -4008,8 +4008,10 @@ const Matching = () => {
           // «існує» зарахувало б сховану до стрічкових і провело б її повз
           // перевірку додаткового доступу.
           const feedDate = snapshot.exists() ? snapshot.val() : null;
+          // Дата лишається в класифікації: за нею список реакцій шикується в
+          // порядку стрічки ще до пагінації, без жодного додаткового читання.
           classifications[id] = typeof feedDate === 'string' && feedDate.trim()
-            ? { storage: 'feed', reason: 'in-matching-feed' }
+            ? { storage: 'feed', reason: 'in-matching-feed', feedDate: feedDate.trim() }
             : { storage: 'nodes', reason: 'not-in-matching-feed' };
         } catch (error) {
           // Відмова в правах — це не відповідь «немає»: картку однаково
@@ -4018,7 +4020,16 @@ const Matching = () => {
         }
       }));
 
-      const legacyReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'feed');
+      // Список реакцій гортається сторінками саме в цьому порядку, тож він
+      // мусить бути порядком стрічки: дата від нової, у межах дня id за
+      // спаданням (`fetchMatchingCardsPage`). Ключі вузла реакцій приходять за
+      // алфавітом id, і сьогоднішня картка, першою в стрічці, у лайкнутих
+      // могла не потрапити навіть на першу сторінку.
+      const byFeedOrder = (a, b) => (
+        String(classifications[b]?.feedDate || '').localeCompare(String(classifications[a]?.feedDate || ''))
+        || b.localeCompare(a)
+      );
+      const legacyReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'feed').sort(byFeedOrder);
       const nodeReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'nodes');
       debugReactionFlowLog('classifyReactionIdsByStorage:result', {
         fullReactionIds: summarizeIdsForDebug(uniqueIds),
@@ -5624,6 +5635,11 @@ const Matching = () => {
     });
 
     const uniqueIds = new Set();
+    // `reactionIds` — це порядок ключів у вузлі реакцій (коли читач лайкнув чи
+    // дизлайкнув), а не порядок стрічки. Список лайкнутих/дизлайкнутих мусить
+    // йти в тому самому порядку, що й загальний список, — тож сортуємо тим
+    // самим компаратором, яким сортується кожна сторінка стрічки
+    // (`compareUsersByLastLogin2`), а не лишаємо порядок реакції.
     return reactionIds
       .map(id => candidateUsersById.get(id))
       .filter(card => Boolean(card))
@@ -5632,7 +5648,8 @@ const Matching = () => {
         if (!canShowReactionTabCard(card, { isAdmin })) return false;
         uniqueIds.add(card.userId);
         return true;
-      });
+      })
+      .sort(compareUsersByLastLogin2);
   }, [
     additionalAccessUsers,
     dislikeUsers,
@@ -6415,7 +6432,15 @@ const Matching = () => {
     // дотиків стільки, скільки їх зробила людина, а не скільки рядків у
     // списку, а повторний дотик читання не повторює (памʼять таба).
     requestPublicCommentsRef.current(userId);
-    if (!isMatchingSummaryCard(user)) return Promise.resolve();
+    // Проєкція — це і картка стрічки (`__matchingSummary`), і урізана видача
+    // пошуку (`__limitedProfile`, `fetchLimitedProfileById` — той самий поділ,
+    // що й у `SearchBar.isCardProjection`). Поки тут питали лише перший
+    // прапорець, дотик до знайденої пошуком картки не читав вузли анкети
+    // взагалі: звичайний читач бачив у відкритій **опублікованій** картці той
+    // самий ініціал (`surnameShort`), що й у видачі, — `ensureFullProfile`
+    // мовчки виходив на першій умові, і `fetchUsersByIds`/`readProfileFromNodes`
+    // не викликались, хоча право на повне прізвище картка вже мала.
+    if (!isMatchingSummaryCard(user) && !user?.__limitedProfile) return Promise.resolve();
     if (fullProfileRequestsRef.current.has(userId)) return Promise.resolve();
     fullProfileRequestsRef.current.add(userId);
 
@@ -8399,17 +8424,17 @@ const Matching = () => {
                       reviewsSlot={buildRowReviewsSlot(user.userId)}
                       reviewsAction={buildRowReviewsAction(user.userId)}
                       primaryAction={{
+                        icon: dislikeUsers[user.userId] ? <FaUndoAlt size={13} /> : <FaTimes size={14} />,
+                        title: uiText(dislikeUsers[user.userId] ? 'Повернути зі схованих' : 'Приховати', language),
+                        active: Boolean(dislikeUsers[user.userId]),
+                        onClick: toggleRowHidden,
+                      }}
+                      secondaryAction={{
                         icon: favoriteUsers[user.userId] ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
                         title: uiText('В обране', language),
                         accent: true,
                         active: Boolean(favoriteUsers[user.userId]),
                         onClick: toggleRowFavorite,
-                      }}
-                      secondaryAction={{
-                        icon: dislikeUsers[user.userId] ? <FaUndoAlt size={13} /> : <FaTimes size={14} />,
-                        title: uiText(dislikeUsers[user.userId] ? 'Повернути зі схованих' : 'Приховати', language),
-                        active: Boolean(dislikeUsers[user.userId]),
-                        onClick: toggleRowHidden,
                       }}
                     />
                   ))}

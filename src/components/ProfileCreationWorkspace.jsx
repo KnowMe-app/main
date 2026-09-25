@@ -4,7 +4,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import { FiChevronDown, FiClock, FiFolder, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
-import { FaEllipsisV } from 'react-icons/fa';
+import { FaEllipsisV, FaMapMarkerAlt } from 'react-icons/fa';
 
 import {
   addMatchingSearchQuery,
@@ -380,8 +380,20 @@ const DraftAvatarFallback = styled.span`
   width:56px; height:56px; flex:0 0 56px; display:grid; place-items:center; border-radius:18px;
   background:var(--km-accent-light); color:var(--km-accent); font:800 22px/1 var(--km-font);
 `;
-const DraftFacts = styled(Meta)`margin:0;`;
 const DraftName = styled.h2`margin:0; font-size:clamp(20px, 5.5vw, 24px); line-height:1.2; overflow-wrap:anywhere;`;
+// Вік стоїть в одному рядку з іменем, як у рядку стрічки (`ProfileRow`), а
+// довге імʼя переносить його нижче, а не вилазить за край.
+const DraftNameRow = styled.div`display:flex; align-items:baseline; flex-wrap:wrap; gap:6px; min-width:0;`;
+const DraftAge = styled.span`font-size:clamp(16px, 4.5vw, 19px); font-weight:600; color:var(--km-muted);`;
+// Локація — рядком під іменем, жирним текстом зі значком, як у рядку стрічки:
+// дві картки тієї самої людини мусять виглядати однаково.
+const DraftLocation = styled.div`
+  display:flex; align-items:center; gap:6px; min-width:0;
+  font-size:14px; font-weight:700; color:var(--km-text);
+  overflow-wrap:anywhere;
+
+  svg { flex:0 0 auto; color:var(--km-muted); }
+`;
 /*
  * Контакти шапки — тим самим представленням, що й усюди (`ContactLinks`).
  *
@@ -1795,25 +1807,24 @@ export const ProfileCreationWorkspace = () => {
   ), [draft, language, overlayTarget]);
 
   /**
-   * Факти, за якими картку впізнають: роль, вік, локація.
+   * Факти, за якими картку впізнають: вік і локація.
    *
    * Беруться вони з тієї самої картки, яку показує форма (канонічна + те, що вже
    * набрали), і тими самими геттерами, що й рядок стрічки, — інакше та сама
    * людина називалась би тут інакше, ніж у видачі, з якої сюди прийшли.
+   *
+   * Роль тут більше не пишеться: код ролі (`ЕД`, `АГ`…) поруч з іменем нічого
+   * не додавав до того, що вже видно з розділу «Категорія» нижче у формі, а
+   * тут лише займав рядок. Вік стоїть поруч з іменем, а локація — під ним
+   * окремим жирним рядком зі значком, так само, як у рядку стрічки
+   * (`ProfileRow`): дві картки тієї самої людини не можуть виглядати по-різному.
    */
   const summaryCard = useMemo(
     () => ({ ...(overlayTarget?.card || overlayTarget?.canonical || {}), ...(draft || {}) }),
     [draft, overlayTarget],
   );
-  const draftRoleLabel = getRoleCode(getProfileRole(summaryCard));
-  const draftFacts = useMemo(() => {
-    const age = getProfileAge(summaryCard);
-    return [
-      draftRoleLabel,
-      age ? `${age}` : '',
-      getProfileLocation(summaryCard),
-    ].filter(Boolean).join(' · ');
-  }, [draftRoleLabel, summaryCard]);
+  const draftAge = getProfileAge(summaryCard);
+  const draftLocation = getProfileLocation(summaryCard);
   /**
    * Контакти шапки — рівно ті, що стоять у полях форми нижче.
    *
@@ -1918,8 +1929,16 @@ export const ProfileCreationWorkspace = () => {
             ? <DraftAvatar src={draftPhoto} alt="" />
             : <DraftAvatarFallback aria-hidden="true">{draftInitial}</DraftAvatarFallback>}
           <DraftIdentityText>
-            <DraftName>{draftName}</DraftName>
-            {draftFacts && <DraftFacts>{draftFacts}</DraftFacts>}
+            <DraftNameRow>
+              <DraftName>{draftName}</DraftName>
+              {draftAge && <DraftAge>{draftAge}</DraftAge>}
+            </DraftNameRow>
+            {draftLocation && (
+              <DraftLocation>
+                <FaMapMarkerAlt aria-hidden="true" />
+                <span>{draftLocation}</span>
+              </DraftLocation>
+            )}
           </DraftIdentityText>
         </DraftIdentity>
         <DraftContacts>
@@ -1953,17 +1972,8 @@ export const ProfileCreationWorkspace = () => {
               унизу форми (`NoteLanes`). Реакція лишається тут: це рішення про
               картку, а не запис про людину. */}
           {!editingSharedDraft && activeMutation.updatedAt && <PersonalDraftMeta>
+            {/* Дизлайк ліворуч, лайк праворуч — як у рядку стрічки й у відкритій картці. */}
             <ReactionButtons>
-              <BtnFavorite
-                userId={activeMutation.cardId}
-                userData={null}
-                cacheUserData={false}
-                favoriteUsers={favoriteUsers}
-                setFavoriteUsers={setFavoriteUsers}
-                dislikeUsers={dislikeUsers}
-                setDislikeUsers={setDislikeUsers}
-                customStyle={{ position: 'static' }}
-              />
               <BtnDislike
                 userId={activeMutation.cardId}
                 userData={null}
@@ -1972,6 +1982,16 @@ export const ProfileCreationWorkspace = () => {
                 setDislikeUsers={setDislikeUsers}
                 favoriteUsers={favoriteUsers}
                 setFavoriteUsers={setFavoriteUsers}
+                customStyle={{ position: 'static' }}
+              />
+              <BtnFavorite
+                userId={activeMutation.cardId}
+                userData={null}
+                cacheUserData={false}
+                favoriteUsers={favoriteUsers}
+                setFavoriteUsers={setFavoriteUsers}
+                dislikeUsers={dislikeUsers}
+                setDislikeUsers={setDislikeUsers}
                 customStyle={{ position: 'static' }}
               />
             </ReactionButtons>

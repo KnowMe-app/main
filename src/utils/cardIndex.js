@@ -21,8 +21,10 @@ export const MATCHING_SUMMARY_CARD_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 // користувачеві цього браузера. Версія 4 прибрала старі кеші без ownerId;
 // версія 5 — ті, що встигли зберегти контакти анкет, право на які тримається
 // на `feedDate` (див. `sanitizeMatchingCardForCache`): нове правило діє на
-// запис, а вже збережене чистить лише зміна версії.
-export const CARDS_CACHE_VERSION = 5;
+// запис, а вже збережене чистить лише зміна версії. Версія 6 — ті, що лягли
+// туди проєкцією з реакції в рядку стрічки (`updateCachedUser`): з ініціалом
+// замість прізвища, але без позначки проєкції, тож догідратувати їх було нічим.
+export const CARDS_CACHE_VERSION = 6;
 export const MATCHING_CACHE_MAX_CHARS = 4 * 1024 * 1024;
 export const MATCHING_QUERY_MAX_IDS = 2000;
 // Версія 2 скидає списки id, збережені тоді, коли порожній бакет `searchKey`
