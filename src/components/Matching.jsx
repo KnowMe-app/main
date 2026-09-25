@@ -14,8 +14,9 @@ import {
   NoteField,
   NoteLane,
   NoteLaneHead,
-  NoteLaneHint,
   NoteLanes,
+  NoteClearButton,
+  NoteFieldRow,
   Container,
   Grid,
   InnerContainer,
@@ -94,7 +95,6 @@ import {
   GalleryPhotoBox,
   GalleryPhotoCount,
   GalleryPublishDot,
-  GalleryRoleTag,
   GalleryTile,
   LayoutToggleButton,
   DetailBar,
@@ -194,6 +194,7 @@ import {
   MATCHING_THROTTLED_LOAD_BATCH,
   MATCHING_THROTTLED_LOAD_DELAY_MS,
   MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS,
+  MATCHING_THROTTLED_FILTERED_MAX_ATTEMPTS,
 } from '../utils/matchingFeedThrottle';
 import FeedLoadCountdown from './FeedLoadCountdown';
 import SearchRefineBar from './SearchRefineBar';
@@ -217,6 +218,7 @@ import ProfileRow, {
   renderFacts as renderProfileFacts,
   splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
+import { PhotoRoleBadge, RoleCode as RowRoleCode } from './MatchingHiddenList.styled';
 import { FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
 import { FaRegHeart, FaUndoAlt, FaChevronDown, FaPencilAlt } from 'react-icons/fa';
 import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
@@ -1312,7 +1314,6 @@ const SwipeableCard = ({
                 <NoteLane $public>
                   <NoteLaneHead>
                     <b>{profileUiText('publicComment', language)}</b>
-                    <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
                   </NoteLaneHead>
                   {publicCommentSlot}
                   <ReviewsStateNote>{publicCommentStatus}</ReviewsStateNote>
@@ -1321,18 +1322,35 @@ const SwipeableCard = ({
               <NoteLane>
                 <NoteLaneHead>
                   <b>{profileUiText('personalNote', language)}</b>
-                  <NoteLaneHint>{profileUiText('personalNoteHint', language)}</NoteLaneHint>
                 </NoteLaneHead>
                 <CommentBox>
-                  <ResizableCommentInput
-                    plain
-                    field={NoteField}
-                    placeholder={profileUiText('personalNotePlaceholder', language)}
-                    value={commentValue || ''}
-                    onClick={e => e.stopPropagation()}
-                    onChange={e => onCommentChange && onCommentChange(e.target.value)}
-                    onBlur={onCommentBlur}
-                  />
+                  <NoteFieldRow>
+                    <ResizableCommentInput
+                      plain
+                      field={NoteField}
+                      placeholder={profileUiText('personalNotePlaceholder', language)}
+                      value={commentValue || ''}
+                      onClick={e => e.stopPropagation()}
+                      onChange={e => onCommentChange && onCommentChange(e.target.value)}
+                      onBlur={onCommentBlur}
+                    />
+                    {/* Той самий хрестик, що й у рядку стрічки та під
+                        публічним відгуком: памʼятка знімається одним дотиком. */}
+                    {commentValue && (
+                      <NoteClearButton
+                        type="button"
+                        title={uiText('Видалити памʼятку', language)}
+                        aria-label={uiText('Видалити памʼятку', language)}
+                        onClick={e => {
+                          e.stopPropagation();
+                          if (onCommentChange) onCommentChange('');
+                          if (onCommentBlur) onCommentBlur('');
+                        }}
+                      >
+                        ×
+                      </NoteClearButton>
+                    )}
+                  </NoteFieldRow>
                   {sharedCommentTexts.map((text, idx) => (
                     <SharedCommentText key={`${user.userId}-shared-comment-${idx}`}>
                       {text}
@@ -1603,25 +1621,30 @@ const GalleryCard = React.memo(({
       {photo && (
         <GalleryPhotoBox>
           <img src={photo} alt="" loading="lazy" decoding="async" />
-          {isHidden && <GalleryHiddenBadge>{uiText('Приховано', language)}</GalleryHiddenBadge>}
+          {/* Роль лежить на знімку, у лівому верхньому куті — та сама плашка
+              (`PhotoRoleBadge`), що й у рядку однієї колонки та у відкритій
+              картці. Чіпом під іменем вона змагалась за ширину з локацією, а
+              дві розкладки казали про ту саму річ у двох різних місцях. */}
+          {roleCode && <PhotoRoleBadge $role={role}>{roleCode}</PhotoRoleBadge>}
+          {isHidden && <GalleryHiddenBadge $belowRole={Boolean(roleCode)}>{uiText('Приховано', language)}</GalleryHiddenBadge>}
           {photos.length > 1 && <GalleryPhotoCount>{photos.length}</GalleryPhotoCount>}
         </GalleryPhotoBox>
       )}
       <GalleryBody>
-        <GalleryName>
-          {name}
-          {age && <>, {age}</>}
-        </GalleryName>
-        {(roleCode || location) && (
-          <GalleryNameRow>
-            {roleCode && <GalleryRoleTag $role={role}>{roleCode}</GalleryRoleTag>}
-            {location && (
-              <GalleryLocation>
-                <FaMapMarkerAlt aria-hidden="true" />
-                <span>{location}</span>
-              </GalleryLocation>
-            )}
-          </GalleryNameRow>
+        {/* Без знімка плашці ролі нема на чому лежати — тоді код стоїть
+            поруч з іменем, рівно як у рядку однієї колонки (`RoleCode`). */}
+        <GalleryNameRow>
+          <GalleryName>
+            {name}
+            {age && <>, {age}</>}
+          </GalleryName>
+          {!photo && roleCode && <RowRoleCode $role={role}>{roleCode}</RowRoleCode>}
+        </GalleryNameRow>
+        {location && (
+          <GalleryLocation>
+            <FaMapMarkerAlt aria-hidden="true" />
+            <span>{location}</span>
+          </GalleryLocation>
         )}
         {bodyFacts.length > 0 && (
           <GalleryFacts>
@@ -1818,7 +1841,6 @@ const Matching = () => {
   const [publicComments, setPublicComments] = useState({});
   const [publicCommentsLoading, setPublicCommentsLoading] = useState({});
   const publicCommentsRequestedRef = useRef(new Set());
-  const [viewerName, setViewerName] = useState('');
   // Spec §9: admin-only data diagnostics. Both the flag and the module it pulls
   // in stay out of an ordinary user's way - the chunk is only fetched once the
   // flag is on, so the checks never reach a non-admin bundle.
@@ -2053,25 +2075,6 @@ const Matching = () => {
       .catch(error => console.error('Failed to load personal create profiles', error));
     return () => { active = false; };
   }, [isAdmin, ownerId]);
-  // A public comment is signed with the author's own name, so the viewer's name
-  // is resolved once here rather than at write time.
-  useEffect(() => {
-    if (!ownerId) {
-      setViewerName('');
-      return () => {};
-    }
-    let active = true;
-    fetchUserById(ownerId)
-      .then(profile => {
-        if (!active) return;
-        setViewerName(getProfileName(profile) || auth.currentUser?.displayName || '');
-      })
-      .catch(() => {
-        if (active) setViewerName(auth.currentUser?.displayName || '');
-      });
-    return () => { active = false; };
-  }, [ownerId]);
-
   const matchingDefaultFilters = useMemo(
     () => getDefaultFilters({ mode: 'matching', nonAdminAllActive: !access.isAdmin }),
     [access.isAdmin],
@@ -7723,6 +7726,14 @@ const Matching = () => {
     setScrolledDownSinceLoad(false);
   }, []);
 
+  // Звужена дека рахує порцію картками, що пройшли фільтри, і джерело
+  // питається більшими сторінками: з двох сирих карток під «не заміжня» часто
+  // не лишається жодної, і три спроби по одній-дві картки давали «Порція не
+  // дала нових карток» там, де далі в стрічці такі картки є.
+  const feedFiltersNarrowed = filterChips.length > 0;
+  const feedFiltersNarrowedRef = useRef(feedFiltersNarrowed);
+  feedFiltersNarrowedRef.current = feedFiltersNarrowed;
+
   const handleThrottledFeedLoad = React.useCallback(() => {
     disarmFeedPaging();
     setLastBatchSummary(null);
@@ -7732,7 +7743,9 @@ const Matching = () => {
       startPublicCardsLength: publicCardsLengthRef.current,
       attempts: 1,
     });
-    endOfDeckLoadRef.current('feed-countdown', { limit: MATCHING_THROTTLED_LOAD_BATCH });
+    endOfDeckLoadRef.current('feed-countdown', {
+      limit: feedFiltersNarrowedRef.current ? MATCHING_REFILL_LIMIT : MATCHING_THROTTLED_LOAD_BATCH,
+    });
   }, [disarmFeedPaging]);
 
   // Відлік обіцяє дві картки, а не дві спроби.
@@ -7744,11 +7757,18 @@ const Matching = () => {
   // самий потік, від якого пауза й захищає.
   useEffect(() => {
     if (!isThrottledFeedPaging || !throttledCycle || loading) return;
+    // Під фільтрами порція — це дві картки **після** фільтрів: читач обрав
+    // групу й чекає саме її, а не двох сирих карток, з яких на екран не
+    // доїхала жодна. Тож і стеля спроб там вища.
+    const maxAttempts = feedFiltersNarrowed
+      ? MATCHING_THROTTLED_FILTERED_MAX_ATTEMPTS
+      : MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS;
     if (
       publicCardsLength >= throttledCycle.target ||
-      pagedCardsLength - throttledCycle.startPagedCardsLength >= MATCHING_THROTTLED_LOAD_BATCH ||
+      (!feedFiltersNarrowed
+        && pagedCardsLength - throttledCycle.startPagedCardsLength >= MATCHING_THROTTLED_LOAD_BATCH) ||
       (!hasMore && !additionalHasMore) ||
-      throttledCycle.attempts >= MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS
+      throttledCycle.attempts >= maxAttempts
     ) {
       // Цикл закінчився — і мусить сказати, чим саме. Нуль так само вартий
       // рядка, як і двійка: «під ці фільтри більше нічого не підійшло» — це
@@ -7762,9 +7782,11 @@ const Matching = () => {
     }
     setThrottledCycle({ ...throttledCycle, attempts: throttledCycle.attempts + 1 });
     endOfDeckLoadRef.current('feed-countdown-topup', {
-      limit: Math.max(1, MATCHING_THROTTLED_LOAD_BATCH - (pagedCardsLength - throttledCycle.startPagedCardsLength)),
+      limit: feedFiltersNarrowed
+        ? MATCHING_REFILL_LIMIT
+        : Math.max(1, MATCHING_THROTTLED_LOAD_BATCH - (pagedCardsLength - throttledCycle.startPagedCardsLength)),
     });
-  }, [additionalHasMore, hasMore, isThrottledFeedPaging, loading, pagedCardsLength, publicCardsLength, throttledCycle]);
+  }, [additionalHasMore, feedFiltersNarrowed, hasMore, isThrottledFeedPaging, loading, pagedCardsLength, publicCardsLength, throttledCycle]);
 
   // Стрічка може виявитись коротшою за екран — тоді крутити нема чого, і жест
   // лишається недосяжним. Дотик робить те саме, що прокрутка.
@@ -7859,12 +7881,15 @@ const Matching = () => {
   }), [publicComments, publicCommentsLoading, requestPublicComments]);
 
   const handleCreatePublicComment = React.useCallback(async (profileId, text) => {
-    const created = await addPublicProfileComment({ profileId, text, authorName: viewerName });
+    // Відгук анонімний: імені автора він не несе ні на екрані, ні в базі.
+    // Лишається `authorId` — його вимагають правила, щоб автор міг свій
+    // відгук правити й знімати, — але імʼя під відгуком більше не пишеться.
+    const created = await addPublicProfileComment({ profileId, text });
     setPublicComments(previous => ({
       ...previous,
       [profileId]: [...(previous[profileId] || []), created],
     }));
-  }, [viewerName]);
+  }, []);
 
   const handleUpdatePublicComment = React.useCallback(async (profileId, commentId, text) => {
     const updated = await updatePublicProfileComment({ profileId, commentId, text });
@@ -8618,9 +8643,13 @@ const Matching = () => {
                           onDelete={handleDeletePublicComment}
                         />
                       )}
-                      onCommentBlur={async () => {
+                      onCommentBlur={async overrideText => {
                         if (auth.currentUser) {
-                          const text = comments[user.userId] || '';
+                          // Хрестик памʼятки передає значення прямо: стан
+                          // `comments` у цьому замиканні ще старий.
+                          const text = typeof overrideText === 'string'
+                            ? overrideText
+                            : (comments[user.userId] || '');
                           try {
                             const res = await saveMyCardComment(user.userId, text, ownerId);
                             dispatchedCommentSaveRef.current = { cardId: user.userId, text };

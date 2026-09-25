@@ -38,7 +38,7 @@ describe('розкладка рядка стрічки', () => {
       secondaryAction: { icon: <span>✕</span>, title: 'Приховати', active: false, onClick: jest.fn() },
     });
 
-    const note = screen.getByPlaceholderText('Нотатка для себе');
+    const note = screen.getByPlaceholderText('Додати памʼятку');
     const favorite = screen.getByTitle('В обране');
     const hide = screen.getByTitle('Приховати');
 
@@ -53,7 +53,7 @@ describe('розкладка рядка стрічки', () => {
   // що він про цю людину вже знає, має бути видно тут само, де рішення.
   it('поле власної нотатки відкрите й порожнє, поки нотатки немає', () => {
     renderRow();
-    expect(screen.getByPlaceholderText('Нотатка для себе')).toHaveValue('');
+    expect(screen.getByPlaceholderText('Додати памʼятку')).toHaveValue('');
   });
 
   // Хто побачить запис, каже підпис над доріжкою — той самий, що й у
@@ -63,8 +63,8 @@ describe('розкладка рядка стрічки', () => {
     renderRow();
     // Підпис береться з того самого словника, що й у відкритій картці
     // (`profileTexts`), а не з рядка в коді, — тож іде мовою інтерфейсу.
-    expect(screen.getByText('Приватна нотатка')).toBeInTheDocument();
-    expect(screen.getByText('Бачите тільки ви')).toBeInTheDocument();
+    expect(screen.getByText('Памʼятка для себе')).toBeInTheDocument();
+    expect(screen.queryByText('Бачите тільки ви')).not.toBeInTheDocument();
   });
 
   it('урізаній проєкції реакцій не дає', () => {

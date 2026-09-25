@@ -59,6 +59,7 @@ import {
   PROFILE_FORM_BLOCK_IDS,
 } from './profileFormNodeBlocks';
 import { appendEmptyFieldRow, canAppendFieldRow, fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
+import { PROFILE_DATE_FIELDS } from 'utils/profileDate';
 
 const get = (...args) =>
   withAdminDownloadToast(firebaseGet(...args), {
@@ -954,20 +955,8 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
   });
 };
 
-/**
- * Поля, у яких лежить дата і тільки дата.
- *
- * Показуються вони крапками, у базу їдуть у `РРРР-ММ-ДД` — перетворення в
- * обидва боки роблять `formatDateToDisplay` і `formatDateToServer`.
- */
-const PROFILE_FORM_DATE_FIELDS = new Set([
-  'birth',
-  'birthWife',
-  'birthHusband',
-  'lastDelivery',
-  'opuDate',
-  'getInTouch',
-]);
+// Перелік полів-дат спільний з формою чернетки — див. `PROFILE_DATE_FIELDS`.
+const PROFILE_FORM_DATE_FIELDS = PROFILE_DATE_FIELDS;
 
 /**
  * Блоки, розгорнуті доти, доки їх не згорнули руками.

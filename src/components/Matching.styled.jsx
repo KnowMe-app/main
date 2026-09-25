@@ -2247,7 +2247,8 @@ export const GalleryPhotoCount = styled.span`
 
 export const GalleryHiddenBadge = styled.span`
   position: absolute;
-  top: 6px;
+  /* Лівий верхній кут займає плашка ролі — «Приховано» стає під неї. */
+  top: ${({ $belowRole }) => ($belowRole ? '36px' : '6px')};
   left: 6px;
   padding: 2px 6px;
   border-radius: 999px;
@@ -2797,44 +2798,28 @@ export const NoteLanes = styled.div`
 `;
 
 /*
- * Доріжка нотатки. У відкритій картці її позначає смужка ліворуч, у рядку
- * стрічки ($flush) — самий лише підпис над текстом.
+ * Доріжка нотатки — однакова на кожному екрані: смужка ліворуч, підпис над
+ * текстом, сам текст без рамки поля.
  *
- * Різниця не в смаку, а в тому, що ліва межа рядка вже зайнята: там від краю
- * до краю йде смужка ролі (`Card` у `MatchingHiddenList.styled`). Друга
- * вертикальна риска поруч із нею читалась би як продовження тієї самої, а
- * зсунути доріжку вглиб означало б відсунути текст нотатки від імені й фактів,
- * які починаються від краю картки.
+ * Колір смужки каже, хто запис побачить: акцентна в публічного відгуку,
+ * зелена в памʼятки для себе. Доти рядок стрічки смужки не мав зовсім
+ * (`$flush`), відкрита картка малювала приватну сірою, а форма чернетки
+ * клала приватну в рамку інпута — і та сама пара записів виглядала на трьох
+ * екранах трьома різними механізмами. Різний лишається хіба масштаб.
  *
- * Спроба «винести смужку у відступ картки» (`margin-left: -12px`) вирішувала
- * вирівнювання й мовчки губила саму смужку: відступ картки — 11 px, тож риска
- * лягала рівно під її власну рамку й не малювалась узагалі. Правило, якого не
- * видно, — гірше за його відсутність: код обіцяє ознаку, якої на екрані немає.
- * Тож у рядку її немає явно, а «хто це побачить» каже підпис
- * (`NoteLaneHead`) — те саме, що й у відкритій картці, тільки словом.
+ * Ліва межа рядка стрічки зайнята смужкою ролі на самому краї картки, а
+ * доріжка стоїть на відступі картки (11 px) — тож дві риски не зливаються.
  */
+export const NOTE_LANE_PUBLIC_COLOR = 'color-mix(in srgb, var(--matching-accent, var(--km-accent, #e8791a)) 55%, transparent)';
+export const NOTE_LANE_PRIVATE_COLOR = 'color-mix(in srgb, #2e9b55 60%, transparent)';
+
 export const NoteLane = styled.div`
   padding-left: 10px;
   /* Кожна змінна тут із запасною: ту саму пару доріжок малює й форма
      доповнення картки, а вона поза матчингом, де --matching-* не оголошені, —
      і невідома змінна в скороченому записі border робить нечинним увесь
      запис, тобто смужки на екрані просто не було б. */
-  border-left: 2px solid ${({ $public }) => ($public
-    ? 'color-mix(in srgb, var(--matching-accent, var(--km-accent, #e8791a)) 55%, transparent)'
-    : 'color-mix(in srgb, var(--matching-muted-text, var(--km-muted, #8a8178)) 26%, transparent)')};
-
-  & + & {
-    padding-top: 10px;
-    border-top: 1px solid var(--matching-section-border, var(--km-border, rgba(0, 0, 0, 0.1)));
-  }
-
-  /* Рядок стрічки: ані риски, ані відступу — текст нотатки стоїть на тій
-     самій лівій межі, що й імʼя, факти й контакти. Пояснення над компонентом:
-     всередині шаблона styled зворотні лапки закривають його. */
-  ${({ $flush }) => $flush && css`
-    padding-left: 0;
-    border-left: 0;
-  `}
+  border-left: 2px solid ${({ $public }) => ($public ? NOTE_LANE_PUBLIC_COLOR : NOTE_LANE_PRIVATE_COLOR)};
 `;
 
 export const NoteLaneHead = styled.div`
@@ -2852,8 +2837,50 @@ export const NoteLaneHead = styled.div`
   }
 `;
 
-export const NoteLaneHint = styled.span`
+/*
+ * Хрестик, яким знімають уже записане — і публічний відгук, і памʼятку.
+ *
+ * Один на всі доріжки й усі екрани: маленький знак, але з мішенню 28 px —
+ * пальцем у 11-піксельний «×» у рядку підпису влучити було неможливо, а
+ * велика кнопка важила б більше за сам запис.
+ */
+export const NoteClearButton = styled.button`
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: -4px -7px -4px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--matching-muted-text, var(--km-muted, #8a8178));
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
   opacity: 0.7;
+
+  &:hover,
+  &:focus-visible {
+    opacity: 1;
+    outline: 0;
+    background: color-mix(in srgb, var(--matching-muted-text, var(--km-muted, #8a8178)) 14%, transparent);
+  }
+`;
+
+/* Поле памʼятки й хрестик біля нього — один рядок: текст забирає всю
+   ширину, хрестик стоїть праворуч на висоті першого рядка. */
+export const NoteFieldRow = styled.div`
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+
+  > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
 `;
 
 /**

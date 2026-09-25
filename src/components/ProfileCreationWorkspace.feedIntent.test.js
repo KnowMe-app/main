@@ -175,7 +175,7 @@ describe('доповнення знайденої картки зі стрічк
   it('лишає особистий коментар тим самим особистим коментарем, що й у стрічці', async () => {
     render(<ProfileCreationWorkspace />);
 
-    expect(await screen.findByPlaceholderText('Нотатка для себе')).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText('Додати памʼятку')).toBeInTheDocument();
   });
 
   /*
@@ -190,10 +190,10 @@ describe('доповнення знайденої картки зі стрічк
     render(<ProfileCreationWorkspace />);
     await screen.findByDisplayValue('Бугаренко');
 
-    expect(screen.getAllByText('Публічна нотатка')).toHaveLength(1);
-    expect(screen.getAllByText('Додати публічну нотатку')).toHaveLength(1);
+    expect(screen.getAllByText('Публічний відгук')).toHaveLength(1);
+    expect(screen.getAllByText('Додати анонімний відгук, його побачать усі')).toHaveLength(1);
     // Поля анкети під доріжкою більше немає — саме воно й було другою копією.
-    expect(screen.queryByPlaceholderText('Додати публічну нотатку')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Додати анонімний відгук, його побачать усі')).not.toBeInTheDocument();
   });
 
   /*
@@ -201,12 +201,14 @@ describe('доповнення знайденої картки зі стрічк
    * плейсхолдері немає, а прочитана порожнеча каже про себе словом: інакше
    * «не прочитали» й «прочитали, нічого немає» виглядали б однаково.
    */
-  it('не кличе перевіряти те, що прочитала сама, і називає порожню відповідь', async () => {
+  // Прочитана порожнеча мовчить: окремий рядок «Публічних відгуків ще немає»
+  // займав місце й не казав нічого, чого не видно з порожньої доріжки.
+  it('не кличе перевіряти те, що прочитала сама, і не пише про порожню відповідь', async () => {
     render(<ProfileCreationWorkspace />);
     await screen.findByDisplayValue('Бугаренко');
 
     expect(screen.queryByText(/перевірити їх наявність/)).not.toBeInTheDocument();
-    expect(await screen.findByText('Публічних відгуків ще немає')).toBeInTheDocument();
+    expect(screen.queryByText('Публічних відгуків ще немає')).not.toBeInTheDocument();
   });
 
   it('записує в оверлей лише дописане, а не підставлене з картки', async () => {

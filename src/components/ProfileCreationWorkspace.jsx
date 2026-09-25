@@ -35,12 +35,16 @@ import InfoModal, {
 } from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { ContactLinks, PublicCommentBlock, ReviewsStateNote, describeReviewsState } from './ProfileRow';
-import { NoteLane, NoteLaneHead, NoteLaneHint, NoteLanes } from './Matching.styled';
+import { NoteClearButton, NoteFieldRow, NoteLane, NoteLaneHead, NoteLanes } from './Matching.styled';
+import { NOTE_TEXT_LINE_HEIGHT, NOTE_TEXT_SIZE } from './noteTypography';
+import { useAutoResize } from '../hooks/useAutoResize';
 import { profileUiText } from 'utils/profileTexts';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { uiText } from 'utils/uiTranslations';
 import { formatDateTime } from 'utils/formatDateTime';
 import { FieldComment } from './smallCard/FieldComment';
+import { formatDate, formatDateToDisplay, formatDateToServer } from './inputValidations';
+import { PROFILE_DATE_FIELDS } from '../utils/profileDate';
 import { BtnFavorite } from './smallCard/btnFavorite';
 import { BtnDislike } from './smallCard/btnDislike';
 import { resolveAccess } from 'utils/accessLevel';
@@ -48,7 +52,7 @@ import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
 import { buildMatchingSearchPath, MATCHING_PATH, readStoredMatchingSearchQuery } from 'utils/matchingSearchLocation';
 import { goBackOrTo } from 'utils/appBackNavigation';
-import { getProfileAge, getProfileLocation, getProfileName, getProfilePhotos, getProfileRole, getRoleCode } from './profileLayoutConfig';
+import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleCode } from './profileLayoutConfig';
 import {
   applyOverlayToCard,
   applyOverlaysToCard,
@@ -302,25 +306,48 @@ const FieldChip = styled.button`
 `;
 const NotesCard = styled(Card)`display:grid; gap:10px;`;
 /*
- * Приватна нотатка малюється чужим компонентом (`FieldComment` — той самий, що
- * в картці адміна), і всередині в неї гола `textarea` з рамкою браузера. Поруч
- * із публічною, яку малює ця сама форма, це виглядало як два різні механізми:
- * одне поле заокруглене й залите, друге — квадратна коробка. Пара мусить
- * виглядати парою, тож оболонка приводить внутрішнє поле до вигляду сусіднього.
+ * Обидві доріжки нотаток — текст без рамки поля, як у стрічці й у відкритій
+ * картці.
+ *
+ * Приватну памʼятку малює чужий компонент (`FieldComment`) з голою
+ * `textarea`, а публічний відгук нової чернетки — поле форми. Раніше ця
+ * оболонка приводила обидва до вигляду сусідніх інпутів (заокруглена
+ * заливка, рамка), і пара нотаток у формі виглядала інакше, ніж та сама пара
+ * в стрічці: там це просто набраний текст. Тепер навпаки — поле знімає з
+ * себе все, крім тексту й плейсхолдера.
  */
 const NoteFieldShell = styled.div`
   textarea {
-    width:100%; box-sizing:border-box; min-height:74px;
-    background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:14px;
-    padding:13px 40px 13px 16px; font:600 15.5px/1.4 var(--km-font); color:var(--km-text);
-    outline:none; resize:vertical;
-    transition:border-color 150ms ease, box-shadow 150ms ease;
+    display:block; width:100%; box-sizing:border-box; min-height:0;
+    margin:0; padding:2px 0 4px; border:0; border-radius:0; background:transparent;
+    font:inherit; font-size:${NOTE_TEXT_SIZE}; line-height:${NOTE_TEXT_LINE_HEIGHT}; color:var(--km-text);
+    outline:none; resize:none; overflow:hidden;
   }
-  textarea:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
-  /* Хрестик усередині поля — той самий жест, що й у решти рядків форми. */
-  button { color:var(--km-muted); }
-  button:hover { color:var(--km-accent); }
+  textarea::placeholder { color:var(--km-muted); opacity:.75; }
 `;
+/*
+ * Публічний відгук нової чернетки — те саме голе поле, що й памʼятка під ним.
+ * Картки ще немає, тож і підписаних відгуків під нею бути не може: відгук тут
+ * — це поле анкети `publicComment`, і хрестик знімає саме його.
+ */
+const PlainNoteField = ({ value, placeholder, onChange, onBlur, onClear, clearLabel }) => {
+  const ref = useRef(null);
+  const autoResize = useAutoResize(ref, value);
+  return <NoteFieldRow>
+    <textarea
+      ref={ref}
+      rows={1}
+      value={value}
+      placeholder={placeholder}
+      onChange={event => {
+        onChange(event.target.value);
+        autoResize(event.target);
+      }}
+      onBlur={onBlur}
+    />
+    {value && <NoteClearButton type="button" aria-label={clearLabel} title={clearLabel} onMouseDown={event => event.preventDefault()} onClick={onClear}>×</NoteClearButton>}
+  </NoteFieldRow>;
+};
 const ReviewCard = styled(Card)`background:color-mix(in srgb, var(--km-accent-mid) 8%, var(--km-card));`;
 const AuthorLink = styled.button`
   padding:0; border:0; background:none; color:var(--km-accent); font:inherit; text-decoration:underline; cursor:pointer;
@@ -688,7 +715,6 @@ export const ProfileCreationWorkspace = () => {
   // це не каже: «читаємо», «не змогли прочитати» й «прочитали, відгуків
   // немає» виглядали б однаково — порожньою доріжкою під полем запису.
   const [publicCommentsState, setPublicCommentsState] = useState({ loading: false, loaded: false });
-  const [viewerName, setViewerName] = useState('');
   const draftRef = useRef(draft);
   const persistedDraftRef = useRef(draft);
   // The draft as its author stored it, before anybody's overlay is replayed
@@ -822,9 +848,6 @@ export const ProfileCreationWorkspace = () => {
       canCreateProfiles: profile?.canCreateProfiles,
     });
     setUid(user.uid);
-    // Імʼя автора відгуку резолвиться один раз тут, а не на кожен запис: та
-    // сама анкета читача вже прочитана рядком вище.
-    setViewerName(getProfileName(profile) || user.displayName || '');
     accessRef.current = resolved;
     setAccess(resolved);
     await refresh(user.uid, resolved);
@@ -879,9 +902,12 @@ export const ProfileCreationWorkspace = () => {
   }, [overlayTarget?.userId]);
 
   const handleCreatePublicComment = useCallback(async (profileId, text) => {
-    const created = await addPublicProfileComment({ profileId, text, authorName: viewerName });
+    // Відгук анонімний: імені автора він не несе ні на екрані, ні в базі.
+    // Лишається `authorId` — його вимагають правила, щоб автор міг свій
+    // відгук правити й знімати, — але імʼя під відгуком більше не пишеться.
+    const created = await addPublicProfileComment({ profileId, text });
     setPublicComments(previous => [...previous, created]);
-  }, [viewerName]);
+  }, []);
 
   const handleUpdatePublicComment = useCallback(async (profileId, commentId, text) => {
     const updated = await updatePublicProfileComment({ profileId, commentId, text });
@@ -1414,7 +1440,14 @@ export const ProfileCreationWorkspace = () => {
   const commitDraftFieldItems = (fieldName, values) => {
     // The form is the source of truth for its current rows. Superseded values
     // belong in the overlay journal, not back in the editor-visible draft.
-    const nextValues = values.length ? [...values] : [''];
+    //
+    // Дата набирається крапками, а в базу їде в `РРРР-ММ-ДД` — той самий
+    // розподіл, що й в анкеті адміна (`PROFILE_DATE_FIELDS`). Недонабрана
+    // дата лишається як є: переставляти в ній нема чого.
+    const normalized = PROFILE_DATE_FIELDS.has(fieldName)
+      ? values.map(item => (typeof item === 'string' ? formatDateToServer(item) : item))
+      : values;
+    const nextValues = normalized.length ? [...normalized] : [''];
     return commitFieldValue(fieldName, nextValues);
   };
 
@@ -1736,6 +1769,7 @@ export const ProfileCreationWorkspace = () => {
     if (!field) return null;
     const value = draft?.[fieldName] || '';
     const isTextArea = fieldName === 'moreInfo_main' || fieldName === 'publicComment';
+    const isDateField = PROFILE_DATE_FIELDS.has(fieldName);
     // «+» відкриває рядок під **наступну версію** поля («телефон був той, став
     // цей»). У коментаря версій не буває: він один, його розширюють або
     // звужують, правлячи той самий текст. Дописаний другий рядок поїхав би в
@@ -1783,9 +1817,16 @@ export const ProfileCreationWorkspace = () => {
           {toFieldValues(value).map((item, index) => <FieldControl key={`${fieldName}-${index}`}>
             <InputShell>
               <FieldInput
-                value={item}
-                placeholder={placeholder ?? getFieldPlaceholder(field, language)}
-                onChange={e => updateDraftFieldItem(fieldName, index, e.target.value)}
+                // Дату людина бачить і набирає як `дд.мм.рррр`, хоч лежить вона
+                // в `РРРР-ММ-ДД`: показувати ISO — це дата задом наперед.
+                value={isDateField ? formatDateToDisplay(item) : item}
+                inputMode={isDateField ? 'numeric' : undefined}
+                placeholder={placeholder ?? (isDateField ? uiText('дд.мм.рррр', language) : getFieldPlaceholder(field, language))}
+                onChange={e => updateDraftFieldItem(
+                  fieldName,
+                  index,
+                  isDateField ? formatDate(e.target.value, true) : e.target.value,
+                )}
                 onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
               />
               <InlineClearButton type="button" aria-label={uiText('Очистити {label}', language, { label })} title={uiText('Очистити рядок', language)} onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
@@ -1930,7 +1971,9 @@ export const ProfileCreationWorkspace = () => {
             : <DraftAvatarFallback aria-hidden="true">{draftInitial}</DraftAvatarFallback>}
           <DraftIdentityText>
             <DraftNameRow>
-              <DraftName>{draftName}</DraftName>
+              {/* Кома стоїть при імені, як у рядку стрічки («Анастасія А., 31»):
+                  без неї «Рога Надія 33» читалось як третє слово імені. */}
+              <DraftName>{draftName}{draftAge ? ',' : ''}</DraftName>
               {draftAge && <DraftAge>{draftAge}</DraftAge>}
             </DraftNameRow>
             {draftLocation && (
@@ -2042,7 +2085,6 @@ export const ProfileCreationWorkspace = () => {
           <NoteLane $public>
             <NoteLaneHead>
               <b>{profileUiText('publicComment', language)}</b>
-              <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
             </NoteLaneHead>
             {/* У доповненні знайденої картки доріжка показує те саме, що
                 показує вона ж у стрічці й у відкритій картці: підписані
@@ -2081,18 +2123,33 @@ export const ProfileCreationWorkspace = () => {
                   }, language)}
                 </ReviewsStateNote>
               </>
-            ) : renderCreateField('publicComment', {
-              hideLabel: true,
-              placeholder: profileUiText('publicCommentPlaceholderPlain', language),
-            })}
+            ) : fieldsMap.has('publicComment') && (() => {
+              const publicValues = toFieldValues(draft?.publicComment);
+              const lastIndex = publicValues.length - 1;
+              return <NoteFieldShell>
+                <PlainNoteField
+                  value={String(publicValues[lastIndex] ?? '')}
+                  placeholder={profileUiText('publicCommentPlaceholderPlain', language)}
+                  onChange={value => updateDraftFieldItem('publicComment', lastIndex, value)}
+                  onBlur={() => commitDraftFieldItems('publicComment', toFieldValues(draftRef.current?.publicComment))}
+                  onClear={() => clearDraftFieldItem('publicComment', lastIndex)}
+                  clearLabel={uiText('Видалити коментар', language)}
+                />
+                {renderFieldTimeline(
+                  'publicComment',
+                  publicValues.map(item => String(item ?? '').trim()).filter(Boolean),
+                  profileUiText('publicComment', language),
+                )}
+              </NoteFieldShell>;
+            })()}
           </NoteLane>
           <NoteLane>
             <NoteLaneHead>
               <b>{profileUiText('personalNote', language)}</b>
-              <NoteLaneHint>{profileUiText('personalNoteHint', language)}</NoteLaneHint>
             </NoteLaneHead>
             <NoteFieldShell>
               <FieldComment
+                ClearButton={NoteClearButton}
                 userData={{ ...draft, userId: overlayTarget ? overlayTarget.userId : (draft.userId || activeMutation.cardId) }}
                 placeholder={profileUiText('personalNotePlaceholder', language)}
                 onLegacyCommentMigrated={() => commitFieldValue('myComment', '')}

@@ -184,7 +184,7 @@ describe('відгуки в рядку стрічки', () => {
     });
 
     const reviews = screen.getByTestId('reviews');
-    const note = screen.getByPlaceholderText('Нотатка для себе');
+    const note = screen.getByPlaceholderText('Додати памʼятку');
     expect(standsBefore(reviews, note)).toBe(true);
   });
 });

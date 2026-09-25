@@ -92,7 +92,33 @@ const ChipCount = styled.b`
   opacity: 0.62;
 `;
 
-export const CheckboxGroup = ({ label, filterName, options, filters, onChange, optionCounts }) => {
+/*
+ * Дотик до чіпа — це вибір того, що читача цікавить, а не того, що ні.
+ *
+ * `selectOnly` (стрічка matching): з незайманої групи дотик до «не заміжня»
+ * лишає увімкненою саму «не заміжня». Доти він її **вимикав**, і вибраними
+ * ставали всі інші — рівно навпаки до того, чого людина хотіла. Далі дотики
+ * додають і знімають значення по одному, а зняте останнє повертає групу в
+ * незайманий стан: «нічого» — це не фільтр, а порожній екран.
+ *
+ * Без прапорця (картотека адміна) лишається віднімання — там групи й
+ * задумані як «вимкни зайве».
+ */
+export const toggleFilterOption = ({ groupValues = {}, options = [], option, selectOnly = false }) => {
+  if (!selectOnly) return { ...groupValues, [option]: !groupValues[option] };
+  const visible = options.map(({ val }) => val);
+  const groupIsCalm = visible.every(val => Boolean(groupValues[val]));
+  if (groupIsCalm) {
+    return visible.reduce((acc, val) => ({ ...acc, [val]: val === option }), { ...groupValues });
+  }
+  const next = { ...groupValues, [option]: !groupValues[option] };
+  if (visible.every(val => !next[val])) {
+    return visible.reduce((acc, val) => ({ ...acc, [val]: true }), next);
+  }
+  return next;
+};
+
+export const CheckboxGroup = ({ label, filterName, options, filters, onChange, optionCounts, selectOnly = false }) => {
   const groupValues = filters[filterName] || {};
   // Незаймана група — та, у якій увімкнено все. Саме вона нічого не фільтрує.
   const groupIsCalm = options.every(({ val }) => Boolean(groupValues[val]));
@@ -100,10 +126,7 @@ export const CheckboxGroup = ({ label, filterName, options, filters, onChange, o
   const handleToggle = option => {
     onChange({
       ...filters,
-      [filterName]: {
-        ...groupValues,
-        [option]: !groupValues[option],
-      },
+      [filterName]: toggleFilterOption({ groupValues, options, option, selectOnly }),
     });
   };
 

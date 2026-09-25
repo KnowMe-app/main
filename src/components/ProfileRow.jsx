@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPencilAlt, FaRegCommentDots } from 'react-icons/fa';
+import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPencilAlt } from 'react-icons/fa';
 import {
   getProfileAge,
   getProfileBio,
@@ -33,7 +33,7 @@ import * as S from './MatchingHiddenList.styled';
 // Доріжки нотаток беруться з розкладки відкритої картки, а не описуються тут
 // удруге: у рядку стрічки й у картці стоять ті самі два записи — публічний
 // відгук і власна нотатка, — і два екрани не можуть казати про них різне.
-import { NoteLane, NoteLaneHead, NoteLaneHint, PublishDot } from './Matching.styled';
+import { NoteClearButton, NoteFieldRow, NoteLane, NoteLaneHead, PublishDot } from './Matching.styled';
 import { isMatchingCardPublished, MATCHING_CARD_REVIEW_FLAG_FIELD } from '../utils/matchingCardIndex';
 
 // The one profile row shared by the hidden-list screen and the matching feed's
@@ -541,22 +541,45 @@ export const CommentBlock = ({ text, onSave, placeholder }) => {
     saveTimerRef.current = setTimeout(() => commit(value), COMMENT_SAVE_DEBOUNCE_MS);
   };
 
+  // Той самий хрестик, що й під публічним відгуком: записане знімається
+  // одним дотиком, а не виділенням і стиранням тексту в полі.
+  const clearButton = draft ? (
+    <NoteClearButton
+      type="button"
+      title={uiText('Видалити памʼятку', language)}
+      aria-label={uiText('Видалити памʼятку', language)}
+      onClick={e => {
+        e.stopPropagation();
+        setDraft('');
+        setMeasureText('');
+        setExpanded(false);
+        setMode('input');
+        commit('');
+      }}
+    >
+      ×
+    </NoteClearButton>
+  ) : null;
+
   if (mode === 'clamped') {
     return (
       <S.CommentLane>
-        <S.Note
-          ref={measureRef}
-          $clip
-          $lines={COMMENT_VISIBLE_ROWS}
-          onClick={e => {
-            e.stopPropagation();
-            pendingCaretRef.current = getCaretOffsetFromClick(e) ?? draft.length;
-            setExpanded(true);
-            setMode('input');
-          }}
-        >
-          {text}
-        </S.Note>
+        <NoteFieldRow>
+          <S.Note
+            ref={measureRef}
+            $clip
+            $lines={COMMENT_VISIBLE_ROWS}
+            onClick={e => {
+              e.stopPropagation();
+              pendingCaretRef.current = getCaretOffsetFromClick(e) ?? draft.length;
+              setExpanded(true);
+              setMode('input');
+            }}
+          >
+            {text}
+          </S.Note>
+          {clearButton}
+        </NoteFieldRow>
         <S.NoteMore
           onClick={e => {
             e.stopPropagation();
@@ -572,24 +595,27 @@ export const CommentBlock = ({ text, onSave, placeholder }) => {
 
   return (
     <S.CommentLane>
-      <S.CommentInput
-        ref={textareaRef}
-        rows={1}
-        value={draft}
-        placeholder={placeholder || uiText('Додати коментар', language)}
-        onClick={e => e.stopPropagation()}
-        onTouchStart={e => e.stopPropagation()}
-        onChange={e => {
-          const { value } = e.target;
-          setDraft(value);
-          autoResizeTextarea(e.target, expanded ? 0 : COMMENT_VISIBLE_ROWS);
-          scheduleSave(value);
-        }}
-        onBlur={e => {
-          commit(e.target.value);
-          setMeasureText(e.target.value);
-        }}
-      />
+      <NoteFieldRow>
+        <S.CommentInput
+          ref={textareaRef}
+          rows={1}
+          value={draft}
+          placeholder={placeholder || uiText('Додати коментар', language)}
+          onClick={e => e.stopPropagation()}
+          onTouchStart={e => e.stopPropagation()}
+          onChange={e => {
+            const { value } = e.target;
+            setDraft(value);
+            autoResizeTextarea(e.target, expanded ? 0 : COMMENT_VISIBLE_ROWS);
+            scheduleSave(value);
+          }}
+          onBlur={e => {
+            commit(e.target.value);
+            setMeasureText(e.target.value);
+          }}
+        />
+        {clearButton}
+      </NoteFieldRow>
       {clipped && (
         <S.NoteMore
           onClick={e => {
@@ -600,7 +626,9 @@ export const CommentBlock = ({ text, onSave, placeholder }) => {
           …
         </S.NoteMore>
       )}
-      <S.Note ref={measureRef} $clip $lines={COMMENT_VISIBLE_ROWS} $hidden aria-hidden="true">{measureText}</S.Note>
+      {/* Міра мусить мати ту саму ширину, що й поле: хрестик забирає в
+          нього 32 px праворуч. */}
+      <S.Note ref={measureRef} $clip $lines={COMMENT_VISIBLE_ROWS} $hidden aria-hidden="true" style={clearButton ? { right: 32 } : undefined}>{measureText}</S.Note>
     </S.CommentLane>
   );
 };
@@ -608,8 +636,8 @@ export const CommentBlock = ({ text, onSave, placeholder }) => {
 // ---------------------------------------------------------------------------
 // Public profile comment (spec §8)
 //
-// A record about a third party that every user of the base can read, signed with
-// the author's own name. The affordance is a line of muted text; a click turns it
+// A record about a third party that every user of the base can read. It is
+// anonymous: no author name is shown under it or written with it. The affordance is a line of muted text; a click turns it
 // into a borderless auto-growing field. It saves on blur, discards on Esc, and
 // commits + blurs on Ctrl/Cmd+Enter. An empty field writes nothing at all.
 
@@ -747,9 +775,6 @@ export const PublicCommentBlock = ({
   const [expanded, setExpanded] = useState(false);
   const [savedAt, setSavedAt] = useState(0);
   const [failedNotice, setFailedNotice] = useState('');
-  // Видалення публічного запису питає підтвердження в тому самому рядку —
-  // випадковий дотик до хрестика не мусить коштувати чужого коментаря.
-  const [confirmingDelete, setConfirmingDelete] = useState(null);
   // Optimistic rows: rendered straight away, and kept - with their text - if the
   // write fails, so a failure never costs what was typed.
   const [pending, setPending] = useState([]);
@@ -760,8 +785,11 @@ export const PublicCommentBlock = ({
     return () => clearTimeout(timer);
   }, [savedAt]);
 
+  // Хрестик знімає запис одним дотиком — без другого кроку «Видалити?».
+  // Підтвердження тут стояло, і прибрати власний відгук коштувало двох
+  // влучань у дрібний напис; мішень тепер велика (`NoteClearButton`), тож
+  // випадковий дотик уже не ціна другого кроку.
   const removeComment = useCallback(async commentId => {
-    setConfirmingDelete(null);
     setFailedNotice('');
     if (!onDelete) return;
     try {
@@ -848,36 +876,40 @@ export const PublicCommentBlock = ({
               else setExpanded(true);
             }}
           >
-            <S.CommentText $clip={!expanded}>{comment.text}</S.CommentText>
-            <S.CommentMeta>
-              <b>{getInitials(comment.authorName) || '—'}</b>
-              <span>{formatCommentDate(comment.createdAt)}</span>
-              {comment.failed && (
-                <S.CommentRetry
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation();
-                    void submit(comment.id, comment.text, comment.commentId);
-                  }}
-                >
-                  {uiText('Повторити', language)}
-                </S.CommentRetry>
-              )}
-              {canRemove && (
-                <S.CommentDelete
-                  type="button"
-                  $confirming={confirmingDelete === comment.id}
-                  aria-label={uiText(confirmingDelete === comment.id ? 'Підтвердити видалення' : 'Видалити коментар', language)}
-                  onClick={e => {
-                    e.stopPropagation();
-                    if (confirmingDelete === comment.id) void removeComment(comment.id);
-                    else setConfirmingDelete(comment.id);
-                  }}
-                >
-                  {confirmingDelete === comment.id ? uiText('Видалити?', language) : '×'}
-                </S.CommentDelete>
-              )}
-            </S.CommentMeta>
+            <S.CommentBody>
+              <S.CommentText $clip={!expanded}>{comment.text}</S.CommentText>
+              {/* Автора під відгуком немає: відгук анонімний. Ініціали тут
+                  стояли, і лишити відгук, не назвавши себе, було не можна. */}
+              <S.CommentMeta>
+                <span>{formatCommentDate(comment.createdAt)}</span>
+                {comment.failed && (
+                  <S.CommentRetry
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      void submit(comment.id, comment.text, comment.commentId);
+                    }}
+                  >
+                    {uiText('Повторити', language)}
+                  </S.CommentRetry>
+                )}
+              </S.CommentMeta>
+            </S.CommentBody>
+            {(canRemove || comment.failed) && (
+              <NoteClearButton
+                type="button"
+                title={uiText('Видалити коментар', language)}
+                aria-label={uiText('Видалити коментар', language)}
+                onClick={e => {
+                  e.stopPropagation();
+                  // Невдалий запис у базі не лежить — знімається сам рядок.
+                  if (comment.failed) setPending(prev => prev.filter(entry => entry.id !== comment.id));
+                  else void removeComment(comment.id);
+                }}
+              >
+                ×
+              </NoteClearButton>
+            )}
           </S.CommentEntry>
         );
       })}
@@ -914,11 +946,6 @@ export const PublicCommentBlock = ({
           }}
         >
           <span>{(preloaded ? publicCommentPlainPlaceholder : publicCommentPlaceholder)(language)}</span>
-          {/* Стрілка й значок кажуть: тут іще й читають чужі відгуки, не лише
-              пишуть свій. Де читання вже почалось само (`preloaded`), нагадувати
-              нема про що — усі виклики цього блоку тепер саме такі. */}
-          {!preloaded && <FaArrowRight size={10} aria-hidden="true" />}
-          {!preloaded && <FaRegCommentDots size={12} aria-hidden="true" />}
         </S.AddCommentTrigger>
       )}
 
@@ -968,18 +995,16 @@ export const enrichGateLabel = language => uiText('Доповнити дані',
  */
 export const ProfileNotes = ({ language, publicSlot, privateSlot, reviewsStatus }) => (
   <S.RowNotes onClick={e => e.stopPropagation()}>
-    <NoteLane $flush $public>
+    <NoteLane $public>
       <NoteLaneHead>
         <b>{profileUiText('publicComment', language)}</b>
-        <NoteLaneHint>{profileUiText('publicCommentHint', language)}</NoteLaneHint>
       </NoteLaneHead>
       {publicSlot}
       <ReviewsStateNote>{reviewsStatus}</ReviewsStateNote>
     </NoteLane>
-    <NoteLane $flush>
+    <NoteLane>
       <NoteLaneHead>
         <b>{profileUiText('personalNote', language)}</b>
-        <NoteLaneHint>{profileUiText('personalNoteHint', language)}</NoteLaneHint>
       </NoteLaneHead>
       {privateSlot}
     </NoteLane>
@@ -1015,13 +1040,12 @@ export const ReviewsStateNote = ({ children }) => (children
 export const describeReviewsState = ({ requested, loading, loaded, count = 0 }, language) => {
   if (loading) return uiText('Шукаємо відгуки…', language);
   if (requested && !loaded) return uiText('Не вдалося прочитати відгуки', language);
-  if (loaded && !count) return uiText('Публічних відгуків ще немає', language);
+  // Прочитана порожнеча мовчить: відгуки приїжджають самі, тож «відгуків
+  // немає» — це просто порожня доріжка з полем для запису. Окремий рядок
+  // «Публічних відгуків ще немає» займав місце в кожній картці й не казав
+  // нічого, чого не видно й так.
   return '';
 };
-
-// A row counts as "unfilled" once its marital status is the only fact it has to
-// show - a bare "заміжня"/"не заміжня" isn't informative enough on its own.
-const isWeakOnlyFact = facts => facts.length === 1 && facts[0].key === 'marital';
 
 // Spec §7: in the feed the like/hide actions are a row swipe - right adds to
 // favourites, left hides - so the reader can triage without opening anything.
@@ -1102,7 +1126,6 @@ const ProfileRow = ({
     [isLimited, user]
   );
   const hasLocation = Boolean(location);
-  const isUnfilled = !isLimited && !hasLocation && (facts.length === 0 || isWeakOnlyFact(facts));
 
   // Кнопка контактів малюється завжди й нічого не читає наперед: у картці
   // стрічки контактів немає, бо вони живуть в окремому вузлі за межею
@@ -1130,6 +1153,9 @@ const ProfileRow = ({
   // — інакше картка без жодного зайвого поля в проєкції ховала б і саму
   // можливість прочитати анкету.
   const canExpandDetails = !isLimited;
+  const hasMoreDetails = gridRows.length > 0
+    || Boolean(bio)
+    || (!showContactsButton && canViewContacts && contactEntries.length > 0);
 
   // Стан публікації читається з картки, а не з `publish`: у проєкції стрічки
   // такого ключа немає (див. `isMatchingCardPublished`).
@@ -1320,7 +1346,7 @@ const ProfileRow = ({
           ряд рішень), починається від краю картки, і рядок метрик посеред них
           був єдиним зсунутим. Відступ лишився рівно один і очевидний — під
           саме імʼя, поруч із фото. */}
-      {!isUnfilled && facts.length > 0 ? (
+      {facts.length > 0 ? (
         <>
           {bodyFacts.length > 0 && (
             <S.FactsRow>
@@ -1343,9 +1369,7 @@ const ProfileRow = ({
             </S.FactsRow>
           )}
         </>
-      ) : isUnfilled && (
-        <S.EmptyNote>{uiText('Анкета не заповнена', language)}</S.EmptyNote>
-      )}
+      ) : null}
 
       {contactsOpen && (
         <S.RowContacts onClick={e => e.stopPropagation()}>
@@ -1359,7 +1383,10 @@ const ProfileRow = ({
         </S.RowContacts>
       )}
 
-      {expanded && !isLimited && (
+      {/* Порожнього блоку «всі дані» не буває: без жодного поля він малював
+          рамку з написом «Додаткових даних немає», тобто зайвий рядок і
+          відступ у картці, який нічого не казав. */}
+      {expanded && !isLimited && hasMoreDetails && (
         <S.More onClick={e => e.stopPropagation()}>
           {gridRows.length > 0 && (
             <S.Grid>
@@ -1378,12 +1405,6 @@ const ProfileRow = ({
               єдиним місцем, звідки контакти видно. */}
           {!showContactsButton && canViewContacts && (
             <ContactsSection user={user} onOpened={onContactsOpened} />
-          )}
-          {/* Стрілка тепер стоїть у кожному рядку, тож розгорнути можна й
-              картку, анкета якої ще їде (або в якій цих полів просто немає).
-              Порожній блок читався б як поламаний — краще сказати словом. */}
-          {gridRows.length === 0 && !bio && (
-            <S.RowContactsNote>{uiText('Додаткових даних немає', language)}</S.RowContactsNote>
           )}
         </S.More>
       )}

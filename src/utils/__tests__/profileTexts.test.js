@@ -57,10 +57,10 @@ describe('картка говорить однією мовою', () => {
   it('без явної мови бере ту, що обрана в меню', () => {
     localStorage.setItem('appLanguage', 'uk');
     expect(resolveProfileLanguage()).toBe('uk');
-    expect(profileUiText('publicComment')).toBe('Публічна нотатка');
+    expect(profileUiText('publicComment')).toBe('Публічний відгук');
 
     localStorage.setItem('appLanguage', 'en');
     expect(resolveProfileLanguage()).toBe('en');
-    expect(profileUiText('publicComment')).toBe('Public note');
+    expect(profileUiText('publicComment')).toBe('Public review');
   });
 });
