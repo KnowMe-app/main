@@ -5,6 +5,7 @@ import {
   removeCardFromList,
 } from './cardsStorage';
 import { loadCards, loadQueries, saveQueries } from './cardIndex';
+import { isMatchingProfileProjection } from './matchingCardIndex';
 
 const DISLIKE_LIST_KEY = 'dislike';
 
@@ -47,8 +48,12 @@ export const syncDislikes = remoteDislikes => {
 export const cacheDislikedUsers = usersObj => {
   const existing = loadCards();
   Object.entries(usersObj).forEach(([id, data]) => {
-    const merged = existing[id] ? { ...existing[id], ...data } : data;
-    updateCard(id, merged);
+    // Проєкція в кеш анкет не лягає (`isMatchingProfileProjection`): злита
+    // поверх збереженої анкети, вона затерла б прізвище ініціалом.
+    if (!isMatchingProfileProjection(data)) {
+      const merged = existing[id] ? { ...existing[id], ...data } : data;
+      updateCard(id, merged);
+    }
     addCardToList(id, DISLIKE_LIST_KEY);
   });
 };

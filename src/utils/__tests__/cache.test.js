@@ -20,6 +20,23 @@ describe('updateCachedUser', () => {
     expect(getIdsByQuery('favorite')).not.toContain('1');
   });
 
+  // Реакція з рядка стрічки передає проєкцію: прізвище в ній — ініціал з
+  // `matchingCards`. Покладена в кеш без позначки проєкції, вона читалась би як
+  // повна анкета, і відкрита картка більше не дочитувала б повне прізвище.
+  it('не кладе в кеш проєкцію стрічки й не затирає нею збережену анкету', () => {
+    updateCachedUser({ userId: 'p1', name: 'Оля', surname: 'Дорошенко' });
+    updateCachedUser({ userId: 'p1', name: 'Оля', surname: 'Д.', __matchingSummary: true });
+    expect(getCard('p1').surname).toBe('Дорошенко');
+
+    updateCachedUser({ userId: 'p2', name: 'Яна', surname: 'К.', __matchingSummary: true });
+    expect(getCard('p2')).toBeFalsy();
+  });
+
+  it('не кладе в кеш і урізану видачу пошуку', () => {
+    updateCachedUser({ userId: 'p3', name: 'Іра', surname: 'Л.', __limitedProfile: true });
+    expect(getCard('p3')).toBeFalsy();
+  });
+
   it('removes specified keys from cached user', () => {
     const user = { userId: '1', name: 'John', email: 'john@example.com' };
     updateCachedUser(user);
