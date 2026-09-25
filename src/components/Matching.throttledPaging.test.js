@@ -200,8 +200,10 @@ describe('публічні коментарі', () => {
     expect(tile).toContain('<ProfileNotes');
     expect(tile).toContain('publicSlot={reviewsSlot}');
     expect(tile).toContain('<CommentBlock');
-    // І той самий значок, яким рядок просить прочитати чужі відгуки.
-    expect(tile).toContain('aria-label={reviewsGateLabel(language)}');
+    // Значка «перевірити відгуки» тут більше немає: дотик по плитці й так
+    // відкриває картку повністю, а читання чужих починає прапорець
+    // `hasPublicReview` картки, а не окремий жест.
+    expect(tile).not.toContain('reviewsGateLabel');
   });
 
   // Нотатка видна всім показаним карткам, а не самій активній: інакше читач
@@ -235,11 +237,13 @@ describe('публічні коментарі', () => {
       .toBeLessThan(card.indexOf("profileUiText('personalNotePlaceholder', language)"));
   });
 
-  it('читає коментарі відкритої анкети сам, а для стрічки — лише на дотик', () => {
-    // Стрічка не питає коментарів наперед: раніше вона брала їх для цілої
-    // першої сторінки списку — запит на кожне відкриття стрічки заради блока,
-    // під яким у більшості анкет порожньо. Лишився єдиний випадок читання без
-    // дотику — відкрита анкета, де блок видно одразу.
+  it('читає коментарі відкритої анкети сама, а для стрічки — лише позначені прапорцем', () => {
+    // Стрічка не питає коментарів усієї сторінки наперед: раніше вона брала їх
+    // для цілої першої сторінки списку — запит на кожне відкриття стрічки
+    // заради блока, під яким у більшості анкет порожньо. Тепер вона питає їх
+    // сама, але вибірково — лише ті картки, чия проєкція вже несе прапорець
+    // `hasPublicReview` (виставляють писачі коментарів у `config.js`), а не всі
+    // підряд і не за кліком.
     const source = matching();
     const effect = source.slice(
       source.indexOf('const requestPublicComments = React.useCallback'),
@@ -249,6 +253,8 @@ describe('публічні коментарі', () => {
     expect(effect).toContain('if (!ownerId || !detailOpen) return;');
     expect(effect).toContain('requestPublicComments(activeProfile?.userId);');
     expect(effect).not.toContain("viewLayout === 'list'");
+    // Автопідвантаження — за прапорцем картки, а не за всім списком підряд.
+    expect(effect).toContain('if (user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]) requestPublicComments(user.userId);');
   });
 });
 

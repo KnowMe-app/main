@@ -177,6 +177,7 @@ import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_FEED_FIELD,
   MATCHING_CARD_ORDER_FIELD,
+  MATCHING_CARD_REVIEW_FLAG_FIELD,
   isMatchingCardPublished,
   isMatchingSummaryCard,
 } from '../utils/matchingCardIndex';
@@ -212,13 +213,12 @@ import ProfileRow, {
   ProfileNotes,
   ReviewsStateNote,
   enrichGateLabel,
-  reviewsGateLabel,
   describeReviewsState,
   renderFacts as renderProfileFacts,
   splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
 import { FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
-import { FaRegHeart, FaUndoAlt, FaChevronDown, FaPencilAlt, FaRegCommentDots } from 'react-icons/fa';
+import { FaRegHeart, FaUndoAlt, FaChevronDown, FaPencilAlt } from 'react-icons/fa';
 import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
 import { CONTACT_ICONS, PHONE_QUICK_LINKS, getContactIcon, isExternalContact } from './contactIcons';
 import { getContactEntries } from './contactMethods';
@@ -1562,9 +1562,6 @@ const GalleryCard = React.memo(({
   diagnosticsSlot,
 }) => {
   const { language } = useAppSettings();
-  // Той самий жест, що й у рядку списку: значок просить прочитати чужі відгуки,
-  // а поле для власного стоїть у доріжці без нього.
-  const [reviewsRequested, setReviewsRequested] = useState(false);
   const name = getProfileName(user);
   const age = getProfileAge(user);
   const photos = getProfilePhotos(user);
@@ -1673,35 +1670,24 @@ const GalleryCard = React.memo(({
             >
               {isFavorite ? <FaHeart /> : <FaRegHeart />}
             </GalleryActionButton>
-            {reviewsAction && (
-              <GalleryActionButton
-                type="button"
-                $on={reviewsRequested}
-                disabled={Boolean(reviewsAction.loading)}
-                aria-label={reviewsGateLabel(language)}
-                title={reviewsGateLabel(language)}
-                onClick={event => {
-                  event.stopPropagation();
-                  setReviewsRequested(true);
-                  reviewsAction.onRequest(user.userId);
-                }}
-              >
-                <FaRegCommentDots />
-                {reviewsAction.count > 0 && <b>{reviewsAction.count}</b>}
-              </GalleryActionButton>
-            )}
           </GalleryActions>
         )}
         {/* Ті самі дві доріжки, що й у рядку списку: розкладка міняє те, як
             картку показують, а не те, що про людину вже записали. Поки плитка
             їх не мала, читач у галереї не бачив власної нотатки — і дописував
-            поверх запису, якого не видно. */}
+            поверх запису, якого не видно.
+
+            Значка «перевірити відгуки» тут немає навмисно: дотик по плитці й
+            так відкриває картку повністю (`onOpen`), тож другого, дрібнішого
+            жесту поруч не додає нічого. Читання чужих починає той самий ефект
+            стрічки, що й у рядку списку, за прапорцем `hasPublicReview`
+            картки. */}
         {!isLimited && onCommentSave && (
           <ProfileNotes
             language={language}
             publicSlot={reviewsSlot}
             reviewsStatus={describeReviewsState({
-              requested: reviewsRequested,
+              requested: Boolean(user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]),
               loading: Boolean(reviewsAction?.loading),
               loaded: Boolean(reviewsAction?.loaded),
               count: reviewsAction?.count || 0,
@@ -7789,15 +7775,16 @@ const Matching = () => {
     setScrolledDownSinceLoad(true);
   }, []);
 
-  // Коментарі читає лише відкрита анкета — там блок видно одразу, тож питати
-  // його на місці нема сенсу.
-  //
-  // Стрічка не читає нічого. Раніше вона брала коментарі наперед для цілої
-  // першої сторінки списку — запит на кожне відкриття стрічки заради блока, під
-  // яким у більшості анкет порожньо. Тепер у рядку стоїть кнопка
-  // «Перевірити наявність відгуків» (`reviewsAction` у ряду рішень), і читання
-  // коштує рівно стільки разів, скільки її натиснули. Поле для власного
-  // відгуку при цьому стоїть відкритим і читань не потребує — воно пише.
+  // Стрічка читає відгуки не на кожен рядок, а на той, у якого вже є що
+  // читати. Раніше вона не читала нічого наперед узагалі: кнопка «Перевірити
+  // наявність відгуків» у ряду рішень робила запит рівно стільки разів,
+  // скільки її натиснули, а порожню картку без відгуку так ніхто й не питав.
+  // Кнопки більше немає — той-таки значок у ряду рішень тепер розгортає «всі
+  // дані» (`onToggleExpand`), — а прапорець `hasPublicReview` у проєкції
+  // `matchingCards` (виставляють писачі коментарів, `docs`/`CLAUDE.md`) каже
+  // наперед, для якої картки читання взагалі має сенс. Відгук лишається рідким
+  // (одиниці карток на сотні), тож ефект нижче б'є запитом не по всій деці, а
+  // по тих кількох id, де прапорець уже стоїть.
   const requestPublicComments = React.useCallback(profileId => {
     const id = String(profileId || '').trim();
     if (!id || publicCommentsRequestedRef.current.has(id)) return;
@@ -7825,17 +7812,30 @@ const Matching = () => {
     requestPublicComments(activeProfile?.userId);
   }, [activeProfile?.userId, detailOpen, ownerId, requestPublicComments]);
 
+  // Дека сама підвантажує відгуки для позначених карток — без цього прапорець
+  // `hasPublicReview` лишався б написом, якого ніхто не прочитав. Ефект бʼє
+  // рівно по нових id: `requestPublicComments` сам відсіює вже запитані
+  // (`publicCommentsRequestedRef`), тож довантаження сторінки не перепитує
+  // картки, які дека вже показувала.
+  useEffect(() => {
+    if (!ownerId) return;
+    users.forEach(user => {
+      if (user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]) requestPublicComments(user.userId);
+    });
+  }, [ownerId, requestPublicComments, users]);
+
   useEffect(() => {
     requestPublicCommentsRef.current = requestPublicComments;
   }, [requestPublicComments]);
 
   /**
-   * Усе, чого ряду рішень треба знати про відгуки цієї картки.
-   *
-   * Значок у ряду каже, скільки їх, і сам починає читання; вміст приїжджає
-   * окремим слотом. Сама пам'ять таба лишається тут, у стрічки: рядок свого
-   * «вже просили» не тримає навмисно — читання, яке впало, мусить бути можливо
-   * повторити (`requestPublicComments` знімає позначку саме на помилці).
+   * Усе, що рядку треба знати про відгуки цієї картки — для статусного рядка
+   * над полем нотатки (`describeReviewsState`), не для кнопки: кнопки більше
+   * немає, читання починає ефект вище сам, за прапорцем `hasPublicReview`.
+   * Сама пам'ять таба лишається тут, у стрічки: рядок свого «вже просили» не
+   * тримає навмисно — читання, яке впало, мусить бути можливо повторити
+   * (`requestPublicComments` знімає позначку саме на помилці, а ефект вище
+   * підхопить її знову на наступному рендері картки).
    */
   const buildRowReviewsAction = React.useCallback(profileId => ({
     count: (publicComments[profileId] || EMPTY_PUBLIC_COMMENTS).length,
@@ -7888,14 +7888,19 @@ const Matching = () => {
    * значка.
    *
    * Це той самий блок, що й у відкритій анкеті: поле для власного відгуку
-   * стоїть у ньому завжди, а прочитані чужі приїжджають у `comments`, щойно
-   * їх попросили значком у ряду рішень. Окремого «гейта», який до читання
-   * показував замість поля напис, більше немає — написати відгук не мусить
-   * починатися з читання чужих.
+   * стоїть у ньому завжди, а прочитані чужі приїжджають у `comments` самі,
+   * щойно прапорець `hasPublicReview` картки скаже, що там є що читати
+   * (`requestPublicComments` в ефекті вище). Окремого «гейта», який до
+   * читання показував замість поля напис, більше немає — написати відгук не
+   * мусить починатися з читання чужих, а читання чужих не мусить чекати на
+   * дотик до значка, якого в ряду рішень більше немає.
    */
   const buildRowReviewsSlot = React.useCallback(profileId => (
     <PublicCommentBlock
       flush
+      // Читання тут іде без окремого жесту (ефект вище), так само, як у
+      // відкритій картці й в обох формах — див. `preloaded` у `ProfileRow`.
+      preloaded
       profileId={profileId}
       backendHref={publicCommentsBackendHref(profileId)}
       comments={publicComments[profileId] || EMPTY_PUBLIC_COMMENTS}
