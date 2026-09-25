@@ -34,7 +34,7 @@ import * as S from './MatchingHiddenList.styled';
 // удруге: у рядку стрічки й у картці стоять ті самі два записи — публічний
 // відгук і власна нотатка, — і два екрани не можуть казати про них різне.
 import { NoteLane, NoteLaneHead, NoteLaneHint, PublishDot } from './Matching.styled';
-import { isMatchingCardPublished } from '../utils/matchingCardIndex';
+import { isMatchingCardPublished, MATCHING_CARD_REVIEW_FLAG_FIELD } from '../utils/matchingCardIndex';
 
 // The one profile row shared by the hidden-list screen and the matching feed's
 // list mode (spec §0/§5). It owns the row's visual structure only - avatar,
@@ -724,11 +724,12 @@ export const PublicCommentBlock = ({
   flush = false,
   // Чи відгуки цього екрана вже прочитані (або читаються) без окремого жесту.
   //
-  // У стрічці читання коштує дотик до значка в ряду рішень, тож плейсхолдер
-  // там і кличе перевірити, і стрілкою показує, куди натиснути. А відкрита
-  // картка й обидві форми питають `comments` одразу на відкритті — там той
-  // самий напис просив зробити вже зроблене, та ще й вказував стрілкою на
-  // значок, якого на цих екранах немає.
+  // Читання ніде більше не чекає на дотик: стрічка сама питає його, щойно
+  // прапорець `hasPublicReview` картки каже, що там є що читати (ефект у
+  // `Matching.jsx`), а відкрита картка й обидві форми питають `comments`
+  // одразу на відкритті. Тому кожен виклик цього блоку тепер несе
+  // `preloaded`; параметр лишається вимкненим за замовчуванням лише для
+  // випадку, коли читання колись знову коштуватиме окремого жесту.
   preloaded = false,
   // Адреса вузла `comments/{profileId}` у консолі Firebase. Складає її та сторона,
   // що знає і читача, і режим (`Matching`), — сам блок не вирішує, кому службова
@@ -913,8 +914,9 @@ export const PublicCommentBlock = ({
           }}
         >
           <span>{(preloaded ? publicCommentPlainPlaceholder : publicCommentPlaceholder)(language)}</span>
-          {/* Стрілка й значок ведуть погляд до кнопки «перевірити відгуки» в
-              ряду рішень. Де читання вже сталось саме, вести нема куди. */}
+          {/* Стрілка й значок кажуть: тут іще й читають чужі відгуки, не лише
+              пишуть свій. Де читання вже почалось само (`preloaded`), нагадувати
+              нема про що — усі виклики цього блоку тепер саме такі. */}
           {!preloaded && <FaArrowRight size={10} aria-hidden="true" />}
           {!preloaded && <FaRegCommentDots size={12} aria-hidden="true" />}
         </S.AddCommentTrigger>
@@ -945,7 +947,6 @@ export const splitFactsByGroup = (facts = []) => [
  * вони мовою інтерфейсу. Виклик без аргументу віддає українську за
  * замовчуванням лише тоді, коли мова інтерфейсу українська.
  */
-export const reviewsGateLabel = language => uiText('Перевірити наявність відгуків', language);
 export const enrichGateLabel = language => uiText('Доповнити дані', language);
 
 /**
@@ -959,9 +960,11 @@ export const enrichGateLabel = language => uiText('Доповнити дані',
  * Обидва поля стоять **без умови**. Написати відгук — це рішення читача, а не
  * наслідок того, що він спершу натиснув «перевірити»: поки поле відкривала
  * кнопка, лишити запис можна було тільки заради того, щоб спершу прочитати
- * чужі. Читання чужих лишається на дотик і далі (`reviewsAction` у ряду
- * рішень): відгуки живуть в окремому вузлі, і запит на кожен рядок списку
- * коштував би сторінку читань заради блока, під яким у більшості анкет порожньо.
+ * чужі. Читання чужих більше не чекає на дотик і на гейт: рядок сам знає з
+ * прапорця `hasPublicReview` проєкції `matchingCards`, чи під карткою взагалі
+ * є що читати, — і питає лише ті картки, де прапорець стоїть. Запит на
+ * кожен рядок списку коштував би сторінку читань заради блока, під яким у
+ * більшості анкет порожньо; прапорець і тримає цю ціну малою.
  */
 export const ProfileNotes = ({ language, publicSlot, privateSlot, reviewsStatus }) => (
   <S.RowNotes onClick={e => e.stopPropagation()}>
@@ -1152,16 +1155,12 @@ const ProfileRow = ({
     return null;
   }, [isAdmin, isLimited, language, onEditProfile, onEnrich]);
 
-  // Значок відгуків більше нічого не розгортає — він просить їх прочитати.
-  // Доріжка з полем стоїть на місці й без нього, тож «згорнути» означало б
-  // прибрати поле, у яке читач саме зібрався писати. Повторний дотик — це
-  // повтор читання: `requestPublicComments` знімає позначку «вже просили» саме
-  // на помилці, тож те, що впало, можна спробувати ще раз.
-  const [reviewsRequested, setReviewsRequested] = useState(false);
-  const requestReviews = () => {
-    setReviewsRequested(true);
-    if (reviewsAction?.onRequest) reviewsAction.onRequest(user.userId);
-  };
+  // Читання відгуків більше не чекає на дотик: його починає сам ефект стрічки,
+  // щойно в проєкції картки стоїть прапорець `hasPublicReview` (`Matching.jsx`,
+  // ефект над `requestPublicComments`). Рядок про це не питає нікого — він лише
+  // описує вже почате читання словом (`describeReviewsState` нижче), тож
+  // локальної позначки «просили» тут більше не тримають.
+  const hasPublicReview = Boolean(user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]);
 
   const toggleContacts = () => {
     setContactsOpen(open => {
@@ -1397,15 +1396,17 @@ const ProfileRow = ({
 
           Обидві стоять відкритим полем, а не за кнопкою: читач гортає список,
           аби вирішити, і лишити запис — що власний, що публічний — має
-          коштувати один дотик просто тут. Публічну доріжку досі відкривала
+          коштувати один дотик просто тут. Публічну доріжку колись відкривала
           кнопка «перевірити відгуки», тобто написати відгук можна було лише
-          дорогою до чужих. Читання чужих на дотику й лишилось: `reviewsSlot`
-          несе прочитане, а поки його не просили, у доріжці стоїть саме поле. */}
+          дорогою до чужих. Тепер читання чужих не чекає й на дотик: `reviewsSlot`
+          несе прочитане, щойно прапорець `hasPublicReview` картки скаже, що
+          воно є (ефект стрічки в `Matching.jsx`), а картці без прапорця в
+          доріжці й далі стоїть саме поле. */}
       <ProfileNotes
         language={language}
         publicSlot={reviewsSlot}
         reviewsStatus={describeReviewsState({
-          requested: reviewsRequested,
+          requested: hasPublicReview,
           loading: Boolean(reviewsAction?.loading),
           loaded: Boolean(reviewsAction?.loaded),
           count: reviewsAction?.count || 0,
@@ -1425,17 +1426,25 @@ const ProfileRow = ({
           потім те, що читач про неї записав, і аж тоді жест.
 
           Порядок у ряду сталий: олівець (дописати анкету) → хрестик і серце →
-          відгуки. Ліворуч те, що читач робить із карткою, праворуч — те, про
+          розгорнути. Ліворуч те, що читач робить із карткою, праворуч — те, про
           що він її питає; реакції посередині стоять парою в спільній рамці,
           бо це два боки одного вибору, а не два незалежні значки. Усередині
           пари `primaryAction` іде першим: у стрічці це хрестик, щоб лайк
           стояв праворуч — так само, як у відкритій картці.
 
-          Підписів у ряду немає: три з цих кнопок раніше були широкими рядками
-          з написами («Доповнити дані», «Перевірити наявність відгуків»), і
+          Значок «перевірити наявність відгуків» тут стояв раніше, і місце
+          праворуч звільнилось не тому, що відгуки стали не потрібні: читання
+          починає сам ефект стрічки, щойно в проєкції картки стоїть прапорець
+          `hasPublicReview` (`Matching.jsx`), а натискати вже нема що. Замість
+          нього — та сама дія, що й у стрілки біля контактів (`onToggleExpand`):
+          другий, звичніший шлях розгорнути «всі дані» рядка, не сягаючи по
+          нього під фото.
+
+          Підписів у ряду немає: ці кнопки раніше були широкими рядками з
+          написами («Доповнити дані», «Перевірити наявність відгуків»), і
           картка з трьох фактів займала пів екрана. Що робить кожна, каже
           `title` і `aria-label` — саме їх читає й екранний диктор. */}
-      {(editAction || reviewsAction || (!isLimited && (primaryAction || secondaryAction))) && (
+      {(editAction || canExpandDetails || (!isLimited && (primaryAction || secondaryAction))) && (
         <S.RowFooterActions onClick={e => e.stopPropagation()}>
           {editAction && (
             <S.RowFooterButton
@@ -1477,17 +1486,20 @@ const ProfileRow = ({
               )}
             </S.RowReactionPair>
           )}
-          {reviewsAction && (
+          {canExpandDetails && (
             <S.RowFooterButton
               type="button"
-              $on={reviewsRequested}
-              disabled={Boolean(reviewsAction.loading)}
-              title={reviewsGateLabel(language)}
-              aria-label={reviewsGateLabel(language)}
-              onClick={e => { e.stopPropagation(); requestReviews(); }}
+              $on={expanded}
+              aria-expanded={expanded}
+              // Та сама дія, що й стрілка біля контактів (`onToggleExpand`), але
+              // з іншим підписом: «Показати всі дані» на двох кнопках картки
+              // заплутало б і людину, і скрінрідер — обидві звучали б однаково,
+              // хоч друга й стоїть окремим жестом у ряду рішень.
+              title={uiText('Розгорнути анкету', language)}
+              aria-label={uiText('Розгорнути анкету', language)}
+              onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
             >
-              <FaRegCommentDots size={13} />
-              {reviewsAction.count > 0 && <b>{reviewsAction.count}</b>}
+              <FaChevronDown size={13} />
             </S.RowFooterButton>
           )}
         </S.RowFooterActions>

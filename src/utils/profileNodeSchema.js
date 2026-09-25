@@ -113,10 +113,21 @@ export const twinSourceRank = field => {
   return TWIN_FIELD_SOURCES[canonical].indexOf(field);
 };
 
+/**
+ * Прапорець «на цю картку є публічний відгук» — третя категорія поля картки,
+ * не пряма копія й не похідна з анкети: джерело правди для нього не анкета, а
+ * вузол `comments/{uid}`, з яким `buildMatchingCardProjection` узагалі не
+ * працює. Пишуть його `addPublicProfileComment`/`updatePublicProfileComment`/
+ * `deletePublicProfileComment` тим самим записом, яким чіпають сам відгук —
+ * див. коментар над `MATCHING_CARDS_ROOT` у `matchingCardIndex.js`.
+ */
+export const MATCHING_CARD_REVIEW_FIELDS = Object.freeze(['hasPublicReview']);
+
 /** Повний набір ключів, які має право лежати в картці стрічки. */
 export const MATCHING_CARD_ALLOWED_FIELDS = Object.freeze([
   ...MATCHING_CARD_DIRECT_FIELDS,
   ...Object.keys(MATCHING_CARD_DERIVED_FIELDS),
+  ...MATCHING_CARD_REVIEW_FIELDS,
 ]);
 
 /**

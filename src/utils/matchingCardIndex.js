@@ -60,6 +60,18 @@ export const MATCHING_CARD_FEED_FIELD = 'feedDate';
 /** Поле, за яким сортується стрічка (потребує `.indexOn` у правилах БД). */
 export const MATCHING_CARD_ORDER_FIELD = MATCHING_CARD_FEED_FIELD;
 
+/**
+ * Прапорець «на цю картку є публічний відгук» — щоб рядок стрічки підвантажив
+ * і показав відгук сам, без кліку «перевірити наявність».
+ *
+ * Джерело правди для нього — не анкета, а `comments/{userId}`: писачі
+ * `add/update/deletePublicProfileComment` у `config.js` виставляють його тим
+ * самим записом, яким чіпають сам відгук. Тому `buildMatchingCardProjection`
+ * тут його не рахує — рахувати нема з чого, `data` цієї функції відгуків не
+ * бачить, — а лише переносить те, що вже стояло в попередній картці.
+ */
+export const MATCHING_CARD_REVIEW_FLAG_FIELD = 'hasPublicReview';
+
 /** Прапорець на розгорнутій картці: це проєкція, а не повна анкета. */
 export const MATCHING_SUMMARY_FLAG = '__matchingSummary';
 
@@ -324,6 +336,15 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   // `false` — теж значення, і воно мусить лягти в картку: без нього сховану
   // анкету не відрізнити від тієї, яку ще не публікували.
   if (feedDate || feedDate === false) projection[MATCHING_CARD_FEED_FIELD] = feedDate;
+
+  // Переноситься, а не рахується: `syncMatchingCardIndex` перезаписує картку
+  // цілком (`set`) на кожне збереження анкети, а не лише зачеплені поля. Без
+  // цього переносу правка будь-якого поля анкети — імені, міста, чого завгодно
+  // — тихо гасила б прапорець, виставлений писачами коментарів, і рядок
+  // стрічки переставав показувати вже прочитаний відгук аж до нового.
+  if (options.existingCard?.[MATCHING_CARD_REVIEW_FLAG_FIELD] === true) {
+    projection[MATCHING_CARD_REVIEW_FLAG_FIELD] = true;
+  }
 
   return projection;
 };

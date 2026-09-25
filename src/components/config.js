@@ -88,6 +88,7 @@ import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_FEED_FIELD,
   MATCHING_CARD_ORDER_FIELD,
+  MATCHING_CARD_REVIEW_FLAG_FIELD,
   areMatchingCardProjectionsEqual,
   buildMatchingCardProjection,
   expandMatchingCard,
@@ -1281,6 +1282,25 @@ export const resolvePublicCommentMaxLength = uid => (
   isAdminUid(uid) ? PUBLIC_COMMENT_ADMIN_MAX_LENGTH : PUBLIC_COMMENT_MAX_LENGTH
 );
 
+/**
+ * Шлях до прапорця «на цю картку є публічний відгук» — `matchingCards/{id}/hasPublicReview`.
+ *
+ * Кожен writer коментаря чіпає його тим самим атомарним записом, яким чіпає й
+ * сам відгук: правило бази (`hasPublicReview.validate`) вимагає, щоб значення
+ * збігалось із `comments/{id}.hasChildren()`, тож сплутати прапорець з реальним
+ * станом дерева тут не можна — база просто відхилить неправильне значення.
+ */
+const matchingCardPublicReviewFlagPath = profileId =>
+  `${MATCHING_CARDS_ROOT}/${profileId}/${MATCHING_CARD_REVIEW_FLAG_FIELD}`;
+
+/** Чи лишається під карткою хоч один відгук, крім (можливо) того, що знімається. */
+const hasRemainingPublicComments = async (profileId, excludeCommentId) => {
+  const snapshot = await firebaseGet(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}`));
+  if (!snapshot.exists()) return false;
+  const keys = Object.keys(snapshot.val() || {});
+  return keys.some(key => key !== excludeCommentId);
+};
+
 const normalizePublicComment = (id, value) => ({
   id,
   text: typeof value?.text === 'string' ? value.text : '',
@@ -1336,13 +1356,19 @@ export const addPublicProfileComment = async ({ profileId, text, authorName = ''
 
   const listRef = ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}`);
   const commentRef = push(listRef);
-  await set(commentRef, {
-    text: trimmed,
-    authorId: user.uid,
-    authorName: String(authorName || '').slice(0, 200),
-    createdAt: serverTimestamp(),
-    updatedAt: null,
-    visibility: 'public',
+  // Прапорець картки лягає в тому самому запиті, яким лягає відгук: перший
+  // відгук на картку без цього доїжджав би до бази, а рядок стрічки — ні, аж
+  // до наступного, нічим не повʼязаного збереження анкети.
+  await update(ref2(database), {
+    [`${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentRef.key}`]: {
+      text: trimmed,
+      authorId: user.uid,
+      authorName: String(authorName || '').slice(0, 200),
+      createdAt: serverTimestamp(),
+      updatedAt: null,
+      visibility: 'public',
+    },
+    [matchingCardPublicReviewFlagPath(profileId)]: true,
   });
 
   return {
@@ -1396,13 +1422,16 @@ export const addPublicProfileCommentAs = async ({
   const resolvedCreatedAt = Number(createdAt) > 0 ? Number(createdAt) : Date.now();
 
   const commentRef = push(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}`));
-  await set(commentRef, {
-    text: trimmed,
-    authorId: resolvedAuthorId,
-    authorName: resolvedAuthorName,
-    createdAt: resolvedCreatedAt,
-    updatedAt: null,
-    visibility: 'public',
+  await update(ref2(database), {
+    [`${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentRef.key}`]: {
+      text: trimmed,
+      authorId: resolvedAuthorId,
+      authorName: resolvedAuthorName,
+      createdAt: resolvedCreatedAt,
+      updatedAt: null,
+      visibility: 'public',
+    },
+    [matchingCardPublicReviewFlagPath(profileId)]: true,
   });
 
   return {
@@ -1425,7 +1454,11 @@ export const updatePublicProfileComment = async ({ profileId, commentId, text })
 
   const trimmed = String(text || '').trim();
   if (!trimmed) {
-    await remove(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`));
+    const stillHasOthers = await hasRemainingPublicComments(profileId, commentId);
+    await update(ref2(database), {
+      [`${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`]: null,
+      [matchingCardPublicReviewFlagPath(profileId)]: stillHasOthers,
+    });
     return null;
   }
   const maxLength = resolvePublicCommentMaxLength(user.uid);
@@ -1450,7 +1483,11 @@ export const deletePublicProfileComment = async ({ profileId, commentId }) => {
   if (!user) throw new Error('User not authenticated');
   if (!profileId || !commentId) throw new Error('profileId і commentId обовʼязкові');
 
-  await remove(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`));
+  const stillHasOthers = await hasRemainingPublicComments(profileId, commentId);
+  await update(ref2(database), {
+    [`${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`]: null,
+    [matchingCardPublicReviewFlagPath(profileId)]: stillHasOthers,
+  });
   return null;
 };
 
@@ -4871,6 +4908,55 @@ export const removeMatchingCardIndex = async userId => {
   } catch (error) {
     console.error('[matchingCards] не вдалося видалити урізану картку', { userId: id, error });
   }
+};
+
+/**
+ * Одноразовий дозапис `hasPublicReview` карткам, чиї відгуки вже лежать у базі.
+ *
+ * Прапорець виставляють самі писачі коментарів — `addPublicProfileComment` і
+ * сусіди, — але лише на **нове** створення чи зняття. Відгук, який уже лежав у
+ * `comments/{id}` до появи цього поля, ніхто не писав заново, тож картка про
+ * нього мовчить: рядок стрічки не показує вже написаний відгук, доки хтось не
+ * торкнеться цього коментаря знову. Ця функція наздоганяє різницю один раз —
+ * той самий прийом, що й у `backfillProfileDraftOwners`.
+ */
+export const backfillMatchingCardPublicReviewFlags = async () => {
+  let commentsByProfile = null;
+  try {
+    const snapshot = await get(ref2(database, PUBLIC_COMMENTS_ROOT_PATH));
+    commentsByProfile = snapshot.exists() ? snapshot.val() : null;
+  } catch (error) {
+    console.warn('[matchingCards] відгуки не прочитано, прапорець не дописано', error);
+    return 0;
+  }
+  if (!commentsByProfile) return 0;
+
+  let cards = {};
+  try {
+    const snapshot = await get(ref2(database, MATCHING_CARDS_ROOT));
+    cards = snapshot.exists() ? snapshot.val() || {} : {};
+  } catch (error) {
+    console.warn('[matchingCards] картки стрічки не прочитано, дописуємо навмання', error);
+  }
+
+  const updates = {};
+  Object.entries(commentsByProfile).forEach(([profileId, comments]) => {
+    if (!profileId || !comments || typeof comments !== 'object' || !Object.keys(comments).length) return;
+    // Картки без проєкції нема куди дописувати: писач коментаря створить її
+    // сам, тим самим атомарним записом, щойно про неї напишуть знову.
+    if (!cards[profileId] || cards[profileId][MATCHING_CARD_REVIEW_FLAG_FIELD] === true) return;
+    updates[`${profileId}/${MATCHING_CARD_REVIEW_FLAG_FIELD}`] = true;
+  });
+
+  const count = Object.keys(updates).length;
+  if (!count) return 0;
+  try {
+    await update(ref2(database, MATCHING_CARDS_ROOT), updates);
+  } catch (error) {
+    console.warn('[matchingCards] прапорець відгуків не дописано', error);
+    return 0;
+  }
+  return count;
 };
 
 /**

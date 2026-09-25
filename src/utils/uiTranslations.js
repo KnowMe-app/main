@@ -158,6 +158,7 @@ const EN_BY_UK = {
   'Показати у стрічці': 'Show in the feed',
   Контакти: 'Contacts',
   'Показати всі дані': 'Show all data',
+  'Розгорнути анкету': 'Expand profile',
   'Анкета не заповнена': 'The profile is empty',
   'Шукаємо контакти…': 'Looking for contacts…',
   'Контактів немає або вони закриті': 'No contacts, or they are closed',
