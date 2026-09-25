@@ -905,8 +905,12 @@ export const fetchMatchingIndexedCandidates = async ({
 export const isValidMatchingUserId = id => typeof id === 'string' && id.length > 20;
 export const isShortMatchingUserId = id => typeof id === 'string' && id.length > 0 && id.length <= 20;
 export const isMatchingCardId = id => isValidMatchingUserId(id) || isShortMatchingUserId(id);
+// Порядок стрічки: дата публікації від нової, а в межах дня — id за спаданням,
+// рівно як сортує `fetchMatchingCardsPage`. Дата тут — лише день, тож без
+// другого ключа картки одного дня в списку реакцій ішли б не так, як у стрічці.
 export const compareUsersByLastLogin2 = (a = {}, b = {}) =>
-  (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '');
+  (b.lastLogin2 || '').localeCompare(a.lastLogin2 || '')
+  || String(b.userId || '').localeCompare(String(a.userId || ''));
 
 export const isSameMatchingCursor = (a, b) => {
   if (!a && !b) return true;

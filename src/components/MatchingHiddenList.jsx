@@ -169,15 +169,17 @@ const MatchingHiddenList = ({
       });
   }, [users, ownerId, commentsByUserId]);
 
+  // Порядок приходить готовий — той самий, що й у загальній стрічці
+  // (`reactionTabUsers` у `Matching`). Своє сортування за часом дизлайку тут
+  // було і перемішувало приховані відносно стрічки.
   const rows = useMemo(() => users
     .filter(user => user?.userId)
     .map(user => {
       const photoOverride = photosByUserId[user.userId];
       if (!photoOverride || !photoOverride.length) return user;
       return { ...user, photos: photoOverride };
-    })
-    .sort((a, b) => (Number(dislikeUsers[b.userId]) || 0) - (Number(dislikeUsers[a.userId]) || 0)),
-  [users, photosByUserId, dislikeUsers]);
+    }),
+  [users, photosByUserId]);
 
   const handleCommentSave = useCallback(async (user, text) => {
     const userId = user?.userId;

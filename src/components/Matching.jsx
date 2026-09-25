@@ -4008,8 +4008,10 @@ const Matching = () => {
           // «існує» зарахувало б сховану до стрічкових і провело б її повз
           // перевірку додаткового доступу.
           const feedDate = snapshot.exists() ? snapshot.val() : null;
+          // Дата лишається в класифікації: за нею список реакцій шикується в
+          // порядку стрічки ще до пагінації, без жодного додаткового читання.
           classifications[id] = typeof feedDate === 'string' && feedDate.trim()
-            ? { storage: 'feed', reason: 'in-matching-feed' }
+            ? { storage: 'feed', reason: 'in-matching-feed', feedDate: feedDate.trim() }
             : { storage: 'nodes', reason: 'not-in-matching-feed' };
         } catch (error) {
           // Відмова в правах — це не відповідь «немає»: картку однаково
@@ -4018,7 +4020,16 @@ const Matching = () => {
         }
       }));
 
-      const legacyReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'feed');
+      // Список реакцій гортається сторінками саме в цьому порядку, тож він
+      // мусить бути порядком стрічки: дата від нової, у межах дня id за
+      // спаданням (`fetchMatchingCardsPage`). Ключі вузла реакцій приходять за
+      // алфавітом id, і сьогоднішня картка, першою в стрічці, у лайкнутих
+      // могла не потрапити навіть на першу сторінку.
+      const byFeedOrder = (a, b) => (
+        String(classifications[b]?.feedDate || '').localeCompare(String(classifications[a]?.feedDate || ''))
+        || b.localeCompare(a)
+      );
+      const legacyReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'feed').sort(byFeedOrder);
       const nodeReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'nodes');
       debugReactionFlowLog('classifyReactionIdsByStorage:result', {
         fullReactionIds: summarizeIdsForDebug(uniqueIds),
