@@ -380,6 +380,29 @@ describe('перший екран зі стрічкового кеша', () => {
     expect(source).toContain('setLastKey(cursorFromCache);');
   });
 
+  it('продовжує з курсора, на якому зупинилось джерело, а дочитану стрічку не питає зовсім', () => {
+    // Вузька дека під фільтрами першого екрана не заповнює, і кожне
+    // перезавантаження обходило `matchingCards` з початку заради тих самих
+    // двох карток. Стан пагінації лежить поруч зі списком id і береться лише
+    // за тієї самої умови (`resolveFeedCacheResume`).
+    const source = matching();
+    const initial = source.slice(
+      source.indexOf('const loadInitial = React.useCallback('),
+      source.indexOf('const reloadDefault = React.useCallback('),
+    );
+    expect(initial).not.toContain('getCardsByList(defaultListKey)');
+    expect(initial).toContain('const feedEntry = readFeedQueryEntry(defaultListKey);');
+    expect(initial).toContain('if (cacheResume.exhausted) {');
+    expect(initial).toContain('resumeCursor,\n          initialExclude,');
+    expect(initial).toContain('rememberFeedPagination({ cursor: res.lastKey, hasMore: res.hasMore, signature: feedCacheSignature });');
+    expect(initial).toContain('rememberFeedSummaryCards(res.users);');
+  });
+
+  it('дописана сторінка стрічки оновлює стан пагінації в кеші', () => {
+    const source = matching();
+    expect(source).toContain('rememberFeedPagination({ cursor, hasMore: nextHasMore, signature: requestFeedCacheSignature });');
+  });
+
   it('будує курсор наступної сторінки з останньої кешованої картки', () => {
     // Пагінація джерела курсорна: пара (lastLogin2, userId) лежить прямо в
     // картці, тож питати її в бекенду немає за чим.

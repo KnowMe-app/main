@@ -164,15 +164,18 @@ import {
   incrementMatchingLoadStat,
   logMatchingLocalStorageCacheStats,
   normalizeQueryKey,
+  readFeedQueryEntry,
   setCachedMatchingSummaryCards,
   setIdsForQuery,
   setIndexIdsForQuery,
+  setQueryPagination,
 } from '../utils/cardIndex';
+import { normalizeFeedCursor, resolveFeedCacheResume } from '../utils/matchingFeedCacheResume';
 import {
   cleanupMatchingLocalStorageCache,
   logMatchingLocalStorageDebugStats,
 } from '../utils/searchKeyCache';
-import { getCardsByList, updateCard } from '../utils/cardsStorage';
+import { updateCard } from '../utils/cardsStorage';
 import { getCachedPhotoUrlsMap, setCachedPhotoUrls } from '../utils/photoUrlCache';
 import {
   MATCHING_CARDS_ROOT,
@@ -3546,6 +3549,36 @@ const Matching = () => {
     reportInitialLoadError,
   ]);
 
+  // Умова, за якої отримано стан пагінації стрічки: фільтри й роль читача
+  // вирішують, які картки джерела дійшли до деки, тож курсор, записаний за
+  // іншої умови, пропустив би картки, що тоді відсіялись.
+  const buildFeedCacheSignature = React.useCallback(() => stableAdditionalSignature({
+    filters: filtersRef.current || {},
+    viewerRole: donorRestrictionViewerRoleRef.current || '',
+  }), []);
+
+  // Стан пагінації пишеться поруч зі списком id стрічки, щоб перезавантаження
+  // сторінки продовжило з того місця, де зупинилось джерело, а не обходило
+  // `matchingCards` з початку (`resolveFeedCacheResume`).
+  const rememberFeedPagination = React.useCallback(({ cursor, hasMore: nextHasMore, signature }) => {
+    const feedCursor = normalizeFeedCursor(cursor);
+    if (!signature || (nextHasMore && !feedCursor)) {
+      setQueryPagination(defaultListKey, null);
+      return;
+    }
+    setQueryPagination(defaultListKey, { cursor: feedCursor, hasMore: Boolean(nextHasMore), signature });
+  }, [defaultListKey]);
+
+  // Проєкції сторінок стрічки лягають у власне сховище: в `cards` їх не кладуть
+  // (`shouldCacheMatchingCard`), тож без цього список id стрічки після
+  // перезавантаження не мав би з чого намалювати жодного рядка.
+  const rememberFeedSummaryCards = React.useCallback(users => {
+    const summaries = (Array.isArray(users) ? users : [])
+      .filter(user => user?.userId && isMatchingSummaryCard(user));
+    if (!summaries.length) return;
+    setCachedMatchingSummaryCards(Object.fromEntries(summaries.map(user => [user.userId, user])));
+  }, []);
+
   const loadInitial = React.useCallback(async () => {
     writeMatchingDebugLog('initialLoad:start', { ownerId: getOwnerId(), viewMode: viewModeRef.current, currentlyRenderedCards: Array.isArray(usersRef.current) ? usersRef.current.length : 0, currentlyLoadedIds: loadedIdsRef.current?.size || 0, hasMore, lastKey });
     if (initialLoadInFlightRef.current) {
@@ -3711,6 +3744,9 @@ const Matching = () => {
           loadedIdsRef.current = new Set(indexedUsers.map(user => user.userId).filter(Boolean));
           setUsers(indexedUsers);
           setIdsForQuery(defaultListKey, indexedUsers.map(user => user.userId));
+          // Зсув індексу курсором джерела не є — стан пагінації стрічки тут не
+          // пишеться, а попередній знімається.
+          setQueryPagination(defaultListKey, null);
           void loadCommentsFor(indexedUsers);
           if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
           setLastKey(indexed.nextOffset);
@@ -3721,22 +3757,48 @@ const Matching = () => {
         }
       }
 
+      // Кеш стрічки — це список показаних id плюс стан пагінації, з яким його
+      // отримано. Раніше тут читався сам список через `getCardsByList`, а той
+      // лишав лише id із повною анкетою в `cards` — тобто майже нічого, бо
+      // рядки стрічки це проєкції, — і довіряв кешу, лише коли той заповнював
+      // перший екран. Вузька дека під фільтрами (дві картки) не заповнювала
+      // його ніколи, і кожне перезавантаження обходило `matchingCards` з
+      // початку заради тих самих двох карток.
+      const feedCacheSignature = buildFeedCacheSignature();
       let cached = [];
+      let cacheResume = { usable: false, exhausted: false, cursor: null };
       if (!isBackendOnlyMode) {
         writeMatchingDebugLog('matchingLocalFirstAttempt', {
           mode: matchingDataSourceMode,
           cacheKey: defaultListKey,
           viewMode: viewModeRef.current,
         });
-        try {
-          const cacheResult = await getCardsByList(defaultListKey);
-          cached = Array.isArray(cacheResult?.cards) ? cacheResult.cards : [];
-        } catch (error) {
-          writeMatchingDebugLog('matchingLocalCacheRejected', { reason: 'invalid_json', cacheKey: defaultListKey });
-          cached = [];
-        }
-        if (!cached.length) {
-          writeMatchingDebugLog('matchingLocalCacheRejected', { reason: 'missing', cacheKey: defaultListKey });
+        const feedEntry = readFeedQueryEntry(defaultListKey);
+        cacheResume = resolveFeedCacheResume({
+          pagination: feedEntry.pagination,
+          signature: feedCacheSignature,
+        });
+        if (!cacheResume.usable) {
+          writeMatchingDebugLog('matchingLocalCacheRejected', {
+            reason: feedEntry.pagination ? 'pagination-stale-or-other-filters' : 'missing',
+            cacheKey: defaultListKey,
+          });
+        } else if (feedEntry.ids.length) {
+          try {
+            // Проєкції беруться з власного кеша; по мережу йдуть лише ті id,
+            // чий запис протух, — точковими читаннями, а не обходом стрічки.
+            const cachedById = await runInitialRequestWithTimeout(
+              () => hydrateMatchingFeedCards(feedEntry.ids),
+              'profile-hydration',
+            );
+            cached = feedEntry.ids
+              .map(id => (cachedById?.[id] ? { ...cachedById[id], userId: cachedById[id].userId || id } : null))
+              .filter(Boolean);
+          } catch (error) {
+            writeMatchingDebugLog('matchingLocalCacheRejected', { reason: 'hydration-failed', cacheKey: defaultListKey });
+            cacheResume = { usable: false, exhausted: false, cursor: null };
+            cached = [];
+          }
         }
       } else {
         writeMatchingDebugLog('matchingBackendOnlyModeUsed', {
@@ -3744,10 +3806,12 @@ const Matching = () => {
           stage: 'default-list-cache-read-skipped',
         });
       }
-      if (cached.length && viewModeRef.current === startMode) {
+      let resumeCursor;
+      if (cacheResume.usable && viewModeRef.current === startMode) {
         writeMatchingDebugLog('matchingLocalCacheUsed', {
           cacheKey: defaultListKey,
           cardsCount: cached.length,
+          exhausted: cacheResume.exhausted,
           mode: matchingDataSourceMode,
         });
         console.log('[loadInitial] using cache', cached.length);
@@ -3773,15 +3837,30 @@ const Matching = () => {
         if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
         setViewMode('default');
 
+        // Минулого разу джерело дочитали до кінця за цих самих фільтрів — отже
+        // нових карток у ньому шукати нема де, скільки б їх не лишилось на
+        // екрані (хоч жодної). Нове в стрічці з'явиться після TTL стану.
+        if (cacheResume.exhausted) {
+          writeMatchingDebugLog('matchingLocalCacheServedInitialLoad', {
+            cacheKey: defaultListKey,
+            cardsCount: filteredCached.length,
+            exhausted: true,
+          });
+          setLastKey(cacheResume.cursor);
+          setHasMore(false);
+          setInitialPublicWindowComplete(true);
+          return;
+        }
+
         // Кеш віддав повний перший екран — на цьому й зупиняємось.
         //
         // Раніше тут стояло «continue to fetch latest data to refresh cache», і
         // стрічка щоразу перечитувала з бекенду ту саму сторінку `users`, яку
         // щойно намалювала з кеша: кеш був лише способом швидше показати те, за
-        // що однаково платили трафіком. Курсор для наступної сторінки будуємо з
-        // останньої кешованої картки — це та сама пара (дата, id), яку віддав би
-        // запит.
-        const cursorFromCache = buildMatchingCursorFromCard(filteredCached[filteredCached.length - 1]);
+        // що однаково платили трафіком. Курсор — той, на якому зупинилось
+        // джерело, а не остання показана картка: під фільтрами джерело встигає
+        // пройти й відсіяні картки, і курсор з показаної повів би по них удруге.
+        const cursorFromCache = cacheResume.cursor;
         if (filteredCached.length >= INITIAL_LOAD && cursorFromCache) {
           writeMatchingDebugLog('matchingLocalCacheServedInitialLoad', {
             cacheKey: defaultListKey,
@@ -3793,7 +3872,9 @@ const Matching = () => {
           setInitialPublicWindowComplete(true);
           return;
         }
-        // Кеша не вистачило на екран — дочитуємо джерело, як і раніше.
+        // Кеша не вистачило на екран — дочитуємо джерело з того місця, де воно
+        // зупинилось, а не з початку.
+        resumeCursor = cursorFromCache || undefined;
       } else if (!isBackendOnlyMode) {
         writeMatchingDebugLog('matchingBackendFallbackUsed', {
           mode: matchingDataSourceMode,
@@ -3806,7 +3887,7 @@ const Matching = () => {
       const res = await runInitialRequestWithTimeout(
         () => fetchChunk(
           Math.max(1, INITIAL_LOAD - cachedPublicCount),
-          undefined,
+          resumeCursor,
           initialExclude,
           async part => {
           if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
@@ -3848,6 +3929,10 @@ const Matching = () => {
         ...res.users.map(u => u.userId),
       ]);
       res.users.forEach(u => { if (shouldCacheMatchingCard(u)) updateCard(u.userId, u); });
+      if (canApplyInitialLoadWithFilters()) {
+        rememberFeedSummaryCards(res.users);
+        rememberFeedPagination({ cursor: res.lastKey, hasMore: res.hasMore, signature: feedCacheSignature });
+      }
       setUsers(prev => {
         const map = new Map(prev.map(u => [u.userId, u]));
         res.users.forEach(u => map.set(u.userId, u));
@@ -3911,7 +3996,7 @@ const Matching = () => {
         setLoading(false);
       }
     }
-  }, [announcePublicFeedUnavailable, beginInitialRequest, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, recordInitialLoadDiagnostic, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [announcePublicFeedUnavailable, beginInitialRequest, buildFeedCacheSignature, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, recordInitialLoadDiagnostic, rememberFeedPagination, rememberFeedSummaryCards, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     setLoadError(null);
@@ -5064,6 +5149,7 @@ const Matching = () => {
     additionalMatchingApplyVersionRef.current = applyVersion;
     const requestViewMode = viewMode;
     const requestFiltersSignature = stableAdditionalSignature(filtersRef.current || {});
+    const requestFeedCacheSignature = buildFeedCacheSignature();
     const isLatestLoadMore = () => (
       loadMoreVersion === additionalLoadMoreFetchVersionRef.current &&
       applyVersion === additionalMatchingApplyVersionRef.current &&
@@ -5359,6 +5445,7 @@ const Matching = () => {
             setIdsForQuery(defaultListKey, result.map(user => user.userId));
             return result;
           });
+          setQueryPagination(defaultListKey, null);
           void loadCommentsFor(indexedPage.collected);
           setLastKey(indexedPage.finalOffset);
           const indexedHasMore = Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck);
@@ -5496,15 +5583,22 @@ const Matching = () => {
       void loadCommentsFor(collected);
 
       const sourceCanContinueWithoutVisibleCards = canLoadMore && collected.length === 0;
+      let nextHasMore = canLoadMore;
       if (sourceCanContinueWithoutVisibleCards) {
         console.log('[loadMore] source cursor advanced with more pages; keeping hasMore true for next cycle');
         setHasMore(true);
+        nextHasMore = true;
       } else if (handleEmptyFetch({ users: collected, lastKey: cursor }, lastKey, setHasMore)) {
         console.log('[loadMore] empty fetch, no more cards');
+        nextHasMore = false;
       } else {
         setHasMore(canLoadMore);
       }
       setLastKey(cursor);
+      if (viewMode === 'default') {
+        rememberFeedSummaryCards(collected);
+        rememberFeedPagination({ cursor, hasMore: nextHasMore, signature: requestFeedCacheSignature });
+      }
       if (
         viewMode === 'default'
         && (usersRef.current.length + collected.length >= INITIAL_LOAD || sourceExhausted || !canLoadMore)
@@ -5553,6 +5647,7 @@ const Matching = () => {
       lastCardLoadTriggerSignatureRef.current = '';
     }
   }, [
+    buildFeedCacheSignature,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
     ensureFreshAdditionalMatchingProfile,
@@ -5570,6 +5665,8 @@ const Matching = () => {
     reactionPaginationByType,
     reactionPipelineReadyByType,
     parsedAdditionalAccessRules.length,
+    rememberFeedPagination,
+    rememberFeedSummaryCards,
     sharedReactionIds,
     viewMode,
   ]);

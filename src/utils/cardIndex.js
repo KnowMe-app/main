@@ -522,14 +522,66 @@ export const setIdsForQuery = (queryKey, ids, options = {}) => {
   const now = Date.now();
   const nextIds = Array.isArray(ids) ? ids.slice(0, MATCHING_QUERY_MAX_IDS) : [];
   const isNegativeHit = Boolean(options?.isNegativeHit && nextIds.length === 0);
+  // Стан пагінації пишеться окремо (`setQueryPagination`) і лишається при
+  // перезаписі списку: стрічка дописує id у кожному рендері, де приїхала
+  // сторінка, і без цього кожна дописана сторінка стирала б курсор, з якого
+  // її ж і читали.
+  const pagination = queries[key]?.pagination;
   queries[key] = {
     ids: nextIds,
     cachedAt: now,
     lastAction: now,
     ...(isNegativeHit ? { isNegativeHit: true } : {}),
+    ...(pagination ? { pagination } : {}),
   };
   saveQueries(queries);
   logMatchingCacheDebug('query ids cache save', { key, idsCount: nextIds.length, isNegativeHit });
+};
+
+/**
+ * Чим закінчилась пагінація списку: курсор наступної сторінки, чи є вона
+ * взагалі, і за якої умови (фільтри, роль читача) цей стан отримано.
+ *
+ * Без цього кеш стрічки знав лише, *які* картки вже показано, а не *де*
+ * зупинилось джерело: вузька дека (дві картки під фільтрами) не дотягувала до
+ * першого екрана, і після перезавантаження стрічка щоразу обходила
+ * `matchingCards` з самого початку, щоб удруге довести, що більше нікого нема.
+ * `null` знімає запис — так роблять шляхи, чий курсор не є курсором джерела.
+ */
+export const setQueryPagination = (queryKey, pagination) => {
+  const key = normalizeQueryKey(queryKey);
+  const queries = loadQueries();
+  const entry = queries[key];
+  if (!pagination) {
+    if (!entry?.pagination) return;
+    const { pagination: _removed, ...rest } = entry;
+    queries[key] = rest;
+    saveQueries(queries);
+    return;
+  }
+  const now = Date.now();
+  queries[key] = {
+    ...(entry || { ids: [], cachedAt: now, lastAction: now }),
+    pagination: { ...pagination, savedAt: now },
+  };
+  saveQueries(queries);
+};
+
+/**
+ * Список id стрічки як він є, без звірки з кешем повних анкет.
+ *
+ * `getQueryEntry` викидає id, яких немає в `cards`, — а стрічка складається з
+ * проєкцій, які туди навмисно не кладуться (`shouldCacheMatchingCard`), тож
+ * читання через нього повертало порожній список і ще й затирало збережений.
+ * Проєкції до цих id бере `getCachedMatchingSummaryCards`.
+ */
+export const readFeedQueryEntry = queryKey => {
+  const entry = loadQueries()[normalizeQueryKey(queryKey)];
+  return {
+    ids: Array.isArray(entry?.ids) ? entry.ids.filter(Boolean) : [],
+    cachedAt: getEntryCacheTimestamp(entry),
+    pagination: entry?.pagination && typeof entry.pagination === 'object' ? entry.pagination : null,
+  };
 };
 
 const SEARCH_QUERY_CACHE_PREFIX = 'cards:search';
