@@ -654,6 +654,23 @@ const changeValueList = change => {
   return uniq(values.map(value => String(value ?? '').trim()).filter(Boolean));
 };
 
+// Те, що зміна **пропонує**, без того, від чого вона відштовхувалась: нове
+// значення заміни (або стерте, коли заміна — це стирання) і значення масиву.
+// Для звірки журналу це важливо: дві послідовні правки того самого поля
+// мають спільний `from`, і звірка з ним зносила б разом із розсудженою
+// правкою ще й попередню версію, яку адмін іще не бачив.
+const changeProposalValues = change => {
+  if (!isPlainObject(change)) return [];
+  if ('from' in change || 'to' in change) {
+    const to = String(change.to ?? '').trim();
+    const from = String(change.from ?? '').trim();
+    return to ? [to] : (from ? [from] : []);
+  }
+  return uniq([...normalizeArray(change.added ?? change.add), ...normalizeArray(change.removed)]
+    .map(value => String(value ?? '').trim())
+    .filter(Boolean));
+};
+
 // A settled edit must leave nothing behind: once a value has been saved into
 // the card or thrown away, the journal entries that only described that value
 // are deleted too, so the review queue never grows a tail of memos about work
@@ -674,7 +691,7 @@ export const purgeOverlayHistoryEntries = async ({ cardUserId, editorUserId, fie
       if (!isPlainObject(entry) || entry.fieldName !== fieldName) return acc;
       if (editorUserId && entry.editorUserId && entry.editorUserId !== editorUserId) return acc;
 
-      const entryValues = changeValueList(entry.change);
+      const entryValues = changeProposalValues(entry.change);
       if (settledValues.size && entryValues.length && !entryValues.some(value => settledValues.has(value))) return acc;
 
       acc[entryId] = null;
@@ -1083,11 +1100,16 @@ export const settleOverlayValueForCard = async ({
   if (!transaction.committed || !settledChange) return null;
 
   if (removedEditorOverlay) await forgetOwnOverlayCard({ editorUserId, cardUserId: normalizedCardId });
-  await appendOverlayHistory({
+  // Розсуджене значення не лишає по собі нічого: ні рядка «прийнято», ні
+  // рядка «відхилено». Доти кожне рішення адміна дописувало в журнал ще один
+  // запис, і журнал, який мав тримати **непрочитані** версії правок, ріс
+  // слідами вже зробленої роботи. Прийняте тепер живе в анкеті, відхилене —
+  // ніде, тож і записи про нього йдуть геть.
+  await purgeOverlayHistoryEntries({
     cardUserId: normalizedCardId,
     editorUserId,
-    action: action === 'accept' ? 'accept' : 'discard',
-    fields: { [fieldName]: settledChange },
+    fieldName,
+    values: changeProposalValues(settledChange),
   });
 
   if (action === 'accept') {
@@ -1130,6 +1152,214 @@ export const settleOverlayValueForCard = async ({
   if (!stillClaimed) await updateSearchId(fieldName, value, normalizedCardId, 'remove');
 
   return { settledChange, remainingChange };
+};
+
+/**
+ * Порівняння значень так, як їх порівнює індекс: для полів `searchId` —
+ * нормалізованим ключем («38 050 …» і «38050…» — один номер), для решти —
+ * обрізаним рядком.
+ */
+const overlayValueKey = (fieldName, value) => {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return '';
+  if (SEARCH_ID_INDEXED_FIELDS.has(fieldName)) return buildSearchIdValueKey(fieldName, trimmed) || trimmed;
+  return trimmed;
+};
+
+const canonicalValueKeys = (canonical, fieldName) => new Set(
+  normalizeArray(canonical?.[fieldName]).map(value => overlayValueKey(fieldName, value)).filter(Boolean),
+);
+
+// Значення, які зміна **пропонує внести** в картку: нове значення заміни або
+// дописане в масив.
+const proposedChangeValues = change => {
+  if (!isPlainObject(change)) return [];
+  if ('to' in change || 'from' in change) {
+    const to = String(change.to ?? '').trim();
+    return to ? [to] : [];
+  }
+  return uniq(normalizeArray(change.added ?? change.add).map(value => String(value ?? '').trim()).filter(Boolean));
+};
+
+/**
+ * Попередні версії правки, яких у шарі вже немає.
+ *
+ * Шар редактора тримає лише **поточну** різницю з карткою: кожне збереження
+ * його переписує. Тож коли читач заміняв номер на А, а потім поправив А на Б,
+ * адмін бачив самий лише Б — перша правка лишалась тільки в журналі
+ * (`editsHistory`), а журнал форма адміна не читала. Виглядало це так, ніби
+ * історії правок немає взагалі, хоч записана вона була.
+ *
+ * Тут журнал розкладається назад у пропозиції: кожне значення, яке редактор
+ * колись пропонував (`edit`), але якого вже немає ні в чиєму поточному шарі й
+ * немає в самій картці, стає окремим рядком із позначкою `superseded`. Рядок
+ * розсуджується так само, як поточний: «ОК» вносить значення в картку, «×»
+ * прибирає, і обидва знімають записи журналу про нього
+ * (`settleSupersededOverlayValue`).
+ */
+export const buildSupersededOverlayEntries = ({ historyEntries = [], overlaysByEditor = {}, canonical = null } = {}) => {
+  const currentKeysByField = {};
+  Object.values(overlaysByEditor || {}).forEach(overlay => {
+    Object.entries(normalizeOverlayFields(overlay?.fields)).forEach(([fieldName, change]) => {
+      if (!isPlainObject(change)) return;
+      const keys = currentKeysByField[fieldName] || new Set();
+      const values = 'to' in change || 'from' in change
+        ? [change.to, change.from]
+        : [...normalizeArray(change.added ?? change.add), ...normalizeArray(change.removed)];
+      values.forEach(value => {
+        const key = overlayValueKey(fieldName, value);
+        if (key) keys.add(key);
+      });
+      currentKeysByField[fieldName] = keys;
+    });
+  });
+
+  const result = {};
+  const seen = new Set();
+  [...(historyEntries || [])]
+    .filter(entry => isPlainObject(entry) && (entry.action || 'edit') === 'edit')
+    .sort((a, b) => Number(a.at || 0) - Number(b.at || 0))
+    .forEach(entry => {
+      const { fieldName, editorUserId } = entry;
+      if (!fieldName || !editorUserId || TECHNICAL_FIELD_NAMES.has(fieldName) || fieldName === 'editor') return;
+      const canonicalKeys = canonicalValueKeys(canonical, fieldName);
+      const currentKeys = currentKeysByField[fieldName] || new Set();
+      proposedChangeValues(entry.change).forEach(value => {
+        const key = overlayValueKey(fieldName, value);
+        if (!key || canonicalKeys.has(key) || currentKeys.has(key)) return;
+        const seenKey = `${fieldName}::${key}`;
+        if (seen.has(seenKey)) return;
+        seen.add(seenKey);
+        result[fieldName] = [
+          ...(result[fieldName] || []),
+          { value, editorUserId, isDeleted: false, superseded: true, at: Number(entry.at) || 0 },
+        ];
+      });
+    });
+
+  return result;
+};
+
+/**
+ * Рішення адміна про попередню версію правки (див. `buildSupersededOverlayEntries`).
+ *
+ * У шарі цього значення вже немає, тож знімати там нічого: рішення — це
+ * підчистити журнал, щоб версія не повертались у форму, і, якщо її
+ * відхилили, зняти ключ `searchId`, який шар завів на неї тоді, коли вона
+ * була поточною. Ключ знімається лише тоді, коли значення не тримає ні
+ * анкета, ні жоден поточний шар.
+ */
+export const settleSupersededOverlayValue = async ({
+  editorUserId,
+  cardUserId,
+  fieldName,
+  value,
+  acceptedValue,
+  action = 'discard',
+}) => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  const normalizedValue = String(value ?? '').trim();
+  if (!normalizedCardId || !fieldName || !normalizedValue) return null;
+
+  await purgeOverlayHistoryEntries({
+    cardUserId: normalizedCardId,
+    editorUserId,
+    fieldName,
+    values: [normalizedValue],
+  });
+
+  if (!SEARCH_ID_INDEXED_FIELDS.has(fieldName)) return { settled: true };
+
+  if (action === 'accept') {
+    const normalizedAcceptedValue = String(acceptedValue ?? normalizedValue).trim();
+    if (normalizedAcceptedValue && normalizedAcceptedValue !== normalizedValue) {
+      await updateSearchId(fieldName, normalizedValue, normalizedCardId, 'remove');
+      await updateSearchId(fieldName, normalizedAcceptedValue, normalizedCardId, 'add');
+    }
+    return { settled: true };
+  }
+
+  try {
+    const canonical = await getCanonicalCard(normalizedCardId);
+    const overlaysByEditor = await getOverlaysForCard(normalizedCardId);
+    const stillClaimed = isValueStillClaimedByCard({
+      canonical,
+      overlaysByEditor,
+      fieldName,
+      value: normalizedValue,
+      // Порожній автор: тут рахуються всі поточні шари, і власний теж —
+      // версію редактор міг повернути собі наступним збереженням.
+      editorUserId: '',
+    });
+    if (!stillClaimed) await updateSearchId(fieldName, normalizedValue, normalizedCardId, 'remove');
+  } catch (error) {
+    console.warn('[multiAccountEdits] searchId cleanup for superseded value skipped', error);
+  }
+  return { settled: true };
+};
+
+/**
+ * Прибрати з шарів те, що в картці вже є.
+ *
+ * Шар — це різниця з карткою, і щойно картка сама почала містити
+ * запропоноване значення (адмін вписав його руками, його прийняли з іншого
+ * шару, анкету поправила сама власниця), пропозиція перестає щось
+ * пропонувати: вона лише дублює канонічне значення на бекенді й висить у черзі
+ * адміна як нерозсуджена. Те саме з пропозицією прибрати значення, якого в
+ * картці вже немає. Такі значення знімаються так само, як прийняті, — разом зі
+ * своїми записами в журналі.
+ *
+ * Повертає кількість знятих значень; викликач перечитує шари, коли вона не 0.
+ */
+export const pruneOverlaysMatchingCanonical = async ({ cardUserId, canonical, overlaysByEditor } = {}) => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId || !isPlainObject(canonical)) return 0;
+
+  const redundant = [];
+  Object.entries(overlaysByEditor || {}).forEach(([editorUserId, overlay]) => {
+    Object.entries(normalizeOverlayFields(overlay?.fields)).forEach(([fieldName, change]) => {
+      if (!isPlainObject(change) || TECHNICAL_FIELD_NAMES.has(fieldName) || fieldName === 'editor') return;
+      const canonicalKeys = canonicalValueKeys(canonical, fieldName);
+      if ('to' in change || 'from' in change) {
+        const to = String(change.to ?? '').trim();
+        const from = String(change.from ?? '').trim();
+        if (to && canonicalKeys.has(overlayValueKey(fieldName, to))) redundant.push({ editorUserId, fieldName, value: to });
+        else if (!to && from && !canonicalKeys.has(overlayValueKey(fieldName, from))) {
+          redundant.push({ editorUserId, fieldName, value: from });
+        }
+        return;
+      }
+      normalizeArray(change.added ?? change.add).forEach(value => {
+        const trimmed = String(value ?? '').trim();
+        if (trimmed && canonicalKeys.has(overlayValueKey(fieldName, trimmed))) {
+          redundant.push({ editorUserId, fieldName, value: trimmed });
+        }
+      });
+      normalizeArray(change.removed).forEach(value => {
+        const trimmed = String(value ?? '').trim();
+        if (trimmed && !canonicalKeys.has(overlayValueKey(fieldName, trimmed))) {
+          redundant.push({ editorUserId, fieldName, value: trimmed });
+        }
+      });
+    });
+  });
+
+  let pruned = 0;
+  for (const item of redundant) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await settleOverlayValueForCard({
+        ...item,
+        cardUserId: normalizedCardId,
+        acceptedValue: item.value,
+        action: 'accept',
+      });
+      if (result) pruned += 1;
+    } catch (error) {
+      console.warn('[multiAccountEdits] failed to prune overlay value present on the card', { ...item, error });
+    }
+  }
+  return pruned;
 };
 
 // ---------------------------------------------------------------------------

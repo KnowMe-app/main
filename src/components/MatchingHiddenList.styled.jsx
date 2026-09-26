@@ -117,12 +117,19 @@ export const Photo = styled.div`
   max-height: 58vh;
   background: var(--matching-section-bg);
   overflow: hidden;
+  /* Горизонтальний жест на фото гортає знімки (\`usePhotoSwipe\`); вертикальний
+   * лишається прокруткою сторінки. */
+  touch-action: pan-y;
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
+    /* Наступне фото ще їде з бекенду — поточне трохи тьмяніє, щоб свайп не
+     * виглядав проігнорованим. */
+    opacity: ${({ $loading }) => ($loading ? 0.6 : 1)};
+    transition: opacity 0.15s ease;
   }
 `;
 

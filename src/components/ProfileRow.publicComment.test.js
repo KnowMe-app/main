@@ -309,7 +309,7 @@ describe('плейсхолдер там, де відгуки вже прочит
   });
 
   it('говорить мовою інтерфейсу', () => {
-    expect(publicCommentPlainPlaceholder('en')).toBe('Add an anonymous review, everyone will see it');
-    expect(publicCommentPlainPlaceholder('uk')).toBe('Додати анонімний відгук, його побачать усі');
+    expect(publicCommentPlainPlaceholder('en')).toBe('Add an anonymous review');
+    expect(publicCommentPlainPlaceholder('uk')).toBe('Додати анонімний відгук');
   });
 });

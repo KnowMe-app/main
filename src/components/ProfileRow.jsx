@@ -30,6 +30,7 @@ import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
 import { formatProfileCountOrDate } from '../utils/profileDate';
 import { formatDeliveryRecency } from '../utils/deliveryRecency';
 import * as S from './MatchingHiddenList.styled';
+import usePhotoSwipe from './usePhotoSwipe';
 // Доріжки нотаток беруться з розкладки відкритої картки, а не описуються тут
 // удруге: у рядку стрічки й у картці стоять ті самі два записи — публічний
 // відгук і власна нотатка, — і два екрани не можуть казати про них різне.
@@ -1088,6 +1089,9 @@ const ProfileRow = ({
   onEnrich,
   onSwipeRight,
   onSwipeLeft,
+  // Дочитати решту фото картки: проєкція стрічки несе один аватар, а
+  // перелік знімків просить уже сам свайп по фото (`usePhotoSwipe`).
+  onRequestPhotos,
 }) => {
   // A limited profile is the projection a viewer without full access gets back
   // from a search: surname, name, age, region, city, and the public comment. There
@@ -1113,7 +1117,15 @@ const ProfileRow = ({
   const age = getProfileAge(user);
   const location = getLocationLine(user);
   const photos = getProfilePhotos(user);
-  const photo = photos[0];
+  const requestPhotos = useCallback(() => {
+    if (onRequestPhotos) onRequestPhotos(user);
+  }, [onRequestPhotos, user]);
+  const photoSwipe = usePhotoSwipe({
+    photos,
+    complete: user?.__allPhotosLoaded === true,
+    onRequestPhotos: onRequestPhotos && !isLimited ? requestPhotos : undefined,
+  });
+  const photo = photoSwipe.current || photos[0];
   const bio = getProfileBio(user);
   const facts = useMemo(
     () => (isLimited ? [] : renderFacts(user, priorityMetricKeys || [], language)),
@@ -1256,14 +1268,18 @@ const ProfileRow = ({
           стоїть рядком нижче. Немає фото — рядок починається з імені, а «хто
           це» несе смужка ролі на лівому краї картки. */}
       {photo && (
-        <S.Photo>
+        <S.Photo {...photoSwipe.handlers} $loading={photoSwipe.loading}>
           <img src={photo} alt="" loading="lazy" decoding="async" />
           {/* Роль лежить на знімку — там само, де її малює відкрита картка
               (`ModernRoleBadge`). Під іменем вона стояла чіпом і забирала
               ширину в локації; а два екрани не можуть казати про ту саму річ
               у двох різних місцях. */}
           {roleCode && <S.PhotoRoleBadge $role={rowRole}>{roleCode}</S.PhotoRoleBadge>}
-          {photos.length > 1 && <S.PhotoCount>{photos.length}</S.PhotoCount>}
+          {photoSwipe.total > 1 && (
+            <S.PhotoCount>
+              {photoSwipe.index > 0 ? `${photoSwipe.index + 1}/${photoSwipe.total}` : photoSwipe.total}
+            </S.PhotoCount>
+          )}
           {/* Цятка публікації — на фото, у правому верхньому куті, так само,
               як у плитці галереї (`GalleryPublishDot`). Це стан картки, а не
               дія над нею, і адмін читає його одним поглядом по фото, а не
@@ -1554,4 +1570,5 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.onEditProfile === next.onEditProfile
   && prev.onSwipeRight === next.onSwipeRight
   && prev.onSwipeLeft === next.onSwipeLeft
+  && prev.onRequestPhotos === next.onRequestPhotos
 ));
