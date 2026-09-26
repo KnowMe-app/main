@@ -44,11 +44,11 @@ describe('рядок стрічки', () => {
   // Картка з відгуком мусить виділятись серед сусідніх: смужка публічної
   // доріжки стає червоною, щойно прочитано хоч один відгук.
   it('позначає доріжку відгуку, лише коли відгуки справді прочитано', () => {
-    const { container, unmount } = renderRow({ reviewsAction: { count: 0, loaded: true } });
-    expect(container.querySelector('[data-reviewed="true"]')).toBeNull();
+    const { unmount } = renderRow({ reviewsAction: { count: 0, loaded: true } });
+    expect(screen.getByTestId('public-note-lane')).not.toHaveAttribute('data-reviewed');
     unmount();
 
-    const reviewed = renderRow({ reviewsAction: { count: 2, loaded: true } });
-    expect(reviewed.container.querySelector('[data-reviewed="true"]')).not.toBeNull();
+    renderRow({ reviewsAction: { count: 2, loaded: true } });
+    expect(screen.getByTestId('public-note-lane')).toHaveAttribute('data-reviewed', 'true');
   });
 });

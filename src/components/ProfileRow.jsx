@@ -998,7 +998,7 @@ export const ProfileNotes = ({ language, publicSlot, privateSlot, reviewsStatus,
     {/* `hasReviews` — прочитані відгуки, а не прапорець проєкції: прапорець
         лишається й після того, як останній відгук зняли, і червона смужка
         тоді обіцяла б те, чого під нею вже немає. */}
-    <NoteLane $public $reviewed={hasReviews} data-reviewed={hasReviews ? 'true' : undefined}>
+    <NoteLane $public $reviewed={hasReviews} data-testid="public-note-lane" data-reviewed={hasReviews ? 'true' : undefined}>
       <NoteLaneHead>
         <b>{profileUiText('publicComment', language)}</b>
       </NoteLaneHead>

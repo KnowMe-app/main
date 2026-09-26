@@ -219,6 +219,7 @@ import ProfileRow, {
   splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
 import { PhotoRoleBadge, RoleCode as RowRoleCode } from './MatchingHiddenList.styled';
+import { DRAFT_FEED_ORDER_FIELD, placeOwnDraftsInFeed, resolveDraftFeedOrderDate } from '../utils/matchingDraftPlacement';
 import { FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
 import { FaRegHeart, FaUndoAlt, FaChevronDown, FaPencilAlt } from 'react-icons/fa';
 import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
@@ -2116,13 +2117,18 @@ const Matching = () => {
     loadOwnProfileMutations(ownerId)
       .then(items => {
         if (!active) return;
-        const pendingProfiles = items.map(mutation => ({
-          ...getEffectiveProfile({ mutation }),
-          publish: true,
-          __matchingAccessAllowed: true,
-          __profileMutationOperation: 'create',
-          __profileMutationStatus: mutation.status,
-        }));
+        const pendingProfiles = items.map(mutation => {
+          const profile = getEffectiveProfile({ mutation });
+          return {
+            ...profile,
+            // Місце чернетки в стрічці — за датою, див. `placeOwnDraftsInFeed`.
+            [DRAFT_FEED_ORDER_FIELD]: resolveDraftFeedOrderDate(profile, mutation),
+            publish: true,
+            __matchingAccessAllowed: true,
+            __profileMutationOperation: 'create',
+            __profileMutationStatus: mutation.status,
+          };
+        });
         setPersonalCreateProfiles(pendingProfiles);
       })
       .catch(error => console.error('Failed to load personal create profiles', error));
@@ -5629,15 +5635,20 @@ const Matching = () => {
     // читачеві його ж чернетки замість того, кого він шукав, і ще й порахувати
     // їх у «Знайдено N».
     //
-    // Чернетки йдуть **перед** декою, а не після неї. Хвіст списку належить
-    // пагінації: саме туди дивиться читач, коли чекає на порцію, і саме там
-    // стоять відлік і сентинел. Поки чернетки лежали в хвості, дописана
-    // сторінка лягала над ними — унизу нічого не змінювалось, і приріст
-    // знаходився тільки прокруткою вгору. Чернетки ж не пагінуються: їх
-    // фіксована жменя, і місце їм на початку, як власним карткам.
+    // Чернетки стоять у стрічці за датою створення, як і решта карток:
+    // новіші їх штовхають униз (`placeOwnDraftsInFeed`). Головою деки вони
+    // були раніше — і висіли над усім, що зʼявилось після них. Хвіст списку
+    // при цьому лишається за пагінацією: саме туди дивиться читач, коли чекає
+    // на порцію, тож чернетку, старшу за все завантажене, помічник не ставить
+    // у кінець, доки стрічка має сторінки, — інакше дописана сторінка лягала б
+    // над нею, і приріст знаходився б тільки прокруткою вгору.
     users: viewMode === 'search'
       ? [...personalDraftSearchMatches, ...users]
-      : [...(initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS), ...users],
+      : placeOwnDraftsInFeed({
+        drafts: initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS,
+        users,
+        hasMore,
+      }),
     additionalAccessUsers,
     sharedReactionCandidateUsers,
     isAdmin,
@@ -5664,6 +5675,7 @@ const Matching = () => {
     initialPublicWindowComplete,
     parsedAdditionalAccessRules,
     personalDraftSearchMatches,
+    hasMore,
     sharedReactionCandidateUsers,
     stickyReactedUserIds,
     users,

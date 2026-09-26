@@ -88,7 +88,7 @@ describe('пошук у matching для читача без повного до�
   // завела картку з цієї ж видачі, поверталась у видачу без неї.
   it('у відповідь на запит ідуть лише ті власні чернетки, що з ним збіглися', () => {
     const source = matchingSource();
-    expect(source).toContain("users: viewMode === 'search'\n      ? [...personalDraftSearchMatches, ...users]\n      : [...(initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS), ...users],");
+    expect(source).toContain("users: viewMode === 'search'\n      ? [...personalDraftSearchMatches, ...users]\n      : placeOwnDraftsInFeed({");
     expect(source).toContain('const personalDraftSearchMatches = useMemo(() => {');
     expect(source).toContain('const detected = detectSearchParams(searchQuery.trim());');
     expect(source).toContain('findMatchingProfileMutations(');
@@ -96,14 +96,17 @@ describe('пошук у matching для читача без повного до�
 
   // Хвіст списку належить пагінації: там стоять відлік і сентинел, і саме туди
   // дивиться читач, чекаючи на порцію. Чернетка в хвості означала б, що дописана
-  // сторінка лягає над нею — унизу нічого не змінюється.
-  it('чернетки стоять перед декою, щоб дописана сторінка лягала в кінець', () => {
+  // сторінка лягає над нею — унизу нічого не змінюється. Тож чернетки стоять
+  // за датою (`placeOwnDraftsInFeed`), а старшу за все завантажене помічник у
+  // хвіст не ставить, доки стрічка має сторінки (`matchingDraftPlacement.test`).
+  it('чернетки стоять у деці за датою, а не в хвості пагінації', () => {
     const source = matchingSource();
     const merge = source.slice(
       source.indexOf('const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({'),
       source.indexOf('additionalAccessUsers,\n    sharedReactionCandidateUsers,'),
     );
-    expect(merge).toContain('personalCreateProfiles : EMPTY_USERS), ...users]');
+    expect(merge).toContain('drafts: initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS,');
+    expect(merge).toContain('hasMore,');
     expect(merge).not.toContain('[...users, ...(initialPublicWindowComplete');
   });
 
