@@ -4876,6 +4876,80 @@ const describeBackfillError = (error, node) => ({
   permissionDenied: isSearchIdPermissionDenied(error),
 });
 
+// Вузли, будь-який з яких каже «анкета ще жива» — навіть без картки стрічки.
+// Чернетка картки не має зовсім, а тримає свій id через мапу авторів.
+const ORPHAN_COMMENT_LIVENESS_PATHS = [
+  PROFILE_NODES.profileDetails,
+  PROFILE_NODES.profileContacts,
+  PROFILE_NODES.profileWorkflow,
+  PROFILE_NODES.profileTechnical,
+  'multiData/profileMutationOwners',
+];
+
+const normalizeOrphanCommentText = text => String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/**
+ * Крок прогону «Публічні коментарі»: відгуки під картками, яких уже немає.
+ *
+ * Видалення картки довго не чіпало `comments/{id}`, а порівняння дублікатів
+ * **копіює** відгук на картку, яку лишають, — тож після злиття оригінал висів
+ * під id видаленого дубля. Знімається лише той відгук, чий текст лежить під
+ * **живою** карткою (є в `matchingCards`): тоді він не пропадає, а лишається
+ * там, куди його перенесли. Відгук без копії лишається на місці й іде у звіт —
+ * інакше прибирання загубило б єдиний запис. Так само лишається все під id,
+ * у якого є хоч один вузол анкети чи чернетка: відсутня картка стрічки ще не
+ * означає видалену анкету, а перевірку, яка впала, за «немає» не вважаємо.
+ */
+const purgeOrphanedPublicComments = async (commentsByProfile, cards, orphanIds, report) => {
+  if (!orphanIds.length) return;
+  const liveProfilesByText = new Map();
+  Object.entries(commentsByProfile).forEach(([profileId, comments]) => {
+    if (!cards[profileId] || !comments || typeof comments !== 'object') return;
+    Object.values(comments).forEach(comment => {
+      const key = normalizeOrphanCommentText(comment?.text);
+      if (key) liveProfilesByText.set(key, profileId);
+    });
+  });
+
+  for (const profileId of orphanIds) {
+    // eslint-disable-next-line no-await-in-loop
+    const liveness = await Promise.allSettled(ORPHAN_COMMENT_LIVENESS_PATHS.map(path => (
+      get(ref2(database, `${path}/${profileId}`))
+    )));
+    if (liveness.some(result => result.status === 'rejected')) {
+      report.orphansKept.push({ profileId, reason: 'checkFailed' });
+      continue;
+    }
+    if (liveness.some(result => result.value.exists())) {
+      report.orphansKept.push({ profileId, reason: 'profileExists' });
+      continue;
+    }
+
+    const updates = {};
+    const movedTo = new Set();
+    let withoutCopy = 0;
+    Object.entries(commentsByProfile[profileId] || {}).forEach(([commentId, comment]) => {
+      const livingProfileId = liveProfilesByText.get(normalizeOrphanCommentText(comment?.text));
+      if (!livingProfileId) {
+        withoutCopy += 1;
+        return;
+      }
+      updates[`${profileId}/${commentId}`] = null;
+      movedTo.add(livingProfileId);
+    });
+    if (withoutCopy) report.orphansKept.push({ profileId, reason: 'noCopy', count: withoutCopy });
+    const count = Object.keys(updates).length;
+    if (!count) continue;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await update(ref2(database, PUBLIC_COMMENTS_ROOT_PATH), updates);
+      report.orphansRemoved.push({ profileId, count, movedTo: [...movedTo] });
+    } catch (error) {
+      report.orphansFailed.push({ profileId, ...describeBackfillError(error) });
+    }
+  }
+};
+
 export const backfillMatchingCardPublicReviewFlags = async () => {
   const report = {
     readError: null,
@@ -4885,6 +4959,9 @@ export const backfillMatchingCardPublicReviewFlags = async () => {
     written: [],
     failed: [],
     batchError: null,
+    orphansRemoved: [],
+    orphansKept: [],
+    orphansFailed: [],
   };
 
   let commentsByProfile = null;
@@ -4926,6 +5003,8 @@ export const backfillMatchingCardPublicReviewFlags = async () => {
     }
     candidates.push(profileId);
   });
+
+  await purgeOrphanedPublicComments(commentsByProfile, cards, report.missingCardIds, report);
 
   if (!candidates.length) return report;
   const updates = candidates.reduce((acc, profileId) => {
@@ -9320,6 +9399,15 @@ export const mergeDuplicateUsers = async () => {
   }
 };
 
+const removePublicCommentsOfDeletedCard = async userId => {
+  if (!isAdminUid(auth.currentUser?.uid)) return;
+  try {
+    await remove(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${userId}`));
+  } catch (error) {
+    console.warn('[comments] відгуки видаленої картки не знято', { userId, error });
+  }
+};
+
 export const removeCardAndSearchId = async userId => {
   const db = getDatabase();
 
@@ -9392,6 +9480,15 @@ export const removeCardAndSearchId = async userId => {
       throw new Error(`Не вдалося видалити вузли анкети: ${failedPaths.join(', ')}`);
     }
     console.log(`Картка користувача та її профільні вузли видалені: ${userId}`);
+
+    // Відгуки йдуть разом з карткою: інакше вони лишаються сиротами під id,
+    // якого вже немає, і прогін «Публічні коментарі» щоразу звітує про них як
+    // про пропуски. Копія, яку порівняння дублікатів переклало на іншу картку
+    // (`copyPublicCommentsBetweenCards`), лежить під **її** id окремим записом,
+    // тож видалення цього вузла її не зачіпає. Окремо від `profilePaths`,
+    // бо видаляє картку й авторка чернетки, а чужі відгуки знімає лише адмін:
+    // відмова тут не мусить валити видалення анкети.
+    await removePublicCommentsOfDeletedCard(userId);
 
     removeCard(userId);
     clearEmptySearchQueryCache();

@@ -25,6 +25,9 @@ export const describePublicReviewFlagBackfill = report => {
     written = [],
     failed = [],
     batchError = null,
+    orphansRemoved = [],
+    orphansKept = [],
+    orphansFailed = [],
   } = report || {};
 
   if (readError) {
@@ -49,6 +52,26 @@ export const describePublicReviewFlagBackfill = report => {
     lines.push(`Без картки в matchingCards (пропущено): ${missingCardIds.length} — ${listIds(missingCardIds)}`);
   }
 
+  // Відгуки під видаленими картками. Знятий — це той, чия копія лежить на
+  // живій картці; решта названа причиною, бо «лишилось N» без причини не
+  // каже, чи це безпека прогону, чи поломка.
+  const removedComments = orphansRemoved.reduce((sum, entry) => sum + (entry.count || 0), 0);
+  if (orphansRemoved.length) {
+    lines.push(`Прибрано відгуків видалених карток: ${removedComments} (${orphansRemoved.length} карток, копії лишились на живих)`);
+  }
+  const keptBy = reason => orphansKept.filter(entry => entry.reason === reason).map(entry => entry.profileId);
+  const noCopy = keptBy('noCopy');
+  const profileExists = keptBy('profileExists');
+  const checkFailed = keptBy('checkFailed');
+  if (noCopy.length) lines.push(`Лишено — копії ніде немає: ${noCopy.length} — ${listIds(noCopy)}`);
+  if (profileExists.length) lines.push(`Лишено — анкета ще існує: ${profileExists.length} — ${listIds(profileExists)}`);
+  if (checkFailed.length) lines.push(`Лишено — не вдалося перевірити: ${checkFailed.length} — ${listIds(checkFailed)}`);
+  if (orphansFailed.length) {
+    lines.push(`Не вдалося прибрати відгуки: ${orphansFailed.length} — ${listIds(orphansFailed.map(entry => entry.profileId))}`);
+    const first = orphansFailed[0];
+    lines.push(first.permissionDenied ? 'PERMISSION_DENIED: відгуки чужих авторів знімає лише адмін.' : `${first.profileId}: ${first.message}`);
+  }
+
   if (failed.length) {
     const denied = failed.filter(entry => entry.permissionDenied);
     lines.push(`Не вдалося: ${failed.length} — ${listIds(failed.map(entry => entry.profileId))}`);
@@ -61,6 +84,7 @@ export const describePublicReviewFlagBackfill = report => {
     }
     return { tone: 'error', message: lines.join('\n') };
   }
+  if (orphansFailed.length) return { tone: 'error', message: lines.join('\n') };
 
   // Пакет упав, а поштучно все лягло — це успіх, але причину пакета варто
   // бачити: зазвичай її дає одна картка, яку правило `$uid.validate` не пускає.
@@ -69,7 +93,7 @@ export const describePublicReviewFlagBackfill = report => {
   }
 
   if (!written.length) {
-    lines.unshift(profilesWithComments ? 'Нема чого дописувати.' : 'Відгуків у базі немає.');
+    lines.unshift(profilesWithComments ? 'Прапорці вже на місці.' : 'Відгуків у базі немає.');
     return { tone: 'success', message: lines.join('\n') };
   }
   lines.unshift('hasPublicReview дописано.');
