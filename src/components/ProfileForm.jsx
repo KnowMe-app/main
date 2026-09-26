@@ -1076,6 +1076,7 @@ export const ProfileForm = ({
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [ppTechnicalInput, setPpTechnicalInput] = useState('');
   const [autoOverlayFieldAdditions, setAutoOverlayFieldAdditions] = useState({});
+  const [authoritativeOverlayCardId, setAuthoritativeOverlayCardId] = useState('');
   const [dismissedOverlayEntries, setDismissedOverlayEntries] = useState({});
   // Пропозицію можна поправити перед тим, як прийняти: у ній буває зайвий
   // пробіл чи плюс, і доти адмін мусив прийняти як є, а потім правити поле
@@ -1253,6 +1254,11 @@ export const ProfileForm = ({
     setOverlayEntryDrafts({});
   }, [state?.userId]);
 
+  useEffect(() => {
+    setAuthoritativeOverlayCardId('');
+    setAutoOverlayFieldAdditions({});
+  }, [state?.userId]);
+
   // A dismissal only suppresses the currently loaded overlay entry. Once a
   // refresh confirms that entry is gone, forget its signature so a later,
   // identical suggestion from the editor can be reviewed again.
@@ -1388,6 +1394,18 @@ export const ProfileForm = ({
       nextState && typeof nextState === 'object'
         ? normalizeGetInTouchForSubmit(nextState)
         : nextState;
+    const submitProfileChanges = () => {
+      const submission = Promise.resolve(
+        handleSubmit(payload, overwrite, delCondition, 'submitWithNormalization')
+      );
+      if (options?.propagateSubmitError) return submission;
+      submission.catch(error => {
+        console.error('Failed to submit profile changes', error);
+        const details = error?.message || String(error);
+        toast.error(`Не вдалося зберегти зміни профілю.\n${details}`);
+      });
+      return undefined;
+    };
     try {
       const rawRules = payload?.[ADDITIONAL_ACCESS_FIELD];
       const previousRulesValue = state?.[ADDITIONAL_ACCESS_FIELD];
@@ -1413,12 +1431,7 @@ export const ProfileForm = ({
                 : {},
           });
           toast('searchKeySets очищено: additional access rules видалено.');
-          Promise.resolve(handleSubmit(payload, overwrite, delCondition, 'submitWithNormalization')).catch(error => {
-            console.error('Failed to submit profile changes', error);
-            const details = error?.message || String(error);
-            toast.error(`Не вдалося зберегти зміни профілю.\n${details}`);
-          });
-          return;
+          return submitProfileChanges();
         }
 
         const matchedUserIdsByInputIndex =
@@ -1427,12 +1440,7 @@ export const ProfileForm = ({
             : await getIndexedMatchedUserIdsByInputIndex(rawRules);
 
         if (!matchedUserIdsByInputIndex) {
-          Promise.resolve(handleSubmit(payload, overwrite, delCondition, 'submitWithNormalization')).catch(error => {
-            console.error('Failed to submit profile changes', error);
-            const details = error?.message || String(error);
-            toast.error(`Не вдалося зберегти зміни профілю.\n${details}`);
-          });
-          return;
+          return submitProfileChanges();
         }
 
         const matchedUserIdsBySetKey = buildMatchedUserIdsBySetKey(
@@ -1534,12 +1542,9 @@ export const ProfileForm = ({
         const details = error?.message || String(error);
         toast.error(`Не вдалося зберегти індексацію наборів фільтрів.\n${details}`);
       }
+      if (options?.propagateSubmitError) throw error;
     }
-    Promise.resolve(handleSubmit(payload, overwrite, delCondition, 'submitWithNormalization')).catch(error => {
-      console.error('Failed to submit profile changes', error);
-      const details = error?.message || String(error);
-      toast.error(`Не вдалося зберегти зміни профілю.\n${details}`);
-    });
+    return submitProfileChanges();
   }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, handleSubmit, localSearchKeyPayload, state]);
 
   const handleAddCustomField = () => {
@@ -2108,10 +2113,12 @@ export const ProfileForm = ({
   const getOverlayEntriesForField = fieldName => {
     if (!isAdmin) return [];
 
-    const mergedEntries = [
-      ...(overlayFieldAdditions[fieldName] || []),
-      ...(autoOverlayFieldAdditions[fieldName] || []),
-    ];
+    const mergedEntries = authoritativeOverlayCardId === state?.userId
+      ? (autoOverlayFieldAdditions[fieldName] || [])
+      : [
+        ...(overlayFieldAdditions[fieldName] || []),
+        ...(autoOverlayFieldAdditions[fieldName] || []),
+      ];
 
     return mergedEntries.filter((entry, idx, arr) => {
       const signature = getOverlayEntrySignature(entry);
@@ -2236,6 +2243,7 @@ export const ProfileForm = ({
   const reconcileOverlayEntriesFromBackend = useCallback(async cardUserId => {
     const { result } = await readOverlayFieldAdditions(cardUserId);
     setAutoOverlayFieldAdditions(result);
+    setAuthoritativeOverlayCardId(cardUserId);
     setDismissedOverlayEntries(previous => Object.entries(previous).reduce((next, [fieldName, signatures]) => {
       const backendSignatures = new Set(
         (result[fieldName] || []).map(getOverlayEntrySignature)
@@ -2290,12 +2298,13 @@ export const ProfileForm = ({
       // пропса, який лишався тим самим, і прибраний рядок повертався на екран
       // з наступним перемальовуванням.
       if (typeof refreshOverlayForEditor === 'function') await refreshOverlayForEditor();
+      await reconcileOverlayEntriesFromBackend(state.userId);
       return true;
     } catch {
       toast.error(action === 'accept' ? 'Не вдалося прийняти пропозицію' : 'Не вдалося видалити пропозицію');
       return false;
     }
-  }, [refreshOverlayForEditor, state?.userId]);
+  }, [reconcileOverlayEntriesFromBackend, refreshOverlayForEditor, state?.userId]);
 
   const enqueueOverlaySettlement = useCallback((fieldName, entry, action, acceptedValue) => {
     const queuedSettlement = overlaySettlementQueueRef.current
@@ -2371,6 +2380,39 @@ export const ProfileForm = ({
     // рядок пропозиції — звичайний інпут, і зайвий пробіл чи плюс адмін
     // прибирає просто в ньому.
     const acceptedValue = getOverlayEntryDraftValue(fieldName, entry);
+    if (entry?.superseded) {
+      const currentValue = state?.[fieldName];
+      let nextState;
+      let delCondition;
+      if (entry.isDeleted) {
+        nextState = { ...(state || {}) };
+        if (Array.isArray(currentValue)) {
+          nextState[fieldName] = currentValue.filter(value => value !== entry.value);
+          if (!nextState[fieldName].length) delete nextState[fieldName];
+        } else {
+          delete nextState[fieldName];
+        }
+        delCondition = { [fieldName]: currentValue };
+      } else {
+        nextState = mergeOverlayValueIntoState(state || {}, fieldName, acceptedValue);
+      }
+
+      try {
+        // Попередня версія існує лише в журналі. Спершу надійно записуємо
+        // канонічну анкету, і тільки після успішного запису прибираємо єдину
+        // backend-копію пропозиції.
+        await submitWithNormalization(nextState, 'overwrite', delCondition, { propagateSubmitError: true });
+      } catch {
+        toast.error('Не вдалося зберегти зміни профілю');
+        return;
+      }
+
+      setState(nextState, { source: 'overlayReview', reason: 'accepted-superseded-overlay' });
+      const settledSuperseded = await enqueueOverlaySettlement(fieldName, entry, 'accept', acceptedValue);
+      if (!settledSuperseded) return;
+      dismissOverlayEntry(fieldName, entry);
+      return;
+    }
     const settled = await enqueueOverlaySettlement(fieldName, entry, 'accept', acceptedValue);
     if (!settled) return;
     if (entry?.isDeleted) removeOverlayValueFromState(fieldName, entry?.value);
