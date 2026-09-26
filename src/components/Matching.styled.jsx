@@ -2098,6 +2098,71 @@ export const ChipCount = styled.b`
   color: var(--matching-chip-label);
 `;
 
+/*
+ * Кнопки колекцій — ті самі кнопки, що й реакції в ряду рішень картки.
+ *
+ * Колекцій три: уся дека, приховані й вподобані. Чіпами з написами
+ * («Приховані», «♥») вони не казали, що це ті самі картки, яким читач щойно
+ * ставив хрестик чи серце: слово «Приховані» ніде на картці не стоїть. Тепер
+ * кнопка колекції несе той самий значок у тій самій рамці, що й кнопка на
+ * картці (`RowActionButton` у ряду рішень), — і стоять вони в тому самому
+ * порядку: хрестик, потім серце. «Усі» зроблено в тому ж стилі, щоб ряд
+ * читався трьома рівними кнопками, а не кнопкою й двома значками.
+ */
+export const CollectionButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 64px;
+  height: 34px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  border: 1px solid ${({ $active, $accent }) => {
+    if (!$active) return 'var(--matching-card-border)';
+    return $accent ? 'var(--matching-accent)' : 'var(--matching-chip-text)';
+  }};
+  background: ${({ $active, $accent }) => {
+    if (!$active) return 'var(--matching-card-bg)';
+    return $accent
+      ? 'color-mix(in srgb, var(--matching-accent) 14%, transparent)'
+      : 'color-mix(in srgb, var(--matching-chip-text) 10%, transparent)';
+  }};
+  color: ${({ $accent, $active }) => {
+    if ($accent) return 'var(--matching-accent)';
+    return $active ? 'var(--matching-chip-text)' : 'var(--matching-muted-text)';
+  }};
+
+  svg {
+    flex: 0 0 auto;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
+  }
+`;
+
+export const CollectionButtonCount = styled.b`
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--matching-chip-label);
+`;
+
 // Spec §4: a single icon button, never a segmented control. It shows the mode
 // we would switch *into*, so the grid icon means "go to gallery".
 export const LayoutToggleButton = styled.button`
@@ -2812,6 +2877,12 @@ export const NoteLanes = styled.div`
  */
 export const NOTE_LANE_PUBLIC_COLOR = 'color-mix(in srgb, var(--matching-accent, var(--km-accent, #e8791a)) 55%, transparent)';
 export const NOTE_LANE_PRIVATE_COLOR = 'color-mix(in srgb, #2e9b55 60%, transparent)';
+/* Прочитаний відгук під карткою фарбує смужку червоним і робить її ширшою.
+   Акцентна смужка стоїть у кожній картці незалежно від того, чи є під нею
+   хоч один відгук, — і картка з відгуком зливалась у списку з рештою: помітити
+   її можна було, лише вчитавшись у саму доріжку. А відгук — це саме те, повз що
+   гортати не можна. */
+export const NOTE_LANE_REVIEWED_COLOR = '#d93a2b';
 
 export const NoteLane = styled.div`
   padding-left: 10px;
@@ -2820,6 +2891,11 @@ export const NoteLane = styled.div`
      і невідома змінна в скороченому записі border робить нечинним увесь
      запис, тобто смужки на екрані просто не було б. */
   border-left: 2px solid ${({ $public }) => ($public ? NOTE_LANE_PUBLIC_COLOR : NOTE_LANE_PRIVATE_COLOR)};
+
+  ${({ $public, $reviewed }) => $public && $reviewed && css`
+    border-left: 3px solid ${NOTE_LANE_REVIEWED_COLOR};
+    padding-left: 9px;
+  `}
 `;
 
 export const NoteLaneHead = styled.div`

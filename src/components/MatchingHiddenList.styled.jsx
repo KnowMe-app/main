@@ -417,20 +417,6 @@ export const EditButton = styled.button`
   }
 `;
 
-/* Числа біля стрілки немає — див. `canExpandDetails` у `ProfileRow`. Разом із
-   ним пішло й правило для `b`: рахувати під стрілкою нічого. */
-export const ChevronButton = styled.button`
-  ${ctrlButtonBase}
-  border: 1px solid var(--matching-card-border);
-  background: var(--matching-card-bg);
-  color: var(--matching-muted-text);
-
-  svg {
-    transition: transform 180ms ease;
-    transform: rotate(${({ $open }) => ($open ? '180deg' : '0deg')});
-  }
-`;
-
 /* Підкладку й заокруглення тримає плашка RowNotes, у якій нотатка лежить, а не
    сама нотатка: доріжок у плашці дві, і два фони поспіль малювали б сходинку
    на межі між ними. */
@@ -1154,6 +1140,12 @@ export const RowFooterButton = styled(RowActionButton)`
   b {
     font-size: 11px;
     font-weight: 700;
+  }
+
+  /* Числа біля стрілки немає — див. \`canExpandDetails\` у \`ProfileRow\`. */
+  svg {
+    transition: transform 180ms ease;
+    transform: rotate(${({ $turn }) => ($turn ? '180deg' : '0deg')});
   }
 `;
 

@@ -63,9 +63,9 @@ import {
   BackendTrafficToggleButton,
   BackendTrafficToggleStatus,
   MatchingSearchStatusMessage,
-  Chip,
-  ChipCount,
   ChipsGroup,
+  CollectionButton,
+  CollectionButtonCount,
   ChipsRow,
   FeedCountdown,
   FeedCountdownHint,
@@ -1043,6 +1043,9 @@ const SwipeableCard = ({
   // без цього рядка «прочитали, відгуків немає» виглядало так само, як
   // «читання ще не починалось» — порожньою доріжкою під полем запису.
   publicCommentStatus = '',
+  // Скільки відгуків прочитано: є хоч один — смужка доріжки червона, як і в
+  // рядку стрічки (`ProfileNotes`).
+  publicCommentCount = 0,
   onAdminEdit,
   onEnrich,
 }) => {
@@ -1311,7 +1314,7 @@ const SwipeableCard = ({
                 про ті самі два записи. */}
             <NoteLanes>
               {publicCommentSlot && (
-                <NoteLane $public>
+                <NoteLane $public $reviewed={publicCommentCount > 0}>
                   <NoteLaneHead>
                     <b>{profileUiText('publicComment', language)}</b>
                   </NoteLaneHead>
@@ -1709,6 +1712,7 @@ const GalleryCard = React.memo(({
           <ProfileNotes
             language={language}
             publicSlot={reviewsSlot}
+            hasReviews={(reviewsAction?.count || 0) > 0}
             reviewsStatus={describeReviewsState({
               requested: Boolean(user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]),
               loading: Boolean(reviewsAction?.loading),
@@ -1812,11 +1816,60 @@ const Matching = () => {
   // Скільки знайдених уже на екрані. Видача більше не приїжджає одним шматком:
   // її показує той самий притишений відлік, що й стрічку.
   const [searchRevealCount, setSearchRevealCount] = useState(MATCHING_FIRST_PAGE_BATCH);
+  /*
+   * Пошук — окремий крок історії, а не лише параметр адреси.
+   *
+   * Читач, який набрав запит і тисне «назад» на телефоні, чекає повернутись у
+   * загальну стрічку. Поки запит жив у адресі самим `replaceState`, «назад»
+   * виводив зі сторінки взагалі — туди, звідки прийшли на `/matching`, — а
+   * запит лишався набраним до наступного заходу. Тепер перший символ кладе в
+   * історію власний запис (`matchingSearch`), і «назад» знімає саме його:
+   * запит стирається, повертається стрічка (`handleSearchPopState` нижче).
+   * Подальший набір той запис лише переписує — «назад» не мусить ходити по
+   * літерах. Стерли запит самі (✕ чи останній символ) — запис знімається
+   * `history.back()`, щоб наступне «назад» не повертало порожній пошук.
+   *
+   * Відкрита картка кладе поверх свій запис (`matchingDetail`), тож «назад» у
+   * картці з видачі закриває картку, а не пошук: після нього поточним стає
+   * запис пошуку, і його обробник це бачить.
+   */
+  const searchHistoryEntryRef = useRef(false);
   useEffect(() => {
     try {
       const url = new URL(window.location.href);
       const current = url.searchParams.get(MATCHING_QUERY_PARAM) || '';
       const next = searchQuery.trim();
+      const onSearchEntry = Boolean(window.history.state?.matchingSearch);
+      if (next && !searchHistoryEntryRef.current) {
+        searchHistoryEntryRef.current = true;
+        // Сторінка вже стоїть на записі пошуку — перезавантаження або
+        // повернення з екрана, куди пошук водив (олівець, «Створити»).
+        // Запис стрічки під ним уже є, другий класти не треба.
+        if (onSearchEntry) {
+          if (current !== next) {
+            url.searchParams.set(MATCHING_QUERY_PARAM, next);
+            window.history.replaceState(window.history.state, '', url.toString());
+          }
+          return;
+        }
+        // Запит приїхав в адресі (посилання, закладка): запис під ним — та
+        // сама сторінка без запиту, щоб «назад» вело в стрічку, а не геть.
+        if (current) {
+          const feedUrl = new URL(url.toString());
+          feedUrl.searchParams.delete(MATCHING_QUERY_PARAM);
+          window.history.replaceState(window.history.state, '', feedUrl.toString());
+        }
+        url.searchParams.set(MATCHING_QUERY_PARAM, next);
+        window.history.pushState({ ...(window.history.state || {}), matchingSearch: true }, '', url.toString());
+        return;
+      }
+      if (!next && searchHistoryEntryRef.current) {
+        searchHistoryEntryRef.current = false;
+        if (onSearchEntry) {
+          window.history.back();
+          return;
+        }
+      }
       if (current === next) return;
       if (next) url.searchParams.set(MATCHING_QUERY_PARAM, next);
       else url.searchParams.delete(MATCHING_QUERY_PARAM);
@@ -4763,6 +4816,21 @@ const Matching = () => {
     reloadDefault();
   }, [reloadDefault]);
 
+  // «Назад» телефона з видачі — у стрічку. Запис пошуку клав ефект адреси
+  // (`searchHistoryEntryRef`); тут його зняли. Якщо поточним після «назад»
+  // лишився запис пошуку, то зняли запис картки над ним — закрилась картка, а
+  // пошук стоїть як стояв.
+  useEffect(() => {
+    const handleSearchPopState = () => {
+      if (!searchHistoryEntryRef.current) return;
+      if (window.history.state?.matchingSearch) return;
+      searchHistoryEntryRef.current = false;
+      handleSearchCleared();
+    };
+    window.addEventListener('popstate', handleSearchPopState);
+    return () => window.removeEventListener('popstate', handleSearchPopState);
+  }, [handleSearchCleared]);
+
   const handleMatchingSearchError = React.useCallback(() => {
     setMatchingSearchStatus(uiText('Не вдалося виконати пошук. Спробуйте ще раз.', language));
   }, [language]);
@@ -7321,6 +7389,9 @@ const Matching = () => {
   const showRefineBar = isSearching
     && (Boolean(refineActiveValue) || searchRefinedUsers.length >= REFINE_MIN_RESULTS);
 
+  // Порядок і значки — ті самі, що й у ряду рішень картки: хрестик, тоді
+  // серце (лайк праворуч від дизлайку). Підпис лишається в `title` і
+  // `aria-label` — його читає диктор, а очі впізнають значок з картки.
   const collectionChips = useMemo(() => [
     {
       key: 'default',
@@ -7330,18 +7401,23 @@ const Matching = () => {
       onSelect: handleDefaultModeClick,
     },
     {
-      key: 'favorites',
-      label: '♥',
-      title: uiText('Показати обране', language),
-      count: Object.keys(favoriteUsers || {}).length,
-      onSelect: handleFavoriteModeClick,
-    },
-    {
       key: 'dislikes',
       label: uiText('Приховані', language),
+      icon: <FaTimes size={14} aria-hidden="true" />,
       title: uiText('Показати приховані', language),
       count: Object.keys(dislikeUsers || {}).length,
       onSelect: handleDislikeModeClick,
+    },
+    {
+      key: 'favorites',
+      label: uiText('Обране', language),
+      icon: viewMode === 'favorites'
+        ? <FaHeart size={13} aria-hidden="true" />
+        : <FaRegHeart size={13} aria-hidden="true" />,
+      accent: true,
+      title: uiText('Показати обране', language),
+      count: Object.keys(favoriteUsers || {}).length,
+      onSelect: handleFavoriteModeClick,
     },
   ], [
     dislikeUsers,
@@ -8268,18 +8344,20 @@ const Matching = () => {
               {(isSearching ? [] : collectionChips).map(chip => {
                 const active = viewMode === chip.key;
                 return (
-                  <Chip
+                  <CollectionButton
                     key={chip.key}
                     type="button"
                     $active={active}
+                    $accent={Boolean(chip.accent)}
                     aria-pressed={active}
+                    aria-label={chip.icon ? chip.title : undefined}
                     disabled={!isSearching && !ownerId}
                     onClick={chip.onSelect}
                     title={chip.title}
                   >
-                    <span>{chip.label}</span>
-                    {chip.count !== undefined && <ChipCount>{chip.count}</ChipCount>}
-                  </Chip>
+                    {chip.icon || <span>{chip.label}</span>}
+                    {chip.count !== undefined && <CollectionButtonCount>{chip.count}</CollectionButtonCount>}
+                  </CollectionButton>
                 );
               })}
             </ChipsGroup>
@@ -8621,6 +8699,7 @@ const Matching = () => {
                         commentsRef.current = { ...commentsRef.current, [user.userId]: val };
                         setComments(prev => ({ ...prev, [user.userId]: val }));
                       }}
+                      publicCommentCount={(publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS).length}
                       publicCommentStatus={describeReviewsState({
                         requested: true,
                         loading: Boolean(publicCommentsLoading[user.userId]),

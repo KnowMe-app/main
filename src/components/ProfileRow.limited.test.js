@@ -57,7 +57,7 @@ describe('limited profile row', () => {
 
   it('shows no metrics line, no expander, no edit and no collection action', () => {
     renderRow(limitedUser);
-    expect(screen.queryByTitle('Показати всі дані')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Розгорнути анкету')).not.toBeInTheDocument();
     expect(screen.queryByTitle('Редагувати анкету')).not.toBeInTheDocument();
     expect(screen.queryByTitle('В обране')).not.toBeInTheDocument();
     expect(screen.queryByText(/BMI/)).not.toBeInTheDocument();
@@ -78,7 +78,7 @@ describe('limited profile row', () => {
   it('still renders the full row for a viewer entitled to one', () => {
     const onOpen = jest.fn();
     renderRow(fullUser, { onOpen });
-    expect(screen.getByTitle('Показати всі дані')).toBeInTheDocument();
+    expect(screen.getByTitle('Розгорнути анкету')).toBeInTheDocument();
     expect(screen.getByTitle('Редагувати анкету')).toBeInTheDocument();
     expect(screen.getByTitle('В обране')).toBeInTheDocument();
     expect(screen.getByText('172/59')).toBeInTheDocument();
