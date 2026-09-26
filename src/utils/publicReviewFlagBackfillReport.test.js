@@ -70,6 +70,31 @@ describe('describePublicReviewFlagBackfill', () => {
       ...base, profilesWithComments: 2, alreadyFlagged: 2,
     });
     expect(tone).toBe('success');
-    expect(message).toMatch(/^Нема чого дописувати/);
+    expect(message).toMatch(/^Прапорці вже на місці/);
+  });
+
+  it('reports removed orphan reviews and names the ones kept with a reason', () => {
+    const { tone, message } = describePublicReviewFlagBackfill({
+      ...base,
+      profilesWithComments: 4,
+      alreadyFlagged: 2,
+      missingCardIds: ['TG0009', 'TG0067'],
+      orphansRemoved: [{ profileId: 'TG0009', count: 1, movedTo: ['AA6649'] }],
+      orphansKept: [{ profileId: 'TG0067', reason: 'noCopy', count: 1 }],
+    });
+    expect(tone).toBe('success');
+    expect(message).toContain('Прибрано відгуків видалених карток: 1');
+    expect(message).toContain('Лишено — копії ніде немає: 1 — TG0067');
+  });
+
+  it('turns an orphan removal failure into an error toast', () => {
+    const { tone, message } = describePublicReviewFlagBackfill({
+      ...base,
+      profilesWithComments: 1,
+      missingCardIds: ['TG0009'],
+      orphansFailed: [{ profileId: 'TG0009', message: 'denied', permissionDenied: true }],
+    });
+    expect(tone).toBe('error');
+    expect(message).toContain('Не вдалося прибрати відгуки: 1 — TG0009');
   });
 });
