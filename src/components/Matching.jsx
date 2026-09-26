@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useLayoutEffect, useMemo } from 'react';
+import usePhotoSwipe from './usePhotoSwipe';
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
@@ -1582,12 +1583,24 @@ const GalleryCard = React.memo(({
   reviewsSlot,
   reviewsAction,
   diagnosticsSlot,
+  onRequestPhotos,
 }) => {
   const { language } = useAppSettings();
   const name = getProfileName(user);
   const age = getProfileAge(user);
   const photos = getProfilePhotos(user);
-  const photo = photos[0];
+  const isLimitedTile = Boolean(user?.__limitedProfile);
+  const requestPhotos = React.useCallback(() => {
+    if (onRequestPhotos) onRequestPhotos(user);
+  }, [onRequestPhotos, user]);
+  // Свайп по фото плитки гортає знімки так само, як у рядку однієї колонки;
+  // решту переліку дочитує сам жест, а не відкриття стрічки.
+  const photoSwipe = usePhotoSwipe({
+    photos,
+    complete: user?.__allPhotosLoaded === true,
+    onRequestPhotos: onRequestPhotos && !isLimitedTile ? requestPhotos : undefined,
+  });
+  const photo = photoSwipe.current || photos[0];
   const role = getProfileRole(user);
   const roleCode = getRoleCode(role);
   const location = getProfileLocation(user);
@@ -1623,7 +1636,7 @@ const GalleryCard = React.memo(({
         />
       )}
       {photo && (
-        <GalleryPhotoBox>
+        <GalleryPhotoBox {...photoSwipe.handlers} $loading={photoSwipe.loading}>
           <img src={photo} alt="" loading="lazy" decoding="async" />
           {/* Роль лежить на знімку, у лівому верхньому куті — та сама плашка
               (`PhotoRoleBadge`), що й у рядку однієї колонки та у відкритій
@@ -1631,7 +1644,11 @@ const GalleryCard = React.memo(({
               дві розкладки казали про ту саму річ у двох різних місцях. */}
           {roleCode && <PhotoRoleBadge $role={role}>{roleCode}</PhotoRoleBadge>}
           {isHidden && <GalleryHiddenBadge $belowRole={Boolean(roleCode)}>{uiText('Приховано', language)}</GalleryHiddenBadge>}
-          {photos.length > 1 && <GalleryPhotoCount>{photos.length}</GalleryPhotoCount>}
+          {photoSwipe.total > 1 && (
+            <GalleryPhotoCount>
+              {photoSwipe.index > 0 ? `${photoSwipe.index + 1}/${photoSwipe.total}` : photoSwipe.total}
+            </GalleryPhotoCount>
+          )}
         </GalleryPhotoBox>
       )}
       <GalleryBody>
@@ -1747,6 +1764,7 @@ const GalleryCard = React.memo(({
   && prev.onEnrich === next.onEnrich
   && prev.onToggleHidden === next.onToggleHidden
   && prev.onTogglePublish === next.onTogglePublish
+  && prev.onRequestPhotos === next.onRequestPhotos
 ));
 
 const Matching = () => {
@@ -6560,8 +6578,44 @@ const Matching = () => {
       merged.photos = resolvedPhotos;
       merged.__photosHydrated = Boolean(cachedPhotos) || (!fullProfile && user.__photosHydrated === true);
     }
+    // Перелік з бекенду вже в руках — свайп по фото за його кінцем більше
+    // нічого не питає (`usePhotoSwipe`).
+    if (cachedPhotos) merged.__allPhotosLoaded = true;
     return merged;
   }, [fullProfileByUserId, photoCacheByUserId]);
+
+  // Свайп по фото в рядку чи плитці просить решту знімків картки. Проєкція
+  // стрічки несе один аватар, і дочитувати перелік на кожну показану картку
+  // означало б лістинг Storage на всю сторінку заради жесту, який роблять на
+  // одиницях — тож він дочитується тут, на перший свайп, і лише для цієї
+  // картки. Порожня відповідь чи помилка лишають аватар: свайпу є на чому
+  // зупинитись, а не на порожній рамці.
+  const photoRequestsRef = useRef(new Set());
+  const requestCardPhotos = React.useCallback(user => {
+    const userId = user?.userId;
+    if (!userId || photoRequestsRef.current.has(userId)) return;
+    photoRequestsRef.current.add(userId);
+    const fallback = getProfilePhotos(user);
+    const cached = getCachedPhotoUrlsMap([userId])[userId];
+    if (Array.isArray(cached) && cached.length) {
+      incrementMatchingLoadStat('photoUrlCacheHits', 1);
+      setPhotoCacheByUserId(prev => ({ ...prev, [userId]: cached }));
+      return;
+    }
+    lazyLoadProfilePhotos(userId, {
+      knownPhotos: !isMatchingSummaryCard(user) && Array.isArray(user.photos) && user.photos.length ? user.photos : null,
+    })
+      .then(photos => {
+        const urls = Array.isArray(photos) && photos.length ? photos : fallback;
+        if (Array.isArray(photos) && photos.length) setCachedPhotoUrls(userId, photos);
+        incrementMatchingLoadStat('photoLazyLoadProfiles');
+        setPhotoCacheByUserId(prev => ({ ...prev, [userId]: urls }));
+      })
+      .catch(error => {
+        console.warn('[Matching] Failed to load card photos', { userId, error });
+        setPhotoCacheByUserId(prev => ({ ...prev, [userId]: fallback }));
+      });
+  }, []);
 
   const activeProfileWithLazyPhotos = withOwnEdits(withLazyPhotos(activeProfile));
 
@@ -8067,6 +8121,7 @@ const Matching = () => {
     contactsLoading: Boolean(rowContactsLoading[user.userId]),
     reviewsAction: buildRowReviewsAction(user.userId),
     reviewsSlot: buildRowReviewsSlot(user.userId),
+    onRequestPhotos: requestCardPhotos,
     secondaryAction: {
       icon: favoriteUsers[user.userId] ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
       title: uiText('В обране', language),
@@ -8084,6 +8139,7 @@ const Matching = () => {
     isAdmin,
     language,
     ownerId,
+    requestCardPhotos,
     rowContactsLoading,
     toggleRowFavorite,
   ]);
@@ -8519,6 +8575,7 @@ const Matching = () => {
                             reviewsSlot={buildRowReviewsSlot(user.userId)}
                             reviewsAction={buildRowReviewsAction(user.userId)}
                             diagnosticsSlot={renderDiagnosticsFor(user)}
+                            onRequestPhotos={requestCardPhotos}
                           />
                         ))}
                     </GalleryColumn>
@@ -8548,6 +8605,7 @@ const Matching = () => {
                       priorityMetricKeys={priorityMetricKeys}
                       onSwipeRight={toggleRowFavorite}
                       onSwipeLeft={toggleRowHidden}
+                      onRequestPhotos={requestCardPhotos}
                       diagnosticsSlot={renderDiagnosticsFor(user)}
                       onEnrich={isAdmin ? undefined : handleRowEnrichProfile}
                       clientComment={comments[user.userId] || ''}

@@ -191,9 +191,9 @@ describe('доповнення знайденої картки зі стрічк
     await screen.findByDisplayValue('Бугаренко');
 
     expect(screen.getAllByText('Публічний відгук')).toHaveLength(1);
-    expect(screen.getAllByText('Додати анонімний відгук, його побачать усі')).toHaveLength(1);
+    expect(screen.getAllByText('Додати анонімний відгук')).toHaveLength(1);
     // Поля анкети під доріжкою більше немає — саме воно й було другою копією.
-    expect(screen.queryByPlaceholderText('Додати анонімний відгук, його побачать усі')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Додати анонімний відгук')).not.toBeInTheDocument();
   });
 
   /*

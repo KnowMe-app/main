@@ -23,7 +23,16 @@ import {
 import { parseUkTriggerQuery } from 'utils/parseUkTrigger';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { resolvePpTechnicalInputTarget } from 'utils/ppTechnicalInputTarget';
-import { buildOverlayFieldEntries, settleOverlayValueForCard } from 'utils/multiAccountEdits';
+import {
+  buildOverlayFieldEntries,
+  buildSupersededOverlayEntries,
+  getCanonicalCard,
+  getOverlayHistoryForCard,
+  pruneOverlaysMatchingCanonical,
+  settleOverlayValueForCard,
+  settleSupersededOverlayValue,
+} from 'utils/multiAccountEdits';
+import { PROFILE_BACKEND_REFRESH_EVENT } from 'utils/profileBackendRefresh';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
 import { FaArrowRight, FaTimes } from 'react-icons/fa';
@@ -1251,7 +1260,7 @@ export const ProfileForm = ({
     setDismissedOverlayEntries(previous => Object.entries(previous).reduce((next, [fieldName, signatures]) => {
       const liveSignatures = new Set((overlayFieldAdditions[fieldName] || []).map(entry => {
         const value = sanitizeOverlayValue(entry?.value);
-        return `${value}::${entry?.editorUserId || ''}::${entry?.isDeleted ? '1' : '0'}`;
+        return `${value}::${entry?.editorUserId || ''}::${entry?.isDeleted ? '1' : '0'}${entry?.superseded ? '::v' : ''}`;
       }));
       const stillPresent = signatures.filter(signature => liveSignatures.has(signature));
       if (stillPresent.length) next[fieldName] = stillPresent;
@@ -2162,23 +2171,64 @@ export const ProfileForm = ({
     const paths = buildOverlayPaths(cardUserId);
     if (!paths.length) return { paths: [], result: {} };
 
-    const debugResults = await Promise.all(
+    const readOverlays = async () => Promise.all(
       paths.map(async path => {
         const snapshot = await get(refDb(database, path));
-        const rawValue = snapshot.exists() ? snapshot.val() : null;
-
-        // Пропозиції розкладає одне місце на всі екрани — по рядку на
-        // значення, а не по рядку на поле.
-        return { path, exists: snapshot.exists(), fieldMap: buildOverlayFieldEntries(rawValue) };
+        return { path, exists: snapshot.exists(), rawValue: snapshot.exists() ? snapshot.val() : null };
       })
     );
 
+    let snapshots = await readOverlays();
+
+    // Картка читається з бекенду, а не з форми: у формі може лежати ще не
+    // збережене, а рішення «це вже в анкеті» стосується записаного.
+    let canonical = null;
+    try {
+      canonical = await getCanonicalCard(cardUserId);
+    } catch (error) {
+      console.warn('[ProfileForm] canonical card unavailable for overlay review', error);
+    }
+
+    // Пропозиція значення, яке в картці вже стоїть, нічого не пропонує: вона
+    // лише дублює анкету на бекенді й висить у черзі. Такі значення знімаються
+    // ще до показу — разом зі своїми записами в журналі.
+    if (canonical && snapshots.some(item => item.rawValue)) {
+      try {
+        let pruned = 0;
+        for (const item of snapshots) {
+          if (!item.rawValue) continue;
+          // eslint-disable-next-line no-await-in-loop
+          pruned += await pruneOverlaysMatchingCanonical({ cardUserId, canonical, overlaysByEditor: item.rawValue });
+        }
+        if (pruned) snapshots = await readOverlays();
+      } catch (error) {
+        console.warn('[ProfileForm] overlay cleanup against the card skipped', error);
+      }
+    }
+
+    // Пропозиції розкладає одне місце на всі екрани — по рядку на
+    // значення, а не по рядку на поле.
     const result = {};
-    debugResults.forEach(item => {
-      Object.entries(item.fieldMap || {}).forEach(([fieldName, entries]) => {
+    snapshots.forEach(item => {
+      Object.entries(buildOverlayFieldEntries(item.rawValue) || {}).forEach(([fieldName, entries]) => {
         result[fieldName] = [...(result[fieldName] || []), ...(entries || [])];
       });
     });
+
+    // Попередні версії правок живуть лише в журналі: шар тримає саму поточну
+    // різницю, і друга правка того самого поля переписувала першу. Адмін
+    // мусить бачити обидві — інакше він вирішує про правку, не знаючи, що
+    // їй передувало.
+    try {
+      const historyEntries = await getOverlayHistoryForCard(cardUserId);
+      const overlaysByEditor = snapshots.reduce((acc, item) => ({ ...acc, ...(item.rawValue || {}) }), {});
+      const superseded = buildSupersededOverlayEntries({ historyEntries, overlaysByEditor, canonical });
+      Object.entries(superseded).forEach(([fieldName, entries]) => {
+        result[fieldName] = [...entries, ...(result[fieldName] || [])];
+      });
+    } catch (error) {
+      console.warn('[ProfileForm] overlay history unavailable', error);
+    }
 
     return { paths, result };
   }, []);
@@ -2196,6 +2246,21 @@ export const ProfileForm = ({
     }, {}));
   }, [readOverlayFieldAdditions]);
 
+  // Кнопка «усі поля» перечитує анкету з бекенду — а пропозиції редакторів і
+  // їхні попередні версії лежать поза анкетою, тож перечитуються тут.
+  useEffect(() => {
+    if (!isAdmin || !state?.userId || typeof window === 'undefined') return undefined;
+    const cardUserId = state.userId;
+    const handleRefresh = event => {
+      if (event?.detail?.userId && event.detail.userId !== cardUserId) return;
+      reconcileOverlayEntriesFromBackend(cardUserId).catch(error => {
+        console.warn('[ProfileForm] overlay refresh after backend reload failed', error);
+      });
+    };
+    window.addEventListener(PROFILE_BACKEND_REFRESH_EVENT, handleRefresh);
+    return () => window.removeEventListener(PROFILE_BACKEND_REFRESH_EVENT, handleRefresh);
+  }, [isAdmin, reconcileOverlayEntriesFromBackend, state?.userId]);
+
   /**
    * Рішення адмінки стосується **одного** значення, а не всієї правки поля.
    *
@@ -2209,7 +2274,10 @@ export const ProfileForm = ({
     if (!fieldName || !entry?.editorUserId || !state?.userId) return;
 
     try {
-      const result = await settleOverlayValueForCard({
+      // Попередня версія в шарі вже не лежить — рішення про неї підчищає
+      // журнал (і `searchId` при відхиленні), а не шар.
+      const settle = entry.superseded ? settleSupersededOverlayValue : settleOverlayValueForCard;
+      const result = await settle({
         editorUserId: entry.editorUserId,
         cardUserId: state.userId,
         fieldName,
@@ -3558,7 +3626,12 @@ ${entries.join('\n')}`;
               // виникає саме на цьому рядку.
               const draftValue = getOverlayEntryDraftValue(field.name, entry);
               return (
-              <OverlayEntryRow key={`overlay-${field.name}-${idx}`}>
+              <React.Fragment key={`overlay-${field.name}-${idx}`}>
+              {/* Попередня версія правки — з журналу, а не з шару: читач її
+                  вже переписав. Підпис каже про це, щоб «ОК» тут не читався як
+                  рішення про поточну пропозицію. */}
+              {entry.superseded && <OverlayVersionNote>Попередня версія правки</OverlayVersionNote>}
+              <OverlayEntryRow>
                 <InputDiv $isOverlaySuggestion $isDeletedOverlay={entry.isDeleted}>
                   <InputFieldContainer fieldName={field.name} value={draftValue}>
                     <InputField
@@ -3597,6 +3670,7 @@ ${entries.join('\n')}`;
                   ОК
                 </Button>
               </OverlayEntryRow>
+              </React.Fragment>
               );
             })}
             </PickerContainer>
@@ -3967,6 +4041,12 @@ const OverlayEntryRow = styled.div`
   width: 100%;
   gap: 8px;
   margin-top: 8px;
+`;
+
+const OverlayVersionNote = styled.div`
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--km-muted, #8a8580);
 `;
 
 const InputField = styled.input`

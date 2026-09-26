@@ -47,7 +47,10 @@ describe('ProfileForm settles one overlay value at a time', () => {
   const formSource = fs.readFileSync(path.join(__dirname, 'ProfileForm.jsx'), 'utf8');
 
   it('рішення йде через settleOverlayValueForCard із самим значенням', () => {
-    expect(formSource).toContain('await settleOverlayValueForCard({');
+    // Поточна пропозиція йде через шар, попередня версія (з журналу) — через
+    // `settleSupersededOverlayValue`: у шарі її вже немає.
+    expect(formSource).toContain('const settle = entry.superseded ? settleSupersededOverlayValue : settleOverlayValueForCard;');
+    expect(formSource).toContain('const result = await settle({');
     expect(formSource).toContain('value: entry.value,');
     expect(formSource).toContain("await enqueueOverlaySettlement(fieldName, entry, 'discard');");
     expect(formSource).toContain("await enqueueOverlaySettlement(fieldName, entry, 'accept', acceptedValue);");
@@ -79,7 +82,9 @@ describe('ProfileForm settles one overlay value at a time', () => {
   });
 
   it('пропозиції будує той самий розкладач, що й форма адміна', () => {
-    expect(formSource).toContain('fieldMap: buildOverlayFieldEntries(rawValue)');
+    expect(formSource).toContain('buildOverlayFieldEntries(item.rawValue)');
+    // Попередні версії правок доливаються з журналу тим самим читанням.
+    expect(formSource).toContain('buildSupersededOverlayEntries({ historyEntries, overlaysByEditor, canonical })');
   });
 
   it('рядок пропозиції — справжній інпут зі стрілкою на searchId', () => {

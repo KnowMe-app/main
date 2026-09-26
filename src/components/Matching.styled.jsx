@@ -2288,12 +2288,16 @@ export const GalleryPhotoBox = styled.div`
   aspect-ratio: 4 / 5;
   overflow: hidden;
   background: var(--matching-section-bg);
+  /* Горизонтальний жест гортає знімки (\`usePhotoSwipe\`), як у рядку списку. */
+  touch-action: pan-y;
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
+    opacity: ${({ $loading }) => ($loading ? 0.6 : 1)};
+    transition: opacity 0.15s ease;
   }
 `;
 

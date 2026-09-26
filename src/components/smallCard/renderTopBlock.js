@@ -36,6 +36,7 @@ import { fieldBlood } from './fieldBlood';
 import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { fieldIMT } from './fieldIMT';
 import { normalizeDisplayValue } from '../profileLayoutConfig';
+import { PROFILE_BACKEND_REFRESH_EVENT } from '../../utils/profileBackendRefresh';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
 import { getCurrentValue } from '../getCurrentValue';
@@ -1848,20 +1849,31 @@ export const TopBlock = ({
     updateContext,
   });
 
+  // Кнопка «усі поля» — перемикач: перше натискання розгортає блок і
+  // перечитує анкету з бекенду (відкрита картка береться з кеша, і сумнів у
+  // її свіжості — саме те, з чим сюди приходять), друге — згортає. Доти вона
+  // вміла лише показувати, і сховати розгорнуте було нічим, крім
+  // перезавантаження сторінки.
   const handleDetailsRefresh = async event => {
     event.stopPropagation();
     const details = document.getElementById(cardData.userId);
-    const showDetails = () => {
-      if (details) {
-        details.style.display = 'block';
-        details.style.marginTop = '8px';
-        const bg = getParentBackground(details);
-        details.style.color = getContrastColor(bg);
-      }
-    };
+    if (details && details.style.display === 'block') {
+      details.style.display = 'none';
+      return;
+    }
+    if (details) {
+      details.style.display = 'block';
+      details.style.marginTop = '8px';
+      const bg = getParentBackground(details);
+      details.style.color = getContrastColor(bg);
+    }
 
-    showDetails();
     await refreshCardFromBackend();
+    // Форма адміна тримає пропозиції редакторів окремо від анкети, і вони
+    // так само могли застаріти — хай перечитає і їх.
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent(PROFILE_BACKEND_REFRESH_EVENT, { detail: { userId: cardData.userId } }));
+    }
   };
 
   const blueActionElement = topBlueAction ? (
@@ -2187,7 +2199,7 @@ export const TopBlock = ({
                 type="button"
                 onClick={handleDetailsRefresh}
                 style={detailsToggleStyle}
-                title="Оновити дані з бекенду та показати всі поля"
+                title="Оновити дані з бекенду та показати всі поля (повторно — сховати)"
                 aria-label="Оновити дані з бекенду та показати всі поля"
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
