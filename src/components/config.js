@@ -108,6 +108,8 @@ import {
 } from '../utils/searchKeyBuckets';
 import { withAdminDownloadToast } from '../utils/backendDownloadToast';
 import { normalizeProfileRole } from '../utils/profileRole';
+import { createSaveComparisonField } from '../utils/comparisonFieldAdapter';
+import { mergeDuplicateProfileValues, normalizePhoneForStorage, sanitizeUploadedInfoPhones } from '../utils/profileValueNormalization';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -3811,30 +3813,6 @@ const stripTransientUserDataFields = (payload, options = {}) => {
   return nextPayload;
 };
 
-const normalizePhoneForStorage = value => {
-  if (value === undefined || value === null) return value;
-
-  if (Array.isArray(value)) {
-    return [...new Set(value.flat(Infinity)
-      .map(item => normalizePhoneForStorage(item))
-      .filter(item => item !== '' && item !== undefined && item !== null))];
-  }
-
-  const digitsOnly = String(value).replace(/\D/g, '');
-  return digitsOnly;
-};
-
-const sanitizeUploadedInfoPhones = uploadedInfo => {
-  if (!uploadedInfo || typeof uploadedInfo !== 'object') return uploadedInfo;
-  if (!Object.prototype.hasOwnProperty.call(uploadedInfo, 'phone')) return uploadedInfo;
-
-  const normalizedPhone = normalizePhoneForStorage(uploadedInfo.phone);
-  return {
-    ...uploadedInfo,
-    phone: normalizedPhone,
-  };
-};
-
 const normalizeIndexedValues = value => Array.isArray(value)
   ? value.filter(Boolean)
   : value && typeof value === 'object'
@@ -4389,48 +4367,13 @@ const throwProfileWriteFailure = (userId, targets) => {
 // Comparison transfers one field, not an outdated snapshot of the whole card.
 // Read its canonical path after an acknowledged write; a partial profile write
 // or a swallowed projection error must never produce a success toast.
-export const saveComparisonField = async (userId, field, value) => {
-  const ownerId = auth.currentUser?.uid;
-  if (!ownerId || !userId) throw new Error('Користувач або картка не визначені');
-  const canonical = resolveCanonicalFieldName(field);
-  let path;
-  const payload = normalizeStoredDates(sanitizeUploadedInfoPhones({ [canonical]: value }));
-  let savedValue = payload[canonical];
-  if (field === 'writer' || field === 'getInTouch') {
-    path = `multiData/${field}/${ownerId}/${userId}`;
-    const saved = field === 'writer'
-      ? await setOwnerWriter(ownerId, userId, savedValue)
-      : await setOwnerGetInTouch(ownerId, userId, savedValue);
-    if (!saved) throw new Error('Позначку не збережено');
-  } else {
-    const node = resolveFieldOwnerNode(field);
-    if (!node) throw new Error(`Поле ${field} не підтримує перенесення`);
-    path = `${node}/${userId}/${canonical}`;
-    if (node === PROFILE_NODES.matchingCards) {
-      savedValue = buildMatchingCardProjection(userId, payload)?.[canonical];
-      if (savedValue === undefined) throw new Error(`Некоректне значення ${field}`);
-    }
-    // In particular, height and weight live only in matchingCards. The generic
-    // node writer excludes that node and its projection refresh is best-effort.
-    const previous = (await readProfileFromNodes(userId, { includeTechnical: true })) || {};
-    const lastAction = Date.now();
-    await set(ref2(database, path), savedValue);
-    await set(ref2(database, `${PROFILE_NODES.profileWorkflow}/${userId}/lastAction`), lastAction);
-    const changed = { [canonical]: savedValue, lastAction };
-    const next = { ...previous, ...changed };
-    await syncUserSearchIdIndex(userId, previous, next);
-    await syncUserSearchKeyIndex(userId, previous, next);
-    if (node !== PROFILE_NODES.matchingCards) {
-      await refreshMatchingCardAfterProfileWrite(userId, changed, 'update');
-    }
-    const legacyWritten = await mirrorProfileToLegacyUsers(userId, changed, 'update');
-    if (legacyWritten) await updateDataInFiresoreDB(userId, changed, 'check');
-  }
-  const snapshot = await get(ref2(database, path));
-  if (!snapshot.exists()) throw new Error(`Не підтверджено збереження ${field}`);
-  clearMatchingSearchResultCache();
-  return snapshot.val();
-};
+export const saveComparisonField = async (userId, field, value) => createSaveComparisonField({
+  auth, database, resolveCanonicalFieldName, resolveFieldOwnerNode, PROFILE_NODES,
+  buildMatchingCardProjection, normalizeStoredDates, sanitizeUploadedInfoPhones, ref2, set, get,
+  readProfileFromNodes, syncUserSearchIdIndex, syncUserSearchKeyIndex,
+  refreshMatchingCardAfterProfileWrite, mirrorProfileToLegacyUsers, updateDataInFiresoreDB,
+  clearMatchingSearchResultCache, setOwnerWriter, setOwnerGetInTouch,
+})(userId, field, value);
 
 export const updateProfileRole = async (userId, nextRole) => {
   const id = String(userId || '').trim();
@@ -9232,36 +9175,7 @@ export const mergeDuplicateUsers = async () => {
       ...((await readProfileFromNodes(userId, { includeTechnical: true })) || {}),
     });
 
-    const mergeValues = (key, currentVal, nextVal) => {
-      const normalize = value => String(value).replace(/\s+/g, '').trim();
-
-      const toArray = value => {
-        if (!value) return [];
-        if (Array.isArray(value)) return value.map(normalize).filter(item => item !== ''); // Якщо вже масив – очищаємо
-        return String(value)
-          .split(/[,;]/) // Розбиваємо значення за `,` або `;`
-          .map(item => normalize(item))
-          .filter(item => item !== '');
-      };
-
-      const currentArray = toArray(currentVal).flatMap(toArray);
-      const nextArray = toArray(nextVal).flatMap(toArray);
-
-      const seen = new Set();
-      const uniqueValues = [...currentArray, ...nextArray].filter(val => {
-        const normalizedVal = val.trim();
-        if (seen.has(normalizedVal)) {
-          return false;
-        }
-        seen.add(normalizedVal);
-        return true;
-      });
-
-      const scalarWorkflowFields = new Set(['cycleStatus', 'lastCycle']);
-      return scalarWorkflowFields.has(key)
-        ? uniqueValues[0]
-        : uniqueValues;
-    };
+    const mergeValues = mergeDuplicateProfileValues;
 
     const delKeys = [
       'photos',

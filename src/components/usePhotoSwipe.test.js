@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import usePhotoSwipe from './usePhotoSwipe';
 
 const Harness = ({ photos, complete, onRequestPhotos, onParentTouch, onParentClick }) => {
@@ -40,17 +40,15 @@ describe('usePhotoSwipe', () => {
     expect(onParentTouch).not.toHaveBeenCalled();
     expect(onParentClick).not.toHaveBeenCalled();
 
-    act(() => {
-      rerender(
-        <Harness
-          photos={['avatar', 'second', 'third']}
-          complete
-          onRequestPhotos={onRequestPhotos}
-          onParentTouch={onParentTouch}
-          onParentClick={onParentClick}
-        />,
-      );
-    });
+    rerender(
+      <Harness
+        photos={['avatar', 'second', 'third']}
+        complete
+        onRequestPhotos={onRequestPhotos}
+        onParentTouch={onParentTouch}
+        onParentClick={onParentClick}
+      />,
+    );
     expect(screen.getByTestId('photo').textContent).toBe('second');
     expect(screen.getByTestId('count').textContent).toBe('2/3');
 

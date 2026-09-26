@@ -1,20 +1,14 @@
-import fs from 'fs';
-import path from 'path';
+import { createSaveComparisonField } from '../utils/comparisonFieldAdapter';
+import { mergeDuplicateProfileValues, sanitizeUploadedInfoPhones } from '../utils/profileValueNormalization';
 import { buildMatchingCardProjection } from '../utils/matchingCardIndex';
 import { PROFILE_NODES, resolveFieldOwnerNode, resolveCanonicalFieldName } from '../utils/profileNodeSchema';
-
-// Exercise the actual backend adapter with an isolated RTDB boundary.
-const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
-const body = source.slice(source.indexOf('export const saveComparisonField'), source.indexOf('export const updateProfileRole'))
-  .replace('export const saveComparisonField =', 'return');
-const sanitizePhones = new Function(`${source.slice(source.indexOf('const normalizePhoneForStorage ='), source.indexOf('const normalizeIndexedValues ='))}\nreturn sanitizeUploadedInfoPhones;`)();
 
 const setup = () => {
   const db = { 'matchingCards/B/height': ['160'], 'matchingCards/B/weight': ['50'] };
   const deps = {
     auth: { currentUser: { uid: 'admin' } }, database: {},
     resolveCanonicalFieldName, resolveFieldOwnerNode, PROFILE_NODES, buildMatchingCardProjection,
-    normalizeStoredDates: value => value, sanitizeUploadedInfoPhones: sanitizePhones,
+    normalizeStoredDates: value => value, sanitizeUploadedInfoPhones,
     ref2: (_, address) => address,
     set: jest.fn(async (address, value) => { db[address] = value; }),
     get: jest.fn(async address => ({ exists: () => address in db, val: () => db[address] })),
@@ -24,7 +18,7 @@ const setup = () => {
     updateDataInFiresoreDB: jest.fn(),
     clearMatchingSearchResultCache: jest.fn(), setOwnerWriter: jest.fn(), setOwnerGetInTouch: jest.fn(),
   };
-  return { db, deps, save: new Function(...Object.keys(deps), body)(...Object.values(deps)) };
+  return { db, deps, save: createSaveComparisonField(deps) };
 };
 
 it.each(['height', 'weight'])('writes %s to its canonical node and confirms it by reading', async field => {
@@ -86,12 +80,9 @@ it('stores each phone once even when formatting differs between cards', async ()
 });
 
 it('bulk duplicate merging also returns a unique array for a single value', () => {
-  const start = source.indexOf('    const mergeValues =', source.indexOf('export const mergeDuplicateUsers'));
-  const mergeSource = source.slice(start, source.indexOf('    const delKeys =', start));
-  const merge = new Function(`${mergeSource}\nreturn mergeValues;`)();
-  expect(merge('phone', '123', ['123', '123'])).toEqual(['123']);
-  expect(merge('phone', null, ['123', '123'])).toEqual(['123']);
-  expect(merge('cycleStatus', 'pregnant', 'pregnant')).toBe('pregnant');
-  expect(merge('lastCycle', null, '2026-08-01')).toBe('2026-08-01');
-  expect(merge('cycleStatus', 'pregnant', 'stimulation')).toBe('pregnant');
+  expect(mergeDuplicateProfileValues('phone', '123', ['123', '123'])).toEqual(['123']);
+  expect(mergeDuplicateProfileValues('phone', null, ['123', '123'])).toEqual(['123']);
+  expect(mergeDuplicateProfileValues('cycleStatus', 'pregnant', 'pregnant')).toBe('pregnant');
+  expect(mergeDuplicateProfileValues('lastCycle', null, '2026-08-01')).toBe('2026-08-01');
+  expect(mergeDuplicateProfileValues('cycleStatus', 'pregnant', 'stimulation')).toBe('pregnant');
 });
