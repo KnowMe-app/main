@@ -33,8 +33,13 @@ const mockDatabase = {
     MERGED: { c2: review('подала  рік назад анкету'), c3: review('Без копії') },
     LONELY: { c4: review('Єдиний запис') },
     DRAFT: { c5: review('Подала рік назад анкету') },
+    // Копію на KATE виправили після злиття; SIBLING — інший відгук того самого
+    // автора з тією самою міткою партії й схожим початком.
+    EDITED: { c6: review('отказалась после обследования от программы сказала что ей ездить слишком много и\nДо ЛИШ о') },
+    KATE: { c7: { ...review('отказалась после обследования от программы сказала что ей ездить слишком много и долго'), updatedAt: 2 } },
+    SIBLING: { c8: review('отказалась после обследования участвовать в прогамме, потому что работает') },
   },
-  matchingCards: { LIVE: { name: 'Кристина' } },
+  matchingCards: { LIVE: { name: 'Кристина' }, KATE: { name: 'Катерина' } },
   'multiData/profileMutationOwners/DRAFT': 'author-uid',
 };
 
@@ -72,13 +77,34 @@ describe('backfillMatchingCardPublicReviewFlags orphan step', () => {
     const report = await backfillMatchingCardPublicReviewFlags();
 
     const commentWrites = update.mock.calls.filter(([path]) => path === 'comments');
-    expect(commentWrites).toEqual([[ 'comments', { 'MERGED/c2': null } ]]);
-    expect(report.orphansRemoved).toEqual([{ profileId: 'MERGED', count: 1, movedTo: ['LIVE'] }]);
+    expect(commentWrites).toEqual([
+      ['comments', { 'MERGED/c2': null }],
+      ['comments', { 'EDITED/c6': null }],
+    ]);
+    expect(report.orphansRemoved).toEqual([
+      { profileId: 'MERGED', count: 1, movedTo: ['LIVE'] },
+      { profileId: 'EDITED', count: 1, movedTo: ['KATE'] },
+    ]);
     expect(report.orphansKept).toEqual(expect.arrayContaining([
       { profileId: 'MERGED', reason: 'noCopy', count: 1 },
       { profileId: 'LONELY', reason: 'noCopy', count: 1 },
       { profileId: 'DRAFT', reason: 'profileExists' },
+      { profileId: 'SIBLING', reason: 'noCopy', count: 1 },
     ]));
-    expect(report.written).toEqual(['LIVE']);
+    expect(report.written).toEqual(['LIVE', 'KATE']);
+  });
+});
+
+describe('isEditedCopyOfOrphanComment', () => {
+  const { isEditedCopyOfOrphanComment } = require('./config');
+  const orphan = review('отказалась после обследования от программы сказала что ей ездить слишком много и\nДо ЛИШ о');
+
+  it('does not treat a batch-mate with the same author and timestamp as a copy', () => {
+    expect(isEditedCopyOfOrphanComment(orphan, review('отказалась после обследования участвовать в прогамме'))).toBe(false);
+  });
+
+  it('requires the same createdAt', () => {
+    const copy = { ...review('отказалась после обследования от программы сказала что ей ездить слишком много и долго'), createdAt: 5 };
+    expect(isEditedCopyOfOrphanComment(orphan, copy)).toBe(false);
   });
 });
