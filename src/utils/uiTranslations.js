@@ -202,6 +202,7 @@ const EN_BY_UK = {
   'До загального списку': 'Back to the whole list',
   'Показати обране': 'Show the favourites',
   Приховані: 'Hidden',
+  Обране: 'Favourites',
   'Показати приховані': 'Show the hidden ones',
   'Активно змінено груп: {count}': 'Groups changed: {count}',
   'Всі профілі показані за поточними правилами доступу': 'Every profile is shown under the current access rules',

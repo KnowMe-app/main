@@ -31,8 +31,8 @@ describe('Matching: власні чернетки у видачі пошуку',
   it('ставить збіглі чернетки у видачу, а всю їх пачку лишає самій деці', () => {
     expect(source).toContain("users: viewMode === 'search'\n      ? [...personalDraftSearchMatches, ...users]");
     // Дека за замовчуванням і далі бере всю пачку власних чернеток — але лише
-    // після першого вікна публічних карток.
-    expect(source).toContain('      : [...(initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS), ...users],');
+    // після першого вікна публічних карток, і ставить кожну за її датою.
+    expect(source).toContain('      : placeOwnDraftsInFeed({\n        drafts: initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS,');
   });
 
   it('збігом вважає те саме, що й пошук: значення поля, яке розпізнав рядок', () => {

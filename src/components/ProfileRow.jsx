@@ -993,9 +993,12 @@ export const enrichGateLabel = language => uiText('Доповнити дані',
  * кожен рядок списку коштував би сторінку читань заради блока, під яким у
  * більшості анкет порожньо; прапорець і тримає цю ціну малою.
  */
-export const ProfileNotes = ({ language, publicSlot, privateSlot, reviewsStatus }) => (
+export const ProfileNotes = ({ language, publicSlot, privateSlot, reviewsStatus, hasReviews = false }) => (
   <S.RowNotes onClick={e => e.stopPropagation()}>
-    <NoteLane $public>
+    {/* `hasReviews` — прочитані відгуки, а не прапорець проєкції: прапорець
+        лишається й після того, як останній відгук зняли, і червона смужка
+        тоді обіцяла б те, чого під нею вже немає. */}
+    <NoteLane $public $reviewed={hasReviews} data-testid="public-note-lane" data-reviewed={hasReviews ? 'true' : undefined}>
       <NoteLaneHead>
         <b>{profileUiText('publicComment', language)}</b>
       </NoteLaneHead>
@@ -1325,17 +1328,6 @@ const ProfileRow = ({
               </S.RowActionButton>
             )}
           </S.RowActionStack>
-          {canExpandDetails && (
-          <S.ChevronButton
-            type="button"
-            $open={expanded}
-            aria-label={uiText('Показати всі дані', language)}
-            title={uiText('Показати всі дані', language)}
-            onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
-          >
-            <FaChevronDown size={11} />
-          </S.ChevronButton>
-          )}
         </S.Ctrl>
       </S.Top>
 
@@ -1426,6 +1418,7 @@ const ProfileRow = ({
       <ProfileNotes
         language={language}
         publicSlot={reviewsSlot}
+        hasReviews={(reviewsAction?.count || 0) > 0}
         reviewsStatus={describeReviewsState({
           requested: hasPublicReview,
           loading: Boolean(reviewsAction?.loading),
@@ -1457,9 +1450,11 @@ const ProfileRow = ({
           праворуч звільнилось не тому, що відгуки стали не потрібні: читання
           починає сам ефект стрічки, щойно в проєкції картки стоїть прапорець
           `hasPublicReview` (`Matching.jsx`), а натискати вже нема що. Замість
-          нього — та сама дія, що й у стрілки біля контактів (`onToggleExpand`):
-          другий, звичніший шлях розгорнути «всі дані» рядка, не сягаючи по
-          нього під фото.
+          нього — розгортання «всіх даних» рядка (`onToggleExpand`).
+
+          Стрілка стояла ще й угорі, під трубкою контактів, — і вела туди ж.
+          Дві однакові стрілки в одній картці читались як дві різні дії, тож
+          лишилась одна: тут, де читач і так тримає палець.
 
           Підписів у ряду немає: ці кнопки раніше були широкими рядками з
           написами («Доповнити дані», «Перевірити наявність відгуків»), і
@@ -1512,10 +1507,8 @@ const ProfileRow = ({
               type="button"
               $on={expanded}
               aria-expanded={expanded}
-              // Та сама дія, що й стрілка біля контактів (`onToggleExpand`), але
-              // з іншим підписом: «Показати всі дані» на двох кнопках картки
-              // заплутало б і людину, і скрінрідер — обидві звучали б однаково,
-              // хоч друга й стоїть окремим жестом у ряду рішень.
+              // Стрілка в картці одна — ця; розгорнутий стан показує поворот.
+              $turn={expanded}
               title={uiText('Розгорнути анкету', language)}
               aria-label={uiText('Розгорнути анкету', language)}
               onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
