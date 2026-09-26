@@ -4888,6 +4888,24 @@ const ORPHAN_COMMENT_LIVENESS_PATHS = [
 
 const normalizeOrphanCommentText = text => String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
+// Частка тексту сироти, яку мусить покрити спільний початок з копією. Правка
+// після злиття чіпає хвіст (обрізаний рядок, сміття розпізнавання), а схожі
+// відгуки одного автора сходяться лише першими словами («отказалась после
+// обследования…» — 30 знаків із сотні).
+const ORPHAN_COPY_MIN_PREFIX_SHARE = 0.8;
+
+export const isEditedCopyOfOrphanComment = (orphan, candidate) => {
+  if (!orphan || !candidate) return false;
+  if (!orphan.authorId || orphan.authorId !== candidate.authorId) return false;
+  if (typeof orphan.createdAt !== 'number' || orphan.createdAt !== candidate.createdAt) return false;
+  const a = normalizeOrphanCommentText(orphan.text);
+  const b = normalizeOrphanCommentText(candidate.text);
+  if (!a || !b) return false;
+  let prefix = 0;
+  while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix += 1;
+  return prefix / a.length >= ORPHAN_COPY_MIN_PREFIX_SHARE;
+};
+
 /**
  * Крок прогону «Публічні коментарі»: відгуки під картками, яких уже немає.
  *
@@ -4896,20 +4914,33 @@ const normalizeOrphanCommentText = text => String(text || '').replace(/\s+/g, ' 
  * під id видаленого дубля. Знімається лише той відгук, чий текст лежить під
  * **живою** карткою (є в `matchingCards`): тоді він не пропадає, а лишається
  * там, куди його перенесли. Відгук без копії лишається на місці й іде у звіт —
- * інакше прибирання загубило б єдиний запис. Так само лишається все під id,
+ * інакше прибирання загубило б єдиний запис.
+ *
+ * Копію впізнає або той самий текст, або **виправлений** текст
+ * (`isEditedCopyOfOrphanComment`): після злиття копію правлять — так сміття
+ * розпізнавання «До ЛИШ о» у відгуку `TG0067` стало «долго», — і звірка за
+ * текстом вважала б оригінал єдиним записом назавжди. Самих лише автора й
+ * `createdAt` для цього мало: перенос TG-нотаток ставив одну мітку цілій партії,
+ * і в одного автора вона стоїть на вісьмох різних відгуках про різних людей.
+ * Тож до них додано спільний початок тексту, що покриває більшу частину
+ * оригіналу. Так само лишається все під id,
  * у якого є хоч один вузол анкети чи чернетка: відсутня картка стрічки ще не
  * означає видалену анкету, а перевірку, яка впала, за «немає» не вважаємо.
  */
 const purgeOrphanedPublicComments = async (commentsByProfile, cards, orphanIds, report) => {
   if (!orphanIds.length) return;
   const liveProfilesByText = new Map();
+  const liveComments = [];
   Object.entries(commentsByProfile).forEach(([profileId, comments]) => {
     if (!cards[profileId] || !comments || typeof comments !== 'object') return;
     Object.values(comments).forEach(comment => {
       const key = normalizeOrphanCommentText(comment?.text);
       if (key) liveProfilesByText.set(key, profileId);
+      liveComments.push({ profileId, comment });
     });
   });
+  const findLivingCopy = comment => liveProfilesByText.get(normalizeOrphanCommentText(comment?.text))
+    || liveComments.find(entry => isEditedCopyOfOrphanComment(comment, entry.comment))?.profileId;
 
   for (const profileId of orphanIds) {
     // eslint-disable-next-line no-await-in-loop
@@ -4929,7 +4960,7 @@ const purgeOrphanedPublicComments = async (commentsByProfile, cards, orphanIds, 
     const movedTo = new Set();
     let withoutCopy = 0;
     Object.entries(commentsByProfile[profileId] || {}).forEach(([commentId, comment]) => {
-      const livingProfileId = liveProfilesByText.get(normalizeOrphanCommentText(comment?.text));
+      const livingProfileId = findLivingCopy(comment);
       if (!livingProfileId) {
         withoutCopy += 1;
         return;
