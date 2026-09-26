@@ -671,6 +671,23 @@ const changeProposalValues = change => {
     .filter(Boolean));
 };
 
+// Та сама зміна без розсуджених значень — або `null`, коли пропонувати в ній
+// більше нічого. Заміна (`from`/`to`) несе одне значення, тож від неї
+// лишитись нічого не може; масив — може.
+const withoutSettledValues = (change, settledValues) => {
+  if (!isPlainObject(change) || 'from' in change || 'to' in change) return null;
+  const keep = values => uniq(normalizeArray(values)
+    .map(value => String(value ?? '').trim())
+    .filter(value => value && !settledValues.has(value)));
+  const added = keep(change.added ?? change.add);
+  const removed = keep(change.removed);
+  if (!added.length && !removed.length) return null;
+  return {
+    ...(added.length ? { added } : {}),
+    ...(removed.length ? { removed } : {}),
+  };
+};
+
 // A settled edit must leave nothing behind: once a value has been saved into
 // the card or thrown away, the journal entries that only described that value
 // are deleted too, so the review queue never grows a tail of memos about work
@@ -695,11 +712,23 @@ export const purgeOverlayHistoryEntries = async ({ cardUserId, editorUserId, fie
       if (settledValues.size && entryValues.length && !entryValues.some(value => settledValues.has(value))) return acc;
 
       acc[entryId] = null;
+      // Один запис журналу — це одне збереження поля, і несе він усе, що в
+      // тому збереженні було: `{ added: [A, B] }`. Розсудили лише A — а B
+      // мусить лишитись, інакше він зникає з «попередніх версій» разом із
+      // чужим рішенням. Частково переписати запис правила не дають (його
+      // можна лише створити й видалити), тож старий знімається, а замість
+      // нього пишеться новий — із рештою значень, тим самим автором і часом.
+      const remainingChange = settledValues.size ? withoutSettledValues(entry.change, settledValues) : null;
+      if (remainingChange) {
+        const key = push(historyRef).key;
+        if (key) acc[key] = { ...entry, change: remainingChange };
+      }
       return acc;
     }, {});
 
     if (Object.keys(updates).length) await update(historyRef, updates);
-    return Object.keys(updates).length;
+    // Лічильник — знятих записів; переписані замість них сюди не входять.
+    return Object.values(updates).filter(value => value === null).length;
   } catch (error) {
     console.warn('[multiAccountEdits] failed to purge overlay history', error);
     return 0;

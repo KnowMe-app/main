@@ -157,3 +157,86 @@ describe('шар, який дублює картку', () => {
     expect(remove).not.toHaveBeenCalled();
   });
 });
+
+describe('запис журналу з кількома значеннями', () => {
+  // Одне збереження дописало A і B, друге поправило B на C.
+  const MULTI_HISTORY = {
+    m1: {
+      cardUserId: 'card-1', editorUserId: 'editorA', action: 'edit', fieldName: 'phone',
+      change: { added: ['380500000001', '380500000002'] }, at: 100,
+    },
+    m2: {
+      cardUserId: 'card-1', editorUserId: 'editorA', action: 'edit', fieldName: 'phone',
+      change: { added: ['380500000001', '380500000003'] }, at: 200,
+    },
+  };
+  const MULTI_OVERLAY = {
+    editorA: {
+      updatedAt: 200,
+      cardUserId: 'card-1',
+      editorUserId: 'editorA',
+      fields: { phone: { added: ['380500000001', '380500000003'] } },
+    },
+  };
+
+  beforeEach(() => {
+    let counter = 0;
+    push.mockImplementation(() => ({ key: `rewritten-${(counter += 1)}` }));
+    runTransaction.mockImplementation(async (refObject, updater) => {
+      updater(MULTI_OVERLAY.editorA);
+      return { committed: true };
+    });
+    mockReads({ overlays: MULTI_OVERLAY, history: MULTI_HISTORY });
+  });
+
+  it('рішення про A переписує записи з рештою значень, а не зносить їх', async () => {
+    await settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380500000001',
+      action: 'accept',
+    });
+
+    const historyUpdate = update.mock.calls.find(([target]) => target.path === 'multiData/editsHistory/card-1');
+    expect(historyUpdate[1]).toEqual({
+      m1: null,
+      'rewritten-1': expect.objectContaining({
+        editorUserId: 'editorA', action: 'edit', fieldName: 'phone', at: 100,
+        change: { added: ['380500000002'] },
+      }),
+      m2: null,
+      'rewritten-2': expect.objectContaining({
+        at: 200,
+        change: { added: ['380500000003'] },
+      }),
+    });
+
+    // B лишається попередньою версією, поки C — поточна пропозиція.
+    const remainingHistory = Object.values(historyUpdate[1]).filter(Boolean);
+    const entries = buildSupersededOverlayEntries({
+      historyEntries: remainingHistory,
+      overlaysByEditor: { editorA: { ...MULTI_OVERLAY.editorA, fields: { phone: { added: ['380500000003'] } } } },
+      canonical: { userId: 'card-1', phone: ['380500000001'] },
+    });
+    expect(entries.phone.map(entry => entry.value)).toEqual(['380500000002']);
+  });
+
+  it('запис, у якому нічого не лишилось, зноситься цілком', async () => {
+    mockReads({
+      overlays: MULTI_OVERLAY,
+      history: { solo: { ...MULTI_HISTORY.m1, change: { added: ['380500000001'] } } },
+    });
+
+    await settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380500000001',
+      action: 'discard',
+    });
+
+    const historyUpdate = update.mock.calls.find(([target]) => target.path === 'multiData/editsHistory/card-1');
+    expect(historyUpdate[1]).toEqual({ solo: null });
+  });
+});
