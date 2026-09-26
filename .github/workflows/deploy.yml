@@ -18,7 +18,7 @@ jobs:
     # workflow_dispatch дозволяє вибрати будь-яку гілку, тому окремо захищаємо
     # продакшн-деплой від ручного запуску коду, який ще не потрапив у main.
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout 🛎️
         uses: actions/checkout@v7

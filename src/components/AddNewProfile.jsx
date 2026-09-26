@@ -97,6 +97,7 @@ import { readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 // хто ці стрілки показує, — див. `utils/backendLinksMode`.
 import { PROFILE_FORM_EXTENDED_MODE_KEY, readBackendLinksEnabled } from 'utils/backendLinksMode';
 import { normalizePhoneState } from './inputValidations';
+import { openComparedCard as openComparedCardNavigation, restoreComparedCard } from './comparedCardNavigation';
 import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import InfoModal, { ModalTitle, ModalText, ModalActionRow, ModalDangerButton, ModalGhostButton } from './InfoModal';
 
@@ -3874,30 +3875,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const [compare, setCompare] = useState('');
-  const openComparedCard = async (userId, refresh) => {
-    const user = await fetchUserById(userId);
-    if (!user) {
-      toast.error('Не вдалося завантажити анкету');
-      return;
-    }
-    comparisonReturnRef.current = { key: location.key, search, refresh };
-    const params = new URLSearchParams(location.search);
-    params.set('userId', userId);
-    if (search) params.set('search', search);
-    setState(user);
-    setShowInfoModal(false);
-    navigate({ pathname: location.pathname, search: `?${params.toString()}` });
-  };
+  const openComparedCard = (userId, refresh) => openComparedCardNavigation({
+    userId, refresh, fetchUserById, toast, comparisonReturnRef, location,
+    search, setState, setShowInfoModal, navigate,
+  });
 
-  useEffect(() => {
-    const previous = comparisonReturnRef.current;
-    if (!previous || previous.key !== location.key) return;
-    setState({});
-    setSearch(previous.search);
-    setShowInfoModal('compareCards');
-    comparisonReturnRef.current = null;
-    previous.refresh?.().catch(error => toast.error(`Не вдалося оновити порівняння: ${error?.message || error}`));
-  }, [location.key, setState, setSearch]);
+  useEffect(() => restoreComparedCard({
+    comparisonReturnRef, location, setState, setSearch, setShowInfoModal, toast,
+  }), [location, setState, setSearch]);
   const [moreActionsState, setMoreActionsState] = useState({
     user: null,
     cards: [],
