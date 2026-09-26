@@ -4862,54 +4862,105 @@ export const removeMatchingCardIndex = async userId => {
  * нього мовчить: рядок стрічки не показує вже написаний відгук, доки хтось не
  * торкнеться цього коментаря знову. Ця функція наздоганяє різницю один раз —
  * той самий прийом, що й у `backfillProfileDraftOwners`.
+ *
+ * Повертає **звіт**, а не число. Число тут уже збрехало: будь-яка відмова
+ * читання давала `0`, а тост читав нуль як «усі картки вже мають прапорець» —
+ * тобто прогін, який не записав нічого, звітував про повний успіх, і в
+ * `matchingCards` не лежало жодного прапорця на двісті карток з відгуками.
+ * Звіт розводить «нема чого писати» і «не вдалося» і називає причину та
+ * картки — його показує `describePublicReviewFlagBackfill`.
  */
+const describeBackfillError = (error, node) => ({
+  ...(node ? { node } : {}),
+  message: error?.message || String(error),
+  permissionDenied: isSearchIdPermissionDenied(error),
+});
+
 export const backfillMatchingCardPublicReviewFlags = async () => {
+  const report = {
+    readError: null,
+    profilesWithComments: 0,
+    alreadyFlagged: 0,
+    missingCardIds: [],
+    written: [],
+    failed: [],
+    batchError: null,
+  };
+
   let commentsByProfile = null;
   try {
     const snapshot = await get(ref2(database, PUBLIC_COMMENTS_ROOT_PATH));
     commentsByProfile = snapshot.exists() ? snapshot.val() : null;
   } catch (error) {
     console.warn('[matchingCards] відгуки не прочитано, прапорець не дописано', error);
-    return 0;
+    report.readError = describeBackfillError(error, PUBLIC_COMMENTS_ROOT_PATH);
+    return report;
   }
-  if (!commentsByProfile) return 0;
+  if (!commentsByProfile) return report;
 
+  // Без карток прогін не пише нічого: «навмання» тут означало б мовчки
+  // пропустити всі картки (`!cards[profileId]`) і відзвітувати нулем.
   let cards = {};
   try {
     const snapshot = await get(ref2(database, MATCHING_CARDS_ROOT));
     cards = snapshot.exists() ? snapshot.val() || {} : {};
   } catch (error) {
-    console.warn('[matchingCards] картки стрічки не прочитано, дописуємо навмання', error);
+    console.warn('[matchingCards] картки стрічки не прочитано, прапорець не дописано', error);
+    report.readError = describeBackfillError(error, MATCHING_CARDS_ROOT);
+    return report;
   }
 
-  const updates = {};
+  const candidates = [];
   Object.entries(commentsByProfile).forEach(([profileId, comments]) => {
     if (!profileId || !comments || typeof comments !== 'object' || !Object.keys(comments).length) return;
+    report.profilesWithComments += 1;
     // Картки без проєкції нема куди дописувати: писач коментаря створить її
     // сам, тим самим атомарним записом, щойно про неї напишуть знову.
-    if (!cards[profileId] || cards[profileId][MATCHING_CARD_REVIEW_FLAG_FIELD] === true) return;
-    updates[`${profileId}/${MATCHING_CARD_REVIEW_FLAG_FIELD}`] = true;
+    if (!cards[profileId]) {
+      report.missingCardIds.push(profileId);
+      return;
+    }
+    if (cards[profileId][MATCHING_CARD_REVIEW_FLAG_FIELD] === true) {
+      report.alreadyFlagged += 1;
+      return;
+    }
+    candidates.push(profileId);
   });
 
-  const paths = Object.keys(updates);
-  if (!paths.length) return 0;
+  if (!candidates.length) return report;
+  const updates = candidates.reduce((acc, profileId) => {
+    acc[`${profileId}/${MATCHING_CARD_REVIEW_FLAG_FIELD}`] = true;
+    return acc;
+  }, {});
   try {
     await update(ref2(database, MATCHING_CARDS_ROOT), updates);
-    return paths.length;
+    report.written = candidates;
+    return report;
   } catch (error) {
     // Багатошляховий запис атомарний: одна картка, яку правило відхилило
     // (`$uid.validate` — картка без жодного вузла анкети), валила весь прогін.
     // Дописуємо поштучно, щоб решта карток таки отримала прапорець.
     console.warn('[matchingCards] пакетний запис прапорця відхилено, пишемо поштучно', error);
+    report.batchError = describeBackfillError(error);
   }
   const results = await Promise.allSettled(
-    paths.map(path => set(ref2(database, `${MATCHING_CARDS_ROOT}/${path}`), true)),
+    candidates.map(profileId => set(
+      ref2(database, `${MATCHING_CARDS_ROOT}/${profileId}/${MATCHING_CARD_REVIEW_FLAG_FIELD}`),
+      true,
+    )),
   );
-  const failed = paths.filter((_, index) => results[index].status === 'rejected');
-  if (failed.length) {
-    console.warn('[matchingCards] прапорець відгуків не дописано карткам', failed);
+  results.forEach((result, index) => {
+    const profileId = candidates[index];
+    if (result.status === 'fulfilled') {
+      report.written.push(profileId);
+      return;
+    }
+    report.failed.push({ profileId, ...describeBackfillError(result.reason) });
+  });
+  if (report.failed.length) {
+    console.warn('[matchingCards] прапорець відгуків не дописано карткам', report.failed);
   }
-  return paths.length - failed.length;
+  return report;
 };
 
 /**

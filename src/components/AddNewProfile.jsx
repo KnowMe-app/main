@@ -96,6 +96,7 @@ import { readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 // Batch 26 §8: тумблер стрілок «перейти до вузла в Firebase». Ключ спільний з тими,
 // хто ці стрілки показує, — див. `utils/backendLinksMode`.
 import { PROFILE_FORM_EXTENDED_MODE_KEY, readBackendLinksEnabled } from 'utils/backendLinksMode';
+import { describePublicReviewFlagBackfill } from 'utils/publicReviewFlagBackfillReport';
 import { normalizePhoneState } from './inputValidations';
 import { openComparedCard as openComparedCardNavigation, restoreComparedCard } from './comparedCardNavigation';
 import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
@@ -6662,13 +6663,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (selectedIndexJobs.matchingCardPublicComments) {
         const toastId = 'index-matching-card-public-comments-progress';
         toast.loading('Дописуємо hasPublicReview за наявними відгуками...', { id: toastId });
-        const written = await backfillMatchingCardPublicReviewFlags();
-        toast.success(
-          written
-            ? `Прапорець дописано карткам: ${written}`
-            : 'Усі картки з відгуками вже мають прапорець',
-          { id: toastId },
-        );
+        const report = await backfillMatchingCardPublicReviewFlags();
+        const { tone, message } = describePublicReviewFlagBackfill(report);
+        if (tone === 'error') {
+          console.error('[AddNewProfile] hasPublicReview backfill failures', report);
+          toast.error(message, { id: toastId, duration: 20000 });
+        } else {
+          toast.success(message, { id: toastId, duration: 10000 });
+        }
       }
 
       if (selectedIndexJobs.searchLocalIdAndKey) {
