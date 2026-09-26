@@ -175,9 +175,9 @@ const MatchingHiddenList = ({
   const rows = useMemo(() => users
     .filter(user => user?.userId)
     .map(user => {
+      if (!Object.prototype.hasOwnProperty.call(photosByUserId, user.userId)) return user;
       const photoOverride = photosByUserId[user.userId];
-      if (!photoOverride || !photoOverride.length) return user;
-      return { ...user, photos: photoOverride };
+      return { ...user, photos: photoOverride, __allPhotosLoaded: true };
     }),
   [users, photosByUserId]);
 

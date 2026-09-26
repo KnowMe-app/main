@@ -693,7 +693,13 @@ const withoutSettledValues = (change, settledValues) => {
 // are deleted too, so the review queue never grows a tail of memos about work
 // that is already done. Entries with no values of their own (`discarded`
 // markers) are always dropped - they are pure bookkeeping.
-export const purgeOverlayHistoryEntries = async ({ cardUserId, editorUserId, fieldName, values = [] }) => {
+export const purgeOverlayHistoryEntries = async ({
+  cardUserId,
+  editorUserId,
+  fieldName,
+  values = [],
+  throwOnError = false,
+}) => {
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId || !fieldName) return 0;
 
@@ -731,6 +737,7 @@ export const purgeOverlayHistoryEntries = async ({ cardUserId, editorUserId, fie
     return Object.values(updates).filter(value => value === null).length;
   } catch (error) {
     console.warn('[multiAccountEdits] failed to purge overlay history', error);
+    if (throwOnError) throw error;
     return 0;
   }
 };
@@ -1139,6 +1146,7 @@ export const settleOverlayValueForCard = async ({
     editorUserId,
     fieldName,
     values: changeProposalValues(settledChange),
+    throwOnError: true,
   });
 
   if (action === 'accept') {
@@ -1205,9 +1213,20 @@ const proposedChangeValues = change => {
   if (!isPlainObject(change)) return [];
   if ('to' in change || 'from' in change) {
     const to = String(change.to ?? '').trim();
-    return to ? [to] : [];
+    const from = String(change.from ?? '').trim();
+    return to
+      ? [{ value: to, isDeleted: false }]
+      : (from ? [{ value: from, isDeleted: true }] : []);
   }
-  return uniq(normalizeArray(change.added ?? change.add).map(value => String(value ?? '').trim()).filter(Boolean));
+  const additions = uniq(normalizeArray(change.added ?? change.add)
+    .map(value => String(value ?? '').trim())
+    .filter(Boolean))
+    .map(value => ({ value, isDeleted: false }));
+  const removals = uniq(normalizeArray(change.removed)
+    .map(value => String(value ?? '').trim())
+    .filter(Boolean))
+    .map(value => ({ value, isDeleted: true }));
+  return [...additions, ...removals];
 };
 
 /**
@@ -1232,12 +1251,9 @@ export const buildSupersededOverlayEntries = ({ historyEntries = [], overlaysByE
     Object.entries(normalizeOverlayFields(overlay?.fields)).forEach(([fieldName, change]) => {
       if (!isPlainObject(change)) return;
       const keys = currentKeysByField[fieldName] || new Set();
-      const values = 'to' in change || 'from' in change
-        ? [change.to, change.from]
-        : [...normalizeArray(change.added ?? change.add), ...normalizeArray(change.removed)];
-      values.forEach(value => {
+      proposedChangeValues(change).forEach(({ value, isDeleted }) => {
         const key = overlayValueKey(fieldName, value);
-        if (key) keys.add(key);
+        if (key) keys.add(`${isDeleted ? 'deleted' : 'added'}::${key}`);
       });
       currentKeysByField[fieldName] = keys;
     });
@@ -1253,15 +1269,20 @@ export const buildSupersededOverlayEntries = ({ historyEntries = [], overlaysByE
       if (!fieldName || !editorUserId || TECHNICAL_FIELD_NAMES.has(fieldName) || fieldName === 'editor') return;
       const canonicalKeys = canonicalValueKeys(canonical, fieldName);
       const currentKeys = currentKeysByField[fieldName] || new Set();
-      proposedChangeValues(entry.change).forEach(value => {
+      proposedChangeValues(entry.change).forEach(({ value, isDeleted }) => {
         const key = overlayValueKey(fieldName, value);
-        if (!key || canonicalKeys.has(key) || currentKeys.has(key)) return;
-        const seenKey = `${fieldName}::${key}`;
+        const canonicalAlreadySettled = isDeleted ? !canonicalKeys.has(key) : canonicalKeys.has(key);
+        const currentKey = `${isDeleted ? 'deleted' : 'added'}::${key}`;
+        if (!key || canonicalAlreadySettled || currentKeys.has(currentKey)) return;
+        // Однакові пропозиції різних редакторів — різні рядки журналу.
+        // Рішення чистить історію конкретного автора, тому й сховати другого
+        // глобальною дедуплікацією тут не можна.
+        const seenKey = `${fieldName}::${editorUserId}::${isDeleted ? 'deleted' : 'added'}::${key}`;
         if (seen.has(seenKey)) return;
         seen.add(seenKey);
         result[fieldName] = [
           ...(result[fieldName] || []),
-          { value, editorUserId, isDeleted: false, superseded: true, at: Number(entry.at) || 0 },
+          { value, editorUserId, isDeleted, superseded: true, at: Number(entry.at) || 0 },
         ];
       });
     });
@@ -1290,25 +1311,13 @@ export const settleSupersededOverlayValue = async ({
   const normalizedValue = String(value ?? '').trim();
   if (!normalizedCardId || !fieldName || !normalizedValue) return null;
 
-  await purgeOverlayHistoryEntries({
-    cardUserId: normalizedCardId,
-    editorUserId,
-    fieldName,
-    values: [normalizedValue],
-  });
-
-  if (!SEARCH_ID_INDEXED_FIELDS.has(fieldName)) return { settled: true };
-
-  if (action === 'accept') {
+  if (SEARCH_ID_INDEXED_FIELDS.has(fieldName) && action === 'accept') {
     const normalizedAcceptedValue = String(acceptedValue ?? normalizedValue).trim();
     if (normalizedAcceptedValue && normalizedAcceptedValue !== normalizedValue) {
       await updateSearchId(fieldName, normalizedValue, normalizedCardId, 'remove');
       await updateSearchId(fieldName, normalizedAcceptedValue, normalizedCardId, 'add');
     }
-    return { settled: true };
-  }
-
-  try {
+  } else if (SEARCH_ID_INDEXED_FIELDS.has(fieldName)) {
     const canonical = await getCanonicalCard(normalizedCardId);
     const overlaysByEditor = await getOverlaysForCard(normalizedCardId);
     const stillClaimed = isValueStillClaimedByCard({
@@ -1321,9 +1330,17 @@ export const settleSupersededOverlayValue = async ({
       editorUserId: '',
     });
     if (!stillClaimed) await updateSearchId(fieldName, normalizedValue, normalizedCardId, 'remove');
-  } catch (error) {
-    console.warn('[multiAccountEdits] searchId cleanup for superseded value skipped', error);
   }
+
+  // Індекс перевіряється першим: якщо читання чи зняття ключа не вдалося,
+  // журнал лишається видимим і рішення можна безпечно повторити.
+  await purgeOverlayHistoryEntries({
+    cardUserId: normalizedCardId,
+    editorUserId,
+    fieldName,
+    values: [normalizedValue],
+    throwOnError: true,
+  });
   return { settled: true };
 };
 

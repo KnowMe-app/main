@@ -93,6 +93,53 @@ describe('попередні версії правки', () => {
     expect(entries).toEqual({});
   });
 
+  it('показує попередні видалення з правильною ознакою', () => {
+    const entries = buildSupersededOverlayEntries({
+      historyEntries: [
+        { editorUserId: 'editorA', action: 'edit', fieldName: 'phone', change: { from: '380500000004', to: '' }, at: 100 },
+        { editorUserId: 'editorA', action: 'edit', fieldName: 'email', change: { removed: ['old@example.com'] }, at: 101 },
+      ],
+      overlaysByEditor: {},
+      canonical: { phone: '380500000004', email: ['old@example.com'] },
+    });
+
+    expect(entries.phone).toEqual([
+      expect.objectContaining({ value: '380500000004', isDeleted: true, superseded: true }),
+    ]);
+    expect(entries.email).toEqual([
+      expect.objectContaining({ value: 'old@example.com', isDeleted: true, superseded: true }),
+    ]);
+  });
+
+  it('не ховає видалення, коли поточна заміна лише відштовхується від того самого значення', () => {
+    const entries = buildSupersededOverlayEntries({
+      historyEntries: [
+        { editorUserId: 'editorA', action: 'edit', fieldName: 'phone', change: { from: '380500000004', to: '' }, at: 100 },
+      ],
+      overlaysByEditor: {
+        editorA: { fields: { phone: { from: '380500000004', to: '380500000006' } } },
+      },
+      canonical: { phone: '380500000004' },
+    });
+
+    expect(entries.phone).toEqual([
+      expect.objectContaining({ value: '380500000004', isDeleted: true }),
+    ]);
+  });
+
+  it('не ховає однакові історичні значення різних редакторів', () => {
+    const entries = buildSupersededOverlayEntries({
+      historyEntries: [
+        { editorUserId: 'editorA', action: 'edit', fieldName: 'phone', change: { added: ['380500000005'] }, at: 100 },
+        { editorUserId: 'editorB', action: 'edit', fieldName: 'phone', change: { added: ['380500000005'] }, at: 101 },
+      ],
+      overlaysByEditor: {},
+      canonical: {},
+    });
+
+    expect(entries.phone.map(entry => entry.editorUserId)).toEqual(['editorA', 'editorB']);
+  });
+
   it('рішення про версію чистить журнал і знімає ключ, якого ніхто не тримає', async () => {
     await settleSupersededOverlayValue({
       editorUserId: 'editorA',
@@ -107,6 +154,26 @@ describe('попередні версії правки', () => {
       { h1: null },
     );
     expect(updateSearchId).toHaveBeenCalledWith('phone', '380503355667', 'card-1', 'remove');
+  });
+
+  it('лишає журнал для повтору, коли перевірка searchId не вдалася', async () => {
+    get.mockImplementation(async ({ path }) => {
+      if (path === 'profileContacts/card-1') throw new Error('network');
+      return { exists: () => false, val: () => null };
+    });
+
+    await expect(settleSupersededOverlayValue({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380503355667',
+      action: 'discard',
+    })).rejects.toThrow('network');
+
+    expect(update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/editsHistory/card-1' }),
+      expect.anything(),
+    );
   });
 });
 
@@ -125,6 +192,24 @@ describe('рішення адміна не лишає слідів', () => {
       expect.objectContaining({ path: 'multiData/editsHistory/card-1' }),
       { h2: null },
     );
+  });
+
+  it('повідомляє про збій очищення журналу', async () => {
+    get.mockImplementation(async ({ path }) => {
+      if (path === 'multiData/edits/card-1/editorA') {
+        return { exists: () => true, val: () => OVERLAYS.editorA };
+      }
+      if (path === 'multiData/editsHistory/card-1') throw new Error('history unavailable');
+      return { exists: () => false, val: () => null };
+    });
+
+    await expect(settleOverlayValueForCard({
+      editorUserId: 'editorA',
+      cardUserId: 'card-1',
+      fieldName: 'phone',
+      value: '380503355666',
+      action: 'discard',
+    })).rejects.toThrow('history unavailable');
   });
 });
 
