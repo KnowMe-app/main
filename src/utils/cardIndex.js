@@ -456,20 +456,25 @@ export const saveCard = card => {
   return merged;
 };
 
+/**
+ * Список id запиту — лише id і його власний стан.
+ *
+ * Тут колись стояло «лишити тільки ті id, чия анкета лежить у `cards`», і
+ * урізаний список ще й записувався назад. Це мало сенс, поки в `cards` лягало
+ * все підряд; коли проєкції стрічки звідти навмисно прибрали
+ * (`shouldCacheMatchingCard`), кожен список, складений з проєкцій, — стрічка,
+ * обране, дизлайки — тихо зводився до порожнього при першому ж читанні. Список
+ * не знає й не мусить знати, у якому сховищі лежить картка: це питання того,
+ * хто картки з нього складає (`composeCachedCards`), а бракує картки — її
+ * дочитують точково, а не список заново.
+ */
 export const getQueryEntry = queryKey => {
   const key = normalizeQueryKey(queryKey);
   const queries = loadQueries();
   const entry = queries[key];
-  const cards = loadCards();
-  const entryIds = Array.isArray(entry?.ids) ? entry.ids : [];
-  const ids = entryIds.filter(id => cards[id]);
+  const ids = Array.isArray(entry?.ids) ? entry.ids.filter(Boolean) : [];
   let updatedEntry = entry;
   let changed = false;
-
-  if (entry && ids.length !== entryIds.length) {
-    updatedEntry = { ...entry, ids };
-    changed = true;
-  }
 
   const cachedAt = getEntryCacheTimestamp(updatedEntry);
 
@@ -491,6 +496,9 @@ export const getQueryEntry = queryKey => {
     ids,
     cachedAt,
     isNegativeHit: Boolean(updatedEntry?.isNegativeHit),
+    pagination: updatedEntry?.pagination && typeof updatedEntry.pagination === 'object'
+      ? updatedEntry.pagination
+      : null,
   };
 };
 
@@ -522,14 +530,50 @@ export const setIdsForQuery = (queryKey, ids, options = {}) => {
   const now = Date.now();
   const nextIds = Array.isArray(ids) ? ids.slice(0, MATCHING_QUERY_MAX_IDS) : [];
   const isNegativeHit = Boolean(options?.isNegativeHit && nextIds.length === 0);
+  // Стан пагінації пишеться окремо (`setQueryPagination`) і лишається при
+  // перезаписі списку: стрічка дописує id у кожному рендері, де приїхала
+  // сторінка, і без цього кожна дописана сторінка стирала б курсор, з якого
+  // її ж і читали.
+  const pagination = queries[key]?.pagination;
   queries[key] = {
     ids: nextIds,
     cachedAt: now,
     lastAction: now,
     ...(isNegativeHit ? { isNegativeHit: true } : {}),
+    ...(pagination ? { pagination } : {}),
   };
+  if (key.startsWith(FEED_LIST_KEY_PREFIX)) pruneFeedListKeys(queries, key);
   saveQueries(queries);
   logMatchingCacheDebug('query ids cache save', { key, idsCount: nextIds.length, isNegativeHit });
+};
+
+/**
+ * Чим закінчилась пагінація списку: курсор наступної сторінки, чи є вона
+ * взагалі, і за якої умови (фільтри, роль читача) цей стан отримано.
+ *
+ * Без цього кеш стрічки знав лише, *які* картки вже показано, а не *де*
+ * зупинилось джерело: вузька дека (дві картки під фільтрами) не дотягувала до
+ * першого екрана, і після перезавантаження стрічка щоразу обходила
+ * `matchingCards` з самого початку, щоб удруге довести, що більше нікого нема.
+ * `null` знімає запис — так роблять шляхи, чий курсор не є курсором джерела.
+ */
+export const setQueryPagination = (queryKey, pagination) => {
+  const key = normalizeQueryKey(queryKey);
+  const queries = loadQueries();
+  const entry = queries[key];
+  if (!pagination) {
+    if (!entry?.pagination) return;
+    const { pagination: _removed, ...rest } = entry;
+    queries[key] = rest;
+    saveQueries(queries);
+    return;
+  }
+  const now = Date.now();
+  queries[key] = {
+    ...(entry || { ids: [], cachedAt: now, lastAction: now }),
+    pagination: { ...pagination, savedAt: now },
+  };
+  saveQueries(queries);
 };
 
 const SEARCH_QUERY_CACHE_PREFIX = 'cards:search';
@@ -761,6 +805,95 @@ export const setCachedMatchingSummaryCards = cardsById => {
     stored[id] = { card, cachedAt: now };
   });
   saveMatchingSummaryCards(pruneMatchingSummaryCards(stored));
+};
+
+/**
+ * Картки для списку id — з того сховища, де кожна з них лежить.
+ *
+ * Сховищ два, і вони навмисно окремі: `cards` тримає повні анкети (їх читає й
+ * екран редагування), `matchingSummaryCards` — проєкції стрічки. Список id
+ * (`queries`) не знає, звідки його картки, тож складає їх одне місце: повна
+ * анкета, якщо вона свіжа й не старша за проєкцію, інакше проєкція. Старша
+ * повна анкета поступається навмисно — проєкцію перечитує кожна сторінка
+ * стрічки, і дата публікації чи аватар у ній новіші.
+ *
+ * `allowProjections: false` — для тих, кому потрібна саме анкета (редагування,
+ * адмінка): проєкцію там видно як анкету, з якої зникла половина полів.
+ * `missingIds` — те, чого немає ніде: його дочитують точково, а не список заново.
+ */
+export const composeCachedCards = (ids, options = {}) => {
+  const { allowProjections = true, ttlMs = TTL_MS } = options || {};
+  const uniqueIds = [...new Set((Array.isArray(ids) ? ids : []).filter(Boolean).map(String))];
+  const cards = {};
+  const missingIds = [];
+  if (!uniqueIds.length) return { cards, missingIds };
+
+  const now = Date.now();
+  const fullCards = loadCards();
+  const summaries = allowProjections ? loadMatchingSummaryCards() : {};
+  const fresh = timestamp => timestamp > 0 && now - timestamp <= ttlMs;
+
+  uniqueIds.forEach(id => {
+    const full = fullCards[id];
+    const fullAt = full ? (toTimestamp(full.cachedAt) || toTimestamp(full.lastAction)) : 0;
+    const summaryEntry = summaries[id];
+    const summaryAt = summaryEntry?.card ? getEntryCacheTimestamp(summaryEntry) : 0;
+    const fullIsFresh = Boolean(full) && fresh(fullAt);
+    const summaryIsFresh = Boolean(summaryEntry?.card) && fresh(summaryAt);
+
+    if (fullIsFresh && (!summaryIsFresh || fullAt >= summaryAt)) {
+      cards[id] = { ...full, userId: full.userId || id };
+    } else if (summaryIsFresh) {
+      cards[id] = { ...summaryEntry.card, userId: summaryEntry.card.userId || id };
+    } else if (fullIsFresh) {
+      cards[id] = { ...full, userId: full.userId || id };
+    } else {
+      missingIds.push(id);
+    }
+  });
+
+  incrementMatchingLoadStat('composedCacheHits', Object.keys(cards).length);
+  return { cards, missingIds };
+};
+
+/**
+ * Список стрічки — окремий на кожну умову (фільтри + роль читача).
+ *
+ * Один ключ `default` з підписом умови всередині переживав рівно одну умову:
+ * зміна фільтрів затирала його, і повернення до попередніх коштувало обходу
+ * стрічки з початку. Ключ — короткий хеш підпису, бо сам підпис — це JSON усіх
+ * груп фільтрів. Скільки таких списків тримати, стежить `pruneFeedListKeys`:
+ * кожен важить до `MATCHING_QUERY_MAX_IDS` id.
+ */
+export const FEED_LIST_KEY_PREFIX = 'feed:';
+export const FEED_LIST_MAX_KEYS = 12;
+const LEGACY_FEED_LIST_KEY = 'default';
+
+const hashSignature = value => {
+  const text = String(value || '');
+  let hash = 5381;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) + hash + text.charCodeAt(index)) | 0; // eslint-disable-line no-bitwise
+  }
+  return (hash >>> 0).toString(36); // eslint-disable-line no-bitwise
+};
+
+export const buildFeedListKey = signature => `${FEED_LIST_KEY_PREFIX}${hashSignature(signature)}`;
+
+const pruneFeedListKeys = (queries, keepKey) => {
+  let changed = false;
+  if (queries[LEGACY_FEED_LIST_KEY]) {
+    delete queries[LEGACY_FEED_LIST_KEY];
+    changed = true;
+  }
+  const feedKeys = Object.keys(queries)
+    .filter(key => key.startsWith(FEED_LIST_KEY_PREFIX) && key !== keepKey)
+    .sort((a, b) => getEntryCacheTimestamp(queries[b]) - getEntryCacheTimestamp(queries[a]));
+  feedKeys.slice(FEED_LIST_MAX_KEYS - 1).forEach(key => {
+    delete queries[key];
+    changed = true;
+  });
+  return changed;
 };
 
 export const clearMatchingCache = (reason = 'manual') => resetMatchingLocalStorageCache(reason);

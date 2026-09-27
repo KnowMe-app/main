@@ -155,7 +155,6 @@ import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache"
 import {
   buildMatchingSearchResultCacheKey,
   clearMatchingCache,
-  getCachedMatchingSummaryCards,
   getCard,
   getCompleteCachedProfile,
   getIdsByQuery,
@@ -164,15 +163,26 @@ import {
   incrementMatchingLoadStat,
   logMatchingLocalStorageCacheStats,
   normalizeQueryKey,
+  buildFeedListKey,
+  composeCachedCards,
+  getQueryEntry,
   setCachedMatchingSummaryCards,
   setIdsForQuery,
   setIndexIdsForQuery,
+  setQueryPagination,
 } from '../utils/cardIndex';
+import { normalizeFeedCursor, resolveFeedCacheResume } from '../utils/matchingFeedCacheResume';
+import {
+  ensureLiveReactionEntry,
+  failLiveReactionEntry,
+  readLiveReactionSnapshot,
+  settleLiveReactionEntry,
+} from '../utils/liveReactionSnapshots';
 import {
   cleanupMatchingLocalStorageCache,
   logMatchingLocalStorageDebugStats,
 } from '../utils/searchKeyCache';
-import { getCardsByList, updateCard } from '../utils/cardsStorage';
+import { updateCard } from '../utils/cardsStorage';
 import { getCachedPhotoUrlsMap, setCachedPhotoUrls } from '../utils/photoUrlCache';
 import {
   MATCHING_CARDS_ROOT,
@@ -372,6 +382,7 @@ const FEED_SOURCE_FALLBACK_REASONS = {
 const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
 const MATCHING_DATA_SOURCE_MODE_KEY = 'matchingDataSourceMode';
 const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
+const LAST_LOGIN_WRITTEN_KEY_PREFIX = 'matchingLastLogin2Written:';
 const MATCHING_DEBUG_VERSION = 'autoload-diagnostics-v2';
 const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 const DEBUG_SHARED_CARD_ID = 'ID0001';
@@ -688,8 +699,29 @@ const canShowReactionTabCard = (card, { isAdmin = false } = {}) => {
 
 // Глядач без повного доступу до матчингу бачить картку додаткового доступу
 // урізаною: рівно ті пʼять полів, які правила відкривають кожному авторизованому.
+// Надані правилами картки перечитувались на кожен перезапуск ефекту доступу —
+// а на старті сторінки він спрацьовує кілька разів поспіль (власник, ключі
+// наборів, фільтри), і та сама пʼятірка карток читалась тричі-чотири рази.
+// Памʼять вкладки тримає прочитане недовго: це проєкція чужої картки, і
+// правка в ній мусить доїхати без перезавантаження.
+const LIMITED_PROFILE_MEMO_TTL_MS = 5 * 60 * 1000;
+const limitedProfileMemo = new Map();
+const fetchLimitedProfileByIdMemo = userId => {
+  const key = String(userId || '');
+  const memo = limitedProfileMemo.get(key);
+  if (memo && Date.now() - memo.at <= LIMITED_PROFILE_MEMO_TTL_MS) {
+    return memo.pending.then(profile => (profile ? { ...profile } : profile));
+  }
+  const pending = Promise.resolve(fetchLimitedProfileById(userId)).catch(error => {
+    limitedProfileMemo.delete(key);
+    throw error;
+  });
+  limitedProfileMemo.set(key, { pending, at: Date.now() });
+  return pending.then(profile => (profile ? { ...profile } : profile));
+};
+
 const fetchLimitedProfilesByIdsForMatching = async ids => (
-  await Promise.all((ids || []).map(userId => fetchLimitedProfileById(userId)))
+  await Promise.all((ids || []).map(userId => fetchLimitedProfileByIdMemo(userId)))
 ).filter(Boolean);
 
 const ADDITIONAL_SEARCH_KEY_SET_PROFILE_FIELDS = [
@@ -1931,7 +1963,6 @@ const Matching = () => {
   const [filters, setFilters] = useState({});
   const filtersRef = useRef(filters);
   // Колекція у вебі одна, тож і дека одна: вибору джерела більше немає.
-  const defaultListKey = 'default';
   const [filterResetToken, setFilterResetToken] = useState(0);
   const [draftFilters, setDraftFilters] = useState({});
   const draftFiltersRef = useRef(draftFilters);
@@ -1977,7 +2008,28 @@ const Matching = () => {
     return () => window.removeEventListener(COMMENTS_UPDATED_EVENT, syncCopiedComment);
   }, [ownerId]);
   const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
-  const [multiDataOwnerIds, setMultiDataOwnerIds] = useState([]);
+  const [multiDataOwnerIds, setMultiDataOwnerIdsState] = useState([]);
+  // Той самий перелік власників приходить кількома шляхами (вхід, профіль
+  // доступу, його оновлення), щоразу новим масивом. Нове посилання на той самий
+  // вміст перезапускало підписки на реакції й перечитувало всі їхні вузли.
+  const setMultiDataOwnerIds = React.useCallback(nextOwnerIds => {
+    setMultiDataOwnerIdsState(prev => {
+      const next = Array.isArray(nextOwnerIds) ? nextOwnerIds : [];
+      return prev.length === next.length && prev.every((id, index) => id === next[index]) ? prev : next;
+    });
+  }, []);
+  // Останній знімок кожної підписки на реакції: `loadInitial` бере його звідси,
+  // а не читає ті самі вузли вдруге (`readLiveReactionSnapshot`).
+  const liveReactionSnapshotsRef = useRef(new Map());
+  const reactionSubscriptionsRef = useRef({
+    owners: new Map(),
+    ownerIds: [],
+    favoriteSnapshots: {},
+    dislikeSnapshots: {},
+    loadedFavoriteOwnerIds: new Set(),
+    loadedDislikeOwnerIds: new Set(),
+    apply: () => {},
+  });
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
   const [currentUserRole, setCurrentUserRole] = useState(() => localStorage.getItem('userRole') || '');
   // A cached role is useful for rendering, but it cannot start a deck: the
@@ -2814,7 +2866,16 @@ const Matching = () => {
 
 
 
-  const ensureFreshAdditionalMatchingProfile = React.useCallback(async ({ accessUserId, reason = 'additional-matching' } = {}) => {
+  // `prefetchedProfile` і `prefetchedSearchKeySetKeys` — те, що викликач щойно
+  // прочитав сам: вхід у сесію читає анкету й ключі наборів, а тоді кличе цю
+  // функцію, і та перечитувала обидва — пʼять вузлів анкети й `searchKeySets`
+  // удруге за ту саму секунду.
+  const ensureFreshAdditionalMatchingProfile = React.useCallback(async ({
+    accessUserId,
+    reason = 'additional-matching',
+    prefetchedProfile,
+    prefetchedSearchKeySetKeys,
+  } = {}) => {
     const state = matchingProfileStateRef.current || {};
     const normalizedAccessUserId = String(accessUserId || auth.currentUser?.uid || state.ownerId || '').trim();
     if (!normalizedAccessUserId) return null;
@@ -2869,7 +2930,9 @@ const Matching = () => {
     additionalProfileRequestVersionRef.current = profileRequestVersion;
     const profilePath = `fetchUserById(${normalizedAccessUserId})`;
     try {
-      const fetchedProfile = await fetchUserById(normalizedAccessUserId);
+      const fetchedProfile = prefetchedProfile !== undefined
+        ? prefetchedProfile
+        : await fetchUserById(normalizedAccessUserId);
       const profileFound = Boolean(fetchedProfile && typeof fetchedProfile === 'object');
 
       if (!profileFound) {
@@ -2918,7 +2981,9 @@ const Matching = () => {
       const accessLevel = profile?.accessLevel || '';
       const userRole = profile?.userRole || profile?.role || '';
       const additionalAccessRules = profile?.additionalAccessRules || '';
-      const searchKeySetsOfExactUser = await resolveAdditionalSearchKeySetKeysForMatching(profile, normalizedAccessUserId);
+      const searchKeySetsOfExactUser = Array.isArray(prefetchedSearchKeySetKeys)
+        ? prefetchedSearchKeySetKeys
+        : await resolveAdditionalSearchKeySetKeysForMatching(profile, normalizedAccessUserId);
 
       if (profileRequestVersion !== additionalProfileRequestVersionRef.current) {
         const latestCache = additionalProfileCacheRef.current;
@@ -3001,7 +3066,7 @@ const Matching = () => {
       logAdditionalMatchingDebug(normalizedAccessUserId, 'profile refetch failed', { firebasePath: profilePath }, error);
       throw error;
     }
-  }, []);
+  }, [setMultiDataOwnerIds]);
 
   const loadCommentsFor = React.useCallback(async (list, { force = false, activeOnly = true } = {}) => {
     const owners = getMatchingMultiDataOwnerIds();
@@ -3150,6 +3215,8 @@ const Matching = () => {
             const freshCache = await ensureFreshAdditionalMatchingProfile({
               accessUserId: user.uid,
               reason: 'auth-state-sync',
+              prefetchedProfile: profile || null,
+              prefetchedSearchKeySetKeys: searchKeySetKeys,
             });
 
             console.info('[Matching][additionalAccessUsers] resolvedSearchKeySetsOfExactUser', freshCache?.searchKeySetsOfExactUser || []);
@@ -3204,24 +3271,64 @@ const Matching = () => {
       const { todayDash } = getCurrentDate();
       // Дата входу — це і ключ стрічки: писач розкладе її по вузлах, перебудує
       // картку і віддзеркалить у legacy для мобільного застосунку.
-      updateDataInRealtimeDB(user.uid, sanitizeCardForBackend({ lastLogin2: todayDash }), 'update');
+      //
+      // Раз на день, а не на кожне відкриття сторінки: дата в межах дня та
+      // сама, а кожен такий запис перечитував власну анкету з пʼяти вузлів і
+      // картку, щоб перебудувати проєкцію, яка від цього не мінялась.
+      const lastLoginMarkerKey = `${LAST_LOGIN_WRITTEN_KEY_PREFIX}${user.uid}`;
+      let lastLoginWritten = '';
+      try { lastLoginWritten = localStorage.getItem(lastLoginMarkerKey) || ''; } catch { lastLoginWritten = ''; }
+      if (lastLoginWritten !== todayDash) {
+        Promise.resolve(updateDataInRealtimeDB(user.uid, sanitizeCardForBackend({ lastLogin2: todayDash }), 'update'))
+          .then(() => {
+            try { localStorage.setItem(lastLoginMarkerKey, todayDash); } catch { /* памʼять браузера недоступна */ }
+          })
+          .catch(error => console.warn('[Matching] lastLogin2 write failed', error));
+      }
 
     });
 
     return () => {
       unsubscribeAuth();
     };
-  }, [ensureFreshAdditionalMatchingProfile, resetAdditionalMatchingState]);
+  }, [ensureFreshAdditionalMatchingProfile, resetAdditionalMatchingState, setMultiDataOwnerIds]);
+
+  // Підписки на реакції живуть поки живе власник у переліку, а не поки живе
+  // сам перелік. Перелік на старті міняється щонайменше раз — спершу сам читач,
+  // потім читач зі спільними власниками, — і доки ефект знімав і ставив усі
+  // підписки заново, вузли читача читались двічі. Тепер ефект лише додає нових
+  // власників і знімає зниклих; знімки й позначки завантаження лежать у ref,
+  // бо переживають перезапуски ефекту.
+  useEffect(() => () => {
+    const store = reactionSubscriptionsRef.current;
+    store.owners.forEach(unsubs => unsubs.forEach(unsub => unsub()));
+    store.owners.clear();
+  }, []);
 
   useEffect(() => {
     const ownerIds = getMatchingMultiDataOwnerIds();
+    const store = reactionSubscriptionsRef.current;
+    const nextOwnerSet = new Set(ownerIds);
+    [...store.owners.keys()].forEach(subscribedOwnerId => {
+      if (nextOwnerSet.has(subscribedOwnerId)) return;
+      store.owners.get(subscribedOwnerId).forEach(unsub => unsub());
+      store.owners.delete(subscribedOwnerId);
+      delete store.favoriteSnapshots[subscribedOwnerId];
+      delete store.dislikeSnapshots[subscribedOwnerId];
+      store.loadedFavoriteOwnerIds.delete(subscribedOwnerId);
+      store.loadedDislikeOwnerIds.delete(subscribedOwnerId);
+    });
+    store.ownerIds = ownerIds;
     if (!ownerIds.length) return undefined;
 
-    const favoriteSnapshots = {};
-    const dislikeSnapshots = {};
-    const loadedFavoriteOwnerIds = new Set();
-    const loadedDislikeOwnerIds = new Set();
-    const applyPrioritizedReactionMaps = () => {
+    const {
+      favoriteSnapshots,
+      dislikeSnapshots,
+      loadedFavoriteOwnerIds,
+      loadedDislikeOwnerIds,
+    } = store;
+    store.apply = () => {
+      const ownerIds = store.ownerIds;
       const ownOwnerId = getOwnerId();
       const hasLoadedOwnReactionSnapshots =
         ownOwnerId &&
@@ -3315,7 +3422,8 @@ const Matching = () => {
       syncDislikes(dislikes);
     };
 
-    const unsubs = ownerIds.flatMap(effectiveOwnerId => {
+    const applyPrioritizedReactionMaps = () => store.apply();
+    ownerIds.filter(ownerId => !store.owners.has(ownerId)).forEach(effectiveOwnerId => {
       const favRef = refDb(database, `multiData/favorites/${effectiveOwnerId}`);
       const disRef = refDb(database, `multiData/dislikes/${effectiveOwnerId}`);
 
@@ -3329,13 +3437,16 @@ const Matching = () => {
             message: error.message || String(error),
           }, error);
         }
-        applyPrioritizedReactionMaps();
+        store.apply();
       };
 
+      const favoriteLive = ensureLiveReactionEntry(liveReactionSnapshotsRef.current, 'favorites', effectiveOwnerId);
+      const dislikeLive = ensureLiveReactionEntry(liveReactionSnapshotsRef.current, 'dislikes', effectiveOwnerId);
       const unsubFav = onValue(favRef, snap => {
         const viewerId = getOwnerId();
         const isDebugViewer = shouldDebugAdditionalMatching(viewerId);
         favoriteSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
+        settleLiveReactionEntry(favoriteLive, favoriteSnapshots[effectiveOwnerId]);
         loadedFavoriteOwnerIds.add(effectiveOwnerId);
         debugSharedReactionsLog(viewerId, 'loaded favorites snapshot for ownerId', {
           ownerId: effectiveOwnerId,
@@ -3343,12 +3454,16 @@ const Matching = () => {
             loadedReactionCount: Object.keys(normalizeReactionMap(favoriteSnapshots[effectiveOwnerId])).length,
           } : {}),
         });
-        applyPrioritizedReactionMaps();
-      }, error => markOwnerSnapshotLoaded(favoriteSnapshots, loadedFavoriteOwnerIds, 'favorites', error));
+        store.apply();
+      }, error => {
+        failLiveReactionEntry(favoriteLive);
+        markOwnerSnapshotLoaded(favoriteSnapshots, loadedFavoriteOwnerIds, 'favorites', error);
+      });
       const unsubDis = onValue(disRef, snap => {
         const viewerId = getOwnerId();
         const isDebugViewer = shouldDebugAdditionalMatching(viewerId);
         dislikeSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
+        settleLiveReactionEntry(dislikeLive, dislikeSnapshots[effectiveOwnerId]);
         loadedDislikeOwnerIds.add(effectiveOwnerId);
         debugSharedReactionsLog(viewerId, 'loaded dislikes snapshot for ownerId', {
           ownerId: effectiveOwnerId,
@@ -3356,15 +3471,22 @@ const Matching = () => {
             loadedReactionCount: Object.keys(normalizeReactionMap(dislikeSnapshots[effectiveOwnerId])).length,
           } : {}),
         });
-        applyPrioritizedReactionMaps();
-      }, error => markOwnerSnapshotLoaded(dislikeSnapshots, loadedDislikeOwnerIds, 'dislikes', error));
+        store.apply();
+      }, error => {
+        failLiveReactionEntry(dislikeLive);
+        markOwnerSnapshotLoaded(dislikeSnapshots, loadedDislikeOwnerIds, 'dislikes', error);
+      });
 
-      return [unsubFav, unsubDis];
+      store.owners.set(effectiveOwnerId, [unsubFav, unsubDis, () => {
+        favoriteLive.active = false;
+        dislikeLive.active = false;
+      }]);
     });
 
-    return () => {
-      unsubs.forEach(unsub => unsub());
-    };
+    // Перелік змінився, а знімки вже є — рішення перераховуються без нового
+    // читання: зник власник чи додався, пріоритет реакцій інший.
+    applyPrioritizedReactionMaps();
+    return undefined;
   }, [getMatchingMultiDataOwnerIds]);
 
   /**
@@ -3381,12 +3503,13 @@ const Matching = () => {
     if (!uniqueIds.length) return {};
 
     // Список id для цієї сторінки вже міг прийти з кеша — тоді читати з бекенду
-    // ті самі проєкції ще раз немає за чим. Тому спершу локальний кеш проєкцій,
-    // а по мережу йдуть тільки ті id, яких у ньому немає або чий запис протух.
+    // ті самі картки ще раз немає за чим. Тому спершу локальний кеш — повна
+    // анкета чи проєкція, яка з них свіжіша (`composeCachedCards`), — а по
+    // мережу йдуть тільки ті id, яких немає в жодному зі сховищ.
     const isBackendOnlyMode = matchingDataSourceMode === 'backend';
     const cachedSummaries = isBackendOnlyMode
       ? { cards: {}, missingIds: uniqueIds }
-      : getCachedMatchingSummaryCards(uniqueIds);
+      : composeCachedCards(uniqueIds);
     if (isBackendOnlyMode) {
       writeMatchingDebugLog('matchingBackendOnlyModeUsed', {
         mode: matchingDataSourceMode,
@@ -3546,6 +3669,38 @@ const Matching = () => {
     reportInitialLoadError,
   ]);
 
+  // Умова, за якої отримано стан пагінації стрічки: фільтри й роль читача
+  // вирішують, які картки джерела дійшли до деки, тож курсор, записаний за
+  // іншої умови, пропустив би картки, що тоді відсіялись.
+  const buildFeedCacheSignature = React.useCallback(() => stableAdditionalSignature({
+    filters: filtersRef.current || {},
+    viewerRole: donorRestrictionViewerRoleRef.current || '',
+  }), []);
+
+  // Стан пагінації пишеться поруч зі списком id стрічки, щоб перезавантаження
+  // сторінки продовжило з того місця, де зупинилось джерело, а не обходило
+  // `matchingCards` з початку (`resolveFeedCacheResume`).
+  const rememberFeedPagination = React.useCallback(({ cursor, hasMore: nextHasMore, signature }) => {
+    if (!signature) return;
+    const listKey = buildFeedListKey(signature);
+    const feedCursor = normalizeFeedCursor(cursor);
+    if (nextHasMore && !feedCursor) {
+      setQueryPagination(listKey, null);
+      return;
+    }
+    setQueryPagination(listKey, { cursor: feedCursor, hasMore: Boolean(nextHasMore), signature });
+  }, []);
+
+  // Проєкції сторінок стрічки лягають у власне сховище: в `cards` їх не кладуть
+  // (`shouldCacheMatchingCard`), тож без цього список id стрічки після
+  // перезавантаження не мав би з чого намалювати жодного рядка.
+  const rememberFeedSummaryCards = React.useCallback(users => {
+    const summaries = (Array.isArray(users) ? users : [])
+      .filter(user => user?.userId && isMatchingSummaryCard(user));
+    if (!summaries.length) return;
+    setCachedMatchingSummaryCards(Object.fromEntries(summaries.map(user => [user.userId, user])));
+  }, []);
+
   const loadInitial = React.useCallback(async () => {
     writeMatchingDebugLog('initialLoad:start', { ownerId: getOwnerId(), viewMode: viewModeRef.current, currentlyRenderedCards: Array.isArray(usersRef.current) ? usersRef.current.length : 0, currentlyLoadedIds: loadedIdsRef.current?.size || 0, hasMore, lastKey });
     if (initialLoadInFlightRef.current) {
@@ -3587,6 +3742,10 @@ const Matching = () => {
     setInitialPublicWindowComplete(false);
     setUsers([]); // clear previous list to avoid caching wrong data
     loadedIdsRef.current = new Set();
+    // Список стрічки свій на кожну умову (`buildFeedListKey`): повернення до
+    // попередніх фільтрів теж береться з кеша, а не обходом стрічки.
+    const feedCacheSignature = buildFeedCacheSignature();
+    const feedListKey = buildFeedListKey(feedCacheSignature);
     try {
       const owners = getMatchingMultiDataOwnerIds();
       let exclude = new Set();
@@ -3595,8 +3754,8 @@ const Matching = () => {
         const { favoriteSnapshots, dislikeSnapshots } = await runInitialRequestWithTimeout(
           () => readReactionSnapshotMaps({
             ownerIds: owners,
-            fetchFavoriteUsers,
-            fetchDislikeUsers,
+            fetchFavoriteUsers: ownerId => readLiveReactionSnapshot(liveReactionSnapshotsRef.current, 'favorites', ownerId, fetchFavoriteUsers),
+            fetchDislikeUsers: ownerId => readLiveReactionSnapshot(liveReactionSnapshotsRef.current, 'dislikes', ownerId, fetchDislikeUsers),
             onWarning: warning => debugSharedReactionsLog(getOwnerId(), 'initial shared reaction snapshot unavailable', warning, warning.error),
           }),
           'reaction-snapshots',
@@ -3710,7 +3869,10 @@ const Matching = () => {
           indexedUsers.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
           loadedIdsRef.current = new Set(indexedUsers.map(user => user.userId).filter(Boolean));
           setUsers(indexedUsers);
-          setIdsForQuery(defaultListKey, indexedUsers.map(user => user.userId));
+          setIdsForQuery(feedListKey, indexedUsers.map(user => user.userId));
+          // Зсув індексу курсором джерела не є — стан пагінації стрічки тут не
+          // пишеться, а попередній знімається.
+          setQueryPagination(feedListKey, null);
           void loadCommentsFor(indexedUsers);
           if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
           setLastKey(indexed.nextOffset);
@@ -3721,22 +3883,48 @@ const Matching = () => {
         }
       }
 
+      // Кеш стрічки — це список показаних id плюс стан пагінації, з яким його
+      // отримано. Раніше тут читався сам список через `getCardsByList`, а той
+      // лишав лише id із повною анкетою в `cards` — тобто майже нічого, бо
+      // рядки стрічки це проєкції, — і довіряв кешу, лише коли той заповнював
+      // перший екран. Вузька дека під фільтрами (дві картки) не заповнювала
+      // його ніколи, і кожне перезавантаження обходило `matchingCards` з
+      // початку заради тих самих двох карток.
       let cached = [];
+      let cacheResume = { usable: false, exhausted: false, cursor: null };
       if (!isBackendOnlyMode) {
         writeMatchingDebugLog('matchingLocalFirstAttempt', {
           mode: matchingDataSourceMode,
-          cacheKey: defaultListKey,
+          cacheKey: feedListKey,
           viewMode: viewModeRef.current,
         });
-        try {
-          const cacheResult = await getCardsByList(defaultListKey);
-          cached = Array.isArray(cacheResult?.cards) ? cacheResult.cards : [];
-        } catch (error) {
-          writeMatchingDebugLog('matchingLocalCacheRejected', { reason: 'invalid_json', cacheKey: defaultListKey });
-          cached = [];
-        }
-        if (!cached.length) {
-          writeMatchingDebugLog('matchingLocalCacheRejected', { reason: 'missing', cacheKey: defaultListKey });
+        const feedEntry = getQueryEntry(feedListKey);
+        cacheResume = resolveFeedCacheResume({
+          pagination: feedEntry.pagination,
+          signature: feedCacheSignature,
+        });
+        if (!cacheResume.usable) {
+          writeMatchingDebugLog('matchingLocalCacheRejected', {
+            reason: feedEntry.pagination ? 'pagination-stale-or-other-filters' : 'missing',
+            cacheKey: feedListKey,
+          });
+        } else if (feedEntry.ids.length) {
+          try {
+            // Картки складаються з обох сховищ (`composeCachedCards` усередині
+            // `hydrateMatchingFeedCards`); по мережу йдуть лише ті id, яких
+            // немає ніде, — точковими читаннями, а не обходом стрічки.
+            const cachedById = await runInitialRequestWithTimeout(
+              () => hydrateMatchingFeedCards(feedEntry.ids),
+              'profile-hydration',
+            );
+            cached = feedEntry.ids
+              .map(id => (cachedById?.[id] ? { ...cachedById[id], userId: cachedById[id].userId || id } : null))
+              .filter(Boolean);
+          } catch (error) {
+            writeMatchingDebugLog('matchingLocalCacheRejected', { reason: 'hydration-failed', cacheKey: feedListKey });
+            cacheResume = { usable: false, exhausted: false, cursor: null };
+            cached = [];
+          }
         }
       } else {
         writeMatchingDebugLog('matchingBackendOnlyModeUsed', {
@@ -3744,10 +3932,12 @@ const Matching = () => {
           stage: 'default-list-cache-read-skipped',
         });
       }
-      if (cached.length && viewModeRef.current === startMode) {
+      let resumeCursor;
+      if (cacheResume.usable && viewModeRef.current === startMode) {
         writeMatchingDebugLog('matchingLocalCacheUsed', {
-          cacheKey: defaultListKey,
+          cacheKey: feedListKey,
           cardsCount: cached.length,
+          exhausted: cacheResume.exhausted,
           mode: matchingDataSourceMode,
         });
         console.log('[loadInitial] using cache', cached.length);
@@ -3768,23 +3958,38 @@ const Matching = () => {
         });
         loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
         setUsers(filteredCached);
-        setIdsForQuery(defaultListKey, filteredCached.map(u => u.userId));
+        setIdsForQuery(feedListKey, filteredCached.map(u => u.userId));
         void loadCommentsFor(filteredCached);
         if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
         setViewMode('default');
+
+        // Минулого разу джерело дочитали до кінця за цих самих фільтрів — отже
+        // нових карток у ньому шукати нема де, скільки б їх не лишилось на
+        // екрані (хоч жодної). Нове в стрічці з'явиться після TTL стану.
+        if (cacheResume.exhausted) {
+          writeMatchingDebugLog('matchingLocalCacheServedInitialLoad', {
+            cacheKey: feedListKey,
+            cardsCount: filteredCached.length,
+            exhausted: true,
+          });
+          setLastKey(cacheResume.cursor);
+          setHasMore(false);
+          setInitialPublicWindowComplete(true);
+          return;
+        }
 
         // Кеш віддав повний перший екран — на цьому й зупиняємось.
         //
         // Раніше тут стояло «continue to fetch latest data to refresh cache», і
         // стрічка щоразу перечитувала з бекенду ту саму сторінку `users`, яку
         // щойно намалювала з кеша: кеш був лише способом швидше показати те, за
-        // що однаково платили трафіком. Курсор для наступної сторінки будуємо з
-        // останньої кешованої картки — це та сама пара (дата, id), яку віддав би
-        // запит.
-        const cursorFromCache = buildMatchingCursorFromCard(filteredCached[filteredCached.length - 1]);
+        // що однаково платили трафіком. Курсор — той, на якому зупинилось
+        // джерело, а не остання показана картка: під фільтрами джерело встигає
+        // пройти й відсіяні картки, і курсор з показаної повів би по них удруге.
+        const cursorFromCache = cacheResume.cursor;
         if (filteredCached.length >= INITIAL_LOAD && cursorFromCache) {
           writeMatchingDebugLog('matchingLocalCacheServedInitialLoad', {
-            cacheKey: defaultListKey,
+            cacheKey: feedListKey,
             cardsCount: filteredCached.length,
             cursorFromCache,
           });
@@ -3793,11 +3998,13 @@ const Matching = () => {
           setInitialPublicWindowComplete(true);
           return;
         }
-        // Кеша не вистачило на екран — дочитуємо джерело, як і раніше.
+        // Кеша не вистачило на екран — дочитуємо джерело з того місця, де воно
+        // зупинилось, а не з початку.
+        resumeCursor = cursorFromCache || undefined;
       } else if (!isBackendOnlyMode) {
         writeMatchingDebugLog('matchingBackendFallbackUsed', {
           mode: matchingDataSourceMode,
-          cacheKey: defaultListKey,
+          cacheKey: feedListKey,
           reason: 'missing',
         });
       }
@@ -3806,7 +4013,7 @@ const Matching = () => {
       const res = await runInitialRequestWithTimeout(
         () => fetchChunk(
           Math.max(1, INITIAL_LOAD - cachedPublicCount),
-          undefined,
+          resumeCursor,
           initialExclude,
           async part => {
           if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
@@ -3848,11 +4055,15 @@ const Matching = () => {
         ...res.users.map(u => u.userId),
       ]);
       res.users.forEach(u => { if (shouldCacheMatchingCard(u)) updateCard(u.userId, u); });
+      if (canApplyInitialLoadWithFilters()) {
+        rememberFeedSummaryCards(res.users);
+        rememberFeedPagination({ cursor: res.lastKey, hasMore: res.hasMore, signature: feedCacheSignature });
+      }
       setUsers(prev => {
         const map = new Map(prev.map(u => [u.userId, u]));
         res.users.forEach(u => map.set(u.userId, u));
         const result = Array.from(map.values());
-        setIdsForQuery(defaultListKey, result.map(u => u.userId));
+        setIdsForQuery(feedListKey, result.map(u => u.userId));
         return result;
       });
       void loadCommentsFor(res.users);
@@ -3911,7 +4122,7 @@ const Matching = () => {
         setLoading(false);
       }
     }
-  }, [announcePublicFeedUnavailable, beginInitialRequest, defaultListKey, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, recordInitialLoadDiagnostic, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [announcePublicFeedUnavailable, beginInitialRequest, buildFeedCacheSignature, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, recordInitialLoadDiagnostic, rememberFeedPagination, rememberFeedSummaryCards, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     setLoadError(null);
@@ -4065,7 +4276,29 @@ const Matching = () => {
         fullReactionIdsCount: uniqueIds.length,
       });
 
-      await Promise.all(uniqueIds.map(async id => {
+      // Дата стрічки вже лежить у кешованій проєкції: `expandMatchingCard`
+      // кладе її в `lastLogin2` поруч із `publish: true`, а сховану позначає
+      // `publish: false`. Тож для карток, чия проєкція свіжа, класифікація не
+      // коштує читання — раніше кожне відкриття вкладки реакцій питало
+      // `feedDate` в усіх лайкнутих і прихованих поштучно. Повна анкета тут не
+      // годиться: її дата — не обовʼязково ключ стрічки.
+      const idsToRead = [];
+      const composedCache = matchingDataSourceMode === 'backend'
+        ? { cards: {} }
+        : composeCachedCards(uniqueIds);
+      uniqueIds.forEach(id => {
+        const cachedCard = composedCache.cards[id];
+        if (!cachedCard || !isMatchingSummaryCard(cachedCard)) {
+          idsToRead.push(id);
+          return;
+        }
+        const cachedFeedDate = cachedCard.publish === true ? String(cachedCard.lastLogin2 || '').trim() : '';
+        classifications[id] = cachedFeedDate
+          ? { storage: 'feed', reason: 'in-matching-feed', feedDate: cachedFeedDate }
+          : { storage: 'nodes', reason: 'not-in-matching-feed' };
+      });
+
+      await Promise.all(idsToRead.map(async id => {
         try {
           const snapshot = await get(refDb(database, `${MATCHING_CARDS_ROOT}/${id}/${MATCHING_CARD_FEED_FIELD}`));
           // Питається значення, а не наявність: у ключа три стани, і `false`
@@ -4127,7 +4360,7 @@ const Matching = () => {
 
     reactionClassificationRequestsRef.current.set(requestKey, requestPromise);
     return requestPromise;
-  }, []);
+  }, [matchingDataSourceMode]);
 
   const fetchReactionCardsByIds = React.useCallback(async ids => {
     const uniqueIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
@@ -4140,8 +4373,13 @@ const Matching = () => {
       viewMode: viewModeRef.current,
     });
 
+    // Картки реакцій — ті самі рядки, що й у стрічці, тож складаються вони з
+    // тих самих двох сховищ. Раніше тут питали лише `cards`, куди проєкції не
+    // кладуть, і кожна вкладка «обране» чи «приховані» читала з бекенду всі
+    // свої картки, щойно лишившись без повних анкет у кеші.
+    const composedCache = composeCachedCards(uniqueIds);
     uniqueIds.forEach(id => {
-      const cached = getCard(id);
+      const cached = composedCache.cards[id] || null;
       const normalizedCached = normalizeReactionCard(cached, id);
 
       if (isValidCachedReactionCard(normalizedCached, id)) {
@@ -4166,7 +4404,9 @@ const Matching = () => {
       missingIds: summarizeIdsForDebug(missingIds),
     });
 
-    const usersMap = missingIds.length ? await fetchUsersByIds(missingIds) : {};
+    // Бракує картки — дочитуємо проєкцію (`hydrateMatchingFeedCards`: сотні
+    // байтів і точковий запит); повна анкета читається лише для id без неї.
+    const usersMap = missingIds.length ? await hydrateMatchingFeedCards(missingIds) : {};
 
     debugReactionFlowLog('fetchReactionCardsByIds:backend-returned', {
       usersMapIds: summarizeIdsForDebug(Object.keys(usersMap || {})),
@@ -4193,7 +4433,7 @@ const Matching = () => {
     });
 
     return result;
-  }, []);
+  }, [hydrateMatchingFeedCards]);
 
   const getAccessibleReactionIds = React.useCallback(async (reactionIds, accessSnapshot = {}) => {
     const uniqueIds = [...new Set((reactionIds || []).map(id => String(id || '').trim()).filter(Boolean))];
@@ -4548,8 +4788,8 @@ const Matching = () => {
 
       const { favoriteSnapshots, dislikeSnapshots } = await readReactionSnapshotMaps({
         ownerIds: owners,
-        fetchFavoriteUsers,
-        fetchDislikeUsers,
+        fetchFavoriteUsers: ownerId => readLiveReactionSnapshot(liveReactionSnapshotsRef.current, 'favorites', ownerId, fetchFavoriteUsers),
+        fetchDislikeUsers: ownerId => readLiveReactionSnapshot(liveReactionSnapshotsRef.current, 'dislikes', ownerId, fetchDislikeUsers),
         onWarning: warning => debugSharedReactionsLog(getOwnerId(), 'reaction snapshot unavailable while loading reaction cards', warning, warning.error),
       });
       const ownOwnerId = getOwnerId();
@@ -5064,6 +5304,8 @@ const Matching = () => {
     additionalMatchingApplyVersionRef.current = applyVersion;
     const requestViewMode = viewMode;
     const requestFiltersSignature = stableAdditionalSignature(filtersRef.current || {});
+    const requestFeedCacheSignature = buildFeedCacheSignature();
+    const feedListKey = buildFeedListKey(requestFeedCacheSignature);
     const isLatestLoadMore = () => (
       loadMoreVersion === additionalLoadMoreFetchVersionRef.current &&
       applyVersion === additionalMatchingApplyVersionRef.current &&
@@ -5356,9 +5598,10 @@ const Matching = () => {
             const map = new Map(prev.map(user => [user.userId, user]));
             indexedPage.collected.forEach(user => map.set(user.userId, user));
             const result = Array.from(map.values());
-            setIdsForQuery(defaultListKey, result.map(user => user.userId));
+            setIdsForQuery(feedListKey, result.map(user => user.userId));
             return result;
           });
+          setQueryPagination(feedListKey, null);
           void loadCommentsFor(indexedPage.collected);
           setLastKey(indexedPage.finalOffset);
           const indexedHasMore = Boolean(indexedPage.finalHasMore && !indexedPage.cursorStuck);
@@ -5490,21 +5733,28 @@ const Matching = () => {
         const map = new Map(prev.map(u => [u.userId, u]));
         collected.forEach(u => map.set(u.userId, u));
         const result = Array.from(map.values());
-        setIdsForQuery(defaultListKey, result.map(u => u.userId));
+        setIdsForQuery(feedListKey, result.map(u => u.userId));
         return result;
       });
       void loadCommentsFor(collected);
 
       const sourceCanContinueWithoutVisibleCards = canLoadMore && collected.length === 0;
+      let nextHasMore = canLoadMore;
       if (sourceCanContinueWithoutVisibleCards) {
         console.log('[loadMore] source cursor advanced with more pages; keeping hasMore true for next cycle');
         setHasMore(true);
+        nextHasMore = true;
       } else if (handleEmptyFetch({ users: collected, lastKey: cursor }, lastKey, setHasMore)) {
         console.log('[loadMore] empty fetch, no more cards');
+        nextHasMore = false;
       } else {
         setHasMore(canLoadMore);
       }
       setLastKey(cursor);
+      if (viewMode === 'default') {
+        rememberFeedSummaryCards(collected);
+        rememberFeedPagination({ cursor, hasMore: nextHasMore, signature: requestFeedCacheSignature });
+      }
       if (
         viewMode === 'default'
         && (usersRef.current.length + collected.length >= INITIAL_LOAD || sourceExhausted || !canLoadMore)
@@ -5553,10 +5803,10 @@ const Matching = () => {
       lastCardLoadTriggerSignatureRef.current = '';
     }
   }, [
+    buildFeedCacheSignature,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
     ensureFreshAdditionalMatchingProfile,
-    defaultListKey,
     fetchChunk,
     classifyReactionIdsByStorage,
     getAccessibleReactionIds,
@@ -5570,6 +5820,8 @@ const Matching = () => {
     reactionPaginationByType,
     reactionPipelineReadyByType,
     parsedAdditionalAccessRules.length,
+    rememberFeedPagination,
+    rememberFeedSummaryCards,
     sharedReactionIds,
     viewMode,
   ]);

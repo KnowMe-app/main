@@ -139,7 +139,7 @@ describe('кеш проєкцій стрічки', () => {
       source.indexOf('const hydrateMatchingFeedCards = React.useCallback('),
       source.indexOf('const fetchChunk = React.useCallback('),
     );
-    expect(hydrate).toContain('getCachedMatchingSummaryCards(uniqueIds)');
+    expect(hydrate).toContain('composeCachedCards(uniqueIds)');
     expect(hydrate).toContain('const idsToFetch = cachedSummaries.missingIds;');
     expect(hydrate).toContain('if (!idsToFetch.length) return { ...cachedSummaries.cards };');
     expect(hydrate).toContain('setCachedMatchingSummaryCards(cards);');
@@ -378,6 +378,30 @@ describe('перший екран зі стрічкового кеша', () => {
     expect(source).not.toContain('// continue to fetch latest data to refresh cache');
     expect(source).toContain('if (filteredCached.length >= INITIAL_LOAD && cursorFromCache) {');
     expect(source).toContain('setLastKey(cursorFromCache);');
+  });
+
+  it('продовжує з курсора, на якому зупинилось джерело, а дочитану стрічку не питає зовсім', () => {
+    // Вузька дека під фільтрами першого екрана не заповнює, і кожне
+    // перезавантаження обходило `matchingCards` з початку заради тих самих
+    // двох карток. Стан пагінації лежить поруч зі списком id і береться лише
+    // за тієї самої умови (`resolveFeedCacheResume`).
+    const source = matching();
+    const initial = source.slice(
+      source.indexOf('const loadInitial = React.useCallback('),
+      source.indexOf('const reloadDefault = React.useCallback('),
+    );
+    expect(initial).not.toContain('getCardsByList(defaultListKey)');
+    expect(initial).toContain('const feedEntry = getQueryEntry(feedListKey);');
+    expect(initial).toContain('const feedListKey = buildFeedListKey(feedCacheSignature);');
+    expect(initial).toContain('if (cacheResume.exhausted) {');
+    expect(initial).toContain('resumeCursor,\n          initialExclude,');
+    expect(initial).toContain('rememberFeedPagination({ cursor: res.lastKey, hasMore: res.hasMore, signature: feedCacheSignature });');
+    expect(initial).toContain('rememberFeedSummaryCards(res.users);');
+  });
+
+  it('дописана сторінка стрічки оновлює стан пагінації в кеші', () => {
+    const source = matching();
+    expect(source).toContain('rememberFeedPagination({ cursor, hasMore: nextHasMore, signature: requestFeedCacheSignature });');
   });
 
   it('будує курсор наступної сторінки з останньої кешованої картки', () => {

@@ -9183,7 +9183,33 @@ export const fetchPaginatedUsers = async (
   }
 };
 
-export const fetchUserById = async userId => {
+// Ті самі анкети на старті сторінки питають кілька незалежних місць одночасно
+// (профіль доступу, додаткові правила, шапка) — і кожне платило за п'ять вузлів
+// окремо. Поки читання триває, наступні запити тієї самої анкети чекають його,
+// а не відкривають своє. Результат не памʼятається довше за саме читання: після
+// нього анкету могли змінити, і наступний виклик мусить побачити зміну.
+const fetchUserByIdInFlight = new Map();
+const cloneFetchedProfile = profile => {
+  if (!profile || typeof profile !== 'object') return profile;
+  try {
+    return structuredClone(profile);
+  } catch {
+    return { ...profile };
+  }
+};
+
+export const fetchUserById = userId => {
+  const key = String(userId || '');
+  if (!fetchUserByIdInFlight.has(key)) {
+    const pending = fetchUserByIdOnce(userId).finally(() => {
+      fetchUserByIdInFlight.delete(key);
+    });
+    fetchUserByIdInFlight.set(key, pending);
+  }
+  return fetchUserByIdInFlight.get(key).then(cloneFetchedProfile);
+};
+
+const fetchUserByIdOnce = async userId => {
   try {
     // Анкету складають нові вузли, і тільки вони. Legacy-колекція у вебі —
     // адресат дзеркального запису для мобільного застосунку, а не джерело:
