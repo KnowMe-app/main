@@ -119,9 +119,10 @@ const PhotoSwipeStage = ({ swipe, photo, loading = false }) => {
     : undefined;
 
   return (
-    <Stage ref={stageRef} style={vars}>
+    <Stage ref={stageRef} style={vars} data-testid="photo-swipe-stage">
       {transition && (
         <Layer
+          data-testid="photo-layer"
           key={`out-${transition.id}`}
           src={transition.from}
           alt=""
@@ -131,6 +132,7 @@ const PhotoSwipeStage = ({ swipe, photo, loading = false }) => {
         />
       )}
       <Layer
+        data-testid="photo-layer"
         key={`photo-${photo}`}
         src={photo}
         alt=""
@@ -142,10 +144,10 @@ const PhotoSwipeStage = ({ swipe, photo, loading = false }) => {
         onAnimationEnd={transition ? onSettled : undefined}
       />
       {prevPhoto && prevPhoto !== photo && (
-        <Layer src={prevPhoto} alt="" aria-hidden="true" decoding="async" $kind="prev" $snapping={snapping} />
+        <Layer data-testid="photo-layer" src={prevPhoto} alt="" aria-hidden="true" decoding="async" $kind="prev" $snapping={snapping} />
       )}
       {nextPhoto && nextPhoto !== photo && nextPhoto !== prevPhoto && (
-        <Layer src={nextPhoto} alt="" aria-hidden="true" decoding="async" $kind="next" $snapping={snapping} />
+        <Layer data-testid="photo-layer" src={nextPhoto} alt="" aria-hidden="true" decoding="async" $kind="next" $snapping={snapping} />
       )}
     </Stage>
   );

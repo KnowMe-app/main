@@ -75,10 +75,11 @@ describe('usePhotoSwipe', () => {
         </div>
       );
     };
-    const { container } = render(<StageHarness />);
+    render(<StageHarness />);
     const box = screen.getByTestId('box');
-    const stage = box.firstChild;
-    const srcs = () => Array.from(container.querySelectorAll('img')).map(img => img.getAttribute('src'));
+    const stage = screen.getByTestId('photo-swipe-stage');
+    const layers = () => screen.queryAllByTestId('photo-layer');
+    const srcs = () => layers().map(img => img.getAttribute('src'));
 
     expect(srcs()).toEqual(['a']);
     fireEvent.touchStart(box, { touches: [{ clientX: 200, clientY: 10 }] });
@@ -92,7 +93,7 @@ describe('usePhotoSwipe', () => {
     expect(srcs()).toEqual(['a', 'b']);
     expect(stage.style.getPropertyValue('--photo-start')).toBe('-30px');
 
-    fireEvent.animationEnd(container.querySelector('img[src="b"]'));
+    fireEvent.animationEnd(layers().find(img => img.getAttribute('src') === 'b'));
     expect(srcs()).toEqual(['b']);
   });
 
