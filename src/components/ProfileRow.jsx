@@ -31,6 +31,7 @@ import { formatProfileCountOrDate } from '../utils/profileDate';
 import { formatDeliveryRecency } from '../utils/deliveryRecency';
 import * as S from './MatchingHiddenList.styled';
 import usePhotoSwipe from './usePhotoSwipe';
+import PhotoSwipeStage from './PhotoSwipeStage';
 // Доріжки нотаток беруться з розкладки відкритої картки, а не описуються тут
 // удруге: у рядку стрічки й у картці стоять ті самі два записи — публічний
 // відгук і власна нотатка, — і два екрани не можуть казати про них різне.
@@ -1269,7 +1270,7 @@ const ProfileRow = ({
           це» несе смужка ролі на лівому краї картки. */}
       {photo && (
         <S.Photo {...photoSwipe.handlers} $loading={photoSwipe.loading}>
-          <img src={photo} alt="" loading="lazy" decoding="async" />
+          <PhotoSwipeStage swipe={photoSwipe} photo={photo} loading={photoSwipe.loading} />
           {/* Роль лежить на знімку — там само, де її малює відкрита картка
               (`ModernRoleBadge`). Під іменем вона стояла чіпом і забирала
               ширину в локації; а два екрани не можуть казати про ту саму річ

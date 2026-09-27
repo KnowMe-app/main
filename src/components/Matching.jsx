@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useLayoutEffect, useMemo } from 'react';
 import usePhotoSwipe from './usePhotoSwipe';
+import PhotoSwipeStage from './PhotoSwipeStage';
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
@@ -1669,7 +1670,7 @@ const GalleryCard = React.memo(({
       )}
       {photo && (
         <GalleryPhotoBox {...photoSwipe.handlers} $loading={photoSwipe.loading}>
-          <img src={photo} alt="" loading="lazy" decoding="async" />
+          <PhotoSwipeStage swipe={photoSwipe} photo={photo} loading={photoSwipe.loading} />
           {/* Роль лежить на знімку, у лівому верхньому куті — та сама плашка
               (`PhotoRoleBadge`), що й у рядку однієї колонки та у відкритій
               картці. Чіпом під іменем вона змагалась за ширину з локацією, а
