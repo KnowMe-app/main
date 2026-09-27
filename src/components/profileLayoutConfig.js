@@ -1,6 +1,7 @@
 import { getCurrentValue } from './getCurrentValue';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
+import { computeBmi, formatCityName, normalizeHeightCm, normalizeWeightKg } from '../utils/profileNormalization';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { CONTACT_FIELDS, getContactValues } from './contactMethods';
 import { translateFieldValue } from './formFields';
@@ -198,12 +199,21 @@ export const getProfileAge = user => {
   return age ? String(age) : '';
 };
 
-export const getProfileLocation = user => {
-  const country = normalizeCountry(normalizeDisplayValue(user?.country));
-  const region = normalizeRegion(normalizeDisplayValue(user?.region));
-  const city = normalizeDisplayValue(user?.city);
+export const getProfileLocation = (user, language) => {
+  const country = normalizeCountry(normalizeDisplayValue(user?.country), language);
+  const region = normalizeRegion(normalizeDisplayValue(user?.region), language);
+  const city = formatCityName(normalizeDisplayValue(user?.city), resolveProfileLanguage(language));
   return [country, city || region].filter(Boolean).join(', ') || region || city;
 };
+
+// Країна, область і місто в полях картки — ті самі довідники, що й рядок
+// локації вище (`utils/profileNormalization`); незнайоме лишається як є.
+const countryDisplayValue = (user, language) => normalizeCountry(normalizeDisplayValue(user?.country), language);
+const regionDisplayValue = (user, language) => normalizeRegion(normalizeDisplayValue(user?.region), language);
+const cityDisplayValue = (user, language) => formatCityName(
+  normalizeDisplayValue(user?.city),
+  resolveProfileLanguage(language),
+);
 
 export const getProfilePhotos = user => {
   const rawPhotos = Array.isArray(user?.photos) ? user.photos : [user?.photos, user?.photo, user?.avatar];
@@ -261,10 +271,19 @@ const toDisplayFields = (items, user, excludeKeys = [], language) =>
 export const bmiValue = user => {
   const explicit = normalizeDisplayValue(user?.bmi);
   if (explicit) return explicit;
-  const weight = Number(normalizeDisplayValue(user?.weight));
-  const height = Number(normalizeDisplayValue(user?.height));
-  if (!weight || !height) return '';
-  return String(Math.round((weight / (height * height)) * 10000));
+  // Із нормалізованих зросту й ваги: фути, записані як сантиметри, давали
+  // «BMI 1200» і «BMI 30000». Неправдоподібного ІМТ не показуємо.
+  const bmi = computeBmi(normalizeDisplayValue(user?.height), normalizeDisplayValue(user?.weight));
+  return bmi ? String(bmi) : '';
+};
+
+const heightDisplayValue = user => {
+  const cm = normalizeHeightCm(normalizeDisplayValue(user?.height));
+  return cm ? String(cm) : '';
+};
+const weightDisplayValue = user => {
+  const kg = normalizeWeightKg(normalizeDisplayValue(user?.weight));
+  return kg ? String(kg) : '';
 };
 
 const ownKidsValue = user => {
@@ -300,8 +319,8 @@ const donorExperienceValue = user => {
 
 const heroFields = {
   ed: [
-    field('height', 'Height'),
-    field('weight', 'Weight'),
+    field('height', 'Height', heightDisplayValue, ['height']),
+    field('weight', 'Weight', weightDisplayValue, ['weight']),
     field('bmi', 'BMI', bmiValue, ['bmi']),
     field('blood', 'Blood/Rh', getBloodGroupDisplay, ['blood'], { resolved: true }),
     field('ownKids', 'Deliveries', birthsCountValue, ['ownKids']),
@@ -313,29 +332,29 @@ const heroFields = {
     field('experience', 'Donations', donorExperienceValue, ['experience', 'donationExperience', 'previousDonation', 'donationCount', 'donationsCount']),
   ],
   ip: [
-    field('country', 'Country'),
-    field('city', 'City'),
+    field('country', 'Country', countryDisplayValue, ['country']),
+    field('city', 'City', cityDisplayValue, ['city']),
     field('maritalStatus', 'Family', maritalStatusDisplayValue, ['maritalStatus'], { resolved: true }),
     field('programInterest', 'Program'),
     field('lookingFor', 'Looking for'),
   ],
   ag: [
-    field('country', 'Country'),
-    field('city', 'City'),
+    field('country', 'Country', countryDisplayValue, ['country']),
+    field('city', 'City', cityDisplayValue, ['city']),
     field('services', 'Services'),
     field('profession', 'Specialization'),
   ],
   pp: [
-    field('country', 'Country'),
-    field('city', 'City'),
+    field('country', 'Country', countryDisplayValue, ['country']),
+    field('city', 'City', cityDisplayValue, ['city']),
     field('services', 'Services'),
   ],
   cl: [
-    field('country', 'Country'),
-    field('city', 'City'),
+    field('country', 'Country', countryDisplayValue, ['country']),
+    field('city', 'City', cityDisplayValue, ['city']),
     field('services', 'Services'),
   ],
-  other: [field('country', 'Country'), field('city', 'City'), field('role', 'Role')],
+  other: [field('country', 'Country', countryDisplayValue, ['country']), field('city', 'City', cityDisplayValue, ['city']), field('role', 'Role')],
 };
 
 const quickFacts = {
@@ -343,31 +362,31 @@ const quickFacts = {
     ...heroFields.ed,
   ],
   ip: [
-    field('country', 'Country'),
-    field('city', 'City'),
+    field('country', 'Country', countryDisplayValue, ['country']),
+    field('city', 'City', cityDisplayValue, ['city']),
     field('maritalStatus', 'Family status', maritalStatusDisplayValue, ['maritalStatus'], { resolved: true }),
     field('programInterest', 'Program interest'),
     field('budget', 'Budget'),
   ],
   ag: [
-    field('country', 'Country'),
-    field('city', 'City'),
+    field('country', 'Country', countryDisplayValue, ['country']),
+    field('city', 'City', cityDisplayValue, ['city']),
     field('services', 'Services'),
     field('profession', 'Specialization'),
   ],
   pp: [
-    field('country', 'Country'),
-    field('city', 'City'),
+    field('country', 'Country', countryDisplayValue, ['country']),
+    field('city', 'City', cityDisplayValue, ['city']),
     field('services', 'Services'),
     field('programInterest', 'Program interest'),
   ],
   cl: [
-    field('country', 'Country'),
-    field('city', 'City'),
+    field('country', 'Country', countryDisplayValue, ['country']),
+    field('city', 'City', cityDisplayValue, ['city']),
     field('services', 'Services'),
     field('programInterest', 'Program interest'),
   ],
-  other: [field('country', 'Country'), field('city', 'City'), field('profession', 'Profession')],
+  other: [field('country', 'Country', countryDisplayValue, ['country']), field('city', 'City', cityDisplayValue, ['city']), field('profession', 'Profession')],
 };
 
 const sectionConfig = {
@@ -389,21 +408,21 @@ const sectionConfig = {
   ],
   ip: [
     { title: 'Main information', fields: [
-      field('country', 'Country'), field('city', 'City'), field('region', 'Region'), field('maritalStatus', 'Family status', maritalStatusDisplayValue, ['maritalStatus'], { resolved: true }),
+      field('country', 'Country', countryDisplayValue, ['country']), field('city', 'City', cityDisplayValue, ['city']), field('region', 'Region', regionDisplayValue, ['region']), field('maritalStatus', 'Family status', maritalStatusDisplayValue, ['maritalStatus'], { resolved: true }),
       field('programInterest', 'Program interest'), field('lookingFor', 'Looking for'), field('budget', 'Budget'),
     ] },
   ],
   ag: [
     { title: 'Agency details', fields: [
-      field('agencyName', 'Agency name'), field('country', 'Country'), field('city', 'City'), field('services', 'Services'),
+      field('agencyName', 'Agency name'), field('country', 'Country', countryDisplayValue, ['country']), field('city', 'City', cityDisplayValue, ['city']), field('services', 'Services'),
       field('profession', 'Specialization'),
     ] },
   ],
   pp: [
     { title: 'Main information', fields: [
-      field('country', 'Country'),
-      field('city', 'City'),
-      field('region', 'Region'),
+      field('country', 'Country', countryDisplayValue, ['country']),
+      field('city', 'City', cityDisplayValue, ['city']),
+      field('region', 'Region', regionDisplayValue, ['region']),
       field('programInterest', 'Program interest'),
       field('lookingFor', 'Looking for'),
       field('budget', 'Budget'),
@@ -412,9 +431,9 @@ const sectionConfig = {
   ],
   cl: [
     { title: 'Main information', fields: [
-      field('country', 'Country'),
-      field('city', 'City'),
-      field('region', 'Region'),
+      field('country', 'Country', countryDisplayValue, ['country']),
+      field('city', 'City', cityDisplayValue, ['city']),
+      field('region', 'Region', regionDisplayValue, ['region']),
       field('programInterest', 'Program interest'),
       field('lookingFor', 'Looking for'),
       field('budget', 'Budget'),
@@ -422,7 +441,7 @@ const sectionConfig = {
     ] },
   ],
   other: [
-    { title: 'Main information', fields: [field('country', 'Country'), field('city', 'City'), field('profession', 'Profession'), field('education', 'Education')] },
+    { title: 'Main information', fields: [field('country', 'Country', countryDisplayValue, ['country']), field('city', 'City', cityDisplayValue, ['city']), field('profession', 'Profession'), field('education', 'Education')] },
   ],
 };
 

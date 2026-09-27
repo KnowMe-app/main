@@ -11,6 +11,10 @@ export const collectFilteredMatchingSourceCards = async ({
   // тобто стара поведінка: гідратувати все поштучно. Викликач, який знає, що
   // його сторінка віддає анкети цілком, вмикає повторне використання сам.
   isHydrated = () => false,
+  // Позиція конкретного запису в джерелі — курсор, з якого наступна сторінка
+  // почнеться одразу після нього. Без нього курсор уміє стояти лише в кінці
+  // сторінки, і все видиме, що на ній лишилось понад потрібне, губиться.
+  getSourceCursor,
   getSourceLimit,
   onPart,
   onDiagnosticEvent,
@@ -117,17 +121,29 @@ export const collectFilteredMatchingSourceCards = async ({
       }
     }
 
+    // Сторінку джерела питають із запасом (`getSourceLimit` — утричі більше,
+    // ніж треба), тож видимих на ній зазвичай більше, ніж узято. Курсор при
+    // цьому ставився в кінець сторінки, і невзяті видимі картки не діставались
+    // уже нікому: наступна сторінка починалась після них. На порції з двох
+    // карток це було до дев'яти загублених зі сторінки в одинадцять — агенція
+    // бачила близько п'ятдесяти анкет із двохсот сімдесяти, а тоді джерело
+    // «закінчувалось», і стан «дочитано» лягав у кеш. Тепер курсор стає на
+    // останню взяту картку, і невзяте дочитається наступною порцією.
     const previousCursor = cursor;
-    const nextCursor = sourceRes?.lastKey ?? null;
+    const lastTaken = slice[slice.length - 1];
+    const rewindCursor = filtered.length > slice.length && lastTaken && typeof getSourceCursor === 'function'
+      ? getSourceCursor(lastTaken, sourceRes) || null
+      : null;
+    const nextCursor = rewindCursor || (sourceRes?.lastKey ?? null);
     cursorAdvanced = Boolean(nextCursor) && !isSameCursor(previousCursor, nextCursor);
-    sourceHasMore = Boolean(sourceRes?.hasMore) && cursorAdvanced;
+    sourceHasMore = (Boolean(sourceRes?.hasMore) || Boolean(rewindCursor)) && cursorAdvanced;
     cursor = nextCursor;
 
     if (sourceCardsCount >= safeMaxSourceCards) {
       stopReason = 'max_source_cards_reached';
       break;
     }
-    if (!sourceRes?.hasMore) {
+    if (!sourceRes?.hasMore && !rewindCursor) {
       stopReason = validSlice.length ? 'source_exhausted' : 'no_visible_cards_added';
       break;
     }

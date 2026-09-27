@@ -7,6 +7,7 @@ import {
   getQuickFacts,
   shouldRenderField,
 } from './profileLayoutConfig';
+import { applyEnglishInterface } from '../testUtils/interfaceLanguage';
 
 jest.mock('./smallCard/utilCalculateAge', () => ({ utilCalculateAge: () => 29 }));
 jest.mock('./normalizeLocation', () => ({
@@ -14,6 +15,10 @@ jest.mock('./normalizeLocation', () => ({
   normalizeRegion: value => value,
 }));
 jest.mock('../utils/convertDriveLinkToImage', () => ({ convertDriveLinkToImage: value => value }));
+
+// Макет картки описано англійськими підписами — і сюїта перевіряє саме
+// англійський бік, а не мову за замовчуванням.
+applyEnglishInterface();
 
 const collectKeys = fields => [...new Set(fields.flatMap(field => [field.key, ...(field.sourceKeys || [])]))];
 const sectionFieldKeys = sections => sections.flatMap(section => section.fields.map(field => field.key));

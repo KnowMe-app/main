@@ -208,10 +208,9 @@ const EN_BY_UK = {
   'Всі профілі показані за поточними правилами доступу': 'Every profile is shown under the current access rules',
   'Не вдалося завантажити профілі.': 'Could not load the profiles.',
   'Повторити завантаження': 'Retry loading',
-  'Показати ще {count}': 'Show {count} more',
-  'Минула порція не дала нових карток — під ці фільтри більше нічого не підійшло':
-    'The last batch brought no new cards — nothing else matches these filters',
-  'Прокрутіть донизу, щоб запустити відлік': 'Scroll down to start the countdown',
+  'Показати ще': 'Show more',
+  'Це всі анкети в стрічці': 'That is every profile in the feed',
+  'Під ці фільтри більше анкет немає': 'No more profiles match these filters',
   'Завантажую…': 'Loading…',
   Профіль: 'Profile',
   'Закрити профіль': 'Close the profile',
@@ -242,9 +241,6 @@ const EN_BY_UK = {
   'У стрічці немає анкет агенцій, клінік чи батьків — інших вона донорці не показує. Конкретну людину можна знайти пошуком':
     'The feed has no agency, clinic or intended-parent profiles — it shows a donor nobody else. A particular person can still be found through search',
   'Немає доступних профілів': 'No profiles available',
-  'Додано {added} {cards} — вони в кінці списку': 'Added {added} {cards} — they are at the end of the list',
-  'Порція не дала нових карток — під ці фільтри більше нічого не підійшло':
-    'The batch brought no new cards — nothing else matches these filters',
   'Загальна стрічка недоступна{detail}. Показані лише картки з додаткового доступу.':
     'The shared feed is unavailable{detail}. Only the additionally granted cards are shown.',
   'Знайшов у searchId{suffix}': 'Found in searchId{suffix}',

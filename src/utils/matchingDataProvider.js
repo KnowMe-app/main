@@ -1558,6 +1558,7 @@ export const fetchFilteredMatchingSourceChunk = ({
     // нема потреби. Урізаний пошуковий хіт — інша річ: за ним стоїть не картка,
     // а проєкція з пʼяти полів, і його треба догідратувати.
     isHydrated: user => Boolean(user) && !user.__limitedProfile,
+    getSourceCursor: (user, page) => page?.cursorsByUserId?.[user?.userId] || null,
     maxSourceCards: 500,
     debugLabel: 'matchingSourceBackfill',
     fetchSourcePage: async ({ limit: sourceLimit, cursor }) => {

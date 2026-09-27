@@ -13,6 +13,7 @@ import {
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { inputUpdateValue } from './inputUpdatedValue';
+import { normalizeProfileFieldInput } from '../utils/profileNormalization';
 import { formatDateToDisplay, normalizePhoneValue } from './inputValidations';
 import {
   createUserWithEmailAndPassword,
@@ -361,13 +362,16 @@ const baseSections = [
   { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'phone', 'birth', 'country', 'region', 'city', 'maritalStatus'] },
   { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'surrogacyExperience', 'ownKids', 'lastDelivery', 'csection', 'reward'] },
   { key: 'appearance', title: '✨ Зовнішність', fields: ['eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'faceShape', 'noseShape', 'lipsShape', 'chin', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race'] },
-  { key: 'social', title: '📱 Соцмережі', fields: ['telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'vk'] },
+  // VK прибрано: мережа заблокована в Україні з 2017 року, і поле для неї в
+  // анкеті читалось як знак, чий це застосунок. Уже записане значення з
+  // анкети не зникає — його просто більше не пропонують вводити.
+  { key: 'social', title: '📱 Соцмережі', fields: ['telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube'] },
   { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'sport', 'education', 'profession', 'hobbies', 'twinsInFamily', 'moreInfo_main', 'surrogacyProgramInterest'] },
 ];
 
 const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery']);
 
-const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','vk','country','region','city','moreInfo_main']);
+const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','country','region','city','moreInfo_main']);
 
 /**
  * Чого «очистити все» не чіпає.
@@ -586,8 +590,14 @@ export const MyProfile = () => {
     }
   }, [mergeLoadedProfileData, normalizeProfileData, restoreLocalDraft]);
 
+  // Країна, область, місто й зріст приводяться до канонічного вигляду саме
+  // тут, на blur, а не під час набору: «Кие» — це ще не «Київ». Інакше в базу
+  // йшло, як набрали, — «Украина», «Днепропетровская», зріст у футах, — і
+  // стрічка потім показувала це як є (`utils/profileNormalization`).
   const normalizeFieldValue = (name, value, field) => (
-    name === 'phone' ? normalizePhoneValue(value) : inputUpdateValue(value, field)
+    name === 'phone'
+      ? normalizePhoneValue(value)
+      : normalizeProfileFieldInput(name, inputUpdateValue(value, field))
   );
 
   const updateFieldValue = (name, value, field) => {

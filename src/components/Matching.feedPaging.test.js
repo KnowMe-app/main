@@ -1,73 +1,59 @@
 import fs from 'fs';
 import path from 'path';
+import { MATCHING_FEED_PAGE_SIZE, MATCHING_FIRST_PAGE_BATCH } from '../utils/matchingFeedPaging';
 
 const read = name => fs.readFileSync(path.join(__dirname, name), 'utf8');
 
-describe('пауза між сторінками стрічки — тільки для не-адміна', () => {
+/**
+ * Стрічка гортається без паузи — для будь-якого читача.
+ *
+ * Не-адмін гортав її по дві картки на десять секунд, з відліком і окремим
+ * жестом на кожну порцію: двісті сорок донорок коштували близько двадцяти
+ * хвилин самого чекання. Тепер сторінка одна для всіх, і наступну просить
+ * сентинел у кінці списку.
+ */
+describe('стрічка гортається сторінками, без паузи', () => {
   const matching = () => read('Matching.jsx');
 
-  it('вмикає відлік саме для не-адміна', () => {
-    expect(matching()).toContain('const isThrottledFeedPaging = !access.isAdmin;');
+  it('має одну сторінку для першого екрана й для кожної наступної порції', () => {
+    expect(MATCHING_FEED_PAGE_SIZE).toBeGreaterThanOrEqual(20);
+    expect(MATCHING_FEED_PAGE_SIZE).toBeLessThanOrEqual(30);
+    expect(MATCHING_FIRST_PAGE_BATCH).toBe(MATCHING_FEED_PAGE_SIZE);
   });
 
-  it('лишає адмінові миттєве дозавантаження по сентинелу', () => {
+  it('не знає більше ні паузи, ні відліку, ні окремого шляху для не-адміна', () => {
     const source = matching();
-    // Видимість кінця списку потрібна обом шляхам; вантажить одразу лише адмін.
+    expect(source).not.toContain('isThrottledFeedPaging');
+    expect(source).not.toContain('throttledCycle');
+    expect(source).not.toContain('FeedLoadCountdown');
+    expect(source).not.toContain('MATCHING_THROTTLED');
+  });
+
+  it('просить наступну сторінку сентинелом, щойно кінець списку близько', () => {
+    const source = matching();
     expect(source).toContain('setFeedEndVisible(isVisible);');
-    expect(source).toContain('if (isThrottledFeedPaging || !isVisible) return;');
-    expect(source).toContain("endOfDeckLoadRef.current('feed-sentinel');");
+    expect(source).toContain("endOfDeckLoadRef.current('feed-sentinel', { limit: MATCHING_FEED_PAGE_SIZE });");
   });
 
-  it('вантажить рівно домовлену порцію, коли відлік добіг нуля', () => {
-    // Звужена дека питає джерело більшими сторінками: порція там — дві
-    // картки після фільтрів, а не дві сирі.
-    expect(matching()).toContain(
-      'limit: feedFiltersNarrowedRef.current ? MATCHING_REFILL_LIMIT : MATCHING_THROTTLED_LOAD_BATCH,'
-    );
-  });
-
-  it('показує відлік лише в кінці видимого списку і лише коли є що вантажити', () => {
+  it('не губить стан пагінації, записаний ще хибним курсором', () => {
+    // Стрічка, дочитана курсором, що губив картки, лягала в кеш як
+    // «дочитано» — і після виправлення закривала б решту карток на весь TTL.
     const source = matching();
-    const gate = source.slice(
-      source.indexOf('const canOfferMoreFeedCards = Boolean('),
-      source.indexOf('const showFeedLoadCountdown ='),
+    const signature = source.slice(
+      source.indexOf('const buildFeedCacheSignature = React.useCallback('),
+      source.indexOf('const rememberFeedPagination = React.useCallback('),
     );
-    ['isThrottledFeedPaging', 'feedEndVisible', 'deckHasMore', '!loading', '!loadError', 'detailIndex === null']
-      .forEach(condition => expect(gate).toContain(condition));
+    expect(signature).toContain('paging: MATCHING_FEED_PAGING_VERSION,');
   });
 
-  it('вимагає прокрутки донизу, щоб завести відлік', () => {
+  it('називає кінець стрічки тією причиною, яка справді є', () => {
+    // «Під ці фільтри більше нічого не підійшло» показувалось і без жодного
+    // фільтра.
     const source = matching();
-    expect(source).toContain('const showFeedLoadCountdown = canOfferMoreFeedCards && scrolledDownSinceLoad;');
-    expect(source).toContain('const showFeedLoadPrompt = canOfferMoreFeedCards && !scrolledDownSinceLoad;');
-  });
-
-  it('витрачає жест на порцію — наступна вимагає нового', () => {
-    const source = matching();
-    const handler = source.slice(
-      source.indexOf('const handleThrottledFeedLoad = React.useCallback('),
-      source.indexOf('const handleArmFeedPaging'),
+    expect(source).not.toContain('під ці фільтри більше нічого не підійшло');
+    expect(source).toContain(
+      "uiText(filterChips.length > 0 ? 'Під ці фільтри більше анкет немає' : 'Це всі анкети в стрічці', language)"
     );
-    // Знімається до запиту, інакше відлік перезапустився б сам, поки картки їдуть.
-    expect(handler.indexOf('disarmFeedPaging()')).toBeLessThan(handler.indexOf('endOfDeckLoadRef.current'));
-  });
-
-  it('лишає спосіб попросити ще, коли стрічка коротша за екран', () => {
-    // Тоді крутити нема чого, і жест лишався б недосяжним.
-    expect(matching()).toContain('onClick={handleArmFeedPaging}');
-  });
-
-  it('перезапускає відлік після кожної підвантаженої публічної порції', () => {
-    // `cycleKey` міняється разом з кількістю публічних карток, і саме це змушує ефект
-    // всередині відліку початися спочатку.
-    expect(matching()).toContain('cycleKey={publicCardsLength}');
-  });
-
-  it('тримає тік у власному компоненті, а не в стані сторінки', () => {
-    // Інакше стрічка перемальовувалась би з кожним кроком відліку: поведінку
-    // перевіряє FeedLoadCountdown.test.jsx, тут — що сторінка його не всмоктала.
-    expect(matching()).toContain("import FeedLoadCountdown from './FeedLoadCountdown';");
-    expect(matching()).not.toContain('const [remainingMs, setRemainingMs]');
   });
 });
 
@@ -87,29 +73,34 @@ describe('стеля на порожні спроби не має бути гл�
     expect(handler).toContain('emptyAutoLoadMoreAttemptsRef.current = 0;');
   });
 
-  it('дає адмінові повторну спробу на прокрутку, бо перетин уже не спрацює', () => {
+  it('дає повторну спробу на прокрутку, бо перетин уже не спрацює', () => {
     // Кінець списку вже видно, тож нової події перетину не буде: без цього
     // стрічка стояла б, доки читач не перезавантажить сторінку.
     const source = matching();
     const effect = source.slice(
-      source.indexOf('if (isThrottledFeedPaging || !scrolledDownSinceLoad) return;'),
-      source.indexOf("endOfDeckLoadRef.current('feed-scroll');"),
+      source.indexOf('if (!scrolledDownSinceLoad) return;'),
+      source.indexOf("endOfDeckLoadRef.current('feed-scroll', { limit: MATCHING_FEED_PAGE_SIZE });"),
     );
     expect(effect).toContain('if (!feedEndVisible || !deckHasMore || loading || detailIndex !== null) return;');
     // Жест витрачається: одна прокрутка донизу — одна спроба.
     expect(effect).toContain('scrolledDownSinceLoadRef.current = false;');
   });
 
-  it('каже вголос, що порція не дала карток, замість мовчазного відліку', () => {
-    // Відлік, після якого нічого не змінюється, читається як зламана сторінка.
+  it('лишає кнопку там, де прокрутити нема чого', () => {
+    // Порожня порція на стрічці, коротшій за екран: ні перетину, ні прокрутки.
     const source = matching();
     expect(source).toContain('setLastLoadAddedNothing(visibleAdded === 0);');
-    expect(source).toContain('Минула порція не дала нових карток');
+    expect(source).toContain('onClick={handleFeedRetry}');
+    const retry = source.slice(
+      source.indexOf('const handleFeedRetry = React.useCallback('),
+      source.indexOf("endOfDeckLoadRef.current('feed-retry', { limit: MATCHING_FEED_PAGE_SIZE });"),
+    );
+    expect(retry).toContain('emptyAutoLoadMoreAttemptsRef.current = 0;');
   });
 
-  // Відновлення позиції — не прокрутка донизу, і завести відлік воно не має
-  // права. Орієнтир посувається на фактичну позицію, бо стати на рядок якоря
-  // (`scrollIntoView`) — це вже не той піксель, що лежав у сховищі.
+  // Відновлення позиції — не прокрутка донизу, і рахуватись за жест воно не
+  // має права. Орієнтир посувається на фактичну позицію, бо стати на рядок
+  // якоря (`scrollIntoView`) — це вже не той піксель, що лежав у сховищі.
   it('не рахує відновлення позиції за жест читача', () => {
     const source = matching();
     const restore = source.slice(
@@ -261,53 +252,10 @@ describe('публічні коментарі', () => {
   });
 });
 
-describe('одна порція — один жест, і рівно дві картки', () => {
-  const matching = () => read('Matching.jsx');
-
-  it('добирає до обіцяної порції в межах того самого циклу', () => {
-    // `loadMore` рахує те, що віддало джерело; фільтри показу проріджують його
-    // ще раз, і ряд галереї виходив напівпорожній — одна картка замість двох.
-    const source = matching();
-    const effect = source.slice(
-      source.indexOf('if (!isThrottledFeedPaging || !throttledCycle || loading) return;'),
-      source.indexOf("endOfDeckLoadRef.current('feed-countdown-topup'"),
-    );
-    expect(effect).toContain('publicCardsLength >= throttledCycle.target');
-    // Зі стелею на спроби, інакше добір сам став би потоком.
-    expect(effect).toContain('throttledCycle.attempts >= maxAttempts');
-    expect(effect).toContain('MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS');
-    // Під фільтрами порцію рахують картки, що пройшли фільтри.
-    expect(effect).toContain('MATCHING_THROTTLED_FILTERED_MAX_ATTEMPTS');
-  });
-
-  // Відлік добігає нуля, картки лягають у кінець — і кінець списку виглядає так
-  // само, як за секунду до того. Читач бачив блимання лічильника, а не
-  // результат, і мусив прокручувати вгору, щоб дізнатись, чи щось приїхало.
-  it('називає підсумок порції там, де щойно був відлік', () => {
-    const source = matching();
-    expect(source).toContain('const [lastBatchSummary, setLastBatchSummary] = useState(null);');
-    expect(source).toContain('startPublicCardsLength: publicCardsLengthRef.current,');
-    // Нуль — теж відповідь: «під ці фільтри більше нічого не підійшло».
-    expect(source).toContain('added: Math.max(0, publicCardsLength - throttledCycle.startPublicCardsLength)');
-    expect(source).toContain("Порція не дала нових карток");
-    expect(source).toContain('MATCHING_BATCH_SUMMARY_VISIBLE_MS');
-    expect(source).toContain("data-testid=\"feed-batch-summary\"");
-  });
-
-  it('ховає відлік і запрошення, поки цикл ще добирає', () => {
-    const source = matching();
-    const gate = source.slice(
-      source.indexOf('const canOfferMoreFeedCards = Boolean('),
-      source.indexOf('const showFeedLoadCountdown ='),
-    );
-    expect(gate).toContain('!throttledCycle');
-  });
-});
-
 describe('перше публічне вікно не змішується з власними чернетками', () => {
   const matching = () => read('Matching.jsx');
 
-  it('відкриває чернетки лише після десяти публічних карток або вичерпання matchingCards', () => {
+  it('відкриває чернетки лише після першої публічної сторінки або вичерпання matchingCards', () => {
     const source = matching();
     expect(source).toContain('const [initialPublicWindowComplete, setInitialPublicWindowComplete] = useState(false);');
     expect(source).toContain('initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS');
@@ -329,44 +277,13 @@ describe('перше публічне вікно не змішується з в
   it('після вичерпання public добирає scoped-картки в межах тієї самої порції', () => {
     const source = matching();
     expect(source).toContain('while (scopedUsers.length < requestedLimit && additionalHasMoreRef.current');
-    expect(source).toContain('pagedCardsLength - throttledCycle.startPagedCardsLength >= MATCHING_THROTTLED_LOAD_BATCH');
-    expect(source).toContain('(!hasMore && !additionalHasMore)');
   });
 
   it('рахує наступну порцію від публічних карток, а не від повної деки', () => {
     const source = matching();
     expect(source).toContain('const publicCardsLength = viewMode === \'default\' ? publicVisibleUsers.length : renderedCardsLength;');
     expect(source).toContain('targetVisibleCount: publicCardsLength + visibleBuffer');
-    expect(source).toContain('publicCardsLengthRef.current + MATCHING_THROTTLED_LOAD_BATCH');
     expect(source).not.toContain('renderedCardsLengthRef');
-  });
-});
-
-describe('самохідні шляхи дозавантаження не обходять відлік', () => {
-  const matching = () => read('Matching.jsx');
-
-  it('глушить дозаправку, поки на екрані є хоч одна картка', () => {
-    // Дозаправка перезапускалась на кожну зміну `filteredUsers` і вважала
-    // приводом те, що фільтри зрізали пару карток — а зрізають вони їх щоразу.
-    // Виходив потік, що йшов повз відлік.
-    expect(matching()).toContain('if (isThrottledFeedPaging && filteredUsers.length > 0) {');
-  });
-
-  it('глушить тригер останньої картки', () => {
-    // На стрічці з однієї картки активний індекс одразу дорівнює останньому.
-    const source = matching();
-    const effect = source.slice(
-      source.indexOf('const lastRenderedIndex = renderedCardsLength - 1;') - 400,
-      source.indexOf('const lastRenderedIndex = renderedCardsLength - 1;'),
-    );
-    expect(effect).toContain('if (isThrottledFeedPaging) return;');
-  });
-
-  it('оголошує прапорець до ефектів, які його читають', () => {
-    // Інакше список залежностей ефекту звертався б до нього в TDZ.
-    const source = matching();
-    expect(source.indexOf('const isThrottledFeedPaging = !access.isAdmin;'))
-      .toBeLessThan(source.indexOf('refillBlockedReason: \'throttled-paging-owned-by-countdown\''));
   });
 });
 

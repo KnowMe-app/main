@@ -1,3 +1,5 @@
+import { isUkraineCountry, normalizeHeightCm, normalizeWeightKg } from './profileNormalization';
+
 // Single source of truth for the searchKey index vocabulary.
 //
 // The same bucket names are produced by the index writers in `components/config.js`
@@ -50,9 +52,11 @@ export const resolveBmiBucket = profile => {
   let bmi = Number.isFinite(directBmi) && directBmi > 0 ? directBmi : null;
 
   if (bmi === null) {
-    const height = Number(String(profile?.height || '').replace(',', '.').trim());
-    const weight = Number(String(profile?.weight || '').replace(',', '.').trim());
-    if (Number.isFinite(height) && Number.isFinite(weight) && height > 0 && weight > 0) {
+    // Зріст і вага нормалізовані (`utils/profileNormalization`): фути, записані
+    // як сантиметри («5»), давали ІМТ 30000 і клали анкету в «30+».
+    const height = normalizeHeightCm(profile?.height);
+    const weight = normalizeWeightKg(profile?.weight);
+    if (height && weight) {
       bmi = weight / (height / 100) ** 2;
     }
   }
@@ -64,12 +68,13 @@ export const resolveBmiBucket = profile => {
   return '30_plus';
 };
 
-const UA_COUNTRY_VALUES = ['ukraine', 'україна', 'украина', 'украин', 'уккраина'];
-
+// Україна впізнається довідником (`isUkraineCountry`), а не переліком
+// написань: у базі їх вісім, зокрема «УкраЇна» й «Уркаїна», і фільтр
+// «Україна» таких анкет не бачив.
 export const resolveCountryBucket = profile => {
   const raw = String(profile?.country ?? '').trim();
   if (!raw) return 'unknown';
-  return UA_COUNTRY_VALUES.includes(raw.toLowerCase()) ? 'ua' : 'other';
+  return isUkraineCountry(raw) ? 'ua' : 'other';
 };
 
 // Bucket -> filter option key, per index. Buckets missing from a map keep their own name.

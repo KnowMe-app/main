@@ -7,6 +7,7 @@ import {
   NOTE_TEXT_SIZE,
 } from './noteTypography';
 import { getRoleColor } from './matchingRoleColors';
+import { FEED_WIDE_MIN_WIDTH, FEED_XWIDE_MIN_WIDTH } from '../hooks/useFeedColumns';
 
 const STACK_CARD_RADIUS = '18px';
 
@@ -87,9 +88,18 @@ export const Container = styled.div`
   background: var(--matching-page-bg);
 `;
 
+/* На телефоні стрічка — одна колонка на всю ширину, на комп'ютері — сітка.
+ *
+ * Тут стояли жорсткі 480 px на будь-якому екрані, і на комп'ютері дві
+ * третини ширини були порожні: агенція гортала двісті анкет по одній на
+ * висоту вікна. Межі ширини ті самі, що в `hooks/useFeedColumns`. */
 export const InnerContainer = styled.div`
   max-width: 480px;
   width: 100%;
+
+  @media (min-width: ${FEED_WIDE_MIN_WIDTH}px) {
+    max-width: min(1240px, calc(100vw - 48px));
+  }
   min-height: 100dvh;
   background: transparent;
   padding: 0;
@@ -2219,6 +2229,22 @@ export const FeedList = styled.div`
   flex-direction: column;
   gap: 9px;
   padding: 2px 0 4px;
+
+  /* Сітка йде рядками, а не колонками: порядок стрічки задає дата публікації, і
+     друга за свіжістю картка мусить стояти поруч із першою, а не посеред
+     екрана внизу лівої колонки. Картки в ряду стають угорі, а не тягнуться
+     до найвищої. */
+  @media (min-width: ${FEED_WIDE_MIN_WIDTH}px) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 14px;
+  }
+
+  @media (min-width: ${FEED_XWIDE_MIN_WIDTH}px) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   ${({ $restoringScroll }) => $restoringScroll && restoringScroll};
 `;
 
@@ -2228,6 +2254,11 @@ export const GalleryGrid = styled.div`
   display: flex;
   align-items: flex-start;
   gap: 10px;
+
+  @media (min-width: ${FEED_WIDE_MIN_WIDTH}px) {
+    gap: 14px;
+  }
+
   padding: 2px 0 4px;
   ${({ $restoringScroll }) => $restoringScroll && restoringScroll};
 `;
@@ -2438,11 +2469,11 @@ export const FeedSentinel = styled.div`
   height: 1px;
 `;
 
-/* Пауза між сторінками стрічки — видима, а не мовчазна.
+/* Рядок у кінці списку: «завантажую», «це всі анкети» або кнопка повтору.
  *
- * Читач має бачити не «список скінчився», а «наступні картки будуть, і ось
- * коли»: звідси відлік з мілісекундами замість спінера чи порожнечі. */
-export const FeedCountdown = styled.div`
+ * Тут жив відлік паузи між сторінками стрічки; паузи більше немає, а місце
+ * лишилось — кінець списку без жодного слова читався б як «зламалось». */
+export const FeedEndNotice = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2454,63 +2485,12 @@ export const FeedCountdown = styled.div`
   line-height: 1.4;
 `;
 
-export const FeedCountdownDial = styled.div`
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 3px;
-  /* Ширина фіксована, бо число міняється: без цього «10 с» і «9 с» різної
-     довжини, і на переході рядок смикається вбік. */
-  min-width: 76px;
-  padding: 7px 14px;
-  border: 1px solid var(--matching-chip-border);
-  border-radius: 999px;
-  background: var(--matching-chip-bg);
-  color: var(--matching-chip-text);
-  /* Моноширинні цифри плюс tabular-nums: інтерфейсний шрифт дає розрядам різну
-     ширину, і на кожному кроці відліку рядок смикався вбік. */
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
-  font-variant-numeric: tabular-nums;
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1.1;
-
-  i {
-    font-family: var(--km-font);
-    font-style: normal;
-    font-size: 12px;
-    font-weight: 600;
-    opacity: 0.6;
-  }
-`;
-
-/* Смужка під числом: скільки паузи вже минуло. Раніше замість неї стояли
-   мілісекунди, які мигтіли двадцять разів на секунду. */
-export const FeedCountdownBar = styled.div`
-  width: 108px;
-  height: 3px;
-  border-radius: 2px;
-  overflow: hidden;
-  background: var(--matching-chip-border);
-`;
-
-export const FeedCountdownBarFill = styled.div`
-  width: 100%;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--matching-accent);
-  transform-origin: left center;
-  will-change: transform;
-`;
-
-export const FeedCountdownHint = styled.div`
+export const FeedEndHint = styled.div`
   max-width: 280px;
 `;
 
-/* Кінець списку до того, як читач попросив продовження.
- *
- * Порожнеча тут читалась би як «більше нічого немає», тож місце каже, що робити:
- * прокрутити далі — або натиснути, якщо стрічка коротша за екран і крутити нічого. */
+/* Повтор після порожньої порції — там, де стрічка коротша за екран і
+ * прокрутити, щоб попросити ще, нема чого. */
 export const FeedLoadPromptButton = styled.button`
   display: inline-flex;
   align-items: center;

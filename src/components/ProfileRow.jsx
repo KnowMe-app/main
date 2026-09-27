@@ -19,7 +19,14 @@ import {
   getProfileRole,
   getRoleCode,
 } from './profileLayoutConfig';
-import { normalizeCountry, normalizeRegion } from './normalizeLocation';
+import { normalizeCountry } from './normalizeLocation';
+import {
+  formatCityName,
+  formatRegionName,
+  isUkraineCountry,
+  normalizeHeightCm,
+  normalizeWeightKg,
+} from '../utils/profileNormalization';
 import { profileUiText, resolveProfileLanguage, translateProfileLabel } from '../utils/profileTexts';
 import { translateFieldValue } from './formFields';
 import { uiText } from 'utils/uiTranslations';
@@ -46,7 +53,6 @@ import { isMatchingCardPublished, MATCHING_CARD_REVIEW_FLAG_FIELD } from '../uti
 // caller and arrives through props.
 
 const CSECTION_KEYS = ['cSection', 'csection', 'c_section', 'cesareanSection'];
-const UA_COUNTRY_VALUES = new Set(['україна', 'ukraine', 'ua']);
 
 // Підписи канонічно англійські — так само, як у решті розкладки анкети, — і
 // перекладаються на показі. Бренди (Telegram, Viber) не перекладаються ніколи:
@@ -128,18 +134,24 @@ const formatCSectionValue = raw => {
 const OTHER_VALUES = new Set(['other', 'інше', 'иное']);
 const isOtherValue = value => OTHER_VALUES.has(String(value || '').trim().toLowerCase());
 
-const abbreviateRegion = region => {
-  const normalized = normalizeRegion(region);
-  return normalized ? normalized.replace(/\s+область$/i, ' обл.') : '';
-};
+const abbreviateRegion = (region, language) => formatRegionName(
+  region,
+  resolveProfileLanguage(language),
+  { short: true },
+);
 
 const stripCityPrefix = value => String(value || '').trim().replace(/^(м\.?\s+|місто\s+)/i, '').trim();
 
-export const getLocationLine = user => {
-  const country = normalizeCountry(normalizeDisplayValue(user?.country));
-  const city = normalizeDisplayValue(user?.city);
-  const isForeign = Boolean(country) && !UA_COUNTRY_VALUES.has(country.toLowerCase());
-  const secondaryRaw = isForeign ? country : abbreviateRegion(normalizeDisplayValue(user?.region));
+// Місто, область і країна — через ті самі довідники, що й відкрита картка
+// (`utils/profileNormalization`): у базі вони лежать українською, російською
+// й англійською впереміш, і рядок стрічки казав «Славянск, Донецкая обл.».
+export const getLocationLine = (user, language) => {
+  const resolvedLanguage = resolveProfileLanguage(language);
+  const rawCountry = normalizeDisplayValue(user?.country);
+  const country = normalizeCountry(rawCountry, resolvedLanguage);
+  const city = formatCityName(normalizeDisplayValue(user?.city), resolvedLanguage);
+  const isForeign = Boolean(country) && !isUkraineCountry(rawCountry);
+  const secondaryRaw = isForeign ? country : abbreviateRegion(normalizeDisplayValue(user?.region), resolvedLanguage);
   const isDuplicateOfCity = Boolean(city) && Boolean(secondaryRaw)
     && stripCityPrefix(secondaryRaw).toLowerCase() === stripCityPrefix(city).toLowerCase();
   const secondary = isDuplicateOfCity ? '' : secondaryRaw;
@@ -232,8 +244,10 @@ export const buildGridRows = (user, language) => {
 export const renderFacts = (user, priorityKeys = [], language) => {
   const nodes = [];
 
-  const height = normalizeDisplayValue(user?.height);
-  const weight = normalizeDisplayValue(user?.weight);
+  // Сантиметри й кілограми, а не те, що набрали: фути з-за кордону («5»)
+  // давали в рядку «5/3 BMI 1200». Неправдоподібне не показується зовсім.
+  const height = normalizeHeightCm(normalizeDisplayValue(user?.height)) || '';
+  const weight = normalizeWeightKg(normalizeDisplayValue(user?.weight)) || '';
   if (height || weight) {
     nodes.push(
       <S.Fact key="hw">
@@ -1116,7 +1130,7 @@ const ProfileRow = ({
   // даних, і однаковий на всіх екранах матчингу.
   const roleCode = getRoleCode(rowRole);
   const age = getProfileAge(user);
-  const location = getLocationLine(user);
+  const location = getLocationLine(user, language);
   const photos = getProfilePhotos(user);
   const requestPhotos = useCallback(() => {
     if (onRequestPhotos) onRequestPhotos(user);

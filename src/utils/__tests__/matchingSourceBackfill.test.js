@@ -159,6 +159,86 @@ describe('collectFilteredMatchingSourceCards', () => {
   });
 });
 
+/**
+ * Невзяте зі сторінки джерела не губиться.
+ *
+ * Сторінку питають із запасом, тож видимих на ній зазвичай більше, ніж
+ * потрібно. Курсор ставав у кінець сторінки, і наступна порція починалась уже
+ * після невзятих карток: агенція бачила близько п'ятдесяти анкет із двохсот
+ * сімдесяти, а тоді джерело «закінчувалось».
+ */
+describe('collectFilteredMatchingSourceCards — курсор після неповної сторінки', () => {
+  // Джерело з позиціями: курсор — це id, з якого сторінка починається після.
+  const makeSource = ids => {
+    const cursorsByUserId = Object.fromEntries(ids.map(id => [id, `after:${id}`]));
+    return jest.fn(async ({ limit, cursor }) => {
+      const start = cursor ? ids.indexOf(String(cursor).replace('after:', '')) + 1 : 0;
+      const slice = ids.slice(start, start + limit);
+      return {
+        users: slice.map(id => ({ userId: id, userRole: 'ag' })),
+        lastKey: slice.length ? `after:${slice[slice.length - 1]}` : null,
+        hasMore: start + limit < ids.length,
+        cursorsByUserId,
+      };
+    });
+  };
+  const collect = (fetchSourcePage, targetVisibleCount, initialCursor) => collectFilteredMatchingSourceCards({
+    targetVisibleCount,
+    initialCursor,
+    fetchSourcePage,
+    filterSourceUsers: agFilter,
+    hydrateUsersByIds,
+    isSameCursor,
+    getSourceLimit: ({ remaining }) => remaining * 3 + 5,
+    getSourceCursor: (user, page) => page?.cursorsByUserId?.[user.userId] || null,
+  });
+
+  it('продовжує від останньої взятої картки, а не від кінця сторінки', async () => {
+    const ids = Array.from({ length: 30 }, (_, index) => `ag-${index + 1}`);
+    const fetchSourcePage = makeSource(ids);
+
+    const first = await collect(fetchSourcePage, 2);
+    expect(first.users.map(user => user.userId)).toEqual(['ag-1', 'ag-2']);
+    expect(first.lastKey).toBe('after:ag-2');
+    expect(first.hasMore).toBe(true);
+
+    const second = await collect(fetchSourcePage, 2, first.lastKey);
+    expect(second.users.map(user => user.userId)).toEqual(['ag-3', 'ag-4']);
+  });
+
+  it('доводить стрічку до кінця, не пропустивши жодної картки', async () => {
+    const ids = Array.from({ length: 40 }, (_, index) => `ag-${index + 1}`);
+    const fetchSourcePage = makeSource(ids);
+    const seen = [];
+    let cursor;
+    let hasMore = true;
+    let guard = 0;
+    while (hasMore && guard < 50) {
+      guard += 1;
+      // eslint-disable-next-line no-await-in-loop
+      const page = await collect(fetchSourcePage, 2, cursor);
+      seen.push(...page.users.map(user => user.userId));
+      cursor = page.lastKey;
+      hasMore = page.hasMore;
+    }
+    expect(seen).toEqual(ids);
+  });
+
+  it('без позицій джерела поводиться як раніше — курсор у кінці сторінки', async () => {
+    const ids = Array.from({ length: 30 }, (_, index) => `ag-${index + 1}`);
+    const fetchSourcePage = makeSource(ids);
+    const result = await collectFilteredMatchingSourceCards({
+      targetVisibleCount: 2,
+      fetchSourcePage,
+      filterSourceUsers: agFilter,
+      hydrateUsersByIds,
+      isSameCursor,
+      getSourceLimit: ({ remaining }) => remaining * 3 + 5,
+    });
+    expect(result.lastKey).toBe('after:ag-11');
+  });
+});
+
 describe('collectFilteredMatchingSourceCards — повторне використання сторінки джерела', () => {
   const page = users => ({ users, lastKey: null, hasMore: false });
 
