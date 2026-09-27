@@ -5,6 +5,7 @@ import { FaEye, FaEyeSlash } from 'react-icons/fa';
 import styled, { css, keyframes } from 'styled-components';
 import {
   auth,
+  fetchProfileCardRole,
   fetchUserData,
   normalizeStoredDates,
   syncUserSearchIdIndex,
@@ -14,6 +15,8 @@ import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOp
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
+import { PROFILE_ROLE_OPTIONS } from '../utils/profileRoleOptions';
+import { resolveViewerCurrentRole } from '../utils/matchingPeerVisibility';
 import { formatDateToDisplay, normalizePhoneValue } from './inputValidations';
 import {
   createUserWithEmailAndPassword,
@@ -392,16 +395,9 @@ const CLEAR_ALL_PROTECTED_FIELDS = new Set([
   'accessLevel',
 ]);
 
-// Ким людина заявляє себе в матчингу. Перелік той самий, що знають картка
-// (`ROLE_CODES` у `profileLayoutConfig`) і фільтри стрічки, — інакше анкета
-// отримала б роль, якої пошук не вміє шукати.
-const MY_PROFILE_ROLE_OPTIONS = [
-  { value: 'ed', label: 'Донорка яйцеклітин' },
-  { value: 'sm', label: 'Сурогатна мати' },
-  { value: 'ip', label: 'Батьки' },
-  { value: 'ag', label: 'Агенція' },
-  { value: 'cl', label: 'Клієнт' },
-];
+// Ким людина заявляє себе в матчингу — той самий перелік, що й на реєстрації
+// (`utils/profileRoleOptions`).
+const MY_PROFILE_ROLE_OPTIONS = PROFILE_ROLE_OPTIONS;
 const readMyProfileDraft = () => {
   const savedDraft = localStorage.getItem(MY_PROFILE_DRAFT_STORAGE_KEY);
   if (!savedDraft) return null;
@@ -571,13 +567,25 @@ export const MyProfile = () => {
     setUserId(uid);
 
     try {
-      const { existingData } = await fetchUserData(uid);
+      const [{ existingData }, cardRole] = await Promise.all([
+        fetchUserData(uid),
+        fetchProfileCardRole(uid).catch(() => null),
+      ]);
 
       if (!shouldApply() || latestFetchUidRef.current !== uid) {
         return false;
       }
 
-      mergeLoadedProfileData(normalizeProfileData(existingData || {}), uid);
+      // Роль показуємо ту саму, за якою гортає стрічка, — з картки. Firestore
+      // тримав роль з останнього входу, і форма її й показувала, хоч людина
+      // обирала іншу тут же, у «Хто ви».
+      const loadedProfile = normalizeProfileData(existingData || {});
+      const currentCardRole = resolveViewerCurrentRole(cardRole);
+      if (currentCardRole) {
+        loadedProfile.userRole = currentCardRole;
+        loadedProfile.role = currentCardRole;
+      }
+      mergeLoadedProfileData(loadedProfile, uid);
       return true;
     } catch (error) {
       console.warn('Failed to load MyProfile profile data.', error);

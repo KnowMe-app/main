@@ -17,10 +17,12 @@ describe('зміна ролі на MyProfile', () => {
   const config = () => read('config.js');
 
   it('дає вибір із тих самих ролей, які знають картка і фільтри', () => {
-    const source = myProfile();
-    expect(source).toContain('const MY_PROFILE_ROLE_OPTIONS = [');
+    // Перелік один на реєстрацію й на «Мій профіль» (`utils/profileRoleOptions`):
+    // форма входу мала свій, із двох ролей, і батьки реєструвались під чужою.
+    expect(myProfile()).toContain('const MY_PROFILE_ROLE_OPTIONS = PROFILE_ROLE_OPTIONS;');
+    const options = fs.readFileSync(path.join(__dirname, '../utils/profileRoleOptions.js'), 'utf8');
     ['ed', 'sm', 'ip', 'ag', 'cl'].forEach(role => {
-      expect(source).toContain(`value: '${role}'`);
+      expect(options).toContain(`value: '${role}'`);
     });
   });
 

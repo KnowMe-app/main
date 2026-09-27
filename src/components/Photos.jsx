@@ -494,11 +494,28 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
     });
   };
 
+  // Список фото з бази й Storage читається **один раз на анкету**, а не на
+  // кожен запуск ефекту нижче. Ефект залежить від `setState`, а «Мій профіль»
+  // передає його новою функцією на кожен рендер, тож перезапускався він щоразу
+  // — і щоразу робив лістинг `avatar/{id}` у Storage, по запиту адреси на
+  // кожен файл і ще читання `profileDetails/{id}/photos`: на вході це
+  // складалось у шість лістингів і по сім запитів на кожне фото. Після
+  // завантаження чи видалення список тримає сама форма, тож перечитувати його
+  // заради звірки нема чого.
+  const remotePhotosRef = useRef({ userId: '', promise: null, applied: false });
+
   useEffect(() => {
     const load = async () => {
-      if (state.userId) {
+      const remote = remotePhotosRef.current;
+      if (state.userId && !(remote.userId === state.userId && remote.applied)) {
+        if (remote.userId !== state.userId || !remote.promise) {
+          remotePhotosRef.current = { userId: state.userId, promise: getAllUserPhotos(state.userId), applied: false };
+        }
+        const pending = remotePhotosRef.current;
         try {
-          const urls = await getAllUserPhotos(state.userId);
+          const urls = await pending.promise;
+          if (remotePhotosRef.current !== pending || pending.applied) return;
+          pending.applied = true;
           const filteredUrls = filterOutMedicationPhotos(urls, state.userId);
           if (filteredUrls.length > 0) {
             const currentPhotos = normalizePhotosArray(state.photos);
@@ -513,6 +530,7 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
             return;
           }
         } catch (e) {
+          pending.applied = true;
           console.error('Error loading photos:', e);
         }
       }
