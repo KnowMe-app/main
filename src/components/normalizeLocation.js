@@ -1,40 +1,23 @@
-export const OBLASTS_UA = [
-  'Вінницька', 'Волинська', 'Дніпропетровська', 'Донецька',
-  'Житомирська', 'Закарпатська', 'Запорізька', 'Івано-Франківська',
-  'Київська', 'Кіровоградська', 'Луганська', 'Львівська',
-  'Миколаївська', 'Одеська', 'Полтавська', 'Рівненська',
-  'Сумська', 'Тернопільська', 'Харківська', 'Херсонська',
-  'Хмельницька', 'Черкаська', 'Чернівецька', 'Чернігівська'
-];
+import { formatCountryName, formatRegionName } from '../utils/profileNormalization';
+import { resolveProfileLanguage } from '../utils/profileTexts';
 
-export const OBLASTS_RU = [
-  'Винницкая', 'Волынская', 'Днепропетровская', 'Донецкая',
-  'Житомирская', 'Закарпатская', 'Запорожская', 'Ивано-Франковская',
-  'Киевская', 'Кировоградская', 'Луганская', 'Львовская',
-  'Николаевская', 'Одесская', 'Полтавская', 'Ровненская',
-  'Сумская', 'Тернопольская', 'Харьковская', 'Херсонская',
-  'Хмельницкая', 'Черкасская', 'Черновицкая', 'Черниговская'
-];
-
-const TRIM_RE = /\s+область$/i;
-
-export const normalizeRegion = region => {
+/**
+ * Область і країна для показу — через довідники `utils/profileNormalization`.
+ *
+ * Досі тут російська назва області лишалась російською («Днепропетровская
+ * область»), а з країн упізнавалась одна «Украина»: рядок стрічки казав
+ * «Славянск, Донецкая обл.» посеред українського інтерфейсу. Тепер знайома
+ * область показується українською (або англійською, коли така мова
+ * інтерфейсу), незнайома — як написали.
+ */
+export const normalizeRegion = (region, language) => {
   if (!region || typeof region !== 'string') return region;
-  let trimmed = region.trim().replace(/,$/, '');
-  const base = trimmed.replace(TRIM_RE, '');
-  const lower = base.toLowerCase();
-  const uaMatch = OBLASTS_UA.some(o => o.toLowerCase() === lower);
-  const ruMatch = OBLASTS_RU.some(o => o.toLowerCase() === lower);
-  if ((uaMatch || ruMatch) && !TRIM_RE.test(trimmed)) {
-    trimmed = `${base} область`;
-  }
-  return trimmed;
+  return formatRegionName(region, resolveProfileLanguage(language));
 };
 
-export const normalizeCountry = country => {
+export const normalizeCountry = (country, language) => {
   if (!country || typeof country !== 'string') return country;
-  const trimmed = country.trim();
-  return /^украина$/i.test(trimmed) ? 'Україна' : trimmed;
+  return formatCountryName(country, resolveProfileLanguage(language));
 };
 
 export const normalizeLocation = str => {

@@ -21,7 +21,10 @@ describe('MyProfile phone autosave', () => {
 
   it('keeps an incomplete phone prefix while editing and normalizes it on save', () => {
     expect(source).toContain("const updatedValue = name === 'phone' ? value : inputUpdateValue(value, field);");
-    expect(source).toContain("name === 'phone' ? normalizePhoneValue(value) : inputUpdateValue(value, field)");
+    expect(source).toContain("? normalizePhoneValue(value)");
+    // Решта полів на збереженні ще й приводиться до канонічного вигляду
+    // (країна, область, місто, зріст) — `utils/profileNormalization`.
+    expect(source).toContain(': normalizeProfileFieldInput(name, inputUpdateValue(value, field))');
   });
 
   it('reindexes every saved searchId field without replacing its accumulated history', () => {

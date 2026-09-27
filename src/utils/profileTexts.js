@@ -20,7 +20,7 @@ import { getStoredLanguage } from '../hooks/useAppSettings';
  * зостається англійським, а не зникає.
  */
 
-export const DEFAULT_PROFILE_LANGUAGE = 'en';
+export const DEFAULT_PROFILE_LANGUAGE = 'uk';
 
 export const resolveProfileLanguage = language => {
   if (language === 'uk' || language === 'en') return language;

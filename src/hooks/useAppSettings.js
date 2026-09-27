@@ -21,11 +21,18 @@ export const getStoredThemeMode = () => {
   }
 };
 
+// Мова за замовчуванням — українська. Стояла англійська, і людина, яка щойно
+// ввійшла з українського екрана входу, опинялась в англійському застосунку:
+// «Profile filled in», «Publish the profile» поруч з «Очистити все» й
+// «Особисті дані», бо частина написів мову не виконує. Аудиторія застосунку —
+// українська, тож англійську обирають явно, у меню трьох крапок.
+export const DEFAULT_APP_LANGUAGE = 'uk';
+
 export const getStoredLanguage = () => {
   try {
-    return localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'uk' ? 'uk' : 'en';
+    return localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en' ? 'en' : DEFAULT_APP_LANGUAGE;
   } catch (error) {
-    return 'en';
+    return DEFAULT_APP_LANGUAGE;
   }
 };
 

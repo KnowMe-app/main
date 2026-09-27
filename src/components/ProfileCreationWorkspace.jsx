@@ -53,6 +53,7 @@ import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
 import { buildMatchingSearchPath, MATCHING_PATH, readStoredMatchingSearchQuery } from 'utils/matchingSearchLocation';
 import { goBackOrTo } from 'utils/appBackNavigation';
 import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleCode } from './profileLayoutConfig';
+import { normalizeProfileFieldInput } from '../utils/profileNormalization';
 import {
   applyOverlayToCard,
   applyOverlaysToCard,
@@ -574,7 +575,10 @@ const PROFILE_SEARCH_DEBOUNCE_MS = 250;
 const CREATE_FORM_SECTIONS = [
   { key: 'personal', title: '👤 ПІБ і дата народження', fields: ['surname', 'name', 'birth'] },
   { key: 'location', title: '📍 Локація', fields: ['country', 'region', 'city'] },
-  { key: 'contacts', title: '📱 Контакти', fields: ['phone', 'email', 'telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'vk'] },
+  // VK тут немає: мережа заблокована в Україні з 2017 року, і поле для неї у
+  // формі читалось як знак, чий це застосунок. Уже записані значення лишаються
+  // в картці й знаходяться пошуком — прибрано саме запрошення їх вводити.
+  { key: 'contacts', title: '📱 Контакти', fields: ['phone', 'email', 'telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube'] },
   { key: 'comment', title: '💬 Публічний коментар', fields: ['publicComment'] },
 ];
 
@@ -1444,9 +1448,16 @@ export const ProfileCreationWorkspace = () => {
     // Дата набирається крапками, а в базу їде в `РРРР-ММ-ДД` — той самий
     // розподіл, що й в анкеті адміна (`PROFILE_DATE_FIELDS`). Недонабрана
     // дата лишається як є: переставляти в ній нема чого.
-    const normalized = PROFILE_DATE_FIELDS.has(fieldName)
+    const dated = PROFILE_DATE_FIELDS.has(fieldName)
       ? values.map(item => (typeof item === 'string' ? formatDateToServer(item) : item))
       : values;
+    // Країна, область, місто й зріст — канонічним виглядом, як у «Моєму
+    // профілі» (`normalizeProfileFieldInput`). Лише у власній чернетці: у
+    // доповненні нормалізоване «Украина» → «Україна» відрізнялось би від
+    // канонічного значення й лягало б у шар правкою, якої читач не робив.
+    const normalized = overlayTarget
+      ? dated
+      : dated.map(item => (typeof item === 'string' ? normalizeProfileFieldInput(fieldName, item) : item));
     const nextValues = normalized.length ? [...normalized] : [''];
     return commitFieldValue(fieldName, nextValues);
   };
