@@ -14,7 +14,7 @@ describe('Matching shared reaction card UI', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
     expect(source).toContain('const fetchReactionCardsByIds = React.useCallback');
-    expect(source).toContain('const usersMap = missingIds.length ? await fetchUsersByIds(missingIds) : {};');
+    expect(source).toContain('const usersMap = missingIds.length ? await hydrateMatchingFeedCards(missingIds) : {};');
     expect(source).not.toContain('const usersMap = await fetchUsersByIds(page.pageIds);');
   });
 
@@ -32,10 +32,14 @@ describe('Matching shared reaction card UI', () => {
 
 
   it('hydrates uncached reaction cards with photos', () => {
+    // Картки реакцій — рядки стрічки: бракує — дочитується проєкція з
+    // аватаром, а решту знімків просить свайп (`requestCardPhotos`). Повна
+    // анкета з усіма фото лишилась запасним шляхом для id без проєкції.
     const matchingSource = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
     const configSource = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
 
-    expect(matchingSource).toContain('const usersMap = missingIds.length ? await fetchUsersByIds(missingIds) : {};');
+    expect(matchingSource).toContain('const usersMap = missingIds.length ? await hydrateMatchingFeedCards(missingIds) : {};');
+    expect(matchingSource).toContain('const hydrated = await fetchUsersByIds(missingIds);');
     expect(configSource).toContain('getAllUserPhotos(userId)');
     expect(configSource).toContain('photos,');
   });

@@ -139,7 +139,7 @@ describe('кеш проєкцій стрічки', () => {
       source.indexOf('const hydrateMatchingFeedCards = React.useCallback('),
       source.indexOf('const fetchChunk = React.useCallback('),
     );
-    expect(hydrate).toContain('getCachedMatchingSummaryCards(uniqueIds)');
+    expect(hydrate).toContain('composeCachedCards(uniqueIds)');
     expect(hydrate).toContain('const idsToFetch = cachedSummaries.missingIds;');
     expect(hydrate).toContain('if (!idsToFetch.length) return { ...cachedSummaries.cards };');
     expect(hydrate).toContain('setCachedMatchingSummaryCards(cards);');
@@ -391,7 +391,8 @@ describe('перший екран зі стрічкового кеша', () => {
       source.indexOf('const reloadDefault = React.useCallback('),
     );
     expect(initial).not.toContain('getCardsByList(defaultListKey)');
-    expect(initial).toContain('const feedEntry = readFeedQueryEntry(defaultListKey);');
+    expect(initial).toContain('const feedEntry = getQueryEntry(feedListKey);');
+    expect(initial).toContain('const feedListKey = buildFeedListKey(feedCacheSignature);');
     expect(initial).toContain('if (cacheResume.exhausted) {');
     expect(initial).toContain('resumeCursor,\n          initialExclude,');
     expect(initial).toContain('rememberFeedPagination({ cursor: res.lastKey, hasMore: res.hasMore, signature: feedCacheSignature });');
