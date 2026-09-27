@@ -70,7 +70,7 @@ describe('matching feed structure', () => {
     );
     expect(navigate).not.toContain('triggerEndOfDeckLoad');
     expect(navigate).toContain('setDetailBounce');
-    expect(source).toContain("endOfDeckLoadRef.current('feed-sentinel');");
+    expect(source).toContain("endOfDeckLoadRef.current('feed-sentinel', { limit: MATCHING_FEED_PAGE_SIZE });");
   });
 
   it('reaches diagnostics only through a lazy import behind the admin flag', () => {

@@ -69,8 +69,8 @@ import {
   CollectionButton,
   CollectionButtonCount,
   ChipsRow,
-  FeedCountdown,
-  FeedCountdownHint,
+  FeedEndNotice,
+  FeedEndHint,
   FeedList,
   FeedLoadPromptButton,
   FeedNotice,
@@ -195,6 +195,7 @@ import {
 } from '../utils/matchingCardIndex';
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
 import { estimateGalleryTileHeight, splitIntoBalancedColumns } from '../utils/galleryColumns';
+import useFeedColumns from '../hooks/useFeedColumns';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
 import { readBackendLinksEnabled } from '../utils/backendLinksMode';
 // Формат адреси в консолі Firebase живе в одному місці: власна копія вже одного
@@ -202,13 +203,10 @@ import { readBackendLinksEnabled } from '../utils/backendLinksMode';
 import { buildRtdbConsoleLink } from './profileFormNodeBlocks';
 import { orderMatchingSearchResults } from '../utils/matchingSearchResultOrder';
 import {
+  MATCHING_FEED_PAGE_SIZE,
+  MATCHING_FEED_PAGING_VERSION,
   MATCHING_FIRST_PAGE_BATCH,
-  MATCHING_THROTTLED_LOAD_BATCH,
-  MATCHING_THROTTLED_LOAD_DELAY_MS,
-  MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS,
-  MATCHING_THROTTLED_FILTERED_MAX_ATTEMPTS,
-} from '../utils/matchingFeedThrottle';
-import FeedLoadCountdown from './FeedLoadCountdown';
+} from '../utils/matchingFeedPaging';
 import SearchRefineBar from './SearchRefineBar';
 import {
   DEFAULT_REFINE_KEY,
@@ -263,7 +261,7 @@ import {
   listFeedRoleFilterKeysForViewer,
   DONOR_FEED_ROLE_FILTER_KEYS,
 } from 'utils/matchingPeerVisibility';
-import { profileUiText, resolveProfileLanguage, translateProfileLabel } from 'utils/profileTexts';
+import { profileUiText, translateProfileLabel } from 'utils/profileTexts';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
 import {
@@ -1132,7 +1130,7 @@ const SwipeableCard = ({
     if (isAdmin && onAdminEdit) return { title: uiText('Редагувати анкету', language), onClick: onAdminEdit };
     return null;
   }, [isAdmin, language, onAdminEdit, onEnrich, user]);
-  const locationInfo = getProfileLocation(user);
+  const locationInfo = getProfileLocation(user, language);
   const identityAndLocationKeys = [
     'name',
     'surname',
@@ -1454,8 +1452,8 @@ const SwipeableCard = ({
   );
 };
 
-// Перший екран стрічки — та сама перша порція, що й у пошуку: десять рядків, а
-// не дві. Далі йде притишений крок (`MATCHING_THROTTLED_LOAD_BATCH`).
+// Перший екран стрічки — та сама перша порція, що й у пошуку, і та сама
+// сторінка, якою стрічка росте далі (`MATCHING_FEED_PAGE_SIZE`).
 const INITIAL_LOAD = MATCHING_FIRST_PAGE_BATCH;
 const MATCHING_VISIBLE_BUFFER = 2;
 const MATCHING_REFILL_LIMIT = 5;
@@ -1483,24 +1481,6 @@ const readQueryFromUrl = () => {
   } catch {
     return '';
   }
-};
-// Скільки живе підсумок порції в кінці списку. Достатньо, щоб його прочитали,
-// і замало, щоб він перетворився на постійний напис.
-const MATCHING_BATCH_SUMMARY_VISIBLE_MS = 6000;
-
-// «1 картка», «2 картки», «5 карток» — рядок читає людина, і число в ньому
-// однозначне, тож форма слова має з ним збігатись.
-const pluralizeCards = (count, language) => {
-  const total = Math.abs(Number(count) || 0);
-  // Англійській вистачає двох форм, українській — трьох, тож рахує їх кожна
-  // мова сама, а не спільна таблиця з «картка(и)» в дужках.
-  if (resolveProfileLanguage(language) === 'en') return total === 1 ? 'card' : 'cards';
-  const tail = total % 100;
-  if (tail >= 11 && tail <= 14) return 'карток';
-  const last = tail % 10;
-  if (last === 1) return 'картка';
-  if (last >= 2 && last <= 4) return 'картки';
-  return 'карток';
 };
 
 const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 2;
@@ -1636,7 +1616,7 @@ const GalleryCard = React.memo(({
   const photo = photoSwipe.current || photos[0];
   const role = getProfileRole(user);
   const roleCode = getRoleCode(role);
-  const location = getProfileLocation(user);
+  const location = getProfileLocation(user, language);
   const facts = useMemo(() => renderProfileFacts(user, [], language), [language, user]);
   const [bodyFacts, reproFacts] = useMemo(() => splitProfileFactsByGroup(facts), [facts]);
   const isLimited = Boolean(user?.__limitedProfile);
@@ -2162,18 +2142,6 @@ const Matching = () => {
       : ''
   ), [backendLinksEnabled, isAdmin]);
 
-  // Не-адмін гортає стрічку з паузою: замість того, щоб підвантажити наступну
-  // сторінку одразу, сентинел лише вмикає відлік, і поки той іде — до бекенду не
-  // йде жодного запиту. Це і стеля на трафік (дві картки на десять секунд), і
-  // видима обіцянка: читач бачить, що картки будуть, і коли саме.
-  //
-  // Адмінові стрічка — робочий інструмент, і він впирається в її кінець щодня,
-  // тож для нього все лишається як було: сентинел вантажить одразу.
-  //
-  // Оголошено тут, а не поруч зі стрічкою: цей прапорець читають ефекти вище за
-  // текстом, і в їхніх списках залежностей він має бути вже ініціалізований.
-  const isThrottledFeedPaging = !access.isAdmin;
-
   // Повідомлення про джерело стрічки адресоване тому, хто може перебудувати
   // індекс або хоча б повідомити про проблему, а не кожному читачеві.
   const canSeeFeedSourceNotice = access.isAdmin
@@ -2439,17 +2407,6 @@ const Matching = () => {
   const [scrolledDownSinceLoad, setScrolledDownSinceLoad] = useState(false);
   // Остання спроба дозавантаження не дала жодної картки.
   const [lastLoadAddedNothing, setLastLoadAddedNothing] = useState(false);
-  // Поточний цикл відліку: скільки карток він пообіцяв і скільки спроб уже зробив.
-  // null — циклу немає, кінець списку може знову запропонувати відлік.
-  const [throttledCycle, setThrottledCycle] = useState(null);
-  // Підсумок останньої порції: скільки карток вона справді додала і коли.
-  //
-  // Відлік добігає нуля, картки лягають у кінець — і кінець списку знову
-  // виглядає так само, як за секунду до того. Читач бачив блимання лічильника,
-  // а не результат, і мусив прокручувати вгору, щоб дізнатись, чи взагалі щось
-  // приїхало. Тепер порція називає себе сама, на тому ж місці, де щойно був
-  // відлік.
-  const [lastBatchSummary, setLastBatchSummary] = useState(null);
   /**
    * Куди читач дивився — це рядок, а не піксель.
    *
@@ -2546,12 +2503,11 @@ const Matching = () => {
       // через це стрічка застрягала намертво до перезавантаження сторінки.
       emptyAutoLoadMoreAttemptsRef.current = 0;
 
-      // І цей же жест — єдине, чим читач просить продовження: він заводить
-      // відлік у кінці списку.
+      // І цей же жест — повторна спроба там, де кінець списку вже видно і
+      // нового перетину сентинела не буде (`feed-scroll` нижче).
       if (scrolledDownSinceLoadRef.current) return;
       scrolledDownSinceLoadRef.current = true;
       setScrolledDownSinceLoad(true);
-      setLastLoadAddedNothing(false);
     };
     handleScroll();
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -3673,9 +3629,16 @@ const Matching = () => {
   // Умова, за якої отримано стан пагінації стрічки: фільтри й роль читача
   // вирішують, які картки джерела дійшли до деки, тож курсор, записаний за
   // іншої умови, пропустив би картки, що тоді відсіялись.
+  //
+  // `paging` — версія самої пагінації. Курсор колись ставав у кінець сторінки
+  // джерела, а не на останню взяту картку, і губив невзяте; стрічка, дочитана
+  // так, лягала в кеш як «дочитано» (`hasMore: false`) і на TTL закривала
+  // решту карток навіть після виправлення. Нова версія робить ті записи
+  // чужими, і стрічка читається заново.
   const buildFeedCacheSignature = React.useCallback(() => stableAdditionalSignature({
     filters: filtersRef.current || {},
     viewerRole: donorRestrictionViewerRoleRef.current || '',
+    paging: MATCHING_FEED_PAGING_VERSION,
   }), []);
 
   // Стан пагінації пишеться поруч зі списком id стрічки, щоб перезавантаження
@@ -6656,12 +6619,6 @@ const Matching = () => {
   // Pagination targets count only public cards. `renderedCardsLength` also
   // contains drafts/access-scoped cards and is therefore only a DOM/deck size.
   const publicCardsLength = viewMode === 'default' ? publicVisibleUsers.length : renderedCardsLength;
-  // Читається з обробника відліку, який живе поза рендером.
-  const publicCardsLengthRef = useRef(publicCardsLength);
-  useEffect(() => { publicCardsLengthRef.current = publicCardsLength; }, [publicCardsLength]);
-  const pagedCardsLength = viewMode === 'default' ? filteredUsers.length : publicCardsLength;
-  const pagedCardsLengthRef = useRef(pagedCardsLength);
-  useEffect(() => { pagedCardsLengthRef.current = pagedCardsLength; }, [pagedCardsLength]);
   useEffect(() => {
     writeMatchingDebugLog('matching:filterPipelineSummary', {
       viewMode,
@@ -7059,9 +7016,10 @@ const Matching = () => {
     Promise.resolve(loadMore(payload)).then(addedCount => {
       const visibleAdded = Math.max(0, Number(addedCount) || 0);
       incrementMatchingLoadStat('visibleCardsAdded', visibleAdded);
-      // Сторінка джерела могла прийти повністю відфільтрованою. Кажемо про це
-      // вголос: мовчазний відлік, після якого нічого не змінюється, читається як
-      // зламана сторінка, а не як «під ці фільтри більше нічого не підійшло».
+      // Сторінка джерела могла прийти повністю відфільтрованою, а кінець
+      // списку тоді лишається видимим, і нового перетину сентинела не буде.
+      // Позначка вмикає кнопку «Показати ще» — інакше на короткій стрічці, яку
+      // нема куди прокрутити, продовжити не було б чим.
       setLastLoadAddedNothing(visibleAdded === 0);
       countAutoLoadMoreAttempt(visibleAdded);
       const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
@@ -7082,7 +7040,7 @@ const Matching = () => {
     // сторінка з бекенду. Ціна порції тут — гідратація фото, коментарів і
     // анкети рівно для того, що зʼявилось на екрані.
     if (viewMode === 'search') {
-      const step = Math.max(1, Number(limit) || MATCHING_THROTTLED_LOAD_BATCH);
+      const step = Math.max(1, Number(limit) || MATCHING_FEED_PAGE_SIZE);
       setSearchRevealCount(current => Math.min(current + step, searchRevealTargetRef.current));
       return;
     }
@@ -7204,17 +7162,6 @@ const Matching = () => {
       additionalNextOffset,
     });
       if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
-    // Для не-адміна догортання належить відліку: одна порція — один жест.
-    //
-    // Ця дозаправка живе власним життям: вона перезапускається на кожну зміну
-    // `filteredUsers` і вважає приводом уже те, що фільтри зрізали пару карток —
-    // а зрізають вони їх щоразу. Виходив самохідний потік, який ішов повз відлік
-    // і зводив нанівець усю паузу. Лишаємо її тільки на випадок, коли на екрані
-    // взагалі порожньо: тоді читачеві нема чого гортати і нема чим завести відлік.
-    if (isThrottledFeedPaging && filteredUsers.length > 0) {
-      console.log('[Matching][refillEffect] blocked', { refillBlockedReason: 'throttled-paging-owned-by-countdown' });
-      return;
-    }
     const isReactionMode = viewMode === 'favorites' || viewMode === 'dislikes';
     const reactionPipelineReady = isReactionMode ? Boolean(reactionPipelineReadyByType[viewMode]) : true;
     const reactionPagination = isReactionMode ? (reactionPaginationByType[viewMode] || buildEmptyReactionPagination()) : buildEmptyReactionPagination();
@@ -7295,7 +7242,7 @@ const Matching = () => {
       targetVisibleCount,
       limit: MATCHING_REFILL_LIMIT,
     });
-  }, [additionalHasMore, additionalNextOffset, filteredUsers.length, filters, hasMore, isThrottledFeedPaging, lastKey, loading, ownerId, reactionPaginationByType, reactionPipelineReadyByType, renderedCardsLength, runAutoLoadMore, viewMode]);
+  }, [additionalHasMore, additionalNextOffset, filteredUsers.length, filters, hasMore, lastKey, loading, ownerId, reactionPaginationByType, reactionPipelineReadyByType, renderedCardsLength, runAutoLoadMore, viewMode]);
 
   useEffect(() => {
     writeMatchingDebugLog('lastCardObserver:mounted', { ownerId, viewMode: viewModeRef.current });
@@ -7320,10 +7267,6 @@ const Matching = () => {
   useEffect(() => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
     if (renderedCardsLength < 1) return;
-    // Другий самохідний шлях повз відлік: на стрічці з однієї картки активний
-    // індекс одразу дорівнює останньому, і вона вантажить сама. Для не-адміна
-    // це робота відліку.
-    if (isThrottledFeedPaging) return;
 
     const lastRenderedIndex = renderedCardsLength - 1;
     const activeRenderedIndex = activeProfileIndex;
@@ -7431,7 +7374,6 @@ const Matching = () => {
     activeProfileIndex,
     additionalNextOffset,
     hasMore,
-    isThrottledFeedPaging,
     lastKey,
     runAutoLoadMore,
     loading,
@@ -8045,21 +7987,22 @@ const Matching = () => {
       setFeedEndVisible(false);
       return undefined;
     }
-    // Адмінський шлях знімає спостерігача на час завантаження; шлях з відліком
-    // тримає його завжди, бо відлік має знати про видимість і поки триває
-    // завантаження — інакше після кожної порції він би не перезапустився.
-    if (!isThrottledFeedPaging && loading) return undefined;
+    // На час завантаження спостерігача знято: сторінка, яка вже їде, не мусить
+    // просити себе вдруге. Після неї ефект ставить його знову, і якщо кінець
+    // списку досі близько, наступна сторінка піде одразу — це і є звичайна
+    // прокрутка, без паузи й без окремого жесту на кожну порцію.
+    if (loading) return undefined;
     const observer = new IntersectionObserver(entries => {
       const isVisible = entries.some(entry => entry.isIntersecting);
       setFeedEndVisible(isVisible);
-      if (isThrottledFeedPaging || !isVisible) return;
-      endOfDeckLoadRef.current('feed-sentinel');
+      if (!isVisible) return;
+      endOfDeckLoadRef.current('feed-sentinel', { limit: MATCHING_FEED_PAGE_SIZE });
     }, { rootMargin: '400px' });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [deckHasMore, detailIndex, filteredUsers.length, isThrottledFeedPaging, loading]);
+  }, [deckHasMore, detailIndex, filteredUsers.length, loading]);
 
-  // Прокрутка донизу — це ще й повторна спроба для адміна.
+  // Прокрутка донизу — це ще й повторна спроба.
   //
   // Сторінка джерела може прийти повністю відфільтрованою: `loadMore` віддає нуль
   // карток, хоча `hasMore` лишається. Кінець списку при цьому вже видно, тож
@@ -8068,128 +8011,29 @@ const Matching = () => {
   //
   // Жест витрачається: одна прокрутка донизу — одна спроба.
   useEffect(() => {
-    if (isThrottledFeedPaging || !scrolledDownSinceLoad) return;
+    if (!scrolledDownSinceLoad) return;
     if (!feedEndVisible || !deckHasMore || loading || detailIndex !== null) return;
     scrolledDownSinceLoadRef.current = false;
     setScrolledDownSinceLoad(false);
-    endOfDeckLoadRef.current('feed-scroll');
-  }, [deckHasMore, detailIndex, feedEndVisible, isThrottledFeedPaging, loading, scrolledDownSinceLoad]);
+    endOfDeckLoadRef.current('feed-scroll', { limit: MATCHING_FEED_PAGE_SIZE });
+  }, [deckHasMore, detailIndex, feedEndVisible, loading, scrolledDownSinceLoad]);
 
-  // Кінець стрічки видно — але цього замало. Порція карток коштує один жест:
-  // поки читач не прокрутив донизу, відлік не заводиться, і кінець списку показує
-  // не таймер, а запрошення прокрутити далі.
-  //
-  // Раніше відлік перезапускався сам після кожної порції, тож достатньо було
-  // залишити вкладку в кінці списку — і картки їхали нескінченно, без жодної
-  // участі читача. Саме від цього стеля й мала захищати.
-  const canOfferMoreFeedCards = Boolean(
-    isThrottledFeedPaging &&
-    !throttledCycle &&
+  // Та сама повторна спроба — для стрічки, коротшої за екран: там крутити нема
+  // чого, і після порожньої порції продовжити інакше не було б чим. Кнопка
+  // з'являється лише після такої порції, а не в кожному кінці списку: у
+  // звичайному випадку наступну сторінку вже просить сентинел.
+  const showFeedRetry = Boolean(
+    lastLoadAddedNothing &&
     feedEndVisible &&
     deckHasMore &&
     !loading &&
     !loadError &&
     detailIndex === null
   );
-  const showFeedLoadCountdown = canOfferMoreFeedCards && scrolledDownSinceLoad;
-  const showFeedLoadPrompt = canOfferMoreFeedCards && !scrolledDownSinceLoad;
-
-  // Підсумок живе кілька секунд і зникає сам: це відповідь на щойно зроблений
-  // жест, а не постійний напис у кінці списку.
-  useEffect(() => {
-    if (!lastBatchSummary) return undefined;
-    const timer = setTimeout(() => setLastBatchSummary(null), MATCHING_BATCH_SUMMARY_VISIBLE_MS);
-    return () => clearTimeout(timer);
-  }, [lastBatchSummary]);
-
-  const feedBatchSummaryText = lastBatchSummary && !throttledCycle && !loading
-    ? (lastBatchSummary.added > 0
-      ? uiText('Додано {added} {cards} — вони в кінці списку', language, {
-        added: lastBatchSummary.added,
-        cards: pluralizeCards(lastBatchSummary.added, language),
-      })
-      : uiText('Порція не дала нових карток — під ці фільтри більше нічого не підійшло', language))
-    : '';
-  // Окремим рядком підсумок показується лише там, де запрошення немає: інакше
-  // два написи про одне й те саме стояли б один під одним.
-  const showStandaloneBatchSummary = Boolean(feedBatchSummaryText) && !showFeedLoadPrompt && detailIndex === null;
-
-  // Жест витрачено: наступна порція вимагатиме нового. Знімаємо прапорець ще до
-  // запиту, інакше відлік перезапустився б сам, поки картки їдуть.
-  const disarmFeedPaging = React.useCallback(() => {
-    scrolledDownSinceLoadRef.current = false;
-    setScrolledDownSinceLoad(false);
-  }, []);
-
-  // Звужена дека рахує порцію картками, що пройшли фільтри, і джерело
-  // питається більшими сторінками: з двох сирих карток під «не заміжня» часто
-  // не лишається жодної, і три спроби по одній-дві картки давали «Порція не
-  // дала нових карток» там, де далі в стрічці такі картки є.
-  const feedFiltersNarrowed = filterChips.length > 0;
-  const feedFiltersNarrowedRef = useRef(feedFiltersNarrowed);
-  feedFiltersNarrowedRef.current = feedFiltersNarrowed;
-
-  const handleThrottledFeedLoad = React.useCallback(() => {
-    disarmFeedPaging();
-    setLastBatchSummary(null);
-    setThrottledCycle({
-      target: publicCardsLengthRef.current + MATCHING_THROTTLED_LOAD_BATCH,
-      startPagedCardsLength: pagedCardsLengthRef.current,
-      startPublicCardsLength: publicCardsLengthRef.current,
-      attempts: 1,
-    });
-    endOfDeckLoadRef.current('feed-countdown', {
-      limit: feedFiltersNarrowedRef.current ? MATCHING_REFILL_LIMIT : MATCHING_THROTTLED_LOAD_BATCH,
-    });
-  }, [disarmFeedPaging]);
-
-  // Відлік обіцяє дві картки, а не дві спроби.
-  //
-  // `loadMore` рахує те, що віддало джерело, а на екран воно потрапляє вже після
-  // фільтрів показу — з двох знайдених могла лишитись одна, і ряд галереї виходив
-  // напівпорожній. Тож цикл добирає, доки не набереться обіцяне: без нового
-  // відліку, без нового жесту і зі стелею на спроби, щоб не перетворитись на той
-  // самий потік, від якого пауза й захищає.
-  useEffect(() => {
-    if (!isThrottledFeedPaging || !throttledCycle || loading) return;
-    // Під фільтрами порція — це дві картки **після** фільтрів: читач обрав
-    // групу й чекає саме її, а не двох сирих карток, з яких на екран не
-    // доїхала жодна. Тож і стеля спроб там вища.
-    const maxAttempts = feedFiltersNarrowed
-      ? MATCHING_THROTTLED_FILTERED_MAX_ATTEMPTS
-      : MATCHING_THROTTLED_LOAD_MAX_ATTEMPTS;
-    if (
-      publicCardsLength >= throttledCycle.target ||
-      (!feedFiltersNarrowed
-        && pagedCardsLength - throttledCycle.startPagedCardsLength >= MATCHING_THROTTLED_LOAD_BATCH) ||
-      (!hasMore && !additionalHasMore) ||
-      throttledCycle.attempts >= maxAttempts
-    ) {
-      // Цикл закінчився — і мусить сказати, чим саме. Нуль так само вартий
-      // рядка, як і двійка: «під ці фільтри більше нічого не підійшло» — це
-      // відповідь, а мовчазний кінець списку — ні.
-      setLastBatchSummary({
-        added: Math.max(0, publicCardsLength - throttledCycle.startPublicCardsLength),
-        at: Date.now(),
-      });
-      setThrottledCycle(null);
-      return;
-    }
-    setThrottledCycle({ ...throttledCycle, attempts: throttledCycle.attempts + 1 });
-    endOfDeckLoadRef.current('feed-countdown-topup', {
-      limit: feedFiltersNarrowed
-        ? MATCHING_REFILL_LIMIT
-        : Math.max(1, MATCHING_THROTTLED_LOAD_BATCH - (pagedCardsLength - throttledCycle.startPagedCardsLength)),
-    });
-  }, [additionalHasMore, feedFiltersNarrowed, hasMore, isThrottledFeedPaging, loading, pagedCardsLength, publicCardsLength, throttledCycle]);
-
-  // Стрічка може виявитись коротшою за екран — тоді крутити нема чого, і жест
-  // лишається недосяжним. Дотик робить те саме, що прокрутка.
-  const handleArmFeedPaging = React.useCallback(() => {
+  const handleFeedRetry = React.useCallback(() => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
     setLastLoadAddedNothing(false);
-    scrolledDownSinceLoadRef.current = true;
-    setScrolledDownSinceLoad(true);
+    endOfDeckLoadRef.current('feed-retry', { limit: MATCHING_FEED_PAGE_SIZE });
   }, []);
 
   // Стрічка читає відгуки не на кожен рядок, а на той, у якого вже є що
@@ -8507,6 +8351,9 @@ const Matching = () => {
     void loadCommentsFor(feedRows, { activeOnly: false });
   }, [feedRows, loadCommentsFor]);
 
+  // Скільки колонок галереї вміщає екран: дві на телефоні, до чотирьох на
+  // комп'ютері (`hooks/useFeedColumns`). Список ділить ширину сам, у CSS.
+  const feedColumns = useFeedColumns();
   /**
    * Дві колонки галереї — за висотою, а не через одну.
    *
@@ -8529,8 +8376,8 @@ const Matching = () => {
       // Плашка нотаток стоїть у кожній повній плитці — і важить вона більше за
       // будь-який окремий рядок тексту.
       hasNotes: !user?.__limitedProfile,
-    })),
-    [feedRows],
+    }), feedColumns.gallery),
+    [feedColumns.gallery, feedRows],
   );
 
   // Кнопка називає те, куди веде, а не те, де стоїмо: так один значок
@@ -8904,40 +8751,32 @@ const Matching = () => {
                   </ActionButton>
                 </FeedNotice>
               )}
-              {showStandaloneBatchSummary && (
-                <FeedCountdown data-testid="feed-batch-summary">
-                  <FeedCountdownHint>{feedBatchSummaryText}</FeedCountdownHint>
-                </FeedCountdown>
-              )}
-              {showFeedLoadPrompt && (
-                <FeedCountdown>
-                  <FeedLoadPromptButton type="button" onClick={handleArmFeedPaging}>
-                    {uiText('Показати ще {count}', language, { count: MATCHING_THROTTLED_LOAD_BATCH })}
+              {showFeedRetry && (
+                <FeedEndNotice>
+                  <FeedLoadPromptButton type="button" onClick={handleFeedRetry}>
+                    {uiText('Показати ще', language)}
                   </FeedLoadPromptButton>
-                  {/* Підсумок щойно завершеної порції говорить із того самого
-                      місця, де стоїть наступний жест: спершу «що приїхало», і
-                      лише коли сказати нема чого — звична підказка. */}
-                  <FeedCountdownHint data-testid={feedBatchSummaryText ? 'feed-batch-summary' : undefined}>
-                    {feedBatchSummaryText || (lastLoadAddedNothing
-                      ? uiText('Минула порція не дала нових карток — під ці фільтри більше нічого не підійшло', language)
-                      : uiText('Прокрутіть донизу, щоб запустити відлік', language))}
-                  </FeedCountdownHint>
-                </FeedCountdown>
+                </FeedEndNotice>
               )}
-              {showFeedLoadCountdown && (
-                <FeedLoadCountdown
-                  durationMs={MATCHING_THROTTLED_LOAD_DELAY_MS}
-                  batchSize={MATCHING_THROTTLED_LOAD_BATCH}
-                  cycleKey={publicCardsLength}
-                  onElapsed={handleThrottledFeedLoad}
-                />
+              {/* Поки наступна сторінка їде, кінець списку інакше порожній, і
+                  пауза читалась би як «більше нічого немає». */}
+              {loading && renderedCardsLength > 0 && (
+                <FeedEndNotice>
+                  <FeedEndHint>{uiText('Завантажую…', language)}</FeedEndHint>
+                </FeedEndNotice>
               )}
-              {/* Між нулем відліку і новими картками кінець списку інакше порожній,
-                  і пауза читалась би як «зламалось». */}
-              {isThrottledFeedPaging && loading && renderedCardsLength > 0 && (
-                <FeedCountdown>
-                  <FeedCountdownHint>{uiText('Завантажую…', language)}</FeedCountdownHint>
-                </FeedCountdown>
+              {/* Кінець стрічки називає себе сам — і лише тією причиною, яка
+                  справді є. Тут стояло «Порція не дала нових карток — під ці
+                  фільтри більше нічого не підійшло», і показувалось воно й без
+                  жодного фільтра: стрічку насправді зупиняв курсор, який губив
+                  картки (`collectFilteredMatchingSourceCards`), а напис
+                  звинувачував фільтри, яких читач не ставив. */}
+              {viewMode === 'default' && !deckHasMore && feedRows.length > 0 && !loading && !loadError && (
+                <FeedEndNotice data-testid="feed-end">
+                  <FeedEndHint>
+                    {uiText(filterChips.length > 0 ? 'Під ці фільтри більше анкет немає' : 'Це всі анкети в стрічці', language)}
+                  </FeedEndHint>
+                </FeedEndNotice>
               )}
               <FeedSentinel ref={feedSentinelRef} />
             </FeedWrap>

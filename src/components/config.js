@@ -5164,14 +5164,17 @@ const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null } =
   const users = entries
     .map(([id, card]) => expandMatchingCard(id, card))
     .filter(Boolean);
+  const cursorOf = ([id, card]) => ({ date: String(card?.[MATCHING_CARD_ORDER_FIELD] || ''), userId: id });
   const lastEntry = entries[entries.length - 1];
 
   return {
     users,
-    lastKey: lastEntry
-      ? { date: String(lastEntry[1]?.[MATCHING_CARD_ORDER_FIELD] || ''), userId: lastEntry[0] }
-      : null,
+    lastKey: lastEntry ? cursorOf(lastEntry) : null,
     hasMore,
+    // Позиція кожної картки сторінки. Той, хто бере зі сторінки не все,
+    // продовжує від останньої взятої, а не від кінця сторінки — інакше
+    // невзяте губиться (`collectFilteredMatchingSourceCards`).
+    cursorsByUserId: Object.fromEntries(entries.map(entry => [entry[0], cursorOf(entry)])),
   };
 };
 

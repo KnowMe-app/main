@@ -7,8 +7,8 @@ const read = name => fs.readFileSync(path.join(__dirname, name), 'utf8');
  * Видача пошуку більше не приїжджає одним шматком.
  *
  * Раніше `applySearchResults` ставив `hasMore = false`, тож `deckHasMore` у
- * режимі `search` був хибний завжди: сентінел мовчав, `FeedLoadCountdown` не
- * показувався ніколи, а `feedRows` рендерив усі знайдені картки одразу. На
+ * режимі `search` був хибний завжди: сентінел мовчав, наступна порція не
+ * просилась ніколи, а `feedRows` рендерив усі знайдені картки одразу. На
  * запиті, що дає сотні влучань, це були сотні рядків у DOM — і стільки ж
  * повних анкет, прочитаних наперед однією хвилею.
  */
@@ -21,7 +21,7 @@ describe('видача пошуку гортається так само, як �
     );
   });
 
-  it('кінець видачі — така сама причина показати відлік, як і кінець стрічки', () => {
+  it('кінець видачі — така сама причина просити наступну порцію, як і кінець стрічки', () => {
     expect(matching()).toContain(
       "const deckHasMore = hasMore || (viewMode === 'default' && additionalHasMore) || searchHasMore;"
     );
@@ -39,26 +39,26 @@ describe('видача пошуку гортається так само, як �
     expect(loader).toContain('setSearchRevealCount(current => Math.min(current + step, searchRevealTargetRef.current));');
   });
 
-  it('перший результат — повний екран, а не порція відліку', () => {
-    // Дві картки на старті — це не притишення, а порожня сторінка: відлік
-    // стереже довгий скрол, а не перше враження про видачу.
+  it('перший результат — повний екран, а не дві картки', () => {
+    // Дві картки на старті — це порожня сторінка, а не перше враження про
+    // видачу.
     const source = matching();
     expect(source).toContain('useState(MATCHING_FIRST_PAGE_BATCH)');
     expect(source).toContain('setSearchRevealCount(MATCHING_FIRST_PAGE_BATCH);');
     expect(source).toContain('const INITIAL_LOAD = MATCHING_FIRST_PAGE_BATCH;');
   });
 
-  it('дозавантаження лишається притишеним кроком', () => {
-    // Перша порція виросла, ціна довгого скролу — ні.
+  it('наступна порція видачі — та сама сторінка, що й у стрічці', () => {
+    // Пауза між порціями пішла разом із відліком: вікно видачі зсувається на
+    // сторінку, як і стрічка.
     const source = matching();
-    expect(source).toContain("endOfDeckLoadRef.current('feed-countdown', { limit: MATCHING_THROTTLED_LOAD_BATCH });");
-    expect(source).toContain("uiText('Показати ще {count}', language, { count: MATCHING_THROTTLED_LOAD_BATCH })");
+    expect(source).toContain('const step = Math.max(1, Number(limit) || MATCHING_FEED_PAGE_SIZE);');
+    expect(source).toContain("endOfDeckLoadRef.current('feed-sentinel', { limit: MATCHING_FEED_PAGE_SIZE });");
   });
 
   it('уточнення переживає новий запит — воно умова, а не сито', () => {
     // Скидання на кожному «Знайшов» означало б ставити уточнення заново на
-    // кожній видачі, ще й устигаючи це зробити раніше, ніж відлік почне
-    // видавати картки по дві. Значення описує не цю видачу, а те, що читачеві
+    // кожній видачі. Значення описує не цю видачу, а те, що читачеві
     // цікаво, — тож воно й лишається.
     const source = matching();
     // Кінець зрізу — наступне оголошення після цієї функції. Стояв тут
