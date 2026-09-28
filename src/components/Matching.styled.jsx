@@ -1419,9 +1419,10 @@ export const ModernHeroTitle = styled.h2`
   margin: 0;
   color: var(--matching-chip-text);
   max-width: 100%;
-  font-size: clamp(30px, 7vw, 36px);
-  line-height: 1.04;
-  font-weight: 750;
+  font-family: var(--km-font-display, 'Playfair Display', Georgia, serif);
+  font-size: clamp(26px, 6.5vw, 32px);
+  line-height: 1.15;
+  font-weight: 600;
   text-wrap: balance;
 `;
 
@@ -1429,10 +1430,10 @@ export const ModernHeroLocation = styled.p`
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: var(--matching-muted-text);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 400;
 
   svg {
     flex: 0 0 auto;
@@ -2376,9 +2377,10 @@ export const GalleryNameRow = styled.div`
 `;
 
 export const GalleryName = styled.div`
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-family: var(--km-font-display, 'Playfair Display', Georgia, serif);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0;
   color: var(--matching-header-text);
   white-space: nowrap;
   overflow: hidden;

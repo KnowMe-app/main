@@ -61,6 +61,7 @@ describe('limited profile row', () => {
     expect(screen.queryByTitle('Редагувати анкету')).not.toBeInTheDocument();
     expect(screen.queryByTitle('В обране')).not.toBeInTheDocument();
     expect(screen.queryByText(/BMI/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Зріст')).not.toBeInTheDocument();
   });
 
   // Дотик мусить щось робити: рядок, який на дотик не робить нічого, читається
@@ -81,7 +82,10 @@ describe('limited profile row', () => {
     expect(screen.getByTitle('Розгорнути анкету')).toBeInTheDocument();
     expect(screen.getByTitle('Редагувати анкету')).toBeInTheDocument();
     expect(screen.getByTitle('В обране')).toBeInTheDocument();
-    expect(screen.getByText('172/59')).toBeInTheDocument();
+    // Показники стоять смугою з підписами (`ProfileStatStrip`), а не рядком
+    // «172/59».
+    expect(screen.getByText('Зріст')).toBeInTheDocument();
+    expect(screen.getByText('Вага')).toBeInTheDocument();
     fireEvent.click(screen.getByText(/Олена Ткаченко/));
     expect(onOpen).toHaveBeenCalledWith(fullUser);
   });

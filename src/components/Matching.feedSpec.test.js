@@ -139,8 +139,8 @@ describe('matching row structure', () => {
     const row = read('ProfileRow.jsx');
     const top = row.indexOf('</S.Top>');
     expect(top).toBeGreaterThan(-1);
-    expect(row.indexOf('<S.FactsRow>')).toBeGreaterThan(top);
-    expect(row.slice(row.indexOf('<S.Body>'), top)).not.toContain('<S.FactsRow');
+    expect(row.indexOf('<ProfileStatStrip')).toBeGreaterThan(top);
+    expect(row.slice(row.indexOf('<S.Body>'), top)).not.toContain('<ProfileStatStrip');
   });
 
   it('draws no avatar box at all when the profile has no photo', () => {

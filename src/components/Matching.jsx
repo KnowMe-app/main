@@ -226,8 +226,19 @@ import ProfileRow, {
   enrichGateLabel,
   describeReviewsState,
   renderFacts as renderProfileFacts,
+  getLocationLine,
   splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
+import {
+  buildProfileDetailSections,
+  buildProfileStatStrip,
+  buildProfileSummaryRows,
+  ProfileAboutSection,
+  ProfileDetailSections,
+  ProfileFactList,
+  ProfileStatStrip,
+} from './ProfileFacts';
+import { getRoleColor } from './matchingRoleColors';
 import { PhotoRoleBadge, RoleCode as RowRoleCode } from './MatchingHiddenList.styled';
 import { DRAFT_FEED_ORDER_FIELD, placeOwnDraftsInFeed, resolveDraftFeedOrderDate } from '../utils/matchingDraftPlacement';
 import { FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
@@ -1130,7 +1141,10 @@ const SwipeableCard = ({
     if (isAdmin && onAdminEdit) return { title: uiText('Редагувати анкету', language), onClick: onAdminEdit };
     return null;
   }, [isAdmin, language, onAdminEdit, onEnrich, user]);
-  const locationInfo = getProfileLocation(user, language);
+  // Місце — тим самим рядком, що в стрічці (`getLocationLine`): картка казала
+  // «Україна, смт Олександрівка», а рядок про ту саму людину — «смт
+  // Олександрівка, Миколаївська обл.».
+  const locationInfo = getLocationLine(user, language);
   const identityAndLocationKeys = [
     'name',
     'surname',
@@ -1153,6 +1167,17 @@ const SwipeableCard = ({
   const usedBodyFieldKeys = collectProfileFieldKeys(bodyHeroFields);
   const sections = getProfileSections(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys, ...usedBodyFieldKeys, ...MATCHING_HIDDEN_CONTACT_KEYS], language });
   const bio = getProfileBio(user);
+  // Картка донорки складається з тих самих частин, що й рядок стрічки
+  // (`ProfileFacts`): смуга показників і короткі факти вгорі — дослівно ті,
+  // що в списку, — а нижче розділи повної анкети, ті самі, що під стрілкою
+  // рядка. Досі тут були окремі пігулки показників, «Основне» і чипи
+  // «Зовнішності» з ВЕЛИКИМИ підписами — третій почерк тих самих фактів.
+  // Решта ролей лишається на своїх секціях (`getProfileSections`).
+  const usesSharedFacts = resolvedRole === 'ed';
+  const statCells = usesSharedFacts ? buildProfileStatStrip(user, language) : [];
+  const summaryRows = usesSharedFacts ? buildProfileSummaryRows(user, language) : [];
+  const detailSections = usesSharedFacts ? buildProfileDetailSections(user, language) : [];
+  const roleAccent = getRoleColor(resolvedRole);
   const contactHintIcons = getContactEntries(user)
     .filter(entry => !MATCHING_HIDDEN_CONTACT_KEYS.includes(entry.key))
     .map(entry => ({ key: entry.key, Icon: CONTACT_ICONS[entry.key] || FaGlobe }))
@@ -1163,7 +1188,7 @@ const SwipeableCard = ({
     .slice(0, 2)
     .map(part => part[0]?.toUpperCase())
     .join('');
-  const shouldShowHeroContent = Boolean(title || locationInfo || heroFields.length > 0);
+  const shouldShowHeroContent = Boolean(title || locationInfo || heroFields.length > 0 || statCells.length > 0 || summaryRows.length > 0);
   const handleContactsToggle = e => {
     e.stopPropagation();
     const owner = auth.currentUser;
@@ -1277,7 +1302,13 @@ const SwipeableCard = ({
           <ModernHeroContent>
             {title && <ModernHeroTitle>{title}</ModernHeroTitle>}
             {locationInfo && <ModernHeroLocation><FaMapMarkerAlt aria-hidden="true" />{locationInfo}</ModernHeroLocation>}
-            {heroFields.length > 0 && (
+            {usesSharedFacts && (
+              <>
+                <ProfileStatStrip cells={statCells} large />
+                <ProfileFactList rows={summaryRows} large />
+              </>
+            )}
+            {!usesSharedFacts && heroFields.length > 0 && (
               <ModernHeroFacts>
                 {heroFields.map(item => {
                   const fact = formatHeroFact(item, language);
@@ -1296,14 +1327,20 @@ const SwipeableCard = ({
           <AdminToggle published={user.publish} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
         )}
         <ModernProfileBody>
-          <ProfileBio text={bio} language={language} />
-          {bodyHeroFields.length > 0 && (
+          {usesSharedFacts && (bio || detailSections.length > 0) && (
+            <ModernSection>
+              <ProfileAboutSection text={bio} language={language} accent={roleAccent} large />
+              <ProfileDetailSections sections={detailSections} accent={roleAccent} large />
+            </ModernSection>
+          )}
+          {!usesSharedFacts && <ProfileBio text={bio} language={language} />}
+          {!usesSharedFacts && bodyHeroFields.length > 0 && (
             <ModernSection>
               <ModernSectionTitle>{profileUiText('keyDetails', language)}</ModernSectionTitle>
               <ProfileChips fields={bodyHeroFields} role={resolvedRole} />
             </ModernSection>
           )}
-          {sections.filter(section => section.variant !== 'contacts').map(section => (
+          {!usesSharedFacts && sections.filter(section => section.variant !== 'contacts').map(section => (
             <ModernSection key={section.title}>
               <ModernSectionTitle>{section.title}</ModernSectionTitle>
               {section.variant === 'chips' ? (
@@ -1616,7 +1653,7 @@ const GalleryCard = React.memo(({
   const photo = photoSwipe.current || photos[0];
   const role = getProfileRole(user);
   const roleCode = getRoleCode(role);
-  const location = getProfileLocation(user, language);
+  const location = getLocationLine(user, language);
   const facts = useMemo(() => renderProfileFacts(user, [], language), [language, user]);
   const [bodyFacts, reproFacts] = useMemo(() => splitProfileFactsByGroup(facts), [facts]);
   const isLimited = Boolean(user?.__limitedProfile);
