@@ -28,17 +28,23 @@ describe('мова сітки «всі дані»', () => {
     const rows = buildGridRows(card, 'uk');
 
     expect(valueOf(rows, 'Раса')).toBe('Європейська');
-    expect(valueOf(rows, 'Волосся')).toBe('Русяве, Пряме');
     expect(valueOf(rows, 'Форма обличчя')).toBe('Кругле');
     expect(valueOf(rows, 'Фігура')).toBe('Пісочний Годинник');
-    expect(valueOf(rows, 'Освіта')).toBe('Ні');
+  });
+
+  // Очі, волосся й освіту словами каже блок під метриками (`buildTraitRows`),
+  // тож під стрілкою вони вдруге не стоять.
+  it('не повторює того, що вже сказав блок характеристик', () => {
+    const rows = buildGridRows(card, 'uk');
+    expect(valueOf(rows, 'Волосся')).toBeUndefined();
+    expect(valueOf(rows, 'Освіта')).toBeUndefined();
   });
 
   it('англійською лишає і підпис, і значення англійськими', () => {
     const rows = buildGridRows(card, 'en');
 
     expect(valueOf(rows, 'Race')).toBe('European');
-    expect(valueOf(rows, 'Hair')).toBe('Fair, Straight');
+    expect(valueOf(rows, 'Face shape')).toBe('Round');
   });
 
   // Те, що ввела людина, не перекладається ніколи: словник складений по

@@ -74,13 +74,12 @@ export const CONTACT_LABELS = {
   ameblo: 'Ameblo',
 };
 
+// Освіти, очей і волосся тут немає: їх словами каже блок під метриками
+// (`buildTraitRows`), і під стрілкою вони стояли б удруге.
 const GRID_FIELD_DEFS = [
-  { key: 'education', label: 'Education' },
   { key: 'clothingSize', label: 'Clothing' },
   { key: 'shoeSize', label: 'Shoe' },
   { key: 'race', label: 'Race' },
-  { key: 'eyeColor', label: 'Eyes' },
-  { key: 'hair', label: 'Hair', combined: ['hairColor', 'hairStructure'] },
   { key: 'faceShape', label: 'Face shape' },
   { key: 'noseShape', label: 'Nose' },
   { key: 'lipsShape', label: 'Lips' },
@@ -237,6 +236,175 @@ export const buildGridRows = (user, language) => {
   }
   return rows;
 };
+
+/*
+ * Зовнішність, пологи з донаціями й освіта — словами, а не рядком чисел.
+ *
+ * Другий рядок фактів казав «пологи 2, 18 міс тому КР 1», а очі, волосся й
+ * освіта лежали аж під стрілкою «всі дані». Тепер це підписані рядки просто
+ * під метриками: «Зовнішність — карі очі, русяве пряме волосся», «Пологи,
+ * донації — двоє пологів, останні 18 міс тому · 1 донація», «Освіта — вища».
+ * Підпис саме «пологи», а не «діти»: `ownKids` рахує пологи, а в сурогатної
+ * мами ці два числа не збігаються.
+ *
+ * Колір очей і волосся, пологи, кесарів і донації несе сама картка стрічки
+ * (`matchingCards`), тож ці рядки стоять у кожній картці без жодного читання.
+ * Структури волосся й освіти в проєкції немає: вони зʼявляються, щойно
+ * приїхала повна анкета (дотик, розгорнутий рядок). Додати їх у проєкцію
+ * можна лише разом із правилами бази — `matchingCards` приймає самі перелічені
+ * поля, і запис картки з новим полем без викоченого правила відхиляється весь.
+ */
+const lowerFirst = text => (text ? text.charAt(0).toLocaleLowerCase('uk-UA') + text.slice(1) : '');
+
+const readTraitValue = (user, field, lang) => {
+  const raw = normalizeDisplayValue(user?.[field]);
+  if (!raw || isOtherValue(raw)) return '';
+  return lowerFirst((lang === 'uk' ? translateFieldValue(field, raw) : raw).trim());
+};
+
+const TRAIT_WORDS = {
+  uk: { eyes: 'очі', hair: 'волосся' },
+  en: { eyes: 'eyes', hair: 'hair' },
+};
+
+// «Блонд», «шатен», «брюнет» — іменники, і з «волоссям» не узгоджуються:
+// «шатен пряме волосся» читалося б як помилка. Прикметник середнього роду
+// («русяве», «темне») стає перед словом, іменник — окремо, через кому.
+const HAIR_COLOR_NOUNS_EN = new Set(['blonde', 'brunette', 'shoten', 'dark blonde', 'dark brunette']);
+const isHairColorNoun = (color, lang) => (lang === 'uk' ? !/[еє]$/.test(color) : HAIR_COLOR_NOUNS_EN.has(color));
+
+const describeAppearance = (user, lang) => {
+  const words = TRAIT_WORDS[lang];
+  const eyes = readTraitValue(user, 'eyeColor', lang);
+  const color = readTraitValue(user, 'hairColor', lang);
+  const structure = readTraitValue(user, 'hairStructure', lang);
+  const parts = [];
+  if (eyes) parts.push(eyes.includes(words.eyes) ? eyes : `${eyes} ${words.eyes}`);
+  if (color && structure) {
+    parts.push(isHairColorNoun(color, lang) ? `${color}, ${structure} ${words.hair}` : `${color} ${structure} ${words.hair}`);
+  } else if (color) {
+    parts.push(isHairColorNoun(color, lang) ? color : `${color} ${words.hair}`);
+  } else if (structure) {
+    parts.push(`${structure} ${words.hair}`);
+  }
+  return parts.join(', ');
+};
+
+const YES_VALUES = new Set(['yes', 'так', 'є']);
+const NO_VALUES = new Set(['no', 'ні', 'немає']);
+
+// Кількість з поля анкети: число, «так/ні» або вільний текст, як його ввели.
+const readCount = raw => {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  if (/^\d+$/.test(text)) return { count: Number(text) };
+  if (YES_VALUES.has(text.toLowerCase())) return { yes: true };
+  if (NO_VALUES.has(text.toLowerCase())) return { count: 0 };
+  return { text };
+};
+
+// «Пологи» — множинний іменник, і «2 пологи» українською не кажуть: до
+// чотирьох це збірний числівник, далі — звичайний.
+const UK_DELIVERY_WORDS = ['', 'одні пологи', 'двоє пологів', 'троє пологів', 'четверо пологів'];
+
+const describeDeliveries = (user, lang) => {
+  const read = readCount(normalizeDisplayValue(user?.ownKids));
+  if (!read) return { text: '', had: false };
+  if (read.count === 0) return { text: lang === 'uk' ? 'пологів не було' : 'no deliveries', had: false };
+  if (read.text) return { text: `${lang === 'uk' ? 'пологи' : 'deliveries'}: ${read.text}`, had: true };
+
+  const count = read.count;
+  let text;
+  if (read.yes) text = lang === 'uk' ? 'були пологи' : 'had deliveries';
+  else if (lang === 'uk') text = UK_DELIVERY_WORDS[count] || `${count} пологів`;
+  else text = `${count} ${count === 1 ? 'delivery' : 'deliveries'}`;
+
+  const recency = formatDeliveryRecency(normalizeDisplayValue(user?.lastDelivery), lang);
+  if (recency) {
+    const single = count === 1;
+    if (lang === 'uk') text += single ? `, ${recency} тому` : `, останні ${recency} тому`;
+    else text += single ? `, ${recency} ago` : `, last ${recency} ago`;
+  }
+  return { text, had: true };
+};
+
+const describeCSection = (user, lang, hadDeliveries) => {
+  const raw = normalizeDisplayValue(user?.[resolveCSectionKey(user)]);
+  if (!raw) return '';
+  const value = formatCSectionValue(raw);
+  const label = profileUiText('factCSection', lang);
+  // «Без КР» має сенс лише поруч із пологами: без них це відповідь на
+  // питання, якого ніхто не ставив.
+  if (value === '0') return hadDeliveries ? `${lang === 'uk' ? 'без' : 'no'} ${label}` : '';
+  return `${label} ${value}`;
+};
+
+const ukDonationWord = count => {
+  const tens = count % 100;
+  if (tens >= 11 && tens <= 14) return 'донацій';
+  const ones = count % 10;
+  if (ones === 1) return 'донація';
+  if (ones >= 2 && ones <= 4) return 'донації';
+  return 'донацій';
+};
+
+const describeDonations = (user, lang) => {
+  const read = readCount(normalizeDisplayValue(user?.experience));
+  if (!read) return '';
+  if (read.count === 0) return lang === 'uk' ? 'донацій ще не було' : 'no donations yet';
+  if (read.text) return `${lang === 'uk' ? 'донації' : 'donations'}: ${read.text}`;
+  if (read.yes) return lang === 'uk' ? 'були донації' : 'has donated';
+  return lang === 'uk'
+    ? `${read.count} ${ukDonationWord(read.count)}`
+    : `${read.count} ${read.count === 1 ? 'donation' : 'donations'}`;
+};
+
+// «Так/ні» в освіті відповідає на питання форми «чи є вища», а не називає
+// освіту: «Освіта — ні» прочиталось би як «без освіти».
+const EDUCATION_FLAG_VALUES = new Set(['yes', 'no', 'так', 'ні']);
+
+const describeEducation = (user, lang) => {
+  const raw = normalizeDisplayValue(user?.education);
+  if (!raw || isOtherValue(raw) || EDUCATION_FLAG_VALUES.has(raw.toLowerCase())) return '';
+  const localized = lang === 'uk' ? translateFieldValue('education', raw) : raw;
+  // Підпис рядка вже каже «Освіта»: «вища освіта» поруч із ним — повтор.
+  return lowerFirst(localized.replace(/\s+освіта$/i, '').trim());
+};
+
+export const buildTraitRows = (user, language) => {
+  const lang = resolveProfileLanguage(language);
+  const rows = [];
+
+  const appearance = describeAppearance(user, lang);
+  if (appearance) rows.push({ key: 'appearance', label: translateProfileLabel('Appearance', lang), value: appearance });
+
+  const deliveries = describeDeliveries(user, lang);
+  const cSection = describeCSection(user, lang, deliveries.had);
+  const donations = describeDonations(user, lang);
+  const reproduction = [deliveries.text, cSection, donations].filter(Boolean);
+  if (reproduction.length) {
+    const hasDeliveries = Boolean(deliveries.text || cSection);
+    let label = 'Deliveries, donations';
+    if (!donations) label = 'Deliveries';
+    else if (!hasDeliveries) label = 'Donations';
+    // Число не відривається від свого слова («6 / донацій» на двох рядках), а
+    // крапка-розділювач — від попередньої частини: переноситься рядок лише між
+    // частинами.
+    const value = reproduction
+      .map(part => part.replace(/(\d) (?=\S)/g, '$1 '))
+      .join(' · ');
+    rows.push({ key: 'reproduction', label: translateProfileLabel(label, lang), value });
+  }
+
+  const education = describeEducation(user, lang);
+  if (education) rows.push({ key: 'education', label: translateProfileLabel('Education', lang), value: education });
+
+  return rows;
+};
+
+// Пологи й кесарів тепер каже блок `buildTraitRows`, тож у рядку фактів їх
+// немає — інакше той самий номер пологів стояв би в картці двічі.
+const TRAIT_FACT_KEYS = ['births', 'cs'];
 
 // The metrics line: `172/59 BMI 20 не заміжня O+ пологи 1, 18 міс тому`.
 // Spec §5 asks that the fields an active filter narrowed on come first, so the
@@ -1146,10 +1314,11 @@ const ProfileRow = ({
     () => (isLimited ? [] : renderFacts(user, priorityMetricKeys || [], language)),
     [isLimited, language, user, priorityMetricKeys]
   );
-  // Один рядок фактів переносився посеред самого факту («пологів 3, останні
-  // 19.10.25» тікало на другий рядок), і зачепитись оку не було за що. Тіло
-  // лишається зверху, пологи й кесарів ідуть окремим, приглушеним рядком.
-  const [bodyFacts, reproFacts] = useMemo(() => splitFactsByGroup(facts), [facts]);
+  // Пологи й кесарів ішли другим, приглушеним рядком фактів; тепер їх словами
+  // каже блок під метриками (`buildTraitRows`), а в рядку лишається тіло й
+  // сімейний стан.
+  const rowFacts = useMemo(() => facts.filter(node => !TRAIT_FACT_KEYS.includes(node.key)), [facts]);
+  const traitRows = useMemo(() => (isLimited ? [] : buildTraitRows(user, language)), [isLimited, language, user]);
   const gridRows = useMemo(() => (isLimited ? [] : buildGridRows(user, language)), [isLimited, language, user]);
   const contactEntries = useMemo(
     () => (isLimited ? [] : getContactEntries(user).filter(entry => entry.key !== 'vk')),
@@ -1369,30 +1538,26 @@ const ProfileRow = ({
           ряд рішень), починається від краю картки, і рядок метрик посеред них
           був єдиним зсунутим. Відступ лишився рівно один і очевидний — під
           саме імʼя, поруч із фото. */}
-      {facts.length > 0 ? (
-        <>
-          {bodyFacts.length > 0 && (
-            <S.FactsRow>
-              {bodyFacts.map((node, idx) => (
-                <React.Fragment key={node.key}>
-                  {idx > 0 && ' '}
-                  {node}
-                </React.Fragment>
-              ))}
-            </S.FactsRow>
-          )}
-          {reproFacts.length > 0 && (
-            <S.FactsRow $soft>
-              {reproFacts.map((node, idx) => (
-                <React.Fragment key={node.key}>
-                  {idx > 0 && ' '}
-                  {node}
-                </React.Fragment>
-              ))}
-            </S.FactsRow>
-          )}
-        </>
-      ) : null}
+      {rowFacts.length > 0 && (
+        <S.FactsRow>
+          {rowFacts.map((node, idx) => (
+            <React.Fragment key={node.key}>
+              {idx > 0 && ' '}
+              {node}
+            </React.Fragment>
+          ))}
+        </S.FactsRow>
+      )}
+      {traitRows.length > 0 && (
+        <S.TraitList>
+          {traitRows.map(row => (
+            <React.Fragment key={row.key}>
+              <S.TraitLabel>{row.label}</S.TraitLabel>
+              <S.TraitValue>{row.value}</S.TraitValue>
+            </React.Fragment>
+          ))}
+        </S.TraitList>
+      )}
 
       {contactsOpen && (
         <S.RowContacts onClick={e => e.stopPropagation()}>
