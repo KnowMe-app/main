@@ -206,10 +206,15 @@ export const Body = styled.div`
   min-width: 0;
 `;
 
+// Імʼя — шрифтом заголовків (`--km-font-display`, Playfair) і в рядку, і в
+// плитці галереї, і у відкритій картці: це той самий заголовок тієї самої
+// людини на трьох екранах.
 export const Name = styled.div`
-  font-size: 17px;
-  font-weight: 650;
-  letter-spacing: -0.015em;
+  font-family: var(--km-font-display, 'Playfair Display', Georgia, serif);
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
   color: var(--matching-header-text);
   white-space: nowrap;
   overflow: hidden;
@@ -298,33 +303,6 @@ export const FactsRow = styled.div`
   opacity: ${({ $soft }) => ($soft ? 0.62 : 0.82)};
   margin-top: ${({ $soft }) => ($soft ? '1px' : '8px')};
   line-height: 1.5;
-`;
-
-/*
- * Зовнішність, пологи з донаціями й освіта — підпис і відповідь парою
- * (`buildTraitRows` у `ProfileRow`). Колонка підписів одна на всі рядки, тож
- * відповіді починаються з однієї вертикалі й читаються списком, а не текстом;
- * довга відповідь переноситься в межах своєї колонки.
- */
-export const TraitList = styled.dl`
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  column-gap: 10px;
-  row-gap: 3px;
-  margin: 6px 0 0;
-  font-size: 12.5px;
-  line-height: 1.45;
-`;
-
-export const TraitLabel = styled.dt`
-  margin: 0;
-  color: var(--matching-muted-text);
-`;
-
-export const TraitValue = styled.dd`
-  margin: 0;
-  color: var(--matching-header-text);
-  opacity: 0.88;
 `;
 
 export const EmptyNote = styled.div`
