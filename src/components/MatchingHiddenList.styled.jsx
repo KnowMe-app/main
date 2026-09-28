@@ -300,6 +300,33 @@ export const FactsRow = styled.div`
   line-height: 1.5;
 `;
 
+/*
+ * Зовнішність, пологи з донаціями й освіта — підпис і відповідь парою
+ * (`buildTraitRows` у `ProfileRow`). Колонка підписів одна на всі рядки, тож
+ * відповіді починаються з однієї вертикалі й читаються списком, а не текстом;
+ * довга відповідь переноситься в межах своєї колонки.
+ */
+export const TraitList = styled.dl`
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 3px;
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+`;
+
+export const TraitLabel = styled.dt`
+  margin: 0;
+  color: var(--matching-muted-text);
+`;
+
+export const TraitValue = styled.dd`
+  margin: 0;
+  color: var(--matching-header-text);
+  opacity: 0.88;
+`;
+
 export const EmptyNote = styled.div`
   font-size: 12px;
   color: var(--matching-muted-text);

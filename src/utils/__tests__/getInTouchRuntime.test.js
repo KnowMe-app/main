@@ -95,10 +95,12 @@ describe('позначки власника читаються і пишутьс
       configSource.indexOf('export const readProfileFromNodes ='),
       configSource.indexOf('export const fetchUsersByIds ='),
     );
-    expect(reader).toContain('readOwnerGetInTouchMap(ownerId)');
-    expect(reader).toContain('merged.getInTouch = getInTouchMap[id]');
-    expect(reader).toContain('readOwnerWriterMap(ownerId)');
-    expect(reader).toContain('merged.writer = writerMap[id]');
+    // Позначка картки — точковим читанням, а не мапою власника цілком: мапа
+    // важила до 160 КБ і приїжджала на кожному вході (`readOwnerValueForProfile`).
+    expect(reader).toContain('readOwnerValueForProfile(OWNER_GET_IN_TOUCH_PATH, ownerId, id');
+    expect(reader).toContain('merged.getInTouch = getInTouchMark.value');
+    expect(reader).toContain('readOwnerValueForProfile(OWNER_WRITER_PATH, ownerId, id)');
+    expect(reader).toContain('merged.writer = writerMark.value');
     // Немає позначки — немає й поля: інакше стара з анкети пережила б зняття.
     expect(reader).toContain('else delete merged.getInTouch;');
     expect(reader).toContain('else delete merged.writer;');

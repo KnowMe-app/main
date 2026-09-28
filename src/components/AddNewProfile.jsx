@@ -48,6 +48,7 @@ import {
   lazyLoadProfilePhotos,
   addMatchingSearchQuery,
   fetchMatchingCardsPage,
+  readOwnerWriterMap,
 } from './config';
 import { fetchUsersBySearchKeyGitNewPaged } from './gitNewLoad';
 import {
@@ -2357,6 +2358,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [showInfoModal, setShowInfoModal] = useState(false);
   const ownerId = auth.currentUser?.uid;
+
+  // Картотека — єдиний екран, якому позначки `writer` потрібні на кожній
+  // картці списку. Анкета тепер читає позначку точково (`readProfileFromNodes`),
+  // а точкове читання не бачить старої, перевернутої форми запису
+  // (`{власник}/{значення}/{картка}`) — і перевірити її дешево, як для
+  // `getInTouch`, тут нема чим: на `writer` немає `.indexOn`. Тож мапа
+  // власника читається тут, один раз на екран, — а не на кожному вході в
+  // застосунок, як було досі.
+  useEffect(() => {
+    if (!ownerId) return;
+    readOwnerWriterMap(ownerId).catch(() => {});
+  }, [ownerId]);
 
   useEffect(() => {
     const logged = localStorage.getItem('isLoggedIn');

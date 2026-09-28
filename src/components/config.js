@@ -2511,15 +2511,18 @@ export const readProfileFromNodes = async (userId, options = {}) => {
   // коштує запиту.
   const ownerId = auth.currentUser?.uid;
   if (ownerId) {
-    const [getInTouchMap, writerMap] = await Promise.all([
-      readOwnerGetInTouchMap(ownerId),
-      readOwnerWriterMap(ownerId),
+    // Позначка саме цієї картки, а не мапа власника цілком
+    // (`readOwnerValueForProfile`): мапа важила до 160 КБ і приїжджала на
+    // кожному вході разом із власною анкетою.
+    const [getInTouchMark, writerMark] = await Promise.all([
+      readOwnerValueForProfile(OWNER_GET_IN_TOUCH_PATH, ownerId, id, { hasLegacyGroups: ownerGetInTouchHasLegacyGroups }),
+      readOwnerValueForProfile(OWNER_WRITER_PATH, ownerId, id),
     ]);
-    if (Object.prototype.hasOwnProperty.call(getInTouchMap, id)) merged.getInTouch = getInTouchMap[id];
+    if (getInTouchMark.found) merged.getInTouch = getInTouchMark.value;
     else delete merged.getInTouch;
     // Позначки немає — немає й поля: інакше стара, ще не дочищена з анкети,
     // пережила б своє зняття.
-    if (Object.prototype.hasOwnProperty.call(writerMap, id)) merged.writer = writerMap[id];
+    if (writerMark.found) merged.writer = writerMark.value;
     else delete merged.writer;
   }
 
@@ -4037,15 +4040,75 @@ const readOwnerValueMap = async (path, ownerId) => {
   return pending;
 };
 
+/**
+ * Позначка власника для однієї картки — без читання всієї мапи.
+ *
+ * `readProfileFromNodes` підмішує `getInTouch` і `writer` у кожну прочитану
+ * анкету, і робив це мапою власника цілком — «раз на сесію». Тільки раз на
+ * сесію означав **на кожному вході**: `App.jsx` читає власну анкету, щоб
+ * дізнатись права, і разом з нею приїжджала вся мапа позначок. В адміна,
+ * який розставив їх на сотні карток, це 160 КБ при кожному відкритті
+ * застосунку — заради поля, якого на екрані входу й «Мого профілю» немає
+ * взагалі. Тепер одна картка — одне точкове читання в десятки байтів.
+ *
+ * Мапа цілком лишається там, де вона вже є: якщо її завантажив екран, якому
+ * потрібні позначки всіх карток (адмінська картотека, список «кому
+ * дзвонити»), відповідь береться з неї, без запиту. І там, де без неї не
+ * обійтись: стару, перевернуту форму запису (`{власник}/{значення}/{картка}`)
+ * точкове читання за id картки не знаходить, тож для `getInTouch` спершу
+ * питається однорядкова проба (`ownerGetInTouchHasLegacyGroups`), і лише
+ * тоді, коли вона каже «стара форма є», читається мапа.
+ */
+const ownerValuePointCache = new Map();
+
+const ownerValuePointKey = (path, owner, id) => `${path}::${owner}::${id}`;
+
+const readOwnerValueForProfile = async (path, ownerId, profileId, { hasLegacyGroups } = {}) => {
+  const owner = String(ownerId || '').trim();
+  const id = String(profileId || '').trim();
+  if (!owner || !id) return { found: false };
+
+  const loadedMap = ownerValueMapCache.get(`${path}::${owner}`);
+  if (loadedMap) {
+    const map = await loadedMap;
+    return Object.prototype.hasOwnProperty.call(map, id) ? { found: true, value: map[id] } : { found: false };
+  }
+
+  const pointKey = ownerValuePointKey(path, owner, id);
+  let pending = ownerValuePointCache.get(pointKey);
+  if (!pending) {
+    pending = (async () => {
+      try {
+        const snapshot = await get(ref2(database, `${path}/${owner}/${id}`));
+        if (snapshot.exists() && !isLegacyOwnerValueGroup(snapshot.val())) {
+          return { found: true, value: snapshot.val() };
+        }
+      } catch (error) {
+        console.warn('[multiData] не вдалося прочитати позначку картки', { path, ownerId: owner, profileId: id, error });
+      }
+      if (typeof hasLegacyGroups === 'function' && await hasLegacyGroups(owner)) {
+        const map = await readOwnerValueMap(path, owner);
+        return Object.prototype.hasOwnProperty.call(map, id) ? { found: true, value: map[id] } : { found: false };
+      }
+      return { found: false };
+    })();
+    ownerValuePointCache.set(pointKey, pending);
+  }
+  return pending;
+};
+
 /** Скидає памʼять — після власного запису або зміни власника. */
 const invalidateOwnerValueMap = (path, ownerId) => {
-  if (ownerId) {
-    ownerValueMapCache.delete(`${path}::${String(ownerId).trim()}`);
-    return;
+  const prefix = ownerId ? `${path}::${String(ownerId).trim()}` : `${path}::`;
+  if (ownerId) ownerValueMapCache.delete(prefix);
+  else {
+    [...ownerValueMapCache.keys()]
+      .filter(key => key.startsWith(prefix))
+      .forEach(key => ownerValueMapCache.delete(key));
   }
-  [...ownerValueMapCache.keys()]
-    .filter(key => key.startsWith(`${path}::`))
-    .forEach(key => ownerValueMapCache.delete(key));
+  [...ownerValuePointCache.keys()]
+    .filter(key => key.startsWith(ownerId ? `${prefix}::` : prefix))
+    .forEach(key => ownerValuePointCache.delete(key));
 };
 
 /**
@@ -4078,19 +4141,29 @@ const setOwnerValue = async (path, ownerId, profileId, value, { stringOnly = fal
     && (typeof scalarValue !== 'string' || scalarValue.trim() !== '');
   const nextValue = hasValue && typeof scalarValue === 'string' ? scalarValue.trim() : scalarValue;
 
-  const map = await readOwnerValueMap(path, owner);
-  const previous = map[id];
+  // Попереднє значення — точковим читанням: заради однієї позначки вся мапа
+  // власника не потрібна (`readOwnerValueForProfile`).
+  const current = await readOwnerValueForProfile(path, owner, id);
+  const previous = current.found ? current.value : undefined;
   if (!hasValue && previous === undefined) return true;
   if (hasValue && previous === nextValue) return true;
 
   try {
     await set(ref2(database, `${path}/${owner}/${id}`), hasValue ? nextValue : null);
-    // Мапа оновлюється на місці — перечитувати цілий вузол заради однієї зміни
-    // означало б платити за кожну позначку читанням усього списку власника.
-    const nextMap = { ...map };
-    if (hasValue) nextMap[id] = nextValue;
-    else delete nextMap[id];
-    ownerValueMapCache.set(`${path}::${owner}`, Promise.resolve(nextMap));
+    // Памʼять оновлюється на місці — перечитувати цілий вузол заради однієї
+    // зміни означало б платити за кожну позначку читанням усього списку
+    // власника. Мапа оновлюється лише тоді, коли її вже хтось завантажив.
+    const loadedMap = ownerValueMapCache.get(`${path}::${owner}`);
+    if (loadedMap) {
+      const nextMap = { ...(await loadedMap) };
+      if (hasValue) nextMap[id] = nextValue;
+      else delete nextMap[id];
+      ownerValueMapCache.set(`${path}::${owner}`, Promise.resolve(nextMap));
+    }
+    ownerValuePointCache.set(
+      ownerValuePointKey(path, owner, id),
+      Promise.resolve(hasValue ? { found: true, value: nextValue } : { found: false }),
+    );
     return true;
   } catch (error) {
     console.warn('[multiData] позначку не збережено', { path, ownerId: owner, profileId: id, error });
@@ -4382,6 +4455,14 @@ export const updateProfileRole = async (userId, nextRole) => {
 
   const previous = (await readProfileFromNodes(id, { includeTechnical: true })) || {};
   await updateDataInRealtimeDB(id, { userRole: role, role }, 'update');
+  // «Мій профіль» читає анкету акаунта з Firestore (`fetchUserData`), а цей
+  // писач її туди не клав: нова роль жила у вузлах і картці, а після
+  // перезавантаження сторінки форма показувала стару — ту, що записав
+  // останній вхід. Відмова тут не скасовує зміни: стрічка й картка вже
+  // бачать нову роль, а форма бере її з картки (`fetchProfileCardRole`).
+  await updateDataInFiresoreDB(id, { userRole: role, role }, 'check').catch(error => {
+    console.warn('[role] не вдалося записати роль у Firestore', { userId: id, error });
+  });
   await syncUserSearchKeyIndex(
     id,
     { userRole: previous.userRole, role: previous.role },
@@ -4766,6 +4847,22 @@ const buildMatchingCardRef = userId => ref2(database, `${MATCHING_CARDS_ROOT}/${
 
 const readMatchingCardRaw = async userId => {
   const snapshot = await get(buildMatchingCardRef(userId));
+  return snapshot.exists() ? snapshot.val() : null;
+};
+
+/**
+ * Роль акаунта — так, як її бачить стрічка: з картки, одним полем.
+ *
+ * «Мій профіль» бере анкету з Firestore, а стрічка й фільтри — з картки
+ * `matchingCards/{id}`, і ці два записи розходились: вхід переписував роль у
+ * Firestore тим, що обрали на формі входу, а картку не чіпав. Людина бачила в
+ * профілі одну роль, а стрічка гортала їй деку іншої. Одне поле картки
+ * коштує байти — і знімає питання, котрий із двох записів правдивий.
+ */
+export const fetchProfileCardRole = async userId => {
+  const id = String(userId || '').trim();
+  if (!id) return null;
+  const snapshot = await get(ref2(database, `${MATCHING_CARDS_ROOT}/${id}/role`));
   return snapshot.exists() ? snapshot.val() : null;
 };
 

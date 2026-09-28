@@ -7,6 +7,7 @@ import { getCurrentDate } from './foramtDate';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { authNotifications } from './authNotifications';
 import {
+  buildAuthLoginPayload,
   buildAuthProfilePayload,
   markAuthSession,
   MY_PROFILE_ROUTE,
@@ -14,6 +15,7 @@ import {
   persistUserWithFallback,
 } from './authProfilePersistence';
 import { readReturnToFromState } from 'utils/authRedirect';
+import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
 
 const Container = styled.div`
   --accent: var(--km-accent);
@@ -239,6 +241,13 @@ const RoleName = styled.span`
   font-weight: 800;
 `;
 
+const RoleHint = styled.p`
+  margin: 0 0 10px;
+  color: var(--text-muted, var(--text));
+  font-size: 13px;
+  line-height: 1.4;
+`;
+
 const TermsButton = styled.button`
   border: none;
   background: transparent;
@@ -297,6 +306,11 @@ const Spinner = styled.div`
 export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   const [isChecked, setIsChecked] = useState(false);
   const [selectedRole, setSelectedRole] = useState('');
+  // Роль питається лише в того, хто реєструється, і лише тоді, коли стало
+  // ясно, що акаунта з цією поштою немає. Досі її вимагали на кожному вході й
+  // записували в анкету — тобто вхід переписував роль, обрану в «Моєму
+  // профілі» (`buildAuthLoginPayload`).
+  const [registrationRoleRequested, setRegistrationRoleRequested] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleCheckboxChange = () => {
@@ -332,6 +346,9 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
 
   const handleChange = e => {
     const { name, value } = e.target;
+    // Інша пошта — інше питання «чи є такий акаунт»: вибір ролі, відкритий для
+    // попередньої, до неї не належить.
+    if (name === 'email') setRegistrationRoleRequested(false);
     setState(prevState => ({
       ...prevState,
       [name]: value,
@@ -359,10 +376,9 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   const handleLogin = async email => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, state.password);
-      const uploadedInfo = buildAuthProfilePayload({
+      const uploadedInfo = buildAuthLoginPayload({
         email,
         userId: userCredential.user.uid,
-        userRole: selectedRole,
         todayDays,
         todayDash,
       });
@@ -404,7 +420,12 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       setIsLoggedIn(true);
       navigateAfterAuth();
     } catch (error) {
-      if (error.code === 'auth/weak-password') {
+      if (error.code === 'auth/email-already-in-use') {
+        // `fetchSignInMethodsForEmail` мовчить, коли в проєкті ввімкнено
+        // захист від перебору пошт, — тоді наявний акаунт виглядає як новий.
+        // Реєструвати його вдруге нема чого: це вхід.
+        await handleLogin(email);
+      } else if (error.code === 'auth/weak-password') {
         authNotifications.weakPassword();
       } else {
         console.error('Error signing in:', error);
@@ -437,11 +458,6 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       return;
     }
 
-    if (!selectedRole) {
-      authNotifications.roleRequired();
-      return;
-    }
-
     if (!isChecked) {
       authNotifications.termsRequired();
       return;
@@ -457,6 +473,9 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       const signInMethods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
       if (signInMethods.length > 0) {
         await handleLogin(normalizedEmail);
+      } else if (!selectedRole) {
+        setRegistrationRoleRequested(true);
+        authNotifications.registrationRoleRequired();
       } else {
         await handleRegistration(normalizedEmail);
       }
@@ -520,23 +539,31 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
             <Label isActive={focused === 'password' || state.password}>Пароль</Label>
           </InputDiv>
 
-          <RoleBlock>
-            <RoleTitle>Оберіть роль</RoleTitle>
-            <RoleGrid>
-              <RoleOption $selected={selectedRole === 'ed'}>
-                <RoleRadio type="radio" name="userRole" value="ed" checked={selectedRole === 'ed'} onChange={e => setSelectedRole(e.target.value)} />
-                <RoleText>
-                  <RoleName>Я донор яйцеклітин</RoleName>
-                </RoleText>
-              </RoleOption>
-              <RoleOption $selected={selectedRole === 'ag'}>
-                <RoleRadio type="radio" name="userRole" value="ag" checked={selectedRole === 'ag'} onChange={e => setSelectedRole(e.target.value)} />
-                <RoleText>
-                  <RoleName>Ми агентство і шукаємо ДО</RoleName>
-                </RoleText>
-              </RoleOption>
-            </RoleGrid>
-          </RoleBlock>
+          {registrationRoleRequested && (
+            <RoleBlock>
+              <RoleTitle>Хто ви?</RoleTitle>
+              <RoleHint>
+                Акаунта з цією поштою ще немає. Роль вирішує, які поля покаже анкета й кого ви побачите у стрічці.
+                Змінити її можна будь-коли в «Моєму профілі».
+              </RoleHint>
+              <RoleGrid>
+                {PROFILE_ROLE_OPTIONS.map(option => (
+                  <RoleOption key={option.value} $selected={selectedRole === option.value}>
+                    <RoleRadio
+                      type="radio"
+                      name="userRole"
+                      value={option.value}
+                      checked={selectedRole === option.value}
+                      onChange={e => setSelectedRole(e.target.value)}
+                    />
+                    <RoleText>
+                      <RoleName>{option.label}</RoleName>
+                    </RoleText>
+                  </RoleOption>
+                ))}
+              </RoleGrid>
+            </RoleBlock>
+          )}
 
           <CheckboxContainer>
             <CustomCheckbox id="login-terms" type="checkbox" checked={isChecked} onChange={handleCheckboxChange} />

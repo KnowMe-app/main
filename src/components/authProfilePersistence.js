@@ -68,6 +68,25 @@ export const buildAuthSessionPayload = ({ todayDays, todayDash }) => ({
   lastLogin2: todayDash,
 });
 
+/**
+ * Що пише вхід у вже наявний акаунт: дату входу й згоду з умовами — і більше
+ * нічого.
+ *
+ * Роль тут стояла, і вхід її **переписував**: форма щоразу вимагала обрати
+ * роль, пропонувала з п'яти лише дві («донорка», «агенція») і клала вибране в
+ * анкету. Батьки, які просто заходили в застосунок, після кожного входу ставали
+ * донорками чи агенціями, а «Мій профіль» (він читає Firestore) показував роль
+ * з останнього входу замість тієї, яку людина обрала в ньому ж. Роль
+ * обирається при реєстрації й міняється в «Моєму профілі» — окремим шляхом
+ * (`updateProfileRole`).
+ */
+export const buildAuthLoginPayload = ({ email, userId, todayDays, todayDash }) => ({
+  email,
+  areTermsConfirmed: todayDays,
+  ...buildAuthSessionPayload({ todayDays, todayDash }),
+  userId,
+});
+
 export const buildAuthProfilePayload = ({
   email,
   userId,

@@ -139,6 +139,11 @@ beforeEach(() => {
   mockGet.mockReset();
   mockGet.mockImplementation(async request => {
     const [path, ...constraints] = Array.isArray(request) ? request : [request];
+    // Анкета бере позначку своєї картки точково (`readOwnerValueForProfile`),
+    // а не мапою власника цілком.
+    const pointMark = String(path).match(new RegExp(`^multiData/getInTouch/${OWNER}/(.+)$`));
+    if (pointMark) return snapshotOf(OWNER_MARKS[pointMark[1]] ?? null);
+    if (String(path).startsWith(`multiData/writer/${OWNER}/`)) return snapshotOf(null);
     if (String(path) === `multiData/getInTouch/${OWNER}`) {
       if (constraints.length) {
         ownerQueries.push(constraints);
