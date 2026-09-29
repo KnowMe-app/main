@@ -113,6 +113,7 @@ export const MatchingFilterRail = ({
                 <FilterRailChipClear
                   type="button"
                   $danger={chip.danger}
+                  $open={isOpen}
                   aria-label={uiText('Скинути групу «{group}»', language, { group: chip.groupLabel })}
                   title={uiText('Скинути групу «{group}»', language, { group: chip.groupLabel })}
                   onClick={() => onResetGroup(chip.filterName)}

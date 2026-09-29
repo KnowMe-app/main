@@ -159,6 +159,8 @@ const EN_BY_UK = {
   'Не вдалося прочитати відгуки': 'Could not read the public notes',
   'Редагувати анкету': 'Edit the profile',
   'Прибрати зі стрічки': 'Take out of the feed',
+  'Не вдалося прибрати анкету зі стрічки': 'Could not take the profile out of the feed',
+  'Не вдалося показати анкету у стрічці': 'Could not show the profile in the feed',
   'Показати у стрічці': 'Show in the feed',
   Контакти: 'Contacts',
   'Показати всі дані': 'Show all data',

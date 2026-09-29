@@ -73,7 +73,22 @@ const Topbar = styled.div`
   border-bottom: 1px solid var(--border);
   padding: 14px 20px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
+`;
+// Назву застосунку на ширшому за 600 px екрані вже несе спільна навігація
+// (`PrimaryNavigation`), тож тут вона стояла другою, просто під першою. На
+// телефоні навігація свою назву ховає — там ця лишається єдиною.
+const TopbarBrand = styled.div`
+  @media (min-width: 601px) {
+    display: none;
+  }
+`;
+const TopbarActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
 `;
 // Header block (brand, "⋮" menu, progress bar, tabs) lives in normal document flow - it must
 // scroll away with the rest of the page, never pin itself to the viewport top.
@@ -1322,8 +1337,8 @@ export const MyProfile = () => {
   return <Page>
     <HeaderPanel>
       <Topbar>
-        <KnowMeBrand />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <TopbarBrand><KnowMeBrand /></TopbarBrand>
+        <TopbarActions>
           <StatusBadge
             type="button"
             $clickable={!isProfileAccessConfirmed}
@@ -1335,7 +1350,7 @@ export const MyProfile = () => {
               : uiText('Логін не відбувся', language)}
           </StatusBadge>
           <DotsButton type='button' aria-label={uiText('Відкрити меню профілю', language)} onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
-        </div>
+        </TopbarActions>
       </Topbar>
 
       <ProgressWrap>

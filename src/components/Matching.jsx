@@ -157,6 +157,7 @@ import {
   buildMatchingSearchResultCacheKey,
   clearMatchingCache,
   getCard,
+  getCachedMatchingSummaryCards,
   getCompleteCachedProfile,
   getIdsByQuery,
   getIndexIdsByQuery,
@@ -1325,7 +1326,7 @@ const SwipeableCard = ({
           </ModernHeroContent>
         )}
         {isAdmin && (
-          <AdminToggle published={user.publish} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
+          <AdminToggle published={isMatchingCardPublished(user)} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
         )}
         <ModernProfileBody>
           {usesSharedFacts && (bio || detailSections.length > 0) && (
@@ -2693,29 +2694,56 @@ const Matching = () => {
    * Локально ключ картки міняється одразу обома іменами: перемальовує цятку
    * саме `feedDate`, і без нього вона лишалась би старого кольору до
    * перечитування стрічки.
+   *
+   * Міняти треба **кожну копію картки, яку бачить екран**, а не лише рядок у
+   * `users`. Відкрита картка — це `{ ...рядок, ...повна анкета }`
+   * (`withLazyPhotos`), і анкета там перекриває рядок: поки обробник правив сам
+   * рядок, прочитана раніше анкета лишалась із `publish: true`, цятка у
+   * відкритій картці не мінялась, і адмін тиснув удруге — тобто публікував
+   * анкету назад. Звідси «натиснув приховати, а `feedDate` не став `false`».
+   * Те саме з кешами: повна анкета й проєкція живуть у `localStorage` годинами,
+   * і перше ж повторне відкриття показало б старий стан.
    */
   const togglePublish = React.useCallback(async user => {
     if (!isAdmin || !user?.userId) return;
+    const userId = user.userId;
     const newValue = !isMatchingCardPublished(user);
-    setUsers(prev =>
-      prev.map(u => (u.userId === user.userId
-        ? {
-          ...u,
-          publish: newValue,
-          [MATCHING_CARD_FEED_FIELD]: newValue
-            ? (normalizeFeedDateValue(u[MATCHING_CARD_FEED_FIELD]) || todayFeedDate())
-            : false,
-        }
-        : u))
-    );
+    const patchPublication = card => (card
+      ? {
+        ...card,
+        publish: newValue,
+        [MATCHING_CARD_FEED_FIELD]: newValue
+          ? (normalizeFeedDateValue(card[MATCHING_CARD_FEED_FIELD]) || normalizeFeedDateValue(card.lastLogin2) || todayFeedDate())
+          : false,
+      }
+      : card);
+    const applyLocally = () => {
+      setUsers(prev => prev.map(u => (u.userId === userId ? patchPublication(u) : u)));
+      setFullProfileByUserId(prev => (prev[userId] ? { ...prev, [userId]: patchPublication(prev[userId]) } : prev));
+    };
+    applyLocally();
     try {
       const backendPayload = sanitizeCardForBackend({ publish: newValue });
-      await updateDataInRealtimeDB(user.userId, backendPayload, 'update');
-      await updateDataInFiresoreDB(user.userId, backendPayload, 'update');
+      await updateDataInRealtimeDB(userId, backendPayload, 'update');
+      // Кеш правиться після запису, а не до нього: відмова бази лишає
+      // збереженим той стан, що справді лежить у картці.
+      if (getCard(userId)) updateCard(userId, { publish: newValue });
+      const { cards: cachedSummaries } = getCachedMatchingSummaryCards([userId]);
+      if (cachedSummaries[userId]) {
+        const { [MATCHING_CARD_FEED_FIELD]: _feedDate, ...summary } = cachedSummaries[userId];
+        setCachedMatchingSummaryCards({ [userId]: { ...summary, publish: newValue } });
+      }
     } catch (err) {
       console.error('Failed to toggle publish', err);
+      toast.error(uiText(newValue ? 'Не вдалося показати анкету у стрічці' : 'Не вдалося прибрати анкету зі стрічки', language));
+      return;
     }
-  }, [isAdmin]);
+    // Firestore — дзеркало анкети акаунта; у картки, заведеної адміном,
+    // документа там немає, і `update` відмовляє. Стрічку це не зачіпає.
+    updateDataInFiresoreDB(userId, sanitizeCardForBackend({ publish: newValue }), 'update').catch(err => {
+      console.warn('Failed to mirror publish into Firestore', err);
+    });
+  }, [isAdmin, language]);
 
   // Spec §1: a non-empty query replaces the feed's contents with the results,
   // which the same filters then narrow - there is no second filtering branch.
