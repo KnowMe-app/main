@@ -286,6 +286,7 @@ import {
   getProfileRole,
   getProfileSections,
   getRoleCode,
+  getRoleLabel,
 } from './profileLayoutConfig';
 import {
   cacheFavoriteUsers,
@@ -1692,7 +1693,7 @@ const GalleryCard = React.memo(({
               (`PhotoRoleBadge`), що й у рядку однієї колонки та у відкритій
               картці. Чіпом під іменем вона змагалась за ширину з локацією, а
               дві розкладки казали про ту саму річ у двох різних місцях. */}
-          {roleCode && <PhotoRoleBadge $role={role}>{roleCode}</PhotoRoleBadge>}
+          {roleCode && <PhotoRoleBadge $role={role}>{getRoleLabel(role, language)}</PhotoRoleBadge>}
           {isHidden && <GalleryHiddenBadge $belowRole={Boolean(roleCode)}>{uiText('Приховано', language)}</GalleryHiddenBadge>}
           {photoSwipe.total > 1 && (
             <GalleryPhotoCount>
@@ -1742,6 +1743,7 @@ const GalleryCard = React.memo(({
             {onEnrich && (
               <GalleryActionButton type="button" aria-label={enrichGateLabel(language)} title={enrichGateLabel(language)} onClick={event => { event.stopPropagation(); onEnrich(user); }}>
                 <FaPencilAlt />
+                <span>{language === 'en' ? 'Edit' : 'Доповнити'}</span>
               </GalleryActionButton>
             )}
             <GalleryActionButton
@@ -1753,6 +1755,7 @@ const GalleryCard = React.memo(({
               onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
             >
               {isHidden ? <FaUndoAlt /> : <FaTimes />}
+              <span>{uiText(isHidden ? 'Повернути' : 'Приховати', language)}</span>
             </GalleryActionButton>
             <GalleryActionButton
               type="button"
@@ -1763,6 +1766,7 @@ const GalleryCard = React.memo(({
               onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
             >
               {isFavorite ? <FaHeart /> : <FaRegHeart />}
+              <span>{uiText('Обране', language)}</span>
             </GalleryActionButton>
           </GalleryActions>
         )}
@@ -7687,9 +7691,8 @@ const Matching = () => {
   const showRefineBar = isSearching
     && (Boolean(refineActiveValue) || searchRefinedUsers.length >= REFINE_MIN_RESULTS);
 
-  // Порядок і значки — ті самі, що й у ряду рішень картки: хрестик, тоді
-  // серце (лайк праворуч від дизлайку). Підпис лишається в `title` і
-  // `aria-label` — його читає диктор, а очі впізнають значок з картки.
+  // Порядок і значки повторюють рішення картки. Видимі підписи пояснюють
+  // призначення колекцій і на телефоні, де немає підказки при наведенні.
   const collectionChips = useMemo(() => [
     {
       key: 'default',
@@ -8560,7 +8563,7 @@ const Matching = () => {
                     onClick={chip.onSelect}
                     title={chip.title}
                   >
-                    {chip.icon || <span>{chip.label}</span>}
+                    {chip.icon}<span>{chip.label}</span>
                     {chip.count !== undefined && <CollectionButtonCount>{chip.count}</CollectionButtonCount>}
                   </CollectionButton>
                 );

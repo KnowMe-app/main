@@ -6,8 +6,10 @@ import { FEED_WIDE_MIN_WIDTH, FEED_XWIDE_MIN_WIDTH, resolveFeedColumns } from '.
  * На комп'ютері стрічка — сітка, а не колонка в 480 px посеред екрана.
  */
 describe('колонки стрічки за шириною екрана', () => {
-  it('лишає телефонові одну колонку списку й дві галереї', () => {
-    expect(resolveFeedColumns(390)).toEqual({ list: 1, gallery: 2 });
+  it('дає телефонові читабельну галерею в одну колонку', () => {
+    expect(resolveFeedColumns(390)).toEqual({ list: 1, gallery: 1 });
+    expect(resolveFeedColumns(599)).toEqual({ list: 1, gallery: 1 });
+    expect(resolveFeedColumns(600)).toEqual({ list: 1, gallery: 2 });
     expect(resolveFeedColumns(FEED_WIDE_MIN_WIDTH - 1)).toEqual({ list: 1, gallery: 2 });
   });
 

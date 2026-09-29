@@ -22,6 +22,8 @@ import { resolveProfileLanguage } from './profileTexts';
 const EN_BY_UK = {
   // --- спільне ---
   'Завантаження…': 'Loading…',
+  'Сімейний стан': 'Marital status',
+  'Повернути': 'Restore',
   'Відкрити меню профілю': 'Open profile menu',
   'Очистити рядок': 'Clear this row',
   'Додати ще один рядок': 'Add another row',

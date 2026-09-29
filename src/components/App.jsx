@@ -15,6 +15,7 @@ import InvoiceBuilderPage from './InvoiceBuilderPage';
 import DocumentsPage from './DocumentsPage';
 import PartiesPage from './PartiesPage';
 import ProfileCreationWorkspace from './ProfileCreationWorkspace';
+import PrimaryNavigation from './PrimaryNavigation';
 import { RequireAuth } from './RequireAuth';
 import { onAuthStateChanged } from 'firebase/auth';
 import toast from 'react-hot-toast';
@@ -124,6 +125,8 @@ export const App = () => {
   const catchAllStatus = authStatus === 'in' && !isAccessResolved ? 'pending' : authStatus;
 
   return (
+    <>
+    {authStatus === 'in' && ['/matching', '/matching/create-profile', '/my-profile'].includes(location.pathname) && <PrimaryNavigation />}
     <Routes>
       {/* Публічні екрани не читають бази: це форма входу та текст угоди, на
           який веде кнопка «Умови» з самої форми. Решта застосунку — про
@@ -162,5 +165,6 @@ export const App = () => {
           (і адреса їде з ним), залогінений — у «Мій профіль». */}
       <Route path="*" element={<RequireAuth status={catchAllStatus}><Navigate to="/my-profile" replace /></RequireAuth>} />
     </Routes>
+    </>
   );
 };
