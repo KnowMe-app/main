@@ -54,6 +54,13 @@ describe('App route guards', () => {
     expect(paths).toEqual(expect.arrayContaining(['/login', '/matching', '/my-profile', '*']));
   });
 
+  it('normalizes trailing slashes before deciding whether to show primary navigation', () => {
+    const source = appSource();
+
+    expect(source).toContain("const normalizedPathname = location.pathname.replace(/\\/+$/, '') || '/';");
+    expect(source).toContain("['/matching', '/matching/create-profile', '/my-profile'].includes(normalizedPathname)");
+  });
+
   /**
    * Межа входу мусить стояти на маршруті, а не всередині екрана. Поки
    * `/matching` був відкритий кожному, незалогінений читач шареного посилання
