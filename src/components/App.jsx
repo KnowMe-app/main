@@ -123,11 +123,12 @@ export const App = () => {
   // адміністраторка, що відкрила посилання на `/edit/...`, поїхала б у «Мій
   // профіль» за мить до того, як її права приїхали з бази.
   const catchAllStatus = authStatus === 'in' && !isAccessResolved ? 'pending' : authStatus;
+  const normalizedPathname = location.pathname.replace(/\/+$/, '') || '/';
 
   return (
     <>
-    {authStatus === 'in' && ['/matching', '/matching/create-profile', '/my-profile'].includes(location.pathname) && <PrimaryNavigation />}
-    <Routes>
+      {authStatus === 'in' && ['/matching', '/matching/create-profile', '/my-profile'].includes(normalizedPathname) && <PrimaryNavigation />}
+      <Routes>
       {/* Публічні екрани не читають бази: це форма входу та текст угоди, на
           який веде кнопка «Умови» з самої форми. Решта застосунку — про
           конкретних людей, тож стоїть за межею входу. */}
@@ -164,7 +165,7 @@ export const App = () => {
           осмисленим екраном, а не білою сторінкою: незалогінений іде на вхід
           (і адреса їде з ним), залогінений — у «Мій профіль». */}
       <Route path="*" element={<RequireAuth status={catchAllStatus}><Navigate to="/my-profile" replace /></RequireAuth>} />
-    </Routes>
+      </Routes>
     </>
   );
 };
