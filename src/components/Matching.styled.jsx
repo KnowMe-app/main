@@ -24,7 +24,7 @@ const matchingThemeVars = css`
     ? '0 16px 34px rgba(22, 22, 22, 0.08)'
     : '0 18px 40px rgba(0, 0, 0, 0.3), 0 0 22px rgba(232, 121, 26, 0.05)')};
   --matching-header-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#1A1A1A' : '#fff8ec')};
-  --matching-muted-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#7A7A72' : 'rgba(255, 248, 236, 0.88)')};
+  --matching-muted-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#62665F' : 'rgba(255, 248, 236, 0.88)')};
   --matching-panel-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : '#15120f')};
   --matching-panel-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#1A1A1A' : '#fff8ec')};
   --matching-section-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : 'rgba(26, 23, 20, 0.82)')};
@@ -103,7 +103,7 @@ export const InnerContainer = styled.div`
   min-height: 100dvh;
   background: transparent;
   padding: 0;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.22);
+  box-shadow: none;
   border-radius: 8px;
   box-sizing: border-box;
   position: relative;
@@ -617,12 +617,16 @@ export const FilterRailScroller = styled.div`
   gap: 6px;
   overflow-x: auto;
   scroll-snap-type: x proximity;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  padding: 2px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--matching-card-border) transparent;
+  padding: 2px 0 6px;
 
   &::-webkit-scrollbar {
-    display: none;
+    height: 4px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--matching-card-border);
+    border-radius: 4px;
   }
 
   > * {
@@ -636,7 +640,7 @@ export const FilterRailChip = styled.button`
   gap: 5px;
   flex: 0 0 auto;
   max-width: 62vw;
-  height: 30px;
+  height: 40px;
   padding: 0 11px;
   box-sizing: border-box;
   /* Зі зняттям поруч чіп віддає йому свій правий край: два окремі
@@ -2124,16 +2128,16 @@ export const CollectionButton = styled.button`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   flex: 0 0 auto;
-  min-width: 64px;
-  height: 34px;
-  padding: 0 12px;
+  min-width: 0;
+  height: 44px;
+  padding: 0 8px;
   box-sizing: border-box;
   border-radius: 10px;
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
@@ -2178,8 +2182,8 @@ export const CollectionButtonCount = styled.b`
 // we would switch *into*, so the grid icon means "go to gallery".
 export const LayoutToggleButton = styled.button`
   flex: 0 0 auto;
-  width: 26px;
-  height: 24px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -2323,6 +2327,11 @@ export const GalleryPhotoBox = styled.div`
   /* Горизонтальний жест гортає знімки (\`usePhotoSwipe\`), як у рядку списку. */
   touch-action: pan-y;
 
+  @media (max-width: 599px) {
+    aspect-ratio: 4 / 3;
+    max-height: 320px;
+  }
+
   img {
     width: 100%;
     height: 100%;
@@ -2362,10 +2371,10 @@ export const GalleryHiddenBadge = styled.span`
 `;
 
 export const GalleryBody = styled.div`
-  padding: 9px 10px 10px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 7px;
   min-width: 0;
 `;
 
@@ -2378,11 +2387,12 @@ export const GalleryNameRow = styled.div`
 
 export const GalleryName = styled.div`
   font-family: var(--km-font-display, 'Playfair Display', Georgia, serif);
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 600;
   letter-spacing: 0;
   color: var(--matching-header-text);
-  white-space: nowrap;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
@@ -2411,7 +2421,7 @@ export const GalleryLocation = styled.div`
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--matching-muted-text);
   white-space: nowrap;
   overflow: hidden;
@@ -2429,11 +2439,11 @@ export const GalleryLocation = styled.div`
 
 export const GalleryFacts = styled.div`
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.45;
   color: var(--matching-muted-text);
   opacity: ${({ $soft }) => ($soft ? 0.72 : 1)};
-  white-space: nowrap;
+  white-space: normal;
   overflow: hidden;
   text-overflow: ellipsis;
 `;
@@ -2442,19 +2452,25 @@ export const GalleryFacts = styled.div`
  * лишалась би взагалі без кнопок — саме так вона й поводилась досі. */
 export const GalleryActions = styled.div`
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 6px;
 `;
 
 export const GalleryActionButton = styled.button`
   flex: 1 1 0;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  padding: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
   border-radius: 10px;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 600;
+  white-space: nowrap;
   border: 1px solid ${({ $on }) => ($on ? 'var(--matching-accent)' : 'var(--matching-card-border)')};
   background: ${({ $on }) => ($on
     ? 'color-mix(in srgb, var(--matching-accent) 14%, transparent)'

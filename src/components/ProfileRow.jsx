@@ -17,6 +17,7 @@ import {
   maritalStatusLabel,
   getProfileRole,
   getRoleCode,
+  getRoleLabel,
 } from './profileLayoutConfig';
 import { normalizeCountry } from './normalizeLocation';
 import {
@@ -1192,7 +1193,7 @@ const ProfileRow = ({
               (`ModernRoleBadge`). Під іменем вона стояла чіпом і забирала
               ширину в локації; а два екрани не можуть казати про ту саму річ
               у двох різних місцях. */}
-          {roleCode && <S.PhotoRoleBadge $role={rowRole}>{roleCode}</S.PhotoRoleBadge>}
+          {roleCode && <S.PhotoRoleBadge $role={rowRole}>{getRoleLabel(rowRole, language)}</S.PhotoRoleBadge>}
           {photoSwipe.total > 1 && (
             <S.PhotoCount>
               {photoSwipe.index > 0 ? `${photoSwipe.index + 1}/${photoSwipe.total}` : photoSwipe.total}

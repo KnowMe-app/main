@@ -52,7 +52,7 @@ export const MATCHING_FILTER_GROUPS = [
     },
     {
       filterName: 'maritalStatus',
-      label: 'Статус',
+      label: 'Сімейний стан',
       options: [
         { val: 'married', label: 'Заміжня' },
         { val: 'unmarried', label: 'Не заміжня' },

@@ -19,7 +19,7 @@
   --km-bg: #FAFAF8;
   --km-card: #FFFFFF;
   --km-text: #1A1A1A;
-  --km-muted: #7A7A72;
+  --km-muted: #62665F;
   --km-border: #E8E8E2;
   --km-danger: #B42318;
   --km-danger-bg: #FFF7F7;
@@ -31,7 +31,7 @@
   --km-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
   --km-shadow-pop: 0 24px 80px rgba(0, 0, 0, 0.22);
   --km-font: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --km-font-display: 'Playfair Display', Georgia, serif;
+  --km-font-display: var(--km-font);
 }
 
 :root[data-km-theme='dark'] {

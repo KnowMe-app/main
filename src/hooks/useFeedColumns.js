@@ -17,6 +17,7 @@ export const resolveFeedColumns = width => {
   const w = Number(width) || 0;
   if (w >= FEED_XWIDE_MIN_WIDTH) return { list: 3, gallery: 4 };
   if (w >= FEED_WIDE_MIN_WIDTH) return { list: 2, gallery: 3 };
+  if (w < 600) return { list: 1, gallery: 1 };
   return { list: 1, gallery: 2 };
 };
 

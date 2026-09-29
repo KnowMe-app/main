@@ -114,7 +114,7 @@ export const Photo = styled.div`
    * підрізає cover. */
   width: calc(100% + 22px);
   aspect-ratio: 4 / 5;
-  max-height: 58vh;
+  max-height: min(40vh, 320px);
   background: var(--matching-section-bg);
   overflow: hidden;
   /* Горизонтальний жест на фото гортає знімки (\`usePhotoSwipe\`); вертикальний
@@ -162,10 +162,9 @@ export const PhotoRoleBadge = styled.span`
   color: ${({ $role }) => (ROLE_STRIPE_COLORS[$role]
     ? `color-mix(in srgb, ${ROLE_STRIPE_COLORS[$role]} 55%, #ffffff)`
     : '#fff')};
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0;
   line-height: 1.5;
   white-space: nowrap;
   overflow: hidden;

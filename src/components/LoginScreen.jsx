@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import styled, { css } from 'styled-components';
+import styled from 'styled-components';
 import { FaUser, FaLock } from 'react-icons/fa';
 import { auth } from './config';
 import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
@@ -75,13 +75,21 @@ const WelcomeAccent = styled.span`
   color: var(--accent);
 `;
 
+const WelcomeDescription = styled.p`
+  margin: 12px auto 0;
+  max-width: 340px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--muted);
+`;
+
 const InputDiv = styled.div`
   display: flex;
   align-items: center;
   position: relative;
   margin-top: 14px;
   padding: 0 14px;
-  min-height: 48px;
+  min-height: 60px;
   background: var(--bg);
   border: 1.5px solid ${({ $active }) => ($active ? 'var(--accent)' : 'var(--border)')};
   border-radius: 12px;
@@ -106,30 +114,18 @@ const InputField = styled.input`
   background: transparent;
   color: var(--text);
   font-size: 15px;
-  padding: 18px 0 6px;
+  padding: 26px 0 8px;
 `;
 
 const Label = styled.label`
   position: absolute;
   left: 44px;
-  top: 50%;
-  transform: translateY(-50%);
-  transition: all 0.2s ease;
+  top: 8px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 12px;
+  font-weight: 600;
   pointer-events: none;
 
-  ${({ isActive }) =>
-    isActive &&
-    css`
-      top: 8px;
-      transform: translateY(0);
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--accent);
-    `}
 `;
 
 const SubmitButton = styled.button`
@@ -507,12 +503,14 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
         <LoginCard>
           <BrandBlock>
             <WelcomeText>KnowMe<WelcomeAccent>.</WelcomeAccent></WelcomeText>
+            <WelcomeDescription>Знайомтеся з донорками, батьками та агенціями. Зберігайте анкети й знаходьте тих, хто вам підходить.</WelcomeDescription>
           </BrandBlock>
 
           <InputDiv $active={focused === 'email' || Boolean(state.email)}>
             <FieldIcon><FaUser /></FieldIcon>
             <InputField
               type="email"
+              id="login-email"
               name="email"
               placeholder=""
               value={state.email}
@@ -521,13 +519,14 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
               onBlur={handleBlur}
               autoComplete="email"
             />
-            <Label isActive={focused === 'email' || state.email}>Поштова скринька</Label>
+            <Label htmlFor="login-email">Поштова скринька</Label>
           </InputDiv>
 
           <InputDiv $active={focused === 'password' || Boolean(state.password)}>
             <FieldIcon><FaLock /></FieldIcon>
             <InputField
               type="password"
+              id="login-password"
               name="password"
               placeholder=""
               value={state.password}
@@ -536,7 +535,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
               onBlur={handleBlur}
               autoComplete="current-password"
             />
-            <Label isActive={focused === 'password' || state.password}>Пароль</Label>
+            <Label htmlFor="login-password">Пароль</Label>
           </InputDiv>
 
           {registrationRoleRequested && (
