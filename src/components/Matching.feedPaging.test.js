@@ -335,7 +335,7 @@ describe('перший екран зі стрічкового кеша', () => {
 });
 
 describe('дії та роль на картці стрічки', () => {
-  it('дає плитці і кнопку «приховати», а не лише серце', () => {
+  it('дає плитці і кнопку «не цікаво», а не лише серце', () => {
     // Кнопки переїхали з фото в тіло плитки: поверх знімка вони жили тільки
     // тому, що іншого місця не було, — і плитка без фото лишалась без них.
     // Рахувати їх число не варто: поруч із двома реакціями там стоїть ще й
@@ -343,7 +343,7 @@ describe('дії та роль на картці стрічки', () => {
     // питає. Питання тут одне — чи є в плитці саме «приховати».
     const source = read('Matching.jsx');
     expect(source).toContain('<GalleryActionButton');
-    expect(source).toContain("aria-label={uiText(isHidden ? 'Повернути зі схованих' : 'Приховати', language)}");
+    expect(source).toContain("aria-label={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}");
     expect(source).toContain('onToggleHidden={toggleRowHidden}');
   });
 
@@ -361,13 +361,16 @@ describe('дії та роль на картці стрічки', () => {
   // казалась по-різному на кожному екрані й мінялась разом із мовою
   // інтерфейсу — «Донорка» в рядку, «Донорка яйцектилін» у відкритій картці,
   // «Donor» англійською. Плашка лишилась на знімку, чіпа під іменем немає.
-  it('показує роль кодом на обох виглядах', () => {
+  // Роль пишеться словом (`getRoleLabel`) — тим самим, що й у чіпі фільтра й у
+  // «Хто ви». Коди `ED`/`IP` знав лише той, хто бачив дані.
+  it('показує роль словом на обох виглядах', () => {
     // Плитка галереї кладе роль на знімок тією самою плашкою, що й рядок.
     const gallerySource = read('Matching.jsx');
-    expect(gallerySource).toContain('<PhotoRoleBadge $role={role}>{roleCode}</PhotoRoleBadge>');
-    expect(gallerySource).toContain('{!photo && roleCode && <RowRoleCode $role={role}>{roleCode}</RowRoleCode>}');
+    expect(gallerySource).toContain('<PhotoRoleBadge $role={role}>{getRoleLabel(role, language)}</PhotoRoleBadge>');
+    expect(gallerySource).toContain('{!photo && roleCode && <RowRoleCode $role={role}>{getRoleLabel(role, language)}</RowRoleCode>}');
     const rowSource = read('ProfileRow.jsx');
-    expect(rowSource).toContain('<S.PhotoRoleBadge $role={rowRole}>{roleCode}</S.PhotoRoleBadge>');
+    expect(rowSource).toContain('<S.PhotoRoleBadge $role={rowRole}>{getRoleLabel(rowRole, language)}</S.PhotoRoleBadge>');
+    expect(rowSource).toContain('<S.RoleCode $role={rowRole}>{getRoleLabel(rowRole, language)}</S.RoleCode>');
     expect(rowSource).not.toContain('<S.RoleTag');
   });
 

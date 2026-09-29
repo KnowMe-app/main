@@ -26,7 +26,7 @@ describe('картка говорить однією мовою', () => {
     expect(maritalStatusLabel('no', 'uk')).toBe('не заміжня');
     expect(translateProfileLabel('Own kids', 'uk')).toBe('Власні діти');
     expect(translateProfileLabel('Main information', 'uk')).toBe('Основне');
-    expect(getRoleLabel('ed', 'uk')).toBe('Донорка яйцеклітин');
+    expect(getRoleLabel('ed', 'uk')).toBe('Донорка ооцитів');
   });
 
   it('веде мову крізь усю розкладку анкети, а не лише в окремих гетерах', () => {

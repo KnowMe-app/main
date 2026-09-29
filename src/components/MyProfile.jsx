@@ -1177,10 +1177,10 @@ export const MyProfile = () => {
 
     try {
       await saveState(nextState, { directFields: ['publish'] });
-      toast.success(uiText('Анкету приховано', language));
+      toast.success(uiText('Анкету знято з публікації', language));
     } catch (error) {
       console.error('hide profile error', error);
-      toast.error(uiText('Не вдалося приховати анкету. Спробуйте ще раз', language));
+      toast.error(uiText('Не вдалося зняти анкету з публікації. Спробуйте ще раз', language));
     }
   };
 
@@ -1219,7 +1219,7 @@ export const MyProfile = () => {
       await saveState(nextState, { directFields: ['publish'] });
       localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
       setShowInfoModal(false);
-      toast.success(uiText('Анкету очищено і приховано', language));
+      toast.success(uiText('Анкету очищено й знято з публікації', language));
     } catch (error) {
       console.error('clear profile error', error);
       toast.error(uiText('Не вдалося очистити анкету. Спробуйте ще раз', language));
@@ -1367,7 +1367,7 @@ export const MyProfile = () => {
             onClick={handleAuthBadgeClick}
           >
             ● {isProfileAccessConfirmed
-              ? uiText(state.publish === true ? 'Опублікована' : 'Прихована', language)
+              ? uiText(state.publish === true ? 'Опублікована' : 'Не опублікована', language)
               : uiText('Логін не відбувся', language)}
           </StatusBadge>
           <DotsButton type='button' aria-label={uiText('Відкрити меню профілю', language)} onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
@@ -1564,7 +1564,7 @@ export const MyProfile = () => {
             <ModalTitle>{uiText('Очистити анкету?', language)}</ModalTitle>
             <ModalText>
               {uiText(
-                'Усі заповнені поля стануть порожніми, а анкету буде приховано зі стрічки. '
+                'Усі заповнені поля стануть порожніми, а анкету буде знято з публікації. '
                 + 'Пошта й доступ до акаунта лишаються.',
                 language,
               )}
@@ -1588,7 +1588,7 @@ export const MyProfile = () => {
 
     <SubmitWrap>
       <SubmitBtn type="button" onClick={state.publish ? hideProfile : publishProfile}>
-        {uiText(state.publish ? 'Приховати анкету' : 'Опублікувати анкету', language)}
+        {uiText(state.publish ? 'Зняти з публікації' : 'Опублікувати анкету', language)}
       </SubmitBtn>
       {/* Друга дія з анкетою цілком — і вона поруч із першою, а не в меню:
           «приховати» й «очистити все» відповідають на те саме питання, просто
@@ -1598,7 +1598,7 @@ export const MyProfile = () => {
           {uiText('Очистити все', language)}
         </ClearAllBtn>
       )}
-      <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>{uiText('Анкету можна приховати або видалити будь-коли в налаштуваннях профілю.', language)}</p>
+      <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>{uiText('Зняти анкету з публікації, очистити чи видалити її можна будь-коли в меню ⋮.', language)}</p>
     </SubmitWrap>
   </Page>;
 };

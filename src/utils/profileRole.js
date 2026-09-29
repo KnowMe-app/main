@@ -13,6 +13,7 @@ const PROFILE_ROLE_ALIASES = Object.freeze(Object.assign(Object.create(null), {
   pp: 'pp',
   cl: 'cl',
   client: 'cl',
+  clinic: 'cl',
 }));
 
 export const normalizeProfileRole = value => {

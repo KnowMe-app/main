@@ -1124,9 +1124,9 @@ const SwipeableCard = ({
   // половина — тією, яку модуль вважав за замовчуванням.
   const { language } = useAppSettings();
   const profileName = getProfileName(user);
-  // Плашка ролі несе той самий дволітерний код, що й рядок стрічки: словом
-  // («Донорка яйцеклітин») вона казала про ту саму роль інакше, ніж список, і
-  // мовою інтерфейсу — тобто дві назви на дві мови на одну річ.
+  // Плашка ролі несе те саме слово, що й рядок стрічки і чіп фільтра
+  // (`getRoleLabel`): одна назва ролі на всі екрани. Код лишився умовою
+  // показу — роль без коду плашки не має.
   const roleCode = getRoleCode(resolvedRole);
   // Роль без назви — це `Profile`/`Анкета`; порівнюємо з кодом, а не з написом,
   // бо напис залежить від мови.
@@ -1284,7 +1284,7 @@ const SwipeableCard = ({
         >
           {!activeHeroPhoto && initials && <ModernHeroFallbackMark>{initials}</ModernHeroFallbackMark>}
           {activeHeroPhoto && <ModernHeroImage src={activeHeroPhoto} alt={`${name || 'Matching'} profile hero`} onError={() => setActiveHeroPhoto('')} />}
-          {shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleCode}</ModernRoleBadge>}
+          {shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{getRoleLabel(resolvedRole, language)}</ModernRoleBadge>}
         </ModernHero>
         {allPhotos.length > 1 && (
           <ModernPhotoStrip onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
@@ -1682,8 +1682,8 @@ const GalleryCard = React.memo(({
         <GalleryPublishDot
           type="button"
           $published={isPublished}
-          title={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
-          aria-label={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
+          title={uiText(isPublished ? 'Зняти з публікації' : 'Опублікувати', language)}
+          aria-label={uiText(isPublished ? 'Зняти з публікації' : 'Опублікувати', language)}
           aria-pressed={isPublished}
           onClick={event => { event.stopPropagation(); onTogglePublish(user); }}
         />
@@ -1696,7 +1696,7 @@ const GalleryCard = React.memo(({
               картці. Чіпом під іменем вона змагалась за ширину з локацією, а
               дві розкладки казали про ту саму річ у двох різних місцях. */}
           {roleCode && <PhotoRoleBadge $role={role}>{getRoleLabel(role, language)}</PhotoRoleBadge>}
-          {isHidden && <GalleryHiddenBadge $belowRole={Boolean(roleCode)}>{uiText('Приховано', language)}</GalleryHiddenBadge>}
+          {isHidden && <GalleryHiddenBadge $belowRole={Boolean(roleCode)}>{uiText('Не цікаво', language)}</GalleryHiddenBadge>}
           {photoSwipe.total > 1 && (
             <GalleryPhotoCount>
               {photoSwipe.index > 0 ? `${photoSwipe.index + 1}/${photoSwipe.total}` : photoSwipe.total}
@@ -1712,7 +1712,7 @@ const GalleryCard = React.memo(({
             {name}
             {age && <>, {age}</>}
           </GalleryName>
-          {!photo && roleCode && <RowRoleCode $role={role}>{roleCode}</RowRoleCode>}
+          {!photo && roleCode && <RowRoleCode $role={role}>{getRoleLabel(role, language)}</RowRoleCode>}
         </GalleryNameRow>
         {location && (
           <GalleryLocation>
@@ -1751,13 +1751,13 @@ const GalleryCard = React.memo(({
             <GalleryActionButton
               type="button"
               $on={isHidden}
-              aria-label={uiText(isHidden ? 'Повернути зі схованих' : 'Приховати', language)}
+              aria-label={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
               aria-pressed={isHidden}
-              title={uiText(isHidden ? 'Повернути зі схованих' : 'Приховати', language)}
+              title={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
               onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
             >
               {isHidden ? <FaUndoAlt /> : <FaTimes />}
-              <span>{uiText(isHidden ? 'Повернути' : 'Приховати', language)}</span>
+              <span>{uiText(isHidden ? 'Повернути' : 'Не цікаво', language)}</span>
             </GalleryActionButton>
             <GalleryActionButton
               type="button"
@@ -2736,7 +2736,7 @@ const Matching = () => {
       }
     } catch (err) {
       console.error('Failed to toggle publish', err);
-      toast.error(uiText(newValue ? 'Не вдалося показати анкету у стрічці' : 'Не вдалося прибрати анкету зі стрічки', language));
+      toast.error(uiText(newValue ? 'Не вдалося опублікувати анкету. Спробуйте ще раз' : 'Не вдалося зняти анкету з публікації. Спробуйте ще раз', language));
       return;
     }
     // Firestore — дзеркало анкети акаунта; у картки, заведеної адміном,
@@ -7780,9 +7780,9 @@ const Matching = () => {
     },
     {
       key: 'dislikes',
-      label: uiText('Приховані', language),
+      label: uiText('Не цікаві', language),
       icon: <FaTimes size={14} aria-hidden="true" />,
-      title: uiText('Показати приховані', language),
+      title: uiText('Показати ті, що не цікаві', language),
       count: Object.keys(dislikeUsers || {}).length,
       onSelect: handleDislikeModeClick,
     },
@@ -8831,7 +8831,7 @@ const Matching = () => {
                       reviewsAction={buildRowReviewsAction(user.userId)}
                       primaryAction={{
                         icon: dislikeUsers[user.userId] ? <FaUndoAlt size={13} /> : <FaTimes size={14} />,
-                        title: uiText(dislikeUsers[user.userId] ? 'Повернути зі схованих' : 'Приховати', language),
+                        title: uiText(dislikeUsers[user.userId] ? 'Повернути в «Усі»' : 'Не цікаво', language),
                         active: Boolean(dislikeUsers[user.userId]),
                         onClick: toggleRowHidden,
                       }}

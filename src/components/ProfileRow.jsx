@@ -1207,8 +1207,8 @@ const ProfileRow = ({
             <S.PhotoPublishDot
               type="button"
               $published={isPublished}
-              title={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
-              aria-label={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
+              title={uiText(isPublished ? 'Зняти з публікації' : 'Опублікувати', language)}
+              aria-label={uiText(isPublished ? 'Зняти з публікації' : 'Опублікувати', language)}
               aria-pressed={isPublished}
               onClick={e => { e.stopPropagation(); onTogglePublish(user); }}
             />
@@ -1225,7 +1225,7 @@ const ProfileRow = ({
               {name}
               {age && <>, {age}</>}
             </S.Name>
-            {!photo && roleCode && <S.RoleCode $role={rowRole}>{roleCode}</S.RoleCode>}
+            {!photo && roleCode && <S.RoleCode $role={rowRole}>{getRoleLabel(rowRole, language)}</S.RoleCode>}
           </S.NameRow>
           {hasLocation && (
             <S.MetaRow>
@@ -1244,8 +1244,8 @@ const ProfileRow = ({
               <PublishDot
                 type="button"
                 $published={isPublished}
-                title={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
-                aria-label={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
+                title={uiText(isPublished ? 'Зняти з публікації' : 'Опублікувати', language)}
+                aria-label={uiText(isPublished ? 'Зняти з публікації' : 'Опублікувати', language)}
                 aria-pressed={isPublished}
                 onClick={e => { e.stopPropagation(); onTogglePublish(user); }}
               />

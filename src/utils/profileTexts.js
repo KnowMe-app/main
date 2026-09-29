@@ -123,11 +123,12 @@ const UK_BY_EN_LABEL = {
   Surrogate: 'Сурогатна',
 
   // ролі
-  'Egg donor': 'Донорка яйцеклітин',
+  'Egg donor': 'Донорка ооцитів',
   Agency: 'Агенція',
-  'Intended parents': 'Батьки',
+  'Intended parents': 'Біологічні батьки',
   'Surrogate mother': 'Сурогатна мати',
   Client: 'Клієнт',
+  Clinic: 'Клініка',
   Profile: 'Анкета',
 
   // контакти
