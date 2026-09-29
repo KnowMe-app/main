@@ -1787,6 +1787,8 @@ const GalleryCard = React.memo(({
             language={language}
             publicSlot={reviewsSlot}
             hasReviews={(reviewsAction?.count || 0) > 0}
+            hasPublicContent={Boolean(user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]) || (reviewsAction?.count || 0) > 0}
+            hasPrivateContent={Boolean(String(clientComment || '').trim())}
             reviewsStatus={describeReviewsState({
               requested: Boolean(user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]),
               loading: Boolean(reviewsAction?.loading),

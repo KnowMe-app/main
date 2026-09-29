@@ -1,6 +1,6 @@
 import React from 'react';
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import ProfileRow from './ProfileRow';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
@@ -34,13 +34,14 @@ applyUkrainianInterface();
 describe('розкладка рядка стрічки', () => {
   it('тримає реакції нижче за нотатку, в одному ряду', () => {
     renderRow({
+      clientComment: 'Дзвонила в понеділок',
       primaryAction: { icon: <span>♥</span>, title: 'В обране', accent: true, active: false, onClick: jest.fn() },
-      secondaryAction: { icon: <span>✕</span>, title: 'Приховати', active: false, onClick: jest.fn() },
+      secondaryAction: { icon: <span>✕</span>, title: 'Не цікаво', active: false, onClick: jest.fn() },
     });
 
-    const note = screen.getByPlaceholderText('Додати памʼятку');
+    const note = screen.getByDisplayValue('Дзвонила в понеділок');
     const favorite = screen.getByTitle('В обране');
-    const hide = screen.getByTitle('Приховати');
+    const hide = screen.getByTitle('Не цікаво');
 
     // Обидві реакції стоять в одному ряду — тобто на одній висоті, — і нижче
     // за поле нотатки. Саме порядок і спільний ряд тут і перевіряються.
@@ -49,22 +50,29 @@ describe('розкладка рядка стрічки', () => {
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  // Поле нотатки стоїть відкритим: читач гортає список, аби вирішити, і те,
-  // що він про цю людину вже знає, має бути видно тут само, де рішення.
-  it('поле власної нотатки відкрите й порожнє, поки нотатки немає', () => {
+  // Порожні доріжки згорнуті в один рядок: шістдесят порожніх полів на
+  // сторінку робили кожну картку довшою за екран. Записане видно одразу.
+  it('порожні доріжки згорнуті в рядок «+ Відгук · + Памʼятка»', () => {
     renderRow();
-    expect(screen.getByPlaceholderText('Додати памʼятку')).toHaveValue('');
+    expect(screen.getByTestId('notes-add-row')).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Додати памʼятку')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('public-note-lane')).not.toBeInTheDocument();
   });
 
-  // Хто побачить запис, каже підпис над доріжкою — той самий, що й у
-  // відкритій картці. Поки його не було, порожнє поле казало «Додати
-  // коментар» і про видимість мовчало.
-  it('підписує доріжку власної нотатки так само, як відкрита картка', () => {
+  it('дотик до «+ Памʼятка» відкриває порожнє поле під тим самим підписом, що й у відкритій картці', () => {
     renderRow();
+    fireEvent.click(screen.getByRole('button', { name: /Памʼятка/ }));
+    expect(screen.getByPlaceholderText('Додати памʼятку')).toHaveValue('');
     // Підпис береться з того самого словника, що й у відкритій картці
     // (`profileTexts`), а не з рядка в коді, — тож іде мовою інтерфейсу.
     expect(screen.getByText('Памʼятка для себе')).toBeInTheDocument();
     expect(screen.queryByText('Бачите тільки ви')).not.toBeInTheDocument();
+  });
+
+  it('записана памʼятка видна без дотику', () => {
+    renderRow({ clientComment: 'Дзвонила в понеділок' });
+    expect(screen.getByDisplayValue('Дзвонила в понеділок')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Відгук/ })).toBeInTheDocument();
   });
 
   it('урізаній проєкції реакцій не дає', () => {

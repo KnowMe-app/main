@@ -902,35 +902,90 @@ export const enrichGateLabel = language => uiText('Доповнити дані',
  * картці вони йдуть парою, у сталому порядку: публічне зверху (відгук читають),
  * власне знизу (нотатку пишуть).
  *
- * Обидва поля стоять **без умови**. Написати відгук — це рішення читача, а не
- * наслідок того, що він спершу натиснув «перевірити»: поки поле відкривала
- * кнопка, лишити запис можна було тільки заради того, щоб спершу прочитати
- * чужі. Читання чужих більше не чекає на дотик і на гейт: рядок сам знає з
- * прапорця `hasPublicReview` проєкції `matchingCards`, чи під карткою взагалі
- * є що читати, — і питає лише ті картки, де прапорець стоїть. Запит на
- * кожен рядок списку коштував би сторінку читань заради блока, під яким у
- * більшості анкет порожньо; прапорець і тримає цю ціну малою.
+ * **Порожня доріжка в стрічці згорнута в рядок «+ Відгук · + Памʼятка».**
+ * Доти обидва поля стояли відкритими в кожній картці, і на сторінці з
+ * тридцятьма картками це було шістдесят порожніх полів «Додати…» — кожна
+ * картка ставала довшою за екран телефона, а людина гортала повз запрошення
+ * писати замість фактів. Написане при цьому видно, як і було: доріжка
+ * розгортається сама, щойно в ній є відгуки (прапорець `hasPublicReview` чи
+ * прочитані), стан їх читання або власна памʼятка, — тож дописати поверх
+ * запису, якого не бачиш, як і раніше, не можна. Запис коштує той самий один
+ * дотик: кнопка в рядку відкриває поле й ставить у нього курсор.
+ *
+ * Згортає лише той, хто назвав наповненість (`hasPublicContent`,
+ * `hasPrivateContent`); без цих пропсів обидві доріжки відкриті, як у
+ * відкритій картці.
  */
-export const ProfileNotes = ({ language, publicSlot, privateSlot, reviewsStatus, hasReviews = false }) => (
-  <S.RowNotes onClick={e => e.stopPropagation()}>
-    {/* `hasReviews` — прочитані відгуки, а не прапорець проєкції: прапорець
-        лишається й після того, як останній відгук зняли, і червона смужка
-        тоді обіцяла б те, чого під нею вже немає. */}
-    <NoteLane $public $reviewed={hasReviews} data-testid="public-note-lane" data-reviewed={hasReviews ? 'true' : undefined}>
-      <NoteLaneHead>
-        <b>{profileUiText('publicComment', language)}</b>
-      </NoteLaneHead>
-      {publicSlot}
-      <ReviewsStateNote>{reviewsStatus}</ReviewsStateNote>
-    </NoteLane>
-    <NoteLane>
-      <NoteLaneHead>
-        <b>{profileUiText('personalNote', language)}</b>
-      </NoteLaneHead>
-      {privateSlot}
-    </NoteLane>
-  </S.RowNotes>
-);
+export const ProfileNotes = ({
+  language,
+  publicSlot,
+  privateSlot,
+  reviewsStatus,
+  hasReviews = false,
+  hasPublicContent,
+  hasPrivateContent,
+}) => {
+  const collapsible = hasPublicContent !== undefined || hasPrivateContent !== undefined;
+  const [opened, setOpened] = useState({ public: false, private: false });
+  const [focusLane, setFocusLane] = useState('');
+  const publicLaneRef = useRef(null);
+  const privateLaneRef = useRef(null);
+  const showPublic = !collapsible || Boolean(hasPublicContent) || Boolean(reviewsStatus) || opened.public;
+  const showPrivate = !collapsible || Boolean(hasPrivateContent) || opened.private;
+
+  useEffect(() => {
+    if (!focusLane) return;
+    const lane = focusLane === 'public' ? publicLaneRef.current : privateLaneRef.current;
+    const target = lane?.querySelector('textarea, [role="button"], button');
+    if (target && typeof target.focus === 'function') target.focus();
+    setFocusLane('');
+  }, [focusLane]);
+
+  const openLane = key => event => {
+    event.stopPropagation();
+    setOpened(previous => ({ ...previous, [key]: true }));
+    setFocusLane(key);
+  };
+
+  return (
+    <S.RowNotes onClick={e => e.stopPropagation()}>
+      {/* `hasReviews` — прочитані відгуки, а не прапорець проєкції: прапорець
+          лишається й після того, як останній відгук зняли, і червона смужка
+          тоді обіцяла б те, чого під нею вже немає. */}
+      {showPublic && (
+        <NoteLane ref={publicLaneRef} $public $reviewed={hasReviews} data-testid="public-note-lane" data-reviewed={hasReviews ? 'true' : undefined}>
+          <NoteLaneHead>
+            <b>{profileUiText('publicComment', language)}</b>
+          </NoteLaneHead>
+          {publicSlot}
+          <ReviewsStateNote>{reviewsStatus}</ReviewsStateNote>
+        </NoteLane>
+      )}
+      {showPrivate && (
+        <NoteLane ref={privateLaneRef}>
+          <NoteLaneHead>
+            <b>{profileUiText('personalNote', language)}</b>
+          </NoteLaneHead>
+          {privateSlot}
+        </NoteLane>
+      )}
+      {(!showPublic || !showPrivate) && (
+        <S.NotesAddRow data-testid="notes-add-row">
+          {!showPublic && (
+            <S.NotesAddButton type="button" $public onClick={openLane('public')}>
+              + {uiText('Відгук', language)}
+            </S.NotesAddButton>
+          )}
+          {!showPrivate && (
+            <S.NotesAddButton type="button" onClick={openLane('private')}>
+              + {uiText('Памʼятка', language)}
+            </S.NotesAddButton>
+          )}
+        </S.NotesAddRow>
+      )}
+    </S.RowNotes>
+  );
+};
 
 /**
  * Що сказати про читання відгуків, крім самих відгуків.
@@ -1330,6 +1385,8 @@ const ProfileRow = ({
         language={language}
         publicSlot={reviewsSlot}
         hasReviews={(reviewsAction?.count || 0) > 0}
+        hasPublicContent={hasPublicReview || (reviewsAction?.count || 0) > 0}
+        hasPrivateContent={commentSlot !== undefined || Boolean(String(clientComment || '').trim())}
         reviewsStatus={describeReviewsState({
           requested: hasPublicReview,
           loading: Boolean(reviewsAction?.loading),

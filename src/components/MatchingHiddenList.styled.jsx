@@ -1225,6 +1225,42 @@ export const RowNotes = styled.div`
   border-top: 1px solid var(--matching-card-border);
 `;
 
+/* Згорнуті доріжки нотаток — один рядок замість двох порожніх полів
+   (`ProfileNotes`). Кнопки несуть колір своєї доріжки — акцентний у відгуку,
+   зелений у памʼятки, — тож розгорнуте поле з'являється там, де його й
+   чекали. Висота 32 px: це мішень для пальця, а не підпис. */
+export const NotesAddRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+`;
+
+export const NotesAddButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px dashed ${({ $public }) => ($public
+    ? 'color-mix(in srgb, var(--matching-accent, #E8791A) 45%, transparent)'
+    : 'color-mix(in srgb, #2E9B55 45%, transparent)')};
+  background: transparent;
+  color: var(--matching-muted, var(--km-muted, #6f675f));
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    color: ${({ $public }) => ($public ? 'var(--matching-accent, #E8791A)' : '#2E9B55')};
+  }
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent, #E8791A) 42%, transparent);
+    outline-offset: 2px;
+  }
+`;
+
 /* Опис «про себе» стоїть під сіткою «всі дані» і тримає ту саму ліву межу, що
    й вона, — тобто межу самої картки. */
 export const MoreNote = styled.div`

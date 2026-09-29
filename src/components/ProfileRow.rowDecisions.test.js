@@ -139,12 +139,17 @@ describe('ряд рішень у рядку стрічки', () => {
 describe('відгуки в рядку стрічки', () => {
   const reviewsSlot = <div data-testid="reviews">відгук</div>;
 
-  it('тримає доріжку відгуків відкритою й нічого сама не читає', () => {
+  // Без відгуків доріжка згорнута в «+ Відгук», і сама нічого не читає;
+  // дотик відкриває поле.
+  it('згортає порожню доріжку відгуків і нічого сама не читає', () => {
     const onRequest = jest.fn();
     renderRow({ reviewsSlot, reviewsAction: { count: 0, loading: false, onRequest } });
 
     expect(onRequest).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('reviews')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Відгук/ }));
     expect(screen.getByTestId('reviews')).toBeInTheDocument();
+    expect(onRequest).not.toHaveBeenCalled();
   });
 
   it('мовчить, поки в картки немає прапорця hasPublicReview', () => {
@@ -183,6 +188,7 @@ describe('відгуки в рядку стрічки', () => {
       reviewsAction: { count: 1, loading: false, loaded: true, onRequest: jest.fn() },
     });
 
+    fireEvent.click(screen.getByRole('button', { name: /Памʼятка/ }));
     const reviews = screen.getByTestId('reviews');
     const note = screen.getByPlaceholderText('Додати памʼятку');
     expect(standsBefore(reviews, note)).toBe(true);

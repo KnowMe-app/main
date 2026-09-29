@@ -178,6 +178,8 @@ const EN_BY_UK = {
   'В обране': 'To favourites',
   'Анкету очищено й знято з публікації': 'The profile is cleared and unpublished',
   'Не цікаво': 'Not interested',
+  Відгук: 'Review',
+  Памʼятка: 'Note',
   'Повернути в «Усі»': 'Back to All',
 
   // --- екран matching: шапка, чіпи, фільтри, стани стрічки ---
