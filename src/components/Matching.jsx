@@ -242,6 +242,7 @@ import {
 import { getRoleColor } from './matchingRoleColors';
 import { PhotoRoleBadge, RoleCode as RowRoleCode } from './MatchingHiddenList.styled';
 import { DRAFT_FEED_ORDER_FIELD, placeOwnDraftsInFeed, resolveDraftFeedOrderDate } from '../utils/matchingDraftPlacement';
+import { liftReturnedCards, listReturnedReactionIds, placeReturnedCardsFirst } from '../utils/matchingReturnedCards';
 import { FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
 import { FaRegHeart, FaUndoAlt, FaChevronDown, FaPencilAlt } from 'react-icons/fa';
 import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
@@ -5931,7 +5932,11 @@ const Matching = () => {
     return matches.length ? matches.map(item => item.data) : EMPTY_USERS;
   }, [personalCreateProfiles, searchQuery, viewMode]);
 
-  const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({
+  // Картки, повернені з колекції в «Усі» в цьому перегляді (див. ефект біля
+  // `reactionTabUsers`).
+  const [returnedToFeedCards, setReturnedToFeedCards] = useState(EMPTY_USERS);
+
+  const visibleUsers = useMemo(() => liftReturnedCards(mergeMatchingCandidateUsers({
     // Власні щойно створені анкети видно завжди — вони не чекають на
     // погодження адміном, щоб зʼявитись у власника в стрічці. Але стрічка — це
     // не результати пошуку: доливати їх до відповіді на запит означає показати
@@ -5949,7 +5954,9 @@ const Matching = () => {
       ? [...personalDraftSearchMatches, ...users]
       : placeOwnDraftsInFeed({
         drafts: initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS,
-        users,
+        users: viewMode === 'default'
+          ? placeReturnedCardsFirst({ users, returnedCards: returnedToFeedCards, favoriteUsers, dislikeUsers })
+          : users,
         hasMore,
       }),
     additionalAccessUsers,
@@ -5968,7 +5975,7 @@ const Matching = () => {
     // Поки його знало лише друге, картка все одно зникала з-під пальця: до
     // фільтрів вона просто не доходила.
     keepReactedUserIds: stickyReactedUserIds,
-  }), [
+  }), viewMode === 'default' ? returnedToFeedCards : EMPTY_USERS), [
     additionalAccessUsers,
     dislikeUsers,
     favoriteUsers,
@@ -5983,6 +5990,7 @@ const Matching = () => {
     stickyReactedUserIds,
     users,
     personalCreateProfiles,
+    returnedToFeedCards,
     viewMode,
     donorRestrictionViewerRole,
     ownerId,
@@ -5992,7 +6000,13 @@ const Matching = () => {
     if (viewMode !== 'favorites' && viewMode !== 'dislikes') return [];
 
     const reactionMap = viewMode === 'favorites' ? favoriteUsers : dislikeUsers;
-    const reactionIds = Object.keys(normalizeReactionMap(reactionMap));
+    // Картка, з якої в цій колекції щойно зняли реакцію, лишається на місці до
+    // виходу з колекції — так само, як у «Усіх» (`stickyReactedUserIds`).
+    // Досі вона зникала тієї ж миті, і промах не було як скасувати.
+    const reactionIds = [...new Set([
+      ...Object.keys(normalizeReactionMap(reactionMap)),
+      ...stickyReactedUserIds,
+    ])];
     if (!reactionIds.length) return [];
 
     const candidateUsersById = new Map();
@@ -6029,9 +6043,44 @@ const Matching = () => {
     isAdmin,
     personalCreateProfiles,
     sharedReactionCandidateUsers,
+    stickyReactedUserIds,
     users,
     viewMode,
   ]);
+
+  /*
+   * Повернене з колекції стоїть на початку «Усіх» (`placeReturnedCardsFirst`).
+   *
+   * Повернення ловиться за зміною самих мап реакцій, а не в одному з
+   * обробників: зняти лайк можна з рядка, плитки й відкритої картки, і кожен
+   * шлях, що забув би про повернення, знову ховав би картку в глибині стрічки.
+   * Рахується лише в колекції: у «Усіх» картка й так на екрані.
+   */
+  const reactionTabUsersRef = useRef(reactionTabUsers);
+  reactionTabUsersRef.current = reactionTabUsers;
+  const previousReactionMapsRef = useRef({ favoriteUsers, dislikeUsers });
+  useEffect(() => {
+    const previous = previousReactionMapsRef.current;
+    previousReactionMapsRef.current = { favoriteUsers, dislikeUsers };
+    if (viewMode !== 'favorites' && viewMode !== 'dislikes') return;
+    const inFavorites = viewMode === 'favorites';
+    const returnedIds = listReturnedReactionIds({
+      previousMap: inFavorites ? previous.favoriteUsers : previous.dislikeUsers,
+      nextMap: inFavorites ? favoriteUsers : dislikeUsers,
+      oppositeMap: inFavorites ? dislikeUsers : favoriteUsers,
+    });
+    const cards = returnedIds
+      .map(id => reactionTabUsersRef.current.find(card => card?.userId === id))
+      .filter(Boolean);
+    if (!cards.length) return;
+    setReturnedToFeedCards(previousCards => [
+      ...cards,
+      ...previousCards.filter(card => !returnedIds.includes(card.userId)),
+    ]);
+    toast.success(uiText('Картку повернуто в «Усі» — вона на початку списку', language), {
+      id: 'matching-returned-to-feed',
+    });
+  }, [dislikeUsers, favoriteUsers, language, viewMode]);
 
   useEffect(() => {
     if (!initialRequestId) return undefined;
