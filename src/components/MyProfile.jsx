@@ -50,6 +50,7 @@ import {
 import toast from 'react-hot-toast';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { KnowMeBrand } from './styles/knowme';
+import { resolveMyProfileFieldText, resolveMyProfileSectionTitle } from '../utils/myProfileRoleTexts';
 
 const Page = styled.div`
   /* Локальні псевдоніми з глобальних KnowMe-токенів: сторінка автоматично підтримує світлу/темну тему. */
@@ -242,23 +243,6 @@ const PhotoSection = styled.div`
   scroll-margin-top: ${CONTENT_SECTION_TOP_GAP}px;
 `;
 const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
-// «Очистити все» — теж дія з анкетою цілком, тож і ширина в неї та сама, а
-// різницю несе тон: стирання незворотне, і виглядати воно як «опублікувати» не
-// має права.
-const ClearAllBtn = styled.button`
-  width:100%;
-  margin-top:10px;
-  padding:14px;
-  background:var(--km-danger-bg, #FDECEA);
-  color:var(--km-danger, #B42318);
-  border:1px solid var(--km-danger-border, rgba(180,35,24,.24));
-  border-radius:var(--radius);
-  font-size:15px;
-  font-weight:700;
-  cursor:pointer;
-
-  &:disabled { opacity:.6; cursor:not-allowed; }
-`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
 const DotsButton = styled.button`
   display:flex;align-items:center;justify-content:center;
@@ -728,9 +712,15 @@ export const MyProfile = () => {
     fields.splice(2, 0, 'email');
     return { ...section, fields };
   }), [isProfileAccessConfirmed]);
+  // Назву розділу бере роль (`resolveMyProfileSectionTitle`): агенція бачить
+  // «Агенція» й «Про агенцію», а не «Особисті дані» й «Спосіб життя».
   const visibleSections = useMemo(() => sections
-    .map(section => ({ ...section, fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)) }))
-    .filter(section => section.fields.length > 0), [isDonorRole, sections]);
+    .map(section => ({
+      ...section,
+      title: resolveMyProfileSectionTitle(section.key, normalizedRole, section.title),
+      fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)),
+    }))
+    .filter(section => section.fields.length > 0), [isDonorRole, normalizedRole, sections]);
   const firstSectionKey = visibleSections[0]?.key || 'personal';
   const navSections = useMemo(() => [
     ...(!isProfileAccessConfirmed ? [{ key: 'auth', title: '🔐 Доступ до анкети', fields: ['email', 'password', 'terms'], isVirtual: true }] : []),
@@ -806,15 +796,22 @@ export const MyProfile = () => {
       // кнопка.
       onDeleteProfile={() => setShowInfoModal('delProfile')}
       onSelect={() => setShowInfoModal(false)}
+      // «Очистити все» стояло кнопкою просто під «Опублікувати» — незворотна
+      // дія поруч із головною, на відстані одного промаху пальцем. Тепер вона
+      // тут, поруч із «Видалити анкету», і так само питає підтвердження.
+      onClearProfile={isProfileAccessConfirmed ? () => setShowInfoModal('delConfirm') : undefined}
     />
   );
 
   const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
-  const filledPct = useMemo(() => {
+  // Лічильник «3 з 8» поруч із відсотком: самі «8%» не казали, скільки
+  // лишилось, а людина з чотирма фото й поштою не розуміла, звідки така цифра.
+  const filledStats = useMemo(() => {
     const keys = visibleSections.flatMap(s => s.fields);
     const filled = keys.filter(name => String(state[name] || '').trim() !== '').length;
-    return Math.round((filled / keys.length) * 100);
+    return { filled, total: keys.length };
   }, [state, visibleSections]);
+  const filledPct = filledStats.total ? Math.round((filledStats.filled / filledStats.total) * 100) : 0;
 
 
   const sectionProgress = useMemo(() => visibleSections.reduce((acc, section) => {
@@ -1231,6 +1228,8 @@ export const MyProfile = () => {
   const renderField = (name) => {
     const field = fieldsMap.get(name);
     if (!field) return null;
+    const roleText = resolveMyProfileFieldText(name, normalizedRole);
+    const fieldPlaceholder = roleText.placeholder ? uiText(roleText.placeholder, language) : getFieldPlaceholder(field, language);
     const val = state[name] || '';
     const isTextArea = name === 'moreInfo_main';
     const isAppearanceField = sections.find(section => section.key === 'appearance')?.fields.includes(name);
@@ -1245,7 +1244,7 @@ export const MyProfile = () => {
       && (Boolean(customOptionMode[name]) || (String(val).trim() !== '' && !optionValues.includes(String(val))));
 
     return <Field key={name}>
-      <Label>{getFieldLabel(field, language)}</Label>
+      <Label>{roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language)}</Label>
       {Array.isArray(field.options) && field.options.length > 0 ? (
         <>
           <ChipRow>
@@ -1316,7 +1315,7 @@ export const MyProfile = () => {
           <TextArea
             value={val}
             $missing={missing[name]}
-            placeholder={getFieldPlaceholder(field, language)}
+            placeholder={fieldPlaceholder}
             onChange={e => updateFieldValue(name, e.target.value, field)}
             onBlur={e => saveFieldValue(name, e.target.value, field)}
           />
@@ -1336,7 +1335,7 @@ export const MyProfile = () => {
           <Input
             value={val}
             $missing={missing[name]}
-            placeholder={getFieldPlaceholder(field, language)}
+            placeholder={fieldPlaceholder}
             onChange={e => updateFieldValue(name, e.target.value, field)}
             onBlur={e => saveFieldValue(name, e.target.value, field)}
           />
@@ -1378,7 +1377,7 @@ export const MyProfile = () => {
     <StickyProgress ref={stickyProgressRef}>
       <ProgressWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{uiText('Заповнено анкету', language)}</span>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{uiText('Заповнено {filled} з {total}', language, filledStats)}</span>
         <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>{filledPct}%</span>
       </div>
       <div style={{ height: 5, background: 'var(--border)', borderRadius: 99 }}>
@@ -1590,14 +1589,6 @@ export const MyProfile = () => {
       <SubmitBtn type="button" onClick={state.publish ? hideProfile : publishProfile}>
         {uiText(state.publish ? 'Зняти з публікації' : 'Опублікувати анкету', language)}
       </SubmitBtn>
-      {/* Друга дія з анкетою цілком — і вона поруч із першою, а не в меню:
-          «приховати» й «очистити все» відповідають на те саме питання, просто
-          різною мірою. Тон у неї інший, бо стирання незворотне. */}
-      {isProfileAccessConfirmed && (
-        <ClearAllBtn type="button" disabled={isClearingProfile} onClick={() => setShowInfoModal('delConfirm')}>
-          {uiText('Очистити все', language)}
-        </ClearAllBtn>
-      )}
       <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>{uiText('Зняти анкету з публікації, очистити чи видалити її можна будь-коли в меню ⋮.', language)}</p>
     </SubmitWrap>
   </Page>;

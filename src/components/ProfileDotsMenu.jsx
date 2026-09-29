@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useLocation } from 'react-router-dom';
-import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaDatabase, FaMoon, FaSun, FaGlobe } from 'react-icons/fa';
+import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEraser, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaDatabase, FaMoon, FaSun, FaGlobe } from 'react-icons/fa';
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
 import { useAppSettings } from 'hooks/useAppSettings';
@@ -155,6 +155,9 @@ export const ProfileDotsMenu = ({
   isSessionActive = true,
   onExit,
   onDeleteProfile,
+  // Стирання полів анкети — друга дія з анкетою цілком, і стоїть вона в тій
+  // самій секції, що й видалення, а не окремою секцією з тією ж назвою.
+  onClearProfile,
   onSelect,
   beforeNavigate,
   extraActions,
@@ -370,9 +373,19 @@ export const ProfileDotsMenu = ({
           «встановіть застосунок у Google Play», а мобільного застосунку більше
           немає — його власна заставка каже про це першою ж карткою стрічки.
           Пункт, який веде в нікуди, гірший за відсутній: він обіцяє дію. */}
-      {onDeleteProfile && (
+      {(onDeleteProfile || onClearProfile) && (
         <MenuSection>
           <SectionLabel>{uiText('Анкета', language)}</SectionLabel>
+          {onClearProfile && (
+            <MenuItem type="button" role="menuitem" $danger onClick={() => handleAction(onClearProfile)}>
+              <ItemIcon $danger><FaEraser /></ItemIcon>
+              <span>
+                <ItemLabel>{uiText('Очистити анкету', language)}</ItemLabel>
+                <ItemDescription>{uiText('Стерти всі поля й зняти з публікації', language)}</ItemDescription>
+              </span>
+            </MenuItem>
+          )}
+          {onDeleteProfile && (
           <MenuItem type="button" role="menuitem" $danger onClick={() => handleAction(onDeleteProfile)}>
             <ItemIcon $danger><FaTrashAlt /></ItemIcon>
             <span>
@@ -380,6 +393,7 @@ export const ProfileDotsMenu = ({
               <ItemDescription>{uiText('Надіслати запит на видалення профілю', language)}</ItemDescription>
             </span>
           </MenuItem>
+          )}
         </MenuSection>
       )}
 
