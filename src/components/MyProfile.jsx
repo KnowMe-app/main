@@ -90,15 +90,28 @@ const TopbarActions = styled.div`
   gap: 10px;
   margin-left: auto;
 `;
-// Header block (brand, "⋮" menu, progress bar, tabs) lives in normal document flow - it must
-// scroll away with the rest of the page, never pin itself to the viewport top.
+// Шапка з назвою й меню «⋮» їде з рештою сторінки, а прогрес із вкладками
+// розділів лишається вгорі (`StickyProgress`): це єдиний орієнтир у довгій
+// анкеті — скільки заповнено і в якому розділі людина зараз. Коли прогрес
+// поїхав разом зі шапкою, вкладки зникали на першому ж екрані прокрутки, і
+// до іншого розділу лишалось гортати навмання.
 const HeaderPanel = styled.div`
   background: var(--card);
 `;
+// Липкий блок стоїть сусідом `HeaderPanel`, а не всередині нього: `sticky`
+// тримається лише в межах свого батька, і в шапці він відлипав би, щойно
+// шапка сама виїхала за екран.
+const StickyProgress = styled.div`
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 20;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+`;
 const CONTENT_SECTION_TOP_GAP = 18;
-// How far above a section's top edge scrollToSection() stops, and how far past a section's top
-// edge the scroll-spy considers it "active" - since the header no longer overlays content when
-// scrolled, this is just a small breathing-room gap, not a header-height offset.
+// Наскільки вище за верх розділу зупиняється scrollToSection() і де scroll-spy
+// вважає розділ активним. До цього відступу додається висота липкого блоку
+// прогресу (`getStickyOffset`): інакше розділ ставав би під нього.
 const SECTION_SCROLL_GAP = CONTENT_SECTION_TOP_GAP;
 const SCROLL_ACTIVE_SECTION_GAP = 16;
 const PROGRAMMATIC_SCROLL_FALLBACK_MS = 900;
@@ -466,6 +479,7 @@ export const MyProfile = () => {
   const [authHintStep, setAuthHintStep] = useState('');
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
+  const stickyProgressRef = useRef(null);
   const tabRefs = useRef({});
   const isManualScrollRef = useRef(false);
   const programmaticScrollTimeoutRef = useRef(null);
@@ -820,16 +834,23 @@ export const MyProfile = () => {
     .map(section => ({ key: section.key, node: sectionRefs.current[section.key] }))
     .filter(item => Boolean(item.node)), [navSections]);
 
+  // Висота міряється щоразу, а не один раз: блок переноситься на два рядки
+  // вкладок на вузькому екрані й міняє висоту разом із поворотом телефона.
+  const getStickyOffset = useCallback(
+    () => stickyProgressRef.current?.getBoundingClientRect().height || 0,
+    [],
+  );
+
   const getSectionTargetTop = useCallback((sectionEl) => {
     const sectionTop = sectionEl.getBoundingClientRect().top + window.scrollY;
-    return Math.max(0, Math.round(sectionTop - SECTION_SCROLL_GAP));
-  }, []);
+    return Math.max(0, Math.round(sectionTop - getStickyOffset() - SECTION_SCROLL_GAP));
+  }, [getStickyOffset]);
 
   const getActiveSectionKeyByScroll = useCallback(() => {
     const entries = getSectionEntries();
     if (entries.length === 0) return '';
 
-    const activationLine = window.scrollY + SECTION_SCROLL_GAP + SCROLL_ACTIVE_SECTION_GAP;
+    const activationLine = window.scrollY + getStickyOffset() + SECTION_SCROLL_GAP + SCROLL_ACTIVE_SECTION_GAP;
     let activeKey = entries[0].key;
 
     entries.forEach(({ key, node }) => {
@@ -840,7 +861,7 @@ export const MyProfile = () => {
     });
 
     return activeKey;
-  }, [getSectionEntries]);
+  }, [getSectionEntries, getStickyOffset]);
 
   const finishProgrammaticScroll = useCallback(() => {
     isManualScrollRef.current = false;
@@ -1352,7 +1373,9 @@ export const MyProfile = () => {
           <DotsButton type='button' aria-label={uiText('Відкрити меню профілю', language)} onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
         </TopbarActions>
       </Topbar>
+    </HeaderPanel>
 
+    <StickyProgress ref={stickyProgressRef}>
       <ProgressWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
         <span style={{ fontSize: 12, color: 'var(--muted)' }}>{uiText('Заповнено анкету', language)}</span>
@@ -1380,7 +1403,7 @@ export const MyProfile = () => {
           </Tab>;
         })}
       </Tabs>
-    </HeaderPanel>
+    </StickyProgress>
 
     {!isProfileAccessConfirmed && <AuthCard ref={node => { sectionRefs.current.auth = node; }}>
       <Header>
