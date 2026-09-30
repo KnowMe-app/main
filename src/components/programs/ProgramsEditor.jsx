@@ -56,6 +56,7 @@ const Wrap = styled.div`
 
 const ProgramBox = styled.div`
   border: 1px ${({ $hidden }) => ($hidden ? 'dashed' : 'solid')} var(--km-border, #e7e1d8);
+  border-left: 4px solid ${({ $hidden, $incomplete }) => ($hidden ? 'var(--km-muted, #6f675f)' : $incomplete ? '#D99A25' : 'var(--km-accent, #E8791A)')};
   border-radius: 14px;
   overflow: hidden;
 `;
@@ -117,6 +118,45 @@ const SmallButton = styled.button`
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
+`;
+
+const HeadActions = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+`;
+
+const MoreActions = styled.details`
+  position: relative;
+  summary {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    min-height: 32px;
+    border: 1px solid var(--km-border, #e7e1d8);
+    border-radius: 9px;
+    background: var(--km-card, #fff);
+    cursor: pointer;
+    list-style: none;
+    font-weight: 800;
+  }
+  summary::-webkit-details-marker { display: none; }
+  > div {
+    position: absolute;
+    z-index: 5;
+    top: calc(100% + 5px);
+    right: 0;
+    min-width: 150px;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    border: 1px solid var(--km-border, #e7e1d8);
+    border-radius: 10px;
+    background: var(--km-card, #fff);
+    box-shadow: 0 10px 28px rgba(30, 27, 24, .14);
+  }
 `;
 
 const Body = styled.div`
@@ -241,6 +281,14 @@ const PreviewLabel = styled.div`
   color: var(--km-muted, #6f675f);
 `;
 
+const PreviewDisclosure = styled.details`
+  border-top: 1px solid var(--km-border, #e7e1d8);
+  padding-top: 10px;
+  summary { cursor: pointer; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  &[open] summary { margin-bottom: 10px; }
+`;
+
 const Choice = ({ options, value, onChange, language }) => (
   <Segments>
     {options.map(option => (
@@ -255,7 +303,6 @@ const summaryLine = (program, language) => {
   const pay = programHeadlinePay(program);
   const amount = Number(pay?.amount);
   return [
-    uiText(PROGRAM_TYPE_LABELS[program.type], language),
     program.location,
     Number.isFinite(amount) && amount > 0 ? formatProgramMoney(amount, pay.currency) : uiText('виплату не вказано', language),
   ].filter(Boolean).join(' · ');
@@ -433,10 +480,10 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
       </Group>
 
       {normalized ? (
-        <>
-          <PreviewLabel>{uiText('Так програму побачать у стрічці', language)}</PreviewLabel>
+        <PreviewDisclosure>
+          <PreviewLabel as="summary">▾ {uiText('Попередній перегляд у стрічці', language)}</PreviewLabel>
           <ProgramCard program={normalized} rates={rates} language={language} />
-        </>
+        </PreviewDisclosure>
       ) : null}
     </Body>
   );
@@ -524,7 +571,7 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
       {draft.map((program, index) => {
         const open = openId === program.id;
         return (
-          <ProgramBox key={program.id} data-testid="program-editor" $hidden={program.hidden}>
+          <ProgramBox key={program.id} data-testid="program-editor" $hidden={program.hidden} $incomplete={!normalizeProgram(program, program.id)}>
             <ProgramHead style={program.hidden ? { opacity: 0.72 } : undefined}>
               <HeadText type="button" aria-expanded={open} onClick={() => { flush(); setOpenId(open ? '' : program.id); }}>
                 <b>
@@ -533,26 +580,31 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
                 </b>
                 <span>{summaryLine(program, language)}</span>
               </HeadText>
-              {draft.length > 1 ? (
-                <>
-                  <SmallButton type="button" aria-label={uiText('Вище', language)} title={uiText('Вище', language)} disabled={index === 0} onClick={() => move(index, -1)}>↑</SmallButton>
-                  <SmallButton type="button" aria-label={uiText('Нижче', language)} title={uiText('Нижче', language)} disabled={index === draft.length - 1} onClick={() => move(index, 1)}>↓</SmallButton>
-                </>
-              ) : null}
+              <HeadActions>
               {confirmDeleteId === program.id ? (
                 <>
                   <SmallButton type="button" $danger onClick={() => { update(draft.filter(item => item.id !== program.id)); setConfirmDeleteId(''); }}>{uiText('Видалити', language)}</SmallButton>
                   <SmallButton type="button" onClick={() => setConfirmDeleteId('')}>{uiText('Ні', language)}</SmallButton>
                 </>
               ) : (
-                <>
+                <MoreActions>
+                  <summary aria-label={uiText('Дії програми', language)}>⋮</summary>
+                  <div>
+                  {draft.length > 1 ? (
+                    <>
+                      <SmallButton type="button" disabled={index === 0} onClick={() => move(index, -1)}>↑ {uiText('Вище', language)}</SmallButton>
+                      <SmallButton type="button" disabled={index === draft.length - 1} onClick={() => move(index, 1)}>↓ {uiText('Нижче', language)}</SmallButton>
+                    </>
+                  ) : null}
                   <SmallButton type="button" aria-pressed={Boolean(program.hidden)} onClick={() => toggleHidden(program)}>
                     {uiText(program.hidden ? 'Показати' : 'Сховати', language)}
                   </SmallButton>
-                  <SmallButton type="button" onClick={() => duplicate(program)} disabled={draft.length >= MAX_PROGRAMS}>{uiText('Копія', language)}</SmallButton>
-                  <SmallButton type="button" $danger aria-label={uiText('Видалити програму', language)} onClick={() => setConfirmDeleteId(program.id)}>✕</SmallButton>
-                </>
+                  <SmallButton type="button" onClick={() => duplicate(program)} disabled={draft.length >= MAX_PROGRAMS}>{uiText('Створити копію', language)}</SmallButton>
+                  <SmallButton type="button" $danger onClick={() => setConfirmDeleteId(program.id)}>{uiText('Видалити програму', language)}</SmallButton>
+                  </div>
+                </MoreActions>
               )}
+              </HeadActions>
             </ProgramHead>
             {open ? (
               <ProgramForm

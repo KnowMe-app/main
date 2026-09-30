@@ -21,6 +21,11 @@ const Wrap = styled.section`
   margin: 0 20px 16px;
 `;
 
+const RoleName = styled.span`
+  color: var(--text, var(--km-text));
+  font-size: 12px;
+`;
+
 const Head = styled.button`
   display: flex;
   align-items: center;
@@ -51,17 +56,19 @@ const Frame = styled(MatchingThemeScope)`
   border-radius: 18px;
 `;
 
-const readCollapsed = () => {
+const storageKey = role => `${COLLAPSED_KEY}:${role || 'profile'}`;
+
+const readCollapsed = role => {
   try {
-    return window.localStorage.getItem(COLLAPSED_KEY) === '1';
+    return window.localStorage.getItem(storageKey(role)) === '1';
   } catch {
     return false;
   }
 };
 
-export const MyProfileCardPreview = ({ card, language, rates, displayCurrency, onDisplayCurrencyChange }) => {
+export const MyProfileCardPreview = ({ card, role = '', roleLabel = '', language, rates, displayCurrency, onDisplayCurrencyChange }) => {
   const { themeMode } = useAppSettings();
-  const [open, setOpen] = useState(() => !readCollapsed());
+  const [open, setOpen] = useState(() => !readCollapsed(role));
   const programsContext = useMemo(() => ({
     viewerType: '',
     facts: null,
@@ -73,7 +80,7 @@ export const MyProfileCardPreview = ({ card, language, rates, displayCurrency, o
   const toggle = () => {
     setOpen(previous => {
       try {
-        window.localStorage.setItem(COLLAPSED_KEY, previous ? '1' : '0');
+        window.localStorage.setItem(storageKey(role), previous ? '1' : '0');
       } catch {
         // приватне вікно: вибір живе до перезавантаження
       }
@@ -85,6 +92,7 @@ export const MyProfileCardPreview = ({ card, language, rates, displayCurrency, o
     <Wrap data-testid="my-profile-card-preview">
       <Head type="button" aria-expanded={open} onClick={toggle}>
         <span>{uiText('Так вашу картку бачать у стрічці', language)}</span>
+        {roleLabel ? <RoleName>{uiText(roleLabel, language)}</RoleName> : null}
         <Caret $open={open} aria-hidden="true">▼</Caret>
       </Head>
       {open ? (
