@@ -7,6 +7,7 @@ import { SiTiktok } from 'react-icons/si';
 import { FaXTwitter } from 'react-icons/fa6';
 import { CheckboxGroup } from './CheckboxGroup';
 import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
+import { PAYMENT_FILTER_BUCKETS, PAYMENT_FILTER_NONE } from 'utils/donorPrograms';
 import { uiText } from 'utils/uiTranslations';
 import { useAppSettings } from '../hooks/useAppSettings';
 
@@ -53,6 +54,18 @@ export const MATCHING_FILTER_GROUPS = [
         { val: 'ag', label: 'Агенція' },
         { val: 'ip', label: 'Біологічні батьки' },
         { val: 'other', label: 'Інші' },
+      ],
+    },
+    // Виплата з програм агенцій і клінік — за курсом НБУ в доларовому
+    // еквіваленті (`listPaymentBuckets`). Межі різні для донорок і СМ, і
+    // читачеві шухляда показує лише свої (`paymentOptionKeys`).
+    {
+      filterName: 'payment',
+      label: 'Виплата',
+      options: [
+        ...PAYMENT_FILTER_BUCKETS.ed.map(bucket => ({ val: bucket.key, label: bucket.label })),
+        ...PAYMENT_FILTER_BUCKETS.sm.map(bucket => ({ val: bucket.key, label: bucket.label })),
+        { val: PAYMENT_FILTER_NONE, label: 'Без програм' },
       ],
     },
     {
@@ -196,15 +209,30 @@ export const buildMatchingFilterChipLabel = (group, values, language) => {
  * шухляді вже не малюють, ряд чіпів однаково писав би «Тип профілю: крім ED» —
  * про позначку, якої вона не бачить і зняти не може.
  */
-export const resolveMatchingFilterGroups = ({ roleOptionKeys } = {}) => {
-  if (!Array.isArray(roleOptionKeys)) return MATCHING_FILTER_GROUPS;
-  const allowed = new Set(roleOptionKeys);
-  return MATCHING_FILTER_GROUPS.map(group => (
-    group.filterName === 'userRole'
-      ? { ...group, options: group.options.filter(option => allowed.has(option.val)) }
-      : group
-  ));
+export const resolveMatchingFilterGroups = ({ roleOptionKeys, paymentOptionKeys } = {}) => {
+  if (!Array.isArray(roleOptionKeys) && !Array.isArray(paymentOptionKeys)) return MATCHING_FILTER_GROUPS;
+  const allowedRoles = Array.isArray(roleOptionKeys) ? new Set(roleOptionKeys) : null;
+  const allowedPayments = Array.isArray(paymentOptionKeys) ? new Set(paymentOptionKeys) : null;
+  return MATCHING_FILTER_GROUPS.map(group => {
+    if (group.filterName === 'userRole' && allowedRoles) {
+      return { ...group, options: group.options.filter(option => allowedRoles.has(option.val)) };
+    }
+    if (group.filterName === 'payment' && allowedPayments) {
+      return { ...group, options: group.options.filter(option => allowedPayments.has(option.val)) };
+    }
+    return group;
+  })
+    // Група без жодної опції для цього читача — не чіп: агенції стрічка
+    // показує донорок, і «Виплата» там нічого не звужувала б.
+    .filter(group => group.options.length > 0);
 };
+
+/** Опції «Виплати» для читача: донорці — донорські межі, СМ — свої, решті — усі. */
+export const listPaymentFilterKeysForViewer = viewerType => [
+  ...(viewerType === 'sm' ? [] : PAYMENT_FILTER_BUCKETS.ed.map(bucket => bucket.key)),
+  ...(viewerType === 'ed' ? [] : PAYMENT_FILTER_BUCKETS.sm.map(bucket => bucket.key)),
+  PAYMENT_FILTER_NONE,
+];
 
 /*
  * Ряд чіпів рейки — чіп на кожну групу, а не лише на змінені.
@@ -218,8 +246,8 @@ export const resolveMatchingFilterGroups = ({ roleOptionKeys } = {}) => {
  * Перелік груп той самий, що й у поповера (`resolveMatchingFilterGroups`), тож
  * чіп, якого цьому читачеві не показують, не з’являється й тут.
  */
-export const buildMatchingFilterRailChips = (filters, language, { roleOptionKeys } = {}) => {
-  const chips = resolveMatchingFilterGroups({ roleOptionKeys }).map(group => {
+export const buildMatchingFilterRailChips = (filters, language, { roleOptionKeys, paymentOptionKeys } = {}) => {
+  const chips = resolveMatchingFilterGroups({ roleOptionKeys, paymentOptionKeys }).map(group => {
     const groupLabel = uiText(group.label, language);
     const summary = buildMatchingFilterChipLabel(group, filters?.[group.filterName], language);
     return {
@@ -246,8 +274,8 @@ export const buildMatchingFilterRailChips = (filters, language, { roleOptionKeys
   return [...chips.filter(chip => chip.narrowed), ...chips.filter(chip => !chip.narrowed)];
 };
 
-export const buildMatchingFilterChips = (filters, language, { roleOptionKeys } = {}) =>
-  resolveMatchingFilterGroups({ roleOptionKeys })
+export const buildMatchingFilterChips = (filters, language, { roleOptionKeys, paymentOptionKeys } = {}) =>
+  resolveMatchingFilterGroups({ roleOptionKeys, paymentOptionKeys })
   .map(group => {
     const label = buildMatchingFilterChipLabel(group, filters?.[group.filterName], language);
     if (!label) return null;
@@ -263,6 +291,7 @@ export const SearchFilters = ({
   mode = 'default',
   allowedFilterNames,
   roleOptionKeys,
+  paymentOptionKeys,
   bloodSearchKeyMode = false,
   reactionFilterOptions,
   optionCounts,
@@ -283,7 +312,7 @@ export const SearchFilters = ({
     : REACTION_FILTER_OPTIONS);
 
   if (mode === 'matching') {
-    groups = resolveMatchingFilterGroups({ roleOptionKeys });
+    groups = resolveMatchingFilterGroups({ roleOptionKeys, paymentOptionKeys });
   } else {
     groups = [
       {

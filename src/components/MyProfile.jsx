@@ -51,6 +51,9 @@ import toast from 'react-hot-toast';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { KnowMeBrand } from './styles/knowme';
 import { resolveMyProfileFieldText, resolveMyProfileSectionTitle } from '../utils/myProfileRoleTexts';
+import { ProgramsEditor } from './programs/ProgramsEditor';
+import { AgencyProfileFields, ParentProfileFields } from './programs/RoleProfileFields';
+import { useProgramRates } from '../hooks/useProgramRates';
 
 const Page = styled.div`
   /* Локальні псевдоніми з глобальних KnowMe-токенів: сторінка автоматично підтримує світлу/темну тему. */
@@ -386,6 +389,9 @@ const baseSections = [
 
 const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery']);
 
+// Поля-обʼєкти розділів агенції й батьків (`roleSections`).
+const OBJECT_PROFILE_FIELDS = new Set(['programs', 'parentPreferences']);
+
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','country','region','city','moreInfo_main']);
 
 /**
@@ -714,13 +720,36 @@ export const MyProfile = () => {
   }), [isProfileAccessConfirmed]);
   // Назву розділу бере роль (`resolveMyProfileSectionTitle`): агенція бачить
   // «Агенція» й «Про агенцію», а не «Особисті дані» й «Спосіб життя».
-  const visibleSections = useMemo(() => sections
-    .map(section => ({
-      ...section,
-      title: resolveMyProfileSectionTitle(section.key, normalizedRole, section.title),
-      fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)),
-    }))
-    .filter(section => section.fields.length > 0), [isDonorRole, normalizedRole, sections]);
+  // Агенція й клініка мають ще два розділи — послуги й програми, — а
+  // біологічні батьки один: кого шукають. Вони стоять одразу після «Особистих
+  // даних», бо саме за ними їх і знаходять у стрічці. Малює їх не
+  // `renderField`, а свій компонент (`custom`): програма — це запис із
+  // десятком полів, а не одне поле форми.
+  const roleSections = useMemo(() => {
+    if (normalizedRole === 'ag' || normalizedRole === 'cl') {
+      return [
+        { key: 'services', title: '🧭 Послуги й досвід', fields: ['services', 'workLocations', 'website', 'foundedYear', 'programsCompleted'], custom: 'agency' },
+        { key: 'programs', title: '💶 Програми', fields: ['programs'], custom: 'programs' },
+      ];
+    }
+    if (normalizedRole === 'ip') {
+      return [{ key: 'search', title: '🔎 Кого шукаєте', fields: ['seeking', 'programLocation', 'parentVia'], custom: 'parents' }];
+    }
+    return [];
+  }, [normalizedRole]);
+  const visibleSections = useMemo(() => {
+    const base = sections
+      .map(section => ({
+        ...section,
+        title: resolveMyProfileSectionTitle(section.key, normalizedRole, section.title),
+        fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)),
+      }))
+      .filter(section => section.fields.length > 0);
+    if (!roleSections.length) return base;
+    const personalIndex = base.findIndex(section => section.key === 'personal');
+    return [...base.slice(0, personalIndex + 1), ...roleSections, ...base.slice(personalIndex + 1)];
+  }, [isDonorRole, normalizedRole, roleSections, sections]);
+  const programRates = useProgramRates(normalizedRole === 'ag' || normalizedRole === 'cl');
   const firstSectionKey = visibleSections[0]?.key || 'personal';
   const navSections = useMemo(() => [
     ...(!isProfileAccessConfirmed ? [{ key: 'auth', title: '🔐 Доступ до анкети', fields: ['email', 'password', 'terms'], isVirtual: true }] : []),
@@ -1102,6 +1131,16 @@ export const MyProfile = () => {
     return saveQueueRef.current;
   };
 
+  // Поля нових розділів пишуться напряму (`directFields`): програми й
+  // побажання — обʼєкти, а `makeUploadedInfo` зводить значення до історії
+  // версій, яка для них нічого не означає.
+  const saveRoleField = (name, value) => {
+    const nextState = { ...stateRef.current, [name]: value };
+    stateRef.current = nextState;
+    setState(nextState);
+    triggerAutosave(nextState, { directFields: [name] });
+  };
+
   const triggerAutosave = (nextState, options) => {
     saveState(nextState, options).catch(error => {
       console.warn('Autosave failed in MyProfile.', error);
@@ -1208,12 +1247,16 @@ export const MyProfile = () => {
 
     setIsClearingProfile(true);
     const nextState = { ...currentState, publish: false };
-    clearableFields.forEach(name => { nextState[name] = ''; });
+    // Програми й побажання батьків — обʼєкти, а не поля з історією версій:
+    // порожній рядок у них не «позначка стирання», а битий запис. Вони
+    // знімаються цілком (`null`) і напряму, як і `publish`.
+    const objectFields = clearableFields.filter(name => OBJECT_PROFILE_FIELDS.has(name));
+    clearableFields.forEach(name => { nextState[name] = OBJECT_PROFILE_FIELDS.has(name) ? null : ''; });
     stateRef.current = nextState;
     setState(nextState);
 
     try {
-      await saveState(nextState, { directFields: ['publish'] });
+      await saveState(nextState, { directFields: ['publish', ...objectFields] });
       localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
       setShowInfoModal(false);
       toast.success(uiText('Анкету очищено й знято з публікації', language));
@@ -1546,7 +1589,20 @@ export const MyProfile = () => {
             {sectionProgress[section.key]?.filled || 0}/{sectionProgress[section.key]?.total || section.fields.length}
           </div>
         </Header>
-        <FieldGroup>{section.fields.map(renderField)}</FieldGroup>
+        <FieldGroup>
+          {section.custom === 'agency' ? <AgencyProfileFields state={state} onCommit={saveRoleField} language={language} role={normalizedRole} /> : null}
+          {section.custom === 'programs' ? (
+            <ProgramsEditor
+              programs={state.programs}
+              onSave={record => saveRoleField('programs', record)}
+              language={language}
+              rates={programRates}
+              defaultType={String(state.services || '').includes('sm') && !String(state.services || '').includes('ed') ? 'sm' : 'ed'}
+            />
+          ) : null}
+          {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} /> : null}
+          {!section.custom ? section.fields.map(renderField) : null}
+        </FieldGroup>
       </SectionCard>
       );
     })}

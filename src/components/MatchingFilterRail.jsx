@@ -45,6 +45,10 @@ export const MatchingFilterRail = ({
   filters,
   language,
   roleOptionKeys,
+  paymentOptionKeys,
+  // Сортування деки стоїть першим у тому самому ряду: ряд прокручується
+  // вбік, і окремий рядок під нього не потрібен.
+  leading = null,
   openGroup,
   onOpenGroup,
   onResetGroup,
@@ -55,7 +59,7 @@ export const MatchingFilterRail = ({
   children,
 }) => {
   const scrollerRef = useRef(null);
-  const chips = buildMatchingFilterRailChips(filters, language, { roleOptionKeys });
+  const chips = buildMatchingFilterRailChips(filters, language, { roleOptionKeys, paymentOptionKeys });
   const openChip = chips.find(chip => chip.filterName === openGroup) || null;
   // «Скинути все» з’являється від двох звужених груп: при одній вона
   // робить те саме, що й хрестик на тому єдиному чіпі, тобто лише
@@ -90,6 +94,7 @@ export const MatchingFilterRail = ({
   return (
     <FilterRail>
       <FilterRailScroller ref={scrollerRef} role="group" aria-label={uiText('Фільтри стрічки', language)}>
+        {leading}
         {chips.map(chip => {
           const isOpen = chip.filterName === openGroup;
           return (

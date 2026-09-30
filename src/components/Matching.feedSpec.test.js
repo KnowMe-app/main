@@ -36,7 +36,10 @@ describe('matching feed structure', () => {
     // Пошук і далі не звужується чіпами — але показується вікном, а не цілком:
     // 400 знайдених це 400 рядків у DOM і стільки ж гідратацій.
     expect(memo).toContain("if (viewMode === 'search') return searchRefinedUsers.slice(0, searchRevealCount);");
-    expect(source).toContain('const feedSourceWithoutOwnEdits = filteredUsers;');
+    // Деку впорядковує вибране сортування — одне на список, галерею й шар
+    // деталей; у колекціях і пошуку порядок лишається свій.
+    expect(source).toContain('const feedSourceWithoutOwnEdits = useMemo(');
+    expect(source).toContain("? sortCardsByMode(filteredUsers, sortMode, {");
     // Поверх списку лягає лише власне доповнення читача — і лише там, де воно є:
     // порожня мапа віддає той самий масив, бо від нього залежать і гідратація
     // фото, і пагінація, і шар деталей.

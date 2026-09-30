@@ -8,6 +8,7 @@ import {
   normalizeFeedDateValue,
   resolveMatchingCardAvatarFromProfile,
 } from './profileFieldDerive';
+import { AGENCY_SERVICE_OPTIONS, PARENT_SEEKING_OPTIONS, buildProgramsBrief } from './donorPrograms';
 
 /**
  * `matchingCards` — проєкція анкети рівно під стрічку матчингу.
@@ -103,6 +104,33 @@ const COPIED_FIELDS = [
 // Аліаси кесаревого: анкети різних поколінь тримають його під різними іменами,
 // а `renderFacts` шукає перший непорожній. Проєкція зводить їх до `csection`.
 const CSECTION_ALIASES = ['cSection', 'csection', 'c_section', 'cesareanSection'];
+
+/** Ключ стислих програм у картці (`buildProgramsBrief`). */
+export const MATCHING_CARD_PROGRAMS_FIELD = 'programsBrief';
+
+/** Нові поля картки — ті, під які правила бази викочуються руками. */
+export const MATCHING_CARD_PROGRAM_FIELDS = Object.freeze([MATCHING_CARD_PROGRAMS_FIELD, 'serviceTags', 'seekingRole']);
+
+const SERVICE_KEYS = new Set(AGENCY_SERVICE_OPTIONS.map(option => option.key));
+const SEEKING_KEYS = new Set(PARENT_SEEKING_OPTIONS.map(option => option.key));
+
+/**
+ * Послуги лежать рядком кодів через кому (`"ed,sm,legal"`), а не масивом:
+ * масив у полі анкети тут читається як історія версій (`getCurrentValue`), і
+ * набір послуг перетворився б на «поточна — остання».
+ */
+export const normalizeServiceTags = value => {
+  const list = String(Array.isArray(value) ? value.join(',') : value ?? '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(item => SERVICE_KEYS.has(item));
+  return [...new Set(list)].join(',');
+};
+
+export const normalizeSeekingRole = value => {
+  const key = String(value ?? '').trim();
+  return SEEKING_KEYS.has(key) ? key : '';
+};
 
 const trimmed = value => {
   if (value === null || value === undefined) return '';
@@ -329,6 +357,15 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   const avatar = trimmed(options.avatar) || resolveMatchingCardAvatarFromProfile(data);
   if (avatar) projection.avatar = avatar;
 
+  // Програми, послуги й «кого шукаємо» — те, чим агенція, клініка й
+  // біологічні батьки представляються в стрічці замість зросту й ваги.
+  const programsBrief = buildProgramsBrief(data.programs);
+  if (programsBrief) projection[MATCHING_CARD_PROGRAMS_FIELD] = programsBrief;
+  const serviceTags = normalizeServiceTags(data.services);
+  if (serviceTags) projection.serviceTags = serviceTags;
+  const seekingRole = normalizeSeekingRole(data.seeking);
+  if (seekingRole) projection.seekingRole = seekingRole;
+
   // Ані `source`, ані `fieldsCount`, ані `v` картка більше не носить. Колекцію
   // називає формат id; заповненість зі стрічки прибрано разом із фільтром; а
   // версія була потрібна лише доти, доки у вузлі лежали картки двох поколінь.
@@ -462,6 +499,10 @@ export const expandMatchingCard = (userId, card) => {
     // стирала б позначку «сховано» і повертала анкету в пошук.
     ...(feedDate === false ? { publish: false } : {}),
     ...(trimmed(feedDate) ? { publish: true, lastLogin2: feedDate } : {}),
+    // Послуги й «кого шукаємо» — під тими самими іменами, що й в анкеті: показ
+    // читає одне поле, хоч би звідки картка приїхала.
+    ...(rest.serviceTags ? { services: rest.serviceTags } : {}),
+    ...(rest.seekingRole ? { seeking: rest.seekingRole } : {}),
     photos: avatar ? [avatar] : [],
     __photosHydrated: true,
     [MATCHING_SUMMARY_FLAG]: true,
@@ -509,10 +550,24 @@ const sameProjectionValue = (left, right) => {
  * Чи змінилась проєкція? Писач звіряє її з тим, що вже лежить у базі, і мовчить,
  * коли правка анкети не зачепила жодного поля стрічки — а це більшість правок.
  */
+// Стислі програми — дерево, а не історія значень: `collectFieldValues` звів
+// би їх до плаского списку, і зміна вимоги між двома програмами виглядала б
+// як відсутність змін.
+const sameStructuredValue = (left, right) => JSON.stringify(sortKeysDeep(left)) === JSON.stringify(sortKeysDeep(right));
+
+const sortKeysDeep = value => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  return Object.keys(value).sort().reduce((acc, key) => ({ ...acc, [key]: sortKeysDeep(value[key]) }), {});
+};
+
 export const areMatchingCardProjectionsEqual = (a, b) => {
   if (!a || !b) return false;
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
   for (const key of keys) {
+    if (key === MATCHING_CARD_PROGRAMS_FIELD) {
+      if (!sameStructuredValue(a[key], b[key])) return false;
+      continue;
+    }
     if (!sameProjectionValue(a[key], b[key])) return false;
   }
   return true;

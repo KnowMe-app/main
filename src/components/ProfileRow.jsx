@@ -48,6 +48,7 @@ import {
 } from './ProfileFacts';
 import { getRoleColor } from './matchingRoleColors';
 import * as S from './MatchingHiddenList.styled';
+import { CardRoleBlock, isCounterpartyCard } from './programs/CardRoleBlock';
 import usePhotoSwipe from './usePhotoSwipe';
 import PhotoSwipeStage from './PhotoSwipeStage';
 // Доріжки нотаток беруться з розкладки відкритої картки, а не описуються тут
@@ -1064,6 +1065,9 @@ const ProfileRow = ({
   // Дочитати решту фото картки: проєкція стрічки несе один аватар, а
   // перелік знімків просить уже сам свайп по фото (`usePhotoSwipe`).
   onRequestPhotos,
+  // Програми агенцій і клінік: хто читач, його анкета для «підходить N з M»,
+  // курс і валюта показу. Один обʼєкт на всю стрічку (`Matching`).
+  programsContext,
 }) => {
   // A limited profile is the projection a viewer without full access gets back
   // from a search: surname, name, age, region, city, and the public comment. There
@@ -1106,8 +1110,12 @@ const ProfileRow = ({
   // Рядка фактів у курсиві («166/57 BMI 21 не заміжня Rh+») тут більше немає:
   // він казав те саме, що смуга й факти, іншим почерком, і стоїть лише в
   // плитці галереї, де на підписи немає ширини.
-  const statCells = useMemo(() => (isLimited ? [] : buildProfileStatStrip(user, language)), [isLimited, language, user]);
-  const summaryRows = useMemo(() => (isLimited ? [] : buildProfileSummaryRows(user, language)), [isLimited, language, user]);
+  // Агенцію, клініку й біологічних батьків описують не тіло й пологи, а те,
+  // що вони пропонують чи шукають (`CardRoleBlock`): смуга «зріст, вага, ІМТ»
+  // під агенцією казала донорці рівно нічого.
+  const isCounterparty = isCounterpartyCard(user);
+  const statCells = useMemo(() => (isLimited || isCounterparty ? [] : buildProfileStatStrip(user, language)), [isCounterparty, isLimited, language, user]);
+  const summaryRows = useMemo(() => (isLimited || isCounterparty ? [] : buildProfileSummaryRows(user, language)), [isCounterparty, isLimited, language, user]);
   const detailSections = useMemo(() => (isLimited ? [] : buildProfileDetailSections(user, language)), [isLimited, language, user]);
   const roleAccent = getRoleColor(rowRole);
   const contactEntries = useMemo(
@@ -1333,6 +1341,7 @@ const ProfileRow = ({
           про людину одне й те саме однаковими словами. */}
       <ProfileStatStrip cells={statCells} />
       <ProfileFactList rows={summaryRows} />
+      {!isLimited ? <CardRoleBlock card={user} programsContext={programsContext} language={language} /> : null}
 
       {contactsOpen && (
         <S.RowContacts onClick={e => e.stopPropagation()}>
@@ -1523,4 +1532,5 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.onSwipeRight === next.onSwipeRight
   && prev.onSwipeLeft === next.onSwipeLeft
   && prev.onRequestPhotos === next.onRequestPhotos
+  && prev.programsContext === next.programsContext
 ));

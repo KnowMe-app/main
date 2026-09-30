@@ -17,7 +17,21 @@ describe('every Matching filter reaches the index', () => {
 
   const allOn = group => Object.fromEntries(group.options.map(option => [option.val, true]));
 
-  it.each(MATCHING_FILTER_GROUPS.map(group => [group.filterName, group]))(
+  // «Виплата» — виняток навмисний: індексу під неї немає, бо питати нічого.
+  // Програми лежать у самій картці стрічки (`programsBrief`), тож фільтр
+  // коштує нуль читань, а дочитування сторінки (`collectFilteredMatchingSourceCards`)
+  // рахує картки вже після нього — дір у сторінці немає.
+  const CARD_BORNE_GROUPS = new Set(['payment']);
+
+  it('виплату фільтрує сама картка', () => {
+    const { applyMatchingSearchKeyFilters } = require('../utils/matchingDataProvider');
+    const withProgram = { userId: 'a', programsBrief: { p1: { type: 'ed', pay: 2500, currency: 'USD' } } };
+    const without = { userId: 'b' };
+    const payment = { ed_lt1500: true, ed_1500: true, ed_2000: true, sm_lt18k: true, sm_18k: true, sm_20k: true, none: false };
+    expect(applyMatchingSearchKeyFilters([withProgram, without], { payment }).map(user => user.userId)).toEqual(['a']);
+  });
+
+  it.each(MATCHING_FILTER_GROUPS.filter(group => !CARD_BORNE_GROUPS.has(group.filterName)).map(group => [group.filterName, group]))(
     '%s produces an index group once an option is switched off',
     (filterName, group) => {
       const [firstOption] = group.options;
