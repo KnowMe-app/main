@@ -31,7 +31,11 @@ import { uiText } from '../../utils/uiTranslations';
 
 const ACCENT = 'var(--matching-accent, var(--km-accent, #E8791A))';
 const BORDER = 'var(--matching-card-border, var(--km-border, #e7e1d8))';
-const MUTED = 'var(--km-muted, #6f675f)';
+// Текст — зі стрічки, коли блок у стрічці: її палітра своя (`--matching-*`) і
+// від теми застосунку не залежить. Успадкований колір там бував білим на
+// світлому — суми й вимоги просто зникали.
+const TEXT = 'var(--matching-header-text, var(--km-text, #1e1b18))';
+const MUTED = 'var(--matching-muted-text, var(--km-muted, #6f675f))';
 const GOOD = '#2E9B55';
 const BAD = '#C8483E';
 
@@ -46,7 +50,7 @@ const SummaryButton = styled.button`
   border: 1px solid ${({ $match }) => ($match ? `color-mix(in srgb, ${GOOD} 45%, transparent)` : BORDER)};
   border-radius: 12px;
   background: ${({ $match }) => ($match ? `color-mix(in srgb, ${GOOD} 8%, transparent)` : 'transparent')};
-  color: inherit;
+  color: ${TEXT};
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -78,6 +82,7 @@ const Caret = styled.span`
 `;
 
 const List = styled.div`
+  color: ${TEXT};
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -85,6 +90,7 @@ const List = styled.div`
 `;
 
 const Card = styled.article`
+  color: ${TEXT};
   border: 1px solid ${BORDER};
   border-left: 3px solid ${({ $state }) => ($state === 'match' ? GOOD : $state === 'mismatch' ? BAD : ACCENT)};
   border-radius: 12px;
@@ -103,7 +109,7 @@ const CardHead = styled.div`
   font-size: 13px;
   color: ${MUTED};
 
-  b { color: var(--km-text, inherit); font-size: 14px; }
+  b { color: ${TEXT}; font-size: 14px; }
 `;
 
 const Verdict = styled.span`
@@ -156,6 +162,7 @@ const Chip = styled.span`
   padding: 3px 9px;
   border-radius: 999px;
   font-size: 12px;
+  color: ${TEXT};
   border: 1px solid ${({ $ok }) => ($ok === true ? `color-mix(in srgb, ${GOOD} 45%, transparent)` : $ok === false ? `color-mix(in srgb, ${BAD} 50%, transparent)` : BORDER)};
   background: ${({ $ok }) => ($ok === true ? `color-mix(in srgb, ${GOOD} 9%, transparent)` : $ok === false ? `color-mix(in srgb, ${BAD} 9%, transparent)` : 'transparent')};
 `;
@@ -322,6 +329,14 @@ export const formatPayRange = (finals, displayCurrency, rates) => {
   return converted ? `≈ ${range}` : range;
 };
 
+const OTHER_TYPE_LABELS = Object.freeze({ ed: 'для донорок', sm: 'для сурогатних мам' });
+
+// «з 2 програм», але «з 1 програми»: після «з» — родовий відмінок.
+const programsGenitive = (count, language) => {
+  if (language === 'en') return count === 1 ? 'program' : 'programs';
+  return count % 10 === 1 && count % 100 !== 11 ? 'програми' : 'програм';
+};
+
 const pluralPrograms = (count, language) => {
   if (language === 'en') return count === 1 ? 'program' : 'programs';
   const mod10 = count % 10;
@@ -355,7 +370,7 @@ export const ProgramsSummary = ({
     ? uiText('Вам підходить {matched} з {total} {programs}', language, {
       matched: summary.matched,
       total: summary.total,
-      programs: pluralPrograms(summary.total, language),
+      programs: programsGenitive(summary.total, language),
     })
     : `${summary.total} ${pluralPrograms(summary.total, language)}`;
   const toggle = event => {
@@ -369,8 +384,13 @@ export const ProgramsSummary = ({
       <SummaryButton type="button" $match={summary.matched > 0} aria-expanded={open} onClick={toggle} data-testid="programs-summary">
         <SummaryText>
           <b>{headline}</b>
-          {summary.allTotal > summary.total ? (
-            <span>{uiText('ще {count} для інших ролей', language, { count: summary.allTotal - summary.total })}</span>
+          {summary.allTotal > summary.total && OTHER_TYPE_LABELS[viewerType === 'ed' ? 'sm' : 'ed'] ? (
+            <span>
+              {uiText('ще {count} — {audience}', language, {
+                count: summary.allTotal - summary.total,
+                audience: uiText(OTHER_TYPE_LABELS[viewerType === 'ed' ? 'sm' : 'ed'], language),
+              })}
+            </span>
           ) : null}
         </SummaryText>
         {range ? <SummaryPay>{range}</SummaryPay> : null}

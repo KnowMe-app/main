@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { fetchNbuUahExchangeRatesByDate } from '../components/config';
 import {
   DEFAULT_PROGRAM_CURRENCY,
@@ -70,7 +70,7 @@ export const useProgramDisplayCurrency = () => {
     displayListeners.add(setCurrency);
     return () => displayListeners.delete(setCurrency);
   }, []);
-  const update = next => {
+  const update = useCallback(next => {
     const code = normalizeProgramCurrency(next) || DEFAULT_PROGRAM_CURRENCY;
     try {
       window.localStorage.setItem(DISPLAY_CURRENCY_KEY, code);
@@ -78,6 +78,6 @@ export const useProgramDisplayCurrency = () => {
       // приватне вікно: вибір живе до перезавантаження
     }
     displayListeners.forEach(listener => listener(code));
-  };
+  }, []);
   return [currency, update];
 };

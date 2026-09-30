@@ -2209,6 +2209,28 @@ export const LayoutToggleButton = styled.button`
   }
 `;
 
+/* Сортування деки — першим у ряду фільтрів і тієї самої висоти, що й чіп.
+ * Рідний select, а не свій поповер: три варіанти, і на телефоні система
+ * сама покаже зручний список. */
+export const SortSelect = styled.select`
+  flex: 0 0 auto;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--matching-chip-border);
+  border-radius: 999px;
+  background: var(--matching-chip-bg);
+  color: var(--matching-chip-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
+  }
+`;
+
 /* ------------------------------------------------------------------ *
  * Matching feed (spec §5-§6)
  * ------------------------------------------------------------------ */

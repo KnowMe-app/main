@@ -1,3 +1,5 @@
+import { listPaymentBuckets } from './donorPrograms';
+import { getProgramRates } from './programCurrency';
 import { get, limitToFirst, orderByKey, query, ref } from 'firebase/database';
 import { collectAgeIdsByFilters, database } from 'components/config';
 import { getCard, getIndexIdsByQuery, MATCHING_INDEX_CACHE_VERSION, serializeQueryFilters, setIndexIdsForQuery } from './cardIndex';
@@ -1156,6 +1158,15 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
     if (isMatchingFilterGroupActive(activeFilters.country)) {
       const category = toCountryCategory(user);
       if (!activeFilters.country[category]) return false;
+    }
+
+    // Виплата — з програм картки й за курсом НБУ (`listPaymentBuckets`).
+    // Індексу під неї немає: програми лежать у самій картці стрічки, тож
+    // перевірка коштує нуль читань. Картка з програмами в кількох бакетах
+    // проходить, коли увімкнено хоч один із них.
+    if (isMatchingFilterGroupActive(activeFilters.payment)) {
+      const buckets = listPaymentBuckets(user, getProgramRates());
+      if (!buckets.some(bucket => activeFilters.payment[bucket])) return false;
     }
 
     return true;

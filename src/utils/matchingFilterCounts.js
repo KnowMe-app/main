@@ -6,6 +6,8 @@ import {
   toRhCategory,
   toRoleCategory,
 } from './matchingDataProvider';
+import { listPaymentBuckets } from './donorPrograms';
+import { getProgramRates } from './programCurrency';
 
 /**
  * Скільки карток підпадає під кожну опцію групи — серед уже завантажених.
@@ -33,6 +35,7 @@ const CATEGORIZERS = {
   age: toAgeCategory,
   bmi: toBmiCategory,
   country: toCountryCategory,
+  payment: listPaymentBuckets,
 };
 
 export const matchingFilterGroupHasCounts = filterName => Boolean(CATEGORIZERS[filterName]);
@@ -49,6 +52,14 @@ export const countMatchingFilterOptions = ({ filterName, users = [], roleIndexSe
   if (!categorize) return null;
 
   const counts = {};
+  // Виплата — єдина група, де картка буває в кількох опціях одразу: у
+  // агенції дві програми на різні суми. Тож і число додається кожній.
+  if (filterName === 'payment') {
+    (Array.isArray(users) ? users : []).forEach(user => {
+      listPaymentBuckets(user, getProgramRates()).forEach(bucket => { counts[bucket] = (counts[bucket] || 0) + 1; });
+    });
+    return counts;
+  }
   (Array.isArray(users) ? users : []).forEach(user => {
     const bucket = filterName === 'userRole' ? categorize(user, roleIndexSets) : categorize(user);
     const key = bucket === undefined || bucket === null || bucket === '' ? 'other' : String(bucket);

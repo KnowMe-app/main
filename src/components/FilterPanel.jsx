@@ -85,6 +85,15 @@ const defaultsMatching = {
     other: true,
   },
   country: { ua: true, other: true, unknown: true },
+  payment: {
+    ed_lt1500: true,
+    ed_1500: true,
+    ed_2000: true,
+    sm_lt18k: true,
+    sm_18k: true,
+    sm_20k: true,
+    none: true,
+  },
 };
 
 const normalizeFilterGroup = (value, defaults) => {
@@ -136,6 +145,7 @@ const FilterPanel = ({
   nonAdminAllActive = false,
   allowedFilterNames,
   roleOptionKeys,
+  paymentOptionKeys,
   viewerRole,
   bloodSearchKeyMode = false,
   reactionFilterOptions,
@@ -234,6 +244,7 @@ const FilterPanel = ({
       reactionFilterOptions={reactionFilterOptions}
       allowedFilterNames={allowedFilterNames}
       roleOptionKeys={roleOptionKeys}
+      paymentOptionKeys={paymentOptionKeys}
       optionCounts={optionCounts}
       bare={bare}
     />

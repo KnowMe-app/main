@@ -442,10 +442,24 @@ export const PAYMENT_FILTER_NONE = 'none';
  * 1 500 $», і «від 2 000 $». Без курсу валютна програма бакета не має — і не
  * вдає, що має.
  */
-export const listPaymentBuckets = (card, rates) => {
+let paymentFilterProgramTypes = null;
+
+/**
+ * Які типи програм рахує фільтр «Виплата». Донорці шухляда показує лише
+ * донорські бакети, а приховані лишаються в стані увімкненими — і агенція
+ * з самими програмами СМ проходила б крізь «від 2 000 $». Тож бакети картки
+ * рахуються лише з програм того типу, який цікавить читача. Тип кладе
+ * `Matching`, так само як курс (`setProgramRates`), бо фільтр стрічки читача
+ * не знає.
+ */
+export const setPaymentFilterProgramTypes = types => {
+  paymentFilterProgramTypes = Array.isArray(types) && types.length ? types : null;
+};
+
+export const listPaymentBuckets = (card, rates, types = paymentFilterProgramTypes) => {
   const { programs } = resolveCardPrograms(card);
   const buckets = new Set();
-  programs.forEach(program => {
+  programs.filter(program => !types || types.includes(program.type)).forEach(program => {
     const usd = programMoneyInUsd(program.payments.final, rates);
     if (!Number.isFinite(usd)) return;
     PAYMENT_FILTER_BUCKETS[program.type].forEach(bucket => {

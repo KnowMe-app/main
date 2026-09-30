@@ -99,6 +99,7 @@ import {
   GalleryPublishDot,
   GalleryTile,
   LayoutToggleButton,
+  SortSelect,
   DetailBar,
   DetailCloseButton,
   DetailInner,
@@ -277,10 +278,22 @@ import {
 import { profileUiText, translateProfileLabel } from 'utils/profileTexts';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
+import { useProgramDisplayCurrency, useProgramRates } from '../hooks/useProgramRates';
+import {
+  MATCHING_SORT_MODES,
+  extractViewerProgramFacts,
+  resolveViewerProgramType,
+  setPaymentFilterProgramTypes,
+  sortCardsByMode,
+} from '../utils/donorPrograms';
+import { computeBmi, normalizeHeightCm } from '../utils/profileNormalization';
+import { CardRoleBlock, isCounterpartyCard } from './programs/CardRoleBlock';
+import { listPaymentFilterKeysForViewer } from './SearchFilters';
 import {
   getHeroFields,
   getQuickFacts,
   getProfileAge,
+  parseBloodValue,
   getProfileBio,
   getProfileLocation,
   getProfileName,
@@ -1078,6 +1091,7 @@ const SwipeableCard = ({
   // людину, і подивитись, кого щойно вподобав, було вже ніде.
   onReacted,
   togglePublish,
+  programsContext,
   multiDataOwnerId,
   onNavigate,
   commentValue,
@@ -1330,6 +1344,9 @@ const SwipeableCard = ({
           <AdminToggle published={isMatchingCardPublished(user)} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
         )}
         <ModernProfileBody>
+          {/* Програми агенції чи клініки й «кого шукають» батьки — першими
+              під фото: саме заради них донорка й відкрила цю картку. */}
+          <CardRoleBlock card={user} programsContext={programsContext} language={language} />
           {usesSharedFacts && (bio || detailSections.length > 0) && (
             <ModernSection>
               <ProfileAboutSection text={bio} language={language} accent={roleAccent} large />
@@ -1506,6 +1523,25 @@ const FEED_PHOTO_HYDRATION_LIMIT = 24;
 // A stable identity so a row without public comments doesn't re-render on it.
 const EMPTY_PUBLIC_COMMENTS = [];
 const EMPTY_USERS = [];
+
+// Як читати анкету читача для вимог програм — тими самими функціями, якими
+// її показує картка, щоб «вам підходить» не розходилось із тим, що видно.
+const PROGRAM_FACT_HELPERS = {
+  age: getProfileAge,
+  height: normalizeHeightCm,
+  bmi: computeBmi,
+  rh: value => parseBloodValue(value).rh,
+};
+
+const MATCHING_SORT_STORAGE_KEY = 'matchingSortMode';
+const readStoredSortMode = () => {
+  try {
+    const stored = window.localStorage.getItem(MATCHING_SORT_STORAGE_KEY);
+    return MATCHING_SORT_MODES.some(mode => mode.key === stored) ? stored : 'relevance';
+  } catch {
+    return 'relevance';
+  }
+};
 const EMPTY_MATCHING_FILTERS = Object.freeze({});
 // Скільки чіпів фільтрів ряд показує згорнутим. Решта — за «+N», яке розгортає
 // ряд на місці; ряд не скролиться вбік, він переноситься.
@@ -1637,12 +1673,15 @@ const GalleryCard = React.memo(({
   reviewsAction,
   diagnosticsSlot,
   onRequestPhotos,
+  programsContext,
 }) => {
   const { language } = useAppSettings();
   const name = getProfileName(user);
   const age = getProfileAge(user);
   const photos = getProfilePhotos(user);
   const isLimitedTile = Boolean(user?.__limitedProfile);
+  // Агенцію й батьків описують програми й «кого шукають», а не зріст і вага.
+  const isCounterparty = isCounterpartyCard(user);
   const requestPhotos = React.useCallback(() => {
     if (onRequestPhotos) onRequestPhotos(user);
   }, [onRequestPhotos, user]);
@@ -1657,7 +1696,7 @@ const GalleryCard = React.memo(({
   const role = getProfileRole(user);
   const roleCode = getRoleCode(role);
   const location = getLocationLine(user, language);
-  const facts = useMemo(() => renderProfileFacts(user, [], language), [language, user]);
+  const facts = useMemo(() => (isCounterparty ? [] : renderProfileFacts(user, [], language)), [isCounterparty, language, user]);
   const [bodyFacts, reproFacts] = useMemo(() => splitProfileFactsByGroup(facts), [facts]);
   const isLimited = Boolean(user?.__limitedProfile);
   const isPublished = isMatchingCardPublished(user);
@@ -1740,6 +1779,7 @@ const GalleryCard = React.memo(({
             ))}
           </GalleryFacts>
         )}
+        {!isLimited ? <CardRoleBlock card={user} programsContext={programsContext} language={language} /> : null}
         {!isLimited && (
           <GalleryActions>
             {onEnrich && (
@@ -1822,6 +1862,7 @@ const GalleryCard = React.memo(({
   && prev.onEnrich === next.onEnrich
   && prev.onToggleHidden === next.onToggleHidden
   && prev.onTogglePublish === next.onTogglePublish
+  && prev.programsContext === next.programsContext
   && prev.onRequestPhotos === next.onRequestPhotos
 ));
 
@@ -2062,6 +2103,10 @@ const Matching = () => {
   // authenticated profile also owns the shared reaction scope that must be
   // snapshotted by the initial request.
   const [currentUserRoleResolved, setCurrentUserRoleResolved] = useState(false);
+  // Анкета читача в тому обсязі, який потрібен вимогам програм (вік, ІМТ,
+  // резус, пологи, КР, сімейний стан). Читається з тієї самої анкети, що й
+  // роль, на вході — окремого запиту не коштує.
+  const [viewerProgramFacts, setViewerProgramFacts] = useState(null);
   // Роль читача потрібна не лише деці, а й дочитуванню сторінок: інакше запас
   // рахувався б по картках, які до екрана не доходять (`fetchChunk`).
   const currentUserRoleRef = useRef(currentUserRole);
@@ -2164,6 +2209,35 @@ const Matching = () => {
    * все й пускати звужувати чим завгодно.
    */
   const donorRestrictionViewerRole = isAdmin ? '' : currentUserRole;
+
+  // Програми агенцій і клінік: кому вони адресовані, курс НБУ й валюта, у
+  // якій читач хоче бачити суми. Контекст один на всю стрічку й міняється
+  // лише тоді, коли міняється щось із цього — рядки мемоізовані по ньому.
+  const viewerProgramType = isAdmin ? '' : resolveViewerProgramType(currentUserRole);
+  const programRates = useProgramRates(true);
+  const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
+  const openProgramsRef = useRef(null);
+  const handleOpenPrograms = React.useCallback(card => { openProgramsRef.current?.(card); }, []);
+  const programsContext = useMemo(() => ({
+    viewerType: viewerProgramType,
+    facts: viewerProgramFacts,
+    rates: programRates,
+    displayCurrency: programDisplayCurrency,
+    onDisplayCurrencyChange: setProgramDisplayCurrency,
+    onOpenPrograms: handleOpenPrograms,
+  }), [handleOpenPrograms, programDisplayCurrency, programRates, setProgramDisplayCurrency, viewerProgramFacts, viewerProgramType]);
+  useEffect(() => {
+    setPaymentFilterProgramTypes(viewerProgramType ? [viewerProgramType] : null);
+  }, [viewerProgramType]);
+
+  // Сортування деки. За замовчуванням — релевантність: картка з програмою,
+  // яка читачеві підходить, вище; для читача, якому програми не адресовані,
+  // порядок стрічки не змінюється зовсім (`sortCardsByMode`).
+  const [sortMode, setSortMode] = useState(readStoredSortMode);
+  const changeSortMode = React.useCallback(mode => {
+    setSortMode(mode);
+    try { window.localStorage.setItem(MATCHING_SORT_STORAGE_KEY, mode); } catch { /* приватне вікно */ }
+  }, []);
   const donorRestrictionViewerRoleRef = useRef(donorRestrictionViewerRole);
   donorRestrictionViewerRoleRef.current = donorRestrictionViewerRole;
   const canUseMatchingFilters = !isDonorViewer(donorRestrictionViewerRole);
@@ -3216,6 +3290,7 @@ const Matching = () => {
             // Install both before resolving it, while leaving the unrelated
             // search-key discovery and additional-access refresh asynchronous.
             setMultiDataOwnerIds(resolvedOwnerIds);
+            setViewerProgramFacts(extractViewerProgramFacts(profile, PROGRAM_FACT_HELPERS));
             setCurrentUserRole(prev => (viewerRoleSignature(prev) === viewerRoleSignature(userRole) ? prev : userRole));
             localStorage.setItem('userRole', userRole);
             setCurrentUserRoleResolved(true);
@@ -6223,7 +6298,20 @@ const Matching = () => {
   // Spec §1: whatever the reader is looking at, the list, the gallery and the
   // detail layer all index into this one array - so opening row N and paging
   // from it can never disagree about which card is which.
-  const feedSourceWithoutOwnEdits = filteredUsers;
+  //
+  // Сортування стоїть тут, а не у фільтрі: деку мусять однаково бачити і
+  // список, і галерея, і шар деталей, інакше «відкрити N-ту» відкривало б
+  // іншу картку. У колекціях і пошуку порядок свій, його не чіпаємо.
+  const feedSourceWithoutOwnEdits = useMemo(
+    () => (viewMode === 'default'
+      ? sortCardsByMode(filteredUsers, sortMode, {
+        viewerType: viewerProgramType,
+        facts: viewerProgramFacts,
+        rates: programRates,
+      })
+      : filteredUsers),
+    [filteredUsers, programRates, sortMode, viewMode, viewerProgramFacts, viewerProgramType],
+  );
 
   /**
    * Картка показується разом із тим, що читач сам у неї дописав.
@@ -6889,6 +6977,9 @@ const Matching = () => {
         console.error('[Matching] Failed to hydrate full profile', { userId, error });
       });
   }, []);
+  // Розгорнутий список програм — теж дотик до картки: стислі програми
+  // рядка не несуть доплат і покриття, тож повна анкета дочитується тут.
+  openProgramsRef.current = ensureFullProfile;
 
   const withLazyPhotos = React.useCallback(user => {
     if (!user?.userId) return user;
@@ -7685,14 +7776,21 @@ const Matching = () => {
     () => listFeedRoleFilterKeysForViewer(donorRestrictionViewerRole),
     [donorRestrictionViewerRole],
   );
+  // «Виплата» — для тих, кому програми адресовані: донорці донорські межі,
+  // СМ — свої, адмінові всі. Агенції стрічка показує донорок, у яких програм
+  // немає, і чіп там нічого не звужував би.
+  const paymentOptionKeys = useMemo(() => {
+    if (isAdmin) return listPaymentFilterKeysForViewer('');
+    return viewerProgramType ? listPaymentFilterKeysForViewer(viewerProgramType) : [];
+  }, [isAdmin, viewerProgramType]);
   // Рейка будує свої чіпи сама; тут вони потрібні рівно заради одного
   // питання — чи не порожня якась група: саме вона є причиною порожнього
   // екрана, і порожній екран мусить називати її словом.
   const filterChips = useMemo(
     () => canUseMatchingFilters
-      ? buildMatchingFilterChips(filters, language, { roleOptionKeys })
+      ? buildMatchingFilterChips(filters, language, { roleOptionKeys, paymentOptionKeys })
       : [],
-    [canUseMatchingFilters, filters, language, roleOptionKeys],
+    [canUseMatchingFilters, filters, language, paymentOptionKeys, roleOptionKeys],
   );
   const emptyFilterGroup = filterChips.find(chip => chip.danger) || null;
 
@@ -8666,6 +8764,19 @@ const Matching = () => {
               filters={filters}
               language={language}
               roleOptionKeys={roleOptionKeys}
+              paymentOptionKeys={paymentOptionKeys}
+              leading={viewMode === 'default' && (viewerProgramType || isAdmin) ? (
+                <SortSelect
+                  aria-label={uiText('Сортування', language)}
+                  title={uiText('Сортування', language)}
+                  value={sortMode}
+                  onChange={event => changeSortMode(event.target.value)}
+                >
+                  {MATCHING_SORT_MODES.map(mode => (
+                    <option key={mode.key} value={mode.key}>{uiText(mode.label, language)}</option>
+                  ))}
+                </SortSelect>
+              ) : null}
               openGroup={openFilterGroup}
               onOpenGroup={handleOpenFilterGroup}
               onResetGroup={resetFilterGroup}
@@ -8685,6 +8796,7 @@ const Matching = () => {
                 groupResetName={filterGroupReset.name}
                 nonAdminAllActive={!isAdmin}
                 roleOptionKeys={roleOptionKeys}
+                paymentOptionKeys={paymentOptionKeys}
                 viewerRole={donorRestrictionViewerRole}
                 // Закрита рейка все одно тримає панель змонтованою — вона й є
                 // сховищем фільтрів, тож зняти її з дерева означало б губити
@@ -8795,6 +8907,7 @@ const Matching = () => {
                             reviewsAction={buildRowReviewsAction(user.userId)}
                             diagnosticsSlot={renderDiagnosticsFor(user)}
                             onRequestPhotos={requestCardPhotos}
+                            programsContext={programsContext}
                           />
                         ))}
                     </GalleryColumn>
@@ -8825,6 +8938,7 @@ const Matching = () => {
                       onSwipeRight={toggleRowFavorite}
                       onSwipeLeft={toggleRowHidden}
                       onRequestPhotos={requestCardPhotos}
+                      programsContext={programsContext}
                       diagnosticsSlot={renderDiagnosticsFor(user)}
                       onEnrich={isAdmin ? undefined : handleRowEnrichProfile}
                       clientComment={comments[user.userId] || ''}
@@ -8972,6 +9086,7 @@ const Matching = () => {
                       setOwnDislikeUsers={setOwnDislikeUsers}
                       onReacted={rememberReactedCard}
                       togglePublish={togglePublish}
+                      programsContext={programsContext}
                       multiDataOwnerId={ownerId}
                       onNavigate={navigateActiveProfile}
                       commentValue={comments[user.userId] || ''}
