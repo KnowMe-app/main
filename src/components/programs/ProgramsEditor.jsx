@@ -6,14 +6,18 @@ import {
   PROGRAM_CSECTION_OPTIONS,
   PROGRAM_KIDS_OPTIONS,
   PROGRAM_MARITAL_OPTIONS,
-  PROGRAM_PAYMENT_FIELDS,
   PROGRAM_RH_OPTIONS,
+  PROGRAM_TOTAL_FIELD,
   PROGRAM_TYPES,
   PROGRAM_TYPE_LABELS,
   createEmptyProgram,
+  listBonusPaymentFields,
+  listGuaranteedPaymentFields,
   listPrograms,
   normalizeProgram,
+  programHeadlinePay,
   programsToRecord,
+  sumGuaranteedPayments,
 } from '../../utils/donorPrograms';
 import { DEFAULT_PROGRAM_CURRENCY, formatProgramMoney } from '../../utils/programCurrency';
 import { uiText } from '../../utils/uiTranslations';
@@ -26,13 +30,19 @@ import { ProgramCard } from './ProgramsView';
  * Програм буває кілька — Україна й Грузія, різний вік, різні доплати, — і
  * кожна тут окрема картка. Згорнута вона каже одним рядком, що це за програма
  * й скільки платить; розгорнута — питає поля групами в тому порядку, у якому
- * їх читає донорка: кого шукаєте, де, вимоги, виплати, що покриваєте.
- * Під формою — та сама картка, яку побачить донорка (`ProgramCard`).
+ * їх читає донорка: кого шукаєте, де, вимоги, виплати, можливі доплати, що
+ * покриваєте. Під формою — та сама картка, яку побачить донорка
+ * (`ProgramCard`).
  *
- * Зберігається все саме, без кнопки: зміна лягає в анкету за мить після
+ * Зберігається все саме, без кнопки: зміна лягає в базу за мить після
  * останнього дотику (`SAVE_DELAY_MS`) і ще раз — коли редактор закривають.
  * «Копія» — найшвидший спосіб завести другу програму: здебільшого вони
- * відрізняються віком і сумою, а не всім.
+ * відрізняються віком і сумою, а не всім. Стрілки ставлять найцікавішу
+ * програму першою, а «Сховати» знімає неактуальну з показу, не стираючи.
+ *
+ * Назви інших доплат підказує словник (`suggestions`): те, що вже написали
+ * інші агенції (`multiData/programTerms`). Одне й те саме «за вагітність з
+ * першого разу» інакше мало б стільки написань, скільки агенцій.
  */
 
 const SAVE_DELAY_MS = 700;
@@ -44,29 +54,41 @@ const Wrap = styled.div`
   padding: 14px 0;
 `;
 
-const Intro = styled.p`
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--km-muted, #6f675f);
-  line-height: 1.5;
-`;
-
 const ProgramBox = styled.div`
-  border: 1px solid var(--km-border, #e7e1d8);
+  border: 1px ${({ $hidden }) => ($hidden ? 'dashed' : 'solid')} var(--km-border, #e7e1d8);
   border-radius: 14px;
   overflow: hidden;
 `;
 
+const HiddenMark = styled.em`
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--km-muted, #6f675f);
+`;
+
+const Hint = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--km-muted, #6f675f);
+`;
+
 const ProgramHead = styled.div`
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   padding: 10px 12px;
   background: var(--km-bg, #faf8f5);
 `;
 
 const HeadText = styled.button`
-  flex: 1 1 auto;
+  /* Кнопок у шапці пʼять (вище, нижче, сховати, копія, видалити); на
+     вузькому екрані вони переносяться під назву, а не стискають її. */
+  flex: 1 1 180px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -230,7 +252,7 @@ const Choice = ({ options, value, onChange, language }) => (
 );
 
 const summaryLine = (program, language) => {
-  const pay = program.payments?.final;
+  const pay = programHeadlinePay(program);
   const amount = Number(pay?.amount);
   return [
     program.title,
@@ -239,14 +261,63 @@ const summaryLine = (program, language) => {
   ].filter(Boolean).join(' · ');
 };
 
-const ProgramForm = ({ program, onChange, language, rates }) => {
+const LabeledPayments = ({ items, onChange, listId, suggestions, placeholder, addLabel, removeLabel, currency, language, rates }) => {
+  const setItem = (index, patch) => onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  return (
+    <>
+      {suggestions.length ? (
+        <datalist id={listId}>
+          {suggestions.map(label => <option key={label} value={label} />)}
+        </datalist>
+      ) : null}
+      {items.map((item, index) => (
+        <OtherRow key={`${listId}-${index}`}>
+          <TextInput
+            value={item.label || ''}
+            list={suggestions.length ? listId : undefined}
+            placeholder={uiText(placeholder, language)}
+            aria-label={uiText(placeholder, language)}
+            onChange={event => setItem(index, { label: event.target.value })}
+          />
+          <MoneyInput language={language} rates={rates} value={item} onChange={money => setItem(index, money)} />
+          <SmallButton type="button" $danger aria-label={uiText(removeLabel, language)} onClick={() => onChange(items.filter((_, i) => i !== index))}>✕</SmallButton>
+        </OtherRow>
+      ))}
+      <SmallButton type="button" onClick={() => onChange([...items, { label: '', amount: '', currency }])}>
+        + {uiText(addLabel, language)}
+      </SmallButton>
+    </>
+  );
+};
+
+const uniqueLabels = labels => {
+  const seen = new Set();
+  return labels.filter(label => {
+    const key = String(label || '').trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
   const set = patch => onChange({ ...program, ...patch });
   const setReq = patch => onChange({ ...program, requirements: { ...program.requirements, ...patch } });
   const setPay = (key, money) => onChange({ ...program, payments: { ...program.payments, [key]: money } });
-  const others = program.otherPayments || [];
-  const setOther = (index, patch) => set({ otherPayments: others.map((item, i) => (i === index ? { ...item, ...patch } : item)) });
   const idPrefix = `program-${program.id}`;
   const normalized = normalizeProgram(program, program.id);
+  const currency = program.payments?.final?.currency || DEFAULT_PROGRAM_CURRENCY;
+  const sum = normalized ? sumGuaranteedPayments(normalized) : null;
+  const total = normalized?.payments?.[PROGRAM_TOTAL_FIELD];
+  const showSumHint = sum && sum.amount > 0 && !(total && total.amount === sum.amount && total.currency === sum.currency);
+  // Підказки — словник інших агенцій і власні назви інших програм, без
+  // повторів: людина, що завела «Бонус за ранній перенос» в одній програмі,
+  // не набирає його вдруге в копії.
+  const paymentSuggestions = uniqueLabels([...(suggestions?.payment || [])]);
+  const bonusSuggestions = uniqueLabels([
+    ...(suggestions?.bonus || []),
+    ...listBonusPaymentFields(program.type === 'ed' ? 'sm' : 'ed').map(field => field.label),
+  ]);
 
   return (
     <Body>
@@ -270,6 +341,10 @@ const ProgramForm = ({ program, onChange, language, rates }) => {
           {uiText('Де проходить', language)}
           <TextInput value={program.location || ''} placeholder={uiText('Наприклад: Київ; пологи в Грузії', language)} onChange={event => set({ location: event.target.value })} />
         </SmallLabel>
+        <SmallLabel>
+          {uiText('Примітка', language)}
+          <TextArea value={program.note || ''} placeholder={uiText('Що ще важливо знати', language)} onChange={event => set({ note: event.target.value })} />
+        </SmallLabel>
       </Group>
 
       <Group>
@@ -289,22 +364,56 @@ const ProgramForm = ({ program, onChange, language, rates }) => {
 
       <Group>
         <legend>{uiText('Виплати', language)}</legend>
-        {PROGRAM_PAYMENT_FIELDS[program.type].map(({ key, label }) => (
+        {listGuaranteedPaymentFields(program.type).map(({ key, label }) => (
           <SmallLabel key={key} as="div">
             {uiText(label, language)}
             <MoneyInput id={`${idPrefix}-${key}`} language={language} rates={rates} value={program.payments?.[key]} onChange={money => setPay(key, money)} />
           </SmallLabel>
         ))}
-        {others.map((item, index) => (
-          <OtherRow key={`other-${index}`}>
-            <TextInput value={item.label || ''} placeholder={uiText('За що', language)} aria-label={uiText('За що', language)} onChange={event => setOther(index, { label: event.target.value })} />
-            <MoneyInput language={language} rates={rates} value={item} onChange={money => setOther(index, money)} />
-            <SmallButton type="button" $danger aria-label={uiText('Прибрати доплату', language)} onClick={() => set({ otherPayments: others.filter((_, i) => i !== index) })}>✕</SmallButton>
-          </OtherRow>
+        <LabeledPayments
+          items={program.otherPayments || []}
+          onChange={otherPayments => set({ otherPayments })}
+          listId={`${idPrefix}-payment-terms`}
+          suggestions={paymentSuggestions}
+          placeholder="За що"
+          addLabel="Інша виплата"
+          removeLabel="Прибрати виплату"
+          currency={currency}
+          language={language}
+          rates={rates}
+        />
+        <SmallLabel as="div">
+          {uiText('Загальна сума за програму', language)}
+          <MoneyInput id={`${idPrefix}-${PROGRAM_TOTAL_FIELD}`} language={language} rates={rates} value={program.payments?.[PROGRAM_TOTAL_FIELD]} onChange={money => setPay(PROGRAM_TOTAL_FIELD, money)} />
+        </SmallLabel>
+        {showSumHint ? (
+          <Hint>
+            <span>{uiText('Разом виплат вище: {sum}', language, { sum: formatProgramMoney(sum.amount, sum.currency) })}</span>
+            <SmallButton type="button" onClick={() => setPay(PROGRAM_TOTAL_FIELD, { amount: sum.amount, currency: sum.currency })}>{uiText('Підставити', language)}</SmallButton>
+          </Hint>
+        ) : null}
+      </Group>
+
+      <Group>
+        <legend>{uiText('Можливі доплати', language)}</legend>
+        {listBonusPaymentFields(program.type).map(({ key, label }) => (
+          <SmallLabel key={key} as="div">
+            {uiText(label, language)}
+            <MoneyInput id={`${idPrefix}-${key}`} language={language} rates={rates} value={program.payments?.[key]} onChange={money => setPay(key, money)} />
+          </SmallLabel>
         ))}
-        <SmallButton type="button" onClick={() => set({ otherPayments: [...others, { label: '', amount: '', currency: program.payments?.final?.currency || DEFAULT_PROGRAM_CURRENCY }] })}>
-          + {uiText('Інша доплата', language)}
-        </SmallButton>
+        <LabeledPayments
+          items={program.bonuses || []}
+          onChange={bonuses => set({ bonuses })}
+          listId={`${idPrefix}-bonus-terms`}
+          suggestions={bonusSuggestions}
+          placeholder="За що"
+          addLabel="Інша доплата"
+          removeLabel="Прибрати доплату"
+          currency={currency}
+          language={language}
+          rates={rates}
+        />
       </Group>
 
       <Group>
@@ -327,18 +436,6 @@ const ProgramForm = ({ program, onChange, language, rates }) => {
         </Segments>
       </Group>
 
-      <Group>
-        <legend>{uiText('Ще', language)}</legend>
-        <SmallLabel>
-          {uiText('Тривалість і візити', language)}
-          <TextInput value={program.duration || ''} placeholder={uiText('Наприклад: 3–4 тижні, 5 візитів', language)} onChange={event => set({ duration: event.target.value })} />
-        </SmallLabel>
-        <SmallLabel>
-          {uiText('Примітка', language)}
-          <TextArea value={program.note || ''} placeholder={uiText('Що ще важливо знати', language)} onChange={event => set({ note: event.target.value })} />
-        </SmallLabel>
-      </Group>
-
       {normalized ? (
         <>
           <PreviewLabel>{uiText('Так програму побачать у стрічці', language)}</PreviewLabel>
@@ -356,8 +453,10 @@ const nextProgramId = existing => {
   return id;
 };
 
-export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType = 'ed' }) => {
-  const [draft, setDraft] = useState(() => listPrograms(programs).map(program => ({ ...program })));
+const listEditablePrograms = programs => listPrograms(programs, { includeHidden: true }).map(program => ({ ...program }));
+
+export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType = 'ed', suggestions = null }) => {
+  const [draft, setDraft] = useState(() => listEditablePrograms(programs));
   const [openId, setOpenId] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState('');
   const timerRef = useRef(null);
@@ -375,7 +474,7 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
   useEffect(() => {
     if (incoming === lastSavedRef.current || dirtyRef.current) return;
     lastSavedRef.current = incoming;
-    const next = listPrograms(programs).map(program => ({ ...program }));
+    const next = listEditablePrograms(programs);
     draftRef.current = next;
     setDraft(next);
   }, [incoming]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -407,25 +506,43 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
   };
 
   const duplicate = program => {
-    const copy = { ...program, id: nextProgramId(draft), title: program.title ? `${program.title} (${uiText('копія', language)})` : '' };
+    const copy = { ...program, id: nextProgramId(draft), hidden: false, title: program.title ? `${program.title} (${uiText('копія', language)})` : '' };
     update([...draft, copy]);
     setOpenId(copy.id);
   };
 
+  // Порядок — це порядок у записі (`programsToRecord` ставить `order` за
+  // позицією), тож пересунути програму означає переставити її в масиві.
+  const move = (index, delta) => {
+    const target = index + delta;
+    if (target < 0 || target >= draft.length) return;
+    const next = [...draft];
+    [next[index], next[target]] = [next[target], next[index]];
+    update(next);
+  };
+
+  const toggleHidden = program => update(draft.map(item => (item.id === program.id ? { ...item, hidden: !item.hidden } : item)));
+
   return (
     <Wrap>
-      <Intro>
-        {uiText('Кожна програма — окремо: зі своїми вимогами й виплатами. Суми вводьте у валюті, у якій платите, — донорки побачать і еквівалент за курсом НБУ.', language)}
-      </Intro>
-      {draft.map(program => {
+      {draft.map((program, index) => {
         const open = openId === program.id;
         return (
-          <ProgramBox key={program.id} data-testid="program-editor">
-            <ProgramHead>
+          <ProgramBox key={program.id} data-testid="program-editor" $hidden={program.hidden}>
+            <ProgramHead style={program.hidden ? { opacity: 0.72 } : undefined}>
               <HeadText type="button" aria-expanded={open} onClick={() => { flush(); setOpenId(open ? '' : program.id); }}>
-                <b>{uiText(PROGRAM_TYPE_LABELS[program.type], language)}</b>
+                <b>
+                  {uiText(PROGRAM_TYPE_LABELS[program.type], language)}
+                  {program.hidden ? <> <HiddenMark>· {uiText('прихована', language)}</HiddenMark></> : null}
+                </b>
                 <span>{summaryLine(program, language)}</span>
               </HeadText>
+              {draft.length > 1 ? (
+                <>
+                  <SmallButton type="button" aria-label={uiText('Вище', language)} title={uiText('Вище', language)} disabled={index === 0} onClick={() => move(index, -1)}>↑</SmallButton>
+                  <SmallButton type="button" aria-label={uiText('Нижче', language)} title={uiText('Нижче', language)} disabled={index === draft.length - 1} onClick={() => move(index, 1)}>↓</SmallButton>
+                </>
+              ) : null}
               {confirmDeleteId === program.id ? (
                 <>
                   <SmallButton type="button" $danger onClick={() => { update(draft.filter(item => item.id !== program.id)); setConfirmDeleteId(''); }}>{uiText('Видалити', language)}</SmallButton>
@@ -433,6 +550,9 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
                 </>
               ) : (
                 <>
+                  <SmallButton type="button" aria-pressed={Boolean(program.hidden)} onClick={() => toggleHidden(program)}>
+                    {uiText(program.hidden ? 'Показати' : 'Сховати', language)}
+                  </SmallButton>
                   <SmallButton type="button" onClick={() => duplicate(program)} disabled={draft.length >= MAX_PROGRAMS}>{uiText('Копія', language)}</SmallButton>
                   <SmallButton type="button" $danger aria-label={uiText('Видалити програму', language)} onClick={() => setConfirmDeleteId(program.id)}>✕</SmallButton>
                 </>
@@ -443,6 +563,7 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
                 program={program}
                 language={language}
                 rates={rates}
+                suggestions={suggestions}
                 onChange={next => update(draft.map(item => (item.id === program.id ? next : item)))}
               />
             ) : null}

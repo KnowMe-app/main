@@ -288,6 +288,9 @@ import {
 } from '../utils/donorPrograms';
 import { computeBmi, normalizeHeightCm } from '../utils/profileNormalization';
 import { CardRoleBlock, isCounterpartyCard } from './programs/CardRoleBlock';
+// Реєструє читача програм для сховища (`utils/programsStore`).
+import './programs/programsRemote';
+import { ensureProgramsForCards, useProgramsVersion } from '../utils/programsStore';
 import { listPaymentFilterKeysForViewer } from './SearchFilters';
 import {
   getHeroFields,
@@ -351,6 +354,7 @@ import {
 } from 'utils/reactionPriority';
 import {
   applyMatchingUiFiltersToUsers,
+  isMatchingFilterGroupActive,
   buildMatchingIndexFilterGroups,
   compareUsersByLastLogin2,
   fetchFilteredMatchingSourceChunk,
@@ -2216,16 +2220,16 @@ const Matching = () => {
   const viewerProgramType = isAdmin ? '' : resolveViewerProgramType(currentUserRole);
   const programRates = useProgramRates(true);
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
-  const openProgramsRef = useRef(null);
-  const handleOpenPrograms = React.useCallback(card => { openProgramsRef.current?.(card); }, []);
+  // Програми карток приїжджають окремо від карток (`utils/programsStore`) —
+  // сортування за релевантністю й виплатою перераховується, коли приїхали.
+  const programsVersion = useProgramsVersion();
   const programsContext = useMemo(() => ({
     viewerType: viewerProgramType,
     facts: viewerProgramFacts,
     rates: programRates,
     displayCurrency: programDisplayCurrency,
     onDisplayCurrencyChange: setProgramDisplayCurrency,
-    onOpenPrograms: handleOpenPrograms,
-  }), [handleOpenPrograms, programDisplayCurrency, programRates, setProgramDisplayCurrency, viewerProgramFacts, viewerProgramType]);
+  }), [programDisplayCurrency, programRates, setProgramDisplayCurrency, viewerProgramFacts, viewerProgramType]);
   useEffect(() => {
     setPaymentFilterProgramTypes(viewerProgramType ? [viewerProgramType] : null);
   }, [viewerProgramType]);
@@ -6203,6 +6207,14 @@ const Matching = () => {
     setSearchHasMore(viewMode === 'search' && searchRevealCount < total);
   }, [searchRefinedUsers, searchRevealCount, viewMode]);
 
+  // Фільтр «Виплата» читає програми, які приїжджають окремо від карток:
+  // картки з кеша сторінки дочитують їх тут, а фільтр перераховується, коли
+  // вони приїхали. Без увімкненого фільтра версія сховища деку не чіпає.
+  const paymentFilterActive = isMatchingFilterGroupActive(matchingUiFilters?.payment);
+  const paymentFilterProgramsVersion = paymentFilterActive ? programsVersion : 0;
+  useEffect(() => {
+    if (paymentFilterActive && viewMode === 'default') ensureProgramsForCards(visibleUsers);
+  }, [paymentFilterActive, viewMode, visibleUsers]);
   const filteredUsers = useMemo(() => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers;
     // Пошук — не стрічка, і фільтри його не звужують. Чіпи описують, кого
@@ -6226,12 +6238,15 @@ const Matching = () => {
       keepReactedUserIds: stickyReactedUserIds,
       roleIndexSets,
       viewMode,
+      // Лише щоб перерахувати фільтр «Виплата», коли програми приїхали.
+      programsVersion: paymentFilterProgramsVersion,
     });
   }, [
     canUseMatchingFilters,
     dislikeUsers,
     favoriteUsers,
     matchingUiFilters,
+    paymentFilterProgramsVersion,
     reactionTabUsers,
     roleIndexSets,
     searchRefinedUsers,
@@ -6308,9 +6323,10 @@ const Matching = () => {
         viewerType: viewerProgramType,
         facts: viewerProgramFacts,
         rates: programRates,
+        programsVersion,
       })
       : filteredUsers),
-    [filteredUsers, programRates, sortMode, viewMode, viewerProgramFacts, viewerProgramType],
+    [filteredUsers, programRates, programsVersion, sortMode, viewMode, viewerProgramFacts, viewerProgramType],
   );
 
   /**
@@ -6977,9 +6993,6 @@ const Matching = () => {
         console.error('[Matching] Failed to hydrate full profile', { userId, error });
       });
   }, []);
-  // Розгорнутий список програм — теж дотик до картки: стислі програми
-  // рядка не несуть доплат і покриття, тож повна анкета дочитується тут.
-  openProgramsRef.current = ensureFullProfile;
 
   const withLazyPhotos = React.useCallback(user => {
     if (!user?.userId) return user;

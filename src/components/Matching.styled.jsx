@@ -62,6 +62,16 @@ const matchingThemeVars = css`
   transition: background 280ms cubic-bezier(0.4, 0, 0.2, 1), color 280ms cubic-bezier(0.4, 0, 0.2, 1);
 `;
 
+/**
+ * Палітра стрічки поза стрічкою — для прев'ю картки в «Моєму профілі»:
+ * картка малюється тими самими компонентами, що й у стрічці, і її кольори
+ * (`--matching-*`) мусять бути оголошені там, де вона стоїть.
+ */
+export const MatchingThemeScope = styled.div`
+  ${matchingThemeVars}
+  color: var(--matching-header-text);
+`;
+
 export const ROLE_COLORS = {
   ed: { accent: '#c2185b', light: 'rgba(194,24,91,0.07)', border: 'rgba(194,24,91,0.22)', text: '#9c1057', tag: 'rgba(252,228,236,0.9)' },
   ag: { accent: '#1565c0', light: 'rgba(21,101,192,0.07)', border: 'rgba(21,101,192,0.22)', text: '#0d47a1', tag: 'rgba(227,242,253,0.9)' },

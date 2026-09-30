@@ -3,7 +3,7 @@ import '@testing-library/jest-dom';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { ProgramsSummary } from './ProgramsView';
 import { CardRoleBlock, isCounterpartyCard } from './CardRoleBlock';
-import { buildProgramsBrief } from '../../utils/donorPrograms';
+import { PROGRAMS_CACHE_PREFIX, resetProgramsStoreForTests, setProgramsTransport } from '../../utils/programsStore';
 import { applyUkrainianInterface } from '../../testUtils/interfaceLanguage';
 
 applyUkrainianInterface();
@@ -28,19 +28,29 @@ describe('програми в рядку стрічки', () => {
     expect(summary).toHaveTextContent('ще 1 — для сурогатних мам');
   });
 
-  it('дотик розгортає програми з позначкою збігу й дочитує анкету', () => {
-    const onOpen = jest.fn();
-    render(<ProgramsSummary card={{ programs }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" onOpen={onOpen} />);
+  it('дотик розгортає програми з позначкою збігу', () => {
+    render(<ProgramsSummary card={{ programs }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     fireEvent.click(screen.getByTestId('programs-summary'));
     const cards = screen.getAllByTestId('program-card');
     expect(cards).toHaveLength(2);
     expect(within(cards[0]).getByText('Вам підходить')).toBeInTheDocument();
     expect(within(cards[1]).getByText('Не підходить')).toBeInTheDocument();
-    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('прихованої програми не видно, а можливі доплати стоять окремим блоком', () => {
+    const withBonus = {
+      p1: { ...programs.p1, bonuses: [{ label: 'Вагітність з першої спроби', amount: 500, currency: 'USD' }] },
+      p2: { ...programs.p2, hidden: true },
+    };
+    render(<ProgramsSummary card={{ programs: withBonus }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
+    expect(screen.getByTestId('programs-summary')).toHaveTextContent('Вам підходить 1 з 1 програми');
+    fireEvent.click(screen.getByTestId('programs-summary'));
+    expect(screen.getByText('Можливі доплати')).toBeInTheDocument();
+    expect(screen.getByText('Вагітність з першої спроби')).toBeInTheDocument();
   });
 
   it('у валюті читача діапазон — еквівалент із «≈»', () => {
-    render(<ProgramsSummary card={{ programsBrief: buildProgramsBrief(programs) }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="EUR" onDisplayCurrencyChange={jest.fn()} language="uk" />);
+    render(<ProgramsSummary card={{ programs }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="EUR" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     expect(screen.getByTestId('programs-summary')).toHaveTextContent('≈');
   });
 
@@ -51,12 +61,46 @@ describe('програми в рядку стрічки', () => {
 });
 
 describe('картка агенції й батьків', () => {
-  it('агенцію описують послуги, а не зріст', () => {
-    const card = { role: 'ag', services: 'ed,legal' };
-    expect(isCounterpartyCard(card)).toBe(true);
-    render(<CardRoleBlock card={card} language="uk" />);
-    expect(screen.getByText('Донорство ооцитів')).toBeInTheDocument();
-    expect(screen.getByText('Юридичний супровід')).toBeInTheDocument();
+  const context = { viewerType: 'ed', facts: donorFacts, rates, displayCurrency: 'USD', onDisplayCurrencyChange: jest.fn() };
+
+  beforeEach(() => {
+    resetProgramsStoreForTests();
+    window.localStorage.clear();
+  });
+
+  afterEach(() => setProgramsTransport(null));
+
+  it('програми картки бере спершу з браузера — без запиту', () => {
+    const read = jest.fn();
+    setProgramsTransport({ read });
+    window.localStorage.setItem(`${PROGRAMS_CACHE_PREFIX}AG1`, JSON.stringify({ at: 10, items: programs }));
+    render(<CardRoleBlock card={{ userId: 'AG1', role: 'ag', programsAt: 10 }} programsContext={context} language="uk" />);
+    expect(screen.getByTestId('programs-summary')).toHaveTextContent('Вам підходить 1 з 2 програм');
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('застарілу копію перечитує один раз, коли картка вже в списку', async () => {
+    const read = jest.fn().mockResolvedValue({ updatedAt: 20, items: { p1: programs.p1 } });
+    setProgramsTransport({ read });
+    window.localStorage.setItem(`${PROGRAMS_CACHE_PREFIX}AG1`, JSON.stringify({ at: 10, items: programs }));
+    render(<CardRoleBlock card={{ userId: 'AG1', role: 'ag', programsAt: 20 }} programsContext={context} language="uk" />);
+    expect(await screen.findByText('Вам підходить 1 з 1 програми')).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(window.localStorage.getItem(`${PROGRAMS_CACHE_PREFIX}AG1`)).at).toBe(20);
+  });
+
+  it('картка без версії програм не питає нічого', () => {
+    const read = jest.fn();
+    setProgramsTransport({ read });
+    const { container } = render(<CardRoleBlock card={{ userId: 'AG2', role: 'ag' }} programsContext={context} language="uk" />);
+    expect(container).toBeEmptyDOMElement();
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('дві ролі — друга анкета підписана роллю', () => {
+    window.localStorage.setItem(`${PROGRAMS_CACHE_PREFIX}ED1`, JSON.stringify({ at: 10, items: programs }));
+    render(<CardRoleBlock card={{ userId: 'ED1', role: ['ed', 'ag'], programsAt: 10 }} programsContext={context} language="uk" />);
+    expect(screen.getByText('Агенція')).toBeInTheDocument();
   });
 
   it('батьки кажуть, кого шукають', () => {

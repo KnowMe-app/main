@@ -8,13 +8,15 @@
  * веде кілька програм одночасно — в Україні й у Грузії, для різного віку, з
  * різними доплатами, — і в чаті їх розрізняють лише за кольором картинки.
  *
- * Тут програма — окремий запис зі своїми вимогами, виплатами й тим, що агенція
- * покриває. Повний запис лежить в анкеті (`profileDetails/{uid}/programs`), а
- * стислий — у картці стрічки (`programsBrief`, `buildProgramsBrief`): рядок
- * стрічки мусить сказати «вам підходить 2 з 3, 1 600–2 500 $» без жодного
- * читання, а повну програму дочитує дотик.
+ * Тут програма — окремий запис зі своїми вимогами, виплатами, можливими
+ * доплатами й тим, що агенція покриває. Лежать програми не в анкеті й не в
+ * картці стрічки, а окремо — `multiData/programs/{uid}` (`utils/programsStore`):
+ * вони не приватні, тож відкриті кожному авторизованому, а картка несе про них
+ * сам лише час останньої зміни (`programsAt`) — щоб кеш браузера знав, чи
+ * його копія ще чинна.
  *
  * Модуль чистий: жодної мережі, лише форма даних і правила порівняння.
+ * Програми картки, прочитані окремо, він бере через `setCardProgramsLookup`.
  */
 
 import {
@@ -33,23 +35,36 @@ export const PROGRAM_TYPE_LABELS = Object.freeze({
 /**
  * Виплати за типом програми. Перша — головна: саме вона йде в діапазон
  * рядка стрічки, у фільтр і в сортування.
+ *
+ * `bonus` — **можлива** доплата: її отримує не кожна, а та, з ким щось
+ * сталося (досвід, КС, двійня, вагітність з першої спроби). У чатах агенцій
+ * вона стояла в одному стовпчику з гарантованим, і сума «20 000 + 2 000 за КС»
+ * читалась як 22 000. Тому ці два переліки живуть окремими блоками і в
+ * редакторі, і в показі, а в загальну суму можливе не входить.
  */
 export const PROGRAM_PAYMENT_FIELDS = Object.freeze({
   ed: Object.freeze([
     { key: 'final', label: 'Винагорода за цикл' },
-    { key: 'repeat', label: 'Повторна донація' },
-    { key: 'experience', label: 'Доплата за досвід' },
+    { key: 'repeat', label: 'Повторна донація', bonus: true },
+    { key: 'experience', label: 'Доплата за досвід', bonus: true },
   ]),
   sm: Object.freeze([
     { key: 'final', label: 'Фінальна виплата' },
     { key: 'monthly', label: 'Щомісячно' },
     { key: 'transfer', label: 'Перенос ембріона' },
     { key: 'contract', label: 'Підписання договору' },
-    { key: 'cSection', label: 'Кесарів розтин' },
-    { key: 'twins', label: 'Двійня' },
-    { key: 'experience', label: 'Доплата за досвід СМ' },
+    { key: 'cSection', label: 'Кесарів розтин', bonus: true },
+    { key: 'twins', label: 'Двійня', bonus: true },
+    { key: 'firstTry', label: 'Вагітність з першої спроби', bonus: true },
+    { key: 'experience', label: 'Доплата за досвід СМ', bonus: true },
   ]),
 });
+
+/** Загальна сума за програму — окреме поле, а не сума полів вище. */
+export const PROGRAM_TOTAL_FIELD = 'total';
+
+export const listGuaranteedPaymentFields = type => (PROGRAM_PAYMENT_FIELDS[type] || []).filter(field => !field.bonus);
+export const listBonusPaymentFields = type => (PROGRAM_PAYMENT_FIELDS[type] || []).filter(field => field.bonus);
 
 export const PROGRAM_COVERAGE_OPTIONS = Object.freeze([
   { key: 'travel', label: 'Проїзд' },
@@ -139,8 +154,8 @@ export const createEmptyProgram = (type = 'ed', id = `p${Date.now().toString(36)
   requirements: { rh: 'any', marital: 'any', ownKids: 'any', csectionMax: 'any' },
   payments: { final: { amount: '', currency: DEFAULT_PROGRAM_CURRENCY } },
   otherPayments: [],
+  bonuses: [],
   coverage: [],
-  duration: '',
   note: '',
 });
 
@@ -172,18 +187,12 @@ export const normalizeProgram = (raw, id) => {
   if (maxBirths !== null) requirements.maxBirths = maxBirths;
 
   const payments = {};
-  PROGRAM_PAYMENT_FIELDS[type].forEach(({ key }) => {
+  [...PROGRAM_PAYMENT_FIELDS[type].map(field => field.key), PROGRAM_TOTAL_FIELD].forEach(key => {
     const money = normalizeProgramMoney(raw.payments?.[key]);
     if (money) payments[key] = money;
   });
-  const otherPayments = (Array.isArray(raw.otherPayments) ? raw.otherPayments : Object.values(raw.otherPayments || {}))
-    .map(item => {
-      const money = normalizeProgramMoney(item);
-      const label = text(item?.label, 60);
-      return money && label ? { label, ...money } : null;
-    })
-    .filter(Boolean)
-    .slice(0, 8);
+  const otherPayments = normalizeLabeledPayments(raw.otherPayments);
+  const bonuses = normalizeLabeledPayments(raw.bonuses);
   const coverageKeys = new Set(PROGRAM_COVERAGE_OPTIONS.map(option => option.key));
   const coverage = (Array.isArray(raw.coverage) ? raw.coverage : Object.keys(raw.coverage || {}))
     .filter(key => coverageKeys.has(key));
@@ -194,106 +203,100 @@ export const normalizeProgram = (raw, id) => {
     requirements,
     payments,
   };
+  // «Тривалість і візити» тут було окремим полем — і лишилось порожнім у
+  // кожної програми: це примітка, а не вимога чи виплата. Старе значення
+  // переїжджає в примітку, а не зникає.
+  const legacyDuration = text(raw.duration);
   const title = text(raw.title);
   const location = text(raw.location);
-  const duration = text(raw.duration);
-  const note = text(raw.note, MAX_NOTE);
+  const noteRaw = text(raw.note, MAX_NOTE);
+  const note = legacyDuration && !noteRaw.includes(legacyDuration)
+    ? text([legacyDuration, noteRaw].filter(Boolean).join('\n'), MAX_NOTE)
+    : noteRaw;
   if (title) program.title = title;
   if (location) program.location = location;
-  if (duration) program.duration = duration;
   if (note) program.note = note;
   if (otherPayments.length) program.otherPayments = otherPayments;
+  if (bonuses.length) program.bonuses = bonuses;
   if (coverage.length) program.coverage = [...new Set(coverage)];
+  // Прихована програма лишається в редакторі, але її не бачить ніхто інший:
+  // агенція набирає її раз і вмикає, коли набір знову відкритий.
+  if (raw.hidden === true) program.hidden = true;
+  const order = Number(raw.order);
+  if (Number.isFinite(order)) program.order = Math.max(0, Math.min(99, Math.round(order)));
   return program;
 };
 
-/** Програми анкети списком, у сталому порядку (за id — тобто за часом створення). */
-export const listPrograms = programs => {
+const normalizeLabeledPayments = value => (Array.isArray(value) ? value : Object.values(value || {}))
+  .map(item => {
+    const money = normalizeProgramMoney(item);
+    const label = text(item?.label, 60);
+    return money && label ? { label, ...money } : null;
+  })
+  .filter(Boolean)
+  .slice(0, 8);
+
+// Порядок програм задає агенція (`order`, стрілки в редакторі): найцікавішу
+// вона ставить першою. Без `order` — за id, тобто за часом створення.
+const compareProgramOrder = (a, b) => {
+  const left = a.order ?? Number.MAX_SAFE_INTEGER;
+  const right = b.order ?? Number.MAX_SAFE_INTEGER;
+  return (left - right) || a.id.localeCompare(b.id);
+};
+
+/**
+ * Програми списком, у порядку агенції. Приховані — лише на прохання
+ * (`includeHidden`): їх бачить сам редактор.
+ */
+export const listPrograms = (programs, { includeHidden = false } = {}) => {
   if (!programs || typeof programs !== 'object') return [];
   const entries = Array.isArray(programs)
     ? programs.map((program, index) => [program?.id || `p${index}`, program])
     : Object.entries(programs);
   return entries
     .map(([id, program]) => normalizeProgram(program, id))
-    .filter(Boolean)
-    .sort((a, b) => a.id.localeCompare(b.id))
+    .filter(program => program && (includeHidden || !program.hidden))
+    .sort(compareProgramOrder)
     .slice(0, MAX_PROGRAMS);
 };
 
-/** Мапа `{ id: program }` для запису в анкету. */
-export const programsToRecord = programs => listPrograms(programs)
-  .reduce((acc, program) => ({ ...acc, [program.id]: program }), {});
-
 /**
- * Стисла програма для картки стрічки: вимоги й головна виплата, без доплат,
- * покриття й приміток. Цього досить, щоб рядок сказав «підходить N з M» і
- * показав діапазон; решту дочитує дотик до картки.
+ * Мапа `{ id: program }` для запису: разом із прихованими, а `order` —
+ * позиція в переданому списку, тож порядок редактора й є записаний порядок.
  */
-export const buildProgramBrief = program => {
-  const normalized = normalizeProgram(program, program?.id);
-  if (!normalized) return null;
-  const brief = { type: normalized.type };
-  if (normalized.title) brief.title = normalized.title.slice(0, 60);
-  if (normalized.location) brief.location = normalized.location.slice(0, 60);
-  const req = normalized.requirements;
-  ['ageFrom', 'ageTo', 'bmiMax', 'heightFrom', 'maxBirths'].forEach(key => {
-    if (req[key] !== undefined) brief[key] = req[key];
-  });
-  ['rh', 'marital', 'ownKids', 'csectionMax'].forEach(key => {
-    if (req[key] && req[key] !== 'any') brief[key] = req[key];
-  });
-  const final = normalized.payments.final;
-  if (final) {
-    brief.pay = final.amount;
-    brief.currency = final.currency;
-  }
-  return brief;
+export const programsToRecord = programs => {
+  const list = Array.isArray(programs)
+    ? programs.map((program, index) => normalizeProgram(program, program?.id || `p${index}`)).filter(Boolean).slice(0, MAX_PROGRAMS)
+    : listPrograms(programs, { includeHidden: true });
+  return list.reduce((acc, program, index) => ({ ...acc, [program.id]: { ...program, order: index } }), {});
 };
 
-export const buildProgramsBrief = programs => {
-  const list = listPrograms(programs);
-  if (!list.length) return null;
-  return list.reduce((acc, program) => {
-    const brief = buildProgramBrief(program);
-    if (brief) acc[program.id] = brief;
-    return acc;
-  }, {});
-};
+/** Головна сума програми: фінальна виплата, а без неї — загальна. */
+export const programHeadlinePay = program => program?.payments?.final || program?.payments?.[PROGRAM_TOTAL_FIELD] || null;
 
-/** Стисла програма назад у форму повної — для однакового показу. */
-export const programFromBrief = (brief, id) => {
-  if (!brief || typeof brief !== 'object') return null;
-  return normalizeProgram({
-    id,
-    type: brief.type,
-    title: brief.title,
-    location: brief.location,
-    requirements: {
-      ageFrom: brief.ageFrom,
-      ageTo: brief.ageTo,
-      bmiMax: brief.bmiMax,
-      heightFrom: brief.heightFrom,
-      maxBirths: brief.maxBirths,
-      rh: brief.rh,
-      marital: brief.marital,
-      ownKids: brief.ownKids,
-      csectionMax: brief.csectionMax,
-    },
-    payments: brief.pay ? { final: { amount: brief.pay, currency: brief.currency } } : {},
-  }, id);
+let cardProgramsLookup = null;
+
+/**
+ * Звідки брати програми картки, яка сама їх не несе. Реєструє сховище
+ * (`utils/programsStore`) — так само, як курс кладе `setProgramRates`: цей
+ * модуль мережі не знає, а в картці стрічки самих програм немає.
+ */
+export const setCardProgramsLookup = lookup => {
+  cardProgramsLookup = typeof lookup === 'function' ? lookup : null;
 };
 
 /**
- * Програми картки: повні, якщо анкета вже дочитана, інакше стислі з картки.
- * Прапорець `brief` каже екрану, що доплат і покриття ще немає звідки взяти.
+ * Видимі програми картки: ті, що несе сама картка (`programs` — «Мій
+ * профіль», прев'ю), інакше прочитані сховищем. Порожній список — або
+ * програм немає, або їх ще не дочитали; `loaded` каже, що саме.
  */
 export const resolveCardPrograms = card => {
-  const full = listPrograms(card?.programs);
-  if (full.length) return { programs: full, brief: false };
-  const brief = card?.programsBrief && typeof card.programsBrief === 'object'
-    ? Object.entries(card.programsBrief).map(([id, item]) => programFromBrief(item, id)).filter(Boolean)
-    : [];
-  return { programs: brief.sort((a, b) => a.id.localeCompare(b.id)), brief: true };
+  if (card?.programs && typeof card.programs === 'object') {
+    return { programs: listPrograms(card.programs), loaded: true };
+  }
+  const found = cardProgramsLookup ? cardProgramsLookup(card) : null;
+  if (!found) return { programs: [], loaded: false };
+  return { programs: listPrograms(found), loaded: true };
 };
 
 // --- порівняння з анкетою читача -------------------------------------------
@@ -400,7 +403,7 @@ export const summarizeCardPrograms = (card, { viewerType = '', facts = null } = 
   const list = relevant.length ? relevant : programs;
   const evaluated = list.map(program => ({ program, result: viewerType && facts ? evaluateProgram(program, facts) : null }));
   const matched = evaluated.filter(item => item.result?.matches).length;
-  const finals = list.map(program => program.payments.final).filter(Boolean);
+  const finals = list.map(programHeadlinePay).filter(Boolean);
   return {
     total: list.length,
     allTotal: programs.length,
@@ -412,7 +415,7 @@ export const summarizeCardPrograms = (card, { viewerType = '', facts = null } = 
 
 /** Найбільша головна виплата в доларах серед програм — для сорту й фільтра. */
 export const maxProgramPayUsd = (programs, rates) => programs
-  .map(program => programMoneyInUsd(program.payments.final, rates))
+  .map(program => programMoneyInUsd(programHeadlinePay(program), rates))
   .filter(value => Number.isFinite(value))
   .reduce((max, value) => (max === null || value > max ? value : max), null);
 
@@ -460,7 +463,7 @@ export const listPaymentBuckets = (card, rates, types = paymentFilterProgramType
   const { programs } = resolveCardPrograms(card);
   const buckets = new Set();
   programs.filter(program => !types || types.includes(program.type)).forEach(program => {
-    const usd = programMoneyInUsd(program.payments.final, rates);
+    const usd = programMoneyInUsd(programHeadlinePay(program), rates);
     if (!Number.isFinite(usd)) return;
     PAYMENT_FILTER_BUCKETS[program.type].forEach(bucket => {
       if ((bucket.min === undefined || usd >= bucket.min) && (bucket.max === undefined || usd < bucket.max)) {
@@ -543,17 +546,39 @@ export const describeProgramRequirements = program => {
   return items;
 };
 
-/** Усі виплати програми по порядку: головна, решта за типом, далі інші. */
+const labeledEntries = (items, prefix) => (items || []).map((item, index) => ({
+  key: `${prefix}-${index}`,
+  label: item.label,
+  money: { amount: item.amount, currency: item.currency },
+}));
+
+/** Гарантовані виплати програми по порядку: головна, решта за типом, далі інші. */
 export const listProgramPayments = program => {
   if (!program) return [];
-  const fields = PROGRAM_PAYMENT_FIELDS[program.type] || [];
-  const known = fields
+  const known = listGuaranteedPaymentFields(program.type)
     .filter(({ key }) => program.payments?.[key])
     .map(({ key, label }) => ({ key, label, money: program.payments[key] }));
-  const other = (program.otherPayments || []).map((item, index) => ({
-    key: `other-${index}`,
-    label: item.label,
-    money: { amount: item.amount, currency: item.currency },
-  }));
-  return [...known, ...other];
+  return [...known, ...labeledEntries(program.otherPayments, 'other')];
+};
+
+/** Можливі доплати: за типом програми, далі дописані агенцією. */
+export const listProgramBonuses = program => {
+  if (!program) return [];
+  const known = listBonusPaymentFields(program.type)
+    .filter(({ key }) => program.payments?.[key])
+    .map(({ key, label }) => ({ key, label, money: program.payments[key] }));
+  return [...known, ...labeledEntries(program.bonuses, 'bonus')];
+};
+
+/**
+ * Сума гарантованих разових виплат у валюті головної — підказка до поля
+ * «Загальна сума». Щомісячне не входить (скільки місяців — невідомо), а
+ * виплата в іншій валюті робить суму нечесною, тож тоді підказки немає.
+ */
+export const sumGuaranteedPayments = program => {
+  const entries = listProgramPayments(program).filter(entry => entry.key !== 'monthly');
+  if (!entries.length) return null;
+  const currency = entries[0].money.currency;
+  if (entries.some(entry => entry.money.currency !== currency)) return null;
+  return { amount: entries.reduce((sum, entry) => sum + Number(entry.money.amount || 0), 0), currency };
 };

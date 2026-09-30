@@ -1,13 +1,17 @@
 import {
-  buildProgramsBrief,
   evaluateProgram,
   extractViewerProgramFacts,
   listPaymentBuckets,
+  listProgramBonuses,
+  listProgramPayments,
   listPrograms,
   normalizeProgram,
+  programsToRecord,
   resolveCardPrograms,
+  setCardProgramsLookup,
   resolveViewerProgramType,
   sortCardsByMode,
+  sumGuaranteedPayments,
   summarizeCardPrograms,
 } from '../donorPrograms';
 import {
@@ -68,17 +72,44 @@ describe('модель програми', () => {
     expect(parseProgramAmount('')).toBeNull();
   });
 
-  it('стисла програма несе вимоги й головну виплату, без доплат', () => {
-    const brief = buildProgramsBrief({ p1: donorProgram, p2: surrogateProgram });
-    expect(brief.p2).toEqual({ type: 'sm', ageTo: 35, marital: 'unmarried', csectionMax: '1', pay: 20000, currency: 'USD' });
-    expect(brief.p1.title).toBe('Донорство в Києві');
+  it('можливі доплати окремо від гарантованих, і в загальну суму не входять', () => {
+    const program = normalizeProgram({
+      ...surrogateProgram,
+      payments: { ...surrogateProgram.payments, firstTry: { amount: 1000, currency: 'USD' } },
+      bonuses: [{ label: 'За досвід СМ', amount: 1500, currency: 'USD' }],
+      otherPayments: [{ label: 'Компенсація дороги', amount: 200, currency: 'USD' }],
+    });
+    expect(listProgramPayments(program).map(item => item.key)).toEqual(['final', 'monthly', 'transfer', 'contract', 'other-0']);
+    expect(listProgramBonuses(program).map(item => item.label)).toEqual(['Кесарів розтин', 'Вагітність з першої спроби', 'За досвід СМ']);
+    // Щомісячне — не разове, а доплати — лише можливі.
+    expect(sumGuaranteedPayments(program)).toEqual({ amount: 20700, currency: 'USD' });
   });
 
-  it('картка без дочитаної анкети показує програми зі стислих', () => {
-    const card = { programsBrief: buildProgramsBrief({ p1: donorProgram }) };
-    const resolved = resolveCardPrograms(card);
-    expect(resolved.brief).toBe(true);
+  it('тривалість стала приміткою, а не зникла', () => {
+    const program = normalizeProgram({ ...donorProgram, duration: '3–4 тижні', note: 'Житло поруч із клінікою' });
+    expect(program.duration).toBeUndefined();
+    expect(program.note).toBe('3–4 тижні\nЖитло поруч із клінікою');
+  });
+
+  it('приховану програму бачить лише редактор, а порядок задає агенція', () => {
+    const record = programsToRecord([
+      { ...surrogateProgram, id: 'p2' },
+      { ...donorProgram, id: 'p1', hidden: true },
+    ]);
+    expect(record.p2.order).toBe(0);
+    expect(record.p1.order).toBe(1);
+    expect(listPrograms(record).map(program => program.id)).toEqual(['p2']);
+    expect(listPrograms(record, { includeHidden: true }).map(program => program.id)).toEqual(['p2', 'p1']);
+  });
+
+  it('картка без власних програм бере їх зі сховища, а без сховища — «ще не прочитано»', () => {
+    setCardProgramsLookup(null);
+    expect(resolveCardPrograms({ userId: 'AG1', programsAt: 5 })).toEqual({ programs: [], loaded: false });
+    setCardProgramsLookup(card => (card.userId === 'AG1' ? { p1: donorProgram } : {}));
+    const resolved = resolveCardPrograms({ userId: 'AG1', programsAt: 5 });
+    expect(resolved.loaded).toBe(true);
     expect(resolved.programs[0].payments.final.amount).toBe(2500);
+    setCardProgramsLookup(null);
   });
 });
 

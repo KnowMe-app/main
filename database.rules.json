@@ -135,58 +135,8 @@
           ".write": "auth != null",
           ".validate": "!newData.exists() || (newData.isBoolean() && newData.val() == root.child('comments').child($uid).hasChildren())"
         },
-        "programsBrief": {
-          "$programId": {
-            ".validate": "$programId.length <= 40 && newData.hasChild('type')",
-            "type": {
-              ".validate": "newData.val() == 'ed' || newData.val() == 'sm'"
-            },
-            "title": {
-              ".validate": "newData.isString() && newData.val().length <= 60"
-            },
-            "location": {
-              ".validate": "newData.isString() && newData.val().length <= 60"
-            },
-            "ageFrom": {
-              ".validate": "newData.isNumber() && newData.val() >= 16 && newData.val() <= 60"
-            },
-            "ageTo": {
-              ".validate": "newData.isNumber() && newData.val() >= 16 && newData.val() <= 60"
-            },
-            "bmiMax": {
-              ".validate": "newData.isNumber() && newData.val() >= 15 && newData.val() <= 45"
-            },
-            "heightFrom": {
-              ".validate": "newData.isNumber() && newData.val() >= 130 && newData.val() <= 200"
-            },
-            "maxBirths": {
-              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10"
-            },
-            "rh": {
-              ".validate": "newData.val() == '+' || newData.val() == '-'"
-            },
-            "marital": {
-              ".validate": "newData.val() == 'married' || newData.val() == 'unmarried'"
-            },
-            "ownKids": {
-              ".validate": "newData.val() == 'required'"
-            },
-            "csectionMax": {
-              ".validate": "newData.val() == '0' || newData.val() == '1' || newData.val() == '2'"
-            },
-            "pay": {
-              ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 1000000000"
-            },
-            "currency": {
-              ".validate": "newData.val() == 'USD' || newData.val() == 'EUR' || newData.val() == 'UAH'"
-            },
-            "$other": {
-              ".validate": false
-            }
-          }
-        },
-        "serviceTags": {
-          ".validate": "newData.isString() && newData.val().length <= 80"
+        "programsAt": {
+          ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now + 600000"
         },
         "seekingRole": {
           ".validate": "newData.val() == 'ed' || newData.val() == 'sm' || newData.val() == 'both'"
@@ -459,6 +409,143 @@
           "$entryId": {
             ".write": "auth != null && ((!data.exists() && newData.exists() && newData.child('editorUserId').val() == auth.uid) || (data.exists() && !newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')))",
             ".validate": "newData.hasChildren(['cardId', 'actorUid', 'editorUserId', 'action', 'fieldName', 'change', 'at', 'revision']) && newData.child('cardId').val() == $cardId && newData.child('actorUid').val() == auth.uid && newData.child('editorUserId').val() == auth.uid && newData.child('action').val() == 'edit' && newData.child('fieldName').isString() && newData.child('fieldName').val().length > 0 && newData.child('change').exists() && newData.child('at').isNumber() && newData.child('revision').isNumber()"
+          }
+        }
+      },
+      "programs": {
+        "$uid": {
+          ".read": "auth != null",
+          ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('accessLevel').val() == 'matching:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('users').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('users').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write'))",
+          ".validate": "newData.hasChildren(['updatedAt'])",
+          "updatedAt": {
+            ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now + 600000"
+          },
+          "items": {
+            "$programId": {
+              ".validate": "$programId.length <= 40 && newData.hasChild('type')",
+              "type": {
+                ".validate": "newData.val() == 'ed' || newData.val() == 'sm'"
+              },
+              "id": {
+                ".validate": "newData.isString() && newData.val() == $programId"
+              },
+              "title": {
+                ".validate": "newData.isString() && newData.val().length <= 80"
+              },
+              "location": {
+                ".validate": "newData.isString() && newData.val().length <= 80"
+              },
+              "note": {
+                ".validate": "newData.isString() && newData.val().length <= 600"
+              },
+              "hidden": {
+                ".validate": "newData.isBoolean()"
+              },
+              "order": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 99"
+              },
+              "requirements": {
+                "ageFrom": {
+                  ".validate": "newData.isNumber() && newData.val() >= 16 && newData.val() <= 60"
+                },
+                "ageTo": {
+                  ".validate": "newData.isNumber() && newData.val() >= 16 && newData.val() <= 60"
+                },
+                "bmiMax": {
+                  ".validate": "newData.isNumber() && newData.val() >= 15 && newData.val() <= 45"
+                },
+                "heightFrom": {
+                  ".validate": "newData.isNumber() && newData.val() >= 130 && newData.val() <= 200"
+                },
+                "maxBirths": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10"
+                },
+                "rh": {
+                  ".validate": "newData.val() == 'any' || newData.val() == '+' || newData.val() == '-'"
+                },
+                "marital": {
+                  ".validate": "newData.val() == 'any' || newData.val() == 'married' || newData.val() == 'unmarried'"
+                },
+                "ownKids": {
+                  ".validate": "newData.val() == 'any' || newData.val() == 'required'"
+                },
+                "csectionMax": {
+                  ".validate": "newData.val() == 'any' || newData.val() == '0' || newData.val() == '1' || newData.val() == '2'"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              },
+              "payments": {
+                "$paymentKey": {
+                  ".validate": "$paymentKey.matches(/^(final|total|repeat|experience|monthly|transfer|contract|cSection|twins|firstTry)$/) && newData.hasChildren(['amount', 'currency'])",
+                  "amount": {
+                    ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 1000000000"
+                  },
+                  "currency": {
+                    ".validate": "newData.val() == 'USD' || newData.val() == 'EUR' || newData.val() == 'UAH'"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                }
+              },
+              "otherPayments": {
+                "$index": {
+                  ".validate": "newData.hasChildren(['amount', 'currency'])",
+                  "amount": {
+                    ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 1000000000"
+                  },
+                  "currency": {
+                    ".validate": "newData.val() == 'USD' || newData.val() == 'EUR' || newData.val() == 'UAH'"
+                  },
+                  "label": {
+                    ".validate": "newData.isString() && newData.val().length <= 60"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                }
+              },
+              "bonuses": {
+                "$index": {
+                  ".validate": "newData.hasChildren(['amount', 'currency'])",
+                  "amount": {
+                    ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 1000000000"
+                  },
+                  "currency": {
+                    ".validate": "newData.val() == 'USD' || newData.val() == 'EUR' || newData.val() == 'UAH'"
+                  },
+                  "label": {
+                    ".validate": "newData.isString() && newData.val().length <= 60"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                }
+              },
+              "coverage": {
+                "$index": {
+                  ".validate": "newData.isString() && newData.val().length <= 20"
+                }
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "programTerms": {
+        ".read": "auth != null",
+        "$kind": {
+          ".validate": "$kind == 'payment' || $kind == 'bonus'",
+          "$termKey": {
+            ".write": "auth != null && (!data.exists() || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+            ".validate": "$termKey.length <= 60 && newData.isString() && newData.val().length > 1 && newData.val().length <= 60"
           }
         }
       }

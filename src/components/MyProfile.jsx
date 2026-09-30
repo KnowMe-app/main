@@ -16,7 +16,8 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
 import { PROFILE_ROLE_OPTIONS } from '../utils/profileRoleOptions';
-import { resolveViewerCurrentRole } from '../utils/matchingPeerVisibility';
+import { listViewerRoles, resolveViewerCurrentRole } from '../utils/matchingPeerVisibility';
+import { parseHiddenRoles } from '../utils/matchingCardIndex';
 import { formatDateToDisplay, normalizePhoneValue } from './inputValidations';
 import {
   createUserWithEmailAndPassword,
@@ -52,8 +53,18 @@ import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { KnowMeBrand } from './styles/knowme';
 import { resolveMyProfileFieldText, resolveMyProfileSectionTitle } from '../utils/myProfileRoleTexts';
 import { ProgramsEditor } from './programs/ProgramsEditor';
-import { AgencyProfileFields, ParentProfileFields } from './programs/RoleProfileFields';
-import { useProgramRates } from '../hooks/useProgramRates';
+import { ParentProfileFields } from './programs/RoleProfileFields';
+import { useProgramDisplayCurrency, useProgramRates } from '../hooks/useProgramRates';
+import {
+  loadOwnPrograms,
+  peekOwnPrograms,
+  retryPendingPrograms,
+  saveCardPrograms,
+  useProgramsVersion,
+} from '../utils/programsStore';
+import { loadProgramTerms, rememberProgramTerms } from './programs/programsRemote';
+import { listPrograms, listProgramBonuses, listProgramPayments } from '../utils/donorPrograms';
+import { MyProfileCardPreview } from './MyProfileCardPreview';
 
 const Page = styled.div`
   /* Локальні псевдоніми з глобальних KnowMe-токенів: сторінка автоматично підтримує світлу/темну тему. */
@@ -232,6 +243,52 @@ const RoleOption = styled.button`
   color: ${({ $active }) => ($active ? '#fff' : 'var(--muted)')};
 `;
 const RoleHint = styled.p`margin:10px 0 0;font-size:11px;line-height:1.5;color:var(--muted);`;
+const RoleVisibilityList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+`;
+const RoleVisibilityRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: ${({ $hidden }) => ($hidden ? 'var(--muted)' : 'var(--text)')};
+
+  b { font-weight: 600; }
+`;
+const RoleVisibilityButton = styled.button`
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+
+  &:disabled { opacity: .45; cursor: default; }
+`;
+// Межа між двома анкетами однієї людини: друга стоїть під першою, і без
+// підпису її розділи читались би як продовження першої.
+const AnketaDivider = styled.div`
+  margin: 28px 20px 10px;
+  padding-top: 14px;
+  border-top: 2px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--muted);
+
+  b { color: ${({ $hidden }) => ($hidden ? 'var(--muted)' : 'var(--text)')}; }
+`;
 const PhotoSection = styled.div`
   display: flex;
   flex-direction: column;
@@ -383,16 +440,52 @@ const baseSections = [
   // VK прибрано: мережа заблокована в Україні з 2017 року, і поле для неї в
   // анкеті читалось як знак, чий це застосунок. Уже записане значення з
   // анкети не зникає — його просто більше не пропонують вводити.
-  { key: 'social', title: '📱 Соцмережі', fields: ['telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube'] },
+  //
+  // Сайт — теж тут: окремий блок «Послуги й досвід», де він стояв, прибрано
+  // (його не заповнював ніхто), а сайт — такий самий спосіб знайти людину,
+  // як і сторінка в мережі. Показується він лише агенції й клініці.
+  { key: 'social', title: '📱 Соцмережі', fields: ['telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'website'] },
   { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'sport', 'education', 'profession', 'hobbies', 'twinsInFamily', 'moreInfo_main', 'surrogacyProgramInterest'] },
 ];
 
 const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery']);
 
-// Поля-обʼєкти розділів агенції й батьків (`roleSections`).
-const OBJECT_PROFILE_FIELDS = new Set(['programs', 'parentPreferences']);
+// Поля-обʼєкти розділів батьків (`roleSections`). Програм тут немає: вони
+// лежать окремо (`utils/programsStore`), а не в анкеті.
+const OBJECT_PROFILE_FIELDS = new Set(['parentPreferences']);
 
-const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','country','region','city','moreInfo_main']);
+const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','country','region','city','moreInfo_main','website']);
+
+// Сайт — лише агенції й клініці: донорці це поле тільки знижувало б відсоток
+// заповненості.
+const ORGANISATION_ONLY_FIELDS = new Set(['website']);
+const PERSON_ROLES = ['ed', 'sm'];
+const ORGANISATION_ROLES = ['ag', 'cl'];
+const KNOWN_ROLES = new Set(PROFILE_ROLE_OPTIONS.map(option => option.value));
+
+// Поля «Мого профілю», яких немає в спільному `pickerFields`: той перелік
+// малює десяток інших екранів, і чіпати його заради одного поля не можна.
+const MY_PROFILE_EXTRA_FIELDS = [
+  { name: 'website', label: 'Сайт', ukrainian: 'Сайт', placeholder: 'https://', svg: 'no' },
+];
+
+/**
+ * Ролі анкети по порядку, основна — остання (так її читає стрічка,
+ * `resolveViewerCurrentRole`).
+ *
+ * Картка не несе сховану роль (`hiddenRoles`), тож ролі з картки
+ * доповнюються схованими. Порядок береться з анкети, коли вона каже про ті
+ * самі ролі: інакше, сховавши основну роль, людина бачила б, як основною
+ * стає друга.
+ */
+export const resolveMyProfileRoles = ({ cardRole, storedRole, hiddenRoles }) => {
+  const fromCard = listViewerRoles(cardRole).filter(role => KNOWN_ROLES.has(role));
+  const hidden = parseHiddenRoles(hiddenRoles).filter(role => KNOWN_ROLES.has(role));
+  const combined = [...hidden.filter(role => !fromCard.includes(role)), ...fromCard];
+  const stored = [...new Set(listViewerRoles(storedRole).filter(role => KNOWN_ROLES.has(role)))];
+  if (stored.length === combined.length && stored.every(role => combined.includes(role))) return stored;
+  return [...new Set(combined)];
+};
 
 /**
  * Чого «очистити все» не чіпає.
@@ -467,6 +560,10 @@ export const MyProfile = () => {
   const [hasAgreed, setHasAgreed] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [authHintStep, setAuthHintStep] = useState('');
+  // Ролі анкети, основна — остання. Порожньо — анкета ще не прочитана,
+  // і роль бере `state.userRole`.
+  const [profileRoles, setProfileRoles] = useState([]);
+  const [programTerms, setProgramTerms] = useState(null);
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const stickyProgressRef = useRef(null);
@@ -600,9 +697,16 @@ export const MyProfile = () => {
       // обирала іншу тут же, у «Хто ви».
       const loadedProfile = normalizeProfileData(existingData || {});
       const currentCardRole = resolveViewerCurrentRole(cardRole);
-      if (currentCardRole) {
-        loadedProfile.userRole = currentCardRole;
-        loadedProfile.role = currentCardRole;
+      const roles = resolveMyProfileRoles({
+        cardRole,
+        storedRole: existingData?.userRole,
+        hiddenRoles: existingData?.hiddenRoles,
+      });
+      setProfileRoles(roles);
+      const primaryRole = roles[roles.length - 1] || currentCardRole;
+      if (primaryRole) {
+        loadedProfile.userRole = primaryRole;
+        loadedProfile.role = primaryRole;
       }
       mergeLoadedProfileData(loadedProfile, uid);
       return true;
@@ -670,10 +774,23 @@ export const MyProfile = () => {
   };
 
   const normalizedRole = String(state.userRole || state.role || '').trim().toLowerCase();
-  const isDonorRole = !normalizedRole || ['ed', 'donor', 'до'].includes(normalizedRole);
   const selectedRole = MY_PROFILE_ROLE_OPTIONS.some(option => option.value === normalizedRole)
     ? normalizedRole
     : 'ed';
+  // Ролей буває дві: донорка, яка ще й підбирає донорок як агентка. Основна
+  // — та, під якою людина гортає стрічку; друга додає свою анкету під першою.
+  const rolesList = useMemo(() => {
+    const list = profileRoles.length ? profileRoles.filter(role => role !== selectedRole) : [];
+    return [...list, selectedRole];
+  }, [profileRoles, selectedRole]);
+  const secondaryRole = rolesList.length > 1 ? rolesList[0] : '';
+  const personRole = rolesList.find(role => PERSON_ROLES.includes(role)) || '';
+  const organisationRole = rolesList.find(role => ORGANISATION_ROLES.includes(role)) || '';
+  const isDonorRole = Boolean(personRole) || !normalizedRole || ['donor', 'до'].includes(normalizedRole);
+  // Заголовки спільних розділів говорять мовою анкети, якій ці поля належать:
+  // у донорки, яка ще й агентка, «Особисті дані» — її, а не агенції.
+  const sectionTitleRole = personRole || selectedRole;
+  const hiddenRoles = useMemo(() => parseHiddenRoles(state.hiddenRoles), [state.hiddenRoles]);
 
   /**
    * Змінити роль анкети.
@@ -685,14 +802,12 @@ export const MyProfile = () => {
    * Автозбереження форми цього не вміє: воно лише додало б нове значення до
    * старого, і анкета лишилась би ще й у попередній ролі.
    */
-  const changeUserRole = useCallback(async nextRole => {
-    const role = String(nextRole || '').trim().toLowerCase();
+  const writeProfileRoles = useCallback(async (roles, primaryRole) => {
     const targetUserId = userId || stateRef.current?.userId;
-    if (!role || role === normalizedRole) return;
-
     editedFieldsRef.current.add('userRole');
+    setProfileRoles(roles);
     setState(prevState => {
-      const nextState = { ...prevState, userRole: role, role };
+      const nextState = { ...prevState, userRole: primaryRole, role: primaryRole };
       stateRef.current = nextState;
       return nextState;
     });
@@ -702,12 +817,45 @@ export const MyProfile = () => {
     if (!targetUserId) return;
 
     try {
-      await updateProfileRole(targetUserId, role);
+      await updateProfileRole(targetUserId, roles);
     } catch (error) {
       console.warn('Failed to change profile role.', error);
       toast.error(uiText('Не вдалося змінити роль — спробуйте ще раз', language));
     }
-  }, [language, normalizedRole, userId]);
+  }, [language, userId]);
+
+  const changeUserRole = useCallback(async nextRole => {
+    const role = String(nextRole || '').trim().toLowerCase();
+    if (!role || role === normalizedRole) return;
+    // Друга роль лишається другою; якщо основною стала саме вона — друга
+    // знімається, а не дублює основну.
+    const roles = [...rolesList.slice(0, -1).filter(item => item !== role), role];
+    await writeProfileRoles(roles, role);
+  }, [normalizedRole, rolesList, writeProfileRoles]);
+
+  const changeSecondaryRole = useCallback(async nextRole => {
+    const role = String(nextRole || '').trim().toLowerCase();
+    if (role === selectedRole || role === secondaryRole) return;
+    const roles = role ? [role, selectedRole] : [selectedRole];
+    // Роль, якої більше немає, не лишається й серед схованих.
+    const stillHidden = hiddenRoles.filter(item => roles.includes(item));
+    if (stillHidden.length !== hiddenRoles.length) saveRoleField('hiddenRoles', stillHidden.join(','));
+    await writeProfileRoles(roles, selectedRole);
+  }, [hiddenRoles, secondaryRole, selectedRole, writeProfileRoles]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * Сховати одну з двох анкет — скажімо, агентську, поки набору немає, — не
+   * знімаючи з публікації другу. Картка стрічки сховану роль не несе
+   * (`buildMatchingCardProjection`). Сховати єдину видиму роль тут не можна:
+   * для цього є «Зняти з публікації».
+   */
+  const toggleRoleHidden = role => {
+    const next = hiddenRoles.includes(role)
+      ? hiddenRoles.filter(item => item !== role)
+      : [...hiddenRoles, role];
+    if (rolesList.every(item => next.includes(item))) return;
+    saveRoleField('hiddenRoles', next.join(','));
+  };
   const isProfileAccessConfirmed = Boolean(userId || state.userId);
   const sections = useMemo(() => baseSections.map(section => {
     if (section.key !== 'personal' || !isProfileAccessConfirmed || section.fields.includes('email')) {
@@ -720,36 +868,108 @@ export const MyProfile = () => {
   }), [isProfileAccessConfirmed]);
   // Назву розділу бере роль (`resolveMyProfileSectionTitle`): агенція бачить
   // «Агенція» й «Про агенцію», а не «Особисті дані» й «Спосіб життя».
-  // Агенція й клініка мають ще два розділи — послуги й програми, — а
-  // біологічні батьки один: кого шукають. Вони стоять одразу після «Особистих
-  // даних», бо саме за ними їх і знаходять у стрічці. Малює їх не
-  // `renderField`, а свій компонент (`custom`): програма — це запис із
-  // десятком полів, а не одне поле форми.
-  const roleSections = useMemo(() => {
-    if (normalizedRole === 'ag' || normalizedRole === 'cl') {
-      return [
-        { key: 'services', title: '🧭 Послуги й досвід', fields: ['services', 'workLocations', 'website', 'foundedYear', 'programsCompleted'], custom: 'agency' },
-        { key: 'programs', title: '💶 Програми', fields: ['programs'], custom: 'programs' },
-      ];
+  // Агенція й клініка мають ще розділ програм, а біологічні батьки — «кого
+  // шукаєте». Розділ основної ролі стоїть одразу після «Особистих даних», бо
+  // саме за ним її й знаходять у стрічці; розділ другої ролі — окремою
+  // анкетою під першою (`anketaRole`). Малює їх не `renderField`, а свій
+  // компонент (`custom`): програма — це запис із десятком полів, а не одне
+  // поле форми.
+  //
+  // «Послуги й досвід» тут був і пішов: його не заповнював ніхто, а сайт з
+  // нього переїхав у «Соцмережі».
+  const roleSectionsFor = useCallback(role => {
+    if (ORGANISATION_ROLES.includes(role)) {
+      return [{ key: 'programs', title: '💶 Програми', fields: ['programs'], custom: 'programs' }];
     }
-    if (normalizedRole === 'ip') {
+    if (role === 'ip') {
       return [{ key: 'search', title: '🔎 Кого шукаєте', fields: ['seeking', 'programLocation', 'parentVia'], custom: 'parents' }];
     }
     return [];
-  }, [normalizedRole]);
+  }, []);
+  const roleSections = useMemo(() => roleSectionsFor(selectedRole), [roleSectionsFor, selectedRole]);
+  const secondaryRoleSections = useMemo(() => (secondaryRole
+    ? roleSectionsFor(secondaryRole)
+      .filter(section => !roleSections.some(item => item.key === section.key))
+      .map((section, index) => (index === 0 ? { ...section, anketaRole: secondaryRole } : section))
+    : []), [roleSections, roleSectionsFor, secondaryRole]);
   const visibleSections = useMemo(() => {
     const base = sections
       .map(section => ({
         ...section,
-        title: resolveMyProfileSectionTitle(section.key, normalizedRole, section.title),
-        fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)),
+        title: resolveMyProfileSectionTitle(section.key, sectionTitleRole, section.title),
+        fields: section.fields
+          .filter(name => isDonorRole || visibleNonDonorFields.has(name))
+          .filter(name => organisationRole || !ORGANISATION_ONLY_FIELDS.has(name)),
       }))
       .filter(section => section.fields.length > 0);
-    if (!roleSections.length) return base;
     const personalIndex = base.findIndex(section => section.key === 'personal');
-    return [...base.slice(0, personalIndex + 1), ...roleSections, ...base.slice(personalIndex + 1)];
-  }, [isDonorRole, normalizedRole, roleSections, sections]);
-  const programRates = useProgramRates(normalizedRole === 'ag' || normalizedRole === 'cl');
+    return [
+      ...base.slice(0, personalIndex + 1),
+      ...roleSections,
+      ...base.slice(personalIndex + 1),
+      ...secondaryRoleSections,
+    ];
+  }, [isDonorRole, organisationRole, roleSections, secondaryRoleSections, sectionTitleRole, sections]);
+  const programRates = useProgramRates(Boolean(organisationRole));
+  const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
+
+  // Програми — не поле анкети: вони лежать у `multiData/programs/{uid}`, і
+  // «Мій профіль» бере їх так само, як стрічка, — спершу з браузера.
+  const programsVersion = useProgramsVersion();
+  const programsOwnerId = userId || state.userId || '';
+  const ownProgramsEntry = useMemo(
+    () => (programsOwnerId ? peekOwnPrograms(programsOwnerId) : null),
+    [programsOwnerId, programsVersion], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const ownPrograms = ownProgramsEntry?.items || null;
+  const ownVisiblePrograms = useMemo(() => listPrograms(ownPrograms), [ownPrograms]);
+  const ownProgramsCount = useMemo(() => listPrograms(ownPrograms, { includeHidden: true }).length, [ownPrograms]);
+
+  useEffect(() => {
+    if (!programsOwnerId || !organisationRole) return undefined;
+    let cancelled = false;
+    (async () => {
+      // Не збережене минулого разу (відмова бази, закрита вкладка) —
+      // спершу дописується, і лише тоді база може щось перебити.
+      await retryPendingPrograms(programsOwnerId).catch(error => {
+        console.warn('[programs] програми з цього браузера досі не в базі', error);
+      });
+      const loaded = await loadOwnPrograms(programsOwnerId);
+      if (cancelled) return;
+      // Перша версія клала програми в анкету. Знайдені там переносяться в
+      // окремий вузол — і з анкети знімаються лише після вдалого запису.
+      const legacy = stateRef.current?.programs;
+      if (!loaded && legacy && typeof legacy === 'object' && Object.keys(legacy).length) {
+        try {
+          await saveCardPrograms(programsOwnerId, legacy);
+          if (!cancelled) saveRoleField('programs', null);
+        } catch (error) {
+          console.warn('[programs] не вдалося перенести програми з анкети', error);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [organisationRole, programsOwnerId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!organisationRole || programTerms) return;
+    loadProgramTerms().then(setProgramTerms);
+  }, [organisationRole, programTerms]);
+
+  const saveOwnPrograms = useCallback(record => {
+    const targetUserId = userId || stateRef.current?.userId;
+    if (!targetUserId) return;
+    const list = listPrograms(record, { includeHidden: true });
+    saveCardPrograms(targetUserId, record || {})
+      .then(() => Promise.all([
+        rememberProgramTerms('payment', list.flatMap(program => listProgramPayments(program).filter(item => item.key.startsWith('other-')).map(item => item.label))),
+        rememberProgramTerms('bonus', list.flatMap(program => listProgramBonuses(program).filter(item => item.key.startsWith('bonus-')).map(item => item.label))),
+      ]))
+      .catch(error => {
+        console.warn('[programs] програми не збереглись у базі', error);
+        toast.error(uiText('Програми поки лише в цьому браузері — збережемо, коли база відповість', language), { id: 'programs-save-failed' });
+      });
+  }, [language, userId]);
   const firstSectionKey = visibleSections[0]?.key || 'personal';
   const navSections = useMemo(() => [
     ...(!isProfileAccessConfirmed ? [{ key: 'auth', title: '🔐 Доступ до анкети', fields: ['email', 'password', 'terms'], isVirtual: true }] : []),
@@ -832,19 +1052,23 @@ export const MyProfile = () => {
     />
   );
 
-  const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
+  const fieldsMap = useMemo(() => new Map([...pickerFields, ...MY_PROFILE_EXTRA_FIELDS].map(field => [field.name, field])), []);
+  // Програми заповнені, коли вони є в сховищі, а не в анкеті.
+  const isFieldFilled = useCallback(name => (name === 'programs'
+    ? ownProgramsCount > 0
+    : String(state[name] || '').trim() !== ''), [ownProgramsCount, state]);
   // Лічильник «3 з 8» поруч із відсотком: самі «8%» не казали, скільки
   // лишилось, а людина з чотирма фото й поштою не розуміла, звідки така цифра.
   const filledStats = useMemo(() => {
     const keys = visibleSections.flatMap(s => s.fields);
-    const filled = keys.filter(name => String(state[name] || '').trim() !== '').length;
+    const filled = keys.filter(isFieldFilled).length;
     return { filled, total: keys.length };
-  }, [state, visibleSections]);
+  }, [isFieldFilled, visibleSections]);
   const filledPct = filledStats.total ? Math.round((filledStats.filled / filledStats.total) * 100) : 0;
 
 
   const sectionProgress = useMemo(() => visibleSections.reduce((acc, section) => {
-    const filled = section.fields.filter(name => String(state[name] || '').trim() !== '').length;
+    const filled = section.fields.filter(isFieldFilled).length;
     const total = section.fields.length;
     acc[section.key] = {
       filled,
@@ -853,7 +1077,7 @@ export const MyProfile = () => {
       progress: total > 0 ? Math.round((filled / total) * 100) : 0,
     };
     return acc;
-  }, {}), [state, visibleSections]);
+  }, {}), [isFieldFilled, visibleSections]);
 
 
   const getSectionEntries = useCallback(() => navSections
@@ -1242,12 +1466,12 @@ export const MyProfile = () => {
     const currentState = stateRef.current || {};
     const clearableFields = visibleSections
       .flatMap(section => section.fields)
-      .filter(name => !CLEAR_ALL_PROTECTED_FIELDS.has(name))
+      .filter(name => !CLEAR_ALL_PROTECTED_FIELDS.has(name) && name !== 'programs')
       .filter(name => String(currentState[name] ?? '').trim() !== '');
 
     setIsClearingProfile(true);
     const nextState = { ...currentState, publish: false };
-    // Програми й побажання батьків — обʼєкти, а не поля з історією версій:
+    // Побажання батьків — обʼєкт, а не поле з історією версій:
     // порожній рядок у них не «позначка стирання», а битий запис. Вони
     // знімаються цілком (`null`) і напряму, як і `publish`.
     const objectFields = clearableFields.filter(name => OBJECT_PROFILE_FIELDS.has(name));
@@ -1257,6 +1481,8 @@ export const MyProfile = () => {
 
     try {
       await saveState(nextState, { directFields: ['publish', ...objectFields] });
+      // Програми лежать окремо від анкети, тож і знімаються окремо.
+      if (ownProgramsCount && programsOwnerId) await saveCardPrograms(programsOwnerId, {});
       localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
       setShowInfoModal(false);
       toast.success(uiText('Анкету очищено й знято з публікації', language));
@@ -1271,7 +1497,7 @@ export const MyProfile = () => {
   const renderField = (name) => {
     const field = fieldsMap.get(name);
     if (!field) return null;
-    const roleText = resolveMyProfileFieldText(name, normalizedRole);
+    const roleText = resolveMyProfileFieldText(name, sectionTitleRole);
     const fieldPlaceholder = roleText.placeholder ? uiText(roleText.placeholder, language) : getFieldPlaceholder(field, language);
     const val = state[name] || '';
     const isTextArea = name === 'moreInfo_main';
@@ -1396,6 +1622,21 @@ export const MyProfile = () => {
       )}
     </Field>;
   };
+
+  // Прев'ю картки — та сама картка стрічки (`ProfileRow`), зібрана з
+  // набраного тут. Зʼявляється, коли набрано бодай щось: порожня картка з
+  // ініціалами нічого не показує. Сховані ролі картка не несе, як і в стрічці.
+  const previewRoles = rolesList.filter(role => !hiddenRoles.includes(role));
+  const showCardPreview = filledStats.filled >= 2 || (Array.isArray(state.photos) && state.photos.length > 0);
+  const previewCard = {
+    ...state,
+    userId: programsOwnerId || 'my-profile-preview',
+    userRole: previewRoles.length > 1 ? previewRoles : previewRoles[0] || selectedRole,
+    role: previewRoles.length > 1 ? previewRoles : previewRoles[0] || selectedRole,
+    photos: Array.isArray(state.photos) ? state.photos : [],
+    programs: previewRoles.some(role => ORGANISATION_ROLES.includes(role)) ? (ownVisiblePrograms.length ? ownPrograms : null) : null,
+  };
+  delete previewCard.password;
 
   return <Page>
     <HeaderPanel>
@@ -1558,7 +1799,63 @@ export const MyProfile = () => {
         ))}
       </RoleOptions>
       <RoleHint>{uiText('Роль вирішує, які поля показує анкета і в якій вкладці її шукають. Змінити її можна будь-коли.', language)}</RoleHint>
+
+      <RoleCardTitle style={{ marginTop: 16 }}>{uiText('Ще одна роль', language)}</RoleCardTitle>
+      <RoleOptions>
+        <RoleOption type="button" $active={!secondaryRole} aria-pressed={!secondaryRole} onClick={() => changeSecondaryRole('')}>
+          {uiText('Немає', language)}
+        </RoleOption>
+        {MY_PROFILE_ROLE_OPTIONS.filter(option => option.value !== selectedRole).map(option => (
+          <RoleOption
+            key={option.value}
+            type="button"
+            $active={secondaryRole === option.value}
+            aria-pressed={secondaryRole === option.value}
+            onClick={() => changeSecondaryRole(option.value)}
+          >
+            {uiText(option.label, language)}
+          </RoleOption>
+        ))}
+      </RoleOptions>
+      <RoleHint>{uiText('Наприклад, донорка, яка ще й підбирає донорок як агентка. Друга анкета стоїть під першою.', language)}</RoleHint>
+
+      {rolesList.length > 1 ? (
+        <RoleVisibilityList>
+          {rolesList.map(role => {
+            const hidden = hiddenRoles.includes(role);
+            const lastVisible = !hidden && rolesList.filter(item => !hiddenRoles.includes(item)).length === 1;
+            const label = MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role;
+            return (
+              <RoleVisibilityRow key={role} $hidden={hidden}>
+                <span>
+                  <b>{uiText(label, language)}</b>
+                  {' · '}
+                  {uiText(hidden ? 'анкету сховано' : 'анкету видно в стрічці', language)}
+                </span>
+                <RoleVisibilityButton
+                  type="button"
+                  disabled={lastVisible}
+                  title={lastVisible ? uiText('Щоб сховати всю анкету — «Зняти з публікації»', language) : undefined}
+                  onClick={() => toggleRoleHidden(role)}
+                >
+                  {uiText(hidden ? 'Показати' : 'Сховати', language)}
+                </RoleVisibilityButton>
+              </RoleVisibilityRow>
+            );
+          })}
+        </RoleVisibilityList>
+      ) : null}
     </RoleCard>
+
+    {showCardPreview ? (
+      <MyProfileCardPreview
+        card={previewCard}
+        language={language}
+        rates={programRates}
+        displayCurrency={programDisplayCurrency}
+        onDisplayCurrencyChange={setProgramDisplayCurrency}
+      />
+    ) : null}
 
     <PhotoSection ref={node => { sectionRefs.current.photo = node; }} $isFirstContent={isProfileAccessConfirmed}>
       <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>{uiText('Додайте до 5 фото. Перше — головне', language)}</p>
@@ -1580,8 +1877,18 @@ export const MyProfile = () => {
 
     {visibleSections.map(section => {
       const SectionCard = !isProfileAccessConfirmed && section.key === firstSectionKey ? FirstContentCard : Card;
+      const anketaLabel = section.anketaRole
+        ? MY_PROFILE_ROLE_OPTIONS.find(option => option.value === section.anketaRole)?.label || section.anketaRole
+        : '';
       return (
-      <SectionCard key={section.key} ref={node => { sectionRefs.current[section.key] = node; }}>
+      <React.Fragment key={section.key}>
+      {anketaLabel ? (
+        <AnketaDivider $hidden={hiddenRoles.includes(section.anketaRole)}>
+          {uiText('Друга анкета', language)}: <b>{uiText(anketaLabel, language)}</b>
+          {hiddenRoles.includes(section.anketaRole) ? <span> · {uiText('анкету сховано', language)}</span> : null}
+        </AnketaDivider>
+      ) : null}
+      <SectionCard ref={node => { sectionRefs.current[section.key] = node; }}>
         <Header>
           <div>{uiText(section.title, language).split(' ')[0]}</div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{uiText(section.title, language).replace(/^\S+\s/, '')}</div>
@@ -1590,20 +1897,20 @@ export const MyProfile = () => {
           </div>
         </Header>
         <FieldGroup>
-          {section.custom === 'agency' ? <AgencyProfileFields state={state} onCommit={saveRoleField} language={language} role={normalizedRole} /> : null}
           {section.custom === 'programs' ? (
             <ProgramsEditor
-              programs={state.programs}
-              onSave={record => saveRoleField('programs', record)}
+              programs={ownPrograms}
+              onSave={saveOwnPrograms}
               language={language}
               rates={programRates}
-              defaultType={String(state.services || '').includes('sm') && !String(state.services || '').includes('ed') ? 'sm' : 'ed'}
+              suggestions={programTerms}
             />
           ) : null}
           {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} /> : null}
           {!section.custom ? section.fields.map(renderField) : null}
         </FieldGroup>
       </SectionCard>
+      </React.Fragment>
       );
     })}
 

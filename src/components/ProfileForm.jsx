@@ -68,6 +68,7 @@ import {
   PROFILE_FORM_BLOCK_IDS,
 } from './profileFormNodeBlocks';
 import { appendEmptyFieldRow, canAppendFieldRow, fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
+import { NestedObjectField, isNestedObjectValue } from './NestedObjectField';
 import { PROFILE_DATE_FIELDS } from 'utils/profileDate';
 
 const get = (...args) =>
@@ -3266,6 +3267,20 @@ ${entries.join('\n')}`;
                   </InputDiv>
                 ))}
               </div>
+            ) : isNestedObjectValue(state[field.name]) ? (
+              // Обʼєкт у полі (програми, побажання батьків, вкладене з імпорту)
+              // текстовим полем показати нема як — там стояло «[object Object]»,
+              // і перше ж збереження записало б цей рядок замість обʼєкта.
+              <NestedObjectField
+                label={getFieldDisplayLabel(field)}
+                value={state[field.name]}
+                onChange={next => setState(prevState => ({ ...prevState, [field.name]: next }))}
+                onCommit={next => {
+                  const latestDraft = latestProfileDraftRef.current || state || {};
+                  submitWithNormalization({ ...latestDraft, [field.name]: next }, 'overwrite');
+                }}
+                onDeleteField={() => handleDelKeyValue && handleDelKeyValue(field.name)}
+              />
             ) : (
               <InputDiv $isHighlighted={highlightedFields.includes(field.name)} $isDeletedOverlay={deletedOverlayFields.includes(field.name)}>
                 <InputFieldContainer fieldName={field.name} value={state[field.name]}>
