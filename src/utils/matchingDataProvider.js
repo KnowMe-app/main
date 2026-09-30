@@ -1,4 +1,5 @@
 import { listPaymentBuckets } from './donorPrograms';
+import { ensureProgramsForCards } from './programsStore';
 import { getProgramRates } from './programCurrency';
 import { get, limitToFirst, orderByKey, query, ref } from 'firebase/database';
 import { collectAgeIdsByFilters, database } from 'components/config';
@@ -1161,9 +1162,9 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
     }
 
     // Виплата — з програм картки й за курсом НБУ (`listPaymentBuckets`).
-    // Індексу під неї немає: програми лежать у самій картці стрічки, тож
-    // перевірка коштує нуль читань. Картка з програмами в кількох бакетах
-    // проходить, коли увімкнено хоч один із них.
+    // Індексу під неї немає: програми дочитує джерело сторінки
+    // (`ensureProgramsForCards`), і лише для карток, які їх мають. Картка з
+    // програмами в кількох бакетах проходить, коли увімкнено хоч один із них.
     if (isMatchingFilterGroupActive(activeFilters.payment)) {
       const buckets = listPaymentBuckets(user, getProgramRates());
       if (!buckets.some(bucket => activeFilters.payment[bucket])) return false;
@@ -1607,6 +1608,13 @@ export const fetchFilteredMatchingSourceChunk = ({
       // перебудовує.
       try {
         const cardsPage = await fetchMatchingCardsPage({ limit: sourceLimit, cursor });
+        // Фільтр «Виплата» питає програми, а картка несе лише їхню версію:
+        // програми сторінки дочитуються до фільтра — спершу з `localStorage`,
+        // і лише тих карток, у яких вони є. Без фільтра їх дочитує сам рядок,
+        // коли картка вже в списку.
+        if (isMatchingFilterGroupActive(filters?.payment) && cardsPage?.users?.length) {
+          await ensureProgramsForCards(cardsPage.users);
+        }
         if (cardsPage?.users?.length || cursor) {
           reportFeedSource('matchingCards', '');
           return cardsPage;

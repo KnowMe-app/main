@@ -3,8 +3,10 @@ import styled from 'styled-components';
 import {
   PROGRAM_COVERAGE_OPTIONS,
   PROGRAM_TYPE_LABELS,
+  PROGRAM_TOTAL_FIELD,
   describeProgramRequirements,
   evaluateProgram,
+  listProgramBonuses,
   listProgramPayments,
   summarizeCardPrograms,
 } from '../../utils/donorPrograms';
@@ -220,12 +222,12 @@ export const ProgramCurrencySwitch = ({ value, onChange, language, rates }) => (
 );
 
 /** Сума агенції першою, далі еквіваленти з «≈». */
-const MoneyLine = ({ money, rates }) => {
+const MoneyLine = ({ money, rates, prefix = '' }) => {
   const described = describeProgramMoney(money, rates);
   if (!described) return null;
   return (
     <dd>
-      {described.text}
+      {prefix}{described.text}
       {described.equivalents.length ? <small>{described.equivalents.map(item => item.text).join(' · ')}</small> : null}
     </dd>
   );
@@ -240,7 +242,13 @@ export const ProgramCard = ({ program, facts = null, rates, language, compactNot
   const checkByKey = new Map((result?.checks || []).map(check => [check.key, check.ok]));
   const state = result ? (result.matches ? 'match' : 'mismatch') : 'neutral';
   const payments = listProgramPayments(program);
-  const [main, ...rest] = payments[0]?.key === 'final' ? payments : [null, ...payments];
+  const total = program.payments?.[PROGRAM_TOTAL_FIELD]
+    ? { key: PROGRAM_TOTAL_FIELD, label: 'Загальна сума за програму', money: program.payments[PROGRAM_TOTAL_FIELD] }
+    : null;
+  // Головна — фінальна виплата; без неї головною стає загальна сума.
+  const [main, ...paymentRest] = payments[0]?.key === 'final' ? payments : [total, ...payments];
+  const rest = main && main !== total && total ? [total, ...paymentRest] : paymentRest;
+  const bonuses = listProgramBonuses(program);
   const mainMoney = main ? describeProgramMoney(main.money, rates) : null;
   const requirements = describeProgramRequirements(program);
   const unknown = requirements.filter(item => checkByKey.get(item.key) === null).map(item => REQUIREMENT_FIX_HINTS[item.key]);
@@ -276,6 +284,20 @@ export const ProgramCard = ({ program, facts = null, rates, language, compactNot
         </PayTable>
       ) : null}
 
+      {bonuses.length ? (
+        <div>
+          <PayLabel>{uiText('Можливі доплати', language)}</PayLabel>
+          <PayTable>
+            {bonuses.map(item => (
+              <React.Fragment key={item.key}>
+                <dt>{uiText(item.label, language)}</dt>
+                <MoneyLine money={item.money} rates={rates} prefix="+" />
+              </React.Fragment>
+            ))}
+          </PayTable>
+        </div>
+      ) : null}
+
       {requirements.length ? (
         <Chips aria-label={uiText('Вимоги', language)}>
           {requirements.map(item => {
@@ -298,7 +320,6 @@ export const ProgramCard = ({ program, facts = null, rates, language, compactNot
         </Chips>
       ) : null}
 
-      {program.duration ? <Note>{program.duration}</Note> : null}
       {program.note && !compactNote ? <Note>{program.note}</Note> : null}
     </Card>
   );

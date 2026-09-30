@@ -187,26 +187,85 @@ await it('картка приймає список ініціалів прізв
     set(ref(context.database(), `matchingCards/${CARD}/surnameShort`), 'К.'));
 });
 
-// Програми агенції лягають у картку стисло (`buildProgramsBrief`): вимоги й
-// головна виплата. Правило пропускає рівно ці ключі й відкидає решту — повна
-// програма з доплатами живе в `profileDetails`.
-await it('картка приймає стислі програми, послуги й «кого шукаємо» — і нічого понад', async () => {
-  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/programsBrief`), {
-    p1: { type: 'ed', title: 'Донорство в Києві', ageFrom: 21, ageTo: 29, rh: '+', ownKids: 'required', pay: 2500, currency: 'USD' },
-    p2: { type: 'sm', ageTo: 35, marital: 'unmarried', csectionMax: '1', pay: 20000, currency: 'USD' },
-  }));
-  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/serviceTags`), 'ed,sm,legal'));
+// Програм картка не несе — лише час їхньої зміни (`programsAt`), за яким
+// браузер читача знає, чи чинна його копія. Самі програми лежать у
+// `multiData/programs/{uid}`: відкриті кожному авторизованому, а пише їх
+// власниця разом із `programsAt` одним записом.
+await it('картка приймає версію програм і «кого шукаємо» — а стислих програм і послуг більше ні', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/programsAt`), 1759200000000));
   await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'both'));
-  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/programsBrief/p3`), { type: 'ed', monthly: 500 }));
-  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/programsBrief/p3`), { type: 'xx', pay: 1 }));
-  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/programsBrief/p3`), { type: 'ed', currency: 'GBP' }));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/programsAt`), 'вчора'));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/programsBrief`), { p1: { type: 'ed', pay: 2500, currency: 'USD' } }));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/serviceTags`), 'ed,sm'));
   await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'anyone'));
   await testEnv.withSecurityRulesDisabled(context =>
-    set(ref(context.database(), `matchingCards/${CARD}/programsBrief`), null));
-  await testEnv.withSecurityRulesDisabled(context =>
-    set(ref(context.database(), `matchingCards/${CARD}/serviceTags`), null));
+    set(ref(context.database(), `matchingCards/${CARD}/programsAt`), null));
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `matchingCards/${CARD}/seekingRole`), null));
+});
+
+const OWNER_PROGRAMS = {
+  updatedAt: 1759200000000,
+  items: {
+    p1: {
+      id: 'p1',
+      type: 'ed',
+      title: 'Донорство в Києві',
+      order: 0,
+      requirements: { ageFrom: 21, ageTo: 29, rh: '+', ownKids: 'required', marital: 'any', csectionMax: 'any' },
+      payments: {
+        final: { amount: 2500, currency: 'USD' },
+        total: { amount: 2700, currency: 'USD' },
+        repeat: { amount: 2800, currency: 'USD' },
+      },
+      otherPayments: [{ label: 'Компенсація дороги', amount: 200, currency: 'UAH' }],
+      bonuses: [{ label: 'Вагітність з першої спроби', amount: 500, currency: 'USD' }],
+      coverage: ['exams', 'legal'],
+    },
+    p2: { id: 'p2', type: 'sm', hidden: true, order: 1, payments: { final: { amount: 20000, currency: 'USD' } } },
+  },
+};
+
+await it('власниця пише програми разом із версією в картці, а читає їх кожен авторизований', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `profileDetails/${PROFILE_OWNER}/name`), 'Агенція'));
+  await assertSucceeds(update(ref(db(PROFILE_OWNER)), {
+    [`multiData/programs/${PROFILE_OWNER}`]: OWNER_PROGRAMS,
+    [`matchingCards/${PROFILE_OWNER}/programsAt`]: OWNER_PROGRAMS.updatedAt,
+  }));
+  await assertSucceeds(get(ref(db(OUTSIDER), `multiData/programs/${PROFILE_OWNER}`)));
+  await assertFails(set(ref(db(OUTSIDER), `multiData/programs/${PROFILE_OWNER}/items/p1/title`), 'Чужа назва'));
+  await assertFails(get(ref(testEnv.unauthenticatedContext().database(), `multiData/programs/${PROFILE_OWNER}`)));
+  // Перелік усіх програм — не читання картки, і анонімно, і цілком — ні.
+  await assertFails(get(ref(db(OUTSIDER), 'multiData/programs')));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `multiData/programs/${PROFILE_OWNER}`), null));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${PROFILE_OWNER}`), null));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `profileDetails/${PROFILE_OWNER}/name`), null));
+});
+
+await it('програма з невідомим ключем, типом чи валютою не пишеться', async () => {
+  const base = `multiData/programs/${PROFILE_OWNER}`;
+  const withProgram = program => ({ updatedAt: 1759200000000, items: { p3: { id: 'p3', type: 'ed', ...program } } });
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ type: 'xx' })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payments: { final: { amount: 1, currency: 'GBP' } } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payments: { bribe: { amount: 1, currency: 'USD' } } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ secret: 'x' })));
+  // Без часу зміни версії в картці не було б із чим звірити.
+  await assertFails(set(ref(db(PROFILE_OWNER), base), { items: { p3: { id: 'p3', type: 'ed' } } }));
+});
+
+// Назви доплат, які вже вживають агенції, — підказки в редакторі програм.
+// Дописати нову може кожен, переписати чужу — ні.
+await it('словник назв доплат: новий ключ пише кожен, наявний не переписує ніхто, крім адміна', async () => {
+  await assertSucceeds(set(ref(db(OUTSIDER), 'multiData/programTerms/bonus/за досвід'), 'За досвід'));
+  await assertFails(set(ref(db(PROFILE_OWNER), 'multiData/programTerms/bonus/за досвід'), 'Інше'));
+  await assertFails(set(ref(db(OUTSIDER), 'multiData/programTerms/secret/x'), 'x'));
+  await assertFails(set(ref(db(OUTSIDER), 'multiData/programTerms/payment/y'), 42));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), 'multiData/programTerms')));
+  await assertSucceeds(set(ref(db(SUPERADMIN), 'multiData/programTerms/bonus/за досвід'), null));
 });
 
 await it('неопублікована анкета не віддає ані деталей, ані контактів', async () => {

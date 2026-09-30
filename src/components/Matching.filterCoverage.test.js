@@ -23,9 +23,9 @@ describe('every Matching filter reaches the index', () => {
   // рахує картки вже після нього — дір у сторінці немає.
   const CARD_BORNE_GROUPS = new Set(['payment']);
 
-  it('виплату фільтрує сама картка', () => {
+  it('виплату фільтрують програми картки, а не індекс', () => {
     const { applyMatchingSearchKeyFilters } = require('../utils/matchingDataProvider');
-    const withProgram = { userId: 'a', programsBrief: { p1: { type: 'ed', pay: 2500, currency: 'USD' } } };
+    const withProgram = { userId: 'a', programs: { p1: { type: 'ed', payments: { final: { amount: 2500, currency: 'USD' } } } } };
     const without = { userId: 'b' };
     const payment = { ed_lt1500: true, ed_1500: true, ed_2000: true, sm_lt18k: true, sm_18k: true, sm_20k: true, none: false };
     expect(applyMatchingSearchKeyFilters([withProgram, without], { payment }).map(user => user.userId)).toEqual(['a']);

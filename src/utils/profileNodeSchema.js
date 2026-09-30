@@ -49,7 +49,8 @@ export const MATCHING_CARD_DIRECT_FIELDS = Object.freeze([
  * (`userRole` і `role`), і звести їх до одного ключа — це рішення, а не копія.
  */
 export const MATCHING_CARD_DERIVED_FIELDS = Object.freeze({
-  role: ['userRole', 'role'],
+  // `hiddenRoles` — ролі, чию анкету людина сховала: картка їх не несе.
+  role: ['userRole', 'role', 'hiddenRoles'],
   surnameShort: ['surname'],
   // Резус — і все. Номер групи з картки прибрано навмисно: разом із резусом
   // він відновлює повне `blood`, тобто картка віддавала б поза стрічкою те
@@ -58,15 +59,12 @@ export const MATCHING_CARD_DERIVED_FIELDS = Object.freeze({
   rh: ['blood'],
   avatar: ['avatar', 'photos'],
   feedDate: ['publish', 'lastLogin2', 'lastLogin'],
-  // Програми агенції чи клініки — стисло: вимоги й головна виплата кожної
-  // (`buildProgramsBrief` у `utils/donorPrograms`). Рядок стрічки каже з них
-  // «вам підходить N з M, 1 600–2 500 $» без жодного читання, а повні
-  // програми з доплатами й покриттям лежать у `profileDetails/programs`.
+  // «Кого шукаємо» біологічних батьків. Ключ картки навмисно інший, ніж поле
+  // анкети: поле, яке належить картці, роутер записів у `profileDetails` уже
+  // не веде (`OWNER_BY_FIELD`).
   //
-  // Ключі картки навмисно інші, ніж поля анкети: поле, яке належить картці,
-  // роутер записів у `profileDetails` уже не веде (`OWNER_BY_FIELD`).
-  programsBrief: ['programs'],
-  serviceTags: ['services'],
+  // Програм агенцій тут немає: вони лежать окремо (`multiData/programs`), а
+  // картка несе лише час їхньої зміни — `programsAt`, `MATCHING_CARD_PROGRAMS_FIELDS`.
   seekingRole: ['seeking'],
 });
 
@@ -133,11 +131,18 @@ export const twinSourceRank = field => {
  */
 export const MATCHING_CARD_REVIEW_FIELDS = Object.freeze(['hasPublicReview']);
 
+/**
+ * Той самий рід поля: час зміни програм (`multiData/programs/{uid}`), який
+ * пише `saveCardPrograms`, а проєкція лише переносить.
+ */
+export const MATCHING_CARD_PROGRAMS_FIELDS = Object.freeze(['programsAt']);
+
 /** Повний набір ключів, які має право лежати в картці стрічки. */
 export const MATCHING_CARD_ALLOWED_FIELDS = Object.freeze([
   ...MATCHING_CARD_DIRECT_FIELDS,
   ...Object.keys(MATCHING_CARD_DERIVED_FIELDS),
   ...MATCHING_CARD_REVIEW_FIELDS,
+  ...MATCHING_CARD_PROGRAMS_FIELDS,
 ]);
 
 /**
@@ -294,14 +299,19 @@ export const PROFILE_DETAIL_FIELDS = Object.freeze([
   'opuDate',
   'opuEggsNumber',
 
-  // агенція / клініка: програми й те, чим вона себе представляє
-  // (`utils/donorPrograms`). Програми тут повні — з доплатами, покриттям і
-  // приміткою; у картку стрічки їде стисла форма (`programsBrief`).
+  // агенція / клініка. `programs` тут лише для старих записів: програми
+  // переїхали в `multiData/programs/{uid}` (`utils/programsStore`), і «Мій
+  // профіль» переносить знайдене тут туди, а звідси знімає. Послуги й досвід
+  // з анкети прибрано — їх не заповнював ніхто, — поля лишаються для вже
+  // записаного.
   'programs',
   'services',
   'workLocations',
   'foundedYear',
   'programsCompleted',
+
+  // ролі, чию анкету людина сховала (`parseHiddenRoles`)
+  'hiddenRoles',
 
   // біологічні батьки: кого шукають і яких рис хочуть
   'seeking',
