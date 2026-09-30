@@ -66,7 +66,7 @@ describe('зміна ролі на MyProfile', () => {
   });
 });
 
-describe('дві ролі в «Моєму профілі»', () => {
+describe('кілька ролей у «Моєму профілі»', () => {
   it('основна роль — остання, і сховання її не міняє', () => {
     // Донорка, яка ще й агентка, сховала донорську анкету: картка несе
     // лише агенцію, але основною лишається донорка.
@@ -75,8 +75,11 @@ describe('дві ролі в «Моєму профілі»', () => {
     expect(resolveMyProfileRoles({ cardRole: 'ip', storedRole: 'ed', hiddenRoles: '' })).toEqual(['ip']);
   });
 
-  it('пише ролі масивом, основна в кінці', () => {
+  it('малює єдиний список чекбоксів і не дозволяє зняти останню роль', () => {
     const source = read('MyProfile.jsx');
-    expect(source).toContain("const roles = role ? [role, selectedRole] : [selectedRole];");
+    expect(source).toContain('type="checkbox"');
+    expect(source).toContain('if (selected && rolesList.length === 1) return;');
+    expect(source).not.toContain('Ще одна роль');
+    expect(source).not.toContain('Друга анкета');
   });
 });

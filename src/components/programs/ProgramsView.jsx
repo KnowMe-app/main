@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import {
   PROGRAM_COVERAGE_OPTIONS,
   PROGRAM_TYPE_LABELS,
   PROGRAM_TOTAL_FIELD,
+  calculateProgramTotal,
+  defaultProgramBonusKeys,
   describeProgramRequirements,
   evaluateProgram,
   listProgramBonuses,
@@ -151,6 +153,19 @@ const PayTable = styled.dl`
   dd small { display: block; font-size: 11.5px; color: ${MUTED}; }
 `;
 
+const BonusChoice = styled.label`
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+
+  input { margin: 0; accent-color: ${ACCENT}; }
+  span { color: ${MUTED}; }
+  strong { color: ${TEXT}; font-weight: 600; text-align: right; }
+`;
+
 const Chips = styled.div`
   display: flex;
   flex-wrap: wrap;
@@ -238,6 +253,12 @@ const MoneyLine = ({ money, rates, prefix = '' }) => {
  * вона є, кожна вимога показує, чи читач їй відповідає.
  */
 export const ProgramCard = ({ program, facts = null, rates, language, compactNote = false }) => {
+  const [selectedBonuses, setSelectedBonuses] = useState(() => defaultProgramBonusKeys(program, facts));
+  useEffect(() => {
+    setSelectedBonuses(defaultProgramBonusKeys(program, facts));
+  // Object identities may change when a cached card rerenders; only facts that
+  // affect defaults should reset the user's local selection.
+  }, [program.id, facts?.births, facts?.csections, facts?.experience]); // eslint-disable-line react-hooks/exhaustive-deps
   const result = facts ? evaluateProgram(program, facts) : null;
   const checkByKey = new Map((result?.checks || []).map(check => [check.key, check.ok]));
   const state = result ? (result.matches ? 'match' : 'mismatch') : 'neutral';
@@ -249,6 +270,7 @@ export const ProgramCard = ({ program, facts = null, rates, language, compactNot
   const [main, ...paymentRest] = payments[0]?.key === 'final' ? payments : [total, ...payments];
   const rest = main && main !== total && total ? [total, ...paymentRest] : paymentRest;
   const bonuses = listProgramBonuses(program);
+  const calculatedTotals = calculateProgramTotal(program, selectedBonuses);
   const mainMoney = main ? describeProgramMoney(main.money, rates) : null;
   const requirements = describeProgramRequirements(program);
   const unknown = requirements.filter(item => checkByKey.get(item.key) === null).map(item => REQUIREMENT_FIX_HINTS[item.key]);
@@ -258,10 +280,18 @@ export const ProgramCard = ({ program, facts = null, rates, language, compactNot
     <Card $state={state} data-testid="program-card">
       <CardHead>
         <b>{uiText(PROGRAM_TYPE_LABELS[program.type], language)}</b>
-        {program.title ? <span>{program.title}</span> : null}
         {program.location ? <span>· {program.location}</span> : null}
         {result ? <Verdict $ok={result.matches}>{uiText(result.matches ? 'Вам підходить' : 'Не підходить', language)}</Verdict> : null}
       </CardHead>
+
+      {calculatedTotals.length ? (
+        <div>
+          <PayLabel>{uiText('Загальна сума за програму', language)}</PayLabel>
+          <MainPay>
+            {calculatedTotals.map(item => <strong key={item.currency}>{formatProgramMoney(item.amount, item.currency)}</strong>)}
+          </MainPay>
+        </div>
+      ) : null}
 
       {mainMoney ? (
         <div>
@@ -289,10 +319,17 @@ export const ProgramCard = ({ program, facts = null, rates, language, compactNot
           <PayLabel>{uiText('Можливі доплати', language)}</PayLabel>
           <PayTable>
             {bonuses.map(item => (
-              <React.Fragment key={item.key}>
-                <dt>{uiText(item.label, language)}</dt>
-                <MoneyLine money={item.money} rates={rates} prefix="+" />
-              </React.Fragment>
+              <BonusChoice key={item.key}>
+                <input
+                  type="checkbox"
+                  checked={selectedBonuses.includes(item.key)}
+                  onChange={() => setSelectedBonuses(current => (current.includes(item.key)
+                    ? current.filter(key => key !== item.key)
+                    : [...current, item.key]))}
+                />
+                <span>{uiText(item.label, language)}</span>
+                <strong>+{formatProgramMoney(item.money.amount, item.money.currency)}</strong>
+              </BonusChoice>
             ))}
           </PayTable>
         </div>

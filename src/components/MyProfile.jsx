@@ -231,8 +231,11 @@ const RoleCardTitle = styled.div`
   margin-bottom: 10px;
 `;
 const RoleOptions = styled.div`display:flex;flex-wrap:wrap;gap:8px;`;
-const RoleOption = styled.button`
+const RoleOption = styled.label`
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   padding: 7px 14px;
   border-radius: 99px;
   font-size: 13px;
@@ -241,6 +244,8 @@ const RoleOption = styled.button`
   border: 1.5px solid ${({ $active }) => ($active ? 'var(--accent)' : 'var(--border)')};
   background: ${({ $active }) => ($active ? 'var(--accent)' : 'var(--card)')};
   color: ${({ $active }) => ($active ? '#fff' : 'var(--muted)')};
+
+  input { margin: 0; accent-color: var(--accent); }
 `;
 const RoleHint = styled.p`margin:10px 0 0;font-size:11px;line-height:1.5;color:var(--muted);`;
 const RoleVisibilityList = styled.div`
@@ -777,13 +782,12 @@ export const MyProfile = () => {
   const selectedRole = MY_PROFILE_ROLE_OPTIONS.some(option => option.value === normalizedRole)
     ? normalizedRole
     : 'ed';
-  // Ролей буває дві: донорка, яка ще й підбирає донорок як агентка. Основна
-  // — та, під якою людина гортає стрічку; друга додає свою анкету під першою.
+  // Остання роль — основна: під нею людина гортає стрічку. Решта вибраних
+  // ролей додають свої блоки анкети без окремого поняття «другої анкети».
   const rolesList = useMemo(() => {
     const list = profileRoles.length ? profileRoles.filter(role => role !== selectedRole) : [];
     return [...list, selectedRole];
   }, [profileRoles, selectedRole]);
-  const secondaryRole = rolesList.length > 1 ? rolesList[0] : '';
   const personRole = rolesList.find(role => PERSON_ROLES.includes(role)) || '';
   const organisationRole = rolesList.find(role => ORGANISATION_ROLES.includes(role)) || '';
   const isDonorRole = Boolean(personRole) || !normalizedRole || ['donor', 'до'].includes(normalizedRole);
@@ -824,20 +828,14 @@ export const MyProfile = () => {
     }
   }, [language, userId]);
 
-  const changeUserRole = useCallback(async nextRole => {
+  const toggleUserRole = useCallback(async nextRole => {
     const role = String(nextRole || '').trim().toLowerCase();
-    if (!role || role === normalizedRole) return;
-    // Друга роль лишається другою; якщо основною стала саме вона — друга
-    // знімається, а не дублює основну.
-    const roles = [...rolesList.slice(0, -1).filter(item => item !== role), role];
-    await writeProfileRoles(roles, role);
-  }, [normalizedRole, rolesList, writeProfileRoles]);
-
-  const changeSecondaryRole = useCallback(async nextRole => {
-    const role = String(nextRole || '').trim().toLowerCase();
-    if (role === selectedRole || role === secondaryRole) return;
-    const roles = role ? [role, selectedRole] : [selectedRole];
-    // Роль, якої більше немає, не лишається й серед схованих.
+    if (!role) return;
+    const selected = rolesList.includes(role);
+    if (selected && rolesList.length === 1) return;
+    const roles = selected ? rolesList.filter(item => item !== role) : [role, ...rolesList];
+    const primaryRole = roles.includes(selectedRole) ? selectedRole : roles[roles.length - 1];
+    // Знята роль не лишається серед схованих.
     const stillHidden = hiddenRoles.filter(item => roles.includes(item));
     if (stillHidden.length !== hiddenRoles.length) {
       const previousState = stateRef.current;
@@ -856,8 +854,8 @@ export const MyProfile = () => {
         return;
       }
     }
-    await writeProfileRoles(roles, selectedRole);
-  }, [hiddenRoles, language, secondaryRole, selectedRole, writeProfileRoles]); // eslint-disable-line react-hooks/exhaustive-deps
+    await writeProfileRoles(roles, primaryRole);
+  }, [hiddenRoles, language, rolesList, selectedRole, writeProfileRoles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Сховати одну з двох анкет — скажімо, агентську, поки набору немає, — не
@@ -903,11 +901,14 @@ export const MyProfile = () => {
     return [];
   }, []);
   const roleSections = useMemo(() => roleSectionsFor(selectedRole), [roleSectionsFor, selectedRole]);
-  const secondaryRoleSections = useMemo(() => (secondaryRole
-    ? roleSectionsFor(secondaryRole)
-      .filter(section => !roleSections.some(item => item.key === section.key))
-      .map((section, index) => (index === 0 ? { ...section, anketaRole: secondaryRole } : section))
-    : []), [roleSections, roleSectionsFor, secondaryRole]);
+  const additionalRoleSections = useMemo(() => {
+    const used = new Set(roleSections.map(section => section.key));
+    return rolesList.filter(role => role !== selectedRole).flatMap(role => {
+      const unique = roleSectionsFor(role).filter(section => !used.has(section.key));
+      unique.forEach(section => used.add(section.key));
+      return unique.map((section, index) => (index === 0 ? { ...section, anketaRole: role } : section));
+    });
+  }, [roleSections, roleSectionsFor, rolesList, selectedRole]);
   const visibleSections = useMemo(() => {
     const base = sections
       .map(section => ({
@@ -923,9 +924,9 @@ export const MyProfile = () => {
       ...base.slice(0, personalIndex + 1),
       ...roleSections,
       ...base.slice(personalIndex + 1),
-      ...secondaryRoleSections,
+      ...additionalRoleSections,
     ];
-  }, [isDonorRole, organisationRole, roleSections, secondaryRoleSections, sectionTitleRole, sections]);
+  }, [additionalRoleSections, isDonorRole, organisationRole, roleSections, sectionTitleRole, sections]);
   const programRates = useProgramRates(Boolean(organisationRole));
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
 
@@ -1813,35 +1814,19 @@ export const MyProfile = () => {
         {MY_PROFILE_ROLE_OPTIONS.map(option => (
           <RoleOption
             key={option.value}
-            type="button"
-            $active={selectedRole === option.value}
-            aria-pressed={selectedRole === option.value}
-            onClick={() => changeUserRole(option.value)}
+            $active={rolesList.includes(option.value)}
           >
+            <input
+              type="checkbox"
+              checked={rolesList.includes(option.value)}
+              disabled={rolesList.length === 1 && rolesList.includes(option.value)}
+              onChange={() => toggleUserRole(option.value)}
+            />
             {uiText(option.label, language)}
           </RoleOption>
         ))}
       </RoleOptions>
       <RoleHint>{uiText('Роль вирішує, які поля показує анкета і в якій вкладці її шукають. Змінити її можна будь-коли.', language)}</RoleHint>
-
-      <RoleCardTitle style={{ marginTop: 16 }}>{uiText('Ще одна роль', language)}</RoleCardTitle>
-      <RoleOptions>
-        <RoleOption type="button" $active={!secondaryRole} aria-pressed={!secondaryRole} onClick={() => changeSecondaryRole('')}>
-          {uiText('Немає', language)}
-        </RoleOption>
-        {MY_PROFILE_ROLE_OPTIONS.filter(option => option.value !== selectedRole).map(option => (
-          <RoleOption
-            key={option.value}
-            type="button"
-            $active={secondaryRole === option.value}
-            aria-pressed={secondaryRole === option.value}
-            onClick={() => changeSecondaryRole(option.value)}
-          >
-            {uiText(option.label, language)}
-          </RoleOption>
-        ))}
-      </RoleOptions>
-      <RoleHint>{uiText('Наприклад, донорка, яка ще й підбирає донорок як агентка. Друга анкета стоїть під першою.', language)}</RoleHint>
 
       {rolesList.length > 1 ? (
         <RoleVisibilityList>
@@ -1908,7 +1893,7 @@ export const MyProfile = () => {
       <React.Fragment key={section.key}>
       {anketaLabel ? (
         <AnketaDivider $hidden={hiddenRoles.includes(section.anketaRole)}>
-          {uiText('Друга анкета', language)}: <b>{uiText(anketaLabel, language)}</b>
+          <b>{uiText(anketaLabel, language)}</b>
           {hiddenRoles.includes(section.anketaRole) ? <span> · {uiText('анкету сховано', language)}</span> : null}
         </AnketaDivider>
       ) : null}
