@@ -1068,6 +1068,10 @@ const ProfileRow = ({
   // Програми агенцій і клінік: хто читач, його анкета для «підходить N з M»,
   // курс і валюта показу. Один обʼєкт на всю стрічку (`Matching`).
   programsContext,
+  // Прев'ю власної картки в «Моєму профілі»: картка та сама, але без
+  // нотаток і ряду рішень — реагувати на себе й писати собі відгук нема
+  // сенсу, а місця вони займали б більше за саму картку.
+  preview = false,
 }) => {
   // A limited profile is the projection a viewer without full access gets back
   // from a search: surname, name, age, region, city, and the public comment. There
@@ -1390,7 +1394,7 @@ const ProfileRow = ({
           несе прочитане, щойно прапорець `hasPublicReview` картки скаже, що
           воно є (ефект стрічки в `Matching.jsx`), а картці без прапорця в
           доріжці й далі стоїть саме поле. */}
-      <ProfileNotes
+      {!preview ? <ProfileNotes
         language={language}
         publicSlot={reviewsSlot}
         hasReviews={(reviewsAction?.count || 0) > 0}
@@ -1411,7 +1415,7 @@ const ProfileRow = ({
               onSave={value => onCommentSave(user, value)}
             />
           )}
-      />
+      /> : null}
 
       {/* Ряд рішень — останній у картці: спершу все, що вона каже про людину,
           потім те, що читач про неї записав, і аж тоді жест.
@@ -1437,7 +1441,7 @@ const ProfileRow = ({
           написами («Доповнити дані», «Перевірити наявність відгуків»), і
           картка з трьох фактів займала пів екрана. Що робить кожна, каже
           `title` і `aria-label` — саме їх читає й екранний диктор. */}
-      {(editAction || canExpandDetails || (!isLimited && (primaryAction || secondaryAction))) && (
+      {!preview && (editAction || canExpandDetails || (!isLimited && (primaryAction || secondaryAction))) && (
         <S.RowFooterActions onClick={e => e.stopPropagation()}>
           {editAction && (
             <S.RowFooterButton

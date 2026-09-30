@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { buildMatchingCardProjection } from '../utils/matchingCardIndex';
+import { resolveMyProfileRoles } from './MyProfile';
 
 const read = file => fs.readFileSync(path.join(__dirname, file), 'utf8');
 
@@ -28,7 +29,7 @@ describe('зміна ролі на MyProfile', () => {
 
   it('зберігає роль окремим шляхом, а не автозбереженням форми', () => {
     const source = myProfile();
-    expect(source).toContain('await updateProfileRole(targetUserId, role);');
+    expect(source).toContain('await updateProfileRole(targetUserId, roles);');
     // Поки анкети в базі немає, роль лишається в чернетці — писати нікуди.
     expect(source).toContain('if (!targetUserId) return;');
   });
@@ -62,5 +63,20 @@ describe('зміна ролі на MyProfile', () => {
       role: 'ed',
     });
     expect(onlyOneKey.role).toEqual(['ag', 'ed']);
+  });
+});
+
+describe('дві ролі в «Моєму профілі»', () => {
+  it('основна роль — остання, і сховання її не міняє', () => {
+    // Донорка, яка ще й агентка, сховала донорську анкету: картка несе
+    // лише агенцію, але основною лишається донорка.
+    expect(resolveMyProfileRoles({ cardRole: 'ag', storedRole: ['ag', 'ed'], hiddenRoles: 'ed' })).toEqual(['ag', 'ed']);
+    expect(resolveMyProfileRoles({ cardRole: ['ag', 'ed'], storedRole: 'ed', hiddenRoles: '' })).toEqual(['ag', 'ed']);
+    expect(resolveMyProfileRoles({ cardRole: 'ip', storedRole: 'ed', hiddenRoles: '' })).toEqual(['ip']);
+  });
+
+  it('пише ролі масивом, основна в кінці', () => {
+    const source = read('MyProfile.jsx');
+    expect(source).toContain("const roles = role ? [role, selectedRole] : [selectedRole];");
   });
 });

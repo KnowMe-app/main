@@ -1,16 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import {
-  AGENCY_SERVICE_OPTIONS,
   PARENT_SEEKING_OPTIONS,
   PARENT_VIA_OPTIONS,
 } from '../../utils/donorPrograms';
-import { normalizeServiceTags } from '../../utils/matchingCardIndex';
 import { uiText } from '../../utils/uiTranslations';
 
 /*
- * Те, чим агенція, клініка й біологічні батьки представляють себе в
- * «Моєму профілі» — поза програмами.
+ * Те, чим біологічні батьки представляють себе в «Моєму профілі».
+ *
+ * Агенція й клініка мали тут ще блок «Послуги й досвід» (послуги, міста,
+ * рік, кількість програм) — його не заповнював ніхто, і його прибрано; сайт
+ * переїхав у «Соцмережі», а решту кажуть програми.
  *
  * Текстові поля пишуться на blur, вибір — одразу: так само, як решта форми.
  * Батьки бачать лише ті побажання, які стосуються того, кого вони шукають:
@@ -33,13 +34,6 @@ const FieldLabel = styled.div`
   letter-spacing: 0.6px;
   text-transform: uppercase;
   color: var(--km-muted, #6f675f);
-`;
-
-const Hint = styled.span`
-  font-size: 12px;
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
 `;
 
 const TextInput = styled.input`
@@ -117,42 +111,6 @@ const Choice = ({ options, value, onChange, language, multiple = false }) => (
     })}
   </Segments>
 );
-
-export const AgencyProfileFields = ({ state, onCommit, language, role }) => {
-  const services = normalizeServiceTags(state.services).split(',').filter(Boolean);
-  const toggleService = key => {
-    const next = services.includes(key) ? services.filter(item => item !== key) : [...services, key];
-    onCommit('services', next.length ? normalizeServiceTags(next) : null);
-  };
-  const place = role === 'cl' ? 'клініка' : 'агенція';
-  return (
-    <Stack>
-      <FieldLabel as="div">
-        {uiText('Послуги', language)}
-        <Choice multiple language={language} options={AGENCY_SERVICE_OPTIONS} value={services} onChange={toggleService} />
-      </FieldLabel>
-      <FieldLabel>
-        {uiText('Де працюєте', language)}
-        <BlurInput value={state.workLocations} placeholder={uiText('Наприклад: Київ, Львів, Грузія', language)} onCommit={value => onCommit('workLocations', value || null)} />
-      </FieldLabel>
-      <FieldLabel>
-        {uiText('Сайт', language)}
-        <BlurInput value={Array.isArray(state.website) ? state.website[state.website.length - 1] : state.website} inputMode="url" placeholder="https://" onCommit={value => onCommit('website', value || null)} />
-      </FieldLabel>
-      <Grid>
-        <FieldLabel>
-          {uiText('Працюєте з року', language)}
-          <BlurInput value={state.foundedYear} inputMode="numeric" placeholder={uiText('Наприклад: 2016', language)} onCommit={value => onCommit('foundedYear', value || null)} />
-        </FieldLabel>
-        <FieldLabel>
-          {uiText('Програм проведено', language)}
-          <BlurInput value={state.programsCompleted} inputMode="numeric" placeholder={uiText('Наприклад: 120', language)} onCommit={value => onCommit('programsCompleted', value || null)} />
-        </FieldLabel>
-      </Grid>
-      <Hint>{uiText(`Instagram, Telegram і Facebook — у розділі «Соцмережі». Програми, які пропонує ${place}, — у розділі «Програми».`, language)}</Hint>
-    </Stack>
-  );
-};
 
 const PREFS_DONOR = [
   { key: 'blood', label: 'Група крові', placeholder: 'Наприклад: 1+, 2+' },

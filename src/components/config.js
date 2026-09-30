@@ -4449,10 +4449,20 @@ export const saveComparisonField = async (userId, field, value) => createSaveCom
   clearMatchingSearchResultCache, setOwnerWriter, setOwnerGetInTouch,
 })(userId, field, value);
 
+/**
+ * `nextRole` — роль або перелік ролей (донорка, яка ще й агентка). Перелік
+ * пишеться масивом, і поточна роль у ньому **остання**: картка читає масив
+ * як набір, а читач — як історію, де поточне значення останнє
+ * (`resolveViewerCurrentRole`), тож основна роль, під якою людина гортає
+ * стрічку, стоїть у кінці.
+ */
 export const updateProfileRole = async (userId, nextRole) => {
   const id = String(userId || '').trim();
-  const role = String(nextRole || '').trim().toLowerCase();
-  if (!id || !role) return;
+  const roles = [...new Set((Array.isArray(nextRole) ? nextRole : [nextRole])
+    .map(item => String(item || '').trim().toLowerCase())
+    .filter(Boolean))];
+  if (!id || !roles.length) return;
+  const role = roles.length === 1 ? roles[0] : roles;
 
   const previous = (await readProfileFromNodes(id, { includeTechnical: true })) || {};
   await updateDataInRealtimeDB(id, { userRole: role, role }, 'update');
@@ -4936,7 +4946,8 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
       await set(buildMatchingCardRef(id), projection);
     } catch (error) {
       // Правила `matchingCards` закриті переліком полів (`$other: false`) і
-      // викочуються руками. Поки поля програм туди не доїхали, картка з ними
+      // викочуються руками. Поки нові поля (`programsAt`, `seekingRole`) туди
+      // не доїхали, картка з ними
       // відлітала б **цілком** — разом з імʼям, фото й датою публікації, — і
       // стрічка показувала б агенцію старою. Тож без нових полів картка
       // пишеться ще раз, а про причину каже консоль.

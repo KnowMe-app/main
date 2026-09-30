@@ -33,7 +33,7 @@ export const listProfileRoles = user => [
 ];
 
 /** Ролі читача по порядку — з масиву, з `['ag','ed']` чи з рядка `'ag,ed'`. */
-const listViewerRoles = viewerRole => roleValues(viewerRole)
+export const listViewerRoles = viewerRole => roleValues(viewerRole)
   .flatMap(value => value.split(','))
   .map(value => normalizeProfileRole(value.trim().toLowerCase()))
   .filter(Boolean);
