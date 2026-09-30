@@ -212,7 +212,37 @@ const Chip = styled.button`
     box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
   `}
 `;
-const SubmitWrap = styled.div`padding:20px;`;
+const SubmitWrap = styled.div`
+  margin: 8px 20px 24px;
+  padding: 18px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+`;
+const RoleActionList = styled.div`display:flex;flex-direction:column;gap:10px;margin-bottom:14px;`;
+const RoleActionRow = styled.div`
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:10px;
+  align-items:center;
+  padding:12px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:var(--bg);
+`;
+const RoleActionMeta = styled.div`
+  min-width:0;
+  b{display:block;font-size:14px;}
+  span{font-size:11.5px;color:var(--muted);}
+`;
+const RoleActionButtons = styled.div`display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;`;
+const RoleActionButton = styled.button`
+  min-height:34px;padding:0 11px;border-radius:9px;border:1px solid var(--border);
+  background:var(--card);color:${({ $danger }) => ($danger ? '#C8483E' : 'var(--text)')};
+  font:inherit;font-size:12px;font-weight:600;cursor:pointer;
+  &:disabled{opacity:.45;cursor:default;}
+`;
 // Роль — перше рішення в анкеті: від неї залежить, які поля взагалі показувати.
 // Тому вона стоїть над формою окремим рядом, а не полем усередині секції.
 const RoleCard = styled.div`
@@ -458,6 +488,11 @@ const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery']);
 // Поля-обʼєкти розділів батьків (`roleSections`). Програм тут немає: вони
 // лежать окремо (`utils/programsStore`), а не в анкеті.
 const OBJECT_PROFILE_FIELDS = new Set(['parentPreferences', 'services']);
+
+const DONOR_ROLE_FIELDS = new Set(baseSections
+  .flatMap(section => section.fields)
+  .filter(name => !['name', 'surname', 'phone', 'country', 'region', 'city', 'telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'website'].includes(name)));
+const PARENT_ROLE_FIELDS = new Set(['seeking', 'programLocation', 'parentVia', 'parentPreferences', 'services']);
 
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','country','region','city','moreInfo_main','website']);
 
@@ -1513,6 +1548,44 @@ export const MyProfile = () => {
     }
   };
 
+  const clearRoleFields = async role => {
+    const label = MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role;
+    if (!window.confirm(uiText('Очистити дані ролі «{role}»? Цю дію не можна скасувати.', language, { role: label }))) return;
+
+    const currentState = stateRef.current || {};
+    const sameKindRoles = rolesList.filter(item => (
+      (PERSON_ROLES.includes(role) && PERSON_ROLES.includes(item))
+      || (ORGANISATION_ROLES.includes(role) && ORGANISATION_ROLES.includes(item))
+    ));
+    const fields = role === 'ip'
+      ? [...PARENT_ROLE_FIELDS]
+      : PERSON_ROLES.includes(role) && sameKindRoles.length === 1
+        ? [...DONOR_ROLE_FIELDS]
+        : [];
+    const nextState = { ...currentState };
+    const directFields = [];
+    fields.forEach(name => {
+      nextState[name] = OBJECT_PROFILE_FIELDS.has(name) ? null : '';
+      if (OBJECT_PROFILE_FIELDS.has(name)) directFields.push(name);
+    });
+    stateRef.current = nextState;
+    setState(nextState);
+
+    try {
+      if (fields.length) await saveState(nextState, { directFields });
+      if (ORGANISATION_ROLES.includes(role) && sameKindRoles.length === 1 && programsOwnerId) {
+        await saveCardPrograms(programsOwnerId, {});
+      }
+      // Коли дві ролі користуються тими самими полями, «очистити одну» означає
+      // прибрати саме роль, не стираючи дані сусідньої анкети.
+      if (sameKindRoles.length > 1) await toggleUserRole(role);
+      toast.success(uiText('Дані ролі очищено', language));
+    } catch (error) {
+      console.error('clear role error', error);
+      toast.error(uiText('Не вдалося очистити дані ролі. Спробуйте ще раз', language));
+    }
+  };
+
   const renderField = (name) => {
     const field = fieldsMap.get(name);
     if (!field) return null;
@@ -1647,21 +1720,27 @@ export const MyProfile = () => {
   // ініціалами нічого не показує. Сховані ролі картка не несе, як і в стрічці.
   const previewRoles = rolesList.filter(role => !hiddenRoles.includes(role));
   const showCardPreview = filledStats.filled >= 2 || (Array.isArray(state.photos) && state.photos.length > 0);
-  const previewDraft = {
-    ...state,
-    userId: programsOwnerId || 'my-profile-preview',
-    userRole: previewRoles.length > 1 ? previewRoles : previewRoles[0] || selectedRole,
-    role: previewRoles.length > 1 ? previewRoles : previewRoles[0] || selectedRole,
-    photos: Array.isArray(state.photos) ? state.photos : [],
-  };
-  const previewCard = {
-    ...expandMatchingCard(
-      previewDraft.userId,
-      buildMatchingCardProjection(previewDraft.userId, previewDraft),
-    ),
-    // Programs are external to the profile projection, just as in the feed.
-    programs: previewRoles.some(role => ORGANISATION_ROLES.includes(role)) && ownVisiblePrograms.length ? ownPrograms : null,
-  };
+  const previewCards = previewRoles.map(role => {
+    const previewDraft = {
+      ...state,
+      userId: `${programsOwnerId || 'my-profile-preview'}-${role}`,
+      userRole: role,
+      role,
+      photos: Array.isArray(state.photos) ? state.photos : [],
+    };
+    return {
+      role,
+      label: MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role,
+      card: {
+        ...expandMatchingCard(
+          previewDraft.userId,
+          buildMatchingCardProjection(previewDraft.userId, previewDraft),
+        ),
+        // Програми належать лише організаційним карткам, а не сусідній ролі.
+        programs: ORGANISATION_ROLES.includes(role) && ownVisiblePrograms.length ? ownPrograms : null,
+      },
+    };
+  });
 
   return <Page>
     <HeaderPanel>
@@ -1839,7 +1918,7 @@ export const MyProfile = () => {
                 <span>
                   <b>{uiText(label, language)}</b>
                   {' · '}
-                  {uiText(hidden ? 'анкету сховано' : 'анкету видно в стрічці', language)}
+                  {uiText(hidden ? 'анкету сховано' : state.publish === true ? 'анкету видно в стрічці' : 'чернетка — профіль не опубліковано', language)}
                 </span>
                 <RoleVisibilityButton
                   type="button"
@@ -1856,15 +1935,18 @@ export const MyProfile = () => {
       ) : null}
     </RoleCard>
 
-    {showCardPreview ? (
+    {showCardPreview ? previewCards.map(preview => (
       <MyProfileCardPreview
-        card={previewCard}
+        key={preview.role}
+        card={preview.card}
+        role={preview.role}
+        roleLabel={preview.label}
         language={language}
         rates={programRates}
         displayCurrency={programDisplayCurrency}
         onDisplayCurrencyChange={setProgramDisplayCurrency}
       />
-    ) : null}
+    )) : null}
 
     <PhotoSection ref={node => { sectionRefs.current.photo = node; }} $isFirstContent={isProfileAccessConfirmed}>
       <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>{uiText('Додайте до 5 фото. Перше — головне', language)}</p>
@@ -1958,6 +2040,38 @@ export const MyProfile = () => {
     )}
 
     <SubmitWrap>
+      <RoleActionList>
+        {rolesList.map(role => {
+          const hidden = hiddenRoles.includes(role);
+          const label = MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role;
+          const status = state.publish !== true
+            ? 'Чернетка'
+            : hidden ? 'Прихована' : 'Опублікована';
+          const lastVisible = !hidden && rolesList.filter(item => !hiddenRoles.includes(item)).length === 1;
+          return (
+            <RoleActionRow key={role}>
+              <RoleActionMeta>
+                <b>{uiText(label, language)}</b>
+                <span>{uiText(status, language)}</span>
+              </RoleActionMeta>
+              <RoleActionButtons>
+                {state.publish === true ? (
+                  <RoleActionButton
+                    type="button"
+                    disabled={lastVisible}
+                    onClick={() => toggleRoleHidden(role)}
+                  >
+                    {uiText(hidden ? 'Показати' : 'Приховати', language)}
+                  </RoleActionButton>
+                ) : null}
+                <RoleActionButton type="button" $danger onClick={() => clearRoleFields(role)}>
+                  {uiText('Очистити роль', language)}
+                </RoleActionButton>
+              </RoleActionButtons>
+            </RoleActionRow>
+          );
+        })}
+      </RoleActionList>
       <SubmitBtn type="button" onClick={state.publish ? hideProfile : publishProfile}>
         {uiText(state.publish ? 'Зняти з публікації' : 'Опублікувати анкету', language)}
       </SubmitBtn>

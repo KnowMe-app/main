@@ -82,4 +82,20 @@ describe('кілька ролей у «Моєму профілі»', () => {
     expect(source).not.toContain('Ще одна роль');
     expect(source).not.toContain('Друга анкета');
   });
+
+  it('збирає окрему картку попереднього перегляду для кожної видимої ролі', () => {
+    const source = read('MyProfile.jsx');
+    expect(source).toContain('const previewCards = previewRoles.map(role =>');
+    expect(source).toContain('role={preview.role}');
+    expect(source).toContain('ORGANISATION_ROLES.includes(role) && ownVisiblePrograms.length');
+    expect(source).not.toContain('userRole: previewRoles.length > 1');
+  });
+
+  it('показує внизу статус і дії кожної ролі', () => {
+    const source = read('MyProfile.jsx');
+    expect(source).toContain('<RoleActionList>');
+    expect(source).toContain("state.publish !== true");
+    expect(source).toContain("uiText(hidden ? 'Показати' : 'Приховати', language)");
+    expect(source).toContain("uiText('Очистити роль', language)");
+  });
 });
