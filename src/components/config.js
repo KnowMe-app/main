@@ -88,6 +88,7 @@ import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_FEED_FIELD,
   MATCHING_CARD_PROGRAM_FIELDS,
+  MATCHING_CARD_PROGRAMS_AT_FIELD,
   MATCHING_CARD_ORDER_FIELD,
   MATCHING_CARD_REVIEW_FLAG_FIELD,
   areMatchingCardProjectionsEqual,
@@ -4942,8 +4943,18 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
 
     if (existing && areMatchingCardProjectionsEqual(existing, projection)) return projection;
 
+    // Programs are owned by saveCardPrograms and may change after the read
+    // above. A field-level patch deliberately never writes programsAt, so a
+    // concurrent program save cannot be rolled back by this profile save.
+    const independentlyOwnedFields = new Set([MATCHING_CARD_PROGRAMS_AT_FIELD]);
+    const projectionPatch = { ...projection };
+    independentlyOwnedFields.forEach(field => { delete projectionPatch[field]; });
+    Object.keys(existing || {}).forEach(field => {
+      if (!(field in projection) && !independentlyOwnedFields.has(field)) projectionPatch[field] = null;
+    });
+
     try {
-      await set(buildMatchingCardRef(id), projection);
+      await update(buildMatchingCardRef(id), projectionPatch);
     } catch (error) {
       // Правила `matchingCards` закриті переліком полів (`$other: false`) і
       // викочуються руками. Поки нові поля (`programsAt`, `seekingRole`) туди
@@ -4955,7 +4966,11 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
       MATCHING_CARD_PROGRAM_FIELDS.forEach(field => { delete withoutPrograms[field]; });
       if (!isReactionPermissionDeniedError(error) || Object.keys(withoutPrograms).length === Object.keys(projection).length) throw error;
       console.warn('[matchingCards] правила бази ще не приймають програм — картку записано без них. Викотіть правила: npx firebase deploy --only database', { userId: id });
-      await set(buildMatchingCardRef(id), withoutPrograms);
+      const fallbackPatch = { ...withoutPrograms };
+      Object.keys(existing || {}).forEach(field => {
+        if (!(field in withoutPrograms) && !independentlyOwnedFields.has(field)) fallbackPatch[field] = null;
+      });
+      await update(buildMatchingCardRef(id), fallbackPatch);
       return withoutPrograms;
     }
     return projection;

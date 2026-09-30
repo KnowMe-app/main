@@ -17,6 +17,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { programsToRecord, setCardProgramsLookup } from './donorPrograms';
+import { listProfileRoles } from './matchingPeerVisibility';
 
 export const PROGRAMS_CACHE_PREFIX = 'programs:v1:';
 
@@ -63,6 +64,15 @@ const writeEntry = (uid, entry) => {
     window.localStorage.setItem(storageKey(uid), JSON.stringify(entry));
   } catch {
     // Переповнене сховище чи приватне вікно: копія живе в памʼяті вкладки.
+  }
+};
+
+const removeEntry = uid => {
+  memory.delete(uid);
+  try {
+    window.localStorage.removeItem(storageKey(uid));
+  } catch {
+    // The in-memory copy is still gone when storage is unavailable.
   }
 };
 
@@ -132,6 +142,10 @@ export const ensureCardPrograms = card => {
 export const ensureProgramsForCards = cards => Promise.all(
   (Array.isArray(cards) ? cards : [])
     .filter(card => readCardProgramsAt(card) > 0)
+    .filter(card => {
+      const roles = listProfileRoles(card);
+      return !roles.length || roles.some(role => role === 'ag' || role === 'cl');
+    })
     .map(card => ensureCardPrograms(card)),
 );
 
@@ -160,8 +174,13 @@ export const loadOwnPrograms = async uid => {
     if (entry) {
       writeEntry(id, entry);
       notify();
+      return entry;
     }
-    return entry || local;
+    // A fulfilled read with no node is an authoritative remote deletion. Only
+    // a rejected read may retain the local cache (the catch branch below).
+    removeEntry(id);
+    notify();
+    return null;
   } catch (error) {
     ownLoaded.delete(id);
     console.warn('[programs] не вдалося прочитати власні програми', error);

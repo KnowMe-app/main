@@ -17,7 +17,7 @@ import { inputUpdateValue } from './inputUpdatedValue';
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
 import { PROFILE_ROLE_OPTIONS } from '../utils/profileRoleOptions';
 import { listViewerRoles, resolveViewerCurrentRole } from '../utils/matchingPeerVisibility';
-import { parseHiddenRoles } from '../utils/matchingCardIndex';
+import { buildMatchingCardProjection, parseHiddenRoles } from '../utils/matchingCardIndex';
 import { formatDateToDisplay, normalizePhoneValue } from './inputValidations';
 import {
   createUserWithEmailAndPassword,
@@ -452,7 +452,7 @@ const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery']);
 
 // Поля-обʼєкти розділів батьків (`roleSections`). Програм тут немає: вони
 // лежать окремо (`utils/programsStore`), а не в анкеті.
-const OBJECT_PROFILE_FIELDS = new Set(['parentPreferences']);
+const OBJECT_PROFILE_FIELDS = new Set(['parentPreferences', 'services']);
 
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','country','region','city','moreInfo_main','website']);
 
@@ -839,7 +839,12 @@ export const MyProfile = () => {
     const roles = role ? [role, selectedRole] : [selectedRole];
     // Роль, якої більше немає, не лишається й серед схованих.
     const stillHidden = hiddenRoles.filter(item => roles.includes(item));
-    if (stillHidden.length !== hiddenRoles.length) saveRoleField('hiddenRoles', stillHidden.join(','));
+    if (stillHidden.length !== hiddenRoles.length) {
+      const nextState = { ...stateRef.current, hiddenRoles: stillHidden.join(',') };
+      stateRef.current = nextState;
+      setState(nextState);
+      await saveState(nextState, { directFields: ['hiddenRoles'] });
+    }
     await writeProfileRoles(roles, selectedRole);
   }, [hiddenRoles, secondaryRole, selectedRole, writeProfileRoles]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1378,7 +1383,9 @@ export const MyProfile = () => {
     const miss = {};
     const missingFieldNames = visibleSections
       .flatMap(section => section.fields)
-      .filter(fieldName => String(currentState[fieldName] || '').trim() === '');
+      .filter(fieldName => fieldName === 'programs'
+        ? ownProgramsCount === 0
+        : String(currentState[fieldName] || '').trim() === '');
 
     missingFieldNames.forEach(fieldName => {
       miss[fieldName] = true;
@@ -1628,15 +1635,18 @@ export const MyProfile = () => {
   // ініціалами нічого не показує. Сховані ролі картка не несе, як і в стрічці.
   const previewRoles = rolesList.filter(role => !hiddenRoles.includes(role));
   const showCardPreview = filledStats.filled >= 2 || (Array.isArray(state.photos) && state.photos.length > 0);
-  const previewCard = {
+  const previewDraft = {
     ...state,
     userId: programsOwnerId || 'my-profile-preview',
     userRole: previewRoles.length > 1 ? previewRoles : previewRoles[0] || selectedRole,
     role: previewRoles.length > 1 ? previewRoles : previewRoles[0] || selectedRole,
     photos: Array.isArray(state.photos) ? state.photos : [],
-    programs: previewRoles.some(role => ORGANISATION_ROLES.includes(role)) ? (ownVisiblePrograms.length ? ownPrograms : null) : null,
   };
-  delete previewCard.password;
+  const previewCard = {
+    ...buildMatchingCardProjection(previewDraft.userId, previewDraft),
+    // Programs are external to the profile projection, just as in the feed.
+    programs: previewRoles.some(role => ORGANISATION_ROLES.includes(role)) && ownVisiblePrograms.length ? ownPrograms : null,
+  };
 
   return <Page>
     <HeaderPanel>

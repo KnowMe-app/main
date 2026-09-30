@@ -64,14 +64,14 @@ export const isCounterpartyCard = card => {
 const labelOf = (options, key) => options.find(option => option.key === key)?.label || '';
 
 /** Дочитує програми картки, щойно вона у списку, і перемальовує, коли приїхали. */
-export const useCardPrograms = card => {
+export const useCardPrograms = (card, enabled = true) => {
   useProgramsVersion();
   const at = readCardProgramsAt(card);
   const id = card?.userId || card?.id;
   useEffect(() => {
-    if (at && id) ensureCardPrograms({ userId: id, programsAt: at });
-  }, [at, id]);
-  return resolveCardPrograms(card);
+    if (enabled && at && id) ensureCardPrograms({ userId: id, programsAt: at });
+  }, [at, enabled, id]);
+  return enabled ? resolveCardPrograms(card) : { programs: [], loaded: true };
 };
 
 // Кого шукають — знахідним відмінком, як читається рядок «Шукають: …».
@@ -91,10 +91,10 @@ export const CardRoleBlock = ({ card, programsContext, language }) => {
   const isOrganisation = roles.some(role => ORGANISATION_ROLES.includes(role));
   const isParent = roles.includes('ip');
   const isAlsoPerson = roles.some(role => PERSON_ROLES.includes(role));
-  const { programs } = useCardPrograms(card);
+  const { programs } = useCardPrograms(card, isOrganisation);
   const seeking = pickText(card?.seeking);
   const hasParentContent = isParent && (seeking || pickText(card?.programLocation));
-  if (!hasParentContent && !programs.length) return null;
+  if (!hasParentContent && !(isOrganisation && programs.length)) return null;
   const organisationRole = roles.find(role => ORGANISATION_ROLES.includes(role));
 
   return (
@@ -107,7 +107,7 @@ export const CardRoleBlock = ({ card, programsContext, language }) => {
           {card?.parentVia ? ` · ${uiText(labelOf(PARENT_VIA_OPTIONS, pickText(card.parentVia)).toLowerCase(), language)}` : ''}
         </Line>
       ) : null}
-      {programs.length && programsContext ? (
+      {isOrganisation && programs.length && programsContext ? (
         <ProgramsSummary
           card={card}
           language={language}
