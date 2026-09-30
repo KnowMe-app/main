@@ -54,10 +54,11 @@ describe('my-profile: видалення і очищення анкети', () =
     );
 
     expect(body).toContain('publish: false');
-    expect(body).toContain("nextState[name] = ''");
+    expect(body).toContain("OBJECT_PROFILE_FIELDS.has(name) ? null : ''");
     // `publish` мусить доїхати до писача навіть будучи `false` — саме він
-    // перебудовує проєкцію стрічки.
-    expect(body).toContain("await saveState(nextState, { directFields: ['publish'] });");
+    // перебудовує проєкцію стрічки. Програми агенції знімаються цілком і теж
+    // напряму: порожній рядок в обʼєкті — не позначка стирання, а битий запис.
+    expect(body).toContain("await saveState(nextState, { directFields: ['publish', ...objectFields] });");
   });
 
   it('не стирає пошту — це логін, а не поле анкети', () => {

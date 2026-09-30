@@ -504,3 +504,42 @@ export const sortCardsByMode = (cards, mode, { viewerType = '', facts = null, ra
     .sort((a, b) => (b.key - a.key) || (a.index - b.index))
     .map(item => item.card);
 };
+
+/**
+ * Вимоги програми словами — по чіпу на вимогу, з ключем для позначки збігу.
+ * Порядок сталий: спершу те, за чим відсіюють найчастіше (вік, ІМТ).
+ */
+export const describeProgramRequirements = program => {
+  const req = program?.requirements || {};
+  const items = [];
+  if (req.ageFrom !== undefined && req.ageTo !== undefined) items.push({ key: 'age', text: `${req.ageFrom}–${req.ageTo} років` });
+  else if (req.ageTo !== undefined) items.push({ key: 'age', text: `до ${req.ageTo} років` });
+  else if (req.ageFrom !== undefined) items.push({ key: 'age', text: `від ${req.ageFrom} років` });
+  if (req.bmiMax !== undefined) items.push({ key: 'bmi', text: `ІМТ до ${req.bmiMax}` });
+  if (req.heightFrom !== undefined) items.push({ key: 'height', text: `зріст від ${req.heightFrom} см` });
+  if (req.rh === '+') items.push({ key: 'rh', text: 'лише Rh+' });
+  if (req.rh === '-') items.push({ key: 'rh', text: 'лише Rh−' });
+  if (req.marital === 'unmarried') items.push({ key: 'marital', text: 'незаміжня' });
+  if (req.marital === 'married') items.push({ key: 'marital', text: 'заміжня' });
+  if (req.ownKids === 'required') items.push({ key: 'ownKids', text: 'є власна дитина' });
+  if (req.maxBirths !== undefined) items.push({ key: 'births', text: `до ${req.maxBirths} пологів` });
+  if (req.csectionMax === '0') items.push({ key: 'csection', text: 'без КР' });
+  if (req.csectionMax === '1') items.push({ key: 'csection', text: 'можна з 1 КР' });
+  if (req.csectionMax === '2') items.push({ key: 'csection', text: 'до 2 КР' });
+  return items;
+};
+
+/** Усі виплати програми по порядку: головна, решта за типом, далі інші. */
+export const listProgramPayments = program => {
+  if (!program) return [];
+  const fields = PROGRAM_PAYMENT_FIELDS[program.type] || [];
+  const known = fields
+    .filter(({ key }) => program.payments?.[key])
+    .map(({ key, label }) => ({ key, label, money: program.payments[key] }));
+  const other = (program.otherPayments || []).map((item, index) => ({
+    key: `other-${index}`,
+    label: item.label,
+    money: { amount: item.amount, currency: item.currency },
+  }));
+  return [...known, ...other];
+};
