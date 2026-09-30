@@ -152,6 +152,10 @@ const ScalarRow = ({ label, value, path, onEdit, onCommit, onRemove }) => {
   // Clearing a number temporarily puts an empty string in form state. Keep the
   // field's schema type independently so the replacement is still converted.
   const numericRef = useRef(typeof value === 'number');
+  // Array rows are keyed by index, so deleting an earlier row may reuse this
+  // component for a different scalar. A non-empty value is authoritative for
+  // that new row; only the transient empty edit keeps the remembered type.
+  if (value !== '') numericRef.current = typeof value === 'number';
   return (
     <Row>
       <Key htmlFor={id} title={label}>{label}</Key>

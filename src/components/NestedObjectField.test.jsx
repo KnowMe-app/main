@@ -55,6 +55,20 @@ describe('поле-обʼєкт у формі адміна', () => {
     expect(onCommit.mock.calls.at(-1)[0].p1.payments.final.amount).toBe(2700);
   });
 
+  it('після зсуву масиву бере тип нового рядка, а не видаленого', () => {
+    const onCommit = jest.fn();
+    render(<Harness initial={[1, '123']} onCommit={onCommit} onDeleteField={jest.fn()} />);
+    open('programs');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Видалити [0]' }));
+    const shifted = screen.getByLabelText('[0]');
+    expect(shifted).toHaveValue('123');
+    fireEvent.change(shifted, { target: { value: '456' } });
+    fireEvent.blur(shifted);
+
+    expect(onCommit.mock.calls.at(-1)[0]).toEqual(['456']);
+  });
+
   it('знімає окремий блок, а останній — разом із полем', () => {
     const onCommit = jest.fn();
     const onDeleteField = jest.fn();

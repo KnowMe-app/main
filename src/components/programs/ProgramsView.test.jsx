@@ -3,7 +3,14 @@ import '@testing-library/jest-dom';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { ProgramsSummary } from './ProgramsView';
 import { CardRoleBlock, isCounterpartyCard } from './CardRoleBlock';
-import { PROGRAMS_CACHE_PREFIX, resetProgramsStoreForTests, setProgramsTransport } from '../../utils/programsStore';
+import {
+  loadOwnPrograms,
+  peekOwnPrograms,
+  PROGRAMS_CACHE_PREFIX,
+  resetProgramsStoreForTests,
+  saveCardPrograms,
+  setProgramsTransport,
+} from '../../utils/programsStore';
 import { applyUkrainianInterface } from '../../testUtils/interfaceLanguage';
 
 applyUkrainianInterface();
@@ -113,5 +120,35 @@ describe('картка агенції й батьків', () => {
     expect(isCounterpartyCard({ role: ['ag', 'ed'] })).toBe(false);
     const { container } = render(<CardRoleBlock card={{ role: 'ed' }} language="uk" />);
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('конкурентне читання власних програм', () => {
+  beforeEach(() => {
+    resetProgramsStoreForTests();
+    window.localStorage.clear();
+  });
+
+  afterEach(() => setProgramsTransport(null));
+
+  it('порожня стара відповідь не стирає нові pending-програми', async () => {
+    let finishRead;
+    const read = jest.fn(() => new Promise(resolve => { finishRead = resolve; }));
+    const writeError = new Error('offline');
+    setProgramsTransport({ read, write: jest.fn().mockRejectedValue(writeError) });
+
+    const loading = loadOwnPrograms('OWNER1');
+    const saving = saveCardPrograms('OWNER1', { p1: programs.p1 }).catch(error => error);
+    finishRead(null);
+
+    await expect(loading).resolves.toEqual(expect.objectContaining({ pending: true }));
+    await expect(saving).resolves.toBe(writeError);
+    const pending = peekOwnPrograms('OWNER1');
+    expect(pending?.pending).toBe(true);
+    expect(pending?.items?.p1).toEqual(expect.objectContaining({
+      id: programs.p1.id,
+      type: programs.p1.type,
+      title: programs.p1.title,
+    }));
   });
 });
