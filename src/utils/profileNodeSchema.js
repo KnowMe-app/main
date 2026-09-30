@@ -58,6 +58,16 @@ export const MATCHING_CARD_DERIVED_FIELDS = Object.freeze({
   rh: ['blood'],
   avatar: ['avatar', 'photos'],
   feedDate: ['publish', 'lastLogin2', 'lastLogin'],
+  // Програми агенції чи клініки — стисло: вимоги й головна виплата кожної
+  // (`buildProgramsBrief` у `utils/donorPrograms`). Рядок стрічки каже з них
+  // «вам підходить N з M, 1 600–2 500 $» без жодного читання, а повні
+  // програми з доплатами й покриттям лежать у `profileDetails/programs`.
+  //
+  // Ключі картки навмисно інші, ніж поля анкети: поле, яке належить картці,
+  // роутер записів у `profileDetails` уже не веде (`OWNER_BY_FIELD`).
+  programsBrief: ['programs'],
+  serviceTags: ['services'],
+  seekingRole: ['seeking'],
 });
 
 /**
@@ -283,6 +293,21 @@ export const PROFILE_DETAIL_FIELDS = Object.freeze([
   'opuCountry',
   'opuDate',
   'opuEggsNumber',
+
+  // агенція / клініка: програми й те, чим вона себе представляє
+  // (`utils/donorPrograms`). Програми тут повні — з доплатами, покриттям і
+  // приміткою; у картку стрічки їде стисла форма (`programsBrief`).
+  'programs',
+  'services',
+  'workLocations',
+  'foundedYear',
+  'programsCompleted',
+
+  // біологічні батьки: кого шукають і яких рис хочуть
+  'seeking',
+  'parentPreferences',
+  'programLocation',
+  'parentVia',
 ]);
 
 /**

@@ -187,6 +187,28 @@ await it('картка приймає список ініціалів прізв
     set(ref(context.database(), `matchingCards/${CARD}/surnameShort`), 'К.'));
 });
 
+// Програми агенції лягають у картку стисло (`buildProgramsBrief`): вимоги й
+// головна виплата. Правило пропускає рівно ці ключі й відкидає решту — повна
+// програма з доплатами живе в `profileDetails`.
+await it('картка приймає стислі програми, послуги й «кого шукаємо» — і нічого понад', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/programsBrief`), {
+    p1: { type: 'ed', title: 'Донорство в Києві', ageFrom: 21, ageTo: 29, rh: '+', ownKids: 'required', pay: 2500, currency: 'USD' },
+    p2: { type: 'sm', ageTo: 35, marital: 'unmarried', csectionMax: '1', pay: 20000, currency: 'USD' },
+  }));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/serviceTags`), 'ed,sm,legal'));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'both'));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/programsBrief/p3`), { type: 'ed', monthly: 500 }));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/programsBrief/p3`), { type: 'xx', pay: 1 }));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/programsBrief/p3`), { type: 'ed', currency: 'GBP' }));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'anyone'));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/programsBrief`), null));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/serviceTags`), null));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/seekingRole`), null));
+});
+
 await it('неопублікована анкета не віддає ані деталей, ані контактів', async () => {
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `matchingCards/${CARD}/feedDate`), null));

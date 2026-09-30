@@ -135,6 +135,62 @@
           ".write": "auth != null",
           ".validate": "!newData.exists() || (newData.isBoolean() && newData.val() == root.child('comments').child($uid).hasChildren())"
         },
+        "programsBrief": {
+          "$programId": {
+            ".validate": "$programId.length <= 40 && newData.hasChild('type')",
+            "type": {
+              ".validate": "newData.val() == 'ed' || newData.val() == 'sm'"
+            },
+            "title": {
+              ".validate": "newData.isString() && newData.val().length <= 60"
+            },
+            "location": {
+              ".validate": "newData.isString() && newData.val().length <= 60"
+            },
+            "ageFrom": {
+              ".validate": "newData.isNumber() && newData.val() >= 16 && newData.val() <= 60"
+            },
+            "ageTo": {
+              ".validate": "newData.isNumber() && newData.val() >= 16 && newData.val() <= 60"
+            },
+            "bmiMax": {
+              ".validate": "newData.isNumber() && newData.val() >= 15 && newData.val() <= 45"
+            },
+            "heightFrom": {
+              ".validate": "newData.isNumber() && newData.val() >= 130 && newData.val() <= 200"
+            },
+            "maxBirths": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10"
+            },
+            "rh": {
+              ".validate": "newData.val() == '+' || newData.val() == '-'"
+            },
+            "marital": {
+              ".validate": "newData.val() == 'married' || newData.val() == 'unmarried'"
+            },
+            "ownKids": {
+              ".validate": "newData.val() == 'required'"
+            },
+            "csectionMax": {
+              ".validate": "newData.val() == '0' || newData.val() == '1' || newData.val() == '2'"
+            },
+            "pay": {
+              ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 1000000000"
+            },
+            "currency": {
+              ".validate": "newData.val() == 'USD' || newData.val() == 'EUR' || newData.val() == 'UAH'"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "serviceTags": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
+        "seekingRole": {
+          ".validate": "newData.val() == 'ed' || newData.val() == 'sm' || newData.val() == 'both'"
+        },
         "$other": {
           ".validate": false
         }

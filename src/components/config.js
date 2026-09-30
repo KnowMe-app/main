@@ -87,6 +87,7 @@ import { PROFILE_CONTACT_FIELDS, PROFILE_NODES, resolveFieldOwnerNode, resolveCa
 import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_FEED_FIELD,
+  MATCHING_CARD_PROGRAM_FIELDS,
   MATCHING_CARD_ORDER_FIELD,
   MATCHING_CARD_REVIEW_FLAG_FIELD,
   areMatchingCardProjectionsEqual,
@@ -4931,7 +4932,21 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
 
     if (existing && areMatchingCardProjectionsEqual(existing, projection)) return projection;
 
-    await set(buildMatchingCardRef(id), projection);
+    try {
+      await set(buildMatchingCardRef(id), projection);
+    } catch (error) {
+      // Правила `matchingCards` закриті переліком полів (`$other: false`) і
+      // викочуються руками. Поки поля програм туди не доїхали, картка з ними
+      // відлітала б **цілком** — разом з імʼям, фото й датою публікації, — і
+      // стрічка показувала б агенцію старою. Тож без нових полів картка
+      // пишеться ще раз, а про причину каже консоль.
+      const withoutPrograms = { ...projection };
+      MATCHING_CARD_PROGRAM_FIELDS.forEach(field => { delete withoutPrograms[field]; });
+      if (!isReactionPermissionDeniedError(error) || Object.keys(withoutPrograms).length === Object.keys(projection).length) throw error;
+      console.warn('[matchingCards] правила бази ще не приймають програм — картку записано без них. Викотіть правила: npx firebase deploy --only database', { userId: id });
+      await set(buildMatchingCardRef(id), withoutPrograms);
+      return withoutPrograms;
+    }
     return projection;
   } catch (error) {
     console.error('[matchingCards] не вдалося оновити урізану картку', { userId: id, error });
