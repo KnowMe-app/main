@@ -9,6 +9,7 @@ jest.mock('components/config', () => ({
 }));
 
 const { fetchFilteredMatchingSourceChunk } = require('../matchingDataProvider');
+const donorPrograms = require('../donorPrograms');
 
 // Колекція `users` приймає лише довгі id — короткий відсіється пост-фільтром.
 const id = suffix => `matching-card-user-id-${suffix}`;
@@ -111,6 +112,28 @@ describe('стрічка читає урізані картки', () => {
     const { limit } = fetchMatchingCardsPage.mock.calls[0][0];
     expect(limit).toBeLessThanOrEqual(100);
     expect(limit).toBeGreaterThanOrEqual(5);
+  });
+
+  it('передає актуальні курси у фільтр виплати сторінки джерела', async () => {
+    const paymentBucketsSpy = jest.spyOn(donorPrograms, 'listPaymentBuckets')
+      .mockReturnValue(['ed_lt1500']);
+    const card = summaryCard(id('eur-program'));
+    const programRates = { EUR: 1.18, UAH: 0.024 };
+    const fetchMatchingCardsPage = jest.fn(async () => ({
+      users: [card],
+      lastKey: null,
+      hasMore: false,
+    }));
+
+    const result = await runChunk({
+      filters: { payment: { ed_lt1500: true, none: false } },
+      programRates,
+      fetchMatchingCardsPage,
+    });
+
+    expect(result.users).toEqual([card]);
+    expect(paymentBucketsSpy).toHaveBeenCalledWith(card, programRates);
+    paymentBucketsSpy.mockRestore();
   });
 
   it('не замінює загальну стрічку додатковим індексом', async () => {

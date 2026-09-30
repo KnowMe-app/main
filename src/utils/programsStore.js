@@ -178,6 +178,9 @@ export const loadOwnPrograms = async uid => {
     }
     // A fulfilled read with no node is an authoritative remote deletion. Only
     // a rejected read may retain the local cache (the catch branch below).
+    // Do not let this older read erase a save that became pending meanwhile.
+    const current = readEntry(id);
+    if (current !== local || current?.pending) return current;
     removeEntry(id);
     notify();
     return null;

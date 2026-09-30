@@ -24,8 +24,7 @@ import {
   normalizeProgramMoney,
   programMoneyInUsd,
 } from './programCurrency';
-import { normalizeProfileRole } from './profileRole';
-import { listProfileRoles } from './matchingPeerVisibility';
+import { listProfileRoles, listViewerRoles } from './matchingPeerVisibility';
 
 export const PROGRAM_TYPES = Object.freeze(['ed', 'sm']);
 
@@ -391,7 +390,7 @@ export const evaluateProgram = (program, facts) => {
 
 /** Тип програм, які стосуються читача: донорка бачить донорські, СМ — свої. */
 export const resolveViewerProgramType = viewerRole => {
-  const roles = (Array.isArray(viewerRole) ? viewerRole : [viewerRole]).map(normalizeProfileRole);
+  const roles = listViewerRoles(viewerRole);
   const current = roles[roles.length - 1];
   if (current === 'ed') return 'ed';
   if (current === 'sm') return 'sm';

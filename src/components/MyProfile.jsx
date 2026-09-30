@@ -17,7 +17,7 @@ import { inputUpdateValue } from './inputUpdatedValue';
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
 import { PROFILE_ROLE_OPTIONS } from '../utils/profileRoleOptions';
 import { listViewerRoles, resolveViewerCurrentRole } from '../utils/matchingPeerVisibility';
-import { buildMatchingCardProjection, parseHiddenRoles } from '../utils/matchingCardIndex';
+import { buildMatchingCardProjection, expandMatchingCard, parseHiddenRoles } from '../utils/matchingCardIndex';
 import { formatDateToDisplay, normalizePhoneValue } from './inputValidations';
 import {
   createUserWithEmailAndPassword,
@@ -840,13 +840,24 @@ export const MyProfile = () => {
     // Роль, якої більше немає, не лишається й серед схованих.
     const stillHidden = hiddenRoles.filter(item => roles.includes(item));
     if (stillHidden.length !== hiddenRoles.length) {
-      const nextState = { ...stateRef.current, hiddenRoles: stillHidden.join(',') };
+      const previousState = stateRef.current;
+      const nextState = { ...previousState, hiddenRoles: stillHidden.join(',') };
       stateRef.current = nextState;
       setState(nextState);
-      await saveState(nextState, { directFields: ['hiddenRoles'] });
+      try {
+        await saveState(nextState, { directFields: ['hiddenRoles'] });
+      } catch (error) {
+        console.warn('Failed to clean up the hidden profile role.', error);
+        if (stateRef.current === nextState) {
+          stateRef.current = previousState;
+          setState(previousState);
+        }
+        toast.error(uiText('Не вдалося змінити роль — спробуйте ще раз', language));
+        return;
+      }
     }
     await writeProfileRoles(roles, selectedRole);
-  }, [hiddenRoles, secondaryRole, selectedRole, writeProfileRoles]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hiddenRoles, language, secondaryRole, selectedRole, writeProfileRoles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Сховати одну з двох анкет — скажімо, агентську, поки набору немає, — не
@@ -1643,7 +1654,10 @@ export const MyProfile = () => {
     photos: Array.isArray(state.photos) ? state.photos : [],
   };
   const previewCard = {
-    ...buildMatchingCardProjection(previewDraft.userId, previewDraft),
+    ...expandMatchingCard(
+      previewDraft.userId,
+      buildMatchingCardProjection(previewDraft.userId, previewDraft),
+    ),
     // Programs are external to the profile projection, just as in the feed.
     programs: previewRoles.some(role => ORGANISATION_ROLES.includes(role)) && ownVisiblePrograms.length ? ownPrograms : null,
   };

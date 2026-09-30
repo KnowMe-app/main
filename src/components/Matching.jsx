@@ -1547,6 +1547,14 @@ const readStoredSortMode = () => {
   }
 };
 const EMPTY_MATCHING_FILTERS = Object.freeze({});
+const keepViewerVisibleMatchingFilters = (candidateFilters, canUseMatchingFilters, canUseProgramControls) => {
+  if (!canUseMatchingFilters) {
+    return canUseProgramControls ? { payment: candidateFilters?.payment } : EMPTY_MATCHING_FILTERS;
+  }
+  if (canUseProgramControls) return candidateFilters;
+  const { payment: _hiddenPayment, ...visibleFilters } = candidateFilters || {};
+  return visibleFilters;
+};
 // Скільки чіпів фільтрів ряд показує згорнутим. Решта — за «+N», яке розгортає
 // ряд на місці; ряд не скролиться вбік, він переноситься.
 /* Імена всіх груп фільтра — це те, що дістає панель, коли рейка закрита:
@@ -2249,16 +2257,18 @@ const Matching = () => {
   // Donors get the program-specific payment group, but not the personal-data
   // filters. Conversely, a role with no visible payment options must never be
   // narrowed by a persisted, now-hidden payment selection.
-  const matchingUiFilters = useMemo(() => {
-    if (!canUseMatchingFilters) return canUseProgramControls ? { payment: filters.payment } : EMPTY_MATCHING_FILTERS;
-    if (canUseProgramControls) return filters;
-    const { payment: _hiddenPayment, ...visibleFilters } = filters;
-    return visibleFilters;
-  }, [canUseMatchingFilters, canUseProgramControls, filters]);
+  const matchingUiFilters = useMemo(
+    () => keepViewerVisibleMatchingFilters(filters, canUseMatchingFilters, canUseProgramControls),
+    [canUseMatchingFilters, canUseProgramControls, filters],
+  );
   filtersRef.current = matchingUiFilters;
   useEffect(() => {
-    if (!canUseMatchingFilters && !canUseProgramControls) setOpenFilterGroup(null);
-  }, [canUseMatchingFilters, canUseProgramControls]);
+    if (!canUseMatchingFilters && (
+      !canUseProgramControls || viewMode !== 'default' || openFilterGroup !== 'payment'
+    )) {
+      setOpenFilterGroup(null);
+    }
+  }, [canUseMatchingFilters, canUseProgramControls, openFilterGroup, viewMode]);
 
   // Стрілка «відкрити вузол у Firebase» біля публічних нотаток: та сама службова
   // навігація, що в блоках форми анкети, і той самий тумблер (EXT на
@@ -3666,6 +3676,7 @@ const Matching = () => {
       favoriteUsers: favoriteUsersRef.current,
       dislikeUsers: dislikeUsersRef.current,
       roleIndexSets,
+      programRates,
       filterMainFn: filterMain,
       fetchMatchingCardsPage,
       hydrateUsersByIds: ids => fetchUsersByIds(ids),
@@ -3677,7 +3688,7 @@ const Matching = () => {
       onPart,
       onDiagnosticEvent: recordInitialLoadDiagnostic,
     }),
-    [isAdmin, recordInitialLoadDiagnostic, roleIndexSets]
+    [isAdmin, programRates, recordInitialLoadDiagnostic, roleIndexSets]
   );
 
   // Додаткові правила відкривають окремі анкети, зокрема неопубліковані,
@@ -4065,7 +4076,7 @@ const Matching = () => {
         console.log('[loadInitial] using cache', cached.length);
         const cachedCandidates = cached.filter(u => isMatchingCardId(u.userId) && !exclude.has(u.userId));
         const filteredCached = keepDonorCounterpartyCards({
-          users: isDonorViewer(donorRestrictionViewerRoleRef.current) ? cachedCandidates : applyMatchingUiFiltersToUsers({
+          users: applyMatchingUiFiltersToUsers({
             users: cachedCandidates,
             filters: filtersRef.current || {},
             filterMainFn: filterMain,
@@ -4073,6 +4084,7 @@ const Matching = () => {
             dislikeUsers: dislikeUsersRef.current,
             excludeReactionUsers: true,
             roleIndexSets,
+            programRates,
             viewMode: 'default',
           }),
           viewerRole: donorRestrictionViewerRoleRef.current,
@@ -4244,7 +4256,7 @@ const Matching = () => {
         setLoading(false);
       }
     }
-  }, [announcePublicFeedUnavailable, beginInitialRequest, buildFeedCacheSignature, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, recordInitialLoadDiagnostic, rememberFeedPagination, rememberFeedSummaryCards, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [announcePublicFeedUnavailable, beginInitialRequest, buildFeedCacheSignature, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, programRates, recordInitialLoadDiagnostic, rememberFeedPagination, rememberFeedSummaryCards, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     setLoadError(null);
@@ -6273,7 +6285,14 @@ const Matching = () => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers.length;
     return applyMatchingUiFiltersToUsers({
       users: visibleUsers,
-      filters: canUseMatchingFilters ? draftFilters : { payment: draftFilters.payment },
+      // Count exactly the groups this viewer can apply. Donor sessions can
+      // retain age/BMI/etc. in FilterPanel storage even though their rail
+      // exposes payment only.
+      filters: keepViewerVisibleMatchingFilters(
+        draftFilters,
+        canUseMatchingFilters,
+        canUseProgramControls,
+      ),
       filterMainFn: filterMain,
       favoriteUsers,
       dislikeUsers,
@@ -6284,6 +6303,7 @@ const Matching = () => {
     }).length;
   }, [
     canUseMatchingFilters,
+    canUseProgramControls,
     dislikeUsers,
     draftFilters,
     favoriteUsers,
@@ -8787,7 +8807,7 @@ const Matching = () => {
               обирає деку (усі / вподобані / приховані), а вже потім звужує
               її вміст. У пошуку рейки немає зовсім: видача — це відповідь на
               набране, і звужує її рядок уточнення, а не фільтри стрічки. */}
-          {(canUseMatchingFilters || canUseProgramControls) && !isSearching && (
+          {(canUseMatchingFilters || (canUseProgramControls && viewMode === 'default')) && !isSearching && (
             <MatchingFilterRail
               filters={matchingUiFilters}
               language={language}

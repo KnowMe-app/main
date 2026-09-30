@@ -176,6 +176,7 @@ describe('чи підходить програма читачеві', () => {
 
   it('роль читача — остання в історії', () => {
     expect(resolveViewerProgramType(['ag', 'ed'])).toBe('ed');
+    expect(resolveViewerProgramType('ag,ed')).toBe('ed');
     expect(resolveViewerProgramType('egg donor')).toBe('ed');
     expect(resolveViewerProgramType('surrogate mother')).toBe('sm');
     expect(resolveViewerProgramType('ag')).toBe('');
