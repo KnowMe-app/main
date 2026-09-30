@@ -157,6 +157,7 @@ import {
   buildMatchingSearchResultCacheKey,
   clearMatchingCache,
   getCard,
+  getCachedMatchingSummaryCards,
   getCompleteCachedProfile,
   getIdsByQuery,
   getIndexIdsByQuery,
@@ -241,6 +242,7 @@ import {
 import { getRoleColor } from './matchingRoleColors';
 import { PhotoRoleBadge, RoleCode as RowRoleCode } from './MatchingHiddenList.styled';
 import { DRAFT_FEED_ORDER_FIELD, placeOwnDraftsInFeed, resolveDraftFeedOrderDate } from '../utils/matchingDraftPlacement';
+import { liftReturnedCards, listReturnedReactionIds, placeReturnedCardsFirst } from '../utils/matchingReturnedCards';
 import { FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
 import { FaRegHeart, FaUndoAlt, FaChevronDown, FaPencilAlt } from 'react-icons/fa';
 import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
@@ -1122,9 +1124,9 @@ const SwipeableCard = ({
   // половина — тією, яку модуль вважав за замовчуванням.
   const { language } = useAppSettings();
   const profileName = getProfileName(user);
-  // Плашка ролі несе той самий дволітерний код, що й рядок стрічки: словом
-  // («Донорка яйцеклітин») вона казала про ту саму роль інакше, ніж список, і
-  // мовою інтерфейсу — тобто дві назви на дві мови на одну річ.
+  // Плашка ролі несе те саме слово, що й рядок стрічки і чіп фільтра
+  // (`getRoleLabel`): одна назва ролі на всі екрани. Код лишився умовою
+  // показу — роль без коду плашки не має.
   const roleCode = getRoleCode(resolvedRole);
   // Роль без назви — це `Profile`/`Анкета`; порівнюємо з кодом, а не з написом,
   // бо напис залежить від мови.
@@ -1282,7 +1284,7 @@ const SwipeableCard = ({
         >
           {!activeHeroPhoto && initials && <ModernHeroFallbackMark>{initials}</ModernHeroFallbackMark>}
           {activeHeroPhoto && <ModernHeroImage src={activeHeroPhoto} alt={`${name || 'Matching'} profile hero`} onError={() => setActiveHeroPhoto('')} />}
-          {shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleCode}</ModernRoleBadge>}
+          {shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{getRoleLabel(resolvedRole, language)}</ModernRoleBadge>}
         </ModernHero>
         {allPhotos.length > 1 && (
           <ModernPhotoStrip onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
@@ -1325,7 +1327,7 @@ const SwipeableCard = ({
           </ModernHeroContent>
         )}
         {isAdmin && (
-          <AdminToggle published={user.publish} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
+          <AdminToggle published={isMatchingCardPublished(user)} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
         )}
         <ModernProfileBody>
           {usesSharedFacts && (bio || detailSections.length > 0) && (
@@ -1680,8 +1682,8 @@ const GalleryCard = React.memo(({
         <GalleryPublishDot
           type="button"
           $published={isPublished}
-          title={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
-          aria-label={uiText(isPublished ? 'Прибрати зі стрічки' : 'Показати у стрічці', language)}
+          title={uiText(isPublished ? 'Зняти з публікації' : 'Опублікувати', language)}
+          aria-label={uiText(isPublished ? 'Зняти з публікації' : 'Опублікувати', language)}
           aria-pressed={isPublished}
           onClick={event => { event.stopPropagation(); onTogglePublish(user); }}
         />
@@ -1694,7 +1696,7 @@ const GalleryCard = React.memo(({
               картці. Чіпом під іменем вона змагалась за ширину з локацією, а
               дві розкладки казали про ту саму річ у двох різних місцях. */}
           {roleCode && <PhotoRoleBadge $role={role}>{getRoleLabel(role, language)}</PhotoRoleBadge>}
-          {isHidden && <GalleryHiddenBadge $belowRole={Boolean(roleCode)}>{uiText('Приховано', language)}</GalleryHiddenBadge>}
+          {isHidden && <GalleryHiddenBadge $belowRole={Boolean(roleCode)}>{uiText('Не цікаво', language)}</GalleryHiddenBadge>}
           {photoSwipe.total > 1 && (
             <GalleryPhotoCount>
               {photoSwipe.index > 0 ? `${photoSwipe.index + 1}/${photoSwipe.total}` : photoSwipe.total}
@@ -1710,7 +1712,7 @@ const GalleryCard = React.memo(({
             {name}
             {age && <>, {age}</>}
           </GalleryName>
-          {!photo && roleCode && <RowRoleCode $role={role}>{roleCode}</RowRoleCode>}
+          {!photo && roleCode && <RowRoleCode $role={role}>{getRoleLabel(role, language)}</RowRoleCode>}
         </GalleryNameRow>
         {location && (
           <GalleryLocation>
@@ -1749,13 +1751,13 @@ const GalleryCard = React.memo(({
             <GalleryActionButton
               type="button"
               $on={isHidden}
-              aria-label={uiText(isHidden ? 'Повернути зі схованих' : 'Приховати', language)}
+              aria-label={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
               aria-pressed={isHidden}
-              title={uiText(isHidden ? 'Повернути зі схованих' : 'Приховати', language)}
+              title={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
               onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
             >
               {isHidden ? <FaUndoAlt /> : <FaTimes />}
-              <span>{uiText(isHidden ? 'Повернути' : 'Приховати', language)}</span>
+              <span>{uiText(isHidden ? 'Повернути' : 'Не цікаво', language)}</span>
             </GalleryActionButton>
             <GalleryActionButton
               type="button"
@@ -1785,6 +1787,8 @@ const GalleryCard = React.memo(({
             language={language}
             publicSlot={reviewsSlot}
             hasReviews={(reviewsAction?.count || 0) > 0}
+            hasPublicContent={Boolean(user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]) || (reviewsAction?.count || 0) > 0}
+            hasPrivateContent={Boolean(String(clientComment || '').trim())}
             reviewsStatus={describeReviewsState({
               requested: Boolean(user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]),
               loading: Boolean(reviewsAction?.loading),
@@ -2693,29 +2697,56 @@ const Matching = () => {
    * Локально ключ картки міняється одразу обома іменами: перемальовує цятку
    * саме `feedDate`, і без нього вона лишалась би старого кольору до
    * перечитування стрічки.
+   *
+   * Міняти треба **кожну копію картки, яку бачить екран**, а не лише рядок у
+   * `users`. Відкрита картка — це `{ ...рядок, ...повна анкета }`
+   * (`withLazyPhotos`), і анкета там перекриває рядок: поки обробник правив сам
+   * рядок, прочитана раніше анкета лишалась із `publish: true`, цятка у
+   * відкритій картці не мінялась, і адмін тиснув удруге — тобто публікував
+   * анкету назад. Звідси «натиснув приховати, а `feedDate` не став `false`».
+   * Те саме з кешами: повна анкета й проєкція живуть у `localStorage` годинами,
+   * і перше ж повторне відкриття показало б старий стан.
    */
   const togglePublish = React.useCallback(async user => {
     if (!isAdmin || !user?.userId) return;
+    const userId = user.userId;
     const newValue = !isMatchingCardPublished(user);
-    setUsers(prev =>
-      prev.map(u => (u.userId === user.userId
-        ? {
-          ...u,
-          publish: newValue,
-          [MATCHING_CARD_FEED_FIELD]: newValue
-            ? (normalizeFeedDateValue(u[MATCHING_CARD_FEED_FIELD]) || todayFeedDate())
-            : false,
-        }
-        : u))
-    );
+    const patchPublication = card => (card
+      ? {
+        ...card,
+        publish: newValue,
+        [MATCHING_CARD_FEED_FIELD]: newValue
+          ? (normalizeFeedDateValue(card[MATCHING_CARD_FEED_FIELD]) || normalizeFeedDateValue(card.lastLogin2) || todayFeedDate())
+          : false,
+      }
+      : card);
+    const applyLocally = () => {
+      setUsers(prev => prev.map(u => (u.userId === userId ? patchPublication(u) : u)));
+      setFullProfileByUserId(prev => (prev[userId] ? { ...prev, [userId]: patchPublication(prev[userId]) } : prev));
+    };
+    applyLocally();
     try {
       const backendPayload = sanitizeCardForBackend({ publish: newValue });
-      await updateDataInRealtimeDB(user.userId, backendPayload, 'update');
-      await updateDataInFiresoreDB(user.userId, backendPayload, 'update');
+      await updateDataInRealtimeDB(userId, backendPayload, 'update');
+      // Кеш правиться після запису, а не до нього: відмова бази лишає
+      // збереженим той стан, що справді лежить у картці.
+      if (getCard(userId)) updateCard(userId, { publish: newValue });
+      const { cards: cachedSummaries } = getCachedMatchingSummaryCards([userId]);
+      if (cachedSummaries[userId]) {
+        const { [MATCHING_CARD_FEED_FIELD]: _feedDate, ...summary } = cachedSummaries[userId];
+        setCachedMatchingSummaryCards({ [userId]: { ...summary, publish: newValue } });
+      }
     } catch (err) {
       console.error('Failed to toggle publish', err);
+      toast.error(uiText(newValue ? 'Не вдалося опублікувати анкету. Спробуйте ще раз' : 'Не вдалося зняти анкету з публікації. Спробуйте ще раз', language));
+      return;
     }
-  }, [isAdmin]);
+    // Firestore — дзеркало анкети акаунта; у картки, заведеної адміном,
+    // документа там немає, і `update` відмовляє. Стрічку це не зачіпає.
+    updateDataInFiresoreDB(userId, sanitizeCardForBackend({ publish: newValue }), 'update').catch(err => {
+      console.warn('Failed to mirror publish into Firestore', err);
+    });
+  }, [isAdmin, language]);
 
   // Spec §1: a non-empty query replaces the feed's contents with the results,
   // which the same filters then narrow - there is no second filtering branch.
@@ -5903,7 +5934,11 @@ const Matching = () => {
     return matches.length ? matches.map(item => item.data) : EMPTY_USERS;
   }, [personalCreateProfiles, searchQuery, viewMode]);
 
-  const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({
+  // Картки, повернені з колекції в «Усі» в цьому перегляді (див. ефект біля
+  // `reactionTabUsers`).
+  const [returnedToFeedCards, setReturnedToFeedCards] = useState(EMPTY_USERS);
+
+  const visibleUsers = useMemo(() => liftReturnedCards(mergeMatchingCandidateUsers({
     // Власні щойно створені анкети видно завжди — вони не чекають на
     // погодження адміном, щоб зʼявитись у власника в стрічці. Але стрічка — це
     // не результати пошуку: доливати їх до відповіді на запит означає показати
@@ -5921,7 +5956,9 @@ const Matching = () => {
       ? [...personalDraftSearchMatches, ...users]
       : placeOwnDraftsInFeed({
         drafts: initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS,
-        users,
+        users: viewMode === 'default'
+          ? placeReturnedCardsFirst({ users, returnedCards: returnedToFeedCards, favoriteUsers, dislikeUsers })
+          : users,
         hasMore,
       }),
     additionalAccessUsers,
@@ -5940,7 +5977,7 @@ const Matching = () => {
     // Поки його знало лише друге, картка все одно зникала з-під пальця: до
     // фільтрів вона просто не доходила.
     keepReactedUserIds: stickyReactedUserIds,
-  }), [
+  }), viewMode === 'default' ? returnedToFeedCards : EMPTY_USERS), [
     additionalAccessUsers,
     dislikeUsers,
     favoriteUsers,
@@ -5955,6 +5992,7 @@ const Matching = () => {
     stickyReactedUserIds,
     users,
     personalCreateProfiles,
+    returnedToFeedCards,
     viewMode,
     donorRestrictionViewerRole,
     ownerId,
@@ -5964,7 +6002,13 @@ const Matching = () => {
     if (viewMode !== 'favorites' && viewMode !== 'dislikes') return [];
 
     const reactionMap = viewMode === 'favorites' ? favoriteUsers : dislikeUsers;
-    const reactionIds = Object.keys(normalizeReactionMap(reactionMap));
+    // Картка, з якої в цій колекції щойно зняли реакцію, лишається на місці до
+    // виходу з колекції — так само, як у «Усіх» (`stickyReactedUserIds`).
+    // Досі вона зникала тієї ж миті, і промах не було як скасувати.
+    const reactionIds = [...new Set([
+      ...Object.keys(normalizeReactionMap(reactionMap)),
+      ...stickyReactedUserIds,
+    ])];
     if (!reactionIds.length) return [];
 
     const candidateUsersById = new Map();
@@ -6001,9 +6045,44 @@ const Matching = () => {
     isAdmin,
     personalCreateProfiles,
     sharedReactionCandidateUsers,
+    stickyReactedUserIds,
     users,
     viewMode,
   ]);
+
+  /*
+   * Повернене з колекції стоїть на початку «Усіх» (`placeReturnedCardsFirst`).
+   *
+   * Повернення ловиться за зміною самих мап реакцій, а не в одному з
+   * обробників: зняти лайк можна з рядка, плитки й відкритої картки, і кожен
+   * шлях, що забув би про повернення, знову ховав би картку в глибині стрічки.
+   * Рахується лише в колекції: у «Усіх» картка й так на екрані.
+   */
+  const reactionTabUsersRef = useRef(reactionTabUsers);
+  reactionTabUsersRef.current = reactionTabUsers;
+  const previousReactionMapsRef = useRef({ favoriteUsers, dislikeUsers });
+  useEffect(() => {
+    const previous = previousReactionMapsRef.current;
+    previousReactionMapsRef.current = { favoriteUsers, dislikeUsers };
+    if (viewMode !== 'favorites' && viewMode !== 'dislikes') return;
+    const inFavorites = viewMode === 'favorites';
+    const returnedIds = listReturnedReactionIds({
+      previousMap: inFavorites ? previous.favoriteUsers : previous.dislikeUsers,
+      nextMap: inFavorites ? favoriteUsers : dislikeUsers,
+      oppositeMap: inFavorites ? dislikeUsers : favoriteUsers,
+    });
+    const cards = returnedIds
+      .map(id => reactionTabUsersRef.current.find(card => card?.userId === id))
+      .filter(Boolean);
+    if (!cards.length) return;
+    setReturnedToFeedCards(previousCards => [
+      ...cards,
+      ...previousCards.filter(card => !returnedIds.includes(card.userId)),
+    ]);
+    toast.success(uiText('Картку повернуто в «Усі» — вона на початку списку', language), {
+      id: 'matching-returned-to-feed',
+    });
+  }, [dislikeUsers, favoriteUsers, language, viewMode]);
 
   useEffect(() => {
     if (!initialRequestId) return undefined;
@@ -7703,9 +7782,9 @@ const Matching = () => {
     },
     {
       key: 'dislikes',
-      label: uiText('Приховані', language),
+      label: uiText('Не цікаві', language),
       icon: <FaTimes size={14} aria-hidden="true" />,
-      title: uiText('Показати приховані', language),
+      title: uiText('Показати ті, що не цікаві', language),
       count: Object.keys(dislikeUsers || {}).length,
       onSelect: handleDislikeModeClick,
     },
@@ -8754,7 +8833,7 @@ const Matching = () => {
                       reviewsAction={buildRowReviewsAction(user.userId)}
                       primaryAction={{
                         icon: dislikeUsers[user.userId] ? <FaUndoAlt size={13} /> : <FaTimes size={14} />,
-                        title: uiText(dislikeUsers[user.userId] ? 'Повернути зі схованих' : 'Приховати', language),
+                        title: uiText(dislikeUsers[user.userId] ? 'Повернути в «Усі»' : 'Не цікаво', language),
                         active: Boolean(dislikeUsers[user.userId]),
                         onClick: toggleRowHidden,
                       }}

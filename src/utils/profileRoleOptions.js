@@ -9,11 +9,11 @@
  * не пропонували.
  */
 export const PROFILE_ROLE_OPTIONS = Object.freeze([
-  { value: 'ed', label: 'Донорка яйцеклітин' },
+  { value: 'ed', label: 'Донорка ооцитів' },
   { value: 'sm', label: 'Сурогатна мати' },
-  { value: 'ip', label: 'Батьки' },
+  { value: 'ip', label: 'Біологічні батьки' },
   { value: 'ag', label: 'Агенція' },
-  { value: 'cl', label: 'Клієнт' },
+  { value: 'cl', label: 'Клініка' },
 ]);
 
 export default PROFILE_ROLE_OPTIONS;

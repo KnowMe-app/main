@@ -50,6 +50,7 @@ import {
 import toast from 'react-hot-toast';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { KnowMeBrand } from './styles/knowme';
+import { resolveMyProfileFieldText, resolveMyProfileSectionTitle } from '../utils/myProfileRoleTexts';
 
 const Page = styled.div`
   /* Локальні псевдоніми з глобальних KnowMe-токенів: сторінка автоматично підтримує світлу/темну тему. */
@@ -73,17 +74,45 @@ const Topbar = styled.div`
   border-bottom: 1px solid var(--border);
   padding: 14px 20px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
 `;
-// Header block (brand, "⋮" menu, progress bar, tabs) lives in normal document flow - it must
-// scroll away with the rest of the page, never pin itself to the viewport top.
+// Назву застосунку на ширшому за 600 px екрані вже несе спільна навігація
+// (`PrimaryNavigation`), тож тут вона стояла другою, просто під першою. На
+// телефоні навігація свою назву ховає — там ця лишається єдиною.
+const TopbarBrand = styled.div`
+  @media (min-width: 601px) {
+    display: none;
+  }
+`;
+const TopbarActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+`;
+// Шапка з назвою й меню «⋮» їде з рештою сторінки, а прогрес із вкладками
+// розділів лишається вгорі (`StickyProgress`): це єдиний орієнтир у довгій
+// анкеті — скільки заповнено і в якому розділі людина зараз. Коли прогрес
+// поїхав разом зі шапкою, вкладки зникали на першому ж екрані прокрутки, і
+// до іншого розділу лишалось гортати навмання.
 const HeaderPanel = styled.div`
   background: var(--card);
 `;
+// Липкий блок стоїть сусідом `HeaderPanel`, а не всередині нього: `sticky`
+// тримається лише в межах свого батька, і в шапці він відлипав би, щойно
+// шапка сама виїхала за екран.
+const StickyProgress = styled.div`
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 20;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+`;
 const CONTENT_SECTION_TOP_GAP = 18;
-// How far above a section's top edge scrollToSection() stops, and how far past a section's top
-// edge the scroll-spy considers it "active" - since the header no longer overlays content when
-// scrolled, this is just a small breathing-room gap, not a header-height offset.
+// Наскільки вище за верх розділу зупиняється scrollToSection() і де scroll-spy
+// вважає розділ активним. До цього відступу додається висота липкого блоку
+// прогресу (`getStickyOffset`): інакше розділ ставав би під нього.
 const SECTION_SCROLL_GAP = CONTENT_SECTION_TOP_GAP;
 const SCROLL_ACTIVE_SECTION_GAP = 16;
 const PROGRAMMATIC_SCROLL_FALLBACK_MS = 900;
@@ -214,23 +243,6 @@ const PhotoSection = styled.div`
   scroll-margin-top: ${CONTENT_SECTION_TOP_GAP}px;
 `;
 const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
-// «Очистити все» — теж дія з анкетою цілком, тож і ширина в неї та сама, а
-// різницю несе тон: стирання незворотне, і виглядати воно як «опублікувати» не
-// має права.
-const ClearAllBtn = styled.button`
-  width:100%;
-  margin-top:10px;
-  padding:14px;
-  background:var(--km-danger-bg, #FDECEA);
-  color:var(--km-danger, #B42318);
-  border:1px solid var(--km-danger-border, rgba(180,35,24,.24));
-  border-radius:var(--radius);
-  font-size:15px;
-  font-weight:700;
-  cursor:pointer;
-
-  &:disabled { opacity:.6; cursor:not-allowed; }
-`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
 const DotsButton = styled.button`
   display:flex;align-items:center;justify-content:center;
@@ -451,6 +463,7 @@ export const MyProfile = () => {
   const [authHintStep, setAuthHintStep] = useState('');
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
+  const stickyProgressRef = useRef(null);
   const tabRefs = useRef({});
   const isManualScrollRef = useRef(false);
   const programmaticScrollTimeoutRef = useRef(null);
@@ -699,9 +712,15 @@ export const MyProfile = () => {
     fields.splice(2, 0, 'email');
     return { ...section, fields };
   }), [isProfileAccessConfirmed]);
+  // Назву розділу бере роль (`resolveMyProfileSectionTitle`): агенція бачить
+  // «Агенція» й «Про агенцію», а не «Особисті дані» й «Спосіб життя».
   const visibleSections = useMemo(() => sections
-    .map(section => ({ ...section, fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)) }))
-    .filter(section => section.fields.length > 0), [isDonorRole, sections]);
+    .map(section => ({
+      ...section,
+      title: resolveMyProfileSectionTitle(section.key, normalizedRole, section.title),
+      fields: section.fields.filter(name => isDonorRole || visibleNonDonorFields.has(name)),
+    }))
+    .filter(section => section.fields.length > 0), [isDonorRole, normalizedRole, sections]);
   const firstSectionKey = visibleSections[0]?.key || 'personal';
   const navSections = useMemo(() => [
     ...(!isProfileAccessConfirmed ? [{ key: 'auth', title: '🔐 Доступ до анкети', fields: ['email', 'password', 'terms'], isVirtual: true }] : []),
@@ -777,15 +796,22 @@ export const MyProfile = () => {
       // кнопка.
       onDeleteProfile={() => setShowInfoModal('delProfile')}
       onSelect={() => setShowInfoModal(false)}
+      // «Очистити все» стояло кнопкою просто під «Опублікувати» — незворотна
+      // дія поруч із головною, на відстані одного промаху пальцем. Тепер вона
+      // тут, поруч із «Видалити анкету», і так само питає підтвердження.
+      onClearProfile={isProfileAccessConfirmed ? () => setShowInfoModal('delConfirm') : undefined}
     />
   );
 
   const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
-  const filledPct = useMemo(() => {
+  // Лічильник «3 з 8» поруч із відсотком: самі «8%» не казали, скільки
+  // лишилось, а людина з чотирма фото й поштою не розуміла, звідки така цифра.
+  const filledStats = useMemo(() => {
     const keys = visibleSections.flatMap(s => s.fields);
     const filled = keys.filter(name => String(state[name] || '').trim() !== '').length;
-    return Math.round((filled / keys.length) * 100);
+    return { filled, total: keys.length };
   }, [state, visibleSections]);
+  const filledPct = filledStats.total ? Math.round((filledStats.filled / filledStats.total) * 100) : 0;
 
 
   const sectionProgress = useMemo(() => visibleSections.reduce((acc, section) => {
@@ -805,16 +831,23 @@ export const MyProfile = () => {
     .map(section => ({ key: section.key, node: sectionRefs.current[section.key] }))
     .filter(item => Boolean(item.node)), [navSections]);
 
+  // Висота міряється щоразу, а не один раз: блок переноситься на два рядки
+  // вкладок на вузькому екрані й міняє висоту разом із поворотом телефона.
+  const getStickyOffset = useCallback(
+    () => stickyProgressRef.current?.getBoundingClientRect().height || 0,
+    [],
+  );
+
   const getSectionTargetTop = useCallback((sectionEl) => {
     const sectionTop = sectionEl.getBoundingClientRect().top + window.scrollY;
-    return Math.max(0, Math.round(sectionTop - SECTION_SCROLL_GAP));
-  }, []);
+    return Math.max(0, Math.round(sectionTop - getStickyOffset() - SECTION_SCROLL_GAP));
+  }, [getStickyOffset]);
 
   const getActiveSectionKeyByScroll = useCallback(() => {
     const entries = getSectionEntries();
     if (entries.length === 0) return '';
 
-    const activationLine = window.scrollY + SECTION_SCROLL_GAP + SCROLL_ACTIVE_SECTION_GAP;
+    const activationLine = window.scrollY + getStickyOffset() + SECTION_SCROLL_GAP + SCROLL_ACTIVE_SECTION_GAP;
     let activeKey = entries[0].key;
 
     entries.forEach(({ key, node }) => {
@@ -825,7 +858,7 @@ export const MyProfile = () => {
     });
 
     return activeKey;
-  }, [getSectionEntries]);
+  }, [getSectionEntries, getStickyOffset]);
 
   const finishProgrammaticScroll = useCallback(() => {
     isManualScrollRef.current = false;
@@ -1141,10 +1174,10 @@ export const MyProfile = () => {
 
     try {
       await saveState(nextState, { directFields: ['publish'] });
-      toast.success(uiText('Анкету приховано', language));
+      toast.success(uiText('Анкету знято з публікації', language));
     } catch (error) {
       console.error('hide profile error', error);
-      toast.error(uiText('Не вдалося приховати анкету. Спробуйте ще раз', language));
+      toast.error(uiText('Не вдалося зняти анкету з публікації. Спробуйте ще раз', language));
     }
   };
 
@@ -1183,7 +1216,7 @@ export const MyProfile = () => {
       await saveState(nextState, { directFields: ['publish'] });
       localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
       setShowInfoModal(false);
-      toast.success(uiText('Анкету очищено і приховано', language));
+      toast.success(uiText('Анкету очищено й знято з публікації', language));
     } catch (error) {
       console.error('clear profile error', error);
       toast.error(uiText('Не вдалося очистити анкету. Спробуйте ще раз', language));
@@ -1195,6 +1228,8 @@ export const MyProfile = () => {
   const renderField = (name) => {
     const field = fieldsMap.get(name);
     if (!field) return null;
+    const roleText = resolveMyProfileFieldText(name, normalizedRole);
+    const fieldPlaceholder = roleText.placeholder ? uiText(roleText.placeholder, language) : getFieldPlaceholder(field, language);
     const val = state[name] || '';
     const isTextArea = name === 'moreInfo_main';
     const isAppearanceField = sections.find(section => section.key === 'appearance')?.fields.includes(name);
@@ -1209,7 +1244,7 @@ export const MyProfile = () => {
       && (Boolean(customOptionMode[name]) || (String(val).trim() !== '' && !optionValues.includes(String(val))));
 
     return <Field key={name}>
-      <Label>{getFieldLabel(field, language)}</Label>
+      <Label>{roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language)}</Label>
       {Array.isArray(field.options) && field.options.length > 0 ? (
         <>
           <ChipRow>
@@ -1280,7 +1315,7 @@ export const MyProfile = () => {
           <TextArea
             value={val}
             $missing={missing[name]}
-            placeholder={getFieldPlaceholder(field, language)}
+            placeholder={fieldPlaceholder}
             onChange={e => updateFieldValue(name, e.target.value, field)}
             onBlur={e => saveFieldValue(name, e.target.value, field)}
           />
@@ -1300,7 +1335,7 @@ export const MyProfile = () => {
           <Input
             value={val}
             $missing={missing[name]}
-            placeholder={getFieldPlaceholder(field, language)}
+            placeholder={fieldPlaceholder}
             onChange={e => updateFieldValue(name, e.target.value, field)}
             onBlur={e => saveFieldValue(name, e.target.value, field)}
           />
@@ -1322,8 +1357,8 @@ export const MyProfile = () => {
   return <Page>
     <HeaderPanel>
       <Topbar>
-        <KnowMeBrand />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <TopbarBrand><KnowMeBrand /></TopbarBrand>
+        <TopbarActions>
           <StatusBadge
             type="button"
             $clickable={!isProfileAccessConfirmed}
@@ -1331,16 +1366,18 @@ export const MyProfile = () => {
             onClick={handleAuthBadgeClick}
           >
             ● {isProfileAccessConfirmed
-              ? uiText(state.publish === true ? 'Опублікована' : 'Прихована', language)
+              ? uiText(state.publish === true ? 'Опублікована' : 'Не опублікована', language)
               : uiText('Логін не відбувся', language)}
           </StatusBadge>
           <DotsButton type='button' aria-label={uiText('Відкрити меню профілю', language)} onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
-        </div>
+        </TopbarActions>
       </Topbar>
+    </HeaderPanel>
 
+    <StickyProgress ref={stickyProgressRef}>
       <ProgressWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{uiText('Заповнено анкету', language)}</span>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{uiText('Заповнено {filled} з {total}', language, filledStats)}</span>
         <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>{filledPct}%</span>
       </div>
       <div style={{ height: 5, background: 'var(--border)', borderRadius: 99 }}>
@@ -1365,7 +1402,7 @@ export const MyProfile = () => {
           </Tab>;
         })}
       </Tabs>
-    </HeaderPanel>
+    </StickyProgress>
 
     {!isProfileAccessConfirmed && <AuthCard ref={node => { sectionRefs.current.auth = node; }}>
       <Header>
@@ -1526,7 +1563,7 @@ export const MyProfile = () => {
             <ModalTitle>{uiText('Очистити анкету?', language)}</ModalTitle>
             <ModalText>
               {uiText(
-                'Усі заповнені поля стануть порожніми, а анкету буде приховано зі стрічки. '
+                'Усі заповнені поля стануть порожніми, а анкету буде знято з публікації. '
                 + 'Пошта й доступ до акаунта лишаються.',
                 language,
               )}
@@ -1550,17 +1587,9 @@ export const MyProfile = () => {
 
     <SubmitWrap>
       <SubmitBtn type="button" onClick={state.publish ? hideProfile : publishProfile}>
-        {uiText(state.publish ? 'Приховати анкету' : 'Опублікувати анкету', language)}
+        {uiText(state.publish ? 'Зняти з публікації' : 'Опублікувати анкету', language)}
       </SubmitBtn>
-      {/* Друга дія з анкетою цілком — і вона поруч із першою, а не в меню:
-          «приховати» й «очистити все» відповідають на те саме питання, просто
-          різною мірою. Тон у неї інший, бо стирання незворотне. */}
-      {isProfileAccessConfirmed && (
-        <ClearAllBtn type="button" disabled={isClearingProfile} onClick={() => setShowInfoModal('delConfirm')}>
-          {uiText('Очистити все', language)}
-        </ClearAllBtn>
-      )}
-      <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>{uiText('Анкету можна приховати або видалити будь-коли в налаштуваннях профілю.', language)}</p>
+      <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>{uiText('Зняти анкету з публікації, очистити чи видалити її можна будь-коли в меню ⋮.', language)}</p>
     </SubmitWrap>
   </Page>;
 };

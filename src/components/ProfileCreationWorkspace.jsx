@@ -52,7 +52,7 @@ import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
 import { buildMatchingSearchPath, MATCHING_PATH, readStoredMatchingSearchQuery } from 'utils/matchingSearchLocation';
 import { goBackOrTo } from 'utils/appBackNavigation';
-import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleCode } from './profileLayoutConfig';
+import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleCode, getRoleLabel } from './profileLayoutConfig';
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
 import {
   applyOverlayToCard,
@@ -651,7 +651,7 @@ export const buildOverlayPrefill = (canonical, cardUserId) => [
 const ProfileResultCard = ({ card, name, note, status, statusVariant, actionLabel, onAction }) => {
   const { language } = useAppSettings();
   const facts = [
-    getRoleCode(getProfileRole(card)),
+    getRoleCode(getProfileRole(card)) ? getRoleLabel(getProfileRole(card), language) : '',
     getProfileAge(card) ? String(getProfileAge(card)) : '',
     getProfileLocation(card),
   ].filter(Boolean).join(' · ');

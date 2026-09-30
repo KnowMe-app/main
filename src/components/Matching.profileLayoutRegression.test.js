@@ -73,7 +73,7 @@ describe('Matching redesigned profile regressions', () => {
     expect(matchingSource).toContain('const shouldShowRoleBadge = !isGenericProfileRole && Boolean(roleCode);');
     expect(matchingSource).toContain("const name = profileName || '';");
     expect(matchingSource).toContain('{title && <ModernHeroTitle>{title}</ModernHeroTitle>}');
-    expect(matchingSource).toContain('{shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{roleCode}</ModernRoleBadge>}');
+    expect(matchingSource).toContain('{shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{getRoleLabel(resolvedRole, language)}</ModernRoleBadge>}');
   });
 
   it('renders editor-created Firebase list values without breaking matching', () => {

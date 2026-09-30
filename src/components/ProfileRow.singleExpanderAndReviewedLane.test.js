@@ -44,7 +44,11 @@ describe('рядок стрічки', () => {
   // Картка з відгуком мусить виділятись серед сусідніх: смужка публічної
   // доріжки стає червоною, щойно прочитано хоч один відгук.
   it('позначає доріжку відгуку, лише коли відгуки справді прочитано', () => {
+    // Без відгуків доріжка згорнута в «+ Відгук»; відкрита дотиком, вона не
+    // позначена.
     const { unmount } = renderRow({ reviewsAction: { count: 0, loaded: true } });
+    expect(screen.queryByTestId('public-note-lane')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Відгук/ }));
     expect(screen.getByTestId('public-note-lane')).not.toHaveAttribute('data-reviewed');
     unmount();
 

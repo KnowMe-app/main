@@ -354,7 +354,7 @@ const MatchingHiddenList = ({
           <S.Sentinel ref={sentinelRef} />
 
           {!hasMore && rows.length > 0 && (
-            <S.FooterNote>{uiText('Приховані анкети бачите тільки ви', language)}</S.FooterNote>
+            <S.FooterNote>{uiText('Список «Не цікаві» бачите тільки ви', language)}</S.FooterNote>
           )}
         </S.List>
       )}

@@ -647,7 +647,6 @@ export const FilterRailChip = styled.button`
    * заокруглені краї, накладені один на одний, читались як дві кнопки,
    * що наїхали одна на одну, а не як одна річ із двома діями. */
   border-radius: ${({ $clearable }) => ($clearable ? '999px 0 0 999px' : '999px')};
-  border-right-width: ${({ $clearable }) => ($clearable ? '0' : '1px')};
   padding-right: ${({ $clearable }) => ($clearable ? '7px' : '11px')};
   cursor: pointer;
   font: inherit;
@@ -662,6 +661,10 @@ export const FilterRailChip = styled.button`
     if ($open) return 'var(--matching-accent)';
     return $narrowed ? 'var(--matching-accent)' : 'var(--matching-chip-border)';
   }};
+  /* Після скороченого border, а не перед ним: той переписує всі чотири
+   * сторони, і знята права рамка поверталась — між чіпом і хрестиком
+   * стояла риска, яка ділила одну плашку навпіл. */
+  border-right-width: ${({ $clearable }) => ($clearable ? '0' : '1px')};
   background: ${({ $danger, $narrowed, $open }) => {
     if ($danger) return 'color-mix(in srgb, #d64545 10%, transparent)';
     if ($open) return 'color-mix(in srgb, var(--matching-accent) 22%, transparent)';
@@ -712,15 +715,21 @@ export const FilterRailChipClear = styled.button`
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 26px;
-  height: 30px;
-  padding: 0;
+  /* Висота та сама, що й у чіпа (40 px): хрестик — друга половина тієї
+   * самої плашки. Стояло 30 px, і в адміна, у якого звужених груп кілька,
+   * кожна плашка з хрестиком мала праворуч менше коло, ніж ліворуч. */
+  width: 30px;
+  height: 40px;
+  box-sizing: border-box;
+  padding: 0 4px 0 0;
   border: 1px solid ${({ $danger }) => ($danger ? 'color-mix(in srgb, #d64545 55%, transparent)' : 'var(--matching-accent)')};
   border-left: none;
   border-radius: 0 999px 999px 0;
-  background: ${({ $danger }) => ($danger
-    ? 'color-mix(in srgb, #d64545 10%, transparent)'
-    : 'color-mix(in srgb, var(--matching-accent) 12%, transparent)')};
+  background: ${({ $danger, $open }) => {
+    if ($danger) return 'color-mix(in srgb, #d64545 10%, transparent)';
+    if ($open) return 'color-mix(in srgb, var(--matching-accent) 22%, transparent)';
+    return 'color-mix(in srgb, var(--matching-accent) 12%, transparent)';
+  }};
   color: ${({ $danger }) => ($danger ? '#d64545' : 'var(--matching-accent)')};
   font: inherit;
   font-size: 11px;
