@@ -54,6 +54,17 @@ describe('програми в рядку стрічки', () => {
     fireEvent.click(screen.getByTestId('programs-summary'));
     expect(screen.getByText('Можливі доплати')).toBeInTheDocument();
     expect(screen.getByText('Вагітність з першої спроби')).toBeInTheDocument();
+    const firstTry = screen.getByRole('checkbox', { name: /Вагітність з першої спроби/ });
+    expect(firstTry).not.toBeChecked();
+    expect(screen.getAllByText('2 500 $').length).toBeGreaterThan(0);
+    fireEvent.click(firstTry);
+    expect(screen.getByText('3 000 $')).toBeInTheDocument();
+  });
+
+  it('не показує застарілу назву програми', () => {
+    render(<ProgramsSummary card={{ programs: { p1: programs.p1 } }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" defaultOpen />);
+    expect(screen.getByText('Донорка ооцитів')).toBeInTheDocument();
+    expect(screen.queryByText('Київ')).not.toBeInTheDocument();
   });
 
   it('у валюті читача діапазон — еквівалент із «≈»', () => {
@@ -148,7 +159,7 @@ describe('конкурентне читання власних програм', 
     expect(pending?.items?.p1).toEqual(expect.objectContaining({
       id: programs.p1.id,
       type: programs.p1.type,
-      title: programs.p1.title,
     }));
+    expect(pending?.items?.p1.title).toBeUndefined();
   });
 });

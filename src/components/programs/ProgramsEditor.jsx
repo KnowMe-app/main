@@ -255,7 +255,7 @@ const summaryLine = (program, language) => {
   const pay = programHeadlinePay(program);
   const amount = Number(pay?.amount);
   return [
-    program.title,
+    uiText(PROGRAM_TYPE_LABELS[program.type], language),
     program.location,
     Number.isFinite(amount) && amount > 0 ? formatProgramMoney(amount, pay.currency) : uiText('виплату не вказано', language),
   ].filter(Boolean).join(' · ');
@@ -333,10 +333,6 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
 
       <Group>
         <legend>{uiText('Програма', language)}</legend>
-        <SmallLabel>
-          {uiText('Назва (необовʼязково)', language)}
-          <TextInput value={program.title || ''} placeholder={uiText('Наприклад: Донорство в Києві', language)} onChange={event => set({ title: event.target.value })} />
-        </SmallLabel>
         <SmallLabel>
           {uiText('Де проходить', language)}
           <TextInput value={program.location || ''} placeholder={uiText('Наприклад: Київ; пологи в Грузії', language)} onChange={event => set({ location: event.target.value })} />
@@ -506,7 +502,7 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
   };
 
   const duplicate = program => {
-    const copy = { ...program, id: nextProgramId(draft), hidden: false, title: program.title ? `${program.title} (${uiText('копія', language)})` : '' };
+    const copy = { ...program, id: nextProgramId(draft), hidden: false };
     update([...draft, copy]);
     setOpenId(copy.id);
   };

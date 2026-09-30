@@ -157,7 +157,6 @@ export const programSeeksDonor = program => program?.type !== 'sm';
 export const createEmptyProgram = (type = 'ed', id = `p${Date.now().toString(36)}`) => ({
   id,
   type,
-  title: '',
   location: '',
   requirements: { rh: 'any', marital: 'any', ownKids: 'any', csectionMax: 'any' },
   payments: { final: { amount: '', currency: DEFAULT_PROGRAM_CURRENCY } },
@@ -215,13 +214,11 @@ export const normalizeProgram = (raw, id) => {
   // кожної програми: це примітка, а не вимога чи виплата. Старе значення
   // переїжджає в примітку, а не зникає.
   const legacyDuration = text(raw.duration);
-  const title = text(raw.title);
   const location = text(raw.location);
   const noteRaw = text(raw.note, MAX_NOTE);
   const note = legacyDuration && !noteRaw.includes(legacyDuration)
     ? text([legacyDuration, noteRaw].filter(Boolean).join('\n'), MAX_NOTE)
     : noteRaw;
-  if (title) program.title = title;
   if (location) program.location = location;
   if (note) program.note = note;
   if (otherPayments.length) program.otherPayments = otherPayments;
@@ -354,7 +351,7 @@ export const extractViewerProgramFacts = (profile, helpers = {}) => {
     marital: readMarital(profile.maritalStatus),
     births: readCount(profile.ownKids),
     csections: readCount(csectionRaw),
-    experience: readCount(profile.experience),
+    experience: readCount(profile.surrogacyExperience ?? profile.experience ?? profile.donationExperience ?? profile.previousDonation),
   };
 };
 
@@ -578,6 +575,41 @@ export const listProgramBonuses = program => {
     .filter(({ key }) => program.payments?.[key])
     .map(({ key, label }) => ({ key, label, money: program.payments[key] }));
   return [...known, ...labeledEntries(program.bonuses, 'bonus')];
+};
+
+/** Доплати, які вже підтверджує анкета; події майбутньої вагітності не вгадуємо. */
+export const defaultProgramBonusKeys = (program, facts) => {
+  if (!facts) return [];
+  return listProgramBonuses(program).filter(item => {
+    const label = String(item.label || '').toLowerCase();
+    if (item.key === 'firstTry' || item.key === 'twins' || /перш(ої|ого).*спроб|двійн/.test(label)) return false;
+    if (item.key === 'experience' || item.key === 'repeat' || /досвід|повторн/.test(label)) return Number(facts.experience) > 0;
+    if (item.key === 'cSection' || /кесар|\bкр\b/.test(label)) return Number(facts.csections) > 0;
+    if (/полог/.test(label)) return Number(facts.births) > 0;
+    return false;
+  }).map(item => item.key);
+};
+
+/**
+ * Персональний підсумок: задана агенцією загальна сума (або гарантовані
+ * разові виплати) плюс лише відмічені користувачем доплати. Різні валюти
+ * лишаються окремими частинами, щоб без курсу не показувати вигадану суму.
+ */
+export const calculateProgramTotal = (program, selectedBonusKeys = []) => {
+  const selected = new Set(selectedBonusKeys);
+  const explicitTotal = program?.payments?.[PROGRAM_TOTAL_FIELD];
+  const baseEntries = explicitTotal
+    ? [{ money: explicitTotal }]
+    : listProgramPayments(program).filter(entry => entry.key !== 'monthly');
+  const bonusEntries = listProgramBonuses(program).filter(entry => selected.has(entry.key));
+  const byCurrency = [...baseEntries, ...bonusEntries].reduce((totals, entry) => {
+    const amount = Number(entry.money?.amount);
+    const currency = entry.money?.currency;
+    if (!Number.isFinite(amount) || !currency) return totals;
+    totals[currency] = (totals[currency] || 0) + amount;
+    return totals;
+  }, {});
+  return Object.entries(byCurrency).map(([currency, amount]) => ({ amount, currency }));
 };
 
 /**

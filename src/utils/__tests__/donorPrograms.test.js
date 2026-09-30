@@ -1,4 +1,6 @@
 import {
+  calculateProgramTotal,
+  defaultProgramBonusKeys,
   evaluateProgram,
   extractViewerProgramFacts,
   listPaymentBuckets,
@@ -83,6 +85,28 @@ describe('модель програми', () => {
     expect(listProgramBonuses(program).map(item => item.label)).toEqual(['Кесарів розтин', 'Вагітність з першої спроби', 'За досвід СМ']);
     // Щомісячне — не разове, а доплати — лише можливі.
     expect(sumGuaranteedPayments(program)).toEqual({ amount: 20700, currency: 'USD' });
+  });
+
+  it('рахує персональну суму з вибраними доплатами без подвійного total', () => {
+    const program = normalizeProgram({
+      ...surrogateProgram,
+      payments: {
+        ...surrogateProgram.payments,
+        total: { amount: 21000, currency: 'USD' },
+        firstTry: { amount: 1000, currency: 'USD' },
+        experience: { amount: 1500, currency: 'USD' },
+      },
+    });
+    const defaults = defaultProgramBonusKeys(program, { births: 1, csections: 0, experience: 1 });
+    expect(defaults).toEqual(['experience']);
+    expect(calculateProgramTotal(program, defaults)).toEqual([{ amount: 22500, currency: 'USD' }]);
+    expect(calculateProgramTotal(program, [...defaults, 'firstTry'])).toEqual([{ amount: 23500, currency: 'USD' }]);
+  });
+
+  it('вибирає доплату за кесарів лише коли анкета має КР', () => {
+    const program = normalizeProgram(surrogateProgram);
+    expect(defaultProgramBonusKeys(program, { births: 2, csections: 0, experience: 0 })).not.toContain('cSection');
+    expect(defaultProgramBonusKeys(program, { births: 2, csections: 1, experience: 0 })).toContain('cSection');
   });
 
   it('тривалість стала приміткою, а не зникла', () => {
