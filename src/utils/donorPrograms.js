@@ -24,8 +24,17 @@ import {
   normalizeProgramMoney,
   programMoneyInUsd,
 } from './programCurrency';
+import { normalizeProfileRole } from './profileRole';
+import { listProfileRoles } from './matchingPeerVisibility';
 
 export const PROGRAM_TYPES = Object.freeze(['ed', 'sm']);
+
+export const hasVisibleOrganisationRole = card => {
+  const roles = listProfileRoles(card);
+  // Legacy/program-only fixtures have no projected role. An explicit role is
+  // authoritative, which is what keeps a hidden organisation role hidden.
+  return !roles.length || roles.some(role => role === 'ag' || role === 'cl');
+};
 
 export const PROGRAM_TYPE_LABELS = Object.freeze({
   ed: 'Донорка ооцитів',
@@ -382,7 +391,7 @@ export const evaluateProgram = (program, facts) => {
 
 /** Тип програм, які стосуються читача: донорка бачить донорські, СМ — свої. */
 export const resolveViewerProgramType = viewerRole => {
-  const roles = (Array.isArray(viewerRole) ? viewerRole : [viewerRole]).map(role => String(role || '').trim().toLowerCase());
+  const roles = (Array.isArray(viewerRole) ? viewerRole : [viewerRole]).map(normalizeProfileRole);
   const current = roles[roles.length - 1];
   if (current === 'ed') return 'ed';
   if (current === 'sm') return 'sm';
@@ -400,7 +409,7 @@ export const summarizeCardPrograms = (card, { viewerType = '', facts = null } = 
   const { programs } = resolveCardPrograms(card);
   if (!programs.length) return null;
   const relevant = viewerType ? programs.filter(program => program.type === viewerType) : programs;
-  const list = relevant.length ? relevant : programs;
+  const list = relevant;
   const evaluated = list.map(program => ({ program, result: viewerType && facts ? evaluateProgram(program, facts) : null }));
   const matched = evaluated.filter(item => item.result?.matches).length;
   const finals = list.map(programHeadlinePay).filter(Boolean);
@@ -460,6 +469,7 @@ export const setPaymentFilterProgramTypes = types => {
 };
 
 export const listPaymentBuckets = (card, rates, types = paymentFilterProgramTypes) => {
+  if (!hasVisibleOrganisationRole(card)) return [PAYMENT_FILTER_NONE];
   const { programs } = resolveCardPrograms(card);
   const buckets = new Set();
   programs.filter(program => !types || types.includes(program.type)).forEach(program => {
@@ -485,6 +495,7 @@ export const listPaymentBuckets = (card, rates, types = paymentFilterProgramType
  */
 export const programRelevanceScore = (card, { viewerType = '', facts = null } = {}) => {
   if (!viewerType || !facts) return 0;
+  if (!hasVisibleOrganisationRole(card)) return 0;
   const summary = summarizeCardPrograms(card, { viewerType, facts });
   if (!summary) return 0;
   const typed = summary.evaluated.filter(item => item.program.type === viewerType);
@@ -511,7 +522,7 @@ export const sortCardsByMode = (cards, mode, { viewerType = '', facts = null, ra
     if (mode === 'payment') {
       const { programs } = resolveCardPrograms(card);
       const typed = viewerType ? programs.filter(program => program.type === viewerType) : programs;
-      const pay = maxProgramPayUsd(typed.length ? typed : programs, rates);
+      const pay = hasVisibleOrganisationRole(card) ? maxProgramPayUsd(typed, rates) : null;
       return { card, index, key: Number.isFinite(pay) ? pay : -1 };
     }
     return { card, index, key: programRelevanceScore(card, { viewerType, facts }) };
@@ -529,17 +540,17 @@ export const sortCardsByMode = (cards, mode, { viewerType = '', facts = null, ra
 export const describeProgramRequirements = program => {
   const req = program?.requirements || {};
   const items = [];
-  if (req.ageFrom !== undefined && req.ageTo !== undefined) items.push({ key: 'age', text: `${req.ageFrom}–${req.ageTo} років` });
-  else if (req.ageTo !== undefined) items.push({ key: 'age', text: `до ${req.ageTo} років` });
-  else if (req.ageFrom !== undefined) items.push({ key: 'age', text: `від ${req.ageFrom} років` });
-  if (req.bmiMax !== undefined) items.push({ key: 'bmi', text: `ІМТ до ${req.bmiMax}` });
-  if (req.heightFrom !== undefined) items.push({ key: 'height', text: `зріст від ${req.heightFrom} см` });
+  if (req.ageFrom !== undefined && req.ageTo !== undefined) items.push({ key: 'age', text: '{from}–{to} років', variables: { from: req.ageFrom, to: req.ageTo } });
+  else if (req.ageTo !== undefined) items.push({ key: 'age', text: 'до {value} років', variables: { value: req.ageTo } });
+  else if (req.ageFrom !== undefined) items.push({ key: 'age', text: 'від {value} років', variables: { value: req.ageFrom } });
+  if (req.bmiMax !== undefined) items.push({ key: 'bmi', text: 'ІМТ до {value}', variables: { value: req.bmiMax } });
+  if (req.heightFrom !== undefined) items.push({ key: 'height', text: 'зріст від {value} см', variables: { value: req.heightFrom } });
   if (req.rh === '+') items.push({ key: 'rh', text: 'лише Rh+' });
   if (req.rh === '-') items.push({ key: 'rh', text: 'лише Rh−' });
   if (req.marital === 'unmarried') items.push({ key: 'marital', text: 'незаміжня' });
   if (req.marital === 'married') items.push({ key: 'marital', text: 'заміжня' });
   if (req.ownKids === 'required') items.push({ key: 'ownKids', text: 'є власна дитина' });
-  if (req.maxBirths !== undefined) items.push({ key: 'births', text: `до ${req.maxBirths} пологів` });
+  if (req.maxBirths !== undefined) items.push({ key: 'births', text: 'до {value} пологів', variables: { value: req.maxBirths } });
   if (req.csectionMax === '0') items.push({ key: 'csection', text: 'без КР' });
   if (req.csectionMax === '1') items.push({ key: 'csection', text: 'можна з 1 КР' });
   if (req.csectionMax === '2') items.push({ key: 'csection', text: 'до 2 КР' });

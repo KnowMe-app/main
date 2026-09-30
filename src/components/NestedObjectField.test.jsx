@@ -41,6 +41,20 @@ describe('поле-обʼєкт у формі адміна', () => {
     }));
   });
 
+  it('лишає заміну числом після тимчасового очищення', () => {
+    const onCommit = jest.fn();
+    render(<Harness initial={programs} onCommit={onCommit} onDeleteField={jest.fn()} />);
+    open('programs');
+    open('p1');
+    open('payments');
+    open('final');
+    const amount = screen.getByLabelText('amount');
+    fireEvent.change(amount, { target: { value: '' } });
+    fireEvent.change(amount, { target: { value: '2700' } });
+    fireEvent.blur(amount);
+    expect(onCommit.mock.calls.at(-1)[0].p1.payments.final.amount).toBe(2700);
+  });
+
   it('знімає окремий блок, а останній — разом із полем', () => {
     const onCommit = jest.fn();
     const onDeleteField = jest.fn();

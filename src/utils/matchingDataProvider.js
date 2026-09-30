@@ -978,9 +978,9 @@ const buildAllowedRoleIdsFromSearchKey = (roleFilters, roleIndexSets) => {
   return { allowedIds, allIndexedIds };
 };
 
-export const toRoleCategory = (user, roleIndexSets = null) => {
+export const toRoleCategories = (user, roleIndexSets = null) => {
   const indexedCategory = resolveRoleCategoryFromSearchKey(user?.userId, roleIndexSets);
-  if (indexedCategory) return indexedCategory;
+  if (indexedCategory) return [indexedCategory];
 
   const normalizeRole = value => {
     const normalized = String(value || '').trim().toLowerCase();
@@ -989,14 +989,14 @@ export const toRoleCategory = (user, roleIndexSets = null) => {
     return '?';
   };
 
-  const directRole = normalizeRole(user?.role);
-  const fallbackRole = normalizeRole(user?.userRole);
-
-  const resolved = directRole !== 'no' && directRole !== '?' ? directRole : fallbackRole;
-
-  if (['ed', 'ag', 'ip'].includes(resolved)) return resolved;
-  return 'other';
+  const values = value => Array.isArray(value) ? value.flatMap(values) : [value];
+  const direct = values(user?.role).map(normalizeRole);
+  const fallback = values(user?.userRole).map(normalizeRole);
+  const resolved = direct.some(role => role !== 'no' && role !== '?') ? direct : fallback;
+  return [...new Set(resolved.map(role => (['ed', 'ag', 'ip'].includes(role) ? role : 'other')))];
 };
+
+export const toRoleCategory = (user, roleIndexSets = null) => toRoleCategories(user, roleIndexSets)[0] || 'other';
 
 export const toMaritalStatusCategory = user => {
   const raw = String(user?.maritalStatus || '').trim().toLowerCase();
@@ -1115,7 +1115,7 @@ export const getMatchingFiltersWithoutSearchKeyGroups = filters => {
   return base;
 };
 
-export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = null) => {
+export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = null, programRates = getProgramRates()) => {
   const activeFilters = filters || {};
   const roleIndexFilterMeta = isMatchingFilterGroupActive(activeFilters.userRole)
     ? buildAllowedRoleIdsFromSearchKey(activeFilters.userRole, roleIndexSets)
@@ -1126,8 +1126,8 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
       if (roleIndexFilterMeta && user?.userId && roleIndexFilterMeta.allIndexedIds.has(user.userId)) {
         if (!roleIndexFilterMeta.allowedIds.has(user.userId)) return false;
       } else {
-        const category = toRoleCategory(user, roleIndexSets);
-        if (!activeFilters.userRole[category]) return false;
+        const categories = toRoleCategories(user, roleIndexSets);
+        if (!categories.some(category => activeFilters.userRole[category])) return false;
       }
     }
 
@@ -1166,7 +1166,7 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
     // (`ensureProgramsForCards`), і лише для карток, які їх мають. Картка з
     // програмами в кількох бакетах проходить, коли увімкнено хоч один із них.
     if (isMatchingFilterGroupActive(activeFilters.payment)) {
-      const buckets = listPaymentBuckets(user, getProgramRates());
+      const buckets = listPaymentBuckets(user, programRates);
       if (!buckets.some(bucket => activeFilters.payment[bucket])) return false;
     }
 
@@ -1349,6 +1349,7 @@ export const applyMatchingUiFiltersToUsers = ({
   roleIndexSets,
   viewMode = 'default',
   filterMainFn = passthroughFilterMain,
+  programRates,
 }) => {
   const {
     filterMainFilters,
@@ -1366,7 +1367,7 @@ export const applyMatchingUiFiltersToUsers = ({
   // it now does whenever a selection keeps the cards with nothing on record. Running
   // the twin post-filter here makes the deck correct either way. It costs nothing
   // when the index did narrow: it keeps exactly what the index would have kept.
-  const searchKeyFilteredUsers = applyMatchingSearchKeyFilters(users, filters, roleIndexSets);
+  const searchKeyFilteredUsers = applyMatchingSearchKeyFilters(users, filters, roleIndexSets, programRates);
 
   const baseUsers = filterMainFn(
     searchKeyFilteredUsers.map(u => [u.userId, u]),

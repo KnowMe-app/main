@@ -305,7 +305,7 @@ export const ProgramCard = ({ program, facts = null, rates, language, compactNot
             return (
               <Chip key={item.key} $ok={ok}>
                 {ok === true ? '✓' : ok === false ? '✕' : null}
-                {uiText(item.text, language)}
+                {uiText(item.text, language, item.variables)}
               </Chip>
             );
           })}

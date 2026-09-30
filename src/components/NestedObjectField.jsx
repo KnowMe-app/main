@@ -149,6 +149,9 @@ const describe = value => {
 
 const ScalarRow = ({ label, value, path, onEdit, onCommit, onRemove }) => {
   const id = `nested-${path.join('-')}`;
+  // Clearing a number temporarily puts an empty string in form state. Keep the
+  // field's schema type independently so the replacement is still converted.
+  const numericRef = useRef(typeof value === 'number');
   return (
     <Row>
       <Key htmlFor={id} title={label}>{label}</Key>
@@ -165,9 +168,9 @@ const ScalarRow = ({ label, value, path, onEdit, onCommit, onRemove }) => {
       ) : (
         <Input
           id={id}
-          inputMode={typeof value === 'number' ? 'decimal' : 'text'}
+          inputMode={numericRef.current ? 'decimal' : 'text'}
           value={value ?? ''}
-          onChange={event => onEdit(path, castLike(value, event.target.value))}
+          onChange={event => onEdit(path, castLike(numericRef.current ? 0 : value, event.target.value))}
           onBlur={() => onCommit()}
         />
       )}

@@ -105,7 +105,7 @@ describe('проєкція стрічки не відкочується на з�
 
     mockUpdate.mockImplementation(async (path, payload) => {
       const [root, id] = splitPath(path);
-      await passGate(gates.profileWrite);
+      if (root === 'users') await passGate(gates.profileWrite);
       const current = { ...(db[root]?.[id] || {}) };
       Object.entries(payload).forEach(([key, value]) => {
         if (value === null) delete current[key];
@@ -163,7 +163,10 @@ describe('проєкція стрічки не відкочується на з�
       updateDataInRealtimeDB(CARD_ID, { name: 'Третє' }, 'update'),
     ]);
 
-    const projectionWrites = mockSet.mock.calls.filter(([path]) => splitPath(path)[0] === 'matchingCards');
+    const projectionWrites = [
+      ...mockSet.mock.calls,
+      ...mockUpdate.mock.calls,
+    ].filter(([path]) => splitPath(path)[0] === 'matchingCards');
     expect(projectionWrites.length).toBeLessThanOrEqual(2);
     const profileReads = mockGet.mock.calls.filter(([path]) => splitPath(path)[0] === 'users');
     expect(profileReads.length).toBeLessThanOrEqual(2);

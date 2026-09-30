@@ -176,7 +176,14 @@ describe('чи підходить програма читачеві', () => {
 
   it('роль читача — остання в історії', () => {
     expect(resolveViewerProgramType(['ag', 'ed'])).toBe('ed');
+    expect(resolveViewerProgramType('egg donor')).toBe('ed');
+    expect(resolveViewerProgramType('surrogate mother')).toBe('sm');
     expect(resolveViewerProgramType('ag')).toBe('');
+  });
+
+  it('не підміняє порожній список програмами іншої аудиторії', () => {
+    const summary = summarizeCardPrograms({ programs: { p2: surrogateProgram } }, { viewerType: 'ed', facts: {} });
+    expect(summary).toMatchObject({ total: 0, allTotal: 1, matched: 0, evaluated: [], finals: [] });
   });
 });
 
@@ -215,6 +222,14 @@ describe('фільтр і сортування за виплатою', () => {
       { userId: 'none' },
     ];
     expect(sortCardsByMode(cards, 'payment', { rates }).map(card => card.userId)).toEqual(['eur', 'usd', 'none']);
+  });
+
+  it('не сортує за виплатою іншої ролі або схованої агенції', () => {
+    const opposite = { userId: 'opposite', role: 'ag', programs: { p2: surrogateProgram } };
+    const applicable = { userId: 'applicable', role: 'ag', programs: { p1: donorProgram } };
+    expect(sortCardsByMode([opposite, applicable], 'payment', { viewerType: 'ed', rates }).map(card => card.userId))
+      .toEqual(['applicable', 'opposite']);
+    expect(listPaymentBuckets({ role: 'ed', programs: { p1: donorProgram } }, rates)).toEqual(['none']);
   });
 
   it('список програм сталий і обмежений', () => {

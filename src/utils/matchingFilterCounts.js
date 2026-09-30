@@ -5,6 +5,7 @@ import {
   toMaritalStatusCategory,
   toRhCategory,
   toRoleCategory,
+  toRoleCategories,
 } from './matchingDataProvider';
 import { listPaymentBuckets } from './donorPrograms';
 import { getProgramRates } from './programCurrency';
@@ -47,7 +48,7 @@ export const matchingFilterGroupHasCounts = filterName => Boolean(CATEGORIZERS[f
  * Роль читається через `roleIndexSets` тим самим шляхом, що й фільтр: у картці
  * ролі може не бути зовсім, а в бакеті `searchKey/users/role` вона є.
  */
-export const countMatchingFilterOptions = ({ filterName, users = [], roleIndexSets = null } = {}) => {
+export const countMatchingFilterOptions = ({ filterName, users = [], roleIndexSets = null, programRates = getProgramRates() } = {}) => {
   const categorize = CATEGORIZERS[filterName];
   if (!categorize) return null;
 
@@ -56,11 +57,15 @@ export const countMatchingFilterOptions = ({ filterName, users = [], roleIndexSe
   // агенції дві програми на різні суми. Тож і число додається кожній.
   if (filterName === 'payment') {
     (Array.isArray(users) ? users : []).forEach(user => {
-      listPaymentBuckets(user, getProgramRates()).forEach(bucket => { counts[bucket] = (counts[bucket] || 0) + 1; });
+      listPaymentBuckets(user, programRates).forEach(bucket => { counts[bucket] = (counts[bucket] || 0) + 1; });
     });
     return counts;
   }
   (Array.isArray(users) ? users : []).forEach(user => {
+    if (filterName === 'userRole') {
+      toRoleCategories(user, roleIndexSets).forEach(key => { counts[key] = (counts[key] || 0) + 1; });
+      return;
+    }
     const bucket = filterName === 'userRole' ? categorize(user, roleIndexSets) : categorize(user);
     const key = bucket === undefined || bucket === null || bucket === '' ? 'other' : String(bucket);
     counts[key] = (counts[key] || 0) + 1;
