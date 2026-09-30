@@ -46,6 +46,7 @@ export const MatchingFilterRail = ({
   language,
   roleOptionKeys,
   paymentOptionKeys,
+  visibleFilterNames,
   // Сортування деки стоїть першим у тому самому ряду: ряд прокручується
   // вбік, і окремий рядок під нього не потрібен.
   leading = null,
@@ -59,7 +60,8 @@ export const MatchingFilterRail = ({
   children,
 }) => {
   const scrollerRef = useRef(null);
-  const chips = buildMatchingFilterRailChips(filters, language, { roleOptionKeys, paymentOptionKeys });
+  const chips = buildMatchingFilterRailChips(filters, language, { roleOptionKeys, paymentOptionKeys })
+    .filter(chip => !visibleFilterNames || visibleFilterNames.includes(chip.filterName));
   const openChip = chips.find(chip => chip.filterName === openGroup) || null;
   // «Скинути все» з’являється від двох звужених груп: при одній вона
   // робить те саме, що й хрестик на тому єдиному чіпі, тобто лише

@@ -242,7 +242,7 @@ export const ProgramCard = ({ program, facts = null, rates, language, compactNot
   const payments = listProgramPayments(program);
   const [main, ...rest] = payments[0]?.key === 'final' ? payments : [null, ...payments];
   const mainMoney = main ? describeProgramMoney(main.money, rates) : null;
-  const requirements = describeProgramRequirements(program);
+  const requirements = describeProgramRequirements(program, (key, vars) => uiText(key, language, vars));
   const unknown = requirements.filter(item => checkByKey.get(item.key) === null).map(item => REQUIREMENT_FIX_HINTS[item.key]);
   const coverage = PROGRAM_COVERAGE_OPTIONS.filter(option => program.coverage?.includes(option.key));
 
@@ -283,7 +283,7 @@ export const ProgramCard = ({ program, facts = null, rates, language, compactNot
             return (
               <Chip key={item.key} $ok={ok}>
                 {ok === true ? '✓' : ok === false ? '✕' : null}
-                {uiText(item.text, language)}
+                {item.text}
               </Chip>
             );
           })}

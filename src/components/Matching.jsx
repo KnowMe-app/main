@@ -2215,6 +2215,10 @@ const Matching = () => {
   // лише тоді, коли міняється щось із цього — рядки мемоізовані по ньому.
   const viewerProgramType = isAdmin ? '' : resolveViewerProgramType(currentUserRole);
   const programRates = useProgramRates(true);
+  const paymentOptionKeys = useMemo(() => {
+    if (isAdmin) return listPaymentFilterKeysForViewer('');
+    return viewerProgramType ? listPaymentFilterKeysForViewer(viewerProgramType) : [];
+  }, [isAdmin, viewerProgramType]);
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
   const openProgramsRef = useRef(null);
   const handleOpenPrograms = React.useCallback(card => { openProgramsRef.current?.(card); }, []);
@@ -2241,13 +2245,21 @@ const Matching = () => {
   const donorRestrictionViewerRoleRef = useRef(donorRestrictionViewerRole);
   donorRestrictionViewerRoleRef.current = donorRestrictionViewerRole;
   const canUseMatchingFilters = !isDonorViewer(donorRestrictionViewerRole);
-  // A donor has no filter controls. Keep persisted filters out of every async
-  // loading path too, so a hidden localStorage value cannot narrow the deck.
-  const matchingUiFilters = canUseMatchingFilters ? filters : EMPTY_MATCHING_FILTERS;
+  // Донорці доступна лише виплата; решта прихованих збережених груп не мають
+  // права звужувати її деку. Так само прихована виплата не діє для ролі, якій
+  // немає чого показати у цій групі.
+  const matchingUiFilters = useMemo(() => {
+    if (!canUseMatchingFilters) {
+      return paymentOptionKeys.length ? { payment: filters.payment } : EMPTY_MATCHING_FILTERS;
+    }
+    if (paymentOptionKeys.length) return filters;
+    const { payment: _hiddenPayment, ...visibleFilters } = filters;
+    return visibleFilters;
+  }, [canUseMatchingFilters, filters, paymentOptionKeys]);
   filtersRef.current = matchingUiFilters;
   useEffect(() => {
-    if (!canUseMatchingFilters) setOpenFilterGroup(null);
-  }, [canUseMatchingFilters]);
+    if (!canUseMatchingFilters && !viewerProgramType) setOpenFilterGroup(null);
+  }, [canUseMatchingFilters, viewerProgramType]);
 
   // Стрілка «відкрити вузол у Firebase» біля публічних нотаток: та сама службова
   // навігація, що в блоках форми анкети, і той самий тумблер (EXT на
@@ -5972,7 +5984,7 @@ const Matching = () => {
   // інакше цикл відліку обіцяв би дві картки, а дорахувати їх на екрані було б
   // нічим — картки колег до нього не доходять.
   const publicVisibleUsers = useMemo(() => keepDonorCounterpartyCards({
-    users: canUseMatchingFilters ? applyMatchingUiFiltersToUsers({
+    users: applyMatchingUiFiltersToUsers({
       users,
       filters: matchingUiFilters,
       filterMainFn: filterMain,
@@ -5981,11 +5993,12 @@ const Matching = () => {
       excludeReactionUsers: viewMode === 'default',
       keepReactedUserIds: stickyReactedUserIds,
       roleIndexSets,
+      programRates,
       viewMode,
-    }) : users,
+    }),
     viewerRole: viewMode === 'default' ? donorRestrictionViewerRole : '',
     viewerId: ownerId,
-  }), [canUseMatchingFilters, donorRestrictionViewerRole, dislikeUsers, favoriteUsers, matchingUiFilters, ownerId, roleIndexSets, stickyReactedUserIds, users, viewMode]);
+  }), [donorRestrictionViewerRole, dislikeUsers, favoriteUsers, matchingUiFilters, ownerId, programRates, roleIndexSets, stickyReactedUserIds, users, viewMode]);
 
   /**
    * Власна чернетка, яку питали по імені чи контакту, — теж відповідь пошуку.
@@ -6215,7 +6228,6 @@ const Matching = () => {
     // DOM і стільки ж гідратацій, і саме тому пошук не мав ані відліку, ані
     // способу дочекатись кінця списку.
     if (viewMode === 'search') return searchRefinedUsers.slice(0, searchRevealCount);
-    if (!canUseMatchingFilters && viewMode === 'default') return visibleUsers;
     return applyMatchingUiFiltersToUsers({
       users: visibleUsers,
       filters: matchingUiFilters,
@@ -6225,13 +6237,14 @@ const Matching = () => {
       excludeReactionUsers: viewMode === 'default',
       keepReactedUserIds: stickyReactedUserIds,
       roleIndexSets,
+      programRates,
       viewMode,
     });
   }, [
-    canUseMatchingFilters,
     dislikeUsers,
     favoriteUsers,
     matchingUiFilters,
+    programRates,
     reactionTabUsers,
     roleIndexSets,
     searchRefinedUsers,
@@ -6253,12 +6266,14 @@ const Matching = () => {
       dislikeUsers,
       excludeReactionUsers: viewMode === 'default',
       roleIndexSets,
+      programRates,
       viewMode,
     }).length;
   }, [
     dislikeUsers,
     draftFilters,
     favoriteUsers,
+    programRates,
     reactionTabUsers.length,
     roleIndexSets,
     showFilters,
@@ -6281,9 +6296,10 @@ const Matching = () => {
       filterName: openFilterGroup,
       users: visibleUsers,
       roleIndexSets,
+      programRates,
     });
     return counts ? { [openFilterGroup]: counts } : undefined;
-  }, [openFilterGroup, roleIndexSets, visibleUsers]);
+  }, [openFilterGroup, programRates, roleIndexSets, visibleUsers]);
 
   const openFilterGroupCountsNote = useMemo(() => {
     if (!openFilterGroup) return '';
@@ -6560,6 +6576,7 @@ const Matching = () => {
         dislikeUsers,
         excludeReactionUsers: viewMode === 'default',
         roleIndexSets,
+        programRates,
         viewMode,
       }).length > 0;
       if (baselineVisible) return [];
@@ -6582,6 +6599,7 @@ const Matching = () => {
           dislikeUsers,
           excludeReactionUsers: viewMode === 'default',
           roleIndexSets,
+          programRates,
           viewMode,
         }).length > 0;
       });
@@ -6816,6 +6834,7 @@ const Matching = () => {
     filteredUsers,
     filters,
     isAdmin,
+    programRates,
     renderedCards.length,
     roleIndexSets,
     sharedReactionCandidateUsers,
@@ -7779,18 +7798,14 @@ const Matching = () => {
   // «Виплата» — для тих, кому програми адресовані: донорці донорські межі,
   // СМ — свої, адмінові всі. Агенції стрічка показує донорок, у яких програм
   // немає, і чіп там нічого не звужував би.
-  const paymentOptionKeys = useMemo(() => {
-    if (isAdmin) return listPaymentFilterKeysForViewer('');
-    return viewerProgramType ? listPaymentFilterKeysForViewer(viewerProgramType) : [];
-  }, [isAdmin, viewerProgramType]);
   // Рейка будує свої чіпи сама; тут вони потрібні рівно заради одного
   // питання — чи не порожня якась група: саме вона є причиною порожнього
   // екрана, і порожній екран мусить називати її словом.
   const filterChips = useMemo(
-    () => canUseMatchingFilters
+    () => (canUseMatchingFilters || Boolean(viewerProgramType))
       ? buildMatchingFilterChips(filters, language, { roleOptionKeys, paymentOptionKeys })
       : [],
-    [canUseMatchingFilters, filters, language, paymentOptionKeys, roleOptionKeys],
+    [canUseMatchingFilters, filters, language, paymentOptionKeys, roleOptionKeys, viewerProgramType],
   );
   const emptyFilterGroup = filterChips.find(chip => chip.danger) || null;
 
@@ -8492,6 +8507,7 @@ const Matching = () => {
         dislikeUsers,
         excludeReactionUsers: false,
         roleIndexSets,
+        programRates,
         viewMode,
       });
       if (!kept.length) misses.add(user.userId);
@@ -8502,6 +8518,7 @@ const Matching = () => {
     favoriteUsers,
     filteredUsers,
     filters,
+    programRates,
     roleIndexSets,
     showDiagnostics,
     viewMode,
@@ -8759,12 +8776,13 @@ const Matching = () => {
               обирає деку (усі / вподобані / приховані), а вже потім звужує
               її вміст. У пошуку рейки немає зовсім: видача — це відповідь на
               набране, і звужує її рядок уточнення, а не фільтри стрічки. */}
-          {canUseMatchingFilters && !isSearching && (
+          {(canUseMatchingFilters || viewerProgramType) && !isSearching && (
             <MatchingFilterRail
               filters={filters}
               language={language}
               roleOptionKeys={roleOptionKeys}
               paymentOptionKeys={paymentOptionKeys}
+              visibleFilterNames={canUseMatchingFilters ? undefined : ['payment']}
               leading={viewMode === 'default' && (viewerProgramType || isAdmin) ? (
                 <SortSelect
                   aria-label={uiText('Сортування', language)}
@@ -8801,7 +8819,9 @@ const Matching = () => {
                 // Закрита рейка все одно тримає панель змонтованою — вона й є
                 // сховищем фільтрів, тож зняти її з дерева означало б губити
                 // чернетку й ганяти ефект перебору групи ролі на кожне відкриття.
-                allowedFilterNames={openFilterGroup ? [openFilterGroup] : MATCHING_FILTER_GROUP_NAMES}
+                allowedFilterNames={openFilterGroup
+                  ? [openFilterGroup]
+                  : (canUseMatchingFilters ? MATCHING_FILTER_GROUP_NAMES : ['payment'])}
                 optionCounts={openFilterGroupCounts}
               />
             </MatchingFilterRail>

@@ -1,5 +1,4 @@
 import { listPaymentBuckets } from './donorPrograms';
-import { getProgramRates } from './programCurrency';
 import { get, limitToFirst, orderByKey, query, ref } from 'firebase/database';
 import { collectAgeIdsByFilters, database } from 'components/config';
 import { getCard, getIndexIdsByQuery, MATCHING_INDEX_CACHE_VERSION, serializeQueryFilters, setIndexIdsForQuery } from './cardIndex';
@@ -1114,7 +1113,7 @@ export const getMatchingFiltersWithoutSearchKeyGroups = filters => {
   return base;
 };
 
-export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = null) => {
+export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = null, programRates = null) => {
   const activeFilters = filters || {};
   const roleIndexFilterMeta = isMatchingFilterGroupActive(activeFilters.userRole)
     ? buildAllowedRoleIdsFromSearchKey(activeFilters.userRole, roleIndexSets)
@@ -1165,7 +1164,7 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
     // перевірка коштує нуль читань. Картка з програмами в кількох бакетах
     // проходить, коли увімкнено хоч один із них.
     if (isMatchingFilterGroupActive(activeFilters.payment)) {
-      const buckets = listPaymentBuckets(user, getProgramRates());
+      const buckets = listPaymentBuckets(user, programRates);
       if (!buckets.some(bucket => activeFilters.payment[bucket])) return false;
     }
 
@@ -1346,6 +1345,7 @@ export const applyMatchingUiFiltersToUsers = ({
   excludeReactionUsers = false,
   keepReactedUserIds = null,
   roleIndexSets,
+  programRates = null,
   viewMode = 'default',
   filterMainFn = passthroughFilterMain,
 }) => {
@@ -1365,7 +1365,7 @@ export const applyMatchingUiFiltersToUsers = ({
   // it now does whenever a selection keeps the cards with nothing on record. Running
   // the twin post-filter here makes the deck correct either way. It costs nothing
   // when the index did narrow: it keeps exactly what the index would have kept.
-  const searchKeyFilteredUsers = applyMatchingSearchKeyFilters(users, filters, roleIndexSets);
+  const searchKeyFilteredUsers = applyMatchingSearchKeyFilters(users, filters, roleIndexSets, programRates);
 
   const baseUsers = filterMainFn(
     searchKeyFilteredUsers.map(u => [u.userId, u]),

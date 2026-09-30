@@ -1,6 +1,7 @@
 import {
   buildProgramsBrief,
   evaluateProgram,
+  describeProgramRequirements,
   extractViewerProgramFacts,
   listPaymentBuckets,
   listPrograms,
@@ -145,7 +146,22 @@ describe('чи підходить програма читачеві', () => {
 
   it('роль читача — остання в історії', () => {
     expect(resolveViewerProgramType(['ag', 'ed'])).toBe('ed');
+    expect(resolveViewerProgramType('egg donor')).toBe('ed');
+    expect(resolveViewerProgramType('surrogate mother')).toBe('sm');
     expect(resolveViewerProgramType('ag')).toBe('');
+  });
+
+  it('не видає програми іншої аудиторії за програми читача', () => {
+    const summary = summarizeCardPrograms(
+      { programs: { p2: surrogateProgram } },
+      { viewerType: 'ed', facts: { age: 25 } },
+    );
+    expect(summary).toMatchObject({ total: 0, allTotal: 1, matched: 0, evaluated: [], finals: [] });
+  });
+
+  it('локалізує числові вимоги до підстановки значень', () => {
+    const translated = describeProgramRequirements(normalizeProgram(donorProgram), (key, vars) => `${key}:${JSON.stringify(vars || {})}`);
+    expect(translated[0].text).toBe('{from}–{to} років:{"from":21,"to":29}');
   });
 });
 
@@ -184,6 +200,16 @@ describe('фільтр і сортування за виплатою', () => {
       { userId: 'none' },
     ];
     expect(sortCardsByMode(cards, 'payment', { rates }).map(card => card.userId)).toEqual(['eur', 'usd', 'none']);
+  });
+
+  it('не сортує типізованому читачеві картки за виплатою іншої ролі', () => {
+    const cards = [
+      { userId: 'none' },
+      { userId: 'other', programs: { p2: surrogateProgram } },
+      { userId: 'donor', programs: { p1: donorProgram } },
+    ];
+    expect(sortCardsByMode(cards, 'payment', { viewerType: 'ed', rates }).map(card => card.userId))
+      .toEqual(['donor', 'none', 'other']);
   });
 
   it('список програм сталий і обмежений', () => {

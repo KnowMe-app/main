@@ -22,6 +22,7 @@ import {
   normalizeProgramMoney,
   programMoneyInUsd,
 } from './programCurrency';
+import { normalizeProfileRole } from './profileRole';
 
 export const PROGRAM_TYPES = Object.freeze(['ed', 'sm']);
 
@@ -379,8 +380,8 @@ export const evaluateProgram = (program, facts) => {
 
 /** Тип програм, які стосуються читача: донорка бачить донорські, СМ — свої. */
 export const resolveViewerProgramType = viewerRole => {
-  const roles = (Array.isArray(viewerRole) ? viewerRole : [viewerRole]).map(role => String(role || '').trim().toLowerCase());
-  const current = roles[roles.length - 1];
+  const roles = Array.isArray(viewerRole) ? viewerRole : [viewerRole];
+  const current = normalizeProfileRole(roles[roles.length - 1]);
   if (current === 'ed') return 'ed';
   if (current === 'sm') return 'sm';
   return '';
@@ -397,7 +398,7 @@ export const summarizeCardPrograms = (card, { viewerType = '', facts = null } = 
   const { programs } = resolveCardPrograms(card);
   if (!programs.length) return null;
   const relevant = viewerType ? programs.filter(program => program.type === viewerType) : programs;
-  const list = relevant.length ? relevant : programs;
+  const list = relevant;
   const evaluated = list.map(program => ({ program, result: viewerType && facts ? evaluateProgram(program, facts) : null }));
   const matched = evaluated.filter(item => item.result?.matches).length;
   const finals = list.map(program => program.payments.final).filter(Boolean);
@@ -508,7 +509,7 @@ export const sortCardsByMode = (cards, mode, { viewerType = '', facts = null, ra
     if (mode === 'payment') {
       const { programs } = resolveCardPrograms(card);
       const typed = viewerType ? programs.filter(program => program.type === viewerType) : programs;
-      const pay = maxProgramPayUsd(typed.length ? typed : programs, rates);
+      const pay = maxProgramPayUsd(typed, rates);
       return { card, index, key: Number.isFinite(pay) ? pay : -1 };
     }
     return { card, index, key: programRelevanceScore(card, { viewerType, facts }) };
@@ -523,23 +524,26 @@ export const sortCardsByMode = (cards, mode, { viewerType = '', facts = null, ra
  * Вимоги програми словами — по чіпу на вимогу, з ключем для позначки збігу.
  * Порядок сталий: спершу те, за чим відсіюють найчастіше (вік, ІМТ).
  */
-export const describeProgramRequirements = program => {
+export const describeProgramRequirements = (program, translate = (key, vars) => {
+  const values = vars || {};
+  return key.replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match);
+}) => {
   const req = program?.requirements || {};
   const items = [];
-  if (req.ageFrom !== undefined && req.ageTo !== undefined) items.push({ key: 'age', text: `${req.ageFrom}–${req.ageTo} років` });
-  else if (req.ageTo !== undefined) items.push({ key: 'age', text: `до ${req.ageTo} років` });
-  else if (req.ageFrom !== undefined) items.push({ key: 'age', text: `від ${req.ageFrom} років` });
-  if (req.bmiMax !== undefined) items.push({ key: 'bmi', text: `ІМТ до ${req.bmiMax}` });
-  if (req.heightFrom !== undefined) items.push({ key: 'height', text: `зріст від ${req.heightFrom} см` });
-  if (req.rh === '+') items.push({ key: 'rh', text: 'лише Rh+' });
-  if (req.rh === '-') items.push({ key: 'rh', text: 'лише Rh−' });
-  if (req.marital === 'unmarried') items.push({ key: 'marital', text: 'незаміжня' });
-  if (req.marital === 'married') items.push({ key: 'marital', text: 'заміжня' });
-  if (req.ownKids === 'required') items.push({ key: 'ownKids', text: 'є власна дитина' });
-  if (req.maxBirths !== undefined) items.push({ key: 'births', text: `до ${req.maxBirths} пологів` });
-  if (req.csectionMax === '0') items.push({ key: 'csection', text: 'без КР' });
-  if (req.csectionMax === '1') items.push({ key: 'csection', text: 'можна з 1 КР' });
-  if (req.csectionMax === '2') items.push({ key: 'csection', text: 'до 2 КР' });
+  if (req.ageFrom !== undefined && req.ageTo !== undefined) items.push({ key: 'age', text: translate('{from}–{to} років', { from: req.ageFrom, to: req.ageTo }) });
+  else if (req.ageTo !== undefined) items.push({ key: 'age', text: translate('до {value} років', { value: req.ageTo }) });
+  else if (req.ageFrom !== undefined) items.push({ key: 'age', text: translate('від {value} років', { value: req.ageFrom }) });
+  if (req.bmiMax !== undefined) items.push({ key: 'bmi', text: translate('ІМТ до {value}', { value: req.bmiMax }) });
+  if (req.heightFrom !== undefined) items.push({ key: 'height', text: translate('зріст від {value} см', { value: req.heightFrom }) });
+  if (req.rh === '+') items.push({ key: 'rh', text: translate('лише Rh+') });
+  if (req.rh === '-') items.push({ key: 'rh', text: translate('лише Rh−') });
+  if (req.marital === 'unmarried') items.push({ key: 'marital', text: translate('незаміжня') });
+  if (req.marital === 'married') items.push({ key: 'marital', text: translate('заміжня') });
+  if (req.ownKids === 'required') items.push({ key: 'ownKids', text: translate('є власна дитина') });
+  if (req.maxBirths !== undefined) items.push({ key: 'births', text: translate('до {value} пологів', { value: req.maxBirths }) });
+  if (req.csectionMax === '0') items.push({ key: 'csection', text: translate('без КР') });
+  if (req.csectionMax === '1') items.push({ key: 'csection', text: translate('можна з 1 КР') });
+  if (req.csectionMax === '2') items.push({ key: 'csection', text: translate('до 2 КР') });
   return items;
 };
 

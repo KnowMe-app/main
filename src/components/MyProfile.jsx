@@ -390,7 +390,7 @@ const baseSections = [
 const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery']);
 
 // Поля-обʼєкти розділів агенції й батьків (`roleSections`).
-const OBJECT_PROFILE_FIELDS = new Set(['programs', 'parentPreferences']);
+const OBJECT_PROFILE_FIELDS = new Set(['programs', 'parentPreferences', 'services']);
 
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','country','region','city','moreInfo_main']);
 

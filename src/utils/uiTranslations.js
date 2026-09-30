@@ -20,6 +20,12 @@ import { resolveProfileLanguage } from './profileTexts';
  * вибрані зі списку значення — `translateFieldValue`.
  */
 const EN_BY_UK = {
+  '{from}–{to} років': '{from}–{to} years',
+  'до {value} років': 'up to {value} years',
+  'від {value} років': 'from {value} years',
+  'ІМТ до {value}': 'BMI up to {value}',
+  'зріст від {value} см': 'height from {value} cm',
+  'до {value} пологів': 'up to {value} deliveries',
   // --- спільне ---
   'Завантаження…': 'Loading…',
   'Сімейний стан': 'Marital status',
