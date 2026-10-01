@@ -6,24 +6,24 @@ import { useAppSettings } from '../hooks/useAppSettings';
 import { uiText } from '../utils/uiTranslations';
 
 /*
- * «Так вашу картку бачать у стрічці» — угорі «Мого профілю».
+ * «Так вас бачать у стрічці» — угорі «Мого профілю».
  *
  * Картка та сама, що в стрічці (`ProfileRow`), і зібрана з того, що людина
  * щойно набрала: інакше «як мене побачать» доводилось би вгадувати, а
  * агенція, яка заповнила програми, не бачила б, що донорка з них прочитає
  * одним рядком. Нотаток і ряду рішень у прев'ю немає (`preview`): на себе не
- * реагують. Згорнути блок можна — вибір памʼятає браузер.
+ * реагують.
+ *
+ * Ролей буває дві, і кожна в стрічці — окрема картка (`previews`). Тут вони
+ * стоять перемикачем, а не одна під одною: дві картки з фото на всю ширину
+ * ставили саму форму на два екрани нижче. Згорнути блок можна — вибір
+ * памʼятає браузер.
  */
 
 const COLLAPSED_KEY = 'myProfileCardPreviewCollapsed';
 
 const Wrap = styled.section`
   margin: 0 20px 16px;
-`;
-
-const RoleName = styled.span`
-  color: var(--text, var(--km-text));
-  font-size: 12px;
 `;
 
 const Head = styled.button`
@@ -42,6 +42,7 @@ const Head = styled.button`
   font-weight: 600;
   letter-spacing: .6px;
   text-transform: uppercase;
+  text-align: left;
   cursor: pointer;
 `;
 
@@ -50,25 +51,45 @@ const Caret = styled.span`
   transform: rotate(${({ $open }) => ($open ? '180deg' : '0deg')});
 `;
 
+// Той самий вигляд, що й чіпи ролей у «Хто ви» вище: перемикач ролі —
+// продовження того вибору, а не новий елемент.
+const Tabs = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+`;
+
+const Tab = styled.button`
+  padding: 6px 12px;
+  border-radius: 99px;
+  border: 1.5px solid ${({ $active }) => ($active ? 'var(--accent, var(--km-accent))' : 'var(--border, var(--km-border))')};
+  background: ${({ $active }) => ($active ? 'var(--accent-light, var(--km-accent-light))' : 'var(--card, var(--km-card))')};
+  color: ${({ $active }) => ($active ? 'var(--accent, var(--km-accent))' : 'var(--muted, var(--km-muted))')};
+  font: inherit;
+  font-size: 13px;
+  font-weight: ${({ $active }) => ($active ? 600 : 500)};
+  cursor: pointer;
+`;
+
 const Frame = styled(MatchingThemeScope)`
   max-width: 460px;
   margin: 0 auto;
   border-radius: 18px;
 `;
 
-const storageKey = role => `${COLLAPSED_KEY}:${role || 'profile'}`;
-
-const readCollapsed = role => {
+const readCollapsed = () => {
   try {
-    return window.localStorage.getItem(storageKey(role)) === '1';
+    return window.localStorage.getItem(COLLAPSED_KEY) === '1';
   } catch {
     return false;
   }
 };
 
-export const MyProfileCardPreview = ({ card, role = '', roleLabel = '', language, rates, displayCurrency, onDisplayCurrencyChange }) => {
+export const MyProfileCardPreview = ({ previews = [], language, rates, displayCurrency, onDisplayCurrencyChange }) => {
   const { themeMode } = useAppSettings();
-  const [open, setOpen] = useState(() => !readCollapsed(role));
+  const [open, setOpen] = useState(() => !readCollapsed());
+  const [activeRole, setActiveRole] = useState('');
   const programsContext = useMemo(() => ({
     viewerType: '',
     facts: null,
@@ -76,11 +97,13 @@ export const MyProfileCardPreview = ({ card, role = '', roleLabel = '', language
     displayCurrency,
     onDisplayCurrencyChange,
   }), [displayCurrency, onDisplayCurrencyChange, rates]);
+  const active = previews.find(item => item.role === activeRole) || previews[0];
+  if (!active) return null;
 
   const toggle = () => {
     setOpen(previous => {
       try {
-        window.localStorage.setItem(storageKey(role), previous ? '1' : '0');
+        window.localStorage.setItem(COLLAPSED_KEY, previous ? '1' : '0');
       } catch {
         // приватне вікно: вибір живе до перезавантаження
       }
@@ -91,14 +114,31 @@ export const MyProfileCardPreview = ({ card, role = '', roleLabel = '', language
   return (
     <Wrap data-testid="my-profile-card-preview">
       <Head type="button" aria-expanded={open} onClick={toggle}>
-        <span>{uiText('Так вашу картку бачать у стрічці', language)}</span>
-        {roleLabel ? <RoleName>{uiText(roleLabel, language)}</RoleName> : null}
+        <span>{uiText('Так вас бачать у стрічці', language)}</span>
         <Caret $open={open} aria-hidden="true">▼</Caret>
       </Head>
       {open ? (
-        <Frame $themeMode={themeMode}>
-          <ProfileRow user={card} programsContext={programsContext} preview canViewContacts={false} />
-        </Frame>
+        <>
+          {previews.length > 1 ? (
+            <Tabs role="tablist">
+              {previews.map(item => (
+                <Tab
+                  key={item.role}
+                  type="button"
+                  role="tab"
+                  aria-selected={item.role === active.role}
+                  $active={item.role === active.role}
+                  onClick={() => setActiveRole(item.role)}
+                >
+                  {uiText(item.label, language)}
+                </Tab>
+              ))}
+            </Tabs>
+          ) : null}
+          <Frame $themeMode={themeMode}>
+            <ProfileRow key={active.role} user={active.card} programsContext={programsContext} preview canViewContacts={false} />
+          </Frame>
+        </>
       ) : null}
     </Wrap>
   );

@@ -158,6 +158,10 @@ export const ProfileDotsMenu = ({
   // Стирання полів анкети — друга дія з анкетою цілком, і стоїть вона в тій
   // самій секції, що й видалення, а не окремою секцією з тією ж назвою.
   onClearProfile,
+  // Людина з двома ролями (донорка й агентка) може очистити дані однієї з
+  // них, не чіпаючи другої. Стоїть це тут же, поруч з «Очистити анкету»:
+  // незворотне живе в одному місці, а не червоною кнопкою біля «Опублікувати».
+  clearRoleItems,
   onSelect,
   beforeNavigate,
   extraActions,
@@ -373,9 +377,18 @@ export const ProfileDotsMenu = ({
           «встановіть застосунок у Google Play», а мобільного застосунку більше
           немає — його власна заставка каже про це першою ж карткою стрічки.
           Пункт, який веде в нікуди, гірший за відсутній: він обіцяє дію. */}
-      {(onDeleteProfile || onClearProfile) && (
+      {(onDeleteProfile || onClearProfile || clearRoleItems?.length) && (
         <MenuSection>
           <SectionLabel>{uiText('Анкета', language)}</SectionLabel>
+          {(clearRoleItems || []).map(item => (
+            <MenuItem key={item.key} type="button" role="menuitem" $danger onClick={() => handleAction(item.onClick)}>
+              <ItemIcon $danger><FaEraser /></ItemIcon>
+              <span>
+                <ItemLabel>{item.label}</ItemLabel>
+                <ItemDescription>{uiText('Стерти поля цієї анкети, інші лишаються', language)}</ItemDescription>
+              </span>
+            </MenuItem>
+          ))}
           {onClearProfile && (
             <MenuItem type="button" role="menuitem" $danger onClick={() => handleAction(onClearProfile)}>
               <ItemIcon $danger><FaEraser /></ItemIcon>

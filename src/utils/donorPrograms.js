@@ -21,6 +21,7 @@
 
 import {
   DEFAULT_PROGRAM_CURRENCY,
+  convertProgramAmount,
   normalizeProgramMoney,
   programMoneyInUsd,
 } from './programCurrency';
@@ -68,8 +69,21 @@ export const PROGRAM_PAYMENT_FIELDS = Object.freeze({
   ]),
 });
 
-/** Загальна сума за програму — окреме поле, а не сума полів вище. */
+/**
+ * Загальна сума за програму, введена агенцією рукою. Нові програми її не
+ * пишуть — загальну суму рахує `programBreakdown` з самих виплат, — а старі
+ * записи без жодної окремої виплати показуються через неї.
+ */
 export const PROGRAM_TOTAL_FIELD = 'total';
+
+/**
+ * Щомісячна виплата сама по собі нічого не каже про заробіток: «500 $
+ * щомісяця» — це 4 500 $ за дев'ять місяців. Тож поруч із сумою лежить
+ * кількість місяців (`payments.monthly.months`), а коли агенція її не
+ * вказала, рахунок бере тривалість вагітності й позначає її як орієнтовну.
+ */
+export const DEFAULT_MONTHLY_MONTHS = 9;
+export const MAX_MONTHLY_MONTHS = 24;
 
 export const listGuaranteedPaymentFields = type => (PROGRAM_PAYMENT_FIELDS[type] || []).filter(field => !field.bonus);
 export const listBonusPaymentFields = type => (PROGRAM_PAYMENT_FIELDS[type] || []).filter(field => field.bonus);
@@ -196,7 +210,12 @@ export const normalizeProgram = (raw, id) => {
   const payments = {};
   [...PROGRAM_PAYMENT_FIELDS[type].map(field => field.key), PROGRAM_TOTAL_FIELD].forEach(key => {
     const money = normalizeProgramMoney(raw.payments?.[key]);
-    if (money) payments[key] = money;
+    if (!money) return;
+    if (key === 'monthly') {
+      const months = wholeNumber(raw.payments.monthly.months, { min: 1, max: MAX_MONTHLY_MONTHS });
+      if (months !== null) money.months = Math.round(months);
+    }
+    payments[key] = money;
   });
   const otherPayments = normalizeLabeledPayments(raw.otherPayments);
   const bonuses = normalizeLabeledPayments(raw.bonuses);
@@ -408,26 +427,37 @@ export const summarizeCardPrograms = (card, { viewerType = '', facts = null } = 
   const list = relevant;
   const evaluated = list.map(program => ({ program, result: viewerType && facts ? evaluateProgram(program, facts) : null }));
   const matched = evaluated.filter(item => item.result?.matches).length;
-  const finals = list.map(programHeadlinePay).filter(Boolean);
+  // Діапазон рядка — гарантовано за програму, а не сама фінальна виплата:
+  // картка програми показує саме цю суму першою, і число в рядку мусить
+  // бути тим самим числом, а не третім.
+  const finals = list.map(program => programGuaranteedMoney(program)).filter(Boolean);
+  const byType = PROGRAM_TYPES
+    .map(type => ({ type, totals: list.filter(program => program.type === type).map(program => programGuaranteedMoney(program)).filter(Boolean) }))
+    .filter(item => item.totals.length);
   return {
     total: list.length,
     allTotal: programs.length,
     matched: viewerType && facts ? matched : null,
     evaluated,
     finals,
+    byType,
   };
 };
 
-/** Найбільша головна виплата в доларах серед програм — для сорту й фільтра. */
+/** Найбільша гарантована сума програми в доларах — для сорту й фільтра. */
 export const maxProgramPayUsd = (programs, rates) => programs
-  .map(program => programMoneyInUsd(programHeadlinePay(program), rates))
+  .map(program => programGuaranteedUsd(program, rates))
   .filter(value => Number.isFinite(value))
   .reduce((max, value) => (max === null || value > max ? value : max), null);
 
 /**
- * Бакети фільтра «Виплата». Межі різні для донорок і СМ: 1 600 $ і 20 000 $
- * — звичайні суми кожна у своїй програмі, і одна шкала на обидві була б
- * порожньою для однієї з них.
+ * Бакети фільтра «Виплата» — за **гарантованою сумою за програму**
+ * (`programGuaranteedUsd`), тим самим числом, яке картка програми показує
+ * першим. Межі різні для донорок і СМ: 1 600 $ і 25 000 $ — звичайні суми
+ * кожна у своїй програмі, і одна шкала на обидві була б порожньою для однієї
+ * з них. Ключі СМ нові (`sm_lt22k`…): межі тут рахувались від самої
+ * фінальної виплати, і збережений у браузері старий вибір під новими межами
+ * означав би інше.
  */
 export const PAYMENT_FILTER_BUCKETS = Object.freeze({
   ed: Object.freeze([
@@ -436,9 +466,9 @@ export const PAYMENT_FILTER_BUCKETS = Object.freeze({
     { key: 'ed_2000', label: 'від 2 000 $', min: 2000 },
   ]),
   sm: Object.freeze([
-    { key: 'sm_lt18k', label: 'до 18 000 $', max: 18000 },
-    { key: 'sm_18k', label: '18 000–20 000 $', min: 18000, max: 20000 },
-    { key: 'sm_20k', label: 'від 20 000 $', min: 20000 },
+    { key: 'sm_lt22k', label: 'до 22 000 $', max: 22000 },
+    { key: 'sm_22k', label: '22 000–26 000 $', min: 22000, max: 26000 },
+    { key: 'sm_26k', label: 'від 26 000 $', min: 26000 },
   ]),
 });
 
@@ -469,7 +499,7 @@ export const listPaymentBuckets = (card, rates, types = paymentFilterProgramType
   const { programs } = resolveCardPrograms(card);
   const buckets = new Set();
   programs.filter(program => !types || types.includes(program.type)).forEach(program => {
-    const usd = programMoneyInUsd(programHeadlinePay(program), rates);
+    const usd = programGuaranteedUsd(program, rates);
     if (!Number.isFinite(usd)) return;
     PAYMENT_FILTER_BUCKETS[program.type].forEach(bucket => {
       if ((bucket.min === undefined || usd >= bucket.min) && (bucket.max === undefined || usd < bucket.max)) {
@@ -577,50 +607,112 @@ export const listProgramBonuses = program => {
   return [...known, ...labeledEntries(program.bonuses, 'bonus')];
 };
 
-/** Доплати, які вже підтверджує анкета; події майбутньої вагітності не вгадуємо. */
+/**
+ * Доплати, які читачка вже має за анкетою: досвід — факт, і його відмічено
+ * одразу. Кесарів, двійня, вагітність з першої спроби — події цієї програми,
+ * а не попередніх: колишній КР не обіцяє доплати за наступний, тож їх
+ * читачка відмічає сама, коли хоче порахувати «а якщо».
+ */
 export const defaultProgramBonusKeys = (program, facts) => {
-  if (!facts) return [];
-  return listProgramBonuses(program).filter(item => {
-    const label = String(item.label || '').toLowerCase();
-    if (item.key === 'firstTry' || item.key === 'twins' || /перш(ої|ого).*спроб|двійн/.test(label)) return false;
-    if (item.key === 'experience' || item.key === 'repeat' || /досвід|повторн/.test(label)) return Number(facts.experience) > 0;
-    if (item.key === 'cSection' || /кесар|\bкр\b/.test(label)) return Number(facts.csections) > 0;
-    if (/полог/.test(label)) return Number(facts.births) > 0;
-    return false;
-  }).map(item => item.key);
+  if (!facts || !(Number(facts.experience) > 0)) return [];
+  return listProgramBonuses(program)
+    .filter(item => item.key === 'experience' || item.key === 'repeat' || /досвід|повторн/i.test(String(item.label || '')))
+    .map(item => item.key);
 };
 
 /**
- * Персональний підсумок: задана агенцією загальна сума (або гарантовані
- * разові виплати) плюс лише відмічені користувачем доплати. Різні валюти
- * лишаються окремими частинами, щоб без курсу не показувати вигадану суму.
+ * Сума кількох виплат у валюті програми. Інша валюта переводиться за курсом
+ * НБУ і робить суму «≈»; без курсу вона лишається окремою частиною
+ * («23 800 $ + 2 000 ₴») — вигадана сума гірша за дві чесні.
  */
-export const calculateProgramTotal = (program, selectedBonusKeys = []) => {
+const sumMoney = (items, baseCurrency, rates) => {
+  const parts = new Map([[baseCurrency, 0]]);
+  let approximate = false;
+  items.forEach(money => {
+    const amount = Number(money?.amount);
+    if (!Number.isFinite(amount) || !money?.currency) return;
+    if (money.currency === baseCurrency) {
+      parts.set(baseCurrency, parts.get(baseCurrency) + amount);
+      return;
+    }
+    // Без явного курсу береться той, що поклав `useProgramRates`
+    // (`setProgramRates`): рядок стрічки курсу в руках не тримає.
+    const converted = convertProgramAmount(amount, money.currency, baseCurrency, rates || undefined);
+    if (Number.isFinite(converted)) {
+      parts.set(baseCurrency, parts.get(baseCurrency) + converted);
+      approximate = true;
+      return;
+    }
+    parts.set(money.currency, (parts.get(money.currency) || 0) + amount);
+  });
+  // Сума за курсом — не точна, і точних одиниць вона не вдає: «≈ 1 650 $», а
+  // не «1 649 $». Крок той самий, що й у діапазоні рядка (`formatPayRange`).
+  const step = baseCurrency === 'UAH' ? 100 : 10;
+  const list = [...parts.entries()]
+    .filter(([currency, amount]) => amount > 0 || currency === baseCurrency)
+    .map(([currency, amount]) => ({ currency, amount: approximate && currency === baseCurrency ? Math.round(amount / step) * step : amount }));
+  return { parts: list, approximate, amount: list[0]?.amount || 0, currency: baseCurrency };
+};
+
+/**
+ * Із чого складається заробіток за програмою — одне місце на картку
+ * програми, редактор, рядок стрічки, фільтр і сортування.
+ *
+ * Гарантовано — усе, що виплачують кожній: фінальна, щомісячні × місяці,
+ * перенос, договір і дописані агенцією виплати. Досі загальна сума брала
+ * лише разові виплати, і «500 $ щомісяця» — найбільша після фінальної
+ * частина заробітку СМ — у підсумок не потрапляла взагалі, а рядок стрічки
+ * показував третє число, саму фінальну. Можливі доплати додаються лише
+ * відмічені (`selectedBonusKeys`); `max` — якщо справдиться все.
+ */
+export const programBreakdown = (program, { selectedBonusKeys = [], rates = null } = {}) => {
   const selected = new Set(selectedBonusKeys);
-  const explicitTotal = program?.payments?.[PROGRAM_TOTAL_FIELD];
-  const baseEntries = explicitTotal
-    ? [{ money: explicitTotal }]
-    : listProgramPayments(program).filter(entry => entry.key !== 'monthly');
-  const bonusEntries = listProgramBonuses(program).filter(entry => selected.has(entry.key));
-  const byCurrency = [...baseEntries, ...bonusEntries].reduce((totals, entry) => {
-    const amount = Number(entry.money?.amount);
-    const currency = entry.money?.currency;
-    if (!Number.isFinite(amount) || !currency) return totals;
-    totals[currency] = (totals[currency] || 0) + amount;
-    return totals;
-  }, {});
-  return Object.entries(byCurrency).map(([currency, amount]) => ({ amount, currency }));
+  let lines = listProgramPayments(program).map(entry => {
+    if (entry.key !== 'monthly') return { ...entry, subtotal: entry.money };
+    const months = Number(entry.money.months) || DEFAULT_MONTHLY_MONTHS;
+    return {
+      ...entry,
+      months,
+      monthsEstimated: !entry.money.months,
+      subtotal: { amount: Number(entry.money.amount) * months, currency: entry.money.currency },
+    };
+  });
+  // Старий запис, де агенція ввела саму загальну суму, без складових.
+  const legacyTotal = program?.payments?.[PROGRAM_TOTAL_FIELD];
+  if (!lines.length && legacyTotal) {
+    lines = [{ key: PROGRAM_TOTAL_FIELD, label: 'Загальна сума за програму', money: legacyTotal, subtotal: legacyTotal }];
+  }
+  const bonuses = listProgramBonuses(program).map(entry => ({ ...entry, selected: selected.has(entry.key), subtotal: entry.money }));
+  const baseCurrency = program?.payments?.final?.currency || lines[0]?.money?.currency || bonuses[0]?.money?.currency || DEFAULT_PROGRAM_CURRENCY;
+  const guaranteedItems = lines.map(line => line.subtotal);
+  return {
+    lines,
+    bonuses,
+    baseCurrency,
+    guaranteed: sumMoney(guaranteedItems, baseCurrency, rates),
+    total: sumMoney([...guaranteedItems, ...bonuses.filter(item => item.selected).map(item => item.subtotal)], baseCurrency, rates),
+    max: sumMoney([...guaranteedItems, ...bonuses.map(item => item.subtotal)], baseCurrency, rates),
+    hasMonthlyEstimate: lines.some(line => line.monthsEstimated),
+  };
 };
 
 /**
- * Сума гарантованих разових виплат у валюті головної — підказка до поля
- * «Загальна сума». Щомісячне не входить (скільки місяців — невідомо), а
- * виплата в іншій валюті робить суму нечесною, тож тоді підказки немає.
+ * Гарантована сума однією сумою в одній валюті — для діапазону рядка.
+ * Без курсу й з виплатами у двох валютах однієї суми немає; тоді рядок
+ * показує саму головну виплату, а не вигадану суму.
  */
-export const sumGuaranteedPayments = program => {
-  const entries = listProgramPayments(program).filter(entry => entry.key !== 'monthly');
-  if (!entries.length) return null;
-  const currency = entries[0].money.currency;
-  if (entries.some(entry => entry.money.currency !== currency)) return null;
-  return { amount: entries.reduce((sum, entry) => sum + Number(entry.money.amount || 0), 0), currency };
+export const programGuaranteedMoney = (program, rates) => {
+  const { guaranteed } = programBreakdown(program, { rates });
+  if (guaranteed.parts.length === 1 && guaranteed.amount > 0) {
+    return { amount: guaranteed.amount, currency: guaranteed.currency, ...(guaranteed.approximate ? { approximate: true } : {}) };
+  }
+  return programHeadlinePay(program);
+};
+
+/** Гарантована сума в доларах — фільтр «Виплата» й сортування. */
+export const programGuaranteedUsd = (program, rates) => {
+  const breakdown = programBreakdown(program, { rates });
+  const usd = breakdown.lines.map(line => programMoneyInUsd(line.subtotal, rates || undefined));
+  if (usd.length && usd.every(value => Number.isFinite(value))) return usd.reduce((sum, value) => sum + value, 0);
+  return programMoneyInUsd(programHeadlinePay(program), rates || undefined);
 };

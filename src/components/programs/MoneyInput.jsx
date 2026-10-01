@@ -53,8 +53,12 @@ const CurrencyButton = styled.button`
   border: 0;
   border-left: 1px solid var(--km-border, #e7e1d8);
   background: ${({ $on }) => ($on ? 'var(--km-accent, #E8791A)' : 'transparent')};
-  color: ${({ $on }) => ($on ? '#fff' : 'inherit')};
+  color: ${({ $on }) => ($on ? '#fff' : 'var(--km-text, inherit)')};
   font: inherit;
+  /* Розмір явний: успадкований брався з батька, і в рядку «Інша виплата»
+     (не всередині підпису поля) значки валют були більші й жирніші, ніж у
+     сусідніх полях. */
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
 
@@ -68,7 +72,9 @@ const Hint = styled.div`
   font-variant-numeric: tabular-nums;
 `;
 
-export const MoneyInput = ({ id, value, onChange, language, rates, placeholder = '0' }) => {
+// Порожнє поле суми — це «не платимо», а не «0 $»: сіре «0» читалось як
+// уже вписана нульова виплата.
+export const MoneyInput = ({ id, value, onChange, language, rates, placeholder }) => {
   const currency = value?.currency || DEFAULT_PROGRAM_CURRENCY;
   const [draft, setDraft] = useState(value?.amount ?? '');
   useEffect(() => { setDraft(value?.amount ?? ''); }, [value?.amount]);
@@ -86,7 +92,7 @@ export const MoneyInput = ({ id, value, onChange, language, rates, placeholder =
           id={id}
           inputMode="decimal"
           value={draft}
-          placeholder={placeholder}
+          placeholder={placeholder ?? uiText('сума', language)}
           onChange={event => setDraft(event.target.value)}
           onBlur={() => commit(draft)}
         />

@@ -27,7 +27,7 @@ describe('every Matching filter reaches the index', () => {
     const { applyMatchingSearchKeyFilters } = require('../utils/matchingDataProvider');
     const withProgram = { userId: 'a', programs: { p1: { type: 'ed', payments: { final: { amount: 2500, currency: 'USD' } } } } };
     const without = { userId: 'b' };
-    const payment = { ed_lt1500: true, ed_1500: true, ed_2000: true, sm_lt18k: true, sm_18k: true, sm_20k: true, none: false };
+    const payment = { ed_lt1500: true, ed_1500: true, ed_2000: true, sm_lt22k: true, sm_22k: true, sm_26k: true, none: false };
     expect(applyMatchingSearchKeyFilters([withProgram, without], { payment }).map(user => user.userId)).toEqual(['a']);
   });
 

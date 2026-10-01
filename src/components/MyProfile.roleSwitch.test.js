@@ -83,19 +83,32 @@ describe('кілька ролей у «Моєму профілі»', () => {
     expect(source).not.toContain('Друга анкета');
   });
 
-  it('збирає окрему картку попереднього перегляду для кожної видимої ролі', () => {
+  it('збирає окрему картку попереднього перегляду для кожної видимої ролі й показує їх перемикачем', () => {
     const source = read('MyProfile.jsx');
     expect(source).toContain('const previewCards = previewRoles.map(role =>');
-    expect(source).toContain('role={preview.role}');
+    expect(source).toContain('previews={previewCards}');
     expect(source).toContain('ORGANISATION_ROLES.includes(role) && ownVisiblePrograms.length');
     expect(source).not.toContain('userRole: previewRoles.length > 1');
   });
 
-  it('показує внизу статус і дії кожної ролі', () => {
+  // Видимість анкет і публікація — в одному блоці; «сховати» вгорі й
+  // «приховати» внизу були тією самою дією під двома словами.
+  it('тримає статус, видимість ролей і публікацію в одному блоці «Публікація»', () => {
     const source = read('MyProfile.jsx');
-    expect(source).toContain('<RoleActionList>');
-    expect(source).toContain("state.publish !== true");
-    expect(source).toContain("uiText(hidden ? 'Показати' : 'Приховати', language)");
-    expect(source).toContain("uiText('Очистити роль', language)");
+    const card = source.slice(source.indexOf('data-testid="publish-card"'), source.indexOf('</SubmitWrap>'));
+    expect(card).toContain('role="switch"');
+    expect(card).toContain('onClick={() => toggleRoleHidden(role)}');
+    expect(card).toContain('onClick={publishProfile}');
+    expect(card).toContain('onClick={hideProfile}');
+    expect(card).not.toContain('clearRoleFields');
+    expect(source).not.toContain('RoleVisibilityList');
+    expect(source).not.toContain("'Приховати'");
+  });
+
+  it('очищення ролі — у меню «⋮» і через ту саму модалку, без window.confirm', () => {
+    const source = read('MyProfile.jsx');
+    expect(source).toContain('clearRoleItems={isProfileAccessConfirmed && rolesList.length > 1');
+    expect(source).toContain('onClick={() => clearRoleFields(clearRoleTarget)}');
+    expect(source).not.toContain('window.confirm');
   });
 });

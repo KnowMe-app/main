@@ -1,7 +1,7 @@
 import React from 'react';
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { ProgramsSummary } from './ProgramsView';
+import { ProgramCard, ProgramsSummary } from './ProgramsView';
 import { CardRoleBlock, isCounterpartyCard } from './CardRoleBlock';
 import {
   loadOwnPrograms,
@@ -75,6 +75,55 @@ describe('програми в рядку стрічки', () => {
   it('читачеві, якому програми не адресовані, — лише кількість', () => {
     render(<ProgramsSummary card={{ programs }} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     expect(screen.getByTestId('programs-summary')).toHaveTextContent('3 програми');
+  });
+});
+
+describe('картка програми — калькулятор заробітку', () => {
+  // Програма зі скріншота користувачки: «загальна сума» там була 23 800 $ —
+  // без жодного з девʼяти щомісячних платежів.
+  const surrogate = {
+    id: 'p2',
+    type: 'sm',
+    location: 'Київ',
+    payments: {
+      final: { amount: 23000, currency: 'USD' },
+      monthly: { amount: 500, currency: 'USD' },
+      transfer: { amount: 200, currency: 'USD' },
+      contract: { amount: 100, currency: 'USD' },
+      cSection: { amount: 1500, currency: 'USD' },
+      twins: { amount: 3000, currency: 'USD' },
+    },
+    otherPayments: [{ label: 'Доплата за повторну програму', amount: 500, currency: 'USD' }],
+  };
+
+  it('разом — усі гарантовані виплати, зі щомісячними × місяці', () => {
+    render(<ProgramCard program={surrogate} rates={rates} language="uk" />);
+    expect(screen.getByTestId('program-total')).toHaveTextContent('28 300 $');
+    expect(screen.getByText(/500 \$ × 9 міс/)).toBeInTheDocument();
+    expect(screen.getByText(/орієнтовно, термін вагітності/)).toBeInTheDocument();
+  });
+
+  it('відмічена можлива доплата додається до «разом»', () => {
+    render(<ProgramCard program={surrogate} rates={rates} language="uk" />);
+    fireEvent.click(screen.getByRole('checkbox', { name: /Кесарів розтин/ }));
+    const total = screen.getByTestId('program-total');
+    expect(total).toHaveTextContent('29 800 $');
+    expect(total).toHaveTextContent('гарантовано 28 300 $');
+    expect(screen.getByRole('checkbox', { name: /Кесарів розтин/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('вимоги й покриття підписані окремо', () => {
+    render(<ProgramCard program={{ ...surrogate, requirements: { ageTo: 35 }, coverage: ['travel'] }} rates={rates} language="uk" />);
+    expect(screen.getByText('Вимоги')).toBeInTheDocument();
+    expect(screen.getByText('Агенція покриває')).toBeInTheDocument();
+  });
+
+  it('читачеві без свого типу програми донорок і СМ — окремими рядками, а не одним діапазоном', () => {
+    render(<ProgramsSummary card={{ programs: { p1: programs.p1, p2: surrogate } }} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
+    const summary = screen.getByTestId('programs-summary');
+    expect(summary).toHaveTextContent('Донорка ооцитів · 2 500 $');
+    expect(summary).toHaveTextContent('Сурогатна мати · 28 300 $');
+    expect(summary).not.toHaveTextContent('2 500–28 300');
   });
 });
 

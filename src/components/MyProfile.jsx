@@ -95,6 +95,8 @@ const Topbar = styled.div`
 // (`PrimaryNavigation`), тож тут вона стояла другою, просто під першою. На
 // телефоні навігація свою назву ховає — там ця лишається єдиною.
 const TopbarBrand = styled.div`
+  min-width: 0;
+  overflow: hidden;
   @media (min-width: 601px) {
     display: none;
   }
@@ -220,28 +222,90 @@ const SubmitWrap = styled.div`
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 `;
-const RoleActionList = styled.div`display:flex;flex-direction:column;gap:10px;margin-bottom:14px;`;
+const PublishHead = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+
+  > span:first-child { font-size: 14px; font-weight: 600; }
+`;
+const PublishStatus = styled.span`
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 99px;
+  background: ${({ $published }) => ($published ? '#EBF8EF' : '#FEE9E9')};
+  color: ${({ $published }) => ($published ? '#2E9B55' : '#D44')};
+`;
+const PublishText = styled.p`margin:0 0 14px;font-size:12px;line-height:1.5;color:var(--muted);`;
+const PublishSubLabel = styled.div`
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--muted);
+`;
+const PublishFootnote = styled.p`margin:10px 0 0;text-align:center;font-size:11px;line-height:1.5;color:var(--muted);`;
+const RoleActionList = styled.div`display:flex;flex-direction:column;gap:8px;margin-bottom:16px;`;
 const RoleActionRow = styled.div`
   display:grid;
   grid-template-columns:minmax(0,1fr) auto;
   gap:10px;
   align-items:center;
-  padding:12px;
+  padding:10px 12px;
   border:1px solid var(--border);
   border-radius:12px;
   background:var(--bg);
+  opacity:${({ $off }) => ($off ? 0.7 : 1)};
 `;
 const RoleActionMeta = styled.div`
   min-width:0;
-  b{display:block;font-size:14px;}
-  span{font-size:11.5px;color:var(--muted);}
+  b{display:block;font-size:14px;font-weight:600;}
+  span{font-size:12px;color:var(--muted);}
 `;
-const RoleActionButtons = styled.div`display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;`;
-const RoleActionButton = styled.button`
-  min-height:34px;padding:0 11px;border-radius:9px;border:1px solid var(--border);
-  background:var(--card);color:${({ $danger }) => ($danger ? '#C8483E' : 'var(--text)')};
-  font:inherit;font-size:12px;font-weight:600;cursor:pointer;
-  &:disabled{opacity:.45;cursor:default;}
+// Перемикач, а не кнопка з написом «Сховати»/«Показати»: стан і дія тут
+// одне й те саме, і напис, який міняється на протилежний, читався як стан.
+const RoleSwitch = styled.button`
+  position: relative;
+  width: 44px;
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 99px;
+  background: ${({ $on }) => ($on ? 'var(--accent)' : 'var(--border)')};
+  cursor: pointer;
+  transition: background-color .18s ease;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: ${({ $on }) => ($on ? '21px' : '3px')};
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    transition: left .18s ease;
+  }
+  &:disabled { opacity: .55; cursor: default; }
+  &:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+`;
+// Зняти з публікації — дія того самого розміру, але не головна: помаранчевий
+// градієнт лишається за «Опублікувати», а не за протилежним.
+const UnpublishBtn = styled.button`
+  width:100%;
+  padding:15px;
+  background:var(--card);
+  color:var(--text);
+  border:1.5px solid var(--border);
+  border-radius:var(--radius);
+  font-size:15px;
+  font-weight:600;
+  cursor:pointer;
 `;
 // Роль — перше рішення в анкеті: від неї залежить, які поля взагалі показувати.
 // Тому вона стоїть над формою окремим рядом, а не полем усередині секції.
@@ -278,51 +342,30 @@ const RoleOption = styled.label`
   input { margin: 0; accent-color: var(--accent); }
 `;
 const RoleHint = styled.p`margin:10px 0 0;font-size:11px;line-height:1.5;color:var(--muted);`;
-const RoleVisibilityList = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-`;
-const RoleVisibilityRow = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 13px;
-  color: ${({ $hidden }) => ($hidden ? 'var(--muted)' : 'var(--text)')};
-
-  b { font-weight: 600; }
-`;
-const RoleVisibilityButton = styled.button`
-  flex: 0 0 auto;
-  min-height: 32px;
-  padding: 0 12px;
-  border-radius: 99px;
-  border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--text);
-  font: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-
-  &:disabled { opacity: .45; cursor: default; }
-`;
 // Межа між двома анкетами однієї людини: друга стоїть під першою, і без
 // підпису її розділи читались би як продовження першої.
+// Заголовок анкети ролі — щабель вище за заголовок розділу (14 px), а не
+// ще один дрібний підпис великими: 12 px великими літерами губились серед
+// підписів полів (11 px, теж великими).
 const AnketaDivider = styled.div`
-  margin: 28px 20px 10px;
-  padding-top: 14px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 28px 20px 12px;
+  padding-top: 16px;
   border-top: 2px solid var(--border);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: .4px;
-  text-transform: uppercase;
-  color: var(--muted);
 
-  b { color: ${({ $hidden }) => ($hidden ? 'var(--muted)' : 'var(--text)')}; }
+  small {
+    flex-basis: 100%;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .6px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  b { font-size: 18px; font-weight: 700; color: ${({ $hidden }) => ($hidden ? 'var(--muted)' : 'var(--text)')}; }
+  span { font-size: 12px; color: var(--muted); }
 `;
 const PhotoSection = styled.div`
   display: flex;
@@ -370,6 +413,8 @@ const hintPulse = keyframes`
   75% { transform: translateX(-1px) scale(1.02); }
 `;
 const StatusBadge = styled.button`
+  flex: 0 0 auto;
+  white-space: nowrap;
   border: none;
   font-size: 11px;
   font-weight: 600;
@@ -485,6 +530,23 @@ const baseSections = [
 
 const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery']);
 
+/**
+ * Сіре «168», «Україна», «Лікар» у порожньому полі читалось як уже введене —
+ * і людина пропускала поле, вважаючи його заповненим. Приклад тепер
+ * називається прикладом. Формат («дд.мм.рррр», «https://», «username»)
+ * лишається як є: він каже, як писати, а не що.
+ */
+const FORMAT_PLACEHOLDER_PATTERN = /^(дд\.|dd\.|https?:|username|\+?\d{3} \d{2} )|^(Наприклад|For example)/i;
+// Підказка-прохання («Коротко розкажіть про себе») — не приклад, і
+// «Наприклад:» перед нею звучало б дивно: приклад — це значення в кілька слів.
+const EXAMPLE_PLACEHOLDER_MAX_WORDS = 3;
+const asExamplePlaceholder = (placeholder, language) => {
+  const text = String(placeholder || '').trim();
+  if (!text || FORMAT_PLACEHOLDER_PATTERN.test(text)) return text;
+  if (text.split(/\s+/).length > EXAMPLE_PLACEHOLDER_MAX_WORDS) return text;
+  return uiText('Наприклад: {value}', language, { value: text });
+};
+
 // Поля-обʼєкти розділів батьків (`roleSections`). Програм тут немає: вони
 // лежать окремо (`utils/programsStore`), а не в анкеті.
 const OBJECT_PROFILE_FIELDS = new Set(['parentPreferences', 'services']);
@@ -500,6 +562,9 @@ const visibleNonDonorFields = new Set(['name','surname','email','phone','telegra
 // заповненості.
 const ORGANISATION_ONLY_FIELDS = new Set(['website']);
 const PERSON_ROLES = ['ed', 'sm'];
+// Розділи, які належать людині, а не ролі: при кількох ролях вони стоять один
+// раз над анкетами ролей.
+const SHARED_SECTION_KEYS = new Set(['personal', 'social']);
 const ORGANISATION_ROLES = ['ag', 'cl'];
 const KNOWN_ROLES = new Set(PROFILE_ROLE_OPTIONS.map(option => option.value));
 
@@ -604,6 +669,8 @@ export const MyProfile = () => {
   // і роль бере `state.userRole`.
   const [profileRoles, setProfileRoles] = useState([]);
   const [programTerms, setProgramTerms] = useState(null);
+  // Роль, дані якої людина просить очистити, — поки відкрите підтвердження.
+  const [clearRoleTarget, setClearRoleTarget] = useState('');
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const stickyProgressRef = useRef(null);
@@ -955,13 +1022,35 @@ export const MyProfile = () => {
       }))
       .filter(section => section.fields.length > 0);
     const personalIndex = base.findIndex(section => section.key === 'personal');
-    return [
-      ...base.slice(0, personalIndex + 1),
-      ...roleSections,
-      ...base.slice(personalIndex + 1),
-      ...additionalRoleSections,
-    ];
-  }, [additionalRoleSections, isDonorRole, organisationRole, roleSections, sectionTitleRole, sections]);
+    if (rolesList.length < 2) {
+      return [
+        ...base.slice(0, personalIndex + 1),
+        ...roleSections,
+        ...base.slice(personalIndex + 1),
+        ...additionalRoleSections,
+      ];
+    }
+    // Ролей дві й більше — і анкет стільки ж, одна під одною. Спершу спільне
+    // (особисті дані й соцмережі — людина одна), далі анкета кожної ролі під
+    // власним заголовком (`anketaRole`), основна роль першою. Досі розділи
+    // основної ролі стояли одразу після «Особистих даних», а другої — в самому
+    // кінці без підпису, тож програми агенції опинялись між особистими
+    // даними донорки і її медичною інформацією.
+    const shared = base.filter(section => SHARED_SECTION_KEYS.has(section.key));
+    const personSections = base.filter(section => !SHARED_SECTION_KEYS.has(section.key));
+    let personAssigned = false;
+    const blocks = [selectedRole, ...rolesList.filter(role => role !== selectedRole)].flatMap(role => {
+      let roleBlock = roleSectionsFor(role);
+      if (PERSON_ROLES.includes(role) && !personAssigned) {
+        personAssigned = true;
+        roleBlock = personSections;
+      }
+      return roleBlock.map((section, index) => (index === 0 ? { ...section, anketaRole: role } : section));
+    });
+    // Без жодної ролі донорки чи СМ «Про себе» — спільне, а не чиясь анкета.
+    const rest = personAssigned ? [] : personSections;
+    return [...shared, ...blocks, ...rest];
+  }, [additionalRoleSections, isDonorRole, organisationRole, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole]);
   const programRates = useProgramRates(Boolean(organisationRole));
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
 
@@ -1100,7 +1189,14 @@ export const MyProfile = () => {
       // «Очистити все» стояло кнопкою просто під «Опублікувати» — незворотна
       // дія поруч із головною, на відстані одного промаху пальцем. Тепер вона
       // тут, поруч із «Видалити анкету», і так само питає підтвердження.
-      onClearProfile={isProfileAccessConfirmed ? () => setShowInfoModal('delConfirm') : undefined}
+      onClearProfile={isProfileAccessConfirmed ? () => { setClearRoleTarget(''); setShowInfoModal('delConfirm'); } : undefined}
+      // Очистити дані однієї з ролей — та сама секція «Анкета», та сама
+      // модалка. Біля «Опублікувати» цих червоних кнопок більше немає.
+      clearRoleItems={isProfileAccessConfirmed && rolesList.length > 1 ? rolesList.map(role => ({
+        key: role,
+        label: uiText('Очистити дані: {role}', language, { role: uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role, language) }),
+        onClick: () => { setClearRoleTarget(role); setShowInfoModal('delConfirm'); },
+      })) : undefined}
     />
   );
 
@@ -1250,7 +1346,14 @@ export const MyProfile = () => {
   }, [activeTab]);
 
   const handleAuthBadgeClick = () => {
-    if (isProfileAccessConfirmed) return;
+    // Статус у шапці — це вхід у блок «Публікація»: там і пояснення, і дія.
+    // Досі він після входу не робив нічого, а «Опублікувати» стояло аж під
+    // останньою секцією анкети.
+    if (isProfileAccessConfirmed) {
+      const publishEl = sectionRefs.current.publish;
+      if (publishEl) window.scrollTo({ top: getSectionTargetTop(publishEl), behavior: 'smooth' });
+      return;
+    }
 
     authHintTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
     scrollToSection('auth');
@@ -1548,9 +1651,10 @@ export const MyProfile = () => {
     }
   };
 
+  // Підтвердження — та сама модалка, що й у «Очистити анкету»
+  // (`clearRoleTarget`), а не системне вікно браузера: дві незворотні дії
+  // однієї сторінки питали людину двома різними вікнами.
   const clearRoleFields = async role => {
-    const label = MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role;
-    if (!window.confirm(uiText('Очистити дані ролі «{role}»? Цю дію не можна скасувати.', language, { role: label }))) return;
 
     const currentState = stateRef.current || {};
     const sameKindRoles = rolesList.filter(item => (
@@ -1579,6 +1683,8 @@ export const MyProfile = () => {
       // Коли дві ролі користуються тими самими полями, «очистити одну» означає
       // прибрати саме роль, не стираючи дані сусідньої анкети.
       if (sameKindRoles.length > 1) await toggleUserRole(role);
+      setShowInfoModal(false);
+      setClearRoleTarget('');
       toast.success(uiText('Дані ролі очищено', language));
     } catch (error) {
       console.error('clear role error', error);
@@ -1590,7 +1696,7 @@ export const MyProfile = () => {
     const field = fieldsMap.get(name);
     if (!field) return null;
     const roleText = resolveMyProfileFieldText(name, sectionTitleRole);
-    const fieldPlaceholder = roleText.placeholder ? uiText(roleText.placeholder, language) : getFieldPlaceholder(field, language);
+    const fieldPlaceholder = roleText.placeholder ? uiText(roleText.placeholder, language) : asExamplePlaceholder(getFieldPlaceholder(field, language), language);
     const val = state[name] || '';
     const isTextArea = name === 'moreInfo_main';
     const isAppearanceField = sections.find(section => section.key === 'appearance')?.fields.includes(name);
@@ -1718,7 +1824,13 @@ export const MyProfile = () => {
   // Прев'ю картки — та сама картка стрічки (`ProfileRow`), зібрана з
   // набраного тут. Зʼявляється, коли набрано бодай щось: порожня картка з
   // ініціалами нічого не показує. Сховані ролі картка не несе, як і в стрічці.
-  const previewRoles = rolesList.filter(role => !hiddenRoles.includes(role));
+  const isPublished = state.publish === true;
+  // Лише основна роль: дві ролі поруч із назвою витискали статус на два
+  // рядки, а «⋮» — за край екрана. Усі ролі людина бачить у «Хто ви».
+  const brandTagline = uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === selectedRole)?.label || '', language);
+  // Основна роль першою — як у шапці й у порядку анкет нижче.
+  const previewRoles = [selectedRole, ...rolesList.filter(role => role !== selectedRole)]
+    .filter(role => rolesList.includes(role) && !hiddenRoles.includes(role));
   const showCardPreview = filledStats.filled >= 2 || (Array.isArray(state.photos) && state.photos.length > 0);
   const previewCards = previewRoles.map(role => {
     const previewDraft = {
@@ -1745,11 +1857,13 @@ export const MyProfile = () => {
   return <Page>
     <HeaderPanel>
       <Topbar>
-        <TopbarBrand><KnowMeBrand /></TopbarBrand>
+        {/* Поруч із назвою — ролі людини її мовою. Тут стояло англійське
+            «Egg donor» за замовчуванням — і в агенції теж. */}
+        <TopbarBrand><KnowMeBrand tagline={brandTagline} /></TopbarBrand>
         <TopbarActions>
           <StatusBadge
             type="button"
-            $clickable={!isProfileAccessConfirmed}
+            $clickable
             $published={state.publish === true}
             onClick={handleAuthBadgeClick}
           >
@@ -1907,46 +2021,21 @@ export const MyProfile = () => {
       </RoleOptions>
       <RoleHint>{uiText('Роль вирішує, які поля показує анкета і в якій вкладці її шукають. Змінити її можна будь-коли.', language)}</RoleHint>
 
-      {rolesList.length > 1 ? (
-        <RoleVisibilityList>
-          {rolesList.map(role => {
-            const hidden = hiddenRoles.includes(role);
-            const lastVisible = !hidden && rolesList.filter(item => !hiddenRoles.includes(item)).length === 1;
-            const label = MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role;
-            return (
-              <RoleVisibilityRow key={role} $hidden={hidden}>
-                <span>
-                  <b>{uiText(label, language)}</b>
-                  {' · '}
-                  {uiText(hidden ? 'анкету сховано' : state.publish === true ? 'анкету видно в стрічці' : 'чернетка — профіль не опубліковано', language)}
-                </span>
-                <RoleVisibilityButton
-                  type="button"
-                  disabled={lastVisible}
-                  title={lastVisible ? uiText('Щоб сховати всю анкету — «Зняти з публікації»', language) : undefined}
-                  onClick={() => toggleRoleHidden(role)}
-                >
-                  {uiText(hidden ? 'Показати' : 'Сховати', language)}
-                </RoleVisibilityButton>
-              </RoleVisibilityRow>
-            );
-          })}
-        </RoleVisibilityList>
-      ) : null}
     </RoleCard>
 
-    {showCardPreview ? previewCards.map(preview => (
+    {/* Прев'ю — один блок з перемикачем ролей, а не по повній картці на
+        роль: дві картки з фото на всю ширину ставили форму на два екрани
+        нижче, і людина, яка відкрила «Мій профіль» дописати поле, гортала
+        повз власні фото двічі. */}
+    {showCardPreview && previewCards.length ? (
       <MyProfileCardPreview
-        key={preview.role}
-        card={preview.card}
-        role={preview.role}
-        roleLabel={preview.label}
+        previews={previewCards}
         language={language}
         rates={programRates}
         displayCurrency={programDisplayCurrency}
         onDisplayCurrencyChange={setProgramDisplayCurrency}
       />
-    )) : null}
+    ) : null}
 
     <PhotoSection ref={node => { sectionRefs.current.photo = node; }} $isFirstContent={isProfileAccessConfirmed}>
       <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>{uiText('Додайте до 5 фото. Перше — головне', language)}</p>
@@ -1975,8 +2064,9 @@ export const MyProfile = () => {
       <React.Fragment key={section.key}>
       {anketaLabel ? (
         <AnketaDivider $hidden={hiddenRoles.includes(section.anketaRole)}>
+          <small>{uiText('Анкета', language)}</small>
           <b>{uiText(anketaLabel, language)}</b>
-          {hiddenRoles.includes(section.anketaRole) ? <span> · {uiText('анкету сховано', language)}</span> : null}
+          {hiddenRoles.includes(section.anketaRole) ? <span>{uiText('сховано — у стрічці її не видно', language)}</span> : null}
         </AnketaDivider>
       ) : null}
       <SectionCard ref={node => { sectionRefs.current[section.key] = node; }}>
@@ -2012,7 +2102,26 @@ export const MyProfile = () => {
         onClose={() => { if (!isClearingProfile) setShowInfoModal(false); }}
         text={showInfoModal}
         Context={dotsMenu}
-        DelConfirm={() => (
+        DelConfirm={() => (clearRoleTarget ? (
+          <>
+            <ModalTitle>
+              {uiText('Очистити дані: {role}?', language, {
+                role: uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === clearRoleTarget)?.label || clearRoleTarget, language),
+              })}
+            </ModalTitle>
+            <ModalText>
+              {uiText('Поля цієї анкети стануть порожніми; у агенції й клініки знімуться програми. Інші анкети, пошта й доступ до акаунта лишаються.', language)}
+            </ModalText>
+            <ModalActionRow>
+              <ModalGhostButton type="button" onClick={() => { setShowInfoModal(false); setClearRoleTarget(''); }}>
+                {uiText('Відмінити', language)}
+              </ModalGhostButton>
+              <ModalDangerButton type="button" onClick={() => clearRoleFields(clearRoleTarget)}>
+                {uiText('Очистити', language)}
+              </ModalDangerButton>
+            </ModalActionRow>
+          </>
+        ) : (
           <>
             <ModalTitle>{uiText('Очистити анкету?', language)}</ModalTitle>
             <ModalText>
@@ -2035,47 +2144,66 @@ export const MyProfile = () => {
               </ModalDangerButton>
             </ModalActionRow>
           </>
-        )}
+        ))}
       />
     )}
 
-    <SubmitWrap>
-      <RoleActionList>
-        {rolesList.map(role => {
-          const hidden = hiddenRoles.includes(role);
-          const label = MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role;
-          const status = state.publish !== true
-            ? 'Чернетка'
-            : hidden ? 'Прихована' : 'Опублікована';
-          const lastVisible = !hidden && rolesList.filter(item => !hiddenRoles.includes(item)).length === 1;
-          return (
-            <RoleActionRow key={role}>
-              <RoleActionMeta>
-                <b>{uiText(label, language)}</b>
-                <span>{uiText(status, language)}</span>
-              </RoleActionMeta>
-              <RoleActionButtons>
-                {state.publish === true ? (
-                  <RoleActionButton
-                    type="button"
-                    disabled={lastVisible}
-                    onClick={() => toggleRoleHidden(role)}
-                  >
-                    {uiText(hidden ? 'Показати' : 'Приховати', language)}
-                  </RoleActionButton>
-                ) : null}
-                <RoleActionButton type="button" $danger onClick={() => clearRoleFields(role)}>
-                  {uiText('Очистити роль', language)}
-                </RoleActionButton>
-              </RoleActionButtons>
-            </RoleActionRow>
-          );
-        })}
-      </RoleActionList>
-      <SubmitBtn type="button" onClick={state.publish ? hideProfile : publishProfile}>
-        {uiText(state.publish ? 'Зняти з публікації' : 'Опублікувати анкету', language)}
-      </SubmitBtn>
-      <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>{uiText('Зняти анкету з публікації, очистити чи видалити її можна будь-коли в меню ⋮.', language)}</p>
+    {/* Публікація — одне місце на все, що вирішує, чи видно анкету: статус,
+        які з анкет показувати (коли ролей кілька) і головна кнопка. Досі те
+        саме «сховати» стояло двічі — «Сховати» вгорі й «Приховати» внизу, і
+        нижнє зʼявлялось лише після публікації, — стан звався трьома словами
+        («Не опублікована», «Чернетка», «чернетка — профіль не опубліковано»),
+        а червоні «Очистити роль» стояли просто біля «Опублікувати». Незворотне
+        живе в меню «⋮» разом з «Очистити анкету» й «Видалити анкету». */}
+    <SubmitWrap ref={node => { sectionRefs.current.publish = node; }} data-testid="publish-card">
+      <PublishHead>
+        <span>{uiText('Публікація', language)}</span>
+        <PublishStatus $published={isPublished}>
+          ● {uiText(isPublished ? 'Опублікована' : 'Не опублікована', language)}
+        </PublishStatus>
+      </PublishHead>
+      <PublishText>
+        {uiText(isPublished
+          ? 'Анкету видно в стрічці й у пошуку. Зміни зберігаються самі.'
+          : 'Поки анкету не опубліковано, у стрічці її не видно. Зміни зберігаються самі.', language)}
+      </PublishText>
+      {rolesList.length > 1 ? (
+        <RoleActionList>
+          <PublishSubLabel>{uiText('Які анкети показувати', language)}</PublishSubLabel>
+          {rolesList.map(role => {
+            const hidden = hiddenRoles.includes(role);
+            const label = MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role;
+            const lastVisible = !hidden && rolesList.filter(item => !hiddenRoles.includes(item)).length === 1;
+            const status = hidden
+              ? 'сховано'
+              : isPublished ? 'видно в стрічці' : 'буде видно після публікації';
+            return (
+              <RoleActionRow key={role} $off={hidden}>
+                <RoleActionMeta>
+                  <b>{uiText(label, language)}</b>
+                  <span>{uiText(status, language)}</span>
+                </RoleActionMeta>
+                <RoleSwitch
+                  type="button"
+                  role="switch"
+                  aria-checked={!hidden}
+                  aria-label={uiText('Показувати анкету «{role}»', language, { role: uiText(label, language) })}
+                  $on={!hidden}
+                  disabled={lastVisible}
+                  title={lastVisible ? uiText('Одна анкета лишається завжди — щоб сховати всі, зніміть з публікації', language) : undefined}
+                  onClick={() => toggleRoleHidden(role)}
+                />
+              </RoleActionRow>
+            );
+          })}
+        </RoleActionList>
+      ) : null}
+      {isPublished ? (
+        <UnpublishBtn type="button" onClick={hideProfile}>{uiText('Зняти з публікації', language)}</UnpublishBtn>
+      ) : (
+        <SubmitBtn type="button" onClick={publishProfile}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
+      )}
+      <PublishFootnote>{uiText('Очистити чи видалити анкету можна в меню ⋮.', language)}</PublishFootnote>
     </SubmitWrap>
   </Page>;
 };

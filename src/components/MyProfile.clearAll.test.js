@@ -32,12 +32,12 @@ describe('my-profile: видалення і очищення анкети', () =
   // Незворотна дія стояла кнопкою просто під «Опублікувати» — на відстані
   // одного промаху. Тепер вона в меню «⋮», поруч із «Видалити анкету».
   it('ставить «Очистити анкету» в меню, а не під головною кнопкою', () => {
-    const submitWrap = source.slice(source.indexOf('<SubmitWrap>'), source.indexOf('</SubmitWrap>'));
-    expect(submitWrap).toContain('onClick={state.publish ? hideProfile : publishProfile}');
+    const submitWrap = source.slice(source.indexOf('data-testid="publish-card"'), source.indexOf('</SubmitWrap>'));
+    expect(submitWrap).toContain('onClick={publishProfile}');
     expect(submitWrap).not.toContain("setShowInfoModal('delConfirm')");
 
     const menu = source.slice(source.indexOf('const dotsMenu = () => ('), source.indexOf('const fieldsMap = useMemo('));
-    expect(menu).toContain("onClearProfile={isProfileAccessConfirmed ? () => setShowInfoModal('delConfirm') : undefined}");
+    expect(menu).toContain("onClearProfile={isProfileAccessConfirmed ? () => { setClearRoleTarget(''); setShowInfoModal('delConfirm'); } : undefined}");
   });
 
   it('питає підтвердження перед стиранням', () => {
