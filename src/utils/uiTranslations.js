@@ -26,6 +26,7 @@ const EN_BY_UK = {
   'Зберегти відгук': 'Save review',
   'Не публікувати': 'Discard',
   'Показати номер': 'Show number',
+  'Уточнити': 'Add details',
   '{label} за номером': '{label} by number',
   'Сімейний стан': 'Marital status',
   'Повернути': 'Restore',

@@ -31,6 +31,7 @@ const BrandWrap = styled.div`
 `;
 
 const BrandName = styled.span`
+  flex-shrink: 0;
   font-family: var(--km-font-display);
   font-size: 18px;
   color: var(--km-text);
@@ -60,6 +61,12 @@ const BrandTagline = styled.span`
   color: var(--km-muted);
   letter-spacing: 0.01em;
   white-space: nowrap;
+  /* Довга роль («Біологічні батьки», дві ролі через кому) обрізалась посеред
+     слова й налазила на значок статусу поруч. Тепер вона стискається з
+     трикрапкою, а повний текст лишається в підказці. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 
   @media (max-width: 380px) {
     display: none;
@@ -74,7 +81,7 @@ export const KnowMeBrand = ({ tagline = 'Egg donor' }) => (
     {tagline ? (
       <>
         <BrandDivider aria-hidden="true" />
-        <BrandTagline>{tagline}</BrandTagline>
+        <BrandTagline title={tagline}>{tagline}</BrandTagline>
       </>
     ) : null}
   </BrandWrap>

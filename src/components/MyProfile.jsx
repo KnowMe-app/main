@@ -12,6 +12,8 @@ import {
   updateProfileRole,
 } from './config';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
+import { listOfferedOptions } from '../utils/offeredOptions';
+import { asExamplePlaceholder } from '../utils/examplePlaceholder';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
@@ -90,11 +92,13 @@ const Topbar = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
 `;
 // Назву застосунку на ширшому за 600 px екрані вже несе спільна навігація
 // (`PrimaryNavigation`), тож тут вона стояла другою, просто під першою. На
 // телефоні навігація свою назву ховає — там ця лишається єдиною.
 const TopbarBrand = styled.div`
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   @media (min-width: 601px) {
@@ -529,23 +533,11 @@ const baseSections = [
 ];
 
 const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery']);
+// Так/Ні, до яких людині є що дописати («Так: апендицит, 2019»).
+const YES_NO_DETAIL_FIELDS = new Set(['surgeries', 'chronicDiseases', 'allergy']);
 
-/**
- * Сіре «168», «Україна», «Лікар» у порожньому полі читалось як уже введене —
- * і людина пропускала поле, вважаючи його заповненим. Приклад тепер
- * називається прикладом. Формат («дд.мм.рррр», «https://», «username»)
- * лишається як є: він каже, як писати, а не що.
- */
-const FORMAT_PLACEHOLDER_PATTERN = /^(дд\.|dd\.|https?:|username|\+?\d{3} \d{2} )|^(Наприклад|For example)/i;
-// Підказка-прохання («Коротко розкажіть про себе») — не приклад, і
-// «Наприклад:» перед нею звучало б дивно: приклад — це значення в кілька слів.
-const EXAMPLE_PLACEHOLDER_MAX_WORDS = 3;
-const asExamplePlaceholder = (placeholder, language) => {
-  const text = String(placeholder || '').trim();
-  if (!text || FORMAT_PLACEHOLDER_PATTERN.test(text)) return text;
-  if (text.split(/\s+/).length > EXAMPLE_PLACEHOLDER_MAX_WORDS) return text;
-  return uiText('Наприклад: {value}', language, { value: text });
-};
+// Підпис прикладу («Наприклад: …») — `utils/examplePlaceholder`: той самий
+// і в чернетці, і в доповненні картки.
 
 // Поля-обʼєкти розділів батьків (`roleSections`). Програм тут немає: вони
 // лежать окремо (`utils/programsStore`), а не в анкеті.
@@ -1744,22 +1736,33 @@ export const MyProfile = () => {
     const val = state[name] || '';
     const isTextArea = name === 'moreInfo_main';
     const isAppearanceField = sections.find(section => section.key === 'appearance')?.fields.includes(name);
-    const optionValues = Array.isArray(field.options) ? field.options.map(getOptionValue).map(String) : [];
-    const optionLabels = Array.isArray(field.options) ? field.options.map(getOptionLabel).map(String) : [];
+    // Форма пропонує лише чинні варіанти (`listOfferedOptions`): дублікати
+    // («Карі» й «Коричневі») і «Так/Ні» там, де питають текст чи рівень,
+    // лишились у довіднику для вже записаних анкет, а не для вибору.
+    const offeredOptions = listOfferedOptions(field.options, val);
+    const optionValues = offeredOptions.map(getOptionValue).map(String);
+    const optionLabels = offeredOptions.map(option => getOptionLabel(option)).map(String);
     const isYesNoField = optionValues.includes('No')
       && optionValues.includes('Yes')
       && optionLabels.includes('Ні')
       && optionLabels.includes('Так');
-    const canUseCustomOption = isAppearanceField || isYesNoField || name === 'csection';
+    const hasCustomValue = String(val).trim() !== '' && !optionValues.includes(String(val));
+    // «Свій варіант» біля кожного Так/Ні був шумом: курити «по-своєму» нема як.
+    // Він лишився там, де людині є що уточнити (операції, хвороби, алергії), і
+    // там, де в анкеті вже лежить своє значення — інакше воно зникло б з екрана.
+    const yesNoAllowsDetails = YES_NO_DETAIL_FIELDS.has(name);
+    const canUseCustomOption = isAppearanceField
+      || (isYesNoField && (yesNoAllowsDetails || hasCustomValue))
+      || name === 'csection';
     const customSelected = canUseCustomOption
-      && (Boolean(customOptionMode[name]) || (String(val).trim() !== '' && !optionValues.includes(String(val))));
+      && (Boolean(customOptionMode[name]) || hasCustomValue);
 
     return <Field key={name}>
       <Label>{roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language)}</Label>
-      {Array.isArray(field.options) && field.options.length > 0 ? (
+      {offeredOptions.length > 0 ? (
         <>
           <ChipRow>
-            {field.options.map(option => {
+            {offeredOptions.map(option => {
               const optionValue = getOptionValue(option);
               const selected = String(val) === String(optionValue);
               return <Chip
@@ -1793,7 +1796,7 @@ export const MyProfile = () => {
                 }}
                 type="button"
               >
-                {uiText('Свій варіант', language)}
+                {uiText(isYesNoField && yesNoAllowsDetails ? 'Уточнити' : 'Свій варіант', language)}
               </Chip>
             ) : null}
           </ChipRow>
@@ -2118,7 +2121,11 @@ export const MyProfile = () => {
           <div>{uiText(section.title, language).split(' ')[0]}</div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{uiText(section.title, language).replace(/^\S+\s/, '')}</div>
           <div style={{ marginLeft: 'auto', fontSize: 11, color: sectionProgress[section.key]?.complete ? '#2E9B55' : 'var(--muted)', background: sectionProgress[section.key]?.complete ? '#EBF8EF' : 'var(--border)', padding: '2px 8px', borderRadius: 99 }}>
-            {sectionProgress[section.key]?.filled || 0}/{sectionProgress[section.key]?.total || section.fields.length}
+            {/* Програми — це записи, а не поле: «1/1» при трьох програмах
+                казав лише, що поле «programs» не порожнє. Тут — скільки їх. */}
+            {section.custom === 'programs'
+              ? ownProgramsCount
+              : `${sectionProgress[section.key]?.filled || 0}/${sectionProgress[section.key]?.total || section.fields.length}`}
           </div>
         </Header>
         <FieldGroup>

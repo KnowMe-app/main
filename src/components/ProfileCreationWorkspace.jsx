@@ -4,7 +4,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import { FiChevronDown, FiClock, FiFolder, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
-import { FaEllipsisV, FaMapMarkerAlt } from 'react-icons/fa';
+import { FaEllipsisV, FaMapMarkerAlt, FaTimes } from 'react-icons/fa';
 
 import {
   addMatchingSearchQuery,
@@ -21,6 +21,10 @@ import {
   updatePublicProfileComment,
 } from './config';
 import { getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue, pickerFields } from './formFields';
+import { listOfferedOptions } from '../utils/offeredOptions';
+// Сірі «Україна», «Київська», «Київ» у порожніх полях чернетки читались як
+// уже введене — приклад підписується прикладом, як у «Моєму профілі».
+import { asExamplePlaceholder } from '../utils/examplePlaceholder';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { getCurrentValue, hasCurrentValue } from './getCurrentValue';
 import { CONTACT_FIELDS, getContactEntries } from './contactMethods';
@@ -1788,14 +1792,20 @@ export const ProfileCreationWorkspace = () => {
     // перша половина відгуку мовчки зникла б з усіх екранів. Правило тут те
     // саме, що й у формі анкети (`fieldAcceptsMultipleValues`).
     const canAddAnotherValue = fieldAcceptsMultipleValues(fieldName);
+    // «+» — лише біля останнього заповненого значення. Біля кожного поля він
+    // стояв і порожнім: двадцять оранжевих «+» на екрані, і людина тиснула
+    // його замість того, щоб виправити саме поле, — а до порожнього поля другу
+    // версію додавати нема чого.
+    const fieldRowValues = toFieldValues(value);
+    const offersAnotherValue = (index, item) => index === fieldRowValues.length - 1 && String(item ?? '').trim() !== '';
     const label = getFieldLabel(field, language) || fieldName;
     const currentValues = toFieldValues(value).map(item => String(item ?? '').trim()).filter(Boolean);
 
     return <FieldRow key={fieldName} $pending={Boolean(pendingFieldEdits[fieldName]?.length)} $bare={hideLabel}>
       {!hideLabel && <FieldLabel>{label}</FieldLabel>}
-      {Array.isArray(field.options) && field.options.length > 0 ? (
+      {listOfferedOptions(field.options, value).length > 0 ? (
         <FieldChipRow>
-          {field.options.map(option => {
+          {listOfferedOptions(field.options, value).map(option => {
             const optionValue = getOptionValue(option);
             const selected = String(value) === String(optionValue);
             return <FieldChip
@@ -1814,13 +1824,13 @@ export const ProfileCreationWorkspace = () => {
             <InputShell>
               <FieldTextArea
                 value={item}
-                placeholder={placeholder ?? getFieldPlaceholder(field, language)}
+                placeholder={placeholder ?? asExamplePlaceholder(getFieldPlaceholder(field, language), language)}
                 onChange={e => updateDraftFieldItem(fieldName, index, e.target.value)}
                 onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
               />
               <InlineClearButton type="button" aria-label={uiText('Очистити {label}', language, { label })} title={uiText('Очистити рядок', language)} onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
             </InputShell>
-            {canAddAnotherValue && <AddValueButton type="button" aria-label={uiText('Додати ще одне значення: {label}', language, { label })} title={uiText('Додати ще один рядок', language)} onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
+            {canAddAnotherValue && offersAnotherValue(index, item) && <AddValueButton type="button" aria-label={uiText('Додати ще одне значення: {label}', language, { label })} title={uiText('Додати ще один рядок', language)} onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
           </FieldControl>)}
         </FieldControls>
       ) : (
@@ -1832,7 +1842,7 @@ export const ProfileCreationWorkspace = () => {
                 // в `РРРР-ММ-ДД`: показувати ISO — це дата задом наперед.
                 value={isDateField ? formatDateToDisplay(item) : item}
                 inputMode={isDateField ? 'numeric' : undefined}
-                placeholder={placeholder ?? (isDateField ? uiText('дд.мм.рррр', language) : getFieldPlaceholder(field, language))}
+                placeholder={placeholder ?? (isDateField ? uiText('дд.мм.рррр', language) : asExamplePlaceholder(getFieldPlaceholder(field, language), language))}
                 onChange={e => updateDraftFieldItem(
                   fieldName,
                   index,
@@ -1842,7 +1852,7 @@ export const ProfileCreationWorkspace = () => {
               />
               <InlineClearButton type="button" aria-label={uiText('Очистити {label}', language, { label })} title={uiText('Очистити рядок', language)} onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
             </InputShell>
-            {canAddAnotherValue && <AddValueButton type="button" aria-label={uiText('Додати ще одне значення: {label}', language, { label })} title={uiText('Додати ще один рядок', language)} onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
+            {canAddAnotherValue && offersAnotherValue(index, item) && <AddValueButton type="button" aria-label={uiText('Додати ще одне значення: {label}', language, { label })} title={uiText('Додати ще один рядок', language)} onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
           </FieldControl>)}
         </FieldControls>
       )}
@@ -2036,7 +2046,15 @@ export const ProfileCreationWorkspace = () => {
                 setDislikeUsers={setDislikeUsers}
                 favoriteUsers={favoriteUsers}
                 setFavoriteUsers={setFavoriteUsers}
-                customStyle={{ position: 'static' }}
+                // Хрестик, а не палець донизу: той самий значок, що в рядку
+                // стрічки й у відкритій картці, — і без акценту, як там.
+                icon={FaTimes}
+                inactiveIconColor="var(--km-muted, #6f6359)"
+                customStyle={{
+                  position: 'static',
+                  background: 'var(--km-card, #fff)',
+                  border: '1px solid var(--km-border, #e2d8ce)',
+                }}
               />
               <BtnFavorite
                 userId={activeMutation.cardId}
@@ -2340,7 +2358,10 @@ export const ProfileCreationWorkspace = () => {
               key={mutation.cardId}
               card={mutation.data}
               name={describeProfileName(mutation.data?.name, mutation.data?.surname) || uiText('Без імені', language)}
-              status={published ? 'Опубліковано' : mutation.status === 'private' ? 'Приватна' : 'Очікує перевірки'}
+              // «Очікує перевірки» обіцяло гейт, якого немає: заведена картка
+              // вже лежить у пошуку, її знаходять і дописують. Слово те саме,
+              // що й у шапці самої чернетки.
+              status={published ? 'Опубліковано' : mutation.status === 'private' ? 'Приватна' : 'Спільна чернетка'}
               statusVariant={published ? undefined : mutation.status === 'private' ? 'private' : 'overlay'}
               note={mutation.updatedAt ? uiText('Оновлено {date}', language, { date: formatDateTime(mutation.updatedAt, language) }) : ''}
               actionLabel={published ? 'Доповнити' : 'Відкрити'}
