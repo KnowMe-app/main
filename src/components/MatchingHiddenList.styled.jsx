@@ -1223,6 +1223,37 @@ export const RowFooterButton = styled(RowActionButton)`
 `;
 
 /*
+ * «Контакти» — головна дія рядка, і виглядає вона головною.
+ *
+ * Картотека існує, щоб людей знайти й написати їм, а кнопка контактів була
+ * дрібною трубкою 38×30 угорі праворуч, поруч з іменем, — найменшою з семи
+ * дій на картці. Тепер вона стоїть у ряду рішень широкою кнопкою з підписом
+ * і несе єдиний акцент ряду поруч із серцем.
+ */
+export const RowContactsButton = styled.button`
+  flex: 3 1 0;
+  height: 34px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--matching-accent, var(--km-accent, #e2762a));
+  background: ${({ $on }) => ($on ? 'transparent' : 'var(--matching-accent, var(--km-accent, #e2762a))')};
+  color: ${({ $on }) => ($on ? 'var(--matching-accent, var(--km-accent, #e2762a))' : '#fff')};
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--matching-accent, #e2762a) 40%, transparent);
+    outline-offset: 2px;
+  }
+`;
+
+/*
  * Серце й хрестик — одна пара, і виглядати вона мусить парою.
  *
  * Порізно вони читались як два незалежні значки серед інших значків ряду, і

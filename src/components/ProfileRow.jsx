@@ -1389,16 +1389,18 @@ const ProfileRow = ({
                 onClick={e => { e.stopPropagation(); onTogglePublish(user); }}
               />
             )}
-            {showContactsButton && (
+            {/* Олівець — угорі, біля імені: це дія над самою карткою, а не
+                рішення про людину. Тут раніше стояла трубка контактів —
+                найменша кнопка картки для її головної дії; вона переїхала в ряд
+                рішень широкою кнопкою (`RowContactsButton`). */}
+            {editAction && (
               <S.RowActionButton
                 type="button"
-                $on={contactsOpen}
-                title={uiText('Контакти', language)}
-                aria-label={uiText('Контакти', language)}
-                aria-expanded={contactsOpen}
-                onClick={e => { e.stopPropagation(); toggleContacts(); }}
+                title={editAction.title}
+                aria-label={editAction.title}
+                onClick={e => { e.stopPropagation(); editAction.onClick(user); }}
               >
-                <PhoneHandsetIcon size={13} />
+                <FaPencilAlt size={12} />
               </S.RowActionButton>
             )}
           </S.RowActionStack>
@@ -1517,18 +1519,8 @@ const ProfileRow = ({
           написами («Доповнити дані», «Перевірити наявність відгуків»), і
           картка з трьох фактів займала пів екрана. Що робить кожна, каже
           `title` і `aria-label` — саме їх читає й екранний диктор. */}
-      {!preview && (editAction || canExpandDetails || (!isLimited && (primaryAction || secondaryAction))) && (
+      {!preview && (showContactsButton || canExpandDetails || (!isLimited && (primaryAction || secondaryAction))) && (
         <S.RowFooterActions onClick={e => e.stopPropagation()}>
-          {editAction && (
-            <S.RowFooterButton
-              type="button"
-              title={editAction.title}
-              aria-label={editAction.title}
-              onClick={e => { e.stopPropagation(); editAction.onClick(user); }}
-            >
-              <FaPencilAlt size={13} />
-            </S.RowFooterButton>
-          )}
           {!isLimited && (primaryAction || secondaryAction) && (
             <S.RowReactionPair data-testid="row-reactions">
               {primaryAction && (
@@ -1558,6 +1550,19 @@ const ProfileRow = ({
                 </S.RowActionButton>
               )}
             </S.RowReactionPair>
+          )}
+          {showContactsButton && (
+            <S.RowContactsButton
+              type="button"
+              $on={contactsOpen}
+              title={uiText('Контакти', language)}
+              aria-label={uiText('Контакти', language)}
+              aria-expanded={contactsOpen}
+              onClick={e => { e.stopPropagation(); toggleContacts(); }}
+            >
+              <PhoneHandsetIcon size={13} />
+              <span>{uiText('Контакти', language)}</span>
+            </S.RowContactsButton>
           )}
           {canExpandDetails && (
             <S.RowFooterButton

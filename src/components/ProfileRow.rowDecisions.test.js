@@ -62,6 +62,21 @@ describe('ряд рішень у рядку стрічки', () => {
     expect(standsBefore(like, expand)).toBe(true);
   });
 
+  // Контакти — головна дія картотеки, і стоять вони в ряду рішень широкою
+  // кнопкою з підписом, а не дрібною трубкою біля імені.
+  it('ставить «Контакти» в ряд рішень — між серцем і стрілкою', () => {
+    renderRow({ onRequestContacts: jest.fn() });
+
+    const like = screen.getByTitle('В обране');
+    const contacts = screen.getByRole('button', { name: 'Контакти' });
+    const expand = screen.getByTitle(expandLabel);
+
+    expect(contacts).toHaveTextContent('Контакти');
+    expect(standsBefore(like, contacts)).toBe(true);
+    expect(standsBefore(contacts, expand)).toBe(true);
+    expect(screen.getAllByTitle('Контакти')).toHaveLength(1);
+  });
+
   it('ставить серце й хрестик у спільну рамку — це два боки одного вибору', () => {
     renderRow();
 

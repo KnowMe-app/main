@@ -17,6 +17,16 @@ import {
 import { readReturnToFromState } from 'utils/authRedirect';
 import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
 
+// Що кожна роль дає в застосунку — одним рядком під назвою. Без пояснення
+// пʼять однакових радіокнопок не казали, чим вони відрізняються.
+const ROLE_DESCRIPTIONS = Object.freeze({
+  ed: 'Вас знаходять агенції, клініки й батьки',
+  sm: 'Коротка анкета: здоровʼя, пологи, умови програми',
+  ip: 'Шукаєте донорку, сурогатну маму чи агенцію',
+  ag: 'Програми й виплати, пошук кандидаток',
+  cl: 'Програми й контакти клініки',
+});
+
 const Container = styled.div`
   --accent: var(--km-accent);
   --accent-light: var(--km-accent-light);
@@ -244,6 +254,62 @@ const RoleHint = styled.p`
   line-height: 1.4;
 `;
 
+// Вхід і реєстрація — дві вкладки, а не одна кнопка «Вхід / Реєстрація».
+// Досі ролі зʼявлялись лише після невдалої спроби з новою поштою, разом із
+// тостом «Акаунта ще немає», — тобто перший крок новачка виглядав як помилка,
+// а одруківка в пошті наявного акаунта вела в другу реєстрацію.
+const ModeTabs = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  background: var(--accent-light);
+`;
+
+const ModeTab = styled.button`
+  border: none;
+  border-radius: 11px;
+  padding: 10px 8px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  background: ${({ $active }) => ($active ? 'var(--card)' : 'transparent')};
+  color: ${({ $active }) => ($active ? 'var(--text)' : 'var(--muted)')};
+  box-shadow: ${({ $active }) => ($active ? '0 1px 4px rgba(60, 30, 10, 0.12)' : 'none')};
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+`;
+
+const RoleDescription = styled.span`
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.35;
+`;
+
+const LoginHint = styled.p`
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+`;
+
+const LinkButton = styled.button`
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+`;
+
 const TermsButton = styled.button`
   border: none;
   background: transparent;
@@ -302,11 +368,14 @@ const Spinner = styled.div`
 export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   const [isChecked, setIsChecked] = useState(false);
   const [selectedRole, setSelectedRole] = useState('');
-  // Роль питається лише в того, хто реєструється, і лише тоді, коли стало
-  // ясно, що акаунта з цією поштою немає. Досі її вимагали на кожному вході й
-  // записували в анкету — тобто вхід переписував роль, обрану в «Моєму
-  // профілі» (`buildAuthLoginPayload`).
-  const [registrationRoleRequested, setRegistrationRoleRequested] = useState(false);
+  // Роль питається лише на вкладці «Створити акаунт». Досі її вимагали на
+  // кожному вході й записували в анкету — тобто вхід переписував роль, обрану
+  // в «Моєму профілі» (`buildAuthLoginPayload`).
+  const [authMode, setAuthMode] = useState('login');
+  const isRegisterMode = authMode === 'register';
+  // Вхід не вдався, а акаунта з такою поштою перевірка не знає — під кнопкою
+  // з'являється пропозиція створити його (а не мовчазний «невірний пароль»).
+  const [loginFailedUnknownEmail, setLoginFailedUnknownEmail] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleCheckboxChange = () => {
@@ -342,9 +411,9 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
 
   const handleChange = e => {
     const { name, value } = e.target;
-    // Інша пошта — інше питання «чи є такий акаунт»: вибір ролі, відкритий для
-    // попередньої, до неї не належить.
-    if (name === 'email') setRegistrationRoleRequested(false);
+    // Інша пошта — інше питання «чи є такий акаунт»: підказка про попередню
+    // до неї не належить.
+    if (name === 'email') setLoginFailedUnknownEmail(false);
     setState(prevState => ({
       ...prevState,
       [name]: value,
@@ -385,13 +454,15 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       setIsLoggedIn(true);
       navigateAfterAuth();
       console.log('User signed in:', userCredential.user);
+      return true;
     } catch (error) {
-      if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+      if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found') {
         authNotifications.wrongPassword();
       } else {
         console.error('Error signing in:', error);
         authNotifications.genericAuthError();
       }
+      return false;
     }
   };
 
@@ -464,16 +535,28 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       email: normalizedEmail,
     }));
 
+    if (isRegisterMode && !selectedRole) {
+      authNotifications.registrationRoleRequired();
+      return;
+    }
+
     setIsLoading(true);
+    setLoginFailedUnknownEmail(false);
     try {
-      const signInMethods = await fetchSignInMethodsForEmail(auth, normalizedEmail);
-      if (signInMethods.length > 0) {
-        await handleLogin(normalizedEmail);
-      } else if (!selectedRole) {
-        setRegistrationRoleRequested(true);
-        authNotifications.registrationRoleRequired();
-      } else {
+      if (isRegisterMode) {
+        // Наявний акаунт тут не реєструється вдруге: `email-already-in-use`
+        // веде у вхід (`handleRegistration`).
         await handleRegistration(normalizedEmail);
+      } else {
+        const signedIn = await handleLogin(normalizedEmail);
+        if (!signedIn) {
+          // Вкладка «Увійти» нікого не реєструє. Якщо пошту не впізнано,
+          // під кнопкою стає пропозиція створити акаунт. Із захистом від
+          // перебору пошт перевірка мовчить і про наявні — тоді лишається
+          // сам «невірний пароль», а не хибна пропозиція реєстрації.
+          const signInMethods = await fetchSignInMethodsForEmail(auth, normalizedEmail).catch(() => null);
+          if (Array.isArray(signInMethods) && signInMethods.length === 0) setLoginFailedUnknownEmail(true);
+        }
       }
     } catch (error) {
       console.error('Error in authentication process:', error);
@@ -505,6 +588,21 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
             <WelcomeText>KnowMe<WelcomeAccent>.</WelcomeAccent></WelcomeText>
             <WelcomeDescription>Знайомтеся з донорками, батьками та агенціями. Зберігайте анкети й знаходьте тих, хто вам підходить.</WelcomeDescription>
           </BrandBlock>
+
+          <ModeTabs role="tablist" aria-label="Вхід або реєстрація">
+            <ModeTab type="button" role="tab" aria-selected={!isRegisterMode} $active={!isRegisterMode} onClick={() => setAuthMode('login')}>
+              Увійти
+            </ModeTab>
+            <ModeTab
+              type="button"
+              role="tab"
+              aria-selected={isRegisterMode}
+              $active={isRegisterMode}
+              onClick={() => { setAuthMode('register'); setLoginFailedUnknownEmail(false); }}
+            >
+              Створити акаунт
+            </ModeTab>
+          </ModeTabs>
 
           <InputDiv $active={focused === 'email' || Boolean(state.email)}>
             <FieldIcon><FaUser /></FieldIcon>
@@ -538,13 +636,10 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
             <Label htmlFor="login-password">Пароль</Label>
           </InputDiv>
 
-          {registrationRoleRequested && (
+          {isRegisterMode && (
             <RoleBlock>
               <RoleTitle>Хто ви?</RoleTitle>
-              <RoleHint>
-                Акаунта з цією поштою ще немає. Роль вирішує, які поля покаже анкета й кого ви побачите у стрічці.
-                Змінити її можна будь-коли в «Моєму профілі».
-              </RoleHint>
+              <RoleHint>Від ролі залежить, які поля покаже анкета й кого ви побачите у стрічці. Змінити її можна будь-коли в «Моєму профілі».</RoleHint>
               <RoleGrid>
                 {PROFILE_ROLE_OPTIONS.map(option => (
                   <RoleOption key={option.value} $selected={selectedRole === option.value}>
@@ -557,6 +652,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
                     />
                     <RoleText>
                       <RoleName>{option.label}</RoleName>
+                      {ROLE_DESCRIPTIONS[option.value] && <RoleDescription>{ROLE_DESCRIPTIONS[option.value]}</RoleDescription>}
                     </RoleText>
                   </RoleOption>
                 ))}
@@ -573,8 +669,16 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
           </CheckboxContainer>
 
           <SubmitButton type="button" onClick={handleAuth} disabled={isLoading}>
-            {isLoading ? 'Зачекайте…' : 'Вхід / Реєстрація'}
+            {isLoading ? 'Зачекайте…' : (isRegisterMode ? 'Створити акаунт' : 'Увійти')}
           </SubmitButton>
+          {!isRegisterMode && loginFailedUnknownEmail && (
+            <LoginHint aria-live="polite">
+              Акаунта з такою поштою немає.{' '}
+              <LinkButton type="button" onClick={() => { setAuthMode('register'); setLoginFailedUnknownEmail(false); }}>
+                Створити акаунт
+              </LinkButton>
+            </LoginHint>
+          )}
         </LoginCard>
       </InnerContainer>
     </Container>

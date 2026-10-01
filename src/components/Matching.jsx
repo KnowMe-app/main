@@ -84,10 +84,7 @@ import {
   QueryDraftValue,
   MatchingTopBar,
   SearchField,
-  GalleryActionButton,
-  GalleryActions,
   GalleryBody,
-  GalleryFacts,
   GalleryColumn,
   GalleryGrid,
   GalleryHiddenBadge,
@@ -229,9 +226,7 @@ import ProfileRow, {
   ReviewsStateNote,
   enrichGateLabel,
   describeReviewsState,
-  renderFacts as renderProfileFacts,
   getLocationLine,
-  splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
 import {
   buildProfileDetailSections,
@@ -243,7 +238,7 @@ import {
   ProfileStatStrip,
 } from './ProfileFacts';
 import { getRoleColor } from './matchingRoleColors';
-import { PhotoRoleBadge, RoleCode as RowRoleCode } from './MatchingHiddenList.styled';
+import { PhotoRoleBadge, RoleCode as RowRoleCode, RowActionButton, RowFooterActions, RowFooterButton, RowReactionPair } from './MatchingHiddenList.styled';
 import { DRAFT_FEED_ORDER_FIELD, placeOwnDraftsInFeed, resolveDraftFeedOrderDate } from '../utils/matchingDraftPlacement';
 import { liftReturnedCards, listReturnedReactionIds, placeReturnedCardsFirst } from '../utils/matchingReturnedCards';
 import { FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
@@ -1771,8 +1766,12 @@ const GalleryCard = React.memo(({
   const role = getProfileRole(user);
   const roleCode = getRoleCode(role);
   const location = getLocationLine(user, language);
-  const facts = useMemo(() => (isCounterparty ? [] : renderProfileFacts(user, [], language)), [isCounterparty, language, user]);
-  const [bodyFacts, reproFacts] = useMemo(() => splitProfileFactsByGroup(facts), [facts]);
+  // Та сама смуга показників, що й у рядку списку та у відкритій картці
+  // (`ProfileStatStrip`): плитка мала свій курсивний рядок «178/88 | BMI 28 |
+  // O+» і «КР 1», тобто ту саму людину дві розкладки описували різними
+  // словами («ІМТ» і «BMI»). Пологи й сімейний стан плитка не несе — на них
+  // немає ширини, і їх видно у відкритій картці.
+  const statCells = useMemo(() => (isCounterparty ? [] : buildProfileStatStrip(user, language)), [isCounterparty, language, user]);
   const isLimited = Boolean(user?.__limitedProfile);
   const isPublished = isMatchingCardPublished(user);
 
@@ -1834,58 +1833,43 @@ const GalleryCard = React.memo(({
             <span>{location}</span>
           </GalleryLocation>
         )}
-        {bodyFacts.length > 0 && (
-          <GalleryFacts>
-            {bodyFacts.map((node, idx) => (
-              <React.Fragment key={node.key}>
-                {idx > 0 && ' '}
-                {node}
-              </React.Fragment>
-            ))}
-          </GalleryFacts>
-        )}
-        {reproFacts.length > 0 && (
-          <GalleryFacts $soft>
-            {reproFacts.map((node, idx) => (
-              <React.Fragment key={node.key}>
-                {idx > 0 && ' '}
-                {node}
-              </React.Fragment>
-            ))}
-          </GalleryFacts>
-        )}
+        {statCells.length > 0 && <ProfileStatStrip cells={statCells} />}
         {!isLimited ? <CardRoleBlock card={user} programsContext={programsContext} language={language} /> : null}
         {!isLimited && (
-          <GalleryActions>
+          // Той самий ряд рішень, що й у рядку списку: олівець, пара
+          // «не цікаво / в обране» у спільній рамці, значки без підписів. Тут
+          // були широкі кнопки зі словами «Доповнити / Не цікаво / Обране», і
+          // «Обране» займало окремий рядок плитки.
+          <RowFooterActions onClick={event => event.stopPropagation()}>
             {onEnrich && (
-              <GalleryActionButton type="button" aria-label={enrichGateLabel(language)} title={enrichGateLabel(language)} onClick={event => { event.stopPropagation(); onEnrich(user); }}>
-                <FaPencilAlt />
-                <span>{language === 'en' ? 'Edit' : 'Доповнити'}</span>
-              </GalleryActionButton>
+              <RowFooterButton type="button" aria-label={enrichGateLabel(language)} title={enrichGateLabel(language)} onClick={event => { event.stopPropagation(); onEnrich(user); }}>
+                <FaPencilAlt size={13} />
+              </RowFooterButton>
             )}
-            <GalleryActionButton
-              type="button"
-              $on={isHidden}
-              aria-label={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
-              aria-pressed={isHidden}
-              title={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
-              onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
-            >
-              {isHidden ? <FaUndoAlt /> : <FaTimes />}
-              <span>{uiText(isHidden ? 'Повернути' : 'Не цікаво', language)}</span>
-            </GalleryActionButton>
-            <GalleryActionButton
-              type="button"
-              $on={isFavorite}
-              aria-label={uiText('В обране', language)}
-              aria-pressed={isFavorite}
-              title={uiText('В обране', language)}
-              onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
-            >
-              {isFavorite ? <FaHeart /> : <FaRegHeart />}
-              <span>{uiText('Обране', language)}</span>
-            </GalleryActionButton>
-          </GalleryActions>
+            <RowReactionPair>
+              <RowActionButton
+                type="button"
+                $on={isHidden}
+                aria-label={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
+                aria-pressed={isHidden}
+                title={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
+                onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
+              >
+                {isHidden ? <FaUndoAlt /> : <FaTimes />}
+              </RowActionButton>
+              <RowActionButton
+                type="button"
+                $accent
+                $on={isFavorite}
+                aria-label={uiText('В обране', language)}
+                aria-pressed={isFavorite}
+                title={uiText('В обране', language)}
+                onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
+              >
+                {isFavorite ? <FaHeart /> : <FaRegHeart />}
+              </RowActionButton>
+            </RowReactionPair>
+          </RowFooterActions>
         )}
         {/* Ті самі дві доріжки, що й у рядку списку: розкладка міняє те, як
             картку показують, а не те, що про людину вже записали. Поки плитка
