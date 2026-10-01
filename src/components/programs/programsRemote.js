@@ -18,18 +18,46 @@ export const readProgramsFromDb = async uid => {
   return snapshot.exists() ? snapshot.val() : null;
 };
 
-export const writeProgramsToDb = async (uid, items, at) => {
+const writeProgramsUpdate = (uid, items, at) => {
   const hasItems = items && Object.keys(items).length > 0;
+  return update(ref(database), {
+    [`${PROGRAMS_ROOT}/${uid}`]: hasItems ? { updatedAt: at, items } : null,
+    // Без програм версії немає: картка без `programsAt` не питає нічого.
+    [`matchingCards/${uid}/${MATCHING_CARD_PROGRAMS_AT_FIELD}`]: hasItems ? at : null,
+  });
+};
+
+/**
+ * Програми без кількості місяців щомісячної виплати.
+ *
+ * `payments.monthly.months` — ключ, якого правила знають лише після ручного
+ * викочування (`$other: false` на виплаті). Доти програма з ним відлітала б
+ * цілком, разом із сумами, — тож запис повторюється без нього, а підсумок
+ * рахує орієнтовні дев'ять місяців (`DEFAULT_MONTHLY_MONTHS`).
+ */
+export const stripMonthlyMonths = items => Object.fromEntries(Object.entries(items || {}).map(([id, program]) => {
+  const monthly = program?.payments?.monthly;
+  if (!monthly || monthly.months === undefined) return [id, program];
+  const { months: _months, ...rest } = monthly;
+  return [id, { ...program, payments: { ...program.payments, monthly: rest } }];
+}));
+
+export const writeProgramsToDb = async (uid, items, at) => {
   try {
-    await update(ref(database), {
-      [`${PROGRAMS_ROOT}/${uid}`]: hasItems ? { updatedAt: at, items } : null,
-      // Без програм версії немає: картка без `programsAt` не питає нічого.
-      [`matchingCards/${uid}/${MATCHING_CARD_PROGRAMS_AT_FIELD}`]: hasItems ? at : null,
-    });
+    await writeProgramsUpdate(uid, items, at);
   } catch (error) {
-    if (isReactionPermissionDeniedError(error)) {
-      console.warn('[programs] база не прийняла програми — правила `multiData/programs` і `matchingCards/…/programsAt` викочуються руками: npx firebase deploy --only database', { uid });
+    if (!isReactionPermissionDeniedError(error)) throw error;
+    const withoutMonths = stripMonthlyMonths(items);
+    if (JSON.stringify(withoutMonths) !== JSON.stringify(items)) {
+      try {
+        await writeProgramsUpdate(uid, withoutMonths, at);
+        console.warn('[programs] правила бази ще не знають кількості місяців щомісячної виплати — програми записано без неї. Викотіть правила: npx firebase deploy --only database', { uid });
+        return;
+      } catch (retryError) {
+        if (!isReactionPermissionDeniedError(retryError)) throw retryError;
+      }
     }
+    console.warn('[programs] база не прийняла програми — правила `multiData/programs` і `matchingCards/…/programsAt` викочуються руками: npx firebase deploy --only database', { uid });
     throw error;
   }
 };

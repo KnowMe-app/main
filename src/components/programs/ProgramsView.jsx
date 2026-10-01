@@ -3,13 +3,10 @@ import styled from 'styled-components';
 import {
   PROGRAM_COVERAGE_OPTIONS,
   PROGRAM_TYPE_LABELS,
-  PROGRAM_TOTAL_FIELD,
-  calculateProgramTotal,
   defaultProgramBonusKeys,
   describeProgramRequirements,
   evaluateProgram,
-  listProgramBonuses,
-  listProgramPayments,
+  programBreakdown,
   summarizeCardPrograms,
 } from '../../utils/donorPrograms';
 import {
@@ -31,6 +28,11 @@ import { uiText } from '../../utils/uiTranslations';
  *
  * Кожна змінна кольору має запасну: блок живе і в стрічці (`--matching-*`), і
  * в «Моєму профілі», де оголошені лише `--km-*`.
+ *
+ * Шкала тексту тут одна на весь блок і не росте від місця до місця:
+ * підпис розділу 11 px великими (`SectionLabel`), рядок 13 px, головна сума
+ * 26 px, приглушене пояснення 11.5 px. Сума в рядку стрічки й «разом» у
+ * картці програми — те саме число (`programBreakdown`).
  */
 
 const ACCENT = 'var(--matching-accent, var(--km-accent, #E8791A))';
@@ -69,14 +71,21 @@ const SummaryText = styled.span`
   min-width: 0;
 
   b { font-size: 14px; font-weight: 700; }
-  span { font-size: 12.5px; color: ${MUTED}; }
+  span { font-size: 12px; color: ${MUTED}; }
+  em { font-style: normal; font-weight: 700; color: ${TEXT}; font-variant-numeric: tabular-nums; }
 `;
 
 const SummaryPay = styled.span`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: auto;
   font-size: 15px;
   font-weight: 800;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+
+  small { font-size: 11px; font-weight: 500; color: ${MUTED}; }
 `;
 
 const Caret = styled.span`
@@ -98,72 +107,126 @@ const Card = styled.article`
   border: 1px solid ${BORDER};
   border-left: 3px solid ${({ $state }) => ($state === 'match' ? GOOD : $state === 'mismatch' ? BAD : ACCENT)};
   border-radius: 12px;
-  padding: 12px;
+  padding: 12px 12px 12px 13px;
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  opacity: ${({ $state }) => ($state === 'mismatch' ? 0.78 : 1)};
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.35;
+  opacity: ${({ $state }) => ($state === 'mismatch' ? 0.82 : 1)};
 `;
 
 const CardHead = styled.div`
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 8px;
-  font-size: 13px;
-  color: ${MUTED};
+  align-items: center;
+  gap: 8px;
 
-  b { color: ${TEXT}; font-size: 14px; }
+  b { font-size: 14px; font-weight: 700; }
+  span { color: ${MUTED}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 `;
 
 const Verdict = styled.span`
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 700;
-  color: ${({ $ok }) => ($ok ? GOOD : BAD)};
+  && {
+    margin-left: auto;
+    flex: 0 0 auto;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: ${({ $ok }) => ($ok ? GOOD : BAD)};
+    background: color-mix(in srgb, ${({ $ok }) => ($ok ? GOOD : BAD)} 10%, transparent);
+  }
 `;
 
-const MainPay = styled.div`
+const SectionLabel = styled.div`
   display: flex;
-  flex-wrap: wrap;
   align-items: baseline;
-  gap: 2px 10px;
-
-  strong { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  span { font-size: 12.5px; color: ${MUTED}; font-variant-numeric: tabular-nums; }
-`;
-
-const PayLabel = styled.div`
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: ${MUTED};
+
+  small { font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; }
 `;
 
-const PayTable = styled.dl`
+const Hero = styled.div`
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, ${ACCENT} 7%, transparent);
+`;
+
+const HeroAmount = styled.div`
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+`;
+
+const Muted = styled.div`
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: ${MUTED};
+  font-variant-numeric: tabular-nums;
+`;
+
+const Rows = styled.div`
+  display: flex;
+  flex-direction: column;
+`;
+
+const Row = styled.div`
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 12px;
-  margin: 0;
-  font-size: 13px;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 0;
+  border-top: 1px solid ${({ $first }) => ($first ? 'transparent' : `color-mix(in srgb, ${BORDER} 70%, transparent)`)};
 
-  dt { color: ${MUTED}; }
-  dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
-  dd small { display: block; font-size: 11.5px; color: ${MUTED}; }
+  > span { color: ${MUTED}; }
+  > span small { display: block; font-size: 11.5px; }
+  > b { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  > b small { display: block; font-size: 11.5px; font-weight: 500; color: ${MUTED}; }
 `;
 
-const BonusChoice = styled.label`
-  grid-column: 1 / -1;
+// Можлива доплата — перемикач, а не рядок: відмічене додається до «разом».
+// Увесь рядок — одна кнопка: квадратик 14 px сам по собі не мішень для пальця.
+const BonusRow = styled.button`
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 0;
+  border: 0;
+  border-top: 1px solid ${({ $first }) => ($first ? 'transparent' : `color-mix(in srgb, ${BORDER} 70%, transparent)`)};
+  background: transparent;
+  color: ${TEXT};
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 
-  input { margin: 0; accent-color: ${ACCENT}; }
-  span { color: ${MUTED}; }
-  strong { color: ${TEXT}; font-weight: 600; text-align: right; }
+  > i {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    border: 1.5px solid ${({ $on }) => ($on ? ACCENT : BORDER)};
+    background: ${({ $on }) => ($on ? ACCENT : 'transparent')};
+    color: #fff;
+    font-size: 12px;
+    font-style: normal;
+    line-height: 1;
+  }
+  > span { color: ${({ $on }) => ($on ? TEXT : MUTED)}; }
+  > b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; color: ${({ $on }) => ($on ? TEXT : MUTED)}; }
+
+  &:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; border-radius: 6px; }
 `;
 
 const Chips = styled.div`
@@ -184,9 +247,25 @@ const Chip = styled.span`
   background: ${({ $ok }) => ($ok === true ? `color-mix(in srgb, ${GOOD} 9%, transparent)` : $ok === false ? `color-mix(in srgb, ${BAD} 9%, transparent)` : 'transparent')};
 `;
 
+// Що покриває агенція — не вимога, і виглядати як вимога не має: без рамки,
+// з галочкою, на тлі. Поки обидва ряди чіпів були однакові, «Проїзд» стояв
+// одразу під «без КР» і читався ще однією умовою.
+const CoverChip = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: ${TEXT};
+  background: color-mix(in srgb, ${MUTED} 10%, transparent);
+
+  &::before { content: '✓'; color: ${GOOD}; font-weight: 700; }
+`;
+
 const Note = styled.p`
   margin: 0;
-  font-size: 12.5px;
+  font-size: 12px;
   color: ${MUTED};
   white-space: pre-wrap;
 `;
@@ -236,125 +315,168 @@ export const ProgramCurrencySwitch = ({ value, onChange, language, rates }) => (
   </CurrencyRow>
 );
 
-/** Сума агенції першою, далі еквіваленти з «≈». */
-const MoneyLine = ({ money, rates, prefix = '' }) => {
-  const described = describeProgramMoney(money, rates);
-  if (!described) return null;
-  return (
-    <dd>
-      {prefix}{described.text}
-      {described.equivalents.length ? <small>{described.equivalents.map(item => item.text).join(' · ')}</small> : null}
-    </dd>
-  );
+const formatParts = sum => sum.parts
+  .filter(part => part.amount > 0)
+  .map(part => formatProgramMoney(part.amount, part.currency))
+  .join(' + ');
+
+/** Еквіваленти суми в двох інших валютах — один рядок, з «≈» і датою курсу. */
+const equivalentsLine = (sum, rates, language) => {
+  if (sum.parts.length !== 1 || !(sum.amount > 0)) return '';
+  const described = describeProgramMoney({ amount: sum.amount, currency: sum.currency }, rates);
+  if (!described?.equivalents.length) return '';
+  const date = rates?.rateDate ? ` · ${uiText('курс НБУ на {date}', language, { date: formatRateDate(rates.rateDate) })}` : '';
+  return `${described.equivalents.map(item => item.text).join(' · ')}${date}`;
+};
+
+const monthWord = (count, language) => {
+  if (language === 'en') return count === 1 ? 'month' : 'months';
+  return 'міс';
 };
 
 /**
- * Одна програма. `facts` — анкета читача (`extractViewerProgramFacts`): коли
- * вона є, кожна вимога показує, чи читач їй відповідає.
+ * Одна програма — калькулятор заробітку.
+ *
+ * Зверху одне число: **разом за програму** — гарантовані виплати (фінальна,
+ * щомісячні × місяці, перенос, договір, дописані агенцією) плюс відмічені
+ * можливі доплати; під ним еквіваленти за курсом НБУ. Нижче — з чого воно
+ * складається, рядок на виплату, і можливі доплати перемикачами: читачка
+ * відмічає, що стосується її, і «разом» перераховується. Досі над
+ * розбивкою стояли два великі числа — «загальна сума» й «фінальна виплата»,
+ * — і саме загальна не враховувала щомісячних, тобто показувала менше, ніж
+ * агенція платить.
+ *
+ * `facts` — анкета читача (`extractViewerProgramFacts`): коли вона є, кожна
+ * вимога показує, чи читач їй відповідає, а доплата за досвід відмічена
+ * одразу.
  */
 export const ProgramCard = ({ program, facts = null, rates, language, compactNote = false }) => {
   const [selectedBonuses, setSelectedBonuses] = useState(() => defaultProgramBonusKeys(program, facts));
   useEffect(() => {
     setSelectedBonuses(defaultProgramBonusKeys(program, facts));
-  // Object identities may change when a cached card rerenders; only facts that
-  // affect defaults should reset the user's local selection.
-  }, [program.id, facts?.births, facts?.csections, facts?.experience]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Ідентичність обʼєктів міняється з кожним перемалюванням кешованої
+  // картки; вибір читачки скидають лише факти, від яких залежить початковий.
+  }, [program.id, facts?.experience]); // eslint-disable-line react-hooks/exhaustive-deps
   const result = facts ? evaluateProgram(program, facts) : null;
   const checkByKey = new Map((result?.checks || []).map(check => [check.key, check.ok]));
   const state = result ? (result.matches ? 'match' : 'mismatch') : 'neutral';
-  const payments = listProgramPayments(program);
-  const total = program.payments?.[PROGRAM_TOTAL_FIELD]
-    ? { key: PROGRAM_TOTAL_FIELD, label: 'Загальна сума за програму', money: program.payments[PROGRAM_TOTAL_FIELD] }
-    : null;
-  // Головна — фінальна виплата; без неї головною стає загальна сума.
-  const [main, ...paymentRest] = payments[0]?.key === 'final' ? payments : [total, ...payments];
-  const rest = main && main !== total && total ? [total, ...paymentRest] : paymentRest;
-  const bonuses = listProgramBonuses(program);
-  const calculatedTotals = calculateProgramTotal(program, selectedBonuses);
-  const mainMoney = main ? describeProgramMoney(main.money, rates) : null;
+  const breakdown = programBreakdown(program, { selectedBonusKeys: selectedBonuses, rates });
+  const { lines, bonuses, total, guaranteed } = breakdown;
+  const selectedCount = bonuses.filter(item => item.selected).length;
   const requirements = describeProgramRequirements(program);
   const unknown = requirements.filter(item => checkByKey.get(item.key) === null).map(item => REQUIREMENT_FIX_HINTS[item.key]);
   const coverage = PROGRAM_COVERAGE_OPTIONS.filter(option => program.coverage?.includes(option.key));
+  const toggleBonus = key => setSelectedBonuses(current => (current.includes(key)
+    ? current.filter(item => item !== key)
+    : [...current, key]));
+  const lineAmount = line => {
+    const own = formatProgramMoney(line.subtotal.amount, line.subtotal.currency);
+    // Виплата в іншій валюті, ніж «разом», показує й свій внесок у суму —
+    // інакше «разом» не звірити з рядками.
+    if (line.subtotal.currency === breakdown.baseCurrency) return { own };
+    const described = describeProgramMoney({ amount: line.subtotal.amount, currency: line.subtotal.currency }, rates);
+    const inBase = described?.equivalents.find(item => item.currency === breakdown.baseCurrency);
+    return { own, hint: inBase?.text || '' };
+  };
 
   return (
     <Card $state={state} data-testid="program-card">
       <CardHead>
         <b>{uiText(PROGRAM_TYPE_LABELS[program.type], language)}</b>
-        {program.location ? <span>· {program.location}</span> : null}
+        {program.location ? <span>{program.location}</span> : null}
         {result ? <Verdict $ok={result.matches}>{uiText(result.matches ? 'Вам підходить' : 'Не підходить', language)}</Verdict> : null}
       </CardHead>
 
-      {calculatedTotals.length ? (
-        <div>
-          <PayLabel>{uiText('Загальна сума за програму', language)}</PayLabel>
-          <MainPay>
-            {calculatedTotals.map(item => <strong key={item.currency}>{formatProgramMoney(item.amount, item.currency)}</strong>)}
-          </MainPay>
-        </div>
+      {total.amount > 0 ? (
+        <Hero data-testid="program-total">
+          <SectionLabel>
+            {uiText('Разом за програму', language)}
+            {selectedCount ? <small>{uiText('з обраними доплатами', language)}</small> : null}
+          </SectionLabel>
+          <HeroAmount>{total.approximate ? '≈ ' : ''}{formatParts(total)}</HeroAmount>
+          {equivalentsLine(total, rates, language) ? <Muted>{equivalentsLine(total, rates, language)}</Muted> : null}
+          {selectedCount ? (
+            <Muted>{uiText('гарантовано {amount}', language, { amount: formatParts(guaranteed) })}</Muted>
+          ) : null}
+        </Hero>
       ) : null}
 
-      {mainMoney ? (
+      {lines.length ? (
         <div>
-          <PayLabel>{uiText(main.label, language)}</PayLabel>
-          <MainPay>
-            <strong>{mainMoney.text}</strong>
-            {mainMoney.equivalents.map(item => <span key={item.currency}>{item.text}</span>)}
-          </MainPay>
+          <SectionLabel>{uiText('Гарантовано', language)}</SectionLabel>
+          <Rows>
+            {lines.map((line, index) => {
+              const amount = lineAmount(line);
+              return (
+                <Row key={line.key} $first={index === 0}>
+                  <span>
+                    {uiText(line.label, language)}
+                    {line.months ? (
+                      <small>
+                        {formatProgramMoney(line.money.amount, line.money.currency)} × {line.months} {monthWord(line.months, language)}
+                        {line.monthsEstimated ? ` · ${uiText('орієнтовно, термін вагітності', language)}` : ''}
+                      </small>
+                    ) : null}
+                  </span>
+                  <b>{amount.own}{amount.hint ? <small>{amount.hint}</small> : null}</b>
+                </Row>
+              );
+            })}
+          </Rows>
         </div>
-      ) : null}
-
-      {rest.length ? (
-        <PayTable>
-          {rest.map(item => (
-            <React.Fragment key={item.key}>
-              <dt>{uiText(item.label, language)}</dt>
-              <MoneyLine money={item.money} rates={rates} />
-            </React.Fragment>
-          ))}
-        </PayTable>
       ) : null}
 
       {bonuses.length ? (
         <div>
-          <PayLabel>{uiText('Можливі доплати', language)}</PayLabel>
-          <PayTable>
-            {bonuses.map(item => (
-              <BonusChoice key={item.key}>
-                <input
-                  type="checkbox"
-                  checked={selectedBonuses.includes(item.key)}
-                  onChange={() => setSelectedBonuses(current => (current.includes(item.key)
-                    ? current.filter(key => key !== item.key)
-                    : [...current, item.key]))}
-                />
+          <SectionLabel>
+            {uiText('Можливі доплати', language)}
+            <small>{uiText('відмітьте, що стосується вас', language)}</small>
+          </SectionLabel>
+          <Rows>
+            {bonuses.map((item, index) => (
+              <BonusRow
+                key={item.key}
+                type="button"
+                role="checkbox"
+                aria-checked={item.selected}
+                $on={item.selected}
+                $first={index === 0}
+                onClick={() => toggleBonus(item.key)}
+              >
+                <i aria-hidden="true">{item.selected ? '✓' : ''}</i>
                 <span>{uiText(item.label, language)}</span>
-                <strong>+{formatProgramMoney(item.money.amount, item.money.currency)}</strong>
-              </BonusChoice>
+                <b>+{formatProgramMoney(item.money.amount, item.money.currency)}</b>
+              </BonusRow>
             ))}
-          </PayTable>
+          </Rows>
         </div>
       ) : null}
 
       {requirements.length ? (
-        <Chips aria-label={uiText('Вимоги', language)}>
-          {requirements.map(item => {
-            const ok = checkByKey.has(item.key) ? checkByKey.get(item.key) : undefined;
-            return (
-              <Chip key={item.key} $ok={ok}>
-                {ok === true ? '✓' : ok === false ? '✕' : null}
-                {uiText(item.text, language, item.variables)}
-              </Chip>
-            );
-          })}
-        </Chips>
+        <div>
+          <SectionLabel>{uiText('Вимоги', language)}</SectionLabel>
+          <Chips>
+            {requirements.map(item => {
+              const ok = checkByKey.has(item.key) ? checkByKey.get(item.key) : undefined;
+              return (
+                <Chip key={item.key} $ok={ok}>
+                  {ok === true ? '✓' : ok === false ? '✕' : null}
+                  {uiText(item.text, language, item.variables)}
+                </Chip>
+              );
+            })}
+          </Chips>
+          {unknown.length ? <Note style={{ marginTop: 6 }}>{[...new Set(unknown)].map(hint => uiText(hint, language)).join(' · ')}</Note> : null}
+        </div>
       ) : null}
 
-      {unknown.length ? <Note>{[...new Set(unknown)].map(hint => uiText(hint, language)).join(' · ')}</Note> : null}
-
       {coverage.length ? (
-        <Chips aria-label={uiText('Що покриває', language)}>
-          {coverage.map(option => <Chip key={option.key}>{uiText(option.label, language)}</Chip>)}
-        </Chips>
+        <div>
+          <SectionLabel>{uiText('Агенція покриває', language)}</SectionLabel>
+          <Chips>
+            {coverage.map(option => <CoverChip key={option.key}>{uiText(option.label, language)}</CoverChip>)}
+          </Chips>
+        </div>
       ) : null}
 
       {program.note && !compactNote ? <Note>{program.note}</Note> : null}
@@ -376,7 +498,9 @@ export const formatPayRange = (finals, displayCurrency, rates) => {
     const max = Math.max(...same);
     return min === max ? formatProgramMoney(min, currency) : `${formatProgramMoney(min, currency).replace(/ \S+$/, '')}–${formatProgramMoney(max, currency)}`;
   }
-  const converted = values.some(item => item.money.currency !== displayCurrency);
+  // «≈» — коли хоч одну суму перераховано за курсом: у валюту читача або ще
+  // всередині програми (виплата агенції в іншій валюті, `programBreakdown`).
+  const converted = values.some(item => item.money.currency !== displayCurrency || item.money.approximate);
   const step = displayCurrency === 'UAH' ? 100 : 10;
   const nums = values.map(item => Math.round(item.converted / step) * step);
   const min = Math.min(...nums);
@@ -423,7 +547,13 @@ export const ProgramsSummary = ({
   const [open, setOpen] = useState(defaultOpen);
   const summary = summarizeCardPrograms(card, { viewerType, facts });
   if (!summary) return null;
-  const range = formatPayRange(summary.finals, displayCurrency, rates);
+  // Програми донорок і СМ в одному діапазоні дають «1 600–23 000 $» — число,
+  // яке не каже нічого жодній з них. Читачеві без свого типу (агенція,
+  // адмін, прев'ю у «Моєму профілі») кожен тип іде своїм рядком.
+  const perType = !viewerType && summary.byType.length > 1
+    ? summary.byType.map(item => ({ type: item.type, range: formatPayRange(item.totals, displayCurrency, rates) }))
+    : null;
+  const range = perType ? '' : formatPayRange(summary.finals, displayCurrency, rates);
   const headline = summary.matched !== null
     ? uiText('Вам підходить {matched} з {total} {programs}', language, {
       matched: summary.matched,
@@ -442,6 +572,12 @@ export const ProgramsSummary = ({
       <SummaryButton type="button" $match={summary.matched > 0} aria-expanded={open} onClick={toggle} data-testid="programs-summary">
         <SummaryText>
           <b>{headline}</b>
+          {perType ? perType.map(item => (
+            <span key={item.type}>
+              {uiText(PROGRAM_TYPE_LABELS[item.type], language)}
+              {item.range ? <> · <em>{item.range}</em></> : null}
+            </span>
+          )) : null}
           {summary.allTotal > summary.total && OTHER_TYPE_LABELS[viewerType === 'ed' ? 'sm' : 'ed'] ? (
             <span>
               {uiText('ще {count} — {audience}', language, {
@@ -451,7 +587,12 @@ export const ProgramsSummary = ({
             </span>
           ) : null}
         </SummaryText>
-        {range ? <SummaryPay>{range}</SummaryPay> : null}
+        {range ? (
+          <SummaryPay>
+            {range}
+            <small>{uiText('за програму', language)}</small>
+          </SummaryPay>
+        ) : null}
         <Caret $open={open} aria-hidden="true">▼</Caret>
       </SummaryButton>
       {open ? (

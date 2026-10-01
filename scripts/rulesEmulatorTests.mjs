@@ -217,6 +217,7 @@ const OWNER_PROGRAMS = {
         final: { amount: 2500, currency: 'USD' },
         total: { amount: 2700, currency: 'USD' },
         repeat: { amount: 2800, currency: 'USD' },
+        monthly: { amount: 500, currency: 'USD', months: 9 },
       },
       otherPayments: [{ label: 'Компенсація дороги', amount: 200, currency: 'UAH' }],
       bonuses: [{ label: 'Вагітність з першої спроби', amount: 500, currency: 'USD' }],
@@ -252,6 +253,9 @@ await it('програма з невідомим ключем, типом чи �
   await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ type: 'xx' })));
   await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payments: { final: { amount: 1, currency: 'GBP' } } })));
   await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payments: { bribe: { amount: 1, currency: 'USD' } } })));
+  // Кількість місяців буває лише в щомісячної виплати й лише в розумних межах.
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payments: { final: { amount: 1, currency: 'USD', months: 9 } } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payments: { monthly: { amount: 500, currency: 'USD', months: 40 } } })));
   await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ secret: 'x' })));
   // Без часу зміни версії в картці не було б із чим звірити.
   await assertFails(set(ref(db(PROFILE_OWNER), base), { items: { p3: { id: 'p3', type: 'ed' } } }));

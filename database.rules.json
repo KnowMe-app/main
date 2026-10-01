@@ -485,6 +485,9 @@
                   "currency": {
                     ".validate": "newData.val() == 'USD' || newData.val() == 'EUR' || newData.val() == 'UAH'"
                   },
+                  "months": {
+                    ".validate": "$paymentKey == 'monthly' && newData.isNumber() && newData.val() >= 1 && newData.val() <= 24"
+                  },
                   "$other": {
                     ".validate": false
                   }

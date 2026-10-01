@@ -89,9 +89,9 @@ const defaultsMatching = {
     ed_lt1500: true,
     ed_1500: true,
     ed_2000: true,
-    sm_lt18k: true,
-    sm_18k: true,
-    sm_20k: true,
+    sm_lt22k: true,
+    sm_22k: true,
+    sm_26k: true,
     none: true,
   },
 };

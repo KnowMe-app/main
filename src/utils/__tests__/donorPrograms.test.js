@@ -1,5 +1,5 @@
 import {
-  calculateProgramTotal,
+  DEFAULT_MONTHLY_MONTHS,
   defaultProgramBonusKeys,
   evaluateProgram,
   extractViewerProgramFacts,
@@ -8,12 +8,13 @@ import {
   listProgramPayments,
   listPrograms,
   normalizeProgram,
+  programBreakdown,
+  programGuaranteedUsd,
   programsToRecord,
   resolveCardPrograms,
   setCardProgramsLookup,
   resolveViewerProgramType,
   sortCardsByMode,
-  sumGuaranteedPayments,
   summarizeCardPrograms,
 } from '../donorPrograms';
 import {
@@ -74,7 +75,7 @@ describe('модель програми', () => {
     expect(parseProgramAmount('')).toBeNull();
   });
 
-  it('можливі доплати окремо від гарантованих, і в загальну суму не входять', () => {
+  it('можливі доплати окремо від гарантованих', () => {
     const program = normalizeProgram({
       ...surrogateProgram,
       payments: { ...surrogateProgram.payments, firstTry: { amount: 1000, currency: 'USD' } },
@@ -83,30 +84,78 @@ describe('модель програми', () => {
     });
     expect(listProgramPayments(program).map(item => item.key)).toEqual(['final', 'monthly', 'transfer', 'contract', 'other-0']);
     expect(listProgramBonuses(program).map(item => item.label)).toEqual(['Кесарів розтин', 'Вагітність з першої спроби', 'За досвід СМ']);
-    // Щомісячне — не разове, а доплати — лише можливі.
-    expect(sumGuaranteedPayments(program)).toEqual({ amount: 20700, currency: 'USD' });
   });
 
-  it('рахує персональну суму з вибраними доплатами без подвійного total', () => {
+  // Програма зі скріншота: 23 000 фінальна, 500 щомісяця, 200 перенос, 100
+  // договір, 500 «за повторну програму», а КС і двійня — можливі доплати.
+  // «Загальна сума» показувала 23 800 — без жодного щомісячного платежу.
+  const screenshotProgram = {
+    type: 'sm',
+    payments: {
+      final: { amount: 23000, currency: 'USD' },
+      monthly: { amount: 500, currency: 'USD' },
+      transfer: { amount: 200, currency: 'USD' },
+      contract: { amount: 100, currency: 'USD' },
+      cSection: { amount: 1500, currency: 'USD' },
+      twins: { amount: 3000, currency: 'USD' },
+    },
+    otherPayments: [{ label: 'Доплата за повторну програму', amount: 500, currency: 'USD' }],
+  };
+
+  it('разом за програму — усі гарантовані виплати, зокрема щомісячні × місяці', () => {
+    const breakdown = programBreakdown(normalizeProgram(screenshotProgram, 'p2'));
+    const monthly = breakdown.lines.find(line => line.key === 'monthly');
+    expect(monthly).toMatchObject({ months: DEFAULT_MONTHLY_MONTHS, monthsEstimated: true, subtotal: { amount: 4500, currency: 'USD' } });
+    expect(breakdown.guaranteed).toMatchObject({ amount: 28300, currency: 'USD', approximate: false });
+    expect(breakdown.max.amount).toBe(32800);
+  });
+
+  it('кількість місяців задає агенція, і вона переживає нормалізацію', () => {
     const program = normalizeProgram({
-      ...surrogateProgram,
-      payments: {
-        ...surrogateProgram.payments,
-        total: { amount: 21000, currency: 'USD' },
-        firstTry: { amount: 1000, currency: 'USD' },
-        experience: { amount: 1500, currency: 'USD' },
-      },
-    });
-    const defaults = defaultProgramBonusKeys(program, { births: 1, csections: 0, experience: 1 });
-    expect(defaults).toEqual(['experience']);
-    expect(calculateProgramTotal(program, defaults)).toEqual([{ amount: 22500, currency: 'USD' }]);
-    expect(calculateProgramTotal(program, [...defaults, 'firstTry'])).toEqual([{ amount: 23500, currency: 'USD' }]);
+      ...screenshotProgram,
+      payments: { ...screenshotProgram.payments, monthly: { amount: 500, currency: 'USD', months: '10' } },
+    }, 'p2');
+    expect(program.payments.monthly).toEqual({ amount: 500, currency: 'USD', months: 10 });
+    expect(programBreakdown(program).guaranteed.amount).toBe(28800);
+    expect(normalizeProgram({ ...screenshotProgram, payments: { monthly: { amount: 500, currency: 'USD', months: 99 } } }, 'x').payments.monthly.months).toBeUndefined();
   });
 
-  it('вибирає доплату за кесарів лише коли анкета має КР', () => {
-    const program = normalizeProgram(surrogateProgram);
-    expect(defaultProgramBonusKeys(program, { births: 2, csections: 0, experience: 0 })).not.toContain('cSection');
-    expect(defaultProgramBonusKeys(program, { births: 2, csections: 1, experience: 0 })).toContain('cSection');
+  it('відмічені доплати додаються до «разом», невідмічені — ні', () => {
+    const program = normalizeProgram(screenshotProgram, 'p2');
+    expect(programBreakdown(program, { selectedBonusKeys: ['cSection'] }).total.amount).toBe(29800);
+    expect(programBreakdown(program, { selectedBonusKeys: ['cSection', 'twins'] }).total.amount).toBe(32800);
+  });
+
+  it('виплата в іншій валюті йде в суму за курсом, а без курсу — окремою частиною', () => {
+    const program = normalizeProgram({
+      ...donorProgram,
+      payments: { final: { amount: 1600, currency: 'USD' } },
+      otherPayments: [{ label: 'Компенсація дороги', amount: 4100, currency: 'UAH' }],
+    }, 'p1');
+    const withRates = programBreakdown(program, { rates });
+    expect(withRates.guaranteed).toMatchObject({ amount: 1700, currency: 'USD', approximate: true });
+    const withoutRates = programBreakdown(program, { rates: { usd: null, eur: null } });
+    expect(withoutRates.guaranteed.parts).toEqual([{ currency: 'USD', amount: 1600 }, { currency: 'UAH', amount: 4100 }]);
+  });
+
+  it('стара програма з самою загальною сумою показує її, а зі складовими — рахує сама', () => {
+    expect(programBreakdown(normalizeProgram({ type: 'sm', payments: { total: { amount: 21000, currency: 'USD' } } }, 'x')).guaranteed.amount).toBe(21000);
+    const both = normalizeProgram({ ...screenshotProgram, payments: { ...screenshotProgram.payments, total: { amount: 21000, currency: 'USD' } } }, 'p2');
+    expect(programBreakdown(both).guaranteed.amount).toBe(28300);
+  });
+
+  it('фільтр і сортування рахують ту саму гарантовану суму', () => {
+    expect(programGuaranteedUsd(normalizeProgram(screenshotProgram, 'p2'), rates)).toBe(28300);
+    expect(listPaymentBuckets({ role: 'ag', programs: { p2: screenshotProgram } }, rates, ['sm'])).toEqual(['sm_26k']);
+  });
+
+  it('досвід відмічено одразу, а кесарів і двійню читачка відмічає сама', () => {
+    const program = normalizeProgram({
+      ...screenshotProgram,
+      payments: { ...screenshotProgram.payments, experience: { amount: 1500, currency: 'USD' } },
+    }, 'p2');
+    expect(defaultProgramBonusKeys(program, { births: 2, csections: 1, experience: 1 })).toEqual(['experience']);
+    expect(defaultProgramBonusKeys(program, { births: 2, csections: 1, experience: 0 })).toEqual([]);
   });
 
   it('тривалість стала приміткою, а не зникла', () => {

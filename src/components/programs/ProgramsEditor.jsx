@@ -6,6 +6,8 @@ import {
   PROGRAM_CSECTION_OPTIONS,
   PROGRAM_KIDS_OPTIONS,
   PROGRAM_MARITAL_OPTIONS,
+  DEFAULT_MONTHLY_MONTHS,
+  MAX_MONTHLY_MONTHS,
   PROGRAM_RH_OPTIONS,
   PROGRAM_TOTAL_FIELD,
   PROGRAM_TYPES,
@@ -15,9 +17,9 @@ import {
   listGuaranteedPaymentFields,
   listPrograms,
   normalizeProgram,
+  programBreakdown,
   programHeadlinePay,
   programsToRecord,
-  sumGuaranteedPayments,
 } from '../../utils/donorPrograms';
 import { DEFAULT_PROGRAM_CURRENCY, formatProgramMoney } from '../../utils/programCurrency';
 import { uiText } from '../../utils/uiTranslations';
@@ -67,6 +69,52 @@ const HiddenMark = styled.em`
   font-weight: 700;
   color: var(--km-muted, #6f675f);
 `;
+
+const MonthsRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--km-muted, #6f675f);
+`;
+
+const MonthsInput = styled.input`
+  box-sizing: border-box;
+  width: 56px;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--km-border, #e7e1d8);
+  border-radius: 9px;
+  background: var(--km-bg, #faf8f5);
+  color: var(--km-text, inherit);
+  font: inherit;
+  font-size: 15px;
+  text-align: center;
+`;
+
+// Підсумок рахується з тих самих виплат і тим самим кодом, що й у картці
+// програми (`programBreakdown`): агенція бачить число, яке побачить донорка.
+const TotalBox = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--km-accent, #E8791A) 8%, transparent);
+
+  > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  > div span { font-size: 13px; color: var(--km-muted, #6f675f); }
+  > div b { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  > div:first-child b { font-size: 20px; }
+  small { font-size: 11.5px; line-height: 1.45; color: var(--km-muted, #6f675f); }
+`;
+
+const formatSumParts = sum => sum.parts
+  .filter(part => part.amount > 0)
+  .map(part => formatProgramMoney(part.amount, part.currency))
+  .join(' + ');
 
 const Hint = styled.div`
   display: flex;
@@ -300,11 +348,15 @@ const Choice = ({ options, value, onChange, language }) => (
 );
 
 const summaryLine = (program, language) => {
-  const pay = programHeadlinePay(program);
+  const normalized = normalizeProgram(program, program.id);
+  const guaranteed = normalized ? programBreakdown(normalized).guaranteed : null;
+  const useGuaranteed = guaranteed && guaranteed.parts.length === 1 && guaranteed.amount > 0;
+  const pay = useGuaranteed ? { amount: guaranteed.amount, currency: guaranteed.currency } : programHeadlinePay(program);
   const amount = Number(pay?.amount);
+  const prefix = useGuaranteed && guaranteed.approximate ? '≈ ' : '';
   return [
     program.location,
-    Number.isFinite(amount) && amount > 0 ? formatProgramMoney(amount, pay.currency) : uiText('виплату не вказано', language),
+    Number.isFinite(amount) && amount > 0 ? `${prefix}${formatProgramMoney(amount, pay.currency)}` : uiText('виплату не вказано', language),
   ].filter(Boolean).join(' · ');
 };
 
@@ -350,13 +402,35 @@ const uniqueLabels = labels => {
 const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
   const set = patch => onChange({ ...program, ...patch });
   const setReq = patch => onChange({ ...program, requirements: { ...program.requirements, ...patch } });
-  const setPay = (key, money) => onChange({ ...program, payments: { ...program.payments, [key]: money } });
+  // `MoneyInput` віддає саму суму й валюту; кількість місяців щомісячної
+  // виплати лежить поруч у тому самому обʼєкті й мусить пережити правку суми.
+  const setPay = (key, money) => onChange({
+    ...program,
+    payments: {
+      ...program.payments,
+      [key]: key === 'monthly' && program.payments?.monthly?.months !== undefined && money
+        ? { ...money, months: program.payments.monthly.months }
+        : money,
+    },
+  });
+  const setMonths = value => onChange({
+    ...program,
+    payments: { ...program.payments, monthly: { ...(program.payments?.monthly || { amount: '', currency }), months: value } },
+  });
+  const removeLegacyTotal = () => {
+    const { [PROGRAM_TOTAL_FIELD]: _removed, ...payments } = program.payments || {};
+    onChange({ ...program, payments });
+  };
   const idPrefix = `program-${program.id}`;
   const normalized = normalizeProgram(program, program.id);
   const currency = program.payments?.final?.currency || DEFAULT_PROGRAM_CURRENCY;
-  const sum = normalized ? sumGuaranteedPayments(normalized) : null;
-  const total = normalized?.payments?.[PROGRAM_TOTAL_FIELD];
-  const showSumHint = sum && sum.amount > 0 && !(total && total.amount === sum.amount && total.currency === sum.currency);
+  // Загальну суму агенція більше не вводить: її рахує `programBreakdown` з
+  // виплат вище — і рахує так само, як побачить донорка. Ручне поле було
+  // третім джерелом правди поруч із виплатами й підсумком і розходилось з
+  // обома, щойно змінювалась хоч одна виплата.
+  const breakdown = normalized ? programBreakdown(normalized, { rates }) : null;
+  const hasComponents = Boolean(breakdown?.lines.some(line => line.key !== PROGRAM_TOTAL_FIELD));
+  const legacyTotal = hasComponents ? normalized?.payments?.[PROGRAM_TOTAL_FIELD] : null;
   // Підказки — словник інших агенцій і власні назви інших програм, без
   // повторів: людина, що завела «Бонус за ранній перенос» в одній програмі,
   // не набирає його вдруге в копії.
@@ -411,6 +485,22 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
           <SmallLabel key={key} as="div">
             {uiText(label, language)}
             <MoneyInput id={`${idPrefix}-${key}`} language={language} rates={rates} value={program.payments?.[key]} onChange={money => setPay(key, money)} />
+            {key === 'monthly' ? (
+              <MonthsRow>
+                <span>{uiText('Скільки місяців', language)}</span>
+                <MonthsInput
+                  inputMode="numeric"
+                  aria-label={uiText('Скільки місяців', language)}
+                  placeholder={String(DEFAULT_MONTHLY_MONTHS)}
+                  value={program.payments?.monthly?.months ?? ''}
+                  onChange={event => {
+                    const digits = event.target.value.replace(/[^0-9]/g, '').slice(0, 2);
+                    setMonths(digits && Number(digits) > MAX_MONTHLY_MONTHS ? String(MAX_MONTHLY_MONTHS) : digits);
+                  }}
+                />
+                <span>{uiText('порожньо — {months} міс, термін вагітності', language, { months: DEFAULT_MONTHLY_MONTHS })}</span>
+              </MonthsRow>
+            ) : null}
           </SmallLabel>
         ))}
         <LabeledPayments
@@ -425,14 +515,14 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
           language={language}
           rates={rates}
         />
-        <SmallLabel as="div">
-          {uiText('Загальна сума за програму', language)}
-          <MoneyInput id={`${idPrefix}-${PROGRAM_TOTAL_FIELD}`} language={language} rates={rates} value={program.payments?.[PROGRAM_TOTAL_FIELD]} onChange={money => setPay(PROGRAM_TOTAL_FIELD, money)} />
-        </SmallLabel>
-        {showSumHint ? (
+        {legacyTotal ? (
           <Hint>
-            <span>{uiText('Разом виплат вище: {sum}', language, { sum: formatProgramMoney(sum.amount, sum.currency) })}</span>
-            <SmallButton type="button" onClick={() => setPay(PROGRAM_TOTAL_FIELD, { amount: sum.amount, currency: sum.currency })}>{uiText('Підставити', language)}</SmallButton>
+            <span>
+              {uiText('Раніше введена загальна сума {amount} більше не показується — разом рахуємо з виплат', language, {
+                amount: formatProgramMoney(legacyTotal.amount, legacyTotal.currency),
+              })}
+            </span>
+            <SmallButton type="button" onClick={removeLegacyTotal}>{uiText('Прибрати', language)}</SmallButton>
           </Hint>
         ) : null}
       </Group>
@@ -458,6 +548,24 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
           rates={rates}
         />
       </Group>
+
+      {breakdown && breakdown.guaranteed.amount > 0 ? (
+        <TotalBox data-testid="program-editor-total">
+          <div>
+            <span>{uiText('Разом гарантовано', language)}</span>
+            <b>{breakdown.guaranteed.approximate ? '≈ ' : ''}{formatSumParts(breakdown.guaranteed)}</b>
+          </div>
+          {breakdown.bonuses.length ? (
+            <div>
+              <span>{uiText('З усіма можливими доплатами', language)}</span>
+              <b>{breakdown.max.approximate ? '≈ ' : ''}{formatSumParts(breakdown.max)}</b>
+            </div>
+          ) : null}
+          <small>
+            {uiText('Так само порахує донорка: фінальна, щомісячні × місяці, перенос, договір та інші виплати. Можливі доплати вона відмітить сама.', language)}
+          </small>
+        </TotalBox>
+      ) : null}
 
       <Group>
         <legend>{uiText('Що покриваєте', language)}</legend>
