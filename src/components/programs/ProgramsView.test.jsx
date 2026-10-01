@@ -115,7 +115,7 @@ describe('картка програми — калькулятор заробі�
   it('вимоги й покриття підписані окремо', () => {
     render(<ProgramCard program={{ ...surrogate, requirements: { ageTo: 35 }, coverage: ['travel'] }} rates={rates} language="uk" />);
     expect(screen.getByText('Вимоги')).toBeInTheDocument();
-    expect(screen.getByText('Агенція покриває')).toBeInTheDocument();
+    expect(screen.getByText('Що покриває')).toBeInTheDocument();
   });
 
   it('читачеві без свого типу програми донорок і СМ — окремими рядками, а не одним діапазоном', () => {

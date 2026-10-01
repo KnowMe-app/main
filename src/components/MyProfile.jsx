@@ -1039,8 +1039,13 @@ export const MyProfile = () => {
     const shared = base.filter(section => SHARED_SECTION_KEYS.has(section.key));
     const personSections = base.filter(section => !SHARED_SECTION_KEYS.has(section.key));
     let personAssigned = false;
+    const usedRoleSectionKeys = new Set();
     const blocks = [selectedRole, ...rolesList.filter(role => role !== selectedRole)].flatMap(role => {
-      let roleBlock = roleSectionsFor(role);
+      let roleBlock = roleSectionsFor(role).filter(section => {
+        if (usedRoleSectionKeys.has(section.key)) return false;
+        usedRoleSectionKeys.add(section.key);
+        return true;
+      });
       if (PERSON_ROLES.includes(role) && !personAssigned) {
         personAssigned = true;
         roleBlock = personSections;

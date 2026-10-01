@@ -495,7 +495,8 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
                   value={program.payments?.monthly?.months ?? ''}
                   onChange={event => {
                     const digits = event.target.value.replace(/[^0-9]/g, '').slice(0, 2);
-                    setMonths(digits && Number(digits) > MAX_MONTHLY_MONTHS ? String(MAX_MONTHLY_MONTHS) : digits);
+                    const months = Number(digits);
+                    setMonths(digits && months >= 1 ? String(Math.min(months, MAX_MONTHLY_MONTHS)) : '');
                   }}
                 />
                 <span>{uiText('порожньо — {months} міс, термін вагітності', language, { months: DEFAULT_MONTHLY_MONTHS })}</span>
