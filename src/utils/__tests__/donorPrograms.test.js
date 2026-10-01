@@ -149,6 +149,16 @@ describe('модель програми', () => {
     expect(listPaymentBuckets({ role: 'ag', programs: { p2: screenshotProgram } }, rates, ['sm'])).toEqual(['sm_26k']);
   });
 
+  it('без повного курсу не фільтрує змішану гарантовану суму як одну виплату', () => {
+    const mixed = normalizeProgram({
+      ...donorProgram,
+      payments: { final: { amount: 20000, currency: 'USD' } },
+      otherPayments: [{ label: 'Компенсація', amount: 5000, currency: 'EUR' }],
+    }, 'mixed');
+    expect(programGuaranteedUsd(mixed, { usd: null, eur: null })).toBeNull();
+    expect(programGuaranteedUsd(mixed, rates)).toBeCloseTo(20000 + (5000 * 48 / 41));
+  });
+
   it('досвід відмічено одразу, а кесарів і двійню читачка відмічає сама', () => {
     const program = normalizeProgram({
       ...screenshotProgram,

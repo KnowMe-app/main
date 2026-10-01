@@ -56,4 +56,19 @@ describe('редактор програм', () => {
     fireEvent.change(screen.getByLabelText('Скільки місяців'), { target: { value: '10' } });
     expect(screen.getByTestId('program-editor-total')).toHaveTextContent('25 000 $');
   });
+
+  it('не лишає нуль місяців, який розрахунок замінив би дев’ятьма', () => {
+    const surrogate = {
+      p2: {
+        id: 'p2',
+        type: 'sm',
+        payments: { monthly: { amount: 500, currency: 'USD' } },
+      },
+    };
+    render(<ProgramsEditor programs={surrogate} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Сурогатна мати/ }));
+    const months = screen.getByLabelText('Скільки місяців');
+    fireEvent.change(months, { target: { value: '0' } });
+    expect(months).toHaveValue('');
+  });
 });

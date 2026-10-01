@@ -247,7 +247,7 @@ const Chip = styled.span`
   background: ${({ $ok }) => ($ok === true ? `color-mix(in srgb, ${GOOD} 9%, transparent)` : $ok === false ? `color-mix(in srgb, ${BAD} 9%, transparent)` : 'transparent')};
 `;
 
-// Що покриває агенція — не вимога, і виглядати як вимога не має: без рамки,
+// Що покриває організація — не вимога, і виглядати як вимога не має: без рамки,
 // з галочкою, на тлі. Поки обидва ряди чіпів були однакові, «Проїзд» стояв
 // одразу під «без КР» і читався ще однією умовою.
 const CoverChip = styled.span`
@@ -472,7 +472,7 @@ export const ProgramCard = ({ program, facts = null, rates, language, compactNot
 
       {coverage.length ? (
         <div>
-          <SectionLabel>{uiText('Агенція покриває', language)}</SectionLabel>
+          <SectionLabel>{uiText('Що покриває', language)}</SectionLabel>
           <Chips>
             {coverage.map(option => <CoverChip key={option.key}>{uiText(option.label, language)}</CoverChip>)}
           </Chips>

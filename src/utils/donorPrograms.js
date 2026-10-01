@@ -714,5 +714,6 @@ export const programGuaranteedUsd = (program, rates) => {
   const breakdown = programBreakdown(program, { rates });
   const usd = breakdown.lines.map(line => programMoneyInUsd(line.subtotal, rates || undefined));
   if (usd.length && usd.every(value => Number.isFinite(value))) return usd.reduce((sum, value) => sum + value, 0);
-  return programMoneyInUsd(programHeadlinePay(program), rates || undefined);
+  if (!breakdown.lines.length) return programMoneyInUsd(programHeadlinePay(program), rates || undefined);
+  return null;
 };
