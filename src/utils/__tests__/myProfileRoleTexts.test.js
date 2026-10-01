@@ -7,8 +7,10 @@ describe('«Мій профіль» говорить мовою ролі', () =>
     expect(resolveMyProfileFieldText('name', 'cl').label).toBe('Назва клініки');
   });
 
-  it('біологічні батьки пишуть, кого шукають', () => {
-    expect(resolveMyProfileFieldText('moreInfo_main', 'ip').label).toBe('Кого шукаєте');
+  // Поле стоїть усередині розділу «Кого шукаєте», тож назва розділу в його
+  // підписі не повторюється: «Кого шукаєте» двічі поспіль і було дублем.
+  it('біологічні батьки пишуть побажання в розділі «Кого шукаєте»', () => {
+    expect(resolveMyProfileFieldText('moreInfo_main', 'ip').label).toBe('Побажання');
     expect(resolveMyProfileSectionTitle('lifestyle', 'ip', '🌿 Спосіб життя')).toBe('📝 Кого шукаєте');
   });
 
@@ -26,5 +28,10 @@ describe('«Мій профіль» говорить мовою ролі', () =>
   it('в інших ролях «Спосіб життя» з одним «Про себе» зветься «Про себе»', () => {
     expect(resolveMyProfileSectionTitle('lifestyle', 'sm', '🌿 Спосіб життя')).toBe('📝 Про себе');
     expect(resolveMyProfileSectionTitle('personal', 'sm', '👤 Особисті дані')).toBe('👤 Особисті дані');
+  });
+
+  it('сурогатну маму медичний розділ питає про вагітності', () => {
+    expect(resolveMyProfileSectionTitle('medical', 'sm', '🏥 Медична інформація')).toBe('🤰 Здоровʼя й вагітності');
+    expect(resolveMyProfileSectionTitle('medical', 'ed', '🏥 Медична інформація')).toBe('🏥 Медична інформація');
   });
 });

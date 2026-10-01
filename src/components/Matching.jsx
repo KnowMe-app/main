@@ -1124,6 +1124,7 @@ const SwipeableCard = ({
   const favoriteButtonWrapRef = useRef(null);
   const dislikeButtonWrapRef = useRef(null);
   const contactViewKeysRef = useRef(new Set());
+  const contactDetailsRef = useRef(null);
   const touchStart = useRef(null);
   const swipedRef = useRef(false);
 
@@ -1218,6 +1219,17 @@ const SwipeableCard = ({
     if (contactViewKeysRef.current.has(contactViewKey)) return;
     contactViewKeysRef.current.add(contactViewKey);
     void addContactViewUser(user.userId, multiDataOwnerId);
+  };
+
+  const hasContactSection = sections.some(section => section.variant === 'contacts');
+  const openContactDetails = e => {
+    e.stopPropagation();
+    const details = contactDetailsRef.current;
+    if (!details) return;
+    // `open = true` сам кидає `toggle`, тож перегляд контактів пишеться тим
+    // самим шляхом, що й при дотику до заголовка блока.
+    details.open = true;
+    details.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   };
 
   const handleTouchStart = e => {
@@ -1348,8 +1360,30 @@ const SwipeableCard = ({
           <AdminToggle published={isMatchingCardPublished(user)} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
         )}
         <ModernProfileBody>
-          {/* Програми агенції чи клініки й «кого шукають» батьки — першими
-              під фото: саме заради них донорка й відкрила цю картку. */}
+          {/* Контакти — першими під шапкою. Блок стояв у самому низу картки,
+              під «Про себе», розділами анкети й нотатками, тобто там, куди
+              докручує не кожен, — а картотека існує, щоб людей знайти й
+              написати їм. Розгортати його й далі треба дотиком (на розгортанні
+              пишеться перегляд контактів, `handleContactsToggle`), і той самий
+              дотик дає трубка в ряду дій унизу (`openContactDetails`). */}
+          {sections.filter(section => section.variant === 'contacts').map(section => (
+            <ModernSection key={section.title}>
+              <ModernContactDetails ref={contactDetailsRef} onToggle={handleContactsToggle} onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+                <ModernContactSummary>
+                  {profileUiText('showContacts', language)}
+                  <ModernContactHints aria-hidden="true">
+                    {contactHintIcons.map(({ key, Icon }) => <Icon key={key} />)}
+                  </ModernContactHints>
+                  <span className="contacts-chevron" aria-hidden="true">
+                    <FaChevronDown size={16} />
+                  </span>
+                </ModernContactSummary>
+                <ProfileContactLinks user={user} role={resolvedRole} language={language} />
+              </ModernContactDetails>
+            </ModernSection>
+          ))}
+          {/* Програми агенції чи клініки й «кого шукають» батьки — одразу
+              під контактами: саме заради них донорка й відкрила цю картку. */}
           <CardRoleBlock card={user} programsContext={programsContext} language={language} />
           {usesSharedFacts && (bio || detailSections.length > 0) && (
             <ModernSection>
@@ -1372,22 +1406,6 @@ const SwipeableCard = ({
               ) : (
                 <ProfileFieldRows fields={section.fields} />
               )}
-            </ModernSection>
-          ))}
-          {sections.filter(section => section.variant === 'contacts').map(section => (
-            <ModernSection key={section.title}>
-              <ModernContactDetails onToggle={handleContactsToggle} onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
-                <ModernContactSummary>
-                  {profileUiText('showContacts', language)}
-                  <ModernContactHints aria-hidden="true">
-                    {contactHintIcons.map(({ key, Icon }) => <Icon key={key} />)}
-                  </ModernContactHints>
-                  <span className="contacts-chevron" aria-hidden="true">
-                    <FaChevronDown size={16} />
-                  </span>
-                </ModernContactSummary>
-                <ProfileContactLinks user={user} role={resolvedRole} language={language} />
-              </ModernContactDetails>
             </ModernSection>
           ))}
           {/* Приватна нотатка й публічний запис — одна секція, дві доріжки.
@@ -1502,6 +1520,19 @@ const SwipeableCard = ({
           <span ref={favoriteButtonWrapRef} onClickCapture={() => onReacted?.(user.userId)}>
             <BtnFavorite userId={user.userId} userData={canonicalUserData} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
           </span>
+          {/* Трубка — та сама, що в рядку стрічки: «звʼязатися з цією людиною».
+              Ряд дій стоїть на екрані завжди, тож і до контактів звідси один
+              дотик, хоч би де читач зараз був у картці. */}
+          {hasContactSection && (
+            <ActionButton
+              type="button"
+              onClick={openContactDetails}
+              aria-label={profileUiText('showContacts', language)}
+              title={profileUiText('showContacts', language)}
+            >
+              <PhoneHandsetIcon />
+            </ActionButton>
+          )}
         </ModernActionRail>
         )}
       </ModernProfileShell>

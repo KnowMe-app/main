@@ -403,10 +403,26 @@ export const getCard = id => {
  * Умову рахує та сама `mayCacheContacts`, якою кеш і наповнюється: два різні
  * написання одного правила рано чи пізно розійшлись би саме на межі.
  */
+const hasCachedContactValue = value => {
+  if (Array.isArray(value)) return value.some(hasCachedContactValue);
+  return typeof value === 'string' ? value.trim() !== '' : value != null && value !== false;
+};
+
+/*
+ * Право «тепер» ще не каже, з яким правом анкету клали. Службовий доступ
+ * (`accessLevel`) зʼявляється в `localStorage` лише після мережевого круга, а
+ * на холодному старті анкета встигає лягти в кеш раніше — без контактів, бо
+ * на ту мить права ще не було. Потім рівень приїжджає, `mayCacheContacts`
+ * каже «так», і обрізана анкета віддавалась як повна: з першого відкриття
+ * картки телефон був, з повторного зникав разом із блоком «Показати
+ * контакти». Анкета без жодного контакту тому повною не вважається — для
+ * картки, в якої контактів справді немає, це коштує одне читання на дотик.
+ */
 export const getCompleteCachedProfile = id => {
   if (!id || !mayCacheContacts(id)) return null;
   const card = getCard(id);
   if (!card || card.cacheVersion !== CARDS_CACHE_VERSION) return null;
+  if (!PROFILE_CONTACT_FIELDS.some(field => hasCachedContactValue(card[field]))) return null;
   incrementMatchingLoadStat('fullProfileCacheHits');
   return card;
 };

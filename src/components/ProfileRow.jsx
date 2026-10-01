@@ -557,8 +557,9 @@ export const CommentBlock = ({ text, onSave, placeholder }) => {
 //
 // A record about a third party that every user of the base can read. It is
 // anonymous: no author name is shown under it or written with it. The affordance is a line of muted text; a click turns it
-// into a borderless auto-growing field. It saves on blur, discards on Esc, and
-// commits + blurs on Ctrl/Cmd+Enter. An empty field writes nothing at all.
+// into a borderless auto-growing field. It is published only by the explicit
+// «Опублікувати» button (or Ctrl/Cmd+Enter) — never on blur — and Esc or
+// «Не публікувати» discards it. An empty field writes nothing at all.
 
 const COMMENT_MIN_ROWS = 1;
 const COMMENT_MAX_ROWS = 6;
@@ -599,8 +600,9 @@ const formatCommentDate = timestamp => {
 
 const CommentComposer = ({ initialText, onCancel, onCommit, language, preloaded = false }) => {
   const ref = useRef(null);
-  const cancelledRef = useRef(false);
   const [draft, setDraft] = useState(initialText || '');
+  const isEdit = Boolean(String(initialText || '').trim());
+  const canCommit = isEdit || draft.trim() !== '';
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -627,20 +629,48 @@ const CommentComposer = ({ initialText, onCancel, onCommit, language, preloaded 
           if (e.key === 'Escape') {
             e.preventDefault();
             e.stopPropagation();
-            cancelledRef.current = true;
             onCancel();
             return;
           }
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
-            onCommit(e.target.value);
+            if (canCommit) onCommit(e.target.value);
           }
         }}
+        // Втрата фокуса нічого не публікує. Порожній новий відгук просто
+        // згортається назад у запрошення — інакше поле висіло б відкритим
+        // після кожного випадкового дотику; набраний текст лишається в полі,
+        // доки людина не натисне «Опублікувати» чи «Не публікувати».
         onBlur={e => {
-          if (cancelledRef.current) return;
-          onCommit(e.target.value);
+          if (!isEdit && !e.target.value.trim()) onCancel();
         }}
       />
+      <S.CommentActions>
+        <S.CommentAudienceNote>{uiText('Побачать усі користувачі. Ваше імʼя не показується.', language)}</S.CommentAudienceNote>
+        <S.CommentCancelButton
+          type="button"
+          // mousedown не забирає фокус у поля: інакше blur порожнього поля
+          // згорнув би редактор раніше, ніж дійде клік.
+          onMouseDown={e => e.preventDefault()}
+          onClick={e => {
+            e.stopPropagation();
+            onCancel();
+          }}
+        >
+          {uiText('Не публікувати', language)}
+        </S.CommentCancelButton>
+        <S.CommentPublishButton
+          type="button"
+          disabled={!canCommit}
+          onMouseDown={e => e.preventDefault()}
+          onClick={e => {
+            e.stopPropagation();
+            onCommit(draft);
+          }}
+        >
+          {uiText(isEdit ? 'Зберегти відгук' : 'Опублікувати', language)}
+        </S.CommentPublishButton>
+      </S.CommentActions>
     </S.CommentEditor>
   );
 };

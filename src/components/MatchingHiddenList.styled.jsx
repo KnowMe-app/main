@@ -1094,6 +1094,68 @@ export const CommentStatus = styled.span`
   white-space: nowrap;
 `;
 
+/*
+ * Відгук публікується кнопкою, а не втратою фокуса.
+ *
+ * Поле відгуку й поле памʼятки виглядають однаково, а наслідки протилежні:
+ * памʼятку бачить сам автор, відгук — кожен, хто відкриє картку. Поки відгук
+ * публікувався на blur, на телефоні його публікувала прокрутка чи дотик повз
+ * поле. Тому під полем — підпис, хто це побачить, і явна кнопка. Кольори з
+ * запасними: той самий блок малює й форма доповнення поза матчингом.
+ */
+export const CommentActions = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 8px;
+  margin-top: 6px;
+`;
+
+export const CommentAudienceNote = styled.span`
+  /* Окремим рядком над кнопками: у вузькому рядку стрічки підпис поруч із
+     ними переносив «Опублікувати» під «Не публікувати». */
+  flex: 1 0 100%;
+  min-width: 0;
+  font-size: ${NOTE_META_SIZE};
+  line-height: 1.35;
+  color: var(--matching-muted-text, var(--km-muted, #6f6359));
+`;
+
+export const CommentCancelButton = styled.button`
+  border: 1px solid var(--matching-card-border, var(--km-border, #e2d8ce));
+  background: transparent;
+  color: var(--matching-header-text, var(--km-text, #221a14));
+  border-radius: 10px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+`;
+
+export const CommentPublishButton = styled.button`
+  border: 1px solid var(--matching-accent, var(--km-accent, #e2762a));
+  background: var(--matching-accent, var(--km-accent, #e2762a));
+  color: #fff;
+  border-radius: 10px;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--matching-accent, #e2762a) 40%, transparent);
+    outline-offset: 2px;
+  }
+`;
+
 export const PublicCommentInput = styled.textarea`
   display: block;
   width: 100%;

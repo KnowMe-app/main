@@ -556,6 +556,11 @@ const DONOR_ROLE_FIELDS = new Set(baseSections
   .filter(name => !['name', 'surname', 'phone', 'country', 'region', 'city', 'telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'website'].includes(name)));
 const PARENT_ROLE_FIELDS = new Set(['seeking', 'programLocation', 'parentVia', 'parentPreferences', 'services']);
 
+// Батьки підписуються одним рядком «Як до вас звертатись» («Олена й
+// Андрій»), і поле «Прізвище» під ним лишалось без відповіді. Записане
+// прізвище з анкети не зникає.
+const PARENT_ONLY_HIDDEN_FIELDS = new Set(['surname']);
+
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','country','region','city','moreInfo_main','website']);
 
 // Сайт — лише агенції й клініці: донорці це поле тільки знижувало б відсоток
@@ -566,6 +571,20 @@ const PERSON_ROLES = ['ed', 'sm'];
 // раз над анкетами ролей.
 const SHARED_SECTION_KEYS = new Set(['personal', 'social']);
 const ORGANISATION_ROLES = ['ag', 'cl'];
+// Чого не питають у сурогатної мами, якщо донорської анкети в людини немає.
+//
+// Обидві ролі ділили одну анкету (`PERSON_ROLES`), і СМ заповнювала 49 полів
+// донорки: форму носа, губ і підборіддя, розмір грудей, окуляри — за ними
+// обирають донорку ооцитів, а не сурогатну маму, — та ще й питання «Чи
+// розглядаєте участь у програмі сурогатного материнства?», поставлене самій
+// сурогатній мамі. Лишається те, за чим СМ справді шукають: вагітності й
+// пологи, здоровʼя, зріст і вага, досвід, винагорода, куріння й алкоголь, «Про
+// себе». Записані значення з анкети не зникають — їх лише перестають питати.
+const SURROGATE_HIDDEN_FIELDS = new Set([
+  'eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'faceShape', 'noseShape',
+  'lipsShape', 'chin', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race',
+  'sport', 'education', 'profession', 'hobbies', 'twinsInFamily', 'surrogacyProgramInterest',
+]);
 const KNOWN_ROLES = new Set(PROFILE_ROLE_OPTIONS.map(option => option.value));
 
 // Поля «Мого профілю», яких немає в спільному `pickerFields`: той перелік
@@ -893,6 +912,10 @@ export const MyProfile = () => {
   const personRole = rolesList.find(role => PERSON_ROLES.includes(role)) || '';
   const organisationRole = rolesList.find(role => ORGANISATION_ROLES.includes(role)) || '';
   const isDonorRole = Boolean(personRole) || !normalizedRole || ['donor', 'до'].includes(normalizedRole);
+  // СМ без донорської анкети — скорочений набір (`SURROGATE_HIDDEN_FIELDS`).
+  const surrogateOnly = rolesList.includes('sm') && !rolesList.includes('ed');
+  // Лише батьки — побажання переїжджають у «Кого шукаєте», прізвища не питають.
+  const parentOnly = rolesList.length === 1 && rolesList[0] === 'ip';
   // Заголовки спільних розділів говорять мовою анкети, якій ці поля належать:
   // у донорки, яка ще й агентка, «Особисті дані» — її, а не агенції.
   const sectionTitleRole = personRole || selectedRole;
@@ -998,10 +1021,22 @@ export const MyProfile = () => {
       return [{ key: 'programs', title: '💶 Програми', fields: ['programs'], custom: 'programs' }];
     }
     if (role === 'ip') {
-      return [{ key: 'search', title: '🔎 Кого шукаєте', fields: ['seeking', 'programLocation', 'parentVia'], custom: 'parents' }];
+      // Побажання (`moreInfo_main`) стоять тут же, а не окремим розділом:
+      // поки вони жили в «Способі життя», батьки бачили «Кого шукаєте» двічі —
+      // розділом із чіпами й розділом з одним полем «Кого шукаєте», і у
+      // вкладках угорі теж двічі. Коли в людини є ще й власна анкета (донорки,
+      // СМ, агенції), поле лишається там, де його читає та роль.
+      const fields = ['seeking', 'programLocation', 'parentVia'];
+      return [{
+        key: 'search',
+        title: '🔎 Кого шукаєте',
+        fields: parentOnly ? [...fields, 'moreInfo_main'] : fields,
+        custom: 'parents',
+        extraFields: parentOnly ? ['moreInfo_main'] : [],
+      }];
     }
     return [];
-  }, []);
+  }, [parentOnly]);
   const roleSections = useMemo(() => roleSectionsFor(selectedRole), [roleSectionsFor, selectedRole]);
   const additionalRoleSections = useMemo(() => {
     const used = new Set(roleSections.map(section => section.key));
@@ -1018,7 +1053,11 @@ export const MyProfile = () => {
         title: resolveMyProfileSectionTitle(section.key, sectionTitleRole, section.title),
         fields: section.fields
           .filter(name => isDonorRole || visibleNonDonorFields.has(name))
-          .filter(name => organisationRole || !ORGANISATION_ONLY_FIELDS.has(name)),
+          .filter(name => organisationRole || !ORGANISATION_ONLY_FIELDS.has(name))
+          .filter(name => !surrogateOnly || !SURROGATE_HIDDEN_FIELDS.has(name))
+          .filter(name => !parentOnly || !PARENT_ONLY_HIDDEN_FIELDS.has(name))
+          // Побажання батьків стоять у «Кого шукаєте» (`extraFields`).
+          .filter(name => !parentOnly || name !== 'moreInfo_main'),
       }))
       .filter(section => section.fields.length > 0);
     const personalIndex = base.findIndex(section => section.key === 'personal');
@@ -1055,7 +1094,7 @@ export const MyProfile = () => {
     // Без жодної ролі донорки чи СМ «Про себе» — спільне, а не чиясь анкета.
     const rest = personAssigned ? [] : personSections;
     return [...shared, ...blocks, ...rest];
-  }, [additionalRoleSections, isDonorRole, organisationRole, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole]);
+  }, [additionalRoleSections, isDonorRole, organisationRole, parentOnly, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole, surrogateOnly]);
   const programRates = useProgramRates(Boolean(organisationRole));
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
 
@@ -2093,6 +2132,7 @@ export const MyProfile = () => {
             />
           ) : null}
           {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} /> : null}
+          {section.custom && section.extraFields?.length ? section.extraFields.map(renderField) : null}
           {!section.custom ? section.fields.map(renderField) : null}
         </FieldGroup>
       </SectionCard>

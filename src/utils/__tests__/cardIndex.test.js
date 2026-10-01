@@ -97,6 +97,19 @@ describe('cardIndex queries', () => {
     expect(getCompleteCachedProfile('cached-profile')).toBeNull();
   });
 
+  it('анкета, покладена в кеш до приїзду рівня доступу, повною не вважається', () => {
+    // Холодний старт: рівня доступу ще немає, і контакти в кеш не лягли.
+    localStorage.setItem('ownerId', 'service-viewer');
+    updateCard('early-profile', { name: 'A', phone: '+380000000000' });
+    // Рівень приїхав — право тепер є, але в кеші телефону немає.
+    localStorage.setItem('accessLevel', 'matching:view&write');
+    expect(getCompleteCachedProfile('early-profile')).toBeNull();
+
+    // Покладена вже з правом — повна.
+    updateCard('early-profile', { name: 'A', phone: '+380000000000' });
+    expect(getCompleteCachedProfile('early-profile')).toMatchObject({ phone: '+380000000000' });
+  });
+
   it('кешована видача пошуку скидається цілком, а кандидати фільтрів лишаються', () => {
     // Запис в `searchId` іде по всіх полях анкети, тож вирахувати, яких саме
     // запитів торкнулась зміна, не можна — скидається все. А кандидати фільтрів
