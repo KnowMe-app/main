@@ -10,6 +10,7 @@ describe('cardIndex queries', () => {
     clearMatchingSearchResultCache,
     buildMatchingSearchResultCacheKey,
     getCompleteCachedProfile,
+    getCachedProfileBody,
     getIndexIdsByQuery,
     setIndexIdsForQuery,
     getQueryEntry,
@@ -108,6 +109,18 @@ describe('cardIndex queries', () => {
     // Покладена вже з правом — повна.
     updateCard('early-profile', { name: 'A', phone: '+380000000000' });
     expect(getCompleteCachedProfile('early-profile')).toMatchObject({ phone: '+380000000000' });
+  });
+
+  // Тіло анкети без контактів — не повна анкета, але й не порожнеча: «спершу
+  // кеш» бере його звідси й дочитує самі контакти.
+  it('віддає кешоване тіло анкети навіть без контактів', () => {
+    localStorage.setItem('ownerId', 'ordinary-viewer');
+    localStorage.setItem('accessLevel', 'ed');
+    updateCard('body-only', { name: 'A', moreInfo_main: 'Про себе', phone: '+380000000000' });
+    expect(getCompleteCachedProfile('body-only')).toBeNull();
+    const body = getCachedProfileBody('body-only');
+    expect(body).toMatchObject({ name: 'A', moreInfo_main: 'Про себе' });
+    expect(body.phone).toBeUndefined();
   });
 
   it('кешована видача пошуку скидається цілком, а кандидати фільтрів лишаються', () => {

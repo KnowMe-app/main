@@ -8,7 +8,7 @@ import React, {
 import toast from 'react-hot-toast';
 import { FaUndo } from 'react-icons/fa';
 import {
-  addContactViewUser,
+  recordContactAction,
   addDislikeUser,
   fetchUserComments,
   lazyLoadProfilePhotos,
@@ -103,7 +103,6 @@ const MatchingHiddenList = ({
 
   const photoRequestedRef = useRef(new Set());
   const commentRequestedRef = useRef(new Set());
-  const contactViewKeysRef = useRef(new Set());
   const loadMoreRef = useRef(loadMore);
   useEffect(() => { loadMoreRef.current = loadMore; }, [loadMore]);
 
@@ -204,12 +203,10 @@ const MatchingHiddenList = ({
     });
   }, []);
 
-  const handleContactsOpened = useCallback(user => {
+  // Кожен дотик до контакту — дія (`recordContactAction`), а не розгортання блока.
+  const handleContactAction = useCallback((user, channel) => {
     if (!user?.userId) return;
-    const trackKey = `${ownerId || ''}:${user.userId}`;
-    if (contactViewKeysRef.current.has(trackKey)) return;
-    contactViewKeysRef.current.add(trackKey);
-    void addContactViewUser(user.userId, ownerId);
+    void recordContactAction(user.userId, ownerId, channel);
   }, [ownerId]);
 
   const handleUndo = useCallback((user, previousDislikedAt) => {
@@ -334,7 +331,7 @@ const MatchingHiddenList = ({
               onOpen={onOpenProfile}
               primaryAction={returnAction}
               onEditProfile={onEditProfile}
-              onContactsOpened={handleContactsOpened}
+              onContactAction={handleContactAction}
               clientComment={commentsByUserId[user.userId] || ''}
               onCommentSave={handleCommentSave}
               {...(buildRowExtras ? buildRowExtras(user) : null)}

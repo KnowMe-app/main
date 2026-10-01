@@ -111,7 +111,7 @@ import {
   lazyLoadProfilePhotos,
   fetchFavoriteUsers,
   fetchDislikeUsers,
-  addContactViewUser,
+  recordContactAction,
   addMatchingSearchQuery,
   filterMain,
   searchUsersOnly,
@@ -124,6 +124,8 @@ import {
   COMMENTS_ROOT_PATH,
   PUBLIC_COMMENTS_ROOT_PATH,
   fetchUsersByIds,
+  isProfileBuiltFromCache,
+  readProfileContacts,
   fetchMatchingCardsPage,
   fetchMatchingCardsByIds,
   clearMatchingCardsPageInFlight,
@@ -219,7 +221,7 @@ import {
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
-import { canOfferProfileContacts } from '../utils/profileVisibilityScope';
+import { canOfferProfileContacts, isOwnProfileDraftCard } from '../utils/profileVisibilityScope';
 import ProfileRow, {
   CommentBlock,
   PublicCommentBlock,
@@ -964,7 +966,13 @@ const contactDisplayValue = entry => {
  * Номерів у анкеті буває кілька — тоді перших рядків стільки ж, по одному на
  * номер: кожен зі своїми кнопками месенджерів.
  */
-const ProfileContactLinks = ({ user, role, language }) => {
+const ProfileContactLinks = ({ user, role, language, onContactAction }) => {
+  // Цифр номера без дотику немає: дотик до «Показати номер», як і до будь-якого
+  // іншого каналу, — дія, і вона рахується (`recordContactAction`). Інакше
+  // статистика «чи анкета цікава» мовчала б про тих, хто просто переписав
+  // номер з екрана.
+  const [revealedPhones, setRevealedPhones] = useState(() => new Set());
+  const act = channel => () => { if (onContactAction) onContactAction(channel); };
   const entries = getContactEntries(user).filter(entry => !MATCHING_HIDDEN_CONTACT_KEYS.includes(entry.key));
   if (!entries.length) return null;
 
@@ -975,17 +983,40 @@ const ProfileContactLinks = ({ user, role, language }) => {
     <ModernContactLinks onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
       {phones.map(entry => {
         const displayValue = contactDisplayValue(entry);
+        const phoneKey = `${entry.index}-${entry.value}`;
+        const revealed = revealedPhones.has(phoneKey);
+        const phoneLabel = revealed
+          ? `${getContactLabel('phone', language)}: ${displayValue}`
+          : uiText('Показати номер', language);
         return (
           <ContactPrimaryRow key={`phone-${entry.index}-${entry.value}`}>
-            <ModernContactLink
-              href={entry.href}
-              $role={role}
-              title={`${getContactLabel('phone', language)}: ${displayValue}`}
-              aria-label={`${getContactLabel('phone', language)}: ${displayValue}`}
-            >
-              <PhoneHandsetIcon />
-              <span>{displayValue}</span>
-            </ModernContactLink>
+            {revealed ? (
+              <ModernContactLink
+                href={entry.href}
+                $role={role}
+                title={phoneLabel}
+                aria-label={phoneLabel}
+                onClick={act('phone')}
+              >
+                <PhoneHandsetIcon />
+                <span>{displayValue}</span>
+              </ModernContactLink>
+            ) : (
+              <ModernContactLink
+                as="button"
+                type="button"
+                $role={role}
+                title={phoneLabel}
+                aria-label={phoneLabel}
+                onClick={() => {
+                  setRevealedPhones(previous => new Set(previous).add(phoneKey));
+                  act('phone')();
+                }}
+              >
+                <PhoneHandsetIcon />
+                <span>{phoneLabel}</span>
+              </ModernContactLink>
+            )}
             <ContactIconRow>
               {PHONE_QUICK_LINKS.map(({ key, Icon, label, build }) => (
                 <ContactIconLink
@@ -993,8 +1024,9 @@ const ProfileContactLinks = ({ user, role, language }) => {
                   href={build(entry.value)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  title={`${label}: ${displayValue}`}
-                  aria-label={`${label}: ${displayValue}`}
+                  title={uiText('{label} за номером', language, { label })}
+                  aria-label={uiText('{label} за номером', language, { label })}
+                  onClick={act(`phone-${key}`)}
                 >
                   <Icon />
                 </ContactIconLink>
@@ -1007,8 +1039,9 @@ const ProfileContactLinks = ({ user, role, language }) => {
         <ContactIconRow $standalone>
           {others.map(entry => {
             const Icon = getContactIcon(entry.key);
-            const displayValue = contactDisplayValue(entry);
-            const label = `${getContactLabel(entry.key, language)}: ${displayValue}`;
+            // Значення в підказці не стоїть: відкривається воно дотиком, і
+            // саме дотик рахується.
+            const label = getContactLabel(entry.key, language);
             return (
               <ContactIconLink
                 key={`${entry.key}-${entry.index}-${entry.value}`}
@@ -1017,6 +1050,7 @@ const ProfileContactLinks = ({ user, role, language }) => {
                 rel={isExternalContact(entry.key) ? 'noopener noreferrer' : undefined}
                 title={label}
                 aria-label={label}
+                onClick={act(entry.key)}
               >
                 <Icon />
               </ContactIconLink>
@@ -1123,7 +1157,6 @@ const SwipeableCard = ({
   const [dir, setDir] = useState(null);
   const favoriteButtonWrapRef = useRef(null);
   const dislikeButtonWrapRef = useRef(null);
-  const contactViewKeysRef = useRef(new Set());
   const contactDetailsRef = useRef(null);
   const touchStart = useRef(null);
   const swipedRef = useRef(false);
@@ -1211,14 +1244,14 @@ const SwipeableCard = ({
     .map(part => part[0]?.toUpperCase())
     .join('');
   const shouldShowHeroContent = Boolean(title || locationInfo || heroFields.length > 0 || statCells.length > 0 || summaryRows.length > 0);
+  // Розгорнути блок — ще не дія: рахується дотик до самого контакту
+  // (`handleContactAction`), а тут лише не даємо події піти в картку.
   const handleContactsToggle = e => {
     e.stopPropagation();
-    const owner = auth.currentUser;
-    if (!e.currentTarget.open || !owner || !user.userId) return;
-    const contactViewKey = `${multiDataOwnerId || owner.uid}:${user.userId}`;
-    if (contactViewKeysRef.current.has(contactViewKey)) return;
-    contactViewKeysRef.current.add(contactViewKey);
-    void addContactViewUser(user.userId, multiDataOwnerId);
+  };
+  const handleContactAction = channel => {
+    if (!auth.currentUser || !user.userId) return;
+    void recordContactAction(user.userId, multiDataOwnerId, channel);
   };
 
   const hasContactSection = sections.some(section => section.variant === 'contacts');
@@ -1226,8 +1259,7 @@ const SwipeableCard = ({
     e.stopPropagation();
     const details = contactDetailsRef.current;
     if (!details) return;
-    // `open = true` сам кидає `toggle`, тож перегляд контактів пишеться тим
-    // самим шляхом, що й при дотику до заголовка блока.
+    // Розгортання не рахується: дією стане дотик до номера чи месенджера.
     details.open = true;
     details.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   };
@@ -1378,7 +1410,7 @@ const SwipeableCard = ({
                     <FaChevronDown size={16} />
                   </span>
                 </ModernContactSummary>
-                <ProfileContactLinks user={user} role={resolvedRole} language={language} />
+                <ProfileContactLinks user={user} role={resolvedRole} language={language} onContactAction={handleContactAction} />
               </ModernContactDetails>
             </ModernSection>
           ))}
@@ -2049,7 +2081,6 @@ const Matching = () => {
   const [detailOpen, setDetailOpen] = useState(false);
   const [expandedRowIds, setExpandedRowIds] = useState(() => new Set());
   const feedScrollTopRef = useRef(0);
-  const rowContactViewKeysRef = useRef(new Set());
   // Spec §8: public records about a profile, readable by everyone signed in.
   // Kept apart from `comments`, which holds this viewer's own private note.
   const [publicComments, setPublicComments] = useState({});
@@ -6998,6 +7029,7 @@ const Matching = () => {
   // сорока наперед.
   const [fullProfileByUserId, setFullProfileByUserId] = useState({});
   const fullProfileRequestsRef = useRef(new Set());
+  const contactRequestsRef = useRef(new Set());
 
   const ensureFullProfile = React.useCallback(user => {
     const userId = user?.userId;
@@ -7027,6 +7059,25 @@ const Matching = () => {
     // самий ініціал (`surnameShort`), що й у видачі, — `ensureFullProfile`
     // мовчки виходив на першій умові, і `fetchUsersByIds`/`readProfileFromNodes`
     // не викликались, хоча право на повне прізвище картка вже мала.
+    // Повна анкета з кеша (`composeCachedCards` бере її замість проєкції), але
+    // без контактів: читачеві, чиє право тримається на `feedDate`, їх у кеш не
+    // кладуть, а службовому доступу — коли анкета лягла туди раніше за рівень
+    // доступу. Решта анкети на руках, тож з бекенду — лише вузол контактів
+    // цієї картки, а не анкета заново. Власна чернетка контакти несе сама.
+    const isFullCachedCard = !isMatchingSummaryCard(user) && !user?.__limitedProfile;
+    if (isFullCachedCard && !getContactEntries(user).length && !isOwnProfileDraftCard(user)) {
+      if (contactRequestsRef.current.has(userId)) return Promise.resolve();
+      contactRequestsRef.current.add(userId);
+      return readProfileContacts(userId)
+        .then(({ allowed, contacts }) => {
+          if (!allowed || !contacts || !Object.keys(contacts).length) return;
+          setFullProfileByUserId(previous => ({ ...previous, [userId]: { ...(previous[userId] || {}), ...contacts } }));
+        })
+        .catch(error => {
+          contactRequestsRef.current.delete(userId);
+          console.warn('[Matching] Failed to read card contacts', { userId, error });
+        });
+    }
     if (!isMatchingSummaryCard(user) && !user?.__limitedProfile) return Promise.resolve();
     if (fullProfileRequestsRef.current.has(userId)) return Promise.resolve();
     fullProfileRequestsRef.current.add(userId);
@@ -7051,7 +7102,9 @@ const Matching = () => {
       .then(hydrated => {
         const profile = hydrated?.[userId];
         if (!profile) return;
-        updateCard(userId, profile);
+        // Зібране з кеша (тіло плюс точково дочитані контакти) назад у кеш не
+        // кладеться: запис оновив би `cachedAt`, і старе тіло жило б ще TTL.
+        if (!isProfileBuiltFromCache(profile)) updateCard(userId, profile);
         setFullProfileByUserId(previous => ({ ...previous, [userId]: profile }));
       })
       .catch(error => {
@@ -8137,12 +8190,11 @@ const Matching = () => {
     }
   }, [language, ownerId]);
 
-  const handleRowContactsOpened = React.useCallback(user => {
+  // Дотик до контакту в рядку — дія, і кожна рахується (`recordContactAction`):
+  // розгорнути контакти ще не означає звʼязатись.
+  const handleRowContactAction = React.useCallback((user, channel) => {
     if (!user?.userId || !ownerId) return;
-    const trackKey = `${ownerId}:${user.userId}`;
-    if (rowContactViewKeysRef.current.has(trackKey)) return;
-    rowContactViewKeysRef.current.add(trackKey);
-    void addContactViewUser(user.userId, ownerId);
+    void recordContactAction(user.userId, ownerId, channel);
   }, [ownerId]);
 
   // Доповнення картки — це не редагування анкети, і кнопка ця не адмінська:
@@ -9007,7 +9059,7 @@ const Matching = () => {
                       onToggleExpand={handleToggleRowExpand}
                       onOpen={openDetailFor}
                       onEditProfile={handleRowEditProfile}
-                      onContactsOpened={handleRowContactsOpened}
+                      onContactAction={handleRowContactAction}
                       onRequestContacts={handleRequestRowContacts}
                       canViewContacts={canOfferProfileContacts({
                         card: user,

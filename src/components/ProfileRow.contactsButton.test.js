@@ -55,8 +55,8 @@ describe('кнопка контактів у рядку стрічки', () => {
   // ставала б мертвою рівно після невдалої спроби.
   it('просить анкету на кожне відкриття, а не один раз назавжди', () => {
     const onRequestContacts = jest.fn();
-    const onContactsOpened = jest.fn();
-    renderRow(feedCard, { onRequestContacts, onContactsOpened });
+    const onContactAction = jest.fn();
+    renderRow(feedCard, { onRequestContacts, onContactAction });
 
     const button = screen.getByTitle('Контакти');
     fireEvent.click(button);
@@ -65,7 +65,29 @@ describe('кнопка контактів у рядку стрічки', () => {
 
     expect(onRequestContacts).toHaveBeenCalledTimes(2);
     expect(onRequestContacts).toHaveBeenCalledWith(feedCard);
-    expect(onContactsOpened).toHaveBeenCalledTimes(2);
+    // Розгорнути контакти — ще не дія: лічильник мовчить.
+    expect(onContactAction).not.toHaveBeenCalled();
+  });
+
+  // Цифр номера без дотику немає: «Показати номер» — уже дія, і вона
+  // рахується, як і дотик до будь-якого каналу.
+  it('ховає цифри номера до дотику й рахує кожен дотик до контакту', () => {
+    const onContactAction = jest.fn();
+    renderRow(hydratedCard, { onRequestContacts: jest.fn(), onContactAction });
+    fireEvent.click(screen.getByTitle('Контакти'));
+
+    expect(screen.queryByText('+380501112233')).not.toBeInTheDocument();
+    expect(screen.queryByTitle(/380501112233/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Показати номер' }));
+    expect(onContactAction).toHaveBeenLastCalledWith(hydratedCard, 'phone');
+    expect(screen.getByText('+380501112233')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('Viber за номером'));
+    expect(onContactAction).toHaveBeenLastCalledWith(hydratedCard, 'phone-viber');
+    fireEvent.click(screen.getByTitle('Telegram'));
+    expect(onContactAction).toHaveBeenLastCalledWith(hydratedCard, 'telegram');
+    expect(onContactAction).toHaveBeenCalledTimes(3);
   });
 
   it('поки читання триває, каже про це, а не вдає, що контактів немає', () => {

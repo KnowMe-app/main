@@ -25,6 +25,8 @@ const EN_BY_UK = {
   'Побачать усі користувачі. Ваше імʼя не показується.': 'Everyone will see this. Your name is not shown.',
   'Зберегти відгук': 'Save review',
   'Не публікувати': 'Discard',
+  'Показати номер': 'Show number',
+  '{label} за номером': '{label} by number',
   'Сімейний стан': 'Marital status',
   'Повернути': 'Restore',
   'Відкрити меню профілю': 'Open profile menu',

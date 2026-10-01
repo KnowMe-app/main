@@ -427,6 +427,21 @@ export const getCompleteCachedProfile = id => {
   return card;
 };
 
+/**
+ * Тіло кешованої анкети — без вимоги, щоб у ньому лежали контакти.
+ *
+ * Контакти в кеші бувають не завжди (`sanitizeMatchingCardForCache`), а решта
+ * анкети — освіта, зовнішність, «Про себе» — лежить там так само свіжою. Тому
+ * «спершу кеш» бере звідси тіло, а з бекенду дочитує самий лише вузол
+ * контактів (`readProfileContacts`), а не пʼять вузлів анкети заново.
+ */
+export const getCachedProfileBody = id => {
+  if (!id) return null;
+  const card = getCard(id);
+  if (!card || card.cacheVersion !== CARDS_CACHE_VERSION) return null;
+  return card;
+};
+
 export const getCardsByIds = ids => {
   const cards = loadCards();
   let changed = false;

@@ -259,38 +259,75 @@ export const renderFacts = (user, priorityKeys = [], language) => {
  * і кожен з них коштував цілого рядка; тепер вони йдуть значками під номером.
  * Що саме за значком, каже `title`.
  */
-export const ContactLinks = ({ entries, language }) => {
+export const ContactLinks = ({ entries, language, onContactAction }) => {
+  // Режим лічильника (`onContactAction`): контакти — це дії, і кожен дотик до
+  // будь-якого каналу рахується (`recordContactAction`) як знак, що анкета
+  // справді зацікавила. Цифр номера тут без дотику не видно: стоїть кнопка
+  // «Показати номер», і саме вона першою стає дією. Без обробника (шапка
+  // форми доповнення, де номер і так стоїть у полі нижче) номер показується
+  // одразу, як і був.
+  const tracked = typeof onContactAction === 'function';
+  const [revealedPhones, setRevealedPhones] = useState(() => new Set());
   const phones = entries.filter(entry => entry.key === 'phone');
   const others = entries.filter(entry => entry.key !== 'phone');
+  const act = channel => () => { if (tracked) onContactAction(channel); };
 
   return (
     <>
       {phones.map(entry => {
         const displayValue = formatPhoneDisplay(entry.value);
-        const phoneLabel = `${getContactLabel('phone', language)}: ${displayValue}`;
+        const phoneKey = `${entry.index}-${entry.value}`;
+        const hidden = tracked && !revealedPhones.has(phoneKey);
+        const phoneLabel = hidden
+          ? uiText('Показати номер', language)
+          : `${getContactLabel('phone', language)}: ${displayValue}`;
         return (
-          <S.ContactPhoneRow key={`phone-${entry.index}-${entry.value}`}>
-            <S.ContactPhoneLink href={entry.href} title={phoneLabel} aria-label={phoneLabel}>
-              {/* Значок номера лежить у такій самій рамці, як значки решти
-                  каналів: ліва межа блока контактів одна на всі рядки. */}
-              <S.ContactIconBadge aria-hidden="true">
-                <PhoneHandsetIcon />
-              </S.ContactIconBadge>
-              <span>{displayValue}</span>
-            </S.ContactPhoneLink>
+          <S.ContactPhoneRow key={`phone-${phoneKey}`}>
+            {hidden ? (
+              <S.ContactPhoneLink
+                as="button"
+                type="button"
+                title={phoneLabel}
+                aria-label={phoneLabel}
+                onClick={() => {
+                  setRevealedPhones(previous => new Set(previous).add(phoneKey));
+                  onContactAction('phone');
+                }}
+              >
+                <S.ContactIconBadge aria-hidden="true">
+                  <PhoneHandsetIcon />
+                </S.ContactIconBadge>
+                <span>{phoneLabel}</span>
+              </S.ContactPhoneLink>
+            ) : (
+              <S.ContactPhoneLink href={entry.href} title={phoneLabel} aria-label={phoneLabel} onClick={act('phone')}>
+                {/* Значок номера лежить у такій самій рамці, як значки решти
+                    каналів: ліва межа блока контактів одна на всі рядки. */}
+                <S.ContactIconBadge aria-hidden="true">
+                  <PhoneHandsetIcon />
+                </S.ContactIconBadge>
+                <span>{displayValue}</span>
+              </S.ContactPhoneLink>
+            )}
             <S.ContactIconRow>
-              {PHONE_QUICK_LINKS.map(({ key, Icon, label, build }) => (
-                <S.ContactIconLink
-                  key={`phone-${key}-${entry.index}`}
-                  href={build(entry.value)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={`${label}: ${displayValue}`}
-                  aria-label={`${label}: ${displayValue}`}
-                >
-                  <Icon />
-                </S.ContactIconLink>
-              ))}
+              {PHONE_QUICK_LINKS.map(({ key, Icon, label, build }) => {
+                const quickLabel = tracked
+                  ? uiText('{label} за номером', language, { label })
+                  : `${label}: ${displayValue}`;
+                return (
+                  <S.ContactIconLink
+                    key={`phone-${key}-${entry.index}`}
+                    href={build(entry.value)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={quickLabel}
+                    aria-label={quickLabel}
+                    onClick={act(`phone-${key}`)}
+                  >
+                    <Icon />
+                  </S.ContactIconLink>
+                );
+              })}
             </S.ContactIconRow>
           </S.ContactPhoneRow>
         );
@@ -299,7 +336,11 @@ export const ContactLinks = ({ entries, language }) => {
         <S.ContactIconRow $standalone>
           {others.map(entry => {
             const Icon = getContactIcon(entry.key);
-            const label = `${getContactLabel(entry.key, language)}: ${entry.value}`;
+            // У режимі лічильника значення в підказці не стоїть: ник чи пошта
+            // відкриваються дотиком, і саме дотик рахується.
+            const label = tracked
+              ? getContactLabel(entry.key, language)
+              : `${getContactLabel(entry.key, language)}: ${entry.value}`;
             return (
               <S.ContactIconLink
                 key={`${entry.key}-${entry.index}-${entry.value}`}
@@ -308,6 +349,7 @@ export const ContactLinks = ({ entries, language }) => {
                 rel={isExternalContact(entry.key) ? 'noopener noreferrer' : undefined}
                 title={label}
                 aria-label={label}
+                onClick={act(entry.key)}
               >
                 <Icon />
               </S.ContactIconLink>
@@ -319,7 +361,7 @@ export const ContactLinks = ({ entries, language }) => {
   );
 };
 
-export const ContactsSection = ({ user, onOpened }) => {
+export const ContactsSection = ({ user, onContactAction }) => {
   const { language } = useAppSettings();
   const entries = useMemo(
     () => getContactEntries(user).filter(entry => entry.key !== 'vk'),
@@ -334,11 +376,7 @@ export const ContactsSection = ({ user, onOpened }) => {
       <S.ContactsHeader
         type="button"
         onClick={() => {
-          setOpen(current => {
-            const next = !current;
-            if (next && onOpened) onOpened(user);
-            return next;
-          });
+          setOpen(current => !current);
         }}
       >
         {translateProfileLabel('Contacts', language)}
@@ -346,7 +384,11 @@ export const ContactsSection = ({ user, onOpened }) => {
       </S.ContactsHeader>
       {open && (
         <S.ContactsBody>
-          <ContactLinks entries={entries} language={language} />
+          <ContactLinks
+            entries={entries}
+            language={language}
+            onContactAction={onContactAction ? channel => onContactAction(user, channel) : undefined}
+          />
         </S.ContactsBody>
       )}
     </S.ContactsBlock>
@@ -1067,7 +1109,8 @@ const ProfileRow = ({
   onToggleExpand,
   onOpen,
   onEditProfile,
-  onContactsOpened,
+  // Дотик до будь-якого контакту — дія (`recordContactAction`): `(user, channel)`.
+  onContactAction,
   onRequestContacts,
   // Чи цьому читачеві взагалі є що тут відкривати. Питання вирішує той, хто
   // знає і картку, і читача (`canOfferProfileContacts` у Matching), — рядок
@@ -1224,7 +1267,6 @@ const ProfileRow = ({
       const next = !open;
       if (next) {
         if (onRequestContacts) onRequestContacts(user);
-        if (onContactsOpened) onContactsOpened(user);
       }
       return next;
     });
@@ -1380,7 +1422,11 @@ const ProfileRow = ({
       {contactsOpen && (
         <S.RowContacts onClick={e => e.stopPropagation()}>
           {contactEntries.length > 0 ? (
-            <ContactLinks entries={contactEntries} language={language} />
+            <ContactLinks
+              entries={contactEntries}
+              language={language}
+              onContactAction={onContactAction ? channel => onContactAction(user, channel) : undefined}
+            />
           ) : (
             <S.RowContactsNote>
               {uiText(contactsLoading ? 'Шукаємо контакти…' : 'Контактів немає або вони закриті', language)}
@@ -1405,7 +1451,7 @@ const ProfileRow = ({
               Там, де кнопки немає (список прихованих), блок лишається
               єдиним місцем, звідки контакти видно. */}
           {!showContactsButton && canViewContacts && (
-            <ContactsSection user={user} onOpened={onContactsOpened} />
+            <ContactsSection user={user} onContactAction={onContactAction} />
           )}
         </S.More>
       )}
