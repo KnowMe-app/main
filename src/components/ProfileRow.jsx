@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPencilAlt } from 'react-icons/fa';
+import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPencilAlt, FaRegCommentDots, FaRegStickyNote } from 'react-icons/fa';
 import {
   getProfileAge,
   getProfileBio,
@@ -250,148 +250,90 @@ export const renderFacts = (user, priorityKeys = [], language) => {
 };
 
 /**
- * Контакти однієї картки: номер у першому рядку, решта — значками в другому.
+ * Контакти однієї картки — один рядок значків.
  *
- * Номер читають очима: його переписують, диктують і звіряють, тож він стоїть
- * повністю, а поруч із ним — три швидкі кнопки, зібрані з нього ж (Telegram,
- * Viber, WhatsApp). Нового контакту вони не несуть, тому й стоять біля номера,
- * а не окремим переліком. Пошта й ніки читання не потребують — у них тапають, —
- * і кожен з них коштував цілого рядка; тепер вони йдуть значками під номером.
- * Що саме за значком, каже `title`.
+ * Трубка — це дзвінок (`tel:`), а поруч три кнопки, зібрані з того самого
+ * номера (Telegram, Viber, WhatsApp); далі значками решта каналів — пошта,
+ * ніки, посилання. Цифр номера на екрані немає: доти тут стояла кнопка
+ * «Показати номер», а за нею — номер текстом, і разом з рядком значків під
+ * ним контакти займали два-три рядки картки заради тексту, який ніхто не
+ * читав — номер набирають дотиком до трубки, а не переписують. Що саме за
+ * значком, каже `title`. Рядок переноситься сам, коли значків більше, ніж
+ * уміщає ширина.
+ *
+ * Режим лічильника (`onContactAction`): контакти — це дії, і кожен дотик до
+ * будь-якого каналу рахується (`recordContactAction`) як знак, що анкета
+ * справді зацікавила; значень у підказках тоді немає — відкривається канал
+ * дотиком, і саме дотик рахується. Без обробника (шапка форми доповнення, де
+ * номер і так стоїть у полі нижче) підказка називає й значення.
  */
 export const ContactLinks = ({ entries, language, onContactAction }) => {
-  // Режим лічильника (`onContactAction`): контакти — це дії, і кожен дотик до
-  // будь-якого каналу рахується (`recordContactAction`) як знак, що анкета
-  // справді зацікавила. Цифр номера тут без дотику не видно: стоїть кнопка
-  // «Показати номер», і саме вона першою стає дією. Без обробника (шапка
-  // форми доповнення, де номер і так стоїть у полі нижче) номер показується
-  // одразу, як і був.
   const tracked = typeof onContactAction === 'function';
-  const [revealedPhones, setRevealedPhones] = useState(() => new Set());
   const phones = entries.filter(entry => entry.key === 'phone');
   const others = entries.filter(entry => entry.key !== 'phone');
   const act = channel => () => { if (tracked) onContactAction(channel); };
-
-  return (
-    <>
-      {phones.map(entry => {
-        const displayValue = formatPhoneDisplay(entry.value);
-        const phoneKey = `${entry.index}-${entry.value}`;
-        const hidden = tracked && !revealedPhones.has(phoneKey);
-        const phoneLabel = hidden
-          ? uiText('Показати номер', language)
-          : `${getContactLabel('phone', language)}: ${displayValue}`;
-        return (
-          <S.ContactPhoneRow key={`phone-${phoneKey}`}>
-            {hidden ? (
-              <S.ContactPhoneLink
-                as="button"
-                type="button"
-                title={phoneLabel}
-                aria-label={phoneLabel}
-                onClick={() => {
-                  setRevealedPhones(previous => new Set(previous).add(phoneKey));
-                  onContactAction('phone');
-                }}
-              >
-                <S.ContactIconBadge aria-hidden="true">
-                  <PhoneHandsetIcon />
-                </S.ContactIconBadge>
-                <span>{phoneLabel}</span>
-              </S.ContactPhoneLink>
-            ) : (
-              <S.ContactPhoneLink href={entry.href} title={phoneLabel} aria-label={phoneLabel} onClick={act('phone')}>
-                {/* Значок номера лежить у такій самій рамці, як значки решти
-                    каналів: ліва межа блока контактів одна на всі рядки. */}
-                <S.ContactIconBadge aria-hidden="true">
-                  <PhoneHandsetIcon />
-                </S.ContactIconBadge>
-                <span>{displayValue}</span>
-              </S.ContactPhoneLink>
-            )}
-            <S.ContactIconRow>
-              {PHONE_QUICK_LINKS.map(({ key, Icon, label, build }) => {
-                const quickLabel = tracked
-                  ? uiText('{label} за номером', language, { label })
-                  : `${label}: ${displayValue}`;
-                return (
-                  <S.ContactIconLink
-                    key={`phone-${key}-${entry.index}`}
-                    href={build(entry.value)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={quickLabel}
-                    aria-label={quickLabel}
-                    onClick={act(`phone-${key}`)}
-                  >
-                    <Icon />
-                  </S.ContactIconLink>
-                );
-              })}
-            </S.ContactIconRow>
-          </S.ContactPhoneRow>
-        );
-      })}
-      {others.length > 0 && (
-        <S.ContactIconRow $standalone>
-          {others.map(entry => {
-            const Icon = getContactIcon(entry.key);
-            // У режимі лічильника значення в підказці не стоїть: ник чи пошта
-            // відкриваються дотиком, і саме дотик рахується.
-            const label = tracked
-              ? getContactLabel(entry.key, language)
-              : `${getContactLabel(entry.key, language)}: ${entry.value}`;
-            return (
-              <S.ContactIconLink
-                key={`${entry.key}-${entry.index}-${entry.value}`}
-                href={entry.href}
-                target={isExternalContact(entry.key) ? '_blank' : undefined}
-                rel={isExternalContact(entry.key) ? 'noopener noreferrer' : undefined}
-                title={label}
-                aria-label={label}
-                onClick={act(entry.key)}
-              >
-                <Icon />
-              </S.ContactIconLink>
-            );
-          })}
-        </S.ContactIconRow>
-      )}
-    </>
-  );
-};
-
-export const ContactsSection = ({ user, onContactAction }) => {
-  const { language } = useAppSettings();
-  const entries = useMemo(
-    () => getContactEntries(user).filter(entry => entry.key !== 'vk'),
-    [user]
-  );
-  const [open, setOpen] = useState(false);
-
   if (!entries.length) return null;
 
   return (
-    <S.ContactsBlock>
-      <S.ContactsHeader
-        type="button"
-        onClick={() => {
-          setOpen(current => !current);
-        }}
-      >
-        {translateProfileLabel('Contacts', language)}
-        {!open && <S.ContactsStatus>{profileUiText('show', language)}</S.ContactsStatus>}
-      </S.ContactsHeader>
-      {open && (
-        <S.ContactsBody>
-          <ContactLinks
-            entries={entries}
-            language={language}
-            onContactAction={onContactAction ? channel => onContactAction(user, channel) : undefined}
-          />
-        </S.ContactsBody>
-      )}
-    </S.ContactsBlock>
+    <S.ContactIconRow>
+      {phones.map(entry => {
+        const displayValue = formatPhoneDisplay(entry.value);
+        const phoneKey = `${entry.index}-${entry.value}`;
+        const callLabel = tracked
+          ? uiText('Подзвонити', language)
+          : `${getContactLabel('phone', language)}: ${displayValue}`;
+        return (
+          <React.Fragment key={`phone-${phoneKey}`}>
+            <S.ContactIconLink
+              href={entry.href}
+              $primary
+              title={callLabel}
+              aria-label={callLabel}
+              onClick={act('phone')}
+            >
+              <PhoneHandsetIcon />
+            </S.ContactIconLink>
+            {PHONE_QUICK_LINKS.map(({ key, Icon, label, build }) => {
+              const quickLabel = tracked
+                ? uiText('{label} за номером', language, { label })
+                : `${label}: ${displayValue}`;
+              return (
+                <S.ContactIconLink
+                  key={`phone-${key}-${entry.index}`}
+                  href={build(entry.value)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={quickLabel}
+                  aria-label={quickLabel}
+                  onClick={act(`phone-${key}`)}
+                >
+                  <Icon />
+                </S.ContactIconLink>
+              );
+            })}
+          </React.Fragment>
+        );
+      })}
+      {others.map(entry => {
+        const Icon = getContactIcon(entry.key);
+        const label = tracked
+          ? getContactLabel(entry.key, language)
+          : `${getContactLabel(entry.key, language)}: ${entry.value}`;
+        return (
+          <S.ContactIconLink
+            key={`${entry.key}-${entry.index}-${entry.value}`}
+            href={entry.href}
+            target={isExternalContact(entry.key) ? '_blank' : undefined}
+            rel={isExternalContact(entry.key) ? 'noopener noreferrer' : undefined}
+            title={label}
+            aria-label={label}
+            onClick={act(entry.key)}
+          >
+            <Icon />
+          </S.ContactIconLink>
+        );
+      })}
+    </S.ContactIconRow>
   );
 };
 
@@ -1046,12 +988,14 @@ export const ProfileNotes = ({
         <S.NotesAddRow data-testid="notes-add-row">
           {!showPublic && (
             <S.NotesAddButton type="button" $public onClick={openLane('public')}>
-              + {uiText('Відгук', language)}
+              <FaRegCommentDots aria-hidden="true" />
+              <span>{uiText('Відгук', language)}</span>
             </S.NotesAddButton>
           )}
           {!showPrivate && (
             <S.NotesAddButton type="button" onClick={openLane('private')}>
-              + {uiText('Памʼятка', language)}
+              <FaRegStickyNote aria-hidden="true" />
+              <span>{uiText('Памʼятка', language)}</span>
             </S.NotesAddButton>
           )}
         </S.NotesAddRow>
@@ -1201,16 +1145,39 @@ const ProfileRow = ({
   );
   const hasLocation = Boolean(location);
 
-  // Кнопка контактів малюється завжди й нічого не читає наперед: у картці
-  // стрічки контактів немає, бо вони живуть в окремому вузлі за межею
-  // приватності. Дотик запускає те саме читання анкети, що й відкрита картка,
-  // — і всі перевірки права відбуваються там, а не тут.
-  const [contactsOpen, setContactsOpen] = useState(false);
-  // Кнопки немає там, де за нею нічого не стоїть. Картка поза стрічкою, на яку
-  // читач не має права, контактів не віддасть — ані кнопці, ані розгорнутому
-  // блоку, — а сам значок обіцяв, що віддасть, і кожне натискання коштувало
-  // круга до бази заради «Контактів немає або вони закриті».
-  const showContactsButton = Boolean(onRequestContacts) && !isLimited && canViewContacts;
+  // Контакти стоять у рядку самі, без кнопки «Контакти»: у картці стрічки
+  // їх немає (вони живуть в окремому вузлі за межею приватності), тож рядок,
+  // щойно зʼявився на екрані, просить їх сам (`onRequestContacts`) — одним
+  // точковим читанням `profileContacts/{id}` і лише там, де за ними щось
+  // стоїть (`canViewContacts`: картка в стрічці, тобто з `feedDate`, власна
+  // чернетка або службовий доступ). Кнопка коштувала рядка в ряду рішень і
+  // дотику на кожну картку заради двох рядків значків.
+  const shouldLoadContacts = Boolean(onRequestContacts) && !isLimited && canViewContacts && contactEntries.length === 0;
+  const cardRef = useRef(null);
+  const contactsRequestedRef = useRef(false);
+  useEffect(() => {
+    if (!shouldLoadContacts || contactsRequestedRef.current) return undefined;
+    const node = cardRef.current;
+    const request = () => {
+      if (contactsRequestedRef.current) return;
+      contactsRequestedRef.current = true;
+      onRequestContacts(user);
+    };
+    // Просимо лише для рядків, які справді на екрані (з запасом на екран
+    // уперед), а не для всієї сторінки наперед.
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      request();
+      return undefined;
+    }
+    const observer = new IntersectionObserver(observed => {
+      if (observed.some(entry => entry.isIntersecting)) {
+        observer.disconnect();
+        request();
+      }
+    }, { rootMargin: '600px 0px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [onRequestContacts, shouldLoadContacts, user]);
 
   // Стрілка стоїть у кожному нефільтрованому рядку й числа біля себе не несе.
   //
@@ -1227,9 +1194,7 @@ const ProfileRow = ({
   // — інакше картка без жодного зайвого поля в проєкції ховала б і саму
   // можливість прочитати анкету.
   const canExpandDetails = !isLimited;
-  const hasMoreDetails = detailSections.length > 0
-    || Boolean(bio)
-    || (!showContactsButton && canViewContacts && contactEntries.length > 0);
+  const hasMoreDetails = detailSections.length > 0 || Boolean(bio);
 
   // Стан публікації читається з картки, а не з `publish`: у проєкції стрічки
   // такого ключа немає (див. `isMatchingCardPublished`).
@@ -1261,16 +1226,6 @@ const ProfileRow = ({
   // описує вже почате читання словом (`describeReviewsState` нижче), тож
   // локальної позначки «просили» тут більше не тримають.
   const hasPublicReview = Boolean(user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]);
-
-  const toggleContacts = () => {
-    setContactsOpen(open => {
-      const next = !open;
-      if (next) {
-        if (onRequestContacts) onRequestContacts(user);
-      }
-      return next;
-    });
-  };
 
   const touchStartRef = useRef(null);
   const swipedRef = useRef(false);
@@ -1316,6 +1271,7 @@ const ProfileRow = ({
       // Якір для відновлення позиції: повернувшись до стрічки, сторінка шукає
       // саме цей рядок, а не піксель (див. `SCROLL_ANCHOR_KEY` у `Matching`).
       data-card-id={user?.userId}
+      ref={cardRef}
       onClick={handleRowClick}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
@@ -1421,19 +1377,13 @@ const ProfileRow = ({
       <ProfileFactList rows={summaryRows} />
       {!isLimited ? <CardRoleBlock card={user} programsContext={programsContext} language={language} /> : null}
 
-      {contactsOpen && (
-        <S.RowContacts onClick={e => e.stopPropagation()}>
-          {contactEntries.length > 0 ? (
-            <ContactLinks
-              entries={contactEntries}
-              language={language}
-              onContactAction={onContactAction ? channel => onContactAction(user, channel) : undefined}
-            />
-          ) : (
-            <S.RowContactsNote>
-              {uiText(contactsLoading ? 'Шукаємо контакти…' : 'Контактів немає або вони закриті', language)}
-            </S.RowContactsNote>
-          )}
+      {contactEntries.length > 0 && (
+        <S.RowContacts onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+          <ContactLinks
+            entries={contactEntries}
+            language={language}
+            onContactAction={onContactAction ? channel => onContactAction(user, channel) : undefined}
+          />
         </S.RowContacts>
       )}
 
@@ -1447,14 +1397,6 @@ const ProfileRow = ({
               «Одяг: 34–36» тут була третім почерком тих самих фактів. */}
           <ProfileAboutSection text={bio} language={language} accent={roleAccent} />
           <ProfileDetailSections sections={detailSections} accent={roleAccent} />
-          {/* Контакти тут другим списком не йдуть: їх показує кнопка з
-              трубкою, і поки блок «усі дані» дублював їх, у чернетці той
-              самий номер стояв двічі — раз під кнопкою, раз під стрілкою.
-              Там, де кнопки немає (список прихованих), блок лишається
-              єдиним місцем, звідки контакти видно. */}
-          {!showContactsButton && canViewContacts && (
-            <ContactsSection user={user} onContactAction={onContactAction} />
-          )}
         </S.More>
       )}
 
@@ -1519,7 +1461,7 @@ const ProfileRow = ({
           написами («Доповнити дані», «Перевірити наявність відгуків»), і
           картка з трьох фактів займала пів екрана. Що робить кожна, каже
           `title` і `aria-label` — саме їх читає й екранний диктор. */}
-      {!preview && (showContactsButton || canExpandDetails || (!isLimited && (primaryAction || secondaryAction))) && (
+      {!preview && (canExpandDetails || (!isLimited && (primaryAction || secondaryAction))) && (
         <S.RowFooterActions onClick={e => e.stopPropagation()}>
           {!isLimited && (primaryAction || secondaryAction) && (
             <S.RowReactionPair data-testid="row-reactions">
@@ -1550,19 +1492,6 @@ const ProfileRow = ({
                 </S.RowActionButton>
               )}
             </S.RowReactionPair>
-          )}
-          {showContactsButton && (
-            <S.RowContactsButton
-              type="button"
-              $on={contactsOpen}
-              title={uiText('Контакти', language)}
-              aria-label={uiText('Контакти', language)}
-              aria-expanded={contactsOpen}
-              onClick={e => { e.stopPropagation(); toggleContacts(); }}
-            >
-              <PhoneHandsetIcon size={13} />
-              <span>{uiText('Контакти', language)}</span>
-            </S.RowContactsButton>
           )}
           {canExpandDetails && (
             <S.RowFooterButton

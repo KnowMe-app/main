@@ -118,12 +118,12 @@ const UK_BY_EN_LABEL = {
   kg: 'кг',
 
   // Короткі назви ролей для стрічки — повні лишаються вище.
-  Donor: 'Донорка',
+  Donor: 'Донор',
   Parents: 'Батьки',
   Surrogate: 'Сурогатна',
 
   // ролі
-  'Egg donor': 'Донорка ооцитів',
+  'Egg donor': 'Донор ооцитів',
   Agency: 'Агенція',
   'Intended parents': 'Біологічні батьки',
   'Surrogate mother': 'Сурогатна мати',

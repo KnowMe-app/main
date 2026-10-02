@@ -36,7 +36,7 @@ describe('my-profile: видалення і очищення анкети', () =
     expect(submitWrap).toContain('onClick={publishProfile}');
     expect(submitWrap).not.toContain("setShowInfoModal('delConfirm')");
 
-    const menu = source.slice(source.indexOf('const dotsMenu = () => ('), source.indexOf('const fieldsMap = useMemo('));
+    const menu = source.slice(source.indexOf('const dotsMenu = ({ close } = {}) => ('), source.indexOf('const fieldsMap = useMemo('));
     expect(menu).toContain("onClearProfile={isProfileAccessConfirmed ? () => { setClearRoleTarget(''); setShowInfoModal('delConfirm'); } : undefined}");
   });
 

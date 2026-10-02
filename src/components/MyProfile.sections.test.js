@@ -15,16 +15,16 @@ describe('My Profile section configuration', () => {
 
   it('places email immediately before phone after profile access is confirmed', () => {
     expect(personalFields).toBeDefined();
-    expect(source).toContain("fields.splice(2, 0, 'email')");
+    expect(source).toContain("fields.splice(fields.indexOf('phone'), 0, 'email')");
 
     const confirmedPersonalFields = [...personalFields];
-    confirmedPersonalFields.splice(2, 0, 'email');
+    confirmedPersonalFields.splice(confirmedPersonalFields.indexOf('phone'), 0, 'email');
 
     expect(confirmedPersonalFields).toEqual(expect.arrayContaining(['email', 'phone']));
     expect(confirmedPersonalFields.indexOf('phone'))
       .toBe(confirmedPersonalFields.indexOf('email') + 1);
     expect(confirmedPersonalFields.slice(0, 5))
-      .toEqual(['name', 'surname', 'email', 'phone', 'birth']);
+      .toEqual(['name', 'surname', 'fathersname', 'email', 'phone']);
   });
 
   it('keeps email in access and phone in personal data before authorization', () => {

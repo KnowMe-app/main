@@ -44,6 +44,14 @@ const RoleHeading = styled.div`
   color: ${MUTED};
 `;
 
+// Назва — власна назва організації, тож без верхнього регістру підпису ролі.
+const AgencyName = styled.span`
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  color: ${TEXT};
+`;
+
 const Line = styled.div`
   font-size: 13px;
   color: ${MUTED};
@@ -94,12 +102,21 @@ export const CardRoleBlock = ({ card, programsContext, language }) => {
   const { programs } = useCardPrograms(card, isOrganisation);
   const seeking = pickText(card?.seeking);
   const hasParentContent = isParent && (seeking || pickText(card?.programLocation));
-  if (!hasParentContent && !(isOrganisation && programs.length)) return null;
+  // Назва агенції чи клініки окремо від імені людини (`agencyName`): у
+  // картці з двома ролями імʼя в шапці — людини, а організація називає себе
+  // тут, над своїми програмами.
+  const agencyName = isOrganisation && isAlsoPerson ? pickText(card?.agencyName) : '';
+  if (!hasParentContent && !(isOrganisation && (programs.length || agencyName))) return null;
   const organisationRole = roles.find(role => ORGANISATION_ROLES.includes(role));
 
   return (
     <Block onClick={event => event.stopPropagation()}>
-      {isOrganisation && isAlsoPerson && programs.length ? <RoleHeading>{getRoleLabel(organisationRole, language)}</RoleHeading> : null}
+      {isOrganisation && isAlsoPerson && (programs.length || agencyName) ? (
+        <RoleHeading>
+          {getRoleLabel(organisationRole, language)}
+          {agencyName ? <AgencyName> · {agencyName}</AgencyName> : null}
+        </RoleHeading>
+      ) : null}
       {hasParentContent ? (
         <Line>
           {seeking && SEEKING_PHRASES[seeking] ? <><b>{uiText('Шукають', language)}:</b> {uiText(SEEKING_PHRASES[seeking], language)}</> : null}

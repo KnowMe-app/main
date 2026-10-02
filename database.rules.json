@@ -138,6 +138,8 @@
         "programsAt": {
           ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now + 600000"
         },
+        "agencyName": {},
+        "hairStructure": {},
         "seekingRole": {
           ".validate": "newData.val() == 'ed' || newData.val() == 'sm' || newData.val() == 'both'"
         },

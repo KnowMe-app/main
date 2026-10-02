@@ -37,7 +37,7 @@ export const hasVisibleOrganisationRole = card => {
 };
 
 export const PROGRAM_TYPE_LABELS = Object.freeze({
-  ed: 'Донорка ооцитів',
+  ed: 'Донор ооцитів',
   sm: 'Сурогатна мати',
 });
 

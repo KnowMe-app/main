@@ -9,7 +9,7 @@
  * не пропонували.
  */
 export const PROFILE_ROLE_OPTIONS = Object.freeze([
-  { value: 'ed', label: 'Донорка ооцитів' },
+  { value: 'ed', label: 'Донор ооцитів' },
   { value: 'sm', label: 'Сурогатна мати' },
   { value: 'ip', label: 'Біологічні батьки' },
   { value: 'ag', label: 'Агенція' },

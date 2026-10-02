@@ -183,22 +183,6 @@ describe('публічні коментарі', () => {
     expect(source).toContain("{profileUiText('publicComment', language)}");
   });
 
-  // Дві доріжки нотаток стоять у картці будь-якої розкладки: розкладка міняє
-  // те, як картку показують, а не те, що про людину вже записали. Поки плитка
-  // галереї їх не мала, читач там не бачив власної нотатки — і дописував
-  // поверх запису, якого не видно.
-  it('показує обидві доріжки і в плитці галереї', () => {
-    const source = matching();
-    const tile = source.slice(source.indexOf('const GalleryCard'), source.indexOf('const Matching = () =>'));
-    expect(tile).toContain('<ProfileNotes');
-    expect(tile).toContain('publicSlot={reviewsSlot}');
-    expect(tile).toContain('<CommentBlock');
-    // Значка «перевірити відгуки» тут більше немає: дотик по плитці й так
-    // відкриває картку повністю, а читання чужих починає прапорець
-    // `hasPublicReview` картки, а не окремий жест.
-    expect(tile).not.toContain('reviewsGateLabel');
-  });
-
   // Нотатка видна всім показаним карткам, а не самій активній: інакше читач
   // дописував би поверх власного запису, якого не бачить. Ціна не росте з
   // кількістю карток — піддерево власника читається одним запитом.
@@ -335,18 +319,9 @@ describe('перший екран зі стрічкового кеша', () => {
 });
 
 describe('дії та роль на картці стрічки', () => {
-  it('дає плитці і кнопку «не цікаво», а не лише серце', () => {
-    // Кнопки переїхали з фото в тіло плитки: поверх знімка вони жили тільки
-    // тому, що іншого місця не було, — і плитка без фото лишалась без них.
-    // Рахувати їх число не варто: поруч із двома реакціями там стоїть ще й
-    // «Доповнити дані», і кожна нова дія ламала перевірку, яка про неї не
-    // питає. Питання тут одне — чи є в плитці саме «приховати».
-    // Ряд рішень плитки — той самий, що й у рядку списку (`RowReactionPair`):
-    // дві розкладки не мають описувати ту саму дію різними кнопками.
-    const source = read('Matching.jsx');
-    expect(source).toContain('<RowReactionPair>');
-    expect(source).toContain("aria-label={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}");
-    expect(source).toContain('onToggleHidden={toggleRowHidden}');
+  // Галереї більше немає: розкладка одна — рядок списку.
+  it('не має плитки галереї', () => {
+    expect(read('Matching.jsx')).not.toContain('const GalleryCard');
   });
 
   it('дає те саме рядку списку', () => {
@@ -366,10 +341,6 @@ describe('дії та роль на картці стрічки', () => {
   // Роль пишеться словом (`getRoleLabel`) — тим самим, що й у чіпі фільтра й у
   // «Хто ви». Коди `ED`/`IP` знав лише той, хто бачив дані.
   it('показує роль словом на обох виглядах', () => {
-    // Плитка галереї кладе роль на знімок тією самою плашкою, що й рядок.
-    const gallerySource = read('Matching.jsx');
-    expect(gallerySource).toContain('<PhotoRoleBadge $role={role}>{getRoleLabel(role, language)}</PhotoRoleBadge>');
-    expect(gallerySource).toContain('{!photo && roleCode && <RowRoleCode $role={role}>{getRoleLabel(role, language)}</RowRoleCode>}');
     const rowSource = read('ProfileRow.jsx');
     expect(rowSource).toContain('<S.PhotoRoleBadge $role={rowRole}>{getRoleLabel(rowRole, language)}</S.PhotoRoleBadge>');
     expect(rowSource).toContain('<S.RoleCode $role={rowRole}>{getRoleLabel(rowRole, language)}</S.RoleCode>');

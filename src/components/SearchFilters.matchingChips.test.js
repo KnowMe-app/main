@@ -70,7 +70,7 @@ describe('matching active-filter chips', () => {
     expect(chips).toEqual([
       // «Інші» в ролі — справжня опція (клініки, сурогатні мами, анкети без
       // ролі), а не «?», тож знятих три, і чіп називає те, що лишилось.
-      { filterName: 'userRole', groupLabel: 'Тип профілю', text: 'Тип профілю: Донорка ооцитів', danger: false },
+      { filterName: 'userRole', groupLabel: 'Тип профілю', text: 'Тип профілю: Донор ооцитів', danger: false },
       { filterName: 'age', groupLabel: 'Вік', text: 'Вік: крім ≤25', danger: false },
     ]);
   });

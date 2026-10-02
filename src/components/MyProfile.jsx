@@ -52,6 +52,7 @@ import {
 } from './authProfilePersistence';
 import toast from 'react-hot-toast';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
+import { usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
 import { KnowMeBrand } from './styles/knowme';
 import { resolveMyProfileFieldText, resolveMyProfileSectionTitle } from '../utils/myProfileRoleTexts';
 import { ProgramsEditor } from './programs/ProgramsEditor';
@@ -386,28 +387,6 @@ const PhotoSection = styled.div`
 `;
 const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
-const DotsButton = styled.button`
-  display:flex;align-items:center;justify-content:center;
-  width:34px;height:34px;border-radius:10px;border:1px solid var(--border);
-  background:var(--card);cursor:pointer;font-size:22px;line-height:1;color:var(--muted);
-  transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease, color .18s ease;
-
-  &:hover {
-    background: var(--accent-light);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  &:focus-visible {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(232, 121, 26, .16);
-  }
-
-  &:active {
-    transform: scale(.98);
-  }
-`;
 
 const AuthCard = styled(FirstContentCard)``;
 const hintPulse = keyframes`
@@ -518,8 +497,8 @@ const AuthActionButton = styled(SubmitBtn)`
 `;
 
 const baseSections = [
-  { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'phone', 'birth', 'country', 'region', 'city', 'maritalStatus'] },
-  { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'surrogacyExperience', 'ownKids', 'lastDelivery', 'csection', 'reward'] },
+  { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'fathersname', 'phone', 'birth', 'country', 'region', 'city', 'maritalStatus'] },
+  { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'lastCycle', 'surgeries', 'chronicDiseases', 'allergy', 'healthComplications', 'surrogacyExperience', 'ownKids', 'lastDelivery', 'csection', 'reward'] },
   { key: 'appearance', title: '✨ Зовнішність', fields: ['eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'faceShape', 'noseShape', 'lipsShape', 'chin', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race'] },
   // VK прибрано: мережа заблокована в Україні з 2017 року, і поле для неї в
   // анкеті читалось як знак, чий це застосунок. Уже записане значення з
@@ -532,9 +511,24 @@ const baseSections = [
   { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'sport', 'education', 'profession', 'hobbies', 'twinsInFamily', 'moreInfo_main', 'surrogacyProgramInterest'] },
 ];
 
-const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery']);
+const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery', 'lastCycle']);
+// Що можна не заповнювати перед публікацією. Із контактів обовʼязковий лише
+// телефон — Telegram, Instagram, сайт і решта є не в кожного, і порожнє поле
+// мережі, якою людина не користується, не має тримати анкету поза стрічкою.
+// Винагорода — розповідь, а не обовʼязкова цифра; по батькові є не в кожної,
+// а дата циклу — подробиця для програми, а не умова публікації.
+const OPTIONAL_PROFILE_FIELDS = new Set([
+  'telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'website', 'vk',
+  'reward', 'fathersname', 'lastCycle',
+]);
 // Так/Ні, до яких людині є що дописати («Так: апендицит, 2019»).
 const YES_NO_DETAIL_FIELDS = new Set(['surgeries', 'chronicDiseases', 'allergy']);
+// Так/Ні, де життя буває складнішим за два варіанти: шлюб не лише
+// офіційний, курять і пʼють «іноді». Тут чіп зветься «Свій варіант».
+const YES_NO_CUSTOM_FIELDS = new Set(['maritalStatus', 'smoking', 'alcohol']);
+// «Ні» або розповідь: відповідь «так» без подробиць нічого не каже, тож
+// другим чіпом стоїть «Детальніше», і за ним — власний текст.
+const NO_OR_DETAILS_FIELDS = new Set(['healthComplications']);
 
 // Підпис прикладу («Наприклад: …») — `utils/examplePlaceholder`: той самий
 // і в чернетці, і в доповненні картки.
@@ -552,6 +546,8 @@ const PARENT_ROLE_FIELDS = new Set(['seeking', 'programLocation', 'parentVia', '
 // Андрій»), і поле «Прізвище» під ним лишалось без відповіді. Записане
 // прізвище з анкети не зникає.
 const PARENT_ONLY_HIDDEN_FIELDS = new Set(['surname']);
+
+const PERSON_HIDDEN_SOCIAL_FIELDS = new Set(['tiktok', 'twitter', 'linkedin', 'youtube']);
 
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','country','region','city','moreInfo_main','website']);
 
@@ -583,6 +579,16 @@ const KNOWN_ROLES = new Set(PROFILE_ROLE_OPTIONS.map(option => option.value));
 // малює десяток інших екранів, і чіпати його заради одного поля не можна.
 const MY_PROFILE_EXTRA_FIELDS = [
   { name: 'website', label: 'Сайт', ukrainian: 'Сайт', placeholder: 'https://', svg: 'no' },
+  // Назва агенції чи клініки окремо від імені людини — для тих, у кого
+  // ролей дві (донорка, яка ще й агентка). Див. `roleSectionsFor`.
+  { name: 'agencyName', label: 'Назва агенції', ukrainian: 'Назва агенції', placeholder: 'Наприклад: Мрія Донорства', svg: 'no' },
+  // По батькові — у донорки й СМ (ключ `fathersname`, той самий, що в
+  // адмінці й імпорті).
+  { name: 'fathersname', label: 'По батькові', ukrainian: 'По батькові', placeholder: 'Наприклад: Олександрівна', svg: 'no' },
+  // Перший день останньої менструації — ключ `lastCycle`, той самий, з яким
+  // працює адмінка (`fieldLastCycle`); нового ключа не заводимо.
+  { name: 'lastCycle', label: 'Перший день останньої менструації', ukrainian: 'Перший день останньої менструації', placeholder: 'дд.мм.рррр', svg: 'no' },
+  { name: 'healthComplications', label: 'Ускладнення здоровʼя, вагітності, пологів', ukrainian: 'Ускладнення здоровʼя, вагітності, пологів', placeholder: 'Опишіть, що саме', svg: 'no', options: [{ placeholder: 'No', ukrainian: 'Ні' }] },
 ];
 
 /**
@@ -910,7 +916,14 @@ export const MyProfile = () => {
   const parentOnly = rolesList.length === 1 && rolesList[0] === 'ip';
   // Заголовки спільних розділів говорять мовою анкети, якій ці поля належать:
   // у донорки, яка ще й агентка, «Особисті дані» — її, а не агенції.
-  const sectionTitleRole = personRole || selectedRole;
+  //
+  // Те саме з батьками, які ще й агенція: імʼя в «Особистих даних» — людини.
+  const sectionTitleRole = personRole
+    || (organisationRole && rolesList.find(role => !ORGANISATION_ROLES.includes(role)))
+    || selectedRole;
+  // Людина й організація в одній анкеті — тоді імʼя й прізвище належать
+  // людині, а в організації своє поле назви (`agencyName`).
+  const hasMixedRoles = Boolean(organisationRole) && rolesList.some(role => !ORGANISATION_ROLES.includes(role));
   const hiddenRoles = useMemo(() => parseHiddenRoles(state.hiddenRoles), [state.hiddenRoles]);
 
   /**
@@ -994,7 +1007,9 @@ export const MyProfile = () => {
     }
 
     const fields = [...section.fields];
-    fields.splice(2, 0, 'email');
+    // Пошта — одразу перед телефоном: контакти стоять поруч, а не між
+    // прізвищем і по батькові.
+    fields.splice(fields.indexOf('phone'), 0, 'email');
     return { ...section, fields };
   }), [isProfileAccessConfirmed]);
   // Назву розділу бере роль (`resolveMyProfileSectionTitle`): агенція бачить
@@ -1008,9 +1023,16 @@ export const MyProfile = () => {
   //
   // «Послуги й досвід» тут був і пішов: його не заповнював ніхто, а сайт з
   // нього переїхав у «Соцмережі».
+  //
+  // Коли ролей дві й одна з них — агенція чи клініка, «Імʼя» й «Прізвище»
+  // належать людині, а назва організації стоїть першою в її власній анкеті
+  // (`agencyName`). Доти обидві анкети писали в те саме `name`, і назва
+  // агенції затирала імʼя донорки — або навпаки.
   const roleSectionsFor = useCallback(role => {
     if (ORGANISATION_ROLES.includes(role)) {
-      return [{ key: 'programs', title: '💶 Програми', fields: ['programs'], custom: 'programs' }];
+      const programs = { key: 'programs', title: '💶 Програми', fields: ['programs'], custom: 'programs' };
+      if (!hasMixedRoles) return [programs];
+      return [{ key: 'organisation', title: role === 'cl' ? '🏥 Клініка' : '🏢 Агенція', fields: ['agencyName'] }, programs];
     }
     if (role === 'ip') {
       // Побажання (`moreInfo_main`) стоять тут же, а не окремим розділом:
@@ -1028,7 +1050,7 @@ export const MyProfile = () => {
       }];
     }
     return [];
-  }, [parentOnly]);
+  }, [hasMixedRoles, parentOnly]);
   const roleSections = useMemo(() => roleSectionsFor(selectedRole), [roleSectionsFor, selectedRole]);
   const additionalRoleSections = useMemo(() => {
     const used = new Set(roleSections.map(section => section.key));
@@ -1045,6 +1067,9 @@ export const MyProfile = () => {
         title: resolveMyProfileSectionTitle(section.key, sectionTitleRole, section.title),
         fields: section.fields
           .filter(name => isDonorRole || visibleNonDonorFields.has(name))
+          // Донорці й СМ ці мережі не потрібні: їх шукають за телефоном,
+          // Telegram та Instagram. Лишаються вони агенції й клініці.
+          .filter(name => !personRole || organisationRole || !PERSON_HIDDEN_SOCIAL_FIELDS.has(name))
           .filter(name => organisationRole || !ORGANISATION_ONLY_FIELDS.has(name))
           .filter(name => !surrogateOnly || !SURROGATE_HIDDEN_FIELDS.has(name))
           .filter(name => !parentOnly || !PARENT_ONLY_HIDDEN_FIELDS.has(name))
@@ -1086,7 +1111,7 @@ export const MyProfile = () => {
     // Без жодної ролі донорки чи СМ «Про себе» — спільне, а не чиясь анкета.
     const rest = personAssigned ? [] : personSections;
     return [...shared, ...blocks, ...rest];
-  }, [additionalRoleSections, isDonorRole, organisationRole, parentOnly, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole, surrogateOnly]);
+  }, [additionalRoleSections, isDonorRole, organisationRole, parentOnly, personRole, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole, surrogateOnly]);
   const programRates = useProgramRates(Boolean(organisationRole));
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
 
@@ -1205,9 +1230,10 @@ export const MyProfile = () => {
     navigate('/');
   };
 
-  const dotsMenu = () => (
+  const dotsMenu = ({ close } = {}) => (
     <ProfileDotsMenu
       navigate={navigate}
+      omitPrimaryDestinations
       isAdmin={isAdmin}
       access={access}
       isEmailVerified={isEmailVerified}
@@ -1221,7 +1247,7 @@ export const MyProfile = () => {
       // `InfoModal`): акаунт і сліди в чужих списках знімає людина, а не
       // кнопка.
       onDeleteProfile={() => setShowInfoModal('delProfile')}
-      onSelect={() => setShowInfoModal(false)}
+      onSelect={close || (() => setShowInfoModal(false))}
       // «Очистити все» стояло кнопкою просто під «Опублікувати» — незворотна
       // дія поруч із головною, на відстані одного промаху пальцем. Тепер вона
       // тут, поруч із «Видалити анкету», і так само питає підтвердження.
@@ -1235,6 +1261,10 @@ export const MyProfile = () => {
       })) : undefined}
     />
   );
+
+  // «⋮» стоїть у рядку спільної навігації праворуч від «Мій профіль», а не
+  // окремою кнопкою в шапці анкети; дії меню (очистити, видалити) — ці самі.
+  usePrimaryNavigationSlot({ renderMenu: dotsMenu });
 
   const fieldsMap = useMemo(() => new Map([...pickerFields, ...MY_PROFILE_EXTRA_FIELDS].map(field => [field.name, field])), []);
   // Програми заповнені, коли вони є в сховищі, а не в анкеті.
@@ -1569,6 +1599,7 @@ export const MyProfile = () => {
     const miss = {};
     const missingFieldNames = visibleSections
       .flatMap(section => section.fields)
+      .filter(fieldName => !OPTIONAL_PROFILE_FIELDS.has(fieldName))
       .filter(fieldName => fieldName === 'programs'
         ? ownProgramsCount === 0
         : String(currentState[fieldName] || '').trim() === '');
@@ -1731,10 +1762,12 @@ export const MyProfile = () => {
   const renderField = (name) => {
     const field = fieldsMap.get(name);
     if (!field) return null;
-    const roleText = resolveMyProfileFieldText(name, sectionTitleRole);
+    const roleText = resolveMyProfileFieldText(name, name === 'agencyName' ? organisationRole : sectionTitleRole);
     const fieldPlaceholder = roleText.placeholder ? uiText(roleText.placeholder, language) : asExamplePlaceholder(getFieldPlaceholder(field, language), language);
     const val = state[name] || '';
-    const isTextArea = name === 'moreInfo_main';
+    // Винагороду пишуть розповіддю («від 1000 $, залежить від програми,
+    // компенсація дороги»), а не однією цифрою — тож і поле для неї текстове.
+    const isTextArea = name === 'moreInfo_main' || name === 'reward';
     const isAppearanceField = sections.find(section => section.key === 'appearance')?.fields.includes(name);
     // Форма пропонує лише чинні варіанти (`listOfferedOptions`): дублікати
     // («Карі» й «Коричневі») і «Так/Ні» там, де питають текст чи рівень,
@@ -1751,8 +1784,10 @@ export const MyProfile = () => {
     // Він лишився там, де людині є що уточнити (операції, хвороби, алергії), і
     // там, де в анкеті вже лежить своє значення — інакше воно зникло б з екрана.
     const yesNoAllowsDetails = YES_NO_DETAIL_FIELDS.has(name);
+    const noOrDetails = NO_OR_DETAILS_FIELDS.has(name);
     const canUseCustomOption = isAppearanceField
-      || (isYesNoField && (yesNoAllowsDetails || hasCustomValue))
+      || (isYesNoField && (yesNoAllowsDetails || YES_NO_CUSTOM_FIELDS.has(name) || hasCustomValue))
+      || noOrDetails
       || name === 'csection';
     const customSelected = canUseCustomOption
       && (Boolean(customOptionMode[name]) || hasCustomValue);
@@ -1796,7 +1831,7 @@ export const MyProfile = () => {
                 }}
                 type="button"
               >
-                {uiText(isYesNoField && yesNoAllowsDetails ? 'Уточнити' : 'Свій варіант', language)}
+                {uiText(noOrDetails ? 'Детальніше' : (isYesNoField && yesNoAllowsDetails ? 'Уточнити' : 'Свій варіант'), language)}
               </Chip>
             ) : null}
           </ChipRow>
@@ -1918,7 +1953,6 @@ export const MyProfile = () => {
               ? uiText(state.publish === true ? 'Опублікована' : 'Не опублікована', language)
               : uiText('Логін не відбувся', language)}
           </StatusBadge>
-          <DotsButton type='button' aria-label={uiText('Відкрити меню профілю', language)} onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
         </TopbarActions>
       </Topbar>
     </HeaderPanel>
@@ -2153,7 +2187,6 @@ export const MyProfile = () => {
       <InfoModal
         onClose={() => { if (!isClearingProfile) setShowInfoModal(false); }}
         text={showInfoModal}
-        Context={dotsMenu}
         DelConfirm={() => (clearRoleTarget ? (
           <>
             <ModalTitle>

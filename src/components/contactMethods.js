@@ -108,7 +108,9 @@ export const CONTACT_LINK_BUILDERS = {
   twitter: buildTwitterUrl,
   website: normalizeExternalUrl,
   otherLink: normalizeExternalUrl,
-  telegramFromPhone: value => `https://t.me/${compactPhone(value)}`,
+  // Номер у посиланні Telegram мусить іти з «+»: `t.me/380…` Telegram читає як
+  // юзернейм і відкриває «такого користувача немає», а `t.me/+380…` — як номер.
+  telegramFromPhone: value => `https://t.me/+${digitsOnlyPhone(value)}`,
   viberFromPhone: value => `viber://chat?number=%2B${digitsOnlyPhone(value)}`,
   whatsappFromPhone: value => `https://wa.me/${digitsOnlyPhone(value)}`,
 };

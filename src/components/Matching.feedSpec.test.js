@@ -6,11 +6,12 @@ const read = name => fs.readFileSync(path.join(__dirname, name), 'utf8');
 describe('matching feed structure', () => {
   const matching = () => read('Matching.jsx');
 
-  it('keeps the list/gallery choice under its own persisted key', () => {
+  // Розкладка одна — список повних рядків; перемикача на галерею немає.
+  it('shows the feed as a single list layout without a gallery toggle', () => {
     const source = matching();
-    expect(source).toContain("const MATCHING_VIEW_LAYOUT_KEY = 'km.matching.view';");
-    expect(source).toContain("const MATCHING_DEFAULT_VIEW_LAYOUT = 'list';");
-    expect(source).toContain("localStorage.setItem(MATCHING_VIEW_LAYOUT_KEY, next);");
+    expect(source).toContain("const MATCHING_VIEW_LAYOUT = 'list';");
+    expect(source).not.toContain('LayoutToggleButton');
+    expect(source).not.toContain('<GalleryGrid');
   });
 
   it('keeps the query in the URL and debounces it by 250ms', () => {

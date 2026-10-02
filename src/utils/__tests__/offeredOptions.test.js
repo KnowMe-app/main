@@ -15,8 +15,8 @@ describe('варіанти, які пропонує форма', () => {
 
   it('лишає записане значення видимим, навіть якщо його вже не пропонують', () => {
     const hair = field('hairColor').options;
-    expect(labels(listOfferedOptions(hair, ''))).not.toContain('Темний брюнет');
-    expect(labels(listOfferedOptions(hair, 'Dark Brunette'))).toContain('Темний брюнет');
+    expect(labels(listOfferedOptions(hair, ''))).not.toContain('Темна брюнетка');
+    expect(labels(listOfferedOptions(hair, 'Dark Brunette'))).toContain('Темна брюнетка');
   });
 
   it('питає рівень освіти, а не «так/ні», і хобі текстом', () => {

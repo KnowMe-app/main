@@ -5078,7 +5078,7 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
       const withoutPrograms = { ...projection };
       MATCHING_CARD_PROGRAM_FIELDS.forEach(field => { delete withoutPrograms[field]; });
       if (!isReactionPermissionDeniedError(error) || Object.keys(withoutPrograms).length === Object.keys(projection).length) throw error;
-      console.warn('[matchingCards] правила бази ще не приймають програм — картку записано без них. Викотіть правила: npx firebase deploy --only database', { userId: id });
+      console.warn('[matchingCards] правила бази ще не приймають нових полів картки (програми, назва агенції, структура волосся) — картку записано без них. Викотіть правила: npx firebase deploy --only database', { userId: id });
       const fallbackPatch = { ...withoutPrograms };
       Object.keys(existing || {}).forEach(field => {
         if (!(field in withoutPrograms) && !independentlyOwnedFields.has(field)) fallbackPatch[field] = null;

@@ -1,5 +1,6 @@
 import {
   CONTACT_FIELDS,
+  CONTACT_LINK_BUILDERS,
   getAvailableContactFields,
   getContactEntries,
 } from './contactMethods';
@@ -74,4 +75,10 @@ describe('contactMethods', () => {
       'https://other.example',
     ]));
   });
+});
+
+// `t.me/380…` Telegram читає як юзернейм; номер — лише з «+».
+it('builds a Telegram deep link from a phone with a leading plus', () => {
+  expect(CONTACT_LINK_BUILDERS.telegramFromPhone('380 50 111 22 33')).toBe('https://t.me/+380501112233');
+  expect(CONTACT_LINK_BUILDERS.telegramFromPhone('+380501112233')).toBe('https://t.me/+380501112233');
 });

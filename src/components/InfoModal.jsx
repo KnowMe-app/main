@@ -205,6 +205,13 @@ const ComparisonCloseButton = styled.button`
   }
 `;
 
+// Меню на телефоні займає майже весь екран, і поля навколо нього, куди можна
+// тапнути, щоб закрити, не лишається — без хрестика з меню не було виходу.
+const MenuCloseButton = styled(ComparisonCloseButton)`
+  float: right;
+  margin: -4px -4px 4px 8px;
+`;
+
 const MenuModalContent = styled(ModalContent)`
   width: min(92vw, 380px);
   padding: 14px;
@@ -467,6 +474,11 @@ export const InfoModal = ({
         }}
         onClick={event => event.stopPropagation()}
       >
+        {text === 'dotsMenu' && (
+          <MenuCloseButton type="button" onClick={onClose} aria-label="Закрити меню" title="Закрити меню">
+            &times;
+          </MenuCloseButton>
+        )}
         {text === 'compareCards' && (
           <ComparisonCloseButton type="button" onClick={onClose} aria-label="Закрити порівняння">
             &times;

@@ -713,6 +713,12 @@ export const ContactIconLink = styled.a`
   color: var(--matching-muted-text, var(--km-muted, #7A7A72));
   text-decoration: none;
 
+  /* Трубка — головна дія блока (дзвінок), тож вона в кольорі акценту. */
+  ${({ $primary }) => $primary && css`
+    color: var(--matching-accent, var(--km-accent, #E8791A));
+    border-color: color-mix(in srgb, var(--matching-accent, var(--km-accent, #E8791A)) 45%, transparent);
+  `}
+
   &:active {
     opacity: 0.6;
   }
@@ -1322,34 +1328,53 @@ export const RowNotes = styled.div`
    (`ProfileNotes`). Кнопки несуть колір своєї доріжки — акцентний у відгуку,
    зелений у памʼятки, — тож розгорнуте поле з'являється там, де його й
    чекали. Висота 32 px: це мішень для пальця, а не підпис. */
+/*
+ * Згорнуті доріжки — два однакові дотики в одну лінію, як ряд рішень під
+ * ними: значок і слово кольором своєї доріжки (акцентний відгук, зелена
+ * памʼятка) на ледь тонованій підкладці. Пунктирні «пігулки» з «+» тут
+ * були, але читались чернеткою кнопки, а не кнопкою.
+ */
 export const NotesAddRow = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 8px;
 `;
 
 export const NotesAddButton = styled.button`
+  --note-lane-color: ${({ $public }) => ($public ? 'var(--matching-accent, var(--km-accent, #E8791A))' : '#2E9B55')};
   display: inline-flex;
   align-items: center;
-  min-height: 32px;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
   padding: 0 12px;
-  border-radius: 999px;
-  border: 1px dashed ${({ $public }) => ($public
-    ? 'color-mix(in srgb, var(--matching-accent, #E8791A) 45%, transparent)'
-    : 'color-mix(in srgb, #2E9B55 45%, transparent)')};
-  background: transparent;
-  color: var(--matching-muted, var(--km-muted, #6f675f));
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--note-lane-color) 22%, transparent);
+  background: color-mix(in srgb, var(--note-lane-color) 7%, transparent);
+  color: var(--note-lane-color);
   font: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 650;
   cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
+
+  svg {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+  }
 
   &:hover {
-    color: ${({ $public }) => ($public ? 'var(--matching-accent, #E8791A)' : '#2E9B55')};
+    background: color-mix(in srgb, var(--note-lane-color) 13%, transparent);
+    border-color: color-mix(in srgb, var(--note-lane-color) 40%, transparent);
+  }
+
+  &:active {
+    transform: scale(0.98);
   }
 
   &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--matching-accent, #E8791A) 42%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--note-lane-color) 45%, transparent);
     outline-offset: 2px;
   }
 `;
