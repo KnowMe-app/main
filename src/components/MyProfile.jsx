@@ -12,6 +12,8 @@ import {
   updateProfileRole,
 } from './config';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
+import { listOfferedOptions } from '../utils/offeredOptions';
+import { asExamplePlaceholder } from '../utils/examplePlaceholder';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
@@ -90,11 +92,13 @@ const Topbar = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
 `;
 // Назву застосунку на ширшому за 600 px екрані вже несе спільна навігація
 // (`PrimaryNavigation`), тож тут вона стояла другою, просто під першою. На
 // телефоні навігація свою назву ховає — там ця лишається єдиною.
 const TopbarBrand = styled.div`
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   @media (min-width: 601px) {
@@ -529,23 +533,11 @@ const baseSections = [
 ];
 
 const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery']);
+// Так/Ні, до яких людині є що дописати («Так: апендицит, 2019»).
+const YES_NO_DETAIL_FIELDS = new Set(['surgeries', 'chronicDiseases', 'allergy']);
 
-/**
- * Сіре «168», «Україна», «Лікар» у порожньому полі читалось як уже введене —
- * і людина пропускала поле, вважаючи його заповненим. Приклад тепер
- * називається прикладом. Формат («дд.мм.рррр», «https://», «username»)
- * лишається як є: він каже, як писати, а не що.
- */
-const FORMAT_PLACEHOLDER_PATTERN = /^(дд\.|dd\.|https?:|username|\+?\d{3} \d{2} )|^(Наприклад|For example)/i;
-// Підказка-прохання («Коротко розкажіть про себе») — не приклад, і
-// «Наприклад:» перед нею звучало б дивно: приклад — це значення в кілька слів.
-const EXAMPLE_PLACEHOLDER_MAX_WORDS = 3;
-const asExamplePlaceholder = (placeholder, language) => {
-  const text = String(placeholder || '').trim();
-  if (!text || FORMAT_PLACEHOLDER_PATTERN.test(text)) return text;
-  if (text.split(/\s+/).length > EXAMPLE_PLACEHOLDER_MAX_WORDS) return text;
-  return uiText('Наприклад: {value}', language, { value: text });
-};
+// Підпис прикладу («Наприклад: …») — `utils/examplePlaceholder`: той самий
+// і в чернетці, і в доповненні картки.
 
 // Поля-обʼєкти розділів батьків (`roleSections`). Програм тут немає: вони
 // лежать окремо (`utils/programsStore`), а не в анкеті.
@@ -555,6 +547,11 @@ const DONOR_ROLE_FIELDS = new Set(baseSections
   .flatMap(section => section.fields)
   .filter(name => !['name', 'surname', 'phone', 'country', 'region', 'city', 'telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'website'].includes(name)));
 const PARENT_ROLE_FIELDS = new Set(['seeking', 'programLocation', 'parentVia', 'parentPreferences', 'services']);
+
+// Батьки підписуються одним рядком «Як до вас звертатись» («Олена й
+// Андрій»), і поле «Прізвище» під ним лишалось без відповіді. Записане
+// прізвище з анкети не зникає.
+const PARENT_ONLY_HIDDEN_FIELDS = new Set(['surname']);
 
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','country','region','city','moreInfo_main','website']);
 
@@ -566,6 +563,20 @@ const PERSON_ROLES = ['ed', 'sm'];
 // раз над анкетами ролей.
 const SHARED_SECTION_KEYS = new Set(['personal', 'social']);
 const ORGANISATION_ROLES = ['ag', 'cl'];
+// Чого не питають у сурогатної мами, якщо донорської анкети в людини немає.
+//
+// Обидві ролі ділили одну анкету (`PERSON_ROLES`), і СМ заповнювала 49 полів
+// донорки: форму носа, губ і підборіддя, розмір грудей, окуляри — за ними
+// обирають донорку ооцитів, а не сурогатну маму, — та ще й питання «Чи
+// розглядаєте участь у програмі сурогатного материнства?», поставлене самій
+// сурогатній мамі. Лишається те, за чим СМ справді шукають: вагітності й
+// пологи, здоровʼя, зріст і вага, досвід, винагорода, куріння й алкоголь, «Про
+// себе». Записані значення з анкети не зникають — їх лише перестають питати.
+const SURROGATE_HIDDEN_FIELDS = new Set([
+  'eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'faceShape', 'noseShape',
+  'lipsShape', 'chin', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race',
+  'sport', 'education', 'profession', 'hobbies', 'twinsInFamily', 'surrogacyProgramInterest',
+]);
 const KNOWN_ROLES = new Set(PROFILE_ROLE_OPTIONS.map(option => option.value));
 
 // Поля «Мого профілю», яких немає в спільному `pickerFields`: той перелік
@@ -893,6 +904,10 @@ export const MyProfile = () => {
   const personRole = rolesList.find(role => PERSON_ROLES.includes(role)) || '';
   const organisationRole = rolesList.find(role => ORGANISATION_ROLES.includes(role)) || '';
   const isDonorRole = Boolean(personRole) || !normalizedRole || ['donor', 'до'].includes(normalizedRole);
+  // СМ без донорської анкети — скорочений набір (`SURROGATE_HIDDEN_FIELDS`).
+  const surrogateOnly = rolesList.includes('sm') && !rolesList.includes('ed');
+  // Лише батьки — побажання переїжджають у «Кого шукаєте», прізвища не питають.
+  const parentOnly = rolesList.length === 1 && rolesList[0] === 'ip';
   // Заголовки спільних розділів говорять мовою анкети, якій ці поля належать:
   // у донорки, яка ще й агентка, «Особисті дані» — її, а не агенції.
   const sectionTitleRole = personRole || selectedRole;
@@ -998,10 +1013,22 @@ export const MyProfile = () => {
       return [{ key: 'programs', title: '💶 Програми', fields: ['programs'], custom: 'programs' }];
     }
     if (role === 'ip') {
-      return [{ key: 'search', title: '🔎 Кого шукаєте', fields: ['seeking', 'programLocation', 'parentVia'], custom: 'parents' }];
+      // Побажання (`moreInfo_main`) стоять тут же, а не окремим розділом:
+      // поки вони жили в «Способі життя», батьки бачили «Кого шукаєте» двічі —
+      // розділом із чіпами й розділом з одним полем «Кого шукаєте», і у
+      // вкладках угорі теж двічі. Коли в людини є ще й власна анкета (донорки,
+      // СМ, агенції), поле лишається там, де його читає та роль.
+      const fields = ['seeking', 'programLocation', 'parentVia'];
+      return [{
+        key: 'search',
+        title: '🔎 Кого шукаєте',
+        fields: parentOnly ? [...fields, 'moreInfo_main'] : fields,
+        custom: 'parents',
+        extraFields: parentOnly ? ['moreInfo_main'] : [],
+      }];
     }
     return [];
-  }, []);
+  }, [parentOnly]);
   const roleSections = useMemo(() => roleSectionsFor(selectedRole), [roleSectionsFor, selectedRole]);
   const additionalRoleSections = useMemo(() => {
     const used = new Set(roleSections.map(section => section.key));
@@ -1018,7 +1045,11 @@ export const MyProfile = () => {
         title: resolveMyProfileSectionTitle(section.key, sectionTitleRole, section.title),
         fields: section.fields
           .filter(name => isDonorRole || visibleNonDonorFields.has(name))
-          .filter(name => organisationRole || !ORGANISATION_ONLY_FIELDS.has(name)),
+          .filter(name => organisationRole || !ORGANISATION_ONLY_FIELDS.has(name))
+          .filter(name => !surrogateOnly || !SURROGATE_HIDDEN_FIELDS.has(name))
+          .filter(name => !parentOnly || !PARENT_ONLY_HIDDEN_FIELDS.has(name))
+          // Побажання батьків стоять у «Кого шукаєте» (`extraFields`).
+          .filter(name => !parentOnly || name !== 'moreInfo_main'),
       }))
       .filter(section => section.fields.length > 0);
     const personalIndex = base.findIndex(section => section.key === 'personal');
@@ -1055,7 +1086,7 @@ export const MyProfile = () => {
     // Без жодної ролі донорки чи СМ «Про себе» — спільне, а не чиясь анкета.
     const rest = personAssigned ? [] : personSections;
     return [...shared, ...blocks, ...rest];
-  }, [additionalRoleSections, isDonorRole, organisationRole, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole]);
+  }, [additionalRoleSections, isDonorRole, organisationRole, parentOnly, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole, surrogateOnly]);
   const programRates = useProgramRates(Boolean(organisationRole));
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
 
@@ -1705,22 +1736,33 @@ export const MyProfile = () => {
     const val = state[name] || '';
     const isTextArea = name === 'moreInfo_main';
     const isAppearanceField = sections.find(section => section.key === 'appearance')?.fields.includes(name);
-    const optionValues = Array.isArray(field.options) ? field.options.map(getOptionValue).map(String) : [];
-    const optionLabels = Array.isArray(field.options) ? field.options.map(getOptionLabel).map(String) : [];
+    // Форма пропонує лише чинні варіанти (`listOfferedOptions`): дублікати
+    // («Карі» й «Коричневі») і «Так/Ні» там, де питають текст чи рівень,
+    // лишились у довіднику для вже записаних анкет, а не для вибору.
+    const offeredOptions = listOfferedOptions(field.options, val);
+    const optionValues = offeredOptions.map(getOptionValue).map(String);
+    const optionLabels = offeredOptions.map(option => getOptionLabel(option)).map(String);
     const isYesNoField = optionValues.includes('No')
       && optionValues.includes('Yes')
       && optionLabels.includes('Ні')
       && optionLabels.includes('Так');
-    const canUseCustomOption = isAppearanceField || isYesNoField || name === 'csection';
+    const hasCustomValue = String(val).trim() !== '' && !optionValues.includes(String(val));
+    // «Свій варіант» біля кожного Так/Ні був шумом: курити «по-своєму» нема як.
+    // Він лишився там, де людині є що уточнити (операції, хвороби, алергії), і
+    // там, де в анкеті вже лежить своє значення — інакше воно зникло б з екрана.
+    const yesNoAllowsDetails = YES_NO_DETAIL_FIELDS.has(name);
+    const canUseCustomOption = isAppearanceField
+      || (isYesNoField && (yesNoAllowsDetails || hasCustomValue))
+      || name === 'csection';
     const customSelected = canUseCustomOption
-      && (Boolean(customOptionMode[name]) || (String(val).trim() !== '' && !optionValues.includes(String(val))));
+      && (Boolean(customOptionMode[name]) || hasCustomValue);
 
     return <Field key={name}>
       <Label>{roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language)}</Label>
-      {Array.isArray(field.options) && field.options.length > 0 ? (
+      {offeredOptions.length > 0 ? (
         <>
           <ChipRow>
-            {field.options.map(option => {
+            {offeredOptions.map(option => {
               const optionValue = getOptionValue(option);
               const selected = String(val) === String(optionValue);
               return <Chip
@@ -1754,7 +1796,7 @@ export const MyProfile = () => {
                 }}
                 type="button"
               >
-                {uiText('Свій варіант', language)}
+                {uiText(isYesNoField && yesNoAllowsDetails ? 'Уточнити' : 'Свій варіант', language)}
               </Chip>
             ) : null}
           </ChipRow>
@@ -2079,7 +2121,11 @@ export const MyProfile = () => {
           <div>{uiText(section.title, language).split(' ')[0]}</div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{uiText(section.title, language).replace(/^\S+\s/, '')}</div>
           <div style={{ marginLeft: 'auto', fontSize: 11, color: sectionProgress[section.key]?.complete ? '#2E9B55' : 'var(--muted)', background: sectionProgress[section.key]?.complete ? '#EBF8EF' : 'var(--border)', padding: '2px 8px', borderRadius: 99 }}>
-            {sectionProgress[section.key]?.filled || 0}/{sectionProgress[section.key]?.total || section.fields.length}
+            {/* Програми — це записи, а не поле: «1/1» при трьох програмах
+                казав лише, що поле «programs» не порожнє. Тут — скільки їх. */}
+            {section.custom === 'programs'
+              ? ownProgramsCount
+              : `${sectionProgress[section.key]?.filled || 0}/${sectionProgress[section.key]?.total || section.fields.length}`}
           </div>
         </Header>
         <FieldGroup>
@@ -2093,6 +2139,7 @@ export const MyProfile = () => {
             />
           ) : null}
           {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} /> : null}
+          {section.custom && section.extraFields?.length ? section.extraFields.map(renderField) : null}
           {!section.custom ? section.fields.map(renderField) : null}
         </FieldGroup>
       </SectionCard>

@@ -37,6 +37,10 @@ const removeComment = async () => {
   fireEvent.click(screen.getByLabelText('Видалити коментар'));
 };
 
+// Відгук публікує кнопка, а не втрата фокуса.
+const publish = () => fireEvent.click(screen.getByRole('button', { name: 'Опублікувати' }));
+const saveEdit = () => fireEvent.click(screen.getByRole('button', { name: 'Зберегти відгук' }));
+
 const openComposer = () => {
   fireEvent.click(screen.getByText(publicCommentPlaceholder()));
   return screen.getByRole('textbox');
@@ -60,12 +64,39 @@ describe('quick public comment', () => {
     expect(field).toHaveValue('');
   });
 
-  it('saves on blur', async () => {
+  it('publishes only on the explicit button', async () => {
     const { onCreate } = setup();
     const field = openComposer();
     fireEvent.change(field, { target: { value: 'обережно' } });
-    fireEvent.blur(field);
+    publish();
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith('profile-1', 'обережно'));
+  });
+
+  // На телефоні фокус губиться від прокрутки чи дотику повз поле — і поки
+  // blur публікував, відгук про людину йшов усім без жодного наміру.
+  it('never publishes on blur and keeps the typed text in the field', () => {
+    const { onCreate } = setup();
+    const field = openComposer();
+    fireEvent.change(field, { target: { value: 'ще думаю' } });
+    fireEvent.blur(field);
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox')).toHaveValue('ще думаю');
+  });
+
+  it('says who will see the review before it is published', () => {
+    setup();
+    openComposer();
+    expect(screen.getByText('Побачать усі користувачі. Ваше імʼя не показується.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Опублікувати' })).toBeDisabled();
+  });
+
+  it('discards the draft on «Не публікувати»', async () => {
+    const { onCreate } = setup();
+    const field = openComposer();
+    fireEvent.change(field, { target: { value: 'передумала' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Не публікувати' }));
+    expect(await screen.findByText(publicCommentPlaceholder())).toBeInTheDocument();
+    expect(onCreate).not.toHaveBeenCalled();
   });
 
   it('writes nothing for an empty field and returns to the plain line', async () => {
@@ -101,7 +132,7 @@ describe('quick public comment', () => {
       const { onCreate } = setup();
       const field = openComposer();
       fireEvent.change(field, { target: { value: 'готово' } });
-      fireEvent.blur(field);
+      publish();
       await act(async () => { await Promise.resolve(); });
       expect(onCreate).toHaveBeenCalled();
       expect(screen.getByText(/^Збережено \d{2}:\d{2}$/)).toBeInTheDocument();
@@ -117,7 +148,7 @@ describe('quick public comment', () => {
     setup({ onCreate });
     const field = openComposer();
     fireEvent.change(field, { target: { value: 'не пройшло' } });
-    fireEvent.blur(field);
+    publish();
     expect(await screen.findByText('Повторити')).toBeInTheDocument();
     expect(screen.getByText('не пройшло')).toBeInTheDocument();
 
@@ -154,7 +185,7 @@ describe('quick public comment', () => {
     fireEvent.click(screen.getByText('мій запис'));
     const field = screen.getByRole('textbox');
     fireEvent.change(field, { target: { value: '   ' } });
-    fireEvent.blur(field);
+    saveEdit();
 
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith('profile-1', 'c1'));
     expect(onUpdate).not.toHaveBeenCalled();
@@ -174,7 +205,7 @@ describe('quick public comment', () => {
     fireEvent.click(screen.getByText('чужий запис'));
     const field = screen.getByRole('textbox');
     fireEvent.change(field, { target: { value: 'виправлено' } });
-    fireEvent.blur(field);
+    saveEdit();
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith('profile-1', 'c2', 'виправлено'));
 
     await removeComment();
@@ -194,7 +225,7 @@ describe('quick public comment', () => {
     setup();
     const field = openComposer();
     fireEvent.change(field, { target: { value: 'щойно' } });
-    fireEvent.blur(field);
+    publish();
 
     expect(await screen.findByText('щойно')).toBeInTheDocument();
     expect(screen.queryByLabelText('Видалити коментар')).not.toBeInTheDocument();

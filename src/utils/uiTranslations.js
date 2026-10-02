@@ -22,6 +22,12 @@ import { resolveProfileLanguage } from './profileTexts';
 const EN_BY_UK = {
   // --- спільне ---
   'Завантаження…': 'Loading…',
+  'Побачать усі користувачі. Ваше імʼя не показується.': 'Everyone will see this. Your name is not shown.',
+  'Зберегти відгук': 'Save review',
+  'Не публікувати': 'Discard',
+  'Показати номер': 'Show number',
+  'Уточнити': 'Add details',
+  '{label} за номером': '{label} by number',
   'Сімейний стан': 'Marital status',
   'Повернути': 'Restore',
   'Відкрити меню профілю': 'Open profile menu',
@@ -195,6 +201,7 @@ const EN_BY_UK = {
   'Програми, адреса, кого шукаєте': 'Programs, address, who you are looking for',
   'Наприклад: Олена й Андрій': 'For example: Olena and Andrii',
   'Кого шукаєте': 'Who you are looking for',
+  'Побажання': 'Preferences',
   'Наприклад: донорку ооцитів, 1-ша група крові, зріст від 165': 'For example: an egg donor, blood group 1, height from 165',
   '🏢 Агенція': '🏢 Agency',
   '📝 Про агенцію': '📝 About the agency',
@@ -577,6 +584,7 @@ const EN_BY_UK = {
   // --- «Мій профіль» ---
   '👤 Особисті дані': '👤 Personal data',
   '🏥 Медична інформація': '🏥 Medical information',
+  '🤰 Здоровʼя й вагітності': '🤰 Health and pregnancies',
   '✨ Зовнішність': '✨ Appearance',
   '📱 Соцмережі': '📱 Social networks',
   '🌿 Спосіб життя': '🌿 Lifestyle',

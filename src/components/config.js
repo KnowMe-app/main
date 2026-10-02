@@ -23,13 +23,14 @@ import {
   equalTo,
   serverTimestamp,
   runTransaction,
+  increment,
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { formatDateToDisplay, formatDateToServer } from './inputValidations';
 import toast from 'react-hot-toast';
-import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCompleteCachedProfile, incrementMatchingLoadStat, removeCard } from '../utils/cardIndex';
+import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCachedProfileBody, getCompleteCachedProfile, incrementMatchingLoadStat, removeCard } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
 import {
   SEARCH_QUERIES_ROOT_PATH,
@@ -718,6 +719,39 @@ export const addContactViewUser = async (userId, ownerId) => {
     await set(ref2(database, `multiData/contactViews/${ownerId || owner.uid}/${userId}`), true);
   } catch (error) {
     console.error('Error adding contact view user:', error);
+  }
+};
+
+// Канал контакту як ключ RTDB: `phone`, `telegram`, `phone-viber`… Решта
+// символів ключем бути не може, тож вони знімаються.
+const normalizeContactChannel = channel => String(channel || 'other').replace(/[.#$/[\]]/g, '_') || 'other';
+
+/**
+ * Дотик до контакту — дія, і вона рахується.
+ *
+ * Це статистика «чи анкета справді цікава»: розгорнути блок контактів ще не
+ * означає звʼязатись, а натиснути номер, Telegram чи пошту — означає. Тому
+ * лічильник пишеться на кожен дотик до будь-якого каналу, а не на розгортання
+ * блока, як писав `addContactViewUser` (`true` раз на картку). Запис лежить
+ * там само — `multiData/contactViews/{читач}/{картка}`, — і правило на нього
+ * значення не перевіряє, тож старе `true` просто стає обʼєктом:
+ * `{ count, lastAt, channels: { phone: 2, telegram: 1 } }`.
+ *
+ * `increment()` рахує на сервері: читати вузол перед записом не треба, і
+ * дотик коштує один запис без жодного читання.
+ */
+export const recordContactAction = async (userId, ownerId, channel) => {
+  try {
+    const owner = auth.currentUser;
+    if (!owner || !userId) return;
+    const key = normalizeContactChannel(channel);
+    await update(ref2(database, `multiData/contactViews/${ownerId || owner.uid}/${userId}`), {
+      count: increment(1),
+      lastAt: serverTimestamp(),
+      [`channels/${key}`]: increment(1),
+    });
+  } catch (error) {
+    console.error('Error recording contact action:', error);
   }
 };
 
@@ -2531,6 +2565,56 @@ export const readProfileFromNodes = async (userId, options = {}) => {
   return merged;
 };
 
+// Памʼять таба про прочитані контакти: картку, яку відкривали щойно, вдруге
+// не питають. Живе недовго — контакти правлять, і правка з іншого пристрою
+// має доїхати без перезавантаження.
+const PROFILE_CONTACTS_MEMO_TTL_MS = 10 * 60 * 1000;
+const profileContactsMemo = new Map();
+// Анкети, які `fetchUsersByIds` склав із кешованого тіла: класти їх у кеш
+// удруге нема чого. Позначка живе тут, а не полем в анкеті, — анкету далі
+// пишуть у базу інші екрани, і зайвий ключ поїхав би туди разом із нею.
+const profilesBuiltFromCache = new WeakSet();
+export const isProfileBuiltFromCache = profile => Boolean(profile && typeof profile === 'object' && profilesBuiltFromCache.has(profile));
+
+/**
+ * Контакти однієї анкети — одним точковим читанням `profileContacts/{id}`.
+ *
+ * Для показаної картки анкета вже здебільшого лежить у кеші, а бракує в ній
+ * самих контактів: читачеві, чиє право на них тримається на `feedDate`, у кеш
+ * їх не кладуть, а службовому доступу — коли анкета лягла туди раніше, ніж
+ * приїхав рівень доступу. Читати заради них пʼять вузлів анкети заново — це
+ * рівно той трафік, якого стрічка уникає.
+ *
+ * Межа стоїть до запиту, як і в `readProfileFromNodes`: читач без права поза
+ * стрічкою спершу питає свіжу картку (кешований `feedDate` міг уже протухнути),
+ * і лише картці в стрічці питає контакти. Відповідь —
+ * `{ allowed, contacts }`; `allowed: false` означає «картка поза стрічкою».
+ */
+export const readProfileContacts = userId => {
+  const id = String(userId || '').trim();
+  if (!id) return Promise.resolve({ allowed: false, contacts: null });
+  const memo = profileContactsMemo.get(id);
+  if (memo && Date.now() - memo.at < PROFILE_CONTACTS_MEMO_TTL_MS) return memo.promise;
+
+  const promise = (async () => {
+    const accessLevel = await resolveViewerAccessLevel();
+    const privileged = canReadProfileOutsideFeed({
+      profileId: id,
+      viewerId: auth.currentUser?.uid || '',
+      accessLevel,
+    });
+    if (!privileged) {
+      const card = await readProfileNodePart(PROFILE_NODES.matchingCards, id);
+      if (!isCardInMatchingFeed(card)) return { allowed: false, contacts: null };
+    }
+    const contacts = await readProfileNodePart(PROFILE_NODES.profileContacts, id);
+    return { allowed: true, contacts: contacts && typeof contacts === 'object' ? contacts : {} };
+  })();
+  profileContactsMemo.set(id, { at: Date.now(), promise });
+  promise.catch(() => profileContactsMemo.delete(id));
+  return promise;
+};
+
 /**
  * Прочитати анкети за id.
  *
@@ -2562,6 +2646,35 @@ export const fetchUsersByIds = async ids => {
         return;
       }
       result[id] = cached;
+    });
+
+    // Спершу кеш і для анкет, у яких у кеші бракує самих контактів: тіло
+    // береться звідти, а з бекенду — лише вузол контактів
+    // (`readProfileContacts`). Картка поза стрічкою (для читача без права
+    // поза нею) йде звичайним читанням: його межа віддасть саму картку.
+    const bodyOnly = await Promise.all(missingIds.map(async id => {
+      const body = getCachedProfileBody(id);
+      if (!body) return [id, null];
+      try {
+        const { allowed, contacts } = await readProfileContacts(id);
+        if (!allowed) return [id, null];
+        incrementMatchingLoadStat('fullProfileCacheHits');
+        // У `localStorage` контакти тут не дописуються: `updateCard` оновив би
+        // `cachedAt`, і старе тіло анкети прожило б ще один повний TTL. Повтор
+        // у цій вкладці бере памʼять `readProfileContacts`, а після
+        // перезавантаження коштує одне точкове читання.
+        const profile = { ...body, ...contacts };
+        profilesBuiltFromCache.add(profile);
+        return [id, profile];
+      } catch (error) {
+        console.warn('[profileNodes] контакти не прочитано, читаємо анкету цілком', { userId: id, error });
+        return [id, null];
+      }
+    }));
+    bodyOnly.forEach(([id, profile]) => {
+      if (!profile) return;
+      result[id] = profile;
+      missingIds.splice(missingIds.indexOf(id), 1);
     });
 
     const snaps = await Promise.all(

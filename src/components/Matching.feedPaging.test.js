@@ -341,8 +341,10 @@ describe('дії та роль на картці стрічки', () => {
     // Рахувати їх число не варто: поруч із двома реакціями там стоїть ще й
     // «Доповнити дані», і кожна нова дія ламала перевірку, яка про неї не
     // питає. Питання тут одне — чи є в плитці саме «приховати».
+    // Ряд рішень плитки — той самий, що й у рядку списку (`RowReactionPair`):
+    // дві розкладки не мають описувати ту саму дію різними кнопками.
     const source = read('Matching.jsx');
-    expect(source).toContain('<GalleryActionButton');
+    expect(source).toContain('<RowReactionPair>');
     expect(source).toContain("aria-label={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}");
     expect(source).toContain('onToggleHidden={toggleRowHidden}');
   });

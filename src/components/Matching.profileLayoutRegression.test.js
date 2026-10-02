@@ -8,9 +8,12 @@ describe('Matching redesigned profile regressions', () => {
   it('renders contacts through actionable links instead of generic profile chips', () => {
     const matchingSource = source();
 
-    expect(matchingSource).toContain('const ProfileContactLinks = ({ user, role, language }) =>');
+    // Дотик до будь-якого контакту — дія, і відкрита картка передає її
+    // лічильнику (`recordContactAction`); цифр номера без дотику не видно.
+    expect(matchingSource).toContain('const ProfileContactLinks = ({ user, role, language, onContactAction }) =>');
     expect(matchingSource).toContain("section.variant === 'contacts'");
-    expect(matchingSource).toContain('<ProfileContactLinks user={user} role={resolvedRole} language={language} />');
+    expect(matchingSource).toContain('<ProfileContactLinks user={user} role={resolvedRole} language={language} onContactAction={handleContactAction} />');
+    expect(matchingSource).toContain("uiText('Показати номер', language)");
     // Напис під замком тепер іде мовою інтерфейсу, тож перевіряється сам слот,
     // а не англійський рядок у ньому.
     expect(matchingSource).toContain("{profileUiText('showContacts', language)}");

@@ -84,10 +84,7 @@ import {
   QueryDraftValue,
   MatchingTopBar,
   SearchField,
-  GalleryActionButton,
-  GalleryActions,
   GalleryBody,
-  GalleryFacts,
   GalleryColumn,
   GalleryGrid,
   GalleryHiddenBadge,
@@ -111,7 +108,7 @@ import {
   lazyLoadProfilePhotos,
   fetchFavoriteUsers,
   fetchDislikeUsers,
-  addContactViewUser,
+  recordContactAction,
   addMatchingSearchQuery,
   filterMain,
   searchUsersOnly,
@@ -124,6 +121,8 @@ import {
   COMMENTS_ROOT_PATH,
   PUBLIC_COMMENTS_ROOT_PATH,
   fetchUsersByIds,
+  isProfileBuiltFromCache,
+  readProfileContacts,
   fetchMatchingCardsPage,
   fetchMatchingCardsByIds,
   clearMatchingCardsPageInFlight,
@@ -219,7 +218,7 @@ import {
 import { getCurrentDate } from './foramtDate';
 import InfoModal from './InfoModal';
 import MatchingHiddenList from './MatchingHiddenList';
-import { canOfferProfileContacts } from '../utils/profileVisibilityScope';
+import { canOfferProfileContacts, isOwnProfileDraftCard } from '../utils/profileVisibilityScope';
 import ProfileRow, {
   CommentBlock,
   PublicCommentBlock,
@@ -227,9 +226,7 @@ import ProfileRow, {
   ReviewsStateNote,
   enrichGateLabel,
   describeReviewsState,
-  renderFacts as renderProfileFacts,
   getLocationLine,
-  splitFactsByGroup as splitProfileFactsByGroup,
 } from './ProfileRow';
 import {
   buildProfileDetailSections,
@@ -241,7 +238,7 @@ import {
   ProfileStatStrip,
 } from './ProfileFacts';
 import { getRoleColor } from './matchingRoleColors';
-import { PhotoRoleBadge, RoleCode as RowRoleCode } from './MatchingHiddenList.styled';
+import { PhotoRoleBadge, RoleCode as RowRoleCode, RowActionButton, RowFooterActions, RowFooterButton, RowReactionPair } from './MatchingHiddenList.styled';
 import { DRAFT_FEED_ORDER_FIELD, placeOwnDraftsInFeed, resolveDraftFeedOrderDate } from '../utils/matchingDraftPlacement';
 import { liftReturnedCards, listReturnedReactionIds, placeReturnedCardsFirst } from '../utils/matchingReturnedCards';
 import { FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
@@ -964,7 +961,13 @@ const contactDisplayValue = entry => {
  * Номерів у анкеті буває кілька — тоді перших рядків стільки ж, по одному на
  * номер: кожен зі своїми кнопками месенджерів.
  */
-const ProfileContactLinks = ({ user, role, language }) => {
+const ProfileContactLinks = ({ user, role, language, onContactAction }) => {
+  // Цифр номера без дотику немає: дотик до «Показати номер», як і до будь-якого
+  // іншого каналу, — дія, і вона рахується (`recordContactAction`). Інакше
+  // статистика «чи анкета цікава» мовчала б про тих, хто просто переписав
+  // номер з екрана.
+  const [revealedPhones, setRevealedPhones] = useState(() => new Set());
+  const act = channel => () => { if (onContactAction) onContactAction(channel); };
   const entries = getContactEntries(user).filter(entry => !MATCHING_HIDDEN_CONTACT_KEYS.includes(entry.key));
   if (!entries.length) return null;
 
@@ -975,17 +978,40 @@ const ProfileContactLinks = ({ user, role, language }) => {
     <ModernContactLinks onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
       {phones.map(entry => {
         const displayValue = contactDisplayValue(entry);
+        const phoneKey = `${entry.index}-${entry.value}`;
+        const revealed = revealedPhones.has(phoneKey);
+        const phoneLabel = revealed
+          ? `${getContactLabel('phone', language)}: ${displayValue}`
+          : uiText('Показати номер', language);
         return (
           <ContactPrimaryRow key={`phone-${entry.index}-${entry.value}`}>
-            <ModernContactLink
-              href={entry.href}
-              $role={role}
-              title={`${getContactLabel('phone', language)}: ${displayValue}`}
-              aria-label={`${getContactLabel('phone', language)}: ${displayValue}`}
-            >
-              <PhoneHandsetIcon />
-              <span>{displayValue}</span>
-            </ModernContactLink>
+            {revealed ? (
+              <ModernContactLink
+                href={entry.href}
+                $role={role}
+                title={phoneLabel}
+                aria-label={phoneLabel}
+                onClick={act('phone')}
+              >
+                <PhoneHandsetIcon />
+                <span>{displayValue}</span>
+              </ModernContactLink>
+            ) : (
+              <ModernContactLink
+                as="button"
+                type="button"
+                $role={role}
+                title={phoneLabel}
+                aria-label={phoneLabel}
+                onClick={() => {
+                  setRevealedPhones(previous => new Set(previous).add(phoneKey));
+                  act('phone')();
+                }}
+              >
+                <PhoneHandsetIcon />
+                <span>{phoneLabel}</span>
+              </ModernContactLink>
+            )}
             <ContactIconRow>
               {PHONE_QUICK_LINKS.map(({ key, Icon, label, build }) => (
                 <ContactIconLink
@@ -993,8 +1019,9 @@ const ProfileContactLinks = ({ user, role, language }) => {
                   href={build(entry.value)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  title={`${label}: ${displayValue}`}
-                  aria-label={`${label}: ${displayValue}`}
+                  title={uiText('{label} за номером', language, { label })}
+                  aria-label={uiText('{label} за номером', language, { label })}
+                  onClick={act(`phone-${key}`)}
                 >
                   <Icon />
                 </ContactIconLink>
@@ -1007,8 +1034,9 @@ const ProfileContactLinks = ({ user, role, language }) => {
         <ContactIconRow $standalone>
           {others.map(entry => {
             const Icon = getContactIcon(entry.key);
-            const displayValue = contactDisplayValue(entry);
-            const label = `${getContactLabel(entry.key, language)}: ${displayValue}`;
+            // Значення в підказці не стоїть: відкривається воно дотиком, і
+            // саме дотик рахується.
+            const label = getContactLabel(entry.key, language);
             return (
               <ContactIconLink
                 key={`${entry.key}-${entry.index}-${entry.value}`}
@@ -1017,6 +1045,7 @@ const ProfileContactLinks = ({ user, role, language }) => {
                 rel={isExternalContact(entry.key) ? 'noopener noreferrer' : undefined}
                 title={label}
                 aria-label={label}
+                onClick={act(entry.key)}
               >
                 <Icon />
               </ContactIconLink>
@@ -1123,7 +1152,7 @@ const SwipeableCard = ({
   const [dir, setDir] = useState(null);
   const favoriteButtonWrapRef = useRef(null);
   const dislikeButtonWrapRef = useRef(null);
-  const contactViewKeysRef = useRef(new Set());
+  const contactDetailsRef = useRef(null);
   const touchStart = useRef(null);
   const swipedRef = useRef(false);
 
@@ -1210,14 +1239,24 @@ const SwipeableCard = ({
     .map(part => part[0]?.toUpperCase())
     .join('');
   const shouldShowHeroContent = Boolean(title || locationInfo || heroFields.length > 0 || statCells.length > 0 || summaryRows.length > 0);
+  // Розгорнути блок — ще не дія: рахується дотик до самого контакту
+  // (`handleContactAction`), а тут лише не даємо події піти в картку.
   const handleContactsToggle = e => {
     e.stopPropagation();
-    const owner = auth.currentUser;
-    if (!e.currentTarget.open || !owner || !user.userId) return;
-    const contactViewKey = `${multiDataOwnerId || owner.uid}:${user.userId}`;
-    if (contactViewKeysRef.current.has(contactViewKey)) return;
-    contactViewKeysRef.current.add(contactViewKey);
-    void addContactViewUser(user.userId, multiDataOwnerId);
+  };
+  const handleContactAction = channel => {
+    if (!auth.currentUser || !user.userId) return;
+    void recordContactAction(user.userId, multiDataOwnerId, channel);
+  };
+
+  const hasContactSection = sections.some(section => section.variant === 'contacts');
+  const openContactDetails = e => {
+    e.stopPropagation();
+    const details = contactDetailsRef.current;
+    if (!details) return;
+    // Розгортання не рахується: дією стане дотик до номера чи месенджера.
+    details.open = true;
+    details.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   };
 
   const handleTouchStart = e => {
@@ -1348,8 +1387,30 @@ const SwipeableCard = ({
           <AdminToggle published={isMatchingCardPublished(user)} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
         )}
         <ModernProfileBody>
-          {/* Програми агенції чи клініки й «кого шукають» батьки — першими
-              під фото: саме заради них донорка й відкрила цю картку. */}
+          {/* Контакти — першими під шапкою. Блок стояв у самому низу картки,
+              під «Про себе», розділами анкети й нотатками, тобто там, куди
+              докручує не кожен, — а картотека існує, щоб людей знайти й
+              написати їм. Розгортати його й далі треба дотиком (на розгортанні
+              пишеться перегляд контактів, `handleContactsToggle`), і той самий
+              дотик дає трубка в ряду дій унизу (`openContactDetails`). */}
+          {sections.filter(section => section.variant === 'contacts').map(section => (
+            <ModernSection key={section.title}>
+              <ModernContactDetails ref={contactDetailsRef} onToggle={handleContactsToggle} onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+                <ModernContactSummary>
+                  {profileUiText('showContacts', language)}
+                  <ModernContactHints aria-hidden="true">
+                    {contactHintIcons.map(({ key, Icon }) => <Icon key={key} />)}
+                  </ModernContactHints>
+                  <span className="contacts-chevron" aria-hidden="true">
+                    <FaChevronDown size={16} />
+                  </span>
+                </ModernContactSummary>
+                <ProfileContactLinks user={user} role={resolvedRole} language={language} onContactAction={handleContactAction} />
+              </ModernContactDetails>
+            </ModernSection>
+          ))}
+          {/* Програми агенції чи клініки й «кого шукають» батьки — одразу
+              під контактами: саме заради них донорка й відкрила цю картку. */}
           <CardRoleBlock card={user} programsContext={programsContext} language={language} />
           {usesSharedFacts && (bio || detailSections.length > 0) && (
             <ModernSection>
@@ -1372,22 +1433,6 @@ const SwipeableCard = ({
               ) : (
                 <ProfileFieldRows fields={section.fields} />
               )}
-            </ModernSection>
-          ))}
-          {sections.filter(section => section.variant === 'contacts').map(section => (
-            <ModernSection key={section.title}>
-              <ModernContactDetails onToggle={handleContactsToggle} onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
-                <ModernContactSummary>
-                  {profileUiText('showContacts', language)}
-                  <ModernContactHints aria-hidden="true">
-                    {contactHintIcons.map(({ key, Icon }) => <Icon key={key} />)}
-                  </ModernContactHints>
-                  <span className="contacts-chevron" aria-hidden="true">
-                    <FaChevronDown size={16} />
-                  </span>
-                </ModernContactSummary>
-                <ProfileContactLinks user={user} role={resolvedRole} language={language} />
-              </ModernContactDetails>
             </ModernSection>
           ))}
           {/* Приватна нотатка й публічний запис — одна секція, дві доріжки.
@@ -1502,6 +1547,19 @@ const SwipeableCard = ({
           <span ref={favoriteButtonWrapRef} onClickCapture={() => onReacted?.(user.userId)}>
             <BtnFavorite userId={user.userId} userData={canonicalUserData} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
           </span>
+          {/* Трубка — та сама, що в рядку стрічки: «звʼязатися з цією людиною».
+              Ряд дій стоїть на екрані завжди, тож і до контактів звідси один
+              дотик, хоч би де читач зараз був у картці. */}
+          {hasContactSection && (
+            <ActionButton
+              type="button"
+              onClick={openContactDetails}
+              aria-label={profileUiText('showContacts', language)}
+              title={profileUiText('showContacts', language)}
+            >
+              <PhoneHandsetIcon />
+            </ActionButton>
+          )}
         </ModernActionRail>
         )}
       </ModernProfileShell>
@@ -1708,8 +1766,12 @@ const GalleryCard = React.memo(({
   const role = getProfileRole(user);
   const roleCode = getRoleCode(role);
   const location = getLocationLine(user, language);
-  const facts = useMemo(() => (isCounterparty ? [] : renderProfileFacts(user, [], language)), [isCounterparty, language, user]);
-  const [bodyFacts, reproFacts] = useMemo(() => splitProfileFactsByGroup(facts), [facts]);
+  // Та сама смуга показників, що й у рядку списку та у відкритій картці
+  // (`ProfileStatStrip`): плитка мала свій курсивний рядок «178/88 | BMI 28 |
+  // O+» і «КР 1», тобто ту саму людину дві розкладки описували різними
+  // словами («ІМТ» і «BMI»). Пологи й сімейний стан плитка не несе — на них
+  // немає ширини, і їх видно у відкритій картці.
+  const statCells = useMemo(() => (isCounterparty ? [] : buildProfileStatStrip(user, language)), [isCounterparty, language, user]);
   const isLimited = Boolean(user?.__limitedProfile);
   const isPublished = isMatchingCardPublished(user);
 
@@ -1771,58 +1833,43 @@ const GalleryCard = React.memo(({
             <span>{location}</span>
           </GalleryLocation>
         )}
-        {bodyFacts.length > 0 && (
-          <GalleryFacts>
-            {bodyFacts.map((node, idx) => (
-              <React.Fragment key={node.key}>
-                {idx > 0 && ' '}
-                {node}
-              </React.Fragment>
-            ))}
-          </GalleryFacts>
-        )}
-        {reproFacts.length > 0 && (
-          <GalleryFacts $soft>
-            {reproFacts.map((node, idx) => (
-              <React.Fragment key={node.key}>
-                {idx > 0 && ' '}
-                {node}
-              </React.Fragment>
-            ))}
-          </GalleryFacts>
-        )}
+        {statCells.length > 0 && <ProfileStatStrip cells={statCells} />}
         {!isLimited ? <CardRoleBlock card={user} programsContext={programsContext} language={language} /> : null}
         {!isLimited && (
-          <GalleryActions>
+          // Той самий ряд рішень, що й у рядку списку: олівець, пара
+          // «не цікаво / в обране» у спільній рамці, значки без підписів. Тут
+          // були широкі кнопки зі словами «Доповнити / Не цікаво / Обране», і
+          // «Обране» займало окремий рядок плитки.
+          <RowFooterActions onClick={event => event.stopPropagation()}>
             {onEnrich && (
-              <GalleryActionButton type="button" aria-label={enrichGateLabel(language)} title={enrichGateLabel(language)} onClick={event => { event.stopPropagation(); onEnrich(user); }}>
-                <FaPencilAlt />
-                <span>{language === 'en' ? 'Edit' : 'Доповнити'}</span>
-              </GalleryActionButton>
+              <RowFooterButton type="button" aria-label={enrichGateLabel(language)} title={enrichGateLabel(language)} onClick={event => { event.stopPropagation(); onEnrich(user); }}>
+                <FaPencilAlt size={13} />
+              </RowFooterButton>
             )}
-            <GalleryActionButton
-              type="button"
-              $on={isHidden}
-              aria-label={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
-              aria-pressed={isHidden}
-              title={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
-              onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
-            >
-              {isHidden ? <FaUndoAlt /> : <FaTimes />}
-              <span>{uiText(isHidden ? 'Повернути' : 'Не цікаво', language)}</span>
-            </GalleryActionButton>
-            <GalleryActionButton
-              type="button"
-              $on={isFavorite}
-              aria-label={uiText('В обране', language)}
-              aria-pressed={isFavorite}
-              title={uiText('В обране', language)}
-              onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
-            >
-              {isFavorite ? <FaHeart /> : <FaRegHeart />}
-              <span>{uiText('Обране', language)}</span>
-            </GalleryActionButton>
-          </GalleryActions>
+            <RowReactionPair>
+              <RowActionButton
+                type="button"
+                $on={isHidden}
+                aria-label={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
+                aria-pressed={isHidden}
+                title={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
+                onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
+              >
+                {isHidden ? <FaUndoAlt /> : <FaTimes />}
+              </RowActionButton>
+              <RowActionButton
+                type="button"
+                $accent
+                $on={isFavorite}
+                aria-label={uiText('В обране', language)}
+                aria-pressed={isFavorite}
+                title={uiText('В обране', language)}
+                onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
+              >
+                {isFavorite ? <FaHeart /> : <FaRegHeart />}
+              </RowActionButton>
+            </RowReactionPair>
+          </RowFooterActions>
         )}
         {/* Ті самі дві доріжки, що й у рядку списку: розкладка міняє те, як
             картку показують, а не те, що про людину вже записали. Поки плитка
@@ -2018,7 +2065,6 @@ const Matching = () => {
   const [detailOpen, setDetailOpen] = useState(false);
   const [expandedRowIds, setExpandedRowIds] = useState(() => new Set());
   const feedScrollTopRef = useRef(0);
-  const rowContactViewKeysRef = useRef(new Set());
   // Spec §8: public records about a profile, readable by everyone signed in.
   // Kept apart from `comments`, which holds this viewer's own private note.
   const [publicComments, setPublicComments] = useState({});
@@ -6967,6 +7013,7 @@ const Matching = () => {
   // сорока наперед.
   const [fullProfileByUserId, setFullProfileByUserId] = useState({});
   const fullProfileRequestsRef = useRef(new Set());
+  const contactRequestsRef = useRef(new Set());
 
   const ensureFullProfile = React.useCallback(user => {
     const userId = user?.userId;
@@ -6996,6 +7043,25 @@ const Matching = () => {
     // самий ініціал (`surnameShort`), що й у видачі, — `ensureFullProfile`
     // мовчки виходив на першій умові, і `fetchUsersByIds`/`readProfileFromNodes`
     // не викликались, хоча право на повне прізвище картка вже мала.
+    // Повна анкета з кеша (`composeCachedCards` бере її замість проєкції), але
+    // без контактів: читачеві, чиє право тримається на `feedDate`, їх у кеш не
+    // кладуть, а службовому доступу — коли анкета лягла туди раніше за рівень
+    // доступу. Решта анкети на руках, тож з бекенду — лише вузол контактів
+    // цієї картки, а не анкета заново. Власна чернетка контакти несе сама.
+    const isFullCachedCard = !isMatchingSummaryCard(user) && !user?.__limitedProfile;
+    if (isFullCachedCard && !getContactEntries(user).length && !isOwnProfileDraftCard(user)) {
+      if (contactRequestsRef.current.has(userId)) return Promise.resolve();
+      contactRequestsRef.current.add(userId);
+      return readProfileContacts(userId)
+        .then(({ allowed, contacts }) => {
+          if (!allowed || !contacts || !Object.keys(contacts).length) return;
+          setFullProfileByUserId(previous => ({ ...previous, [userId]: { ...(previous[userId] || {}), ...contacts } }));
+        })
+        .catch(error => {
+          contactRequestsRef.current.delete(userId);
+          console.warn('[Matching] Failed to read card contacts', { userId, error });
+        });
+    }
     if (!isMatchingSummaryCard(user) && !user?.__limitedProfile) return Promise.resolve();
     if (fullProfileRequestsRef.current.has(userId)) return Promise.resolve();
     fullProfileRequestsRef.current.add(userId);
@@ -7020,7 +7086,9 @@ const Matching = () => {
       .then(hydrated => {
         const profile = hydrated?.[userId];
         if (!profile) return;
-        updateCard(userId, profile);
+        // Зібране з кеша (тіло плюс точково дочитані контакти) назад у кеш не
+        // кладеться: запис оновив би `cachedAt`, і старе тіло жило б ще TTL.
+        if (!isProfileBuiltFromCache(profile)) updateCard(userId, profile);
         setFullProfileByUserId(previous => ({ ...previous, [userId]: profile }));
       })
       .catch(error => {
@@ -8106,12 +8174,11 @@ const Matching = () => {
     }
   }, [language, ownerId]);
 
-  const handleRowContactsOpened = React.useCallback(user => {
+  // Дотик до контакту в рядку — дія, і кожна рахується (`recordContactAction`):
+  // розгорнути контакти ще не означає звʼязатись.
+  const handleRowContactAction = React.useCallback((user, channel) => {
     if (!user?.userId || !ownerId) return;
-    const trackKey = `${ownerId}:${user.userId}`;
-    if (rowContactViewKeysRef.current.has(trackKey)) return;
-    rowContactViewKeysRef.current.add(trackKey);
-    void addContactViewUser(user.userId, ownerId);
+    void recordContactAction(user.userId, ownerId, channel);
   }, [ownerId]);
 
   // Доповнення картки — це не редагування анкети, і кнопка ця не адмінська:
@@ -8976,7 +9043,7 @@ const Matching = () => {
                       onToggleExpand={handleToggleRowExpand}
                       onOpen={openDetailFor}
                       onEditProfile={handleRowEditProfile}
-                      onContactsOpened={handleRowContactsOpened}
+                      onContactAction={handleRowContactAction}
                       onRequestContacts={handleRequestRowContacts}
                       canViewContacts={canOfferProfileContacts({
                         card: user,

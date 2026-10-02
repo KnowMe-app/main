@@ -113,7 +113,7 @@ export const raceOptions = [
   { placeholder: 'European', ukrainian: 'Європейська' },
   { placeholder: 'Middle Eastern', ukrainian: 'Близькосхідна' },
   { placeholder: 'Indian', ukrainian: 'Індійська' },
-  { placeholder: 'Asian', ukrainian: 'азіатська' },
+  { placeholder: 'Asian', ukrainian: 'Азіатська' },
   { placeholder: 'African', ukrainian: 'Африканська' },
   { placeholder: 'Latino', ukrainian: 'Латиноамериканська' },
 
@@ -121,26 +121,32 @@ export const raceOptions = [
 ];
 
 export const hairColorOptions = [
-  { placeholder: 'Dark', ukrainian: 'Темне' },
-  { placeholder: 'Fair', ukrainian: 'Русяве' },
-  { placeholder: 'Blonde', ukrainian: 'Блонд' },
-  { placeholder: 'Brown', ukrainian: 'Коричневе' },
-  { placeholder: 'Chestnut', ukrainian: 'Каштанове' },
+  // Тринадцять відтінків казали про те саме по кілька разів («Темне»,
+  // «Брюнет», «Темний брюнет»; «Коричневе», «Шатен», «Каштанове»). Форма
+  // пропонує сім; решта лишається `legacy` — з неї перекладаються вже записані
+  // анкети, а запропонованою вона стає лише там, де саме вона й записана.
   { placeholder: 'Brunette', ukrainian: 'Брюнет' },
   { placeholder: 'Shoten', ukrainian: 'Шатен' },
+  { placeholder: 'Chestnut', ukrainian: 'Каштанове' },
+  { placeholder: 'Fair', ukrainian: 'Русяве' },
+  { placeholder: 'Dark Blonde', ukrainian: 'Темно-русяве' },
+  { placeholder: 'Blonde', ukrainian: 'Блонд' },
   { placeholder: 'Red', ukrainian: 'Руде' },
-  { placeholder: 'Dark Blonde', ukrainian: 'Темний блонд' },
-  { placeholder: 'Dark Brown', ukrainian: 'Темно-коричневе' },
-  { placeholder: 'Dark Chestnut', ukrainian: 'Темно-каштанове' },
-  { placeholder: 'Dark Brunette', ukrainian: 'Темний брюнет' },
-  { placeholder: 'Gray', ukrainian: 'Сіре' },
+  { placeholder: 'Gray', ukrainian: 'Сиве' },
+  { placeholder: 'Dark', ukrainian: 'Темне', legacy: true },
+  { placeholder: 'Brown', ukrainian: 'Коричневе', legacy: true },
+  { placeholder: 'Dark Brown', ukrainian: 'Темно-коричневе', legacy: true },
+  { placeholder: 'Dark Chestnut', ukrainian: 'Темно-каштанове', legacy: true },
+  { placeholder: 'Dark Brunette', ukrainian: 'Темний брюнет', legacy: true },
   //
 ];
 
 export const eyeColorOptions = [
-  { placeholder: 'Hazel', ukrainian: 'Карі' },
+  // «Карі» й «Коричневі» — одне й те саме українською. Пропонується одне
+  // значення; `Hazel` лишається для вже записаних анкет і показується так само.
+  { placeholder: 'Brown', ukrainian: 'Карі' },
   { placeholder: 'Gray', ukrainian: 'Сірі' },
-  { placeholder: 'Brown', ukrainian: 'Коричневі' },
+  { placeholder: 'Hazel', ukrainian: 'Карі', legacy: true },
   { placeholder: 'Blue', ukrainian: 'Сині' },
   { placeholder: 'Green', ukrainian: 'Зелені' },
   { placeholder: 'Brown-Green', ukrainian: 'Коричнево-зелені' },
@@ -153,8 +159,9 @@ export const eyeColorOptions = [
 export const hairStructureOptions = [
   { placeholder: 'Straight', ukrainian: 'Пряме' },
   { placeholder: 'Curly', ukrainian: 'Кучеряве' },
-  { placeholder: 'Wavy', ukrainian: 'хвилясте' },
-  { placeholder: 'Smooth', ukrainian: 'Гладке' },
+  { placeholder: 'Wavy', ukrainian: 'Хвилясте' },
+  // «Гладке» — те саме, що «Пряме».
+  { placeholder: 'Smooth', ukrainian: 'Гладке', legacy: true },
   { placeholder: 'Thick', ukrainian: 'Густе' },
   { placeholder: 'Thin', ukrainian: 'Тонке' },
   { placeholder: 'Porous', ukrainian: 'Пористе' },
@@ -166,8 +173,8 @@ export const bodyTypeOptions = [
   { placeholder: 'Pear', ukrainian: 'Груша' },
   { placeholder: 'Round', ukrainian: 'Яблуко' },
   { placeholder: 'Rectangle', ukrainian: 'Прямокутник' },
-  { placeholder: 'Triangle', ukrainian: 'трикутник' },
-  { placeholder: 'Hourglass', ukrainian: 'Пісочний Годинник' },
+  { placeholder: 'Triangle', ukrainian: 'Трикутник' },
+  { placeholder: 'Hourglass', ukrainian: 'Пісочний годинник' },
   { placeholder: 'Inverted Triangle', ukrainian: 'Перевернутий трикутник' },
 
   
@@ -186,6 +193,19 @@ export const educationModalOptions = [
   { placeholder: 'Master', ukrainian: 'Магістр' },
   { placeholder: 'PhD', ukrainian: 'Доктор філософії (PhD)' },
 ];
+
+// «Освіта: Ні / Так» не казала нічого: освіта є майже в кожної. Форма питає
+// рівень (ті самі варіанти, що й у модалці), а «Так/Ні» лишаються `legacy` —
+// для вже записаних анкет.
+const educationLevelOptions = [
+  ...educationModalOptions,
+  ...educationOptions.map(option => ({ ...option, legacy: true })),
+];
+
+// Хобі — це текст («читання, йога»), а не так/ні. Варіанти лишаються лише
+// для перекладу вже записаних «Yes»/«No»; форма пропонує поле.
+const hobbyLegacyOptions = yesNoOptions.map(option => ({ ...option, legacy: true }));
+
 
 export const surrogacyProgramInterestOptions = [
   { placeholder: 'Not considering at all', ukrainian: 'Зовсім не розглядаю' },
@@ -268,10 +288,10 @@ export const pickerFields = [
   { name: 'smoking', label: 'Куріння', ukrainian: 'Куріння', placeholder: 'Так / Ні / Інше', svg: 'no', width: '33%', options: yesNoOptions },
   { name: 'alcohol', label: 'Вживання алкоголю', ukrainian: 'Вживання алкоголю', placeholder: 'Так / Ні / Інше', svg: 'no', width: '33%', options: yesNoOptions },
   { name: 'sport', label: 'Спорт', ukrainian: 'Спорт', placeholder: 'волейбол', svg: 'no', width: '33%', options: yesNoOptions },
-  { name: 'hobbies', label: 'Хобі', ukrainian: 'Хобі', placeholder: 'читання', svg: 'no', width: '33%', options: yesNoOptions },
+  { name: 'hobbies', label: 'Хобі', ukrainian: 'Хобі', placeholder: 'читання', svg: 'no', width: '33%', options: hobbyLegacyOptions },
 
   // додатково
-  { name: 'education', label: 'Освіта', ukrainian: 'Освіта', placeholder: 'Вища освіта', svg: 'no', width: '33%', options: educationOptions, modalOptions: educationModalOptions },
+  { name: 'education', label: 'Освіта', ukrainian: 'Освіта', placeholder: 'Вища освіта', svg: 'no', width: '33%', options: educationLevelOptions, modalOptions: educationModalOptions },
   { name: 'profession', label: 'Професія', ukrainian: 'Професія', placeholder: 'Лікар', svg: 'no', width: '33%' },
   { name: 'twinsInFamily', label: 'Чи були двійнята в родині?', ukrainian: 'Чи були двійнята в родині?', placeholder: 'Так / Ні / Інше', svg: 'no', width: '33%', options: yesNoOptions },
   { name: 'moreInfo_main', label: 'Про себе', ukrainian: 'Про себе', placeholder: 'Коротко розкажіть про себе', ukrainianHint: 'До 300 символів', svg: 'no', width: '100%' },

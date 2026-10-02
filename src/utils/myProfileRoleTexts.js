@@ -34,7 +34,7 @@ const ROLE_FIELD_TEXT = Object.freeze({
   },
   ip: {
     name: { label: 'Як до вас звертатись', placeholder: 'Наприклад: Олена й Андрій' },
-    moreInfo_main: { label: 'Кого шукаєте', placeholder: 'Наприклад: донорку ооцитів, 1-ша група крові, зріст від 165' },
+    moreInfo_main: { label: 'Побажання', placeholder: 'Наприклад: 1-ша група крові, зріст від 165, Київ' },
   },
 });
 
@@ -42,6 +42,9 @@ const ROLE_SECTION_TITLES = Object.freeze({
   ag: { personal: '🏢 Агенція', lifestyle: '📝 Про агенцію' },
   cl: { personal: '🏥 Клініка', lifestyle: '📝 Про клініку' },
   ip: { personal: '👤 Про вас', lifestyle: '📝 Кого шукаєте' },
+  // Розділ «Медична інформація» в СМ питає саме про вагітності й пологи, а
+  // «Спосіб життя» скорочено до куріння, алкоголю й «Про себе».
+  sm: { medical: '🤰 Здоровʼя й вагітності', lifestyle: '📝 Про себе' },
 });
 
 const normalizeRole = role => String(role || '').trim().toLowerCase();

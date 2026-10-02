@@ -126,7 +126,9 @@ it('називає екран власними картками і показу�
   expect(await screen.findByRole('heading', { name: 'Створені мною' })).toBeInTheDocument();
   expect(await screen.findByText('Олена')).toBeInTheDocument();
   expect(screen.getByText('Марія')).toBeInTheDocument();
-  expect(screen.getByText('Очікує перевірки')).toBeInTheDocument();
+  // Гейту перевірки немає — картка вже в пошуку, тож і чіп про нього не каже.
+  expect(screen.getByText('Спільна чернетка')).toBeInTheDocument();
+  expect(screen.queryByText('Очікує перевірки')).not.toBeInTheDocument();
   // Прийнята картка зі списку не зникає: «що я завів» лишається правдою й після
   // публікації, а дією над нею стає доповнення, а не редагування чернетки.
   expect(screen.getByText('Опубліковано')).toBeInTheDocument();

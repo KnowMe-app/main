@@ -259,38 +259,75 @@ export const renderFacts = (user, priorityKeys = [], language) => {
  * і кожен з них коштував цілого рядка; тепер вони йдуть значками під номером.
  * Що саме за значком, каже `title`.
  */
-export const ContactLinks = ({ entries, language }) => {
+export const ContactLinks = ({ entries, language, onContactAction }) => {
+  // Режим лічильника (`onContactAction`): контакти — це дії, і кожен дотик до
+  // будь-якого каналу рахується (`recordContactAction`) як знак, що анкета
+  // справді зацікавила. Цифр номера тут без дотику не видно: стоїть кнопка
+  // «Показати номер», і саме вона першою стає дією. Без обробника (шапка
+  // форми доповнення, де номер і так стоїть у полі нижче) номер показується
+  // одразу, як і був.
+  const tracked = typeof onContactAction === 'function';
+  const [revealedPhones, setRevealedPhones] = useState(() => new Set());
   const phones = entries.filter(entry => entry.key === 'phone');
   const others = entries.filter(entry => entry.key !== 'phone');
+  const act = channel => () => { if (tracked) onContactAction(channel); };
 
   return (
     <>
       {phones.map(entry => {
         const displayValue = formatPhoneDisplay(entry.value);
-        const phoneLabel = `${getContactLabel('phone', language)}: ${displayValue}`;
+        const phoneKey = `${entry.index}-${entry.value}`;
+        const hidden = tracked && !revealedPhones.has(phoneKey);
+        const phoneLabel = hidden
+          ? uiText('Показати номер', language)
+          : `${getContactLabel('phone', language)}: ${displayValue}`;
         return (
-          <S.ContactPhoneRow key={`phone-${entry.index}-${entry.value}`}>
-            <S.ContactPhoneLink href={entry.href} title={phoneLabel} aria-label={phoneLabel}>
-              {/* Значок номера лежить у такій самій рамці, як значки решти
-                  каналів: ліва межа блока контактів одна на всі рядки. */}
-              <S.ContactIconBadge aria-hidden="true">
-                <PhoneHandsetIcon />
-              </S.ContactIconBadge>
-              <span>{displayValue}</span>
-            </S.ContactPhoneLink>
+          <S.ContactPhoneRow key={`phone-${phoneKey}`}>
+            {hidden ? (
+              <S.ContactPhoneLink
+                as="button"
+                type="button"
+                title={phoneLabel}
+                aria-label={phoneLabel}
+                onClick={() => {
+                  setRevealedPhones(previous => new Set(previous).add(phoneKey));
+                  onContactAction('phone');
+                }}
+              >
+                <S.ContactIconBadge aria-hidden="true">
+                  <PhoneHandsetIcon />
+                </S.ContactIconBadge>
+                <span>{phoneLabel}</span>
+              </S.ContactPhoneLink>
+            ) : (
+              <S.ContactPhoneLink href={entry.href} title={phoneLabel} aria-label={phoneLabel} onClick={act('phone')}>
+                {/* Значок номера лежить у такій самій рамці, як значки решти
+                    каналів: ліва межа блока контактів одна на всі рядки. */}
+                <S.ContactIconBadge aria-hidden="true">
+                  <PhoneHandsetIcon />
+                </S.ContactIconBadge>
+                <span>{displayValue}</span>
+              </S.ContactPhoneLink>
+            )}
             <S.ContactIconRow>
-              {PHONE_QUICK_LINKS.map(({ key, Icon, label, build }) => (
-                <S.ContactIconLink
-                  key={`phone-${key}-${entry.index}`}
-                  href={build(entry.value)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={`${label}: ${displayValue}`}
-                  aria-label={`${label}: ${displayValue}`}
-                >
-                  <Icon />
-                </S.ContactIconLink>
-              ))}
+              {PHONE_QUICK_LINKS.map(({ key, Icon, label, build }) => {
+                const quickLabel = tracked
+                  ? uiText('{label} за номером', language, { label })
+                  : `${label}: ${displayValue}`;
+                return (
+                  <S.ContactIconLink
+                    key={`phone-${key}-${entry.index}`}
+                    href={build(entry.value)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={quickLabel}
+                    aria-label={quickLabel}
+                    onClick={act(`phone-${key}`)}
+                  >
+                    <Icon />
+                  </S.ContactIconLink>
+                );
+              })}
             </S.ContactIconRow>
           </S.ContactPhoneRow>
         );
@@ -299,7 +336,11 @@ export const ContactLinks = ({ entries, language }) => {
         <S.ContactIconRow $standalone>
           {others.map(entry => {
             const Icon = getContactIcon(entry.key);
-            const label = `${getContactLabel(entry.key, language)}: ${entry.value}`;
+            // У режимі лічильника значення в підказці не стоїть: ник чи пошта
+            // відкриваються дотиком, і саме дотик рахується.
+            const label = tracked
+              ? getContactLabel(entry.key, language)
+              : `${getContactLabel(entry.key, language)}: ${entry.value}`;
             return (
               <S.ContactIconLink
                 key={`${entry.key}-${entry.index}-${entry.value}`}
@@ -308,6 +349,7 @@ export const ContactLinks = ({ entries, language }) => {
                 rel={isExternalContact(entry.key) ? 'noopener noreferrer' : undefined}
                 title={label}
                 aria-label={label}
+                onClick={act(entry.key)}
               >
                 <Icon />
               </S.ContactIconLink>
@@ -319,7 +361,7 @@ export const ContactLinks = ({ entries, language }) => {
   );
 };
 
-export const ContactsSection = ({ user, onOpened }) => {
+export const ContactsSection = ({ user, onContactAction }) => {
   const { language } = useAppSettings();
   const entries = useMemo(
     () => getContactEntries(user).filter(entry => entry.key !== 'vk'),
@@ -334,11 +376,7 @@ export const ContactsSection = ({ user, onOpened }) => {
       <S.ContactsHeader
         type="button"
         onClick={() => {
-          setOpen(current => {
-            const next = !current;
-            if (next && onOpened) onOpened(user);
-            return next;
-          });
+          setOpen(current => !current);
         }}
       >
         {translateProfileLabel('Contacts', language)}
@@ -346,7 +384,11 @@ export const ContactsSection = ({ user, onOpened }) => {
       </S.ContactsHeader>
       {open && (
         <S.ContactsBody>
-          <ContactLinks entries={entries} language={language} />
+          <ContactLinks
+            entries={entries}
+            language={language}
+            onContactAction={onContactAction ? channel => onContactAction(user, channel) : undefined}
+          />
         </S.ContactsBody>
       )}
     </S.ContactsBlock>
@@ -557,8 +599,9 @@ export const CommentBlock = ({ text, onSave, placeholder }) => {
 //
 // A record about a third party that every user of the base can read. It is
 // anonymous: no author name is shown under it or written with it. The affordance is a line of muted text; a click turns it
-// into a borderless auto-growing field. It saves on blur, discards on Esc, and
-// commits + blurs on Ctrl/Cmd+Enter. An empty field writes nothing at all.
+// into a borderless auto-growing field. It is published only by the explicit
+// «Опублікувати» button (or Ctrl/Cmd+Enter) — never on blur — and Esc or
+// «Не публікувати» discards it. An empty field writes nothing at all.
 
 const COMMENT_MIN_ROWS = 1;
 const COMMENT_MAX_ROWS = 6;
@@ -599,8 +642,9 @@ const formatCommentDate = timestamp => {
 
 const CommentComposer = ({ initialText, onCancel, onCommit, language, preloaded = false }) => {
   const ref = useRef(null);
-  const cancelledRef = useRef(false);
   const [draft, setDraft] = useState(initialText || '');
+  const isEdit = Boolean(String(initialText || '').trim());
+  const canCommit = isEdit || draft.trim() !== '';
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -627,20 +671,48 @@ const CommentComposer = ({ initialText, onCancel, onCommit, language, preloaded 
           if (e.key === 'Escape') {
             e.preventDefault();
             e.stopPropagation();
-            cancelledRef.current = true;
             onCancel();
             return;
           }
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
-            onCommit(e.target.value);
+            if (canCommit) onCommit(e.target.value);
           }
         }}
+        // Втрата фокуса нічого не публікує. Порожній новий відгук просто
+        // згортається назад у запрошення — інакше поле висіло б відкритим
+        // після кожного випадкового дотику; набраний текст лишається в полі,
+        // доки людина не натисне «Опублікувати» чи «Не публікувати».
         onBlur={e => {
-          if (cancelledRef.current) return;
-          onCommit(e.target.value);
+          if (!isEdit && !e.target.value.trim()) onCancel();
         }}
       />
+      <S.CommentActions>
+        <S.CommentAudienceNote>{uiText('Побачать усі користувачі. Ваше імʼя не показується.', language)}</S.CommentAudienceNote>
+        <S.CommentCancelButton
+          type="button"
+          // mousedown не забирає фокус у поля: інакше blur порожнього поля
+          // згорнув би редактор раніше, ніж дійде клік.
+          onMouseDown={e => e.preventDefault()}
+          onClick={e => {
+            e.stopPropagation();
+            onCancel();
+          }}
+        >
+          {uiText('Не публікувати', language)}
+        </S.CommentCancelButton>
+        <S.CommentPublishButton
+          type="button"
+          disabled={!canCommit}
+          onMouseDown={e => e.preventDefault()}
+          onClick={e => {
+            e.stopPropagation();
+            onCommit(draft);
+          }}
+        >
+          {uiText(isEdit ? 'Зберегти відгук' : 'Опублікувати', language)}
+        </S.CommentPublishButton>
+      </S.CommentActions>
     </S.CommentEditor>
   );
 };
@@ -1037,7 +1109,8 @@ const ProfileRow = ({
   onToggleExpand,
   onOpen,
   onEditProfile,
-  onContactsOpened,
+  // Дотик до будь-якого контакту — дія (`recordContactAction`): `(user, channel)`.
+  onContactAction,
   onRequestContacts,
   // Чи цьому читачеві взагалі є що тут відкривати. Питання вирішує той, хто
   // знає і картку, і читача (`canOfferProfileContacts` у Matching), — рядок
@@ -1194,7 +1267,6 @@ const ProfileRow = ({
       const next = !open;
       if (next) {
         if (onRequestContacts) onRequestContacts(user);
-        if (onContactsOpened) onContactsOpened(user);
       }
       return next;
     });
@@ -1317,16 +1389,18 @@ const ProfileRow = ({
                 onClick={e => { e.stopPropagation(); onTogglePublish(user); }}
               />
             )}
-            {showContactsButton && (
+            {/* Олівець — угорі, біля імені: це дія над самою карткою, а не
+                рішення про людину. Тут раніше стояла трубка контактів —
+                найменша кнопка картки для її головної дії; вона переїхала в ряд
+                рішень широкою кнопкою (`RowContactsButton`). */}
+            {editAction && (
               <S.RowActionButton
                 type="button"
-                $on={contactsOpen}
-                title={uiText('Контакти', language)}
-                aria-label={uiText('Контакти', language)}
-                aria-expanded={contactsOpen}
-                onClick={e => { e.stopPropagation(); toggleContacts(); }}
+                title={editAction.title}
+                aria-label={editAction.title}
+                onClick={e => { e.stopPropagation(); editAction.onClick(user); }}
               >
-                <PhoneHandsetIcon size={13} />
+                <FaPencilAlt size={12} />
               </S.RowActionButton>
             )}
           </S.RowActionStack>
@@ -1350,7 +1424,11 @@ const ProfileRow = ({
       {contactsOpen && (
         <S.RowContacts onClick={e => e.stopPropagation()}>
           {contactEntries.length > 0 ? (
-            <ContactLinks entries={contactEntries} language={language} />
+            <ContactLinks
+              entries={contactEntries}
+              language={language}
+              onContactAction={onContactAction ? channel => onContactAction(user, channel) : undefined}
+            />
           ) : (
             <S.RowContactsNote>
               {uiText(contactsLoading ? 'Шукаємо контакти…' : 'Контактів немає або вони закриті', language)}
@@ -1375,7 +1453,7 @@ const ProfileRow = ({
               Там, де кнопки немає (список прихованих), блок лишається
               єдиним місцем, звідки контакти видно. */}
           {!showContactsButton && canViewContacts && (
-            <ContactsSection user={user} onOpened={onContactsOpened} />
+            <ContactsSection user={user} onContactAction={onContactAction} />
           )}
         </S.More>
       )}
@@ -1441,18 +1519,8 @@ const ProfileRow = ({
           написами («Доповнити дані», «Перевірити наявність відгуків»), і
           картка з трьох фактів займала пів екрана. Що робить кожна, каже
           `title` і `aria-label` — саме їх читає й екранний диктор. */}
-      {!preview && (editAction || canExpandDetails || (!isLimited && (primaryAction || secondaryAction))) && (
+      {!preview && (showContactsButton || canExpandDetails || (!isLimited && (primaryAction || secondaryAction))) && (
         <S.RowFooterActions onClick={e => e.stopPropagation()}>
-          {editAction && (
-            <S.RowFooterButton
-              type="button"
-              title={editAction.title}
-              aria-label={editAction.title}
-              onClick={e => { e.stopPropagation(); editAction.onClick(user); }}
-            >
-              <FaPencilAlt size={13} />
-            </S.RowFooterButton>
-          )}
           {!isLimited && (primaryAction || secondaryAction) && (
             <S.RowReactionPair data-testid="row-reactions">
               {primaryAction && (
@@ -1482,6 +1550,19 @@ const ProfileRow = ({
                 </S.RowActionButton>
               )}
             </S.RowReactionPair>
+          )}
+          {showContactsButton && (
+            <S.RowContactsButton
+              type="button"
+              $on={contactsOpen}
+              title={uiText('Контакти', language)}
+              aria-label={uiText('Контакти', language)}
+              aria-expanded={contactsOpen}
+              onClick={e => { e.stopPropagation(); toggleContacts(); }}
+            >
+              <PhoneHandsetIcon size={13} />
+              <span>{uiText('Контакти', language)}</span>
+            </S.RowContactsButton>
           )}
           {canExpandDetails && (
             <S.RowFooterButton
