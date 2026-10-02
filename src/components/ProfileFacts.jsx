@@ -14,6 +14,7 @@ import { profileUiText, resolveProfileLanguage, translateProfileLabel } from '..
 import { formatDeliveryRecency } from '../utils/deliveryRecency';
 import { formatProfileCountOrDate } from '../utils/profileDate';
 import { uiText } from '../utils/uiTranslations';
+import { describeHair, describeLooks, describeSizes, describeWork } from '../utils/profileSentences';
 
 /*
  * Факти анкети — один блок на рядок стрічки й на відкриту картку.
@@ -131,23 +132,18 @@ const TRAIT_WORDS = {
   en: { eyes: 'eyes', hair: 'hair' },
 };
 
-// «Блонд», «шатен», «брюнет» — іменники, і з «волоссям» не узгоджуються:
-// «шатен волосся» читалося б як помилка. Прикметник середнього роду
-// («русяве», «темне») стає перед словом, іменник — сам.
-const HAIR_COLOR_NOUNS_EN = new Set(['blonde', 'brunette', 'shoten', 'dark blonde', 'dark brunette']);
-const isHairColorNoun = (color, lang) => (lang === 'uk' ? !/[еє]$/.test(color) : HAIR_COLOR_NOUNS_EN.has(color));
-
-// Структури волосся тут немає навмисно: у картці стрічки її немає, і рядок
-// списку казав би про ту саму людину менше, ніж відкрита картка, — тими
-// самими словами, але іншим реченням. Вона стоїть у розділі «Обличчя й
-// фігура» (`buildProfileDetailSections`).
+// Колір і структура волосся — одним словосполученням («темне хвилясте
+// волосся», `describeHair`): довідник кольору тримає іменники («Брюнетка»,
+// «Шатенка»), а перед «волоссям» стоїть прикметник. Структура тепер у картці
+// стрічки (`hairStructure` у `MATCHING_CARD_MIRRORED_FIELDS`), тож усе про
+// волосся стоїть тут, а не ще раз у розділах повної анкети.
 const describeAppearance = (user, lang) => {
   const words = TRAIT_WORDS[lang];
   const eyes = readOptionValue(user, 'eyeColor', lang);
-  const color = readOptionValue(user, 'hairColor', lang);
+  const hair = describeHair(user, lang);
   const parts = [];
   if (eyes) parts.push(eyes.includes(words.eyes) ? eyes : `${eyes} ${words.eyes}`);
-  if (color) parts.push(isHairColorNoun(color, lang) ? color : `${color} ${words.hair}`);
+  if (hair) parts.push(hair);
   return parts.join(', ');
 };
 
@@ -263,7 +259,7 @@ export const buildProfileSummaryRows = (user, language) => {
 // Ключі полів, які вже сказав короткий блок: інші екрани (сітка, чипи) їх не
 // повторюють.
 export const PROFILE_SUMMARY_FIELD_KEYS = Object.freeze([
-  'height', 'weight', 'bmi', 'blood', 'eyeColor', 'hairColor', 'ownKids', 'lastDelivery',
+  'height', 'weight', 'bmi', 'blood', 'eyeColor', 'hairColor', 'hairStructure', 'ownKids', 'lastDelivery',
   ...CSECTION_KEYS, 'experience', 'maritalStatus',
 ]);
 
@@ -286,12 +282,17 @@ const describeEducation = (user, lang) => {
 const option = field => (user, lang) => readOptionValue(user, field, lang);
 const typed = field => user => readTypedValue(user, field);
 
+/*
+ * Розділ = речення з відповідей, вибраних зі списку (`utils/profileSentences`),
+ * плюс рядки «підпис — значення» для того, що людина набрала сама: власна
+ * відповідь у речення не лягає, бо її рід і відмінок невідомі.
+ */
 const DETAIL_SECTIONS = [
   {
     key: 'looks',
     title: 'Face and figure',
+    describe: describeLooks,
     fields: [
-      { key: 'hairStructure', label: 'Hair', read: option('hairStructure') },
       { key: 'faceShape', label: 'Face shape', read: option('faceShape') },
       { key: 'noseShape', label: 'Nose', read: option('noseShape') },
       { key: 'lipsShape', label: 'Lips', read: option('lipsShape') },
@@ -305,6 +306,7 @@ const DETAIL_SECTIONS = [
   {
     key: 'work',
     title: 'Education and work',
+    describe: describeWork,
     fields: [
       { key: 'education', label: 'Education', read: describeEducation },
       { key: 'profession', label: 'Profession', read: typed('profession') },
@@ -313,6 +315,7 @@ const DETAIL_SECTIONS = [
   {
     key: 'sizes',
     title: 'Sizes',
+    describe: describeSizes,
     fields: [
       { key: 'clothingSize', label: 'Clothing', read: typed('clothingSize') },
       { key: 'shoeSize', label: 'Shoe', read: typed('shoeSize') },
@@ -326,15 +329,21 @@ const DETAIL_SECTIONS = [
  */
 export const buildProfileDetailSections = (user, language) => {
   const lang = resolveProfileLanguage(language);
+  const typedValue = field => readTypedValue(user, field);
   return DETAIL_SECTIONS
-    .map(section => ({
-      key: section.key,
-      title: translateProfileLabel(section.title, lang),
-      rows: section.fields
-        .map(field => ({ key: field.key, label: translateProfileLabel(field.label, lang), value: field.read(user, lang) }))
-        .filter(row => row.value),
-    }))
-    .filter(section => section.rows.length > 0);
+    .map(section => {
+      const { text, used } = section.describe({ user, lang, typed: typedValue });
+      return {
+        key: section.key,
+        title: translateProfileLabel(section.title, lang),
+        text,
+        rows: section.fields
+          .filter(field => !used.has(field.key))
+          .map(field => ({ key: field.key, label: translateProfileLabel(field.label, lang), value: field.read(user, lang) }))
+          .filter(row => row.value),
+      };
+    })
+    .filter(section => section.text || section.rows.length > 0);
 };
 
 // ---------------------------------------------------------------------------
@@ -539,7 +548,8 @@ export const ProfileDetailSections = ({ sections, accent, large = false }) => {
   return sections.map(section => (
     <DetailSection key={section.key}>
       <DetailTitle $accent={accent}>{section.title}</DetailTitle>
-      <ProfileFactList rows={section.rows} large={large} />
+      {section.text ? <AboutText $large={large}>{section.text}</AboutText> : null}
+      {section.rows.length ? <ProfileFactList rows={section.rows} large={large} /> : null}
     </DetailSection>
   ));
 };

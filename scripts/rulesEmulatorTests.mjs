@@ -204,6 +204,17 @@ await it('картка приймає версію програм і «кого 
     set(ref(context.database(), `matchingCards/${CARD}/seekingRole`), null));
 });
 
+// Копії з анкети (`MATCHING_CARD_MIRRORED_FIELDS`): назва агенції в картці
+// людини з двома ролями й структура волосся поруч із кольором.
+await it('картка приймає назву агенції й структуру волосся', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/agencyName`), 'Мрія Донорства'));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/hairStructure`), 'Wavy'));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/agencyName`), null));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/hairStructure`), null));
+});
+
 const OWNER_PROGRAMS = {
   updatedAt: 1759200000000,
   items: {

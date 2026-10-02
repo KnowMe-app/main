@@ -137,12 +137,23 @@ export const MATCHING_CARD_REVIEW_FIELDS = Object.freeze(['hasPublicReview']);
  */
 export const MATCHING_CARD_PROGRAMS_FIELDS = Object.freeze(['programsAt']);
 
+/**
+ * Копії полів анкети в картці стрічки: значення живе й пишеться у своєму
+ * вузлі (`profileDetails`), а картка несе його копію, щоб рядок показав без
+ * читання анкети. Тому власником поля картка не стає (`OWNERSHIP` їх
+ * пропускає). `agencyName` — назва агенції чи клініки, коли в анкеті ще й
+ * особиста роль; `hairStructure` — щоб «Зовнішність» у рядку казала про
+ * волосся все одним місцем.
+ */
+export const MATCHING_CARD_MIRRORED_FIELDS = Object.freeze(['agencyName', 'hairStructure']);
+
 /** Повний набір ключів, які має право лежати в картці стрічки. */
 export const MATCHING_CARD_ALLOWED_FIELDS = Object.freeze([
   ...MATCHING_CARD_DIRECT_FIELDS,
   ...Object.keys(MATCHING_CARD_DERIVED_FIELDS),
   ...MATCHING_CARD_REVIEW_FIELDS,
   ...MATCHING_CARD_PROGRAMS_FIELDS,
+  ...MATCHING_CARD_MIRRORED_FIELDS,
 ]);
 
 /**
@@ -227,6 +238,8 @@ export const PROFILE_DETAIL_FIELDS = Object.freeze([
   // назва агенції чи клініки, коли в анкеті ще й особиста роль: імʼя тоді
   // належить людині (`MyProfile`, `agencyName`)
   'agencyName',
+  // «Ускладнення здоровʼя, вагітності, пологів» — «Ні» або розповідь
+  'healthComplications',
   'blood',
   'photos',
   'photo',
@@ -464,7 +477,7 @@ export const OWNER_MULTI_DATA_STRING_FIELDS = Object.freeze(
 );
 
 const OWNERSHIP = [
-  [PROFILE_NODES.matchingCards, MATCHING_CARD_ALLOWED_FIELDS],
+  [PROFILE_NODES.matchingCards, MATCHING_CARD_ALLOWED_FIELDS.filter(field => !MATCHING_CARD_MIRRORED_FIELDS.includes(field))],
   [PROFILE_NODES.profileContacts, PROFILE_CONTACT_FIELDS],
   [PROFILE_NODES.profileWorkflow, PROFILE_WORKFLOW_FIELDS],
   [PROFILE_NODES.profileTechnical, PROFILE_TECHNICAL_FIELDS],

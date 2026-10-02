@@ -554,8 +554,12 @@ const PROFILE_SEARCH_DEBOUNCE_MS = 250;
 // them, plus one public note. Everything else pickerFields knows about
 // (medical, appearance, lifestyle...) belongs to the full profile, filled in
 // later - not to this quick intake form.
+// По батькові — у спільному `pickerFields` його немає (лише в адмінському
+// `pickerFieldsExtended`, малими літерами), тож форма має власний опис поля.
+const PATRONYMIC_FIELD = { name: 'fathersname', label: 'По батькові', ukrainian: 'По батькові', placeholder: 'Олександрівна', svg: 'no' };
+
 const CREATE_FORM_SECTIONS = [
-  { key: 'personal', title: '👤 ПІБ і дата народження', fields: ['surname', 'name', 'birth'] },
+  { key: 'personal', title: '👤 ПІБ і дата народження', fields: ['surname', 'name', 'fathersname', 'birth'] },
   { key: 'location', title: '📍 Локація', fields: ['country', 'region', 'city'] },
   // VK тут немає: мережа заблокована в Україні з 2017 року, і поле для неї у
   // формі читалось як знак, чий це застосунок. Уже записані значення лишаються
@@ -1666,7 +1670,7 @@ export const ProfileCreationWorkspace = () => {
     }
   };
 
-  const fieldsMap = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
+  const fieldsMap = useMemo(() => new Map([...pickerFields, PATRONYMIC_FIELD].map(field => [field.name, field])), []);
   const draftFilledPct = useMemo(() => {
     const filledFields = [...FORM_FIELD_NAMES].filter(fieldName => (
       toFieldValues(draft?.[fieldName]).some(value => String(value ?? '').trim())

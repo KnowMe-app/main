@@ -19,6 +19,7 @@ const COMMON_FIELD_TEXT = Object.freeze({
   name: { placeholder: 'Наприклад: Марія' },
   surname: { placeholder: 'Наприклад: Іваненко' },
   phone: { placeholder: 'Наприклад: +380671234567' },
+  reward: { label: 'Бажана винагорода', placeholder: 'Наприклад: від 1000 $, залежить від програми' },
 });
 
 const ROLE_FIELD_TEXT = Object.freeze({

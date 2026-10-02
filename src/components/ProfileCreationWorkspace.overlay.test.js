@@ -104,7 +104,8 @@ const openSharedDraft = async () => {
   render(<ProfileCreationWorkspace />);
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Відкрити' }));
-  await waitFor(() => expect(screen.getAllByRole('textbox')).toHaveLength(2));
+  // Два рядки телефону плюс порожнє «по батькові».
+  await waitFor(() => expect(screen.getAllByRole('textbox')).toHaveLength(3));
 };
 
 beforeEach(() => {
@@ -115,27 +116,31 @@ beforeEach(() => {
 applyUkrainianInterface();
 
 describe('ProfileCreationWorkspace repeatable field behavior', () => {
+  // Першим у формі стоїть порожнє «по батькові» — рядки телефону йдуть за ним.
+  const phoneBoxes = () => screen.getAllByRole('textbox').slice(1);
+  const phoneClearButtons = () => screen.getAllByTitle('Очистити рядок').slice(1);
+
   it('removes one of several visible values instead of restoring persisted history', async () => {
     await openSharedDraft();
 
-    fireEvent.click(screen.getAllByTitle('Очистити рядок')[0]);
+    fireEvent.click(phoneClearButtons()[0]);
 
-    await waitFor(() => expect(screen.getAllByRole('textbox')).toHaveLength(1));
-    expect(screen.getByRole('textbox')).toHaveValue('222');
+    await waitFor(() => expect(phoneBoxes()).toHaveLength(1));
+    expect(phoneBoxes()[0]).toHaveValue('222');
   });
 
   it('keeps exactly one empty row after clearing the last value repeatedly and blurring', async () => {
     await openSharedDraft();
 
-    fireEvent.click(screen.getAllByTitle('Очистити рядок')[0]);
-    fireEvent.click(screen.getByTitle('Очистити рядок'));
-    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue(''));
+    fireEvent.click(phoneClearButtons()[0]);
+    fireEvent.click(phoneClearButtons()[0]);
+    await waitFor(() => expect(phoneBoxes()[0]).toHaveValue(''));
 
-    fireEvent.click(screen.getByTitle('Очистити рядок'));
-    fireEvent.blur(screen.getByRole('textbox'));
+    fireEvent.click(phoneClearButtons()[0]);
+    fireEvent.blur(phoneBoxes()[0]);
 
-    expect(screen.getAllByRole('textbox')).toHaveLength(1);
-    expect(screen.getByRole('textbox')).toHaveValue('');
+    expect(phoneBoxes()).toHaveLength(1);
+    expect(phoneBoxes()[0]).toHaveValue('');
     await waitFor(() => expect(saveOverlayForUserCard).toHaveBeenCalledTimes(4));
     const latestFields = saveOverlayForUserCard.mock.calls.at(-1)[0].fields;
     expect(latestFields.phone.added).toBeUndefined();
@@ -145,7 +150,7 @@ describe('ProfileCreationWorkspace repeatable field behavior', () => {
   it('records one correct removal while the editor continues to see only current values', async () => {
     await openSharedDraft();
 
-    fireEvent.click(screen.getAllByTitle('Очистити рядок')[0]);
+    fireEvent.click(phoneClearButtons()[0]);
 
     await waitFor(() => expect(saveOverlayForUserCard).toHaveBeenCalledTimes(1));
     expect(saveOverlayForUserCard).toHaveBeenCalledWith(expect.objectContaining({
@@ -153,8 +158,8 @@ describe('ProfileCreationWorkspace repeatable field behavior', () => {
       editorUserId: 'editor-1',
       fields: { phone: { removed: ['111'] } },
     }));
-    expect(screen.getAllByRole('textbox')).toHaveLength(1);
-    expect(screen.getByRole('textbox')).toHaveValue('222');
+    expect(phoneBoxes()).toHaveLength(1);
+    expect(phoneBoxes()[0]).toHaveValue('222');
 
     const fields = buildOverlayFromDraft(sharedDraft.data, { ...sharedDraft.data, phone: ['222'] });
     expect(applyOverlayToCard(sharedDraft.data, fields).phone).toBe('222');

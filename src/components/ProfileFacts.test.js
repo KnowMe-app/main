@@ -73,13 +73,16 @@ describe('короткі факти', () => {
   it('кажуть про зовнішність самими полями картки стрічки', () => {
     const rows = buildProfileSummaryRows({ eyeColor: 'Hazel', hairColor: 'Fair', hairStructure: 'Straight' }, 'uk');
     expect(labelOf(rows, 'appearance')).toBe('Зовнішність');
-    // Структура волосся — у розділі «Обличчя й фігура», а не тут: у картці
-    // стрічки її немає.
-    expect(valueOf(rows, 'appearance')).toBe('карі очі, русяве волосся');
+    // Усе про волосся — тут, одним словосполученням: структура тепер у
+    // картці стрічки (`MATCHING_CARD_MIRRORED_FIELDS`).
+    expect(valueOf(rows, 'appearance')).toBe('карі очі, русяве пряме волосся');
   });
 
-  it('не узгоджує з «волоссям» колір, який є іменником', () => {
-    expect(valueOf(buildProfileSummaryRows({ hairColor: 'Shoten' }, 'uk'), 'appearance')).toBe('шатен');
+  // Довідник кольору тримає іменники жіночого роду («Шатенка»), а перед
+  // «волоссям» стоїть прикметник.
+  it('узгоджує з «волоссям» колір, який у довіднику є іменником', () => {
+    expect(valueOf(buildProfileSummaryRows({ hairColor: 'Shoten' }, 'uk'), 'appearance')).toBe('світло-каштанове волосся');
+    expect(valueOf(buildProfileSummaryRows({ hairColor: 'Brunette', hairStructure: 'Wavy' }, 'uk'), 'appearance')).toBe('темне хвилясте волосся');
   });
 
   it('називає пологи пологами й каже давність останніх', () => {
@@ -146,28 +149,36 @@ describe('розділи повної анкети', () => {
   it('ставлять решту анкети в розділи, однакові для рядка й картки', () => {
     const sections = buildProfileDetailSections(fullProfile, 'uk');
     expect(sections.map(section => section.title)).toEqual(['Обличчя й фігура', 'Освіта й робота', 'Розміри']);
-    const looks = sections[0].rows;
-    expect(valueOf(looks, 'hairStructure')).toBe('густе');
-    expect(valueOf(looks, 'faceShape')).toBe('овальне');
-    expect(valueOf(looks, 'race')).toBe('європейська');
+    // Відповіді зі списку — реченням; волосся тут немає, воно вгорі.
+    expect(sections[0].text).toContain('овальна форма обличчя');
+    expect(sections[0].text).toContain('Моя раса — європейська.');
+    expect(sections[0].text).not.toContain('волосся');
+    expect(valueOf(sections[0].rows, 'faceShape')).toBeUndefined();
   });
 
   it('пише значення зі списку малими літерами цілком', () => {
-    const looks = buildProfileDetailSections({ bodyType: 'Hourglass' }, 'uk')[0].rows;
-    expect(valueOf(looks, 'bodyType')).toBe('пісочний годинник');
+    const looks = buildProfileDetailSections({ bodyType: 'Hourglass' }, 'uk')[0];
+    expect(looks.text).toBe('Тип моєї фігури — пісочний годинник.');
   });
 
-  it('лишає набране людиною як набрали', () => {
-    const work = buildProfileDetailSections(fullProfile, 'uk').find(section => section.key === 'work').rows;
-    expect(valueOf(work, 'education')).toBe('вища');
-    expect(valueOf(work, 'profession')).toBe('Лікар Терапевт');
+  it('складає освіту й професію в речення', () => {
+    const work = buildProfileDetailSections(fullProfile, 'uk').find(section => section.key === 'work');
+    expect(work.text).toBe('Я маю вищу освіту та працюю за професією Лікар Терапевт.');
+    expect(work.rows).toEqual([]);
+  });
+
+  // Власна відповідь у речення не лягає: її рід і відмінок невідомі.
+  it('лишає власні відповіді рядками анкети', () => {
+    const looks = buildProfileDetailSections({ faceShape: 'як у мами', noseShape: 'Straight' }, 'uk')[0];
+    expect(looks.text).toBe('У мене прямий ніс.');
+    expect(valueOf(looks.rows, 'faceShape')).toBe('як у мами');
   });
 
   // «Так/ні» в освіті — відповідь на питання форми, а не назва освіти.
   it('не показує «Освіта — так»', () => {
     const sections = buildProfileDetailSections({ education: 'Yes', profession: 'Кухар' }, 'uk');
     expect(valueOf(sections[0].rows, 'education')).toBeUndefined();
-    expect(valueOf(sections[0].rows, 'profession')).toBe('Кухар');
+    expect(sections[0].text).toBe('Я працюю за професією Кухар.');
   });
 
   it('не малює розділу без жодного значення', () => {

@@ -125,19 +125,22 @@ export const hairColorOptions = [
   // «Брюнет», «Темний брюнет»; «Коричневе», «Шатен», «Каштанове»). Форма
   // пропонує сім; решта лишається `legacy` — з неї перекладаються вже записані
   // анкети, а запропонованою вона стає лише там, де саме вона й записана.
-  { placeholder: 'Brunette', ukrainian: 'Брюнет' },
-  { placeholder: 'Shoten', ukrainian: 'Шатен' },
+  // Колір волосся описує жінку, тож іменники — жіночого роду: «Брюнетка»,
+  // «Шатенка». У реченні перед «волоссям» їх замінює прикметник
+  // (`utils/profileSentences`, «темне», «світло-каштанове»).
+  { placeholder: 'Brunette', ukrainian: 'Брюнетка' },
+  { placeholder: 'Shoten', ukrainian: 'Шатенка' },
   { placeholder: 'Chestnut', ukrainian: 'Каштанове' },
   { placeholder: 'Fair', ukrainian: 'Русяве' },
   { placeholder: 'Dark Blonde', ukrainian: 'Темно-русяве' },
-  { placeholder: 'Blonde', ukrainian: 'Блонд' },
+  { placeholder: 'Blonde', ukrainian: 'Блондинка' },
   { placeholder: 'Red', ukrainian: 'Руде' },
   { placeholder: 'Gray', ukrainian: 'Сиве' },
   { placeholder: 'Dark', ukrainian: 'Темне', legacy: true },
   { placeholder: 'Brown', ukrainian: 'Коричневе', legacy: true },
   { placeholder: 'Dark Brown', ukrainian: 'Темно-коричневе', legacy: true },
   { placeholder: 'Dark Chestnut', ukrainian: 'Темно-каштанове', legacy: true },
-  { placeholder: 'Dark Brunette', ukrainian: 'Темний брюнет', legacy: true },
+  { placeholder: 'Dark Brunette', ukrainian: 'Темна брюнетка', legacy: true },
   //
 ];
 
