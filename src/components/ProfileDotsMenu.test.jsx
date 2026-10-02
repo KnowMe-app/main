@@ -126,3 +126,12 @@ describe('ProfileDotsMenu: секція «Анкета»', () => {
     expect(screen.queryByText('Анкета')).toBeNull();
   });
 });
+
+// Меню з рядка спільної навігації не повторює її вкладок.
+it('omits the primary navigation destinations when asked', () => {
+  renderMenu({ isAdmin: true, access: {}, omitPrimaryDestinations: true });
+  expect(screen.queryByText('Matching')).toBeNull();
+  expect(screen.queryByText('Мій профіль')).toBeNull();
+  expect(screen.queryByText('Нові профілі')).toBeNull();
+  expect(screen.getByText('Flow')).toBeTruthy();
+});

@@ -52,6 +52,7 @@ import {
 } from './authProfilePersistence';
 import toast from 'react-hot-toast';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
+import { usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
 import { KnowMeBrand } from './styles/knowme';
 import { resolveMyProfileFieldText, resolveMyProfileSectionTitle } from '../utils/myProfileRoleTexts';
 import { ProgramsEditor } from './programs/ProgramsEditor';
@@ -386,28 +387,6 @@ const PhotoSection = styled.div`
 `;
 const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
-const DotsButton = styled.button`
-  display:flex;align-items:center;justify-content:center;
-  width:34px;height:34px;border-radius:10px;border:1px solid var(--border);
-  background:var(--card);cursor:pointer;font-size:22px;line-height:1;color:var(--muted);
-  transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease, color .18s ease;
-
-  &:hover {
-    background: var(--accent-light);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  &:focus-visible {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(232, 121, 26, .16);
-  }
-
-  &:active {
-    transform: scale(.98);
-  }
-`;
 
 const AuthCard = styled(FirstContentCard)``;
 const hintPulse = keyframes`
@@ -1205,9 +1184,10 @@ export const MyProfile = () => {
     navigate('/');
   };
 
-  const dotsMenu = () => (
+  const dotsMenu = ({ close } = {}) => (
     <ProfileDotsMenu
       navigate={navigate}
+      omitPrimaryDestinations
       isAdmin={isAdmin}
       access={access}
       isEmailVerified={isEmailVerified}
@@ -1221,7 +1201,7 @@ export const MyProfile = () => {
       // `InfoModal`): акаунт і сліди в чужих списках знімає людина, а не
       // кнопка.
       onDeleteProfile={() => setShowInfoModal('delProfile')}
-      onSelect={() => setShowInfoModal(false)}
+      onSelect={close || (() => setShowInfoModal(false))}
       // «Очистити все» стояло кнопкою просто під «Опублікувати» — незворотна
       // дія поруч із головною, на відстані одного промаху пальцем. Тепер вона
       // тут, поруч із «Видалити анкету», і так само питає підтвердження.
@@ -1235,6 +1215,10 @@ export const MyProfile = () => {
       })) : undefined}
     />
   );
+
+  // «⋮» стоїть у рядку спільної навігації праворуч від «Мій профіль», а не
+  // окремою кнопкою в шапці анкети; дії меню (очистити, видалити) — ці самі.
+  usePrimaryNavigationSlot({ renderMenu: dotsMenu });
 
   const fieldsMap = useMemo(() => new Map([...pickerFields, ...MY_PROFILE_EXTRA_FIELDS].map(field => [field.name, field])), []);
   // Програми заповнені, коли вони є в сховищі, а не в анкеті.
@@ -1918,7 +1902,6 @@ export const MyProfile = () => {
               ? uiText(state.publish === true ? 'Опублікована' : 'Не опублікована', language)
               : uiText('Логін не відбувся', language)}
           </StatusBadge>
-          <DotsButton type='button' aria-label={uiText('Відкрити меню профілю', language)} onClick={() => setShowInfoModal('dotsMenu')}>⋮</DotsButton>
         </TopbarActions>
       </Topbar>
     </HeaderPanel>
@@ -2153,7 +2136,6 @@ export const MyProfile = () => {
       <InfoModal
         onClose={() => { if (!isClearingProfile) setShowInfoModal(false); }}
         text={showInfoModal}
-        Context={dotsMenu}
         DelConfirm={() => (clearRoleTarget ? (
           <>
             <ModalTitle>

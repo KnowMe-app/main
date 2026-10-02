@@ -57,7 +57,6 @@ describe('стрічка повертається туди, де її лишил
   it('ховає список, доки позиція не стала на місце', () => {
     expect(source).toContain('const [scrollRestorePending, setScrollRestorePending] = useState(() => {');
     expect(source).toContain('<FeedList $restoringScroll={scrollRestorePending}>');
-    expect(source).toContain('<GalleryGrid $restoringScroll={scrollRestorePending}>');
     expect(source).toContain('setScrollRestorePending(false);');
     // Стеля очікування: якір може не приїхати взагалі, і тоді список
     // проявляється там, де він є, — порожній екран гірший за неточну позицію.
@@ -73,9 +72,8 @@ describe('стрічка повертається туди, де її лишил
     expect(source).toContain('if (!lastSeenCardIdRef.current && !scrollPositionRef.current) return;');
   });
 
-  it('рядок і плитка несуть той самий якір', () => {
+  it('рядок несе якір відновлення', () => {
     expect(rowSource).toContain('data-card-id={user?.userId}');
-    expect(source).toContain('data-card-id={user?.userId}');
   });
 
   // Шар деталей стрічку не розмонтовує, але поки він відкритий, у неї могла

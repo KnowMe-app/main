@@ -140,6 +140,9 @@ const SegmentedOption = styled.button`
   }
 `;
 
+// Ті самі адреси, що й вкладки `PrimaryNavigation`.
+const PRIMARY_NAVIGATION_PATHS = ['/my-profile', '/matching', '/matching/create-profile'];
+
 const normalizeAccess = access => ({
   canAccessAdd: Boolean(access?.canAccessAdd),
   canAccessMatching: Boolean(access?.canAccessMatching),
@@ -166,6 +169,11 @@ export const ProfileDotsMenu = ({
   beforeNavigate,
   extraActions,
   extraActionsLabel,
+  // Меню, відкрите з рядка спільної навігації (`PrimaryNavigation`), не
+  // повторює її вкладок: «Пошук анкет», «Мої картки» й «Мій профіль» стоять
+  // просто над ним, і ті самі три пункти в меню були тими самими кнопками
+  // вдруге.
+  omitPrimaryDestinations = false,
 }) => {
   const location = useLocation();
   const { themeMode, setThemeMode, language, setLanguage } = useAppSettings();
@@ -265,7 +273,7 @@ export const ProfileDotsMenu = ({
     // Маршрут інструменту міграції існує тільки для адмінів (App.jsx), і досі туди
     // можна було потрапити лише вбивши адресу руками.
     ...(isAdmin ? [{ path: '/rtdb-migration', label: uiText('Міграція RTDB', language), description: uiText('Розкласти анкети по нових вузлах', language), icon: <FaDatabase /> }] : []),
-  ];
+  ].filter(item => !omitPrimaryDestinations || !PRIMARY_NAVIGATION_PATHS.includes(item.path));
 
   return (
     <MenuShell role="menu" aria-label={uiText('Навігаційне меню профілю', language)}>
@@ -274,7 +282,7 @@ export const ProfileDotsMenu = ({
         <MenuSubtitle>{uiText('Швидка навігація, дії з анкетою та налаштування акаунта.', language)}</MenuSubtitle>
       </MenuHeader>
 
-      <MenuSection>
+      {navItems.length > 0 && <MenuSection>
         <SectionLabel>{uiText('Навігація', language)}</SectionLabel>
         {navItems.map(item => {
           const active = location.pathname === item.path;
@@ -295,7 +303,7 @@ export const ProfileDotsMenu = ({
             </MenuItem>
           );
         })}
-      </MenuSection>
+      </MenuSection>}
 
       {extraActions?.length ? (
         <MenuSection>

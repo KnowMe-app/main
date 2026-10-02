@@ -8,42 +8,31 @@ describe('Matching redesigned profile regressions', () => {
   it('renders contacts through actionable links instead of generic profile chips', () => {
     const matchingSource = source();
 
-    // Дотик до будь-якого контакту — дія, і відкрита картка передає її
-    // лічильнику (`recordContactAction`); цифр номера без дотику не видно.
-    expect(matchingSource).toContain('const ProfileContactLinks = ({ user, role, language, onContactAction }) =>');
+    // Відкрита картка показує контакти тим самим представленням, що й рядок
+    // стрічки (`ContactLinks`), без згортання й без «Показати номер»; дотик до
+    // будь-якого каналу — дія, і вона йде лічильнику (`recordContactAction`).
+    expect(matchingSource).toContain('const ProfileContactLinks = ({ user, language, onContactAction }) =>');
     expect(matchingSource).toContain("section.variant === 'contacts'");
-    expect(matchingSource).toContain('<ProfileContactLinks user={user} role={resolvedRole} language={language} onContactAction={handleContactAction} />');
-    expect(matchingSource).toContain("uiText('Показати номер', language)");
-    // Напис під замком тепер іде мовою інтерфейсу, тож перевіряється сам слот,
-    // а не англійський рядок у ньому.
-    expect(matchingSource).toContain("{profileUiText('showContacts', language)}");
-    // Згорнутий рядок показує ще й значки тих каналів, які в анкеті заповнені,
-    // — інакше він нічого не повідомляє, поки його не розгорнули.
-    expect(matchingSource).toContain('<ModernContactHints aria-hidden="true">');
-    expect(matchingSource).toContain('const contactHintIcons = getContactEntries(user)');
-    expect(matchingSource).toContain('href={entry.href}');
-    // Самі будівники швидких кнопок переїхали в спільний набір значків
-    // (`contactIcons`) — той самий і для картки, і для рядка стрічки, — але
-    // будуються вони так само з номера.
+    expect(matchingSource).toContain('<ProfileContactLinks user={user} language={language} onContactAction={handleContactAction} />');
+    expect(matchingSource).toContain('<ContactLinks entries={entries} language={language} onContactAction={onContactAction} />');
+    expect(matchingSource).not.toContain("uiText('Показати номер', language)");
+    expect(matchingSource).not.toContain('<ModernContactHints');
+    // Будівники швидких кнопок — у спільному наборі значків (`contactIcons`).
     const iconsSource = fs.readFileSync(path.join(__dirname, 'contactIcons.jsx'), 'utf8');
     expect(iconsSource).toContain('CONTACT_LINK_BUILDERS.telegramFromPhone');
     expect(iconsSource).toContain('CONTACT_LINK_BUILDERS.viberFromPhone');
     expect(iconsSource).toContain('CONTACT_LINK_BUILDERS.whatsappFromPhone');
-    expect(matchingSource).toContain("import { CONTACT_ICONS, PHONE_QUICK_LINKS, getContactIcon, isExternalContact } from './contactIcons';");
   });
 
-  it('тримає блок контактів у двох рядках: номер з кнопками і решта іконками', () => {
-    const matchingSource = source();
-
-    // Кнопки месенджерів будуються з номера, тож і стоять біля номера — а не
-    // трьома порожніми рядками після всіх контактів.
-    expect(matchingSource).toContain('<ContactPrimaryRow key={');
-    expect(matchingSource).toContain('PHONE_QUICK_LINKS.map(({ key, Icon, label, build })');
-    // Повністю читається лише телефон; решта — іконки, значення яких лишається
-    // в підказці, а не займає рядок.
-    expect(matchingSource).toContain('const others = entries.filter(entry => entry.key !== \'phone\');');
-    expect(matchingSource).toContain('<ContactIconRow $standalone>');
-    expect(matchingSource).toContain('title={label}');
+  // Контакти — один рядок значків: трубка (дзвінок), месенджери з того самого
+  // номера, далі решта каналів. Номера текстом немає.
+  it('тримає блок контактів одним рядком значків', () => {
+    const rowSource = fs.readFileSync(path.join(__dirname, 'ProfileRow.jsx'), 'utf8');
+    const links = rowSource.slice(rowSource.indexOf('export const ContactLinks'), rowSource.indexOf('const COMMENT_SAVE_DEBOUNCE_MS'));
+    expect(links).toContain('PHONE_QUICK_LINKS.map(({ key, Icon, label, build })');
+    expect(links.match(/<S\.ContactIconRow>/g)).toHaveLength(1);
+    expect(links).not.toContain('<span>{displayValue}</span>');
+    expect(links).toContain("uiText('Подзвонити', language)");
   });
 
   it('hides VK contacts from matching cards for every viewer, including admins', () => {

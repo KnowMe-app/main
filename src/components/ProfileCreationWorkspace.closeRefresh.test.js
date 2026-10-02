@@ -1,12 +1,13 @@
 import '@testing-library/jest-dom';
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import { fetchUserById, fetchUsersByIds } from './config';
 import { getOverlayHistoryForCard, getOverlaysForCard } from 'utils/multiAccountEdits';
 import { loadAllCreateProfileMutations, loadOwnProfileMutations, saveCreateProfileMutation } from 'utils/profileMutations';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
+import { renderWithNavigationSlot } from '../testUtils/renderWithNavigationSlot';
 
 // Regression test for: an admin opens a draft from the review queue, edits a
 // field, and closes the editor. The queue card for that draft was rendered
@@ -134,7 +135,7 @@ beforeEach(() => {
 applyUkrainianInterface();
 
 it('re-fetches the review queue when the editor is closed, so the card reflects the just-saved edit', async () => {
-  render(<ProfileCreationWorkspace />);
+  renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
   expect(await screen.findByText("Ім'я6")).toBeInTheDocument();
 

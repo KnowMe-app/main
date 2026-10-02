@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 
 import { buildOverlayPrefill, ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import {
@@ -21,6 +21,7 @@ import {
 } from 'utils/profileMutations';
 import { getOverlayHistoryForCard, getOverlaysForCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
+import { renderWithNavigationSlot } from '../testUtils/renderWithNavigationSlot';
 
 jest.mock('firebase/auth', () => ({
   onAuthStateChanged: (_auth, callback) => {
@@ -153,7 +154,7 @@ describe('доповнення знайденої картки зі стрічк
   });
 
   it('відкриває форму доповнення одразу, без другого пошуку', async () => {
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     expect(await screen.findByDisplayValue('380930001122')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('380501112233')).not.toBeInTheDocument();
@@ -162,7 +163,7 @@ describe('доповнення знайденої картки зі стрічк
   });
 
   it('називає людину іменем, а не ідентифікатором картки й не словом «оверлей»', async () => {
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     await screen.findByDisplayValue('Бугаренко');
     // Поточне значення поля — остання версія, а не всі одразу.
@@ -173,7 +174,7 @@ describe('доповнення знайденої картки зі стрічк
   });
 
   it('лишає особистий коментар тим самим особистим коментарем, що й у стрічці', async () => {
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     expect(await screen.findByPlaceholderText('Додати памʼятку')).toBeInTheDocument();
   });
@@ -187,7 +188,7 @@ describe('доповнення знайденої картки зі стрічк
    * екран не пояснював ніяк — та сама нотатка писалась двічі.
    */
   it('пропонує написати публічну нотатку рівно один раз', async () => {
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
     await screen.findByDisplayValue('Бугаренко');
 
     expect(screen.getAllByText('Публічний відгук')).toHaveLength(1);
@@ -204,7 +205,7 @@ describe('доповнення знайденої картки зі стрічк
   // Прочитана порожнеча мовчить: окремий рядок «Публічних відгуків ще немає»
   // займав місце й не казав нічого, чого не видно з порожньої доріжки.
   it('не кличе перевіряти те, що прочитала сама, і не пише про порожню відповідь', async () => {
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
     await screen.findByDisplayValue('Бугаренко');
 
     expect(screen.queryByText(/перевірити їх наявність/)).not.toBeInTheDocument();
@@ -212,7 +213,7 @@ describe('доповнення знайденої картки зі стрічк
   });
 
   it('записує в оверлей лише дописане, а не підставлене з картки', async () => {
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
     const existing = await screen.findByDisplayValue('380930001122');
 
     fireEvent.blur(existing);
@@ -237,7 +238,7 @@ describe('доповнення знайденої картки зі стрічк
         fields: { phone: { added: ['380670009988'] } },
       },
     });
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     const previousAddition = await screen.findByDisplayValue('380670009988');
     fireEvent.blur(previousAddition);
@@ -252,7 +253,7 @@ describe('доповнення знайденої картки зі стрічк
   it('повертається у форму доповнення після оновлення сторінки', async () => {
     mockLocationState = {};
     mockSearchParams = 'cardId=card-9&overlay=1';
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     expect(await screen.findByDisplayValue('Бугаренко')).toBeInTheDocument();
     expect(readProfileFromNodes).toHaveBeenCalledWith('card-9', { includeWorkflow: false });
@@ -268,7 +269,7 @@ describe('доповнення знайденої картки зі стрічк
   // запис історії, яким форма відкрилась, уже знято.
   it('повернення веде до видачі пошуку, з якої картку відкрили', async () => {
     mockLocationState = { enrichCardId: 'card-9', returnTo: '/matching?q=%D0%91%D1%83%D0%B3%D0%B0%D1%80%D0%B5%D0%BD%D0%BA%D0%BE' };
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     await screen.findByDisplayValue('Бугаренко');
     fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
@@ -285,7 +286,7 @@ describe('доповнення знайденої картки зі стрічк
     mockLocationState = {};
     mockSearchParams = 'cardId=card-9&overlay=1';
     localStorage.setItem('matchingSearchQuery', 'Бугаренко');
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     await screen.findByDisplayValue('Бугаренко');
     fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
@@ -298,7 +299,7 @@ describe('доповнення знайденої картки зі стрічк
 
   // Перший екран форми мусить називати людину, а не влаштування оверлея.
   it('не показує ані підпису «Власні дані», ані памʼятки про доповнення', async () => {
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     await screen.findByDisplayValue('Бугаренко');
     expect(screen.queryByText('Власні дані')).not.toBeInTheDocument();
@@ -315,7 +316,7 @@ describe('доповнення знайденої картки зі стрічк
       country: 'Україна',
       city: 'Київ',
     });
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     await screen.findByDisplayValue('Бугаренко');
     // Роль (двобуквений код) тут більше не пишеться — це вже сказано розділом
@@ -326,7 +327,7 @@ describe('доповнення знайденої картки зі стрічк
 
   it('відкриває форму навіть тоді, коли картку прочитати не вдалося', async () => {
     readProfileFromNodes.mockRejectedValue(new Error('PERMISSION_DENIED'));
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     expect(await screen.findByText('Картка без імені')).toBeInTheDocument();
   });
@@ -345,7 +346,7 @@ describe('приватність версій у доповненні', () => {
 describe('створення картки з набраного у стрічці', () => {
   it('відкриває форму нової картки одразу, з підставленим прізвищем', async () => {
     mockLocationState = { createFromQuery: 'Бугаренко', queryMatchedCards: 0 };
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     expect(await screen.findByDisplayValue('Бугаренко')).toBeInTheDocument();
     expect(reserveProfileCardId).toHaveBeenCalled();
@@ -356,7 +357,7 @@ describe('створення картки з набраного у стрічц�
   // картку, він перетворив би перше ж автозбереження на DUPLICATE_PROFILE.
   it('не підставляє в нову картку контакт, за яким пошук уже щось знайшов', async () => {
     mockLocationState = { createFromQuery: '380501112233', queryMatchedCards: 2 };
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
     expect(saveCreateProfileMutation.mock.calls[0][0].data).toEqual({ userId: 'new-card' });
@@ -364,7 +365,7 @@ describe('створення картки з набраного у стрічц�
 
   it('підставляє контакт, коли пошук нічого не знайшов', async () => {
     mockLocationState = { createFromQuery: '380501112233', queryMatchedCards: 0 };
-    render(<ProfileCreationWorkspace />);
+    renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
     expect(saveCreateProfileMutation.mock.calls[0][0].data).toEqual({ userId: 'new-card', phone: '380501112233' });

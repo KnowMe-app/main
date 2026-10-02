@@ -1,10 +1,11 @@
 import '@testing-library/jest-dom';
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import { loadOwnProfileMutations, loadSharedProfileMutations } from 'utils/profileMutations';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
+import { renderWithNavigationSlot } from '../testUtils/renderWithNavigationSlot';
 
 /**
  * Екран називається тим, що на ньому лежить, — картками, які завів цей читач.
@@ -121,10 +122,12 @@ beforeEach(() => {
 applyUkrainianInterface();
 
 it('називає екран власними картками і показує їх без жодного пошуку', async () => {
-  render(<ProfileCreationWorkspace />);
+  renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
-  expect(await screen.findByRole('heading', { name: 'Створені мною' })).toBeInTheDocument();
+  // Окремого заголовка екрана немає: його повторювала вкладка «Мої картки»
+  // спільної навігації, і над списком вона так і зветься.
   expect(await screen.findByText('Олена')).toBeInTheDocument();
+  expect(screen.getByTestId('navigation-slot')).toHaveAttribute('data-workspace', '');
   expect(screen.getByText('Марія')).toBeInTheDocument();
   // Гейту перевірки немає — картка вже в пошуку, тож і чіп про нього не каже.
   expect(screen.getByText('Спільна чернетка')).toBeInTheDocument();
@@ -135,7 +138,7 @@ it('називає екран власними картками і показу�
 });
 
 it('питає індекс разом із прийнятими картками, щоб список не губив опубліковане', async () => {
-  render(<ProfileCreationWorkspace />);
+  renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
   await waitFor(() => expect(loadOwnProfileMutations)
     .toHaveBeenCalledWith('owner-1', { includeAccepted: true }));
@@ -143,13 +146,13 @@ it('питає індекс разом із прийнятими карткам�
 
 it('порожній список пояснює, з чого почати, а не лишає порожній екран', async () => {
   loadOwnProfileMutations.mockResolvedValue([]);
-  render(<ProfileCreationWorkspace />);
+  renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
   expect(await screen.findByText('Ви ще не завели жодної картки.')).toBeInTheDocument();
 });
 
 it('першим рядком видачі пропонує завести картку з набраного', async () => {
-  render(<ProfileCreationWorkspace />);
+  renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
 
@@ -160,7 +163,7 @@ it('першим рядком видачі пропонує завести ка�
 });
 
 it('апаратна кнопка «назад» закриває форму так само, як стрілка в шапці', async () => {
-  render(<ProfileCreationWorkspace />);
+  renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Відкрити' }));
@@ -174,7 +177,8 @@ it('апаратна кнопка «назад» закриває форму т�
     await new Promise(resolve => setTimeout(resolve, 0));
   });
 
-  expect(await screen.findByRole('heading', { name: 'Створені мною' })).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByTestId('navigation-slot')).toHaveAttribute('data-workspace', ''));
+  expect(screen.queryByRole('heading', { name: 'Олена' })).not.toBeInTheDocument();
   // Читач лишається на своєму екрані, а не виїжджає з нього навігацією.
   expect(mockNavigate).not.toHaveBeenCalled();
 });

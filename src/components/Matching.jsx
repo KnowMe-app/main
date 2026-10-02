@@ -1,6 +1,4 @@
 import React, { useEffect, useState, useRef, useLayoutEffect, useMemo } from 'react';
-import usePhotoSwipe from './usePhotoSwipe';
-import PhotoSwipeStage from './PhotoSwipeStage';
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
@@ -34,13 +32,7 @@ import {
   ModernBioText,
   ModernChip,
   ModernChipGrid,
-  ModernContactDetails,
-  ContactIconLink,
-  ContactIconRow,
-  ContactPrimaryRow,
   ModernContactLinks,
-  ModernContactLink,
-  ModernContactSummary,
   ModernFieldList,
   ModernFieldRow,
   ModernDesktopNavButton,
@@ -48,7 +40,6 @@ import {
   ModernHero,
   ModernHeroContent,
   ModernHeroFacts,
-  ModernContactHints,
   ModernPhotoStrip,
   ModernPhotoThumb,
   ModernHeroFallbackMark,
@@ -84,18 +75,6 @@ import {
   QueryDraftValue,
   MatchingTopBar,
   SearchField,
-  GalleryBody,
-  GalleryColumn,
-  GalleryGrid,
-  GalleryHiddenBadge,
-  GalleryLocation,
-  GalleryName,
-  GalleryNameRow,
-  GalleryPhotoBox,
-  GalleryPhotoCount,
-  GalleryPublishDot,
-  GalleryTile,
-  LayoutToggleButton,
   SortSelect,
   DetailBar,
   DetailCloseButton,
@@ -195,8 +174,6 @@ import {
   isMatchingSummaryCard,
 } from '../utils/matchingCardIndex';
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
-import { estimateGalleryTileHeight, splitIntoBalancedColumns } from '../utils/galleryColumns';
-import useFeedColumns from '../hooks/useFeedColumns';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
 import { readBackendLinksEnabled } from '../utils/backendLinksMode';
 // Формат адреси в консолі Firebase живе в одному місці: власна копія вже одного
@@ -216,15 +193,13 @@ import {
   getRefineKeySpec,
 } from '../utils/matchingRefineKey';
 import { getCurrentDate } from './foramtDate';
-import InfoModal from './InfoModal';
+import { usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
 import MatchingHiddenList from './MatchingHiddenList';
 import { canOfferProfileContacts, isOwnProfileDraftCard } from '../utils/profileVisibilityScope';
 import ProfileRow, {
-  CommentBlock,
+  ContactLinks,
   PublicCommentBlock,
-  ProfileNotes,
   ReviewsStateNote,
-  enrichGateLabel,
   describeReviewsState,
   getLocationLine,
 } from './ProfileRow';
@@ -238,13 +213,11 @@ import {
   ProfileStatStrip,
 } from './ProfileFacts';
 import { getRoleColor } from './matchingRoleColors';
-import { PhotoRoleBadge, RoleCode as RowRoleCode, RowActionButton, RowFooterActions, RowFooterButton, RowReactionPair } from './MatchingHiddenList.styled';
 import { DRAFT_FEED_ORDER_FIELD, placeOwnDraftsInFeed, resolveDraftFeedOrderDate } from '../utils/matchingDraftPlacement';
 import { liftReturnedCards, listReturnedReactionIds, placeReturnedCardsFirst } from '../utils/matchingReturnedCards';
-import { FaTimes, FaHeart, FaEllipsisV, FaGlobe, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaThLarge, FaListUl, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
-import { FaRegHeart, FaUndoAlt, FaChevronDown, FaPencilAlt } from 'react-icons/fa';
+import { FaTimes, FaHeart, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
+import { FaRegHeart, FaUndoAlt, FaPencilAlt } from 'react-icons/fa';
 import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
-import { CONTACT_ICONS, PHONE_QUICK_LINKS, getContactIcon, isExternalContact } from './contactIcons';
 import { getContactEntries } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
@@ -284,7 +257,7 @@ import {
   sortCardsByMode,
 } from '../utils/donorPrograms';
 import { computeBmi, normalizeHeightCm } from '../utils/profileNormalization';
-import { CardRoleBlock, isCounterpartyCard } from './programs/CardRoleBlock';
+import { CardRoleBlock } from './programs/CardRoleBlock';
 // Реєструє читача програм для сховища (`utils/programsStore`).
 import './programs/programsRemote';
 import { ensureProgramsForCards, useProgramsVersion } from '../utils/programsStore';
@@ -295,7 +268,6 @@ import {
   getProfileAge,
   parseBloodValue,
   getProfileBio,
-  getProfileLocation,
   getProfileName,
   getProfilePhotos,
   getProfileRole,
@@ -940,119 +912,19 @@ const ProfileFieldRows = ({ fields }) => {
   );
 };
 
-const getContactLabel = (key, language) => translateProfileLabel(
-  { otherLink: 'Other link' }[key] || key.charAt(0).toUpperCase() + key.slice(1),
-  language,
-);
-
-const contactDisplayValue = entry => {
-  const valueText = String(entry?.value || '').trim();
-  return entry?.key === 'phone' ? `+${valueText.replace(/\s/g, '')}` : valueText;
-};
-
 /**
- * Блок контактів картки — номер у першому рядку, решта в другому.
- *
- * Повністю читається лише телефон: його переписують, диктують і звіряють.
- * Пошта й ніки читання не потребують — у них тапають, — а текстом вони
- * забирали по рядку кожен і розтягували блок на пів екрана. Що саме за
- * іконкою, каже `title`, тож значення не зникає, а лише перестає займати рядок.
- *
- * Номерів у анкеті буває кілька — тоді перших рядків стільки ж, по одному на
- * номер: кожен зі своїми кнопками месенджерів.
+ * Блок контактів відкритої картки — те саме представлення, що й у рядку
+ * стрічки (`ContactLinks`): один рядок значків, трубка дзвонить, поруч
+ * Telegram, Viber і WhatsApp з того самого номера, далі решта каналів. Своє
+ * представлення тут було другим почерком тих самих контактів — з кнопкою
+ * «Показати номер» і номером текстом на окремому рядку.
  */
-const ProfileContactLinks = ({ user, role, language, onContactAction }) => {
-  // Цифр номера без дотику немає: дотик до «Показати номер», як і до будь-якого
-  // іншого каналу, — дія, і вона рахується (`recordContactAction`). Інакше
-  // статистика «чи анкета цікава» мовчала б про тих, хто просто переписав
-  // номер з екрана.
-  const [revealedPhones, setRevealedPhones] = useState(() => new Set());
-  const act = channel => () => { if (onContactAction) onContactAction(channel); };
+const ProfileContactLinks = ({ user, language, onContactAction }) => {
   const entries = getContactEntries(user).filter(entry => !MATCHING_HIDDEN_CONTACT_KEYS.includes(entry.key));
   if (!entries.length) return null;
-
-  const phones = entries.filter(entry => entry.key === 'phone');
-  const others = entries.filter(entry => entry.key !== 'phone');
-
   return (
     <ModernContactLinks onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
-      {phones.map(entry => {
-        const displayValue = contactDisplayValue(entry);
-        const phoneKey = `${entry.index}-${entry.value}`;
-        const revealed = revealedPhones.has(phoneKey);
-        const phoneLabel = revealed
-          ? `${getContactLabel('phone', language)}: ${displayValue}`
-          : uiText('Показати номер', language);
-        return (
-          <ContactPrimaryRow key={`phone-${entry.index}-${entry.value}`}>
-            {revealed ? (
-              <ModernContactLink
-                href={entry.href}
-                $role={role}
-                title={phoneLabel}
-                aria-label={phoneLabel}
-                onClick={act('phone')}
-              >
-                <PhoneHandsetIcon />
-                <span>{displayValue}</span>
-              </ModernContactLink>
-            ) : (
-              <ModernContactLink
-                as="button"
-                type="button"
-                $role={role}
-                title={phoneLabel}
-                aria-label={phoneLabel}
-                onClick={() => {
-                  setRevealedPhones(previous => new Set(previous).add(phoneKey));
-                  act('phone')();
-                }}
-              >
-                <PhoneHandsetIcon />
-                <span>{phoneLabel}</span>
-              </ModernContactLink>
-            )}
-            <ContactIconRow>
-              {PHONE_QUICK_LINKS.map(({ key, Icon, label, build }) => (
-                <ContactIconLink
-                  key={`phone-${key}-${entry.index}`}
-                  href={build(entry.value)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={uiText('{label} за номером', language, { label })}
-                  aria-label={uiText('{label} за номером', language, { label })}
-                  onClick={act(`phone-${key}`)}
-                >
-                  <Icon />
-                </ContactIconLink>
-              ))}
-            </ContactIconRow>
-          </ContactPrimaryRow>
-        );
-      })}
-      {others.length > 0 && (
-        <ContactIconRow $standalone>
-          {others.map(entry => {
-            const Icon = getContactIcon(entry.key);
-            // Значення в підказці не стоїть: відкривається воно дотиком, і
-            // саме дотик рахується.
-            const label = getContactLabel(entry.key, language);
-            return (
-              <ContactIconLink
-                key={`${entry.key}-${entry.index}-${entry.value}`}
-                href={entry.href}
-                target={isExternalContact(entry.key) ? '_blank' : undefined}
-                rel={isExternalContact(entry.key) ? 'noopener noreferrer' : undefined}
-                title={label}
-                aria-label={label}
-                onClick={act(entry.key)}
-              >
-                <Icon />
-              </ContactIconLink>
-            );
-          })}
-        </ContactIconRow>
-      )}
+      <ContactLinks entries={entries} language={language} onContactAction={onContactAction} />
     </ModernContactLinks>
   );
 };
@@ -1228,10 +1100,6 @@ const SwipeableCard = ({
   const summaryRows = usesSharedFacts ? buildProfileSummaryRows(user, language) : [];
   const detailSections = usesSharedFacts ? buildProfileDetailSections(user, language) : [];
   const roleAccent = getRoleColor(resolvedRole);
-  const contactHintIcons = getContactEntries(user)
-    .filter(entry => !MATCHING_HIDDEN_CONTACT_KEYS.includes(entry.key))
-    .map(entry => ({ key: entry.key, Icon: CONTACT_ICONS[entry.key] || FaGlobe }))
-    .slice(0, 4);
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
@@ -1239,11 +1107,6 @@ const SwipeableCard = ({
     .map(part => part[0]?.toUpperCase())
     .join('');
   const shouldShowHeroContent = Boolean(title || locationInfo || heroFields.length > 0 || statCells.length > 0 || summaryRows.length > 0);
-  // Розгорнути блок — ще не дія: рахується дотик до самого контакту
-  // (`handleContactAction`), а тут лише не даємо події піти в картку.
-  const handleContactsToggle = e => {
-    e.stopPropagation();
-  };
   const handleContactAction = channel => {
     if (!auth.currentUser || !user.userId) return;
     void recordContactAction(user.userId, multiDataOwnerId, channel);
@@ -1254,8 +1117,7 @@ const SwipeableCard = ({
     e.stopPropagation();
     const details = contactDetailsRef.current;
     if (!details) return;
-    // Розгортання не рахується: дією стане дотик до номера чи месенджера.
-    details.open = true;
+    // Прокрутка до блока не рахується: дією стане дотик до трубки чи месенджера.
     details.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   };
 
@@ -1390,23 +1252,14 @@ const SwipeableCard = ({
           {/* Контакти — першими під шапкою. Блок стояв у самому низу картки,
               під «Про себе», розділами анкети й нотатками, тобто там, куди
               докручує не кожен, — а картотека існує, щоб людей знайти й
-              написати їм. Розгортати його й далі треба дотиком (на розгортанні
-              пишеться перегляд контактів, `handleContactsToggle`), і той самий
-              дотик дає трубка в ряду дій унизу (`openContactDetails`). */}
+              написати їм. Розгортати його більше не треба: це один рядок
+              значків (трубка дзвонить, поруч месенджери з того самого
+              номера), і схований за «Показати контакти» він коштував зайвого
+              дотику й рядка. Трубка в ряду дій унизу веде сюди
+              (`openContactDetails`). */}
           {sections.filter(section => section.variant === 'contacts').map(section => (
-            <ModernSection key={section.title}>
-              <ModernContactDetails ref={contactDetailsRef} onToggle={handleContactsToggle} onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
-                <ModernContactSummary>
-                  {profileUiText('showContacts', language)}
-                  <ModernContactHints aria-hidden="true">
-                    {contactHintIcons.map(({ key, Icon }) => <Icon key={key} />)}
-                  </ModernContactHints>
-                  <span className="contacts-chevron" aria-hidden="true">
-                    <FaChevronDown size={16} />
-                  </span>
-                </ModernContactSummary>
-                <ProfileContactLinks user={user} role={resolvedRole} language={language} onContactAction={handleContactAction} />
-              </ModernContactDetails>
+            <ModernSection key={section.title} ref={contactDetailsRef}>
+              <ProfileContactLinks user={user} language={language} onContactAction={handleContactAction} />
             </ModernSection>
           ))}
           {/* Програми агенції чи клініки й «кого шукають» батьки — одразу
@@ -1666,34 +1519,10 @@ const findCardNodeById = cardId => {
 };
 const SEARCH_KEY = MATCHING_SEARCH_STORAGE_KEY;
 
-// Spec §4: the list/gallery choice is a persistent per-device preference, kept
-// under its own namespaced key so it survives a reload and never collides with
-// `viewMode` (which selects the *collection* - all / favourites / hidden).
-const MATCHING_VIEW_LAYOUT_KEY = 'km.matching.view';
-// Дві розкладки одного й того самого списку: картка на всю ширину і дві
-// колонки. Третьої — «одна картка на екран» — більше немає: вона показувала
-// велике фото й під ним три факти з парою кнопок, тобто коштувала цілий екран
-// за менше, ніж каже рядок списку. Велике фото переїхало в сам рядок: тепер
-// його показує та розкладка, яка поруч із ним ще й розповідає про людину.
-const MATCHING_VIEW_LAYOUTS = ['list', 'gallery'];
-const MATCHING_DEFAULT_VIEW_LAYOUT = 'list';
-export const MATCHING_VIEW_LAYOUT_LABELS = {
-  list: 'Режим списку',
-  gallery: 'Режим галереї',
-};
-/** Наступна розкладка по колу — один жест перебирає обидві. */
-export const nextMatchingViewLayout = current => {
-  const index = MATCHING_VIEW_LAYOUTS.indexOf(current);
-  return MATCHING_VIEW_LAYOUTS[(index + 1) % MATCHING_VIEW_LAYOUTS.length];
-};
-const getStoredMatchingViewLayout = () => {
-  try {
-    const stored = localStorage.getItem(MATCHING_VIEW_LAYOUT_KEY);
-    return MATCHING_VIEW_LAYOUTS.includes(stored) ? stored : MATCHING_DEFAULT_VIEW_LAYOUT;
-  } catch {
-    return MATCHING_DEFAULT_VIEW_LAYOUT;
-  }
-};
+// Розкладка стрічки одна — список. Друга, галерея, показувала ту саму картку
+// плиткою з урізаними даними, і перемикач між ними прибрано. Ключ збереженого
+// вибору (`km.matching.view`) більше не читається.
+const MATCHING_VIEW_LAYOUT = 'list';
 
 // Проєкція `matchingCards` — це те, що показує рядок стрічки, а не картка.
 // Кеш карток обслуговує ще й екран редагування, тож класти туди проєкцію не
@@ -1716,214 +1545,6 @@ export const buildMatchingCursorFromCard = card => {
   if (!date || !userId) return null;
   return { date, userId };
 };
-
-// Плитка галереї — це картка, а не рамка під фото.
-//
-// Рамка 4/5 стояла тут завжди, і анкета без фото діставала пів екрана під дві
-// літери власного ж імені, яке лежить рядком нижче. Тепер фото малюється лише
-// тоді, коли воно є, а плитка без нього просто нижча — різна висота колонок
-// дешевша за порожнечу. Пропорція залежить від ролі: донорці зовнішність — це
-// дані, тож портретні 4/5 лишаються їй, решті вистачає 4/3.
-//
-// Локація й дії переїхали з фото в тіло картки: поверх знімка вони жили тільки
-// тому, що іншого місця не було.
-const GalleryCard = React.memo(({
-  user,
-  isAdmin,
-  isFavorite,
-  isHidden,
-  onOpen,
-  onToggleFavorite,
-  onToggleHidden,
-  onTogglePublish,
-  onEnrich,
-  clientComment,
-  onCommentSave,
-  reviewsSlot,
-  reviewsAction,
-  diagnosticsSlot,
-  onRequestPhotos,
-  programsContext,
-}) => {
-  const { language } = useAppSettings();
-  const name = getProfileName(user);
-  const age = getProfileAge(user);
-  const photos = getProfilePhotos(user);
-  const isLimitedTile = Boolean(user?.__limitedProfile);
-  // Агенцію й батьків описують програми й «кого шукають», а не зріст і вага.
-  const isCounterparty = isCounterpartyCard(user);
-  const requestPhotos = React.useCallback(() => {
-    if (onRequestPhotos) onRequestPhotos(user);
-  }, [onRequestPhotos, user]);
-  // Свайп по фото плитки гортає знімки так само, як у рядку однієї колонки;
-  // решту переліку дочитує сам жест, а не відкриття стрічки.
-  const photoSwipe = usePhotoSwipe({
-    photos,
-    complete: user?.__allPhotosLoaded === true,
-    onRequestPhotos: onRequestPhotos && !isLimitedTile ? requestPhotos : undefined,
-  });
-  const photo = photoSwipe.current || photos[0];
-  const role = getProfileRole(user);
-  const roleCode = getRoleCode(role);
-  const location = getLocationLine(user, language);
-  // Та сама смуга показників, що й у рядку списку та у відкритій картці
-  // (`ProfileStatStrip`): плитка мала свій курсивний рядок «178/88 | BMI 28 |
-  // O+» і «КР 1», тобто ту саму людину дві розкладки описували різними
-  // словами («ІМТ» і «BMI»). Пологи й сімейний стан плитка не несе — на них
-  // немає ширини, і їх видно у відкритій картці.
-  const statCells = useMemo(() => (isCounterparty ? [] : buildProfileStatStrip(user, language)), [isCounterparty, language, user]);
-  const isLimited = Boolean(user?.__limitedProfile);
-  const isPublished = isMatchingCardPublished(user);
-
-  return (
-    <GalleryTile
-      $muted={isHidden}
-      $role={role}
-      // Той самий якір, що й у рядку списку: розкладка не має впливати на те,
-      // куди читач повернеться.
-      data-card-id={user?.userId}
-      onClick={() => onOpen(user)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={event => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        onOpen(user);
-      }}
-    >
-      {isAdmin && onTogglePublish && (
-        <GalleryPublishDot
-          type="button"
-          $published={isPublished}
-          title={uiText(isPublished ? 'Зняти з публікації' : 'Опублікувати', language)}
-          aria-label={uiText(isPublished ? 'Зняти з публікації' : 'Опублікувати', language)}
-          aria-pressed={isPublished}
-          onClick={event => { event.stopPropagation(); onTogglePublish(user); }}
-        />
-      )}
-      {photo && (
-        <GalleryPhotoBox {...photoSwipe.handlers} $loading={photoSwipe.loading}>
-          <PhotoSwipeStage swipe={photoSwipe} photo={photo} loading={photoSwipe.loading} />
-          {/* Роль лежить на знімку, у лівому верхньому куті — та сама плашка
-              (`PhotoRoleBadge`), що й у рядку однієї колонки та у відкритій
-              картці. Чіпом під іменем вона змагалась за ширину з локацією, а
-              дві розкладки казали про ту саму річ у двох різних місцях. */}
-          {roleCode && <PhotoRoleBadge $role={role}>{getRoleLabel(role, language)}</PhotoRoleBadge>}
-          {isHidden && <GalleryHiddenBadge $belowRole={Boolean(roleCode)}>{uiText('Не цікаво', language)}</GalleryHiddenBadge>}
-          {photoSwipe.total > 1 && (
-            <GalleryPhotoCount>
-              {photoSwipe.index > 0 ? `${photoSwipe.index + 1}/${photoSwipe.total}` : photoSwipe.total}
-            </GalleryPhotoCount>
-          )}
-        </GalleryPhotoBox>
-      )}
-      <GalleryBody>
-        {/* Без знімка плашці ролі нема на чому лежати — тоді код стоїть
-            поруч з іменем, рівно як у рядку однієї колонки (`RoleCode`). */}
-        <GalleryNameRow>
-          <GalleryName>
-            {name}
-            {age && <>, {age}</>}
-          </GalleryName>
-          {!photo && roleCode && <RowRoleCode $role={role}>{getRoleLabel(role, language)}</RowRoleCode>}
-        </GalleryNameRow>
-        {location && (
-          <GalleryLocation>
-            <FaMapMarkerAlt aria-hidden="true" />
-            <span>{location}</span>
-          </GalleryLocation>
-        )}
-        {statCells.length > 0 && <ProfileStatStrip cells={statCells} />}
-        {!isLimited ? <CardRoleBlock card={user} programsContext={programsContext} language={language} /> : null}
-        {!isLimited && (
-          // Той самий ряд рішень, що й у рядку списку: олівець, пара
-          // «не цікаво / в обране» у спільній рамці, значки без підписів. Тут
-          // були широкі кнопки зі словами «Доповнити / Не цікаво / Обране», і
-          // «Обране» займало окремий рядок плитки.
-          <RowFooterActions onClick={event => event.stopPropagation()}>
-            {onEnrich && (
-              <RowFooterButton type="button" aria-label={enrichGateLabel(language)} title={enrichGateLabel(language)} onClick={event => { event.stopPropagation(); onEnrich(user); }}>
-                <FaPencilAlt size={13} />
-              </RowFooterButton>
-            )}
-            <RowReactionPair>
-              <RowActionButton
-                type="button"
-                $on={isHidden}
-                aria-label={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
-                aria-pressed={isHidden}
-                title={uiText(isHidden ? 'Повернути в «Усі»' : 'Не цікаво', language)}
-                onClick={event => { event.stopPropagation(); onToggleHidden(user); }}
-              >
-                {isHidden ? <FaUndoAlt /> : <FaTimes />}
-              </RowActionButton>
-              <RowActionButton
-                type="button"
-                $accent
-                $on={isFavorite}
-                aria-label={uiText('В обране', language)}
-                aria-pressed={isFavorite}
-                title={uiText('В обране', language)}
-                onClick={event => { event.stopPropagation(); onToggleFavorite(user); }}
-              >
-                {isFavorite ? <FaHeart /> : <FaRegHeart />}
-              </RowActionButton>
-            </RowReactionPair>
-          </RowFooterActions>
-        )}
-        {/* Ті самі дві доріжки, що й у рядку списку: розкладка міняє те, як
-            картку показують, а не те, що про людину вже записали. Поки плитка
-            їх не мала, читач у галереї не бачив власної нотатки — і дописував
-            поверх запису, якого не видно.
-
-            Значка «перевірити відгуки» тут немає навмисно: дотик по плитці й
-            так відкриває картку повністю (`onOpen`), тож другого, дрібнішого
-            жесту поруч не додає нічого. Читання чужих починає той самий ефект
-            стрічки, що й у рядку списку, за прапорцем `hasPublicReview`
-            картки. */}
-        {!isLimited && onCommentSave && (
-          <ProfileNotes
-            language={language}
-            publicSlot={reviewsSlot}
-            hasReviews={(reviewsAction?.count || 0) > 0}
-            hasPublicContent={Boolean(user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]) || (reviewsAction?.count || 0) > 0}
-            hasPrivateContent={Boolean(String(clientComment || '').trim())}
-            reviewsStatus={describeReviewsState({
-              requested: Boolean(user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]),
-              loading: Boolean(reviewsAction?.loading),
-              loaded: Boolean(reviewsAction?.loaded),
-              count: reviewsAction?.count || 0,
-            }, language)}
-            privateSlot={(
-              <CommentBlock
-                text={clientComment}
-                placeholder={profileUiText('personalNotePlaceholder', language)}
-                onSave={value => onCommentSave(user, value)}
-              />
-            )}
-          />
-        )}
-        {diagnosticsSlot}
-      </GalleryBody>
-    </GalleryTile>
-  );
-}, (prev, next) => (
-  prev.user === next.user
-  && prev.isFavorite === next.isFavorite
-  && prev.isHidden === next.isHidden
-  && prev.isAdmin === next.isAdmin
-  && prev.clientComment === next.clientComment
-  && prev.reviewsSlot === next.reviewsSlot
-  && prev.reviewsAction?.count === next.reviewsAction?.count
-  && prev.reviewsAction?.loading === next.reviewsAction?.loading
-  && prev.reviewsAction?.loaded === next.reviewsAction?.loaded
-  && prev.diagnosticsSlot === next.diagnosticsSlot
-  && prev.onEnrich === next.onEnrich
-  && prev.onToggleHidden === next.onToggleHidden
-  && prev.onTogglePublish === next.onTogglePublish
-  && prev.programsContext === next.programsContext
-  && prev.onRequestPhotos === next.onRequestPhotos
-));
 
 const Matching = () => {
   const navigate = useNavigate();
@@ -1956,18 +1577,10 @@ const Matching = () => {
   const ownFavoriteUsersRef = useRef(ownFavoriteUsers);
   const ownDislikeUsersRef = useRef(ownDislikeUsers);
   const [viewMode, setViewMode] = useState('default');
-  const [viewLayout, setViewLayout] = useState(getStoredMatchingViewLayout);
-  const toggleViewLayout = React.useCallback(() => {
-    setViewLayout(current => {
-      const next = nextMatchingViewLayout(current);
-      try {
-        localStorage.setItem(MATCHING_VIEW_LAYOUT_KEY, next);
-      } catch {
-        // a blocked localStorage only costs the persistence, not the switch
-      }
-      return next;
-    });
-  }, []);
+  // Розкладка одна — список повних рядків. Галерея показувала ту саму картку
+  // урізаною (без контактів, фактів і програм), і перемикач між ними став
+  // рудиментом: кожен, хто його знаходив, повертався до списку.
+  const viewLayout = MATCHING_VIEW_LAYOUT;
   // Spec §1-§2: the search input is what switches the screen between the feed and
   // results, and the query lives in the URL so a reload keeps the context.
   const [searchQuery, setSearchQuery] = useState(readQueryFromUrl);
@@ -2111,7 +1724,6 @@ const Matching = () => {
   const showFilters = Boolean(openFilterGroup);
   const showFiltersRef = useRef(showFilters);
   showFiltersRef.current = showFilters;
-  const [showInfoModal, setShowInfoModal] = useState(false);
   const [ownerId, setOwnerId] = useState(null);
   const [personalCreateProfiles, setPersonalCreateProfiles] = useState([]);
   useEffect(() => {
@@ -5389,7 +5001,6 @@ const Matching = () => {
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('userEmail');
       localStorage.removeItem('ownerId');
-      setShowInfoModal(false);
       saveScrollPosition();
       navigate('/my-profile');
       await signOut(auth);
@@ -7012,6 +6623,8 @@ const Matching = () => {
   // повна анкета читається саме там: одна картка на дотик читача замість
   // сорока наперед.
   const [fullProfileByUserId, setFullProfileByUserId] = useState({});
+  // Контакти, дочитані для рядка стрічки окремо від анкети (`handleRequestRowContacts`).
+  const [cardContactsByUserId, setCardContactsByUserId] = useState({});
   const fullProfileRequestsRef = useRef(new Set());
   const contactRequestsRef = useRef(new Set());
 
@@ -7101,9 +6714,12 @@ const Matching = () => {
     if (!user?.userId) return user;
     const fullProfile = fullProfileByUserId[user.userId];
     const cachedPhotos = photoCacheByUserId[user.userId];
-    if (!fullProfile && !cachedPhotos) return user;
+    const cardContacts = cardContactsByUserId[user.userId];
+    if (!fullProfile && !cachedPhotos && !cardContacts) return user;
     // Проєкція перекривається анкетою, а не навпаки: анкета свіжіша й повніша.
+    // Окремо дочитані контакти лягають лише туди, де анкета своїх не принесла.
     const merged = fullProfile ? { ...user, ...fullProfile } : { ...user };
+    if (cardContacts && !getContactEntries(merged).length) Object.assign(merged, cardContacts);
 
     // Анкета з `fetchUsersByIds` приходить із порожнім `photos` — фото до неї
     // йдуть окремо. Порожній список не має стирати аватар, який проєкція вже
@@ -7119,7 +6735,7 @@ const Matching = () => {
     // нічого не питає (`usePhotoSwipe`).
     if (cachedPhotos) merged.__allPhotosLoaded = true;
     return merged;
-  }, [fullProfileByUserId, photoCacheByUserId]);
+  }, [cardContactsByUserId, fullProfileByUserId, photoCacheByUserId]);
 
   // Свайп по фото в рядку чи плитці просить решту знімків картки. Проєкція
   // стрічки несе один аватар, і дочитувати перелік на кожну показану картку
@@ -8134,20 +7750,29 @@ const Matching = () => {
     });
   }, [ensureFullProfile]);
 
-  const [rowContactsLoading, setRowContactsLoading] = useState({});
-
+  // Контакти рядка підтягуються самі, щойно рядок зʼявився на екрані
+  // (`ProfileRow`), — і лише контакти: один точковий `profileContacts/{id}`
+  // (`readProfileContacts`, межа до запиту й памʼять таба), а не анкета з
+  // пʼяти вузлів, яку тягнув би `ensureFullProfile`. Кнопки «Контакти»,
+  // на дотик до якої це читання раніше чекало, у рядку більше немає. Право
+  // питається до виклику (`canOfferProfileContacts` — картка в стрічці, тобто
+  // з `feedDate`), тож картці поза стрічкою запит не йде зовсім.
+  const rowContactRequestsRef = useRef(new Set());
   const handleRequestRowContacts = React.useCallback(user => {
     const userId = user?.userId;
-    if (!userId) return;
-    setRowContactsLoading(previous => ({ ...previous, [userId]: true }));
-    Promise.resolve(ensureFullProfile(user)).finally(() => {
-      setRowContactsLoading(previous => {
-        const next = { ...previous };
-        delete next[userId];
-        return next;
+    if (!userId || getContactEntries(user).length || isOwnProfileDraftCard(user)) return;
+    if (rowContactRequestsRef.current.has(userId)) return;
+    rowContactRequestsRef.current.add(userId);
+    readProfileContacts(userId)
+      .then(({ allowed, contacts }) => {
+        if (!allowed || !contacts || !Object.keys(contacts).length) return;
+        setCardContactsByUserId(previous => ({ ...previous, [userId]: contacts }));
+      })
+      .catch(error => {
+        rowContactRequestsRef.current.delete(userId);
+        console.warn('[Matching] Failed to read row contacts', { userId, error });
       });
-    });
-  }, [ensureFullProfile]);
+  }, []);
 
   /**
    * Власна нотатка, збережена просто з рядка стрічки.
@@ -8547,7 +8172,6 @@ const Matching = () => {
       viewerId: ownerId,
       accessLevel: currentAccessLevel,
     }),
-    contactsLoading: Boolean(rowContactsLoading[user.userId]),
     reviewsAction: buildRowReviewsAction(user.userId),
     reviewsSlot: buildRowReviewsSlot(user.userId),
     onRequestPhotos: requestCardPhotos,
@@ -8569,7 +8193,6 @@ const Matching = () => {
     language,
     ownerId,
     requestCardPhotos,
-    rowContactsLoading,
     toggleRowFavorite,
   ]);
 
@@ -8683,49 +8306,7 @@ const Matching = () => {
     void loadCommentsFor(feedRows, { activeOnly: false });
   }, [feedRows, loadCommentsFor]);
 
-  // Скільки колонок галереї вміщає екран: дві на телефоні, до чотирьох на
-  // комп'ютері (`hooks/useFeedColumns`). Список ділить ширину сам, у CSS.
-  const feedColumns = useFeedColumns();
-  /**
-   * Дві колонки галереї — за висотою, а не через одну.
-   *
-   * Плитка з фото важить утричі більше за плитку без нього, тож поділ парних і
-   * непарних розводив колонки: одна закінчувалась на середині екрана, а картки
-   * другої йшли далі стовпчиком, з порожнечею збоку. Висота не міряється, а
-   * оцінюється з того, що плитка справді малює (`splitIntoBalancedColumns`).
-   */
-  const galleryColumns = useMemo(
-    () => splitIntoBalancedColumns(feedRows, user => estimateGalleryTileHeight({
-      hasPhoto: getProfilePhotos(user).length > 0,
-      // Рівно ті рядки, які малює плитка: імʼя, рядок ролі й локації та до двох
-      // рядків метрик. Рахуються вони наявністю полів, а не збиранням фактів:
-      // будувати вузли ста карток заради оцінки висоти дорожче за саму сітку.
-      textLines: 1
-        + (getProfileRole(user) || getProfileLocation(user) ? 1 : 0)
-        + (user?.height || user?.weight || user?.bmi || user?.rh ? 1 : 0)
-        + (user?.ownKids || user?.maritalStatus || user?.csection || user?.cSection ? 1 : 0),
-      hasActions: !user?.__limitedProfile,
-      // Плашка нотаток стоїть у кожній повній плитці — і важить вона більше за
-      // будь-який окремий рядок тексту.
-      hasNotes: !user?.__limitedProfile,
-    }), feedColumns.gallery),
-    [feedColumns.gallery, feedRows],
-  );
-
-  // Кнопка називає те, куди веде, а не те, де стоїмо: так один значок
-  // перебирає обидві розкладки, і читач бачить наступну наперед.
-  const nextViewLayout = nextMatchingViewLayout(viewLayout);
-  const nextViewLayoutLabel = uiText(MATCHING_VIEW_LAYOUT_LABELS[nextViewLayout], language);
-  const nextViewLayoutIcon = nextViewLayout === 'list' ? <FaListUl /> : <FaThLarge />;
-
   const matchingMenuActions = [
-    {
-      key: 'viewLayout',
-      label: nextViewLayoutLabel,
-      description: uiText('Перемкнути вигляд стрічки', language),
-      icon: nextViewLayoutIcon,
-      onClick: toggleViewLayout,
-    },
     ...(isAdmin ? [{
       key: 'diagnostics',
       label: uiText('Діагностика', language),
@@ -8743,18 +8324,25 @@ const Matching = () => {
     },
   ];
 
-  const dotsMenu = () => (
-    <ProfileDotsMenu
-      navigate={navigate}
-      isAdmin={isAdmin}
-      access={access}
-      onExit={handleExit}
-      onSelect={() => setShowInfoModal(false)}
-      beforeNavigate={saveScrollPosition}
-      extraActions={matchingMenuActions}
-      extraActionsLabel="Matching"
-    />
-  );
+  // Стрілка «назад» у рядку навігації зʼявляється, коли тут є куди
+  // повертатись: з видачі пошуку — у стрічку (той самий шлях, що й «назад»
+  // телефона, `handleSearchCleared`).
+  usePrimaryNavigationSlot({
+    onBack: isSearching ? handleSearchCleared : undefined,
+    renderMenu: ({ close }) => (
+      <ProfileDotsMenu
+        navigate={navigate}
+        isAdmin={isAdmin}
+        access={access}
+        onExit={handleExit}
+        onSelect={close}
+        beforeNavigate={saveScrollPosition}
+        extraActions={matchingMenuActions}
+        extraActionsLabel="Matching"
+        omitPrimaryDestinations
+      />
+    ),
+  });
 
   return (
     <>
@@ -8817,16 +8405,9 @@ const Matching = () => {
                   </BackendTrafficToggleButton>
                 </TopActionGroup>
               )}
-              {/* The "⋮" menu never shares a button group with the page's other action buttons -
-                  it sits on its own, right after them, not inside a TopActionGroup pill. */}
-              <ActionButton
-                type="button"
-                aria-label={uiText('Відкрити меню профілю', language)}
-                title={uiText('Відкрити меню профілю', language)}
-                onClick={() => setShowInfoModal('dotsMenu')}
-              >
-                <FaEllipsisV />
-              </ActionButton>
+              {/* «⋮» звідси переїхав у рядок спільної навігації
+                  (`PrimaryNavigation`), праворуч від «Мій профіль»: дії
+                  стрічки сторінка кладе туди через `usePrimaryNavigationSlot`. */}
             </TopActions>
           </MatchingTopBar>
           {matchingSearchStatus && (
@@ -8861,14 +8442,6 @@ const Matching = () => {
                 );
               })}
             </ChipsGroup>
-            <LayoutToggleButton
-              type="button"
-              onClick={toggleViewLayout}
-              aria-label={nextViewLayoutLabel}
-              title={nextViewLayoutLabel}
-            >
-              {nextViewLayoutIcon}
-            </LayoutToggleButton>
           </ChipsRow>
           {/* Фільтри стоять під колекціями, а не навпаки: спершу читач
               обирає деку (усі / вподобані / приховані), а вже потім звужує
@@ -9001,36 +8574,6 @@ const Matching = () => {
                   </QueryDraftButton>
                 </QueryDraftCard>
               )}
-              {feedRows.length > 0 && viewLayout === 'gallery' && (
-                <GalleryGrid $restoringScroll={scrollRestorePending}>
-                  {galleryColumns.map((columnRows, columnIndex) => (
-                    <GalleryColumn key={`gallery-column-${columnIndex}`}>
-                      {columnRows
-                        .map(user => (
-                          <GalleryCard
-                            key={user.userId}
-                            user={user}
-                            isAdmin={isAdmin}
-                            isFavorite={Boolean(favoriteUsers[user.userId])}
-                            isHidden={Boolean(dislikeUsers[user.userId])}
-                            onOpen={openDetailFor}
-                            onToggleFavorite={toggleRowFavorite}
-                            onToggleHidden={toggleRowHidden}
-                            onTogglePublish={togglePublish}
-                            onEnrich={isAdmin ? undefined : handleRowEnrichProfile}
-                            clientComment={comments[user.userId] || ''}
-                            onCommentSave={handleRowCommentSave}
-                            reviewsSlot={buildRowReviewsSlot(user.userId)}
-                            reviewsAction={buildRowReviewsAction(user.userId)}
-                            diagnosticsSlot={renderDiagnosticsFor(user)}
-                            onRequestPhotos={requestCardPhotos}
-                            programsContext={programsContext}
-                          />
-                        ))}
-                    </GalleryColumn>
-                  ))}
-                </GalleryGrid>
-              )}
               {feedRows.length > 0 && viewLayout === 'list' && (
                 <FeedList $restoringScroll={scrollRestorePending}>
                   {feedRows.map(user => (
@@ -9050,7 +8593,6 @@ const Matching = () => {
                         viewerId: ownerId,
                         accessLevel: currentAccessLevel,
                       })}
-                      contactsLoading={Boolean(rowContactsLoading[user.userId])}
                       priorityMetricKeys={priorityMetricKeys}
                       onSwipeRight={toggleRowFavorite}
                       onSwipeLeft={toggleRowHidden}
@@ -9311,9 +8853,6 @@ const Matching = () => {
           </DetailLayer>
           )}
 
-          {showInfoModal && (
-            <InfoModal onClose={() => setShowInfoModal(false)} text="dotsMenu" Context={dotsMenu} />
-          )}
         </InnerContainer>
       </Container>
     </>

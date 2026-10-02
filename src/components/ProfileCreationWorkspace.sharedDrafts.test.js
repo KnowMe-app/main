@@ -116,9 +116,10 @@ describe('ProfileCreationWorkspace shared drafts', () => {
   it('uses the access-aware profile menu and does not claim drafts are private', () => {
     expect(source).not.toContain("import PageNavMenu from './PageNavMenu';");
     expect(source).toContain("import { ProfileDotsMenu } from './ProfileDotsMenu';");
-    // Стрілка ліворуч, заголовок, «⋮» праворуч — один рядок шапки.
-    expect(source).toContain('<HeaderCopy><Title>{heading}</Title></HeaderCopy>');
-    expect(source).toContain('<BackButton onClick={draft || overlayLoading ? requestCloseEditor : () => goBackOrTo(navigate, MATCHING_PATH)} />');
+    // Стрілка й «⋮» стоять у рядку спільної навігації, а не окремою шапкою.
+    expect(source).not.toContain('<HeaderCopy>');
+    expect(source).toContain('usePrimaryNavigationSlot({');
+    expect(source).toContain('omitPrimaryDestinations');
     expect(source).not.toContain('Картки зберігаються приватно до рішення адміністратора.');
     expect(source).not.toContain('<MatchingButton');
   });

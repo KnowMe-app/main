@@ -16,6 +16,7 @@ import DocumentsPage from './DocumentsPage';
 import PartiesPage from './PartiesPage';
 import ProfileCreationWorkspace from './ProfileCreationWorkspace';
 import PrimaryNavigation from './PrimaryNavigation';
+import { PrimaryNavigationSlotProvider } from './PrimaryNavigationSlot';
 import { RequireAuth } from './RequireAuth';
 import { onAuthStateChanged } from 'firebase/auth';
 import toast from 'react-hot-toast';
@@ -126,7 +127,7 @@ export const App = () => {
   const normalizedPathname = location.pathname.replace(/\/+$/, '') || '/';
 
   return (
-    <>
+    <PrimaryNavigationSlotProvider>
       {authStatus === 'in' && ['/matching', '/matching/create-profile', '/my-profile'].includes(normalizedPathname) && <PrimaryNavigation />}
       <Routes>
       {/* Публічні екрани не читають бази: це форма входу та текст угоди, на
@@ -166,6 +167,6 @@ export const App = () => {
           (і адреса їде з ним), залогінений — у «Мій профіль». */}
       <Route path="*" element={<RequireAuth status={catchAllStatus}><Navigate to="/my-profile" replace /></RequireAuth>} />
       </Routes>
-    </>
+    </PrimaryNavigationSlotProvider>
   );
 };

@@ -4,7 +4,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import { FiChevronDown, FiClock, FiFolder, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
-import { FaEllipsisV, FaMapMarkerAlt, FaTimes } from 'react-icons/fa';
+import { FaMapMarkerAlt, FaTimes } from 'react-icons/fa';
 
 import {
   addMatchingSearchQuery,
@@ -29,7 +29,7 @@ import SearchBar, { detectSearchParams } from './SearchBar';
 import { getCurrentValue, hasCurrentValue } from './getCurrentValue';
 import { CONTACT_FIELDS, getContactEntries } from './contactMethods';
 import { fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
-import BackButton from './BackButton';
+import { usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
 import InfoModal, {
   ModalActionRow,
   ModalDangerButton,
@@ -55,7 +55,7 @@ import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
 import { buildMatchingSearchPath, MATCHING_PATH, readStoredMatchingSearchQuery } from 'utils/matchingSearchLocation';
-import { goBackOrTo } from 'utils/appBackNavigation';
+import { canGoBackInHistory, goBackOrTo } from 'utils/appBackNavigation';
 import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleCode, getRoleLabel } from './profileLayoutConfig';
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
 import {
@@ -91,35 +91,13 @@ import {
 
 const Page = styled.main`
   min-height: 100vh;
-  padding: 32px 20px max(80px, env(safe-area-inset-bottom));
+  padding: 16px 20px max(80px, env(safe-area-inset-bottom));
   background: var(--km-bg);
   color: var(--km-text);
   font-family: var(--km-font);
   box-sizing: border-box;
 `;
 const Shell = styled.div`max-width: 920px; margin: 0 auto;`;
-// Same title row as every other page's header (AdminPageHeader / KmTopbar):
-// title on the left, the "⋮" menu pinned to the right, one row at any width -
-// never the left-of-title placement this page used to have. Перед заголовком
-// стоїть стрілка «назад» — той самий елемент, що й у шарі деталей стрічки.
-const Header = styled.header`
-  display:flex; align-items:center; gap:12px; margin-bottom:28px;
-`;
-// Заголовок забирає вільне місце, щоб стрілка лишалась ліворуч, а «⋮» — праворуч,
-// одним рядком на будь-якій ширині.
-const HeaderCopy = styled.div`min-width:0; flex:1 1 auto;`;
-// Той самий «⋮», що й на решті сторінок анкет: 34 px, рамка, заокруглення.
-const MenuButton = styled.button`
-  width:34px; height:34px; flex:0 0 34px; display:inline-flex; align-items:center; justify-content:center;
-  border:1px solid var(--km-border); border-radius:10px; background:var(--km-card); color:var(--km-muted);
-  font-size:18px; line-height:1; cursor:pointer;
-  transition:background-color .18s ease, border-color .18s ease, color .18s ease;
-  &:hover { background:var(--km-accent-light); border-color:var(--km-accent); color:var(--km-accent); }
-  &:focus-visible { outline:none; border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
-`;
-const Title = styled.h1`
-  margin:0; font-size:clamp(28px, 7vw, 34px); line-height:1.1; font-weight:800; letter-spacing:-.03em;
-`;
 const Button = styled.button`
   box-sizing: border-box;
   min-height:50px; border: 1px solid var(--km-border); border-radius: 16px; padding: 12px 19px;
@@ -708,7 +686,6 @@ export const ProfileCreationWorkspace = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
   const [searchFailed, setSearchFailed] = useState(false);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [deletingDraft, setDeletingDraft] = useState(false);
   const [confirmDeleteDraft, setConfirmDeleteDraft] = useState(false);
   const [favoriteUsers, setFavoriteUsers] = useState({});
@@ -1118,7 +1095,6 @@ export const ProfileCreationWorkspace = () => {
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('userEmail');
       localStorage.removeItem('ownerId');
-      setShowProfileMenu(false);
       navigate('/my-profile');
       await signOut(auth);
     } catch (error) {
@@ -1916,55 +1892,36 @@ export const ProfileCreationWorkspace = () => {
   const draftPhoto = getProfilePhotos(summaryCard)[0] || '';
   const draftInitial = (draftName.trim()[0] || '?').toUpperCase();
 
-  // Екран називається тим, що на ньому лежить, — картками, які завів цей читач.
-  // «Додати профіль» називало дію, а не місце: людина, яка щойно завела картку,
-  // не мала підстав вертатись сюди по неї, бо підпис нічого про неї не обіцяв.
-  // Пошук тут лишається рівно для одного питання — чи не заведена ця людина вже
-  // (карткою чи чужою чернеткою, якої стрічка не показує), і відповідь на нього
-  // розкладена так само, як у стрічці: заготовка нової картки першим рядком,
-  // знайдене — під нею.
+  // Окремого рядка з назвою екрана, стрілкою й «⋮» тут більше немає: усе це
+  // стоїть у рядку спільної навігації (`PrimaryNavigation`). Назва екрана
+  // повторювала підсвічену над нею вкладку, тож відкрите тепер називає сама
+  // вкладка — «Доповнення» над чужою карткою, «Чернетка» над власною, — а
+  // «Мої картки» лишаються для списку.
   //
-  // Відкрита форма — це вже не список, і шапка каже, що саме відкрито: назва
-  // екрана над чужою карткою читалась як обіцянка, що це одна з моїх.
-  const heading = useMemo(() => {
-    if (overlayTarget) return uiText('Доповнення картки', language);
-    if (draft) return uiText('Чернетка', language);
-    return uiText(access?.isAdmin ? 'Нові профілі' : 'Створені мною', language);
-  }, [access, draft, language, overlayTarget]);
+  // Стрілка веде туди ж, куди апаратна кнопка телефона: у формі — назад до
+  // того, з чого її відкрили, у списку — на попередній екран, коли він є.
+  const editorOpen = Boolean(draft || overlayLoading);
+  usePrimaryNavigationSlot({
+    onBack: editorOpen
+      ? requestCloseEditor
+      : (canGoBackInHistory() ? () => goBackOrTo(navigate, MATCHING_PATH) : undefined),
+    workspaceLabel: overlayTarget ? 'overlay' : (draft ? 'draft' : ''),
+    // Меню те саме, що й на решті сторінок анкет: воно знає права читача і не
+    // пропонує йому екранів, куди `App` його все одно не пустить.
+    renderMenu: access ? ({ close }) => (
+      <ProfileDotsMenu
+        navigate={navigate}
+        isAdmin={access.isAdmin}
+        access={access}
+        onExit={handleExit}
+        onSelect={close}
+        omitPrimaryDestinations
+      />
+    ) : undefined,
+  });
   if (!access) return <Page><Shell>{uiText('Завантаження…', language)}</Shell></Page>;
 
   return <Page><Shell>
-    <Header>
-      {/* Стрілка веде туди ж, куди апаратна кнопка телефона: у формі — назад до
-          того, з чого її відкрили, у списку — на попередній екран. */}
-      <BackButton onClick={draft || overlayLoading ? requestCloseEditor : () => goBackOrTo(navigate, MATCHING_PATH)} />
-      <HeaderCopy><Title>{heading}</Title></HeaderCopy>
-      {/* Меню тут те саме, що й на решті сторінок анкет: воно знає права читача
-          і не пропонує йому екранів, куди `App` його все одно не пустить.
-          `PageNavMenu` перелічував Budget/Invoice/Documents/Parties кожному —
-          не-адмін натискав їх і лишався на місці без жодного пояснення. */}
-      <MenuButton
-        type="button"
-        aria-label={uiText('Відкрити меню профілю', language)}
-        title={uiText('Відкрити меню профілю', language)}
-        onClick={() => setShowProfileMenu(true)}
-      >
-        <FaEllipsisV />
-      </MenuButton>
-    </Header>
-    {showProfileMenu && <InfoModal
-      onClose={() => setShowProfileMenu(false)}
-      text="dotsMenu"
-      Context={() => (
-        <ProfileDotsMenu
-          navigate={navigate}
-          isAdmin={access.isAdmin}
-          access={access}
-          onExit={handleExit}
-          onSelect={() => setShowProfileMenu(false)}
-        />
-      )}
-    />}
     {draft ? <>
       <DraftHeaderCard>
         {/* Стан чернетки — це те, що з нею буде далі, і сказати його є кому лише

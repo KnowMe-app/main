@@ -713,6 +713,12 @@ export const ContactIconLink = styled.a`
   color: var(--matching-muted-text, var(--km-muted, #7A7A72));
   text-decoration: none;
 
+  /* Трубка — головна дія блока (дзвінок), тож вона в кольорі акценту. */
+  ${({ $primary }) => $primary && css`
+    color: var(--matching-accent, var(--km-accent, #E8791A));
+    border-color: color-mix(in srgb, var(--matching-accent, var(--km-accent, #E8791A)) 45%, transparent);
+  `}
+
   &:active {
     opacity: 0.6;
   }
