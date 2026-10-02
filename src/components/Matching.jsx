@@ -1546,10 +1546,42 @@ export const buildMatchingCursorFromCard = card => {
   return { date, userId };
 };
 
+/*
+ * Остання показана дека — у памʼяті вкладки, поза компонентом.
+ *
+ * Повернення з відкритої картки чи форми доповнення знову монтує стрічку, а
+ * `loadInitial` не малює нічого, доки не прочитає реакції й власну анкету з
+ * бекенду — навіть коли сама дека вже лежить у кеші. Секунда скелетона на
+ * кожне «назад» читалась як «знову завантажує». Тож на монтуванні стрічка
+ * одразу показує ту деку, яку щойно лишили, а `loadInitial` іде своїм шляхом
+ * і тихо підміняє її тим самим списком (див. `restoredFeedSnapshotRef`).
+ * Знімок привʼязаний до читача і живе недовго: це орієнтир на час повернення,
+ * а не ще один кеш.
+ */
+const FEED_SNAPSHOT_TTL_MS = 10 * 60 * 1000;
+let lastFeedSnapshot = null;
+const readFeedSnapshot = () => {
+  if (!lastFeedSnapshot) return null;
+  let owner = '';
+  try {
+    owner = localStorage.getItem('ownerId') || '';
+  } catch {
+    return null;
+  }
+  if (!owner || lastFeedSnapshot.ownerId !== owner) return null;
+  if (Date.now() - lastFeedSnapshot.at > FEED_SNAPSHOT_TTL_MS) return null;
+  if (readQueryFromUrl().trim()) return null;
+  return lastFeedSnapshot;
+};
+
 const Matching = () => {
   const navigate = useNavigate();
   const routeLocation = useLocation();
-  const [users, setUsers] = useState([]);
+  const feedSnapshotRef = useRef(undefined);
+  if (feedSnapshotRef.current === undefined) feedSnapshotRef.current = readFeedSnapshot();
+  const feedSnapshot = feedSnapshotRef.current;
+  const restoredFeedSnapshotRef = useRef(Boolean(feedSnapshot));
+  const [users, setUsers] = useState(() => feedSnapshot?.users || []);
   const usersRef = useRef(users);
   // Public source readiness is deliberately separate from the rendered deck:
   // own drafts and access-scoped cards must never satisfy the first ten-card
@@ -1558,10 +1590,10 @@ const Matching = () => {
   const [lastKey, setLastKey] = useState(undefined);
   const [hasMore, setHasMore] = useState(true);
   // removed selected user modal logic
-  const [favoriteUsers, setFavoriteUsers] = useState({});
-  const [dislikeUsers, setDislikeUsers] = useState({});
-  const [ownFavoriteUsers, setOwnFavoriteUsers] = useState({});
-  const [ownDislikeUsers, setOwnDislikeUsers] = useState({});
+  const [favoriteUsers, setFavoriteUsers] = useState(() => feedSnapshot?.favoriteUsers || {});
+  const [dislikeUsers, setDislikeUsers] = useState(() => feedSnapshot?.dislikeUsers || {});
+  const [ownFavoriteUsers, setOwnFavoriteUsers] = useState(() => feedSnapshot?.ownFavoriteUsers || {});
+  const [ownDislikeUsers, setOwnDislikeUsers] = useState(() => feedSnapshot?.ownDislikeUsers || {});
   const [sharedReactionIds, setSharedReactionIds] = useState([]);
   const [sharedReactionCandidateUsers, setSharedReactionCandidateUsers] = useState([]);
   const [reactionPaginationByType, setReactionPaginationByType] = useState({
@@ -1725,6 +1757,20 @@ const Matching = () => {
   const showFiltersRef = useRef(showFilters);
   showFiltersRef.current = showFilters;
   const [ownerId, setOwnerId] = useState(null);
+  // Знімок деки для повернення (`readFeedSnapshot`): лише стрічка за
+  // замовчуванням і без пошуку — видача й колекції мають власні шляхи назад.
+  useEffect(() => {
+    if (!ownerId || viewMode !== 'default' || searchQuery.trim() || !users.length) return;
+    lastFeedSnapshot = {
+      ownerId,
+      at: Date.now(),
+      users,
+      favoriteUsers,
+      dislikeUsers,
+      ownFavoriteUsers,
+      ownDislikeUsers,
+    };
+  }, [dislikeUsers, favoriteUsers, ownDislikeUsers, ownFavoriteUsers, ownerId, searchQuery, users, viewMode]);
   const [personalCreateProfiles, setPersonalCreateProfiles] = useState([]);
   useEffect(() => {
     const syncCopiedComment = event => {
@@ -3462,9 +3508,14 @@ const Matching = () => {
   // так, лягала в кеш як «дочитано» (`hasMore: false`) і на TTL закривала
   // решту карток навіть після виправлення. Нова версія робить ті записи
   // чужими, і стрічка читається заново.
+  // Роль — підписом (`viewerRoleSignature`), а не сирим значенням: одна й та
+  // сама роль приходить то масивом (`['ed', 'ag']` з анкети), то рядком
+  // (`'ed,ag'` з `localStorage`), і сирий підпис давав два різні ключі списку.
+  // Кеш стрічки через це не влучав ніколи: повернення з картки чи форми
+  // доповнення щоразу перечитувало `matchingCards` з початку й чекало бекенду.
   const buildFeedCacheSignature = React.useCallback(() => stableAdditionalSignature({
     filters: filtersRef.current || {},
-    viewerRole: donorRestrictionViewerRoleRef.current || '',
+    viewerRole: viewerRoleSignature(donorRestrictionViewerRoleRef.current || ''),
     paging: MATCHING_FEED_PAGING_VERSION,
   }), []);
 
@@ -3531,7 +3582,10 @@ const Matching = () => {
     initialLoadInFlightRef.current = true;
     loadingRef.current = true;
     setInitialPublicWindowComplete(false);
-    setUsers([]); // clear previous list to avoid caching wrong data
+    // Деку, показану зі знімка вкладки (`readFeedSnapshot`), не стираємо: на
+    // час читання реакцій на екрані лишається вона, а не скелетон.
+    if (restoredFeedSnapshotRef.current) restoredFeedSnapshotRef.current = false;
+    else setUsers([]); // clear previous list to avoid caching wrong data
     loadedIdsRef.current = new Set();
     // Список стрічки свій на кожну умову (`buildFeedListKey`): повернення до
     // попередніх фільтрів теж береться з кеша, а не обходом стрічки.

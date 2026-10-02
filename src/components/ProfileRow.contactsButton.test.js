@@ -105,7 +105,7 @@ describe('контакти в рядку стрічки', () => {
   it('поруч із трубкою дає месенджери, зібрані з номера', () => {
     renderRow(hydratedCard, { onRequestContacts: jest.fn() });
 
-    expect(screen.getByTitle('Telegram: +380501112233')).toHaveAttribute('href', 'https://t.me/380501112233');
+    expect(screen.getByTitle('Telegram: +380501112233')).toHaveAttribute('href', 'https://t.me/+380501112233');
     expect(screen.getByTitle('Viber: +380501112233')).toHaveAttribute('href', 'viber://chat?number=%2B380501112233');
     expect(screen.getByTitle('WhatsApp: +380501112233')).toHaveAttribute('href', 'https://wa.me/380501112233');
     expect(screen.getByTitle('Telegram: oksana')).toBeInTheDocument();

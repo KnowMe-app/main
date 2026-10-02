@@ -19,7 +19,7 @@ const program = {
 describe('редактор програм', () => {
   it('не повторює тип програми у короткому описі', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
-    expect(screen.getAllByText('Донорка ооцитів')).toHaveLength(1);
+    expect(screen.getAllByText('Донор ооцитів')).toHaveLength(1);
     expect(screen.getByText(/Київ · 2 500/)).toBeInTheDocument();
   });
 
@@ -33,7 +33,7 @@ describe('редактор програм', () => {
 
   it('показує повне прев’ю лише після розкриття редактора і прев’ю', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Донорка ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Донор ооцитів/ }));
     const disclosure = screen.getByText(/Попередній перегляд у стрічці/);
     expect(screen.getByTestId('program-card')).not.toBeVisible();
     fireEvent.click(disclosure);

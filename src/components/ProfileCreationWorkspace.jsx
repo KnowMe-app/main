@@ -607,6 +607,12 @@ const IDENTITY_CLAIMING_PREFILL_FIELDS = new Set(
 // Що читач бачить у формі доповнення: рівно поточні значення тих полів картки,
 // які ця форма показує. Масив у канонічній картці є історією версій, а не
 // переліком контактів; останній порожній елемент означає видалене поле.
+// Номер у полі — суцільним рядком, без пробілів: у базі він лежить по-різному
+// («380 50 111 22 33» поруч із «380501112233»), а читають і звіряють його
+// однаково. Нормалізується і підставлене, і база порівняння
+// (`buildOverlayPrefill` дає обидва), тож прибрані пробіли правкою не стають.
+const compactPhoneInput = value => (typeof value === 'string' ? value.replace(/\s+/g, '') : value);
+
 export const buildOverlayPrefill = (canonical, cardUserId) => [
   ...CREATE_FORM_SECTIONS.flatMap(section => section.fields),
   // Канали звʼязку, яких у переліку секцій немає, підставляються так само:
@@ -617,7 +623,7 @@ export const buildOverlayPrefill = (canonical, cardUserId) => [
   .reduce((result, fieldName) => {
     const value = getCurrentValue(canonical?.[fieldName]);
     if (value === null || value === undefined || String(value).trim() === '') return result;
-    result[fieldName] = value;
+    result[fieldName] = fieldName === 'phone' ? compactPhoneInput(value) : value;
     return result;
   }, { userId: cardUserId });
 
@@ -1438,7 +1444,8 @@ export const ProfileCreationWorkspace = () => {
     const normalized = overlayTarget
       ? dated
       : dated.map(item => (typeof item === 'string' ? normalizeProfileFieldInput(fieldName, item) : item));
-    const nextValues = normalized.length ? [...normalized] : [''];
+    const compacted = fieldName === 'phone' ? normalized.map(compactPhoneInput) : normalized;
+    const nextValues = compacted.length ? [...compacted] : [''];
     return commitFieldValue(fieldName, nextValues);
   };
 

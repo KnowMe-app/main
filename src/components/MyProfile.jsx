@@ -562,6 +562,9 @@ const KNOWN_ROLES = new Set(PROFILE_ROLE_OPTIONS.map(option => option.value));
 // малює десяток інших екранів, і чіпати його заради одного поля не можна.
 const MY_PROFILE_EXTRA_FIELDS = [
   { name: 'website', label: 'Сайт', ukrainian: 'Сайт', placeholder: 'https://', svg: 'no' },
+  // Назва агенції чи клініки окремо від імені людини — для тих, у кого
+  // ролей дві (донорка, яка ще й агентка). Див. `roleSectionsFor`.
+  { name: 'agencyName', label: 'Назва агенції', ukrainian: 'Назва агенції', placeholder: 'Наприклад: Мрія Донорства', svg: 'no' },
 ];
 
 /**
@@ -889,7 +892,14 @@ export const MyProfile = () => {
   const parentOnly = rolesList.length === 1 && rolesList[0] === 'ip';
   // Заголовки спільних розділів говорять мовою анкети, якій ці поля належать:
   // у донорки, яка ще й агентка, «Особисті дані» — її, а не агенції.
-  const sectionTitleRole = personRole || selectedRole;
+  //
+  // Те саме з батьками, які ще й агенція: імʼя в «Особистих даних» — людини.
+  const sectionTitleRole = personRole
+    || (organisationRole && rolesList.find(role => !ORGANISATION_ROLES.includes(role)))
+    || selectedRole;
+  // Людина й організація в одній анкеті — тоді імʼя й прізвище належать
+  // людині, а в організації своє поле назви (`agencyName`).
+  const hasMixedRoles = Boolean(organisationRole) && rolesList.some(role => !ORGANISATION_ROLES.includes(role));
   const hiddenRoles = useMemo(() => parseHiddenRoles(state.hiddenRoles), [state.hiddenRoles]);
 
   /**
@@ -987,9 +997,16 @@ export const MyProfile = () => {
   //
   // «Послуги й досвід» тут був і пішов: його не заповнював ніхто, а сайт з
   // нього переїхав у «Соцмережі».
+  //
+  // Коли ролей дві й одна з них — агенція чи клініка, «Імʼя» й «Прізвище»
+  // належать людині, а назва організації стоїть першою в її власній анкеті
+  // (`agencyName`). Доти обидві анкети писали в те саме `name`, і назва
+  // агенції затирала імʼя донорки — або навпаки.
   const roleSectionsFor = useCallback(role => {
     if (ORGANISATION_ROLES.includes(role)) {
-      return [{ key: 'programs', title: '💶 Програми', fields: ['programs'], custom: 'programs' }];
+      const programs = { key: 'programs', title: '💶 Програми', fields: ['programs'], custom: 'programs' };
+      if (!hasMixedRoles) return [programs];
+      return [{ key: 'organisation', title: role === 'cl' ? '🏥 Клініка' : '🏢 Агенція', fields: ['agencyName'] }, programs];
     }
     if (role === 'ip') {
       // Побажання (`moreInfo_main`) стоять тут же, а не окремим розділом:
@@ -1007,7 +1024,7 @@ export const MyProfile = () => {
       }];
     }
     return [];
-  }, [parentOnly]);
+  }, [hasMixedRoles, parentOnly]);
   const roleSections = useMemo(() => roleSectionsFor(selectedRole), [roleSectionsFor, selectedRole]);
   const additionalRoleSections = useMemo(() => {
     const used = new Set(roleSections.map(section => section.key));
@@ -1715,7 +1732,7 @@ export const MyProfile = () => {
   const renderField = (name) => {
     const field = fieldsMap.get(name);
     if (!field) return null;
-    const roleText = resolveMyProfileFieldText(name, sectionTitleRole);
+    const roleText = resolveMyProfileFieldText(name, name === 'agencyName' ? organisationRole : sectionTitleRole);
     const fieldPlaceholder = roleText.placeholder ? uiText(roleText.placeholder, language) : asExamplePlaceholder(getFieldPlaceholder(field, language), language);
     const val = state[name] || '';
     const isTextArea = name === 'moreInfo_main';

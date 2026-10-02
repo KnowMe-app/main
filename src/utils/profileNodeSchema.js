@@ -224,6 +224,9 @@ export const PROFILE_TECHNICAL_FIELDS = Object.freeze([
 export const PROFILE_DETAIL_FIELDS = Object.freeze([
   // повна деталізація того, що в картці лежить урізаним
   'surname',
+  // назва агенції чи клініки, коли в анкеті ще й особиста роль: імʼя тоді
+  // належить людині (`MyProfile`, `agencyName`)
+  'agencyName',
   'blood',
   'photos',
   'photo',

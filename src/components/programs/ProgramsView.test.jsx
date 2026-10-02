@@ -63,7 +63,7 @@ describe('програми в рядку стрічки', () => {
 
   it('не показує застарілу назву програми', () => {
     render(<ProgramsSummary card={{ programs: { p1: programs.p1 } }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" defaultOpen />);
-    expect(screen.getByText('Донорка ооцитів')).toBeInTheDocument();
+    expect(screen.getByText('Донор ооцитів')).toBeInTheDocument();
     expect(screen.queryByText('Київ')).not.toBeInTheDocument();
   });
 
@@ -121,7 +121,7 @@ describe('картка програми — калькулятор заробі�
   it('читачеві без свого типу програми донорок і СМ — окремими рядками, а не одним діапазоном', () => {
     render(<ProgramsSummary card={{ programs: { p1: programs.p1, p2: surrogate } }} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     const summary = screen.getByTestId('programs-summary');
-    expect(summary).toHaveTextContent('Донорка ооцитів · 2 500 $');
+    expect(summary).toHaveTextContent('Донор ооцитів · 2 500 $');
     expect(summary).toHaveTextContent('Сурогатна мати · 28 300 $');
     expect(summary).not.toHaveTextContent('2 500–28 300');
   });

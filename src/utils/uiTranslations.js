@@ -592,7 +592,7 @@ const EN_BY_UK = {
   '🔐 Доступ до анкети': '🔐 Access to the profile',
   '📷 Фото': '📷 Photos',
   'Донорка яйцеклітин': 'Egg donor',
-  'Донорка ооцитів': 'Egg donor',
+  'Донор ооцитів': 'Egg donor',
   'Біологічні батьки': 'Intended parents',
   'Клініка': 'Clinic',
   Агенція: 'Agency',

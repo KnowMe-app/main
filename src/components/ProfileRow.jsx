@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPencilAlt } from 'react-icons/fa';
+import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPencilAlt, FaRegCommentDots, FaRegStickyNote } from 'react-icons/fa';
 import {
   getProfileAge,
   getProfileBio,
@@ -988,12 +988,14 @@ export const ProfileNotes = ({
         <S.NotesAddRow data-testid="notes-add-row">
           {!showPublic && (
             <S.NotesAddButton type="button" $public onClick={openLane('public')}>
-              + {uiText('Відгук', language)}
+              <FaRegCommentDots aria-hidden="true" />
+              <span>{uiText('Відгук', language)}</span>
             </S.NotesAddButton>
           )}
           {!showPrivate && (
             <S.NotesAddButton type="button" onClick={openLane('private')}>
-              + {uiText('Памʼятка', language)}
+              <FaRegStickyNote aria-hidden="true" />
+              <span>{uiText('Памʼятка', language)}</span>
             </S.NotesAddButton>
           )}
         </S.NotesAddRow>

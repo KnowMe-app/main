@@ -50,7 +50,7 @@ export const MATCHING_FILTER_GROUPS = [
       // «Інші», а не «?» чи «Без ролі»: під цю опцію `toRoleCategory` кладе й
       // клініки, й сурогатних мам, і анкети без ролі взагалі.
       options: [
-        { val: 'ed', label: 'Донорка ооцитів' },
+        { val: 'ed', label: 'Донор ооцитів' },
         { val: 'ag', label: 'Агенція' },
         { val: 'ip', label: 'Біологічні батьки' },
         { val: 'other', label: 'Інші' },

@@ -24,11 +24,13 @@ const COMMON_FIELD_TEXT = Object.freeze({
 const ROLE_FIELD_TEXT = Object.freeze({
   ag: {
     name: { label: 'Назва агенції', placeholder: 'Наприклад: Мрія Донорства' },
+    agencyName: { label: 'Назва агенції', placeholder: 'Наприклад: Мрія Донорства' },
     surname: { label: 'Контактна особа', placeholder: 'Як до вас звертатись' },
     moreInfo_main: { label: 'Про агенцію', placeholder: 'Послуги, міста, кого шукаєте' },
   },
   cl: {
     name: { label: 'Назва клініки', placeholder: 'Наприклад: Клініка «Нове життя»' },
+    agencyName: { label: 'Назва клініки', placeholder: 'Наприклад: Клініка «Нове життя»' },
     surname: { label: 'Контактна особа', placeholder: 'Як до вас звертатись' },
     moreInfo_main: { label: 'Про клініку', placeholder: 'Програми, адреса, кого шукаєте' },
   },
