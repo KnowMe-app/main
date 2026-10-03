@@ -112,7 +112,7 @@ import {
   updateDataInFiresoreDB,
   readOwnerGetInTouchSorted,
   setOwnerGetInTouch,
-  setReactionUserValue,
+  setReactionUserValues,
 } from './config';
 import { get as firebaseGet, onValue as firebaseOnValue, ref as refDb, query, orderByKey, startAt, endAt } from 'firebase/database';
 import {
@@ -1035,8 +1035,10 @@ const SwipeableCard = ({
   publicCommentCount = 0,
   onAdminEdit,
   onEnrich,
+  anketaRole = '',
+  reactionActions,
 }) => {
-  const resolvedRole = getProfileRole(user) || role;
+  const resolvedRole = anketaRole || getProfileRole(user) || role;
   const photos = getProfilePhotos(user);
   const heroPhoto = photo || photos[0] || '';
   const allPhotos = [heroPhoto, ...photos].filter(Boolean).filter((item, index, list) => list.indexOf(item) === index);
@@ -1415,12 +1417,25 @@ const SwipeableCard = ({
               картку встигало вичистити прибирання в `users` — тобто позначка
               приходила рівно на один рендер пізніше, ніж треба. Рядок стрічки
               робить так само: спершу памʼять, потім запис. */}
-          <span ref={dislikeButtonWrapRef} onClickCapture={() => onReacted?.(user.userId)}>
-            <BtnDislike userId={user.userId} userData={canonicalUserData} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_DISLIKE_IDLE_STYLE} icon={FaTimes} inactiveIconColor="var(--matching-muted-text)" />
-          </span>
-          <span ref={favoriteButtonWrapRef} onClickCapture={() => onReacted?.(user.userId)}>
-            <BtnFavorite userId={user.userId} userData={canonicalUserData} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
-          </span>
+          {anketaRole ? (
+            <>
+              <ActionButton type="button" onClick={reactionActions?.primaryAction?.onClick} title={reactionActions?.primaryAction?.title} aria-label={reactionActions?.primaryAction?.title}>
+                {reactionActions?.primaryAction?.icon}
+              </ActionButton>
+              <ActionButton type="button" onClick={reactionActions?.secondaryAction?.onClick} title={reactionActions?.secondaryAction?.title} aria-label={reactionActions?.secondaryAction?.title}>
+                {reactionActions?.secondaryAction?.icon}
+              </ActionButton>
+            </>
+          ) : (
+            <>
+              <span ref={dislikeButtonWrapRef} onClickCapture={() => onReacted?.(user.userId)}>
+                <BtnDislike userId={user.userId} userData={canonicalUserData} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_DISLIKE_IDLE_STYLE} icon={FaTimes} inactiveIconColor="var(--matching-muted-text)" />
+              </span>
+              <span ref={favoriteButtonWrapRef} onClickCapture={() => onReacted?.(user.userId)}>
+                <BtnFavorite userId={user.userId} userData={canonicalUserData} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
+              </span>
+            </>
+          )}
           {/* Трубка — та сама, що в рядку стрічки: «звʼязатися з цією людиною».
               Ряд дій стоїть на екрані завжди, тож і до контактів звідси один
               дотик, хоч би де читач зараз був у картці. */}
@@ -1724,6 +1739,7 @@ const Matching = () => {
   const [matchingSearchStatus, setMatchingSearchStatus] = useState('');
   const matchingSearchKeyRef = useRef(null);
   const [activeProfileIndex, setActiveProfileIndex] = useState(0);
+  const [activeDetailAnketaRole, setActiveDetailAnketaRole] = useState('');
   // Spec §1: the screen has one content area with three states. `detailIndex`
   // is the third - a layer over the feed rather than a route - and it points
   // into the very same `filtered` array the list and gallery render from, so
@@ -2317,6 +2333,7 @@ const Matching = () => {
    * повернувшись до стрічки.
    */
   const [stickyReactedUserIds, setStickyReactedUserIds] = useState(() => new Set());
+  const stickyReactedAnketaRolesRef = useRef(new Map());
   const rememberReactedCard = React.useCallback(userId => {
     if (!userId) return;
     setStickyReactedUserIds(previous => {
@@ -2334,6 +2351,7 @@ const Matching = () => {
   // тримають. Саме це читач і має на увазі під «наступного разу картки вже не
   // буде»: він перемкнув режим, звузив фільтри або повернувся до стрічки.
   useEffect(() => {
+    stickyReactedAnketaRolesRef.current.clear();
     setStickyReactedUserIds(previous => (previous.size ? new Set() : previous));
   }, [viewMode, filters]);
   useEffect(() => {
@@ -7139,6 +7157,7 @@ const Matching = () => {
     }
 
     setActiveProfileIndex(nextIndex);
+    setActiveDetailAnketaRole('');
   }, [activeProfileIndex, feedSource.length]);
 
   useEffect(() => {
@@ -7744,7 +7763,7 @@ const Matching = () => {
     return keys;
   }, [filters, matchingDefaultFilters]);
 
-  const openDetailFor = React.useCallback(user => {
+  const openDetailFor = React.useCallback((user, anketaRole = '') => {
     // Урізана проєкція теж відкривається. Раніше — ні: рядок списку показує все,
     // на що читач має право, і відкривати нібито не було чого. Але плитка
     // галереї показує менше за рядок (ані локації, ані публічних коментарів),
@@ -7759,6 +7778,7 @@ const Matching = () => {
     // з неї.
     lastSeenCardIdRef.current = user?.userId || '';
     setActiveProfileIndex(index);
+    setActiveDetailAnketaRole(anketaRole);
     setDetailOpen(true);
   }, [feedSource]);
 
@@ -8269,7 +8289,11 @@ const Matching = () => {
   // `postponeDates` — живі зміни з цього екрана, для плашки й доріжки.
   const [postponeDates, setPostponeDates] = useState({});
   const [postponeSortDates, setPostponeSortDates] = useState({});
+  const postponeOwnerRef = useRef('');
   useEffect(() => {
+    postponeOwnerRef.current = ownerId || '';
+    setPostponeDates({});
+    setPostponeSortDates({});
     if (!ownerId) return undefined;
     let cancelled = false;
     readOwnerGetInTouchSorted(ownerId, { from: tomorrowIsoDate() }).then(rows => {
@@ -8279,6 +8303,8 @@ const Matching = () => {
         if (typeof row.getInTouch === 'string') next[row.userId] = row.getInTouch;
       });
       setPostponeSortDates(next);
+      // `previous` contains only optimistic changes made after this owner was
+      // selected: the owner-scoped effect reset the previous account's map.
       setPostponeDates(previous => ({ ...next, ...previous }));
     });
     return () => {
@@ -8287,16 +8313,22 @@ const Matching = () => {
   }, [ownerId]);
 
   const readRowPostponeDate = React.useCallback(row => (
-    Object.prototype.hasOwnProperty.call(postponeDates, row?.userId) ? postponeDates[row.userId] : row?.getInTouch
-  ), [postponeDates]);
-  const readRowPostponeSortDate = React.useCallback(row => postponeSortDates[row?.userId], [postponeSortDates]);
+    postponeOwnerRef.current === ownerId
+      ? (postponeDates[row?.userId] || '')
+      : ''
+  ), [ownerId, postponeDates]);
+  const readRowPostponeSortDate = React.useCallback(row => (
+    postponeOwnerRef.current === ownerId ? postponeSortDates[row?.userId] : ''
+  ), [ownerId, postponeSortDates]);
 
   const saveRowPostpone = React.useCallback(async (user, nextDate) => {
     const id = user?.userId;
     if (!id || !ownerId) return;
     const previous = readRowPostponeDate(user);
+    const requestOwnerId = ownerId;
     setPostponeDates(current => ({ ...current, [id]: nextDate }));
     const saved = await setOwnerGetInTouch(ownerId, id, nextDate);
+    if (postponeOwnerRef.current !== requestOwnerId) return;
     if (!saved) {
       setPostponeDates(current => ({ ...current, [id]: previous || '' }));
       toast.error(uiText('Не вдалося відкласти картку. Спробуйте ще раз', language));
@@ -8310,10 +8342,11 @@ const Matching = () => {
   }, [language, ownerId, readRowPostponeDate]);
 
   const buildRowPostpone = React.useCallback(user => ({
+    ownerId,
     until: readRowPostponeDate(user),
     onSet: months => { void saveRowPostpone(user, addMonthsIsoDate(months)); },
     onClear: () => { void saveRowPostpone(user, ''); },
-  }), [readRowPostponeDate, saveRowPostpone]);
+  }), [ownerId, readRowPostponeDate, saveRowPostpone]);
 
   /*
    * Рядки картки на екрані: анкета, якої читач не бачить (донорці — донорська
@@ -8324,7 +8357,10 @@ const Matching = () => {
    */
   const resolveRowAnketaRoles = user => {
     const id = user?.userId;
-    const roles = listFeedRowAnketaRoles(user, feedRowHiddenRoles);
+    // Hydration merges the complete profile (including unpublished roles) into
+    // a row. The matching-card projection remains the visibility boundary.
+    const projection = feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === id) || user;
+    const roles = listFeedRowAnketaRoles(projection, feedRowHiddenRoles);
     if (!roles[0]) return roles;
     let shown = roles;
     if (viewMode === 'favorites') shown = roles.filter(role => reactionCoversAnketa(favoriteUsers[id], role));
@@ -8334,7 +8370,12 @@ const Matching = () => {
         !reactionCoversAnketa(favoriteUsers[id], role) && !reactionCoversAnketa(dislikeUsers[id], role)
       ));
     }
-    return shown.length ? shown : roles;
+    if (shown.length) return shown;
+    if (viewMode === 'favorites' || viewMode === 'dislikes') {
+      const stickyRole = stickyReactedAnketaRolesRef.current.get(id);
+      return stickyRole && roles.includes(stickyRole) ? [stickyRole] : [];
+    }
+    return roles;
   };
 
   const buildRowReactionActions = (user, anketaRole = '') => {
@@ -8481,6 +8522,7 @@ const Matching = () => {
     }
     const cardRoles = listCardAnketaRoles(user);
     rememberReactedCard(id);
+    stickyReactedAnketaRolesRef.current.set(id, anketaRole);
     const isFavorite = kind === 'favorites';
     const ownMap = isFavorite ? ownFavoriteUsers : ownDislikeUsers;
     const otherOwnMap = isFavorite ? ownDislikeUsers : ownFavoriteUsers;
@@ -8516,10 +8558,7 @@ const Matching = () => {
     setFavorite(id, Boolean(favoriteValue));
     setDislike(id, Boolean(dislikeValue));
     try {
-      await setReactionUserValue(kind, id, ownerId, nextValue);
-      if (otherNextValue !== otherOwnMap[id]) {
-        await setReactionUserValue(isFavorite ? 'dislikes' : 'favorites', id, ownerId, otherNextValue);
-      }
+      await setReactionUserValues({ userId: id, ownerId, favoriteValue, dislikeValue });
     } catch (error) {
       console.error('Failed to save anketa reaction:', error);
       applyMaps(previousFavorite, previousDislike);
@@ -8854,7 +8893,7 @@ const Matching = () => {
                       onTogglePublish={togglePublish}
                       expanded={expandedRowIds.has(user.userId)}
                       onToggleExpand={handleToggleRowExpand}
-                      onOpen={openDetailFor}
+                      onOpen={() => openDetailFor(user, anketaRole)}
                       onEditProfile={handleRowEditProfile}
                       onContactAction={handleRowContactAction}
                       onRequestContacts={handleRequestRowContacts}
@@ -8991,6 +9030,8 @@ const Matching = () => {
                       canonicalUserData={canonicalUserData}
                       photo={photo}
                       role={role}
+                      anketaRole={activeDetailAnketaRole}
+                      reactionActions={activeDetailAnketaRole ? buildRowReactionActions(user, activeDetailAnketaRole) : undefined}
                       isAgency={isAgency}
                       isAdmin={isAdmin}
                       favoriteUsers={favoriteUsers}

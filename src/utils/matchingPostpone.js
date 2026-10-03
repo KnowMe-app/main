@@ -43,7 +43,12 @@ export const addMonthsIsoDate = (months, now = new Date()) => {
 export const readPostponeDate = value => {
   const raw = Array.isArray(value) ? value[value.length - 1] : value;
   const text = String(raw ?? '').trim();
-  return ISO_DATE_RE.test(text) ? text : '';
+  if (!ISO_DATE_RE.test(text)) return '';
+  const [year, month, day] = text.split('-').map(Number);
+  if (month < 1 || month > 12 || day < 1) return '';
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  return day <= daysInMonth ? text : '';
 };
 
 /** Відкладена — дата пізніша за сьогодні. Сьогоднішня вже не відкладена. */

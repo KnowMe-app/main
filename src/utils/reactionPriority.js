@@ -63,8 +63,31 @@ export const buildSharedReactionCandidateIds = ({
   return sharedReactionIds.filter(id => appliedReactionIds.has(id) && !ownDecisionIds.has(id));
 };
 
-const mergeReactionMaps = maps =>
-  Object.assign({}, ...maps.map(map => normalizeReactionMap(map)));
+const mergeReactionValues = (current, incoming) => {
+  if (!current) return incoming;
+  const currentRoles = readReactionRoles(current);
+  const incomingRoles = readReactionRoles(incoming);
+  if (currentRoles === null || incomingRoles === null) return incomingRoles === null ? incoming : current;
+  return [...new Set([...currentRoles, ...incomingRoles])].join(',');
+};
+
+const mergeReactionMaps = maps => maps.reduce((merged, map) => {
+  Object.entries(normalizeReactionMap(map)).forEach(([userId, value]) => {
+    merged[userId] = mergeReactionValues(merged[userId], value);
+  });
+  return merged;
+}, {});
+
+// Remove only the questionnaires won by the higher-priority reaction. Legacy
+// whole-card values cannot be split, so they retain winner-takes-all behavior.
+const withoutWinningReactionRoles = (value, winningValue) => {
+  if (!value || !winningValue) return value;
+  const roles = readReactionRoles(value);
+  const winningRoles = readReactionRoles(winningValue);
+  if (roles === null || winningRoles === null) return undefined;
+  const remaining = roles.filter(role => !winningRoles.includes(role));
+  return remaining.length ? remaining.join(',') : undefined;
+};
 
 export const resolvePrioritizedReactionMaps = ({
   ownerIds = [],
@@ -85,17 +108,23 @@ export const resolvePrioritizedReactionMaps = ({
   const dislikes = { ...sharedDislikes };
 
   Object.keys(dislikes).forEach(userId => {
-    delete favorites[userId];
+    const next = withoutWinningReactionRoles(favorites[userId], dislikes[userId]);
+    if (next === undefined) delete favorites[userId];
+    else favorites[userId] = next;
   });
 
   Object.keys(ownFavorites).forEach(userId => {
     favorites[userId] = ownFavorites[userId];
-    delete dislikes[userId];
+    const next = withoutWinningReactionRoles(dislikes[userId], favorites[userId]);
+    if (next === undefined) delete dislikes[userId];
+    else dislikes[userId] = next;
   });
 
   Object.keys(ownDislikes).forEach(userId => {
     dislikes[userId] = ownDislikes[userId];
-    delete favorites[userId];
+    const next = withoutWinningReactionRoles(favorites[userId], dislikes[userId]);
+    if (next === undefined) delete favorites[userId];
+    else favorites[userId] = next;
   });
 
   return { favorites, dislikes };

@@ -16,6 +16,10 @@ describe('matchingPostpone', () => {
     expect(isPostponedUntil('2026-10-03', '2026-10-03')).toBe(false);
     expect(isPostponedUntil('подзвонити', '2026-10-03')).toBe(false);
     expect(formatPostponeDate('2027-01-03')).toBe('03.01.2027');
+    expect(isPostponedUntil('2099-99-99', '2026-10-03')).toBe(false);
+    expect(isPostponedUntil('9999-99-99', '2026-10-03')).toBe(false);
+    expect(isPostponedUntil('2027-02-29', '2026-10-03')).toBe(false);
+    expect(isPostponedUntil('2028-02-29', '2026-10-03')).toBe(true);
   });
 
   it('ставить відкладені картки в кінець, найближчу першою', () => {
