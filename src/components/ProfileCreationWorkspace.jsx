@@ -742,8 +742,7 @@ const ClearDraftConfirm = ({ busy, language, onCancel, onConfirm }) => <>
   <ModalTitle>{uiText('Очистити всі поля?', language)}</ModalTitle>
   <ModalText>
     {uiText(
-      'Усі поля чернетки стануть порожніми, і картку більше ніхто не побачить. '
-      + 'Історія змін лишиться адміністратору.',
+      'Усі поля чернетки стануть порожніми, і картку більше ніхто не побачить.',
       language,
     )}
   </ModalText>
