@@ -1878,6 +1878,10 @@ export const ProfileCreationWorkspace = () => {
     // версію додавати нема чого.
     const fieldRowValues = toFieldValues(value);
     const offersAnotherValue = (index, item) => index === fieldRowValues.length - 1 && String(item ?? '').trim() !== '';
+    // Хрестик у порожньому полі нічого не стирає — лише обіцяє дію й робить
+    // порожню форму схожою на заповнену. Лишається він хіба на зайвому
+    // порожньому рядку, доданому «+»: інакше прибрати цей рядок було б нічим.
+    const offersClear = item => String(item ?? '').trim() !== '' || fieldRowValues.length > 1;
     const label = getFieldLabel(field, language) || fieldName;
     const currentValues = toFieldValues(value).map(item => String(item ?? '').trim()).filter(Boolean);
 
@@ -1908,7 +1912,7 @@ export const ProfileCreationWorkspace = () => {
                 onChange={e => updateDraftFieldItem(fieldName, index, e.target.value)}
                 onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
               />
-              <InlineClearButton type="button" aria-label={uiText('Очистити {label}', language, { label })} title={uiText('Очистити рядок', language)} onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
+              {offersClear(item) && <InlineClearButton type="button" aria-label={uiText('Очистити {label}', language, { label })} title={uiText('Очистити рядок', language)} onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>}
             </InputShell>
             {canAddAnotherValue && offersAnotherValue(index, item) && <AddValueButton type="button" aria-label={uiText('Додати ще одне значення: {label}', language, { label })} title={uiText('Додати ще один рядок', language)} onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
           </FieldControl>)}
@@ -1930,7 +1934,7 @@ export const ProfileCreationWorkspace = () => {
                 )}
                 onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
               />
-              <InlineClearButton type="button" aria-label={uiText('Очистити {label}', language, { label })} title={uiText('Очистити рядок', language)} onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>
+              {offersClear(item) && <InlineClearButton type="button" aria-label={uiText('Очистити {label}', language, { label })} title={uiText('Очистити рядок', language)} onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>}
             </InputShell>
             {canAddAnotherValue && offersAnotherValue(index, item) && <AddValueButton type="button" aria-label={uiText('Додати ще одне значення: {label}', language, { label })} title={uiText('Додати ще один рядок', language)} onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
           </FieldControl>)}
