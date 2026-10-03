@@ -17,7 +17,7 @@ describe('ProfileCreationWorkspace shared drafts', () => {
 
   it('offers every matching shared draft from search instead of a duplicate card', () => {
     expect(source).toContain('findMatchingProfileMutations(sharedMutations, detectSearchParams(search))');
-    expect(source).toContain('Спільна чернетка, можна додати правки');
+    expect(source).toContain('{matchingSharedDrafts.map(mutation => <DraftListCard');
     // Спільна чернетка рахується знайденим нарівні з карткою: від цього
     // залежить підпис кнопки створення й те, чи підставляти в нову картку
     // набраний контакт (він уже стоїть у знайденій чернетці).

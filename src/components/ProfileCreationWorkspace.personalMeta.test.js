@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import {
@@ -115,7 +115,7 @@ jest.mock('react-router-dom', () => ({
 const openOwnDraft = async () => {
   render(<ProfileCreationWorkspace />);
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Відкрити' }));
+  fireEvent.click(await screen.findByRole('button', { name: /^Відкрити: / }));
   await screen.findByPlaceholderText('Додати памʼятку');
 };
 
@@ -123,7 +123,7 @@ const openOwnDraft = async () => {
 const openOwnDraftInEnglish = async () => {
   render(<ProfileCreationWorkspace />);
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Open' }));
+  fireEvent.click(await screen.findByRole('button', { name: /^Open: / }));
   await screen.findByPlaceholderText('Add a note');
 };
 
@@ -141,14 +141,18 @@ beforeEach(() => {
 // Ці перевірки описують український бік екрана — мову задаємо явно.
 applyUkrainianInterface();
 
-it('replaces regular-user draft status and progress with personal metadata controls', async () => {
+// Реакції — ряд рішень самої картки-шапки, як у стрічці; смужки заповненості
+// над формою більше немає.
+it('ставить реакції рядом рішень картки й не показує заповненості', async () => {
   await openOwnDraft();
 
+  const preview = screen.getByTestId('draft-card-preview');
   expect(screen.getByPlaceholderText('Додати памʼятку')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'В обране' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Дизлайк' })).toBeInTheDocument();
+  expect(within(preview).getByTestId('row-reactions')).toBeInTheDocument();
+  expect(within(preview).getByRole('button', { name: 'В обране' })).toBeInTheDocument();
+  expect(within(preview).getByRole('button', { name: 'Не цікаво' })).toBeInTheDocument();
   expect(screen.queryByText(/Чернетка · оновлено/)).not.toBeInTheDocument();
-  expect(screen.getByText('Заповнено анкету')).toBeInTheDocument();
+  expect(screen.queryByText('Заповнено анкету')).not.toBeInTheDocument();
 });
 
 it('shows personal metadata for persisted drafts without revision metadata', async () => {
@@ -176,15 +180,15 @@ it('saves a personal comment on blur using the draft card id fallback', async ()
 it('switches mutually exclusive reactions through the reused controls', async () => {
   await openOwnDraft();
   const favorite = screen.getByRole('button', { name: 'В обране' });
-  const dislike = screen.getByRole('button', { name: 'Дизлайк' });
+  const dislike = screen.getByRole('button', { name: 'Не цікаво' });
 
   fireEvent.click(favorite);
   await waitFor(() => expect(favorite).toHaveAttribute('aria-pressed', 'true'));
   expect(addFavoriteUser).toHaveBeenCalledWith('draft-card', undefined);
 
   fireEvent.click(dislike);
-  await waitFor(() => expect(dislike).toHaveAttribute('aria-pressed', 'true'));
-  expect(favorite).toHaveAttribute('aria-pressed', 'false');
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Повернути в «Усі»' })).toHaveAttribute('aria-pressed', 'true'));
+  expect(screen.getByRole('button', { name: 'В обране' })).toHaveAttribute('aria-pressed', 'false');
   expect(addDislikeUser).toHaveBeenCalledWith('draft-card', undefined);
   expect(removeFavoriteUser).toHaveBeenCalledWith('draft-card', undefined);
 });
@@ -232,7 +236,7 @@ it('говорить мовою інтерфейсу', async () => {
   localStorage.setItem('appLanguage', 'en');
   await openOwnDraftInEnglish();
 
-  expect(screen.getByText('Profile filled in')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Not interested' })).toBeInTheDocument();
   expect(screen.getByText('Public review')).toBeInTheDocument();
   expect(screen.getByText('Note to self')).toBeInTheDocument();
 });

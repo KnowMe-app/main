@@ -4,7 +4,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import { FiChevronDown, FiClock, FiFolder, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
-import { FaTimes } from 'react-icons/fa';
+import { FaHeart, FaRegHeart, FaTimes, FaUndoAlt } from 'react-icons/fa';
 
 import {
   addMatchingSearchQuery,
@@ -15,6 +15,7 @@ import {
   fetchFavoriteUsers,
   fetchPublicProfileComments,
   fetchUserById,
+  fetchUserComments,
   fetchUsersByIds,
   readProfileFromNodes,
   searchUsersOnly,
@@ -50,8 +51,8 @@ import { formatDateTime } from 'utils/formatDateTime';
 import { FieldComment } from './smallCard/FieldComment';
 import { formatDate, formatDateToDisplay, formatDateToServer } from './inputValidations';
 import { PROFILE_DATE_FIELDS } from '../utils/profileDate';
-import { BtnFavorite } from './smallCard/btnFavorite';
-import { BtnDislike } from './smallCard/btnDislike';
+import { toggleFavoriteUser } from './smallCard/btnFavorite';
+import { toggleDislikeUser } from './smallCard/btnDislike';
 import { resolveAccess } from 'utils/accessLevel';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
@@ -212,14 +213,6 @@ const DisclosureToggle = styled.button`
   svg:last-child { transition: transform 180ms ease; }
   &:hover { color:var(--km-accent); }
   &:focus-visible { outline:2px solid var(--km-accent); outline-offset:3px; border-radius:4px; }
-`;
-const PersonalDraftMeta = styled.div`display:grid; gap:10px;`;
-const ReactionButtons = styled.div`display:flex; align-items:center; gap:10px; min-height:35px;`;
-const ProgressRow = styled.div`display:flex; justify-content:space-between; gap:12px; color:var(--km-muted); font-size:12px;`;
-const ProgressTrack = styled.div`height:6px; overflow:hidden; border-radius:999px; background:var(--km-border);`;
-const ProgressFill = styled.div`
-  width:${({ $pct }) => Math.max(0, Math.min(100, Number($pct) || 0))}%; height:100%;
-  border-radius:inherit; background:var(--km-accent); transition:width 180ms ease;
 `;
 /*
  * Секції форми — ті самі, що в «Моєму профілі»: картка без рамки з тінню й
@@ -678,6 +671,71 @@ const ProfileResultCard = ({ card, name, note, status, statusVariant, actionLabe
   </ResultCard>;
 };
 
+/**
+ * Картка стрічки з даних форми чи чернетки. Сире поле анкети — це **вся
+ * історія** значень, і стерте значення (`['nick', '']`) стояло б живим
+ * контактом, тож контакти лягають поточними значеннями (`getCurrentValue`), як
+ * і всюди на показі; перелік із них складає той самий `getContactEntries`, що
+ * й у рядку стрічки. Без імені картка мовчала б порожнім рядком, тож
+ * безіменна дістає `fallbackName`.
+ */
+const buildDraftPreviewCard = (source, fallbackName) => {
+  const card = { ...(source || {}), __allPhotosLoaded: true };
+  CONTACT_FIELDS.forEach(fieldName => {
+    const value = getCurrentValue(card[fieldName]);
+    if (value === null || value === undefined || String(value).trim() === '') delete card[fieldName];
+    else card[fieldName] = value;
+  });
+  if (!describeProfileName(card.surname, card.name)) card.name = fallbackName;
+  return card;
+};
+
+const currentNoteText = value => String(getCurrentValue(value) ?? '').trim();
+
+const DraftListItem = styled(MatchingThemeScope)`
+  display:block; max-width:460px; margin:0 auto 14px; border-radius:18px; cursor:pointer;
+  &:focus-visible { outline:2px solid var(--km-accent); outline-offset:3px; }
+`;
+
+/*
+ * Чернетка в списку — та сама картка стрічки, що й шапка відкритої чернетки
+ * (`ProfileRow` з `preview`), і відкривається дотиком до неї самої.
+ *
+ * Тут був свій рядок: плитка з ініціалом замість фото, дата «Оновлено …» і
+ * кнопка «Відкрити». Плитка обіцяла фото, якого в чернетці немає й додати
+ * нікуди, дата нічого не казала про людину, а кнопка дублювала дотик. Чіп
+ * стану («Спільна чернетка», «Приватна», «Опубліковано») пішов слідом. Фото
+ * картка показує лише тоді, коли воно справді є (доповнена наявна картка).
+ */
+const DraftListCard = ({ mutation, fallbackName, privateNote, onOpen }) => {
+  const { language, themeMode } = useAppSettings();
+  const card = useMemo(
+    () => buildDraftPreviewCard({ ...(mutation.data || {}), userId: mutation.cardId }, fallbackName),
+    [fallbackName, mutation.cardId, mutation.data],
+  );
+  const previewNotes = useMemo(() => ({
+    publicText: currentNoteText(mutation.data?.publicComment),
+    privateText: String(privateNote || '').trim(),
+  }), [mutation.data?.publicComment, privateNote]);
+  const name = describeProfileName(card.name, card.surname);
+  return <DraftListItem
+    $themeMode={themeMode}
+    role="button"
+    tabIndex={0}
+    data-testid="draft-list-card"
+    aria-label={uiText('Відкрити: {name}', language, { name })}
+    onClick={onOpen}
+    onKeyDown={event => {
+      if (event.target !== event.currentTarget) return;
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      onOpen();
+    }}
+  >
+    <ProfileRow user={card} preview isAdmin={false} expanded={false} previewNotes={previewNotes} />
+  </DraftListItem>;
+};
+
 const describeAuthor = (authorId, authors) => {
   const author = authors?.[authorId] || {};
   return [author.name, author.surname].filter(Boolean).join(' ') || authorId || '—';
@@ -1006,6 +1064,28 @@ export const ProfileCreationWorkspace = () => {
   const matchingSharedDrafts = useMemo(() => (
     searchExecuted ? findMatchingProfileMutations(sharedMutations, detectSearchParams(search)) : []
   ), [search, searchExecuted, sharedMutations]);
+
+  // Памʼятки читача до карток списку: картка чернетки показує записане про
+  // людину так само, як рядок стрічки, — доріжкою під карткою. Один запит на
+  // список (`fetchUserComments` бере піддерево власника, коли карток багато),
+  // і лише поки форма закрита: відкрита чернетка читає свою памʼятку сама.
+  const [draftListNotes, setDraftListNotes] = useState({});
+  const draftListIds = useMemo(() => [...new Set([
+    ...ownCreatedCards, ...matchingOwnDrafts, ...matchingSharedDrafts,
+  ].map(mutation => mutation?.cardId).filter(Boolean))].sort().join(','), [matchingOwnDrafts, matchingSharedDrafts, ownCreatedCards]);
+  useEffect(() => {
+    if (!uid || !draftListIds || draft) return undefined;
+    let active = true;
+    Promise.resolve()
+      .then(() => fetchUserComments(uid, draftListIds.split(',')))
+      .catch(() => ({}))
+      .then(comments => {
+        if (!active) return;
+        setDraftListNotes(Object.fromEntries(Object.entries(comments || {})
+          .map(([cardId, comment]) => [cardId, comment?.text || ''])));
+      });
+    return () => { active = false; };
+  }, [draft, draftListIds, uid]);
 
   // Чи показав пошук хоч щось: знайдену картку або чернетку. Від цього
   // залежить не право створити нову, а підпис кнопки й те, чи підставляти в
@@ -1690,12 +1770,6 @@ export const ProfileCreationWorkspace = () => {
   };
 
   const fieldsMap = useMemo(() => new Map([...pickerFields, PATRONYMIC_FIELD].map(field => [field.name, field])), []);
-  const draftFilledPct = useMemo(() => {
-    const filledFields = [...FORM_FIELD_NAMES].filter(fieldName => (
-      toFieldValues(draft?.[fieldName]).some(value => String(value ?? '').trim())
-    )).length;
-    return Math.round((filledFields / FORM_FIELD_NAMES.size) * 100);
-  }, [draft]);
 
   // Every pending proposal and every superseded value, keyed by the field it
   // belongs to, so the questionnaire can render each of them in place instead
@@ -1874,41 +1948,15 @@ export const ProfileCreationWorkspace = () => {
     () => ({ ...(overlayTarget?.card || overlayTarget?.canonical || {}), ...(draft || {}) }),
     [draft, overlayTarget],
   );
-  /**
-   * Контакти шапки — рівно ті, що стоять у полях форми нижче.
-   *
-   * Сире поле анкети — це **вся історія** значень, і стерте значення
-   * (`['nick', '']`) стояло тут живим контактом: TikTok видно вгорі, а в полі
-   * під ним порожньо, бо поле показує поточне значення. Шапка й анкета мусять
-   * казати одне й те саме, тож сюди лягає поточне значення — як і всюди на
-   * показі (`getCurrentValue`).
-   *
-   * Перелік із них складає `getContactEntries` — те саме, що й у рядку стрічки:
-   * малює їх спільне представлення, і своїх правил «що таке контакт» шапка не
-   * має.
-   */
-  const summaryContacts = useMemo(() => CONTACT_FIELDS.reduce((result, fieldName) => {
-    const value = getCurrentValue(summaryCard?.[fieldName]);
-    if (value === null || value === undefined || String(value).trim() === '') return result;
-    result[fieldName] = value;
-    return result;
-  }, {}), [summaryCard]);
-  // Шапка — картка стрічки (`ProfileRow`), і контакти вона складає тими самими
-  // правилами (`getContactEntries`). Сюди їй лягають поточні значення полів,
-  // а не їхня історія. Без імені картка мовчала б порожнім рядком, тож нова
-  // називається «Новий профіль», а знайдена без імені — «Картка без імені»:
-  // «Новий профіль» над чужою карткою брехав би.
-  const previewCard = useMemo(() => {
-    const card = { ...summaryCard, __allPhotosLoaded: true };
-    CONTACT_FIELDS.forEach(fieldName => {
-      if (fieldName in summaryContacts) card[fieldName] = summaryContacts[fieldName];
-      else delete card[fieldName];
-    });
-    if (!describeProfileName(card.surname, card.name)) {
-      card.name = uiText(overlayTarget ? 'Картка без імені' : 'Новий профіль', language);
-    }
-    return card;
-  }, [language, overlayTarget, summaryCard, summaryContacts]);
+  // Контакти шапки — рівно ті, що стоять у полях форми нижче: поточні
+  // значення, а не історія (TikTok, стертий у полі, вгорі стояв би живим).
+  // Шапка — картка стрічки (`ProfileRow`) з поточних значень полів
+  // (`buildDraftPreviewCard`). Нова називається «Новий профіль», а знайдена
+  // без імені — «Картка без імені»: «Новий профіль» над чужою карткою брехав би.
+  const previewCard = useMemo(
+    () => buildDraftPreviewCard(summaryCard, uiText(overlayTarget ? 'Картка без імені' : 'Новий профіль', language)),
+    [language, overlayTarget, summaryCard],
+  );
   // Канали, які в картці є, а рядка в анкеті не мають, дописуються в кінець
   // блока контактів — інакше виправити їх немає де.
   const extraContactFields = useMemo(() => collectExtraContactFields(draft), [draft]);
@@ -1944,12 +1992,56 @@ export const ProfileCreationWorkspace = () => {
   // Під карткою-шапкою лишається власна плашка лише тоді, коли їй є що сказати:
   // стан і службові дані чернетки, заповненість і реакція. Над доповненням
   // знайденої картки цього нічого немає — там стоїть сама картка.
-  const hasDraftHeaderExtras = !overlayTarget || editingSharedDraft;
+  //
+  // Заповненості («Заповнено анкету, 18%») тут більше немає: картка-шапка
+  // вище й так показує, що заповнено, а смужка з відсотком лише займала
+  // перший екран. Реакції стоять рядом рішень самої картки, як у стрічці.
+  const hasDraftHeaderExtras = editingSharedDraft || (!overlayTarget && (
+    activeMutation?.status === 'private'
+    || (reviewingAsAdmin && pendingEditsCount > 0)
+    || access.isAdmin
+  ));
+  // Рішення про власну збережену чернетку — та сама пара, що й у рядку
+  // стрічки (хрестик ліворуч, серце праворуч, у спільній рамці). Доти тут
+  // стояли окремі круглі кнопки іншого вигляду під смужкою заповненості.
+  const canReactToDraft = !access.isAdmin && !overlayTarget && !editingSharedDraft && Boolean(activeMutation?.updatedAt);
+  const draftReactionId = activeMutation?.cardId;
+  const draftDisliked = Boolean(draftReactionId && dislikeUsers[draftReactionId]);
+  const draftLiked = Boolean(draftReactionId && favoriteUsers[draftReactionId]);
+  const reactionArgs = {
+    userId: draftReactionId,
+    userData: null,
+    cacheUserData: false,
+    favoriteUsers,
+    setFavoriteUsers,
+    dislikeUsers,
+    setDislikeUsers,
+  };
+  const draftPrimaryAction = canReactToDraft ? {
+    icon: draftDisliked ? <FaUndoAlt size={13} /> : <FaTimes size={14} />,
+    title: uiText(draftDisliked ? 'Повернути в «Усі»' : 'Не цікаво', language),
+    active: draftDisliked,
+    onClick: () => { void toggleDislikeUser(reactionArgs); },
+  } : undefined;
+  const draftSecondaryAction = canReactToDraft ? {
+    icon: draftLiked ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
+    title: uiText('В обране', language),
+    accent: true,
+    active: draftLiked,
+    onClick: () => { void toggleFavoriteUser(reactionArgs); },
+  } : undefined;
 
   return <Page><Shell>
     {draft ? <>
       <DraftPreview $themeMode={themeMode} data-testid="draft-card-preview">
-        <ProfileRow user={previewCard} preview isAdmin={false} expanded={false} />
+        <ProfileRow
+          user={previewCard}
+          preview
+          isAdmin={false}
+          expanded={false}
+          primaryAction={draftPrimaryAction}
+          secondaryAction={draftSecondaryAction}
+        />
       </DraftPreview>
       {hasDraftHeaderExtras && <DraftHeaderCard>
         {/* Стан чернетки — це те, що з нею буде далі, і сказати його є кому лише
@@ -1989,49 +2081,6 @@ export const ProfileCreationWorkspace = () => {
           + 'Рішення про те, які правки залишити, ухвалює адміністратор.',
           language
         )}</Meta>}
-        {!access.isAdmin && !overlayTarget && <>
-          <ProgressRow>
-            <span>{uiText('Заповнено анкету', language)}</span>
-            <span style={{ color: 'var(--km-accent)', fontWeight: 700 }}>{draftFilledPct}%</span>
-          </ProgressRow>
-          <ProgressTrack><ProgressFill $pct={draftFilledPct} /></ProgressTrack>
-          {/* Нотатка звідси пішла до публічної — вони пара, і стоять разом
-              унизу форми (`NoteLanes`). Реакція лишається тут: це рішення про
-              картку, а не запис про людину. */}
-          {!editingSharedDraft && activeMutation.updatedAt && <PersonalDraftMeta>
-            {/* Дизлайк ліворуч, лайк праворуч — як у рядку стрічки й у відкритій картці. */}
-            <ReactionButtons>
-              <BtnDislike
-                userId={activeMutation.cardId}
-                userData={null}
-                cacheUserData={false}
-                dislikeUsers={dislikeUsers}
-                setDislikeUsers={setDislikeUsers}
-                favoriteUsers={favoriteUsers}
-                setFavoriteUsers={setFavoriteUsers}
-                // Хрестик, а не палець донизу: той самий значок, що в рядку
-                // стрічки й у відкритій картці, — і без акценту, як там.
-                icon={FaTimes}
-                inactiveIconColor="var(--km-muted, #6f6359)"
-                customStyle={{
-                  position: 'static',
-                  background: 'var(--km-card, #fff)',
-                  border: '1px solid var(--km-border, #e2d8ce)',
-                }}
-              />
-              <BtnFavorite
-                userId={activeMutation.cardId}
-                userData={null}
-                cacheUserData={false}
-                favoriteUsers={favoriteUsers}
-                setFavoriteUsers={setFavoriteUsers}
-                dislikeUsers={dislikeUsers}
-                setDislikeUsers={setDislikeUsers}
-                customStyle={{ position: 'static' }}
-              />
-            </ReactionButtons>
-          </PersonalDraftMeta>}
-        </>}
       </DraftHeaderCard>}
       {reviewingAsAdmin && (pendingEditsCount > 0 || draftHistory.length > 0) && <ReviewCard>
         <SectionHeader>
@@ -2288,21 +2337,19 @@ export const ProfileCreationWorkspace = () => {
             actionLabel="Доповнити дані"
             onAction={() => startExistingProfileOverlay(profile)}
           />)}
-          {matchingOwnDrafts.map(mutation => <ProfileResultCard
+          {matchingOwnDrafts.map(mutation => <DraftListCard
             key={mutation.cardId}
-            card={mutation.data}
-            name={describeProfileName(mutation.data?.name, mutation.data?.surname) || uiText('Ваша чернетка', language)}
-            note="Ваша чернетка, чекає на перевірку"
-            actionLabel="Відкрити"
-            onAction={() => openMutation(mutation)}
+            mutation={mutation}
+            fallbackName={uiText('Ваша чернетка', language)}
+            privateNote={draftListNotes[mutation.cardId]}
+            onOpen={() => openMutation(mutation)}
           />)}
-          {matchingSharedDrafts.map(mutation => <ProfileResultCard
+          {matchingSharedDrafts.map(mutation => <DraftListCard
             key={mutation.cardId}
-            card={mutation.data}
-            name={describeProfileName(mutation.data?.name, mutation.data?.surname) || uiText('Спільна чернетка', language)}
-            note="Спільна чернетка, можна додати правки"
-            actionLabel="Відкрити"
-            onAction={() => openMutation(mutation)}
+            mutation={mutation}
+            fallbackName={uiText('Спільна чернетка', language)}
+            privateNote={draftListNotes[mutation.cardId]}
+            onOpen={() => openMutation(mutation)}
           />)}
           {!searchLoading && !searchFailed && !hasExistingMatches && searchNotFound
             && <Meta>{uiText('Такої анкети ще немає — заведіть її першим рядком.', language)}</Meta>}
@@ -2319,18 +2366,15 @@ export const ProfileCreationWorkspace = () => {
             <Meta>{uiText('Почніть із контакту: пошук покаже, чи є така людина в базі, а перший рядок видачі заведе нову картку.', language)}</Meta>
           </EmptyState> : ownCreatedCards.map(mutation => {
             const published = mutation.status === 'accepted';
-            return <ProfileResultCard
+            // Ні стану («Спільна чернетка», «Приватна», «Опубліковано»), ні
+            // дати «Оновлено …» над карткою немає: про людину вони не кажуть
+            // нічого, а картка в списку — та сама, що в стрічці.
+            return <DraftListCard
               key={mutation.cardId}
-              card={mutation.data}
-              name={describeProfileName(mutation.data?.name, mutation.data?.surname) || uiText('Без імені', language)}
-              // «Очікує перевірки» обіцяло гейт, якого немає: заведена картка
-              // вже лежить у пошуку, її знаходять і дописують. Слово те саме,
-              // що й у шапці самої чернетки.
-              status={published ? 'Опубліковано' : mutation.status === 'private' ? 'Приватна' : 'Спільна чернетка'}
-              statusVariant={published ? undefined : mutation.status === 'private' ? 'private' : 'overlay'}
-              note={mutation.updatedAt ? uiText('Оновлено {date}', language, { date: formatDateTime(mutation.updatedAt, language) }) : ''}
-              actionLabel={published ? 'Доповнити' : 'Відкрити'}
-              onAction={() => (published
+              mutation={mutation}
+              fallbackName={uiText('Без імені', language)}
+              privateNote={draftListNotes[mutation.cardId]}
+              onOpen={() => (published
                 ? startExistingProfileOverlay({ userId: mutation.cardId })
                 : openMutation(mutation))}
             />;

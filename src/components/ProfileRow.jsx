@@ -1207,6 +1207,12 @@ const ProfileRow = ({
   // нотаток і ряду рішень — реагувати на себе й писати собі відгук нема
   // сенсу, а місця вони займали б більше за саму картку.
   preview = false,
+  // Нотатки прев'ю — лише прочитати, без полів: `{ publicText, privateText }`.
+  // Список чернеток малює картку тією самою, що й стрічка, і записане про
+  // людину мусить стояти в ній там само — доріжками під карткою. Порожнє не
+  // малюється зовсім: в прев'ю немає куди писати, тож порожнє поле лише
+  // обіцяло б дію.
+  previewNotes,
   // Роль анкети, яку малює цей рядок, коли картка несе дві — особисту й
   // організації (`listCardAnketaRoles`): тоді стрічка ставить два рядки, і
   // кожен показує лише своє. Без неї рядок — уся картка, як і раніше.
@@ -1598,6 +1604,23 @@ const ProfileRow = ({
           )}
       /> : null}
 
+      {preview && (previewNotes?.publicText || previewNotes?.privateText) ? (
+        <S.RowNotes data-testid="preview-notes">
+          {previewNotes.publicText ? (
+            <NoteLane $public>
+              <NoteLaneHead><b>{profileUiText('publicComment', language)}</b></NoteLaneHead>
+              <S.PreviewNoteText>{previewNotes.publicText}</S.PreviewNoteText>
+            </NoteLane>
+          ) : null}
+          {previewNotes.privateText ? (
+            <NoteLane>
+              <NoteLaneHead><b>{profileUiText('personalNote', language)}</b></NoteLaneHead>
+              <S.PreviewNoteText>{previewNotes.privateText}</S.PreviewNoteText>
+            </NoteLane>
+          ) : null}
+        </S.RowNotes>
+      ) : null}
+
       {/* Ряд рішень — останній у картці: спершу все, що вона каже про людину,
           потім те, що читач про неї записав, і аж тоді жест.
 
@@ -1616,7 +1639,11 @@ const ProfileRow = ({
           написами («Доповнити дані», «Перевірити наявність відгуків»), і
           картка з трьох фактів займала пів екрана. Що робить кожна, каже
           `title` і `aria-label` — саме їх читає й екранний диктор. */}
-      {!preview && (editAction || (!isLimited && (primaryAction || secondaryAction))) && (
+      {/* Прев'ю ряду рішень не має, доки йому не дали реакцій: шапка чернетки
+          їх дає (рішення про картку там те саме, що й у стрічці), «Мій
+          профіль» — ні, бо реагувати на себе нема сенсу. Олівця в прев'ю
+          немає ніде: воно й так стоїть над формою. */}
+      {(preview ? !isLimited && (primaryAction || secondaryAction) : (editAction || (!isLimited && (primaryAction || secondaryAction)))) && (
         <S.RowFooterActions onClick={e => e.stopPropagation()}>
           {!isLimited && (primaryAction || secondaryAction) && (
             <S.RowReactionPair data-testid="row-reactions">
@@ -1651,7 +1678,7 @@ const ProfileRow = ({
           {/* Олівець — на колишньому місці стрілки «розгорнути»: розгортання
               переїхало під опис людини словом «Детальніше», а дія над самою
               карткою стала поруч із рішеннями про неї. */}
-          {editAction && (
+          {editAction && !preview && (
             <S.RowFooterButton
               type="button"
               data-testid="row-edit-action"
@@ -1698,6 +1725,8 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.priorityMetricKeys === next.priorityMetricKeys
   && prev.commentSlot === next.commentSlot
   && prev.reviewsSlot === next.reviewsSlot
+  && prev.previewNotes?.publicText === next.previewNotes?.publicText
+  && prev.previewNotes?.privateText === next.previewNotes?.privateText
   // Дія звіряється по значенню, а не по посиланню: об'єкт складається на
   // кожен рендер списку, і звірка по посиланню означала б «завжди інша».
   && prev.reviewsAction?.count === next.reviewsAction?.count

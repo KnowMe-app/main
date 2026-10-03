@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import React from 'react';
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import { loadOwnProfileMutations, loadSharedProfileMutations } from 'utils/profileMutations';
@@ -129,12 +129,35 @@ it('називає екран власними картками і показу�
   expect(await screen.findByText('Олена')).toBeInTheDocument();
   expect(screen.getByTestId('navigation-slot')).toHaveAttribute('data-workspace', '');
   expect(screen.getByText('Марія')).toBeInTheDocument();
-  // Гейту перевірки немає — картка вже в пошуку, тож і чіп про нього не каже.
-  expect(screen.getByText('Спільна чернетка')).toBeInTheDocument();
-  expect(screen.queryByText('Очікує перевірки')).not.toBeInTheDocument();
   // Прийнята картка зі списку не зникає: «що я завів» лишається правдою й після
-  // публікації, а дією над нею стає доповнення, а не редагування чернетки.
-  expect(screen.getByText('Опубліковано')).toBeInTheDocument();
+  // публікації. Чіпа стану над карткою немає — ні «Очікує перевірки», ні
+  // «Спільна чернетка», ні «Опубліковано»: картка та сама, що в стрічці.
+  expect(screen.getAllByTestId('draft-list-card')).toHaveLength(2);
+  expect(screen.queryByText('Очікує перевірки')).not.toBeInTheDocument();
+  expect(screen.queryByText('Спільна чернетка')).not.toBeInTheDocument();
+  expect(screen.queryByText('Опубліковано')).not.toBeInTheDocument();
+});
+
+// Чернетка в списку — картка стрічки, і відкриває її дотик до неї самої:
+// кнопки «Відкрити», дати «Оновлено …» й плитки з ініціалом замість фото
+// (фото в чернетку додати нікуди) там більше немає.
+it('малює чернетку карткою стрічки й відкриває її дотиком до картки', async () => {
+  loadOwnProfileMutations.mockResolvedValue([{
+    ...DRAFT,
+    data: { ...DRAFT.data, surname: 'Коваль', city: 'Київ', phone: ['380501112233'], publicComment: 'Надійна' },
+  }]);
+  renderWithNavigationSlot(<ProfileCreationWorkspace />);
+
+  const card = await screen.findByTestId('draft-list-card');
+  expect(card).toHaveTextContent('Олена Коваль');
+  expect(card).toHaveTextContent('Київ');
+  expect(card).toHaveTextContent('Надійна');
+  expect(card).not.toHaveTextContent('Оновлено');
+  expect(screen.queryByText('Відкрити')).not.toBeInTheDocument();
+  expect(within(card).queryByTestId('row-photo')).not.toBeInTheDocument();
+
+  fireEvent.click(card);
+  expect(await screen.findByTestId('draft-card-preview')).toHaveTextContent('Олена');
 });
 
 it('питає індекс разом із прийнятими картками, щоб список не губив опубліковане', async () => {
@@ -166,7 +189,7 @@ it('апаратна кнопка «назад» закриває форму т�
   renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Відкрити' }));
+  fireEvent.click(await screen.findByRole('button', { name: /^Відкрити: / }));
   // Шапка форми — картка стрічки (`ProfileRow` з `preview`), і людину
   // називає вона.
   expect(await screen.findByTestId('draft-card-preview')).toHaveTextContent('Олена');
