@@ -27,7 +27,7 @@ import { listOfferedOptions } from '../utils/offeredOptions';
 import { asExamplePlaceholder } from '../utils/examplePlaceholder';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { getCurrentValue, hasCurrentValue } from './getCurrentValue';
-import { CONTACT_FIELDS, getContactEntries } from './contactMethods';
+import { CONTACT_FIELDS, getContactEntries, isHiddenTelegramValue } from './contactMethods';
 import { listProfileRoles } from '../utils/matchingPeerVisibility';
 import { fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
 import { usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
@@ -637,7 +637,14 @@ const IDENTITY_CLAIMING_PREFILL_FIELDS = new Set(
 // (`buildOverlayPrefill` дає обидва), тож прибрані пробіли правкою не стають.
 const compactPhoneInput = value => (typeof value === 'string' ? value.replace(/\s+/g, '') : value);
 
-export const buildOverlayPrefill = (canonical, cardUserId) => [
+//
+// Telegram з приставкою «УК СМ» — робоча позначка адміна, а не контакт людини
+// (`isHiddenTelegramValue`): показ контактів її вже відсіює, а форма
+// доповнення підставляла в поле, і читач бачив «УК СМ Жанна …» як Telegram
+// донорки. Поле тоді лишається порожнім — Telegram з номера дають кнопки біля
+// телефону. Знімається воно і з бази порівняння, тож порожнє поле не стає
+// «стиранням». Адмінові позначка лишається: це його ж робочий запис.
+export const buildOverlayPrefill = (canonical, cardUserId, { keepAdminTelegram = false } = {}) => [
   ...CREATE_FORM_SECTIONS.flatMap(section => section.fields),
   // Канали звʼязку, яких у переліку секцій немає, підставляються так само:
   // інакше рядок для такого контакту порівнював би введене з порожнечею і
@@ -647,6 +654,7 @@ export const buildOverlayPrefill = (canonical, cardUserId) => [
   .reduce((result, fieldName) => {
     const value = getCurrentValue(canonical?.[fieldName]);
     if (value === null || value === undefined || String(value).trim() === '') return result;
+    if (fieldName === 'telegram' && !keepAdminTelegram && isHiddenTelegramValue(value)) return result;
     result[fieldName] = fieldName === 'phone' ? compactPhoneInput(value) : value;
     return result;
   }, { userId: cardUserId });
@@ -1190,7 +1198,9 @@ export const ProfileCreationWorkspace = () => {
       // що вже принесла видача пошуку.
       console.warn('[ProfileCreationWorkspace] canonical card unavailable', error);
     }
-    const canonicalPrefill = buildOverlayPrefill(canonical, profile.userId);
+    const canonicalPrefill = buildOverlayPrefill(canonical, profile.userId, {
+      keepAdminTelegram: Boolean(accessRef.current?.isAdmin),
+    });
     let overlays = {};
     try {
       overlays = await getOverlaysForCard(profile.userId);

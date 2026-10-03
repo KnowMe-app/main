@@ -33,6 +33,16 @@ describe('контакти форми доповнення', () => {
       viber: '380501112233',
     });
   });
+
+  // «УК СМ …» — робоча позначка адміна, а не Telegram людини: читачеві поле
+  // лишається порожнім (Telegram з номера дають кнопки біля телефону), і
+  // порожнім воно лишається й у базі порівняння — тож не стає «стиранням».
+  it('Telegram з приставкою «УК СМ» не підставляється читачеві', () => {
+    const card = { phone: '380961510538', telegram: 'УК СМ Zhanna Stadnik' };
+    expect(buildOverlayPrefill(card, 'card')).toEqual({ userId: 'card', phone: '380961510538' });
+    expect(buildOverlayPrefill(card, 'card', { keepAdminTelegram: true }).telegram).toBe('УК СМ Zhanna Stadnik');
+    expect(buildOverlayPrefill({ telegram: '@zhanna' }, 'card').telegram).toBe('@zhanna');
+  });
 });
 
 /*
