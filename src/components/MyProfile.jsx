@@ -1583,7 +1583,11 @@ export const MyProfile = () => {
       ? visibleSections
       : visibleSections.filter(section => {
         if (section.anketaRole) sectionRole = section.anketaRole;
-        return SHARED_SECTION_KEYS.has(section.key) || sectionRole === onlyRole;
+        const belongsToSameSharedAnketa = (
+          (PERSON_ROLES.includes(onlyRole) && PERSON_ROLES.includes(sectionRole))
+          || (ORGANISATION_ROLES.includes(onlyRole) && ORGANISATION_ROLES.includes(sectionRole))
+        );
+        return SHARED_SECTION_KEYS.has(section.key) || sectionRole === onlyRole || belongsToSameSharedAnketa;
       });
     const missingFieldNames = sectionsToValidate
       .flatMap(section => section.fields)

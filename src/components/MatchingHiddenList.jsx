@@ -333,7 +333,7 @@ const MatchingHiddenList = ({
               isAdmin={isAdmin}
               expanded={expandedIds.has(user.userId)}
               onToggleExpand={handleToggleExpand}
-              onOpen={onOpenProfile}
+              onOpen={onOpenProfile ? openedUser => onOpenProfile(openedUser, anketaRole) : undefined}
               primaryAction={returnAction}
               onEditProfile={onEditProfile}
               onContactAction={handleContactAction}

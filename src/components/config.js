@@ -714,15 +714,22 @@ export const setReactionUserValue = async (kind, userId, ownerId, value) => {
   else await set(ref2(database, path), value);
 };
 
-/** Atomically persist both reaction values for one card. `undefined` removes a path. */
-export const setReactionUserValues = async ({ userId, ownerId, favoriteValue, dislikeValue }) => {
+/** Atomically persist the reaction values changed by one action. `undefined` removes a changed path. */
+export const setReactionUserValues = async ({
+  userId,
+  ownerId,
+  favoriteValue,
+  dislikeValue,
+  favoriteChanged = true,
+  dislikeChanged = true,
+}) => {
   const owner = auth.currentUser;
   if (!owner) return;
   const resolvedOwnerId = ownerId || owner.uid;
-  await update(ref2(database, 'multiData'), {
-    [`favorites/${resolvedOwnerId}/${userId}`]: favoriteValue ?? null,
-    [`dislikes/${resolvedOwnerId}/${userId}`]: dislikeValue ?? null,
-  });
+  const updates = {};
+  if (favoriteChanged) updates[`favorites/${resolvedOwnerId}/${userId}`] = favoriteValue ?? null;
+  if (dislikeChanged) updates[`dislikes/${resolvedOwnerId}/${userId}`] = dislikeValue ?? null;
+  if (Object.keys(updates).length) await update(ref2(database, 'multiData'), updates);
 };
 
 export const addDislikeUser = async (userId, ownerId, dislikedAt) => {

@@ -250,7 +250,7 @@ import {
   readViewerRolesFromProfile,
   DONOR_FEED_ROLE_FILTER_KEYS,
 } from 'utils/matchingPeerVisibility';
-import { listCardAnketaRoles, listFeedRowAnketaRoles } from 'utils/cardAnketas';
+import { isOrganisationAnketaRole, listFeedRowAnketaRoles } from 'utils/cardAnketas';
 import {
   isCardFullyReacted,
   listWholeCardReactionIds,
@@ -277,6 +277,7 @@ import {
 } from '../utils/donorPrograms';
 import { computeBmi, normalizeHeightCm } from '../utils/profileNormalization';
 import { CardRoleBlock } from './programs/CardRoleBlock';
+import { getCurrentValue } from './getCurrentValue';
 // Реєструє читача програм для сховища (`utils/programsStore`).
 import './programs/programsRemote';
 import { ensureProgramsForCards, useProgramsVersion } from '../utils/programsStore';
@@ -1039,6 +1040,12 @@ const SwipeableCard = ({
   reactionActions,
 }) => {
   const resolvedRole = anketaRole || getProfileRole(user) || role;
+  const isOrganisationAnketa = Boolean(anketaRole) && isOrganisationAnketaRole(anketaRole);
+  const isPersonAnketa = Boolean(anketaRole) && !isOrganisationAnketa;
+  const usesCompactHero = anketaRole ? isOrganisationAnketa : isAgency;
+  const roleScopedUser = isOrganisationAnketa
+    ? { ...user, role: anketaRole, userRole: anketaRole }
+    : user;
   const photos = getProfilePhotos(user);
   const heroPhoto = photo || photos[0] || '';
   const allPhotos = [heroPhoto, ...photos].filter(Boolean).filter((item, index, list) => list.indexOf(item) === index);
@@ -1065,7 +1072,8 @@ const SwipeableCard = ({
   // в кожному гетері окремо: інакше половина рядка йшла б однією мовою, а
   // половина — тією, яку модуль вважав за замовчуванням.
   const { language } = useAppSettings();
-  const profileName = getProfileName(user);
+  const organisationName = isOrganisationAnketa ? String(getCurrentValue(user?.agencyName) ?? '').trim() : '';
+  const profileName = organisationName || getProfileName(user);
   // Плашка ролі несе те саме слово, що й рядок стрічки і чіп фільтра
   // (`getRoleLabel`): одна назва ролі на всі екрани. Код лишився умовою
   // показу — роль без коду плашки не має.
@@ -1074,7 +1082,7 @@ const SwipeableCard = ({
   // бо напис залежить від мови.
   const isGenericProfileRole = resolvedRole === 'other';
   const name = profileName || '';
-  const age = getProfileAge(user);
+  const age = isOrganisationAnketa ? '' : getProfileAge(user);
   const title = [name, age].filter(Boolean).join(', ');
   const shouldShowRoleBadge = !isGenericProfileRole && Boolean(roleCode);
   // Те саме рішення, що й у рядку стрічки: спершу доповнення (його має той,
@@ -1111,7 +1119,7 @@ const SwipeableCard = ({
   const bodyHeroFields = getQuickFacts(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys], language });
   const usedBodyFieldKeys = collectProfileFieldKeys(bodyHeroFields);
   const sections = getProfileSections(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys, ...usedBodyFieldKeys, ...MATCHING_HIDDEN_CONTACT_KEYS], language });
-  const bio = getProfileBio(user);
+  const bio = isOrganisationAnketa ? '' : getProfileBio(user);
   // Картка донорки складається з тих самих частин, що й рядок стрічки
   // (`ProfileFacts`): смуга показників і короткі факти вгорі — дослівно ті,
   // що в списку, — а нижче розділи повної анкети, ті самі, що під стрілкою
@@ -1201,7 +1209,7 @@ const SwipeableCard = ({
     <>
       <AnimatedCard
       $dir={dir}
-      $small={isAgency}
+      $small={usesCompactHero}
       $compactWithoutPhoto={!activeHeroPhoto}
       $hasPhoto={!!activeHeroPhoto}
       data-card
@@ -1287,7 +1295,7 @@ const SwipeableCard = ({
           ))}
           {/* Програми агенції чи клініки й «кого шукають» батьки — одразу
               під контактами: саме заради них донорка й відкрила цю картку. */}
-          <CardRoleBlock card={user} programsContext={programsContext} language={language} />
+          {!isPersonAnketa && <CardRoleBlock card={roleScopedUser} programsContext={programsContext} language={language} />}
           {usesSharedFacts && (bio || detailSections.length > 0) && (
             <ModernSection>
               <ProfileAboutSection text={bio} language={language} accent={roleAccent} large />
@@ -8520,7 +8528,11 @@ const Matching = () => {
       else toggleRowHidden(user);
       return;
     }
-    const cardRoles = listCardAnketaRoles(user);
+    // Hydration can contain unpublished roles which were deliberately absent
+    // from the projection that produced this row. Use that same projection so
+    // the clicked questionnaire can never be filtered out of its own action.
+    const projection = feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === id) || user;
+    const cardRoles = listFeedRowAnketaRoles(projection, feedRowHiddenRoles);
     rememberReactedCard(id);
     stickyReactedAnketaRolesRef.current.set(id, anketaRole);
     const isFavorite = kind === 'favorites';
@@ -8558,7 +8570,14 @@ const Matching = () => {
     setFavorite(id, Boolean(favoriteValue));
     setDislike(id, Boolean(dislikeValue));
     try {
-      await setReactionUserValues({ userId: id, ownerId, favoriteValue, dislikeValue });
+      await setReactionUserValues({
+        userId: id,
+        ownerId,
+        favoriteValue,
+        dislikeValue,
+        favoriteChanged: isFavorite || !Object.is(otherNextValue, otherOwnMap[id]),
+        dislikeChanged: !isFavorite || !Object.is(otherNextValue, otherOwnMap[id]),
+      });
     } catch (error) {
       console.error('Failed to save anketa reaction:', error);
       applyMaps(previousFavorite, previousDislike);
@@ -8566,7 +8585,7 @@ const Matching = () => {
       setDislike(id, Boolean(previousDislike));
       toast.error(uiText('Не вдалося зберегти реакцію. Спробуйте ще раз', language));
     }
-  }, [language, ownDislikeUsers, ownFavoriteUsers, ownerId, rememberReactedCard, toggleRowFavorite, toggleRowHidden]);
+  }, [feedRowHiddenRoles, feedSourceWithoutOwnEdits, language, ownDislikeUsers, ownFavoriteUsers, ownerId, rememberReactedCard, toggleRowFavorite, toggleRowHidden]);
 
   /**
    * Шар доповнення накладається ще раз — уже поверх догідратованої анкети.
