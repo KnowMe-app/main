@@ -19,7 +19,6 @@ const renderRow = (user, props = {}) => render(
     isAdmin={false}
     expanded={false}
     onToggleExpand={jest.fn()}
-    onOpen={jest.fn()}
     onCommentSave={jest.fn()}
     clientComment=""
     {...props}
@@ -55,12 +54,12 @@ describe('ProfileRow enrich action', () => {
     expect(screen.queryByRole('button', { name: enrichGateLabel() })).not.toBeInTheDocument();
   });
 
-  it('does not open the card when the button is pressed', () => {
-    const onOpen = jest.fn();
-    renderRow(baseUser, { onEnrich: jest.fn(), onOpen });
+  it('does not expand the card when the button is pressed', () => {
+    const onToggleExpand = jest.fn();
+    renderRow(baseUser, { onEnrich: jest.fn(), onToggleExpand });
 
     fireEvent.click(screen.getByRole('button', { name: enrichGateLabel() }));
 
-    expect(onOpen).not.toHaveBeenCalled();
+    expect(onToggleExpand).not.toHaveBeenCalled();
   });
 });

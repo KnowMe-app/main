@@ -31,11 +31,6 @@ describe('цятка публікації адміна', () => {
     expect(toggle).toContain('setCachedMatchingSummaryCards({ [userId]: { ...summary, publish: newValue } });');
     expect(toggle).toContain('toast.error(');
   });
-
-  it('у відкритій картці стан читається так само, як у рядку', () => {
-    expect(matchingSource).toContain('<AdminToggle published={isMatchingCardPublished(user)}');
-    expect(matchingSource).not.toContain('<AdminToggle published={user.publish}');
-  });
 });
 
 describe('чіп фільтра з хрестиком — одна плашка', () => {

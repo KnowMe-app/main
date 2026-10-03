@@ -149,17 +149,18 @@ describe('Matching initial loading error diagnostics', () => {
 
   it('keeps one stable error toast and replaces the skeleton with an actionable error UI', () => {
     const reporter = section('  const reportInitialLoadError', '  const resetReactionPaginationState');
-    const errorUi = section('            })() : loadError ? (', '            ) : loading ? (');
+    // Помилку показує сама стрічка. Діагностика з кодом і JSON жила в шарі
+    // відкритої картки, а там вона малювалась лише при відкритій картці без
+    // анкети — тобто не малювалась ніколи; шар прибрано разом із карткою.
+    const errorUi = section('              {loadError && feedRows.length === 0 && (', '              {showFeedRetry && (');
 
     expect(reporter).toContain('toast.error(diagnostic.userMessage');
     expect(reporter).toContain('id: INITIAL_LOAD_ERROR_TOAST_ID');
     expect(reporter).toContain('setLoadError(diagnosticWithTrace);\n    loadingRef.current = false;\n    loadingStateRef.current = false;\n    setLoading(false);');
     expect(errorUi).toContain('role="alert"');
     expect(errorUi).toContain('{loadError.userMessage}');
-    expect(errorUi).toContain("{uiText('Код:', language)} {loadError.code}");
-    expect(errorUi).toContain("{uiText('Етап:', language)} {loadError.requestLabel}");
+    expect(errorUi).toContain('onClick={reloadDefault}');
     expect(errorUi).toContain('Спробувати ще раз');
-    expect(errorUi).toContain('JSON.stringify(loadError, null, 2)');
     expect(errorUi).not.toContain('<MatchingSkeleton />');
   });
 

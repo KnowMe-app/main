@@ -18,7 +18,6 @@ const renderRow = (props = {}) => render(
     isAdmin={false}
     expanded={false}
     onToggleExpand={jest.fn()}
-    onOpen={jest.fn()}
     onCommentSave={jest.fn()}
     clientComment=""
     reviewsSlot={<span>відгуки</span>}
@@ -30,12 +29,14 @@ applyUkrainianInterface();
 
 describe('рядок стрічки', () => {
   // Стрілка стояла двічі — під трубкою контактів і в ряду рішень — і вела
-  // туди ж. Лишилась одна, внизу.
-  it('має рівно одну стрілку «розгорнути», і вона в ряду рішень', () => {
+  // туди ж. Тепер розгортання одне, і воно не стрілка в ряду, а «Детальніше»
+  // під описом людини.
+  it('має рівно одне розгортання — «Детальніше»', () => {
     const onToggleExpand = jest.fn();
     renderRow({ onToggleExpand });
     expect(screen.queryByTitle('Показати всі дані')).not.toBeInTheDocument();
-    const expanders = screen.getAllByTitle('Розгорнути анкету');
+    expect(screen.queryByTitle('Розгорнути анкету')).not.toBeInTheDocument();
+    const expanders = screen.getAllByTestId('row-details-toggle');
     expect(expanders).toHaveLength(1);
     fireEvent.click(expanders[0]);
     expect(onToggleExpand).toHaveBeenCalledWith(card.userId);

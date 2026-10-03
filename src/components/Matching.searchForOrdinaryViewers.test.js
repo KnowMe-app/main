@@ -151,7 +151,6 @@ describe('порожній екран називає свою причину', (
   it('обидва порожні стани говорять одним текстом', () => {
     // Дека мала свій зашитий рядок і не знала ані про порожню групу, ані про
     // фільтри — той самий екран пояснював причину лише в одному з двох виглядів.
-    expect(source).toContain('<OwnerStatusMessage>{emptyFeedMessage}</OwnerStatusMessage>');
     // У стрічці той самий текст стоїть уже не сам: під ним буває жест, яким
     // знімається умова, що спорожнила деку (`donorRoleFilterBlocksFeed`).
     expect(source).toContain('<div>{emptyFeedMessage}</div>');

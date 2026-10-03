@@ -18,7 +18,6 @@ const renderRow = (props = {}) => render(
     isAdmin={false}
     expanded={false}
     onToggleExpand={jest.fn()}
-    onOpen={jest.fn()}
     onCommentSave={jest.fn()}
     clientComment=""
     {...props}

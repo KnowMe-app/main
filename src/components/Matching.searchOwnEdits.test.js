@@ -52,7 +52,6 @@ describe('список показує власне доповнення чита
   // — інакше дописаний телефон зникав би рівно тоді, коли контакти й читають.
   it('кладе шар і поверх догідратованої анкети', () => {
     expect(source).toContain('const rows = feedSource.map(user => withOwnEdits(withLazyPhotos(user)));');
-    expect(source).toContain('const activeProfileWithLazyPhotos = withOwnEdits(withLazyPhotos(activeProfile));');
   });
 
   // Перелік власних доповнень не всезнаючий: у базі він лежить під
@@ -92,12 +91,6 @@ describe('список показує власне доповнення чита
     );
     expect(overlayMemo).not.toContain('updateCard(');
     expect(source).toContain('userData: canonicalUser ? withLazyPhotos(canonicalUser) : { userId: user.userId },');
-  });
-
-  it('передає канонічну картку реакціям у відкритих деталях', () => {
-    expect(source).toContain('canonicalUserData={canonicalUserData}');
-    expect(source).toContain('<BtnDislike userId={user.userId} userData={canonicalUserData}');
-    expect(source).toContain('<BtnFavorite userId={user.userId} userData={canonicalUserData}');
   });
 
   // Стрічка з ініціалом прізвища — це те, що видно поза стрічкою; дописане

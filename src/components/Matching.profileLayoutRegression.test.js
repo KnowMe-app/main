@@ -5,18 +5,7 @@ import { getProfileName } from './profileLayoutConfig';
 describe('Matching redesigned profile regressions', () => {
   const source = () => fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
-  it('renders contacts through actionable links instead of generic profile chips', () => {
-    const matchingSource = source();
-
-    // Відкрита картка показує контакти тим самим представленням, що й рядок
-    // стрічки (`ContactLinks`), без згортання й без «Показати номер»; дотик до
-    // будь-якого каналу — дія, і вона йде лічильнику (`recordContactAction`).
-    expect(matchingSource).toContain('const ProfileContactLinks = ({ user, language, onContactAction }) =>');
-    expect(matchingSource).toContain("section.variant === 'contacts'");
-    expect(matchingSource).toContain('<ProfileContactLinks user={user} language={language} onContactAction={handleContactAction} />');
-    expect(matchingSource).toContain('<ContactLinks entries={entries} language={language} onContactAction={onContactAction} />');
-    expect(matchingSource).not.toContain("uiText('Показати номер', language)");
-    expect(matchingSource).not.toContain('<ModernContactHints');
+  it('builds the phone quick links from the shared icon set', () => {
     // Будівники швидких кнопок — у спільному наборі значків (`contactIcons`).
     const iconsSource = fs.readFileSync(path.join(__dirname, 'contactIcons.jsx'), 'utf8');
     expect(iconsSource).toContain('CONTACT_LINK_BUILDERS.telegramFromPhone');
@@ -37,15 +26,11 @@ describe('Matching redesigned profile regressions', () => {
   });
 
   it('hides VK contacts from matching cards for every viewer, including admins', () => {
-    const matchingSource = source();
-
-    expect(matchingSource).toContain("const MATCHING_HIDDEN_CONTACT_KEYS = ['vk'];");
-    expect(matchingSource).toContain('getContactEntries(user).filter(entry => !MATCHING_HIDDEN_CONTACT_KEYS.includes(entry.key))');
-    expect(matchingSource).toContain('...MATCHING_HIDDEN_CONTACT_KEYS');
+    const rowSource = fs.readFileSync(path.join(__dirname, 'ProfileRow.jsx'), 'utf8');
+    expect(rowSource).toContain("getContactEntries(user).filter(entry => entry.key !== 'vk')");
   });
 
   it('builds matching profile names only from approved identity fields', () => {
-    const matchingSource = source();
     const layoutSource = fs.readFileSync(path.join(__dirname, 'profileLayoutConfig.js'), 'utf8');
 
     expect(getProfileName({ name: 'Anna', surname: 'Smith', nameWife: 'Olena', nameHusband: 'Petro' })).toBe('Anna Smith Olena Petro');
@@ -59,14 +44,6 @@ describe('Matching redesigned profile regressions', () => {
     expect(layoutSource).toContain('return name || getEmailName(user);');
     expect(layoutSource).not.toContain('agencyName || name');
     expect(layoutSource).not.toContain('companyName');
-    // Роль без назви впізнається за кодом, а не за написом: напис залежить від
-    // мови інтерфейсу, і порівняння з англійським рядком мовчки ламало б бейдж
-    // під українською.
-    expect(matchingSource).toContain("const isGenericProfileRole = resolvedRole === 'other';");
-    expect(matchingSource).toContain('const shouldShowRoleBadge = !isGenericProfileRole && Boolean(roleCode);');
-    expect(matchingSource).toContain("const name = profileName || '';");
-    expect(matchingSource).toContain('{title && <ModernHeroTitle>{title}</ModernHeroTitle>}');
-    expect(matchingSource).toContain('{shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{getRoleLabel(resolvedRole, language)}</ModernRoleBadge>}');
   });
 
   it('renders editor-created Firebase list values without breaking matching', () => {
@@ -109,36 +86,6 @@ describe('Matching redesigned profile regressions', () => {
     expect(matchingSource).toContain('Перевірте мережу, Firebase rules та індекси');
     expect(matchingSource).toContain('}, 5000);');
     expect(matchingSource).toContain("toast.dismiss('matching-slow-load');");
-  });
-
-  it('supports desktop next/previous navigation without reaction side effects', () => {
-    const matchingSource = source();
-
-    expect(matchingSource).toContain("event.key === 'ArrowRight'");
-    expect(matchingSource).toContain('navigateActiveProfile(1);');
-    expect(matchingSource).toContain("event.key === 'ArrowLeft'");
-    expect(matchingSource).toContain('navigateActiveProfile(-1);');
-    expect(matchingSource).toContain('aria-label="Previous profile"');
-    expect(matchingSource).toContain('aria-label="Next profile"');
-    expect(matchingSource).toContain('onNavigate(direction === \'left\' ? 1 : -1);');
-    expect(matchingSource).not.toContain('swipedRef.current = true;\n    setDir(direction);\n    handleRemove');
-  });
-
-  /*
-   * Відкрита картка читає відгуки сама (ефект на `detailOpen`), тож доріжка
-   * публічної нотатки не кличе їх перевіряти, а про порожню відповідь каже
-   * словом. Мовчати не можна: поле для власного запису стоїть у доріжці
-   * завжди, тож «ще не читали» й «прочитали, відгуків немає» виглядали б
-   * однаково — порожнім місцем під плейсхолдером.
-   */
-  it('каже у відкритій картці, чим скінчилось читання відгуків', () => {
-    const matchingSource = source();
-
-    expect(matchingSource).toContain('<ReviewsStateNote>{publicCommentStatus}</ReviewsStateNote>');
-    expect(matchingSource).toContain('publicCommentStatus={describeReviewsState({');
-    // Блок знає, що читати його вже не просять: плейсхолдер лишається самою
-    // роботою, а стрілка до значка в ряду рішень зникає разом із закликом.
-    expect(matchingSource).toContain('preloaded\n                          profileId={user.userId}');
   });
 
   /*

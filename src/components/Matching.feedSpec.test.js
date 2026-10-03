@@ -53,27 +53,12 @@ describe('matching feed structure', () => {
     expect(source).toContain('return applyOverlayToCard(user, fields);');
   });
 
-  // Закриття шару повертає читача на ту саму картку. Піксель, знятий на
-  // відкритті, для цього вже не годиться сам по собі: поки шар був відкритий,
-  // у стрічку могла долягти чергова порція, а в рядках — догідратуватись фото,
-  // тож висота списку над збереженою позицією вже інша. Орієнтир — рядок
-  // картки; піксель лишається запасним.
-  it('opens the detail layer over the feed with a history entry to pop', () => {
+  // Відкритої картки, яка гортала деку й могла б її довантажувати, більше
+  // немає: стрічку продовжує сам сентинел.
+  it('loads more only from the feed sentinel', () => {
     const source = matching();
-    expect(source).toContain("window.history.pushState({ matchingDetail: true }, '');");
-    expect(source).toContain("window.addEventListener('popstate', handlePopState);");
-    expect(source).toContain('const anchor = findCardNodeById(anchorId);');
-    expect(source).toContain('if (savedTop) window.scrollTo(0, savedTop);');
-  });
-
-  it('never loads more from the detail layer, only from the feed sentinel', () => {
-    const source = matching();
-    const navigate = source.slice(
-      source.indexOf('const navigateActiveProfile = React.useCallback'),
-      source.indexOf('useEffect(() => {\n    if (!detailBounce)'),
-    );
-    expect(navigate).not.toContain('triggerEndOfDeckLoad');
-    expect(navigate).toContain('setDetailBounce');
+    expect(source).not.toContain('navigateActiveProfile');
+    expect(source).not.toContain('detailOpen');
     expect(source).toContain("endOfDeckLoadRef.current('feed-sentinel', { limit: MATCHING_FEED_PAGE_SIZE });");
   });
 

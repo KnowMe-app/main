@@ -61,10 +61,11 @@ import { getCurrentValue } from './getCurrentValue';
 
 import usePhotoSwipe from './usePhotoSwipe';
 import PhotoSwipeStage from './PhotoSwipeStage';
+import PhotoViewer from './PhotoViewer';
 // Доріжки нотаток беруться з розкладки відкритої картки, а не описуються тут
 // удруге: у рядку стрічки й у картці стоять ті самі два записи — публічний
 // відгук і власна нотатка, — і два екрани не можуть казати про них різне.
-import { NoteClearButton, NoteFieldRow, NoteLane, NoteLaneHead, PublishDot } from './Matching.styled';
+import { NoteClearButton, NoteFieldRow, NoteLane, NoteLaneHead, PublishDot, SharedCommentText } from './Matching.styled';
 import { isMatchingCardPublished, MATCHING_CARD_REVIEW_FLAG_FIELD } from '../utils/matchingCardIndex';
 
 const pickCurrentText = value => String(getCurrentValue(value) ?? '').trim();
@@ -948,6 +949,8 @@ export const enrichGateLabel = language => uiText('Доповнити дані',
  * `hasPrivateContent`); без цих пропсів обидві доріжки відкриті, як у
  * відкритій картці.
  */
+const EMPTY_SHARED_NOTES = [];
+
 export const ProfileNotes = ({
   language,
   publicSlot,
@@ -960,6 +963,10 @@ export const ProfileNotes = ({
   // Третя доріжка поруч із відгуком і памʼяткою — це теж запис читача про
   // людину, тільки записаний датою.
   postpone,
+  // Нотатки інших власників спільного доступу (`multiData/comments` чужого
+  // піддерева) — лише на прочитання, курсивом під власною памʼяткою. Їх
+  // показувала тільки відкрита картка; її більше немає, тож вони тут.
+  sharedNotes = EMPTY_SHARED_NOTES,
 }) => {
   const collapsible = hasPublicContent !== undefined || hasPrivateContent !== undefined;
   const [opened, setOpened] = useState({ public: false, private: false, postpone: false });
@@ -1005,6 +1012,9 @@ export const ProfileNotes = ({
             <b>{profileUiText('personalNote', language)}</b>
           </NoteLaneHead>
           {privateSlot}
+          {sharedNotes.map((text, index) => (
+            <SharedCommentText key={`shared-note-${index}`}>{text}</SharedCommentText>
+          ))}
         </NoteLane>
       )}
       {showPostpone && (
@@ -1040,14 +1050,14 @@ export const ProfileNotes = ({
             <S.NotesAddButton
               type="button"
               $postpone
-              title={uiText('Повернутись до профілю пізніше', language)}
+              title={uiText('Відкласти профіль — картка стане в кінець списку до обраної дати', language)}
               onClick={event => {
                 event.stopPropagation();
                 setOpened(previous => ({ ...previous, postpone: true }));
               }}
             >
               <FaRegClock aria-hidden="true" />
-              <span>{uiText('Пізніше', language)}</span>
+              <span>{uiText('Відкласти', language)}</span>
             </S.NotesAddButton>
           )}
         </S.NotesAddRow>
@@ -1066,7 +1076,7 @@ export const ProfileNotes = ({
 const PostponeLane = ({ language, until, onSet, onClear, onCancel }) => (
   <S.PostponeLane data-testid="postpone-lane">
     <NoteLaneHead>
-      <b>{uiText('Повернутись пізніше', language)}</b>
+      <b>{uiText('Відкласти профіль', language)}</b>
       {!until && (
         <S.PostponeCancel
           type="button"
@@ -1160,7 +1170,6 @@ const ProfileRow = ({
   onTogglePublish,
   expanded,
   onToggleExpand,
-  onOpen,
   onEditProfile,
   // Дотик до будь-якого контакту — дія (`recordContactAction`): `(user, channel)`.
   onContactAction,
@@ -1204,16 +1213,15 @@ const ProfileRow = ({
   anketaRole = '',
   // «Повернутись пізніше»: `{ until, onSet(months), onClear() }` — див. `ProfileNotes`.
   postpone,
+  // Нотатки інших власників спільного доступу — див. `ProfileNotes`.
+  sharedNotes,
 }) => {
   // A limited profile is the projection a viewer without full access gets back
   // from a search: surname, name, age, region, city, and the public comment. There
   // is nothing else to expand into, so the row drops the metrics line, the detail
   // chevron, the edit button and the swipe actions rather than showing them empty.
   //
-  // Відкрити її при цьому можна. Раніше — ні, і на дотик рядок не робив рівно
-  // нічого: жодної реакції, жодного пояснення — картка виглядала зламаною. Шар
-  // деталей показує ту саму проєкцію, але з фото на весь екран, тож дотик має
-  // що відкрити.
+  // Фото в ній при цьому відкривається на весь екран, як і в повному рядку.
   const isLimited = user?.__limitedProfile === true;
   // Рядок стрічки говорить тією ж мовою, що й картка: підписи полів і слова,
   // які застосунок підставляє сам («пологів», «КС», «не заміжня»).
@@ -1241,6 +1249,16 @@ const ProfileRow = ({
     onRequestPhotos: onRequestPhotos && !isLimited ? requestPhotos : undefined,
   });
   const photo = photoSwipe.current || photos[0];
+  // Дотик до фото відкриває його на весь екран (`PhotoViewer`) з того знімка,
+  // який зараз у рядку. Відкритої картки, куди дотик вів раніше, більше
+  // немає: вона показувала те саме, що рядок, лише більшим фото.
+  const [viewerIndex, setViewerIndex] = useState(null);
+  const photosComplete = user?.__allPhotosLoaded === true || !onRequestPhotos || isLimited;
+  const openPhotoViewer = event => {
+    event.stopPropagation();
+    if (!photosComplete) requestPhotos();
+    setViewerIndex(photoSwipe.index || 0);
+  };
   const bio = isOrganisationAnketa ? '' : getProfileBio(user);
   // Картку складають ті самі три частини, що й відкриту картку
   // (`ProfileFacts`): смуга показників і короткі факти беруть самі поля картки
@@ -1383,14 +1401,12 @@ const ProfileRow = ({
       swipedRef.current = false;
       return;
     }
-    // Розгортати рядок урізаної проєкції нема чим — метрик і контактів у ній
-    // немає, — тож дотик веде тільки в шар деталей.
-    if (isLimited) {
-      if (onOpen) onOpen(user);
-      return;
-    }
-    if (onOpen) onOpen(user);
-    else if (onToggleExpand) onToggleExpand(user.userId);
+    // Дотик до картки розгортає її. Відкритої картки, куди він вів раніше,
+    // більше немає: вона повторювала рядок, лише з більшим фото, — а фото тепер
+    // відкривається на весь екран дотиком до самого фото. Урізану проєкцію
+    // розгортати нема чим: метрик і контактів у ній немає.
+    if (isLimited) return;
+    if (onToggleExpand) onToggleExpand(user.userId);
   };
 
   return (
@@ -1410,7 +1426,12 @@ const ProfileRow = ({
           стоїть рядком нижче. Немає фото — рядок починається з імені, а «хто
           це» несе смужка ролі на лівому краї картки. */}
       {photo && (
-        <S.Photo {...photoSwipe.handlers} $loading={photoSwipe.loading}>
+        <S.Photo
+          {...photoSwipe.handlers}
+          $loading={photoSwipe.loading}
+          data-testid="row-photo"
+          onClick={openPhotoViewer}
+        >
           <PhotoSwipeStage swipe={photoSwipe} photo={photo} loading={photoSwipe.loading} />
           {/* Роль лежить на знімку — там само, де її малює відкрита картка
               (`ModernRoleBadge`). Під іменем вона стояла чіпом і забирала
@@ -1481,20 +1502,8 @@ const ProfileRow = ({
                 onClick={e => { e.stopPropagation(); onTogglePublish(user); }}
               />
             )}
-            {/* Олівець — угорі, біля імені: це дія над самою карткою, а не
-                рішення про людину. Тут раніше стояла трубка контактів —
-                найменша кнопка картки для її головної дії; вона переїхала в ряд
-                рішень широкою кнопкою (`RowContactsButton`). */}
-            {editAction && (
-              <S.RowActionButton
-                type="button"
-                title={editAction.title}
-                aria-label={editAction.title}
-                onClick={e => { e.stopPropagation(); editAction.onClick(user); }}
-              >
-                <FaPencilAlt size={12} />
-              </S.RowActionButton>
-            )}
+            {/* Олівця тут більше немає: він стоїть у ряду рішень, на місці
+                колишньої стрілки «розгорнути» (див. ряд рішень нижче). */}
           </S.RowActionStack>
         </S.Ctrl>
       </S.Top>
@@ -1513,6 +1522,35 @@ const ProfileRow = ({
       <ProfileFactList rows={summaryRows} />
       {!isLimited && !isPersonAnketa ? <CardRoleBlock card={roleBlockCard} programsContext={programsContext} language={language} /> : null}
 
+      {/* «Детальніше» — під коротким описом, посеред картки, а не стрілкою в
+          правому кінці ряду рішень: розгортають саме те, що щойно прочитали,
+          і палець не мусить іти в куток екрана повз серце й хрестик.
+          Розгорнуте лягає просто під кнопку. */}
+      {!preview && canExpandDetails && onToggleExpand && (
+        <S.RowDetailsToggle
+          type="button"
+          data-testid="row-details-toggle"
+          $turn={expanded}
+          aria-expanded={expanded}
+          onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
+        >
+          <span>{uiText(expanded ? 'Згорнути' : 'Детальніше', language)}</span>
+          <FaChevronDown size={11} aria-hidden="true" />
+        </S.RowDetailsToggle>
+      )}
+
+      {/* Порожнього блоку «всі дані» не буває: без жодного поля він малював
+          рамку з написом «Додаткових даних немає», тобто зайвий рядок і
+          відступ у картці, який нічого не казав. */}
+      {expanded && !isLimited && hasMoreDetails && (
+        <S.More $afterToggle onClick={e => e.stopPropagation()}>
+          {/* Під кнопкою — розділи повної анкети, ті самі й у тому самому
+              порядку, що й у формі (`ProfileFacts`). */}
+          <ProfileAboutSection text={bio} language={language} accent={roleAccent} />
+          <ProfileDetailSections sections={detailSections} accent={roleAccent} />
+        </S.More>
+      )}
+
       {contactEntries.length > 0 && (
         <S.RowContacts onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
           <ContactLinks
@@ -1521,19 +1559,6 @@ const ProfileRow = ({
             onContactAction={onContactAction ? channel => onContactAction(user, channel) : undefined}
           />
         </S.RowContacts>
-      )}
-
-      {/* Порожнього блоку «всі дані» не буває: без жодного поля він малював
-          рамку з написом «Додаткових даних немає», тобто зайвий рядок і
-          відступ у картці, який нічого не казав. */}
-      {expanded && !isLimited && hasMoreDetails && (
-        <S.More onClick={e => e.stopPropagation()}>
-          {/* Під стрілкою — розділи повної анкети, ті самі й у тому самому
-              порядку, що у відкритій картці (`ProfileFacts`). Сітка
-              «Одяг: 34–36» тут була третім почерком тих самих фактів. */}
-          <ProfileAboutSection text={bio} language={language} accent={roleAccent} />
-          <ProfileDetailSections sections={detailSections} accent={roleAccent} />
-        </S.More>
       )}
 
       {/* Нотатки — одна плашка на дві доріжки: спершу те, що про людину
@@ -1556,7 +1581,8 @@ const ProfileRow = ({
         publicSlot={reviewsSlot}
         hasReviews={(reviewsAction?.count || 0) > 0}
         hasPublicContent={hasPublicReview || (reviewsAction?.count || 0) > 0}
-        hasPrivateContent={commentSlot !== undefined || Boolean(String(clientComment || '').trim())}
+        hasPrivateContent={commentSlot !== undefined || Boolean(String(clientComment || '').trim()) || (sharedNotes?.length || 0) > 0}
+        sharedNotes={sharedNotes}
         reviewsStatus={describeReviewsState({
           requested: hasPublicReview,
           loading: Boolean(reviewsAction?.loading),
@@ -1577,28 +1603,22 @@ const ProfileRow = ({
       {/* Ряд рішень — останній у картці: спершу все, що вона каже про людину,
           потім те, що читач про неї записав, і аж тоді жест.
 
-          Порядок у ряду сталий: олівець (дописати анкету) → хрестик і серце →
-          розгорнути. Ліворуч те, що читач робить із карткою, праворуч — те, про
-          що він її питає; реакції посередині стоять парою в спільній рамці,
-          бо це два боки одного вибору, а не два незалежні значки. Усередині
-          пари `primaryAction` іде першим: у стрічці це хрестик, щоб лайк
-          стояв праворуч — так само, як у відкритій картці.
+          Порядок у ряду сталий: хрестик і серце → олівець. Реакції стоять
+          парою в спільній рамці, бо це два боки одного вибору, а не два
+          незалежні значки. Усередині пари `primaryAction` іде першим: у
+          стрічці це хрестик, щоб лайк стояв праворуч.
 
-          Значок «перевірити наявність відгуків» тут стояв раніше, і місце
-          праворуч звільнилось не тому, що відгуки стали не потрібні: читання
-          починає сам ефект стрічки, щойно в проєкції картки стоїть прапорець
-          `hasPublicReview` (`Matching.jsx`), а натискати вже нема що. Замість
-          нього — розгортання «всіх даних» рядка (`onToggleExpand`).
-
-          Стрілка стояла ще й угорі, під трубкою контактів, — і вела туди ж.
-          Дві однакові стрілки в одній картці читались як дві різні дії, тож
-          лишилась одна: тут, де читач і так тримає палець.
+          Праворуч тут стояла стрілка «розгорнути» — і розгорнути анкету
+          означало тягнутись у куток екрана. Розгортання переїхало під опис
+          людини кнопкою «Детальніше», а на його місце став олівець: дія над
+          самою карткою поруч із рішеннями про неї. Угорі біля імені олівця
+          більше немає.
 
           Підписів у ряду немає: ці кнопки раніше були широкими рядками з
           написами («Доповнити дані», «Перевірити наявність відгуків»), і
           картка з трьох фактів займала пів екрана. Що робить кожна, каже
           `title` і `aria-label` — саме їх читає й екранний диктор. */}
-      {!preview && (canExpandDetails || (!isLimited && (primaryAction || secondaryAction))) && (
+      {!preview && (editAction || (!isLimited && (primaryAction || secondaryAction))) && (
         <S.RowFooterActions onClick={e => e.stopPropagation()}>
           {!isLimited && (primaryAction || secondaryAction) && (
             <S.RowReactionPair data-testid="row-reactions">
@@ -1630,24 +1650,34 @@ const ProfileRow = ({
               )}
             </S.RowReactionPair>
           )}
-          {canExpandDetails && (
+          {/* Олівець — на колишньому місці стрілки «розгорнути»: розгортання
+              переїхало під опис людини словом «Детальніше», а дія над самою
+              карткою стала поруч із рішеннями про неї. */}
+          {editAction && (
             <S.RowFooterButton
               type="button"
-              $on={expanded}
-              aria-expanded={expanded}
-              // Стрілка в картці одна — ця; розгорнутий стан показує поворот.
-              $turn={expanded}
-              title={uiText('Розгорнути анкету', language)}
-              aria-label={uiText('Розгорнути анкету', language)}
-              onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
+              data-testid="row-edit-action"
+              title={editAction.title}
+              aria-label={editAction.title}
+              onClick={e => { e.stopPropagation(); editAction.onClick(user); }}
             >
-              <FaChevronDown size={13} />
+              <FaPencilAlt size={12} />
             </S.RowFooterButton>
           )}
         </S.RowFooterActions>
       )}
 
       {diagnosticsSlot}
+
+      {viewerIndex !== null && photos.length > 0 && (
+        <PhotoViewer
+          photos={photos}
+          index={Math.min(viewerIndex, photos.length - 1)}
+          closeOnHistoryBack
+          onReachEnd={photosComplete ? undefined : requestPhotos}
+          onClose={() => setViewerIndex(null)}
+        />
+      )}
 
     </S.Card>
   );
@@ -1686,4 +1716,5 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.programsContext === next.programsContext
   && prev.postpone?.ownerId === next.postpone?.ownerId
   && prev.postpone?.until === next.postpone?.until
+  && prev.sharedNotes === next.sharedNotes
 ));

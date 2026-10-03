@@ -31,16 +31,4 @@ describe('кнопки смужки дій ловлять дотик', () => {
     expect(rail()).toContain('& > * {\n    pointer-events: auto;');
     expect(rail()).not.toContain('& > span {');
   });
-
-  it('олівець у відкритій картці стоїть прямо в смужці', () => {
-    // Якби він був загорнутий у span, попереднє правило нічого не важило б —
-    // саме тому тест дивиться і сюди.
-    const matching = read('Matching.jsx');
-    const railMarkup = matching.slice(
-      matching.indexOf('<ModernActionRail>'),
-      matching.indexOf('</ModernActionRail>')
-    );
-    expect(railMarkup).toContain('{editProfileAction && (');
-    expect(railMarkup).toContain('<ActionButton');
-  });
 });

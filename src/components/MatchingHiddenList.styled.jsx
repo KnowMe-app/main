@@ -120,6 +120,8 @@ export const Photo = styled.div`
   /* Горизонтальний жест на фото гортає знімки (\`usePhotoSwipe\`); вертикальний
    * лишається прокруткою сторінки. */
   touch-action: pan-y;
+  /* Дотик відкриває фото на весь екран (\`PhotoViewer\`). */
+  cursor: zoom-in;
 
   img {
     width: 100%;
@@ -541,6 +543,13 @@ export const More = styled.div`
   margin-top: 9px;
   padding-top: 7px;
   border-top: 1px solid var(--matching-card-border);
+
+  /* Під кнопкою «Детальніше» риска вже є — у самої кнопки. */
+  ${({ $afterToggle }) => $afterToggle && css`
+    margin-top: 2px;
+    padding-top: 0;
+    border-top: 0;
+  `}
 `;
 
 /* Пласка секція на спільній лівій межі — так само, як нотатки (`RowNotes`) і
@@ -1204,6 +1213,44 @@ export const PublicCommentInput = styled.textarea`
  * людину (серце й хрестик), і аж тоді питання про неї («що написали інші»).
  * Ліворуч — те, що робить із карткою читач, праворуч — те, що йому показують.
  */
+/*
+ * «Детальніше» — розгортання рядка словом, посеред картки, одразу під
+ * коротким описом людини.
+ *
+ * Тут була стрілка в правому кінці ряду рішень, і щоб розгорнути анкету,
+ * палець ішов у куток екрана повз серце й хрестик. Розгортають же саме те,
+ * що щойно прочитали, — тож і кнопка стоїть під ним, на всю ширину, а
+ * розгорнуте лягає просто під неї. Олівець пішов на її колишнє місце.
+ */
+export const RowDetailsToggle = styled.button`
+  width: 100%;
+  margin-top: 9px;
+  min-height: 34px;
+  padding: 7px 0 0;
+  border: 0;
+  border-top: 1px solid var(--matching-card-border);
+  background: transparent;
+  color: var(--matching-accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+
+  svg {
+    transition: transform 180ms ease;
+    transform: rotate(${({ $turn }) => ($turn ? '180deg' : '0deg')});
+  }
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline-offset: 1px;
+  }
+`;
+
 export const RowFooterActions = styled.div`
   display: flex;
   align-items: center;

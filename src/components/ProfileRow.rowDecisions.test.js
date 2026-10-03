@@ -29,7 +29,6 @@ const renderRow = (props = {}) => render(
     isAdmin={false}
     expanded={false}
     onToggleExpand={jest.fn()}
-    onOpen={jest.fn()}
     onCommentSave={jest.fn()}
     clientComment=""
     {...reactions}
@@ -41,36 +40,37 @@ const renderRow = (props = {}) => render(
 const standsBefore = (first, second) =>
   first.compareDocumentPosition(second) === Node.DOCUMENT_POSITION_FOLLOWING;
 
-// Рішення про людину стоять одним рядом унизу картки, у сталому порядку:
-// олівець (дописати анкету) → хрестик і серце → розгорнути. Раніше вони жили в
-// трьох різних місцях: два широкі рядки з написами під фактами, стовпчик
-// значків праворуч і сам ряд реакцій.
+// Рішення про людину стоять одним рядом унизу картки: хрестик і серце →
+// олівець. Розгортання — не в ряду, а кнопкою «Детальніше» під коротким
+// описом людини, посеред картки: стрілкою в правому кінці ряду до нього
+// треба було тягнутись у куток екрана. На її місце став олівець.
 // Ці перевірки описують український бік екрана — мову задаємо явно.
 applyUkrainianInterface();
 
+const detailsToggle = () => screen.getByTestId('row-details-toggle');
+
 describe('ряд рішень у рядку стрічки', () => {
-  it('шикує олівець, дизлайк, лайк і розгортання саме в цьому порядку', () => {
+  it('шикує «Детальніше» над рядом, а в ряду — дизлайк, лайк і олівець', () => {
     renderRow({ onEnrich: jest.fn() });
 
     const pencil = screen.getByTitle(enrichGateLabel());
     const like = screen.getByTitle('В обране');
     const hide = screen.getByTitle('Приховати');
-    const expand = screen.getByTitle(expandLabel);
 
-    expect(standsBefore(pencil, hide)).toBe(true);
+    expect(detailsToggle()).toHaveTextContent('Детальніше');
+    expect(standsBefore(detailsToggle(), hide)).toBe(true);
     expect(standsBefore(hide, like)).toBe(true);
-    expect(standsBefore(like, expand)).toBe(true);
+    expect(standsBefore(like, pencil)).toBe(true);
+    expect(screen.queryByTitle(expandLabel)).not.toBeInTheDocument();
   });
 
   // Кнопки «Контакти» в ряду рішень більше немає: контакти стоять у картці
   // самі, рядком значків, і підтягуються без дотику.
-  it('не ставить «Контакти» в ряд рішень — лише серце, хрестик і стрілку', () => {
+  it('не ставить «Контакти» в ряд рішень', () => {
     renderRow({ onRequestContacts: jest.fn() });
 
-    const like = screen.getByTitle('В обране');
-    const expand = screen.getByTitle(expandLabel);
+    expect(screen.getByTitle('В обране')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Контакти' })).not.toBeInTheDocument();
-    expect(standsBefore(like, expand)).toBe(true);
   });
 
   it('ставить серце й хрестик у спільну рамку — це два боки одного вибору', () => {
@@ -93,53 +93,81 @@ describe('ряд рішень у рядку стрічки', () => {
     const onEditProfile = jest.fn();
     renderRow({ isAdmin: true, onEditProfile });
     fireEvent.click(screen.getByTitle('Редагувати анкету'));
+    expect(screen.getByTestId('row-edit-action')).toBeInTheDocument();
     expect(onEditProfile).toHaveBeenCalledWith(card);
   });
 
-  // Кнопка розгортання стоїть у рядку незалежно від того, чи передали
-  // реакції або олівець: це та сама дія, що й стрілка біля контактів
-  // (`onToggleExpand`), і рядок пропонує її сам, без сторонніх пропів.
-  it('малює саме розгортання, коли нічого іншого не передали', () => {
+  // «Детальніше» стоїть у рядку незалежно від того, чи передали реакції або
+  // олівець: рядок пропонує його сам, без сторонніх пропів.
+  it('малює «Детальніше», коли нічого іншого не передали', () => {
     render(
       <ProfileRow
         user={card}
         isAdmin={false}
         expanded={false}
         onToggleExpand={jest.fn()}
-        onOpen={jest.fn()}
         onCommentSave={jest.fn()}
         clientComment=""
       />
     );
-    expect(screen.getByTitle(expandLabel)).toBeInTheDocument();
+    expect(detailsToggle()).toBeInTheDocument();
     expect(screen.queryByTitle('В обране')).not.toBeInTheDocument();
   });
 
   // Урізана проєкція пошуку (`__limitedProfile`) не має чого розгортати —
   // «всіх даних» у ній немає взагалі, — тож без реакцій і олівця ряду рішень
   // немає зовсім.
-  it('не малює ряду взагалі в урізаній картці без інших рішень', () => {
+  it('не малює ні ряду, ні «Детальніше» в урізаній картці без інших рішень', () => {
     render(
       <ProfileRow
         user={{ ...card, __limitedProfile: true }}
         isAdmin={false}
         expanded={false}
         onToggleExpand={jest.fn()}
-        onOpen={jest.fn()}
         onCommentSave={jest.fn()}
         clientComment=""
       />
     );
-    expect(screen.queryByTitle(expandLabel)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('row-details-toggle')).not.toBeInTheDocument();
     expect(screen.queryByTitle('В обране')).not.toBeInTheDocument();
   });
 
-  it('розгортає «всі дані» тим самим жестом, що й стрілка біля контактів', () => {
+  it('розгортає «всі дані» кнопкою «Детальніше», а згортає «Згорнути»', () => {
     const onToggleExpand = jest.fn();
-    renderRow({ onToggleExpand });
+    const { rerender } = renderRow({ onToggleExpand });
 
-    fireEvent.click(screen.getByTitle(expandLabel));
+    fireEvent.click(detailsToggle());
     expect(onToggleExpand).toHaveBeenCalledWith(card.userId);
+
+    rerender(
+      <ProfileRow
+        user={card}
+        isAdmin={false}
+        expanded
+        onToggleExpand={onToggleExpand}
+        onCommentSave={jest.fn()}
+        clientComment=""
+        {...reactions}
+      />
+    );
+    expect(detailsToggle()).toHaveTextContent('Згорнути');
+    expect(detailsToggle()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  // Дотик до фото відкриває його на весь екран, а не картку: окремої
+  // відкритої картки більше немає, вона повторювала рядок.
+  it('відкриває фото на весь екран дотиком і не розгортає рядок', () => {
+    const onToggleExpand = jest.fn();
+    renderRow({ onToggleExpand, user: { ...card, photos: ['a.jpg', 'b.jpg'], __allPhotosLoaded: true } });
+
+    fireEvent.click(screen.getByTestId('row-photo'));
+    const viewer = screen.getByRole('dialog', { name: 'Photo' });
+    expect(viewer).toBeInTheDocument();
+    expect(within(viewer).getByText('1 / 2')).toBeInTheDocument();
+    expect(onToggleExpand).not.toHaveBeenCalled();
+
+    fireEvent.click(within(viewer).getByLabelText('Close'));
+    expect(screen.queryByRole('dialog', { name: 'Photo' })).not.toBeInTheDocument();
   });
 });
 

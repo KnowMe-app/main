@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import styled from 'styled-components';
 import { FiTrash2, FiX, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 
@@ -8,7 +9,8 @@ const Overlay = styled.div`
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.8);
+  background-color: rgba(0, 0, 0, 0.92);
+  touch-action: pan-y;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -51,14 +53,57 @@ const NextButton = styled(ArrowButton)`
   right: 20px;
 `;
 
-export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete }) => {
+const Counter = styled.div`
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+`;
+
+/*
+ * Повноекранний перегляд фото: темне тло, свайп або стрілки вбік, Escape і
+ * клік повз знімок закривають.
+ *
+ * Шар малюється порталом у `body`: його відкривають і з рядка стрічки, а там
+ * батько з `transform` чи `overflow: hidden` обрізав би `position: fixed`. Події
+ * порталу React усе одно несе вгору деревом компонентів, тож шар їх глушить:
+ * інакше свайп по фото тут ставив би серце чи хрестик рядку під ним, а дотик
+ * розгортав би його.
+ *
+ * `closeOnHistoryBack` — «назад» телефона закриває перегляд, а не сторінку:
+ * відкриття кладе в історію свій запис.
+ * `onReachEnd` — перелік ще не повний (стрічка несе один аватар): дійшовши до
+ * кінця, просимо решту, а не йдемо по колу.
+ */
+export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, closeOnHistoryBack = false, onReachEnd }) => {
   const [current, setCurrent] = useState(index);
   const [startX, setStartX] = useState(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  // Крок, що чекає на дочитаний перелік: щойно знімків стало більше, ніж було
+  // в момент кроку, показуємо наступний.
+  const pendingAdvanceRef = useRef(0);
+
+  useEffect(() => {
+    if (!pendingAdvanceRef.current || photos.length <= pendingAdvanceRef.current) return;
+    const target = pendingAdvanceRef.current;
+    pendingAdvanceRef.current = 0;
+    setCurrent(target);
+  }, [photos.length]);
 
   const next = React.useCallback(() => {
     if (photos.length === 0) return;
+    if (onReachEnd && current >= photos.length - 1) {
+      pendingAdvanceRef.current = photos.length;
+      onReachEnd();
+      return;
+    }
     setCurrent(prev => (prev + 1) % photos.length);
-  }, [photos.length]);
+  }, [current, onReachEnd, photos.length]);
 
   const prev = React.useCallback(() => {
     if (photos.length === 0) return;
@@ -66,11 +111,17 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete }) => {
   }, [photos.length]);
 
   useEffect(() => {
+    if (current > 0 && current >= photos.length) setCurrent(Math.max(0, photos.length - 1));
+  }, [current, photos.length]);
+
+  useEffect(() => {
     const handleKey = e => {
       if (e.key === 'ArrowRight') {
         next();
       } else if (e.key === 'ArrowLeft') {
         prev();
+      } else if (e.key === 'Escape' && onCloseRef.current) {
+        onCloseRef.current();
       }
     };
 
@@ -83,13 +134,32 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete }) => {
     };
   }, [next, prev]);
 
+  useEffect(() => {
+    if (!closeOnHistoryBack || typeof window === 'undefined') return undefined;
+    window.history.pushState({ photoViewer: true }, '');
+    let popped = false;
+    const handlePopState = () => {
+      popped = true;
+      if (onCloseRef.current) onCloseRef.current();
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      // Закрили хрестиком чи кліком — знімаємо власний запис, інакше перше ж
+      // «назад» після перегляду не робило б нічого.
+      if (!popped && window.history.state?.photoViewer) window.history.back();
+    };
+  }, [closeOnHistoryBack]);
+
   const handleTouchStart = e => {
+    e.stopPropagation();
     if (e.touches && e.touches.length > 0) {
       setStartX(e.touches[0].clientX);
     }
   };
 
   const handleTouchEnd = e => {
+    e.stopPropagation();
     if (startX === null) return;
     const endX = e.changedTouches[0].clientX;
     const deltaX = endX - startX;
@@ -110,14 +180,25 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete }) => {
   if (!photos.length) return null;
 
   const handleOverlayClick = e => {
+    e.stopPropagation();
     if (e.target === e.currentTarget && onClose) {
       onClose();
     }
   };
 
-  return (
-    <Overlay onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} onClick={handleOverlayClick}>
-      <FullImage src={photos[current]} alt="full" />
+  const shown = Math.min(current, photos.length - 1);
+  const overlay = (
+    <Overlay
+      role="dialog"
+      aria-modal="true"
+      aria-label="Photo"
+      onTouchStart={handleTouchStart}
+      onTouchMove={e => e.stopPropagation()}
+      onTouchEnd={handleTouchEnd}
+      onClick={handleOverlayClick}
+    >
+      <FullImage src={photos[shown]} alt="full" />
+      {photos.length > 1 && <Counter>{shown + 1} / {photos.length}</Counter>}
       <PrevButton onClick={prev} aria-label="Previous">
         <FiChevronLeft size={40} />
       </PrevButton>
@@ -134,6 +215,8 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete }) => {
       )}
     </Overlay>
   );
+
+  return typeof document !== 'undefined' && document.body ? createPortal(overlay, document.body) : overlay;
 };
 
 export default PhotoViewer;
