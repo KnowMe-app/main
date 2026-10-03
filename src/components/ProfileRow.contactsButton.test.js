@@ -105,10 +105,22 @@ describe('контакти в рядку стрічки', () => {
   it('поруч із трубкою дає месенджери, зібрані з номера', () => {
     renderRow(hydratedCard, { onRequestContacts: jest.fn() });
 
-    expect(screen.getByTitle('Telegram: +380501112233')).toHaveAttribute('href', 'https://t.me/+380501112233');
     expect(screen.getByTitle('Viber: +380501112233')).toHaveAttribute('href', 'viber://chat?number=%2B380501112233');
     expect(screen.getByTitle('WhatsApp: +380501112233')).toHaveAttribute('href', 'https://wa.me/380501112233');
     expect(screen.getByTitle('Telegram: oksana')).toBeInTheDocument();
+  });
+
+  // Нік Telegram, записаний в анкеті, — той самий канал, що й Telegram з
+  // номера: два однакові значки поруч не казали, котрий із них куди веде.
+  it('не дублює Telegram з номера, коли в анкеті є власний нік', () => {
+    renderRow(hydratedCard, { onRequestContacts: jest.fn() });
+    expect(screen.queryByTitle('Telegram: +380501112233')).toBeNull();
+    expect(screen.getAllByTitle(/^Telegram/)).toHaveLength(1);
+  });
+
+  it('без власного ніка Telegram збирає з номера', () => {
+    renderRow({ ...feedCard, phone: '380501112233' }, { onRequestContacts: jest.fn() });
+    expect(screen.getByTitle('Telegram: +380501112233')).toHaveAttribute('href', 'https://t.me/+380501112233');
   });
 
   // Розгорнутий блок «усі дані» другим списком контакти не показує.

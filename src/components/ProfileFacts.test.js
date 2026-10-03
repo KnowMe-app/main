@@ -163,7 +163,7 @@ describe('розділи повної анкети', () => {
 
   it('складає освіту й професію в речення', () => {
     const work = buildProfileDetailSections(fullProfile, 'uk').find(section => section.key === 'work');
-    expect(work.text).toBe('Я маю вищу освіту та працюю за професією Лікар Терапевт.');
+    expect(work.text).toBe('Я маю вищу освіту та працюю за професією лікар терапевт.');
     expect(work.rows).toEqual([]);
   });
 
@@ -178,7 +178,7 @@ describe('розділи повної анкети', () => {
   it('не показує «Освіта — так»', () => {
     const sections = buildProfileDetailSections({ education: 'Yes', profession: 'Кухар' }, 'uk');
     expect(valueOf(sections[0].rows, 'education')).toBeUndefined();
-    expect(sections[0].text).toBe('Я працюю за професією Кухар.');
+    expect(sections[0].text).toBe('Я працюю за професією кухар.');
   });
 
   it('не малює розділу без жодного значення', () => {
@@ -209,3 +209,35 @@ describe('обидва екрани', () => {
     expect(row).not.toContain('<S.Grid>');
   });
 });
+
+/*
+ * Анкети зі стрічки, на яких речення розвалювались: «темно русий природній
+ * пряме волосся», «Я працюю за професією Ні», «Освіта — середня» окремим
+ * рядком під реченням, «розмір грудей — 1 розмір».
+ */
+describe('власні відповіді в реченнях анкети', () => {
+  it('не вставляє власний опис кольору між прикметником і «волоссям»', () => {
+    const rows = buildProfileSummaryRows({ eyeColor: 'Green', hairColor: 'Темно русий природній', hairStructure: 'Straight' }, 'uk');
+    expect(valueOf(rows, 'appearance')).toBe('зелені очі, пряме волосся, колір волосся — темно русий природній');
+  });
+
+  it('не пише «працюю за професією Ні»', () => {
+    const sections = buildProfileDetailSections({ education: 'Secondary', profession: 'Ні' }, 'uk');
+    const work = sections.find(section => section.key === 'work');
+    expect(work.text).toBe('Я маю загальну середню освіту.');
+    expect(valueOf(work.rows, 'profession')).toBeUndefined();
+  });
+
+  it('впізнає «Середня», набрану власноруч, як варіант довідника', () => {
+    const sections = buildProfileDetailSections({ education: 'Середня ', profession: 'Бухгалтер' }, 'uk');
+    const work = sections.find(section => section.key === 'work');
+    expect(work.text).toBe('Я маю загальну середню освіту та працюю за професією бухгалтер.');
+    expect(valueOf(work.rows, 'education')).toBeUndefined();
+  });
+
+  it('не повторює «розмір» у розмірі грудей', () => {
+    const sections = buildProfileDetailSections({ bodyType: 'Triangle', breastSize: '1 розмір ' }, 'uk');
+    expect(sections.find(section => section.key === 'looks').text).toContain('розмір грудей — 1.');
+  });
+});
+

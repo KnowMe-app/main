@@ -29,7 +29,8 @@ describe('Matching redesigned profile regressions', () => {
   it('тримає блок контактів одним рядком значків', () => {
     const rowSource = fs.readFileSync(path.join(__dirname, 'ProfileRow.jsx'), 'utf8');
     const links = rowSource.slice(rowSource.indexOf('export const ContactLinks'), rowSource.indexOf('const COMMENT_SAVE_DEBOUNCE_MS'));
-    expect(links).toContain('PHONE_QUICK_LINKS.map(({ key, Icon, label, build })');
+    expect(links).toContain('PHONE_QUICK_LINKS.filter(link => !ownChannels.has(link.key))');
+    expect(links).toContain('phoneQuickLinks.map(({ key, Icon, label, build })');
     expect(links.match(/<S\.ContactIconRow>/g)).toHaveLength(1);
     expect(links).not.toContain('<span>{displayValue}</span>');
     expect(links).toContain("uiText('Подзвонити', language)");
