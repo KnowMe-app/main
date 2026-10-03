@@ -145,7 +145,34 @@ export const resolveProfileFormBlock = fieldName => {
  *
  * Legacy-колекція одна — `users`; саме туди веде посилання блоку legacy-анкети.
  */
-export const buildProfileFormBlockHeader = (blockId, { profileId, ownerId } = {}) => {
+export const DRAFT_RECORD_BLOCK_ID = 'profileMutationDraft';
+
+const DRAFT_RECORD_BLOCK_META = {
+  title: 'Чернетка',
+  hint: 'Анкета ще не опублікована: усі її поля лежать одним записом у multiData/profileMutations, а не у вузлах готової анкети. Правки форми йдуть туди ж і пишуться в журнал чернетки.',
+};
+
+/**
+ * `draftSegments` — адреса даних чернетки (`getDraftRecordDataSegments`).
+ *
+ * Вузлів готової анкети в чернетки немає, тож посилання «Контакти →
+ * profileContacts/{id}» вело в `null` і саме так і читалось: контактів
+ * немає, — хоч вони лежали в чернетці. Для чернетки всі поля анкети — один
+ * блок з посиланням на її запис. Позначка «Звʼязатись» лишається своєю: вона
+ * лежить під адміном, а не в анкеті.
+ */
+export const buildProfileFormBlockHeader = (blockId, { profileId, ownerId, draftSegments = null } = {}) => {
+  if (draftSegments && blockId !== PROFILE_FORM_BLOCK_IDS.getInTouch) {
+    const labelSegments = draftSegments.filter(segment => segment !== profileId);
+    return {
+      id: DRAFT_RECORD_BLOCK_ID,
+      title: DRAFT_RECORD_BLOCK_META.title,
+      hint: DRAFT_RECORD_BLOCK_META.hint,
+      label: labelSegments.join('/'),
+      path: draftSegments.join('/'),
+      href: buildRtdbConsoleLink(draftSegments),
+    };
+  }
   const meta = BLOCK_META[blockId] || { title: blockId, hint: '' };
 
   const path = (() => {

@@ -30,6 +30,13 @@ import {
 } from 'components/inputValidations';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { persistCanonicalCard } from 'utils/persistCanonicalCard';
+import {
+  fetchProfileRecordById,
+  getDraftRecordCreator,
+  isDraftProfileRecord,
+  rememberDraftRecordRevision,
+  saveDraftProfileRecord,
+} from 'utils/profileRecordSource';
 import { normalizePhoneState } from './inputValidations';
 import toast from 'react-hot-toast';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
@@ -449,7 +456,16 @@ const EditProfile = () => {
     let canonical = {};
 
     try {
-      canonical = getCanonicalCardFromCache(userId) || (await getCanonicalCard(userId));
+      // Кешована чернетка — знімок, а не канон: автор править її далі, тож
+      // для чернетки канон береться з її власної адреси, а кеш лишається
+      // запасним. Готова анкета — як і доти: кеш, а без нього вузли.
+      const cachedCanonical = getCanonicalCardFromCache(userId);
+      canonical = isDraftProfileRecord(cachedCanonical)
+        ? (await fetchProfileRecordById(userId, {
+          prefer: 'draft',
+          creatorUid: getDraftRecordCreator(cachedCanonical),
+        })) || cachedCanonical
+        : cachedCanonical || (await getCanonicalCard(userId));
 
       // Non-admins used to be narrowed to their own overlay here, so two
       // editors of the same card never saw each other's pending edits. They
@@ -486,6 +502,9 @@ const EditProfile = () => {
     ) {
       return;
     }
+    // Канон, який форма зараз візьме за основу, — і ревізія чернетки, поверх
+    // якої йтиме наступне збереження.
+    rememberDraftRecordRevision(canonical);
 
     const hasMeaningfulValue = value => {
       if (value === null || value === undefined) return false;
@@ -693,6 +712,16 @@ const EditProfile = () => {
       }
     }
 
+    // Чернетка пишеться в себе саму — у дані й журнал правок, а не у вузли
+    // готової анкети (див. `utils/profileRecordSource.js`).
+    if (isDraftProfileRecord(updatedState)) {
+      await saveDraftProfileRecord({ submitted: updatedState, deletedKeys, actorUid: editorUserId });
+      const syncedDraft = commentSaveFailed
+        ? { ...updatedState, myComment: lastSyncedSnapshotRef.current?.myComment ?? '' }
+        : updatedState;
+      return prepareSyncedSnapshot(syncedDraft, deletedKeys);
+    }
+
     // A submit whose sole purpose is deleting field(s) (handleClear/
     // handleDelKeyValue set delCondition exactly when a field disappears
     // entirely from newState) gets a minimal, targeted null-only payload
@@ -881,6 +910,7 @@ const EditProfile = () => {
     currentProfileUserIdRef.current = userId;
     profileSyncGenerationRef.current += 1;
     const cachedCard = getCard(userId) || location.state || null;
+    rememberDraftRecordRevision(cachedCard);
     setState(cachedCard);
     lastSyncedSnapshotRef.current = prepareSyncedSnapshot(cachedCard || {});
     syncedSnapshotVersionRef.current += 1;
@@ -903,7 +933,9 @@ const EditProfile = () => {
 
     const load = async () => {
       try {
-        const data = await fetchUserById(userId);
+        // Вузли готової анкети, а коли їх немає — чернетка з цим id.
+        const data = await fetchProfileRecordById(userId);
+        rememberDraftRecordRevision(data);
         const formatted =
           data
             ? {
@@ -1035,7 +1067,11 @@ const EditProfile = () => {
     });
 
     toast.success(`Погоджено 1 правку по полю ${fieldName}`);
-    const fresh = await fetchUserById(userId);
+    const fresh = await fetchProfileRecordById(userId, {
+      prefer: isDraftProfileRecord(state) ? 'draft' : '',
+      creatorUid: getDraftRecordCreator(state),
+    });
+    rememberDraftRecordRevision(fresh);
     setState(fresh);
     await refreshOverlays();
   };
@@ -1216,7 +1252,11 @@ const EditProfile = () => {
     setIsReviewingOverlays(true);
     try {
       await action();
-      const fresh = await fetchUserById(userId);
+      const fresh = await fetchProfileRecordById(userId, {
+        prefer: isDraftProfileRecord(state) ? 'draft' : '',
+        creatorUid: getDraftRecordCreator(state),
+      });
+      rememberDraftRecordRevision(fresh);
       if (fresh) setState(fresh);
       await refreshOverlays();
       if (isOverlayHistoryVisible) {

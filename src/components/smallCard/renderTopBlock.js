@@ -64,6 +64,14 @@ import { resolveMatchingMultiDataOwnerIds } from 'utils/multiDataAccess';
 import { buildUserRtdbLink } from 'utils/firebaseUserConsoleLink';
 import { auth } from '../config';
 import toast from 'react-hot-toast';
+import {
+  fetchProfileRecordById,
+  getDraftRecordCreator,
+  getDraftRecordDataSegments,
+  isDraftProfileRecord,
+  rememberDraftRecordRevision,
+} from 'utils/profileRecordSource';
+import { buildRtdbConsoleLink } from '../profileFormNodeBlocks';
 
 // The block always draws its own frame now, so it reads as a card wherever it
 // is placed instead of bleeding into the page behind it.
@@ -1790,11 +1798,18 @@ export const TopBlock = ({
     let toastFn = toast.error;
     let toastMsg = 'Не вдалося завантажити дані';
     try {
-      fresh = await fetchUserById(cardData.userId);
+      // Перечитується те джерело, де анкета справді лежить: у чернетки це
+      // `multiData/profileMutations`, а не вузли готової анкети — ті для неї
+      // порожні, і доти тут виходило «Свіжі дані відсутні» над старим знімком.
+      fresh = await fetchProfileRecordById(cardData.userId, {
+        prefer: isDraftProfileRecord(cardData) ? 'draft' : '',
+        creatorUid: getDraftRecordCreator(cardData),
+      });
       if (fresh) {
         clearCardCache(cardData.userId);
         updateCard(cardData.userId, fresh);
         const backendCard = { ...fresh, userId: cardData.userId };
+        rememberDraftRecordRevision(backendCard);
 
         if (setUsers) {
           setUsers(prev => {
@@ -2160,11 +2175,15 @@ export const TopBlock = ({
               {cardData.lastAction && <span>{formatDateToDisplay(normalizeLastAction(cardData.lastAction))}</span>}
               {cardData.lastAction && cardData.userId && <span>·</span>}
               {cardData.userId && (
+                // Чернетка лежить не в `users`, а в `multiData/profileMutations`:
+                // посилання веде туди, де її дані справді є.
                 <a
-                  href={buildUserRtdbLink(cardData.userId)}
+                  href={getDraftRecordDataSegments(cardData)
+                    ? buildRtdbConsoleLink(getDraftRecordDataSegments(cardData))
+                    : buildUserRtdbLink(cardData.userId)}
                   target="_blank"
                   rel="noreferrer"
-                  title="Відкрити профіль в Firebase RTDB"
+                  title={getDraftRecordDataSegments(cardData) ? 'Відкрити чернетку в Firebase RTDB' : 'Відкрити профіль в Firebase RTDB'}
                   onClick={event => event.stopPropagation()}
                   style={{ color: 'inherit', textDecoration: 'none' }}
                 >

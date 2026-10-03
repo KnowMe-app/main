@@ -15,6 +15,7 @@
 // переписати — з шансом розійтись у дрібниці (`cacheVersion`, дзеркало,
 // індекс), яку потім не знайти.
 import {
+  auth,
   fetchUserById,
   syncUserSearchIdIndex,
   updateDataInFiresoreDB,
@@ -22,10 +23,25 @@ import {
   updateProfileNodesInRTDB,
 } from 'components/config';
 import { isLongFormatUserId } from 'utils/userIdFormat';
+import { isDraftProfileRecord, saveDraftProfileRecord } from 'utils/profileRecordSource';
 
 export const persistCanonicalCard = async mergedCard => {
   const userId = mergedCard?.userId;
   if (!userId) return;
+
+  // Канонічна картка чернетки — сама чернетка (`getCanonicalCard`), і
+  // прийняте доповнення лягає туди ж: у її дані й журнал. У вузли готової
+  // анкети воно завело б другу картку поруч із чернеткою.
+  if (isDraftProfileRecord(mergedCard)) {
+    // База — щойно прочитана чернетка (`getCanonicalCard`), тож і ревізія
+    // її власна, а не та, яку колись показувала форма.
+    await saveDraftProfileRecord({
+      submitted: mergedCard,
+      actorUid: auth.currentUser?.uid,
+      baseRevision: mergedCard.__profileMutationRevision,
+    });
+    return;
+  }
 
   const existingData = (await fetchUserById(userId)) || {};
   await syncUserSearchIdIndex(userId, existingData, mergedCard);

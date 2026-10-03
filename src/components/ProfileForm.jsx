@@ -33,6 +33,15 @@ import {
   settleSupersededOverlayValue,
 } from 'utils/multiAccountEdits';
 import { PROFILE_BACKEND_REFRESH_EVENT } from 'utils/profileBackendRefresh';
+import { loadProfileMutationHistory } from 'utils/profileMutations';
+import { isAdminUid } from 'utils/accessLevel';
+import {
+  PROFILE_DRAFT_SAVED_EVENT,
+  describeDraftHistoryChange,
+  getDraftRecordCreator,
+  getDraftRecordDataSegments,
+  isDraftProfileRecord,
+} from 'utils/profileRecordSource';
 import toast from 'react-hot-toast';
 import { removeField } from './smallCard/actions';
 import { FaArrowRight, FaTimes } from 'react-icons/fa';
@@ -1067,6 +1076,14 @@ export const ProfileForm = ({
     });
   }, [setExternalState]);
   const canManageAccessLevel = isAdmin;
+  // Чернетка — інше джерело, ніж готова анкета: один запис у
+  // `multiData/profileMutations` з власним журналом. Посилання блоків і
+  // історія правок ідуть за ним (див. `utils/profileRecordSource.js`).
+  const isDraftRecord = isDraftProfileRecord(state);
+  const draftRecordSegments = getDraftRecordDataSegments(state);
+  const draftRecordCreator = getDraftRecordCreator(state);
+  const [draftHistory, setDraftHistory] = useState({ cardId: '', entries: [], loading: false, error: '' });
+  const fieldsMapForHistory = useMemo(() => new Map(pickerFields.map(field => [field.name, field])), []);
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
   const ppTechnicalInputRef = useRef(null);
@@ -2255,6 +2272,46 @@ export const ProfileForm = ({
     }, {}));
   }, [readOverlayFieldAdditions]);
 
+  // Журнал чернетки (`multiData/profileMutationHistory/{картка}`): кожне
+  // збереження автора, редактора чи адміна — запис «поле: було → стало».
+  // Пропозиції редакторів (`multiData/editsHistory`) його не містять: правки
+  // чернетки йдуть не шаром, а в неї саму, і доти адмін не бачив їх ніде,
+  // крім черги на `create-profile`. Перечитується на відкритті, на «усі
+  // поля» і після кожного запису чернетки в цьому табі.
+  useEffect(() => {
+    if (!isAdmin || !isDraftRecord || !state?.userId || typeof window === 'undefined') return undefined;
+    const cardId = state.userId;
+    let cancelled = false;
+    let sequence = 0;
+    const load = () => {
+      sequence += 1;
+      const current = sequence;
+      setDraftHistory(previous => ({ ...previous, cardId, loading: true }));
+      loadProfileMutationHistory(cardId)
+        .then(entries => {
+          if (cancelled || current !== sequence) return;
+          setDraftHistory({ cardId, entries, loading: false, error: '' });
+        })
+        .catch(error => {
+          if (cancelled || current !== sequence) return;
+          setDraftHistory({ cardId, entries: [], loading: false, error: error?.code || error?.message || 'unknown' });
+        });
+    };
+    const handleReload = event => {
+      const eventCardId = event?.detail?.userId || event?.detail?.cardId;
+      if (eventCardId && eventCardId !== cardId) return;
+      load();
+    };
+    load();
+    window.addEventListener(PROFILE_BACKEND_REFRESH_EVENT, handleReload);
+    window.addEventListener(PROFILE_DRAFT_SAVED_EVENT, handleReload);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(PROFILE_BACKEND_REFRESH_EVENT, handleReload);
+      window.removeEventListener(PROFILE_DRAFT_SAVED_EVENT, handleReload);
+    };
+  }, [isAdmin, isDraftRecord, state?.userId]);
+
   // Кнопка «усі поля» перечитує анкету з бекенду — а пропозиції редакторів і
   // їхні попередні версії лежать поза анкетою, тож перечитуються тут.
   useEffect(() => {
@@ -2812,6 +2869,7 @@ ${entries.join('\n')}`;
       const header = buildProfileFormBlockHeader(resolveFieldDisplayBlock(field), {
         profileId: state?.userId,
         ownerId: auth.currentUser?.uid,
+        draftSegments: draftRecordSegments,
       });
       const existing = byPath.get(header.path);
 
@@ -3040,6 +3098,30 @@ ${entries.join('\n')}`;
           })}
         </div>
       )}
+      {isAdmin && isDraftRecord && draftHistory.cardId === state.userId && (
+        <DraftHistoryBox data-testid="draft-history">
+          <summary>
+            Історія змін чернетки
+            {draftHistory.loading ? ' · читаємо…' : ` (${draftHistory.entries.length})`}
+          </summary>
+          {draftHistory.error
+            ? <DraftHistoryNote>Журнал чернетки не прочитано: {draftHistory.error}</DraftHistoryNote>
+            : !draftHistory.loading && draftHistory.entries.length === 0
+              ? <DraftHistoryNote>Змін ще не записано.</DraftHistoryNote>
+              : draftHistory.entries.map(entry => (
+                <DraftHistoryRow key={entry.entryId} data-testid="draft-history-entry">
+                  <span>{entry.at ? new Date(entry.at).toLocaleString('uk-UA') : '—'}</span>
+                  <span>
+                    {entry.actorUid && entry.actorUid === draftRecordCreator
+                      ? 'автор'
+                      : isAdminUid(entry.actorUid) ? 'адмін' : (entry.actorUid || '—')}
+                  </span>
+                  <strong>{getFieldLabel(fieldsMapForHistory.get(entry.fieldName)) || entry.fieldName}</strong>
+                  <span>{describeDraftHistoryChange(entry.change)}</span>
+                </DraftHistoryRow>
+              ))}
+        </DraftHistoryBox>
+      )}
       <PickerContainer>
         <FieldMainRow>
           <InputDiv>
@@ -3099,7 +3181,9 @@ ${entries.join('\n')}`;
           // Поле, пришпилене до чужого блоку, називає свій справжній вузол саме
           // тут: інпут стоїть під імʼям, а лежить значення в іншому місці, і
           // мовчати про це означало б спитати «чому в картці немає прізвища».
-          const foreignNodeLabel = PROFILE_FORM_FIELD_DISPLAY_BLOCKS[field.name]
+          // У чернетки вузлів немає — усі поля лежать одним записом, і «лежить
+          // в іншому вузлі» про неї неправда.
+          const foreignNodeLabel = PROFILE_FORM_FIELD_DISPLAY_BLOCKS[field.name] && !draftRecordSegments
             ? buildProfileFormBlockHeader(resolveProfileFormBlock(field.name), {
                 profileId: state?.userId,
                 ownerId: auth.currentUser?.uid,
@@ -4027,6 +4111,36 @@ const BlockHint = styled.p`
   color: var(--km-muted);
   font-size: 11px;
   line-height: 1.45;
+`;
+
+// Журнал чернетки — згорнутий за замовчуванням: його відкривають, коли
+// треба звірити, хто і що міняв, а не щоразу, як відкривають анкету.
+const DraftHistoryBox = styled.details`
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--km-border);
+  border-radius: 10px;
+  background: var(--km-card);
+  color: var(--km-text);
+  font-size: 13px;
+
+  summary { cursor: pointer; font-weight: 700; }
+`;
+
+const DraftHistoryRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--km-border);
+  overflow-wrap: anywhere;
+
+  span:first-child { color: var(--km-muted); font-size: 12px; }
+`;
+
+const DraftHistoryNote = styled.p`
+  margin: 8px 0 0;
+  color: var(--km-muted);
 `;
 
 // Поле, показане не у своєму блоці, називає свій вузол просто над собою.

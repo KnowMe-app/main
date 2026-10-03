@@ -2920,11 +2920,18 @@ const isIndexableProfileDraft = mutation => Boolean(
   && typeof mutation.data === 'object',
 );
 
+// Розгорнута чернетка несе з собою адресу свого джерела: хто автор
+// (`multiData/profileMutations/{автор}/{картка}`) і яка ревізія прочитана.
+// Без них екран, що отримав чернетку з видачі, не мав як ні перечитати її, ні
+// записати назад — і писав у вузли готової анкети, яких у чернетки немає
+// (див. `utils/profileRecordSource.js`).
 const expandProfileDraft = (cardId, mutation) => ({
   ...mutation.data,
   userId: cardId,
   __profileMutationOperation: 'create',
   __profileMutationStatus: mutation.status,
+  __profileMutationCreatedBy: mutation.createdBy || '',
+  __profileMutationRevision: Number(mutation.revision) || 0,
 });
 
 /**
@@ -2996,6 +3003,25 @@ const readProfileDraftForSearchHit = async cardId => {
   const all = await readAllProfileDraftsOnce();
   const mutation = all[cardId];
   return mutation ? showProfileDraftHit(cardId, mutation, viewerId) : null;
+};
+
+/**
+ * Чернетка за id — те саме читання, що й для влучання пошуку, і та сама межа
+ * показу (`showProfileDraftHit`). Коли автор відомий (екран уже тримає
+ * чернетку), це один точковий запит саме за її адресою; інакше — шлях через
+ * мапу авторів, як у пошуку.
+ */
+export const fetchProfileDraftById = async (cardId, { creatorUid = '' } = {}) => {
+  const id = String(cardId || '').trim();
+  if (!id) return null;
+  const viewerId = String(auth.currentUser?.uid || '').trim();
+  if (!viewerId) return null;
+  const creator = String(creatorUid || '').trim();
+  if (creator) {
+    const mutation = await readProfileDraftAt(creator, id);
+    if (mutation) return showProfileDraftHit(id, mutation, viewerId);
+  }
+  return readProfileDraftForSearchHit(id);
 };
 
 const addSearchHit = async (userId, users) => {

@@ -177,6 +177,13 @@ import {
 } from 'utils/cache';
 import { updateCard, saveCard } from 'utils/cardsStorage';
 import {
+  fetchProfileRecordById,
+  getDraftRecordCreator,
+  isDraftProfileRecord,
+  rememberDraftRecordRevision,
+  saveDraftProfileRecord,
+} from 'utils/profileRecordSource';
+import {
   formatDateAndFormula,
   formatDateToDisplay,
   formatDateToServer,
@@ -2003,6 +2010,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
+    // Чернетка пишеться в себе саму — у дані й журнал правок
+    // (`profileMutationHistory`), а не у вузли готової анкети: тих у неї
+    // немає, і запис туди заводив поруч із чернеткою другу картку, а сама
+    // чернетка правки адміна не бачила. Індекс чернетки веде
+    // `saveCreateProfileMutation`; `searchKey` належить стрічці.
+    if (isDraftProfileRecord(syncedState)) {
+      await saveDraftProfileRecord({
+        submitted: syncedState,
+        deletedKeys,
+        actorUid: auth.currentUser?.uid,
+      });
+      return;
+    }
+
     let existingData = null;
     if (syncedState?.userId) {
       try {
@@ -2972,6 +2993,42 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       stateKeysCount: Object.keys(currentState).length,
     });
 
+    // Чернетка у формі — це знімок, узятий з видачі пошуку чи з кеша карток,
+    // а автор править її далі. Перечитується вона за власною адресою
+    // (`multiData/profileMutations/{автор}/{картка}`, один точковий запит), і
+    // новіша ревізія заміняє знімок — доки адмін сам нічого не змінив.
+    // Вузли готової анкети тут питати нема чого: у чернетки їх немає, і
+    // відповідь «порожньо» лишала б на екрані старе.
+    const revalidateDraftRecord = base => {
+      rememberDraftRecordRevision(base);
+      fetchProfileRecordById(activeUserId, { prefer: 'draft', creatorUid: getDraftRecordCreator(base) })
+        .then(fresh => {
+          const latestState = latestProfileSnapshotRef.current || {};
+          if (
+            !fresh
+            || profileFetchRequestRef.current !== requestId
+            || String(latestState.userId || '').trim() !== activeUserId
+            || profileSnapshotVersionRef.current !== startedVersion
+          ) return;
+          const sameRevision = isDraftProfileRecord(fresh)
+            && Number(fresh.__profileMutationRevision) === Number(base.__profileMutationRevision);
+          if (sameRevision) return;
+          const freshProfile = { ...fresh, userId: activeUserId };
+          rememberDraftRecordRevision(freshProfile);
+          updateCard(activeUserId, freshProfile);
+          logRenderSource('backend', freshProfile);
+          setState(freshProfile, {
+            source: 'backend',
+            caller: 'profile-data:draft-revalidate',
+            reason: 'draft-record-newer-than-snapshot',
+          });
+          setProfileSource('backend');
+        })
+        .catch(error => {
+          console.warn('[AddNewProfile] draft record revalidation failed', error);
+        });
+    };
+
     if (Object.keys(currentState).length > 1) {
       if (!currentProfileSource) {
         logProfileRestoreStep('profile-data:state-already-hydrated-set-cache-source', {
@@ -2990,6 +3047,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         });
         logRenderSource(currentProfileSource || 'state', currentState);
       }
+      if (isDraftProfileRecord(currentState)) revalidateDraftRecord(currentState);
       return;
     }
 
@@ -3008,6 +3066,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         reason: 'initial-hydration-from-local-cache',
       });
       setProfileSource('cache');
+      if (isDraftProfileRecord(cachedProfile)) revalidateDraftRecord(cachedProfile);
     } else {
       if (backendInitialLoadUserIdsRef.current.has(activeUserId)) {
         logProfileSnapshotUpdate('backend', {
@@ -3029,7 +3088,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setProfileSource('loading');
       (async () => {
         try {
-          const data = await fetchUserById(activeUserId);
+          // Вузли готової анкети, а коли їх немає — чернетка з цим id.
+          const data = await fetchProfileRecordById(activeUserId);
           if (data) {
             const latestState = latestProfileSnapshotRef.current || {};
             const latestUserId = String(latestState.userId || '').trim();
@@ -3060,6 +3120,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             });
             updateCard(activeUserId, data);
             const backendProfile = { ...data, userId: data.userId || activeUserId };
+            rememberDraftRecordRevision(backendProfile);
             logRenderSource('backend', backendProfile);
             setState(backendProfile, {
               source: 'backend',

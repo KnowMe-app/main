@@ -10,7 +10,7 @@ import {
   rememberOwnOverlayCardLocally,
 } from 'utils/ownOverlayCardsStorage';
 
-import { database, updateSearchId } from 'components/config';
+import { database, fetchProfileDraftById, updateSearchId } from 'components/config';
 
 const get = (...args) =>
   withAdminDownloadToast(firebaseGet(...args), {
@@ -132,6 +132,16 @@ export const getCanonicalCard = async cardUserId => {
   const snapshots = await Promise.all(paths.map(path => get(ref2(database, `${path}/${cardUserId}`))));
   const values = snapshots.map(snapshot => (snapshot.exists() ? snapshot.val() : null));
   const [card, details, contacts, workflow, technical] = values;
+
+  // Жодного вузла — це не порожня анкета, а картка, яка ще живе чернеткою
+  // (`multiData/profileMutations`). Її канонічний вигляд — дані самої
+  // чернетки: від них рахується шар доповнення, і на них лягає прийняте.
+  // Порожня основа тут означала б, що кожне доповнення чернетки «додає» все,
+  // що в ній уже стоїть.
+  if (values.every(value => value === null)) {
+    const draft = await fetchProfileDraftById(cardUserId);
+    if (draft) return draft;
+  }
 
   const merged = mergeProfileNodes({
     userId: cardUserId,

@@ -12,9 +12,10 @@ jest.mock('firebase/database', () => ({
 jest.mock('components/config', () => ({
   database: { app: 'db' },
   updateSearchId: jest.fn(async () => undefined),
+  fetchProfileDraftById: jest.fn(async () => null),
 }));
 
-const { updateSearchId } = require('components/config');
+const { updateSearchId, fetchProfileDraftById } = require('components/config');
 
 const {
   applyOverlayToCard,
@@ -393,6 +394,29 @@ describe('getCanonicalCard', () => {
   });
 
   const snapshotFor = data => ({ exists: () => data !== null, val: () => data });
+
+  // Картка, яка ще живе чернеткою, вузлів не має: її канон — дані самої
+  // чернетки. Порожня основа означала б, що доповнення чернетки «додає» все,
+  // що в ній уже стоїть, а прийняте лягало б у вузли поруч із нею.
+  it('falls back to the draft when the card has no profile node at all', async () => {
+    get.mockImplementation(async () => snapshotFor(null));
+    fetchProfileDraftById.mockResolvedValueOnce({
+      userId: 'draft-1', phone: ['380501112233'], __profileMutationOperation: 'create', __profileMutationCreatedBy: 'author-1',
+    });
+
+    const card = await getCanonicalCard('draft-1');
+
+    expect(fetchProfileDraftById).toHaveBeenCalledWith('draft-1');
+    expect(card).toEqual(expect.objectContaining({ phone: ['380501112233'], __profileMutationCreatedBy: 'author-1' }));
+  });
+
+  it('does not look for a draft when the card has its nodes', async () => {
+    get.mockImplementation(async ({ path }) => snapshotFor(path === 'matchingCards/card-1' ? { name: 'A' } : null));
+
+    await getCanonicalCard('card-1');
+
+    expect(fetchProfileDraftById).not.toHaveBeenCalled();
+  });
 
   it('merges the profile nodes and never reads the legacy collection', async () => {
     // Legacy-колекція сюди не входить: веб із неї не читає, вона лишилась
