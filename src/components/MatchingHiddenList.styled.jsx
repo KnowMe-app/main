@@ -1454,3 +1454,22 @@ export const PostponeCancel = styled.button`
   line-height: 1;
   cursor: pointer;
 `;
+
+export const PostponeBadge = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  padding: 3px 9px;
+  border-radius: 99px;
+  background: color-mix(in srgb, ${POSTPONE_LANE_COLOR} 10%, transparent);
+  color: ${POSTPONE_LANE_COLOR};
+  font-size: 12px;
+  font-weight: 650;
+
+  svg {
+    width: 12px;
+    height: 12px;
+    flex: none;
+  }
+`;

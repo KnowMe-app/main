@@ -701,6 +701,19 @@ export const removeFavoriteUser = async (userId, ownerId) => {
   }
 };
 
+/*
+ * Реакція з роллю анкети в значенні (`utils/anketaReactions`): `'ed'` — лише
+ * донорська анкета картки з двома. `undefined` знімає ключ. Помилку не
+ * ковтає — викликач вирішує, чи повертати стан на екрані.
+ */
+export const setReactionUserValue = async (kind, userId, ownerId, value) => {
+  const owner = auth.currentUser;
+  if (!owner) return;
+  const path = `multiData/${kind === 'dislikes' ? 'dislikes' : 'favorites'}/${ownerId || owner.uid}/${userId}`;
+  if (value === undefined || value === null || value === false) await remove(ref2(database, path));
+  else await set(ref2(database, path), value);
+};
+
 export const addDislikeUser = async (userId, ownerId, dislikedAt) => {
   try {
     const owner = auth.currentUser;
@@ -4966,7 +4979,11 @@ const MATCHING_CARDS_PAGE_WINDOW_CAP = 512;
 // розкидані по 219 датах, найбільша група однією датою — 4, найгірший випадок
 // «група + порція» — 10 карток. Подвійний запас це покриває, а подвоєння вікна
 // лишається запасним ходом на випадок, якого замір не бачив.
-const MATCHING_CARDS_FIRST_WINDOW_FACTOR = 2;
+//
+// Подвійний запас змінено на сталий: найбільша група однією датою — 4, тож
+// вісім карток понад порцію покривають курсор усередині групи з запасом, а
+// подвоєння вікна лишається запасним ходом.
+const MATCHING_CARDS_CURSOR_DATE_SLACK = 8;
 
 const buildMatchingCardRef = userId => ref2(database, `${MATCHING_CARDS_ROOT}/${userId}`);
 
@@ -5355,9 +5372,14 @@ const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null } =
   // парою (дата, id) лишало менше, ніж треба, вікно подвоювалось — і кожна
   // сторінка коштувала два запити замість одного. Запас дешевший за зайвий
   // круг: картка важить сотні байтів, а круг — це ще й затримка.
+  //
+  // Без курсора збігу дат немає взагалі — перша сторінка стрічки починається
+  // з найсвіжішої картки, і вікно рівно на порцію. З курсором запас — не
+  // «вдвічі», а на одну групу однієї дати (`MATCHING_CARDS_CURSOR_DATE_SLACK`):
+  // подвоєння на першій сторінці коштувало 154 картки замість 77.
   const firstWindow = Math.min(
     MATCHING_CARDS_PAGE_WINDOW_CAP,
-    Math.max(fetchLimit, safeLimit * MATCHING_CARDS_FIRST_WINDOW_FACTOR),
+    normalizedCursor.date ? fetchLimit + MATCHING_CARDS_CURSOR_DATE_SLACK : fetchLimit,
   );
 
   // `lastLogin2` — це дата з точністю до дня, тож курсор регулярно потрапляє в

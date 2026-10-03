@@ -236,43 +236,31 @@ const PublishHead = styled.div`
 
   > span:first-child { font-size: 14px; font-weight: 600; }
 `;
-const PublishStatus = styled.span`
-  font-size: 11px;
-  font-weight: 600;
-  padding: 5px 12px;
-  border-radius: 99px;
-  background: ${({ $published }) => ($published ? '#EBF8EF' : '#FEE9E9')};
-  color: ${({ $published }) => ($published ? '#2E9B55' : '#D44')};
-`;
-const PublishText = styled.p`margin:0 0 14px;font-size:12px;line-height:1.5;color:var(--muted);`;
-const PublishSubLabel = styled.div`
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .6px;
-  color: var(--muted);
-`;
-const PublishFootnote = styled.p`margin:10px 0 0;text-align:center;font-size:11px;line-height:1.5;color:var(--muted);`;
-const RoleActionList = styled.div`display:flex;flex-direction:column;gap:8px;margin-bottom:16px;`;
+const RoleActionList = styled.div`display:flex;flex-direction:column;gap:8px;`;
 const RoleActionRow = styled.div`
-  display:grid;
-  grid-template-columns:minmax(0,1fr) auto;
-  gap:10px;
-  align-items:center;
-  padding:10px 12px;
-  border:1px solid var(--border);
-  border-radius:12px;
-  background:var(--bg);
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  ${({ $framed }) => ($framed
+    ? 'padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--bg);'
+    : 'padding:2px 0;')}
 `;
+// Назва ролі й статус — один рядок, кнопки — під ним. Поруч із кнопками
+// на телефоні їм лишалось ~100 px, і «Сурогатна / мати», «Не /
+// опублікована» переносились (чи обрізались трикрапкою).
 const RoleActionMeta = styled.div`
-  min-width:0;
-  b{display:block;font-size:14px;font-weight:600;}
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:10px;
+  b,span{white-space:nowrap;}
+  b{font-size:14px;font-weight:600;}
   span{font-size:12px;color:var(--muted);}
 `;
 const RolePublishStatus = styled.span`
-  && { color: ${({ $published }) => ($published ? '#2E9B55' : '#D44')}; font-weight: 600; white-space: nowrap; }
+  && { color: ${({ $published }) => ($published ? '#2E9B55' : '#D44')}; font-weight: 600; }
 `;
-const RoleActionButtons = styled.div`display:flex;align-items:center;gap:2px;justify-content:flex-end;`;
+const RoleActionButtons = styled.div`display:flex;align-items:center;gap:6px;white-space:nowrap;`;
 const RolePublishBtn = styled.button`
   padding:8px 11px;
   background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);
@@ -2277,23 +2265,19 @@ export const MyProfile = () => {
     <SubmitWrap ref={node => { sectionRefs.current.publish = node; }} data-testid="publish-card">
       <PublishHead>
         <span>{uiText('Публікація', language)}</span>
-        <PublishStatus $published={isPublished}>
-          ● {uiText(isPublished ? 'Опублікована' : 'Не опублікована', language)}
-        </PublishStatus>
       </PublishHead>
-      <PublishText>
-        {uiText(isPublished
-          ? 'Анкету видно в стрічці й у пошуку. Зміни зберігаються самі.'
-          : 'Поки анкету не опубліковано, у стрічці її не видно. Зміни зберігаються самі.', language)}
-      </PublishText>
-      {rolesList.length > 1 ? (
+      {/* Статус — у кожної анкети свій, тож спільної плашки «Не опублікована»
+          й пояснення під нею тут більше немає: вони повторювали те, що вже
+          сказано в рядку анкети. Рамка навколо рядка — лише коли анкет
+          кілька: одна анкета в рамці всередині картки читалась коробкою в
+          коробці. */}
+      {rolesList.length > 0 ? (
         <RoleActionList>
-          <PublishSubLabel>{uiText('Анкети', language)}</PublishSubLabel>
           {rolesList.map(role => {
             const label = MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role;
             const rolePublished = isPublished && !hiddenRoles.includes(role);
             return (
-              <RoleActionRow key={role} data-testid={`publish-role-${role}`}>
+              <RoleActionRow key={role} $framed={rolesList.length > 1} data-testid={`publish-role-${role}`}>
                 <RoleActionMeta>
                   <b>{uiText(label, language)}</b>
                   <RolePublishStatus $published={rolePublished}>
@@ -2324,11 +2308,11 @@ export const MyProfile = () => {
           })}
         </RoleActionList>
       ) : isPublished ? (
+        // Анкета без ролі — рядка анкети немає, лишається одна дія.
         <UnpublishBtn type="button" onClick={hideProfile}>{uiText('Зняти з публікації', language)}</UnpublishBtn>
       ) : (
         <SubmitBtn type="button" onClick={publishProfile}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
       )}
-      <PublishFootnote>{uiText(rolesList.length > 1 ? 'Видалити акаунт можна в меню ⋮.' : 'Очистити чи видалити анкету можна в меню ⋮.', language)}</PublishFootnote>
     </SubmitWrap>
   </Page>;
 };

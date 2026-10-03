@@ -248,7 +248,16 @@ export const describeGlasses = (value, lang) => {
   const key = lower(raw).replace(/[.!]+$/u, '');
   if (GLASSES_NO.has(key)) return lang === 'en' ? "I don't wear glasses, my eyesight is good." : 'Окулярів не ношу, зір гарний.';
   if (GLASSES_YES.has(key)) return lang === 'en' ? 'I wear glasses.' : 'Ношу окуляри.';
-  return lang === 'en' ? `I wear glasses (${raw}).` : `Ношу окуляри (${raw}).`;
+  // Власна відповідь. Число з діоптріями («-2.5», «+1,5», «-2/-3») — це вже
+  // сам зір, і реченням він читається як «Мій зір — −2.5 діоптрії». Решта
+  // («лінзи», «для читання», «лише за кермом») стає уточненням про зір:
+  // «Ношу окуляри (лінзи)» неправда для тієї, хто носить саме лінзи.
+  const text = raw.replace(/[.!]+$/u, '');
+  if (/^[+-−]?\s*\d+([.,]\d+)?(\s*[/;]\s*[+-−]?\s*\d+([.,]\d+)?)?$/u.test(text)) {
+    const diopters = text.replace(/^-/u, '−').replace(/\/-/gu, '/−');
+    return lang === 'en' ? `My eyesight is ${diopters} diopters.` : `Мій зір — ${diopters} діоптрії.`;
+  }
+  return lang === 'en' ? `About my eyesight and glasses: ${lowerFirstWord(text)}.` : `Щодо зору й окулярів — ${lowerFirstWord(text)}.`;
 };
 
 /*

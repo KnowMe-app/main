@@ -33,7 +33,11 @@ export const listCardAnketaRoles = user => {
 export const isOrganisationAnketaRole = role => ORGANISATION_ROLES.includes(role);
 
 /** Рядки стрічки для картки: роль анкети кожного, `''` — уся картка одним рядком. */
-export const listFeedRowAnketaRoles = user => {
+export const listFeedRowAnketaRoles = (user, hiddenRoles = []) => {
   const roles = listCardAnketaRoles(user);
-  return roles.length ? roles : [''];
+  if (!roles.length) return [''];
+  // Ролі, яких цей читач у деці не бачить (донорка не бачить донорських
+  // анкет): від донорки-агентки лишається сама агентська анкета.
+  const shown = roles.filter(role => !hiddenRoles.includes(role));
+  return shown.length ? shown : roles;
 };

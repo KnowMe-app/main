@@ -112,6 +112,7 @@ import {
   updateDataInFiresoreDB,
   readOwnerGetInTouchSorted,
   setOwnerGetInTouch,
+  setReactionUserValue,
 } from './config';
 import { get as firebaseGet, onValue as firebaseOnValue, ref as refDb, query, orderByKey, startAt, endAt } from 'firebase/database';
 import {
@@ -245,9 +246,17 @@ import {
   viewerRoleSignature,
   donorFeedRoleFilterLeavesNothing,
   listFeedRoleFilterKeysForViewer,
+  listViewerHiddenCardRoles,
   DONOR_FEED_ROLE_FILTER_KEYS,
 } from 'utils/matchingPeerVisibility';
-import { listFeedRowAnketaRoles } from 'utils/cardAnketas';
+import { listCardAnketaRoles, listFeedRowAnketaRoles } from 'utils/cardAnketas';
+import {
+  isCardFullyReacted,
+  listWholeCardReactionIds,
+  reactionCoversAnketa,
+  removeAnketaFromReactionValue,
+  toggleAnketaReactionValue,
+} from 'utils/anketaReactions';
 import {
   addMonthsIsoDate,
   formatPostponeDate,
@@ -288,11 +297,13 @@ import {
   cacheFavoriteUsers,
   syncFavorites,
   getFavorites,
+  setFavorite,
 } from '../utils/favoritesStorage';
 import {
   cacheDislikedUsers,
   syncDislikes,
   getDislikes,
+  setDislike,
 } from '../utils/dislikesStorage';
 import {
   loadComments,
@@ -2693,9 +2704,10 @@ const Matching = () => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') {
       return;
     }
+    const hiddenRoles = listViewerHiddenCardRoles(donorRestrictionViewerRoleRef.current);
     setUsers(prev =>
       prev.filter(u => (
-        (!favoriteUsers[u.userId] && !dislikeUsers[u.userId])
+        !isCardFullyReacted(u, favoriteUsers, dislikeUsers, hiddenRoles)
         || stickyReactedUserIds.has(u.userId)
       ))
     );
@@ -3445,8 +3457,8 @@ const Matching = () => {
           searchKeySetKeys,
           filters: filtersRef.current || {},
           excludeIds: [
-            ...Object.keys(favoriteUsersRef.current),
-            ...Object.keys(dislikeUsersRef.current),
+            ...listWholeCardReactionIds(favoriteUsersRef.current),
+            ...listWholeCardReactionIds(dislikeUsersRef.current),
           ],
           offset: 0,
           limit: MATCHING_REFILL_LIMIT,
@@ -3663,9 +3675,12 @@ const Matching = () => {
         setDislikeUsers(disIds);
         syncFavorites(favIds);
         syncDislikes(disIds);
+        // Виключаються лише реакції на людину цілком: картка, де вирішено одну
+        // анкету з двох (`'ed'`), мусить дійти до деки — там її відсіє
+        // `isCardFullyReacted`, якщо нерішених анкет не лишилось.
         exclude = new Set([
-          ...Object.keys(favIds),
-          ...Object.keys(disIds),
+          ...listWholeCardReactionIds(favIds),
+          ...listWholeCardReactionIds(disIds),
         ]);
       } else {
         const localFav = getFavorites();
@@ -3681,8 +3696,8 @@ const Matching = () => {
           setFavoriteUsers(localFav);
           setDislikeUsers(localDis);
           exclude = new Set([
-            ...Object.keys(localFav),
-            ...Object.keys(localDis),
+            ...listWholeCardReactionIds(localFav),
+            ...listWholeCardReactionIds(localDis),
           ]);
         }
       }
@@ -5328,8 +5343,8 @@ const Matching = () => {
       }
 
       const baseExclude = new Set([
-        ...Object.keys(favoriteUsersRef.current),
-        ...Object.keys(dislikeUsersRef.current),
+        ...listWholeCardReactionIds(favoriteUsersRef.current),
+        ...listWholeCardReactionIds(dislikeUsersRef.current),
       ]);
 
       // The scoped source is paged just like the public feed. Read only the
@@ -6807,6 +6822,7 @@ const Matching = () => {
   // картки. Порожня відповідь чи помилка лишають аватар: свайпу є на чому
   // зупинитись, а не на порожній рамці.
   const photoRequestsRef = useRef(new Set());
+  const photoHydrationRequestedRef = useRef(new Set());
   const requestCardPhotos = React.useCallback(user => {
     const userId = user?.userId;
     if (!userId || photoRequestsRef.current.has(userId)) return;
@@ -6866,8 +6882,13 @@ const Matching = () => {
       if (!user.__photosHydrated) return true;
       return isMatchingSummaryCard(user) && Boolean(fullProfileByUserId[user.userId]);
     };
-    const candidates = pool.filter(needsPhotos);
+    // Картка, чиє фото вже питають, удруге не питається: ефект перезапускається
+    // на кожну зміну `feedSource`, а відповідь лягає в `photoCacheByUserId`
+    // аж після круга. Без цього картка без аватара коштувала три читання
+    // `profileDetails/{id}/photos` і три лістинги Storage на одному відкритті.
+    const candidates = pool.filter(user => needsPhotos(user) && !photoHydrationRequestedRef.current.has(user.userId));
     if (!candidates.length) return undefined;
+    candidates.forEach(user => photoHydrationRequestedRef.current.add(user.userId));
 
     const cachedUrls = getCachedPhotoUrlsMap(candidates.map(user => user.userId));
     const pending = candidates.filter(user => !cachedUrls[user.userId]);
@@ -6877,7 +6898,6 @@ const Matching = () => {
     }
     if (!pending.length) return undefined;
 
-    let cancelled = false;
     const resolved = {};
     Promise.all(pending.map(user => (
       // Анкета вже в руках, коли картка гідрована повністю: `knownPhotos` знімає
@@ -6895,15 +6915,16 @@ const Matching = () => {
           resolved[user.userId] = [];
         })
     ))).then(() => {
-      if (cancelled || !Object.keys(resolved).length) return;
+      // Відповідь лягає й тоді, коли ефект уже перезапустився: інакше вона
+      // губилась (поки `cancelled` її відкидав, ту саму картку питали знову
+      // на кожному перезапуску), а з памʼяттю запитаного вище її вже ніхто
+      // не попросив би вдруге.
+      if (!Object.keys(resolved).length) return;
       setPhotoCacheByUserId(prev => ({ ...prev, ...resolved }));
       const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
       if (stats && typeof console.table === 'function') console.table([stats]);
     });
-
-    return () => {
-      cancelled = true;
-    };
+    return undefined;
   }, [activeProfileIndex, detailOpen, feedSource, fullProfileByUserId, photoCacheByUserId]);
 
   useEffect(() => {
@@ -8017,7 +8038,10 @@ const Matching = () => {
       setFeedEndVisible(isVisible);
       if (!isVisible) return;
       endOfDeckLoadRef.current('feed-sentinel', { limit: MATCHING_FEED_PAGE_SIZE });
-    }, { rootMargin: '400px' });
+      // Запас — кілька екранів: рядок стрічки високий (фото на всю ширину), а
+      // сторінка невелика (`MATCHING_FEED_PAGE_SIZE`), тож наступна мусить
+      // приїхати раніше, ніж до кінця списку догорнуть.
+    }, { rootMargin: '2000px' });
     observer.observe(node);
     return () => observer.disconnect();
   }, [deckHasMore, detailIndex, filteredUsers.length, loading]);
@@ -8227,7 +8251,124 @@ const Matching = () => {
    * і є її поверненням — реакція знімає дизлайк, — тож два боки одного вибору
    * лишаються в одній рамці, як серце з хрестиком у стрічці.
    */
-  const buildHiddenRowExtras = React.useCallback(user => ({
+  /*
+   * «Повернутись пізніше» — відкладені картки стоять у кінці стрічки, доки не
+   * настала дата (`utils/matchingPostpone`). Дата — це позначка читача
+   * `getInTouch`, і читаються лише майбутні: `orderByValue + startAt(завтра)`
+   * по вузлу власника, один запит на таб, а не мапа цілком (в адміна вона
+   * важить сотні кілобайт). Зміну з цього екрана видно одразу: картка їде в
+   * кінець, і тост каже, куди саме.
+   */
+  //
+  // Порядок і показ — два різні стани. `postponeSortDates` прочитано один раз
+  // на відкритті сторінки, і лише він переставляє картки: відкладена щойно
+  // картка лишається під пальцем із плашкою «звернутись після …», а в кінець
+  // стає аж після перезавантаження. Інакше вона зникала б з-під дотику —
+  // та сама пастка, що й з реакціями (`keepReactedUserIds`).
+  // `postponeDates` — живі зміни з цього екрана, для плашки й доріжки.
+  const [postponeDates, setPostponeDates] = useState({});
+  const [postponeSortDates, setPostponeSortDates] = useState({});
+  useEffect(() => {
+    if (!ownerId) return undefined;
+    let cancelled = false;
+    readOwnerGetInTouchSorted(ownerId, { from: tomorrowIsoDate() }).then(rows => {
+      if (cancelled) return;
+      const next = {};
+      rows.forEach(row => {
+        if (typeof row.getInTouch === 'string') next[row.userId] = row.getInTouch;
+      });
+      setPostponeSortDates(next);
+      setPostponeDates(previous => ({ ...next, ...previous }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ownerId]);
+
+  const readRowPostponeDate = React.useCallback(row => (
+    Object.prototype.hasOwnProperty.call(postponeDates, row?.userId) ? postponeDates[row.userId] : row?.getInTouch
+  ), [postponeDates]);
+  const readRowPostponeSortDate = React.useCallback(row => postponeSortDates[row?.userId], [postponeSortDates]);
+
+  const saveRowPostpone = React.useCallback(async (user, nextDate) => {
+    const id = user?.userId;
+    if (!id || !ownerId) return;
+    const previous = readRowPostponeDate(user);
+    setPostponeDates(current => ({ ...current, [id]: nextDate }));
+    const saved = await setOwnerGetInTouch(ownerId, id, nextDate);
+    if (!saved) {
+      setPostponeDates(current => ({ ...current, [id]: previous || '' }));
+      toast.error(uiText('Не вдалося відкласти картку. Спробуйте ще раз', language));
+      return;
+    }
+    if (nextDate) {
+      toast.success(uiText('Звернутись після {date} — після оновлення сторінки картка стане в кінець списку', language, { date: formatPostponeDate(nextDate) }));
+    } else {
+      toast.success(uiText('Відкладення знято', language));
+    }
+  }, [language, ownerId, readRowPostponeDate]);
+
+  const buildRowPostpone = React.useCallback(user => ({
+    until: readRowPostponeDate(user),
+    onSet: months => { void saveRowPostpone(user, addMonthsIsoDate(months)); },
+    onClear: () => { void saveRowPostpone(user, ''); },
+  }), [readRowPostponeDate, saveRowPostpone]);
+
+  /*
+   * Рядки картки на екрані: анкета, якої читач не бачить (донорці — донорська
+   * анкета донорки-агентки), не малюється; у стрічці — ще й вирішена реакцією
+   * анкета, доки картку не тримає `stickyReactedUserIds` (щойно вирішене лишається
+   * під пальцем до наступної збірки деки). У колекціях — лише анкети, яких
+   * стосується реакція цієї колекції: «в обраних саме донорська».
+   */
+  const resolveRowAnketaRoles = user => {
+    const id = user?.userId;
+    const roles = listFeedRowAnketaRoles(user, feedRowHiddenRoles);
+    if (!roles[0]) return roles;
+    let shown = roles;
+    if (viewMode === 'favorites') shown = roles.filter(role => reactionCoversAnketa(favoriteUsers[id], role));
+    else if (viewMode === 'dislikes') shown = roles.filter(role => reactionCoversAnketa(dislikeUsers[id], role));
+    else if (!isSearching && !stickyReactedUserIds.has(id)) {
+      shown = roles.filter(role => (
+        !reactionCoversAnketa(favoriteUsers[id], role) && !reactionCoversAnketa(dislikeUsers[id], role)
+      ));
+    }
+    return shown.length ? shown : roles;
+  };
+
+  const buildRowReactionActions = (user, anketaRole = '') => {
+    const disliked = reactionCoversAnketa(dislikeUsers[user.userId], anketaRole);
+    const liked = reactionCoversAnketa(favoriteUsers[user.userId], anketaRole);
+    return {
+      primaryAction: {
+        icon: disliked ? <FaUndoAlt size={13} /> : <FaTimes size={14} />,
+        title: uiText(disliked ? 'Повернути в «Усі»' : 'Не цікаво', language),
+        active: disliked,
+        onClick: () => toggleRowAnketaReaction(user, anketaRole, 'dislikes'),
+      },
+      secondaryAction: {
+        icon: liked ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
+        title: uiText('В обране', language),
+        accent: true,
+        active: liked,
+        onClick: () => toggleRowAnketaReaction(user, anketaRole, 'favorites'),
+      },
+    };
+  };
+
+  // Звичайна функція, а не `useCallback`: вона бере реакції по анкетах із
+  // тих самих помічників, що й рядок стрічки, а ті живуть рендер.
+  const buildHiddenRowExtras = (user, anketaRole = '') => ({
+    // Повернути з «Не цікавих» одну анкету картки з двома — зняти дизлайк
+    // саме з неї; картка з однією анкетою повертається, як і раніше,
+    // власною кнопкою списку.
+    ...(anketaRole ? {
+      primaryAction: {
+        icon: <FaUndoAlt size={13} />,
+        title: uiText('Повернути в загальний список', language),
+        onClick: () => toggleRowAnketaReaction(user, anketaRole, 'dislikes'),
+      },
+    } : {}),
     onEnrich: isAdmin ? undefined : handleRowEnrichProfile,
     onRequestContacts: handleRequestRowContacts,
     canViewContacts: canOfferProfileContacts({
@@ -8238,26 +8379,9 @@ const Matching = () => {
     reviewsAction: buildRowReviewsAction(user.userId),
     reviewsSlot: buildRowReviewsSlot(user.userId),
     onRequestPhotos: requestCardPhotos,
-    secondaryAction: {
-      icon: favoriteUsers[user.userId] ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
-      title: uiText('В обране', language),
-      accent: true,
-      active: Boolean(favoriteUsers[user.userId]),
-      onClick: toggleRowFavorite,
-    },
-  }), [
-    buildRowReviewsAction,
-    buildRowReviewsSlot,
-    currentAccessLevel,
-    favoriteUsers,
-    handleRequestRowContacts,
-    handleRowEnrichProfile,
-    isAdmin,
-    language,
-    ownerId,
-    requestCardPhotos,
-    toggleRowFavorite,
-  ]);
+    postpone: buildRowPostpone(user),
+    secondaryAction: buildRowReactionActions(user, anketaRole).secondaryAction,
+  });
 
   useEffect(() => {
     if (!diagnosticsEnabled || !isAdmin || diagnosticsModule) return;
@@ -8340,6 +8464,70 @@ const Matching = () => {
     });
   }, [dislikeUsers, favoriteUsers, feedSourceWithoutOwnEdits, ownDislikeUsers, ownFavoriteUsers, ownerId, rememberReactedCard, withLazyPhotos]);
 
+  /*
+   * Реакція на одну анкету картки з двома (донорка-агентка): роль анкети
+   * лягає в значення реакції (`utils/anketaReactions`), а ключ лишається id
+   * картки. Картка з однією анкетою йде старим шляхом — `toggleRowFavorite` /
+   * `toggleRowHidden`, тобто `true` і мітка часу, як було.
+   */
+  const toggleRowAnketaReaction = React.useCallback(async (user, anketaRole, kind) => {
+    const id = user?.userId;
+    if (!id) return;
+    if (!anketaRole) {
+      if (kind === 'favorites') toggleRowFavorite(user);
+      else toggleRowHidden(user);
+      return;
+    }
+    const cardRoles = listCardAnketaRoles(user);
+    rememberReactedCard(id);
+    const isFavorite = kind === 'favorites';
+    const ownMap = isFavorite ? ownFavoriteUsers : ownDislikeUsers;
+    const otherOwnMap = isFavorite ? ownDislikeUsers : ownFavoriteUsers;
+    const nextValue = toggleAnketaReactionValue({
+      value: ownMap[id],
+      anketaRole,
+      cardRoles,
+      fullValue: isFavorite ? true : Date.now(),
+    });
+    // Лайк знімає дизлайк тієї самої анкети (і навпаки), а не всієї людини.
+    const addsReaction = reactionCoversAnketa(nextValue, anketaRole);
+    const otherNextValue = addsReaction
+      ? removeAnketaFromReactionValue({ value: otherOwnMap[id], anketaRole, cardRoles })
+      : otherOwnMap[id];
+    const withValue = (map, value) => {
+      const next = { ...map };
+      if (value === undefined) delete next[id];
+      else next[id] = value;
+      return next;
+    };
+    const applyMaps = (favoriteValue, dislikeValue) => {
+      setOwnFavoriteUsers(previous => withValue(previous, favoriteValue));
+      setFavoriteUsers(previous => withValue(previous, favoriteValue));
+      setOwnDislikeUsers(previous => withValue(previous, dislikeValue));
+      setDislikeUsers(previous => withValue(previous, dislikeValue));
+    };
+    const previousFavorite = ownFavoriteUsers[id];
+    const previousDislike = ownDislikeUsers[id];
+    if (isFavorite) applyMaps(nextValue, otherNextValue);
+    else applyMaps(otherNextValue, nextValue);
+    const favoriteValue = isFavorite ? nextValue : otherNextValue;
+    const dislikeValue = isFavorite ? otherNextValue : nextValue;
+    setFavorite(id, Boolean(favoriteValue));
+    setDislike(id, Boolean(dislikeValue));
+    try {
+      await setReactionUserValue(kind, id, ownerId, nextValue);
+      if (otherNextValue !== otherOwnMap[id]) {
+        await setReactionUserValue(isFavorite ? 'dislikes' : 'favorites', id, ownerId, otherNextValue);
+      }
+    } catch (error) {
+      console.error('Failed to save anketa reaction:', error);
+      applyMaps(previousFavorite, previousDislike);
+      setFavorite(id, Boolean(previousFavorite));
+      setDislike(id, Boolean(previousDislike));
+      toast.error(uiText('Не вдалося зберегти реакцію. Спробуйте ще раз', language));
+    }
+  }, [language, ownDislikeUsers, ownFavoriteUsers, ownerId, rememberReactedCard, toggleRowFavorite, toggleRowHidden]);
+
   /**
    * Шар доповнення накладається ще раз — уже поверх догідратованої анкети.
    *
@@ -8349,66 +8537,21 @@ const Matching = () => {
    * після злиття шар кладеться вдруге — накладання ідемпотентне: додане вже
    * на місці, прибране знімається знову.
    */
-  /*
-   * «Повернутись пізніше» — відкладені картки стоять у кінці стрічки, доки не
-   * настала дата (`utils/matchingPostpone`). Дата — це позначка читача
-   * `getInTouch`, і читаються лише майбутні: `orderByValue + startAt(завтра)`
-   * по вузлу власника, один запит на таб, а не мапа цілком (в адміна вона
-   * важить сотні кілобайт). Зміну з цього екрана видно одразу: картка їде в
-   * кінець, і тост каже, куди саме.
-   */
-  const [postponeDates, setPostponeDates] = useState({});
-  useEffect(() => {
-    if (!ownerId) return undefined;
-    let cancelled = false;
-    readOwnerGetInTouchSorted(ownerId, { from: tomorrowIsoDate() }).then(rows => {
-      if (cancelled) return;
-      const next = {};
-      rows.forEach(row => {
-        if (typeof row.getInTouch === 'string') next[row.userId] = row.getInTouch;
-      });
-      setPostponeDates(previous => ({ ...next, ...previous }));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [ownerId]);
-
-  const readRowPostponeDate = React.useCallback(row => (
-    Object.prototype.hasOwnProperty.call(postponeDates, row?.userId) ? postponeDates[row.userId] : row?.getInTouch
-  ), [postponeDates]);
-
-  const saveRowPostpone = React.useCallback(async (user, nextDate) => {
-    const id = user?.userId;
-    if (!id || !ownerId) return;
-    const previous = readRowPostponeDate(user);
-    setPostponeDates(current => ({ ...current, [id]: nextDate }));
-    const saved = await setOwnerGetInTouch(ownerId, id, nextDate);
-    if (!saved) {
-      setPostponeDates(current => ({ ...current, [id]: previous || '' }));
-      toast.error(uiText('Не вдалося відкласти картку. Спробуйте ще раз', language));
-      return;
-    }
-    if (nextDate) {
-      toast.success(uiText('Картку відкладено до {date} — вона в кінці списку', language, { date: formatPostponeDate(nextDate) }));
-    } else {
-      toast.success(uiText('Відкладення знято', language));
-    }
-  }, [language, ownerId, readRowPostponeDate]);
-
-  const buildRowPostpone = user => ({
-    until: readRowPostponeDate(user),
-    onSet: months => { void saveRowPostpone(user, addMonthsIsoDate(months)); },
-    onClear: () => { void saveRowPostpone(user, ''); },
-  });
-
-  // Відкладене переставляється лише в загальній стрічці: у пошуку й у
-  // колекціях порядок задає інше питання («де ця людина», «кого я обрала»).
-  const placePostponedLast = viewMode === 'default' && !isSearching;
+  // Відкладене переставляється в стрічці й в обох колекціях («Обрані», «Не
+  // цікаві»): і там відкладена картка — «на потім». У пошуку — ні: там
+  // питання «де ця людина», і відповідь не може стояти в кінці.
+  const placePostponedLast = ['default', 'favorites', 'dislikes'].includes(viewMode) && !isSearching;
+  // Анкети ролей, яких читач у загальній стрічці не бачить (`keepDonorCounterpartyCards`
+  // відсіює картки, а цей перелік — рядки розщепленої картки). У пошуку й
+  // колекціях показуються всі анкети: там питання про конкретну людину.
+  const feedRowHiddenRoles = useMemo(
+    () => (viewMode === 'default' && !isSearching ? listViewerHiddenCardRoles(donorRestrictionViewerRole) : []),
+    [donorRestrictionViewerRole, isSearching, viewMode],
+  );
   const feedRows = useMemo(() => {
     const rows = feedSource.map(user => withOwnEdits(withLazyPhotos(user)));
-    return placePostponedLast ? placePostponedCardsLast(rows, readRowPostponeDate) : rows;
-  }, [feedSource, placePostponedLast, readRowPostponeDate, withLazyPhotos, withOwnEdits]);
+    return placePostponedLast ? placePostponedCardsLast(rows, readRowPostponeSortDate) : rows;
+  }, [feedSource, placePostponedLast, readRowPostponeSortDate, withLazyPhotos, withOwnEdits]);
 
   /**
    * Власні нотатки — для всіх показаних карток, а не для самої активної.
@@ -8669,6 +8812,7 @@ const Matching = () => {
               onEditProfile={handleRowEditProfile}
               onOpenProfile={openDetailFor}
               buildRowExtras={buildHiddenRowExtras}
+              listRowAnketaRoles={resolveRowAnketaRoles}
             />
           ) : (
             <FeedWrap>
@@ -8699,7 +8843,7 @@ const Matching = () => {
                       під плашкою «Агенція» стояли зріст, вага й пологи
                       (`listFeedRowAnketaRoles`). Кожна анкета — свій рядок, дані
                       ті самі, реакція — на людину. */}
-                  {feedRows.flatMap(user => listFeedRowAnketaRoles(user).map(anketaRole => (
+                  {feedRows.flatMap(user => resolveRowAnketaRoles(user).map(anketaRole => (
                     <ProfileRow
                       key={anketaRole ? `${user.userId}:${anketaRole}` : user.userId}
                       anketaRole={anketaRole}
@@ -8719,8 +8863,8 @@ const Matching = () => {
                         accessLevel: currentAccessLevel,
                       })}
                       priorityMetricKeys={priorityMetricKeys}
-                      onSwipeRight={toggleRowFavorite}
-                      onSwipeLeft={toggleRowHidden}
+                      onSwipeRight={() => toggleRowAnketaReaction(user, anketaRole, 'favorites')}
+                      onSwipeLeft={() => toggleRowAnketaReaction(user, anketaRole, 'dislikes')}
                       onRequestPhotos={requestCardPhotos}
                       programsContext={programsContext}
                       diagnosticsSlot={renderDiagnosticsFor(user)}
@@ -8729,19 +8873,7 @@ const Matching = () => {
                       onCommentSave={handleRowCommentSave}
                       reviewsSlot={buildRowReviewsSlot(user.userId)}
                       reviewsAction={buildRowReviewsAction(user.userId)}
-                      primaryAction={{
-                        icon: dislikeUsers[user.userId] ? <FaUndoAlt size={13} /> : <FaTimes size={14} />,
-                        title: uiText(dislikeUsers[user.userId] ? 'Повернути в «Усі»' : 'Не цікаво', language),
-                        active: Boolean(dislikeUsers[user.userId]),
-                        onClick: toggleRowHidden,
-                      }}
-                      secondaryAction={{
-                        icon: favoriteUsers[user.userId] ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
-                        title: uiText('В обране', language),
-                        accent: true,
-                        active: Boolean(favoriteUsers[user.userId]),
-                        onClick: toggleRowFavorite,
-                      }}
+                      {...buildRowReactionActions(user, anketaRole)}
                     />
                   )))}
                 </FeedList>

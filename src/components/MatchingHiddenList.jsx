@@ -92,6 +92,8 @@ const MatchingHiddenList = ({
    * і було.
    */
   buildRowExtras,
+  // Рядки картки: `(user) => ['ed', 'ag']` для картки з двома анкетами.
+  listRowAnketaRoles,
 }) => {
   // Список прихованих — теж екран матчингу, тож говорить мовою інтерфейсу.
   const { language } = useAppSettings();
@@ -321,9 +323,12 @@ const MatchingHiddenList = ({
         </S.EmptyState>
       ) : (
         <S.List>
-          {rows.map(user => (
+          {/* Картка з двома анкетами — два рядки, і в «Не цікавих» стоїть
+              лише та анкета, яку прибрали (`listRowAnketaRoles` з Matching). */}
+          {rows.flatMap(user => (listRowAnketaRoles ? listRowAnketaRoles(user) : ['']).map(anketaRole => (
             <ProfileRow
-              key={user.userId}
+              key={anketaRole ? `${user.userId}:${anketaRole}` : user.userId}
+              anketaRole={anketaRole}
               user={user}
               isAdmin={isAdmin}
               expanded={expandedIds.has(user.userId)}
@@ -334,9 +339,9 @@ const MatchingHiddenList = ({
               onContactAction={handleContactAction}
               clientComment={commentsByUserId[user.userId] || ''}
               onCommentSave={handleCommentSave}
-              {...(buildRowExtras ? buildRowExtras(user) : null)}
+              {...(buildRowExtras ? buildRowExtras(user, anketaRole) : null)}
             />
-          ))}
+          )))}
 
           {showInitialSkeleton && <SkeletonRows count={4} />}
           {!showInitialSkeleton && isLoadingMore && <SkeletonRows count={2} />}

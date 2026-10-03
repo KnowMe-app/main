@@ -1,4 +1,5 @@
-import { keepDonorCounterpartyCards } from './matchingPeerVisibility';
+import { keepDonorCounterpartyCards, listViewerHiddenCardRoles } from './matchingPeerVisibility';
+import { isCardFullyReacted, readReactionRoles } from './anketaReactions';
 
 const isTruthyReactionValue = value => {
   if (typeof value === 'boolean') return value;
@@ -319,8 +320,11 @@ export const mergeMatchingCandidateUsers = ({
     });
 
     return keepDonorCounterpartyCards({
+      // Реакція прибирає картку, лише коли вирішено кожну видиму анкету:
+      // лайк донорської анкети донорки-агентки лишає агентську в деці
+      // (`utils/anketaReactions`).
       users: Array.from(byId.values()).filter(user => user?.userId && (
-        (!favoriteUsers[user.userId] && !dislikeUsers[user.userId])
+        !isCardFullyReacted(user, favoriteUsers, dislikeUsers, listViewerHiddenCardRoles(viewerRole))
         || Boolean(keepReactedUserIds?.has?.(user.userId))
       )),
       viewerRole,
@@ -343,15 +347,19 @@ export const mergeMatchingCandidateUsers = ({
   sharedReactionCandidateUsers.forEach(injectCandidate);
 
   const mergedUsers = Array.from(byId.values()).filter(canInjectCandidate);
+  // Реакція на одну анкету картки з двома (`'ed'`) не виключає протилежної
+  // реакції на другу: та сама людина буває і в «Обраних» (донорська), і в
+  // «Не цікавих» (агентська). Виключає лише реакція на людину цілком.
+  const coversWholeCard = value => Boolean(value) && readReactionRoles(value) === null;
   if (viewMode === 'favorites') {
     return mergedUsers.filter(
-      user => Boolean(favoriteUsers[user.userId]) && !dislikeUsers[user.userId]
+      user => Boolean(favoriteUsers[user.userId]) && !coversWholeCard(dislikeUsers[user.userId])
     );
   }
 
   if (viewMode === 'dislikes') {
     return mergedUsers.filter(
-      user => Boolean(dislikeUsers[user.userId]) && !favoriteUsers[user.userId]
+      user => Boolean(dislikeUsers[user.userId]) && !coversWholeCard(favoriteUsers[user.userId])
     );
   }
 

@@ -1081,7 +1081,7 @@ const PostponeLane = ({ language, until, onSet, onClear, onCancel }) => (
     {until ? (
       <NoteFieldRow>
         <S.PostponeText>
-          {uiText('Повернетесь {date} — до того картка стоїть у кінці списку', language, { date: formatPostponeDate(until) })}
+          {uiText('Звернутись після {date}. До того картка стоїть у кінці списку', language, { date: formatPostponeDate(until) })}
         </S.PostponeText>
         <NoteClearButton
           type="button"
@@ -1271,6 +1271,7 @@ const ProfileRow = ({
     [isLimited, user]
   );
   const hasLocation = Boolean(location);
+  const postponedUntil = postpone && !isLimited && isPostponedUntil(postpone.until) ? readPostponeDate(postpone.until) : '';
 
   // Контакти стоять у рядку самі, без кнопки «Контакти»: у картці стрічки
   // їх немає (вони живуть в окремому вузлі за межею приватності), тож рядок,
@@ -1456,6 +1457,14 @@ const ProfileRow = ({
                 <span>{location}</span>
               </S.Location>
             </S.MetaRow>
+          )}
+          {/* Відкладена картка видна одразу, а не лише в кінці списку: плашка
+              під імʼям каже, що до людини звертатись пізніше й коли саме. */}
+          {postponedUntil && (
+            <S.PostponeBadge data-testid="postpone-badge">
+              <FaRegClock aria-hidden="true" />
+              <span>{uiText('Звернутись після {date}', language, { date: formatPostponeDate(postponedUntil) })}</span>
+            </S.PostponeBadge>
           )}
         </S.Body>
         <S.Ctrl>

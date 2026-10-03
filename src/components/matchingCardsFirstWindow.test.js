@@ -17,25 +17,20 @@ describe('сторінка стрічки коштує один запит, а �
   // групи карток з тією самою датою, і відсікання за парою (дата, id) лишало
   // менше, ніж треба.
 
-  it('перше вікно береться із запасом на збіг дат', () => {
+  it('вікно з курсором береться із запасом на збіг дат, без курсора — рівно на порцію', () => {
     expect(fnBody).toContain('const firstWindow = Math.min(');
-    expect(fnBody).toContain('safeLimit * MATCHING_CARDS_FIRST_WINDOW_FACTOR');
+    expect(fnBody).toContain('normalizedCursor.date ? fetchLimit + MATCHING_CARDS_CURSOR_DATE_SLACK : fetchLimit');
     expect(fnBody).toContain('let windowSize = firstWindow;');
-  });
-
-  it('запас не менший за саму порцію', () => {
-    // Інакше сторінка не набралася б навіть без жодного збігу дат.
-    expect(fnBody).toContain('Math.max(fetchLimit, safeLimit * MATCHING_CARDS_FIRST_WINDOW_FACTOR)');
   });
 
   it('запас не перестрибує стелю вікна', () => {
     expect(fnBody).toContain('MATCHING_CARDS_PAGE_WINDOW_CAP,');
   });
 
-  it('множник оголошений і більший за одиницю', () => {
-    const declaration = source.match(/const MATCHING_CARDS_FIRST_WINDOW_FACTOR = (\d+);/);
+  it('запас покриває найбільшу групу однією датою (4 картки)', () => {
+    const declaration = source.match(/const MATCHING_CARDS_CURSOR_DATE_SLACK = (\d+);/);
     expect(declaration).not.toBeNull();
-    expect(Number(declaration[1])).toBeGreaterThan(1);
+    expect(Number(declaration[1])).toBeGreaterThanOrEqual(4);
   });
 
   it('подвоєння вікна лишається запасним ходом, а не основним', () => {
