@@ -34,7 +34,8 @@ describe('my-profile: видалення і очищення анкети', () =
   it('ставить «Очистити анкету» в меню, а не під головною кнопкою', () => {
     const submitWrap = source.slice(source.indexOf('data-testid="publish-card"'), source.indexOf('</SubmitWrap>'));
     expect(submitWrap).toContain('onClick={publishProfile}');
-    expect(submitWrap).not.toContain("setShowInfoModal('delConfirm')");
+    // Очистити окрему анкету ролі можна й тут (рядок ролі), а всю анкету — ні.
+    expect(submitWrap).not.toContain("setClearRoleTarget(''); setShowInfoModal('delConfirm')");
 
     const menu = source.slice(source.indexOf('const dotsMenu = ({ close } = {}) => ('), source.indexOf('const fieldsMap = useMemo('));
     expect(menu).toContain("onClearProfile={isProfileAccessConfirmed ? () => { setClearRoleTarget(''); setShowInfoModal('delConfirm'); } : undefined}");

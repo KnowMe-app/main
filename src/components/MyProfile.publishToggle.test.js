@@ -43,7 +43,7 @@ describe('my-profile publication toggle', () => {
     const card = source.slice(source.indexOf('data-testid="publish-card"'), source.indexOf('</SubmitWrap>'));
     expect(card).toContain("<UnpublishBtn type=\"button\" onClick={hideProfile}>{uiText('Зняти з публікації', language)}</UnpublishBtn>");
     expect(card).toContain("<SubmitBtn type=\"button\" onClick={publishProfile}>{uiText('Опублікувати анкету', language)}</SubmitBtn>");
-    expect(card).toContain('{isPublished ? (');
+    expect(card).toContain('isPublished ? (');
   });
 
   it('uses the current publish state for the profile status marker', () => {

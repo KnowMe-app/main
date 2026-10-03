@@ -110,6 +110,8 @@ import {
   auth,
   updateDataInRealtimeDB,
   updateDataInFiresoreDB,
+  readOwnerGetInTouchSorted,
+  setOwnerGetInTouch,
 } from './config';
 import { get as firebaseGet, onValue as firebaseOnValue, ref as refDb, query, orderByKey, startAt, endAt } from 'firebase/database';
 import {
@@ -245,6 +247,13 @@ import {
   listFeedRoleFilterKeysForViewer,
   DONOR_FEED_ROLE_FILTER_KEYS,
 } from 'utils/matchingPeerVisibility';
+import { listFeedRowAnketaRoles } from 'utils/cardAnketas';
+import {
+  addMonthsIsoDate,
+  formatPostponeDate,
+  placePostponedCardsLast,
+  tomorrowIsoDate,
+} from 'utils/matchingPostpone';
 import { profileUiText, translateProfileLabel } from 'utils/profileTexts';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
@@ -8340,10 +8349,66 @@ const Matching = () => {
    * після злиття шар кладеться вдруге — накладання ідемпотентне: додане вже
    * на місці, прибране знімається знову.
    */
-  const feedRows = useMemo(
-    () => feedSource.map(user => withOwnEdits(withLazyPhotos(user))),
-    [feedSource, withLazyPhotos, withOwnEdits],
-  );
+  /*
+   * «Повернутись пізніше» — відкладені картки стоять у кінці стрічки, доки не
+   * настала дата (`utils/matchingPostpone`). Дата — це позначка читача
+   * `getInTouch`, і читаються лише майбутні: `orderByValue + startAt(завтра)`
+   * по вузлу власника, один запит на таб, а не мапа цілком (в адміна вона
+   * важить сотні кілобайт). Зміну з цього екрана видно одразу: картка їде в
+   * кінець, і тост каже, куди саме.
+   */
+  const [postponeDates, setPostponeDates] = useState({});
+  useEffect(() => {
+    if (!ownerId) return undefined;
+    let cancelled = false;
+    readOwnerGetInTouchSorted(ownerId, { from: tomorrowIsoDate() }).then(rows => {
+      if (cancelled) return;
+      const next = {};
+      rows.forEach(row => {
+        if (typeof row.getInTouch === 'string') next[row.userId] = row.getInTouch;
+      });
+      setPostponeDates(previous => ({ ...next, ...previous }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ownerId]);
+
+  const readRowPostponeDate = React.useCallback(row => (
+    Object.prototype.hasOwnProperty.call(postponeDates, row?.userId) ? postponeDates[row.userId] : row?.getInTouch
+  ), [postponeDates]);
+
+  const saveRowPostpone = React.useCallback(async (user, nextDate) => {
+    const id = user?.userId;
+    if (!id || !ownerId) return;
+    const previous = readRowPostponeDate(user);
+    setPostponeDates(current => ({ ...current, [id]: nextDate }));
+    const saved = await setOwnerGetInTouch(ownerId, id, nextDate);
+    if (!saved) {
+      setPostponeDates(current => ({ ...current, [id]: previous || '' }));
+      toast.error(uiText('Не вдалося відкласти картку. Спробуйте ще раз', language));
+      return;
+    }
+    if (nextDate) {
+      toast.success(uiText('Картку відкладено до {date} — вона в кінці списку', language, { date: formatPostponeDate(nextDate) }));
+    } else {
+      toast.success(uiText('Відкладення знято', language));
+    }
+  }, [language, ownerId, readRowPostponeDate]);
+
+  const buildRowPostpone = user => ({
+    until: readRowPostponeDate(user),
+    onSet: months => { void saveRowPostpone(user, addMonthsIsoDate(months)); },
+    onClear: () => { void saveRowPostpone(user, ''); },
+  });
+
+  // Відкладене переставляється лише в загальній стрічці: у пошуку й у
+  // колекціях порядок задає інше питання («де ця людина», «кого я обрала»).
+  const placePostponedLast = viewMode === 'default' && !isSearching;
+  const feedRows = useMemo(() => {
+    const rows = feedSource.map(user => withOwnEdits(withLazyPhotos(user)));
+    return placePostponedLast ? placePostponedCardsLast(rows, readRowPostponeDate) : rows;
+  }, [feedSource, placePostponedLast, readRowPostponeDate, withLazyPhotos, withOwnEdits]);
 
   /**
    * Власні нотатки — для всіх показаних карток, а не для самої активної.
@@ -8630,9 +8695,15 @@ const Matching = () => {
               )}
               {feedRows.length > 0 && viewLayout === 'list' && (
                 <FeedList $restoringScroll={scrollRestorePending}>
-                  {feedRows.map(user => (
+                  {/* Донорка, яка ще й агентка, — дві анкети, а не одна:
+                      під плашкою «Агенція» стояли зріст, вага й пологи
+                      (`listFeedRowAnketaRoles`). Кожна анкета — свій рядок, дані
+                      ті самі, реакція — на людину. */}
+                  {feedRows.flatMap(user => listFeedRowAnketaRoles(user).map(anketaRole => (
                     <ProfileRow
-                      key={user.userId}
+                      key={anketaRole ? `${user.userId}:${anketaRole}` : user.userId}
+                      anketaRole={anketaRole}
+                      postpone={buildRowPostpone(user)}
                       user={user}
                       isAdmin={isAdmin}
                       onTogglePublish={togglePublish}
@@ -8672,7 +8743,7 @@ const Matching = () => {
                         onClick: toggleRowFavorite,
                       }}
                     />
-                  ))}
+                  )))}
                 </FeedList>
               )}
               {loading && feedRows.length === 0 && <MatchingSkeleton />}

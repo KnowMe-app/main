@@ -100,7 +100,7 @@ describe('короткі факти', () => {
 
   it('каже кесарів поруч із пологами', () => {
     expect(valueOf(buildProfileSummaryRows({ ownKids: '3', csection: '1' }, 'uk'), 'reproduction')).toBe('троє пологів · 1 кесарів');
-    expect(valueOf(buildProfileSummaryRows({ ownKids: '1', csection: 'не було' }, 'uk'), 'reproduction')).toBe('одні пологи · без кесаревого');
+    expect(valueOf(buildProfileSummaryRows({ ownKids: '1', csection: 'не було' }, 'uk'), 'reproduction')).toBe('одні пологи · природні пологи');
     expect(valueOf(buildProfileSummaryRows({ ownKids: '2', csection: '2' }, 'uk'), 'reproduction')).toBe('двоє пологів · 2 кесаревих');
   });
 
@@ -153,7 +153,7 @@ describe('короткі факти', () => {
 describe('розділи повної анкети', () => {
   it('ставлять решту анкети в розділи, однакові для рядка й картки', () => {
     const sections = buildProfileDetailSections(fullProfile, 'uk');
-    expect(sections.map(section => section.title)).toEqual(['Обличчя й фігура', 'Освіта й робота', 'Розміри']);
+    expect(sections.map(section => section.title)).toEqual(['Обличчя й фігура', 'Освіта й робота']);
     // Відповіді зі списку — реченням; волосся тут немає, воно вгорі.
     expect(sections[0].text).toContain('овальна форма обличчя');
     expect(sections[0].text).toContain('Моя раса — європейська.');

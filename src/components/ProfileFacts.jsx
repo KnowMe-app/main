@@ -14,7 +14,7 @@ import { profileUiText, resolveProfileLanguage, translateProfileLabel } from '..
 import { formatDeliveryRecency } from '../utils/deliveryRecency';
 import { formatProfileCountOrDate } from '../utils/profileDate';
 import { uiText } from '../utils/uiTranslations';
-import { describeHair, describeLooks, describeSizes, describeWork } from '../utils/profileSentences';
+import { describeHair, describeLooks, describeWork } from '../utils/profileSentences';
 
 /*
  * Факти анкети — один блок на рядок стрічки й на відкриту картку.
@@ -30,7 +30,7 @@ import { describeHair, describeLooks, describeSizes, describeWork } from '../uti
  * 2. короткі факти (`buildProfileSummaryRows`) — зовнішність, пологи й
  *    донації, сімейний стан;
  * 3. розділи повної анкети (`buildProfileDetailSections`) — обличчя й фігура,
- *    освіта й робота, розміри.
+ *    (разом із розмірами й зором), освіта й робота.
  *
  * Перші дві частини беруть **лише поля картки стрічки** (`matchingCards`), тож
  * рядок списку показує їх одразу, без жодного читання, і не міняється, коли
@@ -204,9 +204,10 @@ const describeCSection = (user, lang, hadDeliveries) => {
   const raw = normalizeDisplayValue(user?.[resolveCSectionKey(user)]);
   if (!raw) return '';
   const value = formatCSectionValue(raw);
-  // «Без кесаревого» має сенс лише поруч із пологами: без них це відповідь
-  // на питання, якого ніхто не ставив.
-  if (value === '0') return hadDeliveries ? (lang === 'uk' ? 'без кесаревого' : 'no C-section') : '';
+  // «Природні пологи» мають сенс лише поруч із пологами: без них це відповідь
+  // на питання, якого ніхто не ставив. «Без кесаревого» казало те саме
+  // запереченням, а людина каже «природні».
+  if (value === '0') return hadDeliveries ? (lang === 'uk' ? 'природні пологи' : 'natural births') : '';
   if (/^\d+$/.test(value)) {
     const count = Number(value);
     return lang === 'uk'
@@ -313,6 +314,8 @@ const DETAIL_SECTIONS = [
       { key: 'bodyType', label: 'Body type', read: option('bodyType') },
       { key: 'breastSize', label: 'Breast size', read: typed('breastSize') },
       { key: 'race', label: 'Race', read: option('race') },
+      { key: 'clothingSize', label: 'Clothing', read: typed('clothingSize') },
+      { key: 'shoeSize', label: 'Shoe', read: typed('shoeSize') },
       { key: 'glasses', label: 'Glasses', read: (user, lang) => lowerFirst(glassesLabel(user?.glasses, lang)) },
     ],
   },
@@ -323,15 +326,6 @@ const DETAIL_SECTIONS = [
     fields: [
       { key: 'education', label: 'Education', read: describeEducation },
       { key: 'profession', label: 'Profession', read: typed('profession') },
-    ],
-  },
-  {
-    key: 'sizes',
-    title: 'Sizes',
-    describe: describeSizes,
-    fields: [
-      { key: 'clothingSize', label: 'Clothing', read: typed('clothingSize') },
-      { key: 'shoeSize', label: 'Shoe', read: typed('shoeSize') },
     ],
   },
 ];

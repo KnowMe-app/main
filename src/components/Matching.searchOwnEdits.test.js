@@ -51,7 +51,7 @@ describe('список показує власне доповнення чита
   // (`{ ...user, ...fullProfile }`). Тож шар кладеться ще раз — уже поверх неї,
   // — інакше дописаний телефон зникав би рівно тоді, коли контакти й читають.
   it('кладе шар і поверх догідратованої анкети', () => {
-    expect(source).toContain('() => feedSource.map(user => withOwnEdits(withLazyPhotos(user))),');
+    expect(source).toContain('const rows = feedSource.map(user => withOwnEdits(withLazyPhotos(user)));');
     expect(source).toContain('const activeProfileWithLazyPhotos = withOwnEdits(withLazyPhotos(activeProfile));');
   });
 

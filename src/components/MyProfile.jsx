@@ -263,41 +263,46 @@ const RoleActionRow = styled.div`
   border:1px solid var(--border);
   border-radius:12px;
   background:var(--bg);
-  opacity:${({ $off }) => ($off ? 0.7 : 1)};
 `;
 const RoleActionMeta = styled.div`
   min-width:0;
   b{display:block;font-size:14px;font-weight:600;}
   span{font-size:12px;color:var(--muted);}
 `;
-// Перемикач, а не кнопка з написом «Сховати»/«Показати»: стан і дія тут
-// одне й те саме, і напис, який міняється на протилежний, читався як стан.
-const RoleSwitch = styled.button`
-  position: relative;
-  width: 44px;
-  height: 26px;
-  flex: 0 0 auto;
-  padding: 0;
-  border: 0;
-  border-radius: 99px;
-  background: ${({ $on }) => ($on ? 'var(--accent)' : 'var(--border)')};
-  cursor: pointer;
-  transition: background-color .18s ease;
-
-  &::after {
-    content: '';
-    position: absolute;
-    top: 3px;
-    left: ${({ $on }) => ($on ? '21px' : '3px')};
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 1px 3px rgba(0,0,0,.2);
-    transition: left .18s ease;
-  }
-  &:disabled { opacity: .55; cursor: default; }
-  &:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+const RolePublishStatus = styled.span`
+  && { color: ${({ $published }) => ($published ? '#2E9B55' : '#D44')}; font-weight: 600; white-space: nowrap; }
+`;
+const RoleActionButtons = styled.div`display:flex;align-items:center;gap:2px;justify-content:flex-end;`;
+const RolePublishBtn = styled.button`
+  padding:8px 11px;
+  background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);
+  color:#fff;
+  border:none;
+  border-radius:10px;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+`;
+const RoleUnpublishBtn = styled.button`
+  padding:7px 12px;
+  background:var(--card);
+  color:var(--text);
+  border:1.5px solid var(--border);
+  border-radius:10px;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+`;
+// Незворотне — текстом і червоним, а не кнопкою поруч із головною: питає
+// підтвердження модалкою.
+const RoleClearBtn = styled.button`
+  padding:7px 8px;
+  background:none;
+  border:none;
+  color:#D44;
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
 `;
 // Зняти з публікації — дія того самого розміру, але не головна: помаранчевий
 // градієнт лишається за «Опублікувати», а не за протилежним.
@@ -987,20 +992,8 @@ export const MyProfile = () => {
     await writeProfileRoles(roles, primaryRole);
   }, [hiddenRoles, language, rolesList, selectedRole, writeProfileRoles]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /**
-   * Сховати одну з двох анкет — скажімо, агентську, поки набору немає, — не
-   * знімаючи з публікації другу. Картка стрічки сховану роль не несе
-   * (`buildMatchingCardProjection`). Сховати єдину видиму роль тут не можна:
-   * для цього є «Зняти з публікації».
-   */
-  const toggleRoleHidden = role => {
-    const next = hiddenRoles.includes(role)
-      ? hiddenRoles.filter(item => item !== role)
-      : [...hiddenRoles, role];
-    if (rolesList.every(item => next.includes(item))) return;
-    saveRoleField('hiddenRoles', next.join(','));
-  };
   const isProfileAccessConfirmed = Boolean(userId || state.userId);
+
   const sections = useMemo(() => baseSections.map(section => {
     if (section.key !== 'personal' || !isProfileAccessConfirmed || section.fields.includes('email')) {
       return section;
@@ -1668,6 +1661,47 @@ export const MyProfile = () => {
     }
   };
 
+  /*
+   * Публікація по ролях. Модель даних та сама: `publish` — чи є картка в
+   * стрічці взагалі, `hiddenRoles` — які з анкет вона не несе. Опублікована
+   * роль = картка опублікована і роль не схована. Тож поки картку не
+   * опубліковано, «Опублікувати» одну роль означає опублікувати картку й
+   * сховати решту ролей: інші анкети людина ще не випускала. А зняти
+   * останню видиму роль — це зняти з публікації картку цілком.
+   */
+  const publishRole = async role => {
+    if (!isProfileAccessConfirmed) {
+      await handleAuthConfirm();
+      if (!stateRef.current.userId && !userId) return;
+    }
+    if (!validateRequiredProfileFields()) return;
+    const wasPublished = stateRef.current.publish === true;
+    const nextHidden = wasPublished
+      ? hiddenRoles.filter(item => item !== role)
+      : rolesList.filter(item => item !== role);
+    const nextState = { ...stateRef.current, publish: true, hiddenRoles: nextHidden.join(',') };
+    stateRef.current = nextState;
+    setState(nextState);
+    try {
+      await saveState(nextState, { directFields: ['publish', 'hiddenRoles'] });
+      localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
+      toast.success(uiText('Анкету опубліковано', language));
+    } catch (error) {
+      console.error('publish role error', error);
+      toast.error(uiText('Не вдалося опублікувати анкету. Спробуйте ще раз', language));
+    }
+  };
+
+  const unpublishRole = async role => {
+    const visible = rolesList.filter(item => !hiddenRoles.includes(item));
+    if (visible.length <= 1 || (visible.length === 1 && visible[0] === role)) {
+      await hideProfile();
+      return;
+    }
+    saveRoleField('hiddenRoles', [...hiddenRoles.filter(item => item !== role), role].join(','));
+    toast.success(uiText('Анкету знято з публікації', language));
+  };
+
   /**
    * «Очистити все» — це стирання полів, а не видалення анкети.
    *
@@ -2233,13 +2267,13 @@ export const MyProfile = () => {
       />
     )}
 
-    {/* Публікація — одне місце на все, що вирішує, чи видно анкету: статус,
-        які з анкет показувати (коли ролей кілька) і головна кнопка. Досі те
-        саме «сховати» стояло двічі — «Сховати» вгорі й «Приховати» внизу, і
-        нижнє зʼявлялось лише після публікації, — стан звався трьома словами
-        («Не опублікована», «Чернетка», «чернетка — профіль не опубліковано»),
-        а червоні «Очистити роль» стояли просто біля «Опублікувати». Незворотне
-        живе в меню «⋮» разом з «Очистити анкету» й «Видалити анкету». */}
+    {/* Публікація — одне місце на все, що вирішує, чи видно анкету. Коли
+        ролей кілька, кожна анкета (донорка, СМ, агенція) має власний рядок зі
+        статусом і власними кнопками «Опублікувати» / «Зняти» / «Очистити»:
+        перемикачі «сховано / буде видно» поруч зі спільною кнопкою нічого не
+        означали, поки анкету не опубліковано, і людина не бачила, яку саме
+        анкету вона публікує. «Очистити» питає підтвердження тією самою
+        модалкою (`clearRoleTarget`), що й пункт меню «⋮». */}
     <SubmitWrap ref={node => { sectionRefs.current.publish = node; }} data-testid="publish-card">
       <PublishHead>
         <span>{uiText('Публікація', language)}</span>
@@ -2254,41 +2288,47 @@ export const MyProfile = () => {
       </PublishText>
       {rolesList.length > 1 ? (
         <RoleActionList>
-          <PublishSubLabel>{uiText('Які анкети показувати', language)}</PublishSubLabel>
+          <PublishSubLabel>{uiText('Анкети', language)}</PublishSubLabel>
           {rolesList.map(role => {
-            const hidden = hiddenRoles.includes(role);
             const label = MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role;
-            const lastVisible = !hidden && rolesList.filter(item => !hiddenRoles.includes(item)).length === 1;
-            const status = hidden
-              ? 'сховано'
-              : isPublished ? 'видно в стрічці' : 'буде видно після публікації';
+            const rolePublished = isPublished && !hiddenRoles.includes(role);
             return (
-              <RoleActionRow key={role} $off={hidden}>
+              <RoleActionRow key={role} data-testid={`publish-role-${role}`}>
                 <RoleActionMeta>
                   <b>{uiText(label, language)}</b>
-                  <span>{uiText(status, language)}</span>
+                  <RolePublishStatus $published={rolePublished}>
+                    ● {uiText(rolePublished ? 'Опублікована' : 'Не опублікована', language)}
+                  </RolePublishStatus>
                 </RoleActionMeta>
-                <RoleSwitch
-                  type="button"
-                  role="switch"
-                  aria-checked={!hidden}
-                  aria-label={uiText('Показувати анкету «{role}»', language, { role: uiText(label, language) })}
-                  $on={!hidden}
-                  disabled={lastVisible}
-                  title={lastVisible ? uiText('Одна анкета лишається завжди — щоб сховати всі, зніміть з публікації', language) : undefined}
-                  onClick={() => toggleRoleHidden(role)}
-                />
+                <RoleActionButtons>
+                  {rolePublished ? (
+                    <RoleUnpublishBtn type="button" onClick={() => unpublishRole(role)}>
+                      {uiText('Зняти', language)}
+                    </RoleUnpublishBtn>
+                  ) : (
+                    <RolePublishBtn type="button" onClick={() => publishRole(role)}>
+                      {uiText('Опублікувати', language)}
+                    </RolePublishBtn>
+                  )}
+                  {isProfileAccessConfirmed ? (
+                    <RoleClearBtn
+                      type="button"
+                      onClick={() => { setClearRoleTarget(role); setShowInfoModal('delConfirm'); }}
+                    >
+                      {uiText('Очистити', language)}
+                    </RoleClearBtn>
+                  ) : null}
+                </RoleActionButtons>
               </RoleActionRow>
             );
           })}
         </RoleActionList>
-      ) : null}
-      {isPublished ? (
+      ) : isPublished ? (
         <UnpublishBtn type="button" onClick={hideProfile}>{uiText('Зняти з публікації', language)}</UnpublishBtn>
       ) : (
         <SubmitBtn type="button" onClick={publishProfile}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
       )}
-      <PublishFootnote>{uiText('Очистити чи видалити анкету можна в меню ⋮.', language)}</PublishFootnote>
+      <PublishFootnote>{uiText(rolesList.length > 1 ? 'Видалити акаунт можна в меню ⋮.' : 'Очистити чи видалити анкету можна в меню ⋮.', language)}</PublishFootnote>
     </SubmitWrap>
   </Page>;
 };
