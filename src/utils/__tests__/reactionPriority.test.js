@@ -12,6 +12,31 @@ import {
 } from '../reactionPriority';
 
 describe('resolvePrioritizedReactionMaps', () => {
+  it('preserves opposite reactions scoped to different questionnaires', () => {
+    const { favorites, dislikes } = resolvePrioritizedReactionMaps({
+      ownerIds: ['viewer'],
+      ownOwnerId: 'viewer',
+      favoriteSnapshots: { viewer: { multiRoleCard: 'ed' } },
+      dislikeSnapshots: { viewer: { multiRoleCard: 'ag' } },
+    });
+
+    expect(favorites).toEqual({ multiRoleCard: 'ed' });
+    expect(dislikes).toEqual({ multiRoleCard: 'ag' });
+  });
+
+  it('merges questionnaire roles contributed by shared owners', () => {
+    const { favorites } = resolvePrioritizedReactionMaps({
+      ownerIds: ['viewer', 'first', 'second'],
+      ownOwnerId: 'viewer',
+      favoriteSnapshots: {
+        first: { multiRoleCard: 'ed' },
+        second: { multiRoleCard: 'ag' },
+      },
+    });
+
+    expect(favorites).toEqual({ multiRoleCard: 'ed,ag' });
+  });
+
   it('applies shared favorites and dislikes only when the viewer has no own decision', () => {
     const { favorites, dislikes } = resolvePrioritizedReactionMaps({
       ownerIds: ['viewer', 'sharedOwner'],

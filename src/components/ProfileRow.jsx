@@ -1684,4 +1684,6 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.onSwipeLeft === next.onSwipeLeft
   && prev.onRequestPhotos === next.onRequestPhotos
   && prev.programsContext === next.programsContext
+  && prev.postpone?.ownerId === next.postpone?.ownerId
+  && prev.postpone?.until === next.postpone?.until
 ));

@@ -1575,10 +1575,17 @@ export const MyProfile = () => {
 
   const getSectionKeyByField = fieldName => visibleSections.find(section => section.fields.includes(fieldName))?.key || 'personal';
 
-  const validateRequiredProfileFields = () => {
+  const validateRequiredProfileFields = (onlyRole = '') => {
     const currentState = stateRef.current || {};
     const miss = {};
-    const missingFieldNames = visibleSections
+    let sectionRole = '';
+    const sectionsToValidate = !onlyRole || rolesList.length < 2
+      ? visibleSections
+      : visibleSections.filter(section => {
+        if (section.anketaRole) sectionRole = section.anketaRole;
+        return SHARED_SECTION_KEYS.has(section.key) || sectionRole === onlyRole;
+      });
+    const missingFieldNames = sectionsToValidate
       .flatMap(section => section.fields)
       .filter(fieldName => !OPTIONAL_PROFILE_FIELDS.has(fieldName))
       .filter(fieldName => fieldName === 'programs'
@@ -1662,7 +1669,7 @@ export const MyProfile = () => {
       await handleAuthConfirm();
       if (!stateRef.current.userId && !userId) return;
     }
-    if (!validateRequiredProfileFields()) return;
+    if (!validateRequiredProfileFields(role)) return;
     const wasPublished = stateRef.current.publish === true;
     const nextHidden = wasPublished
       ? hiddenRoles.filter(item => item !== role)
@@ -1686,8 +1693,24 @@ export const MyProfile = () => {
       await hideProfile();
       return;
     }
-    saveRoleField('hiddenRoles', [...hiddenRoles.filter(item => item !== role), role].join(','));
-    toast.success(uiText('Анкету знято з публікації', language));
+    const previousState = stateRef.current;
+    const nextState = {
+      ...previousState,
+      hiddenRoles: [...hiddenRoles.filter(item => item !== role), role].join(','),
+    };
+    stateRef.current = nextState;
+    setState(nextState);
+    try {
+      await saveState(nextState, { directFields: ['hiddenRoles'] });
+      toast.success(uiText('Анкету знято з публікації', language));
+    } catch (error) {
+      console.error('unpublish role error', error);
+      if (stateRef.current === nextState) {
+        stateRef.current = previousState;
+        setState(previousState);
+      }
+      toast.error(uiText('Не вдалося зняти анкету з публікації. Спробуйте ще раз', language));
+    }
   };
 
   /**
@@ -2294,7 +2317,7 @@ export const MyProfile = () => {
                       {uiText('Опублікувати', language)}
                     </RolePublishBtn>
                   )}
-                  {isProfileAccessConfirmed ? (
+                  {isProfileAccessConfirmed && rolesList.length > 1 ? (
                     <RoleClearBtn
                       type="button"
                       onClick={() => { setClearRoleTarget(role); setShowInfoModal('delConfirm'); }}
