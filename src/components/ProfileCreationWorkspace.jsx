@@ -693,10 +693,9 @@ const buildDraftPreviewCard = (source, fallbackName) => {
 const currentNoteText = value => String(getCurrentValue(value) ?? '').trim();
 
 const DraftListItem = styled(MatchingThemeScope)`
-  display:grid; gap:6px; max-width:460px; margin:0 auto 14px; border-radius:18px; cursor:pointer;
+  display:block; max-width:460px; margin:0 auto 14px; border-radius:18px; cursor:pointer;
   &:focus-visible { outline:2px solid var(--km-accent); outline-offset:3px; }
 `;
-const DraftListStatus = styled.div`justify-self:start;`;
 
 /*
  * Чернетка в списку — та сама картка стрічки, що й шапка відкритої чернетки
@@ -704,10 +703,11 @@ const DraftListStatus = styled.div`justify-self:start;`;
  *
  * Тут був свій рядок: плитка з ініціалом замість фото, дата «Оновлено …» і
  * кнопка «Відкрити». Плитка обіцяла фото, якого в чернетці немає й додати
- * нікуди, дата нічого не казала про людину, а кнопка дублювала дотик. Фото
+ * нікуди, дата нічого не казала про людину, а кнопка дублювала дотик. Чіп
+ * стану («Спільна чернетка», «Приватна», «Опубліковано») пішов слідом. Фото
  * картка показує лише тоді, коли воно справді є (доповнена наявна картка).
  */
-const DraftListCard = ({ mutation, fallbackName, status, statusVariant, privateNote, onOpen }) => {
+const DraftListCard = ({ mutation, fallbackName, privateNote, onOpen }) => {
   const { language, themeMode } = useAppSettings();
   const card = useMemo(
     () => buildDraftPreviewCard({ ...(mutation.data || {}), userId: mutation.cardId }, fallbackName),
@@ -732,7 +732,6 @@ const DraftListCard = ({ mutation, fallbackName, status, statusVariant, privateN
       onOpen();
     }}
   >
-    {status ? <DraftListStatus><Status $variant={statusVariant}>{uiText(status, language)}</Status></DraftListStatus> : null}
     <ProfileRow user={card} preview isAdmin={false} expanded={false} previewNotes={previewNotes} />
   </DraftListItem>;
 };
@@ -2342,7 +2341,6 @@ export const ProfileCreationWorkspace = () => {
             key={mutation.cardId}
             mutation={mutation}
             fallbackName={uiText('Ваша чернетка', language)}
-            status="Ваша чернетка"
             privateNote={draftListNotes[mutation.cardId]}
             onOpen={() => openMutation(mutation)}
           />)}
@@ -2350,8 +2348,6 @@ export const ProfileCreationWorkspace = () => {
             key={mutation.cardId}
             mutation={mutation}
             fallbackName={uiText('Спільна чернетка', language)}
-            status="Спільна чернетка"
-            statusVariant="overlay"
             privateNote={draftListNotes[mutation.cardId]}
             onOpen={() => openMutation(mutation)}
           />)}
@@ -2370,16 +2366,13 @@ export const ProfileCreationWorkspace = () => {
             <Meta>{uiText('Почніть із контакту: пошук покаже, чи є така людина в базі, а перший рядок видачі заведе нову картку.', language)}</Meta>
           </EmptyState> : ownCreatedCards.map(mutation => {
             const published = mutation.status === 'accepted';
-            // «Очікує перевірки» обіцяло гейт, якого немає: заведена картка
-            // вже лежить у пошуку, її знаходять і дописують. Слово те саме,
-            // що й у шапці самої чернетки. Дати «Оновлено …» тут більше немає:
-            // про людину вона не каже нічого.
+            // Ні стану («Спільна чернетка», «Приватна», «Опубліковано»), ні
+            // дати «Оновлено …» над карткою немає: про людину вони не кажуть
+            // нічого, а картка в списку — та сама, що в стрічці.
             return <DraftListCard
               key={mutation.cardId}
               mutation={mutation}
               fallbackName={uiText('Без імені', language)}
-              status={published ? 'Опубліковано' : mutation.status === 'private' ? 'Приватна' : 'Спільна чернетка'}
-              statusVariant={published ? undefined : mutation.status === 'private' ? 'private' : 'overlay'}
               privateNote={draftListNotes[mutation.cardId]}
               onOpen={() => (published
                 ? startExistingProfileOverlay({ userId: mutation.cardId })

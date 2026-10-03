@@ -129,12 +129,13 @@ it('називає екран власними картками і показу�
   expect(await screen.findByText('Олена')).toBeInTheDocument();
   expect(screen.getByTestId('navigation-slot')).toHaveAttribute('data-workspace', '');
   expect(screen.getByText('Марія')).toBeInTheDocument();
-  // Гейту перевірки немає — картка вже в пошуку, тож і чіп про нього не каже.
-  expect(screen.getByText('Спільна чернетка')).toBeInTheDocument();
-  expect(screen.queryByText('Очікує перевірки')).not.toBeInTheDocument();
   // Прийнята картка зі списку не зникає: «що я завів» лишається правдою й після
-  // публікації, а дією над нею стає доповнення, а не редагування чернетки.
-  expect(screen.getByText('Опубліковано')).toBeInTheDocument();
+  // публікації. Чіпа стану над карткою немає — ні «Очікує перевірки», ні
+  // «Спільна чернетка», ні «Опубліковано»: картка та сама, що в стрічці.
+  expect(screen.getAllByTestId('draft-list-card')).toHaveLength(2);
+  expect(screen.queryByText('Очікує перевірки')).not.toBeInTheDocument();
+  expect(screen.queryByText('Спільна чернетка')).not.toBeInTheDocument();
+  expect(screen.queryByText('Опубліковано')).not.toBeInTheDocument();
 });
 
 // Чернетка в списку — картка стрічки, і відкриває її дотик до неї самої:
