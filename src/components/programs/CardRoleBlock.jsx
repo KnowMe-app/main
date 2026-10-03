@@ -105,13 +105,16 @@ export const CardRoleBlock = ({ card, programsContext, language }) => {
   // Назва агенції чи клініки окремо від імені людини (`agencyName`): у
   // картці з двома ролями імʼя в шапці — людини, а організація називає себе
   // тут, над своїми програмами.
-  const agencyName = isOrganisation && isAlsoPerson ? pickText(card?.agencyName) : '';
+  // A split organisation row deliberately removes its person role. The
+  // dedicated organisation name still belongs to that row and must not
+  // disappear merely because `isAlsoPerson` is false in the scoped card.
+  const agencyName = isOrganisation ? pickText(card?.agencyName) : '';
   if (!hasParentContent && !(isOrganisation && (programs.length || agencyName))) return null;
   const organisationRole = roles.find(role => ORGANISATION_ROLES.includes(role));
 
   return (
     <Block onClick={event => event.stopPropagation()}>
-      {isOrganisation && isAlsoPerson && (programs.length || agencyName) ? (
+      {isOrganisation && (isAlsoPerson || agencyName) && (programs.length || agencyName) ? (
         <RoleHeading>
           {getRoleLabel(organisationRole, language)}
           {agencyName ? <AgencyName> · {agencyName}</AgencyName> : null}

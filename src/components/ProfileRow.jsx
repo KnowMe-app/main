@@ -50,6 +50,7 @@ import { getRoleColor } from './matchingRoleColors';
 import * as S from './MatchingHiddenList.styled';
 import { CardRoleBlock, isCounterpartyCard } from './programs/CardRoleBlock';
 import { isOrganisationAnketaRole } from '../utils/cardAnketas';
+import { listProfileRoles } from '../utils/matchingPeerVisibility';
 import {
   addMonthsIsoDate,
   formatPostponeDate,
@@ -1283,10 +1284,15 @@ const ProfileRow = ({
     () => (isLimited || isOrganisationAnketa ? [] : buildProfileDetailSections(user, language)),
     [isLimited, isOrganisationAnketa, language, user]
   );
-  // Блок організації бачить у картці лише свою роль: інакше в ньому
-  // зʼявилась би ще й назва поруч з імʼям людини, як у спільній картці.
+  // Блок організації не бачить особистих ролей, але зберігає анкету батьків:
+  // `listCardAnketaRoles` не створює для `ip` третього рядка, тож інакше її
+  // «кого шукають» зникло б з усіх рядків картки `ed + ag + ip`.
   const roleBlockCard = useMemo(
-    () => (isOrganisationAnketa ? { ...user, role: anketaRole, userRole: anketaRole } : user),
+    () => (isOrganisationAnketa ? {
+      ...user,
+      role: [anketaRole, ...listProfileRoles(user).filter(role => role === 'ip')],
+      userRole: [anketaRole, ...listProfileRoles(user).filter(role => role === 'ip')],
+    } : user),
     [anketaRole, isOrganisationAnketa, user]
   );
   const roleAccent = getRoleColor(rowRole);

@@ -1583,11 +1583,19 @@ export const MyProfile = () => {
       ? visibleSections
       : visibleSections.filter(section => {
         if (section.anketaRole) sectionRole = section.anketaRole;
-        return SHARED_SECTION_KEYS.has(section.key) || sectionRole === onlyRole;
+        const belongsToSameQuestionnaire = sectionRole === onlyRole
+          || (PERSON_ROLES.includes(sectionRole) && PERSON_ROLES.includes(onlyRole))
+          || (ORGANISATION_ROLES.includes(sectionRole) && ORGANISATION_ROLES.includes(onlyRole));
+        return SHARED_SECTION_KEYS.has(section.key) || belongsToSameQuestionnaire;
       });
     const missingFieldNames = sectionsToValidate
       .flatMap(section => section.fields)
       .filter(fieldName => !OPTIONAL_PROFILE_FIELDS.has(fieldName))
+      // A shared person block is tagged with whichever of `ed`/`sm` was
+      // assigned first. Reuse it for the other person role, but apply that
+      // role's own questionnaire: an SM must not be blocked by donor-only
+      // appearance and lifestyle fields merely because an ED role also exists.
+      .filter(fieldName => onlyRole !== 'sm' || !SURROGATE_HIDDEN_FIELDS.has(fieldName))
       .filter(fieldName => fieldName === 'programs'
         ? ownProgramsCount === 0
         : String(currentState[fieldName] || '').trim() === '');
