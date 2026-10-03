@@ -99,8 +99,7 @@ const COPIED_FIELDS = [
   'experience',
   'eyeColor',
   'hairColor',
-  // Копії з `profileDetails` (`MATCHING_CARD_MIRRORED_FIELDS`).
-  'hairStructure',
+  // Копія з `profileDetails` (`MATCHING_CARD_MIRRORED_FIELDS`).
   'agencyName',
 ];
 
@@ -120,7 +119,7 @@ const CSECTION_ALIASES = ['cSection', 'csection', 'c_section', 'cesareanSection'
 export const MATCHING_CARD_PROGRAMS_AT_FIELD = 'programsAt';
 
 /** Поля картки, під які правила бази викочуються руками. */
-export const MATCHING_CARD_PROGRAM_FIELDS = Object.freeze([MATCHING_CARD_PROGRAMS_AT_FIELD, 'seekingRole', 'agencyName', 'hairStructure']);
+export const MATCHING_CARD_PROGRAM_FIELDS = Object.freeze([MATCHING_CARD_PROGRAMS_AT_FIELD, 'seekingRole', 'agencyName']);
 
 const SEEKING_KEYS = new Set(PARENT_SEEKING_OPTIONS.map(option => option.key));
 

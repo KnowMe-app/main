@@ -73,8 +73,8 @@ describe('короткі факти', () => {
   it('кажуть про зовнішність самими полями картки стрічки', () => {
     const rows = buildProfileSummaryRows({ eyeColor: 'Hazel', hairColor: 'Fair', hairStructure: 'Straight' }, 'uk');
     expect(labelOf(rows, 'appearance')).toBe('Зовнішність');
-    // Усе про волосся — тут, одним словосполученням: структура тепер у
-    // картці стрічки (`MATCHING_CARD_MIRRORED_FIELDS`).
+    // Усе про волосся — тут, одним словосполученням: структуру дописує повна
+    // анкета (у картці стрічки її немає).
     expect(valueOf(rows, 'appearance')).toBe('карі очі, русяве пряме волосся');
   });
 
@@ -99,8 +99,9 @@ describe('короткі факти', () => {
   });
 
   it('каже кесарів поруч із пологами', () => {
-    expect(valueOf(buildProfileSummaryRows({ ownKids: '3', csection: '1' }, 'uk'), 'reproduction')).toBe('троє пологів · КР 1');
-    expect(valueOf(buildProfileSummaryRows({ ownKids: '1', csection: 'не було' }, 'uk'), 'reproduction')).toBe('одні пологи · без КР');
+    expect(valueOf(buildProfileSummaryRows({ ownKids: '3', csection: '1' }, 'uk'), 'reproduction')).toBe('троє пологів · 1 кесарів');
+    expect(valueOf(buildProfileSummaryRows({ ownKids: '1', csection: 'не було' }, 'uk'), 'reproduction')).toBe('одні пологи · без кесаревого');
+    expect(valueOf(buildProfileSummaryRows({ ownKids: '2', csection: '2' }, 'uk'), 'reproduction')).toBe('двоє пологів · 2 кесаревих');
   });
 
   it('узгоджує числівник і відповідає словами на нуль', () => {
@@ -137,7 +138,11 @@ describe('короткі факти', () => {
     const projection = buildMatchingCardProjection('donor-1', fullProfile, { avatar: '' });
     const card = expandMatchingCard('donor-1', projection);
     expect(card).toBeTruthy();
-    expect(buildProfileSummaryRows(card, 'uk')).toEqual(buildProfileSummaryRows(fullProfile, 'uk'));
+    // Виняток один і навмисний: структуру волосся картка стрічки не несе,
+    // її дописує повна анкета.
+    expect(card.hairStructure).toBeUndefined();
+    const { hairStructure, ...profileWithoutHairStructure } = fullProfile;
+    expect(buildProfileSummaryRows(card, 'uk')).toEqual(buildProfileSummaryRows(profileWithoutHairStructure, 'uk'));
     const stripFromCard = buildProfileStatStrip(card, 'uk');
     const stripFromProfile = buildProfileStatStrip(fullProfile, 'uk');
     expect(stripFromCard.slice(0, 3)).toEqual(stripFromProfile.slice(0, 3));
