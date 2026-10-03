@@ -117,8 +117,9 @@ applyUkrainianInterface();
 
 describe('ProfileCreationWorkspace repeatable field behavior', () => {
   // Першим у формі стоїть порожнє «по батькові» — рядки телефону йдуть за ним.
+  // Хрестика в порожньому полі немає, тож усі хрестики форми — телефонні.
   const phoneBoxes = () => screen.getAllByRole('textbox').slice(1);
-  const phoneClearButtons = () => screen.getAllByTitle('Очистити рядок').slice(1);
+  const phoneClearButtons = () => screen.getAllByTitle('Очистити рядок');
 
   it('removes one of several visible values instead of restoring persisted history', async () => {
     await openSharedDraft();
@@ -136,12 +137,13 @@ describe('ProfileCreationWorkspace repeatable field behavior', () => {
     fireEvent.click(phoneClearButtons()[0]);
     await waitFor(() => expect(phoneBoxes()[0]).toHaveValue(''));
 
-    fireEvent.click(phoneClearButtons()[0]);
+    // Порожній єдиний рядок хрестика не має — стирати в ньому нічого.
+    expect(screen.queryByTitle('Очистити рядок')).not.toBeInTheDocument();
     fireEvent.blur(phoneBoxes()[0]);
 
     expect(phoneBoxes()).toHaveLength(1);
     expect(phoneBoxes()[0]).toHaveValue('');
-    await waitFor(() => expect(saveOverlayForUserCard).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(saveOverlayForUserCard).toHaveBeenCalledTimes(3));
     const latestFields = saveOverlayForUserCard.mock.calls.at(-1)[0].fields;
     expect(latestFields.phone.added).toBeUndefined();
     expect(latestFields.phone.removed).toEqual(['111', '222']);
