@@ -32,6 +32,21 @@ export const listProfileRoles = user => [
   ),
 ];
 
+/**
+ * Ролі читача з його анкети — обидва ключі разом, як і в картки.
+ *
+ * Стрічка брала `userRole || role`, тобто перший непорожній ключ: у старих
+ * анкетах `userRole` бував `'ed'`, а агенція лежала в `role`, і донорка-агентка
+ * гортала стрічку донорки — бачила менше карток, ніж бачила б сама агенція.
+ * Друга роль може лише розширити деку (`listViewerHiddenCardRoles`), тож
+ * загубити її означає звузити те, що людині доступне.
+ */
+export const readViewerRolesFromProfile = profile => {
+  const roles = listProfileRoles(profile);
+  if (roles.length) return roles.join(',');
+  return String(profile?.userRole || profile?.role || '');
+};
+
 /** Ролі читача по порядку — з масиву, з `['ag','ed']` чи з рядка `'ag,ed'`. */
 export const listViewerRoles = viewerRole => roleValues(viewerRole)
   .flatMap(value => value.split(','))

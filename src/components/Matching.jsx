@@ -247,6 +247,7 @@ import {
   donorFeedRoleFilterLeavesNothing,
   listFeedRoleFilterKeysForViewer,
   listViewerHiddenCardRoles,
+  readViewerRolesFromProfile,
   DONOR_FEED_ROLE_FILTER_KEYS,
 } from 'utils/matchingPeerVisibility';
 import { listCardAnketaRoles, listFeedRowAnketaRoles } from 'utils/cardAnketas';
@@ -2828,7 +2829,7 @@ const Matching = () => {
 
       const profile = fetchedProfile;
       const accessLevel = profile?.accessLevel || '';
-      const userRole = profile?.userRole || profile?.role || '';
+      const userRole = readViewerRolesFromProfile(profile);
       const additionalAccessRules = profile?.additionalAccessRules || '';
       const searchKeySetsOfExactUser = Array.isArray(prefetchedSearchKeySetKeys)
         ? prefetchedSearchKeySetKeys
@@ -3025,7 +3026,7 @@ const Matching = () => {
           try {
             const profile = await fetchUserById(user.uid);
             const accessLevel = profile?.accessLevel || '';
-            const userRole = profile?.userRole || profile?.role || '';
+            const userRole = readViewerRolesFromProfile(profile);
             const canCreateProfiles = profile?.canCreateProfiles === true;
             const additionalAccessRules = profile?.additionalAccessRules || '';
             const rawMultiDataAccessUserIds = profile?.[MULTI_DATA_ACCESS_FIELD];

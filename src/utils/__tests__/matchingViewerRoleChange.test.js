@@ -1,4 +1,5 @@
 import {
+  readViewerRolesFromProfile,
   resolveViewerCurrentRole,
   isDonorViewer,
   listFeedRoleFilterKeysForViewer,
@@ -99,5 +100,18 @@ describe('зміна ролі не лишає читача з неможливо
 
   it('порожню групу не вигадує', () => {
     expect(alignRoleFilterGroupWithViewer(undefined, 'ed')).toBeUndefined();
+  });
+});
+
+describe('ролі читача — обидва ключі анкети', () => {
+  // Друга роль лише розширює деку: донорка-агентка бачить усе, що бачить
+  // агенція, навіть коли агенція записана в іншому ключі.
+  it('обʼєднує userRole і role', () => {
+    const viewerRole = readViewerRolesFromProfile({ userRole: 'ed', role: 'ag' });
+    expect(viewerRole).toBe('ed,ag');
+    expect(isDonorViewer(viewerRole)).toBe(false);
+    const feed = [{ userId: 'donor', role: 'ed' }, { userId: 'agency', role: 'ag' }];
+    expect(keepDonorCounterpartyCards({ users: feed, viewerRole })).toEqual(feed);
+    expect(keepDonorCounterpartyCards({ users: feed, viewerRole: 'ed' }).length).toBeLessThan(feed.length);
   });
 });
