@@ -32,7 +32,10 @@ export const MATCHING_QUERY_MAX_IDS = 2000;
 // встиг спрацювати до виправлення, лежить порожній повний список — і кеш
 // показував би ту саму порожню деку далі (`fetchMatchingIndexedCandidates`).
 export const MATCHING_INDEX_CACHE_VERSION = 2;
-export const MATCHING_SUMMARY_CARDS_CACHE_VERSION = 1;
+// Версія 2 скидає проєкції, збережені разом зі структурою волосся
+// (`MATCHING_CARD_RETIRED_FIELDS`): у кеші лежить уже розгорнута картка, і
+// читач, який знімає поле на розгортанні, до неї не доходить.
+export const MATCHING_SUMMARY_CARDS_CACHE_VERSION = 2;
 export const MATCHING_SUMMARY_CARDS_MAX = 2000;
 const MATCHING_LOCAL_STORAGE_KEYS = new Set([
   CARDS_KEY,

@@ -482,6 +482,16 @@ export const isCurrentMatchingCardSchema = card =>
  * Фото вважається гідратованим: аватар уже в картці, тож стрічці нема за чим
  * іти в Storage.
  */
+/*
+ * Поля, які картка колись несла, а тепер не несе. Перестати їх писати мало:
+ * картку, записану раніше, ніхто не перебудовує, доки анкету не збережуть, а
+ * розгортання віддає далі все, чого не впізнало (`...rest`). Структура
+ * волосся з такої картки стояла б у згорнутому рядку, хоч її місце — повна
+ * анкета, а в анкеті, де її стерли, ще й воскресала б: `mergeProfileNodes`
+ * кладе картку під вузли анкети, і порожнє поле анкети її не перекриває.
+ */
+export const MATCHING_CARD_RETIRED_FIELDS = Object.freeze(['hairStructure']);
+
 export const expandMatchingCard = (userId, card) => {
   if (!isCurrentMatchingCardSchema(card)) return null;
   const id = trimmed(userId);
@@ -490,8 +500,10 @@ export const expandMatchingCard = (userId, card) => {
   const {
     avatar, surnameShort, rh,
     [MATCHING_CARD_FEED_FIELD]: feedDate,
-    ...rest
+    ...cardRest
   } = card;
+  const rest = { ...cardRest };
+  MATCHING_CARD_RETIRED_FIELDS.forEach(field => { delete rest[field]; });
 
   // `blood` збирається назад із резуса — і тільки з нього: номера групи картка
   // не носить. Формат той самий, який читає `toRhCategory`; `toBloodGroupCategory`
