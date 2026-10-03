@@ -1399,6 +1399,13 @@ const EditProfile = () => {
             <StimulationSchedule
               userData={scheduleUserData}
               setState={setState}
+              onPersistProfileUpdate={isDraftProfileRecord(scheduleUserData)
+                ? (updates, removedKeys = []) => {
+                    const next = { ...scheduleUserData, ...updates };
+                    removedKeys.forEach(key => delete next[key]);
+                    return handleSubmit(next, 'overwrite', removedKeys);
+                  }
+                : undefined}
               onLastCyclePersisted={({ lastCycle, lastDelivery, needsSync }) => {
                 if (!needsSync) return;
                 const updates = {};

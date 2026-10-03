@@ -78,7 +78,7 @@ jest.mock('firebase/database', () => ({
   serverTimestamp: () => ({}),
 }));
 
-const { searchUsersOnly } = require('./config');
+const { fetchProfileDraftById, searchUsersOnly } = require('./config');
 
 describe('пошук показує чернетку, знайдену в searchId', () => {
   beforeEach(() => {
@@ -146,5 +146,36 @@ describe('пошук показує чернетку, знайдену в search
     };
 
     await expect(searchUsersOnly({ searchId: '380505990799' })).resolves.toEqual({});
+  });
+
+  it('не шукає застарілу чернетку в загальному кеші після промаху за відомим автором', async () => {
+    await expect(fetchProfileDraftById(DRAFT_CARD_ID, { creatorUid: OTHER_UID })).resolves.toBeNull();
+
+    expect(mockReads).toEqual([
+      `multiData/profileMutations/${OTHER_UID}/${DRAFT_CARD_ID}`,
+    ]);
+  });
+
+  it('підмішує в чернетку особисті позначки поточного адміна', async () => {
+    const markedCardId = '-P-PqwxOwPUzBzPccNEW';
+    mockStore[`multiData/profileMutations/${OTHER_UID}/${markedCardId}`] = {
+      cardId: markedCardId,
+      operation: 'create',
+      status: 'pendingReview',
+      createdBy: OTHER_UID,
+      revision: 4,
+      data: { userId: DRAFT_CARD_ID, surname: ['Чернетка'] },
+    };
+    mockStore[`multiData/getInTouch/${VIEWER_UID}/${markedCardId}`] = '2026-10-04';
+    mockStore[`multiData/writer/${VIEWER_UID}/${markedCardId}`] = 'Ірина';
+    mockStore[`multiData/stimulationSchedule/${VIEWER_UID}/${markedCardId}`] = 'schedule';
+
+    await expect(fetchProfileDraftById(markedCardId, { creatorUid: OTHER_UID })).resolves.toEqual(
+      expect.objectContaining({
+        getInTouch: '2026-10-04',
+        writer: 'Ірина',
+        stimulationSchedule: 'schedule',
+      }),
+    );
   });
 });

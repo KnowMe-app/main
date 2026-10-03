@@ -66,6 +66,7 @@ const SkeletonRows = ({ count }) => (
 const MatchingHiddenList = ({
   ownerId,
   users,
+  publishedUsers = [],
   hasMore,
   loading,
   loadMore,
@@ -180,6 +181,10 @@ const MatchingHiddenList = ({
       return { ...user, photos: photoOverride, __allPhotosLoaded: true };
     }),
   [users, photosByUserId]);
+
+  const publishedUsersById = useMemo(() => new Map(
+    publishedUsers.filter(user => user?.userId).map(user => [user.userId, user]),
+  ), [publishedUsers]);
 
   const handleCommentSave = useCallback(async (user, text) => {
     const userId = user?.userId;
@@ -329,6 +334,7 @@ const MatchingHiddenList = ({
               key={anketaRole ? `${user.userId}:${anketaRole}` : user.userId}
               anketaRole={anketaRole}
               user={user}
+              publishedUser={publishedUsersById.get(user.userId) || user}
               isAdmin={isAdmin}
               expanded={expandedIds.has(user.userId)}
               onToggleExpand={handleToggleExpand}

@@ -320,7 +320,7 @@ export const rememberOwnOverlayCard = async ({ editorUserId, cardUserId }) => {
   }
 };
 
-export const forgetOwnOverlayCard = async ({ editorUserId, cardUserId }) => {
+export const forgetOwnOverlayCard = async ({ editorUserId, cardUserId, throwOnError = false }) => {
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId || !editorUserId) return;
 
@@ -330,6 +330,7 @@ export const forgetOwnOverlayCard = async ({ editorUserId, cardUserId }) => {
     await remove(ref2(database, `${EDITS_BY_EDITOR_ROOT}/${editorUserId}/${normalizedCardId}`));
   } catch (error) {
     console.warn('[multiAccountEdits] own overlay index cleanup failed', error);
+    if (throwOnError) throw error;
   }
 };
 
@@ -1533,9 +1534,10 @@ export const clearCardOverlays = async cardUserId => {
   if (!normalizedCardId) return;
 
   const overlays = await getOverlaysForCard(normalizedCardId);
-  await Promise.all(Object.keys(overlays).map(editorUserId => remove(
-    ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`),
-  )));
+  await Promise.all(Object.keys(overlays).flatMap(editorUserId => [
+    remove(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`)),
+    forgetOwnOverlayCard({ editorUserId, cardUserId: normalizedCardId, throwOnError: true }),
+  ]));
 
   const remaining = await getOverlaysForCard(normalizedCardId);
   if (Object.keys(remaining).length) throw new Error('OVERLAY_CLEAR_INCOMPLETE');

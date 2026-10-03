@@ -1097,6 +1097,15 @@ await it('автор чернетки прибирає її застарілий
   await assertFails(remove(foreignKey));
 });
 
+await it('автор чернетки згортає спільний ключ після видалення власної картки', async () => {
+  const sharedKey = ref(db(ORDINARY_VIEWER), 'searchId/380505559918/phone');
+  await testEnv.withSecurityRulesDisabled(context => set(
+    ref(context.database(), 'searchId/380505559918/phone'),
+    [HIDDEN_CARD, 'draftCardId001'],
+  ));
+  await assertSucceeds(set(sharedKey, HIDDEN_CARD));
+});
+
 await it('автор очищує активні чужі оверлеї чернетки, але не їхню історію', async () => {
   const overlayPath = `multiData/edits/draftCardId001/${CARD_CREATOR}`;
   const historyPath = 'multiData/editsHistory/draftCardId001/keptEntry';
@@ -1115,14 +1124,47 @@ await it('автор очищує активні чужі оверлеї чер�
       change: { added: ['380505559917'] },
       at: 1,
     });
+    await set(ref(context.database(), `multiData/editsByEditor/${CARD_CREATOR}/draftCardId001`), 1);
   });
 
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), 'multiData/edits/draftCardId001')));
   await assertSucceeds(remove(ref(db(ORDINARY_VIEWER), overlayPath)));
+  await assertSucceeds(remove(ref(db(ORDINARY_VIEWER), `multiData/editsByEditor/${CARD_CREATOR}/draftCardId001`)));
   await assertFails(remove(ref(db(ORDINARY_VIEWER), historyPath)));
   await testEnv.withSecurityRulesDisabled(async context => {
     const history = await get(ref(context.database(), historyPath));
     if (!history.exists()) throw new Error('історію оверлея стерто');
   });
+});
+
+await it('автор прийнятої чернетки не стирає оверлеї та searchId готової анкети', async () => {
+  const acceptedCardId = 'acceptedDraftCard01';
+  const overlayPath = `multiData/edits/${acceptedCardId}/${CARD_CREATOR}`;
+  const indexPath = `multiData/editsByEditor/${CARD_CREATOR}/${acceptedCardId}`;
+  const searchPath = 'searchId/380505559919/phone';
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const raw = context.database();
+    await set(ref(raw, `multiData/profileMutations/${ORDINARY_VIEWER}/${acceptedCardId}`), {
+      cardId: acceptedCardId,
+      operation: 'create',
+      createdBy: ORDINARY_VIEWER,
+      status: 'accepted',
+      revision: 2,
+    });
+    await set(ref(raw, overlayPath), {
+      cardUserId: acceptedCardId,
+      editorUserId: CARD_CREATOR,
+      updatedAt: 1,
+      fields: { phone: { added: ['380505559919'] } },
+    });
+    await set(ref(raw, indexPath), 1);
+    await set(ref(raw, searchPath), acceptedCardId);
+  });
+
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `multiData/edits/${acceptedCardId}`)));
+  await assertFails(remove(ref(db(ORDINARY_VIEWER), overlayPath)));
+  await assertFails(remove(ref(db(ORDINARY_VIEWER), indexPath)));
+  await assertFails(remove(ref(db(ORDINARY_VIEWER), searchPath)));
 });
 
 await it('без власної чернетки під цим id ключ на неї не заводиться', async () => {

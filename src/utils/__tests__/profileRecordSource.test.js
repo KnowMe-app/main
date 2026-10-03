@@ -11,13 +11,20 @@ import {
   PROFILE_DRAFT_SAVED_EVENT,
 } from '../profileRecordSource';
 import { buildProfileRevisionHistory, loadProfileMutation, saveCreateProfileMutation } from 'utils/profileMutations';
-import { fetchProfileDraftById, fetchUserById, setOwnerGetInTouch } from 'components/config';
+import {
+  fetchProfileDraftById,
+  fetchUserById,
+  setOwnerGetInTouch,
+  setOwnerStimulationSchedule,
+  setOwnerWriter,
+} from 'components/config';
 
 jest.mock('components/config', () => ({
   fetchProfileDraftById: jest.fn(),
   fetchUserById: jest.fn(),
   setOwnerGetInTouch: jest.fn(async () => undefined),
   setOwnerWriter: jest.fn(async () => undefined),
+  setOwnerStimulationSchedule: jest.fn(async () => undefined),
   database: {},
   updateSearchId: jest.fn(),
 }));
@@ -208,14 +215,37 @@ describe('admin save into the draft', () => {
     saveCreateProfileMutation.mockResolvedValue({ revision: 29, data: DRAFT_DATA });
 
     await saveDraftProfileRecord({
-      submitted: { ...draftRecord(), getInTouch: '2026-11-01', writer: 'Ірина' },
+      submitted: {
+        ...draftRecord(),
+        getInTouch: '2026-11-01',
+        writer: 'Ірина',
+        stimulationSchedule: 'schedule',
+      },
       actorUid: 'admin-1',
     });
 
     expect(setOwnerGetInTouch).toHaveBeenCalledWith('admin-1', 'draft-1', '2026-11-01');
+    expect(setOwnerWriter).toHaveBeenCalledWith('admin-1', 'draft-1', 'Ірина');
+    expect(setOwnerStimulationSchedule).toHaveBeenCalledWith('admin-1', 'draft-1', 'schedule');
     const [{ data }] = saveCreateProfileMutation.mock.calls.at(-1);
     expect(data).not.toHaveProperty('getInTouch');
     expect(data).not.toHaveProperty('writer');
+    expect(data).not.toHaveProperty('stimulationSchedule');
+  });
+
+  it('removes owner marks that the admin cleared', async () => {
+    loadProfileMutation.mockResolvedValue({ createdBy: 'author-1', revision: 28, data: DRAFT_DATA });
+    saveCreateProfileMutation.mockResolvedValue({ revision: 29, data: DRAFT_DATA });
+
+    await saveDraftProfileRecord({
+      submitted: draftRecord(),
+      deletedKeys: ['getInTouch', 'writer', 'stimulationSchedule'],
+      actorUid: 'admin-1',
+    });
+
+    expect(setOwnerGetInTouch).toHaveBeenCalledWith('admin-1', 'draft-1', null);
+    expect(setOwnerWriter).toHaveBeenCalledWith('admin-1', 'draft-1', null);
+    expect(setOwnerStimulationSchedule).toHaveBeenCalledWith('admin-1', 'draft-1', null);
   });
 
   it('tells the open admin form that the draft history changed', async () => {

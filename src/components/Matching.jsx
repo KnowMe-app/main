@@ -8013,6 +8013,7 @@ const Matching = () => {
               // кнопці контактів у прихованому рядку не було б що показати, а
               // власне доповнення не лягло б на картку.
               users={feedRows}
+              publishedUsers={feedSourceWithoutOwnEdits}
               hasMore={hasMore}
               loading={loading}
               loadMore={loadMore}
