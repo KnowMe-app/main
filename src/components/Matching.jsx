@@ -165,6 +165,7 @@ import { FaRegHeart, FaUndoAlt } from 'react-icons/fa';
 import { getContactEntries } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
+import { hasFilledProfileDraftData } from 'utils/profileDraftContent';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
 import {
   applyOverlayToCard,
@@ -1368,7 +1369,9 @@ const Matching = () => {
     loadOwnProfileMutations(ownerId)
       .then(items => {
         if (!active) return;
-        const pendingProfiles = items.map(mutation => {
+        // Очищена чернетка («Очистити все») у стрічці не стоїть: заповненого
+        // в ній немає нічого, і рядок був би порожньою рамкою.
+        const pendingProfiles = items.filter(mutation => hasFilledProfileDraftData(mutation?.data)).map(mutation => {
           const profile = getEffectiveProfile({ mutation });
           return {
             ...profile,

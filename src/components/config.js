@@ -72,6 +72,7 @@ import {
   splitSearchIdCandidateKeys,
 } from '../utils/searchKeyUtils';
 import { isAdminUid, readStoredAccessLevel } from '../utils/accessLevel';
+import { hasFilledProfileDraftData } from '../utils/profileDraftContent';
 import { flattenOwnerValueToString } from '../utils/rtdbMigrationDerive';
 import { isLongFormatUserId } from '../utils/userIdFormat';
 import {
@@ -2957,22 +2958,31 @@ const readProfileDraftAt = async (creatorUid, cardId) => {
   }
 };
 
+// Очищена чернетка («Очистити все») лишається в `searchId` і приводить сюди
+// за старим номером, але показувати нікому, крім адміна, їй нічого: авторка
+// сказала, що тут нікого немає. Адмін бачить її, щоб читати історію правок.
+const showProfileDraftHit = (cardId, mutation, viewerId) => (
+  isAdminUid(viewerId) || hasFilledProfileDraftData(mutation?.data)
+    ? expandProfileDraft(cardId, mutation)
+    : null
+);
+
 const readProfileDraftForSearchHit = async cardId => {
   const viewerId = String(auth.currentUser?.uid || '').trim();
   if (!viewerId) return null;
 
   const own = await readProfileDraftAt(viewerId, cardId);
-  if (own) return expandProfileDraft(cardId, own);
+  if (own) return showProfileDraftHit(cardId, own, viewerId);
 
   const ownerId = await readProfileDraftOwnerId(cardId);
   if (ownerId && ownerId !== viewerId) {
     const foreign = await readProfileDraftAt(ownerId, cardId);
-    if (foreign) return expandProfileDraft(cardId, foreign);
+    if (foreign) return showProfileDraftHit(cardId, foreign, viewerId);
   }
 
   const all = await readAllProfileDraftsOnce();
   const mutation = all[cardId];
-  return mutation ? expandProfileDraft(cardId, mutation) : null;
+  return mutation ? showProfileDraftHit(cardId, mutation, viewerId) : null;
 };
 
 const addSearchHit = async (userId, users) => {
