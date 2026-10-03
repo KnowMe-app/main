@@ -1431,6 +1431,7 @@ const StimulationSchedule = ({
   setUsers,
   setState,
   onLastCyclePersisted,
+  onPersistProfileUpdate,
 }) => {
   const base = React.useMemo(() => parseDate(userData?.lastCycle), [userData?.lastCycle]);
   const effectiveStatus = getEffectiveCycleStatus(userData);
@@ -1500,10 +1501,14 @@ const StimulationSchedule = ({
       } else if (setUsers) {
         handleChange(setUsers, null, userData.userId, update);
       }
-      handleSubmit({ userId: userData.userId, ...update }, 'overwrite');
+      if (typeof onPersistProfileUpdate === 'function') {
+        onPersistProfileUpdate(update, isDefault ? ['stimulationSchedule'] : []);
+      } else {
+        handleSubmit({ userId: userData.userId, ...update }, 'overwrite');
+      }
       hasChanges.current = !isDefault;
     },
-    [setUsers, setState, userData.userId, base],
+    [setUsers, setState, userData.userId, base, onPersistProfileUpdate],
   );
 
   const persistContextRef = React.useRef({
@@ -1579,13 +1584,14 @@ const StimulationSchedule = ({
         });
       }
 
-      handleSubmit(
-        { userId: context.userId, ...updates },
-        'overwrite',
-        updateDelivery ? [] : ['lastDelivery', 'getInTouch'],
-      );
+      const removedKeys = updateDelivery ? [] : ['lastDelivery', 'getInTouch'];
+      if (typeof onPersistProfileUpdate === 'function') {
+        onPersistProfileUpdate(updates, removedKeys);
+      } else {
+        handleSubmit({ userId: context.userId, ...updates }, 'overwrite', removedKeys);
+      }
     },
-    [onLastCyclePersisted],
+    [onLastCyclePersisted, onPersistProfileUpdate],
   );
 
   const handleActivateDipherelin = React.useCallback(() => {

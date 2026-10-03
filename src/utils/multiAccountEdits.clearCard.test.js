@@ -30,12 +30,12 @@ it('clears only active overlays and verifies the result', async () => {
 
   await clearCardOverlays('card-1');
 
-  expect(remove).toHaveBeenCalledTimes(1);
+  expect(remove).toHaveBeenCalledTimes(2);
   expect(remove).toHaveBeenCalledWith(expect.objectContaining({ path: 'multiData/edits/card-1/editor' }));
+  expect(remove).toHaveBeenCalledWith(expect.objectContaining({ path: 'multiData/editsByEditor/editor/card-1' }));
   expect(ref.mock.calls.map(([, target]) => target)).not.toEqual(expect.arrayContaining([
     expect.stringContaining('editsHistory'),
     expect.stringContaining('editsContributors'),
-    expect.stringContaining('editsByEditor'),
   ]));
 });
 

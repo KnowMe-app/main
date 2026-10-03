@@ -49,6 +49,7 @@ import {
   addMatchingSearchQuery,
   fetchMatchingCardsPage,
   readOwnerWriterMap,
+  saveMyCardComment,
 } from './config';
 import { fetchUsersBySearchKeyGitNewPaged } from './gitNewLoad';
 import {
@@ -2016,6 +2017,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // чернетка правки адміна не бачила. Індекс чернетки веде
     // `saveCreateProfileMutation`; `searchKey` належить стрічці.
     if (isDraftProfileRecord(syncedState)) {
+      if (Object.prototype.hasOwnProperty.call(syncedState, 'myComment') || deletedKeys.includes('myComment')) {
+        await saveMyCardComment(
+          syncedState.userId,
+          deletedKeys.includes('myComment') ? '' : syncedState.myComment,
+          auth.currentUser?.uid,
+        );
+      }
       await saveDraftProfileRecord({
         submitted: syncedState,
         deletedKeys,
@@ -7835,6 +7843,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 userData={scheduleUserData}
                 setUsers={setUsers}
                 setState={setState}
+                onPersistProfileUpdate={isDraftProfileRecord(scheduleUserData)
+                  ? (updates, removedKeys = []) => {
+                      const next = { ...scheduleUserData, ...updates };
+                      removedKeys.forEach(key => delete next[key]);
+                      return handleSubmit(next, 'overwrite', removedKeys);
+                    }
+                  : undefined}
                 onLastCyclePersisted={({ lastCycle, lastDelivery, needsSync }) => {
                     if (!needsSync) return;
                     const targetUserId = scheduleUserData?.userId;

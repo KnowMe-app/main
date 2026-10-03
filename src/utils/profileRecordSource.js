@@ -1,4 +1,10 @@
-import { fetchProfileDraftById, fetchUserById, setOwnerGetInTouch, setOwnerWriter } from 'components/config';
+import {
+  fetchProfileDraftById,
+  fetchUserById,
+  setOwnerGetInTouch,
+  setOwnerStimulationSchedule,
+  setOwnerWriter,
+} from 'components/config';
 import { OWNER_MULTI_DATA_FIELD_NAMES } from 'utils/profileNodeSchema';
 import { loadProfileMutation, saveCreateProfileMutation } from 'utils/profileMutations';
 
@@ -106,7 +112,11 @@ const FORM_ONLY_KEYS = new Set([
 ]);
 
 // Ті самі позначки, що й для готової анкети, — під тим, хто їх поставив.
-const OWNER_FIELD_WRITERS = { getInTouch: setOwnerGetInTouch, writer: setOwnerWriter };
+const OWNER_FIELD_WRITERS = {
+  getInTouch: setOwnerGetInTouch,
+  writer: setOwnerWriter,
+  stimulationSchedule: setOwnerStimulationSchedule,
+};
 
 const isDraftDataKey = key => key && !key.startsWith('__') && !FORM_ONLY_KEYS.has(key);
 
@@ -172,9 +182,10 @@ export const saveDraftProfileRecord = async ({ submitted, deletedKeys = [], acto
     throw error;
   }
 
+  const removed = new Set(deletedKeys || []);
   await Promise.all(Object.entries(OWNER_FIELD_WRITERS)
-    .filter(([field]) => Object.prototype.hasOwnProperty.call(submitted, field))
-    .map(([field, write]) => write(actorUid, cardId, submitted[field])));
+    .filter(([field]) => Object.prototype.hasOwnProperty.call(submitted, field) || removed.has(field))
+    .map(([field, write]) => write(actorUid, cardId, removed.has(field) ? null : submitted[field])));
 
   const saved = await saveCreateProfileMutation({
     cardId,

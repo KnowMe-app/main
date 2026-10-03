@@ -2981,11 +2981,20 @@ const readProfileDraftAt = async (creatorUid, cardId) => {
 // Очищена чернетка («Очистити все») лишається в `searchId` і приводить сюди
 // за старим номером, але показувати нікому, крім адміна, їй нічого: авторка
 // сказала, що тут нікого немає. Адмін бачить її, щоб читати історію правок.
-const showProfileDraftHit = (cardId, mutation, viewerId) => (
-  isAdminUid(viewerId) || hasFilledProfileDraftData(mutation?.data)
-    ? expandProfileDraft(cardId, mutation)
-    : null
-);
+const showProfileDraftHit = async (cardId, mutation, viewerId) => {
+  if (!isAdminUid(viewerId) && !hasFilledProfileDraftData(mutation?.data)) return null;
+
+  const draft = expandProfileDraft(cardId, mutation);
+  const [getInTouchMark, writerMark, stimulationScheduleMark] = await Promise.all([
+    readOwnerValueForProfile(OWNER_GET_IN_TOUCH_PATH, viewerId, cardId, { hasLegacyGroups: ownerGetInTouchHasLegacyGroups }),
+    readOwnerValueForProfile(OWNER_WRITER_PATH, viewerId, cardId),
+    readOwnerValueForProfile(OWNER_STIMULATION_SCHEDULE_PATH, viewerId, cardId),
+  ]);
+  if (getInTouchMark.found) draft.getInTouch = getInTouchMark.value;
+  if (writerMark.found) draft.writer = writerMark.value;
+  if (stimulationScheduleMark.found) draft.stimulationSchedule = stimulationScheduleMark.value;
+  return draft;
+};
 
 const readProfileDraftForSearchHit = async cardId => {
   const viewerId = String(auth.currentUser?.uid || '').trim();
@@ -3019,7 +3028,7 @@ export const fetchProfileDraftById = async (cardId, { creatorUid = '' } = {}) =>
   const creator = String(creatorUid || '').trim();
   if (creator) {
     const mutation = await readProfileDraftAt(creator, id);
-    if (mutation) return showProfileDraftHit(id, mutation, viewerId);
+    return mutation ? showProfileDraftHit(id, mutation, viewerId) : null;
   }
   return readProfileDraftForSearchHit(id);
 };
