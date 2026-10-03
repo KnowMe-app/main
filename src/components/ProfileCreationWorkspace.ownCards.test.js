@@ -207,3 +207,16 @@ it('апаратна кнопка «назад» закриває форму т�
   // Читач лишається на своєму екрані, а не виїжджає з нього навігацією.
   expect(mockNavigate).not.toHaveBeenCalled();
 });
+
+// Очищена чернетка в списку не стоїть: показати в ній нічого.
+it('не показує в списку очищену чернетку', async () => {
+  loadOwnProfileMutations.mockResolvedValue([
+    { ...DRAFT, data: { userId: 'draft-card', name: ['Олена', ''], phone: [''] } },
+    PUBLISHED,
+  ]);
+  renderWithNavigationSlot(<ProfileCreationWorkspace />);
+
+  expect(await screen.findByText('Марія')).toBeInTheDocument();
+  expect(screen.getAllByTestId('draft-list-card')).toHaveLength(1);
+  expect(screen.queryByText('Олена')).not.toBeInTheDocument();
+});

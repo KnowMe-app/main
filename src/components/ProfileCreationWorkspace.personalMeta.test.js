@@ -2,6 +2,7 @@ import '@testing-library/jest-dom';
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
+import { saveCreateProfileMutation } from 'utils/profileMutations';
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import {
   addDislikeUser,
@@ -239,4 +240,26 @@ it('говорить мовою інтерфейсу', async () => {
   expect(screen.getByRole('button', { name: 'Not interested' })).toBeInTheDocument();
   expect(screen.getByText('Public review')).toBeInTheDocument();
   expect(screen.getByText('Note to self')).toBeInTheDocument();
+});
+
+// «Очистити все» забиває кожне заповнене поле порожнім рядком одним
+// збереженням — чернетка лишається, і журнал правок пише кожне стерте значення.
+it('«Очистити все» після підтвердження зберігає чернетку з порожніми полями', async () => {
+  await openOwnDraft();
+  saveCreateProfileMutation.mockClear();
+  saveCreateProfileMutation.mockImplementation(async ({ cardId, data }) => ({
+    cardId, createdBy: 'owner-1', status: 'private', revision: 2, updatedAt: 200, data,
+  }));
+
+  fireEvent.click(screen.getByTestId('clear-draft-button'));
+  await screen.findByText('Очистити всі поля?');
+  fireEvent.click(screen.getByRole('button', { name: 'Очистити' }));
+
+  await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
+  const { cardId, data } = saveCreateProfileMutation.mock.calls.at(-1)[0];
+  expect(cardId).toBe('draft-card');
+  expect(data.name).toBe('');
+  // Порожньому нема чого очищати — кнопка зникає разом із заповненим.
+  await waitFor(() => expect(screen.queryByTestId('clear-draft-button')).not.toBeInTheDocument());
+  saveCreateProfileMutation.mockReset();
 });

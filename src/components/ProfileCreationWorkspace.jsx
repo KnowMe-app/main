@@ -28,6 +28,7 @@ import { listOfferedOptions } from '../utils/offeredOptions';
 import { asExamplePlaceholder } from '../utils/examplePlaceholder';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { getCurrentValue, hasCurrentValue } from './getCurrentValue';
+import { hasFilledProfileDraftData } from '../utils/profileDraftContent';
 import { CONTACT_FIELDS, isHiddenTelegramValue } from './contactMethods';
 import { listProfileRoles } from '../utils/matchingPeerVisibility';
 import { fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
@@ -736,6 +737,25 @@ const DraftListCard = ({ mutation, fallbackName, privateNote, onOpen }) => {
   </DraftListItem>;
 };
 
+const ClearDraftConfirm = ({ busy, language, onCancel, onConfirm }) => <>
+  <ModalTitle>{uiText('Очистити всі поля?', language)}</ModalTitle>
+  <ModalText>
+    {uiText(
+      'Усі поля чернетки стануть порожніми, і картку більше ніхто не побачить. '
+      + 'Історія змін лишиться адміністратору.',
+      language,
+    )}
+  </ModalText>
+  <ModalActionRow>
+    <ModalGhostButton type="button" disabled={busy} onClick={onCancel}>
+      {uiText('Відмінити', language)}
+    </ModalGhostButton>
+    <ModalDangerButton type="button" disabled={busy} onClick={onConfirm}>
+      {uiText(busy ? 'Очищення…' : 'Очистити', language)}
+    </ModalDangerButton>
+  </ModalActionRow>
+</>;
+
 const describeAuthor = (authorId, authors) => {
   const author = authors?.[authorId] || {};
   return [author.name, author.surname].filter(Boolean).join(' ') || authorId || '—';
@@ -773,6 +793,14 @@ export const ProfileCreationWorkspace = () => {
   const [searchFailed, setSearchFailed] = useState(false);
   const [deletingDraft, setDeletingDraft] = useState(false);
   const [confirmDeleteDraft, setConfirmDeleteDraft] = useState(false);
+  const [confirmClearDraft, setConfirmClearDraft] = useState(false);
+  const [clearingDraft, setClearingDraft] = useState(false);
+  // Вміст модалки «Очистити все» — стабільний компонент, а не стрілка в JSX:
+  // стрілка — новий тип на кожен рендер, і React перемонтовував кнопку щоразу,
+  // коли сторінка оновлювала стан, тож натиск міг влучити у вже зняту кнопку.
+  // Свіжі пропси він бере з ref, який оновлюється кожен рендер.
+  const clearConfirmPropsRef = useRef({});
+  const [ClearConfirmContent] = useState(() => () => <ClearDraftConfirm {...clearConfirmPropsRef.current} />);
   const [favoriteUsers, setFavoriteUsers] = useState({});
   const [dislikeUsers, setDislikeUsers] = useState({});
   // Публічні відгуки картки, яку доповнюють. Це інше сховище, ніж поле
@@ -1070,9 +1098,15 @@ export const ProfileCreationWorkspace = () => {
   // список (`fetchUserComments` бере піддерево власника, коли карток багато),
   // і лише поки форма закрита: відкрита чернетка читає свою памʼятку сама.
   const [draftListNotes, setDraftListNotes] = useState({});
+  // Очищена чернетка («Очистити все») у списку не стоїть: показати в ній
+  // нічого, а авторка сама сказала, що тут нікого немає. Прийнята картка
+  // лишається — її анкета живе вже не в чернетці.
+  const visibleOwnCards = useMemo(() => ownCreatedCards.filter(mutation => (
+    mutation.status === 'accepted' || hasFilledProfileDraftData(mutation.data)
+  )), [ownCreatedCards]);
   const draftListIds = useMemo(() => [...new Set([
-    ...ownCreatedCards, ...matchingOwnDrafts, ...matchingSharedDrafts,
-  ].map(mutation => mutation?.cardId).filter(Boolean))].sort().join(','), [matchingOwnDrafts, matchingSharedDrafts, ownCreatedCards]);
+    ...visibleOwnCards, ...matchingOwnDrafts, ...matchingSharedDrafts,
+  ].map(mutation => mutation?.cardId).filter(Boolean))].sort().join(','), [matchingOwnDrafts, matchingSharedDrafts, visibleOwnCards]);
   useEffect(() => {
     if (!uid || !draftListIds || draft) return undefined;
     let active = true;
@@ -1732,6 +1766,44 @@ export const ProfileCreationWorkspace = () => {
   };
 
   /**
+   * Очистити все — кожне заповнене поле стає порожнім рядком.
+   *
+   * Це не видалення: чернетка лишається на місці одним збереженням, тож
+   * журнал правок (`profileMutationHistory`) записує кожне стерте значення, і
+   * адмін бачить, що тут було. `searchId` при цьому не чіпається — старий
+   * номер і далі веде на цю картку, — але показати там нікому, крім адміна,
+   * уже нічого: порожню чернетку ховають список, стрічка й видача пошуку
+   * (`hasFilledProfileDraftData`). Масив лишається масивом з порожнім хвостом —
+   * так само, як його стирає хрестик у полі.
+   */
+  async function clearAllDraftFields() {
+    const current = draftRef.current || {};
+    const nextDraft = Object.entries(current).reduce((result, [fieldName, value]) => {
+      if (fieldName === 'userId' || fieldName.startsWith('__') || !hasCurrentValue(value)) return result;
+      result[fieldName] = Array.isArray(value) ? [''] : '';
+      return result;
+    }, { ...current });
+    setClearingDraft(true);
+    draftRef.current = nextDraft;
+    setDraft(nextDraft);
+    try {
+      await persistDraft(nextDraft);
+      setConfirmClearDraft(false);
+      toast.success(uiText('Усі поля очищено', language));
+    } catch (error) {
+      reportSaveError(error, describeSaveError(error));
+    } finally {
+      setClearingDraft(false);
+    }
+  }
+  clearConfirmPropsRef.current = {
+    busy: clearingDraft,
+    language,
+    onCancel: () => setConfirmClearDraft(false),
+    onConfirm: () => { void clearAllDraftFields(); },
+  };
+
+  /**
    * Видалити чернетку начисто.
    *
    * «Відхилити» повертає чернетку авторові — це відповідь на «ще не готова».
@@ -2209,6 +2281,24 @@ export const ProfileCreationWorkspace = () => {
         <FormSectionTitle>{uiText('🗂 Інші поля з правками', language)}</FormSectionTitle>
         {extraEditedFields.map(fieldName => renderCreateField(fieldName, { allowUnknown: true }))}
       </FormSectionCard>}
+      {/* «Очистити все» — останнім у формі й лише над власною чернеткою (чи
+          над будь-якою — для адміна). Над доповненням знайденої картки його
+          немає: там «порожньо» означало б запропонувати стерти чужу анкету. */}
+      {!overlayTarget && !editingSharedDraft && hasFilledProfileDraftData(draft) && <Card>
+        <DeleteDraftButton
+          type="button"
+          data-testid="clear-draft-button"
+          disabled={saving || deletingDraft || clearingDraft}
+          onClick={() => setConfirmClearDraft(true)}
+        >
+          {uiText(clearingDraft ? 'Очищення…' : 'Очистити все', language)}
+        </DeleteDraftButton>
+      </Card>}
+      {confirmClearDraft && <InfoModal
+        onClose={() => { if (!clearingDraft) setConfirmClearDraft(false); }}
+        text="delConfirm"
+        DelConfirm={ClearConfirmContent}
+      />}
       {/* Every field already saves itself on blur, so the old Зберегти /
           Прийняти / Відхилити row said nothing about what actually happened.
           What is left is the one step that is not automatic: turning the
@@ -2362,13 +2452,13 @@ export const ProfileCreationWorkspace = () => {
               картки, і вони тут і лежать, разом із уже прийнятими. */}
           <SectionHeader>
             <span>{uiText('Мої картки', language)}</span>
-            <Count aria-label={uiText('{count} карток', language, { count: ownCreatedCards.length })}>{ownCreatedCards.length}</Count>
+            <Count aria-label={uiText('{count} карток', language, { count: visibleOwnCards.length })}>{visibleOwnCards.length}</Count>
           </SectionHeader>
-          {ownCreatedCards.length === 0 ? <EmptyState>
+          {visibleOwnCards.length === 0 ? <EmptyState>
             <EmptyIcon><FiFolder aria-hidden="true" /></EmptyIcon>
             <EmptyTitle>{uiText('Ви ще не завели жодної картки.', language)}</EmptyTitle>
             <Meta>{uiText('Почніть із контакту: пошук покаже, чи є така людина в базі, а перший рядок видачі заведе нову картку.', language)}</Meta>
-          </EmptyState> : ownCreatedCards.map(mutation => {
+          </EmptyState> : visibleOwnCards.map(mutation => {
             const published = mutation.status === 'accepted';
             // Ні стану («Спільна чернетка», «Приватна», «Опубліковано»), ні
             // дати «Оновлено …» над карткою немає: про людину вони не кажуть
