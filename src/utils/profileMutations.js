@@ -415,7 +415,9 @@ export const saveCreateProfileMutation = async ({
   // `PROFILE_MUTATION_OWNERS_NODE`).
   await indexDraftOwner(cardId, mutation.createdBy || creatorUid);
   // Cleanup is idempotent bookkeeping after the revision is already committed.
-  await releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key)));
+  releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(error => {
+    console.warn('[profileMutations] старі заявки на унікальність не знято', { cardId, error });
+  });
   return mutation;
 };
 

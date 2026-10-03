@@ -1218,6 +1218,9 @@ const ProfileRow = ({
   // організації (`listCardAnketaRoles`): тоді стрічка ставить два рядки, і
   // кожен показує лише своє. Без неї рядок — уся картка, як і раніше.
   anketaRole = '',
+  // The feed projection remains the publication boundary after `user` is
+  // hydrated with private/full-profile fields.
+  publishedUser = user,
   // «Повернутись пізніше»: `{ until, onSet(months), onClear() }` — див. `ProfileNotes`.
   postpone,
   // Нотатки інших власників спільного доступу — див. `ProfileNotes`.
@@ -1290,10 +1293,10 @@ const ProfileRow = ({
   const roleBlockCard = useMemo(
     () => (isOrganisationAnketa ? {
       ...user,
-      role: [anketaRole, ...listProfileRoles(user).filter(role => role === 'ip')],
-      userRole: [anketaRole, ...listProfileRoles(user).filter(role => role === 'ip')],
+      role: [anketaRole, ...listProfileRoles(publishedUser).filter(role => role === 'ip')],
+      userRole: [anketaRole, ...listProfileRoles(publishedUser).filter(role => role === 'ip')],
     } : user),
-    [anketaRole, isOrganisationAnketa, user]
+    [anketaRole, isOrganisationAnketa, publishedUser, user]
   );
   const roleAccent = getRoleColor(rowRole);
   const contactEntries = useMemo(

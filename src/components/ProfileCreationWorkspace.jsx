@@ -69,7 +69,7 @@ import {
   getOverlayHistoryForCard,
   getOverlaysForCard,
   purgeOverlayHistoryEntries,
-  purgeCardOverlays,
+  clearCardOverlays,
   saveOverlayForUserCard,
   settleOverlayFieldValue,
 } from 'utils/multiAccountEdits';
@@ -1790,7 +1790,9 @@ export const ProfileCreationWorkspace = () => {
     try {
       await persistDraft(nextDraft);
       const cardId = activeMutationRef.current?.cardId;
-      if (cardId) await purgeCardOverlays(cardId);
+      // This is a reset of a live draft, not deletion of the card. Remove only
+      // pending values and keep history/contributors available to admins.
+      if (cardId) await clearCardOverlays(cardId);
       draftOverlaysRef.current = {};
       stackedDraftRef.current = draftBaseRef.current || nextDraft;
       setDraftOverlays({});
