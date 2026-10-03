@@ -50,7 +50,7 @@ const EN_BY_UK = {
   'Очищення…': 'Clearing…',
   'Очистити всі поля?': 'Clear all fields?',
   'Усі поля очищено': 'All fields cleared',
-  'Усі поля чернетки стануть порожніми, і картку більше ніхто не побачить. Історія змін лишиться адміністратору.': 'Every field of the draft will be emptied and nobody will see the card any more. The change history stays with the admin.',
+  'Усі поля чернетки стануть порожніми, і картку більше ніхто не побачить.': 'Every field of the draft will be emptied and nobody will see the card any more.',
   'Без імені': 'No name',
   'Новий профіль': 'New profile',
   'Картка без імені': 'Card without a name',
