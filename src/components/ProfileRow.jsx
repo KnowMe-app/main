@@ -1433,20 +1433,18 @@ const ProfileRow = ({
           onClick={openPhotoViewer}
         >
           <PhotoSwipeStage swipe={photoSwipe} photo={photo} loading={photoSwipe.loading} />
-          {/* Роль лежить на знімку — там само, де її малює відкрита картка
-              (`ModernRoleBadge`). Під іменем вона стояла чіпом і забирала
-              ширину в локації; а два екрани не можуть казати про ту саму річ
-              у двох різних місцях. */}
+          {/* Роль лежить на знімку — там само, де її малювала відкрита
+              картка, поки вона була. Під іменем вона стояла чіпом і забирала
+              ширину в локації. */}
           {roleCode && <S.PhotoRoleBadge $role={rowRole}>{getRoleLabel(rowRole, language)}</S.PhotoRoleBadge>}
           {photoSwipe.total > 1 && (
             <S.PhotoCount>
               {photoSwipe.index > 0 ? `${photoSwipe.index + 1}/${photoSwipe.total}` : photoSwipe.total}
             </S.PhotoCount>
           )}
-          {/* Цятка публікації — на фото, у правому верхньому куті, так само,
-              як у плитці галереї (`GalleryPublishDot`). Це стан картки, а не
-              дія над нею, і адмін читає його одним поглядом по фото, а не
-              шукає в стовпчику кнопок під ним. */}
+          {/* Цятка публікації — на фото, у правому верхньому куті. Це стан
+              картки, а не дія над нею, і адмін читає його одним поглядом по
+              фото, а не шукає в стовпчику кнопок під ним. */}
           {isAdmin && onTogglePublish && !isLimited && (
             <S.PhotoPublishDot
               type="button"

@@ -89,66 +89,22 @@ describe('Matching redesigned profile regressions', () => {
   });
 
   /*
-   * Розкладка відкритої картки на один екран: порожня смуга фото не займає
-   * пів екрана, а смужка дій — рівно рядок кнопок.
-   */
-  it('не віддає екран порожньому фото й не роздуває смужку дій', () => {
-    const matchingSource = source();
-    const styledSource = fs.readFileSync(path.join(__dirname, 'Matching.styled.jsx'), 'utf8');
-
-    // Без знімка смуга вузька — портретні 4/5 лишаються там, де є що
-    // показувати.
-    expect(matchingSource).toContain('$empty={!activeHeroPhoto}');
-    expect(styledSource).toContain('($empty ? css`');
-    // Монограма читається: біла по кремовому градієнту світлої теми не
-    // читалась узагалі, тож смуга й виглядала просто порожньою.
-    expect(styledSource).toContain('color: var(--matching-role-accent);');
-    // Смужка дій має висоту своїх кнопок, а не власний мінімум у 80 px.
-    expect(styledSource).toContain('min-height: 0;\n  box-sizing: border-box;');
-    // І жолоба смужки прокрутки, який різав фото світлою полосою праворуч,
-    // у картці немає.
-    expect(styledSource).not.toContain('scrollbar-width: thin;');
-  });
-
-  /*
-   * Безпечна зона — про край вікна, а смужка дій до нього не дотикається:
-   * вона лежить усередині картки, під якою йде сторінка. Firefox для Android
-   * віддає в цій змінній висоту своєї нижньої панелі, тож смужка там набирала
-   * майже вдвічі більше за власні кнопки й накривала нотатки, а Chrome із
-   * Samsung віддавали нуль — і те саме правило виглядало правильним.
-   */
-  it('не додає до смужки дій відступу на безпечну зону', () => {
-    const styledSource = fs.readFileSync(path.join(__dirname, 'Matching.styled.jsx'), 'utf8');
-    const rail = styledSource.slice(
-      styledSource.indexOf('export const ModernActionRail'),
-      styledSource.indexOf('export const ModernSwipeHint'),
-    );
-
-    expect(rail).toContain('padding: 9px 54px;');
-    expect(rail).not.toContain('env(safe-area-inset-bottom');
-  });
-
-  /*
    * Блок із пропорцією і автоматичною шириною Chromium стискає **по обох**
    * боках, щойно спрацювала стеля висоти: фото сідало під пропорцію й
    * відходило від правого краю картки світлою смугою. У рядку стрічки стеля
-   * спрацьовує завжди, у відкритій картці — лише на низькому екрані, тож на
-   * око це виглядало як «у списку фото зміщене, а у відкритій картці ні».
+   * спрацьовує завжди, тож фото в списку виглядало зміщеним.
    */
   it('тримає ширину фото заданою там, де висоту обмежує стеля', () => {
-    const styledSource = fs.readFileSync(path.join(__dirname, 'Matching.styled.jsx'), 'utf8');
     const rowStyled = fs.readFileSync(path.join(__dirname, 'MatchingHiddenList.styled.jsx'), 'utf8');
     const photo = rowStyled.slice(rowStyled.indexOf('export const Photo'), rowStyled.indexOf('export const PhotoRoleBadge'));
 
     // Рядок стрічки: фото виходить за відступ картки, тож і ширина на два
-    // відступи більша — інакше стеля 58vh сідала б і на неї.
+    // відступи більша — інакше стеля висоти сідала б і на неї.
     // Подвоєну довжину записуємо готовим значенням: множення одиниць у calc()
     // не підтримують старі браузери з production Browserslist.
     expect(photo).toContain('width: calc(100% + 22px);');
     expect(photo).not.toMatch(/CARD_PADDING\} \* 2/);
-    expect(photo).toContain('max-height: 58vh;');
-    // Відкрита картка: та сама пара правил, та сама причина.
-    expect(styledSource).toContain('width: 100%;\n    aspect-ratio: 4 / 5;');
+    expect(photo).toContain('max-height: min(40vh, 320px);');
   });
 
   /*
