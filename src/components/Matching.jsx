@@ -4297,8 +4297,8 @@ const Matching = () => {
 
   // «Назад» телефона з видачі — у стрічку. Запис пошуку клав ефект адреси
   // (`searchHistoryEntryRef`); тут його зняли. Якщо поточним після «назад»
-  // лишився запис пошуку, то зняли запис картки над ним — закрилась картка, а
-  // пошук стоїть як стояв.
+  // лишився запис пошуку, то зняли запис над ним — закрився перегляд фото
+  // (`PhotoViewer`), а пошук стоїть як стояв.
   useEffect(() => {
     const handleSearchPopState = () => {
       if (!searchHistoryEntryRef.current) return;
@@ -7393,8 +7393,8 @@ const Matching = () => {
   const buildRowReviewsSlot = React.useCallback(profileId => (
     <PublicCommentBlock
       flush
-      // Читання тут іде без окремого жесту (ефект вище), так само, як у
-      // відкритій картці й в обох формах — див. `preloaded` у `ProfileRow`.
+      // Читання тут іде без окремого жесту (ефект вище), так само, як в
+      // обох формах — див. `preloaded` у `ProfileRow`.
       preloaded
       profileId={profileId}
       backendHref={publicCommentsBackendHref(profileId)}

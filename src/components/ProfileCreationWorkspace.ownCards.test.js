@@ -167,7 +167,9 @@ it('апаратна кнопка «назад» закриває форму т�
 
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Відкрити' }));
-  await screen.findByRole('heading', { name: 'Олена' });
+  // Шапка форми — картка стрічки (`ProfileRow` з `preview`), і людину
+  // називає вона.
+  expect(await screen.findByTestId('draft-card-preview')).toHaveTextContent('Олена');
 
   // Відкрита форма поклала в історію рівно один запис — саме його знімає
   // апаратна кнопка.
@@ -178,7 +180,7 @@ it('апаратна кнопка «назад» закриває форму т�
   });
 
   await waitFor(() => expect(screen.getByTestId('navigation-slot')).toHaveAttribute('data-workspace', ''));
-  expect(screen.queryByRole('heading', { name: 'Олена' })).not.toBeInTheDocument();
+  expect(screen.queryByTestId('draft-card-preview')).not.toBeInTheDocument();
   // Читач лишається на своєму екрані, а не виїжджає з нього навігацією.
   expect(mockNavigate).not.toHaveBeenCalled();
 });

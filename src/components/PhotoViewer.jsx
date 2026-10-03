@@ -120,8 +120,8 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, closeOn
         next();
       } else if (e.key === 'ArrowLeft') {
         prev();
-      } else if (e.key === 'Escape' && onCloseRef.current) {
-        onCloseRef.current();
+      } else if (e.key === 'Escape') {
+        closeRef.current();
       }
     };
 
@@ -134,22 +134,32 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, closeOn
     };
   }, [next, prev]);
 
+  // Запис в історії ставиться раз і знімається не прибиранням ефекту, а самим
+  // закриттям: у режимі розробки React ставить і знімає ефекти двічі, і
+  // `history.back()` з прибирання доїжджав подією `popstate` уже до другого
+  // монтування — перегляд закривався, щойно відкрившись.
   useEffect(() => {
     if (!closeOnHistoryBack || typeof window === 'undefined') return undefined;
-    window.history.pushState({ photoViewer: true }, '');
-    let popped = false;
+    if (!window.history.state?.photoViewer) window.history.pushState({ photoViewer: true }, '');
     const handlePopState = () => {
-      popped = true;
       if (onCloseRef.current) onCloseRef.current();
     };
     window.addEventListener('popstate', handlePopState);
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-      // Закрили хрестиком чи кліком — знімаємо власний запис, інакше перше ж
-      // «назад» після перегляду не робило б нічого.
-      if (!popped && window.history.state?.photoViewer) window.history.back();
-    };
+    return () => window.removeEventListener('popstate', handlePopState);
   }, [closeOnHistoryBack]);
+
+  // Закрили хрестиком, Escape чи кліком повз знімок — знімаємо власний запис,
+  // і закриває вже `popstate`; інакше перше ж «назад» після перегляду не
+  // робило б нічого.
+  const close = React.useCallback(() => {
+    if (closeOnHistoryBack && typeof window !== 'undefined' && window.history.state?.photoViewer) {
+      window.history.back();
+      return;
+    }
+    if (onCloseRef.current) onCloseRef.current();
+  }, [closeOnHistoryBack]);
+  const closeRef = useRef(close);
+  closeRef.current = close;
 
   const handleTouchStart = e => {
     e.stopPropagation();
@@ -181,9 +191,7 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, closeOn
 
   const handleOverlayClick = e => {
     e.stopPropagation();
-    if (e.target === e.currentTarget && onClose) {
-      onClose();
-    }
+    if (e.target === e.currentTarget) close();
   };
 
   const shown = Math.min(current, photos.length - 1);
@@ -205,7 +213,7 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, closeOn
       <NextButton onClick={next} aria-label="Next">
         <FiChevronRight size={40} />
       </NextButton>
-      <CloseButton onClick={onClose} aria-label="Close">
+      <CloseButton onClick={close} aria-label="Close">
         <FiX size={30} />
       </CloseButton>
       {onDelete && (

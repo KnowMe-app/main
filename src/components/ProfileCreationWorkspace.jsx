@@ -4,7 +4,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import { FiChevronDown, FiClock, FiFolder, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
-import { FaMapMarkerAlt, FaTimes } from 'react-icons/fa';
+import { FaTimes } from 'react-icons/fa';
 
 import {
   addMatchingSearchQuery,
@@ -27,7 +27,7 @@ import { listOfferedOptions } from '../utils/offeredOptions';
 import { asExamplePlaceholder } from '../utils/examplePlaceholder';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { getCurrentValue, hasCurrentValue } from './getCurrentValue';
-import { CONTACT_FIELDS, getContactEntries, isHiddenTelegramValue } from './contactMethods';
+import { CONTACT_FIELDS, isHiddenTelegramValue } from './contactMethods';
 import { listProfileRoles } from '../utils/matchingPeerVisibility';
 import { fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
 import { usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
@@ -39,8 +39,8 @@ import InfoModal, {
   ModalTitle,
 } from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
-import { ContactLinks, PublicCommentBlock, ReviewsStateNote, describeReviewsState } from './ProfileRow';
-import { NoteClearButton, NoteFieldRow, NoteLane, NoteLaneHead, NoteLanes } from './Matching.styled';
+import ProfileRow, { PublicCommentBlock, ReviewsStateNote, describeReviewsState } from './ProfileRow';
+import { MatchingThemeScope, NoteClearButton, NoteFieldRow, NoteLane, NoteLaneHead, NoteLanes } from './Matching.styled';
 import { NOTE_TEXT_LINE_HEIGHT, NOTE_TEXT_SIZE } from './noteTypography';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { profileUiText } from 'utils/profileTexts';
@@ -134,7 +134,9 @@ const DeleteDraftButton = styled(Button)`
 // пошуку, апаратна кнопка телефона поверталась на порожній екран майстерні.
 // Тепер обидва знімають один і той самий запис історії (`goBackOrTo`), а
 // стрілка в шапці — це рівно той візуал, що вже стоїть у шарі деталей стрічки.
-const Card = styled.section`padding:20px; margin:12px 0; border:1px solid var(--km-border); border-radius:22px; background:var(--km-card); box-shadow:var(--km-shadow);`;
+// Картка — та сама, що в «Моєму профілі» (\`Card\` там): без рамки, з тінню й
+// радіусом \`--km-radius\`, 16 px між картками.
+const Card = styled.section`padding:18px; margin:0 0 16px; border:0; border-radius:var(--km-radius); background:var(--km-card); box-shadow:var(--km-shadow);`;
 const Actions = styled.div`display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;`;
 const Meta = styled.p`margin:6px 0; color:var(--km-muted); font-size:14px; line-height:1.45; overflow-wrap:anywhere;`;
 const STATUS_VARIANT_BACKGROUND = {
@@ -219,10 +221,22 @@ const ProgressFill = styled.div`
   width:${({ $pct }) => Math.max(0, Math.min(100, Number($pct) || 0))}%; height:100%;
   border-radius:inherit; background:var(--km-accent); transition:width 180ms ease;
 `;
-const FormSectionCard = styled(Card)`padding:22px 22px 20px; border-radius:24px;`;
-const FormSectionTitle = styled.h3`margin:0 0 14px; font-size:16.5px; font-weight:800; letter-spacing:-.015em;`;
+/*
+ * Секції форми — ті самі, що в «Моєму профілі»: картка без рамки з тінню й
+ * радіусом \`--km-radius\`, заголовок смугою на тлі сторінки з рискою під нею,
+ * поля з відступом 18 px. Тут стояли свої числа (відступ 22 px, радіус 24 px,
+ * заголовок 16.5 px жирністю 800, жирний текст у полях), і форма доповнення
+ * виглядала окремо скопійованим екраном, а не частиною застосунку.
+ */
+const FormSectionCard = styled(Card)`
+  padding:0 18px; border:0; border-radius:var(--km-radius); overflow:hidden; margin:0 0 16px;
+`;
+const FormSectionTitle = styled.h3`
+  margin:0 -18px; padding:14px 18px; border-bottom:1px solid var(--km-border); background:var(--km-bg);
+  font-size:14px; font-weight:600; line-height:1.3; letter-spacing:0;
+`;
 const FieldRow = styled.div`
-  padding:13px 0; border-bottom:1px solid var(--km-border);
+  padding:14px 0; border-bottom:1px solid var(--km-border);
   &:last-child { border-bottom:none; }
   /* Поле всередині доріжки нотатки: підпис уже стоїть над ним, і власного
      відступу воно не додає — інакше два сусідні порожні поля стояли б на
@@ -234,12 +248,12 @@ const FieldRow = styled.div`
     box-shadow:inset 3px 0 0 var(--km-accent);
   ` : '')}
 `;
-const FieldLabel = styled.div`font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--km-muted); margin-bottom:8px;`;
+const FieldLabel = styled.div`font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.6px; color:var(--km-muted); margin-bottom:6px;`;
 // The right-hand padding leaves room for the clear "×" that sits inside the
 // box (see InlineClearButton), the way My Profile's fields do it.
 const FieldInput = styled.input`
-  width:100%; box-sizing:border-box; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:14px;
-  padding:13px 40px 13px 16px; font:600 15.5px/1.3 var(--km-font); color:var(--km-text); outline:none;
+  width:100%; box-sizing:border-box; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:10px;
+  padding:10px 38px 10px 14px; font:400 16px/1.3 var(--km-font); color:var(--km-text); outline:none;
   transition:border-color 150ms ease, box-shadow 150ms ease;
   &:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
 `;
@@ -263,8 +277,8 @@ const ACTION_TONES = {
   restore: { color: 'var(--km-accent)', background: 'var(--km-accent-light)' },
 };
 const FieldActionButton = styled.button`
-  width:40px; height:40px; flex:0 0 40px; display:grid; place-items:center; padding:0;
-  border:1px solid var(--km-border); border-radius:12px; background:var(--km-card); cursor:pointer;
+  width:42px; height:42px; flex:0 0 42px; display:grid; place-items:center; padding:0;
+  border:1px solid var(--km-border); border-radius:10px; background:var(--km-card); cursor:pointer;
   color:${({ $tone }) => (ACTION_TONES[$tone]?.color || 'var(--km-muted)')};
   &:hover:not(:disabled) {
     border-color:currentColor;
@@ -276,14 +290,14 @@ const FieldActionButton = styled.button`
 `;
 const AddValueButton = styled(FieldActionButton)`color:var(--km-accent);`;
 const FieldTextArea = styled.textarea`
-  width:100%; box-sizing:border-box; min-height:90px; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:14px;
-  padding:13px 40px 13px 16px; font:600 15.5px/1.4 var(--km-font); color:var(--km-text); outline:none; resize:vertical;
+  width:100%; box-sizing:border-box; min-height:90px; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:10px;
+  padding:10px 38px 10px 14px; font:400 16px/1.4 var(--km-font); color:var(--km-text); outline:none; resize:vertical;
   transition:border-color 150ms ease, box-shadow 150ms ease;
   &:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
 `;
 const FieldChipRow = styled.div`display:flex; flex-wrap:wrap; gap:6px;`;
 const FieldChip = styled.button`
-  padding:6px 13px; border-radius:99px; font-size:13px; font-weight:600; cursor:pointer;
+  padding:6px 13px; border-radius:99px; font-size:13px; font-weight:400; cursor:pointer;
   border:1.5px solid ${({ $selected }) => ($selected ? 'var(--km-accent)' : 'var(--km-border)')};
   background: ${({ $selected }) => ($selected ? 'var(--km-accent-light)' : 'var(--km-card)')};
   color: ${({ $selected }) => ($selected ? 'var(--km-accent)' : 'var(--km-muted)')};
@@ -378,45 +392,19 @@ const EditMeta = styled.div`display:flex; flex-wrap:wrap; gap:3px 9px; font-size
 const EditHint = styled.div`font-size:11px; font-weight:700; color:var(--km-accent);`;
 const DraftHeaderCard = styled(Card)`display:grid; gap:10px; margin:0 0 14px;`;
 const DraftBadges = styled.div`display:flex; flex-wrap:wrap; align-items:center; gap:8px;`;
-// Верхній блок — це картка людини, а не самі лише імʼя з прізвищем: під ними
-// стояла памʼятка про те, як влаштований оверлей, і жодного факту про людину.
-// Тепер тут рівно те, за чим картку впізнають у стрічці — фото, роль, вік,
-// локація й контакти.
-const DraftIdentity = styled.div`display:flex; align-items:center; gap:14px; min-width:0;`;
-const DraftIdentityText = styled.div`min-width:0; display:grid; gap:4px;`;
-const DraftAvatar = styled.img`
-  width:56px; height:56px; flex:0 0 56px; border-radius:18px; object-fit:cover; background:var(--km-bg);
-`;
-const DraftAvatarFallback = styled.span`
-  width:56px; height:56px; flex:0 0 56px; display:grid; place-items:center; border-radius:18px;
-  background:var(--km-accent-light); color:var(--km-accent); font:800 22px/1 var(--km-font);
-`;
-const DraftName = styled.h2`margin:0; font-size:clamp(20px, 5.5vw, 24px); line-height:1.2; overflow-wrap:anywhere;`;
-// Вік стоїть в одному рядку з іменем, як у рядку стрічки (`ProfileRow`), а
-// довге імʼя переносить його нижче, а не вилазить за край.
-const DraftNameRow = styled.div`display:flex; align-items:baseline; flex-wrap:wrap; gap:6px; min-width:0;`;
-const DraftAge = styled.span`font-size:clamp(16px, 4.5vw, 19px); font-weight:600; color:var(--km-muted);`;
-// Локація — рядком під іменем, жирним текстом зі значком, як у рядку стрічки:
-// дві картки тієї самої людини мусять виглядати однаково.
-const DraftLocation = styled.div`
-  display:flex; align-items:center; gap:6px; min-width:0;
-  font-size:14px; font-weight:700; color:var(--km-text);
-  overflow-wrap:anywhere;
-
-  svg { flex:0 0 auto; color:var(--km-muted); }
-`;
 /*
- * Контакти шапки — тим самим представленням, що й усюди (`ContactLinks`).
+ * Угорі форми — та сама картка стрічки, що й угорі «Мого профілю»
+ * (`ProfileRow` з `preview`): фото на всю ширину, імʼя, смуга показників,
+ * факти й рядок контактів.
  *
- * Своє в неї було рівно одне: кожен канал — окремим рядком, значок плюс ніком
- * текстом. Ті самі ніки стоять у полях форми просто під шапкою, і виходило по
- * дві копії кожного: вгорі показати, внизу правити. Тепер угорі лишається те,
- * заради чого шапку й читають, — номер повністю (його диктують і звіряють) з
- * трьома кнопками месенджерів, зібраними з нього ж, а решта каналів значками;
- * що саме за значком, каже підказка, а повний нік — поле під ним.
+ * Тут була своя шапка — аватар 56 px і імʼя шрифтом 20–24 px, — і на телефоні
+ * «Рога Надія Сергіївна, 33» розсипалось на три рядки, а сама шапка виглядала
+ * незалежною копією, а не тією карткою, яку читач щойно бачив у стрічці. Та
+ * сама картка знімає обидві біди: вона вже вміщає імʼя в рядок і вже однакова
+ * скрізь. Палітру стрічки поза нею оголошує `MatchingThemeScope`.
  */
-const DraftContacts = styled.div`
-  font-size:14px; line-height:1.5; color:var(--km-text);
+const DraftPreview = styled(MatchingThemeScope)`
+  max-width:460px; margin:0 auto 16px; border-radius:18px;
 `;
 
 // Two controls per proposal, both icons, both on the right of its value:
@@ -698,8 +686,9 @@ const describeAuthor = (authorId, authors) => {
 export const ProfileCreationWorkspace = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  // Підписи контактів у шапці — тією ж мовою, що й решта анкети.
-  const { language } = useAppSettings();
+  // Підписи контактів у шапці — тією ж мовою, що й решта анкети; тема — та
+  // сама, що й у стрічці, інакше картка-шапка малювалась би темною палітрою.
+  const { language, themeMode } = useAppSettings();
   const [searchParams, setSearchParams] = useSearchParams();
   const [uid, setUid] = useState('');
   const [access, setAccess] = useState(null);
@@ -1877,33 +1866,14 @@ export const ProfileCreationWorkspace = () => {
     </FieldRow>;
   };
 
-  // Заголовок називає ту саму людину, що й рядок стрічки. Без імені їх двоє
-  // різних: нова картка ще нічия, а знайдена — чиясь, тільки імені в ній не
-  // видно (або не показано цьому читачеві), і «Новий профіль» над нею брехав би.
-  const draftName = useMemo(() => (
-    describeProfileName(draft?.surname, draft?.name, draft?.fathersname)
-      || uiText(overlayTarget ? 'Картка без імені' : 'Новий профіль', language)
-  ), [draft, language, overlayTarget]);
-
   /**
-   * Факти, за якими картку впізнають: вік і локація.
-   *
-   * Беруться вони з тієї самої картки, яку показує форма (канонічна + те, що вже
-   * набрали), і тими самими геттерами, що й рядок стрічки, — інакше та сама
-   * людина називалась би тут інакше, ніж у видачі, з якої сюди прийшли.
-   *
-   * Роль тут більше не пишеться: код ролі (`ЕД`, `АГ`…) поруч з іменем нічого
-   * не додавав до того, що вже видно з розділу «Категорія» нижче у формі, а
-   * тут лише займав рядок. Вік стоїть поруч з іменем, а локація — під ним
-   * окремим жирним рядком зі значком, так само, як у рядку стрічки
-   * (`ProfileRow`): дві картки тієї самої людини не можуть виглядати по-різному.
+   * Картка, яку показує шапка, — канонічна плюс те, що вже набрали: та сама
+   * людина, якою її бачать у стрічці, лише з правками цієї форми.
    */
   const summaryCard = useMemo(
     () => ({ ...(overlayTarget?.card || overlayTarget?.canonical || {}), ...(draft || {}) }),
     [draft, overlayTarget],
   );
-  const draftAge = getProfileAge(summaryCard);
-  const draftLocation = getProfileLocation(summaryCard);
   /**
    * Контакти шапки — рівно ті, що стоять у полях форми нижче.
    *
@@ -1923,15 +1893,25 @@ export const ProfileCreationWorkspace = () => {
     result[fieldName] = value;
     return result;
   }, {}), [summaryCard]);
-  const summaryContactEntries = useMemo(
-    () => getContactEntries(summaryContacts).filter(entry => entry.key !== 'vk'),
-    [summaryContacts],
-  );
+  // Шапка — картка стрічки (`ProfileRow`), і контакти вона складає тими самими
+  // правилами (`getContactEntries`). Сюди їй лягають поточні значення полів,
+  // а не їхня історія. Без імені картка мовчала б порожнім рядком, тож нова
+  // називається «Новий профіль», а знайдена без імені — «Картка без імені»:
+  // «Новий профіль» над чужою карткою брехав би.
+  const previewCard = useMemo(() => {
+    const card = { ...summaryCard, __allPhotosLoaded: true };
+    CONTACT_FIELDS.forEach(fieldName => {
+      if (fieldName in summaryContacts) card[fieldName] = summaryContacts[fieldName];
+      else delete card[fieldName];
+    });
+    if (!describeProfileName(card.surname, card.name)) {
+      card.name = uiText(overlayTarget ? 'Картка без імені' : 'Новий профіль', language);
+    }
+    return card;
+  }, [language, overlayTarget, summaryCard, summaryContacts]);
   // Канали, які в картці є, а рядка в анкеті не мають, дописуються в кінець
   // блока контактів — інакше виправити їх немає де.
   const extraContactFields = useMemo(() => collectExtraContactFields(draft), [draft]);
-  const draftPhoto = getProfilePhotos(summaryCard)[0] || '';
-  const draftInitial = (draftName.trim()[0] || '?').toUpperCase();
 
   // Окремого рядка з назвою екрана, стрілкою й «⋮» тут більше немає: усе це
   // стоїть у рядку спільної навігації (`PrimaryNavigation`). Назва екрана
@@ -1961,10 +1941,17 @@ export const ProfileCreationWorkspace = () => {
     ) : undefined,
   });
   if (!access) return <Page><Shell>{uiText('Завантаження…', language)}</Shell></Page>;
+  // Під карткою-шапкою лишається власна плашка лише тоді, коли їй є що сказати:
+  // стан і службові дані чернетки, заповненість і реакція. Над доповненням
+  // знайденої картки цього нічого немає — там стоїть сама картка.
+  const hasDraftHeaderExtras = !overlayTarget || editingSharedDraft;
 
   return <Page><Shell>
     {draft ? <>
-      <DraftHeaderCard>
+      <DraftPreview $themeMode={themeMode} data-testid="draft-card-preview">
+        <ProfileRow user={previewCard} preview isAdmin={false} expanded={false} />
+      </DraftPreview>
+      {hasDraftHeaderExtras && <DraftHeaderCard>
         {/* Стан чернетки — це те, що з нею буде далі, і сказати його є кому лише
             там, де воно щось означає: у власній чернетці й у черзі адміна.
             Над доповненням знайденої картки стояв підпис «Власні дані», який не
@@ -1984,28 +1971,6 @@ export const ProfileCreationWorkspace = () => {
             && <Status $variant="private">{uiText('Приватний', language)}</Status>}
           {reviewingAsAdmin && pendingEditsCount > 0 && <Status $variant="overlay">{uiText('{count} непідтверджених правок', language, { count: pendingEditsCount })}</Status>}
         </DraftBadges>}
-        <DraftIdentity>
-          {draftPhoto
-            ? <DraftAvatar src={draftPhoto} alt="" />
-            : <DraftAvatarFallback aria-hidden="true">{draftInitial}</DraftAvatarFallback>}
-          <DraftIdentityText>
-            <DraftNameRow>
-              {/* Кома стоїть при імені, як у рядку стрічки («Анастасія А., 31»):
-                  без неї «Рога Надія 33» читалось як третє слово імені. */}
-              <DraftName>{draftName}{draftAge ? ',' : ''}</DraftName>
-              {draftAge && <DraftAge>{draftAge}</DraftAge>}
-            </DraftNameRow>
-            {draftLocation && (
-              <DraftLocation>
-                <FaMapMarkerAlt aria-hidden="true" />
-                <span>{draftLocation}</span>
-              </DraftLocation>
-            )}
-          </DraftIdentityText>
-        </DraftIdentity>
-        <DraftContacts>
-          <ContactLinks entries={summaryContactEntries} language={language} />
-        </DraftContacts>
         {!overlayTarget && access.isAdmin && <>
           <TechnicalMeta>
             cardId: <code>{activeMutation.cardId}</code> · revision: {activeMutation.revision || 0}
@@ -2067,7 +2032,7 @@ export const ProfileCreationWorkspace = () => {
             </ReactionButtons>
           </PersonalDraftMeta>}
         </>}
-      </DraftHeaderCard>
+      </DraftHeaderCard>}
       {reviewingAsAdmin && (pendingEditsCount > 0 || draftHistory.length > 0) && <ReviewCard>
         <SectionHeader>
           <span>{uiText('Правки редакторів', language)}</span>

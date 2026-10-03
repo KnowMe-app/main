@@ -1,6 +1,6 @@
 import React from 'react';
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import ProfileRow, { enrichGateLabel } from './ProfileRow';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
@@ -156,7 +156,7 @@ describe('ряд рішень у рядку стрічки', () => {
 
   // Дотик до фото відкриває його на весь екран, а не картку: окремої
   // відкритої картки більше немає, вона повторювала рядок.
-  it('відкриває фото на весь екран дотиком і не розгортає рядок', () => {
+  it('відкриває фото на весь екран дотиком і не розгортає рядок', async () => {
     const onToggleExpand = jest.fn();
     renderRow({ onToggleExpand, user: { ...card, photos: ['a.jpg', 'b.jpg'], __allPhotosLoaded: true } });
 
@@ -166,8 +166,9 @@ describe('ряд рішень у рядку стрічки', () => {
     expect(within(viewer).getByText('1 / 2')).toBeInTheDocument();
     expect(onToggleExpand).not.toHaveBeenCalled();
 
+    // Закриття знімає власний запис історії, а закриває вже `popstate`.
     fireEvent.click(within(viewer).getByLabelText('Close'));
-    expect(screen.queryByRole('dialog', { name: 'Photo' })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Photo' })).not.toBeInTheDocument());
   });
 });
 

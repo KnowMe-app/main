@@ -194,16 +194,18 @@ describe('розділи повної анкети', () => {
 describe('обидва екрани', () => {
   const read = name => fs.readFileSync(path.join(__dirname, name), 'utf8');
 
-  it('складають картку з тих самих частин', () => {
+  // Відкритої картки більше немає — вона складалась із тих самих частин, що
+  // й рядок, і повторювала його з більшим фото. Екран тепер один.
+  it('складають картку з тих самих частин — і екран для цього один', () => {
     const row = read('ProfileRow.jsx');
-    const card = read('Matching.jsx');
+    const matching = read('Matching.jsx');
     ['buildProfileStatStrip(user, language)', 'buildProfileSummaryRows(user, language)', 'buildProfileDetailSections(user, language)']
       .forEach(call => {
         expect(row).toContain(call);
-        expect(card).toContain(call);
+        expect(matching).not.toContain(call);
       });
     expect(row).toContain('<ProfileStatStrip cells={statCells} />');
-    expect(card).toContain('<ProfileStatStrip cells={statCells} large />');
+    expect(matching).not.toContain('<ProfileStatStrip cells={statCells} large />');
   });
 
   // Курсивний рядок фактів лишився самій плитці галереї: у рядку він казав
