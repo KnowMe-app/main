@@ -302,7 +302,14 @@ const cSectionValue = user => formatProfileCountOrDate(normalizeDisplayValue(
   user?.cSection || user?.csection || user?.c_section || user?.cesareanSection
 ));
 const maritalStatusDisplayValue = (user, language) => maritalStatusLabel(user?.maritalStatus, language);
-const glassesDisplayValue = (user, language) => glassesLabel(user?.glasses, language);
+// «Окуляри — ні» означає «зір гарний», і саме це читач хоче знати.
+const glassesDisplayValue = (user, language) => {
+  const normalized = normalizeDisplayValue(user?.glasses).toLowerCase();
+  if (NO_TOKENS.has(normalized) || normalized === 'ні') {
+    return resolveProfileLanguage(language) === 'en' ? 'no, good eyesight' : 'не носить, зір гарний';
+  }
+  return glassesLabel(user?.glasses, language);
+};
 
 const donorExperienceValue = user => {
   const exp = normalizeDisplayValue(user?.experience || user?.donationExperience || user?.previousDonation);

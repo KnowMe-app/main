@@ -182,6 +182,12 @@ export const describeLooks = ({ user, lang, typed, includeHair = false }) => {
   const breast = value('breastSize').replace(/\s*розмір\s*$/iu, '').replace(/^розмір\s*/iu, '').trim()
     || value('breastSize');
   const race = word('race');
+  // Розміри — частина тієї ж фігури: окремим розділом «Розміри» стояло одне
+  // речення з двох чисел під заголовком, а поруч — «розмір грудей» у фігурі.
+  const clothing = value('clothingSize');
+  const shoe = value('shoeSize');
+  const glasses = describeGlasses(user?.glasses, lang);
+  if (glasses) used.add('glasses');
 
   const parts = [];
   if (lang === 'en') {
@@ -193,9 +199,15 @@ export const describeLooks = ({ user, lang, typed, includeHair = false }) => {
       chin ? `${chin} chin` : '',
     ], lang);
     if (features) parts.push(sentence(`I have ${features}`));
-    const figure = [body ? `my body type is ${body}` : '', breast ? `breast size ${breast}` : ''].filter(Boolean).join(', ');
+    const figure = [
+      body ? `my body type is ${body}` : '',
+      breast ? `breast size ${breast}` : '',
+      clothing ? `clothing size ${clothing}` : '',
+      shoe ? `shoe size ${shoe}` : '',
+    ].filter(Boolean).join(', ');
     if (figure) parts.push(sentence(figure));
     if (race) parts.push(sentence(`my ethnicity is ${race}`));
+    if (glasses) parts.push(glasses);
   } else {
     // «З ямкою» стоїть після слова: «підборіддя з ямкою», а не «з ямкою підборіддя».
     const chinClause = chin
@@ -209,11 +221,43 @@ export const describeLooks = ({ user, lang, typed, includeHair = false }) => {
       chinClause,
     ], lang);
     if (features) parts.push(sentence(`у мене ${features}`));
-    const figure = [body ? `тип моєї фігури — ${body}` : '', breast ? `розмір грудей — ${breast}` : ''].filter(Boolean).join(', ');
-    if (figure) parts.push(sentence(figure));
+    const figure = [
+      body ? `тип моєї фігури — ${body}` : '',
+      breast ? `розмір грудей — ${breast}` : '',
+      clothing ? `розмір одягу — ${clothing}` : '',
+      shoe ? `розмір взуття — ${shoe}` : '',
+    ].filter(Boolean).join(', ');
+    if (figure) parts.push(sentence(figure.startsWith('розмір') ? `мій ${figure}` : figure));
     if (race) parts.push(sentence(`моя раса — ${race}`));
+    if (glasses) parts.push(glasses);
   }
   return { text: parts.join(' '), used };
+};
+
+const GLASSES_NO = new Set(['no', 'false', 'ні', 'немає', 'нема', 'нет', 'не ношу', '-', '—']);
+const GLASSES_YES = new Set(['yes', 'true', 'так', 'є', 'ношу']);
+
+/*
+ * Окуляри реченням про зір. «Окуляри — ні» читалось як відповідь на питання,
+ * якого читач не бачив; людина ж, що окулярів не носить, каже цим, що зір у
+ * неї гарний. Власна відповідь («-2.5», «для читання») стає уточненням.
+ */
+export const describeGlasses = (value, lang) => {
+  const raw = pickCurrent(value);
+  if (!raw) return '';
+  const key = lower(raw).replace(/[.!]+$/u, '');
+  if (GLASSES_NO.has(key)) return lang === 'en' ? "I don't wear glasses, my eyesight is good." : 'Окулярів не ношу, зір гарний.';
+  if (GLASSES_YES.has(key)) return lang === 'en' ? 'I wear glasses.' : 'Ношу окуляри.';
+  // Власна відповідь. Число з діоптріями («-2.5», «+1,5», «-2/-3») — це вже
+  // сам зір, і реченням він читається як «Мій зір — −2.5 діоптрії». Решта
+  // («лінзи», «для читання», «лише за кермом») стає уточненням про зір:
+  // «Ношу окуляри (лінзи)» неправда для тієї, хто носить саме лінзи.
+  const text = raw.replace(/[.!]+$/u, '');
+  if (/^[+-−]?\s*\d+([.,]\d+)?(\s*[/;]\s*[+-−]?\s*\d+([.,]\d+)?)?$/u.test(text)) {
+    const diopters = text.replace(/^-/u, '−').replace(/\/-/gu, '/−');
+    return lang === 'en' ? `My eyesight is ${diopters} diopters.` : `Мій зір — ${diopters} діоптрії.`;
+  }
+  return lang === 'en' ? `About my eyesight and glasses: ${lowerFirstWord(text)}.` : `Щодо зору й окулярів — ${lowerFirstWord(text)}.`;
 };
 
 /*

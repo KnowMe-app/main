@@ -93,13 +93,19 @@ describe('кілька ролей у «Моєму профілі»', () => {
 
   // Видимість анкет і публікація — в одному блоці; «сховати» вгорі й
   // «приховати» внизу були тією самою дією під двома словами.
-  it('тримає статус, видимість ролей і публікацію в одному блоці «Публікація»', () => {
+  // Коли ролей кілька, кожна анкета публікується, знімається й очищується
+  // окремо: перемикач «сховано / буде видно» поруч зі спільною кнопкою нічого
+  // не означав, поки анкету не опубліковано.
+  it('тримає статус і публікацію кожної анкети в одному блоці «Публікація»', () => {
     const source = read('MyProfile.jsx');
     const card = source.slice(source.indexOf('data-testid="publish-card"'), source.indexOf('</SubmitWrap>'));
-    expect(card).toContain('role="switch"');
-    expect(card).toContain('onClick={() => toggleRoleHidden(role)}');
+    expect(card).not.toContain('role="switch"');
+    expect(card).toContain('onClick={() => publishRole(role)}');
+    expect(card).toContain('onClick={() => unpublishRole(role)}');
+    expect(card).toContain("onClick={() => { setClearRoleTarget(role); setShowInfoModal('delConfirm'); }}");
     expect(card).toContain('onClick={publishProfile}');
     expect(card).toContain('onClick={hideProfile}');
+    // Очищення питає підтвердження модалкою, а не стирає з кнопки.
     expect(card).not.toContain('clearRoleFields');
     expect(source).not.toContain('RoleVisibilityList');
     expect(source).not.toContain("'Приховати'");

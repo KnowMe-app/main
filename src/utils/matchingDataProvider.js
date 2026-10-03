@@ -6,6 +6,7 @@ import { collectAgeIdsByFilters, database } from 'components/config';
 import { getCard, getIndexIdsByQuery, MATCHING_INDEX_CACHE_VERSION, serializeQueryFilters, setIndexIdsForQuery } from './cardIndex';
 import { collectFilteredMatchingSourceCards } from './matchingSourceBackfill';
 import { keepDonorCounterpartyCards } from './matchingPeerVisibility';
+import { isCardFullyReacted } from './anketaReactions';
 import { getIndexedIdsByRules, normalizeSearchKeySetKeys } from './filterSetsIndex';
 import {
   FIELD_COUNT_SEARCH_KEY_INDEX_NAME,
@@ -1382,7 +1383,7 @@ export const applyMatchingUiFiltersToUsers = ({
     .filter(u => u?.__matchingAccessAllowed === true || u?.publish !== false)
     .filter(u => (
       !excludeReactionUsers ||
-      (!favoriteUsers[u.userId] && !dislikeUsers[u.userId]) ||
+      !isCardFullyReacted(u, favoriteUsers, dislikeUsers) ||
       Boolean(keepReactedUserIds?.has?.(u.userId))
     ));
 
@@ -1563,9 +1564,17 @@ export const fetchFilteredMatchingSourceChunk = ({
     // прив'язка до неї означала, що на 40-й картці стрічка просила в бекенда
     // ~50 повних анкет, щоб показати п'ять. Постійний множник тримає запас
     // пропорційним тому, що справді потрібно.
-    getSourceLimit: ({ remaining }) => Math.min(
+    //
+    // Перша сторінка джерела — майже рівно на порцію: без фільтрів відсівається
+    // хіба що вже вирішене, а курсор стоїть на останній взятій картці, тож
+    // запас понад потрібне — це просто прочитані й не показані картки. Утричі
+    // більше просить лише друга й наступні сторінки: вони бувають тоді, коли
+    // фільтр справді відсіяв більшість.
+    getSourceLimit: ({ remaining, loadedPages }) => Math.min(
       MATCHING_SOURCE_PAGE_LIMIT_CAP,
-      remaining * MATCHING_SOURCE_PAGE_OVERFETCH + MATCHING_SOURCE_PAGE_OVERFETCH_FLOOR,
+      loadedPages <= 1
+        ? remaining + MATCHING_SOURCE_PAGE_OVERFETCH_FLOOR
+        : remaining * MATCHING_SOURCE_PAGE_OVERFETCH + MATCHING_SOURCE_PAGE_OVERFETCH_FLOOR,
     ),
     // Сторінка джерела вже віддає все, що рядок стрічки показує — чи то повна
     // анкета, чи то проєкція `matchingCards`. Перечитувати її поштучно за id

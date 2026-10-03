@@ -1340,8 +1340,17 @@ export const NotesAddRow = styled.div`
   gap: 8px;
 `;
 
+// Колір доріжки «Пізніше» — синій: це не запис про людину (відгук, памʼятка),
+// а рішення про час, і з двома сусідами він не мав зливатись.
+export const POSTPONE_LANE_COLOR = '#3D6FD1';
+
+const notesLaneColor = ({ $public, $postpone }) => {
+  if ($postpone) return POSTPONE_LANE_COLOR;
+  return $public ? 'var(--matching-accent, var(--km-accent, #E8791A))' : '#2E9B55';
+};
+
 export const NotesAddButton = styled.button`
-  --note-lane-color: ${({ $public }) => ($public ? 'var(--matching-accent, var(--km-accent, #E8791A))' : '#2E9B55')};
+  --note-lane-color: ${notesLaneColor};
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1388,3 +1397,79 @@ export const MoreNote = styled.div`
 /* Межу між доріжками тримає сама доріжка (`NoteLane` у `Matching.styled`):
    у рядку стрічки й у відкритій картці стоять ті самі дві доріжки, тож і
    риска між ними мусить бути одна на два екрани, а не своя тут. */
+
+export const PostponeLane = styled.div`
+  padding-left: 10px;
+  border-left: 2px solid ${POSTPONE_LANE_COLOR};
+`;
+
+export const PostponeText = styled.div`
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--matching-header-text, var(--km-text, #2c261f));
+`;
+
+export const PostponeChoices = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+`;
+
+export const PostponeChoice = styled.button`
+  min-width: 36px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, ${POSTPONE_LANE_COLOR} 30%, transparent);
+  background: color-mix(in srgb, ${POSTPONE_LANE_COLOR} 8%, transparent);
+  color: ${POSTPONE_LANE_COLOR};
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:hover {
+    background: color-mix(in srgb, ${POSTPONE_LANE_COLOR} 16%, transparent);
+  }
+`;
+
+export const PostponeUnit = styled.span`
+  font-size: 13px;
+  color: var(--matching-muted-text, var(--km-muted, #8a8178));
+`;
+
+export const PostponeCancel = styled.button`
+  margin-left: auto;
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--matching-muted-text, var(--km-muted, #8a8178));
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+`;
+
+export const PostponeBadge = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  padding: 3px 9px;
+  border-radius: 99px;
+  background: color-mix(in srgb, ${POSTPONE_LANE_COLOR} 10%, transparent);
+  color: ${POSTPONE_LANE_COLOR};
+  font-size: 12px;
+  font-weight: 650;
+
+  svg {
+    width: 12px;
+    height: 12px;
+    flex: none;
+  }
+`;

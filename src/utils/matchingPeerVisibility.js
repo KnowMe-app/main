@@ -32,6 +32,21 @@ export const listProfileRoles = user => [
   ),
 ];
 
+/**
+ * Ролі читача з його анкети — обидва ключі разом, як і в картки.
+ *
+ * Стрічка брала `userRole || role`, тобто перший непорожній ключ: у старих
+ * анкетах `userRole` бував `'ed'`, а агенція лежала в `role`, і донорка-агентка
+ * гортала стрічку донорки — бачила менше карток, ніж бачила б сама агенція.
+ * Друга роль може лише розширити деку (`listViewerHiddenCardRoles`), тож
+ * загубити її означає звузити те, що людині доступне.
+ */
+export const readViewerRolesFromProfile = profile => {
+  const roles = listProfileRoles(profile);
+  if (roles.length) return roles.join(',');
+  return String(profile?.userRole || profile?.role || '');
+};
+
 /** Ролі читача по порядку — з масиву, з `['ag','ed']` чи з рядка `'ag,ed'`. */
 export const listViewerRoles = viewerRole => roleValues(viewerRole)
   .flatMap(value => value.split(','))
@@ -59,13 +74,45 @@ export const resolveViewerCurrentRole = viewerRole => {
   return roles.length ? roles[roles.length - 1] : '';
 };
 
-/** Чи ця людина дивиться стрічку як донорка. */
+/*
+ * Ролі читача — це **набір** справ, а не історія. Людина, що веде і донорську
+ * анкету, і агентську, працює як агенція — їй потрібні всі картки, зокрема
+ * інших донорок. А донорка, яка ще й сурогатна мама, лишається «людиною» в
+ * обох ролях: колег (інших донорок і СМ) вона не шукає, їй потрібні агенції,
+ * клініки й батьки. Тобто кожна додана роль може лише **розширити** деку:
+ * роль організації чи батьків знімає звуження цілком.
+ *
+ * Звужує деку лише читач, у якого всі ролі особисті (`ed`, `sm`), і ховає він
+ * рівно анкети своїх ролей (`listViewerHiddenCardRoles`). Доти тут брали
+ * поточну (останню) роль, і донорка-агентка гортала стрічку донорки.
+ */
+const PERSON_VIEWER_ROLES = new Set(['ed', 'sm']);
+
+export const listViewerHiddenCardRoles = viewerRole => {
+  const roles = [...new Set(listViewerRoles(viewerRole))];
+  if (!roles.length || roles.some(role => !PERSON_VIEWER_ROLES.has(role))) return [];
+  return roles;
+};
+
+/** Чи ця людина дивиться стрічку як донорка (і лише як людина, без ролі організації). */
 export const isDonorViewer = viewerRole =>
-  resolveViewerCurrentRole(viewerRole) === PEER_HIDDEN_VIEWER_ROLE;
+  listViewerHiddenCardRoles(viewerRole).includes(PEER_HIDDEN_VIEWER_ROLE);
 
 /** Чи картка не містить донорської ролі. */
 export const isNotEggDonorCard = user =>
   !listProfileRoles(user).includes(PEER_HIDDEN_VIEWER_ROLE);
+
+/**
+ * Чи лишається в картці бодай одна анкета, яку цьому читачеві показують.
+ * Донорка-агентка для донорки-читачки — це агентська анкета: картку лишаємо,
+ * а донорський рядок не малюємо (`listFeedRowAnketaRoles`).
+ */
+export const isCardVisibleForHiddenRoles = (user, hiddenRoles = []) => {
+  if (!hiddenRoles.length) return true;
+  const roles = listProfileRoles(user);
+  if (!roles.some(role => hiddenRoles.includes(role))) return true;
+  return roles.some(role => !hiddenRoles.includes(role));
+};
 
 /** Чи ця картка — відомий контрагент донорки. */
 export const isCounterpartyCard = user =>
@@ -76,8 +123,9 @@ export const isCounterpartyCard = user =>
  * застосовується — рішення про це ухвалює викликач.
  */
 export const keepDonorCounterpartyCards = ({ users = [], viewerRole } = {}) => {
-  if (!isDonorViewer(viewerRole)) return users;
-  return users.filter(user => user && isNotEggDonorCard(user));
+  const hiddenRoles = listViewerHiddenCardRoles(viewerRole);
+  if (!hiddenRoles.length) return users;
+  return users.filter(user => user && isCardVisibleForHiddenRoles(user, hiddenRoles));
 };
 
 /**

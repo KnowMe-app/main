@@ -16,8 +16,8 @@ describe('стрічка гортається сторінками, без па�
   const matching = () => read('Matching.jsx');
 
   it('має одну сторінку для першого екрана й для кожної наступної порції', () => {
-    expect(MATCHING_FEED_PAGE_SIZE).toBeGreaterThanOrEqual(20);
-    expect(MATCHING_FEED_PAGE_SIZE).toBeLessThanOrEqual(30);
+    expect(MATCHING_FEED_PAGE_SIZE).toBeGreaterThanOrEqual(8);
+    expect(MATCHING_FEED_PAGE_SIZE).toBeLessThanOrEqual(12);
     expect(MATCHING_FIRST_PAGE_BATCH).toBe(MATCHING_FEED_PAGE_SIZE);
   });
 
@@ -326,7 +326,10 @@ describe('дії та роль на картці стрічки', () => {
 
   it('дає те саме рядку списку', () => {
     const source = read('Matching.jsx');
-    expect(source).toContain('secondaryAction={{');
+    // Реакції рядка складає один помічник — він знає й про анкети картки з
+    // двома ролями (`utils/anketaReactions`).
+    expect(source).toContain('{...buildRowReactionActions(user, anketaRole)}');
+    expect(source).toContain('secondaryAction: {');
     // Реакції рядка стоять унизу картки, під власною нотаткою, і в один ряд —
     // тому й перевіряється саме нижній ряд, а не стовпчик праворуч.
     const rowSource = read('ProfileRow.jsx');

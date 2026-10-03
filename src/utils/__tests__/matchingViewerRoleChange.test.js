@@ -1,4 +1,5 @@
 import {
+  readViewerRolesFromProfile,
   resolveViewerCurrentRole,
   isDonorViewer,
   listFeedRoleFilterKeysForViewer,
@@ -27,22 +28,32 @@ describe('поточна роль читача — остання з подан�
     expect(resolveViewerCurrentRole(undefined)).toBe('');
   });
 
-  it('правило деки читає ту саму поточну роль', () => {
-    // Доти `String(['ag','ed'])` давало `'ag,ed'`, якого нормалізатор не знає,
-    // і читачка, яка щойно стала доноркою, гортала стрічку як агенція.
-    expect(isDonorViewer(['ag', 'ed'])).toBe(true);
+  // Правило деки читає ролі як набір: кожна роль розширює деку, а роль
+  // організації знімає звуження цілком. Донорка-агентка бачить усе.
+  it('правило деки читає ролі читача як набір', () => {
+    expect(isDonorViewer('ed')).toBe(true);
+    expect(isDonorViewer(['ed', 'sm'])).toBe(true);
+    expect(isDonorViewer(['ag', 'ed'])).toBe(false);
     expect(isDonorViewer(['ed', 'ag'])).toBe(false);
 
-    const feed = [{ userId: 'colleague', role: 'ed' }, { userId: 'agency', role: 'ag' }];
-    expect(keepDonorCounterpartyCards({ users: feed, viewerRole: ['ag', 'ed'] }))
-      .toEqual([{ userId: 'agency', role: 'ag' }]);
-    expect(keepDonorCounterpartyCards({ users: feed, viewerRole: ['ed', 'ag'] })).toEqual(feed);
+    const feed = [
+      { userId: 'colleague', role: 'ed' },
+      { userId: 'surrogate', role: 'sm' },
+      { userId: 'agency', role: 'ag' },
+      { userId: 'donorAgent', role: ['ed', 'ag'] },
+    ];
+    expect(keepDonorCounterpartyCards({ users: feed, viewerRole: 'ed' }).map(user => user.userId))
+      .toEqual(['surrogate', 'agency', 'donorAgent']);
+    expect(keepDonorCounterpartyCards({ users: feed, viewerRole: ['ed', 'sm'] }).map(user => user.userId))
+      .toEqual(['agency', 'donorAgent']);
+    expect(keepDonorCounterpartyCards({ users: feed, viewerRole: ['ag', 'ed'] })).toEqual(feed);
   });
 });
 
 describe('шухляда не пропонує того, чого в деці не буває', () => {
   it('донорці не показує ED, решті показує все', () => {
-    expect(listFeedRoleFilterKeysForViewer(['ag', 'ed'])).toEqual(['ag', 'ip', 'other']);
+    expect(listFeedRoleFilterKeysForViewer('ed')).toEqual(['ag', 'ip', 'other']);
+    expect(listFeedRoleFilterKeysForViewer(['ag', 'ed'])).toEqual(['ed', 'ag', 'ip', 'other']);
     expect(listFeedRoleFilterKeysForViewer('ag')).toEqual(['ed', 'ag', 'ip', 'other']);
     expect(listFeedRoleFilterKeysForViewer('')).toEqual(['ed', 'ag', 'ip', 'other']);
   });
@@ -67,7 +78,7 @@ describe('шухляда не пропонує того, чого в деці н
 describe('зміна ролі не лишає читача з неможливою умовою', () => {
   it('вмикає назад позначку, якої більше не показують', () => {
     const stored = { ed: false, ag: true, ip: true, other: true };
-    expect(alignRoleFilterGroupWithViewer(stored, ['ag', 'ed']))
+    expect(alignRoleFilterGroupWithViewer(stored, 'ed'))
       .toEqual({ ed: true, ag: true, ip: true, other: true });
   });
 
@@ -75,7 +86,7 @@ describe('зміна ролі не лишає читача з неможливо
     // Агенція гортала самих донорок; ставши доноркою, вона дістала б умову,
     // якої її дека виконати не може, — тобто порожній екран замість стрічки.
     const stored = { ed: true, ag: false, ip: false, other: false };
-    expect(alignRoleFilterGroupWithViewer(stored, ['ag', 'ed']))
+    expect(alignRoleFilterGroupWithViewer(stored, 'ed'))
       .toEqual({ ed: true, ag: true, ip: true, other: true });
   });
 
@@ -89,5 +100,18 @@ describe('зміна ролі не лишає читача з неможливо
 
   it('порожню групу не вигадує', () => {
     expect(alignRoleFilterGroupWithViewer(undefined, 'ed')).toBeUndefined();
+  });
+});
+
+describe('ролі читача — обидва ключі анкети', () => {
+  // Друга роль лише розширює деку: донорка-агентка бачить усе, що бачить
+  // агенція, навіть коли агенція записана в іншому ключі.
+  it('обʼєднує userRole і role', () => {
+    const viewerRole = readViewerRolesFromProfile({ userRole: 'ed', role: 'ag' });
+    expect(viewerRole).toBe('ed,ag');
+    expect(isDonorViewer(viewerRole)).toBe(false);
+    const feed = [{ userId: 'donor', role: 'ed' }, { userId: 'agency', role: 'ag' }];
+    expect(keepDonorCounterpartyCards({ users: feed, viewerRole })).toEqual(feed);
+    expect(keepDonorCounterpartyCards({ users: feed, viewerRole: 'ed' }).length).toBeLessThan(feed.length);
   });
 });

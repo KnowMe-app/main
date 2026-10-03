@@ -28,6 +28,7 @@ import { asExamplePlaceholder } from '../utils/examplePlaceholder';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { getCurrentValue, hasCurrentValue } from './getCurrentValue';
 import { CONTACT_FIELDS, getContactEntries } from './contactMethods';
+import { listProfileRoles } from '../utils/matchingPeerVisibility';
 import { fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
 import { usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
 import InfoModal, {
@@ -577,6 +578,25 @@ const CREATE_FORM_SECTIONS = [
  * нього немає. Такі канали дописуються в кінець блока контактів — по рядку на
  * той, що в цій картці справді заповнений.
  */
+/*
+ * Контакти за роллю картки — те саме правило, що й у «Моєму профілі»
+ * (`PERSON_HIDDEN_SOCIAL_FIELDS`): донорці й СМ без ролі організації TikTok,
+ * Twitter, LinkedIn і YouTube не пропонуються — їх шукають за телефоном,
+ * Telegram та Instagram, і порожній LinkedIn у доповненні донорки лише
+ * запрошував вписати те, чого в неї немає. Уже записане значення поле
+ * лишає: інакше його не було б де виправити. Картка без ролі бачить усі.
+ */
+const PERSON_HIDDEN_CONTACT_FIELDS = new Set(['tiktok', 'twitter', 'linkedin', 'youtube']);
+
+export const isContactFieldOfferedForCard = (fieldName, card) => {
+  if (!PERSON_HIDDEN_CONTACT_FIELDS.has(fieldName)) return true;
+  if (hasCurrentValue(card?.[fieldName])) return true;
+  const roles = listProfileRoles(card);
+  const isPerson = roles.some(role => role === 'ed' || role === 'sm');
+  const isOrganisation = roles.some(role => role === 'ag' || role === 'cl');
+  return !isPerson || isOrganisation;
+};
+
 export const collectExtraContactFields = card => CONTACT_FIELDS
   .filter(fieldName => !CREATE_FORM_SECTION_FIELDS.has(fieldName) && hasCurrentValue(card?.[fieldName]));
 
@@ -2063,7 +2083,9 @@ export const ProfileCreationWorkspace = () => {
       {CREATE_FORM_SECTIONS.filter(section => section.key !== 'comment').map(section => (
         <FormSectionCard key={section.key}>
           <FormSectionTitle>{uiText(section.title, language)}</FormSectionTitle>
-          {section.fields.map(fieldName => renderCreateField(fieldName))}
+          {section.fields
+            .filter(fieldName => section.key !== 'contacts' || isContactFieldOfferedForCard(fieldName, summaryCard))
+            .map(fieldName => renderCreateField(fieldName))}
           {section.key === 'contacts' && extraContactFields.map(fieldName => (
             renderCreateField(fieldName, { allowUnknown: true })
           ))}

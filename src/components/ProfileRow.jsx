@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPencilAlt, FaRegCommentDots, FaRegStickyNote } from 'react-icons/fa';
+import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPencilAlt, FaRegClock, FaRegCommentDots, FaRegStickyNote } from 'react-icons/fa';
 import {
   getProfileAge,
   getProfileBio,
@@ -49,6 +49,16 @@ import {
 import { getRoleColor } from './matchingRoleColors';
 import * as S from './MatchingHiddenList.styled';
 import { CardRoleBlock, isCounterpartyCard } from './programs/CardRoleBlock';
+import { isOrganisationAnketaRole } from '../utils/cardAnketas';
+import {
+  addMonthsIsoDate,
+  formatPostponeDate,
+  isPostponedUntil,
+  POSTPONE_MONTH_OPTIONS,
+  readPostponeDate,
+} from '../utils/matchingPostpone';
+import { getCurrentValue } from './getCurrentValue';
+
 import usePhotoSwipe from './usePhotoSwipe';
 import PhotoSwipeStage from './PhotoSwipeStage';
 // Доріжки нотаток беруться з розкладки відкритої картки, а не описуються тут
@@ -56,6 +66,8 @@ import PhotoSwipeStage from './PhotoSwipeStage';
 // відгук і власна нотатка, — і два екрани не можуть казати про них різне.
 import { NoteClearButton, NoteFieldRow, NoteLane, NoteLaneHead, PublishDot } from './Matching.styled';
 import { isMatchingCardPublished, MATCHING_CARD_REVIEW_FLAG_FIELD } from '../utils/matchingCardIndex';
+
+const pickCurrentText = value => String(getCurrentValue(value) ?? '').trim();
 
 // The one profile row shared by the hidden-list screen and the matching feed's
 // list mode (spec §0/§5). It owns the row's visual structure only - avatar,
@@ -944,9 +956,15 @@ export const ProfileNotes = ({
   hasReviews = false,
   hasPublicContent,
   hasPrivateContent,
+  // «Повернутись пізніше» (`utils/matchingPostpone`): `{ until, onSet, onClear }`.
+  // Третя доріжка поруч із відгуком і памʼяткою — це теж запис читача про
+  // людину, тільки записаний датою.
+  postpone,
 }) => {
   const collapsible = hasPublicContent !== undefined || hasPrivateContent !== undefined;
-  const [opened, setOpened] = useState({ public: false, private: false });
+  const [opened, setOpened] = useState({ public: false, private: false, postpone: false });
+  const postponeUntil = postpone && isPostponedUntil(postpone.until) ? readPostponeDate(postpone.until) : '';
+  const showPostpone = Boolean(postpone) && (Boolean(postponeUntil) || opened.postpone);
   const [focusLane, setFocusLane] = useState('');
   const publicLaneRef = useRef(null);
   const privateLaneRef = useRef(null);
@@ -989,7 +1007,22 @@ export const ProfileNotes = ({
           {privateSlot}
         </NoteLane>
       )}
-      {(!showPublic || !showPrivate) && (
+      {showPostpone && (
+        <PostponeLane
+          language={language}
+          until={postponeUntil}
+          onSet={months => {
+            setOpened(previous => ({ ...previous, postpone: false }));
+            postpone.onSet(months);
+          }}
+          onClear={() => {
+            setOpened(previous => ({ ...previous, postpone: false }));
+            postpone.onClear();
+          }}
+          onCancel={() => setOpened(previous => ({ ...previous, postpone: false }))}
+        />
+      )}
+      {(!showPublic || !showPrivate || (postpone && !showPostpone)) && (
         <S.NotesAddRow data-testid="notes-add-row">
           {!showPublic && (
             <S.NotesAddButton type="button" $public onClick={openLane('public')}>
@@ -1003,11 +1036,82 @@ export const ProfileNotes = ({
               <span>{uiText('Памʼятка', language)}</span>
             </S.NotesAddButton>
           )}
+          {postpone && !showPostpone && (
+            <S.NotesAddButton
+              type="button"
+              $postpone
+              title={uiText('Повернутись до профілю пізніше', language)}
+              onClick={event => {
+                event.stopPropagation();
+                setOpened(previous => ({ ...previous, postpone: true }));
+              }}
+            >
+              <FaRegClock aria-hidden="true" />
+              <span>{uiText('Пізніше', language)}</span>
+            </S.NotesAddButton>
+          )}
         </S.NotesAddRow>
       )}
     </S.RowNotes>
   );
 };
+
+/*
+ * Доріжка «Повернутись пізніше». Питання — реченням, яке читається саме:
+ * «Повернутись до цього профілю через [1] [2] [3] [6] [9] [12] міс.» Обрана
+ * відповідь стає датою, і доріжка каже вже її: «Повернетесь 03.01.2027 —
+ * до того часу картка стоїть у кінці списку», з хрестиком, який знімає
+ * відкладення.
+ */
+const PostponeLane = ({ language, until, onSet, onClear, onCancel }) => (
+  <S.PostponeLane data-testid="postpone-lane">
+    <NoteLaneHead>
+      <b>{uiText('Повернутись пізніше', language)}</b>
+      {!until && (
+        <S.PostponeCancel
+          type="button"
+          title={uiText('Відмінити', language)}
+          aria-label={uiText('Відмінити', language)}
+          onClick={event => { event.stopPropagation(); onCancel(); }}
+        >
+          ×
+        </S.PostponeCancel>
+      )}
+    </NoteLaneHead>
+    {until ? (
+      <NoteFieldRow>
+        <S.PostponeText>
+          {uiText('Звернутись після {date}. До того картка стоїть у кінці списку', language, { date: formatPostponeDate(until) })}
+        </S.PostponeText>
+        <NoteClearButton
+          type="button"
+          title={uiText('Не відкладати', language)}
+          aria-label={uiText('Не відкладати', language)}
+          onClick={event => { event.stopPropagation(); onClear(); }}
+        >
+          ×
+        </NoteClearButton>
+      </NoteFieldRow>
+    ) : (
+      <>
+        <S.PostponeText>{uiText('Повернутись до цього профілю через', language)}</S.PostponeText>
+        <S.PostponeChoices>
+          {POSTPONE_MONTH_OPTIONS.map(months => (
+            <S.PostponeChoice
+              key={months}
+              type="button"
+              title={formatPostponeDate(addMonthsIsoDate(months))}
+              onClick={event => { event.stopPropagation(); onSet(months); }}
+            >
+              {months}
+            </S.PostponeChoice>
+          ))}
+          <S.PostponeUnit>{uiText('міс. від сьогодні', language)}</S.PostponeUnit>
+        </S.PostponeChoices>
+      </>
+    )}
+  </S.PostponeLane>
+);
 
 /**
  * Що сказати про читання відгуків, крім самих відгуків.
@@ -1094,6 +1198,12 @@ const ProfileRow = ({
   // нотаток і ряду рішень — реагувати на себе й писати собі відгук нема
   // сенсу, а місця вони займали б більше за саму картку.
   preview = false,
+  // Роль анкети, яку малює цей рядок, коли картка несе дві — особисту й
+  // організації (`listCardAnketaRoles`): тоді стрічка ставить два рядки, і
+  // кожен показує лише своє. Без неї рядок — уся картка, як і раніше.
+  anketaRole = '',
+  // «Повернутись пізніше»: `{ until, onSet(months), onClear() }` — див. `ProfileNotes`.
+  postpone,
 }) => {
   // A limited profile is the projection a viewer without full access gets back
   // from a search: surname, name, age, region, city, and the public comment. There
@@ -1108,15 +1218,18 @@ const ProfileRow = ({
   // Рядок стрічки говорить тією ж мовою, що й картка: підписи полів і слова,
   // які застосунок підставляє сам («пологів», «КС», «не заміжня»).
   const { language } = useAppSettings();
-  const name = getProfileName(user);
-  const rowRole = getProfileRole(user);
+  const isOrganisationAnketa = Boolean(anketaRole) && isOrganisationAnketaRole(anketaRole);
+  const isPersonAnketa = Boolean(anketaRole) && !isOrganisationAnketa;
+  const organisationName = isOrganisationAnketa ? pickCurrentText(user?.agencyName) : '';
+  const name = organisationName || getProfileName(user);
+  const rowRole = anketaRole || getProfileRole(user);
   // Роль позначає дволітерний код — і на знімку, і в рядку імені, коли знімка
   // немає. Словом вона тут стояла («Донорка», «Agency»), і слово розходилось
   // саме з собою: у рядку одне, у відкритій картці інше, у фільтрах третє, а
   // зміна мови інтерфейсу міняла всі три. Код той самий, яким роль лежить у
   // даних, і однаковий на всіх екранах матчингу.
   const roleCode = getRoleCode(rowRole);
-  const age = getProfileAge(user);
+  const age = isOrganisationAnketa ? '' : getProfileAge(user);
   const location = getLocationLine(user, language);
   const photos = getProfilePhotos(user);
   const requestPhotos = useCallback(() => {
@@ -1128,7 +1241,7 @@ const ProfileRow = ({
     onRequestPhotos: onRequestPhotos && !isLimited ? requestPhotos : undefined,
   });
   const photo = photoSwipe.current || photos[0];
-  const bio = getProfileBio(user);
+  const bio = isOrganisationAnketa ? '' : getProfileBio(user);
   // Картку складають ті самі три частини, що й відкриту картку
   // (`ProfileFacts`): смуга показників і короткі факти беруть самі поля картки
   // стрічки, тож стоять у рядку одразу й не міняються, коли приїхала повна
@@ -1139,16 +1252,26 @@ const ProfileRow = ({
   // Агенцію, клініку й біологічних батьків описують не тіло й пологи, а те,
   // що вони пропонують чи шукають (`CardRoleBlock`): смуга «зріст, вага, ІМТ»
   // під агенцією казала донорці рівно нічого.
-  const isCounterparty = isCounterpartyCard(user);
+  const isCounterparty = isOrganisationAnketa || (!isPersonAnketa && isCounterpartyCard(user));
   const statCells = useMemo(() => (isLimited || isCounterparty ? [] : buildProfileStatStrip(user, language)), [isCounterparty, isLimited, language, user]);
   const summaryRows = useMemo(() => (isLimited || isCounterparty ? [] : buildProfileSummaryRows(user, language)), [isCounterparty, isLimited, language, user]);
-  const detailSections = useMemo(() => (isLimited ? [] : buildProfileDetailSections(user, language)), [isLimited, language, user]);
+  const detailSections = useMemo(
+    () => (isLimited || isOrganisationAnketa ? [] : buildProfileDetailSections(user, language)),
+    [isLimited, isOrganisationAnketa, language, user]
+  );
+  // Блок організації бачить у картці лише свою роль: інакше в ньому
+  // зʼявилась би ще й назва поруч з імʼям людини, як у спільній картці.
+  const roleBlockCard = useMemo(
+    () => (isOrganisationAnketa ? { ...user, role: anketaRole, userRole: anketaRole } : user),
+    [anketaRole, isOrganisationAnketa, user]
+  );
   const roleAccent = getRoleColor(rowRole);
   const contactEntries = useMemo(
     () => (isLimited ? [] : getContactEntries(user).filter(entry => entry.key !== 'vk')),
     [isLimited, user]
   );
   const hasLocation = Boolean(location);
+  const postponedUntil = postpone && !isLimited && isPostponedUntil(postpone.until) ? readPostponeDate(postpone.until) : '';
 
   // Контакти стоять у рядку самі, без кнопки «Контакти»: у картці стрічки
   // їх немає (вони живуть в окремому вузлі за межею приватності), тож рядок,
@@ -1335,6 +1458,14 @@ const ProfileRow = ({
               </S.Location>
             </S.MetaRow>
           )}
+          {/* Відкладена картка видна одразу, а не лише в кінці списку: плашка
+              під імʼям каже, що до людини звертатись пізніше й коли саме. */}
+          {postponedUntil && (
+            <S.PostponeBadge data-testid="postpone-badge">
+              <FaRegClock aria-hidden="true" />
+              <span>{uiText('Звернутись після {date}', language, { date: formatPostponeDate(postponedUntil) })}</span>
+            </S.PostponeBadge>
+          )}
         </S.Body>
         <S.Ctrl>
           <S.RowActionStack>
@@ -1380,7 +1511,7 @@ const ProfileRow = ({
           про людину одне й те саме однаковими словами. */}
       <ProfileStatStrip cells={statCells} />
       <ProfileFactList rows={summaryRows} />
-      {!isLimited ? <CardRoleBlock card={user} programsContext={programsContext} language={language} /> : null}
+      {!isLimited && !isPersonAnketa ? <CardRoleBlock card={roleBlockCard} programsContext={programsContext} language={language} /> : null}
 
       {contactEntries.length > 0 && (
         <S.RowContacts onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
@@ -1421,6 +1552,7 @@ const ProfileRow = ({
           доріжці й далі стоїть саме поле. */}
       {!preview ? <ProfileNotes
         language={language}
+        postpone={isLimited ? undefined : postpone}
         publicSlot={reviewsSlot}
         hasReviews={(reviewsAction?.count || 0) > 0}
         hasPublicContent={hasPublicReview || (reviewsAction?.count || 0) > 0}
