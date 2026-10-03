@@ -1520,3 +1520,13 @@ export const PostponeBadge = styled.div`
     flex: none;
   }
 `;
+
+// Текст нотатки в прев'ю — той самий, що стоїть у полі доріжки стрічки, лише
+// без поля: прев'ю показує записане, а не дає писати.
+export const PreviewNoteText = styled.div`
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--matching-header-text, var(--km-text, #2c261f));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+`;

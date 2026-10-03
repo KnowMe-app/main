@@ -103,7 +103,7 @@ const openSharedDraft = async () => {
   loadSharedProfileMutations.mockResolvedValue([sharedDraft]);
   render(<ProfileCreationWorkspace />);
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Відкрити' }));
+  fireEvent.click(await screen.findByRole('button', { name: /^Відкрити: / }));
   // Два рядки телефону плюс порожнє «по батькові».
   await waitFor(() => expect(screen.getAllByRole('textbox')).toHaveLength(3));
 };

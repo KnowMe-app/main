@@ -56,14 +56,14 @@ describe('шапка форми доповнення', () => {
   const source = fs.readFileSync(path.join(__dirname, 'ProfileCreationWorkspace.jsx'), 'utf8');
 
   it('малює картку стрічки, а не власну шапку', () => {
-    expect(source).toContain('<ProfileRow user={previewCard} preview isAdmin={false} expanded={false} />');
+    expect(source).toContain('user={previewCard}\n          preview\n');
     expect(source).not.toContain('<DraftName>');
     expect(source).not.toContain('fieldContacts');
   });
 
   it('кладе в неї поточні значення контактів, а не історію', () => {
-    expect(source).toContain('const value = getCurrentValue(summaryCard?.[fieldName]);');
-    expect(source).toContain('if (fieldName in summaryContacts) card[fieldName] = summaryContacts[fieldName];');
+    expect(source).toContain('const value = getCurrentValue(card[fieldName]);');
+    expect(source).toContain('buildDraftPreviewCard(summaryCard,');
   });
 });
 

@@ -30,7 +30,7 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
 
   it('offers to reopen every matching own draft instead of creating a duplicate', () => {
     expect(source).toContain('findMatchingProfileMutations(mutations, detectSearchParams(search))');
-    expect(source).toContain('Ваша чернетка, чекає на перевірку');
+    expect(source).toContain('{matchingOwnDrafts.map(mutation => <DraftListCard');
   });
 
   it('prefills the new private card from the detected search field', () => {
