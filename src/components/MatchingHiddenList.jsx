@@ -76,7 +76,6 @@ const MatchingHiddenList = ({
   isAdmin,
   onGoToFeed,
   onEditProfile,
-  onOpenProfile,
   /**
    * Решта рішень про картку — контакти, відгуки, доповнення, «в обране».
    *
@@ -333,7 +332,6 @@ const MatchingHiddenList = ({
               isAdmin={isAdmin}
               expanded={expandedIds.has(user.userId)}
               onToggleExpand={handleToggleExpand}
-              onOpen={onOpenProfile}
               primaryAction={returnAction}
               onEditProfile={onEditProfile}
               onContactAction={handleContactAction}

@@ -183,9 +183,12 @@ const EN_BY_UK = {
   'Зняти': 'Unpublish',
   'Видалити акаунт можна в меню ⋮.': 'You can delete the account in the ⋮ menu.',
   // --- «Повернутись пізніше» (`utils/matchingPostpone`) ---
-  'Пізніше': 'Later',
-  'Повернутись пізніше': 'Come back later',
-  'Повернутись до профілю пізніше': 'Come back to this profile later',
+  // Кнопка зветься «Відкласти», а не «Пізніше»: «пізніше» агенція читала як
+  // стан картки («донорка зараз зайнята, анкета неактивна»), а не як дію
+  // читача над власним списком.
+  'Відкласти': 'Postpone',
+  'Відкласти профіль': 'Postpone profile',
+  'Відкласти профіль — картка стане в кінець списку до обраної дати': 'Postpone profile — the card moves to the end of the list until the chosen date',
   'Повернутись до цього профілю через': 'Come back to this profile in',
   'міс. від сьогодні': 'mo. from today',
   'Звернутись після {date}. До того картка стоїть у кінці списку': 'Get back after {date}. Until then the card stays at the end of the list',

@@ -30,7 +30,6 @@ const renderRow = (user, props = {}) => render(
     isAdmin={false}
     expanded={false}
     onToggleExpand={jest.fn()}
-    onOpen={jest.fn()}
     onCommentSave={jest.fn()}
     clientComment=""
     {...props}
@@ -54,7 +53,7 @@ describe('контакти в рядку стрічки', () => {
     expect(onRequestContacts).toHaveBeenCalledWith(feedCard);
     rerender(
       <ProfileRow user={{ ...feedCard }} isAdmin={false} expanded={false} onToggleExpand={jest.fn()}
-        onOpen={jest.fn()} onCommentSave={jest.fn()} clientComment="" onRequestContacts={onRequestContacts} />
+        onCommentSave={jest.fn()} clientComment="" onRequestContacts={onRequestContacts} />
     );
     expect(onRequestContacts).toHaveBeenCalledTimes(1);
   });

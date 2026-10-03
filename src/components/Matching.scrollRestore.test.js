@@ -76,15 +76,13 @@ describe('стрічка повертається туди, де її лишил
     expect(rowSource).toContain('data-card-id={user?.userId}');
   });
 
-  // Шар деталей стрічку не розмонтовує, але поки він відкритий, у неї могла
-  // долягти чергова порція, а в рядках — догідратуватись фото. Піксель, знятий
-  // на відкритті, після цього вказує вже не на ту картку.
-  it('закриття відкритої картки теж стає на її рядок', () => {
-    const closeEffect = source.slice(
-      source.indexOf('  useLayoutEffect(() => {\n    if (detailOpen) return;'),
+  // Відкритої картки більше немає, і якір ставить розгорнутий рядок: саме
+  // до нього читач і хоче повернутись.
+  it('розгорнутий рядок стає якорем повернення', () => {
+    const expand = source.slice(
       source.indexOf('  const handleToggleRowExpand'),
+      source.indexOf('  const rowContactRequestsRef'),
     );
-    expect(closeEffect).toContain('const anchor = findCardNodeById(anchorId);');
-    expect(closeEffect).toContain('if (savedTop) window.scrollTo(0, savedTop);');
+    expect(expand).toContain("lastSeenCardIdRef.current = userId || '';");
   });
 });

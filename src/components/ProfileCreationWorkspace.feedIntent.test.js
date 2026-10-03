@@ -166,8 +166,9 @@ describe('доповнення знайденої картки зі стрічк
     renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     await screen.findByDisplayValue('Бугаренко');
-    // Поточне значення поля — остання версія, а не всі одразу.
-    expect(screen.getByText('Бугаренко Василіса')).toBeInTheDocument();
+    // Поточне значення поля — остання версія, а не всі одразу. Шапка — картка
+    // стрічки, і імʼя в ній стоїть так само, як у рядку: імʼя, потім прізвище.
+    expect(screen.getByTestId('draft-card-preview')).toHaveTextContent('Василіса Бугаренко');
     expect(screen.queryByText(/оверлей/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/card-9/)).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText('Що варто знати адміністратору про цей профіль')).not.toBeInTheDocument();

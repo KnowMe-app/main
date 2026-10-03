@@ -51,9 +51,8 @@ describe('картка, на яку щойно відповіли, лишаєт�
   // Позначка ставиться до запису реакції, а не з її зворотного виклику:
   // `onRemove` спрацьовує вже після того, як зміна списку вподобаних
   // перемалювала сторінку, тобто рівно на один рендер пізніше, ніж треба.
-  it('позначка ставиться до самої реакції — і в рядку, і у відкритій картці', () => {
+  it('позначка ставиться до самої реакції в рядку', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
-    expect(source).toContain('onClickCapture={() => onReacted?.(user.userId)}');
     const rowToggle = source.slice(
       source.indexOf('const toggleRowFavorite = React.useCallback(user => {'),
       source.indexOf('void toggleFavoriteUser({'),

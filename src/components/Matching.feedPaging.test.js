@@ -81,7 +81,7 @@ describe('стеля на порожні спроби не має бути гл�
       source.indexOf('if (!scrolledDownSinceLoad) return;'),
       source.indexOf("endOfDeckLoadRef.current('feed-scroll', { limit: MATCHING_FEED_PAGE_SIZE });"),
     );
-    expect(effect).toContain('if (!feedEndVisible || !deckHasMore || loading || detailIndex !== null) return;');
+    expect(effect).toContain('if (!feedEndVisible || !deckHasMore || loading) return;');
     // Жест витрачається: одна прокрутка донизу — одна спроба.
     expect(effect).toContain('scrolledDownSinceLoadRef.current = false;');
   });
@@ -168,21 +168,6 @@ describe('ряд чіпів', () => {
 describe('публічні коментарі', () => {
   const matching = () => read('Matching.jsx');
 
-  it('показує їх і у відкритій анкеті, не лише в рядку списку', () => {
-    // Досі блок жив тільки в рядках стрічки: у самій анкеті була лише приватна
-    // нотатка переглядача («Мій коментар»), і публічних коментарів не було видно.
-    //
-    // Тепер блок один на обидва місця: і відкрита анкета, і картка списку
-    // показують те саме поле для власного відгуку, а прочитані чужі приїжджають
-    // у нього ж. Окремого «гейта», який до читання малював замість поля напис,
-    // більше немає.
-    const source = matching();
-    expect(source.match(/<PublicCommentBlock/g)).toHaveLength(2);
-    expect(source).not.toContain('<PublicCommentsGate');
-    expect(source).toContain('publicCommentSlot={(');
-    expect(source).toContain("{profileUiText('publicComment', language)}");
-  });
-
   // Нотатка видна всім показаним карткам, а не самій активній: інакше читач
   // дописував би поверх власного запису, якого не бачить. Ціна не росте з
   // кількістю карток — піддерево власника читається одним запитом.
@@ -191,31 +176,7 @@ describe('публічні коментарі', () => {
     expect(matching()).not.toContain("if (viewLayout !== 'list' || !feedRows.length) return;");
   });
 
-  // Блок один, доріжки дві: приватна нотатка й публічний запис розділені не
-  // рамкою, а підписом і смужкою, і приватне не може опинитись під виглядом
-  // публічного.
-  // Спільної шапки «Нотатки» над доріжками немає: підпис над кожною вже каже
-  // і що це, і хто це побачить.
-  //
-  // Публічне стоїть **над** власним: відгук читають, а нотатку пишуть, і
-  // відповідь має стояти над полем для власного запису. Поки порядок був
-  // зворотний, читач писав свою нотатку, ще не побачивши, що про цю людину вже
-  // написали інші. Той самий порядок — у рядку стрічки (`RowNotes`).
-  it('тримає публічні коментарі окремо від приватної нотатки — і над нею', () => {
-    const source = matching();
-    const card = source.slice(
-      source.indexOf('<NoteLanes>'),
-      source.indexOf('</ModernProfileBody>'),
-    );
-    expect(card).toContain("{profileUiText('personalNote', language)}");
-    expect(card).toContain("{profileUiText('publicComment', language)}");
-    // Підказок «Бачите тільки ви» / «Бачать усі» більше немає.
-    expect(card).not.toContain('Hint');
-    expect(card.indexOf('{publicCommentSlot}'))
-      .toBeLessThan(card.indexOf("profileUiText('personalNotePlaceholder', language)"));
-  });
-
-  it('читає коментарі відкритої анкети сама, а для стрічки — лише позначені прапорцем', () => {
+  it('читає коментарі стрічки лише для позначених прапорцем карток', () => {
     // Стрічка не питає коментарів усієї сторінки наперед: раніше вона брала їх
     // для цілої першої сторінки списку — запит на кожне відкриття стрічки
     // заради блока, під яким у більшості анкет порожньо. Тепер вона питає їх
@@ -228,8 +189,7 @@ describe('публічні коментарі', () => {
       source.indexOf('const handleCreatePublicComment'),
     );
     expect(effect).toContain('fetchPublicProfileComments([id])');
-    expect(effect).toContain('if (!ownerId || !detailOpen) return;');
-    expect(effect).toContain('requestPublicComments(activeProfile?.userId);');
+    expect(effect).not.toContain('detailOpen');
     expect(effect).not.toContain("viewLayout === 'list'");
     // Автопідвантаження — за прапорцем картки, а не за всім списком підряд.
     expect(effect).toContain('if (user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]) requestPublicComments(user.userId);');

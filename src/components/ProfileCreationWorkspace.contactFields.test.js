@@ -33,27 +33,37 @@ describe('контакти форми доповнення', () => {
       viber: '380501112233',
     });
   });
+
+  // «УК СМ …» — робоча позначка адміна, а не Telegram людини: читачеві поле
+  // лишається порожнім (Telegram з номера дають кнопки біля телефону), і
+  // порожнім воно лишається й у базі порівняння — тож не стає «стиранням».
+  it('Telegram з приставкою «УК СМ» не підставляється читачеві', () => {
+    const card = { phone: '380961510538', telegram: 'УК СМ Zhanna Stadnik' };
+    expect(buildOverlayPrefill(card, 'card')).toEqual({ userId: 'card', phone: '380961510538' });
+    expect(buildOverlayPrefill(card, 'card', { keepAdminTelegram: true }).telegram).toBe('УК СМ Zhanna Stadnik');
+    expect(buildOverlayPrefill({ telegram: '@zhanna' }, 'card').telegram).toBe('@zhanna');
+  });
 });
 
 /*
- * Шапка форми доповнення показує контакти тим самим представленням, що й решта
- * застосунку (`ContactLinks`): номер повністю плюс три кнопки месенджерів,
- * зібрані з нього ж, а решта каналів — значками.
- *
- * Своє в неї було рівно одне: кожен канал окремим рядком, значок плюс ніком
- * текстом. Ті самі ніки стоять у полях форми просто під шапкою — виходило по
- * дві копії кожного: вгорі показати, внизу правити.
+ * Шапка форми доповнення — та сама картка стрічки (`ProfileRow` з `preview`),
+ * що й угорі «Мого профілю», а не власна верстка. Своя шапка мала аватар
+ * 56 px та імʼя шрифтом до 24 px, і на телефоні імʼя розсипалось на три рядки;
+ * а контакти в ній мали власний список рядків — ті самі ніки, що й у полях
+ * просто під нею.
  */
-describe('представлення контактів у шапці форми', () => {
+describe('шапка форми доповнення', () => {
   const source = fs.readFileSync(path.join(__dirname, 'ProfileCreationWorkspace.jsx'), 'utf8');
 
-  it('бере спільне представлення, а не власний список рядків', () => {
-    expect(source).toContain('<ContactLinks entries={summaryContactEntries}');
+  it('малює картку стрічки, а не власну шапку', () => {
+    expect(source).toContain('<ProfileRow user={previewCard} preview isAdmin={false} expanded={false} />');
+    expect(source).not.toContain('<DraftName>');
     expect(source).not.toContain('fieldContacts');
   });
 
-  it('складає перелік тими самими правилами, що й рядок стрічки', () => {
-    expect(source).toContain('getContactEntries(summaryContacts)');
+  it('кладе в неї поточні значення контактів, а не історію', () => {
+    expect(source).toContain('const value = getCurrentValue(summaryCard?.[fieldName]);');
+    expect(source).toContain('if (fieldName in summaryContacts) card[fieldName] = summaryContacts[fieldName];');
   });
 });
 

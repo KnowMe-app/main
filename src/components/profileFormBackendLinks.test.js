@@ -97,7 +97,7 @@ describe('посилання в консоль Firebase', () => {
 
     expect(source).toContain('isAdmin && backendLinksEnabled && profileId');
     expect(source).toContain('buildRtdbConsoleLink([PUBLIC_COMMENTS_ROOT_PATH, profileId])');
-    expect(source).toContain('backendHref={publicCommentsBackendHref(user.userId)}');
+    expect(source).toContain('backendHref={publicCommentsBackendHref(profileId)}');
     expect(source).not.toContain('console.firebase.google.com');
   });
 });

@@ -4,55 +4,16 @@ import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
 import {
   ActionButton,
-  AdminToggle,
-  AnimatedCard,
-  CardContainer,
   CardWrapper,
-  ClickableId,
-  CommentBox,
-  CommentInput,
-  NoteField,
-  NoteLane,
-  NoteLaneHead,
-  NoteLanes,
-  NoteClearButton,
-  NoteFieldRow,
   Container,
-  Grid,
   InnerContainer,
   OwnerStatusMessage,
-  SharedCommentText,
   SkeletonCardInner,
   SkeletonInfo,
   SkeletonLine,
   SkeletonPhoto,
   TopActionGroup,
   TopActions,
-  ModernActionRail,
-  ModernBioText,
-  ModernChip,
-  ModernChipGrid,
-  ModernContactLinks,
-  ModernFieldList,
-  ModernFieldRow,
-  ModernDesktopNavButton,
-  ModernFactPill,
-  ModernHero,
-  ModernHeroContent,
-  ModernHeroFacts,
-  ModernPhotoStrip,
-  ModernPhotoThumb,
-  ModernHeroFallbackMark,
-  ModernHeroImage,
-  ModernHeroLocation,
-  ModernHeroTitle,
-  ModernMoreButton,
-  ModernProfileBody,
-  ModernProfileScroll,
-  ModernProfileShell,
-  ModernRoleBadge,
-  ModernSection,
-  ModernSectionTitle,
   BackendTrafficToggleButton,
   BackendTrafficToggleStatus,
   MatchingSearchStatusMessage,
@@ -76,11 +37,6 @@ import {
   MatchingTopBar,
   SearchField,
   SortSelect,
-  DetailBar,
-  DetailCloseButton,
-  DetailInner,
-  DetailLayer,
-  DetailPosition,
 } from './Matching.styled';
 import {
   fetchUserById,
@@ -124,16 +80,14 @@ import {
 } from 'utils/backendDownloadToast';
 
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { BtnFavorite, toggleFavoriteUser } from './smallCard/btnFavorite';
-import { BtnDislike, toggleDislikeUser } from './smallCard/btnDislike';
+import { toggleFavoriteUser } from './smallCard/btnFavorite';
+import { toggleDislikeUser } from './smallCard/btnDislike';
 import SearchBar, { detectSearchParams, getSearchCacheKeyForParams } from './SearchBar';
-import PhotoViewer from './PhotoViewer';
 import FilterPanel, { getDefaultFilters } from './FilterPanel';
 import MatchingFilterRail from './MatchingFilterRail';
 import { MATCHING_FILTER_GROUPS, buildMatchingFilterChips } from './SearchFilters';
 import { countMatchingFilterOptions } from '../utils/matchingFilterCounts';
 import { getFieldLabel, pickerFields } from './formFields';
-import { useAutoResize } from '../hooks/useAutoResize';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
 import {
   buildMatchingSearchResultCacheKey,
@@ -200,27 +154,14 @@ import { usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
 import MatchingHiddenList from './MatchingHiddenList';
 import { canOfferProfileContacts, isOwnProfileDraftCard } from '../utils/profileVisibilityScope';
 import ProfileRow, {
-  ContactLinks,
   PublicCommentBlock,
-  ReviewsStateNote,
-  describeReviewsState,
-  getLocationLine,
 } from './ProfileRow';
 import {
-  buildProfileDetailSections,
-  buildProfileStatStrip,
-  buildProfileSummaryRows,
-  ProfileAboutSection,
-  ProfileDetailSections,
-  ProfileFactList,
-  ProfileStatStrip,
 } from './ProfileFacts';
-import { getRoleColor } from './matchingRoleColors';
 import { DRAFT_FEED_ORDER_FIELD, placeOwnDraftsInFeed, resolveDraftFeedOrderDate } from '../utils/matchingDraftPlacement';
 import { liftReturnedCards, listReturnedReactionIds, placeReturnedCardsFirst } from '../utils/matchingReturnedCards';
-import { FaTimes, FaHeart, FaChevronLeft, FaChevronRight, FaMapMarkerAlt, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
-import { FaRegHeart, FaUndoAlt, FaPencilAlt } from 'react-icons/fa';
-import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
+import { FaTimes, FaHeart, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
+import { FaRegHeart, FaUndoAlt } from 'react-icons/fa';
 import { getContactEntries } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
@@ -264,7 +205,6 @@ import {
   placePostponedCardsLast,
   tomorrowIsoDate,
 } from 'utils/matchingPostpone';
-import { profileUiText, translateProfileLabel } from 'utils/profileTexts';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
 import { useProgramDisplayCurrency, useProgramRates } from '../hooks/useProgramRates';
@@ -276,23 +216,15 @@ import {
   sortCardsByMode,
 } from '../utils/donorPrograms';
 import { computeBmi, normalizeHeightCm } from '../utils/profileNormalization';
-import { CardRoleBlock } from './programs/CardRoleBlock';
 // Реєструє читача програм для сховища (`utils/programsStore`).
 import './programs/programsRemote';
 import { ensureProgramsForCards, useProgramsVersion } from '../utils/programsStore';
 import { listPaymentFilterKeysForViewer } from './SearchFilters';
 import {
-  getHeroFields,
-  getQuickFacts,
   getProfileAge,
   parseBloodValue,
-  getProfileBio,
-  getProfileName,
   getProfilePhotos,
   getProfileRole,
-  getProfileSections,
-  getRoleCode,
-  getRoleLabel,
 } from './profileLayoutConfig';
 import {
   cacheFavoriteUsers,
@@ -410,12 +342,6 @@ const ADDITIONAL_PROFILE_CACHE_TTL_MS = 45 * 1000;
 const INITIAL_LOAD_ERROR_TOAST_ID = 'matching-initial-load-error';
 const ADDITIONAL_MATCHING_LOG_LIMIT = 300;
 const buildEmptyReactionPagination = () => ({ ids: [], nextOffset: 0, hasMore: false, accessSnapshotKey: '' });
-const MATCHING_REACTION_IDLE_STYLE = { background: 'rgba(247, 147, 30, 0.95)' };
-// «Сховати» — дія без акценту: колір тут витрачається лише на «в обране».
-const MATCHING_DISLIKE_IDLE_STYLE = {
-  background: 'var(--matching-card-bg)',
-  border: '1px solid var(--matching-card-border)',
-};
 
 const shouldDebugAdditionalMatching = (...ids) =>
   ids.some(id => {
@@ -661,8 +587,6 @@ const onValue = wrapAdminOnValue(firebaseOnValue, {
   source: 'Matching',
 });
 
-const MATCHING_HIDDEN_CONTACT_KEYS = ['vk'];
-
 // Оптимістичне значення `feedDate` для цятки публікації: справжнє дорахує
 // писач (`buildMatchingCardProjection`), а екран не має чекати на нього, щоб
 // перефарбувати крапку.
@@ -862,29 +786,6 @@ async function resolveAdditionalSearchKeySetKeysForMatching(profile, accessUserI
   return searchKeySetKeys;
 }
 
-// `field` дозволяє тому самому полю жити у двох типографіках: у рядку стрічки
-// воно однорядкове, а на картці стоїть поруч із публічним коментарем і мусить
-// читатись однаково з ним (`NoteField`).
-const ResizableCommentInput = ({ value, onChange, onBlur, onClick, field: Field = CommentInput, ...rest }) => {
-  const ref = useRef(null);
-  const autoResize = useAutoResize(ref, value);
-
-  return (
-    <Field
-      {...rest}
-      rows={1}
-      ref={ref}
-      value={value}
-      onClick={onClick}
-      onChange={e => {
-        onChange && onChange(e);
-        autoResize(e.target);
-      }}
-      onBlur={onBlur}
-    />
-  );
-};
-
 const MatchingSkeleton = ({ $small }) => (
   <CardWrapper data-card data-skeleton>
     <SkeletonCardInner $small={$small}>
@@ -898,567 +799,6 @@ const MatchingSkeleton = ({ $small }) => (
   </CardWrapper>
 );
 
-
-const collectProfileFieldKeys = fields => [
-  ...new Set(
-    (fields || []).flatMap(field => [field.key, ...(field.sourceKeys || [])].filter(Boolean))
-  ),
-];
-
-const ProfileChips = ({ fields, role }) => {
-  if (!fields.length) return null;
-  return (
-    <ModernChipGrid>
-      {fields.map(field => (
-        <ModernChip key={`${field.key}-${field.label}`} $role={role}>
-          <strong>{field.label}</strong>
-          <span>{field.value}</span>
-        </ModernChip>
-      ))}
-    </ModernChipGrid>
-  );
-};
-
-const ProfileFieldRows = ({ fields }) => {
-  if (!fields.length) return null;
-  return (
-    <ModernFieldList>
-      {fields.map(field => (
-        <ModernFieldRow key={`${field.key}-${field.label}`}>
-          <strong>{field.label}</strong>
-          <span>{field.value}</span>
-        </ModernFieldRow>
-      ))}
-    </ModernFieldList>
-  );
-};
-
-/**
- * Блок контактів відкритої картки — те саме представлення, що й у рядку
- * стрічки (`ContactLinks`): один рядок значків, трубка дзвонить, поруч
- * Telegram, Viber і WhatsApp з того самого номера, далі решта каналів. Своє
- * представлення тут було другим почерком тих самих контактів — з кнопкою
- * «Показати номер» і номером текстом на окремому рядку.
- */
-const ProfileContactLinks = ({ user, language, onContactAction }) => {
-  const entries = getContactEntries(user).filter(entry => !MATCHING_HIDDEN_CONTACT_KEYS.includes(entry.key));
-  if (!entries.length) return null;
-  return (
-    <ModernContactLinks onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
-      <ContactLinks entries={entries} language={language} onContactAction={onContactAction} />
-    </ModernContactLinks>
-  );
-};
-
-const ProfileBio = ({ text, language }) => {
-  const [expanded, setExpanded] = useState(false);
-  if (!text) return null;
-  const shouldCollapse = text.length > 230;
-  const displayText = shouldCollapse && !expanded ? `${text.slice(0, 230).trim()}…` : text;
-  return (
-    <ModernSection>
-      <ModernSectionTitle>{profileUiText('about', language)}</ModernSectionTitle>
-      <ModernBioText>{displayText}</ModernBioText>
-      {shouldCollapse && (
-        <ModernMoreButton
-          type="button"
-          onClick={e => {
-            e.stopPropagation();
-            setExpanded(value => !value);
-          }}
-        >
-          {expanded ? 'less' : 'more'}
-        </ModernMoreButton>
-      )}
-    </ModernSection>
-  );
-};
-
-
-const HERO_FACT_UNITS = {
-  height: 'cm',
-  weight: 'kg',
-};
-
-const formatHeroFact = (item, language) => {
-  const rawValue = String(item?.value || '').trim();
-  const rawUnit = HERO_FACT_UNITS[item?.key];
-  const preferredUnit = rawUnit ? translateProfileLabel(rawUnit, language) : rawUnit;
-  if (!rawValue) return { value: '', unit: preferredUnit || '' };
-
-  if (rawUnit) {
-    const withoutUnit = rawValue.replace(new RegExp(`\\s*${rawUnit}$`, 'i'), '').trim();
-    return { value: withoutUnit || rawValue, unit: preferredUnit };
-  }
-
-  const unitMatch = rawValue.match(/^(.+?)\s*(cm|kg|кг|см)$/i);
-  if (unitMatch) return { value: unitMatch[1].trim(), unit: unitMatch[2] };
-  return { value: rawValue, unit: '' };
-};
-
-const SwipeableCard = ({
-  user,
-  canonicalUserData,
-  photo,
-  role,
-  isAgency,
-  isAdmin,
-  favoriteUsers,
-  setFavoriteUsers,
-  dislikeUsers,
-  setDislikeUsers,
-  ownFavoriteUsers,
-  setOwnFavoriteUsers,
-  ownDislikeUsers,
-  setOwnDislikeUsers,
-  // Реакція сталася — картку треба **лишити** на екрані до наступної збірки
-  // деки, а не прибрати з неї. Досі тут стояв `handleRemove`, який викидав
-  // анкету зі списку тієї ж миті: лайк у відкритій картці гортав на наступну
-  // людину, і подивитись, кого щойно вподобав, було вже ніде.
-  onReacted,
-  togglePublish,
-  programsContext,
-  multiDataOwnerId,
-  onNavigate,
-  commentValue,
-  sharedCommentTexts = [],
-  onCommentChange,
-  onCommentBlur,
-  publicCommentSlot = null,
-  // Що сказати про читання відгуків, крім самих відгуків. Відкрита картка
-  // питає їх одразу на відкритті, тож мовчати про порожню відповідь не можна:
-  // без цього рядка «прочитали, відгуків немає» виглядало так само, як
-  // «читання ще не починалось» — порожньою доріжкою під полем запису.
-  publicCommentStatus = '',
-  // Скільки відгуків прочитано: є хоч один — смужка доріжки червона, як і в
-  // рядку стрічки (`ProfileNotes`).
-  publicCommentCount = 0,
-  onAdminEdit,
-  onEnrich,
-  anketaRole = '',
-  reactionActions,
-}) => {
-  const resolvedRole = anketaRole || getProfileRole(user) || role;
-  const photos = getProfilePhotos(user);
-  const heroPhoto = photo || photos[0] || '';
-  const allPhotos = [heroPhoto, ...photos].filter(Boolean).filter((item, index, list) => list.indexOf(item) === index);
-  const [activeHeroPhoto, setActiveHeroPhoto] = useState(heroPhoto);
-  const [viewerIndex, setViewerIndex] = useState(null);
-  const [dir, setDir] = useState(null);
-  const favoriteButtonWrapRef = useRef(null);
-  const dislikeButtonWrapRef = useRef(null);
-  const contactDetailsRef = useRef(null);
-  const touchStart = useRef(null);
-  const swipedRef = useRef(false);
-
-  useEffect(() => {
-    setActiveHeroPhoto(heroPhoto);
-  }, [heroPhoto, user.userId]);
-
-  useEffect(() => {
-    if (!dir) return undefined;
-    const t = setTimeout(() => setDir(null), 260);
-    return () => clearTimeout(t);
-  }, [dir]);
-
-  // Мова картки — та сама, що обрана в меню трьох крапок. Читається тут, а не
-  // в кожному гетері окремо: інакше половина рядка йшла б однією мовою, а
-  // половина — тією, яку модуль вважав за замовчуванням.
-  const { language } = useAppSettings();
-  const profileName = getProfileName(user);
-  // Плашка ролі несе те саме слово, що й рядок стрічки і чіп фільтра
-  // (`getRoleLabel`): одна назва ролі на всі екрани. Код лишився умовою
-  // показу — роль без коду плашки не має.
-  const roleCode = getRoleCode(resolvedRole);
-  // Роль без назви — це `Profile`/`Анкета`; порівнюємо з кодом, а не з написом,
-  // бо напис залежить від мови.
-  const isGenericProfileRole = resolvedRole === 'other';
-  const name = profileName || '';
-  const age = getProfileAge(user);
-  const title = [name, age].filter(Boolean).join(', ');
-  const shouldShowRoleBadge = !isGenericProfileRole && Boolean(roleCode);
-  // Те саме рішення, що й у рядку стрічки: спершу доповнення (його має той,
-  // хто заводить картки), потім редагування (його має адмін). Урізаній
-  // проєкції не належить ні те, ні те — правити в ній нема чого.
-  const editProfileAction = useMemo(() => {
-    if (user?.__limitedProfile) return null;
-    if (onEnrich) return { title: uiText('Доповнити дані', language), onClick: () => onEnrich(user) };
-    if (isAdmin && onAdminEdit) return { title: uiText('Редагувати анкету', language), onClick: onAdminEdit };
-    return null;
-  }, [isAdmin, language, onAdminEdit, onEnrich, user]);
-  // Місце — тим самим рядком, що в стрічці (`getLocationLine`): картка казала
-  // «Україна, смт Олександрівка», а рядок про ту саму людину — «смт
-  // Олександрівка, Миколаївська обл.».
-  const locationInfo = getLocationLine(user, language);
-  const identityAndLocationKeys = [
-    'name',
-    'surname',
-    'agencyName',
-    'companyName',
-    'agency',
-    'country',
-    'region',
-    'city',
-    'role',
-    'userRole',
-    'cSection',
-    'csection',
-    'c_section',
-    'cesareanSection',
-  ];
-  const heroFields = getHeroFields(user, resolvedRole, { excludeKeys: identityAndLocationKeys, language });
-  const usedSummaryFieldKeys = collectProfileFieldKeys(heroFields);
-  const bodyHeroFields = getQuickFacts(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys], language });
-  const usedBodyFieldKeys = collectProfileFieldKeys(bodyHeroFields);
-  const sections = getProfileSections(user, resolvedRole, { excludeKeys: [...identityAndLocationKeys, ...usedSummaryFieldKeys, ...usedBodyFieldKeys, ...MATCHING_HIDDEN_CONTACT_KEYS], language });
-  const bio = getProfileBio(user);
-  // Картка донорки складається з тих самих частин, що й рядок стрічки
-  // (`ProfileFacts`): смуга показників і короткі факти вгорі — дослівно ті,
-  // що в списку, — а нижче розділи повної анкети, ті самі, що під стрілкою
-  // рядка. Досі тут були окремі пігулки показників, «Основне» і чипи
-  // «Зовнішності» з ВЕЛИКИМИ підписами — третій почерк тих самих фактів.
-  // Решта ролей лишається на своїх секціях (`getProfileSections`).
-  const usesSharedFacts = resolvedRole === 'ed';
-  const statCells = usesSharedFacts ? buildProfileStatStrip(user, language) : [];
-  const summaryRows = usesSharedFacts ? buildProfileSummaryRows(user, language) : [];
-  const detailSections = usesSharedFacts ? buildProfileDetailSections(user, language) : [];
-  const roleAccent = getRoleColor(resolvedRole);
-  const initials = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map(part => part[0]?.toUpperCase())
-    .join('');
-  const shouldShowHeroContent = Boolean(title || locationInfo || heroFields.length > 0 || statCells.length > 0 || summaryRows.length > 0);
-  const handleContactAction = channel => {
-    if (!auth.currentUser || !user.userId) return;
-    void recordContactAction(user.userId, multiDataOwnerId, channel);
-  };
-
-  const hasContactSection = sections.some(section => section.variant === 'contacts');
-  const openContactDetails = e => {
-    e.stopPropagation();
-    const details = contactDetailsRef.current;
-    if (!details) return;
-    // Прокрутка до блока не рахується: дією стане дотик до трубки чи месенджера.
-    details.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  };
-
-  const handleTouchStart = e => {
-    if (!e.touches || e.touches.length !== 1) return;
-    const touch = e.touches[0];
-    touchStart.current = { x: touch.clientX, y: touch.clientY };
-  };
-
-  const handleTouchMove = e => {
-    if (!touchStart.current || !e.touches || e.touches.length !== 1) return;
-    const touch = e.touches[0];
-    const dx = touch.clientX - touchStart.current.x;
-    const dy = touch.clientY - touchStart.current.y;
-    if (Math.abs(dx) > 16 && Math.abs(dx) > Math.abs(dy) * 1.25) e.preventDefault();
-  };
-
-  const handleTouchEnd = e => {
-    if (!touchStart.current || !e.changedTouches || e.changedTouches.length !== 1) return;
-    const touch = e.changedTouches[0];
-    const dx = touch.clientX - touchStart.current.x;
-    const dy = touch.clientY - touchStart.current.y;
-    touchStart.current = null;
-    if (Math.abs(dx) < 72 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
-    const direction = dx > 0 ? 'right' : 'left';
-    swipedRef.current = true;
-    setDir(direction);
-    if (typeof onNavigate === 'function') {
-      onNavigate(direction === 'left' ? 1 : -1);
-    }
-    setTimeout(() => {
-      swipedRef.current = false;
-    }, 80);
-  };
-
-  const handleClick = () => {
-    if (swipedRef.current) swipedRef.current = false;
-  };
-
-  const openPhotoViewer = index => event => {
-    if (event) event.stopPropagation();
-    if (swipedRef.current || index < 0 || !allPhotos[index]) return;
-    setViewerIndex(index);
-  };
-
-  const openHeroViewer = event => {
-    const heroIndex = allPhotos.indexOf(activeHeroPhoto);
-    openPhotoViewer(heroIndex === -1 ? 0 : heroIndex)(event);
-  };
-
-  const handleHeroKeyDown = event => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    openHeroViewer(event);
-  };
-
-  return (
-    <>
-      <AnimatedCard
-      $dir={dir}
-      $small={isAgency}
-      $compactWithoutPhoto={!activeHeroPhoto}
-      $hasPhoto={!!activeHeroPhoto}
-      data-card
-      data-testid="matching-profile-card"
-      onClick={handleClick}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      $activeProfile
-    >
-      <ModernProfileShell $role={resolvedRole}>
-        <ModernProfileScroll>
-        <ModernHero
-          $image={activeHeroPhoto}
-          $empty={!activeHeroPhoto}
-          $clickable={!!activeHeroPhoto}
-          role={activeHeroPhoto ? 'button' : undefined}
-          tabIndex={activeHeroPhoto ? 0 : undefined}
-          aria-label={activeHeroPhoto ? `Open ${name || 'matching profile'} photo` : undefined}
-          onClick={activeHeroPhoto ? openHeroViewer : undefined}
-          onKeyDown={activeHeroPhoto ? handleHeroKeyDown : undefined}
-        >
-          {!activeHeroPhoto && initials && <ModernHeroFallbackMark>{initials}</ModernHeroFallbackMark>}
-          {activeHeroPhoto && <ModernHeroImage src={activeHeroPhoto} alt={`${name || 'Matching'} profile hero`} onError={() => setActiveHeroPhoto('')} />}
-          {shouldShowRoleBadge && <ModernRoleBadge $role={resolvedRole}>{getRoleLabel(resolvedRole, language)}</ModernRoleBadge>}
-        </ModernHero>
-        {allPhotos.length > 1 && (
-          <ModernPhotoStrip onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
-            {allPhotos.map((item, index) => (
-              <ModernPhotoThumb
-                key={`${user.userId}-thumb-${index}`}
-                type="button"
-                $active={item === activeHeroPhoto}
-                style={{ backgroundImage: `url(${item})` }}
-                aria-label={uiText('Фото {index} з {total}', language, { index: index + 1, total: allPhotos.length })}
-                aria-pressed={item === activeHeroPhoto}
-                onClick={event => { event.stopPropagation(); setActiveHeroPhoto(item); }}
-              />
-            ))}
-          </ModernPhotoStrip>
-        )}
-        {shouldShowHeroContent && (
-          <ModernHeroContent>
-            {title && <ModernHeroTitle>{title}</ModernHeroTitle>}
-            {locationInfo && <ModernHeroLocation><FaMapMarkerAlt aria-hidden="true" />{locationInfo}</ModernHeroLocation>}
-            {usesSharedFacts && (
-              <>
-                <ProfileStatStrip cells={statCells} large />
-                <ProfileFactList rows={summaryRows} large />
-              </>
-            )}
-            {!usesSharedFacts && heroFields.length > 0 && (
-              <ModernHeroFacts>
-                {heroFields.map(item => {
-                  const fact = formatHeroFact(item, language);
-                  return (
-                    <ModernFactPill key={`hero-${item.key}`}>
-                      <span className="fact-value">{fact.value}</span>
-                      <span className="fact-label">{fact.unit || item.label}</span>
-                    </ModernFactPill>
-                  );
-                })}
-              </ModernHeroFacts>
-            )}
-          </ModernHeroContent>
-        )}
-        {isAdmin && (
-          <AdminToggle published={isMatchingCardPublished(user)} onClick={e => { e.stopPropagation(); togglePublish(user); }} />
-        )}
-        <ModernProfileBody>
-          {/* Контакти — першими під шапкою. Блок стояв у самому низу картки,
-              під «Про себе», розділами анкети й нотатками, тобто там, куди
-              докручує не кожен, — а картотека існує, щоб людей знайти й
-              написати їм. Розгортати його більше не треба: це один рядок
-              значків (трубка дзвонить, поруч месенджери з того самого
-              номера), і схований за «Показати контакти» він коштував зайвого
-              дотику й рядка. Трубка в ряду дій унизу веде сюди
-              (`openContactDetails`). */}
-          {sections.filter(section => section.variant === 'contacts').map(section => (
-            <ModernSection key={section.title} ref={contactDetailsRef}>
-              <ProfileContactLinks user={user} language={language} onContactAction={handleContactAction} />
-            </ModernSection>
-          ))}
-          {/* Програми агенції чи клініки й «кого шукають» батьки — одразу
-              під контактами: саме заради них донорка й відкрила цю картку. */}
-          <CardRoleBlock card={user} programsContext={programsContext} language={language} />
-          {usesSharedFacts && (bio || detailSections.length > 0) && (
-            <ModernSection>
-              <ProfileAboutSection text={bio} language={language} accent={roleAccent} large />
-              <ProfileDetailSections sections={detailSections} accent={roleAccent} large />
-            </ModernSection>
-          )}
-          {!usesSharedFacts && <ProfileBio text={bio} language={language} />}
-          {!usesSharedFacts && bodyHeroFields.length > 0 && (
-            <ModernSection>
-              <ModernSectionTitle>{profileUiText('keyDetails', language)}</ModernSectionTitle>
-              <ProfileChips fields={bodyHeroFields} role={resolvedRole} />
-            </ModernSection>
-          )}
-          {!usesSharedFacts && sections.filter(section => section.variant !== 'contacts').map(section => (
-            <ModernSection key={section.title}>
-              <ModernSectionTitle>{section.title}</ModernSectionTitle>
-              {section.variant === 'chips' ? (
-                <ProfileChips fields={section.fields} role={resolvedRole} />
-              ) : (
-                <ProfileFieldRows fields={section.fields} />
-              )}
-            </ModernSection>
-          ))}
-          {/* Приватна нотатка й публічний запис — одна секція, дві доріжки.
-              Це два записи про одну людину, зроблені в одному місці; двома
-              повноцінними блоками вони важили стільки ж, скільки дані анкети,
-              і читались як два різні застосунки — у кожного свій розмір
-              шрифту й свій плейсхолдер. Хто бачить запис, каже смужка ліворуч
-              і підпис над текстом, а не окрема рамка. */}
-          <ModernSection onClick={e => e.stopPropagation()}>
-            {/* Спільної шапки «Нотатки» більше немає: підпис над кожною
-                доріжкою вже каже і що це, і хто це побачить, а третій
-                заголовок над ними лише повторював слово. */}
-            {/* Публічне — зверху, власне — під ним.
-                Порядок був зворотний, і читач писав свою нотатку, ще не
-                побачивши, що про цю людину вже написали інші: відповідь стояла
-                під полем для питання. Той самий порядок тепер і в рядку стрічки
-                (`RowNotes` у `ProfileRow`) — два екрани не можуть казати різне
-                про ті самі два записи. */}
-            <NoteLanes>
-              {publicCommentSlot && (
-                <NoteLane $public $reviewed={publicCommentCount > 0}>
-                  <NoteLaneHead>
-                    <b>{profileUiText('publicComment', language)}</b>
-                  </NoteLaneHead>
-                  {publicCommentSlot}
-                  <ReviewsStateNote>{publicCommentStatus}</ReviewsStateNote>
-                </NoteLane>
-              )}
-              <NoteLane>
-                <NoteLaneHead>
-                  <b>{profileUiText('personalNote', language)}</b>
-                </NoteLaneHead>
-                <CommentBox>
-                  <NoteFieldRow>
-                    <ResizableCommentInput
-                      plain
-                      field={NoteField}
-                      placeholder={profileUiText('personalNotePlaceholder', language)}
-                      value={commentValue || ''}
-                      onClick={e => e.stopPropagation()}
-                      onChange={e => onCommentChange && onCommentChange(e.target.value)}
-                      onBlur={onCommentBlur}
-                    />
-                    {/* Той самий хрестик, що й у рядку стрічки та під
-                        публічним відгуком: памʼятка знімається одним дотиком. */}
-                    {commentValue && (
-                      <NoteClearButton
-                        type="button"
-                        title={uiText('Видалити памʼятку', language)}
-                        aria-label={uiText('Видалити памʼятку', language)}
-                        onClick={e => {
-                          e.stopPropagation();
-                          if (onCommentChange) onCommentChange('');
-                          if (onCommentBlur) onCommentBlur('');
-                        }}
-                      >
-                        ×
-                      </NoteClearButton>
-                    )}
-                  </NoteFieldRow>
-                  {sharedCommentTexts.map((text, idx) => (
-                    <SharedCommentText key={`${user.userId}-shared-comment-${idx}`}>
-                      {text}
-                    </SharedCommentText>
-                  ))}
-                  {isAdmin && (
-                    <ClickableId onClick={onAdminEdit}>
-                      ID: {user.userId ? user.userId.slice(0, 5) : ''}
-                    </ClickableId>
-                  )}
-                </CommentBox>
-              </NoteLane>
-            </NoteLanes>
-          </ModernSection>
-        </ModernProfileBody>
-        </ModernProfileScroll>
-        {/* Реакції на урізану проєкцію не вішаються: разом із реакцією
-            картка лягла б у спільний кеш анкет, а проєкція — не анкета, і
-            саме тому пошук з урізаною видачею кеш узагалі не чіпає. Плитка
-            галереї й рядок списку ховають ці кнопки з тієї ж причини. */}
-        {!user?.__limitedProfile && (
-        <ModernActionRail>
-          {/* Олівець, а не плюс: жест той самий, що й у рядку стрічки, —
-              «правити цю анкету», — а плюс обіцяв щось додати до списку. Два
-              екрани не можуть малювати одну дію двома різними значками. */}
-          {/* Олівець один на обидві ролі — рівно як у рядку стрічки
-              (`editAction` у `ProfileRow`): читач із правом заводити картки
-              ним дописує анкету (`onEnrich`), адмін відкриває її на
-              редагування (`onAdminEdit`). Адмінові його тут не було зовсім:
-              жест, який у списку працював, у відкритій картці не робив
-              нічого, а єдиним входом у редагування лишався дрібний напис
-              «ID: 12345» під нотаткою. */}
-          {editProfileAction && (
-            <ActionButton
-              type="button"
-              onClick={event => { event.stopPropagation(); editProfileAction.onClick(); }}
-              aria-label={editProfileAction.title}
-              title={editProfileAction.title}
-            >
-              <FaPencilAlt />
-            </ActionButton>
-          )}
-          {/* Позначка «на цю картку вже відповіли» ставиться **до** самої
-              реакції, а не з її зворотного виклику: `onRemove` спрацьовує вже
-              після того, як зміна списку вподобаних перемалювала сторінку, і
-              картку встигало вичистити прибирання в `users` — тобто позначка
-              приходила рівно на один рендер пізніше, ніж треба. Рядок стрічки
-              робить так само: спершу памʼять, потім запис. */}
-          {anketaRole ? (
-            <>
-              <ActionButton type="button" onClick={reactionActions?.primaryAction?.onClick} title={reactionActions?.primaryAction?.title} aria-label={reactionActions?.primaryAction?.title}>
-                {reactionActions?.primaryAction?.icon}
-              </ActionButton>
-              <ActionButton type="button" onClick={reactionActions?.secondaryAction?.onClick} title={reactionActions?.secondaryAction?.title} aria-label={reactionActions?.secondaryAction?.title}>
-                {reactionActions?.secondaryAction?.icon}
-              </ActionButton>
-            </>
-          ) : (
-            <>
-              <span ref={dislikeButtonWrapRef} onClickCapture={() => onReacted?.(user.userId)}>
-                <BtnDislike userId={user.userId} userData={canonicalUserData} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_DISLIKE_IDLE_STYLE} icon={FaTimes} inactiveIconColor="var(--matching-muted-text)" />
-              </span>
-              <span ref={favoriteButtonWrapRef} onClickCapture={() => onReacted?.(user.userId)}>
-                <BtnFavorite userId={user.userId} userData={canonicalUserData} favoriteUsers={favoriteUsers} setFavoriteUsers={setFavoriteUsers} ownFavoriteUsers={ownFavoriteUsers} setOwnFavoriteUsers={setOwnFavoriteUsers} dislikeUsers={dislikeUsers} setDislikeUsers={setDislikeUsers} ownDislikeUsers={ownDislikeUsers} setOwnDislikeUsers={setOwnDislikeUsers} onRemove={onReacted} multiDataOwnerId={multiDataOwnerId} customStyle={MATCHING_REACTION_IDLE_STYLE} />
-              </span>
-            </>
-          )}
-          {/* Трубка — та сама, що в рядку стрічки: «звʼязатися з цією людиною».
-              Ряд дій стоїть на екрані завжди, тож і до контактів звідси один
-              дотик, хоч би де читач зараз був у картці. */}
-          {hasContactSection && (
-            <ActionButton
-              type="button"
-              onClick={openContactDetails}
-              aria-label={profileUiText('showContacts', language)}
-              title={profileUiText('showContacts', language)}
-            >
-              <PhoneHandsetIcon />
-            </ActionButton>
-          )}
-        </ModernActionRail>
-        )}
-      </ModernProfileShell>
-      </AnimatedCard>
-      {viewerIndex !== null && allPhotos.length > 0 && (
-        <PhotoViewer photos={allPhotos} index={viewerIndex} onClose={() => setViewerIndex(null)} />
-      )}
-    </>
-  );
-};
 
 // Перший екран стрічки — та сама перша порція, що й у пошуку, і та сама
 // сторінка, якою стрічка росте далі (`MATCHING_FEED_PAGE_SIZE`).
@@ -1738,15 +1078,7 @@ const Matching = () => {
   }, [searchQuery]);
   const [matchingSearchStatus, setMatchingSearchStatus] = useState('');
   const matchingSearchKeyRef = useRef(null);
-  const [activeProfileIndex, setActiveProfileIndex] = useState(0);
-  const [activeDetailAnketaRole, setActiveDetailAnketaRole] = useState('');
-  // Spec §1: the screen has one content area with three states. `detailIndex`
-  // is the third - a layer over the feed rather than a route - and it points
-  // into the very same `filtered` array the list and gallery render from, so
-  // paging through it never issues a request.
-  const [detailOpen, setDetailOpen] = useState(false);
   const [expandedRowIds, setExpandedRowIds] = useState(() => new Set());
-  const feedScrollTopRef = useRef(0);
   // Spec §8: public records about a profile, readable by everyone signed in.
   // Kept apart from `comments`, which holds this viewer's own private note.
   const [publicComments, setPublicComments] = useState({});
@@ -1765,7 +1097,6 @@ const Matching = () => {
   const viewModeRef = useRef(viewMode);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [initialLoadTrace, setInitialLoadTrace] = useState([]);
   const [initialRequestId, setInitialRequestId] = useState(0);
   const [filters, setFilters] = useState({});
   const filtersRef = useRef(filters);
@@ -2163,7 +1494,6 @@ const Matching = () => {
     setInitialRequestId(requestId);
     setLoadError(null);
     initialLoadTraceRef.current = [];
-    setInitialLoadTrace([]);
     toast.dismiss('matching-slow-load');
     toast.dismiss(INITIAL_LOAD_ERROR_TOAST_ID);
     loadingRef.current = true;
@@ -2199,7 +1529,6 @@ const Matching = () => {
     const entry = { requestId, timestamp, ...event };
     const next = [...initialLoadTraceRef.current, entry].slice(-30);
     initialLoadTraceRef.current = next;
-    setInitialLoadTrace(next);
     writeMatchingDebugLog('initialLoad:trace', entry);
     if (event?.stage === 'feed-source') announceFeedSource(event);
   }, [announceFeedSource]);
@@ -4024,7 +3353,6 @@ const Matching = () => {
     invalidateReactionAsyncWork();
     viewModeRef.current = 'default';
     setViewMode('default');
-    setActiveProfileIndex(0);
     setInitialPublicWindowComplete(false);
     resetReactionPaginationState();
     if (initialLoadInFlightRef.current) {
@@ -4649,7 +3977,6 @@ const Matching = () => {
     });
     viewModeRef.current = reactionType;
     setViewMode(reactionType);
-    setActiveProfileIndex(0);
     loadingRef.current = true;
     setLoading(true);
     setUsers([]);
@@ -4864,7 +4191,6 @@ const Matching = () => {
       reactionLoadVersionRef.current += 1;
       sharedReactionCandidateLoadVersionRef.current += 1;
       loadingRef.current = false;
-      setActiveProfileIndex(0);
       setUsers([]);
       setSharedReactionCandidateUsers([]);
       resetReactionPaginationState(nextMode);
@@ -4971,8 +4297,8 @@ const Matching = () => {
 
   // «Назад» телефона з видачі — у стрічку. Запис пошуку клав ефект адреси
   // (`searchHistoryEntryRef`); тут його зняли. Якщо поточним після «назад»
-  // лишився запис пошуку, то зняли запис картки над ним — закрилась картка, а
-  // пошук стоїть як стояв.
+  // лишився запис пошуку, то зняли запис над ним — закрився перегляд фото
+  // (`PhotoViewer`), а пошук стоїть як стояв.
   useEffect(() => {
     const handleSearchPopState = () => {
       if (!searchHistoryEntryRef.current) return;
@@ -6712,8 +6038,6 @@ const Matching = () => {
     visibleUsers,
   ]);
 
-  const detailIndex = detailOpen && feedSource.length ? activeProfileIndex : null;
-  const activeProfile = detailIndex === null ? null : (feedSource[detailIndex] || null);
 
   // Проєкція `matchingCards` несе рівно те, що видно в рядку стрічки. Розгорнутий
   // рядок і шар деталей показують більше — освіту, зовнішність, контакти — тож
@@ -6868,11 +6192,6 @@ const Matching = () => {
       });
   }, []);
 
-  const activeProfileWithLazyPhotos = withOwnEdits(withLazyPhotos(activeProfile));
-
-  useEffect(() => {
-    if (activeProfile) ensureFullProfile(activeProfile);
-  }, [activeProfile, ensureFullProfile]);
 
   // Розгортання рядка приходить із самим лише userId, а шукати за ним картку
   // треба в актуальній стрічці — без того, щоб перестворювати обробник на
@@ -6890,9 +6209,7 @@ const Matching = () => {
   // кожне фото робило власний, тож стрічка з 60 рядків перемальовувалась 60
   // разів поспіль — і щоразу цілком, бо `feedRows` перебудовував усі обʼєкти.
   useEffect(() => {
-    const pool = detailOpen
-      ? [feedSource[activeProfileIndex], feedSource[activeProfileIndex + 1]]
-      : feedSource.slice(0, FEED_PHOTO_HYDRATION_LIMIT);
+    const pool = feedSource.slice(0, FEED_PHOTO_HYDRATION_LIMIT);
     // Аватар проєкції — це одне фото, і рядку стрічки його досить. Шар деталей
     // гортає всі фото, тож картка, яку відкрили (а отже, догідратували повною
     // анкетою), потребує повного набору попри свій `__photosHydrated`.
@@ -6944,33 +6261,12 @@ const Matching = () => {
       if (stats && typeof console.table === 'function') console.table([stats]);
     });
     return undefined;
-  }, [activeProfileIndex, detailOpen, feedSource, fullProfileByUserId, photoCacheByUserId]);
+  }, [feedSource, fullProfileByUserId, photoCacheByUserId]);
 
   useEffect(() => {
-    if (activeProfile?.userId) {
-      void loadCommentsFor([activeProfile], { activeOnly: true });
-    }
-  }, [activeProfile, loadCommentsFor]);
-
-  useEffect(() => {
-    if (detailOpen || !feedSource.length) return;
+    if (!feedSource.length) return;
     void loadCommentsFor(feedSource.slice(0, FEED_PHOTO_HYDRATION_LIMIT), { activeOnly: false });
-  }, [detailOpen, feedSource, loadCommentsFor]);
-
-  useEffect(() => {
-    setActiveProfileIndex(index => {
-      if (feedSource.length === 0) return 0;
-      return Math.min(index, feedSource.length - 1);
-    });
-  }, [feedSource.length]);
-
-  useEffect(() => {
-    setActiveProfileIndex(0);
-  }, [
-    reactionPaginationByType.favorites.ids,
-    reactionPaginationByType.dislikes.ids,
-    viewMode,
-  ]);
+  }, [feedSource, loadCommentsFor]);
 
   const additionalFiltersDebugSignatureRef = useRef('');
   useEffect(() => {
@@ -7106,7 +6402,6 @@ const Matching = () => {
       viewMode,
       sourceCursorSignature,
       publicCardsLength,
-      activeProfileIndex,
       filtersSignature: stableAdditionalSignature(filtersRef.current || {}),
       loadedIdsCount: loadedIdsRef.current?.size || 0,
     });
@@ -7114,7 +6409,6 @@ const Matching = () => {
     console.log('[Matching][endOfDeckLoad] requested', {
       reason,
       publicCardsLength,
-      activeProfileIndex,
       hasMore: Boolean(hasMoreRef.current),
       loadingRefCurrent: Boolean(loadingRef.current),
       sourceNextOffset,
@@ -7131,7 +6425,6 @@ const Matching = () => {
       limit,
     });
   }, [
-    activeProfileIndex,
     lastKey,
     reactionPaginationByType,
     publicCardsLength,
@@ -7139,63 +6432,6 @@ const Matching = () => {
     viewMode,
   ]);
 
-  // Spec §7: paging the detail layer walks `filtered[detailIndex ± 1]` and nothing
-  // else - no fetch, no request for the card by id. It stops at both ends with a
-  // short bounce instead of wrapping around. The feed's own sentinel is what
-  // extends the deck, so this path deliberately never triggers a load.
-  const [detailBounce, setDetailBounce] = useState(0);
-  const navigateActiveProfile = React.useCallback((step) => {
-    if (feedSource.length === 0) {
-      setActiveProfileIndex(0);
-      return;
-    }
-
-    const nextIndex = Math.max(0, Math.min(feedSource.length - 1, activeProfileIndex + step));
-    if (nextIndex === activeProfileIndex) {
-      setDetailBounce(step > 0 ? 1 : -1);
-      return;
-    }
-
-    setActiveProfileIndex(nextIndex);
-    setActiveDetailAnketaRole('');
-  }, [activeProfileIndex, feedSource.length]);
-
-  useEffect(() => {
-    if (!detailBounce) return undefined;
-    const timer = setTimeout(() => setDetailBounce(0), 220);
-    return () => clearTimeout(timer);
-  }, [detailBounce]);
-
-  useEffect(() => {
-    const handleKeyDown = event => {
-      const target = event.target;
-      const tagName = target?.tagName?.toLowerCase();
-      const isTyping = tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target?.isContentEditable;
-      if (isTyping) return;
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        navigateActiveProfile(1);
-      }
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        navigateActiveProfile(-1);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigateActiveProfile]);
-
-  useEffect(() => {
-    if (!detailOpen) return undefined;
-    const handleEscape = event => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      setDetailOpen(false);
-    };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [detailOpen]);
 
   useEffect(() => {
     writeMatchingDebugLog('autoLoadEffect:evaluated', {
@@ -7315,9 +6551,11 @@ const Matching = () => {
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
     if (renderedCardsLength < 1) return;
 
-    const lastRenderedIndex = renderedCardsLength - 1;
-    const activeRenderedIndex = activeProfileIndex;
-    if (activeRenderedIndex < lastRenderedIndex) return;
+    // Колись тут питали, чи відкрита картка дійшла до останньої в деці.
+    // Відкритої картки більше немає, а поріг лишився тим самим, що був при
+    // закритій (індекс 0): цикл спрацьовує, лише коли в деці одна картка.
+    if (renderedCardsLength > 1) return;
+    const lastRenderedIndex = 0;
 
     const reactionPagination = reactionPaginationByType[viewMode] || buildEmptyReactionPagination();
     const sourceNextOffset = viewMode === 'favorites' || viewMode === 'dislikes'
@@ -7340,7 +6578,6 @@ const Matching = () => {
     const triggerSignature = stableAdditionalSignature({
       paginationSignature,
       renderedLength: renderedCardsLength,
-      activeRenderedIndex,
       triggerIndex: lastRenderedIndex,
       triggerUserId: lastRenderedCardUserId || '',
       filtersSignature: stableAdditionalSignature(filtersRef.current || {}),
@@ -7358,7 +6595,6 @@ const Matching = () => {
         renderedLength: renderedCardsLength,
         triggerIndex: lastRenderedIndex,
         triggerUserId: lastRenderedCardUserId,
-        activeRenderedIndex,
         hasMore: sourceHasMore,
         loadingRefCurrent,
         sourceNextOffset,
@@ -7418,7 +6654,6 @@ const Matching = () => {
       limit: MATCHING_REFILL_LIMIT,
     });
   }, [
-    activeProfileIndex,
     additionalNextOffset,
     hasMore,
     lastKey,
@@ -7763,85 +6998,6 @@ const Matching = () => {
     return keys;
   }, [filters, matchingDefaultFilters]);
 
-  const openDetailFor = React.useCallback((user, anketaRole = '') => {
-    // Урізана проєкція теж відкривається. Раніше — ні: рядок списку показує все,
-    // на що читач має право, і відкривати нібито не було чого. Але плитка
-    // галереї показує менше за рядок (ані локації, ані публічних коментарів),
-    // тож дотик до неї не робив рівно нічого — картка виглядала зламаною. Шар
-    // деталей малює те саме, що й проєкція: більше в ньому взятись нема звідки.
-    const index = feedSource.findIndex(candidate => candidate?.userId === user?.userId);
-    if (index === -1) return;
-    feedScrollTopRef.current = window.scrollY;
-    // Відкрита картка — і є те місце, куди читач схоче повернутись. Якір
-    // ставиться тут, а не в момент переходу: з відкритої картки можна піти
-    // далі (олівець, редагування анкети), і тоді сторінка розмонтується вже
-    // з неї.
-    lastSeenCardIdRef.current = user?.userId || '';
-    setActiveProfileIndex(index);
-    setActiveDetailAnketaRole(anketaRole);
-    setDetailOpen(true);
-  }, [feedSource]);
-
-  const closeDetail = React.useCallback(() => {
-    setDetailOpen(false);
-  }, []);
-
-  // Opening pushes one history entry; Android's Back (and the browser's) pops
-  // it, which is what actually closes the layer. Closing from the UI goes
-  // through history.back() so the entry never outlives the layer.
-  const detailHistoryStateRef = useRef(false);
-  useEffect(() => {
-    if (!detailOpen) return undefined;
-    window.history.pushState({ matchingDetail: true }, '');
-    detailHistoryStateRef.current = true;
-    const handlePopState = () => {
-      detailHistoryStateRef.current = false;
-      setDetailOpen(false);
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-      // Only pop the entry we pushed. If the card navigated somewhere (the admin
-      // edit route), history has already moved on and a back() here would undo
-      // that navigation instead of closing anything.
-      if (detailHistoryStateRef.current && window.history.state?.matchingDetail) {
-        detailHistoryStateRef.current = false;
-        window.history.back();
-        return;
-      }
-      detailHistoryStateRef.current = false;
-    };
-  }, [detailOpen]);
-
-  // The layer covers the viewport, so the page behind it must not scroll with it.
-  useEffect(() => {
-    if (!detailOpen) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = previousOverflow; };
-  }, [detailOpen]);
-
-  // Spec §7: the feed comes back to the exact row the reader left from. The feed
-  // never unmounted, but locking the body's scroll can still move it, so the
-  // position saved on open is put back once the layer is gone.
-  useLayoutEffect(() => {
-    if (detailOpen) return;
-    const savedTop = feedScrollTopRef.current;
-    const anchorId = lastSeenCardIdRef.current;
-    if (!savedTop && !anchorId) return;
-    requestAnimationFrame(() => {
-      // Рядок тієї самої картки — точніше за піксель: поки шар був відкритий,
-      // у стрічку могла долягти чергова порція, а в рядках — догідратуватись
-      // фото, і висота списку над збереженою позицією вже інша.
-      const anchor = findCardNodeById(anchorId);
-      if (anchor) {
-        anchor.scrollIntoView({ block: 'center' });
-        return;
-      }
-      if (savedTop) window.scrollTo(0, savedTop);
-    });
-  }, [detailOpen]);
-
   const handleToggleRowExpand = React.useCallback(userId => {
     setExpandedRowIds(previous => {
       const next = new Set(previous);
@@ -7849,6 +7005,10 @@ const Matching = () => {
         next.delete(userId);
       } else {
         next.add(userId);
+        // Розгорнутий рядок — те місце, куди читач схоче повернутись (якір
+        // відновлення позиції). Доти якір ставила відкрита картка, якої більше
+        // немає.
+        lastSeenCardIdRef.current = userId || '';
         ensureFullProfile(feedSourceRef.current.find(candidate => candidate?.userId === userId));
       }
       return next;
@@ -8045,7 +7205,7 @@ const Matching = () => {
   const [feedEndVisible, setFeedEndVisible] = useState(false);
   useEffect(() => {
     const node = feedSentinelRef.current;
-    if (!node || detailIndex !== null || !deckHasMore) {
+    if (!node || !deckHasMore) {
       setFeedEndVisible(false);
       return undefined;
     }
@@ -8065,7 +7225,7 @@ const Matching = () => {
     }, { rootMargin: '2000px' });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [deckHasMore, detailIndex, filteredUsers.length, loading]);
+  }, [deckHasMore, filteredUsers.length, loading]);
 
   // Прокрутка донизу — це ще й повторна спроба.
   //
@@ -8077,11 +7237,11 @@ const Matching = () => {
   // Жест витрачається: одна прокрутка донизу — одна спроба.
   useEffect(() => {
     if (!scrolledDownSinceLoad) return;
-    if (!feedEndVisible || !deckHasMore || loading || detailIndex !== null) return;
+    if (!feedEndVisible || !deckHasMore || loading) return;
     scrolledDownSinceLoadRef.current = false;
     setScrolledDownSinceLoad(false);
     endOfDeckLoadRef.current('feed-scroll', { limit: MATCHING_FEED_PAGE_SIZE });
-  }, [deckHasMore, detailIndex, feedEndVisible, loading, scrolledDownSinceLoad]);
+  }, [deckHasMore, feedEndVisible, loading, scrolledDownSinceLoad]);
 
   // Та сама повторна спроба — для стрічки, коротшої за екран: там крутити нема
   // чого, і після порожньої порції продовжити інакше не було б чим. Кнопка
@@ -8092,8 +7252,7 @@ const Matching = () => {
     feedEndVisible &&
     deckHasMore &&
     !loading &&
-    !loadError &&
-    detailIndex === null
+    !loadError
   );
   const handleFeedRetry = React.useCallback(() => {
     emptyAutoLoadMoreAttemptsRef.current = 0;
@@ -8133,10 +7292,6 @@ const Matching = () => {
       }));
   }, []);
 
-  useEffect(() => {
-    if (!ownerId || !detailOpen) return;
-    requestPublicComments(activeProfile?.userId);
-  }, [activeProfile?.userId, detailOpen, ownerId, requestPublicComments]);
 
   // Дека сама підвантажує відгуки для позначених карток — без цього прапорець
   // `hasPublicReview` лишався б написом, якого ніхто не прочитав. Ефект бʼє
@@ -8238,8 +7393,8 @@ const Matching = () => {
   const buildRowReviewsSlot = React.useCallback(profileId => (
     <PublicCommentBlock
       flush
-      // Читання тут іде без окремого жесту (ефект вище), так само, як у
-      // відкритій картці й в обох формах — див. `preloaded` у `ProfileRow`.
+      // Читання тут іде без окремого жесту (ефект вище), так само, як в
+      // обох формах — див. `preloaded` у `ProfileRow`.
       preloaded
       profileId={profileId}
       backendHref={publicCommentsBackendHref(profileId)}
@@ -8850,7 +8005,6 @@ const Matching = () => {
               isAdmin={isAdmin}
               onGoToFeed={handleDefaultModeClick}
               onEditProfile={handleRowEditProfile}
-              onOpenProfile={openDetailFor}
               buildRowExtras={buildHiddenRowExtras}
               listRowAnketaRoles={resolveRowAnketaRoles}
             />
@@ -8888,12 +8042,12 @@ const Matching = () => {
                       key={anketaRole ? `${user.userId}:${anketaRole}` : user.userId}
                       anketaRole={anketaRole}
                       postpone={buildRowPostpone(user)}
+                      sharedNotes={sharedComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
                       user={user}
                       isAdmin={isAdmin}
                       onTogglePublish={togglePublish}
                       expanded={expandedRowIds.has(user.userId)}
                       onToggleExpand={handleToggleRowExpand}
-                      onOpen={() => openDetailFor(user, anketaRole)}
                       onEditProfile={handleRowEditProfile}
                       onContactAction={handleRowContactAction}
                       onRequestContacts={handleRequestRowContacts}
@@ -8969,187 +8123,6 @@ const Matching = () => {
               )}
               <FeedSentinel ref={feedSentinelRef} />
             </FeedWrap>
-          )}
-
-          {/* Spec §7: a layer over the feed. The feed keeps its DOM and its
-              scroll position underneath, so closing costs no reload. */}
-          {detailIndex !== null && (
-          <DetailLayer
-            $themeMode={themeMode}
-            $bounce={detailBounce}
-            role="dialog"
-            aria-modal="true"
-            aria-label={uiText('Профіль', language)}
-          >
-            <DetailInner>
-              <DetailBar>
-                <DetailCloseButton
-                  type="button"
-                  onClick={closeDetail}
-                  aria-label={uiText('Закрити профіль', language)}
-                  title={uiText('Закрити профіль', language)}
-                >
-                  <FaChevronLeft />
-                </DetailCloseButton>
-                <DetailPosition aria-live="polite">
-                  {detailIndex + 1} / {feedSource.length}
-                </DetailPosition>
-              </DetailBar>
-          <Grid>
-            {activeProfileWithLazyPhotos ? (() => {
-              const user = activeProfileWithLazyPhotos;
-              const canonicalUser = feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === user.userId);
-              const canonicalUserData = canonicalUser ? withLazyPhotos(canonicalUser) : { userId: user.userId };
-              const photos = getProfilePhotos(user);
-              const photo = photos[0];
-              const role = getProfileRole(user);
-              const isAgency = role === 'ag' || role === 'ip';
-              return (
-                <CardContainer key={user.userId}>
-                  <CardWrapper $role={role}>
-                    <ModernDesktopNavButton
-                      type="button"
-                      $side="left"
-                      onClick={e => { e.stopPropagation(); navigateActiveProfile(-1); }}
-                      disabled={activeProfileIndex === 0}
-                      aria-label="Previous profile" title={uiText('Попередній профіль', language)}
-                    >
-                      <FaChevronLeft />
-                    </ModernDesktopNavButton>
-                    <ModernDesktopNavButton
-                      type="button"
-                      $side="right"
-                      onClick={e => { e.stopPropagation(); navigateActiveProfile(1); }}
-                      disabled={activeProfileIndex >= filteredUsers.length - 1 && (!hasMore || loading)}
-                      aria-label="Next profile" title={uiText('Наступний профіль', language)}
-                    >
-                      <FaChevronRight />
-                    </ModernDesktopNavButton>
-                    <SwipeableCard
-                      user={user}
-                      canonicalUserData={canonicalUserData}
-                      photo={photo}
-                      role={role}
-                      anketaRole={activeDetailAnketaRole}
-                      reactionActions={activeDetailAnketaRole ? buildRowReactionActions(user, activeDetailAnketaRole) : undefined}
-                      isAgency={isAgency}
-                      isAdmin={isAdmin}
-                      favoriteUsers={favoriteUsers}
-                      setFavoriteUsers={setFavoriteUsers}
-                      ownFavoriteUsers={ownFavoriteUsers}
-                      setOwnFavoriteUsers={setOwnFavoriteUsers}
-                      dislikeUsers={dislikeUsers}
-                      setDislikeUsers={setDislikeUsers}
-                      ownDislikeUsers={ownDislikeUsers}
-                      setOwnDislikeUsers={setOwnDislikeUsers}
-                      onReacted={rememberReactedCard}
-                      togglePublish={togglePublish}
-                      programsContext={programsContext}
-                      multiDataOwnerId={ownerId}
-                      onNavigate={navigateActiveProfile}
-                      commentValue={comments[user.userId] || ''}
-                      sharedCommentTexts={sharedComments[user.userId] || []}
-                      onCommentChange={val => {
-                        commentsRef.current = { ...commentsRef.current, [user.userId]: val };
-                        setComments(prev => ({ ...prev, [user.userId]: val }));
-                      }}
-                      publicCommentCount={(publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS).length}
-                      publicCommentStatus={describeReviewsState({
-                        requested: true,
-                        loading: Boolean(publicCommentsLoading[user.userId]),
-                        loaded: Boolean(publicComments[user.userId]),
-                        count: (publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS).length,
-                      }, language)}
-                      publicCommentSlot={(
-                        <PublicCommentBlock
-                          flush
-                          // Відкрита картка читає відгуки сама — див.
-                          // `requestPublicComments` в ефекті `detailOpen`.
-                          preloaded
-                          profileId={user.userId}
-                          backendHref={publicCommentsBackendHref(user.userId)}
-                          comments={publicComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
-                          viewerId={auth.currentUser?.uid || ''}
-                          canModerate={isAdmin}
-                          onCreate={handleCreatePublicComment}
-                          onUpdate={handleUpdatePublicComment}
-                          onDelete={handleDeletePublicComment}
-                        />
-                      )}
-                      onCommentBlur={async overrideText => {
-                        if (auth.currentUser) {
-                          // Хрестик памʼятки передає значення прямо: стан
-                          // `comments` у цьому замиканні ще старий.
-                          const text = typeof overrideText === 'string'
-                            ? overrideText
-                            : (comments[user.userId] || '');
-                          try {
-                            const res = await saveMyCardComment(user.userId, text, ownerId);
-                            dispatchedCommentSaveRef.current = { cardId: user.userId, text };
-                            setLocalComment(ownerId, user.userId, text, res?.lastAction);
-                            dispatchedCommentSaveRef.current = null;
-                          } catch (error) {
-                            dispatchedCommentSaveRef.current = null;
-                            const details = error?.message || String(error);
-                            toast.error(uiText('Не вдалося зберегти коментар: {details}', language, { details }));
-                          }
-                        }
-                      }}
-                      onAdminEdit={() => {
-                        lastSeenCardIdRef.current = user.userId || '';
-                        saveScrollPosition();
-                        navigate(`/edit/${user.userId}`, { state: user });
-                      }}
-                      onEnrich={isAdmin ? undefined : handleRowEnrichProfile}
-                    />
-                  </CardWrapper>
-                </CardContainer>
-              );
-            })() : loadError ? (
-              <OwnerStatusMessage role="alert">
-                <div>{uiText('Не вдалося завантажити профілі.', language)}</div>
-                <div>{loadError.userMessage}</div>
-                <div>{uiText('Етап:', language)} {loadError.requestLabel}</div>
-                <details>
-                  <summary>{uiText('Технічні деталі', language)}</summary>
-                  <div>{uiText('Етап:', language)} {loadError.requestLabel}</div>
-                  <div>{uiText('Код:', language)} {loadError.code}</div>
-                  <div>{uiText('Тип:', language)} {loadError.name}</div>
-                  <div>{uiText('Повідомлення:', language)} {loadError.message}</div>
-                  <div>{uiText('Спроба:', language)} {loadError.requestId}</div>
-                  <div>{uiText('Мережа:', language)} {loadError.online === false ? 'offline' : 'online'}</div>
-                  <div>{uiText('Час:', language)} {loadError.timestamp}</div>
-                  <div>
-                    Trace: {(loadError.trace || initialLoadTrace).map(item => `${item.stage} ${item.status === 'completed' ? '✓' : item.status === 'failed' ? '✕' : '…'}`).join(' → ') || uiText('немає подій', language)}
-                  </div>
-                  <ActionButton
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
-                        await navigator.clipboard.writeText(JSON.stringify(loadError, null, 2));
-                        toast.success(uiText('Діагностику скопійовано', language));
-                      } catch {
-                        toast.error(uiText('Не вдалося скопіювати діагностику', language));
-                      }
-                    }}
-                    aria-label={uiText('Копіювати діагностику', language)}
-                  >
-                    Копіювати діагностику
-                  </ActionButton>
-                </details>
-                <ActionButton type="button" onClick={reloadDefault} aria-label={uiText('Повторити завантаження', language)}>
-                  Спробувати ще раз
-                </ActionButton>
-              </OwnerStatusMessage>
-            ) : loading ? (
-              <MatchingSkeleton />
-            ) : (
-              <OwnerStatusMessage>{emptyFeedMessage}</OwnerStatusMessage>
-            )}
-          </Grid>
-            </DetailInner>
-          </DetailLayer>
           )}
 
         </InnerContainer>

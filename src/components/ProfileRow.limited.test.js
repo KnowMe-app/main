@@ -35,7 +35,6 @@ const renderRow = (user, props = {}) => render(
     isAdmin
     expanded={false}
     onToggleExpand={props.onToggleExpand || jest.fn()}
-    onOpen={props.onOpen || jest.fn()}
     onEditProfile={props.onEditProfile || jest.fn()}
     onCommentSave={jest.fn()}
     clientComment=""
@@ -64,29 +63,28 @@ describe('limited profile row', () => {
     expect(screen.queryByText('Зріст')).not.toBeInTheDocument();
   });
 
-  // Дотик мусить щось робити: рядок, який на дотик не робить нічого, читається
-  // як зламана картка. Шар деталей показує ту саму проєкцію, але з фото на весь
-  // екран, — а от розгортати рядок нема чим, метрик і контактів у ній немає.
-  it('opens the detail layer but never expands the row', () => {
-    const onOpen = jest.fn();
+  // Розгортати урізану проєкцію нема чим — метрик і контактів у ній немає,
+  // а відкритої картки, куди дотик вів раніше, більше немає взагалі.
+  it('never expands the row on a tap', () => {
     const onToggleExpand = jest.fn();
-    renderRow(limitedUser, { onOpen, onToggleExpand });
+    renderRow(limitedUser, { onToggleExpand });
     fireEvent.click(screen.getByText(/Олена Ткаченко/));
-    expect(onOpen).toHaveBeenCalledWith(limitedUser);
     expect(onToggleExpand).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('row-details-toggle')).not.toBeInTheDocument();
   });
 
   it('still renders the full row for a viewer entitled to one', () => {
-    const onOpen = jest.fn();
-    renderRow(fullUser, { onOpen });
-    expect(screen.getByTitle('Розгорнути анкету')).toBeInTheDocument();
+    const onToggleExpand = jest.fn();
+    renderRow(fullUser, { onToggleExpand });
+    expect(screen.getByTestId('row-details-toggle')).toBeInTheDocument();
     expect(screen.getByTitle('Редагувати анкету')).toBeInTheDocument();
     expect(screen.getByTitle('В обране')).toBeInTheDocument();
     // Показники стоять смугою з підписами (`ProfileStatStrip`), а не рядком
     // «172/59».
     expect(screen.getByText('Зріст')).toBeInTheDocument();
     expect(screen.getByText('Вага')).toBeInTheDocument();
+    // Дотик до картки розгортає її.
     fireEvent.click(screen.getByText(/Олена Ткаченко/));
-    expect(onOpen).toHaveBeenCalledWith(fullUser);
+    expect(onToggleExpand).toHaveBeenCalledWith(fullUser.userId);
   });
 });
