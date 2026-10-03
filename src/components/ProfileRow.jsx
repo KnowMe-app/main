@@ -272,6 +272,11 @@ export const ContactLinks = ({ entries, language, onContactAction }) => {
   const phones = entries.filter(entry => entry.key === 'phone');
   const others = entries.filter(entry => entry.key !== 'phone');
   const act = channel => () => { if (tracked) onContactAction(channel); };
+  // Канал, записаний в анкеті окремо (нік Telegram, номер Viber), веде туди,
+  // куди людина сама сказала писати; кнопка того самого каналу з номера поруч
+  // з ним давала два однакові значки — і незрозуміло, який із них «правильний».
+  const ownChannels = new Set(others.map(entry => entry.key));
+  const phoneQuickLinks = PHONE_QUICK_LINKS.filter(link => !ownChannels.has(link.key));
   if (!entries.length) return null;
 
   return (
@@ -293,7 +298,7 @@ export const ContactLinks = ({ entries, language, onContactAction }) => {
             >
               <PhoneHandsetIcon />
             </S.ContactIconLink>
-            {PHONE_QUICK_LINKS.map(({ key, Icon, label, build }) => {
+            {phoneQuickLinks.map(({ key, Icon, label, build }) => {
               const quickLabel = tracked
                 ? uiText('{label} за номером', language, { label })
                 : `${label}: ${displayValue}`;

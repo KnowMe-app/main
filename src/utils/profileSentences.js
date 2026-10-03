@@ -82,13 +82,45 @@ const pickCurrent = value => {
 
 const lower = text => text.toLocaleLowerCase('uk-UA');
 
+/*
+ * Як люди називають варіант, коли пишуть його самі, — ключ варіанта.
+ *
+ * «Середня» — це той самий варіант, що й «Загальна середня освіта», і поки
+ * довідник знав лише свій напис, одна донорка казала «Я маю загальну середню
+ * освіту…» реченням, а друга — окремим рядком «Освіта — середня» під
+ * «Я працюю за професією…». Тут лише однозначні назви рівня.
+ */
+const OPTION_ALIASES = {
+  education: {
+    'середня': 'secondary',
+    'середня освіта': 'secondary',
+    'загальна середня': 'secondary',
+    'повна середня': 'secondary',
+    'средняя': 'secondary',
+    'среднее': 'secondary',
+    'вища': 'higher',
+    'висша': 'higher',
+    'высшее': 'higher',
+    'профтехосвіта': 'technical',
+    'професійно-технічна': 'technical',
+    'середня спеціальна': 'technical',
+    'средне-специальное': 'technical',
+    'бакалавр': 'bachelor',
+    'магістр': 'master',
+  },
+};
+
 /** Варіант довідника, якому відповідає записане значення, або `null`. */
 export const findPresetOption = (field, value) => {
-  const text = lower(pickCurrent(value));
+  const text = lower(pickCurrent(value)).replace(/\s+/g, ' ').replace(/[.,;]+$/u, '');
   if (!text) return null;
-  return (OPTIONS_BY_FIELD[field] || []).find(option => (
+  const options = OPTIONS_BY_FIELD[field] || [];
+  const direct = options.find(option => (
     lower(String(option.placeholder || '')) === text || lower(String(option.ukrainian || '')) === text
-  )) || null;
+  ));
+  if (direct) return direct;
+  const aliasKey = OPTION_ALIASES[field]?.[text];
+  return aliasKey ? options.find(option => lower(String(option.placeholder || '')) === aliasKey) || null : null;
 };
 
 // Прикметник середнього роду → жіночого: «овальне» → «овальна».
@@ -145,7 +177,10 @@ export const describeLooks = ({ user, lang, typed, includeHair = false }) => {
   const chin = word('chin');
   const chinOption = findPresetOption('chin', user?.chin);
   const body = word('bodyType');
-  const breast = value('breastSize');
+  // «Розмір грудей — 1 розмір»: людина відповідала на «який розмір» і
+  // повторила слово з питання.
+  const breast = value('breastSize').replace(/\s*розмір\s*$/iu, '').replace(/^розмір\s*/iu, '').trim()
+    || value('breastSize');
   const race = word('race');
 
   const parts = [];
@@ -181,28 +216,66 @@ export const describeLooks = ({ user, lang, typed, includeHair = false }) => {
   return { text: parts.join(' '), used };
 };
 
+/*
+ * Перша літера слова — мала, якщо це звичайне слово з великої («Кухар
+ * Кондитер», «Бухгалтер»): у реченні воно стоїть посередині, і велика літера
+ * читалась як назва. Абревіатури («IT», «ФОП») лишаються як є.
+ */
+const lowerCapitalizedWords = text => text.replace(
+  /(^|[\s-])(\p{Lu})(\p{Ll}+)/gu,
+  (match, before, first, rest) => `${before}${first.toLocaleLowerCase('uk-UA')}${rest}`,
+);
+const lowerFirstWord = text => text.replace(
+  /^(\p{Lu})(\p{Ll})/u,
+  (match, first, second) => `${first.toLocaleLowerCase('uk-UA')}${second}`,
+);
+
 /**
- * Волосся одним словосполученням: «темне хвилясте волосся». Значення не з
- * довідника стоїть як записали; порожньо — нема що сказати.
+ * Волосся одним словосполученням: «темне хвилясте волосся».
+ *
+ * Словосполучення складається лише з варіантів довідника: їх рід і відмінок
+ * відомі. Колір, який людина описала сама («Темно русий природній»,
+ * «світло русяве своє, та зараз покрашена в блондинку»), між прикметником і
+ * «волоссям» розвалював фразу — «темно русий природній пряме волосся». Тож
+ * власна відповідь стоїть поруч, підписана: «пряме волосся, колір волосся —
+ * темно русий природній». Порожньо — нема що сказати.
  */
 export const describeHair = (user, lang) => {
-  const words = ['hairColor', 'hairStructure'].map(field => {
+  const presetWords = [];
+  const ownAnswers = [];
+  ['hairColor', 'hairStructure'].forEach(field => {
     const preset = presetSentenceWord(field, user?.[field], lang);
-    if (preset) return preset;
+    if (preset) {
+      presetWords.push(preset);
+      return;
+    }
     const raw = pickCurrent(user?.[field]);
-    return raw && !['other', 'інше'].includes(lower(raw)) ? lower(raw) : '';
-  }).filter(Boolean);
-  if (!words.length) return '';
-  return `${words.join(' ')} ${lang === 'en' ? 'hair' : 'волосся'}`;
+    if (!raw || ['other', 'інше'].includes(lower(raw))) return;
+    const label = field === 'hairColor'
+      ? (lang === 'en' ? 'hair color' : 'колір волосся')
+      : (lang === 'en' ? 'hair texture' : 'структура волосся');
+    ownAnswers.push(`${label} — ${lowerFirstWord(raw)}`);
+  });
+  const parts = [];
+  if (presetWords.length) parts.push(`${presetWords.join(' ')} ${lang === 'en' ? 'hair' : 'волосся'}`);
+  return [...parts, ...ownAnswers].join(', ');
 };
+
+/*
+ * Відповідь «ні» на «професія» — це не назва професії: «Я працюю за
+ * професією Ні» стояло в картці дослівно. Таку відповідь речення пропускає.
+ */
+const NO_PROFESSION_VALUES = new Set(['ні', 'no', 'немає', 'нема', 'нет', 'не працюю', '-', '—']);
 
 /** «Я маю вищу освіту та працюю за професією лікар.» */
 export const describeWork = ({ user, lang, typed }) => {
   const used = new Set();
   const education = presetSentenceWord('education', user?.education, lang);
   if (education) used.add('education');
-  const profession = typed('profession');
-  if (profession) used.add('profession');
+  const rawProfession = typed('profession');
+  const noProfession = NO_PROFESSION_VALUES.has(lower(rawProfession).replace(/[.!]+$/u, ''));
+  const profession = rawProfession && !noProfession ? lowerCapitalizedWords(rawProfession) : '';
+  if (rawProfession) used.add('profession');
   let text = '';
   if (lang === 'en') {
     const clauses = [education ? `have ${education}` : '', profession ? `work as ${profession}` : ''].filter(Boolean);

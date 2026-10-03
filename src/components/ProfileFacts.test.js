@@ -73,8 +73,8 @@ describe('короткі факти', () => {
   it('кажуть про зовнішність самими полями картки стрічки', () => {
     const rows = buildProfileSummaryRows({ eyeColor: 'Hazel', hairColor: 'Fair', hairStructure: 'Straight' }, 'uk');
     expect(labelOf(rows, 'appearance')).toBe('Зовнішність');
-    // Усе про волосся — тут, одним словосполученням: структура тепер у
-    // картці стрічки (`MATCHING_CARD_MIRRORED_FIELDS`).
+    // Усе про волосся — тут, одним словосполученням: структуру дописує повна
+    // анкета (у картці стрічки її немає).
     expect(valueOf(rows, 'appearance')).toBe('карі очі, русяве пряме волосся');
   });
 
@@ -99,8 +99,9 @@ describe('короткі факти', () => {
   });
 
   it('каже кесарів поруч із пологами', () => {
-    expect(valueOf(buildProfileSummaryRows({ ownKids: '3', csection: '1' }, 'uk'), 'reproduction')).toBe('троє пологів · КР 1');
-    expect(valueOf(buildProfileSummaryRows({ ownKids: '1', csection: 'не було' }, 'uk'), 'reproduction')).toBe('одні пологи · без КР');
+    expect(valueOf(buildProfileSummaryRows({ ownKids: '3', csection: '1' }, 'uk'), 'reproduction')).toBe('троє пологів · 1 кесарів');
+    expect(valueOf(buildProfileSummaryRows({ ownKids: '1', csection: 'не було' }, 'uk'), 'reproduction')).toBe('одні пологи · без кесаревого');
+    expect(valueOf(buildProfileSummaryRows({ ownKids: '2', csection: '2' }, 'uk'), 'reproduction')).toBe('двоє пологів · 2 кесаревих');
   });
 
   it('узгоджує числівник і відповідає словами на нуль', () => {
@@ -137,7 +138,11 @@ describe('короткі факти', () => {
     const projection = buildMatchingCardProjection('donor-1', fullProfile, { avatar: '' });
     const card = expandMatchingCard('donor-1', projection);
     expect(card).toBeTruthy();
-    expect(buildProfileSummaryRows(card, 'uk')).toEqual(buildProfileSummaryRows(fullProfile, 'uk'));
+    // Виняток один і навмисний: структуру волосся картка стрічки не несе,
+    // її дописує повна анкета.
+    expect(card.hairStructure).toBeUndefined();
+    const { hairStructure, ...profileWithoutHairStructure } = fullProfile;
+    expect(buildProfileSummaryRows(card, 'uk')).toEqual(buildProfileSummaryRows(profileWithoutHairStructure, 'uk'));
     const stripFromCard = buildProfileStatStrip(card, 'uk');
     const stripFromProfile = buildProfileStatStrip(fullProfile, 'uk');
     expect(stripFromCard.slice(0, 3)).toEqual(stripFromProfile.slice(0, 3));
@@ -163,7 +168,7 @@ describe('розділи повної анкети', () => {
 
   it('складає освіту й професію в речення', () => {
     const work = buildProfileDetailSections(fullProfile, 'uk').find(section => section.key === 'work');
-    expect(work.text).toBe('Я маю вищу освіту та працюю за професією Лікар Терапевт.');
+    expect(work.text).toBe('Я маю вищу освіту та працюю за професією лікар терапевт.');
     expect(work.rows).toEqual([]);
   });
 
@@ -178,7 +183,7 @@ describe('розділи повної анкети', () => {
   it('не показує «Освіта — так»', () => {
     const sections = buildProfileDetailSections({ education: 'Yes', profession: 'Кухар' }, 'uk');
     expect(valueOf(sections[0].rows, 'education')).toBeUndefined();
-    expect(sections[0].text).toBe('Я працюю за професією Кухар.');
+    expect(sections[0].text).toBe('Я працюю за професією кухар.');
   });
 
   it('не малює розділу без жодного значення', () => {
@@ -209,3 +214,35 @@ describe('обидва екрани', () => {
     expect(row).not.toContain('<S.Grid>');
   });
 });
+
+/*
+ * Анкети зі стрічки, на яких речення розвалювались: «темно русий природній
+ * пряме волосся», «Я працюю за професією Ні», «Освіта — середня» окремим
+ * рядком під реченням, «розмір грудей — 1 розмір».
+ */
+describe('власні відповіді в реченнях анкети', () => {
+  it('не вставляє власний опис кольору між прикметником і «волоссям»', () => {
+    const rows = buildProfileSummaryRows({ eyeColor: 'Green', hairColor: 'Темно русий природній', hairStructure: 'Straight' }, 'uk');
+    expect(valueOf(rows, 'appearance')).toBe('зелені очі, пряме волосся, колір волосся — темно русий природній');
+  });
+
+  it('не пише «працюю за професією Ні»', () => {
+    const sections = buildProfileDetailSections({ education: 'Secondary', profession: 'Ні' }, 'uk');
+    const work = sections.find(section => section.key === 'work');
+    expect(work.text).toBe('Я маю загальну середню освіту.');
+    expect(valueOf(work.rows, 'profession')).toBeUndefined();
+  });
+
+  it('впізнає «Середня», набрану власноруч, як варіант довідника', () => {
+    const sections = buildProfileDetailSections({ education: 'Середня ', profession: 'Бухгалтер' }, 'uk');
+    const work = sections.find(section => section.key === 'work');
+    expect(work.text).toBe('Я маю загальну середню освіту та працюю за професією бухгалтер.');
+    expect(valueOf(work.rows, 'education')).toBeUndefined();
+  });
+
+  it('не повторює «розмір» у розмірі грудей', () => {
+    const sections = buildProfileDetailSections({ bodyType: 'Triangle', breastSize: '1 розмір ' }, 'uk');
+    expect(sections.find(section => section.key === 'looks').text).toContain('розмір грудей — 1.');
+  });
+});
+

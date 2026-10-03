@@ -36,7 +36,7 @@ import { describeHair, describeLooks, describeSizes, describeWork } from '../uti
  * рядок списку показує їх одразу, без жодного читання, і не міняється, коли
  * приїхала повна анкета: верх відкритої картки — той самий блок тими самими
  * словами. Повна анкета лише уточнює на тих самих місцях: групу крові замість
- * самого резусу (`getBloodGroupDisplay`). Третя частина — те, чого в картці
+ * самого резусу (`getBloodGroupDisplay`) і структуру волосся поруч із кольором. Третя частина — те, чого в картці
  * стрічки немає взагалі; її показують розгорнутий рядок і відкрита картка.
  */
 
@@ -134,9 +134,11 @@ const TRAIT_WORDS = {
 
 // Колір і структура волосся — одним словосполученням («темне хвилясте
 // волосся», `describeHair`): довідник кольору тримає іменники («Брюнетка»,
-// «Шатенка»), а перед «волоссям» стоїть прикметник. Структура тепер у картці
-// стрічки (`hairStructure` у `MATCHING_CARD_MIRRORED_FIELDS`), тож усе про
-// волосся стоїть тут, а не ще раз у розділах повної анкети.
+// «Шатенка»), а перед «волоссям» стоїть прикметник. Структури волосся в
+// картці стрічки немає (і не буде: картку читає кожен рядок списку), тож
+// рядок спершу каже колір, а структуру дописує повна анкета, щойно приїхала
+// (розгорнутий рядок, відкрита картка). У розділах повної анкети волосся
+// вдруге не повторюється.
 const describeAppearance = (user, lang) => {
   const words = TRAIT_WORDS[lang];
   const eyes = readOptionValue(user, 'eyeColor', lang);
@@ -193,15 +195,26 @@ const describeDeliveries = (user, lang) => {
   return { text, had: true };
 };
 
+// «1 кесарів», «2 кесаревих» — число перед словом, як і в сусідів
+// («четверо пологів», «1 донація»). Абревіатура «КР 1» стояла навпаки й не
+// читалась: що таке «КР», знав лише той, хто заповнював анкету.
+const ukCSectionWord = count => (count % 10 === 1 && count % 100 !== 11 ? 'кесарів' : 'кесаревих');
+
 const describeCSection = (user, lang, hadDeliveries) => {
   const raw = normalizeDisplayValue(user?.[resolveCSectionKey(user)]);
   if (!raw) return '';
   const value = formatCSectionValue(raw);
-  const label = profileUiText('factCSection', lang);
-  // «Без КР» має сенс лише поруч із пологами: без них це відповідь на
-  // питання, якого ніхто не ставив.
-  if (value === '0') return hadDeliveries ? `${lang === 'uk' ? 'без' : 'no'} ${label}` : '';
-  return `${label} ${value}`;
+  // «Без кесаревого» має сенс лише поруч із пологами: без них це відповідь
+  // на питання, якого ніхто не ставив.
+  if (value === '0') return hadDeliveries ? (lang === 'uk' ? 'без кесаревого' : 'no C-section') : '';
+  if (/^\d+$/.test(value)) {
+    const count = Number(value);
+    return lang === 'uk'
+      ? `${count} ${ukCSectionWord(count)}`
+      : `${count} ${count === 1 ? 'C-section' : 'C-sections'}`;
+  }
+  // Дата операції чи власний текст — підписом спереду.
+  return `${lang === 'uk' ? 'кесарів' : 'C-section'} ${value}`;
 };
 
 const ukDonationWord = count => {

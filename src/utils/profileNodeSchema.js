@@ -142,10 +142,13 @@ export const MATCHING_CARD_PROGRAMS_FIELDS = Object.freeze(['programsAt']);
  * вузлі (`profileDetails`), а картка несе його копію, щоб рядок показав без
  * читання анкети. Тому власником поля картка не стає (`OWNERSHIP` їх
  * пропускає). `agencyName` — назва агенції чи клініки, коли в анкеті ще й
- * особиста роль; `hairStructure` — щоб «Зовнішність» у рядку казала про
- * волосся все одним місцем.
+ * особиста роль.
+ *
+ * Структури волосся (`hairStructure`) тут немає навмисно: картку стрічки
+ * читає кожен рядок списку, а структура — уточнення, яке «Зовнішність»
+ * дописує, коли приїхала повна анкета (розгорнутий рядок, відкрита картка).
  */
-export const MATCHING_CARD_MIRRORED_FIELDS = Object.freeze(['agencyName', 'hairStructure']);
+export const MATCHING_CARD_MIRRORED_FIELDS = Object.freeze(['agencyName']);
 
 /** Повний набір ключів, які має право лежати в картці стрічки. */
 export const MATCHING_CARD_ALLOWED_FIELDS = Object.freeze([
