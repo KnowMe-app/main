@@ -39,6 +39,7 @@ describe('чернетка потрапляє в searchId на збережен�
   beforeEach(() => {
     jest.clearAllMocks();
     ref.mockImplementation((db, path) => ({ db, path }));
+    require('firebase/database').push.mockImplementation(() => ({ key: 'history-1' }));
     // Значення ще не в індексі, і заявку на нього ніхто не тримає.
     get.mockResolvedValue(snapshotOf(null));
     runTransaction.mockImplementation((target, updater) => {
@@ -169,5 +170,32 @@ describe('чернетка потрапляє в searchId на збережен�
       searchIdKey: '380501112255/phone',
       action: 'add',
     }));
+  });
+
+  it('після коміту не видає збережену ревізію за помилку cleanup', async () => {
+    runTransaction.mockImplementation((target, updater) => {
+      if (target.path.startsWith('multiData/profileIdentityClaims/')) {
+        return Promise.reject(new Error('cleanup unavailable'));
+      }
+      const current = target.path.startsWith('multiData/profileMutations/') ? {
+        cardId: 'card-committed',
+        operation: 'create',
+        createdBy: 'author-1',
+        status: 'pendingReview',
+        revision: 1,
+        data: {},
+        identityKeys: ['phone_old'],
+      } : null;
+      const next = updater(current);
+      return Promise.resolve({ committed: next !== undefined, snapshot: snapshotOf(next) });
+    });
+
+    await expect(saveCreateProfileMutation({
+      cardId: 'card-committed',
+      creatorUid: 'author-1',
+      actorUid: 'author-1',
+      data: { city: 'Київ' },
+      expectedRevision: 1,
+    })).resolves.toEqual(expect.objectContaining({ revision: 2, data: expect.objectContaining({ city: 'Київ' }) }));
   });
 });

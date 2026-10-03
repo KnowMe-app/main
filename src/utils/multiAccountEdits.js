@@ -1522,6 +1522,25 @@ export const purgeCardOverlays = async cardUserId => {
   return { editorUserIds };
 };
 
+/**
+ * Clear pending values when a live draft is reset, without erasing its audit
+ * trail or contributor roster. Draft creators are allowed by the database
+ * rules to remove these active nodes; unlike the card-deletion purge, a
+ * failure is surfaced and the remaining nodes are verified before success.
+ */
+export const clearCardOverlays = async cardUserId => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!normalizedCardId) return;
+
+  const overlays = await getOverlaysForCard(normalizedCardId);
+  await Promise.all(Object.keys(overlays).map(editorUserId => remove(
+    ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`),
+  )));
+
+  const remaining = await getOverlaysForCard(normalizedCardId);
+  if (Object.keys(remaining).length) throw new Error('OVERLAY_CLEAR_INCOMPLETE');
+};
+
 export const removeAllOverlaysForCard = async (cardUserId, { historyAction = 'discard' } = {}) => {
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return null;

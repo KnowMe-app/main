@@ -8062,6 +8062,7 @@ const Matching = () => {
                       postpone={buildRowPostpone(user)}
                       sharedNotes={sharedComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
                       user={user}
+                      publishedUser={feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === user.userId) || user}
                       isAdmin={isAdmin}
                       onTogglePublish={togglePublish}
                       expanded={expandedRowIds.has(user.userId)}

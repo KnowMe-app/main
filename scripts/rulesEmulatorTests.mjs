@@ -1084,6 +1084,47 @@ await it('автор чернетки заводить ключ на неї', as
   await assertSucceeds(update(ref(db(ORDINARY_VIEWER), 'searchId/380505559912'), { phone: 'draftCardId001' }));
 });
 
+await it('автор чернетки прибирає її застарілий ключ', async () => {
+  const ownDraftKey = ref(db(ORDINARY_VIEWER), 'searchId/380505559915/phone');
+  await assertSucceeds(set(ownDraftKey, 'draftCardId001'));
+  await assertSucceeds(remove(ownDraftKey));
+
+  const foreignKey = ref(db(ORDINARY_VIEWER), 'searchId/380505559916/phone');
+  await testEnv.withSecurityRulesDisabled(context => set(
+    ref(context.database(), 'searchId/380505559916/phone'),
+    'draftCardId002',
+  ));
+  await assertFails(remove(foreignKey));
+});
+
+await it('автор очищує активні чужі оверлеї чернетки, але не їхню історію', async () => {
+  const overlayPath = `multiData/edits/draftCardId001/${CARD_CREATOR}`;
+  const historyPath = 'multiData/editsHistory/draftCardId001/keptEntry';
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await set(ref(context.database(), overlayPath), {
+      cardUserId: 'draftCardId001',
+      editorUserId: CARD_CREATOR,
+      updatedAt: 1,
+      fields: { phone: { added: ['380505559917'] } },
+    });
+    await set(ref(context.database(), historyPath), {
+      cardUserId: 'draftCardId001',
+      editorUserId: CARD_CREATOR,
+      action: 'edit',
+      fieldName: 'phone',
+      change: { added: ['380505559917'] },
+      at: 1,
+    });
+  });
+
+  await assertSucceeds(remove(ref(db(ORDINARY_VIEWER), overlayPath)));
+  await assertFails(remove(ref(db(ORDINARY_VIEWER), historyPath)));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const history = await get(ref(context.database(), historyPath));
+    if (!history.exists()) throw new Error('історію оверлея стерто');
+  });
+});
+
 await it('без власної чернетки під цим id ключ на неї не заводиться', async () => {
   // Чужа чернетка: вона є, але лежить не в гілці цього читача.
   await testEnv.withSecurityRulesDisabled(context => set(
