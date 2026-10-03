@@ -101,3 +101,35 @@ describe('посилання в консоль Firebase', () => {
     expect(source).not.toContain('console.firebase.google.com');
   });
 });
+
+/*
+ * У чернетки вузлів готової анкети немає: «Контакти → profileContacts/{id}»
+ * вело в `null` і саме так і читалось — контактів немає, хоч вони лежали в
+ * чернетці. Для чернетки кожен блок анкети веде в її запис.
+ */
+describe('посилання блоків чернетки', () => {
+  const draftSegments = ['multiData', 'profileMutations', 'author-1', 'draft-1', 'data'];
+
+  it('веде контакти й решту анкети в дані чернетки, а не у вузли', () => {
+    [PROFILE_FORM_BLOCK_IDS.profileContacts, PROFILE_FORM_BLOCK_IDS.matchingCards, PROFILE_FORM_BLOCK_IDS.profileDetails]
+      .forEach(blockId => {
+        const header = buildProfileFormBlockHeader(blockId, { profileId: 'draft-1', draftSegments });
+        expect(header.path).toBe('multiData/profileMutations/author-1/draft-1/data');
+        expect(header.title).toBe('Чернетка');
+        expect(header.href).toContain('~2FprofileMutations~2Fauthor-1~2Fdraft-1~2Fdata');
+        expect(header.href).not.toContain('profileContacts');
+      });
+  });
+
+  it('лишає особисту позначку «Звʼязатись» під адміном', () => {
+    const header = buildProfileFormBlockHeader(PROFILE_FORM_BLOCK_IDS.getInTouch, {
+      profileId: 'draft-1', ownerId: 'admin-1', draftSegments,
+    });
+    expect(header.path).toBe('multiData/getInTouch/admin-1');
+  });
+
+  it('для готової анкети нічого не міняє', () => {
+    expect(buildProfileFormBlockHeader(PROFILE_FORM_BLOCK_IDS.profileContacts, { profileId: 'card-1' }).path)
+      .toBe('profileContacts/card-1');
+  });
+});

@@ -1319,6 +1319,28 @@ Flow, `fetchNbuUahExchangeRatesByDate`). Оригінал показується
   Дата в полях цієї форми показується й набирається як `дд.мм.рррр`, а в базу
   їде в `РРРР-ММ-ДД` — перелік полів-дат один на всі форми
   (`PROFILE_DATE_FIELDS` у `utils/profileDate.js`).
+- **Форма адміна читає й пише чернетку як чернетку** (`utils/profileRecordSource.js`).
+  У чернетки немає вузлів готової анкети — є запис
+  `multiData/profileMutations/{автор}/{картка}` і журнал
+  `multiData/profileMutationHistory/{картка}`, — а `AddNewProfile`, `EditProfile` і
+  `ProfileForm` знали лише вузли: «усі поля» (`refreshCardFromBackend`, звідки
+  бере дані `renderAllFields`) питали `fetchUserById`, отримували `null` і лишали
+  на екрані старий знімок з кеша; збереження йшло в `updateProfileNodesInRTDB`,
+  тобто заводило поруч із чернеткою напівготову картку, а чернетка й її журнал
+  правки адміна не бачили; історію форма брала лише з шару редакторів, де правок
+  чернетки немає; посилання «Контакти» вело в `profileContacts/{id}` = `null`.
+  Тепер розгорнута чернетка несе адресу джерела (`__profileMutationCreatedBy`,
+  `__profileMutationRevision` — `expandProfileDraft`), читання йде через
+  `fetchProfileRecordById` (вузли, а без них — чернетка; з `prefer: 'draft'` —
+  одразу її адреса), запис — через `saveDraftProfileRecord` (той самий
+  `saveCreateProfileMutation`, що й в автора, тобто ревізія й журнал), а
+  `getCanonicalCard` без жодного вузла віддає чернетку — тож і прийняте
+  доповнення (`persistCanonicalCard`) лягає в неї. Збереження форми йде лише
+  поверх ревізії, яку форма показувала (`knownDraftRevisions`): чужа новіша
+  ревізія — відмова з поясненням, а не тихе затирання правки автора. Особисті
+  позначки адміна (`getInTouch`, `writer`, `myComment`) у дані чернетки не
+  потрапляють. Журнал чернетки адмін бачить у `ProfileForm` («Історія змін
+  чернетки»).
 - **«Очистити все» в чернетці не видаляє її, а стирає** (`clearAllDraftFields` у
   `ProfileCreationWorkspace`): кожне заповнене поле стає порожнім рядком одним
   збереженням, тож журнал правок лишає адмінові все стерте, а заявки на
