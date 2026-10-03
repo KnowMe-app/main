@@ -69,6 +69,7 @@ import {
   getOverlayHistoryForCard,
   getOverlaysForCard,
   purgeOverlayHistoryEntries,
+  purgeCardOverlays,
   saveOverlayForUserCard,
   settleOverlayFieldValue,
 } from 'utils/multiAccountEdits';
@@ -1083,14 +1084,16 @@ export const ProfileCreationWorkspace = () => {
   // named "Марія", for instance - so every match is offered, not just the
   // first one found.
   const matchingOwnDrafts = useMemo(() => (
-    searchExecuted ? findMatchingProfileMutations(mutations, detectSearchParams(search)) : []
+    searchExecuted ? findMatchingProfileMutations(mutations, detectSearchParams(search))
+      .filter(mutation => hasFilledProfileDraftData(mutation.data)) : []
   ), [mutations, search, searchExecuted]);
 
   // The same contact can already sit in a draft somebody else started. That
   // draft is editable by this user too, so offer it instead of letting them
   // create a second card for the same person.
   const matchingSharedDrafts = useMemo(() => (
-    searchExecuted ? findMatchingProfileMutations(sharedMutations, detectSearchParams(search)) : []
+    searchExecuted ? findMatchingProfileMutations(sharedMutations, detectSearchParams(search))
+      .filter(mutation => hasFilledProfileDraftData(mutation.data)) : []
   ), [search, searchExecuted, sharedMutations]);
 
   // Памʼятки читача до карток списку: картка чернетки показує записане про
@@ -1770,10 +1773,9 @@ export const ProfileCreationWorkspace = () => {
    *
    * Це не видалення: чернетка лишається на місці одним збереженням, тож
    * журнал правок (`profileMutationHistory`) записує кожне стерте значення, і
-   * адмін бачить, що тут було. `searchId` при цьому не чіпається — старий
-   * номер і далі веде на цю картку, — але показати там нікому, крім адміна,
-   * уже нічого: порожню чернетку ховають список, стрічка й видача пошуку
-   * (`hasFilledProfileDraftData`). Масив лишається масивом з порожнім хвостом —
+   * адмін бачить, що тут було. Збереження синхронізує `searchId` і заявки на
+   * унікальність, тому звільнені контакти можна одразу використати в іншій
+   * картці. Масив лишається масивом з порожнім хвостом —
    * так само, як його стирає хрестик у полі.
    */
   async function clearAllDraftFields() {
@@ -1788,6 +1790,11 @@ export const ProfileCreationWorkspace = () => {
     setDraft(nextDraft);
     try {
       await persistDraft(nextDraft);
+      const cardId = activeMutationRef.current?.cardId;
+      if (cardId) await purgeCardOverlays(cardId);
+      draftOverlaysRef.current = {};
+      stackedDraftRef.current = draftBaseRef.current || nextDraft;
+      setDraftOverlays({});
       setConfirmClearDraft(false);
       toast.success(uiText('Усі поля очищено', language));
     } catch (error) {

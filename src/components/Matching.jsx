@@ -7506,6 +7506,14 @@ const Matching = () => {
     onClear: () => { void saveRowPostpone(user, ''); },
   }), [ownerId, readRowPostponeDate, saveRowPostpone]);
 
+  // Анкети ролей, яких читач у загальній стрічці не бачить (`keepDonorCounterpartyCards`
+  // відсіює картки, а цей перелік — рядки розщепленої картки). У пошуку й
+  // колекціях показуються всі анкети: там питання про конкретну людину.
+  const feedRowHiddenRoles = useMemo(
+    () => (viewMode === 'default' && !isSearching ? listViewerHiddenCardRoles(donorRestrictionViewerRole) : []),
+    [donorRestrictionViewerRole, isSearching, viewMode],
+  );
+
   /*
    * Рядки картки на екрані: анкета, якої читач не бачить (донорці — донорська
    * анкета донорки-агентки), не малюється; у стрічці — ще й вирішена реакцією
@@ -7678,7 +7686,14 @@ const Matching = () => {
       else toggleRowHidden(user);
       return;
     }
-    const cardRoles = listCardAnketaRoles(user);
+    // Hydration may add unpublished roles. Use the same published projection
+    // that produced the row being clicked.
+    const projection = feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === id) || user;
+    // State transitions must retain every published questionnaire. Viewer
+    // visibility is only a row-rendering concern: narrowing this list would
+    // expand a legacy whole-card reaction as though a hidden role did not
+    // exist, then silently drop that role when the visible one is toggled.
+    const cardRoles = listCardAnketaRoles(projection);
     rememberReactedCard(id);
     stickyReactedAnketaRolesRef.current.set(id, anketaRole);
     const isFavorite = kind === 'favorites';
@@ -7716,7 +7731,14 @@ const Matching = () => {
     setFavorite(id, Boolean(favoriteValue));
     setDislike(id, Boolean(dislikeValue));
     try {
-      await setReactionUserValues({ userId: id, ownerId, favoriteValue, dislikeValue });
+      await setReactionUserValues({
+        userId: id,
+        ownerId,
+        favoriteValue,
+        dislikeValue,
+        favoriteChanged: favoriteValue !== previousFavorite,
+        dislikeChanged: dislikeValue !== previousDislike,
+      });
     } catch (error) {
       console.error('Failed to save anketa reaction:', error);
       applyMaps(previousFavorite, previousDislike);
@@ -7724,7 +7746,7 @@ const Matching = () => {
       setDislike(id, Boolean(previousDislike));
       toast.error(uiText('Не вдалося зберегти реакцію. Спробуйте ще раз', language));
     }
-  }, [language, ownDislikeUsers, ownFavoriteUsers, ownerId, rememberReactedCard, toggleRowFavorite, toggleRowHidden]);
+  }, [feedSourceWithoutOwnEdits, language, ownDislikeUsers, ownFavoriteUsers, ownerId, rememberReactedCard, toggleRowFavorite, toggleRowHidden]);
 
   /**
    * Шар доповнення накладається ще раз — уже поверх догідратованої анкети.
@@ -7739,13 +7761,6 @@ const Matching = () => {
   // цікаві»): і там відкладена картка — «на потім». У пошуку — ні: там
   // питання «де ця людина», і відповідь не може стояти в кінці.
   const placePostponedLast = ['default', 'favorites', 'dislikes'].includes(viewMode) && !isSearching;
-  // Анкети ролей, яких читач у загальній стрічці не бачить (`keepDonorCounterpartyCards`
-  // відсіює картки, а цей перелік — рядки розщепленої картки). У пошуку й
-  // колекціях показуються всі анкети: там питання про конкретну людину.
-  const feedRowHiddenRoles = useMemo(
-    () => (viewMode === 'default' && !isSearching ? listViewerHiddenCardRoles(donorRestrictionViewerRole) : []),
-    [donorRestrictionViewerRole, isSearching, viewMode],
-  );
   const feedRows = useMemo(() => {
     const rows = feedSource.map(user => withOwnEdits(withLazyPhotos(user)));
     return placePostponedLast ? placePostponedCardsLast(rows, readRowPostponeSortDate) : rows;

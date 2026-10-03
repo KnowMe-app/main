@@ -217,9 +217,11 @@ const syncProfileSearchIdIndex = (cardId, profile) => Promise.all(
  */
 const confirmedDraftSearchIdEntries = new Set();
 
+const draftSearchIdRecords = profile => getSearchIdRecords(profile)
+  .filter(record => keyByteLength(record.valueKey) <= 768);
+
 const indexDraftSearchIdEntries = (cardId, profile) => Promise.all(
-  getSearchIdRecords(profile)
-    .filter(record => keyByteLength(record.valueKey) <= 768)
+  draftSearchIdRecords(profile)
     .filter(record => !confirmedDraftSearchIdEntries.has(`${record.path}|${cardId}`))
     .map(record => runTransaction(
       ref(database, record.path),
@@ -240,6 +242,34 @@ const indexDraftSearchIdEntries = (cardId, profile) => Promise.all(
       });
     })),
 );
+
+// Remove keys which disappeared from the draft as well as adding new ones.
+// Without this half of the sync, clearing a draft hid it in the UI but left
+// its old contacts discoverable and (through identity claims) unavailable to
+// a replacement card.
+const removeStaleDraftSearchIdEntries = (cardId, previousProfile, nextProfile) => {
+  const nextPaths = new Set(draftSearchIdRecords(nextProfile).map(record => record.path));
+  return Promise.all(draftSearchIdRecords(previousProfile)
+    .filter(record => !nextPaths.has(record.path))
+    .map(record => runTransaction(
+      ref(database, record.path),
+      current => removeSearchIdEntryId(current, cardId),
+      { applyLocally: false },
+    ).then(() => {
+      confirmedDraftSearchIdEntries.delete(`${record.path}|${cardId}`);
+    }).catch(error => {
+      console.warn('[profileMutations] старий ключ чернетки не знято з searchId', {
+        cardId,
+        path: record.path,
+        error,
+      });
+      reportSearchIdIndexFailure({
+        searchIdKey: `${record.valueKey}/${record.field}`,
+        action: 'remove',
+        error,
+      });
+    })));
+};
 
 /**
  * Записати «цю картку завів я» — щоб знайдену чернетку міг прочитати не лише
@@ -289,11 +319,13 @@ export const saveCreateProfileMutation = async ({
   }
   let conflict = '';
   let previousIdentityKeys = [];
+  let previousData = {};
   let revisionHistory = [];
   let result;
   try {
     result = await runTransaction(ref(database, getProfileMutationPath(creatorUid, cardId)), current => {
       previousIdentityKeys = current?.identityKeys || [];
+      previousData = current?.data || {};
       if (current && current.createdBy !== creatorUid) {
         conflict = 'Profile mutation belongs to another user';
         return undefined;
@@ -374,13 +406,16 @@ export const saveCreateProfileMutation = async ({
   // Але й мовчати про неї не можна: правила бази під цей запис викочуються
   // руками (`npx firebase deploy --only database`), і поки їх немає, кожна
   // нова чернетка тихо лишалась би поза пошуком.
-  await indexDraftSearchIdEntries(cardId, mutation.data);
+  await Promise.all([
+    removeStaleDraftSearchIdEntries(cardId, previousData, mutation.data),
+    indexDraftSearchIdEntries(cardId, mutation.data),
+  ]);
   // Той самий крок, але для «хто автор»: без нього знайдена чернетка
   // відкривається рівно авторові й службовому читачеві (див.
   // `PROFILE_MUTATION_OWNERS_NODE`).
   await indexDraftOwner(cardId, mutation.createdBy || creatorUid);
   // Cleanup is idempotent bookkeeping after the revision is already committed.
-  releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
+  await releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key)));
   return mutation;
 };
 

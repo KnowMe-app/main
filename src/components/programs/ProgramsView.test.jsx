@@ -175,6 +175,12 @@ describe('картка агенції й батьків', () => {
     expect(screen.getByText(/донорку й сурогатну маму/)).toBeInTheDocument();
   });
 
+  it('рядок організації зберігає зміст анкети батьків', () => {
+    render(<CardRoleBlock card={{ role: ['ag', 'ip'], agencyName: 'Мрія', seeking: 'sm' }} language="uk" />);
+    expect(screen.getByText(/Мрія/)).toBeInTheDocument();
+    expect(screen.getByText(/сурогатну маму/)).toBeInTheDocument();
+  });
+
   it('донорку блок не чіпає', () => {
     expect(isCounterpartyCard({ role: 'ed' })).toBe(false);
     expect(isCounterpartyCard({ role: ['ag', 'ed'] })).toBe(false);
