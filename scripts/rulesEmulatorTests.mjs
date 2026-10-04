@@ -876,10 +876,13 @@ await it('не переписує чужий id у своєму полі', async
 });
 
 await it('власник прибирає себе зі спільного індексу з двох анкет', async () => {
-  const indexRef = ref(db(SELF_SERVE), 'searchId/380999999998/phone');
-  await assertSucceeds(set(indexRef, SELF_SERVE));
-  await assertSucceeds(set(indexRef, [SELF_SERVE, CARD]));
-  await assertSucceeds(set(indexRef, CARD));
+  // Спільний ключ заводять двоє, кожен своїм uid: дописати чужий id сам
+  // власник не може (`$index` пускає в нову позицію лише власний), тож
+  // спільний стан готується в обхід правил, як у сусідньому сценарії.
+  const indexPath = 'searchId/380999999998/phone';
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), indexPath), [SELF_SERVE, CARD]));
+  await assertSucceeds(set(ref(db(SELF_SERVE), indexPath), CARD));
 });
 
 await it('сторонній не перетворює чужий спільний індекс на один id', async () => {
@@ -1109,14 +1112,17 @@ await it('автор чернетки згортає спільний ключ �
 await it('автор очищує активні чужі оверлеї чернетки, але не їхню історію', async () => {
   const overlayPath = `multiData/edits/draftCardId001/${CARD_CREATOR}`;
   const historyPath = 'multiData/editsHistory/draftCardId001/keptEntry';
+  // `context.database()` на кожен виклик заново підключає емулятор, і другий
+  // виклик у тому самому контексті валить сценарій ще до перевірки правил.
   await testEnv.withSecurityRulesDisabled(async context => {
-    await set(ref(context.database(), overlayPath), {
+    const raw = context.database();
+    await set(ref(raw, overlayPath), {
       cardUserId: 'draftCardId001',
       editorUserId: CARD_CREATOR,
       updatedAt: 1,
       fields: { phone: { added: ['380505559917'] } },
     });
-    await set(ref(context.database(), historyPath), {
+    await set(ref(raw, historyPath), {
       cardUserId: 'draftCardId001',
       editorUserId: CARD_CREATOR,
       action: 'edit',
@@ -1124,7 +1130,7 @@ await it('автор очищує активні чужі оверлеї чер�
       change: { added: ['380505559917'] },
       at: 1,
     });
-    await set(ref(context.database(), `multiData/editsByEditor/${CARD_CREATOR}/draftCardId001`), 1);
+    await set(ref(raw, `multiData/editsByEditor/${CARD_CREATOR}/draftCardId001`), 1);
   });
 
   await assertSucceeds(get(ref(db(ORDINARY_VIEWER), 'multiData/edits/draftCardId001')));

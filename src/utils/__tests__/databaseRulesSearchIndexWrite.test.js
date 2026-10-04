@@ -80,8 +80,11 @@ describe('права, без яких нова анкета не потрапл�
 
     it('дозволяє знести ключ лише його одноосібному власнику', () => {
       // Видалення вузла не проходить через `.validate` — Firebase не
-      // перевіряє порожнє значення. Тому знесення ключа обмежене тут.
-      expect(write).toContain("data.isString() && data.val() == auth.uid");
+      // перевіряє порожнє значення. Тому знесення ключа обмежене тут:
+      // власним uid або id власної ще не прийнятої чернетки.
+      expect(write).toContain("data.isString() && (data.val() == auth.uid || ");
+      expect(write).toContain("root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'private'");
+      expect(write).not.toContain("child(data.val()).child('status').val() == 'accepted'");
     });
 
     it('лишає корінь searchId несканованим для тих, хто в нього пише', () => {
