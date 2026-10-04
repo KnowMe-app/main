@@ -311,7 +311,6 @@ export const ContactLinks = ({ entries, language, onContactAction }) => {
               onClick={act('phone')}
             >
               <PhoneHandsetIcon />
-              <span>{uiText('Подзвонити', language)}</span>
             </S.ContactIconLink>
             {phoneQuickLinks.map(({ key, Icon, label, build }) => {
               const quickLabel = tracked
@@ -1575,7 +1574,6 @@ const ProfileRow = ({
 
       {contactEntries.length > 0 && (
         <S.RowContacts onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
-          <S.RowContactsTitle>{uiText('Контакти', language)}</S.RowContactsTitle>
           <ContactLinks
             entries={contactEntries}
             language={language}
