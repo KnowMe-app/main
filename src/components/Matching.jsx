@@ -25,6 +25,7 @@ import {
   FeedEndHint,
   FeedList,
   FeedLoadPromptButton,
+  ConnectionNotice,
   FeedNotice,
   FeedSentinel,
   FeedWrap,
@@ -180,6 +181,7 @@ import {
 } from 'utils/matchingSearchLocation';
 import { LOGIN_ROUTE, buildReturnToFromLocation } from 'utils/authRedirect';
 import { useAppSettings } from 'hooks/useAppSettings';
+import { useRealtimeConnection } from 'hooks/useRealtimeConnection';
 import { uiText } from 'utils/uiTranslations';
 import {
   keepDonorCounterpartyCards,
@@ -1266,6 +1268,7 @@ const Matching = () => {
     canCreateProfiles: currentCanCreateProfiles,
   });
   const isAdmin = access.isAdmin;
+  const realtimeConnection = useRealtimeConnection();
 
   /**
    * Роль, за якою деку й фільтри звужують до «донорка бачить лише
@@ -7267,8 +7270,9 @@ const Matching = () => {
     // не каже: поле для власного відгуку стоїть у ній завжди, тож «нічого не
     // прочитали» і «прочитали, відгуків немає» виглядали б однаково.
     loaded: Boolean(publicComments[profileId]),
+    offline: realtimeConnection === 'offline',
     onRequest: requestPublicComments,
-  }), [publicComments, publicCommentsLoading, requestPublicComments]);
+  }), [publicComments, publicCommentsLoading, realtimeConnection, requestPublicComments]);
 
   const handleCreatePublicComment = React.useCallback(async (profileId, text) => {
     // Відгук анонімний: імені автора він не несе ні на екрані, ні в базі.
@@ -7972,6 +7976,16 @@ const Matching = () => {
                 </QueryDraftCard>
               )}
               {feedRows.length > 0 && viewLayout === 'list' && (
+                <>
+                {/* Без звʼязку стрічка цілком малюється з кешу, а дочитування
+                    висить мовчки — рядок показував ініціал замість прізвища,
+                    резус замість групи й жодного контакту, і виглядало це як
+                    «анкету обрізано» (`useRealtimeConnection`). */}
+                {realtimeConnection === 'offline' && (
+                  <ConnectionNotice role="status">
+                    {uiText('Немає звʼязку з базою. Показано збережене: повні анкети, контакти й відгуки довантажаться, щойно звʼязок повернеться.', language)}
+                  </ConnectionNotice>
+                )}
                 <FeedList $restoringScroll={scrollRestorePending}>
                   {/* Донорка, яка ще й агентка, — дві анкети, а не одна:
                       під плашкою «Агенція» стояли зріст, вага й пологи
@@ -8012,6 +8026,7 @@ const Matching = () => {
                     />
                   )))}
                 </FeedList>
+                </>
               )}
               {loading && feedRows.length === 0 && <MatchingSkeleton />}
               {!loading && feedRows.length === 0 && !loadError && (
