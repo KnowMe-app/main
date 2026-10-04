@@ -38,9 +38,13 @@ export const resolveDraftFeedOrderDate = (profile = {}, mutation = {}) => {
   return toFeedDateKey(mutation?.createdAt) || toFeedDateKey(mutation?.updatedAt);
 };
 
-const asFeedRow = card => (card?.[DRAFT_FEED_ORDER_FIELD]
-  ? { ...card, lastLogin2: card[DRAFT_FEED_ORDER_FIELD] }
-  : card);
+// Стрічка адміна стоїть за свіжістю картки (`__recentAt`, `fetchAdminRecentCardsPage`),
+// а не за `lastLogin2`: неопублікована картка там має дату, але не `lastLogin2`, і
+// порівняння з порожнім ставило б чернетку над кожною такою карткою.
+const asFeedRow = card => {
+  const orderDate = card?.[DRAFT_FEED_ORDER_FIELD] || card?.__recentAt;
+  return orderDate ? { ...card, lastLogin2: orderDate } : card;
+};
 
 // Та сама впорядкованість, що й у сторінки стрічки (`compareUsersByLastLogin2`).
 const standsBefore = (draft, card) => compareUsersByLastLogin2(asFeedRow(draft), asFeedRow(card)) < 0;

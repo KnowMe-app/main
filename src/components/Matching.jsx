@@ -57,6 +57,7 @@ import {
   fetchUsersByIds,
   isProfileBuiltFromCache,
   readProfileContacts,
+  fetchAdminRecentCardsPage,
   fetchMatchingCardsPage,
   fetchMatchingCardsByIds,
   clearMatchingCardsPageInFlight,
@@ -2728,7 +2729,10 @@ const Matching = () => {
       roleIndexSets,
       programRates,
       filterMainFn: filterMain,
-      fetchMatchingCardsPage,
+      // Адмін гортає за свіжістю картки (вхід, створення, публікація), а не за
+      // самим `feedDate`: нові анкети здебільшого ще не опубліковані, і в
+      // стрічці за `feedDate` адмін їх не бачив зовсім (`fetchAdminRecentCardsPage`).
+      fetchMatchingCardsPage: isAdmin ? fetchAdminRecentCardsPage : fetchMatchingCardsPage,
       hydrateUsersByIds: ids => fetchUsersByIds(ids),
       // Дека донорки — це самі контрагенти, і рахувати запас треба по них.
       // Інакше сторінка джерела виглядає повною з карток, які на екран не
@@ -2859,11 +2863,15 @@ const Matching = () => {
   // (`'ed,ag'` з `localStorage`), і сирий підпис давав два різні ключі списку.
   // Кеш стрічки через це не влучав ніколи: повернення з картки чи форми
   // доповнення щоразу перечитувало `matchingCards` з початку й чекало бекенду.
+  // Джерело теж у підписі: курсор стрічки адміна (за свіжістю картки) і
+  // курсор стрічки за `feedDate` — пари з різних порядків, і продовжити один
+  // другим означало б пропустити або повторити картки.
   const buildFeedCacheSignature = React.useCallback(() => stableAdditionalSignature({
     filters: filtersRef.current || {},
     viewerRole: viewerRoleSignature(donorRestrictionViewerRoleRef.current || ''),
     paging: MATCHING_FEED_PAGING_VERSION,
-  }), []);
+    source: isAdmin ? 'admin-recent' : 'feed',
+  }), [isAdmin]);
 
   // Стан пагінації пишеться поруч зі списком id стрічки, щоб перезавантаження
   // сторінки продовжило з того місця, де зупинилось джерело, а не обходило

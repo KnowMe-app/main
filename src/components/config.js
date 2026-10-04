@@ -101,6 +101,7 @@ import {
   listDroppedProjectionFields,
   resolveMatchingCardAvatarFromProfile,
 } from '../utils/matchingCardIndex';
+import { pickRecentPage } from '../utils/adminRecentFeed';
 import {
   AGE_BUCKET_FILTER_KEYS,
   SEARCH_KEY_EMPTY_BUCKET,
@@ -5570,6 +5571,101 @@ export const fetchMatchingCardsPage = (options = {}) => {
   return pending.then(page => (
     page && Array.isArray(page.users) ? { ...page, users: [...page.users] } : page
   ));
+};
+
+// Три індекси стрічки адміна: вхід і створення лежать у `profileTechnical`
+// (обидва з `.indexOn`), дата публікації — у самій картці. Межа вікна для
+// технічних дат бере весь день курсора: дата там буває й з часом.
+const ADMIN_RECENT_STREAMS = Object.freeze([
+  { node: 'profileTechnical', field: 'lastLogin', bound: date => `${date}\uf8ff` },
+  { node: 'profileTechnical', field: 'createdAt', bound: date => `${date}\uf8ff` },
+  { node: MATCHING_CARDS_ROOT, field: MATCHING_CARD_ORDER_FIELD, bound: date => date },
+]);
+
+/**
+ * Сторінка стрічки адміна — за найсвіжішою датою картки (`utils/adminRecentFeed`).
+ *
+ * Формат сторінки той самий, що в `fetchMatchingCardsPage` (`users`, `lastKey`,
+ * `hasMore`, `cursorsByUserId`, курсор — пара дата й id), тож решта стрічки —
+ * фільтри, кеш списку, довантаження — не знає, яким джерелом її гортають.
+ * Ціна інша: три запити на вікно замість одного й точкове читання картки на
+ * кожну, якої не віддав індекс `feedDate`. Для адміна це прийнятно, для кожного
+ * читача — ні, тому джерело тільки адмінське (і правила `profileTechnical`
+ * відкривають перелік лише адмінам).
+ */
+export const fetchAdminRecentCardsPage = async ({ limit = 10, cursor = null } = {}) => {
+  const safeLimit = Math.max(1, Number(limit) || 1);
+  const normalizedCursor = cursor && typeof cursor === 'object' && cursor.date
+    ? { date: String(cursor.date), userId: String(cursor.userId || '') }
+    : null;
+
+  let windowSize = Math.min(
+    MATCHING_CARDS_PAGE_WINDOW_CAP,
+    safeLimit + 1 + (normalizedCursor ? MATCHING_CARDS_CURSOR_DATE_SLACK : 0),
+  );
+  let picked = null;
+  let rawCards = {};
+
+  for (;;) {
+    const atCap = windowSize >= MATCHING_CARDS_PAGE_WINDOW_CAP;
+    const size = windowSize;
+    // eslint-disable-next-line no-await-in-loop
+    const snapshots = await Promise.all(ADMIN_RECENT_STREAMS.map(stream => get(query(
+      ref2(database, stream.node),
+      orderByChild(stream.field),
+      startAt(''),
+      ...(normalizedCursor ? [endAt(stream.bound(normalizedCursor.date))] : []),
+      limitToLast(size),
+    ))));
+
+    const records = {};
+    rawCards = {};
+    const streams = ADMIN_RECENT_STREAMS.map((stream, index) => {
+      const raw = (snapshots[index]?.exists?.() && snapshots[index].val()) || {};
+      const entries = Object.entries(raw);
+      entries.forEach(([id, value]) => {
+        const record = records[id] || (records[id] = {});
+        if (stream.node === MATCHING_CARDS_ROOT) {
+          record.feedDate = value?.[stream.field];
+          rawCards[id] = value;
+        } else {
+          record.lastLogin = value?.lastLogin;
+          record.createdAt = value?.createdAt;
+        }
+      });
+      return { dates: entries.map(([, value]) => value?.[stream.field]), full: entries.length >= size };
+    });
+
+    picked = pickRecentPage({ records, streams, cursor: normalizedCursor, limit: safeLimit, atCap });
+    if (!picked.needsWiderWindow) break;
+    windowSize = Math.min(MATCHING_CARDS_PAGE_WINDOW_CAP, windowSize * 2);
+  }
+
+  const pageIds = picked.page.map(entry => entry.userId);
+  const unreadIds = pageIds.filter(id => !isCurrentMatchingCardSchema(rawCards[id]));
+  const { cards: readCards } = unreadIds.length
+    ? await fetchMatchingCardsByIds(unreadIds)
+    : { cards: {} };
+
+  const cursorsByUserId = {};
+  const users = picked.page.map(({ userId, date }) => {
+    cursorsByUserId[userId] = { date, userId };
+    const card = isCurrentMatchingCardSchema(rawCards[userId])
+      ? expandMatchingCard(userId, rawCards[userId])
+      : readCards[userId];
+    // Картки без проєкції стрічка догідратує повною анкетою (`isHydrated`).
+    return card
+      ? { ...card, __recentAt: date }
+      : { userId, __limitedProfile: true, __recentAt: date };
+  });
+  const lastEntry = picked.page[picked.page.length - 1];
+
+  return {
+    users,
+    lastKey: lastEntry ? { date: lastEntry.date, userId: lastEntry.userId } : null,
+    hasMore: picked.hasMore,
+    cursorsByUserId,
+  };
 };
 
 /**
