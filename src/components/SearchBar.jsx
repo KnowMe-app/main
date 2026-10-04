@@ -601,13 +601,18 @@ const getParsedCandidatesForKey = (key, rawQuery) => {
   return [parsedValue];
 };
 
-const parseGroupedSearchValues = input => {
+export const parseGroupedSearchValues = input => {
   if (typeof input !== 'string') return [];
   const trimmed = input.trim();
   if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) return [];
 
   const inside = trimmed.slice(1, -1);
-  const matches = inside.match(/"[^"]+"|[^\s,;]+/g) || [];
+  // Кома (чи крапка з комою) — роздільник значень: `[УК СМ Невідомо, 30.10.2025]`
+  // — це два запити, а не чотири слова. Пробілом список ділиться лише тоді,
+  // коли коми в ньому немає зовсім (`[380501112233 380671112233]`).
+  const outsideQuotes = inside.replace(/"[^"]*"/g, '');
+  const pattern = /[,;]/.test(outsideQuotes) ? /"[^"]+"|[^,;]+/g : /"[^"]+"|[^\s,;]+/g;
+  const matches = inside.match(pattern) || [];
 
   return matches
     .map(value => value.replace(/^"|"$/g, '').trim())

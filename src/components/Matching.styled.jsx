@@ -1300,6 +1300,22 @@ export const QueryDraftButton = styled.button`
   &:focus-visible { outline: 2px solid var(--matching-accent); outline-offset: 2px; }
 `;
 
+// Плашка про відсутній звʼязок з базою: липка, бо читач гортає далі й мусить
+// розуміти, чому розгорнутий рядок не дотягується.
+export const ConnectionNotice = styled.div`
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #7A3E00;
+  background: #FFF1DC;
+  border: 1px solid #F3C98B;
+`;
+
 export const FeedNotice = styled.div`
   padding: 24px 12px;
   text-align: center;

@@ -1153,7 +1153,10 @@ export const ReviewsStateNote = ({ children }) => (children
   ? <S.ReviewsGateNote aria-live="polite">{children}</S.ReviewsGateNote>
   : null);
 
-export const describeReviewsState = ({ requested, loading, loaded, count = 0 }, language) => {
+export const describeReviewsState = ({ requested, loading, loaded, offline = false, count = 0 }, language) => {
+  // Без звʼязку з базою читання не падає, а висить, і «Шукаємо» тут тривало б
+  // вічно — тобто казало б неправду про те, що відбувається.
+  if (loading && offline) return uiText('Немає звʼязку — відгуки прочитаються, щойно він повернеться', language);
   if (loading) return uiText('Шукаємо відгуки…', language);
   if (requested && !loaded) return uiText('Не вдалося прочитати відгуки', language);
   // Прочитана порожнеча мовчить: відгуки приїжджають самі, тож «відгуків
@@ -1607,6 +1610,7 @@ const ProfileRow = ({
           requested: hasPublicReview,
           loading: Boolean(reviewsAction?.loading),
           loaded: Boolean(reviewsAction?.loaded),
+          offline: Boolean(reviewsAction?.offline),
           count: reviewsAction?.count || 0,
         }, language)}
         privateSlot={commentSlot !== undefined

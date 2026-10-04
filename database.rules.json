@@ -92,6 +92,24 @@
         }
       }
     },
+    "adminRecent": {
+      ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+      ".indexOn": ".value",
+      "$uid": {
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('accessLevel').val() == 'matching:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('users').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('users').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write'))",
+        ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/))"
+      }
+    },
+    "adminRecentMeta": {
+      ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+      "backfilledAt": {
+        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+        ".validate": "newData.isNumber() || !newData.exists()"
+      },
+      "$other": {
+        ".validate": false
+      }
+    },
     "matchingCards": {
       ".indexOn": [
         "feedDate",

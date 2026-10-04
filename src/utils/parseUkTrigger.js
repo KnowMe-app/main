@@ -1,5 +1,7 @@
 const TRIGGER_PATTERN = /^(ук)\s*(см|ір|ip|до|агент)\s*(.*)$/i;
 
+const DATE_TOKEN = /^(?:\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})$/;
+
 const CONTACT_PREFIX_ALIASES = {
   telegram: ['tg', 'telegram', 'телеграм'],
   instagram: ['ig', 'inst', 'instagram', 'інста', 'інстаграм'],
@@ -77,7 +79,12 @@ export const parseUkTriggerQuery = rawQuery => {
     ? afterTrigger.slice(0, handleMatch.index).trim()
     : afterTrigger.trim();
 
-  const nameParts = beforeHandle.split(/\s+/).filter(Boolean);
+  // Дата в записі «УК СМ Невідомо 30.10.2025» — частина цього самого
+  // контакту (так його й шукають — одним рядком), а не прізвище: ділячи хвіст
+  // пробілом, розбір клав «30.10.2025» у `surname`, і картка заводилась з
+  // прізвищем-датою. Окремим значенням дата буває лише у списку через кому
+  // (`[УК СМ Невідомо, 30.10.2025]`), і той ділить пошук, а не цей розбір.
+  const nameParts = beforeHandle.split(/\s+/).filter(part => part && !DATE_TOKEN.test(part));
   const name = nameParts[0] || '';
   const surname = nameParts.slice(1).join(' ') || '';
 
