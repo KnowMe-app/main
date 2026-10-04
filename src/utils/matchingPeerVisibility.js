@@ -193,6 +193,25 @@ export const alignRoleFilterGroupWithViewer = (roleFilters, viewerRole) => {
 };
 
 /**
+ * «Тип профілю» за замовчуванням для донорки й сурогатної мами — самі агенції.
+ *
+ * Стрічка особистої ролі складається з контрагентів, і серед них багато
+ * порожніх анкет батьків: заведені й не заповнені, вони займали більшу частину
+ * екрана. Агенції — це те, заради чого донорка й СМ відкривають стрічку, тож
+ * саме з них стрічка й починається; батьків та інших читачка вмикає сама.
+ *
+ * Повертає `null`, коли читач не особистої ролі: тоді за замовчуванням
+ * лишається все.
+ */
+export const resolvePersonalViewerRoleDefault = (roleFilters, viewerRole) => {
+  if (!listViewerHiddenCardRoles(viewerRole).length) return null;
+  const keys = roleFilters && typeof roleFilters === 'object'
+    ? Object.keys(roleFilters)
+    : FEED_ROLE_FILTER_KEYS;
+  return keys.reduce((acc, key) => ({ ...acc, [key]: key === 'ag' }), {});
+};
+
+/**
  * Чи вимкнула донорка в «Типі профілю» рівно те, що їй тільки й показують.
  *
  * Це не «нічого не знайшлось», а неможлива умова: дека донорки складається з

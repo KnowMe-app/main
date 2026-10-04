@@ -36,7 +36,6 @@ import {
   QueryDraftValue,
   MatchingTopBar,
   SearchField,
-  SortSelect,
 } from './Matching.styled';
 import {
   fetchUserById,
@@ -189,6 +188,7 @@ import {
   donorFeedRoleFilterLeavesNothing,
   listFeedRoleFilterKeysForViewer,
   listViewerHiddenCardRoles,
+  listProfileRoles,
   readViewerRolesFromProfile,
   DONOR_FEED_ROLE_FILTER_KEYS,
 } from 'utils/matchingPeerVisibility';
@@ -210,17 +210,13 @@ import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
 import { useProgramDisplayCurrency, useProgramRates } from '../hooks/useProgramRates';
 import {
-  MATCHING_SORT_MODES,
   extractViewerProgramFacts,
   resolveViewerProgramType,
   setPaymentFilterProgramTypes,
-  sortCardsByMode,
 } from '../utils/donorPrograms';
 import { computeBmi, normalizeHeightCm } from '../utils/profileNormalization';
 // Реєструє читача програм для сховища (`utils/programsStore`).
 import './programs/programsRemote';
-import { ensureProgramsForCards, useProgramsVersion } from '../utils/programsStore';
-import { listPaymentFilterKeysForViewer } from './SearchFilters';
 import {
   getProfileAge,
   parseBloodValue,
@@ -277,7 +273,6 @@ import {
 } from 'utils/reactionPriority';
 import {
   applyMatchingUiFiltersToUsers,
-  isMatchingFilterGroupActive,
   buildMatchingIndexFilterGroups,
   compareUsersByLastLogin2,
   fetchFilteredMatchingSourceChunk,
@@ -825,22 +820,14 @@ const PROGRAM_FACT_HELPERS = {
   rh: value => parseBloodValue(value).rh,
 };
 
-const MATCHING_SORT_STORAGE_KEY = 'matchingSortMode';
-const readStoredSortMode = () => {
-  try {
-    const stored = window.localStorage.getItem(MATCHING_SORT_STORAGE_KEY);
-    return MATCHING_SORT_MODES.some(mode => mode.key === stored) ? stored : 'relevance';
-  } catch {
-    return 'relevance';
-  }
-};
-const EMPTY_MATCHING_FILTERS = Object.freeze({});
-const keepViewerVisibleMatchingFilters = (candidateFilters, canUseMatchingFilters, canUseProgramControls) => {
-  if (!canUseMatchingFilters) {
-    return canUseProgramControls ? { payment: candidateFilters?.payment } : EMPTY_MATCHING_FILTERS;
-  }
-  if (canUseProgramControls) return candidateFilters;
-  const { payment: _hiddenPayment, ...visibleFilters } = candidateFilters || {};
+/*
+ * «Виплати» в рейці більше немає, тож і збережена колись позначка не має
+ * права різати деку невидимо: `getInitialFilters` її вже не переносить, а
+ * фільтри, що прийшли повз панель, чистимо тут.
+ */
+const keepViewerVisibleMatchingFilters = candidateFilters => {
+  if (!candidateFilters || candidateFilters.payment === undefined) return candidateFilters;
+  const { payment: _hiddenPayment, ...visibleFilters } = candidateFilters;
   return visibleFilters;
 };
 // Скільки чіпів фільтрів ряд показує згорнутим. Решта — за «+N», яке розгортає
@@ -1301,9 +1288,6 @@ const Matching = () => {
   const viewerProgramType = isAdmin ? '' : resolveViewerProgramType(currentUserRole);
   const programRates = useProgramRates(true);
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
-  // Програми карток приїжджають окремо від карток (`utils/programsStore`) —
-  // сортування за релевантністю й виплатою перераховується, коли приїхали.
-  const programsVersion = useProgramsVersion();
   const programsContext = useMemo(() => ({
     viewerType: viewerProgramType,
     facts: viewerProgramFacts,
@@ -1315,33 +1299,23 @@ const Matching = () => {
     setPaymentFilterProgramTypes(viewerProgramType ? [viewerProgramType] : null);
   }, [viewerProgramType]);
 
-  // Сортування деки. За замовчуванням — релевантність: картка з програмою,
-  // яка читачеві підходить, вище; для читача, якому програми не адресовані,
-  // порядок стрічки не змінюється зовсім (`sortCardsByMode`).
-  const [sortMode, setSortMode] = useState(readStoredSortMode);
-  const changeSortMode = React.useCallback(mode => {
-    setSortMode(mode);
-    try { window.localStorage.setItem(MATCHING_SORT_STORAGE_KEY, mode); } catch { /* приватне вікно */ }
-  }, []);
+  // Сортування деки («релевантність», «виплата», «спершу нові») прибране:
+  // стрічка стоїть у власному порядку — за датою публікації.
   const donorRestrictionViewerRoleRef = useRef(donorRestrictionViewerRole);
   donorRestrictionViewerRoleRef.current = donorRestrictionViewerRole;
-  const canUseMatchingFilters = !isDonorViewer(donorRestrictionViewerRole);
-  const canUseProgramControls = Boolean(viewerProgramType || isAdmin);
-  // Donors get the program-specific payment group, but not the personal-data
-  // filters. Conversely, a role with no visible payment options must never be
-  // narrowed by a persisted, now-hidden payment selection.
+  /*
+   * Фільтри стрічки однакові для кожного читача.
+   *
+   * Донорці тут лишали саму «Виплату»: рейка малювала всі групи («Тип
+   * профілю», «Сімейний стан», «Резус»…), а поповер пускав лише одну — і
+   * дотик до будь-якого іншого чіпа відкривав порожню панель. Виглядало це
+   * як чіпи, що не натискаються. «Виплату» з рейки прибрано зовсім.
+   */
   const matchingUiFilters = useMemo(
-    () => keepViewerVisibleMatchingFilters(filters, canUseMatchingFilters, canUseProgramControls),
-    [canUseMatchingFilters, canUseProgramControls, filters],
+    () => keepViewerVisibleMatchingFilters(filters),
+    [filters],
   );
   filtersRef.current = matchingUiFilters;
-  useEffect(() => {
-    if (!canUseMatchingFilters && (
-      !canUseProgramControls || viewMode !== 'default' || openFilterGroup !== 'payment'
-    )) {
-      setOpenFilterGroup(null);
-    }
-  }, [canUseMatchingFilters, canUseProgramControls, openFilterGroup, viewMode]);
 
   // Стрілка «відкрити вузол у Firebase» біля публічних нотаток: та сама службова
   // навігація, що в блоках форми анкети, і той самий тумблер (EXT на
@@ -5078,7 +5052,7 @@ const Matching = () => {
   // інакше цикл відліку обіцяв би дві картки, а дорахувати їх на екрані було б
   // нічим — картки колег до нього не доходять.
   const publicVisibleUsers = useMemo(() => keepDonorCounterpartyCards({
-    users: (canUseMatchingFilters || canUseProgramControls) ? applyMatchingUiFiltersToUsers({
+    users: applyMatchingUiFiltersToUsers({
       users,
       filters: matchingUiFilters,
       filterMainFn: filterMain,
@@ -5089,10 +5063,10 @@ const Matching = () => {
       roleIndexSets,
       programRates,
       viewMode,
-    }) : users,
+    }),
     viewerRole: viewMode === 'default' ? donorRestrictionViewerRole : '',
     viewerId: ownerId,
-  }), [canUseMatchingFilters, canUseProgramControls, donorRestrictionViewerRole, dislikeUsers, favoriteUsers, matchingUiFilters, ownerId, programRates, roleIndexSets, stickyReactedUserIds, users, viewMode]);
+  }), [donorRestrictionViewerRole, dislikeUsers, favoriteUsers, matchingUiFilters, ownerId, programRates, roleIndexSets, stickyReactedUserIds, users, viewMode]);
 
   /**
    * Власна чернетка, яку питали по імені чи контакту, — теж відповідь пошуку.
@@ -5310,14 +5284,6 @@ const Matching = () => {
     setSearchHasMore(viewMode === 'search' && searchRevealCount < total);
   }, [searchRefinedUsers, searchRevealCount, viewMode]);
 
-  // Фільтр «Виплата» читає програми, які приїжджають окремо від карток:
-  // картки з кеша сторінки дочитують їх тут, а фільтр перераховується, коли
-  // вони приїхали. Без увімкненого фільтра версія сховища деку не чіпає.
-  const paymentFilterActive = isMatchingFilterGroupActive(matchingUiFilters?.payment);
-  const paymentFilterProgramsVersion = paymentFilterActive ? programsVersion : 0;
-  useEffect(() => {
-    if (paymentFilterActive && viewMode === 'default') ensureProgramsForCards(visibleUsers);
-  }, [paymentFilterActive, viewMode, visibleUsers]);
   const filteredUsers = useMemo(() => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers;
     // Пошук — не стрічка, і фільтри його не звужують. Чіпи описують, кого
@@ -5330,7 +5296,6 @@ const Matching = () => {
     // DOM і стільки ж гідратацій, і саме тому пошук не мав ані відліку, ані
     // способу дочекатись кінця списку.
     if (viewMode === 'search') return searchRefinedUsers.slice(0, searchRevealCount);
-    if (!canUseMatchingFilters && !canUseProgramControls && viewMode === 'default') return visibleUsers;
     return applyMatchingUiFiltersToUsers({
       users: visibleUsers,
       filters: matchingUiFilters,
@@ -5342,16 +5307,11 @@ const Matching = () => {
       roleIndexSets,
       programRates,
       viewMode,
-      // Лише щоб перерахувати фільтр «Виплата», коли програми приїхали.
-      programsVersion: paymentFilterProgramsVersion,
     });
   }, [
-    canUseMatchingFilters,
-    canUseProgramControls,
     dislikeUsers,
     favoriteUsers,
     matchingUiFilters,
-    paymentFilterProgramsVersion,
     programRates,
     reactionTabUsers,
     roleIndexSets,
@@ -5368,14 +5328,7 @@ const Matching = () => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers.length;
     return applyMatchingUiFiltersToUsers({
       users: visibleUsers,
-      // Count exactly the groups this viewer can apply. Donor sessions can
-      // retain age/BMI/etc. in FilterPanel storage even though their rail
-      // exposes payment only.
-      filters: keepViewerVisibleMatchingFilters(
-        draftFilters,
-        canUseMatchingFilters,
-        canUseProgramControls,
-      ),
+      filters: keepViewerVisibleMatchingFilters(draftFilters),
       filterMainFn: filterMain,
       favoriteUsers,
       dislikeUsers,
@@ -5385,8 +5338,6 @@ const Matching = () => {
       viewMode,
     }).length;
   }, [
-    canUseMatchingFilters,
-    canUseProgramControls,
     dislikeUsers,
     draftFilters,
     favoriteUsers,
@@ -5431,21 +5382,7 @@ const Matching = () => {
   // Spec §1: whatever the reader is looking at, the list, the gallery and the
   // detail layer all index into this one array - so opening row N and paging
   // from it can never disagree about which card is which.
-  //
-  // Сортування стоїть тут, а не у фільтрі: деку мусять однаково бачити і
-  // список, і галерея, і шар деталей, інакше «відкрити N-ту» відкривало б
-  // іншу картку. У колекціях і пошуку порядок свій, його не чіпаємо.
-  const feedSourceWithoutOwnEdits = useMemo(
-    () => (viewMode === 'default'
-      ? sortCardsByMode(filteredUsers, sortMode, {
-        viewerType: viewerProgramType,
-        facts: viewerProgramFacts,
-        rates: programRates,
-        programsVersion,
-      })
-      : filteredUsers),
-    [filteredUsers, programRates, programsVersion, sortMode, viewMode, viewerProgramFacts, viewerProgramType],
-  );
+  const feedSourceWithoutOwnEdits = filteredUsers;
 
   /**
    * Картка показується разом із тим, що читач сам у неї дописав.
@@ -6850,21 +6787,12 @@ const Matching = () => {
     () => listFeedRoleFilterKeysForViewer(donorRestrictionViewerRole),
     [donorRestrictionViewerRole],
   );
-  // «Виплата» — для тих, кому програми адресовані: донорці донорські межі,
-  // СМ — свої, адмінові всі. Агенції стрічка показує донорок, у яких програм
-  // немає, і чіп там нічого не звужував би.
-  const paymentOptionKeys = useMemo(() => {
-    if (isAdmin) return listPaymentFilterKeysForViewer('');
-    return viewerProgramType ? listPaymentFilterKeysForViewer(viewerProgramType) : [];
-  }, [isAdmin, viewerProgramType]);
   // Рейка будує свої чіпи сама; тут вони потрібні рівно заради одного
   // питання — чи не порожня якась група: саме вона є причиною порожнього
   // екрана, і порожній екран мусить називати її словом.
   const filterChips = useMemo(
-    () => (canUseMatchingFilters || canUseProgramControls)
-      ? buildMatchingFilterChips(matchingUiFilters, language, { roleOptionKeys, paymentOptionKeys })
-      : [],
-    [canUseMatchingFilters, canUseProgramControls, language, matchingUiFilters, paymentOptionKeys, roleOptionKeys],
+    () => buildMatchingFilterChips(matchingUiFilters, language, { roleOptionKeys }),
+    [language, matchingUiFilters, roleOptionKeys],
   );
   const emptyFilterGroup = filterChips.find(chip => chip.danger) || null;
 
@@ -7499,12 +7427,21 @@ const Matching = () => {
     }
   }, [language, ownerId, readRowPostponeDate]);
 
-  const buildRowPostpone = React.useCallback(user => ({
-    ownerId,
-    until: readRowPostponeDate(user),
-    onSet: months => { void saveRowPostpone(user, addMonthsIsoDate(months)); },
-    onClear: () => { void saveRowPostpone(user, ''); },
-  }), [ownerId, readRowPostponeDate, saveRowPostpone]);
+  // Агенції «Відкласти» не пропонуємо: агенція не зайнята й не міняється
+  // за кілька місяців, і повертатись до неї пізніше нема заради чого. Роль
+  // рядка — його анкета (`anketaRole`), а без розщеплення — ролі картки.
+  const buildRowPostpone = React.useCallback((user, anketaRole = '') => {
+    const isAgencyRow = anketaRole
+      ? anketaRole === 'ag'
+      : listProfileRoles(user).includes('ag');
+    if (isAgencyRow) return null;
+    return {
+      ownerId,
+      until: readRowPostponeDate(user),
+      onSet: months => { void saveRowPostpone(user, addMonthsIsoDate(months)); },
+      onClear: () => { void saveRowPostpone(user, ''); },
+    };
+  }, [ownerId, readRowPostponeDate, saveRowPostpone]);
 
   // Анкети ролей, яких читач у загальній стрічці не бачить (`keepDonorCounterpartyCards`
   // відсіює картки, а цей перелік — рядки розщепленої картки). У пошуку й
@@ -7587,7 +7524,7 @@ const Matching = () => {
     reviewsAction: buildRowReviewsAction(user.userId),
     reviewsSlot: buildRowReviewsSlot(user.userId),
     onRequestPhotos: requestCardPhotos,
-    postpone: buildRowPostpone(user),
+    postpone: buildRowPostpone(user, anketaRole),
     secondaryAction: buildRowReactionActions(user, anketaRole).secondaryAction,
   });
 
@@ -7922,24 +7859,11 @@ const Matching = () => {
               обирає деку (усі / вподобані / приховані), а вже потім звужує
               її вміст. У пошуку рейки немає зовсім: видача — це відповідь на
               набране, і звужує її рядок уточнення, а не фільтри стрічки. */}
-          {(canUseMatchingFilters || (canUseProgramControls && viewMode === 'default')) && !isSearching && (
+          {!isSearching && (
             <MatchingFilterRail
               filters={matchingUiFilters}
               language={language}
               roleOptionKeys={roleOptionKeys}
-              paymentOptionKeys={paymentOptionKeys}
-              leading={viewMode === 'default' && (viewerProgramType || isAdmin) ? (
-                <SortSelect
-                  aria-label={uiText('Сортування', language)}
-                  title={uiText('Сортування', language)}
-                  value={sortMode}
-                  onChange={event => changeSortMode(event.target.value)}
-                >
-                  {MATCHING_SORT_MODES.map(mode => (
-                    <option key={mode.key} value={mode.key}>{uiText(mode.label, language)}</option>
-                  ))}
-                </SortSelect>
-              ) : null}
               openGroup={openFilterGroup}
               onOpenGroup={handleOpenFilterGroup}
               onResetGroup={resetFilterGroup}
@@ -7959,14 +7883,11 @@ const Matching = () => {
                 groupResetName={filterGroupReset.name}
                 nonAdminAllActive={!isAdmin}
                 roleOptionKeys={roleOptionKeys}
-                paymentOptionKeys={paymentOptionKeys}
                 viewerRole={donorRestrictionViewerRole}
                 // Закрита рейка все одно тримає панель змонтованою — вона й є
                 // сховищем фільтрів, тож зняти її з дерева означало б губити
                 // чернетку й ганяти ефект перебору групи ролі на кожне відкриття.
-                allowedFilterNames={!canUseMatchingFilters
-                  ? ['payment']
-                  : (openFilterGroup ? [openFilterGroup] : MATCHING_FILTER_GROUP_NAMES)}
+                allowedFilterNames={openFilterGroup ? [openFilterGroup] : MATCHING_FILTER_GROUP_NAMES}
                 optionCounts={openFilterGroupCounts}
               />
             </MatchingFilterRail>
@@ -8060,7 +7981,7 @@ const Matching = () => {
                     <ProfileRow
                       key={anketaRole ? `${user.userId}:${anketaRole}` : user.userId}
                       anketaRole={anketaRole}
-                      postpone={buildRowPostpone(user)}
+                      postpone={buildRowPostpone(user, anketaRole)}
                       sharedNotes={sharedComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
                       user={user}
                       publishedUser={feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === user.userId) || user}
