@@ -133,7 +133,7 @@
         },
         "hasPublicReview": {
           ".write": "auth != null",
-          ".validate": "!newData.exists() || (newData.isBoolean() && newData.val() == root.child('comments').child($uid).hasChildren())"
+          ".validate": "!newData.exists() || (newData.isBoolean() && newData.val() == newData.parent().parent().parent().child('comments').child($uid).hasChildren())"
         },
         "programsAt": {
           ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now + 600000"

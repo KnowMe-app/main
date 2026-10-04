@@ -1400,6 +1400,40 @@ await it('друга межа теж межа — навіть адміну', as
   await assertSucceeds(remove(ref(db(SUPERADMIN), `comments/${CARD}/legacyLong`)));
 });
 
+// Перший відгук під карткою пишеться одним `update` разом із прапорцем
+// `hasPublicReview` (`addPublicProfileComment*`). `root` у правилах — це база
+// ДО запису, тож умова «прапорець дорівнює наявності відгуків» мусить питати
+// стан після запису, інакше перший же відгук під карткою без відгуків
+// відлітає з PERMISSION_DENIED — так ламався перенос відгуків між дублікатами.
+await it('перший відгук під карткою пишеться разом із прапорцем', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `comments/${CARD}`), null));
+  await assertSucceeds(update(ref(db(SUPERADMIN)), {
+    [`comments/${CARD}/first`]: {
+      text: 'перший відгук', authorId: 'legacy-author-abc123', authorName: '',
+      createdAt: 11, updatedAt: null, visibility: 'public',
+    },
+    [`matchingCards/${CARD}/hasPublicReview`]: true,
+  }));
+  await assertSucceeds(update(ref(db(SELF_SERVE)), {
+    [`comments/${CARD}/second`]: {
+      text: 'другий', authorId: SELF_SERVE, createdAt: 12, visibility: 'public',
+    },
+    [`matchingCards/${CARD}/hasPublicReview`]: true,
+  }));
+  // Прапорець і далі не бреше: зняти останній відгук, лишивши `true`, не можна.
+  await assertSucceeds(remove(ref(db(SUPERADMIN), `comments/${CARD}/second`)));
+  await assertFails(update(ref(db(SUPERADMIN)), {
+    [`comments/${CARD}/first`]: null,
+    [`matchingCards/${CARD}/hasPublicReview`]: true,
+  }));
+  await assertSucceeds(update(ref(db(SUPERADMIN)), {
+    [`comments/${CARD}/first`]: null,
+    [`matchingCards/${CARD}/hasPublicReview`]: false,
+  }));
+  await assertFails(set(ref(db(OUTSIDER), `matchingCards/${CARD}/hasPublicReview`), true));
+});
+
 describe('історія пошуку — один ряд на запит');
 
 await it('власниця пише запит із ключем від тексту', () =>
