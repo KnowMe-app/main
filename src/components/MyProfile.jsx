@@ -2028,7 +2028,13 @@ export const MyProfile = () => {
     return {
       role,
       label: MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role,
+      // Картка стрічки плюс уся набрана анкета: читач, якому анкету відкрито
+      // (вона в стрічці), бачить у рядку й контакти, і розгорнуті розділи.
+      // Сама проєкція `matchingCards` їх не несе — і прев'ю, зібране лише з
+      // неї, показувало картку без контактів і без «Детальніше», тобто
+      // меншою, ніж її побачать насправді.
       card: {
+        ...previewDraft,
         ...expandMatchingCard(
           previewDraft.userId,
           buildMatchingCardProjection(previewDraft.userId, previewDraft),

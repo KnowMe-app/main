@@ -1539,7 +1539,10 @@ const ProfileRow = ({
           правому кінці ряду рішень: розгортають саме те, що щойно прочитали,
           і палець не мусить іти в куток екрана повз серце й хрестик.
           Розгорнуте лягає просто під кнопку. */}
-      {!preview && canExpandDetails && onToggleExpand && (
+      {/* У прев'ю кнопка є лише там, де екран дав `onToggleExpand`
+          («Мій профіль»), і лише коли під нею щось є: стрічка дочитує анкету
+          на дотик, а прев'ю вже несе її всю. */}
+      {canExpandDetails && onToggleExpand && (!preview || hasMoreDetails) && (
         <S.RowDetailsToggle
           type="button"
           data-testid="row-details-toggle"

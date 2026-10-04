@@ -175,11 +175,11 @@ const describeDeliveries = (user, lang) => {
   const recency = formatDeliveryRecency(normalizeDisplayValue(user?.lastDelivery), lang);
   const read = readCount(normalizeDisplayValue(user?.ownKids));
   if (!read) {
-    if (!recency) return { text: '', had: false };
-    return { text: lang === 'uk' ? `останні пологи ${recency} тому` : `last delivery ${recency} ago`, had: true };
+    if (!recency) return { text: '', had: false, count: null };
+    return { text: lang === 'uk' ? `останні пологи ${recency} тому` : `last delivery ${recency} ago`, had: true, count: null };
   }
-  if (read.count === 0) return { text: lang === 'uk' ? 'пологів не було' : 'no deliveries', had: false };
-  if (read.text) return { text: `${lang === 'uk' ? 'пологи' : 'deliveries'}: ${read.text}`, had: true };
+  if (read.count === 0) return { text: lang === 'uk' ? 'пологів не було' : 'no deliveries', had: false, count: 0 };
+  if (read.text) return { text: `${lang === 'uk' ? 'пологи' : 'deliveries'}: ${read.text}`, had: true, count: null };
 
   const count = read.count;
   let text;
@@ -192,30 +192,66 @@ const describeDeliveries = (user, lang) => {
     if (lang === 'uk') text += single ? `, ${recency} тому` : `, останні ${recency} тому`;
     else text += single ? `, ${recency} ago` : `, last ${recency} ago`;
   }
-  return { text, had: true };
+  return { text, had: true, count: read.yes ? null : count };
 };
 
-// «1 кесарів», «2 кесаревих» — число перед словом, як і в сусідів
-// («четверо пологів», «1 донація»). Абревіатура «КР 1» стояла навпаки й не
-// читалась: що таке «КР», знав лише той, хто заповнював анкету.
+// «1 кесарів», «2 кесаревих» — коли кількість пологів невідома, кесарів
+// лишається окремою частиною з числом перед словом, як і в сусідів.
 const ukCSectionWord = count => (count % 10 === 1 && count % 100 !== 11 ? 'кесарів' : 'кесаревих');
 
-const describeCSection = (user, lang, hadDeliveries) => {
+/*
+ * Як минули пологи — продовженням того самого речення, а не окремою
+ * частиною: «двоє пологів, останні 13 міс тому, обидва кесаревим розтином».
+ * Доти тут стояло «двоє пологів · 2 кесаревих» — два числа поруч, які читач
+ * мусив звести сам, — а нуль кесаревих казав «одні пологи · природні пологи».
+ *
+ * Повертає `{ text, attach }`: `attach` — дописати через кому до пологів
+ * (кількість пологів відома), інакше це окрема частина рядка.
+ */
+const UK_ALL_OF = count => (count === 2 ? 'обидва' : 'усі');
+const EN_ALL_OF = count => (count === 2 ? 'both' : 'all');
+
+const describeCSection = (user, lang, deliveries) => {
   const raw = normalizeDisplayValue(user?.[resolveCSectionKey(user)]);
-  if (!raw) return '';
+  if (!raw) return { text: '', attach: false };
   const value = formatCSectionValue(raw);
-  // «Природні пологи» мають сенс лише поруч із пологами: без них це відповідь
-  // на питання, якого ніхто не ставив. «Без кесаревого» казало те саме
-  // запереченням, а людина каже «природні».
-  if (value === '0') return hadDeliveries ? (lang === 'uk' ? 'природні пологи' : 'natural births') : '';
+  const uk = lang === 'uk';
+  const total = Number.isInteger(deliveries.count) && deliveries.count > 0 ? deliveries.count : null;
+
+  // «Природним шляхом» має сенс лише поруч із пологами: без них це відповідь
+  // на питання, якого ніхто не ставив.
+  if (value === '0') {
+    if (!deliveries.had) return { text: '', attach: false };
+    const way = uk ? 'природним шляхом' : 'natural';
+    if (!total || total === 1) return { text: way, attach: true };
+    return { text: `${uk ? UK_ALL_OF(total) : EN_ALL_OF(total)} ${way}`, attach: true };
+  }
   if (/^\d+$/.test(value)) {
     const count = Number(value);
-    return lang === 'uk'
-      ? `${count} ${ukCSectionWord(count)}`
-      : `${count} ${count === 1 ? 'C-section' : 'C-sections'}`;
+    if (total) {
+      const caesarean = uk ? 'кесаревим розтином' : 'by C-section';
+      if (count >= total) {
+        return {
+          text: total === 1 ? caesarean : `${uk ? UK_ALL_OF(total) : EN_ALL_OF(total)} ${caesarean}`,
+          attach: true,
+        };
+      }
+      // Частина пологів — кесаревим, решта — природним шляхом.
+      const rest = total - count;
+      if (uk) {
+        const first = count === 1 ? 'одні' : String(count);
+        const other = rest === 1 && total === 2 ? 'другі' : 'решта';
+        return { text: `${first} — кесаревим розтином, ${other} природним шляхом`, attach: true };
+      }
+      return { text: `${count} by C-section, ${rest} natural`, attach: true };
+    }
+    return {
+      text: uk ? `${count} ${ukCSectionWord(count)}` : `${count} ${count === 1 ? 'C-section' : 'C-sections'}`,
+      attach: false,
+    };
   }
   // Дата операції чи власний текст — підписом спереду.
-  return `${lang === 'uk' ? 'кесарів' : 'C-section'} ${value}`;
+  return { text: `${uk ? 'кесарів' : 'C-section'} ${value}`, attach: false };
 };
 
 const ukDonationWord = count => {
@@ -253,11 +289,14 @@ export const buildProfileSummaryRows = (user, language) => {
   if (appearance) rows.push({ key: 'appearance', label: translateProfileLabel('Appearance', lang), value: appearance });
 
   const deliveries = describeDeliveries(user, lang);
-  const cSection = describeCSection(user, lang, deliveries.had);
+  const cSection = describeCSection(user, lang, deliveries);
   const donations = describeDonations(user, lang);
-  const reproduction = [deliveries.text, cSection, donations].filter(Boolean);
+  const deliveryText = cSection.attach && deliveries.text
+    ? `${deliveries.text}, ${cSection.text}`
+    : deliveries.text;
+  const reproduction = [deliveryText, cSection.attach ? '' : cSection.text, donations].filter(Boolean);
   if (reproduction.length) {
-    const hasDeliveries = Boolean(deliveries.text || cSection);
+    const hasDeliveries = Boolean(deliveries.text || cSection.text);
     let label = 'Deliveries, donations';
     if (!donations) label = 'Deliveries';
     else if (!hasDeliveries) label = 'Donations';
