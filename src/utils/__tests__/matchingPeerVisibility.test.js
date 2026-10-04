@@ -6,6 +6,7 @@ import {
   isDonorViewer,
   keepDonorCounterpartyCards,
   listProfileRoles,
+  resolvePersonalViewerRoleDefault,
   viewerRoleSignature,
 } from '../matchingPeerVisibility';
 import { mergeMatchingCandidateUsers } from '../reactionPriority';
@@ -197,5 +198,21 @@ describe('підпис ролі читача', () => {
     expect(viewerRoleSignature('')).toBe('');
     expect(viewerRoleSignature(undefined)).toBe('');
     expect(viewerRoleSignature([])).toBe('');
+  });
+});
+
+describe('resolvePersonalViewerRoleDefault', () => {
+  it('донорці й СМ за замовчуванням лишає самі агенції', () => {
+    const all = { ed: true, ag: true, ip: true, other: true };
+    expect(resolvePersonalViewerRoleDefault(all, 'ed')).toEqual({ ed: false, ag: true, ip: false, other: false });
+    expect(resolvePersonalViewerRoleDefault(all, ['sm'])).toEqual({ ed: false, ag: true, ip: false, other: false });
+    expect(resolvePersonalViewerRoleDefault(null, 'ed,sm')).toEqual({ ed: false, ag: true, ip: false, other: false });
+  });
+
+  it('організації, батькам і невідомій ролі умовчання не звужує', () => {
+    expect(resolvePersonalViewerRoleDefault({ ed: true, ag: true }, 'ag')).toBeNull();
+    expect(resolvePersonalViewerRoleDefault({ ed: true, ag: true }, 'ed,ag')).toBeNull();
+    expect(resolvePersonalViewerRoleDefault({ ed: true, ag: true }, 'ip')).toBeNull();
+    expect(resolvePersonalViewerRoleDefault({ ed: true, ag: true }, '')).toBeNull();
   });
 });

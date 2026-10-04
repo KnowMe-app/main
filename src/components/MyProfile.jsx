@@ -540,7 +540,9 @@ const PARENT_ROLE_FIELDS = new Set(['seeking', 'programLocation', 'parentVia', '
 // прізвище з анкети не зникає.
 const PARENT_ONLY_HIDDEN_FIELDS = new Set(['surname']);
 
-const PERSON_HIDDEN_SOCIAL_FIELDS = new Set(['tiktok', 'twitter', 'linkedin', 'youtube']);
+// TikTok тут був і повернувся: донорки й СМ ведуть його не рідше за
+// Instagram, і саме там агенції їх і знаходять.
+const PERSON_HIDDEN_SOCIAL_FIELDS = new Set(['twitter', 'linkedin', 'youtube']);
 
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','country','region','city','moreInfo_main','website']);
 
@@ -565,6 +567,10 @@ const SURROGATE_HIDDEN_FIELDS = new Set([
   'eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'faceShape', 'noseShape',
   'lipsShape', 'chin', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race',
   'sport', 'education', 'profession', 'hobbies', 'twinsInFamily', 'surrogacyProgramInterest',
+  // Алергії, хронічні захворювання й перенесені операції СМ не питаємо:
+  // про здоровʼя для програми СМ каже «Ускладнення здоровʼя, вагітності,
+  // пологів» (`healthComplications`), а решту перевіряє клініка обстеженням.
+  'allergy', 'chronicDiseases', 'surgeries',
 ]);
 const KNOWN_ROLES = new Set(PROFILE_ROLE_OPTIONS.map(option => option.value));
 
@@ -1049,7 +1055,7 @@ export const MyProfile = () => {
         fields: section.fields
           .filter(name => isDonorRole || visibleNonDonorFields.has(name))
           // Донорці й СМ ці мережі не потрібні: їх шукають за телефоном,
-          // Telegram та Instagram. Лишаються вони агенції й клініці.
+          // Telegram, Instagram і TikTok. Лишаються вони агенції й клініці.
           .filter(name => !personRole || organisationRole || !PERSON_HIDDEN_SOCIAL_FIELDS.has(name))
           .filter(name => organisationRole || !ORGANISATION_ONLY_FIELDS.has(name))
           .filter(name => !surrogateOnly || !SURROGATE_HIDDEN_FIELDS.has(name))

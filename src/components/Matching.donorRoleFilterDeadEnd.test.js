@@ -93,25 +93,20 @@ describe('екран порожньої деки', () => {
 describe('доступність UI-фільтрів за поточною роллю', () => {
   const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
-  it('лишає донорці програмні контролі, не відкриваючи решту фільтрів', () => {
-    expect(source).toContain('const canUseMatchingFilters = !isDonorViewer(donorRestrictionViewerRole);');
-    expect(source).toContain('const canUseProgramControls = Boolean(viewerProgramType || isAdmin);');
-    expect(source).toContain("? ['payment']");
-    expect(source).toContain('{(canUseMatchingFilters || canUseProgramControls) && !isSearching && (');
-  });
-
-  it('застосовує для ed лише фільтр виплати', () => {
-    expect(source).toContain('return canUseProgramControls ? { payment: filters.payment } : EMPTY_MATCHING_FILTERS;');
-    expect(source).toContain('if (!canUseMatchingFilters && !canUseProgramControls && viewMode === \'default\') return visibleUsers;');
-    expect(source).toContain('(canUseMatchingFilters || canUseProgramControls)');
-    // Рядок уточнення живе тепер саме в пошуку, тож донорці він нічого
-    // не звужує в стрічці вже за місцем, а не за роллю.
+  it('показує кожному читачеві ту саму рейку, без «Виплати» й сортування', () => {
+    // Донорці рейка малювала всі групи, а поповер пускав лише «Виплату»:
+    // дотик до «Типу профілю» чи «Резусу» відкривав порожню панель.
+    expect(source).not.toContain('canUseMatchingFilters');
+    expect(source).not.toContain('canUseProgramControls');
+    expect(source).not.toContain("? ['payment']");
+    expect(source).not.toContain('<SortSelect');
+    expect(source).toContain('allowedFilterNames={openFilterGroup ? [openFilterGroup] : MATCHING_FILTER_GROUP_NAMES}');
     expect(source).toContain('const showRefineBar = isSearching');
   });
 
-  it('передає чинні фільтри в індексний план для інших ролей', () => {
+  it('передає чинні фільтри в індексний план', () => {
     expect(source).toContain('filtersRef.current = matchingUiFilters;');
     expect(source).toContain('buildMatchingIndexFilterGroups({\n        filters: filtersRef.current || {},');
-    expect(source).toContain('users: (canUseMatchingFilters || canUseProgramControls) ? applyMatchingUiFiltersToUsers({');
+    expect(source).toContain('users: applyMatchingUiFiltersToUsers({');
   });
 });
