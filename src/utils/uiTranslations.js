@@ -27,6 +27,8 @@ const EN_BY_UK = {
   'Не публікувати': 'Discard',
   'Показати номер': 'Show number',
   'Подзвонити': 'Call',
+  'Немає звʼязку з базою. Показано збережене: повні анкети, контакти й відгуки довантажаться, щойно звʼязок повернеться.': 'No connection to the database. Showing saved data: full profiles, contacts and reviews will load as soon as the connection is back.',
+  'Немає звʼязку — відгуки прочитаються, щойно він повернеться': 'No connection — reviews will load once it is back',
   'Уточнити': 'Add details',
   'Детальніше': 'Details',
   'По батькові': 'Patronymic',
