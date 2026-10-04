@@ -7837,6 +7837,13 @@ const Matching = () => {
                   стрічки сторінка кладе туди через `usePrimaryNavigationSlot`. */}
             </TopActions>
           </MatchingTopBar>
+          {/* Статус не залежить від вибраної колекції чи наявності кешованих
+              рядків: без них особливо важливо пояснити довгий скелетон. */}
+          {realtimeConnection === 'offline' && (
+            <ConnectionNotice role="status">
+              {uiText('Немає звʼязку з базою. Показано збережене: повні анкети, контакти й відгуки довантажаться, щойно звʼязок повернеться.', language)}
+            </ConnectionNotice>
+          )}
           {matchingSearchStatus && (
             <MatchingSearchStatusMessage aria-live="polite">
               {matchingSearchStatus}
@@ -7988,15 +7995,6 @@ const Matching = () => {
               )}
               {feedRows.length > 0 && viewLayout === 'list' && (
                 <>
-                {/* Без звʼязку стрічка цілком малюється з кешу, а дочитування
-                    висить мовчки — рядок показував ініціал замість прізвища,
-                    резус замість групи й жодного контакту, і виглядало це як
-                    «анкету обрізано» (`useRealtimeConnection`). */}
-                {realtimeConnection === 'offline' && (
-                  <ConnectionNotice role="status">
-                    {uiText('Немає звʼязку з базою. Показано збережене: повні анкети, контакти й відгуки довантажаться, щойно звʼязок повернеться.', language)}
-                  </ConnectionNotice>
-                )}
                 <FeedList $restoringScroll={scrollRestorePending}>
                   {/* Донорка, яка ще й агентка, — дві анкети, а не одна:
                       під плашкою «Агенція» стояли зріст, вага й пологи

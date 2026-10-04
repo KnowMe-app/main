@@ -13,6 +13,11 @@ describe('список запитів у дужках', () => {
     expect(parseGroupedSearchValues('["Анна Коваль" 380501112233]')).toEqual(['Анна Коваль', '380501112233']);
   });
 
+  it('зберігає цитовані значення після роздільника з пробілом', () => {
+    expect(parseGroupedSearchValues('[foo, "Anna Kowal"]')).toEqual(['foo', 'Anna Kowal']);
+    expect(parseGroupedSearchValues('[foo; "Anna, Kowal"]')).toEqual(['foo', 'Anna, Kowal']);
+  });
+
   it('рядок без дужок списком не є', () => {
     expect(parseGroupedSearchValues('УК СМ Невідомо 30.10.2025')).toEqual([]);
   });

@@ -611,7 +611,9 @@ export const parseGroupedSearchValues = input => {
   // — це два запити, а не чотири слова. Пробілом список ділиться лише тоді,
   // коли коми в ньому немає зовсім (`[380501112233 380671112233]`).
   const outsideQuotes = inside.replace(/"[^"]*"/g, '');
-  const pattern = /[,;]/.test(outsideQuotes) ? /"[^"]+"|[^,;]+/g : /"[^"]+"|[^\s,;]+/g;
+  // Після роздільника не починаємо нецитоване значення з пробілу: інакше
+  // воно проковтне лапки та кому всередині наступного цитованого значення.
+  const pattern = /[,;]/.test(outsideQuotes) ? /"[^"]+"|[^,;\s][^,;]*/g : /"[^"]+"|[^\s,;]+/g;
   const matches = inside.match(pattern) || [];
 
   return matches
