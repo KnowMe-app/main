@@ -52,10 +52,10 @@ export const MATCHING_CARD_DERIVED_FIELDS = Object.freeze({
   // `hiddenRoles` — ролі, чию анкету людина сховала: картка їх не несе.
   role: ['userRole', 'role', 'hiddenRoles'],
   surnameShort: ['surname'],
-  // Резус — і все. Номер групи з картки прибрано навмисно: разом із резусом
-  // він відновлює повне `blood`, тобто картка віддавала б поза стрічкою те
-  // саме, що лежить у `profileDetails` за межею приватності. Стрічка фільтрує
-  // за групою через індекс `searchKey/blood`, а не за карткою.
+  // Резус є в кожній картці. Повне `blood` картка несе лише опублікованою
+  // (`MATCHING_CARD_MIRRORED_FIELDS`): поза стрічкою воно за межею
+  // приватності, у `profileDetails`. Стрічка фільтрує за групою через індекс
+  // `searchKey/blood`, а не за карткою.
   rh: ['blood'],
   avatar: ['avatar', 'photos'],
   feedDate: ['publish', 'lastLogin2', 'lastLogin'],
