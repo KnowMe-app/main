@@ -1304,9 +1304,9 @@ export const QueryDraftButton = styled.button`
 // розуміти, чому розгорнутий рядок не дотягується.
 export const ConnectionNotice = styled.div`
   position: sticky;
-  top: 8px;
-  z-index: 5;
-  margin: 0 0 10px;
+  top: calc(max(8px, env(safe-area-inset-top)) + 46px);
+  z-index: 13;
+  margin: 0 10px 10px;
   padding: 10px 12px;
   border-radius: 12px;
   font-size: 13px;

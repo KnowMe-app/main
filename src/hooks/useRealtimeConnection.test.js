@@ -24,10 +24,21 @@ describe('стан звʼязку з базою', () => {
   it('не кричить «немає звʼязку», поки перше зʼєднання ще встигає', () => {
     const { result } = renderHook(() => useRealtimeConnection({ grace: 5000, blip: 2000 }));
     emit(false);
-    act(() => { jest.advanceTimersByTime(1000); });
+    act(() => { jest.advanceTimersByTime(2000); });
+    expect(result.current).toBe('pending');
+    act(() => { jest.advanceTimersByTime(2000); });
     expect(result.current).toBe('pending');
     emit(true);
     expect(result.current).toBe('online');
+  });
+
+  it('не замінює початковий grace коротшим таймером обриву', () => {
+    const { result } = renderHook(() => useRealtimeConnection({ grace: 5000, blip: 2000 }));
+    emit(false);
+    act(() => { jest.advanceTimersByTime(2000); });
+    expect(result.current).toBe('pending');
+    act(() => { jest.advanceTimersByTime(3000); });
+    expect(result.current).toBe('offline');
   });
 
   it('каже «немає звʼязку», коли зʼєднання так і не зʼявилось', () => {

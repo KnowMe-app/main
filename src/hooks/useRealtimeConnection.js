@@ -28,14 +28,22 @@ export const useRealtimeConnection = ({
   const [state, setState] = useState('pending');
 
   useEffect(() => {
+    let connectedOnce = false;
     let timer = setTimeout(() => setState(current => (current === 'pending' ? 'offline' : current)), grace);
     const unsubscribe = onValue(ref(database, '.info/connected'), snapshot => {
-      clearTimeout(timer);
       if (snapshot.val() === true) {
+        connectedOnce = true;
+        clearTimeout(timer);
         setState('online');
         return;
       }
-      timer = setTimeout(() => setState(current => (current === 'online' || current === 'pending' ? 'offline' : current)), blip);
+
+      // Firebase спершу повідомляє `false`, ще до того, як транспорт устиг
+      // підʼєднатись. Це не обрив: перше зʼєднання й далі має весь `grace`.
+      if (!connectedOnce) return;
+
+      clearTimeout(timer);
+      timer = setTimeout(() => setState(current => (current === 'online' ? 'offline' : current)), blip);
     });
     return () => {
       clearTimeout(timer);
