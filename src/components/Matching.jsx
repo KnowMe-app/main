@@ -3135,7 +3135,10 @@ const Matching = () => {
         });
       }
       let resumeCursor;
-      if (cacheResume.usable && viewModeRef.current === startMode) {
+      // Стрічка адміна — це питання «хто щойно зʼявився», і відповідь на нього
+      // не може лежати в кеші шість годин: голова її щоразу читається з бази
+      // (`fetchAdminRecentCardsPage`, один запит на сторінку).
+      if (cacheResume.usable && viewModeRef.current === startMode && !isAdmin) {
         writeMatchingDebugLog('matchingLocalCacheUsed', {
           cacheKey: feedListKey,
           cardsCount: cached.length,
@@ -3325,7 +3328,7 @@ const Matching = () => {
         setLoading(false);
       }
     }
-  }, [announcePublicFeedUnavailable, beginInitialRequest, buildFeedCacheSignature, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, programRates, recordInitialLoadDiagnostic, rememberFeedPagination, rememberFeedSummaryCards, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [announcePublicFeedUnavailable, beginInitialRequest, buildFeedCacheSignature, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, isAdmin, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, programRates, recordInitialLoadDiagnostic, rememberFeedPagination, rememberFeedSummaryCards, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     setLoadError(null);

@@ -100,4 +100,13 @@ describe('публікація анкети без дат ставить кар�
     await updateDataInRealtimeDB(ID, { userId: ID, name: 'Ірина' }, 'update');
     expect(db.matchingCards[ID].feedDate).toBeUndefined();
   });
+
+  // Той самий писач кладе й індекс свіжості для стрічки адміна — дату
+  // нормалізованою, бо за сирими значеннями база сортувала б не за календарем.
+  it('пише індекс свіжості для стрічки адміна', async () => {
+    // Дата своя: писач памʼятає записане на вкладку й ту саму дату не повторює.
+    db.profileTechnical = { [ID]: { lastLogin: '2026-09-02' } };
+    await updateDataInRealtimeDB(ID, { userId: ID, publish: true }, 'update');
+    expect(db.adminRecent[ID]).toBe('2026-09-02');
+  });
 });
