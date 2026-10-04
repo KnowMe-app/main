@@ -21,6 +21,10 @@ describe('дата свіжості картки для стрічки адмі�
     expect(resolveRecentDate({})).toBe('');
   });
 
+  it('бере registrationDate, якщо профіль ще жодного разу не входив', () => {
+    expect(resolveRecentDate({ registrationDate: '04.10.2026' }, '2026-10-04')).toBe('2026-10-04');
+  });
+
   it('не бере дату з майбутнього', () => {
     expect(resolveRecentDate({ createdAt: '2099-01-01', lastLogin: '2026-09-01' }, '2026-10-04')).toBe('2026-09-01');
   });
