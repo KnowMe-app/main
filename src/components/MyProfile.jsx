@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiX } from 'react-icons/fi';
+import { FiTrash2, FiX } from 'react-icons/fi';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
 import styled, { css, keyframes } from 'styled-components';
 import {
@@ -227,70 +227,113 @@ const SubmitWrap = styled.div`
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 `;
+/*
+ * Блок «Публікація» — заголовок із підсумком і список анкет.
+ *
+ * Тут стояли жирна назва ролі, червоне «● Не опублікована» праворуч і
+ * червоне «Очистити» поруч із головною кнопкою, а при двох ролях — ще й
+ * рамка навколо кожного рядка всередині картки. Неопублікована анкета — не
+ * помилка, і червоним вона кричала про те, що людина ще просто не дійшла до
+ * кінця форми. Тепер статус — спокійна плашка (зелена лише «У стрічці»),
+ * рядки ділить волосяна риска, а не коробка в коробці, і одна анкета
+ * виглядає так само, як кожна з кількох.
+ */
 const PublishHead = styled.div`
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  flex-direction: column;
+  gap: 4px;
   margin-bottom: 6px;
 
-  > span:first-child { font-size: 14px; font-weight: 600; }
+  > b { font-size: 16px; font-weight: 700; color: var(--text); }
+  > span { font-size: 13px; line-height: 1.4; color: var(--muted); }
 `;
-const RoleActionList = styled.div`display:flex;flex-direction:column;gap:8px;`;
+const RoleActionList = styled.div`display:flex;flex-direction:column;`;
 const RoleActionRow = styled.div`
   display:flex;
-  flex-direction:column;
-  gap:8px;
-  ${({ $framed }) => ($framed
-    ? 'padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--bg);'
-    : 'padding:2px 0;')}
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px 12px;
+  padding:14px 0;
+
+  & + & { border-top:1px solid var(--border); }
+  &:last-child { padding-bottom:2px; }
 `;
-// Назва ролі й статус — один рядок, кнопки — під ним. Поруч із кнопками
-// на телефоні їм лишалось ~100 px, і «Сурогатна / мати», «Не /
-// опублікована» переносились (чи обрізались трикрапкою).
+// Назва ролі й статус — стовпчиком ліворуч, дія — праворуч. На вузькому
+// телефоні кнопки переносяться під них цілим рядком, а не тиснуть назву:
+// «Сурогатна / мати» колись ламалась саме так.
 const RoleActionMeta = styled.div`
   display:flex;
-  align-items:baseline;
-  justify-content:space-between;
-  gap:10px;
-  b,span{white-space:nowrap;}
-  b{font-size:14px;font-weight:600;}
-  span{font-size:12px;color:var(--muted);}
+  flex-direction:column;
+  align-items:flex-start;
+  gap:6px;
+  min-width:0;
+
+  b { font-size:15px; font-weight:600; color:var(--text); }
 `;
 const RolePublishStatus = styled.span`
-  && { color: ${({ $published }) => ($published ? '#2E9B55' : '#D44')}; font-weight: 600; }
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:3px 10px 3px 8px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:600;
+  white-space:nowrap;
+  color:${({ $published }) => ($published ? '#2E9B55' : 'var(--muted)')};
+  background:${({ $published }) => ($published ? 'rgba(46,155,85,0.12)' : 'var(--bg)')};
+
+  &::before {
+    content:'';
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    background:currentColor;
+    opacity:${({ $published }) => ($published ? 1 : 0.55)};
+  }
 `;
-const RoleActionButtons = styled.div`display:flex;align-items:center;gap:6px;white-space:nowrap;`;
+const RoleActionButtons = styled.div`display:flex;align-items:center;gap:6px;margin-left:auto;`;
 const RolePublishBtn = styled.button`
-  padding:8px 11px;
+  min-height:38px;
+  padding:0 18px;
   background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);
   color:#fff;
   border:none;
-  border-radius:10px;
-  font-size:13px;
+  border-radius:999px;
+  font-size:14px;
   font-weight:700;
+  white-space:nowrap;
   cursor:pointer;
+  box-shadow:0 2px 8px rgba(232,121,26,0.25);
 `;
 const RoleUnpublishBtn = styled.button`
-  padding:7px 12px;
+  min-height:38px;
+  padding:0 16px;
   background:var(--card);
   color:var(--text);
   border:1.5px solid var(--border);
-  border-radius:10px;
-  font-size:13px;
+  border-radius:999px;
+  font-size:14px;
   font-weight:600;
+  white-space:nowrap;
   cursor:pointer;
 `;
-// Незворотне — текстом і червоним, а не кнопкою поруч із головною: питає
-// підтвердження модалкою.
+// Незворотне — тихим значком, а не червоним словом поруч із головною
+// кнопкою: питає підтвердження модалкою, і червоним стає лише під пальцем.
 const RoleClearBtn = styled.button`
-  padding:7px 8px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:38px;
+  height:38px;
+  padding:0;
   background:none;
   border:none;
-  color:#D44;
-  font-size:12px;
-  font-weight:600;
+  border-radius:50%;
+  color:var(--muted);
   cursor:pointer;
+
+  &:hover, &:focus-visible { color:#D44; background:rgba(221,68,68,0.08); }
 `;
 // Зняти з публікації — дія того самого розміру, але не головна: помаранчевий
 // градієнт лишається за «Опублікувати», а не за протилежним.
@@ -1966,6 +2009,10 @@ export const MyProfile = () => {
   // набраного тут. Зʼявляється, коли набрано бодай щось: порожня картка з
   // ініціалами нічого не показує. Сховані ролі картка не несе, як і в стрічці.
   const isPublished = state.publish === true;
+  // Скільки анкет справді в стрічці — для підсумку над рядками «Публікації».
+  const publishedRoleCount = isPublished
+    ? (rolesList.length ? rolesList.filter(role => !hiddenRoles.includes(role)).length : 1)
+    : 0;
   // Лише основна роль: дві ролі поруч із назвою витискали статус на два
   // рядки, а «⋮» — за край екрана. Усі ролі людина бачить у «Хто ви».
   const brandTagline = uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === selectedRole)?.label || '', language);
@@ -2301,7 +2348,12 @@ export const MyProfile = () => {
         модалкою (`clearRoleTarget`), що й пункт меню «⋮». */}
     <SubmitWrap ref={node => { sectionRefs.current.publish = node; }} data-testid="publish-card">
       <PublishHead>
-        <span>{uiText('Публікація', language)}</span>
+        <b>{uiText('Публікація', language)}</b>
+        <span>
+          {uiText(publishedRoleCount > 0
+            ? 'Анкету бачать у стрічці. Зняти з публікації можна будь-коли'
+            : 'Анкету поки не видно в стрічці. Опублікуйте, коли будете готові', language)}
+        </span>
       </PublishHead>
       {/* Статус — у кожної анкети свій, тож спільної плашки «Не опублікована»
           й пояснення під нею тут більше немає: вони повторювали те, що вже
@@ -2314,11 +2366,11 @@ export const MyProfile = () => {
             const label = MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role;
             const rolePublished = isPublished && !hiddenRoles.includes(role);
             return (
-              <RoleActionRow key={role} $framed={rolesList.length > 1} data-testid={`publish-role-${role}`}>
+              <RoleActionRow key={role} data-testid={`publish-role-${role}`}>
                 <RoleActionMeta>
                   <b>{uiText(label, language)}</b>
                   <RolePublishStatus $published={rolePublished}>
-                    ● {uiText(rolePublished ? 'Опублікована' : 'Не опублікована', language)}
+                    {uiText(rolePublished ? 'У стрічці' : 'Не опублікована', language)}
                   </RolePublishStatus>
                 </RoleActionMeta>
                 <RoleActionButtons>
@@ -2334,9 +2386,11 @@ export const MyProfile = () => {
                   {isProfileAccessConfirmed && rolesList.length > 1 ? (
                     <RoleClearBtn
                       type="button"
+                      aria-label={uiText('Очистити дані: {role}', language, { role: uiText(label, language) })}
+                      title={uiText('Очистити дані: {role}', language, { role: uiText(label, language) })}
                       onClick={() => { setClearRoleTarget(role); setShowInfoModal('delConfirm'); }}
                     >
-                      {uiText('Очистити', language)}
+                      <FiTrash2 size={17} aria-hidden="true" />
                     </RoleClearBtn>
                   ) : null}
                 </RoleActionButtons>
