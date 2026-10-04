@@ -328,6 +328,30 @@ export const resolveCardBlood = (blood, feedDate) => (
 );
 
 /**
+ * Дата публікації для анкети, яку публікують просто зараз.
+ *
+ * `resolveFeedDate` бере дату з анкети — останній вхід чи створення — і без
+ * неї картку в стрічку не ставить: впорядкувати нема за чим. Для перебудови
+ * з бази це правильно, а для самої публікації — ні: адмін ставив анкеті
+ * `publish: true`, у якої ще не було ні `lastLogin`, ні `createdAt` (акаунт,
+ * заведений до того, як дати почали писатись у вузли), — і картка мовчки
+ * лишалась без `feedDate`. В анкеті `publish: true`, у формі «Опубліковано»,
+ * а в стрічці людини немає, і жодної помилки ніде. Рішення опублікувати —
+ * саме і є подією з датою, тож коли інших дат немає, нею стає сьогоднішня.
+ *
+ * Лише для явного рішення (`publish: true` у тому, що записують зараз), а не
+ * для будь-якої перебудови: офлайн-збірка вузла з локальних файлів інакше
+ * виставила б «сьогодні» всім старим анкетам без дат.
+ */
+export const withPublicationDate = (data, { publishRequested = false, today } = {}) => {
+  if (!publishRequested || !data || typeof data !== 'object') return data;
+  if (!normalizePublish(data.publish)) return data;
+  if (resolveFeedDate(data)) return data;
+  const date = normalizeFeedDateValue(today);
+  return date ? { ...data, lastLogin2: date } : data;
+};
+
+/**
  * Збирає проєкцію з повної анкети.
  *
  * `avatar` не резолвиться зі Storage — це окремий, дорогий крок, який робить

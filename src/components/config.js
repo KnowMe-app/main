@@ -101,7 +101,10 @@ import {
   listDroppedProjectionFields,
   resolveCardBlood,
   resolveMatchingCardAvatarFromProfile,
+  withPublicationDate,
 } from '../utils/matchingCardIndex';
+import { normalizePublish } from '../utils/reactionPriority';
+import { getCurrentDate } from './foramtDate';
 import {
   AGE_BUCKET_FILTER_KEYS,
   SEARCH_KEY_EMPTY_BUCKET,
@@ -4053,7 +4056,13 @@ const runMatchingCardRefresh = async (id, payload, condition) => {
     // публікації не спрацювало б жодного разу: картка перебудувалась би зі
     // старою датою і лишилась у стрічці.
     const stored = condition === 'update' ? await readProfileForMatchingCard(id) : null;
-    const nextData = condition === 'update' ? { ...(stored || {}), ...payload } : payload;
+    const merged = condition === 'update' ? { ...(stored || {}), ...payload } : payload;
+    // Публікація без жодної дати в анкеті стає датою сама (`withPublicationDate`):
+    // інакше `publish: true` лягав в анкету, а картка лишалась поза стрічкою.
+    const nextData = withPublicationDate(merged, {
+      publishRequested: normalizePublish(payload?.publish),
+      today: getCurrentDate().todayDash,
+    });
     if (!nextData || typeof nextData !== 'object') return;
     await syncMatchingCardIndex(id, nextData);
   } catch (error) {
