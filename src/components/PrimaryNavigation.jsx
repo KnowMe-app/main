@@ -117,7 +117,7 @@ export default function PrimaryNavigation() {
         <NavLink to="/matching" end><FaSearch aria-hidden="true" />{english ? 'Find profiles' : 'Пошук анкет'}</NavLink>
         <NavLink to="/matching/create-profile">
           {workspace ? <FaPen aria-hidden="true" /> : <FaRegFolderOpen aria-hidden="true" />}
-          {workspace ? workspace[english ? 'en' : 'uk'] : (english ? 'My cards' : 'Мої картки')}
+          {workspace ? workspace[english ? 'en' : 'uk'] : (english ? 'Add card' : 'Додати картку')}
         </NavLink>
         <NavLink to="/my-profile"><FaRegUser aria-hidden="true" />{english ? 'My profile' : 'Мій профіль'}</NavLink>
         <SideSlot>
