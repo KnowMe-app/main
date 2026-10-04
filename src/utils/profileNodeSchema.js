@@ -561,8 +561,8 @@ export const MATCHING_CARD_SOURCE_FIELDS = Object.freeze([...new Set(
  */
 export const MATCHING_CARD_FORBIDDEN_FIELDS = Object.freeze([
   'surname',
-  'blood',
-  // Номер групи крові: разом із резусом він складається назад у повне `blood`.
+  // `blood` тут більше немає: опублікована картка несе повну групу
+  // (`MATCHING_CARD_MIRRORED_FIELDS`). Окремий номер групи — так само ні.
   'bloodGroup',
   'phone',
   'email',

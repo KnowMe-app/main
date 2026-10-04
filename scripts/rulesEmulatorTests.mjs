@@ -694,6 +694,11 @@ await it('повну групу крові картка приймає лише 
   await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/blood`), '2+'));
   await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/blood`), ['1+', '2+']));
   await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${HIDDEN_CARD}/blood`), '3+'));
+  // Інваріант стоїть на картці, а не на самому `blood`: правило дитини не
+  // бачить запису, який міняє лише сусіда, і зняття самої дати лишало б повну
+  // групу на неопублікованій картці.
+  await assertFails(remove(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`)));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), false));
   // Зняття з публікації знімає й кров — одним записом.
   await assertSucceeds(update(ref(db(SUPERADMIN), `matchingCards/${CARD}`), { feedDate: false, blood: null }));
   await assertFails(update(ref(db(SUPERADMIN), `matchingCards/${CARD}`), { blood: '2+' }));

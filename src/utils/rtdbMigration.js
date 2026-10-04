@@ -58,6 +58,7 @@ import {
 } from './rtdbMigrationDerive';
 import { isListLikeValue, mergeUserFieldValue } from './mergeUserCollections';
 import { hasCurrentValue } from 'components/getCurrentValue';
+import { resolveCardBlood } from './matchingCardIndex';
 
 /** Кнопки міграції, у порядку, в якому їх задумано натискати. */
 export const MIGRATION_GROUPS = Object.freeze([
@@ -782,10 +783,9 @@ const planMatchingDerivedFields = (ctx, { profileId, source, sourceCollection })
     // `surname` лишається: `profileDetails` забере його повним значенням.
   }
 
-  // Тільки резус. Номер групи картка не носить: разом вони складаються назад у
-  // повне `blood`, а воно за межею приватності — у `profileDetails`. Сире
-  // `blood` (вільний текст, а бува й масив версій) лишається на місці: повне
-  // значення забере `profileDetails`.
+  // Резус — кожній картці. Повне `blood` картка отримує лише опублікованою
+  // (див. кінець функції), а сире значення (вільний текст, а бува й масив
+  // версій) лишається на місці: повне значення забере `profileDetails`.
   [
     ['rh', deriveRh(source.blood)],
   ].forEach(([field, derived]) => {
@@ -883,6 +883,15 @@ const planMatchingDerivedFields = (ctx, { profileId, source, sourceCollection })
         planConsumption(ctx, sourceCollection, profileId, 'publish');
       }
     }
+  }
+
+  // Повна група крові — копія з анкети, і лише в опублікованої картки
+  // (`resolveCardBlood`, та сама умова, що й у писача). Сире `blood` при цьому
+  // лишається на місці: власник поля — `profileDetails`, і забере його там.
+  const plannedFeed = readPlannedTarget(ctx, profileId, 'feedDate');
+  const cardBlood = plannedFeed.exists ? resolveCardBlood(source.blood, plannedFeed.value) : undefined;
+  if (cardBlood !== undefined) {
+    offerValue(ctx, { profileId, field: 'blood', value: cardBlood, sourceCollection, derived: true });
   }
 };
 

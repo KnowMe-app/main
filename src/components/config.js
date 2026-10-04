@@ -5171,10 +5171,18 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
       // відлітала б **цілком** — разом з імʼям, фото й датою публікації, — і
       // стрічка показувала б агенцію старою. Тож без нових полів картка
       // пишеться ще раз, а про причину каже консоль.
+      //
+      // Знімаються лише ті нові поля, яких у картці ще немає. Поле, що вже лежить
+      // у картці, правила прийняли — і перелік тут накопичувальний: поки
+      // знімалось усе підряд, очікування правила під `blood` переписувало картку
+      // без `agencyName` і `seekingRole`, яких тоді ж записувала стара база.
+      const unprovenFields = MATCHING_CARD_PROGRAM_FIELDS.filter(field => (
+        field in projection && !(existing && Object.prototype.hasOwnProperty.call(existing, field))
+      ));
       const withoutPrograms = { ...projection };
-      MATCHING_CARD_PROGRAM_FIELDS.forEach(field => { delete withoutPrograms[field]; });
-      if (!isReactionPermissionDeniedError(error) || Object.keys(withoutPrograms).length === Object.keys(projection).length) throw error;
-      console.warn('[matchingCards] правила бази ще не приймають нових полів картки (програми, назва агенції, структура волосся) — картку записано без них. Викотіть правила: npx firebase deploy --only database', { userId: id });
+      unprovenFields.forEach(field => { delete withoutPrograms[field]; });
+      if (!isReactionPermissionDeniedError(error) || !unprovenFields.length) throw error;
+      console.warn('[matchingCards] правила бази ще не приймають нових полів картки — картку записано без них. Викотіть правила: npx firebase deploy --only database', { userId: id, fields: unprovenFields });
       const fallbackPatch = { ...withoutPrograms };
       Object.keys(existing || {}).forEach(field => {
         if (!(field in withoutPrograms) && !independentlyOwnedFields.has(field)) fallbackPatch[field] = null;
