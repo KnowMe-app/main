@@ -101,7 +101,7 @@ import {
   listDroppedProjectionFields,
   resolveMatchingCardAvatarFromProfile,
 } from '../utils/matchingCardIndex';
-import { pickRecentPage } from '../utils/adminRecentFeed';
+import { ADMIN_RECENT_META_PATH, ADMIN_RECENT_ROOT, resolveRecentDate } from '../utils/adminRecentFeed';
 import {
   AGE_BUCKET_FILTER_KEYS,
   SEARCH_KEY_EMPTY_BUCKET,
@@ -4045,6 +4045,31 @@ const normalizeIndexedValues = value => Array.isArray(value)
  */
 const readProfileForMatchingCard = async id => readProfileFromNodes(id, { includeTechnical: true });
 
+// Що вже записано в індекс свіжості з цієї вкладки: вхід пишеться раз на день,
+// а збереження анкети — десятки разів, і дата при цьому здебільшого та сама.
+const adminRecentWritten = new Map();
+let adminRecentWriteWarned = false;
+
+/**
+ * Індекс свіжості для стрічки адміна (`utils/adminRecentFeed`): найсвіжіша з
+ * дат картки, нормалізована. Пишеться поруч із карткою, тим самим писачем.
+ * Ніколи не кидає: це порядок адмінської стрічки, а не частина анкети. До
+ * ручного викочування правил запис падає на відмові — про це раз на вкладку.
+ */
+const syncAdminRecentIndex = async (id, data) => {
+  const date = resolveRecentDate(data, getCurrentDate().todayDash);
+  if (!date || adminRecentWritten.get(id) === date) return;
+  try {
+    await set(ref2(database, `${ADMIN_RECENT_ROOT}/${id}`), date);
+    adminRecentWritten.set(id, date);
+  } catch (error) {
+    if (!adminRecentWriteWarned) {
+      adminRecentWriteWarned = true;
+      console.warn('[adminRecent] індекс свіжості не записано. Викотіть правила: npx firebase deploy --only database', { userId: id, error });
+    }
+  }
+};
+
 const runMatchingCardRefresh = async (id, payload, condition) => {
   try {
     // Перечитане знизу, збережене зверху. `publish` власного вузла не має —
@@ -4055,7 +4080,8 @@ const runMatchingCardRefresh = async (id, payload, condition) => {
     const stored = condition === 'update' ? await readProfileForMatchingCard(id) : null;
     const nextData = condition === 'update' ? { ...(stored || {}), ...payload } : payload;
     if (!nextData || typeof nextData !== 'object') return;
-    await syncMatchingCardIndex(id, nextData);
+    const projection = await syncMatchingCardIndex(id, nextData);
+    await syncAdminRecentIndex(id, { ...nextData, feedDate: projection?.feedDate });
   } catch (error) {
     console.warn('[matchingCards] не вдалося оновити картку після збереження анкети', { userId: id, error });
   }
@@ -5184,6 +5210,8 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
 export const removeMatchingCardIndex = async userId => {
   const id = String(userId || '').trim();
   if (!id) return;
+  adminRecentWritten.delete(id);
+  Promise.resolve().then(() => remove(ref2(database, `${ADMIN_RECENT_ROOT}/${id}`))).catch(() => {});
   try {
     await remove(buildMatchingCardRef(id));
   } catch (error) {
@@ -5242,6 +5270,71 @@ export const isEditedCopyOfOrphanComment = (orphan, candidate) => {
   let prefix = 0;
   while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix += 1;
   return prefix / a.length >= ORPHAN_COPY_MIN_PREFIX_SHARE;
+};
+
+const ADMIN_RECENT_BACKFILL_CHUNK = 1000;
+
+/**
+ * Разова дописка індексу свіжості (`adminRecent`) для всіх карток.
+ *
+ * Писач кладе дату сам на кожному збереженні й вході, але картки, яких відтоді
+ * ніхто не торкався, в індексі відсутні. Ця робота читає технічні дати
+ * (`profileTechnical` цілком — адмінське читання, разове) і дати публікації
+ * (`matchingCards` за `feedDate`), рахує ту саму найсвіжішу дату, що й писач, і
+ * пише її частинами. Наприкінці ставить позначку `adminRecentMeta/backfilledAt`:
+ * доти стрічка адміна йде звичайною, бо з неповного індексу вона показала б
+ * лише кількох.
+ */
+export const backfillAdminRecentIndex = async ({ onProgress } = {}) => {
+  const report = { readError: null, cards: 0, written: 0, failed: [] };
+  const today = getCurrentDate().todayDash;
+  let technical = {};
+  let published = {};
+  try {
+    const [technicalSnapshot, publishedSnapshot] = await Promise.all([
+      get(ref2(database, PROFILE_NODES.profileTechnical)),
+      get(query(ref2(database, MATCHING_CARDS_ROOT), orderByChild(MATCHING_CARD_ORDER_FIELD), startAt(''))),
+    ]);
+    technical = technicalSnapshot.exists() ? technicalSnapshot.val() || {} : {};
+    published = publishedSnapshot.exists() ? publishedSnapshot.val() || {} : {};
+  } catch (error) {
+    report.readError = describeBackfillError(error, PROFILE_NODES.profileTechnical);
+    return report;
+  }
+
+  const dates = {};
+  new Set([...Object.keys(technical), ...Object.keys(published)]).forEach(id => {
+    const date = resolveRecentDate({
+      ...(technical[id] || {}),
+      feedDate: published[id]?.[MATCHING_CARD_ORDER_FIELD],
+    }, today);
+    if (date) dates[id] = date;
+  });
+
+  const entries = Object.entries(dates);
+  report.cards = entries.length;
+  for (let offset = 0; offset < entries.length; offset += ADMIN_RECENT_BACKFILL_CHUNK) {
+    const chunk = entries.slice(offset, offset + ADMIN_RECENT_BACKFILL_CHUNK);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await update(ref2(database, ADMIN_RECENT_ROOT), Object.fromEntries(chunk));
+      chunk.forEach(([id, date]) => adminRecentWritten.set(id, date));
+      report.written += chunk.length;
+    } catch (error) {
+      report.failed.push({ offset, size: chunk.length, ...describeBackfillError(error, ADMIN_RECENT_ROOT) });
+    }
+    if (typeof onProgress === 'function') onProgress({ done: Math.min(offset + chunk.length, entries.length), total: entries.length });
+  }
+
+  if (!report.failed.length && report.written) {
+    try {
+      await set(ref2(database, ADMIN_RECENT_META_PATH), Date.now());
+      adminRecentIndexReady = null;
+    } catch (error) {
+      report.failed.push({ offset: -1, size: 0, ...describeBackfillError(error, ADMIN_RECENT_META_PATH) });
+    }
+  }
+  return report;
 };
 
 /**
@@ -5573,99 +5666,108 @@ export const fetchMatchingCardsPage = (options = {}) => {
   ));
 };
 
-// Три індекси стрічки адміна: вхід і створення лежать у `profileTechnical`
-// (обидва з `.indexOn`), дата публікації — у самій картці. Межа вікна для
-// технічних дат бере весь день курсора: дата там буває й з часом.
-const ADMIN_RECENT_STREAMS = Object.freeze([
-  { node: 'profileTechnical', field: 'lastLogin', bound: date => `${date}\uf8ff` },
-  { node: 'profileTechnical', field: 'createdAt', bound: date => `${date}\uf8ff` },
-  { node: MATCHING_CARDS_ROOT, field: MATCHING_CARD_ORDER_FIELD, bound: date => date },
-]);
+// Чи дописано індекс свіжості для старих карток. Поки ні, у ньому лише ті, хто
+// зберігся чи зайшов після появи писача, — і стрічка адміна з нього показала б
+// кілька карток замість двадцяти тисяч. Тоді адмін гортає звичайну стрічку.
+let adminRecentIndexReady = null;
+const isAdminRecentIndexReady = () => {
+  if (!adminRecentIndexReady) {
+    adminRecentIndexReady = get(ref2(database, ADMIN_RECENT_META_PATH))
+      .then(snapshot => snapshot.exists())
+      .catch(error => {
+        console.warn('[adminRecent] індекс свіжості не прочитано — стрічка адміна йде за feedDate', error);
+        return false;
+      });
+  }
+  return adminRecentIndexReady;
+};
 
 /**
- * Сторінка стрічки адміна — за найсвіжішою датою картки (`utils/adminRecentFeed`).
+ * Сторінка стрічки адміна — за свіжістю картки (`utils/adminRecentFeed`).
  *
- * Формат сторінки той самий, що в `fetchMatchingCardsPage` (`users`, `lastKey`,
- * `hasMore`, `cursorsByUserId`, курсор — пара дата й id), тож решта стрічки —
- * фільтри, кеш списку, довантаження — не знає, яким джерелом її гортають.
- * Ціна інша: три запити на вікно замість одного й точкове читання картки на
- * кожну, якої не віддав індекс `feedDate`. Для адміна це прийнятно, для кожного
- * читача — ні, тому джерело тільки адмінське (і правила `profileTechnical`
- * відкривають перелік лише адмінам).
+ * Один запит до `adminRecent`: `orderByValue` + `endBefore(дата, id)` +
+ * `limitToLast`. Межу між сторінками ставить база парою (значення, ключ), тож
+ * хоч тисяча карток з однією датою гортається без повторів і пропусків, а
+ * порядок рядків береться з її ж відповіді (`forEach`), а не з власного
+ * сортування — інакше порівняння id у браузері могло б розійтись із базою.
+ *
+ * Формат сторінки той самий, що в `fetchMatchingCardsPage`, тож решта стрічки
+ * не знає, яким джерелом її гортають. Картку без проєкції пейджер догідратує
+ * сам, до фільтрів: інакше фільтр за роллю чи віком відкинув би заготовку без
+ * полів, і повна анкета не приїхала б ніколи. Позначка `__adminRecent` каже
+ * фільтру видимості, що це адмінське джерело і сховану картку показувати можна.
  */
-export const fetchAdminRecentCardsPage = async ({ limit = 10, cursor = null } = {}) => {
+const fetchAdminRecentCardsPageUncoalesced = async ({ limit = 10, cursor = null } = {}) => {
+  if (!(await isAdminRecentIndexReady())) {
+    return fetchMatchingCardsPage({ limit, cursor });
+  }
+
   const safeLimit = Math.max(1, Number(limit) || 1);
   const normalizedCursor = cursor && typeof cursor === 'object' && cursor.date
     ? { date: String(cursor.date), userId: String(cursor.userId || '') }
     : null;
 
-  let windowSize = Math.min(
-    MATCHING_CARDS_PAGE_WINDOW_CAP,
-    safeLimit + 1 + (normalizedCursor ? MATCHING_CARDS_CURSOR_DATE_SLACK : 0),
-  );
-  let picked = null;
-  let rawCards = {};
+  const snapshot = await get(query(
+    ref2(database, ADMIN_RECENT_ROOT),
+    orderByValue(),
+    ...(normalizedCursor
+      ? [normalizedCursor.userId ? endBefore(normalizedCursor.date, normalizedCursor.userId) : endBefore(normalizedCursor.date)]
+      : []),
+    limitToLast(safeLimit + 1),
+  ));
 
-  for (;;) {
-    const atCap = windowSize >= MATCHING_CARDS_PAGE_WINDOW_CAP;
-    const size = windowSize;
-    // eslint-disable-next-line no-await-in-loop
-    const snapshots = await Promise.all(ADMIN_RECENT_STREAMS.map(stream => get(query(
-      ref2(database, stream.node),
-      orderByChild(stream.field),
-      startAt(''),
-      ...(normalizedCursor ? [endAt(stream.bound(normalizedCursor.date))] : []),
-      limitToLast(size),
-    ))));
+  const rows = [];
+  // Блокове тіло навмисно: `forEach` знімка зупиняється на truthy-результаті.
+  snapshot.forEach(child => {
+    rows.push({ userId: child.key, date: String(child.val() || '') });
+  });
+  rows.reverse();
 
-    const records = {};
-    rawCards = {};
-    const streams = ADMIN_RECENT_STREAMS.map((stream, index) => {
-      const raw = (snapshots[index]?.exists?.() && snapshots[index].val()) || {};
-      const entries = Object.entries(raw);
-      entries.forEach(([id, value]) => {
-        const record = records[id] || (records[id] = {});
-        if (stream.node === MATCHING_CARDS_ROOT) {
-          record.feedDate = value?.[stream.field];
-          rawCards[id] = value;
-        } else {
-          record.lastLogin = value?.lastLogin;
-          record.createdAt = value?.createdAt;
-        }
-      });
-      return { dates: entries.map(([, value]) => value?.[stream.field]), full: entries.length >= size };
-    });
+  const hasMore = rows.length > safeLimit;
+  const pageRows = rows.slice(0, safeLimit);
+  const ids = pageRows.map(row => row.userId);
 
-    picked = pickRecentPage({ records, streams, cursor: normalizedCursor, limit: safeLimit, atCap });
-    if (!picked.needsWiderWindow) break;
-    windowSize = Math.min(MATCHING_CARDS_PAGE_WINDOW_CAP, windowSize * 2);
-  }
-
-  const pageIds = picked.page.map(entry => entry.userId);
-  const unreadIds = pageIds.filter(id => !isCurrentMatchingCardSchema(rawCards[id]));
-  const { cards: readCards } = unreadIds.length
-    ? await fetchMatchingCardsByIds(unreadIds)
-    : { cards: {} };
+  const { cards, missingIds } = ids.length ? await fetchMatchingCardsByIds(ids) : { cards: {}, missingIds: [] };
+  const full = missingIds.length ? (await fetchUsersByIds(missingIds)) || {} : {};
 
   const cursorsByUserId = {};
-  const users = picked.page.map(({ userId, date }) => {
+  const users = [];
+  pageRows.forEach(({ userId, date }) => {
     cursorsByUserId[userId] = { date, userId };
-    const card = isCurrentMatchingCardSchema(rawCards[userId])
-      ? expandMatchingCard(userId, rawCards[userId])
-      : readCards[userId];
-    // Картки без проєкції стрічка догідратує повною анкетою (`isHydrated`).
-    return card
-      ? { ...card, __recentAt: date }
-      : { userId, __limitedProfile: true, __recentAt: date };
+    const card = cards[userId] || full[userId];
+    // Запис без жодної анкети (видалену картку прибирає писач, але старий
+    // запис міг лишитись) просто пропускається — курсор однаково йде далі.
+    if (card) users.push({ ...card, userId, __recentAt: date, __adminRecent: true });
   });
-  const lastEntry = picked.page[picked.page.length - 1];
+  const lastRow = pageRows[pageRows.length - 1];
 
   return {
     users,
-    lastKey: lastEntry ? { date: lastEntry.date, userId: lastEntry.userId } : null,
-    hasMore: picked.hasMore,
+    lastKey: lastRow ? { date: lastRow.date, userId: lastRow.userId } : null,
+    hasMore,
     cursorsByUserId,
   };
+};
+
+// Той самий спільний запит, що й у `fetchMatchingCardsPage`: `loadInitial` і
+// `loadMore` на старті питають ту саму першу сторінку одночасно.
+const adminRecentPageInFlight = new Map();
+
+export const fetchAdminRecentCardsPage = (options = {}) => {
+  const key = buildMatchingCardsPageKey({
+    limit: Math.max(1, Number(options.limit) || 1),
+    cursor: options.cursor,
+  });
+  let pending = adminRecentPageInFlight.get(key);
+  if (!pending) {
+    pending = fetchAdminRecentCardsPageUncoalesced(options).finally(() => {
+      adminRecentPageInFlight.delete(key);
+    });
+    adminRecentPageInFlight.set(key, pending);
+  }
+  return pending.then(page => (
+    page && Array.isArray(page.users) ? { ...page, users: [...page.users] } : page
+  ));
 };
 
 /**
