@@ -9,7 +9,8 @@ import { normalizeFeedDateValue } from './profileFieldDerive';
  * зайшов, — а нові анкети `feedDate` здебільшого ще не мають і до його стрічки
  * не доходили взагалі.
  *
- * Порядок адміна — найсвіжіша з дат картки: вхід, створення, публікація. Вона
+ * Порядок адміна — найсвіжіша з дат картки: вхід, реєстрація/створення,
+ * публікація. Вона
  * лежить окремим індексом `adminRecent/{id}` = `РРРР-ММ-ДД`, і пише його той
  * самий писач, що перебудовує картку (`syncAdminRecentIndex`). Перша версія
  * зливала три індекси на клієнті поверх сирих дат — і ламалась саме на тому,
@@ -17,13 +18,26 @@ import { normalizeFeedDateValue } from './profileFieldDerive';
  * крапками стояли за днем, а не за календарем, понад вікно однакових дат
  * гортання впиралось у стелю. Нормалізоване значення й один запит
  * `orderByValue` з межею (дата, id) знімають усе це разом: порядок і розрив
- * нічиїх робить база.
+ * нічиїх робить база. Взяти два поля без цього матеріалізованого індексу не
+ * можна: Realtime Database упорядковує один запит лише за одним ключем і не
+ * вміє обчислювати максимум `lastLogin` та `registrationDate`.
  */
 
 export const ADMIN_RECENT_ROOT = 'adminRecent';
 export const ADMIN_RECENT_META_PATH = 'adminRecentMeta/backfilledAt';
 
-const RECENT_DATE_FIELDS = ['lastLogin2', 'lastLogin', 'createdAt2', 'createdAt', 'feedDate'];
+// `registrationDate` — канонічний запасний час реєстрації у
+// `profileTechnical`. Legacy-поля створення лишаються для ще не перенесених
+// записів, а `feedDate` — бо публікація може бути новішою і за реєстрацію, і за
+// останній збережений вхід.
+const RECENT_DATE_FIELDS = [
+  'lastLogin2',
+  'lastLogin',
+  'registrationDate',
+  'createdAt2',
+  'createdAt',
+  'feedDate',
+];
 
 /** Дата як `РРРР-ММ-ДД` — з ISO-дати, ISO з часом, `ДД.ММ.РРРР` чи мітки часу. */
 export const toRecentDate = value => {
