@@ -694,6 +694,27 @@ await it('номер групи крові картка вже не прийма
   await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/rh`), '+'));
 });
 
+// Індекс свіжості для стрічки адміна: хто й коли зʼявився — це «хто чим
+// займається по всій базі», тож перелік відкритий лише адмінам. Пишуть його
+// ті самі, хто пише картку, і лише нормалізованою датою: на сирих значеннях
+// база сортувала б мітки часу й дати крапками не за календарем.
+await it('індекс свіжості: перелік — адмінський, запис — як у картки, значення — дата', async () => {
+  await assertSucceeds(set(ref(db(PROFILE_OWNER), `adminRecent/${PROFILE_OWNER}`), '2026-10-04'));
+  await assertFails(set(ref(db(PROFILE_OWNER), `adminRecent/${CARD}`), '2026-10-04'));
+  await assertFails(set(ref(db(PROFILE_OWNER), `adminRecent/${PROFILE_OWNER}`), '04.10.2026'));
+  await assertFails(set(ref(db(PROFILE_OWNER), `adminRecent/${PROFILE_OWNER}`), 1791139401699));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `adminRecent/${CARD}`), '2026-10-01'));
+  await assertSucceeds(get(query(ref(db(SUPERADMIN), 'adminRecent'), orderByValue(), limitToLast(10))));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), 'adminRecent')));
+  await assertFails(set(ref(db(ORDINARY_VIEWER), 'adminRecentMeta/backfilledAt'), 1));
+  await assertSucceeds(set(ref(db(SUPERADMIN), 'adminRecentMeta/backfilledAt'), 1));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const raw = context.database();
+    await set(ref(raw, 'adminRecent'), null);
+    await set(ref(raw, 'adminRecentMeta'), null);
+  });
+});
+
 describe('розкладка збереженої анкети по вузлах');
 
 await it('власниця анкети розкладає власні дані по всіх своїх вузлах', async () => {
