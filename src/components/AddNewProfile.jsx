@@ -41,7 +41,6 @@ import {
   backfillProfileDraftOwners,
   backfillMatchingCardPublicReviewFlags,
   backfillMatchingCardBlood,
-  backfillAdminRecentIndex,
   createSelectedSearchKeyIndexes,
   buildSearchIdIndexPayloadFromCollections,
   buildSearchKeyIndexPayloadFromCollections,
@@ -633,15 +632,6 @@ const INDEX_JOB_GROUPS = [
         key: 'matchingCardBlood',
         label: 'Група крові в картках',
         hint: '→ matchingCards/{id}/blood',
-      },
-      {
-        // Разова робота: дату свіжості писач кладе сам на кожному збереженні й
-        // вході, а картки, яких відтоді не торкались, у індексі відсутні. Доки
-        // її не запущено, стрічка адміна йде за feedDate (позначка
-        // adminRecentMeta/backfilledAt).
-        key: 'adminRecentIndex',
-        label: 'Свіжість карток для адміна',
-        hint: '→ adminRecent',
       },
     ],
   },
@@ -1375,7 +1365,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     searchLocalIdAndKey: false,
     searchLocalImtHeightWeight: false,
     matchingCardBlood: false,
-    adminRecentIndex: false,
   };
   const defaultSelectedSearchKeyIndexes = SEARCH_KEY_INDEX_OPTIONS.reduce((acc, option) => {
     acc[option.key] = true;
@@ -6712,7 +6701,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       !selectedIndexJobs.profileMutationOwners &&
       !selectedIndexJobs.matchingCardPublicComments &&
       !selectedIndexJobs.matchingCardBlood &&
-      !selectedIndexJobs.adminRecentIndex &&
       !selectedIndexJobs.searchKeyUsersAll &&
       !selectedIndexJobs.searchKeySetReindex &&
       !selectedIndexJobs.searchLocalIdAndKey &&
@@ -6789,26 +6777,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           toast.error(message, { id: toastId, duration: 20000 });
         } else {
           toast.success(message, { id: toastId, duration: 10000 });
-        }
-      }
-
-      if (selectedIndexJobs.adminRecentIndex) {
-        const toastId = 'index-admin-recent-progress';
-        toast.loading('Рахуємо свіжість карток...', { id: toastId });
-        const report = await backfillAdminRecentIndex({
-          onProgress: ({ done, total }) => toast.loading(`Свіжість карток: ${done}/${total}`, { id: toastId }),
-        });
-        if (report.readError || report.failed.length) {
-          const denied = report.readError?.permissionDenied || report.failed.some(entry => entry.permissionDenied);
-          console.error('[AddNewProfile] adminRecent backfill failures', report);
-          toast.error(
-            `Свіжість карток: записано ${report.written}/${report.cards}`
-            + `${report.readError ? `, не прочитано: ${report.readError.message}` : ''}`
-            + `${denied ? '. Викотіть правила: npx firebase deploy --only database' : ''}`,
-            { id: toastId, duration: 20000 },
-          );
-        } else {
-          toast.success(`Свіжість карток записано: ${report.written}. Стрічка адміна тепер за нею.`, { id: toastId, duration: 10000 });
         }
       }
 
