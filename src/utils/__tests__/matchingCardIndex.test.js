@@ -50,15 +50,15 @@ describe('buildMatchingCardProjection', () => {
     expect(projection.source).toBeUndefined();
     expect(projection.fieldsCount).toBeUndefined();
 
-    // Похідні замість сирих значень: у стрічці стоїть ініціал і резус, а повні
-    // `surname` і `blood` живуть у `profileDetails`. Номера групи в картці
-    // немає навмисно: разом із резусом він відновив би повне `blood`, тобто
-    // картка віддавала б поза стрічкою те, що лежить за межею приватності.
+    // Похідні замість сирих значень: у стрічці стоїть ініціал, а повне
+    // `surname` живе в `profileDetails`. Повна група крові картці належить
+    // лише поки анкета опублікована — ця опублікована, тож `blood` є (без
+    // нього рядок казав «Rh+», і читач не розумів, яка це група).
     expect(projection.surnameShort).toBe('Д.');
     expect(projection.rh).toBe('+');
     expect(projection.bloodGroup).toBeUndefined();
     expect(projection.surname).toBeUndefined();
-    expect(projection.blood).toBeUndefined();
+    expect(projection.blood).toBe('1+');
 
     // Опис, контакти, робочі й технічні поля у проєкцію не потрапляють —
     // у кожного з них тепер власний вузол із власними правами.
@@ -281,8 +281,8 @@ describe('expandMatchingCard', () => {
     // Адаптер віддає старі імена полів: стрічка, її фільтри й сортування не
     // знають, що в базі лежать похідні під іншими ключами.
     expect(expanded.surname).toBe('Д.');
-    // Назад розгортається сам резус — номера групи в картці немає.
-    expect(expanded.blood).toBe('+');
+    // Опублікована картка несе повну групу — вона й розгортається.
+    expect(expanded.blood).toBe('1+');
     expect(expanded.lastLogin2).toBe('2026-08-19');
 
     // Службові поля самої проєкції назовні не течуть.
@@ -461,3 +461,24 @@ describe('buildMatchingCardsPayloadFromCollections', () => {
     expect(stats.written).toBe(0);
   });
 });
+
+describe('повна група крові в картці', () => {
+  const ID = 'user-id-of-twenty-chars';
+
+  it('неопублікованій картці не належить — лишається сам резус', () => {
+    // Картку бачить кожен авторизований, а повне `blood` за межею, яку
+    // відкриває саме публікація.
+    const unpublished = buildMatchingCardProjection(ID, { ...fullProfile, publish: false });
+    expect(unpublished.blood).toBeUndefined();
+    expect(unpublished.rh).toBe('+');
+    expect(expandMatchingCard(ID, unpublished).blood).toBe('+');
+
+    const neverPublished = buildMatchingCardProjection(ID, { ...fullProfile, publish: undefined });
+    expect(neverPublished.blood).toBeUndefined();
+  });
+
+  it('несе історію і стирання так само, як решта полів картки', () => {
+    expect(buildMatchingCardProjection(ID, { ...fullProfile, blood: ['1+', '2-'] }).blood).toEqual(['1+', '2-']);
+  });
+});
+

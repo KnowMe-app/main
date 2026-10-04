@@ -311,6 +311,7 @@ export const ContactLinks = ({ entries, language, onContactAction }) => {
               onClick={act('phone')}
             >
               <PhoneHandsetIcon />
+              <span>{uiText('Подзвонити', language)}</span>
             </S.ContactIconLink>
             {phoneQuickLinks.map(({ key, Icon, label, build }) => {
               const quickLabel = tracked
@@ -324,6 +325,7 @@ export const ContactLinks = ({ entries, language, onContactAction }) => {
                   rel="noopener noreferrer"
                   title={quickLabel}
                   aria-label={quickLabel}
+                  $channel={key}
                   onClick={act(`phone-${key}`)}
                 >
                   <Icon />
@@ -346,6 +348,7 @@ export const ContactLinks = ({ entries, language, onContactAction }) => {
             rel={isExternalContact(entry.key) ? 'noopener noreferrer' : undefined}
             title={label}
             aria-label={label}
+            $channel={entry.key}
             onClick={act(entry.key)}
           >
             <Icon />
@@ -1569,6 +1572,7 @@ const ProfileRow = ({
 
       {contactEntries.length > 0 && (
         <S.RowContacts onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+          <S.RowContactsTitle>{uiText('Контакти', language)}</S.RowContactsTitle>
           <ContactLinks
             entries={contactEntries}
             language={language}

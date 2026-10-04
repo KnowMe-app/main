@@ -139,6 +139,12 @@
           ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now + 600000"
         },
         "agencyName": {},
+        "blood": {
+          ".validate": "!newData.exists() || (newData.parent().child('feedDate').isString() && ((newData.isString() && newData.val().length <= 20) || newData.hasChildren()))",
+          "$version": {
+            ".validate": "newData.isString() && newData.val().length <= 20"
+          }
+        },
         "seekingRole": {
           ".validate": "newData.val() == 'ed' || newData.val() == 'sm' || newData.val() == 'both'"
         },

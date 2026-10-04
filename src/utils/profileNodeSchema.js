@@ -148,7 +148,10 @@ export const MATCHING_CARD_PROGRAMS_FIELDS = Object.freeze(['programsAt']);
  * читає кожен рядок списку, а структура — уточнення, яке «Зовнішність»
  * дописує, коли приїхала повна анкета (розгорнутий рядок, відкрита картка).
  */
-export const MATCHING_CARD_MIRRORED_FIELDS = Object.freeze(['agencyName']);
+// `blood` — повна група крові, і лише в опублікованої картки
+// (`buildMatchingCardProjection`): без неї рядок стрічки казав «Rh+», і читач не
+// розумів, яка це група.
+export const MATCHING_CARD_MIRRORED_FIELDS = Object.freeze(['agencyName', 'blood']);
 
 /** Повний набір ключів, які має право лежати в картці стрічки. */
 export const MATCHING_CARD_ALLOWED_FIELDS = Object.freeze([
