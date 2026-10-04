@@ -58,7 +58,7 @@ import {
   fetchUsersByIds,
   isProfileBuiltFromCache,
   readProfileContacts,
-  fetchAdminRecentCardsPage,
+  fetchAdminLastLoginCardsPage,
   fetchMatchingCardsPage,
   fetchMatchingCardsByIds,
   clearMatchingCardsPageInFlight,
@@ -2732,10 +2732,9 @@ const Matching = () => {
       roleIndexSets,
       programRates,
       filterMainFn: filterMain,
-      // Адмін гортає за свіжістю картки (вхід, створення, публікація), а не за
-      // самим `feedDate`: нові анкети здебільшого ще не опубліковані, і в
-      // стрічці за `feedDate` адмін їх не бачив зовсім (`fetchAdminRecentCardsPage`).
-      fetchMatchingCardsPage: isAdmin ? fetchAdminRecentCardsPage : fetchMatchingCardsPage,
+      // Адмін гортає за останнім входом, а не за `feedDate`: нові акаунти
+      // здебільшого ще не опубліковані й у звичайній стрічці їх не видно.
+      fetchMatchingCardsPage: isAdmin ? fetchAdminLastLoginCardsPage : fetchMatchingCardsPage,
       hydrateUsersByIds: ids => fetchUsersByIds(ids),
       // Дека донорки — це самі контрагенти, і рахувати запас треба по них.
       // Інакше сторінка джерела виглядає повною з карток, які на екран не
@@ -3140,7 +3139,7 @@ const Matching = () => {
       let resumeCursor;
       // Стрічка адміна — це питання «хто щойно зʼявився», і відповідь на нього
       // не може лежати в кеші шість годин: голова її щоразу читається з бази
-      // (`fetchAdminRecentCardsPage`, один запит на сторінку).
+      // (`fetchAdminLastLoginCardsPage`, один запит на сторінку).
       if (cacheResume.usable && viewModeRef.current === startMode && !isAdmin) {
         writeMatchingDebugLog('matchingLocalCacheUsed', {
           cacheKey: feedListKey,

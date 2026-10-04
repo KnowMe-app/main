@@ -1380,9 +1380,9 @@ export const applyMatchingUiFiltersToUsers = ({
     .map(([, u]) => u)
     // Явно наданий доступ б'є `publish`: правила додаткового доступу для того й
     // існують, щоб показати картку, яку глядач інакше не побачив би. Те саме з
-    // адмінським джерелом (`__adminRecent`, `fetchAdminRecentCardsPage`): адмін
+    // адмінським джерелом (`__adminLastLogin`, `fetchAdminLastLoginCardsPage`): адмін
     // бачить і сховані картки (`canShowMatchingUser` з `isAdmin`).
-    .filter(u => u?.__matchingAccessAllowed === true || u?.__adminRecent === true || u?.publish !== false)
+    .filter(u => u?.__matchingAccessAllowed === true || u?.__adminLastLogin === true || u?.publish !== false)
     .filter(u => (
       !excludeReactionUsers ||
       !isCardFullyReacted(u, favoriteUsers, dislikeUsers) ||
