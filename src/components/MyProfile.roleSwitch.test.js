@@ -111,6 +111,15 @@ describe('кілька ролей у «Моєму профілі»', () => {
     expect(source).not.toContain("'Приховати'");
   });
 
+  it('переносить назву анкети та статус у вузькому рядку публікації', () => {
+    const source = read('MyProfile.jsx');
+    const metaStyles = source.slice(
+      source.indexOf('const RoleActionMeta = styled.div`'),
+      source.indexOf('const RolePublishStatus = styled.span`')
+    );
+    expect(metaStyles).toContain('flex-wrap:wrap;');
+  });
+
   it('очищення ролі — у меню «⋮» і через ту саму модалку, без window.confirm', () => {
     const source = read('MyProfile.jsx');
     expect(source).toContain('clearRoleItems={isProfileAccessConfirmed && rolesList.length > 1');

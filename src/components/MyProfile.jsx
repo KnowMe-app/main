@@ -250,6 +250,7 @@ const RoleActionRow = styled.div`
 // опублікована» переносились (чи обрізались трикрапкою).
 const RoleActionMeta = styled.div`
   display:flex;
+  flex-wrap:wrap;
   align-items:baseline;
   justify-content:space-between;
   gap:10px;

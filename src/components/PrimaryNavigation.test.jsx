@@ -10,7 +10,7 @@ jest.mock('../hooks/useAppSettings', () => ({
 
 it('marks only the card workspace active on its nested matching route', () => {
   render(<MemoryRouter initialEntries={['/matching/create-profile?cardId=test']}><PrimaryNavigation /></MemoryRouter>);
-  expect(screen.getByRole('link', { name: 'Мої картки' }).getAttribute('aria-current')).toBe('page');
+  expect(screen.getByRole('link', { name: 'Додати картку' }).getAttribute('aria-current')).toBe('page');
   expect(screen.queryByRole('link', { name: 'Пошук анкет', current: 'page' })).toBeNull();
   expect(screen.getByRole('link', { name: 'Мій профіль' }).getAttribute('href')).toBe('/my-profile');
 });
@@ -50,7 +50,7 @@ describe('рядок навігації зі слотом сторінки', () 
   it('над доповненням називає вкладку карток «Доповнення»', () => {
     renderWith({ workspaceLabel: 'overlay' });
     expect(screen.getByRole('link', { name: 'Доповнення' }).getAttribute('href')).toBe('/matching/create-profile');
-    expect(screen.queryByRole('link', { name: 'Мої картки' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Додати картку' })).toBeNull();
   });
 
   it('відкриває меню сторінки праворуч від «Мій профіль» і закриває його хрестиком', () => {
