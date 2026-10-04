@@ -98,10 +98,18 @@ describe('короткі факти', () => {
     expect(valueOf(rows, 'reproduction')).toBe('останні пологи 3 роки тому · донацій ще не було');
   });
 
-  it('каже кесарів поруч із пологами', () => {
-    expect(valueOf(buildProfileSummaryRows({ ownKids: '3', csection: '1' }, 'uk'), 'reproduction')).toBe('троє пологів · 1 кесарів');
-    expect(valueOf(buildProfileSummaryRows({ ownKids: '1', csection: 'не було' }, 'uk'), 'reproduction')).toBe('одні пологи · природні пологи');
-    expect(valueOf(buildProfileSummaryRows({ ownKids: '2', csection: '2' }, 'uk'), 'reproduction')).toBe('двоє пологів · 2 кесаревих');
+  it('каже, як минули пологи, тим самим реченням', () => {
+    const value = user => valueOf(buildProfileSummaryRows(user, 'uk'), 'reproduction');
+    expect(value({ ownKids: '2', lastDelivery: monthsAgo(13), csection: '2' }))
+      .toBe('двоє пологів, останні 13 міс тому, обидва кесаревим розтином');
+    expect(value({ ownKids: '2', csection: '0' })).toBe('двоє пологів, обидва природним шляхом');
+    expect(value({ ownKids: '2', csection: '1' })).toBe('двоє пологів, одні — кесаревим розтином, другі природним шляхом');
+    expect(value({ ownKids: '3', csection: '1' })).toBe('троє пологів, одні — кесаревим розтином, решта природним шляхом');
+    expect(value({ ownKids: '3', csection: '3' })).toBe('троє пологів, усі кесаревим розтином');
+    expect(value({ ownKids: '1', csection: 'не було' })).toBe('одні пологи, природним шляхом');
+    expect(value({ ownKids: '1', csection: '1' })).toBe('одні пологи, кесаревим розтином');
+    // Кількість пологів невідома — кесарів лишається окремою частиною.
+    expect(value({ csection: '2', experience: '1' })).toBe('2 кесаревих · 1 донація');
   });
 
   it('узгоджує числівник і відповідає словами на нуль', () => {

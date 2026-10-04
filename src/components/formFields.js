@@ -275,7 +275,7 @@ export const pickerFields = [
   { name: 'clothingSize', label: 'Розмір одягу', ukrainian: 'Розмір одягу', placeholder: '38-40', svg: 'no', width: '33%' },
   { name: 'shoeSize', label: 'Розмір взуття', ukrainian: 'Розмір взуття', placeholder: '38', svg: 'no', width: '33%' },
   { name: 'breastSize', label: 'Розмір грудей', ukrainian: 'Розмір грудей', placeholder: '75B', svg: 'no', width: '33%' },
-  { name: 'reward', label: 'Бажана винагорода ($)', ukrainian: 'Бажана винагорода ($)', placeholder: '500', svg: 'no' },
+  { name: 'reward', label: 'Бажана винагорода', ukrainian: 'Бажана винагорода', placeholder: 'від 1000 $, залежить від програми', svg: 'no' },
   { name: 'eyeColor', label: 'Колір очей', ukrainian: 'Колір очей', placeholder: 'голубі', svg: 'no', width: '33%', options: eyeColorOptions },
   { name: 'hairColor', label: 'Колір волосся', ukrainian: 'Колір волосся', placeholder: 'блонд', svg: 'no', width: '33%', options: hairColorOptions },
   { name: 'glasses', label: 'Окуляри', ukrainian: 'Окуляри', placeholder: '-2.5', svg: 'no', width: '33%', options: yesNoOptions },

@@ -26,8 +26,11 @@ export const inputUpdateValue = (value, field, data) => {
       ? formatDate(value, true)
       : // : field.name === 'experience'
       // ? createOpuData(value)
+      // Винагорода — опис, а не число: «від 1000 $, залежить від програми,
+      // компенсація дороги». `formatNumber(value, 9999)` тут лишав самі цифри
+      // й обрізав усе, що більше за 9999.
       field.name === 'reward'
-      ? formatNumber(value, 9999)
+      ? removeSpacesLeaveEnter(value)
       : field.name === 'ownKids'
       ? formatNumber(value, 10)
       : field.name === 'shoeSize'

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import styled from 'styled-components';
 import ProfileRow from './ProfileRow';
 import { MatchingThemeScope } from './Matching.styled';
@@ -90,6 +90,9 @@ export const MyProfileCardPreview = ({ previews = [], language, rates, displayCu
   const { themeMode } = useAppSettings();
   const [open, setOpen] = useState(() => !readCollapsed());
   const [activeRole, setActiveRole] = useState('');
+  // «Детальніше» в прев'ю розгортає ту саму анкету, що й у стрічці.
+  const [expanded, setExpanded] = useState(false);
+  const toggleExpanded = useCallback(() => setExpanded(previous => !previous), []);
   const programsContext = useMemo(() => ({
     viewerType: '',
     facts: null,
@@ -136,7 +139,15 @@ export const MyProfileCardPreview = ({ previews = [], language, rates, displayCu
             </Tabs>
           ) : null}
           <Frame $themeMode={themeMode}>
-            <ProfileRow key={active.role} user={active.card} programsContext={programsContext} preview canViewContacts={false} />
+            <ProfileRow
+              key={active.role}
+              user={active.card}
+              programsContext={programsContext}
+              preview
+              canViewContacts={false}
+              expanded={expanded}
+              onToggleExpand={toggleExpanded}
+            />
           </Frame>
         </>
       ) : null}
