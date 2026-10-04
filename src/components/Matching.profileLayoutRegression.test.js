@@ -22,7 +22,7 @@ describe('Matching redesigned profile regressions', () => {
     expect(links).toContain('phoneQuickLinks.map(({ key, Icon, label, build })');
     expect(links.match(/<S\.ContactIconRow>/g)).toHaveLength(1);
     expect(links).not.toContain('<span>{displayValue}</span>');
-    expect(links).toContain("uiText('Подзвонити', language)");
+    expect(links).not.toContain("<span>{uiText('Подзвонити', language)}</span>");
   });
 
   it('hides VK contacts from matching cards for every viewer, including admins', () => {

@@ -616,16 +616,6 @@ export const RowContacts = styled.div`
   border-top: 1px solid var(--matching-card-border);
 `;
 
-// Підпис над блоком: без нього ряд значків не казав, що це контакти.
-export const RowContactsTitle = styled.div`
-  margin-bottom: 7px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--matching-muted-text, var(--km-muted, #7A7A72));
-`;
-
 export const RowContactsNote = styled.div`
   min-height: 34px;
   display: flex;
@@ -680,13 +670,11 @@ export const ContactPhoneRow = styled.div`
  * тож рамки там не було взагалі, і рядок значків виглядав зсунутим праворуч
  * рівно на те, на скільки малюнок відступає від краю своєї (невидимої) рамки.
  */
-// 40 px, а не 28: блок контактів — головна дія картки, а рамкою 28 px з
-// сірим значком 13 px його не помічали й не влучали в нього пальцем.
 const contactIconBox = css`
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
-  border-radius: 12px;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 9px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -695,8 +683,8 @@ const contactIconBox = css`
   box-sizing: border-box;
 
   svg {
-    width: 19px;
-    height: 19px;
+    width: 13px;
+    height: 13px;
   }
 `;
 
@@ -723,7 +711,7 @@ export const ContactIconRow = styled.div`
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   ${({ $standalone }) => $standalone && css`
     padding: 2px 0 0;
   `}
@@ -744,18 +732,12 @@ export const ContactIconLink = styled.a`
   background: color-mix(in srgb, currentColor 9%, var(--matching-card-bg, var(--km-card, #FFFFFF)));
   text-decoration: none;
 
-  /* Дзвінок — головна дія блока: заповнена кнопка зі словом, а не ще один
-   * значок у ряду. */
+  /* Дзвінок лишається головною дією блока, але має той самий компактний
+   * розмір, що й решта контактів. */
   ${({ $primary }) => $primary && css`
-    width: auto;
-    flex: 0 0 auto;
-    gap: 7px;
-    padding: 0 16px;
     color: #FFFFFF;
     background: var(--matching-accent, var(--km-accent, #E8791A));
     border-color: var(--matching-accent, var(--km-accent, #E8791A));
-    font-size: 14px;
-    font-weight: 700;
   `}
 
   &:active {
