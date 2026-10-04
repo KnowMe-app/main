@@ -230,7 +230,7 @@ describe('стрічку звужує рейка, а видачу — рядок
     // Панель стану лишається змонтованою й із закритою рейкою: в ній живуть
     // самі фільтри, їхнє сховище й перебір групи ролі при зміні ролі.
     expect(source).toContain(
-      "allowedFilterNames={!canUseMatchingFilters\n                  ? ['payment']\n                  : (openFilterGroup ? [openFilterGroup] : MATCHING_FILTER_GROUP_NAMES)}"
+      'allowedFilterNames={openFilterGroup ? [openFilterGroup] : MATCHING_FILTER_GROUP_NAMES}'
     );
   });
 });

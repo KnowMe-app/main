@@ -1,7 +1,25 @@
 import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { SearchFilters } from './SearchFilters';
 import { REACTION_FILTER_DEFAULTS } from 'utils/reactionCategory';
-import { alignRoleFilterGroupWithViewer, viewerRoleSignature } from 'utils/matchingPeerVisibility';
+import {
+  alignRoleFilterGroupWithViewer,
+  resolvePersonalViewerRoleDefault,
+  viewerRoleSignature,
+} from 'utils/matchingPeerVisibility';
+
+/*
+ * Для якої ролі читача «Тип профілю» вже стояв за замовчуванням особистої
+ * ролі (самі агенції). Позначка потрібна, щоб умовчання спрацювало **раз** на
+ * роль: далі читачка вмикає батьків чи «Інших» сама, і наступне відкриття
+ * стрічки не має знову звужувати їй деку.
+ */
+export const MATCHING_ROLE_DEFAULT_MARKER_KEY = 'matchingRoleDefaultFor';
+const readRoleDefaultMarker = () => {
+  try { return localStorage.getItem(MATCHING_ROLE_DEFAULT_MARKER_KEY) || ''; } catch { return ''; }
+};
+const writeRoleDefaultMarker = value => {
+  try { localStorage.setItem(MATCHING_ROLE_DEFAULT_MARKER_KEY, value); } catch { /* приватне вікно */ }
+};
 
 const defaultsAdd = {
   csection: { cs2plus: true, cs1: true, cs0: true, no: true, other: true },
@@ -85,15 +103,6 @@ const defaultsMatching = {
     other: true,
   },
   country: { ua: true, other: true, unknown: true },
-  payment: {
-    ed_lt1500: true,
-    ed_1500: true,
-    ed_2000: true,
-    sm_lt22k: true,
-    sm_22k: true,
-    sm_26k: true,
-    none: true,
-  },
 };
 
 const normalizeFilterGroup = (value, defaults) => {
@@ -205,9 +214,19 @@ const FilterPanel = ({
   alignRoleFilterRef.current = viewerRole;
   useEffect(() => {
     if (mode !== 'matching') return;
+    const role = alignRoleFilterRef.current;
+    // Донорці й СМ стрічка вперше (і після зміни ролі) відкривається на самих
+    // агенціях — `resolvePersonalViewerRoleDefault`.
+    const applyPersonalDefault = Boolean(viewerRoleKey)
+      && readRoleDefaultMarker() !== viewerRoleKey
+      && Boolean(resolvePersonalViewerRoleDefault(null, role));
+    if (applyPersonalDefault) writeRoleDefaultMarker(viewerRoleKey);
     setFilters(current => {
       const roleFilters = current?.userRole;
-      const aligned = alignRoleFilterGroupWithViewer(roleFilters, alignRoleFilterRef.current);
+      const base = applyPersonalDefault
+        ? resolvePersonalViewerRoleDefault(roleFilters, role)
+        : roleFilters;
+      const aligned = alignRoleFilterGroupWithViewer(base, role);
       return aligned === roleFilters ? current : { ...current, userRole: aligned };
     });
   }, [mode, viewerRoleKey]);

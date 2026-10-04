@@ -103,3 +103,10 @@ describe('матчинг питає резус, а не групу крові', 
     expect(getDefaultFilters({ mode: 'default' }).bloodGroup).toBeTruthy();
   });
 });
+
+describe('рейка без «Виплати»', () => {
+  it('групи «Виплата» немає ні в переліку, ні в умовчаннях', () => {
+    expect(MATCHING_FILTER_GROUPS.some(group => group.filterName === 'payment')).toBe(false);
+    expect(getDefaultFilters({ mode: 'matching' }).payment).toBeUndefined();
+  });
+});

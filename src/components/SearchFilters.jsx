@@ -56,18 +56,9 @@ export const MATCHING_FILTER_GROUPS = [
         { val: 'other', label: 'Інші' },
       ],
     },
-    // Виплата з програм агенцій і клінік — за курсом НБУ в доларовому
-    // еквіваленті (`listPaymentBuckets`). Межі різні для донорок і СМ, і
-    // читачеві шухляда показує лише свої (`paymentOptionKeys`).
-    {
-      filterName: 'payment',
-      label: 'Виплата',
-      options: [
-        ...PAYMENT_FILTER_BUCKETS.ed.map(bucket => ({ val: bucket.key, label: bucket.label })),
-        ...PAYMENT_FILTER_BUCKETS.sm.map(bucket => ({ val: bucket.key, label: bucket.label })),
-        { val: PAYMENT_FILTER_NONE, label: 'Без програм' },
-      ],
-    },
+    // Групи «Виплата» тут більше немає: чіпи сум прибрано з рейки разом із
+    // сортуванням за виплатою. Межі (`PAYMENT_FILTER_BUCKETS`) лишились у
+    // `donorPrograms` — їх і далі рахує картка програми.
     {
       filterName: 'maritalStatus',
       label: 'Сімейний стан',
