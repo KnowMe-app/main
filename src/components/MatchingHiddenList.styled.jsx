@@ -616,6 +616,16 @@ export const RowContacts = styled.div`
   border-top: 1px solid var(--matching-card-border);
 `;
 
+// Підпис над блоком: без нього ряд значків не казав, що це контакти.
+export const RowContactsTitle = styled.div`
+  margin-bottom: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--matching-muted-text, var(--km-muted, #7A7A72));
+`;
+
 export const RowContactsNote = styled.div`
   min-height: 34px;
   display: flex;
@@ -670,11 +680,13 @@ export const ContactPhoneRow = styled.div`
  * тож рамки там не було взагалі, і рядок значків виглядав зсунутим праворуч
  * рівно на те, на скільки малюнок відступає від краю своєї (невидимої) рамки.
  */
+// 40 px, а не 28: блок контактів — головна дія картки, а рамкою 28 px з
+// сірим значком 13 px його не помічали й не влучали в нього пальцем.
 const contactIconBox = css`
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  border-radius: 9px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -683,8 +695,8 @@ const contactIconBox = css`
   box-sizing: border-box;
 
   svg {
-    width: 13px;
-    height: 13px;
+    width: 19px;
+    height: 19px;
   }
 `;
 
@@ -711,21 +723,39 @@ export const ContactIconRow = styled.div`
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   ${({ $standalone }) => $standalone && css`
     padding: 2px 0 0;
   `}
 `;
 
+// Кольори месенджерів — їхні власні: значок упізнають за кольором раніше,
+// ніж за формою, а сірі однакові рамки читались як декор, а не як кнопки.
+const CONTACT_CHANNEL_COLORS = {
+  telegram: '#229ED9',
+  viber: '#7360F2',
+  whatsapp: '#25D366',
+};
+
 export const ContactIconLink = styled.a`
   ${contactIconBox};
-  color: var(--matching-muted-text, var(--km-muted, #7A7A72));
+  color: ${({ $channel }) => CONTACT_CHANNEL_COLORS[$channel] || 'var(--matching-accent, var(--km-accent, #E8791A))'};
+  border-color: color-mix(in srgb, currentColor 40%, transparent);
+  background: color-mix(in srgb, currentColor 9%, var(--matching-card-bg, var(--km-card, #FFFFFF)));
   text-decoration: none;
 
-  /* Трубка — головна дія блока (дзвінок), тож вона в кольорі акценту. */
+  /* Дзвінок — головна дія блока: заповнена кнопка зі словом, а не ще один
+   * значок у ряду. */
   ${({ $primary }) => $primary && css`
-    color: var(--matching-accent, var(--km-accent, #E8791A));
-    border-color: color-mix(in srgb, var(--matching-accent, var(--km-accent, #E8791A)) 45%, transparent);
+    width: auto;
+    flex: 0 0 auto;
+    gap: 7px;
+    padding: 0 16px;
+    color: #FFFFFF;
+    background: var(--matching-accent, var(--km-accent, #E8791A));
+    border-color: var(--matching-accent, var(--km-accent, #E8791A));
+    font-size: 14px;
+    font-weight: 700;
   `}
 
   &:active {

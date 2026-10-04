@@ -119,7 +119,7 @@
       "$uid": {
         ".read": "auth != null && (!data.child('feedDate').isBoolean() || auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('accessLevel').isString() && root.child('users').child(auth.uid).child('accessLevel').val().contains('matching')) || (root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching')))",
         ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('accessLevel').val() == 'matching:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('users').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('users').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write'))",
-        ".validate": "!newData.exists() || root.child('profileDetails').child($uid).exists() || root.child('profileTechnical').child($uid).exists() || root.child('profileContacts').child($uid).exists() || root.child('profileWorkflow').child($uid).exists() || root.child('users').child($uid).exists()",
+        ".validate": "!newData.exists() || ((root.child('profileDetails').child($uid).exists() || root.child('profileTechnical').child($uid).exists() || root.child('profileContacts').child($uid).exists() || root.child('profileWorkflow').child($uid).exists() || root.child('users').child($uid).exists()) && (!newData.child('blood').exists() || newData.child('feedDate').isString()))",
         "name": {},
         "surnameShort": {
           ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 20) || newData.hasChildren()",
@@ -157,6 +157,12 @@
           ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now + 600000"
         },
         "agencyName": {},
+        "blood": {
+          ".validate": "!newData.exists() || (newData.parent().child('feedDate').isString() && ((newData.isString() && newData.val().length <= 20) || newData.hasChildren()))",
+          "$version": {
+            ".validate": "newData.isString() && newData.val().length <= 20"
+          }
+        },
         "seekingRole": {
           ".validate": "newData.val() == 'ed' || newData.val() == 'sm' || newData.val() == 'both'"
         },

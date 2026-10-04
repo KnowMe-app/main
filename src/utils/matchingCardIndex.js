@@ -79,7 +79,7 @@ export const MATCHING_SUMMARY_FLAG = '__matchingSummary';
 /**
  * Скаляри, які переносяться в проєкцію як є.
  *
- * Тут немає ані `surname`, ані `blood`, ані `lastLogin2`, ані `lastAction`,
+ * Тут немає ані `surname`, ані `lastLogin2`, ані `lastAction`,
  * ані `getInTouch`: у кожного з них тепер свій вузол, а стрічці потрібне не
  * саме значення, а похідна від нього.
  */
@@ -119,7 +119,7 @@ const CSECTION_ALIASES = ['cSection', 'csection', 'c_section', 'cesareanSection'
 export const MATCHING_CARD_PROGRAMS_AT_FIELD = 'programsAt';
 
 /** Поля картки, під які правила бази викочуються руками. */
-export const MATCHING_CARD_PROGRAM_FIELDS = Object.freeze([MATCHING_CARD_PROGRAMS_AT_FIELD, 'seekingRole', 'agencyName']);
+export const MATCHING_CARD_PROGRAM_FIELDS = Object.freeze([MATCHING_CARD_PROGRAMS_AT_FIELD, 'seekingRole', 'agencyName', 'blood']);
 
 const SEEKING_KEYS = new Set(PARENT_SEEKING_OPTIONS.map(option => option.key));
 
@@ -319,6 +319,15 @@ const resolveFeedDate = (data, { existingCard } = {}) => {
 };
 
 /**
+ * Значення `blood` для картки: повна група — лише в опублікованої (дата у
+ * `feedDate`), інакше ключа немає. Те саме питання ставить і разова дописка
+ * карткам, опублікованим раніше (`backfillMatchingCardBlood`).
+ */
+export const resolveCardBlood = (blood, feedDate) => (
+  typeof feedDate === 'string' && feedDate.trim() ? projectionValue(blood) : undefined
+);
+
+/**
  * Дата публікації для анкети, яку публікують просто зараз.
  *
  * `resolveFeedDate` бере дату з анкети — останній вхід чи створення — і без
@@ -412,6 +421,15 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   // `false` — теж значення, і воно мусить лягти в картку: без нього сховану
   // анкету не відрізнити від тієї, яку ще не публікували.
   if (feedDate || feedDate === false) projection[MATCHING_CARD_FEED_FIELD] = feedDate;
+
+  // Повна група крові — лише в опублікованої картки. Рядок стрічки показував
+  // сам резус («Rh+»), і читач не розумів, яка це група. Але картку бачить
+  // кожен авторизований, зокрема неопубліковану, яку знаходить пошук, а повне
+  // `blood` за межею приватності (`profileDetails` відкриває саме публікація).
+  // Тож у картці воно рівно доти, доки в ній стоїть дата: зняття з публікації
+  // перебудовує картку, і писач знімає ключ разом з датою.
+  const blood = resolveCardBlood(data.blood, feedDate);
+  if (blood !== undefined) projection.blood = blood;
 
   // Переноситься, а не рахується: `syncMatchingCardIndex` перезаписує картку
   // цілком (`set`) на кожне збереження анкети, а не лише зачеплені поля. Без
@@ -517,11 +535,11 @@ export const expandMatchingCard = (userId, card) => {
     ...rest
   } = card;
 
-  // `blood` збирається назад із резуса — і тільки з нього: номера групи картка
-  // не носить. Формат той самий, який читає `toRhCategory`; `toBloodGroupCategory`
-  // на такому значенні каже «групи тут немає», і фільтр за групою її не питає в
-  // картки, а бере з індексу `searchKey/blood`.
-  const blood = trimmed(rh);
+  // Повна група крові лежить лише в опублікованій картці; без неї `blood`
+  // збирається з резуса. Формат той самий, який читає `toRhCategory`;
+  // `toBloodGroupCategory` на голому резусі каже «групи тут немає», і фільтр за
+  // групою її не питає в картки, а бере з індексу `searchKey/blood`.
+  const blood = hasMeaningfulValue(rest.blood) ? rest.blood : trimmed(rh);
 
   return {
     ...rest,

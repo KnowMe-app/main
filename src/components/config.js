@@ -99,6 +99,7 @@ import {
   isCurrentMatchingCardSchema,
   isMatchingSummaryCard,
   listDroppedProjectionFields,
+  resolveCardBlood,
   resolveMatchingCardAvatarFromProfile,
   withPublicationDate,
 } from '../utils/matchingCardIndex';
@@ -5197,10 +5198,18 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
       // відлітала б **цілком** — разом з імʼям, фото й датою публікації, — і
       // стрічка показувала б агенцію старою. Тож без нових полів картка
       // пишеться ще раз, а про причину каже консоль.
+      //
+      // Знімаються лише ті нові поля, яких у картці ще немає. Поле, що вже лежить
+      // у картці, правила прийняли — і перелік тут накопичувальний: поки
+      // знімалось усе підряд, очікування правила під `blood` переписувало картку
+      // без `agencyName` і `seekingRole`, яких тоді ж записувала стара база.
+      const unprovenFields = MATCHING_CARD_PROGRAM_FIELDS.filter(field => (
+        field in projection && !(existing && Object.prototype.hasOwnProperty.call(existing, field))
+      ));
       const withoutPrograms = { ...projection };
-      MATCHING_CARD_PROGRAM_FIELDS.forEach(field => { delete withoutPrograms[field]; });
-      if (!isReactionPermissionDeniedError(error) || Object.keys(withoutPrograms).length === Object.keys(projection).length) throw error;
-      console.warn('[matchingCards] правила бази ще не приймають нових полів картки (програми, назва агенції, структура волосся) — картку записано без них. Викотіть правила: npx firebase deploy --only database', { userId: id });
+      unprovenFields.forEach(field => { delete withoutPrograms[field]; });
+      if (!isReactionPermissionDeniedError(error) || !unprovenFields.length) throw error;
+      console.warn('[matchingCards] правила бази ще не приймають нових полів картки — картку записано без них. Викотіть правила: npx firebase deploy --only database', { userId: id, fields: unprovenFields });
       const fallbackPatch = { ...withoutPrograms };
       Object.keys(existing || {}).forEach(field => {
         if (!(field in withoutPrograms) && !independentlyOwnedFields.has(field)) fallbackPatch[field] = null;
@@ -5343,6 +5352,61 @@ export const backfillAdminRecentIndex = async ({ onProgress } = {}) => {
       report.failed.push({ offset: -1, size: 0, ...describeBackfillError(error, ADMIN_RECENT_META_PATH) });
     }
   }
+  return report;
+};
+
+/**
+ * Разова дописка повної групи крові опублікованим карткам.
+ *
+ * `blood` у картці зʼявляється сам на кожному збереженні анкети
+ * (`buildMatchingCardProjection`), але картки, опубліковані раніше, лишились з
+ * самим резусом — і рядок стрічки казав їм «Rh+». Ця робота наздоганяє різницю
+ * один раз. Бере лише опубліковані: неопублікованій картці повної групи не
+ * належить (межа приватності), і правило бази таку відхиляє. Опублікованих
+ * сотні, а не десятки тисяч, тож анкета читається точково — `profileDetails/{id}/blood`.
+ *
+ * Пише поштучно: одна відмова (картка без вузлів анкети, `$uid.validate`) не
+ * валить решту. Повертає звіт; відмову в правах він називає окремо, бо до
+ * ручного викочування правил кожен запис упаде саме на ній.
+ */
+export const backfillMatchingCardBlood = async () => {
+  const report = { readError: null, published: 0, written: [], unchanged: 0, noBlood: 0, failed: [] };
+
+  let cards = {};
+  try {
+    const snapshot = await get(query(
+      ref2(database, MATCHING_CARDS_ROOT),
+      orderByChild(MATCHING_CARD_ORDER_FIELD),
+      startAt(''),
+    ));
+    cards = snapshot.exists() ? snapshot.val() || {} : {};
+  } catch (error) {
+    report.readError = describeBackfillError(error, MATCHING_CARDS_ROOT);
+    return report;
+  }
+
+  const published = Object.entries(cards).filter(([, card]) => typeof card?.[MATCHING_CARD_ORDER_FIELD] === 'string');
+  report.published = published.length;
+
+  await mapWithConcurrency(published, MATCHING_CARDS_AVATAR_CONCURRENCY, async ([id, card]) => {
+    try {
+      const snapshot = await get(ref2(database, `${PROFILE_NODES.profileDetails}/${id}/blood`));
+      const blood = resolveCardBlood(snapshot.exists() ? snapshot.val() : undefined, card[MATCHING_CARD_ORDER_FIELD]);
+      if (blood === undefined) {
+        report.noBlood += 1;
+        return;
+      }
+      if (JSON.stringify(card.blood ?? null) === JSON.stringify(blood)) {
+        report.unchanged += 1;
+        return;
+      }
+      await set(ref2(database, `${MATCHING_CARDS_ROOT}/${id}/blood`), blood);
+      report.written.push(id);
+    } catch (error) {
+      report.failed.push({ id, ...describeBackfillError(error) });
+    }
+  });
+
   return report;
 };
 

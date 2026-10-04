@@ -282,10 +282,12 @@ describe('Matching Cards', () => {
 
     expect(cardFields(state, 'P1')).toEqual({
       surnameShort: 'К.',
-      // Номера групи в картці немає: разом із резусом він відновив би повне
-      // `blood`, а воно лишається у `profileDetails`.
+      // Окремого номера групи в картці немає; повне `blood` вона несе, бо
+      // опублікована, а сире значення й далі лишається для `profileDetails`.
       rh: '+',
       avatar: 'https://p1',
+      // Картка опублікована — і несе повну групу крові.
+      blood: '2+',
       role: 'sm',
       feedDate: '2026-08-25',
     });
@@ -423,6 +425,24 @@ describe('Matching Cards', () => {
     MATCHING_CARD_FORBIDDEN_FIELDS.forEach(field => {
       expect(card(state, 'P1')).not.toHaveProperty(field);
     });
+  });
+});
+
+describe('повна група крові в картці з міграції', () => {
+  // Та сама межа, що й у писача: повне `blood` — лише в опублікованої картки.
+  // Інакше картки, перенесені після разової дописки, показували б «Rh+».
+  it('дзеркалить blood опублікованій картці', () => {
+    const state = stateWith({ P1: { name: 'Ірина', blood: '2+', publish: true, lastLogin2: '2026-08-25' } }, {});
+    runMigrationGroup(state, 'matchingCards');
+    expect(card(state, 'P1').blood).toBe('2+');
+    expect(card(state, 'P1').rh).toBe('+');
+  });
+
+  it('неопублікованій лишає сам резус', () => {
+    const state = stateWith({ P1: { name: 'Ірина', blood: '2+', publish: false } }, {});
+    runMigrationGroup(state, 'matchingCards');
+    expect(card(state, 'P1').blood).toBeUndefined();
+    expect(card(state, 'P1').rh).toBe('+');
   });
 });
 

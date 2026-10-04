@@ -668,7 +668,6 @@ await it('поле з кількох значень картка приймає'
 await it('сирі поля, що переїхали в інші вузли, картка вже не приймає', async () => {
   for (const [field, value] of [
     ['surname', 'Коваленко'],
-    ['blood', '2+'],
     ['getInTouch', '2026-09-01'],
     ['lastAction', 'дзвінок'],
     ['lastLogin2', '2026-08-25'],
@@ -689,6 +688,24 @@ await it('сирі поля, що переїхали в інші вузли, к�
 // Номер групи разом із резусом відновлює повне `blood`, а воно за межею
 // приватності — у `profileDetails`. Тож із картки він прибраний зовсім, і
 // правила мусять його відхиляти, а не валідувати.
+// Повна група крові — у картці лише опублікованої анкети: картку бачить кожен
+// авторизований, а `blood` за межею, яку відкриває саме публікація.
+await it('повну групу крові картка приймає лише з датою публікації', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/blood`), '2+'));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/blood`), ['1+', '2+']));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${HIDDEN_CARD}/blood`), '3+'));
+  // Інваріант стоїть на картці, а не на самому `blood`: правило дитини не
+  // бачить запису, який міняє лише сусіда, і зняття самої дати лишало б повну
+  // групу на неопублікованій картці.
+  await assertFails(remove(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`)));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/feedDate`), false));
+  // Зняття з публікації знімає й кров — одним записом.
+  await assertSucceeds(update(ref(db(SUPERADMIN), `matchingCards/${CARD}`), { feedDate: false, blood: null }));
+  await assertFails(update(ref(db(SUPERADMIN), `matchingCards/${CARD}`), { blood: '2+' }));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/feedDate`), '2026-08-25'));
+});
+
 await it('номер групи крові картка вже не приймає', async () => {
   await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/bloodGroup`), '2'));
   await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/rh`), '+'));

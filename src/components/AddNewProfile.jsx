@@ -40,6 +40,7 @@ import {
   createMatchingCardsIndex,
   backfillProfileDraftOwners,
   backfillMatchingCardPublicReviewFlags,
+  backfillMatchingCardBlood,
   backfillAdminRecentIndex,
   createSelectedSearchKeyIndexes,
   buildSearchIdIndexPayloadFromCollections,
@@ -100,6 +101,7 @@ import { readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 // хто ці стрілки показує, — див. `utils/backendLinksMode`.
 import { PROFILE_FORM_EXTENDED_MODE_KEY, readBackendLinksEnabled } from 'utils/backendLinksMode';
 import { describePublicReviewFlagBackfill } from 'utils/publicReviewFlagBackfillReport';
+import { describeMatchingCardBloodBackfill } from 'utils/matchingCardBloodBackfillReport';
 import { normalizePhoneState } from './inputValidations';
 import { openComparedCard as openComparedCardNavigation, restoreComparedCard } from './comparedCardNavigation';
 import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
@@ -623,6 +625,14 @@ const INDEX_JOB_GROUPS = [
         key: 'matchingCardPublicComments',
         label: 'Публічні коментарі',
         hint: '→ matchingCards/{id}/hasPublicReview',
+      },
+      {
+        // Разова робота: повну групу крові картка отримує сама на збереженні
+        // анкети, а опубліковані раніше лишились із самим резусом («Rh+»).
+        // Пише лише опублікованим — неопублікованій вона не належить.
+        key: 'matchingCardBlood',
+        label: 'Група крові в картках',
+        hint: '→ matchingCards/{id}/blood',
       },
       {
         // Разова робота: дату свіжості писач кладе сам на кожному збереженні й
@@ -1364,6 +1374,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     searchKeySetReindex: false,
     searchLocalIdAndKey: false,
     searchLocalImtHeightWeight: false,
+    matchingCardBlood: false,
     adminRecentIndex: false,
   };
   const defaultSelectedSearchKeyIndexes = SEARCH_KEY_INDEX_OPTIONS.reduce((acc, option) => {
@@ -6700,6 +6711,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       !selectedIndexJobs.stimulationShortcuts &&
       !selectedIndexJobs.profileMutationOwners &&
       !selectedIndexJobs.matchingCardPublicComments &&
+      !selectedIndexJobs.matchingCardBlood &&
       !selectedIndexJobs.adminRecentIndex &&
       !selectedIndexJobs.searchKeyUsersAll &&
       !selectedIndexJobs.searchKeySetReindex &&
@@ -6761,6 +6773,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         const { tone, message } = describePublicReviewFlagBackfill(report);
         if (tone === 'error') {
           console.error('[AddNewProfile] hasPublicReview backfill failures', report);
+          toast.error(message, { id: toastId, duration: 20000 });
+        } else {
+          toast.success(message, { id: toastId, duration: 10000 });
+        }
+      }
+
+      if (selectedIndexJobs.matchingCardBlood) {
+        const toastId = 'index-matching-card-blood-progress';
+        toast.loading('Дописуємо групу крові в опубліковані картки...', { id: toastId });
+        const report = await backfillMatchingCardBlood();
+        const { tone, message } = describeMatchingCardBloodBackfill(report);
+        if (tone === 'error') {
+          console.error('[AddNewProfile] blood backfill failures', report);
           toast.error(message, { id: toastId, duration: 20000 });
         } else {
           toast.success(message, { id: toastId, duration: 10000 });

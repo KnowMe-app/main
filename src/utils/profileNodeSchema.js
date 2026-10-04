@@ -52,10 +52,10 @@ export const MATCHING_CARD_DERIVED_FIELDS = Object.freeze({
   // `hiddenRoles` — ролі, чию анкету людина сховала: картка їх не несе.
   role: ['userRole', 'role', 'hiddenRoles'],
   surnameShort: ['surname'],
-  // Резус — і все. Номер групи з картки прибрано навмисно: разом із резусом
-  // він відновлює повне `blood`, тобто картка віддавала б поза стрічкою те
-  // саме, що лежить у `profileDetails` за межею приватності. Стрічка фільтрує
-  // за групою через індекс `searchKey/blood`, а не за карткою.
+  // Резус є в кожній картці. Повне `blood` картка несе лише опублікованою
+  // (`MATCHING_CARD_MIRRORED_FIELDS`): поза стрічкою воно за межею
+  // приватності, у `profileDetails`. Стрічка фільтрує за групою через індекс
+  // `searchKey/blood`, а не за карткою.
   rh: ['blood'],
   avatar: ['avatar', 'photos'],
   feedDate: ['publish', 'lastLogin2', 'lastLogin'],
@@ -148,7 +148,10 @@ export const MATCHING_CARD_PROGRAMS_FIELDS = Object.freeze(['programsAt']);
  * читає кожен рядок списку, а структура — уточнення, яке «Зовнішність»
  * дописує, коли приїхала повна анкета (розгорнутий рядок, відкрита картка).
  */
-export const MATCHING_CARD_MIRRORED_FIELDS = Object.freeze(['agencyName']);
+// `blood` — повна група крові, і лише в опублікованої картки
+// (`buildMatchingCardProjection`): без неї рядок стрічки казав «Rh+», і читач не
+// розумів, яка це група.
+export const MATCHING_CARD_MIRRORED_FIELDS = Object.freeze(['agencyName', 'blood']);
 
 /** Повний набір ключів, які має право лежати в картці стрічки. */
 export const MATCHING_CARD_ALLOWED_FIELDS = Object.freeze([
@@ -558,8 +561,8 @@ export const MATCHING_CARD_SOURCE_FIELDS = Object.freeze([...new Set(
  */
 export const MATCHING_CARD_FORBIDDEN_FIELDS = Object.freeze([
   'surname',
-  'blood',
-  // Номер групи крові: разом із резусом він складається назад у повне `blood`.
+  // `blood` тут більше немає: опублікована картка несе повну групу
+  // (`MATCHING_CARD_MIRRORED_FIELDS`). Окремий номер групи — так само ні.
   'bloodGroup',
   'phone',
   'email',
