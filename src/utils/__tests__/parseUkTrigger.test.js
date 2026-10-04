@@ -76,4 +76,19 @@ describe('parseUkTriggerQuery', () => {
       searchPair: { telegram: 'УК АГЕНТ Надія @nadia_agent' },
     });
   });
+
+  // Дата — частина цього самого контакту, а не прізвище: картка заводилась з
+  // `surname: '30.10.2025'`.
+  it('не робить дату прізвищем', () => {
+    const result = parseUkTriggerQuery('УК СМ Невідомо 30.10.2025');
+    expect(result.name).toBe('Невідомо');
+    expect(result.surname).toBeUndefined();
+    // Шукається й заводиться контакт одним рядком — разом із датою.
+    expect(result.searchPair.telegram).toBe('УК СМ Невідомо 30.10.2025');
+
+    const withSurname = parseUkTriggerQuery('УК СМ Анна Коваль 2025-10-30');
+    expect(withSurname.name).toBe('Анна');
+    expect(withSurname.surname).toBe('Коваль');
+  });
 });
+
