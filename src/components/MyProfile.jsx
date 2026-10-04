@@ -228,112 +228,100 @@ const SubmitWrap = styled.div`
   box-shadow: var(--shadow);
 `;
 /*
- * Блок «Публікація» — заголовок із підсумком і список анкет.
+ * Блок «Публікація».
  *
- * Тут стояли жирна назва ролі, червоне «● Не опублікована» праворуч і
- * червоне «Очистити» поруч із головною кнопкою, а при двох ролях — ще й
- * рамка навколо кожного рядка всередині картки. Неопублікована анкета — не
- * помилка, і червоним вона кричала про те, що людина ще просто не дійшла до
- * кінця форми. Тепер статус — спокійна плашка (зелена лише «У стрічці»),
- * рядки ділить волосяна риска, а не коробка в коробці, і одна анкета
- * виглядає так само, як кожна з кількох.
+ * Одна анкета — це опис і одна кнопка на всю ширину, без назви ролі й без
+ * статусу: що саме публікується, видно з самої форми над блоком, а стан
+ * каже опис і слово на кнопці («Опублікувати» / «Приховати»).
+ *
+ * Кілька анкет — по рядку на кожну: ліворуч «Анкета донора», праворуч спаяна
+ * пара кнопок, як серце з хрестиком у ряду рішень (`RowReactionPair`):
+ * головна дія й кошик «Очистити» в одній рамці з рискою між ними. Окремим
+ * червоним словом поруч «Очистити» читалось як друга головна дія, а окремим
+ * значком — губилось.
  */
 const PublishHead = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 6px;
+  gap: 6px;
 
-  > b { font-size: 16px; font-weight: 700; color: var(--text); }
-  > span { font-size: 13px; line-height: 1.4; color: var(--muted); }
+  > b { font-size: 17px; font-weight: 700; color: var(--text); }
+  > span { font-size: 13px; line-height: 1.45; color: var(--muted); }
 `;
-const RoleActionList = styled.div`display:flex;flex-direction:column;`;
+const PublishSingleAction = styled.div`margin-top:16px;`;
+const RoleActionList = styled.div`
+  display:flex;
+  flex-direction:column;
+  margin-top:10px;
+`;
 const RoleActionRow = styled.div`
   display:flex;
-  flex-wrap:wrap;
   align-items:center;
   justify-content:space-between;
-  gap:10px 12px;
-  padding:14px 0;
+  gap:12px;
+  padding:12px 0;
 
   & + & { border-top:1px solid var(--border); }
-  &:last-child { padding-bottom:2px; }
+  &:last-child { padding-bottom:0; }
 `;
-// Назва ролі й статус — стовпчиком ліворуч, дія — праворуч. На вузькому
-// телефоні кнопки переносяться під них цілим рядком, а не тиснуть назву:
-// «Сурогатна / мати» колись ламалась саме так.
 const RoleActionMeta = styled.div`
   display:flex;
   flex-direction:column;
-  align-items:flex-start;
-  gap:6px;
+  gap:3px;
   min-width:0;
 
-  b { font-size:15px; font-weight:600; color:var(--text); }
+  b { font-size:15px; font-weight:600; color:var(--text); line-height:1.3; }
 `;
+// Під назвою — лише «у стрічці», коли анкету видно: неопублікована анкета
+// окремого напису не потребує, про неї вже каже кнопка «Опублікувати».
 const RolePublishStatus = styled.span`
   display:inline-flex;
   align-items:center;
   gap:6px;
-  padding:3px 10px 3px 8px;
-  border-radius:999px;
   font-size:12px;
   font-weight:600;
-  white-space:nowrap;
-  color:${({ $published }) => ($published ? '#2E9B55' : 'var(--muted)')};
-  background:${({ $published }) => ($published ? 'rgba(46,155,85,0.12)' : 'var(--bg)')};
+  color:#2E9B55;
 
-  &::before {
-    content:'';
-    width:7px;
-    height:7px;
-    border-radius:50%;
-    background:currentColor;
-    opacity:${({ $published }) => ($published ? 1 : 0.55)};
+  &::before { content:''; width:7px; height:7px; border-radius:50%; background:currentColor; }
+`;
+// Спаяна пара: головна дія + кошик. Опублікувати — заповнена помаранчевим,
+// приховати — рамкою: та сама градація, що й між головною й другорядною
+// кнопками на решті екрана.
+const RoleActionPair = styled.div`
+  display:flex;
+  flex:none;
+  align-items:stretch;
+  height:40px;
+  border-radius:12px;
+  overflow:hidden;
+  ${({ $primary }) => ($primary
+    ? 'background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);box-shadow:0 2px 8px rgba(232,121,26,0.22);'
+    : 'background:var(--card);border:1.5px solid var(--border);')}
+
+  > button {
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border:0;
+    background:transparent;
+    color:${({ $primary }) => ($primary ? '#fff' : 'var(--text)')};
+    font-size:14px;
+    font-weight:${({ $primary }) => ($primary ? 700 : 600)};
+    white-space:nowrap;
+    cursor:pointer;
+  }
+
+  > button + button {
+    border-left:1px solid ${({ $primary }) => ($primary ? 'rgba(255,255,255,0.4)' : 'var(--border)')};
   }
 `;
-const RoleActionButtons = styled.div`display:flex;align-items:center;gap:6px;margin-left:auto;`;
-const RolePublishBtn = styled.button`
-  min-height:38px;
-  padding:0 18px;
-  background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);
-  color:#fff;
-  border:none;
-  border-radius:999px;
-  font-size:14px;
-  font-weight:700;
-  white-space:nowrap;
-  cursor:pointer;
-  box-shadow:0 2px 8px rgba(232,121,26,0.25);
-`;
-const RoleUnpublishBtn = styled.button`
-  min-height:38px;
-  padding:0 16px;
-  background:var(--card);
-  color:var(--text);
-  border:1.5px solid var(--border);
-  border-radius:999px;
-  font-size:14px;
-  font-weight:600;
-  white-space:nowrap;
-  cursor:pointer;
-`;
-// Незворотне — тихим значком, а не червоним словом поруч із головною
-// кнопкою: питає підтвердження модалкою, і червоним стає лише під пальцем.
-const RoleClearBtn = styled.button`
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  width:38px;
-  height:38px;
+const RolePairMainBtn = styled.button`padding:0 16px;`;
+const RolePairClearBtn = styled.button`
+  width:42px;
   padding:0;
-  background:none;
-  border:none;
-  border-radius:50%;
-  color:var(--muted);
-  cursor:pointer;
 
-  &:hover, &:focus-visible { color:#D44; background:rgba(221,68,68,0.08); }
+  && { color:${({ $primary }) => ($primary ? 'rgba(255,255,255,0.9)' : 'var(--muted)')}; }
+  &&:hover, &&:focus-visible { color:${({ $primary }) => ($primary ? '#fff' : '#D44')}; }
 `;
 // Зняти з публікації — дія того самого розміру, але не головна: помаранчевий
 // градієнт лишається за «Опублікувати», а не за протилежним.
@@ -615,6 +603,15 @@ const SURROGATE_HIDDEN_FIELDS = new Set([
   // пологів» (`healthComplications`), а решту перевіряє клініка обстеженням.
   'allergy', 'chronicDiseases', 'surgeries',
 ]);
+// Назва анкети в рядку «Публікації» — «Анкета донора», а не голе «Донор
+// ооцитів»: публікується анкета, а не роль.
+const MY_PROFILE_ANKETA_LABELS = {
+  ed: 'Анкета донора',
+  sm: 'Анкета сурогатної мами',
+  ag: 'Анкета агенції',
+  cl: 'Анкета клініки',
+  ip: 'Анкета батьків',
+};
 const KNOWN_ROLES = new Set(PROFILE_ROLE_OPTIONS.map(option => option.value));
 
 // Поля «Мого профілю», яких немає в спільному `pickerFields`: той перелік
@@ -2339,70 +2336,78 @@ export const MyProfile = () => {
       />
     )}
 
-    {/* Публікація — одне місце на все, що вирішує, чи видно анкету. Коли
-        ролей кілька, кожна анкета (донорка, СМ, агенція) має власний рядок зі
-        статусом і власними кнопками «Опублікувати» / «Зняти» / «Очистити»:
-        перемикачі «сховано / буде видно» поруч зі спільною кнопкою нічого не
-        означали, поки анкету не опубліковано, і людина не бачила, яку саме
-        анкету вона публікує. «Очистити» питає підтвердження тією самою
-        модалкою (`clearRoleTarget`), що й пункт меню «⋮». */}
+    {/* Публікація — одне місце на все, що вирішує, чи видно анкету
+        (вигляд — у коментарі до `PublishHead`). «Очистити» питає
+        підтвердження тією самою модалкою (`clearRoleTarget`), що й пункт
+        меню «⋮». */}
     <SubmitWrap ref={node => { sectionRefs.current.publish = node; }} data-testid="publish-card">
       <PublishHead>
         <b>{uiText('Публікація', language)}</b>
         <span>
           {uiText(publishedRoleCount > 0
-            ? 'Анкету бачать у стрічці. Зняти з публікації можна будь-коли'
+            ? 'Анкету бачать у стрічці. Приховати її можна будь-коли'
             : 'Анкету поки не видно в стрічці. Опублікуйте, коли будете готові', language)}
         </span>
       </PublishHead>
-      {/* Статус — у кожної анкети свій, тож спільної плашки «Не опублікована»
-          й пояснення під нею тут більше немає: вони повторювали те, що вже
-          сказано в рядку анкети. Рамка навколо рядка — лише коли анкет
-          кілька: одна анкета в рамці всередині картки читалась коробкою в
-          коробці. */}
-      {rolesList.length > 0 ? (
+      {rolesList.length > 1 ? (
         <RoleActionList>
           {rolesList.map(role => {
-            const label = MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role;
+            const label = MY_PROFILE_ANKETA_LABELS[role]
+              || MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label
+              || role;
             const rolePublished = isPublished && !hiddenRoles.includes(role);
+            const clearLabel = uiText('Очистити дані: {role}', language, { role: uiText(label, language) });
             return (
               <RoleActionRow key={role} data-testid={`publish-role-${role}`}>
                 <RoleActionMeta>
                   <b>{uiText(label, language)}</b>
-                  <RolePublishStatus $published={rolePublished}>
-                    {uiText(rolePublished ? 'У стрічці' : 'Не опублікована', language)}
-                  </RolePublishStatus>
-                </RoleActionMeta>
-                <RoleActionButtons>
                   {rolePublished ? (
-                    <RoleUnpublishBtn type="button" onClick={() => unpublishRole(role)}>
-                      {uiText('Зняти', language)}
-                    </RoleUnpublishBtn>
+                    <RolePublishStatus>{uiText('У стрічці', language)}</RolePublishStatus>
+                  ) : null}
+                </RoleActionMeta>
+                <RoleActionPair $primary={!rolePublished}>
+                  {rolePublished ? (
+                    <RolePairMainBtn type="button" onClick={() => unpublishRole(role)}>
+                      {uiText('Приховати', language)}
+                    </RolePairMainBtn>
                   ) : (
-                    <RolePublishBtn type="button" onClick={() => publishRole(role)}>
+                    <RolePairMainBtn type="button" onClick={() => publishRole(role)}>
                       {uiText('Опублікувати', language)}
-                    </RolePublishBtn>
+                    </RolePairMainBtn>
                   )}
-                  {isProfileAccessConfirmed && rolesList.length > 1 ? (
-                    <RoleClearBtn
+                  {isProfileAccessConfirmed ? (
+                    <RolePairClearBtn
                       type="button"
-                      aria-label={uiText('Очистити дані: {role}', language, { role: uiText(label, language) })}
-                      title={uiText('Очистити дані: {role}', language, { role: uiText(label, language) })}
+                      $primary={!rolePublished}
+                      aria-label={clearLabel}
+                      title={clearLabel}
                       onClick={() => { setClearRoleTarget(role); setShowInfoModal('delConfirm'); }}
                     >
                       <FiTrash2 size={17} aria-hidden="true" />
-                    </RoleClearBtn>
+                    </RolePairClearBtn>
                   ) : null}
-                </RoleActionButtons>
+                </RoleActionPair>
               </RoleActionRow>
             );
           })}
         </RoleActionList>
-      ) : isPublished ? (
-        // Анкета без ролі — рядка анкети немає, лишається одна дія.
-        <UnpublishBtn type="button" onClick={hideProfile}>{uiText('Зняти з публікації', language)}</UnpublishBtn>
       ) : (
-        <SubmitBtn type="button" onClick={publishProfile}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
+        // Одна анкета — опис і одна кнопка. З роллю дія та сама, що й у
+        // рядку ролі (`publishRole`/`unpublishRole`); анкета без ролі —
+        // `publishProfile`/`hideProfile`.
+        <PublishSingleAction data-testid={rolesList[0] ? `publish-role-${rolesList[0]}` : undefined}>
+          {rolesList[0] ? (
+            publishedRoleCount > 0 ? (
+              <UnpublishBtn type="button" onClick={() => unpublishRole(rolesList[0])}>{uiText('Приховати анкету', language)}</UnpublishBtn>
+            ) : (
+              <SubmitBtn type="button" onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
+            )
+          ) : isPublished ? (
+            <UnpublishBtn type="button" onClick={hideProfile}>{uiText('Зняти з публікації', language)}</UnpublishBtn>
+          ) : (
+            <SubmitBtn type="button" onClick={publishProfile}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
+          )}
+        </PublishSingleAction>
       )}
     </SubmitWrap>
   </Page>;

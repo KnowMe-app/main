@@ -108,7 +108,18 @@ describe('кілька ролей у «Моєму профілі»', () => {
     // Очищення питає підтвердження модалкою, а не стирає з кнопки.
     expect(card).not.toContain('clearRoleFields');
     expect(source).not.toContain('RoleVisibilityList');
-    expect(source).not.toContain("'Приховати'");
+    // Опубліковану анкету ховає кнопка «Приховати» в тій самій спаяній парі,
+    // що й кошик «Очистити».
+    expect(card).toContain("{uiText('Приховати', language)}");
+    expect(card).toContain('<RoleActionPair $primary={!rolePublished}>');
+  });
+
+  it('одна анкета — опис і одна кнопка, без назви ролі й кошика', () => {
+    const source = read('MyProfile.jsx');
+    const card = source.slice(source.indexOf('data-testid="publish-card"'), source.indexOf('</SubmitWrap>'));
+    expect(card).toContain('{rolesList.length > 1 ? (');
+    expect(card).toContain("onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати анкету', language)}");
+    expect(card).toContain("onClick={() => unpublishRole(rolesList[0])}>{uiText('Приховати анкету', language)}");
   });
 
   it('очищення ролі — у меню «⋮» і через ту саму модалку, без window.confirm', () => {
