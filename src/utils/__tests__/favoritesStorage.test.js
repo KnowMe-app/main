@@ -1,3 +1,4 @@
+import { readCachedQueries, resetCardsCache, seedCachedCards } from '../../testUtils/cardsCache';
 import {
   getFavorites,
   setFavorite,
@@ -8,14 +9,14 @@ import { setIdsForQuery } from '../cardIndex';
 
 describe('favoritesStorage', () => {
   beforeEach(() => {
-    localStorage.clear();
+    resetCardsCache();
   });
 
   it('stores favorite ids only in queries', () => {
     setFavorite('1', true);
     setFavorite('2', true);
     setFavorite('1', false);
-    const queries = JSON.parse(localStorage.getItem('queries'));
+    const queries = readCachedQueries();
     expect(queries['favorite'].ids).toEqual(['2']);
   });
 
@@ -29,7 +30,7 @@ describe('favoritesStorage', () => {
     const { cards, fromCache } = await getFavoriteCards();
     expect(cards[0].title).toBe('Fav Card');
     expect(fromCache).toBe(true);
-    const queries = JSON.parse(localStorage.getItem('queries'));
+    const queries = readCachedQueries();
     expect(queries['favorite'].ids).toEqual(['1']);
   });
 
@@ -37,7 +38,7 @@ describe('favoritesStorage', () => {
     const SIX_HOURS = 6 * 60 * 60 * 1000;
     const expired = Date.now() - SIX_HOURS - 1000;
     const oldCard = { userId: '1', title: 'Old Fav', lastAction: expired };
-    localStorage.setItem('cards', JSON.stringify({ '1': oldCard }));
+    seedCachedCards({ '1': oldCard });
     setIdsForQuery('favorite', ['1']);
 
     const remoteFetch = jest.fn();

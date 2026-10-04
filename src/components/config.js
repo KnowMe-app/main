@@ -4553,8 +4553,7 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) 
 };
 
 /**
- * Кого дзеркалити в legacy: акаунти впізнаються за форматом id, а для старих
- * коротких карток перевіряємо, чи legacy-тіло вже існує.
+ * Кого дзеркалити в legacy: питання вирішує формат id, а не читання.
  *
  * `/users` — вузол акаунтів: там лежать анкети тих, хто завів акаунт сам.
  * Картка, яку завела адміністраторка, акаунта не має — дзеркалити її нема для
@@ -4563,15 +4562,13 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) 
  * `getCardLegacyCollection` після цього назавжди вважає таку картку
  * legacy-анкетою і жене в `/users` кожне наступне збереження.
  *
- * Довгий id — Firebase-Auth UID, тому його дзеркало гарантоване. Нового тіла
- * для короткої картки не створюємо, але вже наявне мусимо підтримувати: його
- * досі можуть читати мобільний застосунок і старі профільні потоки.
+ * Довгий id — Firebase-Auth UID, тому його дзеркало гарантоване. Перевірка
+ * «а раптом тіло вже лежить» для короткої картки тут була (`get` на
+ * `users/{id}`) і повернулась злиттям — але веб з `/users` не читає взагалі:
+ * це коштувало круга до бази на кожне збереження картки, а для читача без
+ * адмінських прав закінчувалось відмовою правил, тобто тим самим `false`.
  */
-const hasLegacyUsersBody = async userId => {
-  if (isLongFormatUserId(userId)) return true;
-  const snapshot = await get(ref2(database, `users/${userId}`));
-  return snapshot.exists();
-};
+const hasLegacyUsersBody = userId => isLongFormatUserId(userId);
 
 /**
  * Дзеркалення анкети в legacy-колекцію.
@@ -4590,7 +4587,7 @@ const hasLegacyUsersBody = async userId => {
  */
 const mirrorProfileToLegacyUsers = async (userId, payload, condition) => {
   try {
-    if (!(await hasLegacyUsersBody(userId))) return false;
+    if (!hasLegacyUsersBody(userId)) return false;
     const legacyRef = ref2(database, `users/${userId}`);
     // Дати переписуються у формат мобільного застосунку рівно тут — на єдиному
     // вході в legacy. Вузли й картка стрічки лишаються в ISO.

@@ -1,8 +1,9 @@
+import { readCachedQueries, resetCardsCache } from '../../testUtils/cardsCache';
 import { cacheDplUsers, getDplCards } from '../dplStorage';
 
 describe('dplStorage', () => {
   beforeEach(() => {
-    localStorage.clear();
+    resetCardsCache();
   });
 
   it('stores ids in queries and retrieves cards', async () => {
@@ -10,7 +11,7 @@ describe('dplStorage', () => {
     const { cards, fromCache } = await getDplCards();
     expect(cards[0].title).toBe('Card 1');
     expect(fromCache).toBe(true);
-    const queries = JSON.parse(localStorage.getItem('queries'));
+    const queries = readCachedQueries();
     expect(queries['dpl'].ids).toEqual(['1']);
   });
 });

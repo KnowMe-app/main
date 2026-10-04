@@ -102,7 +102,9 @@ describe('пошук у matching для читача без повного до�
   it('чернетки стоять у деці за датою, а не в хвості пагінації', () => {
     const source = matchingSource();
     const merge = source.slice(
-      source.indexOf('const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({'),
+      // Злиття загорнуте в `liftReturnedCards(...)` (повернене з колекції —
+      // на початок «Усіх»), тож якір — сам `useMemo`, а не його перший виклик.
+      source.indexOf('const visibleUsers = useMemo(() =>'),
       source.indexOf('additionalAccessUsers,\n    sharedReactionCandidateUsers,'),
     );
     expect(merge).toContain('drafts: initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS,');

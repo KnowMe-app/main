@@ -41,7 +41,7 @@ describe('Matching shared reaction card UI', () => {
     expect(matchingSource).toContain('const usersMap = missingIds.length ? await hydrateMatchingFeedCards(missingIds) : {};');
     expect(matchingSource).toContain('const hydrated = await fetchUsersByIds(missingIds);');
     expect(configSource).toContain('getAllUserPhotos(userId)');
-    expect(configSource).toContain('photos,');
+    expect(configSource).toContain('return { ...fromNodes, photos: photos || [], __photosHydrated: true };');
   });
 
   it('refreshes reaction pagination when access scope changes', () => {
@@ -49,7 +49,9 @@ describe('Matching shared reaction card UI', () => {
 
     expect(source).toContain('currentPagination.accessSnapshotKey !== reactionAccessSnapshotKey');
     expect(source).toContain('if (didAccessSnapshotChange) return page.users;');
-    expect(source).toContain('const canUseCachedCard = cached && (');
+    // Кешовані картки реакцій складаються з тих самих сховищ, що й стрічка.
+    expect(source).toContain('const composedCache = composeCachedCards(uniqueIds);');
+    expect(source).toContain('if (isValidCachedReactionCard(normalizedCached, id)) {');
     expect(source).toContain('__fromCardCache: true');
     expect(source).not.toContain('const hasHydratedPhotoState = cachedPhotos.length > 0 || cached?.__photosHydrated === true;');
   });
@@ -58,18 +60,20 @@ describe('Matching shared reaction card UI', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
     expect(source).toContain('const sharedReactionCandidateLoadVersionRef = useRef(0);');
-    expect(source).toContain('const canApplySharedCandidateResult = () => shouldApplySharedReactionCandidateResult({');
+    // Результат, що приїхав після скидання кешу, теж застарілий — звідси епоха.
+    expect(source).toContain('const canApplySharedCandidateResult = () => cacheEpoch === getMatchingLocalStorageCacheEpoch() && shouldApplySharedReactionCandidateResult({');
     expect(source).toContain('currentViewMode: viewModeRef.current');
-    expect(source).toContain('currentCollectionSource: collectionSourceRef.current');
     expect(source).toContain(`if (!canApplySharedCandidateResult()) {
       return;
     }
 
-    loadedUsers.forEach`);
+    const loadedUsers = accessibleCandidateIds`);
   });
 
 
-  it('reloads shared candidates when returning to default mode without shared id changes', () => {
+  // Загальний список — це стрічка, і нічого, крім стрічки: спільні реакції
+  // в деку за замовчуванням більше не доливаються, а лише у вкладки реакцій.
+  it('reloads shared candidates on mode change, but keeps them out of the default deck', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
     expect(source).toContain('const requestViewMode = viewMode;');
@@ -78,6 +82,10 @@ describe('Matching shared reaction card UI', () => {
   ]);
 
   useEffect(() => {
+    if (viewModeRef.current === 'default') {
+      setSharedReactionCandidateUsers([]);
+      return;
+    }
     loadSharedReactionCandidates();
   }, [loadSharedReactionCandidates]);`);
   });
@@ -86,52 +94,37 @@ describe('Matching shared reaction card UI', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
     expect(source).toContain(`setSharedReactionCandidateUsers([]);
-    viewModeRef.current = 'search';`);
+    setViewMode('search');`);
   });
 
 
   it('requires searchKeySets for additional reaction access instead of falling back to global searchKey', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+    const indexSource = fs.readFileSync(path.join(__dirname, '../utils/filterSetsIndex.js'), 'utf8');
 
-    expect(source).toContain('requireSearchKeySetKeys: true');
+    // Вимога стала умовчанням самого читача індексу, і ніхто її не знімає.
+    expect(indexSource).toContain('requireSearchKeySetKeys = true,');
+    expect(source).not.toContain('requireSearchKeySetKeys: false');
     expect(source).not.toContain("refDb(database, 'searchKey')");
     expect(source).not.toContain("ref2(database, 'searchKey')");
   });
 
 
-  it('keeps Matching as a single premium active profile without reward or load-more chrome', () => {
+  // Шар відкритої картки (`DetailLayer`, `SwipeableCard`) прибрано разом з
+  // його стилями: дотик до фото відкриває саме фото, дотик деінде розгортає
+  // рядок. Лишилось стежити, що стрічка тримається одного масиву й не
+  // обростає ні шаром, ні кнопками дозавантаження.
+  it('keeps Matching a single feed without a detail layer or load-more chrome', () => {
     const matchingSource = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
-    const styledSource = fs.readFileSync(path.join(__dirname, 'Matching.styled.jsx'), 'utf8');
 
-    // The deck became a layer over the feed (matching spec §1/§7): the same
-    // `filtered` array still backs it, addressed through `detailIndex`, and the
-    // layer still never resolves a card by id of its own.
     expect(matchingSource).toContain('const feedSourceWithoutOwnEdits = filteredUsers;');
-    expect(matchingSource).toContain('const detailIndex = detailOpen && feedSource.length ? activeProfileIndex : null;');
-    expect(matchingSource).toContain('const activeProfile = detailIndex === null ? null : (feedSource[detailIndex] || null);');
-    expect(matchingSource).toContain('data-testid="matching-profile-card"');
-    expect(matchingSource).toContain('onNavigate(direction === \'left\' ? 1 : -1);');
-    expect(matchingSource).toContain('const identityAndLocationKeys =');
+    expect(matchingSource).not.toContain('DetailLayer');
+    expect(matchingSource).not.toContain('SwipeableCard');
     expect(matchingSource).not.toContain('Дозавантажити карточки');
     expect(matchingSource).not.toContain('Більше карточок завтра');
     expect(matchingSource).not.toContain('<LoadMoreButton');
     expect(matchingSource).not.toContain('ModernGallery');
     expect(matchingSource).not.toContain('Gallery</ModernSectionTitle>');
-    // Висоту фото задає пропорція знімка, а не частка екрана: частка робила з
-    // портретного кадру горизонтальну смугу, і cover лишав від обличчя саме
-    // чоло. Під фото в тій самій прокрутці стоять мініатюри й дані анкети.
-    // Правило тепер умовне (без знімка смуга вузька), тож і відступ у нього
-    // глибший — сама пропорція лишилась та сама.
-    expect(styledSource).toContain('aspect-ratio: 4 / 5;\n    height: auto;');
-    expect(styledSource).toContain('min-height: clamp(320px, 52%, 460px);');
-    expect(styledSource).toContain('max-height: min(64dvh, 560px);');
-    expect(styledSource).toContain('top: 14px;\n  left: 14px;');
-    // Смуга показників переноситься в два ряди, а комірки розтягуються, щоб
-    // останній ряд не лишав порожнього місця. Роздільник малює сама комірка.
-    expect(styledSource).toContain('&:not(:first-child)::before');
-    expect(styledSource).toContain('flex: 1 1 22%;');
-    expect(styledSource).toContain('width: 1px;');
-    expect(styledSource).toContain('flex: 1 1 0;');
   });
 
 });

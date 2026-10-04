@@ -109,7 +109,7 @@ describe('matching row structure', () => {
     const styles = rowStyles();
     const photo = styles.slice(styles.indexOf('export const Photo = styled.div`'));
     expect(photo).toContain('aspect-ratio: 4 / 5;');
-    expect(photo).toContain('max-height: 58vh;');
+    expect(photo).toContain('max-height: min(40vh, 320px);');
     // Від краю до краю картки: підкладку знімає відʼємний відступ на її
     // власне поле, а не окреме правило десь поруч.
     expect(photo).toContain(`margin: -\${CARD_PADDING} -\${CARD_PADDING} 9px;`);

@@ -24,7 +24,9 @@ describe('AddNewProfile.jsx no longer has a hidden write-skip gate on handleSubm
 
   it('handleSubmit no longer accepts a 4th "makeIndex" parameter', () => {
     expect(source).not.toContain('makeIndex');
-    expect(source).toContain('const handleSubmit = (newState, overwrite, delCondition) => {');
+    // Четвертий параметр знову є, але це не гейт запису, а значення, які
+    // треба зняти з індексу (`removedIndexValues`), — запис від нього не залежить.
+    expect(source).toContain('const handleSubmit = (newState, overwrite, delCondition, removedIndexValues) => {');
   });
 
   it('the long-userId branch writes to Firebase unconditionally (no truthy-string-skips-write gate)', () => {
@@ -48,10 +50,13 @@ describe('AddNewProfile.jsx no longer has a hidden write-skip gate on handleSubm
 
   it('handleBlur passes overwrite so a changed scalar field replaces cleanly instead of becoming an array', () => {
     const handleBlurBody = source.slice(
-      source.indexOf('const handleBlur = () => {'),
+      source.indexOf('const handleBlur = name => {'),
       source.indexOf('const hideFutureGitNewCardAndLoadNext')
     );
 
-    expect(handleBlurBody).toContain("handleSubmit(normalizedState, 'overwrite');");
+    // Перезаписується саме поле, з якого пішов фокус (`makeUploadedInfo`
+    // приймає назву поля як `overwrite`), — решта лишається злиттям.
+    // Поведінку стереже `AddNewProfile.blurOverwrite.test.js`.
+    expect(handleBlurBody).toContain('handleSubmit(normalizedState, baseFieldName);');
   });
 });

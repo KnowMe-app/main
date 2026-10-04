@@ -149,7 +149,9 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     const { fetchMatchingIndexedCandidates } = loadModule();
     const roles = {
       user00000000000000000001: 'ed',
-      user00000000000000000002: '',
+      // Донорці ховаються саме донорки: картка без ролі в стрічці лишається
+      // (`matchingPeerVisibility.test`), тож відкинутих колег тут дві.
+      user00000000000000000002: 'ed',
       user00000000000000000003: 'ag',
     };
     const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(

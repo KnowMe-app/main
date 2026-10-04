@@ -1,3 +1,4 @@
+import { readCachedCards, resetCardsCache, seedCachedCards } from '../../testUtils/cardsCache';
 import { getFilteredCardsByList } from '../cardsStorage';
 import { setIdsForQuery, getIdsByQuery } from '../cardIndex';
 
@@ -7,15 +8,15 @@ jest.mock('../../components/config', () => ({
 
 describe('getFilteredCardsByList', () => {
   beforeEach(() => {
-    localStorage.clear();
+    resetCardsCache();
   });
 
   it('filters stored cards and fetches more when needed', async () => {
     const now = Date.now();
-    localStorage.setItem('cards', JSON.stringify({
+    seedCachedCards({
       a: { userId: 'a', ok: true, lastAction: now },
       b: { userId: 'b', ok: false, lastAction: now },
-    }));
+    });
     setIdsForQuery('testList', ['a', 'b']);
 
     const fetchMore = jest.fn(async count => {
@@ -33,7 +34,7 @@ describe('getFilteredCardsByList', () => {
     );
 
     expect(res.map(c => c.userId)).toEqual(['a', 'c']);
-    const storedCards = JSON.parse(localStorage.getItem('cards'));
+    const storedCards = readCachedCards();
     expect(storedCards.c.ok).toBe(true);
     const ids = getIdsByQuery('testList');
     expect(ids).toContain('c');
