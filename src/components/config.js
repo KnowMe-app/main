@@ -4848,6 +4848,76 @@ export const deletePhotos = async (userId, photoUrls = []) => {
   );
 };
 
+/** Шлях файлу в Storage з адреси `getDownloadURL` (або `''`, якщо це не Storage). */
+export const storagePathFromDownloadUrl = url => {
+  const afterObjectSegment = String(url || '').split('/o/')[1];
+  if (!afterObjectSegment) return '';
+  try {
+    return decodeURIComponent(afterObjectSegment.split('?')[0]);
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * Ключ фото для порівняння дублікатів: імʼя файлу для власного фото картки,
+ * сама адреса — для решти.
+ *
+ * Перенесене фото — це копія файлу під тим самим імʼям у теці іншої картки
+ * (`copyProfilePhotosBetweenCards`), і адреса в неї вже інша. Звіряй порівняння
+ * адреси, перенесене фото й далі значилось би «тільки в одній картці», а
+ * повторний дотик копіював би його вдруге.
+ */
+export const photoComparisonKey = (url, userId) => {
+  const path = storagePathFromDownloadUrl(url);
+  const prefix = `avatar/${userId}/`;
+  if (userId && path.startsWith(prefix)) return `file:${path.slice(prefix.length)}`;
+  return String(url || '').trim();
+};
+
+/**
+ * Переносить фото однієї картки в іншу під час злиття дублікатів.
+ *
+ * Файл **копіюється** в `avatar/{target}/`, а не лише адреса: картку-джерело
+ * злиття потім закриває, а видалення анкети забирає з Storage її теку
+ * (`deletePhotos`), тож чужа адреса в отримувачці зламалась би разом з нею.
+ * Фото не зі Storage картки-джерела (зовнішнє посилання) переноситься адресою.
+ * Повертає нові адреси в отримувачці — їх викликач дописує в поле `photos`.
+ */
+export const copyProfilePhotosBetweenCards = async ({ sourceUserId, targetUserId, photoUrls = [] }) => {
+  if (!sourceUserId || !targetUserId) throw new Error('Картку не визначено');
+  const sourcePrefix = `avatar/${sourceUserId}/`;
+  const copied = [];
+  for (const url of photoUrls.filter(Boolean)) {
+    const sourcePath = storagePathFromDownloadUrl(url);
+    if (!sourcePath.startsWith(sourcePrefix)) {
+      copied.push(url);
+      continue;
+    }
+    const relativePath = sourcePath.slice(sourcePrefix.length);
+    if (relativePath.startsWith('medication/')) continue;
+    const sourceRef = ref(storage, sourcePath);
+    let bytes;
+    try {
+      bytes = await getBytes(sourceRef);
+    } catch (bytesError) {
+      // Той самий запасний шлях, що й у `getStorageFileDataUrl`: getBytes
+      // падає на CORS там, де звичайний GET за адресою проходить.
+      const response = await fetch(url);
+      if (!response.ok) throw bytesError;
+      bytes = await response.arrayBuffer();
+    }
+    const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const contentType = getStorageContentTypeFromBytes(byteArray)
+      || getStorageContentTypeFromName({ name: relativePath })
+      || 'image/jpeg';
+    const targetRef = ref(storage, `avatar/${targetUserId}/${relativePath}`);
+    await uploadBytes(targetRef, byteArray, { contentType });
+    copied.push(await getDownloadURL(targetRef));
+  }
+  return copied;
+};
+
 const normalizePhotoValues = value => {
   if (!value) return [];
   if (Array.isArray(value)) return value.flatMap(normalizePhotoValues);

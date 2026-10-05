@@ -7,6 +7,9 @@ import { mergeComparisonValues } from '../../utils/comparisonValues';
 jest.mock('react-hot-toast', () => ({ success: jest.fn(), error: jest.fn() }));
 jest.mock('../config', () => ({
   auth: { currentUser: { uid: 'admin' } },
+  getAllUserPhotos: jest.fn(async () => []),
+  photoComparisonKey: jest.fn(url => url),
+  copyProfilePhotosBetweenCards: jest.fn(async () => []),
   fetchPublicProfileComments: jest.fn(async () => ({})),
   fetchUserComment: jest.fn(async () => null),
   saveComparisonField: jest.fn(),
