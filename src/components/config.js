@@ -4848,6 +4848,102 @@ export const deletePhotos = async (userId, photoUrls = []) => {
   );
 };
 
+const FIREBASE_STORAGE_HOST = 'firebasestorage.googleapis.com';
+
+/**
+ * Шлях файлу в Storage з адреси `getDownloadURL` (або `''`, якщо це не файл
+ * нашого бакета).
+ *
+ * Адреса береться з поля `photos` анкети, тобто з даних, які пише й сама
+ * власниця, — тож розбір суворий: хост Firebase Storage, бакет цього проєкту,
+ * і жодних порожніх сегментів чи `..`. Шлях, що пройшов перевірку, далі
+ * стає адресою запису в Storage (`copyProfilePhotosBetweenCards`).
+ */
+export const storagePathFromDownloadUrl = url => {
+  let parsed;
+  try {
+    parsed = new URL(String(url || ''));
+  } catch {
+    return '';
+  }
+  if (parsed.protocol !== 'https:' || parsed.hostname !== FIREBASE_STORAGE_HOST) return '';
+  const bucket = storage?.app?.options?.storageBucket;
+  const prefix = `/v0/b/${bucket}/o/`;
+  if (!bucket || !parsed.pathname.startsWith(prefix)) return '';
+  let path;
+  try {
+    path = decodeURIComponent(parsed.pathname.slice(prefix.length));
+  } catch {
+    return '';
+  }
+  const segments = path.split('/');
+  if (segments.some(segment => !segment || segment === '.' || segment === '..')) return '';
+  return path;
+};
+
+/**
+ * Ключ фото для порівняння дублікатів: імʼя файлу для власного фото картки,
+ * сама адреса — для решти.
+ *
+ * Перенесене фото — це копія файлу під тим самим імʼям у теці іншої картки
+ * (`copyProfilePhotosBetweenCards`), і адреса в неї вже інша. Звіряй порівняння
+ * адреси, перенесене фото й далі значилось би «тільки в одній картці», а
+ * повторний дотик копіював би його вдруге.
+ */
+export const photoComparisonKey = (url, userId) => {
+  const path = storagePathFromDownloadUrl(url);
+  const prefix = `avatar/${userId}/`;
+  if (userId && path.startsWith(prefix)) return `file:${path.slice(prefix.length)}`;
+  return String(url || '').trim();
+};
+
+/**
+ * Переносить фото однієї картки в іншу під час злиття дублікатів.
+ *
+ * Файл **копіюється** в `avatar/{target}/`, а не лише адреса: картку-джерело
+ * злиття потім закриває, а видалення анкети забирає з Storage її теку
+ * (`deletePhotos`), тож чужа адреса в отримувачці зламалась би разом з нею.
+ * Фото не зі Storage картки-джерела (зовнішнє посилання) переноситься адресою.
+ * Повертає нові адреси в отримувачці — їх викликач дописує в поле `photos`.
+ */
+export const copyProfilePhotosBetweenCards = async ({ sourceUserId, targetUserId, photoUrls = [] }) => {
+  if (!sourceUserId || !targetUserId) throw new Error('Картку не визначено');
+  const sourcePrefix = `avatar/${sourceUserId}/`;
+  const copied = [];
+  for (const url of photoUrls.filter(Boolean)) {
+    const sourcePath = storagePathFromDownloadUrl(url);
+    // Фото препаратів — не фото анкети, хай чия це тека.
+    if (sourcePath.split('/').includes('medication')) continue;
+    if (!sourcePath.startsWith(sourcePrefix)) {
+      // Чужий файл нашого бакета чи зовнішнє посилання: переноситься лише
+      // адреса, і тільки https — байти звідти не тягнемо.
+      if (!sourcePath && !/^https:\/\//i.test(String(url))) continue;
+      copied.push(url);
+      continue;
+    }
+    const relativePath = sourcePath.slice(sourcePrefix.length);
+    const sourceRef = ref(storage, sourcePath);
+    let bytes;
+    try {
+      bytes = await getBytes(sourceRef);
+    } catch (bytesError) {
+      // Той самий запасний шлях, що й у `getStorageFileDataUrl`: getBytes
+      // падає на CORS там, де звичайний GET за адресою проходить.
+      const response = await fetch(url);
+      if (!response.ok) throw bytesError;
+      bytes = await response.arrayBuffer();
+    }
+    const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const contentType = getStorageContentTypeFromBytes(byteArray)
+      || getStorageContentTypeFromName({ name: relativePath })
+      || 'image/jpeg';
+    const targetRef = ref(storage, `avatar/${targetUserId}/${relativePath}`);
+    await uploadBytes(targetRef, byteArray, { contentType });
+    copied.push(await getDownloadURL(targetRef));
+  }
+  return copied;
+};
+
 const normalizePhotoValues = value => {
   if (!value) return [];
   if (Array.isArray(value)) return value.flatMap(normalizePhotoValues);

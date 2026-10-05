@@ -1,6 +1,17 @@
 import React from 'react';
 import toast from 'react-hot-toast';
-import { auth, fetchPublicProfileComments, fetchPublicProfileCommentsStrict, fetchUserById, fetchUserComment, saveMyCardComment, saveComparisonField } from '../config';
+import {
+  auth,
+  copyProfilePhotosBetweenCards,
+  fetchPublicProfileComments,
+  fetchPublicProfileCommentsStrict,
+  fetchUserById,
+  fetchUserComment,
+  getAllUserPhotos,
+  photoComparisonKey,
+  saveMyCardComment,
+  saveComparisonField,
+} from '../config';
 import { setLocalComment } from '../../utils/commentsStorage';
 import { copyPublicCommentsBetweenCards } from '../../utils/legacyImportCommentMigration';
 import { isAdminUid } from '../../utils/accessLevel';
@@ -42,6 +53,18 @@ const compareIcon = (
 // зберігає автора й дату (`copyPublicCommentsBetweenCards`).
 const PUBLIC_COMMENTS_KEY = 'publicComments';
 
+// Фото теж стоять у таблиці окремим рядком, а не сирим полем `photos`: поле
+// тут було виключене (`delKeys`), бо адреси Storage в комірці нічого не кажуть,
+// — і разом з ним зникла сама можливість перенести фото з дубліката. Частина
+// фото лежить лише в Storage, повз поле, тож рядок бере повний перелік
+// (`getAllUserPhotos`), показує мініатюри, а переносить файли
+// `copyProfilePhotosBetweenCards`.
+const PHOTOS_KEY = 'photos';
+
+const normalizePhotoList = value => (Array.isArray(value) ? value : [value])
+  .map(item => (typeof item === 'string' ? item.trim() : ''))
+  .filter(Boolean);
+
 /**
  * Позначки власника, які база тримає рядком.
  *
@@ -80,7 +103,15 @@ export const btnCompare = (
     try {
       await queueCardSave(targetUserId, async () => {
         let savedValue;
-        if (key === PUBLIC_COMMENTS_KEY) {
+        if (key === PHOTOS_KEY) {
+          const targetPhotos = new Set((targetValue || []).map(url => photoComparisonKey(url, targetUserId)));
+          const missing = (sourceValue || []).filter(url => !targetPhotos.has(photoComparisonKey(url, sourceUserId)));
+          const copied = await copyProfilePhotosBetweenCards({ sourceUserId, targetUserId, photoUrls: missing });
+          const target = (usersRef?.current || users)[targetUserId] || {};
+          const merged = mergeComparisonValues(copied, normalizePhotoList(target.photos));
+          savedValue = await saveComparisonField(targetUserId, PHOTOS_KEY, merged);
+          updateCachedUser({ userId: targetUserId, [PHOTOS_KEY]: savedValue });
+        } else if (key === PUBLIC_COMMENTS_KEY) {
           await copyPublicCommentsBetweenCards({ sourceProfileId: sourceUserId, targetProfileId: targetUserId });
           const comments = await fetchPublicProfileCommentsStrict([targetUserId]);
           savedValue = (comments?.[targetUserId] || []).map(comment => comment.text);
@@ -132,10 +163,12 @@ export const btnCompare = (
     const currentUserRaw = latest[pairIds[0]] || {};
     const nextUserRaw = latest[pairIds[1]] || {};
     const ownerId = auth.currentUser?.uid;
-    const [currentCommentResult, nextCommentResult, publicByProfile] = await Promise.all([
+    const [currentCommentResult, nextCommentResult, publicByProfile, currentPhotos, nextPhotos] = await Promise.all([
       ownerId && currentUserRaw.userId ? fetchUserComment(ownerId, currentUserRaw.userId) : null,
       ownerId && nextUserRaw.userId ? fetchUserComment(ownerId, nextUserRaw.userId) : null,
       fetchPublicProfileComments([currentUserRaw.userId, nextUserRaw.userId].filter(Boolean)),
+      currentUserRaw.userId ? getAllUserPhotos(currentUserRaw.userId) : [],
+      nextUserRaw.userId ? getAllUserPhotos(nextUserRaw.userId) : [],
     ]);
     if (requestId !== latestCompareRequest) return;
 
@@ -150,6 +183,8 @@ export const btnCompare = (
       myComment: currentPersonalComment(currentUserRaw.myComment, currentCommentResult),
       [PUBLIC_COMMENTS_KEY]: publicCommentTexts(currentUserRaw.userId),
     };
+    const currentPhotoList = normalizePhotoList(currentPhotos);
+    const nextPhotoList = normalizePhotoList(nextPhotos);
     const nextUser = {
       ...nextUserRaw,
       myComment: currentPersonalComment(nextUserRaw.myComment, nextCommentResult),
@@ -196,6 +231,35 @@ export const btnCompare = (
       );
     }).filter(Boolean);
 
+    const photosRow = (() => {
+      const currentKeys = new Set(currentPhotoList.map(url => photoComparisonKey(url, currentUser.userId)));
+      const nextKeys = new Set(nextPhotoList.map(url => photoComparisonKey(url, nextUser.userId)));
+      const uniqueCurrent = currentPhotoList.filter(url => !nextKeys.has(photoComparisonKey(url, currentUser.userId)));
+      const uniqueNext = nextPhotoList.filter(url => !currentKeys.has(photoComparisonKey(url, nextUser.userId)));
+      if (!uniqueCurrent.length && !uniqueNext.length) return null;
+      const photoCell = (unique, source, target, sourceList, targetList) => (
+        <td
+          style={{ width: '40%', whiteSpace: 'normal', cursor: unique.length ? 'pointer' : 'default' }}
+          title={unique.length ? `Перенести ${unique.length} фото в ${target.userId}` : undefined}
+          onClick={unique.length
+            ? () => copyValue(PHOTOS_KEY, sourceList, target.userId, source.userId, targetList)
+            : undefined}
+        >
+          {unique.map(url => (
+            <img key={url} src={url} alt="" style={{ width: 40, height: 40, objectFit: 'cover', margin: 2, borderRadius: 4 }} />
+          ))}
+          {unique.length ? <div>→ перенести {unique.length}</div> : null}
+        </td>
+      );
+      return (
+        <tr key={PHOTOS_KEY}>
+          <td style={{ width: '20%' }}>{PHOTOS_KEY}</td>
+          {photoCell(uniqueCurrent, currentUser, nextUser, currentPhotoList, nextPhotoList)}
+          {photoCell(uniqueNext, nextUser, currentUser, nextPhotoList, currentPhotoList)}
+        </tr>
+      );
+    })();
+
     setCompare(
       <div style={{ fontSize: '10px', fontFamily: 'Arial, sans-serif' }}>
         <table border="1" cellSpacing="0" cellPadding="5" style={{ borderCollapse: 'collapse', width: '100%' }}>
@@ -204,7 +268,7 @@ export const btnCompare = (
               {onOpenCard ? <button type="button" onClick={() => onOpenCard(user.userId, () => refreshComparison(true))}>{user.userId}</button> : user.userId}
             </th>
           ))}</tr></thead>
-          <tbody>{rows}</tbody>
+          <tbody>{photosRow}{rows}</tbody>
         </table>
       </div>,
     );
