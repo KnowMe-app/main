@@ -78,6 +78,7 @@ import {
 } from './profileFormNodeBlocks';
 import { appendEmptyFieldRow, canAppendFieldRow, fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
 import { NestedObjectField, isNestedObjectValue } from './NestedObjectField';
+import { ProfileDataTree } from './ProfileDataTree';
 import { PROFILE_DATE_FIELDS } from 'utils/profileDate';
 
 const get = (...args) =>
@@ -3980,6 +3981,19 @@ ${entries.join('\n')}`;
           </SearchKeySourceModal>
         </AdditionalRulesOverlay>
       )}
+
+      {/* Усе, що база знає про картку поза полями анкети: позначки власника
+          (графік стимуляції в форму не доїжджав зовсім), чернетка з журналом,
+          шари доповнень, відгуки, ключі searchId — деревом, з шляхом і
+          посиланням у консоль на кожному вузлі. */}
+      {isAdmin && state.userId ? (
+        <ProfileDataTree
+          cardId={state.userId}
+          viewerId={auth.currentUser?.uid || ''}
+          draftAuthorId={draftRecordCreator}
+          record={state}
+        />
+      ) : null}
 
       </FormCard>
 
