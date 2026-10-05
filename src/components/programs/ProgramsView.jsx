@@ -105,9 +105,11 @@ const List = styled.div`
 const Card = styled.article`
   color: ${TEXT};
   border: 1px solid ${BORDER};
-  border-left: 3px solid ${({ $state }) => ($state === 'match' ? GOOD : $state === 'mismatch' ? BAD : ACCENT)};
-  border-radius: 12px;
-  padding: 12px 12px 12px 13px;
+  border-top: 4px solid ${({ $state }) => ($state === 'match' ? GOOD : $state === 'mismatch' ? BAD : ACCENT)};
+  border-radius: 15px;
+  padding: 14px;
+  background: var(--matching-card-bg, var(--km-card, #fff));
+  box-shadow: 0 8px 24px color-mix(in srgb, ${TEXT} 7%, transparent);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -119,9 +121,10 @@ const Card = styled.article`
 const CardHead = styled.div`
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 
-  b { font-size: 14px; font-weight: 700; }
+  b { font-size: 16px; font-weight: 800; }
   span { color: ${MUTED}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 `;
 
@@ -154,9 +157,10 @@ const SectionLabel = styled.div`
 `;
 
 const Hero = styled.div`
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: color-mix(in srgb, ${ACCENT} 7%, transparent);
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, ${ACCENT} 22%, transparent);
+  border-radius: 12px;
+  background: linear-gradient(135deg, color-mix(in srgb, ${ACCENT} 13%, transparent), color-mix(in srgb, ${ACCENT} 4%, transparent));
 `;
 
 const HeroAmount = styled.div`
@@ -176,6 +180,9 @@ const Muted = styled.div`
 const Rows = styled.div`
   display: flex;
   flex-direction: column;
+  padding: 2px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, ${MUTED} 5%, transparent);
 `;
 
 const Row = styled.div`

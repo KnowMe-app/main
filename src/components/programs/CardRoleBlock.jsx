@@ -94,12 +94,12 @@ const pickText = value => {
   return String(raw ?? '').trim();
 };
 
-export const CardRoleBlock = ({ card, programsContext, language }) => {
+export const CardRoleBlock = ({ card, programsContext, language, showPrograms = true }) => {
   const roles = listProfileRoles(card);
   const isOrganisation = roles.some(role => ORGANISATION_ROLES.includes(role));
   const isParent = roles.includes('ip');
   const isAlsoPerson = roles.some(role => PERSON_ROLES.includes(role));
-  const { programs } = useCardPrograms(card, isOrganisation);
+  const { programs } = useCardPrograms(card, isOrganisation && showPrograms);
   const seeking = pickText(card?.seeking);
   const hasParentContent = isParent && (seeking || pickText(card?.programLocation));
   // Назва агенції чи клініки окремо від імені людини (`agencyName`): у
@@ -127,7 +127,7 @@ export const CardRoleBlock = ({ card, programsContext, language }) => {
           {card?.parentVia ? ` · ${uiText(labelOf(PARENT_VIA_OPTIONS, pickText(card.parentVia)).toLowerCase(), language)}` : ''}
         </Line>
       ) : null}
-      {isOrganisation && programs.length && programsContext ? (
+      {showPrograms && isOrganisation && programs.length && programsContext ? (
         <ProgramsSummary
           card={card}
           language={language}
