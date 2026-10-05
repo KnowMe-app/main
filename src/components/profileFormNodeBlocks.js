@@ -48,6 +48,16 @@ export const buildRtdbConsoleLink = segments => {
   return path ? `${databaseUrl}/${path}` : databaseUrl;
 };
 
+/** Документ Firestore у консолі — той самий кодований шлях, інший розділ. */
+export const buildFirestoreConsoleLink = segments => {
+  const path = segments
+    .filter(segment => segment !== null && segment !== undefined && String(segment) !== '')
+    .map(segment => `~2F${encodeURIComponent(String(segment))}`)
+    .join('');
+  return `https://console.firebase.google.com/u/0/project/${getFirebaseConsoleProjectId()}`
+    + `/firestore/databases/-default-/data/${path}`;
+};
+
 /**
  * Блоки, які не збігаються з вузлом один-в-один.
  *

@@ -2592,9 +2592,14 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     // Позначка саме цієї картки, а не мапа власника цілком
     // (`readOwnerValueForProfile`): мапа важила до 160 КБ і приїжджала на
     // кожному вході разом із власною анкетою.
-    const [getInTouchMark, writerMark] = await Promise.all([
+    // Графік стимуляції — третя така позначка. Після переїзду в `multiData`
+    // його не читав ніхто, крім чернеток: у готовій анкеті ключа не було, тож
+    // форма адміна не малювала для графіка навіть поля, а список «графік
+    // стимуляції» на `AddNewProfile` не знаходив жодного.
+    const [getInTouchMark, writerMark, stimulationScheduleMark] = await Promise.all([
       readOwnerValueForProfile(OWNER_GET_IN_TOUCH_PATH, ownerId, id, { hasLegacyGroups: ownerGetInTouchHasLegacyGroups }),
       readOwnerValueForProfile(OWNER_WRITER_PATH, ownerId, id),
+      readOwnerValueForProfile(OWNER_STIMULATION_SCHEDULE_PATH, ownerId, id),
     ]);
     if (getInTouchMark.found) merged.getInTouch = getInTouchMark.value;
     else delete merged.getInTouch;
@@ -2602,6 +2607,8 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     // пережила б своє зняття.
     if (writerMark.found) merged.writer = writerMark.value;
     else delete merged.writer;
+    if (stimulationScheduleMark.found) merged.stimulationSchedule = stimulationScheduleMark.value;
+    else delete merged.stimulationSchedule;
   }
 
   return merged;
