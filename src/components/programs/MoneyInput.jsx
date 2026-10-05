@@ -74,7 +74,7 @@ const Hint = styled.div`
 
 // Порожнє поле суми — це «не платимо», а не «0 $»: сіре «0» читалось як
 // уже вписана нульова виплата.
-export const MoneyInput = ({ id, value, onChange, language, rates, placeholder }) => {
+export const MoneyInput = ({ id, value, onChange, language, rates, placeholder, ariaLabel }) => {
   const currency = value?.currency || DEFAULT_PROGRAM_CURRENCY;
   const [draft, setDraft] = useState(value?.amount ?? '');
   useEffect(() => { setDraft(value?.amount ?? ''); }, [value?.amount]);
@@ -90,6 +90,7 @@ export const MoneyInput = ({ id, value, onChange, language, rates, placeholder }
       <Row>
         <AmountInput
           id={id}
+          aria-label={ariaLabel}
           inputMode="decimal"
           value={draft}
           placeholder={placeholder ?? uiText('сума', language)}

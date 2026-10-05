@@ -1189,14 +1189,22 @@ export const MyProfile = () => {
     const targetUserId = userId || stateRef.current?.userId;
     if (!targetUserId) return;
     const list = listPrograms(record, { includeHidden: true });
-    saveCardPrograms(targetUserId, record || {})
-      .then(() => Promise.all([
-        rememberProgramTerms('payment', list.flatMap(program => listProgramPayments(program).filter(item => item.key.startsWith('other-')).map(item => item.label))),
-        rememberProgramTerms('bonus', list.flatMap(program => listProgramBonuses(program).filter(item => item.key.startsWith('bonus-')).map(item => item.label))),
-      ]))
+    // Проміс каже редакторові, чи прийняла база запис («Збережено» чи «поки
+    // лише в цьому браузері»).
+    return saveCardPrograms(targetUserId, record || {})
+      .then(() => {
+        // Словник назв — підказка іншим агенціям, а не частина запису: його
+        // відмова не робить збережені програми незбереженими.
+        Promise.all([
+          rememberProgramTerms('payment', list.flatMap(program => listProgramPayments(program).filter(item => item.key.startsWith('other-')).map(item => item.label))),
+          rememberProgramTerms('bonus', list.flatMap(program => listProgramBonuses(program).filter(item => item.key.startsWith('bonus-')).map(item => item.label))),
+        ]).catch(error => console.warn('[programs] назви виплат не записались у словник', error));
+        return true;
+      })
       .catch(error => {
         console.warn('[programs] програми не збереглись у базі', error);
         toast.error(uiText('Програми поки лише в цьому браузері — збережемо, коли база відповість', language), { id: 'programs-save-failed' });
+        return false;
       });
   }, [language, userId]);
   const firstSectionKey = visibleSections[0]?.key || 'personal';
@@ -1296,8 +1304,10 @@ export const MyProfile = () => {
   const fieldsMap = useMemo(() => new Map([...pickerFields, ...MY_PROFILE_EXTRA_FIELDS].map(field => [field.name, field])), []);
   // Програми заповнені, коли вони є в сховищі, а не в анкеті.
   const isFieldFilled = useCallback(name => (name === 'programs'
-    ? ownProgramsCount > 0
-    : String(state[name] || '').trim() !== ''), [ownProgramsCount, state]);
+    // Заповненим розділ робить програма, яку побачать читачі, а не порожня
+    // чернетка: інакше анкета публікувалась би без жодної видимої програми.
+    ? ownVisiblePrograms.length > 0
+    : String(state[name] || '').trim() !== ''), [ownVisiblePrograms, state]);
   // Лічильник «3 з 8» поруч із відсотком: самі «8%» не казали, скільки
   // лишилось, а людина з чотирма фото й поштою не розуміла, звідки така цифра.
   const filledStats = useMemo(() => {
@@ -1643,7 +1653,7 @@ export const MyProfile = () => {
       // appearance and lifestyle fields merely because an ED role also exists.
       .filter(fieldName => onlyRole !== 'sm' || !SURROGATE_HIDDEN_FIELDS.has(fieldName))
       .filter(fieldName => fieldName === 'programs'
-        ? ownProgramsCount === 0
+        ? ownVisiblePrograms.length === 0
         : String(currentState[fieldName] || '').trim() === '');
 
     missingFieldNames.forEach(fieldName => {

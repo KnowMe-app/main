@@ -49,7 +49,6 @@ import {
 import { getRoleColor } from './matchingRoleColors';
 import * as S from './MatchingHiddenList.styled';
 import { CardRoleBlock, isCounterpartyCard } from './programs/CardRoleBlock';
-import { AgencyMediaCarousel } from './programs/AgencyMediaCarousel';
 import { isOrganisationAnketaRole } from '../utils/cardAnketas';
 import { listProfileRoles } from '../utils/matchingPeerVisibility';
 import {
@@ -1245,7 +1244,16 @@ const ProfileRow = ({
   const isOrganisationAnketa = Boolean(anketaRole) && isOrganisationAnketaRole(anketaRole);
   const isPersonAnketa = Boolean(anketaRole) && !isOrganisationAnketa;
   const showsOrganisation = !isPersonAnketa && (isOrganisationAnketa || listProfileRoles(user).some(isOrganisationAnketaRole));
-  const organisationName = isOrganisationAnketa ? pickCurrentText(user?.agencyName) : '';
+  // Організацію називає її назва, і лише вона. Анкета агенції без особистої
+  // ролі кладе назву в `name`, а в `surname` — контактну особу («Мій профіль»
+  // підписує їх «Назва агенції» й «Контактна особа», `myProfileRoleTexts`),
+  // тож загальний `getProfileName` складав «Surrohelp M.», а дата народження
+  // контактної особи давала агенції вік: «Допоміжне батьківство Н., 43».
+  const isOrganisationIdentity = isOrganisationAnketa
+    || (showsOrganisation && !listProfileRoles(user).some(role => role === 'ed' || role === 'sm'));
+  const organisationName = isOrganisationIdentity
+    ? (pickCurrentText(user?.agencyName) || (isOrganisationAnketa ? '' : pickCurrentText(user?.name)))
+    : '';
   const name = organisationName || getProfileName(user);
   const rowRole = anketaRole || getProfileRole(user);
   // Роль позначає дволітерний код — і на знімку, і в рядку імені, коли знімка
@@ -1254,7 +1262,7 @@ const ProfileRow = ({
   // зміна мови інтерфейсу міняла всі три. Код той самий, яким роль лежить у
   // даних, і однаковий на всіх екранах матчингу.
   const roleCode = getRoleCode(rowRole);
-  const age = isOrganisationAnketa ? '' : getProfileAge(user);
+  const age = isOrganisationIdentity ? '' : getProfileAge(user);
   const location = getLocationLine(user, language);
   const photos = getProfilePhotos(user);
   const requestPhotos = useCallback(() => {
@@ -1275,10 +1283,6 @@ const ProfileRow = ({
     event.stopPropagation();
     if (!photosComplete) requestPhotos();
     setViewerIndex(photoSwipe.index || 0);
-  };
-  const openPhotoViewerAt = index => {
-    if (!photosComplete) requestPhotos();
-    setViewerIndex(index);
   };
   const bio = isOrganisationAnketa ? '' : getProfileBio(user);
   // Картку складають ті самі три частини, що й відкриту картку
@@ -1451,15 +1455,12 @@ const ProfileRow = ({
           Плитки з ініціалами тут немає й не було: вона повторювала імʼя, яке
           стоїть рядком нижче. Немає фото — рядок починається з імені, а «хто
           це» несе смужка ролі на лівому краї картки. */}
-      {showsOrganisation ? (
-        <AgencyMediaCarousel
-          card={roleBlockCard}
-          photos={photos}
-          programsContext={programsContext}
-          language={language}
-          onOpenPhoto={openPhotoViewerAt}
-        />
-      ) : photo && (
+      {/* Агенція й клініка починаються з того самого фото, що й будь-яка
+          картка (здебільшого це логотип), з плашкою ролі на ньому. Програми
+          стояли тут карусельлю над іменем, і без плашки агенцію з фото не
+          можна було відрізнити від людини; тепер вони в тілі картки
+          (`CardRoleBlock`). */}
+      {photo && (
         <S.Photo
           {...photoSwipe.handlers}
           $loading={photoSwipe.loading}
@@ -1552,7 +1553,7 @@ const ProfileRow = ({
           про людину одне й те саме однаковими словами. */}
       <ProfileStatStrip cells={statCells} />
       <ProfileFactList rows={summaryRows} />
-      {!isLimited && !isPersonAnketa ? <CardRoleBlock card={roleBlockCard} programsContext={programsContext} language={language} showPrograms={!showsOrganisation} /> : null}
+      {!isLimited && !isPersonAnketa ? <CardRoleBlock card={roleBlockCard} programsContext={programsContext} language={language} accent={roleAccent} /> : null}
 
       {/* «Детальніше» — під коротким описом, посеред картки, а не стрілкою в
           правому кінці ряду рішень: розгортають саме те, що щойно прочитали,

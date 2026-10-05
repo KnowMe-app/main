@@ -260,6 +260,30 @@ const normalizeLabeledPayments = value => (Array.isArray(value) ? value : Object
   .filter(Boolean)
   .slice(0, 8);
 
+/**
+ * Чи програма каже читачеві хоч щось, окрім свого типу.
+ *
+ * «Додати програму» заводить запис одразу, і агенція, яка натиснула й
+ * пішла, лишала в стрічці слайд із самою назвою «Донор ооцитів» і порожнім
+ * місцем на пів екрана — у проді така програма є. Порожня програма — це
+ * чернетка: редактор її показує й тримає, а читачам вона не видна, доки в
+ * ній не зʼявиться місце, виплата, вимога, покриття чи умова.
+ */
+export const isProgramPresentable = program => {
+  if (!program) return false;
+  const payments = program.payments || {};
+  const req = program.requirements || {};
+  const hasRequirement = ['ageFrom', 'ageTo', 'bmiMax', 'heightFrom', 'maxBirths'].some(key => req[key] !== undefined && req[key] !== null && req[key] !== '')
+    || ['rh', 'marital', 'ownKids', 'csectionMax'].some(key => req[key] && req[key] !== 'any');
+  return Object.keys(payments).length > 0
+    || Boolean(program.otherPayments?.length)
+    || Boolean(program.bonuses?.length)
+    || Boolean(program.coverage?.length)
+    || Boolean(String(program.note || '').trim())
+    || Boolean(String(program.location || '').trim())
+    || hasRequirement;
+};
+
 // Порядок програм задає агенція (`order`, стрілки в редакторі): найцікавішу
 // вона ставить першою. Без `order` — за id, тобто за часом створення.
 const compareProgramOrder = (a, b) => {
@@ -279,7 +303,7 @@ export const listPrograms = (programs, { includeHidden = false } = {}) => {
     : Object.entries(programs);
   return entries
     .map(([id, program]) => normalizeProgram(program, id))
-    .filter(program => program && (includeHidden || !program.hidden))
+    .filter(program => program && (includeHidden || (!program.hidden && isProgramPresentable(program))))
     .sort(compareProgramOrder)
     .slice(0, MAX_PROGRAMS);
 };
@@ -716,4 +740,81 @@ export const programGuaranteedUsd = (program, rates) => {
   if (usd.length && usd.every(value => Number.isFinite(value))) return usd.reduce((sum, value) => sum + value, 0);
   if (!breakdown.lines.length) return programMoneyInUsd(programHeadlinePay(program), rates || undefined);
   return null;
+};
+
+// --- порівняння програм однієї агенції --------------------------------------
+
+/**
+ * Ключові ознаки програми для рядка списку — те, за чим програми однієї
+ * агенції й відрізняються: місце, вік, головні вимоги, доплати, покриття.
+ *
+ * Кожна ознака має `key`: `listProgramDifferences` порівнює програми саме за
+ * ними, і рядок підсвічує те, чим ця програма не схожа на сусідні. Порожніх
+ * ознак немає — чого агенція не вказала, того в рядку просто нема.
+ */
+export const describeProgramHighlights = program => {
+  if (!program) return [];
+  const requirements = describeProgramRequirements(program);
+  const age = requirements.find(item => item.key === 'age');
+  const others = requirements.filter(item => item.key !== 'age');
+  const bonuses = listProgramBonuses(program);
+  const items = [];
+  if (age) items.push({ ...age, compare: `${age.text}|${JSON.stringify(age.variables || {})}` });
+  others.slice(0, 2).forEach(item => items.push({ ...item, compare: `${item.text}|${JSON.stringify(item.variables || {})}` }));
+  if (bonuses.length) {
+    items.push({
+      key: 'bonuses',
+      text: bonuses.length === 1 ? '+1 доплата' : '+{count} доплати',
+      variables: { count: bonuses.length },
+      compare: bonuses.map(item => `${item.label}:${item.money.amount}${item.money.currency}`).sort().join(','),
+    });
+  }
+  if (program.coverage?.length) {
+    items.push({
+      key: 'coverage',
+      text: 'покриває {count}',
+      variables: { count: program.coverage.length },
+      compare: [...program.coverage].sort().join(','),
+    });
+  }
+  return items;
+};
+
+const programPayCompareKey = program => {
+  const money = programGuaranteedMoney(program);
+  return money ? `${money.amount}${money.currency}` : '';
+};
+
+/**
+ * Чим кожна програма відрізняється від інших програм **того самого типу** в
+ * цієї агенції: `Map<id, Set<key>>`, де `key` — 'location', 'pay' або ключ
+ * ознаки з `describeProgramHighlights`. Дві донорські програми, що різняться
+ * лише віком і сумою, мусять показати саме це, а не змусити читати обидві.
+ * Єдина програма свого типу відмінностей не має — порівнювати нема з чим.
+ */
+export const listProgramDifferences = programs => {
+  const result = new Map();
+  const list = Array.isArray(programs) ? programs : [];
+  PROGRAM_TYPES.forEach(type => {
+    const group = list.filter(program => program.type === type);
+    if (group.length < 2) return;
+    const signatures = group.map(program => {
+      const sig = new Map([
+        ['location', String(program.location || '').trim().toLowerCase()],
+        ['pay', programPayCompareKey(program)],
+      ]);
+      describeProgramHighlights(program).forEach(item => sig.set(item.key, item.compare));
+      return sig;
+    });
+    const keys = new Set(signatures.flatMap(sig => [...sig.keys()]));
+    group.forEach((program, index) => {
+      const differs = new Set();
+      keys.forEach(key => {
+        const own = signatures[index].get(key) ?? '';
+        if (signatures.some((sig, other) => other !== index && (sig.get(key) ?? '') !== own)) differs.add(key);
+      });
+      result.set(program.id, differs);
+    });
+  });
+  return result;
 };

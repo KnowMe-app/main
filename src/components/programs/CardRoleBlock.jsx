@@ -8,7 +8,7 @@ import { listProfileRoles } from '../../utils/matchingPeerVisibility';
 import { getRoleLabel } from '../profileLayoutConfig';
 import { ensureCardPrograms, readCardProgramsAt, useProgramsVersion } from '../../utils/programsStore';
 import { uiText } from '../../utils/uiTranslations';
-import { ProgramsSummary } from './ProgramsView';
+import { AgencyProgramsPanel } from './ProgramsView';
 
 /*
  * Чим картка агенції, клініки чи біологічних батьків каже про себе в стрічці.
@@ -16,6 +16,11 @@ import { ProgramsSummary } from './ProgramsView';
  * Донорку описують зріст, вага й пологи, і для неї рядок лишається як був.
  * Агенцію ж описують програми, а батьків — кого вони шукають; їхній зріст
  * донорці не каже нічого, а раніше рядок показував саме його.
+ *
+ * Агенцію ж описують програми — списком, по рядку на програму
+ * (`AgencyProgramsPanel`), просто в тілі картки під іменем. Досі вони стояли
+ * карусельлю повних карток **над** іменем, і хто це, читач дізнавався аж
+ * під першою програмою.
  *
  * Програми дочитуються тут, коли картка вже в списку (`ensureCardPrograms`),
  * і спершу з `localStorage`: картка несе лише версію програм (`programsAt`).
@@ -32,7 +37,8 @@ const Block = styled.div`
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-top: 9px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid ${BORDER};
 `;
 
@@ -94,7 +100,7 @@ const pickText = value => {
   return String(raw ?? '').trim();
 };
 
-export const CardRoleBlock = ({ card, programsContext, language, showPrograms = true }) => {
+export const CardRoleBlock = ({ card, programsContext, language, showPrograms = true, accent = '' }) => {
   const roles = listProfileRoles(card);
   const isOrganisation = roles.some(role => ORGANISATION_ROLES.includes(role));
   const isParent = roles.includes('ip');
@@ -114,7 +120,10 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
 
   return (
     <Block onClick={event => event.stopPropagation()}>
-      {isOrganisation && (isAlsoPerson || agencyName) && (programs.length || agencyName) ? (
+      {/* Назву організації шапка рядка вже показує (`ProfileRow`), коли рядок
+          — сама організація; підпис ролі з назвою потрібен лише тоді, коли
+          шапка належить людині, а організація — друга анкета картки. */}
+      {isOrganisation && isAlsoPerson && (programs.length || agencyName) ? (
         <RoleHeading>
           {getRoleLabel(organisationRole, language)}
           {agencyName ? <AgencyName> · {agencyName}</AgencyName> : null}
@@ -128,8 +137,9 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
         </Line>
       ) : null}
       {showPrograms && isOrganisation && programs.length && programsContext ? (
-        <ProgramsSummary
+        <AgencyProgramsPanel
           card={card}
+          accent={accent}
           language={language}
           viewerType={programsContext.viewerType}
           facts={programsContext.facts}

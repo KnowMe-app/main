@@ -20,7 +20,8 @@ describe('редактор програм', () => {
   it('не повторює тип програми у короткому описі', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
     expect(screen.getAllByText('Донор ооцитів')).toHaveLength(1);
-    expect(screen.getByText(/Київ · 2 500/)).toBeInTheDocument();
+    expect(screen.getByTestId('program-editor').querySelector('em')).toHaveTextContent('Київ · 2 500 $');
+    expect(screen.getByText('Готова до показу')).toBeInTheDocument();
   });
 
   it('ховає другорядні команди в меню дій', () => {
@@ -31,13 +32,34 @@ describe('редактор програм', () => {
     expect(screen.getByText('Видалити програму')).toBeVisible();
   });
 
-  it('показує повне прев’ю лише після розкриття редактора і прев’ю', () => {
+  it('поруч із формою — та сама картка, яку побачать у стрічці', () => {
+    render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
+    expect(screen.queryByTestId('program-card')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Донор ооцитів/ }));
+    expect(screen.getByTestId('program-card')).toHaveTextContent('2 500 $');
+    expect(screen.getByRole('button', { name: 'Як побачать' })).toBeInTheDocument();
+  });
+
+  it('можливу доплату не показує порожнім полем, а додає кнопкою', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
     fireEvent.click(screen.getByRole('button', { name: /Донор ооцитів/ }));
-    const disclosure = screen.getByText(/Попередній перегляд у стрічці/);
-    expect(screen.getByTestId('program-card')).not.toBeVisible();
-    fireEvent.click(disclosure);
-    expect(screen.getByTestId('program-card')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Доплата за досвід')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '+ Доплата за досвід' }));
+    expect(screen.getByLabelText('Доплата за досвід')).toBeInTheDocument();
+  });
+
+  it('каже про вимогу поза межами одразу, а не губить її при записі', () => {
+    render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Донор ооцитів/ }));
+    fireEvent.change(screen.getByLabelText('Вік до'), { target: { value: '18' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('«До» менше за «від»');
+    fireEvent.change(screen.getByLabelText('Вік до'), { target: { value: '70' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('Від 16 до 60');
+  });
+
+  it('порожню програму називає чернеткою, якої в стрічці не видно', () => {
+    render(<ProgramsEditor programs={{ p9: { id: 'p9', type: 'ed' } }} onSave={jest.fn()} language="uk" />);
+    expect(screen.getByText('Чернетка — у стрічці не видно')).toBeInTheDocument();
   });
 
   it('загальну суму не питає, а рахує — зі щомісячними × місяці', () => {
