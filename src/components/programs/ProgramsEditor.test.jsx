@@ -20,7 +20,7 @@ describe('редактор програм', () => {
   it('не повторює тип програми у короткому описі', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
     expect(screen.getAllByText('Донор ооцитів')).toHaveLength(1);
-    expect(screen.getByTestId('program-editor').querySelector('em')).toHaveTextContent('Київ · 2 500 $');
+    expect(screen.getByRole('button', { name: /Донор ооцитів/ })).toHaveTextContent('Київ · 2 500 $');
     expect(screen.getByText('Готова до показу')).toBeInTheDocument();
   });
 
