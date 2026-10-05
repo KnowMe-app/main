@@ -4848,15 +4848,37 @@ export const deletePhotos = async (userId, photoUrls = []) => {
   );
 };
 
-/** Шлях файлу в Storage з адреси `getDownloadURL` (або `''`, якщо це не Storage). */
+const FIREBASE_STORAGE_HOST = 'firebasestorage.googleapis.com';
+
+/**
+ * Шлях файлу в Storage з адреси `getDownloadURL` (або `''`, якщо це не файл
+ * нашого бакета).
+ *
+ * Адреса береться з поля `photos` анкети, тобто з даних, які пише й сама
+ * власниця, — тож розбір суворий: хост Firebase Storage, бакет цього проєкту,
+ * і жодних порожніх сегментів чи `..`. Шлях, що пройшов перевірку, далі
+ * стає адресою запису в Storage (`copyProfilePhotosBetweenCards`).
+ */
 export const storagePathFromDownloadUrl = url => {
-  const afterObjectSegment = String(url || '').split('/o/')[1];
-  if (!afterObjectSegment) return '';
+  let parsed;
   try {
-    return decodeURIComponent(afterObjectSegment.split('?')[0]);
+    parsed = new URL(String(url || ''));
   } catch {
     return '';
   }
+  if (parsed.protocol !== 'https:' || parsed.hostname !== FIREBASE_STORAGE_HOST) return '';
+  const bucket = storage?.app?.options?.storageBucket;
+  const prefix = `/v0/b/${bucket}/o/`;
+  if (!bucket || !parsed.pathname.startsWith(prefix)) return '';
+  let path;
+  try {
+    path = decodeURIComponent(parsed.pathname.slice(prefix.length));
+  } catch {
+    return '';
+  }
+  const segments = path.split('/');
+  if (segments.some(segment => !segment || segment === '.' || segment === '..')) return '';
+  return path;
 };
 
 /**
@@ -4890,12 +4912,16 @@ export const copyProfilePhotosBetweenCards = async ({ sourceUserId, targetUserId
   const copied = [];
   for (const url of photoUrls.filter(Boolean)) {
     const sourcePath = storagePathFromDownloadUrl(url);
+    // Фото препаратів — не фото анкети, хай чия це тека.
+    if (sourcePath.split('/').includes('medication')) continue;
     if (!sourcePath.startsWith(sourcePrefix)) {
+      // Чужий файл нашого бакета чи зовнішнє посилання: переноситься лише
+      // адреса, і тільки https — байти звідти не тягнемо.
+      if (!sourcePath && !/^https:\/\//i.test(String(url))) continue;
       copied.push(url);
       continue;
     }
     const relativePath = sourcePath.slice(sourcePrefix.length);
-    if (relativePath.startsWith('medication/')) continue;
     const sourceRef = ref(storage, sourcePath);
     let bytes;
     try {
