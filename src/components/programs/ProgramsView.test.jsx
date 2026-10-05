@@ -3,6 +3,7 @@ import '@testing-library/jest-dom';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { ProgramCard, ProgramsSummary } from './ProgramsView';
 import { CardRoleBlock, isCounterpartyCard } from './CardRoleBlock';
+import { AgencyMediaCarousel } from './AgencyMediaCarousel';
 import {
   loadOwnPrograms,
   peekOwnPrograms,
@@ -136,6 +137,27 @@ describe('картка агенції й батьків', () => {
   });
 
   afterEach(() => setProgramsTransport(null));
+
+  it('обʼєднує фотографії та програми в одну свайп-зону', () => {
+    render(
+      <AgencyMediaCarousel
+        card={{ userId: 'AG1', role: 'ag', programs }}
+        photos={['first.jpg', 'second.jpg']}
+        programsContext={context}
+        language="uk"
+      />
+    );
+    const carousel = screen.getByTestId('agency-media-carousel');
+    expect(within(carousel).getAllByRole('button', { name: 'Відкрити фото' })).toHaveLength(2);
+    expect(within(carousel).getAllByTestId('program-card')).toHaveLength(3);
+    expect(within(carousel).getByText('Програма 1 з 3')).toBeInTheDocument();
+    expect(screen.queryByTestId('programs-summary')).not.toBeInTheDocument();
+  });
+
+  it('без фото й програм не збільшує контактну картку', () => {
+    const { container } = render(<AgencyMediaCarousel card={{ userId: 'AG2', role: 'ag' }} language="uk" />);
+    expect(container).toBeEmptyDOMElement();
+  });
 
   it('програми картки бере спершу з браузера — без запиту', () => {
     const read = jest.fn();
