@@ -56,6 +56,27 @@ const Wrap = styled.div`
   padding: 14px 0;
 `;
 
+const EditorGuide = styled.div`
+  display: grid;
+  gap: 9px;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--km-accent, #E8791A) 24%, var(--km-border, #e7e1d8));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--km-accent, #E8791A) 6%, var(--km-card, #fff));
+
+  > b { font-size: 14px; line-height: 1.35; }
+  > span { color: var(--km-muted, #6f675f); font-size: 12px; line-height: 1.45; }
+  > div { display: flex; flex-wrap: wrap; gap: 6px; }
+  small {
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: var(--km-card, #fff);
+    color: var(--km-muted, #6f675f);
+    font-size: 11px;
+    font-weight: 600;
+  }
+`;
+
 const ProgramBox = styled.div`
   border: 1px ${({ $hidden }) => ($hidden ? 'dashed' : 'solid')} var(--km-border, #e7e1d8);
   border-left: 4px solid ${({ $hidden, $incomplete }) => ($hidden ? 'var(--km-muted, #6f675f)' : $incomplete ? '#D99A25' : 'var(--km-accent, #E8791A)')};
@@ -130,8 +151,8 @@ const ProgramHead = styled.div`
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 8px;
-  padding: 10px 12px;
-  background: var(--km-bg, #faf8f5);
+  padding: 12px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--km-accent, #E8791A) 7%, var(--km-card, #fff)), var(--km-card, #fff));
 `;
 
 const HeadText = styled.button`
@@ -150,8 +171,22 @@ const HeadText = styled.button`
   text-align: left;
   cursor: pointer;
 
-  b { font-size: 14px; }
+  b { font-size: 15px; }
   span { font-size: 12px; color: var(--km-muted, #6f675f); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+`;
+
+const HeadStatus = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: ${({ $complete }) => ($complete ? '#247a43' : '#9a6610')};
+  background: ${({ $complete }) => ($complete ? '#ebf8ef' : '#fff4dc')};
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
 `;
 
 const SmallButton = styled.button`
@@ -211,7 +246,8 @@ const Body = styled.div`
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 12px;
+  padding: 14px 12px;
+  background: color-mix(in srgb, var(--km-bg, #faf8f5) 54%, var(--km-card, #fff));
 `;
 
 const Group = styled.fieldset`
@@ -220,15 +256,18 @@ const Group = styled.fieldset`
      картки, обрізаючи «₴». */
   min-width: 0;
   margin: 0;
-  padding: 0;
-  border: 0;
+  padding: 12px;
+  border: 1px solid var(--km-border, #e7e1d8);
+  border-radius: 12px;
+  background: var(--km-card, #fff);
   display: flex;
   flex-direction: column;
   gap: 8px;
 
   legend {
-    padding: 0;
-    margin-bottom: 6px;
+    padding: 0 5px;
+    margin-left: -5px;
+    margin-bottom: 2px;
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.06em;
@@ -677,10 +716,21 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
 
   return (
     <Wrap>
+      <EditorGuide>
+        <b>{uiText('Одна програма — одна зрозуміла пропозиція', language)}</b>
+        <span>{uiText('Вкажіть гарантовані виплати окремо: застосунок сам порахує підсумок і покаже програму першою у свайп-зоні агенції.', language)}</span>
+        <div>
+          <small>{uiText('1 · Кого шукаєте', language)}</small>
+          <small>{uiText('2 · Виплати', language)}</small>
+          <small>{uiText('3 · Вимоги й покриття', language)}</small>
+        </div>
+      </EditorGuide>
       {draft.map((program, index) => {
         const open = openId === program.id;
+        const normalized = normalizeProgram(program, program.id);
+        const complete = Boolean(normalized && programBreakdown(normalized).guaranteed.amount > 0);
         return (
-          <ProgramBox key={program.id} data-testid="program-editor" $hidden={program.hidden} $incomplete={!normalizeProgram(program, program.id)}>
+          <ProgramBox key={program.id} data-testid="program-editor" $hidden={program.hidden} $incomplete={!complete}>
             <ProgramHead style={program.hidden ? { opacity: 0.72 } : undefined}>
               <HeadText type="button" aria-expanded={open} onClick={() => { flush(); setOpenId(open ? '' : program.id); }}>
                 <b>
@@ -689,6 +739,9 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
                 </b>
                 <span>{summaryLine(program, language)}</span>
               </HeadText>
+              <HeadStatus $complete={complete}>
+                {complete ? '✓' : '•'} {uiText(complete ? 'Готова до показу' : 'Заповніть виплату', language)}
+              </HeadStatus>
               <HeadActions>
               {confirmDeleteId === program.id ? (
                 <>

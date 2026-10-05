@@ -49,6 +49,7 @@ import {
 import { getRoleColor } from './matchingRoleColors';
 import * as S from './MatchingHiddenList.styled';
 import { CardRoleBlock, isCounterpartyCard } from './programs/CardRoleBlock';
+import { AgencyMediaCarousel } from './programs/AgencyMediaCarousel';
 import { isOrganisationAnketaRole } from '../utils/cardAnketas';
 import { listProfileRoles } from '../utils/matchingPeerVisibility';
 import {
@@ -1243,6 +1244,7 @@ const ProfileRow = ({
   const { language } = useAppSettings();
   const isOrganisationAnketa = Boolean(anketaRole) && isOrganisationAnketaRole(anketaRole);
   const isPersonAnketa = Boolean(anketaRole) && !isOrganisationAnketa;
+  const showsOrganisation = !isPersonAnketa && (isOrganisationAnketa || listProfileRoles(user).some(isOrganisationAnketaRole));
   const organisationName = isOrganisationAnketa ? pickCurrentText(user?.agencyName) : '';
   const name = organisationName || getProfileName(user);
   const rowRole = anketaRole || getProfileRole(user);
@@ -1273,6 +1275,10 @@ const ProfileRow = ({
     event.stopPropagation();
     if (!photosComplete) requestPhotos();
     setViewerIndex(photoSwipe.index || 0);
+  };
+  const openPhotoViewerAt = index => {
+    if (!photosComplete) requestPhotos();
+    setViewerIndex(index);
   };
   const bio = isOrganisationAnketa ? '' : getProfileBio(user);
   // Картку складають ті самі три частини, що й відкриту картку
@@ -1445,7 +1451,15 @@ const ProfileRow = ({
           Плитки з ініціалами тут немає й не було: вона повторювала імʼя, яке
           стоїть рядком нижче. Немає фото — рядок починається з імені, а «хто
           це» несе смужка ролі на лівому краї картки. */}
-      {photo && (
+      {showsOrganisation ? (
+        <AgencyMediaCarousel
+          card={roleBlockCard}
+          photos={photos}
+          programsContext={programsContext}
+          language={language}
+          onOpenPhoto={openPhotoViewerAt}
+        />
+      ) : photo && (
         <S.Photo
           {...photoSwipe.handlers}
           $loading={photoSwipe.loading}
@@ -1538,7 +1552,7 @@ const ProfileRow = ({
           про людину одне й те саме однаковими словами. */}
       <ProfileStatStrip cells={statCells} />
       <ProfileFactList rows={summaryRows} />
-      {!isLimited && !isPersonAnketa ? <CardRoleBlock card={roleBlockCard} programsContext={programsContext} language={language} /> : null}
+      {!isLimited && !isPersonAnketa ? <CardRoleBlock card={roleBlockCard} programsContext={programsContext} language={language} showPrograms={!showsOrganisation} /> : null}
 
       {/* «Детальніше» — під коротким описом, посеред картки, а не стрілкою в
           правому кінці ряду рішень: розгортають саме те, що щойно прочитали,
