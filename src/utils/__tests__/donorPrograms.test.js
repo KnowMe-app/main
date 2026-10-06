@@ -18,6 +18,11 @@ import {
   resolveViewerProgramType,
   sortCardsByMode,
   summarizeCardPrograms,
+  HIGHLIGHTS_NONE,
+  describeProgramRequirements,
+  formatProgramPlace,
+  programPayLabel,
+  resolveProgramHighlights,
 } from '../donorPrograms';
 import {
   convertProgramAmount,
@@ -341,5 +346,108 @@ describe('чернетки й порівняння програм', () => {
     const differences = listProgramDifferences(list);
     expect([...differences.get('a')].sort()).toEqual(['location', 'pay']);
     expect(differences.has('c')).toBe(false);
+  });
+});
+
+describe('програми з оголошень: що зберігається', () => {
+  const surrogacy = {
+    id: 's1',
+    type: 'sm',
+    name: 'Програма в Києві',
+    payKind: 'final',
+    startNow: true,
+    payments: {
+      final: { amount: '15 000', currency: 'USD' },
+      monthly: { amount: 900, currency: 'USD', months: 9, includes: { label: 'одяг', amount: 400, currency: 'USD' } },
+      transfer: { amount: 300, currency: 'USD', when: 'після переносу', condition: '' },
+    },
+    otherPayments: [{ label: '20 тиждень', amount: 500, currency: 'USD', when: 'на 20 тижні', condition: 'якщо вагітність триває' }],
+    bonuses: [{ label: 'Кесарів', amount: 1000, currency: 'USD', condition: 'якщо пологи кесаревим' }],
+    requirements: { csectionMax: '1', ageTo: 37 },
+    requirementMeta: { csection: { level: 'individual', note: 'через 2 роки після КР' }, rh: { level: 'free' }, bogus: { level: 'free' } },
+    stages: [{ stage: 'screening', place: 'Київ' }, { stage: 'delivery', place: 'Львів' }, { stage: 'nope', place: 'Одеса' }, { stage: 'transfer', place: '' }],
+    relocation: { when: 'з 12 тижня', family: 'yes', note: 'квартира' },
+    coverage: ['housing', 'food'],
+    coverageDetails: { housing: { mode: 'paid' }, food: { mode: 'allowance', limit: { amount: 10, currency: 'USD' }, per: 'day', note: 'готівкою' }, travel: { mode: 'paid' } },
+    highlights: ['startNow', 'csection'],
+  };
+
+  it('нормалізація зберігає вид суми, графік з умовами, рівні вимог, етапи, переїзд, покриття й головне', () => {
+    const program = normalizeProgram(surrogacy);
+    expect(program.name).toBe('Програма в Києві');
+    // Типовий вид суми не пишеться: «final» для СМ і так за замовчуванням.
+    expect(program.payKind).toBeUndefined();
+    expect(program.startNow).toBe(true);
+    expect(program.payments.monthly).toEqual({ amount: 900, currency: 'USD', months: 9, includes: { label: 'одяг', amount: 400, currency: 'USD' } });
+    expect(program.payments.transfer).toEqual({ amount: 300, currency: 'USD', when: 'після переносу' });
+    expect(program.otherPayments[0]).toEqual(expect.objectContaining({ when: 'на 20 тижні', condition: 'якщо вагітність триває' }));
+    expect(program.bonuses[0]).toEqual(expect.objectContaining({ condition: 'якщо пологи кесаревим' }));
+    expect(program.requirementMeta).toEqual({ csection: { level: 'individual', note: 'через 2 роки після КР' }, rh: { level: 'free' } });
+    expect(program.stages).toEqual([{ stage: 'screening', place: 'Київ' }, { stage: 'delivery', place: 'Львів' }, { stage: 'other', place: 'Одеса' }]);
+    expect(program.relocation).toEqual({ when: 'з 12 тижня', family: 'yes', note: 'квартира' });
+    // Подробиці лише для відміченого покриття.
+    expect(program.coverageDetails).toEqual({ housing: { mode: 'paid' }, food: { mode: 'allowance', limit: { amount: 10, currency: 'USD' }, per: 'day', note: 'готівкою' } });
+    expect(program.highlights).toEqual(['startNow', 'csection']);
+    // Друга нормалізація — та сама програма: збереження й повторне редагування нічого не губить.
+    expect(normalizeProgram(program)).toEqual(program);
+  });
+
+  it('вкладена сума не додається, а графік рахується повністю', () => {
+    const breakdown = programBreakdown(normalizeProgram(surrogacy));
+    // 15 000 + 900 × 9 + 300 + 500
+    expect(breakdown.guaranteed.amount).toBe(23900);
+    expect(breakdown.reliable).toBe(true);
+  });
+
+  it('гарантований мінімум тримає максимум з умовою; іншому виду суми максимум не лишається', () => {
+    const guaranteed = normalizeProgram({ id: 'g', type: 'ed', payKind: 'guaranteed', payments: { final: { amount: 55000, currency: 'UAH' } }, payMax: { amount: 70000, currency: 'UAH', condition: 'залежно від результату' } });
+    expect(guaranteed.payMax).toEqual({ amount: 70000, currency: 'UAH', condition: 'залежно від результату' });
+    expect(programBreakdown(guaranteed).upTo.amount).toBe(70000);
+    expect(programPayLabel(guaranteed)).toEqual({ text: 'Гарантовано донорці' });
+    const cycle = normalizeProgram({ ...guaranteed, payKind: 'cycle' });
+    expect(cycle.payMax).toBeUndefined();
+  });
+
+  it('«бажано» й «індивідуально» не відмовляють, «без обмежень» — окремий пункт', () => {
+    const program = normalizeProgram({ id: 'r', type: 'ed', requirements: { ageTo: 30 }, requirementMeta: { age: { level: 'preferred' }, marital: { level: 'free' } } });
+    expect(evaluateProgram(program, { age: 33 })).toEqual(expect.objectContaining({ matches: true, uncertain: true }));
+    expect(describeProgramRequirements(program).map(item => item.key)).toEqual(['age', 'marital']);
+    const strict = normalizeProgram({ id: 'r', type: 'ed', requirements: { ageTo: 30 } });
+    expect(evaluateProgram(strict, { age: 33 }).matches).toBe(false);
+  });
+
+  it('головне без вибору агенції — типові ознаки; зняте все — порожньо', () => {
+    const base = normalizeProgram({ ...surrogacy, highlights: undefined });
+    expect(resolveProgramHighlights(base).map(item => item.key)).toEqual(['startNow', 'monthly', 'age', 'csection']);
+    expect(resolveProgramHighlights({ ...base, highlights: [HIGHLIGHTS_NONE] })).toEqual([]);
+  });
+
+  it('місце показується з великої літери', () => {
+    expect(formatProgramPlace('київ; пологи в грузії')).toBe('Київ; Пологи в грузії');
+  });
+});
+
+describe('запис програм, поки правила не викочені', () => {
+  // eslint-disable-next-line global-require
+  const { stripExtendedProgramFields } = require('../../components/programs/programsRemote');
+
+  it('прибирає лише нові поля й лишає те, що правила вже приймають', () => {
+    const items = {
+      p1: {
+        id: 'p1', type: 'sm', name: 'X', payKind: 'total', startNow: true, location: 'Київ',
+        payments: { final: { amount: 1, currency: 'USD', when: 'потім' }, monthly: { amount: 2, currency: 'USD', months: 9, includes: { label: 'одяг', amount: 1, currency: 'USD' } } },
+        otherPayments: [{ label: 'a', amount: 3, currency: 'USD', condition: 'c' }],
+        bonuses: [{ label: 'b', amount: 4, currency: 'USD', condition: 'c' }],
+        stages: [{ stage: 'other', place: 'Львів' }], highlights: ['startNow'], requirementMeta: { age: { level: 'free' } },
+      },
+    };
+    expect(stripExtendedProgramFields(items)).toEqual({
+      p1: {
+        id: 'p1', type: 'sm', location: 'Київ',
+        payments: { final: { amount: 1, currency: 'USD' }, monthly: { amount: 2, currency: 'USD', months: 9 } },
+        otherPayments: [{ label: 'a', amount: 3, currency: 'USD' }],
+        bonuses: [{ label: 'b', amount: 4, currency: 'USD' }],
+      },
+    });
   });
 });

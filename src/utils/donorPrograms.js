@@ -42,6 +42,82 @@ export const PROGRAM_TYPE_LABELS = Object.freeze({
 });
 
 /**
+ * Назва програми як пропозиції, а не ролі людини. «Донор ооцитів» у шапці
+ * програми читався як підпис самої агенції («хто це»), тож заголовок
+ * програми каже, що саме пропонують: донорство чи сурогатне материнство.
+ * `PROGRAM_TYPE_LABELS` лишається для перемикача «Кого шукаєте» в редакторі.
+ */
+export const PROGRAM_OFFER_LABELS = Object.freeze({
+  ed: 'Донорство ооцитів',
+  sm: 'Сурогатне материнство',
+});
+
+/**
+ * Що означає головна сума програми. У чатах агенцій те саме число зветься
+ * то «за програму», то «разом», то «винагорода за цикл», а значить різне:
+ * донорці платять за цикл, СМ — фінальну виплату плюс графік, а дехто пише
+ * «55 000 ₴ гарантовано, до 70 000 ₴ за результатом». Тож вид суми агенція
+ * вибирає сама, і той самий підпис іде в редактор, рядок і деталі.
+ *
+ * - `cycle` — фіксовано за цикл донації (донорці за замовчуванням);
+ * - `final` — фінальна виплата, решта графіка — окремими рядками (СМ);
+ * - `total` — загальна винагорода: виплати графіка вже **всередині** неї
+ *   й до суми не додаються;
+ * - `guaranteed` — гарантований мінімум, а поруч «до …» з умовою (`payMax`).
+ */
+export const PROGRAM_PAY_KINDS = Object.freeze({
+  ed: Object.freeze([
+    { key: 'cycle', label: 'Фіксовано за цикл донації' },
+    { key: 'guaranteed', label: 'Гарантовано + до …' },
+    { key: 'total', label: 'Загалом за програму' },
+  ]),
+  sm: Object.freeze([
+    { key: 'final', label: 'Фінальна виплата + графік' },
+    { key: 'total', label: 'Загальна винагорода' },
+    { key: 'guaranteed', label: 'Гарантований мінімум + до …' },
+  ]),
+});
+
+export const DEFAULT_PAY_KIND = Object.freeze({ ed: 'cycle', sm: 'final' });
+
+export const resolveProgramPayKind = program => {
+  const type = program?.type === 'sm' ? 'sm' : 'ed';
+  const kind = program?.payKind;
+  return PROGRAM_PAY_KINDS[type].some(option => option.key === kind) ? kind : DEFAULT_PAY_KIND[type];
+};
+
+// Кому платять — словом у самому підписі: читачка мусить бачити, що гроші
+// отримує вона, а не платить. Підпис цілим рядком на кожен тип, а не
+// підставлене «донорці»: так його перекладає словник інтерфейсу.
+const PAY_LABELS = Object.freeze({
+  ed: Object.freeze({
+    cycle: 'Винагорода донорці за цикл',
+    total: 'Винагорода донорці за програму',
+    guaranteed: 'Гарантовано донорці',
+    final: 'Фінальна виплата донорці',
+    sum: 'Разом донорці за програму',
+  }),
+  sm: Object.freeze({
+    cycle: 'Винагорода сурогатній мамі за цикл',
+    total: 'Винагорода сурогатній мамі за програму',
+    guaranteed: 'Гарантовано сурогатній мамі',
+    final: 'Фінальна виплата сурогатній мамі',
+    sum: 'Разом сурогатній мамі за програму',
+  }),
+});
+
+/**
+ * Підпис головної суми: хто отримує і за що. Один на редактор, рядок і
+ * деталі — «Разом за програму», «За програму» й «Винагорода за цикл» про ту
+ * саму суму стояли поруч у трьох місцях картки. `sum` — підпис суми за
+ * повним графіком (`describeProgramOffer`).
+ */
+export const programPayLabel = (program, { sum = false } = {}) => {
+  const type = program?.type === 'sm' ? 'sm' : 'ed';
+  return { text: PAY_LABELS[type][sum ? 'sum' : resolveProgramPayKind(program)] };
+};
+
+/**
  * Виплати за типом програми. Перша — головна: саме вона йде в діапазон
  * рядка стрічки, у фільтр і в сортування.
  *
@@ -101,25 +177,103 @@ export const PROGRAM_COVERAGE_OPTIONS = Object.freeze([
   { key: 'family', label: 'Переїзд із сімʼєю' },
 ]);
 
+// Витрати й супровід — різні питання («скільки я витрачу» і «хто мені
+// допоможе»), тож картка показує їх двома групами.
+export const PROGRAM_SUPPORT_COVERAGE = Object.freeze(['legal', 'notary', 'support', 'insurance']);
+
+/**
+ * Як саме агенція покриває витрату. «Житло» без пояснення читалось і як
+ * «знімаємо квартиру», і як «компенсуємо оренду», і як «гроші на житло
+ * всередині винагороди» — а для кандидатки це три різні суми на руках.
+ */
+export const PROGRAM_COVERAGE_MODES = Object.freeze([
+  { key: 'paid', label: 'Оплачує агенція' },
+  { key: 'reimbursed', label: 'Компенсує за чеками' },
+  { key: 'allowance', label: 'Видає кошти' },
+  { key: 'included', label: 'Входить у винагороду' },
+]);
+
+export const PROGRAM_COVERAGE_PER = Object.freeze([
+  { key: 'total', label: 'за весь час' },
+  { key: 'day', label: 'на день' },
+  { key: 'month', label: 'на місяць' },
+]);
+
+/**
+ * Рівень вимоги. «Не вказано» (рівня немає) і «без обмежень» (`free`) —
+ * різні відповіді: перше значить «агенція не сказала», друге — «сказала, що
+ * не важливо», і лише друге можна обіцяти кандидатці.
+ */
+export const PROGRAM_REQUIREMENT_LEVELS = Object.freeze([
+  { key: 'required', label: 'Обовʼязково' },
+  { key: 'preferred', label: 'Бажано' },
+  { key: 'individual', label: 'Індивідуально' },
+  { key: 'free', label: 'Без обмежень' },
+]);
+
+export const PROGRAM_REQUIREMENT_KEYS = Object.freeze(['age', 'bmi', 'height', 'rh', 'marital', 'ownKids', 'births', 'csection']);
+
+export const PROGRAM_REQUIREMENT_LABELS = Object.freeze({
+  age: 'Вік',
+  bmi: 'ІМТ',
+  height: 'Зріст',
+  rh: 'Група крові / резус',
+  marital: 'Сімейний стан',
+  ownKids: 'Власні діти',
+  births: 'Кількість пологів',
+  csection: 'Кесарів розтин',
+});
+
+/**
+ * Етапи програми й де кожен проходить. Обстеження в одному місті, стимуляція
+ * в іншому, пункція за кордоном — у чатах це три окремі абзаци, а одне поле
+ * «Де проходить» вміщало хіба перше.
+ */
+export const PROGRAM_STAGE_OPTIONS = Object.freeze({
+  ed: Object.freeze([
+    { key: 'screening', label: 'Обстеження' },
+    { key: 'stimulation', label: 'Стимуляція' },
+    { key: 'retrieval', label: 'Пункція' },
+    { key: 'other', label: 'Інше' },
+  ]),
+  sm: Object.freeze([
+    { key: 'screening', label: 'Обстеження' },
+    { key: 'transfer', label: 'Перенос ембріона' },
+    { key: 'pregnancy', label: 'Вагітність' },
+    { key: 'delivery', label: 'Пологи' },
+    { key: 'other', label: 'Інше' },
+  ]),
+});
+
+const ALL_STAGE_KEYS = new Set(Object.values(PROGRAM_STAGE_OPTIONS).flat().map(option => option.key));
+
+export const PROGRAM_FAMILY_OPTIONS = Object.freeze([
+  { key: '', label: 'Не вказано' },
+  { key: 'yes', label: 'Можна з сімʼєю' },
+  { key: 'no', label: 'Без сімʼї' },
+]);
+
+export const MAX_PROGRAM_HIGHLIGHTS = 4;
+
 export const PROGRAM_RH_OPTIONS = Object.freeze([
-  { key: 'any', label: 'Будь-який' },
+  { key: 'any', label: 'Не вказано' },
   { key: '+', label: 'Лише Rh+' },
   { key: '-', label: 'Лише Rh−' },
 ]);
 
 export const PROGRAM_MARITAL_OPTIONS = Object.freeze([
-  { key: 'any', label: 'Не має значення' },
+  { key: 'any', label: 'Не вказано' },
   { key: 'unmarried', label: 'Лише незаміжня' },
   { key: 'married', label: 'Лише заміжня' },
 ]);
 
 export const PROGRAM_KIDS_OPTIONS = Object.freeze([
-  { key: 'any', label: 'Не має значення' },
+  { key: 'any', label: 'Не вказано' },
   { key: 'required', label: 'Потрібна власна дитина' },
 ]);
 
 export const PROGRAM_CSECTION_OPTIONS = Object.freeze([
-  { key: 'any', label: 'Не має значення' },
+  { key: 'any', label: 'Не вказано' },
   { key: '0', label: 'Без КР' },
   { key: '1', label: 'Можна з 1 КР' },
   { key: '2', label: 'До 2 КР' },
@@ -213,12 +367,12 @@ export const normalizeProgram = (raw, id) => {
     if (!money) return;
     if (key === 'monthly') {
       const months = wholeNumber(raw.payments.monthly.months, { min: 1, max: MAX_MONTHLY_MONTHS });
-      if (months !== null) money.months = Math.round(months);
+      if (money && months !== null) money.months = Math.round(months);
     }
-    payments[key] = money;
+    payments[key] = key === PROGRAM_TOTAL_FIELD ? money : { ...money, ...normalizePaymentExtras(raw.payments[key]) };
   });
   const otherPayments = normalizeLabeledPayments(raw.otherPayments);
-  const bonuses = normalizeLabeledPayments(raw.bonuses);
+  const bonuses = normalizeLabeledPayments(raw.bonuses, { extras: false });
   const coverageKeys = new Set(PROGRAM_COVERAGE_OPTIONS.map(option => option.key));
   const coverage = (Array.isArray(raw.coverage) ? raw.coverage : Object.keys(raw.coverage || {}))
     .filter(key => coverageKeys.has(key));
@@ -240,6 +394,36 @@ export const normalizeProgram = (raw, id) => {
     : noteRaw;
   if (location) program.location = location;
   if (note) program.note = note;
+  // Власна назва програми — `name`, а не `title`: `title` прибрали 30.09, і в
+  // старих записах він дублює місце («Київ»), тож воскресити його означало б
+  // показати назви, яких агенція вже не бачить у редакторі.
+  const name = text(raw.name, 60);
+  if (name) program.name = name;
+  const payKinds = PROGRAM_PAY_KINDS[type];
+  if (payKinds.some(option => option.key === raw.payKind) && raw.payKind !== DEFAULT_PAY_KIND[type]) program.payKind = raw.payKind;
+  const payMax = normalizeProgramMoney(raw.payMax);
+  if (payMax && resolveProgramPayKind(program) === 'guaranteed') {
+    const condition = text(raw.payMax.condition, 120);
+    program.payMax = condition ? { ...payMax, condition } : payMax;
+  }
+  if (raw.startNow === true) program.startNow = true;
+  const requirementMeta = normalizeRequirementMeta(raw.requirementMeta);
+  if (requirementMeta) program.requirementMeta = requirementMeta;
+  const stages = (Array.isArray(raw.stages) ? raw.stages : Object.values(raw.stages || {}))
+    .map(item => ({ stage: ALL_STAGE_KEYS.has(item?.stage) ? item.stage : 'other', place: text(item?.place) }))
+    .filter(item => item.place)
+    .slice(0, 6);
+  if (stages.length) program.stages = stages;
+  const relocation = normalizeRelocation(raw.relocation);
+  if (relocation) program.relocation = relocation;
+  const coverageDetails = normalizeCoverageDetails(raw.coverageDetails, program.coverage || coverage);
+  if (coverageDetails) program.coverageDetails = coverageDetails;
+  const highlights = (Array.isArray(raw.highlights) ? raw.highlights : Object.values(raw.highlights || {}))
+    .map(key => text(key, 30))
+    .filter(Boolean);
+  // Агенція, яка зняла всі ознаки, теж вибрала — і типові їй не
+  // підставляються: це `['none']` (`HIGHLIGHTS_NONE`), а не порожній список.
+  if (highlights.length) program.highlights = [...new Set(highlights)].slice(0, MAX_PROGRAM_HIGHLIGHTS);
   if (otherPayments.length) program.otherPayments = otherPayments;
   if (bonuses.length) program.bonuses = bonuses;
   if (coverage.length) program.coverage = [...new Set(coverage)];
@@ -251,14 +435,84 @@ export const normalizeProgram = (raw, id) => {
   return program;
 };
 
-const normalizeLabeledPayments = value => (Array.isArray(value) ? value : Object.values(value || {}))
+/**
+ * Подробиці однієї виплати графіка: коли платять, за якої умови, і що вже
+ * всередині неї. «900 $ щомісяця, з них 400 $ на одяг» — це 900, а не 1 300:
+ * вкладена сума (`includes`) показується, але до разом не додається.
+ */
+const normalizePaymentExtras = raw => {
+  const extras = {};
+  const when = text(raw?.when, 60);
+  const condition = text(raw?.condition, 120);
+  if (when) extras.when = when;
+  if (condition) extras.condition = condition;
+  const included = normalizeProgramMoney(raw?.includes);
+  const includedLabel = text(raw?.includes?.label, 60);
+  if (included && includedLabel) extras.includes = { label: includedLabel, ...included };
+  return extras;
+};
+
+const normalizeLabeledPayments = (value, { extras = true } = {}) => (Array.isArray(value) ? value : Object.values(value || {}))
   .map(item => {
     const money = normalizeProgramMoney(item);
     const label = text(item?.label, 60);
-    return money && label ? { label, ...money } : null;
+    if (!money || !label) return null;
+    if (extras) return { label, ...money, ...normalizePaymentExtras(item) };
+    const condition = text(item?.condition, 120);
+    return condition ? { label, ...money, condition } : { label, ...money };
   })
   .filter(Boolean)
   .slice(0, 8);
+
+const LEVEL_KEYS = new Set(PROGRAM_REQUIREMENT_LEVELS.map(option => option.key));
+
+const normalizeRequirementMeta = raw => {
+  if (!raw || typeof raw !== 'object') return null;
+  const meta = {};
+  PROGRAM_REQUIREMENT_KEYS.forEach(key => {
+    const level = LEVEL_KEYS.has(raw[key]?.level) ? raw[key].level : '';
+    const note = text(raw[key]?.note, 120);
+    if (!level && !note) return;
+    meta[key] = { ...(level ? { level } : {}), ...(note ? { note } : {}) };
+  });
+  return Object.keys(meta).length ? meta : null;
+};
+
+const normalizeRelocation = raw => {
+  if (!raw || typeof raw !== 'object') return null;
+  const relocation = {};
+  const when = text(raw.when);
+  const note = text(raw.note, 120);
+  if (when) relocation.when = when;
+  if (raw.family === 'yes' || raw.family === 'no') relocation.family = raw.family;
+  if (note) relocation.note = note;
+  return Object.keys(relocation).length ? relocation : null;
+};
+
+const COVERAGE_MODE_KEYS = new Set(PROGRAM_COVERAGE_MODES.map(option => option.key));
+const COVERAGE_PER_KEYS = new Set(PROGRAM_COVERAGE_PER.map(option => option.key));
+
+// Подробиці лише для відміченого: зняте покриття не лишає по собі «ліміту»,
+// якого в картці вже не видно.
+const normalizeCoverageDetails = (raw, coverage) => {
+  if (!raw || typeof raw !== 'object') return null;
+  const allowed = new Set(Array.isArray(coverage) ? coverage : []);
+  const details = {};
+  Object.entries(raw).forEach(([key, value]) => {
+    if (!allowed.has(key) || !value || typeof value !== 'object') return;
+    const item = {};
+    if (COVERAGE_MODE_KEYS.has(value.mode)) item.mode = value.mode;
+    const limit = normalizeProgramMoney(value.limit);
+    if (limit) {
+      item.limit = limit;
+      if (COVERAGE_PER_KEYS.has(value.per) && value.per !== 'total') item.per = value.per;
+    }
+    const note = text(value.note, 120);
+    if (note) item.note = note;
+    if (Object.keys(item).length) details[key] = item;
+  });
+  return Object.keys(details).length ? details : null;
+};
 
 /**
  * Чи програма каже читачеві хоч щось, окрім свого типу.
@@ -281,6 +535,8 @@ export const isProgramPresentable = program => {
     || Boolean(program.coverage?.length)
     || Boolean(String(program.note || '').trim())
     || Boolean(String(program.location || '').trim())
+    || Boolean(String(program.name || '').trim())
+    || Boolean(program.stages?.length)
     || hasRequirement;
 };
 
@@ -423,6 +679,13 @@ export const evaluateProgram = (program, facts) => {
   if (req.csectionMax && req.csectionMax !== 'any') {
     push('csection', f.csections === null || f.csections === undefined ? null : f.csections <= Number(req.csectionMax));
   }
+  // «Бажано» й «індивідуально» не відмовляють: агенція сама сказала, що
+  // розглядає. Розбіжність там — питання, а не «не підходить».
+  const meta = program?.requirementMeta || {};
+  checks.forEach(check => {
+    const level = meta[check.key]?.level;
+    if (check.ok === false && (level === 'preferred' || level === 'individual')) check.ok = null;
+  });
   const failed = checks.some(check => check.ok === false);
   const unknown = checks.some(check => check.ok === null);
   return { matches: !failed, uncertain: !failed && unknown, checks };
@@ -589,6 +852,7 @@ export const sortCardsByMode = (cards, mode, { viewerType = '', facts = null, ra
  */
 export const describeProgramRequirements = program => {
   const req = program?.requirements || {};
+  const meta = program?.requirementMeta || {};
   const items = [];
   if (req.ageFrom !== undefined && req.ageTo !== undefined) items.push({ key: 'age', text: '{from}–{to} років', variables: { from: req.ageFrom, to: req.ageTo } });
   else if (req.ageTo !== undefined) items.push({ key: 'age', text: 'до {value} років', variables: { value: req.ageTo } });
@@ -604,21 +868,57 @@ export const describeProgramRequirements = program => {
   if (req.csectionMax === '0') items.push({ key: 'csection', text: 'без КР' });
   if (req.csectionMax === '1') items.push({ key: 'csection', text: 'можна з 1 КР' });
   if (req.csectionMax === '2') items.push({ key: 'csection', text: 'до 2 КР' });
-  return items;
+  // Рівень і пояснення лягають на ту саму вимогу: «можна з 1 КР — через
+  // 2 роки після операції» — одна умова, а не дві. Явне «без обмежень» без
+  // значення — окремий пункт: «не вказано» мовчить, а це — відповідь.
+  const described = items.map(item => {
+    const own = meta[item.key] || {};
+    const level = own.level === 'free' ? '' : own.level || '';
+    return { ...item, ...(level ? { level } : {}), ...(own.note ? { note: own.note } : {}) };
+  });
+  PROGRAM_REQUIREMENT_KEYS.forEach(key => {
+    if (described.some(item => item.key === key)) return;
+    const own = meta[key];
+    if (own?.level === 'free') described.push({ key, text: '{label} — без обмежень', variables: { label: PROGRAM_REQUIREMENT_LABELS[key] }, level: 'free', ...(own.note ? { note: own.note } : {}) });
+    else if (own?.note) described.push({ key, text: '{label}', variables: { label: PROGRAM_REQUIREMENT_LABELS[key] }, level: own.level || 'individual', note: own.note });
+  });
+  return described;
 };
+
+const paymentExtras = item => ({
+  ...(item?.when ? { when: item.when } : {}),
+  ...(item?.condition ? { condition: item.condition } : {}),
+  ...(item?.includes ? { includes: item.includes } : {}),
+});
 
 const labeledEntries = (items, prefix) => (items || []).map((item, index) => ({
   key: `${prefix}-${index}`,
   label: item.label,
   money: { amount: item.amount, currency: item.currency },
+  ...paymentExtras(item),
 }));
+
+// Підпис головної виплати в розбивці — за видом суми: «Винагорода за цикл»
+// під фіксованою донорською програмою, «Гарантовано» під мінімумом.
+const MAIN_PAYMENT_LABELS = Object.freeze({
+  cycle: 'Винагорода за цикл',
+  final: 'Фінальна виплата',
+  total: 'Загальна винагорода',
+  guaranteed: 'Гарантовано',
+});
 
 /** Гарантовані виплати програми по порядку: головна, решта за типом, далі інші. */
 export const listProgramPayments = program => {
   if (!program) return [];
+  const kind = resolveProgramPayKind(program);
   const known = listGuaranteedPaymentFields(program.type)
     .filter(({ key }) => program.payments?.[key])
-    .map(({ key, label }) => ({ key, label, money: program.payments[key] }));
+    .map(({ key, label }) => ({
+      key,
+      label: key === 'final' ? MAIN_PAYMENT_LABELS[kind] || label : label,
+      money: program.payments[key],
+      ...paymentExtras(program.payments[key]),
+    }));
   return [...known, ...labeledEntries(program.otherPayments, 'other')];
 };
 
@@ -706,17 +1006,39 @@ export const programBreakdown = (program, { selectedBonusKeys = [], rates = null
   if (!lines.length && legacyTotal) {
     lines = [{ key: PROGRAM_TOTAL_FIELD, label: 'Загальна сума за програму', money: legacyTotal, subtotal: legacyTotal }];
   }
+  // Загальна винагорода вже містить графік: його виплати — частини суми,
+  // а не надбавки до неї, і додати їх означало б порахувати двічі.
+  const kind = resolveProgramPayKind(program);
+  if (kind === 'total' && lines.some(line => line.key === 'final')) {
+    lines = lines.map(line => (line.key === 'final' ? line : { ...line, included: true }));
+  }
   const bonuses = listProgramBonuses(program).map(entry => ({ ...entry, selected: selected.has(entry.key), subtotal: entry.money }));
   const baseCurrency = program?.payments?.final?.currency || lines[0]?.money?.currency || bonuses[0]?.money?.currency || DEFAULT_PROGRAM_CURRENCY;
-  const guaranteedItems = lines.map(line => line.subtotal);
+  const counted = lines.filter(line => !line.included);
+  const guaranteedItems = counted.map(line => line.subtotal);
+  const guaranteed = sumMoney(guaranteedItems, baseCurrency, rates);
+  const hasMonthlyEstimate = counted.some(line => line.monthsEstimated);
+  // «До 70 000 ₴ залежно від результату» — це головна виплата в найкращому
+  // разі; решта графіка стоїть та сама.
+  const payMax = kind === 'guaranteed' ? program?.payMax : null;
+  const upTo = payMax
+    ? sumMoney([payMax, ...counted.filter(line => line.key !== 'final').map(line => line.subtotal)], baseCurrency, rates)
+    : null;
   return {
+    kind,
     lines,
     bonuses,
     baseCurrency,
-    guaranteed: sumMoney(guaranteedItems, baseCurrency, rates),
+    guaranteed,
     total: sumMoney([...guaranteedItems, ...bonuses.filter(item => item.selected).map(item => item.subtotal)], baseCurrency, rates),
     max: sumMoney([...guaranteedItems, ...bonuses.map(item => item.subtotal)], baseCurrency, rates),
-    hasMonthlyEstimate: lines.some(line => line.monthsEstimated),
+    upTo,
+    upToCondition: payMax?.condition || '',
+    hasMonthlyEstimate,
+    // Суму «разом» можна обіцяти, лише коли вона справді одна: усі виплати
+    // в одній валюті (чи за курсом) і щомісячних відомо скільки. Девʼять
+    // місяців «за терміном вагітності» — наша оцінка, а не умова агенції.
+    reliable: guaranteed.parts.length === 1 && guaranteed.amount > 0 && !hasMonthlyEstimate,
   };
 };
 
@@ -818,3 +1140,103 @@ export const listProgramDifferences = programs => {
   });
   return result;
 };
+
+// --- головне в картці --------------------------------------------------------
+
+export const HIGHLIGHTS_NONE = 'none';
+
+// Порядок типових ознак: спершу те, що в оголошеннях агенцій стоїть першим
+// рядком («старт одразу», «щомісячно 500 $»), далі вимоги, за якими
+// відсіюють найчастіше. «До 70 000» типово не виноситься: його вже називає
+// підпис суми, — але агенція може вибрати й його.
+const DEFAULT_HIGHLIGHT_ORDER = Object.freeze([
+  'startNow', 'monthly', 'age', 'csection', 'family', 'rh', 'bmi', 'height', 'marital', 'ownKids', 'births', 'bonuses',
+]);
+
+/**
+ * Усе, що програма може винести в згорнуту картку, — ознаки, зібрані з
+ * самих полів програми. Агенція вибирає з них і ставить у свій порядок
+ * (`highlights`), але тексту не пише: інакше «до 30 років» у згорнутій
+ * картці й «до 32 років» у вимогах розійшлись би з першою ж правкою.
+ *
+ * Сума тут — `money`, а не текст: показ переводить її у валюту читача.
+ */
+export const listProgramHighlightOptions = program => {
+  if (!program) return [];
+  const options = [];
+  if (program.startNow) options.push({ key: 'startNow', text: 'старт одразу' });
+  const breakdown = programBreakdown(program);
+  if (breakdown.upTo?.amount > 0) {
+    options.push({ key: 'payMax', text: 'до {amount}', money: { amount: breakdown.upTo.amount, currency: breakdown.upTo.currency } });
+  }
+  const monthly = program.payments?.monthly;
+  if (monthly) options.push({ key: 'monthly', text: '{amount} щомісяця', money: { amount: monthly.amount, currency: monthly.currency } });
+  describeProgramRequirements(program).forEach(item => options.push({ ...item }));
+  if (program.relocation?.family === 'yes') options.push({ key: 'family', text: 'переїзд із сімʼєю' });
+  (program.coverage || []).forEach(key => {
+    const option = PROGRAM_COVERAGE_OPTIONS.find(item => item.key === key);
+    if (!option || key === 'family') return;
+    options.push({ key: `cov:${key}`, text: '{label} за рахунок агенції', variables: { label: option.label } });
+  });
+  const bonuses = listProgramBonuses(program);
+  if (bonuses.length) options.push({ key: 'bonuses', text: '+{count} доплати', variables: { count: bonuses.length } });
+  return options;
+};
+
+/**
+ * Ознаки згорнутої картки в порядку агенції, а без її вибору — типові.
+ * Ознака, якої в програмі вже немає (агенція прибрала вимогу), зникає сама.
+ */
+export const resolveProgramHighlights = (program, { limit = MAX_PROGRAM_HIGHLIGHTS } = {}) => {
+  const options = listProgramHighlightOptions(program);
+  const byKey = new Map(options.map(option => [option.key, option]));
+  const chosen = Array.isArray(program?.highlights) ? program.highlights : null;
+  if (chosen?.includes(HIGHLIGHTS_NONE)) return [];
+  if (chosen?.length) return chosen.map(key => byKey.get(key)).filter(Boolean).slice(0, limit);
+  return DEFAULT_HIGHLIGHT_ORDER.map(key => byKey.get(key)).filter(Boolean).slice(0, limit);
+};
+
+/** Ключі типових ознак — редактор показує їх відміченими, доки агенція не вибрала свої. */
+export const defaultProgramHighlightKeys = program => resolveProgramHighlights({ ...program, highlights: undefined }).map(item => item.key);
+
+// --- що покриває -------------------------------------------------------------
+
+/**
+ * Покриття програми з подробицями: витрати окремо від супроводу. Кожен
+ * пункт несе, як саме його покривають (`mode`), межу й примітку — у
+ * згорнутій картці від нього лишається саме слово.
+ */
+export const describeProgramCoverage = program => {
+  const details = program?.coverageDetails || {};
+  const items = PROGRAM_COVERAGE_OPTIONS
+    .filter(option => program?.coverage?.includes(option.key))
+    .map(option => ({ key: option.key, label: option.label, ...(details[option.key] || {}) }));
+  return {
+    expenses: items.filter(item => !PROGRAM_SUPPORT_COVERAGE.includes(item.key)),
+    support: items.filter(item => PROGRAM_SUPPORT_COVERAGE.includes(item.key)),
+    all: items,
+  };
+};
+
+// --- місце -------------------------------------------------------------------
+
+const capitalizeFirst = value => value.charAt(0).toLocaleUpperCase('uk-UA') + value.slice(1);
+
+/**
+ * Місце програми так, як його показують: «київ» → «Київ». Частини через
+ * «;» лишаються частинами, і кожна з великої літери; довідник міст тут не
+ * потрібен — це вільний текст агенції, і його лише не показують «сирим».
+ */
+export const formatProgramPlace = value => String(value || '')
+  .split(/\s*;\s*/)
+  .map(part => part.trim())
+  .filter(Boolean)
+  .map(capitalizeFirst)
+  .join('; ');
+
+/** Етапи з місцями — у порядку агенції; без етапів — саме місце програми. */
+export const listProgramStages = program => (program?.stages || []).map(item => {
+  const options = PROGRAM_STAGE_OPTIONS[program.type === 'sm' ? 'sm' : 'ed'];
+  const label = options.find(option => option.key === item.stage)?.label || 'Інше';
+  return { ...item, label, place: formatProgramPlace(item.place) };
+});

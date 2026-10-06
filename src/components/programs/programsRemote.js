@@ -42,17 +42,46 @@ export const stripMonthlyMonths = items => Object.fromEntries(Object.entries(ite
   return [id, { ...program, payments: { ...program.payments, monthly: rest } }];
 }));
 
+/**
+ * Поля програми, яких правила не знають до ручного викочування: вид суми,
+ * «до …» з умовою, подробиці виплат графіка, рівні вимог, етапи, переїзд,
+ * подробиці покриття, вибрані ознаки. На кожному з них `$other: false`
+ * відкинув би програму цілком — тож запис повторюється без них, а повна
+ * версія лишається в браузері власниці (`programsStore`).
+ */
+const EXTENDED_PROGRAM_FIELDS = Object.freeze(['name', 'payKind', 'payMax', 'startNow', 'requirementMeta', 'stages', 'relocation', 'coverageDetails', 'highlights']);
+const EXTENDED_PAYMENT_FIELDS = Object.freeze(['when', 'condition', 'includes']);
+
+const omit = (value, keys) => Object.fromEntries(Object.entries(value || {}).filter(([key]) => !keys.includes(key)));
+
+export const stripExtendedProgramFields = items => Object.fromEntries(Object.entries(items || {}).map(([id, program]) => {
+  if (!program || typeof program !== 'object') return [id, program];
+  const next = omit(program, EXTENDED_PROGRAM_FIELDS);
+  if (program.payments) {
+    next.payments = Object.fromEntries(Object.entries(program.payments).map(([key, money]) => [key, omit(money, EXTENDED_PAYMENT_FIELDS)]));
+  }
+  if (Array.isArray(program.otherPayments)) next.otherPayments = program.otherPayments.map(item => omit(item, EXTENDED_PAYMENT_FIELDS));
+  if (Array.isArray(program.bonuses)) next.bonuses = program.bonuses.map(item => omit(item, ['condition']));
+  return [id, next];
+}));
+
 export const writeProgramsToDb = async (uid, items, at) => {
   try {
     await writeProgramsUpdate(uid, items, at);
   } catch (error) {
     if (!isReactionPermissionDeniedError(error)) throw error;
-    const withoutMonths = stripMonthlyMonths(items);
-    if (JSON.stringify(withoutMonths) !== JSON.stringify(items)) {
+    // Від новішого до старішого: спершу без нових полів, далі ще й без
+    // кількості місяців — кожна з цих версій правил у проді вже бувала.
+    const fallbacks = [stripExtendedProgramFields(items), stripMonthlyMonths(stripExtendedProgramFields(items))];
+    let previous = JSON.stringify(items);
+    for (const fallback of fallbacks) {
+      const serialized = JSON.stringify(fallback);
+      if (serialized === previous) continue;
+      previous = serialized;
       try {
-        await writeProgramsUpdate(uid, withoutMonths, at);
-        console.warn('[programs] правила бази ще не знають кількості місяців щомісячної виплати — програми записано без неї. Викотіть правила: npx firebase deploy --only database', { uid });
-        return;
+        await writeProgramsUpdate(uid, fallback, at);
+        console.warn('[programs] правила бази ще не знають частини полів програм — програми записано без них, повна версія лишилась у цьому браузері. Викотіть правила: npx firebase deploy --only database', { uid });
+        return { partial: true };
       } catch (retryError) {
         if (!isReactionPermissionDeniedError(retryError)) throw retryError;
       }

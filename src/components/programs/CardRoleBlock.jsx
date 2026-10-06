@@ -30,16 +30,13 @@ import { AgencyProgramsPanel } from './ProgramsView';
 
 const TEXT = 'var(--matching-header-text, var(--km-text, #1e1b18))';
 const MUTED = 'var(--matching-muted-text, var(--km-muted, #6f675f))';
-const BORDER = 'var(--matching-card-border, var(--km-border, #e7e1d8))';
 
 const Block = styled.div`
   color: ${TEXT};
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid ${BORDER};
+  margin-top: 10px;
 `;
 
 const RoleHeading = styled.div`

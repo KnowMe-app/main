@@ -67,7 +67,8 @@ import PhotoViewer from './PhotoViewer';
 // удруге: у рядку стрічки й у картці стоять ті самі два записи — публічний
 // відгук і власна нотатка, — і два екрани не можуть казати про них різне.
 import { NoteClearButton, NoteFieldRow, NoteLane, NoteLaneHead, PublishDot, SharedCommentText } from './Matching.styled';
-import { isMatchingCardPublished, MATCHING_CARD_REVIEW_FLAG_FIELD } from '../utils/matchingCardIndex';
+import { isMatchingCardPublished, isMatchingSummaryCard, MATCHING_CARD_REVIEW_FLAG_FIELD } from '../utils/matchingCardIndex';
+import { SectionToggle } from './programs/ProgramsView';
 
 const pickCurrentText = value => String(getCurrentValue(value) ?? '').trim();
 
@@ -281,7 +282,7 @@ export const renderFacts = (user, priorityKeys = [], language) => {
  * дотиком, і саме дотик рахується. Без обробника (шапка форми доповнення, де
  * номер і так стоїть у полі нижче) підказка називає й значення.
  */
-export const ContactLinks = ({ entries, language, onContactAction }) => {
+export const ContactLinks = ({ entries, language, onContactAction, primaryLabel = false }) => {
   const tracked = typeof onContactAction === 'function';
   const phones = entries.filter(entry => entry.key === 'phone');
   const others = entries.filter(entry => entry.key !== 'phone');
@@ -306,11 +307,13 @@ export const ContactLinks = ({ entries, language, onContactAction }) => {
             <S.ContactIconLink
               href={entry.href}
               $primary
+              $wide={primaryLabel && phones[0] === entry}
               title={callLabel}
               aria-label={callLabel}
               onClick={act('phone')}
             >
               <PhoneHandsetIcon />
+              {primaryLabel && phones[0] === entry ? <span>{uiText('Подзвонити', language)}</span> : null}
             </S.ContactIconLink>
             {phoneQuickLinks.map(({ key, Icon, label, build }) => {
               const quickLabel = tracked
@@ -334,11 +337,13 @@ export const ContactLinks = ({ entries, language, onContactAction }) => {
           </React.Fragment>
         );
       })}
-      {others.map(entry => {
+      {others.map((entry, index) => {
         const Icon = getContactIcon(entry.key);
         const label = tracked
           ? getContactLabel(entry.key, language)
           : `${getContactLabel(entry.key, language)}: ${entry.value}`;
+        // Без телефону головною стає перша решта: «Написати: Telegram».
+        const wide = primaryLabel && !phones.length && index === 0;
         return (
           <S.ContactIconLink
             key={`${entry.key}-${entry.index}-${entry.value}`}
@@ -348,9 +353,12 @@ export const ContactLinks = ({ entries, language, onContactAction }) => {
             title={label}
             aria-label={label}
             $channel={entry.key}
+            $primary={wide}
+            $wide={wide}
             onClick={act(entry.key)}
           >
             <Icon />
+            {wide ? <span>{uiText('Написати: {channel}', language, { channel: getContactLabel(entry.key, language) })}</span> : null}
           </S.ContactIconLink>
         );
       })}
@@ -970,6 +978,10 @@ export const ProfileNotes = ({
   // піддерева) — лише на прочитання, курсивом під власною памʼяткою. Їх
   // показувала тільки відкрита картка; її більше немає, тож вони тут.
   sharedNotes = EMPTY_SHARED_NOTES,
+  // Стислий ряд другорядних дій (картка організації): відгук, памʼятка й
+  // рішення одним рядком. `trailing` — рішення, які ряд ставить праворуч.
+  compact = false,
+  trailing = null,
 }) => {
   const collapsible = hasPublicContent !== undefined || hasPrivateContent !== undefined;
   const [opened, setOpened] = useState({ public: false, private: false, postpone: false });
@@ -996,7 +1008,7 @@ export const ProfileNotes = ({
   };
 
   return (
-    <S.RowNotes onClick={e => e.stopPropagation()}>
+    <S.RowNotes $plain={compact} onClick={e => e.stopPropagation()}>
       {/* `hasReviews` — прочитані відгуки, а не прапорець проєкції: прапорець
           лишається й після того, як останній відгук зняли, і червона смужка
           тоді обіцяла б те, чого під нею вже немає. */}
@@ -1035,8 +1047,8 @@ export const ProfileNotes = ({
           onCancel={() => setOpened(previous => ({ ...previous, postpone: false }))}
         />
       )}
-      {(!showPublic || !showPrivate || (postpone && !showPostpone)) && (
-        <S.NotesAddRow data-testid="notes-add-row">
+      {(!showPublic || !showPrivate || (postpone && !showPostpone) || trailing) && (
+        <S.NotesAddRow data-testid="notes-add-row" $compact={compact}>
           {!showPublic && (
             <S.NotesAddButton type="button" $public onClick={openLane('public')}>
               <FaRegCommentDots aria-hidden="true" />
@@ -1063,6 +1075,7 @@ export const ProfileNotes = ({
               <span>{uiText('Відкласти', language)}</span>
             </S.NotesAddButton>
           )}
+          {trailing}
         </S.NotesAddRow>
       )}
     </S.RowNotes>
@@ -1164,6 +1177,34 @@ export const describeReviewsState = ({ requested, loading, loaded, offline = fal
   // нічого, чого не видно й так.
   return '';
 };
+
+const foldText = value => String(value ?? '').toLocaleLowerCase('uk-UA').replace(/[^\p{L}\p{N}]+/gu, '');
+
+/**
+ * Чи опис організації каже щось, чого картка ще не сказала.
+ *
+ * В анкетах агенцій «Про себе» часто лежить саме місто — «київ», — і блок
+ * «Про себе» з одним цим словом під локацією «Київ, Київська обл.» займав
+ * рядок і нічого не додавав. Опис, що повторює місто, область, назву чи
+ * рядок локації, — не опис; решту показуємо як написали.
+ */
+export const isMeaningfulOrganisationDescription = (text, user, location = '') => {
+  const folded = foldText(text);
+  if (folded.length < 4) return false;
+  const known = [
+    location,
+    pickCurrentText(user?.city),
+    pickCurrentText(user?.region),
+    pickCurrentText(user?.country),
+    pickCurrentText(user?.agencyName),
+    pickCurrentText(user?.name),
+    `${pickCurrentText(user?.city)}${pickCurrentText(user?.region)}`,
+  ].map(foldText).filter(Boolean);
+  return !known.includes(folded);
+};
+
+// Опис довший за це — згорнутий до трьох рядків, з «Читати повністю».
+const ORGANISATION_ABOUT_CLAMP_CHARS = 180;
 
 // Spec §7: in the feed the like/hide actions are a row swipe - right adds to
 // favourites, left hides - so the reader can triage without opening anything.
@@ -1372,6 +1413,27 @@ const ProfileRow = ({
   const canExpandDetails = !isLimited;
   const hasMoreDetails = detailSections.length > 0 || Boolean(bio);
 
+  /*
+   * Картка організації читається в іншому порядку, ніж картка людини:
+   * хто це (назва, тип, місце) → що вона про себе каже → програми → як
+   * звʼязатись → решта дій. «Детальніше» внизу тут розгортало «Про себе»,
+   * а стрілка біля суми програми — деталі програми, і обидва виглядали
+   * однаково. Тепер кожне розгортання підписане тим, що воно відкриває, і
+   * стоїть у тому розділі, який розгортає: «Про агенцію» — над програмами,
+   * «Деталі програми» — у контейнері програми (`ProgramsView`).
+   *
+   * Опис організації в картці стрічки не лежить (`matchingCards` його не
+   * несе), тож поки анкету не прочитано, розділ — сама кнопка; прочитаний
+   * опис, що лише повторює місто, не показується зовсім.
+   */
+  const organisationLayout = !isLimited && !isPersonAnketa && isCounterparty && showsOrganisation;
+  const aboutKnown = !isMatchingSummaryCard(user) || user?.__fullProfileHydrated === true;
+  const aboutText = organisationLayout && !isOrganisationAnketa ? getProfileBio(user) : '';
+  const aboutMeaningful = organisationLayout && isMeaningfulOrganisationDescription(aboutText, user, location);
+  const aboutLong = aboutMeaningful && (aboutText.length > ORGANISATION_ABOUT_CLAMP_CHARS || aboutText.split('\n').length > 3);
+  const aboutRole = rowRole === 'cl' || anketaRole === 'cl' ? 'cl' : 'ag';
+  const aboutTitle = uiText(aboutRole === 'cl' ? 'Про клініку' : 'Про агенцію', language);
+
   // Стан публікації читається з картки, а не з `publish`: у проєкції стрічки
   // такого ключа немає (див. `isMatchingCardPublished`).
   const isPublished = isMatchingCardPublished(user);
@@ -1438,6 +1500,53 @@ const ProfileRow = ({
     if (isLimited) return;
     if (onToggleExpand) onToggleExpand(user.userId);
   };
+
+  const reactionPair = !isLimited && (primaryAction || secondaryAction) ? (
+    <S.RowReactionPair data-testid="row-reactions">
+      {primaryAction && (
+        <S.RowActionButton
+          type="button"
+          $accent={Boolean(primaryAction.accent)}
+          $on={Boolean(primaryAction.active)}
+          title={primaryAction.title}
+          aria-label={primaryAction.title}
+          aria-pressed={primaryAction.active}
+          onClick={e => { e.stopPropagation(); primaryAction.onClick(user); }}
+        >
+          {primaryAction.icon}
+        </S.RowActionButton>
+      )}
+      {secondaryAction && (
+        <S.RowActionButton
+          type="button"
+          $accent={Boolean(secondaryAction.accent)}
+          $on={Boolean(secondaryAction.active)}
+          title={secondaryAction.title}
+          aria-label={secondaryAction.title}
+          aria-pressed={secondaryAction.active}
+          onClick={e => { e.stopPropagation(); secondaryAction.onClick(user); }}
+        >
+          {secondaryAction.icon}
+        </S.RowActionButton>
+      )}
+    </S.RowReactionPair>
+  ) : null;
+  const editButton = editAction && !preview ? (
+    <S.RowFooterButton
+      type="button"
+      data-testid="row-edit-action"
+      title={editAction.title}
+      aria-label={editAction.title}
+      onClick={e => { e.stopPropagation(); editAction.onClick(user); }}
+    >
+      <FaPencilAlt size={12} />
+    </S.RowFooterButton>
+  ) : null;
+  // Картка організації ставить рішення в стислий ряд разом з відгуком і
+  // памʼяткою (`ProfileNotes` з `compact`), а не окремим рядом під ними.
+  const compactDecisions = organisationLayout && !preview && (reactionPair || editButton)
+    ? <S.CompactDecisions data-testid="compact-decisions">{reactionPair}{editButton}</S.CompactDecisions>
+    : null;
 
   return (
     <S.Card
@@ -1553,6 +1662,42 @@ const ProfileRow = ({
           про людину одне й те саме однаковими словами. */}
       <ProfileStatStrip cells={statCells} />
       <ProfileFactList rows={summaryRows} />
+      {organisationLayout && (aboutMeaningful || (!aboutKnown && canExpandDetails && onToggleExpand && !isOrganisationAnketa) || (expanded && aboutKnown && !isOrganisationAnketa)) ? (
+        <S.OrganisationAbout data-testid="organisation-about" onClick={e => e.stopPropagation()}>
+          {aboutMeaningful ? (
+            <>
+              <S.OrganisationAboutTitle>{aboutTitle}</S.OrganisationAboutTitle>
+              <S.OrganisationAboutText $clamped={aboutLong && !expanded}>{aboutText}</S.OrganisationAboutText>
+              {aboutLong && onToggleExpand ? (
+                <SectionToggle
+                  type="button"
+                  $open={expanded}
+                  aria-expanded={expanded}
+                  onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
+                >
+                  <span>{uiText(expanded ? 'Згорнути опис' : 'Читати повністю', language)}</span>
+                  <FaChevronDown aria-hidden="true" />
+                </SectionToggle>
+              ) : null}
+            </>
+          ) : expanded && aboutKnown ? (
+            <S.OrganisationAboutEmpty>
+              {uiText(aboutRole === 'cl' ? 'Клініка ще не додала опису.' : 'Агенція ще не додала опису.', language)}
+            </S.OrganisationAboutEmpty>
+          ) : (
+            <SectionToggle
+              type="button"
+              data-testid="row-details-toggle"
+              $open={expanded}
+              aria-expanded={expanded}
+              onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
+            >
+              <span>{aboutTitle}</span>
+              <FaChevronDown aria-hidden="true" />
+            </SectionToggle>
+          )}
+        </S.OrganisationAbout>
+      ) : null}
       {!isLimited && !isPersonAnketa ? <CardRoleBlock card={roleBlockCard} programsContext={programsContext} language={language} accent={roleAccent} /> : null}
 
       {/* «Детальніше» — під коротким описом, посеред картки, а не стрілкою в
@@ -1562,7 +1707,7 @@ const ProfileRow = ({
       {/* У прев'ю кнопка є лише там, де екран дав `onToggleExpand`
           («Мій профіль»), і лише коли під нею щось є: стрічка дочитує анкету
           на дотик, а прев'ю вже несе її всю. */}
-      {canExpandDetails && onToggleExpand && (!preview || hasMoreDetails) && (
+      {!organisationLayout && canExpandDetails && onToggleExpand && (!preview || hasMoreDetails) && (
         <S.RowDetailsToggle
           type="button"
           data-testid="row-details-toggle"
@@ -1578,7 +1723,7 @@ const ProfileRow = ({
       {/* Порожнього блоку «всі дані» не буває: без жодного поля він малював
           рамку з написом «Додаткових даних немає», тобто зайвий рядок і
           відступ у картці, який нічого не казав. */}
-      {expanded && !isLimited && hasMoreDetails && (
+      {!organisationLayout && expanded && !isLimited && hasMoreDetails && (
         <S.More $afterToggle onClick={e => e.stopPropagation()}>
           {/* Під кнопкою — розділи повної анкети, ті самі й у тому самому
               порядку, що й у формі (`ProfileFacts`). */}
@@ -1588,10 +1733,11 @@ const ProfileRow = ({
       )}
 
       {contactEntries.length > 0 && (
-        <S.RowContacts onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+        <S.RowContacts $plain={organisationLayout} onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
           <ContactLinks
             entries={contactEntries}
             language={language}
+            primaryLabel={organisationLayout}
             onContactAction={onContactAction ? channel => onContactAction(user, channel) : undefined}
           />
         </S.RowContacts>
@@ -1619,6 +1765,8 @@ const ProfileRow = ({
         hasPublicContent={hasPublicReview || (reviewsAction?.count || 0) > 0}
         hasPrivateContent={commentSlot !== undefined || Boolean(String(clientComment || '').trim()) || (sharedNotes?.length || 0) > 0}
         sharedNotes={sharedNotes}
+        compact={Boolean(compactDecisions)}
+        trailing={compactDecisions}
         reviewsStatus={describeReviewsState({
           requested: hasPublicReview,
           loading: Boolean(reviewsAction?.loading),
@@ -1676,52 +1824,13 @@ const ProfileRow = ({
           їх дає (рішення про картку там те саме, що й у стрічці), «Мій
           профіль» — ні, бо реагувати на себе нема сенсу. Олівця в прев'ю
           немає ніде: воно й так стоїть над формою. */}
-      {(preview ? !isLimited && (primaryAction || secondaryAction) : (editAction || (!isLimited && (primaryAction || secondaryAction)))) && (
+      {!compactDecisions && (preview ? !isLimited && (primaryAction || secondaryAction) : (editAction || (!isLimited && (primaryAction || secondaryAction)))) && (
         <S.RowFooterActions onClick={e => e.stopPropagation()}>
-          {!isLimited && (primaryAction || secondaryAction) && (
-            <S.RowReactionPair data-testid="row-reactions">
-              {primaryAction && (
-                <S.RowActionButton
-                  type="button"
-                  $accent={Boolean(primaryAction.accent)}
-                  $on={Boolean(primaryAction.active)}
-                  title={primaryAction.title}
-                  aria-label={primaryAction.title}
-                  aria-pressed={primaryAction.active}
-                  onClick={e => { e.stopPropagation(); primaryAction.onClick(user); }}
-                >
-                  {primaryAction.icon}
-                </S.RowActionButton>
-              )}
-              {secondaryAction && (
-                <S.RowActionButton
-                  type="button"
-                  $accent={Boolean(secondaryAction.accent)}
-                  $on={Boolean(secondaryAction.active)}
-                  title={secondaryAction.title}
-                  aria-label={secondaryAction.title}
-                  aria-pressed={secondaryAction.active}
-                  onClick={e => { e.stopPropagation(); secondaryAction.onClick(user); }}
-                >
-                  {secondaryAction.icon}
-                </S.RowActionButton>
-              )}
-            </S.RowReactionPair>
-          )}
+          {reactionPair}
           {/* Олівець — на колишньому місці стрілки «розгорнути»: розгортання
               переїхало під опис людини словом «Детальніше», а дія над самою
               карткою стала поруч із рішеннями про неї. */}
-          {editAction && !preview && (
-            <S.RowFooterButton
-              type="button"
-              data-testid="row-edit-action"
-              title={editAction.title}
-              aria-label={editAction.title}
-              onClick={e => { e.stopPropagation(); editAction.onClick(user); }}
-            >
-              <FaPencilAlt size={12} />
-            </S.RowFooterButton>
-          )}
+          {editButton}
         </S.RowFooterActions>
       )}
 

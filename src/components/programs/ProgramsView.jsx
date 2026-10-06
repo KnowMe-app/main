@@ -1,21 +1,41 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import styled from 'styled-components';
 import {
-  PROGRAM_COVERAGE_OPTIONS,
-  PROGRAM_TYPE_LABELS,
+  FaBalanceScale,
+  FaBus,
+  FaChevronDown,
+  FaFileSignature,
+  FaHeadset,
+  FaHome,
+  FaMapMarkerAlt,
+  FaShieldAlt,
+  FaStethoscope,
+  FaTshirt,
+  FaUsers,
+  FaUtensils,
+} from 'react-icons/fa';
+import {
+  PROGRAM_COVERAGE_MODES,
+  PROGRAM_COVERAGE_PER,
+  PROGRAM_FAMILY_OPTIONS,
+  PROGRAM_OFFER_LABELS,
+  PROGRAM_REQUIREMENT_LABELS,
   defaultProgramBonusKeys,
-  describeProgramHighlights,
+  describeProgramCoverage,
   describeProgramRequirements,
   evaluateProgram,
+  formatProgramPlace,
   listProgramDifferences,
+  listProgramStages,
   programBreakdown,
+  programPayLabel,
+  resolveProgramHighlights,
   summarizeCardPrograms,
 } from '../../utils/donorPrograms';
 import {
   PROGRAM_CURRENCIES,
   PROGRAM_CURRENCY_SIGNS,
   convertProgramAmount,
-  describeProgramMoney,
   formatProgramMoney,
   formatRateDate,
 } from '../../utils/programCurrency';
@@ -27,31 +47,31 @@ import { uiText } from '../../utils/uiTranslations';
  *
  * Програма — це комерційна пропозиція, і читають її двома кроками:
  *
- *  1. **Список** (`AgencyProgramsPanel`) — по рядку на програму: тип і місце,
- *     сума за програму, три-чотири ознаки. Ознаки, якими програма
- *     відрізняється від інших програм того ж типу в цієї агенції,
- *     підсвічені (`listProgramDifferences`): дві донорські програми, що
- *     різняться лише віком і сумою, кажуть саме це, і читати обидві
- *     цілком не треба. Донорці й СМ рядок одразу каже, чи програма їй
- *     підходить.
- *  2. **Деталі** (`ProgramCard`) — під рядком, на дотик: сума й з чого вона
- *     складається, можливі доплати перемикачами («а якщо КС»), вимоги з
- *     позначкою збігу, що покриває агенція, умови.
+ *  1. **Згорнута програма** (`ProgramListItem`) — окремий контейнер у тілі
+ *     картки агенції: що пропонують (донорство чи сурогатне материнство) і
+ *     власна назва, де, скільки й **кому за що** («Винагорода донорці за
+ *     цикл»), до чотирьох ознак, які вибрала агенція, і одним рядком, що
+ *     покривають («Проїзд, житло +2»).
+ *  2. **Деталі програми** — під тим самим контейнером, кнопкою «Деталі
+ *     програми» всередині нього: графік виплат з умовами, можливі доплати
+ *     перемикачами, вимоги з рівнями й поясненнями, етапи й переїзд, як саме
+ *     покривається кожна витрата, умови.
  *
- * Досі програми стояли повними картками в горизонтальній карусельці над
- * іменем агенції: хто це, читач дізнавався аж під програмами, другу програму
- * треба було гортати вбік, щоб узагалі дізнатись, що вона є, а порожня
- * програма займала пів екрана білим. І кожна картка програми була вкладеною
- * плашкою з тінню й градієнтом усередині картки стрічки — тобто окремим
- * міні-застосунком, а не частиною картки.
+ * Досі програма була рядком без меж, і на картці з однією програмою вона
+ * зливалась з описом агенції: заголовок «Програми», під ним «1 програма»,
+ * потім «Донор ооцитів київ» (роль людини й сирий текст місця), а сума
+ * повторювалась тричі різними словами — «за програму», «Разом за програму»,
+ * «Винагорода за цикл». Стрілка біля суми й «Детальніше» внизу розгортали
+ * різне, але виглядали однаково.
  *
- * Мова оформлення — та сама, що в розділах анкети (`ProfileFacts`):
- * волосяна риска між розділами, заголовок з рискою кольору ролі, підпис
- * ліворуч і значення праворуч. Вкладених плашок із фоном у рядку немає
- * (див. «Ліва межа картки одна» в CLAUDE.md).
+ * Суми — у валюті, яку обрав читач (`displayCurrency`), і в згорнутій, і в
+ * деталях: обрана гривня поруч із найбільшим числом у доларах означала, що
+ * вибір нічого не змінив. Оригінал агенції лишається другим рядком, а курс
+ * і його дата стоять один раз — під програмами.
  *
  * Кожна змінна кольору має запасну: блок живе і в стрічці (`--matching-*`), і
- * в «Моєму профілі», де оголошені лише `--km-*`.
+ * в «Моєму профілі», де оголошені лише `--km-*`. Акцент один — інтерактивне;
+ * зелений, червоний і бурштиновий означають збіг з анкетою і більше нічого.
  */
 
 const ACCENT = 'var(--matching-accent, var(--km-accent, #E8791A))';
@@ -61,70 +81,84 @@ const BORDER = 'var(--matching-card-border, var(--km-border, #E8E8E2))';
 // світлому — суми й вимоги просто зникали.
 const TEXT = 'var(--matching-header-text, var(--km-text, #1A1A1A))';
 const MUTED = 'var(--matching-muted-text, var(--km-muted, #62665F))';
+const CARD_BG = 'var(--matching-card-bg, var(--km-card, #FFFFFF))';
+// Контейнер програми — ледь тонований текстом, а не акцентом: у темній темі
+// це трохи світліше за картку, у світлій — трохи темніше, і рамка лишається
+// волосяною. Акцентний фон читався б кнопкою.
+const PROGRAM_BG = `color-mix(in srgb, ${TEXT} 4%, ${CARD_BG})`;
 const GOOD = 'var(--km-success, #2E9B55)';
 const BAD = '#C8483E';
 const UNSURE = '#B7791F';
 
 const VISIBLE_PROGRAMS = 3;
 
-// --- спільні частини ---------------------------------------------------------
+// --- гроші у валюті читача -----------------------------------------------------
 
-// Заголовок розділу — той самий, що в розділах анкети (`DetailTitle` у
-// `ProfileFacts`): риска кольору ролі й короткий жирний підпис.
-const SectionTitle = styled.h4`
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 2px 8px;
-  margin: 0 0 8px;
-  font-size: 12.5px;
+/**
+ * Сума так, як її показувати: у валюті читача першою, оригінал агенції —
+ * другим рядком. Без курсу — сам оригінал, без «≈»: вигадане число гірше
+ * за чесне в іншій валюті.
+ */
+export const presentMoney = (money, displayCurrency, rates) => {
+  const amount = Number(money?.amount);
+  if (!Number.isFinite(amount) || amount <= 0 || !money?.currency) return { primary: '', original: '', converted: false };
+  const own = formatProgramMoney(amount, money.currency);
+  const approximate = Boolean(money.approximate);
+  if (!displayCurrency || displayCurrency === money.currency) {
+    return { primary: `${approximate ? '≈ ' : ''}${own}`, original: '', converted: false };
+  }
+  const converted = convertProgramAmount(amount, money.currency, displayCurrency, rates || undefined);
+  if (!Number.isFinite(converted)) return { primary: `${approximate ? '≈ ' : ''}${own}`, original: '', converted: false };
+  const step = displayCurrency === 'UAH' ? 100 : 10;
+  return {
+    primary: `≈ ${formatProgramMoney(Math.round(converted / step) * step, displayCurrency)}`,
+    original: own,
+    converted: true,
+  };
+};
+
+// Сума кількох виплат (`programBreakdown`) — одна частина або кілька валют
+// без курсу; друге показується як є, частинами.
+const presentSum = (sum, displayCurrency, rates) => {
+  if (!sum || !(sum.amount > 0)) return { primary: '', original: '', converted: false };
+  const parts = sum.parts.filter(part => part.amount > 0);
+  if (parts.length !== 1) {
+    return { primary: parts.map(part => formatProgramMoney(part.amount, part.currency)).join(' + '), original: '', converted: false };
+  }
+  return presentMoney({ amount: parts[0].amount, currency: parts[0].currency, approximate: sum.approximate }, displayCurrency, rates);
+};
+
+const plainMoney = (money, displayCurrency, rates) => presentMoney(money, displayCurrency, rates).primary;
+
+// --- спільні частини -------------------------------------------------------------
+
+const SectionTitle = styled.h5`
+  margin: 0 0 6px;
+  font-size: 11.5px;
   font-weight: 700;
-  letter-spacing: 0.01em;
-  color: ${TEXT};
-
-  &::before {
-    content: '';
-    flex: 0 0 auto;
-    width: 3px;
-    height: 13px;
-    border-radius: 2px;
-    background: ${({ $accent }) => $accent || ACCENT};
-  }
-
-  small {
-    margin-left: auto;
-    white-space: nowrap;
-    font-size: 11.5px;
-    font-weight: 500;
-    color: ${MUTED};
-  }
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: ${MUTED};
 `;
 
 const Section = styled.section`
-  padding-top: 12px;
-  margin-top: 12px;
-  border-top: 1px solid ${BORDER};
-
-  &:first-child {
-    margin-top: 0;
-    padding-top: 0;
-    border-top: 0;
-  }
+  & + & { margin-top: 14px; }
 `;
 
 const MoneyRows = styled.dl`
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   column-gap: 12px;
-  row-gap: 6px;
+  row-gap: 8px;
   margin: 0;
   font-size: 13.5px;
   line-height: 1.4;
 
-  dt { margin: 0; color: ${MUTED}; min-width: 0; }
-  dt small { display: block; font-size: 11.5px; }
+  dt { margin: 0; color: ${TEXT}; min-width: 0; }
+  dt small { display: block; font-size: 12px; color: ${MUTED}; }
   dd { margin: 0; color: ${TEXT}; font-weight: 600; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
   dd small { display: block; font-size: 11.5px; font-weight: 500; color: ${MUTED}; }
+  dt.total, dd.total { padding-top: 8px; border-top: 1px solid ${BORDER}; font-weight: 700; }
 `;
 
 // Можлива доплата — перемикач, а не рядок: відмічене додається до «разом».
@@ -158,7 +192,7 @@ const BonusRow = styled.button`
     font-style: normal;
     line-height: 1;
   }
-  > span { color: ${({ $on }) => ($on ? TEXT : MUTED)}; }
+  > span small { display: block; font-size: 12px; color: ${MUTED}; }
   > b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; color: ${({ $on }) => ($on ? TEXT : MUTED)}; }
 
   &:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; border-radius: 6px; }
@@ -186,26 +220,51 @@ const Chip = styled.li`
   font-size: 12.5px;
   color: ${TEXT};
   border: 1px solid ${({ $ok }) => (tone($ok) ? `color-mix(in srgb, ${tone($ok)} 50%, transparent)` : BORDER)};
-  background: ${({ $ok }) => (tone($ok) ? `color-mix(in srgb, ${tone($ok)} 8%, transparent)` : 'transparent')};
+  background: ${({ $ok }) => (tone($ok) ? `color-mix(in srgb, ${tone($ok)} 8%, transparent)` : CARD_BG)};
 
   b { font-weight: 700; color: ${({ $ok }) => tone($ok) || TEXT}; }
+  em { font-style: normal; color: ${MUTED}; }
+`;
+
+const NoteList = styled.ul`
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: ${MUTED};
+
+  li + li { margin-top: 2px; }
+  b { font-weight: 600; color: ${TEXT}; }
 `;
 
 // Що покриває організація — не вимога, і виглядати як вимога не має: список
-// з галочками, а не рамки. Поки обидва ряди були чіпами, «Проїзд» стояв
-// одразу під «без КР» і читався ще однією умовою.
+// зі значками, а не рамки. Подробиці (як саме покривають, межа, примітка)
+// стоять під назвою дрібніше.
 const CoverList = styled.ul`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 4px 12px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px 14px;
   margin: 0;
   padding: 0;
   list-style: none;
   font-size: 13.5px;
   color: ${TEXT};
 
-  li { display: flex; gap: 6px; align-items: baseline; }
-  li::before { content: '✓'; color: ${GOOD}; font-weight: 700; }
+  li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: start; }
+  li > svg { width: 14px; height: 14px; margin-top: 2px; color: ${MUTED}; }
+  li small { display: block; font-size: 12px; line-height: 1.4; color: ${MUTED}; }
+`;
+
+const PlaceList = styled.dl`
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13.5px;
+
+  dt { color: ${MUTED}; }
+  dd { margin: 0; color: ${TEXT}; overflow-wrap: anywhere; }
 `;
 
 const Note = styled.p`
@@ -213,37 +272,40 @@ const Note = styled.p`
   font-size: 13.5px;
   line-height: 1.5;
   color: ${TEXT};
-  opacity: 0.86;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 `;
 
 const Hint = styled.p`
   margin: 6px 0 0;
-  font-size: 11.5px;
+  font-size: 12px;
+  line-height: 1.4;
   color: ${MUTED};
 `;
 
-const CurrencyRow = styled.div`
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  font-size: 12px;
-  color: ${MUTED};
+const CurrencyGroup = styled.div`
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 2px;
+  border: 1px solid ${BORDER};
+  border-radius: 999px;
 `;
 
 const CurrencyButton = styled.button`
-  min-width: 34px;
-  min-height: 28px;
+  min-width: 32px;
+  min-height: 26px;
   padding: 0 8px;
+  border: 0;
   border-radius: 999px;
-  border: 1px solid ${({ $on }) => ($on ? ACCENT : BORDER)};
-  background: ${({ $on }) => ($on ? `color-mix(in srgb, ${ACCENT} 14%, transparent)` : 'transparent')};
-  color: ${({ $on }) => ($on ? ACCENT : 'inherit')};
+  background: ${({ $on }) => ($on ? ACCENT : 'transparent')};
+  color: ${({ $on }) => ($on ? '#fff' : MUTED)};
   font: inherit;
+  font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
+
+  &:hover { color: ${({ $on }) => ($on ? '#fff' : TEXT)}; }
+  &:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 1px; }
 `;
 
 const REQUIREMENT_FIX_HINTS = Object.freeze({
@@ -257,39 +319,87 @@ const REQUIREMENT_FIX_HINTS = Object.freeze({
   csection: 'Вкажіть кількість КР в анкеті',
 });
 
-export const ProgramCurrencySwitch = ({ value, onChange, language, rates }) => (
-  <CurrencyRow>
-    <span>{uiText('Показувати в', language)}</span>
+const LEVEL_SUFFIX = Object.freeze({ preferred: 'бажано', individual: 'індивідуально' });
+
+/** Перемикач валюти — сегментом поруч із заголовком програм. */
+export const ProgramCurrencySwitch = ({ value, onChange, language }) => (
+  <CurrencyGroup role="group" aria-label={uiText('Валюта сум', language)}>
     {PROGRAM_CURRENCIES.map(code => (
-      <CurrencyButton key={code} type="button" $on={value === code} aria-pressed={value === code} onClick={event => { event.stopPropagation(); onChange(code); }}>
+      <CurrencyButton
+        key={code}
+        type="button"
+        $on={value === code}
+        aria-pressed={value === code}
+        title={code}
+        aria-label={code}
+        onClick={event => { event.stopPropagation(); onChange(code); }}
+      >
         {PROGRAM_CURRENCY_SIGNS[code]}
       </CurrencyButton>
     ))}
-    {rates?.rateDate ? <span>· {uiText('курс НБУ на {date}', language, { date: formatRateDate(rates.rateDate) })}</span> : null}
-  </CurrencyRow>
+  </CurrencyGroup>
 );
-
-const formatParts = sum => sum.parts
-  .filter(part => part.amount > 0)
-  .map(part => formatProgramMoney(part.amount, part.currency))
-  .join(' + ');
-
-/** Еквіваленти суми в двох інших валютах — один рядок, з «≈» і датою курсу. */
-const equivalentsLine = (sum, rates, language) => {
-  if (sum.parts.length !== 1 || !(sum.amount > 0)) return '';
-  const described = describeProgramMoney({ amount: sum.amount, currency: sum.currency }, rates);
-  if (!described?.equivalents.length) return '';
-  const date = rates?.rateDate ? ` · ${uiText('курс НБУ на {date}', language, { date: formatRateDate(rates.rateDate) })}` : '';
-  return `${described.equivalents.map(item => item.text).join(' · ')}${date}`;
-};
 
 const monthWord = (count, language) => {
   if (language === 'en') return count === 1 ? 'month' : 'months';
   return 'міс';
 };
 
-/** Назва програми: тип і місце — те, що відрізняє програми в чатах агенцій. */
-export const programHeading = (program, language) => uiText(PROGRAM_TYPE_LABELS[program?.type] || '', language);
+/** Що пропонує програма — назва пропозиції, а не роль людини. */
+export const programHeading = (program, language) => uiText(PROGRAM_OFFER_LABELS[program?.type] || '', language);
+
+const requirementText = (item, language) => uiText(item.text, language, item.variables && item.variables.label
+  ? { ...item.variables, label: uiText(item.variables.label, language) }
+  : item.variables);
+
+const highlightText = (item, language, displayCurrency, rates) => {
+  if (item.key === 'bonuses') return `+${item.variables.count} ${uiText(pluralBonuses(item.variables.count, language), language)}`;
+  if (item.money) return uiText(item.text, language, { amount: plainMoney(item.money, displayCurrency, rates) });
+  if (item.variables?.label) return uiText(item.text, language, { ...item.variables, label: uiText(item.variables.label, language).toLowerCase() });
+  const base = uiText(item.text, language, item.variables);
+  return item.level && LEVEL_SUFFIX[item.level] ? `${base} (${uiText(LEVEL_SUFFIX[item.level], language)})` : base;
+};
+
+const COVERAGE_ICONS = Object.freeze({
+  travel: FaBus,
+  housing: FaHome,
+  food: FaUtensils,
+  clothes: FaTshirt,
+  exams: FaStethoscope,
+  insurance: FaShieldAlt,
+  legal: FaBalanceScale,
+  notary: FaFileSignature,
+  support: FaHeadset,
+  family: FaUsers,
+});
+
+const coverageDetailText = (item, language, displayCurrency, rates) => {
+  const parts = [];
+  const mode = PROGRAM_COVERAGE_MODES.find(option => option.key === item.mode);
+  if (mode) parts.push(uiText(mode.label, language));
+  if (item.limit) {
+    const per = PROGRAM_COVERAGE_PER.find(option => option.key === (item.per || 'total'));
+    const amount = plainMoney(item.limit, displayCurrency, rates);
+    parts.push(item.per ? `${uiText('до {amount}', language, { amount })} ${uiText(per.label, language)}` : uiText('до {amount}', language, { amount }));
+  }
+  if (item.note) parts.push(item.note);
+  return parts.join(' · ');
+};
+
+/**
+ * Згорнутий рядок покриття: «Проїзд, житло +2». Число «покриття: 4» не
+ * казало, що саме покривають, а саме це й питають.
+ */
+export const summarizeCoverageLine = (program, language, limit = 2) => {
+  const { all } = describeProgramCoverage(program);
+  if (!all.length) return '';
+  const names = all.slice(0, limit).map((item, index) => {
+    const label = uiText(item.label, language);
+    return index === 0 ? label : label.toLowerCase();
+  });
+  const rest = all.length - names.length;
+  return `${names.join(', ')}${rest > 0 ? ` +${rest}` : ''}`;
+};
 
 // --- деталі програми ---------------------------------------------------------
 
@@ -300,12 +410,12 @@ const Details = styled.div`
 `;
 
 // Попередній перегляд у редакторі показує програму окремо від рядка
-// стрічки, тож там вона має власну рамку; у стрічці рамки немає.
+// стрічки, тож там вона має власну рамку; у стрічці рамку несе контейнер.
 const Framed = styled.article`
   padding: 14px;
   border: 1px solid ${BORDER};
   border-radius: var(--km-radius, 14px);
-  background: var(--matching-card-bg, var(--km-card, #fff));
+  background: ${CARD_BG};
 `;
 
 const FramedHead = styled.header`
@@ -319,54 +429,38 @@ const FramedHead = styled.header`
   span { font-size: 13px; color: ${MUTED}; }
 `;
 
-const Total = styled.div`
-  font-size: 24px;
-  font-weight: 800;
-  line-height: 1.15;
-  letter-spacing: -0.01em;
-  color: ${TEXT};
-  font-variant-numeric: tabular-nums;
-`;
-
-const TotalMeta = styled.div`
-  margin-top: 3px;
-  font-size: 11.5px;
-  color: ${MUTED};
-  font-variant-numeric: tabular-nums;
-`;
-
 const Verdict = styled.p`
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
+  margin: 0 0 8px;
   font-size: 13px;
   font-weight: 600;
   color: ${({ $state }) => tone($state === 'match' ? true : $state === 'mismatch' ? false : null)};
 `;
 
+const lineMeta = line => [
+  line.months ? null : line.when,
+  line.condition,
+].filter(Boolean).join(' · ');
+
 /**
- * Одна програма — деталі під рядком списку.
+ * Деталі програми — під згорнутою частиною того самого контейнера.
  *
- * Розділи йдуть у порядку, у якому їх питає читачка: скільки (разом за
- * програму, і з чого воно складається) → що може додатись (перемикачі
- * можливих доплат: відмічене додається до «разом») → чи підходжу я
- * (вимоги з позначкою збігу) → що мені покриють → умови. Розділу без
- * даних немає зовсім: програма, де агенція вказала саму суму, — це сума,
- * а не п'ять порожніх заголовків.
+ * Розділ без даних не малюється: програма, де агенція вказала саму суму, —
+ * це сума в згорнутій частині, а не п'ять порожніх заголовків. І головна сума
+ * тут не повторюється ще раз великим числом: її вже назвала згорнута частина,
+ * а деталі кажуть те, чого там немає, — з чого вона складається.
  *
  * `facts` — анкета читача (`extractViewerProgramFacts`): коли вона є, кожна
  * вимога показує, чи читач їй відповідає, а доплата за досвід відмічена
- * одразу. `framed` — окрема картка з назвою (попередній перегляд у
- * редакторі); у стрічці назву вже несе рядок списку.
+ * одразу. `framed` — окрема картка з назвою (старий попередній перегляд).
  */
-export const ProgramCard = ({ program, facts = null, rates, language, framed = false, accent = '' }) => {
+export const ProgramCard = ({ program, facts = null, rates, language, framed = false, displayCurrency = '' }) => {
   const [selectedBonuses, setSelectedBonuses] = useState(() => defaultProgramBonusKeys(program, facts));
   useEffect(() => {
     setSelectedBonuses(defaultProgramBonusKeys(program, facts));
   // Ідентичність обʼєктів міняється з кожним перемалюванням кешованої
   // картки; вибір читачки скидають лише факти, від яких залежить початковий.
   }, [program.id, facts?.experience]); // eslint-disable-line react-hooks/exhaustive-deps
+  const currency = displayCurrency || '';
   const result = facts ? evaluateProgram(program, facts) : null;
   const checkByKey = new Map((result?.checks || []).map(check => [check.key, check.ok]));
   const breakdown = programBreakdown(program, { selectedBonusKeys: selectedBonuses, rates });
@@ -374,74 +468,86 @@ export const ProgramCard = ({ program, facts = null, rates, language, framed = f
   const selectedCount = bonuses.filter(item => item.selected).length;
   const requirements = describeProgramRequirements(program);
   const unknown = requirements.filter(item => checkByKey.get(item.key) === null).map(item => REQUIREMENT_FIX_HINTS[item.key]);
-  const coverage = PROGRAM_COVERAGE_OPTIONS.filter(option => program.coverage?.includes(option.key));
+  const coverage = describeProgramCoverage(program);
+  const stages = listProgramStages(program);
+  const relocation = program.relocation || null;
   const toggleBonus = key => setSelectedBonuses(current => (current.includes(key)
     ? current.filter(item => item !== key)
     : [...current, key]));
-  const lineAmount = line => {
-    const own = formatProgramMoney(line.subtotal.amount, line.subtotal.currency);
-    // Виплата в іншій валюті, ніж «разом», показує й свій внесок у суму —
-    // інакше «разом» не звірити з рядками.
-    if (line.subtotal.currency === breakdown.baseCurrency) return { own };
-    const described = describeProgramMoney({ amount: line.subtotal.amount, currency: line.subtotal.currency }, rates);
-    const inBase = described?.equivalents.find(item => item.currency === breakdown.baseCurrency);
-    return { own, hint: inBase?.text || '' };
-  };
+  const show = money => presentMoney(money, currency, rates);
   const state = result ? (result.matches ? (result.uncertain ? 'uncertain' : 'match') : 'mismatch') : '';
   const verdictText = {
     match: 'Вам підходить',
-    uncertain: 'Може підходити — доповніть анкету',
+    uncertain: 'Може підходити — уточніть в агенції або доповніть анкету',
     mismatch: 'Не підходить за вимогами',
   }[state];
-  // Один рядок розбивки, що дорівнює «разом», нічого не пояснює: «Винагорода
-  // за цикл 10 000 $» під «Разом 10 000 $» — те саме число двічі.
-  const showBreakdown = lines.length > 1 || lines.some(line => line.months);
+  const counted = lines.filter(line => !line.included);
+  // Один рядок, що дорівнює головній сумі, нічого не пояснює: «Винагорода
+  // за цикл 10 000 $» під тим самим числом у згорнутій частині — те саме двічі.
+  const showSchedule = lines.length > 1 || lines.some(line => line.months || line.when || line.condition || line.includes);
+  const showTotal = counted.length > 1 && breakdown.reliable;
+  const notes = requirements.filter(item => item.note);
+  const familyLabel = PROGRAM_FAMILY_OPTIONS.find(option => option.key === relocation?.family && option.key)?.label || '';
 
   const body = (
     <Details data-testid={framed ? undefined : 'program-card'}>
-      {total.amount > 0 ? (
+      {showSchedule ? (
         <Section data-testid="program-total">
-          <SectionTitle $accent={accent}>
-            {uiText('Разом за програму', language)}
-            {selectedCount ? <small>{uiText('з обраними доплатами', language)}</small> : null}
-          </SectionTitle>
-          <Total>{total.approximate ? '≈ ' : ''}{formatParts(total)}</Total>
-          {equivalentsLine(total, rates, language) ? <TotalMeta>{equivalentsLine(total, rates, language)}</TotalMeta> : null}
-          {selectedCount ? (
-            <TotalMeta>{uiText('гарантовано {amount}', language, { amount: formatParts(guaranteed) })}</TotalMeta>
+          <SectionTitle>{uiText('Виплати', language)}</SectionTitle>
+          <MoneyRows>
+            {lines.map(line => {
+              const own = show(line.subtotal);
+              const meta = lineMeta(line);
+              return (
+                <React.Fragment key={line.key}>
+                  <dt>
+                    {uiText(line.label, language)}
+                    {line.months ? (
+                      <small>
+                        {plainMoney(line.money, currency, rates)} × {line.months} {monthWord(line.months, language)}
+                        {line.monthsEstimated ? ` · ${uiText('скільки місяців — уточніть в агенції', language)}` : ''}
+                      </small>
+                    ) : null}
+                    {meta ? <small>{meta}</small> : null}
+                    {line.includes ? (
+                      <small>
+                        {uiText('у тому числі {amount} — {label}', language, { amount: plainMoney(line.includes, currency, rates), label: line.includes.label })}
+                      </small>
+                    ) : null}
+                    {line.included ? <small>{uiText('входить у загальну винагороду', language)}</small> : null}
+                  </dt>
+                  <dd>{own.primary}{own.original ? <small>{own.original}</small> : null}</dd>
+                </React.Fragment>
+              );
+            })}
+            {breakdown.upTo ? (
+              <>
+                <dt>
+                  {uiText('Максимум', language)}
+                  {breakdown.upToCondition ? <small>{breakdown.upToCondition}</small> : null}
+                </dt>
+                <dd>{uiText('до {amount}', language, { amount: presentSum(breakdown.upTo, currency, rates).primary })}</dd>
+              </>
+            ) : null}
+            {showTotal ? (
+              <>
+                <dt className="total">{uiText(selectedCount ? 'Разом з обраними доплатами' : 'Разом за програму', language)}</dt>
+                <dd className="total">
+                  {presentSum(total, currency, rates).primary}
+                  {selectedCount ? <small>{uiText('гарантовано {amount}', language, { amount: presentSum(guaranteed, currency, rates).primary })}</small> : null}
+                </dd>
+              </>
+            ) : null}
+          </MoneyRows>
+          {counted.length > 1 && breakdown.hasMonthlyEstimate ? (
+            <Hint>{uiText('Разом не рахуємо: агенція не вказала, скільки місяців триває щомісячна виплата.', language)}</Hint>
           ) : null}
-          {showBreakdown ? (
-            <MoneyRows style={{ marginTop: 10 }} aria-label={uiText('Гарантовано', language)}>
-              {lines.map(line => {
-                const amount = lineAmount(line);
-                return (
-                  <React.Fragment key={line.key}>
-                    <dt>
-                      {uiText(line.label, language)}
-                      {line.months ? (
-                        <small>
-                          {formatProgramMoney(line.money.amount, line.money.currency)} × {line.months} {monthWord(line.months, language)}
-                          {line.monthsEstimated ? ` · ${uiText('орієнтовно, термін вагітності', language)}` : ''}
-                        </small>
-                      ) : null}
-                    </dt>
-                    <dd>{amount.own}{amount.hint ? <small>{amount.hint}</small> : null}</dd>
-                  </React.Fragment>
-                );
-              })}
-            </MoneyRows>
-          ) : (
-            <TotalMeta>{lines[0] ? uiText(lines[0].label, language) : null}</TotalMeta>
-          )}
         </Section>
       ) : null}
 
       {bonuses.length ? (
         <Section>
-          <SectionTitle $accent={accent}>
-            {uiText('Можливі доплати', language)}
-            <small>{uiText('відмітьте, що стосується вас', language)}</small>
-          </SectionTitle>
+          <SectionTitle>{uiText('Можливі доплати', language)}</SectionTitle>
           {bonuses.map(item => (
             <BonusRow
               key={item.key}
@@ -449,47 +555,88 @@ export const ProgramCard = ({ program, facts = null, rates, language, framed = f
               role="checkbox"
               aria-checked={item.selected}
               $on={item.selected}
-              onClick={() => toggleBonus(item.key)}
+              onClick={event => { event.stopPropagation(); toggleBonus(item.key); }}
             >
               <i aria-hidden="true">{item.selected ? '✓' : ''}</i>
-              <span>{uiText(item.label, language)}</span>
-              <b>+{formatProgramMoney(item.money.amount, item.money.currency)}</b>
+              <span>
+                {uiText(item.label, language)}
+                {item.money?.condition || item.condition ? <small>{item.money?.condition || item.condition}</small> : null}
+              </span>
+              <b>{plainMoney(item.money, currency, rates).replace(/^(≈ )?/, (match, approx) => `${approx || ''}+`)}</b>
             </BonusRow>
           ))}
+          {selectedCount && !showTotal && total.amount > 0 ? (
+            <Hint data-testid="program-bonus-total">{uiText('Разом з обраними доплатами: {amount}', language, { amount: presentSum(total, currency, rates).primary })}</Hint>
+          ) : null}
         </Section>
       ) : null}
 
       {requirements.length ? (
         <Section>
-          <SectionTitle $accent={accent}>{uiText('Вимоги', language)}</SectionTitle>
-          {verdictText ? <Verdict $state={state} style={{ marginBottom: 8 }}>{uiText(verdictText, language)}</Verdict> : null}
+          <SectionTitle>{uiText('Вимоги', language)}</SectionTitle>
+          {verdictText ? <Verdict $state={state}>{uiText(verdictText, language)}</Verdict> : null}
           <Chips>
             {requirements.map(item => {
               const ok = checkByKey.has(item.key) ? checkByKey.get(item.key) : undefined;
               return (
                 <Chip key={item.key} $ok={ok}>
                   {ok === true ? <b aria-hidden="true">✓</b> : ok === false ? <b aria-hidden="true">✕</b> : null}
-                  {uiText(item.text, language, item.variables)}
+                  {requirementText(item, language)}
+                  {LEVEL_SUFFIX[item.level] ? <em>· {uiText(LEVEL_SUFFIX[item.level], language)}</em> : null}
                 </Chip>
               );
             })}
           </Chips>
+          {notes.length ? (
+            <NoteList>
+              {notes.map(item => <li key={item.key}><b>{uiText(PROGRAM_REQUIREMENT_LABELS[item.key], language)}:</b> {item.note}</li>)}
+            </NoteList>
+          ) : null}
           {unknown.length ? <Hint>{[...new Set(unknown)].map(hint => uiText(hint, language)).join(' · ')}</Hint> : null}
         </Section>
       ) : null}
 
-      {coverage.length ? (
+      {stages.length || relocation ? (
         <Section>
-          <SectionTitle $accent={accent}>{uiText('Що покриває', language)}</SectionTitle>
-          <CoverList>
-            {coverage.map(option => <li key={option.key}>{uiText(option.label, language)}</li>)}
+          <SectionTitle>{uiText('Де й коли', language)}</SectionTitle>
+          <PlaceList>
+            {stages.map((item, index) => (
+              <React.Fragment key={`${item.stage}-${index}`}>
+                <dt>{uiText(item.label, language)}</dt>
+                <dd>{item.place}</dd>
+              </React.Fragment>
+            ))}
+            {relocation?.when ? <><dt>{uiText('Переїзд', language)}</dt><dd>{relocation.when}</dd></> : null}
+            {familyLabel ? <><dt>{uiText('Сімʼя', language)}</dt><dd>{uiText(familyLabel, language)}</dd></> : null}
+          </PlaceList>
+          {relocation?.note ? <Hint>{relocation.note}</Hint> : null}
+        </Section>
+      ) : null}
+
+      {coverage.all.length ? (
+        <Section>
+          <SectionTitle>{uiText('Що покриває', language)}</SectionTitle>
+          <CoverList aria-label={uiText('Витрати', language)}>
+            {[...coverage.expenses, ...coverage.support].map(item => {
+              const Icon = COVERAGE_ICONS[item.key] || FaShieldAlt;
+              const detail = coverageDetailText(item, language, currency, rates);
+              return (
+                <li key={item.key}>
+                  <Icon aria-hidden="true" />
+                  <span>
+                    {uiText(item.label, language)}
+                    {detail ? <small>{detail}</small> : null}
+                  </span>
+                </li>
+              );
+            })}
           </CoverList>
         </Section>
       ) : null}
 
       {program.note ? (
         <Section>
-          <SectionTitle $accent={accent}>{uiText('Умови й примітки', language)}</SectionTitle>
+          <SectionTitle>{uiText('Умови й примітки', language)}</SectionTitle>
           <Note>{program.note}</Note>
         </Section>
       ) : null}
@@ -500,8 +647,8 @@ export const ProgramCard = ({ program, facts = null, rates, language, framed = f
   return (
     <Framed data-testid="program-card">
       <FramedHead>
-        <b>{programHeading(program, language)}</b>
-        {program.location ? <span>{program.location}</span> : null}
+        <b>{program.name || programHeading(program, language)}</b>
+        {program.location ? <span>{formatProgramPlace(program.location)}</span> : null}
       </FramedHead>
       {body}
     </Framed>
@@ -545,15 +692,6 @@ const programsGenitive = (count, language) => {
   return count % 10 === 1 && count % 100 !== 11 ? 'програми' : 'програм';
 };
 
-const pluralPrograms = (count, language) => {
-  if (language === 'en') return count === 1 ? 'program' : 'programs';
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'програма';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'програми';
-  return 'програм';
-};
-
 const pluralBonuses = (count, language) => {
   if (language === 'en') return count === 1 ? 'bonus' : 'bonuses';
   const mod10 = count % 10;
@@ -569,13 +707,23 @@ const Panel = styled.section`
 
 const PanelHead = styled.div`
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-bottom: 4px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+`;
+
+const PanelTitle = styled.h4`
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: ${TEXT};
+
+  span { font-weight: 500; color: ${MUTED}; }
 `;
 
 const PanelLine = styled.p`
-  margin: 0;
+  margin: -4px 0 8px;
   font-size: 12.5px;
   color: ${({ $match }) => ($match ? GOOD : MUTED)};
   font-weight: ${({ $match }) => ($match ? 600 : 400)};
@@ -584,47 +732,62 @@ const PanelLine = styled.p`
 `;
 
 const ProgramList = styled.ol`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
 `;
 
+// Кожна програма — свій контейнер: при двох-трьох програмах межа між ними
+// мусить бути видно без читання, а без меж програма зливалась з описом
+// агенції над нею.
 const ProgramItem = styled.li`
-  border-top: 1px solid ${BORDER};
-
-  &:first-child { border-top: 0; }
+  padding: 12px 12px 4px;
+  border: 1px solid ${BORDER};
+  border-radius: 14px;
+  background: ${PROGRAM_BG};
 `;
 
-const ProgramButton = styled.button`
+const ProgramHead = styled.div`
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 4px 12px;
-  width: 100%;
-  min-height: 56px;
-  padding: 10px 0;
-  border: 0;
-  background: transparent;
-  color: ${TEXT};
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-
-  &:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; border-radius: 8px; }
+  align-items: start;
+  gap: 2px 12px;
 `;
 
-const ProgramTitle = styled.span`
+const Overline = styled.div`
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 2px 6px;
+  gap: 6px;
   min-width: 0;
-  font-size: 14.5px;
-  line-height: 1.3;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: ${MUTED};
+`;
 
-  b { font-weight: 700; }
-  > span { color: ${MUTED}; }
-  > span.differs { color: ${TEXT}; }
+const ProgramTitle = styled.div`
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: ${TEXT};
+  overflow-wrap: anywhere;
+`;
+
+const Place = styled.div`
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: 13px;
+  color: ${MUTED};
+  overflow-wrap: anywhere;
+
+  svg { flex: 0 0 auto; width: 10px; height: 10px; transform: translateY(1px); }
+  &.differs { color: ${TEXT}; }
 `;
 
 // Значок збігу — колір і форма, а не лише колір: ✓ / ✕ / ?.
@@ -632,75 +795,119 @@ const FitMark = styled.i`
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: 10px;
   font-style: normal;
   font-weight: 800;
   color: #fff;
   background: ${({ $state }) => tone($state === 'match' ? true : $state === 'mismatch' ? false : null)};
 `;
 
-const ProgramPay = styled.span`
-  grid-row: span 2;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-
-  > span { display: flex; flex-direction: column; align-items: flex-end; }
-  b { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  small { font-size: 11px; color: ${MUTED}; }
-  > i {
-    font-style: normal;
-    font-size: 11px;
-    color: ${MUTED};
-    transform: rotate(${({ $open }) => ($open ? '180deg' : '0deg')});
-    transition: transform 0.15s ease;
-  }
+const Offer = styled.div`
+  margin-top: 10px;
 `;
 
-// Крапка-роздільник висить у проміжку перед ознакою; на початку перенесеного
-// рядка вона виходить за ліву межу й обрізається (`overflow: hidden`), тож
-// рядок ніколи не починається з «·».
-const Highlights = styled.span`
+const Amount = styled.div`
   display: flex;
+  align-items: baseline;
   flex-wrap: wrap;
-  gap: 2px 14px;
-  min-width: 0;
-  overflow: hidden;
+  gap: 2px 8px;
+
+  b { font-size: 21px; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; color: ${TEXT}; font-variant-numeric: tabular-nums; }
+  span { font-size: 12.5px; color: ${MUTED}; font-variant-numeric: tabular-nums; }
+`;
+
+const PayLabel = styled.div`
+  margin-top: 1px;
   font-size: 12.5px;
   line-height: 1.4;
   color: ${MUTED};
 
-  > span { position: relative; }
-  > span + span::before { content: '·'; position: absolute; left: -9px; color: ${MUTED}; }
-  > span.differs { color: ${TEXT}; font-weight: 500; }
+  strong { font-weight: 600; color: ${TEXT}; }
+`;
+
+const Highlights = styled.ul`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 0 9px;
+    border-radius: 999px;
+    border: 1px solid ${BORDER};
+    background: ${CARD_BG};
+    font-size: 12.5px;
+    color: ${TEXT};
+  }
+  li.differs { border-color: color-mix(in srgb, ${TEXT} 45%, transparent); font-weight: 600; }
+`;
+
+const CoverageLine = styled.p`
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: ${MUTED};
+
+  b { font-weight: 600; color: ${TEXT}; }
 `;
 
 const ProgramBody = styled.div`
-  padding: 2px 0 14px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid ${BORDER};
+`;
+
+// Розгортання — словом, у самому контейнері, якого воно стосується:
+// стрілка біля суми й «Детальніше» під карткою розгортали різне, а виглядали
+// однаково.
+export const SectionToggle = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: ${ACCENT};
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+
+  svg { width: 10px; height: 10px; transition: transform 0.15s ease; transform: rotate(${({ $open }) => ($open ? '180deg' : '0deg')}); }
+  &:hover { text-decoration: underline; text-underline-offset: 3px; }
+  &:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; border-radius: 6px; }
 `;
 
 const MoreButton = styled.button`
   width: 100%;
-  min-height: 40px;
-  border: 0;
-  border-top: 1px solid ${BORDER};
+  min-height: 38px;
+  margin-top: 8px;
+  border: 1px dashed ${BORDER};
+  border-radius: 12px;
   background: transparent;
   color: ${ACCENT};
   font: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+
+  &:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
 `;
 
-const highlightText = (item, language) => {
-  if (item.key === 'bonuses') return `+${item.variables.count} ${uiText(pluralBonuses(item.variables.count, language), language)}`;
-  if (item.key === 'coverage') return uiText('покриття: {count}', language, item.variables);
-  return uiText(item.text, language, item.variables);
-};
+const RateNote = styled.p`
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: ${MUTED};
+`;
 
 const programFitState = result => {
   if (!result) return '';
@@ -712,64 +919,145 @@ const FIT_LABELS = Object.freeze({ match: 'Вам підходить', uncertain
 const FIT_MARKS = Object.freeze({ match: '✓', uncertain: '?', mismatch: '✕' });
 
 /**
- * Рядок списку — сама пропозиція одним поглядом.
+ * Головна сума програми і що вона означає.
  *
- * Ліворуч тип і місце, під ними до чотирьох ознак; праворуч сума за
- * програму. Ознаки, якими програма відрізняється від інших програм того
- * ж типу (`differs`), стоять першими й темнішим кольором — решта сіра.
+ * Сума — та, яку можна обіцяти: разом за графіком, коли він повний (усі
+ * місяці відомі, одна валюта), інакше головна виплата з власним підписом і
+ * приміткою «+ виплати за графіком». Підпис називає, хто отримує і за що
+ * (`programPayLabel`), тож «за програму» й «за цикл» більше не стоять поруч
+ * про те саме число.
  */
-const ProgramListItem = ({ program, open, onToggle, facts, rates, language, differs, accent }) => {
+export const describeProgramOffer = (program, { rates = null } = {}) => {
+  const breakdown = programBreakdown(program, { rates });
+  const main = breakdown.lines.find(line => line.key === 'final') || breakdown.lines[0] || null;
+  const counted = breakdown.lines.filter(line => !line.included);
+  const label = programPayLabel(program);
+  if (counted.length > 1 && breakdown.reliable) {
+    return { money: breakdown.guaranteed, label: programPayLabel(program, { sum: true }), extra: '', breakdown };
+  }
+  if (!main) return { money: null, label, extra: '', breakdown };
+  return {
+    money: main.subtotal,
+    label: main.key === 'final' ? label : { text: main.label },
+    extra: counted.length > 1 ? 'schedule' : '',
+    breakdown,
+  };
+};
+
+/**
+ * Згорнута програма — пропозиція одним поглядом, у власному контейнері.
+ */
+const ProgramListItem = ({ program, open, onToggle, facts, rates, language, differs, displayCurrency }) => {
   const result = facts ? evaluateProgram(program, facts) : null;
   const fit = programFitState(result);
-  const breakdown = programBreakdown(program, { rates });
-  const pay = breakdown.guaranteed.amount > 0
-    ? `${breakdown.guaranteed.approximate ? '≈ ' : ''}${formatParts(breakdown.guaranteed)}`
-    : '';
+  const offer = describeProgramOffer(program, { rates });
+  const shown = offer.money ? presentSum(offer.money.parts ? offer.money : { parts: [offer.money], amount: offer.money.amount, currency: offer.money.currency, approximate: offer.money.approximate }, displayCurrency, rates) : null;
+  const upTo = offer.breakdown.upTo ? presentSum(offer.breakdown.upTo, displayCurrency, rates).primary : '';
   const highlights = useMemo(() => {
-    const items = describeProgramHighlights(program);
-    const flagged = items.map(item => ({ ...item, differs: Boolean(differs?.has(item.key)) }));
-    return [...flagged.filter(item => item.differs), ...flagged.filter(item => !item.differs)].slice(0, 4);
+    const items = resolveProgramHighlights(program);
+    return items.map(item => ({ ...item, differs: Boolean(differs?.has(item.key)) }));
   }, [differs, program]);
+  const coverageLine = summarizeCoverageLine(program, language);
   const bodyId = `program-body-${program.id}`;
+  const offerLabel = programHeading(program, language);
+  const place = program.location ? formatProgramPlace(program.location) : (listProgramStages(program)[0]?.place || '');
+  const stagesCount = (program.stages || []).length;
 
   return (
-    <ProgramItem data-testid="program-list-item">
-      <ProgramButton type="button" aria-expanded={open} aria-controls={open ? bodyId : undefined} onClick={event => { event.stopPropagation(); onToggle(); }}>
-        <ProgramTitle>
-          {fit ? <FitMark role="img" $state={fit} title={uiText(FIT_LABELS[fit], language)} aria-label={uiText(FIT_LABELS[fit], language)}>{FIT_MARKS[fit]}</FitMark> : null}
-          <b>{programHeading(program, language)}</b>
-          {program.location ? <span className={differs?.has('location') ? 'differs' : undefined}>{program.location}</span> : null}
-        </ProgramTitle>
-        <ProgramPay $open={open}>
-          <span>
-            {pay ? <b>{pay}</b> : <small>{uiText('сума — у агенції', language)}</small>}
-            {pay ? <small>{uiText('за програму', language)}</small> : null}
-          </span>
-          <i aria-hidden="true">▼</i>
-        </ProgramPay>
-        {highlights.length ? (
-          <Highlights>
-            {highlights.map(item => <span key={item.key} className={item.differs ? 'differs' : undefined}>{highlightText(item, language)}</span>)}
-          </Highlights>
-        ) : <span />}
-      </ProgramButton>
+    <ProgramItem data-testid="program-list-item" onClick={event => event.stopPropagation()}>
+      <ProgramHead>
+        <div>
+          {program.name ? (
+            <>
+              <Overline>
+                {fit ? <FitMark role="img" $state={fit} title={uiText(FIT_LABELS[fit], language)} aria-label={uiText(FIT_LABELS[fit], language)}>{FIT_MARKS[fit]}</FitMark> : null}
+                <span>{offerLabel}</span>
+              </Overline>
+              <ProgramTitle>{program.name}</ProgramTitle>
+            </>
+          ) : (
+            <ProgramTitle as="div" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {fit ? <FitMark role="img" $state={fit} title={uiText(FIT_LABELS[fit], language)} aria-label={uiText(FIT_LABELS[fit], language)}>{FIT_MARKS[fit]}</FitMark> : null}
+              <span>{offerLabel}</span>
+            </ProgramTitle>
+          )}
+          {place ? (
+            <Place className={differs?.has('location') ? 'differs' : undefined}>
+              <FaMapMarkerAlt aria-hidden="true" />
+              <span>
+                {place}
+                {stagesCount > 1 ? ` · ${uiText('{count} етапи', language, { count: stagesCount })}` : ''}
+              </span>
+            </Place>
+          ) : null}
+        </div>
+      </ProgramHead>
+
+      <Offer>
+        {shown?.primary ? (
+          <>
+            <Amount>
+              <b>{shown.primary}</b>
+              {shown.original ? <span>{shown.original}</span> : null}
+            </Amount>
+            <PayLabel>
+              {uiText(offer.label.text, language, offer.label.variables)}
+              {upTo ? <> · <strong>{uiText('до {amount}', language, { amount: upTo })}</strong>{offer.breakdown.upToCondition ? ` — ${offer.breakdown.upToCondition}` : ''}</> : null}
+              {offer.extra === 'schedule' ? ` · ${uiText('+ виплати за графіком', language)}` : ''}
+            </PayLabel>
+          </>
+        ) : (
+          <PayLabel>{uiText('Суму уточнюйте в агенції', language)}</PayLabel>
+        )}
+      </Offer>
+
+      {!open && highlights.length ? (
+        <Highlights aria-label={uiText('Головне', language)}>
+          {highlights.map(item => (
+            <li key={item.key} className={item.differs ? 'differs' : undefined}>{highlightText(item, language, displayCurrency, rates)}</li>
+          ))}
+        </Highlights>
+      ) : null}
+      {!open && coverageLine ? (
+        <CoverageLine><b>{uiText('Покриває', language)}:</b> {coverageLine}</CoverageLine>
+      ) : null}
+
       {open ? (
         <ProgramBody id={bodyId}>
-          <ProgramCard program={program} facts={facts} rates={rates} language={language} accent={accent} />
+          <ProgramCard program={program} facts={facts} rates={rates} language={language} displayCurrency={displayCurrency} />
         </ProgramBody>
       ) : null}
+
+      <SectionToggle
+        type="button"
+        $open={open}
+        aria-expanded={open}
+        aria-controls={open ? bodyId : undefined}
+        onClick={event => { event.stopPropagation(); onToggle(); }}
+      >
+        <span>{uiText(open ? 'Згорнути деталі' : 'Деталі програми', language)}</span>
+        <FaChevronDown aria-hidden="true" />
+      </SectionToggle>
     </ProgramItem>
+  );
+};
+
+/** Одна програма окремо — попередній перегляд у редакторі, і згорнута, і розгорнута. */
+export const ProgramPreview = ({ program, rates, language, displayCurrency, defaultOpen = false }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <ProgramList as="div">
+      <ProgramListItem program={program} open={open} onToggle={() => setOpen(value => !value)} rates={rates} language={language} displayCurrency={displayCurrency} />
+    </ProgramList>
   );
 };
 
 /**
  * Програми агенції в картці стрічки.
  *
- * Угорі — одним рядком, що тут є: донорці чи СМ «Вам підходить 2 з 3
- * програм», решті «3 програми»; під ним суми за програму (кожен тип — своїм
- * діапазоном: «1 600–23 000 $» не каже нічого ні донорці, ні СМ). Далі
- * список, по рядку на програму, перші три; решта — «Показати ще». Дотик до
- * рядка розгортає деталі просто під ним, відкритою буває одна програма.
+ * Заголовок — «Програми · N» з перемикачем валюти поруч; донорці чи СМ під
+ * ним — «Вам підходить 1 з 2». Далі контейнер на програму, перші три;
+ * решта — «Показати ще». Деталі кожної розгортаються незалежно.
  *
  * Програми чужого типу (донорці — програми СМ) у список не йдуть: вони
  * названі рядком «ще 1 — для сурогатних мам».
@@ -783,69 +1071,72 @@ export const AgencyProgramsPanel = ({
   onDisplayCurrencyChange,
   language,
   defaultOpenId = '',
-  accent = '',
   onOpen,
 }) => {
-  const [openId, setOpenId] = useState(defaultOpenId);
+  const [openIds, setOpenIds] = useState(() => new Set(defaultOpenId ? [defaultOpenId] : []));
   const [showAll, setShowAll] = useState(false);
   const summary = summarizeCardPrograms(card, { viewerType, facts });
   const programs = useMemo(() => (summary ? summary.evaluated.map(item => item.program) : []), [summary]);
   const differences = useMemo(() => listProgramDifferences(programs), [programs]);
   if (!summary) return null;
-  const perType = !viewerType && summary.byType.length > 1
-    ? summary.byType.map(item => ({ type: item.type, range: formatPayRange(item.totals, displayCurrency, rates) }))
-    : null;
-  // Одну програму сума вже називає її рядок — діапазон над ним повторив би те
-  // саме число.
-  const range = perType || summary.total < 2 ? '' : formatPayRange(summary.finals, displayCurrency, rates);
-  // Донорка, якій агенція пропонує самі програми СМ: «Вам підходить 0 з 0»
-  // не каже нічого — каже рядок «ще N — для сурогатних мам» нижче.
-  const headline = summary.total === 0
-    ? uiText('Програм для вас поки немає', language)
-    : summary.matched !== null
-    ? uiText('Вам підходить {matched} з {total} {programs}', language, {
-      matched: summary.matched,
-      total: summary.total,
-      programs: programsGenitive(summary.total, language),
-    })
-    : `${summary.total} ${uiText(pluralPrograms(summary.total, language), language)}`;
-  const otherType = viewerType === 'ed' ? 'sm' : 'ed';
-  const othersCount = summary.allTotal - summary.total;
   const visible = showAll ? programs : programs.slice(0, VISIBLE_PROGRAMS);
   const hiddenCount = programs.length - visible.length;
+  // Діапазон — лише коли частину програм сховано: видимі контейнери й так
+  // називають кожну суму, а діапазон над ними повторив би їх утретє.
+  const range = hiddenCount > 0 ? formatPayRange(summary.finals, displayCurrency, rates) : '';
+  const matchedLine = summary.total === 0
+    ? uiText('Програм для вас поки немає', language)
+    : summary.matched !== null
+      ? uiText('Вам підходить {matched} з {total} {programs}', language, {
+        matched: summary.matched,
+        total: summary.total,
+        programs: programsGenitive(summary.total, language),
+      })
+      : '';
+  const otherType = viewerType === 'ed' ? 'sm' : 'ed';
+  const othersCount = summary.allTotal - summary.total;
   const toggle = id => {
-    setOpenId(current => (current === id ? '' : id));
-    if (openId !== id) onOpen?.(id);
+    setOpenIds(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else {
+        next.add(id);
+        onOpen?.(id);
+      }
+      return next;
+    });
   };
+  // Курс називається один раз — коли бодай одну суму перераховано.
+  const converted = Boolean(rates?.rateDate) && displayCurrency
+    && programs.some(program => programBreakdown(program).lines.some(line => line.money?.currency && line.money.currency !== displayCurrency));
 
   return (
     <Panel data-testid="programs-summary" onClick={event => event.stopPropagation()}>
       <PanelHead>
-        <SectionTitle $accent={accent} style={{ marginBottom: 0 }}>{uiText('Програми', language)}</SectionTitle>
-        <PanelLine $match={summary.matched > 0}>
-          {headline}
-          {range ? <> · <em>{range}</em> {uiText('за програму', language)}</> : null}
-        </PanelLine>
-        {perType ? perType.map(item => (
-          <PanelLine key={item.type}>
-            {uiText(PROGRAM_TYPE_LABELS[item.type], language)}
-            {item.range ? <> · <em>{item.range}</em></> : null}
-          </PanelLine>
-        )) : null}
+        <PanelTitle>{uiText('Програми', language)} <span>· {summary.total}</span></PanelTitle>
+        {onDisplayCurrencyChange && programs.length ? (
+          <ProgramCurrencySwitch value={displayCurrency} onChange={onDisplayCurrencyChange} language={language} />
+        ) : null}
       </PanelHead>
+      {matchedLine || range ? (
+        <PanelLine $match={summary.matched > 0}>
+          {matchedLine}
+          {range ? <>{matchedLine ? ' · ' : ''}<em>{range}</em></> : null}
+        </PanelLine>
+      ) : null}
       {visible.length ? (
         <ProgramList>
           {visible.map(program => (
             <ProgramListItem
               key={program.id}
               program={program}
-              open={openId === program.id}
+              open={openIds.has(program.id)}
               onToggle={() => toggle(program.id)}
               facts={viewerType === program.type ? facts : null}
               rates={rates}
               language={language}
               differs={differences.get(program.id)}
-              accent={accent}
+              displayCurrency={displayCurrency}
             />
           ))}
         </ProgramList>
@@ -856,17 +1147,15 @@ export const AgencyProgramsPanel = ({
         </MoreButton>
       ) : null}
       {othersCount > 0 && OTHER_TYPE_LABELS[otherType] && viewerType ? (
-        <PanelLine style={{ marginTop: 4 }}>
+        <RateNote>
           {uiText('ще {count} — {audience}', language, {
             count: othersCount,
             audience: uiText(OTHER_TYPE_LABELS[otherType], language),
           })}
-        </PanelLine>
+        </RateNote>
       ) : null}
-      {openId && onDisplayCurrencyChange ? (
-        <div style={{ marginTop: 6 }}>
-          <ProgramCurrencySwitch value={displayCurrency} onChange={onDisplayCurrencyChange} language={language} rates={rates} />
-        </div>
+      {converted ? (
+        <RateNote>{uiText('≈ — за курсом НБУ на {date}', language, { date: formatRateDate(rates.rateDate) })}</RateNote>
       ) : null}
     </Panel>
   );
@@ -874,3 +1163,4 @@ export const AgencyProgramsPanel = ({
 
 // Стара назва: рядок стрічки звав блок саме так.
 export const ProgramsSummary = AgencyProgramsPanel;
+

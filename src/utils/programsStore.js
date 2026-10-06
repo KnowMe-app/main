@@ -105,7 +105,9 @@ export const peekCardPrograms = card => {
 
 setCardProgramsLookup(peekCardPrograms);
 
-const isFresh = (entry, at) => Boolean(entry) && !entry.pending && entry.at >= at;
+// Власна недописана версія (`pending`) теж чинна, якщо не старша за картку:
+// її записала сама власниця, і база може знати про неї менше (див. нижче).
+const isFresh = (entry, at) => Boolean(entry) && entry.at >= at;
 
 const fetchPrograms = (uid, at) => {
   const key = `${uid}@${at}`;
@@ -114,6 +116,12 @@ const fetchPrograms = (uid, at) => {
   const request = transport.read(uid)
     .then(data => {
       const items = data?.items && typeof data.items === 'object' ? data.items : {};
+      // Власна, ще не дописана в базу версія (`pending`) не старша за базову —
+      // це та сама або новіша правка, і база її не перебиває: інакше власниця,
+      // глянувши на свою картку в стрічці, втрачала б поля, яких правила ще
+      // не приймають (`stripExtendedProgramFields`).
+      const local = readEntry(uid);
+      if (local?.pending && local.at >= (Number(data?.updatedAt) || 0)) return local.items;
       writeEntry(uid, { at: Number(data?.updatedAt) || at, items, pending: false });
       notify();
       return items;
@@ -204,9 +212,12 @@ export const saveCardPrograms = async (uid, programs) => {
   writeEntry(id, { at, items, pending: true });
   notify();
   if (!transport.write) return { at, items, saved: false };
-  await transport.write(id, items, at);
-  writeEntry(id, { at, items, pending: false });
-  return { at, items, saved: true };
+  const result = await transport.write(id, items, at);
+  // Записане без частини полів (правила ще не викочені) лишається «не в
+  // базі»: наступне відкриття профілю спробує дописати повну версію.
+  const partial = result?.partial === true;
+  writeEntry(id, { at, items, pending: partial });
+  return { at, items, saved: true, ...(partial ? { partial: true } : {}) };
 };
 
 export const retryPendingPrograms = async uid => {

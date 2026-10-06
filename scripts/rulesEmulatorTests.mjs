@@ -271,6 +271,42 @@ await it('програма з невідомим ключем, типом чи �
   await assertFails(set(ref(db(PROFILE_OWNER), base), { items: { p3: { id: 'p3', type: 'ed' } } }));
 });
 
+// Програми з оголошень: вид суми, «до …» з умовою, подробиці виплат графіка,
+// рівні вимог, етапи, переїзд, подробиці покриття й вибрані ознаки. Поки цих
+// правил немає в проді, клієнт пише програму без них (`stripExtendedProgramFields`).
+await it('приймає розширені поля програми й відкидає невідомі всередині них', async () => {
+  const base = `multiData/programs/${PROFILE_OWNER}`;
+  const withProgram = program => ({ updatedAt: 1759200000000, items: { p4: { id: 'p4', type: 'sm', ...program } } });
+  const full = {
+    name: 'Програма в Києві',
+    payKind: 'guaranteed',
+    startNow: true,
+    payMax: { amount: 70000, currency: 'UAH', condition: 'залежно від результату' },
+    payments: {
+      final: { amount: 55000, currency: 'UAH', when: 'після пологів' },
+      monthly: { amount: 900, currency: 'USD', months: 9, includes: { label: 'одяг', amount: 400, currency: 'USD' } },
+    },
+    otherPayments: [{ label: '20 тиждень', amount: 500, currency: 'USD', when: 'на 20 тижні', condition: 'якщо вагітність триває' }],
+    bonuses: [{ label: 'Кесарів', amount: 1000, currency: 'USD', condition: 'якщо кесарів' }],
+    requirementMeta: { csection: { level: 'individual', note: 'через 2 роки' }, rh: { level: 'free' } },
+    stages: [{ stage: 'screening', place: 'Київ' }, { stage: 'delivery', place: 'Львів' }],
+    relocation: { when: 'з 12 тижня', family: 'yes', note: 'квартира' },
+    coverage: ['housing', 'food'],
+    coverageDetails: { housing: { mode: 'paid' }, food: { mode: 'allowance', limit: { amount: 10, currency: 'USD' }, per: 'day', note: 'готівкою' } },
+    highlights: ['startNow', 'csection'],
+  };
+  await assertSucceeds(set(ref(db(PROFILE_OWNER), base), withProgram(full)));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payKind: 'bribe' })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirementMeta: { csection: { level: 'must' } } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirementMeta: { salary: { level: 'free' } } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ stages: [{ stage: 'moon', place: 'Місяць' }] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ relocation: { family: 'maybe' } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ coverageDetails: { food: { mode: 'free' } } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payments: { final: { amount: 1, currency: 'USD', includes: { label: 'x', amount: 1, currency: 'GBP' } } } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ highlights: ['a', 'b', 'c', 'd', 'e'] })));
+  await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
+});
+
 // Назви доплат, які вже вживають агенції, — підказки в редакторі програм.
 // Дописати нову може кожен, переписати чужу — ні.
 await it('словник назв доплат: новий ключ пише кожен, наявний не переписує ніхто, крім адміна', async () => {

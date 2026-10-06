@@ -493,6 +493,27 @@
                   "currency": {
                     ".validate": "newData.val() == 'USD' || newData.val() == 'EUR' || newData.val() == 'UAH'"
                   },
+"includes": {
+                    ".validate": "newData.hasChildren(['label', 'amount', 'currency'])",
+                    "label": {
+                      ".validate": "newData.isString() && newData.val().length <= 60"
+                    },
+                    "amount": {
+                      ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 1000000000"
+                    },
+                    "currency": {
+                      ".validate": "newData.val() == 'USD' || newData.val() == 'EUR' || newData.val() == 'UAH'"
+                    },
+                    "$other": {
+                      ".validate": false
+                    }
+                  },
+                  "when": {
+                    ".validate": "newData.isString() && newData.val().length <= 60"
+                  },
+                  "condition": {
+                    ".validate": "newData.isString() && newData.val().length <= 120"
+                  },
                   "months": {
                     ".validate": "$paymentKey == 'monthly' && newData.isNumber() && newData.val() >= 1 && newData.val() <= 24"
                   },
@@ -509,6 +530,27 @@
                   },
                   "currency": {
                     ".validate": "newData.val() == 'USD' || newData.val() == 'EUR' || newData.val() == 'UAH'"
+                  },
+                  "includes": {
+                    ".validate": "newData.hasChildren(['label', 'amount', 'currency'])",
+                    "label": {
+                      ".validate": "newData.isString() && newData.val().length <= 60"
+                    },
+                    "amount": {
+                      ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 1000000000"
+                    },
+                    "currency": {
+                      ".validate": "newData.val() == 'USD' || newData.val() == 'EUR' || newData.val() == 'UAH'"
+                    },
+                    "$other": {
+                      ".validate": false
+                    }
+                  },
+                  "when": {
+                    ".validate": "newData.isString() && newData.val().length <= 60"
+                  },
+                  "condition": {
+                    ".validate": "newData.isString() && newData.val().length <= 120"
                   },
                   "label": {
                     ".validate": "newData.isString() && newData.val().length <= 60"
@@ -527,12 +569,115 @@
                   "currency": {
                     ".validate": "newData.val() == 'USD' || newData.val() == 'EUR' || newData.val() == 'UAH'"
                   },
+                  "condition": {
+                    ".validate": "newData.isString() && newData.val().length <= 120"
+                  },
                   "label": {
                     ".validate": "newData.isString() && newData.val().length <= 60"
                   },
                   "$other": {
                     ".validate": false
                   }
+                }
+              },
+              "name": {
+                ".validate": "newData.isString() && newData.val().length <= 60"
+              },
+              "payKind": {
+                ".validate": "newData.val() == 'cycle' || newData.val() == 'final' || newData.val() == 'total' || newData.val() == 'guaranteed'"
+              },
+              "payMax": {
+                ".validate": "newData.hasChildren(['amount', 'currency'])",
+                "amount": {
+                  ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 1000000000"
+                },
+                "currency": {
+                  ".validate": "newData.val() == 'USD' || newData.val() == 'EUR' || newData.val() == 'UAH'"
+                },
+                "condition": {
+                  ".validate": "newData.isString() && newData.val().length <= 120"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              },
+              "startNow": {
+                ".validate": "newData.isBoolean()"
+              },
+              "requirementMeta": {
+                "$requirementKey": {
+                  ".validate": "$requirementKey.matches(/^(age|bmi|height|rh|marital|ownKids|births|csection)$/)",
+                  "level": {
+                    ".validate": "newData.val() == 'required' || newData.val() == 'preferred' || newData.val() == 'individual' || newData.val() == 'free'"
+                  },
+                  "note": {
+                    ".validate": "newData.isString() && newData.val().length <= 120"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                }
+              },
+              "stages": {
+                "$index": {
+                  ".validate": "$index.matches(/^[0-5]$/) && newData.hasChildren(['stage', 'place'])",
+                  "stage": {
+                    ".validate": "newData.isString() && newData.val().matches(/^(screening|stimulation|retrieval|transfer|pregnancy|delivery|other)$/)"
+                  },
+                  "place": {
+                    ".validate": "newData.isString() && newData.val().length <= 80"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                }
+              },
+              "relocation": {
+                "when": {
+                  ".validate": "newData.isString() && newData.val().length <= 80"
+                },
+                "family": {
+                  ".validate": "newData.val() == 'yes' || newData.val() == 'no'"
+                },
+                "note": {
+                  ".validate": "newData.isString() && newData.val().length <= 120"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              },
+              "coverageDetails": {
+                "$coverageKey": {
+                  ".validate": "$coverageKey.length <= 20",
+                  "mode": {
+                    ".validate": "newData.val() == 'paid' || newData.val() == 'reimbursed' || newData.val() == 'allowance' || newData.val() == 'included'"
+                  },
+                  "limit": {
+                    ".validate": "newData.hasChildren(['amount', 'currency'])",
+                    "amount": {
+                      ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 1000000000"
+                    },
+                    "currency": {
+                      ".validate": "newData.val() == 'USD' || newData.val() == 'EUR' || newData.val() == 'UAH'"
+                    },
+                    "$other": {
+                      ".validate": false
+                    }
+                  },
+                  "per": {
+                    ".validate": "newData.val() == 'day' || newData.val() == 'month'"
+                  },
+                  "note": {
+                    ".validate": "newData.isString() && newData.val().length <= 120"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                }
+              },
+              "highlights": {
+                "$index": {
+                  ".validate": "$index.matches(/^[0-3]$/) && newData.isString() && newData.val().length <= 30"
                 }
               },
               "coverage": {
