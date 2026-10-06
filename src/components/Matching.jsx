@@ -6093,6 +6093,10 @@ const Matching = () => {
     // Проєкція перекривається анкетою, а не навпаки: анкета свіжіша й повніша.
     // Окремо дочитані контакти лягають лише туди, де анкета своїх не принесла.
     const merged = fullProfile ? { ...user, ...fullProfile } : { ...user };
+    // Прапорець проєкції лишається й на зведеній картці, тож рядок окремо
+    // дізнається, що анкету вже прочитано: «Про агенцію» без опису після
+    // читання мусить сказати це, а не лишитись кнопкою.
+    if (fullProfile) merged.__fullProfileHydrated = true;
     if (cardContacts && !getContactEntries(merged).length) Object.assign(merged, cardContacts);
 
     // Анкета з `fetchUsersByIds` приходить із порожнім `photos` — фото до неї

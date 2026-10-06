@@ -1,31 +1,45 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import {
+  HIGHLIGHTS_NONE,
   MAX_PROGRAMS,
+  MAX_PROGRAM_HIGHLIGHTS,
+  PROGRAM_COVERAGE_MODES,
   PROGRAM_COVERAGE_OPTIONS,
+  PROGRAM_COVERAGE_PER,
   PROGRAM_CSECTION_OPTIONS,
+  PROGRAM_FAMILY_OPTIONS,
   PROGRAM_KIDS_OPTIONS,
   PROGRAM_MARITAL_OPTIONS,
   DEFAULT_MONTHLY_MONTHS,
   MAX_MONTHLY_MONTHS,
+  PROGRAM_OFFER_LABELS,
+  PROGRAM_PAY_KINDS,
+  PROGRAM_REQUIREMENT_LABELS,
+  PROGRAM_REQUIREMENT_LEVELS,
   PROGRAM_RH_OPTIONS,
+  PROGRAM_STAGE_OPTIONS,
   PROGRAM_TOTAL_FIELD,
   PROGRAM_TYPES,
   PROGRAM_TYPE_LABELS,
   createEmptyProgram,
+  defaultProgramHighlightKeys,
+  formatProgramPlace,
   isProgramPresentable,
   listBonusPaymentFields,
   listGuaranteedPaymentFields,
+  listProgramHighlightOptions,
   listPrograms,
   normalizeProgram,
   programBreakdown,
   programHeadlinePay,
   programsToRecord,
+  resolveProgramPayKind,
 } from '../../utils/donorPrograms';
 import { DEFAULT_PROGRAM_CURRENCY, formatProgramMoney } from '../../utils/programCurrency';
 import { uiText } from '../../utils/uiTranslations';
 import { MoneyInput } from './MoneyInput';
-import { ProgramCard } from './ProgramsView';
+import { ProgramCurrencySwitch, ProgramPreview } from './ProgramsView';
 
 /*
  * Програми агенції чи клініки в «Моєму профілі».
@@ -127,8 +141,8 @@ const HeadText = styled.button`
   text-align: left;
   cursor: pointer;
 
-  > span:first-child { display: flex; align-items: baseline; gap: 6px; max-width: 100%; }
-  b { font-size: 15px; font-weight: 700; white-space: nowrap; }
+  > span:first-child { display: flex; align-items: baseline; gap: 6px; max-width: 100%; min-width: 0; }
+  b { min-width: 0; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   em { font-style: normal; font-size: 13px; color: ${MUTED}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   > span:last-child { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; font-size: 13px; }
   strong { font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -334,12 +348,14 @@ const inputCss = `
 const TextInput = styled.input`
   ${inputCss}
   border-color: ${({ $invalid }) => ($invalid ? DANGER : BORDER)};
+  ${({ $compact }) => ($compact ? 'min-height: 36px; font-size: 13.5px;' : '')}
 `;
 
 const Select = styled.select`
   ${inputCss}
   padding-right: 8px;
   cursor: pointer;
+  ${({ $compact }) => ($compact ? 'min-height: 36px; font-size: 13.5px;' : '')}
 `;
 
 const RangeInputs = styled.div`
@@ -493,6 +509,122 @@ const EmptyState = styled.div`
   b { display: block; margin-bottom: 4px; color: var(--km-text, inherit); font-size: 15px; }
 `;
 
+const LinkButton = styled.button`
+  align-self: flex-start;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: ${ACCENT};
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover { text-decoration: underline; text-underline-offset: 3px; }
+  &:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; border-radius: 4px; }
+`;
+
+const DetailsBox = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border-left: 2px solid ${BORDER};
+`;
+
+const QualifierRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 6px;
+
+  > select { flex: 0 1 190px; }
+  > input { flex: 1 1 200px; }
+`;
+
+const CheckRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+
+  input { width: 18px; height: 18px; accent-color: ${ACCENT}; }
+`;
+
+const ReqGroup = styled.fieldset`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+
+  legend { margin-bottom: 6px; padding: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: ${MUTED}; }
+`;
+
+const CoverageRow = styled.div`
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 8px;
+  align-items: center;
+
+  > b { font-size: 13.5px; }
+  > input { grid-column: 2 / -1; }
+
+  @media (max-width: 620px) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    > b { grid-column: 1 / -1; }
+    > input { grid-column: 1 / -1; }
+  }
+`;
+
+const HighlightList = styled.ol`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 38px;
+    padding: 0 8px 0 10px;
+    border: 1px solid ${BORDER};
+    border-radius: 10px;
+  }
+  li[data-on='true'] { border-color: color-mix(in srgb, ${ACCENT} 55%, ${BORDER}); }
+  label { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13.5px; cursor: pointer; }
+  input { width: 17px; height: 17px; accent-color: ${ACCENT}; }
+  li > span { display: flex; gap: 4px; }
+`;
+
+const IconButton = styled.button`
+  width: 30px;
+  height: 30px;
+  border: 1px solid ${BORDER};
+  border-radius: 8px;
+  background: ${CARD};
+  color: var(--km-text, inherit);
+  font: inherit;
+  cursor: pointer;
+
+  &:disabled { opacity: 0.35; cursor: not-allowed; }
+  &:hover:not(:disabled) { background: color-mix(in srgb, currentColor 7%, ${CARD}); }
+`;
+
+const PreviewHead = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+`;
+
 const formatSumParts = sum => sum.parts
   .filter(part => part.amount > 0)
   .map(part => formatProgramMoney(part.amount, part.currency))
@@ -564,33 +696,6 @@ const ALWAYS_SHOWN_PAYMENTS = Object.freeze({ ed: ['final'], sm: ['final', 'mont
 
 const hasMoney = money => Number(money?.amount) > 0;
 
-const LabeledPayments = ({ items, onChange, listId, suggestions, placeholder, removeLabel, language, rates }) => {
-  const setItem = (index, patch) => onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)));
-  if (!items.length) return null;
-  return (
-    <>
-      {suggestions.length ? (
-        <datalist id={listId}>
-          {suggestions.map(label => <option key={label} value={label} />)}
-        </datalist>
-      ) : null}
-      {items.map((item, index) => (
-        <OtherRow key={`${listId}-${index}`}>
-          <TextInput
-            value={item.label || ''}
-            list={suggestions.length ? listId : undefined}
-            placeholder={uiText(placeholder, language)}
-            aria-label={uiText(placeholder, language)}
-            onChange={event => setItem(index, { label: event.target.value })}
-          />
-          <MoneyInput language={language} rates={rates} value={item} ariaLabel={uiText('Сума', language)} onChange={money => setItem(index, money)} />
-          <RemoveButton type="button" aria-label={uiText(removeLabel, language)} title={uiText(removeLabel, language)} onClick={() => onChange(items.filter((_, i) => i !== index))}>✕</RemoveButton>
-        </OtherRow>
-      ))}
-    </>
-  );
-};
-
 const uniqueLabels = labels => {
   const seen = new Set();
   return labels.filter(label => {
@@ -601,30 +706,236 @@ const uniqueLabels = labels => {
   });
 };
 
-const ChoiceSelect = ({ id, label, options, value, onChange, language }) => (
+const ChoiceSelect = ({ id, label, options, value, onChange, language, fallback = 'any' }) => (
   <Field>
     <label htmlFor={id}>{uiText(label, language)}</label>
-    <Select id={id} value={value || 'any'} onChange={event => onChange(event.target.value)}>
+    <Select id={id} value={value || fallback} onChange={event => onChange(event.target.value)}>
       {options.map(option => <option key={option.key} value={option.key}>{uiText(option.label, language)}</option>)}
     </Select>
   </Field>
 );
 
+// Подробиці виплати графіка — під самою виплатою, згорнуті, доки їх не
+// попросили: у більшості виплат їх немає, а чотири порожні поля під кожною
+// сумою знову зробили б форму таблицею.
+const PaymentDetails = ({ value, onChange, language, rates, idPrefix }) => {
+  const filled = Boolean(value?.when || value?.condition || value?.includes);
+  const [open, setOpen] = useState(filled);
+  if (!open) {
+    return (
+      <LinkButton type="button" onClick={() => setOpen(true)}>
+        + {uiText('коли, умова, що входить', language)}
+      </LinkButton>
+    );
+  }
+  const includes = value?.includes || null;
+  return (
+    <DetailsBox>
+      <Grid $min={150}>
+        <Field>
+          <label htmlFor={`${idPrefix}-when`}>{uiText('Коли платять', language)}</label>
+          <TextInput id={`${idPrefix}-when`} value={value?.when || ''} maxLength={60} placeholder={uiText('Наприклад: на 12 тижні', language)} onChange={event => onChange({ when: event.target.value })} />
+        </Field>
+        <Field>
+          <label htmlFor={`${idPrefix}-condition`}>{uiText('За якої умови', language)}</label>
+          <TextInput id={`${idPrefix}-condition`} value={value?.condition || ''} maxLength={120} placeholder={uiText('Наприклад: після підтвердження вагітності', language)} onChange={event => onChange({ condition: event.target.value })} />
+        </Field>
+      </Grid>
+      <Field>
+        <span>{uiText('У тому числі', language)} <small>· {uiText('сума всередині цієї виплати, до разом не додається', language)}</small></span>
+        <OtherRow>
+          <TextInput
+            aria-label={uiText('На що саме', language)}
+            value={includes?.label || ''}
+            maxLength={60}
+            placeholder={uiText('Наприклад: одяг', language)}
+            onChange={event => onChange({ includes: { amount: includes?.amount || '', currency: includes?.currency || value?.currency || DEFAULT_PROGRAM_CURRENCY, label: event.target.value } })}
+          />
+          <MoneyInput
+            language={language}
+            rates={rates}
+            ariaLabel={uiText('Сума всередині виплати', language)}
+            value={includes}
+            onChange={money => onChange({ includes: money ? { ...money, label: includes?.label || '' } : null })}
+          />
+          <RemoveButton type="button" aria-label={uiText('Прибрати подробиці', language)} title={uiText('Прибрати подробиці', language)} onClick={() => { onChange({ when: '', condition: '', includes: null }); setOpen(false); }}>✕</RemoveButton>
+        </OtherRow>
+      </Field>
+    </DetailsBox>
+  );
+};
+
+const LabeledPayments = ({ items, onChange, listId, suggestions, placeholder, removeLabel, language, rates, withDetails = false }) => {
+  const setItem = (index, patch) => onChange(items.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  if (!items.length) return null;
+  return (
+    <>
+      {suggestions.length ? (
+        <datalist id={listId}>
+          {suggestions.map(label => <option key={label} value={label} />)}
+        </datalist>
+      ) : null}
+      {items.map((item, index) => (
+        <Field key={`${listId}-${index}`}>
+          <OtherRow>
+            <TextInput
+              value={item.label || ''}
+              list={suggestions.length ? listId : undefined}
+              placeholder={uiText(placeholder, language)}
+              aria-label={uiText(placeholder, language)}
+              onChange={event => setItem(index, { label: event.target.value })}
+            />
+            <MoneyInput language={language} rates={rates} value={item} ariaLabel={uiText('Сума', language)} onChange={money => setItem(index, money || { amount: '' })} />
+            <RemoveButton type="button" aria-label={uiText(removeLabel, language)} title={uiText(removeLabel, language)} onClick={() => onChange(items.filter((_, i) => i !== index))}>✕</RemoveButton>
+          </OtherRow>
+          {withDetails ? (
+            <PaymentDetails value={item} language={language} rates={rates} idPrefix={`${listId}-${index}`} onChange={patch => setItem(index, patch)} />
+          ) : (
+            <TextInput
+              aria-label={uiText('Умова доплати', language)}
+              value={item.condition || ''}
+              maxLength={120}
+              placeholder={uiText('Умова, наприклад: якщо пологи кесаревим', language)}
+              onChange={event => setItem(index, { condition: event.target.value })}
+            />
+          )}
+        </Field>
+      ))}
+    </>
+  );
+};
+
+// Рівень вимоги й пояснення — під самою вимогою. «Не вказано» лишає її
+// звичайною: строгою, якщо значення є, і відсутньою, якщо ні.
+const RequirementQualifier = ({ requirementKey, meta, onChange, language, idPrefix }) => {
+  const own = meta?.[requirementKey] || {};
+  const [noteOpen, setNoteOpen] = useState(Boolean(own.note));
+  const showNote = noteOpen || Boolean(own.note) || own.level === 'preferred' || own.level === 'individual';
+  return (
+    <QualifierRow>
+      <Select
+        aria-label={uiText('Рівень вимоги: {label}', language, { label: uiText(PROGRAM_REQUIREMENT_LABELS[requirementKey], language) })}
+        value={own.level || ''}
+        onChange={event => onChange(requirementKey, { ...own, level: event.target.value })}
+        $compact
+      >
+        <option value="">{uiText('Рівень: як вказано', language)}</option>
+        {PROGRAM_REQUIREMENT_LEVELS.map(option => <option key={option.key} value={option.key}>{uiText(option.label, language)}</option>)}
+      </Select>
+      {showNote ? (
+        <TextInput
+          id={`${idPrefix}-${requirementKey}-note`}
+          aria-label={uiText('Пояснення: {label}', language, { label: uiText(PROGRAM_REQUIREMENT_LABELS[requirementKey], language) })}
+          value={own.note || ''}
+          maxLength={120}
+          placeholder={uiText('Наприклад: через 2 роки після КР', language)}
+          onChange={event => onChange(requirementKey, { ...own, note: event.target.value })}
+          $compact
+        />
+      ) : (
+        <LinkButton type="button" onClick={() => setNoteOpen(true)}>+ {uiText('пояснення', language)}</LinkButton>
+      )}
+    </QualifierRow>
+  );
+};
+
+/*
+ * Головне в згорнутій картці — вибір з того, що вже є в програмі, а не
+ * новий текст: ознака «до 30 років» береться з вимоги віку, і правка вимоги
+ * міняє її сама. Відмічено — те, що побачать у стрічці; стрілки — порядок.
+ */
+const HighlightsPicker = ({ program, normalized, onChange, language }) => {
+  const [showAll, setShowAll] = useState(false);
+  const options = listProgramHighlightOptions(normalized);
+  const custom = Array.isArray(program.highlights) && program.highlights.length > 0;
+  const chosen = custom
+    ? program.highlights.filter(key => key === HIGHLIGHTS_NONE || options.some(option => option.key === key))
+    : defaultProgramHighlightKeys(normalized);
+  const selected = chosen.filter(key => key !== HIGHLIGHTS_NONE);
+  if (!options.length) {
+    return <Hint><span>{uiText('Заповніть виплати, вимоги чи покриття — і тут зʼявиться, що винести в картку.', language)}</span></Hint>;
+  }
+  const write = keys => onChange(keys.length ? keys : [HIGHLIGHTS_NONE]);
+  const toggle = key => (selected.includes(key)
+    ? write(selected.filter(item => item !== key))
+    : selected.length < MAX_PROGRAM_HIGHLIGHTS ? write([...selected, key]) : null);
+  const move = (key, delta) => {
+    const index = selected.indexOf(key);
+    const target = index + delta;
+    if (index < 0 || target < 0 || target >= selected.length) return;
+    const next = [...selected];
+    [next[index], next[target]] = [next[target], next[index]];
+    write(next);
+  };
+  const rest = options.filter(option => !selected.includes(option.key));
+  const ordered = [...selected.map(key => options.find(option => option.key === key)).filter(Boolean), ...(showAll || !selected.length ? rest : [])];
+  const optionText = option => {
+    if (option.money) return uiText(option.text, language, { amount: formatProgramMoney(option.money.amount, option.money.currency) });
+    if (option.variables?.label) return uiText(option.text, language, { ...option.variables, label: uiText(option.variables.label, language).toLowerCase() });
+    if (option.key === 'bonuses') return uiText('+{count} доплати', language, option.variables);
+    return uiText(option.text, language, option.variables);
+  };
+  return (
+    <>
+      <HighlightList>
+        {ordered.map(option => {
+          const index = selected.indexOf(option.key);
+          const on = index >= 0;
+          return (
+            <li key={option.key} data-on={on ? 'true' : undefined}>
+              <label>
+                <input type="checkbox" checked={on} disabled={!on && selected.length >= MAX_PROGRAM_HIGHLIGHTS} onChange={() => toggle(option.key)} />
+                <span>{optionText(option)}</span>
+              </label>
+              {on && selected.length > 1 ? (
+                <span>
+                  <IconButton type="button" disabled={index === 0} aria-label={uiText('Вище', language)} title={uiText('Вище', language)} onClick={() => move(option.key, -1)}>↑</IconButton>
+                  <IconButton type="button" disabled={index === selected.length - 1} aria-label={uiText('Нижче', language)} title={uiText('Нижче', language)} onClick={() => move(option.key, 1)}>↓</IconButton>
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </HighlightList>
+      {rest.length && selected.length ? (
+        <LinkButton type="button" aria-expanded={showAll} onClick={() => setShowAll(value => !value)}>
+          {showAll ? uiText('Сховати решту', language) : `+ ${uiText('Інші ознаки ({count})', language, { count: rest.length })}`}
+        </LinkButton>
+      ) : null}
+      <Hint>
+        <span>{uiText('До {max} ознак. Сума й покриття в картці стоять завжди.', language, { max: MAX_PROGRAM_HIGHLIGHTS })}</span>
+        {custom ? <SmallButton type="button" onClick={() => onChange(undefined)}>{uiText('Як типово', language)}</SmallButton> : null}
+      </Hint>
+    </>
+  );
+};
+
 const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
   const [revealed, setRevealed] = useState(() => new Set());
   const [mode, setMode] = useState('form');
+  const [previewCurrency, setPreviewCurrency] = useState('');
   const set = patch => onChange({ ...program, ...patch });
   const setReq = patch => onChange({ ...program, requirements: { ...program.requirements, ...patch } });
-  // `MoneyInput` віддає саму суму й валюту; кількість місяців щомісячної
-  // виплати лежить поруч у тому самому обʼєкті й мусить пережити правку суми.
-  const setPay = (key, money) => onChange({
+  const setMeta = (key, value) => {
+    const next = { ...(program.requirementMeta || {}) };
+    if (!value?.level && !value?.note) delete next[key];
+    else next[key] = value;
+    onChange({ ...program, requirementMeta: next });
+  };
+  // `MoneyInput` віддає саму суму й валюту; кількість місяців і подробиці
+  // виплати (коли, умова, що входить) лежать поруч у тому самому обʼєкті й
+  // мусять пережити правку суми.
+  const setPay = (key, money) => {
+    const current = program.payments?.[key] || {};
+    const { amount: _amount, currency: _currency, ...extras } = current;
+    onChange({
+      ...program,
+      payments: { ...program.payments, [key]: money ? { ...extras, ...money } : (Object.keys(extras).length ? { ...extras, amount: '' } : money) },
+    });
+  };
+  const setPayExtras = (key, patch) => onChange({
     ...program,
-    payments: {
-      ...program.payments,
-      [key]: key === 'monthly' && program.payments?.monthly?.months !== undefined && money
-        ? { ...money, months: program.payments.monthly.months }
-        : money,
-    },
+    payments: { ...program.payments, [key]: { ...(program.payments?.[key] || { amount: '', currency }), ...patch } },
   });
   const removePay = key => {
     const { [key]: _removed, ...payments } = program.payments || {};
@@ -643,6 +954,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
   const idPrefix = `program-${program.id}`;
   const normalized = normalizeProgram(program, program.id);
   const currency = program.payments?.final?.currency || DEFAULT_PROGRAM_CURRENCY;
+  const payKind = resolveProgramPayKind(program);
   // Загальну суму агенція не вводить: її рахує `programBreakdown` з виплат —
   // і рахує так само, як побачить донорка. Ручне поле було третім джерелом
   // правди поруч із виплатами й підсумком і розходилось з обома.
@@ -660,13 +972,26 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
   const errors = validateProgramRequirements(program.requirements);
   const always = ALWAYS_SHOWN_PAYMENTS[program.type] || ['final'];
   const isShown = key => always.includes(key) || hasMoney(program.payments?.[key]) || revealed.has(key);
-  const guaranteedFields = listGuaranteedPaymentFields(program.type);
+  const guaranteedFields = listGuaranteedPaymentFields(program.type).filter(field => field.key !== 'final');
   const bonusFields = listBonusPaymentFields(program.type);
   const otherPayments = program.otherPayments || [];
   const bonuses = program.bonuses || [];
+  const stages = program.stages || [];
+  const relocation = program.relocation || {};
+  const coverageDetails = program.coverageDetails || {};
   const noteLength = String(program.note || '').length;
+  const stageOptions = PROGRAM_STAGE_OPTIONS[program.type === 'sm' ? 'sm' : 'ed'];
+  const mainLabel = {
+    cycle: 'Винагорода за цикл донації',
+    final: 'Фінальна виплата',
+    total: 'Загальна винагорода',
+    guaranteed: 'Гарантований мінімум',
+  }[payKind];
+  const setStage = (index, patch) => set({ stages: stages.map((item, i) => (i === index ? { ...item, ...patch } : item)) });
+  const setRelocation = patch => set({ relocation: { ...relocation, ...patch } });
+  const setCoverageDetail = (key, patch) => set({ coverageDetails: { ...coverageDetails, [key]: { ...(coverageDetails[key] || {}), ...patch } } });
 
-  const renderMoneyField = ({ key, label }, { removable }) => (
+  const renderMoneyField = ({ key, label }, { removable, details = false }) => (
     <Field key={key}>
       <span>{uiText(label, language)}</span>
       <FieldRow>
@@ -697,9 +1022,10 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
               setMonths(digits && months >= 1 ? String(Math.min(months, MAX_MONTHLY_MONTHS)) : '');
             }}
           />
-          <span>{uiText('порожньо — {months} міс, термін вагітності', language, { months: DEFAULT_MONTHLY_MONTHS })}</span>
+          <span>{uiText('без цього разом за програму не рахується', language)}</span>
         </MonthsRow>
       ) : null}
+      {details ? <PaymentDetails value={program.payments?.[key]} language={language} rates={rates} idPrefix={`${idPrefix}-${key}`} onChange={patch => setPayExtras(key, patch)} /> : null}
     </Field>
   );
 
@@ -711,13 +1037,14 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
         inputMode="decimal"
         $invalid={Boolean(errors[key])}
         aria-invalid={Boolean(errors[key])}
-        placeholder={uiText('не важливо', language)}
+        placeholder={uiText('не вказано', language)}
         value={program.requirements?.[key] ?? ''}
         onChange={event => setReq({ [key]: event.target.value })}
       />
       {errors[key] ? <FieldError role="alert">{uiText(errors[key].text, language, errors[key].vars)}</FieldError> : null}
     </Field>
   );
+  const qualifier = key => <RequirementQualifier requirementKey={key} meta={program.requirementMeta} onChange={setMeta} language={language} idPrefix={idPrefix} />;
 
   return (
     <Body>
@@ -735,30 +1062,89 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
             <span>{uiText('Кого шукаєте', language)}</span>
             <Segments role="group" aria-label={uiText('Кого шукаєте', language)}>
               {PROGRAM_TYPES.map(key => (
-                <Segment key={key} type="button" $on={program.type === key} aria-pressed={program.type === key} onClick={() => set({ type: key })}>
+                <Segment key={key} type="button" $on={program.type === key} aria-pressed={program.type === key} onClick={() => set({ type: key, payKind: undefined, payMax: undefined })}>
                   {uiText(PROGRAM_TYPE_LABELS[key], language)}
                 </Segment>
               ))}
             </Segments>
           </Field>
-          <Field>
-            <label htmlFor={`${idPrefix}-location`}>{uiText('Де проходить', language)}</label>
-            <TextInput
-              id={`${idPrefix}-location`}
-              value={program.location || ''}
-              maxLength={80}
-              placeholder={uiText('Наприклад: Київ; пологи в Грузії', language)}
-              onChange={event => set({ location: event.target.value })}
-            />
-          </Field>
+          <Grid $min={200}>
+            <Field>
+              <label htmlFor={`${idPrefix}-name`}>{uiText('Назва програми', language)} <small>· {uiText('необовʼязково', language)}</small></label>
+              <TextInput
+                id={`${idPrefix}-name`}
+                value={program.name || ''}
+                maxLength={60}
+                placeholder={uiText('Наприклад: Донорство в Грузії', language)}
+                onChange={event => set({ name: event.target.value })}
+              />
+            </Field>
+            <Field>
+              <label htmlFor={`${idPrefix}-location`}>{uiText('Де проходить', language)}</label>
+              <TextInput
+                id={`${idPrefix}-location`}
+                value={program.location || ''}
+                maxLength={80}
+                placeholder={uiText('Наприклад: Київ', language)}
+                onChange={event => set({ location: event.target.value })}
+              />
+            </Field>
+          </Grid>
+          <CheckRow>
+            <input id={`${idPrefix}-start`} type="checkbox" checked={program.startNow === true} onChange={event => set({ startNow: event.target.checked || undefined })} />
+            <label htmlFor={`${idPrefix}-start`}>{uiText('Старт одразу — набір відкритий зараз', language)}</label>
+          </CheckRow>
         </Step>
 
         <Step>
           <StepHead>
-            <h4>{uiText('Виплати', language)}</h4>
-            <p>{uiText('Те, що гарантовано отримає кожна учасниця. Суму «разом» застосунок порахує сам.', language)}</p>
+            <h4>{uiText('Винагорода', language)}</h4>
+            <p>{uiText('Що отримає кандидатка. Вид суми визначає підпис у картці — «за цикл», «фінальна», «загалом» чи «гарантовано, до …».', language)}</p>
           </StepHead>
-          {guaranteedFields.filter(field => isShown(field.key)).map(field => renderMoneyField(field, { removable: !always.includes(field.key) }))}
+          <Field>
+            <span>{uiText('Вид суми', language)}</span>
+            <Segments role="group" aria-label={uiText('Вид суми', language)}>
+              {PROGRAM_PAY_KINDS[program.type === 'sm' ? 'sm' : 'ed'].map(option => (
+                <Segment key={option.key} type="button" $on={payKind === option.key} aria-pressed={payKind === option.key} onClick={() => set({ payKind: option.key })}>
+                  {uiText(option.label, language)}
+                </Segment>
+              ))}
+            </Segments>
+          </Field>
+          {renderMoneyField({ key: 'final', label: mainLabel }, { removable: false, details: program.type === 'sm' })}
+          {payKind === 'guaranteed' ? (
+            <Field>
+              <span>{uiText('До (максимум)', language)}</span>
+              <OtherRow>
+                <MoneyInput
+                  language={language}
+                  rates={rates}
+                  ariaLabel={uiText('Максимальна сума', language)}
+                  placeholder={uiText('сума', language)}
+                  value={program.payMax}
+                  onChange={money => set({ payMax: money ? { ...money, condition: program.payMax?.condition || '' } : undefined })}
+                />
+                <TextInput
+                  aria-label={uiText('Від чого залежить максимум', language)}
+                  value={program.payMax?.condition || ''}
+                  maxLength={120}
+                  placeholder={uiText('Наприклад: залежно від кількості ооцитів', language)}
+                  onChange={event => set({ payMax: { ...(program.payMax || { amount: '', currency }), condition: event.target.value } })}
+                />
+                <span />
+              </OtherRow>
+            </Field>
+          ) : null}
+        </Step>
+
+        <Step>
+          <StepHead>
+            <h4>{uiText('Графік виплат', language)}<small>{uiText(program.type === 'sm' ? 'перенос, тижні вагітності, щомісячні' : 'необовʼязково', language)}</small></h4>
+            <p>{uiText(payKind === 'total'
+              ? 'Загальна винагорода вже містить ці виплати — у картці вони стоять розбивкою і до суми не додаються.'
+              : 'Виплати, які отримує кожна учасниця, з умовою й терміном. Разом застосунок порахує сам — коли графік повний.', language)}</p>
+          </StepHead>
+          {guaranteedFields.filter(field => isShown(field.key)).map(field => renderMoneyField(field, { removable: !always.includes(field.key), details: true }))}
           <LabeledPayments
             items={otherPayments}
             onChange={next => set({ otherPayments: next })}
@@ -768,6 +1154,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
             removeLabel="Прибрати виплату"
             language={language}
             rates={rates}
+            withDetails
           />
           <Segments>
             {guaranteedFields.filter(field => !isShown(field.key)).map(field => (
@@ -790,9 +1177,18 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
           {breakdown && breakdown.guaranteed.amount > 0 ? (
             <TotalBox data-testid="program-editor-total">
               <div>
-                <span>{uiText('Разом гарантовано', language)}</span>
-                <b>{breakdown.guaranteed.approximate ? '≈ ' : ''}{formatSumParts(breakdown.guaranteed)}</b>
+                <span>{uiText(payKind === 'total' ? 'Загальна винагорода' : 'Разом гарантовано', language)}</span>
+                <b>{breakdown.reliable ? `${breakdown.guaranteed.approximate ? '≈ ' : ''}${formatSumParts(breakdown.guaranteed)}` : '—'}</b>
               </div>
+              {!breakdown.reliable && breakdown.hasMonthlyEstimate ? (
+                <small>{uiText('Вкажіть, скільки місяців щомісячна виплата, — інакше разом у картці не показується (≈ {amount} за 9 міс).', language, { amount: formatSumParts(breakdown.guaranteed) })}</small>
+              ) : null}
+              {breakdown.upTo ? (
+                <div>
+                  <span>{uiText('Максимум', language)}</span>
+                  <b>{breakdown.upTo.approximate ? '≈ ' : ''}{formatSumParts(breakdown.upTo)}</b>
+                </div>
+              ) : null}
               {breakdown.bonuses.length ? (
                 <div>
                   <span>{uiText('З усіма можливими доплатами', language)}</span>
@@ -832,50 +1228,100 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
         <Step>
           <StepHead>
             <h4>{uiText('Вимоги до кандидатки', language)}<small>{uiText('необовʼязково', language)}</small></h4>
-            <p>{uiText('Порожнє поле — «не має значення». За вимогами кандидатка одразу бачить, чи програма їй підходить.', language)}</p>
+            <p>{uiText('Порожнє — «не вказано». «Без обмежень», «бажано» й «індивідуально» — рівень під вимогою; за строгими вимогами кандидатка одразу бачить, чи програма їй підходить.', language)}</p>
           </StepHead>
-          <Field>
-            <span>{uiText('Вік', language)}</span>
-            <RangeInputs>
-              <TextInput
-                inputMode="numeric"
-                aria-label={uiText('Вік від', language)}
-                placeholder={uiText('від', language)}
-                $invalid={Boolean(errors.ageFrom)}
-                aria-invalid={Boolean(errors.ageFrom)}
-                value={program.requirements?.ageFrom ?? ''}
-                onChange={event => setReq({ ageFrom: event.target.value })}
-              />
-              <span>—</span>
-              <TextInput
-                inputMode="numeric"
-                aria-label={uiText('Вік до', language)}
-                placeholder={uiText('до', language)}
-                $invalid={Boolean(errors.ageTo)}
-                aria-invalid={Boolean(errors.ageTo)}
-                value={program.requirements?.ageTo ?? ''}
-                onChange={event => setReq({ ageTo: event.target.value })}
-              />
-            </RangeInputs>
-            {errors.ageFrom || errors.ageTo ? <FieldError role="alert">{uiText((errors.ageFrom || errors.ageTo).text, language, (errors.ageFrom || errors.ageTo).vars)}</FieldError> : null}
-          </Field>
-          <Grid $min={120}>
-            {numberField('bmiMax', 'ІМТ до')}
-            {numberField('heightFrom', 'Зріст від', 'см')}
-            {numberField('maxBirths', 'Пологів не більше')}
-          </Grid>
-          <Grid $min={210}>
+          <ReqGroup>
+            <legend>{uiText('Вік і тіло', language)}</legend>
+            <Field>
+              <span>{uiText('Вік', language)}</span>
+              <RangeInputs>
+                <TextInput
+                  inputMode="numeric"
+                  aria-label={uiText('Вік від', language)}
+                  placeholder={uiText('від', language)}
+                  $invalid={Boolean(errors.ageFrom)}
+                  aria-invalid={Boolean(errors.ageFrom)}
+                  value={program.requirements?.ageFrom ?? ''}
+                  onChange={event => setReq({ ageFrom: event.target.value })}
+                />
+                <span>—</span>
+                <TextInput
+                  inputMode="numeric"
+                  aria-label={uiText('Вік до', language)}
+                  placeholder={uiText('до', language)}
+                  $invalid={Boolean(errors.ageTo)}
+                  aria-invalid={Boolean(errors.ageTo)}
+                  value={program.requirements?.ageTo ?? ''}
+                  onChange={event => setReq({ ageTo: event.target.value })}
+                />
+              </RangeInputs>
+              {errors.ageFrom || errors.ageTo ? <FieldError role="alert">{uiText((errors.ageFrom || errors.ageTo).text, language, (errors.ageFrom || errors.ageTo).vars)}</FieldError> : null}
+              {qualifier('age')}
+            </Field>
+            <Grid $min={150}>
+              <div>{numberField('bmiMax', 'ІМТ до')}{qualifier('bmi')}</div>
+              <div>{numberField('heightFrom', 'Зріст від', 'см')}{qualifier('height')}</div>
+            </Grid>
+          </ReqGroup>
+          <ReqGroup>
+            <legend>{uiText('Здоровʼя', language)}</legend>
             <ChoiceSelect id={`${idPrefix}-rh`} label="Резус" options={PROGRAM_RH_OPTIONS} value={program.requirements?.rh} onChange={rh => setReq({ rh })} language={language} />
+            {qualifier('rh')}
+          </ReqGroup>
+          <ReqGroup>
+            <legend>{uiText('Діти й пологи', language)}</legend>
+            <Grid $min={180}>
+              <div>
+                <ChoiceSelect id={`${idPrefix}-kids`} label="Власна дитина" options={PROGRAM_KIDS_OPTIONS} value={program.requirements?.ownKids} onChange={ownKids => setReq({ ownKids })} language={language} />
+                {qualifier('ownKids')}
+              </div>
+              <div>{numberField('maxBirths', 'Пологів не більше')}{qualifier('births')}</div>
+              <div>
+                <ChoiceSelect id={`${idPrefix}-cs`} label="Кесарів розтин" options={PROGRAM_CSECTION_OPTIONS} value={program.requirements?.csectionMax} onChange={csectionMax => setReq({ csectionMax })} language={language} />
+                {qualifier('csection')}
+              </div>
+            </Grid>
+          </ReqGroup>
+          <ReqGroup>
+            <legend>{uiText('Сімейний стан', language)}</legend>
             <ChoiceSelect id={`${idPrefix}-marital`} label="Сімейний стан" options={PROGRAM_MARITAL_OPTIONS} value={program.requirements?.marital} onChange={marital => setReq({ marital })} language={language} />
-            <ChoiceSelect id={`${idPrefix}-kids`} label="Власна дитина" options={PROGRAM_KIDS_OPTIONS} value={program.requirements?.ownKids} onChange={ownKids => setReq({ ownKids })} language={language} />
-            <ChoiceSelect id={`${idPrefix}-cs`} label="Кесарів розтин" options={PROGRAM_CSECTION_OPTIONS} value={program.requirements?.csectionMax} onChange={csectionMax => setReq({ csectionMax })} language={language} />
+            {qualifier('marital')}
+          </ReqGroup>
+        </Step>
+
+        <Step>
+          <StepHead>
+            <h4>{uiText('Де й коли', language)}<small>{uiText('необовʼязково', language)}</small></h4>
+            <p>{uiText('Етапи в різних містах чи країнах, переїзд і чи можна з сімʼєю.', language)}</p>
+          </StepHead>
+          {stages.map((item, index) => (
+            <OtherRow key={`stage-${index}`}>
+              <Select aria-label={uiText('Етап', language)} value={item.stage || 'other'} onChange={event => setStage(index, { stage: event.target.value })}>
+                {stageOptions.map(option => <option key={option.key} value={option.key}>{uiText(option.label, language)}</option>)}
+              </Select>
+              <TextInput aria-label={uiText('Де', language)} value={item.place || ''} maxLength={80} placeholder={uiText('Місто чи країна', language)} onChange={event => setStage(index, { place: event.target.value })} />
+              <RemoveButton type="button" aria-label={uiText('Прибрати етап', language)} title={uiText('Прибрати етап', language)} onClick={() => set({ stages: stages.filter((_, i) => i !== index) })}>✕</RemoveButton>
+            </OtherRow>
+          ))}
+          {stages.length < 6 ? (
+            <Segments>
+              <AddChip type="button" onClick={() => set({ stages: [...stages, { stage: stageOptions[stages.length]?.key || 'other', place: '' }] })}>+ {uiText('Етап і місце', language)}</AddChip>
+            </Segments>
+          ) : null}
+          <Grid $min={200}>
+            <Field>
+              <label htmlFor={`${idPrefix}-reloc-when`}>{uiText('Переїзд', language)}</label>
+              <TextInput id={`${idPrefix}-reloc-when`} value={relocation.when || ''} maxLength={80} placeholder={uiText('Наприклад: з 12 тижня вагітності', language)} onChange={event => setRelocation({ when: event.target.value })} />
+            </Field>
+            <ChoiceSelect id={`${idPrefix}-family`} label="Сімʼя" options={PROGRAM_FAMILY_OPTIONS} value={relocation.family || ''} fallback="" onChange={family => setRelocation({ family })} language={language} />
           </Grid>
+          <TextInput aria-label={uiText('Примітка про переїзд', language)} value={relocation.note || ''} maxLength={120} placeholder={uiText('Наприклад: квартира на двох, діти — за домовленістю', language)} onChange={event => setRelocation({ note: event.target.value })} />
         </Step>
 
         <Step>
           <StepHead>
             <h4>{uiText('Що покриваєте', language)}<small>{uiText('необовʼязково', language)}</small></h4>
-            <p>{uiText('Позначте, за що учасниці не доведеться платити самій.', language)}</p>
+            <p>{uiText('Позначте, за що учасниці не доведеться платити самій, і як саме: оплачуєте, компенсуєте за чеками чи видаєте кошти.', language)}</p>
           </StepHead>
           <Segments>
             {PROGRAM_COVERAGE_OPTIONS.map(option => {
@@ -893,12 +1339,41 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
               );
             })}
           </Segments>
+          {(program.coverage || []).map(key => {
+            const option = PROGRAM_COVERAGE_OPTIONS.find(item => item.key === key);
+            if (!option) return null;
+            const detail = coverageDetails[key] || {};
+            // Подробиці — на прохання: здебільшого «житло» без умов і є вся
+            // відповідь, і п'ять порожніх рядків під чіпами лише подовжували форму.
+            const filledDetail = Boolean(detail.mode || detail.limit || detail.note);
+            if (!filledDetail && !revealed.has(`cov:${key}`)) {
+              return (
+                <LinkButton key={key} type="button" onClick={() => reveal(`cov:${key}`)}>
+                  + {uiText('як саме: {label}', language, { label: uiText(option.label, language).toLowerCase() })}
+                </LinkButton>
+              );
+            }
+            return (
+              <CoverageRow key={key}>
+                <b>{uiText(option.label, language)}</b>
+                <Select aria-label={uiText('Як покриваєте: {label}', language, { label: uiText(option.label, language) })} value={detail.mode || ''} onChange={event => setCoverageDetail(key, { mode: event.target.value || undefined })}>
+                  <option value="">{uiText('Як — не вказано', language)}</option>
+                  {PROGRAM_COVERAGE_MODES.map(mode => <option key={mode.key} value={mode.key}>{uiText(mode.label, language)}</option>)}
+                </Select>
+                <MoneyInput language={language} rates={rates} ariaLabel={uiText('Межа: {label}', language, { label: uiText(option.label, language) })} placeholder={uiText('межа', language)} value={detail.limit} onChange={money => setCoverageDetail(key, { limit: money || undefined })} />
+                <Select aria-label={uiText('За який час: {label}', language, { label: uiText(option.label, language) })} value={detail.per || 'total'} onChange={event => setCoverageDetail(key, { per: event.target.value })}>
+                  {PROGRAM_COVERAGE_PER.map(per => <option key={per.key} value={per.key}>{uiText(per.label, language)}</option>)}
+                </Select>
+                <TextInput aria-label={uiText('Умова: {label}', language, { label: uiText(option.label, language) })} value={detail.note || ''} maxLength={120} placeholder={uiText('Наприклад: крім таксі', language)} onChange={event => setCoverageDetail(key, { note: event.target.value })} />
+              </CoverageRow>
+            );
+          })}
         </Step>
 
         <Step>
           <StepHead>
             <h4>{uiText('Умови й примітки', language)}<small>{uiText('необовʼязково', language)}</small></h4>
-            <p>{uiText('Тривалість і візити, що не покривається, важливі обмеження — те, про що інакше питали б у чаті.', language)}</p>
+            <p>{uiText('Те, про що інакше питали б у чаті: тривалість, візити, що не покривається.', language)}</p>
           </StepHead>
           <Field>
             <TextArea
@@ -911,12 +1386,25 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions }) => {
             <Counter $over={noteLength >= NOTE_MAX}>{noteLength}/{NOTE_MAX}</Counter>
           </Field>
         </Step>
+
+        <Step>
+          <StepHead>
+            <h4>{uiText('Головне в картці', language)}</h4>
+            <p>{uiText('Що побачать у згорнутій картці одразу під сумою. Вибирайте з уже вказаного — текст оновиться сам, коли зміните програму.', language)}</p>
+          </StepHead>
+          {normalized ? <HighlightsPicker program={program} normalized={normalized} language={language} onChange={highlights => set({ highlights })} /> : null}
+        </Step>
       </FormColumn>
 
       <PreviewColumn $hiddenOnMobile={mode !== 'preview'} aria-label={uiText('Як побачать у стрічці', language)}>
-        <PreviewLabel>{uiText('Так програму побачать у стрічці', language)}</PreviewLabel>
+        <PreviewHead>
+          <PreviewLabel>{uiText('Так програму побачать у стрічці', language)}</PreviewLabel>
+          <ProgramCurrencySwitch value={previewCurrency || currency} onChange={setPreviewCurrency} language={language} />
+        </PreviewHead>
         {normalized && isProgramPresentable(normalized) ? (
-          <ProgramCard program={normalized} rates={rates} language={language} framed />
+          <div data-testid="program-card">
+            <ProgramPreview program={normalized} rates={rates} language={language} displayCurrency={previewCurrency || currency} />
+          </div>
         ) : (
           <EmptyState>
             <b>{uiText('Поки що нічого показати', language)}</b>
@@ -1059,10 +1547,11 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
             <ProgramHead $open={open} style={program.hidden ? { opacity: 0.75 } : undefined}>
               <HeadText type="button" aria-expanded={open} onClick={() => { flush(); setOpenId(open ? '' : program.id); }}>
                 <span>
-                  <b>{uiText(PROGRAM_TYPE_LABELS[program.type], language)}</b>
+                  <b>{program.name || uiText(PROGRAM_OFFER_LABELS[program.type], language)}</b>
+                  {program.name ? <em>{uiText(PROGRAM_OFFER_LABELS[program.type], language)}</em> : null}
                 </span>
                 <span>
-                  <em>{program.location}{program.location && pay ? ' · ' : ''}{pay ? <strong>{pay}</strong> : null}</em>
+                  <em>{formatProgramPlace(program.location)}{program.location && pay ? ' · ' : ''}{pay ? <strong>{pay}</strong> : null}</em>
                   <Status $tone={status.tone}>{uiText(status.label, language)}</Status>
                 </span>
               </HeadText>

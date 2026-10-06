@@ -22,7 +22,9 @@ describe('Matching redesigned profile regressions', () => {
     expect(links).toContain('phoneQuickLinks.map(({ key, Icon, label, build })');
     expect(links.match(/<S\.ContactIconRow>/g)).toHaveLength(1);
     expect(links).not.toContain('<span>{displayValue}</span>');
-    expect(links).not.toContain("<span>{uiText('Подзвонити', language)}</span>");
+    // Підпис «Подзвонити» — лише головна дія картки організації (`primaryLabel`).
+    expect(links.match(/<span>\{uiText\('Подзвонити', language\)\}<\/span>/g)).toHaveLength(1);
+    expect(links).toContain("{primaryLabel && phones[0] === entry ? <span>{uiText('Подзвонити', language)}</span> : null}");
   });
 
   it('hides VK contacts from matching cards for every viewer, including admins', () => {

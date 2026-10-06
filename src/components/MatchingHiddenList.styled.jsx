@@ -403,15 +403,27 @@ export const RowActionButton = styled.button`
   background: ${({ $accent, $on }) => ($accent && $on
     ? 'color-mix(in srgb, var(--matching-accent) 14%, transparent)'
     : 'var(--matching-card-bg)')};
-  color: ${({ $accent }) => ($accent ? 'var(--matching-accent)' : 'var(--matching-muted-text)')};
+  /* Увімкнена кнопка — кольором тексту, а не приглушеним: сірий олівець на
+     сірій рамці виглядав вимкненим. Вимкнену видно за прозорістю й
+     курсором, наведення й натиск — за підкладкою, фокус — за обвідкою. */
+  color: ${({ $accent }) => ($accent ? 'var(--matching-accent)' : 'var(--matching-header-text)')};
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--matching-header-text) 7%, var(--matching-card-bg));
+  }
+
+  &:active:not(:disabled) {
+    background: color-mix(in srgb, var(--matching-header-text) 13%, var(--matching-card-bg));
+  }
 
   &:disabled {
-    opacity: 0.5;
-    cursor: default;
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--matching-accent) 42%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--matching-accent) 60%, transparent);
     outline-offset: 1px;
   }
 `;
@@ -614,6 +626,13 @@ export const RowContacts = styled.div`
   margin-top: 9px;
   padding-top: 7px;
   border-top: 1px solid var(--matching-card-border);
+
+  /* Картка організації ділить розділи відступом, а не рискою на всю ширину. */
+  ${({ $plain }) => $plain && css`
+    margin-top: 14px;
+    padding-top: 0;
+    border-top: 0;
+  `}
 `;
 
 export const RowContactsNote = styled.div`
@@ -725,12 +744,36 @@ const CONTACT_CHANNEL_COLORS = {
   whatsapp: '#25D366',
 };
 
+/* Колір месенджера — у самому значку, а рамка й підкладка спільні, нейтральні:
+ * п'ять різнобарвних рамок поспіль змагались з єдиною справжньою головною
+ * дією (дзвінок), і ряд читався строкатим, а не набором каналів. */
 export const ContactIconLink = styled.a`
   ${contactIconBox};
-  color: ${({ $channel }) => CONTACT_CHANNEL_COLORS[$channel] || 'var(--matching-accent, var(--km-accent, #E8791A))'};
-  border-color: color-mix(in srgb, currentColor 40%, transparent);
-  background: color-mix(in srgb, currentColor 9%, var(--matching-card-bg, var(--km-card, #FFFFFF)));
+  color: ${({ $channel }) => CONTACT_CHANNEL_COLORS[$channel] || 'var(--matching-muted-text, var(--km-muted, #62665F))'};
   text-decoration: none;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--matching-header-text, var(--km-text, #1A1A1A)) 6%, var(--matching-card-bg, var(--km-card, #FFFFFF)));
+  }
+
+  &:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--matching-accent, var(--km-accent, #E8791A)) 60%, transparent);
+    outline-offset: 1px;
+  }
+
+  /* Головна дія картки організації — словом, а не значком: «Подзвонити»
+   * агенції — це те, заради чого картку й відкривали. */
+  ${({ $wide }) => $wide && css`
+    width: auto;
+    flex: 0 0 auto;
+    height: 36px;
+    padding: 0 14px;
+    gap: 7px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 700;
+  `}
 
   /* Дзвінок лишається головною дією блока, але має той самий компактний
    * розмір, що й решта контактів. */
@@ -1381,6 +1424,12 @@ export const RowNotes = styled.div`
   margin-top: 10px;
   padding-top: 9px;
   border-top: 1px solid var(--matching-card-border);
+
+  ${({ $plain }) => $plain && css`
+    margin-top: 10px;
+    padding-top: 0;
+    border-top: 0;
+  `}
 `;
 
 /* Згорнуті доріжки нотаток — один рядок замість двох порожніх полів
@@ -1397,6 +1446,41 @@ export const NotesAddRow = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: 8px;
+
+  /* Картка організації: відгук, памʼятка й рішення — один стислий ряд
+     другорядних дій під головною («Подзвонити»). Двома рядами широких
+     кольорових кнопок вони займали більше місця, ніж сама пропозиція. */
+  ${({ $compact }) => $compact && css`
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+
+    > button {
+      min-height: 32px;
+      padding: 0 10px;
+      border-color: var(--matching-card-border);
+      background: transparent;
+      color: var(--matching-header-text);
+      font-weight: 600;
+    }
+    > button svg { color: var(--note-lane-color); }
+    > button:hover {
+      background: color-mix(in srgb, var(--matching-header-text) 7%, transparent);
+      border-color: var(--matching-card-border);
+    }
+  `}
+`;
+
+/* Рішення в стислому ряду: праворуч, поруч з відгуком і памʼяткою. */
+export const CompactDecisions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+
+  > div { flex: 0 0 auto; width: 76px; height: 32px; }
+  > button { flex: 0 0 auto; width: 36px; height: 32px; }
 `;
 
 // Колір доріжки «Пізніше» — синій: це не запис про людину (відгук, памʼятка),
@@ -1541,4 +1625,40 @@ export const PreviewNoteText = styled.div`
   color: var(--matching-header-text, var(--km-text, #2c261f));
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+`;
+
+/* «Про агенцію» — свій розділ між шапкою й програмами, без рамки: межу тримає
+   відступ, а не волосяна риска на всю ширину. Заголовок — того ж розміру, що
+   й «Програми», щоб два розділи картки стояли на одному рівні ієрархії. */
+export const OrganisationAbout = styled.section`
+  margin-top: 12px;
+`;
+
+export const OrganisationAboutTitle = styled.h4`
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--matching-header-text);
+`;
+
+export const OrganisationAboutText = styled.p`
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--matching-header-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+
+  ${({ $clamped }) => $clamped && css`
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  `}
+`;
+
+export const OrganisationAboutEmpty = styled.p`
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--matching-muted-text);
 `;
