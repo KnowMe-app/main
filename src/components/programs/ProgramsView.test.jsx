@@ -3,7 +3,6 @@ import '@testing-library/jest-dom';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { ProgramCard, ProgramsSummary } from './ProgramsView';
 import { CardRoleBlock, isCounterpartyCard } from './CardRoleBlock';
-import { AgencyMediaCarousel } from './AgencyMediaCarousel';
 import {
   loadOwnPrograms,
   peekOwnPrograms,
@@ -36,13 +35,16 @@ describe('програми в рядку стрічки', () => {
     expect(summary).toHaveTextContent('ще 1 — для сурогатних мам');
   });
 
-  it('дотик розгортає програми з позначкою збігу', () => {
+  it('кожна програма — рядок зі збігом, а дотик розгортає її деталі', () => {
     render(<ProgramsSummary card={{ programs }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
-    fireEvent.click(screen.getByTestId('programs-summary'));
-    const cards = screen.getAllByTestId('program-card');
-    expect(cards).toHaveLength(2);
-    expect(within(cards[0]).getByText('Вам підходить')).toBeInTheDocument();
-    expect(within(cards[1]).getByText('Не підходить')).toBeInTheDocument();
+    const rows = screen.getAllByTestId('program-list-item');
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByLabelText('Вам підходить')).toBeInTheDocument();
+    expect(within(rows[1]).getByLabelText('Не підходить')).toBeInTheDocument();
+    expect(screen.queryByTestId('program-card')).not.toBeInTheDocument();
+    fireEvent.click(within(rows[0]).getByRole('button'));
+    expect(within(rows[0]).getByTestId('program-card')).toBeInTheDocument();
+    expect(within(rows[0]).getByText('Вам підходить')).toBeInTheDocument();
   });
 
   it('прихованої програми не видно, а можливі доплати стоять окремим блоком', () => {
@@ -52,7 +54,7 @@ describe('програми в рядку стрічки', () => {
     };
     render(<ProgramsSummary card={{ programs: withBonus }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     expect(screen.getByTestId('programs-summary')).toHaveTextContent('Вам підходить 1 з 1 програми');
-    fireEvent.click(screen.getByTestId('programs-summary'));
+    fireEvent.click(within(screen.getByTestId('program-list-item')).getByRole('button'));
     expect(screen.getByText('Можливі доплати')).toBeInTheDocument();
     expect(screen.getByText('Вагітність з першої спроби')).toBeInTheDocument();
     const firstTry = screen.getByRole('checkbox', { name: /Вагітність з першої спроби/ });
@@ -63,7 +65,7 @@ describe('програми в рядку стрічки', () => {
   });
 
   it('не показує застарілу назву програми', () => {
-    render(<ProgramsSummary card={{ programs: { p1: programs.p1 } }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" defaultOpen />);
+    render(<ProgramsSummary card={{ programs: { p1: programs.p1 } }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" defaultOpenId="p1" />);
     expect(screen.getByText('Донор ооцитів')).toBeInTheDocument();
     expect(screen.queryByText('Київ')).not.toBeInTheDocument();
   });
@@ -138,28 +140,29 @@ describe('картка агенції й батьків', () => {
 
   afterEach(() => setProgramsTransport(null));
 
-  it('обʼєднує фотографії та програми в одну свайп-зону', () => {
-    render(
-      <AgencyMediaCarousel
-        card={{ userId: 'AG1', role: 'ag', programs }}
-        photos={['first.jpg', 'second.jpg']}
-        programsContext={context}
-        language="uk"
-      />
-    );
-    const carousel = screen.getByTestId('agency-media-carousel');
-    expect(within(carousel).getAllByRole('button', { name: 'Відкрити фото' })).toHaveLength(2);
-    expect(within(carousel).getAllByTestId('program-card')).toHaveLength(3);
-    expect(within(carousel).getByText('Програма 1 з 3')).toBeInTheDocument();
-    const firstProgram = within(carousel).getAllByTestId('program-card')[0];
-    const firstPhoto = within(carousel).getAllByRole('button', { name: 'Відкрити фото' })[0];
-    expect(firstProgram.compareDocumentPosition(firstPhoto) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.queryByTestId('programs-summary')).not.toBeInTheDocument();
+  it('порожню програму читачам не показує — це чернетка', () => {
+    const withDraft = { ...programs, p4: { id: 'p4', type: 'ed', requirements: { rh: 'any' } } };
+    render(<CardRoleBlock card={{ userId: 'AG1', role: 'ag', programs: withDraft }} programsContext={context} language="uk" />);
+    expect(screen.getAllByTestId('program-list-item')).toHaveLength(2);
   });
 
-  it('без фото й програм не збільшує контактну картку', () => {
-    const { container } = render(<AgencyMediaCarousel card={{ userId: 'AG2', role: 'ag' }} language="uk" />);
-    expect(container).toBeEmptyDOMElement();
+  it('у програм одного типу підсвічує саме те, чим вони різняться', () => {
+    const pair = {
+      a: { id: 'a', type: 'ed', location: 'Київ', requirements: { ageTo: 30, rh: '+' }, payments: { final: { amount: 1500, currency: 'USD' } } },
+      b: { id: 'b', type: 'ed', location: 'Київ', requirements: { ageTo: 35, rh: '+' }, payments: { final: { amount: 1500, currency: 'USD' } } },
+    };
+    render(<CardRoleBlock card={{ userId: 'AG3', role: 'ag', programs: pair }} programsContext={{ ...context, viewerType: '' }} language="uk" />);
+    const [first] = screen.getAllByTestId('program-list-item');
+    expect(within(first).getByText('до 30 років')).toHaveClass('differs');
+    expect(within(first).getByText('лише Rh+')).not.toHaveClass('differs');
+  });
+
+  it('показує перші три програми, решту — на прохання', () => {
+    const many = Object.fromEntries(['a', 'b', 'c', 'd', 'e'].map(id => [id, { ...programs.p1, id }]));
+    render(<CardRoleBlock card={{ userId: 'AG4', role: 'ag', programs: many }} programsContext={{ ...context, viewerType: '' }} language="uk" />);
+    expect(screen.getAllByTestId('program-list-item')).toHaveLength(3);
+    fireEvent.click(screen.getByText('Показати ще 2'));
+    expect(screen.getAllByTestId('program-list-item')).toHaveLength(5);
   });
 
   it('програми картки бере спершу з браузера — без запиту', () => {
@@ -201,8 +204,10 @@ describe('картка агенції й батьків', () => {
   });
 
   it('рядок організації зберігає зміст анкети батьків', () => {
+    // Назву організації в такому рядку несе шапка (`ProfileRow`), тож блок її
+    // не повторює — але «кого шукають» батьків лишається.
     render(<CardRoleBlock card={{ role: ['ag', 'ip'], agencyName: 'Мрія', seeking: 'sm' }} language="uk" />);
-    expect(screen.getByText(/Мрія/)).toBeInTheDocument();
+    expect(screen.queryByText(/Мрія/)).not.toBeInTheDocument();
     expect(screen.getByText(/сурогатну маму/)).toBeInTheDocument();
   });
 

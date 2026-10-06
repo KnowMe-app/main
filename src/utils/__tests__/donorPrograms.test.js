@@ -2,6 +2,8 @@ import {
   DEFAULT_MONTHLY_MONTHS,
   defaultProgramBonusKeys,
   evaluateProgram,
+  isProgramPresentable,
+  listProgramDifferences,
   extractViewerProgramFacts,
   listPaymentBuckets,
   listProgramBonuses,
@@ -319,5 +321,25 @@ describe('фільтр і сортування за виплатою', () => {
   it('список програм сталий і обмежений', () => {
     const many = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`p${String(i).padStart(2, '0')}`, donorProgram]));
     expect(listPrograms(many)).toHaveLength(12);
+  });
+});
+
+describe('чернетки й порівняння програм', () => {
+  it('порожня програма — чернетка: редактор її бачить, читачі ні', () => {
+    const record = { a: { id: 'a', type: 'ed', requirements: { rh: 'any', marital: 'any' } }, b: { id: 'b', type: 'ed', note: 'Візити до клініки' } };
+    expect(isProgramPresentable(normalizeProgram(record.a, 'a'))).toBe(false);
+    expect(listPrograms(record).map(program => program.id)).toEqual(['b']);
+    expect(listPrograms(record, { includeHidden: true }).map(program => program.id)).toEqual(['a', 'b']);
+  });
+
+  it('відмінності рахує лише між програмами одного типу', () => {
+    const list = listPrograms({
+      a: { id: 'a', type: 'ed', location: 'Київ', requirements: { ageTo: 30 }, payments: { final: { amount: 1500, currency: 'USD' } } },
+      b: { id: 'b', type: 'ed', location: 'Грузія', requirements: { ageTo: 30 }, payments: { final: { amount: 1800, currency: 'USD' } } },
+      c: { id: 'c', type: 'sm', location: 'Київ', payments: { final: { amount: 20000, currency: 'USD' } } },
+    });
+    const differences = listProgramDifferences(list);
+    expect([...differences.get('a')].sort()).toEqual(['location', 'pay']);
+    expect(differences.has('c')).toBe(false);
   });
 });
