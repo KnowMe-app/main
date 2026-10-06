@@ -263,13 +263,13 @@ export const PROGRAM_RH_OPTIONS = Object.freeze([
 
 export const PROGRAM_MARITAL_OPTIONS = Object.freeze([
   { key: 'any', label: 'Не вказано' },
-  { key: 'unmarried', label: 'Лише незаміжня' },
-  { key: 'married', label: 'Лише заміжня' },
+  { key: 'unmarried', label: 'Незаміжня' },
+  { key: 'married', label: 'Заміжня' },
 ]);
 
 export const PROGRAM_KIDS_OPTIONS = Object.freeze([
   { key: 'any', label: 'Не вказано' },
-  { key: 'required', label: 'Потрібна власна дитина' },
+  { key: 'required', label: 'Потрібна' },
 ]);
 
 export const PROGRAM_CSECTION_OPTIONS = Object.freeze([
@@ -1173,11 +1173,8 @@ export const listProgramHighlightOptions = program => {
   if (monthly) options.push({ key: 'monthly', text: '{amount} щомісяця', money: { amount: monthly.amount, currency: monthly.currency } });
   describeProgramRequirements(program).forEach(item => options.push({ ...item }));
   if (program.relocation?.family === 'yes') options.push({ key: 'family', text: 'переїзд із сімʼєю' });
-  (program.coverage || []).forEach(key => {
-    const option = PROGRAM_COVERAGE_OPTIONS.find(item => item.key === key);
-    if (!option || key === 'family') return;
-    options.push({ key: `cov:${key}`, text: '{label} за рахунок агенції', variables: { label: option.label } });
-  });
+  // Покриття ознакою не пропонується: рядок «Покриває: …» стоїть у картці
+  // завжди, і «житло за рахунок агенції» поруч було б тим самим удруге.
   const bonuses = listProgramBonuses(program);
   if (bonuses.length) options.push({ key: 'bonuses', text: '+{count} доплати', variables: { count: bonuses.length } });
   return options;
