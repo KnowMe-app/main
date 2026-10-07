@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import styled from 'styled-components';
 import {
   FaBalanceScale,
@@ -436,10 +436,33 @@ const Verdict = styled.p`
   color: ${({ $state }) => tone($state === 'match' ? true : $state === 'mismatch' ? false : null)};
 `;
 
+/**
+ * Чи головна сума згорнутої програми вже несе відмічені доплати. Лише коли
+ * «разом» можна обіцяти (`reliable`) і з доплатами воно лишається однією
+ * сумою; інакше доплати підсумовує рядок під ними.
+ */
+const offerCountsSelectedBonuses = breakdown => breakdown.reliable
+  && breakdown.bonuses.some(item => item.selected)
+  && breakdown.total.parts.length === 1;
+
 const lineMeta = line => [
   line.months ? null : line.when,
   line.condition,
 ].filter(Boolean).join(' · ');
+
+/** Відмічені доплати програми; початковий вибір — з анкети читача. */
+const useSelectedBonuses = (program, facts) => {
+  const [selected, setSelected] = useState(() => defaultProgramBonusKeys(program, facts));
+  useEffect(() => {
+    setSelected(defaultProgramBonusKeys(program, facts));
+  // Ідентичність обʼєктів міняється з кожним перемалюванням кешованої
+  // картки; вибір читачки скидають лише факти, від яких залежить початковий.
+  }, [program.id, facts?.experience]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggle = useCallback(key => setSelected(current => (current.includes(key)
+    ? current.filter(item => item !== key)
+    : [...current, key])), []);
+  return [selected, toggle];
+};
 
 /**
  * Деталі програми — під згорнутою частиною того самого контейнера.
@@ -453,27 +476,33 @@ const lineMeta = line => [
  * вимога показує, чи читач їй відповідає, а доплата за досвід відмічена
  * одразу. `framed` — окрема картка з назвою (старий попередній перегляд).
  */
-export const ProgramCard = ({ program, facts = null, rates, language, framed = false, displayCurrency = '' }) => {
-  const [selectedBonuses, setSelectedBonuses] = useState(() => defaultProgramBonusKeys(program, facts));
-  useEffect(() => {
-    setSelectedBonuses(defaultProgramBonusKeys(program, facts));
-  // Ідентичність обʼєктів міняється з кожним перемалюванням кешованої
-  // картки; вибір читачки скидають лише факти, від яких залежить початковий.
-  }, [program.id, facts?.experience]); // eslint-disable-line react-hooks/exhaustive-deps
+export const ProgramCard = ({
+  program,
+  facts = null,
+  rates,
+  language,
+  framed = false,
+  displayCurrency = '',
+  selectedBonuses: controlledBonuses,
+  onToggleBonus,
+}) => {
+  const [ownBonuses, toggleOwnBonus] = useSelectedBonuses(program, facts);
+  // У контейнері стрічки вибір тримає згорнута частина: її головна сума
+  // рахує відмічені доплати (`describeProgramOffer`).
+  const controlled = Array.isArray(controlledBonuses) && typeof onToggleBonus === 'function';
+  const selectedBonuses = controlled ? controlledBonuses : ownBonuses;
   const currency = displayCurrency || '';
   const result = facts ? evaluateProgram(program, facts) : null;
   const checkByKey = new Map((result?.checks || []).map(check => [check.key, check.ok]));
   const breakdown = programBreakdown(program, { selectedBonusKeys: selectedBonuses, rates });
-  const { lines, bonuses, total, guaranteed } = breakdown;
+  const { lines, bonuses, total } = breakdown;
   const selectedCount = bonuses.filter(item => item.selected).length;
   const requirements = describeProgramRequirements(program);
   const unknown = requirements.filter(item => checkByKey.get(item.key) === null).map(item => REQUIREMENT_FIX_HINTS[item.key]);
   const coverage = describeProgramCoverage(program);
   const stages = listProgramStages(program);
   const relocation = program.relocation || null;
-  const toggleBonus = key => setSelectedBonuses(current => (current.includes(key)
-    ? current.filter(item => item !== key)
-    : [...current, key]));
+  const toggleBonus = controlled ? onToggleBonus : toggleOwnBonus;
   const show = money => presentMoney(money, currency, rates);
   const state = result ? (result.matches ? (result.uncertain ? 'uncertain' : 'match') : 'mismatch') : '';
   const verdictText = {
@@ -485,7 +514,10 @@ export const ProgramCard = ({ program, facts = null, rates, language, framed = f
   // Один рядок, що дорівнює головній сумі, нічого не пояснює: «Винагорода
   // за цикл 10 000 $» під тим самим числом у згорнутій частині — те саме двічі.
   const showSchedule = lines.length > 1 || lines.some(line => line.months || line.when || line.condition || line.includes);
-  const showTotal = counted.length > 1 && breakdown.reliable;
+  // Разом — у згорнутій частині. Тут лишився той самий підсумок ще раз, а з
+  // доплатами — третім числом поруч з ним; рядок прибрано, щоб анкета була
+  // коротшою. Підсумок під доплатами лишається там, де вгорі його немає.
+  const bonusTotalShownAbove = offerCountsSelectedBonuses(breakdown);
   const notes = requirements.filter(item => item.note);
   const familyLabel = PROGRAM_FAMILY_OPTIONS.find(option => option.key === relocation?.family && option.key)?.label || '';
 
@@ -529,15 +561,6 @@ export const ProgramCard = ({ program, facts = null, rates, language, framed = f
                 <dd>{uiText('до {amount}', language, { amount: presentSum(breakdown.upTo, currency, rates).primary })}</dd>
               </>
             ) : null}
-            {showTotal ? (
-              <>
-                <dt className="total">{uiText(selectedCount ? 'Разом з обраними доплатами' : 'Разом за програму', language)}</dt>
-                <dd className="total">
-                  {presentSum(total, currency, rates).primary}
-                  {selectedCount ? <small>{uiText('гарантовано {amount}', language, { amount: presentSum(guaranteed, currency, rates).primary })}</small> : null}
-                </dd>
-              </>
-            ) : null}
           </MoneyRows>
           {counted.length > 1 && breakdown.hasMonthlyEstimate ? (
             <Hint>{uiText('Разом не рахуємо: агенція не вказала, скільки місяців триває щомісячна виплата.', language)}</Hint>
@@ -565,7 +588,7 @@ export const ProgramCard = ({ program, facts = null, rates, language, framed = f
               <b>{plainMoney(item.money, currency, rates).replace(/^(≈ )?/, (match, approx) => `${approx || ''}+`)}</b>
             </BonusRow>
           ))}
-          {selectedCount && !showTotal && total.amount > 0 ? (
+          {selectedCount && !bonusTotalShownAbove && total.amount > 0 ? (
             <Hint data-testid="program-bonus-total">{uiText('Разом з обраними доплатами: {amount}', language, { amount: presentSum(total, currency, rates).primary })}</Hint>
           ) : null}
         </Section>
@@ -927,19 +950,31 @@ const FIT_MARKS = Object.freeze({ match: '✓', uncertain: '?', mismatch: '✕' 
  * (`programPayLabel`), тож «за програму» й «за цикл» більше не стоять поруч
  * про те саме число.
  */
-export const describeProgramOffer = (program, { rates = null } = {}) => {
-  const breakdown = programBreakdown(program, { rates });
+export const describeProgramOffer = (program, { rates = null, selectedBonusKeys = [] } = {}) => {
+  const breakdown = programBreakdown(program, { rates, selectedBonusKeys });
   const main = breakdown.lines.find(line => line.key === 'final') || breakdown.lines[0] || null;
   const counted = breakdown.lines.filter(line => !line.included);
   const label = programPayLabel(program);
+  // Відмічені доплати входять у головну суму, а гарантоване стоїть поруч
+  // дрібним: другий рядок «Разом з обраними доплатами» в деталях повторював
+  // те саме число, що й угорі, лише на кілька сотень більше.
+  const bonusesCounted = offerCountsSelectedBonuses(breakdown);
+  const bonusNote = bonusesCounted ? breakdown.guaranteed : null;
   if (counted.length > 1 && breakdown.reliable) {
-    return { money: breakdown.guaranteed, label: programPayLabel(program, { sum: true }), extra: '', breakdown };
+    return {
+      money: bonusesCounted ? breakdown.total : breakdown.guaranteed,
+      label: programPayLabel(program, { sum: true }),
+      extra: '',
+      guaranteed: bonusNote,
+      breakdown,
+    };
   }
-  if (!main) return { money: null, label, extra: '', breakdown };
+  if (!main) return { money: null, label, extra: '', guaranteed: null, breakdown };
   return {
-    money: main.subtotal,
+    money: bonusesCounted && counted.length === 1 ? breakdown.total : main.subtotal,
     label: main.key === 'final' ? label : { text: main.label },
     extra: counted.length > 1 ? 'schedule' : '',
+    guaranteed: counted.length === 1 ? bonusNote : null,
     breakdown,
   };
 };
@@ -950,7 +985,9 @@ export const describeProgramOffer = (program, { rates = null } = {}) => {
 const ProgramListItem = ({ program, open, onToggle, facts, rates, language, differs, displayCurrency }) => {
   const result = facts ? evaluateProgram(program, facts) : null;
   const fit = programFitState(result);
-  const offer = describeProgramOffer(program, { rates });
+  const [selectedBonuses, toggleBonus] = useSelectedBonuses(program, facts);
+  const offer = describeProgramOffer(program, { rates, selectedBonusKeys: selectedBonuses });
+  const guaranteedNote = offer.guaranteed ? presentSum(offer.guaranteed, displayCurrency, rates).primary : '';
   const shown = offer.money ? presentSum(offer.money.parts ? offer.money : { parts: [offer.money], amount: offer.money.amount, currency: offer.money.currency, approximate: offer.money.approximate }, displayCurrency, rates) : null;
   const upTo = offer.breakdown.upTo ? presentSum(offer.breakdown.upTo, displayCurrency, rates).primary : '';
   const highlights = useMemo(() => {
@@ -1004,6 +1041,7 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
               {uiText(offer.label.text, language, offer.label.variables)}
               {upTo ? <> · <strong>{uiText('до {amount}', language, { amount: upTo })}</strong>{offer.breakdown.upToCondition ? ` — ${offer.breakdown.upToCondition}` : ''}</> : null}
               {offer.extra === 'schedule' ? ` · ${uiText('+ виплати за графіком', language)}` : ''}
+              {guaranteedNote ? <> · {uiText('з обраними доплатами, гарантовано {amount}', language, { amount: guaranteedNote })}</> : null}
             </PayLabel>
           </>
         ) : (
@@ -1024,7 +1062,15 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
 
       {open ? (
         <ProgramBody id={bodyId}>
-          <ProgramCard program={program} facts={facts} rates={rates} language={language} displayCurrency={displayCurrency} />
+          <ProgramCard
+            program={program}
+            facts={facts}
+            rates={rates}
+            language={language}
+            displayCurrency={displayCurrency}
+            selectedBonuses={selectedBonuses}
+            onToggleBonus={toggleBonus}
+          />
         </ProgramBody>
       ) : null}
 

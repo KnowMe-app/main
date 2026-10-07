@@ -96,6 +96,9 @@ import {
 const Page = styled.main`
   min-height: 100vh;
   padding: 16px 20px max(80px, env(safe-area-inset-bottom));
+  /* На телефоні бічний відступ — як у стрічці пошуку (10 px): з 20 px
+     картки й форма тут ставали вужчими за ті самі картки в стрічці. */
+  @media (max-width: 600px) { padding-left: 10px; padding-right: 10px; }
   background: var(--km-bg);
   color: var(--km-text);
   font-family: var(--km-font);
