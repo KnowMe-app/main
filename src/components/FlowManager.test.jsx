@@ -19,6 +19,7 @@ jest.mock('./config', () => ({
 const {
   calculateFlowRowCurrencyAmount,
   flattenFlowEntriesFromBackend,
+  getFlowRowDisplayCurrency,
   parseFlowEntryLine,
 } = require('./FlowManager');
 
@@ -96,5 +97,63 @@ describe('calculateFlowRowCurrencyAmount', () => {
     };
     expect(calculateFlowRowCurrencyAmount({ ...options, row: { amount: '-500', amountUsd: '-12.5' } })).toBe(-12.5);
     expect(calculateFlowRowCurrencyAmount({ ...options, row: { amount: '500', amountUsd: '12.5' } })).toBe(12.5);
+  });
+});
+
+describe('per-row exchange rate currency', () => {
+  const { resolveFlowExchangeRatesForMode } = require('./config');
+
+  it('reads a trailing rate as dollars unless EUR or € follows the number', () => {
+    expect(parseFlowEntryLine('07.10.2026 27981.29 кавоварка курс 50.75', '2026-10-07')).toMatchObject({
+      amount: '27981.29',
+      description: 'кавоварка',
+      customUsdRate: '50.75',
+      customEurRate: '',
+    });
+    ['курс 50.75 EUR', 'курс 50.75€', 'курс 50,75 €', 'курс EUR 50.75', 'курс євро 50.75', '€ 50.75', '1€=50.75', '50.75 грн/€'].forEach(
+      suffix => {
+        expect(parseFlowEntryLine(`07.10.2026 27981.29 кавоварка ${suffix}`, '2026-10-07')).toMatchObject({
+          description: 'кавоварка',
+          customUsdRate: '',
+          customEurRate: '50.75',
+        });
+      }
+    );
+    expect(parseFlowEntryLine('07.10.2026 100 кава курс 41 $', '2026-10-07')).toMatchObject({
+      customUsdRate: '41',
+      customEurRate: '',
+    });
+  });
+
+  it('applies a EUR rate only to euros and counts every currency from the raw UAH amount', () => {
+    resolveFlowExchangeRatesForMode.mockReturnValue({ usd: 40, eur: 50 });
+    const options = {
+      exchangeRateMode: 'mono',
+      exchangeRates: { usd: 40, eur: 50 },
+      historicalRatesByDate: {},
+      customUsdRate: '',
+    };
+    const eurRow = { amount: '1015', customEurRate: '50.75' };
+    const usdRow = { amount: '1015', customUsdRate: '40.6' };
+
+    expect(getFlowRowDisplayCurrency(eurRow)).toBe('eur');
+    expect(getFlowRowDisplayCurrency(usdRow)).toBe('usd');
+    expect(calculateFlowRowCurrencyAmount({ ...options, row: eurRow, currency: 'eur' })).toBe(20);
+    expect(calculateFlowRowCurrencyAmount({ ...options, row: eurRow, currency: 'usd' })).toBe(25.375);
+    expect(calculateFlowRowCurrencyAmount({ ...options, row: usdRow, currency: 'usd' })).toBe(25);
+    expect(calculateFlowRowCurrencyAmount({ ...options, row: usdRow, currency: 'eur' })).toBe(20.3);
+  });
+
+  it('restores the EUR rate marker from the stored amount', () => {
+    const rows = flattenFlowEntriesFromBackend({
+      general: {
+        '2026-10-07': {
+          a: '1015 25.38 20.00 50.75EUR_кава',
+          b: '1015 25.00 20.30 40.60_чай',
+        },
+      },
+    });
+    expect(rows.find(row => row.entryId === 'a')).toMatchObject({ customUsdRate: '', customEurRate: '50.75' });
+    expect(rows.find(row => row.entryId === 'b')).toMatchObject({ customUsdRate: '40.6', customEurRate: '' });
   });
 });
