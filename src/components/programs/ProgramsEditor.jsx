@@ -1013,7 +1013,6 @@ const WORDS = Object.freeze({
   expense: { uk: ['витрата', 'витрати', 'витрат'], en: ['expense', 'expenses'] },
 });
 
-const levelLabel = level => PROGRAM_REQUIREMENT_LEVELS.find(option => option.key === (level || 'required'))?.label || 'Обовʼязково';
 
 const CollapsibleSection = ({ index, sectionKey, title, summary, open, onToggle, language, children, idPrefix }) => {
   const contentId = `${idPrefix}-section-${sectionKey}`;
@@ -1056,7 +1055,7 @@ const PaymentDetails = ({ value, onChange, language, rates, idPrefix, examples, 
         <Field id={`${idPrefix}-when`} label="Коли платять" optional language={language}>
           <TextInput id={`${idPrefix}-when`} value={value?.when || ''} maxLength={60} placeholder={uiText(examples.when, language)} onChange={event => onChange({ when: event.target.value })} />
         </Field>
-        <Field id={`${idPrefix}-condition`} label="Умови" optional language={language}>
+        <Field id={`${idPrefix}-condition`} label="Умови виплати" optional language={language}>
           <TextInput id={`${idPrefix}-condition`} value={value?.condition || ''} maxLength={120} placeholder={uiText(examples.condition, language)} onChange={event => onChange({ condition: event.target.value })} />
         </Field>
       </FieldRow>

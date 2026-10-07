@@ -21,6 +21,7 @@ import { resolveProfileLanguage } from './profileTexts';
  */
 const EN_BY_UK = {
   // Редактор програм: пʼять розділів, виплати блоками, сценарій доплат.
+  'Умови виплати': 'Conditions',
   'Додати доплату: {label}': 'Add supplement: {label}',
   'Збережено частково — нові поля поки лише в цьому браузері': 'Partly saved — new fields are only in this browser for now',
   'Вік, років': 'Age, years',
@@ -59,11 +60,9 @@ const EN_BY_UK = {
   'Як виглядає в картці': 'Card presentation',
   'ІМТ, не більше': 'BMI, at most',
   'Зріст, від': 'Height, from',
-  'Резус': 'Rh factor',
   'Пологів, не більше': 'Births, at most',
   'Деталі: коли, умови, у тому числі': 'Add details: timing, conditions, included allowances',
   'Деталі: коли й за яких умов': 'Add details: timing and conditions',
-  'Умови': 'Conditions',
   'У тому числі на': 'Included allowance for',
   'Скільки з цієї виплати': 'How much of this payment',
   '«У тому числі» — частина цієї виплати, до суми не додається.': 'An included allowance is part of this payment and is not added to the total.',
@@ -108,7 +107,6 @@ const EN_BY_UK = {
   'Доплати за умовою': 'Conditional supplements',
   'Отримує лише та, з ким умова справдиться, — у разом за програму вони не входять.': 'Paid only if the condition is met — not part of the program total.',
   'Умова': 'Condition',
-  'Вік': 'Age',
   'років': 'years',
   'Вказуйте лише те, що справді відсіює. «Бажано» й «Індивідуально» кандидатці не відмовляють.': 'List only what actually rules candidates out. “Preferred” and “Individual consideration” do not reject anyone.',
   'Як покриваєте': 'How it is covered',
