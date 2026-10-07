@@ -451,3 +451,106 @@ describe('запис програм, поки правила не викочен
     });
   });
 });
+
+describe('як виплата стоїть щодо головної суми', () => {
+  const usd = amount => ({ amount, currency: 'USD' });
+
+  it('заявлена загальна сума з частиною «всередині» лишається собою', () => {
+    const program = normalizeProgram({
+      type: 'ed',
+      payKind: 'total',
+      payments: { final: usd(1500) },
+      otherPayments: [{ label: 'Після обстеження', ...usd(500), counting: 'included' }],
+    }, 't1');
+    const breakdown = programBreakdown(program);
+    expect(breakdown.guaranteed.amount).toBe(1500);
+    expect(breakdown.lines.find(line => line.key === 'other-0').included).toBe(true);
+    expect(programGuaranteedUsd(program, rates)).toBe(1500);
+  });
+
+  it('безумовна додаткова виплата додається до головної', () => {
+    const program = normalizeProgram({
+      type: 'ed',
+      payments: { final: usd(1500) },
+      otherPayments: [{ label: 'Компенсація дороги', ...usd(500), counting: 'added' }],
+    }, 't2');
+    expect(programBreakdown(program).guaranteed.amount).toBe(2000);
+  });
+
+  it('умовна доплата стоїть окремо, доки її не відмітили в сценарії', () => {
+    const program = normalizeProgram({
+      type: 'ed',
+      payments: { final: usd(1500) },
+      bonuses: [{ label: 'За досвід', ...usd(500), condition: 'якщо вже була донація' }],
+    }, 't3');
+    const plain = programBreakdown(program);
+    expect(plain.guaranteed.amount).toBe(1500);
+    expect(plain.total.amount).toBe(1500);
+    expect(programBreakdown(program, { selectedBonusKeys: ['bonus-0'] }).total.amount).toBe(2000);
+    expect(programBreakdown(program, { selectedBonusKeys: ['bonus-0'] }).guaranteed.amount).toBe(1500);
+  });
+
+  it('СМ: 23 000 + 600 × 8 + 300 = 28 100 за планом, двійня 3 000 — окремо', () => {
+    const program = normalizeProgram({
+      type: 'sm',
+      payments: {
+        final: usd(23000),
+        monthly: { ...usd(600), months: 8 },
+        transfer: usd(300),
+        twins: usd(3000),
+      },
+    }, 't4');
+    const breakdown = programBreakdown(program);
+    expect(breakdown.guaranteed.amount).toBe(28100);
+    expect(breakdown.reliable).toBe(true);
+    expect(breakdown.lines.find(line => line.key === 'monthly').subtotal.amount).toBe(4800);
+    expect(breakdown.bonuses.map(item => [item.key, item.money.amount])).toEqual([['twins', 3000]]);
+    expect(breakdown.max.amount).toBe(31100);
+  });
+
+  it('оплата повторної процедури не входить ні в разом, ні в доплати', () => {
+    const program = normalizeProgram({
+      type: 'ed',
+      payments: { final: usd(1500), repeat: usd(1200) },
+      otherPayments: [{ label: 'Повторна пункція', ...usd(500), counting: 'separate' }],
+    }, 't5');
+    const breakdown = programBreakdown(program);
+    expect(breakdown.guaranteed.amount).toBe(1500);
+    expect(breakdown.separate.map(line => line.label)).toEqual(['Повторна пункція', 'Повторна донація']);
+    expect(listProgramBonuses(program)).toEqual([]);
+    expect(programGuaranteedUsd(program, rates)).toBe(1500);
+  });
+
+  it('у загальній винагороді виплату можна явно додати зверху', () => {
+    const program = normalizeProgram({
+      type: 'sm',
+      payKind: 'total',
+      payments: { final: usd(20000), monthly: { ...usd(500), months: 9 }, transfer: { ...usd(300), counting: 'added' } },
+    }, 't6');
+    expect(programBreakdown(program).guaranteed.amount).toBe(20300);
+  });
+
+  it('частини «всередині», більші за саму суму, позначає помилкою', () => {
+    const program = normalizeProgram({
+      type: 'ed',
+      payKind: 'total',
+      payments: { final: usd(1500) },
+      otherPayments: [{ label: 'a', ...usd(1000) }, { label: 'b', ...usd(800) }],
+    }, 't7');
+    expect(programBreakdown(program).includedExceedsMain).toBe(true);
+    expect(programBreakdown(program).guaranteed.amount).toBe(1500);
+  });
+
+  it('вибір головної суми й місце виплати переживають нормалізацію', () => {
+    const program = normalizeProgram({
+      type: 'sm',
+      featured: 'monthly',
+      payments: { final: { ...usd(1), counting: 'included' }, monthly: { ...usd(2), counting: 'separate' } },
+      otherPayments: [{ label: 'x', ...usd(3), counting: 'bogus' }],
+    }, 't8');
+    expect(program.featured).toBe('monthly');
+    expect(program.payments.final.counting).toBeUndefined();
+    expect(program.payments.monthly.counting).toBe('separate');
+    expect(program.otherPayments[0].counting).toBeUndefined();
+  });
+});

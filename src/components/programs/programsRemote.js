@@ -49,21 +49,30 @@ export const stripMonthlyMonths = items => Object.fromEntries(Object.entries(ite
  * відкинув би програму цілком — тож запис повторюється без них, а повна
  * версія лишається в браузері власниці (`programsStore`).
  */
-const EXTENDED_PROGRAM_FIELDS = Object.freeze(['name', 'payKind', 'payMax', 'startNow', 'requirementMeta', 'stages', 'relocation', 'coverageDetails', 'highlights']);
-const EXTENDED_PAYMENT_FIELDS = Object.freeze(['when', 'condition', 'includes']);
+// Найновіші поля — місце виплати щодо головної суми (`counting`) і вибрана
+// головна сума картки (`featured`). Їх знімається спершу окремо: правила, що
+// вже знають решту розширених полів, не мусять коштувати агенції назви,
+// виду суми й графіка лише через ці два.
+const NEWEST_PROGRAM_FIELDS = Object.freeze(['featured']);
+const NEWEST_PAYMENT_FIELDS = Object.freeze(['counting']);
+const EXTENDED_PROGRAM_FIELDS = Object.freeze(['name', 'payKind', 'payMax', 'startNow', 'requirementMeta', 'stages', 'relocation', 'coverageDetails', 'highlights', ...NEWEST_PROGRAM_FIELDS]);
+const EXTENDED_PAYMENT_FIELDS = Object.freeze(['when', 'condition', 'includes', ...NEWEST_PAYMENT_FIELDS]);
 
 const omit = (value, keys) => Object.fromEntries(Object.entries(value || {}).filter(([key]) => !keys.includes(key)));
 
-export const stripExtendedProgramFields = items => Object.fromEntries(Object.entries(items || {}).map(([id, program]) => {
+const stripProgramFields = (items, programFields, paymentFields) => Object.fromEntries(Object.entries(items || {}).map(([id, program]) => {
   if (!program || typeof program !== 'object') return [id, program];
-  const next = omit(program, EXTENDED_PROGRAM_FIELDS);
+  const next = omit(program, programFields);
   if (program.payments) {
-    next.payments = Object.fromEntries(Object.entries(program.payments).map(([key, money]) => [key, omit(money, EXTENDED_PAYMENT_FIELDS)]));
+    next.payments = Object.fromEntries(Object.entries(program.payments).map(([key, money]) => [key, omit(money, paymentFields)]));
   }
-  if (Array.isArray(program.otherPayments)) next.otherPayments = program.otherPayments.map(item => omit(item, EXTENDED_PAYMENT_FIELDS));
-  if (Array.isArray(program.bonuses)) next.bonuses = program.bonuses.map(item => omit(item, ['condition']));
+  if (Array.isArray(program.otherPayments)) next.otherPayments = program.otherPayments.map(item => omit(item, paymentFields));
+  if (Array.isArray(program.bonuses) && paymentFields.includes('condition')) next.bonuses = program.bonuses.map(item => omit(item, ['condition']));
   return [id, next];
 }));
+
+export const stripExtendedProgramFields = items => stripProgramFields(items, EXTENDED_PROGRAM_FIELDS, EXTENDED_PAYMENT_FIELDS);
+export const stripNewestProgramFields = items => stripProgramFields(items, NEWEST_PROGRAM_FIELDS, NEWEST_PAYMENT_FIELDS);
 
 export const writeProgramsToDb = async (uid, items, at) => {
   try {
@@ -72,7 +81,7 @@ export const writeProgramsToDb = async (uid, items, at) => {
     if (!isReactionPermissionDeniedError(error)) throw error;
     // Від новішого до старішого: спершу без нових полів, далі ще й без
     // кількості місяців — кожна з цих версій правил у проді вже бувала.
-    const fallbacks = [stripExtendedProgramFields(items), stripMonthlyMonths(stripExtendedProgramFields(items))];
+    const fallbacks = [stripNewestProgramFields(items), stripExtendedProgramFields(items), stripMonthlyMonths(stripExtendedProgramFields(items))];
     let previous = JSON.stringify(items);
     for (const fallback of fallbacks) {
       const serialized = JSON.stringify(fallback);

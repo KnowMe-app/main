@@ -66,11 +66,11 @@ describe('програми в рядку стрічки', () => {
     const firstTry = screen.getByRole('checkbox', { name: /Вагітність з першої спроби/ });
     expect(firstTry).not.toBeChecked();
     fireEvent.click(firstTry);
-    // Доплата йде в головну суму згорнутої частини, а не в окремий рядок під доплатами.
+    // Відмічена доплата — сценарій: головна сума лишається тією, яку назвала
+    // агенція, а підсумок «а якщо» стоїть під доплатами й так і підписаний.
     const row = screen.getByTestId('program-list-item');
-    expect(row).toHaveTextContent('3 000 $');
-    expect(row).toHaveTextContent('з обраними доплатами, гарантовано 2 500 $');
-    expect(screen.queryByTestId('program-bonus-total')).not.toBeInTheDocument();
+    expect(row).toHaveTextContent('2 500 $');
+    expect(screen.getByTestId('program-bonus-total')).toHaveTextContent('Сценарій з відміченими доплатами3 000 $');
   });
 
   it('заголовок — пропозиція, а не роль, і застарілої назви `title` не показує', () => {
@@ -141,7 +141,9 @@ describe('картка програми — калькулятор заробі�
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
     // Деталі «разом» не повторюють: воно вже стоїть угорі.
     expect(within(row).getByTestId('program-total')).not.toHaveTextContent('28 300 $');
-    expect(screen.getByText(/500 \$ × 9 міс/)).toBeInTheDocument();
+    // Щомісячна — сумою на місяць, а тривалість і разом за неї — дрібніше.
+    expect(within(row).getByTestId('program-total')).toHaveTextContent('500 $/міс');
+    expect(screen.getByText('9 міс · 4 500 $ разом')).toBeInTheDocument();
   });
 
   it('без кількості місяців разом не обіцяє, а каже чому', () => {
@@ -151,15 +153,41 @@ describe('картка програми — калькулятор заробі�
     expect(screen.getByText(/Разом не рахуємо/)).toBeInTheDocument();
   });
 
-  it('відмічена можлива доплата додається до «разом» угорі, а не другим рядком', () => {
+  it('відмічена можлива доплата — сценарій під доплатами, а головна сума та сама', () => {
     render(<ProgramsSummary card={{ programs: { p2: surrogate } }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
     fireEvent.click(screen.getByRole('checkbox', { name: /Кесарів розтин/ }));
-    expect(row).toHaveTextContent('29 800 $');
-    expect(row).toHaveTextContent('з обраними доплатами, гарантовано 28 300 $');
-    expect(row).not.toHaveTextContent('Разом з обраними доплатами');
+    expect(row).toHaveTextContent('28 300 $');
+    expect(screen.getByTestId('program-bonus-total')).toHaveTextContent('29 800 $');
+    expect(row).toHaveTextContent('Лише за умови. Відмітьте, щоб порахувати сценарій.');
     expect(screen.getByRole('checkbox', { name: /Кесарів розтин/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('агенція вибирає головну суму картки; разом за планом тоді стоїть у деталях', () => {
+    const plan = {
+      id: 'p9',
+      type: 'sm',
+      featured: 'monthly',
+      payments: { final: { amount: 23000, currency: 'USD' }, monthly: { amount: 600, currency: 'USD', months: 8 }, transfer: { amount: 300, currency: 'USD' }, twins: { amount: 3000, currency: 'USD' } },
+    };
+    render(<ProgramsSummary card={{ programs: { p9: plan } }} rates={rates} displayCurrency="USD" language="uk" />);
+    const row = screen.getByTestId('program-list-item');
+    expect(row).toHaveTextContent('600 $/міс');
+    expect(row).toHaveTextContent('Щомісячна виплата сурогатній мамі · разом за планом 28 100 $');
+    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    expect(within(row).getByTestId('program-planned-total')).toHaveTextContent('28 100 $');
+    expect(screen.getByRole('checkbox', { name: /Двійня/ })).not.toBeChecked();
+    expect(describeProgramOffer({ ...plan, featured: 'main' }).money.amount).toBe(23000);
+    expect(describeProgramOffer({ ...plan, featured: undefined }).money.amount).toBe(28100);
+  });
+
+  it('оплата повторної процедури стоїть окремо й до суми не додається', () => {
+    const program = { id: 'r', type: 'ed', payments: { final: { amount: 1500, currency: 'USD' }, repeat: { amount: 1200, currency: 'USD' } } };
+    render(<ProgramCard program={program} rates={rates} language="uk" />);
+    expect(screen.getByTestId('program-separate')).toHaveTextContent('Повторна донація1 200 $');
+    expect(screen.queryByRole('checkbox', { name: /Повторна/ })).not.toBeInTheDocument();
+    expect(describeProgramOffer(program).money.amount).toBe(1500);
   });
 
   it('вимоги й покриття підписані окремо', () => {

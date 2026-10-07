@@ -307,6 +307,29 @@ await it('приймає розширені поля програми й від�
   await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
 });
 
+// Місце виплати щодо головної суми (додається / уже всередині / за окрему
+// процедуру) і вибрана головна сума картки. Головна виплата й повторна донація
+// місця не вибирають: перша сама є сумою, друга окрема за визначенням.
+await it('приймає місце виплати й вибрану головну суму, відкидає чуже', async () => {
+  const base = `multiData/programs/${PROFILE_OWNER}`;
+  const withProgram = program => ({ updatedAt: 1759200000000, items: { p5: { id: 'p5', type: 'sm', ...program } } });
+  await assertSucceeds(set(ref(db(PROFILE_OWNER), base), withProgram({
+    featured: 'monthly',
+    payKind: 'total',
+    payments: {
+      final: { amount: 20000, currency: 'USD' },
+      monthly: { amount: 600, currency: 'USD', months: 8, counting: 'included' },
+      transfer: { amount: 300, currency: 'USD', counting: 'added' },
+    },
+    otherPayments: [{ label: 'Повторна пункція', amount: 500, currency: 'USD', counting: 'separate' }],
+  })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ featured: 'biggest' })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payments: { final: { amount: 1, currency: 'USD', counting: 'added' } } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payments: { transfer: { amount: 1, currency: 'USD', counting: 'maybe' } } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ otherPayments: [{ label: 'x', amount: 1, currency: 'USD', counting: 'twice' }] })));
+  await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
+});
+
 // Назви доплат, які вже вживають агенції, — підказки в редакторі програм.
 // Дописати нову може кожен, переписати чужу — ні.
 await it('словник назв доплат: новий ключ пише кожен, наявний не переписує ніхто, крім адміна', async () => {
