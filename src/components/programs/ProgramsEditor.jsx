@@ -723,7 +723,21 @@ const LabeledPayments = ({ items, onChange, listId, suggestions, placeholder, re
           </Line>
           {withDetails ? (
             <PaymentDetails allowIncludes value={item} language={language} rates={rates} idPrefix={`${listId}-${index}`} onChange={patch => setItem(index, patch)} />
-          ) : null}
+          ) : (
+            // Умова дописаної доплати («якщо пологи кесаревим») — одним
+            // компактним полем під нею: картка її показує, тож і правити, і
+            // стерти її мусить бути де.
+            <Sub>
+              <TextInput
+                $compact
+                aria-label={uiText('Умова доплати', language)}
+                value={item.condition || ''}
+                maxLength={120}
+                placeholder={uiText('Умова: якщо пологи кесаревим', language)}
+                onChange={event => setItem(index, { condition: event.target.value })}
+              />
+            </Sub>
+          )}
         </React.Fragment>
       ))}
     </>

@@ -156,4 +156,17 @@ describe('редактор програм', () => {
     expect(saved.startNow).toBe(true);
     expect(saved.highlights).toEqual(['startNow']);
   });
+
+  it('умову дописаної доплати видно й можна правити', () => {
+    const onSave = jest.fn();
+    const withBonus = { p1: { ...program.p1, bonuses: [{ label: 'Кесарів', amount: 500, currency: 'USD', condition: 'якщо кесаревим' }] } };
+    const { unmount } = render(<ProgramsEditor programs={withBonus} onSave={onSave} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
+    const condition = screen.getByLabelText('Умова доплати');
+    expect(condition).toHaveValue('якщо кесаревим');
+    fireEvent.change(condition, { target: { value: '' } });
+    unmount();
+    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0].p1;
+    expect(saved.bonuses[0].condition).toBeUndefined();
+  });
 });
