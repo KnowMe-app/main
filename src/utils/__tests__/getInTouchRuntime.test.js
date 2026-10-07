@@ -44,6 +44,19 @@ describe('позначки власника читаються і пишутьс
     expect(fanOut).toContain('await setOwnerWriter(ownerId, userId, payload.writer)');
   });
 
+  it('графік стимуляції теж пишеться туди, звідки його читають', () => {
+    // Читач (`readProfileFromNodes`) бере графік з `multiData/stimulationSchedule`,
+    // а писача не було: сторінка ліків показувала події графіка з міграції.
+    const fanOut = configSource.slice(
+      configSource.indexOf('const fanOutProfileNodes ='),
+      configSource.indexOf("const OWNER_GET_IN_TOUCH_PATH = 'multiData/getInTouch'"),
+    );
+    expect(fanOut).toContain("hasOwnProperty.call(payload, 'stimulationSchedule')");
+    expect(fanOut).toContain(
+      'await setOwnerStimulationSchedule(ownerId, userId, payload.stimulationSchedule)',
+    );
+  });
+
   it('зміна позначки — це запис в одну адресу, а не переїзд між ключами', () => {
     // Значення лежить значенням, тож міняти його — це `set` у ту саму адресу,
     // а знімати — `null` у ній же. Переїзду між двома ключами, у якому картка

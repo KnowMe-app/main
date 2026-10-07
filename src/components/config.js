@@ -4128,6 +4128,17 @@ const fanOutProfileNodes = async (userId, payload) => {
     if (ownerId) await setOwnerWriter(ownerId, userId, payload.writer);
   }
 
+  // Графік стимуляції — третя така позначка, і читається він уже звідти
+  // (`readProfileFromNodes`). Писача тут не було: роутер вузлів поле відкидає,
+  // тож графік у базі лишався тим, що поклала міграція. Екран стимуляції
+  // показував свіжу версію з памʼяті й кеша, а сторінка ліків, яка перечитує
+  // анкету, малювала події попереднього циклу («Оновити ліки» на місяць
+  // раніше). `null` знімає позначку — так зберігається стандартний графік.
+  if (payload && Object.prototype.hasOwnProperty.call(payload, 'stimulationSchedule')) {
+    const ownerId = auth.currentUser?.uid;
+    if (ownerId) await setOwnerStimulationSchedule(ownerId, userId, payload.stimulationSchedule);
+  }
+
   const patch = buildProfileNodePatch(userId, payload);
   const paths = Object.keys(patch);
   // Порожній патч — це не відмова: писати не було чого.
