@@ -135,6 +135,14 @@ const StickyProgress = styled.div`
   z-index: 20;
   background: var(--card);
   border-bottom: 1px solid var(--border);
+
+  /* Поки відкрита програма, смуга «Заповнено N з M» нічого не каже про
+     програму, а на телефоні разом із вкладками забирала понад сотню пікселів
+     над полями. Лишаються самі вкладки, тонше. */
+  ${({ $compact }) => ($compact ? `
+    > div:first-child { display: none; }
+    > div:last-child { padding-top: 8px; padding-bottom: 8px; }
+  ` : '')}
 `;
 const CONTENT_SECTION_TOP_GAP = 18;
 // Наскільки вище за верх розділу зупиняється scrollToSection() і де scroll-spy
@@ -156,7 +164,10 @@ const Card = styled.div`
   background: var(--card);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  /* clip, а не hidden: обрізає кути так само, але не стає контейнером
+     прокрутки — інакше липкий перегляд програми всередині не прилипав. */
   overflow: hidden;
+  overflow: clip;
   scroll-margin-top: ${CONTENT_SECTION_TOP_GAP}px;
 `;
 const FirstContentCard = styled(Card)`margin-top: ${CONTENT_SECTION_TOP_GAP}px;`;
@@ -729,6 +740,8 @@ export const MyProfile = () => {
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [userId, setUserId] = useState('');
   const [activeTab, setActiveTab] = useState('auth');
+  const [editingProgram, setEditingProgram] = useState(false);
+  const [stickyHeight, setStickyHeight] = useState(0);
   const [customOptionMode, setCustomOptionMode] = useState({});
   const [missing, setMissing] = useState({});
   const [hasAgreed, setHasAgreed] = useState(false);
@@ -1220,14 +1233,17 @@ export const MyProfile = () => {
     // Проміс каже редакторові, чи прийняла база запис («Збережено» чи «поки
     // лише в цьому браузері»).
     return saveCardPrograms(targetUserId, record || {})
-      .then(() => {
+      .then(saved => {
         // Словник назв — підказка іншим агенціям, а не частина запису: його
         // відмова не робить збережені програми незбереженими.
         Promise.all([
           rememberProgramTerms('payment', list.flatMap(program => listProgramPayments(program).filter(item => item.key.startsWith('other-')).map(item => item.label))),
           rememberProgramTerms('bonus', list.flatMap(program => listProgramBonuses(program).filter(item => item.key.startsWith('bonus-')).map(item => item.label))),
         ]).catch(error => console.warn('[programs] назви виплат не записались у словник', error));
-        return true;
+        // Правила бази ще не знають частини полів — програму записано без
+        // них, а повна версія лишилась у браузері (`pending`). «Збережено»
+        // тут було б неправдою для тих, хто читає програму з бази.
+        return saved?.partial ? 'partial' : true;
       })
       .catch(error => {
         console.warn('[programs] програми не збереглись у базі', error);
@@ -1365,6 +1381,19 @@ export const MyProfile = () => {
 
   // Висота міряється щоразу, а не один раз: блок переноситься на два рядки
   // вкладок на вузькому екрані й міняє висоту разом із поворотом телефона.
+  // Висоту липкої панелі знають і вкладені блоки (редактор програм ставить під
+  // неї свій липкий перегляд і прокрутку до розділу) — через CSS-змінну.
+  useEffect(() => {
+    const node = stickyProgressRef.current;
+    if (!node) return undefined;
+    const measure = () => setStickyHeight(Math.round(node.getBoundingClientRect().height));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   const getStickyOffset = useCallback(
     () => stickyProgressRef.current?.getBoundingClientRect().height || 0,
     [],
@@ -2083,7 +2112,7 @@ export const MyProfile = () => {
     };
   });
 
-  return <Page>
+  return <Page style={{ '--km-sticky-offset': `${stickyHeight}px` }}>
     <HeaderPanel>
       <Topbar>
         {/* Поруч із назвою — ролі людини її мовою. Тут стояло англійське
@@ -2104,7 +2133,7 @@ export const MyProfile = () => {
       </Topbar>
     </HeaderPanel>
 
-    <StickyProgress ref={stickyProgressRef}>
+    <StickyProgress ref={stickyProgressRef} $compact={editingProgram}>
       <ProgressWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
         <span style={{ fontSize: 12, color: 'var(--muted)' }}>{uiText('Заповнено {filled} з {total}', language, filledStats)}</span>
@@ -2317,6 +2346,8 @@ export const MyProfile = () => {
               language={language}
               rates={programRates}
               suggestions={programTerms}
+              profilePublished={state.publish === true}
+              onEditingChange={setEditingProgram}
             />
           ) : null}
           {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} /> : null}

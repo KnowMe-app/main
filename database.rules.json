@@ -517,6 +517,9 @@
                   "months": {
                     ".validate": "$paymentKey == 'monthly' && newData.isNumber() && newData.val() >= 1 && newData.val() <= 24"
                   },
+                  "counting": {
+                    ".validate": "$paymentKey != 'final' && $paymentKey != 'total' && $paymentKey != 'repeat' && (newData.val() == 'added' || newData.val() == 'included' || newData.val() == 'separate')"
+                  },
                   "$other": {
                     ".validate": false
                   }
@@ -554,6 +557,9 @@
                   },
                   "label": {
                     ".validate": "newData.isString() && newData.val().length <= 60"
+                  },
+                  "counting": {
+                    ".validate": "newData.val() == 'added' || newData.val() == 'included' || newData.val() == 'separate'"
                   },
                   "$other": {
                     ".validate": false
@@ -603,6 +609,9 @@
               },
               "startNow": {
                 ".validate": "newData.isBoolean()"
+              },
+              "featured": {
+                ".validate": "newData.val() == 'main' || newData.val() == 'sum' || newData.val() == 'monthly'"
               },
               "requirementMeta": {
                 "$requirementKey": {

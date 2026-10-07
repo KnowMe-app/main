@@ -148,13 +148,15 @@ const Section = styled.section`
 const MoneyRows = styled.dl`
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: 12px;
+  column-gap: 0;
   row-gap: 8px;
   margin: 0;
   font-size: 13.5px;
   line-height: 1.4;
 
-  dt { margin: 0; color: ${TEXT}; min-width: 0; }
+  /* Відступ між колонками — padding, а не column-gap: інакше риска над
+     «Разом за планом» рвалась посередині. */
+  dt { margin: 0; padding-right: 12px; color: ${TEXT}; min-width: 0; }
   dt small { display: block; font-size: 12px; color: ${MUTED}; }
   dd { margin: 0; color: ${TEXT}; font-weight: 600; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
   dd small { display: block; font-size: 11.5px; font-weight: 500; color: ${MUTED}; }
@@ -436,14 +438,22 @@ const Verdict = styled.p`
   color: ${({ $state }) => tone($state === 'match' ? true : $state === 'mismatch' ? false : null)};
 `;
 
-/**
- * Чи головна сума згорнутої програми вже несе відмічені доплати. Лише коли
- * «разом» можна обіцяти (`reliable`) і з доплатами воно лишається однією
- * сумою; інакше доплати підсумовує рядок під ними.
- */
-const offerCountsSelectedBonuses = breakdown => breakdown.reliable
-  && breakdown.bonuses.some(item => item.selected)
-  && breakdown.total.parts.length === 1;
+// Підсумок «а якщо» під доплатами — окремою плашкою зі словом «сценарій»:
+// він не головна сума програми й не має виглядати нею.
+const ScenarioLine = styled.div`
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px dashed ${BORDER};
+  font-size: 12.5px;
+  color: ${MUTED};
+
+  b { font-size: 14px; font-weight: 700; color: ${TEXT}; font-variant-numeric: tabular-nums; white-space: nowrap; }
+`;
 
 const lineMeta = line => [
   line.months ? null : line.when,
@@ -495,7 +505,7 @@ export const ProgramCard = ({
   const result = facts ? evaluateProgram(program, facts) : null;
   const checkByKey = new Map((result?.checks || []).map(check => [check.key, check.ok]));
   const breakdown = programBreakdown(program, { selectedBonusKeys: selectedBonuses, rates });
-  const { lines, bonuses, total } = breakdown;
+  const { lines, bonuses, total, separate } = breakdown;
   const selectedCount = bonuses.filter(item => item.selected).length;
   const requirements = describeProgramRequirements(program);
   const unknown = requirements.filter(item => checkByKey.get(item.key) === null).map(item => REQUIREMENT_FIX_HINTS[item.key]);
@@ -503,6 +513,8 @@ export const ProgramCard = ({
   const stages = listProgramStages(program);
   const relocation = program.relocation || null;
   const toggleBonus = controlled ? onToggleBonus : toggleOwnBonus;
+  // У рядках деталей — лише сума у валюті читача: оригінал агенції вже стоїть
+  // під головною сумою, а другий рядок під кожною виплатою подвоював список.
   const show = money => presentMoney(money, currency, rates);
   const state = result ? (result.matches ? (result.uncertain ? 'uncertain' : 'match') : 'mismatch') : '';
   const verdictText = {
@@ -510,14 +522,16 @@ export const ProgramCard = ({
     uncertain: 'Може підходити — уточніть в агенції або доповніть анкету',
     mismatch: 'Не підходить за вимогами',
   }[state];
-  const counted = lines.filter(line => !line.included);
+  const scheduleLines = lines.filter(line => !line.separate);
+  const counted = scheduleLines.filter(line => !line.included);
   // Один рядок, що дорівнює головній сумі, нічого не пояснює: «Винагорода
   // за цикл 10 000 $» під тим самим числом у згорнутій частині — те саме двічі.
-  const showSchedule = lines.length > 1 || lines.some(line => line.months || line.when || line.condition || line.includes);
-  // Разом — у згорнутій частині. Тут лишився той самий підсумок ще раз, а з
-  // доплатами — третім числом поруч з ним; рядок прибрано, щоб анкета була
-  // коротшою. Підсумок під доплатами лишається там, де вгорі його немає.
-  const bonusTotalShownAbove = offerCountsSelectedBonuses(breakdown);
+  const showSchedule = scheduleLines.length > 1 || scheduleLines.some(line => line.months || line.when || line.condition || line.includes);
+  // Разом за планом стоїть тут лише тоді, коли згорнута частина показує інше
+  // число (головну виплату чи щомісячну, як вибрала агенція): удруге те
+  // саме число нічого не пояснює.
+  const offer = describeProgramOffer(program, { rates });
+  const showPlannedTotal = counted.length > 1 && breakdown.reliable && offer.featured !== 'sum';
   const notes = requirements.filter(item => item.note);
   const familyLabel = PROGRAM_FAMILY_OPTIONS.find(option => option.key === relocation?.family && option.key)?.label || '';
 
@@ -527,8 +541,10 @@ export const ProgramCard = ({
         <Section data-testid="program-total">
           <SectionTitle>{uiText('Виплати', language)}</SectionTitle>
           <MoneyRows>
-            {lines.map(line => {
-              const own = show(line.subtotal);
+            {scheduleLines.map(line => {
+              // Щомісячна — сумою на місяць: «600 $/міс» читається одразу, а
+              // «4 800 $» праворуч від «Щомісячно» виглядало як разова виплата.
+              const own = line.months ? { primary: `${plainMoney(line.money, currency, rates)}/${uiText('міс', language)}` } : show(line.subtotal);
               const meta = lineMeta(line);
               return (
                 <React.Fragment key={line.key}>
@@ -536,8 +552,9 @@ export const ProgramCard = ({
                     {uiText(line.label, language)}
                     {line.months ? (
                       <small>
-                        {plainMoney(line.money, currency, rates)} × {line.months} {monthWord(line.months, language)}
-                        {line.monthsEstimated ? ` · ${uiText('скільки місяців — уточніть в агенції', language)}` : ''}
+                        {line.monthsEstimated
+                          ? uiText('скільки місяців — уточніть в агенції', language)
+                          : uiText('{months} {unit} · {amount} разом', language, { months: line.months, unit: monthWord(line.months, language), amount: plainMoney(line.subtotal, currency, rates) })}
                       </small>
                     ) : null}
                     {meta ? <small>{meta}</small> : null}
@@ -546,9 +563,9 @@ export const ProgramCard = ({
                         {uiText('у тому числі {amount} — {label}', language, { amount: plainMoney(line.includes, currency, rates), label: line.includes.label })}
                       </small>
                     ) : null}
-                    {line.included ? <small>{uiText('входить у загальну винагороду', language)}</small> : null}
+                    {line.included ? <small>{uiText('уже входить у головну суму', language)}</small> : null}
                   </dt>
-                  <dd>{own.primary}{own.original ? <small>{own.original}</small> : null}</dd>
+                  <dd>{line.included ? <small>{uiText('у т. ч.', language)} {own.primary}</small> : own.primary}</dd>
                 </React.Fragment>
               );
             })}
@@ -561,6 +578,12 @@ export const ProgramCard = ({
                 <dd>{uiText('до {amount}', language, { amount: presentSum(breakdown.upTo, currency, rates).primary })}</dd>
               </>
             ) : null}
+            {showPlannedTotal ? (
+              <>
+                <dt className="total">{uiText('Разом за планом', language)}</dt>
+                <dd className="total" data-testid="program-planned-total">{presentSum(breakdown.guaranteed, currency, rates).primary}</dd>
+              </>
+            ) : null}
           </MoneyRows>
           {counted.length > 1 && breakdown.hasMonthlyEstimate ? (
             <Hint>{uiText('Разом не рахуємо: агенція не вказала, скільки місяців триває щомісячна виплата.', language)}</Hint>
@@ -568,9 +591,30 @@ export const ProgramCard = ({
         </Section>
       ) : null}
 
+      {separate.length ? (
+        <Section data-testid="program-separate">
+          <SectionTitle>{uiText('За окрему процедуру', language)}</SectionTitle>
+          <MoneyRows>
+            {separate.map(line => {
+              const meta = lineMeta(line);
+              return (
+                <React.Fragment key={line.key}>
+                  <dt>{uiText(line.label, language)}{meta ? <small>{meta}</small> : null}</dt>
+                  <dd>{show(line.subtotal).primary}</dd>
+                </React.Fragment>
+              );
+            })}
+          </MoneyRows>
+          <Hint>{uiText('Окремо від суми програми — якщо буде ще одна процедура.', language)}</Hint>
+        </Section>
+      ) : null}
+
       {bonuses.length ? (
         <Section>
           <SectionTitle>{uiText('Можливі доплати', language)}</SectionTitle>
+          {/* Перемикачі — калькулятор «а якщо», а не обіцянка: головна сума
+              програми від них не міняється, і підсумок підписаний сценарієм. */}
+          <Hint style={{ margin: '0 0 4px' }}>{uiText('Лише за умови. Відмітьте, щоб порахувати сценарій.', language)}</Hint>
           {bonuses.map(item => (
             <BonusRow
               key={item.key}
@@ -588,8 +632,11 @@ export const ProgramCard = ({
               <b>{plainMoney(item.money, currency, rates).replace(/^(≈ )?/, (match, approx) => `${approx || ''}+`)}</b>
             </BonusRow>
           ))}
-          {selectedCount && !bonusTotalShownAbove && total.amount > 0 ? (
-            <Hint data-testid="program-bonus-total">{uiText('Разом з обраними доплатами: {amount}', language, { amount: presentSum(total, currency, rates).primary })}</Hint>
+          {selectedCount && total.amount > 0 ? (
+            <ScenarioLine data-testid="program-bonus-total">
+              <span>{uiText('Сценарій з відміченими доплатами', language)}</span>
+              <b>{presentSum(total, currency, rates).primary}</b>
+            </ScenarioLine>
           ) : null}
         </Section>
       ) : null}
@@ -839,6 +886,7 @@ const Amount = styled.div`
   gap: 2px 8px;
 
   b { font-size: 21px; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; color: ${TEXT}; font-variant-numeric: tabular-nums; }
+  b small { font-size: 14px; font-weight: 700; color: ${MUTED}; }
   span { font-size: 12.5px; color: ${MUTED}; font-variant-numeric: tabular-nums; }
 `;
 
@@ -952,29 +1000,35 @@ const FIT_MARKS = Object.freeze({ match: '✓', uncertain: '?', mismatch: '✕' 
  */
 export const describeProgramOffer = (program, { rates = null, selectedBonusKeys = [] } = {}) => {
   const breakdown = programBreakdown(program, { rates, selectedBonusKeys });
-  const main = breakdown.lines.find(line => line.key === 'final') || breakdown.lines[0] || null;
-  const counted = breakdown.lines.filter(line => !line.included);
+  const scheduled = breakdown.lines.filter(line => !line.separate);
+  const main = scheduled.find(line => line.key === 'final') || scheduled[0] || null;
+  const counted = scheduled.filter(line => !line.included);
   const label = programPayLabel(program);
-  // Відмічені доплати входять у головну суму, а гарантоване стоїть поруч
-  // дрібним: другий рядок «Разом з обраними доплатами» в деталях повторював
-  // те саме число, що й угорі, лише на кілька сотень більше.
-  const bonusesCounted = offerCountsSelectedBonuses(breakdown);
-  const bonusNote = bonusesCounted ? breakdown.guaranteed : null;
-  if (counted.length > 1 && breakdown.reliable) {
+  // Головну суму вибирає агенція (`featured`) з того, що в програмі є. Відмічені
+  // читачкою доплати її не міняють: це сценарій, і він рахується окремо під
+  // доплатами, а опублікована сума лишається тією, яку назвала агенція.
+  const monthly = scheduled.find(line => line.key === 'monthly');
+  const canSum = counted.length > 1 && breakdown.reliable;
+  const wanted = program?.featured;
+  if (wanted === 'monthly' && monthly) {
     return {
-      money: bonusesCounted ? breakdown.total : breakdown.guaranteed,
-      label: programPayLabel(program, { sum: true }),
-      extra: '',
-      guaranteed: bonusNote,
+      money: monthly.money,
+      perMonth: true,
+      label: programPayLabel(program, { monthly: true }),
+      extra: canSum ? 'planned' : '',
+      featured: 'monthly',
       breakdown,
     };
   }
-  if (!main) return { money: null, label, extra: '', guaranteed: null, breakdown };
+  if (canSum && wanted !== 'main') {
+    return { money: breakdown.guaranteed, label: programPayLabel(program, { sum: true }), extra: '', featured: 'sum', breakdown };
+  }
+  if (!main) return { money: null, label, extra: '', featured: '', breakdown };
   return {
-    money: bonusesCounted && counted.length === 1 ? breakdown.total : main.subtotal,
+    money: main.subtotal,
     label: main.key === 'final' ? label : { text: main.label },
-    extra: counted.length > 1 ? 'schedule' : '',
-    guaranteed: counted.length === 1 ? bonusNote : null,
+    extra: counted.length > 1 ? (canSum ? 'planned' : 'schedule') : '',
+    featured: 'main',
     breakdown,
   };
 };
@@ -986,8 +1040,8 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
   const result = facts ? evaluateProgram(program, facts) : null;
   const fit = programFitState(result);
   const [selectedBonuses, toggleBonus] = useSelectedBonuses(program, facts);
-  const offer = describeProgramOffer(program, { rates, selectedBonusKeys: selectedBonuses });
-  const guaranteedNote = offer.guaranteed ? presentSum(offer.guaranteed, displayCurrency, rates).primary : '';
+  const offer = describeProgramOffer(program, { rates });
+  const planned = offer.extra === 'planned' ? presentSum(offer.breakdown.guaranteed, displayCurrency, rates).primary : '';
   const shown = offer.money ? presentSum(offer.money.parts ? offer.money : { parts: [offer.money], amount: offer.money.amount, currency: offer.money.currency, approximate: offer.money.approximate }, displayCurrency, rates) : null;
   const upTo = offer.breakdown.upTo ? presentSum(offer.breakdown.upTo, displayCurrency, rates).primary : '';
   const highlights = useMemo(() => {
@@ -1034,14 +1088,14 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
         {shown?.primary ? (
           <>
             <Amount>
-              <b>{shown.primary}</b>
-              {shown.original ? <span>{shown.original}</span> : null}
+              <b>{shown.primary}{offer.perMonth ? <small>/{uiText('міс', language)}</small> : null}</b>
+              {shown.original ? <span>{shown.original}{offer.perMonth ? `/${uiText('міс', language)}` : ''}</span> : null}
             </Amount>
             <PayLabel>
               {uiText(offer.label.text, language, offer.label.variables)}
               {upTo ? <> · <strong>{uiText('до {amount}', language, { amount: upTo })}</strong>{offer.breakdown.upToCondition ? ` — ${offer.breakdown.upToCondition}` : ''}</> : null}
               {offer.extra === 'schedule' ? ` · ${uiText('+ виплати за графіком', language)}` : ''}
-              {guaranteedNote ? <> · {uiText('з обраними доплатами, гарантовано {amount}', language, { amount: guaranteedNote })}</> : null}
+              {planned ? <> · {uiText('разом за планом {amount}', language, { amount: planned })}</> : null}
             </PayLabel>
           </>
         ) : (
