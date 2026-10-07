@@ -20,6 +20,7 @@ import { resolveProfileLanguage } from './profileTexts';
  * вибрані зі списку значення — `translateFieldValue`.
  */
 const EN_BY_UK = {
+  'Умова: якщо пологи кесаревим': 'Condition: if delivered by C-section',
   'ще {count}': '{count} more',
   'Потрібна': 'Required',
   'Незаміжня': 'Unmarried',

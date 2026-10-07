@@ -971,6 +971,20 @@ export const MyProfile = () => {
   // Людина й організація в одній анкеті — тоді імʼя й прізвище належать
   // людині, а в організації своє поле назви (`agencyName`).
   const hasMixedRoles = Boolean(organisationRole) && rolesList.some(role => !ORGANISATION_ROLES.includes(role));
+  // «Лише організація» — жодної іншої ролі, зокрема батьків: батькам ці поля
+  // пропонуються, і анкета «агенція + батьки» мусить їх лишити.
+  const organisationOnly = Boolean(organisationRole) && !hasMixedRoles;
+  // Поле, яке хоч раз показали заповненим, лишається на місці до кінця
+  // сесії: інакше стерте до останньої літери поле зникало б з-під фокуса,
+  // а без blur стирання не записується — і старе значення поверталось би
+  // після перезавантаження.
+  const shownSkippedFieldsRef = useRef(new Set());
+  const keepSkippedField = name => {
+    if (shownSkippedFieldsRef.current.has(name)) return true;
+    if (String(getCurrentValue(state[name]) ?? '').trim() === '') return false;
+    shownSkippedFieldsRef.current.add(name);
+    return true;
+  };
   const hiddenRoles = useMemo(() => parseHiddenRoles(state.hiddenRoles), [state.hiddenRoles]);
 
   /**
@@ -1106,8 +1120,7 @@ export const MyProfile = () => {
           // Telegram, Instagram і TikTok. Лишаються вони агенції й клініці.
           .filter(name => !personRole || organisationRole || !PERSON_HIDDEN_SOCIAL_FIELDS.has(name))
           .filter(name => organisationRole || !ORGANISATION_ONLY_FIELDS.has(name))
-          .filter(name => !organisationRole || personRole || !ORGANISATION_SKIPPED_FIELDS.has(name)
-            || String(getCurrentValue(state[name]) ?? '').trim() !== '')
+          .filter(name => !organisationOnly || !ORGANISATION_SKIPPED_FIELDS.has(name) || keepSkippedField(name))
           .filter(name => !surrogateOnly || !SURROGATE_HIDDEN_FIELDS.has(name))
           .filter(name => !parentOnly || !PARENT_ONLY_HIDDEN_FIELDS.has(name))
           // Побажання батьків стоять у «Кого шукаєте» (`extraFields`).
@@ -1148,7 +1161,7 @@ export const MyProfile = () => {
     // Без жодної ролі донорки чи СМ «Про себе» — спільне, а не чиясь анкета.
     const rest = personAssigned ? [] : personSections;
     return [...shared, ...blocks, ...rest];
-  }, [additionalRoleSections, isDonorRole, organisationRole, parentOnly, personRole, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole, state, surrogateOnly]);
+  }, [additionalRoleSections, isDonorRole, organisationRole, parentOnly, personRole, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole, state, surrogateOnly, organisationOnly]); // eslint-disable-line react-hooks/exhaustive-deps
   const programRates = useProgramRates(Boolean(organisationRole));
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
 
