@@ -23,7 +23,6 @@ const EN_BY_UK = {
   'ще {count}': '{count} more',
   'Потрібна': 'Required',
   'Незаміжня': 'Unmarried',
-  'Заміжня': 'Married',
   'Коли: на 12 тижні': 'When: at week 12',
   'Умова: після УЗД': 'Condition: after the ultrasound',
   'У тому числі на: одяг': 'Including for: clothing',
