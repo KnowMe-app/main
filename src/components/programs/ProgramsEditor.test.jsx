@@ -77,7 +77,7 @@ describe('редактор програм', () => {
     expect(screen.queryByText('Загальна сума за програму')).not.toBeInTheDocument();
     // Без кількості місяців разом не обіцяється — лише орієнтовно в підказці.
     expect(screen.getByTestId('program-editor-total')).toHaveTextContent('—');
-    expect(screen.getByTestId('program-editor-total')).toHaveTextContent('≈ 24 500 $ за 9 міс');
+    expect(screen.getByTestId('program-editor-total')).toHaveTextContent('Вкажіть кількість місяців');
     fireEvent.change(screen.getByLabelText('Скільки місяців'), { target: { value: '10' } });
     expect(screen.getByTestId('program-editor-total')).toHaveTextContent('25 000 $');
   });
@@ -101,7 +101,7 @@ describe('редактор програм', () => {
     const onSave = jest.fn();
     const { unmount } = render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
     fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Гарантовано + до …' }));
+    fireEvent.change(screen.getByLabelText('Вид суми'), { target: { value: 'guaranteed' } });
     fireEvent.change(screen.getByLabelText('Максимальна сума'), { target: { value: '3000' } });
     fireEvent.blur(screen.getByLabelText('Максимальна сума'));
     fireEvent.change(screen.getByLabelText('Від чого залежить максимум'), { target: { value: 'залежно від результату' } });
@@ -118,6 +118,7 @@ describe('редактор програм', () => {
     fireEvent.click(screen.getByRole('button', { name: /Сурогатне материнство/ }));
     // Подробиці головної виплати й щомісячної — дві кнопки; беремо другу.
     fireEvent.click(screen.getAllByRole('button', { name: '+ коли, умова, що входить' })[1]);
+    fireEvent.click(screen.getByRole('button', { name: '+ у тому числі (не додається до разом)' }));
     fireEvent.change(screen.getByLabelText('На що саме'), { target: { value: 'одяг' } });
     fireEvent.change(screen.getByLabelText('Сума всередині виплати'), { target: { value: '400' } });
     fireEvent.blur(screen.getByLabelText('Сума всередині виплати'));
@@ -132,6 +133,7 @@ describe('редактор програм', () => {
     const onSave = jest.fn();
     const { unmount } = render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
     fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Уточнити: Кесарів розтин' }));
     fireEvent.change(screen.getByLabelText('Рівень вимоги: Кесарів розтин'), { target: { value: 'individual' } });
     fireEvent.change(screen.getByLabelText('Пояснення: Кесарів розтин'), { target: { value: 'після 2 років' } });
     unmount();
@@ -145,7 +147,7 @@ describe('редактор програм', () => {
     fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
     const age = screen.getByRole('checkbox', { name: '21–29 років' });
     expect(age).toBeChecked();
-    fireEvent.click(screen.getByLabelText('Старт одразу — набір відкритий зараз'));
+    fireEvent.click(screen.getByLabelText('Старт одразу'));
     // Нова ознака стає типовою сама; агенція знімає вік — і це вже її вибір.
     expect(screen.getByRole('checkbox', { name: 'старт одразу' })).toBeChecked();
     fireEvent.click(screen.getByRole('checkbox', { name: '21–29 років' }));

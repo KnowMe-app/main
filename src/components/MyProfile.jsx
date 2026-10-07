@@ -68,6 +68,7 @@ import {
 import { loadProgramTerms, rememberProgramTerms } from './programs/programsRemote';
 import { listPrograms, listProgramBonuses, listProgramPayments } from '../utils/donorPrograms';
 import { MyProfileCardPreview } from './MyProfileCardPreview';
+import { getCurrentValue } from './getCurrentValue';
 
 const Page = styled.div`
   /* Локальні псевдоніми з глобальних KnowMe-токенів: сторінка автоматично підтримує світлу/темну тему. */
@@ -574,6 +575,13 @@ const PARENT_ONLY_HIDDEN_FIELDS = new Set(['surname']);
 // TikTok тут був і повернувся: донорки й СМ ведуть його не рідше за
 // Instagram, і саме там агенції їх і знаходять.
 const PERSON_HIDDEN_SOCIAL_FIELDS = new Set(['twitter', 'linkedin', 'youtube']);
+
+// Агенції й клініці без особистої ролі не пропонуються область (місто її
+// вже каже, а в стрічці стоїть саме місто) і мережі, якими агенції в
+// Україні не шукають (Twitter, LinkedIn, YouTube). Анкета агенції мусить
+// заповнюватись за хвилину: кожне зайве поле — ще один привід не
+// дозаповнити її зовсім. Записане значення поле не ховає.
+const ORGANISATION_SKIPPED_FIELDS = new Set(['region', 'twitter', 'linkedin', 'youtube']);
 
 const visibleNonDonorFields = new Set(['name','surname','email','phone','telegram','facebook','instagram','tiktok','country','region','city','moreInfo_main','website']);
 
@@ -1098,6 +1106,8 @@ export const MyProfile = () => {
           // Telegram, Instagram і TikTok. Лишаються вони агенції й клініці.
           .filter(name => !personRole || organisationRole || !PERSON_HIDDEN_SOCIAL_FIELDS.has(name))
           .filter(name => organisationRole || !ORGANISATION_ONLY_FIELDS.has(name))
+          .filter(name => !organisationRole || personRole || !ORGANISATION_SKIPPED_FIELDS.has(name)
+            || String(getCurrentValue(state[name]) ?? '').trim() !== '')
           .filter(name => !surrogateOnly || !SURROGATE_HIDDEN_FIELDS.has(name))
           .filter(name => !parentOnly || !PARENT_ONLY_HIDDEN_FIELDS.has(name))
           // Побажання батьків стоять у «Кого шукаєте» (`extraFields`).
@@ -1138,7 +1148,7 @@ export const MyProfile = () => {
     // Без жодної ролі донорки чи СМ «Про себе» — спільне, а не чиясь анкета.
     const rest = personAssigned ? [] : personSections;
     return [...shared, ...blocks, ...rest];
-  }, [additionalRoleSections, isDonorRole, organisationRole, parentOnly, personRole, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole, surrogateOnly]);
+  }, [additionalRoleSections, isDonorRole, organisationRole, parentOnly, personRole, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole, state, surrogateOnly]);
   const programRates = useProgramRates(Boolean(organisationRole));
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
 
