@@ -1504,7 +1504,14 @@ const StimulationSchedule = ({
       if (typeof onPersistProfileUpdate === 'function') {
         onPersistProfileUpdate(update, isDefault ? ['stimulationSchedule'] : []);
       } else {
-        handleSubmit({ userId: userData.userId, ...update }, 'overwrite');
+        // Стандартний графік не зберігається — збережений знімається. Без
+        // `removeKeys` `undefined` губився дорогою, і в базі лишалась стара
+        // власна версія, з якої сторінка ліків бере події.
+        handleSubmit(
+          { userId: userData.userId, ...update },
+          'overwrite',
+          isDefault ? ['stimulationSchedule'] : [],
+        );
       }
       hasChanges.current = !isDefault;
     },
