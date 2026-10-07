@@ -598,28 +598,57 @@ const formatCustomUsdRateDisplay = value => {
   return formattedRate ? `1 $ = ${formattedRate} грн` : '';
 };
 
-const extractCustomUsdRateFromText = value => {
+// Курс у кінці рядка буває доларовий або євровий: «курс 50.75 EUR», «курс 50.75€»,
+// «€ 50.75», «1€=50.75». Без позначки валюти — долар, як і було. Євровий курс
+// лягає лише на євро: долар рядка лишається за курсом джерела (чи глобальним).
+const FLOW_RATE_NUMBER = '(\\d+(?:[.,]\\d+)?)';
+const FLOW_RATE_CURRENCY = '(\\$|usd|дол(?:ар|арів)?|€|eur|євро|евро)';
+const FLOW_RATE_UAH_SUFFIX = '(?:\\s*(?:грн|uah))?';
+const FLOW_RATE_PATTERNS = [
+  new RegExp(
+    `(?:^|\\s)(?:курс|rate)\\s*${FLOW_RATE_CURRENCY}?\\s*[:=]?\\s*${FLOW_RATE_NUMBER}\\s*${FLOW_RATE_CURRENCY}?${FLOW_RATE_UAH_SUFFIX}\\s*$`,
+    'iu'
+  ),
+  new RegExp(
+    `(?:^|\\s)1?\\s*${FLOW_RATE_CURRENCY}\\s*[:=]?\\s*${FLOW_RATE_NUMBER}${FLOW_RATE_UAH_SUFFIX}\\s*$`,
+    'iu'
+  ),
+  new RegExp(`(?:^|\\s)${FLOW_RATE_NUMBER}${FLOW_RATE_UAH_SUFFIX}\\s*\\/\\s*${FLOW_RATE_CURRENCY}\\s*$`, 'iu'),
+];
+const isEurRateToken = token => /^(?:€|eur|євро|евро)$/iu.test(String(token || '').trim());
+
+const extractCustomRateFromText = value => {
   const rawText = String(value || '').trim();
-  if (!rawText) return { text: '', customUsdRate: '' };
+  if (!rawText) return { text: '', customUsdRate: '', customEurRate: '' };
 
-  const patterns = [
-    /(?:^|\s)(?:курс|rate|usd|дол(?:ар|арів)?|\$)\s*[:=]?\s*(\d+(?:[.,]\d+)?)(?:\s*(?:грн|uah))?\s*$/iu,
-    /(?:^|\s)1?\s*\$\s*=?\s*(\d+(?:[.,]\d+)?)(?:\s*(?:грн|uah))?\s*$/iu,
-    /(?:^|\s)(\d+(?:[.,]\d+)?)\s*(?:грн|uah)?\s*\/\s*\$\s*$/iu,
-  ];
-
-  for (const pattern of patterns) {
+  for (const pattern of FLOW_RATE_PATTERNS) {
     const match = rawText.match(pattern);
-    const formattedRate = formatCustomUsdRate(match?.[1]);
-    if (formattedRate) {
-      return {
-        text: rawText.slice(0, match.index).trim(),
-        customUsdRate: formattedRate,
-      };
-    }
+    if (!match) continue;
+    const groups = match.slice(1).filter(item => item !== undefined);
+    const rateToken = groups.find(item => /^\d/.test(item));
+    const formattedRate = formatCustomUsdRate(rateToken);
+    if (!formattedRate) continue;
+    const isEur = groups.some(isEurRateToken);
+    return {
+      text: rawText.slice(0, match.index).trim(),
+      customUsdRate: isEur ? '' : formattedRate,
+      customEurRate: isEur ? formattedRate : '',
+    };
   }
 
-  return { text: rawText, customUsdRate: '' };
+  return { text: rawText, customUsdRate: '', customEurRate: '' };
+};
+
+// Валюта, в якій рядок показує еквівалент: євро, якщо курс рядка задано в євро.
+export const getFlowRowDisplayCurrency = row => (normalizeCustomUsdRate(row?.customEurRate) ? 'eur' : 'usd');
+const FLOW_CURRENCY_SIGNS = { usd: '$', eur: '€' };
+
+// Збережений курс рядка — четверта частина суми: «50.75» (долар) або «50.75EUR».
+export const parseStoredFlowCustomRate = value => {
+  const raw = String(value || '').trim();
+  const eurMatch = raw.match(/^(\d+(?:[.,]\d+)?)\s*EUR$/i);
+  if (eurMatch) return { customUsdRate: '', customEurRate: eurMatch[1] };
+  return { customUsdRate: raw, customEurRate: '' };
 };
 
 const formatGroupTitle = groupPath => {
@@ -639,12 +668,13 @@ const getFlowRatesForRow = ({
       ? historicalRatesByDate[row.date] || null
       : resolveFlowExchangeRatesForMode(exchangeRates, exchangeRateMode);
   const normalizedCustomUsdRate = normalizeCustomUsdRate(row.customUsdRate) || normalizeCustomUsdRate(customUsdRate);
-  if (!normalizedCustomUsdRate) return baseRates;
+  const normalizedCustomEurRate = normalizeCustomUsdRate(row.customEurRate);
+  if (!normalizedCustomUsdRate && !normalizedCustomEurRate) return baseRates;
 
   return {
     ...(baseRates || {}),
-    usd: normalizedCustomUsdRate,
-    customUsdRate: normalizedCustomUsdRate,
+    ...(normalizedCustomUsdRate ? { usd: normalizedCustomUsdRate, customUsdRate: normalizedCustomUsdRate } : {}),
+    ...(normalizedCustomEurRate ? { eur: normalizedCustomEurRate, customEurRate: normalizedCustomEurRate } : {}),
   };
 };
 
@@ -780,7 +810,7 @@ export const parseFlowEntryLine = (line, fallbackDate = '') => {
   const fallbackYear = Number(String(fallbackDate).split('-')[0]) || new Date().getFullYear();
   const parsedDate = lineMatch[1] ? parseDisplayDate(lineMatch[1], fallbackYear) : fallbackDate;
   const parsedAmount = normalizeFlowCurrencyFormulaAmount(normalizeFlowAmount(amountParts.amountRaw || ''));
-  const { text: descriptionWithoutCustomRate, customUsdRate } = extractCustomUsdRateFromText(
+  const { text: descriptionWithoutCustomRate, customUsdRate, customEurRate } = extractCustomRateFromText(
     amountParts.description || ''
   );
   const parsedDescription = sanitizeEntryKeyChunk(descriptionWithoutCustomRate);
@@ -791,6 +821,7 @@ export const parseFlowEntryLine = (line, fallbackDate = '') => {
     amount: parsedAmount,
     description: parsedDescription,
     customUsdRate,
+    customEurRate,
   };
 };
 
@@ -961,7 +992,7 @@ export const flattenFlowEntriesFromBackend = flowNode => {
         amount: amountUah,
         amountUsd,
         amountEur,
-        customUsdRate,
+        ...parseStoredFlowCustomRate(customUsdRate),
         description: rest.join('_'),
       };
     }
@@ -974,11 +1005,13 @@ export const flattenFlowEntriesFromBackend = flowNode => {
         amountEur: amountEurFromAmount,
         customUsdRate: customUsdRateFromAmount,
       } = parseAmountTriplet(rawAmount);
+      const storedRate = parseStoredFlowCustomRate(customUsdRateFromAmount);
       return {
         amount: amountUah,
         amountUsd: value.amountUsd ?? value.usd ?? amountUsdFromAmount,
         amountEur: value.amountEur ?? value.eur ?? amountEurFromAmount,
-        customUsdRate: value.customUsdRate ?? value.usdRate ?? customUsdRateFromAmount,
+        customUsdRate: value.customUsdRate ?? value.usdRate ?? storedRate.customUsdRate,
+        customEurRate: value.customEurRate ?? value.eurRate ?? storedRate.customEurRate,
         description: value.description ?? value.comment ?? value.note ?? '',
       };
     }
@@ -988,6 +1021,7 @@ export const flattenFlowEntriesFromBackend = flowNode => {
       amountUsd: '',
       amountEur: '',
       customUsdRate: '',
+      customEurRate: '',
       description: '',
     };
   };
@@ -1013,6 +1047,7 @@ export const flattenFlowEntriesFromBackend = flowNode => {
               amountUsd: normalizeFlowAmount(parsed.amountUsd),
               amountEur: normalizeFlowAmount(parsed.amountEur),
               customUsdRate: formatCustomUsdRate(parsed.customUsdRate),
+              customEurRate: formatCustomUsdRate(parsed.customEurRate),
               description: sanitizeEntryKeyChunk(parsed.description),
             };
           })
@@ -1524,6 +1559,7 @@ export const FlowManager = ({ ownerId }) => {
       await Promise.all(
         parsedEntries.map(entry => {
           const rowCustomUsdRate = formatCustomUsdRate(entry.customUsdRate);
+          const rowCustomEurRate = formatCustomUsdRate(entry.customEurRate);
           return saveFlowEntry({
             ownerId,
             ...entry,
@@ -1531,6 +1567,7 @@ export const FlowManager = ({ ownerId }) => {
             exchangeRateMode,
             customUsdRate: rowCustomUsdRate || customUsdRate,
             rowCustomUsdRate,
+            customEurRate: rowCustomEurRate,
           });
         })
       );
@@ -1659,10 +1696,14 @@ export const FlowManager = ({ ownerId }) => {
     const key = getRowKey(row, idx);
     setEditingKey(key);
     const formattedRowRate = formatCustomUsdRate(row.customUsdRate);
+    const formattedRowEurRate = formatCustomUsdRate(row.customEurRate);
     const baseLine = `${formatDisplayDate(row.date)} ${row.amount} ${row.description}`.trim();
-    setEditingDraft({
-      line: formattedRowRate ? `${baseLine} курс ${formattedRowRate}` : baseLine,
-    });
+    const rateSuffix = formattedRowEurRate
+      ? ` курс ${formattedRowEurRate} €`
+      : formattedRowRate
+        ? ` курс ${formattedRowRate}`
+        : '';
+    setEditingDraft({ line: `${baseLine}${rateSuffix}` });
   };
 
   const cancelEdit = () => {
@@ -1689,6 +1730,7 @@ export const FlowManager = ({ ownerId }) => {
     }
 
     const rowCustomUsdRate = formatCustomUsdRate(parsedLine.customUsdRate);
+    const rowCustomEurRate = formatCustomUsdRate(parsedLine.customEurRate);
     const effectiveCustomUsdRate = rowCustomUsdRate || customUsdRate;
 
     try {
@@ -1706,6 +1748,7 @@ export const FlowManager = ({ ownerId }) => {
           amount: nextAmount,
           description: nextDescription,
           customUsdRate: rowCustomUsdRate,
+          customEurRate: rowCustomEurRate,
         },
         exchangeRates,
         exchangeRateMode,
@@ -1752,6 +1795,7 @@ export const FlowManager = ({ ownerId }) => {
           amount: row.amount,
           description: row.description,
           customUsdRate: row.customUsdRate,
+          customEurRate: row.customEurRate,
         },
         exchangeRates,
         exchangeRateMode,
@@ -2088,15 +2132,18 @@ export const FlowManager = ({ ownerId }) => {
                           {formatDisplayDate(row.date)} {resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate })} {row.description}
                           {(() => {
                             const displayAmount = resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate });
-                            const amountUsd = calculateFlowRowCurrencyAmount({
+                            const displayCurrency = getFlowRowDisplayCurrency(row);
+                            const amountInCurrency = calculateFlowRowCurrencyAmount({
                               row: { ...row, amount: displayAmount },
-                              currency: 'usd',
+                              currency: displayCurrency,
                               exchangeRateMode,
                               exchangeRates,
                               historicalRatesByDate,
                               customUsdRate,
                             });
-                            return amountUsd !== 0 ? ` / ${formatCurrencyValue(amountUsd)} $` : '';
+                            return amountInCurrency !== 0
+                              ? ` / ${formatCurrencyValue(amountInCurrency)} ${FLOW_CURRENCY_SIGNS[displayCurrency]}`
+                              : '';
                           })()}
                         </EventText>
                         <ChangeCategoryBtn

@@ -2150,13 +2150,16 @@ const normalizeFlowCustomUsdRate = value => {
   return isUsableFlowRate(parsed) ? parsed : null;
 };
 
-const applyFlowCustomUsdRate = (rates, customUsdRate) => {
+// Курс рядка задають у доларах або в євро («курс 50.75 EUR»); кожен перебиває
+// лише свою валюту, інша лишається за курсом джерела.
+const applyFlowCustomUsdRate = (rates, customUsdRate, customEurRate) => {
   const normalizedCustomUsdRate = normalizeFlowCustomUsdRate(customUsdRate);
-  if (!normalizedCustomUsdRate) return rates || null;
+  const normalizedCustomEurRate = normalizeFlowCustomUsdRate(customEurRate);
+  if (!normalizedCustomUsdRate && !normalizedCustomEurRate) return rates || null;
   return {
     ...(rates || {}),
-    usd: normalizedCustomUsdRate,
-    customUsdRate: normalizedCustomUsdRate,
+    ...(normalizedCustomUsdRate ? { usd: normalizedCustomUsdRate, customUsdRate: normalizedCustomUsdRate } : {}),
+    ...(normalizedCustomEurRate ? { eur: normalizedCustomEurRate, customEurRate: normalizedCustomEurRate } : {}),
   };
 };
 
@@ -2212,12 +2215,13 @@ export const fetchFlowExchangeRatesForMode = async ({
   exchangeRateMode = 'current',
   exchangeRates,
   customUsdRate,
+  customEurRate,
 } = {}) => {
   const fallbackRates = resolveFlowExchangeRatesForMode(exchangeRates, exchangeRateMode) || exchangeRates || null;
   if (exchangeRateMode === 'nbu' && isValidFlowDateYmd(date)) {
-    return applyFlowCustomUsdRate(await fetchNbuUahExchangeRatesByDate(date), customUsdRate);
+    return applyFlowCustomUsdRate(await fetchNbuUahExchangeRatesByDate(date), customUsdRate, customEurRate);
   }
-  return applyFlowCustomUsdRate(fallbackRates, customUsdRate);
+  return applyFlowCustomUsdRate(fallbackRates, customUsdRate, customEurRate);
 };
 
 const formatFlowStoredCurrencyAmount = value => {
@@ -2237,6 +2241,7 @@ export const saveFlowEntry = async ({
   exchangeRateMode = 'current',
   customUsdRate,
   rowCustomUsdRate,
+  customEurRate,
 }) => {
   if (!ownerId || !groupPath || !date || !amount) return;
   const datePath = buildFlowDatePath({ groupPath, date });
@@ -2245,7 +2250,8 @@ export const saveFlowEntry = async ({
   const amountUahNumber = Number(normalizedAmountUah);
   let effectiveRates = applyFlowCustomUsdRate(
     resolveFlowExchangeRatesForMode(exchangeRates, exchangeRateMode) || exchangeRates,
-    customUsdRate
+    customUsdRate,
+    customEurRate
   );
   if (Number.isFinite(amountUahNumber)) {
     try {
@@ -2255,6 +2261,7 @@ export const saveFlowEntry = async ({
           exchangeRateMode,
           exchangeRates,
           customUsdRate,
+          customEurRate,
         })) || effectiveRates;
     } catch (error) {
       console.error(`Unable to load FX rates for ${date}`, error);
@@ -2269,15 +2276,21 @@ export const saveFlowEntry = async ({
       ? formatFlowStoredCurrencyAmount(amountUahNumber / effectiveRates.eur)
       : '';
   const normalizedRowCustomUsdRate = normalizeFlowCustomUsdRate(rowCustomUsdRate);
+  const normalizedRowCustomEurRate = normalizeFlowCustomUsdRate(customEurRate);
+  // Євровий курс несе позначку в самому значенні («50.75EUR»), тож позиції
+  // частин суми ті самі, що й у старих записах.
   const normalizedCustomUsdRateAmount = normalizedRowCustomUsdRate
     ? formatFlowStoredCurrencyAmount(normalizedRowCustomUsdRate)
-    : '';
+    : normalizedRowCustomEurRate
+      ? `${formatFlowStoredCurrencyAmount(normalizedRowCustomEurRate)}EUR`
+      : '';
   const value = isFlowFormulaAmount(normalizedAmountUah)
     ? {
         amount: normalizedAmountUah,
         amountUsd,
         amountEur,
-        customUsdRate: normalizedCustomUsdRateAmount,
+        customUsdRate: normalizedRowCustomUsdRate ? normalizedCustomUsdRateAmount : '',
+        customEurRate: normalizedRowCustomEurRate ? formatFlowStoredCurrencyAmount(normalizedRowCustomEurRate) : '',
         description: sanitizeFlowValuePart(description),
       }
     : buildFlowEntryValue({
@@ -2334,6 +2347,7 @@ export const updateFlowEntry = async ({
     exchangeRateMode,
     customUsdRate,
     rowCustomUsdRate: rowCustomUsdRate ?? nextEntry.customUsdRate,
+    customEurRate: nextEntry.customEurRate,
   });
 };
 
