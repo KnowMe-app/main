@@ -626,13 +626,6 @@ export const RowContacts = styled.div`
   margin-top: 9px;
   padding-top: 7px;
   border-top: 1px solid var(--matching-card-border);
-
-  /* Картка організації ділить розділи відступом, а не рискою на всю ширину. */
-  ${({ $plain }) => $plain && css`
-    margin-top: 14px;
-    padding-top: 0;
-    border-top: 0;
-  `}
 `;
 
 export const RowContactsNote = styled.div`
@@ -761,19 +754,6 @@ export const ContactIconLink = styled.a`
     outline: 2px solid color-mix(in srgb, var(--matching-accent, var(--km-accent, #E8791A)) 60%, transparent);
     outline-offset: 1px;
   }
-
-  /* Головна дія картки організації — словом, а не значком: «Подзвонити»
-   * агенції — це те, заради чого картку й відкривали. */
-  ${({ $wide }) => $wide && css`
-    width: auto;
-    flex: 0 0 auto;
-    height: 36px;
-    padding: 0 14px;
-    gap: 7px;
-    border-radius: 10px;
-    font-size: 13.5px;
-    font-weight: 700;
-  `}
 
   /* Дзвінок лишається головною дією блока, але має той самий компактний
    * розмір, що й решта контактів. */

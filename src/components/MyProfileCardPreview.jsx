@@ -23,7 +23,7 @@ import { uiText } from '../utils/uiTranslations';
 const COLLAPSED_KEY = 'myProfileCardPreviewCollapsed';
 
 const Wrap = styled.section`
-  margin: 0 20px 16px;
+  margin: 0 var(--page-gutter, 20px) 16px;
 `;
 
 const Head = styled.button`

@@ -1,7 +1,7 @@
 import React from 'react';
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { ProgramCard, ProgramsSummary } from './ProgramsView';
+import { ProgramCard, ProgramsSummary, describeProgramOffer } from './ProgramsView';
 import { CardRoleBlock, isCounterpartyCard } from './CardRoleBlock';
 import {
   loadOwnPrograms,
@@ -66,7 +66,11 @@ describe('програми в рядку стрічки', () => {
     const firstTry = screen.getByRole('checkbox', { name: /Вагітність з першої спроби/ });
     expect(firstTry).not.toBeChecked();
     fireEvent.click(firstTry);
-    expect(screen.getByTestId('program-bonus-total')).toHaveTextContent('3 000 $');
+    // Доплата йде в головну суму згорнутої частини, а не в окремий рядок під доплатами.
+    const row = screen.getByTestId('program-list-item');
+    expect(row).toHaveTextContent('3 000 $');
+    expect(row).toHaveTextContent('з обраними доплатами, гарантовано 2 500 $');
+    expect(screen.queryByTestId('program-bonus-total')).not.toBeInTheDocument();
   });
 
   it('заголовок — пропозиція, а не роль, і застарілої назви `title` не показує', () => {
@@ -131,8 +135,12 @@ describe('картка програми — калькулятор заробі�
   };
 
   it('разом — усі гарантовані виплати, зі щомісячними × місяці', () => {
-    render(<ProgramCard program={surrogate} rates={rates} language="uk" />);
-    expect(screen.getByTestId('program-total')).toHaveTextContent('28 300 $');
+    render(<ProgramsSummary card={{ programs: { p2: surrogate } }} rates={rates} displayCurrency="USD" language="uk" />);
+    const row = screen.getByTestId('program-list-item');
+    expect(row).toHaveTextContent('28 300 $');
+    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    // Деталі «разом» не повторюють: воно вже стоїть угорі.
+    expect(within(row).getByTestId('program-total')).not.toHaveTextContent('28 300 $');
     expect(screen.getByText(/500 \$ × 9 міс/)).toBeInTheDocument();
   });
 
@@ -143,12 +151,14 @@ describe('картка програми — калькулятор заробі�
     expect(screen.getByText(/Разом не рахуємо/)).toBeInTheDocument();
   });
 
-  it('відмічена можлива доплата додається до «разом»', () => {
-    render(<ProgramCard program={surrogate} rates={rates} language="uk" />);
+  it('відмічена можлива доплата додається до «разом» угорі, а не другим рядком', () => {
+    render(<ProgramsSummary card={{ programs: { p2: surrogate } }} rates={rates} displayCurrency="USD" language="uk" />);
+    const row = screen.getByTestId('program-list-item');
+    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
     fireEvent.click(screen.getByRole('checkbox', { name: /Кесарів розтин/ }));
-    const total = screen.getByTestId('program-total');
-    expect(total).toHaveTextContent('29 800 $');
-    expect(total).toHaveTextContent('гарантовано 28 300 $');
+    expect(row).toHaveTextContent('29 800 $');
+    expect(row).toHaveTextContent('з обраними доплатами, гарантовано 28 300 $');
+    expect(row).not.toHaveTextContent('Разом з обраними доплатами');
     expect(screen.getByRole('checkbox', { name: /Кесарів розтин/ })).toHaveAttribute('aria-checked', 'true');
   });
 
@@ -208,7 +218,7 @@ describe('програми з оголошень агенцій', () => {
     };
     render(<ProgramCard program={program} rates={rates} language="uk" />);
     // 15 000 + 900 × 9 + 300 + 500 = 23 900; 400 на одяг усередині щомісячних.
-    expect(screen.getByTestId('program-total')).toHaveTextContent('23 900 $');
+    expect(describeProgramOffer(program).money.amount).toBe(23900);
     expect(screen.getByText(/у тому числі 400 \$ — одяг/)).toBeInTheDocument();
     expect(screen.getByText('на 6 тижні · після УЗД')).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: /Кесарів розтин/ })).not.toBeChecked();

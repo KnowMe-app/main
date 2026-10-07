@@ -82,6 +82,11 @@ const Page = styled.div`
   --border: var(--km-border);
   --radius: var(--km-radius);
   --shadow: var(--km-shadow);
+  /* Бічний відступ сторінки — той самий, що в стрічці пошуку: на телефоні
+     20 px з кожного боку забирали ширину в кожного блока анкети, і поруч зі
+     стрічкою (10 px) «Мій профіль» виглядав вужчим екраном. */
+  --page-gutter: 20px;
+  @media (max-width: 600px) { --page-gutter: 10px; }
   font-family: var(--km-font);
   background: var(--bg);
   color: var(--text);
@@ -90,7 +95,7 @@ const Page = styled.div`
 const Topbar = styled.div`
   background: var(--card);
   border-bottom: 1px solid var(--border);
-  padding: 14px 20px;
+  padding: 14px var(--page-gutter);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -138,8 +143,8 @@ const CONTENT_SECTION_TOP_GAP = 18;
 const SECTION_SCROLL_GAP = CONTENT_SECTION_TOP_GAP;
 const SCROLL_ACTIVE_SECTION_GAP = 16;
 const PROGRAMMATIC_SCROLL_FALLBACK_MS = 900;
-const ProgressWrap = styled.div`padding: 16px 20px 0;`;
-const Tabs = styled.div`padding:14px 20px;display:flex;gap:8px;overflow:auto;`;
+const ProgressWrap = styled.div`padding: 16px var(--page-gutter) 0;`;
+const Tabs = styled.div`padding:14px var(--page-gutter);display:flex;gap:8px;overflow:auto;`;
 const Tab = styled.button`
   flex-shrink: 0; padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 500;
   border: 1.5px solid ${({ $complete, $active }) => ($complete ? '#2E9B55' : $active ? 'var(--accent)' : 'var(--border)')};
@@ -147,7 +152,7 @@ const Tab = styled.button`
   color: ${({ $active, $complete }) => ($active ? '#fff' : $complete ? '#2E9B55' : 'var(--muted)')};
 `;
 const Card = styled.div`
-  margin: 0 20px 16px;
+  margin: 0 var(--page-gutter) 16px;
   background: var(--card);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -221,7 +226,7 @@ const Chip = styled.button`
   `}
 `;
 const SubmitWrap = styled.div`
-  margin: 8px 20px 24px;
+  margin: 8px var(--page-gutter) 24px;
   padding: 18px;
   background: var(--card);
   border: 1px solid var(--border);
@@ -340,7 +345,7 @@ const UnpublishBtn = styled.button`
 // Роль — перше рішення в анкеті: від неї залежить, які поля взагалі показувати.
 // Тому вона стоїть над формою окремим рядом, а не полем усередині секції.
 const RoleCard = styled.div`
-  margin: ${CONTENT_SECTION_TOP_GAP}px 20px 16px;
+  margin: ${CONTENT_SECTION_TOP_GAP}px var(--page-gutter) 16px;
   padding: 14px 18px;
   background: var(--card);
   border-radius: var(--radius);
@@ -382,7 +387,7 @@ const AnketaDivider = styled.div`
   align-items: baseline;
   flex-wrap: wrap;
   gap: 4px 8px;
-  margin: 28px 20px 12px;
+  margin: 28px var(--page-gutter) 12px;
   padding-top: 16px;
   border-top: 2px solid var(--border);
 
@@ -401,7 +406,7 @@ const PhotoSection = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin: ${({ $isFirstContent }) => ($isFirstContent ? `${CONTENT_SECTION_TOP_GAP}px` : '0')} 20px 20px;
+  margin: ${({ $isFirstContent }) => ($isFirstContent ? `${CONTENT_SECTION_TOP_GAP}px` : '0')} var(--page-gutter) 20px;
   padding: 18px;
   background: var(--card);
   border-radius: var(--radius);

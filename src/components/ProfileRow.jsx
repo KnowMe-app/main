@@ -282,7 +282,7 @@ export const renderFacts = (user, priorityKeys = [], language) => {
  * дотиком, і саме дотик рахується. Без обробника (шапка форми доповнення, де
  * номер і так стоїть у полі нижче) підказка називає й значення.
  */
-export const ContactLinks = ({ entries, language, onContactAction, primaryLabel = false }) => {
+export const ContactLinks = ({ entries, language, onContactAction }) => {
   const tracked = typeof onContactAction === 'function';
   const phones = entries.filter(entry => entry.key === 'phone');
   const others = entries.filter(entry => entry.key !== 'phone');
@@ -307,13 +307,11 @@ export const ContactLinks = ({ entries, language, onContactAction, primaryLabel 
             <S.ContactIconLink
               href={entry.href}
               $primary
-              $wide={primaryLabel && phones[0] === entry}
               title={callLabel}
               aria-label={callLabel}
               onClick={act('phone')}
             >
               <PhoneHandsetIcon />
-              {primaryLabel && phones[0] === entry ? <span>{uiText('Подзвонити', language)}</span> : null}
             </S.ContactIconLink>
             {phoneQuickLinks.map(({ key, Icon, label, build }) => {
               const quickLabel = tracked
@@ -337,13 +335,11 @@ export const ContactLinks = ({ entries, language, onContactAction, primaryLabel 
           </React.Fragment>
         );
       })}
-      {others.map((entry, index) => {
+      {others.map(entry => {
         const Icon = getContactIcon(entry.key);
         const label = tracked
           ? getContactLabel(entry.key, language)
           : `${getContactLabel(entry.key, language)}: ${entry.value}`;
-        // Без телефону головною стає перша решта: «Написати: Telegram».
-        const wide = primaryLabel && !phones.length && index === 0;
         return (
           <S.ContactIconLink
             key={`${entry.key}-${entry.index}-${entry.value}`}
@@ -353,12 +349,9 @@ export const ContactLinks = ({ entries, language, onContactAction, primaryLabel 
             title={label}
             aria-label={label}
             $channel={entry.key}
-            $primary={wide}
-            $wide={wide}
             onClick={act(entry.key)}
           >
             <Icon />
-            {wide ? <span>{uiText('Написати: {channel}', language, { channel: getContactLabel(entry.key, language) })}</span> : null}
           </S.ContactIconLink>
         );
       })}
@@ -1733,11 +1726,10 @@ const ProfileRow = ({
       )}
 
       {contactEntries.length > 0 && (
-        <S.RowContacts $plain={organisationLayout} onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+        <S.RowContacts onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
           <ContactLinks
             entries={contactEntries}
             language={language}
-            primaryLabel={organisationLayout}
             onContactAction={onContactAction ? channel => onContactAction(user, channel) : undefined}
           />
         </S.RowContacts>

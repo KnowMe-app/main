@@ -7,10 +7,12 @@ const styles = fs.readFileSync(path.join(__dirname, 'MatchingHiddenList.styled.j
 describe('зона контактів у рядку стрічки', () => {
   it('показує контакти без зайвого заголовка й тексту кнопки дзвінка', () => {
     expect(rowSource).not.toContain('S.RowContactsTitle');
-    // Підпис «Подзвонити» — лише головній дії картки організації
-    // (`primaryLabel`): у рядку людини дзвінок лишається значком.
-    expect(rowSource).not.toContain("$primary\n              title={callLabel}\n              aria-label={callLabel}\n              onClick={act('phone')}\n            >\n              <PhoneHandsetIcon />\n              <span>");
-    expect(rowSource).toContain("{primaryLabel && phones[0] === entry ? <span>{uiText('Подзвонити', language)}</span> : null}");
+    // Дзвінок — значок скрізь, і в картці організації теж: підпис
+    // «Подзвонити» робив її ряд контактів іншим, ніж у донорки.
+    const links = rowSource.slice(rowSource.indexOf('export const ContactLinks'), rowSource.indexOf('const COMMENT_SAVE_DEBOUNCE_MS'));
+    expect(links).not.toContain('<span>');
+    expect(links).not.toContain('primaryLabel');
+    expect(rowSource).not.toContain('primaryLabel={organisationLayout}');
   });
 
   it('повертає компактні мішені 28 px, зберігаючи кольори месенджерів', () => {
