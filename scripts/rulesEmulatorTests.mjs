@@ -330,6 +330,27 @@ await it('приймає місце виплати й вибрану голов�
   await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
 });
 
+// Гарантована доплата чи можлива — вибір агенції на кожній доплаті. Головна
+// сума гарантована за визначенням, тож позначки на ній не буває.
+await it('приймає позначку «гарантована» на доплатах, але не на головній сумі', async () => {
+  const base = `multiData/programs/${PROFILE_OWNER}`;
+  const withProgram = program => ({ updatedAt: 1759200000000, items: { p6: { id: 'p6', type: 'sm', ...program } } });
+  await assertSucceeds(set(ref(db(PROFILE_OWNER), base), withProgram({
+    payments: {
+      final: { amount: 23000, currency: 'USD' },
+      monthly: { amount: 600, currency: 'USD', months: 8, guaranteed: true },
+      transfer: { amount: 300, currency: 'USD', guaranteed: false },
+      twins: { amount: 3000, currency: 'USD', guaranteed: true },
+    },
+    otherPayments: [{ label: 'Підтвердження вагітності', amount: 500, currency: 'USD', guaranteed: true }],
+  })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payments: { final: { amount: 1, currency: 'USD', guaranteed: true } } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payments: { twins: { amount: 1, currency: 'USD', guaranteed: 'yes' } } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ otherPayments: [{ label: 'x', amount: 1, currency: 'USD', guaranteed: 1 }] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ bonuses: [{ label: 'x', amount: 1, currency: 'USD', guaranteed: true }] })));
+  await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
+});
+
 // Назви доплат, які вже вживають агенції, — підказки в редакторі програм.
 // Дописати нову може кожен, переписати чужу — ні.
 await it('словник назв доплат: новий ключ пише кожен, наявний не переписує ніхто, крім адміна', async () => {

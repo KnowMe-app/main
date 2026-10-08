@@ -1,6 +1,6 @@
 import {
   DEFAULT_MONTHLY_MONTHS,
-  defaultProgramBonusKeys,
+  listOptionalBonusKeys,
   evaluateProgram,
   isProgramPresentable,
   listProgramDifferences,
@@ -110,12 +110,16 @@ describe('модель програми', () => {
     otherPayments: [{ label: 'Доплата за повторну програму', amount: 500, currency: 'USD' }],
   };
 
-  it('сума програми — головна плюс усі доплати, щомісячна — × місяці', () => {
+  it('гарантовано — головна плюс гарантовані доплати, щомісячна — × місяці', () => {
     const breakdown = programBreakdown(normalizeProgram(screenshotProgram, 'p2'));
     const monthly = breakdown.bonuses.find(line => line.key === 'monthly');
-    expect(monthly).toMatchObject({ months: DEFAULT_MONTHLY_MONTHS, monthsEstimated: true, subtotal: { amount: 4500, currency: 'USD' } });
-    // Дев'ять місяців — наша оцінка, тож сума «≈».
-    expect(breakdown.total).toMatchObject({ amount: 32800, currency: 'USD', approximate: true });
+    expect(monthly).toMatchObject({ months: DEFAULT_MONTHLY_MONTHS, monthsEstimated: true, guaranteed: true, subtotal: { amount: 4500, currency: 'USD' } });
+    // 23 000 + 4 500 + 200 + 100; дев'ять місяців — наша оцінка, тож сума «≈».
+    expect(breakdown.guaranteed).toMatchObject({ amount: 27800, currency: 'USD', approximate: true });
+    // Без вибору кандидатки можливі доплати в суму не йдуть.
+    expect(breakdown.total.amount).toBe(27800);
+    // КС 1 500 + двійня 3 000 + дописана 500.
+    expect(breakdown.optional.amount).toBe(5000);
     expect(breakdown.max.amount).toBe(32800);
   });
 
@@ -125,22 +129,43 @@ describe('модель програми', () => {
       payments: { ...screenshotProgram.payments, monthly: { amount: 500, currency: 'USD', months: '10' } },
     }, 'p2');
     expect(program.payments.monthly).toEqual({ amount: 500, currency: 'USD', months: 10 });
-    expect(programBreakdown(program).total).toMatchObject({ amount: 33300, approximate: false });
+    expect(programBreakdown(program).total).toMatchObject({ amount: 28300, approximate: false });
     expect(normalizeProgram({ ...screenshotProgram, payments: { monthly: { amount: 500, currency: 'USD', months: 99 } } }, 'x').payments.monthly.months).toBeUndefined();
   });
 
-  it('зняті доплати з суми виходять, відмічені — лишаються', () => {
+  it('відмічені можливі доплати додаються до гарантованого, гарантовані не знімаються', () => {
     const program = normalizeProgram(screenshotProgram, 'p2');
-    expect(programBreakdown(program, { selectedBonusKeys: ['cSection'] }).total.amount).toBe(24500);
-    expect(programBreakdown(program, { selectedBonusKeys: ['cSection', 'twins'] }).total.amount).toBe(27500);
-    expect(programBreakdown(program, { selectedBonusKeys: [] }).total.amount).toBe(23000);
+    expect(programBreakdown(program, { selectedBonusKeys: ['cSection'] }).total.amount).toBe(29300);
+    expect(programBreakdown(program, { selectedBonusKeys: ['cSection', 'twins'] }).total.amount).toBe(32300);
+    expect(programBreakdown(program, { selectedBonusKeys: [] }).total.amount).toBe(27800);
+    // Ключ гарантованої у виборі нічого не міняє: її й так рахує кожна.
+    expect(programBreakdown(program, { selectedBonusKeys: ['monthly'] }).total.amount).toBe(27800);
+  });
+
+  it('агенція сама каже, гарантована доплата чи можлива; старі записи — за ключем', () => {
+    const legacy = normalizeProgram(screenshotProgram, 'p2');
+    expect(listOptionalBonusKeys(legacy)).toEqual(['cSection', 'twins', 'other-0']);
+    const chosen = normalizeProgram({
+      ...screenshotProgram,
+      payments: { ...screenshotProgram.payments, transfer: { amount: 200, currency: 'USD', guaranteed: false }, twins: { amount: 3000, currency: 'USD', guaranteed: true } },
+      otherPayments: [{ label: 'Доплата за повторну програму', amount: 500, currency: 'USD', guaranteed: true }],
+    }, 'p2');
+    // Вибір агенції переживає нормалізацію, і повторна не міняє нічого.
+    expect(chosen.payments.transfer.guaranteed).toBe(false);
+    expect(chosen.otherPayments[0].guaranteed).toBe(true);
+    expect(normalizeProgram(chosen)).toEqual(chosen);
+    expect(listOptionalBonusKeys(chosen)).toEqual(['transfer', 'cSection']);
+    // 23 000 + 4 500 + 100 + 3 000 + 500
+    expect(programBreakdown(chosen).guaranteed.amount).toBe(31100);
+    // На головній сумі позначки не буває: вона гарантована за визначенням.
+    expect(normalizeProgram({ type: 'sm', payments: { final: { amount: 1, currency: 'USD', guaranteed: false } } }).payments.final).toEqual({ amount: 1, currency: 'USD' });
   });
 
   it('виплата в іншій валюті йде в суму за курсом, а без курсу — окремою частиною', () => {
     const program = normalizeProgram({
       ...donorProgram,
       payments: { final: { amount: 1600, currency: 'USD' } },
-      otherPayments: [{ label: 'Компенсація дороги', amount: 4100, currency: 'UAH' }],
+      otherPayments: [{ label: 'Компенсація дороги', amount: 4100, currency: 'UAH', guaranteed: true }],
     }, 'p1');
     const withRates = programBreakdown(program, { rates });
     expect(withRates.guaranteed).toMatchObject({ amount: 1700, currency: 'USD', approximate: true });
@@ -151,11 +176,12 @@ describe('модель програми', () => {
   it('стара програма з самою загальною сумою показує її, а зі складовими — рахує сама', () => {
     expect(programBreakdown(normalizeProgram({ type: 'sm', payments: { total: { amount: 21000, currency: 'USD' } } }, 'x')).guaranteed.amount).toBe(21000);
     const both = normalizeProgram({ ...screenshotProgram, payments: { ...screenshotProgram.payments, total: { amount: 21000, currency: 'USD' } } }, 'p2');
-    expect(programBreakdown(both).guaranteed.amount).toBe(32800);
+    expect(programBreakdown(both).guaranteed.amount).toBe(27800);
+    expect(programBreakdown(both).max.amount).toBe(32800);
   });
 
   it('фільтр і сортування рахують ту саму гарантовану суму', () => {
-    expect(programGuaranteedUsd(normalizeProgram(screenshotProgram, 'p2'), rates)).toBe(32800);
+    expect(programGuaranteedUsd(normalizeProgram(screenshotProgram, 'p2'), rates)).toBe(27800);
     expect(listPaymentBuckets({ role: 'ag', programs: { p2: screenshotProgram } }, rates, ['sm'])).toEqual(['sm_26k']);
   });
 
@@ -163,18 +189,21 @@ describe('модель програми', () => {
     const mixed = normalizeProgram({
       ...donorProgram,
       payments: { final: { amount: 20000, currency: 'USD' } },
-      otherPayments: [{ label: 'Компенсація', amount: 5000, currency: 'EUR' }],
+      otherPayments: [{ label: 'Компенсація', amount: 5000, currency: 'EUR', guaranteed: true }],
     }, 'mixed');
     expect(programGuaranteedUsd(mixed, { usd: null, eur: null })).toBeNull();
     expect(programGuaranteedUsd(mixed, rates)).toBeCloseTo(20000 + (5000 * 48 / 41));
   });
 
-  it('типово відмічено всі доплати — читачка знімає зайве сама', () => {
+  it('типово не відмічено жодної можливої доплати — сума вгорі гарантована', () => {
     const program = normalizeProgram({
       ...screenshotProgram,
       payments: { ...screenshotProgram.payments, experience: { amount: 1500, currency: 'USD' } },
     }, 'p2');
-    expect(defaultProgramBonusKeys(program)).toEqual(['monthly', 'transfer', 'contract', 'cSection', 'twins', 'experience', 'other-0']);
+    const breakdown = programBreakdown(program);
+    expect(breakdown.bonuses.filter(item => item.selected).map(item => item.key)).toEqual(['monthly', 'transfer', 'contract']);
+    expect(breakdown.hasOptional).toBe(true);
+    expect(breakdown.hasSelectedOptional).toBe(false);
   });
 
   it('одяг пропонується й показується лише програмі СМ', () => {
@@ -405,8 +434,9 @@ describe('програми з оголошень: що зберігається'
 
   it('вкладена сума не додається, а доплати рахуються повністю', () => {
     const breakdown = programBreakdown(normalizeProgram(surrogacy));
-    // 15 000 + 900 × 9 + 300 + 500 + 1 000
-    expect(breakdown.total.amount).toBe(24900);
+    // Гарантовано 15 000 + 900 × 9 + 300; з можливими 500 і 1 000 — 24 900.
+    expect(breakdown.guaranteed.amount).toBe(23400);
+    expect(breakdown.max.amount).toBe(24900);
     expect(breakdown.reliable).toBe(true);
   });
 
@@ -462,6 +492,28 @@ describe('запис програм, поки правила не викочен
   });
 });
 
+describe('позначка «гарантована», поки правила не викочені', () => {
+  // eslint-disable-next-line global-require
+  const { stripNewestProgramFields } = require('../../components/programs/programsRemote');
+
+  it('першим відступом знімається позначка, а суми й решта полів лишаються', () => {
+    const items = {
+      p1: {
+        id: 'p1', type: 'sm', payKind: 'final',
+        payments: { final: { amount: 1, currency: 'USD' }, twins: { amount: 2, currency: 'USD', guaranteed: true, when: 'після пологів' } },
+        otherPayments: [{ label: 'a', amount: 3, currency: 'USD', guaranteed: false }],
+      },
+    };
+    expect(stripNewestProgramFields(items)).toEqual({
+      p1: {
+        id: 'p1', type: 'sm', payKind: 'final',
+        payments: { final: { amount: 1, currency: 'USD' }, twins: { amount: 2, currency: 'USD', when: 'після пологів' } },
+        otherPayments: [{ label: 'a', amount: 3, currency: 'USD' }],
+      },
+    });
+  });
+});
+
 describe('доплати рахуються просто', () => {
   const usd = amount => ({ amount, currency: 'USD' });
 
@@ -474,9 +526,11 @@ describe('доплати рахуються просто', () => {
     }, 't1');
     const breakdown = programBreakdown(program);
     expect(breakdown.bonuses.map(item => item.label)).toEqual(['Повторна донація', 'Після обстеження', 'Повторна пункція']);
-    expect(breakdown.total.amount).toBe(3500);
+    // Донорські доплати — можливі: гарантована лише винагорода за цикл.
+    expect(breakdown.total.amount).toBe(1500);
+    expect(breakdown.max.amount).toBe(3500);
     expect(programBreakdown(program, { selectedBonusKeys: ['repeat'] }).total.amount).toBe(2700);
-    expect(programGuaranteedUsd(program, rates)).toBe(3500);
+    expect(programGuaranteedUsd(program, rates)).toBe(1500);
   });
 
   it('СМ: 23 000 + 600 × 8 + 300 + двійня 3 000', () => {
@@ -490,10 +544,11 @@ describe('доплати рахуються просто', () => {
       },
     }, 't4');
     const breakdown = programBreakdown(program);
-    expect(breakdown.total.amount).toBe(31100);
+    expect(breakdown.total.amount).toBe(28100);
+    expect(breakdown.max.amount).toBe(31100);
     expect(breakdown.reliable).toBe(true);
     expect(breakdown.bonuses.find(line => line.key === 'monthly').subtotal.amount).toBe(4800);
-    expect(programBreakdown(program, { selectedBonusKeys: ['monthly', 'transfer'] }).total.amount).toBe(28100);
+    expect(programBreakdown(program, { selectedBonusKeys: ['twins'] }).total.amount).toBe(31100);
   });
 
   it('вибір головної суми й місце виплати більше не зберігаються', () => {

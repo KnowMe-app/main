@@ -54,7 +54,7 @@ describe('програми в рядку стрічки', () => {
     expect(screen.getAllByTestId('program-card')).toHaveLength(2);
   });
 
-  it('прихованої програми не видно, а кожна доплата — перемикач, що міняє суму в заголовку', () => {
+  it('прихованої програми не видно, а можлива доплата стоїть незнятою й додається до суми', () => {
     const withBonus = {
       p1: { ...programs.p1, bonuses: [{ label: 'Вагітність з першої спроби', amount: 500, currency: 'USD' }] },
       p2: { ...programs.p2, hidden: true },
@@ -62,23 +62,35 @@ describe('програми в рядку стрічки', () => {
     render(<ProgramsSummary card={{ programs: withBonus }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     expect(screen.getByTestId('programs-summary')).toHaveTextContent('Вам підходить 1 з 1 програми');
     const row = screen.getByTestId('program-list-item');
-    // Сума одна — головна плюс усі доплати, і стоїть вона в заголовку.
-    expect(within(row).getByTestId('program-title')).toHaveTextContent('Донорство ооцитів — 3 000 $');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
-    expect(screen.getByText('Доплати')).toBeInTheDocument();
+    // Угорі — гарантоване, а можлива доплата — обіцянкою під ним.
+    expect(within(row).getByTestId('program-pay')).toHaveTextContent('Гарантовано від 2 500 $');
+    expect(within(row).getByTestId('program-pay')).toHaveTextContent('+ до 500 $ можливих доплат');
+    // Дотик до обіцянки відкриває самі перемикачі.
+    fireEvent.click(within(row).getByRole('button', { name: /можливих доплат/ }));
+    expect(within(row).getByText('Можливі доплати')).toBeInTheDocument();
     const firstTry = screen.getByRole('checkbox', { name: /Вагітність з першої спроби/ });
-    expect(firstTry).toHaveAttribute('aria-checked', 'true');
+    expect(firstTry).toHaveAttribute('aria-checked', 'false');
     fireEvent.click(firstTry);
-    expect(within(row).getByTestId('program-title')).toHaveTextContent('Донорство ооцитів — 2 500 $');
+    expect(firstTry).toHaveAttribute('aria-checked', 'true');
+    expect(within(row).getByTestId('program-pay')).toHaveTextContent('З вибраними доплатами 3 000 $');
+    expect(within(row).getByTestId('program-pay')).toHaveTextContent('з них гарантовано 2 500 $');
     expect(row).not.toHaveTextContent('Сценарій');
   });
 
-  it('заголовок — пропозиція й сума через тире, без власної назви й `title`', () => {
+  it('заголовок каже, кому платять, а сума стоїть окремо — без власної назви й `title`', () => {
     render(<ProgramsSummary card={{ programs: { p1: { ...programs.p1, name: 'Донорство в Грузії' } } }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" defaultOpenId="p1" />);
-    expect(screen.getByTestId('program-title')).toHaveTextContent('Донорство ооцитів — 2 500 $');
+    expect(screen.getByTestId('program-title')).toHaveTextContent(/^.?Винагорода донорці яйцеклітин$/);
+    // Без можливих доплат «від» нічого не означає.
+    expect(screen.getByTestId('program-pay')).toHaveTextContent(/^Гарантовано 2 500 \$$/);
     expect(screen.queryByText('Київ')).not.toBeInTheDocument();
     expect(screen.queryByText('Донорство в Грузії')).not.toBeInTheDocument();
-    expect(screen.getByTestId('program-list-item')).not.toHaveTextContent('Винагорода донорці');
+    expect(screen.getByTestId('program-list-item')).not.toHaveTextContent('Донорство ооцитів');
+  });
+
+  it('англійською назва програми теж каже, кому платять', () => {
+    render(<ProgramsSummary card={{ programs: { p3: programs.p3 } }} rates={rates} displayCurrency="USD" language="en" />);
+    expect(screen.getByTestId('program-title')).toHaveTextContent('Surrogate compensation');
+    expect(screen.getByTestId('program-pay')).toHaveTextContent('Guaranteed');
   });
 
   it('місце — окремим рядком з великої літери', () => {
@@ -95,7 +107,9 @@ describe('програми в рядку стрічки', () => {
     expect(row).toHaveTextContent('≈ 1 004 500 ₴');
     expect(row).toHaveTextContent('24 500 $');
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
-    expect(within(row).getByTestId('program-bonuses')).toHaveTextContent('≈ +184 500 ₴');
+    // Щомісячна гарантована: вона в розбивці, а не серед перемикачів.
+    expect(within(row).getByTestId('program-guaranteed')).toHaveTextContent('≈ +184 500 ₴');
+    expect(within(row).queryByTestId('program-bonuses')).not.toBeInTheDocument();
     // Курс і дата — один раз, під програмами.
     expect(screen.getAllByText(/курсом НБУ на 30\.09\.2026/)).toHaveLength(1);
   });
@@ -132,14 +146,21 @@ describe('картка програми — калькулятор заробі�
     otherPayments: [{ label: 'Доплата за повторну програму', amount: 500, currency: 'USD' }],
   };
 
-  it('сума — головна плюс усі доплати, щомісячна — × місяці', () => {
+  it('гарантовано — головна плюс гарантовані доплати, щомісячна — × місяці', () => {
     render(<ProgramsSummary card={{ programs: { p2: surrogate } }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    // 23 000 + 4 500 + 200 + 100 + 1 500 + 3 000 + 500
-    expect(within(row).getByTestId('program-title')).toHaveTextContent('Сурогатне материнство — 32 800 $');
+    expect(within(row).getByTestId('program-title')).toHaveTextContent('Винагорода сурогатній мамі');
+    // 23 000 + 4 500 + 200 + 100; КС, двійня й дописана — можливі: 5 000.
+    expect(within(row).getByTestId('program-pay')).toHaveTextContent('Гарантовано від 27 800 $');
+    expect(within(row).getByTestId('program-pay')).toHaveTextContent('+ до 5 000 $ можливих доплат');
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
-    expect(within(row).getByTestId('program-bonuses')).toHaveTextContent('500 $/міс × 9 міс');
-    expect(within(row).getByTestId('program-bonuses')).toHaveTextContent('+4 500 $');
+    const guaranteed = within(row).getByTestId('program-guaranteed');
+    expect(guaranteed).toHaveTextContent('Фінальна виплата23 000 $');
+    expect(guaranteed).toHaveTextContent('500 $/міс × 9 міс');
+    expect(guaranteed).toHaveTextContent('+4 500 $');
+    // Гарантоване перемикачем не є — знімати там нічого.
+    expect(within(guaranteed).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(within(row).getByTestId('program-bonuses')).getAllByRole('checkbox')).toHaveLength(3);
     expect(row).not.toHaveTextContent('Разом за планом');
   });
 
@@ -151,23 +172,52 @@ describe('картка програми — калькулятор заробі�
     expect(describeProgramOffer(program).money.approximate).toBe(true);
   });
 
-  it('зняті доплати виходять із суми, і окремого сценарію немає', () => {
+  it('відмічені можливі доплати додаються до суми одразу, зняті — виходять', () => {
     render(<ProgramsSummary card={{ programs: { p2: surrogate } }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    expect(screen.getByRole('checkbox', { name: /Кесарів розтин/ })).toHaveAttribute('aria-checked', 'false');
     fireEvent.click(screen.getByRole('checkbox', { name: /Кесарів розтин/ }));
     fireEvent.click(screen.getByRole('checkbox', { name: /Двійня/ }));
-    expect(within(row).getByTestId('program-title')).toHaveTextContent('28 300 $');
-    expect(screen.getByRole('checkbox', { name: /Кесарів розтин/ })).toHaveAttribute('aria-checked', 'false');
+    // 27 800 + 1 500 + 3 000
+    expect(within(row).getByTestId('program-pay')).toHaveTextContent('З вибраними доплатами 32 300 $');
+    fireEvent.click(screen.getByRole('checkbox', { name: /Двійня/ }));
+    expect(within(row).getByTestId('program-pay')).toHaveTextContent('29 300 $');
+    fireEvent.click(screen.getByRole('checkbox', { name: /Кесарів розтин/ }));
+    expect(within(row).getByTestId('program-pay')).toHaveTextContent('Гарантовано від 27 800 $');
     expect(screen.queryByTestId('program-bonus-total')).not.toBeInTheDocument();
   });
 
-  it('повторна донація — така сама доплата з перемикачем', () => {
+  it('повторна донація — можлива доплата з незнятим перемикачем', () => {
     const program = { id: 'r', type: 'ed', payments: { final: { amount: 1500, currency: 'USD' }, repeat: { amount: 1200, currency: 'USD' } } };
     render(<ProgramCard program={program} rates={rates} language="uk" />);
-    expect(screen.getByRole('checkbox', { name: /Повторна донація/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('checkbox', { name: /Повторна донація/ })).toHaveAttribute('aria-checked', 'false');
     expect(screen.queryByTestId('program-separate')).not.toBeInTheDocument();
-    expect(describeProgramOffer(program).money.amount).toBe(2700);
+    expect(describeProgramOffer(program).money.amount).toBe(1500);
+    expect(describeProgramOffer(program, { selectedBonusKeys: ['repeat'] }).money.amount).toBe(2700);
+  });
+
+  it('гарантовану доплату агенція може зробити можливою, а можливу — гарантованою', () => {
+    const program = {
+      ...surrogate,
+      payments: { ...surrogate.payments, transfer: { amount: 200, currency: 'USD', guaranteed: false }, cSection: { amount: 1500, currency: 'USD', guaranteed: true } },
+    };
+    render(<ProgramsSummary card={{ programs: { p2: program } }} rates={rates} displayCurrency="USD" language="uk" />);
+    const row = screen.getByTestId('program-list-item');
+    // 23 000 + 4 500 + 100 + 1 500
+    expect(within(row).getByTestId('program-pay')).toHaveTextContent('Гарантовано від 29 100 $');
+    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    expect(within(row).getByTestId('program-guaranteed')).toHaveTextContent('Кесарів розтин');
+    expect(screen.getByRole('checkbox', { name: /Перенос ембріона/ })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('додаткова інформація агенції — у деталях, з переносами рядків, і лише коли вона є', () => {
+    const { rerender } = render(<ProgramCard program={{ ...surrogate, note: 'Перша консультація безкоштовна.\nВідповідаємо протягом доби.' }} rates={rates} language="uk" />);
+    const note = screen.getByTestId('program-note');
+    expect(note).toHaveTextContent('Додаткова інформація');
+    expect(within(note).getByText(/Перша консультація/).textContent).toBe('Перша консультація безкоштовна.\nВідповідаємо протягом доби.');
+    rerender(<ProgramCard program={surrogate} rates={rates} language="uk" />);
+    expect(screen.queryByTestId('program-note')).not.toBeInTheDocument();
   });
 
   it('вимоги й покриття підписані окремо', () => {
@@ -179,8 +229,10 @@ describe('картка програми — калькулятор заробі�
   it('читачеві без свого типу програми донорок і СМ — кожна своїм контейнером', () => {
     render(<ProgramsSummary card={{ programs: { p1: programs.p1, p2: surrogate } }} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     const [donor, sm] = screen.getAllByTestId('program-list-item');
-    expect(donor).toHaveTextContent('Донорство ооцитів — 2 500 $');
-    expect(sm).toHaveTextContent('Сурогатне материнство — 32 800 $');
+    expect(donor).toHaveTextContent('Винагорода донорці яйцеклітин');
+    expect(donor).toHaveTextContent('2 500 $');
+    expect(sm).toHaveTextContent('Винагорода сурогатній мамі');
+    expect(sm).toHaveTextContent('27 800 $');
   });
 });
 
@@ -220,7 +272,8 @@ describe('програми з оголошень агенцій', () => {
       otherPayments: [{ label: 'Підтвердження вагітності', amount: 500, currency: 'USD', when: 'на 6 тижні', condition: 'після УЗД' }],
     };
     render(<ProgramCard program={program} rates={rates} language="uk" />);
-    expect(describeProgramOffer(program).money.amount).toBe(23900);
+    // 15 000 + 900 × 9 + 300 гарантовано; дописана доплата — можлива.
+    expect(describeProgramOffer(program).money.amount).toBe(23400);
     expect(screen.getByText('на 6 тижні · після УЗД')).toBeInTheDocument();
     expect(screen.getByText('після переносу')).toBeInTheDocument();
   });
@@ -268,18 +321,27 @@ describe('програми з оголошень агенцій', () => {
     expect(row).toHaveTextContent('бажано');
   });
 
-  it('головне в картці — те, що вибрала агенція, у її порядку', () => {
+  it('згорнута програма показує всі вимоги — вирішальні першими', () => {
     const program = {
       id: 'g',
       type: 'sm',
       startNow: true,
       payments: { final: { amount: 20000, currency: 'USD' }, monthly: { amount: 500, currency: 'USD' } },
-      requirements: { ageTo: 35, csectionMax: '1' },
+      requirements: { heightFrom: 160, bmiMax: 30, ageTo: 35, csectionMax: '1', rh: '+', marital: 'unmarried', ownKids: 'required', maxBirths: 3 },
+      coverage: ['travel', 'housing'],
+      // Колишній вибір ознак агенцією вимог більше не ріже.
       highlights: ['csection', 'startNow'],
     };
     render(<ProgramsSummary card={{ programs: { g: program } }} rates={rates} displayCurrency="USD" language="uk" />);
-    const list = within(screen.getByTestId('program-list-item')).getByLabelText('Головне');
-    expect(within(list).getAllByRole('listitem').map(item => item.textContent)).toEqual(['можна з 1 КР', 'старт одразу']);
+    const row = screen.getByTestId('program-list-item');
+    const list = within(row).getByTestId('program-requirements');
+    const chips = () => within(list).getAllByRole('listitem').map(item => item.textContent);
+    expect(chips()).toEqual(['до 35 років', 'незаміжня', 'лише Rh+', 'є власна дитина', 'до 3 пологів', 'можна з 1 КР', 'ІМТ до 30', 'зріст від 160 см']);
+    // Вимоги стоять над покриттям, і деталі їх не повторюють.
+    expect(row.textContent.indexOf('до 35 років')).toBeLessThan(row.textContent.indexOf('Покриває'));
+    expect(row).toHaveTextContent('старт одразу');
+    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    expect(within(row).getAllByText('до 35 років')).toHaveLength(1);
   });
 });
 

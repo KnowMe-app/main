@@ -19,9 +19,9 @@ const program = {
 describe('редактор програм', () => {
   it('не повторює тип програми у короткому описі', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
-    // Шапка називає пропозицію, а не роль людини: «Донорство ооцитів».
-    expect(screen.getAllByText('Донорство ооцитів')).toHaveLength(1);
-    expect(screen.getByRole('button', { name: /Донорство ооцитів/ })).toHaveTextContent('Київ · 2 500 $');
+    // Шапка називає, кому платять, а не роль людини.
+    expect(screen.getAllByText('Винагорода донорці яйцеклітин')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /Винагорода донорці яйцеклітин/ })).toHaveTextContent('Київ · 2 500 $');
     expect(screen.getByText('Готова до показу')).toBeInTheDocument();
   });
 
@@ -36,7 +36,7 @@ describe('редактор програм', () => {
   it('поруч із формою — та сама картка, яку побачать у стрічці', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
     expect(screen.queryByTestId('program-card')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода донорці яйцеклітин/ }));
     expect(screen.getByTestId('program-card')).toHaveTextContent('2 500 $');
     expect(screen.getByRole('tab', { name: 'Перегляд' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Редагування' })).toHaveAttribute('aria-selected', 'true');
@@ -44,7 +44,7 @@ describe('редактор програм', () => {
 
   it('можливу доплату не показує порожнім полем, а додає кнопкою', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода донорці яйцеклітин/ }));
     expect(screen.queryByLabelText('Доплата за досвід')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Додати доплату: Доплата за досвід' }));
     expect(screen.getByLabelText('Доплата за досвід')).toBeInTheDocument();
@@ -52,7 +52,7 @@ describe('редактор програм', () => {
 
   it('каже про вимогу поза межами одразу, а не губить її при записі', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода донорці яйцеклітин/ }));
     fireEvent.click(screen.getByRole('button', { name: /Вимоги до кандидатки/ }));
     fireEvent.change(screen.getByLabelText('Вік до'), { target: { value: '18' } });
     expect(screen.getByRole('alert')).toHaveTextContent('«До» менше за «від»');
@@ -75,7 +75,7 @@ describe('редактор програм', () => {
       },
     };
     render(<ProgramsEditor programs={surrogate} onSave={onSave} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Сурогатне материнство/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода сурогатній мамі/ }));
     expect(screen.queryByText('Загальна сума за програму')).not.toBeInTheDocument();
     // Без кількості місяців — дев'ять і «≈», з підказкою, чому сума приблизна.
     expect(screen.getByTestId('program-editor-total')).toHaveTextContent('≈ 24 500 $');
@@ -93,31 +93,68 @@ describe('редактор програм', () => {
       },
     };
     render(<ProgramsEditor programs={surrogate} onSave={jest.fn()} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Сурогатне материнство/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода сурогатній мамі/ }));
     const months = screen.getByLabelText('Скільки місяців');
     fireEvent.change(months, { target: { value: '0' } });
     expect(months).toHaveValue('');
   });
 
-  it('гарантований мінімум питає максимум і його умову, і зберігає обидва', () => {
+  it('що означає головна сума, не питає; старе «до …» не губить, а дає прибрати', () => {
     const onSave = jest.fn();
-    const { unmount } = render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
-    fireEvent.click(screen.getByRole('radio', { name: /Гарантований мінімум/ }));
-    fireEvent.change(screen.getByLabelText('Максимальна сума'), { target: { value: '3000' } });
-    fireEvent.blur(screen.getByLabelText('Максимальна сума'));
-    fireEvent.change(screen.getByLabelText('Від чого залежить максимум'), { target: { value: 'залежно від результату' } });
+    const legacy = { p1: { ...program.p1, payKind: 'guaranteed', payMax: { amount: 3000, currency: 'USD', condition: 'залежно від результату' } } };
+    const { unmount } = render(<ProgramsEditor programs={legacy} onSave={onSave} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода донорці яйцеклітин/ }));
+    expect(screen.queryByText('Що означає головна сума?')).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: /Гарантований мінімум/ })).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('payment-final')).getByText('Винагорода за цикл')).toBeInTheDocument();
+    expect(screen.getByText(/Старе «до 3 000 \$» ще стоїть у картці/)).toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId('payment-final')).getByRole('button', { name: 'Прибрати' }));
     unmount();
     const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0].p1;
-    expect(saved.payKind).toBe('guaranteed');
-    expect(saved.payMax).toEqual({ amount: 3000, currency: 'USD', condition: 'залежно від результату' });
+    expect(saved.payKind).toBeUndefined();
+    expect(saved.payMax).toBeUndefined();
+    expect(saved.payments.final).toEqual({ amount: 2500, currency: 'USD' });
+  });
+
+  it('кожна доплата — гарантована чи можлива, і вибір зберігається', () => {
+    const onSave = jest.fn();
+    const surrogate = {
+      p2: {
+        id: 'p2',
+        type: 'sm',
+        payments: { final: { amount: 20000, currency: 'USD' }, monthly: { amount: 500, currency: 'USD', months: 9 }, twins: { amount: 3000, currency: 'USD' } },
+      },
+    };
+    const { unmount } = render(<ProgramsEditor programs={surrogate} onSave={onSave} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода сурогатній мамі/ }));
+    // Типово: щомісячна — гарантована, двійня — можлива.
+    expect(within(screen.getByTestId('payment-monthly')).getByRole('radio', { name: 'Гарантована' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(screen.getByTestId('payment-twins')).getByRole('radio', { name: 'Можлива' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('program-editor-total')).toHaveTextContent('Гарантовано24 500 $');
+    expect(screen.getByTestId('program-editor-total')).toHaveTextContent('З усіма можливими доплатами — до 27 500 $');
+    fireEvent.click(within(screen.getByTestId('payment-twins')).getByRole('radio', { name: 'Гарантована' }));
+    expect(screen.getByTestId('program-editor-total')).toHaveTextContent('Гарантовано27 500 $');
+    // Дописана доплата — можлива, доки агенція не скаже інакше.
+    fireEvent.click(screen.getByRole('button', { name: '+ Інша доплата' }));
+    const block = screen.getByTestId('bonus-block');
+    expect(within(block).getByRole('radio', { name: 'Можлива' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.change(within(block).getByLabelText('За що доплата'), { target: { value: 'Підтвердження вагітності' } });
+    fireEvent.change(within(block).getByLabelText('Сума'), { target: { value: '500' } });
+    fireEvent.blur(within(block).getByLabelText('Сума'));
+    fireEvent.click(within(block).getByRole('radio', { name: 'Гарантована' }));
+    expect(screen.getByTestId('program-editor-total')).toHaveTextContent('Гарантовано28 000 $');
+    unmount();
+    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0].p2;
+    expect(saved.payments.twins).toEqual({ amount: 3000, currency: 'USD', guaranteed: true });
+    expect(saved.payments.monthly.guaranteed).toBeUndefined();
+    expect(saved.otherPayments).toEqual([{ label: 'Підтвердження вагітності', amount: 500, currency: 'USD', guaranteed: true }]);
   });
 
   it('у кожної виплати той самий підпис деталей; правка суми їх не губить', () => {
     const onSave = jest.fn();
     const surrogate = { p2: { id: 'p2', type: 'sm', payments: { final: { amount: 20000, currency: 'USD' }, monthly: { amount: 900, currency: 'USD', months: 9 } } } };
     const { unmount } = render(<ProgramsEditor programs={surrogate} onSave={onSave} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Сурогатне материнство/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода сурогатній мамі/ }));
     // Головна сума й щомісячна — дві однакові кнопки; беремо другу.
     const details = screen.getAllByRole('button', { name: '+ Деталі: коли й за яких умов' });
     expect(details).toHaveLength(2);
@@ -134,7 +171,7 @@ describe('редактор програм', () => {
   it('вимога має рівень і пояснення', () => {
     const onSave = jest.fn();
     const { unmount } = render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода донорці яйцеклітин/ }));
     fireEvent.click(screen.getByRole('button', { name: /Вимоги до кандидатки/ }));
     // Рівень стоїть словом поруч зі значенням, а не за «⋯».
     expect(screen.getByLabelText('Рівень вимоги: Вік')).toHaveDisplayValue('Обовʼязково');
@@ -147,29 +184,27 @@ describe('редактор програм', () => {
     expect(saved.requirementMeta).toEqual({ csection: { level: 'individual', note: 'після 2 років' } });
   });
 
-  it('головне в картці вибирають з полів програми, і вибір зберігається', () => {
+  it('додаткова інформація про програму — вільний текст, що зберігається з переносами', () => {
     const onSave = jest.fn();
     const { unmount } = render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Як виглядає в картці/ }));
-    const age = screen.getByRole('checkbox', { name: '21–29 років' });
-    expect(age).toBeChecked();
-    expect(screen.getByText('Вибрано 1 з 4')).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText(/Старт одразу/));
-    // Нова ознака стає типовою сама; агенція знімає вік — і це вже її вибір.
-    expect(screen.getByRole('checkbox', { name: 'старт одразу' })).toBeChecked();
-    fireEvent.click(screen.getByRole('checkbox', { name: '21–29 років' }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода донорці яйцеклітин/ }));
+    // Ознак на вибір більше немає: картка показує всі вимоги сама.
+    expect(screen.queryByRole('button', { name: /Як виглядає в картці/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Додаткова інформація/ }));
+    fireEvent.change(screen.getByLabelText(/Додаткова інформація про програму/), { target: { value: 'Консультація безкоштовна.\nВідповідаємо за добу.' } });
+    fireEvent.click(screen.getByRole('tab', { name: 'Перегляд' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Деталі програми' }));
+    expect(screen.getByTestId('program-note')).toHaveTextContent('Консультація безкоштовна.');
     unmount();
     const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0].p1;
-    expect(saved.startNow).toBe(true);
-    expect(saved.highlights).toEqual(['startNow']);
+    expect(saved.note).toBe('Консультація безкоштовна.\nВідповідаємо за добу.');
   });
 
   it('умову старої доплати видно, а правка переносить її до решти доплат', () => {
     const onSave = jest.fn();
     const withBonus = { p1: { ...program.p1, bonuses: [{ label: 'Кесарів', amount: 500, currency: 'USD', condition: 'якщо кесаревим' }] } };
     const { unmount } = render(<ProgramsEditor programs={withBonus} onSave={onSave} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода донорці яйцеклітин/ }));
     const condition = within(screen.getByTestId('bonus-block')).getByLabelText(/Умови виплати/);
     expect(condition).toHaveValue('якщо кесаревим');
     fireEvent.change(condition, { target: { value: '' } });
@@ -188,14 +223,15 @@ describe('редактор програм', () => {
       },
     };
     render(<ProgramsEditor programs={surrogate} onSave={jest.fn()} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Сурогатне материнство/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода сурогатній мамі/ }));
     const payments = screen.getByRole('button', { name: /Виплати/ });
     expect(payments).toHaveAttribute('aria-expanded', 'true');
-    // 23 000 + 600 × 8 + 300 + 1 500 + 3 000 — головна сума й усі доплати.
-    expect(screen.getByTestId('program-editor-total')).toHaveTextContent('32 600 $');
-    expect(screen.getByTestId('program-editor-total')).toHaveTextContent('23 000 $ + 600 $ × 8 + 300 $ + 1 500 $ + 3 000 $');
+    // Гарантовано 23 000 + 600 × 8 + 300; з КС і двійнею — до 32 600.
+    expect(screen.getByTestId('program-editor-total')).toHaveTextContent('Гарантовано28 100 $');
+    expect(screen.getByTestId('program-editor-total')).toHaveTextContent('23 000 $ + 600 $ × 8 + 300 $');
+    expect(screen.getByTestId('program-editor-total')).toHaveTextContent('З усіма можливими доплатами — до 32 600 $');
     fireEvent.click(payments);
-    expect(payments).toHaveTextContent('4 доплати · сума програми 32 600 $');
+    expect(payments).toHaveTextContent('4 доплати · гарантовано 28 100 $');
     expect(screen.queryByTestId('program-editor-total')).not.toBeInTheDocument();
     fireEvent.click(payments);
     expect(screen.getByLabelText('Скільки місяців')).toHaveValue('8');
@@ -204,7 +240,7 @@ describe('редактор програм', () => {
   it('порожньої «Іншої доплати» не стоїть двох, і вона додається до суми', () => {
     const onSave = jest.fn();
     const { unmount } = render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода донорці яйцеклітин/ }));
     expect(screen.queryByRole('button', { name: '+ Інша виплата' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '+ Інша доплата' }));
     expect(screen.queryByRole('button', { name: '+ Інша доплата' })).not.toBeInTheDocument();
@@ -221,7 +257,7 @@ describe('редактор програм', () => {
 
   it('доплату без суми називає проблемою, а не мовчки губить', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода донорці яйцеклітин/ }));
     fireEvent.click(screen.getByRole('button', { name: '+ Інша доплата' }));
     fireEvent.change(screen.getByLabelText('За що доплата'), { target: { value: 'За вік' } });
     expect(screen.getByText('Є що виправити')).toBeInTheDocument();
@@ -230,7 +266,7 @@ describe('редактор програм', () => {
 
   it('назви програми й одягу донорці не пропонує', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода донорці яйцеклітин/ }));
     expect(screen.queryByLabelText(/Назва програми/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Покриття витрат/ }));
     expect(screen.queryByRole('button', { name: 'Одяг' })).not.toBeInTheDocument();
@@ -246,7 +282,7 @@ describe('редактор програм', () => {
     const scrollTo = jest.fn();
     window.scrollTo = scrollTo;
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Донорство ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Винагорода донорці яйцеклітин/ }));
     window.scrollY = 640;
     fireEvent.click(screen.getByRole('tab', { name: 'Перегляд' }));
     window.scrollY = 120;

@@ -49,12 +49,14 @@ export const stripMonthlyMonths = items => Object.fromEntries(Object.entries(ite
  * відкинув би програму цілком — тож запис повторюється без них, а повна
  * версія лишається в браузері власниці (`programsStore`).
  */
-// Найновіші поля — місце виплати щодо головної суми (`counting`) і вибрана
-// головна сума картки (`featured`). Їх знімається спершу окремо: правила, що
-// вже знають решту розширених полів, не мусять коштувати агенції назви,
-// виду суми й графіка лише через ці два.
+// Найновіші поля — місце виплати щодо головної суми (`counting`), вибрана
+// головна сума картки (`featured`) і гарантована чи можлива доплата
+// (`guaranteed`). Їх знімається спершу окремо: правила, що вже знають решту
+// розширених полів, не мусять коштувати агенції назви, виду суми й графіка
+// лише через ці. Доплата без `guaranteed` читається за ключем
+// (`isPaymentGuaranteed`), тож у базі вибір агенції доти просто не діє.
 const NEWEST_PROGRAM_FIELDS = Object.freeze(['featured']);
-const NEWEST_PAYMENT_FIELDS = Object.freeze(['counting']);
+const NEWEST_PAYMENT_FIELDS = Object.freeze(['counting', 'guaranteed']);
 const EXTENDED_PROGRAM_FIELDS = Object.freeze(['name', 'payKind', 'payMax', 'startNow', 'requirementMeta', 'stages', 'relocation', 'coverageDetails', 'highlights', ...NEWEST_PROGRAM_FIELDS]);
 const EXTENDED_PAYMENT_FIELDS = Object.freeze(['when', 'condition', 'includes', ...NEWEST_PAYMENT_FIELDS]);
 
