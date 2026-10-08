@@ -20,6 +20,22 @@ import { resolveProfileLanguage } from './profileTexts';
  * вибрані зі списку значення — `translateFieldValue`.
  */
 const EN_BY_UK = {
+  // Програми: головна сума плюс доплати одним списком; «Більше про …» внизу картки.
+  'Доплати': 'Supplements',
+  'Доплата': 'Supplement',
+  '{amount}/міс · скільки місяців — уточніть в агенції': '{amount}/mo · ask the agency how many months',
+  '{amount}/міс × {months} {unit}': '{amount}/mo × {months} {unit}',
+  'сума програми {amount}': 'program total {amount}',
+  'Вкажіть кількість місяців — інакше рахуємо 9, і сума буде приблизною': 'Enter the number of months — otherwise we count 9 and the total is approximate',
+  'Головна сума й усі доплати. У картці кожна доплата стоїть з позначкою, і кандидатка може зняти ті, що її не стосуються.': 'Main amount plus all supplements. On the card each supplement has a checkbox, and the candidate can untick the ones that do not apply to her.',
+  'Усе, що ви доплачуєте понад головну суму: за досвід, вік, кількість клітин, повторну донацію.': 'Everything you pay on top of the main amount: for experience, age, number of eggs, a repeat donation.',
+  'Фіксована сума за один цикл': 'A fixed amount for one cycle',
+  'Уся винагорода за програму однією сумою': 'The whole compensation for the program as one amount',
+  'Сума після пологів; щомісячні — доплатами нижче': 'Paid after delivery; monthly payments go below as supplements',
+  'Наприклад: за кількість клітин': 'E.g. for the number of eggs',
+  'Більше про агенцію': 'More about the agency',
+  'Більше про клініку': 'More about the clinic',
+  'Більше про біологічних батьків': 'More about the intended parents',
   // Редактор програм: пʼять розділів, виплати блоками, сценарій доплат.
   'Умови виплати': 'Conditions',
   'Додати доплату: {label}': 'Add supplement: {label}',
