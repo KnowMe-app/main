@@ -57,12 +57,12 @@ export const PROGRAM_OFFER_LABELS = Object.freeze({
  * то «за програму», то «разом», то «винагорода за цикл», а значить різне:
  * донорці платять за цикл, СМ — фінальну виплату плюс графік, а дехто пише
  * «55 000 ₴ гарантовано, до 70 000 ₴ за результатом». Тож вид суми агенція
- * вибирає сама, і той самий підпис іде в редактор, рядок і деталі.
+ * вибирає сама. Вид каже лише, як підписати головну суму, і чи стоїть поруч
+ * «до …»; рахунок від нього не залежить — доплати додаються завжди.
  *
  * - `cycle` — фіксовано за цикл донації (донорці за замовчуванням);
- * - `final` — фінальна виплата, решта графіка — окремими рядками (СМ);
- * - `total` — загальна винагорода: виплати графіка вже **всередині** неї
- *   й до суми не додаються;
+ * - `final` — фінальна виплата (СМ);
+ * - `total` — загальна винагорода за програму;
  * - `guaranteed` — гарантований мінімум, а поруч «до …» з умовою (`payMax`).
  */
 export const PROGRAM_PAY_KINDS = Object.freeze({
@@ -86,71 +86,41 @@ export const resolveProgramPayKind = program => {
   return PROGRAM_PAY_KINDS[type].some(option => option.key === kind) ? kind : DEFAULT_PAY_KIND[type];
 };
 
-// Кому платять — словом у самому підписі: читачка мусить бачити, що гроші
-// отримує вона, а не платить. Підпис цілим рядком на кожен тип, а не
-// підставлене «донорці»: так його перекладає словник інтерфейсу.
-const PAY_LABELS = Object.freeze({
-  ed: Object.freeze({
-    cycle: 'Винагорода донорці за цикл',
-    total: 'Винагорода донорці за програму',
-    guaranteed: 'Гарантовано донорці',
-    final: 'Фінальна виплата донорці',
-    sum: 'Разом донорці за програму',
-    monthly: 'Щомісячна виплата донорці',
-  }),
-  sm: Object.freeze({
-    cycle: 'Винагорода сурогатній мамі за цикл',
-    total: 'Винагорода сурогатній мамі за програму',
-    guaranteed: 'Гарантовано сурогатній мамі',
-    final: 'Фінальна виплата сурогатній мамі',
-    sum: 'Разом сурогатній мамі за програму',
-    monthly: 'Щомісячна виплата сурогатній мамі',
-  }),
-});
-
 /**
- * Підпис головної суми: хто отримує і за що. Один на редактор, рядок і
- * деталі — «Разом за програму», «За програму» й «Винагорода за цикл» про ту
- * саму суму стояли поруч у трьох місцях картки. `sum` — підпис суми за
- * повним графіком (`describeProgramOffer`).
- */
-export const programPayLabel = (program, { sum = false, monthly = false } = {}) => {
-  const type = program?.type === 'sm' ? 'sm' : 'ed';
-  return { text: PAY_LABELS[type][monthly ? 'monthly' : sum ? 'sum' : resolveProgramPayKind(program)] };
-};
-
-/**
- * Виплати за типом програми. Перша — головна: саме вона йде в діапазон
- * рядка стрічки, у фільтр і в сортування.
+ * Виплати за типом програми. Перша — головна сума (`final`), решта —
+ * **доплати**: досвід, повторна донація, щомісячні, перенос, КС, двійня.
  *
- * `bonus` — **можлива** доплата: її отримує не кожна, а та, з ким щось
- * сталося (досвід, КС, двійня, вагітність з першої спроби). У чатах агенцій
- * вона стояла в одному стовпчику з гарантованим, і сума «20 000 + 2 000 за КС»
- * читалась як 22 000. Тому ці два переліки живуть окремими блоками і в
- * редакторі, і в показі, а в загальну суму можливе не входить.
+ * Тут були три категорії — гарантовані виплати графіка, можливі доплати й
+ * оплата окремої процедури, — і кожна виплата ще й казала, чи вона
+ * додається, чи вже «всередині» головної суми (`counting`). У картці це
+ * давало чотири блоки сум («Виплати», «За окрему процедуру», «Можливі
+ * доплати», «Сценарій з відміченими доплатами») і три різні числа про ту
+ * саму програму. Агенції самі звуть усе понад головну суму доплатами (за
+ * досвід, за вік, за кількість клітин), тож і тут вони одним списком: кожна
+ * з перемикачем, а сума програми — головна плюс відмічені (`programBreakdown`).
  */
 export const PROGRAM_PAYMENT_FIELDS = Object.freeze({
   ed: Object.freeze([
     { key: 'final', label: 'Винагорода за цикл' },
-    { key: 'repeat', label: 'Повторна донація', separate: true },
-    { key: 'experience', label: 'Доплата за досвід', bonus: true },
+    { key: 'experience', label: 'Доплата за досвід' },
+    { key: 'repeat', label: 'Повторна донація' },
   ]),
   sm: Object.freeze([
     { key: 'final', label: 'Фінальна виплата' },
     { key: 'monthly', label: 'Щомісячно' },
     { key: 'transfer', label: 'Перенос ембріона' },
     { key: 'contract', label: 'Підписання договору' },
-    { key: 'cSection', label: 'Кесарів розтин', bonus: true },
-    { key: 'twins', label: 'Двійня', bonus: true },
-    { key: 'firstTry', label: 'Вагітність з першої спроби', bonus: true },
-    { key: 'experience', label: 'Доплата за досвід СМ', bonus: true },
+    { key: 'cSection', label: 'Кесарів розтин' },
+    { key: 'twins', label: 'Двійня' },
+    { key: 'firstTry', label: 'Вагітність з першої спроби' },
+    { key: 'experience', label: 'Доплата за досвід СМ' },
   ]),
 });
 
 /**
  * Загальна сума за програму, введена агенцією рукою. Нові програми її не
- * пишуть — загальну суму рахує `programBreakdown` з самих виплат, — а старі
- * записи без жодної окремої виплати показуються через неї.
+ * пишуть — суму рахує `programBreakdown` з самих виплат, — а старі записи
+ * без жодної окремої виплати показуються через неї.
  */
 export const PROGRAM_TOTAL_FIELD = 'total';
 
@@ -158,50 +128,21 @@ export const PROGRAM_TOTAL_FIELD = 'total';
  * Щомісячна виплата сама по собі нічого не каже про заробіток: «500 $
  * щомісяця» — це 4 500 $ за дев'ять місяців. Тож поруч із сумою лежить
  * кількість місяців (`payments.monthly.months`), а коли агенція її не
- * вказала, рахунок бере тривалість вагітності й позначає її як орієнтовну.
+ * вказала, рахунок бере тривалість вагітності й робить суму «≈».
  */
 export const DEFAULT_MONTHLY_MONTHS = 9;
 export const MAX_MONTHLY_MONTHS = 24;
 
-export const listGuaranteedPaymentFields = type => (PROGRAM_PAYMENT_FIELDS[type] || []).filter(field => !field.bonus && !field.separate);
-export const listBonusPaymentFields = type => (PROGRAM_PAYMENT_FIELDS[type] || []).filter(field => field.bonus);
-export const listSeparatePaymentFields = type => (PROGRAM_PAYMENT_FIELDS[type] || []).filter(field => field.separate);
-
-/**
- * Як виплата графіка стоїть щодо головної суми. У чатах агенцій «1 500 $, з
- * них 500 $ після обстеження» і «1 500 $ + 500 $ після обстеження» пишуть
- * однаково — а це 1 500 і 2 000. Тому кожна виплата каже про себе сама:
- *
- * - `added` — додається до головної суми (типово для фінальної й за цикл);
- * - `included` — уже всередині заявленої суми (типово для «загальної
- *   винагороди»): показується як частина, у разом не додається;
- * - `separate` — оплата окремої чи повторної процедури: її отримує та, хто
- *   пройде ще одну, тож ані в разом, ані в сценарій доплат вона не йде.
- *
- * Можливі доплати (`bonus`) — четверта категорія й живуть окремим списком,
- * а вкладена сума (`includes`) — пʼята: частина однієї виплати.
- */
-export const PROGRAM_PAYMENT_COUNTING = Object.freeze([
-  { key: 'added', label: 'Додається до головної суми' },
-  { key: 'included', label: 'Уже входить у головну суму' },
-  { key: 'separate', label: 'За окрему чи повторну процедуру' },
-]);
-const COUNTING_KEYS = new Set(PROGRAM_PAYMENT_COUNTING.map(option => option.key));
-
-/** Типове місце виплати: у «загальній винагороді» графік уже всередині. */
-export const defaultPaymentCounting = program => (resolveProgramPayKind(program) === 'total' ? 'included' : 'added');
-
-/**
- * Яку суму картка показує головною. Без вибору — як було: разом за планом,
- * коли його можна порахувати, інакше головна виплата.
- */
-export const PROGRAM_FEATURED_AMOUNTS = Object.freeze(['main', 'sum', 'monthly']);
+/** Відомі доплати типу програми — усе, крім головної суми. */
+export const listExtraPaymentFields = type => (PROGRAM_PAYMENT_FIELDS[type] || []).filter(field => field.key !== 'final');
 
 export const PROGRAM_COVERAGE_OPTIONS = Object.freeze([
   { key: 'travel', label: 'Проїзд' },
   { key: 'housing', label: 'Житло' },
   { key: 'food', label: 'Харчування' },
-  { key: 'clothes', label: 'Одяг' },
+  // Одяг — потреба вагітності, а не циклу донації: донорській програмі його
+  // не пропонуємо й не показуємо.
+  { key: 'clothes', label: 'Одяг', types: ['sm'] },
   { key: 'exams', label: 'Обстеження' },
   { key: 'insurance', label: 'Страховка' },
   { key: 'legal', label: 'Юридичний супровід' },
@@ -212,6 +153,9 @@ export const PROGRAM_COVERAGE_OPTIONS = Object.freeze([
 
 // Витрати й супровід — різні питання («скільки я витрачу» і «хто мені
 // допоможе»), тож картка показує їх двома групами.
+/** Пункти покриття, доречні для типу програми. */
+export const listCoverageOptions = type => PROGRAM_COVERAGE_OPTIONS.filter(option => !option.types || option.types.includes(type === 'sm' ? 'sm' : 'ed'));
+
 export const PROGRAM_SUPPORT_COVERAGE = Object.freeze(['legal', 'notary', 'support', 'insurance']);
 
 /**
@@ -406,11 +350,7 @@ export const normalizeProgram = (raw, id) => {
       payments[key] = money;
       return;
     }
-    const extras = normalizePaymentExtras(raw.payments[key]);
-    // Головна сума ні до чого не додається, а повторна донація окрема за
-    // визначенням — місця їм вибирати нема з чого.
-    if (key === 'final' || PROGRAM_PAYMENT_FIELDS[type].find(field => field.key === key)?.separate) delete extras.counting;
-    payments[key] = { ...money, ...extras };
+    payments[key] = { ...money, ...normalizePaymentExtras(raw.payments[key]) };
   });
   const otherPayments = normalizeLabeledPayments(raw.otherPayments);
   const bonuses = normalizeLabeledPayments(raw.bonuses, { extras: false });
@@ -448,7 +388,8 @@ export const normalizeProgram = (raw, id) => {
     program.payMax = condition ? { ...payMax, condition } : payMax;
   }
   if (raw.startNow === true) program.startNow = true;
-  if (PROGRAM_FEATURED_AMOUNTS.includes(raw.featured)) program.featured = raw.featured;
+  // `featured` (яку суму показати головною) і `counting` виплат більше не
+  // читаються: сума програми одна — головна плюс доплати (`programBreakdown`).
   const requirementMeta = normalizeRequirementMeta(raw.requirementMeta);
   if (requirementMeta) program.requirementMeta = requirementMeta;
   const stages = (Array.isArray(raw.stages) ? raw.stages : Object.values(raw.stages || {}))
@@ -491,7 +432,6 @@ const normalizePaymentExtras = raw => {
   const included = normalizeProgramMoney(raw?.includes);
   const includedLabel = text(raw?.includes?.label, 60);
   if (included && includedLabel) extras.includes = { label: includedLabel, ...included };
-  if (COUNTING_KEYS.has(raw?.counting)) extras.counting = raw.counting;
   return extras;
 };
 
@@ -929,10 +869,8 @@ export const describeProgramRequirements = program => {
 };
 
 const paymentExtras = item => ({
-  ...(item?.counting ? { counting: item.counting } : {}),
   ...(item?.when ? { when: item.when } : {}),
   ...(item?.condition ? { condition: item.condition } : {}),
-  ...(item?.includes ? { includes: item.includes } : {}),
 });
 
 const labeledEntries = (items, prefix) => (items || []).map((item, index) => ({
@@ -942,8 +880,8 @@ const labeledEntries = (items, prefix) => (items || []).map((item, index) => ({
   ...paymentExtras(item),
 }));
 
-// Підпис головної виплати в розбивці — за видом суми: «Винагорода за цикл»
-// під фіксованою донорською програмою, «Гарантовано» під мінімумом.
+// Підпис головної суми — за видом суми: «Винагорода за цикл» під
+// фіксованою донорською програмою, «Гарантовано» під мінімумом.
 const MAIN_PAYMENT_LABELS = Object.freeze({
   cycle: 'Винагорода за цикл',
   final: 'Фінальна виплата',
@@ -951,54 +889,45 @@ const MAIN_PAYMENT_LABELS = Object.freeze({
   guaranteed: 'Гарантовано',
 });
 
-/** Гарантовані виплати програми по порядку: головна, решта за типом, далі інші. */
+/** Головна сума програми як рядок розбивки, а без неї — стара загальна сума. */
 export const listProgramPayments = program => {
   if (!program) return [];
   const kind = resolveProgramPayKind(program);
-  const known = listGuaranteedPaymentFields(program.type)
-    .filter(({ key }) => program.payments?.[key])
-    .map(({ key, label }) => ({
-      key,
-      label: key === 'final' ? MAIN_PAYMENT_LABELS[kind] || label : label,
-      money: program.payments[key],
-      ...paymentExtras(program.payments[key]),
-    }));
-  const separate = listSeparatePaymentFields(program.type)
-    .filter(({ key }) => program.payments?.[key])
-    .map(({ key, label }) => ({ key, label, money: program.payments[key], ...paymentExtras(program.payments[key]), counting: 'separate' }));
-  return [...known, ...labeledEntries(program.otherPayments, 'other'), ...separate];
-};
-
-/** Можливі доплати: за типом програми, далі дописані агенцією. */
-export const listProgramBonuses = program => {
-  if (!program) return [];
-  const known = listBonusPaymentFields(program.type)
-    .filter(({ key }) => program.payments?.[key])
-    .map(({ key, label }) => ({ key, label, money: program.payments[key] }));
-  return [...known, ...labeledEntries(program.bonuses, 'bonus')];
+  if (program.payments?.final) {
+    return [{ key: 'final', label: MAIN_PAYMENT_LABELS[kind], money: program.payments.final, ...paymentExtras(program.payments.final) }];
+  }
+  return [];
 };
 
 /**
- * Доплати, які читачка вже має за анкетою: досвід — факт, і його відмічено
- * одразу. Кесарів, двійня, вагітність з першої спроби — події цієї програми,
- * а не попередніх: колишній КР не обіцяє доплати за наступний, тож їх
- * читачка відмічає сама, коли хоче порахувати «а якщо».
+ * Доплати програми одним списком: відомі за типом, далі дописані агенцією.
+ * Дописані лежать у двох масивах — `otherPayments` (так їх пише редактор) і
+ * `bonuses` (старі записи), — але для читачки це та сама річ.
  */
-export const defaultProgramBonusKeys = (program, facts) => {
-  if (!facts || !(Number(facts.experience) > 0)) return [];
-  return listProgramBonuses(program)
-    .filter(item => item.key === 'experience' || item.key === 'repeat' || /досвід|повторн/i.test(String(item.label || '')))
-    .map(item => item.key);
+export const listProgramBonuses = program => {
+  if (!program) return [];
+  const known = listExtraPaymentFields(program.type)
+    .filter(({ key }) => program.payments?.[key])
+    .map(({ key, label }) => ({ key, label, money: program.payments[key], ...paymentExtras(program.payments[key]) }));
+  return [...known, ...labeledEntries(program.otherPayments, 'other'), ...labeledEntries(program.bonuses, 'bonus')];
 };
+
+/**
+ * Доплати, відмічені одразу, — усі. Сума програми — це головна плюс усе,
+ * що агенція може доплатити, а читачка знімає те, що її не стосується.
+ * Сценарій «відмітьте, щоб порахувати» стояв окремою плашкою під доплатами
+ * і робив з однієї програми два числа.
+ */
+export const defaultProgramBonusKeys = program => listProgramBonuses(program).map(item => item.key);
 
 /**
  * Сума кількох виплат у валюті програми. Інша валюта переводиться за курсом
  * НБУ і робить суму «≈»; без курсу вона лишається окремою частиною
  * («23 800 $ + 2 000 ₴») — вигадана сума гірша за дві чесні.
  */
-const sumMoney = (items, baseCurrency, rates) => {
+const sumMoney = (items, baseCurrency, rates, { approximate: forced = false } = {}) => {
   const parts = new Map([[baseCurrency, 0]]);
-  let approximate = false;
+  let approximate = forced;
   items.forEach(money => {
     const amount = Number(money?.amount);
     if (!Number.isFinite(amount) || !money?.currency) return;
@@ -1029,108 +958,87 @@ const sumMoney = (items, baseCurrency, rates) => {
  * Із чого складається заробіток за програмою — одне місце на картку
  * програми, редактор, рядок стрічки, фільтр і сортування.
  *
- * Гарантовано — усе, що виплачують кожній: фінальна, щомісячні × місяці,
- * перенос, договір і дописані агенцією виплати. Досі загальна сума брала
- * лише разові виплати, і «500 $ щомісяця» — найбільша після фінальної
- * частина заробітку СМ — у підсумок не потрапляла взагалі, а рядок стрічки
- * показував третє число, саму фінальну. Можливі доплати додаються лише
- * відмічені (`selectedBonusKeys`); `max` — якщо справдиться все.
+ * Рахунок простий: головна сума плюс доплати. `total` — з відміченими
+ * (`selectedBonusKeys`, без вибору — з усіма), `max` — з усіма. Щомісячна
+ * доплата важить суму × місяці; не вказала агенція місяців — береться 9, і
+ * сума стає «≈»: це наша оцінка, а не умова агенції.
+ *
+ * Місця виплати щодо головної суми («додається», «уже всередині», «за окрему
+ * процедуру») тут більше немає: три способи рахувати давали в картці три
+ * числа, і читачка не знала, якому вірити.
  */
-export const programBreakdown = (program, { selectedBonusKeys = [], rates = null } = {}) => {
-  const selected = new Set(selectedBonusKeys);
-  let lines = listProgramPayments(program).map(entry => {
-    if (entry.key !== 'monthly') return { ...entry, subtotal: entry.money };
-    const months = Number(entry.money.months) || DEFAULT_MONTHLY_MONTHS;
-    return {
-      ...entry,
-      months,
-      monthsEstimated: !entry.money.months,
-      subtotal: { amount: Number(entry.money.amount) * months, currency: entry.money.currency },
-    };
-  });
+export const programBreakdown = (program, { selectedBonusKeys = null, rates = null } = {}) => {
+  let lines = listProgramPayments(program).map(entry => ({ ...entry, subtotal: entry.money }));
   // Старий запис, де агенція ввела саму загальну суму, без складових.
   const legacyTotal = program?.payments?.[PROGRAM_TOTAL_FIELD];
   if (!lines.length && legacyTotal) {
     lines = [{ key: PROGRAM_TOTAL_FIELD, label: 'Загальна сума за програму', money: legacyTotal, subtotal: legacyTotal }];
   }
-  // Кожна виплата графіка — або додається, або вже всередині заявленої суми,
-  // або за окрему процедуру (`PROGRAM_PAYMENT_COUNTING`). Без явного вибору
-  // загальна винагорода вже містить графік: додати його означало б
-  // порахувати двічі. «Всередині» без головної суми не буває — тоді виплата
-  // лишається звичайною, інакше разом вийшло б нулем.
-  const kind = resolveProgramPayKind(program);
-  const fallbackCounting = defaultPaymentCounting(program);
-  const hasMain = lines.some(line => line.key === 'final');
-  lines = lines.map(line => {
-    if (line.key === 'final' || line.key === PROGRAM_TOTAL_FIELD) return line;
-    const counting = line.counting || fallbackCounting;
-    if (counting === 'separate') return { ...line, separate: true };
-    if (counting === 'included' && hasMain) return { ...line, included: true };
-    return line;
+  const main = lines[0] || null;
+  const selected = Array.isArray(selectedBonusKeys) ? new Set(selectedBonusKeys) : null;
+  const bonuses = listProgramBonuses(program).map(entry => {
+    const base = { ...entry, selected: selected ? selected.has(entry.key) : true };
+    if (entry.key !== 'monthly') return { ...base, subtotal: entry.money };
+    const months = Number(entry.money.months) || DEFAULT_MONTHLY_MONTHS;
+    return {
+      ...base,
+      months,
+      monthsEstimated: !entry.money.months,
+      subtotal: { amount: Number(entry.money.amount) * months, currency: entry.money.currency },
+    };
   });
-  const bonuses = listProgramBonuses(program).map(entry => ({ ...entry, selected: selected.has(entry.key), subtotal: entry.money }));
-  const baseCurrency = program?.payments?.final?.currency || lines[0]?.money?.currency || bonuses[0]?.money?.currency || DEFAULT_PROGRAM_CURRENCY;
-  const counted = lines.filter(line => !line.included && !line.separate);
-  const guaranteedItems = counted.map(line => line.subtotal);
-  // Частини, заявлені «всередині», не можуть важити більше за саму суму:
-  // таку розбивку редактор показує як помилку, а не тихо рахує.
-  const mainLine = lines.find(line => line.key === 'final');
-  const includedSum = sumMoney(lines.filter(line => line.included).map(line => line.subtotal), baseCurrency, rates);
-  const includedExceedsMain = Boolean(mainLine) && includedSum.parts.length === 1 && includedSum.amount > 0
-    && includedSum.amount > Number(mainLine.subtotal?.amount || 0) + 0.5
-    && !includedSum.approximate && mainLine.subtotal.currency === baseCurrency;
-  const guaranteed = sumMoney(guaranteedItems, baseCurrency, rates);
-  const hasMonthlyEstimate = counted.some(line => line.monthsEstimated);
-  // «До 70 000 ₴ залежно від результату» — це головна виплата в найкращому
-  // разі; решта графіка стоїть та сама.
+  const kind = resolveProgramPayKind(program);
+  const baseCurrency = main?.money?.currency || bonuses[0]?.money?.currency || DEFAULT_PROGRAM_CURRENCY;
+  const mainItems = main ? [main.subtotal] : [];
+  const sumWith = list => sumMoney(
+    [...mainItems, ...list.map(item => item.subtotal)],
+    baseCurrency,
+    rates,
+    { approximate: list.some(item => item.monthsEstimated) },
+  );
+  const chosen = bonuses.filter(item => item.selected);
+  const total = sumWith(chosen);
+  const max = sumWith(bonuses);
+  // «До 70 000 ₴ залежно від результату» — це головна сума в найкращому
+  // разі; доплати стоять ті самі.
   const payMax = kind === 'guaranteed' ? program?.payMax : null;
-  const upTo = payMax
-    ? sumMoney([payMax, ...counted.filter(line => line.key !== 'final').map(line => line.subtotal)], baseCurrency, rates)
-    : null;
+  const upTo = payMax ? sumMoney([payMax, ...chosen.map(item => item.subtotal)], baseCurrency, rates) : null;
   return {
     kind,
+    main,
     lines,
-    separate: lines.filter(line => line.separate),
-    includedExceedsMain,
     bonuses,
     baseCurrency,
-    guaranteed,
-    total: sumMoney([...guaranteedItems, ...bonuses.filter(item => item.selected).map(item => item.subtotal)], baseCurrency, rates),
-    max: sumMoney([...guaranteedItems, ...bonuses.map(item => item.subtotal)], baseCurrency, rates),
+    total,
+    max,
+    // Історична назва: сума програми з усіма доплатами — те саме число, що
+    // стоїть у картці програми першим, у діапазоні рядка й у фільтрі.
+    guaranteed: max,
     upTo,
     upToCondition: payMax?.condition || '',
-    hasMonthlyEstimate,
-    // Сума за планом — не обіцянка: `guaranteed` зветься так історично, а
-    // означає «усе, що виплачують кожній за повним графіком». Гарантоване в
-    // прямому сенсі — лише вид суми `guaranteed` (мінімум).
-    // Суму «разом» можна обіцяти, лише коли вона справді одна: усі виплати
-    // в одній валюті (чи за курсом) і щомісячних відомо скільки. Девʼять
-    // місяців «за терміном вагітності» — наша оцінка, а не умова агенції.
-    reliable: guaranteed.parts.length === 1 && guaranteed.amount > 0 && !hasMonthlyEstimate,
+    hasMonthlyEstimate: bonuses.some(item => item.monthsEstimated),
+    reliable: max.parts.length === 1 && max.amount > 0,
   };
 };
 
 /**
- * Гарантована сума однією сумою в одній валюті — для діапазону рядка.
- * Без курсу й з виплатами у двох валютах однієї суми немає; тоді рядок
- * показує саму головну виплату, а не вигадану суму.
+ * Сума програми однією сумою в одній валюті — для діапазону рядка. Без
+ * курсу й з виплатами у двох валютах однієї суми немає; тоді рядок показує
+ * саму головну виплату, а не вигадану суму.
  */
 export const programGuaranteedMoney = (program, rates) => {
-  const { guaranteed } = programBreakdown(program, { rates });
-  if (guaranteed.parts.length === 1 && guaranteed.amount > 0) {
-    return { amount: guaranteed.amount, currency: guaranteed.currency, ...(guaranteed.approximate ? { approximate: true } : {}) };
+  const { max } = programBreakdown(program, { rates });
+  if (max.parts.length === 1 && max.amount > 0) {
+    return { amount: max.amount, currency: max.currency, ...(max.approximate ? { approximate: true } : {}) };
   }
   return programHeadlinePay(program);
 };
 
-/** Гарантована сума в доларах — фільтр «Виплата» й сортування. */
+/** Сума програми в доларах — фільтр «Виплата» й сортування. */
 export const programGuaranteedUsd = (program, rates) => {
   const breakdown = programBreakdown(program, { rates });
-  // Лише те, що справді додається: частини заявленої суми й окремі процедури
-  // фільтр не роздувають.
-  const usd = breakdown.lines.filter(line => !line.included && !line.separate).map(line => programMoneyInUsd(line.subtotal, rates || undefined));
+  const usd = [...breakdown.lines, ...breakdown.bonuses].map(line => programMoneyInUsd(line.subtotal, rates || undefined));
   if (usd.length && usd.every(value => Number.isFinite(value))) return usd.reduce((sum, value) => sum + value, 0);
-  if (!breakdown.lines.length) return programMoneyInUsd(programHeadlinePay(program), rates || undefined);
   return null;
 };
 
@@ -1275,7 +1183,7 @@ export const defaultProgramHighlightKeys = program => resolveProgramHighlights({
  */
 export const describeProgramCoverage = program => {
   const details = program?.coverageDetails || {};
-  const items = PROGRAM_COVERAGE_OPTIONS
+  const items = listCoverageOptions(program?.type)
     .filter(option => program?.coverage?.includes(option.key))
     .map(option => ({ key: option.key, label: option.label, ...(details[option.key] || {}) }));
   return {

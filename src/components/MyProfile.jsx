@@ -66,7 +66,7 @@ import {
   useProgramsVersion,
 } from '../utils/programsStore';
 import { loadProgramTerms, rememberProgramTerms } from './programs/programsRemote';
-import { listPrograms, listProgramBonuses, listProgramPayments } from '../utils/donorPrograms';
+import { listPrograms, listProgramBonuses } from '../utils/donorPrograms';
 import { MyProfileCardPreview } from './MyProfileCardPreview';
 import { getCurrentValue } from './getCurrentValue';
 
@@ -1236,9 +1236,10 @@ export const MyProfile = () => {
       .then(saved => {
         // Словник назв — підказка іншим агенціям, а не частина запису: його
         // відмова не робить збережені програми незбереженими.
+        // Виплат і доплат більше не два списки — дописане агенцією йде
+        // підказкою доплати, звідки б воно не було записане.
         Promise.all([
-          rememberProgramTerms('payment', list.flatMap(program => listProgramPayments(program).filter(item => item.key.startsWith('other-')).map(item => item.label))),
-          rememberProgramTerms('bonus', list.flatMap(program => listProgramBonuses(program).filter(item => item.key.startsWith('bonus-')).map(item => item.label))),
+          rememberProgramTerms('bonus', list.flatMap(program => listProgramBonuses(program).filter(item => /^(other|bonus)-/.test(item.key)).map(item => item.label))),
         ]).catch(error => console.warn('[programs] назви виплат не записались у словник', error));
         // Правила бази ще не знають частини полів — програму записано без
         // них, а повна версія лишилась у браузері (`pending`). «Збережено»

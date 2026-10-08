@@ -1411,9 +1411,11 @@ const ProfileRow = ({
    * хто це (назва, тип, місце) → що вона про себе каже → програми → як
    * звʼязатись → решта дій. «Детальніше» внизу тут розгортало «Про себе»,
    * а стрілка біля суми програми — деталі програми, і обидва виглядали
-   * однаково. Тепер кожне розгортання підписане тим, що воно відкриває, і
-   * стоїть у тому розділі, який розгортає: «Про агенцію» — над програмами,
-   * «Деталі програми» — у контейнері програми (`ProgramsView`).
+   * однаково. Тепер кожне розгортання підписане тим, що воно відкриває:
+   * «Деталі програми» — у контейнері програми (`ProgramsView`), а «Більше про
+   * агенцію» — у самому низу картки, під відгуком, памʼяткою й реакціями.
+   * Над програмами цей розділ стояв першим після назви й відсував програми —
+   * те, заради чого картку агенції й гортають, — на другий екран.
    *
    * Опис організації в картці стрічки не лежить (`matchingCards` його не
    * несе), тож поки анкету не прочитано, розділ — сама кнопка; прочитаний
@@ -1425,7 +1427,13 @@ const ProfileRow = ({
   const aboutMeaningful = organisationLayout && isMeaningfulOrganisationDescription(aboutText, user, location);
   const aboutLong = aboutMeaningful && (aboutText.length > ORGANISATION_ABOUT_CLAMP_CHARS || aboutText.split('\n').length > 3);
   const aboutRole = rowRole === 'cl' || anketaRole === 'cl' ? 'cl' : 'ag';
-  const aboutTitle = uiText(aboutRole === 'cl' ? 'Про клініку' : 'Про агенцію', language);
+  const aboutTitle = uiText(aboutRole === 'cl' ? 'Більше про клініку' : 'Більше про агенцію', language);
+  // Біологічні батьки — картка людей, а не організації (смуга показників і
+  // розділи анкети), але читає її та сама агенція чи донорка, що й картку
+  // агенції: розгортання так само стоїть у самому низу й підписане тим, про
+  // кого воно, а не безликим «Детальніше».
+  const parentsLayout = !organisationLayout && !isPersonAnketa && isCounterparty && rowRole === 'ip';
+  const detailsLabel = parentsLayout ? 'Більше про біологічних батьків' : 'Детальніше';
 
   // Стан публікації читається з картки, а не з `publish`: у проєкції стрічки
   // такого ключа немає (див. `isMatchingCardPublished`).
@@ -1541,6 +1549,35 @@ const ProfileRow = ({
     ? <S.CompactDecisions data-testid="compact-decisions">{reactionPair}{editButton}</S.CompactDecisions>
     : null;
 
+  const detailsBlock = (
+    <>
+      {!organisationLayout && canExpandDetails && onToggleExpand && (!preview || hasMoreDetails) && (
+        <S.RowDetailsToggle
+          type="button"
+          data-testid="row-details-toggle"
+          $turn={expanded}
+          aria-expanded={expanded}
+          onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
+        >
+          <span>{uiText(expanded ? 'Згорнути' : detailsLabel, language)}</span>
+          <FaChevronDown size={11} aria-hidden="true" />
+        </S.RowDetailsToggle>
+      )}
+
+      {/* Порожнього блоку «всі дані» не буває: без жодного поля він малював
+          рамку з написом «Додаткових даних немає», тобто зайвий рядок і
+          відступ у картці, який нічого не казав. */}
+      {!organisationLayout && expanded && !isLimited && hasMoreDetails && (
+        <S.More $afterToggle onClick={e => e.stopPropagation()}>
+          {/* Під кнопкою — розділи повної анкети, ті самі й у тому самому
+              порядку, що й у формі (`ProfileFacts`). */}
+          <ProfileAboutSection text={bio} language={language} accent={roleAccent} />
+          <ProfileDetailSections sections={detailSections} accent={roleAccent} />
+        </S.More>
+      )}
+    </>
+  );
+
   return (
     <S.Card
       $role={rowRole}
@@ -1655,42 +1692,6 @@ const ProfileRow = ({
           про людину одне й те саме однаковими словами. */}
       <ProfileStatStrip cells={statCells} />
       <ProfileFactList rows={summaryRows} />
-      {organisationLayout && (aboutMeaningful || (!aboutKnown && canExpandDetails && onToggleExpand && !isOrganisationAnketa) || (expanded && aboutKnown && !isOrganisationAnketa)) ? (
-        <S.OrganisationAbout data-testid="organisation-about" onClick={e => e.stopPropagation()}>
-          {aboutMeaningful ? (
-            <>
-              <S.OrganisationAboutTitle>{aboutTitle}</S.OrganisationAboutTitle>
-              <S.OrganisationAboutText $clamped={aboutLong && !expanded}>{aboutText}</S.OrganisationAboutText>
-              {aboutLong && onToggleExpand ? (
-                <SectionToggle
-                  type="button"
-                  $open={expanded}
-                  aria-expanded={expanded}
-                  onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
-                >
-                  <span>{uiText(expanded ? 'Згорнути опис' : 'Читати повністю', language)}</span>
-                  <FaChevronDown aria-hidden="true" />
-                </SectionToggle>
-              ) : null}
-            </>
-          ) : expanded && aboutKnown ? (
-            <S.OrganisationAboutEmpty>
-              {uiText(aboutRole === 'cl' ? 'Клініка ще не додала опису.' : 'Агенція ще не додала опису.', language)}
-            </S.OrganisationAboutEmpty>
-          ) : (
-            <SectionToggle
-              type="button"
-              data-testid="row-details-toggle"
-              $open={expanded}
-              aria-expanded={expanded}
-              onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
-            >
-              <span>{aboutTitle}</span>
-              <FaChevronDown aria-hidden="true" />
-            </SectionToggle>
-          )}
-        </S.OrganisationAbout>
-      ) : null}
       {!isLimited && !isPersonAnketa ? <CardRoleBlock card={roleBlockCard} programsContext={programsContext} language={language} accent={roleAccent} /> : null}
 
       {/* «Детальніше» — під коротким описом, посеред картки, а не стрілкою в
@@ -1700,30 +1701,7 @@ const ProfileRow = ({
       {/* У прев'ю кнопка є лише там, де екран дав `onToggleExpand`
           («Мій профіль»), і лише коли під нею щось є: стрічка дочитує анкету
           на дотик, а прев'ю вже несе її всю. */}
-      {!organisationLayout && canExpandDetails && onToggleExpand && (!preview || hasMoreDetails) && (
-        <S.RowDetailsToggle
-          type="button"
-          data-testid="row-details-toggle"
-          $turn={expanded}
-          aria-expanded={expanded}
-          onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
-        >
-          <span>{uiText(expanded ? 'Згорнути' : 'Детальніше', language)}</span>
-          <FaChevronDown size={11} aria-hidden="true" />
-        </S.RowDetailsToggle>
-      )}
-
-      {/* Порожнього блоку «всі дані» не буває: без жодного поля він малював
-          рамку з написом «Додаткових даних немає», тобто зайвий рядок і
-          відступ у картці, який нічого не казав. */}
-      {!organisationLayout && expanded && !isLimited && hasMoreDetails && (
-        <S.More $afterToggle onClick={e => e.stopPropagation()}>
-          {/* Під кнопкою — розділи повної анкети, ті самі й у тому самому
-              порядку, що й у формі (`ProfileFacts`). */}
-          <ProfileAboutSection text={bio} language={language} accent={roleAccent} />
-          <ProfileDetailSections sections={detailSections} accent={roleAccent} />
-        </S.More>
-      )}
+      {!parentsLayout ? detailsBlock : null}
 
       {contactEntries.length > 0 && (
         <S.RowContacts onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
@@ -1825,6 +1803,47 @@ const ProfileRow = ({
           {editButton}
         </S.RowFooterActions>
       )}
+
+      {/* «Більше про агенцію» — останнім у картці, під рішенням: спершу
+          програми й контакти, заради яких картку агенції гортають, а опис —
+          для тих, кому їх замало. */}
+      {organisationLayout && (aboutMeaningful || (!aboutKnown && canExpandDetails && onToggleExpand && !isOrganisationAnketa) || (expanded && aboutKnown && !isOrganisationAnketa)) ? (
+        <S.OrganisationAbout data-testid="organisation-about" onClick={e => e.stopPropagation()}>
+          {aboutMeaningful ? (
+            <>
+              <S.OrganisationAboutTitle>{aboutTitle}</S.OrganisationAboutTitle>
+              <S.OrganisationAboutText $clamped={aboutLong && !expanded}>{aboutText}</S.OrganisationAboutText>
+              {aboutLong && onToggleExpand ? (
+                <SectionToggle
+                  type="button"
+                  $open={expanded}
+                  aria-expanded={expanded}
+                  onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
+                >
+                  <span>{uiText(expanded ? 'Згорнути опис' : 'Читати повністю', language)}</span>
+                  <FaChevronDown aria-hidden="true" />
+                </SectionToggle>
+              ) : null}
+            </>
+          ) : expanded && aboutKnown ? (
+            <S.OrganisationAboutEmpty>
+              {uiText(aboutRole === 'cl' ? 'Клініка ще не додала опису.' : 'Агенція ще не додала опису.', language)}
+            </S.OrganisationAboutEmpty>
+          ) : (
+            <SectionToggle
+              type="button"
+              data-testid="row-details-toggle"
+              $open={expanded}
+              aria-expanded={expanded}
+              onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
+            >
+              <span>{aboutTitle}</span>
+              <FaChevronDown aria-hidden="true" />
+            </SectionToggle>
+          )}
+        </S.OrganisationAbout>
+      ) : null}
+      {parentsLayout ? detailsBlock : null}
 
       {diagnosticsSlot}
 
