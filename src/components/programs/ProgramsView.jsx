@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import styled from 'styled-components';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import styled, { css, keyframes } from 'styled-components';
 import {
   FaBalanceScale,
   FaBus,
   FaChevronDown,
   FaFileSignature,
+  FaGift,
   FaHeadset,
   FaHome,
   FaMapMarkerAlt,
@@ -19,13 +20,11 @@ import {
   PROGRAM_COVERAGE_PER,
   PROGRAM_FAMILY_OPTIONS,
   PROGRAM_OFFER_LABELS,
-  PROGRAM_REQUIREMENT_LABELS,
   describeProgramCoverage,
   describeProgramRequirements,
   evaluateProgram,
   formatProgramPlace,
   listProgramDifferences,
-  listProgramStages,
   programBreakdown,
   resolveProgramHighlights,
   summarizeCardPrograms,
@@ -37,6 +36,13 @@ import {
   formatProgramMoney,
   formatRateDate,
 } from '../../utils/programCurrency';
+import {
+  buildSurrogacyTimeline,
+  formatCycleDateForStorage,
+  formatTimelineDate,
+  parseCycleDate,
+  projectCycleStart,
+} from '../../utils/programTimeline';
 import { uiText } from '../../utils/uiTranslations';
 
 /*
@@ -53,8 +59,9 @@ import { uiText } from '../../utils/uiTranslations';
  *     читати далі, а покриття — уже в деталях.
  *  2. **Деталі програми** — під тим самим контейнером, кнопкою «Деталі
  *     програми» всередині нього: основна й гарантовані виплати рядками,
- *     додаткові — перемикачами, вимоги з рівнями й поясненнями, етапи й
- *     переїзд, як саме покривається кожна витрата, коментар організатора.
+ *     додаткові — перемикачами, вимоги, переїзд, що ще дає програма (як
+ *     саме покривається кожна витрата, своє агенції), коментар організатора
+ *     і — у програмі СМ — приблизний графік від місячних до пологів.
  *
  * Сума в заголовку — основна плюс гарантовані виплати (`programBreakdown`),
  * а додаткові (КС, двійня, досвід) у неї не йдуть, доки читачка їх не
@@ -96,6 +103,18 @@ const BAD = '#C8483E';
 const UNSURE = '#B7791F';
 
 const VISIBLE_PROGRAMS = 3;
+
+// Розгорнуте зʼявляється, а не вистрибує: деталі програми тут, розділ і
+// виплата в редакторі (`ProgramsEditor`). Коротко й без зміни висоти —
+// анімація висоти смикала б прокрутку під пальцем.
+const revealIn = keyframes`
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+`;
+export const revealCss = css`
+  animation: ${revealIn} 0.18s ease-out;
+  @media (prefers-reduced-motion: reduce) { animation: none; }
+`;
 
 // --- гроші у валюті читача -----------------------------------------------------
 
@@ -216,18 +235,6 @@ const Chip = styled.li`
   &.differs { font-weight: 600; }
 `;
 
-const NoteList = styled.ul`
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: ${MUTED};
-
-  li + li { margin-top: 2px; }
-  b { font-weight: 600; color: ${TEXT}; }
-`;
-
 // Що покриває організація — не вимога, і виглядати як вимога не має: список
 // зі значками, а не рамки. Подробиці (як саме покривають, межа, примітка)
 // стоять під назвою дрібніше.
@@ -309,8 +316,6 @@ const REQUIREMENT_FIX_HINTS = Object.freeze({
   csection: 'Вкажіть кількість КР в анкеті',
 });
 
-const LEVEL_SUFFIX = Object.freeze({ preferred: 'бажано', individual: 'індивідуально' });
-
 /** Перемикач валюти — сегментом поруч із заголовком програм. */
 export const ProgramCurrencySwitch = ({ value, onChange, language }) => (
   <CurrencyGroup role="group" aria-label={uiText('Валюта сум', language)}>
@@ -346,8 +351,7 @@ const highlightText = (item, language, displayCurrency, rates) => {
   if (item.key === 'bonuses') return `+${item.variables.count} ${uiText(pluralBonuses(item.variables.count, language), language)}`;
   if (item.money) return uiText(item.text, language, { amount: plainMoney(item.money, displayCurrency, rates) });
   if (item.variables?.label) return uiText(item.text, language, { ...item.variables, label: uiText(item.variables.label, language).toLowerCase() });
-  const base = uiText(item.text, language, item.variables);
-  return item.level && LEVEL_SUFFIX[item.level] ? `${base} (${uiText(LEVEL_SUFFIX[item.level], language)})` : base;
+  return uiText(item.text, language, item.variables);
 };
 
 const COVERAGE_ICONS = Object.freeze({
@@ -384,11 +388,156 @@ export const summarizeCoverageLine = (program, language, limit = 2) => {
   const { all } = describeProgramCoverage(program);
   if (!all.length) return '';
   const names = all.slice(0, limit).map((item, index) => {
+    if (item.custom) return item.label;
     const label = uiText(item.label, language);
     return index === 0 ? label : label.toLowerCase();
   });
   const rest = all.length - names.length;
   return `${names.join(', ')}${rest > 0 ? ` +${rest}` : ''}`;
+};
+
+// --- приблизний графік програми ---------------------------------------------
+
+const TimelineToggle = styled.button`
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid ${BORDER};
+  border-radius: 999px;
+  background: ${CARD_BG};
+  color: ${ACCENT};
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
+`;
+
+const TimelineControls = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 14px;
+  margin-bottom: 10px;
+  ${revealCss}
+
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: ${MUTED}; }
+  input[type='date'] {
+    min-height: 38px;
+    padding: 0 10px;
+    border: 1px solid ${BORDER};
+    border-radius: 10px;
+    background: ${CARD_BG};
+    color: ${TEXT};
+    font: inherit;
+    font-size: 14px;
+    color-scheme: light dark;
+  }
+  label.check { flex-direction: row; align-items: center; gap: 8px; min-height: 38px; font-size: 13.5px; color: ${TEXT}; cursor: pointer; }
+  label.check input { width: 18px; height: 18px; margin: 0; accent-color: ${ACCENT}; }
+`;
+
+const TimelineList = styled.ol`
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: ${TEXT};
+  ${revealCss}
+
+  li { display: grid; grid-template-columns: 4.6em minmax(0, 1fr); gap: 8px; padding: 3px 0; }
+  li + li { border-top: 1px solid color-mix(in srgb, ${BORDER} 60%, transparent); }
+  time { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  em { font-style: normal; color: ${MUTED}; }
+  li.key time, li.key span { color: ${ACCENT}; font-weight: 700; }
+`;
+
+const TIMELINE_SAVE_DELAY_MS = 800;
+const KEY_TIMELINE_EVENTS = new Set(['transfer', 'week40']);
+
+/**
+ * Приблизний графік програми СМ: від першого дня місячних до пологів.
+ *
+ * Дата місячних — поле анкети читачки (`lastCycle`): записане підставляється
+ * само, порожнє вона вводить тут, і будь-яке правиться. Уведене пишеться в її
+ * анкету (`onLastCycleChange`), з паузою, щоб набір дати по цифрі не писав
+ * кожну проміжну. Без колбека (прев'ю агенції в редакторі) графік лише
+ * рахується. Рядок — «12 лис (12 тиж.) — Скринінг»: дата, тиждень вагітності,
+ * подія. Дати рахує `programTimeline` тією самою логікою робочих днів, що й
+ * графік стимуляції.
+ */
+export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language }) => {
+  const [open, setOpen] = useState(false);
+  const saved = formatCycleDateForStorage(parseCycleDate(lastCycle));
+  const [value, setValue] = useState(saved);
+  const [dipherelin, setDipherelin] = useState(false);
+  const savedRef = useRef(saved);
+  useEffect(() => {
+    // Записане ззовні (інша вкладка, «Мій профіль») підхоплюється, поки
+    // читачка не почала правити своє.
+    if (saved !== savedRef.current) {
+      savedRef.current = saved;
+      setValue(saved);
+    }
+  }, [saved]);
+  useEffect(() => {
+    if (!onLastCycleChange || !value || value === savedRef.current || !parseCycleDate(value)) return undefined;
+    const timer = window.setTimeout(() => {
+      savedRef.current = value;
+      onLastCycleChange(value);
+    }, TIMELINE_SAVE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [onLastCycleChange, value]);
+
+  if (!open) {
+    return (
+      <TimelineToggle type="button" onClick={event => { event.stopPropagation(); setOpen(true); }}>
+        {uiText('Приблизний графік програми', language)}
+      </TimelineToggle>
+    );
+  }
+  const { date: start, projected } = projectCycleStart(parseCycleDate(value));
+  const items = buildSurrogacyTimeline(start, { dipherelin });
+  const weekUnit = language === 'en' ? 'wk' : 'тиж.';
+  return (
+    <div data-testid="program-timeline" onClick={event => event.stopPropagation()}>
+      <SectionTitle>{uiText('Приблизний графік програми', language)}</SectionTitle>
+      <TimelineControls>
+        <label>
+          {uiText('Перший день останньої менструації', language)}
+          <input type="date" value={value} onChange={event => setValue(event.target.value)} />
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={dipherelin} onChange={event => setDipherelin(event.target.checked)} />
+          {uiText('Стимуляція з дифереліном', language)}
+        </label>
+      </TimelineControls>
+      {items.length ? (
+        <>
+          {projected ? (
+            <Hint>{uiText('Рахуємо від наступних очікуваних місячних — {date} (цикл 28 днів)', language, { date: formatTimelineDate(start, language) })}</Hint>
+          ) : null}
+          <TimelineList aria-label={uiText('Приблизний графік програми', language)}>
+            {items.map(item => (
+              <li key={item.key} className={KEY_TIMELINE_EVENTS.has(item.key) ? 'key' : undefined}>
+                <time dateTime={formatCycleDateForStorage(item.date)}>{formatTimelineDate(item.date, language)}</time>
+                <span>
+                  {item.week !== undefined ? <em>({item.week} {weekUnit}) </em> : null}
+                  — {uiText(item.label, language)}
+                </span>
+              </li>
+            ))}
+          </TimelineList>
+          <Hint>{uiText('Дати приблизні: точний графік складає лікар клініки.', language)}</Hint>
+        </>
+      ) : (
+        <Hint>{uiText('Вкажіть дату — і графік складеться сам.', language)}</Hint>
+      )}
+    </div>
+  );
 };
 
 // --- деталі програми ---------------------------------------------------------
@@ -487,6 +636,7 @@ export const ProgramCard = ({
   displayCurrency = '',
   selectedBonuses: controlledBonuses,
   onToggleBonus,
+  timeline = null,
 }) => {
   const [ownBonuses, toggleOwnBonus] = useSelectedBonuses(program);
   // У контейнері стрічки вибір тримає згорнута частина: її заголовок рахує
@@ -500,7 +650,6 @@ export const ProgramCard = ({
   const requirements = describeProgramRequirements(program);
   const unknown = requirements.filter(item => checkByKey.get(item.key) === null).map(item => REQUIREMENT_FIX_HINTS[item.key]);
   const coverage = describeProgramCoverage(program);
-  const stages = listProgramStages(program);
   const relocation = program.relocation || null;
   const toggleBonus = controlled ? onToggleBonus : toggleOwnBonus;
   const state = result ? (result.matches ? (result.uncertain ? 'uncertain' : 'match') : 'mismatch') : '';
@@ -509,7 +658,6 @@ export const ProgramCard = ({
     uncertain: 'Може підходити — уточніть в агенції або доповніть анкету',
     mismatch: 'Не підходить за вимогами',
   }[state];
-  const notes = requirements.filter(item => item.note);
   const familyLabel = PROGRAM_FAMILY_OPTIONS.find(option => option.key === relocation?.family && option.key)?.label || '';
   const plus = money => plainMoney(money, currency, rates).replace(/^(≈ )?/, (match, approx) => `${approx || ''}+`);
   const lineMoney = item => (item.monthsEstimated ? { ...item.subtotal, approximate: true } : item.subtotal);
@@ -574,30 +722,18 @@ export const ProgramCard = ({
                 <Chip key={item.key} $ok={ok}>
                   {ok === true ? <b aria-hidden="true">✓</b> : ok === false ? <b aria-hidden="true">✕</b> : null}
                   {requirementText(item, language)}
-                  {LEVEL_SUFFIX[item.level] ? <em>· {uiText(LEVEL_SUFFIX[item.level], language)}</em> : null}
                 </Chip>
               );
             })}
           </Chips>
-          {notes.length ? (
-            <NoteList>
-              {notes.map(item => <li key={item.key}><b>{uiText(PROGRAM_REQUIREMENT_LABELS[item.key], language)}:</b> {item.note}</li>)}
-            </NoteList>
-          ) : null}
           {unknown.length ? <Hint>{[...new Set(unknown)].map(hint => uiText(hint, language)).join(' · ')}</Hint> : null}
         </Section>
       ) : null}
 
-      {stages.length || relocation ? (
+      {relocation ? (
         <Section>
-          <SectionTitle>{uiText('Де й коли', language)}</SectionTitle>
+          <SectionTitle>{uiText('Переїзд', language)}</SectionTitle>
           <PlaceList>
-            {stages.map((item, index) => (
-              <React.Fragment key={`${item.stage}-${index}`}>
-                <dt>{uiText(item.label, language)}</dt>
-                <dd>{item.place}</dd>
-              </React.Fragment>
-            ))}
             {relocation?.when ? <><dt>{uiText('Переїзд', language)}</dt><dd>{relocation.when}</dd></> : null}
             {familyLabel ? <><dt>{uiText('Сімʼя', language)}</dt><dd>{uiText(familyLabel, language)}</dd></> : null}
           </PlaceList>
@@ -607,16 +743,16 @@ export const ProgramCard = ({
 
       {coverage.all.length ? (
         <Section>
-          <SectionTitle>{uiText('Що покриває', language)}</SectionTitle>
-          <CoverList aria-label={uiText('Витрати', language)}>
-            {[...coverage.expenses, ...coverage.support].map(item => {
-              const Icon = COVERAGE_ICONS[item.key] || FaShieldAlt;
-              const detail = coverageDetailText(item, language, currency, rates);
+          <SectionTitle>{uiText('Що ще дає програма', language)}</SectionTitle>
+          <CoverList aria-label={uiText('Що ще дає програма', language)}>
+            {[...coverage.expenses, ...coverage.support, ...coverage.custom].map(item => {
+              const Icon = item.custom ? FaGift : COVERAGE_ICONS[item.key] || FaShieldAlt;
+              const detail = item.custom ? '' : coverageDetailText(item, language, currency, rates);
               return (
                 <li key={item.key}>
                   <Icon aria-hidden="true" />
                   <span>
-                    {uiText(item.label, language)}
+                    {item.custom ? item.label : uiText(item.label, language)}
                     {detail ? <small>{detail}</small> : null}
                   </span>
                 </li>
@@ -630,6 +766,13 @@ export const ProgramCard = ({
         <Section>
           <SectionTitle>{uiText('Коментар організатора', language)}</SectionTitle>
           <Note>{program.note}</Note>
+        </Section>
+      ) : null}
+
+      {/* Графік — наприкінці: спершу «що дає програма», потім «коли». */}
+      {program.type === 'sm' ? (
+        <Section>
+          <ProgramTimeline language={language} lastCycle={timeline?.lastCycle} onLastCycleChange={timeline?.onLastCycleChange} />
         </Section>
       ) : null}
     </Details>
@@ -862,6 +1005,7 @@ const ProgramBody = styled.div`
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid ${BORDER};
+  ${revealCss}
 `;
 
 // Розгортання — словом, у самому контейнері, якого воно стосується:
@@ -934,7 +1078,7 @@ export const describeProgramOffer = (program, { rates = null, selectedBonusKeys 
 /**
  * Згорнута програма — пропозиція одним поглядом, у власному контейнері.
  */
-const ProgramListItem = ({ program, open, onToggle, facts, rates, language, differs, displayCurrency }) => {
+const ProgramListItem = ({ program, open, onToggle, facts, rates, language, differs, displayCurrency, timeline = null }) => {
   const result = facts ? evaluateProgram(program, facts) : null;
   const fit = programFitState(result);
   const [selectedBonuses, toggleBonus] = useSelectedBonuses(program);
@@ -952,8 +1096,7 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
   const checkByKey = new Map((result?.checks || []).map(check => [check.key, check.ok]));
   const bodyId = `program-body-${program.id}`;
   const offerLabel = programHeading(program, language);
-  const place = program.location ? formatProgramPlace(program.location) : (listProgramStages(program)[0]?.place || '');
-  const stagesCount = (program.stages || []).length;
+  const place = program.location ? formatProgramPlace(program.location) : '';
 
   return (
     <ProgramItem data-testid="program-list-item" onClick={event => event.stopPropagation()}>
@@ -976,10 +1119,7 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
           {place ? (
             <Place className={differs?.has('location') ? 'differs' : undefined}>
               <FaMapMarkerAlt aria-hidden="true" />
-              <span>
-                {place}
-                {stagesCount > 1 ? ` · ${uiText('{count} етапи', language, { count: stagesCount })}` : ''}
-              </span>
+              <span>{place}</span>
             </Place>
           ) : null}
         </div>
@@ -993,7 +1133,6 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
               <Chip key={item.key} $ok={ok} className={differs?.has(item.key) ? 'differs' : undefined}>
                 {ok === true ? <b aria-hidden="true">✓</b> : ok === false ? <b aria-hidden="true">✕</b> : null}
                 {requirementText(item, language)}
-                {LEVEL_SUFFIX[item.level] ? <em>· {uiText(LEVEL_SUFFIX[item.level], language)}</em> : null}
               </Chip>
             );
           })}
@@ -1020,6 +1159,7 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
             displayCurrency={displayCurrency}
             selectedBonuses={selectedBonuses}
             onToggleBonus={toggleBonus}
+            timeline={timeline}
           />
         </ProgramBody>
       ) : null}
@@ -1068,6 +1208,7 @@ export const AgencyProgramsPanel = ({
   language,
   defaultOpenId = '',
   onOpen,
+  timeline = null,
 }) => {
   const [openIds, setOpenIds] = useState(() => new Set(defaultOpenId ? [defaultOpenId] : []));
   const [showAll, setShowAll] = useState(false);
@@ -1136,6 +1277,7 @@ export const AgencyProgramsPanel = ({
               language={language}
               differs={differences.get(program.id)}
               displayCurrency={displayCurrency}
+              timeline={timeline}
             />
           ))}
         </ProgramList>

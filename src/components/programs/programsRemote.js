@@ -54,7 +54,7 @@ export const stripMonthlyMonths = items => Object.fromEntries(Object.entries(ite
 // знімається спершу окремо: правила, що вже знають решту розширених полів,
 // не мусять коштувати агенції назви, етапів і графіка лише через ці. Без
 // `guaranteed` у базі виплата бере типовий рід (`isGuaranteedPayment`).
-const NEWEST_PROGRAM_FIELDS = Object.freeze(['featured', 'customRequirements']);
+const NEWEST_PROGRAM_FIELDS = Object.freeze(['featured', 'customRequirements', 'customCoverage']);
 const NEWEST_PAYMENT_FIELDS = Object.freeze(['counting', 'guaranteed']);
 const EXTENDED_PROGRAM_FIELDS = Object.freeze(['name', 'payKind', 'payMax', 'startNow', 'requirementMeta', 'stages', 'relocation', 'coverageDetails', 'highlights', ...NEWEST_PROGRAM_FIELDS]);
 const EXTENDED_PAYMENT_FIELDS = Object.freeze(['when', 'condition', 'includes', ...NEWEST_PAYMENT_FIELDS]);
@@ -78,6 +78,9 @@ export const stripNewestProgramFields = items => stripProgramFields(items, NEWES
 // що вже знають `guaranteed`, не мусять коштувати агенції роду виплат лише
 // через нього, тож спершу знімається саме воно.
 export const stripCustomRequirements = items => stripProgramFields(items, ['customRequirements'], []);
+// Своє в «Що ще дає програма» (`customCoverage`) — ще свіжіше: спершу
+// знімається лише воно, потім разом із власними вимогами.
+export const stripCustomCoverage = items => stripProgramFields(items, ['customCoverage'], []);
 
 export const writeProgramsToDb = async (uid, items, at) => {
   try {
@@ -86,7 +89,7 @@ export const writeProgramsToDb = async (uid, items, at) => {
     if (!isReactionPermissionDeniedError(error)) throw error;
     // Від новішого до старішого: спершу без нових полів, далі ще й без
     // кількості місяців — кожна з цих версій правил у проді вже бувала.
-    const fallbacks = [stripCustomRequirements(items), stripNewestProgramFields(items), stripExtendedProgramFields(items), stripMonthlyMonths(stripExtendedProgramFields(items))];
+    const fallbacks = [stripCustomCoverage(items), stripCustomRequirements(stripCustomCoverage(items)), stripNewestProgramFields(items), stripExtendedProgramFields(items), stripMonthlyMonths(stripExtendedProgramFields(items))];
     let previous = JSON.stringify(items);
     for (const fallback of fallbacks) {
       const serialized = JSON.stringify(fallback);

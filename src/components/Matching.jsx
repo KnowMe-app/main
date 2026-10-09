@@ -1182,6 +1182,9 @@ const Matching = () => {
   // резус, пологи, КР, сімейний стан). Читається з тієї самої анкети, що й
   // роль, на вході — окремого запиту не коштує.
   const [viewerProgramFacts, setViewerProgramFacts] = useState(null);
+  // Перший день місячних читачки — з нього графік програми СМ рахує перенос
+  // і пологи (`ProgramTimeline`). Уведене там пишеться назад у її анкету.
+  const [viewerLastCycle, setViewerLastCycle] = useState('');
   // Роль читача потрібна не лише деці, а й дочитуванню сторінок: інакше запас
   // рахувався б по картках, які до екрана не доходять (`fetchChunk`).
   const currentUserRoleRef = useRef(currentUserRole);
@@ -1292,13 +1295,27 @@ const Matching = () => {
   const viewerProgramType = isAdmin ? '' : resolveViewerProgramType(currentUserRole);
   const programRates = useProgramRates(true);
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
+  const saveViewerLastCycle = React.useCallback(async value => {
+    setViewerLastCycle(value);
+    if (!ownerId) return;
+    try {
+      await updateDataInRealtimeDB(ownerId, { lastCycle: value }, 'update');
+    } catch (error) {
+      console.warn('[Matching] не вдалося записати дату місячних з графіка програми', error);
+    }
+  }, [ownerId]);
+  const programTimeline = useMemo(() => ({
+    lastCycle: viewerLastCycle,
+    onLastCycleChange: ownerId ? saveViewerLastCycle : undefined,
+  }), [ownerId, saveViewerLastCycle, viewerLastCycle]);
   const programsContext = useMemo(() => ({
     viewerType: viewerProgramType,
     facts: viewerProgramFacts,
     rates: programRates,
     displayCurrency: programDisplayCurrency,
     onDisplayCurrencyChange: setProgramDisplayCurrency,
-  }), [programDisplayCurrency, programRates, setProgramDisplayCurrency, viewerProgramFacts, viewerProgramType]);
+    timeline: programTimeline,
+  }), [programDisplayCurrency, programRates, programTimeline, setProgramDisplayCurrency, viewerProgramFacts, viewerProgramType]);
   useEffect(() => {
     setPaymentFilterProgramTypes(viewerProgramType ? [viewerProgramType] : null);
   }, [viewerProgramType]);
@@ -2366,6 +2383,7 @@ const Matching = () => {
             // search-key discovery and additional-access refresh asynchronous.
             setMultiDataOwnerIds(resolvedOwnerIds);
             setViewerProgramFacts(extractViewerProgramFacts(profile, PROGRAM_FACT_HELPERS));
+            setViewerLastCycle(String((Array.isArray(profile?.lastCycle) ? profile.lastCycle[profile.lastCycle.length - 1] : profile?.lastCycle) || ''));
             setCurrentUserRole(prev => (viewerRoleSignature(prev) === viewerRoleSignature(userRole) ? prev : userRole));
             localStorage.setItem('userRole', userRole);
             setCurrentUserRoleResolved(true);
