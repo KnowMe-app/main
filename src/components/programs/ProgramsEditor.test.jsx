@@ -169,8 +169,8 @@ describe('редактор програм', () => {
     // останньою — і стоїть останньою, відкрита, а щомісячна згортається.
     fireEvent.click(screen.getByRole('button', { name: 'Додати доплату: Перенос ембріона' }));
     expect(screen.queryByLabelText('Скільки місяців')).not.toBeInTheDocument();
-    const rows = Array.from(document.querySelectorAll('[data-payment-row]')).map(node => node.getAttribute('data-payment-row'));
-    expect(rows).toEqual(['final', 'known-monthly', 'known-twins', 'known-transfer']);
+    const rows = screen.getAllByTestId(/^payment-/).map(node => node.getAttribute('data-testid'));
+    expect(rows).toEqual(['payment-final', 'payment-monthly', 'payment-twins', 'payment-transfer']);
     expect(within(screen.getByTestId('payment-transfer')).getByLabelText('Перенос ембріона')).toBeInTheDocument();
   });
 
