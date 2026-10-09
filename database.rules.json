@@ -520,6 +520,9 @@
                   "counting": {
                     ".validate": "$paymentKey != 'final' && $paymentKey != 'total' && $paymentKey != 'repeat' && (newData.val() == 'added' || newData.val() == 'included' || newData.val() == 'separate')"
                   },
+                  "guaranteed": {
+                    ".validate": "$paymentKey != 'final' && $paymentKey != 'total' && newData.isBoolean()"
+                  },
                   "$other": {
                     ".validate": false
                   }
@@ -560,6 +563,9 @@
                   },
                   "counting": {
                     ".validate": "newData.val() == 'added' || newData.val() == 'included' || newData.val() == 'separate'"
+                  },
+                  "guaranteed": {
+                    ".validate": "newData.isBoolean()"
                   },
                   "$other": {
                     ".validate": false

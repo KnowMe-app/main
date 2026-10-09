@@ -20,6 +20,20 @@ import { resolveProfileLanguage } from './profileTexts';
  * вибрані зі списку значення — `translateFieldValue`.
  */
 const EN_BY_UK = {
+  // Програми: основна виплата без вибору виду суми, гарантовані виплати в
+  // сумі, додаткові — перемикачами; коментар організатора.
+  'Шукаємо донора ооцитів': 'Seeking an egg donor',
+  'Шукаємо сурогатну маму': 'Seeking a surrogate',
+  'Основна виплата': 'Main payment',
+  'Інші виплати': 'Other payments',
+  'Додаткові виплати': 'Additional payments',
+  'Гарантована — входить у суму програми': 'Guaranteed — included in the program amount',
+  'З додатковими виплатами — до {amount}': 'With additional payments — up to {amount}',
+  'Сума може бути вищою': 'The amount may be higher',
+  'з додатковими виплатами': 'with additional payments',
+  'Коментар організатора': 'Organizer’s comment',
+  'Важливе, чого немає серед полів програми': 'Anything important the program fields do not cover',
+  'є коментар': 'has a comment',
   // Програми: головна сума плюс доплати одним списком; «Більше про …» внизу картки.
   'Доплати': 'Supplements',
   'Доплата': 'Supplement',
