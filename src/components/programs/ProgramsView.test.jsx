@@ -63,22 +63,24 @@ describe('програми в рядку стрічки', () => {
     expect(screen.getByTestId('programs-summary')).toHaveTextContent('Вам підходить 1 з 1 програми');
     const row = screen.getByTestId('program-list-item');
     // У заголовку — те, що отримує кожна; додаткове читачка додає сама.
-    expect(within(row).getByTestId('program-title')).toHaveTextContent('Шукаємо донора ооцитів — 2 500 $');
-    expect(within(row).getByTestId('program-pay-label')).toHaveTextContent('Сума може бути вищою: до 3 000 $ з додатковими виплатами');
+    expect(within(row).getByTestId('program-title')).toHaveTextContent('Шукаємо донора ооцитів');
+    // «від» — бо з додатковими виплатами винагорода більша.
+    expect(within(row).getByTestId('program-reward')).toHaveTextContent('Винагорода від 2 500 $');
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
     expect(screen.getByText('Додаткові виплати')).toBeInTheDocument();
     const firstTry = screen.getByRole('checkbox', { name: /Вагітність з першої спроби/ });
     expect(firstTry).toHaveAttribute('aria-checked', 'false');
     fireEvent.click(firstTry);
-    expect(within(row).getByTestId('program-title')).toHaveTextContent('Шукаємо донора ооцитів — 3 000 $');
-    // Відмічено все — обіцяти більше нема чого.
-    expect(within(row).queryByTestId('program-pay-label')).not.toBeInTheDocument();
+    // Відмічено все — «від» обіцяв би більше, ніж є.
+    expect(within(row).getByTestId('program-reward')).toHaveTextContent(/^Винагорода 3 000 \$$/);
     expect(row).not.toHaveTextContent('Сценарій');
   });
 
-  it('заголовок — пропозиція й сума через тире, без власної назви й `title`', () => {
+  it('заголовок — кого шукають, сума окремим рядком «Винагорода», без власної назви й `title`', () => {
     render(<ProgramsSummary card={{ programs: { p1: { ...programs.p1, name: 'Донорство в Грузії' } } }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" defaultOpenId="p1" />);
-    expect(screen.getByTestId('program-title')).toHaveTextContent('Шукаємо донора ооцитів — 2 500 $');
+    expect(screen.getByTestId('program-title')).toHaveTextContent(/Шукаємо донора ооцитів$/);
+    // Додаткових виплат немає — просто «Винагорода», без «від».
+    expect(screen.getByTestId('program-reward')).toHaveTextContent(/^Винагорода 2 500 \$$/);
     expect(screen.queryByText('Київ')).not.toBeInTheDocument();
     expect(screen.queryByText('Донорство в Грузії')).not.toBeInTheDocument();
     expect(screen.getByTestId('program-list-item')).not.toHaveTextContent('Винагорода донорці');
@@ -153,8 +155,8 @@ describe('картка програми — калькулятор заробі�
     render(<ProgramsSummary card={{ programs: { p2: surrogate } }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
     // 23 000 + 4 500 + 200 + 100; КС, двійня й повторна програма — додаткові.
-    expect(within(row).getByTestId('program-title')).toHaveTextContent('Шукаємо сурогатну маму — 27 800 $');
-    expect(within(row).getByTestId('program-pay-label')).toHaveTextContent('до 32 800 $');
+    expect(within(row).getByTestId('program-title')).toHaveTextContent('Шукаємо сурогатну маму');
+    expect(within(row).getByTestId('program-reward')).toHaveTextContent('Винагорода від 27 800 $');
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
     const paid = within(row).getByTestId('program-payments');
     expect(paid).toHaveTextContent('Основна виплата');
@@ -180,7 +182,7 @@ describe('картка програми — калькулятор заробі�
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
     fireEvent.click(screen.getByRole('checkbox', { name: /Кесарів розтин/ }));
     fireEvent.click(screen.getByRole('checkbox', { name: /Двійня/ }));
-    expect(within(row).getByTestId('program-title')).toHaveTextContent('32 300 $');
+    expect(within(row).getByTestId('program-reward')).toHaveTextContent('32 300 $');
     expect(screen.getByRole('checkbox', { name: /Кесарів розтин/ })).toHaveAttribute('aria-checked', 'true');
     expect(screen.queryByTestId('program-bonus-total')).not.toBeInTheDocument();
   });
@@ -203,8 +205,8 @@ describe('картка програми — калькулятор заробі�
   it('читачеві без свого типу програми донорок і СМ — кожна своїм контейнером', () => {
     render(<ProgramsSummary card={{ programs: { p1: programs.p1, p2: surrogate } }} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     const [donor, sm] = screen.getAllByTestId('program-list-item');
-    expect(donor).toHaveTextContent('Шукаємо донора ооцитів — 2 500 $');
-    expect(sm).toHaveTextContent('Шукаємо сурогатну маму — 27 800 $');
+    expect(donor).toHaveTextContent('Шукаємо донора ооцитівВинагорода 2 500 $');
+    expect(sm).toHaveTextContent('Шукаємо сурогатну мамуВинагорода від 27 800 $');
   });
 });
 
