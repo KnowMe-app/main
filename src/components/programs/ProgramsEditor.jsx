@@ -19,8 +19,10 @@ import {
   PROGRAM_STAGE_OPTIONS,
   PROGRAM_TOTAL_FIELD,
   PROGRAM_TYPES,
+  MAIN_PAYMENT_LABEL,
   createEmptyProgram,
   defaultProgramHighlightKeys,
+  isGuaranteedPayment,
   formatProgramPlace,
   isProgramPresentable,
   listCoverageOptions,
@@ -31,7 +33,6 @@ import {
   programBreakdown,
   programHeadlinePay,
   programsToRecord,
-  resolveProgramPayKind,
 } from '../../utils/donorPrograms';
 import { DEFAULT_PROGRAM_CURRENCY, formatProgramMoney } from '../../utils/programCurrency';
 import { uiText } from '../../utils/uiTranslations';
@@ -59,11 +60,12 @@ import { ProgramCurrencySwitch, ProgramPreview, describeProgramOffer } from './P
  *   заповнено;
  * - рівень вимоги стоїть словом («Обовʼязково», «Бажано»), а не «⋯».
  *
- * Виплат і доплат тут більше не два списки, і місця виплати щодо головної
- * суми («Як рахувати»: додається, уже входить, за окрему процедуру) теж
- * немає: агенції звуть усе понад головну суму доплатами, а три способи
- * рахувати давали в картці три різні числа. Сума програми — головна плюс
- * усі доплати, і стоїть вона формулою під доплатами.
+ * Основна виплата одна, без вибору «що означає головна сума» (за цикл,
+ * фінальна, загальна, мінімум + «до …») і без пояснень під кожним
+ * заголовком — прибрано на прохання власниці продукту. Кожна виплата понад
+ * основну має одну позначку — «Гарантована» (`isGuaranteedPayment`):
+ * гарантовані йдуть у суму програми, решта стоять у картці перемикачами.
+ * Сума програми — основна плюс гарантовані, формулою під виплатами.
  *
  * Поруч із формою — та сама картка, яку побачить донорка: на широкому
  * екрані колонкою праворуч, на телефоні — вкладкою «Перегляд». Позиція
@@ -617,31 +619,6 @@ const TotalBox = styled.div`
   > p.error { color: ${DANGER}; font-weight: 600; }
 `;
 
-const KindList = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-`;
-
-// Відповідь на «що означає головна сума» — рядок із поясненням, а не пункт
-// списку: «Загальна винагорода» без «графік уже всередині» нічого не каже.
-const KindOption = styled.label`
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-  padding: 10px 12px;
-  border: 1px solid ${({ $on }) => ($on ? ACCENT : BORDER)};
-  border-radius: 10px;
-  background: ${({ $on }) => ($on ? `color-mix(in srgb, ${ACCENT} 9%, transparent)` : 'transparent')};
-  cursor: pointer;
-
-  input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: ${ACCENT}; }
-  b { display: block; font-size: 14px; font-weight: 700; color: ${TEXT}; }
-  small { display: block; margin-top: 2px; font-size: 12.5px; line-height: 1.4; color: ${MUTED}; }
-  &:focus-within { box-shadow: ${FOCUS_RING}; }
-`;
-
 // --- вимоги ----------------------------------------------------------------------
 
 const ReqRow = styled.div`
@@ -858,13 +835,6 @@ export const listProgramIssues = program => {
   const rows = [...(program.otherPayments || []), ...(program.bonuses || [])].filter(item => !blankRow(item));
   if (rows.some(item => !hasMoney(item))) issues.push('Доплата без суми не збережеться');
   if (rows.some(item => !String(item.label || '').trim())) issues.push('Доплата без назви не збережеться');
-  const normalized = normalizeProgram(program, program.id);
-  if (normalized) {
-    const main = Number(normalized.payments?.final?.amount);
-    if (normalized.payMax && main > 0 && normalized.payMax.currency === normalized.payments.final.currency && Number(normalized.payMax.amount) <= main) {
-      issues.push('Максимум має бути більшим за гарантований мінімум');
-    }
-  }
   return issues;
 };
 
@@ -897,30 +867,6 @@ const uniqueLabels = labels => {
     return true;
   });
 };
-
-/*
- * Що означає головна сума — по три відповіді на тип. Ключі ті самі, що й у
- * записі (`payKind`); доплати додаються до головної суми за будь-якої.
- */
-const PAY_KIND_CHOICES = Object.freeze({
-  ed: Object.freeze([
-    { key: 'cycle', label: 'Винагорода за цикл донації', hint: 'Фіксована сума за один цикл' },
-    { key: 'total', label: 'Загальна винагорода за програму', hint: 'Уся винагорода за програму однією сумою' },
-    { key: 'guaranteed', label: 'Гарантований мінімум і «до …»', hint: 'Мінімум для кожної, більше — залежно від результату' },
-  ]),
-  sm: Object.freeze([
-    { key: 'final', label: 'Фінальна виплата', hint: 'Сума після пологів; щомісячні — доплатами нижче' },
-    { key: 'total', label: 'Загальна винагорода за програму', hint: 'Уся винагорода за програму однією сумою' },
-    { key: 'guaranteed', label: 'Гарантований мінімум і «до …»', hint: 'Мінімум для кожної, більше — залежно від результату' },
-  ]),
-});
-
-const MAIN_AMOUNT_LABELS = Object.freeze({
-  cycle: 'Винагорода за цикл',
-  final: 'Фінальна виплата',
-  total: 'Загальна винагорода',
-  guaranteed: 'Гарантований мінімум',
-});
 
 // Приклади — мовою саме цієї програми: «у день пункції» сурогатній мамі не
 // скаже нічого, як і «на 12 тижні» донорці.
@@ -1023,6 +969,17 @@ const CollapsibleSection = ({ index, sectionKey, title, summary, open, onToggle,
  * «коли, умови, у тому числі» поруч із «коли й за яких умов» читались як
  * дві різні речі.
  */
+/**
+ * Рід виплати понад основну: гарантована йде в суму програми, додаткова
+ * стоїть у картці перемикачем, який кандидатка відмічає сама.
+ */
+const GuaranteedToggle = ({ id, checked, onChange, language }) => (
+  <CheckRow htmlFor={id}>
+    <input id={id} type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} />
+    <span>{uiText('Гарантована — входить у суму програми', language)}</span>
+  </CheckRow>
+);
+
 const PaymentDetails = ({ value, onChange, language, idPrefix, examples, conditionExample }) => {
   const filled = Boolean(value?.when || value?.condition);
   const [open, setOpen] = useState(filled);
@@ -1139,7 +1096,6 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
   const idPrefix = `program-${program.id}`;
   const normalized = normalizeProgram(program, program.id);
   const currency = program.payments?.final?.currency || DEFAULT_PROGRAM_CURRENCY;
-  const payKind = resolveProgramPayKind(program);
   const isSurrogacy = program.type === 'sm';
   const typeKey = isSurrogacy ? 'sm' : 'ed';
   const examples = TYPE_EXAMPLES[typeKey];
@@ -1227,11 +1183,12 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
       uiText(PROGRAM_OFFER_LABELS[program.type], language),
       program.location ? formatProgramPlace(program.location) : '',
       program.startNow ? uiText('старт одразу', language) : '',
+      program.note ? uiText('є коментар', language) : '',
     ].filter(Boolean).join(' · '),
     payments: [
       breakdown?.main ? '' : uiText('Суму ще не вказано', language),
-      breakdown?.bonuses.length ? countText(breakdown.bonuses.length, WORDS.bonus, language) : '',
-      breakdown?.max.amount > 0 ? uiText('сума програми {amount}', language, { amount: sumText(breakdown.max) }) : '',
+      breakdown?.bonuses.length ? countText(breakdown.bonuses.length, WORDS.payment, language) : '',
+      breakdown?.guaranteed.amount > 0 ? uiText('сума програми {amount}', language, { amount: sumText(breakdown.guaranteed) }) : '',
     ].filter(Boolean).join(' · '),
     requirements: (() => {
       const count = (normalized?.requirements?.ageFrom !== undefined || normalized?.requirements?.ageTo !== undefined ? 1 : 0)
@@ -1249,14 +1206,11 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
   // --- головна сума ---
   const mainBlock = () => {
     const value = program.payments?.final;
-    const fieldLabel = MAIN_AMOUNT_LABELS[payKind];
+    const fieldLabel = MAIN_PAYMENT_LABEL;
     return (
       <Block key="final" $tone="main" data-testid="payment-final">
         <BlockHead>
-          <b>
-            {uiText(fieldLabel, language)}
-            <small>{uiText('Головна сума', language)}</small>
-          </b>
+          <b>{uiText(fieldLabel, language)}</b>
         </BlockHead>
         <FieldRow>
           <Field id={`${idPrefix}-final`} label="Сума" narrow language={language}>
@@ -1272,31 +1226,6 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
             />
           </Field>
         </FieldRow>
-        {payKind === 'guaranteed' ? (
-          <FieldRow>
-            <Field id={`${idPrefix}-max`} label="До (максимум)" narrow language={language}>
-              <MoneyInput
-                compact
-                id={`${idPrefix}-max`}
-                language={language}
-                rates={rates}
-                ariaLabel={uiText('Максимальна сума', language)}
-                placeholder={uiText('сума', language)}
-                value={program.payMax}
-                onChange={next => set({ payMax: next ? { ...next, condition: program.payMax?.condition || '' } : undefined })}
-              />
-            </Field>
-            <Field id={`${idPrefix}-max-condition`} label="Від чого залежить максимум" language={language}>
-              <TextInput
-                id={`${idPrefix}-max-condition`}
-                value={program.payMax?.condition || ''}
-                maxLength={120}
-                placeholder={uiText('Наприклад: кількість ооцитів', language)}
-                onChange={event => set({ payMax: { ...(program.payMax || { amount: '', currency }), condition: event.target.value } })}
-              />
-            </Field>
-          </FieldRow>
-        ) : null}
         <PaymentDetails value={value} language={language} idPrefix={`${idPrefix}-final`} examples={examples} onChange={patch => setPayExtras('final', patch)} />
       </Block>
     );
@@ -1355,6 +1284,12 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
               : uiText('Вкажіть кількість місяців — інакше рахуємо 9, і сума буде приблизною', language)}
           </Readout>
         ) : null}
+        <GuaranteedToggle
+          id={`${idPrefix}-${key}-guaranteed`}
+          checked={isGuaranteedPayment(key, value)}
+          language={language}
+          onChange={checked => setPayExtras(key, { guaranteed: checked })}
+        />
         <PaymentDetails
           value={value}
           language={language}
@@ -1396,6 +1331,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
             <MoneyInput compact id={`${blockId}-amount`} language={language} rates={rates} value={item} ariaLabel={uiText('Сума', language)} onChange={next => setItem(next || { amount: '' })} />
           </Field>
         </FieldRow>
+        <GuaranteedToggle id={`${blockId}-guaranteed`} checked={item.guaranteed === true} language={language} onChange={checked => setItem({ guaranteed: checked })} />
         <PaymentDetails value={item} language={language} idPrefix={blockId} examples={examples} onChange={setItem} />
       </Block>
     );
@@ -1403,23 +1339,22 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
 
   // --- підсумок формулою ---
   const totalBox = () => {
-    if (!breakdown || !(breakdown.max.amount > 0)) return null;
+    if (!breakdown || !(breakdown.guaranteed.amount > 0)) return null;
     const term = line => (line.months
       ? `${money(Number(line.money.amount), line.money.currency)} × ${line.months}`
       : money(Number(line.subtotal.amount), line.subtotal.currency));
-    const terms = [...(breakdown.main ? [breakdown.main] : []), ...breakdown.bonuses];
+    const terms = [...(breakdown.main ? [breakdown.main] : []), ...breakdown.guaranteedBonuses];
+    const grows = breakdown.additional.length > 0 && breakdown.max.amount > breakdown.guaranteed.amount;
     return (
       <TotalBox data-testid="program-editor-total">
         <div>
           <span>{uiText('Сума програми', language)}</span>
-          <b>{sumText(breakdown.max)}</b>
+          <b>{sumText(breakdown.guaranteed)}</b>
         </div>
         {terms.length > 1 ? <p>{terms.map(term).join(' + ')}</p> : null}
+        {grows ? <p>{uiText('З додатковими виплатами — до {amount}', language, { amount: sumText(breakdown.max) })}</p> : null}
         {breakdown.hasMonthlyEstimate ? (
           <p>{uiText('Вкажіть кількість місяців — інакше рахуємо 9, і сума буде приблизною', language)}</p>
-        ) : null}
-        {breakdown.bonuses.length ? (
-          <p>{uiText('Головна сума й усі доплати. У картці кожна доплата стоїть з позначкою, і кандидатка може зняти ті, що її не стосуються.', language)}</p>
         ) : null}
       </TotalBox>
     );
@@ -1513,7 +1448,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         <Field label="Кого шукаєте" language={language}>
           <Segments role="group" aria-label={uiText('Кого шукаєте', language)}>
             {PROGRAM_TYPES.map(key => (
-              <Pill key={key} type="button" $on={program.type === key} aria-pressed={program.type === key} onClick={() => set({ type: key, payKind: undefined, payMax: undefined })}>
+              <Pill key={key} type="button" $on={program.type === key} aria-pressed={program.type === key} onClick={() => set({ type: key })}>
                 {uiText(PROGRAM_OFFER_LABELS[key], language)}
               </Pill>
             ))}
@@ -1531,28 +1466,24 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           <input id={`${idPrefix}-start`} type="checkbox" checked={program.startNow === true} onChange={event => set({ startNow: event.target.checked || undefined })} />
           <span>{uiText('Старт одразу', language)} <small>· {uiText('кандидатку чекають уже зараз', language)}</small></span>
         </CheckRow>
+        <Field id={`${idPrefix}-note`} label="Коментар організатора" optional language={language}>
+          <TextArea
+            id={`${idPrefix}-note`}
+            value={program.note || ''}
+            maxLength={600}
+            rows={3}
+            placeholder={uiText('Важливе, чого немає серед полів програми', language)}
+            onChange={event => set({ note: event.target.value })}
+          />
+        </Field>
       </>
     ),
     payments: (
       <>
-        <Field label="Що означає головна сума?" language={language}>
-          <KindList role="radiogroup" aria-label={uiText('Що означає головна сума?', language)}>
-            {PAY_KIND_CHOICES[typeKey].map(option => (
-              <KindOption key={option.key} $on={payKind === option.key}>
-                <input type="radio" name={`${idPrefix}-paykind`} value={option.key} checked={payKind === option.key} onChange={() => set({ payKind: option.key })} />
-                <span>
-                  <b>{uiText(option.label, language)}</b>
-                  <small>{uiText(option.hint, language)}</small>
-                </span>
-              </KindOption>
-            ))}
-          </KindList>
-        </Field>
         {mainBlock()}
 
         <SubHead>
-          <h5>{uiText('Доплати', language)}</h5>
-          <p>{uiText('Усе, що ви доплачуєте понад головну суму: за досвід, вік, кількість клітин, повторну донацію.', language)}</p>
+          <h5>{uiText('Інші виплати', language)}</h5>
         </SubHead>
         {extraFields.filter(field => isShown(field.key)).map(knownBonusBlock)}
         {customBonuses.map(customBonusBlock)}
@@ -1739,16 +1670,6 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
             <HighlightsPicker program={program} normalized={normalized} language={language} onChange={highlights => set({ highlights })} />
           </Field>
         ) : null}
-        <Field id={`${idPrefix}-note`} label="Умови й примітки" optional language={language}>
-          <TextArea
-            id={`${idPrefix}-note`}
-            value={program.note || ''}
-            maxLength={600}
-            rows={3}
-            placeholder={uiText('Що ще важливо знати кандидатці', language)}
-            onChange={event => set({ note: event.target.value })}
-          />
-        </Field>
       </>
     ),
   };
@@ -1758,10 +1679,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         ? program.highlights.filter(key => key !== HIGHLIGHTS_NONE).length
         : defaultProgramHighlightKeys(normalized).length)
       : 0;
-    summaries.card = [
-      highlightsCount ? uiText('{count} з {max} ознак', language, { count: highlightsCount, max: MAX_PROGRAM_HIGHLIGHTS }) : '',
-      program.note ? uiText('є примітки', language) : '',
-    ].filter(Boolean).join(' · ');
+    summaries.card = highlightsCount ? uiText('{count} з {max} ознак', language, { count: highlightsCount, max: MAX_PROGRAM_HIGHLIGHTS }) : '';
   }
 
   return (
@@ -1780,7 +1698,8 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
             {issues.map(issue => <li key={issue}>{uiText(issue, language)}</li>)}
           </Issues>
         ) : null}
-        {SECTIONS.map((section, index) => (
+        {/* «Як виглядає в картці» без жодної ознаки на вибір — порожній розділ: вимоги картка показує всі сама. */}
+        {SECTIONS.filter(section => section.key !== 'card' || (normalized && listProgramHighlightOptions(normalized).length > 0)).map((section, index) => (
           <CollapsibleSection
             key={section.key}
             index={index + 1}

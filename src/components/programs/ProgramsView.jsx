@@ -20,7 +20,6 @@ import {
   PROGRAM_FAMILY_OPTIONS,
   PROGRAM_OFFER_LABELS,
   PROGRAM_REQUIREMENT_LABELS,
-  defaultProgramBonusKeys,
   describeProgramCoverage,
   describeProgramRequirements,
   evaluateProgram,
@@ -47,18 +46,21 @@ import { uiText } from '../../utils/uiTranslations';
  * Програма — це комерційна пропозиція, і читають її двома кроками:
  *
  *  1. **Згорнута програма** (`ProgramListItem`) — окремий контейнер у тілі
- *     картки агенції: що пропонують і скільки одним рядком («Донорство
- *     ооцитів — 1 500 $»), де, до чотирьох ознак, які вибрала агенція, і
- *     одним рядком, що покривають («Проїзд, житло +2»).
+ *     картки агенції: кого шукають і скільки одним рядком («Шукаємо донора
+ *     ооцитів — 1 500 $»), де, **усі вимоги** до кандидатки, ознаки, які
+ *     вибрала агенція, і її коментар. Рядок «Покриває: проїзд, житло +2»
+ *     тут стояв і поступився вимогам: за ними кандидатка вирішує, чи
+ *     читати далі, а покриття — уже в деталях.
  *  2. **Деталі програми** — під тим самим контейнером, кнопкою «Деталі
- *     програми» всередині нього: доплати перемикачами, вимоги з рівнями й
- *     поясненнями, етапи й переїзд, як саме покривається кожна витрата, умови.
+ *     програми» всередині нього: основна й гарантовані виплати рядками,
+ *     додаткові — перемикачами, вимоги з рівнями й поясненнями, етапи й
+ *     переїзд, як саме покривається кожна витрата, коментар організатора.
  *
- * Сума програми одна й стоїть у заголовку: головна плюс відмічені доплати
- * (`programBreakdown`). Перемикач доплати міняє саме її — окремої плашки
- * «Сценарій з відміченими доплатами», блоку «За окрему процедуру» й підпису
- * «Разом донорці за програму» тут більше немає: це були три числа про одну
- * програму. Власної назви програми теж немає — назва це те, що пропонують.
+ * Сума в заголовку — основна плюс гарантовані виплати (`programBreakdown`),
+ * а додаткові (КС, двійня, досвід) у неї не йдуть, доки читачка їх не
+ * відмітить: під сумою стоїть «може бути вищою», а перемикач додаткової
+ * виплати міняє саме заголовок. Власної назви програми немає — назва це те,
+ * кого шукають.
  *
  * Досі програма була рядком без меж, і на картці з однією програмою вона
  * зливалась з описом агенції: заголовок «Програми», під ним «1 програма»,
@@ -211,6 +213,7 @@ const Chip = styled.li`
 
   b { font-weight: 700; color: ${({ $ok }) => tone($ok) || TEXT}; }
   em { font-style: normal; color: ${MUTED}; }
+  &.differs { font-weight: 600; }
 `;
 
 const NoteList = styled.ul`
@@ -425,18 +428,37 @@ const Verdict = styled.p`
 
 const bonusMeta = item => [item.when, item.condition].filter(Boolean).join(' · ');
 
+// Основна й гарантовані виплати — рядки без перемикача: вони вже в сумі.
+const PaymentLine = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 2px 0;
+  font-size: 13.5px;
+  color: ${TEXT};
+
+  > span small { display: block; font-size: 12px; color: ${MUTED}; }
+  > b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+`;
+
+const monthlyDetail = (item, currency, rates, language) => (item.monthsEstimated
+  ? uiText('{amount}/міс · скільки місяців — уточніть в агенції', language, { amount: plainMoney(item.money, currency, rates) })
+  : uiText('{amount}/міс × {months} {unit}', language, { amount: plainMoney(item.money, currency, rates), months: item.months, unit: monthWord(item.months, language) }));
+
 /**
- * Відмічені доплати програми. Тримається **зняте** читачкою, а не відмічене:
- * типово відмічено все (`defaultProgramBonusKeys`), і доплата, яку агенція
- * щойно додала в редакторі, мусить одразу стати в суму, а не чекати дотику.
+ * Відмічені читачкою додаткові виплати. Типово не відмічено жодної: сума в
+ * заголовку — те, що отримує кожна, а додаткове кандидатка додає сама, якщо
+ * воно її стосується.
  */
 const useSelectedBonuses = program => {
-  const [cleared, setCleared] = useState(() => new Set());
+  const [chosen, setChosen] = useState(() => new Set());
   useEffect(() => {
-    setCleared(new Set());
+    setChosen(new Set());
   }, [program.id]);
-  const selected = defaultProgramBonusKeys(program).filter(key => !cleared.has(key));
-  const toggle = useCallback(key => setCleared(current => {
+  const selected = [...chosen];
+  const toggle = useCallback(key => setChosen(current => {
     const next = new Set(current);
     if (next.has(key)) next.delete(key);
     else next.add(key);
@@ -474,7 +496,7 @@ export const ProgramCard = ({
   const currency = displayCurrency || '';
   const result = facts ? evaluateProgram(program, facts) : null;
   const checkByKey = new Map((result?.checks || []).map(check => [check.key, check.ok]));
-  const { bonuses } = programBreakdown(program, { selectedBonusKeys: selectedBonuses, rates });
+  const { main, guaranteedBonuses, additional } = programBreakdown(program, { selectedBonusKeys: selectedBonuses, rates });
   const requirements = describeProgramRequirements(program);
   const unknown = requirements.filter(item => checkByKey.get(item.key) === null).map(item => REQUIREMENT_FIX_HINTS[item.key]);
   const coverage = describeProgramCoverage(program);
@@ -490,13 +512,34 @@ export const ProgramCard = ({
   const notes = requirements.filter(item => item.note);
   const familyLabel = PROGRAM_FAMILY_OPTIONS.find(option => option.key === relocation?.family && option.key)?.label || '';
   const plus = money => plainMoney(money, currency, rates).replace(/^(≈ )?/, (match, approx) => `${approx || ''}+`);
+  const lineMoney = item => (item.monthsEstimated ? { ...item.subtotal, approximate: true } : item.subtotal);
+  const paidLines = [...(main ? [main] : []), ...guaranteedBonuses];
 
   const body = (
     <Details data-testid={framed ? undefined : 'program-card'}>
-      {bonuses.length ? (
+      {paidLines.length > 0 && (guaranteedBonuses.length > 0 || additional.length > 0) ? (
+        <Section data-testid="program-payments">
+          <SectionTitle>{uiText('Виплати', language)}</SectionTitle>
+          {paidLines.map(item => {
+            const meta = bonusMeta(item);
+            return (
+              <PaymentLine key={item.key}>
+                <span>
+                  {uiText(item.label, language)}
+                  {item.months ? <small>{monthlyDetail(item, currency, rates, language)}</small> : null}
+                  {meta ? <small>{meta}</small> : null}
+                </span>
+                <b>{item === main ? plainMoney(item.subtotal, currency, rates) : plus(lineMoney(item))}</b>
+              </PaymentLine>
+            );
+          })}
+        </Section>
+      ) : null}
+
+      {additional.length ? (
         <Section data-testid="program-bonuses">
-          <SectionTitle>{uiText('Доплати', language)}</SectionTitle>
-          {bonuses.map(item => {
+          <SectionTitle>{uiText('Додаткові виплати', language)}</SectionTitle>
+          {additional.map(item => {
             const meta = bonusMeta(item);
             return (
               <BonusRow
@@ -510,16 +553,10 @@ export const ProgramCard = ({
                 <i aria-hidden="true">{item.selected ? '✓' : ''}</i>
                 <span>
                   {uiText(item.label, language)}
-                  {item.months ? (
-                    <small>
-                      {item.monthsEstimated
-                        ? uiText('{amount}/міс · скільки місяців — уточніть в агенції', language, { amount: plainMoney(item.money, currency, rates) })
-                        : uiText('{amount}/міс × {months} {unit}', language, { amount: plainMoney(item.money, currency, rates), months: item.months, unit: monthWord(item.months, language) })}
-                    </small>
-                  ) : null}
+                  {item.months ? <small>{monthlyDetail(item, currency, rates, language)}</small> : null}
                   {meta ? <small>{meta}</small> : null}
                 </span>
-                <b>{plus(item.monthsEstimated ? { ...item.subtotal, approximate: true } : item.subtotal)}</b>
+                <b>{plus(lineMoney(item))}</b>
               </BonusRow>
             );
           })}
@@ -591,7 +628,7 @@ export const ProgramCard = ({
 
       {program.note ? (
         <Section>
-          <SectionTitle>{uiText('Умови й примітки', language)}</SectionTitle>
+          <SectionTitle>{uiText('Коментар організатора', language)}</SectionTitle>
           <Note>{program.note}</Note>
         </Section>
       ) : null}
@@ -790,11 +827,22 @@ const Highlights = styled.ul`
   li.differs { border-color: color-mix(in srgb, ${TEXT} 45%, transparent); font-weight: 600; }
 `;
 
-const CoverageLine = styled.p`
+const CollapsedRequirements = styled(Chips)`
+  margin-top: 10px;
+`;
+
+// Коментар організатора в згорнутій картці — три рядки, решта в деталях.
+const OrganizerNote = styled.p`
+  display: -webkit-box;
   margin: 8px 0 0;
+  overflow: hidden;
   font-size: 12.5px;
-  line-height: 1.4;
+  line-height: 1.45;
   color: ${MUTED};
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 
   b { font-weight: 600; color: ${TEXT}; }
 `;
@@ -859,7 +907,8 @@ const FIT_LABELS = Object.freeze({ match: 'Вам підходить', uncertain
 const FIT_MARKS = Object.freeze({ match: '✓', uncertain: '?', mismatch: '✕' });
 
 /**
- * Сума програми — головна плюс відмічені доплати (без вибору — усі).
+ * Сума програми — основна плюс гарантовані виплати плюс відмічені читачкою
+ * додаткові (без вибору — жодної).
  *
  * Підписів на кшталт «Разом донорці за програму» чи «Винагорода донорці за
  * цикл» під нею більше немає: сума стоїть у заголовку поруч із тим, що
@@ -880,12 +929,17 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
   const [selectedBonuses, toggleBonus] = useSelectedBonuses(program);
   const offer = describeProgramOffer(program, { rates, selectedBonusKeys: selectedBonuses });
   const shown = offer.money ? presentSum(offer.money, displayCurrency, rates) : null;
-  const upTo = offer.breakdown.upTo ? presentSum(offer.breakdown.upTo, displayCurrency, rates).primary : '';
+  // «Може бути вищою» — поки є невідмічені додаткові виплати; з ними всіма
+  // сума вже повна, і обіцяти більше нема чого.
+  const { max } = offer.breakdown;
+  const canGrow = offer.breakdown.additional.some(item => !item.selected) && max.amount > (offer.money?.amount || 0);
+  const maxShown = canGrow ? presentSum(max, displayCurrency, rates).primary : '';
   const highlights = useMemo(() => {
     const items = resolveProgramHighlights(program);
     return items.map(item => ({ ...item, differs: Boolean(differs?.has(item.key)) }));
   }, [differs, program]);
-  const coverageLine = summarizeCoverageLine(program, language);
+  const requirements = describeProgramRequirements(program);
+  const checkByKey = new Map((result?.checks || []).map(check => [check.key, check.ok]));
   const bodyId = `program-body-${program.id}`;
   const offerLabel = programHeading(program, language);
   const place = program.location ? formatProgramPlace(program.location) : (listProgramStages(program)[0]?.place || '');
@@ -902,12 +956,12 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
               {shown?.primary ? <> — <Sum>{shown.primary}</Sum></> : null}
             </span>
           </ProgramTitle>
-          {shown?.original || upTo || !shown?.primary ? (
-            <PayLabel>
+          {shown?.original || maxShown || !shown?.primary ? (
+            <PayLabel data-testid="program-pay-label">
               {shown?.primary ? (
                 <>
                   {shown.original}
-                  {upTo ? <>{shown.original ? ' · ' : ''}<strong>{uiText('до {amount}', language, { amount: upTo })}</strong>{offer.breakdown.upToCondition ? ` — ${offer.breakdown.upToCondition}` : ''}</> : null}
+                  {maxShown ? <>{shown.original ? ' · ' : ''}{uiText('Сума може бути вищою', language)}: <strong>{uiText('до {amount}', language, { amount: maxShown })}</strong> {uiText('з додатковими виплатами', language)}</> : null}
                 </>
               ) : uiText('Суму уточнюйте в агенції', language)}
             </PayLabel>
@@ -924,6 +978,20 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
         </div>
       </ProgramHead>
 
+      {!open && requirements.length ? (
+        <CollapsedRequirements aria-label={uiText('Вимоги', language)} data-testid="program-requirements">
+          {requirements.map(item => {
+            const ok = checkByKey.has(item.key) ? checkByKey.get(item.key) : undefined;
+            return (
+              <Chip key={item.key} $ok={ok} className={differs?.has(item.key) ? 'differs' : undefined}>
+                {ok === true ? <b aria-hidden="true">✓</b> : ok === false ? <b aria-hidden="true">✕</b> : null}
+                {requirementText(item, language)}
+                {LEVEL_SUFFIX[item.level] ? <em>· {uiText(LEVEL_SUFFIX[item.level], language)}</em> : null}
+              </Chip>
+            );
+          })}
+        </CollapsedRequirements>
+      ) : null}
       {!open && highlights.length ? (
         <Highlights aria-label={uiText('Головне', language)}>
           {highlights.map(item => (
@@ -931,8 +999,8 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
           ))}
         </Highlights>
       ) : null}
-      {!open && coverageLine ? (
-        <CoverageLine><b>{uiText('Покриває', language)}:</b> {coverageLine}</CoverageLine>
+      {!open && program.note ? (
+        <OrganizerNote data-testid="program-organizer-note"><b>{uiText('Коментар організатора', language)}:</b> {program.note}</OrganizerNote>
       ) : null}
 
       {open ? (

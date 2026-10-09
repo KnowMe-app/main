@@ -271,6 +271,22 @@ await it('програма з невідомим ключем, типом чи �
   await assertFails(set(ref(db(PROFILE_OWNER), base), { items: { p3: { id: 'p3', type: 'ed' } } }));
 });
 
+// Рід виплати понад основну: гарантована йде в суму програми, додаткова
+// стоїть у картці перемикачем. Основна виплата гарантована за означенням,
+// тож позначки на ній немає. Поки правила не викочено, клієнт пише програму
+// без неї (`stripNewestProgramFields`).
+await it('виплата понад основну приймає позначку «гарантована», основна — ні', async () => {
+  const base = `multiData/programs/${PROFILE_OWNER}`;
+  const withProgram = program => ({ updatedAt: 1759200000000, items: { p5: { id: 'p5', type: 'sm', ...program } } });
+  await assertSucceeds(set(ref(db(PROFILE_OWNER), base), withProgram({
+    payments: { final: { amount: 20000, currency: 'USD' }, cSection: { amount: 1500, currency: 'USD', guaranteed: true }, monthly: { amount: 500, currency: 'USD', guaranteed: false } },
+    otherPayments: [{ label: 'Підтвердження вагітності', amount: 300, currency: 'USD', guaranteed: true }],
+  })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payments: { final: { amount: 20000, currency: 'USD', guaranteed: true } } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ payments: { twins: { amount: 3000, currency: 'USD', guaranteed: 'так' } } })));
+  await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
+});
+
 // Програми з оголошень: вид суми, «до …» з умовою, подробиці виплат графіка,
 // рівні вимог, етапи, переїзд, подробиці покриття й вибрані ознаки. Поки цих
 // правил немає в проді, клієнт пише програму без них (`stripExtendedProgramFields`).
