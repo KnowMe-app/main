@@ -749,9 +749,10 @@ const ProgramHead = styled.div`
   gap: 2px 12px;
 `;
 
-// Що пропонують і скільки — одним рядком: «Донорство ооцитів — 1 500 $».
-// Сума стояла окремим великим числом під назвою, з підписом «кому за що»
-// третім рядком, і програма займала пів екрана до першої ознаки.
+// Кого шукають — заголовком, а скільки — окремим рядком «Винагорода від
+// 28 100 $» під ним. Через тире в одному рядку («Шукаємо сурогатну маму —
+// 28 100 $») сума читалась як ціна, а не як винагорода кандидатці, і не
+// казала, що з додатковими виплатами вона більша.
 const ProgramTitle = styled.div`
   display: flex;
   align-items: center;
@@ -766,6 +767,16 @@ const ProgramTitle = styled.div`
 const Sum = styled.span`
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+`;
+
+const Reward = styled.div`
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: ${TEXT};
+
+  ${Sum} { font-weight: 700; }
 `;
 
 const Place = styled.div`
@@ -929,11 +940,10 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
   const [selectedBonuses, toggleBonus] = useSelectedBonuses(program);
   const offer = describeProgramOffer(program, { rates, selectedBonusKeys: selectedBonuses });
   const shown = offer.money ? presentSum(offer.money, displayCurrency, rates) : null;
-  // «Може бути вищою» — поки є невідмічені додаткові виплати; з ними всіма
-  // сума вже повна, і обіцяти більше нема чого.
+  // «Винагорода від …» — поки є невідмічені додаткові виплати; з ними всіма
+  // сума вже повна, і «від» обіцяв би більше, ніж є.
   const { max } = offer.breakdown;
   const canGrow = offer.breakdown.additional.some(item => !item.selected) && max.amount > (offer.money?.amount || 0);
-  const maxShown = canGrow ? presentSum(max, displayCurrency, rates).primary : '';
   const highlights = useMemo(() => {
     const items = resolveProgramHighlights(program);
     return items.map(item => ({ ...item, differs: Boolean(differs?.has(item.key)) }));
@@ -951,19 +961,16 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
         <div>
           <ProgramTitle data-testid="program-title">
             {fit ? <FitMark role="img" $state={fit} title={uiText(FIT_LABELS[fit], language)} aria-label={uiText(FIT_LABELS[fit], language)}>{FIT_MARKS[fit]}</FitMark> : null}
-            <span>
-              {offerLabel}
-              {shown?.primary ? <> — <Sum>{shown.primary}</Sum></> : null}
-            </span>
+            <span>{offerLabel}</span>
           </ProgramTitle>
-          {shown?.original || maxShown || !shown?.primary ? (
+          {shown?.primary ? (
+            <Reward data-testid="program-reward">
+              {uiText(canGrow ? 'Винагорода від' : 'Винагорода', language)} <Sum>{shown.primary}</Sum>
+            </Reward>
+          ) : null}
+          {shown?.original || !shown?.primary ? (
             <PayLabel data-testid="program-pay-label">
-              {shown?.primary ? (
-                <>
-                  {shown.original}
-                  {maxShown ? <>{shown.original ? ' · ' : ''}{uiText('Сума може бути вищою', language)}: <strong>{uiText('до {amount}', language, { amount: maxShown })}</strong> {uiText('з додатковими виплатами', language)}</> : null}
-                </>
-              ) : uiText('Суму уточнюйте в агенції', language)}
+              {shown?.primary ? shown.original : uiText('Суму уточнюйте в агенції', language)}
             </PayLabel>
           ) : null}
           {place ? (
