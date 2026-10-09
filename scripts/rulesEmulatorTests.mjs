@@ -323,6 +323,22 @@ await it('приймає розширені поля програми й від�
   await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
 });
 
+// Власні вимоги агенції — текст і рівень; поки правил немає в проді,
+// клієнт пише програму без них (`stripCustomRequirements`).
+await it('приймає власні вимоги програми й відкидає чуже в них', async () => {
+  const base = `multiData/programs/${PROFILE_OWNER}`;
+  const withProgram = program => ({ updatedAt: 1759200000000, items: { p6: { id: 'p6', type: 'ed', ...program } } });
+  await assertSucceeds(set(ref(db(PROFILE_OWNER), base), withProgram({
+    customRequirements: [{ text: 'Без татуювань' }, { text: 'Закордонний паспорт', level: 'preferred' }],
+  })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ customRequirements: [{ text: '' }] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ customRequirements: [{ text: 'x'.repeat(81) }] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ customRequirements: [{ text: 'x', level: 'must' }] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ customRequirements: [{ text: 'x', secret: 1 }] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ customRequirements: { 8: { text: 'x' } } })));
+  await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
+});
+
 // Місце виплати щодо головної суми (додається / уже всередині / за окрему
 // процедуру) і вибрана головна сума картки. Головна виплата й повторна донація
 // місця не вибирають: перша сама є сумою, друга окрема за визначенням.

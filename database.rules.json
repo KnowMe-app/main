@@ -619,6 +619,20 @@
               "featured": {
                 ".validate": "newData.val() == 'main' || newData.val() == 'sum' || newData.val() == 'monthly'"
               },
+              "customRequirements": {
+                "$index": {
+                  ".validate": "$index.matches(/^[0-7]$/) && newData.hasChildren(['text'])",
+                  "text": {
+                    ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+                  },
+                  "level": {
+                    ".validate": "newData.val() == 'preferred' || newData.val() == 'individual'"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                }
+              },
               "requirementMeta": {
                 "$requirementKey": {
                   ".validate": "$requirementKey.matches(/^(age|bmi|height|rh|marital|ownKids|births|csection)$/)",

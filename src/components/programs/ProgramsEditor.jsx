@@ -4,6 +4,8 @@ import {
   HIGHLIGHTS_NONE,
   MAX_PROGRAMS,
   MAX_PROGRAM_HIGHLIGHTS,
+  MAX_CUSTOM_REQUIREMENTS,
+  CUSTOM_REQUIREMENT_MAX_LENGTH,
   PROGRAM_COVERAGE_MODES,
   PROGRAM_COVERAGE_OPTIONS,
   PROGRAM_COVERAGE_PER,
@@ -12,6 +14,7 @@ import {
   PROGRAM_KIDS_OPTIONS,
   PROGRAM_MARITAL_OPTIONS,
   MAX_MONTHLY_MONTHS,
+  DEFAULT_MONTHLY_MONTHS,
   PROGRAM_OFFER_LABELS,
   PROGRAM_REQUIREMENT_LABELS,
   PROGRAM_REQUIREMENT_LEVELS,
@@ -600,6 +603,58 @@ const Readout = styled.div`
   b { color: ${TEXT}; font-weight: 700; }
 `;
 
+// Згорнута виплата — рядком, яким вона стоїть серед виплат картки: назва,
+// коли платять, сума праворуч; додаткова — з квадратиком, як перемикач,
+// що його кандидатка відмічає сама. Відкрита лише одна: розгорнуті всі
+// разом займали кілька екранів, і щойно додана губилась серед них.
+const PaymentSummary = styled.button`
+  display: grid;
+  grid-template-columns: ${({ $mark }) => ($mark ? '18px ' : '')}minmax(0, 1fr) auto 12px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1px solid ${BORDER};
+  border-left: 3px solid ${({ $tone }) => ($tone === 'bonus' ? '#B7791F' : ACCENT)};
+  border-radius: 10px;
+  background: ${FIELD_BG};
+  color: ${TEXT};
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  > i {
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid ${MUTED};
+    border-radius: 4px;
+  }
+  > span { min-width: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+  > span small { display: block; margin-top: 1px; font-size: 12px; font-weight: 500; color: ${MUTED}; }
+  > b { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  > b.empty { font-weight: 500; color: ${MUTED}; }
+  &:focus-visible { outline: none; box-shadow: ${FOCUS_RING}; }
+`;
+
+const BlockTitle = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: ${TEXT};
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  b { min-width: 0; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+  &:focus-visible { outline: none; box-shadow: ${FOCUS_RING}; border-radius: 6px; }
+`;
+
 // Підсумок рахується з тих самих виплат і тим самим кодом, що й у картці
 // програми (`programBreakdown`), і показується формулою: агенція бачить, що
 // саме додалось, що вже всередині, а що лишилось окремо.
@@ -854,9 +909,14 @@ export const programStatus = (program, { profilePublished } = {}) => {
   return { tone: 'ready', label: 'Готова до показу' };
 };
 
-// Виплати, які стоять полем завжди: без головної програма не має суми, а
-// щомісячну агенції СМ платять майже всі.
-const ALWAYS_SHOWN_PAYMENTS = Object.freeze({ ed: ['final'], sm: ['final', 'monthly'] });
+// Щомісячну агенції СМ платять майже всі, тож нова програма СМ відкривається
+// з нею. Це пропозиція, а не обовʼязок: стояла вона тут полем завжди, і
+// програму без щомісячних скласти було неможливо — тепер її прибирають, як
+// будь-яку іншу доплату. Основна виплата одна й стоїть завжди.
+const SUGGESTED_PAYMENTS = Object.freeze({ ed: [], sm: ['monthly'] });
+
+const isFreshProgram = program => !Object.values(program.payments || {}).some(hasMoney)
+  && ![...(program.otherPayments || []), ...(program.bonuses || [])].length;
 
 const uniqueLabels = labels => {
   const seen = new Set();
@@ -873,26 +933,14 @@ const uniqueLabels = labels => {
 const TYPE_EXAMPLES = Object.freeze({
   ed: {
     when: 'Наприклад: у день пункції',
-    condition: 'Наприклад: після 2-ї донації',
     bonusName: 'Наприклад: за кількість клітин',
     place: 'Наприклад: Грузія, Тбілісі',
   },
   sm: {
     when: 'Наприклад: на 12 тижні',
-    condition: 'Наприклад: після підтвердження вагітності',
     bonusName: 'Наприклад: підтвердження вагітності',
     place: 'Наприклад: Україна, Київ',
   },
-});
-
-// Умова для відомої доплати — своя: «якщо пологи кесаревим» під «Двійнею»
-// читалось як помилка. Щомісячна — графік, а не умова, тож її приклад — загальний.
-const BONUS_CONDITION_EXAMPLES = Object.freeze({
-  cSection: 'Наприклад: планове чи екстрене',
-  twins: 'Наприклад: після УЗД двійні',
-  firstTry: 'Наприклад: з першого переносу',
-  experience: 'Наприклад: від 1 програми',
-  repeat: 'Наприклад: через 3 місяці',
 });
 
 const SECTIONS = Object.freeze([
@@ -976,29 +1024,37 @@ const CollapsibleSection = ({ index, sectionKey, title, summary, open, onToggle,
 const GuaranteedToggle = ({ id, checked, onChange, language }) => (
   <CheckRow htmlFor={id}>
     <input id={id} type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} />
-    <span>{uiText('Гарантована — входить у суму програми', language)}</span>
+    <span>{uiText('Сумується автоматично до загальної винагороди', language)}</span>
   </CheckRow>
 );
 
-const PaymentDetails = ({ value, onChange, language, idPrefix, examples, conditionExample }) => {
-  const filled = Boolean(value?.when || value?.condition);
+/*
+ * «Умови виплати» поруч із «Коли платять» агенції читали як синонім і
+ * писали те саме двічі — поля більше немає. Старе значення `condition`
+ * лишається видно й правиться, доки його не стерли: інакше в картці стояв
+ * би текст, якого в редакторі не знайти.
+ */
+const PaymentDetails = ({ value, onChange, language, idPrefix, examples }) => {
+  const filled = Boolean(value?.when);
   const [open, setOpen] = useState(filled);
-  if (!open && !filled) {
-    return (
-      <LinkButton type="button" onClick={() => setOpen(true)}>
-        + {uiText('Деталі: коли й за яких умов', language)}
-      </LinkButton>
-    );
-  }
+  const legacyCondition = value?.condition !== undefined && value?.condition !== '';
   return (
-    <FieldRow>
-      <Field id={`${idPrefix}-when`} label="Коли платять" optional language={language}>
-        <TextInput id={`${idPrefix}-when`} value={value?.when || ''} maxLength={60} placeholder={uiText(examples.when, language)} onChange={event => onChange({ when: event.target.value })} />
-      </Field>
-      <Field id={`${idPrefix}-condition`} label="Умови виплати" optional language={language}>
-        <TextInput id={`${idPrefix}-condition`} value={value?.condition || ''} maxLength={120} placeholder={uiText(conditionExample || examples.condition, language)} onChange={event => onChange({ condition: event.target.value })} />
-      </Field>
-    </FieldRow>
+    <>
+      {!open && !filled ? (
+        <LinkButton type="button" onClick={() => setOpen(true)}>
+          + {uiText('Коли платять', language)}
+        </LinkButton>
+      ) : (
+        <Field id={`${idPrefix}-when`} label="Коли платять" optional language={language}>
+          <TextInput id={`${idPrefix}-when`} value={value?.when || ''} maxLength={60} placeholder={uiText(examples.when, language)} onChange={event => onChange({ when: event.target.value })} />
+        </Field>
+      )}
+      {legacyCondition ? (
+        <Field id={`${idPrefix}-condition`} label="Умови виплати" optional language={language}>
+          <TextInput id={`${idPrefix}-condition`} value={value?.condition || ''} maxLength={120} onChange={event => onChange({ condition: event.target.value })} />
+        </Field>
+      ) : null}
+    </>
   );
 };
 
@@ -1079,7 +1135,25 @@ const HighlightsPicker = ({ program, normalized, onChange, language }) => {
 };
 
 const ProgramForm = ({ program, onChange, language, rates, suggestions, saveState }) => {
-  const [revealed, setRevealed] = useState(() => new Set());
+  const [revealed, setRevealed] = useState(() => new Set(isFreshProgram(program) ? SUGGESTED_PAYMENTS[program.type === 'sm' ? 'sm' : 'ed'] : []));
+  const entrySeq = useRef(0);
+  const nextEntryId = () => { entrySeq.current += 1; return `custom-${entrySeq.current}`; };
+  // Порядок виплат на екрані — порядок, у якому їх додавали. Відомі доплати
+  // мають своє місце в переліку типу, і щойно додана ставала туди — часто
+  // вище за видиме, тож кнопка зникала, а нового блока ніде не було.
+  // Дописані впізнаються за позицією серед дописаних: нові завжди лягають
+  // у кінець масиву, тож n-й запис цього списку — n-та дописана доплата.
+  const [paymentOrder, setPaymentOrder] = useState(() => {
+    const fresh = isFreshProgram(program) ? SUGGESTED_PAYMENTS[program.type === 'sm' ? 'sm' : 'ed'] : [];
+    return [
+      ...listExtraPaymentFields(program.type)
+        .filter(field => program.payments?.[field.key] !== undefined || fresh.includes(field.key))
+        .map(field => ({ id: `known-${field.key}`, key: field.key })),
+      ...[...(program.otherPayments || []), ...(program.bonuses || [])].map(() => ({ id: nextEntryId(), custom: true })),
+    ];
+  });
+  const [openPayment, setOpenPayment] = useState(() => (hasMoney(program.payments?.final) ? '' : 'final'));
+  const focusPaymentRef = useRef('');
   const [mode, setMode] = useState('edit');
   const [openSections, setOpenSections] = useState(() => new Set(['basic', 'payments']));
   const [previewCurrency, setPreviewCurrency] = useState('');
@@ -1156,8 +1230,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
   ]);
   const errors = validateProgramRequirements(program.requirements);
   const issues = listProgramIssues(program);
-  const always = ALWAYS_SHOWN_PAYMENTS[typeKey];
-  const isShown = key => always.includes(key) || program.payments?.[key] !== undefined || revealed.has(key);
+  const isShown = key => program.payments?.[key] !== undefined || revealed.has(key);
   const extraFields = listExtraPaymentFields(program.type);
   // Дописані доплати — один список. Старі записи тримали їх у двох масивах
   // (`otherPayments` — виплати, `bonuses` — доплати за умовою); перша ж
@@ -1192,7 +1265,8 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
     ].filter(Boolean).join(' · '),
     requirements: (() => {
       const count = (normalized?.requirements?.ageFrom !== undefined || normalized?.requirements?.ageTo !== undefined ? 1 : 0)
-        + REQUIREMENT_DEFS.filter(def => requirementFilled(program, def)).length;
+        + REQUIREMENT_DEFS.filter(def => requirementFilled(program, def)).length
+        + (normalized?.customRequirements?.length || 0);
       return count ? countText(count, WORDS.requirement, language) : uiText('Без вимог', language);
     })(),
     coverage: [
@@ -1203,21 +1277,122 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
     card: '',
   };
 
+  // --- виплати: одна відкрита, решта рядками картки ---
+  const togglePayment = id => setOpenPayment(current => (current === id ? '' : id));
+  const openNewPayment = id => {
+    setOpenPayment(id);
+    focusPaymentRef.current = id;
+  };
+  // Щойно додана виплата стає під палець: прокрутка до неї й фокус на
+  // першому полі. Без цього її доводилось шукати, і здавалось, що дотик не
+  // спрацював.
+  useEffect(() => {
+    const id = focusPaymentRef.current;
+    if (!id) return;
+    focusPaymentRef.current = '';
+    const node = document.querySelector(`[data-payment-row="${id}"]`);
+    if (!node) return;
+    if (typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    node.querySelector('input')?.focus({ preventScroll: true });
+  });
+  // Дотик до пропозиції не забирає фокус у поля суми: `MoneyInput` записує
+  // суму на blur, перерахунок зсував розкладку між натисканням і відпусканням
+  // пальця, і перший дотик влучав повз кнопку — додати доплату виходило
+  // лише з другого разу.
+  const keepFocus = event => event.preventDefault();
+  const addKnownPayment = key => {
+    const id = `known-${key}`;
+    reveal(key);
+    setPaymentOrder(current => [...current.filter(entry => entry.id !== id), { id, key }]);
+    openNewPayment(id);
+  };
+  const addCustomPayment = () => {
+    const id = nextEntryId();
+    setPaymentOrder(current => [...current, { id, custom: true }]);
+    setCustomBonuses([...customBonuses, { label: '', amount: '', currency }]);
+    openNewPayment(id);
+  };
+  const paymentRows = (() => {
+    const rows = [];
+    const placed = new Set();
+    let customIndex = 0;
+    paymentOrder.forEach(entry => {
+      if (entry.custom) {
+        if (customIndex < customBonuses.length) rows.push({ id: entry.id, customIndex: customIndex++ });
+        return;
+      }
+      if (placed.has(entry.key) || !isShown(entry.key) || !extraFields.some(field => field.key === entry.key)) return;
+      placed.add(entry.key);
+      rows.push({ id: entry.id, key: entry.key });
+    });
+    // Те, чого перелік не знав (зміна типу, запис ззовні), — у кінці.
+    extraFields.forEach(field => {
+      if (isShown(field.key) && !placed.has(field.key)) rows.push({ id: `known-${field.key}`, key: field.key });
+    });
+    for (; customIndex < customBonuses.length; customIndex += 1) rows.push({ id: `custom-extra-${customIndex}`, customIndex });
+    return rows;
+  })();
+
+  const whenLine = value => [value?.when, value?.condition].filter(Boolean).join(' · ');
+  const collapsedPayment = ({ id, testId, tone, label, amount, details, additional }) => (
+    <PaymentSummary
+      key={id}
+      type="button"
+      data-payment-row={id}
+      data-testid={testId}
+      $tone={tone}
+      $mark={additional}
+      aria-expanded="false"
+      aria-label={uiText('Змінити виплату: {label}', language, { label })}
+      onClick={() => togglePayment(id)}
+    >
+      {additional ? <i aria-hidden="true" title={uiText('Додаткова — кандидатка відмічає сама', language)} /> : null}
+      <span>
+        {label}
+        {details.filter(Boolean).map(line => <small key={line}>{line}</small>)}
+      </span>
+      {amount ? <b>{amount}</b> : <b className="empty">{uiText('без суми', language)}</b>}
+      <Chevron $open={false} aria-hidden="true">▼</Chevron>
+    </PaymentSummary>
+  );
+  const openHead = (id, label, remove) => (
+    <BlockHead>
+      <BlockTitle type="button" aria-expanded="true" onClick={() => togglePayment(id)}>
+        <b>{label}</b>
+        <Chevron $open aria-hidden="true">▼</Chevron>
+      </BlockTitle>
+      {remove ? (
+        <RemoveButton type="button" aria-label={uiText('Прибрати доплату: {label}', language, { label })} onClick={remove}>
+          {uiText('Прибрати доплату', language)}
+        </RemoveButton>
+      ) : null}
+    </BlockHead>
+  );
+  const plusMoney = (amount, cur, approximate = false) => `+${approximate ? '≈ ' : ''}${money(amount, cur)}`;
+
   // --- головна сума ---
   const mainBlock = () => {
     const value = program.payments?.final;
-    const fieldLabel = MAIN_PAYMENT_LABEL;
+    const label = uiText(MAIN_PAYMENT_LABEL, language);
+    if (openPayment !== 'final') {
+      return collapsedPayment({
+        id: 'final',
+        testId: 'payment-final',
+        tone: 'main',
+        label,
+        amount: hasMoney(value) ? money(Number(value.amount), value.currency || currency) : '',
+        details: [whenLine(value)],
+      });
+    }
     return (
-      <Block key="final" $tone="main" data-testid="payment-final">
-        <BlockHead>
-          <b>{uiText(fieldLabel, language)}</b>
-        </BlockHead>
+      <Block key="final" $tone="main" data-testid="payment-final" data-payment-row="final">
+        {openHead('final', label)}
         <FieldRow>
           <Field id={`${idPrefix}-final`} label="Сума" narrow language={language}>
             <MoneyInput
               compact
               id={`${idPrefix}-final`}
-              ariaLabel={uiText(fieldLabel, language)}
+              ariaLabel={label}
               language={language}
               rates={rates}
               placeholder={uiText('сума', language)}
@@ -1232,27 +1407,40 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
   };
 
   // --- відома доплата (досвід, повторна, щомісячно, КС…) ---
-  const knownBonusBlock = ({ key, label }) => {
+  const knownBonusBlock = ({ id, key }) => {
+    const label = uiText(extraFields.find(field => field.key === key)?.label || key, language);
     const value = program.payments?.[key];
     const isMonthly = key === 'monthly';
     const months = Number(value?.months) || 0;
-    const removable = !always.includes(key);
+    const remove = () => {
+      setPaymentOrder(current => current.filter(entry => entry.id !== id));
+      removePay(key);
+    };
+    if (openPayment !== id) {
+      const amount = Number(value?.amount) || 0;
+      const cur = value?.currency || currency;
+      return collapsedPayment({
+        id,
+        testId: `payment-${key}`,
+        tone: 'bonus',
+        label,
+        additional: !isGuaranteedPayment(key, value),
+        amount: amount > 0 ? plusMoney(isMonthly ? amount * (months || DEFAULT_MONTHLY_MONTHS) : amount, cur, isMonthly && !months) : '',
+        details: [
+          isMonthly && amount > 0 ? `${money(amount, cur)}/${uiText('міс', language)} × ${months || `≈ ${DEFAULT_MONTHLY_MONTHS}`}` : '',
+          whenLine(value),
+        ],
+      });
+    }
     return (
-      <Block key={key} $tone="bonus" data-testid={`payment-${key}`}>
-        <BlockHead>
-          <b>{uiText(label, language)}</b>
-          {removable ? (
-            <RemoveButton type="button" aria-label={uiText('Прибрати доплату: {label}', language, { label: uiText(label, language) })} onClick={() => removePay(key)}>
-              {uiText('Прибрати доплату', language)}
-            </RemoveButton>
-          ) : null}
-        </BlockHead>
+      <Block key={id} $tone="bonus" data-testid={`payment-${key}`} data-payment-row={id}>
+        {openHead(id, label, remove)}
         <FieldRow>
           <Field id={`${idPrefix}-${key}`} label={isMonthly ? 'Сума на місяць' : 'Сума'} narrow language={language}>
             <MoneyInput
               compact
               id={`${idPrefix}-${key}`}
-              ariaLabel={uiText(label, language)}
+              ariaLabel={label}
               language={language}
               rates={rates}
               placeholder={uiText('сума', language)}
@@ -1295,7 +1483,6 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           language={language}
           idPrefix={`${idPrefix}-${key}`}
           examples={examples}
-          conditionExample={BONUS_CONDITION_EXAMPLES[key]}
           onChange={patch => setPayExtras(key, patch)}
         />
       </Block>
@@ -1303,19 +1490,29 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
   };
 
   // --- дописана доплата ---
-  const customBonusBlock = (item, index) => {
+  const customBonusBlock = ({ id, customIndex: index }) => {
+    const item = customBonuses[index];
     const setItem = patch => setCustomBonuses(customBonuses.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)));
-    const remove = () => setCustomBonuses(customBonuses.filter((_, i) => i !== index));
+    const remove = () => {
+      setPaymentOrder(current => current.filter(entry => entry.id !== id));
+      setCustomBonuses(customBonuses.filter((_, i) => i !== index));
+    };
     const blockId = `${idPrefix}-bonus-${index}`;
-    const name = String(item.label || '').trim();
+    const name = String(item.label || '').trim() || uiText('Доплата', language);
+    if (openPayment !== id) {
+      return collapsedPayment({
+        id,
+        testId: 'bonus-block',
+        tone: 'bonus',
+        label: name,
+        additional: item.guaranteed !== true,
+        amount: hasMoney(item) ? plusMoney(Number(item.amount), item.currency || currency) : '',
+        details: [whenLine(item)],
+      });
+    }
     return (
-      <Block key={blockId} $tone="bonus" data-testid="bonus-block">
-        <BlockHead>
-          <b>{name || uiText('Доплата', language)}</b>
-          <RemoveButton type="button" aria-label={uiText('Прибрати доплату: {label}', language, { label: name || uiText('Доплата', language) })} onClick={remove}>
-            {uiText('Прибрати доплату', language)}
-          </RemoveButton>
-        </BlockHead>
+      <Block key={id} $tone="bonus" data-testid="bonus-block" data-payment-row={id}>
+        {openHead(id, name, remove)}
         <FieldRow>
           <Field id={`${blockId}-label`} label="За що доплата" language={language}>
             <TextInput
@@ -1442,6 +1639,43 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
     );
   };
 
+  // --- своя вимога ---
+  const customRequirements = program.customRequirements || [];
+  const setCustomRequirements = next => set({ customRequirements: next });
+  const customRequirementRow = (item, index) => {
+    const inputId = `${idPrefix}-req-custom-${index}`;
+    const label = uiText('Своя вимога {n}', language, { n: index + 1 });
+    const setItem = patch => setCustomRequirements(customRequirements.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)));
+    return (
+      <ReqRow key={inputId} data-testid="custom-requirement">
+        <ReqHead>
+          <label htmlFor={inputId}>{label}</label>
+          <RemoveButton type="button" aria-label={uiText('Прибрати вимогу: {label}', language, { label: item.text || label })} onClick={() => setCustomRequirements(customRequirements.filter((_, i) => i !== index))}>{uiText('Прибрати', language)}</RemoveButton>
+        </ReqHead>
+        <ReqControls>
+          <div className="value">
+            <TextInput
+              id={inputId}
+              value={item.text || ''}
+              maxLength={CUSTOM_REQUIREMENT_MAX_LENGTH}
+              placeholder={uiText('Наприклад: без татуювань', language)}
+              onChange={event => setItem({ text: event.target.value })}
+            />
+          </div>
+          <Select
+            className="level"
+            aria-label={uiText('Рівень вимоги: {label}', language, { label: item.text || label })}
+            value={item.level || ''}
+            onChange={event => setItem({ level: event.target.value || undefined })}
+          >
+            <option value="">{uiText('Обовʼязково', language)}</option>
+            {PROGRAM_REQUIREMENT_LEVELS.filter(option => option.key === 'preferred' || option.key === 'individual').map(option => <option key={option.key} value={option.key}>{uiText(option.label, language)}</option>)}
+          </Select>
+        </ReqControls>
+      </ReqRow>
+    );
+  };
+
   const sectionBody = {
     basic: (
       <>
@@ -1454,18 +1688,19 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
             ))}
           </Segments>
         </Field>
-        <Field
-          id={`${idPrefix}-location`}
-          label="Місце програми"
-          language={language}
-          hint={uiText(stages.length ? 'Етапи в різних місцях — у розділі «Покриття витрат і переїзд».' : 'Країна й місто. Якщо етапи проходять у різних місцях — додайте їх у розділі «Покриття витрат і переїзд».', language)}
-        >
+        {/* Підказка під полем («Країна й місто. Якщо етапи…») і «Старт одразу»
+            прибрані як шум на прохання власниці продукту. Уже поставлений
+            «Старт одразу» лишається видно, доки його не знято: інакше в
+            картці стояла б ознака, якої в редакторі не знайти. */}
+        <Field id={`${idPrefix}-location`} label="Місце програми" language={language}>
           <TextInput id={`${idPrefix}-location`} value={program.location || ''} maxLength={80} placeholder={uiText(examples.place, language)} onChange={event => set({ location: event.target.value })} />
         </Field>
-        <CheckRow htmlFor={`${idPrefix}-start`}>
-          <input id={`${idPrefix}-start`} type="checkbox" checked={program.startNow === true} onChange={event => set({ startNow: event.target.checked || undefined })} />
-          <span>{uiText('Старт одразу', language)} <small>· {uiText('кандидатку чекають уже зараз', language)}</small></span>
-        </CheckRow>
+        {program.startNow === true ? (
+          <CheckRow htmlFor={`${idPrefix}-start`}>
+            <input id={`${idPrefix}-start`} type="checkbox" checked onChange={event => set({ startNow: event.target.checked || undefined })} />
+            <span>{uiText('Старт одразу', language)}</span>
+          </CheckRow>
+        ) : null}
         <Field id={`${idPrefix}-note`} label="Коментар організатора" optional language={language}>
           <TextArea
             id={`${idPrefix}-note`}
@@ -1485,18 +1720,17 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         <SubHead>
           <h5>{uiText('Інші виплати', language)}</h5>
         </SubHead>
-        {extraFields.filter(field => isShown(field.key)).map(knownBonusBlock)}
-        {customBonuses.map(customBonusBlock)}
+        {paymentRows.map(row => (row.key ? knownBonusBlock(row) : customBonusBlock(row)))}
         {bonusSuggestions.length ? (
           <datalist id={`${idPrefix}-bonus-terms`}>{bonusSuggestions.map(label => <option key={label} value={label} />)}</datalist>
         ) : null}
         <Segments>
           {extraFields.filter(field => !isShown(field.key)).map(field => (
-            <AddChip key={field.key} type="button" aria-label={uiText('Додати доплату: {label}', language, { label: uiText(field.label, language) })} onClick={() => reveal(field.key)}>+ {uiText(field.label, language)}</AddChip>
+            <AddChip key={field.key} type="button" aria-label={uiText('Додати доплату: {label}', language, { label: uiText(field.label, language) })} onMouseDown={keepFocus} onClick={() => addKnownPayment(field.key)}>+ {uiText(field.label, language)}</AddChip>
           ))}
           {/* Порожній рядок стоїть один: наступний додається, коли цей заповнено. */}
           {customBonuses.some(blankRow) ? null : (
-            <AddChip type="button" onClick={() => setCustomBonuses([...customBonuses, { label: '', amount: '', currency }])}>
+            <AddChip type="button" onMouseDown={keepFocus} onClick={addCustomPayment}>
               + {uiText('Інша доплата', language)}
             </AddChip>
           )}
@@ -1544,10 +1778,15 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           {requirementNote('age', uiText(PROGRAM_REQUIREMENT_LABELS.age, language))}
         </ReqRow>
         {REQUIREMENT_DEFS.filter(def => requirementFilled(program, def) || revealed.has(`req:${def.key}`)).map(requirementRow)}
+        {customRequirements.map(customRequirementRow)}
         <Segments>
           {REQUIREMENT_DEFS.filter(def => !requirementFilled(program, def) && !revealed.has(`req:${def.key}`)).map(def => (
             <AddChip key={def.key} type="button" onClick={() => reveal(`req:${def.key}`)}>+ {uiText(PROGRAM_REQUIREMENT_LABELS[def.key], language)}</AddChip>
           ))}
+          {/* Порожня своя вимога стоїть одна: наступна додається, коли цю заповнено. */}
+          {customRequirements.length < MAX_CUSTOM_REQUIREMENTS && !customRequirements.some(item => !String(item.text || '').trim()) ? (
+            <AddChip type="button" onMouseDown={keepFocus} onClick={() => setCustomRequirements([...customRequirements, { text: '' }])}>+ {uiText('Своя вимога', language)}</AddChip>
+          ) : null}
         </Segments>
         <Readout>{uiText('Вказуйте лише те, що справді відсіює. «Бажано» й «Індивідуально» кандидатці не відмовляють.', language)}</Readout>
       </>

@@ -174,6 +174,15 @@ export const PROGRAM_REQUIREMENT_LEVELS = Object.freeze([
 
 export const PROGRAM_REQUIREMENT_KEYS = Object.freeze(['age', 'bmi', 'height', 'rh', 'marital', 'ownKids', 'births', 'csection']);
 
+/**
+ * Власні вимоги агенції — те, чого немає серед полів (`requirements`):
+ * «без татуювань», «не курить», «закордонний паспорт». Текст пише агенція,
+ * рівень — той самий, що й у полів. Відсіяти за таким текстом анкету не
+ * можна, тож «підходить» ці вимоги не рахує: вони стоять у картці чіпами.
+ */
+export const MAX_CUSTOM_REQUIREMENTS = 8;
+export const CUSTOM_REQUIREMENT_MAX_LENGTH = 80;
+
 export const PROGRAM_REQUIREMENT_LABELS = Object.freeze({
   age: 'Вік',
   bmi: 'ІМТ',
@@ -374,6 +383,8 @@ export const normalizeProgram = (raw, id) => {
   // читаються: сума програми одна — головна плюс доплати (`programBreakdown`).
   const requirementMeta = normalizeRequirementMeta(raw.requirementMeta);
   if (requirementMeta) program.requirementMeta = requirementMeta;
+  const customRequirements = normalizeCustomRequirements(raw.customRequirements);
+  if (customRequirements.length) program.customRequirements = customRequirements;
   const stages = (Array.isArray(raw.stages) ? raw.stages : Object.values(raw.stages || {}))
     .map(item => ({ stage: ALL_STAGE_KEYS.has(item?.stage) ? item.stage : 'other', place: text(item?.place) }))
     .filter(item => item.place)
@@ -444,6 +455,16 @@ const normalizeRequirementMeta = raw => {
   return Object.keys(meta).length ? meta : null;
 };
 
+const normalizeCustomRequirements = raw => (Array.isArray(raw) ? raw : Object.values(raw || {}))
+  .map(item => {
+    const value = text(item?.text, CUSTOM_REQUIREMENT_MAX_LENGTH);
+    if (!value) return null;
+    const level = LEVEL_KEYS.has(item?.level) && item.level !== 'required' && item.level !== 'free' ? item.level : '';
+    return level ? { text: value, level } : { text: value };
+  })
+  .filter(Boolean)
+  .slice(0, MAX_CUSTOM_REQUIREMENTS);
+
 const normalizeRelocation = raw => {
   if (!raw || typeof raw !== 'object') return null;
   const relocation = {};
@@ -503,6 +524,7 @@ export const isProgramPresentable = program => {
     || Boolean(String(program.location || '').trim())
     || Boolean(String(program.name || '').trim())
     || Boolean(program.stages?.length)
+    || Boolean(program.customRequirements?.length)
     || hasRequirement;
 };
 
@@ -847,6 +869,11 @@ export const describeProgramRequirements = program => {
     const own = meta[key];
     if (own?.level === 'free') described.push({ key, text: '{label} — без обмежень', variables: { label: PROGRAM_REQUIREMENT_LABELS[key] }, level: 'free', ...(own.note ? { note: own.note } : {}) });
     else if (own?.note) described.push({ key, text: '{label}', variables: { label: PROGRAM_REQUIREMENT_LABELS[key] }, level: own.level || 'individual', note: own.note });
+  });
+  // Текст агенції йде змінною, а не шаблоном: фігурні дужки в ньому не мусять
+  // ставати підстановкою, а перекладати чужий текст словник не вміє.
+  (program?.customRequirements || []).forEach((item, index) => {
+    described.push({ key: `custom-${index}`, text: '{value}', variables: { value: item.text }, ...(item.level ? { level: item.level } : {}) });
   });
   return described;
 };

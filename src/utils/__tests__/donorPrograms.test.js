@@ -521,3 +521,24 @@ describe('доплати рахуються просто', () => {
     expect(program.otherPayments[0].counting).toBeUndefined();
   });
 });
+
+describe('власні вимоги агенції', () => {
+  it('тримає текст і рівень, порожні й «обовʼязково» не пише', () => {
+    const program = normalizeProgram({
+      type: 'ed',
+      customRequirements: [{ text: ' Без татуювань ' }, { text: '' }, { text: 'Закордонний паспорт', level: 'preferred' }, { text: 'Не курить', level: 'required' }],
+    }, 'p1');
+    expect(program.customRequirements).toEqual([
+      { text: 'Без татуювань' },
+      { text: 'Закордонний паспорт', level: 'preferred' },
+      { text: 'Не курить' },
+    ]);
+  });
+
+  it('стоять у вимогах картки чіпами, а фігурні дужки лишаються текстом', () => {
+    const program = normalizeProgram({ type: 'ed', customRequirements: [{ text: 'без {value}', level: 'individual' }] }, 'p1');
+    expect(describeProgramRequirements(program)).toEqual([
+      { key: 'custom-0', text: '{value}', variables: { value: 'без {value}' }, level: 'individual' },
+    ]);
+  });
+});
