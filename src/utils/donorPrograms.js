@@ -143,6 +143,15 @@ export const listCoverageOptions = type => PROGRAM_COVERAGE_OPTIONS.filter(optio
 export const PROGRAM_SUPPORT_COVERAGE = Object.freeze(['legal', 'notary', 'support', 'insurance']);
 
 /**
+ * Що ще дає програма понад перелік — словами агенції: подарунки, аванс,
+ * компенсація за пропущену роботу. Перелік (`PROGRAM_COVERAGE_OPTIONS`)
+ * описує витрати, а агенції пропонують і те, що витратою не є, — і писати це
+ * було ніде, крім коментаря.
+ */
+export const MAX_CUSTOM_COVERAGE = 8;
+export const CUSTOM_COVERAGE_MAX_LENGTH = 60;
+
+/**
  * Як саме агенція покриває витрату. «Житло» без пояснення читалось і як
  * «знімаємо квартиру», і як «компенсуємо оренду», і як «гроші на житло
  * всередині винагороди» — а для кандидатки це три різні суми на руках.
@@ -160,24 +169,12 @@ export const PROGRAM_COVERAGE_PER = Object.freeze([
   { key: 'month', label: 'на місяць' },
 ]);
 
-/**
- * Рівень вимоги. «Не вказано» (рівня немає) і «без обмежень» (`free`) —
- * різні відповіді: перше значить «агенція не сказала», друге — «сказала, що
- * не важливо», і лише друге можна обіцяти кандидатці.
- */
-export const PROGRAM_REQUIREMENT_LEVELS = Object.freeze([
-  { key: 'required', label: 'Обовʼязково' },
-  { key: 'preferred', label: 'Бажано' },
-  { key: 'individual', label: 'Індивідуально' },
-  { key: 'free', label: 'Без обмежень' },
-]);
-
 export const PROGRAM_REQUIREMENT_KEYS = Object.freeze(['age', 'bmi', 'height', 'rh', 'marital', 'ownKids', 'births', 'csection']);
 
 /**
  * Власні вимоги агенції — те, чого немає серед полів (`requirements`):
  * «без татуювань», «не курить», «закордонний паспорт». Текст пише агенція,
- * рівень — той самий, що й у полів. Відсіяти за таким текстом анкету не
+ * рівня в нього немає. Відсіяти за таким текстом анкету не
  * можна, тож «підходить» ці вимоги не рахує: вони стоять у картці чіпами.
  */
 export const MAX_CUSTOM_REQUIREMENTS = 8;
@@ -193,29 +190,6 @@ export const PROGRAM_REQUIREMENT_LABELS = Object.freeze({
   births: 'Кількість пологів',
   csection: 'Кесарів розтин',
 });
-
-/**
- * Етапи програми й де кожен проходить. Обстеження в одному місті, стимуляція
- * в іншому, пункція за кордоном — у чатах це три окремі абзаци, а одне поле
- * «Де проходить» вміщало хіба перше.
- */
-export const PROGRAM_STAGE_OPTIONS = Object.freeze({
-  ed: Object.freeze([
-    { key: 'screening', label: 'Обстеження' },
-    { key: 'stimulation', label: 'Стимуляція' },
-    { key: 'retrieval', label: 'Пункція' },
-    { key: 'other', label: 'Інше' },
-  ]),
-  sm: Object.freeze([
-    { key: 'screening', label: 'Обстеження' },
-    { key: 'transfer', label: 'Перенос ембріона' },
-    { key: 'pregnancy', label: 'Вагітність' },
-    { key: 'delivery', label: 'Пологи' },
-    { key: 'other', label: 'Інше' },
-  ]),
-});
-
-const ALL_STAGE_KEYS = new Set(Object.values(PROGRAM_STAGE_OPTIONS).flat().map(option => option.key));
 
 export const PROGRAM_FAMILY_OPTIONS = Object.freeze([
   { key: '', label: 'Не вказано' },
@@ -381,15 +355,15 @@ export const normalizeProgram = (raw, id) => {
   if (raw.startNow === true) program.startNow = true;
   // `featured` (яку суму показати головною) і `counting` виплат більше не
   // читаються: сума програми одна — головна плюс доплати (`programBreakdown`).
-  const requirementMeta = normalizeRequirementMeta(raw.requirementMeta);
-  if (requirementMeta) program.requirementMeta = requirementMeta;
+  // Рівні вимог («бажано», «індивідуально», «без обмежень») і пояснення до
+  // кожної (`requirementMeta`, `level` своєї вимоги) більше не читаються:
+  // прибрано на прохання власниці продукту — сказати «індивідуально» агенція
+  // може своєю вимогою чи коментарем. Етапи з місцями (`stages`) — так само:
+  // їх пишуть в описі програми. Перший же запис програми їх знімає.
   const customRequirements = normalizeCustomRequirements(raw.customRequirements);
   if (customRequirements.length) program.customRequirements = customRequirements;
-  const stages = (Array.isArray(raw.stages) ? raw.stages : Object.values(raw.stages || {}))
-    .map(item => ({ stage: ALL_STAGE_KEYS.has(item?.stage) ? item.stage : 'other', place: text(item?.place) }))
-    .filter(item => item.place)
-    .slice(0, 6);
-  if (stages.length) program.stages = stages;
+  const customCoverage = normalizeCustomCoverage(raw.customCoverage);
+  if (customCoverage.length) program.customCoverage = customCoverage;
   const relocation = normalizeRelocation(raw.relocation);
   if (relocation) program.relocation = relocation;
   const coverageDetails = normalizeCoverageDetails(raw.coverageDetails, program.coverage || coverage);
@@ -441,29 +415,18 @@ const normalizeLabeledPayments = (value, { extras = true } = {}) => (Array.isArr
   .filter(Boolean)
   .slice(0, 8);
 
-const LEVEL_KEYS = new Set(PROGRAM_REQUIREMENT_LEVELS.map(option => option.key));
-
-const normalizeRequirementMeta = raw => {
-  if (!raw || typeof raw !== 'object') return null;
-  const meta = {};
-  PROGRAM_REQUIREMENT_KEYS.forEach(key => {
-    const level = LEVEL_KEYS.has(raw[key]?.level) ? raw[key].level : '';
-    const note = text(raw[key]?.note, 120);
-    if (!level && !note) return;
-    meta[key] = { ...(level ? { level } : {}), ...(note ? { note } : {}) };
-  });
-  return Object.keys(meta).length ? meta : null;
-};
-
 const normalizeCustomRequirements = raw => (Array.isArray(raw) ? raw : Object.values(raw || {}))
   .map(item => {
     const value = text(item?.text, CUSTOM_REQUIREMENT_MAX_LENGTH);
-    if (!value) return null;
-    const level = LEVEL_KEYS.has(item?.level) && item.level !== 'required' && item.level !== 'free' ? item.level : '';
-    return level ? { text: value, level } : { text: value };
+    return value ? { text: value } : null;
   })
   .filter(Boolean)
   .slice(0, MAX_CUSTOM_REQUIREMENTS);
+
+const normalizeCustomCoverage = raw => [...new Set((Array.isArray(raw) ? raw : Object.values(raw || {}))
+  .map(item => text(typeof item === 'string' ? item : item?.text, CUSTOM_COVERAGE_MAX_LENGTH))
+  .filter(Boolean))]
+  .slice(0, MAX_CUSTOM_COVERAGE);
 
 const normalizeRelocation = raw => {
   if (!raw || typeof raw !== 'object') return null;
@@ -523,7 +486,7 @@ export const isProgramPresentable = program => {
     || Boolean(String(program.note || '').trim())
     || Boolean(String(program.location || '').trim())
     || Boolean(String(program.name || '').trim())
-    || Boolean(program.stages?.length)
+    || Boolean(program.customCoverage?.length)
     || Boolean(program.customRequirements?.length)
     || hasRequirement;
 };
@@ -667,13 +630,6 @@ export const evaluateProgram = (program, facts) => {
   if (req.csectionMax && req.csectionMax !== 'any') {
     push('csection', f.csections === null || f.csections === undefined ? null : f.csections <= Number(req.csectionMax));
   }
-  // «Бажано» й «індивідуально» не відмовляють: агенція сама сказала, що
-  // розглядає. Розбіжність там — питання, а не «не підходить».
-  const meta = program?.requirementMeta || {};
-  checks.forEach(check => {
-    const level = meta[check.key]?.level;
-    if (check.ok === false && (level === 'preferred' || level === 'individual')) check.ok = null;
-  });
   const failed = checks.some(check => check.ok === false);
   const unknown = checks.some(check => check.ok === null);
   return { matches: !failed, uncertain: !failed && unknown, checks };
@@ -840,7 +796,6 @@ export const sortCardsByMode = (cards, mode, { viewerType = '', facts = null, ra
  */
 export const describeProgramRequirements = program => {
   const req = program?.requirements || {};
-  const meta = program?.requirementMeta || {};
   const items = [];
   if (req.ageFrom !== undefined && req.ageTo !== undefined) items.push({ key: 'age', text: '{from}–{to} років', variables: { from: req.ageFrom, to: req.ageTo } });
   else if (req.ageTo !== undefined) items.push({ key: 'age', text: 'до {value} років', variables: { value: req.ageTo } });
@@ -856,24 +811,11 @@ export const describeProgramRequirements = program => {
   if (req.csectionMax === '0') items.push({ key: 'csection', text: 'без КР' });
   if (req.csectionMax === '1') items.push({ key: 'csection', text: 'можна з 1 КР' });
   if (req.csectionMax === '2') items.push({ key: 'csection', text: 'до 2 КР' });
-  // Рівень і пояснення лягають на ту саму вимогу: «можна з 1 КР — через
-  // 2 роки після операції» — одна умова, а не дві. Явне «без обмежень» без
-  // значення — окремий пункт: «не вказано» мовчить, а це — відповідь.
-  const described = items.map(item => {
-    const own = meta[item.key] || {};
-    const level = own.level === 'free' ? '' : own.level || '';
-    return { ...item, ...(level ? { level } : {}), ...(own.note ? { note: own.note } : {}) };
-  });
-  PROGRAM_REQUIREMENT_KEYS.forEach(key => {
-    if (described.some(item => item.key === key)) return;
-    const own = meta[key];
-    if (own?.level === 'free') described.push({ key, text: '{label} — без обмежень', variables: { label: PROGRAM_REQUIREMENT_LABELS[key] }, level: 'free', ...(own.note ? { note: own.note } : {}) });
-    else if (own?.note) described.push({ key, text: '{label}', variables: { label: PROGRAM_REQUIREMENT_LABELS[key] }, level: own.level || 'individual', note: own.note });
-  });
+  const described = [...items];
   // Текст агенції йде змінною, а не шаблоном: фігурні дужки в ньому не мусять
   // ставати підстановкою, а перекладати чужий текст словник не вміє.
   (program?.customRequirements || []).forEach((item, index) => {
-    described.push({ key: `custom-${index}`, text: '{value}', variables: { value: item.text }, ...(item.level ? { level: item.level } : {}) });
+    described.push({ key: `custom-${index}`, text: '{value}', variables: { value: item.text } });
   });
   return described;
 };
@@ -1179,10 +1121,13 @@ export const describeProgramCoverage = program => {
   const items = listCoverageOptions(program?.type)
     .filter(option => program?.coverage?.includes(option.key))
     .map(option => ({ key: option.key, label: option.label, ...(details[option.key] || {}) }));
+  // Своє агенції — текстом як є, без перекладу й без подробиць.
+  const custom = (program?.customCoverage || []).map((label, index) => ({ key: `custom-${index}`, label, custom: true }));
   return {
     expenses: items.filter(item => !PROGRAM_SUPPORT_COVERAGE.includes(item.key)),
     support: items.filter(item => PROGRAM_SUPPORT_COVERAGE.includes(item.key)),
-    all: items,
+    custom,
+    all: [...items, ...custom],
   };
 };
 
@@ -1201,10 +1146,3 @@ export const formatProgramPlace = value => String(value || '')
   .filter(Boolean)
   .map(capitalizeFirst)
   .join('; ');
-
-/** Етапи з місцями — у порядку агенції; без етапів — саме місце програми. */
-export const listProgramStages = program => (program?.stages || []).map(item => {
-  const options = PROGRAM_STAGE_OPTIONS[program.type === 'sm' ? 'sm' : 'ed'];
-  const label = options.find(option => option.key === item.stage)?.label || 'Інше';
-  return { ...item, label, place: formatProgramPlace(item.place) };
-});

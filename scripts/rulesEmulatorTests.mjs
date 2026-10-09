@@ -339,6 +339,20 @@ await it('приймає власні вимоги програми й відк�
   await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
 });
 
+// Своє агенції в «Що ще дає програма» — рядки до 60 знаків, не більше
+// восьми; поки правил немає в проді, клієнт пише програму без них
+// (`stripCustomCoverage`).
+await it('приймає своє в покритті програми й відкидає чуже в ньому', async () => {
+  const base = `multiData/programs/${PROFILE_OWNER}`;
+  const withProgram = program => ({ updatedAt: 1759200000000, items: { p7: { id: 'p7', type: 'sm', ...program } } });
+  await assertSucceeds(set(ref(db(PROFILE_OWNER), base), withProgram({ customCoverage: ['Подарунок після пологів', 'Аванс 500 $'] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ customCoverage: [''] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ customCoverage: ['x'.repeat(61)] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ customCoverage: [{ text: 'x' }] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ customCoverage: { 8: 'x' } })));
+  await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
+});
+
 // Місце виплати щодо головної суми (додається / уже всередині / за окрему
 // процедуру) і вибрана головна сума картки. Головна виплата й повторна донація
 // місця не вибирають: перша сама є сумою, друга окрема за визначенням.

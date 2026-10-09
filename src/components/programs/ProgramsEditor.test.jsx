@@ -193,7 +193,7 @@ describe('редактор програм', () => {
     expect(screen.queryByText(/Якщо етапи проходять/)).not.toBeInTheDocument();
   });
 
-  it('власну вимогу можна дописати з рівнем', () => {
+  it('власну вимогу дописують самим текстом, без рівня', () => {
     const onSave = jest.fn();
     const { unmount } = render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
     fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
@@ -201,43 +201,78 @@ describe('редактор програм', () => {
     fireEvent.click(screen.getByRole('button', { name: '+ Своя вимога' }));
     expect(screen.queryByRole('button', { name: '+ Своя вимога' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Своя вимога 1'), { target: { value: 'Без татуювань' } });
-    fireEvent.change(screen.getByLabelText('Рівень вимоги: Без татуювань'), { target: { value: 'preferred' } });
+    expect(screen.queryByLabelText(/Рівень вимоги/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '+ Своя вимога' })).toBeInTheDocument();
     unmount();
     const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0].p1;
-    expect(saved.customRequirements).toEqual([{ text: 'Без татуювань', level: 'preferred' }]);
+    expect(saved.customRequirements).toEqual([{ text: 'Без татуювань' }]);
   });
 
-  it('вимога має рівень і пояснення', () => {
+  it('вимоги — без рівнів і без пояснень; старий рівень перший запис знімає', () => {
+    const onSave = jest.fn();
+    const withMeta = { p1: { ...program.p1, requirements: { ...program.p1.requirements, csectionMax: '1' }, requirementMeta: { csection: { level: 'individual', note: 'після 2 років' } } } };
+    const { unmount } = render(<ProgramsEditor programs={withMeta} onSave={onSave} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Вимоги до кандидатки/ }));
+    expect(screen.queryByLabelText(/Рівень вимоги/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Пояснення' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/«Бажано»/)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Вік до'), { target: { value: '30' } });
+    unmount();
+    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0].p1;
+    expect(saved.requirements.ageTo).toBe(30);
+    expect(saved.requirementMeta).toBeUndefined();
+  });
+
+  it('розділу «Як виглядає в картці» й етапів програми немає', () => {
+    render(<ProgramsEditor programs={{ p1: { ...program.p1, startNow: true } }} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
+    expect(screen.queryByRole('button', { name: /Як виглядає в картці/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Що ще дає програма/ }));
+    expect(screen.queryByText('Етапи програми')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Етап і місце' })).not.toBeInTheDocument();
+  });
+
+  it('у «Що ще дає програма» можна дописати своє — подарунки, аванс', () => {
     const onSave = jest.fn();
     const { unmount } = render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
     fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Вимоги до кандидатки/ }));
-    // Рівень стоїть словом поруч зі значенням, а не за «⋯».
-    expect(screen.getByLabelText('Рівень вимоги: Вік')).toHaveDisplayValue('Обовʼязково');
-    fireEvent.click(screen.getByRole('button', { name: '+ Кесарів розтин' }));
-    fireEvent.change(screen.getByLabelText('Рівень вимоги: Кесарів розтин'), { target: { value: 'individual' } });
-    fireEvent.click(screen.getAllByRole('button', { name: '+ Пояснення' })[1]);
-    fireEvent.change(screen.getByLabelText('Пояснення: Кесарів розтин'), { target: { value: 'після 2 років' } });
+    fireEvent.click(screen.getByRole('button', { name: /Що ще дає програма/ }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Своє: подарунки, аванс…' }));
+    // Порожній свій пункт стоїть один.
+    expect(screen.queryByRole('button', { name: '+ Своє: подарунки, аванс…' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Своє 1'), { target: { value: 'Подарунок\nпісля пункції' } });
+    expect(screen.getByRole('button', { name: '+ Своє: подарунки, аванс…' })).toBeInTheDocument();
     unmount();
     const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0].p1;
-    expect(saved.requirementMeta).toEqual({ csection: { level: 'individual', note: 'після 2 років' } });
+    // Поле росте під текст, але значення лишається одним рядком.
+    expect(saved.customCoverage).toEqual(['Подарунок після пункції']);
   });
 
-  it('головне в картці вибирають з полів програми, і вибір зберігається', () => {
+  it('«OK» записує набране, як blur, і згортає виплату', () => {
     const onSave = jest.fn();
-    const { unmount } = render(<ProgramsEditor programs={{ p1: { ...program.p1, startNow: true } }} onSave={onSave} language="uk" />);
-    fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Як виглядає в картці/ }));
-    // Вимоги ознаками не пропонуються: згорнута картка показує їх усі сама.
-    expect(screen.queryByRole('checkbox', { name: '21–29 років' })).not.toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: 'старт одразу' })).toBeChecked();
-    expect(screen.getByText('Вибрано 1 з 4')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'старт одразу' }));
+    const surrogate = { p2: { id: 'p2', type: 'sm', payments: { final: { amount: 20000, currency: 'USD' }, cSection: { amount: 1500, currency: 'USD' } } } };
+    const { unmount } = render(<ProgramsEditor programs={surrogate} onSave={onSave} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо сурогатну маму/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Змінити виплату: Кесарів розтин' }));
+    const amount = screen.getByLabelText('Кесарів розтин');
+    amount.focus();
+    fireEvent.change(amount, { target: { value: '1700' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Готово: Кесарів розтин' }));
+    expect(screen.queryByLabelText('Кесарів розтин')).not.toBeInTheDocument();
+    expect(screen.getByTestId('payment-cSection')).toHaveTextContent('+1 700 $');
     unmount();
-    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0].p1;
-    expect(saved.startNow).toBe(true);
-    expect(saved.highlights).toEqual(['none']);
+    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0].p2;
+    expect(saved.payments.cSection).toEqual({ amount: 1700, currency: 'USD' });
+  });
+
+  it('згорнута виплата — без стрілки й без квадратика перед назвою', () => {
+    const surrogate = { p2: { id: 'p2', type: 'sm', payments: { final: { amount: 20000, currency: 'USD' }, twins: { amount: 2000, currency: 'USD' } } } };
+    render(<ProgramsEditor programs={surrogate} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо сурогатну маму/ }));
+    const row = screen.getByTestId('payment-twins');
+    // Рядок — сама назва й сума: «Двійня +2 000 $», нічого перед і після.
+    expect(row).toHaveTextContent(/^Двійня\+2 000 \$$/);
   });
 
   it('умову старої доплати видно, а правка переносить її до решти доплат', () => {
@@ -313,7 +348,7 @@ describe('редактор програм', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
     fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
     expect(screen.queryByLabelText(/Назва програми/)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Покриття витрат/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Що ще дає програма/ }));
     expect(screen.queryByRole('button', { name: 'Одяг' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Проїзд' })).toBeInTheDocument();
   });

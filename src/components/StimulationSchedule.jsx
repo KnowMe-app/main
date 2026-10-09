@@ -4,6 +4,13 @@ import { formatDateToServer } from 'components/inputValidations';
 import { OrangeBtn } from 'components/styles';
 import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
+import {
+  adjustBackward,
+  adjustForward,
+  diffDays,
+  findWorkingCycleDay,
+  isWeekend,
+} from 'utils/cycleDates';
 
 const firstDayActionButtonStyle = {
   minWidth: '88px',
@@ -1026,32 +1033,6 @@ const parseLeadingDate = (input, anchorDate) => {
   };
 };
 
-const isWeekend = date => {
-  const day = date.getDay();
-  return day === 0 || day === 6;
-};
-
-const diffDays = (date, base) =>
-  Math.round((date - base) / (1000 * 60 * 60 * 24)) + 1;
-
-const adjustForward = (date, base) => {
-  let day = diffDays(date, base);
-  while (isWeekend(date)) {
-    date.setDate(date.getDate() + 1);
-    day = diffDays(date, base);
-  }
-  return { date, day, sign: '' };
-};
-
-const adjustBackward = (date, base) => {
-  let day = diffDays(date, base);
-  while (isWeekend(date)) {
-    date.setDate(date.getDate() - 1);
-    day = diffDays(date, base);
-  }
-  return { date, day, sign: '' };
-};
-
 const adjustToNextWorkingDay = (date, base) => {
   if (!date) return null;
   const candidate = new Date(date);
@@ -1145,20 +1126,7 @@ export const generateSchedule = base => {
   });
 
   // Transfer 19-22
-  let transfer;
-  for (let n = 19; n <= 22; n++) {
-    d = new Date(base);
-    d.setDate(base.getDate() + n - 1);
-    if (!isWeekend(d)) {
-      transfer = { date: d, day: n, sign: '' };
-      break;
-    }
-  }
-  if (!transfer) {
-    d = new Date(base);
-    d.setDate(base.getDate() + 21);
-    transfer = adjustBackward(d, base);
-  }
+  const transfer = findWorkingCycleDay(base, 19, 22);
   visits.push({
     key: 'transfer',
     date: transfer.date,
@@ -1623,28 +1591,8 @@ const StimulationSchedule = ({
       label: `${adjustedDayEight.day}й день УЗД`,
     };
 
-    let difEvent = null;
-    for (let n = 19; n <= 22; n += 1) {
-      const candidate = new Date(normalizedBase);
-      candidate.setDate(normalizedBase.getDate() + n - 1);
-      if (!isWeekend(candidate)) {
-        difEvent = {
-          date: normalizeDate(candidate),
-          day: diffDays(candidate, normalizedBase),
-        };
-        break;
-      }
-    }
-
-    if (!difEvent) {
-      const fallback = new Date(normalizedBase);
-      fallback.setDate(normalizedBase.getDate() + 21);
-      const adjusted = adjustBackward(fallback, normalizedBase);
-      difEvent = {
-        date: normalizeDate(adjusted.date),
-        day: adjusted.day,
-      };
-    }
+    const difDay = findWorkingCycleDay(normalizedBase, 19, 22);
+    const difEvent = { date: normalizeDate(difDay.date), day: difDay.day };
 
     const preDipherelin = {
       key: 'pre-dipherelin',

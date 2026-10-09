@@ -633,6 +633,11 @@
                   }
                 }
               },
+              "customCoverage": {
+                "$index": {
+                  ".validate": "$index.matches(/^[0-7]$/) && newData.isString() && newData.val().length > 0 && newData.val().length <= 60"
+                }
+              },
               "requirementMeta": {
                 "$requirementKey": {
                   ".validate": "$requirementKey.matches(/^(age|bmi|height|rh|marital|ownKids|births|csection)$/)",

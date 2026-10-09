@@ -143,6 +143,7 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
           rates={programsContext.rates}
           displayCurrency={programsContext.displayCurrency}
           onDisplayCurrencyChange={programsContext.onDisplayCurrencyChange}
+          timeline={programsContext.timeline}
         />
       ) : null}
     </Block>

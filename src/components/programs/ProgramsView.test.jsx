@@ -113,7 +113,7 @@ describe('програми в рядку стрічки', () => {
     expect(within(requirements).getAllByRole('listitem').map(item => item.textContent)).toEqual(['✓21–29 років', 'ІМТ до 28', 'зріст від 165 см', 'лише Rh+']);
     expect(row).not.toHaveTextContent('Покриває');
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
-    expect(within(row).getByText('Що покриває')).toBeInTheDocument();
+    expect(within(row).getByText('Що ще дає програма')).toBeInTheDocument();
   });
 
   it('коментар організатора видно вже в згорнутій програмі', () => {
@@ -199,7 +199,7 @@ describe('картка програми — калькулятор заробі�
   it('вимоги й покриття підписані окремо', () => {
     render(<ProgramCard program={{ ...surrogate, requirements: { ageTo: 35 }, coverage: ['travel'] }} rates={rates} language="uk" />);
     expect(screen.getByText('Вимоги')).toBeInTheDocument();
-    expect(screen.getByText('Що покриває')).toBeInTheDocument();
+    expect(screen.getByText('Що ще дає програма')).toBeInTheDocument();
   });
 
   it('читачеві без свого типу програми донорок і СМ — кожна своїм контейнером', () => {
@@ -261,25 +261,26 @@ describe('програми з оголошень агенцій', () => {
     expect(row).not.toHaveTextContent('Одяг');
   });
 
-  it('кілька етапів: місце кожного й переїзд із сімʼєю', () => {
+  it('етапів з місцями більше не показує, переїзд із сімʼєю — показує', () => {
     const program = {
       id: 'e',
       type: 'ed',
+      location: 'Київ',
       payments: { final: { amount: 1500, currency: 'USD' } },
       stages: [{ stage: 'stimulation', place: 'Київ' }, { stage: 'retrieval', place: 'Грузія, Тбілісі' }],
       relocation: { when: 'на 5 днів', family: 'yes' },
     };
     render(<ProgramsSummary card={{ programs: { e: program } }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    expect(row).toHaveTextContent('Київ · 2 етапи');
+    expect(row).not.toHaveTextContent('2 етапи');
     expect(row).toHaveTextContent('переїзд із сімʼєю');
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
-    expect(within(row).getByText('Пункція')).toBeInTheDocument();
-    expect(within(row).getByText('Грузія, Тбілісі')).toBeInTheDocument();
+    expect(within(row).queryByText('Пункція')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Грузія, Тбілісі')).not.toBeInTheDocument();
     expect(within(row).getByText('Можна з сімʼєю')).toBeInTheDocument();
   });
 
-  it('вимога з поясненням і рівнем; «бажано» не відмовляє', () => {
+  it('рівнів вимог і пояснень до них картка не показує', () => {
     const program = {
       id: 'f',
       type: 'sm',
@@ -289,11 +290,55 @@ describe('програми з оголошень агенцій', () => {
     };
     render(<ProgramsSummary card={{ programs: { f: program } }} viewerType="sm" facts={{ age: 38, csections: 1 }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    expect(within(row).getByLabelText('Може підходити')).toBeInTheDocument();
+    expect(within(row).getByLabelText('Не підходить')).toBeInTheDocument();
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
-    expect(row).toHaveTextContent('через 2 роки після операції');
-    expect(row).toHaveTextContent('Сімейний стан — без обмежень');
-    expect(row).toHaveTextContent('бажано');
+    expect(row).not.toHaveTextContent('через 2 роки після операції');
+    expect(row).not.toHaveTextContent('без обмежень');
+    expect(row).not.toHaveTextContent('бажано');
+  });
+
+  it('своє агенції стоїть у «Що ще дає програма» як написано', () => {
+    const program = { id: 'c', type: 'sm', payments: { final: { amount: 20000, currency: 'USD' } }, coverage: ['housing'], customCoverage: ['Подарунок після пологів'] };
+    render(<ProgramsSummary card={{ programs: { c: program } }} rates={rates} displayCurrency="USD" language="uk" />);
+    const row = screen.getByTestId('program-list-item');
+    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    const list = within(row).getByLabelText('Що ще дає програма');
+    expect(list).toHaveTextContent('Житло');
+    expect(list).toHaveTextContent('Подарунок після пологів');
+  });
+
+  it('у програмі СМ є приблизний графік від місячних читачки до пологів, і нова дата пишеться в анкету', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 9, 9));
+    const onLastCycleChange = jest.fn();
+    const program = { id: 't', type: 'sm', payments: { final: { amount: 20000, currency: 'USD' } } };
+    render(<ProgramsSummary card={{ programs: { t: program } }} rates={rates} displayCurrency="USD" language="uk" timeline={{ lastCycle: '2026-10-05', onLastCycleChange }} />);
+    const row = screen.getByTestId('program-list-item');
+    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    fireEvent.click(within(row).getByRole('button', { name: 'Приблизний графік програми' }));
+    const timeline = within(row).getByTestId('program-timeline');
+    expect(within(timeline).getByLabelText('Перший день останньої менструації')).toHaveValue('2026-10-05');
+    const lines = within(timeline).getAllByRole('listitem').map(item => item.textContent);
+    // 5 жов — 1-й день; 23 жов — пʼятниця, 19-й день; ХГЧ на 14-й день після.
+    expect(lines[0]).toBe('5 жов— Місячні');
+    expect(lines[1]).toBe('23 жов(2 тиж.) — Перенос ембріона');
+    expect(lines[2]).toBe('5 лис(4 тиж.) — ХГЧ');
+    expect(lines[lines.length - 1]).toBe('12 лип(40 тиж.) — Пологи');
+    expect(onLastCycleChange).not.toHaveBeenCalled();
+    fireEvent.click(within(timeline).getByLabelText('Стимуляція з дифереліном'));
+    expect(within(timeline).getByText(/Диферелін/)).toBeInTheDocument();
+    fireEvent.change(within(timeline).getByLabelText('Перший день останньої менструації'), { target: { value: '2026-10-07' } });
+    jest.advanceTimersByTime(1000);
+    expect(onLastCycleChange).toHaveBeenCalledWith('2026-10-07');
+    jest.useRealTimers();
+  });
+
+  it('донорській програмі графіка СМ не пропонує', () => {
+    const program = { id: 'd', type: 'ed', payments: { final: { amount: 1500, currency: 'USD' } } };
+    render(<ProgramsSummary card={{ programs: { d: program } }} rates={rates} displayCurrency="USD" language="uk" />);
+    const row = screen.getByTestId('program-list-item');
+    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    expect(within(row).queryByRole('button', { name: 'Приблизний графік програми' })).not.toBeInTheDocument();
   });
 
   it('головне в картці — те, що вибрала агенція, у її порядку; вимоги стоять окремо й усі', () => {

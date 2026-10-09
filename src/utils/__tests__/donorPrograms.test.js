@@ -18,6 +18,7 @@ import {
   sortCardsByMode,
   summarizeCardPrograms,
   HIGHLIGHTS_NONE,
+  describeProgramCoverage,
   describeProgramRequirements,
   formatProgramPlace,
   resolveProgramHighlights,
@@ -391,7 +392,7 @@ describe('програми з оголошень: що зберігається'
     highlights: ['startNow', 'csection'],
   };
 
-  it('нормалізація зберігає вид суми, графік з умовами, рівні вимог, етапи, переїзд, покриття й головне', () => {
+  it('нормалізація зберігає графік з умовами, переїзд, покриття й головне, а рівні вимог і етапи знімає', () => {
     const program = normalizeProgram(surrogacy);
     expect(program.name).toBe('Програма в Києві');
     // Типовий вид суми не пишеться: «final» для СМ і так за замовчуванням.
@@ -401,8 +402,9 @@ describe('програми з оголошень: що зберігається'
     expect(program.payments.transfer).toEqual({ amount: 300, currency: 'USD', when: 'після переносу' });
     expect(program.otherPayments[0]).toEqual(expect.objectContaining({ when: 'на 20 тижні', condition: 'якщо вагітність триває' }));
     expect(program.bonuses[0]).toEqual(expect.objectContaining({ condition: 'якщо пологи кесаревим' }));
-    expect(program.requirementMeta).toEqual({ csection: { level: 'individual', note: 'через 2 роки після КР' }, rh: { level: 'free' } });
-    expect(program.stages).toEqual([{ stage: 'screening', place: 'Київ' }, { stage: 'delivery', place: 'Львів' }, { stage: 'other', place: 'Одеса' }]);
+    // Рівнів вимог і етапів з місцями більше немає: перший запис їх знімає.
+    expect(program.requirementMeta).toBeUndefined();
+    expect(program.stages).toBeUndefined();
     expect(program.relocation).toEqual({ when: 'з 12 тижня', family: 'yes', note: 'квартира' });
     // Подробиці лише для відміченого покриття.
     expect(program.coverageDetails).toEqual({ housing: { mode: 'paid' }, food: { mode: 'allowance', limit: { amount: 10, currency: 'USD' }, per: 'day', note: 'готівкою' } });
@@ -427,12 +429,10 @@ describe('програми з оголошень: що зберігається'
     expect(programBreakdown(old).guaranteed.amount).toBe(55000);
   });
 
-  it('«бажано» й «індивідуально» не відмовляють, «без обмежень» — окремий пункт', () => {
+  it('старий рівень вимоги більше нічого не міняє: вимога — саме значення', () => {
     const program = normalizeProgram({ id: 'r', type: 'ed', requirements: { ageTo: 30 }, requirementMeta: { age: { level: 'preferred' }, marital: { level: 'free' } } });
-    expect(evaluateProgram(program, { age: 33 })).toEqual(expect.objectContaining({ matches: true, uncertain: true }));
-    expect(describeProgramRequirements(program).map(item => item.key)).toEqual(['age', 'marital']);
-    const strict = normalizeProgram({ id: 'r', type: 'ed', requirements: { ageTo: 30 } });
-    expect(evaluateProgram(strict, { age: 33 }).matches).toBe(false);
+    expect(evaluateProgram(program, { age: 33 }).matches).toBe(false);
+    expect(describeProgramRequirements(program).map(item => item.key)).toEqual(['age']);
   });
 
   it('головне без вибору агенції — типові ознаки; зняте все — порожньо', () => {
@@ -449,7 +449,12 @@ describe('програми з оголошень: що зберігається'
 
 describe('запис програм, поки правила не викочені', () => {
   // eslint-disable-next-line global-require
-  const { stripExtendedProgramFields } = require('../../components/programs/programsRemote');
+  const { stripCustomCoverage, stripExtendedProgramFields } = require('../../components/programs/programsRemote');
+
+  it('своє в покритті знімається першим і окремо', () => {
+    const items = { p1: { id: 'p1', type: 'sm', coverage: ['housing'], customCoverage: ['Подарунок'], customRequirements: [{ text: 'x' }] } };
+    expect(stripCustomCoverage(items)).toEqual({ p1: { id: 'p1', type: 'sm', coverage: ['housing'], customRequirements: [{ text: 'x' }] } });
+  });
 
   it('прибирає лише нові поля й лишає те, що правила вже приймають', () => {
     const items = {
@@ -523,14 +528,14 @@ describe('доплати рахуються просто', () => {
 });
 
 describe('власні вимоги агенції', () => {
-  it('тримає текст і рівень, порожні й «обовʼязково» не пише', () => {
+  it('тримає сам текст: порожні не пише, рівня немає', () => {
     const program = normalizeProgram({
       type: 'ed',
       customRequirements: [{ text: ' Без татуювань ' }, { text: '' }, { text: 'Закордонний паспорт', level: 'preferred' }, { text: 'Не курить', level: 'required' }],
     }, 'p1');
     expect(program.customRequirements).toEqual([
       { text: 'Без татуювань' },
-      { text: 'Закордонний паспорт', level: 'preferred' },
+      { text: 'Закордонний паспорт' },
       { text: 'Не курить' },
     ]);
   });
@@ -538,7 +543,25 @@ describe('власні вимоги агенції', () => {
   it('стоять у вимогах картки чіпами, а фігурні дужки лишаються текстом', () => {
     const program = normalizeProgram({ type: 'ed', customRequirements: [{ text: 'без {value}', level: 'individual' }] }, 'p1');
     expect(describeProgramRequirements(program)).toEqual([
-      { key: 'custom-0', text: '{value}', variables: { value: 'без {value}' }, level: 'individual' },
+      { key: 'custom-0', text: '{value}', variables: { value: 'без {value}' } },
     ]);
+  });
+});
+
+describe('що ще дає програма — своє агенції', () => {
+  it('тримає текст як є, без порожніх і повторів, не більше восьми', () => {
+    const program = normalizeProgram({
+      type: 'sm',
+      customCoverage: [' Подарунок після пологів ', '', 'Аванс 500 $', 'Аванс 500 $', ...Array.from({ length: 10 }, (_, i) => `Пункт ${i}`)],
+    }, 'p1');
+    expect(program.customCoverage.slice(0, 2)).toEqual(['Подарунок після пологів', 'Аванс 500 $']);
+    expect(program.customCoverage).toHaveLength(8);
+    expect(isProgramPresentable(normalizeProgram({ type: 'sm', customCoverage: ['Подарунок'] }, 'p2'))).toBe(true);
+  });
+
+  it('стоїть у покритті після переліку, позначене своїм', () => {
+    const coverage = describeProgramCoverage(normalizeProgram({ type: 'sm', coverage: ['housing'], customCoverage: ['Подарунок'] }, 'p1'));
+    expect(coverage.all.map(item => item.label)).toEqual(['Житло', 'Подарунок']);
+    expect(coverage.custom).toEqual([{ key: 'custom-0', label: 'Подарунок', custom: true }]);
   });
 });

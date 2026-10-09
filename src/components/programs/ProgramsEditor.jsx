@@ -1,11 +1,11 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import {
-  HIGHLIGHTS_NONE,
   MAX_PROGRAMS,
-  MAX_PROGRAM_HIGHLIGHTS,
   MAX_CUSTOM_REQUIREMENTS,
   CUSTOM_REQUIREMENT_MAX_LENGTH,
+  MAX_CUSTOM_COVERAGE,
+  CUSTOM_COVERAGE_MAX_LENGTH,
   PROGRAM_COVERAGE_MODES,
   PROGRAM_COVERAGE_OPTIONS,
   PROGRAM_COVERAGE_PER,
@@ -17,20 +17,16 @@ import {
   DEFAULT_MONTHLY_MONTHS,
   PROGRAM_OFFER_LABELS,
   PROGRAM_REQUIREMENT_LABELS,
-  PROGRAM_REQUIREMENT_LEVELS,
   PROGRAM_RH_OPTIONS,
-  PROGRAM_STAGE_OPTIONS,
   PROGRAM_TOTAL_FIELD,
   PROGRAM_TYPES,
   MAIN_PAYMENT_LABEL,
   createEmptyProgram,
-  defaultProgramHighlightKeys,
   isGuaranteedPayment,
   formatProgramPlace,
   isProgramPresentable,
   listCoverageOptions,
   listExtraPaymentFields,
-  listProgramHighlightOptions,
   listPrograms,
   normalizeProgram,
   programBreakdown,
@@ -39,15 +35,19 @@ import {
 } from '../../utils/donorPrograms';
 import { DEFAULT_PROGRAM_CURRENCY, formatProgramMoney } from '../../utils/programCurrency';
 import { uiText } from '../../utils/uiTranslations';
+import { AutoGrowTextarea } from '../AutoGrowTextarea';
 import { MoneyInput } from './MoneyInput';
-import { ProgramCurrencySwitch, ProgramPreview, describeProgramOffer } from './ProgramsView';
+import { ProgramCurrencySwitch, ProgramPreview, describeProgramOffer, revealCss } from './ProgramsView';
 
 /*
  * Програми агенції чи клініки в «Моєму профілі».
  *
- * Форма — пʼять розділів, кожен згортається сам по собі й згорнутим каже,
+ * Форма — чотири розділи, кожен згортається сам по собі й згорнутим каже,
  * що в ньому вже є («3 виплати · 2 доплати за умовою»): основне, виплати,
- * вимоги до кандидатки, покриття й переїзд, як програма стоїть у картці.
+ * вимоги до кандидатки, що ще дає програма (покриття, своє, переїзд).
+ * Розділу «Як виглядає в картці» (вибір ознак) і етапів з місцями більше
+ * немає — прибрано на прохання власниці продукту: ознаки картка бере типові
+ * (`defaultProgramHighlightKeys`), а етапи пишуть в описі програми.
  * Досі все стояло одним полотном на чотири екрани телефона: вимоги з
  * «⋯» біля кожної, по кілька порожніх «Інша виплата» поспіль, підпис
  * ліворуч і поле на 64 px праворуч, де не вміщалась ні назва виплати, ні
@@ -61,7 +61,13 @@ import { ProgramCurrencySwitch, ProgramPreview, describeProgramOffer } from './P
  * - необовʼязкове додається на прохання, і порожньої «Інша доплата» ніколи
  *   не стоїть двох: кнопка зʼявляється знову, щойно попередній рядок
  *   заповнено;
- * - рівень вимоги стоїть словом («Обовʼязково», «Бажано»), а не «⋯».
+ * - вимога — саме значення: рівнів («бажано», «індивідуально») і пояснень
+ *   до кожної немає, сказати своє агенція може власною вимогою;
+ * - текстові поля ростуть під текст (`AutoGrowTextarea`): `<input>` показував
+ *   довгий текст шматком, і правити його на телефоні не виходило;
+ * - відкрита виплата закривається кнопкою «OK»: вона записує набране (як
+ *   blur) і згортає виплату — пальцем у порожнє місце не завжди влучиш, і
+ *   ненароком відкривалась сусідня виплата.
  *
  * Основна виплата одна, без вибору «що означає головна сума» (за цикл,
  * фінальна, загальна, мінімум + «до …») і без пояснень під кожним
@@ -83,6 +89,7 @@ import { ProgramCurrencySwitch, ProgramPreview, describeProgramOffer } from './P
  */
 
 const SAVE_DELAY_MS = 700;
+
 
 const ACCENT = 'var(--km-accent, #E8791A)';
 const BORDER = 'var(--km-border, #E8E8E2)';
@@ -260,6 +267,7 @@ const Body = styled.div`
   grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   padding: 12px;
+  ${revealCss}
 
   @media (min-width: 1000px) {
     grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
@@ -383,6 +391,7 @@ const SectionContent = styled.div`
   gap: 14px;
   padding: 4px 12px 14px;
   ${narrowCss}
+  ${revealCss}
 `;
 
 const SubHead = styled.div`
@@ -442,9 +451,23 @@ const FieldError = styled.span`
   color: ${DANGER};
 `;
 
-const TextInput = styled.input`
+// Текстове поле росте під текст (`AutoGrowTextarea`): у `<input>` довге
+// «коли платять» чи примітку було видно шматком, і правити її на телефоні
+// виходило навпомацки. Висота — від одного рядка, як у решти полів.
+const TextInput = styled(AutoGrowTextarea)`
   ${controlCss}
+  display: block;
+  padding: 10px 12px;
+  line-height: 1.4;
+  resize: none;
+  overflow: hidden;
   ${({ $invalid }) => ($invalid ? `border-color: ${DANGER};` : '')}
+`;
+
+// Назва доплати лишається `<input>`: лише він уміє `list` — підказки назв,
+// які вже вживають інші агенції (`multiData/programTerms`).
+const LabelInput = styled.input`
+  ${controlCss}
 `;
 
 const TextArea = styled.textarea`
@@ -582,6 +605,7 @@ const Block = styled.div`
   border-left: 3px solid ${({ $tone }) => ($tone === 'bonus' ? '#B7791F' : $tone === 'separate' ? MUTED : ACCENT)};
   border-radius: 10px;
   background: ${FIELD_BG};
+  ${revealCss}
 `;
 
 const BlockHead = styled.div`
@@ -604,19 +628,24 @@ const Readout = styled.div`
 `;
 
 // Згорнута виплата — рядком, яким вона стоїть серед виплат картки: назва,
-// коли платять, сума праворуч; додаткова — з квадратиком, як перемикач,
-// що його кандидатка відмічає сама. Відкрита лише одна: розгорнуті всі
-// разом займали кілька екранів, і щойно додана губилась серед них.
+// коли платять, сума праворуч. Відкрита лише одна: розгорнуті всі разом
+// займали кілька екранів, і щойно додана губилась серед них.
+//
+// Квадратика перемикача перед назвою додаткової виплати тут більше немає:
+// у темній темі він був майже невидимий і читався як відступ абзацу — одні
+// рядки починались з краю, інші ні. Рід виплати каже колір смуги ліворуч
+// (додаткова — сіра) і позначка у відкритій виплаті. Стрілки праворуч від
+// суми теж немає: рядок і так кнопка, а стрілка відволікала від суми.
 const PaymentSummary = styled.button`
   display: grid;
-  grid-template-columns: ${({ $mark }) => ($mark ? '18px ' : '')}minmax(0, 1fr) auto 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   width: 100%;
   min-height: 48px;
   padding: 8px 12px;
   border: 1px solid ${BORDER};
-  border-left: 3px solid ${({ $tone }) => ($tone === 'bonus' ? '#B7791F' : ACCENT)};
+  border-left: 3px solid ${({ $tone }) => ($tone === 'additional' ? MUTED : $tone === 'bonus' ? '#B7791F' : ACCENT)};
   border-radius: 10px;
   background: ${FIELD_BG};
   color: ${TEXT};
@@ -624,12 +653,6 @@ const PaymentSummary = styled.button`
   text-align: left;
   cursor: pointer;
 
-  > i {
-    width: 16px;
-    height: 16px;
-    border: 1.5px solid ${MUTED};
-    border-radius: 4px;
-  }
   > span { min-width: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
   > span small { display: block; margin-top: 1px; font-size: 12px; font-weight: 500; color: ${MUTED}; }
   > b { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -653,6 +676,29 @@ const BlockTitle = styled.button`
 
   b { min-width: 0; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
   &:focus-visible { outline: none; box-shadow: ${FOCUS_RING}; border-radius: 6px; }
+`;
+
+// «OK» — кінець правки виплати: записує набране й згортає її. Стоїть
+// праворуч унизу блока, під великим пальцем, на всю мішень 40 px.
+const BlockFooter = styled.div`
+  display: flex;
+  justify-content: flex-end;
+`;
+
+const OkButton = styled.button`
+  min-width: 96px;
+  min-height: 40px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: ${ACCENT};
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:focus-visible { outline: none; box-shadow: ${FOCUS_RING}; }
 `;
 
 // Підсумок рахується з тих самих виплат і тим самим кодом, що й у картці
@@ -704,74 +750,8 @@ const ReqControls = styled.div`
   align-items: center;
   gap: 8px;
 
-  /* Значення й рівень — одним рядком і на телефоні: під кожною вимогою
-     окремий рядок рівня робив розділ утричі довшим. */
   > .value { flex: 1 1 128px; min-width: 0; display: flex; align-items: center; gap: 6px; }
   > .value > span { color: ${MUTED}; font-size: 13px; }
-  > .level { flex: 0 0 auto; width: auto; max-width: 100%; padding-right: 8px; font-size: 14px; }
-`;
-
-// --- головне в картці ----------------------------------------------------------
-
-const OrderedList = styled.ol`
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-
-  li {
-    display: grid;
-    grid-template-columns: 24px minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px;
-    min-height: 40px;
-    padding: 0 4px 0 8px;
-    border: 1px solid ${ACCENT};
-    border-radius: 10px;
-    background: color-mix(in srgb, ${ACCENT} 9%, transparent);
-    color: ${TEXT};
-    font-size: 13.5px;
-  }
-  li > i {
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: ${ACCENT};
-    color: #fff;
-    font-size: 12px;
-    font-style: normal;
-    font-weight: 800;
-  }
-  li > span { min-width: 0; overflow-wrap: anywhere; }
-  li > div { display: flex; gap: 2px; }
-`;
-
-const IconButton = styled.button`
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: ${TEXT};
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-
-  &:hover:not(:disabled) { background: color-mix(in srgb, ${TEXT} 10%, transparent); }
-  &:focus-visible { outline: none; box-shadow: ${FOCUS_RING}; }
-  &:disabled { opacity: 0.3; cursor: not-allowed; }
-`;
-
-const Counter = styled.span`
-  font-size: 12.5px;
-  font-weight: 600;
-  color: ${({ $full }) => ($full ? ACCENT : MUTED)};
 `;
 
 const PreviewLabel = styled.div`
@@ -947,8 +927,7 @@ const SECTIONS = Object.freeze([
   { key: 'basic', title: 'Основне' },
   { key: 'payments', title: 'Виплати' },
   { key: 'requirements', title: 'Вимоги до кандидатки' },
-  { key: 'coverage', title: 'Покриття витрат і переїзд' },
-  { key: 'card', title: 'Як виглядає в картці' },
+  { key: 'coverage', title: 'Що ще дає програма' },
 ]);
 
 const REQUIREMENT_DEFS = Object.freeze([
@@ -963,8 +942,6 @@ const REQUIREMENT_DEFS = Object.freeze([
 
 const requirementFilled = (program, def) => {
   const value = program.requirements?.[def.field];
-  const own = program.requirementMeta?.[def.key];
-  if (own?.level || own?.note) return true;
   if (def.kind === 'select') return Boolean(value) && value !== 'any';
   return value !== undefined && value !== null && String(value).trim() !== '';
 };
@@ -986,7 +963,6 @@ const WORDS = Object.freeze({
   payment: { uk: ['виплата', 'виплати', 'виплат'], en: ['payment', 'payments'] },
   bonus: { uk: ['доплата', 'доплати', 'доплат'], en: ['supplement', 'supplements'] },
   requirement: { uk: ['вимога', 'вимоги', 'вимог'], en: ['requirement', 'requirements'] },
-  stage: { uk: ['етап', 'етапи', 'етапів'], en: ['stage', 'stages'] },
   expense: { uk: ['витрата', 'витрати', 'витрат'], en: ['expense', 'expenses'] },
 });
 
@@ -1058,82 +1034,6 @@ const PaymentDetails = ({ value, onChange, language, idPrefix, examples }) => {
   );
 };
 
-/*
- * Головне в картці — ознаки з полів програми: вибране стоїть списком у
- * своєму порядку (номер, стрілки, прибрати), решта — пропозиціями нижче.
- * Номер на чіпі поруч із сумою читався як частина числа: «1 600 $» замість
- * першої ознаки «600 $ щомісяця».
- */
-const HighlightsPicker = ({ program, normalized, onChange, language }) => {
-  const options = listProgramHighlightOptions(normalized);
-  const custom = Array.isArray(program.highlights) && program.highlights.length > 0;
-  const chosen = custom
-    ? program.highlights.filter(key => key === HIGHLIGHTS_NONE || options.some(option => option.key === key))
-    : defaultProgramHighlightKeys(normalized);
-  const selected = chosen.filter(key => key !== HIGHLIGHTS_NONE);
-  if (!options.length) return null;
-  const write = keys => onChange(keys.length ? keys : [HIGHLIGHTS_NONE]);
-  const optionText = option => {
-    if (option.money) return uiText(option.text, language, { amount: formatProgramMoney(option.money.amount, option.money.currency) });
-    if (option.variables?.label) return uiText(option.text, language, { ...option.variables, label: uiText(option.variables.label, language).toLowerCase() });
-    if (option.key === 'bonuses') {
-      const count = option.variables.count;
-      return language === 'en'
-        ? `+${count} ${count === 1 ? 'supplement' : 'supplements'}`
-        : `+${count} ${pluralUk(count, 'доплата', 'доплати', 'доплат')}`;
-    }
-    return uiText(option.text, language, option.variables);
-  };
-  const move = (index, delta) => {
-    const next = [...selected];
-    [next[index], next[index + delta]] = [next[index + delta], next[index]];
-    write(next);
-  };
-  const rest = options.filter(option => !selected.includes(option.key));
-  const full = selected.length >= MAX_PROGRAM_HIGHLIGHTS;
-  return (
-    <>
-      <FieldRow style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <Counter $full={full}>{uiText('Вибрано {count} з {max}', language, { count: selected.length, max: MAX_PROGRAM_HIGHLIGHTS })}</Counter>
-        {custom ? <LinkButton type="button" onClick={() => onChange(undefined)}>{uiText('Як типово', language)}</LinkButton> : null}
-      </FieldRow>
-      {selected.length ? (
-        <OrderedList aria-label={uiText('Вибрані ознаки', language)}>
-          {selected.map((key, index) => {
-            const option = options.find(item => item.key === key);
-            if (!option) return null;
-            const text = optionText(option);
-            return (
-              <li key={key}>
-                <i aria-hidden="true">{index + 1}</i>
-                <span>{text}</span>
-                <div>
-                  <IconButton type="button" disabled={index === 0} aria-label={uiText('Вище: {label}', language, { label: text })} onClick={() => move(index, -1)}>↑</IconButton>
-                  <IconButton type="button" disabled={index === selected.length - 1} aria-label={uiText('Нижче: {label}', language, { label: text })} onClick={() => move(index, 1)}>↓</IconButton>
-                  <IconButton type="button" role="checkbox" aria-checked="true" aria-label={text} title={uiText('Прибрати з картки', language)} onClick={() => write(selected.filter(item => item !== key))}>✕</IconButton>
-                </div>
-              </li>
-            );
-          })}
-        </OrderedList>
-      ) : null}
-      {rest.length ? (
-        <Segments>
-          {rest.map(option => {
-            const text = optionText(option);
-            return (
-              <Pill key={option.key} type="button" role="checkbox" aria-checked="false" aria-label={text} disabled={full} onClick={() => write([...selected, option.key])}>
-                + {text}
-              </Pill>
-            );
-          })}
-        </Segments>
-      ) : null}
-      {full && rest.length ? <Readout>{uiText('Щоб додати іншу, приберіть одну з вибраних.', language)}</Readout> : null}
-    </>
-  );
-};
-
 const ProgramForm = ({ program, onChange, language, rates, suggestions, saveState }) => {
   const [revealed, setRevealed] = useState(() => new Set(isFreshProgram(program) ? SUGGESTED_PAYMENTS[program.type === 'sm' ? 'sm' : 'ed'] : []));
   const entrySeq = useRef(0);
@@ -1161,12 +1061,6 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
   const tabsRef = useRef(null);
   const set = patch => onChange({ ...program, ...patch });
   const setReq = patch => onChange({ ...program, requirements: { ...program.requirements, ...patch } });
-  const setMeta = (key, value) => {
-    const next = { ...(program.requirementMeta || {}) };
-    if (!value?.level && !value?.note) delete next[key];
-    else next[key] = value;
-    onChange({ ...program, requirementMeta: next });
-  };
   const idPrefix = `program-${program.id}`;
   const normalized = normalizeProgram(program, program.id);
   const currency = program.payments?.final?.currency || DEFAULT_PROGRAM_CURRENCY;
@@ -1238,13 +1132,12 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
   // приймають і «коли», і «умову».
   const customBonuses = [...(program.otherPayments || []), ...(program.bonuses || [])];
   const setCustomBonuses = next => set({ otherPayments: next, bonuses: [] });
-  const stages = program.stages || [];
+  const customCoverage = program.customCoverage || [];
+  const setCustomCoverage = next => set({ customCoverage: next });
   const relocation = program.relocation || {};
   const coverageDetails = program.coverageDetails || {};
   const coverageOptions = listCoverageOptions(program.type);
   const coverageKeys = (program.coverage || []).filter(key => coverageOptions.some(option => option.key === key));
-  const stageOptions = PROGRAM_STAGE_OPTIONS[typeKey];
-  const setStage = (index, patch) => set({ stages: stages.map((item, i) => (i === index ? { ...item, ...patch } : item)) });
   const setRelocation = patch => set({ relocation: { ...relocation, ...patch } });
   const setCoverageDetail = (key, patch) => set({ coverageDetails: { ...coverageDetails, [key]: { ...(coverageDetails[key] || {}), ...patch } } });
   const showRelocation = revealed.has('relocation') || Boolean(relocation.when || relocation.family || relocation.note);
@@ -1271,10 +1164,9 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
     })(),
     coverage: [
       coverageKeys.length ? `${uiText('покриває', language)} ${countText(coverageKeys.length, WORDS.expense, language)}` : '',
-      stages.length ? countText(stages.length, WORDS.stage, language) : '',
+      customCoverage.filter(item => String(item || '').trim()).length ? uiText('є своє', language) : '',
       showRelocation ? uiText('переїзд', language) : '',
     ].filter(Boolean).join(' · ') || uiText('Нічого не вказано', language),
-    card: '',
   };
 
   // --- виплати: одна відкрита, решта рядками картки ---
@@ -1340,26 +1232,37 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
       type="button"
       data-payment-row={id}
       data-testid={testId}
-      $tone={tone}
-      $mark={additional}
+      $tone={additional ? 'additional' : tone}
       aria-expanded="false"
       aria-label={uiText('Змінити виплату: {label}', language, { label })}
+      title={additional ? uiText('Додаткова — кандидатка відмічає сама', language) : undefined}
       onClick={() => togglePayment(id)}
     >
-      {additional ? <i aria-hidden="true" title={uiText('Додаткова — кандидатка відмічає сама', language)} /> : null}
       <span>
         {label}
         {details.filter(Boolean).map(line => <small key={line}>{line}</small>)}
       </span>
       {amount ? <b>{amount}</b> : <b className="empty">{uiText('без суми', language)}</b>}
-      <Chevron $open={false} aria-hidden="true">▼</Chevron>
     </PaymentSummary>
+  );
+  // «OK» робить те, що робив би blur: поле, у якому стоїть курсор, віддає
+  // набране (`MoneyInput` пише суму саме на blur), — і лише тоді виплата
+  // згортається. `onMouseDown` не забирає фокус сам, інакше між натисканням і
+  // відпусканням перерахунок суми зсував би кнопку з-під пальця.
+  const finishPayment = () => {
+    const active = document.activeElement;
+    if (active && typeof active.blur === 'function' && active !== document.body) active.blur();
+    setOpenPayment('');
+  };
+  const okFooter = label => (
+    <BlockFooter>
+      <OkButton type="button" onMouseDown={keepFocus} aria-label={uiText('Готово: {label}', language, { label })} onClick={finishPayment}>OK</OkButton>
+    </BlockFooter>
   );
   const openHead = (id, label, remove) => (
     <BlockHead>
       <BlockTitle type="button" aria-expanded="true" onClick={() => togglePayment(id)}>
         <b>{label}</b>
-        <Chevron $open aria-hidden="true">▼</Chevron>
       </BlockTitle>
       {remove ? (
         <RemoveButton type="button" aria-label={uiText('Прибрати доплату: {label}', language, { label })} onClick={remove}>
@@ -1402,6 +1305,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           </Field>
         </FieldRow>
         <PaymentDetails value={value} language={language} idPrefix={`${idPrefix}-final`} examples={examples} onChange={patch => setPayExtras('final', patch)} />
+        {okFooter(label)}
       </Block>
     );
   };
@@ -1485,6 +1389,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           examples={examples}
           onChange={patch => setPayExtras(key, patch)}
         />
+        {okFooter(label)}
       </Block>
     );
   };
@@ -1515,7 +1420,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         {openHead(id, name, remove)}
         <FieldRow>
           <Field id={`${blockId}-label`} label="За що доплата" language={language}>
-            <TextInput
+            <LabelInput
               id={`${blockId}-label`}
               value={item.label || ''}
               maxLength={60}
@@ -1530,6 +1435,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         </FieldRow>
         <GuaranteedToggle id={`${blockId}-guaranteed`} checked={item.guaranteed === true} language={language} onChange={checked => setItem({ guaranteed: checked })} />
         <PaymentDetails value={item} language={language} idPrefix={blockId} examples={examples} onChange={setItem} />
+        {okFooter(name)}
       </Block>
     );
   };
@@ -1558,57 +1464,22 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
   };
 
   // --- вимога ---
-  const levelSelect = (metaKey, label) => {
-    const own = program.requirementMeta?.[metaKey] || {};
-    return (
-      <Select
-        className="level"
-        aria-label={uiText('Рівень вимоги: {label}', language, { label })}
-        value={own.level || ''}
-        onChange={event => setMeta(metaKey, { ...own, level: event.target.value })}
-      >
-        <option value="">{uiText('Обовʼязково', language)}</option>
-        {PROGRAM_REQUIREMENT_LEVELS.filter(option => option.key !== 'required').map(option => <option key={option.key} value={option.key}>{uiText(option.label, language)}</option>)}
-      </Select>
-    );
-  };
-  const noteOpen = metaKey => revealed.has(`note:${metaKey}`) || Boolean(program.requirementMeta?.[metaKey]?.note);
-  const noteToggle = metaKey => (noteOpen(metaKey) ? null : (
-    <LinkButton type="button" onClick={() => reveal(`note:${metaKey}`)}>+ {uiText('Пояснення', language)}</LinkButton>
-  ));
-  const requirementNote = (metaKey, label) => {
-    const own = program.requirementMeta?.[metaKey] || {};
-    if (!noteOpen(metaKey)) return null;
-    return (
-      <TextInput
-        aria-label={uiText('Пояснення: {label}', language, { label })}
-        value={own.note || ''}
-        maxLength={120}
-        placeholder={uiText('Наприклад: через 2 роки після КР', language)}
-        onChange={event => setMeta(metaKey, { ...own, note: event.target.value })}
-      />
-    );
-  };
+  // Рівня («бажано», «індивідуально») і пояснення біля кожної вимоги більше
+  // немає: вимога — саме значення. Своє агенція каже власною вимогою внизу.
   const requirementRow = def => {
     const label = uiText(def.label, language);
     const metaLabel = uiText(PROGRAM_REQUIREMENT_LABELS[def.key], language);
     const inputId = `${idPrefix}-req-${def.key}`;
     const error = errors[def.field];
     const clear = () => {
-      const nextMeta = { ...(program.requirementMeta || {}) };
-      delete nextMeta[def.key];
       hide(`req:${def.key}`);
-      hide(`note:${def.key}`);
-      onChange({ ...program, requirements: { ...program.requirements, [def.field]: def.kind === 'select' ? 'any' : '' }, requirementMeta: nextMeta });
+      onChange({ ...program, requirements: { ...program.requirements, [def.field]: def.kind === 'select' ? 'any' : '' } });
     };
     return (
       <ReqRow key={def.key}>
         <ReqHead>
           <label htmlFor={inputId}>{label}</label>
-          <div>
-            {noteToggle(def.key)}
-            <RemoveButton type="button" aria-label={uiText('Прибрати вимогу: {label}', language, { label: metaLabel })} onClick={clear}>{uiText('Прибрати', language)}</RemoveButton>
-          </div>
+          <RemoveButton type="button" aria-label={uiText('Прибрати вимогу: {label}', language, { label: metaLabel })} onClick={clear}>{uiText('Прибрати', language)}</RemoveButton>
         </ReqHead>
         <ReqControls>
           <div className="value">
@@ -1631,10 +1502,8 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
               </>
             )}
           </div>
-          {levelSelect(def.key, metaLabel)}
         </ReqControls>
         {error ? <FieldError role="alert">{uiText(error.text, language, error.vars)}</FieldError> : null}
-        {requirementNote(def.key, metaLabel)}
       </ReqRow>
     );
   };
@@ -1662,15 +1531,6 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
               onChange={event => setItem({ text: event.target.value })}
             />
           </div>
-          <Select
-            className="level"
-            aria-label={uiText('Рівень вимоги: {label}', language, { label: item.text || label })}
-            value={item.level || ''}
-            onChange={event => setItem({ level: event.target.value || undefined })}
-          >
-            <option value="">{uiText('Обовʼязково', language)}</option>
-            {PROGRAM_REQUIREMENT_LEVELS.filter(option => option.key === 'preferred' || option.key === 'individual').map(option => <option key={option.key} value={option.key}>{uiText(option.label, language)}</option>)}
-          </Select>
         </ReqControls>
       </ReqRow>
     );
@@ -1747,7 +1607,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
     requirements: (
       <>
         <ReqRow>
-          <ReqHead><span className="label">{uiText('Вік, років', language)}</span>{noteToggle('age')}</ReqHead>
+          <ReqHead><span className="label">{uiText('Вік, років', language)}</span></ReqHead>
           <ReqControls>
             <Range className="value">
               <Num
@@ -1772,10 +1632,8 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
                 onChange={event => setReq({ ageTo: event.target.value })}
               />
             </Range>
-            {levelSelect('age', uiText(PROGRAM_REQUIREMENT_LABELS.age, language))}
           </ReqControls>
           {errors.ageFrom || errors.ageTo ? <FieldError role="alert">{uiText((errors.ageFrom || errors.ageTo).text, language, (errors.ageFrom || errors.ageTo).vars)}</FieldError> : null}
-          {requirementNote('age', uiText(PROGRAM_REQUIREMENT_LABELS.age, language))}
         </ReqRow>
         {REQUIREMENT_DEFS.filter(def => requirementFilled(program, def) || revealed.has(`req:${def.key}`)).map(requirementRow)}
         {customRequirements.map(customRequirementRow)}
@@ -1788,12 +1646,11 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
             <AddChip type="button" onMouseDown={keepFocus} onClick={() => setCustomRequirements([...customRequirements, { text: '' }])}>+ {uiText('Своя вимога', language)}</AddChip>
           ) : null}
         </Segments>
-        <Readout>{uiText('Вказуйте лише те, що справді відсіює. «Бажано» й «Індивідуально» кандидатці не відмовляють.', language)}</Readout>
       </>
     ),
     coverage: (
       <>
-        <Field label="Що покриваєте" language={language}>
+        <Field label="Що покриваєте й пропонуєте" language={language}>
           <Segments>
             {coverageOptions.map(option => {
               const on = (program.coverage || []).includes(option.key);
@@ -1854,31 +1711,29 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           </Segments>
         ) : null}
 
-        <SubHead>
-          <h5>{uiText('Етапи програми', language)}</h5>
-          <p>{uiText('Якщо обстеження, процедура чи пологи проходять у різних містах.', language)}</p>
-        </SubHead>
-        {stages.map((item, index) => (
-          <Block key={`stage-${index}`} $tone="separate">
-            <BlockHead>
-              <b>{uiText('Етап {n}', language, { n: index + 1 })}</b>
-              <RemoveButton type="button" aria-label={uiText('Прибрати етап {n}', language, { n: index + 1 })} onClick={() => set({ stages: stages.filter((_, i) => i !== index) })}>{uiText('Прибрати етап', language)}</RemoveButton>
-            </BlockHead>
-            <FieldRow>
-              <Field id={`${idPrefix}-stage-${index}`} label="Етап" grow={false} language={language}>
-                <Select id={`${idPrefix}-stage-${index}`} value={item.stage || 'other'} onChange={event => setStage(index, { stage: event.target.value })}>
-                  {stageOptions.map(option => <option key={option.key} value={option.key}>{uiText(option.label, language)}</option>)}
-                </Select>
-              </Field>
-              <Field id={`${idPrefix}-stage-${index}-place`} label="Де" language={language}>
-                <TextInput id={`${idPrefix}-stage-${index}-place`} value={item.place || ''} maxLength={80} placeholder={uiText(examples.place, language)} onChange={event => setStage(index, { place: event.target.value })} />
-              </Field>
-            </FieldRow>
-          </Block>
-        ))}
+        {customCoverage.map((item, index) => {
+          const inputId = `${idPrefix}-cov-custom-${index}`;
+          const label = uiText('Своє {n}', language, { n: index + 1 });
+          return (
+            <ReqRow key={inputId} data-testid="custom-coverage">
+              <ReqHead>
+                <label htmlFor={inputId}>{label}</label>
+                <RemoveButton type="button" aria-label={uiText('Прибрати: {label}', language, { label: item || label })} onClick={() => setCustomCoverage(customCoverage.filter((_, i) => i !== index))}>{uiText('Прибрати', language)}</RemoveButton>
+              </ReqHead>
+              <TextInput
+                id={inputId}
+                value={item}
+                maxLength={CUSTOM_COVERAGE_MAX_LENGTH}
+                placeholder={uiText(isSurrogacy ? 'Наприклад: подарунок після пологів' : 'Наприклад: аванс на старті', language)}
+                onChange={event => setCustomCoverage(customCoverage.map((entry, i) => (i === index ? event.target.value : entry)))}
+              />
+            </ReqRow>
+          );
+        })}
         <Segments>
-          {stages.length < 6 && !stages.some(item => !String(item.place || '').trim()) ? (
-            <AddChip type="button" onClick={() => set({ stages: [...stages, { stage: stageOptions[stages.length]?.key || 'other', place: '' }] })}>+ {uiText('Етап і місце', language)}</AddChip>
+          {/* Порожній свій пункт стоїть один: наступний додається, коли цей заповнено. */}
+          {customCoverage.length < MAX_CUSTOM_COVERAGE && !customCoverage.some(item => !String(item || '').trim()) ? (
+            <AddChip type="button" onMouseDown={keepFocus} onClick={() => setCustomCoverage([...customCoverage, ''])}>+ {uiText('Своє: подарунки, аванс…', language)}</AddChip>
           ) : null}
           {!showRelocation ? <AddChip type="button" onClick={() => reveal('relocation')}>+ {uiText('Переїзд', language)}</AddChip> : null}
         </Segments>
@@ -1902,24 +1757,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         ) : null}
       </>
     ),
-    card: (
-      <>
-        {normalized && listProgramHighlightOptions(normalized).length ? (
-          <Field label="Головне в картці" language={language} hint={uiText('Ознаки беруться з полів програми й міняються разом із ними.', language)}>
-            <HighlightsPicker program={program} normalized={normalized} language={language} onChange={highlights => set({ highlights })} />
-          </Field>
-        ) : null}
-      </>
-    ),
   };
-  if (normalized) {
-    const highlightsCount = listProgramHighlightOptions(normalized).length
-      ? (Array.isArray(program.highlights) && program.highlights.length
-        ? program.highlights.filter(key => key !== HIGHLIGHTS_NONE).length
-        : defaultProgramHighlightKeys(normalized).length)
-      : 0;
-    summaries.card = highlightsCount ? uiText('{count} з {max} ознак', language, { count: highlightsCount, max: MAX_PROGRAM_HIGHLIGHTS }) : '';
-  }
 
   return (
     <Body>
@@ -1937,8 +1775,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
             {issues.map(issue => <li key={issue}>{uiText(issue, language)}</li>)}
           </Issues>
         ) : null}
-        {/* «Як виглядає в картці» без жодної ознаки на вибір — порожній розділ: вимоги картка показує всі сама. */}
-        {SECTIONS.filter(section => section.key !== 'card' || (normalized && listProgramHighlightOptions(normalized).length > 0)).map((section, index) => (
+        {SECTIONS.map((section, index) => (
           <CollapsibleSection
             key={section.key}
             index={index + 1}

@@ -20,6 +20,7 @@ import {
   auth,
 } from './config';
 import { useAutoResize } from 'hooks/useAutoResize';
+import { AutoGrowTextarea } from 'components/AutoGrowTextarea';
 import { isFormulaFlowAmount, resolveFlowAmountInput } from 'utils/flowAmountFormula';
 
 const Wrap = styled.div`
@@ -116,6 +117,23 @@ const Input = styled.input`
   border-radius: 6px;
   padding: 8px;
   font-size: 14px;
+  box-sizing: border-box;
+`;
+
+// Правка рядка Flow — поле, що росте під текст: в однорядковому `<input>`
+// довгий рядок («20.01 =1200+300*2 оренда за січень і комуналка») було видно
+// шматком, і правити його доводилось навпомацки. Enter, як і раніше, зберігає.
+const EditRowInput = styled(AutoGrowTextarea)`
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #d7d7d7;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  resize: none;
+  overflow: hidden;
   box-sizing: border-box;
 `;
 
@@ -2102,9 +2120,8 @@ export const FlowManager = ({ ownerId }) => {
                   >
                     {isEditing ? (
                       <EditInline>
-                        <Input
+                        <EditRowInput
                           autoFocus
-                          style={{ width: '100%', minWidth: 0, fontSize: 12, padding: 4 }}
                           value={editingDraft.line}
                           onChange={e => setEditingDraft(prev => ({ ...prev, line: e.target.value }))}
                           onBlur={e => {
