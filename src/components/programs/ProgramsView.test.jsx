@@ -317,7 +317,7 @@ describe('програми з оголошень агенцій', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
     fireEvent.click(within(row).getByRole('button', { name: 'Приблизний графік програми' }));
     const timeline = within(row).getByTestId('program-timeline');
-    expect(within(timeline).getByLabelText('Перший день останньої менструації')).toHaveValue('2026-10-05');
+    expect(within(timeline).getByLabelText('Перший день останньої менструації')).toHaveValue('05.10.2026');
     const lines = within(timeline).getAllByRole('listitem').map(item => item.textContent);
     // 05.10 — 1-й день; 23.10 — пʼятниця, 19-й день; ХГЧ на 14-й день після.
     expect(lines[0]).toBe('05.10 пнМісячні');
@@ -332,11 +332,11 @@ describe('програми з оголошень агенцій', () => {
     expect(onLastCycleChange).not.toHaveBeenCalled();
     fireEvent.click(within(timeline).getByLabelText('Стимуляція з дифереліном'));
     expect(within(timeline).getByText(/Диферелін/)).toBeInTheDocument();
-    fireEvent.change(within(timeline).getByLabelText('Перший день останньої менструації'), { target: { value: '2026-10-07' } });
+    fireEvent.change(within(timeline).getByLabelText('Перший день останньої менструації'), { target: { value: '07102026' } });
     jest.advanceTimersByTime(1000);
     expect(onLastCycleChange).toHaveBeenCalledWith('2026-10-07');
     // Обране за мить до згортання деталей не губиться: запис іде одразу.
-    fireEvent.change(within(timeline).getByLabelText('Перший день останньої менструації'), { target: { value: '2026-10-08' } });
+    fireEvent.change(within(timeline).getByLabelText('Перший день останньої менструації'), { target: { value: '08.10.2026' } });
     fireEvent.click(within(row).getByRole('button', { name: 'Згорнути деталі' }));
     expect(onLastCycleChange).toHaveBeenLastCalledWith('2026-10-08');
     jest.useRealTimers();

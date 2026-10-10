@@ -3,7 +3,9 @@ import styled from 'styled-components';
 import {
   FaBalanceScale,
   FaBus,
+  FaCalendarAlt,
   FaChevronDown,
+  FaChevronRight,
   FaFileSignature,
   FaGift,
   FaHeadset,
@@ -44,6 +46,7 @@ import {
   parseCycleDate,
   projectCycleStart,
 } from '../../utils/programTimeline';
+import { formatDate } from '../inputValidations';
 import { uiText } from '../../utils/uiTranslations';
 import { revealCss } from '../../styles/revealAnimation';
 
@@ -392,21 +395,45 @@ export const summarizeCoverageLine = (program, language, limit = 2) => {
 
 // --- приблизний графік програми ---------------------------------------------
 
+// Кнопка графіка — картка-запрошення, а не ще одна пігулка: голий підпис
+// у рамці губився серед чіпів вимог, і що там за ним — не казав нічого.
+// Тонована підкладка кольору акценту, значок календаря, назва й під нею
+// що саме складеться.
 const TimelineToggle = styled.button`
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  min-height: 38px;
-  padding: 0 14px;
-  border: 1px solid ${BORDER};
-  border-radius: 999px;
-  background: ${CARD_BG};
-  color: ${ACCENT};
+  gap: 12px;
+  width: 100%;
+  margin: 4px 0 2px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, ${ACCENT} 35%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, ${ACCENT} 9%, ${CARD_BG});
+  color: ${TEXT};
   font: inherit;
-  font-size: 13px;
-  font-weight: 600;
+  text-align: left;
   cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 
+  &:hover { background: color-mix(in srgb, ${ACCENT} 14%, ${CARD_BG}); border-color: ${ACCENT}; }
   &:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
+
+  .icon {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    background: ${ACCENT};
+    color: #fff;
+    font-size: 17px;
+  }
+  .text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+  .title { font-size: 14.5px; font-weight: 700; color: ${ACCENT}; }
+  .sub { font-size: 12.5px; color: ${MUTED}; }
+  .chevron { flex: none; color: ${ACCENT}; font-size: 13px; }
 `;
 
 const TimelineControls = styled.div`
@@ -418,7 +445,8 @@ const TimelineControls = styled.div`
   ${revealCss}
 
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: ${MUTED}; }
-  input[type='date'] {
+  input.date {
+    width: 11ch;
     min-height: 38px;
     padding: 0 10px;
     border: 1px solid ${BORDER};
@@ -426,9 +454,11 @@ const TimelineControls = styled.div`
     background: ${CARD_BG};
     color: ${TEXT};
     font: inherit;
-    font-size: 14px;
-    color-scheme: light dark;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+    box-sizing: content-box;
   }
+  input.date:focus { outline: none; border-color: ${ACCENT}; box-shadow: 0 0 0 3px color-mix(in srgb, ${ACCENT} 20%, transparent); }
   label.check { flex-direction: row; align-items: center; gap: 8px; min-height: 38px; font-size: 13.5px; color: ${TEXT}; cursor: pointer; }
   label.check input { width: 18px; height: 18px; margin: 0; accent-color: ${ACCENT}; }
 `;
@@ -464,6 +494,18 @@ const TimelineList = styled.ol`
 `;
 
 const TIMELINE_SAVE_DELAY_MS = 800;
+
+// Поле дати — текст `дд.мм.рррр`, а не `<input type="date">`. Нативне поле в
+// Chrome на Android на дотик лише виділяло сегмент плейсхолдера («рррр»), а
+// ні календаря, ні клавіатури не відкривало — увести дату місячних було
+// нічим. Цифрова клавіатура й маска крапками — той самий набір дати, що й у
+// формі анкети (`formatDate` з `inputValidations`).
+const toTimelineInputValue = date => {
+  if (!date) return '';
+  const d = String(date.getDate()).padStart(2, '0');
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  return `${d}.${m}.${date.getFullYear()}`;
+};
 const KEY_TIMELINE_EVENTS = new Set(['transfer', 'week40']);
 
 /**
@@ -484,7 +526,7 @@ const KEY_TIMELINE_EVENTS = new Set(['transfer', 'week40']);
 export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language }) => {
   const [open, setOpen] = useState(false);
   const saved = formatCycleDateForStorage(parseCycleDate(lastCycle));
-  const [value, setValue] = useState(saved);
+  const [value, setValue] = useState(() => toTimelineInputValue(parseCycleDate(saved)));
   const [dipherelin, setDipherelin] = useState(false);
   const savedRef = useRef(saved);
   useEffect(() => {
@@ -492,7 +534,7 @@ export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language })
     // читачка не почала правити своє.
     if (saved !== savedRef.current) {
       savedRef.current = saved;
-      setValue(saved);
+      setValue(toTimelineInputValue(parseCycleDate(saved)));
     }
   }, [saved]);
   // Останні значення — у ref: запис на розмонтуванні й `pagehide` бачить їх, а
@@ -500,8 +542,9 @@ export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language })
   const pendingRef = useRef({ value, onLastCycleChange });
   pendingRef.current = { value, onLastCycleChange };
   const commit = useCallback(() => {
-    const { value: next, onLastCycleChange: save } = pendingRef.current;
-    if (!save || !next || next === savedRef.current || !parseCycleDate(next)) return;
+    const { value: typed, onLastCycleChange: save } = pendingRef.current;
+    const next = formatCycleDateForStorage(parseCycleDate(typed));
+    if (!save || !next || next === savedRef.current) return;
     savedRef.current = next;
     save(next);
   }, []);
@@ -519,8 +562,13 @@ export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language })
 
   if (!open) {
     return (
-      <TimelineToggle type="button" onClick={event => { event.stopPropagation(); setOpen(true); }}>
-        {uiText('Приблизний графік програми', language)}
+      <TimelineToggle type="button" aria-label={uiText('Приблизний графік програми', language)} onClick={event => { event.stopPropagation(); setOpen(true); }}>
+        <span className="icon" aria-hidden="true"><FaCalendarAlt /></span>
+        <span className="text">
+          <span className="title">{uiText('Приблизний графік програми', language)}</span>
+          <span className="sub">{uiText('Від місячних до пологів — дати по днях', language)}</span>
+        </span>
+        <FaChevronRight className="chevron" aria-hidden="true" />
       </TimelineToggle>
     );
   }
@@ -534,7 +582,17 @@ export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language })
       <TimelineControls>
         <label>
           {uiText('Перший день останньої менструації', language)}
-          <input type="date" value={value} onChange={event => setValue(event.target.value)} onBlur={commit} />
+          <input
+            className="date"
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={10}
+            placeholder={uiText('дд.мм.рррр', language)}
+            value={value}
+            onChange={event => setValue(formatDate(event.target.value, true))}
+            onBlur={commit}
+          />
         </label>
         <label className="check">
           <input type="checkbox" checked={dipherelin} onChange={event => setDipherelin(event.target.checked)} />
