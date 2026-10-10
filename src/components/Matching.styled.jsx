@@ -1,4 +1,5 @@
 import styled, { css, keyframes } from 'styled-components';
+import { revealCss } from '../styles/revealAnimation';
 import { color } from './styles';
 import { NOTE_META_LINE_HEIGHT, NOTE_META_SIZE } from './noteTypography';
 import { FEED_WIDE_MIN_WIDTH, FEED_XWIDE_MIN_WIDTH } from '../hooks/useFeedColumns';
@@ -1459,6 +1460,7 @@ export const RefineSummary = styled.span`
 `;
 
 export const RefineKeyMenu = styled.div`
+  ${revealCss}
   position: absolute;
   z-index: 6;
   top: calc(100% - 4px);

@@ -320,15 +320,15 @@ describe('програми з оголошень агенцій', () => {
     expect(within(timeline).getByLabelText('Перший день останньої менструації')).toHaveValue('2026-10-05');
     const lines = within(timeline).getAllByRole('listitem').map(item => item.textContent);
     // 05.10 — 1-й день; 23.10 — пʼятниця, 19-й день; ХГЧ на 14-й день після.
-    expect(lines[0]).toBe('05.10 пн— Місячні');
-    expect(lines[1]).toBe('23.10 пт(19 день) — Перенос ембріона');
-    expect(lines[2]).toBe('05.11 чт(4 тиж.) — ХГЧ');
+    expect(lines[0]).toBe('05.10 пнМісячні');
+    expect(lines[1]).toBe('23.10 пт (19 день)Перенос ембріона');
+    expect(lines[2]).toBe('05.11 чт (4 тиж.)ХГЧ');
     // Новий рік — окремим рядком перед першою подією 2027-го.
     expect(lines).toContain('2027');
     const yearRow = lines.indexOf('2027');
-    expect(lines[yearRow - 1]).toBe('28.12 пн(12 тиж.) — Скринінг');
-    expect(lines[yearRow + 1]).toBe('08.02 пн(18 тиж.) — Скринінг');
-    expect(lines[lines.length - 1]).toBe('12.07 пн(40 тиж.) — Пологи');
+    expect(lines[yearRow - 1]).toBe('28.12 пн (12 тиж.)Скринінг');
+    expect(lines[yearRow + 1]).toBe('08.02 пн (18 тиж.)Скринінг');
+    expect(lines[lines.length - 1]).toBe('12.07 пн (40 тиж.)Пологи');
     expect(onLastCycleChange).not.toHaveBeenCalled();
     fireEvent.click(within(timeline).getByLabelText('Стимуляція з дифереліном'));
     expect(within(timeline).getByText(/Диферелін/)).toBeInTheDocument();

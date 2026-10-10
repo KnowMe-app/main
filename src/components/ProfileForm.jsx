@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import styled, { css } from 'styled-components';
+import { revealCss } from '../styles/revealAnimation';
 import { get as firebaseGet, ref as refDb } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 
@@ -4047,6 +4048,7 @@ const TechnicalFieldsSection = styled.section`
 `;
 
 const FieldsGrid = styled.div`
+  ${revealCss}
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, max(260px, calc(50% - 6px))), 1fr));
   gap: 10px 12px;

@@ -1,4 +1,5 @@
 import styled, { css, keyframes } from 'styled-components';
+import { revealCss } from '../styles/revealAnimation';
 import {
   NOTE_META_LINE_HEIGHT,
   NOTE_META_SIZE,
@@ -552,6 +553,7 @@ export const NoteMore = styled.span`
 `;
 
 export const More = styled.div`
+  ${revealCss}
   margin-top: 9px;
   padding-top: 7px;
   border-top: 1px solid var(--matching-card-border);
@@ -1638,6 +1640,7 @@ export const OrganisationAboutText = styled.p`
 `;
 
 export const OrganisationAboutEmpty = styled.p`
+  ${revealCss}
   margin: 0;
   font-size: 12.5px;
   color: var(--matching-muted-text);
