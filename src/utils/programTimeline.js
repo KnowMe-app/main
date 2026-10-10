@@ -81,8 +81,10 @@ const weeksFrom = (date, base) => Math.floor(Math.round((atMidnight(date) - base
  * Головні дати програми СМ. `dipherelin` — підготовка дифереліном: перенос
  * тоді йде в наступному циклі.
  *
- * Повертає `[{ key, date, label, week }]`; `week` є лише в подій від
- * переносу й далі — до переносу «тиждень вагітності» нічого не означає.
+ * Повертає `[{ key, date, label, week?, cycleDay? }]`. Перенос і диферелін
+ * несуть день циклу (`cycleDay`: «19 день») — їх і призначають за днем циклу,
+ * а тиждень вагітності на дні переносу (2-й) нічого не каже. `week` — у подій
+ * після переносу.
  */
 export const buildSurrogacyTimeline = (cycleStart, { dipherelin = false } = {}) => {
   if (!cycleStart) return [];
@@ -91,11 +93,12 @@ export const buildSurrogacyTimeline = (cycleStart, { dipherelin = false } = {}) 
   let base = first;
   if (dipherelin) {
     const dif = findWorkingCycleDay(first, 19, 22);
-    items.push({ key: 'dipherelin', date: atMidnight(dif.date), label: 'Диферелін' });
+    items.push({ key: 'dipherelin', date: atMidnight(dif.date), label: 'Диферелін', cycleDay: dif.day });
     base = nextWorkingDay(addDays(dif.date, 9));
     items.push({ key: 'cycle2', date: base, label: 'Новий цикл' });
   }
-  const transfer = atMidnight(findWorkingCycleDay(base, 19, 22).date);
+  const transferDay = findWorkingCycleDay(base, 19, 22);
+  const transfer = atMidnight(transferDay.date);
   const hcg = addDays(transfer, 13);
   const heartbeat = atMidnight(adjustForward(addDays(hcg, 14), base).date);
   const week = (n, forward = true) => {
@@ -103,7 +106,7 @@ export const buildSurrogacyTimeline = (cycleStart, { dipherelin = false } = {}) 
     return forward ? atMidnight(adjustForward(date, base).date) : date;
   };
   items.push(
-    { key: 'transfer', date: transfer, label: 'Перенос ембріона' },
+    { key: 'transfer', date: transfer, label: 'Перенос ембріона', cycleDay: transferDay.day },
     { key: 'hcg', date: hcg, label: 'ХГЧ' },
     { key: 'heartbeat', date: heartbeat, label: 'УЗД, серцебиття' },
     { key: 'week12', date: week(12), label: 'Скринінг' },
@@ -111,16 +114,35 @@ export const buildSurrogacyTimeline = (cycleStart, { dipherelin = false } = {}) 
     { key: 'week36', date: week(36, false), label: 'Договір з пологовим' },
     { key: 'week40', date: week(40, false), label: 'Пологи' },
   );
-  return items.map(item => (item.date >= transfer ? { ...item, week: weeksFrom(item.date, base) } : item));
+  return items.map(item => (item.date > transfer ? { ...item, week: weeksFrom(item.date, base) } : item));
 };
 
-const MONTHS = Object.freeze({
-  uk: ['січ', 'лют', 'бер', 'кві', 'тра', 'чер', 'лип', 'сер', 'вер', 'жов', 'лис', 'гру'],
-  en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+const WEEKDAYS = Object.freeze({
+  uk: ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'],
+  en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
 });
 
-/** «12 лис» — день і місяць скорочено. */
+/**
+ * «27.11 пн» — день, місяць і день тижня. День тижня тут не прикраса: перенос
+ * і візити стоять лише на буднях, і саме його людина звіряє з роботою.
+ * Рік у рядку не пишеться — його ставить окремий рядок там, де рік
+ * змінюється (`groupTimelineByYear`).
+ */
 export const formatTimelineDate = (date, language = 'uk') => {
-  const months = MONTHS[language === 'en' ? 'en' : 'uk'];
-  return `${date.getDate()} ${months[date.getMonth()]}`;
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${day}.${month} ${WEEKDAYS[language === 'en' ? 'en' : 'uk'][date.getDay()]}`;
 };
+
+/**
+ * Події графіка з рядком-роком там, де починається новий рік: «2027» перед
+ * першою подією 2027-го. Графік СМ тягнеться на десять місяців і майже завжди
+ * переходить через Новий рік — без цього «15.03» після «24.12» читалось як
+ * березень того самого року.
+ */
+export const groupTimelineByYear = items => items.reduce((rows, item, index) => {
+  const year = item.date.getFullYear();
+  if (index > 0 && items[index - 1].date.getFullYear() !== year) rows.push({ key: `year-${year}`, year });
+  rows.push(item);
+  return rows;
+}, []);

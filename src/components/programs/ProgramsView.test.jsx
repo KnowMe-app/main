@@ -113,7 +113,7 @@ describe('програми в рядку стрічки', () => {
     expect(within(requirements).getAllByRole('listitem').map(item => item.textContent)).toEqual(['✓21–29 років', 'ІМТ до 28', 'зріст від 165 см', 'лише Rh+']);
     expect(row).not.toHaveTextContent('Покриває');
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
-    expect(within(row).getByText('Що ще дає програма')).toBeInTheDocument();
+    expect(within(row).getByText('Додатково')).toBeInTheDocument();
   });
 
   it('коментар організатора видно вже в згорнутій програмі', () => {
@@ -199,7 +199,7 @@ describe('картка програми — калькулятор заробі�
   it('вимоги й покриття підписані окремо', () => {
     render(<ProgramCard program={{ ...surrogate, requirements: { ageTo: 35 }, coverage: ['travel'] }} rates={rates} language="uk" />);
     expect(screen.getByText('Вимоги')).toBeInTheDocument();
-    expect(screen.getByText('Що ще дає програма')).toBeInTheDocument();
+    expect(screen.getByText('Додатково')).toBeInTheDocument();
   });
 
   it('читачеві без свого типу програми донорок і СМ — кожна своїм контейнером', () => {
@@ -297,12 +297,12 @@ describe('програми з оголошень агенцій', () => {
     expect(row).not.toHaveTextContent('бажано');
   });
 
-  it('своє агенції стоїть у «Що ще дає програма» як написано', () => {
+  it('своє агенції стоїть у «Додатково» як написано', () => {
     const program = { id: 'c', type: 'sm', payments: { final: { amount: 20000, currency: 'USD' } }, coverage: ['housing'], customCoverage: ['Подарунок після пологів'] };
     render(<ProgramsSummary card={{ programs: { c: program } }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
     fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
-    const list = within(row).getByLabelText('Що ще дає програма');
+    const list = within(row).getByLabelText('Додатково');
     expect(list).toHaveTextContent('Житло');
     expect(list).toHaveTextContent('Подарунок після пологів');
   });
@@ -319,17 +319,26 @@ describe('програми з оголошень агенцій', () => {
     const timeline = within(row).getByTestId('program-timeline');
     expect(within(timeline).getByLabelText('Перший день останньої менструації')).toHaveValue('2026-10-05');
     const lines = within(timeline).getAllByRole('listitem').map(item => item.textContent);
-    // 5 жов — 1-й день; 23 жов — пʼятниця, 19-й день; ХГЧ на 14-й день після.
-    expect(lines[0]).toBe('5 жов— Місячні');
-    expect(lines[1]).toBe('23 жов(2 тиж.) — Перенос ембріона');
-    expect(lines[2]).toBe('5 лис(4 тиж.) — ХГЧ');
-    expect(lines[lines.length - 1]).toBe('12 лип(40 тиж.) — Пологи');
+    // 05.10 — 1-й день; 23.10 — пʼятниця, 19-й день; ХГЧ на 14-й день після.
+    expect(lines[0]).toBe('05.10 пн— Місячні');
+    expect(lines[1]).toBe('23.10 пт(19 день) — Перенос ембріона');
+    expect(lines[2]).toBe('05.11 чт(4 тиж.) — ХГЧ');
+    // Новий рік — окремим рядком перед першою подією 2027-го.
+    expect(lines).toContain('2027');
+    const yearRow = lines.indexOf('2027');
+    expect(lines[yearRow - 1]).toBe('28.12 пн(12 тиж.) — Скринінг');
+    expect(lines[yearRow + 1]).toBe('08.02 пн(18 тиж.) — Скринінг');
+    expect(lines[lines.length - 1]).toBe('12.07 пн(40 тиж.) — Пологи');
     expect(onLastCycleChange).not.toHaveBeenCalled();
     fireEvent.click(within(timeline).getByLabelText('Стимуляція з дифереліном'));
     expect(within(timeline).getByText(/Диферелін/)).toBeInTheDocument();
     fireEvent.change(within(timeline).getByLabelText('Перший день останньої менструації'), { target: { value: '2026-10-07' } });
     jest.advanceTimersByTime(1000);
     expect(onLastCycleChange).toHaveBeenCalledWith('2026-10-07');
+    // Обране за мить до згортання деталей не губиться: запис іде одразу.
+    fireEvent.change(within(timeline).getByLabelText('Перший день останньої менструації'), { target: { value: '2026-10-08' } });
+    fireEvent.click(within(row).getByRole('button', { name: 'Згорнути деталі' }));
+    expect(onLastCycleChange).toHaveBeenLastCalledWith('2026-10-08');
     jest.useRealTimers();
   });
 
