@@ -228,16 +228,16 @@ describe('редактор програм', () => {
     render(<ProgramsEditor programs={{ p1: { ...program.p1, startNow: true } }} onSave={jest.fn()} language="uk" />);
     fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
     expect(screen.queryByRole('button', { name: /Як виглядає в картці/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Що ще дає програма/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Додатково/ }));
     expect(screen.queryByText('Етапи програми')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '+ Етап і місце' })).not.toBeInTheDocument();
   });
 
-  it('у «Що ще дає програма» можна дописати своє — подарунки, аванс', () => {
+  it('у «Додатково» можна дописати своє — подарунки, аванс', () => {
     const onSave = jest.fn();
     const { unmount } = render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
     fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Що ще дає програма/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Додатково/ }));
     fireEvent.click(screen.getByRole('button', { name: '+ Своє: подарунки, аванс…' }));
     // Порожній свій пункт стоїть один.
     expect(screen.queryByRole('button', { name: '+ Своє: подарунки, аванс…' })).not.toBeInTheDocument();
@@ -348,7 +348,7 @@ describe('редактор програм', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
     fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
     expect(screen.queryByLabelText(/Назва програми/)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Що ще дає програма/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Додатково/ }));
     expect(screen.queryByRole('button', { name: 'Одяг' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Проїзд' })).toBeInTheDocument();
   });

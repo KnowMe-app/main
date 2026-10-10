@@ -1,6 +1,7 @@
 import {
   buildSurrogacyTimeline,
   formatTimelineDate,
+  groupTimelineByYear,
   parseCycleDate,
   projectCycleStart,
 } from '../programTimeline';
@@ -40,8 +41,20 @@ describe('приблизний графік програми СМ', () => {
     expect(byKey.transfer.date).toEqual(new Date(2026, 11, 18));
   });
 
-  it('дата — день і місяць скорочено', () => {
-    expect(formatTimelineDate(new Date(2026, 10, 12))).toBe('12 лис');
-    expect(formatTimelineDate(new Date(2026, 10, 12), 'en')).toBe('12 Nov');
+  it('дата — «27.11 пн»: день, місяць і день тижня', () => {
+    expect(formatTimelineDate(new Date(2026, 10, 27))).toBe('27.11 пт');
+    expect(formatTimelineDate(new Date(2026, 10, 30), 'en')).toBe('30.11 Mon');
+  });
+
+  it('перенос несе день циклу, а не тиждень; новий рік — окремим рядком', () => {
+    const items = buildSurrogacyTimeline(new Date(2026, 10, 1));
+    const transfer = items.find(item => item.key === 'transfer');
+    expect(transfer).toEqual(expect.objectContaining({ cycleDay: 19 }));
+    expect(transfer.week).toBeUndefined();
+    const rows = groupTimelineByYear(items);
+    const yearIndex = rows.findIndex(row => row.year === 2027);
+    expect(rows[yearIndex - 1].date.getFullYear()).toBe(2026);
+    expect(rows[yearIndex + 1].date.getFullYear()).toBe(2027);
+    expect(rows.filter(row => row.year)).toHaveLength(1);
   });
 });

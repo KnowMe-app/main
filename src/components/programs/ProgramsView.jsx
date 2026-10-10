@@ -40,6 +40,7 @@ import {
   buildSurrogacyTimeline,
   formatCycleDateForStorage,
   formatTimelineDate,
+  groupTimelineByYear,
   parseCycleDate,
   projectCycleStart,
 } from '../../utils/programTimeline';
@@ -448,8 +449,9 @@ const TimelineList = styled.ol`
   color: ${TEXT};
   ${revealCss}
 
-  li { display: grid; grid-template-columns: 4.6em minmax(0, 1fr); gap: 8px; padding: 3px 0; }
+  li { display: grid; grid-template-columns: 5.4em minmax(0, 1fr); gap: 8px; padding: 3px 0; }
   li + li { border-top: 1px solid color-mix(in srgb, ${BORDER} 60%, transparent); }
+  li.year { display: block; padding-top: 8px; font-weight: 800; color: ${MUTED}; letter-spacing: 0.04em; }
   time { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
   em { font-style: normal; color: ${MUTED}; }
   li.key time, li.key span { color: ${ACCENT}; font-weight: 700; }
@@ -464,10 +466,14 @@ const KEY_TIMELINE_EVENTS = new Set(['transfer', 'week40']);
  * Дата місячних — поле анкети читачки (`lastCycle`): записане підставляється
  * само, порожнє вона вводить тут, і будь-яке правиться. Уведене пишеться в її
  * анкету (`onLastCycleChange`), з паузою, щоб набір дати по цифрі не писав
- * кожну проміжну. Без колбека (прев'ю агенції в редакторі) графік лише
- * рахується. Рядок — «12 лис (12 тиж.) — Скринінг»: дата, тиждень вагітності,
- * подія. Дати рахує `programTimeline` тією самою логікою робочих днів, що й
- * графік стимуляції.
+ * кожну проміжну, — і негайно на blur та коли графік зникає з екрана (згорнули
+ * деталі, пішли зі сторінки): поки запис чекав лише таймера, дата, обрана за
+ * мить до згортання чи перезавантаження, не доїжджала в анкету, і наступне
+ * відкриття знову питало її. Без колбека (прев'ю агенції в редакторі) графік
+ * лише рахується. Рядок — «27.11 пн (19 день) — Перенос ембріона»: дата з днем
+ * тижня, день циклу (перенос, диферелін) або тиждень вагітності, подія; де
+ * починається новий рік — рядок із роком. Дати рахує `programTimeline` тією
+ * самою логікою робочих днів, що й графік стимуляції.
  */
 export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language }) => {
   const [open, setOpen] = useState(false);
@@ -483,14 +489,27 @@ export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language })
       setValue(saved);
     }
   }, [saved]);
+  // Останні значення — у ref: запис на розмонтуванні й `pagehide` бачить їх, а
+  // не ті, що були на першому рендері.
+  const pendingRef = useRef({ value, onLastCycleChange });
+  pendingRef.current = { value, onLastCycleChange };
+  const commit = useCallback(() => {
+    const { value: next, onLastCycleChange: save } = pendingRef.current;
+    if (!save || !next || next === savedRef.current || !parseCycleDate(next)) return;
+    savedRef.current = next;
+    save(next);
+  }, []);
   useEffect(() => {
-    if (!onLastCycleChange || !value || value === savedRef.current || !parseCycleDate(value)) return undefined;
-    const timer = window.setTimeout(() => {
-      savedRef.current = value;
-      onLastCycleChange(value);
-    }, TIMELINE_SAVE_DELAY_MS);
+    const timer = window.setTimeout(commit, TIMELINE_SAVE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [onLastCycleChange, value]);
+  }, [commit, onLastCycleChange, value]);
+  useEffect(() => {
+    window.addEventListener('pagehide', commit);
+    return () => {
+      window.removeEventListener('pagehide', commit);
+      commit();
+    };
+  }, [commit]);
 
   if (!open) {
     return (
@@ -502,13 +521,14 @@ export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language })
   const { date: start, projected } = projectCycleStart(parseCycleDate(value));
   const items = buildSurrogacyTimeline(start, { dipherelin });
   const weekUnit = language === 'en' ? 'wk' : 'тиж.';
+  const dayUnit = language === 'en' ? 'day' : 'день';
   return (
     <div data-testid="program-timeline" onClick={event => event.stopPropagation()}>
       <SectionTitle>{uiText('Приблизний графік програми', language)}</SectionTitle>
       <TimelineControls>
         <label>
           {uiText('Перший день останньої менструації', language)}
-          <input type="date" value={value} onChange={event => setValue(event.target.value)} />
+          <input type="date" value={value} onChange={event => setValue(event.target.value)} onBlur={commit} />
         </label>
         <label className="check">
           <input type="checkbox" checked={dipherelin} onChange={event => setDipherelin(event.target.checked)} />
@@ -521,15 +541,18 @@ export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language })
             <Hint>{uiText('Рахуємо від наступних очікуваних місячних — {date} (цикл 28 днів)', language, { date: formatTimelineDate(start, language) })}</Hint>
           ) : null}
           <TimelineList aria-label={uiText('Приблизний графік програми', language)}>
-            {items.map(item => (
+            {groupTimelineByYear(items).map(item => (item.year ? (
+              <li key={item.key} className="year">{item.year}</li>
+            ) : (
               <li key={item.key} className={KEY_TIMELINE_EVENTS.has(item.key) ? 'key' : undefined}>
                 <time dateTime={formatCycleDateForStorage(item.date)}>{formatTimelineDate(item.date, language)}</time>
                 <span>
+                  {item.cycleDay !== undefined ? <em>({item.cycleDay} {dayUnit}) </em> : null}
                   {item.week !== undefined ? <em>({item.week} {weekUnit}) </em> : null}
                   — {uiText(item.label, language)}
                 </span>
               </li>
-            ))}
+            )))}
           </TimelineList>
           <Hint>{uiText('Дати приблизні: точний графік складає лікар клініки.', language)}</Hint>
         </>
@@ -743,8 +766,8 @@ export const ProgramCard = ({
 
       {coverage.all.length ? (
         <Section>
-          <SectionTitle>{uiText('Що ще дає програма', language)}</SectionTitle>
-          <CoverList aria-label={uiText('Що ще дає програма', language)}>
+          <SectionTitle>{uiText('Додатково', language)}</SectionTitle>
+          <CoverList aria-label={uiText('Додатково', language)}>
             {[...coverage.expenses, ...coverage.support, ...coverage.custom].map(item => {
               const Icon = item.custom ? FaGift : COVERAGE_ICONS[item.key] || FaShieldAlt;
               const detail = item.custom ? '' : coverageDetailText(item, language, currency, rates);

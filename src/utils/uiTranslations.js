@@ -758,7 +758,7 @@ const EN_BY_UK = {
   'Через клініку': 'Through a clinic',
   'Шукають': 'Looking for',
   'Що покриває': 'What is covered',
-  'Що ще дає програма': 'What else the program offers',
+  'Додатково': 'Extras',
   'Що покриваєте й пропонуєте': 'What you cover and offer',
   'Своє {n}': 'Custom {n}',
   'Своє: подарунки, аванс…': 'Custom: gifts, advance…',
