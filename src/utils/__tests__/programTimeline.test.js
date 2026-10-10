@@ -12,6 +12,9 @@ describe('приблизний графік програми СМ', () => {
     expect(parseCycleDate('05.10.2026')).toEqual(new Date(2026, 9, 5));
     expect(parseCycleDate(['2026-01-01', '2026-10-05'])).toEqual(new Date(2026, 9, 5));
     expect(parseCycleDate('вчора')).toBeNull();
+    // Неіснуючий день не переноситься на сусідній місяць.
+    expect(parseCycleDate('00.10.2026')).toBeNull();
+    expect(parseCycleDate('2026-02-31')).toBeNull();
   });
 
   it('давні місячні відкладає циклами по 28 днів до найближчих', () => {

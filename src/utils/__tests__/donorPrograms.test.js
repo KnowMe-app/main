@@ -438,7 +438,8 @@ describe('програми з оголошень: що зберігається'
   it('головне без вибору агенції — типові ознаки; зняте все — порожньо', () => {
     const base = normalizeProgram({ ...surrogacy, highlights: undefined });
     // Вимог серед ознак немає: згорнута картка показує їх усі окремо.
-    expect(resolveProgramHighlights(base).map(item => item.key)).toEqual(['startNow', 'monthly', 'family']);
+    // Грошей серед ознак немає: суму несе заголовок програми.
+    expect(resolveProgramHighlights(base).map(item => item.key)).toEqual(['startNow', 'family']);
     expect(resolveProgramHighlights({ ...base, highlights: [HIGHLIGHTS_NONE] })).toEqual([]);
   });
 

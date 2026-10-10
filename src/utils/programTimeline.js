@@ -35,10 +35,13 @@ export const parseCycleDate = value => {
   const raw = String(Array.isArray(value) ? value[value.length - 1] ?? '' : value ?? '').trim();
   const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const dotted = raw.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  let date = null;
-  if (iso) date = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
-  else if (dotted) date = new Date(Number(dotted[3]), Number(dotted[2]) - 1, Number(dotted[1]));
-  if (!date || Number.isNaN(date.getTime())) return null;
+  const parts = iso ? [iso[1], iso[2], iso[3]] : dotted ? [dotted[3], dotted[2], dotted[1]] : null;
+  if (!parts) return null;
+  const [year, month, day] = parts.map(Number);
+  const date = new Date(year, month - 1, day);
+  // «00.10.2026» чи «31.02» `Date` мовчки переносить на сусідній місяць —
+  // і графік рахувався від дати, якої ніхто не вводив. Такої дати немає.
+  if (Number.isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
   return atMidnight(date);
 };
 

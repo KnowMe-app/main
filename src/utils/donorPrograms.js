@@ -220,7 +220,7 @@ export const PROGRAM_CSECTION_OPTIONS = Object.freeze([
   { key: 'any', label: 'Не вказано' },
   { key: '0', label: 'Без КР' },
   { key: '1', label: 'Можна з 1 КР' },
-  { key: '2', label: 'До 2 КР' },
+  { key: '2', label: 'Можна з 2 КР' },
 ]);
 
 /** Послуги агенції чи клініки — чіпи в анкеті й у рядку стрічки. */
@@ -810,7 +810,7 @@ export const describeProgramRequirements = program => {
   if (req.maxBirths !== undefined) items.push({ key: 'births', text: 'до {value} пологів', variables: { value: req.maxBirths } });
   if (req.csectionMax === '0') items.push({ key: 'csection', text: 'без КР' });
   if (req.csectionMax === '1') items.push({ key: 'csection', text: 'можна з 1 КР' });
-  if (req.csectionMax === '2') items.push({ key: 'csection', text: 'до 2 КР' });
+  if (req.csectionMax === '2') items.push({ key: 'csection', text: 'можна з 2 КР' });
   const described = [...items];
   // Текст агенції йде змінною, а не шаблоном: фігурні дужки в ньому не мусять
   // ставати підстановкою, а перекладати чужий текст словник не вміє.
@@ -1069,27 +1069,23 @@ export const HIGHLIGHTS_NONE = 'none';
 // («старт одразу», «щомісячно 500 $»). Вимог серед ознак немає: згорнута
 // картка показує їх усі й завжди — за ними кандидатка й вирішує, чи читати
 // далі, а чотири ознаки на вибір агенції ховали решту вимог у деталі.
-// «+2 доплати» типово теж не виноситься: під сумою вже стоїть «може бути
-// вищою», — але агенція може вибрати й його.
-const DEFAULT_HIGHLIGHT_ORDER = Object.freeze(['startNow', 'monthly', 'family']);
+// Грошей серед ознак немає зовсім: чіпи «+5 доплат» і «≈ 540 €/міс»
+// повторювали суму, яку заголовок програми вже називає діапазоном «від
+// основної до максимальної з усіма доплатами», — прибрано на прохання
+// власниці продукту.
+const DEFAULT_HIGHLIGHT_ORDER = Object.freeze(['startNow', 'family']);
 
 /**
  * Усе, що програма може винести в згорнуту картку, — ознаки, зібрані з
  * самих полів програми. Агенція вибирає з них і ставить у свій порядок
  * (`highlights`), але тексту не пише: інакше «до 30 років» у згорнутій
  * картці й «до 32 років» у вимогах розійшлись би з першою ж правкою.
- *
- * Сума тут — `money`, а не текст: показ переводить її у валюту читача.
  */
 export const listProgramHighlightOptions = program => {
   if (!program) return [];
   const options = [];
   if (program.startNow) options.push({ key: 'startNow', text: 'старт одразу' });
-  const monthly = program.payments?.monthly;
-  if (monthly) options.push({ key: 'monthly', text: '{amount} щомісяця', money: { amount: monthly.amount, currency: monthly.currency } });
   if (program.relocation?.family === 'yes') options.push({ key: 'family', text: 'переїзд із сімʼєю' });
-  const additional = listProgramAdditionalPayments(program);
-  if (additional.length) options.push({ key: 'bonuses', text: '+{count} доплати', variables: { count: additional.length } });
   return options;
 };
 
