@@ -1,5 +1,7 @@
 import {
   buildSearchIdCandidateKeys,
+  looksLikePhoneSearchInput,
+  makeSearchKeyValue,
   splitSearchIdCandidateKeys,
 } from '../searchKeyUtils';
 import { encodeKey } from '../searchIndexCandidates';
@@ -83,5 +85,36 @@ describe('черга кандидатів searchId', () => {
 
     expect(primary).toEqual(keys);
     expect(fallback).toEqual([]);
+  });
+});
+
+describe('варіант «як телефон» — лише для того, що схоже на телефон', () => {
+  const candidates = raw => {
+    const { modifiedSearchValue, searchValue } = makeSearchKeyValue({ searchId: raw }, {});
+    return buildSearchIdCandidateKeys(modifiedSearchValue, searchValue, { includeVariants: false, includeAdaptedPhoneVariant: true });
+  };
+
+  it('не зводить текст із хендлом до цифр: «УК СМ Виктория @Viktoriia440» не шукає «440»', () => {
+    const keys = candidates('УК СМ Виктория @Viktoriia440');
+    expect(keys).not.toContain('440');
+    expect(keys.every(key => /\p{L}/u.test(key))).toBe(true);
+    // Точний ключ — увесь запис, здогадка — сам Telegram-хендл.
+    expect(keys).toEqual(['ук_space_см_space_виктория_space__at_viktoriia440', 'viktoriia440']);
+  });
+
+  it('хендл з цифрами без «УК» теж лишається хендлом', () => {
+    expect(candidates('Viktoriia440')).toEqual(['viktoriia440']);
+  });
+
+  it('телефон у будь-якому написанні й далі шукається в бекендовій формі', () => {
+    expect(candidates('050 123 45 67')).toContain('380501234567');
+    expect(candidates('тел 0501234567')).toContain('380501234567');
+  });
+
+  it('looksLikePhoneSearchInput: літери без мітки — текст', () => {
+    expect(looksLikePhoneSearchInput('@Viktoriia440')).toBe(false);
+    expect(looksLikePhoneSearchInput('AA614')).toBe(false);
+    expect(looksLikePhoneSearchInput('+38 (050) 123-45-67')).toBe(true);
+    expect(looksLikePhoneSearchInput('123')).toBe(false);
   });
 });

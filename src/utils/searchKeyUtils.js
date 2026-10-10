@@ -225,6 +225,23 @@ export const normalizeSearchDateComparableValue = value => {
 
 const normalizePhoneSearchIdValue = rawValue => normalizePhoneValue(rawValue);
 
+/**
+ * Чи набране взагалі може бути телефоном — те саме правило, що й у
+ * `parsePhoneNumber` у `SearchBar`: літери без мітки «тел»/«phone» означають
+ * текст. Без цієї перевірки «УК СМ Виктория @Viktoriia440» давало другий
+ * ключ `440` — цифри з хендла, зведені «до телефону», — а в адміна ще й
+ * діапазонний скан за ним, і видача заповнювалась номерами, що починаються
+ * на 440.
+ */
+export const looksLikePhoneSearchInput = rawValue => {
+  const value = String(rawValue || '').trim();
+  if (!value) return false;
+  // Мітку знімаємо, решта літер — уже текст.
+  const withoutLabel = value.replace(/(?:phone|телефон|тел|номер|моб)/giu, '');
+  if (/\p{L}/u.test(withoutLabel)) return false;
+  return value.replace(/\D/g, '').length >= 4;
+};
+
 const UK_SM_KEY_PART = encodeKey('УК СМ ').toLowerCase();
 
 /**
@@ -253,13 +270,20 @@ export const buildSearchIdCandidateKeys = (modifiedSearchValue, rawSearchValue, 
 
   const searchKeys = [normalizedValue];
 
-  if (includeAdaptedPhoneVariant) {
+  if (includeAdaptedPhoneVariant && looksLikePhoneSearchInput(rawSearchValue)) {
     // Телефон, набраний у будь-якому написанні, шукається ще й у тій формі, у
     // якій його зберігає бекенд.
     const adaptedPhoneKey = encodeKey(normalizePhoneSearchIdValue(rawSearchValue)).toLowerCase();
     const rawPhoneKey = encodeKey(String(rawSearchValue || '').trim()).toLowerCase();
     searchKeys.push(adaptedPhoneKey, rawPhoneKey);
   }
+
+  // «УК СМ Виктория @Viktoriia440» — запис, у якому живе Telegram-хендл.
+  // Точний ключ — увесь рядок; не знайшовся — здогадка тут сам хендл
+  // (`parseUkTriggerQuery` кладе його в анкету другим значенням), а не цифри з
+  // нього.
+  const ukHandle = parseUkTriggerQuery(String(rawSearchValue || ''))?.handle;
+  if (ukHandle) searchKeys.push(encodeKey(ukHandle).toLowerCase());
 
   if (includeVariants) {
     if (includeUkSmVariant) {
