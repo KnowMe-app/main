@@ -767,6 +767,7 @@ const EN_BY_UK = {
   'є своє': 'has custom',
   'Готово: {label}': 'Done: {label}',
   'Приблизний графік програми': 'Approximate program timeline',
+  'Від місячних до пологів — дати по днях': 'From period to delivery, day by day',
   'Стимуляція з дифереліном': 'Stimulation with Diphereline',
   'Рахуємо від наступних очікуваних місячних — {date} (цикл 28 днів)': 'Counted from the next expected period — {date} (28-day cycle)',
   'Дати приблизні: точний графік складає лікар клініки.': 'Dates are approximate: the clinic doctor sets the exact schedule.',
