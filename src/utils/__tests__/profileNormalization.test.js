@@ -131,3 +131,16 @@ describe('введення на blur', () => {
     expect(normalizeProfileFieldInput('name', ' Оксана ')).toBe(' Оксана ');
   });
 });
+
+describe('область з назви області або міста', () => {
+  // eslint-disable-next-line global-require
+  const { resolveOblastFromPlace } = require('../profileNormalization');
+
+  it('впізнає області й обласні центри будь-якою мовою', () => {
+    expect(resolveOblastFromPlace('Днепр')).toBe('Дніпропетровська');
+    expect(resolveOblastFromPlace('Суми')).toBe('Сумська');
+    expect(resolveOblastFromPlace('Харківська обл.')).toBe('Харківська');
+    expect(resolveOblastFromPlace('Kharkiv')).toBe('Харківська');
+    expect(resolveOblastFromPlace('центр і захід')).toBeNull();
+  });
+});

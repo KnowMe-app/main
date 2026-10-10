@@ -353,6 +353,29 @@ await it('приймає своє в покритті програми й від
   await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
 });
 
+// Група крові, АМГ і «звідки не беруть» — вимоги з реальних оголошень
+// («бажано кров 2, 3, 4 (+)», «АМГ від 4», «Дніпро, Суми, Харків — ні»), і
+// коментар до 1000 знаків: опис програми з гепатитом B у 600 не вміщався.
+// Поки правил немає в проді, клієнт пише програму без них
+// (`stripLatestRequirementFields`).
+await it('приймає групу крові, АМГ, регіони й довгий коментар, відкидає чуже', async () => {
+  const base = `multiData/programs/${PROFILE_OWNER}`;
+  const withProgram = program => ({ updatedAt: 1759200000000, items: { p8: { id: 'p8', type: 'ed', ...program } } });
+  await assertSucceeds(set(ref(db(PROFILE_OWNER), base), withProgram({
+    requirements: { rh: '+', bloodGroups: '2,3,4', amhFrom: 4, regionsExcluded: 'Дніпро, Суми, Харків' },
+    note: 'x'.repeat(1000),
+  })));
+  await assertSucceeds(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { bloodGroups: '1', amhFrom: 1.5 } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { bloodGroups: '1,2,3,4' } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { bloodGroups: '5' } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { bloodGroups: 2 } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { amhFrom: 0 } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { amhFrom: '4' } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { regionsExcluded: 'x'.repeat(121) } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ note: 'x'.repeat(1001) })));
+  await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
+});
+
 // Місце виплати щодо головної суми (додається / уже всередині / за окрему
 // процедуру) і вибрана головна сума картки. Головна виплата й повторна донація
 // місця не вибирають: перша сама є сумою, друга окрема за визначенням.

@@ -18,6 +18,10 @@ import {
   PROGRAM_OFFER_LABELS,
   PROGRAM_REQUIREMENT_LABELS,
   PROGRAM_RH_OPTIONS,
+  PROGRAM_BLOOD_GROUPS,
+  PROGRAM_NOTE_MAX_LENGTH,
+  REGIONS_EXCLUDED_MAX_LENGTH,
+  listExcludedOblasts,
   PROGRAM_TOTAL_FIELD,
   PROGRAM_TYPES,
   MAIN_PAYMENT_LABEL,
@@ -795,6 +799,7 @@ const REQUIREMENT_LIMITS = Object.freeze({
   bmiMax: { min: 15, max: 45 },
   heightFrom: { min: 130, max: 200 },
   maxBirths: { min: 0, max: 10 },
+  amhFrom: { min: 0.1, max: 20 },
 });
 
 const readNumber = value => {
@@ -836,6 +841,7 @@ export const listProgramIssues = program => {
   const rows = [...(program.otherPayments || []), ...(program.bonuses || [])].filter(item => !blankRow(item));
   if (rows.some(item => !hasMoney(item))) issues.push('Доплата без суми не збережеться');
   if (rows.some(item => !String(item.label || '').trim())) issues.push('Доплата без назви не збережеться');
+  if (String(program.note || '').trim().length > PROGRAM_NOTE_MAX_LENGTH) issues.push('Коментар довший за {max} знаків — кінець не збережеться');
   return issues;
 };
 
@@ -900,11 +906,18 @@ const REQUIREMENT_DEFS = Object.freeze([
   { key: 'bmi', kind: 'number', field: 'bmiMax', label: 'ІМТ, не більше' },
   { key: 'height', kind: 'number', field: 'heightFrom', label: 'Зріст, від', unit: 'см' },
   { key: 'rh', kind: 'select', field: 'rh', label: 'Резус', options: PROGRAM_RH_OPTIONS },
+  // Група крові — чіпами поруч із резусом: «2, 3, 4 (+)» в оголошеннях пишуть
+  // саме так. АМГ — лише донорці: сурогатній мамі його не міряють.
+  { key: 'bloodGroups', kind: 'groups', field: 'bloodGroups', label: 'Група крові' },
+  { key: 'amh', kind: 'number', field: 'amhFrom', label: 'АМГ, не менше', types: ['ed'] },
+  { key: 'regions', kind: 'text', field: 'regionsExcluded', label: 'Звідки не беруть' },
   { key: 'ownKids', kind: 'select', field: 'ownKids', label: 'Власна дитина', options: PROGRAM_KIDS_OPTIONS },
   { key: 'births', kind: 'number', field: 'maxBirths', label: 'Пологів, не більше' },
   { key: 'csection', kind: 'select', field: 'csectionMax', label: 'Кесарів розтин', options: PROGRAM_CSECTION_OPTIONS },
   { key: 'marital', kind: 'select', field: 'marital', label: 'Сімейний стан', options: PROGRAM_MARITAL_OPTIONS },
 ]);
+
+const requirementDefsFor = type => REQUIREMENT_DEFS.filter(def => !def.types || def.types.includes(type === 'sm' ? 'sm' : 'ed'));
 
 const requirementFilled = (program, def) => {
   const value = program.requirements?.[def.field];
@@ -1107,6 +1120,24 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
   const setRelocation = patch => set({ relocation: { ...relocation, ...patch } });
   const setCoverageDetail = (key, patch) => set({ coverageDetails: { ...coverageDetails, [key]: { ...(coverageDetails[key] || {}), ...patch } } });
   const showRelocation = revealed.has('relocation') || Boolean(relocation.when || relocation.family || relocation.note);
+  const requirementDefs = requirementDefsFor(program.type);
+  // Нова програма заводиться донорською, і «Щомісячно» — пропозиція саме
+  // для СМ (`SUGGESTED_PAYMENTS`) — ставилась лише при створенні. Агенція,
+  // яка перемкнула тип, шукала його серед «+». Тепер перемикання на СМ
+  // пропонує те саме, що й програма, одразу заведена для СМ.
+  const switchType = type => {
+    if (type === program.type) return;
+    if (type === 'sm' && program.payments?.monthly === undefined) {
+      reveal('monthly');
+      setPaymentOrder(current => (current.some(entry => entry.key === 'monthly') ? current : [...current, { id: 'known-monthly', key: 'monthly' }]));
+    }
+    set({ type });
+  };
+  // «+ Як саме: …» під кожним відміченим покриттям займало пів екрана: шість
+  // відмічених — шість однакових чіпів. Тепер чіп один, а вибір пункту — за
+  // ним.
+  const [pickCoverageDetail, setPickCoverageDetail] = useState(false);
+  const noteLength = String(program.note || '').length;
   const money = (amount, cur) => formatProgramMoney(amount, cur);
 
   // --- згорнуті розділи кажуть, що в них уже є ---
@@ -1124,7 +1155,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
     ].filter(Boolean).join(' · '),
     requirements: (() => {
       const count = (normalized?.requirements?.ageFrom !== undefined || normalized?.requirements?.ageTo !== undefined ? 1 : 0)
-        + REQUIREMENT_DEFS.filter(def => requirementFilled(program, def)).length
+        + requirementDefs.filter(def => requirementFilled(program, def)).length
         + (normalized?.customRequirements?.length || 0);
       return count ? countText(count, WORDS.requirement, language) : uiText('Без вимог', language);
     })(),
@@ -1437,9 +1468,21 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
     const metaLabel = uiText(PROGRAM_REQUIREMENT_LABELS[def.key], language);
     const inputId = `${idPrefix}-req-${def.key}`;
     const error = errors[def.field];
+    // Агенція бачить, які області впізнано: лише за ними анкету й відсіємо.
+    const recognizedOblasts = def.kind === 'text' ? listExcludedOblasts(program.requirements?.[def.field]) : [];
+    const regionHint = def.kind === 'text' && String(program.requirements?.[def.field] || '').trim()
+      ? (recognizedOblasts.length
+        ? uiText('Відсіємо анкети з областей: {list}', language, { list: recognizedOblasts.join(', ') })
+        : uiText('Областей не впізнали — покажемо як текст', language))
+      : '';
     const clear = () => {
       hide(`req:${def.key}`);
       onChange({ ...program, requirements: { ...program.requirements, [def.field]: def.kind === 'select' ? 'any' : '' } });
+    };
+    const selectedGroups = String(program.requirements?.bloodGroups || '').split(',').filter(Boolean);
+    const toggleGroup = key => {
+      const next = selectedGroups.includes(key) ? selectedGroups.filter(item => item !== key) : [...selectedGroups, key];
+      setReq({ bloodGroups: PROGRAM_BLOOD_GROUPS.map(option => option.key).filter(option => next.includes(option)).join(',') });
     };
     return (
       <ReqRow key={def.key}>
@@ -1453,6 +1496,21 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
               <Select id={inputId} value={program.requirements?.[def.field] || 'any'} onChange={event => setReq({ [def.field]: event.target.value })}>
                 {def.options.map(option => <option key={option.key} value={option.key}>{uiText(option.label, language)}</option>)}
               </Select>
+            ) : def.kind === 'groups' ? (
+              <Segments id={inputId} role="group" aria-label={label}>
+                {PROGRAM_BLOOD_GROUPS.map(option => {
+                  const on = selectedGroups.includes(option.key);
+                  return <Pill key={option.key} type="button" $on={on} aria-pressed={on} onClick={() => toggleGroup(option.key)}>{on ? '✓ ' : ''}{option.label}</Pill>;
+                })}
+              </Segments>
+            ) : def.kind === 'text' ? (
+              <TextInput
+                id={inputId}
+                value={program.requirements?.[def.field] || ''}
+                maxLength={REGIONS_EXCLUDED_MAX_LENGTH}
+                placeholder={uiText('Наприклад: Дніпро, Суми, Харків', language)}
+                onChange={event => setReq({ [def.field]: event.target.value })}
+              />
             ) : (
               <>
                 <Num
@@ -1470,6 +1528,8 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           </div>
         </ReqControls>
         {error ? <FieldError role="alert">{uiText(error.text, language, error.vars)}</FieldError> : null}
+        {def.kind === 'groups' && !selectedGroups.length ? <Readout>{uiText('Нічого не відмічено — підходить будь-яка', language)}</Readout> : null}
+        {def.kind === 'text' && regionHint ? <Readout>{regionHint}</Readout> : null}
       </ReqRow>
     );
   };
@@ -1508,7 +1568,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         <Field label="Кого шукаєте" language={language}>
           <Segments role="group" aria-label={uiText('Кого шукаєте', language)}>
             {PROGRAM_TYPES.map(key => (
-              <Pill key={key} type="button" $on={program.type === key} aria-pressed={program.type === key} onClick={() => set({ type: key })}>
+              <Pill key={key} type="button" $on={program.type === key} aria-pressed={program.type === key} onClick={() => switchType(key)}>
                 {uiText(PROGRAM_OFFER_LABELS[key], language)}
               </Pill>
             ))}
@@ -1531,11 +1591,19 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           <TextArea
             id={`${idPrefix}-note`}
             value={program.note || ''}
-            maxLength={600}
             rows={3}
+            aria-invalid={noteLength > PROGRAM_NOTE_MAX_LENGTH}
             placeholder={uiText('Важливе, чого немає серед полів програми', language)}
             onChange={event => set({ note: event.target.value })}
           />
+          {/* Без `maxLength`: він мовчки обрізав вставлене оголошення. Тепер
+              текст лишається цілим, а лічильник і «Що виправити» кажуть, що
+              кінець не збережеться. */}
+          {noteLength > PROGRAM_NOTE_MAX_LENGTH * 0.8 ? (
+            <Readout style={noteLength > PROGRAM_NOTE_MAX_LENGTH ? { color: DANGER } : undefined}>
+              {noteLength} / {PROGRAM_NOTE_MAX_LENGTH}
+            </Readout>
+          ) : null}
         </Field>
       </>
     ),
@@ -1601,10 +1669,10 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           </ReqControls>
           {errors.ageFrom || errors.ageTo ? <FieldError role="alert">{uiText((errors.ageFrom || errors.ageTo).text, language, (errors.ageFrom || errors.ageTo).vars)}</FieldError> : null}
         </ReqRow>
-        {REQUIREMENT_DEFS.filter(def => requirementFilled(program, def) || revealed.has(`req:${def.key}`)).map(requirementRow)}
+        {requirementDefs.filter(def => requirementFilled(program, def) || revealed.has(`req:${def.key}`)).map(requirementRow)}
         {customRequirements.map(customRequirementRow)}
         <Segments>
-          {REQUIREMENT_DEFS.filter(def => !requirementFilled(program, def) && !revealed.has(`req:${def.key}`)).map(def => (
+          {requirementDefs.filter(def => !requirementFilled(program, def) && !revealed.has(`req:${def.key}`)).map(def => (
             <AddChip key={def.key} type="button" onClick={() => reveal(`req:${def.key}`)}>+ {uiText(PROGRAM_REQUIREMENT_LABELS[def.key], language)}</AddChip>
           ))}
           {/* Порожня своя вимога стоїть одна: наступна додається, коли цю заповнено. */}
@@ -1670,10 +1738,12 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         })}
         {coverageKeys.some(key => !revealed.has(`cov:${key}`) && !Object.keys(coverageDetails[key] || {}).length) ? (
           <Segments>
-            {coverageKeys.filter(key => !revealed.has(`cov:${key}`) && !Object.keys(coverageDetails[key] || {}).length).map(key => {
+            {pickCoverageDetail ? coverageKeys.filter(key => !revealed.has(`cov:${key}`) && !Object.keys(coverageDetails[key] || {}).length).map(key => {
               const option = PROGRAM_COVERAGE_OPTIONS.find(item => item.key === key);
-              return option ? <AddChip key={key} type="button" onClick={() => reveal(`cov:${key}`)}>+ {uiText('Як саме: {label}', language, { label: uiText(option.label, language).toLowerCase() })}</AddChip> : null;
-            })}
+              return option ? <AddChip key={key} type="button" onClick={() => { reveal(`cov:${key}`); setPickCoverageDetail(false); }}>+ {uiText(option.label, language)}</AddChip> : null;
+            }) : (
+              <AddChip type="button" onClick={() => setPickCoverageDetail(true)}>+ {uiText('Як саме покриваєте', language)}</AddChip>
+            )}
           </Segments>
         ) : null}
 
@@ -1699,7 +1769,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         <Segments>
           {/* Порожній свій пункт стоїть один: наступний додається, коли цей заповнено. */}
           {customCoverage.length < MAX_CUSTOM_COVERAGE && !customCoverage.some(item => !String(item || '').trim()) ? (
-            <AddChip type="button" onMouseDown={keepFocus} onClick={() => setCustomCoverage([...customCoverage, ''])}>+ {uiText('Свій варіант: подарунок, переїзд із сімʼєю…', language)}</AddChip>
+            <AddChip type="button" onMouseDown={keepFocus} onClick={() => setCustomCoverage([...customCoverage, ''])}>+ {uiText('Свій варіант: подарунок, аванс…', language)}</AddChip>
           ) : null}
           {!showRelocation ? <AddChip type="button" onClick={() => reveal('relocation')}>+ {uiText('Переїзд', language)}</AddChip> : null}
         </Segments>
@@ -1738,7 +1808,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
       <FormColumn $hiddenOnMobile={mode !== 'edit'}>
         {issues.length ? (
           <Issues aria-label={uiText('Що виправити', language)}>
-            {issues.map(issue => <li key={issue}>{uiText(issue, language)}</li>)}
+            {issues.map(issue => <li key={issue}>{uiText(issue, language, { max: PROGRAM_NOTE_MAX_LENGTH })}</li>)}
           </Issues>
         ) : null}
         {SECTIONS.map((section, index) => (

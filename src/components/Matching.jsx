@@ -821,6 +821,7 @@ const PROGRAM_FACT_HELPERS = {
   height: normalizeHeightCm,
   bmi: computeBmi,
   rh: value => parseBloodValue(value).rh,
+  abo: value => parseBloodValue(value).abo,
 };
 
 /*
