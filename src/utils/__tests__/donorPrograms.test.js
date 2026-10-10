@@ -79,6 +79,10 @@ describe('модель програми', () => {
     expect(parseProgramAmount('1,600')).toBe(1600);
     expect(parseProgramAmount('18.5k')).toBe(18500);
     expect(parseProgramAmount('')).toBeNull();
+    // Діапазон з оголошення не зливається в одне число.
+    expect(parseProgramAmount('2000–3000')).toBe(2000);
+    expect(parseProgramAmount('1500-10000$')).toBe(1500);
+    expect(parseProgramAmount('19 000 – 20 000 €')).toBe(19000);
   });
 
   it('усе понад головну суму — доплати одним списком', () => {
