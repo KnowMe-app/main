@@ -10,8 +10,8 @@ export const termsAndConditions = [
     style: 'title',
   },
   {
-    en: 'Date of Last Update: 01 November 2023',
-    uk: 'Дата останнього оновлення: 01 листопада 2023 року',
+    en: 'Date of Last Update: 10 October 2026',
+    uk: 'Дата останнього оновлення: 10 жовтня 2026 року',
     style: 'headerItalic',
   },
 
@@ -39,8 +39,8 @@ export const termsAndConditions = [
     style: 'text',
   },
   {
-    en: 'You enter into this Agreement with the Individual Entrepreneur O.V. Koval, registration tax ID number - 3281009190 (hereinafter - Licensor, We, Us), which owns exclusive property rights to the App, including those necessary and sufficient for its administration and providing access to the system.',
-    uk: 'Ви укладаєте цю Угоду з ФОП О.В. Коваль, реєстраційний номер облікової картки платника податків – 3281009190 (далі - Ліцензіар, Ми, Нас), який володіє виключними майновими правами на Застосунок, в тому числі необхідними та достатніми для його адміністрування та надання доступу до системи.',
+    en: 'You enter into this Agreement with the owner of the App (hereinafter - Licensor, We, Us), which owns exclusive property rights to the App, including those necessary and sufficient for its administration and providing access to the system. All communication with the Licensor is carried out via the email KnowMeEggDonor@gmail.com.',
+    uk: 'Ви укладаєте цю Угоду з власником Застосунку (далі - Ліцензіар, Ми, Нас), який володіє виключними майновими правами на Застосунок, в тому числі необхідними та достатніми для його адміністрування та надання доступу до системи. Уся комунікація з Ліцензіаром здійснюється через електронну пошту KnowMeEggDonor@gmail.com.',
     style: 'text',
   },
   {
@@ -413,8 +413,8 @@ export const termsAndConditions = [
     style: 'text',
   },
   {
-    en: 'The controller and the processor of personal data processed in the App is the Individual Entrepreneur O.V. Koval (location: Ukraine, 04209, Kyiv, Bogatyrska Street, Building 6/1, apartment 129; registration tax ID number - 3281009190).',
-    uk: 'Володільцем та розпорядником персональних даних, що обробляються в Застосунку є ФОП О.В. Коваль (місцезнаходження: Україна, 04209, місто Київ, вул. Богатирська, будинок 6/1, квартира 129; реєстраційний номер облікової картки платника податків – 3281009190).',
+    en: 'The controller and the processor of personal data processed in the App is the Licensor. You can contact the controller of personal data via the email KnowMeEggDonor@gmail.com.',
+    uk: 'Володільцем та розпорядником персональних даних, що обробляються в Застосунку, є Ліцензіар. Зв’язатися з володільцем персональних даних можна через електронну пошту KnowMeEggDonor@gmail.com.',
     style: 'text',
   },
   {
