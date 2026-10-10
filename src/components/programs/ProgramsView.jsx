@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import styled, { css, keyframes } from 'styled-components';
+import styled from 'styled-components';
 import {
   FaBalanceScale,
   FaBus,
@@ -45,6 +45,7 @@ import {
   projectCycleStart,
 } from '../../utils/programTimeline';
 import { uiText } from '../../utils/uiTranslations';
+import { revealCss } from '../../styles/revealAnimation';
 
 /*
  * Показ програм агенції чи клініки — один на стрічку, прев'ю «Мого профілю»
@@ -105,17 +106,9 @@ const UNSURE = '#B7791F';
 
 const VISIBLE_PROGRAMS = 3;
 
-// Розгорнуте зʼявляється, а не вистрибує: деталі програми тут, розділ і
-// виплата в редакторі (`ProgramsEditor`). Коротко й без зміни висоти —
-// анімація висоти смикала б прокрутку під пальцем.
-const revealIn = keyframes`
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: none; }
-`;
-export const revealCss = css`
-  animation: ${revealIn} 0.18s ease-out;
-  @media (prefers-reduced-motion: reduce) { animation: none; }
-`;
+// Спільна анімація розгортання (`styles/revealAnimation`); редактор програм
+// бере її звідси ж.
+export { revealCss };
 
 // --- гроші у валюті читача -----------------------------------------------------
 
@@ -440,7 +433,15 @@ const TimelineControls = styled.div`
   label.check input { width: 18px; height: 18px; margin: 0; accent-color: ${ACCENT}; }
 `;
 
+// Дві колонки на весь список, а не на рядок: ліворуч дата з днем тижня й
+// днем циклу чи тижнем вагітності — разом, одним блоком; праворуч назва
+// події, і всі назви починаються з одного вертикального краю. Колонка
+// ширини за найдовшою датою (`max-content`), тому «04.01 пн (12 тиж.)» і
+// «30.10 пт (19 день)» не зсувають подію. Тире між ними пішло: рівний край
+// і так відділяє назву.
 const TimelineList = styled.ol`
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -449,12 +450,17 @@ const TimelineList = styled.ol`
   color: ${TEXT};
   ${revealCss}
 
-  li { display: grid; grid-template-columns: 5.4em minmax(0, 1fr); gap: 8px; padding: 3px 0; }
-  li + li { border-top: 1px solid color-mix(in srgb, ${BORDER} 60%, transparent); }
-  li.year { display: block; padding-top: 8px; font-weight: 800; color: ${MUTED}; letter-spacing: 0.04em; }
-  time { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  li { display: contents; }
+  li > span { padding: 4px 0; }
+  li + li > span { border-top: 1px solid color-mix(in srgb, ${BORDER} 60%, transparent); }
+  /* Проміжок — відступом першої комірки, а не column-gap: інакше риска між
+     рядками рвалась би посередині. */
+  .when { padding-right: 16px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  time { font-weight: 700; }
   em { font-style: normal; color: ${MUTED}; }
-  li.key time, li.key span { color: ${ACCENT}; font-weight: 700; }
+  li.key time, li.key .what { color: ${ACCENT}; font-weight: 700; }
+  li.key em { color: ${ACCENT}; }
+  li.year > span { grid-column: 1 / -1; padding-top: 10px; font-weight: 800; color: ${MUTED}; letter-spacing: 0.04em; }
 `;
 
 const TIMELINE_SAVE_DELAY_MS = 800;
@@ -470,9 +476,9 @@ const KEY_TIMELINE_EVENTS = new Set(['transfer', 'week40']);
  * деталі, пішли зі сторінки): поки запис чекав лише таймера, дата, обрана за
  * мить до згортання чи перезавантаження, не доїжджала в анкету, і наступне
  * відкриття знову питало її. Без колбека (прев'ю агенції в редакторі) графік
- * лише рахується. Рядок — «27.11 пн (19 день) — Перенос ембріона»: дата з днем
- * тижня, день циклу (перенос, диферелін) або тиждень вагітності, подія; де
- * починається новий рік — рядок із роком. Дати рахує `programTimeline` тією
+ * лише рахується. Рядок — «27.11 пн (19 день)  Перенос ембріона»: ліворуч дата з
+ * днем тижня й днем циклу (перенос, диферелін) або тижнем вагітності, праворуч
+ * подія з одного вертикального краю; де починається новий рік — рядок із роком. Дати рахує `programTimeline` тією
  * самою логікою робочих днів, що й графік стимуляції.
  */
 export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language }) => {
@@ -542,15 +548,15 @@ export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language })
           ) : null}
           <TimelineList aria-label={uiText('Приблизний графік програми', language)}>
             {groupTimelineByYear(items).map(item => (item.year ? (
-              <li key={item.key} className="year">{item.year}</li>
+              <li key={item.key} className="year"><span>{item.year}</span></li>
             ) : (
               <li key={item.key} className={KEY_TIMELINE_EVENTS.has(item.key) ? 'key' : undefined}>
-                <time dateTime={formatCycleDateForStorage(item.date)}>{formatTimelineDate(item.date, language)}</time>
-                <span>
-                  {item.cycleDay !== undefined ? <em>({item.cycleDay} {dayUnit}) </em> : null}
-                  {item.week !== undefined ? <em>({item.week} {weekUnit}) </em> : null}
-                  — {uiText(item.label, language)}
+                <span className="when">
+                  <time dateTime={formatCycleDateForStorage(item.date)}>{formatTimelineDate(item.date, language)}</time>
+                  {item.cycleDay !== undefined ? <em> ({item.cycleDay} {dayUnit})</em> : null}
+                  {item.week !== undefined ? <em> ({item.week} {weekUnit})</em> : null}
                 </span>
+                <span className="what">{uiText(item.label, language)}</span>
               </li>
             )))}
           </TimelineList>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
+import { revealCss } from '../styles/revealAnimation';
 import { get, ref, remove, set } from 'firebase/database';
 import { doc, getDoc } from 'firebase/firestore';
 import toast from 'react-hot-toast';
@@ -515,6 +516,7 @@ const Caret = styled.span`
 `;
 
 const BranchBody = styled.div`
+  ${revealCss}
   display: flex;
   flex-direction: column;
   gap: 4px;

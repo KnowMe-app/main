@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import styled from 'styled-components';
+import { revealCss } from '../styles/revealAnimation';
 import ProfileRow from './ProfileRow';
 import { MatchingThemeScope } from './Matching.styled';
 import { useAppSettings } from '../hooks/useAppSettings';
@@ -86,6 +87,12 @@ const readCollapsed = () => {
   }
 };
 
+// Розгорнуте прев'ю зʼявляється тією самою анімацією, що й решта розкривних
+// блоків анкети (`styles/revealAnimation`).
+const Reveal = styled.div`
+  ${revealCss}
+`;
+
 export const MyProfileCardPreview = ({ previews = [], language, rates, displayCurrency, onDisplayCurrencyChange }) => {
   const { themeMode } = useAppSettings();
   const [open, setOpen] = useState(() => !readCollapsed());
@@ -121,7 +128,7 @@ export const MyProfileCardPreview = ({ previews = [], language, rates, displayCu
         <Caret $open={open} aria-hidden="true">▼</Caret>
       </Head>
       {open ? (
-        <>
+        <Reveal>
           {previews.length > 1 ? (
             <Tabs role="tablist">
               {previews.map(item => (
@@ -149,7 +156,7 @@ export const MyProfileCardPreview = ({ previews = [], language, rates, displayCu
               onToggleExpand={toggleExpanded}
             />
           </Frame>
-        </>
+        </Reveal>
       ) : null}
     </Wrap>
   );

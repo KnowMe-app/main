@@ -3,6 +3,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
+import { revealCss } from '../styles/revealAnimation';
 import { FiChevronDown, FiClock, FiFolder, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
 import { FaHeart, FaRegHeart, FaTimes, FaUndoAlt } from 'react-icons/fa';
 
@@ -145,6 +146,9 @@ const DeleteDraftButton = styled(Button)`
 const Card = styled.section`padding:18px; margin:0 0 16px; border:0; border-radius:var(--km-radius); background:var(--km-card); box-shadow:var(--km-shadow);`;
 const Actions = styled.div`display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;`;
 const Meta = styled.p`margin:6px 0; color:var(--km-muted); font-size:14px; line-height:1.45; overflow-wrap:anywhere;`;
+// Розгорнута історія правок — лише вона монтується дотиком, тож анімується
+// саме вона, а не кожен `Meta` форми.
+const RevealMeta = styled(Meta)`${revealCss}`;
 const STATUS_VARIANT_BACKGROUND = {
   private: 'color-mix(in srgb, var(--km-muted) 16%, var(--km-card))',
   overlay: 'color-mix(in srgb, var(--km-accent-mid) 22%, var(--km-card))',
@@ -2185,11 +2189,11 @@ export const ProfileCreationWorkspace = () => {
           <FiClock aria-hidden="true" /> {uiText('Історія правок ({count})', language, { count: draftHistory.length })}
           <FiChevronDown aria-hidden="true" style={{ transform: showDraftHistory ? 'rotate(180deg)' : 'none' }} />
         </DisclosureToggle>
-        {showDraftHistory && <Meta>
+        {showDraftHistory && <RevealMeta>
           {uiText(draftHistory.length === 0
             ? 'Історія порожня.'
             : 'Для кожного поля показано окреме дерево: актуальне значення вгорі, оригінальне — внизу.', language)}
-        </Meta>}
+        </RevealMeta>}
       </ReviewCard>}
       {CREATE_FORM_SECTIONS.filter(section => section.key !== 'comment').map(section => (
         <FormSectionCard key={section.key}>

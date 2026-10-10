@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import styled from 'styled-components';
+import { revealCss } from '../styles/revealAnimation';
 import { FaTimes } from 'react-icons/fa';
 
 /*
@@ -58,6 +59,7 @@ const Caret = styled.span`
 `;
 
 const Body = styled.div`
+  ${revealCss}
   display: flex;
   flex-direction: column;
   gap: 6px;
