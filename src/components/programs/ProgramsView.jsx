@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import {
   FaBalanceScale,
@@ -49,6 +49,10 @@ import {
 import { formatDate } from '../inputValidations';
 import { uiText } from '../../utils/uiTranslations';
 import { revealCss } from '../../styles/revealAnimation';
+import Collapsible, { COLLAPSE_DURATION_MS } from '../Collapsible';
+import CalendarPicker from '../CalendarPicker';
+
+const COLLAPSE_SETTLE_MS = COLLAPSE_DURATION_MS + 60;
 
 /*
  * Показ програм агенції чи клініки — один на стрічку, прев'ю «Мого профілю»
@@ -68,11 +72,11 @@ import { revealCss } from '../../styles/revealAnimation';
  *     саме покривається кожна витрата, своє агенції), коментар організатора
  *     і — у програмі СМ — приблизний графік від місячних до пологів.
  *
- * Сума в заголовку — основна плюс гарантовані виплати (`programBreakdown`),
- * а додаткові (КС, двійня, досвід) у неї не йдуть, доки читачка їх не
- * відмітить: під сумою стоїть «може бути вищою», а перемикач додаткової
- * виплати міняє саме заголовок. Власної назви програми немає — назва це те,
- * кого шукають.
+ * Сума в заголовку — діапазон (`presentPayRange`): від основної з
+ * гарантованими виплатами (`programBreakdown`) до максимальної з усіма
+ * додатковими (КС, двійня, досвід). Перемикачі додаткових виплат у деталях
+ * рахують «Разом із відміченими» під собою, а заголовка не міняють. Власної
+ * назви програми немає — назва це те, кого шукають.
  *
  * Досі програма була рядком без меж, і на картці з однією програмою вона
  * зливалась з описом агенції: заголовок «Програми», під ним «1 програма»,
@@ -150,6 +154,38 @@ const presentSum = (sum, displayCurrency, rates) => {
 };
 
 const plainMoney = (money, displayCurrency, rates) => presentMoney(money, displayCurrency, rates).primary;
+
+// «1 500–2 300 $»: валюта одна — знак лише в кінці; «≈» один на весь діапазон.
+const joinRange = (low, high) => {
+  if (!low || !high || low === high) return low || high || '';
+  const approx = /^≈ /.test(low) || /^≈ /.test(high);
+  const lo = low.replace(/^≈ /, '');
+  const hi = high.replace(/^≈ /, '');
+  // Сума з кількох валют без курсу («1 000 $ + 500 €») діапазоном не стискається.
+  if (lo.includes(' + ') || hi.includes(' + ')) return `${low} – ${high}`;
+  const unit = /\s(\S+)$/;
+  const loUnit = lo.match(unit)?.[1];
+  const sameUnit = loUnit && loUnit === hi.match(unit)?.[1];
+  return `${approx ? '≈ ' : ''}${sameUnit ? lo.replace(unit, '') : lo}–${hi}`;
+};
+
+/**
+ * Винагорода програми діапазоном: від основної (з гарантованими виплатами)
+ * до максимальної — з усіма додатковими. Без додаткових — одне число.
+ */
+export const presentPayRange = (breakdown, displayCurrency, rates) => {
+  const low = presentSum(breakdown?.guaranteed, displayCurrency, rates);
+  const grows = breakdown?.additional?.length > 0 && breakdown.max.amount > breakdown.guaranteed.amount;
+  if (!grows) return { ...low, range: false };
+  const high = presentSum(breakdown.max, displayCurrency, rates);
+  if (!low.primary || !high.primary) return { ...low, range: false };
+  return {
+    primary: joinRange(low.primary, high.primary),
+    original: low.original && high.original ? joinRange(low.original, high.original) : '',
+    converted: low.converted || high.converted,
+    range: true,
+  };
+};
 
 // --- спільні частини -------------------------------------------------------------
 
@@ -344,9 +380,7 @@ const requirementText = (item, language) => uiText(item.text, language, item.var
   ? { ...item.variables, label: uiText(item.variables.label, language) }
   : item.variables);
 
-const highlightText = (item, language, displayCurrency, rates) => {
-  if (item.key === 'bonuses') return `+${item.variables.count} ${uiText(pluralBonuses(item.variables.count, language), language)}`;
-  if (item.money) return uiText(item.text, language, { amount: plainMoney(item.money, displayCurrency, rates) });
+const highlightText = (item, language) => {
   if (item.variables?.label) return uiText(item.text, language, { ...item.variables, label: uiText(item.variables.label, language).toLowerCase() });
   return uiText(item.text, language, item.variables);
 };
@@ -442,9 +476,24 @@ const TimelineControls = styled.div`
   align-items: flex-end;
   gap: 8px 14px;
   margin-bottom: 10px;
-  ${revealCss}
 
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: ${MUTED}; }
+  .date-field { display: flex; flex-direction: column; gap: 4px; }
+  .date-row { display: flex; align-items: center; gap: 6px; }
+  .calendar-button {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid ${BORDER};
+    border-radius: 10px;
+    background: ${CARD_BG};
+    color: ${ACCENT};
+    font-size: 16px;
+    cursor: pointer;
+  }
+  .calendar-button[data-on] { border-color: ${ACCENT}; background: color-mix(in srgb, ${ACCENT} 12%, ${CARD_BG}); }
+  .calendar-button:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
   input.date {
     width: 11ch;
     min-height: 38px;
@@ -499,7 +548,9 @@ const TIMELINE_SAVE_DELAY_MS = 800;
 // Chrome на Android на дотик лише виділяло сегмент плейсхолдера («рррр»), а
 // ні календаря, ні клавіатури не відкривало — увести дату місячних було
 // нічим. Цифрова клавіатура й маска крапками — той самий набір дати, що й у
-// формі анкети (`formatDate` з `inputValidations`).
+// формі анкети (`formatDate` з `inputValidations`). Поруч — власний календар
+// (`CalendarPicker`): вибирати день дотиком зручніше, ніж набирати, а свій
+// календар, на відміну від нативного, однаковий у кожному браузері.
 const toTimelineInputValue = date => {
   if (!date) return '';
   const d = String(date.getDate()).padStart(2, '0');
@@ -572,6 +623,29 @@ export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language })
       </TimelineToggle>
     );
   }
+  // Дата з календаря пишеться одразу: вибір дотиком — уже завершений намір,
+  // і чекати таймера чи blur тут нема чого.
+  const selectDate = date => {
+    const next = toTimelineInputValue(date);
+    setValue(next);
+    pendingRef.current = { ...pendingRef.current, value: next };
+    commit();
+  };
+  return <TimelineReveal><TimelineBody {...{ value, setValue, selectDate, commit, dipherelin, setDipherelin, language }} /></TimelineReveal>;
+};
+
+// Графік розгортається з кнопки тією самою висотою, що й деталі програми.
+const TimelineReveal = ({ children }) => {
+  const [open, setOpen] = useState(false);
+  useEffect(() => { setOpen(true); }, []);
+  return <Collapsible open={open}>{children}</Collapsible>;
+};
+
+const TimelineBody = ({ value, setValue, selectDate, commit, dipherelin, setDipherelin, language }) => {
+  const inputId = useId();
+  // Порожня дата — календар відкритий одразу: вибрати день дотиком швидше,
+  // ніж набирати його цифрами.
+  const [calendarOpen, setCalendarOpen] = useState(() => !parseCycleDate(value));
   const { date: start, projected } = projectCycleStart(parseCycleDate(value));
   const items = buildSurrogacyTimeline(start, { dipherelin });
   const weekUnit = language === 'en' ? 'wk' : 'тиж.';
@@ -580,25 +654,45 @@ export const ProgramTimeline = ({ lastCycle = '', onLastCycleChange, language })
     <div data-testid="program-timeline" onClick={event => event.stopPropagation()}>
       <SectionTitle>{uiText('Приблизний графік програми', language)}</SectionTitle>
       <TimelineControls>
-        <label>
-          {uiText('Перший день останньої менструації', language)}
-          <input
-            className="date"
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            maxLength={10}
-            placeholder={uiText('дд.мм.рррр', language)}
-            value={value}
-            onChange={event => setValue(formatDate(event.target.value, true))}
-            onBlur={commit}
-          />
-        </label>
+        <div className="date-field">
+          <label htmlFor={inputId}>{uiText('Перший день останньої менструації', language)}</label>
+          <div className="date-row">
+            <input
+              id={inputId}
+              className="date"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={10}
+              placeholder={uiText('дд.мм.рррр', language)}
+              value={value}
+              onChange={event => setValue(formatDate(event.target.value, true))}
+              onBlur={commit}
+            />
+            <button
+              type="button"
+              className="calendar-button"
+              aria-label={uiText('Вибрати дату в календарі', language)}
+              aria-expanded={calendarOpen}
+              data-on={calendarOpen ? 'true' : undefined}
+              onClick={() => setCalendarOpen(current => !current)}
+            >
+              <FaCalendarAlt aria-hidden="true" />
+            </button>
+          </div>
+        </div>
         <label className="check">
           <input type="checkbox" checked={dipherelin} onChange={event => setDipherelin(event.target.checked)} />
           {uiText('Стимуляція з дифереліном', language)}
         </label>
       </TimelineControls>
+      <Collapsible open={calendarOpen}>
+        <CalendarPicker
+          value={parseCycleDate(value)}
+          language={language}
+          onSelect={date => { selectDate(date); setCalendarOpen(false); }}
+        />
+      </Collapsible>
       {items.length ? (
         <>
           {projected ? (
@@ -726,14 +820,14 @@ export const ProgramCard = ({
   timeline = null,
 }) => {
   const [ownBonuses, toggleOwnBonus] = useSelectedBonuses(program);
-  // У контейнері стрічки вибір тримає згорнута частина: її заголовок рахує
-  // відмічені доплати (`describeProgramOffer`).
+  // У контейнері стрічки вибір тримає згорнута частина: так він переживає
+  // перемальовування деталей.
   const controlled = Array.isArray(controlledBonuses) && typeof onToggleBonus === 'function';
   const selectedBonuses = controlled ? controlledBonuses : ownBonuses;
   const currency = displayCurrency || '';
   const result = facts ? evaluateProgram(program, facts) : null;
   const checkByKey = new Map((result?.checks || []).map(check => [check.key, check.ok]));
-  const { main, guaranteedBonuses, additional } = programBreakdown(program, { selectedBonusKeys: selectedBonuses, rates });
+  const { main, guaranteedBonuses, additional, total } = programBreakdown(program, { selectedBonusKeys: selectedBonuses, rates });
   const requirements = describeProgramRequirements(program);
   const unknown = requirements.filter(item => checkByKey.get(item.key) === null).map(item => REQUIREMENT_FIX_HINTS[item.key]);
   const coverage = describeProgramCoverage(program);
@@ -795,6 +889,14 @@ export const ProgramCard = ({
               </BonusRow>
             );
           })}
+          {/* Заголовок програми — діапазон «від … до …» і від вибору не
+              міняється; відмічене читачкою рахується тут, під перемикачами. */}
+          {additional.some(item => item.selected) && total.amount > 0 ? (
+            <PaymentLine data-testid="program-selected-total">
+              <span>{uiText('Разом із відміченими', language)}</span>
+              <b>{presentSum(total, currency, rates).primary}</b>
+            </PaymentLine>
+          ) : null}
         </Section>
       ) : null}
 
@@ -830,8 +932,8 @@ export const ProgramCard = ({
 
       {coverage.all.length ? (
         <Section>
-          <SectionTitle>{uiText('Додатково', language)}</SectionTitle>
-          <CoverList aria-label={uiText('Додатково', language)}>
+          <SectionTitle>{uiText('Додатково покривається', language)}</SectionTitle>
+          <CoverList aria-label={uiText('Додатково покривається', language)}>
             {[...coverage.expenses, ...coverage.support, ...coverage.custom].map(item => {
               const Icon = item.custom ? FaGift : COVERAGE_ICONS[item.key] || FaShieldAlt;
               const detail = item.custom ? '' : coverageDetailText(item, language, currency, rates);
@@ -912,15 +1014,6 @@ const OTHER_TYPE_LABELS = Object.freeze({ ed: 'для донорок', sm: 'дл
 const programsGenitive = (count, language) => {
   if (language === 'en') return count === 1 ? 'program' : 'programs';
   return count % 10 === 1 && count % 100 !== 11 ? 'програми' : 'програм';
-};
-
-const pluralBonuses = (count, language) => {
-  if (language === 'en') return count === 1 ? 'bonus' : 'bonuses';
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'доплата';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'доплати';
-  return 'доплат';
 };
 
 const Panel = styled.section`
@@ -1092,7 +1185,6 @@ const ProgramBody = styled.div`
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid ${BORDER};
-  ${revealCss}
 `;
 
 // Розгортання — словом, у самому контейнері, якого воно стосується:
@@ -1164,17 +1256,21 @@ export const describeProgramOffer = (program, { rates = null, selectedBonusKeys 
 
 /**
  * Згорнута програма — пропозиція одним поглядом, у власному контейнері.
+ *
+ * Винагорода — діапазоном у заголовку («Винагорода 1 500–2 300 $»): від
+ * основної з гарантованими до максимальної з усіма додатковими. Чіпів
+ * «+5 доплат» і «≈ 540 €/міс» під ним більше немає — вони повторювали те
+ * саме число частинами.
+ *
+ * Розгортання й згортання — плавні (`Collapsible`), і згорнута частина
+ * (вимоги, ознаки, коментар) поступається деталям так само плавно.
  */
 const ProgramListItem = ({ program, open, onToggle, facts, rates, language, differs, displayCurrency, timeline = null }) => {
   const result = facts ? evaluateProgram(program, facts) : null;
   const fit = programFitState(result);
   const [selectedBonuses, toggleBonus] = useSelectedBonuses(program);
-  const offer = describeProgramOffer(program, { rates, selectedBonusKeys: selectedBonuses });
-  const shown = offer.money ? presentSum(offer.money, displayCurrency, rates) : null;
-  // «Винагорода від …» — поки є невідмічені додаткові виплати; з ними всіма
-  // сума вже повна, і «від» обіцяв би більше, ніж є.
-  const { max } = offer.breakdown;
-  const canGrow = offer.breakdown.additional.some(item => !item.selected) && max.amount > (offer.money?.amount || 0);
+  const breakdown = useMemo(() => programBreakdown(program, { rates }), [program, rates]);
+  const shown = breakdown.guaranteed.amount > 0 ? presentPayRange(breakdown, displayCurrency, rates) : null;
   const highlights = useMemo(() => {
     const items = resolveProgramHighlights(program);
     return items.map(item => ({ ...item, differs: Boolean(differs?.has(item.key)) }));
@@ -1184,9 +1280,27 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
   const bodyId = `program-body-${program.id}`;
   const offerLabel = programHeading(program, language);
   const place = program.location ? formatProgramPlace(program.location) : '';
+  const itemRef = useRef(null);
+  const wasOpenRef = useRef(open);
+  // Відкрита програма закриває іншу (одна відкрита на список), і та, що
+  // згорнулась вище, тягне цю вгору — інколи за край екрана. Тоді її
+  // заголовок повертається в поле зору, коли рух скінчився.
+  useEffect(() => {
+    const opened = open && !wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (!opened) return undefined;
+    const timer = window.setTimeout(() => {
+      const node = itemRef.current;
+      if (!node || typeof node.getBoundingClientRect !== 'function') return;
+      if (node.getBoundingClientRect().top < 0 && typeof node.scrollIntoView === 'function') {
+        node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, COLLAPSE_SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [open]);
 
   return (
-    <ProgramItem data-testid="program-list-item" onClick={event => event.stopPropagation()}>
+    <ProgramItem ref={itemRef} data-testid="program-list-item" onClick={event => event.stopPropagation()}>
       <ProgramHead>
         <div>
           <ProgramTitle data-testid="program-title">
@@ -1195,7 +1309,7 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
           </ProgramTitle>
           {shown?.primary ? (
             <Reward data-testid="program-reward">
-              {uiText(canGrow ? 'Винагорода від' : 'Винагорода', language)} <Sum>{shown.primary}</Sum>
+              {uiText('Винагорода', language)} <Sum>{shown.primary}</Sum>
             </Reward>
           ) : null}
           {shown?.original || !shown?.primary ? (
@@ -1212,32 +1326,34 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
         </div>
       </ProgramHead>
 
-      {!open && requirements.length ? (
-        <CollapsedRequirements aria-label={uiText('Вимоги', language)} data-testid="program-requirements">
-          {requirements.map(item => {
-            const ok = checkByKey.has(item.key) ? checkByKey.get(item.key) : undefined;
-            return (
-              <Chip key={item.key} $ok={ok} className={differs?.has(item.key) ? 'differs' : undefined}>
-                {ok === true ? <b aria-hidden="true">✓</b> : ok === false ? <b aria-hidden="true">✕</b> : null}
-                {requirementText(item, language)}
-              </Chip>
-            );
-          })}
-        </CollapsedRequirements>
-      ) : null}
-      {!open && highlights.length ? (
-        <Highlights aria-label={uiText('Головне', language)}>
-          {highlights.map(item => (
-            <li key={item.key} className={item.differs ? 'differs' : undefined}>{highlightText(item, language, displayCurrency, rates)}</li>
-          ))}
-        </Highlights>
-      ) : null}
-      {!open && program.note ? (
-        <OrganizerNote data-testid="program-organizer-note"><b>{uiText('Коментар організатора', language)}:</b> {program.note}</OrganizerNote>
-      ) : null}
+      <Collapsible open={!open}>
+        {requirements.length ? (
+          <CollapsedRequirements aria-label={uiText('Вимоги', language)} data-testid="program-requirements">
+            {requirements.map(item => {
+              const ok = checkByKey.has(item.key) ? checkByKey.get(item.key) : undefined;
+              return (
+                <Chip key={item.key} $ok={ok} className={differs?.has(item.key) ? 'differs' : undefined}>
+                  {ok === true ? <b aria-hidden="true">✓</b> : ok === false ? <b aria-hidden="true">✕</b> : null}
+                  {requirementText(item, language)}
+                </Chip>
+              );
+            })}
+          </CollapsedRequirements>
+        ) : null}
+        {highlights.length ? (
+          <Highlights aria-label={uiText('Головне', language)}>
+            {highlights.map(item => (
+              <li key={item.key} className={item.differs ? 'differs' : undefined}>{highlightText(item, language)}</li>
+            ))}
+          </Highlights>
+        ) : null}
+        {program.note ? (
+          <OrganizerNote data-testid="program-organizer-note"><b>{uiText('Коментар організатора', language)}:</b> {program.note}</OrganizerNote>
+        ) : null}
+      </Collapsible>
 
-      {open ? (
-        <ProgramBody id={bodyId}>
+      <Collapsible open={open} id={bodyId}>
+        <ProgramBody>
           <ProgramCard
             program={program}
             facts={facts}
@@ -1249,7 +1365,7 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
             timeline={timeline}
           />
         </ProgramBody>
-      ) : null}
+      </Collapsible>
 
       <SectionToggle
         type="button"
@@ -1280,7 +1396,8 @@ export const ProgramPreview = ({ program, rates, language, displayCurrency, defa
  *
  * Заголовок — «Програми · N» з перемикачем валюти поруч; донорці чи СМ під
  * ним — «Вам підходить 1 з 2». Далі контейнер на програму, перші три;
- * решта — «Показати ще». Деталі кожної розгортаються незалежно.
+ * решта — «Показати ще». Деталі відкриті в однієї програми: розгорнута
+ * згортає ту, що була відкрита до неї.
  *
  * Програми чужого типу (донорці — програми СМ) у список не йдуть: вони
  * названі рядком «ще 1 — для сурогатних мам».
@@ -1297,7 +1414,10 @@ export const AgencyProgramsPanel = ({
   onOpen,
   timeline = null,
 }) => {
-  const [openIds, setOpenIds] = useState(() => new Set(defaultOpenId ? [defaultOpenId] : []));
+  // Відкрита одна програма на список: розгорнуті поспіль дві-три програми
+  // робили картку агенції на кілька екранів, і де закінчується одна й
+  // починається інша, вже не було видно.
+  const [openId, setOpenId] = useState(defaultOpenId || '');
   const [showAll, setShowAll] = useState(false);
   const summary = summarizeCardPrograms(card, { viewerType, facts });
   const programs = useMemo(() => (summary ? summary.evaluated.map(item => item.program) : []), [summary]);
@@ -1320,15 +1440,12 @@ export const AgencyProgramsPanel = ({
   const otherType = viewerType === 'ed' ? 'sm' : 'ed';
   const othersCount = summary.allTotal - summary.total;
   const toggle = id => {
-    setOpenIds(current => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else {
-        next.add(id);
-        onOpen?.(id);
-      }
-      return next;
-    });
+    if (openId === id) {
+      setOpenId('');
+      return;
+    }
+    setOpenId(id);
+    onOpen?.(id);
   };
   // Курс називається один раз — коли бодай одну суму перераховано.
   const converted = Boolean(rates?.rateDate) && displayCurrency
@@ -1357,7 +1474,7 @@ export const AgencyProgramsPanel = ({
             <ProgramListItem
               key={program.id}
               program={program}
-              open={openIds.has(program.id)}
+              open={openId === program.id}
               onToggle={() => toggle(program.id)}
               facts={viewerType === program.type ? facts : null}
               rates={rates}

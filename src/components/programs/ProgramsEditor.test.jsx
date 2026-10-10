@@ -27,10 +27,29 @@ describe('редактор програм', () => {
 
   it('ховає другорядні команди в меню дій', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
-    expect(screen.queryByText('Створити копію')).not.toBeVisible();
+    expect(screen.queryByText('Створити копію')).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('Дії програми'));
     expect(screen.getByText('Створити копію')).toBeVisible();
     expect(screen.getByText('Видалити програму')).toBeVisible();
+  });
+
+  it('меню дій живе поза карткою програми, і її overflow його не ріже', () => {
+    render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByLabelText('Дії програми'));
+    const menu = screen.getByRole('menu');
+    // Портал у body: жоден предок з overflow не обрізає список.
+    expect(screen.getByTestId('program-editor')).not.toContainElement(menu);
+    expect(document.body).toContainElement(menu);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('стрілки біля назви немає: програму розгортає сама назва', () => {
+    render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
+    expect(screen.queryByText('▼')).not.toBeInTheDocument();
+    const title = screen.getByRole('button', { name: /Шукаємо донора ооцитів/ });
+    fireEvent.click(title);
+    expect(title).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('поруч із формою — та сама картка, яку побачать у стрічці', () => {
@@ -238,11 +257,16 @@ describe('редактор програм', () => {
     const { unmount } = render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
     fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
     fireEvent.click(screen.getByRole('button', { name: /Додатково/ }));
-    fireEvent.click(screen.getByRole('button', { name: '+ Своє: подарунки, аванс…' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Свій варіант: подарунок, переїзд із сімʼєю…' }));
     // Порожній свій пункт стоїть один.
-    expect(screen.queryByRole('button', { name: '+ Своє: подарунки, аванс…' })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Своє 1'), { target: { value: 'Подарунок\nпісля пункції' } });
-    expect(screen.getByRole('button', { name: '+ Своє: подарунки, аванс…' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Свій варіант: подарунок, переїзд із сімʼєю…' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Свій варіант 1'), { target: { value: 'Подарунок\nпісля пункції' } });
+    expect(screen.getByRole('button', { name: '+ Свій варіант: подарунок, переїзд із сімʼєю…' })).toBeInTheDocument();
+    // Другий свій варіант додається, правиться й прибирається окремо від першого.
+    fireEvent.click(screen.getByRole('button', { name: '+ Свій варіант: подарунок, переїзд із сімʼєю…' }));
+    fireEvent.change(screen.getByLabelText('Свій варіант 2'), { target: { value: 'Телефон у подарунок' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Прибрати: Телефон у подарунок' }));
+    expect(screen.queryByLabelText('Свій варіант 2')).not.toBeInTheDocument();
     unmount();
     const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0].p1;
     // Поле росте під текст, але значення лишається одним рядком.

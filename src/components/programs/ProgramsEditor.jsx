@@ -38,6 +38,7 @@ import { uiText } from '../../utils/uiTranslations';
 import { AutoGrowTextarea } from '../AutoGrowTextarea';
 import { MoneyInput } from './MoneyInput';
 import { ProgramCurrencySwitch, ProgramPreview, describeProgramOffer, revealCss } from './ProgramsView';
+import ProgramActionsMenu from './ProgramActionsMenu';
 
 /*
  * Програми агенції чи клініки в «Моєму профілі».
@@ -199,6 +200,7 @@ const Status = styled.span`
   background: ${({ $tone }) => STATUS_TONES[$tone].bg};
 `;
 
+// Стрілка заголовка розділу (`CollapsibleSection`) — там вона частина кнопки.
 const Chevron = styled.span`
   flex: 0 0 auto;
   font-size: 11px;
@@ -222,42 +224,6 @@ const SmallButton = styled.button`
 
   &:focus-visible { outline: none; box-shadow: ${FOCUS_RING}; }
   &:disabled { opacity: 0.45; cursor: not-allowed; }
-`;
-
-const MoreActions = styled.details`
-  position: relative;
-  flex: 0 0 auto;
-
-  summary {
-    display: grid;
-    place-items: center;
-    width: 36px;
-    height: 36px;
-    border: 1px solid ${BORDER};
-    border-radius: 10px;
-    background: ${CARD};
-    cursor: pointer;
-    list-style: none;
-    font-weight: 800;
-  }
-  summary::-webkit-details-marker { display: none; }
-  summary:focus-visible { outline: none; box-shadow: ${FOCUS_RING}; }
-  > div {
-    position: absolute;
-    z-index: 5;
-    top: calc(100% + 5px);
-    right: 0;
-    min-width: 170px;
-    padding: 6px;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    border: 1px solid ${BORDER};
-    border-radius: 10px;
-    background: ${CARD};
-    box-shadow: 0 10px 28px rgba(0, 0, 0, .22);
-  }
-  > div > button { text-align: left; }
 `;
 
 // Форма й перегляд — дві колонки на широкому екрані; на телефоні одна з
@@ -927,7 +893,7 @@ const SECTIONS = Object.freeze([
   { key: 'basic', title: 'Основне' },
   { key: 'payments', title: 'Виплати' },
   { key: 'requirements', title: 'Вимоги до кандидатки' },
-  { key: 'coverage', title: 'Додатково' },
+  { key: 'coverage', title: 'Додатково покривається' },
 ]);
 
 const REQUIREMENT_DEFS = Object.freeze([
@@ -1164,7 +1130,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
     })(),
     coverage: [
       coverageKeys.length ? `${uiText('покриває', language)} ${countText(coverageKeys.length, WORDS.expense, language)}` : '',
-      customCoverage.filter(item => String(item || '').trim()).length ? uiText('є своє', language) : '',
+      customCoverage.filter(item => String(item || '').trim()).length ? uiText('є свої варіанти', language) : '',
       showRelocation ? uiText('переїзд', language) : '',
     ].filter(Boolean).join(' · ') || uiText('Нічого не вказано', language),
   };
@@ -1713,7 +1679,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
 
         {customCoverage.map((item, index) => {
           const inputId = `${idPrefix}-cov-custom-${index}`;
-          const label = uiText('Своє {n}', language, { n: index + 1 });
+          const label = uiText('Свій варіант {n}', language, { n: index + 1 });
           return (
             <ReqRow key={inputId} data-testid="custom-coverage">
               <ReqHead>
@@ -1724,7 +1690,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
                 id={inputId}
                 value={item}
                 maxLength={CUSTOM_COVERAGE_MAX_LENGTH}
-                placeholder={uiText(isSurrogacy ? 'Наприклад: подарунок після пологів' : 'Наприклад: аванс на старті', language)}
+                placeholder={uiText(isSurrogacy ? 'Наприклад: телефон у подарунок' : 'Наприклад: аванс на старті', language)}
                 onChange={event => setCustomCoverage(customCoverage.map((entry, i) => (i === index ? event.target.value : entry)))}
               />
             </ReqRow>
@@ -1733,7 +1699,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         <Segments>
           {/* Порожній свій пункт стоїть один: наступний додається, коли цей заповнено. */}
           {customCoverage.length < MAX_CUSTOM_COVERAGE && !customCoverage.some(item => !String(item || '').trim()) ? (
-            <AddChip type="button" onMouseDown={keepFocus} onClick={() => setCustomCoverage([...customCoverage, ''])}>+ {uiText('Своє: подарунки, аванс…', language)}</AddChip>
+            <AddChip type="button" onMouseDown={keepFocus} onClick={() => setCustomCoverage([...customCoverage, ''])}>+ {uiText('Свій варіант: подарунок, переїзд із сімʼєю…', language)}</AddChip>
           ) : null}
           {!showRelocation ? <AddChip type="button" onClick={() => reveal('relocation')}>+ {uiText('Переїзд', language)}</AddChip> : null}
         </Segments>
@@ -1964,24 +1930,23 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
                   <SmallButton type="button" onClick={() => setConfirmDeleteId('')}>{uiText('Ні', language)}</SmallButton>
                 </>
               ) : (
-                <MoreActions>
-                  <summary aria-label={uiText('Дії програми', language)}>⋮</summary>
-                  <div>
-                    {draft.length > 1 ? (
-                      <>
-                        <SmallButton type="button" disabled={index === 0} onClick={() => move(index, -1)}>↑ {uiText('Вище', language)}</SmallButton>
-                        <SmallButton type="button" disabled={index === draft.length - 1} onClick={() => move(index, 1)}>↓ {uiText('Нижче', language)}</SmallButton>
-                      </>
-                    ) : null}
-                    <SmallButton type="button" aria-pressed={Boolean(program.hidden)} onClick={() => toggleHidden(program)}>
-                      {uiText(program.hidden ? 'Показати' : 'Сховати', language)}
-                    </SmallButton>
-                    <SmallButton type="button" onClick={() => duplicate(program)} disabled={draft.length >= MAX_PROGRAMS}>{uiText('Створити копію', language)}</SmallButton>
-                    <SmallButton type="button" $danger onClick={() => setConfirmDeleteId(program.id)}>{uiText('Видалити програму', language)}</SmallButton>
-                  </div>
-                </MoreActions>
+                <ProgramActionsMenu label={uiText('Дії програми', language)}>
+                  {draft.length > 1 ? (
+                    <>
+                      <SmallButton type="button" disabled={index === 0} onClick={() => move(index, -1)}>↑ {uiText('Вище', language)}</SmallButton>
+                      <SmallButton type="button" disabled={index === draft.length - 1} onClick={() => move(index, 1)}>↓ {uiText('Нижче', language)}</SmallButton>
+                    </>
+                  ) : null}
+                  <SmallButton type="button" aria-pressed={Boolean(program.hidden)} onClick={() => toggleHidden(program)}>
+                    {uiText(program.hidden ? 'Показати' : 'Сховати', language)}
+                  </SmallButton>
+                  <SmallButton type="button" onClick={() => duplicate(program)} disabled={draft.length >= MAX_PROGRAMS}>{uiText('Створити копію', language)}</SmallButton>
+                  <SmallButton type="button" $danger onClick={() => setConfirmDeleteId(program.id)}>{uiText('Видалити програму', language)}</SmallButton>
+                </ProgramActionsMenu>
               )}
-              <Chevron $open={open} aria-hidden="true">▼</Chevron>
+              {/* Стрілки ▼ тут більше немає: вона не натискалась, а виглядала
+                  кнопкою. Розгортає програму натиск на її назву, а «⋮» став
+                  на місце стрілки, у правий край. */}
             </ProgramHead>
             {open ? (
               <ProgramForm
