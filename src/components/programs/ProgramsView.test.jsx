@@ -36,6 +36,14 @@ describe('програми в рядку стрічки', () => {
     expect(summary).toHaveTextContent('ще 1 — для сурогатних мам');
   });
 
+  it('дотик до заголовка програми розгортає її деталі', () => {
+    render(<ProgramsSummary card={{ programs }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
+    const head = screen.getAllByTestId('program-head')[0];
+    expect(head).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(head);
+    expect(head).toHaveAttribute('aria-expanded', 'true');
+  });
+
   it('кожна програма — контейнер зі збігом, а «Деталі програми» розгортає саме її', () => {
     render(<ProgramsSummary card={{ programs }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     const rows = screen.getAllByTestId('program-list-item');
