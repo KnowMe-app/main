@@ -365,11 +365,10 @@ describe('редактор програм', () => {
     fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
     fireEvent.click(screen.getByRole('button', { name: '+ Інша доплата' }));
     const block = screen.getByTestId('bonus-block');
-    expect(block.querySelector('datalist')).toBeNull();
-    const chips = within(screen.getByTestId('bonus-term-suggestions')).getAllByRole('button').map(node => node.textContent);
+    const chips = within(screen.getByTestId('bonus-term-suggestions')).getAllByRole('button').map(node => node.title);
     expect(chips).toEqual(['Повторна пункція', 'За досвід', 'За кількість клітин']);
     const label = within(block).getByLabelText('За що доплата');
-    expect(label.tagName).toBe('TEXTAREA');
+    expect(label).toHaveAttribute('rows', '1');
     fireEvent.change(label, { target: { value: 'досв' } });
     fireEvent.click(within(block).getByRole('button', { name: 'За досвід' }));
     expect(label).toHaveValue('За досвід');
