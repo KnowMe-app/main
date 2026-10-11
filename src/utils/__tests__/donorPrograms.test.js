@@ -1,4 +1,6 @@
 import {
+  classifyProgramPaymentTerm,
+  isPaymentTermForProgramType,
   DEFAULT_MONTHLY_MONTHS,
   evaluateProgram,
   isProgramPresentable,
@@ -630,5 +632,21 @@ describe('група крові, АМГ і звідки не беруть', () =
     const stripped = stripLatestRequirementFields({ p1: { ...program, note: 'x'.repeat(700) } });
     expect(stripped.p1.requirements).toEqual({ rh: '+', marital: 'any', ownKids: 'any', csectionMax: 'any' });
     expect(stripped.p1.note).toHaveLength(600);
+  });
+});
+
+describe('classifyProgramPaymentTerm', () => {
+  it('розводить назви доплат за типом програми', () => {
+    expect(classifyProgramPaymentTerm('Повторна пункція')).toBe('ed');
+    expect(classifyProgramPaymentTerm('За кількість і якість ооцитів')).toBe('ed');
+    expect(classifyProgramPaymentTerm('Повторна донація')).toBe('ed');
+    expect(classifyProgramPaymentTerm('Двійня')).toBe('sm');
+    expect(classifyProgramPaymentTerm('Доплата за досвід СМ')).toBe('sm');
+    expect(classifyProgramPaymentTerm('Одяг')).toBe('sm');
+    expect(classifyProgramPaymentTerm('За досвід')).toBeNull();
+    expect(classifyProgramPaymentTerm('Після обстеження')).toBeNull();
+    expect(isPaymentTermForProgramType('Повторна пункція', 'sm')).toBe(false);
+    expect(isPaymentTermForProgramType('Повторна пункція', 'ed')).toBe(true);
+    expect(isPaymentTermForProgramType('Доплата за повторну програму', 'sm')).toBe(true);
   });
 });

@@ -11,8 +11,12 @@ import { useAutoResize } from '../hooks/useAutoResize';
  * Enter нового рядка не додає (у формі він означає «готово» — `onEnter`), а
  * вставлені переноси стають пробілами. Тож у базу їде те саме, що їхало з
  * `<input>`.
+ *
+ * `multiline` — для справжнього тексту в кілька абзаців (коментар програми,
+ * куди вставляють оголошення): переноси лишаються, Enter додає рядок, а
+ * висота так само стартує з одного рядка й росте під текст.
  */
-const AutoGrowTextarea = forwardRef(({ value, onChange, onKeyDown, onEnter, ...rest }, forwardedRef) => {
+const AutoGrowTextarea = forwardRef(({ value, onChange, onKeyDown, onEnter, multiline = false, ...rest }, forwardedRef) => {
   const innerRef = useRef(null);
   useAutoResize(innerRef, value);
   const setRef = useCallback(node => {
@@ -22,12 +26,12 @@ const AutoGrowTextarea = forwardRef(({ value, onChange, onKeyDown, onEnter, ...r
   }, [forwardedRef]);
   const handleChange = event => {
     const raw = event.target.value;
-    if (/[\r\n]/.test(raw)) event.target.value = raw.replace(/\s*[\r\n]+\s*/g, ' ');
+    if (!multiline && /[\r\n]/.test(raw)) event.target.value = raw.replace(/\s*[\r\n]+\s*/g, ' ');
     onChange?.(event);
   };
   const handleKeyDown = event => {
     onKeyDown?.(event);
-    if (event.defaultPrevented || event.key !== 'Enter' || event.shiftKey || event.nativeEvent?.isComposing) return;
+    if (multiline || event.defaultPrevented || event.key !== 'Enter' || event.shiftKey || event.nativeEvent?.isComposing) return;
     event.preventDefault();
     onEnter?.(event);
   };

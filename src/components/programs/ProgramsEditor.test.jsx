@@ -359,6 +359,23 @@ describe('редактор програм', () => {
     expect(saved.otherPayments).toEqual([{ label: 'За кількість клітин', amount: 500, currency: 'USD' }]);
   });
 
+  it('підказує назви доплат пігулками й лише свого типу програми', () => {
+    const suggestions = { bonus: ['Повторна пункція', 'Двійня', 'Додаткові щомісячні у разі двійні', 'За досвід', 'За кількість клітин'], payment: [] };
+    render(<ProgramsEditor programs={program} suggestions={suggestions} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Інша доплата' }));
+    const block = screen.getByTestId('bonus-block');
+    expect(block.querySelector('datalist')).toBeNull();
+    const chips = within(screen.getByTestId('bonus-term-suggestions')).getAllByRole('button').map(node => node.textContent);
+    expect(chips).toEqual(['Повторна пункція', 'За досвід', 'За кількість клітин']);
+    const label = within(block).getByLabelText('За що доплата');
+    expect(label.tagName).toBe('TEXTAREA');
+    fireEvent.change(label, { target: { value: 'досв' } });
+    fireEvent.click(within(block).getByRole('button', { name: 'За досвід' }));
+    expect(label).toHaveValue('За досвід');
+    expect(screen.queryByTestId('bonus-term-suggestions')).not.toBeInTheDocument();
+  });
+
   it('доплату без суми називає проблемою, а не мовчки губить', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
     fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));

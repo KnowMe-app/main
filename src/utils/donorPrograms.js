@@ -108,6 +108,30 @@ export const MAX_MONTHLY_MONTHS = 24;
 /** Відомі виплати понад основну — усе, крім основної суми. */
 export const listExtraPaymentFields = type => (PROGRAM_PAYMENT_FIELDS[type] || []).filter(field => field.key !== 'final');
 
+/*
+ * До якої програми стосується назва доплати. Словник назв
+ * (`multiData/programTerms`) спільний для всіх агенцій і типу не знає, тож
+ * програмі СМ підказувало «Повторну пункцію», а донорській — «Двійню».
+ * Тип читається зі слів назви: пункція, ооцити, стимуляція бувають лише в
+ * донорки; перенос, вагітність, пологи, двійня — лише в сурогатної мами.
+ * Назва без таких слів («За досвід», «Після обстеження») годиться обом.
+ */
+const DONOR_TERM_PATTERN = /пункц|ооцит|яйцекліт|клітин|фолікул|стимуляц|донац|донор|кріо/i;
+const SURROGACY_TERM_PATTERN = /перенос|ембріон|вагітн|пологи|пологів|двійн|трійн|кесар|(^|[^а-яіїєґa-z])(кс|см)($|[^а-яіїєґa-z])|сурогат|одяг|щомісяч|скринінг|узд/i;
+
+export const classifyProgramPaymentTerm = label => {
+  const text = String(label || '');
+  const donor = DONOR_TERM_PATTERN.test(text);
+  const surrogacy = SURROGACY_TERM_PATTERN.test(text);
+  if (donor === surrogacy) return null;
+  return donor ? 'ed' : 'sm';
+};
+
+export const isPaymentTermForProgramType = (label, type) => {
+  const termType = classifyProgramPaymentTerm(label);
+  return !termType || !type || termType === type;
+};
+
 /**
  * Виплати, які гарантовані типово: їх платять кожній, хто пройшла програму.
  * Агенція може перекласти будь-яку виплату в інший рід (`guaranteed` на
