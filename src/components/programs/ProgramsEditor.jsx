@@ -475,6 +475,16 @@ const TermChip = styled.button`
 
 const TERM_SUGGESTIONS_SHOWN = 6;
 
+// Словник поповнює автозбереження, а воно спрацьовує й посеред набору, тож
+// у ньому лежать обрізки: «…у разі двійні к» поруч із «…у разі двійні
+// кожен місяць». Обрізок — назва, яку інша назва продовжує посеред слова;
+// «Одяг» поруч з «Одяг і взуття» лишається — там межа слова.
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+const isTruncatedTerm = (key, known) => known.some(other => other.length > key.length
+  && other.startsWith(key)
+  && WORD_CHAR.test(key.slice(-1))
+  && WORD_CHAR.test(other.charAt(key.length)));
+
 const Select = styled.select`
   ${controlCss}
   padding: 0 10px;
@@ -1422,13 +1432,19 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
   };
 
   // Підказки назви: набране звужує перелік, а точний збіг його ховає —
-  // назву вже обрано. Назви інших доплат цієї ж програми не пропонуються.
+  // назву вже обрано. Назва, вже вжита в іншій доплаті цієї програми, не
+  // пропонується, а прибрана доплата повертає її в підказки — перелік
+  // рахується з поточних доплат, а не памʼятається.
   const termSuggestionsFor = (item, index) => {
     const typed = String(item.label || '').trim().toLowerCase();
-    const used = new Set(customBonuses.filter((_, i) => i !== index).map(entry => String(entry.label || '').trim().toLowerCase()));
+    const used = customBonuses.filter((_, i) => i !== index).map(entry => String(entry.label || '').trim().toLowerCase()).filter(Boolean);
     if (bonusSuggestions.some(label => label.trim().toLowerCase() === typed)) return null;
+    const known = [...used, ...bonusSuggestions.map(label => label.trim().toLowerCase())];
     const shown = bonusSuggestions
-      .filter(label => !used.has(label.trim().toLowerCase()) && (!typed || label.toLowerCase().includes(typed)))
+      .filter(label => {
+        const key = label.trim().toLowerCase();
+        return !used.includes(key) && !isTruncatedTerm(key, known) && (!typed || key.includes(typed));
+      })
       .slice(0, TERM_SUGGESTIONS_SHOWN);
     if (!shown.length) return null;
     return (

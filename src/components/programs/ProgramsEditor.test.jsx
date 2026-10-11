@@ -375,6 +375,20 @@ describe('редактор програм', () => {
     expect(screen.queryByTestId('bonus-term-suggestions')).not.toBeInTheDocument();
   });
 
+  it('вжиту назву й обрізки з автозбереження не підказує, а прибрана доплата повертає назву', () => {
+    const suggestions = { bonus: ['За стаж к', 'За стаж кожен рік', 'За вік', 'За вік і досвід', 'Тестова'], payment: [] };
+    render(<ProgramsEditor programs={program} suggestions={suggestions} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Інша доплата' }));
+    const chipTitles = () => within(screen.getByTestId('bonus-term-suggestions')).getAllByRole('button').map(node => node.title);
+    expect(chipTitles()).toEqual(['За стаж кожен рік', 'За вік', 'За вік і досвід', 'Тестова']);
+    fireEvent.click(within(screen.getByTestId('bonus-term-suggestions')).getByRole('button', { name: 'Тестова' }));
+    fireEvent.change(within(screen.getByTestId('bonus-block')).getByLabelText('Сума'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Готово: Тестова' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Інша доплата' }));
+    expect(chipTitles()).not.toContain('Тестова');
+  });
+
   it('доплату без суми називає проблемою, а не мовчки губить', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
     fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));

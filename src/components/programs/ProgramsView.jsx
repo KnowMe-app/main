@@ -1070,6 +1070,11 @@ const ProgramHead = styled.div`
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: 2px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+
+  &:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
 `;
 
 // Кого шукають — заголовком, а скільки — окремим рядком «Винагорода від
@@ -1301,7 +1306,21 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
 
   return (
     <ProgramItem ref={itemRef} data-testid="program-list-item" onClick={event => event.stopPropagation()}>
-      <ProgramHead>
+      {/* Заголовок розгортає деталі, як і кнопка під програмою: по назві
+          тицяють першою, і мертвий дотик читався як «деталей немає». */}
+      <ProgramHead
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        aria-controls={open ? bodyId : undefined}
+        data-testid="program-head"
+        onClick={event => { event.stopPropagation(); onToggle(); }}
+        onKeyDown={event => {
+          if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+          event.preventDefault();
+          onToggle();
+        }}
+      >
         <div>
           <ProgramTitle data-testid="program-title">
             {fit ? <FitMark role="img" $state={fit} title={uiText(FIT_LABELS[fit], language)} aria-label={uiText(FIT_LABELS[fit], language)}>{FIT_MARKS[fit]}</FitMark> : null}
