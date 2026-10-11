@@ -26,6 +26,7 @@ import {
   programMoneyInUsd,
 } from './programCurrency';
 import { listProfileRoles, listViewerRoles } from './matchingPeerVisibility';
+import { resolveOblastFromPlace } from './profileNormalization';
 
 export const PROGRAM_TYPES = Object.freeze(['ed', 'sm']);
 
@@ -137,8 +138,16 @@ export const PROGRAM_COVERAGE_OPTIONS = Object.freeze([
 
 // Витрати й супровід — різні питання («скільки я витрачу» і «хто мені
 // допоможе»), тож картка показує їх двома групами.
-/** Пункти покриття, доречні для типу програми. */
-export const listCoverageOptions = type => PROGRAM_COVERAGE_OPTIONS.filter(option => !option.types || option.types.includes(type === 'sm' ? 'sm' : 'ed'));
+/**
+ * Пункти покриття, доречні для типу програми.
+ *
+ * «Переїзд із сімʼєю» тут не пропонується: те саме питає блок «Переїзд»
+ * (`relocation.family`), і агенція відповідала на одне питання двічі.
+ * Старе значення переїжджає туди ж (`normalizeProgram`).
+ */
+export const listCoverageOptions = type => PROGRAM_COVERAGE_OPTIONS
+  .filter(option => option.key !== 'family')
+  .filter(option => !option.types || option.types.includes(type === 'sm' ? 'sm' : 'ed'));
 
 export const PROGRAM_SUPPORT_COVERAGE = Object.freeze(['legal', 'notary', 'support', 'insurance']);
 
@@ -169,7 +178,34 @@ export const PROGRAM_COVERAGE_PER = Object.freeze([
   { key: 'month', label: 'на місяць' },
 ]);
 
-export const PROGRAM_REQUIREMENT_KEYS = Object.freeze(['age', 'bmi', 'height', 'rh', 'marital', 'ownKids', 'births', 'csection']);
+export const PROGRAM_REQUIREMENT_KEYS = Object.freeze(['age', 'bmi', 'height', 'rh', 'bloodGroups', 'amh', 'regions', 'marital', 'ownKids', 'births', 'csection']);
+
+/**
+ * Група крові — окремо від резусу: «бажано 2, 3, 4 (+)». Лежить рядком
+ * цифр через кому (`'2,3,4'`), бо так його просто перевірити правилом бази;
+ * жодної позначки — підходить будь-яка.
+ */
+export const PROGRAM_BLOOD_GROUPS = Object.freeze([
+  { key: '1', label: 'I' },
+  { key: '2', label: 'II' },
+  { key: '3', label: 'III' },
+  { key: '4', label: 'IV' },
+]);
+const BLOOD_GROUP_BY_ABO = Object.freeze({ O: '1', A: '2', B: '3', AB: '4' });
+
+/** Звідки кандидаток не беруть — словами агенції, до 120 знаків. */
+export const REGIONS_EXCLUDED_MAX_LENGTH = 120;
+
+/**
+ * Області, які агенція назвала в «звідки не беруть». Незнайоме («схід»,
+ * «прифронтові») лишається текстом у картці, але не відсіює нікого: чесно
+ * відмовити можна лише на тому, що впізнали.
+ */
+export const listExcludedOblasts = value => [...new Set(String(value || '')
+  // «Харків — одразу ні»: тире відділяє коментар агенції від назви.
+  .split(/[,;/\n—–]|\s-\s|\s+(?:і|та|и)\s+/)
+  .map(part => resolveOblastFromPlace(part))
+  .filter(Boolean))];
 
 /**
  * Власні вимоги агенції — те, чого немає серед полів (`requirements`):
@@ -184,7 +220,10 @@ export const PROGRAM_REQUIREMENT_LABELS = Object.freeze({
   age: 'Вік',
   bmi: 'ІМТ',
   height: 'Зріст',
-  rh: 'Група крові / резус',
+  rh: 'Резус',
+  bloodGroups: 'Група крові',
+  amh: 'АМГ',
+  regions: 'Звідки не беруть',
   marital: 'Сімейний стан',
   ownKids: 'Власні діти',
   births: 'Кількість пологів',
@@ -247,7 +286,10 @@ export const PARENT_VIA_OPTIONS = Object.freeze([
 
 export const MAX_PROGRAMS = 12;
 const MAX_TEXT = 80;
-const MAX_NOTE = 600;
+// 600 знаків не вміщали навіть одного реального оголошення (програма з
+// гепатитом B — ~650), а поле ще й мовчки обрізало вставлений текст.
+export const PROGRAM_NOTE_MAX_LENGTH = 1000;
+const MAX_NOTE = PROGRAM_NOTE_MAX_LENGTH;
 
 const text = (value, max = MAX_TEXT) => String(value ?? '').trim().slice(0, max);
 
@@ -304,6 +346,12 @@ export const normalizeProgram = (raw, id) => {
   if (bmiMax !== null) requirements.bmiMax = bmiMax;
   if (heightFrom !== null) requirements.heightFrom = heightFrom;
   if (maxBirths !== null) requirements.maxBirths = maxBirths;
+  const bloodGroups = normalizeBloodGroups(requirementsRaw.bloodGroups);
+  if (bloodGroups) requirements.bloodGroups = bloodGroups;
+  const amhFrom = wholeNumber(requirementsRaw.amhFrom, { min: 0.1, max: 20 });
+  if (amhFrom !== null) requirements.amhFrom = amhFrom;
+  const regionsExcluded = text(requirementsRaw.regionsExcluded, REGIONS_EXCLUDED_MAX_LENGTH);
+  if (regionsExcluded) requirements.regionsExcluded = regionsExcluded;
 
   const payments = {};
   [...PROGRAM_PAYMENT_FIELDS[type].map(field => field.key), PROGRAM_TOTAL_FIELD].forEach(key => {
@@ -325,8 +373,12 @@ export const normalizeProgram = (raw, id) => {
   const otherPayments = normalizeLabeledPayments(raw.otherPayments);
   const bonuses = normalizeLabeledPayments(raw.bonuses, { extras: false });
   const coverageKeys = new Set(PROGRAM_COVERAGE_OPTIONS.map(option => option.key));
-  const coverage = (Array.isArray(raw.coverage) ? raw.coverage : Object.keys(raw.coverage || {}))
+  const coverageRaw = (Array.isArray(raw.coverage) ? raw.coverage : Object.keys(raw.coverage || {}))
     .filter(key => coverageKeys.has(key));
+  // «Переїзд із сімʼєю» в покритті — те саме, що «Сімʼя: можна» в переїзді.
+  // Відповідь лишається одна, у переїзді, і питання більше не дублюється.
+  const familyFromCoverage = coverageRaw.includes('family');
+  const coverage = coverageRaw.filter(key => key !== 'family');
 
   const program = {
     id: text(raw.id || id, 40) || `p${Date.now().toString(36)}`,
@@ -364,7 +416,9 @@ export const normalizeProgram = (raw, id) => {
   if (customRequirements.length) program.customRequirements = customRequirements;
   const customCoverage = normalizeCustomCoverage(raw.customCoverage);
   if (customCoverage.length) program.customCoverage = customCoverage;
-  const relocation = normalizeRelocation(raw.relocation);
+  const relocation = normalizeRelocation(familyFromCoverage && !raw.relocation?.family
+    ? { ...(raw.relocation || {}), family: 'yes' }
+    : raw.relocation);
   if (relocation) program.relocation = relocation;
   const coverageDetails = normalizeCoverageDetails(raw.coverageDetails, program.coverage || coverage);
   if (coverageDetails) program.coverageDetails = coverageDetails;
@@ -414,6 +468,15 @@ const normalizeLabeledPayments = (value, { extras = true } = {}) => (Array.isArr
   })
   .filter(Boolean)
   .slice(0, 8);
+
+const normalizeBloodGroups = raw => {
+  const keys = new Set((Array.isArray(raw) ? raw : String(raw ?? '').split(','))
+    .map(key => String(key).trim())
+    .filter(key => PROGRAM_BLOOD_GROUPS.some(option => option.key === key)));
+  // Усі чотири групи — це «будь-яка», тобто вимоги немає.
+  if (!keys.size || keys.size === PROGRAM_BLOOD_GROUPS.length) return '';
+  return PROGRAM_BLOOD_GROUPS.filter(option => keys.has(option.key)).map(option => option.key).join(',');
+};
 
 const normalizeCustomRequirements = raw => (Array.isArray(raw) ? raw : Object.values(raw || {}))
   .map(item => {
@@ -477,7 +540,7 @@ export const isProgramPresentable = program => {
   if (!program) return false;
   const payments = program.payments || {};
   const req = program.requirements || {};
-  const hasRequirement = ['ageFrom', 'ageTo', 'bmiMax', 'heightFrom', 'maxBirths'].some(key => req[key] !== undefined && req[key] !== null && req[key] !== '')
+  const hasRequirement = ['ageFrom', 'ageTo', 'bmiMax', 'heightFrom', 'maxBirths', 'amhFrom', 'bloodGroups', 'regionsExcluded'].some(key => req[key] !== undefined && req[key] !== null && req[key] !== '')
     || ['rh', 'marital', 'ownKids', 'csectionMax'].some(key => req[key] && req[key] !== 'any');
   return Object.keys(payments).length > 0
     || Boolean(program.otherPayments?.length)
@@ -592,12 +655,16 @@ export const extractViewerProgramFacts = (profile, helpers = {}) => {
   const heightCm = helpers.height?.(last(profile.height)) || null;
   const bmi = Number(last(profile.bmi)) || helpers.bmi?.(last(profile.height), last(profile.weight)) || null;
   const rh = helpers.rh?.(last(profile.blood)) || '';
+  const bloodGroup = BLOOD_GROUP_BY_ABO[helpers.abo?.(last(profile.blood)) || ''] || '';
+  const oblast = resolveOblastFromPlace(last(profile.region)) || resolveOblastFromPlace(last(profile.city)) || '';
   const csectionRaw = profile.csection ?? profile.cSection ?? profile.c_section;
   return {
     age,
     heightCm,
     bmi,
     rh,
+    bloodGroup,
+    oblast,
     marital: readMarital(profile.maritalStatus),
     births: readCount(profile.ownKids),
     csections: readCount(csectionRaw),
@@ -624,6 +691,11 @@ export const evaluateProgram = (program, facts) => {
   if (req.bmiMax !== undefined) push('bmi', f.bmi ? f.bmi <= req.bmiMax : null);
   if (req.heightFrom !== undefined) push('height', f.heightCm ? f.heightCm >= req.heightFrom : null);
   if (req.rh && req.rh !== 'any') push('rh', f.rh ? f.rh === req.rh : null);
+  if (req.bloodGroups) push('bloodGroups', f.bloodGroup ? req.bloodGroups.split(',').includes(f.bloodGroup) : null);
+  // АМГ в анкеті немає, тож ця вимога лише показується: «вкажіть в анкеті»
+  // тут просило б того, чого вказати ніде.
+  const excludedOblasts = listExcludedOblasts(req.regionsExcluded);
+  if (excludedOblasts.length) push('regions', f.oblast ? !excludedOblasts.includes(f.oblast) : null);
   if (req.marital && req.marital !== 'any') push('marital', f.marital ? f.marital === req.marital : null);
   if (req.ownKids === 'required') push('ownKids', f.births === null || f.births === undefined ? null : f.births > 0);
   if (req.maxBirths !== undefined) push('births', f.births === null || f.births === undefined ? null : f.births <= req.maxBirths);
@@ -804,6 +876,12 @@ export const describeProgramRequirements = program => {
   if (req.heightFrom !== undefined) items.push({ key: 'height', text: 'зріст від {value} см', variables: { value: req.heightFrom } });
   if (req.rh === '+') items.push({ key: 'rh', text: 'лише Rh+' });
   if (req.rh === '-') items.push({ key: 'rh', text: 'лише Rh−' });
+  if (req.bloodGroups) {
+    const groups = req.bloodGroups.split(',').map(key => PROGRAM_BLOOD_GROUPS.find(option => option.key === key)?.label).filter(Boolean);
+    items.push({ key: 'bloodGroups', text: 'група крові {value}', variables: { value: groups.join(', ') } });
+  }
+  if (req.amhFrom !== undefined) items.push({ key: 'amh', text: 'АМГ від {value}', variables: { value: req.amhFrom } });
+  if (req.regionsExcluded) items.push({ key: 'regions', text: 'крім: {value}', variables: { value: req.regionsExcluded } });
   if (req.marital === 'unmarried') items.push({ key: 'marital', text: 'незаміжня' });
   if (req.marital === 'married') items.push({ key: 'marital', text: 'заміжня' });
   if (req.ownKids === 'required') items.push({ key: 'ownKids', text: 'є власна дитина' });

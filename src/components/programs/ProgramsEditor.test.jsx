@@ -257,13 +257,13 @@ describe('редактор програм', () => {
     const { unmount } = render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
     fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
     fireEvent.click(screen.getByRole('button', { name: /Додатково/ }));
-    fireEvent.click(screen.getByRole('button', { name: '+ Свій варіант: подарунок, переїзд із сімʼєю…' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Свій варіант: подарунок, аванс…' }));
     // Порожній свій пункт стоїть один.
-    expect(screen.queryByRole('button', { name: '+ Свій варіант: подарунок, переїзд із сімʼєю…' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Свій варіант: подарунок, аванс…' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Свій варіант 1'), { target: { value: 'Подарунок\nпісля пункції' } });
-    expect(screen.getByRole('button', { name: '+ Свій варіант: подарунок, переїзд із сімʼєю…' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+ Свій варіант: подарунок, аванс…' })).toBeInTheDocument();
     // Другий свій варіант додається, правиться й прибирається окремо від першого.
-    fireEvent.click(screen.getByRole('button', { name: '+ Свій варіант: подарунок, переїзд із сімʼєю…' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Свій варіант: подарунок, аванс…' }));
     fireEvent.change(screen.getByLabelText('Свій варіант 2'), { target: { value: 'Телефон у подарунок' } });
     fireEvent.click(screen.getByRole('button', { name: 'Прибрати: Телефон у подарунок' }));
     expect(screen.queryByLabelText('Свій варіант 2')).not.toBeInTheDocument();
@@ -392,5 +392,63 @@ describe('редактор програм', () => {
     window.scrollY = 120;
     fireEvent.click(screen.getByRole('tab', { name: 'Редагування' }));
     expect(scrollTo).toHaveBeenLastCalledWith(0, 640);
+  });
+
+  it('перемкнута на СМ програма пропонує щомісячну, як і заведена для СМ', () => {
+    render(<ProgramsEditor programs={{ p3: { id: 'p3', type: 'ed', payments: {} } }} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
+    expect(screen.queryByTestId('payment-monthly')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Шукаємо сурогатну маму' }));
+    expect(screen.getByTestId('payment-monthly')).toBeInTheDocument();
+  });
+
+  it('під відміченим покриттям — один чіп «Як саме», а не по чіпу на пункт', () => {
+    const programs = { p4: { id: 'p4', type: 'sm', coverage: ['travel', 'housing', 'exams'], payments: { final: { amount: 20000, currency: 'USD' } } } };
+    render(<ProgramsEditor programs={programs} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо сурогатну маму/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Додатково/ }));
+    expect(screen.queryByRole('button', { name: /Як саме: житло/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '+ Як саме покриваєте' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Житло' }));
+    expect(screen.getByLabelText('Як покриваєте: Житло')).toBeInTheDocument();
+    // «Переїзд із сімʼєю» питає лише блок переїзду.
+    expect(screen.queryByRole('button', { name: 'Переїзд із сімʼєю' })).not.toBeInTheDocument();
+  });
+
+  it('групу крові відмічають чіпами, «звідки не беруть» — текстом із впізнаними областями', () => {
+    const onSave = jest.fn();
+    const { unmount } = render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Вимоги до кандидатки/ }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Група крові' }));
+    expect(screen.getByText('Нічого не відмічено — підходить будь-яка')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'III' }));
+    fireEvent.click(screen.getByRole('button', { name: 'II' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ АМГ' }));
+    fireEvent.change(screen.getByLabelText('АМГ, не менше'), { target: { value: '4' } });
+    fireEvent.click(screen.getByRole('button', { name: '+ Звідки не беруть' }));
+    fireEvent.change(screen.getByLabelText('Звідки не беруть'), { target: { value: 'Дніпро, Суми, Харків' } });
+    expect(screen.getByText('Відсіємо анкети з областей: Дніпропетровська, Сумська, Харківська')).toBeInTheDocument();
+    unmount();
+    const saved = onSave.mock.calls[onSave.mock.calls.length - 1][0].p1;
+    expect(saved.requirements).toMatchObject({ bloodGroups: '2,3', amhFrom: 4, regionsExcluded: 'Дніпро, Суми, Харків' });
+  });
+
+  it('АМГ сурогатній мамі не пропонує', () => {
+    render(<ProgramsEditor programs={{ p5: { id: 'p5', type: 'sm', payments: { final: { amount: 20000, currency: 'USD' } } } }} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо сурогатну маму/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Вимоги до кандидатки/ }));
+    expect(screen.queryByRole('button', { name: '+ АМГ' })).not.toBeInTheDocument();
+  });
+
+  it('довгий коментар не обрізає мовчки, а каже, що кінець не збережеться', () => {
+    render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
+    const note = screen.getByLabelText(/Коментар організатора/);
+    expect(note).not.toHaveAttribute('maxLength');
+    fireEvent.change(note, { target: { value: 'x'.repeat(1100) } });
+    expect(note).toHaveValue('x'.repeat(1100));
+    expect(screen.getByText('1100 / 1000')).toBeInTheDocument();
+    expect(screen.getByText('Коментар довший за 1000 знаків — кінець не збережеться')).toBeInTheDocument();
   });
 });

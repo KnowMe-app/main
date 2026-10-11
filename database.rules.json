@@ -444,7 +444,7 @@
                 ".validate": "newData.isString() && newData.val().length <= 80"
               },
               "note": {
-                ".validate": "newData.isString() && newData.val().length <= 600"
+                ".validate": "newData.isString() && newData.val().length <= 1000"
               },
               "hidden": {
                 ".validate": "newData.isBoolean()"
@@ -479,6 +479,15 @@
                 },
                 "csectionMax": {
                   ".validate": "newData.val() == 'any' || newData.val() == '0' || newData.val() == '1' || newData.val() == '2'"
+                },
+                "bloodGroups": {
+                  ".validate": "newData.isString() && newData.val().matches(/^[1-4](,[1-4]){0,2}$/)"
+                },
+                "amhFrom": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0.1 && newData.val() <= 20"
+                },
+                "regionsExcluded": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
                 },
                 "$other": {
                   ".validate": false

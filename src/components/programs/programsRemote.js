@@ -82,6 +82,22 @@ export const stripCustomRequirements = items => stripProgramFields(items, ['cust
 // знімається лише воно, потім разом із власними вимогами.
 export const stripCustomCoverage = items => stripProgramFields(items, ['customCoverage'], []);
 
+/**
+ * Програми без найновіших вимог (група крові, АМГ, «звідки не беруть») і з
+ * коментарем у старій межі 600 знаків. Поки правила не викочено, ці поля
+ * відкинули б програму цілком; знімаються вони першими й лишаються знятими
+ * в кожному наступному відступі — усі старші версії правил їх теж не знають.
+ */
+const LATEST_REQUIREMENT_FIELDS = Object.freeze(['bloodGroups', 'amhFrom', 'regionsExcluded']);
+const LEGACY_NOTE_MAX_LENGTH = 600;
+export const stripLatestRequirementFields = items => Object.fromEntries(Object.entries(items || {}).map(([id, program]) => {
+  if (!program || typeof program !== 'object') return [id, program];
+  const next = { ...program };
+  if (program.requirements) next.requirements = omit(program.requirements, LATEST_REQUIREMENT_FIELDS);
+  if (typeof program.note === 'string' && program.note.length > LEGACY_NOTE_MAX_LENGTH) next.note = program.note.slice(0, LEGACY_NOTE_MAX_LENGTH);
+  return [id, next];
+}));
+
 export const writeProgramsToDb = async (uid, items, at) => {
   try {
     await writeProgramsUpdate(uid, items, at);
@@ -89,7 +105,8 @@ export const writeProgramsToDb = async (uid, items, at) => {
     if (!isReactionPermissionDeniedError(error)) throw error;
     // Від новішого до старішого: спершу без нових полів, далі ще й без
     // кількості місяців — кожна з цих версій правил у проді вже бувала.
-    const fallbacks = [stripCustomCoverage(items), stripCustomRequirements(stripCustomCoverage(items)), stripNewestProgramFields(items), stripExtendedProgramFields(items), stripMonthlyMonths(stripExtendedProgramFields(items))];
+    const base = stripLatestRequirementFields(items);
+    const fallbacks = [base, stripCustomCoverage(base), stripCustomRequirements(stripCustomCoverage(base)), stripNewestProgramFields(base), stripExtendedProgramFields(base), stripMonthlyMonths(stripExtendedProgramFields(base))];
     let previous = JSON.stringify(items);
     for (const fallback of fallbacks) {
       const serialized = JSON.stringify(fallback);

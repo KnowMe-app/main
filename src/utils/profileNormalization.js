@@ -285,6 +285,22 @@ const SETTLEMENT_PREFIXES = [
 // Префікси, які вже українські й лишаються як написали.
 const KEPT_SETTLEMENT_PREFIX_RE = /^(?:м\.|місто|с\.|село|смт)\s*/i;
 
+/**
+ * Область, про яку йдеться, — з назви області або її центру.
+ *
+ * Агенції пишуть «Дніпро, Суми, Харків — одразу ні», маючи на увазі регіони,
+ * а в анкеті лежить область («Дніпропетровська»). Місто з довідника веде до
+ * своєї області через англійську назву центру; незнайоме — `null`.
+ */
+export const resolveOblastFromPlace = value => {
+  const text = cleanText(value);
+  if (!text) return null;
+  const oblast = resolveOblast(text) || OBLAST_ANY_INDEX.get(foldLocationKey(text.replace(OBLAST_SUFFIX_RE, '')));
+  if (oblast) return oblast.uk;
+  const city = CITY_INDEX.get(foldLocationKey(text.replace(/^(?:м\.|місто|г\.|город)\s*/i, '')));
+  return city ? OBLAST_ANY_INDEX.get(foldLocationKey(city.en))?.uk || null : null;
+};
+
 /** Місто мовою інтерфейсу, якщо довідник його знає; інакше — як написали. */
 export const formatCityName = (value, language) => {
   let text = cleanText(value);

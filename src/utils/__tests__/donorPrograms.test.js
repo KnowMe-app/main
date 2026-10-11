@@ -22,6 +22,8 @@ import {
   describeProgramRequirements,
   formatProgramPlace,
   resolveProgramHighlights,
+  listExcludedOblasts,
+  listCoverageOptions,
 } from '../donorPrograms';
 import {
   convertProgramAmount,
@@ -79,6 +81,10 @@ describe('модель програми', () => {
     expect(parseProgramAmount('1,600')).toBe(1600);
     expect(parseProgramAmount('18.5k')).toBe(18500);
     expect(parseProgramAmount('')).toBeNull();
+    // Діапазон з оголошення не зливається в одне число.
+    expect(parseProgramAmount('2000–3000')).toBe(2000);
+    expect(parseProgramAmount('1500-10000$')).toBe(1500);
+    expect(parseProgramAmount('19 000 – 20 000 €')).toBe(19000);
   });
 
   it('усе понад головну суму — доплати одним списком', () => {
@@ -564,5 +570,65 @@ describe('що ще дає програма — своє агенції', () => 
     const coverage = describeProgramCoverage(normalizeProgram({ type: 'sm', coverage: ['housing'], customCoverage: ['Подарунок'] }, 'p1'));
     expect(coverage.all.map(item => item.label)).toEqual(['Житло', 'Подарунок']);
     expect(coverage.custom).toEqual([{ key: 'custom-0', label: 'Подарунок', custom: true }]);
+  });
+});
+
+// Вимоги з реальних оголошень: «бажано кров 2, 3, 4 (+)», «АМГ від 4»,
+// «Дніпро, Суми, Харків — одразу ні».
+describe('група крові, АМГ і звідки не беруть', () => {
+  const program = normalizeProgram({
+    type: 'sm',
+    requirements: { rh: '+', bloodGroups: '4,2,3', amhFrom: '4', regionsExcluded: 'Дніпро, Суми, Харків і все таке' },
+    payments: { final: { amount: 20000, currency: 'USD' } },
+  }, 'p1');
+
+  it('лежать у вимогах і показуються чіпами', () => {
+    expect(program.requirements).toMatchObject({ bloodGroups: '2,3,4', amhFrom: 4, regionsExcluded: 'Дніпро, Суми, Харків і все таке' });
+    const chips = describeProgramRequirements(program).map(item => item.key);
+    expect(chips).toEqual(expect.arrayContaining(['bloodGroups', 'amh', 'regions']));
+  });
+
+  it('усі чотири групи — це «будь-яка», тобто вимоги немає', () => {
+    expect(normalizeProgram({ type: 'sm', requirements: { bloodGroups: '1,2,3,4' } }, 'p2').requirements.bloodGroups).toBeUndefined();
+    expect(normalizeProgram({ type: 'sm', requirements: { bloodGroups: '7' } }, 'p2').requirements.bloodGroups).toBeUndefined();
+  });
+
+  it('міста з оголошення стають областями, незнайоме лишається текстом', () => {
+    expect(listExcludedOblasts('Дніпро, Суми, Харків і все таке')).toEqual(['Дніпропетровська', 'Сумська', 'Харківська']);
+    expect(listExcludedOblasts('схід')).toEqual([]);
+    expect(listExcludedOblasts('Дніпро, Суми, Харків — одразу ні')).toEqual(['Дніпропетровська', 'Сумська', 'Харківська']);
+  });
+
+  it('відсіює за групою крові й областю, АМГ не рахує', () => {
+    expect(evaluateProgram(program, { rh: '+', bloodGroup: '2', oblast: 'Київська' }).matches).toBe(true);
+    expect(evaluateProgram(program, { rh: '+', bloodGroup: '1', oblast: 'Київська' }).matches).toBe(false);
+    expect(evaluateProgram(program, { rh: '+', bloodGroup: '2', oblast: 'Харківська' }).matches).toBe(false);
+    const unknown = evaluateProgram(program, { rh: '+' });
+    expect(unknown).toMatchObject({ matches: true, uncertain: true });
+    expect(unknown.checks.map(check => check.key)).not.toContain('amh');
+  });
+
+  it('читає групу крові й область з анкети', () => {
+    const facts = extractViewerProgramFacts({ blood: '3+', region: 'Харьковская обл.' }, { abo: () => 'B', rh: () => '+' });
+    expect(facts).toMatchObject({ bloodGroup: '3', oblast: 'Харківська' });
+  });
+
+  it('«переїзд із сімʼєю» в покритті переходить у блок переїзду', () => {
+    const migrated = normalizeProgram({ type: 'sm', coverage: ['housing', 'family'] }, 'p3');
+    expect(migrated.coverage).toEqual(['housing']);
+    expect(migrated.relocation).toEqual({ family: 'yes' });
+    expect(listCoverageOptions('sm').map(option => option.key)).not.toContain('family');
+  });
+
+  it('коментар вміщає до 1000 знаків', () => {
+    expect(normalizeProgram({ type: 'sm', note: 'x'.repeat(1200) }, 'p4').note).toHaveLength(1000);
+  });
+
+  it('поки правила не викочено, нові вимоги знімаються, а коментар коротшає до 600', () => {
+    // eslint-disable-next-line global-require
+    const { stripLatestRequirementFields } = require('../../components/programs/programsRemote');
+    const stripped = stripLatestRequirementFields({ p1: { ...program, note: 'x'.repeat(700) } });
+    expect(stripped.p1.requirements).toEqual({ rh: '+', marital: 'any', ownKids: 'any', csectionMax: 'any' });
+    expect(stripped.p1.note).toHaveLength(600);
   });
 });

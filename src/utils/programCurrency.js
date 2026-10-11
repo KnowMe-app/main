@@ -37,8 +37,12 @@ export const normalizeProgramCurrency = value => {
 /** Сума з поля введення: пробіли, коми й «k» не мають її ламати. */
 export const parseProgramAmount = value => {
   if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? Math.round(value) : null;
-  const text = String(value ?? '').trim().toLowerCase().replace(/\s| | /g, '');
-  if (!text) return null;
+  const raw = String(value ?? '').trim().toLowerCase().replace(/\s| | /g, '');
+  if (!raw) return null;
+  // Діапазон з оголошення («2000–3000 $», «1500-10000») — це два числа, а не
+  // одне: поки цифри просто зливались, агенція бачила «20 003 000 $». Сума
+  // тут одна, тож береться нижня межа — те, що обіцяно напевно.
+  const text = raw.match(/\d[\d.,]*k?/)?.[0] || raw;
   const thousands = /^(\d+(?:[.,]\d+)?)k$/.exec(text);
   const digits = text.replace(/[^\d.,]/g, '');
   // «19.000 €» і «1,600 $» у чатах агенцій — це тисячі, а не дроби: крапка чи
