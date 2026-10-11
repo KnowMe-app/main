@@ -27,6 +27,7 @@ import {
   MAIN_PAYMENT_LABEL,
   createEmptyProgram,
   isGuaranteedPayment,
+  isPaymentTermForProgramType,
   formatProgramPlace,
   isProgramPresentable,
   listCoverageOptions,
@@ -90,7 +91,8 @@ import ProgramActionsMenu from './ProgramActionsMenu';
  * стан запису стоїть у рядку вкладок відкритої програми.
  *
  * Назви інших доплат підказує словник (`suggestions`): те, що вже написали
- * інші агенції (`multiData/programTerms`).
+ * інші агенції (`multiData/programTerms`), — пігулками під полем назви і
+ * лише ті, що стосуються типу програми (`isPaymentTermForProgramType`).
  */
 
 const SAVE_DELAY_MS = 700;
@@ -434,20 +436,44 @@ const TextInput = styled(AutoGrowTextarea)`
   ${({ $invalid }) => ($invalid ? `border-color: ${DANGER};` : '')}
 `;
 
-// Назва доплати лишається `<input>`: лише він уміє `list` — підказки назв,
-// які вже вживають інші агенції (`multiData/programTerms`).
-const LabelInput = styled.input`
-  ${controlCss}
-`;
-
-const TextArea = styled.textarea`
-  ${controlCss}
-  min-height: 72px;
-  padding: 10px 12px;
+// Коментар організатора — той самий ріст під текст, але з абзацами:
+// стартує одним рядком, а не трьома порожніми, і росте, коли вставили
+// оголошення.
+const NoteInput = styled(TextInput).attrs({ multiline: true })`
   font-size: 14.5px;
   line-height: 1.45;
-  resize: vertical;
 `;
+
+// Назви доплат, які вже вживають інші агенції (`multiData/programTerms`), —
+// пігулками під полем, а не `<datalist>`: той на Android розгортався темним
+// списком на пів екрана поверх форми й клавіатури.
+const TermSuggestions = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+`;
+
+const TermChip = styled.button`
+  min-height: 32px;
+  max-width: 100%;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid ${BORDER};
+  background: color-mix(in srgb, ${TEXT} 5%, transparent);
+  color: ${TEXT};
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:focus-visible { outline: none; box-shadow: ${FOCUS_RING}; }
+`;
+
+const TERM_SUGGESTIONS_SHOWN = 6;
 
 const Select = styled.select`
   ${controlCss}
@@ -1096,11 +1122,15 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
 
   const hasComponents = Boolean(breakdown?.main && breakdown.main.key !== PROGRAM_TOTAL_FIELD);
   const legacyTotal = hasComponents ? normalized?.payments?.[PROGRAM_TOTAL_FIELD] : null;
+  // Підказки — лише назви, що стосуються цього типу програми
+  // (`isPaymentTermForProgramType`): «Повторна пункція» сурогатній мамі не
+  // доплачується. Відомі доплати свого типу сюди не йдуть — вони стоять
+  // кнопками «+» під списком.
+  const ownKnownLabels = new Set(listExtraPaymentFields(program.type).map(field => field.label.trim().toLowerCase()));
   const bonusSuggestions = uniqueLabels([
     ...(suggestions?.bonus || []),
     ...(suggestions?.payment || []),
-    ...listExtraPaymentFields(isSurrogacy ? 'ed' : 'sm').map(field => field.label),
-  ]);
+  ]).filter(label => isPaymentTermForProgramType(label, program.type) && !ownKnownLabels.has(String(label).trim().toLowerCase()));
   const errors = validateProgramRequirements(program.requirements);
   const issues = listProgramIssues(program);
   const isShown = key => program.payments?.[key] !== undefined || revealed.has(key);
@@ -1391,6 +1421,27 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
     );
   };
 
+  // Підказки назви: набране звужує перелік, а точний збіг його ховає —
+  // назву вже обрано. Назви інших доплат цієї ж програми не пропонуються.
+  const termSuggestionsFor = (item, index) => {
+    const typed = String(item.label || '').trim().toLowerCase();
+    const used = new Set(customBonuses.filter((_, i) => i !== index).map(entry => String(entry.label || '').trim().toLowerCase()));
+    if (bonusSuggestions.some(label => label.trim().toLowerCase() === typed)) return null;
+    const shown = bonusSuggestions
+      .filter(label => !used.has(label.trim().toLowerCase()) && (!typed || label.toLowerCase().includes(typed)))
+      .slice(0, TERM_SUGGESTIONS_SHOWN);
+    if (!shown.length) return null;
+    return (
+      <TermSuggestions data-testid="bonus-term-suggestions">
+        {shown.map(label => (
+          <TermChip key={label} type="button" title={label} onMouseDown={keepFocus} onClick={() => setCustomBonuses(customBonuses.map((entry, i) => (i === index ? { ...entry, label } : entry)))}>
+            {label}
+          </TermChip>
+        ))}
+      </TermSuggestions>
+    );
+  };
+
   // --- дописана доплата ---
   const customBonusBlock = ({ id, customIndex: index }) => {
     const item = customBonuses[index];
@@ -1417,14 +1468,14 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         {openHead(id, name, remove)}
         <FieldRow>
           <Field id={`${blockId}-label`} label="За що доплата" language={language}>
-            <LabelInput
+            <TextInput
               id={`${blockId}-label`}
               value={item.label || ''}
               maxLength={60}
-              list={bonusSuggestions.length ? `${idPrefix}-bonus-terms` : undefined}
               placeholder={uiText(examples.bonusName, language)}
               onChange={event => setItem({ label: event.target.value })}
             />
+            {termSuggestionsFor(item, index)}
           </Field>
           <Field id={`${blockId}-amount`} label="Сума" narrow language={language}>
             <MoneyInput compact id={`${blockId}-amount`} language={language} rates={rates} value={item} ariaLabel={uiText('Сума', language)} onChange={next => setItem(next || { amount: '' })} />
@@ -1588,10 +1639,9 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           </CheckRow>
         ) : null}
         <Field id={`${idPrefix}-note`} label="Коментар організатора" optional language={language}>
-          <TextArea
+          <NoteInput
             id={`${idPrefix}-note`}
             value={program.note || ''}
-            rows={3}
             aria-invalid={noteLength > PROGRAM_NOTE_MAX_LENGTH}
             placeholder={uiText('Важливе, чого немає серед полів програми', language)}
             onChange={event => set({ note: event.target.value })}
@@ -1615,9 +1665,6 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           <h5>{uiText('Інші виплати', language)}</h5>
         </SubHead>
         {paymentRows.map(row => (row.key ? knownBonusBlock(row) : customBonusBlock(row)))}
-        {bonusSuggestions.length ? (
-          <datalist id={`${idPrefix}-bonus-terms`}>{bonusSuggestions.map(label => <option key={label} value={label} />)}</datalist>
-        ) : null}
         <Segments>
           {extraFields.filter(field => !isShown(field.key)).map(field => (
             <AddChip key={field.key} type="button" aria-label={uiText('Додати доплату: {label}', language, { label: uiText(field.label, language) })} onMouseDown={keepFocus} onClick={() => addKnownPayment(field.key)}>+ {uiText(field.label, language)}</AddChip>
