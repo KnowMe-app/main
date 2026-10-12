@@ -240,7 +240,7 @@ const TextParagraph = ({ paragraph, isBilingual, lang, cellStyles, allowPageBrea
 // filled to its estimated height before the right one, each column stacked in its own cell. That is
 // an approximation of true reflow (a single very long paragraph can't itself be split across the
 // columns), the same atomic-paragraph limit the bilingual layout already lives with.
-const SingleLanguageColumns = ({ columns, lang, cellStyles, allowPageBreaks, logoWidth, clinicLogos, blankFields }) => {
+const SingleLanguageColumns = ({ columns, lang, cellStyles, allowPageBreaks, logoWidth, clinicLogos, blankFields, leftHeader = null }) => {
   const [leftParagraphs, rightParagraphs] = columns;
   const renderColumn = columnParagraphs => columnParagraphs.map((paragraph, index) => (
     // eslint-disable-next-line react/no-array-index-key
@@ -256,7 +256,10 @@ const SingleLanguageColumns = ({ columns, lang, cellStyles, allowPageBreaks, log
   ));
   return (
     <View style={styles.row}>
-      <View style={cellStyles.leftCell}>{renderColumn(leftParagraphs)}</View>
+      <View style={cellStyles.leftCell}>
+        {leftHeader}
+        {renderColumn(leftParagraphs)}
+      </View>
       <View style={cellStyles.rightCell}>{renderColumn(rightParagraphs)}</View>
     </View>
   );
@@ -334,10 +337,13 @@ const SignerBlockStrip = ({ blocks, offsetPercent, langKey, cellStyles, blankFie
   </View>
 );
 
-const BeforeTitleBlocks = ({ doc, isBilingual, lang, cellStyles, blankFields }) => {
+// `inColumn`: the single-language 2-column layout sets the addressee block as the first lines of
+// the left column, as the reference Word files do (one section in two columns) - there it spans the
+// whole column and the title follows it directly, without the strip offset or the blank line.
+const BeforeTitleBlocks = ({ doc, isBilingual, lang, cellStyles, blankFields, inColumn = false }) => {
   const blocks = (doc.beforeTitle || []).filter(block => !isBlankBlockText(block.uk) || !isBlankBlockText(block.en));
   if (!blocks.length) return null;
-  const offsetPercent = normalizeSignerBlockOffsetPercent(doc.beforeTitleOffsetPercent);
+  const offsetPercent = inColumn ? 0 : normalizeSignerBlockOffsetPercent(doc.beforeTitleOffsetPercent);
   return (
     <View>
       {isBilingual ? (
@@ -352,7 +358,7 @@ const BeforeTitleBlocks = ({ doc, isBilingual, lang, cellStyles, blankFields }) 
       ) : (
         <SignerBlockStrip blocks={blocks} offsetPercent={offsetPercent} langKey={lang} cellStyles={cellStyles} />
       )}
-      <BlankLine cellStyles={cellStyles} />
+      {inColumn ? null : <BlankLine cellStyles={cellStyles} />}
     </View>
   );
 };
@@ -868,6 +874,15 @@ const buildCellStyles = (formatting, columnGap) => StyleSheet.create({
   },
 });
 
+// The addressee block and title as the opening lines of the left column (see BeforeTitleBlocks'
+// `inColumn`) - shared by the rendered page and planColumnLayouts' measuring pass.
+const ColumnHeader = ({ doc, lang, cellStyles, formatting, blankFields }) => (
+  <>
+    <BeforeTitleBlocks doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} blankFields={blankFields} inColumn />
+    <DocumentTitleBlock doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} titleGap={formatting.paragraphSpacing} blankFields={blankFields} />
+  </>
+);
+
 // Geometry of the single-language 2-column layout for one document - the same numbers for the
 // rendered pages and for planColumnLayouts' measuring pass below.
 const singleLanguageColumnGeometry = (doc, effectiveLayout, formatting, clinicLogos) => {
@@ -891,16 +906,19 @@ const singleLanguageColumnGeometry = (doc, effectiveLayout, formatting, clinicLo
 };
 
 // Which paragraphs go into which column of which page, measured by react-pdf itself rather than
-// estimated. The character-count estimate (paginateParagraphColumns) can't know where react-pdf
-// breaks a justified line, so to never overfill a column it plans with a wide margin - every
-// column ended short of the page bottom, and the appendix came out a page longer than its
-// reference Word file. Here each paragraph flows, whole (wrap off), through a hidden document
-// whose page is exactly one column, so react-pdf's own pagination finds every column break; an
-// absolutely positioned marker before each paragraph records the column it landed on without
-// taking any height. Columns pair up into pages: 1-2 is page one, 3-4 page two.
-// One extra layout pass per document (~0.5 s for an 8-page contract). `pdfFn` is react-pdf's
-// `pdf`; the result is { [doc.id]: [[leftIndices, rightIndices], ...] } over the document's
-// grouped body paragraphs, for DocumentsPdfDocument's `columnPlans`.
+// estimated, column by column, the way Word flows a two-column section:
+// - each column is filled to its bottom; a paragraph that doesn't fit is split between the
+//   columns at a word boundary (binary search on the word count), the rest continuing at the top of
+//   the next column without a first-line indent - moving it whole left the column short;
+// - the addressee block and title open the left column of page one (ColumnHeader), they don't
+//   span both columns;
+// - page one's right column ends formatting.firstPageRightReserveCm early (the blank's security
+//   element), and the last column leaves formatting.lastColumnReserveCm free (the copy stamp).
+// Measuring: the items flow through a hidden document whose page is exactly one column of the
+// given height; an absolutely positioned marker before each item records the page (= column) it
+// landed on without taking any height. Paragraph markup (* / **) is never split, so a bold run
+// can't lose its closing marker. `pdfFn` is react-pdf's `pdf`; the result is
+// { [doc.id]: { pages: [[leftParagraphs, rightParagraphs], ...] } } for `columnPlans`.
 export const planColumnLayouts = async (pdfFn, {
   documents = [], layout = 'two-column', formatting = DEFAULT_DOC_FORMATTING, clinicLogos = [],
 }) => {
@@ -912,13 +930,20 @@ export const planColumnLayouts = async (pdfFn, {
     const lang = getLayoutLang(effectiveLayout);
     const geometry = singleLanguageColumnGeometry(doc, effectiveLayout, formatting, clinicLogos);
     const cellStyles = buildCellStyles(formatting, geometry.columnGap);
-    const paragraphs = groupJoinedParagraphs(doc.paragraphs);
-    // The column a paragraph lands on when `items` flow through columns `heightPt` tall.
-    const measure = async (items, heightPt) => {
+    const blankFields = isOfficialFormStyle(doc);
+    const header = <ColumnHeader doc={doc} lang={lang} cellStyles={cellStyles} formatting={formatting} blankFields={blankFields} />;
+    const renderItem = paragraph => (paragraph.type && paragraph.type !== 'text' ? (
+      <LogoBlock type={paragraph.type} isBilingual={false} cellStyles={cellStyles} logoWidth={geometry.logoWidth} longLogoWidth={geometry.logoWidth} clinicLogos={geometry.effectiveClinicLogos} showUk showEn />
+    ) : (
+      <TextParagraph paragraph={paragraph} isBilingual={false} lang={lang} cellStyles={cellStyles} allowPageBreaks={doc.allowPageBreaks} blankFields={blankFields} />
+    ));
+    // How many of `items` fit into one column `heightPt` tall (under `withHeader` when set).
+    const countFitting = async (items, heightPt, withHeader) => {
       const landedOn = [];
       const element = (
         <Document>
-          <Page size={[geometry.columnContentWidth, heightPt]} style={{ fontFamily: 'Tinos', fontSize: formatting.fontSize }}>
+          <Page size={[geometry.columnContentWidth, Math.max(1, heightPt)]} style={{ fontFamily: 'Tinos', fontSize: formatting.fontSize }}>
+            {withHeader ? <View wrap={false}>{header}</View> : null}
             {items.map((paragraph, index) => (
               // eslint-disable-next-line react/no-array-index-key
               <View key={index} wrap={false}>
@@ -929,11 +954,7 @@ export const planColumnLayouts = async (pdfFn, {
                     return ' ';
                   }}
                 />
-                {paragraph.type && paragraph.type !== 'text' ? (
-                  <LogoBlock type={paragraph.type} isBilingual={false} cellStyles={cellStyles} logoWidth={geometry.logoWidth} longLogoWidth={geometry.logoWidth} clinicLogos={geometry.effectiveClinicLogos} showUk showEn />
-                ) : (
-                  <TextParagraph paragraph={paragraph} isBilingual={false} lang={lang} cellStyles={cellStyles} allowPageBreaks={doc.allowPageBreaks} blankFields={isOfficialFormStyle(doc)} />
-                )}
+                {renderItem(paragraph)}
               </View>
             ))}
           </Page>
@@ -941,51 +962,100 @@ export const planColumnLayouts = async (pdfFn, {
       );
       const instance = pdfFn(element);
       await (typeof window !== 'undefined' && instance.toBlob ? instance.toBlob() : instance.toBuffer());
-      return landedOn.length === items.length && landedOn.every(Number.isInteger) ? landedOn : null;
+      if (landedOn.length !== items.length || !landedOn.every(Number.isInteger)) return null;
+      const firstOverflow = landedOn.findIndex(page => page > 1);
+      return firstOverflow === -1 ? items.length : firstOverflow;
     };
-    // Page one's BOTH columns start under the full-width header (logo, addressee block, title), so
-    // its two columns are measured at the reduced height first; whatever didn't fit flows on
-    // through full-height columns from page two.
-    // eslint-disable-next-line no-await-in-loop
-    const firstPass = await measure(paragraphs, Math.max(1, geometry.pageContentHeightPt - geometry.firstPageHeaderPt));
-    if (!firstPass) continue; // eslint-disable-line no-continue
-    const firstPageCount = firstPass.filter(column => column <= 2).length;
-    const pages = [[[], []]];
-    firstPass.slice(0, firstPageCount).forEach((column, index) => pages[0][column - 1].push(index));
-    if (firstPageCount < paragraphs.length) {
+    const splittable = paragraph => (!paragraph.type || paragraph.type === 'text')
+      && !isParagraphBold(paragraph)
+      && !/[*\n]/.test(String(paragraph[lang] || ''))
+      && String(paragraph[lang] || '').trim().split(/\s+/).length > 3;
+    const withText = (paragraph, text, continuation) => {
+      const next = { ...paragraph, [lang]: text };
+      if (continuation) {
+        next.indentCm = 0;
+        if (paragraph.style) next.style = { ...paragraph.style, indentCm: 0 };
+      }
+      return next;
+    };
+    // The longest head (in words) of `paragraph` that still fits after `placed` in the column.
+    const splitToFit = async (placed, paragraph, heightPt, withHeader) => {
+      const words = String(paragraph[lang]).trim().split(/\s+/);
+      let low = 0;
+      let high = words.length - 1;
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        const head = withText(paragraph, words.slice(0, middle).join(' '), false);
+        // eslint-disable-next-line no-await-in-loop
+        const fitting = await countFitting([...placed, head], heightPt, withHeader);
+        if (fitting === placed.length + 1) low = middle;
+        else high = middle - 1;
+      }
+      if (low < 2) return null; // never leave a lone word or two at a column's bottom
+      return [
+        withText(paragraph, words.slice(0, low).join(' '), false),
+        withText(paragraph, words.slice(low).join(' '), true),
+      ];
+    };
+
+    const fullHeight = geometry.pageContentHeightPt;
+    const firstPageRightReserve = (formatting.firstPageRightReserveCm || 0) * CM_TO_PT;
+    const lastColumnReserve = (formatting.lastColumnReserveCm || 0) * CM_TO_PT;
+    let rest = groupJoinedParagraphs(doc.paragraphs);
+    const columns = [];
+    let failed = false;
+    while (rest.length && !failed) {
+      const columnIndex = columns.length;
+      const withHeader = columnIndex === 0;
+      const heightPt = fullHeight - (columnIndex === 1 ? firstPageRightReserve : 0);
       // eslint-disable-next-line no-await-in-loop
-      const rest = await measure(paragraphs.slice(firstPageCount), geometry.pageContentHeightPt);
-      if (!rest) continue; // eslint-disable-line no-continue
-      rest.forEach((column, offset) => {
-        const pageIndex = 1 + Math.floor((column - 1) / 2);
-        while (pages.length <= pageIndex) pages.push([[], []]);
-        pages[pageIndex][(column - 1) % 2].push(firstPageCount + offset);
-      });
+      let fitting = await countFitting(rest, heightPt, withHeader);
+      if (fitting === null) { failed = true; break; }
+      if (fitting === rest.length && lastColumnReserve > 0) {
+        // Everything left fits here - so this is the last column, and it must keep the stamp space.
+        // eslint-disable-next-line no-await-in-loop
+        const fittingWithReserve = await countFitting(rest, heightPt - lastColumnReserve, withHeader);
+        if (fittingWithReserve === null) { failed = true; break; }
+        fitting = fittingWithReserve;
+      }
+      let column = rest.slice(0, fitting);
+      let remaining = rest.slice(fitting);
+      if (remaining.length && splittable(remaining[0])) {
+        // eslint-disable-next-line no-await-in-loop
+        const split = await splitToFit(column, remaining[0], heightPt, withHeader);
+        if (split) {
+          column = [...column, split[0]];
+          remaining = [split[1], ...remaining.slice(1)];
+        }
+      }
+      // A heading never ends a column: it moves on with the paragraph it introduces (Word's
+      // "keep with next", which the reference files set on every heading).
+      while (column.length > 1 && remaining.length && isParagraphBold(column[column.length - 1])) {
+        remaining = [column[column.length - 1], ...remaining];
+        column = column.slice(0, -1);
+      }
+      if (!column.length && !withHeader) {
+        // A single item taller than a whole column: it overflows wherever it goes.
+        column = [remaining[0]];
+        remaining = remaining.slice(1);
+      }
+      columns.push(column);
+      rest = remaining;
     }
-    // The flow fills the left column first, so a last page that isn't full ends with a tall left
-    // column next to a short (or, for a one-column-long document, empty) right one. Balance it
-    // like the estimate does: only ever moves the left column's tail to the right, so the left
-    // column keeps fitting, and the right one never gets more than the left column already held.
-    const lastPage = pages[pages.length - 1];
-    const charsPerLine = estimateCharsPerLine({
-      columnWidthPt: geometry.columnContentWidth, fontSize: formatting.fontSize, letterSpacingPt: formatting.letterSpacingPt,
-    });
-    const [balancedLeft, balancedRight] = splitColumnsEvenly(
-      [...lastPage[0], ...lastPage[1]],
-      index => estimateParagraphChars(paragraphs[index], lang, charsPerLine),
-    );
-    if (balancedLeft.length <= lastPage[0].length) pages[pages.length - 1] = [balancedLeft, balancedRight];
-    plans[doc.id] = pages;
+    if (failed) continue; // eslint-disable-line no-continue
+    const pages = [];
+    for (let index = 0; index < columns.length; index += 2) pages.push([columns[index], columns[index + 1] || []]);
+    if (!pages.length) pages.push([[], []]);
+    // A document short enough for one column still gets two balanced columns, not a blank right one.
+    if (pages.length === 1 && !pages[0][1].length && pages[0][0].length > 1) {
+      const charsPerLine = estimateCharsPerLine({
+        columnWidthPt: geometry.columnContentWidth, fontSize: formatting.fontSize, letterSpacingPt: formatting.letterSpacingPt,
+      });
+      pages[0] = splitColumnsEvenly(pages[0][0], paragraph => estimateParagraphChars(paragraph, lang, charsPerLine));
+    }
+    plans[doc.id] = { pages };
   }
   return plans;
-};
-
-// A measured plan applies only to the exact paragraph list it was measured on.
-const columnsFromPlan = (plan, paragraphs) => {
-  if (!Array.isArray(plan)) return null;
-  const used = plan.flat(2);
-  if (used.length !== paragraphs.length || used.some((index, position) => index !== position)) return null;
-  return plan.map(([left, right]) => [left.map(index => paragraphs[index]), right.map(index => paragraphs[index])]);
 };
 
 const DocumentsPdfDocument = ({
@@ -1080,7 +1150,8 @@ const DocumentsPdfDocument = ({
     const indentChars = ownIndentCm => Math.ceil(
       ((ownIndentCm !== undefined ? ownIndentCm : formatting.firstLineIndentCm) * CM_TO_PT) / charWidthPt,
     );
-    const pages = columnsFromPlan(columnPlans?.[doc.id], bodyParagraphs) || paginateParagraphColumns(bodyParagraphs, lang, {
+    const measuredPages = columnPlans?.[doc.id]?.pages;
+    const pages = Array.isArray(measuredPages) ? measuredPages : paginateParagraphColumns(bodyParagraphs, lang, {
       columnCapacity: capacity,
       firstPageColumnCapacity,
       charsPerLine,
@@ -1097,16 +1168,11 @@ const DocumentsPdfDocument = ({
         {pages.map((pageColumns, pageIndex) => (
           // eslint-disable-next-line react/no-array-index-key
           <View key={pageIndex} break={pageIndex > 0}>
-            {pageIndex === 0 ? (
-              <>
-                {doc.logo && !headerLogoReserve ? (
-                  <LogoBlock type={doc.logo} isBilingual={false} cellStyles={cellStyles} logoWidth={logoWidth} longLogoWidth={contentWidth} clinicLogos={effectiveClinicLogos} showUk showEn />
-                ) : null}
-                <BeforeTitleBlocks doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} blankFields={blankFields} />
-                <DocumentTitleBlock doc={doc} isBilingual={false} lang={lang} cellStyles={cellStyles} titleGap={formatting.paragraphSpacing} blankFields={blankFields} />
-              </>
+            {pageIndex === 0 && doc.logo && !headerLogoReserve ? (
+              <LogoBlock type={doc.logo} isBilingual={false} cellStyles={cellStyles} logoWidth={logoWidth} longLogoWidth={contentWidth} clinicLogos={effectiveClinicLogos} showUk showEn />
             ) : null}
             <SingleLanguageColumns
+              leftHeader={pageIndex === 0 ? <ColumnHeader doc={doc} lang={lang} cellStyles={cellStyles} formatting={formatting} blankFields={blankFields} /> : null}
               columns={pageColumns}
               lang={lang}
               cellStyles={cellStyles}

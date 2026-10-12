@@ -383,8 +383,10 @@ describe('Documents PDF single-language 2-column layout paginates correctly (bug
       return countPdfPages(Buffer.concat(chunks));
     };
     const columnPlans = await documentsModule.planColumnLayouts(pdf, props);
-    const plan = columnPlans['measured-doc'];
-    expect(plan.flat(2)).toEqual(doc.paragraphs.map((_, index) => index));
+    const plan = columnPlans['measured-doc'].pages;
+    // Every word in order, whatever was split between columns.
+    const words = paragraphs => paragraphs.map(paragraph => paragraph.uk).join(' ').split(/\s+/);
+    expect(words(plan.flat(2))).toEqual(words(doc.paragraphs));
     expect(await renderPages({ columnPlans })).toBe(plan.length);
     expect(plan.length).toBeLessThanOrEqual(await renderPages({}));
   }, 60000);
@@ -412,9 +414,9 @@ describe('Documents PDF single-language 2-column layout paginates correctly (bug
     const plans = await documentsModule.planColumnLayouts(pdf, {
       documents: [doc], layout: 'two-column-uk', clinicLogos: [], formatting: DEFAULT_DOC_FORMATTING,
     });
-    const [[left, right]] = plans['short-doc'];
-    expect(plans['short-doc']).toHaveLength(1);
-    expect([...left, ...right]).toEqual([0, 1, 2, 3, 4, 5]);
+    const [[left, right]] = plans['short-doc'].pages;
+    expect(plans['short-doc'].pages).toHaveLength(1);
+    expect([...left, ...right]).toEqual(doc.paragraphs);
     expect(left).toHaveLength(3);
     expect(right).toHaveLength(3);
   }, 30000);
