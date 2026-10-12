@@ -3034,22 +3034,39 @@ describe('spec: normalized case structure', () => {
     expect(generated.paragraphs[0].uk).toBe('Дівчинка та хлопчик');
   });
 
-  it('capitalizes the first letter of a paragraph that starts lowercase, without mutating the stored template (§21 #7)', () => {
+  it('capitalizes a paragraph that opens with a variable, without mutating the stored template (§21 #7)', () => {
     const template = {
       id: 'doc-1',
       title: { uk: 'Заява' },
-      paragraphs: [{ uk: 'п\'ятого травня дві тисячі... народилася дитина.', en: 'on the fifth of may... a child was born.' }],
+      paragraphs: [{ uk: '{{when.uk}} народилася дитина.', en: '{{when.en}} a child was born.' }],
     };
-    const generated = buildGeneratedDocument(template, {});
+    const context = { when: { uk: 'п\'ятого травня дві тисячі...', en: 'on the fifth of may...' } };
+    const generated = buildGeneratedDocument(template, context);
     expect(generated.paragraphs[0].uk).toBe('П\'ятого травня дві тисячі... народилася дитина.');
     expect(generated.paragraphs[0].en).toBe('On the fifth of may... a child was born.');
     // The stored template text itself is untouched - only the resolved/rendered output changes.
-    expect(template.paragraphs[0].uk).toBe('п\'ятого травня дві тисячі... народилася дитина.');
+    expect(template.paragraphs[0].uk).toBe('{{when.uk}} народилася дитина.');
+  });
+
+  it('keeps text the template spells out in lowercase - a sentence continued across rows', () => {
+    const template = {
+      id: 'doc-1',
+      title: { uk: 'Заява' },
+      paragraphs: [
+        { uk: 'Ми, жінка Кацура Юкако,' },
+        { uk: 'чоловік Кацура Наоя,' },
+        { uk: 'що перебувають у зареєстрованому шлюбі.' },
+      ],
+    };
+    const generated = buildGeneratedDocument(template, {});
+    expect(generated.paragraphs.map(paragraph => paragraph.uk)).toEqual([
+      'Ми, жінка Кацура Юкако,', 'чоловік Кацура Наоя,', 'що перебувають у зареєстрованому шлюбі.',
+    ]);
   });
 
   it('capitalizes past any leading bold/italic markers, never the marker character itself', () => {
-    const template = { id: 'doc-1', title: { uk: 'Заява' }, paragraphs: [{ uk: '**сьогодні** гарний день.' }] };
-    const generated = buildGeneratedDocument(template, {});
+    const template = { id: 'doc-1', title: { uk: 'Заява' }, paragraphs: [{ uk: '**{{day}}** гарний день.' }] };
+    const generated = buildGeneratedDocument(template, { day: 'сьогодні' });
     expect(generated.paragraphs[0].uk).toBe('**Сьогодні** гарний день.');
   });
 
