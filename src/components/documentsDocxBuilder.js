@@ -110,6 +110,8 @@ export const buildDocumentsDocx = async ({
         bold: baseBold || run.bold,
         italics: run.italic,
         underline: run.blank ? { type: UnderlineType.SINGLE } : undefined,
+        // Word's condensed/expanded character spacing, in twentieths of a point.
+        characterSpacing: formatting.letterSpacingPt ? Math.round(formatting.letterSpacingPt * 20) : undefined,
         ...(segmentIndex > 0 ? { break: 1 } : {}),
       }));
     });

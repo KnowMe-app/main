@@ -176,12 +176,15 @@ const DocumentsPdfPreview = ({ doc, layout, formatting, clinicLogos }) => {
         documentsModule.ensureDocumentsPdfFontsRegistered();
         // Exactly the export call (see handleGeneratePdf): one document, the same resolved doc /
         // layout / per-document formatting / clinic logos.
-        const blob = await pdf(React.createElement(documentsModule.default, {
+        const pdfProps = {
           documents: [payload.doc],
           layout: payload.layout,
           formatting: payload.formatting,
           clinicLogos: payload.clinicLogos,
-        })).toBlob();
+        };
+        const columnPlans = await documentsModule.planColumnLayouts(pdf, pdfProps);
+        if (generationRef.current !== generation) return;
+        const blob = await pdf(React.createElement(documentsModule.default, { ...pdfProps, columnPlans })).toBlob();
         if (generationRef.current !== generation) return;
         const nextPdfDocument = await engine.loadPdfDocument(await blob.arrayBuffer());
         if (generationRef.current !== generation) {
