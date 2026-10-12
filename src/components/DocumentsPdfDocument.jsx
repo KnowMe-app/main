@@ -29,8 +29,8 @@ import {
   normalizeSignerBlockOffsetPercent,
   parseFormattedRuns,
   splitBlankFieldRuns,
-  splitParagraphsIntoColumns,
-  splitParagraphsIntoPages,
+  paginateParagraphColumns,
+  showsPageNumbers,
 } from './documentsCatalogUtils';
 
 const CM_TO_PT = 28.3465;
@@ -228,12 +228,12 @@ const TextParagraph = ({ paragraph, isBilingual, lang, cellStyles, allowPageBrea
 
 // The single-language 2-column layout (spec §4: newspaper-style, one language flowing across two
 // columns) - unlike the bilingual layout, react-pdf has no native multi-column text flow, so the
-// paragraphs are split once, up front, into two roughly equal (by character count) whole-paragraph
-// groups, each stacked in its own column. That is an approximation of true reflow (a single very
-// long paragraph can't itself be split across the columns), the same atomic-paragraph limit the
-// bilingual layout already lives with.
-const SingleLanguageColumns = ({ paragraphs, lang, cellStyles, allowPageBreaks, logoWidth, clinicLogos, charsPerLine, blankFields }) => {
-  const [leftParagraphs, rightParagraphs] = splitParagraphsIntoColumns(paragraphs, lang, charsPerLine);
+// paragraphs are laid out up front (paginateParagraphColumns): whole paragraphs, the left column
+// filled to its estimated height before the right one, each column stacked in its own cell. That is
+// an approximation of true reflow (a single very long paragraph can't itself be split across the
+// columns), the same atomic-paragraph limit the bilingual layout already lives with.
+const SingleLanguageColumns = ({ columns, lang, cellStyles, allowPageBreaks, logoWidth, clinicLogos, blankFields }) => {
+  const [leftParagraphs, rightParagraphs] = columns;
   const renderColumn = columnParagraphs => columnParagraphs.map((paragraph, index) => (
     // eslint-disable-next-line react/no-array-index-key
     <View key={index} wrap>
@@ -426,6 +426,44 @@ const resolveHeaderLogoReserve = (doc, clinicLogos, widthPt) => {
   return widthPt * resolveLogoAspectRatio(variant) + OFFICIAL_FORM_HEADER_LOGO_GAP_PT;
 };
 
+// How tall the first page's header (body logo, addressee block, title) renders, estimated with the
+// same character-width model as the columns below it - the single-language 2-column layout plans
+// its pages before react-pdf lays anything out, so it has to know how much of page one is taken.
+const estimateTextLines = (text, widthPt, fontSize) => {
+  const charsPerLine = estimateCharsPerLine({ columnWidthPt: widthPt, fontSize });
+  return String(text || '').replace(/\*/g, '').split('\n')
+    .reduce((sum, segment) => sum + Math.max(1, Math.ceil(segment.length / charsPerLine)), 0);
+};
+
+export const estimateFirstPageHeaderPt = (doc, { lang, formatting, contentWidth, logoWidth, clinicLogos }) => {
+  const lineHeight = fontSize => fontSize * formatting.lineSpacing;
+  let height = 0;
+  if (doc.logo) {
+    const variant = getClinicLogo(clinicLogos, doc.logo);
+    if (variant?.dataUrl) {
+      const width = doc.logo === 'logo-long' ? contentWidth : logoWidth;
+      height += width * resolveLogoAspectRatio(variant) + LOGO_BOTTOM_GAP_PT;
+    }
+  }
+  const blocks = (doc.beforeTitle || []).filter(block => !isBlankBlockText(block.uk) || !isBlankBlockText(block.en));
+  if (blocks.length) {
+    const stripWidth = contentWidth * (1 - normalizeSignerBlockOffsetPercent(doc.beforeTitleOffsetPercent) / 100);
+    const blankLine = lineHeight(formatting.fontSize) + formatting.paragraphSpacing;
+    blocks.forEach(block => {
+      const fontSize = block.fontSize !== undefined ? block.fontSize : formatting.fontSize;
+      height += estimateTextLines(block[lang], stripWidth, fontSize) * lineHeight(fontSize) + formatting.paragraphSpacing;
+    });
+    // One empty line between blocks and one after the whole strip (BeforeTitleBlocks).
+    height += blocks.length * blankLine;
+  }
+  const title = doc.title || {};
+  if (!isBlankBlockText(title[lang])) {
+    const fontSize = title.fontSize !== undefined ? title.fontSize : formatting.titleFontSize;
+    height += estimateTextLines(title[lang], contentWidth, fontSize) * lineHeight(fontSize) + formatting.paragraphSpacing;
+  }
+  return height;
+};
+
 const PageHeader = ({ formatting, marginTop, marginLeft, marginRight }) => (!formatting.headerText ? null : (
   <Text
     fixed
@@ -456,13 +494,14 @@ const PageDivider = ({ show, marginTop, marginBottom, left }) => (!show ? null :
 // subPageNumber/subPageTotalPages always reflects every actual physical page that document ends
 // up spanning - including any accidental extra page from an imperfect capacity estimate - never a
 // hardcoded number that can desync from what react-pdf actually laid out.
-const PageFooter = ({ formatting, marginBottom, marginLeft, marginRight }) => {
-  if (!formatting.footerText && !formatting.showPageNumbers) return null;
+const PageFooter = ({ doc, formatting, marginBottom, marginLeft, marginRight }) => {
+  const showPageNumbers = showsPageNumbers(doc, formatting);
+  if (!formatting.footerText && !showPageNumbers) return null;
   const smallSize = Math.max(7, formatting.fontSize - 2);
   return (
     <View fixed style={[styles.footerRow, { bottom: Math.max(6, marginBottom * 0.35), left: marginLeft, right: marginRight }]}>
       <Text style={{ fontSize: smallSize }}>{formatting.footerText || ''}</Text>
-      {formatting.showPageNumbers ? (
+      {showPageNumbers ? (
         <Text
           style={{ fontSize: smallSize }}
           render={({ subPageNumber, subPageTotalPages }) => (
@@ -850,7 +889,7 @@ const DocumentsPdfDocument = ({
   const dividerLeft = marginLeft + columnContentWidth + columnGap / 2 - 0.5;
 
   // The single-language 2-column layout can't rely on react-pdf's automatic wrap the way every
-  // other layout does (see splitParagraphsIntoPages for why): a flex row's two columns can't
+  // other layout does (see paginateParagraphColumns for why): a flex row's two columns can't
   // continue onto a shared next page independently, so the paragraphs are pre-chunked into
   // page-sized groups up front, each meant to occupy exactly one physical page. That grouping used
   // to render as its own separate <Page> JSX element per group, with a hardcoded "Page X of Y"
@@ -880,7 +919,26 @@ const DocumentsPdfDocument = ({
       fontSize: formatting.fontSize,
       lineSpacing: formatting.lineSpacing,
     });
-    const pageGroups = splitParagraphsIntoPages(bodyParagraphs, lang, capacity, charsPerLine);
+    // The first page's columns start under the logo, the addressee block and the title, so they
+    // hold less: without this the first page was planned as if the columns started at the top
+    // margin, and its left column ran past the page bottom.
+    const firstPageHeaderPt = estimateFirstPageHeaderPt(doc, {
+      lang,
+      formatting,
+      contentWidth,
+      logoWidth,
+      clinicLogos: headerLogoReserve ? [] : effectiveClinicLogos,
+    });
+    const firstPageColumnCapacity = Math.floor(capacity * Math.max(0, pageContentHeightPt - firstPageHeaderPt) / pageContentHeightPt);
+    const paragraphGapChars = formatting.paragraphSpacing
+      ? Math.ceil((formatting.paragraphSpacing / (formatting.fontSize * formatting.lineSpacing)) * charsPerLine)
+      : 0;
+    const pages = paginateParagraphColumns(bodyParagraphs, lang, {
+      columnCapacity: capacity,
+      firstPageColumnCapacity,
+      charsPerLine,
+      paragraphGapChars,
+    });
     return (
       <Page key={doc.id} size="A4" style={pageStyleForDoc}>
         <PageHeader formatting={formatting} marginTop={marginTop} marginLeft={marginLeft} marginRight={marginRight} />
@@ -888,7 +946,7 @@ const DocumentsPdfDocument = ({
           <HeaderLogo doc={doc} clinicLogos={effectiveClinicLogos} widthPt={logoWidth} marginLeft={marginLeft} marginTop={marginTop} />
         ) : null}
         <PageDivider show={showColumnDivider} marginTop={marginTop} marginBottom={marginBottom} left={dividerLeft} />
-        {pageGroups.map((pageParagraphs, pageIndex) => (
+        {pages.map((pageColumns, pageIndex) => (
           // eslint-disable-next-line react/no-array-index-key
           <View key={pageIndex} break={pageIndex > 0}>
             {pageIndex === 0 ? (
@@ -901,18 +959,17 @@ const DocumentsPdfDocument = ({
               </>
             ) : null}
             <SingleLanguageColumns
-              paragraphs={pageParagraphs}
+              columns={pageColumns}
               lang={lang}
               cellStyles={cellStyles}
               allowPageBreaks={doc.allowPageBreaks}
               logoWidth={logoWidth}
               clinicLogos={effectiveClinicLogos}
-              charsPerLine={charsPerLine}
               blankFields={blankFields}
             />
           </View>
         ))}
-        <PageFooter formatting={formatting} marginBottom={marginBottom} marginLeft={marginLeft} marginRight={marginRight} />
+        <PageFooter doc={doc} formatting={formatting} marginBottom={marginBottom} marginLeft={marginLeft} marginRight={marginRight} />
       </Page>
     );
   };
@@ -939,7 +996,7 @@ const DocumentsPdfDocument = ({
           longLogoWidth={contentWidth}
           clinicLogos={effectiveClinicLogos}
         />
-        <PageFooter formatting={formatting} marginBottom={marginBottom} marginLeft={marginLeft} marginRight={marginRight} />
+        <PageFooter doc={doc} formatting={formatting} marginBottom={marginBottom} marginLeft={marginLeft} marginRight={marginRight} />
       </Page>
     );
   };

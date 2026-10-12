@@ -87,6 +87,8 @@ import {
   splitBlankFieldRuns,
   splitParagraphsIntoColumns,
   splitParagraphsIntoPages,
+  paginateParagraphColumns,
+  showsPageNumbers,
   stripDerivedFields,
   stripUndefinedDeep,
   TITLE_SCOPE,
@@ -1646,6 +1648,25 @@ describe('spec: insert-variable picker (collectContextLeafPaths / buildVariableP
     expect(groups.find(g => g.label === 'Клініка — українська')).toBeUndefined();
   });
 
+  it('offers the notary for a notarized template even before one is picked, and the notarial document data once it exists', () => {
+    const withoutNotary = buildVariablePickerGroups({ notary: null }, { templateId: 'surrogate-unmarried-declaration' });
+    const notaryGroup = withoutNotary.find(g => g.label === 'Нотаріус');
+    expect(notaryGroup.items).toEqual([]);
+    expect(notaryGroup.emptyHint).toBeTruthy();
+    expect(buildVariablePickerGroups({ notary: null }, { templateId: 'surrogacy-agreement-appendix-1' })
+      .find(g => g.label === 'Нотаріус')).toBeUndefined();
+
+    const groups = buildVariablePickerGroups({
+      case: { documents: { maritalStatusDeclaration: { date: '2026-10-16', notaryId: 'notary-1' } } },
+      notary: { name: { uk: { nominative: 'Алексашина' } } },
+      maritalStatusDeclaration: { date: '2026-10-16', dateFormatted: { uk: '16.10.2026' }, notaryId: 'notary-1' },
+    });
+    expect(groups.find(g => g.label === 'Нотаріус').items).toEqual([{ path: 'notary.name.uk.nominative', value: 'Алексашина' }]);
+    const declaration = groups.find(g => g.label === 'Заява про відсутність шлюбу').items.map(item => item.path);
+    expect(declaration).toEqual(expect.arrayContaining(['maritalStatusDeclaration.date', 'maritalStatusDeclaration.dateFormatted.uk']));
+    expect(declaration).not.toContain('maritalStatusDeclaration.notaryId');
+  });
+
   it('tolerates a missing root (null context, or a group whose root is null/undefined) without throwing', () => {
     expect(() => buildVariablePickerGroups(null)).not.toThrow();
     expect(buildVariablePickerGroups(null).every(group => group.items.length === 0)).toBe(true);
@@ -2249,6 +2270,45 @@ describe('spec: single-language 2-column pagination (bugfix - a column must neve
 
   it('returns one empty page group for an empty document rather than an empty array', () => {
     expect(splitParagraphsIntoPages([], 'uk', 100)).toEqual([[]]);
+  });
+});
+
+describe('paginateParagraphColumns: newspaper flow that never overfills a column', () => {
+  const costOf = paragraph => paragraph.uk.length;
+  const paragraphs = [40, 30, 50, 20, 60, 10, 30, 40, 20].map((length, id) => ({ uk: 'x'.repeat(length), id }));
+
+  it('fills the left column to its capacity before the right one, page by page, in order', () => {
+    const pages = paginateParagraphColumns(paragraphs, 'uk', { columnCapacity: 100 });
+    expect(pages.flat(2)).toEqual(paragraphs);
+    pages.slice(0, -1).forEach(([left, right]) => {
+      expect(left.reduce((sum, p) => sum + costOf(p), 0)).toBeLessThanOrEqual(100);
+      expect(right.reduce((sum, p) => sum + costOf(p), 0)).toBeLessThanOrEqual(100);
+    });
+    expect(pages[0][0].map(p => p.id)).toEqual([0, 1]);
+    expect(pages[0][1].map(p => p.id)).toEqual([2, 3]);
+  });
+
+  it('gives the first page only what is left under its header', () => {
+    const roomy = paginateParagraphColumns(paragraphs, 'uk', { columnCapacity: 100 });
+    const underHeader = paginateParagraphColumns(paragraphs, 'uk', { columnCapacity: 100, firstPageColumnCapacity: 50 });
+    expect(underHeader[0][0].map(p => p.id)).toEqual([0]);
+    expect(underHeader.flat(2)).toEqual(paragraphs);
+    expect(underHeader[0].flat().length).toBeLessThan(roomy[0].flat().length);
+  });
+
+  it('balances the last page instead of stacking it all in the left column', () => {
+    const [[left, right]] = paginateParagraphColumns([{ uk: 'a'.repeat(30) }, { uk: 'b'.repeat(30) }], 'uk', { columnCapacity: 1000 });
+    expect(left).toHaveLength(1);
+    expect(right).toHaveLength(1);
+  });
+});
+
+describe('page numbers: notarial documents carry none', () => {
+  it('only an official form prints page numbers, and only when the toggle is on', () => {
+    expect(showsPageNumbers({ documentStyle: 'branded' }, { showPageNumbers: true })).toBe(false);
+    expect(showsPageNumbers({}, { showPageNumbers: true })).toBe(false);
+    expect(showsPageNumbers({ documentStyle: 'official-form' }, { showPageNumbers: true })).toBe(true);
+    expect(showsPageNumbers({ documentStyle: 'official-form' }, { showPageNumbers: false })).toBe(false);
   });
 });
 

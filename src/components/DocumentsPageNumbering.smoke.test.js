@@ -16,6 +16,7 @@ import {
   DEFAULT_DOC_FORMATTING,
   estimateCharsPerLine,
   estimateColumnPageCapacity,
+  paginateParagraphColumns,
   splitParagraphsIntoPages,
 } from './documentsCatalogUtils';
 
@@ -254,5 +255,86 @@ describe('Documents PDF single-language 2-column layout paginates correctly (bug
     // than the naive one-page-per-group prediction, and it must still succeed (no thrown error, no
     // dropped content).
     expect(renderedPages).toBeGreaterThan(predictedGroups);
+  }, 30000);
+
+  // Bugfix regression (appendix to the surrogacy agreement): the first page carries the addressee
+  // block ("Додаток №1 / до Договору …") above the columns, and the plan used to size page one as
+  // if the columns started at the top margin - while also halving each page's paragraphs by count
+  // rather than filling a column to its height. The left column ran past the page bottom and
+  // react-pdf continued just that column on a page of its own: clause 1.2 alone on page 2, after
+  // page 1's right column had already gone on to 1.3-1.7. Every planned page must be exactly one
+  // physical page.
+  it('plans the first page under its addressee block, so no column spills onto a page of its own', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    Font.register({
+      family: 'Tinos',
+      fonts: [
+        { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+        { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+      ],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+    const DocumentsPdfDocument = documentsModule.default;
+
+    const formatting = { ...DEFAULT_DOC_FORMATTING, fontSize: 9, titleFontSize: 9 };
+    const clause = (number, sentences) => ({
+      type: 'text',
+      uk: `${number}. ${Array.from({ length: sentences }, (_, i) => `Потенційні батьки зобов'язуються сплатити компенсацію за пунктом ${i + 1} цього Додатку.`).join(' ')}`,
+      en: '',
+    });
+    const appendixDoc = {
+      id: 'appendix-doc',
+      allowPageBreaks: true,
+      logo: null,
+      beforeTitle: [
+        { uk: '**Додаток №1**', en: '', bold: true },
+        { uk: 'до Договору про сурогатне материнство від 16.10.2026 р.', en: '' },
+      ],
+      title: { uk: '', en: '' },
+      paragraphs: [3, 9, 4, 7, 12, 3, 6, 10, 5, 8, 4, 11, 6, 3, 9, 7, 5, 12, 4, 6, 8, 3, 10, 5]
+        .map((sentences, index) => clause(`1.${index + 1}`, sentences)),
+    };
+
+    const element = React.createElement(DocumentsPdfDocument, {
+      documents: [appendixDoc],
+      layout: 'two-column-uk',
+      clinicLogos: [],
+      formatting,
+    });
+    const stream = await pdf(element).toBuffer();
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      stream.on('data', chunk => chunks.push(chunk));
+      stream.on('end', resolve);
+      stream.on('error', reject);
+    });
+    const renderedPages = countPdfPages(Buffer.concat(chunks));
+
+    const CM_TO_PT = 28.3465;
+    const A4_WIDTH_PT = 595.28;
+    const A4_HEIGHT_PT = 841.89;
+    const contentWidth = A4_WIDTH_PT - (formatting.marginLeftCm + formatting.marginRightCm) * CM_TO_PT;
+    const columnContentWidth = (contentWidth - formatting.columnGapCm * CM_TO_PT) / 2;
+    const pageContentHeightPt = A4_HEIGHT_PT - (formatting.marginTopCm + formatting.marginBottomCm) * CM_TO_PT;
+    const charsPerLine = estimateCharsPerLine({ columnWidthPt: columnContentWidth, fontSize: formatting.fontSize });
+    const capacity = estimateColumnPageCapacity({
+      columnWidthPt: columnContentWidth,
+      pageContentHeightPt,
+      fontSize: formatting.fontSize,
+      lineSpacing: formatting.lineSpacing,
+    });
+    const headerPt = documentsModule.estimateFirstPageHeaderPt(appendixDoc, {
+      lang: 'uk', formatting, contentWidth, logoWidth: columnContentWidth, clinicLogos: [],
+    });
+    const plannedPages = paginateParagraphColumns(appendixDoc.paragraphs, 'uk', {
+      columnCapacity: capacity,
+      firstPageColumnCapacity: Math.floor(capacity * (pageContentHeightPt - headerPt) / pageContentHeightPt),
+      charsPerLine,
+    }).length;
+
+    expect(headerPt).toBeGreaterThan(0);
+    expect(plannedPages).toBeGreaterThan(1);
+    expect(renderedPages).toBe(plannedPages);
   }, 30000);
 });

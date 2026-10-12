@@ -3334,17 +3334,66 @@ export const VARIABLE_PICKER_GROUPS = [
     roots: ['medicalServicesAgreement'],
     predicate: context => Boolean(context?.case?.documents?.medicalServicesAgreement),
   },
+  // Notarial documents. The notary is resolved per document (spec §8, TEMPLATE_DOCUMENT_CONFIG),
+  // so the group shows for every template that is notarized - even before a notary is picked on
+  // the case: hiding it then is exactly how the notary tags went missing from the picker while
+  // the admin was writing the template that needs them (emptyHint names what to fill in).
+  {
+    label: 'Нотаріус',
+    roots: ['notary'],
+    predicate: (context, { templateId } = {}) => Boolean(context?.notary)
+      || Boolean(TEMPLATE_DOCUMENT_CONFIG[templateId]?.usesNotary),
+    emptyHint: 'Оберіть нотаріуса для цього документа в кейсі',
+  },
+  {
+    label: 'Заява про реєстрацію народження',
+    roots: ['birthRegistration'],
+    predicate: context => Boolean(context?.case?.documents?.birthRegistrationConsent),
+  },
+  {
+    label: 'Заява про відсутність шлюбу',
+    roots: ['maritalStatusDeclaration'],
+    predicate: context => Boolean(context?.case?.documents?.maritalStatusDeclaration),
+  },
+  {
+    label: 'Заява про юридичні послуги',
+    roots: ['legalServicesDisclaimer'],
+    predicate: context => Boolean(context?.case?.documents?.legalServicesDisclaimer),
+  },
+  {
+    label: 'Додаток №1 до договору',
+    roots: ['surrogacyAgreementAppendix1'],
+    predicate: context => Boolean(context?.case?.documents?.surrogacyAgreementAppendix1),
+  },
+  {
+    label: 'Пологовий будинок',
+    roots: ['maternityHospital'],
+    predicate: context => Boolean(context?.maternityHospital),
+  },
+  {
+    label: 'Дитина',
+    roots: ['child', 'childbirth', 'medicalConclusion'],
+    predicate: context => Boolean(context?.case?.childbirth),
+  },
 ];
+
+// Technical references a document sub-record carries next to its printable data (which notary/
+// hospital a document points at) - the picker offers what prints, and an id never does.
+const VARIABLE_PICKER_OMITTED_LEAF_KEYS = new Set(['notaryId', 'maternityHospitalId']);
+const isPrintableLeafPath = path => !VARIABLE_PICKER_OMITTED_LEAF_KEYS.has(path.split('.').pop());
 
 // Builds the picker's grouped leaf list from a resolved case context (or any similarly-shaped
 // object, e.g. an example record when no case is selected yet). A group with a predicate that
 // evaluates false for this context (e.g. the clinic kind that isn't this case's clinic) is
 // dropped entirely rather than shown empty.
-export const buildVariablePickerGroups = context => VARIABLE_PICKER_GROUPS
-  .filter(group => !group.predicate || group.predicate(context))
+export const buildVariablePickerGroups = (context, options = {}) => VARIABLE_PICKER_GROUPS
+  .filter(group => !group.predicate || group.predicate(context, options))
   .map(group => ({
     label: group.label,
-    items: group.roots.flatMap(root => collectContextLeafPaths(context?.[root], root)),
+    items: group.roots
+      .flatMap(root => collectContextLeafPaths(context?.[root], root))
+      .filter(item => isPrintableLeafPath(item.path)),
+    ...(group.emptyHint ? { emptyHint: group.emptyHint } : {}),
   }));
 
 // Generic "most recently used first" ordering + upsert, shared by the case selector (spec §5) and
@@ -3790,29 +3839,74 @@ export const splitParagraphsIntoColumns = (paragraphs, lang, charsPerLine = Infi
   return [items.slice(0, splitIndex), items.slice(splitIndex)];
 };
 
-// Groups paragraphs into page-sized chunks: each chunk's combined estimated character count stays
-// within one page's two-column capacity (columnCharCapacity is per column; a page holds two), so
-// every chunk can safely render as its own page with a same-page-only left/right split (see
-// splitParagraphsIntoColumns) instead of letting one column spill onto the next physical page while
-// its sibling sits empty.
-export const splitParagraphsIntoPages = (paragraphs, lang, columnCharCapacity, charsPerLine = Infinity) => {
-  const perPageCapacity = Math.max(1, columnCharCapacity) * 2;
-  const pages = [];
-  let current = [];
-  let currentChars = 0;
-  (paragraphs || []).forEach(paragraph => {
-    const chars = estimateParagraphChars(paragraph, lang, charsPerLine);
-    if (current.length && currentChars + chars > perPageCapacity) {
-      pages.push(current);
-      current = [];
-      currentChars = 0;
+// The left/right split with the smallest taller column: whole paragraphs, in order. Used for the
+// last page of a column flow, where the greedy fill would otherwise leave a tall left column next
+// to a short right one.
+const splitColumnsEvenly = (items, costOf) => {
+  const costs = items.map(costOf);
+  const total = costs.reduce((sum, cost) => sum + cost, 0);
+  let bestIndex = items.length;
+  let bestHeight = total;
+  let running = 0;
+  for (let index = 0; index <= items.length; index += 1) {
+    const height = Math.max(running, total - running);
+    if (height < bestHeight) {
+      bestHeight = height;
+      bestIndex = index;
     }
-    current.push(paragraph);
-    currentChars += chars;
-  });
-  if (current.length) pages.push(current);
-  return pages.length ? pages : [[]];
+    if (index < items.length) running += costs[index];
+  }
+  return [items.slice(0, bestIndex), items.slice(bestIndex)];
 };
+
+// Lays one document's paragraphs out page by page, column by column, the way newspaper columns
+// flow: the left column fills up to its capacity, then the right one, then the next page - so no
+// column is ever handed more than fits (a lone paragraph taller than a whole column is the one
+// unavoidable exception). The previous split chunked pages by their two-column total and halved
+// each chunk afterwards, and the half could carry most of a paragraph over the column's real
+// height: react-pdf then continued only that column on an extra physical page, which read as a
+// page holding a single clause (1.2) between pages whose right columns had already moved on (1.3+).
+// `firstPageColumnCapacity` is what is left of the first page under the logo, the addressee block
+// and the title; `paragraphGapChars` is the per-paragraph spacing expressed in the same units.
+// Returns one [left, right] pair per page; the last page is balanced instead of filled.
+export const paginateParagraphColumns = (paragraphs, lang, {
+  columnCapacity,
+  firstPageColumnCapacity = columnCapacity,
+  charsPerLine = Infinity,
+  paragraphGapChars = 0,
+} = {}) => {
+  const costOf = paragraph => estimateParagraphChars(paragraph, lang, charsPerLine) + paragraphGapChars;
+  const pages = [];
+  let columns = [[], []];
+  let columnIndex = 0;
+  let used = 0;
+  let capacity = Math.max(1, firstPageColumnCapacity);
+  (paragraphs || []).forEach(paragraph => {
+    const cost = costOf(paragraph);
+    if (columns[columnIndex].length && used + cost > capacity) {
+      if (columnIndex === 0) {
+        columnIndex = 1;
+      } else {
+        pages.push(columns);
+        columns = [[], []];
+        columnIndex = 0;
+        capacity = Math.max(1, columnCapacity);
+      }
+      used = 0;
+    }
+    columns[columnIndex].push(paragraph);
+    used += cost;
+  });
+  pages.push(splitColumnsEvenly([...columns[0], ...columns[1]], costOf));
+  return pages;
+};
+
+// Groups paragraphs into page-sized chunks (see paginateParagraphColumns for how each page's two
+// columns are filled) - the flat per-page view of the same layout.
+export const splitParagraphsIntoPages = (paragraphs, lang, columnCharCapacity, charsPerLine = Infinity, options = {}) => (
+  paginateParagraphColumns(paragraphs, lang, { columnCapacity: columnCharCapacity, charsPerLine, ...options })
+    .map(([left, right]) => [...left, ...right])
+);
 
 // A clinic can keep several logo file variants (spec §7): a compact one for the shared logo
 // above the two-column layout and a long full-width one for the one-column layouts. The column
@@ -3887,6 +3981,11 @@ export const DOCUMENT_STYLES = ['branded', 'official-form'];
 export const normalizeDocumentStyle = value => (DOCUMENT_STYLES.includes(value) ? value : 'branded');
 
 export const isOfficialFormStyle = doc => normalizeDocumentStyle(doc?.documentStyle) === 'official-form';
+
+// A notarial (branded) document carries no "Page X of Y": the notarial standard numbers nothing,
+// and the footer was printing it under every statement and agreement. Only an official form keeps
+// the Format panel's page-number toggle - it replicates a government template, which may number.
+export const showsPageNumbers = (doc, formatting) => Boolean(formatting?.showPageNumbers) && isOfficialFormStyle(doc);
 
 // Measured directly from the reference Додаток 18 docx's own XML (batch 22): pgMar top/right/
 // bottom/left = 284/851/567/851 twips = 0.5/1.5/1.0/1.5 cm, single line spacing, no after-paragraph

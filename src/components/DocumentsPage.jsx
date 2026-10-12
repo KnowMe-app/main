@@ -3947,14 +3947,18 @@ const DocumentsPage = ({ isAdmin }) => {
                     </Field>
                   </FieldGrid>
                   <RowLine style={{ marginTop: 8 }}>
-                    <CheckLine>
-                      <DocCheckbox
-                        type="checkbox"
-                        checked={activeFormatting.showPageNumbers}
-                        onChange={event => setFormattingField('showPageNumbers', event.target.checked)}
-                      />
-                      Page numbers in the footer
-                    </CheckLine>
+                    {/* Notarial (branded) documents never print page numbers (showsPageNumbers),
+                        so the toggle only exists for an official form it can still affect. */}
+                    {isOfficialFormStyle(catalog.documents.find(item => String(item.id) === formatDocId)) ? (
+                      <CheckLine>
+                        <DocCheckbox
+                          type="checkbox"
+                          checked={activeFormatting.showPageNumbers}
+                          onChange={event => setFormattingField('showPageNumbers', event.target.checked)}
+                        />
+                        Page numbers in the footer
+                      </CheckLine>
+                    ) : null}
                     <CheckLine>
                       <DocCheckbox
                         type="checkbox"
@@ -4005,6 +4009,7 @@ const DocumentsPage = ({ isAdmin }) => {
       {variablePickerOpen ? (
         <VariablePickerModal
           context={variablePickerTemplateId ? getContextForTemplate(variablePickerTemplateId) : caseContext}
+          templateId={variablePickerTemplateId}
           onPick={handleInsertVariable}
           onClose={() => setVariablePickerOpen(false)}
         />

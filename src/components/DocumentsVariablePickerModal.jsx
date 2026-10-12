@@ -110,7 +110,7 @@ const ItemPath = styled.span`
 
 const LONG_PRESS_MS = 450;
 
-const VariablePickerModal = ({ context, onPick, onClose }) => {
+const VariablePickerModal = ({ context, templateId, onPick, onClose }) => {
   const [revealedPath, setRevealedPath] = useState(null);
   const pressTimerRef = useRef(null);
 
@@ -135,7 +135,7 @@ const VariablePickerModal = ({ context, onPick, onClose }) => {
     setRevealedPath(null);
   };
 
-  const groups = buildVariablePickerGroups(context);
+  const groups = buildVariablePickerGroups(context, { templateId });
 
   return (
     <Overlay onClick={onClose}>
@@ -163,7 +163,7 @@ const VariablePickerModal = ({ context, onPick, onClose }) => {
                 >
                   {revealedPath === item.path ? <ItemPath>{item.path}</ItemPath> : item.value}
                 </Item>
-              )) : <EmptyHint>{context ? 'Немає даних' : 'Оберіть кейс, щоб побачити значення'}</EmptyHint>}
+              )) : <EmptyHint>{context ? (group.emptyHint || 'Немає даних') : 'Оберіть кейс, щоб побачити значення'}</EmptyHint>}
             </div>
           ))}
         </Body>
