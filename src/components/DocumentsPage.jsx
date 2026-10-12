@@ -61,7 +61,9 @@ import {
   getTemplateScopeText,
   isBilingualLayout,
   isLayoutV2Template,
+  isNotarialDocument,
   isOfficialFormStyle,
+  listEmptyPrintedLanguages,
   isSingleLanguageTwoColumnLayout,
   layoutV2LabelScope,
   layoutV2Scope,
@@ -2662,6 +2664,7 @@ const DocumentsPage = ({ isAdmin }) => {
                 // Using the document's own effective layout here (not just the shared fallback)
                 // keeps the editor honest with what actually gets exported for it.
                 const effectiveLayout = getEffectiveDocLayout(template, layout);
+                const emptyPrintedLanguages = listEmptyPrintedLanguages(template, effectiveLayout);
                 const isBilingual = isBilingualLayout(effectiveLayout);
                 const showUk = isBilingual || getLayoutLang(effectiveLayout) === 'uk';
                 const showEn = isBilingual || getLayoutLang(effectiveLayout) === 'en';
@@ -2787,6 +2790,11 @@ const DocumentsPage = ({ isAdmin }) => {
                         <FaTrash />
                       </DangerButton>
                     </DocRowHead>
+                    {emptyPrintedLanguages.length ? (
+                      <DocSubtitle style={{ color: 'var(--km-danger, #b4432d)', marginTop: 4 }}>
+                        {`Обраний макет друкує ${emptyPrintedLanguages.map(lang => (lang === 'en' ? 'англійську' : 'українську')).join(' й ')}, а тексту цією мовою в документі немає — змініть мову в ⚙.`}
+                      </DocSubtitle>
+                    ) : null}
                     {isExpanded ? (
                       <div style={{ marginTop: 6 }}>
                         {!isLayoutV2OnlyDoc ? (
@@ -3947,9 +3955,9 @@ const DocumentsPage = ({ isAdmin }) => {
                     </Field>
                   </FieldGrid>
                   <RowLine style={{ marginTop: 8 }}>
-                    {/* Notarial (branded) documents never print page numbers (showsPageNumbers),
-                        so the toggle only exists for an official form it can still affect. */}
-                    {isOfficialFormStyle(catalog.documents.find(item => String(item.id) === formatDocId)) ? (
+                    {/* Notarial documents never print page numbers (showsPageNumbers), so the
+                        toggle only shows where it still decides something. */}
+                    {!isNotarialDocument(catalog.documents.find(item => String(item.id) === formatDocId)) ? (
                       <CheckLine>
                         <DocCheckbox
                           type="checkbox"

@@ -1751,16 +1751,25 @@ await it('донорка читає показану анкету, а прихо
   await assertFails(get(ref(db(SELF_SERVE), `profileContacts/${HIDDEN_CARD}`)));
 });
 
-describe('documentsBuilder: тестовий акаунт лише читає');
+describe('documentsBuilder: тестовий акаунт читає й пише');
 
-// Тестовий акаунт веб-сесій (MIGRATION_EMAIL) читає шаблони й кейси, щоб звіряти документ
-// з живими даними, а не вгадувати зі скріншота. Писати туди він не може: у вузлі паспортні
-// дані реальних людей, і правка лишається за власницею.
-const DOCUMENTS_READER = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
+// Тестовий акаунт веб-сесій (MIGRATION_EMAIL) читає й правит шаблони, кейси та сторони — так
+// власниця доручила вести документи з веб-сесії (кожна правка звітується їй схемою змін).
+// Сторонньому вузол закритий повністю: у ньому паспортні дані реальних людей.
+const DOCUMENTS_EDITOR = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
 
-await it('тестовий акаунт читає documentsBuilder, але не пише', async () => {
-  await assertSucceeds(get(ref(db(DOCUMENTS_READER), 'documentsBuilder/templates')));
-  await assertFails(set(ref(db(DOCUMENTS_READER), 'documentsBuilder/templates/t1/title'), 'x'));
+await it('тестовий акаунт читає й пише documentsBuilder', async () => {
+  await assertSucceeds(get(ref(db(DOCUMENTS_EDITOR), 'documentsBuilder/templates')));
+  await assertSucceeds(set(ref(db(DOCUMENTS_EDITOR), 'documentsBuilder/templates/t1/title'), 'x'));
+  await assertSucceeds(update(ref(db(DOCUMENTS_EDITOR), 'documentsBuilder/templates'), { t2: { id: 't2' } }));
+});
+
+// Пише він на рівні запису, а не вузла: одним записом зітерти шаблони чи сторони цілком
+// (а з ними й паспортні дані) він не може — це лишається за власницею.
+await it('тестовий акаунт не стирає колекцію чи запис цілком', async () => {
+  await assertFails(set(ref(db(DOCUMENTS_EDITOR), 'documentsBuilder/templates'), null));
+  await assertFails(set(ref(db(DOCUMENTS_EDITOR), 'documentsBuilder/templates/t1'), null));
+  await assertFails(set(ref(db(DOCUMENTS_EDITOR), 'documentsBuilder'), { templates: {} }));
 });
 
 await it('власниця і читає, і пише documentsBuilder; сторонній — ні те, ні те', async () => {
