@@ -50,7 +50,7 @@
     },
     "documentsBuilder": {
       ".read": "auth != null && (auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1')",
-      ".write": "auth != null && auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'"
+      ".write": "auth != null && (auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1')"
     },
     "invoiceBuilder": {
       ".read": "auth != null && auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'",
