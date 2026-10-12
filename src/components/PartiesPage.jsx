@@ -442,6 +442,10 @@ const SURROGATE_MOTHER_FIELDS = [
   { label: 'Name (en)', path: 'name.en' },
   { label: 'Birth date', path: 'birthDate', type: 'date' },
   { label: 'Passport number', path: 'passport.number' },
+  // The record and the notarial templates ({{surrogateMother.passport.issuedBy.uk}}) always had
+  // these - only the form lacked them, so "ким виданий" could be read but never edited.
+  { label: 'Passport issued by (uk)', path: 'passport.issuedBy.uk' },
+  { label: 'Passport issued by (en)', path: 'passport.issuedBy.en' },
   { label: 'Passport issue date', path: 'passport.issueDate', type: 'date' },
   { label: 'Tax ID', path: 'taxId' },
   { label: 'Address (uk)', path: 'address.uk' },

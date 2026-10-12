@@ -89,6 +89,7 @@ import {
   splitParagraphsIntoPages,
   paginateParagraphColumns,
   showsPageNumbers,
+  listEmptyPrintedLanguages,
   stripDerivedFields,
   stripUndefinedDeep,
   TITLE_SCOPE,
@@ -2300,6 +2301,21 @@ describe('paginateParagraphColumns: newspaper flow that never overfills a column
     const [[left, right]] = paginateParagraphColumns([{ uk: 'a'.repeat(30) }, { uk: 'b'.repeat(30) }], 'uk', { columnCapacity: 1000 });
     expect(left).toHaveLength(1);
     expect(right).toHaveLength(1);
+  });
+});
+
+describe('listEmptyPrintedLanguages: a layout that prints a language the document has no text in', () => {
+  const ukOnly = { paragraphs: [{ uk: '7.4. Цей Договір складено…', en: '' }, { uk: '7.5.', en: '' }] };
+
+  it('flags the surrogacy agreement pinned to English while every clause is Ukrainian', () => {
+    expect(listEmptyPrintedLanguages(ukOnly, 'two-column-en')).toEqual(['en']);
+    expect(listEmptyPrintedLanguages(ukOnly, 'two-column')).toEqual(['en']);
+    expect(listEmptyPrintedLanguages(ukOnly, 'two-column-uk')).toEqual([]);
+  });
+
+  it('stays quiet for a fully bilingual or an empty document', () => {
+    expect(listEmptyPrintedLanguages({ paragraphs: [{ uk: 'а', en: 'a' }] }, 'two-column')).toEqual([]);
+    expect(listEmptyPrintedLanguages({ paragraphs: [] }, 'one-column-en')).toEqual([]);
   });
 });
 

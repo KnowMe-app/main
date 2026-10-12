@@ -62,6 +62,7 @@ import {
   isBilingualLayout,
   isLayoutV2Template,
   isOfficialFormStyle,
+  listEmptyPrintedLanguages,
   isSingleLanguageTwoColumnLayout,
   layoutV2LabelScope,
   layoutV2Scope,
@@ -2662,6 +2663,7 @@ const DocumentsPage = ({ isAdmin }) => {
                 // Using the document's own effective layout here (not just the shared fallback)
                 // keeps the editor honest with what actually gets exported for it.
                 const effectiveLayout = getEffectiveDocLayout(template, layout);
+                const emptyPrintedLanguages = listEmptyPrintedLanguages(template, effectiveLayout);
                 const isBilingual = isBilingualLayout(effectiveLayout);
                 const showUk = isBilingual || getLayoutLang(effectiveLayout) === 'uk';
                 const showEn = isBilingual || getLayoutLang(effectiveLayout) === 'en';
@@ -2787,6 +2789,11 @@ const DocumentsPage = ({ isAdmin }) => {
                         <FaTrash />
                       </DangerButton>
                     </DocRowHead>
+                    {emptyPrintedLanguages.length ? (
+                      <DocSubtitle style={{ color: 'var(--km-danger, #b4432d)', marginTop: 4 }}>
+                        {`Обраний макет друкує ${emptyPrintedLanguages.map(lang => (lang === 'en' ? 'англійську' : 'українську')).join(' й ')}, а тексту цією мовою в документі немає — змініть мову в ⚙.`}
+                      </DocSubtitle>
+                    ) : null}
                     {isExpanded ? (
                       <div style={{ marginTop: 6 }}>
                         {!isLayoutV2OnlyDoc ? (

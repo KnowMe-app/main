@@ -3771,6 +3771,18 @@ export const getEffectiveDocLayout = (doc, fallbackLayout) => {
   return doc.columns === 2 ? `two-column-${lang}` : `one-column-${lang}`;
 };
 
+// The languages a document's layout prints that it has no body text in, while the other language
+// does - e.g. the surrogacy agreement pinned to "EN" with all 58 clauses written in Ukrainian only:
+// the editor showed empty fields and the export printed a blank document, and nothing said why.
+// A layoutV2 document carries its text elsewhere and is never reported.
+export const listEmptyPrintedLanguages = (template, layout) => {
+  if (!template || isLayoutV2Template(template)) return [];
+  const paragraphs = template.paragraphs || [];
+  const hasText = lang => paragraphs.some(paragraph => String(paragraph?.[lang] || '').trim());
+  const printed = isBilingualLayout(layout) ? ['uk', 'en'] : [getLayoutLang(layout)];
+  return printed.filter(lang => !hasText(lang) && hasText(lang === 'uk' ? 'en' : 'uk'));
+};
+
 // Rough per-page-per-column character capacity for the single-language 2-column layout's manual
 // pagination (splitParagraphsIntoPages below). react-pdf has no native multi-column text flow: a
 // flex row's two columns can't independently continue onto a shared next page, so once a page's
