@@ -49,7 +49,7 @@
       ".write": "auth != null && auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'"
     },
     "documentsBuilder": {
-      ".read": "auth != null && auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'",
+      ".read": "auth != null && (auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1')",
       ".write": "auth != null && auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'"
     },
     "invoiceBuilder": {
