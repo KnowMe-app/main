@@ -3173,9 +3173,15 @@ export const buildGeneratedDocument = (template, context) => {
       // joinWithPrevious (groupJoinedParagraphs below) - a paragraph that continues the previous
       // one mid-sentence must never get the usual forced capital first letter (it isn't starting a
       // new sentence), only the paragraph that actually opens the group should.
+      // Only a paragraph that OPENS with a variable is capitalized - that is what the rule is for
+      // (a lowercase date in words at a sentence start). Text the template spells out itself keeps
+      // its case: medical statements continue a sentence across rows ("чоловік, ...", "що
+      // перебувають у шлюбі ..."), and forcing those to "Чоловік"/"Що" misprinted the documents.
       const resolveText = langKey => {
-        const filled = fillPlaceholders(localizedText(paragraph, langKey), context, langKey);
-        return paragraph.joinWithPrevious ? filled : capitalizeFirstLetter(filled);
+        const raw = localizedText(paragraph, langKey);
+        const filled = fillPlaceholders(raw, context, langKey);
+        const opensWithVariable = /^\s*\**\s*\{\{/.test(raw);
+        return paragraph.joinWithPrevious || !opensWithVariable ? filled : capitalizeFirstLetter(filled);
       };
       return {
         type,

@@ -672,7 +672,7 @@ describe('spec: joinWithPrevious keeps a conditional clause reading as one conti
     id: 'birth-registration-surrogate-consent',
     title: { uk: '' },
     paragraphs: [
-      { uk: 'з генетичним батьком – Кацура Наоя,', en: 'with the genetic father Katsura Naoya,' },
+      { uk: 'З генетичним батьком – Кацура Наоя,', en: 'with the genetic father Katsura Naoya,' },
       {
         uk: " та генетичною матір'ю – Кацура Юкако,",
         en: ' and the genetic mother Katsura Yukako,',
