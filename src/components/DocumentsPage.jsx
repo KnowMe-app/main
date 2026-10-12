@@ -2473,12 +2473,15 @@ const DocumentsPage = ({ isAdmin }) => {
       const DocumentsPdfDocument = documentsModule.default;
       for (let index = 0; index < generated.length; index += 1) {
         const doc = generated[index];
-        const blob = await pdf(React.createElement(DocumentsPdfDocument, {
+        const pdfProps = {
           documents: [doc],
           layout,
           formatting: formattingByDoc[index],
           clinicLogos,
-        })).toBlob();
+        };
+        // Two-column documents get their column breaks measured, not estimated (planColumnLayouts).
+        const columnPlans = await documentsModule.planColumnLayouts(pdf, pdfProps);
+        const blob = await pdf(React.createElement(DocumentsPdfDocument, { ...pdfProps, columnPlans })).toBlob();
         saveAs(blob, buildDocumentsFileName(catalog, selectedCase, layout, 'pdf', doc));
         if (index < generated.length - 1) await sleep(MULTI_DOWNLOAD_DELAY_MS);
       }
@@ -3927,6 +3930,7 @@ const DocumentsPage = ({ isAdmin }) => {
                     {numberField('fontSize', 'Font size (pt)', 0.5)}
                     {numberField('titleFontSize', 'Title size (pt)', 0.5)}
                     {numberField('lineSpacing', 'Line spacing (×)', 0.05)}
+                    {numberField('letterSpacingPt', 'Letter spacing (pt, − condensed)', 0.1)}
                     {numberField('paragraphSpacing', 'Paragraph spacing (pt)', 1)}
                     {numberField('firstLineIndentCm', 'First line indent (cm)', 0.25)}
                     {numberField('columnGapCm', 'Column gap (cm)', 0.1)}

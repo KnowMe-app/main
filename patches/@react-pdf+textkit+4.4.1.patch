@@ -1,0 +1,30 @@
+diff --git a/node_modules/@react-pdf/textkit/lib/textkit.cjs b/node_modules/@react-pdf/textkit/lib/textkit.cjs
+index 7879740..f917b4b 100644
+--- a/node_modules/@react-pdf/textkit/lib/textkit.cjs
++++ b/node_modules/@react-pdf/textkit/lib/textkit.cjs
+@@ -925,6 +925,10 @@ var layoutParagraph = function layoutParagraph(engines, options) {
+     var availableWidths = rects.map(function (r) {
+       return r.width;
+     });
++    // A paragraph laid out into a single line rect (the usual case) used to get just that one
++    // width, and the first-line indent taken off it then applied to EVERY line - each line of an
++    // indented paragraph broke a whole indent short. Only the first line is indented.
++    if (indent && availableWidths.length === 1) availableWidths.push(availableWidths[0]);
+     availableWidths[0] -= indent;
+     var lines = engines.linebreaker(options)(paragraph, availableWidths);
+     return layoutLines(rects, lines, indent);
+diff --git a/node_modules/@react-pdf/textkit/lib/textkit.js b/node_modules/@react-pdf/textkit/lib/textkit.js
+index 9c407c8..debf418 100644
+--- a/node_modules/@react-pdf/textkit/lib/textkit.js
++++ b/node_modules/@react-pdf/textkit/lib/textkit.js
+@@ -911,6 +911,10 @@ var layoutParagraph = function layoutParagraph(engines, options) {
+     var availableWidths = rects.map(function (r) {
+       return r.width;
+     });
++    // A paragraph laid out into a single line rect (the usual case) used to get just that one
++    // width, and the first-line indent taken off it then applied to EVERY line - each line of an
++    // indented paragraph broke a whole indent short. Only the first line is indented.
++    if (indent && availableWidths.length === 1) availableWidths.push(availableWidths[0]);
+     availableWidths[0] -= indent;
+     var lines = engines.linebreaker(options)(paragraph, availableWidths);
+     return layoutLines(rects, lines, indent);

@@ -62,6 +62,12 @@ export const ensureDocumentsPdfFontsRegistered = () => {
 // builder (10 pt = 200 twips); everything else comes from the Format panel values.
 export const LOGO_BOTTOM_GAP_PT = 10;
 
+// Word's "single" line spacing for Times New Roman / its metric clone Tinos is the font's own line
+// height, 1.15 of the font size (hhea ascent + descent + lineGap = 2355/2048) - measured in the
+// reference files too (9 pt text, 10.35 pt line pitch). react-pdf's lineHeight is a plain multiple
+// of the font size, so `lineSpacing: 1` used to render tighter than the same document in Word.
+export const WORD_SINGLE_LINE_HEIGHT = 1.15;
+
 const A4_WIDTH_PT = 595.28;
 const A4_HEIGHT_PT = 841.89;
 
@@ -436,7 +442,7 @@ const estimateTextLines = (text, widthPt, fontSize) => {
 };
 
 export const estimateFirstPageHeaderPt = (doc, { lang, formatting, contentWidth, logoWidth, clinicLogos }) => {
-  const lineHeight = fontSize => fontSize * formatting.lineSpacing;
+  const lineHeight = fontSize => fontSize * formatting.lineSpacing * WORD_SINGLE_LINE_HEIGHT;
   let height = 0;
   if (doc.logo) {
     const variant = getClinicLogo(clinicLogos, doc.logo);
@@ -810,11 +816,169 @@ const renderLayoutV2DocumentPage = (doc, clinicLogos, logoWidthPt) => {
 // tagged). Each document starts on its own page, like the separate statements in the reference
 // file; templates with `allowPageBreaks` (the long agreement) are free to spill onto further
 // pages - nothing here constrains a document to a single page.
+// The paragraph/title/heading cell styles every legacy layout renders with - shared by the document
+// itself and by planColumnLayouts' measuring pass, so both lay text out identically.
+const buildCellStyles = (formatting, columnGap) => StyleSheet.create({
+  title: {
+    fontFamily: 'Tinos',
+    fontWeight: 700,
+    fontSize: formatting.titleFontSize,
+    textAlign: 'center',
+    lineHeight: formatting.lineSpacing * WORD_SINGLE_LINE_HEIGHT,
+    letterSpacing: formatting.letterSpacingPt || undefined,
+  },
+  paragraph: {
+    fontFamily: 'Tinos',
+    fontSize: formatting.fontSize,
+    textAlign: 'justify',
+    lineHeight: formatting.lineSpacing * WORD_SINGLE_LINE_HEIGHT,
+    letterSpacing: formatting.letterSpacingPt || undefined,
+    textIndent: formatting.firstLineIndentCm * CM_TO_PT,
+    marginBottom: formatting.paragraphSpacing,
+  },
+  paragraphHeading: {
+    fontFamily: 'Tinos',
+    fontWeight: 700,
+    fontSize: formatting.fontSize,
+    textAlign: 'left',
+    lineHeight: formatting.lineSpacing * WORD_SINGLE_LINE_HEIGHT,
+    letterSpacing: formatting.letterSpacingPt || undefined,
+    textIndent: 0,
+    marginTop: formatting.paragraphSpacing,
+    marginBottom: formatting.paragraphSpacing,
+  },
+  beforeTitle: {
+    fontFamily: 'Tinos',
+    fontSize: formatting.fontSize,
+    lineHeight: formatting.lineSpacing * WORD_SINGLE_LINE_HEIGHT,
+    letterSpacing: formatting.letterSpacingPt || undefined,
+    marginBottom: formatting.paragraphSpacing,
+  },
+  leftCell: {
+    flex: 1,
+    marginRight: columnGap / 2,
+  },
+  rightCell: {
+    flex: 1,
+    marginLeft: columnGap / 2,
+  },
+});
+
+// Geometry of the single-language 2-column layout for one document - the same numbers for the
+// rendered pages and for planColumnLayouts' measuring pass below.
+const singleLanguageColumnGeometry = (doc, effectiveLayout, formatting, clinicLogos) => {
+  const marginTop = formatting.marginTopCm * CM_TO_PT;
+  const marginBottom = formatting.marginBottomCm * CM_TO_PT;
+  const columnGap = formatting.columnGapCm * CM_TO_PT;
+  const contentWidth = A4_WIDTH_PT - (formatting.marginLeftCm + formatting.marginRightCm) * CM_TO_PT;
+  const columnContentWidth = (contentWidth - columnGap) / 2;
+  const effectiveClinicLogos = formatting.showLogo !== false ? clinicLogos : [];
+  const logoWidth = Math.min(formatting.logoWidthMm * MM_TO_PT, columnContentWidth);
+  const headerLogoReserve = resolveHeaderLogoReserve(doc, effectiveClinicLogos, logoWidth);
+  const pageContentHeightPt = A4_HEIGHT_PT - marginTop - headerLogoReserve - marginBottom;
+  const firstPageHeaderPt = estimateFirstPageHeaderPt(doc, {
+    lang: getLayoutLang(effectiveLayout),
+    formatting,
+    contentWidth,
+    logoWidth,
+    clinicLogos: headerLogoReserve ? [] : effectiveClinicLogos,
+  });
+  return { columnGap, contentWidth, columnContentWidth, logoWidth, headerLogoReserve, pageContentHeightPt, firstPageHeaderPt, effectiveClinicLogos };
+};
+
+// Which paragraphs go into which column of which page, measured by react-pdf itself rather than
+// estimated. The character-count estimate (paginateParagraphColumns) can't know where react-pdf
+// breaks a justified line, so to never overfill a column it plans with a wide margin - every
+// column ended short of the page bottom, and the appendix came out a page longer than its
+// reference Word file. Here each paragraph flows, whole (wrap off), through a hidden document
+// whose page is exactly one column, so react-pdf's own pagination finds every column break; an
+// absolutely positioned marker before each paragraph records the column it landed on without
+// taking any height. Columns pair up into pages: 1-2 is page one, 3-4 page two.
+// One extra layout pass per document (~0.5 s for an 8-page contract). `pdfFn` is react-pdf's
+// `pdf`; the result is { [doc.id]: [[leftIndices, rightIndices], ...] } over the document's
+// grouped body paragraphs, for DocumentsPdfDocument's `columnPlans`.
+export const planColumnLayouts = async (pdfFn, {
+  documents = [], layout = 'two-column', formatting = DEFAULT_DOC_FORMATTING, clinicLogos = [],
+}) => {
+  const plans = {};
+  // eslint-disable-next-line no-restricted-syntax
+  for (const doc of documents) {
+    const effectiveLayout = getEffectiveDocLayout(doc, layout);
+    if (doc.layoutV2 || !isSingleLanguageTwoColumnLayout(effectiveLayout)) continue; // eslint-disable-line no-continue
+    const lang = getLayoutLang(effectiveLayout);
+    const geometry = singleLanguageColumnGeometry(doc, effectiveLayout, formatting, clinicLogos);
+    const cellStyles = buildCellStyles(formatting, geometry.columnGap);
+    const paragraphs = groupJoinedParagraphs(doc.paragraphs);
+    // The column a paragraph lands on when `items` flow through columns `heightPt` tall.
+    const measure = async (items, heightPt) => {
+      const landedOn = [];
+      const element = (
+        <Document>
+          <Page size={[geometry.columnContentWidth, heightPt]} style={{ fontFamily: 'Tinos', fontSize: formatting.fontSize }}>
+            {items.map((paragraph, index) => (
+              // eslint-disable-next-line react/no-array-index-key
+              <View key={index} wrap={false}>
+                <Text
+                  style={{ position: 'absolute', top: 0, left: 0, fontSize: 1 }}
+                  render={({ pageNumber }) => {
+                    landedOn[index] = pageNumber;
+                    return ' ';
+                  }}
+                />
+                {paragraph.type && paragraph.type !== 'text' ? (
+                  <LogoBlock type={paragraph.type} isBilingual={false} cellStyles={cellStyles} logoWidth={geometry.logoWidth} longLogoWidth={geometry.logoWidth} clinicLogos={geometry.effectiveClinicLogos} showUk showEn />
+                ) : (
+                  <TextParagraph paragraph={paragraph} isBilingual={false} lang={lang} cellStyles={cellStyles} allowPageBreaks={doc.allowPageBreaks} blankFields={isOfficialFormStyle(doc)} />
+                )}
+              </View>
+            ))}
+          </Page>
+        </Document>
+      );
+      const instance = pdfFn(element);
+      await (typeof window !== 'undefined' && instance.toBlob ? instance.toBlob() : instance.toBuffer());
+      return landedOn.length === items.length && landedOn.every(Number.isInteger) ? landedOn : null;
+    };
+    // Page one's BOTH columns start under the full-width header (logo, addressee block, title), so
+    // its two columns are measured at the reduced height first; whatever didn't fit flows on
+    // through full-height columns from page two.
+    // eslint-disable-next-line no-await-in-loop
+    const firstPass = await measure(paragraphs, Math.max(1, geometry.pageContentHeightPt - geometry.firstPageHeaderPt));
+    if (!firstPass) continue; // eslint-disable-line no-continue
+    const firstPageCount = firstPass.filter(column => column <= 2).length;
+    const pages = [[[], []]];
+    firstPass.slice(0, firstPageCount).forEach((column, index) => pages[0][column - 1].push(index));
+    if (firstPageCount < paragraphs.length) {
+      // eslint-disable-next-line no-await-in-loop
+      const rest = await measure(paragraphs.slice(firstPageCount), geometry.pageContentHeightPt);
+      if (!rest) continue; // eslint-disable-line no-continue
+      rest.forEach((column, offset) => {
+        const pageIndex = 1 + Math.floor((column - 1) / 2);
+        while (pages.length <= pageIndex) pages.push([[], []]);
+        pages[pageIndex][(column - 1) % 2].push(firstPageCount + offset);
+      });
+    }
+    plans[doc.id] = pages;
+  }
+  return plans;
+};
+
+// A measured plan applies only to the exact paragraph list it was measured on.
+const columnsFromPlan = (plan, paragraphs) => {
+  if (!Array.isArray(plan)) return null;
+  const used = plan.flat(2);
+  if (used.length !== paragraphs.length || used.some((index, position) => index !== position)) return null;
+  return plan.map(([left, right]) => [left.map(index => paragraphs[index]), right.map(index => paragraphs[index])]);
+};
+
 const DocumentsPdfDocument = ({
   documents = [],
   layout = 'two-column',
   formatting = DEFAULT_DOC_FORMATTING,
   clinicLogos = [],
+  // Measured column breaks per document id (planColumnLayouts); without them the single-language
+  // 2-column layout falls back to the character-count estimate.
+  columnPlans = null,
 }) => {
   const marginTop = formatting.marginTopCm * CM_TO_PT;
   const marginBottom = formatting.marginBottomCm * CM_TO_PT;
@@ -836,47 +1000,7 @@ const DocumentsPdfDocument = ({
   const canRenderLogo = formatting.showLogo !== false;
   const effectiveClinicLogos = canRenderLogo ? clinicLogos : [];
 
-  const cellStyles = StyleSheet.create({
-    title: {
-      fontFamily: 'Tinos',
-      fontWeight: 700,
-      fontSize: formatting.titleFontSize,
-      textAlign: 'center',
-      lineHeight: formatting.lineSpacing,
-    },
-    paragraph: {
-      fontFamily: 'Tinos',
-      fontSize: formatting.fontSize,
-      textAlign: 'justify',
-      lineHeight: formatting.lineSpacing,
-      textIndent: formatting.firstLineIndentCm * CM_TO_PT,
-      marginBottom: formatting.paragraphSpacing,
-    },
-    paragraphHeading: {
-      fontFamily: 'Tinos',
-      fontWeight: 700,
-      fontSize: formatting.fontSize,
-      textAlign: 'left',
-      lineHeight: formatting.lineSpacing,
-      textIndent: 0,
-      marginTop: formatting.paragraphSpacing,
-      marginBottom: formatting.paragraphSpacing,
-    },
-    beforeTitle: {
-      fontFamily: 'Tinos',
-      fontSize: formatting.fontSize,
-      lineHeight: formatting.lineSpacing,
-      marginBottom: formatting.paragraphSpacing,
-    },
-    leftCell: {
-      flex: 1,
-      marginRight: columnGap / 2,
-    },
-    rightCell: {
-      flex: 1,
-      marginLeft: columnGap / 2,
-    },
-  });
+  const cellStyles = buildCellStyles(formatting, columnGap);
 
   const pageStyle = {
     paddingTop: marginTop,
@@ -912,12 +1036,13 @@ const DocumentsPdfDocument = ({
     const pageStyleForDoc = headerLogoReserve ? { ...pageStyle, paddingTop: marginTop + headerLogoReserve } : pageStyle;
     const bodyParagraphs = groupJoinedParagraphs(doc.paragraphs);
     const pageContentHeightPt = A4_HEIGHT_PT - marginTop - headerLogoReserve - marginBottom;
-    const charsPerLine = estimateCharsPerLine({ columnWidthPt: columnContentWidth, fontSize: formatting.fontSize });
+    const charsPerLine = estimateCharsPerLine({ columnWidthPt: columnContentWidth, fontSize: formatting.fontSize, letterSpacingPt: formatting.letterSpacingPt });
     const capacity = estimateColumnPageCapacity({
       columnWidthPt: columnContentWidth,
       pageContentHeightPt,
       fontSize: formatting.fontSize,
-      lineSpacing: formatting.lineSpacing,
+      lineSpacing: formatting.lineSpacing * WORD_SINGLE_LINE_HEIGHT,
+      letterSpacingPt: formatting.letterSpacingPt,
     });
     // The first page's columns start under the logo, the addressee block and the title, so they
     // hold less: without this the first page was planned as if the columns started at the top
@@ -931,13 +1056,19 @@ const DocumentsPdfDocument = ({
     });
     const firstPageColumnCapacity = Math.floor(capacity * Math.max(0, pageContentHeightPt - firstPageHeaderPt) / pageContentHeightPt);
     const paragraphGapChars = formatting.paragraphSpacing
-      ? Math.ceil((formatting.paragraphSpacing / (formatting.fontSize * formatting.lineSpacing)) * charsPerLine)
+      ? Math.ceil((formatting.paragraphSpacing / (formatting.fontSize * formatting.lineSpacing * WORD_SINGLE_LINE_HEIGHT)) * charsPerLine)
       : 0;
-    const pages = paginateParagraphColumns(bodyParagraphs, lang, {
+    // First-line indent in character widths, per paragraph (its own indentCm, else the document's).
+    const charWidthPt = columnContentWidth / charsPerLine;
+    const indentChars = ownIndentCm => Math.ceil(
+      ((ownIndentCm !== undefined ? ownIndentCm : formatting.firstLineIndentCm) * CM_TO_PT) / charWidthPt,
+    );
+    const pages = columnsFromPlan(columnPlans?.[doc.id], bodyParagraphs) || paginateParagraphColumns(bodyParagraphs, lang, {
       columnCapacity: capacity,
       firstPageColumnCapacity,
       charsPerLine,
       paragraphGapChars,
+      indentChars,
     });
     return (
       <Page key={doc.id} size="A4" style={pageStyleForDoc}>

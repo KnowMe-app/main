@@ -3809,10 +3809,14 @@ export const listEmptyPrintedLanguages = (template, layout) => {
 const AVG_CHAR_WIDTH_EM = 0.5;
 const SAFETY_FACTOR = 0.92;
 
-export const estimateCharsPerLine = ({ columnWidthPt, fontSize }) => Math.max(1, Math.floor(columnWidthPt / (fontSize * AVG_CHAR_WIDTH_EM)));
+// letterSpacingPt (Word's condensed/expanded character spacing) adds to every character's advance.
+export const estimateCharsPerLine = ({ columnWidthPt, fontSize, letterSpacingPt = 0 }) => Math.max(
+  1,
+  Math.floor(columnWidthPt / Math.max(0.1, fontSize * AVG_CHAR_WIDTH_EM + letterSpacingPt)),
+);
 
-export const estimateColumnPageCapacity = ({ columnWidthPt, pageContentHeightPt, fontSize, lineSpacing }) => {
-  const charsPerLine = estimateCharsPerLine({ columnWidthPt, fontSize });
+export const estimateColumnPageCapacity = ({ columnWidthPt, pageContentHeightPt, fontSize, lineSpacing, letterSpacingPt = 0 }) => {
+  const charsPerLine = estimateCharsPerLine({ columnWidthPt, fontSize, letterSpacingPt });
   const lineHeightPt = fontSize * lineSpacing;
   const linesPerColumn = Math.max(1, Math.floor(pageContentHeightPt / lineHeightPt));
   return Math.max(1, Math.floor(charsPerLine * linesPerColumn * SAFETY_FACTOR));
@@ -3827,11 +3831,17 @@ export const estimateColumnPageCapacity = ({ columnWidthPt, pageContentHeightPt,
 // balance below for real contract text full of numbered/bulleted sub-clauses. charsPerLine (when
 // known) costs each newline-delimited segment by its own real line count instead; omitted, this
 // falls back to plain character length (the original, newline-blind behavior).
-export const estimateParagraphChars = (paragraph, lang, charsPerLine = Infinity) => {
+// `indentChars` is the first-line indent in character widths: the paragraph's first line holds that
+// much less text (1.5 cm is ~10 characters at 9 pt), which a whole column of short clauses adds up to
+// several lines - enough to push the column past the page bottom.
+export const estimateParagraphChars = (paragraph, lang, charsPerLine = Infinity, indentChars = 0) => {
   if (paragraph?.type && paragraph.type !== 'text') return 0;
   const text = String(paragraph?.[lang] || '');
   if (!Number.isFinite(charsPerLine) || charsPerLine <= 0) return text.length;
-  const lines = text.split('\n').reduce((sum, segment) => sum + Math.max(1, Math.ceil(segment.length / charsPerLine)), 0);
+  const lines = text.split('\n').reduce(
+    (sum, segment, index) => sum + Math.max(1, Math.ceil((segment.length + (index === 0 ? indentChars : 0)) / charsPerLine)),
+    0,
+  );
   return lines * charsPerLine;
 };
 
@@ -3891,8 +3901,14 @@ export const paginateParagraphColumns = (paragraphs, lang, {
   firstPageColumnCapacity = columnCapacity,
   charsPerLine = Infinity,
   paragraphGapChars = 0,
+  indentChars = 0,
 } = {}) => {
-  const costOf = paragraph => estimateParagraphChars(paragraph, lang, charsPerLine) + paragraphGapChars;
+  // A paragraph's own indentCm (when set) replaces the document-wide first-line indent.
+  const indentOf = paragraph => {
+    const own = getParagraphStyle(paragraph).indentCm;
+    return typeof indentChars === 'function' ? indentChars(own) : indentChars;
+  };
+  const costOf = paragraph => estimateParagraphChars(paragraph, lang, charsPerLine, indentOf(paragraph)) + paragraphGapChars;
   const pages = [];
   let columns = [[], []];
   let columnIndex = 0;
@@ -3976,6 +3992,9 @@ export const DEFAULT_DOC_FORMATTING = {
   // Off by default (spec §3): a thin vertical rule between the two columns, drawn only while a
   // 2-column layout (bilingual or single-language) is actually active.
   columnDivider: false,
+  // Character spacing in points, Word's "Condensed/Expanded by" - the reference surrogacy agreement
+  // is condensed by 0.3 pt (w:spacing -6), which is what fits its two columns onto two pages.
+  letterSpacingPt: 0,
 };
 
 const clampNumber = (value, min, max, fallback) => {
@@ -4030,6 +4049,7 @@ export const OFFICIAL_FORM_FORMATTING = {
   footerText: DEFAULT_DOC_FORMATTING.footerText,
   showPageNumbers: DEFAULT_DOC_FORMATTING.showPageNumbers,
   columnDivider: DEFAULT_DOC_FORMATTING.columnDivider,
+  letterSpacingPt: DEFAULT_DOC_FORMATTING.letterSpacingPt,
 };
 
 export const normalizeDocFormatting = raw => {
@@ -4055,6 +4075,7 @@ export const normalizeDocFormatting = raw => {
     columnDivider: source.columnDivider === undefined
       ? DEFAULT_DOC_FORMATTING.columnDivider
       : Boolean(source.columnDivider),
+    letterSpacingPt: clampNumber(source.letterSpacingPt, -2, 2, DEFAULT_DOC_FORMATTING.letterSpacingPt),
   };
 };
 

@@ -165,7 +165,7 @@ describe('Documents PDF single-language 2-column layout paginates correctly (bug
       columnWidthPt: columnContentWidth,
       pageContentHeightPt: A4_HEIGHT_PT - marginTop - marginBottom,
       fontSize: formatting.fontSize,
-      lineSpacing: formatting.lineSpacing,
+      lineSpacing: formatting.lineSpacing * documentsModule.WORD_SINGLE_LINE_HEIGHT,
     });
     const expectedGroups = splitParagraphsIntoPages(longDoc.paragraphs, 'uk', capacity, charsPerLine).length;
 
@@ -246,7 +246,7 @@ describe('Documents PDF single-language 2-column layout paginates correctly (bug
       columnWidthPt: columnContentWidth,
       pageContentHeightPt: A4_HEIGHT_PT - marginTop - marginBottom,
       fontSize: formatting.fontSize,
-      lineSpacing: formatting.lineSpacing,
+      lineSpacing: formatting.lineSpacing * documentsModule.WORD_SINGLE_LINE_HEIGHT,
     });
     const predictedGroups = splitParagraphsIntoPages(overflowDoc.paragraphs, 'uk', capacity, charsPerLine).length;
 
@@ -322,7 +322,7 @@ describe('Documents PDF single-language 2-column layout paginates correctly (bug
       columnWidthPt: columnContentWidth,
       pageContentHeightPt,
       fontSize: formatting.fontSize,
-      lineSpacing: formatting.lineSpacing,
+      lineSpacing: formatting.lineSpacing * documentsModule.WORD_SINGLE_LINE_HEIGHT,
     });
     const headerPt = documentsModule.estimateFirstPageHeaderPt(appendixDoc, {
       lang: 'uk', formatting, contentWidth, logoWidth: columnContentWidth, clinicLogos: [],
@@ -331,10 +331,61 @@ describe('Documents PDF single-language 2-column layout paginates correctly (bug
       columnCapacity: capacity,
       firstPageColumnCapacity: Math.floor(capacity * (pageContentHeightPt - headerPt) / pageContentHeightPt),
       charsPerLine,
+      // The renderer's own first-line indent cost, in character widths.
+      indentChars: ownIndentCm => Math.ceil(
+        ((ownIndentCm !== undefined ? ownIndentCm : formatting.firstLineIndentCm) * CM_TO_PT) / (columnContentWidth / charsPerLine),
+      ),
     }).length;
 
     expect(headerPt).toBeGreaterThan(0);
     expect(plannedPages).toBeGreaterThan(1);
     expect(renderedPages).toBe(plannedPages);
   }, 30000);
+
+  // The measured plan (planColumnLayouts) lays every column out with react-pdf's own line breaking,
+  // so it may fill columns to the bottom instead of planning with the estimate's wide margin - and
+  // still never lets a column run onto a page of its own.
+  it('lays columns out by measurement: never more pages than the estimate, none of them stranded', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    Font.register({
+      family: 'Tinos',
+      fonts: [
+        { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+        { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+      ],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+    const formatting = { ...DEFAULT_DOC_FORMATTING, fontSize: 9, titleFontSize: 9 };
+    const clause = (number, sentences) => ({
+      type: 'text',
+      uk: `${number}. ${Array.from({ length: sentences }, (_, i) => `Потенційні батьки зобов'язуються сплатити компенсацію за пунктом ${i + 1} цього Додатку.`).join(' ')}`,
+      en: '',
+    });
+    const doc = {
+      id: 'measured-doc',
+      allowPageBreaks: true,
+      logo: null,
+      beforeTitle: [{ uk: '**Додаток №1**\nдо Договору про сурогатне материнство від 16.10.2026 р.', en: '', align: 'right' }],
+      title: { uk: '', en: '' },
+      paragraphs: [3, 9, 4, 7, 12, 3, 6, 10, 5, 8, 4, 11, 6, 3, 9, 7, 5, 12, 4, 6, 8, 3, 10, 5, 7, 9, 4, 6]
+        .map((sentences, index) => clause(`1.${index + 1}`, sentences)),
+    };
+    const props = { documents: [doc], layout: 'two-column-uk', clinicLogos: [], formatting };
+    const renderPages = async extra => {
+      const stream = await pdf(React.createElement(documentsModule.default, { ...props, ...extra })).toBuffer();
+      const chunks = [];
+      await new Promise((resolve, reject) => {
+        stream.on('data', chunk => chunks.push(chunk));
+        stream.on('end', resolve);
+        stream.on('error', reject);
+      });
+      return countPdfPages(Buffer.concat(chunks));
+    };
+    const columnPlans = await documentsModule.planColumnLayouts(pdf, props);
+    const plan = columnPlans['measured-doc'];
+    expect(plan.flat(2)).toEqual(doc.paragraphs.map((_, index) => index));
+    expect(await renderPages({ columnPlans })).toBe(plan.length);
+    expect(plan.length).toBeLessThanOrEqual(await renderPages({}));
+  }, 60000);
 });
