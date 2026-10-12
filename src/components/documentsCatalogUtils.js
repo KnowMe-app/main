@@ -3869,7 +3869,7 @@ export const splitParagraphsIntoColumns = (paragraphs, lang, charsPerLine = Infi
 // The left/right split with the smallest taller column: whole paragraphs, in order. Used for the
 // last page of a column flow, where the greedy fill would otherwise leave a tall left column next
 // to a short right one.
-const splitColumnsEvenly = (items, costOf) => {
+export const splitColumnsEvenly = (items, costOf) => {
   const costs = items.map(costOf);
   const total = costs.reduce((sum, cost) => sum + cost, 0);
   let bestIndex = items.length;

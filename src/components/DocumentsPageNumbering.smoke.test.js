@@ -388,4 +388,43 @@ describe('Documents PDF single-language 2-column layout paginates correctly (bug
     expect(await renderPages({ columnPlans })).toBe(plan.length);
     expect(plan.length).toBeLessThanOrEqual(await renderPages({}));
   }, 60000);
+
+  // Review follow-up: the measured flow fills the left column first, so a short document used to
+  // come out with everything on the left and an empty right column.
+  it('balances the last measured page across both columns', async () => {
+    const { pdf, Font } = await import('@react-pdf/renderer');
+    const documentsModule = await import('./DocumentsPdfDocument');
+    Font.register({
+      family: 'Tinos',
+      fonts: [
+        { src: toDataUri('Tinos-Regular.ttf'), fontWeight: 400 },
+        { src: toDataUri('Tinos-Bold.ttf'), fontWeight: 700 },
+      ],
+    });
+    Font.registerHyphenationCallback(word => [word]);
+    const doc = {
+      id: 'short-doc',
+      allowPageBreaks: true,
+      logo: null,
+      title: { uk: 'Короткий договір', en: '' },
+      paragraphs: [1, 2, 3, 4, 5, 6].map(number => ({ type: 'text', uk: `${number}. Короткий пункт договору номер ${number}.`, en: '' })),
+    };
+    const plans = await documentsModule.planColumnLayouts(pdf, {
+      documents: [doc], layout: 'two-column-uk', clinicLogos: [], formatting: DEFAULT_DOC_FORMATTING,
+    });
+    const [[left, right]] = plans['short-doc'];
+    expect(plans['short-doc']).toHaveLength(1);
+    expect([...left, ...right]).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(left).toHaveLength(3);
+    expect(right).toHaveLength(3);
+  }, 30000);
+
+  it('counts the document letter spacing in the first-page header height', async () => {
+    const documentsModule = await import('./DocumentsPdfDocument');
+    const doc = { title: { uk: 'Довгий заголовок договору '.repeat(6), en: '' }, beforeTitle: [] };
+    const header = letterSpacingPt => documentsModule.estimateFirstPageHeaderPt(doc, {
+      lang: 'uk', formatting: { ...DEFAULT_DOC_FORMATTING, letterSpacingPt }, contentWidth: 500, logoWidth: 100, clinicLogos: [],
+    });
+    expect(header(2)).toBeGreaterThan(header(0));
+  });
 });

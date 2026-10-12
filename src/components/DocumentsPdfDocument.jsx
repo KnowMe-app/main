@@ -18,6 +18,7 @@ import {
   allowsParagraphInternalBreak,
   estimateCharsPerLine,
   estimateColumnPageCapacity,
+  estimateParagraphChars,
   getClinicLogo,
   getEffectiveDocLayout,
   getLayoutLang,
@@ -29,6 +30,7 @@ import {
   normalizeSignerBlockOffsetPercent,
   parseFormattedRuns,
   splitBlankFieldRuns,
+  splitColumnsEvenly,
   paginateParagraphColumns,
   showsPageNumbers,
 } from './documentsCatalogUtils';
@@ -435,8 +437,10 @@ const resolveHeaderLogoReserve = (doc, clinicLogos, widthPt) => {
 // How tall the first page's header (body logo, addressee block, title) renders, estimated with the
 // same character-width model as the columns below it - the single-language 2-column layout plans
 // its pages before react-pdf lays anything out, so it has to know how much of page one is taken.
-const estimateTextLines = (text, widthPt, fontSize) => {
-  const charsPerLine = estimateCharsPerLine({ columnWidthPt: widthPt, fontSize });
+// letterSpacingPt is the document's character spacing: the header renders with it like the body, so
+// expanded text takes more header lines - leaving it out let page one's columns be planned too tall.
+const estimateTextLines = (text, widthPt, fontSize, letterSpacingPt = 0) => {
+  const charsPerLine = estimateCharsPerLine({ columnWidthPt: widthPt, fontSize, letterSpacingPt });
   return String(text || '').replace(/\*/g, '').split('\n')
     .reduce((sum, segment) => sum + Math.max(1, Math.ceil(segment.length / charsPerLine)), 0);
 };
@@ -457,7 +461,7 @@ export const estimateFirstPageHeaderPt = (doc, { lang, formatting, contentWidth,
     const blankLine = lineHeight(formatting.fontSize) + formatting.paragraphSpacing;
     blocks.forEach(block => {
       const fontSize = block.fontSize !== undefined ? block.fontSize : formatting.fontSize;
-      height += estimateTextLines(block[lang], stripWidth, fontSize) * lineHeight(fontSize) + formatting.paragraphSpacing;
+      height += estimateTextLines(block[lang], stripWidth, fontSize, formatting.letterSpacingPt) * lineHeight(fontSize) + formatting.paragraphSpacing;
     });
     // One empty line between blocks and one after the whole strip (BeforeTitleBlocks).
     height += blocks.length * blankLine;
@@ -465,7 +469,7 @@ export const estimateFirstPageHeaderPt = (doc, { lang, formatting, contentWidth,
   const title = doc.title || {};
   if (!isBlankBlockText(title[lang])) {
     const fontSize = title.fontSize !== undefined ? title.fontSize : formatting.titleFontSize;
-    height += estimateTextLines(title[lang], contentWidth, fontSize) * lineHeight(fontSize) + formatting.paragraphSpacing;
+    height += estimateTextLines(title[lang], contentWidth, fontSize, formatting.letterSpacingPt) * lineHeight(fontSize) + formatting.paragraphSpacing;
   }
   return height;
 };
@@ -958,6 +962,19 @@ export const planColumnLayouts = async (pdfFn, {
         pages[pageIndex][(column - 1) % 2].push(firstPageCount + offset);
       });
     }
+    // The flow fills the left column first, so a last page that isn't full ends with a tall left
+    // column next to a short (or, for a one-column-long document, empty) right one. Balance it
+    // like the estimate does: only ever moves the left column's tail to the right, so the left
+    // column keeps fitting, and the right one never gets more than the left column already held.
+    const lastPage = pages[pages.length - 1];
+    const charsPerLine = estimateCharsPerLine({
+      columnWidthPt: geometry.columnContentWidth, fontSize: formatting.fontSize, letterSpacingPt: formatting.letterSpacingPt,
+    });
+    const [balancedLeft, balancedRight] = splitColumnsEvenly(
+      [...lastPage[0], ...lastPage[1]],
+      index => estimateParagraphChars(paragraphs[index], lang, charsPerLine),
+    );
+    if (balancedLeft.length <= lastPage[0].length) pages[pages.length - 1] = [balancedLeft, balancedRight];
     plans[doc.id] = pages;
   }
   return plans;
