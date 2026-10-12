@@ -918,6 +918,25 @@ const uniqueLabels = labels => {
 
 // Приклади — мовою саме цієї програми: «у день пункції» сурогатній мамі не
 // скаже нічого, як і «на 12 тижні» донорці.
+// Приклад примітки — про той пункт, під яким вона стоїть. Одне «крім таксі»
+// під кожним блоком (і під «Житлом», і під «Страховкою») читалось як
+// випадковий текст і нічого не підказувало.
+const COVERAGE_NOTE_EXAMPLES = Object.freeze({
+  travel: { ed: 'Наприклад: квитки до клініки й назад', sm: 'Наприклад: таксі на кожен прийом' },
+  housing: { ed: 'Наприклад: квартира біля клініки на час стимуляції', sm: 'Наприклад: окрема квартира з 12 тижня' },
+  food: { ed: 'Наприклад: добові на дні стимуляції', sm: 'Наприклад: щомісяця на продукти' },
+  clothes: { sm: 'Наприклад: одяг для вагітних з 20 тижня' },
+  exams: { ed: 'Наприклад: аналізи й УЗД перед програмою', sm: 'Наприклад: усі аналізи й скринінги вагітності' },
+  insurance: { ed: 'Наприклад: страховка на час стимуляції', sm: 'Наприклад: медична страховка на всю вагітність' },
+  legal: { ed: 'Наприклад: юрист пояснює договір', sm: 'Наприклад: юрист на всіх етапах, зокрема після пологів' },
+  notary: { ed: 'Наприклад: договір у нотаріуса за рахунок агенції', sm: 'Наприклад: нотаріальна згода чоловіка' },
+  support: { ed: 'Наприклад: координаторка на звʼязку до пункції', sm: 'Наприклад: куратор на звʼязку до пологів' },
+});
+const coverageNoteExample = (key, isSurrogacy) => {
+  const examples = COVERAGE_NOTE_EXAMPLES[key];
+  return (examples && (isSurrogacy ? examples.sm || examples.ed : examples.ed || examples.sm)) || 'Наприклад: що саме входить';
+};
+
 const TYPE_EXAMPLES = Object.freeze({
   ed: {
     when: 'Наприклад: у день пункції',
@@ -1177,6 +1196,10 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
   // відмічених — шість однакових чіпів. Тепер чіп один, а вибір пункту — за
   // ним.
   const [pickCoverageDetail, setPickCoverageDetail] = useState(false);
+  // Подробиці покриття відкриті по одній, як виплати: «OK» згортає блок у
+  // рядок, а дотик до рядка відкриває його знову. Без цього відкритий блок
+  // стояв до кінця сесії, і закінчити опис не було чим.
+  const [openCoverage, setOpenCoverage] = useState('');
   const noteLength = String(program.note || '').length;
   const money = (amount, cur) => formatProgramMoney(amount, cur);
 
@@ -1296,6 +1319,48 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
       <OkButton type="button" onMouseDown={keepFocus} aria-label={uiText('Готово: {label}', language, { label })} onClick={finishPayment}>OK</OkButton>
     </BlockFooter>
   );
+  const finishCoverage = () => {
+    const active = document.activeElement;
+    if (active && typeof active.blur === 'function' && active !== document.body) active.blur();
+    setOpenCoverage('');
+  };
+  const coverageOkFooter = label => (
+    <BlockFooter>
+      <OkButton type="button" onMouseDown={keepFocus} aria-label={uiText('Готово: {label}', language, { label })} onClick={finishCoverage}>OK</OkButton>
+    </BlockFooter>
+  );
+  const collapsedCoverage = ({ key, label, details }) => {
+    const lines = details.map(line => String(line || '').trim()).filter(Boolean);
+    return (
+      <PaymentSummary
+        key={key}
+        type="button"
+        data-testid={`coverage-${key}`}
+        $tone="additional"
+        aria-expanded="false"
+        aria-label={uiText('Змінити: {label}', language, { label })}
+        onClick={() => setOpenCoverage(key)}
+      >
+        <span>
+          {label}
+          {lines.length ? lines.map(line => <small key={line}>{line}</small>) : <small>{uiText('не вказано', language)}</small>}
+        </span>
+      </PaymentSummary>
+    );
+  };
+  const openRelocation = () => {
+    reveal('relocation');
+    setOpenCoverage('relocation');
+  };
+  const clearRelocation = () => {
+    setRevealed(current => {
+      const next = new Set(current);
+      next.delete('relocation');
+      return next;
+    });
+    if (openCoverage === 'relocation') setOpenCoverage('');
+    set({ relocation: {} });
+  };
   const openHead = (id, label, remove) => (
     <BlockHead>
       <BlockTitle type="button" aria-expanded="true" onClick={() => togglePayment(id)}>
@@ -1763,18 +1828,73 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
                 </Pill>
               );
             })}
+            {/* Переїзд — такий самий пункт, як решта: відмічений відкриває
+                свій блок, знятий прибирає записане. Окремим «+ Переїзд»
+                унизу він губився серед чіпів «свого варіанту». */}
+            <Pill
+              type="button"
+              $on={showRelocation}
+              aria-pressed={showRelocation}
+              onClick={() => (showRelocation ? clearRelocation() : openRelocation())}
+            >
+              {showRelocation ? '✓ ' : ''}{uiText('Переїзд', language)}
+            </Pill>
           </Segments>
         </Field>
+        {showRelocation ? (openCoverage === 'relocation' ? (
+          <Block $tone="separate" data-testid="coverage-relocation">
+            <BlockHead>
+              <BlockTitle type="button" aria-expanded="true" onClick={() => setOpenCoverage('')}><b>{uiText('Переїзд', language)}</b></BlockTitle>
+            </BlockHead>
+            <FieldRow>
+              <Field id={`${idPrefix}-reloc-when`} label="Коли переїзд" language={language}>
+                <TextInput id={`${idPrefix}-reloc-when`} value={relocation.when || ''} maxLength={80} placeholder={uiText(isSurrogacy ? 'Наприклад: з 12 тижня' : 'Наприклад: на 5 днів стимуляції', language)} onChange={event => setRelocation({ when: event.target.value })} />
+              </Field>
+              <Field id={`${idPrefix}-family`} label="Сімʼя" grow={false} language={language}>
+                <Select id={`${idPrefix}-family`} value={relocation.family || ''} onChange={event => setRelocation({ family: event.target.value })}>
+                  {PROGRAM_FAMILY_OPTIONS.map(option => <option key={option.key} value={option.key}>{uiText(option.label, language)}</option>)}
+                </Select>
+              </Field>
+            </FieldRow>
+            <Field id={`${idPrefix}-reloc-note`} label="Примітка" optional language={language}>
+              <TextInput id={`${idPrefix}-reloc-note`} value={relocation.note || ''} maxLength={120} placeholder={uiText(isSurrogacy ? 'Наприклад: квартира біля пологового' : 'Наприклад: квартира біля клініки', language)} onChange={event => setRelocation({ note: event.target.value })} />
+            </Field>
+            {coverageOkFooter(uiText('Переїзд', language))}
+          </Block>
+        ) : collapsedCoverage({
+          key: 'relocation',
+          label: uiText('Переїзд', language),
+          details: [
+            relocation.when,
+            relocation.family ? uiText(PROGRAM_FAMILY_OPTIONS.find(option => option.key === relocation.family)?.label || '', language) : '',
+            relocation.note,
+          ],
+        })) : null}
         {coverageKeys.map(key => {
           const option = PROGRAM_COVERAGE_OPTIONS.find(item => item.key === key);
           if (!option) return null;
           const detail = coverageDetails[key] || {};
           const label = uiText(option.label, language);
-          const open = revealed.has(`cov:${key}`) || Object.keys(detail).length > 0;
-          if (!open) return null;
+          const shown = revealed.has(`cov:${key}`) || Object.keys(detail).length > 0;
+          if (!shown) return null;
+          if (openCoverage !== key) {
+            const mode = PROGRAM_COVERAGE_MODES.find(item => item.key === detail.mode);
+            const per = PROGRAM_COVERAGE_PER.find(item => item.key === (detail.per || 'total'));
+            return collapsedCoverage({
+              key,
+              label,
+              details: [
+                mode ? uiText(mode.label, language) : '',
+                hasMoney(detail.limit) ? `${uiText('до', language)} ${money(Number(detail.limit.amount), detail.limit.currency || currency)} ${uiText(per?.label || '', language)}`.trim() : '',
+                detail.note,
+              ],
+            });
+          }
           return (
-            <Block key={key} $tone="separate">
-              <BlockHead><b>{label}</b></BlockHead>
+            <Block key={key} $tone="separate" data-testid={`coverage-${key}`}>
+              <BlockHead>
+                <BlockTitle type="button" aria-expanded="true" onClick={() => setOpenCoverage('')}><b>{label}</b></BlockTitle>
+              </BlockHead>
               <FieldRow>
                 <Field id={`${idPrefix}-cov-${key}-mode`} label="Як покриваєте" language={language}>
                   <Select id={`${idPrefix}-cov-${key}-mode`} aria-label={uiText('Як покриваєте: {label}', language, { label })} value={detail.mode || ''} onChange={event => setCoverageDetail(key, { mode: event.target.value || undefined })}>
@@ -1794,8 +1914,9 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
                 ) : null}
               </FieldRow>
               <Field id={`${idPrefix}-cov-${key}-note`} label="Примітка" optional language={language}>
-                <TextInput id={`${idPrefix}-cov-${key}-note`} value={detail.note || ''} maxLength={120} placeholder={uiText('Наприклад: крім таксі', language)} onChange={event => setCoverageDetail(key, { note: event.target.value })} />
+                <TextInput id={`${idPrefix}-cov-${key}-note`} value={detail.note || ''} maxLength={120} placeholder={uiText(coverageNoteExample(key, isSurrogacy), language)} onChange={event => setCoverageDetail(key, { note: event.target.value })} />
               </Field>
+              {coverageOkFooter(label)}
             </Block>
           );
         })}
@@ -1803,7 +1924,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           <Segments>
             {pickCoverageDetail ? coverageKeys.filter(key => !revealed.has(`cov:${key}`) && !Object.keys(coverageDetails[key] || {}).length).map(key => {
               const option = PROGRAM_COVERAGE_OPTIONS.find(item => item.key === key);
-              return option ? <AddChip key={key} type="button" onClick={() => { reveal(`cov:${key}`); setPickCoverageDetail(false); }}>+ {uiText(option.label, language)}</AddChip> : null;
+              return option ? <AddChip key={key} type="button" onClick={() => { reveal(`cov:${key}`); setOpenCoverage(key); setPickCoverageDetail(false); }}>+ {uiText(option.label, language)}</AddChip> : null;
             }) : (
               <AddChip type="button" onClick={() => setPickCoverageDetail(true)}>+ {uiText('Як саме покриваєте', language)}</AddChip>
             )}
@@ -1834,26 +1955,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           {customCoverage.length < MAX_CUSTOM_COVERAGE && !customCoverage.some(item => !String(item || '').trim()) ? (
             <AddChip type="button" onMouseDown={keepFocus} onClick={() => setCustomCoverage([...customCoverage, ''])}>+ {uiText('Свій варіант: подарунок, аванс…', language)}</AddChip>
           ) : null}
-          {!showRelocation ? <AddChip type="button" onClick={() => reveal('relocation')}>+ {uiText('Переїзд', language)}</AddChip> : null}
         </Segments>
-        {showRelocation ? (
-          <Block $tone="separate">
-            <BlockHead><b>{uiText('Переїзд', language)}</b></BlockHead>
-            <FieldRow>
-              <Field id={`${idPrefix}-reloc-when`} label="Коли переїзд" language={language}>
-                <TextInput id={`${idPrefix}-reloc-when`} value={relocation.when || ''} maxLength={80} placeholder={uiText(isSurrogacy ? 'Наприклад: з 12 тижня' : 'Наприклад: на 5 днів стимуляції', language)} onChange={event => setRelocation({ when: event.target.value })} />
-              </Field>
-              <Field id={`${idPrefix}-family`} label="Сімʼя" grow={false} language={language}>
-                <Select id={`${idPrefix}-family`} value={relocation.family || ''} onChange={event => setRelocation({ family: event.target.value })}>
-                  {PROGRAM_FAMILY_OPTIONS.map(option => <option key={option.key} value={option.key}>{uiText(option.label, language)}</option>)}
-                </Select>
-              </Field>
-            </FieldRow>
-            <Field id={`${idPrefix}-reloc-note`} label="Примітка" optional language={language}>
-              <TextInput id={`${idPrefix}-reloc-note`} value={relocation.note || ''} maxLength={120} placeholder={uiText('Наприклад: квартира біля клініки', language)} onChange={event => setRelocation({ note: event.target.value })} />
-            </Field>
-          </Block>
-        ) : null}
       </>
     ),
   };
@@ -2096,7 +2198,9 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
       })}
       {draft.length < MAX_PROGRAMS ? (
         <AddProgram type="button" onClick={() => add(defaultType)}>
-          + {uiText('Додати програму', language)}
+          {/* Під уже заведеною програмою «Додати програму» читалось як
+              «зберегти цю», тобто як кнопка відправки форми. */}
+          + {uiText(draft.length ? 'Додати ще одну програму' : 'Додати програму', language)}
         </AddProgram>
       ) : null}
     </Wrap>

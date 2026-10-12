@@ -445,6 +445,39 @@ describe('редактор програм', () => {
     expect(screen.queryByRole('button', { name: 'Переїзд із сімʼєю' })).not.toBeInTheDocument();
   });
 
+  it('подробиці покриття згортає «OK», підказка — про сам пункт, переїзд — чіп серед покриття', () => {
+    const onSave = jest.fn();
+    const programs = { p5: { id: 'p5', type: 'sm', coverage: ['housing'], payments: { final: { amount: 20000, currency: 'USD' } } } };
+    render(<ProgramsEditor programs={programs} onSave={onSave} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо сурогатну маму/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Додатково/ }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Як саме покриваєте' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Житло' }));
+    expect(screen.queryByPlaceholderText('Наприклад: крім таксі')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('Наприклад: окрема квартира з 12 тижня'), { target: { value: 'двокімнатна' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Готово: Житло' }));
+    expect(screen.queryByLabelText('Як покриваєте: Житло')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Змінити: Житло' })).toHaveTextContent('двокімнатна');
+
+    expect(screen.queryByRole('button', { name: '+ Переїзд' })).not.toBeInTheDocument();
+    const relocation = screen.getByRole('button', { name: 'Переїзд' });
+    expect(relocation).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(relocation);
+    expect(screen.getByLabelText('Коли переїзд')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Готово: Переїзд' }));
+    expect(screen.queryByLabelText('Коли переїзд')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '✓ Переїзд' }));
+    expect(screen.getByRole('button', { name: 'Переїзд' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('під заведеною програмою кнопка каже «Додати ще одну програму»', () => {
+    const { unmount } = render(<ProgramsEditor programs={{}} onSave={jest.fn()} language="uk" />);
+    expect(screen.getByRole('button', { name: '+ Додати програму' })).toBeInTheDocument();
+    unmount();
+    render(<ProgramsEditor programs={{ p6: { id: 'p6', type: 'ed', payments: {} } }} onSave={jest.fn()} language="uk" />);
+    expect(screen.getByRole('button', { name: '+ Додати ще одну програму' })).toBeInTheDocument();
+  });
+
   it('групу крові відмічають чіпами, «звідки не беруть» — текстом із впізнаними областями', () => {
     const onSave = jest.fn();
     const { unmount } = render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
