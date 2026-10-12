@@ -22,6 +22,7 @@ import {
   parseFormattedRuns,
   splitBlankFieldRuns,
   splitParagraphsIntoColumns,
+  showsPageNumbers,
 } from './documentsCatalogUtils';
 
 const CM_TO_TWIP = 567;
@@ -745,10 +746,10 @@ export const buildDocumentsDocx = async ({
   // way; `allowPageBreaks` (set on genuinely long templates) is the best available per-document
   // proxy for "this one may run past a single page" and is used instead of the previous
   // `documents.length > 1` guess, which judged the whole export rather than each document.
-  const anyDocumentCanShowPageNumbers = formatting.showPageNumbers && documents.some(doc => doc.allowPageBreaks);
+  const anyDocumentCanShowPageNumbers = documents.some(doc => showsPageNumbers(doc, formatting) && doc.allowPageBreaks);
 
   const buildFooter = doc => {
-    const showPageNumbers = formatting.showPageNumbers && Boolean(doc.allowPageBreaks);
+    const showPageNumbers = showsPageNumbers(doc, formatting) && Boolean(doc.allowPageBreaks);
     const footerChildren = [];
     if (formatting.footerText || showPageNumbers) {
       const runs = [];
