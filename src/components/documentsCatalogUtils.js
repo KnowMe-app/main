@@ -912,6 +912,11 @@ export const createEmptyNotary = () => ({
     en: { full: '' },
   },
   title: { uk: '', en: '' },
+  // The notarial certificate under an agreement names the notary in the instrumental case
+  // ("посвідчено мною, приватним нотаріусом … Ю.Б. Алексашиною") - a form no generic rule can
+  // derive from the nominative, so it is typed once per notary.
+  titleInstrumental: { uk: '' },
+  instrumentalShortName: { uk: '' },
   city: { uk: '', en: '' },
 });
 
@@ -3994,10 +3999,15 @@ export const normalizeDocumentStyle = value => (DOCUMENT_STYLES.includes(value) 
 
 export const isOfficialFormStyle = doc => normalizeDocumentStyle(doc?.documentStyle) === 'official-form';
 
-// A notarial (branded) document carries no "Page X of Y": the notarial standard numbers nothing,
-// and the footer was printing it under every statement and agreement. Only an official form keeps
-// the Format panel's page-number toggle - it replicates a government template, which may number.
-export const showsPageNumbers = (doc, formatting) => Boolean(formatting?.showPageNumbers) && isOfficialFormStyle(doc);
+// A notarial document carries no "Page X of Y": the reference Word files of the agreement, its
+// appendix and the statements number nothing, and the footer was printing it under each of them.
+// "Notarial" is every template tied to a case document (TEMPLATE_DOCUMENT_CONFIG with a
+// documentKey) - the appendix too, though it isn't itself notarized. The program rules (no
+// documentKey) and every other template keep the Format panel's toggle: the rules' reference
+// file does print "Page 1 of 6".
+export const isNotarialDocument = doc => Boolean(TEMPLATE_DOCUMENT_CONFIG[doc?.id]?.documentKey);
+
+export const showsPageNumbers = (doc, formatting) => Boolean(formatting?.showPageNumbers) && !isNotarialDocument(doc);
 
 // Measured directly from the reference Додаток 18 docx's own XML (batch 22): pgMar top/right/
 // bottom/left = 284/851/567/851 twips = 0.5/1.5/1.0/1.5 cm, single line spacing, no after-paragraph
@@ -4097,23 +4107,50 @@ export const normalizeDocumentsSettings = raw => {
 
 // --- File naming ----------------------------------------------------------------------------
 
-const slugifyFileNamePart = value => String(value || '')
-  .replace(/[^\p{L}\p{N}]+/gu, '_')
-  .replace(/^_+|_+$/g, '');
+// Short document names for the downloaded file, as the reference files name them
+// ("Katsura - Ільченко - Договір.docx"). A template not listed here falls back to its catalog name.
+export const DOCUMENT_FILE_LABELS = {
+  'surrogacy-agreement': 'Договір',
+  'surrogacy-agreement-appendix-1': 'Додаток',
+  'surrogacy-program-rules': 'Правила',
+  'surrogate-unmarried-declaration': 'Заява про шлюб',
+};
+
+// Characters no file system accepts; everything else (Cyrillic, spaces, dashes) stays exactly as
+// the reference names have it. Whitespace runs (tabs, newlines) collapse to one space.
+const sanitizeFileNamePart = value => String(value || '')
+  .replace(/[\\/:*?"<>|]+/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const firstWord = value => String(value || '').trim().split(/\s+/)[0] || '';
+
+const personNameText = name => {
+  if (!name) return '';
+  if (typeof name === 'string') return name;
+  return name.full || name.nominative || '';
+};
 
 // Every selected document downloads as its own file (spec: "всі обрані документи ... мають бути
-// окремими файлами") - `doc` (a single generated document, when provided) adds its own title to
-// the name so a batch download doesn't produce several identically-named files.
+// окремими файлами"), named like the reference files: couple surname (Latin, from the passport
+// name) - surrogate mother surname - short document name, e.g. "Katsura - Ільченко - Договір".
+// A layout other than Ukrainian-only adds its language tag, so the UA and EN files of one document
+// never overwrite each other. Missing parts are skipped rather than left as empty " -  - ".
 export const buildDocumentsFileName = (catalog, caseRecord, layout, extension, doc = null) => {
-  const label = slugifyFileNamePart(buildCaseLabel(catalog, caseRecord)).slice(0, 60) || 'Case';
-  const docLabel = doc ? slugifyFileNamePart(doc.title?.uk || doc.title?.en || doc.id).slice(0, 60) : '';
-  const langTag = isBilingualLayout(layout) ? 'UA-EN' : (getLayoutLang(layout) === 'en' ? 'EN' : 'UA');
-  const today = new Date();
-  const ymd = [
-    today.getFullYear(),
-    String(today.getMonth() + 1).padStart(2, '0'),
-    String(today.getDate()).padStart(2, '0'),
-  ].join('-');
-  const parts = ['Documents', label, docLabel, langTag, ymd].filter(Boolean);
-  return `${parts.join('_')}.${extension}`;
+  const context = caseRecord ? resolveCaseContext(catalog, caseRecord.id) : null;
+  const coupleName = firstWord(personNameText(context?.wife?.name?.en))
+    || firstWord(personNameText(context?.husband?.name?.en))
+    || firstWord(personNameText(context?.wife?.name?.uk));
+  const surrogateName = firstWord(personNameText(context?.surrogateMother?.name?.uk));
+  const template = doc ? toArray(catalog?.documents).find(item => String(item?.id) === String(doc.id)) : null;
+  const docLabel = doc
+    ? (DOCUMENT_FILE_LABELS[doc.id] || template?.catalogName || doc.title?.uk || doc.title?.en || doc.id)
+    : 'Документи';
+  const effectiveLayout = doc ? getEffectiveDocLayout(doc, layout) : layout;
+  const langTag = isBilingualLayout(effectiveLayout) ? 'UA-EN' : (getLayoutLang(effectiveLayout) === 'en' ? 'EN' : '');
+  const parts = [coupleName, surrogateName, [docLabel, langTag].filter(Boolean).join(' ')]
+    .map(sanitizeFileNamePart)
+    .filter(Boolean);
+  const base = parts.length ? parts.join(' - ') : (sanitizeFileNamePart(buildCaseLabel(catalog, caseRecord)) || 'Документи');
+  return `${base}.${extension}`;
 };

@@ -671,22 +671,28 @@ describe('spec: Documents list ordered by most recently downloaded', () => {
 });
 
 describe('spec: every selected document downloads as its own separate file', () => {
-  it('includes the document title in the file name so a batch never collides on one name', () => {
+  it('names the file like the reference files: couple - surrogate mother - short document name', () => {
     const catalog = sampleCatalog();
     const caseRecord = catalog.cases[0];
-    const docA = { id: 'doc-a', title: { uk: 'Перший документ', en: 'First document' } };
-    const docB = { id: 'doc-b', title: { uk: 'Другий документ', en: 'Second document' } };
+    const agreement = { id: 'surrogacy-agreement', languages: ['uk'], title: { uk: 'ДОГОВІР' } };
+    expect(buildDocumentsFileName(catalog, caseRecord, 'two-column', 'docx', agreement)).toBe('Testova - Прикладова - Договір.docx');
+    const english = { ...agreement, languages: ['en'] };
+    expect(buildDocumentsFileName(catalog, caseRecord, 'two-column', 'pdf', english)).toBe('Testova - Прикладова - Договір EN.pdf');
+  });
+
+  it('falls back to the document title for an unlisted template, so a batch never collides on one name', () => {
+    const catalog = sampleCatalog();
+    const caseRecord = catalog.cases[0];
+    const docA = { id: 'doc-a', languages: ['uk'], title: { uk: 'Перший документ' } };
+    const docB = { id: 'doc-b', languages: ['uk'], title: { uk: 'Другий документ' } };
     const nameA = buildDocumentsFileName(catalog, caseRecord, 'two-column', 'pdf', docA);
-    const nameB = buildDocumentsFileName(catalog, caseRecord, 'two-column', 'pdf', docB);
-    expect(nameA).not.toBe(nameB);
-    expect(nameA).toContain('Перший_документ');
-    expect(nameB).toContain('Другий_документ');
+    expect(nameA).not.toBe(buildDocumentsFileName(catalog, caseRecord, 'two-column', 'pdf', docB));
+    expect(nameA).toBe('Testova - Прикладова - Перший документ.pdf');
   });
 
   it('still produces a valid name when no specific document is given (batch-level fallback)', () => {
     const catalog = sampleCatalog();
-    const caseRecord = catalog.cases[0];
-    expect(buildDocumentsFileName(catalog, caseRecord, 'two-column', 'pdf')).toMatch(/^Documents_.+\.pdf$/);
+    expect(buildDocumentsFileName(catalog, catalog.cases[0], 'two-column', 'pdf')).toMatch(/^Testova - Прикладова - .+\.pdf$/);
   });
 });
 
@@ -2320,11 +2326,13 @@ describe('listEmptyPrintedLanguages: a layout that prints a language the documen
 });
 
 describe('page numbers: notarial documents carry none', () => {
-  it('only an official form prints page numbers, and only when the toggle is on', () => {
-    expect(showsPageNumbers({ documentStyle: 'branded' }, { showPageNumbers: true })).toBe(false);
-    expect(showsPageNumbers({}, { showPageNumbers: true })).toBe(false);
-    expect(showsPageNumbers({ documentStyle: 'official-form' }, { showPageNumbers: true })).toBe(true);
-    expect(showsPageNumbers({ documentStyle: 'official-form' }, { showPageNumbers: false })).toBe(false);
+  it('drops numbering for templates tied to a case document, keeps the toggle elsewhere', () => {
+    expect(showsPageNumbers({ id: 'surrogacy-agreement' }, { showPageNumbers: true })).toBe(false);
+    expect(showsPageNumbers({ id: 'surrogacy-agreement-appendix-1' }, { showPageNumbers: true })).toBe(false);
+    expect(showsPageNumbers({ id: 'surrogate-unmarried-declaration' }, { showPageNumbers: true })).toBe(false);
+    expect(showsPageNumbers({ id: 'surrogacy-program-rules' }, { showPageNumbers: true })).toBe(true);
+    expect(showsPageNumbers({ id: 'medical-services-agreement' }, { showPageNumbers: true })).toBe(true);
+    expect(showsPageNumbers({ id: 'surrogacy-program-rules' }, { showPageNumbers: false })).toBe(false);
   });
 });
 

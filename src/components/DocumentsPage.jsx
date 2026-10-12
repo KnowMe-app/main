@@ -61,6 +61,7 @@ import {
   getTemplateScopeText,
   isBilingualLayout,
   isLayoutV2Template,
+  isNotarialDocument,
   isOfficialFormStyle,
   listEmptyPrintedLanguages,
   isSingleLanguageTwoColumnLayout,
@@ -3954,9 +3955,9 @@ const DocumentsPage = ({ isAdmin }) => {
                     </Field>
                   </FieldGrid>
                   <RowLine style={{ marginTop: 8 }}>
-                    {/* Notarial (branded) documents never print page numbers (showsPageNumbers),
-                        so the toggle only exists for an official form it can still affect. */}
-                    {isOfficialFormStyle(catalog.documents.find(item => String(item.id) === formatDocId)) ? (
+                    {/* Notarial documents never print page numbers (showsPageNumbers), so the
+                        toggle only shows where it still decides something. */}
+                    {!isNotarialDocument(catalog.documents.find(item => String(item.id) === formatDocId)) ? (
                       <CheckLine>
                         <DocCheckbox
                           type="checkbox"

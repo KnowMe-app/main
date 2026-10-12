@@ -532,6 +532,10 @@ const NOTARY_FIELDS = [
   { label: 'Name (en, full)', path: 'name.en.full' },
   { label: 'Title (uk)', path: 'title.uk' },
   { label: 'Title (en)', path: 'title.en' },
+  // Instrumental forms for the notarial certificate ("посвідчено мною, приватним нотаріусом …
+  // Ю.Б. Алексашиною") - see createEmptyNotary.
+  { label: 'Title (uk, instrumental «ким»)', path: 'titleInstrumental.uk' },
+  { label: 'Short name (uk, instrumental «Ю.Б. Алексашиною»)', path: 'instrumentalShortName.uk' },
   { label: 'City (uk)', path: 'city.uk' },
   { label: 'City (en)', path: 'city.en' },
 ];
