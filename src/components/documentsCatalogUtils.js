@@ -3995,6 +3995,13 @@ export const DEFAULT_DOC_FORMATTING = {
   // Character spacing in points, Word's "Condensed/Expanded by" - the reference surrogacy agreement
   // is condensed by 0.3 pt (w:spacing -6), which is what fits its two columns onto two pages.
   letterSpacingPt: 0,
+  // Blank space (cm) kept free at the bottom of page one's right column: a notarial blank carries
+  // its security element (32 x 25 mm optical element with the QR code, series and number) in the
+  // lower right corner of the front side, and nothing may be printed over it.
+  firstPageRightReserveCm: 0,
+  // Blank space (cm) kept free at the end of the last column - room for the notary's
+  // "copy" stamp under the text.
+  lastColumnReserveCm: 0,
 };
 
 const clampNumber = (value, min, max, fallback) => {
@@ -4050,6 +4057,8 @@ export const OFFICIAL_FORM_FORMATTING = {
   showPageNumbers: DEFAULT_DOC_FORMATTING.showPageNumbers,
   columnDivider: DEFAULT_DOC_FORMATTING.columnDivider,
   letterSpacingPt: DEFAULT_DOC_FORMATTING.letterSpacingPt,
+  firstPageRightReserveCm: DEFAULT_DOC_FORMATTING.firstPageRightReserveCm,
+  lastColumnReserveCm: DEFAULT_DOC_FORMATTING.lastColumnReserveCm,
 };
 
 export const normalizeDocFormatting = raw => {
@@ -4076,6 +4085,8 @@ export const normalizeDocFormatting = raw => {
       ? DEFAULT_DOC_FORMATTING.columnDivider
       : Boolean(source.columnDivider),
     letterSpacingPt: clampNumber(source.letterSpacingPt, -2, 2, DEFAULT_DOC_FORMATTING.letterSpacingPt),
+    firstPageRightReserveCm: clampNumber(source.firstPageRightReserveCm, 0, 20, DEFAULT_DOC_FORMATTING.firstPageRightReserveCm),
+    lastColumnReserveCm: clampNumber(source.lastColumnReserveCm, 0, 20, DEFAULT_DOC_FORMATTING.lastColumnReserveCm),
   };
 };
 

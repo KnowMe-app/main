@@ -3931,6 +3931,8 @@ const DocumentsPage = ({ isAdmin }) => {
                     {numberField('titleFontSize', 'Title size (pt)', 0.5)}
                     {numberField('lineSpacing', 'Line spacing (×)', 0.05)}
                     {numberField('letterSpacingPt', 'Letter spacing (pt, − condensed)', 0.1)}
+                    {numberField('firstPageRightReserveCm', 'Free space, page 1 right column bottom (cm, blank security element)', 0.5)}
+                    {numberField('lastColumnReserveCm', 'Free space after the text (cm, notary copy stamp)', 0.5)}
                     {numberField('paragraphSpacing', 'Paragraph spacing (pt)', 1)}
                     {numberField('firstLineIndentCm', 'First line indent (cm)', 0.25)}
                     {numberField('columnGapCm', 'Column gap (cm)', 0.1)}
