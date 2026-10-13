@@ -904,9 +904,24 @@ const FormatPopoverButton = ({ open, onToggle, onClose, buttonTitle, fields, chi
 // font size / first-line indent (previously a second button, the sliders icon, right next to this
 // one). One gear, one popover, one trash button alongside it - same open/close-on-outside-click/Esc
 // boundary as FormatPopoverButton above.
+// Page margins as Word's Page Setup lays them out: top/bottom, then left/right.
+const PAGE_MARGIN_FIELDS = [
+  { key: 'marginTopCm', label: 'Верхнє' },
+  { key: 'marginBottomCm', label: 'Нижнє' },
+  { key: 'marginLeftCm', label: 'Ліве' },
+  { key: 'marginRightCm', label: 'Праве' },
+];
+
+const MarginGrid = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+`;
+
 const DocLayoutSettingsPopoverButton = ({
   open, onToggle, onClose, activeLayout, onSetLayout, hasLayoutV2, layoutV2Active, onToggleLayoutV2,
   fontSizeValue, fontSizePlaceholder, onSetFontSize, indentValue, indentPlaceholder, onSetIndent, onFieldBlur,
+  marginFields = [], onSetFormatField,
 }) => {
   const anchorRef = useRef(null);
   const cardRef = useRef(null);
@@ -971,6 +986,23 @@ const DocLayoutSettingsPopoverButton = ({
         onApply={onSetIndent}
         onFieldBlur={onFieldBlur}
       />
+      {marginFields.length ? (
+        <Field>
+          Поля сторінки (см)
+          <MarginGrid>
+            {marginFields.map(field => (
+              <PlainNumberField
+                key={field.key}
+                label={field.label}
+                initialValue={field.value}
+                placeholder={field.placeholder}
+                onApply={raw => onSetFormatField(field.key, raw)}
+                onFieldBlur={onFieldBlur}
+              />
+            ))}
+          </MarginGrid>
+        </Field>
+      ) : null}
     </PopoverCard>
   );
   return (
@@ -2787,6 +2819,12 @@ const DocumentsPage = ({ isAdmin }) => {
                         indentValue={template.format?.firstLineIndentCm !== undefined ? String(template.format.firstLineIndentCm) : ''}
                         indentPlaceholder={formatting.firstLineIndentCm.toFixed(1)}
                         onSetIndent={raw => setDocFormatField(template.id, 'firstLineIndentCm', raw)}
+                        marginFields={PAGE_MARGIN_FIELDS.map(field => ({
+                          ...field,
+                          value: template.format?.[field.key] !== undefined ? String(template.format[field.key]) : '',
+                          placeholder: Number(formatting[field.key]).toFixed(1),
+                        }))}
+                        onSetFormatField={(key, raw) => setDocFormatField(template.id, key, raw)}
                         onFieldBlur={() => persistTemplate(template.id)}
                       />
                       <DangerButton type="button" onClick={() => handleDeleteTemplate(template)} title="Delete document">
