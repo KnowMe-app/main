@@ -154,6 +154,54 @@ const ProgramBox = styled.div`
   border: 1px ${({ $hidden }) => ($hidden ? 'dashed' : 'solid')} ${BORDER};
   border-radius: var(--km-radius, 14px);
   background: ${CARD};
+  /* Прокрутка до програми (нова, згорнута) не ховає її шапку під липку панель. */
+  scroll-margin-top: calc(${STICKY_OFFSET} + 12px);
+`;
+
+// Підтвердження видалення — окремим рядком під шапкою, з питанням словами.
+// Дві кнопки «Видалити» й «Ні» в самій шапці стискали назву програми до
+// «Шукаємо сурогатну …», а «Ні» без питання поруч не казало, на що це відповідь.
+const ConfirmRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 10px 14px;
+  border-top: 1px solid ${BORDER};
+  background: color-mix(in srgb, ${DANGER} 6%, transparent);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: ${TEXT};
+
+  > span { flex: 1 1 100%; }
+  &:last-child { border-radius: 0 0 var(--km-radius, 14px) var(--km-radius, 14px); }
+`;
+
+// Внизу відкритої програми: форма довга, і згорнути її інакше можна було
+// лише прокрутивши назад до назви. Кнопки «зберегти» тут немає й не треба —
+// записує автозбереження, — тож закінчення роботи з програмою названо
+// згортанням.
+const ProgramFooter = styled.div`
+  display: flex;
+  justify-content: center;
+  padding: 0 12px 14px;
+`;
+
+const CollapseButton = styled.button`
+  min-height: 42px;
+  width: 100%;
+  max-width: 360px;
+  padding: 0 18px;
+  border: 1px solid ${BORDER};
+  border-radius: 10px;
+  background: ${CARD};
+  color: ${TEXT};
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:focus-visible { outline: none; box-shadow: ${FOCUS_RING}; }
 `;
 
 const ProgramHead = styled.div`
@@ -1047,16 +1095,18 @@ const GuaranteedToggle = ({ id, checked, onChange, language }) => (
 const PaymentDetails = ({ value, onChange, language, idPrefix, examples }) => {
   const filled = Boolean(value?.when);
   const [open, setOpen] = useState(filled);
+  // Відкрите дотиком поле одразу бере фокус — як і решта «+» форми.
+  const [focusOnOpen, setFocusOnOpen] = useState(false);
   const legacyCondition = value?.condition !== undefined && value?.condition !== '';
   return (
     <>
       {!open && !filled ? (
-        <LinkButton type="button" onClick={() => setOpen(true)}>
+        <LinkButton type="button" onClick={() => { setOpen(true); setFocusOnOpen(true); }}>
           + {uiText('Коли платять', language)}
         </LinkButton>
       ) : (
         <Field id={`${idPrefix}-when`} label="Коли платять" optional language={language}>
-          <TextInput id={`${idPrefix}-when`} value={value?.when || ''} maxLength={60} placeholder={uiText(examples.when, language)} onChange={event => onChange({ when: event.target.value })} />
+          <TextInput id={`${idPrefix}-when`} autoFocus={focusOnOpen} value={value?.when || ''} maxLength={60} placeholder={uiText(examples.when, language)} onChange={event => onChange({ when: event.target.value })} />
         </Field>
       )}
       {legacyCondition ? (
@@ -1252,6 +1302,22 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
   // пальця, і перший дотик влучав повз кнопку — додати доплату виходило
   // лише з другого разу.
   const keepFocus = event => event.preventDefault();
+  // Те саме, що й з виплатами, — для решти «+»: вимога, своя вимога, свій
+  // варіант покриття, подробиці покриття. Новий рядок ставав на своє місце в
+  // переліку (група крові — посеред вимог), без фокуса, і людина після дотику
+  // шукала очима, що ж додалось, а на телефоні ще й тягнулась до поля вдруге.
+  const focusIdRef = useRef('');
+  const focusSoon = id => { focusIdRef.current = id; };
+  useEffect(() => {
+    const id = focusIdRef.current;
+    if (!id) return;
+    focusIdRef.current = '';
+    const node = document.getElementById(id);
+    if (!node) return;
+    const target = node.matches('input, textarea, select, button') ? node : node.querySelector('input, textarea, select, button');
+    if (typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    target?.focus({ preventScroll: true });
+  });
   const addKnownPayment = key => {
     const id = `known-${key}`;
     reveal(key);
@@ -1351,6 +1417,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
   const openRelocation = () => {
     reveal('relocation');
     setOpenCoverage('relocation');
+    focusSoon(`${idPrefix}-reloc-when`);
   };
   const clearRelocation = () => {
     setRevealed(current => {
@@ -1801,11 +1868,11 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         {customRequirements.map(customRequirementRow)}
         <Segments>
           {requirementDefs.filter(def => !requirementFilled(program, def) && !revealed.has(`req:${def.key}`)).map(def => (
-            <AddChip key={def.key} type="button" onClick={() => reveal(`req:${def.key}`)}>+ {uiText(PROGRAM_REQUIREMENT_LABELS[def.key], language)}</AddChip>
+            <AddChip key={def.key} type="button" onClick={() => { reveal(`req:${def.key}`); focusSoon(`${idPrefix}-req-${def.key}`); }}>+ {uiText(PROGRAM_REQUIREMENT_LABELS[def.key], language)}</AddChip>
           ))}
           {/* Порожня своя вимога стоїть одна: наступна додається, коли цю заповнено. */}
           {customRequirements.length < MAX_CUSTOM_REQUIREMENTS && !customRequirements.some(item => !String(item.text || '').trim()) ? (
-            <AddChip type="button" onMouseDown={keepFocus} onClick={() => setCustomRequirements([...customRequirements, { text: '' }])}>+ {uiText('Своя вимога', language)}</AddChip>
+            <AddChip type="button" onMouseDown={keepFocus} onClick={() => { setCustomRequirements([...customRequirements, { text: '' }]); focusSoon(`${idPrefix}-req-custom-${customRequirements.length}`); }}>+ {uiText('Своя вимога', language)}</AddChip>
           ) : null}
         </Segments>
       </>
@@ -1921,14 +1988,33 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
           );
         })}
         {coverageKeys.some(key => !revealed.has(`cov:${key}`) && !Object.keys(coverageDetails[key] || {}).length) ? (
-          <Segments>
-            {pickCoverageDetail ? coverageKeys.filter(key => !revealed.has(`cov:${key}`) && !Object.keys(coverageDetails[key] || {}).length).map(key => {
-              const option = PROGRAM_COVERAGE_OPTIONS.find(item => item.key === key);
-              return option ? <AddChip key={key} type="button" onClick={() => { reveal(`cov:${key}`); setOpenCoverage(key); setPickCoverageDetail(false); }}>+ {uiText(option.label, language)}</AddChip> : null;
-            }) : (
+          pickCoverageDetail ? (
+            // Без питання над ними чіпи «+ Проїзд», «+ Житло» стояли просто під
+            // уже відміченими «✓ Проїзд», «✓ Житло» і читались як «додати ще
+            // раз». Тепер вибір підписаний і має вихід.
+            <Field label="Уточніть, як саме покриваєте:" language={language}>
+              <Segments>
+                {coverageKeys.filter(key => !revealed.has(`cov:${key}`) && !Object.keys(coverageDetails[key] || {}).length).map(key => {
+                  const option = PROGRAM_COVERAGE_OPTIONS.find(item => item.key === key);
+                  return option ? (
+                    <AddChip
+                      key={key}
+                      type="button"
+                      aria-label={uiText('Уточнити: {label}', language, { label: uiText(option.label, language) })}
+                      onClick={() => { reveal(`cov:${key}`); setOpenCoverage(key); setPickCoverageDetail(false); focusSoon(`${idPrefix}-cov-${key}-mode`); }}
+                    >
+                      {uiText(option.label, language)}
+                    </AddChip>
+                  ) : null;
+                })}
+                <LinkButton type="button" onClick={() => setPickCoverageDetail(false)}>{uiText('Не уточнювати', language)}</LinkButton>
+              </Segments>
+            </Field>
+          ) : (
+            <Segments>
               <AddChip type="button" onClick={() => setPickCoverageDetail(true)}>+ {uiText('Як саме покриваєте', language)}</AddChip>
-            )}
-          </Segments>
+            </Segments>
+          )
         ) : null}
 
         {customCoverage.map((item, index) => {
@@ -1953,7 +2039,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         <Segments>
           {/* Порожній свій пункт стоїть один: наступний додається, коли цей заповнено. */}
           {customCoverage.length < MAX_CUSTOM_COVERAGE && !customCoverage.some(item => !String(item || '').trim()) ? (
-            <AddChip type="button" onMouseDown={keepFocus} onClick={() => setCustomCoverage([...customCoverage, ''])}>+ {uiText('Свій варіант: подарунок, аванс…', language)}</AddChip>
+            <AddChip type="button" onMouseDown={keepFocus} onClick={() => { setCustomCoverage([...customCoverage, '']); focusSoon(`${idPrefix}-cov-custom-${customCoverage.length}`); }}>+ {uiText('Свій варіант: подарунок, аванс…', language)}</AddChip>
           ) : null}
         </Segments>
       </>
@@ -2100,16 +2186,38 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
     timerRef.current = window.setTimeout(flush, SAVE_DELAY_MS);
   };
 
+  // Відкрита (чи щойно згорнута) програма стає під палець. Відкриття нової
+  // згортає попередню, і сторінка над нею коротшає на висоту цілої форми:
+  // браузер без scroll anchoring (Safari) лишав людину посеред «Соцмереж», а
+  // нової програми не було видно взагалі.
+  const scrollTargetRef = useRef('');
+  useEffect(() => {
+    const id = scrollTargetRef.current;
+    if (!id) return;
+    scrollTargetRef.current = '';
+    const node = document.querySelector(`[data-program-box="${id}"]`);
+    if (node && typeof node.scrollIntoView === 'function') node.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  });
+  const openProgram = id => {
+    scrollTargetRef.current = id;
+    setOpenId(id);
+  };
+  const collapseProgram = id => {
+    flush();
+    scrollTargetRef.current = id;
+    setOpenId('');
+  };
+
   const add = type => {
     const program = createEmptyProgram(type, nextProgramId(draft));
     update([...draft, program]);
-    setOpenId(program.id);
+    openProgram(program.id);
   };
 
   const duplicate = program => {
     const copy = { ...program, id: nextProgramId(draft), hidden: false };
     update([...draft, copy]);
-    setOpenId(copy.id);
+    openProgram(copy.id);
   };
 
   // Порядок — це порядок у записі (`programsToRecord` ставить `order` за
@@ -2148,23 +2256,18 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
         const status = programStatus(program, { profilePublished });
         const pay = headPay(program);
         return (
-          <ProgramBox key={program.id} data-testid="program-editor" $hidden={program.hidden}>
+          <ProgramBox key={program.id} data-testid="program-editor" data-program-box={program.id} $hidden={program.hidden}>
             <ProgramHead $open={open} style={program.hidden ? { opacity: 0.75 } : undefined}>
-              <HeadText type="button" aria-expanded={open} onClick={() => { flush(); setOpenId(open ? '' : program.id); }}>
+              <HeadText type="button" aria-expanded={open} onClick={() => { flush(); if (open) setOpenId(''); else openProgram(program.id); }}>
                 <span>
                   <b>{uiText(PROGRAM_OFFER_LABELS[program.type], language)}</b>
                 </span>
                 <span>
-                  <em>{formatProgramPlace(program.location)}{program.location && pay ? ' · ' : ''}{pay ? <strong>{pay}</strong> : null}</em>
+                  {program.location || pay ? <em>{formatProgramPlace(program.location)}{program.location && pay ? ' · ' : ''}{pay ? <strong>{pay}</strong> : null}</em> : null}
                   <Status $tone={status.tone}>{uiText(status.label, language)}</Status>
                 </span>
               </HeadText>
-              {confirmDeleteId === program.id ? (
-                <>
-                  <SmallButton type="button" $danger onClick={() => { update(draft.filter(item => item.id !== program.id)); setConfirmDeleteId(''); }}>{uiText('Видалити', language)}</SmallButton>
-                  <SmallButton type="button" onClick={() => setConfirmDeleteId('')}>{uiText('Ні', language)}</SmallButton>
-                </>
-              ) : (
+              {confirmDeleteId === program.id ? null : (
                 <ProgramActionsMenu label={uiText('Дії програми', language)}>
                   {draft.length > 1 ? (
                     <>
@@ -2183,6 +2286,23 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
                   кнопкою. Розгортає програму натиск на її назву, а «⋮» став
                   на місце стрілки, у правий край. */}
             </ProgramHead>
+            {confirmDeleteId === program.id ? (
+              <ConfirmRow role="alertdialog" aria-label={uiText('Видалити програму?', language)}>
+                <span>{uiText('Видалити програму? Відновити її не вийде.', language)}</span>
+                <SmallButton type="button" autoFocus onClick={() => setConfirmDeleteId('')}>{uiText('Не видаляти', language)}</SmallButton>
+                <SmallButton
+                  type="button"
+                  $danger
+                  onClick={() => {
+                    update(draft.filter(item => item.id !== program.id));
+                    setConfirmDeleteId('');
+                    if (openId === program.id) setOpenId('');
+                  }}
+                >
+                  {uiText('Так, видалити', language)}
+                </SmallButton>
+              </ConfirmRow>
+            ) : null}
             {open ? (
               <ProgramForm
                 program={program}
@@ -2192,6 +2312,13 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
                 saveState={saveState}
                 onChange={next => update(draft.map(item => (item.id === program.id ? next : item)))}
               />
+            ) : null}
+            {open ? (
+              <ProgramFooter>
+                <CollapseButton type="button" onClick={() => collapseProgram(program.id)}>
+                  {uiText('Готово — згорнути програму', language)}
+                </CollapseButton>
+              </ProgramFooter>
             ) : null}
           </ProgramBox>
         );

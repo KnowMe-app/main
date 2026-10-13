@@ -439,7 +439,7 @@ describe('редактор програм', () => {
     fireEvent.click(screen.getByRole('button', { name: /Додатково/ }));
     expect(screen.queryByRole('button', { name: /Як саме: житло/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '+ Як саме покриваєте' }));
-    fireEvent.click(screen.getByRole('button', { name: '+ Житло' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Уточнити: Житло' }));
     expect(screen.getByLabelText('Як покриваєте: Житло')).toBeInTheDocument();
     // «Переїзд із сімʼєю» питає лише блок переїзду.
     expect(screen.queryByRole('button', { name: 'Переїзд із сімʼєю' })).not.toBeInTheDocument();
@@ -452,7 +452,7 @@ describe('редактор програм', () => {
     fireEvent.click(screen.getByRole('button', { name: /Шукаємо сурогатну маму/ }));
     fireEvent.click(screen.getByRole('button', { name: /Додатково/ }));
     fireEvent.click(screen.getByRole('button', { name: '+ Як саме покриваєте' }));
-    fireEvent.click(screen.getByRole('button', { name: '+ Житло' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Уточнити: Житло' }));
     expect(screen.queryByPlaceholderText('Наприклад: крім таксі')).not.toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText('Наприклад: окрема квартира з 12 тижня'), { target: { value: 'двокімнатна' } });
     fireEvent.click(screen.getByRole('button', { name: 'Готово: Житло' }));
@@ -468,6 +468,56 @@ describe('редактор програм', () => {
     expect(screen.queryByLabelText('Коли переїзд')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '✓ Переїзд' }));
     expect(screen.getByRole('button', { name: 'Переїзд' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('вибір пункту для уточнення підписаний і має вихід', () => {
+    const programs = { p6: { id: 'p6', type: 'sm', coverage: ['travel', 'housing'], payments: { final: { amount: 20000, currency: 'USD' } } } };
+    render(<ProgramsEditor programs={programs} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо сурогатну маму/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Додатково/ }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Як саме покриваєте' }));
+    expect(screen.getByText('Уточніть, як саме покриваєте:')).toBeInTheDocument();
+    // Чіпи вибору не повторюють «+ Житло» поруч із відміченим «✓ Житло».
+    expect(screen.queryByRole('button', { name: '+ Житло' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Не уточнювати' }));
+    expect(screen.queryByRole('button', { name: 'Уточнити: Житло' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '+ Як саме покриваєте' })).toBeInTheDocument();
+  });
+
+  it('видалення програми питає словами й не видаляє з першого дотику', () => {
+    const onSave = jest.fn();
+    const programs = { p7: { id: 'p7', type: 'ed', location: 'Київ', payments: { final: { amount: 1500, currency: 'USD' } } } };
+    render(<ProgramsEditor programs={programs} onSave={onSave} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Дії програми' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Видалити програму' }));
+    expect(screen.getByText('Видалити програму? Відновити її не вийде.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Не видаляти' }));
+    expect(screen.queryByText('Видалити програму? Відновити її не вийде.')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('program-editor')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Дії програми' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Видалити програму' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Так, видалити' }));
+    expect(screen.queryAllByTestId('program-editor')).toHaveLength(0);
+  });
+
+  it('відкриту програму згортає кнопка внизу форми', () => {
+    const programs = { p8: { id: 'p8', type: 'ed', location: 'Київ', payments: { final: { amount: 1500, currency: 'USD' } } } };
+    render(<ProgramsEditor programs={programs} onSave={jest.fn()} language="uk" />);
+    const head = screen.getByRole('button', { name: /Шукаємо донора ооцитів/ });
+    fireEvent.click(head);
+    expect(head).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Готово — згорнути програму' }));
+    expect(head).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: 'Готово — згорнути програму' })).not.toBeInTheDocument();
+  });
+
+  it('додана вимога одразу бере фокус', () => {
+    const programs = { p9: { id: 'p9', type: 'ed', location: 'Київ', payments: { final: { amount: 1500, currency: 'USD' } } } };
+    render(<ProgramsEditor programs={programs} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Вимоги/ }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Своя вимога' }));
+    expect(screen.getByPlaceholderText('Наприклад: без татуювань')).toHaveFocus();
   });
 
   it('під заведеною програмою кнопка каже «Додати ще одну програму»', () => {
