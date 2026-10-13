@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import React from 'react';
-import { buildGeneratedDocument, resolveCaseContext, normalizeDocumentsCatalog } from './documentsCatalogUtils';
+import { DEFAULT_DOC_FORMATTING as DOC_DEFAULTS, buildGeneratedDocument, resolveCaseContext, normalizeDocumentsCatalog } from './documentsCatalogUtils';
 
 const toDataUri = file => {
   const buf = fs.readFileSync(path.join(__dirname, '../../public/fonts', file));
@@ -214,6 +214,44 @@ describe('Documents DOCX builder (real docx Packer)', () => {
     // 1cm * CM_TO_TWIP(567) = 567 twips, and only the overridden paragraph carries it.
     const indentCount = (xml.match(/w:firstLine="567"/g) || []).length;
     expect(indentCount).toBe(1);
+  }, 20000);
+
+  const docxXml = async blob => {
+    const arrayBuffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(blob);
+    });
+    const JSZip = (await import('jszip')).default;
+    const zip = await JSZip.loadAsync(Buffer.from(arrayBuffer));
+    return zip.file('word/document.xml').async('string');
+  };
+
+  it('keeps an explicit indent on a bold paragraph (the date line of a notarial statement)', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const doc = {
+      id: 'bold-indented', allowPageBreaks: false, logo: null, title: { uk: 'Тест' },
+      paragraphs: [{ type: 'text', uk: '**Місто Київ, дата.**', indentCm: 1.27, bold: true }],
+    };
+    const xml = await docxXml(await buildDocumentsDocx({ documents: [doc], layout: 'one-column-uk' }));
+    expect(xml).toContain('w:firstLine="720"');
+  }, 20000);
+
+  it('lays a single-language two-column document out as real Word columns, not a table', async () => {
+    const { buildDocumentsDocx } = await import('./documentsDocxBuilder');
+    const doc = {
+      id: 'agreement', allowPageBreaks: true, logo: null, title: { uk: 'ДОГОВІР' },
+      languages: ['uk'], columns: 2,
+      paragraphs: [{ type: 'text', uk: 'Перший абзац.' }, { type: 'text', uk: 'Другий абзац.' }],
+    };
+    const formatting = { ...DOC_DEFAULTS, firstPageRightReserveCm: 3 };
+    const xml = await docxXml(await buildDocumentsDocx({ documents: [doc], layout: 'two-column', formatting }));
+    expect(xml).toMatch(/<w:cols [^>]*w:num="2"/);
+    expect(xml).not.toContain('<w:tbl>');
+    // The security-element reserve: a picture anchored to the page that text wraps around.
+    expect(xml).toContain('<wp:anchor');
+    expect(xml).toContain('<wp:wrapSquare');
   }, 20000);
 
   // batch 2026-07-23 B §3: empty lines separate the notarial blocks and must survive into the
