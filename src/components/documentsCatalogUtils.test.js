@@ -98,6 +98,7 @@ import {
   paragraphScope,
   withParagraphStyle,
   withTemplateScopeStyle,
+  withDocumentIndentForAllParagraphs,
   withTemplateScopeText,
   toggleInlineFormat,
   toggleRawInlineMarker,
@@ -3851,5 +3852,28 @@ describe('spec (batch 26 §3): describeDocumentSaveError - names the actual save
   it('falls back to the call site\'s own specific message for an unclassified error', () => {
     const error = new Error('some unrelated backend hiccup');
     expect(describeDocumentSaveError(error, 'Could not save the alignment change.')).toBe('Could not save the alignment change.');
+  });
+});
+
+describe('the document gear indent applies to every paragraph', () => {
+  it('drops body paragraphs\' own indents and keeps centered/right lines as they are', () => {
+    const template = {
+      id: 'doc',
+      paragraphs: [
+        { uk: 'Тіло', style: { align: 'justify', indentCm: 1.5 } },
+        { uk: 'Без відступу', style: { indentCm: 0 } },
+        { uk: 'ЗАГОЛОВОК', style: { align: 'center', indentCm: 0 } },
+        { uk: 'Підпис', style: { align: 'right', indentCm: 2 } },
+        { uk: 'Звичайний' },
+      ],
+    };
+    const next = withDocumentIndentForAllParagraphs(template);
+    expect(next.paragraphs.map(paragraph => paragraph.style)).toEqual([
+      { align: 'justify' },
+      undefined,
+      { align: 'center', indentCm: 0 },
+      { align: 'right', indentCm: 2 },
+      undefined,
+    ]);
   });
 });

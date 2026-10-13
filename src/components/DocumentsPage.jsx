@@ -75,6 +75,7 @@ import {
   normalizeDocFormatting,
   normalizeDocumentsCatalog,
   normalizeDocumentsSettings,
+  withDocumentIndentForAllParagraphs,
   OFFICIAL_FORM_FORMATTING,
   orderCasesByRecent,
   orderRecordsByRecentIds,
@@ -1428,7 +1429,8 @@ const DocumentsPage = ({ isAdmin }) => {
       const format = { ...(template.format || {}) };
       if (parsed === null || parsed === formatting[field]) delete format[field];
       else format[field] = parsed;
-      const next = { ...template };
+      // The gear's indent is the whole document's: paragraphs stop overriding it.
+      const next = field === 'firstLineIndentCm' ? withDocumentIndentForAllParagraphs(template) : { ...template };
       if (Object.keys(format).length) next.format = format;
       else delete next.format;
       return next;
