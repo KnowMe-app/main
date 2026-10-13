@@ -2369,6 +2369,19 @@ export const withTemplateScopeStyle = (template, scope, partialStyle) => {
   return template;
 };
 
+// The document gear's first-line indent applies to the whole document: every body paragraph drops
+// its own indent and inherits the document value. Centered and right-aligned lines (titles,
+// signatures) keep theirs - an indent there only shifts the line off its axis.
+export const withDocumentIndentForAllParagraphs = template => ({
+  ...template,
+  paragraphs: toArray(template?.paragraphs).map(paragraph => {
+    if (!isPlainObject(paragraph)) return paragraph;
+    const style = getParagraphStyle(paragraph);
+    if (style.indentCm === undefined || style.align === 'center' || style.align === 'right') return paragraph;
+    return withParagraphStyle(paragraph, { indentCm: null });
+  }),
+});
+
 // Read-time migration for one template (idempotent, same spirit as normalizeCaseRecord): every
 // paragraph and beforeTitle block re-expressed with its styles consolidated under `style`, so the
 // next persist writes the new shape without a separate migration pass.

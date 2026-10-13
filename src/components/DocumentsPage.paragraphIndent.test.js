@@ -196,6 +196,28 @@ describe('spec: document-level formatting popover in the header row (§1.2)', ()
     ));
   });
 
+  it('applies the gear\'s first-line indent to every paragraph, dropping their own indents', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+    await screen.findByText('Абзац з відступом.');
+
+    fireEvent.click(screen.getByTitle('Document settings - language, columns, renderer, font size, first line indent'));
+    const indentField = screen.getByLabelText('First line indent (cm)');
+    fireEvent.change(indentField, { target: { value: '1' } });
+    fireEvent.blur(indentField);
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({
+        format: { firstLineIndentCm: 1 },
+        paragraphs: [
+          { uk: 'Абзац з відступом.', en: 'Indented paragraph.' },
+          { uk: 'Абзац без відступу.', en: 'Not-indented paragraph.' },
+        ],
+      }),
+    ));
+  });
+
   it('sets the page margins (top, bottom, left, right) from the same gear, like Word\'s Page Setup', async () => {
     render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
     fireEvent.click(await screen.findByTitle('Edit paragraphs'));
