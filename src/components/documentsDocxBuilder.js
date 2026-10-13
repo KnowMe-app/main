@@ -21,7 +21,6 @@ import {
   normalizeSignerBlockOffsetPercent,
   parseFormattedRuns,
   splitBlankFieldRuns,
-  splitParagraphsIntoColumns,
   showsPageNumbers,
 } from './documentsCatalogUtils';
 
@@ -32,6 +31,11 @@ const MM_TO_PX = 96 / 25.4; // docx ImageRun transformations are CSS pixels at 9
 const halfPoints = pt => Math.round(pt * 2);
 
 // data:image/png;base64,... -> bytes + docx image type
+// A fully transparent 1x1 PNG, stretched over the area kept free for the blank's security element
+// (see hologramReserveParagraph) - Word wraps text around a picture, never around empty space.
+const TRANSPARENT_PIXEL_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4//8/AwAI/AL+p5qgoAAAAABJRU5ErkJggg==';
+const CM_TO_EMU = 360000;
+
 const decodeLogoDataUrl = dataUrl => {
   const match = /^data:image\/(png|jpe?g|gif|bmp);base64,(.+)$/i.exec(String(dataUrl || ''));
   if (!match) return null;
@@ -142,24 +146,27 @@ export const buildDocumentsDocx = async ({
 
   // Short numbered section titles ("1. Предмет Договору") render bold, flush left, with extra
   // room above and kept with the paragraph that follows so a heading never ends a page alone.
-  const headingParagraph = (text, alignmentOverride, sizeOverride, blankFields = false) => new Paragraph({
+  // Explicit per-paragraph indent still applies: a bold date line in a notarial statement is
+  // ordinary text set in bold, and the PDF indents it like its neighbours - Word dropped it.
+  const headingParagraph = (text, alignmentOverride, sizeOverride, blankFields = false, indentTwipsOverride) => new Paragraph({
     alignment: alignmentOverride || AlignmentType.LEFT,
     spacing: { before: afterTwips, after: afterTwips, line: lineTwips, lineRule: 'auto' },
+    indent: indentTwipsOverride ? { firstLine: indentTwipsOverride } : undefined,
     keepLines: true,
     keepNext: true,
     children: formattedTextRuns(text, { size: sizeOverride ?? bodySize, baseBold: true, blankFields }),
   });
 
-  const cellParagraph = (text, allowPageBreaks, paragraph, blankFields = false) => {
+  const cellParagraph = (text, allowPageBreaks, paragraph, blankFields = false, splittable = false) => {
     // align/indentCm/fontSize arrive already resolved from the paragraph's consolidated `style`
     // key (buildGeneratedDocument) - undefined means "inherit the document-wide value".
     const alignmentOverride = paragraph?.align ? alignmentForBlock(paragraph.align) : undefined;
     const indentTwipsOverride = paragraph?.indentCm !== undefined ? Math.round(paragraph.indentCm * CM_TO_TWIP) : undefined;
     const sizeOverride = paragraph?.fontSize !== undefined ? halfPoints(paragraph.fontSize) : undefined;
     return isParagraphBold(paragraph)
-      ? headingParagraph(text, alignmentOverride, sizeOverride, blankFields)
+      ? headingParagraph(text, alignmentOverride, sizeOverride, blankFields, indentTwipsOverride)
       : bodyParagraph(text, {
-        keepLines: !allowsParagraphInternalBreak(paragraph, allowPageBreaks),
+        keepLines: !splittable && !allowsParagraphInternalBreak(paragraph, allowPageBreaks),
         alignmentOverride,
         indentTwipsOverride,
         sizeOverride,
@@ -264,30 +271,6 @@ export const buildDocumentsDocx = async ({
     })),
   });
 
-  // The single-language 2-column layout (spec §4: newspaper-style, one language flowing across two
-  // columns). Word does support native multi-column section flow, but splitting it out would need
-  // a second, continuous-break section per document and would fight the per-document page-number
-  // restart every section already carries (pageNumbers.start: 1) - so, for parity with the PDF
-  // renderer (which has no native multi-column flow at all) and to keep the well-tested
-  // per-document section/pagination model untouched, this uses the same up-front split into two
-  // whole-paragraph groups as the PDF, laid out as a single borderless table row.
-  const singleLanguageColumnsTable = (paragraphs, allowPageBreaks, lang, layoutCtx) => {
-    const [leftParagraphs, rightParagraphs] = splitParagraphsIntoColumns(paragraphs, lang);
-    const buildColumnChildren = columnParagraphs => columnParagraphs.flatMap(paragraph => (
-      paragraph.type && paragraph.type !== 'text' ? buildLogoBlock(paragraph.type, layoutCtx) : [cellParagraph(paragraph[lang], allowPageBreaks, paragraph, layoutCtx.blankFields)]
-    ));
-    return new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      borders: { ...noBorders, insideHorizontal: noBorder, insideVertical: noBorder },
-      rows: [new TableRow({
-        children: [
-          twoColumnCellFromParagraph(buildColumnChildren(leftParagraphs), 'left', layoutCtx.showColumnDivider),
-          twoColumnCellFromParagraph(buildColumnChildren(rightParagraphs), 'right', layoutCtx.showColumnDivider),
-        ],
-      })],
-    });
-  };
-
   const logoImageRun = (decoded, widthPx, ratio, floating) => new ImageRun({
     data: decoded.bytes,
     type: decoded.type,
@@ -331,6 +314,43 @@ export const buildDocumentsDocx = async ({
     return [logoParagraph(decoded, compactWidthPx, ratio)];
   };
 
+  // Page one's right column keeps its bottom free for the notarial blank's security element (the
+  // PDF planner does it with firstPageRightReserveCm). Word knows nothing of the plan - it flows
+  // text by itself - so the same area is taken by a transparent picture anchored to the page with
+  // top-and-bottom wrapping: the column's text stops above it and continues in the next column.
+  const hologramReserveParagraph = () => {
+    const reserveCm = Number(formatting.firstPageRightReserveCm) || 0;
+    const pixel = reserveCm > 0 ? decodeLogoDataUrl(TRANSPARENT_PIXEL_PNG) : null;
+    if (!pixel) return null;
+    const columnWidthCm = columnContentWidthTwips / CM_TO_TWIP;
+    const pageWidthCm = 11906 / CM_TO_TWIP;
+    const pageHeightCm = 16838 / CM_TO_TWIP;
+    return new Paragraph({
+      // A 1pt exact-height anchor: the paragraph itself takes (almost) no room in the column.
+      spacing: { before: 0, after: 0, line: 20, lineRule: 'exact' },
+      children: [new ImageRun({
+        data: pixel.bytes,
+        type: pixel.type,
+        transformation: {
+          width: Math.round((columnWidthCm / 2.54) * 96),
+          height: Math.round((reserveCm / 2.54) * 96),
+        },
+        floating: {
+          horizontalPosition: {
+            relative: HorizontalPositionRelativeFrom.PAGE,
+            offset: Math.round((pageWidthCm - formatting.marginRightCm - columnWidthCm) * CM_TO_EMU),
+          },
+          verticalPosition: {
+            relative: VerticalPositionRelativeFrom.PAGE,
+            offset: Math.round((pageHeightCm - formatting.marginBottomCm - reserveCm) * CM_TO_EMU),
+          },
+          wrap: { type: TextWrappingType.SQUARE },
+          allowOverlap: false,
+        },
+      })],
+    });
+  };
+
   const buildDocChildren = doc => {
     const effectiveLayout = getEffectiveDocLayout(doc, layout);
     const isBilingual = isBilingualLayout(effectiveLayout);
@@ -364,10 +384,14 @@ export const buildDocumentsDocx = async ({
           signerBlockTable(signerBlocks, 'uk', columnContentWidthTwips, offsetPercent, blankFields),
           signerBlockTable(signerBlocks, 'en', columnContentWidthTwips, offsetPercent, blankFields),
         ]], true, showColumnDivider));
+      } else if (isSingleLanguageFlow) {
+        // Inside the two-column section: the block opens the left column across its whole width,
+        // and the title follows directly (same as the PDF's ColumnHeader).
+        children.push(signerBlockTable(signerBlocks, lang, columnContentWidthTwips, 0, blankFields));
       } else {
         children.push(signerBlockTable(signerBlocks, lang, contentWidthTwips, offsetPercent, blankFields));
       }
-      children.push(emptyLineParagraph());
+      if (!isSingleLanguageFlow) children.push(emptyLineParagraph());
     }
 
     // A document whose title was deleted (both languages resolve blank) gets no title paragraph
@@ -390,10 +414,19 @@ export const buildDocumentsDocx = async ({
     const bodyParagraphs = groupJoinedParagraphs(doc.paragraphs);
 
     if (isSingleLanguageFlow) {
-      // One shared table for the whole body (not one per paragraph, unlike the bilingual/1-column
-      // branches below) - the newspaper-style column split is decided once, up front, across every
-      // paragraph together (see splitParagraphsIntoColumns).
-      children.push(singleLanguageColumnsTable(bodyParagraphs, doc.allowPageBreaks, lang, layoutCtx));
+      // The single-language 2-column layout (spec §4: one language flowing across two columns) is
+      // a Word section in two columns (the section's `column` property below): the paragraphs are plain
+      // body paragraphs and Word flows them down the left column, then the right one, on every
+      // page - exactly how the reference agreement is made. It used to be one borderless table
+      // row with two cells, so the left cell ran down every page before the right one began.
+      // A paragraph may continue in the next column (the PDF splits it there too) - a paragraph
+      // kept whole left half-empty column bottoms in Word.
+      const reserve = hologramReserveParagraph();
+      if (reserve) children.push(reserve);
+      bodyParagraphs.forEach(paragraph => {
+        if (paragraph.type && paragraph.type !== 'text') children.push(...buildLogoBlock(paragraph.type, layoutCtx));
+        else children.push(cellParagraph(paragraph[lang], doc.allowPageBreaks, paragraph, blankFields, true));
+      });
       return children;
     }
 
@@ -803,7 +836,17 @@ export const buildDocumentsDocx = async ({
       properties: layoutV2PageSetup(generated),
       children: buildLayoutV2Children(generated),
     } : {
-      properties: pageSetup,
+      properties: isSingleLanguageTwoColumnLayout(getEffectiveDocLayout(generated, layout))
+        ? {
+          ...pageSetup,
+          column: {
+            count: 2,
+            space: gapTwips,
+            equalWidth: true,
+            separate: Boolean(formatting.columnDivider),
+          },
+        }
+        : pageSetup,
       headers: buildHeader(generated),
       footers: buildFooter(generated),
       children: buildDocChildren(generated),

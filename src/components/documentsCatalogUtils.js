@@ -4152,6 +4152,7 @@ export const DOCUMENT_FILE_LABELS = {
   'surrogacy-agreement-appendix-1': 'Додаток',
   'surrogacy-program-rules': 'Правила',
   'surrogate-unmarried-declaration': 'Заява про шлюб',
+  'pregnancy-surveillance-declaration': 'Заява на ведення вагітності',
 };
 
 // Characters no file system accepts; everything else (Cyrillic, spaces, dashes) stays exactly as
@@ -4172,8 +4173,10 @@ const personNameText = name => {
 // Every selected document downloads as its own file (spec: "всі обрані документи ... мають бути
 // окремими файлами"), named like the reference files: couple surname (Latin, from the passport
 // name) - surrogate mother surname - short document name, e.g. "Katsura - Ільченко - Договір".
-// A layout other than Ukrainian-only adds its language tag, so the UA and EN files of one document
-// never overwrite each other. Missing parts are skipped rather than left as empty " -  - ".
+// Only an English-only layout adds a tag ("… - Договір EN"), so the UA and EN files of one
+// document never overwrite each other; a bilingual document is one file and is named exactly like
+// the reference ("Katsura - Ільченко - Заява на ведення вагітності", no "UA-EN"). Missing parts are
+// skipped rather than left as empty " -  - ".
 export const buildDocumentsFileName = (catalog, caseRecord, layout, extension, doc = null) => {
   const context = caseRecord ? resolveCaseContext(catalog, caseRecord.id) : null;
   const coupleName = firstWord(personNameText(context?.wife?.name?.en))
@@ -4185,7 +4188,7 @@ export const buildDocumentsFileName = (catalog, caseRecord, layout, extension, d
     ? (DOCUMENT_FILE_LABELS[doc.id] || template?.catalogName || doc.title?.uk || doc.title?.en || doc.id)
     : 'Документи';
   const effectiveLayout = doc ? getEffectiveDocLayout(doc, layout) : layout;
-  const langTag = isBilingualLayout(effectiveLayout) ? 'UA-EN' : (getLayoutLang(effectiveLayout) === 'en' ? 'EN' : '');
+  const langTag = !isBilingualLayout(effectiveLayout) && getLayoutLang(effectiveLayout) === 'en' ? 'EN' : '';
   const parts = [coupleName, surrogateName, [docLabel, langTag].filter(Boolean).join(' ')]
     .map(sanitizeFileNamePart)
     .filter(Boolean);

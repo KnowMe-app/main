@@ -680,6 +680,13 @@ describe('spec: every selected document downloads as its own separate file', () 
     expect(buildDocumentsFileName(catalog, caseRecord, 'two-column', 'pdf', english)).toBe('Testova - Прикладова - Договір EN.pdf');
   });
 
+  it('names a bilingual statement without a language tag, exactly like the reference file', () => {
+    const catalog = sampleCatalog();
+    const statement = { id: 'pregnancy-surveillance-declaration', languages: ['uk', 'en'], title: { uk: 'Заява' } };
+    expect(buildDocumentsFileName(catalog, catalog.cases[0], 'two-column', 'docx', statement))
+      .toBe('Testova - Прикладова - Заява на ведення вагітності.docx');
+  });
+
   it('falls back to the document title for an unlisted template, so a batch never collides on one name', () => {
     const catalog = sampleCatalog();
     const caseRecord = catalog.cases[0];
