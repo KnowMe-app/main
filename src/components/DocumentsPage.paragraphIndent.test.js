@@ -195,6 +195,23 @@ describe('spec: document-level formatting popover in the header row (§1.2)', ()
       expect.objectContaining({ format: { fontSize: 14 } }),
     ));
   });
+
+  it('sets the page margins (top, bottom, left, right) from the same gear, like Word\'s Page Setup', async () => {
+    render(<MemoryRouter><DocumentsPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit paragraphs'));
+    await screen.findByText('Абзац з відступом.');
+
+    fireEvent.click(screen.getByTitle('Document settings - language, columns, renderer, font size, first line indent'));
+    const topField = screen.getByLabelText('Верхнє');
+    expect(topField).toHaveAttribute('placeholder', '2.0'); // the shared default
+    fireEvent.change(topField, { target: { value: '1,3' } });
+    fireEvent.blur(topField);
+
+    await waitFor(() => expect(set).toHaveBeenCalledWith(
+      'documentsBuilder/templates/doc-1',
+      expect.objectContaining({ format: { marginTopCm: 1.3 } }),
+    ));
+  });
 });
 
 describe('spec: one alignment button per paragraph, MS Word cycle (§1.5)', () => {
