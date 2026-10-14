@@ -30,7 +30,10 @@ import { applyStoredAppSettings } from 'hooks/useAppSettings';
 // чернетки), а в конструкторі документів — як редактор `documentsBuilder`, тож
 // там позначка брехала б: правка зберігається. Перелік — саме екранів, де запис
 // проходить: новий екран, якого тут немає, отримує позначку, а не мовчанку.
-const READ_ONLY_INSPECTOR_WRITABLE_PATHS = ['/matching', '/matching/create-profile', '/my-profile', '/documents', '/parties'];
+// `/matching/create-profile` тут навмисно немає: інспектор там адмін
+// (`isAdminUid`), бачить чергу чужих чернеток, і автозбереження чужої чернетки
+// пише у вузол її авторки — правила пускають туди лише повного адміна.
+const READ_ONLY_INSPECTOR_WRITABLE_PATHS = ['/matching', '/my-profile', '/documents', '/parties'];
 
 const READ_ONLY_BADGE_STYLE = {
   position: 'fixed',
