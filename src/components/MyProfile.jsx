@@ -1355,8 +1355,11 @@ export const MyProfile = () => {
     : String(state[name] || '').trim() !== ''), [ownVisiblePrograms, state]);
   // Лічильник «3 з 8» поруч із відсотком: самі «8%» не казали, скільки
   // лишилось, а людина з чотирма фото й поштою не розуміла, звідки така цифра.
+  // Рахуються лише обовʼязкові поля — ті самі, яких вимагає публікація
+  // (`validateRequiredProfileFields`). Порожній «Сайт» тримав готову анкету
+  // агенції на «13 з 14 · 93%», і людина шукала, що ж вона пропустила.
   const filledStats = useMemo(() => {
-    const keys = visibleSections.flatMap(s => s.fields);
+    const keys = visibleSections.flatMap(s => s.fields).filter(name => !OPTIONAL_PROFILE_FIELDS.has(name));
     const filled = keys.filter(isFieldFilled).length;
     return { filled, total: keys.length };
   }, [isFieldFilled, visibleSections]);
@@ -1366,10 +1369,17 @@ export const MyProfile = () => {
   const sectionProgress = useMemo(() => visibleSections.reduce((acc, section) => {
     const filled = section.fields.filter(isFieldFilled).length;
     const total = section.fields.length;
+    // «Готовий» розділ — той, де заповнено все обовʼязкове: соцмережі цілком
+    // необовʼязкові, і сірі «4/5» казали, що розділ недороблений. Розділ без
+    // жодного обовʼязкового поля готовий, щойно в ньому щось є.
+    const required = section.fields.filter(name => !OPTIONAL_PROFILE_FIELDS.has(name));
+    const complete = required.length
+      ? required.every(isFieldFilled)
+      : filled > 0;
     acc[section.key] = {
       filled,
       total,
-      complete: total > 0 && filled === total,
+      complete,
       progress: total > 0 ? Math.round((filled / total) * 100) : 0,
     };
     return acc;

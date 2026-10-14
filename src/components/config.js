@@ -1642,11 +1642,26 @@ export const deleteCommentByOwner = async ({ ownerId, cardId }) => {
   }
 };
 
+// Памʼять вкладки для точкових читань нотатки. Ту саму нотатку картки питали
+// одночасно кілька місць — стрічка (`loadCommentsFor`), поле нотатки й блок
+// картки, — і кожне до того, як інше встигло її покласти в кеш: виходило по
+// два-три однакові запити на картку. Тепер запит у дорозі ділиться, а
+// відповідь живе хвилину; будь-який запис нотатки цю памʼять скидає
+// (`invalidateOwnerCommentsCache`).
+const commentPointCache = new Map();
+const COMMENT_POINT_TTL_MS = 60 * 1000;
+
 export const fetchUserComment = async (ownerId, cardId) => {
   try {
     if (!ownerId || !cardId) return null;
-    const snap = await get(ref2(database, getCommentPath(ownerId, cardId)));
-    return snap.exists() ? normalizeComment(snap.val()) : null;
+    const key = `${ownerId}::${cardId}`;
+    const cached = commentPointCache.get(key);
+    if (cached && Date.now() - cached.at < COMMENT_POINT_TTL_MS) return await cached.promise;
+    const promise = get(ref2(database, getCommentPath(ownerId, cardId)))
+      .then(snap => (snap.exists() ? normalizeComment(snap.val()) : null));
+    commentPointCache.set(key, { promise, at: Date.now() });
+    promise.catch(() => commentPointCache.delete(key));
+    return await promise;
   } catch (error) {
     console.error('Error fetching comment:', error);
     return null;
@@ -1702,17 +1717,14 @@ export const migrateMyCardComment = async (cardId, text, ownerId) => {
 // Коментарі одного власника — це одне піддерево `multiData/comments/{ownerId}`,
 // на яке правила дають читачеві право цілком.
 //
-// Читати його не можна безоглядно: в активного адміна там тисячі записів, і
-// заради трьох карток тягнути все — гірше, ніж три поштучні запити. Тому
-// піддерево береться лише тоді, коли поштучних запитів було б більше за поріг,
-// і після цього живе в памʼяті короткий TTL — стрічка питає коментарі до кожної
-// нової сторінки карток, і без кешу перша ж сторінка знецінила б виграш.
+// Списки його не читають (див. `fetchUserComments`): в активного адміна там
+// тисячі записів. Цілком його бере лише міграція, і памʼять на короткий TTL
+// тримає те саме читання від повторного запуску.
 //
 // Що лишається забороненим (і чого цей код не робить): корінь
 // `multiData/comments` через усіх власників і будь-який легасі-корінь.
 const ownerCommentsSubtreeCache = new Map();
 const OWNER_COMMENTS_SUBTREE_TTL_MS = 2 * 60 * 1000;
-const OWNER_COMMENTS_SUBTREE_THRESHOLD = 8;
 
 const getCachedOwnerCommentsSubtree = ownerId => {
   const cached = ownerCommentsSubtreeCache.get(ownerId);
@@ -1738,6 +1750,9 @@ const readOwnerCommentsSubtree = async ownerId => {
 
 /** Скидає кеш піддерева — після запису чи видалення коментаря. */
 export const invalidateOwnerCommentsCache = ownerId => {
+  [...commentPointCache.keys()]
+    .filter(key => !ownerId || key.startsWith(`${ownerId}::`))
+    .forEach(key => commentPointCache.delete(key));
   if (ownerId) ownerCommentsSubtreeCache.delete(ownerId);
   else ownerCommentsSubtreeCache.clear();
 };
@@ -1758,27 +1773,24 @@ export const fetchOwnerCommentsSubtree = async ownerId => {
   return readOwnerCommentsSubtree(owner);
 };
 
+// Нотатки для списку — завжди поштучно, рівно за показаними картками.
+//
+// Тут був поріг: від восьми карток читалось піддерево власника цілком, «один
+// запит замість N». У активного адміна те піддерево — тисячі нотаток і
+// ~300 КБ, а питали його колекції «Обрані» / «Не цікаві», стрічка й
+// список чернеток — на кожне відкриття, ще й по разу на кожного власника
+// спільного доступу. Точковий запит важить сотню байтів і йде тим самим
+// сокетом, тож двадцять карток коштують кілька кілобайт, а не весь архів
+// нотаток. Піддерево цілком лишилось одній разовій міграції
+// (`fetchOwnerCommentsSubtree`).
 export const fetchUserComments = async (ownerId, cardIds = []) => {
   try {
     if (!ownerId || !Array.isArray(cardIds) || !cardIds.length) return {};
 
-    const cachedSubtree = getCachedOwnerCommentsSubtree(ownerId);
-    const shouldReadSubtree = Boolean(cachedSubtree) || cardIds.length >= OWNER_COMMENTS_SUBTREE_THRESHOLD;
-
-    if (shouldReadSubtree) {
-      incrementMatchingLoadStat('commentsSubtreeReads');
-      const subtree = await readOwnerCommentsSubtree(ownerId);
-      const result = {};
-      cardIds.forEach(cardId => {
-        const raw = subtree?.[cardId];
-        if (raw) result[cardId] = normalizeComment(raw);
-      });
-      return result;
-    }
-
-    incrementMatchingLoadStat('commentsReads', cardIds.length);
+    const uniqueIds = [...new Set(cardIds.filter(Boolean))];
+    incrementMatchingLoadStat('commentsReads', uniqueIds.length);
     const result = {};
-    await Promise.all(cardIds.map(async cardId => {
+    await Promise.all(uniqueIds.map(async cardId => {
       const comment = await fetchUserComment(ownerId, cardId);
       if (comment) result[cardId] = comment;
     }));

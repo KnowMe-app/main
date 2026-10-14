@@ -25,12 +25,15 @@ const Container = styled.div`
   min-width: 0;
 `;
 
+// Компактний ряд переноситься, а не прокручується вбік: при чотирьох фото
+// кнопка «+» на телефоні стояла за правим краєм (x = 369 при ширині 390), без
+// смуги прокрутки й без натяку, що там щось є, — додати пʼяте фото «не було
+// як».
 const PhotosWrapper = styled.div`
   display: flex;
-  flex-wrap: ${({ $compact }) => ($compact ? 'nowrap' : 'wrap')};
+  flex-wrap: wrap;
   justify-content: ${({ $compact }) => ($compact ? 'flex-start' : 'center')};
   gap: ${({ $compact }) => ($compact ? '12px' : '10px')};
-  overflow-x: ${({ $compact }) => ($compact ? 'auto' : 'visible')};
   padding: ${({ $compact }) => ($compact ? '4px 4px 8px' : 0)};
 `;
 
@@ -55,22 +58,28 @@ const PhotoImage = styled.img`
   cursor: pointer;
 `;
 
+// «×» видаляє файл зі сховища, тож перший дотик лише питає («Видалити?»),
+// а видаляє другий. Доти 20-піксельний хрестик на краю мініатюри знищував
+// фото одним промахом пальця повз саму мініатюру.
 const DeleteButton = styled.button`
   position: absolute;
-  top: ${({ $compact }) => ($compact ? '0' : '5px')};
-  right: ${({ $compact }) => ($compact ? '0' : '5px')};
-  background-color: ${({ $compact }) => ($compact ? '#fff' : 'red')};
-  color: ${({ $compact }) => ($compact ? '#7A7A72' : 'white')};
-  border: ${({ $compact }) => ($compact ? '1px solid #E8E8E2' : 'none')};
-  border-radius: 50%;
-  width: 20px;
-  height: 20px;
-  padding: 0;
+  z-index: 1;
+  top: ${({ $compact }) => ($compact ? '-4px' : '5px')};
+  right: ${({ $compact }) => ($compact ? '-4px' : '5px')};
+  background-color: ${({ $armed, $compact }) => ($armed ? '#C8483E' : $compact ? '#fff' : 'red')};
+  color: ${({ $armed, $compact }) => ($armed || !$compact ? 'white' : '#7A7A72')};
+  border: ${({ $armed, $compact }) => ($compact && !$armed ? '1px solid #E8E8E2' : 'none')};
+  border-radius: ${({ $armed }) => ($armed ? '999px' : '50%')};
+  width: ${({ $armed }) => ($armed ? 'auto' : '24px')};
+  height: 24px;
+  padding: ${({ $armed }) => ($armed ? '0 8px' : 0)};
+  font-weight: ${({ $armed }) => ($armed ? 700 : 'inherit')};
+  white-space: nowrap;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: ${({ $armed }) => ($armed ? '12px' : '16px')};
   line-height: 1;
 `;
 
@@ -598,6 +607,38 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
     }
   };
 
+  // Фото, яке попросили видалити першим дотиком «×»; знімається само за
+  // кілька секунд, щоб випадковий дотик не лишав «зведеного курка».
+  const [armedDeleteIndex, setArmedDeleteIndex] = useState(null);
+  useEffect(() => {
+    if (armedDeleteIndex === null) return undefined;
+    const timer = setTimeout(() => setArmedDeleteIndex(null), 4000);
+    return () => clearTimeout(timer);
+  }, [armedDeleteIndex]);
+  const handleDeleteTap = index => {
+    if (armedDeleteIndex !== index) {
+      setArmedDeleteIndex(index);
+      return;
+    }
+    setArmedDeleteIndex(null);
+    handleDeletePhoto(index);
+  };
+
+  // «Перше — головне», а змінити головне не було чим, крім як видалити й
+  // завантажити наново. Перегляд фото тепер ставить показане першим.
+  const handleMakeMain = async index => {
+    const currentPhotos = Array.isArray(state.photos) ? state.photos : [];
+    if (index <= 0 || index >= currentPhotos.length) return;
+    const newPhotos = [currentPhotos[index], ...currentPhotos.filter((_, i) => i !== index)];
+    commitPhotosUpdate(newPhotos);
+    try {
+      await savePhotoList(newPhotos);
+    } catch (error) {
+      commitPhotosUpdate(currentPhotos);
+      console.error('Error reordering photos:', error);
+    }
+  };
+
   const handleDeleteFromViewer = async index => {
     const newLength = state.photos.length - 1;
     await handleDeletePhoto(index);
@@ -860,11 +901,12 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
             />
             <DeleteButton
               $compact={compact}
+              $armed={armedDeleteIndex === actualIndex}
               type="button"
-              onClick={() => handleDeletePhoto(actualIndex)}
-              aria-label={`Видалити фото ${actualIndex + 1}`}
+              onClick={() => handleDeleteTap(actualIndex)}
+              aria-label={armedDeleteIndex === actualIndex ? `Підтвердити видалення фото ${actualIndex + 1}` : `Видалити фото ${actualIndex + 1}`}
             >
-              ×
+              {armedDeleteIndex === actualIndex ? 'Видалити?' : '×'}
             </DeleteButton>
           </PhotoItem>;
         })}
@@ -881,6 +923,7 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
           index={viewerIndex}
           onClose={() => setViewerIndex(null)}
           onDelete={handleDeleteFromViewer}
+          onMakeMain={hideFirstPhoto ? undefined : handleMakeMain}
         />
       )}
     </Container>

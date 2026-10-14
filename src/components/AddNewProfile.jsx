@@ -12,9 +12,7 @@ import {
   updateDataInFiresoreDB,
   fetchPaginatedUsers,
   fetchFavoriteUsers,
-  fetchFavoriteUsersData,
   fetchDislikeUsers,
-  fetchDislikeUsersData,
   isReactionPermissionDeniedError,
   fetchCycleUsersData,
   // fetchListOfUsers,
@@ -49,7 +47,6 @@ import {
   lazyLoadProfilePhotos,
   addMatchingSearchQuery,
   fetchMatchingCardsPage,
-  readOwnerWriterMap,
   saveMyCardComment,
 } from './config';
 import { fetchUsersBySearchKeyGitNewPaged } from './gitNewLoad';
@@ -115,7 +112,6 @@ import {
   getFavorites,
   syncFavorites,
   cacheFavoriteUsers,
-  getFavoriteCards,
 } from 'utils/favoritesStorage';
 import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
 import { cacheDplUsers, getDplCards } from 'utils/dplStorage';
@@ -123,7 +119,6 @@ import {
   getDislikes,
   syncDislikes,
   cacheDislikedUsers,
-  getDislikedCards,
 } from 'utils/dislikesStorage';
 import { passesReactionFilter } from 'utils/reactionCategory';
 import {
@@ -2399,17 +2394,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const ownerId = auth.currentUser?.uid;
 
-  // Картотека — єдиний екран, якому позначки `writer` потрібні на кожній
-  // картці списку. Анкета тепер читає позначку точково (`readProfileFromNodes`),
-  // а точкове читання не бачить старої, перевернутої форми запису
-  // (`{власник}/{значення}/{картка}`) — і перевірити її дешево, як для
-  // `getInTouch`, тут нема чим: на `writer` немає `.indexOn`. Тож мапа
-  // власника читається тут, один раз на екран, — а не на кожному вході в
-  // застосунок, як було досі.
-  useEffect(() => {
-    if (!ownerId) return;
-    readOwnerWriterMap(ownerId).catch(() => {});
-  }, [ownerId]);
+  // Позначку `writer` кожна картка списку читає точково
+  // (`readProfileFromNodes` → `readOwnerValueForProfile`). Тут стояло
+  // читання мапи власника цілком (~160 КБ в адміна на кожне відкриття
+  // картотеки) — заради старої, перевернутої форми запису, яку точкове
+  // читання не бачить. Усі записи переведено в нову форму, тож мапа більше
+  // не читається.
 
   useEffect(() => {
     const logged = localStorage.getItem('isLoggedIn');
@@ -3492,6 +3482,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return ids;
   }, [ownerId, refreshStimulationShortcuts, isMountedRef]);
 
+  // Стан посторінкового списку обраних чи дизлайкнутих (`startReactionPaging`).
+  // Нова умова списку (фільтр, режим) починає його спочатку: інакше перехід
+  // на сторінку продовжив би вибірку, зібрану під старі фільтри.
+  const reactionPagingRef = useRef(null);
+  useEffect(() => {
+    reactionPagingRef.current = null;
+  }, [currentFilter, filters]);
+
   const loadFavoriteIdsOnce = useCallback(async (targetOwnerId = ownerId) => {
     if (!targetOwnerId) return {};
 
@@ -4012,6 +4010,27 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
   };
 
+  const loadLikeDislikeBatch = async reactions => {
+    const loaded = await Promise.all(reactions.map(async ({ id, type }) => {
+      const user = getCard(id) || await fetchUserById(id).catch(() => null);
+      return user ? { ...user, userId: user.userId || id, _reactionType: type } : null;
+    }));
+    return loaded.filter(Boolean);
+  };
+
+  const loadMoreLikeDislikeCards = async () => {
+    const pending = moreActionsState.pendingReactions || [];
+    if (!pending.length || moreActionsState.loadingMore) return;
+    setMoreActionsState(prev => ({ ...prev, loadingMore: true }));
+    const batch = await loadLikeDislikeBatch(pending.slice(0, PAGE_SIZE));
+    setMoreActionsState(prev => ({
+      ...prev,
+      loadingMore: false,
+      cards: [...prev.cards, ...batch],
+      pendingReactions: (prev.pendingReactions || []).slice(PAGE_SIZE),
+    }));
+  };
+
   const toggleLikeDislikeCards = async () => {
     if (!moreActionsState.user?.userId) return;
 
@@ -4031,30 +4050,35 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const ownerId = moreActionsState.user.userId;
       // `rethrow` тут обовʼязковий: реакції належать власниці картки, і відмова
       // в правах на її вузол — не порожній список, а окрема відповідь.
+      //
+      // З бази — самі мапи id, а анкети порціями (`loadMoreLikeDislikeCards`):
+      // доти тут читались повні анкети всіх реакцій людини одразу.
       const [likesMap, dislikesMap] = await Promise.all([
-        fetchFavoriteUsersData(ownerId, { rethrow: true }),
-        fetchDislikeUsersData(ownerId, { rethrow: true }),
+        fetchFavoriteUsers(ownerId, { rethrow: true }),
+        fetchDislikeUsers(ownerId, { rethrow: true }),
       ]);
 
-      const merged = {};
-      Object.values(likesMap || {}).forEach(item => {
-        if (item?.userId) merged[item.userId] = { ...item, _reactionType: 'Like' };
+      const reactionTypes = {};
+      const reactionAt = {};
+      Object.entries(likesMap || {}).forEach(([id, value]) => {
+        if (!value) return;
+        reactionTypes[id] = 'Like';
+        reactionAt[id] = Number(value) || 0;
       });
-      Object.values(dislikesMap || {}).forEach(item => {
-        if (item?.userId) {
-          const existing = merged[item.userId];
-          merged[item.userId] = {
-            ...item,
-            _reactionType: existing?._reactionType ? `${existing._reactionType}/Dislike` : 'Dislike',
-          };
-        }
+      Object.entries(dislikesMap || {}).forEach(([id, value]) => {
+        if (!value) return;
+        reactionTypes[id] = reactionTypes[id] ? `${reactionTypes[id]}/Dislike` : 'Dislike';
+        reactionAt[id] = Math.max(reactionAt[id] || 0, Number(value) || 0);
       });
+      const pendingReactions = Object.keys(reactionTypes)
+        .sort((left, right) => reactionAt[right] - reactionAt[left])
+        .map(id => ({ id, type: reactionTypes[id] }));
 
-      const sortedCards = Object.values(merged).sort((a, b) => (b.lastLogin2 || '').localeCompare(a.lastLogin2 || ''));
-
+      const firstBatch = await loadLikeDislikeBatch(pendingReactions.slice(0, PAGE_SIZE));
       setMoreActionsState(prev => ({
         ...prev,
-        cards: sortedCards,
+        cards: firstBatch,
+        pendingReactions: pendingReactions.slice(PAGE_SIZE),
       }));
     } catch (error) {
       console.error('Unable to load Like/Dislike cards for user:', error);
@@ -4144,6 +4168,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 </MatchingMiniCard>
               ))
             )}
+            {!moreActionsState.error && (moreActionsState.pendingReactions || []).length > 0 ? (
+              <MoreActionsCommandButton type="button" onClick={loadMoreLikeDislikeCards} disabled={moreActionsState.loadingMore}>
+                {moreActionsState.loadingMore
+                  ? 'Завантаження...'
+                  : `Показати ще (${moreActionsState.pendingReactions.length})`}
+              </MoreActionsCommandButton>
+            ) : null}
           </MatchingMiniList>
         )}
       </>
@@ -5574,7 +5605,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     while (more && loaded < needed) {
       const { cacheCount, backendCount, hasMore: nextMore, ignored } =
-        currentFilter === 'DATE2'
+        currentFilter === 'FAVORITE'
+          ? await loadNextReactionBatch()
+          : currentFilter === 'DATE2'
           ? await loadMoreUsers2()
           : currentFilter === 'GITnew'
           ? await loadMoreUsersGitNew()
@@ -5758,49 +5791,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     saveContactsBySelectedFormat(res);
   };
 
-  const fetchAndMergeFavoriteUsers = useCallback(async () => {
-    const owner = auth.currentUser?.uid;
-    if (!owner) return null;
-
-    await loadFavoriteIdsOnce(owner);
-
-    const { cards: cachedArr, fromCache } = await getFavoriteCards(
-      id => fetchUserById(id),
-    );
-    let cacheCount = fromCache ? cachedArr.length : 0;
-    let backendCount = fromCache ? 0 : cachedArr.length;
-
-    const loaded = cachedArr.reduce((acc, user) => {
-      if (user?.userId) {
-        acc[user.userId] = user;
-      }
-      return acc;
-    }, {});
-
-    const favIds = getFavorites();
-    const favoriteQueryIds = getIdsByQuery('favorite');
-
-    favoriteQueryIds.forEach(id => {
-      if (id) {
-        favIds[id] = true;
-      }
-    });
-
-    const normalizedFavs = Object.fromEntries(
-      Object.entries(favIds).filter(([, value]) => value),
-    );
-
-    syncFavorites(normalizedFavs);
-    setFavoriteUsersData(normalizedFavs);
-    setFavoriteIds(normalizedFavs);
-
-    cacheFetchedUsers(loaded, cacheFavoriteUsers);
-    setIdsForQuery('favorite', Object.keys(normalizedFavs));
-
-    return { loaded, normalizedFavs, cacheCount, backendCount };
-  }, [cacheFetchedUsers, loadFavoriteIdsOnce, setFavoriteUsersData]);
-
   const resetReactionUsersState = useCallback(() => {
+    reactionPagingRef.current = null;
     setUsers({});
     setHasMore(false);
     setLastKey(null);
@@ -5808,127 +5800,107 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setCacheCount(0);
     setBackendCount(0);
 
-    return { users: {}, ids: [], cacheCount: 0, backendCount: 0 };
+    return { users: {}, ids: [], cacheCount: 0, backendCount: 0, hasMore: false };
   }, []);
 
-  const presentReactionUsers = useCallback(
-    ({
-      loadedUsers = {},
-      reactionIds = {},
-      favoritesMap = {},
-      dislikedMap = {},
-      cacheCount = 0,
-      backendCount = 0,
-    }) => {
-      const sortedUsers = Object.keys(reactionIds)
-        .map(id => loadedUsers[id])
-        .filter(Boolean)
-        .sort((a, b) => compareUsersByGetInTouch(a, b));
+  /*
+   * Обрані й дизлайкнуті — посторінково, а не всією колекцією одразу.
+   *
+   * Тут читались повні анкети **всіх** вподобаних (чи дизлайкнутих) за раз —
+   * сотні `fetchUserById` по пʼять вузлів кожен, а в дизлайків ще й двічі, —
+   * лише щоб упорядкувати й відфільтрувати список, з якого на екрані одна
+   * сторінка. Тепер з бази береться сама мапа id (вона легка), а анкети —
+   * порціями по сторінці: спершу з кеша браузера, решта точково, і наступну
+   * порцію просить перехід на наступну сторінку (`handlePageChange`). Порядок
+   * — від найсвіжішої реакції, де значення реакції — мітка часу; фільтри
+   * картотеки застосовуються до кожної порції, тож порція добирається, доки
+   * сторінка не набереться або id не скінчаться.
+   */
+  const loadNextReactionBatch = useCallback(async ({ targetCount = PAGE_SIZE } = {}) => {
+    const paging = reactionPagingRef.current;
+    if (!paging) return { cacheCount: 0, backendCount: 0, hasMore: false };
 
-      const filterMode = currentFilter || 'DATE2';
-      const filteredUsers = filterMain(
-        sortedUsers.map(user => [user.userId, user]),
-        filterMode,
+    const added = {};
+    let cacheCount = 0;
+    let backendCount = 0;
+    while (Object.keys(added).length < targetCount && paging.next < paging.ids.length) {
+      const slice = paging.ids.slice(paging.next, paging.next + PAGE_SIZE);
+      paging.next += slice.length;
+      const loadedSlice = await Promise.all(slice.map(async id => {
+        const cached = getCard(id);
+        if (cached) return { id, user: { ...cached, userId: cached.userId || id }, fromCache: true };
+        const user = await fetchUserById(id).catch(() => null);
+        return user ? { id, user, fromCache: false } : null;
+      }));
+      if (paging !== reactionPagingRef.current) {
+        return { ignored: true, cacheCount: 0, backendCount: 0, hasMore: false };
+      }
+      const fromBackend = {};
+      for (const entry of loadedSlice) {
+        if (!entry) continue;
+        if (entry.fromCache) {
+          cacheCount += 1;
+        } else {
+          backendCount += 1;
+          fromBackend[entry.id] = entry.user;
+        }
+      }
+      if (Object.keys(fromBackend).length) cacheFetchedUsers(fromBackend, paging.cacheFn);
+      filterMain(
+        loadedSlice.filter(Boolean).map(({ id, user }) => [id, user]),
+        currentFilter || 'DATE2',
         filters,
-        favoritesMap,
-        dislikedMap,
-      ).map(([, user]) => user);
-
-      const normalized = filteredUsers.reduce((acc, user) => {
-        acc[user.userId] = user;
-        return acc;
-      }, {});
-
-      const ids = filteredUsers.map(user => user.userId);
-
-      setUsers(normalized);
-      setHasMore(false);
-      setLastKey(null);
-      setCurrentPage(1);
-      setCacheCount(cacheCount);
-      setBackendCount(backendCount);
-
-      return { users: normalized, ids, cacheCount, backendCount };
-    }, [
-      compareUsersByGetInTouch,
-      currentFilter,
-      filters,
-      setBackendCount,
-      setCacheCount,
-      setCurrentPage,
-      setHasMore,
-      setLastKey,
-      setUsers,
-    ],
-  );
-
-  const showFavoriteCards = useCallback(async () => {
-    const result = await fetchAndMergeFavoriteUsers();
-    if (!result) {
-      return resetReactionUsersState();
+        paging.favoritesMap,
+        paging.dislikedMap,
+      ).forEach(([id, user]) => {
+        added[id] = user;
+      });
     }
 
-    const { loaded, normalizedFavs, cacheCount, backendCount } = result;
+    const more = paging.next < paging.ids.length;
+    setUsers(prev => ({ ...prev, ...added }));
+    setHasMore(more);
+    setCacheCount(cacheCount);
+    setBackendCount(backendCount);
+    return { cacheCount, backendCount, hasMore: more };
+  }, [cacheFetchedUsers, currentFilter, filters]);
 
-    return presentReactionUsers({
-      loadedUsers: loaded,
-      reactionIds: normalizedFavs,
-      favoritesMap: { ...favoriteUsersData, ...normalizedFavs },
-      dislikedMap: { ...dislikeUsersData },
-      cacheCount,
-      backendCount,
-    });
+  const startReactionPaging = useCallback(async kind => {
+    const owner = auth.currentUser?.uid;
+    if (!owner) return resetReactionUsersState();
+
+    const isFavorite = kind === 'favorite';
+    const remote = isFavorite ? await loadFavoriteIdsOnce(owner) : await loadDislikeIdsOnce(owner);
+    const reactionMap = Object.fromEntries(Object.entries(remote || {}).filter(([, value]) => value));
+    const ids = Object.entries(reactionMap)
+      .sort(([, left], [, right]) => (Number(right) || 0) - (Number(left) || 0))
+      .map(([id]) => id);
+
+    setIdsForQuery(isFavorite ? 'favorite' : 'dislike', ids);
+    reactionPagingRef.current = {
+      kind,
+      ids,
+      next: 0,
+      cacheFn: isFavorite ? cacheFavoriteUsers : cacheDislikedUsers,
+      favoritesMap: isFavorite ? { ...favoriteUsersData, ...reactionMap } : { ...favoriteUsersData },
+      dislikedMap: isFavorite ? { ...dislikeUsersData } : { ...dislikeUsersData, ...reactionMap },
+    };
+    setUsers({});
+    setLastKey(null);
+    setCurrentPage(1);
+    return loadNextReactionBatch();
   }, [
-    fetchAndMergeFavoriteUsers,
-    presentReactionUsers,
-    favoriteUsersData,
     dislikeUsersData,
+    favoriteUsersData,
+    loadDislikeIdsOnce,
+    loadFavoriteIdsOnce,
+    loadNextReactionBatch,
     resetReactionUsersState,
   ]);
 
+  const showFavoriteCards = useCallback(() => startReactionPaging('favorite'), [startReactionPaging]);
+
   const loadFavoriteUsers = async () => showFavoriteCards();
-
-  const fetchAndMergeDislikedUsers = useCallback(async () => {
-    const owner = auth.currentUser?.uid;
-    if (!owner) return null;
-
-    await loadDislikeIdsOnce(owner);
-
-    const { cards: cachedArr, fromCache } = await getDislikedCards(
-      id => fetchUserById(id),
-    );
-    let cacheCount = fromCache ? cachedArr.length : 0;
-    let backendCount = fromCache ? 0 : cachedArr.length;
-
-    const loaded = cachedArr.reduce((acc, user) => {
-      if (user?.userId) {
-        acc[user.userId] = user;
-      }
-      return acc;
-    }, {});
-
-    const dislikedIds = getDislikes();
-    const dislikedUsers = await fetchDislikeUsersData(owner);
-    Object.entries(dislikedUsers).forEach(([id, user]) => {
-      dislikedIds[id] = true;
-      if (id && !loaded[id]) {
-        loaded[id] = user;
-        backendCount += 1;
-      }
-    });
-
-    const normalizedDislikes = Object.fromEntries(
-      Object.entries(dislikedIds).filter(([, value]) => value),
-    );
-
-    syncDislikes(normalizedDislikes);
-    setDislikeUsersData(normalizedDislikes);
-
-    cacheFetchedUsers(loaded, cacheDislikedUsers);
-    setIdsForQuery('dislike', Object.keys(normalizedDislikes));
-
-    return { loaded, normalizedDislikes, cacheCount, backendCount };
-  }, [cacheFetchedUsers, loadDislikeIdsOnce, setDislikeUsersData]);
 
   const isSingleReactionSelection = useCallback((reactionFilters, targetKey) => {
     if (!reactionFilters || typeof reactionFilters !== 'object') return false;
@@ -5938,29 +5910,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return selectedKeys.length === 1 && selectedKeys[0] === targetKey;
   }, []);
 
-  const showDislikedCards = useCallback(async () => {
-    const result = await fetchAndMergeDislikedUsers();
-    if (!result) {
-      return resetReactionUsersState();
-    }
-
-    const { loaded, normalizedDislikes, cacheCount, backendCount } = result;
-
-    return presentReactionUsers({
-      loadedUsers: loaded,
-      reactionIds: normalizedDislikes,
-      favoritesMap: { ...favoriteUsersData },
-      dislikedMap: { ...dislikeUsersData, ...normalizedDislikes },
-      cacheCount,
-      backendCount,
-    });
-  }, [
-    dislikeUsersData,
-    favoriteUsersData,
-    fetchAndMergeDislikedUsers,
-    presentReactionUsers,
-    resetReactionUsersState,
-  ]);
+  // Пошук за `searchKey` з однією реакцією «дизлайк» кличе це і на старті
+  // списку, і на кожну наступну сторінку: другий виклик продовжує вже
+  // розпочату вибірку, а не збирає її знову з нуля.
+  const showDislikedCards = useCallback(() => (
+    reactionPagingRef.current?.kind === 'dislike'
+      ? loadNextReactionBatch()
+      : startReactionPaging('dislike')
+  ), [loadNextReactionBatch, startReactionPaging]);
 
 
 

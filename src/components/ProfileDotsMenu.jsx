@@ -200,6 +200,7 @@ export const ProfileDotsMenu = ({
     cancelLogoutRef.current?.focus();
     const handleKeyDown = event => {
       if (event.key === 'Escape' && !isLoggingOut) {
+        event.preventDefault();
         setIsLogoutConfirmationOpen(false);
       }
     };
@@ -279,7 +280,9 @@ export const ProfileDotsMenu = ({
     <MenuShell role="menu" aria-label={uiText('Навігаційне меню профілю', language)}>
       <MenuHeader>
         <MenuTitle>{uiText('Меню профілю', language)}</MenuTitle>
-        <MenuSubtitle>{uiText('Швидка навігація, дії з анкетою та налаштування акаунта.', language)}</MenuSubtitle>
+        {/* «Швидка навігація» обіцяла пункти, яких тут немає, коли меню
+            відкрите з рядка навігації (`omitPrimaryDestinations`). */}
+        <MenuSubtitle>{uiText(navItems.length ? 'Швидка навігація, дії з анкетою та налаштування акаунта.' : 'Дії з анкетою та налаштування акаунта.', language)}</MenuSubtitle>
       </MenuHeader>
 
       {navItems.length > 0 && <MenuSection>

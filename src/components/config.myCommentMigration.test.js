@@ -55,16 +55,17 @@ describe('myComment moves off the card into multiData/comments/{ownerId}/{cardId
     expect(fnBody).not.toContain('equalTo');
   });
 
-  // Дрібна пачка й далі читається поточковими шляхами: піддерево активного
-  // адміна — це тисячі записів, і тягнути його заради трьох карток дорожче за
-  // три запити. Великій пачці навпаки: один запит замість N.
-  it('reads a small bulk of comments by exact card paths', () => {
+  // Пачка будь-якого розміру читається поточковими шляхами: піддерево
+  // активного адміна — тисячі записів і ~300 КБ, а питали його колекції
+  // «Обрані» й «Не цікаві» на кожне відкриття.
+  it('reads a bulk of comments by exact card paths, never the owner subtree', () => {
     const fnBody = source.slice(
       source.indexOf('export const fetchUserComments'),
       source.indexOf('export const fetchAllCommentsByCardId')
     );
     expect(fnBody).toContain('fetchUserComment(ownerId, cardId)');
-    expect(fnBody).toContain('cardIds.length >= OWNER_COMMENTS_SUBTREE_THRESHOLD');
+    expect(fnBody).not.toContain('readOwnerCommentsSubtree');
+    expect(fnBody).not.toContain('OWNER_COMMENTS_SUBTREE_THRESHOLD');
     expect(fnBody).not.toContain('get(ref2(database, getCommentPath(ownerId)))');
     expect(fnBody).not.toContain('get(ref2(database, getLegacyCommentPath(ownerId)))');
   });

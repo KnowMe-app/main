@@ -45,7 +45,7 @@ const pickLanguage = language => (language === 'en' ? 'en' : 'uk');
 // --- країни -----------------------------------------------------------------
 
 const COUNTRIES = [
-  { code: 'UA', uk: 'Україна', en: 'Ukraine', aliases: ['Украина', 'Ukraina', 'UA', 'Укр', 'Уркаїна', 'Украіна', 'Украйна', 'Ukrainе'] },
+  { code: 'UA', uk: 'Україна', en: 'Ukraine', aliases: ['Украина', 'Ukraina', 'UA', 'Укр', 'Уркаїна', 'Украіна', 'Украйна', 'Ukrainе', 'України', 'Україні', 'Украины', 'Ukrainy'] },
   { code: 'PL', uk: 'Польща', en: 'Poland', aliases: ['Польша', 'Polska'] },
   { code: 'DE', uk: 'Німеччина', en: 'Germany', aliases: ['Германия', 'Deutschland'] },
   { code: 'CZ', uk: 'Чехія', en: 'Czechia', aliases: ['Чехия', 'Česko', 'Czech Republic', 'Česká republika'] },

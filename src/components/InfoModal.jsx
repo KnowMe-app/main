@@ -451,6 +451,24 @@ export const InfoModal = ({
   }
   if (text === 'compareCards') ContentComponent = ComparisonModalContent;
 
+  // Escape закриває будь-яке вікно цієї модалки — меню профілю, підтвердження,
+  // список варіантів. Доти на десктопі його закривали лише хрестик і дотик
+  // повз вікно. Коли всередині відкрите вкладене вікно (підтвердження
+  // виходу в меню профілю), Escape закриває лише його.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const onKeyDown = event => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      // Слухач вкладеного вікна ставиться пізніше за цей і спрацьовує після
+      // нього, тож саму позначку тут ще не видно — питаємо розмітку.
+      if (comparisonContentRef.current?.querySelector('[aria-modal="true"]')) return;
+      onCloseRef.current?.(event);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   const handleOverlayClick = event => {
     if (Date.now() - openedAtRef.current < 250) {
       return;

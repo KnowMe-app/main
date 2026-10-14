@@ -1479,7 +1479,12 @@ export const TopBlock = ({
     const loadAllComments = async () => {
       const viewerId = auth.currentUser?.uid;
       const viewerProfile = viewerId ? (getCard(viewerId) || await fetchUserById(viewerId)) : null;
-      const ownerIds = resolveMatchingMultiDataOwnerIds({ viewerId, profile: viewerProfile });
+      // Власну нотатку читає й показує `FieldComment` під цим блоком, а тут
+      // її однаково відкидає `otherAdminsComments` — тож питати її вдруге
+      // означало зайвий запит на кожну картку списку.
+      const ownerIds = resolveMatchingMultiDataOwnerIds({ viewerId, profile: viewerProfile })
+        .filter(ownerId => ownerId !== viewerId);
+      if (!ownerIds.length) return;
       const allByCard = await fetchAllCommentsByCardId(cardData.userId, ownerIds);
       if (!isMounted) return;
       setBackendMultiComments(allByCard);

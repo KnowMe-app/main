@@ -53,6 +53,41 @@ const NextButton = styled(ArrowButton)`
   right: 20px;
 `;
 
+// Нижня смуга перегляду: питання перед видаленням і «Зробити головним».
+// Кошик стояв за 50 px від хрестика закриття і видаляв знімок зі сховища
+// одним дотиком — промах повз «закрити» коштував фото без шляху назад.
+const BottomBar = styled.div`
+  position: absolute;
+  left: 50%;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 10px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(20, 20, 20, 0.85);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+`;
+
+const BarButton = styled.button`
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: ${({ $danger }) => ($danger ? '#C8483E' : 'transparent')};
+  border-color: ${({ $danger }) => ($danger ? '#C8483E' : 'rgba(255, 255, 255, 0.35)')};
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+`;
+
 const Counter = styled.div`
   position: absolute;
   top: 26px;
@@ -79,8 +114,11 @@ const Counter = styled.div`
  * `onReachEnd` — перелік ще не повний (стрічка несе один аватар): дійшовши до
  * кінця, просимо решту, а не йдемо по колу.
  */
-export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, closeOnHistoryBack = false, onReachEnd }) => {
+export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, onMakeMain, closeOnHistoryBack = false, onReachEnd }) => {
   const [current, setCurrent] = useState(index);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  // Питання стосується показаного знімка: гортання його знімає.
+  useEffect(() => { setConfirmDelete(false); }, [current]);
   const [startX, setStartX] = useState(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -121,7 +159,8 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, closeOn
       } else if (e.key === 'ArrowLeft') {
         prev();
       } else if (e.key === 'Escape') {
-        closeRef.current();
+        if (confirmDeleteRef.current) setConfirmDelete(false);
+        else closeRef.current();
       }
     };
 
@@ -160,6 +199,8 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, closeOn
   }, [closeOnHistoryBack]);
   const closeRef = useRef(close);
   closeRef.current = close;
+  const confirmDeleteRef = useRef(confirmDelete);
+  confirmDeleteRef.current = confirmDelete;
 
   const handleTouchStart = e => {
     e.stopPropagation();
@@ -182,6 +223,7 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, closeOn
   };
 
   const handleDelete = () => {
+    setConfirmDelete(false);
     if (onDelete) {
       onDelete(current);
     }
@@ -217,10 +259,23 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, closeOn
         <FiX size={30} />
       </CloseButton>
       {onDelete && (
-        <DeleteButton onClick={handleDelete} aria-label="Delete">
+        <DeleteButton onClick={() => setConfirmDelete(true)} aria-label="Видалити фото" title="Видалити фото">
           <FiTrash2 size={30} />
         </DeleteButton>
       )}
+      {onDelete && confirmDelete ? (
+        <BottomBar role="alertdialog" aria-label="Видалити це фото?">
+          <span>Видалити це фото?</span>
+          <BarButton type="button" autoFocus onClick={() => setConfirmDelete(false)}>Не видаляти</BarButton>
+          <BarButton type="button" $danger onClick={handleDelete}>Так, видалити</BarButton>
+        </BottomBar>
+      ) : onMakeMain && photos.length > 1 ? (
+        <BottomBar>
+          {shown === 0
+            ? <span>Головне фото</span>
+            : <BarButton type="button" onClick={() => { onMakeMain(shown); setCurrent(0); }}>Зробити головним</BarButton>}
+        </BottomBar>
+      ) : null}
     </Overlay>
   );
 
