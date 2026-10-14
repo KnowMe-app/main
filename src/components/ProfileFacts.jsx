@@ -564,14 +564,15 @@ const AboutToggle = styled.button`
 
 const ABOUT_COLLAPSE_LENGTH = 230;
 
-export const ProfileAboutSection = ({ text, language, accent, large = false }) => {
+// `title` — коли розповідь не «про себе»: батьки пишуть «Про нас».
+export const ProfileAboutSection = ({ text, language, accent, large = false, title = '' }) => {
   const [expanded, setExpanded] = useState(false);
   if (!text) return null;
   const collapsible = text.length > ABOUT_COLLAPSE_LENGTH;
   const shown = collapsible && !expanded ? `${text.slice(0, ABOUT_COLLAPSE_LENGTH).trim()}…` : text;
   return (
     <DetailSection>
-      <DetailTitle $accent={accent}>{profileUiText('about', language)}</DetailTitle>
+      <DetailTitle $accent={accent}>{title || profileUiText('about', language)}</DetailTitle>
       <AboutText $large={large}>{shown}</AboutText>
       {collapsible && (
         <AboutToggle
@@ -596,6 +597,68 @@ export const ProfileDetailSections = ({ sections, accent, large = false }) => {
       <DetailTitle $accent={accent}>{section.title}</DetailTitle>
       {section.text ? <AboutText $large={large}>{section.text}</AboutText> : null}
       {section.rows.length ? <ProfileFactList rows={section.rows} large={large} /> : null}
+    </DetailSection>
+  ));
+};
+
+const GOOD = 'var(--km-success, #2E9B55)';
+
+const WishList = styled.ul`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+`;
+
+const WishChip = styled.li`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid ${({ $match }) => ($match ? GOOD : HAIRLINE)};
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: ${TEXT};
+
+  b {
+    color: ${GOOD};
+    font-weight: 800;
+  }
+`;
+
+const WishNote = styled.p`
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: ${MUTED};
+`;
+
+/**
+ * «Більше про біологічних батьків»: як шукають, де програма, побажання до
+ * донорки (`buildParentDetailSections`). Побажання — чіпами, а збіг з
+ * анкетою читачки — «✓» на чіпі: відмови тут немає, бо побажання не
+ * відсіюють.
+ */
+export const ParentDetailSections = ({ sections, accent, large = false }) => {
+  if (!sections || sections.length === 0) return null;
+  return sections.map(section => (
+    <DetailSection key={section.key} data-testid={section.key}>
+      <DetailTitle $accent={accent}>{section.title}</DetailTitle>
+      {section.text ? <AboutText $large={large}>{section.text}</AboutText> : null}
+      {section.items?.length ? (
+        <WishList>
+          {section.items.map(item => (
+            <WishChip key={item.key} $match={item.match} data-match={item.match ? 'true' : undefined}>
+              {item.match ? <b aria-hidden="true">✓</b> : null}
+              <span>{item.label ? `${item.label}: ${item.text}` : item.text}</span>
+            </WishChip>
+          ))}
+        </WishList>
+      ) : null}
+      {section.note ? <WishNote>{section.note}</WishNote> : null}
     </DetailSection>
   ));
 };

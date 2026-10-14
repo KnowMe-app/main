@@ -693,6 +693,11 @@ export const extractViewerProgramFacts = (profile, helpers = {}) => {
     births: readCount(profile.ownKids),
     csections: readCount(csectionRaw),
     experience: readCount(profile.surrogacyExperience ?? profile.experience ?? profile.donationExperience ?? profile.previousDonation),
+    // Не для вимог програми — для побажань батьків до зовнішності донорки
+    // (`utils/parentWishes`): «✓ як у вас» на картці батьків.
+    eyeColor: String(last(profile.eyeColor) ?? '').trim(),
+    hairColor: String(last(profile.hairColor) ?? '').trim(),
+    education: String(last(profile.education) ?? '').trim(),
   };
 };
 
@@ -750,9 +755,17 @@ export const resolveViewerProgramType = viewerRole => {
 export const summarizeCardPrograms = (card, { viewerType = '', facts = null } = {}) => {
   const { programs } = resolveCardPrograms(card);
   if (!programs.length) return null;
-  const relevant = viewerType ? programs.filter(program => program.type === viewerType) : programs;
-  const list = relevant;
-  const evaluated = list.map(program => ({ program, result: viewerType && facts ? evaluateProgram(program, facts) : null }));
+  // Програм поки мало, тож читач бачить усі — і донорські, і програми СМ:
+  // сховані за типом, вони лишали картку агенції майже порожньою. Свого типу
+  // стоять першими, і лише їх звіряють з анкетою читача («Вам підходить …»):
+  // вимоги донорської програми до сурогатної мами нічого не кажуть.
+  // Фільтрацію за типом повернемо, коли програм стане багато.
+  const own = viewerType ? programs.filter(program => program.type === viewerType) : [];
+  const list = viewerType ? [...own, ...programs.filter(program => program.type !== viewerType)] : programs;
+  const evaluated = list.map(program => ({
+    program,
+    result: viewerType && facts && program.type === viewerType ? evaluateProgram(program, facts) : null,
+  }));
   const matched = evaluated.filter(item => item.result?.matches).length;
   // Діапазон рядка — гарантовано за програму, а не сама фінальна виплата:
   // картка програми показує саме цю суму першою, і число в рядку мусить
@@ -764,7 +777,8 @@ export const summarizeCardPrograms = (card, { viewerType = '', facts = null } = 
   return {
     total: list.length,
     allTotal: programs.length,
-    matched: viewerType && facts ? matched : null,
+    ownTotal: own.length,
+    matched: viewerType && facts && own.length ? matched : null,
     evaluated,
     finals,
     byType,

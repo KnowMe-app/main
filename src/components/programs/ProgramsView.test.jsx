@@ -29,11 +29,14 @@ describe('програми в рядку стрічки', () => {
   it('каже донорці, скільки програм їй підходить, у заголовку «Програми · N»', () => {
     render(<ProgramsSummary card={{ programs }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     const summary = screen.getByTestId('programs-summary');
-    expect(summary).toHaveTextContent('Програми · 2');
+    // Програм поки мало: донорка бачить і програму СМ, а «підходить» —
+    // серед донорських.
+    expect(summary).toHaveTextContent('Програми · 3');
     expect(summary).toHaveTextContent('Вам підходить 1 з 2 програм');
+    expect(summary).toHaveTextContent('Шукаємо сурогатну маму');
     // Видимі контейнери самі називають кожну суму — діапазону над ними немає.
     expect(summary).not.toHaveTextContent('1 600–2 500 $');
-    expect(summary).toHaveTextContent('ще 1 — для сурогатних мам');
+    expect(summary).not.toHaveTextContent('ще 1 — для сурогатних мам');
   });
 
   it('дотик до заголовка програми розгортає її деталі', () => {
@@ -47,9 +50,12 @@ describe('програми в рядку стрічки', () => {
   it('кожна програма — контейнер зі збігом, а «Деталі програми» розгортає саме її', () => {
     render(<ProgramsSummary card={{ programs }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     const rows = screen.getAllByTestId('program-list-item');
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(within(rows[0]).getByLabelText('Вам підходить')).toBeInTheDocument();
     expect(within(rows[1]).getByLabelText('Не підходить')).toBeInTheDocument();
+    // Програму іншої аудиторії з анкетою не звіряють — позначки збігу в неї немає.
+    expect(within(rows[2]).queryByLabelText('Вам підходить')).not.toBeInTheDocument();
+    expect(within(rows[2]).queryByLabelText('Не підходить')).not.toBeInTheDocument();
     expect(screen.queryByTestId('program-card')).not.toBeInTheDocument();
     const toggle = within(rows[0]).getByRole('button', { name: 'Деталі програми' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -450,7 +456,13 @@ describe('картка агенції й батьків', () => {
   it('порожню програму читачам не показує — це чернетка', () => {
     const withDraft = { ...programs, p4: { id: 'p4', type: 'ed', requirements: { rh: 'any' } } };
     render(<CardRoleBlock card={{ userId: 'AG1', role: 'ag', programs: withDraft }} programsContext={context} language="uk" />);
-    expect(screen.getAllByTestId('program-list-item')).toHaveLength(2);
+    expect(screen.getAllByTestId('program-list-item')).toHaveLength(3);
+  });
+
+  it('батьки ведуть програми так само, як агенція', () => {
+    render(<CardRoleBlock card={{ userId: 'IP1', role: 'ip', seeking: 'ed', programs }} programsContext={context} language="uk" />);
+    expect(screen.getByTestId('programs-summary')).toHaveTextContent('Вам підходить 1 з 2 програм');
+    expect(screen.getAllByTestId('program-list-item')).toHaveLength(3);
   });
 
   it('у програм одного типу підсвічує саме те, чим вони різняться', () => {

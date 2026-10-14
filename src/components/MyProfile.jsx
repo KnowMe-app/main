@@ -57,6 +57,7 @@ import { KnowMeBrand } from './styles/knowme';
 import { resolveMyProfileFieldText, resolveMyProfileSectionTitle } from '../utils/myProfileRoleTexts';
 import { ProgramsEditor } from './programs/ProgramsEditor';
 import { ParentProfileFields } from './programs/RoleProfileFields';
+import { buildParentRoleSections, listRequiredSectionFields } from '../utils/myProfileSections';
 import { useProgramDisplayCurrency, useProgramRates } from '../hooks/useProgramRates';
 import {
   loadOwnPrograms,
@@ -588,6 +589,12 @@ const PARENT_ROLE_FIELDS = new Set(['seeking', 'programLocation', 'parentVia', '
 // прізвище з анкети не зникає.
 const PARENT_ONLY_HIDDEN_FIELDS = new Set(['surname']);
 
+// Область батькам не пропонується: місто вже каже, де людина, — так само, як
+// агенції й клініці (`ORGANISATION_SKIPPED_FIELDS`). Записане значення поле не
+// ховає, і публікацію воно не тримає.
+const PARENT_ONLY_SKIPPED_FIELDS = new Set(['region']);
+const PARENT_ONLY_OPTIONAL_FIELDS = new Set([...OPTIONAL_PROFILE_FIELDS, ...PARENT_ONLY_SKIPPED_FIELDS]);
+
 // TikTok тут був і повернувся: донорки й СМ ведуть його не рідше за
 // Instagram, і саме там агенції їх і знаходять.
 const PERSON_HIDDEN_SOCIAL_FIELDS = new Set(['twitter', 'linkedin', 'youtube']);
@@ -974,11 +981,18 @@ export const MyProfile = () => {
   }, [profileRoles, selectedRole]);
   const personRole = rolesList.find(role => PERSON_ROLES.includes(role)) || '';
   const organisationRole = rolesList.find(role => ORGANISATION_ROLES.includes(role)) || '';
+  // Програми веде не лише організація: батьки так само пропонують донорці чи
+  // СМ свою програму — суму, вимоги, покриття. Вузол програм один на картку
+  // (`multiData/programs/{uid}`), тож і роль, якій належить редактор, одна —
+  // організація, якщо вона є, інакше батьки.
+  const programsRole = organisationRole || (rolesList.includes('ip') ? 'ip' : '');
   const isDonorRole = Boolean(personRole) || !normalizedRole || ['donor', 'до'].includes(normalizedRole);
   // СМ без донорської анкети — скорочений набір (`SURROGATE_HIDDEN_FIELDS`).
   const surrogateOnly = rolesList.includes('sm') && !rolesList.includes('ed');
   // Лише батьки — побажання переїжджають у «Кого шукаєте», прізвища не питають.
   const parentOnly = rolesList.length === 1 && rolesList[0] === 'ip';
+  // Що публікацію не тримає для цього читача (`listRequiredSectionFields`).
+  const optionalProfileFields = parentOnly ? PARENT_ONLY_OPTIONAL_FIELDS : OPTIONAL_PROFILE_FIELDS;
   // Заголовки спільних розділів говорять мовою анкети, якій ці поля належать:
   // у донорки, яка ще й агентка, «Особисті дані» — її, а не агенції.
   //
@@ -1003,6 +1017,8 @@ export const MyProfile = () => {
     shownSkippedFieldsRef.current.add(name);
     return true;
   };
+  // «Де програма» батьків — лише записане (`buildParentRoleSections`).
+  const showParentProgramLocation = rolesList.includes('ip') && keepSkippedField('programLocation');
   const hiddenRoles = useMemo(() => parseHiddenRoles(state.hiddenRoles), [state.hiddenRoles]);
 
   /**
@@ -1102,22 +1118,14 @@ export const MyProfile = () => {
       return [{ key: 'organisation', title: role === 'cl' ? '🏥 Клініка' : '🏢 Агенція', fields: ['agencyName'] }, programs];
     }
     if (role === 'ip') {
-      // Побажання (`moreInfo_main`) стоять тут же, а не окремим розділом:
-      // поки вони жили в «Способі життя», батьки бачили «Кого шукаєте» двічі —
-      // розділом із чіпами й розділом з одним полем «Кого шукаєте», і у
-      // вкладках угорі теж двічі. Коли в людини є ще й власна анкета (донорки,
-      // СМ, агенції), поле лишається там, де його читає та роль.
-      const fields = ['seeking', 'programLocation', 'parentVia'];
-      return [{
-        key: 'search',
-        title: '🔎 Кого шукаєте',
-        fields: parentOnly ? [...fields, 'moreInfo_main'] : fields,
-        custom: 'parents',
-        extraFields: parentOnly ? ['moreInfo_main'] : [],
-      }];
+      return buildParentRoleSections({
+        parentOnly,
+        ownsPrograms: programsRole === 'ip',
+        showProgramLocation: showParentProgramLocation,
+      });
     }
     return [];
-  }, [hasMixedRoles, parentOnly]);
+  }, [hasMixedRoles, parentOnly, programsRole, showParentProgramLocation]);
   const roleSections = useMemo(() => roleSectionsFor(selectedRole), [roleSectionsFor, selectedRole]);
   const additionalRoleSections = useMemo(() => {
     const used = new Set(roleSections.map(section => section.key));
@@ -1141,6 +1149,7 @@ export const MyProfile = () => {
           .filter(name => !organisationOnly || !ORGANISATION_SKIPPED_FIELDS.has(name) || keepSkippedField(name))
           .filter(name => !surrogateOnly || !SURROGATE_HIDDEN_FIELDS.has(name))
           .filter(name => !parentOnly || !PARENT_ONLY_HIDDEN_FIELDS.has(name))
+          .filter(name => !parentOnly || !PARENT_ONLY_SKIPPED_FIELDS.has(name) || keepSkippedField(name))
           // Побажання батьків стоять у «Кого шукаєте» (`extraFields`).
           .filter(name => !parentOnly || name !== 'moreInfo_main'),
       }))
@@ -1180,7 +1189,7 @@ export const MyProfile = () => {
     const rest = personAssigned ? [] : personSections;
     return [...shared, ...blocks, ...rest];
   }, [additionalRoleSections, isDonorRole, organisationRole, parentOnly, personRole, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole, state, surrogateOnly, organisationOnly]); // eslint-disable-line react-hooks/exhaustive-deps
-  const programRates = useProgramRates(Boolean(organisationRole));
+  const programRates = useProgramRates(Boolean(programsRole));
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
 
   // Програми — не поле анкети: вони лежать у `multiData/programs/{uid}`, і
@@ -1196,7 +1205,7 @@ export const MyProfile = () => {
   const ownProgramsCount = useMemo(() => listPrograms(ownPrograms, { includeHidden: true }).length, [ownPrograms]);
 
   useEffect(() => {
-    if (!programsOwnerId || !organisationRole) return undefined;
+    if (!programsOwnerId || !programsRole) return undefined;
     let cancelled = false;
     (async () => {
       // Не збережене минулого разу (відмова бази, закрита вкладка) —
@@ -1219,12 +1228,12 @@ export const MyProfile = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [organisationRole, programsOwnerId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [programsRole, programsOwnerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!organisationRole || programTerms) return;
+    if (!programsRole || programTerms) return;
     loadProgramTerms().then(setProgramTerms);
-  }, [organisationRole, programTerms]);
+  }, [programsRole, programTerms]);
 
   const saveOwnPrograms = useCallback(record => {
     const targetUserId = userId || stateRef.current?.userId;
@@ -1359,10 +1368,10 @@ export const MyProfile = () => {
   // (`validateRequiredProfileFields`). Порожній «Сайт» тримав готову анкету
   // агенції на «13 з 14 · 93%», і людина шукала, що ж вона пропустила.
   const filledStats = useMemo(() => {
-    const keys = visibleSections.flatMap(s => s.fields).filter(name => !OPTIONAL_PROFILE_FIELDS.has(name));
+    const keys = visibleSections.flatMap(section => listRequiredSectionFields(section, { optional: optionalProfileFields }));
     const filled = keys.filter(isFieldFilled).length;
     return { filled, total: keys.length };
-  }, [isFieldFilled, visibleSections]);
+  }, [isFieldFilled, optionalProfileFields, visibleSections]);
   const filledPct = filledStats.total ? Math.round((filledStats.filled / filledStats.total) * 100) : 0;
 
 
@@ -1372,7 +1381,7 @@ export const MyProfile = () => {
     // «Готовий» розділ — той, де заповнено все обовʼязкове: соцмережі цілком
     // необовʼязкові, і сірі «4/5» казали, що розділ недороблений. Розділ без
     // жодного обовʼязкового поля готовий, щойно в ньому щось є.
-    const required = section.fields.filter(name => !OPTIONAL_PROFILE_FIELDS.has(name));
+    const required = listRequiredSectionFields(section, { optional: optionalProfileFields });
     const complete = required.length
       ? required.every(isFieldFilled)
       : filled > 0;
@@ -1383,7 +1392,7 @@ export const MyProfile = () => {
       progress: total > 0 ? Math.round((filled / total) * 100) : 0,
     };
     return acc;
-  }, {}), [isFieldFilled, visibleSections]);
+  }, {}), [isFieldFilled, optionalProfileFields, visibleSections]);
 
 
   const getSectionEntries = useCallback(() => navSections
@@ -1713,8 +1722,7 @@ export const MyProfile = () => {
         return SHARED_SECTION_KEYS.has(section.key) || belongsToSameQuestionnaire;
       });
     const missingFieldNames = sectionsToValidate
-      .flatMap(section => section.fields)
-      .filter(fieldName => !OPTIONAL_PROFILE_FIELDS.has(fieldName))
+      .flatMap(section => listRequiredSectionFields(section, { optional: optionalProfileFields }))
       // A shared person block is tagged with whichever of `ed`/`sm` was
       // assigned first. Reuse it for the other person role, but apply that
       // role's own questionnaire: an SM must not be blocked by donor-only
@@ -1921,7 +1929,9 @@ export const MyProfile = () => {
 
     try {
       if (fields.length) await saveState(nextState, { directFields });
-      if (ORGANISATION_ROLES.includes(role) && sameKindRoles.length === 1 && programsOwnerId) {
+      // У батьків «одного роду» ролей немає (`sameKindRoles` порожній), а
+      // програми їхні — коли поруч немає організації (`programsRole`).
+      if (role === programsRole && (role === 'ip' || sameKindRoles.length === 1) && programsOwnerId) {
         await saveCardPrograms(programsOwnerId, {});
       }
       // Коли дві ролі користуються тими самими полями, «очистити одну» означає
@@ -2118,7 +2128,7 @@ export const MyProfile = () => {
           buildMatchingCardProjection(previewDraft.userId, previewDraft),
         ),
         // Програми належать лише організаційним карткам, а не сусідній ролі.
-        programs: ORGANISATION_ROLES.includes(role) && ownVisiblePrograms.length ? ownPrograms : null,
+        programs: role === programsRole && ownVisiblePrograms.length ? ownPrograms : null,
       },
     };
   });
@@ -2361,7 +2371,7 @@ export const MyProfile = () => {
               onEditingChange={setEditingProgram}
             />
           ) : null}
-          {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} /> : null}
+          {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} showProgramLocation={showParentProgramLocation} /> : null}
           {section.custom && section.extraFields?.length ? section.extraFields.map(renderField) : null}
           {!section.custom ? section.fields.map(renderField) : null}
         </FieldGroup>
