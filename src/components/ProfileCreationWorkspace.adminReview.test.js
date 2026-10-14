@@ -63,6 +63,7 @@ jest.mock('./formFields', () => ({
 }));
 
 jest.mock('utils/accessLevel', () => ({
+  ...jest.requireActual('utils/accessLevel'),
   resolveAccess: () => ({ canCreateProfiles: true, isAdmin: true }),
 }));
 

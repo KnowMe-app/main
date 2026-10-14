@@ -74,6 +74,7 @@ jest.mock('./formFields', () => ({
   getOptionValue: value => value,
 }));
 jest.mock('utils/accessLevel', () => ({
+  ...jest.requireActual('utils/accessLevel'),
   resolveAccess: () => ({ canCreateProfiles: true, isAdmin: false }),
 }));
 // The real matcher and normalizer are used here (not stubbed) so the
