@@ -284,12 +284,16 @@ describe('чи підходить програма читачеві', () => {
     expect(result.uncertain).toBe(true);
   });
 
-  it('рахує «вам підходить N з M» лише серед програм свого типу', () => {
+  it('показує всі програми, а «вам підходить N з M» рахує лише серед свого типу', () => {
     const card = { programs: { p1: donorProgram, p2: surrogateProgram, p3: { ...donorProgram, id: 'p3', requirements: { ageTo: 25 } } } };
     const summary = summarizeCardPrograms(card, { viewerType: 'ed', facts: { age: 28, heightCm: 172, rh: '+', births: 1 } });
-    expect(summary.total).toBe(2);
+    expect(summary.total).toBe(3);
     expect(summary.allTotal).toBe(3);
+    expect(summary.ownTotal).toBe(2);
     expect(summary.matched).toBe(1);
+    // Свого типу — першими; програму СМ донорці не звіряють.
+    expect(summary.evaluated.map(item => item.program.type)).toEqual(['ed', 'ed', 'sm']);
+    expect(summary.evaluated[2].result).toBeNull();
   });
 
   it('роль читача — остання в історії', () => {
@@ -300,9 +304,10 @@ describe('чи підходить програма читачеві', () => {
     expect(resolveViewerProgramType('ag')).toBe('');
   });
 
-  it('не підміняє порожній список програмами іншої аудиторії', () => {
+  it('програми лише іншої аудиторії показує, але не каже «підходить 0 з 0»', () => {
     const summary = summarizeCardPrograms({ programs: { p2: surrogateProgram } }, { viewerType: 'ed', facts: {} });
-    expect(summary).toMatchObject({ total: 0, allTotal: 1, matched: 0, evaluated: [], finals: [] });
+    expect(summary).toMatchObject({ total: 1, allTotal: 1, ownTotal: 0, matched: null });
+    expect(summary.evaluated[0].result).toBeNull();
   });
 });
 

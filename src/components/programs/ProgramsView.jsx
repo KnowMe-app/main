@@ -1008,7 +1008,6 @@ export const formatPayRange = (finals, displayCurrency, rates) => {
 
 // --- список програм агенції --------------------------------------------------
 
-const OTHER_TYPE_LABELS = Object.freeze({ ed: 'для донорок', sm: 'для сурогатних мам' });
 const RANGE_TYPE_LABELS = Object.freeze({ ed: 'Донорам', sm: 'Сурогатним мамам' });
 
 // «з 2 програм», але «з 1 програми»: після «з» — родовий відмінок.
@@ -1470,17 +1469,15 @@ export const AgencyProgramsPanel = ({
       ))}
     </>
   ) : null;
-  const matchedLine = summary.total === 0
-    ? uiText('Програм для вас поки немає', language)
-    : summary.matched !== null
-      ? uiText('Вам підходить {matched} з {total} {programs}', language, {
-        matched: summary.matched,
-        total: summary.total,
-        programs: programsGenitive(summary.total, language),
-      })
-      : '';
-  const otherType = viewerType === 'ed' ? 'sm' : 'ed';
-  const othersCount = summary.allTotal - summary.total;
+  // Рахується серед програм типу читача: решту видно, але звіряти анкету
+  // донорки з вимогами програми СМ (і навпаки) нема сенсу.
+  const matchedLine = summary.matched !== null
+    ? uiText('Вам підходить {matched} з {total} {programs}', language, {
+      matched: summary.matched,
+      total: summary.ownTotal,
+      programs: programsGenitive(summary.ownTotal, language),
+    })
+    : '';
   const toggle = id => {
     if (openId === id) {
       setOpenId('');
@@ -1532,14 +1529,6 @@ export const AgencyProgramsPanel = ({
         <MoreButton type="button" onClick={event => { event.stopPropagation(); setShowAll(true); }}>
           {uiText('Показати ще {count}', language, { count: hiddenCount })}
         </MoreButton>
-      ) : null}
-      {othersCount > 0 && OTHER_TYPE_LABELS[otherType] && viewerType ? (
-        <RateNote>
-          {uiText('ще {count} — {audience}', language, {
-            count: othersCount,
-            audience: uiText(OTHER_TYPE_LABELS[otherType], language),
-          })}
-        </RateNote>
       ) : null}
       {converted ? (
         <RateNote>{uiText('≈ — за курсом НБУ на {date}', language, { date: formatRateDate(rates.rateDate) })}</RateNote>

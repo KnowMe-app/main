@@ -87,7 +87,7 @@ describe('кілька ролей у «Моєму профілі»', () => {
     const source = read('MyProfile.jsx');
     expect(source).toContain('const previewCards = previewRoles.map(role =>');
     expect(source).toContain('previews={previewCards}');
-    expect(source).toContain('ORGANISATION_ROLES.includes(role) && ownVisiblePrograms.length');
+    expect(source).toContain('role === programsRole && ownVisiblePrograms.length');
     expect(source).not.toContain('userRole: previewRoles.length > 1');
   });
 

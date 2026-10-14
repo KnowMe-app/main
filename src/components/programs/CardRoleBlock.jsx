@@ -102,7 +102,9 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
   const isOrganisation = roles.some(role => ORGANISATION_ROLES.includes(role));
   const isParent = roles.includes('ip');
   const isAlsoPerson = roles.some(role => PERSON_ROLES.includes(role));
-  const { programs } = useCardPrograms(card, isOrganisation && showPrograms);
+  // Програми веде й організація, і батьки (той самий вузол програм).
+  const ownsPrograms = isOrganisation || isParent;
+  const { programs } = useCardPrograms(card, ownsPrograms && showPrograms);
   const seeking = pickText(card?.seeking);
   const hasParentContent = isParent && (seeking || pickText(card?.programLocation));
   // Назва агенції чи клініки окремо від імені людини (`agencyName`): у
@@ -112,7 +114,7 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
   // dedicated organisation name still belongs to that row and must not
   // disappear merely because `isAlsoPerson` is false in the scoped card.
   const agencyName = isOrganisation ? pickText(card?.agencyName) : '';
-  if (!hasParentContent && !(isOrganisation && (programs.length || agencyName))) return null;
+  if (!hasParentContent && !(ownsPrograms && programs.length) && !(isOrganisation && agencyName)) return null;
   const organisationRole = roles.find(role => ORGANISATION_ROLES.includes(role));
 
   return (
@@ -133,7 +135,7 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
           {card?.parentVia ? ` · ${uiText(labelOf(PARENT_VIA_OPTIONS, pickText(card.parentVia)).toLowerCase(), language)}` : ''}
         </Line>
       ) : null}
-      {showPrograms && isOrganisation && programs.length && programsContext ? (
+      {showPrograms && ownsPrograms && programs.length && programsContext ? (
         <AgencyProgramsPanel
           card={card}
           accent={accent}
