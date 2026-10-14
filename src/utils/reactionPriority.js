@@ -399,6 +399,32 @@ export const mergeMatchingCandidateUsers = ({
 export const getReactionUserIds = reactionMap =>
   Object.keys(normalizeReactionMap(reactionMap));
 
+/*
+ * Порядок колекції реакцій — свіжіша реакція вище, і складається він із самої
+ * мапи реакцій, без жодного читання.
+ *
+ * Тут стояв порядок стрічки (дата `feedDate` від нової), і коштував він рівно
+ * стільки, скільки в колекції карток: дату знає лише сама картка, тож
+ * відкриття «Обраних» читало `matchingCards/{id}/feedDate` кожного вподобаного
+ * — в адміна 136 id і ~490 запитів заради шістнадцяти показаних. Час реакції ж
+ * лежить у значенні: дизлайк завжди писав мітку часу, лайк пише її тепер.
+ * Старі лайки (`true`, роль анкети `'ed'`) часу не мають і стоять після
+ * датованих, за id від більшого: push-id карток, заведених адміном, ростуть із
+ * часом, тож свіжіші там і так вище.
+ */
+const readReactionTime = value => {
+  const time = typeof value === 'number' ? value : Number(typeof value === 'string' && /^\d{10,}$/.test(value) ? value : NaN);
+  return Number.isFinite(time) && time > 0 ? time : 0;
+};
+
+export const orderReactionIdsByRecency = reactionMap => {
+  const activeMap = normalizeReactionMap(reactionMap);
+  return Object.keys(activeMap).sort((a, b) => (
+    readReactionTime(activeMap[b]) - readReactionTime(activeMap[a])
+    || (a < b ? 1 : a > b ? -1 : 0)
+  ));
+};
+
 export const hasPendingSharedReactionCandidates = ({
   reactionIds = [],
   sharedReactionIds = [],

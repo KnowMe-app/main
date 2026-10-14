@@ -263,11 +263,11 @@ import {
   canShowMatchingUser,
   getCanShowMatchingUserDebug,
   mergeMatchingCandidateUsers,
-  mergeSharedReactionCandidateUsers,
   loadReactionCardsPageRecords,
   hasPendingSharedReactionCandidates,
   normalizePublish,
   normalizeReactionMap,
+  orderReactionIdsByRecency,
   readReactionSnapshotMaps,
   resolvePrioritizedReactionMaps,
   shouldApplyReactionPageResult,
@@ -277,7 +277,6 @@ import {
 import {
   applyMatchingUiFiltersToUsers,
   buildMatchingIndexFilterGroups,
-  compareUsersByLastLogin2,
   fetchFilteredMatchingSourceChunk,
   fetchAdditionalAccessUsersBySearchIndex,
   fetchMatchingIndexedCandidates,
@@ -661,6 +660,22 @@ const fetchLimitedProfileByIdMemo = userId => {
   });
   limitedProfileMemo.set(key, { pending, at: Date.now() });
   return pending.then(profile => (profile ? { ...profile } : profile));
+};
+
+// Дата стрічки картки колекції, якої не принесла проєкція. Та сама сторінка
+// класифікується з кількох місць (перша порція, довантаження, повтор після
+// зміни прав), і без памʼяті кожне питало той самий рядок наново.
+const reactionFeedDateMemo = new Map();
+const readReactionFeedDateMemo = cardId => {
+  const key = String(cardId || '');
+  const memo = reactionFeedDateMemo.get(key);
+  if (memo && Date.now() - memo.at <= LIMITED_PROFILE_MEMO_TTL_MS) return memo.pending;
+  const pending = get(refDb(database, `${MATCHING_CARDS_ROOT}/${key}/${MATCHING_CARD_FEED_FIELD}`)).catch(error => {
+    reactionFeedDateMemo.delete(key);
+    throw error;
+  });
+  reactionFeedDateMemo.set(key, { pending, at: Date.now() });
+  return pending;
 };
 
 const fetchLimitedProfilesByIdsForMatching = async ids => (
@@ -3486,9 +3501,17 @@ const Matching = () => {
   // де на нього є чесна відповідь: ключ стрічки `feedDate` у проєкції. Він є
   // рівно в показаної картки, і саме його читає дека. Це ще й один рядок
   // замість цілої анкети на кожен id.
-  const classifyReactionIdsByStorage = React.useCallback(async ids => {
+  //
+  // Питається це лише про сторінку, яку збираються показати, і першою
+  // відповідає сама картка: сторінку колекції читають проєкціями
+  // (`fetchReactionCardsByIds` → `knownCards`), а проєкція несе `publish` і
+  // `lastLogin2` — ту саму дату стрічки. Окремий `feedDate` питається лише в
+  // картки, яку принесла повна анкета (там дата не обовʼязково ключ стрічки), і
+  // памʼятається вкладкою. Доти класифікацію питали про всю колекцію наперед —
+  // по запиту на кожен вподобаний id, ще й по кілька разів.
+  const classifyReactionIdsByStorage = React.useCallback(async (ids, knownCards = null) => {
     const uniqueIds = [...new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean))];
-    const requestKey = uniqueIds.slice().sort().join('|');
+    const requestKey = `${knownCards ? 'known:' : ''}${uniqueIds.slice().sort().join('|')}`;
     if (reactionClassificationRequestsRef.current.has(requestKey)) {
       debugReactionFlowLog('classifyReactionIdsByStorage:dedupe-hit', { ids: summarizeIdsForDebug(uniqueIds) });
       return reactionClassificationRequestsRef.current.get(requestKey);
@@ -3513,7 +3536,8 @@ const Matching = () => {
         ? { cards: {} }
         : composeCachedCards(uniqueIds);
       uniqueIds.forEach(id => {
-        const cachedCard = composedCache.cards[id];
+        const knownCard = knownCards?.[id];
+        const cachedCard = knownCard && isMatchingSummaryCard(knownCard) ? knownCard : composedCache.cards[id];
         if (!cachedCard || !isMatchingSummaryCard(cachedCard)) {
           idsToRead.push(id);
           return;
@@ -3526,7 +3550,7 @@ const Matching = () => {
 
       await Promise.all(idsToRead.map(async id => {
         try {
-          const snapshot = await get(refDb(database, `${MATCHING_CARDS_ROOT}/${id}/${MATCHING_CARD_FEED_FIELD}`));
+          const snapshot = await readReactionFeedDateMemo(id);
           // Питається значення, а не наявність: у ключа три стани, і `false`
           // (сховали) теж «існує». У стрічці стоїть лише картка з датою — саме
           // її бачить запит стрічки (`startAt('')` бере самі рядки), тож
@@ -3545,16 +3569,9 @@ const Matching = () => {
         }
       }));
 
-      // Список реакцій гортається сторінками саме в цьому порядку, тож він
-      // мусить бути порядком стрічки: дата від нової, у межах дня id за
-      // спаданням (`fetchMatchingCardsPage`). Ключі вузла реакцій приходять за
-      // алфавітом id, і сьогоднішня картка, першою в стрічці, у лайкнутих
-      // могла не потрапити навіть на першу сторінку.
-      const byFeedOrder = (a, b) => (
-        String(classifications[b]?.feedDate || '').localeCompare(String(classifications[a]?.feedDate || ''))
-        || b.localeCompare(a)
-      );
-      const legacyReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'feed').sort(byFeedOrder);
+      // Порядок лишається вхідним: колекція гортається за часом реакції
+      // (`orderReactionIdsByRecency`), а не за датою стрічки.
+      const legacyReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'feed');
       const nodeReactionIds = uniqueIds.filter(id => classifications[id]?.storage === 'nodes');
       debugReactionFlowLog('classifyReactionIdsByStorage:result', {
         fullReactionIds: summarizeIdsForDebug(uniqueIds),
@@ -3661,10 +3678,11 @@ const Matching = () => {
     return result;
   }, [hydrateMatchingFeedCards]);
 
-  const getAccessibleReactionIds = React.useCallback(async (reactionIds, accessSnapshot = {}) => {
+  const getAccessibleReactionIds = React.useCallback(async (reactionIds, accessSnapshot = {}, knownCards = null) => {
     const uniqueIds = [...new Set((reactionIds || []).map(id => String(id || '').trim()).filter(Boolean))];
     const accessRequestKey = stableAdditionalSignature({
       ids: uniqueIds.slice().sort(),
+      withKnownCards: Boolean(knownCards),
       accessUserId: accessSnapshot.accessUserId || ownerId || getOwnerId(),
       rawRules: accessSnapshot.rawRules ?? currentAdditionalAccessRules,
       searchKeySetsOfExactUser: accessSnapshot.searchKeySetsOfExactUser ?? currentSearchKeySetKeys,
@@ -3679,7 +3697,7 @@ const Matching = () => {
       legacyReactionIds,
       nodeReactionIds,
       classifications,
-    } = await classifyReactionIdsByStorage(uniqueIds);
+    } = await classifyReactionIdsByStorage(uniqueIds, knownCards);
 
     debugReactionFlowLog('getAccessibleReactionIds:start', {
       inputIds: summarizeIdsForDebug(uniqueIds),
@@ -3764,6 +3782,12 @@ const Matching = () => {
     ownerId,
   ]);
 
+  // Пул «спільних» реакцій — картки, які вподобав чи сховав інший власник
+  // спільного доступу. Гідратувати їх окремо нема чого: мапа колекції
+  // (`resolvePrioritizedReactionMaps`) уже містить ці id, і сторінки колекції
+  // приносять їх так само, як власні (`hasPendingSharedReactionCandidates`
+  // тримає `hasMore`, доки не принесли). Доти пул читав і перевіряв **усі**
+  // спільні реакції разом на кожне відкриття колекції — поза пагінацією.
   const loadSharedReactionCandidates = React.useCallback(async () => {
     const cacheEpoch = getMatchingLocalStorageCacheEpoch();
     const viewerId = ownerId || getOwnerId();
@@ -3777,103 +3801,15 @@ const Matching = () => {
       currentViewMode: viewModeRef.current,
     });
 
-    if (!['default', 'favorites', 'dislikes'].includes(requestViewMode)) {
+    if (canApplySharedCandidateResult()) {
       setSharedReactionCandidateUsers([]);
-      return;
     }
-
-    if (requestViewMode === 'default') {
-      if (canApplySharedCandidateResult()) {
-        setSharedReactionCandidateUsers([]);
-      }
-      debugSharedReactionsLog(viewerId, 'skipped shared reaction candidate hydration for default deck');
-      return;
-    }
-
-    const candidateIds = [...new Set(sharedReactionIds.filter(Boolean))];
-    debugSharedReactionsLog(viewerId, 'shared reaction ids found for candidate pool', {
-      sharedReactionIds: summarizeIdsForDebug(candidateIds),
-    });
-
-    if (!viewerId || candidateIds.length === 0) {
-      if (canApplySharedCandidateResult()) {
-        setSharedReactionCandidateUsers([]);
-      }
-      return;
-    }
-
-    const reactionAccessSnapshot = {
-      accessUserId: viewerId,
-      rawRules: currentAdditionalAccessRules,
-      searchKeySetsOfExactUser: currentSearchKeySetKeys,
-    };
-    const accessibleCandidateIds = await getAccessibleReactionIds(candidateIds, reactionAccessSnapshot);
-    if (!canApplySharedCandidateResult()) {
-      return;
-    }
-
-    const recordsById = accessibleCandidateIds.length > 0
-      ? await fetchReactionCardsByIds(accessibleCandidateIds)
-      : {};
-    if (!canApplySharedCandidateResult()) {
-      return;
-    }
-
-    const loadedUsers = accessibleCandidateIds
-      .map(id => recordsById?.[id])
-      .filter(Boolean)
-      .filter(user => canShowMatchingUser(user, { isAdmin }))
-      .map(user => ({
-        ...user,
-        ...(reactionStorageByIdRef.current?.[user.userId] === 'nodes' ? { __matchingAccessAllowed: true } : {}),
-      }));
-    const loadedIds = new Set(loadedUsers.map(user => user.userId).filter(Boolean));
-    const filteredInvalidIds = candidateIds.filter(id => !reactionStorageByIdRef.current?.[id]);
-    const filteredByAccessIds = candidateIds.filter(id => !accessibleCandidateIds.includes(id) && reactionStorageByIdRef.current?.[id] === 'nodes');
-    const missingAllowedIds = accessibleCandidateIds.filter(id => !loadedIds.has(id));
-    const allowedNodeCardIds = accessibleCandidateIds.filter(id => reactionStorageByIdRef.current?.[id] === 'nodes');
-
-    if (!canApplySharedCandidateResult()) {
-      return;
-    }
-
-    loadedUsers.forEach(user => {
-      const { __matchingAccessAllowed, ...cacheUser } = user;
-      updateCard(user.userId, cacheUser);
-    });
-    setSharedReactionCandidateUsers(prev => mergeSharedReactionCandidateUsers({
-      currentUsers: prev,
-      loadedUsers,
-      candidateIds,
-    }));
-    void loadCommentsFor(loadedUsers);
-
-    if (!canApplySharedCandidateResult()) {
-      return;
-    }
-
-    debugSharedReactionsLog(viewerId, 'shared reaction candidate pool resolved', {
-      sharedReactionIds: summarizeIdsForDebug(candidateIds),
-      addedToCandidatePool: summarizeIdsForDebug(loadedUsers.map(user => user.userId)),
-      filteredInvalidIds: summarizeIdsForDebug(filteredInvalidIds),
-      filteredByAccessOrSearchKeySets: summarizeIdsForDebug(filteredByAccessIds),
-      missingAllowedCards: summarizeIdsForDebug(missingAllowedIds),
-      allowedBySearchKeySetsCount: allowedNodeCardIds.length,
-      id0001SelfCheck: {
-        sharedReactionIdFound: candidateIds.includes(DEBUG_SHARED_CARD_ID),
-        allowedBySearchKeySets: allowedNodeCardIds.includes(DEBUG_SHARED_CARD_ID),
-        filteredByAccessOrSearchKeySets: filteredByAccessIds.includes(DEBUG_SHARED_CARD_ID),
-        addedToCandidatePool: loadedIds.has(DEBUG_SHARED_CARD_ID),
-      },
+    debugSharedReactionsLog(viewerId, 'shared reaction candidates come from collection pagination', {
+      viewMode: requestViewMode,
+      sharedReactionIds: summarizeIdsForDebug(sharedReactionIds),
     });
   }, [
-    currentAdditionalAccessRules,
-    currentSearchKeySetKeys,
-    fetchReactionCardsByIds,
-    getAccessibleReactionIds,
-    loadCommentsFor,
     ownerId,
-    isAdmin,
     sharedReactionIds,
     viewMode,
   ]);
@@ -3892,6 +3828,7 @@ const Matching = () => {
     offset = 0,
     limit = LOAD_MORE,
     loadedIds = new Set(),
+    accessSnapshot = {},
   }) => {
     const activeReactionMap = normalizeReactionMap(reactionMap);
     debugReactionFlowLog('loadReactionCardsPage:start', {
@@ -3908,7 +3845,13 @@ const Matching = () => {
       offset,
       limit,
       loadedIds,
-      fetchUsersByIds: fetchReactionCardsByIds,
+      // Право на картку перевіряється тут, на сторінці, а не на всій
+      // колекції наперед: класифікація бере вже прочитані проєкції сторінки.
+      fetchUsersByIds: async pageIds => {
+        const cardsById = await fetchReactionCardsByIds(pageIds);
+        const allowedIds = new Set(await getAccessibleReactionIds(pageIds, accessSnapshot, cardsById));
+        return Object.fromEntries(Object.entries(cardsById || {}).filter(([id]) => allowedIds.has(id)));
+      },
       mapUser: user => ({
         ...user,
         userId: user.userId,
@@ -3951,21 +3894,18 @@ const Matching = () => {
       }),
     });
 
-    const sortedUsers = page.users.sort(compareUsersByLastLogin2);
     debugReactionFlowLog('loadReactionCardsPage:result', {
       viewMode: viewModeRef.current,
-      users: summarizeUsersForReactionDebug(sortedUsers),
+      users: summarizeUsersForReactionDebug(page.users),
       nextOffset: page.nextOffset,
       hasMore: page.hasMore,
       loadedIds: summarizeIdsForDebug(Array.from(loadedIds || [])),
     });
 
-    return {
-      ...page,
-      users: sortedUsers,
-    };
+    return page;
   }, [
     fetchReactionCardsByIds,
+    getAccessibleReactionIds,
     isAdmin,
   ]);
 
@@ -4072,21 +4012,17 @@ const Matching = () => {
         searchKeySetsOfExactUser: currentSearchKeySetKeys,
       };
       const reactionAccessSnapshotKey = buildAdditionalAccessSnapshotKey(reactionAccessSnapshot);
-      const reactionIds = await getAccessibleReactionIds(fullReactionIds, reactionAccessSnapshot);
-      const classifiedReaction = await classifyReactionIdsByStorage(reactionIds);
-      const safeReactionIds = [...new Set([
-        ...classifiedReaction.legacyReactionIds,
-        ...classifiedReaction.nodeReactionIds,
-      ])];
+      // Перелік колекції — сама мапа реакцій у порядку часу реакції. Право на
+      // кожну картку перевіряє сторінка (`loadReactionCardsPage`), тож до
+      // першої порції база не питається ні про що.
+      const safeReactionIds = orderReactionIdsByRecency(reactionMap);
       debugReactionFlowLog('loadReactionCards:accessibleReactionIds', {
         reactionType,
-        reactionIds: summarizeIdsForDebug(reactionIds),
-        accessibleReactionIdsCount: reactionIds.length,
+        reactionIds: summarizeIdsForDebug(safeReactionIds),
+        fullReactionIdsCount: fullReactionIds.length,
         safeReactionIdsCount: safeReactionIds.length,
         paginationInitialized: false,
         reactionPipelineReady: false,
-        nodeReactionIds: summarizeIdsForDebug(classifiedReaction.nodeReactionIds),
-        removedByAccessIds: fullReactionIds.filter(id => !reactionIds.includes(id)),
         reactionAccessSnapshotKey,
       });
       if (!canApplyReactionLoad()) {
@@ -4120,6 +4056,7 @@ const Matching = () => {
         offset: 0,
         limit: INITIAL_LOAD,
         loadedIds,
+        accessSnapshot: reactionAccessSnapshot,
       });
       debugReactionFlowLog('loadReactionCards:page-loaded', {
         reactionType,
@@ -4183,8 +4120,6 @@ const Matching = () => {
   }, [
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
-    classifyReactionIdsByStorage,
-    getAccessibleReactionIds,
     loadCommentsFor,
     loadReactionCardsPage,
     ownerId,
@@ -4614,23 +4549,20 @@ const Matching = () => {
           currentPagination.ids.length > 0 &&
           currentPagination.accessSnapshotKey !== reactionAccessSnapshotKey
         );
-        const reactionIds = shouldRefreshReactionIds || currentPagination.ids.length === 0
-          ? await getAccessibleReactionIds(reactionMapIds, reactionAccessSnapshot)
+        // Перелік той самий, що й у першої порції (`orderReactionIdsByRecency`),
+        // і тримається сталим, доки не змінились права: зсув сторінки рахується
+        // саме від нього. Право на картку перевіряє сторінка.
+        const safeReactionIds = didAccessSnapshotChange || currentPagination.ids.length === 0
+          ? orderReactionIdsByRecency(reactionMap)
           : currentPagination.ids;
-        const classifiedReaction = await classifyReactionIdsByStorage(reactionIds);
-        const safeReactionIds = [...new Set([
-          ...classifiedReaction.legacyReactionIds,
-          ...classifiedReaction.nodeReactionIds,
-        ])];
         debugReactionFlowLog('loadMore:reactionIds', {
           viewMode,
           reactionIds: summarizeIdsForDebug(safeReactionIds),
-          accessibleReactionIdsCount: reactionIds.length,
+          reactionMapIdsCount: reactionMapIds.length,
           paginationIdsCount: currentPagination.ids.length,
           didAccessSnapshotChange,
           shouldRefreshReactionIds,
           reactionAccessSnapshotKey,
-          nodeReactionIds: summarizeIdsForDebug(classifiedReaction.nodeReactionIds),
         });
 
         if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('reaction-branch'); return; }
@@ -4644,6 +4576,7 @@ const Matching = () => {
           offset: didAccessSnapshotChange || currentPagination.ids.length === 0 ? 0 : currentPagination.nextOffset,
           limit: requestedLimit,
           loadedIds,
+          accessSnapshot: reactionAccessSnapshot,
         });
         debugReactionFlowLog('loadMore:reaction-page-loaded', {
           viewMode,
@@ -4658,7 +4591,16 @@ const Matching = () => {
         page.users.forEach(user => { if (shouldCacheMatchingCard(user)) updateCard(user.userId, user); });
         if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('reaction-branch'); return; }
         reactionLoadedIdsRef.current[viewMode] = loadedIds;
-        loadedIdsRef.current = new Set(loadedIds);
+        // `loadedIdsRef` — показане, а не оброблене (так його ставить і перша
+        // порція). `loadedIds` пагінації несе й відсіяні id — картку без
+        // проєкції, закриту правами, — і поки він лягав сюди, дозаповнення
+        // бачило «завантажено більше, ніж показано» назавжди й дочитувало
+        // колекцію до кінця без жодної прокрутки: «Не цікаві» адміна — 136
+        // карток на відкриття.
+        loadedIdsRef.current = new Set([
+          ...(didAccessSnapshotChange ? [] : Array.from(loadedIdsRef.current || [])),
+          ...page.users.map(user => user.userId),
+        ]);
         setUsers(prev => {
           if (didAccessSnapshotChange) return page.users;
           const map = new Map(prev.map(user => [user.userId, user]));
@@ -5031,8 +4973,6 @@ const Matching = () => {
     currentSearchKeySetKeys,
     ensureFreshAdditionalMatchingProfile,
     fetchChunk,
-    classifyReactionIdsByStorage,
-    getAccessibleReactionIds,
     hasMore,
     hydrateMatchingFeedCards,
     loading,
@@ -5194,7 +5134,7 @@ const Matching = () => {
     // виходу з колекції — так само, як у «Усіх» (`stickyReactedUserIds`).
     // Досі вона зникала тієї ж миті, і промах не було як скасувати.
     const reactionIds = [...new Set([
-      ...Object.keys(normalizeReactionMap(reactionMap)),
+      ...orderReactionIdsByRecency(reactionMap),
       ...stickyReactedUserIds,
     ])];
     if (!reactionIds.length) return [];
@@ -5211,11 +5151,10 @@ const Matching = () => {
     });
 
     const uniqueIds = new Set();
-    // `reactionIds` — це порядок ключів у вузлі реакцій (коли читач лайкнув чи
-    // дизлайкнув), а не порядок стрічки. Список лайкнутих/дизлайкнутих мусить
-    // йти в тому самому порядку, що й загальний список, — тож сортуємо тим
-    // самим компаратором, яким сортується кожна сторінка стрічки
-    // (`compareUsersByLastLogin2`), а не лишаємо порядок реакції.
+    // Порядок — той самий, яким колекцію гортають сторінки: свіжіша реакція
+    // вище (`orderReactionIdsByRecency`). Сортування за датою стрічки тут
+    // стояло, поки й сторінки йшли за нею; лишене поверх порядку реакцій, воно
+    // вставляло кожну дочитану сторінку посеред уже показаних карток.
     return reactionIds
       .map(id => candidateUsersById.get(id))
       .filter(card => Boolean(card))
@@ -5224,8 +5163,7 @@ const Matching = () => {
         if (!canShowReactionTabCard(card, { isAdmin })) return false;
         uniqueIds.add(card.userId);
         return true;
-      })
-      .sort(compareUsersByLastLogin2);
+      });
   }, [
     additionalAccessUsers,
     dislikeUsers,
@@ -7677,7 +7615,9 @@ const Matching = () => {
       value: ownMap[id],
       anketaRole,
       cardRoles,
-      fullValue: isFavorite ? true : Date.now(),
+      // Лайк, як і дизлайк, — мітка часу: за нею колекція стоїть свіжішим
+      // угорі (`orderReactionIdsByRecency`) без читання карток.
+      fullValue: Date.now(),
     });
     // Лайк знімає дизлайк тієї самої анкети (і навпаки), а не всієї людини.
     const addsReaction = reactionCoversAnketa(nextValue, anketaRole);

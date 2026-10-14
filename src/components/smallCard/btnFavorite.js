@@ -60,10 +60,11 @@ export const toggleFavoriteUser = async ({
   }
 
   try {
-    await addFavoriteUser(userId, multiDataOwnerId);
-    const updatedOwnFav = { ...viewerFavoriteUsers, [userId]: true };
+    const likedAt = Date.now();
+    await addFavoriteUser(userId, multiDataOwnerId, likedAt);
+    const updatedOwnFav = { ...viewerFavoriteUsers, [userId]: likedAt };
     if (updateOwnFavoriteUsers) updateOwnFavoriteUsers(updatedOwnFav);
-    const updatedFav = { ...favoriteUsers, [userId]: true };
+    const updatedFav = { ...favoriteUsers, [userId]: likedAt };
     setFavoriteUsers(updatedFav);
     setFavoriteIds(updatedFav);
     if (cacheUserData) updateCachedUser(userData || { userId });

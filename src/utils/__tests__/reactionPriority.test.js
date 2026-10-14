@@ -6,6 +6,7 @@ import {
   loadReactionCardsPageRecords,
   mergeMatchingCandidateUsers,
   mergeSharedReactionCandidateUsers,
+  orderReactionIdsByRecency,
   resolvePrioritizedReactionMaps,
   shouldApplyReactionPageResult,
   shouldApplySharedReactionCandidateResult,
@@ -1286,5 +1287,24 @@ describe('вкладки реакцій — накладка поверх усі
     expect(shouldApplySharedReactionCandidateResult(base)).toBe(true);
     expect(shouldApplyReactionPageResult({ ...base, currentVersion: 2 })).toBe(false);
     expect(shouldApplyReactionPageResult({ ...base, currentViewMode: 'dislikes' })).toBe(false);
+  });
+});
+
+describe('orderReactionIdsByRecency', () => {
+  // Порядок колекції складається з самої мапи реакцій — без читання карток.
+  it('puts the latest reaction first and undated legacy reactions after, by id descending', () => {
+    expect(orderReactionIdsByRecency({
+      old: 1700000000000,
+      fresh: 1760000000000,
+      '-OAaa': true,
+      '-OBbb': 'ed',
+      gone: false,
+      mid: '1730000000000',
+    })).toEqual(['fresh', 'mid', 'old', '-OBbb', '-OAaa']);
+  });
+
+  it('returns nothing for an empty or missing map', () => {
+    expect(orderReactionIdsByRecency(null)).toEqual([]);
+    expect(orderReactionIdsByRecency({})).toEqual([]);
   });
 });
