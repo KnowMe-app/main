@@ -843,6 +843,8 @@ const EN_BY_UK = {
   'ще {count} — {audience}': '{count} more — {audience}',
   'для донорок': 'for egg donors',
   'для сурогатних мам': 'for surrogates',
+  Донорам: 'Egg donors',
+  'Сурогатним мамам': 'Surrogates',
   'Вам підходить': 'Fits you',
   'Не підходить': 'Does not fit',
   'донорку ооцитів': 'an egg donor',

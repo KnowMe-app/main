@@ -472,6 +472,21 @@ describe('картка агенції й батьків', () => {
     expect(screen.getAllByTestId('program-list-item')).toHaveLength(5);
   });
 
+  it('суми донорських і сурогатних програм не зливає в один діапазон', () => {
+    const pay = amount => ({ final: { amount, currency: 'USD' } });
+    const mixed = {
+      a: { id: 'a', type: 'ed', location: 'Київ', payments: pay(1500) },
+      b: { id: 'b', type: 'ed', location: 'Львів', payments: pay(1700) },
+      c: { id: 'c', type: 'sm', location: 'Київ', payments: pay(20000) },
+      d: { id: 'd', type: 'sm', location: 'Львів', payments: pay(28000) },
+    };
+    render(<CardRoleBlock card={{ userId: 'AG5', role: 'ag', programs: mixed }} programsContext={{ ...context, viewerType: '' }} language="uk" />);
+    const summary = screen.getByTestId('programs-summary');
+    expect(summary).toHaveTextContent('Донорам: 1 500–1 700 $');
+    expect(summary).toHaveTextContent('Сурогатним мамам: 20 000–28 000 $');
+    expect(summary).not.toHaveTextContent('1 500–28 000 $');
+  });
+
   it('програми картки бере спершу з браузера — без запиту', () => {
     const read = jest.fn();
     setProgramsTransport({ read });

@@ -389,9 +389,13 @@ describe('legacy лишається недоторканим', () => {
       path.join(repoRoot, 'src', 'utils', '__tests__', 'fixtures', 'legacyRulesShape.json'),
       'utf8',
     ));
-    expect(rules.users['.read']).toBe(legacy.users['.read']);
+    // Аудиторію читання розширено рівно на одного — тестовий акаунт-інспектор
+    // (`READONLY_ADMIN_UIDS`): він читає все, що адмін, і не пише нічого.
+    const withoutInspector = rule => rule.replace("auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || ", '');
+    expect(withoutInspector(rules.users['.read'])).toBe(legacy.users['.read']);
     expect(rules.users['.indexOn']).toEqual(legacy.users['.indexOn']);
-    expect(rules.users.$uid['.read']).toBe(legacy.users.$uid['.read']);
+    expect(withoutInspector(rules.users.$uid['.read'])).toBe(legacy.users.$uid['.read']);
+    expect(rules.users.$uid['.write']).not.toContain('vtDxkDMjCwYuTDqTUnZsO29bpQr1');
     // Право на запис — єдине, що розширилось, і рівно на один диз'юнкт:
     // редактор заводить анкету під `push`-ключем. Знімок лишається початком
     // рядка, тож будь-яка правка самої legacy-умови все одно впаде тут.

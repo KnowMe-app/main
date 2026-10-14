@@ -1009,6 +1009,7 @@ export const formatPayRange = (finals, displayCurrency, rates) => {
 // --- список програм агенції --------------------------------------------------
 
 const OTHER_TYPE_LABELS = Object.freeze({ ed: 'для донорок', sm: 'для сурогатних мам' });
+const RANGE_TYPE_LABELS = Object.freeze({ ed: 'Донорам', sm: 'Сурогатним мамам' });
 
 // «з 2 програм», але «з 1 програми»: після «з» — родовий відмінок.
 const programsGenitive = (count, language) => {
@@ -1446,7 +1447,29 @@ export const AgencyProgramsPanel = ({
   const hiddenCount = programs.length - visible.length;
   // Діапазон — лише коли частину програм сховано: видимі контейнери й так
   // називають кожну суму, а діапазон над ними повторив би їх утретє.
-  const range = hiddenCount > 0 ? formatPayRange(summary.finals, displayCurrency, rates) : '';
+  // Донорські й сурогатні суми різняться на порядок, і спільний діапазон
+  // «1 500–28 100 $» не казав нічого ні донорці, ні СМ — тож за кількох типів
+  // діапазон стоїть окремо на кожен, підписаний, кому він.
+  const rangeParts = hiddenCount > 0
+    ? (summary.byType.length > 1
+      ? summary.byType.map(item => ({
+        type: item.type,
+        label: uiText(RANGE_TYPE_LABELS[item.type] || '', language),
+        text: formatPayRange(item.totals, displayCurrency, rates),
+      })).filter(item => item.text)
+      : [{ type: '', label: '', text: formatPayRange(summary.finals, displayCurrency, rates) }].filter(item => item.text))
+    : [];
+  const range = rangeParts.length ? (
+    <>
+      {rangeParts.map((part, index) => (
+        <React.Fragment key={part.type || 'all'}>
+          {index ? ' · ' : ''}
+          {part.label ? `${part.label}: ` : ''}
+          <em>{part.text}</em>
+        </React.Fragment>
+      ))}
+    </>
+  ) : null;
   const matchedLine = summary.total === 0
     ? uiText('Програм для вас поки немає', language)
     : summary.matched !== null
@@ -1484,7 +1507,7 @@ export const AgencyProgramsPanel = ({
       {matchedLine || range ? (
         <PanelLine $match={summary.matched > 0}>
           {matchedLine}
-          {range ? <>{matchedLine ? ' · ' : ''}<em>{range}</em></> : null}
+          {range ? <>{matchedLine ? ' · ' : ''}{range}</> : null}
         </PanelLine>
       ) : null}
       {visible.length ? (

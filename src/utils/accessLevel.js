@@ -1,6 +1,17 @@
 export const ADMIN_UIDS = ['3LiD7JGCJTSJoVMU7fdR1ZrcIZH2', '0ghb1LphfASV0Y3b6J010v4CDyD2'];
 
-export const isAdminUid = uid => !!uid && ADMIN_UIDS.includes(uid);
+// Тестовий акаунт веб-сесій (`MIGRATION_EMAIL`): бачить застосунок очима
+// адміна — усі екрани, зокрема `AddNewProfile`, і всі колекції, — але нічого
+// не пише. Межа запису стоїть не тут, а в правилах: `database.rules.json` і
+// `storage.rules` дають цьому UID лише `.read`, тож будь-яка правка з його
+// сесії відлітає з `PERMISSION_DENIED`. Без розгорнутих правил він не читає
+// більше, ніж звичайний користувач. Потрібен для дебагу живим застосунком:
+// адмінські екрани інакше не відкрити з контейнера взагалі.
+export const READONLY_ADMIN_UIDS = ['vtDxkDMjCwYuTDqTUnZsO29bpQr1'];
+
+export const isReadOnlyAdminUid = uid => !!uid && READONLY_ADMIN_UIDS.includes(uid);
+
+export const isAdminUid = uid => !!uid && (ADMIN_UIDS.includes(uid) || READONLY_ADMIN_UIDS.includes(uid));
 
 // UIDs granted Invoice Builder access without full admin rights.
 export const INVOICE_BUILDER_UIDS = ['S0VhDLCYjuTFDNLalRa85u7fPcg2'];

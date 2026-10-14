@@ -21,8 +21,23 @@ import { RequireAuth } from './RequireAuth';
 import { onAuthStateChanged } from 'firebase/auth';
 import toast from 'react-hot-toast';
 import { auth, fetchUserById, resetViewerAccessLevelCache } from './config';
-import { clearStoredAccessRights, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
+import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
+
+// Тестовий акаунт бачить адмінські екрани, але база його правок не приймає.
+// Без позначки відмова збереження читалась би як поломка екрана.
+const READ_ONLY_BADGE_STYLE = {
+  position: 'fixed',
+  left: 8,
+  bottom: 8,
+  zIndex: 2147483000,
+  padding: '4px 10px',
+  borderRadius: 999,
+  background: 'rgba(200, 72, 62, 0.92)',
+  color: '#fff',
+  font: '600 12px/1.4 system-ui, sans-serif',
+  pointerEvents: 'none',
+};
 
 export const App = () => {
 
@@ -129,6 +144,9 @@ export const App = () => {
   return (
     <PrimaryNavigationSlotProvider>
       {authStatus === 'in' && ['/matching', '/matching/create-profile', '/my-profile'].includes(normalizedPathname) && <PrimaryNavigation />}
+      {authStatus === 'in' && isReadOnlyAdminUid(auth.currentUser?.uid) ? (
+        <div role="status" style={READ_ONLY_BADGE_STYLE}>Лише читання — зміни не зберігаються</div>
+      ) : null}
       <Routes>
       {/* Публічні екрани не читають бази: це форма входу та текст угоди, на
           який веде кнопка «Умови» з самої форми. Решта застосунку — про

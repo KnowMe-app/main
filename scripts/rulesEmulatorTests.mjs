@@ -1778,6 +1778,48 @@ await it('власниця і читає, і пише documentsBuilder; стор
   await assertFails(set(ref(db(OUTSIDER), 'documentsBuilder/templates/t1/title'), 'x'));
 });
 
+// Той самий тестовий акаунт — інспектор: читає все, що читає адмін, і не пише
+// нічого поза documentsBuilder. Правка з його сесії мусить відлітати з
+// PERMISSION_DENIED, бо адмінські екрани він бачить як адмін.
+describe('тестовий акаунт — інспектор лише на читання');
+
+const INSPECTOR = DOCUMENTS_EDITOR;
+
+await it('інспектор читає цілі колекції, як адмін', async () => {
+  await assertSucceeds(get(ref(db(INSPECTOR), 'matchingCards')));
+  await assertSucceeds(get(ref(db(INSPECTOR), 'profileDetails')));
+  await assertSucceeds(get(ref(db(INSPECTOR), 'profileContacts')));
+  await assertSucceeds(get(ref(db(INSPECTOR), 'profileWorkflow')));
+  await assertSucceeds(get(ref(db(INSPECTOR), 'profileTechnical')));
+  await assertSucceeds(get(ref(db(INSPECTOR), 'users')));
+  await assertSucceeds(get(ref(db(INSPECTOR), 'searchId')));
+  await assertSucceeds(get(ref(db(INSPECTOR), 'multiData/edits')));
+  await assertSucceeds(get(ref(db(INSPECTOR), 'multiData/profileMutations')));
+  await assertSucceeds(get(ref(db(INSPECTOR), 'budget')));
+  await assertSucceeds(get(ref(db(INSPECTOR), 'invoiceBuilder')));
+});
+
+await it('інспектор читає приховану анкету й чужі позначки', async () => {
+  await assertSucceeds(get(ref(db(INSPECTOR), `profileContacts/${HIDDEN_CARD}`)));
+  await assertSucceeds(get(ref(db(INSPECTOR), `profileDetails/${HIDDEN_CARD}`)));
+  await assertSucceeds(get(ref(db(INSPECTOR), `multiData/getInTouch/${SUPERADMIN}`)));
+  await assertSucceeds(get(ref(db(INSPECTOR), `multiData/favorites/${PROFILE_OWNER}`)));
+});
+
+await it('інспектор не пише ні анкет, ні чужих позначок, ні службових вузлів', async () => {
+  await assertFails(set(ref(db(INSPECTOR), `matchingCards/${CARD}/name`), 'Змінено'));
+  await assertFails(set(ref(db(INSPECTOR), `profileDetails/${CARD}/surname`), 'Змінено'));
+  await assertFails(set(ref(db(INSPECTOR), `profileContacts/${HIDDEN_CARD}/email`), 'x@y.z'));
+  await assertFails(set(ref(db(INSPECTOR), `users/${CARD}/name`), 'Змінено'));
+  await assertFails(set(ref(db(INSPECTOR), `multiData/getInTouch/${SUPERADMIN}/${CARD}`), '2030-01-01'));
+  await assertFails(set(ref(db(INSPECTOR), `multiData/favorites/${PROFILE_OWNER}/${CARD}`), null));
+  await assertFails(set(ref(db(INSPECTOR), 'budget/x'), 1));
+  await assertFails(set(ref(db(INSPECTOR), 'invoiceBuilder/x'), 1));
+});
+
+await it('корінь бази інспекторові так само закритий', () =>
+  assertFails(get(ref(db(INSPECTOR), '/'))));
+
 describe('legacy /users лишається як був');
 
 await it('матчинговий переглядач і далі читає legacy-колекцію', () =>
