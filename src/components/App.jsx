@@ -26,6 +26,12 @@ import { applyStoredAppSettings } from 'hooks/useAppSettings';
 
 // Тестовий акаунт бачить адмінські екрани, але база його правок не приймає.
 // Без позначки відмова збереження читалась би як поломка екрана.
+// На матчингу він пише як звичайний користувач (своя анкета, реакції, нотатки,
+// чернетки), а в конструкторі документів — як редактор `documentsBuilder`, тож
+// там позначка брехала б: правка зберігається. Перелік — саме екранів, де запис
+// проходить: новий екран, якого тут немає, отримує позначку, а не мовчанку.
+const READ_ONLY_INSPECTOR_WRITABLE_PATHS = ['/matching', '/matching/create-profile', '/my-profile', '/documents', '/parties'];
+
 const READ_ONLY_BADGE_STYLE = {
   position: 'fixed',
   left: 8,
@@ -144,7 +150,7 @@ export const App = () => {
   return (
     <PrimaryNavigationSlotProvider>
       {authStatus === 'in' && ['/matching', '/matching/create-profile', '/my-profile'].includes(normalizedPathname) && <PrimaryNavigation />}
-      {authStatus === 'in' && isReadOnlyAdminUid(auth.currentUser?.uid) ? (
+      {authStatus === 'in' && isReadOnlyAdminUid(auth.currentUser?.uid) && !READ_ONLY_INSPECTOR_WRITABLE_PATHS.includes(normalizedPathname) ? (
         <div role="status" style={READ_ONLY_BADGE_STYLE}>Лише читання — зміни не зберігаються</div>
       ) : null}
       <Routes>
