@@ -55,7 +55,8 @@ import { formatDate, formatDateToDisplay, formatDateToServer } from './inputVali
 import { PROFILE_DATE_FIELDS } from '../utils/profileDate';
 import { toggleFavoriteUser } from './smallCard/btnFavorite';
 import { toggleDislikeUser } from './smallCard/btnDislike';
-import { resolveAccess } from 'utils/accessLevel';
+import { isReadOnlyAdminUid, resolveAccess } from 'utils/accessLevel';
+import { ReadOnlyBadge } from './ReadOnlyBadge';
 import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
 import { buildMatchingSearchPath, MATCHING_PATH, readStoredMatchingSearchQuery } from 'utils/matchingSearchLocation';
@@ -1658,6 +1659,11 @@ export const ProfileCreationWorkspace = () => {
   };
 
   const editingSharedDraft = isSharedDraft(activeMutation, uid, access?.isAdmin);
+  // Інспектор тут адмін і відкриває чужі чернетки з черги, але їхнє
+  // автозбереження пише у вузол авторки, куди правила його не пускають. Своя
+  // картка й доповнення зберігаються, тож позначка — лише над чужою чернеткою.
+  const inspectorOnForeignDraft = isReadOnlyAdminUid(uid)
+    && Boolean(activeMutation?.createdBy) && activeMutation.createdBy !== uid;
 
   // --- Admin review of the pending overlays on the open draft ----------------
   // Two decisions per proposed value, and both clear the backend behind them -
@@ -2122,7 +2128,7 @@ export const ProfileCreationWorkspace = () => {
     onClick: () => { void toggleFavoriteUser(reactionArgs); },
   } : undefined;
 
-  return <Page><Shell>
+  return <Page>{inspectorOnForeignDraft && <ReadOnlyBadge />}<Shell>
     {draft ? <>
       <DraftPreview $themeMode={themeMode} data-testid="draft-card-preview">
         <ProfileRow

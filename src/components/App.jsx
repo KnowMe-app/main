@@ -23,30 +23,18 @@ import toast from 'react-hot-toast';
 import { auth, fetchUserById, resetViewerAccessLevelCache } from './config';
 import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
+import { ReadOnlyBadge } from './ReadOnlyBadge';
 
-// Тестовий акаунт бачить адмінські екрани, але база його правок не приймає.
-// Без позначки відмова збереження читалась би як поломка екрана.
+// Тестовий акаунт бачить адмінські екрани, але база його правок там не приймає.
 // На матчингу він пише як звичайний користувач (своя анкета, реакції, нотатки,
-// чернетки), а в конструкторі документів — як редактор `documentsBuilder`, тож
-// там позначка брехала б: правка зберігається. Перелік — саме екранів, де запис
-// проходить: новий екран, якого тут немає, отримує позначку, а не мовчанку.
-// `/matching/create-profile` тут навмисно немає: інспектор там адмін
-// (`isAdminUid`), бачить чергу чужих чернеток, і автозбереження чужої чернетки
-// пише у вузол її авторки — правила пускають туди лише повного адміна.
-const READ_ONLY_INSPECTOR_WRITABLE_PATHS = ['/matching', '/my-profile', '/documents', '/parties'];
-
-const READ_ONLY_BADGE_STYLE = {
-  position: 'fixed',
-  left: 8,
-  bottom: 8,
-  zIndex: 2147483000,
-  padding: '4px 10px',
-  borderRadius: 999,
-  background: 'rgba(200, 72, 62, 0.92)',
-  color: '#fff',
-  font: '600 12px/1.4 system-ui, sans-serif',
-  pointerEvents: 'none',
-};
+// чернетки, доповнення), а в конструкторі документів — як редактор
+// `documentsBuilder`, тож там позначка брехала б: правка зберігається. Перелік —
+// саме екранів, де запис проходить: новий екран, якого тут немає, отримує
+// позначку, а не мовчанку. На `/matching/create-profile` позначку ставить сама
+// форма й лише над чужою чернеткою (її автозбереження пише у вузол авторки, а
+// туди правила пускають лише повного адміна): своя картка й доповнення там
+// зберігаються.
+const READ_ONLY_INSPECTOR_WRITABLE_PATHS = ['/matching', '/matching/create-profile', '/my-profile', '/documents', '/parties'];
 
 export const App = () => {
 
@@ -154,7 +142,7 @@ export const App = () => {
     <PrimaryNavigationSlotProvider>
       {authStatus === 'in' && ['/matching', '/matching/create-profile', '/my-profile'].includes(normalizedPathname) && <PrimaryNavigation />}
       {authStatus === 'in' && isReadOnlyAdminUid(auth.currentUser?.uid) && !READ_ONLY_INSPECTOR_WRITABLE_PATHS.includes(normalizedPathname) ? (
-        <div role="status" style={READ_ONLY_BADGE_STYLE}>Лише читання — зміни не зберігаються</div>
+        <ReadOnlyBadge />
       ) : null}
       <Routes>
       {/* Публічні екрани не читають бази: це форма входу та текст угоди, на
