@@ -5892,7 +5892,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const owner = auth.currentUser?.uid;
     if (!owner) return null;
 
-    await loadDislikeIdsOnce(owner);
+    const remoteDislikes = await loadDislikeIdsOnce(owner);
 
     const { cards: cachedArr, fromCache } = await getDislikedCards(
       id => fetchUserById(id),
@@ -5907,15 +5907,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return acc;
     }, {});
 
-    const dislikedIds = getDislikes();
-    const dislikedUsers = await fetchDislikeUsersData(owner);
-    Object.entries(dislikedUsers).forEach(([id, user]) => {
-      dislikedIds[id] = true;
-      if (id && !loaded[id]) {
-        loaded[id] = user;
+    // Тут стояв `fetchDislikeUsersData`, тобто вдруге повні анкети **всіх**
+    // дизлайкнутих — тих самих, що `getDislikedCards` щойно взяв з кеша чи
+    // бази. Ідентифікатори вже прочитав `loadDislikeIdsOnce`, тож дочитується
+    // лише те, чого бракує.
+    const dislikedIds = { ...getDislikes(), ...(remoteDislikes || {}) };
+    const missingIds = Object.keys(dislikedIds).filter(id => id && !loaded[id]);
+    if (missingIds.length) {
+      const fetched = await Promise.all(missingIds.map(id => fetchUserById(id)));
+      fetched.forEach((user, index) => {
+        if (!user) return;
+        loaded[missingIds[index]] = user;
         backendCount += 1;
-      }
-    });
+      });
+    }
 
     const normalizedDislikes = Object.fromEntries(
       Object.entries(dislikedIds).filter(([, value]) => value),
