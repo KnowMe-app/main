@@ -3,8 +3,10 @@ import {
   buildParentDetailSections,
   isHigherEducationWish,
   isWishSelected,
+  listParentWishItems,
   listWishChoices,
   parseWishList,
+  resolveParentWishGroups,
   toggleWish,
 } from '../parentWishes';
 import { applyUkrainianInterface } from '../../testUtils/interfaceLanguage';
@@ -98,5 +100,34 @@ describe('«Більше про біологічних батьків»', () => 
 
   it('порожня анкета — порожньо', () => {
     expect(buildParentDetailSections({}, { type: 'ed' }, 'uk')).toEqual([]);
+  });
+
+  // Батьки перейшли з «донорку» на «сурогатну маму»: записані побажання до
+  // донорки лишаються в анкеті (форма дає їх стерти), але картка їх не
+  // показує — і навпаки.
+  it('побажання до того, кого вже не шукають, картка не показує', () => {
+    const prefs = { donor: { eyeColor: 'Brown' }, surrogate: { ageTo: '35' } };
+    const keysFor = seeking => buildParentDetailSections({ seeking, parentPreferences: prefs }, {}, 'uk').map(section => section.key);
+    expect(keysFor('sm')).toEqual(['parent-surrogate-wishes']);
+    expect(keysFor('ed')).toEqual(['parent-donor-wishes']);
+    expect(keysFor('both')).toEqual(['parent-donor-wishes', 'parent-surrogate-wishes']);
+    expect(keysFor(undefined)).toEqual(['parent-donor-wishes', 'parent-surrogate-wishes']);
+  });
+});
+
+describe('чиї побажання чинні', () => {
+  it('за тим, кого шукають; невідоме не ховає нічого', () => {
+    expect(resolveParentWishGroups('ed')).toEqual({ donor: true, surrogate: false });
+    expect(resolveParentWishGroups('sm')).toEqual({ donor: false, surrogate: true });
+    expect(resolveParentWishGroups('both')).toEqual({ donor: true, surrogate: true });
+    expect(resolveParentWishGroups('')).toEqual({ donor: true, surrogate: true });
+  });
+
+  it('записане словами — для форми, без позначок збігу', () => {
+    const prefs = { donor: { hairColor: 'Dark', education: 'Higher', blood: '1+' }, surrogate: { location: 'Грузія' } };
+    expect(listParentWishItems(prefs, 'donor', 'uk').map(item => [item.label || '', item.text]))
+      .toEqual([['Волосся', 'темне'], ['', 'вища освіта'], ['Група крові', '1+']]);
+    expect(listParentWishItems(prefs, 'surrogate', 'uk').map(item => item.text)).toEqual(['Грузія']);
+    expect(listParentWishItems({}, 'donor', 'uk')).toEqual([]);
   });
 });

@@ -26,6 +26,8 @@ import {
   resolveProgramHighlights,
   listExcludedOblasts,
   listCoverageOptions,
+  isProgramsOwnerRoleHidden,
+  resolveProgramsOwnerRole,
 } from '../donorPrograms';
 import {
   convertProgramAmount,
@@ -356,6 +358,17 @@ describe('фільтр і сортування за виплатою', () => {
     expect(listPaymentBuckets({ role: 'ed', programs: { p1: donorProgram } }, rates)).toEqual(['none']);
   });
 
+  // Програми веде й батьківська картка — і фільтр, і сортування мусять бачити
+  // їх так само, як рядок стрічки, а не відкидати картку без агенції.
+  it('батьки з програмою — у бакеті й у сортуванні, як агенція', () => {
+    const parents = { userId: 'parents', role: 'ip', programs: { p1: donorProgram } };
+    expect(listPaymentBuckets(parents, rates)).toEqual(['ed_2000']);
+    const cards = [{ userId: 'none', role: 'ip' }, parents];
+    expect(sortCardsByMode(cards, 'payment', { viewerType: 'ed', rates }).map(card => card.userId)).toEqual(['parents', 'none']);
+    expect(sortCardsByMode(cards, 'relevance', { viewerType: 'ed', facts: { age: 25, heightCm: 172, rh: '+', births: 1 } })
+      .map(card => card.userId)).toEqual(['parents', 'none']);
+  });
+
   it('список програм сталий і обмежений', () => {
     const many = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`p${String(i).padStart(2, '0')}`, donorProgram]));
     expect(listPrograms(many)).toHaveLength(12);
@@ -653,5 +666,30 @@ describe('classifyProgramPaymentTerm', () => {
     expect(isPaymentTermForProgramType('Повторна пункція', 'sm')).toBe(false);
     expect(isPaymentTermForProgramType('Повторна пункція', 'ed')).toBe(true);
     expect(isPaymentTermForProgramType('Доплата за повторну програму', 'sm')).toBe(true);
+  });
+});
+
+describe('кому належать програми картки', () => {
+  it('організації, якщо вона є, інакше батькам', () => {
+    expect(resolveProgramsOwnerRole(['ip', 'ag'])).toBe('ag');
+    expect(resolveProgramsOwnerRole(['ed', 'cl'])).toBe('cl');
+    expect(resolveProgramsOwnerRole(['ed', 'ip'])).toBe('ip');
+    expect(resolveProgramsOwnerRole(['ed', 'sm'])).toBe('');
+    expect(resolveProgramsOwnerRole(undefined)).toBe('');
+  });
+
+  // Агенція, яка ще й батьки, ховає агентську анкету: програми агенції не
+  // переходять до батьків, а ховаються разом з нею.
+  it('сховано, коли схована саме роль-власниця', () => {
+    expect(isProgramsOwnerRoleHidden(['ag', 'ip'], ['ag'])).toBe(true);
+    expect(isProgramsOwnerRoleHidden(['ag', 'ip'], ['ip'])).toBe(false);
+    expect(isProgramsOwnerRoleHidden(['ed', 'ip'], ['ip'])).toBe(true);
+    expect(isProgramsOwnerRoleHidden(['ed', 'ag'], ['ed'])).toBe(false);
+    expect(isProgramsOwnerRoleHidden(['ag', 'ip'], [])).toBe(false);
+  });
+
+  it('сховати всі ролі не можна — тоді картка лишає й програми', () => {
+    expect(isProgramsOwnerRoleHidden(['ag', 'ip'], ['ag', 'ip'])).toBe(false);
+    expect(isProgramsOwnerRoleHidden(['ag'], ['ag'])).toBe(false);
   });
 });

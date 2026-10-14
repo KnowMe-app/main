@@ -30,11 +30,50 @@ import { resolveOblastFromPlace } from './profileNormalization';
 
 export const PROGRAM_TYPES = Object.freeze(['ed', 'sm']);
 
-export const hasVisibleOrganisationRole = card => {
+/**
+ * Хто веде програми картки. Вузол програм один на картку
+ * (`multiData/programs/{uid}`), тож і власник у нього один: організація, якщо
+ * вона є серед ролей людини, інакше біологічні батьки. Так само вирішує
+ * «Мій профіль», ставлячи редактор програм в анкету цієї ролі
+ * (`programsRole`), — і за цим же переліком стрічка рахує програми картки:
+ * рядок (`CardRoleBlock`), дочитування (`ensureProgramsForCards`), фільтр
+ * «Виплата» й сортування. Поки батьків знав лише рядок, решта вважала їхню
+ * картку такою, що програм не має зовсім.
+ */
+export const PROGRAMS_OWNER_ROLES = Object.freeze(['ag', 'cl', 'ip']);
+const ORGANISATION_PROGRAM_ROLES = Object.freeze(['ag', 'cl']);
+
+export const resolveProgramsOwnerRole = roles => {
+  const list = Array.isArray(roles) ? roles : [];
+  return list.find(role => ORGANISATION_PROGRAM_ROLES.includes(role)) || (list.includes('ip') ? 'ip' : '');
+};
+
+/** Чи несе картка роль, яка веде програми. */
+export const hasVisibleProgramsOwnerRole = card => {
   const roles = listProfileRoles(card);
   // Legacy/program-only fixtures have no projected role. An explicit role is
-  // authoritative, which is what keeps a hidden organisation role hidden.
-  return !roles.length || roles.some(role => role === 'ag' || role === 'cl');
+  // authoritative: a card that shows only a person role has no programs.
+  return !roles.length || roles.some(role => PROGRAMS_OWNER_ROLES.includes(role));
+};
+
+/**
+ * Чи сховала людина саме ту анкету, якій належать програми.
+ *
+ * Сховану роль картка не несе, а з нею — і програм цієї ролі: агенція, яка ще
+ * й шукає донорку як батьки, ховає агентську анкету — і програми агенції мусять
+ * зникнути разом з нею, а не перейти до батьків, які в картці лишились. Тому
+ * тоді в картці немає й версії програм (`programsAt`): її знімають писачі
+ * картки (`buildMatchingCardProjection`, `syncMatchingCardIndex`) і не ставить
+ * писач програм (`saveCardPrograms` з `advertise: false`).
+ *
+ * Сховати всі ролі не можна — тоді картка лишає всі, і програми теж.
+ */
+export const isProgramsOwnerRoleHidden = (roles, hiddenRoles) => {
+  const list = Array.isArray(roles) ? roles : [];
+  const hidden = Array.isArray(hiddenRoles) ? hiddenRoles : [];
+  const owner = resolveProgramsOwnerRole(list);
+  if (!owner || !hidden.includes(owner)) return false;
+  return list.some(role => !hidden.includes(role));
 };
 
 export const PROGRAM_TYPE_LABELS = Object.freeze({
@@ -836,7 +875,7 @@ export const setPaymentFilterProgramTypes = types => {
 };
 
 export const listPaymentBuckets = (card, rates, types = paymentFilterProgramTypes) => {
-  if (!hasVisibleOrganisationRole(card)) return [PAYMENT_FILTER_NONE];
+  if (!hasVisibleProgramsOwnerRole(card)) return [PAYMENT_FILTER_NONE];
   const { programs } = resolveCardPrograms(card);
   const buckets = new Set();
   programs.filter(program => !types || types.includes(program.type)).forEach(program => {
@@ -862,7 +901,7 @@ export const listPaymentBuckets = (card, rates, types = paymentFilterProgramType
  */
 export const programRelevanceScore = (card, { viewerType = '', facts = null } = {}) => {
   if (!viewerType || !facts) return 0;
-  if (!hasVisibleOrganisationRole(card)) return 0;
+  if (!hasVisibleProgramsOwnerRole(card)) return 0;
   const summary = summarizeCardPrograms(card, { viewerType, facts });
   if (!summary) return 0;
   const typed = summary.evaluated.filter(item => item.program.type === viewerType);
@@ -889,7 +928,7 @@ export const sortCardsByMode = (cards, mode, { viewerType = '', facts = null, ra
     if (mode === 'payment') {
       const { programs } = resolveCardPrograms(card);
       const typed = viewerType ? programs.filter(program => program.type === viewerType) : programs;
-      const pay = hasVisibleOrganisationRole(card) ? maxProgramPayUsd(typed, rates) : null;
+      const pay = hasVisibleProgramsOwnerRole(card) ? maxProgramPayUsd(typed, rates) : null;
       return { card, index, key: Number.isFinite(pay) ? pay : -1 };
     }
     return { card, index, key: programRelevanceScore(card, { viewerType, facts }) };

@@ -57,6 +57,31 @@ describe('«Кого шукаєте» біологічних батьків', ()
     expect(screen.getByDisplayValue('1+')).toBeInTheDocument();
   });
 
+  // Перейшли з «донорку» на «сурогатну маму»: побажання до донорки картка вже
+  // не показує, а форма не ховає — стоїть окремо, і стерти його можна одним
+  // дотиком, не повертаючи «донорку».
+  it('побажання до донорки, коли шукають СМ, — окремо, і стираються одним дотиком', () => {
+    const onCommit = mountFields({
+      seeking: 'sm',
+      parentPreferences: { donor: { eyeColor: 'Brown', education: 'Higher' }, surrogate: { ageTo: '35' } },
+    });
+    expect(screen.queryByTestId('parent-wish-eyeColor')).not.toBeInTheDocument();
+    const aside = screen.getByTestId('parent-set-aside-donor');
+    expect(aside).toHaveTextContent('Ви зараз не шукаєте донорку');
+    expect(aside).toHaveTextContent('Очі: карі · вища освіта');
+    fireEvent.click(within(aside).getByRole('button', { name: 'Стерти' }));
+    expect(onCommit).toHaveBeenCalledWith('parentPreferences', { surrogate: { ageTo: '35' } });
+  });
+
+  it('записане для СМ, коли шукають донорку, — так само', () => {
+    const onCommit = mountFields({ seeking: 'ed', parentPreferences: { surrogate: { location: 'Грузія' } } });
+    expect(screen.queryByDisplayValue('Грузія')).not.toBeInTheDocument();
+    const aside = screen.getByTestId('parent-set-aside-surrogate');
+    expect(aside).toHaveTextContent('Грузія');
+    fireEvent.click(within(aside).getByRole('button', { name: 'Стерти' }));
+    expect(onCommit).toHaveBeenCalledWith('parentPreferences', null);
+  });
+
   it('вільний текст, записаний колись у побажання, лишається обраним варіантом', () => {
     mountFields({ seeking: 'ed', parentPreferences: { donor: { eyeColor: 'блакитні' } } });
     expect(within(screen.getByTestId('parent-wish-eyeColor')).getByRole('button', { name: 'блакитні' }))

@@ -8,7 +8,8 @@ import {
   normalizeFeedDateValue,
   resolveMatchingCardAvatarFromProfile,
 } from './profileFieldDerive';
-import { PARENT_SEEKING_OPTIONS } from './donorPrograms';
+import { PARENT_SEEKING_OPTIONS, isProgramsOwnerRoleHidden } from './donorPrograms';
+import { listProfileRoles } from './matchingPeerVisibility';
 
 /**
  * `matchingCards` — проєкція анкети рівно під стрічку матчингу.
@@ -441,8 +442,13 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   }
   // З тієї ж причини: програми пише свій писач (`saveCardPrograms`), а не
   // збереження анкети.
+  //
+  // Окрім одного випадку: програми належать ролі (організації, а без неї —
+  // батькам, `resolveProgramsOwnerRole`), і сховану роль картка не несе разом
+  // з її програмами. Інакше агенція, яка сховала агентську анкету й лишила
+  // анкету батьків, далі показувала б свої програми — уже під батьками.
   const programsAt = Number(options.existingCard?.[MATCHING_CARD_PROGRAMS_AT_FIELD]);
-  if (Number.isFinite(programsAt) && programsAt > 0) {
+  if (Number.isFinite(programsAt) && programsAt > 0 && !isProgramsOwnerRoleHidden(listProfileRoles(data), hiddenRoles)) {
     projection[MATCHING_CARD_PROGRAMS_AT_FIELD] = programsAt;
   }
 

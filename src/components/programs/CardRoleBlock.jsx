@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import styled from 'styled-components';
-import { resolveCardPrograms } from '../../utils/donorPrograms';
+import { PROGRAMS_OWNER_ROLES, resolveCardPrograms } from '../../utils/donorPrograms';
 import { listProfileRoles } from '../../utils/matchingPeerVisibility';
 import { getRoleLabel } from '../profileLayoutConfig';
 import { ensureCardPrograms, readCardProgramsAt, useProgramsVersion } from '../../utils/programsStore';
@@ -97,8 +97,9 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
   const isOrganisation = roles.some(role => ORGANISATION_ROLES.includes(role));
   const isParent = roles.includes('ip');
   const isAlsoPerson = roles.some(role => PERSON_ROLES.includes(role));
-  // Програми веде й організація, і батьки (той самий вузол програм).
-  const ownsPrograms = isOrganisation || isParent;
+  // Програми веде й організація, і батьки (той самий вузол програм) — і той
+  // самий перелік власників, що й у фільтра та дочитування стрічки.
+  const ownsPrograms = roles.some(role => PROGRAMS_OWNER_ROLES.includes(role));
   const { programs } = useCardPrograms(card, ownsPrograms && showPrograms);
   const seeking = pickText(card?.seeking);
   // Рядок батьків до розгортання — лише «кого шукають»: це поле є в картці

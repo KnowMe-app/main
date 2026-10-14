@@ -18,12 +18,16 @@ export const readProgramsFromDb = async uid => {
   return snapshot.exists() ? snapshot.val() : null;
 };
 
-const writeProgramsUpdate = (uid, items, at) => {
+const writeProgramsUpdate = (uid, items, at, { advertise = true } = {}) => {
   const hasItems = items && Object.keys(items).length > 0;
   return update(ref(database), {
     [`${PROGRAMS_ROOT}/${uid}`]: hasItems ? { updatedAt: at, items } : null,
     // Без програм версії немає: картка без `programsAt` не питає нічого.
-    [`matchingCards/${uid}/${MATCHING_CARD_PROGRAMS_AT_FIELD}`]: hasItems ? at : null,
+    // Не несе її й картка, де схована анкета, якій програми належать
+    // (`isProgramsOwnerRoleHidden`): програми зберігаються, але не
+    // показуються, а версію повертає збереження анкети, яке цю роль покаже
+    // знову (`syncMatchingCardIndex`).
+    [`matchingCards/${uid}/${MATCHING_CARD_PROGRAMS_AT_FIELD}`]: hasItems && advertise ? at : null,
   });
 };
 
@@ -98,9 +102,9 @@ export const stripLatestRequirementFields = items => Object.fromEntries(Object.e
   return [id, next];
 }));
 
-export const writeProgramsToDb = async (uid, items, at) => {
+export const writeProgramsToDb = async (uid, items, at, options = {}) => {
   try {
-    await writeProgramsUpdate(uid, items, at);
+    await writeProgramsUpdate(uid, items, at, options);
   } catch (error) {
     if (!isReactionPermissionDeniedError(error)) throw error;
     // Від новішого до старішого: спершу без нових полів, далі ще й без
@@ -113,7 +117,7 @@ export const writeProgramsToDb = async (uid, items, at) => {
       if (serialized === previous) continue;
       previous = serialized;
       try {
-        await writeProgramsUpdate(uid, fallback, at);
+        await writeProgramsUpdate(uid, fallback, at, options);
         console.warn('[programs] правила бази ще не знають частини полів програм — програми записано без них, повна версія лишилась у цьому браузері. Викотіть правила: npx firebase deploy --only database', { uid });
         return { partial: true };
       } catch (retryError) {

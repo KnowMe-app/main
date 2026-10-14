@@ -99,10 +99,13 @@ import {
   isCurrentMatchingCardSchema,
   isMatchingSummaryCard,
   listDroppedProjectionFields,
+  parseHiddenRoles,
   resolveCardBlood,
   resolveMatchingCardAvatarFromProfile,
   withPublicationDate,
 } from '../utils/matchingCardIndex';
+import { isProgramsOwnerRoleHidden, resolveProgramsOwnerRole } from '../utils/donorPrograms';
+import { listProfileRoles } from '../utils/matchingPeerVisibility';
 import { normalizePublish } from '../utils/reactionPriority';
 import { getCurrentDate } from './foramtDate';
 import {
@@ -5256,6 +5259,57 @@ const resolveMatchingCardAvatar = async (userId, data, { includeStorage = true }
 };
 
 /**
+ * Версія програм у картці (`programsAt`), коли її треба змінити разом з
+ * анкетою: `null` — зняти, число — повернути, `undefined` — не чіпати.
+ *
+ * Пише версію свій писач (`saveCardPrograms`), і збереження анкети її не
+ * чіпає — окрім схованої ролі. Програми належать ролі (організації, а без неї
+ * — батькам, `resolveProgramsOwnerRole`), і сховану анкету картка не несе
+ * разом з її програмами (`isProgramsOwnerRoleHidden`): агенція, яка сховала
+ * агентську анкету й лишила анкету батьків, далі показувала б свої програми,
+ * тільки вже під батьками. Тож збереження, яке роль ховає, версію знімає, а
+ * збереження, після якого роль знову в картці, повертає її з вузла програм.
+ *
+ * Вузол програм читається, лише коли версії в картці немає: щойно роль
+ * повернулась у картку — завжди, а інакше щонайбільше раз на вкладку для
+ * картки (на випадок, коли повернути не вдалось), бо програм у більшості
+ * карток немає зовсім.
+ *
+ * Запис, що в цей час пише сам писач програм, тут не відкочується: під
+ * схованою роллю він версії й не ставить (`advertise: false`), а повернута
+ * трохи старша версія лише змусить читача раз перечитати ті самі програми.
+ */
+const programsVersionCheckedIds = new Set();
+
+const readProgramsVersion = async id => {
+  const snapshot = await get(ref2(database, `multiData/programs/${id}/updatedAt`));
+  const at = Number(snapshot.exists() ? snapshot.val() : 0);
+  return Number.isFinite(at) && at > 0 ? at : 0;
+};
+
+const resolveProgramsVersionPatch = async (id, data, existing) => {
+  const roles = listProfileRoles(data);
+  const owner = resolveProgramsOwnerRole(roles);
+  if (!owner || !existing) return undefined;
+  const hasVersion = Number(existing[MATCHING_CARD_PROGRAMS_AT_FIELD]) > 0;
+  if (isProgramsOwnerRoleHidden(roles, parseHiddenRoles(data?.hiddenRoles))) {
+    programsVersionCheckedIds.delete(id);
+    return hasVersion ? null : undefined;
+  }
+  if (hasVersion) return undefined;
+  const ownerReturned = !listProfileRoles(existing).includes(owner);
+  if (!ownerReturned && programsVersionCheckedIds.has(id)) return undefined;
+  try {
+    const at = await readProgramsVersion(id);
+    programsVersionCheckedIds.add(id);
+    return at || undefined;
+  } catch (error) {
+    console.warn('[matchingCards] не вдалося прочитати версію програм картки', { userId: id, error });
+    return undefined;
+  }
+};
+
+/**
  * Приводить `matchingCards/{userId}` у відповідність до анкети.
  *
  * Викликається поруч із `syncUserSearchKeyIndex` — там, де анкету вже зберегли,
@@ -5295,17 +5349,22 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
       console.warn('[matchingCards] поля анкети не потрапили в картку', { userId: id, fields: droppedFields });
     }
 
+    const programsVersionPatch = await resolveProgramsVersionPatch(id, nextData, existing);
+    if (programsVersionPatch) projection[MATCHING_CARD_PROGRAMS_AT_FIELD] = programsVersionPatch;
+
     if (existing && areMatchingCardProjectionsEqual(existing, projection)) return projection;
 
     // Programs are owned by saveCardPrograms and may change after the read
-    // above. A field-level patch deliberately never writes programsAt, so a
-    // concurrent program save cannot be rolled back by this profile save.
+    // above. A field-level patch never writes programsAt on its own, so a
+    // concurrent program save cannot be rolled back by this profile save;
+    // the one exception is a hidden owner role (`resolveProgramsVersionPatch`).
     const independentlyOwnedFields = new Set([MATCHING_CARD_PROGRAMS_AT_FIELD]);
     const projectionPatch = { ...projection };
     independentlyOwnedFields.forEach(field => { delete projectionPatch[field]; });
     Object.keys(existing || {}).forEach(field => {
       if (!(field in projection) && !independentlyOwnedFields.has(field)) projectionPatch[field] = null;
     });
+    if (programsVersionPatch !== undefined) projectionPatch[MATCHING_CARD_PROGRAMS_AT_FIELD] = programsVersionPatch;
 
     try {
       await update(buildMatchingCardRef(id), projectionPatch);
@@ -5329,9 +5388,13 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
       if (!isReactionPermissionDeniedError(error) || !unprovenFields.length) throw error;
       console.warn('[matchingCards] правила бази ще не приймають нових полів картки — картку записано без них. Викотіть правила: npx firebase deploy --only database', { userId: id, fields: unprovenFields });
       const fallbackPatch = { ...withoutPrograms };
+      independentlyOwnedFields.forEach(field => { delete fallbackPatch[field]; });
       Object.keys(existing || {}).forEach(field => {
         if (!(field in withoutPrograms) && !independentlyOwnedFields.has(field)) fallbackPatch[field] = null;
       });
+      // Зняти версію схованої ролі можна завжди: правила не перевіряють того,
+      // що видаляється.
+      if (programsVersionPatch === null) fallbackPatch[MATCHING_CARD_PROGRAMS_AT_FIELD] = null;
       await update(buildMatchingCardRef(id), fallbackPatch);
       return withoutPrograms;
     }

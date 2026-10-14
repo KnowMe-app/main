@@ -16,8 +16,7 @@
  */
 
 import { useSyncExternalStore } from 'react';
-import { programsToRecord, setCardProgramsLookup } from './donorPrograms';
-import { listProfileRoles } from './matchingPeerVisibility';
+import { hasVisibleProgramsOwnerRole, programsToRecord, setCardProgramsLookup } from './donorPrograms';
 
 export const PROGRAMS_CACHE_PREFIX = 'programs:v1:';
 
@@ -146,14 +145,15 @@ export const ensureCardPrograms = card => {
   return fetchPrograms(uid, at);
 };
 
-/** Програми для всіх переданих карток, у яких вони є, — паралельно. */
+/**
+ * Програми для всіх переданих карток, у яких вони є, — паралельно. Ті самі
+ * власники програм, що й у рядку (`hasVisibleProgramsOwnerRole`): батьки, які
+ * завели програму, мусять пройти фільтр «Виплата» так само, як агенція.
+ */
 export const ensureProgramsForCards = cards => Promise.all(
   (Array.isArray(cards) ? cards : [])
     .filter(card => readCardProgramsAt(card) > 0)
-    .filter(card => {
-      const roles = listProfileRoles(card);
-      return !roles.length || roles.some(role => role === 'ag' || role === 'cl');
-    })
+    .filter(hasVisibleProgramsOwnerRole)
     .map(card => ensureCardPrograms(card)),
 );
 
@@ -203,8 +203,12 @@ export const loadOwnPrograms = async uid => {
  * Записує програми: спершу в браузер (з позначкою «ще не в базі»), тоді в
  * базу разом із `programsAt` картки. Відмова бази програм не губить: вони
  * лишаються в браузері й дописуються на наступному відкритті профілю.
+ *
+ * `advertise: false` — анкета, якій програми належать, схована
+ * (`isProgramsOwnerRoleHidden`): програми пишуться, а версія в картку — ні,
+ * інакше збереження програм показало б їх під іншою роллю картки.
  */
-export const saveCardPrograms = async (uid, programs) => {
+export const saveCardPrograms = async (uid, programs, { advertise = true } = {}) => {
   const id = String(uid || '').trim();
   if (!id) return null;
   const items = programsToRecord(programs);
@@ -212,7 +216,7 @@ export const saveCardPrograms = async (uid, programs) => {
   writeEntry(id, { at, items, pending: true });
   notify();
   if (!transport.write) return { at, items, saved: false };
-  const result = await transport.write(id, items, at);
+  const result = await transport.write(id, items, at, { advertise });
   // Записане без частини полів (правила ще не викочені) лишається «не в
   // базі»: наступне відкриття профілю спробує дописати повну версію.
   const partial = result?.partial === true;
@@ -220,10 +224,10 @@ export const saveCardPrograms = async (uid, programs) => {
   return { at, items, saved: true, ...(partial ? { partial: true } : {}) };
 };
 
-export const retryPendingPrograms = async uid => {
+export const retryPendingPrograms = async (uid, options) => {
   const entry = readEntry(String(uid || '').trim());
   if (!entry?.pending) return false;
-  await saveCardPrograms(uid, entry.items);
+  await saveCardPrograms(uid, entry.items, options);
   return true;
 };
 

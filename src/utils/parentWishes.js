@@ -129,6 +129,63 @@ const matchesViewer = (value, field, viewerValue) => {
 const isHigherEducation = value => HIGHER_EDUCATION_VALUES.has(norm(pickText(value)));
 
 /**
+ * Чиї побажання зараз чинні — за тим, кого батьки шукають.
+ *
+ * Шукають сурогатну маму — побажань до донорки картка не показує (і
+ * навпаки), хоч в анкеті вони й лежать: зміна «кого шукаєте» не стирає
+ * записаного мовчки (дотик повз «Донорку» коштував би всіх побажань), а
+ * картка не мусить казати, якою має бути донорка, тим, кого донорка вже не
+ * цікавить. Форма показує сховане окремо й дає його стерти
+ * (`ParentProfileFields`). Невідоме «кого» не ховає нічого.
+ */
+export const resolveParentWishGroups = seeking => {
+  const key = pickText(seeking);
+  return { donor: key !== 'sm', surrogate: key !== 'ed' };
+};
+
+const readPrefsGroup = (prefs, group) => (prefs?.[group] && typeof prefs[group] === 'object' ? prefs[group] : {});
+
+const describeDonorWishItems = (donor, language, { isDonorViewer = false, facts = {} } = {}) => {
+  const items = [];
+  PARENT_DONOR_WISH_FIELDS.forEach(field => {
+    if (!parseWishList(donor[field.key]).length) return;
+    items.push({
+      key: field.key,
+      label: uiText(field.short, language),
+      text: describeWishTokens(donor[field.key], field, language),
+      match: isDonorViewer && matchesViewer(donor[field.key], field, facts[field.key]),
+    });
+  });
+  if (parseWishList(donor.education).length) {
+    const higher = isHigherEducationWish(donor.education);
+    items.push({
+      key: 'education',
+      text: higher ? norm(uiText('Вища освіта', language)) : parseWishList(donor.education).join(', '),
+      match: isDonorViewer && higher && isHigherEducation(facts.education),
+    });
+  }
+  // Записане до того, як групу крові й зріст стали задавати вимогами
+  // програми, лишається видно — без позначки збігу.
+  if (pickText(donor.blood)) items.push({ key: 'blood', label: uiText('Група крові', language), text: pickText(donor.blood), match: false });
+  if (pickText(donor.heightFrom)) {
+    items.push({ key: 'heightFrom', text: uiText('зріст від {value} см', language, { value: pickText(donor.heightFrom) }), match: false });
+  }
+  return items;
+};
+
+const describeSurrogateWishItems = (surrogate, language) => {
+  const items = [];
+  if (pickText(surrogate.ageTo)) items.push({ key: 'ageTo', text: uiText('вік до {value}', language, { value: pickText(surrogate.ageTo) }), match: false });
+  if (pickText(surrogate.location)) items.push({ key: 'location', text: pickText(surrogate.location), match: false });
+  return items;
+};
+
+/** Записані побажання групи (`donor` чи `surrogate`) словами — без позначок збігу. */
+export const listParentWishItems = (prefs, group, language) => (group === 'donor'
+  ? describeDonorWishItems(readPrefsGroup(prefs, 'donor'), language)
+  : describeSurrogateWishItems(readPrefsGroup(prefs, 'surrogate'), language));
+
+/**
  * Розділи «Більше про біологічних батьків» (крім «Про нас», яке малює
  * `ProfileAboutSection`). `viewer` — `{ type, facts }` з `programsContext`:
  * позначку «✓ як у вас» бачить лише донорка.
@@ -143,33 +200,10 @@ export const buildParentDetailSections = (user, viewer = {}, language) => {
   if (place) sections.push({ key: 'parent-place', title: uiText('Де програма', language), text: place });
 
   const prefs = user?.parentPreferences && typeof user.parentPreferences === 'object' ? user.parentPreferences : {};
-  const donor = prefs.donor && typeof prefs.donor === 'object' ? prefs.donor : {};
+  const groups = resolveParentWishGroups(user?.seeking);
   const isDonorViewer = viewer?.type === 'ed';
   const facts = isDonorViewer && viewer?.facts ? viewer.facts : {};
-  const donorItems = [];
-  PARENT_DONOR_WISH_FIELDS.forEach(field => {
-    if (!parseWishList(donor[field.key]).length) return;
-    donorItems.push({
-      key: field.key,
-      label: uiText(field.short, language),
-      text: describeWishTokens(donor[field.key], field, language),
-      match: isDonorViewer && matchesViewer(donor[field.key], field, facts[field.key]),
-    });
-  });
-  if (parseWishList(donor.education).length) {
-    const higher = isHigherEducationWish(donor.education);
-    donorItems.push({
-      key: 'education',
-      text: higher ? norm(uiText('Вища освіта', language)) : parseWishList(donor.education).join(', '),
-      match: isDonorViewer && higher && isHigherEducation(facts.education),
-    });
-  }
-  // Записане до того, як групу крові й зріст стали задавати вимогами
-  // програми, лишається видно — без позначки збігу.
-  if (pickText(donor.blood)) donorItems.push({ key: 'blood', label: uiText('Група крові', language), text: pickText(donor.blood), match: false });
-  if (pickText(donor.heightFrom)) {
-    donorItems.push({ key: 'heightFrom', text: uiText('зріст від {value} см', language, { value: pickText(donor.heightFrom) }), match: false });
-  }
+  const donorItems = groups.donor ? describeDonorWishItems(readPrefsGroup(prefs, 'donor'), language, { isDonorViewer, facts }) : [];
   if (donorItems.length) {
     sections.push({
       key: 'parent-donor-wishes',
@@ -181,10 +215,7 @@ export const buildParentDetailSections = (user, viewer = {}, language) => {
     });
   }
 
-  const surrogate = prefs.surrogate && typeof prefs.surrogate === 'object' ? prefs.surrogate : {};
-  const surrogateItems = [];
-  if (pickText(surrogate.ageTo)) surrogateItems.push({ key: 'ageTo', text: uiText('вік до {value}', language, { value: pickText(surrogate.ageTo) }), match: false });
-  if (pickText(surrogate.location)) surrogateItems.push({ key: 'location', text: pickText(surrogate.location), match: false });
+  const surrogateItems = groups.surrogate ? describeSurrogateWishItems(readPrefsGroup(prefs, 'surrogate'), language) : [];
   if (surrogateItems.length) {
     sections.push({ key: 'parent-surrogate-wishes', title: uiText('Бажано у сурогатної мами', language), items: surrogateItems });
   }
