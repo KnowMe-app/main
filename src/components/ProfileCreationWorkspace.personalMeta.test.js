@@ -185,7 +185,7 @@ it('switches mutually exclusive reactions through the reused controls', async ()
 
   fireEvent.click(favorite);
   await waitFor(() => expect(favorite).toHaveAttribute('aria-pressed', 'true'));
-  expect(addFavoriteUser).toHaveBeenCalledWith('draft-card', undefined);
+  expect(addFavoriteUser).toHaveBeenCalledWith('draft-card', undefined, expect.any(Number));
 
   fireEvent.click(dislike);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Повернути в «Усі»' })).toHaveAttribute('aria-pressed', 'true'));

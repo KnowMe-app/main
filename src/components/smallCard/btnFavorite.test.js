@@ -76,10 +76,13 @@ describe('BtnFavorite', () => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(addFavoriteUser).toHaveBeenCalledWith('ID0001', 'viewer');
+    // Лайк пише мітку часу, і та сама мітка лягає в мапи на екрані: за нею
+    // колекція «Обрані» стоїть свіжішим угорі.
+    expect(addFavoriteUser).toHaveBeenCalledWith('ID0001', 'viewer', expect.any(Number));
+    const likedAt = addFavoriteUser.mock.calls[0][2];
     expect(removeDislikeUser).not.toHaveBeenCalled();
-    expect(setOwnFavoriteUsers).toHaveBeenCalledWith({ ID0001: true });
-    expect(setFavoriteUsers).toHaveBeenCalledWith({ ID0001: true });
+    expect(setOwnFavoriteUsers).toHaveBeenCalledWith({ ID0001: likedAt });
+    expect(setFavoriteUsers).toHaveBeenCalledWith({ ID0001: likedAt });
     expect(setOwnDislikeUsers).toHaveBeenCalledWith({});
     expect(setDislikeUsers).toHaveBeenCalledWith({});
   });

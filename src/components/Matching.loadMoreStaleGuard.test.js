@@ -54,8 +54,12 @@ describe('Matching loadMore stale pagination guards', () => {
     const source = loadMoreSource();
 
     expect(source).toContain(`if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('reaction-branch'); return; }
-        reactionLoadedIdsRef.current[viewMode] = loadedIds;
-        loadedIdsRef.current = new Set(loadedIds);`);
+        reactionLoadedIdsRef.current[viewMode] = loadedIds;`);
+    // Показане, а не оброблене: відсіяні id пагінації сюди не лягають.
+    expect(source).toContain(`loadedIdsRef.current = new Set([
+          ...(didAccessSnapshotChange ? [] : Array.from(loadedIdsRef.current || [])),
+          ...page.users.map(user => user.userId),
+        ]);`);
     const setUsersIndex = source.indexOf('setUsers(prev => {\n          if (didAccessSnapshotChange) return page.users;');
     const commentsIndex = source.indexOf('void loadCommentsFor(page.users);', setUsersIndex);
     expect(setUsersIndex).toBeGreaterThan(-1);

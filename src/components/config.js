@@ -686,11 +686,16 @@ export const fetchUserData = async userId => {
   return { existingData, userRef };
 };
 
-export const addFavoriteUser = async (userId, ownerId) => {
+// Значення лайку — мітка часу, як у дизлайку (`addDislikeUser`): колекція
+// «Обрані» стоїть за часом реакції (`orderReactionIdsByRecency`), і без мітки
+// порядок довелось би брати з кожної картки окремим читанням. Старі `true`
+// лишаються дійсними: читачі питають лише, чи значення truthy.
+export const addFavoriteUser = async (userId, ownerId, likedAt) => {
   try {
     const owner = auth.currentUser;
     if (!owner) return;
-    await set(ref2(database, `multiData/favorites/${ownerId || owner.uid}/${userId}`), true);
+    const timestamp = typeof likedAt === 'number' ? likedAt : Date.now();
+    await set(ref2(database, `multiData/favorites/${ownerId || owner.uid}/${userId}`), timestamp);
   } catch (error) {
     console.error('Error adding favorite user:', error);
   }
