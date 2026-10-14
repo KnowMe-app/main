@@ -4,6 +4,15 @@ import {
   PARENT_SEEKING_OPTIONS,
   PARENT_VIA_OPTIONS,
 } from '../../utils/donorPrograms';
+import {
+  HIGHER_EDUCATION_WISH,
+  PARENT_DONOR_WISH_FIELDS,
+  isHigherEducationWish,
+  isWishSelected,
+  listWishChoices,
+  toggleWish,
+} from '../../utils/parentWishes';
+import { getOptionLabel } from '../formFields';
 import { uiText } from '../../utils/uiTranslations';
 
 /*
@@ -112,24 +121,47 @@ const Choice = ({ options, value, onChange, language, multiple = false }) => (
   </Segments>
 );
 
-const PREFS_DONOR = [
+const Hint = styled.p`
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--km-muted, #6f675f);
+`;
+
+// Записане до того, як групу крові, зріст, вік і місце стали задавати
+// програмою. Форма їх більше не питає, але й не ховає: поки значення лежить
+// в анкеті, його видно й можна стерти — а стерте зникає з форми.
+const LEGACY_DONOR_PREFS = [
   { key: 'blood', label: 'Група крові', placeholder: 'Наприклад: 1+, 2+' },
-  { key: 'eyeColor', label: 'Колір очей', placeholder: 'Наприклад: блакитні, зелені' },
-  { key: 'hairColor', label: 'Колір волосся', placeholder: 'Наприклад: русяве' },
   { key: 'heightFrom', label: 'Зріст від, см', placeholder: '165', inputMode: 'numeric' },
-  { key: 'education', label: 'Освіта', placeholder: 'Наприклад: вища' },
 ];
 
-const PREFS_SURROGATE = [
+const LEGACY_SURROGATE_PREFS = [
   { key: 'ageTo', label: 'Вік до', placeholder: '35', inputMode: 'numeric' },
   { key: 'location', label: 'Де програма для СМ', placeholder: 'Наприклад: Україна або Грузія' },
 ];
 
-export const ParentProfileFields = ({ state, onCommit, language }) => {
+/**
+ * «Кого шукаєте» біологічних батьків.
+ *
+ * Програма однакова для всіх і несе суму, вимоги (вік, ІМТ, зріст, група
+ * крові), покриття й місце — тут лише те, чого вона не вміє: кого шукають,
+ * як шукають і побажання до зовнішності донорки. Побажання — вибір з тих
+ * самих довідників, що й в анкеті донорки (`utils/parentWishes`), а не
+ * вільний текст: так картка може сказати донорці «✓ як у вас».
+ *
+ * `showProgramLocation` — «Де програма» лише тоді, коли воно вже записане:
+ * нове місце задається в самій програмі, а записане видно, доки його не
+ * стерли.
+ */
+export const ParentProfileFields = ({ state, onCommit, language, showProgramLocation = false }) => {
   const seeking = String(state.seeking || '');
+  const via = String(state.parentVia || '');
   const prefs = state.parentPreferences && typeof state.parentPreferences === 'object' ? state.parentPreferences : {};
   const wantsDonor = seeking === 'ed' || seeking === 'both';
-  const wantsSurrogate = seeking === 'sm' || seeking === 'both';
   const setPref = (group, key, value) => {
     const nextGroup = { ...(prefs[group] || {}), [key]: value };
     if (!value) delete nextGroup[key];
@@ -137,16 +169,23 @@ export const ParentProfileFields = ({ state, onCommit, language }) => {
     if (!Object.keys(nextGroup).length) delete next[group];
     onCommit('parentPreferences', Object.keys(next).length ? next : null);
   };
-  const renderPrefs = (group, fields) => (
-    <Grid>
-      {fields.map(field => (
-        <FieldLabel key={field.key}>
-          {uiText(field.label, language)}
-          <BlurInput value={prefs[group]?.[field.key]} inputMode={field.inputMode} placeholder={uiText(field.placeholder, language)} onCommit={value => setPref(group, field.key, value)} />
-        </FieldLabel>
-      ))}
-    </Grid>
-  );
+  const renderLegacy = (group, fields) => {
+    const recorded = fields.filter(field => String(prefs[group]?.[field.key] ?? '').trim());
+    if (!recorded.length) return null;
+    return (
+      <Grid>
+        {recorded.map(field => (
+          <FieldLabel key={field.key}>
+            {uiText(field.label, language)}
+            <BlurInput value={prefs[group]?.[field.key]} inputMode={field.inputMode} placeholder={uiText(field.placeholder, language)} onCommit={value => setPref(group, field.key, value)} />
+          </FieldLabel>
+        ))}
+      </Grid>
+    );
+  };
+  const legacyDonor = wantsDonor ? renderLegacy('donor', LEGACY_DONOR_PREFS) : null;
+  const legacySurrogate = renderLegacy('surrogate', LEGACY_SURROGATE_PREFS);
+  const donorPrefs = prefs.donor || {};
 
   return (
     <Stack>
@@ -154,26 +193,70 @@ export const ParentProfileFields = ({ state, onCommit, language }) => {
         {uiText('Кого шукаєте', language)}
         <Choice language={language} options={PARENT_SEEKING_OPTIONS} value={seeking} onChange={key => onCommit('seeking', key)} />
       </FieldLabel>
-      {wantsDonor ? (
-        <>
-          <SubTitle>{uiText('Побажання до донорки ооцитів', language)}</SubTitle>
-          {renderPrefs('donor', PREFS_DONOR)}
-        </>
-      ) : null}
-      {wantsSurrogate ? (
-        <>
-          <SubTitle>{uiText('Побажання до сурогатної мами', language)}</SubTitle>
-          {renderPrefs('surrogate', PREFS_SURROGATE)}
-        </>
-      ) : null}
-      <FieldLabel>
-        {uiText('Де програма', language)}
-        <BlurInput value={state.programLocation} placeholder={uiText('Наприклад: клініка в Києві', language)} onCommit={value => onCommit('programLocation', value || null)} />
-      </FieldLabel>
+      {/* Необовʼязкове: повторний дотик знімає вибір. */}
       <FieldLabel as="div">
         {uiText('Як шукаєте', language)}
-        <Choice language={language} options={PARENT_VIA_OPTIONS} value={String(state.parentVia || '')} onChange={key => onCommit('parentVia', key)} />
+        <Choice language={language} options={PARENT_VIA_OPTIONS} value={via} onChange={key => onCommit('parentVia', key === via ? null : key)} />
       </FieldLabel>
+      {showProgramLocation ? (
+        <FieldLabel>
+          {uiText('Де програма', language)}
+          <BlurInput value={state.programLocation} placeholder={uiText('Наприклад: клініка в Києві', language)} onCommit={value => onCommit('programLocation', value || null)} />
+          <Hint>{uiText('Тепер це «Місце програми» в самій програмі', language)}</Hint>
+        </FieldLabel>
+      ) : null}
+      {wantsDonor ? (
+        <>
+          <SubTitle>{uiText('Бажано у донорки', language)}</SubTitle>
+          {PARENT_DONOR_WISH_FIELDS.map(field => (
+            <FieldLabel as="div" key={field.key} data-testid={`parent-wish-${field.key}`}>
+              {uiText(field.label, language)}
+              <Segments>
+                {listWishChoices(donorPrefs[field.key], field).map(option => {
+                  const on = isWishSelected(donorPrefs[field.key], field, option);
+                  return (
+                    <Segment
+                      key={option.placeholder}
+                      type="button"
+                      $on={on}
+                      aria-pressed={on}
+                      onClick={() => setPref('donor', field.key, toggleWish(donorPrefs[field.key], field, option))}
+                    >
+                      {option.recorded ? option.placeholder : getOptionLabel(option, language)}
+                    </Segment>
+                  );
+                })}
+              </Segments>
+            </FieldLabel>
+          ))}
+          <FieldLabel as="div" data-testid="parent-wish-education">
+            {uiText('Освіта', language)}
+            <Segments>
+              {(() => {
+                const on = isHigherEducationWish(donorPrefs.education);
+                return (
+                  <Segment
+                    type="button"
+                    $on={on}
+                    aria-pressed={on}
+                    onClick={() => setPref('donor', 'education', on ? '' : HIGHER_EDUCATION_WISH)}
+                  >
+                    {uiText('Вища освіта', language)}
+                  </Segment>
+                );
+              })()}
+            </Segments>
+          </FieldLabel>
+          <Hint>{uiText('Побажання не відсіюють донорок — лише підказують, кого ви шукаєте. Вік, ІМТ, групу крові задайте у програмі: там донорка одразу бачить, чи підходить.', language)}</Hint>
+        </>
+      ) : null}
+      {legacyDonor || legacySurrogate ? (
+        <>
+          <SubTitle>{uiText('Записано раніше — тепер це вимоги програми', language)}</SubTitle>
+          {legacyDonor}
+          {legacySurrogate}
+        </>
+      ) : null}
     </Stack>
   );
 };

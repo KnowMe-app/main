@@ -1,9 +1,6 @@
 import React, { useEffect } from 'react';
 import styled from 'styled-components';
-import {
-  PARENT_VIA_OPTIONS,
-  resolveCardPrograms,
-} from '../../utils/donorPrograms';
+import { resolveCardPrograms } from '../../utils/donorPrograms';
 import { listProfileRoles } from '../../utils/matchingPeerVisibility';
 import { getRoleLabel } from '../profileLayoutConfig';
 import { ensureCardPrograms, readCardProgramsAt, useProgramsVersion } from '../../utils/programsStore';
@@ -72,8 +69,6 @@ export const isCounterpartyCard = card => {
   return roles.some(role => [...ORGANISATION_ROLES, 'ip'].includes(role));
 };
 
-const labelOf = (options, key) => options.find(option => option.key === key)?.label || '';
-
 /** Дочитує програми картки, щойно вона у списку, і перемальовує, коли приїхали. */
 export const useCardPrograms = (card, enabled = true) => {
   useProgramsVersion();
@@ -106,7 +101,12 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
   const ownsPrograms = isOrganisation || isParent;
   const { programs } = useCardPrograms(card, ownsPrograms && showPrograms);
   const seeking = pickText(card?.seeking);
-  const hasParentContent = isParent && (seeking || pickText(card?.programLocation));
+  // Рядок батьків до розгортання — лише «кого шукають»: це поле є в картці
+  // стрічки (`seekingRole`), тож рядок не міняється, коли дочитується анкета.
+  // Як шукають і де програма — у «Більше про біологічних батьків»
+  // (`buildParentDetailSections`): тут вони зʼявлялись аж після дочитування,
+  // і рядок підстрибував під пальцем.
+  const hasParentContent = isParent && Boolean(SEEKING_PHRASES[seeking]);
   // Назва агенції чи клініки окремо від імені людини (`agencyName`): у
   // картці з двома ролями імʼя в шапці — людини, а організація називає себе
   // тут, над своїми програмами.
@@ -129,10 +129,8 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
         </RoleHeading>
       ) : null}
       {hasParentContent ? (
-        <Line>
-          {seeking && SEEKING_PHRASES[seeking] ? <><b>{uiText('Шукають', language)}:</b> {uiText(SEEKING_PHRASES[seeking], language)}</> : null}
-          {pickText(card?.programLocation) ? ` · ${pickText(card.programLocation)}` : ''}
-          {card?.parentVia ? ` · ${uiText(labelOf(PARENT_VIA_OPTIONS, pickText(card.parentVia)).toLowerCase(), language)}` : ''}
+        <Line data-testid="parent-seeking">
+          <b>{uiText('Шукають', language)}</b> {uiText(SEEKING_PHRASES[seeking], language)}
         </Line>
       ) : null}
       {showPrograms && ownsPrograms && programs.length && programsContext ? (

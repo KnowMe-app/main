@@ -693,6 +693,11 @@ export const extractViewerProgramFacts = (profile, helpers = {}) => {
     births: readCount(profile.ownKids),
     csections: readCount(csectionRaw),
     experience: readCount(profile.surrogacyExperience ?? profile.experience ?? profile.donationExperience ?? profile.previousDonation),
+    // Не для вимог програми — для побажань батьків до зовнішності донорки
+    // (`utils/parentWishes`): «✓ як у вас» на картці батьків.
+    eyeColor: String(last(profile.eyeColor) ?? '').trim(),
+    hairColor: String(last(profile.hairColor) ?? '').trim(),
+    education: String(last(profile.education) ?? '').trim(),
   };
 };
 

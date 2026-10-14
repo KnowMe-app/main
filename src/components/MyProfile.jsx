@@ -57,6 +57,7 @@ import { KnowMeBrand } from './styles/knowme';
 import { resolveMyProfileFieldText, resolveMyProfileSectionTitle } from '../utils/myProfileRoleTexts';
 import { ProgramsEditor } from './programs/ProgramsEditor';
 import { ParentProfileFields } from './programs/RoleProfileFields';
+import { buildParentRoleSections, listRequiredSectionFields } from '../utils/myProfileSections';
 import { useProgramDisplayCurrency, useProgramRates } from '../hooks/useProgramRates';
 import {
   loadOwnPrograms,
@@ -588,6 +589,12 @@ const PARENT_ROLE_FIELDS = new Set(['seeking', 'programLocation', 'parentVia', '
 // прізвище з анкети не зникає.
 const PARENT_ONLY_HIDDEN_FIELDS = new Set(['surname']);
 
+// Область батькам не пропонується: місто вже каже, де людина, — так само, як
+// агенції й клініці (`ORGANISATION_SKIPPED_FIELDS`). Записане значення поле не
+// ховає, і публікацію воно не тримає.
+const PARENT_ONLY_SKIPPED_FIELDS = new Set(['region']);
+const PARENT_ONLY_OPTIONAL_FIELDS = new Set([...OPTIONAL_PROFILE_FIELDS, ...PARENT_ONLY_SKIPPED_FIELDS]);
+
 // TikTok тут був і повернувся: донорки й СМ ведуть його не рідше за
 // Instagram, і саме там агенції їх і знаходять.
 const PERSON_HIDDEN_SOCIAL_FIELDS = new Set(['twitter', 'linkedin', 'youtube']);
@@ -984,6 +991,8 @@ export const MyProfile = () => {
   const surrogateOnly = rolesList.includes('sm') && !rolesList.includes('ed');
   // Лише батьки — побажання переїжджають у «Кого шукаєте», прізвища не питають.
   const parentOnly = rolesList.length === 1 && rolesList[0] === 'ip';
+  // Що публікацію не тримає для цього читача (`listRequiredSectionFields`).
+  const optionalProfileFields = parentOnly ? PARENT_ONLY_OPTIONAL_FIELDS : OPTIONAL_PROFILE_FIELDS;
   // Заголовки спільних розділів говорять мовою анкети, якій ці поля належать:
   // у донорки, яка ще й агентка, «Особисті дані» — її, а не агенції.
   //
@@ -1008,6 +1017,8 @@ export const MyProfile = () => {
     shownSkippedFieldsRef.current.add(name);
     return true;
   };
+  // «Де програма» батьків — лише записане (`buildParentRoleSections`).
+  const showParentProgramLocation = rolesList.includes('ip') && keepSkippedField('programLocation');
   const hiddenRoles = useMemo(() => parseHiddenRoles(state.hiddenRoles), [state.hiddenRoles]);
 
   /**
@@ -1107,28 +1118,14 @@ export const MyProfile = () => {
       return [{ key: 'organisation', title: role === 'cl' ? '🏥 Клініка' : '🏢 Агенція', fields: ['agencyName'] }, programs];
     }
     if (role === 'ip') {
-      // Побажання (`moreInfo_main`) стоять тут же, а не окремим розділом:
-      // поки вони жили в «Способі життя», батьки бачили «Кого шукаєте» двічі —
-      // розділом із чіпами й розділом з одним полем «Кого шукаєте», і у
-      // вкладках угорі теж двічі. Коли в людини є ще й власна анкета (донорки,
-      // СМ, агенції), поле лишається там, де його читає та роль.
-      const fields = ['seeking', 'programLocation', 'parentVia'];
-      const search = {
-        key: 'search',
-        title: '🔎 Кого шукаєте',
-        fields: parentOnly ? [...fields, 'moreInfo_main'] : fields,
-        custom: 'parents',
-        extraFields: parentOnly ? ['moreInfo_main'] : [],
-      };
-      // Програми батьків — той самий редактор, що в агенції, але
-      // необовʼязковий (`OPTIONAL_PROFILE_FIELDS` не годиться: для агенції
-      // програма обовʼязкова, а поле одне — див. `programsOptional`). Коли
-      // поруч є агенція чи клініка, програми вже стоять у її анкеті.
-      if (programsRole !== 'ip') return [search];
-      return [search, { key: 'programs', title: '💶 Програми', fields: ['programs'], custom: 'programs', programsOptional: true }];
+      return buildParentRoleSections({
+        parentOnly,
+        ownsPrograms: programsRole === 'ip',
+        showProgramLocation: showParentProgramLocation,
+      });
     }
     return [];
-  }, [hasMixedRoles, parentOnly, programsRole]);
+  }, [hasMixedRoles, parentOnly, programsRole, showParentProgramLocation]);
   const roleSections = useMemo(() => roleSectionsFor(selectedRole), [roleSectionsFor, selectedRole]);
   const additionalRoleSections = useMemo(() => {
     const used = new Set(roleSections.map(section => section.key));
@@ -1152,6 +1149,7 @@ export const MyProfile = () => {
           .filter(name => !organisationOnly || !ORGANISATION_SKIPPED_FIELDS.has(name) || keepSkippedField(name))
           .filter(name => !surrogateOnly || !SURROGATE_HIDDEN_FIELDS.has(name))
           .filter(name => !parentOnly || !PARENT_ONLY_HIDDEN_FIELDS.has(name))
+          .filter(name => !parentOnly || !PARENT_ONLY_SKIPPED_FIELDS.has(name) || keepSkippedField(name))
           // Побажання батьків стоять у «Кого шукаєте» (`extraFields`).
           .filter(name => !parentOnly || name !== 'moreInfo_main'),
       }))
@@ -1370,10 +1368,10 @@ export const MyProfile = () => {
   // (`validateRequiredProfileFields`). Порожній «Сайт» тримав готову анкету
   // агенції на «13 з 14 · 93%», і людина шукала, що ж вона пропустила.
   const filledStats = useMemo(() => {
-    const keys = visibleSections.flatMap(s => (s.programsOptional ? [] : s.fields)).filter(name => !OPTIONAL_PROFILE_FIELDS.has(name));
+    const keys = visibleSections.flatMap(section => listRequiredSectionFields(section, { optional: optionalProfileFields }));
     const filled = keys.filter(isFieldFilled).length;
     return { filled, total: keys.length };
-  }, [isFieldFilled, visibleSections]);
+  }, [isFieldFilled, optionalProfileFields, visibleSections]);
   const filledPct = filledStats.total ? Math.round((filledStats.filled / filledStats.total) * 100) : 0;
 
 
@@ -1383,7 +1381,7 @@ export const MyProfile = () => {
     // «Готовий» розділ — той, де заповнено все обовʼязкове: соцмережі цілком
     // необовʼязкові, і сірі «4/5» казали, що розділ недороблений. Розділ без
     // жодного обовʼязкового поля готовий, щойно в ньому щось є.
-    const required = section.programsOptional ? [] : section.fields.filter(name => !OPTIONAL_PROFILE_FIELDS.has(name));
+    const required = listRequiredSectionFields(section, { optional: optionalProfileFields });
     const complete = required.length
       ? required.every(isFieldFilled)
       : filled > 0;
@@ -1394,7 +1392,7 @@ export const MyProfile = () => {
       progress: total > 0 ? Math.round((filled / total) * 100) : 0,
     };
     return acc;
-  }, {}), [isFieldFilled, visibleSections]);
+  }, {}), [isFieldFilled, optionalProfileFields, visibleSections]);
 
 
   const getSectionEntries = useCallback(() => navSections
@@ -1724,8 +1722,7 @@ export const MyProfile = () => {
         return SHARED_SECTION_KEYS.has(section.key) || belongsToSameQuestionnaire;
       });
     const missingFieldNames = sectionsToValidate
-      .flatMap(section => (section.programsOptional ? [] : section.fields))
-      .filter(fieldName => !OPTIONAL_PROFILE_FIELDS.has(fieldName))
+      .flatMap(section => listRequiredSectionFields(section, { optional: optionalProfileFields }))
       // A shared person block is tagged with whichever of `ed`/`sm` was
       // assigned first. Reuse it for the other person role, but apply that
       // role's own questionnaire: an SM must not be blocked by donor-only
@@ -2374,7 +2371,7 @@ export const MyProfile = () => {
               onEditingChange={setEditingProgram}
             />
           ) : null}
-          {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} /> : null}
+          {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} showProgramLocation={showParentProgramLocation} /> : null}
           {section.custom && section.extraFields?.length ? section.extraFields.map(renderField) : null}
           {!section.custom ? section.fields.map(renderField) : null}
         </FieldGroup>

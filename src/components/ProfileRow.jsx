@@ -39,6 +39,7 @@ import {
   buildProfileStatStrip,
   buildProfileSummaryRows,
   formatCSectionValue,
+  ParentDetailSections,
   ProfileAboutSection,
   ProfileDetailSections,
   ProfileFactList,
@@ -50,6 +51,7 @@ import { getRoleColor } from './matchingRoleColors';
 import * as S from './MatchingHiddenList.styled';
 import { CardRoleBlock, isCounterpartyCard } from './programs/CardRoleBlock';
 import { isOrganisationAnketaRole } from '../utils/cardAnketas';
+import { buildParentDetailSections } from '../utils/parentWishes';
 import { listProfileRoles } from '../utils/matchingPeerVisibility';
 import {
   addMonthsIsoDate,
@@ -1404,7 +1406,6 @@ const ProfileRow = ({
   // — інакше картка без жодного зайвого поля в проєкції ховала б і саму
   // можливість прочитати анкету.
   const canExpandDetails = !isLimited;
-  const hasMoreDetails = detailSections.length > 0 || Boolean(bio);
 
   /*
    * Картка організації читається в іншому порядку, ніж картка людини:
@@ -1434,6 +1435,20 @@ const ProfileRow = ({
   // кого воно, а не безликим «Детальніше».
   const parentsLayout = !organisationLayout && !isPersonAnketa && isCounterparty && rowRole === 'ip';
   const detailsLabel = parentsLayout ? 'Більше про біологічних батьків' : 'Детальніше';
+  // Розгорнуте в батьків — не розділи донорської анкети (обличчя, освіта,
+  // розміри), а те, що батьки кажуть про себе й про пошук: «Про нас», як
+  // шукають, побажання до донорки. Позначку «✓ як у вас» на побажаннях
+  // бачить лише донорка — з власної анкети, яку стрічка вже прочитала для
+  // «Вам підходить» (`programsContext.facts`).
+  const viewerType = programsContext?.viewerType || '';
+  const viewerFacts = programsContext?.facts || null;
+  const parentSections = useMemo(
+    () => (parentsLayout && !isLimited ? buildParentDetailSections(user, { type: viewerType, facts: viewerFacts }, language) : []),
+    [isLimited, language, parentsLayout, user, viewerFacts, viewerType]
+  );
+  const hasMoreDetails = parentsLayout
+    ? Boolean(bio) || parentSections.length > 0
+    : detailSections.length > 0 || Boolean(bio);
 
   // Стан публікації читається з картки, а не з `publish`: у проєкції стрічки
   // такого ключа немає (див. `isMatchingCardPublished`).
@@ -1571,8 +1586,15 @@ const ProfileRow = ({
         <S.More $afterToggle onClick={e => e.stopPropagation()}>
           {/* Під кнопкою — розділи повної анкети, ті самі й у тому самому
               порядку, що й у формі (`ProfileFacts`). */}
-          <ProfileAboutSection text={bio} language={language} accent={roleAccent} />
-          <ProfileDetailSections sections={detailSections} accent={roleAccent} />
+          <ProfileAboutSection
+            text={bio}
+            language={language}
+            accent={roleAccent}
+            title={parentsLayout ? uiText('Про нас', language) : ''}
+          />
+          {parentsLayout
+            ? <ParentDetailSections sections={parentSections} accent={roleAccent} />
+            : <ProfileDetailSections sections={detailSections} accent={roleAccent} />}
         </S.More>
       )}
     </>

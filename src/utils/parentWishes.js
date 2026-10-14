@@ -1,0 +1,192 @@
+import { eyeColorOptions, getOptionLabel, hairColorOptions } from '../components/formFields';
+import { PARENT_VIA_OPTIONS } from './donorPrograms';
+import { uiText } from './uiTranslations';
+
+/*
+ * Що біологічні батьки кажуть про себе й про пошук — поза програмою.
+ *
+ * Програма однакова для всіх (агенція, клініка, батьки) і несе суму, вимоги,
+ * покриття й місце. Тут лишається те, чого програма не вміє:
+ *
+ * — **побажання до донорки**: колір очей, волосся й освіта. Це не вимога —
+ *   донорку вони не відсіюють і в «Вам підходить» не рахуються, — а підказка,
+ *   кого шукають. Вік, ІМТ, зріст і групу крові батьки задають вимогами
+ *   програми: там донорка бачить «підходить / ні»;
+ * — **як шукають** (`parentVia`) і **де програма** (`programLocation`,
+ *   лише вже записане — нове місце задається в самій програмі).
+ *
+ * Значення побажань лежать у тому самому полі, що й раніше
+ * (`parentPreferences.donor.{eyeColor, hairColor, education}`), але тепер це
+ * значення з довідників анкети донорки, а не вільний текст: лише так картка
+ * може сказати донорці «✓ як у вас». Кілька значень — рядок через кому, як
+ * написала б людина руками. Уже записаний вільний текст не губиться:
+ * незнайоме слово показується як є і знімається тим самим дотиком.
+ */
+
+const norm = value => String(value ?? '').trim().toLowerCase();
+
+const pickText = value => String((Array.isArray(value) ? value[value.length - 1] : value) ?? '').trim();
+
+// Значення, які довідник тримає окремими записами, хоча людина вкладає в них
+// те саме: «Карі» й «Hazel», «Брюнетка» й «Темне». Без цього донорка з
+// записаним колись «Темним» волоссям не впізнала б себе в «брюнетці».
+const EYE_FAMILIES = Object.freeze({ Hazel: 'Brown' });
+const HAIR_FAMILIES = Object.freeze({
+  Dark: 'Brunette',
+  'Dark Brunette': 'Brunette',
+  Brown: 'Shoten',
+  'Dark Brown': 'Shoten',
+  'Dark Chestnut': 'Chestnut',
+});
+
+export const PARENT_DONOR_WISH_FIELDS = Object.freeze([
+  { key: 'eyeColor', label: 'Колір очей', short: 'Очі', options: eyeColorOptions, families: EYE_FAMILIES },
+  { key: 'hairColor', label: 'Колір волосся', short: 'Волосся', options: hairColorOptions, families: HAIR_FAMILIES },
+]);
+
+/** Освіта в побажаннях одна — «вища»: «середню» ніхто не просить. */
+export const HIGHER_EDUCATION_WISH = 'Higher';
+const HIGHER_EDUCATION_VALUES = new Set([
+  'higher', 'bachelor', 'master', 'phd',
+  'вища', 'вища освіта', 'бакалавр', 'магістр', 'доктор філософії (phd)',
+]);
+
+/** Рядок через кому (або вже масив) — список без порожніх і повторів. */
+export const parseWishList = value => {
+  const raw = Array.isArray(value) ? value : String(value ?? '').split(/[,;]+/);
+  const seen = new Set();
+  return raw
+    .map(item => String(item ?? '').trim())
+    .filter(item => {
+      const key = norm(item);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+};
+
+const findOption = (token, options) => {
+  const key = norm(token);
+  if (!key) return null;
+  return options.find(option => norm(option.placeholder) === key && !option.legacy)
+    || options.find(option => norm(option.placeholder) === key)
+    || options.find(option => norm(option.ukrainian) === key && !option.legacy)
+    || options.find(option => norm(option.ukrainian) === key)
+    || null;
+};
+
+// Ключ порівняння: значення довідника зводиться до своєї «родини», незнайоме
+// слово — до самого себе.
+const wishKey = (token, field) => {
+  const option = findOption(token, field.options);
+  if (!option) return norm(token);
+  return norm(field.families?.[option.placeholder] || option.placeholder);
+};
+
+/** Варіанти, які пропонує форма: запропоновані довідником плюс записане незнайоме. */
+export const listWishChoices = (value, field) => {
+  const offered = field.options.filter(option => !option.legacy);
+  const offeredKeys = new Set(offered.map(option => wishKey(option.placeholder, field)));
+  const extra = parseWishList(value)
+    .filter(token => !offeredKeys.has(wishKey(token, field)))
+    .map(token => ({ placeholder: token, ukrainian: token, recorded: true }));
+  return [...offered, ...extra];
+};
+
+export const isWishSelected = (value, field, option) => {
+  const key = wishKey(option.placeholder, field);
+  return parseWishList(value).some(token => wishKey(token, field) === key);
+};
+
+/** Дотик до варіанта: обраний знімається (разом із «родиною»), інший додається. */
+export const toggleWish = (value, field, option) => {
+  const key = wishKey(option.placeholder, field);
+  const tokens = parseWishList(value);
+  const kept = tokens.filter(token => wishKey(token, field) !== key);
+  const next = kept.length === tokens.length ? [...tokens, option.placeholder] : kept;
+  return next.join(', ');
+};
+
+export const isHigherEducationWish = value => parseWishList(value)
+  .some(token => HIGHER_EDUCATION_VALUES.has(norm(token)) || norm(token).startsWith('вищ'));
+
+const describeWishTokens = (value, field, language) => parseWishList(value)
+  .map(token => {
+    const option = findOption(token, field.options);
+    return option ? norm(getOptionLabel(option, language)) : token;
+  })
+  .join(', ');
+
+// Збіг із анкетою читачки — лише «так»: «ні» тут не кажемо, бо побажання не
+// відсіюють, а незаповнене поле в анкеті донорки — не відмова.
+const matchesViewer = (value, field, viewerValue) => {
+  const own = pickText(viewerValue);
+  if (!own) return false;
+  const ownKey = wishKey(own, field);
+  return parseWishList(value).some(token => wishKey(token, field) === ownKey);
+};
+
+const isHigherEducation = value => HIGHER_EDUCATION_VALUES.has(norm(pickText(value)));
+
+/**
+ * Розділи «Більше про біологічних батьків» (крім «Про нас», яке малює
+ * `ProfileAboutSection`). `viewer` — `{ type, facts }` з `programsContext`:
+ * позначку «✓ як у вас» бачить лише донорка.
+ */
+export const buildParentDetailSections = (user, viewer = {}, language) => {
+  const sections = [];
+  const via = PARENT_VIA_OPTIONS.find(option => option.key === pickText(user?.parentVia));
+  if (via) {
+    sections.push({ key: 'parent-via', title: uiText('Як шукають', language), text: uiText(via.label, language) });
+  }
+  const place = pickText(user?.programLocation);
+  if (place) sections.push({ key: 'parent-place', title: uiText('Де програма', language), text: place });
+
+  const prefs = user?.parentPreferences && typeof user.parentPreferences === 'object' ? user.parentPreferences : {};
+  const donor = prefs.donor && typeof prefs.donor === 'object' ? prefs.donor : {};
+  const isDonorViewer = viewer?.type === 'ed';
+  const facts = isDonorViewer && viewer?.facts ? viewer.facts : {};
+  const donorItems = [];
+  PARENT_DONOR_WISH_FIELDS.forEach(field => {
+    if (!parseWishList(donor[field.key]).length) return;
+    donorItems.push({
+      key: field.key,
+      label: uiText(field.short, language),
+      text: describeWishTokens(donor[field.key], field, language),
+      match: isDonorViewer && matchesViewer(donor[field.key], field, facts[field.key]),
+    });
+  });
+  if (parseWishList(donor.education).length) {
+    const higher = isHigherEducationWish(donor.education);
+    donorItems.push({
+      key: 'education',
+      text: higher ? norm(uiText('Вища освіта', language)) : parseWishList(donor.education).join(', '),
+      match: isDonorViewer && higher && isHigherEducation(facts.education),
+    });
+  }
+  // Записане до того, як групу крові й зріст стали задавати вимогами
+  // програми, лишається видно — без позначки збігу.
+  if (pickText(donor.blood)) donorItems.push({ key: 'blood', label: uiText('Група крові', language), text: pickText(donor.blood), match: false });
+  if (pickText(donor.heightFrom)) {
+    donorItems.push({ key: 'heightFrom', text: uiText('зріст від {value} см', language, { value: pickText(donor.heightFrom) }), match: false });
+  }
+  if (donorItems.length) {
+    sections.push({
+      key: 'parent-donor-wishes',
+      title: uiText('Бажано у донорки', language),
+      items: donorItems,
+      note: isDonorViewer
+        ? uiText('✓ — як у вашій анкеті. Побажання не відсіюють: «Вам підходить» рахує лише вимоги програми.', language)
+        : '',
+    });
+  }
+
+  const surrogate = prefs.surrogate && typeof prefs.surrogate === 'object' ? prefs.surrogate : {};
+  const surrogateItems = [];
+  if (pickText(surrogate.ageTo)) surrogateItems.push({ key: 'ageTo', text: uiText('вік до {value}', language, { value: pickText(surrogate.ageTo) }), match: false });
+  if (pickText(surrogate.location)) surrogateItems.push({ key: 'location', text: pickText(surrogate.location), match: false });
+  if (surrogateItems.length) {
+    sections.push({ key: 'parent-surrogate-wishes', title: uiText('Бажано у сурогатної мами', language), items: surrogateItems });
+  }
+  return sections;
+};
