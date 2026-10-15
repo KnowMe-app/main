@@ -12,8 +12,8 @@ applyUkrainianInterface();
 // написала, мусить пережити нормалізацію (вона мовчки відкидає те, чого не
 // знає) і дійти до картки.
 const previewText = program => {
-  const { container } = render(<ProgramPreview program={program} language="uk" defaultOpen />);
-  return container.textContent.replace(/\s+/g, ' ');
+  render(<ProgramPreview program={program} language="uk" defaultOpen />);
+  return document.body.textContent.replace(/\s+/g, ' ');
 };
 
 describe('програма СМ з оголошення: Грузія, 40–41 рік', () => {
