@@ -853,10 +853,14 @@ export const ProgramCard = ({
   const plus = money => plainMoney(money, currency, rates).replace(/^(≈ )?/, (match, approx) => `${approx || ''}+`);
   const lineMoney = item => (item.monthsEstimated ? { ...item.subtotal, approximate: true } : item.subtotal);
   const paidLines = [...(main ? [main] : []), ...guaranteedBonuses];
+  // Одна основна виплата без доплат — та сама сума, що в заголовку, і рядок
+  // її лише повторював би. Але «коли платять» («після народження») заголовок
+  // не каже, і без цього рядка воно зникало з картки зовсім.
+  const showPaidLines = paidLines.length > 0 && (guaranteedBonuses.length > 0 || additional.length > 0 || Boolean(main && bonusMeta(main)));
 
   const body = (
     <Details data-testid={framed ? undefined : 'program-card'}>
-      {paidLines.length > 0 && (guaranteedBonuses.length > 0 || additional.length > 0) ? (
+      {showPaidLines ? (
         <Section data-testid="program-payments">
           <SectionTitle>{uiText('Виплати', language)}</SectionTitle>
           {paidLines.map(item => {
