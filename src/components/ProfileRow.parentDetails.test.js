@@ -22,9 +22,10 @@ const parents = {
   parentPreferences: { donor: { eyeColor: 'Brown', hairColor: 'Brunette, Shoten', education: 'Higher' } },
 };
 
-const renderRow = ({ user = parents, expanded = true, programsContext, anketaRole, onToggleExpand = jest.fn() } = {}) => render(
+const renderRow = ({ user = parents, publishedUser, expanded = true, programsContext, anketaRole, onToggleExpand = jest.fn() } = {}) => render(
   <ProfileRow
     user={user}
+    publishedUser={publishedUser || user}
     isAdmin={false}
     expanded={expanded}
     onToggleExpand={onToggleExpand}
@@ -123,6 +124,23 @@ describe('анкета батьків у картці з кількома рол
     renderRow({ user, expanded: true, anketaRole: 'ag' });
     expect(screen.getByTestId('parent-seeking')).toBeInTheDocument();
     expect(within(screen.getByTestId('organisation-about')).getByTestId('parent-via')).toHaveTextContent('Через клініку');
+  });
+
+  // Дочитана анкета несе й сховані ролі (`withLazyPhotos` кладе її поверх
+  // картки), тож межа видимості — картка стрічки, `publishedUser`.
+  it('сховану анкету батьків розгорнута картка не показує', () => {
+    const user = { userId: 'EDIP2', role: ['ed', 'ip'], name: 'Оля', moreInfo_main: 'Про себе коротко.', ...parentFields };
+    renderRow({ user, publishedUser: { userId: 'EDIP2', role: 'ed', name: 'Оля' }, expanded: true });
+    expect(screen.queryByTestId('parent-seeking')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('parent-via')).not.toBeInTheDocument();
+  });
+
+  it('сховану агенцію дочитана анкета не повертає: картка лишається карткою батьків', () => {
+    const user = { userId: 'AGIP2', role: ['ag', 'ip'], name: 'Олена', agencyName: 'Мрія', ...parentFields };
+    renderRow({ user, publishedUser: { userId: 'AGIP2', role: 'ip', name: 'Олена' }, expanded: false });
+    expect(screen.queryByTestId('organisation-about')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Мрія/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('row-details-toggle')).toHaveTextContent('Більше про біологічних батьків');
   });
 
   it('прочитана проєкція без анкети: рядок організації кличе розгортання «Більше про біологічних батьків»', () => {

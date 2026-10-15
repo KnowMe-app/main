@@ -5276,8 +5276,10 @@ const resolveMatchingCardAvatar = async (userId, data, { includeStorage = true }
  * карток немає зовсім.
  *
  * Запис, що в цей час пише сам писач програм, тут не відкочується: під
- * схованою роллю він версії й не ставить (`advertise: false`), а повернута
- * трохи старша версія лише змусить читача раз перечитати ті самі програми.
+ * схованою роллю він версії й не ставить (`advertise: false`), а повертається
+ * версія транзакцією й лише туди, де її немає (`syncMatchingCardIndex`): між
+ * читанням вузла програм і записом писач міг поставити новішу, і перебита
+ * старішою вона тримала б читачів на застарілій копії до наступної правки.
  */
 const programsVersionCheckedIds = new Set();
 
@@ -5350,9 +5352,24 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
     }
 
     const programsVersionPatch = await resolveProgramsVersionPatch(id, nextData, existing);
-    if (programsVersionPatch) projection[MATCHING_CARD_PROGRAMS_AT_FIELD] = programsVersionPatch;
+    const restoreProgramsVersion = async () => {
+      if (!(programsVersionPatch > 0)) return;
+      try {
+        const result = await runTransaction(
+          ref2(database, `${MATCHING_CARDS_ROOT}/${id}/${MATCHING_CARD_PROGRAMS_AT_FIELD}`),
+          current => (Number(current) > 0 ? undefined : programsVersionPatch),
+        );
+        const at = Number(result?.snapshot?.val?.());
+        if (Number.isFinite(at) && at > 0) projection[MATCHING_CARD_PROGRAMS_AT_FIELD] = at;
+      } catch (error) {
+        console.warn('[matchingCards] не вдалося повернути версію програм картки', { userId: id, error });
+      }
+    };
 
-    if (existing && areMatchingCardProjectionsEqual(existing, projection)) return projection;
+    if (existing && areMatchingCardProjectionsEqual(existing, projection)) {
+      await restoreProgramsVersion();
+      return projection;
+    }
 
     // Programs are owned by saveCardPrograms and may change after the read
     // above. A field-level patch never writes programsAt on its own, so a
@@ -5364,7 +5381,7 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
     Object.keys(existing || {}).forEach(field => {
       if (!(field in projection) && !independentlyOwnedFields.has(field)) projectionPatch[field] = null;
     });
-    if (programsVersionPatch !== undefined) projectionPatch[MATCHING_CARD_PROGRAMS_AT_FIELD] = programsVersionPatch;
+    if (programsVersionPatch === null) projectionPatch[MATCHING_CARD_PROGRAMS_AT_FIELD] = null;
 
     try {
       await update(buildMatchingCardRef(id), projectionPatch);
@@ -5396,8 +5413,10 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
       // що видаляється.
       if (programsVersionPatch === null) fallbackPatch[MATCHING_CARD_PROGRAMS_AT_FIELD] = null;
       await update(buildMatchingCardRef(id), fallbackPatch);
+      await restoreProgramsVersion();
       return withoutPrograms;
     }
+    await restoreProgramsVersion();
     return projection;
   } catch (error) {
     console.error('[matchingCards] не вдалося оновити урізану картку', { userId: id, error });

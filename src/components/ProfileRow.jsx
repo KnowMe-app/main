@@ -1279,19 +1279,26 @@ const ProfileRow = ({
   const { language } = useAppSettings();
   const isOrganisationAnketa = Boolean(anketaRole) && isOrganisationAnketaRole(anketaRole);
   const isPersonAnketa = Boolean(anketaRole) && !isOrganisationAnketa;
-  const showsOrganisation = !isPersonAnketa && (isOrganisationAnketa || listProfileRoles(user).some(isOrganisationAnketaRole));
+  // Ролі рядка — з картки стрічки (`publishedUser`), а не з дочитаної анкети:
+  // `withLazyPhotos` кладе анкету поверх картки, а анкета несе й ролі, які
+  // людина сховала (`hiddenRoles`). Поки рядок питав ролі в `user`, розгорнута
+  // картка перебудовувалась під сховану роль, а «кого шукають» і побажання
+  // схованої анкети батьків зʼявлялись під «Детальніше». Ту саму межу тримає
+  // `resolveRowAnketaRoles` у `Matching`.
+  const visibleRoles = listProfileRoles(publishedUser);
+  const showsOrganisation = !isPersonAnketa && (isOrganisationAnketa || visibleRoles.some(isOrganisationAnketaRole));
   // Організацію називає її назва, і лише вона. Анкета агенції без особистої
   // ролі кладе назву в `name`, а в `surname` — контактну особу («Мій профіль»
   // підписує їх «Назва агенції» й «Контактна особа», `myProfileRoleTexts`),
   // тож загальний `getProfileName` складав «Surrohelp M.», а дата народження
   // контактної особи давала агенції вік: «Допоміжне батьківство Н., 43».
   const isOrganisationIdentity = isOrganisationAnketa
-    || (showsOrganisation && !listProfileRoles(user).some(role => role === 'ed' || role === 'sm'));
+    || (showsOrganisation && !visibleRoles.some(role => role === 'ed' || role === 'sm'));
   const organisationName = isOrganisationIdentity
     ? (pickCurrentText(user?.agencyName) || (isOrganisationAnketa ? '' : pickCurrentText(user?.name)))
     : '';
   const name = organisationName || getProfileName(user);
-  const rowRole = anketaRole || getProfileRole(user);
+  const rowRole = anketaRole || getProfileRole(publishedUser);
   // Роль позначає дволітерний код — і на знімку, і в рядку імені, коли знімка
   // немає. Словом вона тут стояла («Донорка», «Agency»), і слово розходилось
   // саме з собою: у рядку одне, у відкритій картці інше, у фільтрах третє, а
@@ -1331,7 +1338,7 @@ const ProfileRow = ({
   // Агенцію, клініку й біологічних батьків описують не тіло й пологи, а те,
   // що вони пропонують чи шукають (`CardRoleBlock`): смуга «зріст, вага, ІМТ»
   // під агенцією казала донорці рівно нічого.
-  const isCounterparty = isOrganisationAnketa || (!isPersonAnketa && isCounterpartyCard(user));
+  const isCounterparty = isOrganisationAnketa || (!isPersonAnketa && isCounterpartyCard(publishedUser));
   const statCells = useMemo(() => (isLimited || isCounterparty ? [] : buildProfileStatStrip(user, language)), [isCounterparty, isLimited, language, user]);
   const summaryRows = useMemo(() => (isLimited || isCounterparty ? [] : buildProfileSummaryRows(user, language)), [isCounterparty, isLimited, language, user]);
   const detailSections = useMemo(
@@ -1340,15 +1347,14 @@ const ProfileRow = ({
   );
   // Блок організації не бачить особистих ролей, але зберігає анкету батьків:
   // `listCardAnketaRoles` не створює для `ip` третього рядка, тож інакше її
-  // «кого шукають» зникло б з усіх рядків картки `ed + ag + ip`.
-  const roleBlockCard = useMemo(
-    () => (isOrganisationAnketa ? {
-      ...user,
-      role: [anketaRole, ...listProfileRoles(publishedUser).filter(role => role === 'ip')],
-      userRole: [anketaRole, ...listProfileRoles(publishedUser).filter(role => role === 'ip')],
-    } : user),
-    [anketaRole, isOrganisationAnketa, publishedUser, user]
-  );
+  // «кого шукають» зникло б з усіх рядків картки `ed + ag + ip`. Ролі блоку —
+  // теж лише з картки стрічки: сховану агенцію чи сховану анкету батьків він
+  // не показує й тоді, коли анкету вже дочитано.
+  const roleBlockCard = useMemo(() => {
+    const shown = listProfileRoles(publishedUser);
+    const roles = isOrganisationAnketa ? [anketaRole, ...shown.filter(role => role === 'ip')] : shown;
+    return { ...user, role: roles, userRole: roles };
+  }, [anketaRole, isOrganisationAnketa, publishedUser, user]);
   const roleAccent = getRoleColor(rowRole);
   const contactEntries = useMemo(
     () => (isLimited ? [] : getContactEntries(user).filter(entry => entry.key !== 'vk')),

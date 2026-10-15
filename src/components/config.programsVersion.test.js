@@ -16,6 +16,7 @@ jest.mock('firebase/storage', () => ({
 
 const mockUpdate = jest.fn();
 const mockGet = jest.fn();
+const mockRunTransaction = jest.fn();
 jest.mock('firebase/database', () => ({
   getDatabase: () => ({}),
   ref: (_db, path) => path,
@@ -23,7 +24,7 @@ jest.mock('firebase/database', () => ({
   query: jest.fn(), orderByChild: jest.fn(), orderByKey: jest.fn(), orderByValue: jest.fn(),
   startAt: jest.fn(), endAt: jest.fn(), endBefore: jest.fn(), startAfter: jest.fn(),
   limitToFirst: jest.fn(), limitToLast: jest.fn(), equalTo: jest.fn(),
-  serverTimestamp: jest.fn(), runTransaction: jest.fn(), increment: jest.fn(),
+  serverTimestamp: jest.fn(), runTransaction: (...args) => mockRunTransaction(...args), increment: jest.fn(),
 }));
 
 const { syncMatchingCardIndex } = require('./config');
@@ -31,9 +32,16 @@ const { syncMatchingCardIndex } = require('./config');
 const snapshot = value => ({ exists: () => value !== null && value !== undefined, val: () => value });
 const profile = extra => ({ name: 'Мрія', role: ['ag', 'ip'], publish: true, lastLogin2: '2026-10-01', ...extra });
 
+// Транзакція над версією в картці: `current` — те, що там лежить на момент запису.
+const transactionOver = current => async (_path, updater) => {
+  const next = updater(current);
+  return { committed: next !== undefined, snapshot: snapshot(next === undefined ? current : next) };
+};
+
 beforeEach(() => {
   mockUpdate.mockReset().mockResolvedValue(undefined);
   mockGet.mockReset().mockResolvedValue(snapshot(null));
+  mockRunTransaction.mockReset().mockImplementation(transactionOver(null));
 });
 
 it('агенція сховала агентську анкету — картка знімає версію програм', async () => {
@@ -51,10 +59,27 @@ it('показала знову — версія повертається з в�
   mockGet.mockImplementation(async path => snapshot(path === `multiData/programs/${id}/updatedAt` ? 222 : null));
   const existingCard = { name: 'Мрія', role: 'ip', feedDate: '2026-10-01' };
 
-  await syncMatchingCardIndex(id, profile({ hiddenRoles: '' }), { existingCard, avatar: '' });
+  const card = await syncMatchingCardIndex(id, profile({ hiddenRoles: '' }), { existingCard, avatar: '' });
 
   expect(mockGet).toHaveBeenCalledWith(`multiData/programs/${id}/updatedAt`);
-  expect(mockUpdate).toHaveBeenCalledWith(`matchingCards/${id}`, expect.objectContaining({ role: ['ag', 'ip'], programsAt: 222 }));
+  expect(mockUpdate).toHaveBeenCalledWith(`matchingCards/${id}`, expect.objectContaining({ role: ['ag', 'ip'] }));
+  expect(mockRunTransaction).toHaveBeenCalledWith(`matchingCards/${id}/programsAt`, expect.any(Function));
+  expect(card.programsAt).toBe(222);
+});
+
+// Між читанням вузла програм і записом картки писач програм (інша вкладка,
+// автозбереження редактора) міг поставити новішу версію — її не перебиваємо.
+it('новішої версії, поставленої тим часом, не перебиває', async () => {
+  const id = 'agencyParentsRaceUid0000000';
+  mockGet.mockImplementation(async path => snapshot(path === `multiData/programs/${id}/updatedAt` ? 222 : null));
+  mockRunTransaction.mockImplementation(transactionOver(333));
+  const existingCard = { name: 'Мрія', role: 'ip', feedDate: '2026-10-01' };
+
+  const card = await syncMatchingCardIndex(id, profile({ hiddenRoles: '' }), { existingCard, avatar: '' });
+
+  const [, patch] = mockUpdate.mock.calls[0];
+  expect(patch).not.toHaveProperty('programsAt');
+  expect(card.programsAt).toBe(333);
 });
 
 it('правка анкети без зміни ролей версії не чіпає й вузла програм не питає', async () => {
@@ -77,5 +102,6 @@ it('картку без програм перевіряє щонайбільше
   await syncMatchingCardIndex(id, profile({ name: 'Мрія 2' }), { existingCard: { ...existingCard, name: 'Мрія 1' }, avatar: '' });
 
   expect(mockGet).toHaveBeenCalledTimes(1);
+  expect(mockRunTransaction).not.toHaveBeenCalled();
   mockUpdate.mock.calls.forEach(([, patch]) => expect(patch).not.toHaveProperty('programsAt'));
 });
