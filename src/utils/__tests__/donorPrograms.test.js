@@ -28,6 +28,7 @@ import {
   listCoverageOptions,
   isProgramsOwnerRoleHidden,
   resolveProgramsOwnerRole,
+  hasVisibleProgramsOwnerRole,
 } from '../donorPrograms';
 import {
   convertProgramAmount,
@@ -675,6 +676,10 @@ describe('кому належать програми картки', () => {
     expect(resolveProgramsOwnerRole(['ed', 'cl'])).toBe('cl');
     expect(resolveProgramsOwnerRole(['ed', 'ip'])).toBe('ip');
     expect(resolveProgramsOwnerRole(['ed', 'sm'])).toBe('');
+    // `pp` — старі анкети батьків: їхні програми теж мусять доїхати до стрічки.
+    expect(resolveProgramsOwnerRole(['pp'])).toBe('pp');
+    expect(resolveProgramsOwnerRole(['pp', 'ag'])).toBe('ag');
+    expect(hasVisibleProgramsOwnerRole({ role: 'pp', programsAt: 5 })).toBe(true);
     expect(resolveProgramsOwnerRole(undefined)).toBe('');
   });
 

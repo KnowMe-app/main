@@ -40,12 +40,18 @@ export const PROGRAM_TYPES = Object.freeze(['ed', 'sm']);
  * «Виплата» й сортування. Поки батьків знав лише рядок, решта вважала їхню
  * картку такою, що програм не має зовсім.
  */
-export const PROGRAMS_OWNER_ROLES = Object.freeze(['ag', 'cl', 'ip']);
+// `pp` — роль старих анкет батьків (`matchingPeerVisibility`): картка з нею й
+// `programsAt` інакше випадала б з усього, що питає цей перелік, — програми не
+// дочитувались, рядок їх не малював, а фільтр «Виплата» вважав, що їх немає.
+export const PROGRAMS_OWNER_ROLES = Object.freeze(['ag', 'cl', 'ip', 'pp']);
 const ORGANISATION_PROGRAM_ROLES = Object.freeze(['ag', 'cl']);
+const PARENT_PROGRAM_ROLES = Object.freeze(['ip', 'pp']);
 
 export const resolveProgramsOwnerRole = roles => {
   const list = Array.isArray(roles) ? roles : [];
-  return list.find(role => ORGANISATION_PROGRAM_ROLES.includes(role)) || (list.includes('ip') ? 'ip' : '');
+  return list.find(role => ORGANISATION_PROGRAM_ROLES.includes(role))
+    || PARENT_PROGRAM_ROLES.find(role => list.includes(role))
+    || '';
 };
 
 /** Чи несе картка роль, яка веде програми. */

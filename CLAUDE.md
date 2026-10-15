@@ -803,7 +803,7 @@ Flow, `fetchNbuUahExchangeRatesByDate`). Оригінал показується
 організації, якщо вона є в ролях, інакше батькам (`resolveProgramsOwnerRole`).
 У батьків розділ «Програми» необовʼязковий (`optionalFields` розділу) —
 публікацію він не тримає. **Перелік власників програм один на всю стрічку**
-(`PROGRAMS_OWNER_ROLES`, `hasVisibleProgramsOwnerRole` у `donorPrograms`): рядок
+(`PROGRAMS_OWNER_ROLES` — `ag`, `cl`, `ip` і `pp` старих анкет батьків; `hasVisibleProgramsOwnerRole` у `donorPrograms`): рядок
 (`CardRoleBlock`), дочитування (`ensureProgramsForCards`), бакети «Виплати» й
 сортування — поки батьків знав лише рядок, решта вважала їхню картку такою, що
 програм не має. **Програми ховаються разом з анкетою, якій належать**
