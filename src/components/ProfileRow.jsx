@@ -1279,19 +1279,26 @@ const ProfileRow = ({
   const { language } = useAppSettings();
   const isOrganisationAnketa = Boolean(anketaRole) && isOrganisationAnketaRole(anketaRole);
   const isPersonAnketa = Boolean(anketaRole) && !isOrganisationAnketa;
-  const showsOrganisation = !isPersonAnketa && (isOrganisationAnketa || listProfileRoles(user).some(isOrganisationAnketaRole));
+  // Ролі рядка — з картки стрічки (`publishedUser`), а не з дочитаної анкети:
+  // `withLazyPhotos` кладе анкету поверх картки, а анкета несе й ролі, які
+  // людина сховала (`hiddenRoles`). Поки рядок питав ролі в `user`, розгорнута
+  // картка перебудовувалась під сховану роль, а «кого шукають» і побажання
+  // схованої анкети батьків зʼявлялись під «Детальніше». Ту саму межу тримає
+  // `resolveRowAnketaRoles` у `Matching`.
+  const visibleRoles = listProfileRoles(publishedUser);
+  const showsOrganisation = !isPersonAnketa && (isOrganisationAnketa || visibleRoles.some(isOrganisationAnketaRole));
   // Організацію називає її назва, і лише вона. Анкета агенції без особистої
   // ролі кладе назву в `name`, а в `surname` — контактну особу («Мій профіль»
   // підписує їх «Назва агенції» й «Контактна особа», `myProfileRoleTexts`),
   // тож загальний `getProfileName` складав «Surrohelp M.», а дата народження
   // контактної особи давала агенції вік: «Допоміжне батьківство Н., 43».
   const isOrganisationIdentity = isOrganisationAnketa
-    || (showsOrganisation && !listProfileRoles(user).some(role => role === 'ed' || role === 'sm'));
+    || (showsOrganisation && !visibleRoles.some(role => role === 'ed' || role === 'sm'));
   const organisationName = isOrganisationIdentity
     ? (pickCurrentText(user?.agencyName) || (isOrganisationAnketa ? '' : pickCurrentText(user?.name)))
     : '';
   const name = organisationName || getProfileName(user);
-  const rowRole = anketaRole || getProfileRole(user);
+  const rowRole = anketaRole || getProfileRole(publishedUser);
   // Роль позначає дволітерний код — і на знімку, і в рядку імені, коли знімка
   // немає. Словом вона тут стояла («Донорка», «Agency»), і слово розходилось
   // саме з собою: у рядку одне, у відкритій картці інше, у фільтрах третє, а
@@ -1331,7 +1338,7 @@ const ProfileRow = ({
   // Агенцію, клініку й біологічних батьків описують не тіло й пологи, а те,
   // що вони пропонують чи шукають (`CardRoleBlock`): смуга «зріст, вага, ІМТ»
   // під агенцією казала донорці рівно нічого.
-  const isCounterparty = isOrganisationAnketa || (!isPersonAnketa && isCounterpartyCard(user));
+  const isCounterparty = isOrganisationAnketa || (!isPersonAnketa && isCounterpartyCard(publishedUser));
   const statCells = useMemo(() => (isLimited || isCounterparty ? [] : buildProfileStatStrip(user, language)), [isCounterparty, isLimited, language, user]);
   const summaryRows = useMemo(() => (isLimited || isCounterparty ? [] : buildProfileSummaryRows(user, language)), [isCounterparty, isLimited, language, user]);
   const detailSections = useMemo(
@@ -1340,15 +1347,14 @@ const ProfileRow = ({
   );
   // Блок організації не бачить особистих ролей, але зберігає анкету батьків:
   // `listCardAnketaRoles` не створює для `ip` третього рядка, тож інакше її
-  // «кого шукають» зникло б з усіх рядків картки `ed + ag + ip`.
-  const roleBlockCard = useMemo(
-    () => (isOrganisationAnketa ? {
-      ...user,
-      role: [anketaRole, ...listProfileRoles(publishedUser).filter(role => role === 'ip')],
-      userRole: [anketaRole, ...listProfileRoles(publishedUser).filter(role => role === 'ip')],
-    } : user),
-    [anketaRole, isOrganisationAnketa, publishedUser, user]
-  );
+  // «кого шукають» зникло б з усіх рядків картки `ed + ag + ip`. Ролі блоку —
+  // теж лише з картки стрічки: сховану агенцію чи сховану анкету батьків він
+  // не показує й тоді, коли анкету вже дочитано.
+  const roleBlockCard = useMemo(() => {
+    const shown = listProfileRoles(publishedUser);
+    const roles = isOrganisationAnketa ? [anketaRole, ...shown.filter(role => role === 'ip')] : shown;
+    return { ...user, role: roles, userRole: roles };
+  }, [anketaRole, isOrganisationAnketa, publishedUser, user]);
   const roleAccent = getRoleColor(rowRole);
   const contactEntries = useMemo(
     () => (isLimited ? [] : getContactEntries(user).filter(entry => entry.key !== 'vk')),
@@ -1442,13 +1448,39 @@ const ProfileRow = ({
   // «Вам підходить» (`programsContext.facts`).
   const viewerType = programsContext?.viewerType || '';
   const viewerFacts = programsContext?.facts || null;
+  // Анкета батьків буває й поруч з іншою роллю: донорка, яка ще й шукає СМ;
+  // агенція, яка ще й батьки; рядок організації картки «донорка + агенція +
+  // батьки» (`roleBlockCard`). «Кого шукають» такий рядок показує в
+  // `CardRoleBlock`, а як шукають і побажання — там, де він розгортається:
+  // у «Детальніше» людини чи в «Більше про …» організації. Поки розділи
+  // батьків малювала сама розкладка батьків, у таких картках їх не бачив ніхто.
+  const carriesParentAnketa = !isLimited && !isPersonAnketa && listProfileRoles(roleBlockCard).includes('ip');
   const parentSections = useMemo(
-    () => (parentsLayout && !isLimited ? buildParentDetailSections(user, { type: viewerType, facts: viewerFacts }, language) : []),
-    [isLimited, language, parentsLayout, user, viewerFacts, viewerType]
+    () => (carriesParentAnketa ? buildParentDetailSections(user, { type: viewerType, facts: viewerFacts }, language) : []),
+    [carriesParentAnketa, language, user, viewerFacts, viewerType]
   );
+  const personParentSections = !parentsLayout && !organisationLayout ? parentSections : [];
+  const organisationParentSections = organisationLayout ? parentSections : [];
   const hasMoreDetails = parentsLayout
     ? Boolean(bio) || parentSections.length > 0
-    : detailSections.length > 0 || Boolean(bio);
+    : detailSections.length > 0 || Boolean(bio) || personParentSections.length > 0;
+  // Розгортання картки організації: опис організації й, коли картка несе ще й
+  // анкету батьків, її розділи — однією кнопкою. Поки анкету не прочитано,
+  // кнопка кличе себе тим, що відкриє: «Більше про агенцію», а в рядку
+  // організації розщепленої картки, де опису немає (він належить людині), —
+  // «Більше про біологічних батьків».
+  const organisationRevealsMore = aboutKnown
+    ? organisationParentSections.length > 0
+    : (!isOrganisationAnketa && !aboutMeaningful) || carriesParentAnketa;
+  const organisationLoadToggle = !aboutKnown && !aboutLong;
+  let organisationToggleLabel = '';
+  if (organisationLayout && canExpandDetails && onToggleExpand && (aboutLong || organisationRevealsMore)) {
+    organisationToggleLabel = organisationLoadToggle
+      ? (isOrganisationAnketa || aboutMeaningful ? uiText('Більше про біологічних батьків', language) : aboutTitle)
+      : uiText(expanded
+        ? (organisationParentSections.length > 0 ? 'Згорнути' : 'Згорнути опис')
+        : (aboutLong ? 'Читати повністю' : 'Більше про біологічних батьків'), language);
+  }
 
   // Стан публікації читається з картки, а не з `publish`: у проєкції стрічки
   // такого ключа немає (див. `isMatchingCardPublished`).
@@ -1594,7 +1626,12 @@ const ProfileRow = ({
           />
           {parentsLayout
             ? <ParentDetailSections sections={parentSections} accent={roleAccent} />
-            : <ProfileDetailSections sections={detailSections} accent={roleAccent} />}
+            : (
+              <>
+                <ProfileDetailSections sections={detailSections} accent={roleAccent} />
+                <ParentDetailSections sections={personParentSections} accent={roleAccent} />
+              </>
+            )}
         </S.More>
       )}
     </>
@@ -1829,40 +1866,31 @@ const ProfileRow = ({
       {/* «Більше про агенцію» — останнім у картці, під рішенням: спершу
           програми й контакти, заради яких картку агенції гортають, а опис —
           для тих, кому їх замало. */}
-      {organisationLayout && (aboutMeaningful || (!aboutKnown && canExpandDetails && onToggleExpand && !isOrganisationAnketa) || (expanded && aboutKnown && !isOrganisationAnketa)) ? (
+      {organisationLayout && (aboutMeaningful || organisationToggleLabel || (expanded && aboutKnown && !isOrganisationAnketa) || (expanded && aboutKnown && organisationParentSections.length > 0)) ? (
         <S.OrganisationAbout data-testid="organisation-about" onClick={e => e.stopPropagation()}>
           {aboutMeaningful ? (
             <>
               <S.OrganisationAboutTitle>{aboutTitle}</S.OrganisationAboutTitle>
               <S.OrganisationAboutText $clamped={aboutLong && !expanded}>{aboutText}</S.OrganisationAboutText>
-              {aboutLong && onToggleExpand ? (
-                <SectionToggle
-                  type="button"
-                  $open={expanded}
-                  aria-expanded={expanded}
-                  onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
-                >
-                  <span>{uiText(expanded ? 'Згорнути опис' : 'Читати повністю', language)}</span>
-                  <FaChevronDown aria-hidden="true" />
-                </SectionToggle>
-              ) : null}
             </>
-          ) : expanded && aboutKnown ? (
+          ) : expanded && aboutKnown && !isOrganisationAnketa ? (
             <S.OrganisationAboutEmpty>
               {uiText(aboutRole === 'cl' ? 'Клініка ще не додала опису.' : 'Агенція ще не додала опису.', language)}
             </S.OrganisationAboutEmpty>
-          ) : (
+          ) : null}
+          {expanded && aboutKnown ? <ParentDetailSections sections={organisationParentSections} accent={roleAccent} /> : null}
+          {organisationToggleLabel ? (
             <SectionToggle
               type="button"
-              data-testid="row-details-toggle"
+              data-testid={organisationLoadToggle ? 'row-details-toggle' : undefined}
               $open={expanded}
               aria-expanded={expanded}
               onClick={e => { e.stopPropagation(); onToggleExpand(user.userId); }}
             >
-              <span>{aboutTitle}</span>
+              <span>{organisationToggleLabel}</span>
               <FaChevronDown aria-hidden="true" />
             </SectionToggle>
-          )}
+          ) : null}
         </S.OrganisationAbout>
       ) : null}
       {parentsLayout ? detailsBlock : null}

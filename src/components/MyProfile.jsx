@@ -67,7 +67,7 @@ import {
   useProgramsVersion,
 } from '../utils/programsStore';
 import { loadProgramTerms, rememberProgramTerms } from './programs/programsRemote';
-import { listPrograms, listProgramBonuses } from '../utils/donorPrograms';
+import { isProgramsOwnerRoleHidden, listPrograms, listProgramBonuses, resolveProgramsOwnerRole } from '../utils/donorPrograms';
 import { MyProfileCardPreview } from './MyProfileCardPreview';
 import { getCurrentValue } from './getCurrentValue';
 
@@ -984,8 +984,9 @@ export const MyProfile = () => {
   // Програми веде не лише організація: батьки так само пропонують донорці чи
   // СМ свою програму — суму, вимоги, покриття. Вузол програм один на картку
   // (`multiData/programs/{uid}`), тож і роль, якій належить редактор, одна —
-  // організація, якщо вона є, інакше батьки.
-  const programsRole = organisationRole || (rolesList.includes('ip') ? 'ip' : '');
+  // організація, якщо вона є, інакше батьки (`resolveProgramsOwnerRole` —
+  // той самий вибір робить стрічка й картка).
+  const programsRole = resolveProgramsOwnerRole(rolesList);
   const isDonorRole = Boolean(personRole) || !normalizedRole || ['donor', 'до'].includes(normalizedRole);
   // СМ без донорської анкети — скорочений набір (`SURROGATE_HIDDEN_FIELDS`).
   const surrogateOnly = rolesList.includes('sm') && !rolesList.includes('ed');
@@ -1020,6 +1021,12 @@ export const MyProfile = () => {
   // «Де програма» батьків — лише записане (`buildParentRoleSections`).
   const showParentProgramLocation = rolesList.includes('ip') && keepSkippedField('programLocation');
   const hiddenRoles = useMemo(() => parseHiddenRoles(state.hiddenRoles), [state.hiddenRoles]);
+  // Анкету, якій належать програми, сховано — тоді писач програм не ставить у
+  // картку їхньої версії (`advertise: false`): програми зберігаються, але під
+  // іншою, видимою роллю картки не показуються. Через ref — бо дописування з
+  // минулого разу стартує в ефекті, а не з рендера.
+  const programsAdvertiseRef = useRef(true);
+  programsAdvertiseRef.current = !isProgramsOwnerRoleHidden(rolesList, hiddenRoles);
 
   /**
    * Змінити роль анкети.
@@ -1210,7 +1217,7 @@ export const MyProfile = () => {
     (async () => {
       // Не збережене минулого разу (відмова бази, закрита вкладка) —
       // спершу дописується, і лише тоді база може щось перебити.
-      await retryPendingPrograms(programsOwnerId).catch(error => {
+      await retryPendingPrograms(programsOwnerId, { advertise: programsAdvertiseRef.current }).catch(error => {
         console.warn('[programs] програми з цього браузера досі не в базі', error);
       });
       const loaded = await loadOwnPrograms(programsOwnerId);
@@ -1220,7 +1227,7 @@ export const MyProfile = () => {
       const legacy = stateRef.current?.programs;
       if (!loaded && legacy && typeof legacy === 'object' && Object.keys(legacy).length) {
         try {
-          await saveCardPrograms(programsOwnerId, legacy);
+          await saveCardPrograms(programsOwnerId, legacy, { advertise: programsAdvertiseRef.current });
           if (!cancelled) saveRoleField('programs', null);
         } catch (error) {
           console.warn('[programs] не вдалося перенести програми з анкети', error);
@@ -1241,7 +1248,7 @@ export const MyProfile = () => {
     const list = listPrograms(record, { includeHidden: true });
     // Проміс каже редакторові, чи прийняла база запис («Збережено» чи «поки
     // лише в цьому браузері»).
-    return saveCardPrograms(targetUserId, record || {})
+    return saveCardPrograms(targetUserId, record || {}, { advertise: programsAdvertiseRef.current })
       .then(saved => {
         // Словник назв — підказка іншим агенціям, а не частина запису: його
         // відмова не робить збережені програми незбереженими.

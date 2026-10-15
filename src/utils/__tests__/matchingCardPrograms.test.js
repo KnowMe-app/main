@@ -42,6 +42,21 @@ describe('картка стрічки агенції й батьків', () => {
     expect(expanded.programsAt).toBe(7);
   });
 
+  // Сховану анкету картка не несе разом з її програмами: інакше агенція, яка
+  // сховала агентську анкету й лишила анкету батьків, показувала б свої
+  // програми вже під батьками.
+  it('версію програм несе, лише поки роль, якій вони належать, не схована', () => {
+    const existingCard = { programsAt: 1759200000000 };
+    const agencyParents = { userId: 'AP1', name: 'Мрія', userRole: ['ag', 'ip'], role: ['ag', 'ip'] };
+    expect(buildMatchingCardProjection('AP1', agencyParents, { existingCard }).programsAt).toBe(1759200000000);
+    expect(buildMatchingCardProjection('AP1', { ...agencyParents, hiddenRoles: 'ag' }, { existingCard }).programsAt).toBeUndefined();
+    expect(buildMatchingCardProjection('AP1', { ...agencyParents, hiddenRoles: 'ip' }, { existingCard }).programsAt).toBe(1759200000000);
+
+    const donorParents = { userId: 'DP1', name: 'Оля', userRole: ['ed', 'ip'], role: ['ed', 'ip'] };
+    expect(buildMatchingCardProjection('DP1', { ...donorParents, hiddenRoles: 'ip' }, { existingCard }).programsAt).toBeUndefined();
+    expect(buildMatchingCardProjection('DP1', { ...donorParents, hiddenRoles: 'ed' }, { existingCard }).programsAt).toBe(1759200000000);
+  });
+
   it('сховану роль картка не несе, а сховати всі не дає', () => {
     const both = { userId: 'ED1', name: 'Оля', userRole: ['ag', 'ed'], role: ['ag', 'ed'] };
     expect(buildMatchingCardProjection('ED1', both).role).toEqual(['ag', 'ed']);

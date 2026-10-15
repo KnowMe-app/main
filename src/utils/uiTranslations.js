@@ -734,6 +734,11 @@ const EN_BY_UK = {
   '✓ — як у вашій анкеті. Побажання не відсіюють: «Вам підходить» рахує лише вимоги програми.': '✓ — same as in your profile. Preferences do not filter anyone out: “Suits you” counts only the program requirements.',
   'Тепер це «Місце програми» в самій програмі': 'This is now “Program location” in the program itself',
   'Записано раніше — тепер це вимоги програми': 'Recorded earlier — these are now program requirements',
+  // Побажання до того, кого батьки вже не шукають: картка їх не показує, а
+  // форма дає стерти.
+  'Ви зараз не шукаєте донорку, тож у картці цього не видно.': 'You are not looking for a donor right now, so the card does not show this.',
+  'Ви зараз не шукаєте сурогатну маму, тож у картці цього не видно.': 'You are not looking for a surrogate right now, so the card does not show this.',
+  'Стерти': 'Clear',
   'Побажання не відсіюють донорок — лише підказують, кого ви шукаєте. Вік, ІМТ, групу крові задайте у програмі: там донорка одразу бачить, чи підходить.': 'Preferences do not filter donors out — they only hint at whom you are looking for. Set age, BMI and blood group in the program: there a donor sees at once whether she fits.',
   'Наприклад: Олена й Андрій або «Пара з Києва»': 'For example: Olena and Andrii, or “A couple from Kyiv”',
   'Наприклад: ми разом девʼять років і мріємо про першу дитину': 'For example: we have been together for nine years and dream of our first child',

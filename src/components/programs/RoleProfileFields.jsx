@@ -9,7 +9,9 @@ import {
   PARENT_DONOR_WISH_FIELDS,
   isHigherEducationWish,
   isWishSelected,
+  listParentWishItems,
   listWishChoices,
+  resolveParentWishGroups,
   toggleWish,
 } from '../../utils/parentWishes';
 import { getOptionLabel } from '../formFields';
@@ -24,7 +26,9 @@ import { uiText } from '../../utils/uiTranslations';
  *
  * Текстові поля пишуться на blur, вибір — одразу: так само, як решта форми.
  * Батьки бачать лише ті побажання, які стосуються того, кого вони шукають:
- * «колір очей донорки» тим, хто шукає сурогатну маму, нічого не каже.
+ * «колір очей донорки» тим, хто шукає сурогатну маму, нічого не каже. Уже
+ * записане про іншого не губиться й не висить у картці: воно стоїть окремо,
+ * з кнопкою «Стерти» (`SET_ASIDE_WISHES`).
  */
 
 const Stack = styled.div`
@@ -121,6 +125,15 @@ const Choice = ({ options, value, onChange, language, multiple = false }) => (
   </Segments>
 );
 
+const SetAsideList = styled.p`
+  margin: 0;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--km-text, inherit);
+`;
+
 const Hint = styled.p`
   margin: 0;
   font-size: 12px;
@@ -144,6 +157,15 @@ const LEGACY_SURROGATE_PREFS = [
   { key: 'location', label: 'Де програма для СМ', placeholder: 'Наприклад: Україна або Грузія' },
 ];
 
+// Побажання до того, кого батьки вже не шукають: картка їх не показує
+// (`resolveParentWishGroups`), а форма — показує окремо, щоб їх було видно й
+// можна було стерти. Зміна «кого шукаєте» їх не стирає сама: один дотик повз
+// потрібний варіант коштував би всіх побажань.
+const SET_ASIDE_WISHES = [
+  { group: 'donor', title: 'Бажано у донорки', hint: 'Ви зараз не шукаєте донорку, тож у картці цього не видно.' },
+  { group: 'surrogate', title: 'Бажано у сурогатної мами', hint: 'Ви зараз не шукаєте сурогатну маму, тож у картці цього не видно.' },
+];
+
 /**
  * «Кого шукаєте» біологічних батьків.
  *
@@ -162,11 +184,20 @@ export const ParentProfileFields = ({ state, onCommit, language, showProgramLoca
   const via = String(state.parentVia || '');
   const prefs = state.parentPreferences && typeof state.parentPreferences === 'object' ? state.parentPreferences : {};
   const wantsDonor = seeking === 'ed' || seeking === 'both';
+  // Чиї побажання зараз показує картка — решта записаного стоїть нижче
+  // окремо (`SET_ASIDE_WISHES`).
+  const shownGroups = resolveParentWishGroups(seeking);
+  const donorWishItems = listParentWishItems(prefs, 'donor', language);
   const setPref = (group, key, value) => {
     const nextGroup = { ...(prefs[group] || {}), [key]: value };
     if (!value) delete nextGroup[key];
     const next = { ...prefs, [group]: nextGroup };
     if (!Object.keys(nextGroup).length) delete next[group];
+    onCommit('parentPreferences', Object.keys(next).length ? next : null);
+  };
+  const clearPrefsGroup = group => {
+    const next = { ...prefs };
+    delete next[group];
     onCommit('parentPreferences', Object.keys(next).length ? next : null);
   };
   const renderLegacy = (group, fields) => {
@@ -183,9 +214,16 @@ export const ParentProfileFields = ({ state, onCommit, language, showProgramLoca
       </Grid>
     );
   };
-  const legacyDonor = wantsDonor ? renderLegacy('donor', LEGACY_DONOR_PREFS) : null;
-  const legacySurrogate = renderLegacy('surrogate', LEGACY_SURROGATE_PREFS);
+  const legacyDonor = shownGroups.donor ? renderLegacy('donor', LEGACY_DONOR_PREFS) : null;
+  const legacySurrogate = shownGroups.surrogate ? renderLegacy('surrogate', LEGACY_SURROGATE_PREFS) : null;
   const donorPrefs = prefs.donor || {};
+  // «Кого шукаєте» ще не вибрано, а побажання до донорки вже записані — картка
+  // їх показує, тож і форма мусить дати їх правити.
+  const showDonorWishes = wantsDonor || (shownGroups.donor && donorWishItems.length > 0);
+  const setAside = SET_ASIDE_WISHES
+    .filter(({ group }) => !shownGroups[group])
+    .map(entry => ({ ...entry, items: listParentWishItems(prefs, entry.group, language) }))
+    .filter(entry => entry.items.length > 0);
 
   return (
     <Stack>
@@ -205,7 +243,7 @@ export const ParentProfileFields = ({ state, onCommit, language, showProgramLoca
           <Hint>{uiText('Тепер це «Місце програми» в самій програмі', language)}</Hint>
         </FieldLabel>
       ) : null}
-      {wantsDonor ? (
+      {showDonorWishes ? (
         <>
           <SubTitle>{uiText('Бажано у донорки', language)}</SubTitle>
           {PARENT_DONOR_WISH_FIELDS.map(field => (
@@ -257,6 +295,16 @@ export const ParentProfileFields = ({ state, onCommit, language, showProgramLoca
           {legacySurrogate}
         </>
       ) : null}
+      {setAside.map(entry => (
+        <FieldLabel as="div" key={entry.group} data-testid={`parent-set-aside-${entry.group}`}>
+          {uiText(entry.title, language)}
+          <Hint>{uiText(entry.hint, language)}</Hint>
+          <SetAsideList>{entry.items.map(item => (item.label ? `${item.label}: ${item.text}` : item.text)).join(' · ')}</SetAsideList>
+          <Segments>
+            <Segment type="button" onClick={() => clearPrefsGroup(entry.group)}>{uiText('Стерти', language)}</Segment>
+          </Segments>
+        </FieldLabel>
+      ))}
     </Stack>
   );
 };
