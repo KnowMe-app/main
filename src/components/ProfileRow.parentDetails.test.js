@@ -91,7 +91,7 @@ describe('анкета батьків у картці з кількома рол
   it('донорка, яка ще й батьки: розділи батьків — у «Детальніше»', () => {
     const user = { userId: 'EDIP1', role: ['ed', 'ip'], name: 'Оля', moreInfo_main: 'Про себе коротко.', ...parentFields };
     renderRow({ user, expanded: true, programsContext: { viewerType: 'sm', facts: {} } });
-    expect(screen.getByTestId('parent-seeking')).toHaveTextContent('Шукають донорку й сурогатну маму');
+    expect(screen.getByTestId('parent-seeking')).toHaveTextContent('Шукають донорку ооцитів та сурогатну маму');
     expect(within(screen.getByTestId('parent-via')).getByText('Через клініку')).toBeInTheDocument();
     expect(wishChip(screen.getByTestId('parent-donor-wishes'), 'Очі: карі')).toBeInTheDocument();
   });

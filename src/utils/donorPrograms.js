@@ -291,7 +291,39 @@ export const PROGRAM_REQUIREMENT_LABELS = Object.freeze({
   ownKids: 'Власні діти',
   births: 'Кількість пологів',
   csection: 'Кесарів розтин',
+  eyes: 'Колір очей',
+  hair: 'Колір волосся',
+  education: 'Вища освіта',
 });
+
+/**
+ * Побажання до зовнішності й освіти донорки — у самій програмі, поруч із
+ * вимогами (`requirements.eyeColors`, `hairColors` — значення довідників анкети
+ * донорки рядком через кому; `education: 'higher'`). Жили вони окремим
+ * блоком «Бажано у донорки» в анкеті батьків, тобто далеко від вимог, з якими
+ * їх і читають. **Це не вимога**: донорку вони не відсіюють і в «Вам
+ * підходить» не рахуються (`evaluateProgram` про них не знає), а картка лише
+ * ставить «✓ як у вас» (`utils/parentWishes`, `describeProgramWishes`). Лише
+ * донорській програмі.
+ */
+export const PROGRAM_WISH_FIELDS = Object.freeze(['eyeColors', 'hairColors', 'education']);
+const WISH_LIST_MAX_LENGTH = 200;
+
+const normalizeWishList = value => {
+  const seen = new Set();
+  const list = String(value ?? '').split(',').map(item => item.trim().slice(0, 40)).filter(item => {
+    const key = item.toLowerCase();
+    if (!item || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  let out = '';
+  list.forEach(item => {
+    const next = out ? `${out},${item}` : item;
+    if (next.length <= WISH_LIST_MAX_LENGTH) out = next;
+  });
+  return out;
+};
 
 export const PROGRAM_FAMILY_OPTIONS = Object.freeze([
   { key: '', label: 'Не вказано' },
@@ -334,12 +366,48 @@ export const AGENCY_SERVICE_OPTIONS = Object.freeze([
   { key: 'legal', label: 'Юридичний супровід' },
 ]);
 
-/** Кого шукають біологічні батьки. */
+/**
+ * Кого шукають біологічні батьки — **набір**, а не один вибір: батьки, які
+ * ще нічого не знають, шукають і донорку, і агенцію, яка допоможе, і
+ * клініку. Агенція чи клініка, побачивши в стрічці «Шукають агенцію», може
+ * сама написати їм з пропозицією.
+ *
+ * Записується одним рядком (`encodeSeekingRoles`): «Обох» тут був окремий
+ * варіант (`both`), і старі записи його несуть — читається він як донорка й
+ * СМ. Набір із самих донорки й СМ і далі пишеться старими словами (`ed`,
+ * `sm`, `both`): їх приймає й ще не викочене правило картки
+ * `matchingCards/…/seekingRole`, тож нове правило потрібне лише агенції й
+ * клініці в наборі.
+ */
 export const PARENT_SEEKING_OPTIONS = Object.freeze([
   { key: 'ed', label: 'Донорку ооцитів' },
   { key: 'sm', label: 'Сурогатну маму' },
-  { key: 'both', label: 'Обох' },
+  { key: 'ag', label: 'Агенцію' },
+  { key: 'cl', label: 'Клініку' },
 ]);
+
+const SEEKING_ORDER = PARENT_SEEKING_OPTIONS.map(option => option.key);
+
+/** Записане «кого шукають» — списком ключів у сталому порядку. */
+export const parseSeekingRoles = value => {
+  const raw = Array.isArray(value) ? value[value.length - 1] : value;
+  const tokens = String(raw ?? '').split(',').map(item => item.trim().toLowerCase()).filter(Boolean);
+  const keys = new Set(tokens.flatMap(token => (token === 'both' ? ['ed', 'sm'] : [token])));
+  return SEEKING_ORDER.filter(key => keys.has(key));
+};
+
+/** Список ключів — рядком для анкети й картки (порожній набір — порожній рядок). */
+export const encodeSeekingRoles = keys => {
+  const list = parseSeekingRoles(Array.isArray(keys) ? keys.join(',') : keys);
+  if (list.length === 2 && list[0] === 'ed' && list[1] === 'sm') return 'both';
+  return list.join(',');
+};
+
+/** Дотик до варіанта: обраний знімається, інший додається. */
+export const toggleSeekingRole = (value, key) => {
+  const list = parseSeekingRoles(value);
+  return encodeSeekingRoles(list.includes(key) ? list.filter(item => item !== key) : [...list, key]);
+};
 
 export const PARENT_VIA_OPTIONS = Object.freeze([
   { key: 'agency', label: 'Через агенцію' },
@@ -415,6 +483,13 @@ export const normalizeProgram = (raw, id) => {
   if (amhFrom !== null) requirements.amhFrom = amhFrom;
   const regionsExcluded = text(requirementsRaw.regionsExcluded, REGIONS_EXCLUDED_MAX_LENGTH);
   if (regionsExcluded) requirements.regionsExcluded = regionsExcluded;
+  if (type === 'ed') {
+    const eyeColors = normalizeWishList(requirementsRaw.eyeColors);
+    if (eyeColors) requirements.eyeColors = eyeColors;
+    const hairColors = normalizeWishList(requirementsRaw.hairColors);
+    if (hairColors) requirements.hairColors = hairColors;
+    if (requirementsRaw.education === 'higher') requirements.education = 'higher';
+  }
 
   const payments = {};
   [...PROGRAM_PAYMENT_FIELDS[type].map(field => field.key), PROGRAM_TOTAL_FIELD].forEach(key => {
@@ -603,7 +678,7 @@ export const isProgramPresentable = program => {
   if (!program) return false;
   const payments = program.payments || {};
   const req = program.requirements || {};
-  const hasRequirement = ['ageFrom', 'ageTo', 'bmiMax', 'heightFrom', 'maxBirths', 'amhFrom', 'bloodGroups', 'regionsExcluded'].some(key => req[key] !== undefined && req[key] !== null && req[key] !== '')
+  const hasRequirement = ['ageFrom', 'ageTo', 'bmiMax', 'heightFrom', 'maxBirths', 'amhFrom', 'bloodGroups', 'regionsExcluded', ...PROGRAM_WISH_FIELDS].some(key => req[key] !== undefined && req[key] !== null && req[key] !== '')
     || ['rh', 'marital', 'ownKids', 'csectionMax'].some(key => req[key] && req[key] !== 'any');
   return Object.keys(payments).length > 0
     || Boolean(program.otherPayments?.length)

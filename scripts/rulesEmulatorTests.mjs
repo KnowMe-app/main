@@ -198,6 +198,11 @@ await it('картка приймає версію програм і «кого 
   await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/programsBrief`), { p1: { type: 'ed', pay: 2500, currency: 'USD' } }));
   await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/serviceTags`), 'ed,sm'));
   await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'anyone'));
+  // Батьки шукають кількох — і агенцію чи клініку теж.
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'ed,ag,cl'));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'ag'));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'ed,anyone'));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'ed,sm,ag,cl,ed'));
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `matchingCards/${CARD}/programsAt`), null));
   await testEnv.withSecurityRulesDisabled(context =>
@@ -373,6 +378,21 @@ await it('приймає групу крові, АМГ, регіони й дов
   await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { amhFrom: '4' } })));
   await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { regionsExcluded: 'x'.repeat(121) } })));
   await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ note: 'x'.repeat(1001) })));
+  await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
+});
+
+// Побажання до донорки — тепер у програмі, а не блоком в анкеті батьків
+// (`PROGRAM_WISH_FIELDS`). Поки правил немає в проді, клієнт пише програму
+// без них (`stripProgramWishFields`).
+await it('приймає побажання до донорки в програмі, відкидає чуже', async () => {
+  const base = `multiData/programs/${PROFILE_OWNER}`;
+  const withProgram = program => ({ updatedAt: 1759200000000, items: { p9: { id: 'p9', type: 'ed', ...program } } });
+  await assertSucceeds(set(ref(db(PROFILE_OWNER), base), withProgram({
+    requirements: { eyeColors: 'Brown,Blue', hairColors: 'Blonde', education: 'higher' },
+  })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { education: 'yes' } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { eyeColors: '' } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { hairColors: 'x'.repeat(201) } })));
   await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
 });
 

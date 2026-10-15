@@ -121,6 +121,9 @@ describe('чиї побажання чинні', () => {
     expect(resolveParentWishGroups('sm')).toEqual({ donor: false, surrogate: true });
     expect(resolveParentWishGroups('both')).toEqual({ donor: true, surrogate: true });
     expect(resolveParentWishGroups('')).toEqual({ donor: true, surrogate: true });
+    // Агенція чи клініка в наборі побажань не ховає.
+    expect(resolveParentWishGroups('ed,ag')).toEqual({ donor: true, surrogate: false });
+    expect(resolveParentWishGroups('ag,cl')).toEqual({ donor: true, surrogate: true });
   });
 
   it('записане словами — для форми, без позначок збігу', () => {
@@ -129,5 +132,22 @@ describe('чиї побажання чинні', () => {
       .toEqual([['Волосся', 'темне'], ['', 'вища освіта'], ['Група крові', '1+']]);
     expect(listParentWishItems(prefs, 'surrogate', 'uk').map(item => item.text)).toEqual(['Грузія']);
     expect(listParentWishItems({}, 'donor', 'uk')).toEqual([]);
+  });
+});
+
+describe('побажання програми', () => {
+  const { describeProgramWishes } = require('../parentWishes');
+  const { evaluateProgram, normalizeProgram } = require('../donorPrograms');
+  const program = normalizeProgram({ type: 'ed', requirements: { ageTo: 30, eyeColors: 'Brown, Blue', education: 'higher' } }, 'p1');
+
+  it('лише позначають збіг і не відсіюють', () => {
+    const facts = { age: 25, eyeColor: 'Green', education: 'Higher' };
+    const wishes = describeProgramWishes(program, 'uk', facts);
+    expect(wishes.map(item => [item.key, item.ok])).toEqual([['eyes', undefined], ['education', true]]);
+    expect(evaluateProgram(program, facts).matches).toBe(true);
+  });
+
+  it('програма СМ побажань до донорки не несе', () => {
+    expect(normalizeProgram({ type: 'sm', requirements: { eyeColors: 'Brown' } }, 'p2').requirements.eyeColors).toBeUndefined();
   });
 });

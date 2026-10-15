@@ -40,6 +40,8 @@ import {
 } from '../../utils/donorPrograms';
 import { DEFAULT_PROGRAM_CURRENCY, formatProgramMoney } from '../../utils/programCurrency';
 import { uiText } from '../../utils/uiTranslations';
+import { PARENT_DONOR_WISH_FIELDS, isWishSelected, listWishChoices, toggleWish } from '../../utils/parentWishes';
+import { getOptionLabel } from '../formFields';
 import { AutoGrowTextarea } from '../AutoGrowTextarea';
 import { MoneyInput } from './MoneyInput';
 import { ProgramCurrencySwitch, ProgramPreview, describeProgramOffer, revealCss } from './ProgramsView';
@@ -227,7 +229,7 @@ const HeadText = styled.button`
   text-align: left;
   cursor: pointer;
 
-  > span:first-child { display: flex; align-items: baseline; gap: 6px; max-width: 100%; min-width: 0; }
+  > span:first-child { display: flex; align-items: baseline; gap: 10px; width: 100%; min-width: 0; }
   b { min-width: 0; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   em { font-style: normal; font-size: 13px; color: ${MUTED}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   > span:last-child { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; font-size: 13px; }
@@ -236,22 +238,27 @@ const HeadText = styled.button`
 `;
 
 const STATUS_TONES = Object.freeze({
-  ready: { color: 'var(--km-success, #247a43)', bg: 'color-mix(in srgb, var(--km-success, #2E9B55) 14%, transparent)' },
-  warn: { color: '#B7791F', bg: 'color-mix(in srgb, #B7791F 15%, transparent)' },
-  hidden: { color: MUTED, bg: 'color-mix(in srgb, currentColor 8%, transparent)' },
+  ready: 'var(--km-success, #2E9B55)',
+  warn: '#B7791F',
+  hidden: MUTED,
 });
 
+// Стан — дрібним рядком у правому верхньому куті, поруч із назвою, а не
+// плашкою під нею: це підпис, а не ще одна кнопка.
 const Status = styled.span`
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
+  flex: 0 0 auto;
+  margin-left: auto;
   font-size: 11.5px;
   font-weight: 700;
+  letter-spacing: 0.02em;
   white-space: nowrap;
-  color: ${({ $tone }) => STATUS_TONES[$tone].color};
-  background: ${({ $tone }) => STATUS_TONES[$tone].bg};
+  color: ${({ $tone }) => STATUS_TONES[$tone]};
+`;
+
+const Problem = styled.span`
+  font-size: 12px;
+  font-weight: 700;
+  color: #B7791F;
 `;
 
 // Стрілка заголовка розділу (`CollapsibleSection`) — там вона частина кнопки.
@@ -930,19 +937,32 @@ export const listProgramIssues = program => {
 };
 
 /**
- * Стан програми одним словом — і чому. «Готова до показу» означає саме
- * це: у програмі є що показати, головна сума, нічого не загубиться при
- * записі — і анкету агенції опубліковано. Без публікації програму не
- * побачить ніхто, хоч би якою повною вона була.
+ * Стан програми — одне слово про те, чи її видно, і стоїть він у правому
+ * верхньому куті шапки. Станів чотири, і вони взаємовиключні: «Прихована»
+ * (агенція сховала саму програму), «Чернетка» (показати ще нічого),
+ * «Не опублікована» (програма готова, але анкету не опубліковано — тож не
+ * бачить ніхто) і «Опублікована». Тут стояли поруч три різні мітки —
+ * «Прихована», «Готова — анкету ще не опубліковано» і «Збережено» в рядку
+ * вкладок, — і читались вони як три стани однієї речі.
+ *
+ * Що в програмі не так («Додайте виплату», «Є що виправити») — не стан
+ * видимості, а підказка; її повертає `programProblem` і показує рядок під
+ * назвою.
  */
 export const programStatus = (program, { profilePublished } = {}) => {
   const normalized = normalizeProgram(program, program.id);
   if (program.hidden) return { tone: 'hidden', label: 'Прихована' };
-  if (!normalized || !isProgramPresentable(normalized)) return { tone: 'warn', label: 'Чернетка — у стрічці не видно' };
-  if (!(programBreakdown(normalized).guaranteed.amount > 0)) return { tone: 'warn', label: 'Додайте виплату' };
-  if (listProgramIssues(program).length) return { tone: 'warn', label: 'Є що виправити' };
-  if (profilePublished === false) return { tone: 'warn', label: 'Готова — анкету ще не опубліковано' };
-  return { tone: 'ready', label: 'Готова до показу' };
+  if (!normalized || !isProgramPresentable(normalized)) return { tone: 'hidden', label: 'Чернетка' };
+  if (profilePublished === false) return { tone: 'warn', label: 'Не опублікована' };
+  return { tone: 'ready', label: 'Опублікована' };
+};
+
+export const programProblem = program => {
+  const normalized = normalizeProgram(program, program.id);
+  if (!normalized || !isProgramPresentable(normalized)) return '';
+  if (!(programBreakdown(normalized).guaranteed.amount > 0)) return 'Додайте виплату';
+  if (listProgramIssues(program).length) return 'Є що виправити';
+  return '';
 };
 
 // Щомісячну агенції СМ платять майже всі, тож нова програма СМ відкривається
@@ -1018,6 +1038,12 @@ const REQUIREMENT_DEFS = Object.freeze([
   { key: 'births', kind: 'number', field: 'maxBirths', label: 'Пологів, не більше' },
   { key: 'csection', kind: 'select', field: 'csectionMax', label: 'Кесарів розтин', options: PROGRAM_CSECTION_OPTIONS },
   { key: 'marital', kind: 'select', field: 'marital', label: 'Сімейний стан', options: PROGRAM_MARITAL_OPTIONS },
+  // Побажання до донорки — не вимога: не відсіюють і в «підходить» не
+  // рахуються, картка лише ставить «✓ як у вас» (`PROGRAM_WISH_FIELDS`). Жили
+  // вони блоком «Бажано у донорки» в анкеті батьків, далеко від вимог.
+  { key: 'eyes', kind: 'wish', field: 'eyeColors', label: 'Колір очей · бажано', wish: PARENT_DONOR_WISH_FIELDS[0], types: ['ed'] },
+  { key: 'hair', kind: 'wish', field: 'hairColors', label: 'Колір волосся · бажано', wish: PARENT_DONOR_WISH_FIELDS[1], types: ['ed'] },
+  { key: 'education', kind: 'higher', field: 'education', label: 'Вища освіта · бажано', types: ['ed'] },
 ]);
 
 const requirementDefsFor = type => REQUIREMENT_DEFS.filter(def => !def.types || def.types.includes(type === 'sm' ? 'sm' : 'ed'));
@@ -1702,6 +1728,19 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
                   return <Pill key={option.key} type="button" $on={on} aria-pressed={on} onClick={() => toggleGroup(option.key)}>{on ? '✓ ' : ''}{option.label}</Pill>;
                 })}
               </Segments>
+            ) : def.kind === 'wish' ? (
+              <Segments id={inputId} role="group" aria-label={label}>
+                {listWishChoices(program.requirements?.[def.field], def.wish).map(option => {
+                  const on = isWishSelected(program.requirements?.[def.field], def.wish, option);
+                  return (
+                    <Pill key={option.placeholder} type="button" $on={on} aria-pressed={on} onClick={() => setReq({ [def.field]: toggleWish(program.requirements?.[def.field], def.wish, option) })}>
+                      {on ? '✓ ' : ''}{option.recorded ? option.placeholder : getOptionLabel(option, language)}
+                    </Pill>
+                  );
+                })}
+              </Segments>
+            ) : def.kind === 'higher' ? (
+              <Readout id={inputId}>{uiText('Бажано з вищою освітою', language)}</Readout>
             ) : def.kind === 'text' ? (
               <TextInput
                 id={inputId}
@@ -1729,6 +1768,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         {error ? <FieldError role="alert">{uiText(error.text, language, error.vars)}</FieldError> : null}
         {def.kind === 'groups' && !selectedGroups.length ? <Readout>{uiText('Нічого не відмічено — підходить будь-яка', language)}</Readout> : null}
         {def.kind === 'text' && regionHint ? <Readout>{regionHint}</Readout> : null}
+        {def.kind === 'wish' ? <Readout>{uiText('Не відсіює: донорка з іншим кольором теж бачить «підходить», а збіг позначено «✓»', language)}</Readout> : null}
       </ReqRow>
     );
   };
@@ -1868,7 +1908,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         {customRequirements.map(customRequirementRow)}
         <Segments>
           {requirementDefs.filter(def => !requirementFilled(program, def) && !revealed.has(`req:${def.key}`)).map(def => (
-            <AddChip key={def.key} type="button" onClick={() => { reveal(`req:${def.key}`); focusSoon(`${idPrefix}-req-${def.key}`); }}>+ {uiText(PROGRAM_REQUIREMENT_LABELS[def.key], language)}</AddChip>
+            <AddChip key={def.key} type="button" onClick={() => { reveal(`req:${def.key}`); if (def.kind === 'higher') setReq({ education: 'higher' }); focusSoon(`${idPrefix}-req-${def.key}`); }}>+ {uiText(PROGRAM_REQUIREMENT_LABELS[def.key], language)}</AddChip>
           ))}
           {/* Порожня своя вимога стоїть одна: наступна додається, коли цю заповнено. */}
           {customRequirements.length < MAX_CUSTOM_REQUIREMENTS && !customRequirements.some(item => !String(item.text || '').trim()) ? (
@@ -2048,12 +2088,12 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
 
   return (
     <Body>
-      <Toolbar ref={tabsRef} $empty={!saveState}>
+      <Toolbar ref={tabsRef} $empty={!SAVE_LABELS[saveState]}>
         <ModeTabs role="tablist" aria-label={uiText('Режим', language)}>
           <button type="button" role="tab" aria-selected={mode === 'edit'} onClick={() => switchMode('edit')}>{uiText('Редагування', language)}</button>
           <button type="button" role="tab" aria-selected={mode === 'preview'} onClick={() => switchMode('preview')}>{uiText('Перегляд', language)}</button>
         </ModeTabs>
-        {saveState ? <SaveState $state={saveState} role="status">{uiText(SAVE_LABELS[saveState], language)}</SaveState> : <span />}
+        {SAVE_LABELS[saveState] ? <SaveState $state={saveState} role="status">{uiText(SAVE_LABELS[saveState], language)}</SaveState> : <span />}
       </Toolbar>
 
       <FormColumn $hiddenOnMobile={mode !== 'edit'}>
@@ -2108,9 +2148,11 @@ const nextProgramId = existing => {
 
 const listEditablePrograms = programs => listPrograms(programs, { includeHidden: true }).map(program => ({ ...program }));
 
+// Автозбереження каже про себе лише тоді, коли щось пішло не так. «Збережено»
+// після кожного дотику було третьою міткою поруч зі станом програми й нічого
+// не означало: записує кожна правка, а успіх — звичайний випадок. Відмова й
+// частковий запис — інша річ: набране лишилось лише в цьому браузері.
 const SAVE_LABELS = Object.freeze({
-  saving: 'Зберігаємо…',
-  saved: 'Збережено',
   partial: 'Збережено частково — нові поля поки лише в цьому браузері',
   failed: 'Поки лише в цьому браузері',
 });
@@ -2242,7 +2284,7 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
   return (
     <Wrap>
       {/* Стан запису стоїть у рядку вкладок відкритої програми; без відкритої — тут. */}
-      {saveState && !openId ? (
+      {SAVE_LABELS[saveState] && !openId ? (
         <SaveState $state={saveState} role="status">{uiText(SAVE_LABELS[saveState], language)}</SaveState>
       ) : null}
       {!draft.length ? (
@@ -2254,6 +2296,7 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
       {draft.map((program, index) => {
         const open = openId === program.id;
         const status = programStatus(program, { profilePublished });
+        const problem = programProblem(program);
         const pay = headPay(program);
         return (
           <ProgramBox key={program.id} data-testid="program-editor" data-program-box={program.id} $hidden={program.hidden}>
@@ -2261,11 +2304,14 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
               <HeadText type="button" aria-expanded={open} onClick={() => { flush(); if (open) setOpenId(''); else openProgram(program.id); }}>
                 <span>
                   <b>{uiText(PROGRAM_OFFER_LABELS[program.type], language)}</b>
+                  <Status $tone={status.tone} data-testid="program-status">{uiText(status.label, language)}</Status>
                 </span>
-                <span>
-                  {program.location || pay ? <em>{formatProgramPlace(program.location)}{program.location && pay ? ' · ' : ''}{pay ? <strong>{pay}</strong> : null}</em> : null}
-                  <Status $tone={status.tone}>{uiText(status.label, language)}</Status>
-                </span>
+                {program.location || pay || problem ? (
+                  <span>
+                    {program.location || pay ? <em>{formatProgramPlace(program.location)}{program.location && pay ? ' · ' : ''}{pay ? <strong>{pay}</strong> : null}</em> : null}
+                    {problem ? <Problem>{uiText(problem, language)}</Problem> : null}
+                  </span>
+                ) : null}
               </HeadText>
               {confirmDeleteId === program.id ? null : (
                 <ProgramActionsMenu label={uiText('Дії програми', language)}>

@@ -3,18 +3,13 @@ import styled from 'styled-components';
 import {
   PARENT_SEEKING_OPTIONS,
   PARENT_VIA_OPTIONS,
+  parseSeekingRoles,
+  toggleSeekingRole,
 } from '../../utils/donorPrograms';
 import {
-  HIGHER_EDUCATION_WISH,
-  PARENT_DONOR_WISH_FIELDS,
-  isHigherEducationWish,
-  isWishSelected,
   listParentWishItems,
-  listWishChoices,
   resolveParentWishGroups,
-  toggleWish,
 } from '../../utils/parentWishes';
-import { getOptionLabel } from '../formFields';
 import { uiText } from '../../utils/uiTranslations';
 
 /*
@@ -181,9 +176,10 @@ const SET_ASIDE_WISHES = [
  */
 export const ParentProfileFields = ({ state, onCommit, language, showProgramLocation = false }) => {
   const seeking = String(state.seeking || '');
+  const seekingKeys = parseSeekingRoles(seeking);
   const via = String(state.parentVia || '');
   const prefs = state.parentPreferences && typeof state.parentPreferences === 'object' ? state.parentPreferences : {};
-  const wantsDonor = seeking === 'ed' || seeking === 'both';
+  const wantsDonor = seekingKeys.includes('ed');
   // Чиї побажання зараз показує картка — решта записаного стоїть нижче
   // окремо (`SET_ASIDE_WISHES`).
   const shownGroups = resolveParentWishGroups(seeking);
@@ -216,7 +212,6 @@ export const ParentProfileFields = ({ state, onCommit, language, showProgramLoca
   };
   const legacyDonor = shownGroups.donor ? renderLegacy('donor', LEGACY_DONOR_PREFS) : null;
   const legacySurrogate = shownGroups.surrogate ? renderLegacy('surrogate', LEGACY_SURROGATE_PREFS) : null;
-  const donorPrefs = prefs.donor || {};
   // «Кого шукаєте» ще не вибрано, а побажання до донорки вже записані — картка
   // їх показує, тож і форма мусить дати їх правити.
   const showDonorWishes = wantsDonor || (shownGroups.donor && donorWishItems.length > 0);
@@ -229,7 +224,16 @@ export const ParentProfileFields = ({ state, onCommit, language, showProgramLoca
     <Stack>
       <FieldLabel as="div">
         {uiText('Кого шукаєте', language)}
-        <Choice language={language} options={PARENT_SEEKING_OPTIONS} value={seeking} onChange={key => onCommit('seeking', key)} />
+        {/* Кількох одразу: батьки, які ще нічого не знають, шукають і
+            донорку, і агенцію чи клініку, що допоможе. */}
+        <Choice
+          language={language}
+          multiple
+          options={PARENT_SEEKING_OPTIONS}
+          value={seekingKeys}
+          onChange={key => onCommit('seeking', toggleSeekingRole(seeking, key) || null)}
+        />
+        <Hint>{uiText('Можна кількох. Агенції й клініки побачать це у вашій картці й зможуть написати вам самі.', language)}</Hint>
       </FieldLabel>
       {/* Необовʼязкове: повторний дотик знімає вибір. */}
       <FieldLabel as="div">
@@ -243,50 +247,19 @@ export const ParentProfileFields = ({ state, onCommit, language, showProgramLoca
           <Hint>{uiText('Тепер це «Місце програми» в самій програмі', language)}</Hint>
         </FieldLabel>
       ) : null}
-      {showDonorWishes ? (
-        <>
-          <SubTitle>{uiText('Бажано у донорки', language)}</SubTitle>
-          {PARENT_DONOR_WISH_FIELDS.map(field => (
-            <FieldLabel as="div" key={field.key} data-testid={`parent-wish-${field.key}`}>
-              {uiText(field.label, language)}
-              <Segments>
-                {listWishChoices(donorPrefs[field.key], field).map(option => {
-                  const on = isWishSelected(donorPrefs[field.key], field, option);
-                  return (
-                    <Segment
-                      key={option.placeholder}
-                      type="button"
-                      $on={on}
-                      aria-pressed={on}
-                      onClick={() => setPref('donor', field.key, toggleWish(donorPrefs[field.key], field, option))}
-                    >
-                      {option.recorded ? option.placeholder : getOptionLabel(option, language)}
-                    </Segment>
-                  );
-                })}
-              </Segments>
-            </FieldLabel>
-          ))}
-          <FieldLabel as="div" data-testid="parent-wish-education">
-            {uiText('Освіта', language)}
-            <Segments>
-              {(() => {
-                const on = isHigherEducationWish(donorPrefs.education);
-                return (
-                  <Segment
-                    type="button"
-                    $on={on}
-                    aria-pressed={on}
-                    onClick={() => setPref('donor', 'education', on ? '' : HIGHER_EDUCATION_WISH)}
-                  >
-                    {uiText('Вища освіта', language)}
-                  </Segment>
-                );
-              })()}
-            </Segments>
-          </FieldLabel>
-          <Hint>{uiText('Побажання не відсіюють донорок — лише підказують, кого ви шукаєте. Вік, ІМТ, групу крові задайте у програмі: там донорка одразу бачить, чи підходить.', language)}</Hint>
-        </>
+      {/* Побажання до донорки задаються в програмі («Вимоги до кандидатки» →
+          колір очей, волосся, вища освіта — `PROGRAM_WISH_FIELDS`): окремим
+          блоком в анкеті вони стояли далеко від вимог, з якими їх читають.
+          Записане тут картка ще показує — тож його видно й можна стерти. */}
+      {showDonorWishes && donorWishItems.length ? (
+        <FieldLabel as="div" data-testid="parent-donor-wishes-moved">
+          {uiText('Бажано у донорки', language)}
+          <Hint>{uiText('Тепер це задається в програмі: «Вимоги до кандидатки» → колір очей, колір волосся, вища освіта.', language)}</Hint>
+          <SetAsideList>{donorWishItems.map(item => (item.label ? `${item.label}: ${item.text}` : item.text)).join(' · ')}</SetAsideList>
+          <Segments>
+            <Segment type="button" onClick={() => clearPrefsGroup('donor')}>{uiText('Стерти', language)}</Segment>
+          </Segments>
+        </FieldLabel>
       ) : null}
       {legacyDonor || legacySurrogate ? (
         <>

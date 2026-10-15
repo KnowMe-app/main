@@ -8,7 +8,7 @@ import {
   normalizeFeedDateValue,
   resolveMatchingCardAvatarFromProfile,
 } from './profileFieldDerive';
-import { PARENT_SEEKING_OPTIONS, isProgramsOwnerRoleHidden } from './donorPrograms';
+import { encodeSeekingRoles, isProgramsOwnerRoleHidden } from './donorPrograms';
 import { listProfileRoles } from './matchingPeerVisibility';
 
 /**
@@ -122,8 +122,6 @@ export const MATCHING_CARD_PROGRAMS_AT_FIELD = 'programsAt';
 /** Поля картки, під які правила бази викочуються руками. */
 export const MATCHING_CARD_PROGRAM_FIELDS = Object.freeze([MATCHING_CARD_PROGRAMS_AT_FIELD, 'seekingRole', 'agencyName', 'blood']);
 
-const SEEKING_KEYS = new Set(PARENT_SEEKING_OPTIONS.map(option => option.key));
-
 /**
  * Ролі, які людина сховала (`hiddenRoles`, рядок кодів через кому — масив у
  * полі анкети читався б як історія версій). Донорка, яка ще й підбирає
@@ -134,10 +132,16 @@ export const parseHiddenRoles = value => [...new Set(String(Array.isArray(value)
   .map(item => item.trim().toLowerCase())
   .filter(Boolean))];
 
-export const normalizeSeekingRole = value => {
-  const key = String(value ?? '').trim();
-  return SEEKING_KEYS.has(key) ? key : '';
-};
+export const normalizeSeekingRole = value => encodeSeekingRoles(value);
+
+/**
+ * «Кого шукають» словами, які приймає ще не викочене правило картки (`ed`,
+ * `sm`, `both`): агенцію й клініку з набору знято. Цим значенням картка
+ * пишеться ще раз, коли база відкинула набір з агенцією чи клінікою.
+ */
+export const legacySeekingRole = value => encodeSeekingRoles(
+  String(normalizeSeekingRole(value)).split(',').filter(key => key === 'ed' || key === 'sm' || key === 'both'),
+);
 
 const trimmed = value => {
   if (value === null || value === undefined) return '';

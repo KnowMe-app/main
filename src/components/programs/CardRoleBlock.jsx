@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import styled from 'styled-components';
-import { PROGRAMS_OWNER_ROLES, resolveCardPrograms } from '../../utils/donorPrograms';
+import { PROGRAMS_OWNER_ROLES, parseSeekingRoles, resolveCardPrograms } from '../../utils/donorPrograms';
 import { listProfileRoles } from '../../utils/matchingPeerVisibility';
 import { getRoleLabel } from '../profileLayoutConfig';
 import { ensureCardPrograms, readCardProgramsAt, useProgramsVersion } from '../../utils/programsStore';
@@ -81,11 +81,20 @@ export const useCardPrograms = (card, enabled = true) => {
 };
 
 // Кого шукають — знахідним відмінком, як читається рядок «Шукають: …».
+// Батьки обирають кількох (`parseSeekingRoles`), тож рядок складається з
+// частин: «донорку ооцитів, агенцію та клініку».
 const SEEKING_PHRASES = Object.freeze({
   ed: 'донорку ооцитів',
   sm: 'сурогатну маму',
-  both: 'донорку й сурогатну маму',
+  ag: 'агенцію',
+  cl: 'клініку',
 });
+
+export const describeSeekingRoles = (value, language) => {
+  const parts = parseSeekingRoles(value).map(key => uiText(SEEKING_PHRASES[key], language));
+  if (parts.length < 2) return parts[0] || '';
+  return `${parts.slice(0, -1).join(', ')} ${uiText('та', language)} ${parts[parts.length - 1]}`;
+};
 
 const pickText = value => {
   const raw = Array.isArray(value) ? value[value.length - 1] : value;
@@ -101,13 +110,13 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
   // самий перелік власників, що й у фільтра та дочитування стрічки.
   const ownsPrograms = roles.some(role => PROGRAMS_OWNER_ROLES.includes(role));
   const { programs } = useCardPrograms(card, ownsPrograms && showPrograms);
-  const seeking = pickText(card?.seeking);
+  const seekingText = describeSeekingRoles(card?.seeking, language);
   // Рядок батьків до розгортання — лише «кого шукають»: це поле є в картці
   // стрічки (`seekingRole`), тож рядок не міняється, коли дочитується анкета.
   // Як шукають і де програма — у «Більше про біологічних батьків»
   // (`buildParentDetailSections`): тут вони зʼявлялись аж після дочитування,
   // і рядок підстрибував під пальцем.
-  const hasParentContent = isParent && Boolean(SEEKING_PHRASES[seeking]);
+  const hasParentContent = isParent && Boolean(seekingText);
   // Назва агенції чи клініки окремо від імені людини (`agencyName`): у
   // картці з двома ролями імʼя в шапці — людини, а організація називає себе
   // тут, над своїми програмами.
@@ -131,7 +140,7 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
       ) : null}
       {hasParentContent ? (
         <Line data-testid="parent-seeking">
-          <b>{uiText('Шукають', language)}</b> {uiText(SEEKING_PHRASES[seeking], language)}
+          <b>{uiText('Шукають', language)}</b> {seekingText}
         </Line>
       ) : null}
       {showPrograms && ownsPrograms && programs.length && programsContext ? (

@@ -1,5 +1,5 @@
 import { eyeColorOptions, getOptionLabel, hairColorOptions } from '../components/formFields';
-import { PARENT_VIA_OPTIONS } from './donorPrograms';
+import { PARENT_VIA_OPTIONS, parseSeekingRoles } from './donorPrograms';
 import { uiText } from './uiTranslations';
 
 /*
@@ -139,8 +139,13 @@ const isHigherEducation = value => HIGHER_EDUCATION_VALUES.has(norm(pickText(val
  * (`ParentProfileFields`). Невідоме «кого» не ховає нічого.
  */
 export const resolveParentWishGroups = seeking => {
-  const key = pickText(seeking);
-  return { donor: key !== 'sm', surrogate: key !== 'ed' };
+  // Агенція чи клініка в наборі побажань не ховає: вони про те, хто
+  // допоможе, а не про те, якою має бути донорка чи СМ.
+  const keys = parseSeekingRoles(seeking);
+  const wantsDonor = keys.includes('ed');
+  const wantsSurrogate = keys.includes('sm');
+  if (!wantsDonor && !wantsSurrogate) return { donor: true, surrogate: true };
+  return { donor: wantsDonor, surrogate: wantsSurrogate };
 };
 
 const readPrefsGroup = (prefs, group) => (prefs?.[group] && typeof prefs[group] === 'object' ? prefs[group] : {});
@@ -177,6 +182,38 @@ const describeSurrogateWishItems = (surrogate, language) => {
   const items = [];
   if (pickText(surrogate.ageTo)) items.push({ key: 'ageTo', text: uiText('вік до {value}', language, { value: pickText(surrogate.ageTo) }), match: false });
   if (pickText(surrogate.location)) items.push({ key: 'location', text: pickText(surrogate.location), match: false });
+  return items;
+};
+
+/**
+ * Побажання програми (`requirements.eyeColors`, `hairColors`, `education` —
+ * `PROGRAM_WISH_FIELDS`) — чіпами поруч із вимогами. `ok: true` — «✓ як у
+ * вас» (лише донорці, `facts` її анкети); «ні» тут не кажемо ніколи, як і в
+ * побажаннях батьків: це підказка, а не відмова.
+ */
+export const PROGRAM_WISH_DEFS = Object.freeze([
+  { key: 'eyes', field: 'eyeColors', wish: PARENT_DONOR_WISH_FIELDS[0], text: 'бажано: очі {value}' },
+  { key: 'hair', field: 'hairColors', wish: PARENT_DONOR_WISH_FIELDS[1], text: 'бажано: волосся {value}' },
+]);
+
+export const describeProgramWishes = (program, language, facts = null) => {
+  const req = program?.requirements || {};
+  const items = [];
+  PROGRAM_WISH_DEFS.forEach(def => {
+    if (!parseWishList(req[def.field]).length) return;
+    items.push({
+      key: def.key,
+      text: uiText(def.text, language, { value: describeWishTokens(req[def.field], def.wish, language) }),
+      ok: facts && matchesViewer(req[def.field], def.wish, facts[def.wish.key]) ? true : undefined,
+    });
+  });
+  if (req.education === 'higher') {
+    items.push({
+      key: 'education',
+      text: uiText('бажано: вища освіта', language),
+      ok: facts && isHigherEducation(facts.education) ? true : undefined,
+    });
+  }
   return items;
 };
 

@@ -22,7 +22,7 @@ describe('редактор програм', () => {
     // Шапка називає, кого шукають, а не роль людини.
     expect(screen.getAllByText('Шукаємо донора ооцитів')).toHaveLength(1);
     expect(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ })).toHaveTextContent('Київ · 2 500 $');
-    expect(screen.getByText('Готова до показу')).toBeInTheDocument();
+    expect(screen.getByTestId('program-status')).toHaveTextContent('Опублікована');
   });
 
   it('ховає другорядні команди в меню дій', () => {
@@ -81,7 +81,7 @@ describe('редактор програм', () => {
 
   it('порожню програму називає чернеткою, якої в стрічці не видно', () => {
     render(<ProgramsEditor programs={{ p9: { id: 'p9', type: 'ed' } }} onSave={jest.fn()} language="uk" />);
-    expect(screen.getByText('Чернетка — у стрічці не видно')).toBeInTheDocument();
+    expect(screen.getByTestId('program-status')).toHaveTextContent('Чернетка');
   });
 
   it('загальну суму не питає, а рахує — зі щомісячними × місяці', () => {
@@ -407,9 +407,28 @@ describe('редактор програм', () => {
     expect(screen.getByRole('button', { name: 'Проїзд' })).toBeInTheDocument();
   });
 
-  it('«Готова до показу» — лише коли анкету агенції опубліковано', () => {
+  it('«Опублікована» — лише коли анкету агенції опубліковано', () => {
     render(<ProgramsEditor programs={program} onSave={jest.fn()} language="uk" profilePublished={false} />);
-    expect(screen.getByText('Готова — анкету ще не опубліковано')).toBeInTheDocument();
+    expect(screen.getByTestId('program-status')).toHaveTextContent('Не опублікована');
+  });
+
+  it('стан програми один: прихована не каже ще й «не опублікована»', () => {
+    render(<ProgramsEditor programs={{ p1: { ...program.p1, hidden: true } }} onSave={jest.fn()} language="uk" profilePublished={false} />);
+    expect(screen.getAllByTestId('program-status')).toHaveLength(1);
+    expect(screen.getByTestId('program-status')).toHaveTextContent('Прихована');
+  });
+
+  it('успішний запис не підписує «Збережено» — лише відмову', async () => {
+    const { act } = require('@testing-library/react');
+    jest.useFakeTimers();
+    const onSave = jest.fn(() => Promise.resolve(true));
+    render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
+    fireEvent.change(screen.getByDisplayValue('Київ'), { target: { value: 'Львів' } });
+    await act(async () => { jest.runOnlyPendingTimers(); });
+    jest.useRealTimers();
+    expect(onSave).toHaveBeenCalled();
+    expect(screen.queryByText('Збережено')).not.toBeInTheDocument();
   });
 
   it('вкладки «Редагування» й «Перегляд» тримають кожна свою прокрутку', () => {
@@ -563,5 +582,30 @@ describe('редактор програм', () => {
     expect(note).toHaveValue('x'.repeat(1100));
     expect(screen.getByText('1100 / 1000')).toBeInTheDocument();
     expect(screen.getByText('Коментар довший за 1000 знаків — кінець не збережеться')).toBeInTheDocument();
+  });
+});
+
+describe('побажання до донорки в програмі', () => {
+  it('колір очей обирають чіпами в «Вимогах»; лише донорській програмі', () => {
+    jest.useFakeTimers();
+    const onSave = jest.fn();
+    render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Вимоги до кандидатки/ }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Колір очей' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Карі' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Вища освіта' }));
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+    expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({
+      p1: expect.objectContaining({ requirements: expect.objectContaining({ eyeColors: 'Brown', education: 'higher' }) }),
+    }));
+  });
+
+  it('програмі СМ побажань до донорки не пропонує', () => {
+    render(<ProgramsEditor programs={{ p2: { id: 'p2', type: 'sm', location: 'Київ' } }} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо сурогатну маму/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Вимоги до кандидатки/ }));
+    expect(screen.queryByRole('button', { name: '+ Колір очей' })).not.toBeInTheDocument();
   });
 });

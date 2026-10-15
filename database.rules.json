@@ -151,7 +151,7 @@
           }
         },
         "seekingRole": {
-          ".validate": "newData.val() == 'ed' || newData.val() == 'sm' || newData.val() == 'both'"
+          ".validate": "newData.isString() && (newData.val() == 'ed' || newData.val() == 'sm' || newData.val() == 'both' || (newData.val().length <= 11 && newData.val().matches(/^(ed|sm|ag|cl)(,(ed|sm|ag|cl))*$/)))"
         },
         "$other": {
           ".validate": false
@@ -493,6 +493,15 @@
                 },
                 "regionsExcluded": {
                   ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
+                },
+                "eyeColors": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200"
+                },
+                "hairColors": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200"
+                },
+                "education": {
+                  ".validate": "newData.val() == 'higher'"
                 },
                 "$other": {
                   ".validate": false

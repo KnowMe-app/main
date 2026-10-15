@@ -47,6 +47,7 @@ import {
   projectCycleStart,
 } from '../../utils/programTimeline';
 import { formatDate } from '../inputValidations';
+import { describeProgramWishes } from '../../utils/parentWishes';
 import { uiText } from '../../utils/uiTranslations';
 import { revealCss } from '../../styles/revealAnimation';
 import Collapsible, { COLLAPSE_DURATION_MS } from '../Collapsible';
@@ -379,6 +380,14 @@ export const programHeading = (program, language) => uiText(PROGRAM_OFFER_LABELS
 const requirementText = (item, language) => uiText(item.text, language, item.variables && item.variables.label
   ? { ...item.variables, label: uiText(item.variables.label, language) }
   : item.variables);
+
+// Побажання — чіп поруч із вимогами, але без «✕»: за ним не відмовляють.
+const WishChip = ({ item }) => (
+  <Chip $ok={item.ok} data-testid={`program-wish-${item.key}`}>
+    {item.ok ? <b aria-hidden="true">✓</b> : null}
+    {item.text}
+  </Chip>
+);
 
 const highlightText = (item, language) => {
   if (item.variables?.label) return uiText(item.text, language, { ...item.variables, label: uiText(item.variables.label, language).toLowerCase() });
@@ -829,6 +838,7 @@ export const ProgramCard = ({
   const checkByKey = new Map((result?.checks || []).map(check => [check.key, check.ok]));
   const { main, guaranteedBonuses, additional, total } = programBreakdown(program, { selectedBonusKeys: selectedBonuses, rates });
   const requirements = describeProgramRequirements(program);
+  const wishes = describeProgramWishes(program, language, facts);
   const unknown = requirements.filter(item => checkByKey.get(item.key) === null).map(item => REQUIREMENT_FIX_HINTS[item.key]);
   const coverage = describeProgramCoverage(program);
   const relocation = program.relocation || null;
@@ -900,7 +910,7 @@ export const ProgramCard = ({
         </Section>
       ) : null}
 
-      {requirements.length ? (
+      {requirements.length || wishes.length ? (
         <Section>
           <SectionTitle>{uiText('Вимоги', language)}</SectionTitle>
           {verdictText ? <Verdict $state={state}>{uiText(verdictText, language)}</Verdict> : null}
@@ -914,6 +924,7 @@ export const ProgramCard = ({
                 </Chip>
               );
             })}
+            {wishes.map(item => <WishChip key={`wish-${item.key}`} item={item} />)}
           </Chips>
           {unknown.length ? <Hint>{[...new Set(unknown)].map(hint => uiText(hint, language)).join(' · ')}</Hint> : null}
         </Section>
@@ -1281,6 +1292,7 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
     return items.map(item => ({ ...item, differs: Boolean(differs?.has(item.key)) }));
   }, [differs, program]);
   const requirements = describeProgramRequirements(program);
+  const wishes = describeProgramWishes(program, language, facts);
   const checkByKey = new Map((result?.checks || []).map(check => [check.key, check.ok]));
   const bodyId = `program-body-${program.id}`;
   const offerLabel = programHeading(program, language);
@@ -1346,7 +1358,7 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
       </ProgramHead>
 
       <Collapsible open={!open}>
-        {requirements.length ? (
+        {requirements.length || wishes.length ? (
           <CollapsedRequirements aria-label={uiText('Вимоги', language)} data-testid="program-requirements">
             {requirements.map(item => {
               const ok = checkByKey.has(item.key) ? checkByKey.get(item.key) : undefined;
@@ -1357,6 +1369,7 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
                 </Chip>
               );
             })}
+            {wishes.map(item => <WishChip key={`wish-${item.key}`} item={item} />)}
           </CollapsedRequirements>
         ) : null}
         {highlights.length ? (
