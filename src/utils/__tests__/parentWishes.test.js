@@ -121,6 +121,9 @@ describe('чиї побажання чинні', () => {
     expect(resolveParentWishGroups('sm')).toEqual({ donor: false, surrogate: true });
     expect(resolveParentWishGroups('both')).toEqual({ donor: true, surrogate: true });
     expect(resolveParentWishGroups('')).toEqual({ donor: true, surrogate: true });
+    // Агенція чи клініка в наборі побажань не ховає.
+    expect(resolveParentWishGroups('ed,ag')).toEqual({ donor: true, surrogate: false });
+    expect(resolveParentWishGroups('ag,cl')).toEqual({ donor: true, surrogate: true });
   });
 
   it('записане словами — для форми, без позначок збігу', () => {

@@ -13,6 +13,16 @@ const mountFields = (state, props = {}) => {
 };
 
 describe('«Кого шукаєте» біологічних батьків', () => {
+  it('кого шукаєте — кількох, і агенцію з клінікою теж', () => {
+    const onCommit = mountFields({ seeking: 'both' });
+    expect(screen.getByRole('button', { name: 'Донорку ооцитів' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Сурогатну маму' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Агенцію' }));
+    expect(onCommit).toHaveBeenLastCalledWith('seeking', 'ed,sm,ag');
+    fireEvent.click(screen.getByRole('button', { name: 'Сурогатну маму' }));
+    expect(onCommit).toHaveBeenLastCalledWith('seeking', 'ed');
+  });
+
   it('побажання до донорки — вибір з довідника, і дотик записує значення довідника', () => {
     const onCommit = mountFields({ seeking: 'ed' });
     expect(screen.getByText('Бажано у донорки')).toBeInTheDocument();

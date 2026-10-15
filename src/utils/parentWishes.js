@@ -1,5 +1,5 @@
 import { eyeColorOptions, getOptionLabel, hairColorOptions } from '../components/formFields';
-import { PARENT_VIA_OPTIONS } from './donorPrograms';
+import { PARENT_VIA_OPTIONS, parseSeekingRoles } from './donorPrograms';
 import { uiText } from './uiTranslations';
 
 /*
@@ -139,8 +139,13 @@ const isHigherEducation = value => HIGHER_EDUCATION_VALUES.has(norm(pickText(val
  * (`ParentProfileFields`). Невідоме «кого» не ховає нічого.
  */
 export const resolveParentWishGroups = seeking => {
-  const key = pickText(seeking);
-  return { donor: key !== 'sm', surrogate: key !== 'ed' };
+  // Агенція чи клініка в наборі побажань не ховає: вони про те, хто
+  // допоможе, а не про те, якою має бути донорка чи СМ.
+  const keys = parseSeekingRoles(seeking);
+  const wantsDonor = keys.includes('ed');
+  const wantsSurrogate = keys.includes('sm');
+  if (!wantsDonor && !wantsSurrogate) return { donor: true, surrogate: true };
+  return { donor: wantsDonor, surrogate: wantsSurrogate };
 };
 
 const readPrefsGroup = (prefs, group) => (prefs?.[group] && typeof prefs[group] === 'object' ? prefs[group] : {});

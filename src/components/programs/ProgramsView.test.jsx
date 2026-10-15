@@ -534,7 +534,12 @@ describe('картка агенції й батьків', () => {
 
   it('батьки кажуть, кого шукають', () => {
     render(<CardRoleBlock card={{ role: 'ip', seeking: 'both' }} language="uk" />);
-    expect(screen.getByText(/донорку й сурогатну маму/)).toBeInTheDocument();
+    expect(screen.getByText(/донорку ооцитів та сурогатну маму/)).toBeInTheDocument();
+  });
+
+  it('батьки шукають кількох — і агенцію з клінікою теж', () => {
+    render(<CardRoleBlock card={{ role: 'ip', seeking: 'ed,ag,cl' }} language="uk" />);
+    expect(screen.getByTestId('parent-seeking')).toHaveTextContent('Шукають донорку ооцитів, агенцію та клініку');
   });
 
   it('рядок організації зберігає зміст анкети батьків', () => {

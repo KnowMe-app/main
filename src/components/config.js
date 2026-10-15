@@ -90,6 +90,7 @@ import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_FEED_FIELD,
   MATCHING_CARD_PROGRAM_FIELDS,
+  legacySeekingRole,
   MATCHING_CARD_PROGRAMS_AT_FIELD,
   MATCHING_CARD_ORDER_FIELD,
   MATCHING_CARD_REVIEW_FLAG_FIELD,
@@ -5402,8 +5403,18 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
       ));
       const withoutPrograms = { ...projection };
       unprovenFields.forEach(field => { delete withoutPrograms[field]; });
-      if (!isReactionPermissionDeniedError(error) || !unprovenFields.length) throw error;
-      console.warn('[matchingCards] правила бази ще не приймають нових полів картки — картку записано без них. Викотіть правила: npx firebase deploy --only database', { userId: id, fields: unprovenFields });
+      // «Кого шукають» з агенцією чи клінікою — нове значення поля, яке в
+      // картці вже лежить, тож переліком нових полів його не зняти: картка
+      // відлітала б цілком. Його переписує старими словами (лише донорка
+      // й СМ), а без них — знімає.
+      const seekingFallback = 'seekingRole' in withoutPrograms ? legacySeekingRole(withoutPrograms.seekingRole) : '';
+      const seekingDowngraded = 'seekingRole' in withoutPrograms && seekingFallback !== withoutPrograms.seekingRole;
+      if (seekingDowngraded) {
+        if (seekingFallback) withoutPrograms.seekingRole = seekingFallback;
+        else delete withoutPrograms.seekingRole;
+      }
+      if (!isReactionPermissionDeniedError(error) || (!unprovenFields.length && !seekingDowngraded)) throw error;
+      console.warn('[matchingCards] правила бази ще не приймають нових полів картки — картку записано без них. Викотіть правила: npx firebase deploy --only database', { userId: id, fields: seekingDowngraded ? [...unprovenFields, 'seekingRole'] : unprovenFields });
       const fallbackPatch = { ...withoutPrograms };
       independentlyOwnedFields.forEach(field => { delete fallbackPatch[field]; });
       Object.keys(existing || {}).forEach(field => {

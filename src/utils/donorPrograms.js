@@ -334,12 +334,48 @@ export const AGENCY_SERVICE_OPTIONS = Object.freeze([
   { key: 'legal', label: 'Юридичний супровід' },
 ]);
 
-/** Кого шукають біологічні батьки. */
+/**
+ * Кого шукають біологічні батьки — **набір**, а не один вибір: батьки, які
+ * ще нічого не знають, шукають і донорку, і агенцію, яка допоможе, і
+ * клініку. Агенція чи клініка, побачивши в стрічці «Шукають агенцію», може
+ * сама написати їм з пропозицією.
+ *
+ * Записується одним рядком (`encodeSeekingRoles`): «Обох» тут був окремий
+ * варіант (`both`), і старі записи його несуть — читається він як донорка й
+ * СМ. Набір із самих донорки й СМ і далі пишеться старими словами (`ed`,
+ * `sm`, `both`): їх приймає й ще не викочене правило картки
+ * `matchingCards/…/seekingRole`, тож нове правило потрібне лише агенції й
+ * клініці в наборі.
+ */
 export const PARENT_SEEKING_OPTIONS = Object.freeze([
   { key: 'ed', label: 'Донорку ооцитів' },
   { key: 'sm', label: 'Сурогатну маму' },
-  { key: 'both', label: 'Обох' },
+  { key: 'ag', label: 'Агенцію' },
+  { key: 'cl', label: 'Клініку' },
 ]);
+
+const SEEKING_ORDER = PARENT_SEEKING_OPTIONS.map(option => option.key);
+
+/** Записане «кого шукають» — списком ключів у сталому порядку. */
+export const parseSeekingRoles = value => {
+  const raw = Array.isArray(value) ? value[value.length - 1] : value;
+  const tokens = String(raw ?? '').split(',').map(item => item.trim().toLowerCase()).filter(Boolean);
+  const keys = new Set(tokens.flatMap(token => (token === 'both' ? ['ed', 'sm'] : [token])));
+  return SEEKING_ORDER.filter(key => keys.has(key));
+};
+
+/** Список ключів — рядком для анкети й картки (порожній набір — порожній рядок). */
+export const encodeSeekingRoles = keys => {
+  const list = parseSeekingRoles(Array.isArray(keys) ? keys.join(',') : keys);
+  if (list.length === 2 && list[0] === 'ed' && list[1] === 'sm') return 'both';
+  return list.join(',');
+};
+
+/** Дотик до варіанта: обраний знімається, інший додається. */
+export const toggleSeekingRole = (value, key) => {
+  const list = parseSeekingRoles(value);
+  return encodeSeekingRoles(list.includes(key) ? list.filter(item => item !== key) : [...list, key]);
+};
 
 export const PARENT_VIA_OPTIONS = Object.freeze([
   { key: 'agency', label: 'Через агенцію' },

@@ -198,6 +198,11 @@ await it('картка приймає версію програм і «кого 
   await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/programsBrief`), { p1: { type: 'ed', pay: 2500, currency: 'USD' } }));
   await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/serviceTags`), 'ed,sm'));
   await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'anyone'));
+  // Батьки шукають кількох — і агенцію чи клініку теж.
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'ed,ag,cl'));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'ag'));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'ed,anyone'));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/seekingRole`), 'ed,sm,ag,cl,ed'));
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `matchingCards/${CARD}/programsAt`), null));
   await testEnv.withSecurityRulesDisabled(context =>

@@ -3,6 +3,8 @@ import styled from 'styled-components';
 import {
   PARENT_SEEKING_OPTIONS,
   PARENT_VIA_OPTIONS,
+  parseSeekingRoles,
+  toggleSeekingRole,
 } from '../../utils/donorPrograms';
 import {
   HIGHER_EDUCATION_WISH,
@@ -181,9 +183,10 @@ const SET_ASIDE_WISHES = [
  */
 export const ParentProfileFields = ({ state, onCommit, language, showProgramLocation = false }) => {
   const seeking = String(state.seeking || '');
+  const seekingKeys = parseSeekingRoles(seeking);
   const via = String(state.parentVia || '');
   const prefs = state.parentPreferences && typeof state.parentPreferences === 'object' ? state.parentPreferences : {};
-  const wantsDonor = seeking === 'ed' || seeking === 'both';
+  const wantsDonor = seekingKeys.includes('ed');
   // Чиї побажання зараз показує картка — решта записаного стоїть нижче
   // окремо (`SET_ASIDE_WISHES`).
   const shownGroups = resolveParentWishGroups(seeking);
@@ -229,7 +232,16 @@ export const ParentProfileFields = ({ state, onCommit, language, showProgramLoca
     <Stack>
       <FieldLabel as="div">
         {uiText('Кого шукаєте', language)}
-        <Choice language={language} options={PARENT_SEEKING_OPTIONS} value={seeking} onChange={key => onCommit('seeking', key)} />
+        {/* Кількох одразу: батьки, які ще нічого не знають, шукають і
+            донорку, і агенцію чи клініку, що допоможе. */}
+        <Choice
+          language={language}
+          multiple
+          options={PARENT_SEEKING_OPTIONS}
+          value={seekingKeys}
+          onChange={key => onCommit('seeking', toggleSeekingRole(seeking, key) || null)}
+        />
+        <Hint>{uiText('Можна кількох. Агенції й клініки побачать це у вашій картці й зможуть написати вам самі.', language)}</Hint>
       </FieldLabel>
       {/* Необовʼязкове: повторний дотик знімає вибір. */}
       <FieldLabel as="div">
