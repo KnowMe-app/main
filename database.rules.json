@@ -494,6 +494,15 @@
                 "regionsExcluded": {
                   ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
                 },
+                "eyeColors": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200"
+                },
+                "hairColors": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200"
+                },
+                "education": {
+                  ".validate": "newData.val() == 'higher'"
+                },
                 "$other": {
                   ".validate": false
                 }

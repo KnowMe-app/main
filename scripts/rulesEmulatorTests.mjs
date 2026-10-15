@@ -381,6 +381,21 @@ await it('приймає групу крові, АМГ, регіони й дов
   await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
 });
 
+// Побажання до донорки — тепер у програмі, а не блоком в анкеті батьків
+// (`PROGRAM_WISH_FIELDS`). Поки правил немає в проді, клієнт пише програму
+// без них (`stripProgramWishFields`).
+await it('приймає побажання до донорки в програмі, відкидає чуже', async () => {
+  const base = `multiData/programs/${PROFILE_OWNER}`;
+  const withProgram = program => ({ updatedAt: 1759200000000, items: { p9: { id: 'p9', type: 'ed', ...program } } });
+  await assertSucceeds(set(ref(db(PROFILE_OWNER), base), withProgram({
+    requirements: { eyeColors: 'Brown,Blue', hairColors: 'Blonde', education: 'higher' },
+  })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { education: 'yes' } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { eyeColors: '' } })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ requirements: { hairColors: 'x'.repeat(201) } })));
+  await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
+});
+
 // Місце виплати щодо головної суми (додається / уже всередині / за окрему
 // процедуру) і вибрана головна сума картки. Головна виплата й повторна донація
 // місця не вибирають: перша сама є сумою, друга окрема за визначенням.

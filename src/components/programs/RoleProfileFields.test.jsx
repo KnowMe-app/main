@@ -23,18 +23,18 @@ describe('«Кого шукаєте» біологічних батьків', ()
     expect(onCommit).toHaveBeenLastCalledWith('seeking', 'ed');
   });
 
-  it('побажання до донорки — вибір з довідника, і дотик записує значення довідника', () => {
-    const onCommit = mountFields({ seeking: 'ed' });
-    expect(screen.getByText('Бажано у донорки')).toBeInTheDocument();
-    fireEvent.click(within(screen.getByTestId('parent-wish-eyeColor')).getByRole('button', { name: 'Карі' }));
-    expect(onCommit).toHaveBeenCalledWith('parentPreferences', { donor: { eyeColor: 'Brown' } });
+  it('нових побажань до донорки анкета не пропонує — вони тепер у програмі', () => {
+    mountFields({ seeking: 'ed' });
+    expect(screen.queryByTestId('parent-wish-eyeColor')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('parent-donor-wishes-moved')).not.toBeInTheDocument();
   });
 
-  it('вищу освіту знімає повторний дотик', () => {
-    const onCommit = mountFields({ seeking: 'both', parentPreferences: { donor: { education: 'Higher' } } });
-    const higher = within(screen.getByTestId('parent-wish-education')).getByRole('button', { name: 'Вища освіта' });
-    expect(higher).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(higher);
+  it('записані побажання до донорки видно з підказкою про програму, і їх можна стерти', () => {
+    const onCommit = mountFields({ seeking: 'both', parentPreferences: { donor: { eyeColor: 'Brown', education: 'Higher' } } });
+    const box = screen.getByTestId('parent-donor-wishes-moved');
+    expect(box).toHaveTextContent('Тепер це задається в програмі');
+    expect(box).toHaveTextContent('карі');
+    fireEvent.click(within(box).getByRole('button', { name: 'Стерти' }));
     expect(onCommit).toHaveBeenCalledWith('parentPreferences', null);
   });
 
@@ -92,9 +92,8 @@ describe('«Кого шукаєте» біологічних батьків', ()
     expect(onCommit).toHaveBeenCalledWith('parentPreferences', null);
   });
 
-  it('вільний текст, записаний колись у побажання, лишається обраним варіантом', () => {
+  it('вільний текст, записаний колись у побажання, не губиться', () => {
     mountFields({ seeking: 'ed', parentPreferences: { donor: { eyeColor: 'блакитні' } } });
-    expect(within(screen.getByTestId('parent-wish-eyeColor')).getByRole('button', { name: 'блакитні' }))
-      .toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('parent-donor-wishes-moved')).toHaveTextContent('блакитні');
   });
 });

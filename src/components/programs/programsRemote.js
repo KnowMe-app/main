@@ -1,6 +1,7 @@
 import { get, ref, remove, set, update } from 'firebase/database';
 import { database, isReactionPermissionDeniedError } from '../config';
 import { MATCHING_CARD_PROGRAMS_AT_FIELD } from '../../utils/matchingCardIndex';
+import { PROGRAM_WISH_FIELDS } from '../../utils/donorPrograms';
 import { setProgramsTransport } from '../../utils/programsStore';
 
 /*
@@ -102,6 +103,16 @@ export const stripLatestRequirementFields = items => Object.fromEntries(Object.e
   return [id, next];
 }));
 
+/**
+ * Програми без побажань до донорки (`PROGRAM_WISH_FIELDS`: колір очей,
+ * волосся, освіта). Найновіші поля — знімаються першими й лишаються знятими
+ * в кожному наступному відступі.
+ */
+export const stripProgramWishFields = items => Object.fromEntries(Object.entries(items || {}).map(([id, program]) => {
+  if (!program || typeof program !== 'object' || !program.requirements) return [id, program];
+  return [id, { ...program, requirements: omit(program.requirements, PROGRAM_WISH_FIELDS) }];
+}));
+
 export const writeProgramsToDb = async (uid, items, at, options = {}) => {
   try {
     await writeProgramsUpdate(uid, items, at, options);
@@ -109,8 +120,9 @@ export const writeProgramsToDb = async (uid, items, at, options = {}) => {
     if (!isReactionPermissionDeniedError(error)) throw error;
     // Від новішого до старішого: спершу без нових полів, далі ще й без
     // кількості місяців — кожна з цих версій правил у проді вже бувала.
-    const base = stripLatestRequirementFields(items);
-    const fallbacks = [base, stripCustomCoverage(base), stripCustomRequirements(stripCustomCoverage(base)), stripNewestProgramFields(base), stripExtendedProgramFields(base), stripMonthlyMonths(stripExtendedProgramFields(base))];
+    const withoutWishes = stripProgramWishFields(items);
+    const base = stripLatestRequirementFields(withoutWishes);
+    const fallbacks = [withoutWishes, base, stripCustomCoverage(base), stripCustomRequirements(stripCustomCoverage(base)), stripNewestProgramFields(base), stripExtendedProgramFields(base), stripMonthlyMonths(stripExtendedProgramFields(base))];
     let previous = JSON.stringify(items);
     for (const fallback of fallbacks) {
       const serialized = JSON.stringify(fallback);

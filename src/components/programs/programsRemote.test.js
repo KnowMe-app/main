@@ -46,3 +46,9 @@ it('«Мій профіль» передає це писачеві через с
   expect(patch['multiData/programs/U2']).toEqual(expect.objectContaining({ items: expect.any(Object) }));
   expect(patch['matchingCards/U2/programsAt']).toBeNull();
 });
+
+it('без правила під побажання програма пишеться без них, а решта вимог лишається', () => {
+  const { stripProgramWishFields } = require('./programsRemote');
+  const items = { p1: { id: 'p1', type: 'ed', requirements: { bloodGroups: '2,3', eyeColors: 'Brown', education: 'higher' } } };
+  expect(stripProgramWishFields(items).p1.requirements).toEqual({ bloodGroups: '2,3' });
+});

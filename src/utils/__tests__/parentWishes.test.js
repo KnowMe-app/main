@@ -134,3 +134,20 @@ describe('чиї побажання чинні', () => {
     expect(listParentWishItems({}, 'donor', 'uk')).toEqual([]);
   });
 });
+
+describe('побажання програми', () => {
+  const { describeProgramWishes } = require('../parentWishes');
+  const { evaluateProgram, normalizeProgram } = require('../donorPrograms');
+  const program = normalizeProgram({ type: 'ed', requirements: { ageTo: 30, eyeColors: 'Brown, Blue', education: 'higher' } }, 'p1');
+
+  it('лише позначають збіг і не відсіюють', () => {
+    const facts = { age: 25, eyeColor: 'Green', education: 'Higher' };
+    const wishes = describeProgramWishes(program, 'uk', facts);
+    expect(wishes.map(item => [item.key, item.ok])).toEqual([['eyes', undefined], ['education', true]]);
+    expect(evaluateProgram(program, facts).matches).toBe(true);
+  });
+
+  it('програма СМ побажань до донорки не несе', () => {
+    expect(normalizeProgram({ type: 'sm', requirements: { eyeColors: 'Brown' } }, 'p2').requirements.eyeColors).toBeUndefined();
+  });
+});

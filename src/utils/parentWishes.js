@@ -185,6 +185,38 @@ const describeSurrogateWishItems = (surrogate, language) => {
   return items;
 };
 
+/**
+ * Побажання програми (`requirements.eyeColors`, `hairColors`, `education` —
+ * `PROGRAM_WISH_FIELDS`) — чіпами поруч із вимогами. `ok: true` — «✓ як у
+ * вас» (лише донорці, `facts` її анкети); «ні» тут не кажемо ніколи, як і в
+ * побажаннях батьків: це підказка, а не відмова.
+ */
+export const PROGRAM_WISH_DEFS = Object.freeze([
+  { key: 'eyes', field: 'eyeColors', wish: PARENT_DONOR_WISH_FIELDS[0], text: 'бажано: очі {value}' },
+  { key: 'hair', field: 'hairColors', wish: PARENT_DONOR_WISH_FIELDS[1], text: 'бажано: волосся {value}' },
+]);
+
+export const describeProgramWishes = (program, language, facts = null) => {
+  const req = program?.requirements || {};
+  const items = [];
+  PROGRAM_WISH_DEFS.forEach(def => {
+    if (!parseWishList(req[def.field]).length) return;
+    items.push({
+      key: def.key,
+      text: uiText(def.text, language, { value: describeWishTokens(req[def.field], def.wish, language) }),
+      ok: facts && matchesViewer(req[def.field], def.wish, facts[def.wish.key]) ? true : undefined,
+    });
+  });
+  if (req.education === 'higher') {
+    items.push({
+      key: 'education',
+      text: uiText('бажано: вища освіта', language),
+      ok: facts && isHigherEducation(facts.education) ? true : undefined,
+    });
+  }
+  return items;
+};
+
 /** Записані побажання групи (`donor` чи `surrogate`) словами — без позначок збігу. */
 export const listParentWishItems = (prefs, group, language) => (group === 'donor'
   ? describeDonorWishItems(readPrefsGroup(prefs, 'donor'), language)

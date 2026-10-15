@@ -40,6 +40,8 @@ import {
 } from '../../utils/donorPrograms';
 import { DEFAULT_PROGRAM_CURRENCY, formatProgramMoney } from '../../utils/programCurrency';
 import { uiText } from '../../utils/uiTranslations';
+import { PARENT_DONOR_WISH_FIELDS, isWishSelected, listWishChoices, toggleWish } from '../../utils/parentWishes';
+import { getOptionLabel } from '../formFields';
 import { AutoGrowTextarea } from '../AutoGrowTextarea';
 import { MoneyInput } from './MoneyInput';
 import { ProgramCurrencySwitch, ProgramPreview, describeProgramOffer, revealCss } from './ProgramsView';
@@ -1036,6 +1038,12 @@ const REQUIREMENT_DEFS = Object.freeze([
   { key: 'births', kind: 'number', field: 'maxBirths', label: 'Пологів, не більше' },
   { key: 'csection', kind: 'select', field: 'csectionMax', label: 'Кесарів розтин', options: PROGRAM_CSECTION_OPTIONS },
   { key: 'marital', kind: 'select', field: 'marital', label: 'Сімейний стан', options: PROGRAM_MARITAL_OPTIONS },
+  // Побажання до донорки — не вимога: не відсіюють і в «підходить» не
+  // рахуються, картка лише ставить «✓ як у вас» (`PROGRAM_WISH_FIELDS`). Жили
+  // вони блоком «Бажано у донорки» в анкеті батьків, далеко від вимог.
+  { key: 'eyes', kind: 'wish', field: 'eyeColors', label: 'Колір очей · бажано', wish: PARENT_DONOR_WISH_FIELDS[0], types: ['ed'] },
+  { key: 'hair', kind: 'wish', field: 'hairColors', label: 'Колір волосся · бажано', wish: PARENT_DONOR_WISH_FIELDS[1], types: ['ed'] },
+  { key: 'education', kind: 'higher', field: 'education', label: 'Вища освіта · бажано', types: ['ed'] },
 ]);
 
 const requirementDefsFor = type => REQUIREMENT_DEFS.filter(def => !def.types || def.types.includes(type === 'sm' ? 'sm' : 'ed'));
@@ -1720,6 +1728,19 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
                   return <Pill key={option.key} type="button" $on={on} aria-pressed={on} onClick={() => toggleGroup(option.key)}>{on ? '✓ ' : ''}{option.label}</Pill>;
                 })}
               </Segments>
+            ) : def.kind === 'wish' ? (
+              <Segments id={inputId} role="group" aria-label={label}>
+                {listWishChoices(program.requirements?.[def.field], def.wish).map(option => {
+                  const on = isWishSelected(program.requirements?.[def.field], def.wish, option);
+                  return (
+                    <Pill key={option.placeholder} type="button" $on={on} aria-pressed={on} onClick={() => setReq({ [def.field]: toggleWish(program.requirements?.[def.field], def.wish, option) })}>
+                      {on ? '✓ ' : ''}{option.recorded ? option.placeholder : getOptionLabel(option, language)}
+                    </Pill>
+                  );
+                })}
+              </Segments>
+            ) : def.kind === 'higher' ? (
+              <Readout id={inputId}>{uiText('Бажано з вищою освітою', language)}</Readout>
             ) : def.kind === 'text' ? (
               <TextInput
                 id={inputId}
@@ -1747,6 +1768,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         {error ? <FieldError role="alert">{uiText(error.text, language, error.vars)}</FieldError> : null}
         {def.kind === 'groups' && !selectedGroups.length ? <Readout>{uiText('Нічого не відмічено — підходить будь-яка', language)}</Readout> : null}
         {def.kind === 'text' && regionHint ? <Readout>{regionHint}</Readout> : null}
+        {def.kind === 'wish' ? <Readout>{uiText('Не відсіює: донорка з іншим кольором теж бачить «підходить», а збіг позначено «✓»', language)}</Readout> : null}
       </ReqRow>
     );
   };
@@ -1886,7 +1908,7 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         {customRequirements.map(customRequirementRow)}
         <Segments>
           {requirementDefs.filter(def => !requirementFilled(program, def) && !revealed.has(`req:${def.key}`)).map(def => (
-            <AddChip key={def.key} type="button" onClick={() => { reveal(`req:${def.key}`); focusSoon(`${idPrefix}-req-${def.key}`); }}>+ {uiText(PROGRAM_REQUIREMENT_LABELS[def.key], language)}</AddChip>
+            <AddChip key={def.key} type="button" onClick={() => { reveal(`req:${def.key}`); if (def.kind === 'higher') setReq({ education: 'higher' }); focusSoon(`${idPrefix}-req-${def.key}`); }}>+ {uiText(PROGRAM_REQUIREMENT_LABELS[def.key], language)}</AddChip>
           ))}
           {/* Порожня своя вимога стоїть одна: наступна додається, коли цю заповнено. */}
           {customRequirements.length < MAX_CUSTOM_REQUIREMENTS && !customRequirements.some(item => !String(item.text || '').trim()) ? (

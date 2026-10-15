@@ -584,3 +584,28 @@ describe('редактор програм', () => {
     expect(screen.getByText('Коментар довший за 1000 знаків — кінець не збережеться')).toBeInTheDocument();
   });
 });
+
+describe('побажання до донорки в програмі', () => {
+  it('колір очей обирають чіпами в «Вимогах»; лише донорській програмі', () => {
+    jest.useFakeTimers();
+    const onSave = jest.fn();
+    render(<ProgramsEditor programs={program} onSave={onSave} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо донора ооцитів/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Вимоги до кандидатки/ }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Колір очей' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Карі' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Вища освіта' }));
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+    expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({
+      p1: expect.objectContaining({ requirements: expect.objectContaining({ eyeColors: 'Brown', education: 'higher' }) }),
+    }));
+  });
+
+  it('програмі СМ побажань до донорки не пропонує', () => {
+    render(<ProgramsEditor programs={{ p2: { id: 'p2', type: 'sm', location: 'Київ' } }} onSave={jest.fn()} language="uk" />);
+    fireEvent.click(screen.getByRole('button', { name: /Шукаємо сурогатну маму/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Вимоги до кандидатки/ }));
+    expect(screen.queryByRole('button', { name: '+ Колір очей' })).not.toBeInTheDocument();
+  });
+});
