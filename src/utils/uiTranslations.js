@@ -785,6 +785,7 @@ const EN_BY_UK = {
   'Очистити чи видалити анкету можна в меню ⋮.': 'You can clear or delete the profile in the ⋮ menu.',
   'Очистити дані: {role}': 'Clear data: {role}',
   'Очистити дані: {role}?': 'Clear data: {role}?',
+  'Це остання заповнена анкета: стануть порожніми всі поля, зокрема імʼя, прізвище, телефон і соцмережі, а профіль буде знято з публікації. Пошта й доступ до акаунта лишаються.': 'This is the last filled-in profile: every field will be emptied, including the name, surname, phone and social links, and the profile will be unpublished. The email and account access stay.',
   'Поля цієї анкети стануть порожніми; у агенції й клініки знімуться програми. Інші анкети, пошта й доступ до акаунта лишаються.': 'The fields of this profile will be emptied; agencies and clinics lose their programs. Other profiles, the email and account access stay.',
   'Стерти поля цієї анкети, інші лишаються': 'Erase this profile’s fields, the others stay',
   'Очистити': 'Clear',

@@ -749,9 +749,14 @@ const NO_OR_DETAILS_FIELDS = new Set(['healthComplications']);
 // лежать окремо (`utils/programsStore`), а не в анкеті.
 const OBJECT_PROFILE_FIELDS = new Set(['parentPreferences', 'services']);
 
+// Поля особистої анкети — усе, крім «Особистих даних» і «Соцмереж»: ті
+// належать людині, а не ролі, і при кількох ролях стоять над анкетами одним
+// спільним блоком. Тут колись був перелік-виняток, у якому бракувало по
+// батькові, дати народження й сімейного стану, — і «очистити анкету СМ»
+// стирало їх у людини, яка лишалась ще й агенцією.
 const DONOR_ROLE_FIELDS = new Set(baseSections
-  .flatMap(section => section.fields)
-  .filter(name => !['name', 'surname', 'phone', 'country', 'region', 'city', 'telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'website'].includes(name)));
+  .filter(section => !['personal', 'social'].includes(section.key))
+  .flatMap(section => section.fields));
 const PARENT_ROLE_FIELDS = new Set(['seeking', 'programLocation', 'parentVia', 'parentPreferences', 'services']);
 
 // Батьки підписуються одним рядком «Як до вас звертатись» («Олена й
@@ -1393,7 +1398,12 @@ export const MyProfile = () => {
         personAssigned = true;
         roleBlock = personSections;
       }
-      return roleBlock.map((section, index) => (index === 0 ? { ...section, anketaRole: role } : section));
+      // `ownerRole` — на кожному розділі анкети, а не лише на першому
+      // (`anketaRole` малює заголовок): «Очистити дані ролі» бере поля саме
+      // цієї анкети, і спільний «Про себе» (`rest`) їй не належить.
+      return roleBlock.map((section, index) => (
+        index === 0 ? { ...section, anketaRole: role, ownerRole: role } : { ...section, ownerRole: role }
+      ));
     });
     // Без жодної ролі донорки чи СМ «Про себе» — спільне, а не чиясь анкета.
     const rest = personAssigned ? [] : personSections;
@@ -2186,6 +2196,19 @@ export const MyProfile = () => {
    * саме він перебудовує проєкцію, де знятій публікації відповідає `feedDate:
    * false` (див. `hideProfile`).
    */
+  /*
+   * Очищення оптимістичне: модалка закривається й поля порожніють тієї ж
+   * миті, а запис іде слідом. Доки модалка чекала на `saveState` (черга,
+   * `fetchUserData`, кілька вузлів RTDB, програми), вона висіла кілька
+   * секунд після «Очистити», і здавалось, що дотик не спрацював. Відмова
+   * повертає стан, якщо людина тим часом нічого не змінила, і каже про це.
+   */
+  const rollbackClear = (previousState, nextState) => {
+    if (stateRef.current !== nextState) return;
+    stateRef.current = previousState;
+    setState(previousState);
+  };
+
   const clearProfileFields = async () => {
     const currentState = stateRef.current || {};
     const clearableFields = visibleSections
@@ -2193,7 +2216,6 @@ export const MyProfile = () => {
       .filter(name => !CLEAR_ALL_PROTECTED_FIELDS.has(name) && name !== 'programs')
       .filter(name => String(currentState[name] ?? '').trim() !== '');
 
-    setIsClearingProfile(true);
     const wasLikedAudience = isLikedAudienceProfile(currentState);
     const nextState = { ...currentState, publish: false, publishAudience: null };
     // Побажання батьків — обʼєкт, а не поле з історією версій:
@@ -2203,38 +2225,89 @@ export const MyProfile = () => {
     clearableFields.forEach(name => { nextState[name] = OBJECT_PROFILE_FIELDS.has(name) ? null : ''; });
     stateRef.current = nextState;
     setState(nextState);
+    localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
+    setShowInfoModal(false);
+    setClearRoleTarget('');
+    toast.success(uiText('Анкету очищено й знято з публікації', language));
 
+    setIsClearingProfile(true);
     try {
       await saveState(nextState, { directFields: ['publish', 'publishAudience', ...objectFields] });
       if (wasLikedAudience) await closeLikedAudience();
       // Програми лежать окремо від анкети, тож і знімаються окремо.
       if (ownProgramsCount && programsOwnerId) await saveCardPrograms(programsOwnerId, {});
-      localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
-      setShowInfoModal(false);
-      toast.success(uiText('Анкету очищено й знято з публікації', language));
     } catch (error) {
       console.error('clear profile error', error);
+      rollbackClear(currentState, nextState);
       toast.error(uiText('Не вдалося очистити анкету. Спробуйте ще раз', language));
     } finally {
       setIsClearingProfile(false);
     }
   };
 
+  /*
+   * Поля однієї анкети — розділи з її `ownerRole`, а не спільні «Особисті
+   * дані» й «Соцмережі». До них додаються поля ролі, яких форма зараз не
+   * питає, але які лежать в анкеті (донорське СМ, давні побажання батьків):
+   * «очистити» означає стерти записане, а не лише видиме.
+   */
+  const listAnketaFields = role => {
+    const fromSections = visibleSections
+      .filter(section => section.ownerRole === role)
+      .flatMap(section => section.fields);
+    const recorded = role === 'ip'
+      ? [...PARENT_ROLE_FIELDS]
+      : PERSON_ROLES.includes(role)
+        ? [...DONOR_ROLE_FIELDS]
+        : ORGANISATION_ROLES.includes(role) ? ['agencyName'] : [];
+    return [...new Set([...fromSections, ...recorded])]
+      .filter(name => name !== 'programs' && !CLEAR_ALL_PROTECTED_FIELDS.has(name));
+  };
+  const hasFieldValue = (source, name) => {
+    const value = source[name];
+    if (value && typeof value === 'object' && !Array.isArray(value)) return Object.keys(value).length > 0;
+    return String(getCurrentValue(value) ?? '').trim() !== '';
+  };
+  const anketaHasData = (role, source) => (
+    listAnketaFields(role).some(name => hasFieldValue(source, name))
+    || (role === programsRole && ownProgramsCount > 0)
+  );
+
+  // Остання анкета з даними — та, крім якої в людини не лишається нічого
+  // свого: решта ролей уже порожні. Тоді «очистити» означає те саме, що
+  // «Очистити анкету»: зникають і імʼя, прізвище, телефон, соцмережі. Поки
+  // спільне лишалось, людина, очистивши всі анкети по черзі, бачила в
+  // профілі своє імʼя й номер і не розуміла, що ж тоді очистилось.
+  const isLastFilledAnketa = role => rolesList.length > 1
+    && rolesList.filter(item => item !== role).every(item => !anketaHasData(item, stateRef.current || {}));
+
+  const clearsWholeProfile = role => {
+    const sharesFields = rolesList.filter(item => item !== role).some(item => (
+      (PERSON_ROLES.includes(role) && PERSON_ROLES.includes(item))
+      || (ORGANISATION_ROLES.includes(role) && ORGANISATION_ROLES.includes(item))
+    ));
+    return !sharesFields && isLastFilledAnketa(role);
+  };
+
   // Підтвердження — та сама модалка, що й у «Очистити анкету»
   // (`clearRoleTarget`), а не системне вікно браузера: дві незворотні дії
   // однієї сторінки питали людину двома різними вікнами.
   const clearRoleFields = async role => {
-
     const currentState = stateRef.current || {};
     const sameKindRoles = rolesList.filter(item => (
       (PERSON_ROLES.includes(role) && PERSON_ROLES.includes(item))
       || (ORGANISATION_ROLES.includes(role) && ORGANISATION_ROLES.includes(item))
     ));
-    const fields = role === 'ip'
-      ? [...PARENT_ROLE_FIELDS]
-      : PERSON_ROLES.includes(role) && sameKindRoles.length === 1
-        ? [...DONOR_ROLE_FIELDS]
-        : [];
+    // Коли дві ролі користуються тими самими полями, «очистити одну» означає
+    // прибрати саме роль, не стираючи дані сусідньої анкети.
+    const sharesFields = sameKindRoles.length > 1;
+    if (clearsWholeProfile(role)) {
+      await clearProfileFields();
+      return;
+    }
+    const fields = sharesFields
+      ? []
+      : listAnketaFields(role).filter(name => hasFieldValue(currentState, name));
     const nextState = { ...currentState };
     const directFields = [];
     fields.forEach(name => {
@@ -2243,22 +2316,21 @@ export const MyProfile = () => {
     });
     stateRef.current = nextState;
     setState(nextState);
+    setShowInfoModal(false);
+    setClearRoleTarget('');
+    toast.success(uiText('Дані ролі очищено', language));
 
     try {
       if (fields.length) await saveState(nextState, { directFields });
       // У батьків «одного роду» ролей немає (`sameKindRoles` порожній), а
       // програми їхні — коли поруч немає організації (`programsRole`).
-      if (role === programsRole && (role === 'ip' || sameKindRoles.length === 1) && programsOwnerId) {
+      if (role === programsRole && !sharesFields && programsOwnerId) {
         await saveCardPrograms(programsOwnerId, {});
       }
-      // Коли дві ролі користуються тими самими полями, «очистити одну» означає
-      // прибрати саме роль, не стираючи дані сусідньої анкети.
-      if (sameKindRoles.length > 1) await toggleUserRole(role);
-      setShowInfoModal(false);
-      setClearRoleTarget('');
-      toast.success(uiText('Дані ролі очищено', language));
+      if (sharesFields) await toggleUserRole(role);
     } catch (error) {
       console.error('clear role error', error);
+      rollbackClear(currentState, nextState);
       toast.error(uiText('Не вдалося очистити дані ролі. Спробуйте ще раз', language));
     }
   };
@@ -2760,7 +2832,12 @@ export const MyProfile = () => {
               })}
             </ModalTitle>
             <ModalText>
-              {uiText('Поля цієї анкети стануть порожніми; у агенції й клініки знімуться програми. Інші анкети, пошта й доступ до акаунта лишаються.', language)}
+              {/* Остання анкета з даними забирає з собою й спільне — імʼя,
+                  телефон, соцмережі (`clearsWholeProfile`), і людина мусить
+                  знати це до дотику, а не побачити після. */}
+              {clearsWholeProfile(clearRoleTarget)
+                ? uiText('Це остання заповнена анкета: стануть порожніми всі поля, зокрема імʼя, прізвище, телефон і соцмережі, а профіль буде знято з публікації. Пошта й доступ до акаунта лишаються.', language)
+                : uiText('Поля цієї анкети стануть порожніми; у агенції й клініки знімуться програми. Інші анкети, пошта й доступ до акаунта лишаються.', language)}
             </ModalText>
             <ModalActionRow>
               <ModalGhostButton type="button" onClick={() => { setShowInfoModal(false); setClearRoleTarget(''); }}>

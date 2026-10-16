@@ -128,4 +128,31 @@ describe('кілька ролей у «Моєму профілі»', () => {
     expect(source).toContain('onClick={() => clearRoleFields(clearRoleTarget)}');
     expect(source).not.toContain('window.confirm');
   });
+
+  // Модалка висіла кілька секунд після «Очистити», поки йшов запис, — і
+  // здавалось, що дотик не спрацював. Тепер вона закривається до запису.
+  it('очищення оптимістичне: модалка закривається до запису в базу', () => {
+    const source = read('MyProfile.jsx');
+    const body = name => {
+      const start = source.indexOf(`const ${name} = async`);
+      return source.slice(start, source.indexOf('\n  };\n', start));
+    };
+    ['clearProfileFields', 'clearRoleFields'].forEach(name => {
+      const fn = body(name);
+      const close = fn.indexOf('setShowInfoModal(false)');
+      expect(close).toBeGreaterThan(-1);
+      expect(close).toBeLessThan(fn.indexOf('await saveState'));
+      expect(fn).toContain('rollbackClear(currentState, nextState)');
+    });
+  });
+
+  // Очистивши всі анкети по черзі, людина бачила в профілі своє імʼя й
+  // телефон: спільне «Особисті дані» не належало жодній ролі.
+  it('остання заповнена анкета стирає й спільні поля, а анкета ролі — лише свої', () => {
+    const source = read('MyProfile.jsx');
+    expect(source).toContain('if (clearsWholeProfile(role)) {\n      await clearProfileFields();');
+    expect(source).toContain("ORGANISATION_ROLES.includes(role) ? ['agencyName'] : []");
+    expect(source).toContain(".filter(section => !['personal', 'social'].includes(section.key))");
+    expect(source).toContain('{clearsWholeProfile(clearRoleTarget)');
+  });
 });
