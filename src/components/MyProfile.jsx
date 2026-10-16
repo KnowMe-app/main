@@ -8,9 +8,17 @@ import {
   fetchProfileCardRole,
   fetchUserData,
   normalizeStoredDates,
+  readOwnCardLikedAudience,
+  rememberOwnLikedAudience,
+  setOwnLikedAudienceEntries,
   syncUserSearchIdIndex,
   updateProfileRole,
 } from './config';
+import {
+  LIKED_AUDIENCE,
+  canOfferLikedAudiencePublication,
+  isLikedAudienceProfile,
+} from '../utils/likedAudience';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
 import { listOfferedOptions } from '../utils/offeredOptions';
 import { asExamplePlaceholder } from '../utils/examplePlaceholder';
@@ -354,6 +362,41 @@ const UnpublishBtn = styled.button`
   font-weight:600;
   cursor:pointer;
 `;
+/*
+ * Публікація «лише для вподобаних» (`utils/likedAudience`).
+ *
+ * Друга, тихіша кнопка під головною: режим — свідомий обмін анонімності на
+ * кількість пропозицій, і людина мусить прочитати, на що міняє, ще до того,
+ * як натисне. Тому застереження стоїть поруч із кнопкою завжди, а не тостом
+ * після: тост читають уже після рішення.
+ */
+const LikedAudienceBtn = styled(UnpublishBtn)`
+  margin-top:10px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+
+  > span[aria-hidden] { flex:none; color:#E8791A; }
+`;
+const LikedAudienceNote = styled.div`
+  margin-top:12px;
+  padding:12px 14px;
+  border-radius:12px;
+  background:var(--accent-light, rgba(232,121,26,0.08));
+  border:1px solid rgba(232,121,26,0.28);
+  font-size:13px;
+  line-height:1.5;
+  color:var(--text);
+
+  > b { display:block; margin-bottom:4px; font-size:14px; font-weight:700; }
+  > p { margin:0; }
+  > p + p { margin-top:6px; }
+`;
+const LikedAudienceCaveat = styled.p`
+  && { color:var(--muted); }
+`;
+
 // Роль — перше рішення в анкеті: від неї залежить, які поля взагалі показувати.
 // Тому вона стоїть над формою окремим рядом, а не полем усередині секції.
 const RoleCard = styled.div`
@@ -695,6 +738,7 @@ const CLEAR_ALL_PROTECTED_FIELDS = new Set([
   'userRole',
   'role',
   'publish',
+  'publishAudience',
   'accessLevel',
 ]);
 
@@ -711,7 +755,13 @@ const readMyProfileDraft = () => {
       return null;
     }
 
-    const { password: _password, userId: _userId, publish: _publish, ...draftFields } = parsedDraft;
+    const {
+      password: _password,
+      userId: _userId,
+      publish: _publish,
+      publishAudience: _publishAudience,
+      ...draftFields
+    } = parsedDraft;
     return { ...draftFields, password: '' };
   } catch (error) {
     console.warn('Failed to load MyProfile draft.', error);
@@ -744,6 +794,10 @@ export const MyProfile = () => {
   const isAdmin = access.isAdmin;
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [isClearingProfile, setIsClearingProfile] = useState(false);
+  // Скільки людей зараз бачать анкету, відкриту лише вподобаним (`null` —
+  // ще не знаємо).
+  const [likedAudienceCount, setLikedAudienceCount] = useState(null);
+  const likedAudienceReconciledForRef = useRef('');
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [userId, setUserId] = useState('');
   const [activeTab, setActiveTab] = useState('auth');
@@ -1090,6 +1144,28 @@ export const MyProfile = () => {
   }, [hiddenRoles, language, rolesList, selectedRole, writeProfileRoles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isProfileAccessConfirmed = Boolean(userId || state.userId);
+
+  /*
+   * Анкета, відкрита лише вподобаним, на кожному відкритті «Мого профілю»
+   * дописує обернений перелік для всіх поточних вподобань. Писачі реакцій
+   * роблять це самі, але запис, що відлетів (правила ще не викочені, інший
+   * пристрій без мережі), інакше лишився б дірою назавжди: агенцію вподобали,
+   * а знайти анкету їй нема за чим. Заразом це й число для підпису. Раз на
+   * акаунт за відкриття сторінки.
+   */
+  const ownLikedAudienceUid = userId || state.userId || '';
+  const ownProfileSharedWithLiked = isLikedAudienceProfile(state) && state.publish !== true;
+  useEffect(() => {
+    if (!ownLikedAudienceUid || !ownProfileSharedWithLiked) return;
+    if (auth.currentUser?.uid !== ownLikedAudienceUid) return;
+    if (likedAudienceReconciledForRef.current === ownLikedAudienceUid) return;
+    likedAudienceReconciledForRef.current = ownLikedAudienceUid;
+    let cancelled = false;
+    setOwnLikedAudienceEntries(ownLikedAudienceUid, true).then(result => {
+      if (!cancelled && result.ok) setLikedAudienceCount(result.count);
+    });
+    return () => { cancelled = true; };
+  }, [ownLikedAudienceUid, ownProfileSharedWithLiked]);
 
   const sections = useMemo(() => baseSections.map(section => {
     if (section.key !== 'personal' || !isProfileAccessConfirmed || section.fields.includes('email')) {
@@ -1766,12 +1842,14 @@ export const MyProfile = () => {
       return;
     }
 
-    const nextState = { ...stateRef.current, publish: true };
+    const wasLikedAudience = isLikedAudienceProfile(stateRef.current);
+    const nextState = { ...stateRef.current, publish: true, publishAudience: null };
     stateRef.current = nextState;
     setState(nextState);
 
     try {
-      await saveState(nextState, { directFields: ['publish'] });
+      await saveState(nextState, { directFields: ['publish', 'publishAudience'] });
+      if (wasLikedAudience) await closeLikedAudience();
       localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
       toast.success(uiText('Анкету опубліковано', language));
     } catch (error) {
@@ -1789,13 +1867,17 @@ export const MyProfile = () => {
   // Чому `false`, а не видалення ключа: «сховали» і «ще не публікували» — різні
   // стани. Обидва поза стрічкою, але пошук показує друге і мовчить про перше,
   // тож стерти позначку означало б повернути сховану анкету у видачу.
+  //
+  // Схована анкета не лишає й кола вподобаних: «приховати» означає «нікому».
   const hideProfile = async () => {
-    const nextState = { ...stateRef.current, publish: false };
+    const wasLikedAudience = isLikedAudienceProfile(stateRef.current);
+    const nextState = { ...stateRef.current, publish: false, publishAudience: null };
     stateRef.current = nextState;
     setState(nextState);
 
     try {
-      await saveState(nextState, { directFields: ['publish'] });
+      await saveState(nextState, { directFields: ['publish', 'publishAudience'] });
+      if (wasLikedAudience) await closeLikedAudience();
       toast.success(uiText('Анкету знято з публікації', language));
     } catch (error) {
       console.error('hide profile error', error);
@@ -1817,21 +1899,98 @@ export const MyProfile = () => {
       if (!stateRef.current.userId && !userId) return;
     }
     if (!validateRequiredProfileFields(role)) return;
-    const wasPublished = stateRef.current.publish === true;
+    // Анкета, відкрита колу вподобаних, уже видима — її ролі лишаються як є,
+    // а публікація для всіх це коло знімає.
+    const wasLikedAudience = isLikedAudienceProfile(stateRef.current);
+    const wasPublished = stateRef.current.publish === true || wasLikedAudience;
     const nextHidden = wasPublished
       ? hiddenRoles.filter(item => item !== role)
       : rolesList.filter(item => item !== role);
-    const nextState = { ...stateRef.current, publish: true, hiddenRoles: nextHidden.join(',') };
+    const nextState = { ...stateRef.current, publish: true, publishAudience: null, hiddenRoles: nextHidden.join(',') };
     stateRef.current = nextState;
     setState(nextState);
     try {
-      await saveState(nextState, { directFields: ['publish', 'hiddenRoles'] });
+      await saveState(nextState, { directFields: ['publish', 'publishAudience', 'hiddenRoles'] });
+      if (wasLikedAudience) await closeLikedAudience();
       localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
       toast.success(uiText('Анкету опубліковано', language));
     } catch (error) {
       console.error('publish role error', error);
       toast.error(uiText('Не вдалося опублікувати анкету. Спробуйте ще раз', language));
     }
+  };
+
+  /*
+   * Публікація «лише для вподобаних» (`utils/likedAudience`).
+   *
+   * Записів три, і порядок у них не випадковий. Спершу анкета: `publish:
+   * false` + `publishAudience` перебудовують картку на `feedDate: false` +
+   * `audience: 'liked'`, тобто зі стрічки вона зникає для всіх тим самим
+   * записом. Потім обернений перелік для вже поставлених вподобань — адреса,
+   * за якою агенція знайде анкету. І наостанок картку перечитують: поки
+   * правила бази режиму не знають, писач кладе її без `audience`, схованою від
+   * усіх (`MATCHING_CARD_PROGRAM_FIELDS`), — і людина мусить про це знати, а не
+   * думати, що її бачать вподобані.
+   */
+  const publishToLikedAudience = async () => {
+    if (!isProfileAccessConfirmed) {
+      await handleAuthConfirm();
+      if (!stateRef.current.userId && !userId) return;
+    }
+    const currentState = stateRef.current || {};
+    const wasVisible = currentState.publish === true || isLikedAudienceProfile(currentState);
+    const nextHidden = wasVisible ? hiddenRoles : [];
+    const shownRoles = rolesList.filter(role => !nextHidden.includes(role));
+    const rolesToValidate = rolesList.length > 1 ? shownRoles : [''];
+    if (!rolesToValidate.every(role => validateRequiredProfileFields(role))) return;
+
+    const nextState = {
+      ...currentState,
+      publish: false,
+      publishAudience: LIKED_AUDIENCE,
+      hiddenRoles: nextHidden.join(','),
+    };
+    stateRef.current = nextState;
+    setState(nextState);
+    const ownerUid = userId || nextState.userId;
+    try {
+      await saveState(nextState, { directFields: ['publish', 'publishAudience', 'hiddenRoles'] });
+      localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
+      const cardShared = await readOwnCardLikedAudience(ownerUid).catch(() => false);
+      if (!cardShared) {
+        rememberOwnLikedAudience(ownerUid, false);
+        toast.error(uiText(
+          'Анкету сховано від усіх, але показ лише вподобаним ще не діє: базу ще не оновлено. Спробуйте пізніше або напишіть адміністраторові',
+          language,
+        ), { duration: 8000 });
+        return;
+      }
+      const entries = await setOwnLikedAudienceEntries(ownerUid, true);
+      if (entries.ok) setLikedAudienceCount(entries.count);
+      if (!entries.ok) {
+        toast.error(uiText(
+          'Анкету відкрито лише вподобаним, але агенції поки не знайдуть її у стрічці: базу ще не оновлено',
+          language,
+        ), { duration: 8000 });
+      } else {
+        toast.success(uiText(entries.count
+          ? 'Анкету бачать лише ті, кого ви вподобали'
+          : 'Анкету сховано від усіх. Її побачать ті, кого ви вподобаєте', language));
+      }
+    } catch (error) {
+      console.error('publish to liked audience error', error);
+      toast.error(uiText('Не вдалося опублікувати анкету. Спробуйте ще раз', language));
+    }
+  };
+
+  // Вимкнути режим — зняти й адреси, за якими агенції знаходили анкету.
+  // Доступу вони вже не дають (картка без `audience`), тож відмова тут лише
+  // лишає в їхніх переліках мертвий запис, і збереження вона не валить.
+  const closeLikedAudience = async () => {
+    const ownerUid = userId || stateRef.current?.userId;
+    if (!ownerUid) return;
+    setLikedAudienceCount(null);
+    await setOwnLikedAudienceEntries(ownerUid, false);
   };
 
   const unpublishRole = async role => {
@@ -1886,7 +2045,8 @@ export const MyProfile = () => {
       .filter(name => String(currentState[name] ?? '').trim() !== '');
 
     setIsClearingProfile(true);
-    const nextState = { ...currentState, publish: false };
+    const wasLikedAudience = isLikedAudienceProfile(currentState);
+    const nextState = { ...currentState, publish: false, publishAudience: null };
     // Побажання батьків — обʼєкт, а не поле з історією версій:
     // порожній рядок у них не «позначка стирання», а битий запис. Вони
     // знімаються цілком (`null`) і напряму, як і `publish`.
@@ -1896,7 +2056,8 @@ export const MyProfile = () => {
     setState(nextState);
 
     try {
-      await saveState(nextState, { directFields: ['publish', ...objectFields] });
+      await saveState(nextState, { directFields: ['publish', 'publishAudience', ...objectFields] });
+      if (wasLikedAudience) await closeLikedAudience();
       // Програми лежать окремо від анкети, тож і знімаються окремо.
       if (ownProgramsCount && programsOwnerId) await saveCardPrograms(programsOwnerId, {});
       localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
@@ -2101,8 +2262,11 @@ export const MyProfile = () => {
   // набраного тут. Зʼявляється, коли набрано бодай щось: порожня картка з
   // ініціалами нічого не показує. Сховані ролі картка не несе, як і в стрічці.
   const isPublished = state.publish === true;
+  // Відкрита лише вподобаним: `publish` тут `false`, але анкету видно — колу.
+  const isLikedAudience = !isPublished && isLikedAudienceProfile(state);
+  const canOfferLikedAudience = canOfferLikedAudiencePublication(rolesList);
   // Скільки анкет справді в стрічці — для підсумку над рядками «Публікації».
-  const publishedRoleCount = isPublished
+  const publishedRoleCount = isPublished || isLikedAudience
     ? (rolesList.length ? rolesList.filter(role => !hiddenRoles.includes(role)).length : 1)
     : 0;
   // Лише основна роль: дві ролі поруч із назвою витискали статус на два
@@ -2150,11 +2314,11 @@ export const MyProfile = () => {
           <StatusBadge
             type="button"
             $clickable
-            $published={state.publish === true}
+            $published={state.publish === true || isLikedAudience}
             onClick={handleAuthBadgeClick}
           >
             ● {isProfileAccessConfirmed
-              ? uiText(state.publish === true ? 'Опублікована' : 'Не опублікована', language)
+              ? uiText(state.publish === true ? 'Опублікована' : (isLikedAudience ? 'Лише вподобаним' : 'Не опублікована'), language)
               : uiText('Логін не відбувся', language)}
           </StatusBadge>
         </TopbarActions>
@@ -2447,9 +2611,11 @@ export const MyProfile = () => {
       <PublishHead>
         <b>{uiText('Публікація', language)}</b>
         <span>
-          {uiText(publishedRoleCount > 0
-            ? 'Анкету бачать у стрічці. Приховати її можна будь-коли'
-            : 'Анкету поки не видно в стрічці. Опублікуйте, коли будете готові', language)}
+          {uiText(isLikedAudience
+            ? 'Анкету бачать лише ті, кого ви вподобали. Для решти її немає ні в стрічці, ні в пошуку'
+            : publishedRoleCount > 0
+              ? 'Анкету бачать у стрічці. Приховати її можна будь-коли'
+              : 'Анкету поки не видно в стрічці. Опублікуйте, коли будете готові', language)}
         </span>
       </PublishHead>
       {rolesList.length > 1 ? (
@@ -2458,14 +2624,14 @@ export const MyProfile = () => {
             const label = MY_PROFILE_ANKETA_LABELS[role]
               || MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label
               || role;
-            const rolePublished = isPublished && !hiddenRoles.includes(role);
+            const rolePublished = (isPublished || isLikedAudience) && !hiddenRoles.includes(role);
             const clearLabel = uiText('Очистити дані: {role}', language, { role: uiText(label, language) });
             return (
               <RoleActionRow key={role} data-testid={`publish-role-${role}`}>
                 <RoleActionMeta>
                   <b>{uiText(label, language)}</b>
                   {rolePublished ? (
-                    <RolePublishStatus>{uiText('У стрічці', language)}</RolePublishStatus>
+                    <RolePublishStatus>{uiText(isLikedAudience ? 'Лише вподобаним' : 'У стрічці', language)}</RolePublishStatus>
                   ) : null}
                 </RoleActionMeta>
                 <RoleActionPair $primary={!rolePublished}>
@@ -2500,7 +2666,12 @@ export const MyProfile = () => {
         // `publishProfile`/`hideProfile`.
         <PublishSingleAction data-testid={rolesList[0] ? `publish-role-${rolesList[0]}` : undefined}>
           {rolesList[0] ? (
-            publishedRoleCount > 0 ? (
+            isLikedAudience ? (
+              <>
+                <SubmitBtn type="button" onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати для всіх', language)}</SubmitBtn>
+                <LikedAudienceBtn type="button" onClick={hideProfile}>{uiText('Приховати анкету', language)}</LikedAudienceBtn>
+              </>
+            ) : publishedRoleCount > 0 ? (
               <UnpublishBtn type="button" onClick={() => unpublishRole(rolesList[0])}>{uiText('Приховати анкету', language)}</UnpublishBtn>
             ) : (
               <SubmitBtn type="button" onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
@@ -2512,6 +2683,39 @@ export const MyProfile = () => {
           )}
         </PublishSingleAction>
       )}
+      {canOfferLikedAudience ? (
+        <div data-testid="publish-liked-audience">
+          {isLikedAudience ? (
+            rolesList.length > 1 ? (
+              <LikedAudienceBtn type="button" onClick={publishProfile}>{uiText('Опублікувати для всіх', language)}</LikedAudienceBtn>
+            ) : null
+          ) : (
+            <LikedAudienceBtn type="button" onClick={publishToLikedAudience}>
+              <span aria-hidden="true">♥</span>
+              {uiText(isPublished ? 'Показувати лише тим, кого я вподобала' : 'Опублікувати лише для тих, кого я вподобала', language)}
+            </LikedAudienceBtn>
+          )}
+          <LikedAudienceNote>
+            <b>{uiText('Лише для тих, кого ви вподобали', language)}</b>
+            {isLikedAudience ? (
+              <p>
+                {likedAudienceCount === 0
+                  ? uiText('Ви ще нікого не вподобали, тож зараз анкету не бачить ніхто. Вподобайте агенцію, клініку чи біологічних батьків у стрічці — і вони одразу її побачать.', language)
+                  : likedAudienceCount > 0
+                    ? uiText('Зараз анкету бачать: {count}. Знімете вподобання — і для них вона одразу закриється.', language, { count: likedAudienceCount })
+                    : uiText('Вподобайте агенцію, клініку чи біологічних батьків у стрічці — і вони одразу побачать анкету. Знімете вподобання — і для них вона закриється.', language)}
+              </p>
+            ) : (
+              <p>
+                {uiText('Анкету побачать лише агенції, клініки й біологічні батьки, яких ви вподобали ♥ — зокрема ті, кого ви вже вподобали раніше, — і лише доки вподобання стоїть. Для всіх інших її не буде ні в стрічці, ні в пошуку.', language)}
+              </p>
+            )}
+            <LikedAudienceCaveat>
+              {uiText('Так більше анонімності, але менше пропозицій: анкету побачить менше агенцій, тож і програм вам, найімовірніше, запропонують менше.', language)}
+            </LikedAudienceCaveat>
+          </LikedAudienceNote>
+        </div>
+      ) : null}
     </SubmitWrap>
   </Page>;
 };

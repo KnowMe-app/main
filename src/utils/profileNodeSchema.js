@@ -59,6 +59,9 @@ export const MATCHING_CARD_DERIVED_FIELDS = Object.freeze({
   rh: ['blood'],
   avatar: ['avatar', 'photos'],
   feedDate: ['publish', 'lastLogin2', 'lastLogin'],
+  // Публікація «лише для вподобаних» (`utils/likedAudience`): картка несе коло
+  // читачів поруч із `feedDate: false`, і саме його питають правила бази.
+  audience: ['publishAudience'],
   // «Кого шукаємо» біологічних батьків. Ключ картки навмисно інший, ніж поле
   // анкети: поле, яке належить картці, роутер записів у `profileDetails` уже
   // не веде (`OWNER_BY_FIELD`).

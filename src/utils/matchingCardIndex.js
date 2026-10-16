@@ -10,6 +10,12 @@ import {
 } from './profileFieldDerive';
 import { encodeSeekingRoles, isProgramsOwnerRoleHidden } from './donorPrograms';
 import { listProfileRoles } from './matchingPeerVisibility';
+import {
+  LIKED_AUDIENCE,
+  MATCHING_CARD_AUDIENCE_FIELD,
+  PUBLISH_AUDIENCE_FIELD,
+  isLikedAudienceProfile,
+} from './likedAudience';
 
 /**
  * `matchingCards` — проєкція анкети рівно під стрічку матчингу.
@@ -120,7 +126,13 @@ const CSECTION_ALIASES = ['cSection', 'csection', 'c_section', 'cesareanSection'
 export const MATCHING_CARD_PROGRAMS_AT_FIELD = 'programsAt';
 
 /** Поля картки, під які правила бази викочуються руками. */
-export const MATCHING_CARD_PROGRAM_FIELDS = Object.freeze([MATCHING_CARD_PROGRAMS_AT_FIELD, 'seekingRole', 'agencyName', 'blood']);
+//
+// `audience` (публікація «лише для вподобаних», `utils/likedAudience`) тут теж:
+// поки правила його не знають, картка пишеться без нього — тобто з самим
+// `feedDate: false`, схованою від усіх. Відступ у бік приватності, а не
+// розкриття: режим обіцяв показати анкету меншому колу, і поки база його не
+// розуміє, вона не показує її нікому.
+export const MATCHING_CARD_PROGRAM_FIELDS = Object.freeze([MATCHING_CARD_PROGRAMS_AT_FIELD, 'seekingRole', 'agencyName', 'blood', MATCHING_CARD_AUDIENCE_FIELD]);
 
 /**
  * Ролі, які людина сховала (`hiddenRoles`, рядок кодів через кому — масив у
@@ -313,6 +325,10 @@ const hasFeedKey = card => Boolean(card)
  * туди він приходить із самої ж картки через `expandMatchingCard`.
  */
 const resolveFeedDate = (data, { existingCard } = {}) => {
+  // Публікація лише для вподобаних — явне рішення, а не стан форми, тож
+  // перехід тут не питається: дати в такої картки не буває ніколи, інакше
+  // запит стрічки (`startAt('')`) показав би її всім.
+  if (isLikedAudienceProfile(data)) return false;
   if (isPublishExplicitlyDenied(data)) {
     return existingCard === undefined || hasFeedKey(existingCard) ? false : '';
   }
@@ -426,6 +442,12 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   // `false` — теж значення, і воно мусить лягти в картку: без нього сховану
   // анкету не відрізнити від тієї, яку ще не публікували.
   if (feedDate || feedDate === false) projection[MATCHING_CARD_FEED_FIELD] = feedDate;
+  // Коло читачів картки: правила бази відкривають її, деталі й контакти тому,
+  // кого власниця вподобала (`utils/likedAudience`). Лише поруч із `false`:
+  // так само вимагає й правило поля.
+  if (feedDate === false && isLikedAudienceProfile(data)) {
+    projection[MATCHING_CARD_AUDIENCE_FIELD] = LIKED_AUDIENCE;
+  }
 
   // Повна група крові — лише в опублікованої картки. Рядок стрічки показував
   // сам резус («Rh+»), і читач не розумів, яка це група. Але картку бачить
@@ -542,6 +564,7 @@ export const expandMatchingCard = (userId, card) => {
   const {
     avatar, surnameShort, rh,
     [MATCHING_CARD_FEED_FIELD]: feedDate,
+    [MATCHING_CARD_AUDIENCE_FIELD]: audience,
     ...rest
   } = card;
 
@@ -572,6 +595,11 @@ export const expandMatchingCard = (userId, card) => {
     // стирала б позначку «сховано» і повертала анкету в пошук.
     ...(feedDate === false ? { publish: false } : {}),
     ...(trimmed(feedDate) ? { publish: true, lastLogin2: feedDate } : {}),
+    // Коло вподобаних — назад під імʼям поля анкети, разом із `publish: false`:
+    // без нього перша ж правка сусіднього поля перебудувала б картку як просто
+    // сховану, і вподобані перестали б її бачити. `publish` лишається `false`
+    // і тут — показ відкриває лише той шлях, що довів членство читача в колі.
+    ...(feedDate === false && audience === LIKED_AUDIENCE ? { [PUBLISH_AUDIENCE_FIELD]: LIKED_AUDIENCE } : {}),
     // «Кого шукаємо» — під тим самим іменем, що й в анкеті: показ читає одне
     // поле, хоч би звідки картка приїхала.
     ...(rest.seekingRole ? { seeking: rest.seekingRole } : {}),

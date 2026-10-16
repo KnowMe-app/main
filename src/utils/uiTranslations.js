@@ -1129,6 +1129,33 @@ const EN_BY_UK = {
   'Анкета донора': 'Donor profile',
   'Анкету бачать у стрічці. Приховати її можна будь-коли': 'Your profile is visible in the feed. You can hide it at any time',
   'Анкету поки не видно в стрічці. Опублікуйте, коли будете готові': 'Your profile is not in the feed yet. Publish it when you are ready',
+  // --- публікація «лише для вподобаних» (`utils/likedAudience`) ---
+  'Лише вподобаним': 'Liked only',
+  'Опублікувати для всіх': 'Publish for everyone',
+  'Опублікувати лише для тих, кого я вподобала': 'Publish only for those I liked',
+  'Показувати лише тим, кого я вподобала': 'Show only to those I liked',
+  'Лише для тих, кого ви вподобали': 'Only for those you liked',
+  'Анкету бачать лише ті, кого ви вподобали. Для решти її немає ні в стрічці, ні в пошуку':
+    'Only those you liked can see your profile. Everyone else will not find it in the feed or in search',
+  'Анкету побачать лише агенції, клініки й біологічні батьки, яких ви вподобали ♥ — зокрема ті, кого ви вже вподобали раніше, — і лише доки вподобання стоїть. Для всіх інших її не буде ні в стрічці, ні в пошуку.':
+    'Only the agencies, clinics and intended parents you liked ♥ will see the profile — including those you liked earlier — and only while the like stays. For everyone else it will be absent from the feed and from search.',
+  'Так більше анонімності, але менше пропозицій: анкету побачить менше агенцій, тож і програм вам, найімовірніше, запропонують менше.':
+    'This gives you more anonymity but fewer offers: fewer agencies will see the profile, so you will most likely be offered fewer programmes.',
+  'Ви ще нікого не вподобали, тож зараз анкету не бачить ніхто. Вподобайте агенцію, клініку чи біологічних батьків у стрічці — і вони одразу її побачать.':
+    'You have not liked anyone yet, so nobody can see the profile right now. Like an agency, a clinic or intended parents in the feed and they will see it straight away.',
+  'Зараз анкету бачать: {count}. Знімете вподобання — і для них вона одразу закриється.':
+    'Seen right now by: {count}. Remove a like and the profile closes for them at once.',
+  'Вподобайте агенцію, клініку чи біологічних батьків у стрічці — і вони одразу побачать анкету. Знімете вподобання — і для них вона закриється.':
+    'Like an agency, a clinic or intended parents in the feed and they will see the profile straight away. Remove the like and it closes for them.',
+  'Анкету сховано від усіх, але показ лише вподобаним ще не діє: базу ще не оновлено. Спробуйте пізніше або напишіть адміністраторові':
+    'The profile is hidden from everyone, but showing it to liked ones does not work yet: the database has not been updated. Try later or contact the administrator',
+  'Анкету відкрито лише вподобаним, але агенції поки не знайдуть її у стрічці: базу ще не оновлено':
+    'The profile is open to liked ones only, but agencies cannot find it in the feed yet: the database has not been updated',
+  'Анкету бачать лише ті, кого ви вподобали': 'Only those you liked can see the profile',
+  'Анкету сховано від усіх. Її побачать ті, кого ви вподобаєте': 'The profile is hidden from everyone. Those you like will see it',
+  'Ви вподобали — тепер вони бачать вашу анкету': 'Liked — they can now see your profile',
+  'Вподобання знято — вашу анкету для них закрито': 'Like removed — your profile is closed to them',
+  'Анкета прихована від інших — вас вподобали, тож вам її видно': 'Hidden from others — you were liked, so you can see it',
   'Логін не відбувся': 'Not signed in',
   'Доступ до анкети': 'Access to the profile',
   'Введіть емейл': 'Type your email',

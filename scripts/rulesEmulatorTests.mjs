@@ -1771,6 +1771,98 @@ await it('донорка читає показану анкету, а прихо
   await assertFails(get(ref(db(SELF_SERVE), `profileContacts/${HIDDEN_CARD}`)));
 });
 
+describe('публікація лише для вподобаних — анкету бачить тільки той, кого власниця вподобала');
+
+// Донорка, яка відкрила анкету лише вподобаним: дати стрічки немає (`false`),
+// поруч — коло читачів. Вподобала вона агенцію ORDINARY_VIEWER і, щоб
+// перевірити саме нове правило картки, донорку SELF_SERVE: у ролі `ed`
+// кореневого читання `matchingCards` немає, тож картку їй відкриває лише
+// реакція. NODE_ROLE_VIEWER — агенція, яку не вподобали.
+const LIKED_ONLY_OWNER = 'likedOnlyOwnerUid000000000';
+
+await testEnv.withSecurityRulesDisabled(async context => {
+  const seed = context.database();
+  await set(ref(seed, `matchingCards/${LIKED_ONLY_OWNER}`), { name: 'Анонімна', feedDate: false, audience: 'liked' });
+  await set(ref(seed, `profileDetails/${LIKED_ONLY_OWNER}`), { surname: 'Анонімна', blood: '1+' });
+  await set(ref(seed, `profileContacts/${LIKED_ONLY_OWNER}`), { phone: ['+380671112233'] });
+  await set(ref(seed, `multiData/favorites/${LIKED_ONLY_OWNER}`), {
+    [ORDINARY_VIEWER]: 1760000000000,
+    [SELF_SERVE]: 'ed',
+  });
+});
+
+await it('вподобана агенція читає картку, деталі й контакти', async () => {
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `matchingCards/${LIKED_ONLY_OWNER}`)));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `profileDetails/${LIKED_ONLY_OWNER}`)));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `profileContacts/${LIKED_ONLY_OWNER}`)));
+});
+
+await it('вподобаній читачці без кореневого доступу картку відкриває сама реакція', async () => {
+  await assertSucceeds(get(ref(db(SELF_SERVE), `matchingCards/${LIKED_ONLY_OWNER}`)));
+  await assertSucceeds(get(ref(db(SELF_SERVE), `profileContacts/${LIKED_ONLY_OWNER}`)));
+});
+
+await it('невподобана агенція не отримує ні деталей, ні контактів', async () => {
+  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${LIKED_ONLY_OWNER}`)));
+  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${LIKED_ONLY_OWNER}`)));
+});
+
+await it('стороння донорка не бачить навіть картки', async () => {
+  await assertFails(get(ref(db(OUTSIDER), `matchingCards/${LIKED_ONLY_OWNER}`)));
+  await assertFails(get(ref(db(OUTSIDER), `profileDetails/${LIKED_ONLY_OWNER}`)));
+  await assertFails(get(ref(db(OUTSIDER), `profileContacts/${LIKED_ONLY_OWNER}`)));
+});
+
+await it('запит стрічки картку без дати не привозить', async () => {
+  const snapshot = await assertSucceeds(get(query(ref(db(OUTSIDER), 'matchingCards'), orderByChild('feedDate'), startAt(''))));
+  if (snapshot.child(LIKED_ONLY_OWNER).exists()) throw new Error('картка лише для вподобаних потрапила в стрічку');
+});
+
+await it('зняте вподобання забирає доступ тієї ж миті', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `multiData/favorites/${LIKED_ONLY_OWNER}/${ORDINARY_VIEWER}`), null));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `profileDetails/${LIKED_ONLY_OWNER}`)));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `profileContacts/${LIKED_ONLY_OWNER}`)));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `multiData/favorites/${LIKED_ONLY_OWNER}/${ORDINARY_VIEWER}`), 1760000000000));
+});
+
+await it('вподобання без режиму нічого не відкриває: звичайна схована лишається схованою', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${LIKED_ONLY_OWNER}/audience`), null));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `profileDetails/${LIKED_ONLY_OWNER}`)));
+  await assertFails(get(ref(db(SELF_SERVE), `matchingCards/${LIKED_ONLY_OWNER}`)));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${LIKED_ONLY_OWNER}/audience`), 'liked'));
+});
+
+await it('власниця вмикає режим лише разом із feedDate: false', async () => {
+  await assertSucceeds(update(ref(db(LIKED_ONLY_OWNER), `matchingCards/${LIKED_ONLY_OWNER}`), { feedDate: false, audience: 'liked' }));
+  // Дата поруч із колом читачів поставила б картку в стрічку всім.
+  await assertFails(update(ref(db(LIKED_ONLY_OWNER), `matchingCards/${LIKED_ONLY_OWNER}`), { feedDate: '2026-10-16', audience: 'liked' }));
+  await assertFails(set(ref(db(LIKED_ONLY_OWNER), `matchingCards/${LIKED_ONLY_OWNER}/audience`), 'all'));
+  // Публікація для всіх знімає коло тим самим записом.
+  await assertSucceeds(update(ref(db(LIKED_ONLY_OWNER), `matchingCards/${LIKED_ONLY_OWNER}`), { feedDate: '2026-10-16', audience: null }));
+  await assertSucceeds(update(ref(db(LIKED_ONLY_OWNER), `matchingCards/${LIKED_ONLY_OWNER}`), { feedDate: false, audience: 'liked' }));
+});
+
+await it('чуже коло не вмикає ніхто, крім власниці', () =>
+  assertFails(update(ref(db(ORDINARY_VIEWER), `matchingCards/${LIKED_ONLY_OWNER}`), { feedDate: false, audience: 'liked' })));
+
+await it('обернений перелік: власниця пише себе вподобаному, читає його лише він сам', async () => {
+  const entry = `multiData/likedAudience/${ORDINARY_VIEWER}/${LIKED_ONLY_OWNER}`;
+  await assertSucceeds(set(ref(db(LIKED_ONLY_OWNER), entry), 1760000000000));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `multiData/likedAudience/${ORDINARY_VIEWER}`)));
+  await assertFails(get(ref(db(NODE_ROLE_VIEWER), `multiData/likedAudience/${ORDINARY_VIEWER}`)));
+  await assertFails(get(ref(db(OUTSIDER), 'multiData/likedAudience')));
+  // Від чужого імені не пише ніхто — ні вподобаний, ні сторонній.
+  await assertFails(set(ref(db(ORDINARY_VIEWER), entry), 1760000000001));
+  await assertFails(set(ref(db(OUTSIDER), `multiData/likedAudience/${ORDINARY_VIEWER}/${LIKED_ONLY_OWNER}`), 1760000000001));
+  await assertFails(set(ref(db(LIKED_ONLY_OWNER), entry), 'yes'));
+  await assertFails(set(ref(db(LIKED_ONLY_OWNER), `multiData/likedAudience/${LIKED_ONLY_OWNER}/${LIKED_ONLY_OWNER}`), 1760000000000));
+  await assertSucceeds(remove(ref(db(LIKED_ONLY_OWNER), entry)));
+});
+
 describe('documentsBuilder: тестовий акаунт читає й пише');
 
 // Тестовий акаунт веб-сесій (MIGRATION_EMAIL) читає й правит шаблони, кейси та сторони — так

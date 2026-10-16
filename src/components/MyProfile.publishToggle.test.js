@@ -18,8 +18,8 @@ describe('my-profile publication toggle', () => {
       source.indexOf('const renderField = (name) => {')
     );
 
-    expect(hideProfileBody).toContain('publish: false');
-    expect(hideProfileBody).toContain("await saveState(nextState, { directFields: ['publish'] });");
+    expect(hideProfileBody).toContain('publish: false, publishAudience: null');
+    expect(hideProfileBody).toContain("await saveState(nextState, { directFields: ['publish', 'publishAudience'] });");
   });
 
   // Сховати анкету — це не лише `publish: false` в самій анкеті: у стрічці її
@@ -47,8 +47,37 @@ describe('my-profile publication toggle', () => {
   });
 
   it('uses the current publish state for the profile status marker', () => {
-    expect(source).toContain('$published={state.publish === true}');
-    expect(source).toContain("state.publish === true ? 'Опублікована' : 'Не опублікована'");
+    expect(source).toContain('$published={state.publish === true || isLikedAudience}');
+    expect(source).toContain("state.publish === true ? 'Опублікована' : (isLikedAudience ? 'Лише вподобаним' : 'Не опублікована')");
+  });
+
+  // Публікація «лише для вподобаних» — свідомий обмін анонімності на кількість
+  // пропозицій, тож застереження стоїть поруч із кнопкою, а не тостом після.
+  it('offers liked-only publication with the caveat next to the button', () => {
+    const card = source.slice(source.indexOf('data-testid="publish-card"'), source.indexOf('</SubmitWrap>'));
+    expect(card).toContain('canOfferLikedAudience ? (');
+    expect(card).toContain('onClick={publishToLikedAudience}');
+    expect(card).toContain("'Опублікувати лише для тих, кого я вподобала'");
+    expect(card).toContain('Так більше анонімності, але менше пропозицій');
+    expect(card).toContain('Для всіх інших її не буде ні в стрічці, ні в пошуку.');
+  });
+
+  it('liked-only publication hides the card from everyone in the same write', () => {
+    const body = source.slice(
+      source.indexOf('const publishToLikedAudience = async () => {'),
+      source.indexOf('const closeLikedAudience = async () => {'),
+    );
+    expect(body).toContain('publish: false,');
+    expect(body).toContain('publishAudience: LIKED_AUDIENCE,');
+    expect(body).toContain("directFields: ['publish', 'publishAudience', 'hiddenRoles']");
+    // Перевіряє, що база справді прийняла режим, і каже, коли ні.
+    expect(body).toContain('readOwnCardLikedAudience(ownerUid)');
+    expect(body).toContain('setOwnLikedAudienceEntries(ownerUid, true)');
+
+    const savedState = { name: 'Олена', lastLogin2: '2026-08-19', publish: false, publishAudience: 'liked' };
+    const projection = buildMatchingCardProjection('a'.repeat(28), savedState, { existingCard: { feedDate: '2026-08-19' } });
+    expect(projection[MATCHING_CARD_FEED_FIELD]).toBe(false);
+    expect(projection.audience).toBe('liked');
   });
 
   it('keeps the failed login status for profiles without confirmed access', () => {

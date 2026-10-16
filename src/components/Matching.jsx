@@ -70,7 +70,9 @@ import {
   readOwnerGetInTouchSorted,
   setOwnerGetInTouch,
   setReactionUserValues,
+  fetchLikedAudienceCards,
 } from './config';
+import { LIKED_AUDIENCE_CARD_FLAG, LIKED_AUDIENCE_EVENT } from 'utils/likedAudience';
 import { get as firebaseGet, onValue as firebaseOnValue, ref as refDb, query, orderByKey, startAt, endAt } from 'firebase/database';
 import {
   BACKEND_TRAFFIC_TRACKING_TEST_UID,
@@ -631,6 +633,9 @@ const isValidCachedReactionCard = (card, id) => {
 };
 const canShowReactionTabCard = (card, { isAdmin = false } = {}) => {
   if (!card?.userId) return false;
+  // Відкрита саме цьому читачеві (публікація «лише для вподобаних»):
+  // `publish: false` у неї навмисно, показ дає доведене членство в колі.
+  if (card[LIKED_AUDIENCE_CARD_FLAG] === true) return true;
   // Явно наданий (або явно знятий) доступ вирішує сам; далі — звичайне
   // `publish`. Колекція, з якої картка приїхала, тут уже ні до чого.
   if (card.__matchingAccessAllowed === false) return false;
@@ -1213,6 +1218,10 @@ const Matching = () => {
     normalizeSearchKeySetKeys(localStorage.getItem('additionalSearchKeySetKeys') || '')
   );
   const [additionalAccessUsers, setAdditionalAccessUsers] = useState([]);
+  // Картки, які донорки чи сурогатні мами відкрили саме цьому читачеві
+  // (публікація «лише для вподобаних», `utils/likedAudience`).
+  const [likedAudienceUsers, setLikedAudienceUsers] = useState([]);
+  const likedAudienceIdsRef = useRef(new Set());
   const additionalAccessUsersRef = useRef(additionalAccessUsers);
   const [additionalNextOffset, setAdditionalNextOffset] = useState(0);
   const additionalNextOffsetRef = useRef(0);
@@ -2781,6 +2790,54 @@ const Matching = () => {
     [isAdmin, programRates, recordInitialLoadDiagnostic, roleIndexSets]
   );
 
+  /*
+   * Анкети, відкриті цьому читачеві вподобанням донорки чи СМ.
+   *
+   * Стрічка їх не привезе: дати в такій картці немає, щоб запит стрічки не
+   * показав її всім. Тож вони читаються окремо — обернений перелік читача й
+   * точкове читання кожної картки (`fetchLikedAudienceCards`) — і стають
+   * головою деки (`mergeMatchingCandidateUsers`). Запит — раз на читача, а не
+   * на кожну сторінку: таких карток одиниці.
+   */
+  useEffect(() => {
+    const viewerId = String(ownerId || '').trim();
+    if (!viewerId) {
+      likedAudienceIdsRef.current = new Set();
+      setLikedAudienceUsers(EMPTY_USERS);
+      return () => {};
+    }
+    let cancelled = false;
+    fetchLikedAudienceCards()
+      .then(cards => {
+        if (cancelled) return;
+        likedAudienceIdsRef.current = new Set(cards.map(card => card.userId));
+        setLikedAudienceUsers(cards.length ? cards : EMPTY_USERS);
+        if (cards.length) void loadCommentsFor(cards);
+      })
+      .catch(error => {
+        if (!cancelled) console.warn('[likedAudience] не вдалося завантажити відкриті вам анкети', error);
+      });
+    return () => { cancelled = true; };
+  }, [loadCommentsFor, ownerId]);
+
+  // Донорці в режимі «лише для вподобаних» серце відкриває анкету тому, кого
+  // вподобала, а знята реакція — закриває. Без підказки лайк виглядав би
+  // звичайним «подобається», і людина не знала б, що щойно показала себе.
+  useEffect(() => {
+    if (typeof window === 'undefined') return () => {};
+    const handleLikedAudienceChange = event => {
+      const opened = Boolean(event?.detail?.opened);
+      toast.success(
+        uiText(opened
+          ? 'Ви вподобали — тепер вони бачать вашу анкету'
+          : 'Вподобання знято — вашу анкету для них закрито', language),
+        { id: `liked-audience-${event?.detail?.viewerId || ''}` },
+      );
+    };
+    window.addEventListener(LIKED_AUDIENCE_EVENT, handleLikedAudienceChange);
+    return () => window.removeEventListener(LIKED_AUDIENCE_EVENT, handleLikedAudienceChange);
+  }, [language]);
+
   // Додаткові правила відкривають окремі анкети, зокрема неопубліковані,
   // яких за визначенням немає у публічному matchingCards. Тому scoped-індекс
   // доповнює загальну стрічку, а не підміняє її джерело чи пагінацію.
@@ -3856,6 +3913,10 @@ const Matching = () => {
         ...user,
         userId: user.userId,
         ...(reactionStorageByIdRef.current?.[user.userId] === 'nodes' ? { __matchingAccessAllowed: true } : {}),
+        // Картка, яку власниця відкрила цьому читачеві: сторінка колекції
+        // читає її сама, і без позначки `publish: false` сховав би її з
+        // «Обраних» того, хто її вподобав у відповідь.
+        ...(likedAudienceIdsRef.current.has(user.userId) ? { [LIKED_AUDIENCE_CARD_FLAG]: true } : {}),
       }),
       filterUsers: candidates => {
         debugReactionFlowLog('loadReactionCardsPage:filterUsers-input', {
@@ -5090,6 +5151,7 @@ const Matching = () => {
         hasMore,
       }),
     additionalAccessUsers,
+    likedAudienceUsers,
     sharedReactionCandidateUsers,
     isAdmin,
     viewMode,
@@ -5107,6 +5169,7 @@ const Matching = () => {
     keepReactedUserIds: stickyReactedUserIds,
   }), viewMode === 'default' ? returnedToFeedCards : EMPTY_USERS), [
     additionalAccessUsers,
+    likedAudienceUsers,
     dislikeUsers,
     favoriteUsers,
     ownDislikeUsers,
@@ -5142,6 +5205,7 @@ const Matching = () => {
     const candidateUsersById = new Map();
     [
       ...users,
+      ...likedAudienceUsers,
       ...additionalAccessUsers,
       ...sharedReactionCandidateUsers,
       ...personalCreateProfiles,
@@ -5166,6 +5230,7 @@ const Matching = () => {
       });
   }, [
     additionalAccessUsers,
+    likedAudienceUsers,
     dislikeUsers,
     favoriteUsers,
     isAdmin,
