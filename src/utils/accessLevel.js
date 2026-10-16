@@ -104,3 +104,29 @@ export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfi
     canCreateProfiles: canCreateProfilesResolved,
   };
 };
+
+/*
+ * Поля, яким правила бази довіряють як правам читача: `accessLevel`
+ * (службовий доступ до всіх анкет), `canCreateProfiles` і
+ * `multiDataSourceUserIds` (чужі реакції й позначки). Міняти їх може лише
+ * двоє адмінів (`ADMIN_UIDS`) — так тепер написано й у `database.rules.json`:
+ * поки власник міг писати їх у свій `users/{uid}` чи `profileTechnical/{uid}`
+ * сам, будь-хто, хто увійшов, ставив собі `matching:view` і читав контакти
+ * будь-якої, навіть схованої, анкети.
+ *
+ * Писачі анкети знімають ці поля з усього, що пише не адмін: інакше
+ * збереження, яке везе їх із Firestore (там вони можуть відрізнятися від
+ * бази), правила відкинули б цілим вузлом — разом із датою входу й рештою.
+ */
+export const PRIVILEGED_PROFILE_FIELDS = Object.freeze(['accessLevel', 'canCreateProfiles', 'multiDataSourceUserIds']);
+
+export const canGrantProfilePrivileges = uid => !!uid && ADMIN_UIDS.includes(uid);
+
+export const stripPrivilegedProfileFields = (payload, writerUid) => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+  if (canGrantProfilePrivileges(writerUid)) return payload;
+  if (!PRIVILEGED_PROFILE_FIELDS.some(field => Object.prototype.hasOwnProperty.call(payload, field))) return payload;
+  const next = { ...payload };
+  PRIVILEGED_PROFILE_FIELDS.forEach(field => { delete next[field]; });
+  return next;
+};

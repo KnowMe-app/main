@@ -28,8 +28,15 @@ describe('limited search projection', () => {
     // The rules are the enforcement; the field list is only what the client asks
     // for. If they drift apart the projection silently gains or loses a field.
     expect(openedFields.sort()).toEqual(limitedProfileFields.sort());
-    expect(Object.keys(uidRules).filter(key => !key.startsWith('.')).sort())
-      .toEqual(limitedProfileFields.sort());
+    // Інші дочірні правила тут бувають лише сторожами запису (поля прав —
+    // `accessLevel`, `canCreateProfiles`, `multiDataSourceUserIds` міняють самі
+    // адміни) і нічого не відкривають на читання.
+    const otherChildren = Object.keys(uidRules)
+      .filter(key => !key.startsWith('.') && !limitedProfileFields.includes(key));
+    expect(otherChildren.sort()).toEqual(['accessLevel', 'canCreateProfiles', 'multiDataSourceUserIds']);
+    otherChildren.forEach(key => {
+      expect(JSON.stringify(uidRules[key])).not.toContain('.read');
+    });
   });
 
   it('leaves users node-level reads gated as before', () => {

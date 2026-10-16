@@ -71,7 +71,7 @@ import {
   shouldSkipBroadFallbackForExactSearchId,
   splitSearchIdCandidateKeys,
 } from '../utils/searchKeyUtils';
-import { isAdminUid, readStoredAccessLevel } from '../utils/accessLevel';
+import { isAdminUid, readStoredAccessLevel, stripPrivilegedProfileFields } from '../utils/accessLevel';
 import { hasFilledProfileDraftData } from '../utils/profileDraftContent';
 import { flattenOwnerValueToString } from '../utils/rtdbMigrationDerive';
 import { isLongFormatUserId } from '../utils/userIdFormat';
@@ -4947,9 +4947,12 @@ export const updateProfileRole = async (userId, nextRole) => {
 
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
-    const cleanedUploadedInfo = normalizeStoredDates(stripTransientUserDataFields(uploadedInfo, {
+    // Права (`accessLevel`, `canCreateProfiles`, `multiDataSourceUserIds`)
+    // видають лише адміни, і правила бази відкидають їх від будь-кого іншого —
+    // разом з усім вузлом. Тож із запису не-адміна вони знімаються ще тут.
+    const cleanedUploadedInfo = stripPrivilegedProfileFields(normalizeStoredDates(stripTransientUserDataFields(uploadedInfo, {
       markForRealtimeDeletion: condition === 'update',
-    }));
+    })), auth.currentUser?.uid);
 
     // Спершу вузли — вони джерело істини для веба, і саме їх читає застосунок.
     // Legacy йде другим: це дзеркало для мобільного застосунку, і його відмова
@@ -5046,9 +5049,12 @@ export const updateProfileNodesInRTDB = async (userId, uploadedInfo, condition, 
     console.log('currentUserData :>> ', currentUserData);
 
     // if (condition === 'update' && !(Object.keys(uploadedInfo).length < Object.keys(currentUserData).length)) {
-    const cleanedUploadedInfo = normalizeStoredDates(stripTransientUserDataFields(uploadedInfo, {
+    // Права (`accessLevel`, `canCreateProfiles`, `multiDataSourceUserIds`)
+    // видають лише адміни, і правила бази відкидають їх від будь-кого іншого —
+    // разом з усім вузлом. Тож із запису не-адміна вони знімаються ще тут.
+    const cleanedUploadedInfo = stripPrivilegedProfileFields(normalizeStoredDates(stripTransientUserDataFields(uploadedInfo, {
       markForRealtimeDeletion: condition === 'update',
-    }));
+    })), auth.currentUser?.uid);
 
     const nodesWritten = await fanOutProfileNodes(userId, cleanedUploadedInfo);
     if (!nodesWritten) throwProfileWriteFailure(userId, 'вузли анкети');

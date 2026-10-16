@@ -1913,6 +1913,44 @@ await it('опублікована для всіх — програми знов
   await assertFails(get(ref(testEnv.unauthenticatedContext().database(), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
 });
 
+describe('права доступу видають лише два адміни — не власник анкети й не редактор');
+
+// Правила довіряють `accessLevel`, `canCreateProfiles` і
+// `multiDataSourceUserIds` власного запису читача. Поки власник міг писати ці
+// поля сам, будь-хто, хто увійшов, ставив собі `matching:view` і читав
+// контакти й деталі будь-якої анкети, зокрема схованої.
+await it('власниця не видає собі службового доступу ні в profileTechnical, ні в users', async () => {
+  await assertFails(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/accessLevel`), 'matching:view'));
+  await assertFails(set(ref(db(SELF_SERVE), `users/${SELF_SERVE}/accessLevel`), 'matching:view'));
+  await assertFails(update(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}`), { lastLogin: '2026-10-16', accessLevel: 'matching:view' }));
+  await assertFails(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/canCreateProfiles`), true));
+  await assertFails(set(ref(db(SELF_SERVE), `users/${SELF_SERVE}/canCreateProfiles`), true));
+  await assertFails(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/multiDataSourceUserIds/${SUPERADMIN}`), true));
+  await assertFails(set(ref(db(SELF_SERVE), `users/${SELF_SERVE}/multiDataSourceUserIds/${SUPERADMIN}`), true));
+  await assertFails(get(ref(db(SELF_SERVE), `profileContacts/${HIDDEN_CARD}`)));
+});
+
+await it('редактор матчингу чужих прав не змінює', async () => {
+  await assertFails(set(ref(db(MIGRATED_EDITOR), `profileTechnical/${SELF_SERVE}/accessLevel`), 'matching:view'));
+  await assertFails(set(ref(db(MATCHING_EDITOR), `users/${SELF_SERVE}/accessLevel`), 'matching:view'));
+  await assertFails(set(ref(db(MIGRATED_EDITOR), `profileTechnical/${MIGRATED_EDITOR}/accessLevel`), 'matching+profileContacts:view&write'));
+});
+
+await it('звичайне збереження анкети проходить, зокрема з незміненим рівнем доступу', async () => {
+  await assertSucceeds(update(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}`), { lastLogin: '2026-10-16' }));
+  await assertSucceeds(update(ref(db(MATCHING_EDITOR), `users/${MATCHING_EDITOR}`), { name: 'Редактор', accessLevel: 'matching:view&write' }));
+  await assertSucceeds(update(ref(db(MIGRATED_EDITOR), `profileTechnical/${MIGRATED_EDITOR}`), { lastLogin: '2026-10-16', accessLevel: 'matching:view&write', canCreateProfiles: true }));
+});
+
+await it('обидва адміни видають і знімають права', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/accessLevel`), 'matching:view'));
+  await assertSucceeds(set(ref(db('3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'), `users/${SELF_SERVE}/canCreateProfiles`), true));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/multiDataSourceUserIds/${SUPERADMIN}`), true));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/accessLevel`), null));
+  await assertSucceeds(set(ref(db('3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'), `users/${SELF_SERVE}/canCreateProfiles`), null));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/multiDataSourceUserIds`), null));
+});
+
 describe('documentsBuilder: тестовий акаунт читає й пише');
 
 // Тестовий акаунт веб-сесій (MIGRATION_EMAIL) читає й правит шаблони, кейси та сторони — так
