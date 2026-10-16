@@ -1155,6 +1155,17 @@ const EN_BY_UK = {
   'Анкету сховано від усіх. Її побачать ті, кого ви вподобаєте': 'The profile is hidden from everyone. Those you like will see it',
   'Ви вподобали — тепер вони бачать вашу анкету': 'Liked — they can now see your profile',
   'Вподобання знято — вашу анкету для них закрито': 'Like removed — your profile is closed to them',
+  'Показувати анкету лише тим, кого ви вподобали?': 'Show the profile only to those you liked?',
+  'Після «OK» анкета одразу зникне зі стрічки й пошуку для всіх. Її бачитимуть лише агенції, клініки й біологічні батьки, яких ви вподобали ♥ — зокрема раніше, — і лише доки вподобання стоїть.':
+    'After “OK” the profile disappears from the feed and from search for everyone at once. Only the agencies, clinics and intended parents you liked ♥ — including earlier — will see it, and only while the like stays.',
+  'Нові агенції, клініки й біологічні батьки зʼявляються в застосунку постійно.':
+    'New agencies, clinics and intended parents join the app all the time.',
+  'Вашої анкети вони не побачать і нічого не зможуть вам запропонувати, доки ви самі їх не вподобаєте.':
+    'They will not see your profile and cannot offer you anything until you like them yourself.',
+  'Тож час від часу заходьте в застосунок: перевіряйте стрічку, чи не зʼявилися нові, і вподобайте тих, кому хочете показати анкету.':
+    'So open the app from time to time: check the feed for newcomers and like those you want to show your profile to.',
+  'Більше анонімності — менше пропозицій. Повернути звичайну публікацію можна будь-коли кнопкою «Опублікувати для всіх».':
+    'More anonymity means fewer offers. You can return to normal publication at any time with “Publish for everyone”.',
   'Анкета прихована від інших — вас вподобали, тож вам її видно': 'Hidden from others — you were liked, so you can see it',
   'Логін не відбувся': 'Not signed in',
   'Доступ до анкети': 'Access to the profile',

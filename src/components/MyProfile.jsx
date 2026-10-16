@@ -42,6 +42,7 @@ import InfoModal, {
   ModalActionRow,
   ModalDangerButton,
   ModalGhostButton,
+  ModalPrimaryButton,
   ModalText,
   ModalTitle,
 } from './InfoModal';
@@ -1932,17 +1933,39 @@ export const MyProfile = () => {
    * усіх (`MATCHING_CARD_PROGRAM_FIELDS`), — і людина мусить про це знати, а не
    * думати, що її бачать вподобані.
    */
-  const publishToLikedAudience = async () => {
-    if (!isProfileAccessConfirmed) {
-      await handleAuthConfirm();
-      if (!stateRef.current.userId && !userId) return;
-    }
+  //
+  // Вмикається режим лише після підтвердження в модалці
+  // (`likedAudienceConfirm`): нові агенції, клініки й батьки зʼявляються
+  // постійно, і анкети вони не побачать, доки людина сама їх не вподобає, —
+  // тобто вона бере на себе час від часу заходити й перевіряти стрічку. Це
+  // треба сказати до рішення, а не після. Обовʼязкові поля перевіряються ще
+  // до модалки: інакше людина погоджувалась би на режим, а у відповідь
+  // діставала «заповніть поле».
+  const prepareLikedAudiencePublication = () => {
     const currentState = stateRef.current || {};
     const wasVisible = currentState.publish === true || isLikedAudienceProfile(currentState);
     const nextHidden = wasVisible ? hiddenRoles : [];
     const shownRoles = rolesList.filter(role => !nextHidden.includes(role));
     const rolesToValidate = rolesList.length > 1 ? shownRoles : [''];
-    if (!rolesToValidate.every(role => validateRequiredProfileFields(role))) return;
+    if (!rolesToValidate.every(role => validateRequiredProfileFields(role))) return null;
+    return { currentState, nextHidden };
+  };
+
+  const requestLikedAudiencePublication = async () => {
+    if (!isProfileAccessConfirmed) {
+      await handleAuthConfirm();
+      if (!stateRef.current.userId && !userId) return;
+    }
+    if (!prepareLikedAudiencePublication()) return;
+    setClearRoleTarget('');
+    setShowInfoModal('likedAudienceConfirm');
+  };
+
+  const publishToLikedAudience = async () => {
+    setShowInfoModal(false);
+    const prepared = prepareLikedAudiencePublication();
+    if (!prepared) return;
+    const { currentState, nextHidden } = prepared;
 
     const nextState = {
       ...currentState,
@@ -2556,8 +2579,35 @@ export const MyProfile = () => {
     {showInfoModal && (
       <InfoModal
         onClose={() => { if (!isClearingProfile) setShowInfoModal(false); }}
-        text={showInfoModal}
-        DelConfirm={() => (clearRoleTarget ? (
+        // Підтвердження режиму «лише для вподобаних» малюється тією самою
+        // модалкою підтвердження, що й «Очистити анкету».
+        text={showInfoModal === 'likedAudienceConfirm' ? 'delConfirm' : showInfoModal}
+        DelConfirm={() => (showInfoModal === 'likedAudienceConfirm' ? (
+          <div data-testid="liked-audience-confirm">
+            <ModalTitle>{uiText('Показувати анкету лише тим, кого ви вподобали?', language)}</ModalTitle>
+            <ModalText>
+              {uiText('Після «OK» анкета одразу зникне зі стрічки й пошуку для всіх. Її бачитимуть лише агенції, клініки й біологічні батьки, яких ви вподобали ♥ — зокрема раніше, — і лише доки вподобання стоїть.', language)}
+            </ModalText>
+            <ModalText>
+              <b>{uiText('Нові агенції, клініки й біологічні батьки зʼявляються в застосунку постійно.', language)}</b>{' '}
+              {uiText('Вашої анкети вони не побачать і нічого не зможуть вам запропонувати, доки ви самі їх не вподобаєте.', language)}
+            </ModalText>
+            <ModalText>
+              {uiText('Тож час від часу заходьте в застосунок: перевіряйте стрічку, чи не зʼявилися нові, і вподобайте тих, кому хочете показати анкету.', language)}
+            </ModalText>
+            <ModalText>
+              {uiText('Більше анонімності — менше пропозицій. Повернути звичайну публікацію можна будь-коли кнопкою «Опублікувати для всіх».', language)}
+            </ModalText>
+            <ModalActionRow>
+              <ModalGhostButton type="button" onClick={() => setShowInfoModal(false)}>
+                {uiText('Відмінити', language)}
+              </ModalGhostButton>
+              <ModalPrimaryButton type="button" onClick={publishToLikedAudience}>
+                OK
+              </ModalPrimaryButton>
+            </ModalActionRow>
+          </div>
+        ) : clearRoleTarget ? (
           <>
             <ModalTitle>
               {uiText('Очистити дані: {role}?', language, {
@@ -2690,7 +2740,7 @@ export const MyProfile = () => {
               <LikedAudienceBtn type="button" onClick={publishProfile}>{uiText('Опублікувати для всіх', language)}</LikedAudienceBtn>
             ) : null
           ) : (
-            <LikedAudienceBtn type="button" onClick={publishToLikedAudience}>
+            <LikedAudienceBtn type="button" onClick={requestLikedAudiencePublication}>
               <span aria-hidden="true">♥</span>
               {uiText(isPublished ? 'Показувати лише тим, кого я вподобала' : 'Опублікувати лише для тих, кого я вподобала', language)}
             </LikedAudienceBtn>

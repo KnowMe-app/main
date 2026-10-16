@@ -56,10 +56,31 @@ describe('my-profile publication toggle', () => {
   it('offers liked-only publication with the caveat next to the button', () => {
     const card = source.slice(source.indexOf('data-testid="publish-card"'), source.indexOf('</SubmitWrap>'));
     expect(card).toContain('canOfferLikedAudience ? (');
-    expect(card).toContain('onClick={publishToLikedAudience}');
+    // Кнопка не вмикає режим сама — спершу модалка з підтвердженням.
+    expect(card).toContain('onClick={requestLikedAudiencePublication}');
     expect(card).toContain("'Опублікувати лише для тих, кого я вподобала'");
     expect(card).toContain('Так більше анонімності, але менше пропозицій');
     expect(card).toContain('Для всіх інших її не буде ні в стрічці, ні в пошуку.');
+  });
+
+  // Нові агенції, клініки й батьки анкети не бачать, доки донорка їх не
+  // вподобає, — і це треба сказати до рішення, з явним «OK» або «Відмінити».
+  it('asks to confirm liked-only publication and explains new agencies will not see it', () => {
+    const modal = source.slice(source.indexOf('data-testid="liked-audience-confirm"'), source.indexOf(') : clearRoleTarget ? ('));
+    expect(modal).toContain('Нові агенції, клініки й біологічні батьки зʼявляються в застосунку постійно.');
+    expect(modal).toContain('доки ви самі їх не вподобаєте');
+    expect(modal).toContain('час від часу заходьте в застосунок');
+    expect(modal).toContain('<ModalPrimaryButton type="button" onClick={publishToLikedAudience}>');
+    expect(modal).toContain("uiText('Відмінити', language)");
+
+    const request = source.slice(
+      source.indexOf('const requestLikedAudiencePublication = async () => {'),
+      source.indexOf('const publishToLikedAudience = async () => {'),
+    );
+    // Обовʼязкові поля — до модалки, а сам запис — лише після «OK».
+    expect(request).toContain('prepareLikedAudiencePublication()');
+    expect(request).toContain("setShowInfoModal('likedAudienceConfirm')");
+    expect(request).not.toContain('saveState(');
   });
 
   it('liked-only publication hides the card from everyone in the same write', () => {
