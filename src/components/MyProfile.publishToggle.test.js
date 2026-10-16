@@ -58,18 +58,30 @@ describe('my-profile publication toggle', () => {
     expect(card).toContain('canOfferLikedAudience ? (');
     // Кнопка не вмикає режим сама — спершу модалка з підтвердженням.
     expect(card).toContain('onClick={requestLikedAudiencePublication}');
-    expect(card).toContain("'Опублікувати лише для тих, кого я вподобала'");
-    expect(card).toContain('Так більше анонімності, але менше пропозицій');
-    expect(card).toContain('Для всіх інших її не буде ні в стрічці, ні в пошуку.');
+    expect(card).toContain('isPublished ? likedTexts.restrictButton : likedTexts.publishButton');
+    expect(card).toContain('uiText(likedTexts.offer, language)');
+    expect(card).toContain('uiText(likedTexts.caveat, language)');
+    // Слова — свої для кожного боку ринку, і в обох є ціна режиму.
+    const texts = source.slice(source.indexOf('const LIKED_AUDIENCE_TEXTS'), source.indexOf('// Роль — перше рішення'));
+    expect(texts).toContain("publishButton: 'Опублікувати лише для тих, кого я вподобала'");
+    expect(texts).toContain('Так більше анонімності, але менше пропозицій');
+    expect(texts).toContain('Для всіх інших її не буде ні в стрічці, ні в пошуку.');
+    expect(texts).toContain('Анкету й програми побачать лише ті, кого ви вподобали');
+    expect(texts).toContain('Так більше закритості, але менше звернень');
+    expect(source).toContain('LIKED_AUDIENCE_TEXTS[resolveLikedAudienceKind(rolesList)]');
   });
 
   // Нові агенції, клініки й батьки анкети не бачать, доки донорка їх не
   // вподобає, — і це треба сказати до рішення, з явним «OK» або «Відмінити».
   it('asks to confirm liked-only publication and explains new agencies will not see it', () => {
     const modal = source.slice(source.indexOf('data-testid="liked-audience-confirm"'), source.indexOf(') : clearRoleTarget ? ('));
-    expect(modal).toContain('Нові агенції, клініки й біологічні батьки зʼявляються в застосунку постійно.');
-    expect(modal).toContain('доки ви самі їх не вподобаєте');
+    expect(modal).toContain('uiText(likedTexts.modalNewcomers, language)');
+    expect(modal).toContain('uiText(likedTexts.modalNewcomersResult, language)');
     expect(modal).toContain('час від часу заходьте в застосунок');
+    const texts = source.slice(source.indexOf('const LIKED_AUDIENCE_TEXTS'), source.indexOf('// Роль — перше рішення'));
+    expect(texts).toContain('Нові агенції, клініки й біологічні батьки зʼявляються в застосунку постійно.');
+    expect(texts).toContain('Нові донори, сурогатні мами й біологічні батьки зʼявляються в застосунку постійно.');
+    expect(texts).toContain('доки ви самі їх не вподобаєте');
     expect(modal).toContain('<ModalPrimaryButton type="button" onClick={publishToLikedAudience}>');
     expect(modal).toContain("uiText('Відмінити', language)");
 
@@ -108,8 +120,23 @@ describe('my-profile publication toggle', () => {
     expect(header).toContain('isProfileAccessConfirmed && isLikedAudience ? (');
     expect(header).toContain('data-testid="liked-audience-chip" onClick={handleAuthBadgeClick}');
     expect(header).toContain("'Анкету бачать лише обрані'");
-    expect(header).toContain('Решта агенцій, клінік і батьків її не бачать');
+    expect(header).toContain('uiText(likedTexts.chipCount, language, { count: likedAudienceCount })');
     expect(header).toContain('$restricted={isProfileAccessConfirmed && isLikedAudience}');
+  });
+
+  // Одна анкета теж очищується з «Публікації»: кошик відкриває ту саму
+  // модалку, що й меню «⋮», і стирає поля порожніми версіями.
+  it('offers a trash button that clears the profile through the confirmation modal', () => {
+    const single = source.slice(source.indexOf('<PublishSingleAction'), source.indexOf('</PublishSingleAction>'));
+    expect(single).toContain('data-testid="publish-clear-profile"');
+    expect(single).toContain("onClick={() => { setClearRoleTarget(''); setShowInfoModal('delConfirm'); }}");
+    expect(single).toContain("aria-label={uiText('Очистити анкету', language)}");
+    expect(source).toContain('<ModalDangerButton type="button" disabled={isClearingProfile} onClick={clearProfileFields}>');
+  });
+
+  it('keeps the heart symbol out of the liked-only texts', () => {
+    const texts = source.slice(source.indexOf('const LIKED_AUDIENCE_TEXTS'), source.indexOf('// Роль — перше рішення'));
+    expect(texts).not.toContain('♥');
   });
 
   it('keeps the failed login status for profiles without confirmed access', () => {

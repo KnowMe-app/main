@@ -439,7 +439,7 @@
       },
       "programs": {
         "$uid": {
-          ".read": "auth != null",
+          ".read": "auth != null && (root.child('matchingCards').child($uid).child('audience').val() != 'liked' || auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('accessLevel').isString() && root.child('users').child(auth.uid).child('accessLevel').val().contains('matching')) || (root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching')) || root.child('multiData').child('favorites').child($uid).child(auth.uid).exists())",
           ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('users').child(auth.uid).child('accessLevel').val() == 'matching:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('users').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('users').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write' || root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write'))",
           ".validate": "newData.hasChildren(['updatedAt'])",
           "updatedAt": {

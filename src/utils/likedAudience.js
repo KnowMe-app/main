@@ -54,11 +54,16 @@ export const LIKED_AUDIENCE_EVENT = 'knowme:liked-audience';
 export const LIKED_AUDIENCE_CARD_FLAG = '__likedAudience';
 
 /**
- * Ролі, яким режим пропонується. Агенції, клініці й батькам анонімність не
- * потрібна — їх саме мають знаходити, — а картка в людини одна: сховати
- * агентську анкету разом з особистою означало б зникнути як агенція.
+ * Ролі, яким режим пропонується, — усі ролі матчингу. Спершу він був лише
+ * для донорки й СМ, а тоді й агенції, клініки та батьки попросили того
+ * самого: показувати анкету — а разом з нею й програми (`multiData/programs`
+ * закриті тим самим правилом) — лише тим, кого самі вподобали. Картка в
+ * людини одна, тож і режим один на всі її анкети.
  */
-export const LIKED_AUDIENCE_ROLES = Object.freeze(['ed', 'sm']);
+export const LIKED_AUDIENCE_ROLES = Object.freeze(['ed', 'sm', 'ag', 'cl', 'ip', 'pp']);
+
+/** Особисті ролі: донорка й СМ шукають агенції, клініки й батьків, а не навпаки. */
+const PERSONAL_ROLES = Object.freeze(['ed', 'sm']);
 
 const readScalar = value => (Array.isArray(value) ? value[value.length - 1] : value);
 
@@ -79,12 +84,25 @@ export const isCardSharedWithLikedAudience = card => (
   )
 );
 
-/** Чи пропонувати режим анкеті з такими ролями: лише коли всі ролі особисті. */
+const normalizeRoles = roles => (Array.isArray(roles) ? roles : [roles])
+  .map(role => String(role || '').trim().toLowerCase())
+  .filter(Boolean);
+
+/** Чи пропонувати режим анкеті з такими ролями: будь-якій відомій ролі матчингу. */
 export const canOfferLikedAudiencePublication = (roles = []) => {
-  const list = (Array.isArray(roles) ? roles : [roles])
-    .map(role => String(role || '').trim().toLowerCase())
-    .filter(Boolean);
+  const list = normalizeRoles(roles);
   return list.length > 0 && list.every(role => LIKED_AUDIENCE_ROLES.includes(role));
+};
+
+/**
+ * Кого власниця вподобовує, а отже, хто й побачить анкету — від цього
+ * залежать слова на екрані. Донорка й СМ відкриваються агенціям, клінікам і
+ * батькам; агенція, клініка й батьки — донорам, сурогатним мамам і одне
+ * одному. Картка з особистою роллю й роллю організації пише про ширше коло.
+ */
+export const resolveLikedAudienceKind = (roles = []) => {
+  const list = normalizeRoles(roles);
+  return list.length > 0 && list.every(role => PERSONAL_ROLES.includes(role)) ? 'person' : 'organisation';
 };
 
 const isValidKey = id => typeof id === 'string' && id.trim() !== '' && !/[.#$/[\]]/.test(id);

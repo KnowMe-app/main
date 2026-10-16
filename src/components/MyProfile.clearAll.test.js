@@ -31,11 +31,15 @@ describe('my-profile: видалення і очищення анкети', () =
 
   // Незворотна дія стояла кнопкою просто під «Опублікувати» — на відстані
   // одного промаху. Тепер вона в меню «⋮», поруч із «Видалити анкету».
-  it('ставить «Очистити анкету» в меню, а не під головною кнопкою', () => {
+  // Кошик «Очистити анкету» стоїть і біля головної кнопки «Публікації» (на
+  // прохання власниці продукту), але окремою квадратною кнопкою й лише через
+  // модалку: один промах пальцем не стирає анкету. Меню «⋮» лишається.
+  it('очищує всю анкету з меню й кошиком біля головної кнопки — лише через модалку', () => {
     const submitWrap = source.slice(source.indexOf('data-testid="publish-card"'), source.indexOf('</SubmitWrap>'));
     expect(submitWrap).toContain('onClick={publishProfile}');
-    // Очистити окрему анкету ролі можна й тут (рядок ролі), а всю анкету — ні.
-    expect(submitWrap).not.toContain("setClearRoleTarget(''); setShowInfoModal('delConfirm')");
+    const clearButton = submitWrap.slice(submitWrap.indexOf('<ClearProfileBtn'), submitWrap.indexOf('</ClearProfileBtn>'));
+    expect(clearButton).toContain("onClick={() => { setClearRoleTarget(''); setShowInfoModal('delConfirm'); }}");
+    expect(clearButton).not.toContain('clearProfileFields');
 
     const menu = source.slice(source.indexOf('const dotsMenu = ({ close } = {}) => ('), source.indexOf('const fieldsMap = useMemo('));
     expect(menu).toContain("onClearProfile={isProfileAccessConfirmed ? () => { setClearRoleTarget(''); setShowInfoModal('delConfirm'); } : undefined}");

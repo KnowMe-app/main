@@ -18,6 +18,7 @@ import {
   LIKED_AUDIENCE,
   canOfferLikedAudiencePublication,
   isLikedAudienceProfile,
+  resolveLikedAudienceKind,
 } from '../utils/likedAudience';
 import { pickerFields, getFieldLabel, getFieldPlaceholder, getOptionLabel, getOptionValue } from './formFields';
 import { listOfferedOptions } from '../utils/offeredOptions';
@@ -276,6 +277,37 @@ const PublishHead = styled.div`
   > span { font-size: 13px; line-height: 1.45; color: var(--muted); }
 `;
 const PublishSingleAction = styled.div`margin-top:16px;`;
+/*
+ * Одна анкета — головна дія й поруч кошик «Очистити анкету». Кошик стоїть
+ * тут на прохання власниці продукту: при кількох ролях він уже є в рядку
+ * кожної анкети, а одну анкету очистити можна було лише з меню «⋮», якого
+ * біля «Публікації» ніхто не шукав. Незворотність тримає модалка
+ * (`DelConfirm`), а саме очищення — `clearProfileFields`: порожні рядки
+ * лягають новими версіями полів, тож адмін бачить історію.
+ */
+const PublishSingleRow = styled.div`
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+
+  > div { flex:1 1 auto; min-width:0; }
+`;
+const ClearProfileBtn = styled.button`
+  flex:none;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:52px;
+  height:52px;
+  padding:0;
+  border:1.5px solid var(--border);
+  border-radius:var(--radius);
+  background:var(--card);
+  color:var(--muted);
+  cursor:pointer;
+
+  &:hover, &:focus-visible { color:#D44; border-color:#D44; }
+`;
 const RoleActionList = styled.div`
   display:flex;
   flex-direction:column;
@@ -378,7 +410,6 @@ const LikedAudienceBtn = styled(UnpublishBtn)`
   justify-content:center;
   gap:8px;
 
-  > span[aria-hidden] { flex:none; color:#E8791A; }
 `;
 const LikedAudienceNote = styled.div`
   margin-top:12px;
@@ -397,6 +428,47 @@ const LikedAudienceNote = styled.div`
 const LikedAudienceCaveat = styled.p`
   && { color:var(--muted); }
 `;
+
+/*
+ * Слова режиму «лише для вподобаних» — свої для кожного боку ринку
+ * (`resolveLikedAudienceKind`). Донорка й СМ відкриваються агенціям,
+ * клінікам і батькам і втрачають пропозиції програм; агенція, клініка й
+ * батьки відкриваються донорам, СМ і одне одному, ховають разом з анкетою
+ * програми й втрачають звернення. Один текст на обидва боки або обіцяв би
+ * агенції «програми, які вам запропонують», або мовчав би про її програми.
+ */
+const LIKED_AUDIENCE_TEXTS = Object.freeze({
+  person: Object.freeze({
+    publishButton: 'Опублікувати лише для тих, кого я вподобала',
+    restrictButton: 'Показувати лише тим, кого я вподобала',
+    offer: 'Анкету побачать лише агенції, клініки й біологічні батьки, яких ви вподобали — зокрема ті, кого ви вже вподобали раніше, — і лише доки вподобання стоїть. Для всіх інших її не буде ні в стрічці, ні в пошуку.',
+    caveat: 'Так більше анонімності, але менше пропозицій: анкету побачить менше агенцій, тож і програм вам, найімовірніше, запропонують менше.',
+    nobodyYet: 'Ви ще нікого не вподобали, тож зараз анкету не бачить ніхто. Вподобайте агенцію, клініку чи біологічних батьків у стрічці — і вони одразу її побачать.',
+    howTo: 'Вподобайте агенцію, клініку чи біологічних батьків у стрічці — і вони одразу побачать анкету. Знімете вподобання — і для них вона закриється.',
+    chipNobody: 'Ви ще нікого не вподобали — зараз анкету не бачить ніхто. Вподобайте агенцію, клініку чи батьків у стрічці',
+    chipCount: 'Ті, кого ви вподобали: {count}. Решта агенцій, клінік і батьків її не бачать',
+    chipGeneric: 'Ті, кого ви вподобали. Решта агенцій, клінік і батьків її не бачать',
+    modalAfterOk: 'Після «OK» анкета одразу зникне зі стрічки й пошуку для всіх. Її бачитимуть лише агенції, клініки й біологічні батьки, яких ви вподобали — зокрема раніше, — і лише доки вподобання стоїть.',
+    modalNewcomers: 'Нові агенції, клініки й біологічні батьки зʼявляються в застосунку постійно.',
+    modalNewcomersResult: 'Вашої анкети вони не побачать і нічого не зможуть вам запропонувати, доки ви самі їх не вподобаєте.',
+    modalTradeoff: 'Більше анонімності — менше пропозицій. Повернути звичайну публікацію можна будь-коли кнопкою «Опублікувати для всіх».',
+  }),
+  organisation: Object.freeze({
+    publishButton: 'Опублікувати лише для вподобаних',
+    restrictButton: 'Показувати лише вподобаним',
+    offer: 'Анкету й програми побачать лише ті, кого ви вподобали — донори ооцитів, сурогатні мами, біологічні батьки чи інші агенції, зокрема вподобані раніше, — і лише доки вподобання стоїть. Для всіх інших їх не буде ні в стрічці, ні в пошуку.',
+    caveat: 'Так більше закритості, але менше звернень: анкету й програми побачить менше людей, тож і відгукнеться на них, найімовірніше, менше кандидаток.',
+    nobodyYet: 'Ви ще нікого не вподобали, тож зараз анкету й програми не бачить ніхто. Вподобайте донора, сурогатну маму чи батьків у стрічці — і вони одразу їх побачать.',
+    howTo: 'Вподобайте донора, сурогатну маму чи батьків у стрічці — і вони одразу побачать анкету й програми. Знімете вподобання — і для них вони закриються.',
+    chipNobody: 'Ви ще нікого не вподобали — зараз анкету й програми не бачить ніхто. Вподобайте когось у стрічці',
+    chipCount: 'Ті, кого ви вподобали: {count}. Решта не бачить ні анкети, ні програм',
+    chipGeneric: 'Ті, кого ви вподобали. Решта не бачить ні анкети, ні програм',
+    modalAfterOk: 'Після «OK» анкета й програми одразу зникнуть зі стрічки й пошуку для всіх. Їх бачитимуть лише ті, кого ви вподобали — зокрема раніше, — і лише доки вподобання стоїть.',
+    modalNewcomers: 'Нові донори, сурогатні мами й біологічні батьки зʼявляються в застосунку постійно.',
+    modalNewcomersResult: 'Вашої анкети й програм вони не побачать і не зможуть вам написати, доки ви самі їх не вподобаєте.',
+    modalTradeoff: 'Більше закритості — менше звернень. Повернути звичайну публікацію можна будь-коли кнопкою «Опублікувати для всіх».',
+  }),
+});
 
 // Роль — перше рішення в анкеті: від неї залежить, які поля взагалі показувати.
 // Тому вона стоїть над формою окремим рядом, а не полем усередині секції.
@@ -2342,6 +2414,7 @@ export const MyProfile = () => {
   // Відкрита лише вподобаним: `publish` тут `false`, але анкету видно — колу.
   const isLikedAudience = !isPublished && isLikedAudienceProfile(state);
   const canOfferLikedAudience = canOfferLikedAudiencePublication(rolesList);
+  const likedTexts = LIKED_AUDIENCE_TEXTS[resolveLikedAudienceKind(rolesList)];
   // Скільки анкет справді в стрічці — для підсумку над рядками «Публікації».
   const publishedRoleCount = isPublished || isLikedAudience
     ? (rolesList.length ? rolesList.filter(role => !hiddenRoles.includes(role)).length : 1)
@@ -2408,10 +2481,10 @@ export const MyProfile = () => {
             <b>{uiText('Анкету бачать лише обрані', language)}</b>
             <span>
               {likedAudienceCount === 0
-                ? uiText('Ви ще нікого не вподобали — зараз анкету не бачить ніхто. Вподобайте ♥ агенцію, клініку чи батьків у стрічці', language)
+                ? uiText(likedTexts.chipNobody, language)
                 : likedAudienceCount > 0
-                  ? uiText('Ті, кого ви вподобали ♥: {count}. Решта агенцій, клінік і батьків її не бачать', language, { count: likedAudienceCount })
-                  : uiText('Ті, кого ви вподобали ♥. Решта агенцій, клінік і батьків її не бачать', language)}
+                  ? uiText(likedTexts.chipCount, language, { count: likedAudienceCount })
+                  : uiText(likedTexts.chipGeneric, language)}
             </span>
           </LikedAudienceChipText>
           <FiChevronRight size={18} aria-label={uiText('Змінити, хто бачить анкету', language)} />
@@ -2632,7 +2705,8 @@ export const MyProfile = () => {
               language={language}
               rates={programRates}
               suggestions={programTerms}
-              profilePublished={state.publish === true}
+              profilePublished={state.publish === true || isLikedAudience}
+              profileSharedWithLiked={isLikedAudience}
               onEditingChange={setEditingProgram}
             />
           ) : null}
@@ -2657,17 +2731,17 @@ export const MyProfile = () => {
           <div data-testid="liked-audience-confirm">
             <ModalTitle>{uiText('Показувати анкету лише тим, кого ви вподобали?', language)}</ModalTitle>
             <ModalText>
-              {uiText('Після «OK» анкета одразу зникне зі стрічки й пошуку для всіх. Її бачитимуть лише агенції, клініки й біологічні батьки, яких ви вподобали ♥ — зокрема раніше, — і лише доки вподобання стоїть.', language)}
+              {uiText(likedTexts.modalAfterOk, language)}
             </ModalText>
             <ModalText>
-              <b>{uiText('Нові агенції, клініки й біологічні батьки зʼявляються в застосунку постійно.', language)}</b>{' '}
-              {uiText('Вашої анкети вони не побачать і нічого не зможуть вам запропонувати, доки ви самі їх не вподобаєте.', language)}
+              <b>{uiText(likedTexts.modalNewcomers, language)}</b>{' '}
+              {uiText(likedTexts.modalNewcomersResult, language)}
             </ModalText>
             <ModalText>
               {uiText('Тож час від часу заходьте в застосунок: перевіряйте стрічку, чи не зʼявилися нові, і вподобайте тих, кому хочете показати анкету.', language)}
             </ModalText>
             <ModalText>
-              {uiText('Більше анонімності — менше пропозицій. Повернути звичайну публікацію можна будь-коли кнопкою «Опублікувати для всіх».', language)}
+              {uiText(likedTexts.modalTradeoff, language)}
             </ModalText>
             <ModalActionRow>
               <ModalGhostButton type="button" onClick={() => setShowInfoModal(false)}>
@@ -2786,22 +2860,37 @@ export const MyProfile = () => {
         // рядку ролі (`publishRole`/`unpublishRole`); анкета без ролі —
         // `publishProfile`/`hideProfile`.
         <PublishSingleAction data-testid={rolesList[0] ? `publish-role-${rolesList[0]}` : undefined}>
-          {rolesList[0] ? (
-            isLikedAudience ? (
-              <>
-                <SubmitBtn type="button" onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати для всіх', language)}</SubmitBtn>
-                <LikedAudienceBtn type="button" onClick={hideProfile}>{uiText('Приховати анкету', language)}</LikedAudienceBtn>
-              </>
-            ) : publishedRoleCount > 0 ? (
-              <UnpublishBtn type="button" onClick={() => unpublishRole(rolesList[0])}>{uiText('Приховати анкету', language)}</UnpublishBtn>
-            ) : (
-              <SubmitBtn type="button" onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
-            )
-          ) : isPublished ? (
-            <UnpublishBtn type="button" onClick={hideProfile}>{uiText('Зняти з публікації', language)}</UnpublishBtn>
-          ) : (
-            <SubmitBtn type="button" onClick={publishProfile}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
-          )}
+          <PublishSingleRow>
+            <div>
+              {rolesList[0] ? (
+                isLikedAudience ? (
+                  <>
+                    <SubmitBtn type="button" onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати для всіх', language)}</SubmitBtn>
+                    <LikedAudienceBtn type="button" onClick={hideProfile}>{uiText('Приховати анкету', language)}</LikedAudienceBtn>
+                  </>
+                ) : publishedRoleCount > 0 ? (
+                  <UnpublishBtn type="button" onClick={() => unpublishRole(rolesList[0])}>{uiText('Приховати анкету', language)}</UnpublishBtn>
+                ) : (
+                  <SubmitBtn type="button" onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
+                )
+              ) : isPublished ? (
+                <UnpublishBtn type="button" onClick={hideProfile}>{uiText('Зняти з публікації', language)}</UnpublishBtn>
+              ) : (
+                <SubmitBtn type="button" onClick={publishProfile}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
+              )}
+            </div>
+            {isProfileAccessConfirmed ? (
+              <ClearProfileBtn
+                type="button"
+                data-testid="publish-clear-profile"
+                aria-label={uiText('Очистити анкету', language)}
+                title={uiText('Очистити анкету', language)}
+                onClick={() => { setClearRoleTarget(''); setShowInfoModal('delConfirm'); }}
+              >
+                <FiTrash2 size={19} aria-hidden="true" />
+              </ClearProfileBtn>
+            ) : null}
+          </PublishSingleRow>
         </PublishSingleAction>
       )}
       {canOfferLikedAudience ? (
@@ -2812,8 +2901,7 @@ export const MyProfile = () => {
             ) : null
           ) : (
             <LikedAudienceBtn type="button" onClick={requestLikedAudiencePublication}>
-              <span aria-hidden="true">♥</span>
-              {uiText(isPublished ? 'Показувати лише тим, кого я вподобала' : 'Опублікувати лише для тих, кого я вподобала', language)}
+              {uiText(isPublished ? likedTexts.restrictButton : likedTexts.publishButton, language)}
             </LikedAudienceBtn>
           )}
           <LikedAudienceNote>
@@ -2821,18 +2909,18 @@ export const MyProfile = () => {
             {isLikedAudience ? (
               <p>
                 {likedAudienceCount === 0
-                  ? uiText('Ви ще нікого не вподобали, тож зараз анкету не бачить ніхто. Вподобайте агенцію, клініку чи біологічних батьків у стрічці — і вони одразу її побачать.', language)
+                  ? uiText(likedTexts.nobodyYet, language)
                   : likedAudienceCount > 0
                     ? uiText('Зараз анкету бачать: {count}. Знімете вподобання — і для них вона одразу закриється.', language, { count: likedAudienceCount })
-                    : uiText('Вподобайте агенцію, клініку чи біологічних батьків у стрічці — і вони одразу побачать анкету. Знімете вподобання — і для них вона закриється.', language)}
+                    : uiText(likedTexts.howTo, language)}
               </p>
             ) : (
               <p>
-                {uiText('Анкету побачать лише агенції, клініки й біологічні батьки, яких ви вподобали ♥ — зокрема ті, кого ви вже вподобали раніше, — і лише доки вподобання стоїть. Для всіх інших її не буде ні в стрічці, ні в пошуку.', language)}
+                {uiText(likedTexts.offer, language)}
               </p>
             )}
             <LikedAudienceCaveat>
-              {uiText('Так більше анонімності, але менше пропозицій: анкету побачить менше агенцій, тож і програм вам, найімовірніше, запропонують менше.', language)}
+              {uiText(likedTexts.caveat, language)}
             </LikedAudienceCaveat>
           </LikedAudienceNote>
         </div>
