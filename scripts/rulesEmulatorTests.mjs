@@ -1863,6 +1863,56 @@ await it('обернений перелік: власниця пише себе 
   await assertSucceeds(remove(ref(db(LIKED_ONLY_OWNER), entry)));
 });
 
+describe('публікація лише для вподобаних — агенція ховає анкету й програми');
+
+// Той самий режим у агенції: картка без дати з колом читачів, а програми
+// (`multiData/programs`) закриті тим самим правилом. Агенція вподобала
+// донорку SELF_SERVE; ORDINARY_VIEWER — інша агенція, OUTSIDER — донорка,
+// яку не вподобали.
+const LIKED_ONLY_AGENCY = 'likedOnlyAgencyUid00000000';
+
+await testEnv.withSecurityRulesDisabled(async context => {
+  const seed = context.database();
+  await set(ref(seed, `matchingCards/${LIKED_ONLY_AGENCY}`), { name: 'Закрита агенція', role: 'ag', feedDate: false, audience: 'liked', programsAt: 1760000000000 });
+  await set(ref(seed, `profileDetails/${LIKED_ONLY_AGENCY}`), { surname: 'Контактна особа' });
+  await set(ref(seed, `profileContacts/${LIKED_ONLY_AGENCY}`), { phone: ['+380441112233'] });
+  await set(ref(seed, `multiData/programs/${LIKED_ONLY_AGENCY}`), { updatedAt: 1760000000000, items: { p1: { id: 'p1', type: 'ed' } } });
+  await set(ref(seed, `multiData/favorites/${LIKED_ONLY_AGENCY}`), { [SELF_SERVE]: 1760000000000 });
+});
+
+await it('вподобана донорка бачить картку, контакти й програми агенції', async () => {
+  await assertSucceeds(get(ref(db(SELF_SERVE), `matchingCards/${LIKED_ONLY_AGENCY}`)));
+  await assertSucceeds(get(ref(db(SELF_SERVE), `profileContacts/${LIKED_ONLY_AGENCY}`)));
+  await assertSucceeds(get(ref(db(SELF_SERVE), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
+});
+
+await it('невподобані не бачать ні програм, ні контактів агенції', async () => {
+  await assertFails(get(ref(db(OUTSIDER), `matchingCards/${LIKED_ONLY_AGENCY}`)));
+  await assertFails(get(ref(db(OUTSIDER), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `profileContacts/${LIKED_ONLY_AGENCY}`)));
+});
+
+await it('свої програми агенція читає й пише, службовий доступ читає', async () => {
+  await assertSucceeds(get(ref(db(LIKED_ONLY_AGENCY), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
+  await assertSucceeds(set(ref(db(LIKED_ONLY_AGENCY), `multiData/programs/${LIKED_ONLY_AGENCY}/updatedAt`), Date.now()));
+  await assertSucceeds(get(ref(db(MATCHING_VIEWER), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
+  await assertSucceeds(get(ref(db(SUPERADMIN), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
+});
+
+await it('зняте вподобання закриває й програми', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `multiData/favorites/${LIKED_ONLY_AGENCY}/${SELF_SERVE}`), null));
+  await assertFails(get(ref(db(SELF_SERVE), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
+});
+
+await it('опублікована для всіх — програми знову відкриті кожному авторизованому', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    update(ref(context.database(), `matchingCards/${LIKED_ONLY_AGENCY}`), { feedDate: '2026-10-16', audience: null }));
+  await assertSucceeds(get(ref(db(OUTSIDER), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
+  await assertFails(get(ref(testEnv.unauthenticatedContext().database(), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
+});
+
 describe('documentsBuilder: тестовий акаунт читає й пише');
 
 // Тестовий акаунт веб-сесій (MIGRATION_EMAIL) читає й правит шаблони, кейси та сторони — так

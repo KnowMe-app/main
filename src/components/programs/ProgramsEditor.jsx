@@ -949,11 +949,14 @@ export const listProgramIssues = program => {
  * видимості, а підказка; її повертає `programProblem` і показує рядок під
  * назвою.
  */
-export const programStatus = (program, { profilePublished } = {}) => {
+export const programStatus = (program, { profilePublished, profileSharedWithLiked = false } = {}) => {
   const normalized = normalizeProgram(program, program.id);
   if (program.hidden) return { tone: 'hidden', label: 'Прихована' };
   if (!normalized || !isProgramPresentable(normalized)) return { tone: 'hidden', label: 'Чернетка' };
   if (profilePublished === false) return { tone: 'warn', label: 'Не опублікована' };
+  // Анкету відкрито лише вподобаним — і програми разом з нею (правило
+  // `multiData/programs` те саме): «Опублікована» обіцяла б їх усім.
+  if (profileSharedWithLiked) return { tone: 'ready', label: 'Лише обраним' };
   return { tone: 'ready', label: 'Опублікована' };
 };
 
@@ -2157,7 +2160,7 @@ const SAVE_LABELS = Object.freeze({
   failed: 'Поки лише в цьому браузері',
 });
 
-export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType = 'ed', suggestions = null, profilePublished, onEditingChange }) => {
+export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType = 'ed', suggestions = null, profilePublished, profileSharedWithLiked = false, onEditingChange }) => {
   const [draft, setDraft] = useState(() => listEditablePrograms(programs));
   const [openId, setOpenId] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState('');
@@ -2295,7 +2298,7 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
       ) : null}
       {draft.map((program, index) => {
         const open = openId === program.id;
-        const status = programStatus(program, { profilePublished });
+        const status = programStatus(program, { profilePublished, profileSharedWithLiked });
         const problem = programProblem(program);
         const pay = headPay(program);
         return (

@@ -1137,8 +1137,8 @@ const EN_BY_UK = {
   'Лише для тих, кого ви вподобали': 'Only for those you liked',
   'Анкету бачать лише ті, кого ви вподобали. Для решти її немає ні в стрічці, ні в пошуку':
     'Only those you liked can see your profile. Everyone else will not find it in the feed or in search',
-  'Анкету побачать лише агенції, клініки й біологічні батьки, яких ви вподобали ♥ — зокрема ті, кого ви вже вподобали раніше, — і лише доки вподобання стоїть. Для всіх інших її не буде ні в стрічці, ні в пошуку.':
-    'Only the agencies, clinics and intended parents you liked ♥ will see the profile — including those you liked earlier — and only while the like stays. For everyone else it will be absent from the feed and from search.',
+  'Анкету побачать лише агенції, клініки й біологічні батьки, яких ви вподобали — зокрема ті, кого ви вже вподобали раніше, — і лише доки вподобання стоїть. Для всіх інших її не буде ні в стрічці, ні в пошуку.':
+    'Only the agencies, clinics and intended parents you liked will see the profile — including those you liked earlier — and only while the like stays. For everyone else it will be absent from the feed and from search.',
   'Так більше анонімності, але менше пропозицій: анкету побачить менше агенцій, тож і програм вам, найімовірніше, запропонують менше.':
     'This gives you more anonymity but fewer offers: fewer agencies will see the profile, so you will most likely be offered fewer programmes.',
   'Ви ще нікого не вподобали, тож зараз анкету не бачить ніхто. Вподобайте агенцію, клініку чи біологічних батьків у стрічці — і вони одразу її побачать.':
@@ -1156,16 +1156,40 @@ const EN_BY_UK = {
   'Ви вподобали — тепер вони бачать вашу анкету': 'Liked — they can now see your profile',
   'Вподобання знято — вашу анкету для них закрито': 'Like removed — your profile is closed to them',
   'Анкету бачать лише обрані': 'Only chosen ones can see your profile',
-  'Ви ще нікого не вподобали — зараз анкету не бачить ніхто. Вподобайте ♥ агенцію, клініку чи батьків у стрічці':
-    'You have not liked anyone yet — nobody can see the profile right now. Like ♥ an agency, a clinic or parents in the feed',
-  'Ті, кого ви вподобали ♥: {count}. Решта агенцій, клінік і батьків її не бачать':
-    'Those you liked ♥: {count}. Other agencies, clinics and parents cannot see it',
-  'Ті, кого ви вподобали ♥. Решта агенцій, клінік і батьків її не бачать':
-    'Those you liked ♥. Other agencies, clinics and parents cannot see it',
+  'Ви ще нікого не вподобали — зараз анкету не бачить ніхто. Вподобайте агенцію, клініку чи батьків у стрічці':
+    'You have not liked anyone yet — nobody can see the profile right now. Like an agency, a clinic or parents in the feed',
+  'Ті, кого ви вподобали: {count}. Решта агенцій, клінік і батьків її не бачать':
+    'Those you liked: {count}. Other agencies, clinics and parents cannot see it',
+  'Ті, кого ви вподобали. Решта агенцій, клінік і батьків її не бачать':
+    'Those you liked. Other agencies, clinics and parents cannot see it',
   'Змінити, хто бачить анкету': 'Change who can see the profile',
+  'Опублікувати лише для вподобаних': 'Publish only for those you liked',
+  'Показувати лише вподобаним': 'Show only to those you liked',
+  'Анкету й програми побачать лише ті, кого ви вподобали — донори ооцитів, сурогатні мами, біологічні батьки чи інші агенції, зокрема вподобані раніше, — і лише доки вподобання стоїть. Для всіх інших їх не буде ні в стрічці, ні в пошуку.':
+    'Only those you liked — egg donors, surrogates, intended parents or other agencies, including those liked earlier — will see the profile and the programmes, and only while the like stays. For everyone else they will be absent from the feed and from search.',
+  'Так більше закритості, але менше звернень: анкету й програми побачить менше людей, тож і відгукнеться на них, найімовірніше, менше кандидаток.':
+    'This keeps you more private but brings fewer enquiries: fewer people will see the profile and the programmes, so most likely fewer candidates will respond.',
+  'Ви ще нікого не вподобали, тож зараз анкету й програми не бачить ніхто. Вподобайте донора, сурогатну маму чи батьків у стрічці — і вони одразу їх побачать.':
+    'You have not liked anyone yet, so nobody can see the profile and the programmes right now. Like a donor, a surrogate or parents in the feed and they will see them straight away.',
+  'Вподобайте донора, сурогатну маму чи батьків у стрічці — і вони одразу побачать анкету й програми. Знімете вподобання — і для них вони закриються.':
+    'Like a donor, a surrogate or parents in the feed and they will see the profile and the programmes straight away. Remove the like and they close for them.',
+  'Ви ще нікого не вподобали — зараз анкету й програми не бачить ніхто. Вподобайте когось у стрічці':
+    'You have not liked anyone yet — nobody can see the profile and the programmes right now. Like someone in the feed',
+  'Ті, кого ви вподобали: {count}. Решта не бачить ні анкети, ні програм':
+    'Those you liked: {count}. Nobody else sees the profile or the programmes',
+  'Ті, кого ви вподобали. Решта не бачить ні анкети, ні програм':
+    'Those you liked. Nobody else sees the profile or the programmes',
+  'Після «OK» анкета й програми одразу зникнуть зі стрічки й пошуку для всіх. Їх бачитимуть лише ті, кого ви вподобали — зокрема раніше, — і лише доки вподобання стоїть.':
+    'After “OK” the profile and the programmes disappear from the feed and from search for everyone at once. Only those you liked — including earlier — will see them, and only while the like stays.',
+  'Нові донори, сурогатні мами й біологічні батьки зʼявляються в застосунку постійно.':
+    'New donors, surrogates and intended parents join the app all the time.',
+  'Вашої анкети й програм вони не побачать і не зможуть вам написати, доки ви самі їх не вподобаєте.':
+    'They will not see your profile or programmes and cannot write to you until you like them yourself.',
+  'Більше закритості — менше звернень. Повернути звичайну публікацію можна будь-коли кнопкою «Опублікувати для всіх».':
+    'More privacy means fewer enquiries. You can return to normal publication at any time with “Publish for everyone”.',
   'Показувати анкету лише тим, кого ви вподобали?': 'Show the profile only to those you liked?',
-  'Після «OK» анкета одразу зникне зі стрічки й пошуку для всіх. Її бачитимуть лише агенції, клініки й біологічні батьки, яких ви вподобали ♥ — зокрема раніше, — і лише доки вподобання стоїть.':
-    'After “OK” the profile disappears from the feed and from search for everyone at once. Only the agencies, clinics and intended parents you liked ♥ — including earlier — will see it, and only while the like stays.',
+  'Після «OK» анкета одразу зникне зі стрічки й пошуку для всіх. Її бачитимуть лише агенції, клініки й біологічні батьки, яких ви вподобали — зокрема раніше, — і лише доки вподобання стоїть.':
+    'After “OK” the profile disappears from the feed and from search for everyone at once. Only the agencies, clinics and intended parents you liked — including earlier — will see it, and only while the like stays.',
   'Нові агенції, клініки й біологічні батьки зʼявляються в застосунку постійно.':
     'New agencies, clinics and intended parents join the app all the time.',
   'Вашої анкети вони не побачать і нічого не зможуть вам запропонувати, доки ви самі їх не вподобаєте.':

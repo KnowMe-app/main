@@ -6,7 +6,9 @@ import {
   isLikedAudienceProfile,
   listLikedAudienceViewerIds,
   orderLikedAudienceOwnerIds,
+  resolveLikedAudienceKind,
 } from '../likedAudience';
+import { programStatus } from '../../components/programs/ProgramsEditor';
 import {
   buildMatchingCardProjection,
   expandMatchingCard,
@@ -128,13 +130,27 @@ describe('публікація лише для вподобаних — межа
 });
 
 describe('публікація лише для вподобаних — допоміжні', () => {
-  it('режим пропонується лише анкеті з самими особистими ролями', () => {
-    expect(canOfferLikedAudiencePublication(['ed'])).toBe(true);
-    expect(canOfferLikedAudiencePublication(['ed', 'sm'])).toBe(true);
-    expect(canOfferLikedAudiencePublication(['sm'])).toBe(true);
-    expect(canOfferLikedAudiencePublication(['ed', 'ag'])).toBe(false);
-    expect(canOfferLikedAudiencePublication(['ip'])).toBe(false);
+  it('режим пропонується кожній ролі матчингу — і донорці, і агенції, клініці, батькам', () => {
+    ['ed', 'sm', 'ag', 'cl', 'ip', 'pp'].forEach(role => {
+      expect(canOfferLikedAudiencePublication([role])).toBe(true);
+    });
+    expect(canOfferLikedAudiencePublication(['ed', 'ag'])).toBe(true);
+    expect(canOfferLikedAudiencePublication(['unknown'])).toBe(false);
     expect(canOfferLikedAudiencePublication([])).toBe(false);
+  });
+
+  it('слова режиму — свої для донорки й СМ і для агенції, клініки, батьків', () => {
+    expect(resolveLikedAudienceKind(['ed'])).toBe('person');
+    expect(resolveLikedAudienceKind(['ed', 'sm'])).toBe('person');
+    expect(resolveLikedAudienceKind(['ag'])).toBe('organisation');
+    expect(resolveLikedAudienceKind(['ip'])).toBe('organisation');
+    expect(resolveLikedAudienceKind(['ed', 'ag'])).toBe('organisation');
+  });
+
+  it('програми агенції в цьому режимі підписані «Лише обраним», а не «Опублікована»', () => {
+    const program = { id: 'p1', type: 'ed', location: 'Київ' };
+    expect(programStatus(program, { profilePublished: true, profileSharedWithLiked: true }).label).toBe('Лише обраним');
+    expect(programStatus(program, { profilePublished: true }).label).toBe('Опублікована');
   });
 
   it('читає рішення й з історії версій', () => {
