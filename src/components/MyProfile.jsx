@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiTrash2, FiX } from 'react-icons/fi';
-import { FaEye, FaEyeSlash } from 'react-icons/fa';
+import { FiChevronRight, FiTrash2, FiX } from 'react-icons/fi';
+import { FaEye, FaEyeSlash, FaLock } from 'react-icons/fa';
 import styled, { css, keyframes } from 'styled-components';
 import {
   auth,
@@ -492,6 +492,60 @@ const StatusBadge = styled.button`
   background: ${({ $published }) => ($published ? '#EBF8EF' : '#FEE9E9')};
   color: ${({ $published }) => ($published ? '#2E9B55' : '#D44')};
   cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
+  /* Лише для обраних — не зелене «опубліковано для всіх»: колір акценту й
+     замок, щоб із першого погляду було видно, що коло обмежене. */
+  ${({ $restricted }) => ($restricted ? `
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(232,121,26,0.12);
+    color: #C25E0C;
+  ` : '')}
+`;
+/*
+ * Чіп угорі «Мого профілю», поки анкету видно лише обраним (публікація «лише
+ * для вподобаних», `utils/likedAudience`). Режим міняє те, хто бачить анкету,
+ * а блок «Публікація» стоїть аж під останньою секцією — тож нагадування живе
+ * там, куди людина дивиться щоразу: під шапкою. Дотик веде до «Публікації»,
+ * де режим і змінюють.
+ */
+const LikedAudienceChip = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 2 * var(--page-gutter));
+  margin: 10px var(--page-gutter) 12px;
+  padding: 10px 12px 10px 14px;
+  border: 1.5px solid rgba(232,121,26,0.35);
+  border-radius: 14px;
+  background: rgba(232,121,26,0.08);
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  > svg { flex: none; color: #C25E0C; }
+`;
+const LikedAudienceChipIcon = styled.span`
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #E8791A;
+  color: #fff;
+`;
+const LikedAudienceChipText = styled.span`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+
+  > b { font-size: 14px; font-weight: 700; line-height: 1.3; }
+  > span { font-size: 12.5px; line-height: 1.4; color: var(--muted); }
 `;
 const HighlightableLabel = styled(Label)`
   display: inline-block;
@@ -2338,14 +2392,31 @@ export const MyProfile = () => {
             type="button"
             $clickable
             $published={state.publish === true || isLikedAudience}
+            $restricted={isProfileAccessConfirmed && isLikedAudience}
             onClick={handleAuthBadgeClick}
           >
-            ● {isProfileAccessConfirmed
-              ? uiText(state.publish === true ? 'Опублікована' : (isLikedAudience ? 'Лише вподобаним' : 'Не опублікована'), language)
+            {isProfileAccessConfirmed && isLikedAudience ? <FaLock size={9} aria-hidden="true" /> : '●'} {isProfileAccessConfirmed
+              ? uiText(state.publish === true ? 'Опублікована' : (isLikedAudience ? 'Лише обраним' : 'Не опублікована'), language)
               : uiText('Логін не відбувся', language)}
           </StatusBadge>
         </TopbarActions>
       </Topbar>
+      {isProfileAccessConfirmed && isLikedAudience ? (
+        <LikedAudienceChip type="button" data-testid="liked-audience-chip" onClick={handleAuthBadgeClick}>
+          <LikedAudienceChipIcon aria-hidden="true"><FaLock size={13} /></LikedAudienceChipIcon>
+          <LikedAudienceChipText>
+            <b>{uiText('Анкету бачать лише обрані', language)}</b>
+            <span>
+              {likedAudienceCount === 0
+                ? uiText('Ви ще нікого не вподобали — зараз анкету не бачить ніхто. Вподобайте ♥ агенцію, клініку чи батьків у стрічці', language)
+                : likedAudienceCount > 0
+                  ? uiText('Ті, кого ви вподобали ♥: {count}. Решта агенцій, клінік і батьків її не бачать', language, { count: likedAudienceCount })
+                  : uiText('Ті, кого ви вподобали ♥. Решта агенцій, клінік і батьків її не бачать', language)}
+            </span>
+          </LikedAudienceChipText>
+          <FiChevronRight size={18} aria-label={uiText('Змінити, хто бачить анкету', language)} />
+        </LikedAudienceChip>
+      ) : null}
     </HeaderPanel>
 
     <StickyProgress ref={stickyProgressRef} $compact={editingProgram}>
@@ -2681,7 +2752,7 @@ export const MyProfile = () => {
                 <RoleActionMeta>
                   <b>{uiText(label, language)}</b>
                   {rolePublished ? (
-                    <RolePublishStatus>{uiText(isLikedAudience ? 'Лише вподобаним' : 'У стрічці', language)}</RolePublishStatus>
+                    <RolePublishStatus>{uiText(isLikedAudience ? 'Лише обраним' : 'У стрічці', language)}</RolePublishStatus>
                   ) : null}
                 </RoleActionMeta>
                 <RoleActionPair $primary={!rolePublished}>

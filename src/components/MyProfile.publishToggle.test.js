@@ -48,7 +48,7 @@ describe('my-profile publication toggle', () => {
 
   it('uses the current publish state for the profile status marker', () => {
     expect(source).toContain('$published={state.publish === true || isLikedAudience}');
-    expect(source).toContain("state.publish === true ? 'Опублікована' : (isLikedAudience ? 'Лише вподобаним' : 'Не опублікована')");
+    expect(source).toContain("state.publish === true ? 'Опублікована' : (isLikedAudience ? 'Лише обраним' : 'Не опублікована')");
   });
 
   // Публікація «лише для вподобаних» — свідомий обмін анонімності на кількість
@@ -99,6 +99,17 @@ describe('my-profile publication toggle', () => {
     const projection = buildMatchingCardProjection('a'.repeat(28), savedState, { existingCard: { feedDate: '2026-08-19' } });
     expect(projection[MATCHING_CARD_FEED_FIELD]).toBe(false);
     expect(projection.audience).toBe('liked');
+  });
+
+  // Блок «Публікація» стоїть аж унизу, тож обмежене коло читачів нагадує
+  // чіп під шапкою — і веде до того блоку.
+  it('shows a chip at the top while the profile is visible to chosen ones only', () => {
+    const header = source.slice(source.indexOf('<HeaderPanel>'), source.indexOf('</HeaderPanel>'));
+    expect(header).toContain('isProfileAccessConfirmed && isLikedAudience ? (');
+    expect(header).toContain('data-testid="liked-audience-chip" onClick={handleAuthBadgeClick}');
+    expect(header).toContain("'Анкету бачать лише обрані'");
+    expect(header).toContain('Решта агенцій, клінік і батьків її не бачать');
+    expect(header).toContain('$restricted={isProfileAccessConfirmed && isLikedAudience}');
   });
 
   it('keeps the failed login status for profiles without confirmed access', () => {

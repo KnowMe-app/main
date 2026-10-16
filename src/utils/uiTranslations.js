@@ -1130,7 +1130,7 @@ const EN_BY_UK = {
   'Анкету бачать у стрічці. Приховати її можна будь-коли': 'Your profile is visible in the feed. You can hide it at any time',
   'Анкету поки не видно в стрічці. Опублікуйте, коли будете готові': 'Your profile is not in the feed yet. Publish it when you are ready',
   // --- публікація «лише для вподобаних» (`utils/likedAudience`) ---
-  'Лише вподобаним': 'Liked only',
+  'Лише обраним': 'Chosen only',
   'Опублікувати для всіх': 'Publish for everyone',
   'Опублікувати лише для тих, кого я вподобала': 'Publish only for those I liked',
   'Показувати лише тим, кого я вподобала': 'Show only to those I liked',
@@ -1155,6 +1155,14 @@ const EN_BY_UK = {
   'Анкету сховано від усіх. Її побачать ті, кого ви вподобаєте': 'The profile is hidden from everyone. Those you like will see it',
   'Ви вподобали — тепер вони бачать вашу анкету': 'Liked — they can now see your profile',
   'Вподобання знято — вашу анкету для них закрито': 'Like removed — your profile is closed to them',
+  'Анкету бачать лише обрані': 'Only chosen ones can see your profile',
+  'Ви ще нікого не вподобали — зараз анкету не бачить ніхто. Вподобайте ♥ агенцію, клініку чи батьків у стрічці':
+    'You have not liked anyone yet — nobody can see the profile right now. Like ♥ an agency, a clinic or parents in the feed',
+  'Ті, кого ви вподобали ♥: {count}. Решта агенцій, клінік і батьків її не бачать':
+    'Those you liked ♥: {count}. Other agencies, clinics and parents cannot see it',
+  'Ті, кого ви вподобали ♥. Решта агенцій, клінік і батьків її не бачать':
+    'Those you liked ♥. Other agencies, clinics and parents cannot see it',
+  'Змінити, хто бачить анкету': 'Change who can see the profile',
   'Показувати анкету лише тим, кого ви вподобали?': 'Show the profile only to those you liked?',
   'Після «OK» анкета одразу зникне зі стрічки й пошуку для всіх. Її бачитимуть лише агенції, клініки й біологічні батьки, яких ви вподобали ♥ — зокрема раніше, — і лише доки вподобання стоїть.':
     'After “OK” the profile disappears from the feed and from search for everyone at once. Only the agencies, clinics and intended parents you liked ♥ — including earlier — will see it, and only while the like stays.',
