@@ -1,5 +1,6 @@
 import { keepDonorCounterpartyCards, listViewerHiddenCardRoles } from './matchingPeerVisibility';
 import { isCardFullyReacted, readReactionRoles } from './anketaReactions';
+import { LIKED_AUDIENCE_CARD_FLAG } from './likedAudience';
 
 const isTruthyReactionValue = value => {
   if (typeof value === 'boolean') return value;
@@ -186,6 +187,23 @@ export const getCanShowMatchingUserDebug = (user, { isAdmin = false } = {}) => {
     };
   }
 
+  // Картка, яку власниця відкрила саме цьому читачеві (публікація «лише для
+  // вподобаних»): `publish` у неї навмисно `false`, і показ дає лише доведене
+  // членство в колі — позначку ставить стрічка, що прочитала картку з
+  // оберненого переліку читача. У кеш карток позначка не потрапляє
+  // (`sanitizeMatchingCardForCache` знімає `__`-ключі), тож знята реакція не
+  // переживе перезавантаження у вигляді показаної картки.
+  if (user?.[LIKED_AUDIENCE_CARD_FLAG] === true) {
+    return {
+      canShow: true,
+      excludedFunction: 'canShowMatchingUser',
+      excludedCondition: 'user.__likedAudience === true',
+      exactReason: `liked_audience:userId=${userId}`,
+      excludedAtStage: 'final render guard',
+      reasonCode: 'allowed_liked_audience',
+    };
+  }
+
   if (user?.__matchingAccessAllowed === true) {
     return {
       canShow: true,
@@ -270,6 +288,11 @@ export const mergeSharedReactionCandidateUsers = ({
 export const mergeMatchingCandidateUsers = ({
   users = [],
   additionalAccessUsers = [],
+  // Картки, які власниці відкрили саме цьому читачеві (публікація «лише для
+  // вподобаних», `fetchLikedAudienceCards`). У стрічці їх немає за
+  // визначенням — дати в них немає, — тож вони доливаються головою деки:
+  // це відповідь на вподобання самої донорки, і губити її в хвості не можна.
+  likedAudienceUsers = [],
   sharedReactionCandidateUsers = [],
   isAdmin = false,
   viewMode = 'default',
@@ -325,10 +348,11 @@ export const mergeMatchingCandidateUsers = ({
     // знаходився тільки прокруткою вгору. Тож пачка з входу — це голова деки,
     // як і власні чернетки, а хвіст лишається за сторінками, які приїжджають
     // потім (зокрема за наданими картками, дочитаними після кінця стрічки).
+    const likedHead = likedAudienceUsers.filter(user => user?.userId && canInjectCandidate(user));
     const grantedHead = grantedFeedCards.filter(user => user.__matchingAccessInitialBatch === true);
     const grantedTail = grantedFeedCards.filter(user => user.__matchingAccessInitialBatch !== true);
     const byId = new Map();
-    [...grantedHead, ...baseUsers, ...grantedTail].forEach(user => {
+    [...likedHead, ...grantedHead, ...baseUsers, ...grantedTail].forEach(user => {
       const previous = byId.get(user.userId);
       if (!previous) {
         byId.set(user.userId, user);
@@ -344,6 +368,9 @@ export const mergeMatchingCandidateUsers = ({
           : {}),
         ...(previous.__matchingAccessInitialBatch === true || user.__matchingAccessInitialBatch === true
           ? { __matchingAccessInitialBatch: true }
+          : {}),
+        ...(previous[LIKED_AUDIENCE_CARD_FLAG] === true || user[LIKED_AUDIENCE_CARD_FLAG] === true
+          ? { [LIKED_AUDIENCE_CARD_FLAG]: true }
           : {}),
       });
     });

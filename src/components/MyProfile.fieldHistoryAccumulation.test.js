@@ -41,6 +41,6 @@ describe('editing a field on my-profile does not force it through as a plain ove
       source.indexOf('const publishProfile = async () => {'),
       source.indexOf('const renderField = (name) => {')
     );
-    expect(publishBody).toContain("await saveState(nextState, { directFields: ['publish'] });");
+    expect(publishBody).toContain("await saveState(nextState, { directFields: ['publish', 'publishAudience'] });");
   });
 });

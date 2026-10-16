@@ -3,6 +3,7 @@ import { getAvailableContactFields } from 'components/contactMethods';
 import { MATCHING_CARD_FEED_FIELD } from './matchingCardIndex';
 import { normalizeFeedDateValue } from './profileFieldDerive';
 import { normalizePublish } from './reactionPriority';
+import { LIKED_AUDIENCE_CARD_FLAG } from './likedAudience';
 
 /**
  * Скільки анкети віддавати читачеві, коли картки немає в стрічці.
@@ -118,6 +119,11 @@ export const canOfferProfileContacts = ({ card, viewerId, accessLevel } = {}) =>
   if (!card || typeof card !== 'object') return false;
   if (isOwnProfileDraftCard(card)) return true;
   if (isCardInMatchingFeed(card)) return true;
+  // Картка, яку власниця відкрила саме цьому читачеві (публікація «лише для
+  // вподобаних»): позначку ставить стрічка, що прочитала її з оберненого
+  // переліку читача (`fetchLikedAudienceCards`), а право ще раз перевіряє
+  // база — за самою реакцією.
+  if (card[LIKED_AUDIENCE_CARD_FLAG] === true) return true;
   if (cardAlreadyCarriesContacts(card)) return true;
   return canReadProfileOutsideFeed({ profileId: card.userId, viewerId, accessLevel });
 };
@@ -133,10 +139,16 @@ export const scopeProfileNodesToViewer = ({
   profileId,
   viewerId,
   accessLevel,
+  // Читач у колі, якому власниця відкрила анкету (публікація «лише для
+  // вподобаних»). Довести це картка сама не може — її кореневе правило
+  // відкриває й тим, кого не вподобали, — тож доказ приносить викликач
+  // (`isViewerInLikedAudienceOf` у `config.js`).
+  sharedWithViewer = false,
   parts = {},
   legacy = null,
 } = {}) => {
   const cappedToCard = !isCardInMatchingFeed(parts.card)
+    && !sharedWithViewer
     && !canReadProfileOutsideFeed({ profileId, viewerId, accessLevel });
 
   if (!cappedToCard) return { parts, legacy, cappedToCard };

@@ -107,6 +107,15 @@ import {
 } from '../utils/matchingCardIndex';
 import { isProgramsOwnerRoleHidden, resolveProgramsOwnerRole } from '../utils/donorPrograms';
 import { listProfileRoles } from '../utils/matchingPeerVisibility';
+import {
+  LIKED_AUDIENCE_EVENT,
+  LIKED_AUDIENCE_ROOT,
+  MATCHING_CARD_AUDIENCE_FIELD,
+  LIKED_AUDIENCE,
+  buildLikedAudiencePatch,
+  isCardSharedWithLikedAudience,
+  orderLikedAudienceOwnerIds,
+} from '../utils/likedAudience';
 import { normalizePublish } from '../utils/reactionPriority';
 import { getCurrentDate } from './foramtDate';
 import {
@@ -690,6 +699,188 @@ export const fetchUserData = async userId => {
   return { existingData, userRef };
 };
 
+/*
+ * Публікація «лише для вподобаних» (`utils/likedAudience`).
+ *
+ * Право читача дає сама реакція власниці — це перевіряють правила бази. Але
+ * межа стоїть і **до запиту** (як і вся межа приватності, див.
+ * `readProfileFromNodes`): приватні вузли такої картки питаються лише тоді,
+ * коли читач — у колі. Звідки застосунок це знає: з оберненого переліку
+ * `multiData/likedAudience/{читач}`, який власниця пише, поки режим увімкнено.
+ * Успіх читання самої картки доказом не є — кореневе правило `matchingCards`
+ * відкриває картки будь-якій ролі, крім `ed`, тож агенція, яку не вподобали,
+ * картку прочитає й так, а деталей і контактів база їй не віддасть.
+ *
+ * Перелік читача читається раз на кілька хвилин на вкладку: він маленький
+ * (кілька власниць), а питають його кожна картка в цьому режимі й стрічка.
+ */
+const LIKED_AUDIENCE_INBOX_TTL_MS = 2 * 60 * 1000;
+let likedAudienceInboxMemo = null;
+
+export const readOwnLikedAudienceInbox = ({ force = false } = {}) => {
+  const viewerId = auth.currentUser?.uid || '';
+  if (!viewerId) return Promise.resolve({});
+  const memo = likedAudienceInboxMemo;
+  if (!force && memo && memo.viewerId === viewerId && Date.now() - memo.at < LIKED_AUDIENCE_INBOX_TTL_MS) {
+    return memo.promise;
+  }
+  const promise = get(ref2(database, `${LIKED_AUDIENCE_ROOT}/${viewerId}`))
+    .then(snapshot => {
+      const value = snapshot.exists() ? snapshot.val() : null;
+      return value && typeof value === 'object' ? value : {};
+    })
+    .catch(error => {
+      // Відмова — не «нікого немає»: правила під перелік викочуються руками.
+      // Наступне питання спробує знову, а показ лишається закритим.
+      if (likedAudienceInboxMemo?.promise === promise) likedAudienceInboxMemo = null;
+      console.warn('[likedAudience] не вдалося прочитати перелік відкритих вам анкет', { viewerId, error });
+      return {};
+    });
+  likedAudienceInboxMemo = { viewerId, at: Date.now(), promise };
+  return promise;
+};
+
+export const isViewerInLikedAudienceOf = async ownerId => {
+  const id = String(ownerId || '').trim();
+  if (!id) return false;
+  const inbox = await readOwnLikedAudienceInbox();
+  return Boolean(inbox[id]);
+};
+
+/**
+ * Чи можна цьому читачеві питати приватні вузли картки: картка в стрічці, або
+ * вона відкрита колу вподобаних і читач у ньому. Для службового доступу й
+ * власниці питання ставиться окремо (`canReadProfileOutsideFeed`).
+ */
+const mayViewerReadCardPrivateNodes = async (id, card) => (
+  isCardInMatchingFeed(card)
+  || (isCardSharedWithLikedAudience(card) && await isViewerInLikedAudienceOf(id))
+);
+
+/**
+ * Картки, які власниці відкрили саме цьому читачеві, — для його стрічки.
+ *
+ * Знайти їх запитом стрічки не можна (дати в них немає), а чужі реакції читачеві
+ * закриті, тож шлях один: обернений перелік, а тоді точкове читання кожної
+ * картки. Запис, за яким нічого не стоїть (вподобання зняли, режим вимкнули,
+ * анкету видалили), відпадає мовчки: доступу перелік не дає, його дає реакція.
+ */
+const LIKED_AUDIENCE_CARDS_LIMIT = 60;
+
+export const fetchLikedAudienceCards = async ({ limit = LIKED_AUDIENCE_CARDS_LIMIT } = {}) => {
+  const viewerId = auth.currentUser?.uid || '';
+  if (!viewerId) return [];
+  const inbox = await readOwnLikedAudienceInbox({ force: true });
+  const ownerIds = orderLikedAudienceOwnerIds(inbox)
+    .filter(id => id !== viewerId)
+    .slice(0, limit);
+  const cards = await Promise.all(ownerIds.map(async id => {
+    try {
+      const raw = await readMatchingCardRaw(id);
+      if (!isCardSharedWithLikedAudience(raw)) return null;
+      const expanded = expandMatchingCard(id, raw);
+      return expanded ? { ...expanded, __likedAudience: true } : null;
+    } catch (error) {
+      if (!isReactionPermissionDeniedError(error)) {
+        console.warn('[likedAudience] не вдалося прочитати відкриту вам картку', { userId: id, error });
+      }
+      return null;
+    }
+  }));
+  return cards.filter(Boolean);
+};
+
+/*
+ * Бік власниці: обернений перелік живе рівно стільки, скільки режим.
+ *
+ * У звичайній публікації реакції — таємниця, і перелік про них мовчить. Тому
+ * кожен писач вподобань питає, чи власна картка зараз у режимі «лише для
+ * вподобаних», — один раз на вкладку (`rememberOwnLikedAudience` оновлює
+ * відповідь, коли режим перемикає «Мій профіль»), — і лише тоді дописує або
+ * знімає запис. Відмова не валить реакцію: вподобання — головне, а перелік —
+ * лише адреса, за якою агенція знайде анкету в стрічці.
+ */
+const ownLikedAudienceMemo = new Map();
+
+export const rememberOwnLikedAudience = (ownerId, enabled) => {
+  const id = String(ownerId || '').trim();
+  if (id) ownLikedAudienceMemo.set(id, Promise.resolve(Boolean(enabled)));
+};
+
+export const readOwnCardLikedAudience = async ownerId => {
+  const id = String(ownerId || '').trim();
+  if (!id) return false;
+  const snapshot = await get(ref2(database, `${MATCHING_CARDS_ROOT}/${id}/${MATCHING_CARD_AUDIENCE_FIELD}`));
+  return snapshot.exists() && snapshot.val() === LIKED_AUDIENCE;
+};
+
+const isOwnCardSharedWithLikedAudience = ownerId => {
+  if (!ownLikedAudienceMemo.has(ownerId)) {
+    const pending = readOwnCardLikedAudience(ownerId).catch(error => {
+      ownLikedAudienceMemo.delete(ownerId);
+      console.warn('[likedAudience] не вдалося прочитати режим власної картки', { ownerId, error });
+      return false;
+    });
+    ownLikedAudienceMemo.set(ownerId, pending);
+  }
+  return ownLikedAudienceMemo.get(ownerId);
+};
+
+const announceLikedAudienceChange = detail => {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  try {
+    window.dispatchEvent(new CustomEvent(LIKED_AUDIENCE_EVENT, { detail }));
+  } catch (error) {
+    // Подія — лише підказка на екрані; без неї вподобання все одно діє.
+  }
+};
+
+const syncLikedAudienceAfterReaction = async (ownerId, viewerId, favoriteValue) => {
+  const owner = auth.currentUser?.uid || '';
+  const viewer = String(viewerId || '').trim();
+  if (!owner || (ownerId && ownerId !== owner) || !viewer || viewer === owner) return;
+  try {
+    if (!(await isOwnCardSharedWithLikedAudience(owner))) return;
+    const patch = buildLikedAudiencePatch({
+      ownerId: owner,
+      favorites: { [viewer]: favoriteValue },
+      viewerIds: [viewer],
+      enabled: Boolean(favoriteValue),
+    });
+    await update(ref2(database), patch);
+    announceLikedAudienceChange({ viewerId: viewer, opened: Boolean(favoriteValue) });
+  } catch (error) {
+    console.warn(
+      '[likedAudience] вподобання збережено, але перелік відкритих анкет не оновлено. Викотіть правила: npx firebase deploy --only database',
+      { ownerId: owner, viewerId: viewer, error },
+    );
+  }
+};
+
+/**
+ * Увімкнути чи вимкнути обернений перелік для всіх поточних вподобань — коли
+ * «Мій профіль» перемикає режим. Повертає, скільки читачів зачеплено і чи
+ * запис пройшов: відмову екран показує, а не ковтає.
+ */
+export const setOwnLikedAudienceEntries = async (ownerId, enabled) => {
+  const owner = auth.currentUser?.uid || '';
+  if (!owner || owner !== String(ownerId || '').trim()) return { ok: false, count: 0 };
+  rememberOwnLikedAudience(owner, enabled);
+  try {
+    const favorites = await fetchFavoriteUsers(owner, { rethrow: true });
+    const patch = buildLikedAudiencePatch({ ownerId: owner, favorites, enabled });
+    const count = Object.keys(patch).length;
+    if (count) await update(ref2(database), patch);
+    return { ok: true, count };
+  } catch (error) {
+    console.warn(
+      '[likedAudience] не вдалося оновити перелік відкритих анкет. Викотіть правила: npx firebase deploy --only database',
+      { ownerId: owner, enabled, error },
+    );
+    return { ok: false, count: 0, error };
+  }
+};
+
 // Значення лайку — мітка часу, як у дизлайку (`addDislikeUser`): колекція
 // «Обрані» стоїть за часом реакції (`orderReactionIdsByRecency`), і без мітки
 // порядок довелось би брати з кожної картки окремим читанням. Старі `true`
@@ -700,6 +891,7 @@ export const addFavoriteUser = async (userId, ownerId, likedAt) => {
     if (!owner) return;
     const timestamp = typeof likedAt === 'number' ? likedAt : Date.now();
     await set(ref2(database, `multiData/favorites/${ownerId || owner.uid}/${userId}`), timestamp);
+    void syncLikedAudienceAfterReaction(ownerId || owner.uid, userId, timestamp);
   } catch (error) {
     console.error('Error adding favorite user:', error);
   }
@@ -710,6 +902,7 @@ export const removeFavoriteUser = async (userId, ownerId) => {
     const owner = auth.currentUser;
     if (!owner) return;
     await remove(ref2(database, `multiData/favorites/${ownerId || owner.uid}/${userId}`));
+    void syncLikedAudienceAfterReaction(ownerId || owner.uid, userId, null);
   } catch (error) {
     console.error('Error removing favorite user:', error);
   }
@@ -726,6 +919,7 @@ export const setReactionUserValue = async (kind, userId, ownerId, value) => {
   const path = `multiData/${kind === 'dislikes' ? 'dislikes' : 'favorites'}/${ownerId || owner.uid}/${userId}`;
   if (value === undefined || value === null || value === false) await remove(ref2(database, path));
   else await set(ref2(database, path), value);
+  if (kind !== 'dislikes') void syncLikedAudienceAfterReaction(ownerId || owner.uid, userId, value);
 };
 
 /**
@@ -750,6 +944,7 @@ export const setReactionUserValues = async ({
   if (favoriteChanged) updates[`favorites/${resolvedOwnerId}/${userId}`] = favoriteValue ?? null;
   if (dislikeChanged) updates[`dislikes/${resolvedOwnerId}/${userId}`] = dislikeValue ?? null;
   if (Object.keys(updates).length) await update(ref2(database, 'multiData'), updates);
+  if (favoriteChanged) void syncLikedAudienceAfterReaction(resolvedOwnerId, userId, favoriteValue);
 };
 
 export const addDislikeUser = async (userId, ownerId, dislikedAt) => {
@@ -2559,11 +2754,18 @@ export const readProfileFromNodes = async (userId, options = {}) => {
   // Ціна — один круг мережі на анкету, яку читачеві таки видно. Прихована ж
   // коштує тепер одне читання замість пʼяти, з яких чотири однаково
   // поверталися відмовою.
-  const mayReadPrivateNodes = canReadProfileOutsideFeed({
+  //
+  // Картку, відкриту лише вподобаним, — так само, але право доводить
+  // обернений перелік читача (`mayViewerReadCardPrivateNodes`): прочитана
+  // картка ще не означає, що читач у колі.
+  const privileged = canReadProfileOutsideFeed({
     profileId: id,
     viewerId: auth.currentUser?.uid || '',
     accessLevel,
-  }) || isCardInMatchingFeed(card);
+  });
+  const sharedWithViewer = !privileged && !isCardInMatchingFeed(card)
+    && isCardSharedWithLikedAudience(card) && await isViewerInLikedAudienceOf(id);
+  const mayReadPrivateNodes = privileged || isCardInMatchingFeed(card) || sharedWithViewer;
 
   const [details, contacts, workflow, technical] = mayReadPrivateNodes
     ? await Promise.all([
@@ -2604,6 +2806,7 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     profileId: id,
     viewerId: auth.currentUser?.uid || '',
     accessLevel,
+    sharedWithViewer,
     parts: { card, details, contacts, workflow, technical },
     legacy,
   });
@@ -2689,7 +2892,7 @@ export const readProfileContacts = userId => {
     });
     if (!privileged) {
       const card = await readProfileNodePart(PROFILE_NODES.matchingCards, id);
-      if (!isCardInMatchingFeed(card)) return { allowed: false, contacts: null };
+      if (!(await mayViewerReadCardPrivateNodes(id, card))) return { allowed: false, contacts: null };
     }
     const contacts = await readProfileNodePart(PROFILE_NODES.profileContacts, id);
     return { allowed: true, contacts: contacts && typeof contacts === 'object' ? contacts : {} };

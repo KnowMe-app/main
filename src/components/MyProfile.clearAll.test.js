@@ -59,7 +59,7 @@ describe('my-profile: видалення і очищення анкети', () =
     // `publish` мусить доїхати до писача навіть будучи `false` — саме він
     // перебудовує проєкцію стрічки. Програми агенції знімаються цілком і теж
     // напряму: порожній рядок в обʼєкті — не позначка стирання, а битий запис.
-    expect(body).toContain("await saveState(nextState, { directFields: ['publish', ...objectFields] });");
+    expect(body).toContain("await saveState(nextState, { directFields: ['publish', 'publishAudience', ...objectFields] });");
   });
 
   it('не стирає пошту — це логін, а не поле анкети', () => {

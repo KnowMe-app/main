@@ -6,7 +6,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaArrowRight, FaChevronDown, FaMapMarkerAlt, FaPencilAlt, FaRegClock, FaRegCommentDots, FaRegStickyNote } from 'react-icons/fa';
+import { FaArrowRight, FaChevronDown, FaLock, FaMapMarkerAlt, FaPencilAlt, FaRegClock, FaRegCommentDots, FaRegStickyNote } from 'react-icons/fa';
+import { LIKED_AUDIENCE_CARD_FLAG } from 'utils/likedAudience';
 import {
   getProfileAge,
   getProfileBio,
@@ -1712,6 +1713,15 @@ const ProfileRow = ({
           )}
           {/* Відкладена картка видна одразу, а не лише в кінці списку: плашка
               під імʼям каже, що до людини звертатись пізніше й коли саме. */}
+          {/* Анкета, яку донорка чи СМ відкрила саме цьому читачеві
+              (публікація «лише для вподобаних»): без плашки агенція не знала
+              б, чому картка в неї є, і що решта її не бачить. */}
+          {user?.[LIKED_AUDIENCE_CARD_FLAG] === true && (
+            <S.LikedAudienceBadge data-testid="liked-audience-badge">
+              <FaLock aria-hidden="true" />
+              <span>{uiText('Анкета прихована від інших — вас вподобали, тож вам її видно', language)}</span>
+            </S.LikedAudienceBadge>
+          )}
           {postponedUntil && (
             <S.PostponeBadge data-testid="postpone-badge">
               <FaRegClock aria-hidden="true" />

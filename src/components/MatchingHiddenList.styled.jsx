@@ -1599,6 +1599,12 @@ export const PostponeBadge = styled.div`
   }
 `;
 
+// Та сама плашка під імʼям, кольором акценту стрічки: «вам відкрили анкету».
+export const LikedAudienceBadge = styled(PostponeBadge)`
+  background: color-mix(in srgb, var(--matching-accent, var(--km-accent, #E8791A)) 12%, transparent);
+  color: var(--matching-accent, var(--km-accent, #E8791A));
+`;
+
 // Текст нотатки в прев'ю — той самий, що стоїть у полі доріжки стрічки, лише
 // без поля: прев'ю показує записане, а не дає писати.
 export const PreviewNoteText = styled.div`
