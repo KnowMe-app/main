@@ -28,7 +28,10 @@ describe('LoginScreen returns the reader to the link they opened', () => {
    */
   it('decides "already signed in" by the auth status, not by localStorage', () => {
     const source = loginSource();
-    expect(source).toContain("if (authStatus !== 'in') return;");
+    expect(source).toContain("if (authStatus !== 'in' || authFlowInProgressRef.current) return;");
+    // Реєстрація: Firebase каже «увійшов» до запису анкети, і ефект не мусить
+    // відвозити в «Мій профіль», поки роль ще не в картці.
+    expect(source).toContain('authFlowInProgressRef.current = true;\n    try {');
     expect(source).not.toContain("const loggedIn = localStorage.getItem('isLoggedIn');");
   });
 });

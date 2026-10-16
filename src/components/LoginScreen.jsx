@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { FaUser, FaLock } from 'react-icons/fa';
 import { auth } from './config';
@@ -377,6 +377,15 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   // з'являється пропозиція створити його (а не мовчазний «невірний пароль»).
   const [loginFailedUnknownEmail, setLoginFailedUnknownEmail] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Вхід чи реєстрація, які веде сама форма. Firebase каже «увійшов» уже на
+  // `createUserWithEmailAndPassword`, тобто до запису анкети, і ефект нижче
+  // відвозив людину в «Мій профіль» посеред реєстрації: той читав ще порожню
+  // картку, не знаходив ролі й показував «Донор ооцитів» замість обраної
+  // агенції (`mergeLoadedProfileData` ставить `ed` за замовчуванням), а
+  // перше ж збереження поля могло записати цю роль у базу. Поки форма працює,
+  // переводить на профіль вона сама — після запису (`navigateAfterAuth`).
+  const authFlowInProgressRef = useRef(false);
+  const navigatedAfterAuthRef = useRef(false);
 
   const handleCheckboxChange = () => {
     setIsChecked(!isChecked);
@@ -435,6 +444,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   const { todayDays, todayDash } = getCurrentDate();
 
   const navigateAfterAuth = () => {
+    navigatedAfterAuthRef.current = true;
     navigate(returnTo || MY_PROFILE_ROUTE, { replace: true });
   };
 
@@ -542,6 +552,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
 
     setIsLoading(true);
     setLoginFailedUnknownEmail(false);
+    authFlowInProgressRef.current = true;
     try {
       if (isRegisterMode) {
         // Наявний акаунт тут не реєструється вдруге: `email-already-in-use`
@@ -561,7 +572,11 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     } catch (error) {
       console.error('Error in authentication process:', error);
     } finally {
+      authFlowInProgressRef.current = false;
       setIsLoading(false);
+      // Акаунт створено, а запис анкети впав: ефект нижче цей момент
+      // пропустив, тож відвозимо звідси тут, як і було до гарда.
+      if (auth.currentUser && !navigatedAfterAuthRef.current) navigateAfterAuth();
     }
   };
 
@@ -570,7 +585,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   // протухлою сесією їхала звідси на захищений екран, той вертав її назад сюди,
   // і людина бачила два редиректи по колу замість форми.
   useEffect(() => {
-    if (authStatus !== 'in') return;
+    if (authStatus !== 'in' || authFlowInProgressRef.current) return;
     setIsLoggedIn(true);
     navigate(returnTo || MY_PROFILE_ROUTE, { replace: true });
   }, [authStatus, navigate, returnTo, setIsLoggedIn]);
