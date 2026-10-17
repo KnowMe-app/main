@@ -77,7 +77,6 @@ education:
 profession:
 phone:
 telegram:
-telegramName:
 city:
 region:
 country:
@@ -102,12 +101,13 @@ myComment:
 - `education` — `Higher` / `Technical` / `Secondary` / `Bachelor` / `Master`
   / `PhD`.
 - `phone` — digits, international, no `+`; `0XXXXXXXXX` → `380XXXXXXXXX`.
-- `telegram` — username without `@`, never a phone.
-- `telegramName` — sender display name exactly as shown in the chat.
+- `telegram` — sender display name exactly as shown in the chat (e.g.
+  `УК СМ Оля`); if a @username is also known → list
+  `[<display name>, <username without @>]`. Never a phone.
 - `city` without prefixes; `region` only if stated; `country` if stated.
 - `myComment` — `|` literal, Ukrainian, one fact per line, each starting
   `🔏`. First line always
-  `🔏Telegram: <telegramName>, DD.MM.YYYY HH:MM` (first kept message);
+  `🔏Telegram: <display name>, DD.MM.YYYY HH:MM` (first kept message);
   second `🔏Повідомлення: DD.MM.YYYY HH:MM, …` (all used messages). Then
   everything without its own field: program wanted, status, history,
   geography, relocation, compensation and every payment (exact amounts,
@@ -128,8 +128,7 @@ maritalStatus: "Yes"
 csection: 2
 ownKids: 3
 phone: 380000000000
-telegram: example_donor
-telegramName: Марта Приклад
+telegram: [Марта Приклад, example_donor]
 city: Полтава
 myComment: |
   🔏Telegram: Марта Приклад, 01.01.2026 10:00
@@ -145,14 +144,16 @@ telegram_intake.yaml per docs/telegram-chat-intake.md".
 1. Parse YAML; drop the illustrative example.
 2. Convert: `birth`, `lastDelivery`, `lastCycle` → `YYYY-MM-DD`; all values
    to strings; `userRole` also written to `role`.
-3. Match: `searchId/{buildSearchIdValueKey(field, value)}` for `telegram`,
-   then `phone` (`readSearchIdEntryIds`). Senders whose `telegramName`
-   starts with `УК СМ` are saved contacts and most likely already exist —
-   if no match, flag them in the report.
+3. Match: `searchId/{buildSearchIdValueKey('telegram', value)}` for each
+   `telegram` value (display name first), then `phone`
+   (`readSearchIdEntryIds`). Exactly one card → that card. Zero, or two and
+   more (a search bug) → new draft. Display names starting `УК СМ` are
+   saved contacts and almost always match one card; report those that
+   did not or matched several.
 4. Write — every value, no filtering:
-   - no match → draft: `reserveProfileCardId()` +
+   - no single match → draft: `reserveProfileCardId()` +
      `saveCreateProfileMutation({ cardId, creatorUid, actorUid, data })`;
-   - match → overlay on that card with every value that differs from it,
+   - single match → overlay on that card with every value that differs from it,
      including placeholder dates over exact ones (`{ from, to }`, or
      `{ added }` for array fields). `saveOverlayForUserCard` replaces the
      editor's whole layer for the card — merge with the existing
@@ -162,8 +163,8 @@ telegram_intake.yaml per docs/telegram-chat-intake.md".
      (display name + date + time) lets the admin find the message and save
      the contact.
 5. Verify every card resolves via `searchId`; report drafts, overlays,
-   conflicts (field: card value → chat value), `УК СМ` senders without a
-   match, errors.
+   conflicts (field: card value → chat value), `УК СМ` senders with zero
+   or several matches, errors.
 
 Run app code from Node: temp file in `src/` (never commit),
 `/** @jest-environment node */`, `signInWithEmailAndPassword` with
