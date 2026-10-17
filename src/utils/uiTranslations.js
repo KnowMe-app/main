@@ -864,6 +864,7 @@ const EN_BY_UK = {
   Донорам: 'Egg donors',
   'Сурогатним мамам': 'Surrogates',
   'Вам підходить': 'Fits you',
+  Підходить: 'Fits',
   'Не підходить': 'Does not fit',
   'донорку ооцитів': 'an egg donor',
   'сурогатну маму': 'a surrogate',
