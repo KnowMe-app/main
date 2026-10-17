@@ -612,9 +612,10 @@ export const describeProfileName = (...values) => values
 
 // Поля, які претендують на зайнятість контакту (`claimProfileIdentities` бере
 // все індексоване, крім імені та прізвища). Підставляти таке значення в НОВУ
-// картку, коли пошук уже показав чужу з цим самим контактом, означає завести
-// дубль, який база все одно відхилить, — і показати людині відмову замість
-// форми. Імʼя та прізвище підставляються завжди: вони нічого не займають.
+// картку, коли пошук уже показав чужу з цим самим контактом, означає самому
+// завести дубль: збереження його пропустить, але з попередженням, і
+// обʼєднувати картки потім доведеться адмінові. Імʼя та прізвище
+// підставляються завжди: вони нічого не займають.
 const IDENTITY_CLAIMING_PREFILL_FIELDS = new Set(
   [...PROFILE_SEARCH_PREFILL_FIELDS].filter(field => field !== 'name' && field !== 'surname')
 );
@@ -1448,9 +1449,34 @@ export const ProfileCreationWorkspace = () => {
         {targets ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{uiText('Перевірте rules для: {targets}.', language, { targets })}</div> : null}
         {recovery ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{recovery}</div> : null}
       </div>,
-      { duration: 8000 },
+      // Стабільний id: автозбереження повторює відмову на кожному blur, і
+      // однакові тости складались у вежу.
+      { duration: 8000, id: `profile-save-error:${error?.message || ''}` },
     );
   };
+
+  // Дубль контакту збереження не зупиняє: значення записане, а людині
+  // кажемо, у якій ще картці воно є, — розсуджує й обʼєднує дублі адмін.
+  // Id чужої картки — лише адмінові; решті досить знати поле.
+  const reportDuplicateConflicts = conflicts => {
+    if (!conflicts?.length) return;
+    const lines = conflicts.map(conflict => {
+      const field = getFieldLabel(conflict.field, language) || conflict.field;
+      return accessRef.current?.isAdmin && conflict.cardIds?.length
+        ? uiText('{field} уже є в картці {cards}', language, { field, cards: conflict.cardIds.join(', ') })
+        : uiText('{field} уже є в іншій картці', language, { field });
+    });
+    toast(
+      <div>
+        <div style={{ fontWeight: 700 }}>{uiText('Збережено, але схоже на дубль', language)}</div>
+        {lines.map(line => <div key={line} style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{line}</div>)}
+      </div>,
+      { duration: 8000, icon: '⚠️', id: `profile-duplicate:${lines.join('|')}` },
+    );
+  };
+
+  const reportDuplicateConflictsRef = useRef(reportDuplicateConflicts);
+  reportDuplicateConflictsRef.current = reportDuplicateConflicts;
 
   const describeSaveError = error => uiText(error?.message === 'REVISION_CONFLICT'
     ? 'Профіль уже змінено. Оновіть сторінку.'
@@ -1542,6 +1568,9 @@ export const ProfileCreationWorkspace = () => {
         if (!error.profileSaveStage) error.profileSaveStage = 'identity-claim-or-mutation';
         throw error;
       }
+      // Через ref: функція бере мову й права з поточного рендера, а
+      // `persistDraft` живе довше за рендер.
+      reportDuplicateConflictsRef.current(saved?.duplicateConflicts);
       activeMutationRef.current = saved;
       draftBaseRef.current = saved?.data || nextData;
       stackedDraftRef.current = applyOverlaysToCard(draftBaseRef.current, overlays);
@@ -1682,6 +1711,7 @@ export const ProfileCreationWorkspace = () => {
       expectedRevision: current.revision,
       skipRevisionHistory,
     });
+    reportDuplicateConflicts(saved?.duplicateConflicts);
     activeMutationRef.current = saved;
     draftBaseRef.current = saved?.data || nextData;
     setActiveMutation(saved);
