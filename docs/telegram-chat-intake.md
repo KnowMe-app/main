@@ -39,6 +39,9 @@ Write ~/Documents/telegram_intake.yaml.
    - agency/clinic/parents offers: program terms, payments, requirements,
      locations, contacts.
    Skip small talk. Facts about third parties do not go to the sender.
+   Exception: a sender whose display name does NOT start with "УК СМ" is
+   not a saved contact — keep EVERY message of theirs, small talk
+   included, verbatim with date and time (see myComment).
 4. For each new sender with a kept message: open their profile, copy
    @username and phone if shown.
 5. Parse each sender into one profile (Schema). Later messages update it.
@@ -114,6 +117,9 @@ myComment:
   currencies, conditions — never convert), program terms of agencies and
   clinics, what parents look for, restrictions, contact instructions.
   Do not repeat structured fields.
+  Sender not starting `УК СМ`: after those lines add every message of theirs,
+  whatever its content, one line each:
+  `🔏DD.MM.YYYY HH:MM: «<message text verbatim>»`.
 - Conflicting statements → newest in the field, the other in `myComment`.
 - Validate YAML before saving.
 
