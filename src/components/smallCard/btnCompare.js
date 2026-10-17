@@ -17,6 +17,7 @@ import { copyPublicCommentsBetweenCards } from '../../utils/legacyImportCommentM
 import { isAdminUid } from '../../utils/accessLevel';
 import { OWNER_MULTI_DATA_STRING_FIELDS } from '../../utils/profileNodeSchema';
 import { updateCachedUser } from '../../utils/cache';
+import { isJsonStateCard } from '../../utils/jsonProfileImport';
 import {
   appendComparisonText,
   comparisonValuesForKey,
@@ -100,6 +101,19 @@ export const btnCompare = (
   let requestId;
   const copyValue = async (key, sourceValue, targetUserId, sourceUserId, targetValue) => {
     if (!targetUserId) return;
+    const latestTarget = (usersRef?.current || users)[targetUserId];
+    if (isJsonStateCard(latestTarget)) {
+      // Анкета з файлу живе лише в стейті: значення з бази туди переносимо,
+      // нічого не записуючи. У базу пише лише протилежний напрямок.
+      const updateTarget = previous => ({
+        ...previous,
+        [targetUserId]: { ...previous[targetUserId], [key]: sourceValue },
+      });
+      if (usersRef) usersRef.current = updateTarget(usersRef.current);
+      setUsers(updateTarget);
+      await refreshComparison();
+      return;
+    }
     try {
       await queueCardSave(targetUserId, async () => {
         let savedValue;
@@ -154,7 +168,10 @@ export const btnCompare = (
 
   const refreshComparison = async (reloadProfiles = false) => {
     if (reloadProfiles) {
-      const profiles = await Promise.all(pairIds.map(fetchUserById));
+      const latestBefore = usersRef?.current || users;
+      const profiles = await Promise.all(pairIds
+        .filter(id => !isJsonStateCard(latestBefore[id]))
+        .map(fetchUserById));
       const loaded = Object.fromEntries(profiles.filter(Boolean).map(user => [user.userId, user]));
       if (usersRef) usersRef.current = { ...usersRef.current, ...loaded };
       setUsers(previous => ({ ...previous, ...loaded }));
@@ -163,12 +180,15 @@ export const btnCompare = (
     const currentUserRaw = latest[pairIds[0]] || {};
     const nextUserRaw = latest[pairIds[1]] || {};
     const ownerId = auth.currentUser?.uid;
+    // У анкети з файлу немає ні нотатки, ні відгуків, ні фото в Storage —
+    // питати базу про її id нема сенсу.
+    const remoteId = user => (isJsonStateCard(user) ? undefined : user.userId);
     const [currentCommentResult, nextCommentResult, publicByProfile, currentPhotos, nextPhotos] = await Promise.all([
-      ownerId && currentUserRaw.userId ? fetchUserComment(ownerId, currentUserRaw.userId) : null,
-      ownerId && nextUserRaw.userId ? fetchUserComment(ownerId, nextUserRaw.userId) : null,
-      fetchPublicProfileComments([currentUserRaw.userId, nextUserRaw.userId].filter(Boolean)),
-      currentUserRaw.userId ? getAllUserPhotos(currentUserRaw.userId) : [],
-      nextUserRaw.userId ? getAllUserPhotos(nextUserRaw.userId) : [],
+      ownerId && remoteId(currentUserRaw) ? fetchUserComment(ownerId, currentUserRaw.userId) : null,
+      ownerId && remoteId(nextUserRaw) ? fetchUserComment(ownerId, nextUserRaw.userId) : null,
+      fetchPublicProfileComments([remoteId(currentUserRaw), remoteId(nextUserRaw)].filter(Boolean)),
+      remoteId(currentUserRaw) ? getAllUserPhotos(currentUserRaw.userId) : [],
+      remoteId(nextUserRaw) ? getAllUserPhotos(nextUserRaw.userId) : [],
     ]);
     if (requestId !== latestCompareRequest) return;
 
@@ -265,7 +285,7 @@ export const btnCompare = (
         <table border="1" cellSpacing="0" cellPadding="5" style={{ borderCollapse: 'collapse', width: '100%' }}>
           <thead><tr><th style={{ width: '20%' }}>Key</th>{[currentUser, nextUser].map(user => (
             <th key={user.userId} style={{ width: '40%' }}>
-              {onOpenCard ? <button type="button" onClick={() => onOpenCard(user.userId, () => refreshComparison(true))}>{user.userId}</button> : user.userId}
+              {onOpenCard && !isJsonStateCard(user) ? <button type="button" onClick={() => onOpenCard(user.userId, () => refreshComparison(true))}>{user.userId}</button> : user.userId}
             </th>
           ))}</tr></thead>
           <tbody>{photosRow}{rows}</tbody>

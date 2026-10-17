@@ -20,6 +20,11 @@ import { SEARCH_ID_INDEXED_FIELDS, normalizeSearchIdInput, normalizeSearchDateCo
 import { isMatchingSummaryCard } from '../utils/matchingCardIndex';
 import { buildSearchSuggestions } from '../utils/searchQueryStorage';
 import { fetchOwnSearchQueries } from './config';
+import {
+  buildJsonProfileSearchValues,
+  buildJsonStateCard,
+  parseJsonProfileList,
+} from '../utils/jsonProfileImport';
 
 const SearchIcon = (
   <svg
@@ -104,6 +109,19 @@ const ClearButton = styled.button`
   &:hover {
     color: var(--km-accent);
   }
+`;
+
+const JsonUploadButton = styled.button`
+  flex: 0 0 auto;
+  margin-left: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #bbb;
+  background: #fff;
+  color: #111;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
 `;
 
 const HistoryList = styled.ul`
@@ -1199,8 +1217,12 @@ const SearchBar = ({
   placeholder,
   inputAriaLabel,
   debounceMs = 0,
+  // Лише AddNewProfile: `{…}` у рядку — список анкет із файлу, а не запит.
+  allowJsonProfileList = false,
 }) => {
   const activeSearchRequestRef = useRef(0);
+  const jsonFileInputRef = useRef(null);
+  const lastJsonQueryRef = useRef(null);
   const [internalSearch, setInternalSearch] = useState(
     () => localStorage.getItem(storageKey) || '',
   );
@@ -2090,6 +2112,73 @@ const SearchBar = ({
     const rawQuery = typeof query === 'string' ? query : '';
     const trimmed = rawQuery.trim();
 
+    const jsonProfiles = allowJsonProfileList ? parseJsonProfileList(trimmed) : [];
+    if (jsonProfiles.length > 0) {
+      // Enter і blur, що за ним іде, кличуть пошук з тим самим текстом; список
+      // на кілька десятків анкет — це десятки запитів, двічі їх не робимо.
+      if (lastJsonQueryRef.current === trimmed) return;
+      lastJsonQueryRef.current = trimmed;
+      // В історію пошуку й у `searchQueries` файл не пишемо: це не запит, а
+      // вміст, і з бази його ніхто читати не мав би.
+      const collector = {
+        requestId,
+        results: {},
+        orderedItems: [],
+        currentResults: {},
+        currentValue: null,
+        states: {},
+        users: {},
+        lastState: undefined,
+        lastUsers: undefined,
+        lastUserNotFound: false,
+        searchContexts: {},
+      };
+      repeatedSearchCollectorRef.current = collector;
+      try {
+        for (const { key, profile } of jsonProfiles) {
+          addRepeatedSearchItem(collector, `json_${key}`, buildJsonStateCard(key, profile));
+          const values = buildJsonProfileSearchValues(profile);
+          const found = {};
+          for (const value of values) {
+            collector.currentValue = value;
+            collector.currentResults = {};
+            await executeWriteData(value, { requestId, suppressHistory: true, suppressSearchExecuted: true });
+            if (isStaleRequest()) return;
+            Object.entries(collector.currentResults).forEach(([id, item]) => {
+              if (!item || item._notFound) return;
+              found[id] = item;
+            });
+          }
+          const foundEntries = Object.entries(found);
+          if (foundEntries.length > 0) {
+            foundEntries.forEach(([id, item]) => {
+              addRepeatedSearchItem(collector, id, { ...item, _jsonGroup: key });
+            });
+          } else if (values.length > 0) {
+            const [firstValue] = values;
+            addRepeatedSearchItem(collector, `new_json_${key}`, {
+              ...buildRepeatedNotFoundItem(firstValue, buildRepeatedSearchContext(firstValue)),
+              _jsonGroup: key,
+            });
+          }
+        }
+      } finally {
+        if (repeatedSearchCollectorRef.current?.requestId === requestId) {
+          repeatedSearchCollectorRef.current = null;
+        }
+      }
+      if (isStaleRequest()) return;
+      const orderedResults = collector.orderedItems.reduce((acc, { key, item }) => {
+        acc[key] = item;
+        return acc;
+      }, {});
+      setUserNotFound && setUserNotFound(false);
+      setState && setState({});
+      setUsers && setUsers(orderedResults);
+      return;
+    }
+    lastJsonQueryRef.current = null;
+
     if (onSearchExecuted && !suppressSearchExecuted && lastNotifiedSearchRef.current !== trimmed) {
       // Enter and the blur it triggers both call writeData() with the same
       // unchanged value - only notify once per value.
@@ -2398,6 +2487,31 @@ const SearchBar = ({
           </ClearButton>
         )}
       </InputFieldContainer>
+      {allowJsonProfileList && (
+        <>
+          <JsonUploadButton
+            type="button"
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => jsonFileInputRef.current?.click()}
+          >
+            Завантажити JSON
+          </JsonUploadButton>
+          <input
+            ref={jsonFileInputRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={async e => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              const text = (await file.text()).trim();
+              setSearch(text);
+              writeData(text, { committed: true });
+            }}
+          />
+        </>
+      )}
       {/* Набране веде до підказок, порожнє поле — до останніх запитів. Це
           один і той самий список і те саме джерело; різниця лише в тому, що
           підказка вже знає, з чого починається потрібний рядок. Хрестик стоїть
