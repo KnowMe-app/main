@@ -123,6 +123,42 @@ myComment:
 - Conflicting statements → newest in the field, the other in `myComment`.
 - Validate YAML before saving.
 
+### Extraction rules
+
+Optimise for completeness and accuracy, not short output. Every profile keeps
+the full meaning of its source; concise wording is fine, lost meaning is not.
+
+1. **Lossless.** Keep every meaningful detail; never drop one for brevity.
+2. **Medical.** Conditions, explicit absence of disease, history, procedures,
+   reproductive health (protocols, response, AMH, oocyte yield), test results.
+3. **Physical.** Every appearance attribute and measurement (hair, eyes,
+   build, sizes) and physical requirements.
+4. **Experience.** Each past program with type, year, outcome; failed
+   attempts; an explicit "no experience".
+5. **Money.** One line per component: base fee, monthly, contract, transfer,
+   C-section, twins, clothing, nanny, relocation, compensations, bonuses —
+   amount, currency, condition, timing; mark what is negotiable. Never sum
+   or convert.
+6. **Geography.** Keep apart: residence (fields), program location, embryo
+   transfer, pregnancy monitoring, delivery. Relocation: full/partial, when,
+   limits, who pays. A program city is never `city`.
+7. **Requirements.** Everything intended parents, agencies or clinics demand
+   or prefer: age, parameters, experience, health, location, habits.
+8. **Legal and organisational.** Contract type, notarisation, risk coverage,
+   procedures, communication and support expectations.
+9. **Multiple roles.** One person in several program types → all roles in
+   `userRole`, terms for each role on separate lines; drop nothing secondary.
+10. **Contacts.** Every channel, username, number and restriction ("Telegram
+    only", "no calls") once, no duplicates.
+11. **Negatives.** Keep meaningful absences, exclusions, refusals ("no
+    abroad", "no full relocation", "no chronic diseases").
+12. **No over-summarising.** Never replace specifics with generic phrases
+    ("good conditions", "has experience").
+13. **No assumptions.** Do not infer missing facts, turn a wish into an
+    agreement, or a program location into an address.
+14. **Completeness check.** Before saving, re-read each source message and
+    confirm every meaningful statement sits in a field or in `myComment`.
+
 Illustrative only, fictional, never written to the database:
 
 ```yaml
