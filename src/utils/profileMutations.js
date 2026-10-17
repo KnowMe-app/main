@@ -113,23 +113,6 @@ const getIdentityClaimKey = ({ field, valueKey }) => {
 };
 
 /**
- * Чий саме контакт — відмова мусить це назвати.
- *
- * `DUPLICATE_PROFILE` колись приходив голим словом: адмін дописав у чернетку
- * нік телеграму, і кожен наступний blur будь-якого поля давав той самий тост
- * «Профіль з такими контактами вже існує», не кажучи ні якого поля, ні якої
- * картки. Розібратись у дублі (а це рішення саме адміна) було ні з чим, а
- * збереження чернетки стояло цілком через одне значення. Тож помилка несе
- * поле й id карток, які його тримають (`duplicateConflicts`), — екран
- * показує їх людині.
- */
-const duplicateProfileError = conflicts => {
-  const error = new Error('DUPLICATE_PROFILE');
-  error.duplicateConflicts = conflicts;
-  return error;
-};
-
-/**
  * Id із `searchId` — ще не доказ, що картка існує.
  *
  * Індекс знімається не завжди: попередня версія поля лишається в ньому
@@ -175,35 +158,52 @@ const claimProfileIdentities = async ({ cardId, data }) => {
     ...conflict,
     cardIds: await keepExistingCardIds(conflict.cardIds),
   })))).filter(conflict => conflict.cardIds.length);
-  if (canonicalConflicts.length) throw duplicateProfileError(canonicalConflicts);
+  // Дубль контакту — не відмова, а попередження. Значення зберігається, а
+  // поле й картки, які його вже мають, повертаються (`conflicts`) — екран
+  // каже про них людині, а розсуджує дублі адмін окремо (порівняння
+  // дублікатів на `AddNewProfile`). Поки збіг кидав `DUPLICATE_PROFILE`,
+  // одне дописане значення (нік телеграму від адміна) зупиняло збереження
+  // чернетки цілком, і кожен наступний blur будь-якого поля давав ту саму
+  // відмову — тобто губилась і решта правок.
+  const conflicts = [...canonicalConflicts];
+  const noteConflict = (field, ids) => {
+    const existing = conflicts.find(conflict => conflict.field === field);
+    if (existing) {
+      existing.cardIds = [...new Set([...existing.cardIds, ...ids])];
+    } else {
+      conflicts.push({ field, cardIds: ids });
+    }
+  };
+  const ownedKeys = [];
   const acquiredKeys = [];
   try {
     for (const [index, key] of keys.entries()) {
       const claimRef = ref(database, getProfileIdentityClaimPath(key));
       const existingSnapshot = await get(claimRef);
       const alreadyOwned = existingSnapshot.val() === cardId;
-      let duplicate = false;
-      let claimedBy = '';
+      let claimedBy = null;
       const result = await runTransaction(claimRef, current => {
         if (current != null && current !== cardId) {
-          duplicate = true;
           claimedBy = typeof current === 'string' ? current : '';
           return undefined;
         }
         return cardId;
       }, { applyLocally: false });
       if (!result.committed) {
-        throw duplicate
-          ? duplicateProfileError([{ field: searchRecords[index].field, cardIds: claimedBy ? [claimedBy] : [] }])
-          : new Error('REVISION_CONFLICT');
+        if (claimedBy == null) throw new Error('REVISION_CONFLICT');
+        // Заявку тримає інша картка — її не перебиваємо: вона лишається за
+        // тим, хто завів контакт першим, а ця картка просто зберігає значення.
+        noteConflict(searchRecords[index].field, claimedBy ? [claimedBy] : []);
+        continue;
       }
+      ownedKeys.push(key);
       if (!alreadyOwned) acquiredKeys.push(key);
     }
   } catch (error) {
     await releaseProfileIdentities(cardId, acquiredKeys).catch(() => {});
     throw error;
   }
-  return { keys, acquiredKeys };
+  return { keys: ownedKeys, acquiredKeys, conflicts };
 };
 
 const releaseProfileIdentities = (cardId, keys) => Promise.all((keys || []).map(key => runTransaction(
@@ -368,8 +368,13 @@ export const saveCreateProfileMutation = async ({
   if (!cardId || !creatorUid || !actorUid) throw new Error('cardId, creatorUid and actorUid are required');
   let identityKeys;
   let acquiredIdentityKeys;
+  let duplicateConflicts;
   try {
-    ({ keys: identityKeys, acquiredKeys: acquiredIdentityKeys } = await claimProfileIdentities({ cardId, data }));
+    ({
+      keys: identityKeys,
+      acquiredKeys: acquiredIdentityKeys,
+      conflicts: duplicateConflicts,
+    } = await claimProfileIdentities({ cardId, data }));
   } catch (error) {
     error.profileSaveStage = 'identity-claim';
     throw error;
@@ -475,6 +480,12 @@ export const saveCreateProfileMutation = async ({
   await releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(error => {
     console.warn('[profileMutations] старі заявки на унікальність не знято', { cardId, error });
   });
+  // Збіги з іншими картками їдуть поруч із записом, а не в ньому: це
+  // попередження цьому збереженню, а не стан чернетки, тож неперелічуване
+  // поле не потрапляє ні в кеш, ні в копії обʼєкта.
+  if (duplicateConflicts?.length && mutation && typeof mutation === 'object') {
+    Object.defineProperty(mutation, 'duplicateConflicts', { value: duplicateConflicts, enumerable: false });
+  }
   return mutation;
 };
 
@@ -763,8 +774,8 @@ export const rejectCreateProfileMutation = async ({ cardId, creatorUid, expected
  *   — `multiData/profileMutationHistory/{картка}` — журнал її ревізій;
  *   — `multiData/profileIdentityClaims/*` — заявки на унікальність. Поки вони
  *     стоять, номер видаленої чернетки лишається зайнятим, і наступна спроба
- *     завести з ним картку відповідає `DUPLICATE_PROFILE` — тобто видалення
- *     блокує саме те, заради чого видаляли;
+ *     завести з ним картку попереджає про дубль із карткою, якої вже немає,
+ *     а нова картка заявки на свій номер не дістає;
  *   — `searchId` — чернетка лежить **тільки** там (картки стрічки в неї
  *     немає), тож без цього кроку пошук і далі знаходить те, чого немає;
  *   — шари доповнень, журнал і переліки редакторів (`purgeCardOverlays`);
