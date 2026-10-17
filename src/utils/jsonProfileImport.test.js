@@ -24,6 +24,10 @@ describe('jsonProfileImport', () => {
       .toEqual(['380751110125', '@stupko']);
   });
 
+  it('converts file dates to the database format', () => {
+    expect(buildJsonStateCard('1', { birth: '01.01.1998', city: 'Київ' })).toMatchObject({ birth: '1998-01-01', city: 'Київ' });
+  });
+
   it('marks the state card so nothing writes it by id', () => {
     expect(buildJsonStateCard('3', { phone: '1' })).toMatchObject({ userId: 'json_3', _fromJson: true, _jsonGroup: '3' });
   });

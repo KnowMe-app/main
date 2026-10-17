@@ -3,6 +3,8 @@
 // лише в стейті: у базу вони потрапляють поштучно, кліком по полю в таблиці
 // порівняння, або через «+» на плитці «не знайдено».
 
+import { PROFILE_DATE_FIELDS, parseProfileDate } from './profileDate';
+
 export const JSON_CARD_ID_PREFIX = 'json_';
 
 const isPlainObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -44,8 +46,17 @@ export const buildJsonProfileSearchValues = profile => {
   return [...new Set([...phones, ...telegrams])];
 };
 
+// Дати у файлі — `дд.мм.рррр`, у базі — `РРРР-ММ-ДД`. Без зведення та сама
+// дата стояла в порівнянні рядком відмінності, а клік записав би в базу
+// чужий формат.
+const normalizeJsonDates = profile => Object.entries(profile).reduce((acc, [field, value]) => {
+  const parsed = PROFILE_DATE_FIELDS.has(field) ? parseProfileDate(value) : null;
+  acc[field] = parsed ? `${parsed.y}-${parsed.mo}-${parsed.d}` : value;
+  return acc;
+}, {});
+
 export const buildJsonStateCard = (key, profile) => ({
-  ...profile,
+  ...normalizeJsonDates(profile),
   userId: `${JSON_CARD_ID_PREFIX}${key}`,
   _fromJson: true,
   _jsonGroup: key,
