@@ -52,6 +52,7 @@ import { uiText } from '../../utils/uiTranslations';
 import { revealCss } from '../../styles/revealAnimation';
 import Collapsible, { COLLAPSE_DURATION_MS } from '../Collapsible';
 import CalendarPicker from '../CalendarPicker';
+import { getRoleColor } from '../matchingRoleColors';
 
 const COLLAPSE_SETTLE_MS = COLLAPSE_DURATION_MS + 60;
 
@@ -102,17 +103,25 @@ const BORDER = 'var(--matching-card-border, var(--km-border, #E8E8E2))';
 // від теми застосунку не залежить. Успадкований колір там бував білим на
 // світлому — суми й вимоги просто зникали.
 const TEXT = 'var(--matching-header-text, var(--km-text, #1A1A1A))';
-const MUTED = 'var(--matching-muted-text, var(--km-muted, #62665F))';
 const CARD_BG = 'var(--matching-card-bg, var(--km-card, #FFFFFF))';
+// Приглушене — частка тексту на тлі картки, а не `--matching-muted-text`: у
+// темній палітрі стрічки той токен — 88% білого, і підписи розділів, місто й
+// оригінальна сума виглядали так само, як значення під ними, — ієрархія
+// блоку зникала. Глобальний токен фарбує всю стрічку, тож пропорція своя
+// лише тут; у світлій темі вона дає той самий сірий, що й був (≈ #686868).
+const MUTED = `color-mix(in srgb, ${TEXT} 66%, ${CARD_BG})`;
 // Контейнер програми — ледь тонований текстом, а не акцентом: у темній темі
 // це трохи світліше за картку, у світлій — трохи темніше, і рамка лишається
-// волосяною. Акцентний фон читався б кнопкою.
-const PROGRAM_BG = `color-mix(in srgb, ${TEXT} 4%, ${CARD_BG})`;
+// волосяною. Акцентний фон читався б кнопкою. 4% у темній темі від картки
+// майже не відрізнялись — 5% видно в обох.
+const PROGRAM_BG = `color-mix(in srgb, ${TEXT} 5%, ${CARD_BG})`;
 const GOOD = 'var(--km-success, #2E9B55)';
 const BAD = '#C8483E';
 const UNSURE = '#B7791F';
 
-const VISIBLE_PROGRAMS = 3;
+// Згорнута програма — три-чотири рядки, тож п’ять програм уміщаються там,
+// де раніше стояли три (≈ 800 px проти ≈ 990 px на 390 px ширини).
+const VISIBLE_PROGRAMS = 5;
 
 // Спільна анімація розгортання (`styles/revealAnimation`); редактор програм
 // бере її звідси ж.
@@ -1073,18 +1082,27 @@ const ProgramList = styled.ol`
 // Кожна програма — свій контейнер: при двох-трьох програмах межа між ними
 // мусить бути видно без читання, а без меж програма зливалась з описом
 // агенції над нею.
+//
+// Смужка ліворуч — колір ролі, для якої програма (`getRoleColor`: та сама
+// таблиця, що в плашки «Донор ооцитів» і смужки рядка стрічки): п’ять сірих
+// однакових контейнерів не казали, де донорська програма, а де СМ, доки їх не
+// прочитаєш. Смужка — `border-left`, як у доріжки нотатки (`NoteLane`), а не
+// накладений шар. Програма, що читачці не підходить, лишається на своєму
+// місці (порядок задає агенція), лише блідне.
+const typeStripe = (type, share) => {
+  const color = getRoleColor(type);
+  return color ? `color-mix(in srgb, ${color} ${share}%, transparent)` : BORDER;
+};
+
 const ProgramItem = styled.li`
-  padding: 12px 12px 4px;
+  padding: 10px 12px 10px 11px;
   border: 1px solid ${BORDER};
+  border-left: 3px solid ${({ $type, $off }) => typeStripe($type, $off ? 35 : 75)};
   border-radius: 14px;
   background: ${PROGRAM_BG};
 `;
 
 const ProgramHead = styled.div`
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 2px 12px;
   border-radius: 8px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -1112,42 +1130,43 @@ const Sum = styled.span`
   font-variant-numeric: tabular-nums;
 `;
 
+// Сума — головне число програми, розміром і вагою як числа смуги показників
+// донорки (зріст, вага — 19/700). Слово «Винагорода» лишається перед нею,
+// дрібніше й сірим: голе «1 500 $» у картці агенції читалось би ціною.
 const Reward = styled.div`
-  margin-top: 2px;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.35;
-  color: ${TEXT};
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: ${MUTED};
 
-  ${Sum} { font-weight: 700; }
+  ${Sum} { font-size: 19px; font-weight: 700; color: ${TEXT}; }
+  &[data-off] { opacity: 0.6; }
+`;
+
+// Місце й «Деталі програми» — один рядок: окремий рядок розгортання коштував
+// ~40 px на кожну програму, а підписаним розгортання лишається.
+const PlaceRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+  cursor: pointer;
+
+  /* Мішень дотику — увесь рядок (він теж розгортає), тож кнопці досить
+     28 px: 36 px робили рядок місця вищим за суму над ним. */
+  > button { margin-left: auto; flex: none; min-height: 28px; }
 `;
 
 const Place = styled.div`
   display: flex;
   align-items: baseline;
   gap: 5px;
-  margin-top: 2px;
-  font-size: 13px;
-  color: ${MUTED};
+  min-width: 0;
+  font-size: 14px;
+  color: ${TEXT};
   overflow-wrap: anywhere;
 
-  svg { flex: 0 0 auto; width: 10px; height: 10px; transform: translateY(1px); }
-  &.differs { color: ${TEXT}; }
-`;
-
-// Значок збігу — колір і форма, а не лише колір: ✓ / ✕ / ?.
-const FitMark = styled.i`
-  display: inline-grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 800;
-  color: #fff;
-  background: ${({ $state }) => tone($state === 'match' ? true : $state === 'mismatch' ? false : null)};
+  svg { flex: 0 0 auto; width: 10px; height: 10px; transform: translateY(1px); color: ${MUTED}; }
 `;
 
 const PayLabel = styled.div`
@@ -1182,7 +1201,53 @@ const Highlights = styled.ul`
 `;
 
 const CollapsedRequirements = styled(Chips)`
-  margin-top: 10px;
+  margin-top: 6px;
+`;
+
+// Вердикт — перший чіп у ряду вимог, поруч зі своєю причиною. Тонований, а
+// не залитий: залитий червоний «Не підходить» був гучнішим за суму. Стояв він
+// значком 16 px перед заголовком і губився; праворуч від суми — на 390 px
+// переносився в двох програмах із трьох.
+const VerdictChip = styled.li`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: ${({ $state }) => tone($state === 'match' ? true : $state === 'mismatch' ? false : null)};
+  background: ${({ $state }) => `color-mix(in srgb, ${tone($state === 'match' ? true : $state === 'mismatch' ? false : null)} 16%, transparent)`};
+`;
+
+// Кого шукають — один раз над програмами цього типу, а не в кожній: три
+// «Шукаємо донора ооцитів» поспіль займали по рядку й нічого не розрізняли.
+// Кружок — той самий колір ролі, що й смужка програм під ним.
+const ProgramGroup = styled.section`
+  & + & { margin-top: 12px; }
+`;
+
+const ProgramGroupHead = styled.h5`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px 1px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: ${TEXT};
+
+  &::before {
+    content: '';
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: ${({ $type }) => getRoleColor($type) || MUTED};
+  }
+
+  span { font-weight: 500; color: ${MUTED}; }
 `;
 
 // Коментар організатора в згорнутій картці — три рядки, решта в деталях.
@@ -1259,6 +1324,8 @@ const programFitState = result => {
 
 const FIT_LABELS = Object.freeze({ match: 'Вам підходить', uncertain: 'Може підходити', mismatch: 'Не підходить' });
 const FIT_MARKS = Object.freeze({ match: '✓', uncertain: '?', mismatch: '✕' });
+// На чіпі — коротко: «Вам» тут зайве, чіп стоїть у ряду вимог читачки.
+const FIT_CHIP_LABELS = Object.freeze({ match: 'Підходить', uncertain: 'Може підходити', mismatch: 'Не підходить' });
 
 /**
  * Сума програми — основна плюс гарантовані виплати плюс відмічені читачкою
@@ -1285,7 +1352,7 @@ export const describeProgramOffer = (program, { rates = null, selectedBonusKeys 
  * Розгортання й згортання — плавні (`Collapsible`), і згорнута частина
  * (вимоги, ознаки, коментар) поступається деталям так само плавно.
  */
-const ProgramListItem = ({ program, open, onToggle, facts, rates, language, differs, displayCurrency, timeline = null }) => {
+const ProgramListItem = ({ program, open, onToggle, facts, rates, language, differs, displayCurrency, timeline = null, heading = true }) => {
   const result = facts ? evaluateProgram(program, facts) : null;
   const fit = programFitState(result);
   const [selectedBonuses, toggleBonus] = useSelectedBonuses(program);
@@ -1320,9 +1387,22 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
     return () => window.clearTimeout(timer);
   }, [open]);
 
+  const toggleControl = (
+    <SectionToggle
+      type="button"
+      $open={open}
+      aria-expanded={open}
+      aria-controls={open ? bodyId : undefined}
+      onClick={event => { event.stopPropagation(); onToggle(); }}
+    >
+      <span>{uiText(open ? 'Згорнути деталі' : 'Деталі програми', language)}</span>
+      <FaChevronDown aria-hidden="true" />
+    </SectionToggle>
+  );
+
   return (
-    <ProgramItem ref={itemRef} data-testid="program-list-item" onClick={event => event.stopPropagation()}>
-      {/* Заголовок розгортає деталі, як і кнопка під програмою: по назві
+    <ProgramItem ref={itemRef} $type={program.type} $off={fit === 'mismatch'} data-testid="program-list-item" onClick={event => event.stopPropagation()}>
+      {/* Заголовок розгортає деталі, як і кнопка поруч із місцем: по сумі
           тицяють першою, і мертвий дотик читався як «деталей немає». */}
       <ProgramHead
         role="button"
@@ -1337,33 +1417,43 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
           onToggle();
         }}
       >
-        <div>
+        {/* У списку агенції «кого шукають» стоїть над групою програм
+            (`ProgramGroupHead`); окрема програма — прев'ю в редакторі —
+            називає себе сама. */}
+        {heading ? (
           <ProgramTitle data-testid="program-title">
-            {fit ? <FitMark role="img" $state={fit} title={uiText(FIT_LABELS[fit], language)} aria-label={uiText(FIT_LABELS[fit], language)}>{FIT_MARKS[fit]}</FitMark> : null}
             <span>{offerLabel}</span>
           </ProgramTitle>
-          {shown?.primary ? (
-            <Reward data-testid="program-reward">
-              {uiText('Винагорода', language)} <Sum>{shown.primary}</Sum>
-            </Reward>
-          ) : null}
-          {shown?.original || !shown?.primary ? (
-            <PayLabel data-testid="program-pay-label">
-              {shown?.primary ? shown.original : uiText('Суму уточнюйте в агенції', language)}
-            </PayLabel>
-          ) : null}
-          {place ? (
-            <Place className={differs?.has('location') ? 'differs' : undefined}>
-              <FaMapMarkerAlt aria-hidden="true" />
-              <span>{place}</span>
-            </Place>
-          ) : null}
-        </div>
+        ) : null}
+        {shown?.primary ? (
+          <Reward data-testid="program-reward" data-off={fit === 'mismatch' ? '' : undefined}>
+            {uiText('Винагорода', language)} <Sum>{shown.primary}</Sum>
+          </Reward>
+        ) : null}
+        {shown?.original || !shown?.primary ? (
+          <PayLabel data-testid="program-pay-label">
+            {shown?.primary ? shown.original : uiText('Суму уточнюйте в агенції', language)}
+          </PayLabel>
+        ) : null}
       </ProgramHead>
+      <PlaceRow onClick={event => { event.stopPropagation(); onToggle(); }}>
+        {place ? (
+          <Place>
+            <FaMapMarkerAlt aria-hidden="true" />
+            <span>{place}</span>
+          </Place>
+        ) : null}
+        {toggleControl}
+      </PlaceRow>
 
       <Collapsible open={!open}>
-        {requirements.length || wishes.length ? (
+        {fit || requirements.length || wishes.length ? (
           <CollapsedRequirements aria-label={uiText('Вимоги', language)} data-testid="program-requirements">
+            {fit ? (
+              <VerdictChip $state={fit} data-testid="program-verdict" aria-label={uiText(FIT_LABELS[fit], language)}>
+                <span aria-hidden="true">{FIT_MARKS[fit]} {uiText(FIT_CHIP_LABELS[fit], language)}</span>
+              </VerdictChip>
+            ) : null}
             {requirements.map(item => {
               const ok = checkByKey.has(item.key) ? checkByKey.get(item.key) : undefined;
               return (
@@ -1402,17 +1492,6 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
           />
         </ProgramBody>
       </Collapsible>
-
-      <SectionToggle
-        type="button"
-        $open={open}
-        aria-expanded={open}
-        aria-controls={open ? bodyId : undefined}
-        onClick={event => { event.stopPropagation(); onToggle(); }}
-      >
-        <span>{uiText(open ? 'Згорнути деталі' : 'Деталі програми', language)}</span>
-        <FaChevronDown aria-hidden="true" />
-      </SectionToggle>
     </ProgramItem>
   );
 };
@@ -1431,8 +1510,8 @@ export const ProgramPreview = ({ program, rates, language, displayCurrency, defa
  * Програми агенції в картці стрічки.
  *
  * Заголовок — «Програми · N» з перемикачем валюти поруч; донорці чи СМ під
- * ним — «Вам підходить 1 з 2». Далі контейнер на програму, перші три;
- * решта — «Показати ще». Деталі відкриті в однієї програми: розгорнута
+ * ним — «Вам підходить 1 з 2». Далі групи за типом («Шукаємо донора ооцитів
+ * · 3») і контейнер на програму, перші п’ять; решта — «Показати ще». Деталі відкриті в однієї програми: розгорнута
  * згортає ту, що була відкрита до неї.
  *
  * Програми чужого типу (донорці — програми СМ) у список не йдуть: вони
@@ -1461,6 +1540,17 @@ export const AgencyProgramsPanel = ({
   if (!summary) return null;
   const visible = showAll ? programs : programs.slice(0, VISIBLE_PROGRAMS);
   const hiddenCount = programs.length - visible.length;
+  // Програми одного типу — одна група під «Шукаємо …», навіть коли агенція
+  // перемежувала типи: інакше «Шукаємо донора ооцитів» стояло б двічі. Групи
+  // йдуть у порядку першої появи (`summarizeCardPrograms` ставить тип читача
+  // першим), а порядок агенції всередині типу не чіпається. Лічильник — усі
+  // програми типу, а не лише видимі до «Показати ще».
+  const groups = visible.reduce((acc, program) => {
+    const group = acc.find(item => item.type === program.type);
+    if (group) group.programs.push(program);
+    else acc.push({ key: program.type || 'other', type: program.type, programs: [program] });
+    return acc;
+  }, []).map(group => ({ ...group, count: programs.filter(program => program.type === group.type).length }));
   // Діапазон — лише коли частину програм сховано: видимі контейнери й так
   // називають кожну суму, а діапазон над ними повторив би їх утретє.
   // Донорські й сурогатні суми різняться на порядок, і спільний діапазон
@@ -1524,24 +1614,31 @@ export const AgencyProgramsPanel = ({
           {range ? <>{matchedLine ? ' · ' : ''}{range}</> : null}
         </PanelLine>
       ) : null}
-      {visible.length ? (
-        <ProgramList>
-          {visible.map(program => (
-            <ProgramListItem
-              key={program.id}
-              program={program}
-              open={openId === program.id}
-              onToggle={() => toggle(program.id)}
-              facts={viewerType === program.type ? facts : null}
-              rates={rates}
-              language={language}
-              differs={differences.get(program.id)}
-              displayCurrency={displayCurrency}
-              timeline={timeline}
-            />
-          ))}
-        </ProgramList>
-      ) : null}
+      {groups.map(group => (
+        <ProgramGroup key={group.key} data-testid="program-group">
+          <ProgramGroupHead $type={group.type} data-testid="program-group-title">
+            {programHeading({ type: group.type }, language)}
+            {group.count > 1 ? <span>· {group.count}</span> : null}
+          </ProgramGroupHead>
+          <ProgramList>
+            {group.programs.map(program => (
+              <ProgramListItem
+                key={program.id}
+                program={program}
+                open={openId === program.id}
+                onToggle={() => toggle(program.id)}
+                facts={viewerType === program.type ? facts : null}
+                rates={rates}
+                language={language}
+                differs={differences.get(program.id)}
+                displayCurrency={displayCurrency}
+                timeline={timeline}
+                heading={false}
+              />
+            ))}
+          </ProgramList>
+        </ProgramGroup>
+      ))}
       {hiddenCount > 0 ? (
         <MoreButton type="button" onClick={event => { event.stopPropagation(); setShowAll(true); }}>
           {uiText('Показати ще {count}', language, { count: hiddenCount })}
