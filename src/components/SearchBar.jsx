@@ -2158,6 +2158,9 @@ const SearchBar = ({
             const [firstValue] = values;
             addRepeatedSearchItem(collector, `new_json_${key}`, {
               ...buildRepeatedNotFoundItem(firstValue, buildRepeatedSearchContext(firstValue)),
+              // Екран показує лише елементи з `userId`, тож без нього плитка
+              // «не знайдено» зникала з рамки.
+              userId: `new_json_${key}`,
               _jsonGroup: key,
             });
           }

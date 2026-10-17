@@ -7056,11 +7056,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const shouldPaginate = searchBarQueryActive
     ? Object.keys(users || {}).length > PAGE_SIZE
     : currentFilter !== 'FAVORITE' && currentFilter !== 'CYCLE_FAVORITE';
+  // Видача зі списку анкет JSON — це групи «анкета з файлу → знайдене», і
+  // порядок у них і є зміст: сортувалка картотеки розносила картку з файлу й
+  // її знахідки по різних місцях, а ⇄ порівнювала сусідів із чужих груп.
+  const isJsonProfileListView = Object.values(users || {}).some(user => user?._jsonGroup !== undefined);
   const getSortedIds = () => {
     const ids = Object.keys(users);
     const currentCardsById = loadCards();
     const getVisibleCard = id => currentCardsById[id] || users[id] || {};
-    if (isDuplicateView || isSearchersView || currentFilter === 'CYCLE_FAVORITE') {
+    if (isDuplicateView || isSearchersView || isJsonProfileListView || currentFilter === 'CYCLE_FAVORITE') {
       return ids;
     }
 
@@ -7117,7 +7121,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const filterRenderCards = cards => {
     // Перелік читачів — це відповідь на питання «хто що шукав», а не зріз
     // стрічки: фільтри картотеки його не звужують.
-    if (isDuplicateView || isSearchersView) return cards;
+    if (isDuplicateView || isSearchersView || isJsonProfileListView) return cards;
     if (searchBarQueryActive && !useSearchResultFilters) return cards;
 
     return filterMain(

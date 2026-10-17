@@ -1,6 +1,6 @@
 import React from 'react';
 import { coloredCard, FadeContainer } from './styles';
-import { makeNewUser } from './config';
+import { auth, fetchUserComment, makeNewUser } from './config';
 import { TopBlock } from './smallCard/renderTopBlock';
 import { btnCompare } from './smallCard/btnCompare';
 import { btnMore } from './smallCard/btnMore';
@@ -9,6 +9,7 @@ import { renderAllFields } from './ProfileForm';
 import StimulationSchedule from './StimulationSchedule';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { isJsonStateCard } from 'utils/jsonProfileImport';
+import { comparisonValuesForKey, currentPersonalComment } from 'utils/comparisonValues';
 
 const cardActionButtonStyle = {
   width: '30px',
@@ -140,22 +141,60 @@ const formatJsonValue = value => (
 // поля й кнопки пишуть у базу за `userId`, а такого id в базі немає. Тому
 // картка показує поля як є і несе одну дію — порівняння з наступною карткою
 // групи, де клік по полю переносить значення в картку з бази.
-const JsonStateCard = ({ userData, compareButton }) => (
+// Прев'ю показує лише те, чого в знайдених картках групи ще немає: значення,
+// яке вже лежить у базі, переносити нікуди, а повтор ховав би нове.
+const listJsonUniqueFields = (userData, foundCards) => Object.entries(userData)
+  .filter(([key]) => key !== 'userId' && !key.startsWith('_'))
+  .map(([key, value]) => {
+    if (!foundCards.length) return [key, formatJsonValue(value)];
+    const known = new Set(foundCards.flatMap(card => comparisonValuesForKey(key, card?.[key])));
+    const unique = comparisonValuesForKey(key, value).filter(item => !known.has(item));
+    return [key, unique.join(', ')];
+  })
+  .filter(([, value]) => value !== '');
+
+const JsonStateCard = ({ userData, foundCards = [], compareButton }) => {
+  // Особиста нотатка лежить не в картці, а в `multiData/comments` — так само
+  // її дочитує й таблиця порівняння. Без цього прев'ю показувало нотатку з
+  // файлу «новою», хоч у базі вона вже є.
+  const foundIdsKey = foundCards.map(card => card.userId).join('|');
+  const [notesById, setNotesById] = React.useState({});
+  React.useEffect(() => {
+    const ownerId = auth.currentUser?.uid;
+    const ids = foundIdsKey ? foundIdsKey.split('|') : [];
+    if (!ownerId || !ids.length || userData.myComment === undefined) return undefined;
+    let cancelled = false;
+    Promise.all(ids.map(id => fetchUserComment(ownerId, id).catch(() => null)))
+      .then(results => {
+        if (cancelled) return;
+        setNotesById(Object.fromEntries(ids.map((id, index) => [id, results[index]])));
+      });
+    return () => { cancelled = true; };
+  }, [foundIdsKey, userData.myComment]);
+  const cardsWithNotes = foundCards.map(card => (
+    card.userId in notesById
+      ? { ...card, myComment: currentPersonalComment(card.myComment, notesById[card.userId]) }
+      : card
+  ));
+  const uniqueFields = listJsonUniqueFields(userData, cardsWithNotes);
+  return (
   <div style={{ padding: '10px', color: 'white', display: 'flex', flexDirection: 'column', gap: '4px' }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '12px' }}>
       <strong>з файлу #{userData._jsonGroup}</strong>
       <span style={{ background: 'rgba(0,0,0,0.35)', padding: '1px 6px', borderRadius: '6px' }}>не збережено</span>
     </div>
-    {Object.entries(userData)
-      .filter(([key]) => key !== 'userId' && !key.startsWith('_'))
-      .map(([key, value]) => (
-        <div key={key} style={{ fontSize: '12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-          <span style={{ opacity: 0.75 }}>{key}: </span>{formatJsonValue(value)}
-        </div>
-      ))}
+    {uniqueFields.length === 0 && (
+      <div style={{ fontSize: '12px', opacity: 0.85 }}>Усі дані з файлу вже є в знайденій картці</div>
+    )}
+    {uniqueFields.map(([key, value]) => (
+      <div key={key} style={{ fontSize: '12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+        <span style={{ opacity: 0.75 }}>{key}: </span>{value}
+      </div>
+    ))}
     <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>{compareButton}</div>
   </div>
-);
+  );
+};
 
 // Сусідні елементи з тим самим `_jsonGroup` — анкета з файлу й усе, що за
 // нею знайшлось, — стоять в одній рамці.
@@ -246,6 +285,9 @@ const UsersList = ({
           {isJsonStateCard(userData) ? (
             <JsonStateCard
               userData={userData}
+              foundCards={items
+                .map(([, item]) => item)
+                .filter(item => !isJsonStateCard(item) && !item?._notFound)}
               compareButton={btnCompare(
                 index,
                 users,
