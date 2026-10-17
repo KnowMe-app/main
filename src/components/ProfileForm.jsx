@@ -24,6 +24,7 @@ import {
 import { parseUkTriggerQuery } from 'utils/parseUkTrigger';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { resolvePpTechnicalInputTarget } from 'utils/ppTechnicalInputTarget';
+import { appendFieldValue, appendTextBlockValue } from 'utils/ppTechnicalInputAppend';
 import {
   buildOverlayFieldEntries,
   buildSupersededOverlayEntries,
@@ -269,41 +270,6 @@ const PHENOTYPE_FIELDS = [
   'responsibility',
 ];
 const ANTHROPOMETRY_FIELDS = ['height', 'weight', 'imt', 'clothingSize', 'shoeSize', 'breastSize'];
-const appendFieldValue = (currentValue, nextValue) => {
-  const normalizedNextValue = String(nextValue ?? '').trim();
-  if (!normalizedNextValue) return currentValue;
-
-  if (Array.isArray(currentValue)) {
-    return [...currentValue, normalizedNextValue];
-  }
-
-  const normalizedCurrentValue = String(currentValue ?? '').trim();
-  if (!normalizedCurrentValue) {
-    return normalizedNextValue;
-  }
-
-  return [normalizedCurrentValue, normalizedNextValue];
-};
-
-const appendTextBlockValue = (currentValue, nextValue) => {
-  const normalizedNextValue = String(nextValue ?? '').trim();
-  if (!normalizedNextValue) return currentValue;
-
-  if (Array.isArray(currentValue)) {
-    const normalizedCurrentValues = currentValue
-      .map(value => String(value ?? '').trim())
-      .filter(Boolean);
-    return [...normalizedCurrentValues, normalizedNextValue].join('\n');
-  }
-
-  const normalizedCurrentValue = String(currentValue ?? '').trim();
-  if (!normalizedCurrentValue) {
-    return normalizedNextValue;
-  }
-
-  return `${normalizedCurrentValue}\n${normalizedNextValue}`;
-};
-
 const normalizePpTechnicalTargetValue = (fieldName, value) => {
   const rawValue = String(value ?? '').trim();
   if (!rawValue) return '';
@@ -402,7 +368,7 @@ const applyPpTechnicalKeyValueEntry = (stateDraft, fieldName, normalizedValue) =
   }
 
   if (PP_TECHNICAL_APPEND_FIELD_NAMES.has(fieldName)) {
-    stateDraft[fieldName] = appendFieldValue(stateDraft[fieldName], normalizedValue);
+    stateDraft[fieldName] = appendFieldValue(stateDraft[fieldName], normalizedValue, fieldName);
     return;
   }
 
@@ -2936,7 +2902,8 @@ ${entries.join('\n')}`;
           );
           nextState[resolvedTechnicalTarget.fieldName] = appendFieldValue(
             nextState[resolvedTechnicalTarget.fieldName],
-            normalizedTechnicalValue
+            normalizedTechnicalValue,
+            resolvedTechnicalTarget.fieldName
           );
         }
       } else {
@@ -2945,20 +2912,20 @@ ${entries.join('\n')}`;
         if (contactType) {
           if (contactType === 'phone') {
             const rawPhoneValue = Array.isArray(contactValues) ? contactValues[0] : contactValues;
-            nextState.phone = appendFieldValue(nextState.phone, normalizePhoneValue(rawPhoneValue));
+            nextState.phone = appendFieldValue(nextState.phone, normalizePhoneValue(rawPhoneValue), 'phone');
           } else if (contactType === 'email') {
             const rawEmailValue = Array.isArray(contactValues) ? contactValues[0] : contactValues;
-            nextState.email = appendFieldValue(nextState.email, String(rawEmailValue || '').trim());
+            nextState.email = appendFieldValue(nextState.email, String(rawEmailValue || '').trim(), 'email');
           } else {
             const rawContactValue = Array.isArray(contactValues) ? contactValues[0] : contactValues;
-            nextState[contactType] = appendFieldValue(nextState[contactType], rawContactValue);
+            nextState[contactType] = appendFieldValue(nextState[contactType], rawContactValue, contactType);
           }
         }
         if (name) {
-          nextState.name = appendFieldValue(nextState.name, name);
+          nextState.name = appendFieldValue(nextState.name, name, 'name');
         }
         if (surname) {
-          nextState.surname = appendFieldValue(nextState.surname, surname);
+          nextState.surname = appendFieldValue(nextState.surname, surname, 'surname');
         }
       }
 
