@@ -7643,6 +7643,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           <SearchBar
             key={`add-search-${searchBarResetVersion}`}
             searchFunc={searchUsersCollectionInRTDB}
+            allowJsonProfileList
             search={search}
             setSearch={value => {
               setSearch(value);

@@ -8,6 +8,7 @@ import { renderAllFields } from './ProfileForm';
 // import { btnExportUsers } from './topBtns/btnExportUsers';
 import StimulationSchedule from './StimulationSchedule';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
+import { isJsonStateCard } from 'utils/jsonProfileImport';
 
 const cardActionButtonStyle = {
   width: '30px',
@@ -131,6 +132,44 @@ const UserCard = ({
   );
 };
 
+const formatJsonValue = value => (
+  value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')
+);
+
+// Анкета з JSON-файлу — лише стейт. Звичайна `UserCard` тут не годиться: її
+// поля й кнопки пишуть у базу за `userId`, а такого id в базі немає. Тому
+// картка показує поля як є і несе одну дію — порівняння з наступною карткою
+// групи, де клік по полю переносить значення в картку з бази.
+const JsonStateCard = ({ userData, compareButton }) => (
+  <div style={{ padding: '10px', color: 'white', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '12px' }}>
+      <strong>з файлу #{userData._jsonGroup}</strong>
+      <span style={{ background: 'rgba(0,0,0,0.35)', padding: '1px 6px', borderRadius: '6px' }}>не збережено</span>
+    </div>
+    {Object.entries(userData)
+      .filter(([key]) => key !== 'userId' && !key.startsWith('_'))
+      .map(([key, value]) => (
+        <div key={key} style={{ fontSize: '12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          <span style={{ opacity: 0.75 }}>{key}: </span>{formatJsonValue(value)}
+        </div>
+      ))}
+    <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>{compareButton}</div>
+  </div>
+);
+
+// Сусідні елементи з тим самим `_jsonGroup` — анкета з файлу й усе, що за
+// нею знайшлось, — стоять в одній рамці.
+const groupEntries = entries => entries.reduce((groups, entry, index) => {
+  const group = entry[1]?._jsonGroup;
+  const last = groups[groups.length - 1];
+  if (group !== undefined && last && last.group === group) {
+    last.items.push([...entry, index]);
+  } else {
+    groups.push({ group, items: [[...entry, index]] });
+  }
+  return groups;
+}, []);
+
 // Компонент для рендерингу списку користувачів
 const UsersList = ({
   users,
@@ -163,6 +202,16 @@ const UsersList = ({
     const searchValue = item?.searchValue || value;
     const rawSearchValue = item?.rawSearchValue || value;
     const res = await makeNewUser({ [searchKey]: searchValue }, rawSearchValue);
+    if (item?._jsonGroup !== undefined) {
+      // Плитка групи з файлу: нова картка стає на її місце, у ту саму рамку,
+      // щоб її одразу можна було порівняти з анкетою з файлу.
+      setUsers(prev => Object.entries(prev).reduce((next, [key, existingItem]) => {
+        if (existingItem === item) next[res.userId] = { ...res, _jsonGroup: item._jsonGroup };
+        else next[key] = existingItem;
+        return next;
+      }, {}));
+      return;
+    }
     setUsers(prev => {
       const copy = { ...prev };
       Object.entries(copy).forEach(([key, existingItem]) => {
@@ -176,7 +225,8 @@ const UsersList = ({
 
   return (
     <div style={styles.container}>
-      {entries.map(([userId, userData], index) => {
+      {groupEntries(entries).map(({ group, items }) => {
+        const rendered = items.map(([userId, userData, index]) => {
         const entryRole = userData?.role || userData?.userRole;
         return (
         <FadeContainer
@@ -193,7 +243,22 @@ const UsersList = ({
             }
           }}
         >
-          {userData._notFound ? (
+          {isJsonStateCard(userData) ? (
+            <JsonStateCard
+              userData={userData}
+              compareButton={btnCompare(
+                index,
+                users,
+                setUsers,
+                setShowInfoModal,
+                setCompare,
+                usersRef,
+                { ...cardActionButtonStyle, backgroundColor: 'purple' },
+                undefined,
+                onOpenComparedCard,
+              )}
+            />
+          ) : userData._notFound ? (
             <div
               style={{
                 padding: '20px',
@@ -248,6 +313,20 @@ const UsersList = ({
           )}
           {typeof renderCardFooter === 'function' && renderCardFooter(userId, userData)}
         </FadeContainer>
+        );
+        });
+        if (group === undefined) return <React.Fragment key={items[0][0]}>{rendered}</React.Fragment>;
+        const foundCount = items.filter(([, item]) => !isJsonStateCard(item) && !item?._notFound).length;
+        return (
+          <div
+            key={`json-group-${group}`}
+            style={{ border: '2px solid #7a5cc4', borderRadius: '14px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}
+          >
+            <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#7a5cc4' }}>
+              #{group} з файлу · {foundCount ? `знайдено ${foundCount}` : 'не знайдено'}
+            </div>
+            {rendered}
+          </div>
         );
       })}
     </div>
