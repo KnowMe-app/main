@@ -1,82 +1,70 @@
-# Інтейк кандидаток з чату Telegram
+# Telegram chat intake
 
-## Огляд
-
-Конвеєр переносить повідомлення чату спільноти, що стосуються програм
-донорства ооцитів і сурогатного материнства, у картки KnowMe. Ручну роботу —
-переглянути кожне повідомлення й вирішити, чи воно про участь у програмі, чи
-містить анкетні дані, чи це загальна розмова, — виконує агент; людина
-переглядає лише підсумкову таблицю перед записом.
+Turns a community Telegram chat into KnowMe profiles.
 
 ```
-Telegram Desktop ──► агент з керуванням компʼютером ──► telegram_intake.yaml
-   (чат)               класифікація повідомлень,          (анкета на людину
-                       парсинг полів анкети                за схемою нижче)
-                                                               │
-                                                               ▼
-                      KnowMe RTDB  ◄── сесія Claude Code на knowme-app/main
-                                       пошук за telegram, таблиця перевірки,
-                                       доповнення / нова чернетка, нотатка
+Telegram Desktop ─► Phase 1: computer-use agent ─► telegram_intake.yaml
+                    classify messages, parse profiles
+                                                       │
+KnowMe RTDB ◄─ Phase 2: Claude Code on knowme-app/main ┘
+               match by telegram / phone, draft or overlay, private note
 ```
 
-### Фаза 1 — класифікація й парсинг
+Core rule: **never drop data.** Every parsed value is written. Conflicts with
+existing cards go in as overlays; the admin resolves them.
 
-Агент у застосунку Claude на компʼютері (керування компʼютером) читає чат у
-Telegram Desktop екран за екраном. Кожне повідомлення отримує одну або кілька
-категорій; повідомлення категорії `S` відкидаються, решта парситься в анкету
-авторки за схемою (розділ «Схема анкети»). Ідентифікатор людини — `@username`
-з картки учасника в Telegram. Дата й час повідомлень-джерел ідуть у
-`myComment`.
+## Phase 1 — read the chat
 
-| Код | Категорія | Куди потрапляє |
-|---|---|---|
-| P1 | Хоче стати донором ооцитів | `userRole: ed` |
-| P2 | Хоче стати сурогатною мамою | `userRole: sm` |
-| P3 | Хоче в програму, тип не названо | `myComment` |
-| P4 | Шукає агенцію, клініку, програму; питає умови | `myComment` |
-| P5 | Зараз у програмі (етап) | `myComment` |
-| P6 | Попередня участь (скільки, коли, результат) | донації — `experience`; пологи в програмі СМ — `ownKids`, `lastDelivery`; решта — `myComment` |
-| P7 | Не підійшла або відмовилась (причина) | `myComment` |
-| D1 | Вік, дата чи рік народження | `birth` |
-| D2 | Країна, область, місто, переїзд | `country`, `region`, `city`, `myComment` |
-| D3 | Пологи, останні пологи, кесарів, цикл | `ownKids`, `lastDelivery`, `csection`, `lastCycle` |
-| D4 | Зріст, вага, група крові | `height`, `weight`, `blood` |
-| D5 | Здоровʼя, звички | `myComment` |
-| D6 | Сімейний стан | `maritalStatus` |
-| D7 | Освіта, робота | `education`, `profession` |
-| D8 | Контакти | `phone`, `telegram` |
-| D9 | Імʼя, прізвище, по батькові | `name`, `surname`, `fathersname` |
-| X1 | Досвід з конкретною агенцією чи клінікою | `myComment` |
-| X2 | Рекомендує іншу людину | `myComment` автора |
-| X3 | Відповідь на питання інших про програму | поля D/P за змістом |
-| S | Загальна розмова | не зберігається |
+Setup: Claude desktop app, new chat, computer use on, Telegram allowed.
+Telegram Desktop full screen, light theme, target chat open, notifications
+off. Check first: "Take a screenshot and transcribe the last three messages."
 
-### Фаза 2 — зіставлення й запис
+Prompt (fill in chat name and start date, append the Schema section):
 
-Сесія Claude Code на `knowme-app/main` запускає код застосунку з Node:
+```
+Read Telegram chat "<CHAT>" in Telegram Desktop from <DD.MM.YYYY> to the
+newest message. Read-only: send nothing, no reactions, open no links.
+Write ~/Documents/telegram_intake.yaml.
 
-| Крок | Реалізація |
-|---|---|
-| Відсів зразків | записи з розділу «Зразок» і будь-які інші приклади з документації в базу не пишуться |
-| Перетворення | `birth`, `lastDelivery`, `lastCycle`: `ДД.ММ.РРРР` → `РРРР-ММ-ДД` (`STORAGE_DATE_FIELDS` у `config.js`; `saveCreateProfileMutation` сам `normalizeStoredDates` не викликає); `userRole` пишеться і в `role` (`deriveRole` читає обидва ключі); `maritalStatus` — `Yes` / `No` як у `yesNoOptions`; `csection` — рядок `-` / `1` / `2` |
-| Пошук | `searchId/{buildSearchIdValueKey('telegram', нік)}/telegram`, без ніка — `phone` |
-| Картка є | доповнення `saveOverlayForUserCard({ editorUserId, cardUserId, fields })` — у черзі «Доповнення» адмін приймає кожне значення окремо |
-| Картки немає | `reserveProfileCardId()` + `saveCreateProfileMutation({ cardId, creatorUid, actorUid, data })` — чернетка, у стрічці не показується, знаходиться пошуком |
-| `myComment` | у дані картки не йде; пишеться приватною нотаткою `multiData/comments/{uid}/{cardId}` |
-| Звіт | заведено / доповнено / помилки з причиною |
+1. Jump to the start date (chat search → calendar).
+2. For every message note its date (day separator) and time, and the sender
+   as displayed (the account's display name, e.g. "УК СМ Оля").
+3. Keep a message if it concerns, about the sender:
+   - wanting or offering a program: egg donor (ed), surrogate (sm),
+     intended parents (ip), agency (ag), clinic (cl);
+   - program status, past programs, refusals;
+   - profile facts: name, age, location, deliveries, C-sections, cycle,
+     height, weight, blood, marital status, health, education, job,
+     contacts;
+   - agency/clinic/parents offers: program terms, payments, requirements,
+     locations, contacts.
+   Skip small talk. Facts about third parties do not go to the sender.
+   Exception: a sender whose display name does NOT start with "УК СМ" is
+   not a saved contact — keep EVERY message of theirs, small talk
+   included, verbatim with date and time (see myComment).
+4. For each new sender with a kept message: open their profile, copy
+   @username and phone if shown.
+5. Parse each sender into one profile (Schema). Later messages update it.
+6. Scroll one screen at a time, keep the last processed message at the top.
+7. Every 20 screens rewrite the file and set resumeFrom.
+8. At the end report: people by role, unreadable messages (date, time).
 
-Повторний прохід стартує з `resumeFrom` попереднього файлу; уже заведені
-люди знаходяться за `telegram` і отримують доповнення, а не дубль.
+File:
+chat: <CHAT>
+resumeFrom: DD.MM.YYYY HH:MM
+people:
+  - <profile>
+```
 
-## Схема анкети
+## Schema
 
-Кожна людина — один обʼєкт. Ключі в цьому порядку, відсутні й порожні
-пропускаються:
+One object per sender, keys in this order, omit unknown/empty, never `null`:
 
 ```yaml
 name:
 surname:
 fathersname:
+agencyName:
 userRole:
 birth:
 blood:
@@ -98,214 +86,100 @@ country:
 myComment:
 ```
 
-### Правила парсингу
+- `name/surname/fathersname` — split a full name; never invent. For an
+  agency/clinic: `agencyName` = organisation name, `name` = contact person.
+- `userRole` — `ed` / `sm` / `ip` / `ag` / `cl`. Several roles → YAML list,
+  main role last.
+- `birth` — `DD.MM.YYYY`. Age only → `01.01.(message year − age)`;
+  "37, turns 38 in August" → `01.08.(message year − 38)`.
+- `blood` — `1+`…`4-`; O/I→1, II→2, III→3, IV→4.
+- `maritalStatus` — `"Yes"` married, `"No"` unmarried/divorced (quoted).
+- `csection` — count; `"-"` (quoted) if explicitly none.
+- `weight` kg, `height` cm — numbers; range → midpoint; metres → cm.
+- `ownKids` — all deliveries incl. surrogacy; twins = 1; not miscarriages,
+  abortions, failed programs, egg donations.
+- `lastDelivery`, `lastCycle` — `DD.MM.YYYY`; year only → `01.01.YYYY`;
+  month+year → `01.MM.YYYY`; relative ("3 months ago") → from message date.
+- `experience` — number of prior egg donations.
+- `education` — `Higher` / `Technical` / `Secondary` / `Bachelor` / `Master`
+  / `PhD`.
+- `phone` — digits, international, no `+`; `0XXXXXXXXX` → `380XXXXXXXXX`.
+- `telegram` — sender display name exactly as shown in the chat (e.g.
+  `УК СМ Оля`); if a @username is also known → list
+  `[<display name>, <username without @>]`. Never a phone.
+- `city` without prefixes; `region` only if stated; `country` if stated.
+- `myComment` — `|` literal, Ukrainian, one fact per line, each starting
+  `🔏`. First line always
+  `🔏Telegram: <display name>, DD.MM.YYYY HH:MM` (first kept message);
+  second `🔏Повідомлення: DD.MM.YYYY HH:MM, …` (all used messages). Then
+  everything without its own field: program wanted, status, history,
+  geography, relocation, compensation and every payment (exact amounts,
+  currencies, conditions — never convert), program terms of agencies and
+  clinics, what parents look for, restrictions, contact instructions.
+  Do not repeat structured fields.
+  Sender not starting `УК СМ`: after those lines add every message of theirs,
+  whatever its content, one line each:
+  `🔏DD.MM.YYYY HH:MM: «<message text verbatim>»`.
+- Conflicting statements → newest in the field, the other in `myComment`.
+- Validate YAML before saving.
 
-- **name / surname / fathersname** — повне українське імʼя розбивається на
-  три поля. Не вигадувати.
-- **userRole** — `ed`, якщо хоче стати донором ооцитів (P1) або має досвід
-  донацій; `sm`, якщо хоче стати сурогатною мамою (P2) або має досвід СМ.
-  Тип не названо — ключ пропускається.
-- **birth** — `ДД.ММ.РРРР`, точна дата в пріоритеті. Лише вік →
-  `01.01.(рік повідомлення − вік)`. «37, у серпні буде 38» →
-  `01.08.(рік повідомлення − 38)`. Рік береться з дати повідомлення, а не
-  поточний. Це допустимі дати-заглушки.
-- **blood** — `1+`, `1-`, `2+`, `2-`, `3+`, `3-`, `4+`, `4-`. O / I → 1,
-  II → 2, III → 3, IV → 4.
-- **maritalStatus** — `Yes` — заміжня; `No` — не заміжня або розлучена.
-- **csection** — кількість кесаревих; `"-"` (у лапках — голий `-` у YAML
-  є початком списку), якщо прямо сказано, що не було. Дат тут не буває.
-- **weight** — число, кг. Діапазон → середина.
-- **height** — число, см. Метри переводяться.
-- **ownKids** — усі пологи, власні й у програмах сурогатного материнства.
-  Двійня — одні пологи. Викидні, аборти, невдалі програми й донації ооцитів
-  не рахуються.
-- **lastDelivery** — останні пологи, зокрема в програмі. `ДД.ММ.РРРР`; лише
-  рік → `01.01.РРРР`; місяць і рік → `01.ММ.РРРР`. Відносна дата
-  рахується від дати повідомлення: «народила 3 міс тому» в повідомленні від
-  10.06.2026 → `01.03.2026`.
-- **lastCycle** — перший день останніх місячних, `ДД.ММ.РРРР`. Без року —
-  рік повідомлення. Приблизно («на початку червня») → `01.06.РРРР`.
-  Відносна дата («тиждень тому») — від дати повідомлення.
-- **experience** — кількість попередніх донацій ооцитів, число.
-- **education** — рівень: `Higher` (вища), `Technical`
-  (професійно-технічна), `Secondary` (середня), `Bachelor`, `Master`, `PhD`.
-  Інше — у `myComment`.
-- **profession** — професія чи робота, як сказано.
-- **phone** — лише цифри, міжнародний формат без `+`. `0XXXXXXXXX` →
-  `380XXXXXXXXX`.
-- **telegram** — лише username без `@`. Номер телефону сюди не йде. Ніка
-  немає — ключ пропускається.
-- **city** — назва населеного пункту без «м.», «смт», «с.».
-- **region** — область, лише якщо названа.
-- **country** — країна проживання, якщо названа або важлива.
-- **myComment** — YAML-літерал `|`, кожен рядок починається з `🔏`,
-  українською, один факт на рядок, стисло. Сюди йде те, для чого немає
-  окремого поля:
-  - джерело: перший рядок завжди
-    `🔏Джерело: «<НАЗВА ЧАТУ>», ДД.ММ.РРРР ГГ:ХХ` — дата й час першого
-    повідомлення людини з категорією, відмінною від S; другий —
-    `🔏Повідомлення: ДД.ММ.РРРР ГГ:ХХ, ДД.ММ.РРРР ГГ:ХХ, …` — усі
-    повідомлення, з яких узято дані;
-  - яка програма цікавить, етап участі, відмова й причина;
-  - досвід сурогатного материнства й донорства, протоколи, медична історія;
-  - природні пологи й кесареві в історії;
-  - географія програми, умови переїзду, доступність;
-  - винагорода, щомісячні виплати, підписання договору, перенос, одяг, няня,
-    КР, двійня, доплати за переїзд — суми, валюти, діапазони й умови точно
-    як сказано, валюти не перераховуються;
-  - обмеження, побажання, як звʼязатися;
-  - досвід з агенціями й клініками, рекомендації інших людей.
-
-### Обмеження виводу
-
-1. Числові поля — числа; виняток — `csection: "-"`.
-2. Дати — `ДД.ММ.РРРР`.
-3. `null` не пишеться; невідоме пропускається.
-4. Фактів не вигадувати; виводити можна лише дати-заглушки з правил.
-5. Структуровані поля в `myComment` не дублюються.
-6. `myComment` — останній ключ.
-7. Суперечливі дані — береться найновіше явне.
-8. Уточнення до вже складеної анкети оновлюють обʼєкт, решта полів лишається.
-9. YAML перевіряється на синтаксис перед записом у файл.
-
-### Зразок
-
-Лише для ілюстрації формату — у базу не пишеться.
-
-Вхід — повідомлення в чаті «Приклад чату» від 01.01.2026 10:00 (дані
-вигадані): «Марта, 29, Полтава, заміжня, 168/62, 2-, 2 власні пологи,
-1 програма, 2 КР, останні 15.03.2025, 20000–22000€, monthly 350€,
-twins +2500€, 0000000000, Telegram @example_donor.»
+Illustrative only, fictional, never written to the database:
 
 ```yaml
 name: Марта
 userRole: sm
 birth: 01.01.1997
 blood: 2-
-maritalStatus: Yes
+maritalStatus: "Yes"
 csection: 2
-weight: 62
-height: 168
 ownKids: 3
-lastDelivery: 15.03.2025
 phone: 380000000000
-telegram: example_donor
+telegram: [Марта Приклад, example_donor]
 city: Полтава
 myComment: |
-  🔏Джерело: «Приклад чату», 01.01.2026 10:00
+  🔏Telegram: Марта Приклад, 01.01.2026 10:00
   🔏Повідомлення: 01.01.2026 10:00
-  🔏Досвід: 1 програма сурогатного материнства.
-  🔏Бажаний гонорар: 20000–22000€.
-  🔏Щомісячні виплати: 350€.
-  🔏Доплата за двійню: 2500€.
+  🔏Бажаний гонорар: 20000–22000€, щомісячні 350€.
 ```
 
-## Фаза 1. Запуск
+## Phase 2 — write to KnowMe
 
-1. Застосунок Claude на компʼютері → нова розмова → увімкнути керування
-   компʼютером, дозволити Telegram.
-2. Telegram Desktop на весь екран, світла тема, відкритий потрібний чат.
-   Сповіщення й заставку екрана вимкнути, компʼютер під час роботи не
-   використовувати.
-3. Перевірка: «Зроби знімок екрана й перепиши три останні повідомлення з
-   відкритого чату». Текст прочитано — вставити промпт.
+Claude Code session on `knowme-app/main`, attach the YAML: "Import
+telegram_intake.yaml per docs/telegram-chat-intake.md".
 
-### Промпт
+1. Parse YAML; drop the illustrative example.
+2. Convert: `birth`, `lastDelivery`, `lastCycle` → `YYYY-MM-DD`; all values
+   to strings; `userRole` also written to `role`.
+3. Match: `searchId/{buildSearchIdValueKey('telegram', value)}` for each
+   `telegram` value (display name first), then `phone`
+   (`readSearchIdEntryIds`). Exactly one card → that card. Zero, or two and
+   more (a search bug) → new draft. Display names starting `УК СМ` are
+   saved contacts and almost always match one card; report those that
+   did not or matched several.
+4. Write — every value, no filtering:
+   - no single match → draft: `reserveProfileCardId()` +
+     `saveCreateProfileMutation({ cardId, creatorUid, actorUid, data })`;
+   - single match → overlay on that card with every value that differs from it,
+     including placeholder dates over exact ones (`{ from, to }`, or
+     `{ added }` for array fields). `saveOverlayForUserCard` replaces the
+     editor's whole layer for the card — merge with the existing
+     `multiData/edits/{cardId}/{uid}/fields` first;
+   - `myComment` → `setUserComment(cardId, text, uid)`; append to an
+     existing note, never overwrite. For unmatched senders the first line
+     (display name + date + time) lets the admin find the message and save
+     the contact.
+5. Verify every card resolves via `searchId`; report drafts, overlays,
+   conflicts (field: card value → chat value), `УК СМ` senders with zero
+   or several matches, errors.
 
-Вставити разом із розділом «Схема анкети» цього документа (схема, правила
-парсингу, обмеження виводу, зразок). Підставити назву чату й дату початку:
-
-```
-Завдання: обробити повідомлення чату Telegram «<НАЗВА ЧАТУ>» у Telegram
-Desktop з <ДД.ММ.РРРР> до найновішого і скласти файл
-~/Documents/telegram_intake.yaml з анкетами за схемою нижче.
-
-Режим — лише читання: нічого не надсилати, не ставити реакцій, не відкривати
-посилань.
-
-1. Перейти до дати початку: пошук у чаті → календар.
-
-2. Читати екран зверху вниз. Для кожного повідомлення зафіксувати дату (з
-   роздільника дня в стрічці) і час (під повідомленням) та призначити одну
-   або кілька категорій:
-
-   P1 — хоче стати донором ооцитів
-   P2 — хоче стати сурогатною мамою
-   P3 — хоче в програму, тип не названо
-   P4 — шукає агенцію, клініку чи програму; питає умови, оплату, вимоги
-   P5 — зараз у програмі (етап: обстеження, стимуляція, перенос, вагітність)
-   P6 — попередня участь: скільки разів, коли, результат
-   P7 — не підійшла або відмовилась (причина)
-   D1 — вік, дата чи рік народження
-   D2 — країна, область, місто, готовність до переїзду
-   D3 — пологи: кількість, дата останніх, кесарів розтин, останні місячні
-   D4 — зріст, вага, група крові й резус
-   D5 — хронічні захворювання, операції, алергії, куріння
-   D6 — сімейний стан
-   D7 — освіта, робота
-   D8 — телефон, нік
-   D9 — імʼя, прізвище, по батькові
-   X1 — досвід з конкретною агенцією чи клінікою (назва і що сказано)
-   X2 — рекомендує іншу людину
-   X3 — відповідь на питання інших про програму (зміст класифікувати як P/D)
-   S  — загальна розмова, не стосується програм і анкети
-
-   D-категорії — лише про саму авторку повідомлення. Сказане про іншу
-   людину до анкети авторки не йде.
-
-3. Для кожної нової людини з категорією, відмінною від S: відкрити картку
-   учасника (клік на імʼя), записати @username у telegram і телефон у
-   phone, якщо він видний у картці, закрити картку.
-   Відображуване імʼя в Telegram — не name, якщо людина сама його не
-   назвала.
-
-4. Розібрати повідомлення людини в анкету за схемою, правилами парсингу й
-   обмеженнями виводу. Нові повідомлення тієї ж людини оновлюють її анкету.
-   Перший рядок myComment — джерело з датою й часом, другий — перелік дат і
-   часу всіх використаних повідомлень.
-
-5. Прокручувати на висоту екрана так, щоб останнє оброблене повідомлення
-   лишалось угорі. Повідомлень не пропускати.
-
-6. Кожні 20 екранів перезаписувати файл і оновлювати resumeFrom — дата й час
-   останнього обробленого повідомлення. Після перерви продовжувати з нього.
-
-7. Наприкінці вивести: кількість людей; скільки з категоріями P; скільки
-   лише з D; повідомлення, які не вдалося прочитати (дата й час).
-
-Формат файлу — один YAML-документ:
-
-chat: <НАЗВА ЧАТУ>
-resumeFrom: ДД.ММ.РРРР ГГ:ХХ
-people:
-  - <анкета за схемою>
-  - <анкета за схемою>
-
-<розділ «Схема анкети»>
-```
-
-## Фаза 2. Запуск
-
-Сесія Claude Code на `knowme-app/main`, прикріпити `telegram_intake.yaml`:
-«Заведи анкети з telegram_intake.yaml за docs/telegram-chat-intake.md».
-
-1. Перевірити YAML і схему; відкинути зразки.
-2. Перетворити поля (таблиця фази 2 в огляді).
-3. Знайти кожну людину за `telegram`, без ніка — за `phone`.
-4. Показати таблицю: людина → поля → джерело (дата й час) → «знайдено (id) /
-   нова». Записувати після підтвердження.
-5. Записати:
-   - знайдено — доповнення з полів схеми, крім `myComment`;
-   - не знайдено — нова чернетка з полями схеми, крім `myComment`;
-   - `myComment` — приватна нотатка до картки; для нової картки вона
-     обовʼязково починається рядком джерела з датою й часом.
-6. Вивести звіт.
-
-Запуск коду застосунку: тимчасовий файл у `src/` (не комітити) з
-`/** @jest-environment node */`, вхід `signInWithEmailAndPassword` з
+Run app code from Node: temp file in `src/` (never commit),
+`/** @jest-environment node */`, `signInWithEmailAndPassword` with
 `MIGRATION_EMAIL` / `MIGRATION_PASSWORD`:
 
 ```bash
 NODE_USE_ENV_PROXY=1 CI=true npx react-scripts test \
-  --testPathPattern "<файл>" --watchAll=false --forceExit
+  --testPathPattern "<file>" --watchAll=false --forceExit
 ```
+
+Next pass starts at the previous `resumeFrom`; existing people match and get
+overlays.
