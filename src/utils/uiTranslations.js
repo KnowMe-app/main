@@ -539,6 +539,8 @@ const EN_BY_UK = {
   'Не вдалося зберегти чернетку як картку': 'Could not save the draft as a card',
   'Профіль уже змінено. Оновіть сторінку.': 'The profile has already changed. Reload the page.',
   'Профіль з такими контактами вже існує або очікує перевірки.': 'A profile with these contacts already exists or is waiting for review.',
+  '{field} уже є в картці {cards}': '{field} is already in profile {cards}',
+  '{field} уже є в іншій картці': '{field} is already in another profile',
   'Не вдалося зберегти профіль': 'Could not save the profile',
   'Чернетку повернено в режим редагування — можна повторити.': 'The draft is editable again — you can retry.',
   'Не вдалося автоматично розблокувати чернетку. Оновіть сторінку.': 'Could not unlock the draft automatically. Reload the page.',

@@ -112,6 +112,49 @@ const getIdentityClaimKey = ({ field, valueKey }) => {
   return keyByteLength(claimKey) <= 700 ? claimKey : `${field}_hash_${hashKey(claimKey)}`;
 };
 
+/**
+ * Чий саме контакт — відмова мусить це назвати.
+ *
+ * `DUPLICATE_PROFILE` колись приходив голим словом: адмін дописав у чернетку
+ * нік телеграму, і кожен наступний blur будь-якого поля давав той самий тост
+ * «Профіль з такими контактами вже існує», не кажучи ні якого поля, ні якої
+ * картки. Розібратись у дублі (а це рішення саме адміна) було ні з чим, а
+ * збереження чернетки стояло цілком через одне значення. Тож помилка несе
+ * поле й id карток, які його тримають (`duplicateConflicts`), — екран
+ * показує їх людині.
+ */
+const duplicateProfileError = conflicts => {
+  const error = new Error('DUPLICATE_PROFILE');
+  error.duplicateConflicts = conflicts;
+  return error;
+};
+
+/**
+ * Id із `searchId` — ще не доказ, що картка існує.
+ *
+ * Індекс знімається не завжди: попередня версія поля лишається в ньому
+ * навмисно, а видалена картка могла лишити ключ, якщо видалення впало на
+ * півдорозі. Такий «сирота» блокував контакт назавжди — значення ставало
+ * зайнятим карткою, якої немає ніде. Дублем рахується лише id, за яким
+ * стоїть картка стрічки або чернетка (`profileMutationOwners`); чернетки без
+ * цієї пари стереже її власна заявка на унікальність нижче. Відмова в
+ * читанні — не «картки немає»: такий id лишається конфліктом.
+ */
+const keepExistingCardIds = async cardIds => {
+  const checks = await Promise.all(cardIds.map(async id => {
+    try {
+      const [card, owner] = await Promise.all([
+        get(ref(database, `matchingCards/${id}`)),
+        get(ref(database, getProfileMutationOwnerPath(id))),
+      ]);
+      return card?.exists?.() || owner?.exists?.();
+    } catch {
+      return true;
+    }
+  }));
+  return cardIds.filter((_, index) => checks[index]);
+};
+
 const claimProfileIdentities = async ({ cardId, data }) => {
   const searchRecords = getSearchIdRecords(data, { contactsOnly: true });
   const keys = searchRecords.map(getIdentityClaimKey);
@@ -119,27 +162,41 @@ const claimProfileIdentities = async ({ cardId, data }) => {
   // ніс поле в собі, тож інакше й не виходило; тепер під одним значенням
   // можуть стояти різні поля — і чужий нікнейм, що збігся з номером, не має
   // означати «такий телефон уже є».
-  const indexedValues = await Promise.all(searchRecords
-    .filter(record => keyByteLength(record.valueKey) <= 768)
+  const checkedRecords = searchRecords.filter(record => keyByteLength(record.valueKey) <= 768);
+  const indexedValues = await Promise.all(checkedRecords
     .map(record => get(ref(database, buildSearchIdEntryPath(record.valueKey, record.field)))));
-  const canonicalConflict = indexedValues.some(snapshot =>
-    readSearchIdEntryIds(snapshot.val()).some(id => id !== cardId));
-  if (canonicalConflict) throw new Error('DUPLICATE_PROFILE');
+  const candidateConflicts = checkedRecords
+    .map((record, index) => ({
+      field: record.field,
+      cardIds: readSearchIdEntryIds(indexedValues[index].val()).filter(id => id !== cardId),
+    }))
+    .filter(conflict => conflict.cardIds.length);
+  const canonicalConflicts = (await Promise.all(candidateConflicts.map(async conflict => ({
+    ...conflict,
+    cardIds: await keepExistingCardIds(conflict.cardIds),
+  })))).filter(conflict => conflict.cardIds.length);
+  if (canonicalConflicts.length) throw duplicateProfileError(canonicalConflicts);
   const acquiredKeys = [];
   try {
-    for (const key of keys) {
+    for (const [index, key] of keys.entries()) {
       const claimRef = ref(database, getProfileIdentityClaimPath(key));
       const existingSnapshot = await get(claimRef);
       const alreadyOwned = existingSnapshot.val() === cardId;
       let duplicate = false;
+      let claimedBy = '';
       const result = await runTransaction(claimRef, current => {
         if (current != null && current !== cardId) {
           duplicate = true;
+          claimedBy = typeof current === 'string' ? current : '';
           return undefined;
         }
         return cardId;
       }, { applyLocally: false });
-      if (!result.committed) throw new Error(duplicate ? 'DUPLICATE_PROFILE' : 'REVISION_CONFLICT');
+      if (!result.committed) {
+        throw duplicate
+          ? duplicateProfileError([{ field: searchRecords[index].field, cardIds: claimedBy ? [claimedBy] : [] }])
+          : new Error('REVISION_CONFLICT');
+      }
       if (!alreadyOwned) acquiredKeys.push(key);
     }
   } catch (error) {

@@ -1436,6 +1436,16 @@ export const ProfileCreationWorkspace = () => {
       .filter(Boolean)
       .map(target => uiText(target, language))
       .join(' + ');
+    // Котре значення зайняте й ким. Id чужої картки — лише адмінові: він і
+    // розсуджує дублі, а решті досить знати, яке поле виправити.
+    const duplicates = (error?.duplicateConflicts || [])
+      .map(conflict => {
+        const field = getFieldLabel(conflict.field, language) || conflict.field;
+        return accessRef.current?.isAdmin && conflict.cardIds?.length
+          ? uiText('{field} уже є в картці {cards}', language, { field, cards: conflict.cardIds.join(', ') })
+          : uiText('{field} уже є в іншій картці', language, { field });
+      })
+      .join('; ');
     const recovery = error?.profileSaveRecovered === true
       ? uiText('Чернетку повернено в режим редагування — можна повторити.', language)
       : error?.profileSaveRecovered === false
@@ -1444,11 +1454,14 @@ export const ProfileCreationWorkspace = () => {
     toast.error(
       <div>
         <div style={{ fontWeight: 700 }}>{fallbackMessage}</div>
+        {duplicates ? <div style={{ marginTop: 4 }}>{duplicates}</div> : null}
         {detail ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{stage}: {detail}</div> : null}
         {targets ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{uiText('Перевірте rules для: {targets}.', language, { targets })}</div> : null}
         {recovery ? <div style={{ fontSize: 12, opacity: .8, marginTop: 4 }}>{recovery}</div> : null}
       </div>,
-      { duration: 8000 },
+      // Стабільний id: автозбереження повторює відмову на кожному blur, і
+      // однакові тости складались у вежу.
+      { duration: 8000, id: `profile-save-error:${error?.message || ''}:${duplicates}` },
     );
   };
 
