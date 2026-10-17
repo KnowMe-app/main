@@ -50,8 +50,8 @@ describe('перелік читачів із їхніми запитами', () 
   });
 
   it('фільтри картотеки перелік не звужують і не пересортовують', () => {
-    expect(source).toContain('if (isDuplicateView || isSearchersView) return cards;');
-    expect(source).toContain("if (isDuplicateView || isSearchersView || currentFilter === 'CYCLE_FAVORITE') {");
+    expect(source).toContain('if (isDuplicateView || isSearchersView || isJsonProfileListView) return cards;');
+    expect(source).toContain("if (isDuplicateView || isSearchersView || isJsonProfileListView || currentFilter === 'CYCLE_FAVORITE') {");
   });
 
   it('натиснутий запит іде тим самим шляхом, що й набраний у рядку', () => {
