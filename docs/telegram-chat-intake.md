@@ -3,10 +3,10 @@
 Turns a community Telegram chat into KnowMe profiles.
 
 ```
-Telegram Desktop ─► Phase 1: computer-use agent ─► telegram_intake.yaml
-                    classify messages, parse profiles
-                                                       │
-KnowMe RTDB ◄─ Phase 2: Claude Code on knowme-app/main ┘
+Telegram Web ─► Phase 1: Claude in Chrome reads the page text ─► telegram_intake.yaml
+                classify messages, parse profiles, save every 100 messages
+                                                                      │
+KnowMe RTDB ◄─ Phase 2: Claude Code on knowme-app/main ───────────────┘
                match by telegram / phone, draft or overlay, private note
 ```
 
@@ -15,20 +15,39 @@ existing cards go in as overlays; the admin resolves them.
 
 ## Phase 1 — read the chat
 
-Setup: Claude desktop app, new chat, computer use on, Telegram allowed.
-Telegram Desktop full screen, light theme, target chat open, notifications
-off. Check first: "Take a screenshot and transcribe the last three messages."
+No screenshots: the chat may forbid them. The agent reads message text from
+the page itself (DOM), not from pixels.
 
-Prompt (fill in chat name and start date, append the Schema section):
+Setup:
+1. Chrome with the Claude in Chrome extension, signed in to
+   `web.telegram.org` with the same account (saved contact names such as
+   "УК СМ …" sync there).
+2. Open the chat and scroll to the message to start from. That open position
+   is the start; nothing else is specified.
+3. In the Claude desktop app (or Claude Code on the same computer) start a
+   new chat with Claude in Chrome connected, and send the prompt below plus
+   the Schema section. Give the chat a working folder (the folder opened in
+   the app, or the folder Claude Code runs in): the file goes there. The
+   extension alone has no file access.
+
+Fallback only if Telegram Web is not possible: Telegram Desktop with computer
+use — it reads the screen through screenshots, so it fails on chats that
+block them.
+
+Prompt (use as is, nothing to fill in):
 
 ```
-Read Telegram chat "<CHAT>" in Telegram Desktop from <DD.MM.YYYY> to the
-newest message. Read-only: send nothing, no reactions, open no links.
-Write ~/Documents/telegram_intake.yaml.
+Work only in the Telegram chat open in the current tab, starting from the
+message currently visible at the top of the chat. Read text from the page
+(DOM), never take screenshots. Read-only: send nothing, no reactions, open no
+links, do not switch chats.
+Write telegram_intake.yaml in this chat's working folder (no file access →
+print the full YAML in the reply after every batch instead).
 
-1. Jump to the start date (chat search → calendar).
-2. For every message note its date (day separator) and time, and the sender
-   as displayed (the account's display name, e.g. "УК СМ Оля").
+Loop until the end of the chat:
+1. Read the next 100 messages downward from the current position.
+2. For every message note its date (day separator) and time, the sender as
+   displayed (the account's display name, e.g. "УК СМ Оля"), and the text.
 3. Keep a message if it concerns, about the sender:
    - wanting or offering a program: egg donor (ed), surrogate (sm),
      intended parents (ip), agency (ag), clinic (cl);
@@ -42,15 +61,19 @@ Write ~/Documents/telegram_intake.yaml.
    Exception: a sender whose display name does NOT start with "УК СМ" is
    not a saved contact — keep EVERY message of theirs, small talk
    included, verbatim with date and time (see myComment).
-4. For each new sender with a kept message: open their profile, copy
-   @username and phone if shown.
-5. Parse each sender into one profile (Schema). Later messages update it.
-6. Scroll one screen at a time, keep the last processed message at the top.
-7. Every 20 screens rewrite the file and set resumeFrom.
-8. At the end report: people by role, unreadable messages (date, time).
+4. For each new sender with a kept message: open their profile from the
+   message, copy @username and phone if shown, return to the same place in
+   the chat.
+5. Merge into profiles (Schema); later messages update a profile.
+6. Save: rewrite the file, set resumeFrom to the date and time of the last
+   processed message.
+7. Scroll down past the processed messages and go to step 1.
+Stop when the newest message is processed and scrolling brings nothing new.
+Then report: messages processed, people by role, messages that could not be
+read (date, time).
 
 File:
-chat: <CHAT>
+chat: <chat title from the header>
 resumeFrom: DD.MM.YYYY HH:MM
 people:
   - <profile>
@@ -217,5 +240,5 @@ NODE_USE_ENV_PROXY=1 CI=true npx react-scripts test \
   --testPathPattern "<file>" --watchAll=false --forceExit
 ```
 
-Next pass starts at the previous `resumeFrom`; existing people match and get
-overlays.
+Next pass: open the chat at the message after the previous `resumeFrom` and
+run the same prompt; existing people match and get overlays.
