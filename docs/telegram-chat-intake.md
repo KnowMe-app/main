@@ -26,8 +26,9 @@ Setup:
    is the start; nothing else is specified.
 3. In the Claude desktop app (or Claude Code on the same computer) start a
    new chat with Claude in Chrome connected, and send the prompt below plus
-   the Schema section. That chat writes the file; the extension alone has no
-   file access.
+   the Schema section. Give the chat a working folder (the folder opened in
+   the app, or the folder Claude Code runs in): the file goes there. The
+   extension alone has no file access.
 
 Fallback only if Telegram Web is not possible: Telegram Desktop with computer
 use — it reads the screen through screenshots, so it fails on chats that
@@ -40,8 +41,8 @@ Work only in the Telegram chat open in the current tab, starting from the
 message currently visible at the top of the chat. Read text from the page
 (DOM), never take screenshots. Read-only: send nothing, no reactions, open no
 links, do not switch chats.
-Write ~/Documents/telegram_intake.yaml (no file access → print the full YAML
-in the reply after every batch instead).
+Write telegram_intake.yaml in this chat's working folder (no file access →
+print the full YAML in the reply after every batch instead).
 
 Loop until the end of the chat:
 1. Read the next 100 messages downward from the current position.
