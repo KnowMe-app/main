@@ -1928,6 +1928,17 @@ export const MyProfile = () => {
 
   const getSectionKeyByField = fieldName => visibleSections.find(section => section.fields.includes(fieldName))?.key || 'personal';
 
+  // Тост «Заповніть обовʼязкове поле» мусить назвати поле так само, як його
+  // підписує форма: агенція бачила «Ім’я» замість «Назва агенції» (підпис ролі
+  // — `resolveMyProfileFieldText`), а розділ програм, який полем у довіднику
+  // не є, — сирим ключем «programs».
+  const resolveRequiredFieldLabel = fieldName => {
+    if (fieldName === 'programs') return uiText('Програми — додайте хоча б одну', language);
+    const roleText = resolveMyProfileFieldText(fieldName, fieldName === 'agencyName' ? organisationRole : sectionTitleRole);
+    if (roleText.label) return uiText(roleText.label, language);
+    return getFieldLabel(fieldsMap.get(fieldName), language) || fieldName;
+  };
+
   const validateRequiredProfileFields = (onlyRole = '') => {
     const currentState = stateRef.current || {};
     const miss = {};
@@ -1961,7 +1972,7 @@ export const MyProfile = () => {
     if (!missingFieldNames.length) return true;
 
     const firstMissingField = missingFieldNames[0];
-    const firstMissingFieldLabel = getFieldLabel(fieldsMap.get(firstMissingField), language) || firstMissingField;
+    const firstMissingFieldLabel = resolveRequiredFieldLabel(firstMissingField);
     toast.error(uiText('Заповніть обов’язкове поле: {label}', language, { label: firstMissingFieldLabel }));
     scrollToSection(getSectionKeyByField(firstMissingField));
     return false;

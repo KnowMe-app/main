@@ -1314,6 +1314,7 @@ const EN_BY_UK = {
   'Щоб бачити анкети, увійдіть у застосунок': 'Sign in to see the profiles',
   'Увійти': 'Sign in',
   'Перевіряємо сесію…': 'Checking your session…',
+  'Програми — додайте хоча б одну': 'Programs — add at least one',
 };
 
 /**
