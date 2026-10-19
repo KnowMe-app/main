@@ -7066,7 +7066,10 @@ const Matching = () => {
   const handleRowEditProfile = React.useCallback(user => {
     lastSeenCardIdRef.current = user?.userId || '';
     saveScrollPosition();
-    navigate(`/edit/${user.userId}`, { state: user });
+    // Адмін править картку на `AddNewProfile` (форма адміна з кошиком і
+    // модалкою видалення), а не на `/edit`: там шапка картки отримує
+    // заглушки замість обробників, і кошик не робив нічого.
+    navigate(`/add?userId=${encodeURIComponent(user.userId)}`);
     // saveScrollPosition reads a ref and never changes identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
