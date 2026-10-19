@@ -7066,7 +7066,16 @@ const Matching = () => {
   const handleRowEditProfile = React.useCallback(user => {
     lastSeenCardIdRef.current = user?.userId || '';
     saveScrollPosition();
-    navigate(`/edit/${user.userId}`, { state: user });
+    // Адмін править картку на `AddNewProfile` (форма адміна з кошиком і
+    // модалкою видалення), а не на `/edit`: там шапка картки отримує
+    // заглушки замість обробників, і кошик не робив нічого.
+    // Після видалення картки адмін має повернутись у стрічку, а не в
+    // картотеку: адресу кладемо в sessionStorage, бо `AddNewProfile`
+    // переписує свій URL (і з ним `location.state`) синхронізацією userId.
+    try {
+      sessionStorage.setItem('addNewProfile:returnAfterDelete', JSON.stringify({ userId: user.userId, path: '/matching' }));
+    } catch {}
+    navigate(`/add?userId=${encodeURIComponent(user.userId)}`);
     // saveScrollPosition reads a ref and never changes identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);

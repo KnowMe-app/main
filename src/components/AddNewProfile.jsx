@@ -3921,6 +3921,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     />
   );
 
+  // Картку, відкриту олівцем зі стрічки, після видалення повертаємо туди ж
+  // (позначку ставить `handleRowEditProfile` у `Matching`).
+  const readReturnAfterDelete = id => {
+    try {
+      const raw = sessionStorage.getItem('addNewProfile:returnAfterDelete');
+      sessionStorage.removeItem('addNewProfile:returnAfterDelete');
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed?.userId === id ? parsed.path : '';
+    } catch {
+      return '';
+    }
+  };
+
   const delConfirm = () => {
     const handleRemoveUser = async () => {
       try {
@@ -3940,7 +3953,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setState({});
         setShowInfoModal(null);
         setUserIdToDelete(null);
-        navigate('/add');
+        navigate(readReturnAfterDelete(id) || '/add');
       } catch (error) {
         console.error('Error deleting user:', error);
       } finally {
