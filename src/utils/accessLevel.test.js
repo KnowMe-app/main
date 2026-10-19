@@ -85,7 +85,8 @@ describe('права видають лише два адміни', () => {
   it('правила бази дають змінювати права лише цим двом адмінам', () => {
     const rules = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'database.rules.json'), 'utf8')).rules;
     const admins = ADMIN_UIDS.map(uid => `auth.uid == '${uid}'`).join(' || ');
-    ['users', 'profileTechnical'].forEach(root => {
+    expect(rules.users).toBeUndefined();
+    ['profileTechnical'].forEach(root => {
       const node = rules[root].$uid;
       expect(node.accessLevel['.validate']).toBe(`${admins} || (data.exists() && newData.val() == data.val())`);
       expect(node.canCreateProfiles['.validate']).toBe(`${admins} || (data.exists() && newData.val() == data.val())`);

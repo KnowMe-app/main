@@ -100,9 +100,9 @@ describe("remoteUpdate sends a minimal null-only payload for pure field deletion
     expect(remoteUpdateBody).toContain('const isDeleteOnlySubmit = deleteOnlyKeys.length > 0;');
   });
 
-  it('users-storage delete-only branch writes only nulls + lastAction, never touching makeUploadedInfo', () => {
+  it('account-profile delete-only branch writes only nulls + lastAction, never touching makeUploadedInfo', () => {
     const longBranch = remoteUpdateBody.slice(
-      remoteUpdateBody.indexOf("if (legacyCollection === 'users') {"),
+      remoteUpdateBody.indexOf('if (isAccountProfileCard(updatedState?.userId)) {'),
       remoteUpdateBody.indexOf('} else if (updatedState?.userId) {')
     );
     const deleteBranch = longBranch.slice(

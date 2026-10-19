@@ -17,8 +17,7 @@ import { isLongFormatUserId } from 'utils/userIdFormat';
  * читається одним точковим `get` і пишеться прямо за адресою, як у консолі.
  *
  * Чого тут навмисно немає:
- *   — `users/{id}`: legacy-дзеркало веб не читає ніколи (див. CLAUDE.md),
- *     тож воно стоїть посиланням у консоль без читання;
+ *   — `users/{id}` у RTDB: legacy закрито й видалено з правил;
  *   — `searchKey`: бакет лежить під значенням фільтра, і знайти всі бакети
  *     картки можна лише обходом усього індексу;
  *   — `multiData/flow`: розкладено за датами, а не за карткою.
@@ -187,14 +186,6 @@ export const buildProfileDataSources = ({ cardId, viewerId = '', draftAuthorId =
       },
     );
   }
-
-  sources.push({
-    id: 'external:legacy',
-    group: 'external',
-    title: 'Legacy users (не читається)',
-    segments: ['users', id],
-    linkOnly: true,
-  });
 
   return sources;
 };

@@ -48,7 +48,7 @@ import {
   applyOverlaysToCard,
   buildOverlayFieldEntries,
   buildOverlayFromDraft,
-  getCardLegacyCollection,
+  isAccountProfileCard,
   getCanonicalCard,
   getOtherEditorsChangedFields,
   getOverlayHistoryForCard,
@@ -739,11 +739,7 @@ const EditProfile = () => {
       : [];
     const isDeleteOnlySubmit = deleteOnlyKeys.length > 0;
 
-    const legacyCollection = updatedState?.userId
-      ? await getCardLegacyCollection(updatedState.userId)
-      : null;
-
-    if (legacyCollection === 'users') {
+    if (isAccountProfileCard(updatedState?.userId)) {
       const fetchedExistingData = await fetchUserById(updatedState.userId);
       const existingData = fetchedExistingData || lastSyncedSnapshotRef.current || {};
 

@@ -32,10 +32,10 @@ describe('database.rules.json matching read access', () => {
     );
   });
 
-  it('lets every matching access level read users', () => {
-    const readRule = rules.users['.read'];
+  it('lets every matching access level scan the matching cards', () => {
+    const readRule = rules.matchingCards['.read'];
 
-    expect(grantsAccessLevelByContains(readRule, 'users')).toBe(true);
+    expect(grantsAccessLevelByContains(readRule, 'profileTechnical')).toBe(true);
 
     assignableAccessLevels
       .filter(level => canAccessMatchingByLevel(level))
@@ -45,15 +45,18 @@ describe('database.rules.json matching read access', () => {
       });
   });
 
-  it('keeps admin uids and non-ed roles able to read the collection', () => {
-    const readRule = rules.users['.read'];
+  // Роль читача правила беруть з його картки стрічки: legacy `users`
+  // закрито й видалено з правил.
+  it('keeps admin uids and non-ed roles able to scan the matching cards', () => {
+    const readRule = rules.matchingCards['.read'];
     expect(readRule).toContain("auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'");
     expect(readRule).toContain("auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2'");
-    expect(readRule).toContain("child('userRole').val() != 'ed'");
+    expect(readRule).toContain("root.child('matchingCards').child(auth.uid).child('role').val() != 'ed'");
   });
 
-  it('keeps per-profile reads restricted to the owner and admins', () => {
-    expect(rules.users.$uid['.read']).toContain('auth.uid == $uid');
+  it('has no legacy users node and no rule that asks it', () => {
+    expect(rules.users).toBeUndefined();
+    expect(JSON.stringify(rules)).not.toContain("child('users')");
   });
 
   it('grants ordinary matching-role access to contacts only for a dated projection', () => {

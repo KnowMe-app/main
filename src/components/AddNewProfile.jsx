@@ -153,8 +153,7 @@ import {
 } from './formFields';
 import { PAGE_SIZE, database } from './config';
 import { CONTACT_LINK_BUILDERS } from './contactMethods';
-import { get as firebaseGet, ref, update } from 'firebase/database';
-import { parseProfileCardsJson } from 'utils/profileCardsJsonImport';
+import { get as firebaseGet, ref } from 'firebase/database';
 import {
   getBackendDownloadToastsEnabled,
   setBackendDownloadToastsEnabled,
@@ -1381,11 +1380,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [searchBarResetVersion, setSearchBarResetVersion] = useState(0);
   const searchListIsolationRef = useRef(Boolean((search || '').trim()));
   const [isExcelImporting, setIsExcelImporting] = useState(false);
-  const [isJsonImporting, setIsJsonImporting] = useState(false);
   const [downloadSizeToastsEnabled, setDownloadSizeToastsEnabled] = useState(() => getBackendDownloadToastsEnabled());
   const [extendedMode, setExtendedMode] = useState(readBackendLinksEnabled);
   const excelImportInputRef = useRef(null);
-  const jsonImportInputRef = useRef(null);
   const [showSearchKeyIndexPanel, setShowSearchKeyIndexPanel] = useState(false);
   const [showLocalIndexModal, setShowLocalIndexModal] = useState(false);
   const [pendingLocalIndexTypes, setPendingLocalIndexTypes] = useState([]);
@@ -1842,26 +1839,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     [downloadJsonFile],
   );
 
-  const handleProfileCardsJsonUpload = useCallback(async event => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-
-    setIsJsonImporting(true);
-    try {
-      const cards = parseProfileCardsJson(await file.text());
-
-      // update() adds these keyed cards to `users` instead of replacing the
-      // collection, so cards that are not present in the file remain intact.
-      await update(ref(database, 'users'), cards);
-      toast.success(`Завантажено карток: ${Object.keys(cards).length}`);
-    } catch (error) {
-      console.error('[AddNewProfile] JSON import failed', error);
-      toast.error(error?.message || 'Помилка при завантаженні JSON');
-    } finally {
-      setIsJsonImporting(false);
-    }
-  }, []);
   const isMountedRef = useRef(true);
   const scheduleShortcutPresenceRef = useRef({ userId: null, hasSchedule: null });
   const hasStimulationScheduleKey = state.userId
@@ -6372,20 +6349,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   }, [downloadJsonFile]);
 
-  const handleDownloadCollectionsForLocalIndex = useCallback(async () => {
-    const toastId = 'download-local-index-collections';
-    toast.loading('Завантаження users...', { id: toastId });
-    try {
-      const usersData = await get(ref(database, 'users'))
-        .then(snapshot => (snapshot.exists() ? snapshot.val() || {} : {}));
-      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-      downloadJsonFile(`users-${stamp}.json`, usersData || {});
-      toast.success('Колекцію users завантажено', { id: toastId });
-    } catch (error) {
-      toast.error(`Не вдалося завантажити колекції: ${error?.message || 'невідома помилка'}`, { id: toastId });
-    }
-  }, [downloadJsonFile]);
-
   const handlePickUsersFileForLocalIndex = useCallback(() => {
     if (localUsersFileInputRef.current) {
       localUsersFileInputRef.current.value = '';
@@ -8255,15 +8218,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       </ToolButton>
                       <ToolButton
                         type="button"
-                        onClick={() => jsonImportInputRef.current?.click()}
-                        disabled={isJsonImporting}
-                        title="Додати картки з JSON у users"
-                        {...createLongPressHandlers('Завантажує картки з JSON та доповнює колекцію users')}
-                      >
-                        {isJsonImporting ? '...' : 'Імпорт JSON'}
-                      </ToolButton>
-                      <ToolButton
-                        type="button"
                         onClick={() => {
                           btnMerge(users, setUsers, setDuplicates);
                         }}
@@ -8335,13 +8289,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               accept=".xls,.xlsx"
               style={{ display: 'none' }}
               onChange={handleExcelProfilesUpload}
-            />
-            <input
-              ref={jsonImportInputRef}
-              type="file"
-              accept="application/json,.json"
-              style={{ display: 'none' }}
-              onChange={handleProfileCardsJsonUpload}
             />
             <input
               ref={localNodeFilesInputRef}
@@ -8563,10 +8510,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                     ? ` + чернетки (${Object.keys(localDraftProfiles).length})`
                     : ''}
                 </StepHint>
-              </StepButton>
-              <StepButton type="button" onClick={handleDownloadCollectionsForLocalIndex}>
-                Додатково · Викачати legacy users
-                <StepHint>потрібне лише для полів, яких немає у вузлах</StepHint>
               </StepButton>
               <StepButton type="button" onClick={handlePickUsersFileForLocalIndex}>
                 Додатково · Обрати users.json

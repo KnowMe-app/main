@@ -1889,8 +1889,8 @@ export const saveMyCardComment = async (cardId, text, ownerId) => {
 };
 
 // Moves an edited legacy card comment to the current admin's personal
-// multiData record. The canonical write must succeed independently; cleanup
-// of old card fields is intentionally best-effort.
+// multiData record. The old copy lived in `users/{id}/myComment`; that node is
+// closed now, so there is nothing left to clean up after the write.
 export const migrateMyCardComment = async (cardId, text, ownerId) => {
   const user = auth.currentUser;
   if (!user) throw new Error('User not authenticated');
@@ -1900,21 +1900,13 @@ export const migrateMyCardComment = async (cardId, text, ownerId) => {
   const trimmed = String(text || '').trim();
   if (trimmed) {
     const updatedAt = Date.now();
-    // Persist the new source of truth first. Legacy cleanup is deliberately
-    // best-effort: missing permissions on an old root must not roll this write back.
     await set(ref2(database, getCommentPath(commentsOwnerId, cardId)), { text, updatedAt });
     invalidateOwnerCommentsCache(commentsOwnerId);
-    remove(ref2(database, `users/${cardId}/myComment`)).catch(error => {
-      console.error('Error cleaning up legacy card comment:', error);
-    });
     return { lastAction: updatedAt };
   }
 
   await remove(ref2(database, getCommentPath(commentsOwnerId, cardId)));
   invalidateOwnerCommentsCache(commentsOwnerId);
-  remove(ref2(database, `users/${cardId}/myComment`)).catch(error => {
-    console.error('Error cleaning up legacy card comment:', error);
-  });
   return null;
 };
 
@@ -3070,9 +3062,8 @@ const readLimitedProfileFromMatchingCard = async userId => {
 // nothing for the caller to strip afterwards.
 export const fetchLimitedProfileById = async userId => {
   if (!userId) return null;
-  // Джерело одне — картка стрічки: один запит замість пʼяти, і вона є в анкети
-  // незалежно від того, чи має та тіло в legacy-колекції. Полів анкети з
-  // `users/$uid` тут більше не питають: веб з legacy не читає.
+  // Джерело одне — картка стрічки: один запит замість пʼяти, і вона є в
+  // кожної анкети.
   const projection = await readLimitedProfileFromMatchingCard(userId);
   if (!projection) return null;
   const feedDate = String(projection[MATCHING_CARD_FEED_FIELD] || '').trim();
@@ -3502,15 +3493,13 @@ export const searchUsersOnly = async (searchedValue, options = {}) => {
 /**
  * Завести нову анкету у вебі.
  *
- * Тіла в legacy-колекції вона не отримує, і це не економія: `users` — це вузол
- * акаунтів, і право писати в чужий `users/$uid` має лише сам власник та адмін.
- * Дати його редактору означало б дати право переписати чужий `accessLevel`.
- * Нові ж вузли мають власні правила з перевіркою кожного поля — саме туди
- * анкета й лягає, а `push` на `users` слугує лише генератором ключа.
+ * Анкета лягає у вузли з власними правилами на кожне поле. `push` на
+ * `matchingCards` тут — лише генератор ключа (локальний, без запису): legacy
+ * `users` закрито й видалено з правил, і з ним веб більше не працює.
  */
 export const makeNewUser = async (searchedValue, rawQuery = '') => {
   const db = getDatabase();
-  const usersRef = ref2(db, 'users');
+  const keyRef = ref2(db, PROFILE_NODES.matchingCards);
   const searchIdRef = ref2(db, 'searchId');
 
   const parsedQuery = parseUkTriggerQuery(rawQuery);
@@ -3528,7 +3517,7 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
     ? makeSearchKeyValue(effectiveSearchValue)
     : null;
 
-  const newUserId = push(usersRef).key; // `push` лише генерує ключ, тіла ще не пише
+  const newUserId = push(keyRef).key; // `push` лише генерує ключ, тіла ще не пише
 
   const now = new Date();
   const createdAt = now.toLocaleDateString('uk-UA');
@@ -3562,15 +3551,9 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   }
 
   // Анкета одразу розкладається по вузлах — так само, як це робить кожне
-  // збереження. Вузли доступні делегованим редакторам, на відміну від `users`,
-  // тож саме вони і є записом анкети.
+  // збереження: вузли і є записом анкети.
   const nodesWritten = await fanOutProfileNodes(newUserId, newUser);
   if (!nodesWritten) throwProfileWriteFailure(newUserId, 'вузли анкети');
-  // Legacy-тіла нова анкета не отримує. `push` на `users` тут — лише генератор
-  // ключа; сам вузол `users` — це акаунти, і анкета, яку завела адміністраторка,
-  // акаунтом не є: у мобільному застосунку немає нікого, хто б її прочитав.
-  // Раніше дзеркало заводило під цим ключем порожній акаунт — і `users`
-  // наповнювався картками, до яких він не має стосунку.
   await syncUserSearchKeyIndex(newUserId, {}, newUser);
   // І одразу отримує урізану картку, інакше вона зʼявиться в стрічці тільки
   // після наступної індексації.
@@ -4185,65 +4168,6 @@ export const normalizeStoredDates = payload => {
   return next;
 };
 
-/**
- * Дати для legacy-колекції `users`.
- *
- * `users` живе своїм життям: із неї читає мобільний застосунок, і там дата
- * написана крапками — `ДД.ММ.РРРР`. Нові вузли й картка стрічки лишаються в
- * `РРРР-ММ-ДД`, бо саме за ними база сортує і бере діапазони. Тому один і той
- * самий запис лягає у два місця у двох написаннях, і перетворення стоїть на
- * єдиному вході в legacy — тут.
- *
- * Виняток — поля-двійники. У legacy дата лежить двічі: крапкова під коротким
- * імʼям і ISO-копія під тим самим імʼям із «2» (`lastLogin`/`lastLogin2`,
- * `createdAt`/`createdAt2`). ISO-копію чіпати не можна: саме її читає
- * мобільний застосунок як свіжу дату, а крапкову — посторінковий завантажувач
- * за датою входу (`defaultFetchByLastLogin`, `equalTo` рівно в `дд.мм.рррр`).
- * Тож двійник дописується поруч, а не замість.
- */
-const LEGACY_TWIN_DATE_FIELDS = Object.freeze({
-  createdAt: 'createdAt2',
-  lastLogin: 'lastLogin2',
-});
-
-const LEGACY_TWIN_DATE_KEYS = new Set([
-  ...Object.keys(LEGACY_TWIN_DATE_FIELDS),
-  ...Object.values(LEGACY_TWIN_DATE_FIELDS),
-]);
-
-const LEGACY_DOTTED_DATE_FIELDS = STORAGE_DATE_FIELDS.filter(field => !LEGACY_TWIN_DATE_KEYS.has(field));
-
-const formatDatesForLegacyUsers = payload => {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
-
-  const toDotted = value => {
-    if (Array.isArray(value)) return value.map(toDotted);
-    if (typeof value !== 'string') return value;
-    return formatDateToDisplay(value);
-  };
-
-  const next = { ...payload };
-  LEGACY_DOTTED_DATE_FIELDS.forEach(field => {
-    if (!Object.prototype.hasOwnProperty.call(next, field)) return;
-    if (next[field] === null || next[field] === undefined) return;
-    next[field] = toDotted(next[field]);
-  });
-
-  // Кожна копія двійника лишається своєю: `createdAt` рахується локальним часом,
-  // `createdAt2` — UTC, і після 21:00 за Києвом це різні дати. Тому наявне
-  // значення лише переписується у власне написання, а виводиться з сусіда тільки
-  // те, чого в записі немає.
-  Object.entries(LEGACY_TWIN_DATE_FIELDS).forEach(([dotted, iso]) => {
-    const dottedValue = typeof payload[dotted] === 'string' ? payload[dotted] : '';
-    const isoValue = typeof payload[iso] === 'string' ? payload[iso] : '';
-    if (!dottedValue && !isoValue) return;
-    next[dotted] = formatDateToDisplay(dottedValue || isoValue);
-    next[iso] = formatDateToServer(isoValue || dottedValue);
-  });
-
-  return next;
-};
-
 const stripTransientUserDataFields = (payload, options = {}) => {
   const { markForRealtimeDeletion = false } = options;
   const cleaned = removeUndefined(payload);
@@ -4394,7 +4318,7 @@ const fanOutProfileNodes = async (userId, payload) => {
     return acc;
   }, {});
 
-  const results = await Promise.all(Object.entries(byNode).map(async ([node, nodePatch]) => {
+  const writeNode = async ([node, nodePatch]) => {
     try {
       await update(ref2(database, '/'), nodePatch);
       return true;
@@ -4407,7 +4331,15 @@ const fanOutProfileNodes = async (userId, payload) => {
       });
       return false;
     }
-  }));
+  };
+  // Картка стрічки — останньою: правило `matchingCards/$uid/.validate` пускає
+  // її лише тоді, коли анкета вже лежить в одному з вузлів. Поки поруч був
+  // legacy `users/{uid}`, нова анкета акаунта мала таке тіло з реєстрації; тепер
+  // його немає, і паралельний запис картки міг випередити власні вузли.
+  const entries = Object.entries(byNode);
+  const results = await Promise.all(entries.filter(([node]) => node !== PROFILE_NODES.matchingCards).map(writeNode));
+  const cardEntry = entries.find(([node]) => node === PROFILE_NODES.matchingCards);
+  if (cardEntry) results.push(await writeNode(cardEntry));
 
   return results.some(Boolean);
 };
@@ -4819,61 +4751,6 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) 
 };
 
 /**
- * Кого дзеркалити в legacy: акаунти впізнаються за форматом id, а для старих
- * коротких карток перевіряємо, чи legacy-тіло вже існує.
- *
- * `/users` — вузол акаунтів: там лежать анкети тих, хто завів акаунт сам.
- * Картка, яку завела адміністраторка, акаунта не має — дзеркалити її нема для
- * кого, а створений під push-ключем `users/-P0W2CxWOGI-UGUk1NXt` лише вдає
- * акаунт: ані власника, ані читача в нього немає, зате
- * `getCardLegacyCollection` після цього назавжди вважає таку картку
- * legacy-анкетою і жене в `/users` кожне наступне збереження.
- *
- * Довгий id — Firebase-Auth UID, тому його дзеркало гарантоване. Нового тіла
- * для короткої картки не створюємо, але вже наявне мусимо підтримувати: його
- * досі можуть читати мобільний застосунок і старі профільні потоки.
- */
-const hasLegacyUsersBody = async userId => {
-  if (isLongFormatUserId(userId)) return true;
-  const snapshot = await get(ref2(database, `users/${userId}`));
-  return snapshot.exists();
-};
-
-/**
- * Дзеркалення анкети в legacy-колекцію.
- *
- * Дзеркалення двостороннє: мобільний застосунок пише в `/users` і читає звідти,
- * тож веб мусить класти туди свої зміни. Але це саме дзеркало, а не збереження:
- * коли `/users` перестане підтримуватись — вузол приберуть, права закриють —
- * запис сюди почне відмовляти, і веб не має від цього падати. Тому відмова тут
- * не кидається далі, а повертається викликачу, який уже вирішує, чи анкета
- * взагалі кудись збереглась.
- *
- * Дзеркало пише лише туди, де legacy-тіло вже є (`hasLegacyUsersBody`) — нового
- * воно не заводить.
- *
- * @returns {Promise<boolean>} чи прийняла legacy-колекція запис.
- */
-const mirrorProfileToLegacyUsers = async (userId, payload, condition) => {
-  try {
-    if (!(await hasLegacyUsersBody(userId))) return false;
-    const legacyRef = ref2(database, `users/${userId}`);
-    // Дати переписуються у формат мобільного застосунку рівно тут — на єдиному
-    // вході в legacy. Вузли й картка стрічки лишаються в ISO.
-    const legacyPayload = formatDatesForLegacyUsers(payload);
-    if (condition === 'update') await update(legacyRef, legacyPayload);
-    else await set(legacyRef, legacyPayload);
-    return true;
-  } catch (error) {
-    console.warn('[legacy] анкету не вдалося віддзеркалити в стару колекцію', {
-      userId,
-      error,
-    });
-    return false;
-  }
-};
-
-/**
  * Анкета не збереглась нікуди.
  *
  * Окремий текст, бо це єдиний випадок, коли користувач мусить побачити помилку:
@@ -4907,7 +4784,7 @@ export const saveComparisonField = async (userId, field, value) => createSaveCom
   auth, database, resolveCanonicalFieldName, resolveFieldOwnerNode, PROFILE_NODES,
   buildMatchingCardProjection, normalizeStoredDates, sanitizeUploadedInfoPhones, ref2, set, get,
   readProfileFromNodes, syncUserSearchIdIndex, syncUserSearchKeyIndex,
-  refreshMatchingCardAfterProfileWrite, mirrorProfileToLegacyUsers, updateDataInFiresoreDB,
+  refreshMatchingCardAfterProfileWrite, isAccountProfileId: isLongFormatUserId, updateDataInFiresoreDB,
   clearMatchingSearchResultCache, setOwnerWriter, setOwnerGetInTouch,
 })(userId, field, value);
 
@@ -4954,12 +4831,10 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
       markForRealtimeDeletion: condition === 'update',
     })), auth.currentUser?.uid);
 
-    // Спершу вузли — вони джерело істини для веба, і саме їх читає застосунок.
-    // Legacy йде другим: це дзеркало для мобільного застосунку, і його відмова
-    // не має скасовувати збереження.
+    // Вузли — єдине місце анкети. Дзеркала в legacy `users` більше немає:
+    // вузол закрито й видалено з правил, і веб із ним не працює взагалі.
     const nodesWritten = await fanOutProfileNodes(userId, cleanedUploadedInfo);
-    const legacyWritten = await mirrorProfileToLegacyUsers(userId, cleanedUploadedInfo, condition);
-    if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId, 'ні нові вузли, ні стара колекція');
+    if (!nodesWritten) throwProfileWriteFailure(userId, 'вузли анкети');
 
     await refreshMatchingCardAfterProfileWrite(userId, cleanedUploadedInfo, condition);
   } catch (error) {
@@ -5058,14 +4933,6 @@ export const updateProfileNodesInRTDB = async (userId, uploadedInfo, condition, 
 
     const nodesWritten = await fanOutProfileNodes(userId, cleanedUploadedInfo);
     if (!nodesWritten) throwProfileWriteFailure(userId, 'вузли анкети');
-
-    if (cleanedUploadedInfo.lastLogin2 !== undefined) {
-      try {
-        await update(ref2(database, `users/${userId}`), { lastLogin2: cleanedUploadedInfo.lastLogin2 });
-      } catch (e) {
-        console.error('Error updating lastLogin2 in users:', e);
-      }
-    }
 
     await refreshMatchingCardAfterProfileWrite(userId, cleanedUploadedInfo, condition);
 
@@ -9525,11 +9392,6 @@ export const removeSearchId = async userId => {
       console.log(`Знято з searchId записів: ${Object.keys(updates).length}`);
     }
   }
-
-  // Видалення картки в users
-  const userRef = ref2(db, `users/${userId}`);
-  await remove(userRef);
-  console.log(`Видалено картку користувача з users: ${userId}`);
 };
 
 // Функція для видалення пар у searchId
@@ -10149,39 +10011,6 @@ const fetchUserByIdOnce = async userId => {
   }
 };
 
-// Функція для видалення ключа з Firebase
-export const removeKeyFromFirebase = async (field, value, userId) => {
-  const dbRealtime = getDatabase();
-  const dbFirestore = getFirestore();
-
-  // Визначаємо шлях для видалення в Realtime Database
-  const usersRefRealtime = ref2(dbRealtime, `users/${userId}/${field}`);
-
-  // Визначаємо шлях для видалення в Firestore
-  const usersDocFirestore = doc(dbFirestore, 'users', userId);
-
-  try {
-    if (field === 'photos') {
-      const urls = Array.isArray(value) ? value : [value];
-      await deletePhotos(userId, urls);
-    }
-    await updateSearchId(field, value, userId, 'remove');
-
-    // Видалення з users у Realtime Database
-    await remove(usersRefRealtime);
-    console.log(`Ключ "${field}" видалено з Realtime Database: users/${userId}`);
-
-    // Видалення з users у Firestore
-    const usersDocSnap = await getDoc(usersDocFirestore);
-    if (usersDocSnap.exists()) {
-      await updateDoc(usersDocFirestore, { [field]: deleteField() });
-      console.log(`Ключ "${field}" видалено з Firestore: users/${userId}`);
-    }
-  } catch (error) {
-    console.error('Помилка видалення ключа з Firebase:', error);
-  }
-};
-
 export const loadDuplicateUsers = async () => {
   try {
     const searchIdData = await loadCollectionWithIndexCache('searchId');
@@ -10360,9 +10189,6 @@ export const mergeDuplicateUsers = async () => {
 
       await updateProfileNodesInRTDB(mergedUsers[primaryUser].userId, mergedUsers[primaryUser], 'update');
 
-      const db = getDatabase();
-      await remove(ref2(db, `users/${donorUser}`));
-      console.log(`Deleted donor user: ${donorUser}`);
     }
 
     console.log('Final merged users:', mergedUsers);
@@ -10445,7 +10271,6 @@ export const removeCardAndSearchId = async userId => {
       PROFILE_NODES.profileContacts,
       PROFILE_NODES.profileWorkflow,
       PROFILE_NODES.profileTechnical,
-      'users',
     ];
     const deletionResults = await Promise.allSettled(
       profilePaths.map(path => remove(ref2(db, `${path}/${userId}`))),

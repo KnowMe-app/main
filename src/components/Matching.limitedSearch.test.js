@@ -19,32 +19,18 @@ describe('limited search projection', () => {
     expect(limitedProfileFields.sort()).toEqual(['birth', 'city', 'name', 'region', 'surname']);
   });
 
-  it('opens exactly those fields on users/$uid and nothing more', () => {
-    const uidRules = rules.users.$uid;
-    const openedFields = Object.keys(uidRules)
-      .filter(key => !key.startsWith('.'))
-      .filter(key => uidRules[key]['.read'] === 'auth != null');
-
-    // The rules are the enforcement; the field list is only what the client asks
-    // for. If they drift apart the projection silently gains or loses a field.
-    expect(openedFields.sort()).toEqual(limitedProfileFields.sort());
-    // Інші дочірні правила тут бувають лише сторожами запису (поля прав —
-    // `accessLevel`, `canCreateProfiles`, `multiDataSourceUserIds` міняють самі
-    // адміни) і нічого не відкривають на читання.
-    const otherChildren = Object.keys(uidRules)
-      .filter(key => !key.startsWith('.') && !limitedProfileFields.includes(key));
-    expect(otherChildren.sort()).toEqual(['accessLevel', 'canCreateProfiles', 'multiDataSourceUserIds']);
-    otherChildren.forEach(key => {
-      expect(JSON.stringify(uidRules[key])).not.toContain('.read');
-    });
-  });
-
-  it('leaves users node-level reads gated as before', () => {
-    const nodeRead = rules.users.$uid['.read'];
-    expect(nodeRead).toContain('auth.uid == $uid');
-    expect(nodeRead).not.toBe('auth != null');
-    // The collection root - what a query would need - stays behind matching access.
-    expect(rules.users['.read']).toContain("accessLevel').val().contains('matching')");
+  // Урізану проєкцію дає картка стрічки (`readLimitedProfileFromMatchingCard`),
+  // яку правила відкривають кожному авторизованому. Legacy `users`, де ці поля
+  // колись стояли відкритими по одному, закрито й видалено з правил.
+  it('reads the projection from the matching card, not from legacy users', () => {
+    const source = read('config.js');
+    const fetcher = source.slice(
+      source.indexOf('export const fetchLimitedProfileById = async'),
+      source.indexOf('const addLimitedUser = async'),
+    );
+    expect(fetcher).toContain('readLimitedProfileFromMatchingCard(userId)');
+    expect(fetcher).not.toMatch(/users\//);
+    expect(rules.users).toBeUndefined();
   });
 
   it('lets any signed-in user resolve one searchId key but not scan the index', () => {

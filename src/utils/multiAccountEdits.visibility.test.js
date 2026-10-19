@@ -14,7 +14,7 @@ jest.mock('utils/backendDownloadToast', () => ({
   withAdminDownloadToast: promise => promise,
 }));
 
-const { getCardLegacyCollection, getOverlaysForCard } = require('./multiAccountEdits');
+const { isAccountProfileCard, getOverlaysForCard } = require('./multiAccountEdits');
 const snapshotOf = value => ({ exists: () => value != null, val: () => value });
 
 describe('shared card storage and overlay visibility', () => {
@@ -35,17 +35,17 @@ describe('shared card storage and overlay visibility', () => {
     });
   });
 
-  // Legacy-тіло має рівно анкета акаунта, і про це каже сам id — довгий це
-  // Firebase-Auth UID. Читання `users/{id}` тут більше немає: у вебі не
-  // лишилось жодного читання цієї колекції.
-  it('routes an account profile to users by the shape of its id alone', async () => {
-    await expect(getCardLegacyCollection('firebaseAuthUid0123456789012')).resolves.toBe('users');
+  // Анкету акаунта впізнає сам id — довгий це Firebase-Auth UID. Жодного
+  // читання: legacy `users` закрито, і веб його не питає.
+  it('recognises an account profile by the shape of its id alone', () => {
+    expect(isAccountProfileCard('firebaseAuthUid0123456789012')).toBe(true);
     expect(get).not.toHaveBeenCalled();
   });
 
-  it('reports no legacy body for a card that lives only in the profile nodes', async () => {
-    await expect(getCardLegacyCollection('TG0016')).resolves.toBeNull();
-    await expect(getCardLegacyCollection('-push-id-20-chars---')).resolves.toBeNull();
+  it('does not treat a card that lives only in the profile nodes as an account', () => {
+    expect(isAccountProfileCard('TG0016')).toBe(false);
+    expect(isAccountProfileCard('-push-id-20-chars---')).toBe(false);
+    expect(isAccountProfileCard('')).toBe(false);
     expect(get).not.toHaveBeenCalled();
   });
 });

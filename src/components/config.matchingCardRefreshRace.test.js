@@ -4,7 +4,7 @@
 // лістинг Storage → set проєкції», і в спільний вузол `matchingCards/{id}`
 // писав той ланцюжок, що завершився останнім, а не той, що бачив найсвіжіший
 // стан. Достатньо, щоб найповільнішим виявився найперший, — і в стрічці лишалось
-// старе імʼя при вже новому в `users`.
+// старе прізвище при вже новому в `profileDetails`.
 //
 // Порядок тут задається воротами, а не таймерами: гонку не можна перевіряти
 // перегонами, бо тоді тест міряє швидкість машини.
@@ -84,10 +84,9 @@ describe('проєкція стрічки не відкочується на з�
 
   beforeEach(() => {
     db = {
-      users: {
-        [CARD_ID]: { userId: CARD_ID, name: 'Старе', publish: true, lastLogin2: '2026-08-20' },
-      },
-      matchingCards: {},
+      profileDetails: { [CARD_ID]: { surname: 'Старенко' } },
+      profileTechnical: { [CARD_ID]: { lastLogin2: '2026-08-20' } },
+      matchingCards: { [CARD_ID]: { name: 'Анна', surnameShort: 'С.', feedDate: '2026-08-20' } },
     };
     gates = { profileWrite: [], projectionRead: [] };
     held = false;
@@ -103,15 +102,27 @@ describe('проєкція стрічки не відкочується на з�
       return { exists: () => value !== undefined, val: () => value };
     });
 
-    mockUpdate.mockImplementation(async (path, payload) => {
-      const [root, id] = splitPath(path);
-      if (root === 'users') await passGate(gates.profileWrite);
-      const current = { ...(db[root]?.[id] || {}) };
-      Object.entries(payload).forEach(([key, value]) => {
-        if (value === null) delete current[key];
-        else current[key] = value;
-      });
+    // Вузли пишуться мультишляховим `update` від кореня (`fanOutProfileNodes`).
+    const applyPath = (fullPath, value) => {
+      const [root, id, ...rest] = splitPath(fullPath).filter(Boolean);
+      db[root] = db[root] || {};
+      if (!rest.length) {
+        if (value === null) delete db[root][id];
+        else db[root][id] = value;
+        return;
+      }
+      const current = { ...(db[root][id] || {}) };
+      if (value === null) delete current[rest.join('/')];
+      else current[rest.join('/')] = value;
       db[root][id] = current;
+    };
+    mockUpdate.mockImplementation(async (path, payload) => {
+      const base = String(path).replace(/\/$/, '');
+      const entries = Object.entries(payload).map(([key, value]) => [base ? `${base}/${key}` : key, value]);
+      if (entries.some(([fullPath]) => splitPath(fullPath).filter(Boolean)[0] === 'profileDetails')) {
+        await passGate(gates.profileWrite);
+      }
+      entries.forEach(([fullPath, value]) => applyPath(fullPath, value));
     });
 
     mockSet.mockImplementation(async (path, value) => {
@@ -121,28 +132,28 @@ describe('проєкція стрічки не відкочується на з�
     });
   });
 
-  it('останнє записане імʼя доходить до matchingCards, навіть коли найперший ланцюжок фінішує останнім', async () => {
+  it('останнє записане прізвище доходить до matchingCards, навіть коли найперший ланцюжок фінішує останнім', async () => {
     held = true;
 
     const writes = [
-      updateDataInRealtimeDB(CARD_ID, { name: 'Перше' }, 'update'),
-      updateDataInRealtimeDB(CARD_ID, { name: 'Друге' }, 'update'),
-      updateDataInRealtimeDB(CARD_ID, { name: 'Третє' }, 'update'),
+      updateDataInRealtimeDB(CARD_ID, { surname: 'Антоненко' }, 'update'),
+      updateDataInRealtimeDB(CARD_ID, { surname: 'Бондаренко' }, 'update'),
+      updateDataInRealtimeDB(CARD_ID, { surname: 'Василенко' }, 'update'),
     ];
     let settled = false;
     const allWrites = Promise.all(writes).then(() => { settled = true; });
 
     // Перший запис лягає сам: його ланцюжок встигає прочитати анкету зі «Перше»
     // і впирається в читання проєкції.
-    await waitUntil(() => gates.profileWrite.length >= 3);
+    expect(await waitUntil(() => gates.profileWrite.length >= 3)).toBe(true);
     releaseOldest(gates.profileWrite);
-    await waitUntil(() => gates.projectionRead.length >= 1);
+    expect(await waitUntil(() => gates.projectionRead.length >= 1)).toBe(true);
 
     // Тепер лягають другий і третій — уже після того читання.
     releaseOldest(gates.profileWrite);
     await nextTick();
     releaseOldest(gates.profileWrite);
-    await waitUntil(() => db.users[CARD_ID].name === 'Третє');
+    expect(await waitUntil(() => db.profileDetails[CARD_ID].surname === 'Василенко')).toBe(true);
 
     // Застряглі ланцюжки відпускаємо у зворотному порядку: найперший (з
     // найстарішим знімком) фінішує останнім і має шанс затерти вузол.
@@ -152,15 +163,15 @@ describe('проєкція стрічки не відкочується на з�
     }
     await allWrites;
 
-    expect(db.users[CARD_ID].name).toBe('Третє');
-    expect(db.matchingCards[CARD_ID].name).toBe('Третє');
+    expect(db.profileDetails[CARD_ID].surname).toBe('Василенко');
+    expect(db.matchingCards[CARD_ID].surnameShort).toBe('В.');
   });
 
   it('сплеск записів коштує один відкладений прогін проєкції, а не по прогону на запис', async () => {
     await Promise.all([
-      updateDataInRealtimeDB(CARD_ID, { name: 'Перше' }, 'update'),
-      updateDataInRealtimeDB(CARD_ID, { name: 'Друге' }, 'update'),
-      updateDataInRealtimeDB(CARD_ID, { name: 'Третє' }, 'update'),
+      updateDataInRealtimeDB(CARD_ID, { surname: 'Антоненко' }, 'update'),
+      updateDataInRealtimeDB(CARD_ID, { surname: 'Бондаренко' }, 'update'),
+      updateDataInRealtimeDB(CARD_ID, { surname: 'Василенко' }, 'update'),
     ]);
 
     const projectionWrites = [
@@ -168,7 +179,7 @@ describe('проєкція стрічки не відкочується на з�
       ...mockUpdate.mock.calls,
     ].filter(([path]) => splitPath(path)[0] === 'matchingCards');
     expect(projectionWrites.length).toBeLessThanOrEqual(2);
-    const profileReads = mockGet.mock.calls.filter(([path]) => splitPath(path)[0] === 'users');
+    const profileReads = mockGet.mock.calls.filter(([path]) => splitPath(path)[0] === 'profileDetails');
     expect(profileReads.length).toBeLessThanOrEqual(2);
   });
 });

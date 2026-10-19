@@ -425,7 +425,7 @@ const searchIdRecordContainsUserId = (recordValue, userId) =>
 // Посилання в консоль будує один спільний хелпер — той самий, що й для
 // заголовків блоків. Дві копії форматування вже розійшлися одна з одною, і
 // саме в цьому був зламаний слеш після `/data`.
-const buildUsersBackendUrl = userId => (userId ? buildRtdbConsoleLink(['users', userId]) : '');
+const buildUsersBackendUrl = userId => (userId ? buildRtdbConsoleLink(['matchingCards', userId]) : '');
 const buildSearchIdBackendUrl = (searchIdRecordKey, searchIdField) =>
   (searchIdRecordKey ? buildRtdbConsoleLink(['searchId', searchIdRecordKey, searchIdField].filter(Boolean)) : '');
 const SEARCH_KEY_ROOT = 'searchKey';
@@ -3131,7 +3131,7 @@ ${entries.join('\n')}`;
               <BlockNodeName>{block.label}</BlockNodeName>
               <BlockFieldCount>{block.fields.length}</BlockFieldCount>
             </BlockToggle>
-            {isAdmin && (
+            {isAdmin && block.href && (
               <BlockBackendLink
                 href={block.href}
                 target="_blank"

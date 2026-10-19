@@ -18,24 +18,24 @@ const sliceFn = (name, until) => {
 };
 
 /**
- * Веб мусить пережити зникнення `/users`.
+ * Веб живе без `/users`.
  *
- * Дзеркалення двостороннє, поки мобільний застосунок живий: він пише в `/users`,
- * і веб кладе туди свої зміни. Але «поки живий» — це не «назавжди». Колекцію
- * можуть перестати підтримувати: закрити права, прибрати вузол. Веб від цього
- * не має ані падати на збереженні, ані втрачати стан публікації — бо єдине, що
- * жило тільки в legacy, це `publish`.
+ * Legacy-колекцію закрито й видалено з правил: веб її не читає й не пише. Тут
+ * стоїть сторожа на те, щоб дзеркало не повернулось жодним шляхом.
  */
 describe('збереження анкети не залежить від legacy-колекції', () => {
-  it('updateDataInRealtimeDB пише спершу у вузли, і лише потім дзеркалить у legacy', () => {
+  it('updateDataInRealtimeDB пише лише у вузли', () => {
     const writer = sliceFn('export const updateDataInRealtimeDB =', '\nexport const ');
 
-    const nodesIndex = writer.indexOf('await fanOutProfileNodes(userId, cleanedUploadedInfo)');
-    const legacyIndex = writer.indexOf('await mirrorProfileToLegacyUsers(');
+    expect(writer).toContain('await fanOutProfileNodes(userId, cleanedUploadedInfo)');
+    expect(writer).not.toContain('mirrorProfileToLegacyUsers');
+    expect(writer).toContain('if (!nodesWritten) throwProfileWriteFailure(userId,');
+  });
 
-    expect(nodesIndex).toBeGreaterThan(-1);
-    expect(legacyIndex).toBeGreaterThan(nodesIndex);
-    expect(writer).toContain('if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId,');
+  it('у config.js немає жодного шляху в legacy users', () => {
+    expect(configSource).not.toContain('mirrorProfileToLegacyUsers');
+    expect(configSource).not.toContain('hasLegacyUsersBody');
+    expect(configSource).not.toMatch(/ref2\([a-zA-Z]+, *[`'"]users[/`'"]/);
   });
 
   it('updateProfileNodesInRTDB не має legacy-тіла, тож пише лише у вузли', () => {
@@ -44,17 +44,6 @@ describe('збереження анкети не залежить від legacy-
     expect(writer).toContain('await fanOutProfileNodes(userId, cleanedUploadedInfo)');
     expect(writer).not.toContain('mirrorProfileToLegacyUsers(');
     expect(writer).toContain('if (!nodesWritten) throwProfileWriteFailure(userId,');
-  });
-
-  it('дзеркалення в legacy не кидає — воно повертає результат', () => {
-    const mirror = sliceFn(
-      'const mirrorProfileToLegacyUsers = async',
-      'const throwProfileWriteFailure',
-    );
-
-    expect(mirror).toContain('return true;');
-    expect(mirror).toContain('return false;');
-    expect(mirror).toContain("console.warn('[legacy] анкету не вдалося віддзеркалити в стару колекцію'");
   });
 
   it('розкладка по вузлах теж не кидає, але звітує про успіх', () => {
@@ -94,7 +83,7 @@ describe('дзеркалення читається і в зворотний б�
   // копію — ту саму, у якій ще лежить те, що у вебі вже стерли, — та ще й
   // впиралось у права, яких у звичайного читача на чужий `users/$uid` немає.
   it('анкета читається лише з вузлів', () => {
-    const reader = sliceFn('export const fetchUserById =', 'export const removeKeyFromFirebase');
+    const reader = sliceFn('export const fetchUserById =', 'export const loadDuplicateUsers');
     expect(reader).toContain('await readProfileFromNodes(userId, { includeTechnical: true })');
     expect(reader).not.toContain('withLegacy');
     expect(reader).not.toContain(`users/\${userId}`);

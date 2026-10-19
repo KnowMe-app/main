@@ -14,7 +14,7 @@ const setup = () => {
     get: jest.fn(async address => ({ exists: () => address in db, val: () => db[address] })),
     readProfileFromNodes: jest.fn(async () => ({ height: ['160'], weight: ['50'] })),
     syncUserSearchIdIndex: jest.fn(), syncUserSearchKeyIndex: jest.fn(),
-    refreshMatchingCardAfterProfileWrite: jest.fn(), mirrorProfileToLegacyUsers: jest.fn(),
+    refreshMatchingCardAfterProfileWrite: jest.fn(), isAccountProfileId: jest.fn(() => false),
     updateDataInFiresoreDB: jest.fn(),
     clearMatchingSearchResultCache: jest.fn(), setOwnerWriter: jest.fn(), setOwnerGetInTouch: jest.fn(),
   };
@@ -42,15 +42,21 @@ it.each([
   expect(deps.set).toHaveBeenCalledWith(`matchingCards/B/${canonical}`, value);
 });
 
-it('updates the Firestore mirror when the legacy RTDB body was updated', async () => {
+it('updates the Firestore copy of an account profile', async () => {
   const { deps, save } = setup();
-  deps.mirrorProfileToLegacyUsers.mockResolvedValue(true);
+  deps.isAccountProfileId.mockReturnValue(true);
   await save('B', 'phone', '380671234567');
   expect(deps.updateDataInFiresoreDB).toHaveBeenCalledWith(
     'B',
     expect.objectContaining({ phone: '380671234567', lastAction: expect.any(Number) }),
     'check',
   );
+});
+
+it('leaves Firestore alone for a card that is not an account', async () => {
+  const { deps, save } = setup();
+  await save('B', 'phone', '380671234567');
+  expect(deps.updateDataInFiresoreDB).not.toHaveBeenCalled();
 });
 
 it('does not hide a rejected matchingCards write behind another successful node', async () => {

@@ -19,9 +19,10 @@ export const normalizeAuthEmail = email => String(email || '').trim();
 
 export const isValidAuthEmail = email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-// Канонічне місце анкети акаунта — `users` (її читає мобільний застосунок) і
-// Firestore. Коли туди не пускають права, анкета все одно мусить десь бути: тоді
-// вона цілком їде у вузли профілю, на які власник акаунта право має завжди.
+// Анкета акаунта лягає у вузли профілю (`updateDataInRealtimeDB`) і в Firestore.
+// Коли один із записів не вдався, анкета все одно мусить десь бути: тоді вона
+// цілком їде у вузли профілю, на які власник акаунта право має завжди. Legacy
+// `users` закрито й видалено з правил — туди не пише ніхто.
 export const persistUserWithFallback = async (userId, uploadedInfo, firestoreCondition = 'update') => {
   let canonicalWriteFailed = false;
 
@@ -32,7 +33,7 @@ export const persistUserWithFallback = async (userId, uploadedInfo, firestoreCon
       throw error;
     }
     canonicalWriteFailed = true;
-    console.warn('No write access to users/$uid, falling back to the profile nodes.');
+    console.warn('Profile nodes write was denied, retrying through the node writer.');
   }
 
   try {

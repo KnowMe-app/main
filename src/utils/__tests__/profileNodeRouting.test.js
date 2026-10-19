@@ -113,7 +113,11 @@ describe('блоки форми анкети', () => {
       const header = buildProfileFormBlockHeader(blockId, { profileId: 'a'.repeat(28) });
       expect(header.title).toBeTruthy();
       expect(header.path).toBeTruthy();
-      expect(header.href).toContain('console.firebase.google.com');
+      // Поля поза вузлами в базі не лежать ніде: legacy `users` закрито, тож
+      // посилання в консоль у цього блоку немає.
+      expect(header.href).toEqual(blockId === PROFILE_FORM_BLOCK_IDS.legacy
+        ? ''
+        : expect.stringContaining('console.firebase.google.com'));
     });
   });
 
@@ -132,7 +136,7 @@ describe('блоки форми анкети', () => {
     expect(buildProfileFormBlockHeader(PROFILE_FORM_BLOCK_IDS.access, { profileId }).path)
       .toBe(`profileTechnical/${profileId}`);
     expect(buildProfileFormBlockHeader(PROFILE_FORM_BLOCK_IDS.legacy, { profileId: 'short' }).path)
-      .toBe('users/short');
+      .not.toContain('users');
   });
 
   it('кодує слеші так, як їх читає консоль Firebase', () => {

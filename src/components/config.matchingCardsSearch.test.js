@@ -77,8 +77,7 @@ describe('пошук ходить по matchingCards', () => {
     // І не індексують того, за чим не шукають: зайвий індекс — це зайва копія
     // колекції, яку база перебудовує на кожен запис картки.
     expect(rules.matchingCards['.indexOn']).not.toContain('surnameShort');
-    const usersReaders = rules.users['.read'].replace('auth != null && (', '').replace(/\)$/, '');
-    expect(rules.matchingCards['.read']).toContain(usersReaders);
+    expect(rules.matchingCards['.read']).toContain("contains('matching')");
   });
 });
 
@@ -144,7 +143,7 @@ describe('створення анкети не впирається в прав�
   it('`createdAt` приймається у profileTechnical від творця анкети', () => {
     const write = rules.profileTechnical.$uid.createdAt['.write'];
 
-    expect(write).toContain("root.child('users').child(auth.uid).child('canCreateProfiles').val() == true");
+    expect(write).not.toContain("child('users')");
     expect(write).toContain("root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true");
     expect(write).toContain("contains('matching')");
     expect(write).toContain("contains('view&write')");

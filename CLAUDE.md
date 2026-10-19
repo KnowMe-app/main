@@ -141,20 +141,22 @@ ESM він імпортується дефолтним імпортом, а не
 ### Анкета розкладена по вузлах RTDB
 
 `/matchingCards`, `/profileDetails`, `/profileContacts`, `/profileWorkflow`,
-`/profileTechnical`; `/users` лишається **legacy-дзеркалом** — веб туди пише, але з нього
-**не читає взагалі**: жодного `get` на `users/...` у коді немає, і додавати новий не
-можна. Що читалось звідти раніше й куди переїхало: `publish` → `feedDate` у картці,
-`accessLevel` → `profileTechnical`, `cycleStatus`/`lastAction`/`lastCycle` →
-`profileWorkflow`, `lastLogin`/`createdAt` → `profileTechnical`, контакти → `searchId` і
-`profileContacts`. Дзеркалиться лише анкета акаунта (довгий id — Firebase-Auth UID), і
-питання «чи є legacy-тіло» вирішує формат id, а не читання
-(`hasLegacyUsersBody`, `getCardLegacyCollection`). Виняток один і він явний:
-кнопка «завантажити users.json» в адмінці — вона й існує, щоб вивантажити legacy
-для міграції. Дзеркало не *створює* нового тіла: у `/users`
-живуть анкети акаунтів (довгий id — Firebase-Auth UID) і ті картки, тіло яких
-потрапило туди раніше. Картка, яку завела адміністраторка, тіла в `/users` не
-отримує — ані при створенні (`makeNewUser`), ані при публікації чернетки
-(`acceptCreateProfileMutation`). Розкладка описана декларативно в
+`/profileTechnical`. **Legacy `/users` закрито й видалено з правил** (19.10): веб його
+не читає й не пише ніде — ні дзеркалом, ні кнопкою вивантаження, ні посиланням у
+консоль; вузла в `database.rules.json` немає, а корінь заборонений за
+замовчуванням, тож відмовляє він усім, адмінам теж. Що жило там і куди переїхало:
+`publish` → `feedDate` у картці, `accessLevel`/`canCreateProfiles`/
+`multiDataSourceUserIds` → `profileTechnical` (перед закриттям звірено: у
+`/users` не лежало жодного права, якого не було б у `profileTechnical`), роль
+читача для правил → `matchingCards/{uid}/role`, `cycleStatus`/`lastAction`/`lastCycle`
+→ `profileWorkflow`, `lastLogin`/`createdAt` → `profileTechnical`, контакти →
+`searchId` і `profileContacts`. Анкету акаунта (довгий id — Firebase-Auth UID)
+впізнає сам id (`isAccountProfileCard`): від цього залежить лише писач і копія в
+Firestore. Поля, які не мають власного вузла, у RTDB не потрапляють — раніше
+їх тримало саме дзеркало. Дані в `/users` ще лежать; стерти їх може лише адмін
+з консолі. Сторожа — `legacyIndependence.test.js`, сценарій «legacy /users не
+читає й не пише ніхто» в `npm run test:rules` і хук `no-users-read`.
+Розкладка описана декларативно в
 `src/utils/profileNodeSchema.js` — це джерело правди і для міграції, і для runtime, і для
 тестів правил. Деталі: `docs/rtdb-profile-nodes.md`.
 
@@ -275,16 +277,16 @@ ESM він імпортується дефолтним імпортом, а не
 мусить знати це до рішення. Поки режим діє, під шапкою «Мого профілю» стоїть
 чіп «Анкету бачать лише обрані» (`liked-audience-chip`), а статус —
 «Лише обраним» із замком, не зелений: блок «Публікація» стоїть аж унизу.
-**Межа неповна, поки відкритий legacy `/users`**: його кореневе `.read` пускає
-будь-яку роль, крім `ed`, а анкета акаунта дзеркалиться туди цілком.
+Межу колись обходив legacy `/users` (кореневе `.read` для будь-якої ролі, крім
+`ed`, і повне тіло анкети акаунта з контактами); тепер його закрито для всіх.
 
 Службовий доступ (`accessLevel` містить `matching`), власниця анкети й адміни
 (`ADMIN_UIDS` у `src/utils/accessLevel.js`) від межі не залежать. Рівень доступу читається,
 а не вгадується: `resolveViewerAccessLevel` у `config.js` — ключ у `localStorage` зʼявляється
 лише після мережевого круга, і відсутність ключа означає «прав немає», а не «можна все».
 **Права видають лише два адміни з правил** (`ADMIN_UIDS`): `accessLevel`,
-`canCreateProfiles` і `multiDataSourceUserIds` у `users/{uid}` і
-`profileTechnical/{uid}` мають власні `.validate` — змінити їх може лише
+`canCreateProfiles` і `multiDataSourceUserIds` у `profileTechnical/{uid}` мають
+власні `.validate` — змінити їх може лише
 адмін, решта може хіба переписати те саме значення. Поки власник писав ці поля
 сам, будь-хто, хто увійшов, ставив собі `matching:view` і читав контакти
 будь-якої анкети. Писачі анкети (`updateDataInRealtimeDB`,
@@ -1749,8 +1751,8 @@ Flow, `fetchNbuUahExchangeRatesByDate`). Оригінал показується
   (зокрема графік стимуляції), чернетка з журналом, шари доповнень, відгуки,
   програми, ключі `searchId`, а для акаунта ще й його власні вузли (ліниво).
   Кожен вузол підписаний шляхом і веде в консоль; запис іде прямо за адресою,
-  як у консолі, і похідних (картка стрічки, індекси) не перебудовує. `users/{id}`
-  стоїть самим посиланням — legacy не читається. Новий per-card вузол додавайте
+  як у консолі, і похідних (картка стрічки, індекси) не перебудовує. Legacy
+  `users/{id}` у RTDB тут немає — вузол закрито. Новий per-card вузол додавайте
   в цей перелік, інакше адмін його не побачить. Графік стимуляції форма не
   показувала зовсім: `readProfileFromNodes` дочитував із `multiData` лише
   `getInTouch` і `writer` — тепер і `stimulationSchedule`.

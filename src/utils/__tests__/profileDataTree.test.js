@@ -39,11 +39,10 @@ describe('buildProfileDataSources', () => {
       .not.toContain('multiData/profileMutations/');
   });
 
-  it('legacy users не читає — лише посилання', () => {
+  it('legacy users RTDB у дереві немає зовсім — вузол закрито', () => {
     const legacy = buildProfileDataSources({ cardId: 'AA0001', viewerId: ADMIN })
       .filter(source => source.segments[0] === 'users' && !source.store);
-    expect(legacy).toHaveLength(1);
-    expect(legacy[0].linkOnly).toBe(true);
+    expect(legacy).toHaveLength(0);
   });
 
   it('для акаунта додає його власні вузли — ліниво', () => {

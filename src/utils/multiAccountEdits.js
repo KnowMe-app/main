@@ -100,28 +100,18 @@ const normalizeEditorNode = (overlay, cardUserId, editorUserId) => {
   };
 };
 
-// Куди дзеркалити запис. Не щоб узяти звідти дані — їх веб бере з вузлів, — а
-// щоб не завести в legacy нового тіла: анкети, створені у вебі, живуть лише у
-// вузлах.
-//
-// Відповідь дає сам id, без жодного читання: довгий — це Firebase-Auth UID,
-// тобто анкета акаунта; короткий — картка, заведена в застосунку, і
-// legacy-тіла вона не має. Раніше на короткому id тут стояло читання
-// `users/{id}` — останнє в цьому файлі й одне з останніх у вебі; тепер читань
-// legacy-колекції в коді немає взагалі.
-//
-// `null` означає «legacy-тіла немає»: писати таку анкету треба лише у вузли.
-export const getCardLegacyCollection = async cardUserId => {
+// Чи картка — анкета акаунта. Відповідь дає сам id, без жодного читання:
+// довгий — це Firebase-Auth UID, короткий — картка, заведена в застосунку.
+// Від відповіді залежить лише писач (`updateDataInRealtimeDB` з Firestore для
+// акаунта, `updateProfileNodesInRTDB` для решти): legacy `users` закрито й
+// видалено з правил, і веб не пише й не читає його ні для кого.
+export const isAccountProfileCard = cardUserId => {
   const normalizedCardId = normalizeCardKey(cardUserId);
-  if (!normalizedCardId) return null;
-  return isLongFormatUserId(normalizedCardId) ? 'users' : null;
+  return Boolean(normalizedCardId) && isLongFormatUserId(normalizedCardId);
 };
 
 export const getCanonicalCard = async cardUserId => {
-  // Анкета живе у вузлах — і тільки в них. Legacy-колекція сюди не входить:
-  // веб із неї не читає, вона лишилась адресатом дзеркального запису для
-  // мобільного застосунку. Інакше чернетка правки складалася б із копії, у
-  // якій ще лежить те, що у вебі вже стерли.
+  // Анкета живе у вузлах — і тільки в них.
   const paths = [
     PROFILE_NODES.matchingCards,
     PROFILE_NODES.profileDetails,

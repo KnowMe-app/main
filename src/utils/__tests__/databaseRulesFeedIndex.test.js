@@ -58,8 +58,7 @@ describe('правила, без яких стрічка не може чита�
     // Дзеркалення живе в писачах анкети: хто може зберегти анкету, той мусить
     // могти оновити і її проєкцію, інакше картка застигає застарілою.
     expect(rules.matchingCards.$uid['.write']).toBe(rules.profileDetails.$uid['.write']
-      .replace(" || (root.child('users').child(auth.uid).child('canCreateProfiles').val() == true"
-        + " || root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true)", ''));
+      .replace(" || (root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true)", ''));
     ["matching:view&write", 'matching+addNewProfile:view&write', 'add+matching:view&write']
       .forEach(level => expect(rules.matchingCards.$uid['.write']).toContain(level));
   });

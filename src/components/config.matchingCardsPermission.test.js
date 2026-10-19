@@ -28,9 +28,10 @@ describe('доступ до вузла matchingCards', () => {
   it('не дає завести картку без анкети за нею', () => {
     // Проєкція без канонічної анкети — привид, на який нічого не вказує.
     const validate = node.$uid['.validate'];
-    expect(validate).toContain("root.child('users').child($uid).exists()");
-    // Але питається це напряму у вузлах і legacy-колекції, а не через поле
-    // `source`: у цільовій схемі картки `source` немає, а перевірка потрібна.
+    expect(validate).toContain("root.child('profileDetails').child($uid).exists()");
+    expect(validate).not.toContain("child('users')");
+    // Питається це напряму у вузлах, а не через поле `source`: у цільовій
+    // схемі картки `source` немає, а перевірка потрібна.
     expect(validate).not.toContain("child('source')");
   });
 
@@ -41,18 +42,13 @@ describe('доступ до вузла matchingCards', () => {
     expect(rules.matchingCardsMeta).toBeUndefined();
   });
 
-  it('відкриває сканування тим, хто читає users, і стрічку — всім авторизованим', () => {
-    // Пошук ходить по `matchingCards`, тож сканувати вузол має право те саме
-    // коло, що сканує `users`, — інакше пошук мовчки повертав би порожньо.
-    const usersReaders = rules.users['.read'].replace('auth != null && (', '').replace(/\)$/, '');
-    expect(node['.read']).toContain(usersReaders);
+  it('відкриває сканування службовому доступу й не-донорам, а стрічку — всім авторизованим', () => {
+    // Пошук ходить по `matchingCards`: сканувати вузол мають адміни, службовий
+    // доступ і читач з роллю, відмінною від `ed` (роль — з його картки).
+    expect(node['.read']).toContain("root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching')");
+    expect(node['.read']).toContain("root.child('matchingCards').child(auth.uid).child('role').val() != 'ed'");
     // А запит самої стрічки лишається відкритим кожному авторизованому.
     expect(node['.read']).toContain("query.orderByChild == 'feedDate' && query.startAt == ''");
   });
 
-  it('індексує поле правил доступу, за яким шукають власників наборів', () => {
-    // Без цього `orderByChild('additionalAccessRules')` відсортує на клієнті —
-    // тобто перебудова наборів знову качатиме всю колекцію users.
-    expect(rules.users['.indexOn']).toContain('additionalAccessRules');
-  });
 });

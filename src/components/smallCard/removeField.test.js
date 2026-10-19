@@ -6,12 +6,12 @@ jest.mock('components/config', () => ({
 }));
 jest.mock('utils/cache', () => ({ updateCachedUser: jest.fn() }));
 jest.mock('utils/multiAccountEdits', () => ({
-  getCardLegacyCollection: jest.fn(async userId => (userId === 'ID0001' ? null : 'users')),
+  isAccountProfileCard: jest.fn(userId => userId !== 'ID0001'),
 }));
 
 const { updateProfileNodesInRTDB, updateDataInRealtimeDB } = require('components/config');
 const { updateCachedUser } = require('utils/cache');
-const { getCardLegacyCollection } = require('utils/multiAccountEdits');
+const { isAccountProfileCard } = require('utils/multiAccountEdits');
 const { removeField } = require('./actions');
 
 // Simulates a real React setUsers(prev => ...) state setter: applies the
@@ -30,7 +30,7 @@ describe('removeField sends a minimal, targeted payload instead of the whole loc
     updateProfileNodesInRTDB.mockClear();
     updateDataInRealtimeDB.mockClear();
     updateCachedUser.mockClear();
-    getCardLegacyCollection.mockImplementation(async userId => (userId === 'ID0001' ? null : 'users'));
+    isAccountProfileCard.mockImplementation(userId => userId !== 'ID0001');
   });
 
   it('writes only the changed top-level field + lastAction for a long-userId card', async () => {
@@ -74,7 +74,7 @@ describe('removeField sends a minimal, targeted payload instead of the whole loc
     expect(box.get()[longUserId]).toEqual({ userId: longUserId });
   });
 
-  it('writes only to the profile nodes for a card without a legacy body', async () => {
+  it('writes only to the profile nodes for a card that is not an account profile', async () => {
     const box = makeStateBox({
       ID0001: { userId: 'ID0001', key1: 'value1' },
     });
@@ -116,7 +116,7 @@ describe('removeField writes to the backend even when React defers the state upd
     updateProfileNodesInRTDB.mockReset();
     updateDataInRealtimeDB.mockReset();
     updateCachedUser.mockReset();
-    getCardLegacyCollection.mockImplementation(async userId => (userId === 'ID0001' ? null : 'users'));
+    isAccountProfileCard.mockImplementation(userId => userId !== 'ID0001');
   });
 
   it('mirrors the optimistic card deletion to cache before React flushes its updater', () => {

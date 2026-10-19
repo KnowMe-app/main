@@ -89,8 +89,8 @@ const ACCESS_BLOCK_FIELDS = new Set([
 
 const EXPLICIT_FIELD_BLOCKS = {
   getInTouch: PROFILE_FORM_BLOCK_IDS.getInTouch,
-  // `publish` фізично лишається в legacy-анкеті; стрічку вмикає похідний
-  // `feedDate` у картці.
+  // `publish` власного вузла не має; стрічку вмикає похідний `feedDate` у
+  // картці.
   publish: PROFILE_FORM_BLOCK_IDS.legacy,
   userRole: PROFILE_FORM_BLOCK_IDS.matchingCards,
 };
@@ -133,12 +133,12 @@ const BLOCK_META = {
     hint: 'Логіни, дати створення, мова. Видно власнику анкети і суперадмінам.',
   },
   [PROFILE_FORM_BLOCK_IDS.legacy]: {
-    title: 'Legacy-анкета',
-    hint: 'Поля, які ще не мають власного вузла. Звідси їх читає мобільний застосунок.',
+    title: 'Поза вузлами',
+    hint: 'Поля, які не мають власного вузла. Legacy users закрито й видалено з правил, тож у базу такі поля не потрапляють.',
   },
   [PROFILE_FORM_BLOCK_IDS.access]: {
     title: 'Доступи',
-    hint: 'Рівень доступу і право створювати анкети живуть у profileTechnical — правила бази питають і його, і legacy. Делегування чужого multiData лишається тільки в legacy.',
+    hint: 'Рівень доступу, право створювати анкети й делегування чужого multiData живуть у profileTechnical — правила бази питають лише його.',
   },
 };
 
@@ -153,7 +153,7 @@ export const resolveProfileFormBlock = fieldName => {
 /**
  * Заголовок блоку разом із посиланням саме на той вузол, де лежать його дані.
  *
- * Legacy-колекція одна — `users`; саме туди веде посилання блоку legacy-анкети.
+ * Блок полів поза вузлами посилання не має: legacy `users` закрито.
  */
 export const DRAFT_RECORD_BLOCK_ID = 'profileMutationDraft';
 
@@ -192,10 +192,9 @@ export const buildProfileFormBlockHeader = (blockId, { profileId, ownerId, draft
           ? ['multiData', 'getInTouch', ownerId]
           : ['multiData', 'getInTouch'];
       case PROFILE_FORM_BLOCK_IDS.legacy:
-        return ['users', profileId];
+        return ['legacy', profileId];
       // Права переїхали в технічний вузол, і посилання веде туди ж, куди тепер
-      // іде запис. Делегування (`multiDataSourceUserIds`, `godMode`) лишилось у
-      // legacy — його видно в блоці legacy-анкети.
+      // іде запис.
       case PROFILE_FORM_BLOCK_IDS.access:
         return [PROFILE_NODES.profileTechnical, profileId];
       default:
@@ -215,7 +214,7 @@ export const buildProfileFormBlockHeader = (blockId, { profileId, ownerId, draft
     hint: meta.hint,
     label: labelSegments.join('/'),
     path: path.join('/'),
-    href: buildRtdbConsoleLink(path),
+    href: blockId === PROFILE_FORM_BLOCK_IDS.legacy ? '' : buildRtdbConsoleLink(path),
   };
 };
 

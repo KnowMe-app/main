@@ -1771,9 +1771,8 @@ const getMatchedUserIdsFromSearchKey = async (parsedRuleGroups, { searchKeyFile 
  * нього RTDB відсортує на клієнті, тобто віддасть усе.
  *
  * Питається `profileTechnical`, а не legacy-колекція: права доступу переїхали
- * туди разом з рештою технічного, і саме звідти їх читають правила бази. Веб із
- * `users` не читає — вона лишилась адресатом дзеркального запису для мобільного
- * застосунку.
+ * туди разом з рештою технічного, і саме звідти їх читають правила бази.
+ * Legacy `users` закрито й видалено з правил.
  */
 const loadAccessRuleOwners = async () => {
   const ownersQuery = query(
