@@ -1,5 +1,5 @@
 import { getStoredLanguage } from '../hooks/useAppSettings';
-import { JA_BY_EN_LABEL, JA_DERIVED_VALUES, JA_UI_TEXTS } from './jaTranslations';
+import { getExtraLocale, isSupportedLanguage } from './locales';
 
 /**
  * Мова картки анкети: і підписи блоків, і значення, які підставляє застосунок.
@@ -24,7 +24,7 @@ import { JA_BY_EN_LABEL, JA_DERIVED_VALUES, JA_UI_TEXTS } from './jaTranslations
 export const DEFAULT_PROFILE_LANGUAGE = 'uk';
 
 export const resolveProfileLanguage = language => {
-  if (language === 'uk' || language === 'en' || language === 'ja') return language;
+  if (isSupportedLanguage(language)) return language;
   try {
     return getStoredLanguage();
   } catch {
@@ -153,7 +153,8 @@ export const translateProfileLabel = (label, language) => {
   const text = String(label ?? '').trim();
   if (!text) return '';
   const lang = resolveProfileLanguage(language);
-  if (lang === 'ja') return JA_BY_EN_LABEL[text] || text;
+  const extra = getExtraLocale(lang);
+  if (extra) return extra.byEnLabel[text] || text;
   if (lang !== 'uk') return text;
   return UK_BY_EN_LABEL[text] || text;
 };
@@ -174,7 +175,8 @@ const DERIVED_VALUES = {
 export const derivedValueTexts = (kind, language) => {
   const pair = DERIVED_VALUES[kind] || DERIVED_VALUES.yesNo;
   const lang = resolveProfileLanguage(language);
-  if (lang === 'ja') return JA_DERIVED_VALUES[kind] || JA_DERIVED_VALUES.yesNo;
+  const extra = getExtraLocale(lang);
+  if (extra) return extra.derived[kind] || extra.derived.yesNo;
   return pair[lang] || pair.en;
 };
 
@@ -227,6 +229,7 @@ export const profileUiText = (key, language) => {
   const entry = UI_TEXTS[key];
   if (!entry) return '';
   const lang = resolveProfileLanguage(language);
-  if (lang === 'ja') return JA_UI_TEXTS[key] || entry.en;
+  const extra = getExtraLocale(lang);
+  if (extra) return extra.uiTexts[key] || entry.en;
   return entry[lang] || entry.en;
 };

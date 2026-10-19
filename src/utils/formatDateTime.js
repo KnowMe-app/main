@@ -1,4 +1,5 @@
 import { resolveProfileLanguage } from './profileTexts';
+import { getLanguageLocale } from './locales';
 
 /**
  * Дата й час мовою інтерфейсу.
@@ -13,8 +14,7 @@ export const formatDateTime = (value, language) => {
   if (value === null || value === undefined || value === '') return '';
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  const lang = resolveProfileLanguage(language);
-  return date.toLocaleString(lang === 'uk' ? 'uk-UA' : lang === 'ja' ? 'ja-JP' : 'en-GB');
+  return date.toLocaleString(getLanguageLocale(resolveProfileLanguage(language)));
 };
 
 export default formatDateTime;

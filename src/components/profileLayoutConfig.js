@@ -1,4 +1,5 @@
 import { getCurrentValue } from './getCurrentValue';
+import { getExtraLocale } from '../utils/locales';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
 import { computeBmi, formatCityName, normalizeHeightCm, normalizeWeightKg } from '../utils/profileNormalization';
@@ -243,11 +244,12 @@ const isExcluded = (item, excludeKeys = []) => {
 // вже лежить у формі. Вільний текст словнику не відповідає й лишається як є.
 const localizeFieldValue = (item, value, language) => {
   const lang = resolveProfileLanguage(language);
-  if (item.resolved || (lang !== 'uk' && lang !== 'ja')) return value;
-  return String(value)
+  const extra = getExtraLocale(lang);
+  if (item.resolved || (lang !== 'uk' && !extra)) return value;
+  const parts = String(value)
     .split(', ')
-    .map(part => translateFieldValue(item.key, part, lang))
-    .join(lang === 'ja' ? '、' : ', ');
+    .map(part => translateFieldValue(item.key, part, lang));
+  return extra ? extra.sentences.list(parts) : parts.join(', ');
 };
 
 const toDisplayFields = (items, user, excludeKeys = [], language) =>
@@ -308,7 +310,8 @@ const glassesDisplayValue = (user, language) => {
   const normalized = normalizeDisplayValue(user?.glasses).toLowerCase();
   if (NO_TOKENS.has(normalized) || normalized === 'ні') {
     const lang = resolveProfileLanguage(language);
-    if (lang === 'ja') return 'なし、視力良好';
+    const extra = getExtraLocale(lang);
+    if (extra) return extra.sentences.glasses.short;
     return lang === 'en' ? 'no, good eyesight' : 'не носить, зір гарний';
   }
   return glassesLabel(user?.glasses, language);

@@ -1,3 +1,4 @@
+import { getExtraLocale } from '../utils/locales';
 import React, { useState } from 'react';
 import styled, { css } from 'styled-components';
 import {
@@ -64,7 +65,7 @@ const lowerFirst = text => (text ? text.charAt(0).toLocaleLowerCase('uk-UA') + t
 const readOptionValue = (user, field, lang) => {
   const raw = normalizeDisplayValue(user?.[field]);
   if (!raw || isOtherValue(raw)) return '';
-  const localized = lang === 'uk' || lang === 'ja' ? translateFieldValue(field, raw, lang) : raw;
+  const localized = lang === 'uk' || getExtraLocale(lang) ? translateFieldValue(field, raw, lang) : raw;
   return localized.trim().toLocaleLowerCase('uk-UA');
 };
 
@@ -131,7 +132,6 @@ export const buildProfileStatStrip = (user, language) => {
 const TRAIT_WORDS = {
   uk: { eyes: 'очі', hair: 'волосся' },
   en: { eyes: 'eyes', hair: 'hair' },
-  ja: { eyes: 'の目', hair: '髪' },
 };
 
 // Колір і структура волосся — одним словосполученням («темне хвилясте
@@ -142,13 +142,17 @@ const TRAIT_WORDS = {
 // (розгорнутий рядок, відкрита картка). У розділах повної анкети волосся
 // вдруге не повторюється.
 const describeAppearance = (user, lang) => {
-  const words = TRAIT_WORDS[lang];
+  const extra = getExtraLocale(lang);
+  const words = TRAIT_WORDS[lang] || TRAIT_WORDS.en;
   const eyes = readOptionValue(user, 'eyeColor', lang);
   const hair = describeHair(user, lang);
   const parts = [];
-  if (eyes) parts.push(eyes.includes(words.eyes) ? eyes : lang === 'ja' ? `${eyes}${words.eyes}` : `${eyes} ${words.eyes}`);
+  if (eyes) {
+    if (extra) parts.push(extra.sentences.eyes(eyes));
+    else parts.push(eyes.includes(words.eyes) ? eyes : `${eyes} ${words.eyes}`);
+  }
   if (hair) parts.push(hair);
-  return parts.join(lang === 'ja' ? '、' : ', ');
+  return extra ? extra.sentences.clauses(parts) : parts.join(', ');
 };
 
 const YES_VALUES = new Set(['yes', 'так', 'є']);
@@ -173,20 +177,21 @@ const UK_DELIVERY_WORDS = ['', 'одні пологи', 'двоє пологів
  * анкет заповнена сама дата останніх. Відкрита картка її показувала («3 роки
  * після пологів»), а рядок стрічки мовчав — бо питав спершу кількість.
  */
-// Японською — без відмінків і множини: «出産2回、最後は13か月前、2回とも帝王切開».
-const describeDeliveriesJa = (read, recency) => {
-  if (!read) return recency ? { text: `最後の出産は${recency}前`, had: true, count: null } : { text: '', had: false, count: null };
-  if (read.count === 0) return { text: '出産なし', had: false, count: 0 };
-  if (read.text) return { text: `出産：${read.text}`, had: true, count: null };
-  let text = read.yes ? '出産経験あり' : `出産${read.count}回`;
-  if (recency) text += read.count === 1 ? `、${recency}前` : `、最後は${recency}前`;
+// Мови з `utils/locales` — зі своїх шаблонів: «出産2回、最後は13か月前».
+const describeDeliveriesExtra = (words, list, read, recency) => {
+  if (!read) return recency ? { text: words.recencyOnly(recency), had: true, count: null } : { text: '', had: false, count: null };
+  if (read.count === 0) return { text: words.none, had: false, count: 0 };
+  if (read.text) return { text: words.text(read.text), had: true, count: null };
+  const base = read.yes ? words.yes : words.count(read.count);
+  const text = recency ? list([base, read.count === 1 ? words.recencySingle(recency) : words.recencyLast(recency)]) : base;
   return { text, had: true, count: read.yes ? null : read.count };
 };
 
 const describeDeliveries = (user, lang) => {
   const recency = formatDeliveryRecency(normalizeDisplayValue(user?.lastDelivery), lang);
   const read = readCount(normalizeDisplayValue(user?.ownKids));
-  if (lang === 'ja') return describeDeliveriesJa(read, recency);
+  const extra = getExtraLocale(lang);
+  if (extra) return describeDeliveriesExtra(extra.sentences.deliveries, extra.sentences.clauses, read, recency);
   if (!read) {
     if (!recency) return { text: '', had: false, count: null };
     return { text: lang === 'uk' ? `останні пологи ${recency} тому` : `last delivery ${recency} ago`, had: true, count: null };
@@ -224,28 +229,29 @@ const ukCSectionWord = count => (count % 10 === 1 && count % 100 !== 11 ? 'ке�
 const UK_ALL_OF = count => (count === 2 ? 'обидва' : 'усі');
 const EN_ALL_OF = count => (count === 2 ? 'both' : 'all');
 
-const describeCSectionJa = (value, deliveries) => {
+const describeCSectionExtra = (words, value, deliveries) => {
   const total = Number.isInteger(deliveries.count) && deliveries.count > 0 ? deliveries.count : null;
   if (value === '0') {
     if (!deliveries.had) return { text: '', attach: false };
-    return { text: total && total > 1 ? `${total}回とも自然分娩` : '自然分娩', attach: true };
+    return { text: total && total > 1 ? words.allNatural(total) : words.natural, attach: true };
   }
   if (/^\d+$/.test(value)) {
     const count = Number(value);
     if (total) {
-      if (count >= total) return { text: total === 1 ? '帝王切開' : `${total}回とも帝王切開`, attach: true };
-      return { text: `帝王切開${count}回、自然分娩${total - count}回`, attach: true };
+      if (count >= total) return { text: total === 1 ? words.caesarean : words.allCaesarean(total), attach: true };
+      return { text: words.mixed(count, total - count), attach: true };
     }
-    return { text: `帝王切開${count}回`, attach: false };
+    return { text: words.count(count), attach: false };
   }
-  return { text: `帝王切開 ${value}`, attach: false };
+  return { text: words.other(value), attach: false };
 };
 
 const describeCSection = (user, lang, deliveries) => {
   const raw = normalizeDisplayValue(user?.[resolveCSectionKey(user)]);
   if (!raw) return { text: '', attach: false };
   const value = formatCSectionValue(raw);
-  if (lang === 'ja') return describeCSectionJa(value, deliveries);
+  const extraWords = getExtraLocale(lang)?.sentences.cSection;
+  if (extraWords) return describeCSectionExtra(extraWords, value, deliveries);
   const uk = lang === 'uk';
   const total = Number.isInteger(deliveries.count) && deliveries.count > 0 ? deliveries.count : null;
 
@@ -297,11 +303,12 @@ const ukDonationWord = count => {
 const describeDonations = (user, lang) => {
   const read = readCount(normalizeDisplayValue(user?.experience));
   if (!read) return '';
-  if (lang === 'ja') {
-    if (read.count === 0) return 'ドネーション経験なし';
-    if (read.text) return `ドネーション：${read.text}`;
-    if (read.yes) return 'ドネーション経験あり';
-    return `ドネーション${read.count}回`;
+  const extraWords = getExtraLocale(lang)?.sentences.donations;
+  if (extraWords) {
+    if (read.count === 0) return extraWords.none;
+    if (read.text) return extraWords.text(read.text);
+    if (read.yes) return extraWords.yes;
+    return extraWords.count(read.count);
   }
   if (read.count === 0) return lang === 'uk' ? 'донацій ще не було' : 'no donations yet';
   if (read.text) return `${lang === 'uk' ? 'донації' : 'donations'}: ${read.text}`;
@@ -328,8 +335,9 @@ export const buildProfileSummaryRows = (user, language) => {
   const deliveries = describeDeliveries(user, lang);
   const cSection = describeCSection(user, lang, deliveries);
   const donations = describeDonations(user, lang);
+  const extraList = getExtraLocale(lang)?.sentences.clauses;
   const deliveryText = cSection.attach && deliveries.text
-    ? `${deliveries.text}, ${cSection.text}`
+    ? (extraList ? extraList([deliveries.text, cSection.text]) : `${deliveries.text}, ${cSection.text}`)
     : deliveries.text;
   const reproduction = [deliveryText, cSection.attach ? '' : cSection.text, donations].filter(Boolean);
   if (reproduction.length) {
@@ -364,7 +372,7 @@ const EDUCATION_FLAG_VALUES = new Set(['yes', 'no', 'так', 'ні']);
 const describeEducation = (user, lang) => {
   const raw = normalizeDisplayValue(user?.education);
   if (!raw || isOtherValue(raw) || EDUCATION_FLAG_VALUES.has(raw.toLowerCase())) return '';
-  const localized = lang === 'uk' || lang === 'ja' ? translateFieldValue('education', raw, lang) : raw;
+  const localized = lang === 'uk' || getExtraLocale(lang) ? translateFieldValue('education', raw, lang) : raw;
   // Підпис рядка вже каже «Освіта»: «вища освіта» поруч із ним — повтор.
   return lowerFirst(localized.replace(/\s+освіта$/i, '').trim());
 };

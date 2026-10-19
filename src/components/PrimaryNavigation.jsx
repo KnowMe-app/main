@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { getExtraLocale } from '../utils/locales';
 import { NavLink } from 'react-router-dom';
 import styled from 'styled-components';
 import { FaSearch, FaRegFolderOpen, FaRegUser, FaChevronLeft, FaEllipsisV, FaPen } from 'react-icons/fa';
@@ -87,27 +88,33 @@ const MenuButton = styled(SlotButton)`
 
 // Підпис вкладки карток каже, що на ній відкрито зараз: над формою
 // доповнення «Мої картки» обіцяли список власних карток, а лежала там чужа.
-const WORKSPACE_LABELS = {
-  overlay: { uk: 'Доповнення', en: 'Enrich card', ja: 'カードを補足' },
-  draft: { uk: 'Чернетка', en: 'Draft', ja: '下書き' },
-};
-
-// Написи рядка навігації трьома мовами; невідома мова бере українські.
+// Написи рядка навігації: українська й англійська тут, решта мов — у своїх
+// модулях (`utils/locales`, поле `nav`); невідома мова бере українські.
 const NAV_TEXTS = {
-  uk: { back: 'Назад', menu: 'Відкрити меню', nav: 'Основна навігація', find: 'Пошук анкет', add: 'Додати картку', mine: 'Мій профіль' },
-  en: { back: 'Back', menu: 'Open menu', nav: 'Main navigation', find: 'Find profiles', add: 'Add card', mine: 'My profile' },
-  ja: { back: '戻る', menu: 'メニューを開く', nav: 'メインナビゲーション', find: 'プロフィール検索', add: 'カードを追加', mine: 'マイプロフィール' },
+  uk: { back: 'Назад', menu: 'Відкрити меню', nav: 'Основна навігація', find: 'Пошук анкет', add: 'Додати картку', mine: 'Мій профіль', overlay: 'Доповнення', draft: 'Чернетка' },
+  en: { back: 'Back', menu: 'Open menu', nav: 'Main navigation', find: 'Find profiles', add: 'Add card', mine: 'My profile', overlay: 'Enrich card', draft: 'Draft' },
 };
+const resolveNavTexts = language => NAV_TEXTS[language] || getExtraLocale(language)?.nav || NAV_TEXTS.uk;
 
 // Keep the main destinations visible; account settings live in the "⋮" menu
 // at the end of the same row, and "back" — at its start.
 export default function PrimaryNavigation() {
   const { language } = useAppSettings();
-  const lang = NAV_TEXTS[language] ? language : 'uk';
-  const texts = NAV_TEXTS[lang];
+  const texts = resolveNavTexts(language);
   const slot = usePrimaryNavigationSlotState();
   const [menuOpen, setMenuOpen] = useState(false);
-  const workspace = WORKSPACE_LABELS[slot?.workspaceLabel];
+  // Пункти меню складає сторінка (`renderMenu` через ref), і в тому самому
+  // проході, де змінилась мова, ref ще тримає її попередній рендер: відкрите
+  // меню лишалось би мовою, з якої щойно перемкнули. Після коміту ref уже
+  // свіжий — один повторний рендер його й підхоплює.
+  const [, refreshMenu] = useState(0);
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const timer = setTimeout(() => refreshMenu(value => value + 1), 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language]);
+  const workspace = slot?.workspaceLabel ? texts[slot.workspaceLabel] : '';
   const backLabel = texts.back;
   const menuLabel = texts.menu;
   const closeMenu = () => setMenuOpen(false);
@@ -125,7 +132,7 @@ export default function PrimaryNavigation() {
         <NavLink to="/matching" end><FaSearch aria-hidden="true" />{texts.find}</NavLink>
         <NavLink to="/matching/create-profile">
           {workspace ? <FaPen aria-hidden="true" /> : <FaRegFolderOpen aria-hidden="true" />}
-          {workspace ? workspace[lang] : texts.add}
+          {workspace || texts.add}
         </NavLink>
         <NavLink to="/my-profile"><FaRegUser aria-hidden="true" />{texts.mine}</NavLink>
         <SideSlot>

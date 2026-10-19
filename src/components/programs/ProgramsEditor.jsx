@@ -39,6 +39,7 @@ import {
   programsToRecord,
 } from '../../utils/donorPrograms';
 import { DEFAULT_PROGRAM_CURRENCY, formatProgramMoney } from '../../utils/programCurrency';
+import { getExtraLocale } from '../../utils/locales';
 import { uiText } from '../../utils/uiTranslations';
 import { PARENT_DONOR_WISH_FIELDS, isWishSelected, listWishChoices, toggleWish } from '../../utils/parentWishes';
 import { getOptionLabel } from '../formFields';
@@ -1067,15 +1068,16 @@ const pluralUk = (count, one, few, many) => {
 
 const countText = (count, forms, language) => {
   if (language === 'en') return `${count} ${count === 1 ? forms.en[0] : forms.en[1]}`;
-  if (language === 'ja' && forms.ja) return `${forms.ja}${count}件`;
+  const units = getExtraLocale(language)?.units;
+  if (units && forms.key) return units.counter(count, units.nouns[forms.key]);
   return `${count} ${pluralUk(count, ...forms.uk)}`;
 };
 
 const WORDS = Object.freeze({
-  payment: { uk: ['виплата', 'виплати', 'виплат'], en: ['payment', 'payments'], ja: '支払い' },
-  bonus: { uk: ['доплата', 'доплати', 'доплат'], en: ['supplement', 'supplements'], ja: '追加手当' },
-  requirement: { uk: ['вимога', 'вимоги', 'вимог'], en: ['requirement', 'requirements'], ja: '条件' },
-  expense: { uk: ['витрата', 'витрати', 'витрат'], en: ['expense', 'expenses'], ja: '費用' },
+  payment: { key: 'payment', uk: ['виплата', 'виплати', 'виплат'], en: ['payment', 'payments'] },
+  bonus: { key: 'bonus', uk: ['доплата', 'доплати', 'доплат'], en: ['supplement', 'supplements'] },
+  requirement: { key: 'requirement', uk: ['вимога', 'вимоги', 'вимог'], en: ['requirement', 'requirements'] },
+  expense: { key: 'expense', uk: ['витрата', 'витрати', 'витрат'], en: ['expense', 'expenses'] },
 });
 
 

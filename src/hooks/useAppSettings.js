@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { SUPPORTED_LANGUAGE_CODES } from '../utils/locales';
 
-// Global app settings: colour theme (light/dark) and interface language (uk/en/ja).
+// Global app settings: colour theme (light/dark) and interface language
+// (any code from `utils/locales` — uk, en, es, de, nl, ja, zh).
 // Persisted in localStorage and synced between mounted components via a window event,
 // so the toggles in the three-dots menu update every open screen immediately.
 
@@ -27,9 +29,9 @@ export const getStoredThemeMode = () => {
 // «Особисті дані», бо частина написів мову не виконує. Аудиторія застосунку —
 // українська, тож англійську обирають явно, у меню трьох крапок.
 export const DEFAULT_APP_LANGUAGE = 'uk';
-// Японську виконують екрани матчингу (`utils/jaTranslations`); адмінські
-// мовою інтерфейсу не користуються й лишаються українськими.
-export const SUPPORTED_APP_LANGUAGES = Object.freeze(['uk', 'en', 'ja']);
+// Перелік мов — у реєстрі `utils/locales`. Виконують їх екрани матчингу;
+// адмінські мовою інтерфейсу не користуються й лишаються українськими.
+export const SUPPORTED_APP_LANGUAGES = SUPPORTED_LANGUAGE_CODES;
 
 export const getStoredLanguage = () => {
   try {

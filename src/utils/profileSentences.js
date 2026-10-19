@@ -23,7 +23,7 @@ import {
   noseShapeOptions,
   raceOptions,
 } from '../components/formFields';
-import { translateOptionValueToJapanese } from './jaTranslations';
+import { getExtraLocale, translateOptionValue } from './locales';
 
 const OPTIONS_BY_FIELD = {
   hairColor: hairColorOptions,
@@ -135,7 +135,7 @@ export const presetSentenceWord = (field, value, lang) => {
   const override = SENTENCE_FORMS[lang]?.[field]?.[key];
   if (override) return override;
   if (lang === 'en') return key;
-  if (lang === 'ja') return translateOptionValueToJapanese(field, option.placeholder) || key;
+  if (getExtraLocale(lang)) return translateOptionValue(lang, field, option.placeholder) || key;
   const word = lower(String(option.ukrainian || ''));
   return field === 'faceShape' ? toFeminine(word) : word;
 };
@@ -144,14 +144,13 @@ export const presetSentenceWord = (field, value, lang) => {
 const joinClauses = (clauses, lang) => {
   const list = clauses.filter(Boolean);
   if (list.length < 2) return list[0] || '';
-  if (lang === 'ja') return list.join('、');
+  const extra = getExtraLocale(lang);
+  if (extra) return extra.sentences.list(list);
   const and = lang === 'en' ? 'and' : 'та';
   return `${list.slice(0, -1).join(', ')} ${and} ${list[list.length - 1]}`;
 };
 
 const sentence = text => (text ? `${text.charAt(0).toLocaleUpperCase('uk-UA')}${text.slice(1)}.` : '');
-// Японське речення великої літери не має й кінчається «。».
-const jaSentence = text => (text ? `${text}。` : '');
 
 /**
  * Речення про зовнішність і поля, які в нього лягли (`used`): ті самі поля
@@ -195,23 +194,26 @@ export const describeLooks = ({ user, lang, typed, includeHair = false }) => {
   if (glasses) used.add('glasses');
 
   const parts = [];
-  if (lang === 'ja') {
+  const looks = getExtraLocale(lang)?.sentences.looks;
+  if (looks) {
+    // Мови понад українську й англійську складають речення зі своїх шаблонів
+    // (`utils/locales`): «підпис + значення» не вимагає узгодження роду.
     const features = joinClauses([
-      hairWords.length ? `髪は${hairWords.join('・')}` : '',
-      face ? `顔の形は${face}` : '',
-      nose ? `鼻は${nose}` : '',
-      lips ? `唇は${lips}` : '',
-      chin ? `あごは${chin}` : '',
+      hairWords.length ? looks.hair(getExtraLocale(lang).sentences.hair.join(hairWords)) : '',
+      face ? looks.face(face) : '',
+      nose ? looks.nose(nose) : '',
+      lips ? looks.lips(lips) : '',
+      chin ? looks.chin(chin) : '',
     ], lang);
-    if (features) parts.push(jaSentence(`${features}です`));
-    const figure = [
-      body ? `体型は${body}` : '',
-      breast ? `バストサイズは${breast}` : '',
-      clothing ? `服のサイズは${clothing}` : '',
-      shoe ? `靴のサイズは${shoe}` : '',
-    ].filter(Boolean).join('、');
-    if (figure) parts.push(jaSentence(`${figure}です`));
-    if (race) parts.push(jaSentence(`民族は${race}です`));
+    if (features) parts.push(looks.features(features));
+    const figure = joinClauses([
+      body ? looks.body(body) : '',
+      breast ? looks.breast(breast) : '',
+      clothing ? looks.clothing(clothing) : '',
+      shoe ? looks.shoe(shoe) : '',
+    ], lang);
+    if (figure) parts.push(looks.figure(figure));
+    if (race) parts.push(looks.race(race));
     if (glasses) parts.push(glasses);
   } else if (lang === 'en') {
     const features = joinClauses([
@@ -254,7 +256,7 @@ export const describeLooks = ({ user, lang, typed, includeHair = false }) => {
     if (race) parts.push(sentence(`моя раса — ${race}`));
     if (glasses) parts.push(glasses);
   }
-  return { text: parts.join(' '), used };
+  return { text: parts.join(getExtraLocale(lang)?.sentences.sentenceGap ?? ' '), used };
 };
 
 const GLASSES_NO = new Set(['no', 'false', 'ні', 'немає', 'нема', 'нет', 'не ношу', '-', '—']);
@@ -269,9 +271,10 @@ export const describeGlasses = (value, lang) => {
   const raw = pickCurrent(value);
   if (!raw) return '';
   const key = lower(raw).replace(/[.!]+$/u, '');
-  if (lang === 'ja') {
-    if (GLASSES_NO.has(key)) return '眼鏡はかけていません。視力は良好です。';
-    if (GLASSES_YES.has(key)) return '眼鏡をかけています。';
+  const glassesWords = getExtraLocale(lang)?.sentences.glasses;
+  if (glassesWords) {
+    if (GLASSES_NO.has(key)) return glassesWords.no;
+    if (GLASSES_YES.has(key)) return glassesWords.yes;
   }
   if (GLASSES_NO.has(key)) return lang === 'en' ? "I don't wear glasses, my eyesight is good." : 'Окулярів не ношу, зір гарний.';
   if (GLASSES_YES.has(key)) return lang === 'en' ? 'I wear glasses.' : 'Ношу окуляри.';
@@ -282,10 +285,10 @@ export const describeGlasses = (value, lang) => {
   const text = raw.replace(/[.!]+$/u, '');
   if (/^[+-−]?\s*\d+([.,]\d+)?(\s*[/;]\s*[+-−]?\s*\d+([.,]\d+)?)?$/u.test(text)) {
     const diopters = text.replace(/^-/u, '−').replace(/\/-/gu, '/−');
-    if (lang === 'ja') return `視力は${diopters}ディオプターです。`;
+    if (glassesWords) return glassesWords.diopters(diopters);
     return lang === 'en' ? `My eyesight is ${diopters} diopters.` : `Мій зір — ${diopters} діоптрії.`;
   }
-  if (lang === 'ja') return `視力と眼鏡について：${text}。`;
+  if (glassesWords) return glassesWords.other(text);
   return lang === 'en' ? `About my eyesight and glasses: ${lowerFirstWord(text)}.` : `Щодо зору й окулярів — ${lowerFirstWord(text)}.`;
 };
 
@@ -324,15 +327,17 @@ export const describeHair = (user, lang) => {
     }
     const raw = pickCurrent(user?.[field]);
     if (!raw || ['other', 'інше'].includes(lower(raw))) return;
+    const hairWords = getExtraLocale(lang)?.sentences.hair;
     const label = field === 'hairColor'
-      ? (lang === 'en' ? 'hair color' : lang === 'ja' ? '髪の色' : 'колір волосся')
-      : (lang === 'en' ? 'hair texture' : lang === 'ja' ? '髪質' : 'структура волосся');
+      ? (lang === 'en' ? 'hair color' : hairWords ? hairWords.colorLabel : 'колір волосся')
+      : (lang === 'en' ? 'hair texture' : hairWords ? hairWords.textureLabel : 'структура волосся');
     ownAnswers.push(`${label} — ${lowerFirstWord(raw)}`);
   });
   const parts = [];
   if (presetWords.length) {
-    parts.push(lang === 'ja'
-      ? `${presetWords.join('・')}の髪`
+    const hairWords = getExtraLocale(lang)?.sentences.hair;
+    parts.push(hairWords
+      ? hairWords.phrase(presetWords)
       : `${presetWords.join(' ')} ${lang === 'en' ? 'hair' : 'волосся'}`);
   }
   return [...parts, ...ownAnswers].join(', ');
@@ -351,12 +356,19 @@ export const describeWork = ({ user, lang, typed }) => {
   if (education) used.add('education');
   const rawProfession = typed('profession');
   const noProfession = NO_PROFESSION_VALUES.has(lower(rawProfession).replace(/[.!]+$/u, ''));
-  const profession = rawProfession && !noProfession ? lowerCapitalizedWords(rawProfession) : '';
+  // Мала літера — лише українській і англійській: німецький іменник з неї
+  // пишеться з великої, а решту мов краще лишити такою, як набрала людина.
+  const keepAsTyped = Boolean(getExtraLocale(lang));
+  const profession = rawProfession && !noProfession
+    ? (keepAsTyped ? rawProfession : lowerCapitalizedWords(rawProfession))
+    : '';
   if (rawProfession) used.add('profession');
   let text = '';
-  if (lang === 'ja') {
-    const clauses = [education ? `学歴は${education}` : '', profession ? `職業は${profession}` : ''].filter(Boolean);
-    text = clauses.length ? jaSentence(`${clauses.join('、')}です`) : '';
+  const work = getExtraLocale(lang)?.sentences.work;
+  if (work) {
+    const clauses = [education ? work.education(education) : '', profession ? work.profession(profession) : ''];
+    const list = joinClauses(clauses, lang);
+    text = list ? work.sentence(list) : '';
   } else if (lang === 'en') {
     const clauses = [education ? `have ${education}` : '', profession ? `work as ${profession}` : ''].filter(Boolean);
     text = clauses.length ? sentence(`I ${clauses.join(' and ')}`) : '';
@@ -374,9 +386,10 @@ export const describeSizes = ({ lang, typed }) => {
   const shoe = typed('shoeSize');
   if (clothing) used.add('clothingSize');
   if (shoe) used.add('shoeSize');
-  if (lang === 'ja') {
-    const jaClauses = [clothing ? `服のサイズは${clothing}` : '', shoe ? `靴のサイズは${shoe}` : ''].filter(Boolean);
-    return { text: jaClauses.length ? jaSentence(`${jaClauses.join('、')}です`) : '', used };
+  const sizes = getExtraLocale(lang)?.sentences.sizes;
+  if (sizes) {
+    const list = joinClauses([clothing ? sizes.clothing(clothing) : '', shoe ? sizes.shoe(shoe) : ''], lang);
+    return { text: list ? sizes.sentence(list) : '', used };
   }
   const clauses = lang === 'en'
     ? [clothing ? `my clothing size is ${clothing}` : '', shoe ? `shoe size ${shoe}` : '']

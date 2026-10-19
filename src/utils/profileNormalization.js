@@ -1,3 +1,4 @@
+import { formatRegionDisplayName, getExtraLocale } from './locales';
 /**
  * Країна, область, місто, зріст і вага — у тому вигляді, в якому їх можна
  * показати й за яким можна фільтрувати.
@@ -40,22 +41,9 @@ const buildIndex = (entries, keysOf) => {
   return index;
 };
 
-// Японська бере англійські назви областей і міст (латиницею їх і шукають),
-// а країну називає по-японськи (`JA_COUNTRY_NAMES`).
-const pickLanguage = language => (language === 'en' || language === 'ja' ? 'en' : 'uk');
-
-const JA_COUNTRY_NAMES = {
-  UA: 'ウクライナ', PL: 'ポーランド', DE: 'ドイツ', CZ: 'チェコ', SK: 'スロバキア', HU: 'ハンガリー',
-  ES: 'スペイン', IT: 'イタリア', FR: 'フランス', PT: 'ポルトガル', NL: 'オランダ', AT: 'オーストリア',
-  CH: 'スイス', BE: 'ベルギー', SE: 'スウェーデン', NO: 'ノルウェー', FI: 'フィンランド', DK: 'デンマーク',
-  IE: 'アイルランド', GB: 'イギリス', LT: 'リトアニア', LV: 'ラトビア', EE: 'エストニア', RO: 'ルーマニア',
-  BG: 'ブルガリア', GR: 'ギリシャ', CY: 'キプロス', TR: 'トルコ', MD: 'モルドバ', BY: 'ベラルーシ',
-  RU: 'ロシア', GE: 'ジョージア', AM: 'アルメニア', AZ: 'アゼルバイジャン', KZ: 'カザフスタン',
-  KG: 'キルギス', UZ: 'ウズベキスタン', TM: 'トルクメニスタン', IL: 'イスラエル', AE: 'アラブ首長国連邦',
-  US: 'アメリカ', CA: 'カナダ', MX: 'メキシコ', BR: 'ブラジル', AR: 'アルゼンチン', CO: 'コロンビア',
-  AU: 'オーストラリア', IN: 'インド', BD: 'バングラデシュ', PH: 'フィリピン', KE: 'ケニア', UG: 'ウガンダ',
-  NG: 'ナイジェリア', GH: 'ガーナ', ZA: '南アフリカ', ZW: 'ジンバブエ', EG: 'エジプト', CN: '中国', TH: 'タイ',
-};
+// Мови понад українську беруть англійські назви областей і міст (латиницею
+// їх і шукають), а країну називають своєю мовою через `Intl.DisplayNames`.
+const pickLanguage = language => (language === 'uk' || !language ? 'uk' : 'en');
 
 // --- країни -----------------------------------------------------------------
 
@@ -133,7 +121,7 @@ export const formatCountryName = (value, language) => {
   const text = cleanText(value);
   if (!text) return '';
   const entry = COUNTRY_INDEX.get(foldLocationKey(text));
-  if (entry && language === 'ja') return JA_COUNTRY_NAMES[entry.code] || entry.en;
+  if (entry && getExtraLocale(language)) return formatRegionDisplayName(language, entry.code) || entry.en;
   return entry ? entry[pickLanguage(language)] : text;
 };
 

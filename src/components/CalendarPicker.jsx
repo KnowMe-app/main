@@ -1,3 +1,4 @@
+import { getExtraLocale, listMonthNames, listWeekdayNames } from '../utils/locales';
 import React, { useMemo, useState } from 'react';
 import styled from 'styled-components';
 import { uiText } from '../utils/uiTranslations';
@@ -25,13 +26,23 @@ const CARD_BG = 'var(--matching-card-bg, var(--km-card, #FFFFFF))';
 const MONTHS = Object.freeze({
   uk: ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'],
   en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
-  ja: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
 });
 const WEEKDAYS = Object.freeze({
   uk: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'],
   en: ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'],
-  ja: ['月', '火', '水', '木', '金', '土', '日'],
 });
+
+// Решта мов — з `Intl`: таблиця на кожну мову розійшлась би з браузером.
+const calendarWords = language => {
+  if (MONTHS[language]) return { months: MONTHS[language], weekdays: WEEKDAYS[language] };
+  if (getExtraLocale(language)) {
+    return {
+      months: listMonthNames(language),
+      weekdays: listWeekdayNames(language, { mondayFirst: true, width: 'narrow' }),
+    };
+  }
+  return { months: MONTHS.uk, weekdays: WEEKDAYS.uk };
+};
 
 const sameDay = (a, b) => Boolean(a && b)
   && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -122,7 +133,7 @@ const Day = styled.button`
 `;
 
 const CalendarPicker = ({ value = null, onSelect, maxDate = null, language = 'uk' }) => {
-  const lang = MONTHS[language] ? language : 'uk';
+  const words = useMemo(() => calendarWords(language), [language]);
   const today = useMemo(() => atMidnight(new Date()), []);
   const limit = maxDate ? atMidnight(maxDate) : null;
   const initial = value || limit || today;
@@ -139,11 +150,12 @@ const CalendarPicker = ({ value = null, onSelect, maxDate = null, language = 'uk
     <Wrap data-testid="calendar-picker" role="group" aria-label={uiText('Календар', language)} onClick={event => event.stopPropagation()}>
       <Head>
         <NavButton type="button" aria-label={uiText('Попередній місяць', language)} onClick={() => shift(-1)}>‹</NavButton>
-        <b aria-live="polite">{MONTHS[lang][view.month]} {view.year}</b>
+        <b aria-live="polite">{words.months[view.month]} {view.year}</b>
         <NavButton type="button" aria-label={uiText('Наступний місяць', language)} disabled={!canGoNext} onClick={() => shift(1)}>›</NavButton>
       </Head>
       <Grid>
-        {WEEKDAYS[lang].map(day => <Weekday key={day} aria-hidden="true">{day}</Weekday>)}
+        {/* Ключ — позиція: вузькі назви днів повторюються (T, T; S, S). */}
+        {words.weekdays.map((day, index) => <Weekday key={index} aria-hidden="true">{day}</Weekday>)}
         {days.map(day => {
           const outside = day.getMonth() !== view.month;
           const selected = sameDay(day, value);
@@ -156,7 +168,7 @@ const CalendarPicker = ({ value = null, onSelect, maxDate = null, language = 'uk
               $selected={selected}
               $today={sameDay(day, today)}
               aria-pressed={selected}
-              aria-label={`${day.getDate()} ${MONTHS[lang][day.getMonth()]} ${day.getFullYear()}`}
+              aria-label={`${day.getDate()} ${words.months[day.getMonth()]} ${day.getFullYear()}`}
               disabled={disabled}
               onClick={() => onSelect?.(day)}
             >

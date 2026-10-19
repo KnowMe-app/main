@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useLocation } from 'react-router-dom';
-import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEraser, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaDatabase, FaMoon, FaSun, FaGlobe } from 'react-icons/fa';
+import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEraser, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaDatabase, FaMoon, FaSun } from 'react-icons/fa';
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
+import { LanguagePicker } from './LanguagePicker';
 import { useAppSettings } from 'hooks/useAppSettings';
 import { uiText } from 'utils/uiTranslations';
 import {
@@ -357,42 +358,9 @@ export const ProfileDotsMenu = ({
             </SegmentedOption>
           </SegmentedControl>
         </SettingRow>
-        <SettingRow>
-          <ItemIcon><FaGlobe /></ItemIcon>
-          <span>
-            <ItemLabel>{uiText('Мова', language)}</ItemLabel>
-            <ItemDescription>{uiText('Мова документів, правил і карток анкет', language)}</ItemDescription>
-          </span>
-          <SegmentedControl role="group" aria-label={uiText('Перемкнути мову', language)}>
-            <SegmentedOption
-              type="button"
-              $active={language === 'uk'}
-              aria-pressed={language === 'uk'}
-              onClick={() => setLanguage('uk')}
-            >
-              UK
-            </SegmentedOption>
-            <SegmentedOption
-              type="button"
-              $active={language === 'en'}
-              aria-pressed={language === 'en'}
-              onClick={() => setLanguage('en')}
-            >
-              EN
-            </SegmentedOption>
-            {/* Японська — для екранів матчингу; адмінські й конструктор
-                документів лишаються українськими. */}
-            <SegmentedOption
-              type="button"
-              lang="ja"
-              $active={language === 'ja'}
-              aria-pressed={language === 'ja'}
-              onClick={() => setLanguage('ja')}
-            >
-              日本語
-            </SegmentedOption>
-          </SegmentedControl>
-        </SettingRow>
+        {/* Мов сім, і сегментований перемикач на них не ліз у рядок — вибір
+            згорнутий в один рядок і розгортається сіткою (`LanguagePicker`). */}
+        <LanguagePicker language={language} setLanguage={setLanguage} />
       </MenuSection>
 
       {/* «Переглянути анкету» звідси прибрано: той пункт відкривав інструкцію

@@ -1,5 +1,5 @@
 import { resolveProfileLanguage } from './profileTexts';
-import { JA_BY_UK } from './jaTranslations';
+import { getExtraLocale } from './locales';
 
 /**
  * Англійський бік екранів матчингу.
@@ -1350,10 +1350,11 @@ const EN_BY_UK = {
 export const uiText = (text, language, vars) => {
   const source = String(text ?? '');
   const lang = resolveProfileLanguage(language);
-  // Японського рядка може ще не бути — тоді японський читач бачить
-  // англійський, а не український.
-  const translated = lang === 'ja'
-    ? JA_BY_UK[source] ?? EN_BY_UK[source] ?? source
+  // Рядка мовою читача може ще не бути — тоді він бачить англійський, а не
+  // український: для того, хто обрав не українську, англійська ближча.
+  const extra = getExtraLocale(lang);
+  const translated = extra
+    ? extra.byUk[source] ?? EN_BY_UK[source] ?? source
     : lang === 'en' ? EN_BY_UK[source] ?? source : source;
   if (!vars) return translated;
   return translated.replace(/\{(\w+)\}/g, (match, key) => (

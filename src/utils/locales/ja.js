@@ -1,5 +1,6 @@
 /**
- * Японський бік екранів матчингу.
+ * Японський бік екранів матчингу. Форма модуля — спільна для всіх мов
+ * понад українську й англійську (`utils/locales/index.js`).
  *
  * Будова та сама, що в англійського (`uiTranslations`, `profileTexts`):
  * ключ — український рядок інтерфейсу, англійський підпис поля чи англійське
@@ -11,7 +12,7 @@
  * користуються (`getFieldLabel` без мови) і лишаються українськими.
  * Текст, який ввела людина, не перекладається ніколи.
  */
-export const JA_BY_UK = {
+const BY_UK = {
   'Шукаємо донора ооцитів': '卵子ドナーを募集しています',
   'Шукаємо сурогатну маму': '代理母を募集しています',
   'Основна виплата': '基本報酬',
@@ -1236,7 +1237,7 @@ export const JA_BY_UK = {
 };
 
 /** Підписи полів і заголовки блоків картки: англійський оригінал → японський. */
-export const JA_BY_EN_LABEL = {
+const BY_EN_LABEL = {
   'Main information': '基本情報',
   Appearance: '外見',
   'Donation experience': 'ドネーション経験',
@@ -1312,7 +1313,7 @@ export const JA_BY_EN_LABEL = {
 };
 
 /** Статичні написи картки (`profileUiText`): ключ — той самий, що в `profileTexts`. */
-export const JA_UI_TEXTS = {
+const UI_TEXTS = {
   showContacts: '連絡先を表示',
   show: '表示',
   personalNote: '自分用メモ',
@@ -1331,7 +1332,7 @@ export const JA_UI_TEXTS = {
 };
 
 /** Значення, які підставляє застосунок (`derivedValueTexts`). */
-export const JA_DERIVED_VALUES = {
+const DERIVED_VALUES = {
   yesNo: ['はい', 'いいえ'],
   marital: ['既婚', '未婚'],
   ownKids: ['あり', 'なし'],
@@ -1342,7 +1343,7 @@ export const JA_DERIVED_VALUES = {
  * японське. Слово буває спільним для різних полів, а означає різне («Round» —
  * і кругле обличчя, і фігура «яблуко»), тож поле може мати власний переклад.
  */
-export const JA_OPTION_VALUES = {
+const OPTION_VALUES = {
   '-': 'いいえ',
   No: 'いいえ',
   Yes: 'はい',
@@ -1419,19 +1420,118 @@ export const JA_OPTION_VALUES = {
   Considering: '検討中',
 };
 
-export const JA_FIELD_OPTION_VALUES = {
+const FIELD_OPTION_VALUES = {
   bodyType: { Round: 'リンゴ型' },
   faceShape: { Round: '丸顔' },
+  // «Straight» — і волосся, і ніс: ストレート про ніс не кажуть.
+  noseShape: { Straight: 'まっすぐ' },
+  chin: { Round: '丸い' },
 };
 
-/** Японський переклад значення довідника, або `null`, коли такого немає. */
-export const translateOptionValueToJapanese = (fieldName, value) => {
-  const text = String(value ?? '').trim();
-  if (!text) return null;
-  const byField = JA_FIELD_OPTION_VALUES[fieldName] || {};
-  const match = key => Object.keys(key).find(candidate => candidate.toLowerCase() === text.toLowerCase());
-  const fieldKey = match(byField);
-  if (fieldKey) return byField[fieldKey];
-  const key = match(JA_OPTION_VALUES);
-  return key ? JA_OPTION_VALUES[key] : null;
+/** Японські речення картки — без родів і множини, кінчаються «。». */
+const sentence = text => (text ? `${text}。` : '');
+const listJa = items => items.filter(Boolean).join('、');
+
+const SENTENCES = {
+  list: listJa,
+  // Частини однієї фрази — комою, без сполучника: «2 partos, el último hace 8 meses».
+  clauses: items => items.filter(Boolean).join('、'),
+  // Речення стоять впритул: проміжок між ними тут не пишуть.
+  sentenceGap: '',
+  looks: {
+    hair: v => `髪は${v}`,
+    face: v => `顔の形は${v}`,
+    nose: v => `鼻は${v}`,
+    lips: v => `唇は${v}`,
+    chin: v => `あごは${v}`,
+    features: list => sentence(`${list}です`),
+    body: v => `体型は${v}`,
+    breast: v => `バストサイズは${v}`,
+    clothing: v => `服のサイズは${v}`,
+    shoe: v => `靴のサイズは${v}`,
+    figure: list => sentence(`${list}です`),
+    race: v => sentence(`民族は${v}です`),
+  },
+  glasses: {
+    no: '眼鏡はかけていません。視力は良好です。',
+    yes: '眼鏡をかけています。',
+    diopters: d => `視力は${d}ディオプターです。`,
+    other: t => `視力と眼鏡について：${t}。`,
+    short: 'なし、視力良好',
+  },
+  hair: {
+    join: words => words.join('・'),
+    phrase: words => `${words.join('・')}の髪`,
+    colorLabel: '髪の色',
+    textureLabel: '髪質',
+  },
+  eyes: v => `${v}の目`,
+  work: {
+    education: v => `学歴は${v}`,
+    profession: v => `職業は${v}`,
+    sentence: list => sentence(`${list}です`),
+  },
+  sizes: {
+    clothing: v => `服のサイズは${v}`,
+    shoe: v => `靴のサイズは${v}`,
+    sentence: list => sentence(`${list}です`),
+  },
+  deliveries: {
+    none: '出産なし',
+    recencyOnly: r => `最後の出産は${r}前`,
+    text: t => `出産：${t}`,
+    yes: '出産経験あり',
+    count: n => `出産${n}回`,
+    recencySingle: r => `${r}前`,
+    recencyLast: r => `最後は${r}前`,
+  },
+  cSection: {
+    natural: '自然分娩',
+    allNatural: n => `${n}回とも自然分娩`,
+    caesarean: '帝王切開',
+    allCaesarean: n => `${n}回とも帝王切開`,
+    mixed: (count, rest) => `帝王切開${count}回、自然分娩${rest}回`,
+    count: n => `帝王切開${n}回`,
+    other: v => `帝王切開 ${v}`,
+  },
+  donations: {
+    none: 'ドネーション経験なし',
+    text: t => `ドネーション：${t}`,
+    yes: 'ドネーション経験あり',
+    count: n => `ドネーション${n}回`,
+  },
+  recency: {
+    lessThanMonth: '1か月未満',
+    months: n => `${n}か月`,
+    years: n => `${n}年`,
+  },
 };
+
+/** Дрібні одиниці, які екрани складають самі. */
+const UNITS = {
+  month: () => 'か月',
+  week: '週',
+  cycleDay: '日目',
+  programs: () => 'プログラム',
+  counter: (count, noun) => `${noun}${count}件`,
+  nouns: { payment: '支払い', bonus: '追加手当', requirement: '条件', expense: '費用' },
+};
+
+const NAV = { back: '戻る', menu: 'メニューを開く', nav: 'メインナビゲーション', find: 'プロフィール検索', add: 'カードを追加', mine: 'マイプロフィール', overlay: 'カードを補足', draft: '下書き' };
+
+const ja = {
+  code: 'ja',
+  nativeName: '日本語',
+  locale: 'ja-JP',
+  byUk: BY_UK,
+  byEnLabel: BY_EN_LABEL,
+  uiTexts: UI_TEXTS,
+  derived: DERIVED_VALUES,
+  optionValues: OPTION_VALUES,
+  fieldOptionValues: FIELD_OPTION_VALUES,
+  sentences: SENTENCES,
+  units: UNITS,
+  nav: NAV,
+};
+
+export default ja;
