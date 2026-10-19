@@ -25,10 +25,12 @@ const CARD_BG = 'var(--matching-card-bg, var(--km-card, #FFFFFF))';
 const MONTHS = Object.freeze({
   uk: ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'],
   en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+  ja: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
 });
 const WEEKDAYS = Object.freeze({
   uk: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'],
   en: ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'],
+  ja: ['月', '火', '水', '木', '金', '土', '日'],
 });
 
 const sameDay = (a, b) => Boolean(a && b)
@@ -120,7 +122,7 @@ const Day = styled.button`
 `;
 
 const CalendarPicker = ({ value = null, onSelect, maxDate = null, language = 'uk' }) => {
-  const lang = language === 'en' ? 'en' : 'uk';
+  const lang = MONTHS[language] ? language : 'uk';
   const today = useMemo(() => atMidnight(new Date()), []);
   const limit = maxDate ? atMidnight(maxDate) : null;
   const initial = value || limit || today;

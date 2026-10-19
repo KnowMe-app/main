@@ -88,24 +88,32 @@ const MenuButton = styled(SlotButton)`
 // Підпис вкладки карток каже, що на ній відкрито зараз: над формою
 // доповнення «Мої картки» обіцяли список власних карток, а лежала там чужа.
 const WORKSPACE_LABELS = {
-  overlay: { uk: 'Доповнення', en: 'Enrich card' },
-  draft: { uk: 'Чернетка', en: 'Draft' },
+  overlay: { uk: 'Доповнення', en: 'Enrich card', ja: 'カードを補足' },
+  draft: { uk: 'Чернетка', en: 'Draft', ja: '下書き' },
+};
+
+// Написи рядка навігації трьома мовами; невідома мова бере українські.
+const NAV_TEXTS = {
+  uk: { back: 'Назад', menu: 'Відкрити меню', nav: 'Основна навігація', find: 'Пошук анкет', add: 'Додати картку', mine: 'Мій профіль' },
+  en: { back: 'Back', menu: 'Open menu', nav: 'Main navigation', find: 'Find profiles', add: 'Add card', mine: 'My profile' },
+  ja: { back: '戻る', menu: 'メニューを開く', nav: 'メインナビゲーション', find: 'プロフィール検索', add: 'カードを追加', mine: 'マイプロフィール' },
 };
 
 // Keep the main destinations visible; account settings live in the "⋮" menu
 // at the end of the same row, and "back" — at its start.
 export default function PrimaryNavigation() {
   const { language } = useAppSettings();
-  const english = language === 'en';
+  const lang = NAV_TEXTS[language] ? language : 'uk';
+  const texts = NAV_TEXTS[lang];
   const slot = usePrimaryNavigationSlotState();
   const [menuOpen, setMenuOpen] = useState(false);
   const workspace = WORKSPACE_LABELS[slot?.workspaceLabel];
-  const backLabel = english ? 'Back' : 'Назад';
-  const menuLabel = english ? 'Open menu' : 'Відкрити меню';
+  const backLabel = texts.back;
+  const menuLabel = texts.menu;
   const closeMenu = () => setMenuOpen(false);
   return (
     <Header>
-      <Navigation aria-label={english ? 'Main navigation' : 'Основна навігація'}>
+      <Navigation aria-label={texts.nav}>
         <strong>KnowMe<span>.</span></strong>
         <SideSlot>
           {slot?.onBack && (
@@ -114,12 +122,12 @@ export default function PrimaryNavigation() {
             </SlotButton>
           )}
         </SideSlot>
-        <NavLink to="/matching" end><FaSearch aria-hidden="true" />{english ? 'Find profiles' : 'Пошук анкет'}</NavLink>
+        <NavLink to="/matching" end><FaSearch aria-hidden="true" />{texts.find}</NavLink>
         <NavLink to="/matching/create-profile">
           {workspace ? <FaPen aria-hidden="true" /> : <FaRegFolderOpen aria-hidden="true" />}
-          {workspace ? workspace[english ? 'en' : 'uk'] : (english ? 'Add card' : 'Додати картку')}
+          {workspace ? workspace[lang] : texts.add}
         </NavLink>
-        <NavLink to="/my-profile"><FaRegUser aria-hidden="true" />{english ? 'My profile' : 'Мій профіль'}</NavLink>
+        <NavLink to="/my-profile"><FaRegUser aria-hidden="true" />{texts.mine}</NavLink>
         <SideSlot>
           {slot?.renderMenu && (
             <MenuButton type="button" aria-label={menuLabel} title={menuLabel} onClick={() => setMenuOpen(true)}>
@@ -129,7 +137,7 @@ export default function PrimaryNavigation() {
         </SideSlot>
       </Navigation>
       {menuOpen && slot?.renderMenu && (
-        <InfoModal onClose={closeMenu} text="dotsMenu" Context={() => slot.renderMenu({ close: closeMenu })} />
+        <InfoModal onClose={closeMenu} text="dotsMenu" language={language} Context={() => slot.renderMenu({ close: closeMenu })} />
       )}
     </Header>
   );

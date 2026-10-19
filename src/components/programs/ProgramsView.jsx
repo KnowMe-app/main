@@ -380,6 +380,7 @@ export const ProgramCurrencySwitch = ({ value, onChange, language }) => (
 
 const monthWord = (count, language) => {
   if (language === 'en') return count === 1 ? 'month' : 'months';
+  if (language === 'ja') return 'か月';
   return 'міс';
 };
 
@@ -666,8 +667,8 @@ const TimelineBody = ({ value, setValue, selectDate, commit, dipherelin, setDiph
   const [calendarOpen, setCalendarOpen] = useState(() => !parseCycleDate(value));
   const { date: start, projected } = projectCycleStart(parseCycleDate(value));
   const items = buildSurrogacyTimeline(start, { dipherelin });
-  const weekUnit = language === 'en' ? 'wk' : 'тиж.';
-  const dayUnit = language === 'en' ? 'day' : 'день';
+  const weekUnit = language === 'en' ? 'wk' : language === 'ja' ? '週' : 'тиж.';
+  const dayUnit = language === 'en' ? 'day' : language === 'ja' ? '日目' : 'день';
   return (
     <div data-testid="program-timeline" onClick={event => event.stopPropagation()}>
       <SectionTitle>{uiText('Приблизний графік програми', language)}</SectionTitle>
@@ -1037,6 +1038,7 @@ const RANGE_TYPE_LABELS = Object.freeze({ ed: 'Донорам', sm: 'Сурог�
 // «з 2 програм», але «з 1 програми»: після «з» — родовий відмінок.
 const programsGenitive = (count, language) => {
   if (language === 'en') return count === 1 ? 'program' : 'programs';
+  if (language === 'ja') return 'プログラム';
   return count % 10 === 1 && count % 100 !== 11 ? 'програми' : 'програм';
 };
 

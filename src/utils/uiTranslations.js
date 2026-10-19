@@ -1,4 +1,5 @@
 import { resolveProfileLanguage } from './profileTexts';
+import { JA_BY_UK } from './jaTranslations';
 
 /**
  * Англійський бік екранів матчингу.
@@ -1315,6 +1316,29 @@ const EN_BY_UK = {
   'Увійти': 'Sign in',
   'Перевіряємо сесію…': 'Checking your session…',
   'Програми — додайте хоча б одну': 'Programs — add at least one',
+  // Фото, перегляд фото, меню навігації — екрани матчингу й «Мій профіль».
+  'Підтвердити видалення фото {n}': 'Confirm deleting photo {n}',
+  'Видалити фото {n}': 'Delete photo {n}',
+  'Закрити меню': 'Close menu',
+  'Додати фото': 'Add a photo',
+  'Видалити фото': 'Delete photo',
+  'Видалити це фото?': 'Delete this photo?',
+  'Головне фото': 'Main photo',
+  'Зробити головним': 'Make it the main one',
+  'Наступне фото': 'Next photo',
+  'Попереднє фото': 'Previous photo',
+  'Закрити': 'Close',
+  'Фото': 'Photo',
+  'Обрізати фото до стандартного розміру': 'Crop the photo to the standard size',
+  'Перетягніть фото всередині рамки та змініть масштаб, щоб обрати найвдалішу частину для картки.': 'Drag the photo inside the frame and zoom to pick the best part for the card.',
+  'Попередній перегляд обрізання': 'Crop preview',
+  'Обробляємо фото…': 'Processing the photos…',
+  'Фото завантажується на сервер…': 'Uploading the photo…',
+  'Зберегти й наступне': 'Save and next',
+  'Зберегти': 'Save',
+  'Видалити?': 'Delete?',
+  'Додайте свої фото, максимум {max} шт': 'Add your photos, up to {max}',
+  'Matching: не вдалося отримати дані протягом 5 секунд. Режим: {mode}. Перевірте мережу, Firebase rules та індекси.': 'Matching: no data within 5 seconds. Mode: {mode}. Check the network, Firebase rules and indexes.',
 };
 
 /**
@@ -1325,7 +1349,12 @@ const EN_BY_UK = {
  */
 export const uiText = (text, language, vars) => {
   const source = String(text ?? '');
-  const translated = resolveProfileLanguage(language) === 'en' ? EN_BY_UK[source] ?? source : source;
+  const lang = resolveProfileLanguage(language);
+  // Японського рядка може ще не бути — тоді японський читач бачить
+  // англійський, а не український.
+  const translated = lang === 'ja'
+    ? JA_BY_UK[source] ?? EN_BY_UK[source] ?? source
+    : lang === 'en' ? EN_BY_UK[source] ?? source : source;
   if (!vars) return translated;
   return translated.replace(/\{(\w+)\}/g, (match, key) => (
     Object.prototype.hasOwnProperty.call(vars, key) ? String(vars[key] ?? '') : match

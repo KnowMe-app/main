@@ -242,11 +242,12 @@ const isExcluded = (item, excludeKeys = []) => {
 // Значення, вибране зі списку, показується мовою інтерфейсу — пара для нього
 // вже лежить у формі. Вільний текст словнику не відповідає й лишається як є.
 const localizeFieldValue = (item, value, language) => {
-  if (item.resolved || resolveProfileLanguage(language) !== 'uk') return value;
+  const lang = resolveProfileLanguage(language);
+  if (item.resolved || (lang !== 'uk' && lang !== 'ja')) return value;
   return String(value)
     .split(', ')
-    .map(part => translateFieldValue(item.key, part))
-    .join(', ');
+    .map(part => translateFieldValue(item.key, part, lang))
+    .join(lang === 'ja' ? '、' : ', ');
 };
 
 const toDisplayFields = (items, user, excludeKeys = [], language) =>
@@ -306,7 +307,9 @@ const maritalStatusDisplayValue = (user, language) => maritalStatusLabel(user?.m
 const glassesDisplayValue = (user, language) => {
   const normalized = normalizeDisplayValue(user?.glasses).toLowerCase();
   if (NO_TOKENS.has(normalized) || normalized === 'ні') {
-    return resolveProfileLanguage(language) === 'en' ? 'no, good eyesight' : 'не носить, зір гарний';
+    const lang = resolveProfileLanguage(language);
+    if (lang === 'ja') return 'なし、視力良好';
+    return lang === 'en' ? 'no, good eyesight' : 'не носить, зір гарний';
   }
   return glassesLabel(user?.glasses, language);
 };

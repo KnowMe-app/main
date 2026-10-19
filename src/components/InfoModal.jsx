@@ -1,3 +1,4 @@
+import { uiText } from '../utils/uiTranslations';
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 
@@ -289,7 +290,10 @@ export const InfoModal = ({
   FlowComposer,
   initialCustomInput = '',
   comparisonScrollRef,
+  // Лише меню рядка навігації передає мову; решта модалок лишаються як були.
+  language,
 }) => {
+  const closeMenuLabel = language ? uiText('Закрити меню', language) : 'Закрити меню';
   const openedAtRef = useRef(Date.now());
   const comparisonContentRef = useRef(null);
   useEffect(() => {
@@ -493,7 +497,7 @@ export const InfoModal = ({
         onClick={event => event.stopPropagation()}
       >
         {text === 'dotsMenu' && (
-          <MenuCloseButton type="button" onClick={onClose} aria-label="Закрити меню" title="Закрити меню">
+          <MenuCloseButton type="button" onClick={onClose} aria-label={closeMenuLabel} title={closeMenuLabel}>
             &times;
           </MenuCloseButton>
         )}

@@ -5283,7 +5283,7 @@ const Matching = () => {
       if (requestId !== initialRequestIdRef.current || !loadingStateRef.current) return;
       const mode = viewModeRef.current || viewMode || 'unknown';
       toast(
-        `Matching: не вдалося отримати дані протягом 5 секунд. Режим: ${mode}. Перевірте мережу, Firebase rules та індекси.`,
+        uiText('Matching: не вдалося отримати дані протягом 5 секунд. Режим: {mode}. Перевірте мережу, Firebase rules та індекси.', language, { mode }),
         {
           id: 'matching-slow-load',
           icon: '⚠️',

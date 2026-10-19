@@ -69,12 +69,14 @@ export const formatDeliveryRecency = (raw, language, now = new Date()) => {
   const months = monthsSinceDate(raw, now);
   if (months === null) return '';
 
-  if (months < 1) return isUk(language) ? '<1 міс' : '<1 mo';
+  const ja = String(language || '').toLowerCase().startsWith('ja');
+  if (months < 1) return isUk(language) ? '<1 міс' : ja ? '1か月未満' : '<1 mo';
 
   if (months < DELIVERY_RECENCY_YEARS_THRESHOLD_MONTHS) {
-    return isUk(language) ? `${months} міс` : `${months} mo`;
+    return isUk(language) ? `${months} міс` : ja ? `${months}か月` : `${months} mo`;
   }
 
   const years = Math.floor(months / MONTHS_IN_YEAR);
+  if (ja) return `${years}年`;
   return isUk(language) ? `${years} ${ukYearWord(years)}` : `${years} ${years === 1 ? 'year' : 'years'}`;
 };

@@ -2599,7 +2599,7 @@ export const MyProfile = () => {
             type="button"
             onClick={() => scrollToSection(s.key)}
           >
-            {s.title}
+            {uiText(s.title, language)}
           </Tab>;
         })}
       </Tabs>
@@ -2748,6 +2748,7 @@ export const MyProfile = () => {
           });
         }}
         uploadInputId="my-profile-photo-upload"
+        language={language}
         compact
         maxPhotos={5}
       />

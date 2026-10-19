@@ -380,6 +380,17 @@ export const ProfileDotsMenu = ({
             >
               EN
             </SegmentedOption>
+            {/* Японська — для екранів матчингу; адмінські й конструктор
+                документів лишаються українськими. */}
+            <SegmentedOption
+              type="button"
+              lang="ja"
+              $active={language === 'ja'}
+              aria-pressed={language === 'ja'}
+              onClick={() => setLanguage('ja')}
+            >
+              日本語
+            </SegmentedOption>
           </SegmentedControl>
         </SettingRow>
       </MenuSection>

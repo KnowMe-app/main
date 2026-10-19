@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-// Global app settings: colour theme (light/dark) and interface language (uk/en).
+// Global app settings: colour theme (light/dark) and interface language (uk/en/ja).
 // Persisted in localStorage and synced between mounted components via a window event,
 // so the toggles in the three-dots menu update every open screen immediately.
 
@@ -27,10 +27,14 @@ export const getStoredThemeMode = () => {
 // «Особисті дані», бо частина написів мову не виконує. Аудиторія застосунку —
 // українська, тож англійську обирають явно, у меню трьох крапок.
 export const DEFAULT_APP_LANGUAGE = 'uk';
+// Японську виконують екрани матчингу (`utils/jaTranslations`); адмінські
+// мовою інтерфейсу не користуються й лишаються українськими.
+export const SUPPORTED_APP_LANGUAGES = Object.freeze(['uk', 'en', 'ja']);
 
 export const getStoredLanguage = () => {
   try {
-    return localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en' ? 'en' : DEFAULT_APP_LANGUAGE;
+    const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    return SUPPORTED_APP_LANGUAGES.includes(stored) ? stored : DEFAULT_APP_LANGUAGE;
   } catch (error) {
     return DEFAULT_APP_LANGUAGE;
   }
@@ -88,7 +92,7 @@ export const useAppSettings = () => {
   }, [setThemeMode]);
 
   const setLanguage = useCallback(lang => {
-    const nextLanguage = lang === 'en' ? 'en' : 'uk';
+    const nextLanguage = SUPPORTED_APP_LANGUAGES.includes(lang) ? lang : DEFAULT_APP_LANGUAGE;
     try {
       localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
     } catch (error) {

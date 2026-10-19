@@ -1914,6 +1914,7 @@ const ProfileRow = ({
           closeOnHistoryBack
           onReachEnd={photosComplete ? undefined : requestPhotos}
           onClose={() => setViewerIndex(null)}
+          language={language}
         />
       )}
 

@@ -1067,14 +1067,15 @@ const pluralUk = (count, one, few, many) => {
 
 const countText = (count, forms, language) => {
   if (language === 'en') return `${count} ${count === 1 ? forms.en[0] : forms.en[1]}`;
+  if (language === 'ja' && forms.ja) return `${forms.ja}${count}件`;
   return `${count} ${pluralUk(count, ...forms.uk)}`;
 };
 
 const WORDS = Object.freeze({
-  payment: { uk: ['виплата', 'виплати', 'виплат'], en: ['payment', 'payments'] },
-  bonus: { uk: ['доплата', 'доплати', 'доплат'], en: ['supplement', 'supplements'] },
-  requirement: { uk: ['вимога', 'вимоги', 'вимог'], en: ['requirement', 'requirements'] },
-  expense: { uk: ['витрата', 'витрати', 'витрат'], en: ['expense', 'expenses'] },
+  payment: { uk: ['виплата', 'виплати', 'виплат'], en: ['payment', 'payments'], ja: '支払い' },
+  bonus: { uk: ['доплата', 'доплати', 'доплат'], en: ['supplement', 'supplements'], ja: '追加手当' },
+  requirement: { uk: ['вимога', 'вимоги', 'вимог'], en: ['requirement', 'requirements'], ja: '条件' },
+  expense: { uk: ['витрата', 'витрати', 'витрат'], en: ['expense', 'expenses'], ja: '費用' },
 });
 
 

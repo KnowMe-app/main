@@ -23,6 +23,7 @@ import {
   noseShapeOptions,
   raceOptions,
 } from '../components/formFields';
+import { translateOptionValueToJapanese } from './jaTranslations';
 
 const OPTIONS_BY_FIELD = {
   hairColor: hairColorOptions,
@@ -134,6 +135,7 @@ export const presetSentenceWord = (field, value, lang) => {
   const override = SENTENCE_FORMS[lang]?.[field]?.[key];
   if (override) return override;
   if (lang === 'en') return key;
+  if (lang === 'ja') return translateOptionValueToJapanese(field, option.placeholder) || key;
   const word = lower(String(option.ukrainian || ''));
   return field === 'faceShape' ? toFeminine(word) : word;
 };
@@ -142,11 +144,14 @@ export const presetSentenceWord = (field, value, lang) => {
 const joinClauses = (clauses, lang) => {
   const list = clauses.filter(Boolean);
   if (list.length < 2) return list[0] || '';
+  if (lang === 'ja') return list.join('、');
   const and = lang === 'en' ? 'and' : 'та';
   return `${list.slice(0, -1).join(', ')} ${and} ${list[list.length - 1]}`;
 };
 
 const sentence = text => (text ? `${text.charAt(0).toLocaleUpperCase('uk-UA')}${text.slice(1)}.` : '');
+// Японське речення великої літери не має й кінчається «。».
+const jaSentence = text => (text ? `${text}。` : '');
 
 /**
  * Речення про зовнішність і поля, які в нього лягли (`used`): ті самі поля
@@ -190,7 +195,25 @@ export const describeLooks = ({ user, lang, typed, includeHair = false }) => {
   if (glasses) used.add('glasses');
 
   const parts = [];
-  if (lang === 'en') {
+  if (lang === 'ja') {
+    const features = joinClauses([
+      hairWords.length ? `髪は${hairWords.join('・')}` : '',
+      face ? `顔の形は${face}` : '',
+      nose ? `鼻は${nose}` : '',
+      lips ? `唇は${lips}` : '',
+      chin ? `あごは${chin}` : '',
+    ], lang);
+    if (features) parts.push(jaSentence(`${features}です`));
+    const figure = [
+      body ? `体型は${body}` : '',
+      breast ? `バストサイズは${breast}` : '',
+      clothing ? `服のサイズは${clothing}` : '',
+      shoe ? `靴のサイズは${shoe}` : '',
+    ].filter(Boolean).join('、');
+    if (figure) parts.push(jaSentence(`${figure}です`));
+    if (race) parts.push(jaSentence(`民族は${race}です`));
+    if (glasses) parts.push(glasses);
+  } else if (lang === 'en') {
     const features = joinClauses([
       hairWords.length ? `${hairWords.join(' ')} hair` : '',
       face ? `${face} face` : '',
@@ -246,6 +269,10 @@ export const describeGlasses = (value, lang) => {
   const raw = pickCurrent(value);
   if (!raw) return '';
   const key = lower(raw).replace(/[.!]+$/u, '');
+  if (lang === 'ja') {
+    if (GLASSES_NO.has(key)) return '眼鏡はかけていません。視力は良好です。';
+    if (GLASSES_YES.has(key)) return '眼鏡をかけています。';
+  }
   if (GLASSES_NO.has(key)) return lang === 'en' ? "I don't wear glasses, my eyesight is good." : 'Окулярів не ношу, зір гарний.';
   if (GLASSES_YES.has(key)) return lang === 'en' ? 'I wear glasses.' : 'Ношу окуляри.';
   // Власна відповідь. Число з діоптріями («-2.5», «+1,5», «-2/-3») — це вже
@@ -255,8 +282,10 @@ export const describeGlasses = (value, lang) => {
   const text = raw.replace(/[.!]+$/u, '');
   if (/^[+-−]?\s*\d+([.,]\d+)?(\s*[/;]\s*[+-−]?\s*\d+([.,]\d+)?)?$/u.test(text)) {
     const diopters = text.replace(/^-/u, '−').replace(/\/-/gu, '/−');
+    if (lang === 'ja') return `視力は${diopters}ディオプターです。`;
     return lang === 'en' ? `My eyesight is ${diopters} diopters.` : `Мій зір — ${diopters} діоптрії.`;
   }
+  if (lang === 'ja') return `視力と眼鏡について：${text}。`;
   return lang === 'en' ? `About my eyesight and glasses: ${lowerFirstWord(text)}.` : `Щодо зору й окулярів — ${lowerFirstWord(text)}.`;
 };
 
@@ -296,12 +325,16 @@ export const describeHair = (user, lang) => {
     const raw = pickCurrent(user?.[field]);
     if (!raw || ['other', 'інше'].includes(lower(raw))) return;
     const label = field === 'hairColor'
-      ? (lang === 'en' ? 'hair color' : 'колір волосся')
-      : (lang === 'en' ? 'hair texture' : 'структура волосся');
+      ? (lang === 'en' ? 'hair color' : lang === 'ja' ? '髪の色' : 'колір волосся')
+      : (lang === 'en' ? 'hair texture' : lang === 'ja' ? '髪質' : 'структура волосся');
     ownAnswers.push(`${label} — ${lowerFirstWord(raw)}`);
   });
   const parts = [];
-  if (presetWords.length) parts.push(`${presetWords.join(' ')} ${lang === 'en' ? 'hair' : 'волосся'}`);
+  if (presetWords.length) {
+    parts.push(lang === 'ja'
+      ? `${presetWords.join('・')}の髪`
+      : `${presetWords.join(' ')} ${lang === 'en' ? 'hair' : 'волосся'}`);
+  }
   return [...parts, ...ownAnswers].join(', ');
 };
 
@@ -321,7 +354,10 @@ export const describeWork = ({ user, lang, typed }) => {
   const profession = rawProfession && !noProfession ? lowerCapitalizedWords(rawProfession) : '';
   if (rawProfession) used.add('profession');
   let text = '';
-  if (lang === 'en') {
+  if (lang === 'ja') {
+    const clauses = [education ? `学歴は${education}` : '', profession ? `職業は${profession}` : ''].filter(Boolean);
+    text = clauses.length ? jaSentence(`${clauses.join('、')}です`) : '';
+  } else if (lang === 'en') {
     const clauses = [education ? `have ${education}` : '', profession ? `work as ${profession}` : ''].filter(Boolean);
     text = clauses.length ? sentence(`I ${clauses.join(' and ')}`) : '';
   } else {
@@ -338,6 +374,10 @@ export const describeSizes = ({ lang, typed }) => {
   const shoe = typed('shoeSize');
   if (clothing) used.add('clothingSize');
   if (shoe) used.add('shoeSize');
+  if (lang === 'ja') {
+    const jaClauses = [clothing ? `服のサイズは${clothing}` : '', shoe ? `靴のサイズは${shoe}` : ''].filter(Boolean);
+    return { text: jaClauses.length ? jaSentence(`${jaClauses.join('、')}です`) : '', used };
+  }
   const clauses = lang === 'en'
     ? [clothing ? `my clothing size is ${clothing}` : '', shoe ? `shoe size ${shoe}` : '']
     : [clothing ? `мій розмір одягу — ${clothing}` : '', shoe ? `${clothing ? 'розмір' : 'мій розмір'} взуття — ${shoe}` : ''];

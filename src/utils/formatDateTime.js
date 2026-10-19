@@ -13,7 +13,8 @@ export const formatDateTime = (value, language) => {
   if (value === null || value === undefined || value === '') return '';
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString(resolveProfileLanguage(language) === 'uk' ? 'uk-UA' : 'en-GB');
+  const lang = resolveProfileLanguage(language);
+  return date.toLocaleString(lang === 'uk' ? 'uk-UA' : lang === 'ja' ? 'ja-JP' : 'en-GB');
 };
 
 export default formatDateTime;

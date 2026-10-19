@@ -1,4 +1,5 @@
 import { getStoredLanguage } from '../hooks/useAppSettings';
+import { JA_BY_EN_LABEL, JA_DERIVED_VALUES, JA_UI_TEXTS } from './jaTranslations';
 
 /**
  * Мова картки анкети: і підписи блоків, і значення, які підставляє застосунок.
@@ -23,7 +24,7 @@ import { getStoredLanguage } from '../hooks/useAppSettings';
 export const DEFAULT_PROFILE_LANGUAGE = 'uk';
 
 export const resolveProfileLanguage = language => {
-  if (language === 'uk' || language === 'en') return language;
+  if (language === 'uk' || language === 'en' || language === 'ja') return language;
   try {
     return getStoredLanguage();
   } catch {
@@ -151,7 +152,9 @@ const UK_BY_EN_LABEL = {
 export const translateProfileLabel = (label, language) => {
   const text = String(label ?? '').trim();
   if (!text) return '';
-  if (resolveProfileLanguage(language) !== 'uk') return text;
+  const lang = resolveProfileLanguage(language);
+  if (lang === 'ja') return JA_BY_EN_LABEL[text] || text;
+  if (lang !== 'uk') return text;
   return UK_BY_EN_LABEL[text] || text;
 };
 
@@ -170,7 +173,9 @@ const DERIVED_VALUES = {
 
 export const derivedValueTexts = (kind, language) => {
   const pair = DERIVED_VALUES[kind] || DERIVED_VALUES.yesNo;
-  return pair[resolveProfileLanguage(language)] || pair.en;
+  const lang = resolveProfileLanguage(language);
+  if (lang === 'ja') return JA_DERIVED_VALUES[kind] || JA_DERIVED_VALUES.yesNo;
+  return pair[lang] || pair.en;
 };
 
 /** Статичні написи картки анкети. Ключ — англійський оригінал. */
@@ -221,5 +226,7 @@ const UI_TEXTS = {
 export const profileUiText = (key, language) => {
   const entry = UI_TEXTS[key];
   if (!entry) return '';
-  return entry[resolveProfileLanguage(language)] || entry.en;
+  const lang = resolveProfileLanguage(language);
+  if (lang === 'ja') return JA_UI_TEXTS[key] || entry.en;
+  return entry[lang] || entry.en;
 };

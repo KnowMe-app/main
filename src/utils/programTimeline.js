@@ -123,6 +123,7 @@ export const buildSurrogacyTimeline = (cycleStart, { dipherelin = false } = {}) 
 const WEEKDAYS = Object.freeze({
   uk: ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'],
   en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+  ja: ['日', '月', '火', '水', '木', '金', '土'],
 });
 
 /**
@@ -134,7 +135,7 @@ const WEEKDAYS = Object.freeze({
 export const formatTimelineDate = (date, language = 'uk') => {
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
-  return `${day}.${month} ${WEEKDAYS[language === 'en' ? 'en' : 'uk'][date.getDay()]}`;
+  return `${day}.${month} ${(WEEKDAYS[language] || WEEKDAYS.uk)[date.getDay()]}`;
 };
 
 /**

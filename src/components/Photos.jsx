@@ -10,6 +10,7 @@ import {
 } from './config';
 import { color } from './styles';
 import PhotoViewer from './PhotoViewer';
+import { uiText } from '../utils/uiTranslations';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
 
@@ -399,7 +400,10 @@ const cropPhotoToStandardRatio = async (file, cropSettings) => {
   });
 };
 
-export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId = 'file-upload', compact = false, maxPhotos = 9, cropAspectRatio = DEFAULT_CROP_ASPECT_RATIO }) => {
+// `language` передає лише «Мій профіль»: адмінські екрани кличуть фото без
+// нього й лишаються українськими.
+export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId = 'file-upload', compact = false, maxPhotos = 9, cropAspectRatio = DEFAULT_CROP_ASPECT_RATIO, language }) => {
+  const t = (text, vars) => (language ? uiText(text, language, vars) : text.replace(/\{(\w+)\}/g, (m, k) => (vars && k in vars ? String(vars[k]) : m)));
   const [viewerIndex, setViewerIndex] = useState(null);
   const [pendingCropFiles, setPendingCropFiles] = useState([]);
   const [croppedPendingFiles, setCroppedPendingFiles] = useState([]);
@@ -808,9 +812,9 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
       <UploadButtonLabel
         $compact={compact}
         htmlFor={uploadInputId}
-        aria-label="Додати фото"
+        aria-label={t('Додати фото')}
       >
-        {compact ? '+' : 'Додати фото'}
+        {compact ? '+' : t('Додати фото')}
         <HiddenFileInput
           id={uploadInputId}
           type="file"
@@ -825,8 +829,8 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
   const cropModal = pendingCropFile ? (
     <CropModalOverlay onClick={cancelCrop}>
       <CropModalCard onClick={event => event.stopPropagation()} aria-busy={isCropSaving}>
-        <CropModalTitle>Обрізати фото до стандартного розміру</CropModalTitle>
-        <CropModalHint>Перетягніть фото всередині рамки та змініть масштаб, щоб обрати найвдалішу частину для картки.</CropModalHint>
+        <CropModalTitle>{t('Обрізати фото до стандартного розміру')}</CropModalTitle>
+        <CropModalHint>{t('Перетягніть фото всередині рамки та змініть масштаб, щоб обрати найвдалішу частину для картки.')}</CropModalHint>
         <CropPreview
           $aspectRatio={safeCropAspectRatio}
           onPointerDown={handleCropPreviewPointerDown}
@@ -843,7 +847,7 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
               />
               <CropPreviewImage
                 src={cropPreviewUrl}
-                alt="Попередній перегляд обрізання"
+                alt={t('Попередній перегляд обрізання')}
                 $displayWidth={cropDisplay.displayWidth || cropFrameSize.width}
                 $displayHeight={cropDisplay.displayHeight || cropFrameSize.height}
                 $offsetX={boundedCropOffset.x}
@@ -870,12 +874,12 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
           {isCropSaving && (
             <CropSavingStatus role="status" aria-live="polite">
               <CropSavingSpinner aria-hidden="true" />
-              {pendingCropFiles.length > 1 ? 'Обробляємо фото…' : 'Фото завантажується на сервер…'}
+              {pendingCropFiles.length > 1 ? t('Обробляємо фото…') : t('Фото завантажується на сервер…')}
             </CropSavingStatus>
           )}
-          <CropButton type="button" onClick={cancelCrop} disabled={isCropSaving}>Скасувати</CropButton>
+          <CropButton type="button" onClick={cancelCrop} disabled={isCropSaving}>{t('Скасувати')}</CropButton>
           <CropButton type="button" $primary onClick={confirmCurrentCrop} disabled={isCropSaving}>
-            {isCropSaving ? 'Зберігаємо…' : pendingCropFiles.length > 1 ? 'Зберегти й наступне' : 'Зберегти'}
+            {isCropSaving ? t('Зберігаємо…') : pendingCropFiles.length > 1 ? t('Зберегти й наступне') : t('Зберегти')}
           </CropButton>
         </CropActions>
       </CropModalCard>
@@ -904,16 +908,16 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
               $armed={armedDeleteIndex === actualIndex}
               type="button"
               onClick={() => handleDeleteTap(actualIndex)}
-              aria-label={armedDeleteIndex === actualIndex ? `Підтвердити видалення фото ${actualIndex + 1}` : `Видалити фото ${actualIndex + 1}`}
+              aria-label={armedDeleteIndex === actualIndex ? t('Підтвердити видалення фото {n}', { n: actualIndex + 1 }) : t('Видалити фото {n}', { n: actualIndex + 1 })}
             >
-              {armedDeleteIndex === actualIndex ? 'Видалити?' : '×'}
+              {armedDeleteIndex === actualIndex ? t('Видалити?') : '×'}
             </DeleteButton>
           </PhotoItem>;
         })}
         {compact && uploadButton}
       </PhotosWrapper>
       {!compact && displayedPhotos.length === 0 && (
-        <NoPhotosText>Додайте свої фото, максимум {maxPhotos} шт</NoPhotosText>
+        <NoPhotosText>{t('Додайте свої фото, максимум {max} шт', { max: maxPhotos })}</NoPhotosText>
       )}
       {!compact && uploadButton}
       {cropModal && typeof document !== 'undefined' ? createPortal(cropModal, document.body) : cropModal}
@@ -924,6 +928,7 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
           onClose={() => setViewerIndex(null)}
           onDelete={handleDeleteFromViewer}
           onMakeMain={hideFirstPhoto ? undefined : handleMakeMain}
+          language={language}
         />
       )}
     </Container>
