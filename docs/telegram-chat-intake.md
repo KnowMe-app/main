@@ -15,8 +15,13 @@ existing cards go in as overlays; the admin resolves them.
 
 ## Phase 1 — read the chat
 
-No screenshots: the chat may forbid them. The agent reads message text from
-the page itself (DOM), not from pixels.
+The agent reads message text from the page (DOM). Claude in Chrome may still
+capture the tab as screenshots internally — a prompt cannot switch that off,
+so this route is not screenshot-free. A browser page cannot block those
+captures, so a chat that forbids screenshots in the Telegram apps is still
+readable here. A route with no screen capture at all is only the Telegram API
+(e.g. a Telethon export run on your computer) — then Phase 1 reads the export
+file instead of the screen.
 
 Setup:
 1. Chrome with the Claude in Chrome extension, signed in to
@@ -28,7 +33,8 @@ Setup:
    new chat with Claude in Chrome connected, and send the prompt below plus
    the Schema section. Give the chat a working folder (the folder opened in
    the app, or the folder Claude Code runs in): the file goes there. The
-   extension alone has no file access.
+   extension alone has no file access. Without file access the run goes one
+   batch per reply (see the prompt): after each reply send "далі".
 
 Fallback only if Telegram Web is not possible: Telegram Desktop with computer
 use — it reads the screen through screenshots, so it fails on chats that
@@ -39,10 +45,12 @@ Prompt (use as is, nothing to fill in):
 ```
 Work only in the Telegram chat open in the current tab, starting from the
 message currently visible at the top of the chat. Read text from the page
-(DOM), never take screenshots. Read-only: send nothing, no reactions, open no
+(DOM); do not use the screenshot action. Read-only: send nothing, no reactions, open no
 links, do not switch chats.
-Write telegram_intake.yaml in this chat's working folder (no file access →
-print the full YAML in the reply after every batch instead).
+Write telegram_intake.yaml in this chat's working folder. No file access →
+process ONE batch per reply: print the full YAML (previous YAML + this batch)
+and stop; on "далі" find the `cursor` message on the page and continue from
+it.
 
 Loop until the end of the chat:
 1. Read the next 100 messages downward from the current position.
@@ -65,16 +73,22 @@ Loop until the end of the chat:
    message, copy @username and phone if shown, return to the same place in
    the chat.
 5. Merge into profiles (Schema); later messages update a profile.
-6. Save: rewrite the file, set resumeFrom to the date and time of the last
-   processed message.
-7. Scroll down past the processed messages and go to step 1.
+6. Save: rewrite the file and set `cursor` to the last processed message
+   (kept or skipped): its date and time, sender, first 60 characters of text.
+7. Scroll down past the cursor message and go to step 1. When resuming,
+   start AT the cursor message (inclusive): find it by date, time, sender
+   and text, and skip messages already in the file (same date, time, sender
+   and text) — several messages can share one minute.
 Stop when the newest message is processed and scrolling brings nothing new.
 Then report: messages processed, people by role, messages that could not be
 read (date, time).
 
 File:
 chat: <chat title from the header>
-resumeFrom: DD.MM.YYYY HH:MM
+cursor:
+  datetime: DD.MM.YYYY HH:MM
+  sender: <display name>
+  text: <first 60 characters>
 people:
   - <profile>
 ```
@@ -240,5 +254,6 @@ NODE_USE_ENV_PROXY=1 CI=true npx react-scripts test \
   --testPathPattern "<file>" --watchAll=false --forceExit
 ```
 
-Next pass: open the chat at the message after the previous `resumeFrom` and
-run the same prompt; existing people match and get overlays.
+Next pass: open the chat at the previous `cursor` message (match date, time,
+sender, text) and run the same prompt with the previous YAML attached;
+duplicates are skipped, existing people match and get overlays.
