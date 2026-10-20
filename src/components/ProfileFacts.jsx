@@ -1,4 +1,4 @@
-import { getExtraLocale } from '../utils/locales';
+import { getExtraLocale, toInlineCase, toInlineCaseFirst } from '../utils/locales';
 import React, { useState } from 'react';
 import styled, { css } from 'styled-components';
 import {
@@ -57,16 +57,17 @@ export const formatCSectionValue = raw => {
 const OTHER_VALUES = new Set(['other', 'інше', 'иное']);
 export const isOtherValue = value => OTHER_VALUES.has(String(value || '').trim().toLowerCase());
 
-const lowerFirst = text => (text ? text.charAt(0).toLocaleLowerCase('uk-UA') + text.slice(1) : '');
+const lowerFirst = (text, lang) => toInlineCaseFirst(text, lang);
 
 // Значення, вибране зі списку, — мовою інтерфейсу (`translateFieldValue`) і
 // малими літерами: у рядку воно стоїть після підпису, а не починає речення.
 // Малими всі, а не лише перша: у словнику трапляється «Пісочний Годинник».
+// Німецька — виняток (`toInlineCase`): там іменник з великої.
 const readOptionValue = (user, field, lang) => {
   const raw = normalizeDisplayValue(user?.[field]);
   if (!raw || isOtherValue(raw)) return '';
   const localized = lang === 'uk' || getExtraLocale(lang) ? translateFieldValue(field, raw, lang) : raw;
-  return localized.trim().toLocaleLowerCase('uk-UA');
+  return toInlineCase(localized.trim(), lang);
 };
 
 // Те, що людина набрала сама (професія, розмір), лишається як набрали.
@@ -348,7 +349,7 @@ export const buildProfileSummaryRows = (user, language) => {
     rows.push({ key: 'reproduction', label: translateProfileLabel(label, lang), value: joinParts(reproduction) });
   }
 
-  const marital = lowerFirst(maritalStatusLabel(normalizeDisplayValue(user?.maritalStatus), lang));
+  const marital = lowerFirst(maritalStatusLabel(normalizeDisplayValue(user?.maritalStatus), lang), lang);
   if (marital) rows.push({ key: 'marital', label: translateProfileLabel('Marital status', lang), value: marital });
 
   return rows;
@@ -374,7 +375,7 @@ const describeEducation = (user, lang) => {
   if (!raw || isOtherValue(raw) || EDUCATION_FLAG_VALUES.has(raw.toLowerCase())) return '';
   const localized = lang === 'uk' || getExtraLocale(lang) ? translateFieldValue('education', raw, lang) : raw;
   // Підпис рядка вже каже «Освіта»: «вища освіта» поруч із ним — повтор.
-  return lowerFirst(localized.replace(/\s+освіта$/i, '').trim());
+  return lowerFirst(localized.replace(/\s+освіта$/i, '').trim(), lang);
 };
 
 const option = field => (user, lang) => readOptionValue(user, field, lang);
@@ -400,7 +401,7 @@ const DETAIL_SECTIONS = [
       { key: 'race', label: 'Race', read: option('race') },
       { key: 'clothingSize', label: 'Clothing', read: typed('clothingSize') },
       { key: 'shoeSize', label: 'Shoe', read: typed('shoeSize') },
-      { key: 'glasses', label: 'Glasses', read: (user, lang) => lowerFirst(glassesLabel(user?.glasses, lang)) },
+      { key: 'glasses', label: 'Glasses', read: (user, lang) => lowerFirst(glassesLabel(user?.glasses, lang), lang) },
     ],
   },
   {

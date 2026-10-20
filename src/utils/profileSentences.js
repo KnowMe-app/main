@@ -331,7 +331,9 @@ export const describeHair = (user, lang) => {
     const label = field === 'hairColor'
       ? (lang === 'en' ? 'hair color' : hairWords ? hairWords.colorLabel : 'колір волосся')
       : (lang === 'en' ? 'hair texture' : hairWords ? hairWords.textureLabel : 'структура волосся');
-    ownAnswers.push(`${label} — ${lowerFirstWord(raw)}`);
+    // Набране людиною мовам понад українську й англійську лишається як є:
+    // «Rotblond» з малої для німецької — помилка.
+    ownAnswers.push(`${label} — ${hairWords ? raw : lowerFirstWord(raw)}`);
   });
   const parts = [];
   if (presetWords.length) {

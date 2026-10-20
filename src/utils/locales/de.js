@@ -1469,6 +1469,8 @@ const de = {
   code: 'de',
   nativeName: 'Deutsch',
   locale: 'de-DE',
+  // Іменник пишуть з великої: значення зі списку не зводяться до малих.
+  keepsNounCase: true,
   byUk: BY_UK,
   byEnLabel: BY_EN_LABEL,
   uiTexts: UI_TEXTS,

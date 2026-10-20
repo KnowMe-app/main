@@ -1,5 +1,5 @@
 import { resolveProfileLanguage } from './profileTexts';
-import { getLanguageLocale } from './locales';
+import { getDateTimeFormat } from './locales';
 
 /**
  * Дата й час мовою інтерфейсу.
@@ -10,11 +10,17 @@ import { getLanguageLocale } from './locales';
  * 12.09.2025, 23:03» проти «Оновлено 12.09.2025, 23:03» різнить не сама дата,
  * а те, що поруч. Формат іде за тією самою мовою, що й підпис.
  */
+const DATE_TIME_OPTIONS = Object.freeze({
+  year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric',
+});
+
 export const formatDateTime = (value, language) => {
   if (value === null || value === undefined || value === '') return '';
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString(getLanguageLocale(resolveProfileLanguage(language)));
+  // Ті самі параметри, що в `toLocaleString` без аргументів, але формат один
+  // на мову, а не новий на кожну дату списку.
+  return getDateTimeFormat(resolveProfileLanguage(language), DATE_TIME_OPTIONS).format(date);
 };
 
 export default formatDateTime;

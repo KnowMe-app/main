@@ -7,6 +7,7 @@ import {
   EXTRA_LOCALES,
   SUPPORTED_LANGUAGE_CODES,
   formatRegionDisplayName,
+  keepsNounCase,
   listMonthNames,
   translateOptionValue,
 } from '../locales';
@@ -14,7 +15,7 @@ import { translateProfileLabel, profileUiText, derivedValueTexts, resolveProfile
 import { translateFieldValue, getOptionLabel } from '../../components/formFields';
 import { describeGlasses, describeWork, describeLooks } from '../profileSentences';
 import { formatDeliveryRecency } from '../deliveryRecency';
-import { buildProfileSummaryRows } from '../../components/ProfileFacts';
+import { buildProfileDetailSections, buildProfileSummaryRows } from '../../components/ProfileFacts';
 import { SUPPORTED_APP_LANGUAGES } from '../../hooks/useAppSettings';
 
 // Мови понад українську й англійську — модулі однакової форми
@@ -124,5 +125,27 @@ describe('dictionary lookups', () => {
       expect(uiText('toString', language)).toBe('toString');
       expect(translateProfileLabel('constructor', language)).toBe('constructor');
     });
+  });
+});
+
+// Значення зі списку посеред рядка стоять з малої, але німецький іменник —
+// з великої: «Bildung — hochschulabschluss» було помилкою.
+describe('регістр значень зі списку', () => {
+  const user = { education: 'Higher', maritalStatus: 'No', role: 'ed' };
+  const flatValues = language => buildProfileDetailSections(user, language)
+    .flatMap(section => [section.text, ...section.rows.map(row => row.value)])
+    .map(value => String(value ?? ''))
+    .concat(buildProfileSummaryRows(user, language).map(row => String(row.value)))
+    .join(' | ');
+
+  it('німецька лишає іменник з великої', () => {
+    expect(flatValues('de')).toContain('Hochschulabschluss');
+    expect(flatValues('de')).not.toContain('hochschulabschluss');
+  });
+
+  it('українська й іспанська й далі пишуть значення з малої', () => {
+    expect(flatValues('uk')).not.toMatch(/Вища/);
+    expect(keepsNounCase('es')).toBe(false);
+    expect(keepsNounCase('de')).toBe(true);
   });
 });

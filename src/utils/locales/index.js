@@ -52,46 +52,99 @@ export const getLanguageNativeName = language => (
   APP_LANGUAGES.find(item => item.code === language)?.nativeName || language
 );
 
-const findKey = (dictionary, text) => Object.keys(dictionary || {})
-  .find(candidate => candidate.toLowerCase() === text.toLowerCase());
+/**
+ * Значення зі списку посеред рядка — з малої літери («Освіта — вища»), крім
+ * мов, де іменник пишуть з великої (`keepsNounCase`): німецьке
+ * «Bildung — hochschulabschluss» — помилка, а не стиль.
+ */
+export const keepsNounCase = language => Boolean(getExtraLocale(language)?.keepsNounCase);
+
+export const toInlineCase = (text, language) => (
+  keepsNounCase(language) ? text : text.toLocaleLowerCase(getLanguageLocale(language))
+);
+
+export const toInlineCaseFirst = (text, language) => (
+  !text || keepsNounCase(language)
+    ? text || ''
+    : text.charAt(0).toLocaleLowerCase(getLanguageLocale(language)) + text.slice(1)
+);
+
+/*
+ * Словник довідника — мапа з ключами малими літерами, зібрана раз на словник.
+ *
+ * Поки ключ шукався перебором (`Object.keys(...).find` з `toLowerCase` обох
+ * боків), кожна опція кожного списку й кожен факт кожного рядка стрічки
+ * коштували прохід по сотні ключів — на кожному рендері.
+ */
+const lowercaseIndexes = new WeakMap();
+const lookupLowercase = (dictionary, text) => {
+  if (!dictionary) return undefined;
+  let index = lowercaseIndexes.get(dictionary);
+  if (!index) {
+    index = new Map(Object.entries(dictionary).map(([key, value]) => [key.toLowerCase(), value]));
+    lowercaseIndexes.set(dictionary, index);
+  }
+  return index.get(text.toLowerCase());
+};
 
 /** Значення довідника мовою `language`, або `null`, коли перекладу немає. */
 export const translateOptionValue = (language, fieldName, value) => {
   const locale = getExtraLocale(language);
   const text = String(value ?? '').trim();
   if (!locale || !text) return null;
-  const byField = locale.fieldOptionValues?.[fieldName] || {};
-  const fieldKey = findKey(byField, text);
-  if (fieldKey) return byField[fieldKey];
-  const key = findKey(locale.optionValues, text);
-  return key ? locale.optionValues[key] : null;
+  return lookupLowercase(locale.fieldOptionValues?.[fieldName], text)
+    ?? lookupLowercase(locale.optionValues, text)
+    ?? null;
 };
+
+/*
+ * `Intl`-обʼєкти дорогі в конструкторі, а питають їх по рядку: графік програми
+ * — день тижня на кожну подію, стрічка — країну на кожну картку. Тож формати й
+ * готові переліки тримаються раз на мову (і на параметри).
+ */
+const intlCache = new Map();
+const cached = (key, build) => {
+  if (!intlCache.has(key)) intlCache.set(key, build());
+  return intlCache.get(key);
+};
+
+/** `Intl.DateTimeFormat` мовою інтерфейсу, один на мову й параметри. */
+export const getDateTimeFormat = (language, options = {}) => (
+  cached(`dtf|${getLanguageLocale(language)}|${JSON.stringify(options)}`,
+    () => new Intl.DateTimeFormat(getLanguageLocale(language), options))
+);
 
 /**
  * Назва країни мовою інтерфейсу з `Intl.DisplayNames`; `null`, коли браузер
  * її не знає.
  */
-export const formatRegionDisplayName = (language, regionCode) => {
-  try {
-    const name = new Intl.DisplayNames([getLanguageLocale(language)], { type: 'region' }).of(regionCode);
-    return name && name !== regionCode ? name : null;
-  } catch {
-    return null;
-  }
-};
+export const formatRegionDisplayName = (language, regionCode) => (
+  cached(`region|${getLanguageLocale(language)}|${regionCode}`, () => {
+    try {
+      const name = new Intl.DisplayNames([getLanguageLocale(language)], { type: 'region' }).of(regionCode);
+      return name && name !== regionCode ? name : null;
+    } catch {
+      return null;
+    }
+  })
+);
 
 /** Назви місяців і днів тижня з `Intl` (тиждень з понеділка, якщо `mondayFirst`). */
-export const listMonthNames = (language, { capitalize = true } = {}) => {
-  const formatter = new Intl.DateTimeFormat(getLanguageLocale(language), { month: 'long' });
-  return Array.from({ length: 12 }, (_, month) => {
-    const name = formatter.format(new Date(2026, month, 1));
-    return capitalize ? name.charAt(0).toLocaleUpperCase() + name.slice(1) : name;
-  });
-};
+export const listMonthNames = (language, { capitalize = true } = {}) => (
+  cached(`months|${getLanguageLocale(language)}|${capitalize}`, () => {
+    const formatter = getDateTimeFormat(language, { month: 'long' });
+    return Object.freeze(Array.from({ length: 12 }, (_, month) => {
+      const name = formatter.format(new Date(2026, month, 1));
+      return capitalize ? name.charAt(0).toLocaleUpperCase() + name.slice(1) : name;
+    }));
+  })
+);
 
-export const listWeekdayNames = (language, { mondayFirst = false, width = 'short' } = {}) => {
-  const formatter = new Intl.DateTimeFormat(getLanguageLocale(language), { weekday: width });
-  // 4 січня 2026 — неділя.
-  const days = Array.from({ length: 7 }, (_, index) => formatter.format(new Date(2026, 0, 4 + index)));
-  return mondayFirst ? [...days.slice(1), days[0]] : days;
-};
+export const listWeekdayNames = (language, { mondayFirst = false, width = 'short' } = {}) => (
+  cached(`weekdays|${getLanguageLocale(language)}|${mondayFirst}|${width}`, () => {
+    const formatter = getDateTimeFormat(language, { weekday: width });
+    // 4 січня 2026 — неділя.
+    const days = Array.from({ length: 7 }, (_, index) => formatter.format(new Date(2026, 0, 4 + index)));
+    return Object.freeze(mondayFirst ? [...days.slice(1), days[0]] : days);
+  })
+);
