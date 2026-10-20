@@ -12,78 +12,70 @@ import styled from 'styled-components';
  * самих `MenuItem`, і відступ між ними ставиться сам.
  */
 
+/*
+ * Рядки меню — без рамок і заливок. Кожен пункт тут колись був рожевою
+ * плашкою з рамкою, і нижня половина меню (очистити, видалити, вийти)
+ * читалась суцільним попередженням: «Вийти» мало ту саму вагу, що й
+ * «Видалити анкету». Тепер червоним лише текст і значок незворотного, а
+ * вихід — звичайний рядок.
+ */
 export const MenuItem = styled.button`
   width: 100%;
+  min-height: 52px;
   display: grid;
-  grid-template-columns: 34px 1fr auto;
+  grid-template-columns: 28px 1fr auto;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border: 1px solid ${({ $active, $danger }) => ($danger ? 'var(--km-danger-border)' : $active ? 'var(--km-accent)' : 'transparent')};
-  border-radius: var(--km-radius);
-  background: ${({ $active, $danger }) => ($danger ? 'var(--km-danger-bg)' : $active ? 'var(--km-accent-light)' : 'var(--km-card)')};
+  gap: 12px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: ${({ $active }) => ($active ? 'var(--km-accent-light)' : 'transparent')};
   color: ${({ $danger }) => ($danger ? 'var(--km-danger)' : 'var(--km-text)')};
   cursor: pointer;
   text-align: left;
-  transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
-
-  & + & {
-    margin-top: 6px;
-  }
+  transition: background-color 0.18s ease;
 
   &:hover {
-    transform: translateY(-1px);
-    border-color: ${({ $danger }) => ($danger ? 'var(--km-danger-border)' : 'var(--km-accent-mid)')};
-    background: ${({ $danger }) => ($danger ? 'var(--km-danger-bg)' : 'var(--km-accent-light)')};
-    box-shadow: 0 8px 22px rgba(26, 26, 26, 0.08);
+    background: ${({ $active }) => ($active ? 'var(--km-accent-light)' : 'var(--km-fill)')};
   }
 
   &:focus-visible {
     outline: none;
-    border-color: ${({ $danger }) => ($danger ? 'var(--km-danger)' : 'var(--km-accent)')};
     box-shadow: 0 0 0 3px ${({ $danger }) => ($danger ? 'rgba(180, 35, 24, .14)' : 'var(--km-accent-ring)')};
   }
 
-  &:active {
-    transform: scale(0.99);
-  }
-
   /* Рядок, який зараз не натиснеш (пошта чекає на повторний лист),
-   * мусить й виглядати ненатисканним, а не підстрибувати під пальцем. */
+   * мусить й виглядати ненатисканним. */
   &:disabled {
     cursor: default;
     opacity: 0.66;
   }
 
   &:disabled:hover {
-    transform: none;
-    box-shadow: none;
+    background: transparent;
   }
 `;
 
 export const ItemIcon = styled.span`
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
-  background: ${({ $danger }) => ($danger ? 'var(--km-danger-bg)' : 'var(--km-accent-light)')};
-  color: ${({ $danger }) => ($danger ? 'var(--km-danger)' : 'var(--km-accent)')};
-  font-size: 15px;
+  color: ${({ $danger }) => ($danger ? 'var(--km-danger)' : 'var(--km-muted)')};
+  font-size: 17px;
 `;
 
 export const ItemLabel = styled.span`
   display: block;
-  font-size: 14px;
-  font-weight: 800;
+  font-size: 15px;
+  font-weight: 500;
 `;
 
 export const ItemDescription = styled.span`
   display: block;
   margin-top: 2px;
   color: var(--km-muted);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.35;
 `;
-

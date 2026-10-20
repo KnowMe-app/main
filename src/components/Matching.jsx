@@ -17,8 +17,8 @@ import {
   BackendTrafficToggleButton,
   BackendTrafficToggleStatus,
   MatchingSearchStatusMessage,
-  ChipsGroup,
   CollectionButton,
+  CollectionSegments,
   CollectionButtonCount,
   ChipsRow,
   FeedEndNotice,
@@ -7884,7 +7884,7 @@ const Matching = () => {
               другу відповідь на той самий запит із локального кеша. Лишаються
               активні фільтри — вони й у пошуку чинні. */}
           <ChipsRow role="group" aria-label={uiText(isSearching ? 'Результати пошуку' : 'Колекції matching', language)}>
-            <ChipsGroup>
+            <CollectionSegments>
               {(isSearching ? [] : collectionChips).map(chip => {
                 const active = viewMode === chip.key;
                 return (
@@ -7904,7 +7904,7 @@ const Matching = () => {
                   </CollectionButton>
                 );
               })}
-            </ChipsGroup>
+            </CollectionSegments>
           </ChipsRow>
           {/* Фільтри стоять під колекціями, а не навпаки: спершу читач
               обирає деку (усі / вподобані / приховані), а вже потім звужує

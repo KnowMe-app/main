@@ -434,7 +434,7 @@ const Root = styled.div`
   flex-direction: column;
   gap: 4px;
   padding: 6px 8px;
-  border-left: 3px solid rgba(232, 121, 26, 0.45);
+  border-left: 3px solid rgba(201, 96, 15, 0.45);
   background: rgba(0, 0, 0, 0.02);
   border-radius: 6px;
 `;
@@ -577,7 +577,7 @@ const RemoveButton = styled.button`
   height: 24px;
   border: 0;
   border-radius: 6px;
-  background: rgba(232, 121, 26, 0.12);
+  background: rgba(201, 96, 15, 0.12);
   color: #c75f0b;
   cursor: pointer;
 `;

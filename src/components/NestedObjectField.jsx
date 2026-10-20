@@ -102,7 +102,7 @@ const RemoveButton = styled.button`
   height: 28px;
   border: 0;
   border-radius: 8px;
-  background: rgba(232, 121, 26, 0.12);
+  background: rgba(201, 96, 15, 0.12);
   color: #c75f0b;
   cursor: pointer;
 `;

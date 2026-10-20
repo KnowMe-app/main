@@ -28,21 +28,21 @@ import { ItemDescription, ItemIcon, ItemLabel } from './ProfileDotsMenu.styled';
  */
 const Row = styled.button`
   display: grid;
-  grid-template-columns: 34px 1fr auto;
+  grid-template-columns: 28px 1fr auto;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  margin-top: 6px;
-  padding: 10px;
+  min-height: 52px;
+  padding: 8px 10px;
   border: none;
-  border-radius: var(--km-radius);
+  border-radius: 12px;
   background: transparent;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
 
-  &:hover { background: var(--km-bg); }
+  &:hover { background: var(--km-fill); }
   &:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--km-accent-ring); }
 `;
 
@@ -57,7 +57,7 @@ const Options = styled.div`
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
-  margin: 2px 10px 6px 54px;
+  margin: 2px 10px 6px 50px;
 `;
 
 const Option = styled.label`

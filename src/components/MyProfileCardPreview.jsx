@@ -52,23 +52,28 @@ const Caret = styled.span`
   transform: rotate(${({ $open }) => ($open ? '180deg' : '0deg')});
 `;
 
-// Той самий вигляд, що й чіпи ролей у «Хто ви» вище: перемикач ролі —
-// продовження того вибору, а не новий елемент.
+// Перемикач, яку з анкет показати, — доріжка з білим вибраним сегментом,
+// та сама, що в колекціях стрічки: це вибір «яку з», а не ще одна роль.
 const Tabs = styled.div`
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 2px;
   margin-bottom: 10px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--km-fill);
 `;
 
 const Tab = styled.button`
-  padding: 6px 12px;
-  border-radius: 99px;
-  border: 1.5px solid ${({ $active }) => ($active ? 'var(--accent, var(--km-accent))' : 'var(--border, var(--km-border))')};
-  background: ${({ $active }) => ($active ? 'var(--accent-light, var(--km-accent-light))' : 'var(--card, var(--km-card))')};
-  color: ${({ $active }) => ($active ? 'var(--accent, var(--km-accent))' : 'var(--muted, var(--km-muted))')};
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 0;
+  background: ${({ $active }) => ($active ? 'var(--card, var(--km-card))' : 'transparent')};
+  box-shadow: ${({ $active }) => ($active ? '0 1px 2px rgba(28, 27, 26, 0.12)' : 'none')};
+  color: ${({ $active }) => ($active ? 'var(--text, var(--km-text))' : 'var(--muted, var(--km-muted))')};
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: ${({ $active }) => ($active ? 600 : 500)};
   cursor: pointer;
 `;

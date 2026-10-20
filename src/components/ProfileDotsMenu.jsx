@@ -30,26 +30,26 @@ const MenuShell = styled.nav`
 `;
 
 const MenuHeader = styled.div`
-  padding: 2px 2px 14px;
+  padding: 2px 10px 10px;
 `;
 
 const MenuTitle = styled.h3`
   margin: 0;
   color: var(--km-text);
   font-size: 18px;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: -0.02em;
 `;
 
 const MenuSubtitle = styled.p`
-  margin: 5px 0 0;
+  margin: 4px 0 0;
   color: var(--km-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
 `;
 
 const MenuSection = styled.div`
-  padding: 10px 0;
+  padding: 8px 0;
   border-top: 1px solid var(--km-border);
 
   &:first-of-type {
@@ -59,11 +59,11 @@ const MenuSection = styled.div`
 `;
 
 const SectionLabel = styled.div`
-  margin: 0 4px 8px;
+  margin: 4px 10px 4px;
   color: var(--km-muted);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 `;
 
@@ -73,7 +73,7 @@ const ActivePill = styled.span`
   background: var(--km-accent);
   color: #fff;
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
 `;
 
 const LogoutConfirmation = styled.div`
@@ -96,43 +96,43 @@ const LogoutIcon = styled.div`
 
 const SettingRow = styled.div`
   display: grid;
-  grid-template-columns: 34px 1fr auto;
+  grid-template-columns: 28px 1fr auto;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border-radius: var(--km-radius);
-
-  & + & {
-    margin-top: 6px;
-  }
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 10px;
+  border-radius: 12px;
 `;
 
+// Доріжка з білим вибраним сегментом — та сама, що в колекціях стрічки:
+// помаранчева заливка тут робила тему найгучнішим елементом меню.
 const SegmentedControl = styled.div`
   display: inline-flex;
   padding: 3px;
   gap: 2px;
-  border: 1px solid var(--km-border);
-  border-radius: 99px;
-  background: var(--km-bg);
+  border-radius: 10px;
+  background: var(--km-fill);
 `;
 
 const SegmentedOption = styled.button`
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 10px;
+  min-height: 32px;
+  padding: 0 10px;
   border: none;
-  border-radius: 99px;
-  background: ${({ $active }) => ($active ? 'var(--km-accent)' : 'transparent')};
-  color: ${({ $active }) => ($active ? '#fff' : 'var(--km-muted)')};
+  border-radius: 8px;
+  background: ${({ $active }) => ($active ? 'var(--km-card)' : 'transparent')};
+  box-shadow: ${({ $active }) => ($active ? '0 1px 2px rgba(28, 27, 26, 0.12)' : 'none')};
+  color: ${({ $active }) => ($active ? 'var(--km-text)' : 'var(--km-muted)')};
   font-family: var(--km-font);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   transition: background-color 0.18s ease, color 0.18s ease;
 
   &:hover {
-    color: ${({ $active }) => ($active ? '#fff' : 'var(--km-accent)')};
+    color: var(--km-text);
   }
 
   &:focus-visible {
@@ -359,6 +359,25 @@ export const ProfileDotsMenu = ({
         <LanguagePicker language={language} setLanguage={setLanguage} />
       </MenuSection>
 
+      {/* «Акаунт» стоїть над «Анкетою»: незворотне — очистити й видалити —
+          лишається останнім, окремо від звичайного виходу. */}
+      {(showVerifyEmail || isSessionActive) && (
+        <MenuSection>
+          <SectionLabel>{uiText('Акаунт', language)}</SectionLabel>
+          {showVerifyEmail && !isEmailVerified && (
+            <VerifyEmail />
+          )}
+          {isSessionActive && onExit && (
+            <MenuItem type="button" role="menuitem" onClick={() => setIsLogoutConfirmationOpen(true)}>
+              <ItemIcon><FaSignOutAlt /></ItemIcon>
+              <span>
+                <ItemLabel>{uiText('Вийти', language)}</ItemLabel>
+                <ItemDescription>{uiText('Завершити поточну сесію', language)}</ItemDescription>
+              </span>
+            </MenuItem>
+          )}
+        </MenuSection>
+      )}
       {/* «Переглянути анкету» звідси прибрано: той пункт відкривав інструкцію
           «встановіть застосунок у Google Play», а мобільного застосунку більше
           немає — його власна заставка каже про це першою ж карткою стрічки.
@@ -396,23 +415,6 @@ export const ProfileDotsMenu = ({
         </MenuSection>
       )}
 
-      {(showVerifyEmail || isSessionActive) && (
-        <MenuSection>
-          <SectionLabel>{uiText('Акаунт', language)}</SectionLabel>
-          {showVerifyEmail && !isEmailVerified && (
-            <VerifyEmail />
-          )}
-          {isSessionActive && onExit && (
-            <MenuItem type="button" role="menuitem" $danger onClick={() => setIsLogoutConfirmationOpen(true)}>
-              <ItemIcon $danger><FaSignOutAlt /></ItemIcon>
-              <span>
-                <ItemLabel>{uiText('Вийти', language)}</ItemLabel>
-                <ItemDescription>{uiText('Завершити поточну сесію', language)}</ItemDescription>
-              </span>
-            </MenuItem>
-          )}
-        </MenuSection>
-      )}
     </MenuShell>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiChevronRight, FiTrash2, FiX } from 'react-icons/fi';
-import { FaEye, FaEyeSlash, FaLock } from 'react-icons/fa';
+import { FaCheck, FaEye, FaEyeSlash, FaLock } from 'react-icons/fa';
 import styled, { css, keyframes } from 'styled-components';
 import {
   auth,
@@ -26,6 +26,7 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import { inputUpdateValue } from './inputUpdatedValue';
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
 import { PROFILE_ROLE_OPTIONS } from '../utils/profileRoleOptions';
+import { stripSectionEmoji } from '../utils/sectionTitle';
 import { listViewerRoles, resolveViewerCurrentRole } from '../utils/matchingPeerVisibility';
 import { buildMatchingCardProjection, expandMatchingCard, parseHiddenRoles } from '../utils/matchingCardIndex';
 import { formatDateToDisplay, normalizePhoneValue } from './inputValidations';
@@ -162,12 +163,20 @@ const SECTION_SCROLL_GAP = CONTENT_SECTION_TOP_GAP;
 const SCROLL_ACTIVE_SECTION_GAP = 16;
 const PROGRAMMATIC_SCROLL_FALLBACK_MS = 900;
 const ProgressWrap = styled.div`padding: 16px var(--page-gutter) 0;`;
-const Tabs = styled.div`padding:14px var(--page-gutter);display:flex;gap:8px;overflow:auto;`;
+/* Вкладки розділів — текст із рискою під активною, а заповнений розділ
+ * позначає зелена галочка. Тут стояли пігулки з емодзі, де помаранчева
+ * заливка («тут ви зараз») і зелена рамка («заповнено») накладались на
+ * одну кнопку, і без підказки не було видно, що з двох означає колір; а
+ * емодзі (📷 🏢 💶) єдині на екрані розмовляли іншою мовою, ніж лінійні
+ * значки навігації. */
+const Tabs = styled.div`padding:4px var(--page-gutter) 0;display:flex;gap:20px;overflow:auto;scrollbar-width:none;&::-webkit-scrollbar{display:none;}`;
 const Tab = styled.button`
-  flex-shrink: 0; padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 500;
-  border: 1.5px solid ${({ $complete, $active }) => ($complete ? '#2E9B55' : $active ? 'var(--accent)' : 'var(--border)')};
-  background: ${({ $active, $complete }) => ($active ? 'var(--accent)' : $complete ? '#EBF8EF' : 'var(--card)')};
-  color: ${({ $active, $complete }) => ($active ? '#fff' : $complete ? '#2E9B55' : 'var(--muted)')};
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px;
+  min-height: 44px; padding: 0; border: 0; background: transparent;
+  font-size: 14px; font-weight: ${({ $active }) => ($active ? 600 : 500)};
+  color: ${({ $active }) => ($active ? 'var(--text)' : 'var(--muted)')};
+  box-shadow: inset 0 -2px 0 ${({ $active }) => ($active ? 'var(--accent)' : 'transparent')};
+  svg { color: var(--km-success); flex: 0 0 auto; }
 `;
 const Card = styled.div`
   margin: 0 var(--page-gutter) 16px;
@@ -184,17 +193,20 @@ const FirstContentCard = styled(Card)`margin-top: ${CONTENT_SECTION_TOP_GAP}px;`
 const Header = styled.div`display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg);`;
 const FieldGroup = styled.div`padding:0 18px;`;
 const Field = styled.div`padding:14px 0;border-bottom:1px solid var(--border); &:last-child{border-bottom:none;}`;
-const Label = styled.div`font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px;`;
+// Підпис поля — звичайним реченням: 11 px великими з розрядкою читались
+// гірше за саме значення й кричали з кожного рядка форми.
+const Label = styled.div`font-size:13px;font-weight:500;color:var(--muted);margin-bottom:6px;`;
 const Input = styled.input`
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  background: var(--bg);
-  border: 1.5px solid var(--border);
+  /* Заливка без рамки, як рядок пошуку; рамка — на фокусі. */
+  background: var(--km-fill);
+  border: 1.5px solid transparent;
   border-radius: 10px;
   padding: 10px 38px 10px 14px;
   outline: none;
-  &:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(232, 121, 26, .12); }
+  &:focus { background: var(--card); border-color: var(--accent); box-shadow: 0 0 0 3px var(--km-accent-ring); }
   ${({ $missing }) => $missing && `
     border-color: #D44;
     box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
@@ -204,12 +216,13 @@ const TextArea = styled.textarea`
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  background: var(--bg);
-  border: 1.5px solid var(--border);
+  background: var(--km-fill);
+  border: 1.5px solid transparent;
   border-radius: 10px;
   padding: 10px 38px 10px 14px;
   outline: none;
   min-height: 90px;
+  &:focus { background: var(--card); border-color: var(--accent); box-shadow: 0 0 0 3px var(--km-accent-ring); }
   ${({ $missing }) => $missing && `
     border-color: #D44;
     box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
@@ -239,8 +252,10 @@ const ClearFieldButton = styled.button`
 `;
 const ChipRow = styled.div`display:flex;flex-wrap:wrap;gap:6px;`;
 const Chip = styled.button`
-  padding: 6px 13px; border-radius: 99px; font-size: 13px; border: 1.5px solid ${({ selected }) => (selected ? 'var(--accent)' : 'var(--border)')};
-  background: ${({ selected }) => (selected ? 'var(--accent-light)' : 'var(--card)')}; color: ${({ selected }) => (selected ? 'var(--accent)' : 'var(--muted)')};
+  /* Вибране — заливкою, як чіп ролі в «Хто ви»: блідо-помаранчеве з
+     помаранчевим текстом від невибраного з першого погляду не відрізнялось. */
+  min-height: 36px; padding: 0 13px; border-radius: 99px; font-size: 14px; border: 1px solid ${({ selected }) => (selected ? 'var(--accent)' : 'var(--border)')};
+  background: ${({ selected }) => (selected ? 'var(--accent)' : 'var(--card)')}; color: ${({ selected }) => (selected ? '#fff' : 'var(--text)')};
   ${({ $missing }) => $missing && `
     border-color: #D44;
     box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
@@ -353,7 +368,7 @@ const RoleActionPair = styled.div`
   border-radius:12px;
   overflow:hidden;
   ${({ $primary }) => ($primary
-    ? 'background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);box-shadow:0 2px 8px rgba(232,121,26,0.22);'
+    ? 'background:var(--km-accent);'
     : 'background:var(--card);border:1.5px solid var(--border);')}
 
   > button {
@@ -414,8 +429,8 @@ const LikedAudienceNote = styled.div`
   margin-top:12px;
   padding:12px 14px;
   border-radius:12px;
-  background:var(--accent-light, rgba(232,121,26,0.08));
-  border:1px solid rgba(232,121,26,0.28);
+  background:var(--accent-light, rgba(201, 96, 15,0.08));
+  border:1px solid rgba(201, 96, 15,0.28);
   font-size:13px;
   line-height:1.5;
   color:var(--text);
@@ -473,37 +488,44 @@ const LIKED_AUDIENCE_TEXTS = Object.freeze({
 // Тому вона стоїть над формою окремим рядом, а не полем усередині секції.
 const RoleCard = styled.div`
   margin: ${CONTENT_SECTION_TOP_GAP}px var(--page-gutter) 16px;
-  padding: 14px 18px;
+  padding: 16px 18px;
   background: var(--card);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 `;
 const RoleCardTitle = styled.div`
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: .6px;
+  letter-spacing: .06em;
   color: var(--muted);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 `;
 const RoleOptions = styled.div`display:flex;flex-wrap:wrap;gap:8px;`;
+// Чіп ролі сам і є перемикачем: квадратик чекбокса всередині заливки
+// дублював ту саму відповідь двічі. Справжній чекбокс лишається (клавіатура,
+// екранний читач), але невидимий; вибір показують заливка й галочка.
 const RoleOption = styled.label`
+  position: relative;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 14px;
+  gap: 6px;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 0 14px;
   border-radius: 99px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  border: 1.5px solid ${({ $active }) => ($active ? 'var(--accent)' : 'var(--border)')};
+  border: 1px solid ${({ $active }) => ($active ? 'var(--accent)' : 'var(--border)')};
   background: ${({ $active }) => ($active ? 'var(--accent)' : 'var(--card)')};
-  color: ${({ $active }) => ($active ? '#fff' : 'var(--muted)')};
+  color: ${({ $active }) => ($active ? '#fff' : 'var(--text)')};
 
-  input { margin: 0; accent-color: var(--accent); }
+  input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+  &:focus-within { box-shadow: 0 0 0 3px var(--km-accent-ring); }
 `;
-const RoleHint = styled.p`margin:10px 0 0;font-size:11px;line-height:1.5;color:var(--muted);`;
+const RoleHint = styled.p`margin:12px 0 0;font-size:13px;line-height:1.45;color:var(--muted);`;
 // Межа між двома анкетами однієї людини: друга стоїть під першою, і без
 // підпису її розділи читались би як продовження першої.
 // Заголовок анкети ролі — щабель вище за заголовок розділу (14 px), а не
@@ -542,7 +564,7 @@ const PhotoSection = styled.div`
   min-width: 0;
   scroll-margin-top: ${CONTENT_SECTION_TOP_GAP}px;
 `;
-const SubmitBtn = styled.button`width:100%;padding:16px;background:linear-gradient(135deg,#E8791A 0%,#F5A24B 100%);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
+const SubmitBtn = styled.button`width:100%;padding:16px;background:var(--km-accent);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
 
 const AuthCard = styled(FirstContentCard)``;
@@ -556,12 +578,15 @@ const StatusBadge = styled.button`
   flex: 0 0 auto;
   white-space: nowrap;
   border: none;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
   padding: 5px 12px;
   border-radius: 99px;
-  background: ${({ $published }) => ($published ? '#EBF8EF' : '#FEE9E9')};
-  color: ${({ $published }) => ($published ? '#2E9B55' : '#D44')};
+  /* Неопублікована анкета — звичайний стан нової анкети, а не помилка:
+     червоний тут лякав кожного, хто щойно зареєструвався. Червоним лишається
+     лише «Логін не відбувся» — це справді збій. */
+  background: ${({ $published, $error }) => ($error ? '#FEE9E9' : $published ? '#EBF8EF' : 'var(--km-fill)')};
+  color: ${({ $published, $error }) => ($error ? '#D44' : $published ? '#2E9B55' : 'var(--muted)')};
   cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
   /* Лише для обраних — не зелене «опубліковано для всіх»: колір акценту й
      замок, щоб із першого погляду було видно, що коло обмежене. */
@@ -569,7 +594,7 @@ const StatusBadge = styled.button`
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    background: rgba(232,121,26,0.12);
+    background: rgba(201, 96, 15,0.12);
     color: #C25E0C;
   ` : '')}
 `;
@@ -587,9 +612,9 @@ const LikedAudienceChip = styled.button`
   width: calc(100% - 2 * var(--page-gutter));
   margin: 10px var(--page-gutter) 12px;
   padding: 10px 12px 10px 14px;
-  border: 1.5px solid rgba(232,121,26,0.35);
+  border: 1.5px solid rgba(201, 96, 15,0.35);
   border-radius: 14px;
-  background: rgba(232,121,26,0.08);
+  background: rgba(201, 96, 15,0.08);
   color: var(--text);
   font-family: inherit;
   text-align: left;
@@ -605,7 +630,7 @@ const LikedAudienceChipIcon = styled.span`
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: #E8791A;
+  background: #C9600F;
   color: #fff;
 `;
 const LikedAudienceChipText = styled.span`
@@ -703,7 +728,7 @@ const AuthActionButton = styled(SubmitBtn)`
   margin: 4px 0 20px;
   ${({ $active }) => $active && css`
     animation: ${hintPulse} .45s ease-in-out;
-    box-shadow: 0 0 0 4px rgba(232, 121, 26, .16);
+    box-shadow: 0 0 0 4px rgba(201, 96, 15, .16);
   `}
 `;
 
@@ -2574,6 +2599,7 @@ export const MyProfile = () => {
             type="button"
             $clickable
             $published={state.publish === true || isLikedAudience}
+            $error={!isProfileAccessConfirmed}
             $restricted={isProfileAccessConfirmed && isLikedAudience}
             onClick={handleAuthBadgeClick}
           >
@@ -2604,11 +2630,11 @@ export const MyProfile = () => {
     <StickyProgress ref={stickyProgressRef} $compact={editingProgram}>
       <ProgressWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{uiText('Заповнено {filled} з {total}', language, filledStats)}</span>
+        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{uiText('Заповнено {filled} з {total}', language, filledStats)}</span>
         <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>{filledPct}%</span>
       </div>
-      <div style={{ height: 5, background: 'var(--border)', borderRadius: 99 }}>
-        <div style={{ width: `${filledPct}%`, height: '100%', borderRadius: 99, background: 'linear-gradient(90deg, var(--accent) 0%, var(--accent-mid) 100%)' }} />
+      <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+        <div style={{ width: `${filledPct}%`, height: '100%', borderRadius: 99, background: 'var(--accent)' }} />
       </div>
     </ProgressWrap>
 
@@ -2625,7 +2651,8 @@ export const MyProfile = () => {
             type="button"
             onClick={() => scrollToSection(s.key)}
           >
-            {uiText(s.title, language)}
+            {stripSectionEmoji(uiText(s.title, language))}
+            {info.complete ? <FaCheck size={11} aria-hidden="true" /> : null}
           </Tab>;
         })}
       </Tabs>
@@ -2633,7 +2660,6 @@ export const MyProfile = () => {
 
     {!isProfileAccessConfirmed && <AuthCard ref={node => { sectionRefs.current.auth = node; }}>
       <Header>
-        <div>🔐</div>
         <div style={{ fontSize: 14, fontWeight: 600 }}>{uiText('Доступ до анкети', language)}</div>
       </Header>
       <FieldGroup>
@@ -2740,6 +2766,7 @@ export const MyProfile = () => {
               disabled={rolesList.length === 1 && rolesList.includes(option.value)}
               onChange={() => toggleUserRole(option.value)}
             />
+            {rolesList.includes(option.value) ? <FaCheck size={12} aria-hidden="true" /> : null}
             {uiText(option.label, language)}
           </RoleOption>
         ))}
@@ -2797,8 +2824,7 @@ export const MyProfile = () => {
       ) : null}
       <SectionCard ref={node => { sectionRefs.current[section.key] = node; }}>
         <Header>
-          <div>{uiText(section.title, language).split(' ')[0]}</div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{uiText(section.title, language).replace(/^\S+\s/, '')}</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{stripSectionEmoji(uiText(section.title, language))}</div>
           <div style={{ marginLeft: 'auto', fontSize: 11, color: sectionProgress[section.key]?.complete ? '#2E9B55' : 'var(--muted)', background: sectionProgress[section.key]?.complete ? '#EBF8EF' : 'var(--border)', padding: '2px 8px', borderRadius: 99 }}>
             {/* Програми — це записи, а не поле: «1/1» при трьох програмах
                 казав лише, що поле «programs» не порожнє. Тут — скільки їх. */}

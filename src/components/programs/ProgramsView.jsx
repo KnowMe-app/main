@@ -98,7 +98,7 @@ const COLLAPSE_SETTLE_MS = COLLAPSE_DURATION_MS + 60;
  * зелений, червоний і бурштиновий означають збіг з анкетою і більше нічого.
  */
 
-const ACCENT = 'var(--matching-accent, var(--km-accent, #E8791A))';
+const ACCENT = 'var(--matching-accent, var(--km-accent, #C9600F))';
 const BORDER = 'var(--matching-card-border, var(--km-border, #E8E8E2))';
 // Текст — зі стрічки, коли блок у стрічці: її палітра своя (`--matching-*`) і
 // від теми застосунку не залежить. Успадкований колір там бував білим на
@@ -560,7 +560,7 @@ const TimelineList = styled.ol`
   em { font-style: normal; color: ${MUTED}; }
   li.key time, li.key .what { color: ${ACCENT}; font-weight: 700; }
   li.key em { color: ${ACCENT}; }
-  li.year > span { grid-column: 1 / -1; padding-top: 10px; font-weight: 800; color: ${MUTED}; letter-spacing: 0.04em; }
+  li.year > span { grid-column: 1 / -1; padding-top: 10px; font-weight: 700; color: ${MUTED}; letter-spacing: 0.04em; }
 `;
 
 const TIMELINE_SAVE_DELAY_MS = 800;

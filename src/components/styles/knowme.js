@@ -210,7 +210,7 @@ export const KmPrimaryButton = styled.button`
   padding: 10px 20px;
   border: none;
   border-radius: var(--km-radius);
-  background: linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
+  background: var(--km-accent);
   color: #fff;
   font-family: var(--km-font);
   font-size: 14px;
@@ -220,7 +220,7 @@ export const KmPrimaryButton = styled.button`
 
   &:hover {
     filter: brightness(1.05);
-    box-shadow: 0 8px 22px rgba(232, 121, 26, 0.28);
+    box-shadow: 0 8px 22px rgba(201, 96, 15, 0.28);
   }
 
   &:focus-visible {

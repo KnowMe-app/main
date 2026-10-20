@@ -601,7 +601,7 @@ const AboutToggle = styled.button`
   padding: 6px 0;
   border: 0;
   background: transparent;
-  color: var(--matching-accent, var(--km-accent, #E8791A));
+  color: var(--matching-accent, var(--km-accent, #C9600F));
   font: inherit;
   font-size: 13.5px;
   font-weight: 700;
@@ -671,7 +671,7 @@ const WishChip = styled.li`
 
   b {
     color: ${GOOD};
-    font-weight: 800;
+    font-weight: 700;
   }
 `;
 

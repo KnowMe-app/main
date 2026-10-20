@@ -43,9 +43,8 @@ const Container = styled.div`
   align-items: center;
   justify-content: center;
   padding: 24px 16px;
-  background:
-    radial-gradient(circle at top left, rgba(232, 121, 26, 0.12), transparent 30%),
-    var(--bg);
+  /* Рівне тло без помаранчевої плями в куті — як на решті екранів. */
+  background: var(--bg);
   color: var(--text);
   font-family: var(--km-font);
   box-sizing: border-box;
@@ -64,7 +63,7 @@ const LoginCard = styled.div`
   padding: 22px;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 22px;
+  border-radius: 20px;
   box-shadow: var(--shadow);
 `;
 
@@ -76,9 +75,9 @@ const BrandBlock = styled.div`
 const WelcomeText = styled.h1`
   margin: 0;
   color: var(--text);
-  font-size: clamp(26px, 8vw, 34px);
-  font-weight: 900;
-  letter-spacing: -0.04em;
+  font-size: clamp(26px, 8vw, 32px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
 `;
 
 const WelcomeAccent = styled.span`
@@ -86,10 +85,10 @@ const WelcomeAccent = styled.span`
 `;
 
 const WelcomeDescription = styled.p`
-  margin: 12px auto 0;
+  margin: 10px auto 0;
   max-width: 340px;
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--muted);
 `;
 
@@ -100,12 +99,13 @@ const InputDiv = styled.div`
   margin-top: 14px;
   padding: 0 14px;
   min-height: 60px;
-  background: var(--bg);
-  border: 1.5px solid ${({ $active }) => ($active ? 'var(--accent)' : 'var(--border)')};
+  /* Заливка замість рамки — як поля решти застосунку; рамка на фокусі. */
+  background: ${({ $active }) => ($active ? 'var(--card)' : 'var(--km-fill)')};
+  border: 1.5px solid ${({ $active }) => ($active ? 'var(--accent)' : 'transparent')};
   border-radius: 12px;
   box-sizing: border-box;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
-  box-shadow: ${({ $active }) => ($active ? '0 0 0 3px rgba(232, 121, 26, .12)' : 'none')};
+  box-shadow: ${({ $active }) => ($active ? '0 0 0 3px var(--km-accent-ring)' : 'none')};
 `;
 
 const FieldIcon = styled.span`
@@ -113,7 +113,7 @@ const FieldIcon = styled.span`
   align-items: center;
   justify-content: center;
   margin-right: 10px;
-  color: var(--accent);
+  color: var(--muted);
 `;
 
 const InputField = styled.input`
@@ -147,20 +147,19 @@ const SubmitButton = styled.button`
   border-radius: var(--radius);
   cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
   font-size: 16px;
-  font-weight: 800;
-  background: ${({ disabled }) => (disabled ? 'var(--border)' : 'linear-gradient(135deg, var(--accent) 0%, var(--accent-mid) 100%)')};
-  box-shadow: ${({ disabled }) => (disabled ? 'none' : '0 10px 24px rgba(232, 121, 26, 0.22)')};
-  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+  font-weight: 600;
+  /* Пласка кнопка акцентного кольору: на градієнті до світлого помаранчевого
+     білий напис праворуч мав контраст нижче за 3:1. */
+  background: ${({ disabled }) => (disabled ? 'var(--border)' : 'var(--accent)')};
+  transition: transform 0.18s ease, filter 0.18s ease;
 
   &:hover {
-    filter: ${({ disabled }) => (disabled ? 'none' : 'brightness(1.02)')};
-    box-shadow: ${({ disabled }) => (disabled ? 'none' : '0 14px 30px rgba(232, 121, 26, 0.28)')};
-    transform: ${({ disabled }) => (disabled ? 'none' : 'translateY(-1px)')};
+    filter: ${({ disabled }) => (disabled ? 'none' : 'brightness(1.06)')};
   }
 
   &:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 4px rgba(232, 121, 26, .18);
+    box-shadow: 0 0 0 4px var(--km-accent-ring);
   }
 
   &:active {
@@ -175,15 +174,15 @@ const CheckboxContainer = styled.div`
   gap: 10px;
   align-items: flex-start;
   padding: 12px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  background: var(--km-fill);
+  border: 0;
+  border-radius: 12px;
 `;
 
 const CheckboxLabel = styled.label`
   color: var(--text);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.45;
 
   &:hover {
@@ -202,9 +201,10 @@ const RoleTitle = styled.legend`
   margin-bottom: 8px;
   color: var(--text);
   font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
+  color: var(--muted);
 `;
 
 const RoleGrid = styled.div`
@@ -218,15 +218,14 @@ const RoleOption = styled.label`
   align-items: flex-start;
   gap: 10px;
   padding: 12px;
-  border: 1.5px solid ${({ $selected }) => ($selected ? 'var(--accent)' : 'var(--border)')};
-  border-radius: 14px;
+  border: 1px solid ${({ $selected }) => ($selected ? 'var(--accent)' : 'var(--border)')};
+  border-radius: 12px;
   background: ${({ $selected }) => ($selected ? 'var(--accent-light)' : 'var(--card)')};
   cursor: pointer;
-  transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
 
   &:hover {
-    transform: translateY(-1px);
-    border-color: var(--accent-mid);
+    border-color: var(--accent);
   }
 `;
 
@@ -243,8 +242,8 @@ const RoleText = styled.span`
 
 const RoleName = styled.span`
   color: var(--text);
-  font-size: 14px;
-  font-weight: 800;
+  font-size: 15px;
+  font-weight: 600;
 `;
 
 const RoleHint = styled.p`
@@ -264,21 +263,22 @@ const ModeTabs = styled.div`
   gap: 4px;
   padding: 4px;
   margin-bottom: 16px;
-  border-radius: 14px;
-  background: var(--accent-light);
+  border-radius: 12px;
+  background: var(--km-fill);
 `;
 
 const ModeTab = styled.button`
   border: none;
-  border-radius: 11px;
-  padding: 10px 8px;
+  border-radius: 9px;
+  min-height: 40px;
+  padding: 8px;
   font: inherit;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: ${({ $active }) => ($active ? 600 : 500)};
   cursor: pointer;
   background: ${({ $active }) => ($active ? 'var(--card)' : 'transparent')};
   color: ${({ $active }) => ($active ? 'var(--text)' : 'var(--muted)')};
-  box-shadow: ${({ $active }) => ($active ? '0 1px 4px rgba(60, 30, 10, 0.12)' : 'none')};
+  box-shadow: ${({ $active }) => ($active ? '0 1px 2px rgba(28, 27, 26, 0.12)' : 'none')};
 
   &:focus-visible {
     outline: 2px solid var(--accent);
@@ -288,7 +288,7 @@ const ModeTab = styled.button`
 
 const RoleDescription = styled.span`
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.35;
 `;
 
@@ -306,7 +306,7 @@ const LinkButton = styled.button`
   padding: 0;
   color: var(--accent);
   font: inherit;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
 `;
 
@@ -315,7 +315,7 @@ const TermsButton = styled.button`
   background: transparent;
   color: var(--accent);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   padding: 0;
   cursor: pointer;
   white-space: nowrap;

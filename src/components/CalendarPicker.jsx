@@ -17,7 +17,7 @@ import { uiText } from '../utils/uiTranslations';
  * в стрічці (`--matching-*`), і поза нею (`--km-*`).
  */
 
-const ACCENT = 'var(--matching-accent, var(--km-accent, #E8791A))';
+const ACCENT = 'var(--matching-accent, var(--km-accent, #C9600F))';
 const BORDER = 'var(--matching-card-border, var(--km-border, #E8E8E2))';
 const TEXT = 'var(--matching-header-text, var(--km-text, #1A1A1A))';
 const MUTED = 'var(--matching-muted-text, var(--km-muted, #62665F))';

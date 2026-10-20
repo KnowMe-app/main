@@ -49,16 +49,20 @@ const InputDiv = styled.div`
   position: relative;
   margin: 10px 0;
   padding: 10px 14px;
-  background-color: var(--km-card);
-  border: 1.5px solid var(--km-border);
-  border-radius: var(--km-radius);
+  /* Заливка замість рамки: поле — найчастіший контрол екрана, і обведене
+     воно було ще одним контуром серед колекцій і чіпів під ним. Рамка
+     зʼявляється на фокусі, щоб було видно, куди йде набір. */
+  background-color: var(--km-fill);
+  border: 1.5px solid transparent;
+  border-radius: 12px;
   box-sizing: border-box;
   flex: 1 1 auto;
   min-width: 0;
   height: auto;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
 
   &:focus-within {
+    background-color: var(--km-card);
     border-color: var(--km-accent);
     box-shadow: 0 0 0 3px var(--km-accent-ring);
   }
