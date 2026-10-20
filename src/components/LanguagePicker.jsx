@@ -20,7 +20,11 @@ import { ItemDescription, ItemIcon, ItemLabel } from './ProfileDotsMenu.styled';
  * прочитати жодного слова в меню.
  *
  * Варіанти — справжні радіокнопки: стрілки клавіатури, фокус і «обрано» для
- * екранного читача беруться від браузера, без власної логіки.
+ * екранного читача беруться від браузера, без власної логіки. Стрілка в
+ * радіогрупі одразу й обирає, тож мова перемикається на ходу, а сітка
+ * згортається лише на явне «так»: дотик чи клік мишею, Enter, пробіл.
+ * Доки вибір згортав сітку на кожному `change`, перша ж стрілка вмикала
+ * сусідню мову й ховала решту — далі сусідньої клавіатурою було не дійти.
  */
 const Row = styled.button`
   display: grid;
@@ -97,11 +101,6 @@ export const LanguagePicker = ({ language, setLanguage }) => {
   const currentName = getLanguageNativeName(language);
   const hint = language === 'en' ? currentName : `${currentName} · Language`;
 
-  const choose = code => {
-    setLanguage(code);
-    setOpen(false);
-  };
-
   return (
     <div>
       <Row
@@ -125,22 +124,37 @@ export const LanguagePicker = ({ language, setLanguage }) => {
           role="radiogroup"
           aria-label={uiText('Перемкнути мову', language)}
           onKeyDown={event => {
-            if (event.key === 'Escape') {
+            if (event.key === 'Escape' || event.key === 'Enter') {
               event.stopPropagation();
+              event.preventDefault();
               setOpen(false);
             }
           }}
         >
           {APP_LANGUAGES.map(item => (
-            <Option key={item.code} $active={item.code === language} lang={item.code}>
+            <Option
+              key={item.code}
+              $active={item.code === language}
+              lang={item.code}
+              // Вказівник обирає й згортає: клік мишею чи дотик приходить на
+              // підпис з `detail > 0`. Стрілки клавіатури шлють радіокнопці
+              // `click` з нулем — і так само браузер пересилає їй клік із
+              // підпису, — тож на самій радіокнопці мишу від стрілки не
+              // відрізнити, а тут можна. Мову ставить сам підпис: згорнута
+              // сітка зникає раніше, ніж клік дійде до радіокнопки.
+              onClick={event => {
+                if (event.detail === 0) return;
+                setLanguage(item.code);
+                setOpen(false);
+              }}
+            >
               <input
                 type="radio"
                 name={groupName}
                 value={item.code}
                 checked={item.code === language}
-                onChange={() => choose(item.code)}
-                // Клік по вже обраній мові `change` не дає — і сітка не згорталась би.
-                onClick={() => { if (item.code === language) setOpen(false); }}
+                onChange={() => setLanguage(item.code)}
+                onKeyUp={event => { if (event.key === ' ') setOpen(false); }}
               />
               <span>{item.nativeName}</span>
               {item.code === language ? <FaCheck size={11} aria-hidden="true" /> : null}

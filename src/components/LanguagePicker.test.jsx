@@ -35,8 +35,23 @@ describe('вибір мови в меню', () => {
       .forEach(name => expect(screen.getByRole('radio', { name })).toBeTruthy());
     expect(screen.getByRole('radio', { name: 'Українська' }).checked).toBe(true);
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Nederlands' }));
+    // Клік вказівником по підпису: `detail: 1`. Підпис пересилає його
+    // радіокнопці — та обирає мову.
+    fireEvent.click(screen.getByText('Nederlands'), { detail: 1 });
     expect(setLanguage).toHaveBeenCalledWith('nl');
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+  });
+
+  // Стрілка в радіогрупі обирає сусідню мову (браузер шле `click` з
+  // `detail === 0`) — і сітка мусить лишатись, інакше далі сусідньої не дійти.
+  it('стрілка клавіатури перемикає мову, а сітку лишає відкритою', () => {
+    const { setLanguage } = renderPicker('uk');
+    fireEvent.click(screen.getByTestId('language-picker-toggle'));
+    fireEvent.click(screen.getByRole('radio', { name: 'English' }), { detail: 0 });
+    expect(setLanguage).toHaveBeenCalledWith('en');
+    expect(screen.getByRole('radiogroup')).toBeTruthy();
+
+    fireEvent.keyDown(screen.getByRole('radiogroup'), { key: 'Enter' });
     expect(screen.queryByRole('radiogroup')).toBeNull();
   });
 

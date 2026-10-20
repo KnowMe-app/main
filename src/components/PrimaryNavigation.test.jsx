@@ -61,3 +61,53 @@ describe('рядок навігації зі слотом сторінки', () 
     expect(screen.queryByText('Пункт меню')).toBeNull();
   });
 });
+
+// Меню малює рядок навігації — сусід сторінки, а не нащадок, — тож без
+// підписки відкрите меню лишалось у стані, в якому його відкрили.
+it('відкрите меню йде за станом сторінки', () => {
+  const StatefulPage = () => {
+    const [count, setCount] = React.useState(0);
+    usePrimaryNavigationSlot({
+      renderMenu: () => <span>Лічильник {count}</span>,
+    });
+    return <button type="button" onClick={() => setCount(value => value + 1)}>Збільшити</button>;
+  };
+  render(
+    <MemoryRouter initialEntries={['/matching']}>
+      <PrimaryNavigationSlotProvider>
+        <PrimaryNavigation />
+        <StatefulPage />
+      </PrimaryNavigationSlotProvider>
+    </MemoryRouter>
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Відкрити меню' }));
+  expect(screen.getByText('Лічильник 0')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Збільшити' }));
+  expect(screen.getByText('Лічильник 1')).toBeTruthy();
+});
+
+// Меню не перемонтовується від рендерів сторінки: інакше губиться його власний
+// стан (розгорнута сітка мов згорталась на першій же стрілці).
+it('стан усередині меню переживає рендер сторінки', () => {
+  const MenuWithState = () => {
+    const [open, setOpen] = React.useState(false);
+    return <button type="button" onClick={() => setOpen(true)}>{open ? 'Розгорнуто' : 'Згорнуто'}</button>;
+  };
+  const Page = () => {
+    const [, setCount] = React.useState(0);
+    usePrimaryNavigationSlot({ renderMenu: () => <MenuWithState /> });
+    return <button type="button" onClick={() => setCount(value => value + 1)}>Рендер сторінки</button>;
+  };
+  render(
+    <MemoryRouter initialEntries={['/matching']}>
+      <PrimaryNavigationSlotProvider>
+        <PrimaryNavigation />
+        <Page />
+      </PrimaryNavigationSlotProvider>
+    </MemoryRouter>
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Відкрити меню' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Згорнуто' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Рендер сторінки' }));
+  expect(screen.getByRole('button', { name: 'Розгорнуто' })).toBeTruthy();
+});

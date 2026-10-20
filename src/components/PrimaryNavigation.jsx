@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { getExtraLocale } from '../utils/locales';
 import { NavLink } from 'react-router-dom';
 import styled from 'styled-components';
 import { FaSearch, FaRegFolderOpen, FaRegUser, FaChevronLeft, FaEllipsisV, FaPen } from 'react-icons/fa';
 import { useAppSettings } from '../hooks/useAppSettings';
-import { usePrimaryNavigationSlotState } from './PrimaryNavigationSlot';
+import { usePrimaryNavigationMenuSubscription, usePrimaryNavigationSlotState } from './PrimaryNavigationSlot';
 import { InfoModal } from './InfoModal';
 
 const Header = styled.header`
@@ -103,21 +103,29 @@ export default function PrimaryNavigation() {
   const texts = resolveNavTexts(language);
   const slot = usePrimaryNavigationSlotState();
   const [menuOpen, setMenuOpen] = useState(false);
-  // Пункти меню складає сторінка (`renderMenu` через ref), і в тому самому
-  // проході, де змінилась мова, ref ще тримає її попередній рендер: відкрите
-  // меню лишалось би мовою, з якої щойно перемкнули. Після коміту ref уже
-  // свіжий — один повторний рендер його й підхоплює.
+  // Пункти меню складає сторінка, і відкрите меню мусить іти за її станом:
+  // поки воно відкрите, кожен рендер сторінки перемальовує і його
+  // (`usePrimaryNavigationMenuSubscription`).
+  const subscribeMenu = usePrimaryNavigationMenuSubscription();
   const [, refreshMenu] = useState(0);
   useEffect(() => {
-    if (!menuOpen) return undefined;
-    const timer = setTimeout(() => refreshMenu(value => value + 1), 0);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language]);
+    if (!menuOpen || !subscribeMenu) return undefined;
+    return subscribeMenu(() => refreshMenu(value => value + 1));
+  }, [menuOpen, subscribeMenu]);
   const workspace = slot?.workspaceLabel ? texts[slot.workspaceLabel] : '';
   const backLabel = texts.back;
   const menuLabel = texts.menu;
-  const closeMenu = () => setMenuOpen(false);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  // Тип компонента меню мусить бути сталим. Тут стояло
+  // `Context={() => slot.renderMenu(...)}` — новий тип на кожен рендер рядка,
+  // і React щоразу перемонтовував меню цілком: розгорнута сітка мов
+  // згорталась на першій же стрілці, прокрутка меню скидалась. Сталий тип
+  // React просто перемальовує, і вміст при цьому свіжий (ref сторінки).
+  const renderSlotMenu = slot?.renderMenu;
+  const SlotMenu = useCallback(
+    () => (renderSlotMenu ? renderSlotMenu({ close: closeMenu }) : null),
+    [closeMenu, renderSlotMenu],
+  );
   return (
     <Header>
       <Navigation aria-label={texts.nav}>
@@ -144,7 +152,7 @@ export default function PrimaryNavigation() {
         </SideSlot>
       </Navigation>
       {menuOpen && slot?.renderMenu && (
-        <InfoModal onClose={closeMenu} text="dotsMenu" language={language} Context={() => slot.renderMenu({ close: closeMenu })} />
+        <InfoModal onClose={closeMenu} text="dotsMenu" language={language} Context={SlotMenu} />
       )}
     </Header>
   );
