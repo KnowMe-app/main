@@ -1,5 +1,6 @@
 import { getStoredLanguage } from '../hooks/useAppSettings';
 import { getExtraLocale, isSupportedLanguage } from './locales';
+import { ownEntry } from './locales/shared';
 
 /**
  * Мова картки анкети: і підписи блоків, і значення, які підставляє застосунок.
@@ -154,9 +155,9 @@ export const translateProfileLabel = (label, language) => {
   if (!text) return '';
   const lang = resolveProfileLanguage(language);
   const extra = getExtraLocale(lang);
-  if (extra) return extra.byEnLabel[text] || text;
+  if (extra) return ownEntry(extra.byEnLabel, text) || text;
   if (lang !== 'uk') return text;
-  return UK_BY_EN_LABEL[text] || text;
+  return ownEntry(UK_BY_EN_LABEL, text) || text;
 };
 
 /**

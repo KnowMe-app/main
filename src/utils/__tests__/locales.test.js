@@ -114,3 +114,15 @@ describe('реєстр мов', () => {
     expect(formatRegionDisplayName('es', 'UA')).toBe('Ucrania');
   });
 });
+
+describe('dictionary lookups', () => {
+  it('never returns prototype members for keys like "constructor"', () => {
+    const { uiText } = require('../uiTranslations');
+    const { translateProfileLabel } = require('../profileTexts');
+    ['uk', 'en', 'ja', 'de'].forEach(language => {
+      expect(uiText('constructor', language)).toBe('constructor');
+      expect(uiText('toString', language)).toBe('toString');
+      expect(translateProfileLabel('constructor', language)).toBe('constructor');
+    });
+  });
+});

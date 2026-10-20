@@ -1,5 +1,6 @@
 import { resolveProfileLanguage } from './profileTexts';
 import { getExtraLocale } from './locales';
+import { ownEntry } from './locales/shared';
 
 /**
  * Англійський бік екранів матчингу.
@@ -1354,8 +1355,8 @@ export const uiText = (text, language, vars) => {
   // український: для того, хто обрав не українську, англійська ближча.
   const extra = getExtraLocale(lang);
   const translated = extra
-    ? extra.byUk[source] ?? EN_BY_UK[source] ?? source
-    : lang === 'en' ? EN_BY_UK[source] ?? source : source;
+    ? ownEntry(extra.byUk, source) ?? ownEntry(EN_BY_UK, source) ?? source
+    : lang === 'en' ? ownEntry(EN_BY_UK, source) ?? source : source;
   if (!vars) return translated;
   return translated.replace(/\{(\w+)\}/g, (match, key) => (
     Object.prototype.hasOwnProperty.call(vars, key) ? String(vars[key] ?? '') : match
