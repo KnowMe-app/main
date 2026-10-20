@@ -1027,8 +1027,6 @@ const BY_UK = {
   'Пошук і порівняння анкет': 'Profile suchen und vergleichen',
   'Перевірка нових карток': 'Prüfung der neuen Karten',
   'Ваші картки та створення нових': 'Ihre Karten und neue erstellen',
-  'Міграція RTDB': 'RTDB-Migration',
-  'Розкласти анкети по нових вузлах': 'Profile auf die neuen Knoten verteilen',
   '👤 Особисті дані': '👤 Persönliche Daten',
   '🏥 Медична інформація': '🏥 Medizinische Angaben',
   '🤰 Здоровʼя й вагітності': '🤰 Gesundheit und Schwangerschaften',
