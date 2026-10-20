@@ -1720,6 +1720,31 @@ await it('читач без ролі показану анкету бачить'
     set(ref(context.database(), `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ag'));
 });
 
+// Кореневе читання `matchingCards` (сторінки стрічки з курсором, пошук за
+// іменем) дає роль читача, відмінна від `ed`. Картка з кількома ролями несе її
+// масивом (`['ed', 'ag']`), а сховану роль не несе зовсім, тож правило питає і
+// елементи масиву, і `profileDetails/{uid}/hiddenRoles`. Поки воно питало сам
+// рядок, донорка-агентка гортала стрічку лише до першої сторінки.
+await it('донорка-агентка читає корінь matchingCards і з масивом ролей, і зі схованою агенцією', async () => {
+  const rootQuery = viewer => get(query(ref(db(viewer), 'matchingCards'), orderByChild('name'), limitToFirst(2)));
+  const setRole = value => testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${NODE_ROLE_VIEWER}/role`), value));
+  const setHidden = value => testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `profileDetails/${NODE_ROLE_VIEWER}/hiddenRoles`), value));
+  await setRole('ed');
+  await assertFails(rootQuery(NODE_ROLE_VIEWER));
+  await setRole(['ed', 'ag']);
+  await assertSucceeds(rootQuery(NODE_ROLE_VIEWER));
+  // Масив із самих донорських ролей — та сама донорка, що й рядок `ed`.
+  await setRole(['ed']);
+  await assertFails(rootQuery(NODE_ROLE_VIEWER));
+  await setRole('ed');
+  await setHidden('ag');
+  await assertSucceeds(rootQuery(NODE_ROLE_VIEWER));
+  await setHidden(null);
+  await setRole('ag');
+});
+
 await it('legacy-картка без дати у feedDate не відкриває приватні вузли', async () => {
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `matchingCards/${HIDDEN_CARD}/feedDate`), 'not-a-date'));
