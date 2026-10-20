@@ -159,7 +159,7 @@ export const getCanShowMatchingUserDebug = (user, { isAdmin = false } = {}) => {
   }
 
   // A card with a public comment is deliberately kept out of the general
-  // matching feed - it stays fully searchable (search reads users/{userId}
+  // matching feed - it stays fully searchable (search reads the profile nodes
   // directly, independent of this guard), just not surfaced in the deck.
   const normalizedPublicComment = String(user?.publicComment ?? '').trim();
   if (normalizedPublicComment) {

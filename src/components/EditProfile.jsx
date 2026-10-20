@@ -6,7 +6,6 @@ import {
   fetchUserById,
   updateDataInRealtimeDB,
   updateProfileNodesInRTDB,
-  updateDataInFiresoreDB,
   pruneSearchIdValues,
   syncUserSearchIdIndex,
   fetchUserComment,
@@ -48,7 +47,7 @@ import {
   applyOverlaysToCard,
   buildOverlayFieldEntries,
   buildOverlayFromDraft,
-  getCardLegacyCollection,
+  isAccountProfileCard,
   getCanonicalCard,
   getOtherEditorsChangedFields,
   getOverlayHistoryForCard,
@@ -739,11 +738,7 @@ const EditProfile = () => {
       : [];
     const isDeleteOnlySubmit = deleteOnlyKeys.length > 0;
 
-    const legacyCollection = updatedState?.userId
-      ? await getCardLegacyCollection(updatedState.userId)
-      : null;
-
-    if (legacyCollection === 'users') {
+    if (isAccountProfileCard(updatedState?.userId)) {
       const fetchedExistingData = await fetchUserById(updatedState.userId);
       const existingData = fetchedExistingData || lastSyncedSnapshotRef.current || {};
 
@@ -760,7 +755,6 @@ const EditProfile = () => {
 
         await syncUserSearchIdIndex(updatedState.userId, existingData, deletePayload, deletedKeys);
         await updateDataInRealtimeDB(updatedState.userId, deletePayload, 'update');
-        await updateDataInFiresoreDB(updatedState.userId, deletePayload, 'check', delCondition);
 
         debugProfileSave('remoteUpdate:success', { delCondition, deleteOnlyKeys });
       } else {
@@ -799,7 +793,6 @@ const EditProfile = () => {
         });
 
         await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
-        await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
 
         debugProfileSave('remoteUpdate:success', {
           delCondition,

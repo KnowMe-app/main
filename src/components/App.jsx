@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate  } from 'react-router-dom';
 import { PrivacyPolicy } from './PrivacyPolicy';
 import { MyProfile } from './MyProfile';
-import { MyProfileOld } from './MyProfileOld';
 import { LoginScreen } from './LoginScreen';
 import { AddNewProfile } from './AddNewProfile';
 import Matching from './Matching';
@@ -10,7 +9,6 @@ import EditProfile from './EditProfile';
 import MedicationsPage from './MedicationsPage';
 import FlowManager from './FlowManager';
 import BudgetPage from './BudgetPage';
-import RtdbMigrationTool from './RtdbMigrationTool';
 import InvoiceBuilderPage from './InvoiceBuilderPage';
 import DocumentsPage from './DocumentsPage';
 import PartiesPage from './PartiesPage';
@@ -154,7 +152,6 @@ export const App = () => {
       <Route path="/" element={<RequireAuth status={authStatus}>{canAccessAdd ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <PrivacyPolicy />}</RequireAuth>} />
       <Route path="/my-profile" element={<RequireAuth status={authStatus}><MyProfile /></RequireAuth>} />
       <Route path="/my-profile-new" element={<Navigate to="/my-profile" replace />} />
-      {isAdmin && <Route path="/my-profile-old" element={<RequireAuth status={authStatus}><MyProfileOld isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /></RequireAuth>} />}
       {canAccessAdd && <Route path="/add" element={<RequireAuth status={authStatus}><AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /></RequireAuth>} />}
       <Route path="/matching" element={<RequireAuth status={authStatus}><Matching /></RequireAuth>} />
       {/* Заводити й доповнювати картки може кожен, хто увійшов: право
@@ -165,12 +162,6 @@ export const App = () => {
       {isAdmin && <Route path="/edit/:userId" element={<RequireAuth status={authStatus}><EditProfile /></RequireAuth>} />}
       {isAdmin && <Route path="/medications/:userId" element={<RequireAuth status={authStatus}><MedicationsPage /></RequireAuth>} />}
       {isAdmin && <Route path="/flow" element={<RequireAuth status={authStatus}><FlowManager ownerId={auth.currentUser?.uid} /></RequireAuth>} />}
-      {/*
-        Інструмент міграції нічого не пише у Firebase, але читає локальні копії
-        обох колекцій цілком — тобто показує контакти всіх анкет. Тож маршрут
-        адмінський, як і решта інструментів роботи з сирими даними.
-      */}
-      {isAdmin && <Route path="/rtdb-migration" element={<RequireAuth status={authStatus}><RtdbMigrationTool /></RequireAuth>} />}
       {isAdmin && <Route path="/budget" element={<RequireAuth status={authStatus}><BudgetPage isAdmin={isAdmin} /></RequireAuth>} />}
       {canAccessInvoices && <Route path="/invoices" element={<RequireAuth status={authStatus}><InvoiceBuilderPage isAdmin={canAccessInvoices} /></RequireAuth>} />}
       {canAccessInvoices && <Route path="/documents" element={<RequireAuth status={authStatus}><DocumentsPage isAdmin={canAccessInvoices} /></RequireAuth>} />}

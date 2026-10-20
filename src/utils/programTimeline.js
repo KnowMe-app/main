@@ -1,3 +1,4 @@
+import { getExtraLocale, listWeekdayNames } from './locales';
 import { adjustForward, findWorkingCycleDay, isWeekend } from './cycleDates';
 
 /*
@@ -134,7 +135,9 @@ const WEEKDAYS = Object.freeze({
 export const formatTimelineDate = (date, language = 'uk') => {
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
-  return `${day}.${month} ${WEEKDAYS[language === 'en' ? 'en' : 'uk'][date.getDay()]}`;
+  const weekdays = WEEKDAYS[language]
+    || (getExtraLocale(language) ? listWeekdayNames(language, { width: 'short' }) : WEEKDAYS.uk);
+  return `${day}.${month} ${weekdays[date.getDay()]}`;
 };
 
 /**

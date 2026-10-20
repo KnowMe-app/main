@@ -84,7 +84,6 @@ describe('поза стрічкою видно саму картку', () => {
       viewerId: ORDINARY,
       accessLevel: '',
       parts: parts(hiddenCard),
-      legacy: { phone: ['+380990000000'], surname: 'Приховайло' },
     });
 
     expect(scoped.cappedToCard).toBe(true);
@@ -93,9 +92,6 @@ describe('поза стрічкою видно саму картку', () => {
     expect(scoped.parts.contacts).toBeNull();
     expect(scoped.parts.workflow).toBeNull();
     expect(scoped.parts.technical).toBeNull();
-    // Контакти лежать і в legacy-шарі, тож і він знімається — інакше межа
-    // трималася б рівно доти, доки анкету не прочитають старим шляхом.
-    expect(scoped.legacy).toBeNull();
   });
 
   it('службовий доступ, власниця анкети й суперадмін від межі не залежать', () => {
@@ -156,7 +152,7 @@ describe('межу тримає той, хто складає анкету', () 
     // ключа там немає до першого читання власної анкети.
     expect(body).toContain('resolveViewerAccessLevel(),');
     expect(body).toContain('accessLevel,');
-    expect(body).toContain('legacy: legacyFieldsNodesDoNotOwn(scoped.legacy, parts),');
+    expect(body).toContain('const merged = mergeProfileNodes({ userId: id, ...parts });');
   });
 
   it('кеш пристрою не переживає цю межу', () => {

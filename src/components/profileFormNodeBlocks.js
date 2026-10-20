@@ -48,24 +48,19 @@ export const buildRtdbConsoleLink = segments => {
   return path ? `${databaseUrl}/${path}` : databaseUrl;
 };
 
-/** Документ Firestore у консолі — той самий кодований шлях, інший розділ. */
-export const buildFirestoreConsoleLink = segments => {
-  const path = segments
-    .filter(segment => segment !== null && segment !== undefined && String(segment) !== '')
-    .map(segment => `~2F${encodeURIComponent(String(segment))}`)
-    .join('');
-  return `https://console.firebase.google.com/u/0/project/${getFirebaseConsoleProjectId()}`
-    + `/firestore/databases/-default-/data/${path}`;
-};
-
 /**
  * Блоки, які не збігаються з вузлом один-в-один.
  *
  * `getInTouch` — персональна позначка конкретного адміна, і в анкеті її більше
- * немає: вона лежить у `multiData` під тим, хто її поставив. `publish` навпаки
- * лишається в legacy-анкеті — його читає мобільний застосунок, — а на стрічку
- * впливає через `feedDate`. Права доступу теж лишаються в `/users`: саме звідти
- * їх читають правила бази, і другої копії тут бути не повинно.
+ * немає: вона лежить у `multiData` під тим, хто її поставив. `publish`
+ * власного вузла не має, але в базу потрапляє — писач картки перекладає його в
+ * `feedDate`, — тож і стоїть він у блоці картки стрічки. Права доступу живуть у
+ * `profileTechnical`: саме звідти їх читають правила бази.
+ *
+ * `unstored` — поля, яким немає вузла взагалі. Тут вони стояли блоком «legacy»
+ * з вигаданим шляхом `legacy/{id}` і правились як звичайні — а збереження
+ * мовчки їх відкидало (`fanOutProfileNodes` пише лише поля з власником).
+ * Тепер блок каже, що поля не зберігаються, і показує їх лише для читання.
  */
 export const PROFILE_FORM_BLOCK_IDS = Object.freeze({
   matchingCards: PROFILE_NODES.matchingCards,
@@ -74,8 +69,9 @@ export const PROFILE_FORM_BLOCK_IDS = Object.freeze({
   profileWorkflow: PROFILE_NODES.profileWorkflow,
   profileTechnical: PROFILE_NODES.profileTechnical,
   getInTouch: 'multiDataGetInTouch',
+  ownerMarks: 'multiDataOwnerMarks',
   access: 'access',
-  legacy: 'legacy',
+  unstored: 'unstored',
 });
 
 const ACCESS_BLOCK_FIELDS = new Set([
@@ -89,9 +85,16 @@ const ACCESS_BLOCK_FIELDS = new Set([
 
 const EXPLICIT_FIELD_BLOCKS = {
   getInTouch: PROFILE_FORM_BLOCK_IDS.getInTouch,
-  // `publish` фізично лишається в legacy-анкеті; стрічку вмикає похідний
-  // `feedDate` у картці.
-  publish: PROFILE_FORM_BLOCK_IDS.legacy,
+  // Вузла анкети в них немає, але їх зберігають окремі писачі — під тим, хто
+  // їх поставив (`setOwnerWriter`, `setOwnerStimulationSchedule`, нотатка —
+  // `multiData/comments`). У блоці «Не зберігається» вони стали б лише для
+  // читання, тобто адмін утратив би власну нотатку.
+  writer: PROFILE_FORM_BLOCK_IDS.ownerMarks,
+  stimulationSchedule: PROFILE_FORM_BLOCK_IDS.ownerMarks,
+  myComment: PROFILE_FORM_BLOCK_IDS.ownerMarks,
+  // `publish` власного вузла не має; стрічку вмикає похідний `feedDate` у
+  // картці — туди запис і йде.
+  publish: PROFILE_FORM_BLOCK_IDS.matchingCards,
   userRole: PROFILE_FORM_BLOCK_IDS.matchingCards,
 };
 
@@ -101,9 +104,10 @@ export const PROFILE_FORM_BLOCK_ORDER = Object.freeze([
   PROFILE_FORM_BLOCK_IDS.profileContacts,
   PROFILE_FORM_BLOCK_IDS.profileDetails,
   PROFILE_FORM_BLOCK_IDS.getInTouch,
+  PROFILE_FORM_BLOCK_IDS.ownerMarks,
   PROFILE_FORM_BLOCK_IDS.profileWorkflow,
   PROFILE_FORM_BLOCK_IDS.profileTechnical,
-  PROFILE_FORM_BLOCK_IDS.legacy,
+  PROFILE_FORM_BLOCK_IDS.unstored,
   PROFILE_FORM_BLOCK_IDS.access,
 ]);
 
@@ -124,6 +128,10 @@ const BLOCK_META = {
     title: 'Звʼязатись',
     hint: 'Персональна позначка адміна, а не поле анкети: у базі вона лежить під тим, хто її поставив.',
   },
+  [PROFILE_FORM_BLOCK_IDS.ownerMarks]: {
+    title: 'Ваші позначки',
+    hint: 'Нотатка, автор і графік стимуляції — позначки того, хто їх ставить: лежать у multiData під вашим uid (comments, writer, stimulationSchedule), а не в анкеті.',
+  },
   [PROFILE_FORM_BLOCK_IDS.profileWorkflow]: {
     title: 'Робота з анкетою',
     hint: 'Внутрішні операційні дані. Видно тим, хто редагує матчинг.',
@@ -132,28 +140,28 @@ const BLOCK_META = {
     title: 'Технічне',
     hint: 'Логіни, дати створення, мова. Видно власнику анкети і суперадмінам.',
   },
-  [PROFILE_FORM_BLOCK_IDS.legacy]: {
-    title: 'Legacy-анкета',
-    hint: 'Поля, які ще не мають власного вузла. Звідси їх читає мобільний застосунок.',
+  [PROFILE_FORM_BLOCK_IDS.unstored]: {
+    title: 'Не зберігається',
+    hint: 'Поля без власного вузла: база їх не приймає, і збереження форми їх відкидає, тож тут вони лише для читання. Щоб поле зберігалось, йому потрібен вузол у profileNodeSchema.',
   },
   [PROFILE_FORM_BLOCK_IDS.access]: {
     title: 'Доступи',
-    hint: 'Рівень доступу і право створювати анкети живуть у profileTechnical — правила бази питають і його, і legacy. Делегування чужого multiData лишається тільки в legacy.',
+    hint: 'Рівень доступу, право створювати анкети й делегування чужого multiData живуть у profileTechnical — правила бази питають лише його.',
   },
 };
 
-/** Якому блоку належить поле. Невідоме поле лишається в legacy — як і в даних. */
+/** Якому блоку належить поле. Невідоме поле — у блоці «Не зберігається». */
 export const resolveProfileFormBlock = fieldName => {
-  if (!fieldName) return PROFILE_FORM_BLOCK_IDS.legacy;
+  if (!fieldName) return PROFILE_FORM_BLOCK_IDS.unstored;
   if (ACCESS_BLOCK_FIELDS.has(fieldName)) return PROFILE_FORM_BLOCK_IDS.access;
   if (EXPLICIT_FIELD_BLOCKS[fieldName]) return EXPLICIT_FIELD_BLOCKS[fieldName];
-  return resolveFieldOwnerNode(fieldName) || PROFILE_FORM_BLOCK_IDS.legacy;
+  return resolveFieldOwnerNode(fieldName) || PROFILE_FORM_BLOCK_IDS.unstored;
 };
 
 /**
  * Заголовок блоку разом із посиланням саме на той вузол, де лежать його дані.
  *
- * Legacy-колекція одна — `users`; саме туди веде посилання блоку legacy-анкети.
+ * Блок полів без вузла посилання не має: у базі вони не лежать ніде.
  */
 export const DRAFT_RECORD_BLOCK_ID = 'profileMutationDraft';
 
@@ -191,11 +199,16 @@ export const buildProfileFormBlockHeader = (blockId, { profileId, ownerId, draft
         return ownerId
           ? ['multiData', 'getInTouch', ownerId]
           : ['multiData', 'getInTouch'];
-      case PROFILE_FORM_BLOCK_IDS.legacy:
-        return ['users', profileId];
+      // Шляху в базі немає; ключ лише розводить блоки у формі й не
+      // показується (`label` нижче порожній — назву дає `title`).
+      case PROFILE_FORM_BLOCK_IDS.unstored:
+        return ['unstored', profileId];
       // Права переїхали в технічний вузол, і посилання веде туди ж, куди тепер
-      // іде запис. Делегування (`multiDataSourceUserIds`, `godMode`) лишилось у
-      // legacy — його видно в блоці legacy-анкети.
+      // іде запис.
+      // Позначки лежать у трьох різних вузлах `multiData`, тож посилання
+      // веде на сам `multiData`, а назви вузлів дає підказка блоку.
+      case PROFILE_FORM_BLOCK_IDS.ownerMarks:
+        return ['multiData'];
       case PROFILE_FORM_BLOCK_IDS.access:
         return [PROFILE_NODES.profileTechnical, profileId];
       default:
@@ -209,13 +222,15 @@ export const buildProfileFormBlockHeader = (blockId, { profileId, ownerId, draft
   // Посилання при цьому веде на повний шлях, разом з id.
   const labelSegments = profileId ? path.filter(segment => segment !== profileId) : path;
 
+  const unstored = blockId === PROFILE_FORM_BLOCK_IDS.unstored;
   return {
     id: blockId,
     title: meta.title,
     hint: meta.hint,
-    label: labelSegments.join('/'),
+    label: unstored ? meta.title : labelSegments.join('/'),
     path: path.join('/'),
-    href: buildRtdbConsoleLink(path),
+    href: unstored ? '' : buildRtdbConsoleLink(path),
+    readOnly: unstored,
   };
 };
 

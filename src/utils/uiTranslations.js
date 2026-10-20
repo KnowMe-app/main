@@ -1,4 +1,6 @@
 import { resolveProfileLanguage } from './profileTexts';
+import { getExtraLocale } from './locales';
+import { ownEntry } from './locales/shared';
 
 /**
  * Англійський бік екранів матчингу.
@@ -1088,14 +1090,11 @@ const EN_BY_UK = {
   'Так, вийти': 'Yes, sign out',
   'Виходимо…': 'Signing out…',
   'Мій профіль': 'My profile',
-  'Старий профіль': 'Old profile',
   'Додати анкету': 'Add a profile',
   'Адмін-додавання профілів': 'Admin profile creation',
   'Пошук і порівняння анкет': 'Search and compare profiles',
   'Перевірка нових карток': 'Review of the new cards',
   'Ваші картки та створення нових': 'Your cards, and creating new ones',
-  'Міграція RTDB': 'RTDB migration',
-  'Розкласти анкети по нових вузлах': 'Lay the profiles out across the new nodes',
 
   // --- «Мій профіль» ---
   '👤 Особисті дані': '👤 Personal data',
@@ -1314,6 +1313,30 @@ const EN_BY_UK = {
   'Щоб бачити анкети, увійдіть у застосунок': 'Sign in to see the profiles',
   'Увійти': 'Sign in',
   'Перевіряємо сесію…': 'Checking your session…',
+  'Програми — додайте хоча б одну': 'Programs — add at least one',
+  // Фото, перегляд фото, меню навігації — екрани матчингу й «Мій профіль».
+  'Підтвердити видалення фото {n}': 'Confirm deleting photo {n}',
+  'Видалити фото {n}': 'Delete photo {n}',
+  'Закрити меню': 'Close menu',
+  'Додати фото': 'Add a photo',
+  'Видалити фото': 'Delete photo',
+  'Видалити це фото?': 'Delete this photo?',
+  'Головне фото': 'Main photo',
+  'Зробити головним': 'Make it the main one',
+  'Наступне фото': 'Next photo',
+  'Попереднє фото': 'Previous photo',
+  'Закрити': 'Close',
+  'Фото': 'Photo',
+  'Обрізати фото до стандартного розміру': 'Crop the photo to the standard size',
+  'Перетягніть фото всередині рамки та змініть масштаб, щоб обрати найвдалішу частину для картки.': 'Drag the photo inside the frame and zoom to pick the best part for the card.',
+  'Попередній перегляд обрізання': 'Crop preview',
+  'Обробляємо фото…': 'Processing the photos…',
+  'Фото завантажується на сервер…': 'Uploading the photo…',
+  'Зберегти й наступне': 'Save and next',
+  'Зберегти': 'Save',
+  'Видалити?': 'Delete?',
+  'Додайте свої фото, максимум {max} шт': 'Add your photos, up to {max}',
+  'Matching: не вдалося отримати дані протягом 5 секунд. Режим: {mode}. Перевірте мережу, Firebase rules та індекси.': 'Matching: no data within 5 seconds. Mode: {mode}. Check the network, Firebase rules and indexes.',
 };
 
 /**
@@ -1324,7 +1347,13 @@ const EN_BY_UK = {
  */
 export const uiText = (text, language, vars) => {
   const source = String(text ?? '');
-  const translated = resolveProfileLanguage(language) === 'en' ? EN_BY_UK[source] ?? source : source;
+  const lang = resolveProfileLanguage(language);
+  // Рядка мовою читача може ще не бути — тоді він бачить англійський, а не
+  // український: для того, хто обрав не українську, англійська ближча.
+  const extra = getExtraLocale(lang);
+  const translated = extra
+    ? ownEntry(extra.byUk, source) ?? ownEntry(EN_BY_UK, source) ?? source
+    : lang === 'en' ? ownEntry(EN_BY_UK, source) ?? source : source;
   if (!vars) return translated;
   return translated.replace(/\{(\w+)\}/g, (match, key) => (
     Object.prototype.hasOwnProperty.call(vars, key) ? String(vars[key] ?? '') : match

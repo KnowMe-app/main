@@ -66,7 +66,6 @@ import {
   database,
   auth,
   updateDataInRealtimeDB,
-  updateDataInFiresoreDB,
   readOwnerGetInTouchSorted,
   setOwnerGetInTouch,
   setReactionUserValues,
@@ -1931,11 +1930,6 @@ const Matching = () => {
       toast.error(uiText(newValue ? 'Не вдалося опублікувати анкету. Спробуйте ще раз' : 'Не вдалося зняти анкету з публікації. Спробуйте ще раз', language));
       return;
     }
-    // Firestore — дзеркало анкети акаунта; у картки, заведеної адміном,
-    // документа там немає, і `update` відмовляє. Стрічку це не зачіпає.
-    updateDataInFiresoreDB(userId, sanitizeCardForBackend({ publish: newValue }), 'update').catch(err => {
-      console.warn('Failed to mirror publish into Firestore', err);
-    });
   }, [isAdmin, language]);
 
   // Spec §1: a non-empty query replaces the feed's contents with the results,
@@ -5283,7 +5277,7 @@ const Matching = () => {
       if (requestId !== initialRequestIdRef.current || !loadingStateRef.current) return;
       const mode = viewModeRef.current || viewMode || 'unknown';
       toast(
-        `Matching: не вдалося отримати дані протягом 5 секунд. Режим: ${mode}. Перевірте мережу, Firebase rules та індекси.`,
+        uiText('Matching: не вдалося отримати дані протягом 5 секунд. Режим: {mode}. Перевірте мережу, Firebase rules та індекси.', language, { mode }),
         {
           id: 'matching-slow-load',
           icon: '⚠️',
@@ -7836,7 +7830,6 @@ const Matching = () => {
                 searchOptions={{
                   searchIdPrefixes: MATCHING_SEARCH_ID_PREFIXES,
                   enabledSearchKeys: MATCHING_SEARCH_BAR_ENABLED_KEYS,
-                  cacheScope: { collections: ['users'] },
                   limitedFields: !hasFullProfileAccess,
                   // Видача малюється карткою; анкета читається на дотик, коли
                   // картку відкрили (`ensureFullProfile`). Див. `addCardHit`.

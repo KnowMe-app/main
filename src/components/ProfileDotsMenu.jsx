@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useLocation } from 'react-router-dom';
-import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEraser, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaDatabase, FaMoon, FaSun, FaGlobe } from 'react-icons/fa';
+import { FaRegUser, FaUsers, FaSignOutAlt, FaTrashAlt, FaEraser, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaMoon, FaSun } from 'react-icons/fa';
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
+import { LanguagePicker } from './LanguagePicker';
 import { useAppSettings } from 'hooks/useAppSettings';
 import { uiText } from 'utils/uiTranslations';
 import {
@@ -250,7 +251,6 @@ export const ProfileDotsMenu = ({
 
   const navItems = [
     { path: '/my-profile', label: uiText('Мій профіль', language), icon: <FaRegUser /> },
-    ...(isAdmin ? [{ path: '/my-profile-old', label: uiText('Старий профіль', language), icon: <FaUserEdit /> }] : []),
     ...(canSeePrivilegedNav && (isAdmin || resolvedAccess.canAccessAdd)
       ? [{ path: '/add', label: uiText('Додати анкету', language), description: uiText('Адмін-додавання профілів', language), icon: <MdPersonAddAlt1 /> }]
       : []),
@@ -271,9 +271,6 @@ export const ProfileDotsMenu = ({
     ...(isAdmin ? [{ path: '/invoices', label: 'Invoices', description: 'Create and export client invoices', icon: <FaFileInvoiceDollar /> }] : []),
     ...(isAdmin ? [{ path: '/documents', label: 'Documents', description: 'Generate case documents from templates', icon: <FaFileAlt /> }] : []),
     ...(isAdmin ? [{ path: '/parties', label: 'Parties', description: 'Manage clinics, couples and other case parties', icon: <FaAddressBook /> }] : []),
-    // Маршрут інструменту міграції існує тільки для адмінів (App.jsx), і досі туди
-    // можна було потрапити лише вбивши адресу руками.
-    ...(isAdmin ? [{ path: '/rtdb-migration', label: uiText('Міграція RTDB', language), description: uiText('Розкласти анкети по нових вузлах', language), icon: <FaDatabase /> }] : []),
   ].filter(item => !omitPrimaryDestinations || !PRIMARY_NAVIGATION_PATHS.includes(item.path));
 
   return (
@@ -357,31 +354,9 @@ export const ProfileDotsMenu = ({
             </SegmentedOption>
           </SegmentedControl>
         </SettingRow>
-        <SettingRow>
-          <ItemIcon><FaGlobe /></ItemIcon>
-          <span>
-            <ItemLabel>{uiText('Мова', language)}</ItemLabel>
-            <ItemDescription>{uiText('Мова документів, правил і карток анкет', language)}</ItemDescription>
-          </span>
-          <SegmentedControl role="group" aria-label={uiText('Перемкнути мову', language)}>
-            <SegmentedOption
-              type="button"
-              $active={language === 'uk'}
-              aria-pressed={language === 'uk'}
-              onClick={() => setLanguage('uk')}
-            >
-              UK
-            </SegmentedOption>
-            <SegmentedOption
-              type="button"
-              $active={language === 'en'}
-              aria-pressed={language === 'en'}
-              onClick={() => setLanguage('en')}
-            >
-              EN
-            </SegmentedOption>
-          </SegmentedControl>
-        </SettingRow>
+        {/* Мов сім, і сегментований перемикач на них не ліз у рядок — вибір
+            згорнутий в один рядок і розгортається сіткою (`LanguagePicker`). */}
+        <LanguagePicker language={language} setLanguage={setLanguage} />
       </MenuSection>
 
       {/* «Переглянути анкету» звідси прибрано: той пункт відкривав інструкцію

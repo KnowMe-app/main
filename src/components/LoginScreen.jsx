@@ -12,7 +12,7 @@ import {
   markAuthSession,
   MY_PROFILE_ROUTE,
   normalizeAuthEmail,
-  persistUserWithFallback,
+  persistAccountProfile,
 } from './authProfilePersistence';
 import { readReturnToFromState } from 'utils/authRedirect';
 import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
@@ -458,7 +458,11 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
         todayDash,
       });
 
-      await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'update');
+      // Вхід — це сесія Firebase, а не запис дати входу: відмова бази на
+      // `lastLogin` не мусить не пускати людину в застосунок.
+      await persistAccountProfile(userCredential.user.uid, uploadedInfo, 'update').catch(error => {
+        console.warn('[login] не вдалося записати дату входу', error);
+      });
 
       markAuthSession({ email, userId: userCredential.user.uid });
       setIsLoggedIn(true);
@@ -491,7 +495,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       });
 
       await sendEmailVerification(userCredential.user);
-      await persistUserWithFallback(userCredential.user.uid, uploadedInfo, 'set');
+      await persistAccountProfile(userCredential.user.uid, uploadedInfo, 'set');
 
       markAuthSession({ email, userId: userCredential.user.uid });
       setIsLoggedIn(true);

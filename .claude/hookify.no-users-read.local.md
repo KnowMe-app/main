@@ -5,29 +5,27 @@ event: file
 conditions:
   - field: new_text
     operator: regex_match
-    pattern: get\(\s*ref2?\(\s*database\s*,\s*['"\x60]users[/'"\x60]
+    pattern: ref2?\(\s*[a-zA-Z]+\s*,\s*['"\x60]users[/'"\x60]
 ---
 
-🚫 **Читання з `/users` — це legacy-вузол.**
+🚫 **`/users` у RTDB закрито й видалено з правил.**
 
-`/users` лишається **дзеркалом**: веб туди пише, але з нього **не читає
-взагалі**. Жодного `get` на `users/...` у коді немає, і додавати новий не можна.
+Веб з ним не працює взагалі: ні читання, ні запису, ні дзеркала. Будь-який
+`ref(..., 'users/...')` у RTDB відлетить з `PERMISSION_DENIED` — у всіх, адмінів
+теж. (Firestore `users/{uid}` — інша річ: туди пише `updateDataInFiresoreDB`.)
 
-**Куди переїхало те, що читалось звідти раніше:**
+**Куди переїхало те, що жило в `/users`:**
 
 | Було в `/users` | Тепер |
 |---|---|
 | `publish` | `feedDate` у картці |
-| `accessLevel` | `profileTechnical` |
+| `accessLevel`, `canCreateProfiles`, `multiDataSourceUserIds` | `profileTechnical` |
+| роль читача для правил | `matchingCards/{uid}/role` |
 | `cycleStatus`, `lastAction`, `lastCycle` | `profileWorkflow` |
 | `lastLogin`, `createdAt` | `profileTechnical` |
 | контакти | `searchId` + `profileContacts` |
 
-**Питання «чи є legacy-тіло» вирішує формат id, а не читання** —
-`hasLegacyUsersBody`, `getCardLegacyCollection`.
-
-**Єдиний явний виняток** — кнопка «завантажити users.json» в адмінці
-(`AddNewProfile.jsx`): вона й існує, щоб вивантажити legacy для міграції.
+Анкету акаунта впізнає формат id — `isAccountProfileCard`.
 
 Новий шлях читання анкети веде в `readProfileFromNodes` (`src/components/config.js`),
 а не в окремий `get` — там стоїть межа приватності.

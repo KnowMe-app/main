@@ -1,4 +1,5 @@
 import { getCurrentValue } from './getCurrentValue';
+import { getExtraLocale } from '../utils/locales';
 import { utilCalculateAge } from './smallCard/utilCalculateAge';
 import { normalizeCountry, normalizeRegion } from './normalizeLocation';
 import { computeBmi, formatCityName, normalizeHeightCm, normalizeWeightKg } from '../utils/profileNormalization';
@@ -242,11 +243,13 @@ const isExcluded = (item, excludeKeys = []) => {
 // Значення, вибране зі списку, показується мовою інтерфейсу — пара для нього
 // вже лежить у формі. Вільний текст словнику не відповідає й лишається як є.
 const localizeFieldValue = (item, value, language) => {
-  if (item.resolved || resolveProfileLanguage(language) !== 'uk') return value;
-  return String(value)
+  const lang = resolveProfileLanguage(language);
+  const extra = getExtraLocale(lang);
+  if (item.resolved || (lang !== 'uk' && !extra)) return value;
+  const parts = String(value)
     .split(', ')
-    .map(part => translateFieldValue(item.key, part))
-    .join(', ');
+    .map(part => translateFieldValue(item.key, part, lang));
+  return extra ? extra.sentences.list(parts) : parts.join(', ');
 };
 
 const toDisplayFields = (items, user, excludeKeys = [], language) =>
@@ -306,7 +309,10 @@ const maritalStatusDisplayValue = (user, language) => maritalStatusLabel(user?.m
 const glassesDisplayValue = (user, language) => {
   const normalized = normalizeDisplayValue(user?.glasses).toLowerCase();
   if (NO_TOKENS.has(normalized) || normalized === 'ні') {
-    return resolveProfileLanguage(language) === 'en' ? 'no, good eyesight' : 'не носить, зір гарний';
+    const lang = resolveProfileLanguage(language);
+    const extra = getExtraLocale(lang);
+    if (extra) return extra.sentences.glasses.short;
+    return lang === 'en' ? 'no, good eyesight' : 'не носить, зір гарний';
   }
   return glassesLabel(user?.glasses, language);
 };

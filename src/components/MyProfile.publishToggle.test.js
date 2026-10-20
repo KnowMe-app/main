@@ -143,3 +143,24 @@ describe('my-profile publication toggle', () => {
     expect(source).toContain("uiText('Логін не відбувся', language)");
   });
 });
+
+// Тост про обовʼязкове поле називає поле так, як його підписує форма цієї
+// ролі: агенція бачила «Ім’я» над полем «Назва агенції», а розділ програм —
+// сирим ключем «programs».
+describe('required-field toast names the field the way the form labels it', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'MyProfile.jsx'), 'utf8');
+  const { resolveMyProfileFieldText } = require('../utils/myProfileRoleTexts');
+
+  it('takes the role label before the dictionary label, and names programs in words', () => {
+    const helper = source.slice(
+      source.indexOf('const resolveRequiredFieldLabel = fieldName => {'),
+      source.indexOf('const validateRequiredProfileFields ='),
+    );
+    expect(helper).toContain("if (fieldName === 'programs') return uiText('Програми — додайте хоча б одну', language);");
+    expect(helper).toContain('resolveMyProfileFieldText(fieldName,');
+    expect(source).toContain('const firstMissingFieldLabel = resolveRequiredFieldLabel(firstMissingField);');
+    expect(resolveMyProfileFieldText('name', 'ag').label).toBe('Назва агенції');
+    expect(resolveMyProfileFieldText('surname', 'ag').label).toBe('Контактна особа');
+    expect(resolveMyProfileFieldText('moreInfo_main', 'cl').label).toBe('Про клініку');
+  });
+});

@@ -110,9 +110,9 @@ describe("remoteUpdate is serialized through enqueueProfileSync and sends a mini
     expect(deleteBranch).toContain('deleteOnlyKeys.forEach(key => {');
     expect(deleteBranch).toContain('deletePayload[key] = null;');
     expect(deleteBranch).not.toContain('makeUploadedInfo(');
-    expect(deleteBranch).toContain(
-      "await Promise.all([\n          updateDataInRealtimeDB(syncedState.userId, deletePayload, 'update'),\n          updateDataInFiresoreDB(syncedState.userId, deletePayload, 'check', delCondition),\n        ]);"
-    );
+    // Анкету акаунта пише лише RTDB: Firestore застосунок не чіпає.
+    expect(deleteBranch).toContain("await updateDataInRealtimeDB(syncedState.userId, deletePayload, 'update');");
+    expect(deleteBranch).not.toContain('updateDataInFiresoreDB');
   });
 
   it('short-userId delete-only branch writes a minimal deletePayload with no skipIndexing argument', () => {

@@ -2,13 +2,12 @@ import {
   fetchUserById,
   updateDataInRealtimeDB,
   updateProfileNodesInRTDB,
-  updateDataInFiresoreDB
 } from "components/config";
 import { updateCachedUser } from "utils/cache";
 import { formatDateAndFormula, formatDateToServer } from "components/inputValidations";
 import { makeUploadedInfo } from "components/makeUploadedInfo";
 import { getUserStateShape, markUserPendingRemove, updateUserInState } from "./userStateUpdate";
-import { getCardLegacyCollection } from "utils/multiAccountEdits";
+import { isAccountProfileCard } from "utils/multiAccountEdits";
 
 export const handleChange = (
   setUsers,
@@ -502,11 +501,9 @@ export const handleSubmit = async (userData, condition, removeKeys = []) => {
   // Оновлюємо поле lastAction поточною датою в мілісекундах
   uploadedInfo.lastAction = Date.now();
 
-  // Картки, опубліковані з чернеток, мають короткий push id, але вже живуть у
-  // users. Тому вибираємо сховище за наявним записом, а не лише за довжиною id.
-  const legacyCollection = await getCardLegacyCollection(userData?.userId);
-  const writesToUsers = legacyCollection === 'users';
-  const basePayload = writesToUsers
+  // Анкета акаунта пишеться цілком, картка — лише полями, які веде форма.
+  const writesAccountProfile = isAccountProfileCard(userData?.userId);
+  const basePayload = writesAccountProfile
     ? { ...uploadedInfo }
     : Object.fromEntries(
         Object.entries(uploadedInfo).filter(([key]) =>
@@ -542,7 +539,7 @@ export const handleSubmit = async (userData, condition, removeKeys = []) => {
     { removeKeys: removalTargets },
   );
 
-  if (writesToUsers) {
+  if (writesAccountProfile) {
     await updateDataInRealtimeDB(userData.userId, payloadForBackend, 'update');
   } else {
     await updateProfileNodesInRTDB(userData.userId, payloadForBackend, 'update');
@@ -563,10 +560,8 @@ export const handleSubmitAll = async (userData, overwrite) => {
 
   updateCachedUser({ ...uploadedInfo, userId: userData.userId });
 
-  const legacyCollection = await getCardLegacyCollection(userData?.userId);
-  if (legacyCollection === 'users') {
+  if (isAccountProfileCard(userData?.userId)) {
     await updateDataInRealtimeDB(userData.userId, uploadedInfo, 'update');
-    await updateDataInFiresoreDB(userData.userId, uploadedInfo, 'check');
   } else {
     await updateProfileNodesInRTDB(userData.userId, uploadedInfo, 'update');
   }

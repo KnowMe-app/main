@@ -1,4 +1,6 @@
 import { getStoredLanguage } from '../hooks/useAppSettings';
+import { getExtraLocale, isSupportedLanguage } from './locales';
+import { ownEntry } from './locales/shared';
 
 /**
  * Мова картки анкети: і підписи блоків, і значення, які підставляє застосунок.
@@ -23,7 +25,7 @@ import { getStoredLanguage } from '../hooks/useAppSettings';
 export const DEFAULT_PROFILE_LANGUAGE = 'uk';
 
 export const resolveProfileLanguage = language => {
-  if (language === 'uk' || language === 'en') return language;
+  if (isSupportedLanguage(language)) return language;
   try {
     return getStoredLanguage();
   } catch {
@@ -151,8 +153,11 @@ const UK_BY_EN_LABEL = {
 export const translateProfileLabel = (label, language) => {
   const text = String(label ?? '').trim();
   if (!text) return '';
-  if (resolveProfileLanguage(language) !== 'uk') return text;
-  return UK_BY_EN_LABEL[text] || text;
+  const lang = resolveProfileLanguage(language);
+  const extra = getExtraLocale(lang);
+  if (extra) return ownEntry(extra.byEnLabel, text) || text;
+  if (lang !== 'uk') return text;
+  return ownEntry(UK_BY_EN_LABEL, text) || text;
 };
 
 /**
@@ -170,7 +175,10 @@ const DERIVED_VALUES = {
 
 export const derivedValueTexts = (kind, language) => {
   const pair = DERIVED_VALUES[kind] || DERIVED_VALUES.yesNo;
-  return pair[resolveProfileLanguage(language)] || pair.en;
+  const lang = resolveProfileLanguage(language);
+  const extra = getExtraLocale(lang);
+  if (extra) return extra.derived[kind] || extra.derived.yesNo;
+  return pair[lang] || pair.en;
 };
 
 /** Статичні написи картки анкети. Ключ — англійський оригінал. */
@@ -221,5 +229,8 @@ const UI_TEXTS = {
 export const profileUiText = (key, language) => {
   const entry = UI_TEXTS[key];
   if (!entry) return '';
-  return entry[resolveProfileLanguage(language)] || entry.en;
+  const lang = resolveProfileLanguage(language);
+  const extra = getExtraLocale(lang);
+  if (extra) return extra.uiTexts[key] || entry.en;
+  return entry[lang] || entry.en;
 };

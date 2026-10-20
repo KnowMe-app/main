@@ -636,14 +636,14 @@ describe('SearchBar cache-first search', () => {
   });
 
   it('keeps negative cache entries isolated by cache scope', () => {
-    const usersScope = { cacheScope: { collections: ['users'] } };
+    const scoped = { cacheScope: { screen: 'admin' } };
     setIdsForQuery(
-      getSearchCacheKeyForParams('instagram', 'collection-only', usersScope),
+      getSearchCacheKeyForParams('instagram', 'collection-only', scoped),
       [],
       { isNegativeHit: true }
     );
 
-    expect(getFreshCachedSearchResult('instagram', 'collection-only', usersScope).negativeHit).toBe(true);
+    expect(getFreshCachedSearchResult('instagram', 'collection-only', scoped).negativeHit).toBe(true);
     // Той самий запит без скоупа — це інший ключ, тож негативний кеш на нього
     // не поширюється.
     expect(getFreshCachedSearchResult('instagram', 'collection-only').negativeHit).toBe(false);

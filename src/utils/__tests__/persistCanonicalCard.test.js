@@ -6,7 +6,6 @@ jest.mock('components/config', () => ({
   auth: { currentUser: { uid: 'admin-1' } },
   fetchUserById: jest.fn(async () => ({})),
   syncUserSearchIdIndex: jest.fn(async () => undefined),
-  updateDataInFiresoreDB: jest.fn(async () => undefined),
   updateDataInRealtimeDB: jest.fn(async () => undefined),
   updateProfileNodesInRTDB: jest.fn(async () => undefined),
 }));

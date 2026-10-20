@@ -35,7 +35,6 @@ const hasAnyNode = nodes => nodes.some(node => node && typeof node === 'object' 
  * @param {object|null} parts.contacts   `profileContacts/{id}`
  * @param {object|null} parts.workflow   `profileWorkflow/{id}`
  * @param {object|null} parts.technical  `profileTechnical/{id}`
- * @param {object|null} parts.legacy     анкета зі старої колекції, якщо її читали
  */
 export const mergeProfileNodes = ({
   userId,
@@ -44,18 +43,13 @@ export const mergeProfileNodes = ({
   contacts = null,
   workflow = null,
   technical = null,
-  legacy = null,
 } = {}) => {
   const id = String(userId || '').trim();
   if (!id) return null;
-  if (!hasAnyNode([card, details, contacts, workflow, technical, legacy])) return null;
+  if (!hasAnyNode([card, details, contacts, workflow, technical])) return null;
 
   const expandedCard = card ? expandMatchingCard(id, card) : null;
   const merged = { userId: id };
-
-  // Legacy йде найпершим шаром: поки анкету не перенесли, він єдиний, хто щось
-  // знає; після перенесення нові вузли лягають згори і перекривають його.
-  if (legacy && typeof legacy === 'object') Object.assign(merged, legacy);
 
   if (expandedCard) {
     Object.entries(expandedCard).forEach(([key, value]) => {
@@ -88,8 +82,9 @@ export const mergeProfileNodes = ({
 /**
  * Чи є в цих вузлах хоч щось — тобто чи варто взагалі відповідати.
  *
- * Порожня відповідь від усіх пʼятьох означає «анкета сюди ще не переїхала», і
- * викликач має піти в legacy, а не показати порожню картку.
+ * Порожня відповідь від усіх пʼятьох означає, що анкети з вузлів немає (це,
+ * скажімо, чернетка), і викликач має шукати її деінде, а не показувати
+ * порожню картку.
  */
 export const hasAnyProfileNode = parts => hasAnyNode([
   parts?.card, parts?.details, parts?.contacts, parts?.workflow, parts?.technical,

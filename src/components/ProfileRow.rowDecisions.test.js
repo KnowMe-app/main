@@ -161,14 +161,15 @@ describe('ряд рішень у рядку стрічки', () => {
     renderRow({ onToggleExpand, user: { ...card, photos: ['a.jpg', 'b.jpg'], __allPhotosLoaded: true } });
 
     fireEvent.click(screen.getByTestId('row-photo'));
-    const viewer = screen.getByRole('dialog', { name: 'Photo' });
+    // Перегляд фото називає себе мовою інтерфейсу — тут українською.
+    const viewer = screen.getByRole('dialog', { name: 'Фото' });
     expect(viewer).toBeInTheDocument();
     expect(within(viewer).getByText('1 / 2')).toBeInTheDocument();
     expect(onToggleExpand).not.toHaveBeenCalled();
 
     // Закриття знімає власний запис історії, а закриває вже `popstate`.
-    fireEvent.click(within(viewer).getByLabelText('Close'));
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Photo' })).not.toBeInTheDocument());
+    fireEvent.click(within(viewer).getByLabelText('Закрити'));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Фото' })).not.toBeInTheDocument());
   });
 });
 

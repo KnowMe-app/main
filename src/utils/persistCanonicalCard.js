@@ -4,8 +4,8 @@
 // (адмін переглядає чергу доповнень списком), а писати треба тим самим шляхом,
 // яким пише форма, інакше анкета розійдеться з індексом. Шляхів два, і вибирає
 // між ними формат id — та сама умова, що й у решті писачів: довгий id це
-// Firebase-Auth UID, тобто анкета акаунта з legacy-дзеркалом, короткий — картка,
-// заведена в застосунку, у якої тіла в `/users` немає й не буде.
+// Firebase-Auth UID, тобто анкета акаунта (`updateDataInRealtimeDB`), короткий —
+// картка, заведена в застосунку (`updateProfileNodesInRTDB`).
 //
 // Індекс дописується **до** запису анкети: `syncUserSearchIdIndex` порівнює
 // подане з тим, що лежить у базі зараз, тож після запису різниці вже не видно.
@@ -18,7 +18,6 @@ import {
   auth,
   fetchUserById,
   syncUserSearchIdIndex,
-  updateDataInFiresoreDB,
   updateDataInRealtimeDB,
   updateProfileNodesInRTDB,
 } from 'components/config';
@@ -53,7 +52,6 @@ export const persistCanonicalCard = async mergedCard => {
 
   if (isLongFormatUserId(userId)) {
     await updateDataInRealtimeDB(userId, cleanedState, 'update');
-    await updateDataInFiresoreDB(userId, cleanedState, 'check');
     return;
   }
 

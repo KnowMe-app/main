@@ -39,14 +39,14 @@ describe('локальний вхід індексації читає ті са�
     expect(gates.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('вузлів самих по собі достатньо, legacy сам по собі — привід попередити', () => {
+  it('вузлів самих по собі достатньо, а експорт `users` джерелом не є', () => {
     const nodesOnly = describeLocalIndexingSources({ matchingCards: { a: { name: 'A' } } });
     expect(nodesOnly.isUsable).toBe(true);
-    expect(nodesOnly.isLegacyOnly).toBe(false);
 
-    const legacyOnly = describeLocalIndexingSources({ users: { a: { name: 'A' } } });
-    expect(legacyOnly.isUsable).toBe(true);
-    expect(legacyOnly.isLegacyOnly).toBe(true);
+    // З колекцією `users` застосунок більше не працює, тож і локально з неї
+    // нічого не збирається: файл без вузлів — це «нічого не обрано».
+    expect(describeLocalIndexingSources({ users: { a: { name: 'A' } } }).isUsable).toBe(false);
+    expect(addNewProfileSource).not.toContain('Обрати users.json');
 
     expect(describeLocalIndexingSources({}).isUsable).toBe(false);
   });

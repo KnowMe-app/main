@@ -37,11 +37,10 @@ const MIGRATED_EDITOR = 'migratedEditorUid0000000000';
 // акаунт бачить стрічку — і саме на ньому перевіряється, що поза стрічкою він
 // не бачить нічого, крім картки.
 const ORDINARY_VIEWER = 'ordinaryViewerUid000000000';
-// Той самий звичайний користувач, але його роль не доїхала в legacy `users`:
-// запис туди відхилили правами, і `persistUserWithFallback` поклав анкету у
-// вузли профілю. Роль такого акаунта живе в `matchingCards/{uid}/role` — і поки
-// правила шукали її тільки в `users`, показана анкета відкривалась йому
-// урізаною: картка є, а ні прізвища, ні контактів немає.
+// Той самий звичайний користувач; роль живе в `matchingCards/{uid}/role` — і
+// поки правила шукали її тільки в legacy `users`, показана анкета відкривалась
+// йому урізаною: картка є, а ні прізвища, ні контактів немає. Legacy `users`
+// тепер закрито й видалено з правил, тож роль будь-якого читача лежить саме тут.
 const NODE_ROLE_VIEWER = 'nodeRoleViewerUid000000000';
 // Читачка, якій дозволено заводити картки (`canCreateProfiles`), але рівня
 // доступу їй ніхто не давав. Саме такий акаунт доповнює знайдену картку своїм
@@ -86,23 +85,18 @@ const testEnv = await initializeTestEnvironment({
  */
 await testEnv.withSecurityRulesDisabled(async context => {
   const db = context.database();
+  // Legacy `users` закрито: права живуть у `profileTechnical`, роль — у
+  // картці стрічки. Самі дані legacy в базі ще лежать, тож сіється й він —
+  // щоб перевірити, що правила його справді не відкривають нікому.
   await set(ref(db, 'users'), {
-    [SUPERADMIN]: { name: 'Супер' },
-    [MATCHING_VIEWER]: { name: 'Переглядач', accessLevel: 'matching:view' },
-    [MATCHING_EDITOR]: { name: 'Редактор', accessLevel: 'matching:view&write' },
-    [CONTACTS_VIEWER]: { name: 'Контакти', accessLevel: 'matching+profileContacts:view&write' },
-    [DELEGATED_READER]: { name: 'Делегат', multiDataSourceUserIds: { [SUPERADMIN]: true } },
-    [PROFILE_OWNER]: { name: 'Власниця', userRole: 'ed' },
-    [OUTSIDER]: { name: 'Стороння', userRole: 'ed' },
-    [SELF_SERVE]: { name: 'Донорка', userRole: 'ed' },
-    [CARD_CREATOR]: { name: 'Заводить картки', userRole: 'ag', canCreateProfiles: true },
-    [ORDINARY_VIEWER]: { name: 'Агенція', userRole: 'ag' },
-    [CARD]: { name: 'Картка' },
-    [HIDDEN_CARD]: { name: 'Прихована', publish: false },
+    [CARD]: { name: 'Картка', phone: '+380' },
+    [HIDDEN_CARD]: { name: 'Прихована', publish: false, phone: '+380990000000' },
   });
   await set(ref(db, 'matchingCards'), {
     [CARD]: { name: 'Картка', surnameShort: 'К.', feedDate: '2026-08-25' },
-    [PROFILE_OWNER]: { name: 'Власниця', feedDate: '2026-08-20' },
+    [PROFILE_OWNER]: { name: 'Власниця', feedDate: '2026-08-20', role: 'ed' },
+    [CARD_CREATOR]: { name: 'Заводить картки', role: 'ag' },
+    [ORDINARY_VIEWER]: { name: 'Агенція', role: 'ag' },
     // Акаунт без запису в legacy: роль лежить лише тут.
     [NODE_ROLE_VIEWER]: { name: 'Агенція без legacy', role: 'ag' },
     // Ключа стрічки немає — анкети немає і в стрічці.
@@ -120,6 +114,11 @@ await testEnv.withSecurityRulesDisabled(async context => {
   await set(ref(db, 'profileTechnical'), {
     [CARD]: { lastLogin2: '2026-08-25' },
     [PROFILE_OWNER]: { lastLogin2: '2026-08-20' },
+    [MATCHING_VIEWER]: { accessLevel: 'matching:view' },
+    [MATCHING_EDITOR]: { accessLevel: 'matching:view&write' },
+    [CONTACTS_VIEWER]: { accessLevel: 'matching+profileContacts:view&write' },
+    [DELEGATED_READER]: { multiDataSourceUserIds: { [SUPERADMIN]: true } },
+    [CARD_CREATOR]: { canCreateProfiles: true },
     // Права після міграції: у legacy цього акаунта немає взагалі.
     [MIGRATED_EDITOR]: { accessLevel: 'matching:view&write', canCreateProfiles: true },
   });
@@ -991,12 +990,16 @@ await it('feedDate приймає лише дату YYYY-MM-DD або false', as
 // сама користувачка зі своєю анкетою.
 describe('самообслуговування: анкета живе без адміна');
 
-await it('заводить власну картку стрічки', () =>
-  assertSucceeds(update(ref(db(SELF_SERVE), '/'), {
+// Як і реєстрація: спершу власний вузол анкети, тоді картка — правило картки
+// пускає її лише поруч з анкетою.
+await it('заводить власну картку стрічки', async () => {
+  await assertSucceeds(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/lastLogin`), '2026-08-26'));
+  await assertSucceeds(update(ref(db(SELF_SERVE), '/'), {
     [`matchingCards/${SELF_SERVE}/name`]: 'Донорка',
     [`matchingCards/${SELF_SERVE}/birth`]: '01.01.1995',
     [`matchingCards/${SELF_SERVE}/surnameShort`]: 'Д.',
-  })));
+  }));
+});
 
 await it('публікує себе — це запис однієї дати', () =>
   assertSucceeds(set(ref(db(SELF_SERVE), `matchingCards/${SELF_SERVE}/feedDate`), '2026-08-26')));
@@ -1706,22 +1709,40 @@ await it('роль ed у картці показану анкету не зак�
     set(ref(context.database(), `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ag'));
 });
 
-// Роль `ed` у legacy-дзеркалі — так само не привід відмовляти.
-await it('роль ed у legacy показану анкету не закриває', async () => {
-  await testEnv.withSecurityRulesDisabled(async context => {
-    const seed = context.database();
-    await set(ref(seed, `matchingCards/${NODE_ROLE_VIEWER}/role`), null);
-    await set(ref(seed, `users/${NODE_ROLE_VIEWER}`), { name: 'Колишня донорка', userRole: 'ed' });
-  });
+// Читач без ролі — так само не привід відмовляти в показаній анкеті.
+await it('читач без ролі показану анкету бачить', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${NODE_ROLE_VIEWER}/role`), null));
   await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileDetails/${CARD}`)));
   await assertSucceeds(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${CARD}`)));
   await assertFails(get(ref(db(NODE_ROLE_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ag'));
+});
 
-  await testEnv.withSecurityRulesDisabled(async context => {
-    const seed = context.database();
-    await set(ref(seed, `matchingCards/${NODE_ROLE_VIEWER}/role`), 'ag');
-    await set(ref(seed, `users/${NODE_ROLE_VIEWER}`), null);
-  });
+// Кореневе читання `matchingCards` (сторінки стрічки з курсором, пошук за
+// іменем) дає роль читача, відмінна від `ed`. Картка з кількома ролями несе її
+// масивом (`['ed', 'ag']`), а сховану роль не несе зовсім, тож правило питає і
+// елементи масиву, і `profileDetails/{uid}/hiddenRoles`. Поки воно питало сам
+// рядок, донорка-агентка гортала стрічку лише до першої сторінки.
+await it('донорка-агентка читає корінь matchingCards і з масивом ролей, і зі схованою агенцією', async () => {
+  const rootQuery = viewer => get(query(ref(db(viewer), 'matchingCards'), orderByChild('name'), limitToFirst(2)));
+  const setRole = value => testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${NODE_ROLE_VIEWER}/role`), value));
+  const setHidden = value => testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `profileDetails/${NODE_ROLE_VIEWER}/hiddenRoles`), value));
+  await setRole('ed');
+  await assertFails(rootQuery(NODE_ROLE_VIEWER));
+  await setRole(['ed', 'ag']);
+  await assertSucceeds(rootQuery(NODE_ROLE_VIEWER));
+  // Масив із самих донорських ролей — та сама донорка, що й рядок `ed`.
+  await setRole(['ed']);
+  await assertFails(rootQuery(NODE_ROLE_VIEWER));
+  await setRole('ed');
+  await setHidden('ag');
+  await assertSucceeds(rootQuery(NODE_ROLE_VIEWER));
+  await setHidden(null);
+  await setRole('ag');
 });
 
 await it('legacy-картка без дати у feedDate не відкриває приватні вузли', async () => {
@@ -1919,35 +1940,32 @@ describe('права доступу видають лише два адміни 
 // `multiDataSourceUserIds` власного запису читача. Поки власник міг писати ці
 // поля сам, будь-хто, хто увійшов, ставив собі `matching:view` і читав
 // контакти й деталі будь-якої анкети, зокрема схованої.
-await it('власниця не видає собі службового доступу ні в profileTechnical, ні в users', async () => {
+await it('власниця не видає собі службового доступу', async () => {
   await assertFails(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/accessLevel`), 'matching:view'));
-  await assertFails(set(ref(db(SELF_SERVE), `users/${SELF_SERVE}/accessLevel`), 'matching:view'));
   await assertFails(update(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}`), { lastLogin: '2026-10-16', accessLevel: 'matching:view' }));
   await assertFails(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/canCreateProfiles`), true));
-  await assertFails(set(ref(db(SELF_SERVE), `users/${SELF_SERVE}/canCreateProfiles`), true));
   await assertFails(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/multiDataSourceUserIds/${SUPERADMIN}`), true));
-  await assertFails(set(ref(db(SELF_SERVE), `users/${SELF_SERVE}/multiDataSourceUserIds/${SUPERADMIN}`), true));
   await assertFails(get(ref(db(SELF_SERVE), `profileContacts/${HIDDEN_CARD}`)));
 });
 
 await it('редактор матчингу чужих прав не змінює', async () => {
   await assertFails(set(ref(db(MIGRATED_EDITOR), `profileTechnical/${SELF_SERVE}/accessLevel`), 'matching:view'));
-  await assertFails(set(ref(db(MATCHING_EDITOR), `users/${SELF_SERVE}/accessLevel`), 'matching:view'));
+  await assertFails(set(ref(db(MATCHING_EDITOR), `profileTechnical/${SELF_SERVE}/accessLevel`), 'matching:view'));
   await assertFails(set(ref(db(MIGRATED_EDITOR), `profileTechnical/${MIGRATED_EDITOR}/accessLevel`), 'matching+profileContacts:view&write'));
 });
 
 await it('звичайне збереження анкети проходить, зокрема з незміненим рівнем доступу', async () => {
   await assertSucceeds(update(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}`), { lastLogin: '2026-10-16' }));
-  await assertSucceeds(update(ref(db(MATCHING_EDITOR), `users/${MATCHING_EDITOR}`), { name: 'Редактор', accessLevel: 'matching:view&write' }));
+  await assertSucceeds(update(ref(db(MATCHING_EDITOR), `profileTechnical/${MATCHING_EDITOR}`), { lastLogin: '2026-10-16', accessLevel: 'matching:view&write' }));
   await assertSucceeds(update(ref(db(MIGRATED_EDITOR), `profileTechnical/${MIGRATED_EDITOR}`), { lastLogin: '2026-10-16', accessLevel: 'matching:view&write', canCreateProfiles: true }));
 });
 
 await it('обидва адміни видають і знімають права', async () => {
   await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/accessLevel`), 'matching:view'));
-  await assertSucceeds(set(ref(db('3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'), `users/${SELF_SERVE}/canCreateProfiles`), true));
+  await assertSucceeds(set(ref(db('3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'), `profileTechnical/${SELF_SERVE}/canCreateProfiles`), true));
   await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/multiDataSourceUserIds/${SUPERADMIN}`), true));
   await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/accessLevel`), null));
-  await assertSucceeds(set(ref(db('3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'), `users/${SELF_SERVE}/canCreateProfiles`), null));
+  await assertSucceeds(set(ref(db('3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'), `profileTechnical/${SELF_SERVE}/canCreateProfiles`), null));
   await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/multiDataSourceUserIds`), null));
 });
 
@@ -1991,7 +2009,6 @@ await it('інспектор читає цілі колекції, як адмі
   await assertSucceeds(get(ref(db(INSPECTOR), 'profileContacts')));
   await assertSucceeds(get(ref(db(INSPECTOR), 'profileWorkflow')));
   await assertSucceeds(get(ref(db(INSPECTOR), 'profileTechnical')));
-  await assertSucceeds(get(ref(db(INSPECTOR), 'users')));
   await assertSucceeds(get(ref(db(INSPECTOR), 'searchId')));
   await assertSucceeds(get(ref(db(INSPECTOR), 'multiData/edits')));
   await assertSucceeds(get(ref(db(INSPECTOR), 'multiData/profileMutations')));
@@ -2010,7 +2027,6 @@ await it('інспектор не пише ні анкет, ні чужих по
   await assertFails(set(ref(db(INSPECTOR), `matchingCards/${CARD}/name`), 'Змінено'));
   await assertFails(set(ref(db(INSPECTOR), `profileDetails/${CARD}/surname`), 'Змінено'));
   await assertFails(set(ref(db(INSPECTOR), `profileContacts/${HIDDEN_CARD}/email`), 'x@y.z'));
-  await assertFails(set(ref(db(INSPECTOR), `users/${CARD}/name`), 'Змінено'));
   await assertFails(set(ref(db(INSPECTOR), `multiData/getInTouch/${SUPERADMIN}/${CARD}`), '2030-01-01'));
   await assertFails(set(ref(db(INSPECTOR), `multiData/favorites/${PROFILE_OWNER}/${CARD}`), null));
   await assertFails(set(ref(db(INSPECTOR), 'budget/x'), 1));
@@ -2020,10 +2036,20 @@ await it('інспектор не пише ні анкет, ні чужих по
 await it('корінь бази інспекторові так само закритий', () =>
   assertFails(get(ref(db(INSPECTOR), '/'))));
 
-describe('legacy /users лишається як був');
+describe('legacy /users закрито для всіх');
 
-await it('матчинговий переглядач і далі читає legacy-колекцію', () =>
-  assertSucceeds(get(ref(db(MATCHING_VIEWER), 'users'))));
+// Вузол видалено з правил: ні читати, ні писати його не може ніхто, зокрема
+// адміни й інспектор. Поки він був відкритий будь-якій ролі, крім `ed`,
+// агенція читала через нього повне тіло схованої анкети разом з контактами.
+await it('legacy /users не читає й не пише ніхто', async () => {
+  for (const uid of [SUPERADMIN, INSPECTOR, MATCHING_VIEWER, ORDINARY_VIEWER, OUTSIDER]) {
+    await assertFails(get(ref(db(uid), 'users')));
+    await assertFails(get(ref(db(uid), `users/${HIDDEN_CARD}`)));
+  }
+  await assertFails(get(ref(db(HIDDEN_CARD), `users/${HIDDEN_CARD}`)));
+  await assertFails(set(ref(db(SUPERADMIN), `users/${CARD}/name`), 'x'));
+  await assertFails(set(ref(db(SELF_SERVE), `users/${SELF_SERVE}`), { name: 'x' }));
+});
 
 await it('корінь бази закритий', () =>
   assertFails(get(ref(db(SUPERADMIN), '/'))));

@@ -1,3 +1,4 @@
+import { uiText } from '../utils/uiTranslations';
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import styled from 'styled-components';
@@ -114,7 +115,10 @@ const Counter = styled.div`
  * `onReachEnd` — перелік ще не повний (стрічка несе один аватар): дійшовши до
  * кінця, просимо решту, а не йдемо по колу.
  */
-export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, onMakeMain, closeOnHistoryBack = false, onReachEnd }) => {
+// `language` — лише з екранів матчингу: без нього перегляд лишається українським,
+// як і на адмінських екранах, що теж його відкривають.
+export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, onMakeMain, closeOnHistoryBack = false, onReachEnd, language }) => {
+  const t = text => (language ? uiText(text, language) : text);
   const [current, setCurrent] = useState(index);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Питання стосується показаного знімка: гортання його знімає.
@@ -241,7 +245,7 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, onMakeM
     <Overlay
       role="dialog"
       aria-modal="true"
-      aria-label="Photo"
+      aria-label={language ? uiText('Фото', language) : 'Photo'}
       onTouchStart={handleTouchStart}
       onTouchMove={e => e.stopPropagation()}
       onTouchEnd={handleTouchEnd}
@@ -249,31 +253,31 @@ export const PhotoViewer = ({ photos = [], index = 0, onClose, onDelete, onMakeM
     >
       <FullImage src={photos[shown]} alt="full" />
       {photos.length > 1 && <Counter>{shown + 1} / {photos.length}</Counter>}
-      <PrevButton onClick={prev} aria-label="Previous">
+      <PrevButton onClick={prev} aria-label={language ? uiText('Попереднє фото', language) : 'Previous'}>
         <FiChevronLeft size={40} />
       </PrevButton>
-      <NextButton onClick={next} aria-label="Next">
+      <NextButton onClick={next} aria-label={language ? uiText('Наступне фото', language) : 'Next'}>
         <FiChevronRight size={40} />
       </NextButton>
-      <CloseButton onClick={close} aria-label="Close">
+      <CloseButton onClick={close} aria-label={language ? uiText('Закрити', language) : 'Close'}>
         <FiX size={30} />
       </CloseButton>
       {onDelete && (
-        <DeleteButton onClick={() => setConfirmDelete(true)} aria-label="Видалити фото" title="Видалити фото">
+        <DeleteButton onClick={() => setConfirmDelete(true)} aria-label={t('Видалити фото')} title={t('Видалити фото')}>
           <FiTrash2 size={30} />
         </DeleteButton>
       )}
       {onDelete && confirmDelete ? (
-        <BottomBar role="alertdialog" aria-label="Видалити це фото?">
-          <span>Видалити це фото?</span>
-          <BarButton type="button" autoFocus onClick={() => setConfirmDelete(false)}>Не видаляти</BarButton>
-          <BarButton type="button" $danger onClick={handleDelete}>Так, видалити</BarButton>
+        <BottomBar role="alertdialog" aria-label={t('Видалити це фото?')}>
+          <span>{t('Видалити це фото?')}</span>
+          <BarButton type="button" autoFocus onClick={() => setConfirmDelete(false)}>{t('Не видаляти')}</BarButton>
+          <BarButton type="button" $danger onClick={handleDelete}>{t('Так, видалити')}</BarButton>
         </BottomBar>
       ) : onMakeMain && photos.length > 1 ? (
         <BottomBar>
           {shown === 0
-            ? <span>Головне фото</span>
-            : <BarButton type="button" onClick={() => { onMakeMain(shown); setCurrent(0); }}>Зробити головним</BarButton>}
+            ? <span>{t('Головне фото')}</span>
+            : <BarButton type="button" onClick={() => { onMakeMain(shown); setCurrent(0); }}>{t('Зробити головним')}</BarButton>}
         </BottomBar>
       ) : null}
     </Overlay>

@@ -1,3 +1,4 @@
+import { formatRegionDisplayName, getExtraLocale } from './locales';
 /**
  * Країна, область, місто, зріст і вага — у тому вигляді, в якому їх можна
  * показати й за яким можна фільтрувати.
@@ -40,7 +41,9 @@ const buildIndex = (entries, keysOf) => {
   return index;
 };
 
-const pickLanguage = language => (language === 'en' ? 'en' : 'uk');
+// Мови понад українську беруть англійські назви областей і міст (латиницею
+// їх і шукають), а країну називають своєю мовою через `Intl.DisplayNames`.
+const pickLanguage = language => (language === 'uk' || !language ? 'uk' : 'en');
 
 // --- країни -----------------------------------------------------------------
 
@@ -118,6 +121,7 @@ export const formatCountryName = (value, language) => {
   const text = cleanText(value);
   if (!text) return '';
   const entry = COUNTRY_INDEX.get(foldLocationKey(text));
+  if (entry && getExtraLocale(language)) return formatRegionDisplayName(language, entry.code) || entry.en;
   return entry ? entry[pickLanguage(language)] : text;
 };
 

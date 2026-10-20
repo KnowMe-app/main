@@ -57,11 +57,10 @@ describe('AddNewProfile admin console', () => {
     expect(source).toContain('{!userNotFound && currentFilter !== OVERLAY_REVIEW_FILTER && (');
   });
 
-  it('окреме меню міграції доступне з тієї ж панелі', () => {
-    // Міграція лишається окремим екраном (`/rtdb-migration`), але вхід у неї
-    // стоїть поруч з рештою робіт над даними: доти її знав лише той, хто
-    // памʼятав про меню «⋮».
-    expect(source).toContain("onClick={() => navigate('/rtdb-migration')}");
+  it('екрана міграції users/newUsers більше немає', () => {
+    // Міграцію завершено, а з колекцією `users` застосунок більше не працює
+    // взагалі — тож і входу в окремий екран міграції (`/rtdb-migration`) нема.
+    expect(source).not.toContain("navigate('/rtdb-migration')");
   });
 
   it('роботи індексації згруповані за тим, що вони роблять', () => {

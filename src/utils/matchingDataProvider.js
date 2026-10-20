@@ -7,6 +7,7 @@ import { getCard, getIndexIdsByQuery, MATCHING_INDEX_CACHE_VERSION, serializeQue
 import { collectFilteredMatchingSourceCards } from './matchingSourceBackfill';
 import { keepDonorCounterpartyCards } from './matchingPeerVisibility';
 import { isCardFullyReacted } from './anketaReactions';
+import { LIKED_AUDIENCE_CARD_FLAG } from './likedAudience';
 import { getIndexedIdsByRules, normalizeSearchKeySetKeys } from './filterSetsIndex';
 import {
   FIELD_COUNT_SEARCH_KEY_INDEX_NAME,
@@ -1381,8 +1382,18 @@ export const applyMatchingUiFiltersToUsers = ({
     // Явно наданий доступ б'є `publish`: правила додаткового доступу для того й
     // існують, щоб показати картку, яку глядач інакше не побачив би. Те саме з
     // адмінським джерелом (`__adminLastLogin`, `fetchAdminLastLoginCardsPage`): адмін
-    // бачить і сховані картки (`canShowMatchingUser` з `isAdmin`).
-    .filter(u => u?.__matchingAccessAllowed === true || u?.__adminLastLogin === true || u?.publish !== false)
+    // бачить і сховані картки (`canShowMatchingUser` з `isAdmin`). І так само
+    // з карткою, яку власниця відкрила саме цьому читачеві (`__likedAudience`,
+    // `fetchLikedAudienceCards`): `publish: false` у неї навмисно. Поки цей
+    // фільтр про позначку не знав, збирач деки ставив таку картку головою, а
+    // тут вона мовчки відпадала — вподобана агенція не бачила анкети в стрічці,
+    // хоча правила бази вже відкрили їй і деталі, і контакти.
+    .filter(u => (
+      u?.__matchingAccessAllowed === true
+      || u?.__adminLastLogin === true
+      || u?.[LIKED_AUDIENCE_CARD_FLAG] === true
+      || u?.publish !== false
+    ))
     .filter(u => (
       !excludeReactionUsers ||
       !isCardFullyReacted(u, favoriteUsers, dislikeUsers) ||

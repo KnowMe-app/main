@@ -425,7 +425,7 @@ const searchIdRecordContainsUserId = (recordValue, userId) =>
 // Посилання в консоль будує один спільний хелпер — той самий, що й для
 // заголовків блоків. Дві копії форматування вже розійшлися одна з одною, і
 // саме в цьому був зламаний слеш після `/data`.
-const buildUsersBackendUrl = userId => (userId ? buildRtdbConsoleLink(['users', userId]) : '');
+const buildUsersBackendUrl = userId => (userId ? buildRtdbConsoleLink(['matchingCards', userId]) : '');
 const buildSearchIdBackendUrl = (searchIdRecordKey, searchIdField) =>
   (searchIdRecordKey ? buildRtdbConsoleLink(['searchId', searchIdRecordKey, searchIdField].filter(Boolean)) : '');
 const SEARCH_KEY_ROOT = 'searchKey';
@@ -3131,7 +3131,7 @@ ${entries.join('\n')}`;
               <BlockNodeName>{block.label}</BlockNodeName>
               <BlockFieldCount>{block.fields.length}</BlockFieldCount>
             </BlockToggle>
-            {isAdmin && (
+            {isAdmin && block.href && (
               <BlockBackendLink
                 href={block.href}
                 target="_blank"
@@ -3144,7 +3144,9 @@ ${entries.join('\n')}`;
             )}
           </BlockHeaderRow>
           {block.isOpen && block.hint && <BlockHint>{block.hint}</BlockHint>}
-          {block.isOpen && <FieldsGrid>{block.fields.map(field => {
+          {/* Поля без вузла збереження відкидає, тож і правити їх нема чого:
+              вимкнений `fieldset` вимикає всі інпути й кнопки всередині. */}
+          {block.isOpen && <ReadOnlyFieldset disabled={Boolean(block.readOnly)}><FieldsGrid>{block.fields.map(field => {
           const overlayEntries = getOverlayEntriesForField(field.name);
           const hasOverlaySuggestions = overlayEntries.length > 0;
           // Поле, пришпилене до чужого блоку, називає свій справжній вузол саме
@@ -3786,7 +3788,7 @@ ${entries.join('\n')}`;
             </PickerContainer>
             </FieldGroup>
           );
-          })}</FieldsGrid>}
+          })}</FieldsGrid></ReadOnlyFieldset>}
         </TechnicalFieldsSection>
       ))}
       <KeyValueRow>
@@ -4087,6 +4089,14 @@ const BlockBackendLink = styled.a`
   align-items: center;
   padding: 4px;
   color: var(--km-accent, #2b6);
+`;
+
+// Рамки й відступів у `fieldset` немає: він тут лише вимикає поля блоку.
+const ReadOnlyFieldset = styled.fieldset`
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 `;
 
 const BlockHint = styled.p`

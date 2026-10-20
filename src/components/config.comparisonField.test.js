@@ -14,8 +14,7 @@ const setup = () => {
     get: jest.fn(async address => ({ exists: () => address in db, val: () => db[address] })),
     readProfileFromNodes: jest.fn(async () => ({ height: ['160'], weight: ['50'] })),
     syncUserSearchIdIndex: jest.fn(), syncUserSearchKeyIndex: jest.fn(),
-    refreshMatchingCardAfterProfileWrite: jest.fn(), mirrorProfileToLegacyUsers: jest.fn(),
-    updateDataInFiresoreDB: jest.fn(),
+    refreshMatchingCardAfterProfileWrite: jest.fn(),
     clearMatchingSearchResultCache: jest.fn(), setOwnerWriter: jest.fn(), setOwnerGetInTouch: jest.fn(),
   };
   return { db, deps, save: createSaveComparisonField(deps) };
@@ -42,15 +41,12 @@ it.each([
   expect(deps.set).toHaveBeenCalledWith(`matchingCards/B/${canonical}`, value);
 });
 
-it('updates the Firestore mirror when the legacy RTDB body was updated', async () => {
+// Копії анкети в Firestore більше немає: поле лягає лише у свій вузол RTDB.
+it('writes an account profile field to its node only', async () => {
   const { deps, save } = setup();
-  deps.mirrorProfileToLegacyUsers.mockResolvedValue(true);
   await save('B', 'phone', '380671234567');
-  expect(deps.updateDataInFiresoreDB).toHaveBeenCalledWith(
-    'B',
-    expect.objectContaining({ phone: '380671234567', lastAction: expect.any(Number) }),
-    'check',
-  );
+  expect(deps.set).toHaveBeenCalledWith('profileContacts/B/phone', '380671234567');
+  expect(deps).not.toHaveProperty('updateDataInFiresoreDB');
 });
 
 it('does not hide a rejected matchingCards write behind another successful node', async () => {

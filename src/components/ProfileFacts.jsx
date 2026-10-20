@@ -1,3 +1,4 @@
+import { getExtraLocale, toInlineCase, toInlineCaseFirst } from '../utils/locales';
 import React, { useState } from 'react';
 import styled, { css } from 'styled-components';
 import {
@@ -56,15 +57,17 @@ export const formatCSectionValue = raw => {
 const OTHER_VALUES = new Set(['other', 'інше', 'иное']);
 export const isOtherValue = value => OTHER_VALUES.has(String(value || '').trim().toLowerCase());
 
-const lowerFirst = text => (text ? text.charAt(0).toLocaleLowerCase('uk-UA') + text.slice(1) : '');
+const lowerFirst = (text, lang) => toInlineCaseFirst(text, lang);
 
 // Значення, вибране зі списку, — мовою інтерфейсу (`translateFieldValue`) і
 // малими літерами: у рядку воно стоїть після підпису, а не починає речення.
 // Малими всі, а не лише перша: у словнику трапляється «Пісочний Годинник».
+// Німецька — виняток (`toInlineCase`): там іменник з великої.
 const readOptionValue = (user, field, lang) => {
   const raw = normalizeDisplayValue(user?.[field]);
   if (!raw || isOtherValue(raw)) return '';
-  return (lang === 'uk' ? translateFieldValue(field, raw) : raw).trim().toLocaleLowerCase('uk-UA');
+  const localized = lang === 'uk' || getExtraLocale(lang) ? translateFieldValue(field, raw, lang) : raw;
+  return toInlineCase(localized.trim(), lang);
 };
 
 // Те, що людина набрала сама (професія, розмір), лишається як набрали.
@@ -140,13 +143,17 @@ const TRAIT_WORDS = {
 // (розгорнутий рядок, відкрита картка). У розділах повної анкети волосся
 // вдруге не повторюється.
 const describeAppearance = (user, lang) => {
-  const words = TRAIT_WORDS[lang];
+  const extra = getExtraLocale(lang);
+  const words = TRAIT_WORDS[lang] || TRAIT_WORDS.en;
   const eyes = readOptionValue(user, 'eyeColor', lang);
   const hair = describeHair(user, lang);
   const parts = [];
-  if (eyes) parts.push(eyes.includes(words.eyes) ? eyes : `${eyes} ${words.eyes}`);
+  if (eyes) {
+    if (extra) parts.push(extra.sentences.eyes(eyes));
+    else parts.push(eyes.includes(words.eyes) ? eyes : `${eyes} ${words.eyes}`);
+  }
   if (hair) parts.push(hair);
-  return parts.join(', ');
+  return extra ? extra.sentences.clauses(parts) : parts.join(', ');
 };
 
 const YES_VALUES = new Set(['yes', 'так', 'є']);
@@ -171,9 +178,21 @@ const UK_DELIVERY_WORDS = ['', 'одні пологи', 'двоє пологів
  * анкет заповнена сама дата останніх. Відкрита картка її показувала («3 роки
  * після пологів»), а рядок стрічки мовчав — бо питав спершу кількість.
  */
+// Мови з `utils/locales` — зі своїх шаблонів: «出産2回、最後は13か月前».
+const describeDeliveriesExtra = (words, list, read, recency) => {
+  if (!read) return recency ? { text: words.recencyOnly(recency), had: true, count: null } : { text: '', had: false, count: null };
+  if (read.count === 0) return { text: words.none, had: false, count: 0 };
+  if (read.text) return { text: words.text(read.text), had: true, count: null };
+  const base = read.yes ? words.yes : words.count(read.count);
+  const text = recency ? list([base, read.count === 1 ? words.recencySingle(recency) : words.recencyLast(recency)]) : base;
+  return { text, had: true, count: read.yes ? null : read.count };
+};
+
 const describeDeliveries = (user, lang) => {
   const recency = formatDeliveryRecency(normalizeDisplayValue(user?.lastDelivery), lang);
   const read = readCount(normalizeDisplayValue(user?.ownKids));
+  const extra = getExtraLocale(lang);
+  if (extra) return describeDeliveriesExtra(extra.sentences.deliveries, extra.sentences.clauses, read, recency);
   if (!read) {
     if (!recency) return { text: '', had: false, count: null };
     return { text: lang === 'uk' ? `останні пологи ${recency} тому` : `last delivery ${recency} ago`, had: true, count: null };
@@ -211,10 +230,29 @@ const ukCSectionWord = count => (count % 10 === 1 && count % 100 !== 11 ? 'ке�
 const UK_ALL_OF = count => (count === 2 ? 'обидва' : 'усі');
 const EN_ALL_OF = count => (count === 2 ? 'both' : 'all');
 
+const describeCSectionExtra = (words, value, deliveries) => {
+  const total = Number.isInteger(deliveries.count) && deliveries.count > 0 ? deliveries.count : null;
+  if (value === '0') {
+    if (!deliveries.had) return { text: '', attach: false };
+    return { text: total && total > 1 ? words.allNatural(total) : words.natural, attach: true };
+  }
+  if (/^\d+$/.test(value)) {
+    const count = Number(value);
+    if (total) {
+      if (count >= total) return { text: total === 1 ? words.caesarean : words.allCaesarean(total), attach: true };
+      return { text: words.mixed(count, total - count), attach: true };
+    }
+    return { text: words.count(count), attach: false };
+  }
+  return { text: words.other(value), attach: false };
+};
+
 const describeCSection = (user, lang, deliveries) => {
   const raw = normalizeDisplayValue(user?.[resolveCSectionKey(user)]);
   if (!raw) return { text: '', attach: false };
   const value = formatCSectionValue(raw);
+  const extraWords = getExtraLocale(lang)?.sentences.cSection;
+  if (extraWords) return describeCSectionExtra(extraWords, value, deliveries);
   const uk = lang === 'uk';
   const total = Number.isInteger(deliveries.count) && deliveries.count > 0 ? deliveries.count : null;
 
@@ -266,6 +304,13 @@ const ukDonationWord = count => {
 const describeDonations = (user, lang) => {
   const read = readCount(normalizeDisplayValue(user?.experience));
   if (!read) return '';
+  const extraWords = getExtraLocale(lang)?.sentences.donations;
+  if (extraWords) {
+    if (read.count === 0) return extraWords.none;
+    if (read.text) return extraWords.text(read.text);
+    if (read.yes) return extraWords.yes;
+    return extraWords.count(read.count);
+  }
   if (read.count === 0) return lang === 'uk' ? 'донацій ще не було' : 'no donations yet';
   if (read.text) return `${lang === 'uk' ? 'донації' : 'donations'}: ${read.text}`;
   if (read.yes) return lang === 'uk' ? 'були донації' : 'has donated';
@@ -291,8 +336,9 @@ export const buildProfileSummaryRows = (user, language) => {
   const deliveries = describeDeliveries(user, lang);
   const cSection = describeCSection(user, lang, deliveries);
   const donations = describeDonations(user, lang);
+  const extraList = getExtraLocale(lang)?.sentences.clauses;
   const deliveryText = cSection.attach && deliveries.text
-    ? `${deliveries.text}, ${cSection.text}`
+    ? (extraList ? extraList([deliveries.text, cSection.text]) : `${deliveries.text}, ${cSection.text}`)
     : deliveries.text;
   const reproduction = [deliveryText, cSection.attach ? '' : cSection.text, donations].filter(Boolean);
   if (reproduction.length) {
@@ -303,7 +349,7 @@ export const buildProfileSummaryRows = (user, language) => {
     rows.push({ key: 'reproduction', label: translateProfileLabel(label, lang), value: joinParts(reproduction) });
   }
 
-  const marital = lowerFirst(maritalStatusLabel(normalizeDisplayValue(user?.maritalStatus), lang));
+  const marital = lowerFirst(maritalStatusLabel(normalizeDisplayValue(user?.maritalStatus), lang), lang);
   if (marital) rows.push({ key: 'marital', label: translateProfileLabel('Marital status', lang), value: marital });
 
   return rows;
@@ -327,9 +373,9 @@ const EDUCATION_FLAG_VALUES = new Set(['yes', 'no', 'так', 'ні']);
 const describeEducation = (user, lang) => {
   const raw = normalizeDisplayValue(user?.education);
   if (!raw || isOtherValue(raw) || EDUCATION_FLAG_VALUES.has(raw.toLowerCase())) return '';
-  const localized = lang === 'uk' ? translateFieldValue('education', raw) : raw;
+  const localized = lang === 'uk' || getExtraLocale(lang) ? translateFieldValue('education', raw, lang) : raw;
   // Підпис рядка вже каже «Освіта»: «вища освіта» поруч із ним — повтор.
-  return lowerFirst(localized.replace(/\s+освіта$/i, '').trim());
+  return lowerFirst(localized.replace(/\s+освіта$/i, '').trim(), lang);
 };
 
 const option = field => (user, lang) => readOptionValue(user, field, lang);
@@ -355,7 +401,7 @@ const DETAIL_SECTIONS = [
       { key: 'race', label: 'Race', read: option('race') },
       { key: 'clothingSize', label: 'Clothing', read: typed('clothingSize') },
       { key: 'shoeSize', label: 'Shoe', read: typed('shoeSize') },
-      { key: 'glasses', label: 'Glasses', read: (user, lang) => lowerFirst(glassesLabel(user?.glasses, lang)) },
+      { key: 'glasses', label: 'Glasses', read: (user, lang) => lowerFirst(glassesLabel(user?.glasses, lang), lang) },
     ],
   },
   {

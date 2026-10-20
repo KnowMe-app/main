@@ -14,9 +14,10 @@ import { mergeProfileNodes } from './profileNodeMerge';
  * буде хіба що по дірках у пошуку. Тому збірка тут одна на двох: різниця між
  * входами закінчується на тому, хто прочитав вузли.
  *
- * Колекція у вебі одна. `users` приймається лише як нижній шар для анкет, які
- * ще не переїхали, і як єдине джерело `publish` — власного вузла в нього
- * немає, ним володіє мобільний застосунок.
+ * Колекція у вебі одна, і складається вона лише з вузлів. Legacy `users`
+ * тут колись приймався нижнім шаром для анкет, які ще не переїхали, і джерелом
+ * `publish`; з колекцією `users` застосунок більше не працює, а стан публікації
+ * приносить картка: `expandMatchingCard` розгортає `feedDate` у `publish`.
  */
 
 /** Вузли, з яких складається анкета. Порядок — той самий, що й у читача. */
@@ -31,30 +32,22 @@ export const PROFILE_NODE_NAMES = Object.freeze([
 const asMap = value => (value && typeof value === 'object' ? value : {});
 
 /**
- * @param {object} sources вузли як `{ id: дані }` плюс необовʼязковий
- *   `users` — legacy-шар для ще не перенесених анкет.
+ * @param {object} sources вузли як `{ id: дані }`; будь-які інші ключі
+ *   (зокрема колишній `users`) ігноруються.
  * @returns {{ profiles: object, stats: object }}
  */
 export const mergeProfileNodeCollections = (sources = {}) => {
   const nodes = Object.fromEntries(
     PROFILE_NODE_NAMES.map(node => [node, asMap(sources[node])]),
   );
-  const legacyUsers = asMap(sources.users);
 
-  const ids = new Set([
-    ...PROFILE_NODE_NAMES.flatMap(node => Object.keys(nodes[node])),
-    ...Object.keys(legacyUsers),
-  ]);
+  const ids = new Set(PROFILE_NODE_NAMES.flatMap(node => Object.keys(nodes[node])));
 
   const profiles = {};
-  const stats = { total: 0, fromNodes: 0, legacyOnly: 0, withPublish: 0 };
+  const stats = { total: 0 };
 
   ids.forEach(id => {
     if (!id) return;
-    stats.total += 1;
-
-    const legacy = legacyUsers[id] || null;
-    const hasNodeData = PROFILE_NODE_NAMES.some(node => nodes[node][id]);
 
     const profile = mergeProfileNodes({
       userId: id,
@@ -63,22 +56,10 @@ export const mergeProfileNodeCollections = (sources = {}) => {
       contacts: nodes.profileContacts[id] || null,
       workflow: nodes.profileWorkflow[id] || null,
       technical: nodes.profileTechnical[id] || null,
-      legacy,
     });
     if (!profile) return;
 
-    // `publish` живе тільки в legacy — власного вузла в нього немає. Тож коли
-    // legacy-шару не дали, стан публікації читається з картки: наявність
-    // `feedDate` і є «показувати».
-    const publish = legacyUsers[id]?.publish;
-    if (publish !== undefined) {
-      profile.publish = publish;
-      stats.withPublish += 1;
-    }
-
-    if (hasNodeData) stats.fromNodes += 1;
-    else stats.legacyOnly += 1;
-
+    stats.total += 1;
     profiles[id] = profile;
   });
 
@@ -88,23 +69,19 @@ export const mergeProfileNodeCollections = (sources = {}) => {
 /**
  * Що з локально завантажених файлів чого варте.
  *
- * Локальна індексація без вузлів — це індексація legacy, тобто того, чого веб
- * уже не показує. Мовчати про це не можна: людина натисне кнопку, отримає
- * файл, заллє його — і зламає пошук, не побачивши жодної помилки.
+ * Мовчати про порожнечу не можна: людина натисне кнопку, отримає файл, заллє
+ * його — і зламає пошук, не побачивши жодної помилки.
  */
 export const describeLocalIndexingSources = (sources = {}) => {
   const loadedNodes = PROFILE_NODE_NAMES.filter(node => Object.keys(asMap(sources[node])).length);
-  const hasLegacy = Boolean(Object.keys(asMap(sources.users)).length);
 
   return {
     loadedNodes,
-    hasLegacy,
     // Будь-який вузол анкети вартий індексації: контакти живуть у
     // `profileContacts`, і `searchId`, зібраний із самих лише контактів, — це
     // повний індекс контактів, а не «майже порожній результат». Поки тут
     // питались тільки картка й деталі, вибір самого `profileContacts` мовчки
     // вважався «нічого не завантажено», і кнопка не робила нічого.
-    isUsable: loadedNodes.length > 0 || hasLegacy,
-    isLegacyOnly: !loadedNodes.length && hasLegacy,
+    isUsable: loadedNodes.length > 0,
   };
 };

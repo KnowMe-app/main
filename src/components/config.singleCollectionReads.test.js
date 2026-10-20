@@ -68,13 +68,16 @@ describe('single legacy collection reads', () => {
     expect(source).not.toContain('export const cacheFilteredUsers');
   });
 
-  it('the local export merge is a plain pass-through of one file', () => {
+  it('the local export reads the profile node files, not a users.json export', () => {
     const localExportMergeBody = addNewProfileSource.slice(
-      addNewProfileSource.indexOf('const getMergedUsersFromLocalExportCollections'),
+      addNewProfileSource.indexOf('const getLocalNodeProfiles'),
       addNewProfileSource.indexOf('const hasPhoneStartingWith38'),
     );
 
-    expect(localExportMergeBody).toContain('if (!localExportUsersData) return null;');
+    // Той самий збирач, що й у локальної індексації: три входи з одних
+    // файлів мусять бачити ті самі анкети.
+    expect(localExportMergeBody).toContain('mergeProfileNodeCollections(localNodeFiles).profiles');
+    expect(addNewProfileSource).not.toContain('localExportUsersData');
     expect(localExportMergeBody).not.toContain('mergeUserCollectionData');
   });
 
@@ -84,7 +87,7 @@ describe('single legacy collection reads', () => {
     expect(source).toContain("'__photosHydrated'");
     // Пейлоад ще й проходить приведення дат до формату бази — чистка від цього
     // не змінилась, просто вона тепер не остання ланка перед записом.
-    expect(source).toContain('normalizeStoredDates(stripTransientUserDataFields(uploadedInfo));');
+    expect(source).toContain('normalizeStoredDates(stripTransientUserDataFields(');
     expect(source.match(/markForRealtimeDeletion: condition === 'update'/g)).toHaveLength(2);
   });
 });

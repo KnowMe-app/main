@@ -4,7 +4,7 @@ export const createSaveComparisonField = deps => async (userId, field, value) =>
     auth, database, resolveCanonicalFieldName, resolveFieldOwnerNode, PROFILE_NODES,
     buildMatchingCardProjection, normalizeStoredDates, sanitizeUploadedInfoPhones,
     ref2, set, get, readProfileFromNodes, syncUserSearchIdIndex, syncUserSearchKeyIndex,
-    refreshMatchingCardAfterProfileWrite, mirrorProfileToLegacyUsers, updateDataInFiresoreDB,
+    refreshMatchingCardAfterProfileWrite,
     clearMatchingSearchResultCache, setOwnerWriter, setOwnerGetInTouch,
   } = deps;
   const ownerId = auth.currentUser?.uid;
@@ -38,8 +38,6 @@ export const createSaveComparisonField = deps => async (userId, field, value) =>
     if (node !== PROFILE_NODES.matchingCards) {
       await refreshMatchingCardAfterProfileWrite(userId, changed, 'update');
     }
-    const legacyWritten = await mirrorProfileToLegacyUsers(userId, changed, 'update');
-    if (legacyWritten) await updateDataInFiresoreDB(userId, changed, 'check');
   }
   const snapshot = await get(ref2(database, path));
   if (!snapshot.exists()) throw new Error(`Не підтверджено збереження ${field}`);

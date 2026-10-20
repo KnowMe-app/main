@@ -1,5 +1,6 @@
 import { uiText } from '../utils/uiTranslations';
 import { resolveProfileLanguage } from '../utils/profileTexts';
+import { getExtraLocale, translateOptionValue } from '../utils/locales';
 
 export const yesNoOptions = [
   { placeholder: 'No', ukrainian: 'Ні' },
@@ -46,6 +47,10 @@ export const getFieldHint = (field, language) => {
 };
 
 export const getOptionLabel = (option, language) => {
+  if (language && getExtraLocale(resolveProfileLanguage(language))) {
+    const en = option?.placeholder ?? option?.label ?? option?.value ?? '';
+    return translateOptionValue(resolveProfileLanguage(language), '', en) || en;
+  }
   if (language && resolveProfileLanguage(language) === 'en') {
     return option?.placeholder ?? option?.label ?? option?.value ?? '';
   }
@@ -410,9 +415,14 @@ const buildFieldValueDictionaries = () => {
 
 let fieldValueDictionaries = null;
 
-export const translateFieldValue = (fieldName, value) => {
+// `language` — необовʼязковий: без нього (і з українською) переклад іде
+// українською, як ішов; решта мов бере свій словник довідників (`utils/locales`).
+export const translateFieldValue = (fieldName, value, language) => {
   const text = String(value ?? '').trim();
   if (!text || !fieldName) return text;
+  if (language && getExtraLocale(resolveProfileLanguage(language))) {
+    return translateOptionValue(resolveProfileLanguage(language), fieldName, text) || text;
+  }
   if (!fieldValueDictionaries) fieldValueDictionaries = buildFieldValueDictionaries();
   return fieldValueDictionaries[fieldName]?.get(text.toLowerCase()) || text;
 };

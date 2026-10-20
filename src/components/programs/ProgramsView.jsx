@@ -48,6 +48,7 @@ import {
 } from '../../utils/programTimeline';
 import { formatDate } from '../inputValidations';
 import { describeProgramWishes } from '../../utils/parentWishes';
+import { getExtraLocale } from '../../utils/locales';
 import { uiText } from '../../utils/uiTranslations';
 import { revealCss } from '../../styles/revealAnimation';
 import Collapsible, { COLLAPSE_DURATION_MS } from '../Collapsible';
@@ -380,6 +381,8 @@ export const ProgramCurrencySwitch = ({ value, onChange, language }) => (
 
 const monthWord = (count, language) => {
   if (language === 'en') return count === 1 ? 'month' : 'months';
+  const units = getExtraLocale(language)?.units;
+  if (units) return units.month(count);
   return 'міс';
 };
 
@@ -666,8 +669,9 @@ const TimelineBody = ({ value, setValue, selectDate, commit, dipherelin, setDiph
   const [calendarOpen, setCalendarOpen] = useState(() => !parseCycleDate(value));
   const { date: start, projected } = projectCycleStart(parseCycleDate(value));
   const items = buildSurrogacyTimeline(start, { dipherelin });
-  const weekUnit = language === 'en' ? 'wk' : 'тиж.';
-  const dayUnit = language === 'en' ? 'day' : 'день';
+  const units = getExtraLocale(language)?.units;
+  const weekUnit = language === 'en' ? 'wk' : units ? units.week : 'тиж.';
+  const dayUnit = language === 'en' ? 'day' : units ? units.cycleDay : 'день';
   return (
     <div data-testid="program-timeline" onClick={event => event.stopPropagation()}>
       <SectionTitle>{uiText('Приблизний графік програми', language)}</SectionTitle>
@@ -1037,6 +1041,8 @@ const RANGE_TYPE_LABELS = Object.freeze({ ed: 'Донорам', sm: 'Сурог�
 // «з 2 програм», але «з 1 програми»: після «з» — родовий відмінок.
 const programsGenitive = (count, language) => {
   if (language === 'en') return count === 1 ? 'program' : 'programs';
+  const units = getExtraLocale(language)?.units;
+  if (units) return units.programs(count);
   return count % 10 === 1 && count % 100 !== 11 ? 'програми' : 'програм';
 };
 

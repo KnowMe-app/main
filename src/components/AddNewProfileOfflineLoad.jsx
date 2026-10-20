@@ -16,14 +16,17 @@ export const normalizeOfflineLoadMode = mode => (mode === LEGACY_OFFLINE_LOAD_MO
 export const OFFLINE_LOAD_BACKEND_PAGE_SIZE = 20;
 export const OFFLINE_FILTER_MAIN_OPTIONS = { requireCurrentOrPastGetInTouch: true };
 
+// Джерело офлайн-режиму — ті самі файли вузлів анкет, що й у локальної
+// індексації, зведені тим самим `mergeProfileNodeCollections`. Тут колись
+// обирався експорт колекції `users`, але з нею застосунок більше не працює:
+// у ній немає анкет, заведених у вебі, і немає стертого після переїзду.
 export const AddNewProfileOfflineLoadControls = ({
   SortModeLabel,
   LocalIndexActions,
   loadSortMode,
   onModeChange,
-  onPickUsersFile,
-  onClearSavedFiles,
-  hasUsersFile,
+  onPickNodeFiles,
+  loadedNodes = [],
 }) => (
   <>
     <SortModeLabel>
@@ -38,14 +41,9 @@ export const AddNewProfileOfflineLoadControls = ({
     </SortModeLabel>
     {normalizeOfflineLoadMode(loadSortMode) === OFFLINE_LOAD_MODE && (
       <LocalIndexActions>
-        <button type="button" onClick={onPickUsersFile}>
-          Обрати users.json {hasUsersFile ? '✅' : ''}
+        <button type="button" onClick={onPickNodeFiles}>
+          Обрати файли вузлів {loadedNodes.length ? `✅ ${loadedNodes.join(', ')}` : '(matchingCards, profileDetails, …)'}
         </button>
-        {hasUsersFile && onClearSavedFiles && (
-          <button type="button" onClick={onClearSavedFiles}>
-            Очистити збережені offline-файли
-          </button>
-        )}
       </LocalIndexActions>
     )}
   </>
@@ -60,12 +58,12 @@ export const getRawOfflineIdsByQuery = queryKey => {
 
 export const getOfflineFilteredIds = ({
   currentFilters,
-  getMergedUsersFromLocalExportCollections,
+  getLocalNodeProfiles,
   filterMain,
   favoriteUsersData,
   dislikeUsersData,
 }) => {
-  const mergedUsers = getMergedUsersFromLocalExportCollections();
+  const mergedUsers = getLocalNodeProfiles();
   if (!mergedUsers) return null;
 
   const filteredEntries = filterMain(
@@ -162,7 +160,7 @@ export const loadMoreUsersOffline = async ({
   buildListQueryKey,
   serializeQueryFilters,
   getActiveFiltersKey,
-  getMergedUsersFromLocalExportCollections,
+  getLocalNodeProfiles,
   filterMain,
   favoriteUsersData,
   dislikeUsersData,
@@ -185,14 +183,14 @@ export const loadMoreUsersOffline = async ({
 
   const localIds = getOfflineFilteredIds({
     currentFilters,
-    getMergedUsersFromLocalExportCollections,
+    getLocalNodeProfiles,
     filterMain,
     favoriteUsersData,
     dislikeUsersData,
   });
 
   if (!localIds) {
-    toast.error('Оберіть локальний users.json для offline load');
+    toast.error('Оберіть файли вузлів анкет для offline load');
     appendLoadDebugLog('loadMoreUsersOffline:missing-local-files', { queryKey });
     setHasMore(false);
     return { cacheCount: 0, backendCount: 0, hasMore: false };

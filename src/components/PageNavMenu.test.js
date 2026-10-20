@@ -42,7 +42,7 @@ describe('spec (batch 26 §10): PageNavMenu lists every top-level screen', () =>
     expect(screen.getByText('Matching')).toBeInTheDocument();
     expect(screen.getByText('My profile')).toBeInTheDocument();
     expect(screen.getByText('Створені мною')).toBeInTheDocument();
-    ['Add profile', 'Flow', 'Budget', 'Invoice', 'Documents', 'Parties', 'RTDB migration']
+    ['Add profile', 'Flow', 'Budget', 'Invoice', 'Documents', 'Parties']
       .forEach(label => expect(screen.queryByText(label)).toBeNull());
   });
 

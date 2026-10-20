@@ -18,24 +18,24 @@ const sliceFn = (name, until) => {
 };
 
 /**
- * Веб мусить пережити зникнення `/users`.
+ * Веб живе без `/users`.
  *
- * Дзеркалення двостороннє, поки мобільний застосунок живий: він пише в `/users`,
- * і веб кладе туди свої зміни. Але «поки живий» — це не «назавжди». Колекцію
- * можуть перестати підтримувати: закрити права, прибрати вузол. Веб від цього
- * не має ані падати на збереженні, ані втрачати стан публікації — бо єдине, що
- * жило тільки в legacy, це `publish`.
+ * Legacy-колекцію закрито й видалено з правил: веб її не читає й не пише. Тут
+ * стоїть сторожа на те, щоб дзеркало не повернулось жодним шляхом.
  */
 describe('збереження анкети не залежить від legacy-колекції', () => {
-  it('updateDataInRealtimeDB пише спершу у вузли, і лише потім дзеркалить у legacy', () => {
+  it('updateDataInRealtimeDB пише лише у вузли', () => {
     const writer = sliceFn('export const updateDataInRealtimeDB =', '\nexport const ');
 
-    const nodesIndex = writer.indexOf('await fanOutProfileNodes(userId, cleanedUploadedInfo)');
-    const legacyIndex = writer.indexOf('await mirrorProfileToLegacyUsers(');
+    expect(writer).toContain('await fanOutProfileNodes(userId, cleanedUploadedInfo)');
+    expect(writer).not.toContain('mirrorProfileToLegacyUsers');
+    expect(writer).toContain('if (!nodesWritten) throwProfileWriteFailure(userId,');
+  });
 
-    expect(nodesIndex).toBeGreaterThan(-1);
-    expect(legacyIndex).toBeGreaterThan(nodesIndex);
-    expect(writer).toContain('if (!nodesWritten && !legacyWritten) throwProfileWriteFailure(userId,');
+  it('у config.js немає жодного шляху в legacy users', () => {
+    expect(configSource).not.toContain('mirrorProfileToLegacyUsers');
+    expect(configSource).not.toContain('hasLegacyUsersBody');
+    expect(configSource).not.toMatch(/ref2\([a-zA-Z]+, *[`'"]users[/`'"]/);
   });
 
   it('updateProfileNodesInRTDB не має legacy-тіла, тож пише лише у вузли', () => {
@@ -44,17 +44,6 @@ describe('збереження анкети не залежить від legacy-
     expect(writer).toContain('await fanOutProfileNodes(userId, cleanedUploadedInfo)');
     expect(writer).not.toContain('mirrorProfileToLegacyUsers(');
     expect(writer).toContain('if (!nodesWritten) throwProfileWriteFailure(userId,');
-  });
-
-  it('дзеркалення в legacy не кидає — воно повертає результат', () => {
-    const mirror = sliceFn(
-      'const mirrorProfileToLegacyUsers = async',
-      'const throwProfileWriteFailure',
-    );
-
-    expect(mirror).toContain('return true;');
-    expect(mirror).toContain('return false;');
-    expect(mirror).toContain("console.warn('[legacy] анкету не вдалося віддзеркалити в стару колекцію'");
   });
 
   it('розкладка по вузлах теж не кидає, але звітує про успіх', () => {
@@ -94,7 +83,7 @@ describe('дзеркалення читається і в зворотний б�
   // копію — ту саму, у якій ще лежить те, що у вебі вже стерли, — та ще й
   // впиралось у права, яких у звичайного читача на чужий `users/$uid` немає.
   it('анкета читається лише з вузлів', () => {
-    const reader = sliceFn('export const fetchUserById =', 'export const removeKeyFromFirebase');
+    const reader = sliceFn('export const fetchUserById =', 'export const loadDuplicateUsers');
     expect(reader).toContain('await readProfileFromNodes(userId, { includeTechnical: true })');
     expect(reader).not.toContain('withLegacy');
     expect(reader).not.toContain(`users/\${userId}`);
@@ -104,19 +93,12 @@ describe('дзеркалення читається і в зворотний б�
     const loader = sliceFn('export const readProfileFromNodes =', 'export const fetchUsersByIds =');
     expect(loader).not.toContain("readProfileNodePart('users', id)");
     expect(loader).not.toContain('withLegacy');
-    // Шар, який викликач уже тримає в руках (файл офлайн-міграції), лишається —
-    // але проходить ту саму межу видимості, що й вузли: контакти лежать і в
-    // ньому, тож читачеві прихованої анкети він теж не дістається.
-    expect(loader).toContain('legacy: legacyFieldsNodesDoNotOwn(scoped.legacy, parts)');
-  });
-
-  it('legacy мовчить про те, чим уже володіє вузол', () => {
-    // Інакше поле, стерте у вебі, поверталося б із кожним читанням: у вузлі
-    // його немає, а в legacy воно ще лежить.
-    const filter = sliceFn('const legacyFieldsNodesDoNotOwn =', 'export const readProfileFromNodes');
-
-    expect(filter).toContain('!presentNodes.has(resolveFieldOwnerNode(field))');
-    expect(filter).toContain('Object.keys(value).length');
+    // Шару «legacy від викликача» теж більше немає: його приносив файл
+    // офлайн-міграції `users`/`newUsers`, а з колекцією `users` застосунок
+    // більше не працює. Анкета — це пʼять вузлів і нічого понад них.
+    expect(loader).toContain('const merged = mergeProfileNodes({ userId: id, ...parts });');
+    expect(loader).not.toContain('legacy');
+    expect(configSource).not.toContain('legacyFieldsNodesDoNotOwn');
   });
 });
 
@@ -164,34 +146,34 @@ describe('стан публікації переживає зникнення le
       userId: 'freshPushKey00000000',
       card: publishedCard,
       details: { surname: 'Коваленко' },
-      legacy: null,
     });
 
     expect(profile.publish).toBe(true);
     expect(profile.surname).toBe('Коваленко');
   });
 
-  it('індексація без legacy-шару бере публікацію з картки', () => {
+  it('індексація бере публікацію з картки', () => {
     const { profiles, stats } = mergeProfileNodeCollections({
       matchingCards: { freshPushKey00000000: publishedCard },
       profileDetails: { freshPushKey00000000: { surname: 'Коваленко' } },
     });
 
     expect(profiles.freshPushKey00000000.publish).toBe(true);
-    expect(stats.fromNodes).toBe(1);
-    // `withPublish` рахує саме legacy-джерело — його тут немає, і це не збій.
-    expect(stats.withPublish).toBe(0);
+    expect(stats.total).toBe(1);
   });
 
-  it('legacy, коли він є, лишається останнім словом про публікацію', () => {
-    // Поки мобільний застосунок живий, `publish` у `/users` — його рішення, і
-    // веб його поважає: інакше вимкнена в мобільному анкета лишалась би в
-    // стрічці до наступної перебудови картки.
-    const { profiles } = mergeProfileNodeCollections({
+  it('експорт `users`, підкладений поруч із вузлами, не важить нічого', () => {
+    // Колись `users` був останнім словом про `publish` і нижнім шаром для
+    // анкет, що ще не переїхали. З цією колекцією застосунок більше не
+    // працює: її `publish: false` не ховає картку, а анкета, яка є лише в
+    // ній, не зʼявляється в індексі.
+    const { profiles, stats } = mergeProfileNodeCollections({
       matchingCards: { freshPushKey00000000: publishedCard },
-      users: { freshPushKey00000000: { publish: false } },
+      users: { freshPushKey00000000: { publish: false }, onlyInUsers00000000: { name: 'Стара' } },
     });
 
-    expect(profiles.freshPushKey00000000.publish).toBe(false);
+    expect(profiles.freshPushKey00000000.publish).toBe(true);
+    expect(profiles).not.toHaveProperty('onlyInUsers00000000');
+    expect(stats.total).toBe(1);
   });
 });

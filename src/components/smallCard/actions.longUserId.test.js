@@ -2,30 +2,29 @@ jest.mock('components/config', () => ({
   fetchUserById: jest.fn(),
   updateProfileNodesInRTDB: jest.fn(),
   updateDataInRealtimeDB: jest.fn(),
-  updateDataInFiresoreDB: jest.fn(),
 }));
 jest.mock('utils/cache', () => ({ updateCachedUser: jest.fn() }));
 jest.mock('utils/multiAccountEdits', () => ({
-  getCardLegacyCollection: jest.fn(async userId => (userId === 'ID0001' ? null : 'users')),
+  isAccountProfileCard: jest.fn(userId => userId !== 'ID0001'),
 }));
 
 const {
   updateProfileNodesInRTDB,
   updateDataInRealtimeDB,
 } = require('components/config');
-const { getCardLegacyCollection } = require('utils/multiAccountEdits');
+const { isAccountProfileCard } = require('utils/multiAccountEdits');
 const { handleSubmit } = require('./actions');
 
 describe('handleSubmit routes quick card-field edits by userId length', () => {
   beforeEach(() => {
     updateProfileNodesInRTDB.mockClear();
     updateDataInRealtimeDB.mockClear();
-    getCardLegacyCollection.mockReset();
+    isAccountProfileCard.mockReset();
   });
 
-  it('mirrors to users for a card that has a legacy body', async () => {
+  it('writes an account profile through the account writer', async () => {
     const longUserId = 'Oghb1LphfASVOY3b6JO1Ov4CDyD2';
-    getCardLegacyCollection.mockResolvedValue('users');
+    isAccountProfileCard.mockReturnValue(true);
     await handleSubmit({ userId: longUserId, writer: 'IgF' }, 'overwrite');
 
     expect(updateDataInRealtimeDB).toHaveBeenCalledTimes(1);
@@ -34,8 +33,8 @@ describe('handleSubmit routes quick card-field edits by userId length', () => {
     expect(updateProfileNodesInRTDB).not.toHaveBeenCalled();
   });
 
-  it('writes only to the profile nodes for a card without a legacy body', async () => {
-    getCardLegacyCollection.mockResolvedValue(null);
+  it('writes only to the profile nodes for a card that is not an account profile', async () => {
+    isAccountProfileCard.mockReturnValue(false);
     await handleSubmit({ userId: 'ID0001', writer: 'IgF' }, 'overwrite');
 
     expect(updateProfileNodesInRTDB).toHaveBeenCalledTimes(1);

@@ -37,10 +37,6 @@ const NAV_LINKS = [
   { path: '/invoices', label: 'Invoice', right: 'canAccessInvoices' },
   { path: '/documents', label: 'Documents', right: 'canAccessInvoices' },
   { path: '/parties', label: 'Parties', right: 'canAccessInvoices' },
-  // Інструмент міграції RTDB читає локальні копії обох колекцій цілком, тобто показує
-  // контакти всіх анкет. Маршрут адмінський (App.jsx), тож і пункт меню показуємо лише
-  // адміну.
-  { path: '/rtdb-migration', label: 'RTDB migration', right: 'isAdmin' },
 ];
 
 // Права тут беруться з того ж localStorage, куди їх кладе App при вході: меню рендериться

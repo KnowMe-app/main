@@ -50,7 +50,6 @@ const runSearch = async query => {
       searchOptions: {
         searchIdPrefixes: ['phone', 'telegram', 'instagram', 'name', 'surname'],
         enabledSearchKeys,
-        cacheScope: { collections: ['users'] },
       },
     }));
     for (let i = 0; i < 20; i += 1) await Promise.resolve();

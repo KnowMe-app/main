@@ -5,7 +5,6 @@ import { ProfileDataTree } from './ProfileDataTree';
 
 jest.mock('./config', () => ({ database: {}, db: {} }));
 jest.mock('react-hot-toast', () => ({ success: jest.fn(), error: jest.fn() }));
-jest.mock('firebase/firestore', () => ({ doc: jest.fn(), getDoc: jest.fn() }));
 jest.mock('firebase/database', () => ({
   ref: jest.fn((_db, path) => path),
   get: jest.fn(),

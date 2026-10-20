@@ -199,7 +199,8 @@ describe('matchingCards приймає лише перелічені поля', 
   it('більше не вимагає поля source, але й далі не пускає картку-привида', () => {
     // ТЗ знімає вимогу `source`, а не вимогу існування анкети.
     expect(card['.validate']).not.toContain("child('source')");
-    expect(card['.validate']).toContain("root.child('users').child($uid).exists()");
+    expect(card['.validate']).not.toContain("child('users')");
+    expect(card['.validate']).toContain("root.child('profileTechnical').child($uid).exists()");
   });
 
   it('анкети, яка живе лише в нових вузлах, для картки досить', () => {
@@ -340,10 +341,9 @@ describe('решта вузлів не стає другим місцем для
       .forEach(field => expect(validate).not.toContain(`$other != '${field}'`));
   });
 
-  it('правила питають про рівень доступу і profileTechnical теж', () => {
-    // Інакше переїзд прав зняв би доступ усім, чий акаунт лежав у legacy:
-    // очищена колекція заливається в базу цілком, а разом із нею зникло б і
-    // єдине місце, звідки правила про цей доступ дізнавались.
+  it('правила питають про рівень доступу лише profileTechnical', () => {
+    // Legacy `users` закрито й видалено з правил; права всіх акаунтів уже
+    // лежать у `profileTechnical` (звірено перед закриттям).
     const withAccessCheck = [
       rules.matchingCards.$uid['.write'],
       rules.profileDetails.$uid['.write'],
@@ -355,8 +355,7 @@ describe('решта вузлів не стає другим місцем для
 
     withAccessCheck.forEach(rule => {
       expect(rule).toContain("root.child('profileTechnical').child(auth.uid).child('accessLevel')");
-      // Legacy-джерело нікуди не діло: `/users` міграція не чистить.
-      expect(rule).toContain("root.child('users').child(auth.uid).child('accessLevel')");
+      expect(rule).not.toContain("child('users')");
     });
 
     expect(rules.multiData.profileMutations['.read'])
@@ -376,33 +375,17 @@ describe('решта вузлів не стає другим місцем для
   });
 });
 
-describe('legacy лишається недоторканим', () => {
+describe('legacy закрито', () => {
   it('корінь і далі заборонений за замовчуванням', () => {
     expect(rules['.read']).toBe(false);
     expect(rules['.write']).toBe(false);
   });
 
-  it('users зберігає свої правила і індекси', () => {
-    // Знімок легко звірити з файлом правил: legacy-колекція одна, і вона не
-    // змінюється — ті самі вузли, ті самі індекси, та сама аудиторія.
-    const legacy = JSON.parse(fs.readFileSync(
-      path.join(repoRoot, 'src', 'utils', '__tests__', 'fixtures', 'legacyRulesShape.json'),
-      'utf8',
-    ));
-    // Аудиторію читання розширено рівно на одного — тестовий акаунт-інспектор
-    // (`READONLY_ADMIN_UIDS`): він читає все, що адмін, і не пише нічого.
-    const withoutInspector = rule => rule.replace("auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || ", '');
-    expect(withoutInspector(rules.users['.read'])).toBe(legacy.users['.read']);
-    expect(rules.users['.indexOn']).toEqual(legacy.users['.indexOn']);
-    expect(withoutInspector(rules.users.$uid['.read'])).toBe(legacy.users.$uid['.read']);
-    expect(rules.users.$uid['.write']).not.toContain('vtDxkDMjCwYuTDqTUnZsO29bpQr1');
-    // Право на запис — єдине, що розширилось, і рівно на один диз'юнкт:
-    // редактор заводить анкету під `push`-ключем. Знімок лишається початком
-    // рядка, тож будь-яка правка самої legacy-умови все одно впаде тут.
-    expect(rules.users.$uid['.write'].startsWith(legacy.users.$uid['.write'].replace(/\)$/, ''))).toBe(true);
-    // Legacy-джерело прав нікуди не поділось: доступ, записаний там, працює далі.
-    expect(rules.users['.read'])
-      .toContain("root.child('users').child(auth.uid).child('accessLevel')");
+  // Legacy `users` закрито для всіх: вузла в правилах немає, а корінь
+  // заборонений за замовчуванням — тож ні читати, ні писати його не може ніхто.
+  it('users у правилах немає зовсім', () => {
+    expect(rules.users).toBeUndefined();
+    expect(JSON.stringify(rules)).not.toContain("child('users')");
   });
 
   it('другої legacy-колекції в правилах немає', () => {

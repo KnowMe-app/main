@@ -1,3 +1,4 @@
+import { getExtraLocale } from './locales';
 /**
  * Останні пологи — це «як давно», а не «коли саме».
  *
@@ -69,12 +70,14 @@ export const formatDeliveryRecency = (raw, language, now = new Date()) => {
   const months = monthsSinceDate(raw, now);
   if (months === null) return '';
 
-  if (months < 1) return isUk(language) ? '<1 міс' : '<1 mo';
+  const words = getExtraLocale(language)?.sentences.recency;
+  if (months < 1) return isUk(language) ? '<1 міс' : words ? words.lessThanMonth : '<1 mo';
 
   if (months < DELIVERY_RECENCY_YEARS_THRESHOLD_MONTHS) {
-    return isUk(language) ? `${months} міс` : `${months} mo`;
+    return isUk(language) ? `${months} міс` : words ? words.months(months) : `${months} mo`;
   }
 
   const years = Math.floor(months / MONTHS_IN_YEAR);
+  if (words) return words.years(years);
   return isUk(language) ? `${years} ${ukYearWord(years)}` : `${years} ${years === 1 ? 'year' : 'years'}`;
 };

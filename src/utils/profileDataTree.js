@@ -17,8 +17,7 @@ import { isLongFormatUserId } from 'utils/userIdFormat';
  * читається одним точковим `get` і пишеться прямо за адресою, як у консолі.
  *
  * Чого тут навмисно немає:
- *   — `users/{id}`: legacy-дзеркало веб не читає ніколи (див. CLAUDE.md),
- *     тож воно стоїть посиланням у консоль без читання;
+ *   — `users/{id}` у RTDB: legacy закрито й видалено з правил;
  *   — `searchKey`: бакет лежить під значенням фільтра, і знайти всі бакети
  *     картки можна лише обходом усього індексу;
  *   — `multiData/flow`: розкладено за датами, а не за карткою.
@@ -32,7 +31,6 @@ export const PROFILE_DATA_TREE_GROUPS = Object.freeze({
   public: 'Відгуки й програми',
   search: 'Індекс пошуку searchId',
   account: 'Що цей користувач веде сам',
-  external: 'Поза Realtime Database',
 });
 
 const PROFILE_NODE_TITLES = {
@@ -174,27 +172,12 @@ export const buildProfileDataSources = ({ cardId, viewerId = '', draftAuthorId =
         lazy: true,
       });
     });
+    // Документа Firestore `users/{id}` тут більше немає: з Firestore
+    // застосунок не працює зовсім, а показ лише читанням коштував запит.
     sources.push(
       { id: 'account:usersIndex', group: 'account', title: 'usersIndex', segments: ['usersIndex', id], lazy: true },
-      {
-        id: 'external:firestore',
-        group: 'external',
-        title: 'Firestore users',
-        segments: ['users', id],
-        store: 'firestore',
-        lazy: true,
-        readOnly: true,
-      },
     );
   }
-
-  sources.push({
-    id: 'external:legacy',
-    group: 'external',
-    title: 'Legacy users (не читається)',
-    segments: ['users', id],
-    linkOnly: true,
-  });
 
   return sources;
 };
