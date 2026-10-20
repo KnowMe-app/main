@@ -42,7 +42,7 @@ describe('AddNewProfile.jsx no longer has a hidden write-skip gate on handleSubm
     );
 
     expect(longUserIdBranch).toContain('updateDataInRealtimeDB(syncedState.userId, uploadedInfo, \'update\')');
-    expect(longUserIdBranch).toContain('updateDataInFiresoreDB(syncedState.userId, uploadedInfo, \'check\', delCondition)');
+    expect(longUserIdBranch).not.toContain('updateDataInFiresoreDB');
     expect(longUserIdBranch).not.toMatch(/if\s*\(!\w+\)\s*\{[\s\S]*updateDataInRealtimeDB/);
   });
 

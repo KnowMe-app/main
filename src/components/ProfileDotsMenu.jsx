@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useLocation } from 'react-router-dom';
-import { FaRegUser, FaUserEdit, FaUsers, FaSignOutAlt, FaTrashAlt, FaEraser, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaMoon, FaSun } from 'react-icons/fa';
+import { FaRegUser, FaUsers, FaSignOutAlt, FaTrashAlt, FaEraser, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaMoon, FaSun } from 'react-icons/fa';
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
 import { LanguagePicker } from './LanguagePicker';
@@ -251,7 +251,6 @@ export const ProfileDotsMenu = ({
 
   const navItems = [
     { path: '/my-profile', label: uiText('Мій профіль', language), icon: <FaRegUser /> },
-    ...(isAdmin ? [{ path: '/my-profile-old', label: uiText('Старий профіль', language), icon: <FaUserEdit /> }] : []),
     ...(canSeePrivilegedNav && (isAdmin || resolvedAccess.canAccessAdd)
       ? [{ path: '/add', label: uiText('Додати анкету', language), description: uiText('Адмін-додавання профілів', language), icon: <MdPersonAddAlt1 /> }]
       : []),

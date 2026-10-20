@@ -1,51 +1,24 @@
 import {
   syncUserSearchIdIndex,
   syncUserSearchKeyIndex,
-  updateDataInFiresoreDB,
   updateDataInRealtimeDB,
-  updateProfileNodesInRTDB,
 } from './config';
 
 export const MY_PROFILE_DRAFT_STORAGE_KEY = 'myProfileDraft';
 export const MY_PROFILE_ROUTE = '/my-profile';
 
-export const isPermissionDeniedError = error => {
-  const code = String(error?.code || '').toLowerCase();
-  const message = String(error?.message || '').toLowerCase();
-  return code.includes('permission-denied') || code.includes('permission_denied') || message.includes('permission_denied');
-};
-
 export const normalizeAuthEmail = email => String(email || '').trim();
 
 export const isValidAuthEmail = email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-// Анкета акаунта лягає у вузли профілю (`updateDataInRealtimeDB`) і в Firestore.
-// Коли один із записів не вдався, анкета все одно мусить десь бути: тоді вона
-// цілком їде у вузли профілю, на які власник акаунта право має завжди. Legacy
-// `users` закрито й видалено з правил — туди не пише ніхто.
-export const persistUserWithFallback = async (userId, uploadedInfo, firestoreCondition = 'update') => {
-  let canonicalWriteFailed = false;
-
-  try {
-    await updateDataInRealtimeDB(userId, uploadedInfo, firestoreCondition === 'set' ? undefined : 'update');
-  } catch (error) {
-    if (!isPermissionDeniedError(error)) {
-      throw error;
-    }
-    canonicalWriteFailed = true;
-    console.warn('Profile nodes write was denied, retrying through the node writer.');
-  }
-
-  try {
-    await updateDataInFiresoreDB(userId, uploadedInfo, firestoreCondition);
-  } catch (error) {
-    canonicalWriteFailed = true;
-    console.warn('Firestore write failed, falling back to the profile nodes.', error);
-  }
-
-  if (canonicalWriteFailed) {
-    await updateProfileNodesInRTDB(userId, uploadedInfo, 'update');
-  }
+// Анкета акаунта лягає у вузли профілю (`updateDataInRealtimeDB`), і тільки в
+// них. Тут стояв ще запис у Firestore й «запасний шлях»: коли один із двох
+// записів падав, анкета вдруге їхала в ті самі вузли. Той повтор нічого не
+// рятував — відмова вузлів повторювалась, а падіння Firestore лише
+// перезаписувало вже збережене, — тож відмова тепер просто доходить до того,
+// хто кликав: людина мусить знати, що анкета не збереглась.
+export const persistAccountProfile = async (userId, uploadedInfo, mode = 'update') => {
+  await updateDataInRealtimeDB(userId, uploadedInfo, mode === 'set' ? undefined : 'update');
 
   // Реєстрація — це поява анкети, тож тут же зʼявляються і її пошукові індекси.
   //
@@ -53,7 +26,7 @@ export const persistUserWithFallback = async (userId, uploadedInfo, firestoreCon
   // не писав ніхто: щойно зареєстрований акаунт не знаходився ні за поштою, ні
   // за іменем, доки власник не відкриє й не збереже анкету вручну. Індекси —
   // прискорення читання, а не частина реєстрації, тож збій тут її не валить.
-  if (firestoreCondition !== 'set') return;
+  if (mode !== 'set') return;
   await Promise.all([
     syncUserSearchIdIndex(userId, {}, uploadedInfo).catch(error => {
       console.warn('[registration] не вдалося оновити searchId', error);
@@ -76,7 +49,7 @@ export const buildAuthSessionPayload = ({ todayDays, todayDash }) => ({
  * Роль тут стояла, і вхід її **переписував**: форма щоразу вимагала обрати
  * роль, пропонувала з п'яти лише дві («донорка», «агенція») і клала вибране в
  * анкету. Батьки, які просто заходили в застосунок, після кожного входу ставали
- * донорками чи агенціями, а «Мій профіль» (він читає Firestore) показував роль
+ * донорками чи агенціями, а «Мій профіль» (тоді він читав Firestore) показував роль
  * з останнього входу замість тієї, яку людина обрала в ньому ж. Роль
  * обирається при реєстрації й міняється в «Моєму профілі» — окремим шляхом
  * (`updateProfileRole`).

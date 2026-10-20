@@ -6,10 +6,8 @@ import * as XLSX from 'xlsx';
 import {
   auth,
   searchUsersCollectionInRTDB,
-  // fetchUserData,
   updateProfileNodesInRTDB,
   updateDataInRealtimeDB,
-  updateDataInFiresoreDB,
   fetchPaginatedUsers,
   fetchFavoriteUsers,
   fetchDislikeUsers,
@@ -2059,19 +2057,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (syncedState?.userId?.length > 20) {
 
       if (isDeleteOnlySubmit) {
-        // Жодного відбору за назвою ключа: анкету акаунта пишуть
-        // `updateDataInRealtimeDB` (вузли) і Firestore цілком, тож і
-        // знімається там усе.
+        // Жодного відбору за назвою ключа: анкету акаунта пише
+        // `updateDataInRealtimeDB` у вузли цілком, тож і знімається там усе.
         const deletePayload = { lastAction: syncedState.lastAction };
         deleteOnlyKeys.forEach(key => {
           deletePayload[key] = null;
         });
 
         console.log('[SAVE] payload to firebase:', deletePayload);
-        await Promise.all([
-          updateDataInRealtimeDB(syncedState.userId, deletePayload, 'update'),
-          updateDataInFiresoreDB(syncedState.userId, deletePayload, 'check', delCondition),
-        ]);
+        await updateDataInRealtimeDB(syncedState.userId, deletePayload, 'update');
       } else {
         const cleanedState = sanitizeTechnicalPayload(syncedState);
         if (delCondition) {
@@ -2102,10 +2096,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         }
 
         console.log('[SAVE] payload to firebase:', uploadedInfo);
-        await Promise.all([
-          updateDataInRealtimeDB(syncedState.userId, uploadedInfo, 'update'),
-          updateDataInFiresoreDB(syncedState.userId, uploadedInfo, 'check', delCondition),
-        ]);
+        await updateDataInRealtimeDB(syncedState.userId, uploadedInfo, 'update');
       }
 
     } else {

@@ -1,18 +1,16 @@
 import fs from 'fs';
 import path from 'path';
 
-describe('persistUserWithFallback', () => {
+describe('persistAccountProfile', () => {
   const source = fs.readFileSync(path.join(__dirname, 'authProfilePersistence.js'), 'utf8');
 
-  it('writes the whole profile into the nodes only when the canonical write failed', () => {
-    expect(source).toContain('let canonicalWriteFailed = false;');
-    expect(source).toContain('if (canonicalWriteFailed) {');
-    expect(source).toContain("await updateProfileNodesInRTDB(userId, uploadedInfo, 'update');");
-  });
-
-  it('never swallows a non-permission error from the canonical write', () => {
-    expect(source).toContain('if (!isPermissionDeniedError(error)) {');
-    expect(source).toContain('throw error;');
+  // Анкета акаунта живе лише у вузлах RTDB: ні Firestore, ні повторного
+  // «запасного» запису в ті самі вузли, який нічого не рятував.
+  it('writes the profile nodes once and lets a failure reach the caller', () => {
+    expect(source).toContain("await updateDataInRealtimeDB(userId, uploadedInfo, mode === 'set' ? undefined : 'update');");
+    expect(source).not.toContain('updateDataInFiresoreDB');
+    expect(source).not.toContain('updateProfileNodesInRTDB');
+    expect(source).not.toContain('canonicalWriteFailed');
   });
 });
 

@@ -55,13 +55,17 @@ describe('роль на екрані входу', () => {
 describe('роль у «Моєму профілі»', () => {
   it('показує роль з картки — ту саму, за якою гортає стрічка', () => {
     const source = read('MyProfile.jsx');
-    expect(source).toContain('fetchProfileCardRole(uid).catch(() => null)');
+    // Анкета — з вузлів, і роль приходить у ній же: окремого читання ролі
+    // картки й документа Firestore більше немає.
+    expect(source).toContain('const cardRole = existingData.role ?? null;');
     expect(source).toContain('const currentCardRole = resolveViewerCurrentRole(cardRole);');
+    expect(source).not.toContain('fetchUserData');
   });
 
-  it('зміна ролі доїжджає й у Firestore, звідки форма читає анкету', () => {
+  it('зміна ролі пише лише вузли — Firestore застосунок не чіпає', () => {
     const config = read('config.js');
     const writer = config.slice(config.indexOf('export const updateProfileRole ='), config.indexOf('export const updateDataInRealtimeDB ='));
-    expect(writer).toContain("updateDataInFiresoreDB(id, { userRole: role, role }, 'check')");
+    expect(writer).toContain("await updateDataInRealtimeDB(id, { userRole: role, role }, 'update');");
+    expect(config).not.toContain('firebase/firestore');
   });
 });

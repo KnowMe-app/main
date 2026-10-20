@@ -1021,7 +1021,6 @@ const BY_UK = {
   'Так, вийти': 'Sí, cerrar sesión',
   'Виходимо…': 'Cerrando sesión…',
   'Мій профіль': 'Mi perfil',
-  'Старий профіль': 'Perfil antiguo',
   'Додати анкету': 'Añadir un perfil',
   'Адмін-додавання профілів': 'Creación de perfiles por el administrador',
   'Пошук і порівняння анкет': 'Buscar y comparar perfiles',

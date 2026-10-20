@@ -1090,7 +1090,6 @@ const EN_BY_UK = {
   'Так, вийти': 'Yes, sign out',
   'Виходимо…': 'Signing out…',
   'Мій профіль': 'My profile',
-  'Старий профіль': 'Old profile',
   'Додати анкету': 'Add a profile',
   'Адмін-додавання профілів': 'Admin profile creation',
   'Пошук і порівняння анкет': 'Search and compare profiles',

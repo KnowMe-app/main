@@ -1,6 +1,5 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { doc, getDoc as firebaseGetDoc, getFirestore, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes } from 'firebase/storage';
 import {
   getDatabase,
@@ -74,7 +73,6 @@ import {
 import { isAdminUid, readStoredAccessLevel, stripPrivilegedProfileFields } from '../utils/accessLevel';
 import { hasFilledProfileDraftData } from '../utils/profileDraftContent';
 import { flattenOwnerValueToString } from '../utils/ownerValueString';
-import { isLongFormatUserId } from '../utils/userIdFormat';
 import {
   canReadProfileOutsideFeed,
   isCardInMatchingFeed,
@@ -147,9 +145,11 @@ const firebaseConfig = {
 // Ініціалізація Firebase
 const app = initializeApp(firebaseConfig);
 
-// Ініціалізація сервісів
+// Ініціалізація сервісів. Firestore тут був дзеркалом анкети акаунта, і
+// «Мій профіль» читав анкету саме з нього; вузли RTDB тримали все те саме, а
+// кожне збереження коштувало ще й читання документа (режим `check`). Тепер
+// анкету читають і пишуть лише вузли — Firestore застосунок не чіпає.
 export const auth = getAuth(app);
-export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const database = getDatabase(app);
 
@@ -168,14 +168,6 @@ const get = (...args) => {
     path: args[0],
   });
 };
-
-const getDoc = (...args) =>
-  withAdminDownloadToast(firebaseGetDoc(...args), {
-    getUid: getCurrentAdminUid,
-    operation: 'getDoc',
-    source: 'config',
-    path: args[0],
-  });
 
 const listAll = (...args) => {
   incrementMatchingLoadStat('storageListAllCalls');
@@ -690,13 +682,6 @@ const dataURLToFile = dataUrl => {
     u8arr[n] = bstr.charCodeAt(n);
   }
   return new File([u8arr], 'compressed.jpg', { type: mime });
-};
-
-export const fetchUserData = async userId => {
-  const userRef = doc(db, 'users', userId);
-  const docSnap = await getDoc(userRef);
-  const existingData = docSnap.data();
-  return { existingData, userRef };
 };
 
 /*
@@ -4003,40 +3988,6 @@ export const searchUsersCollectionInRTDB = async (searchedValue, options = {}) =
   }
 };
 
-export const updateDataInFiresoreDB = async (userId, uploadedInfo, condition, delCondition) => {
-  const cleanedUploadedInfo = normalizeStoredDates(stripTransientUserDataFields(uploadedInfo));
-  const keysToDelete = [
-    ...(delCondition ? Object.keys(delCondition) : []),
-    ...transientUserDataKeys,
-  ];
-  const basePayload = { ...cleanedUploadedInfo };
-  keysToDelete.forEach(key => {
-    delete basePayload[key];
-  });
-  const updatePayload = { ...basePayload };
-  keysToDelete.forEach(key => {
-    updatePayload[key] = deleteField();
-  });
-  try {
-    const userRef = doc(db, `users/${userId}`);
-    if (condition === 'update') {
-      await updateDoc(userRef, updatePayload);
-    } else if (condition === 'set') {
-      await setDoc(userRef, basePayload);
-    } else if (condition === 'check') {
-      const userDoc = await getDoc(userRef);
-      if (userDoc.exists()) {
-        await updateDoc(userRef, updatePayload);
-      } else {
-        await setDoc(userRef, basePayload);
-      }
-    }
-  } catch (error) {
-    console.error('Сталася помилка під час збереження даних в Firestore Database1:', error);
-    throw error;
-  }
-};
-
 const removeUndefined = obj => {
   if (Array.isArray(obj)) {
     return obj.filter(item => item !== undefined).map(removeUndefined);
@@ -4737,7 +4688,7 @@ export const saveComparisonField = async (userId, field, value) => createSaveCom
   auth, database, resolveCanonicalFieldName, resolveFieldOwnerNode, PROFILE_NODES,
   buildMatchingCardProjection, normalizeStoredDates, sanitizeUploadedInfoPhones, ref2, set, get,
   readProfileFromNodes, syncUserSearchIdIndex, syncUserSearchKeyIndex,
-  refreshMatchingCardAfterProfileWrite, isAccountProfileId: isLongFormatUserId, updateDataInFiresoreDB,
+  refreshMatchingCardAfterProfileWrite,
   clearMatchingSearchResultCache, setOwnerWriter, setOwnerGetInTouch,
 })(userId, field, value);
 
@@ -4758,14 +4709,6 @@ export const updateProfileRole = async (userId, nextRole) => {
 
   const previous = (await readProfileFromNodes(id, { includeTechnical: true })) || {};
   await updateDataInRealtimeDB(id, { userRole: role, role }, 'update');
-  // «Мій профіль» читає анкету акаунта з Firestore (`fetchUserData`), а цей
-  // писач її туди не клав: нова роль жила у вузлах і картці, а після
-  // перезавантаження сторінки форма показувала стару — ту, що записав
-  // останній вхід. Відмова тут не скасовує зміни: стрічка й картка вже
-  // бачать нову роль, а форма бере її з картки (`fetchProfileCardRole`).
-  await updateDataInFiresoreDB(id, { userRole: role, role }, 'check').catch(error => {
-    console.warn('[role] не вдалося записати роль у Firestore', { userId: id, error });
-  });
   await syncUserSearchKeyIndex(
     id,
     { userRole: previous.userRole, role: previous.role },
@@ -5246,22 +5189,6 @@ const buildMatchingCardRef = userId => ref2(database, `${MATCHING_CARDS_ROOT}/${
 
 const readMatchingCardRaw = async userId => {
   const snapshot = await get(buildMatchingCardRef(userId));
-  return snapshot.exists() ? snapshot.val() : null;
-};
-
-/**
- * Роль акаунта — так, як її бачить стрічка: з картки, одним полем.
- *
- * «Мій профіль» бере анкету з Firestore, а стрічка й фільтри — з картки
- * `matchingCards/{id}`, і ці два записи розходились: вхід переписував роль у
- * Firestore тим, що обрали на формі входу, а картку не чіпав. Людина бачила в
- * профілі одну роль, а стрічка гортала їй деку іншої. Одне поле картки
- * коштує байти — і знімає питання, котрий із двох записів правдивий.
- */
-export const fetchProfileCardRole = async userId => {
-  const id = String(userId || '').trim();
-  if (!id) return null;
-  const snapshot = await get(ref2(database, `${MATCHING_CARDS_ROOT}/${id}/role`));
   return snapshot.exists() ? snapshot.val() : null;
 };
 

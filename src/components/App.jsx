@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate  } from 'react-router-dom';
 import { PrivacyPolicy } from './PrivacyPolicy';
 import { MyProfile } from './MyProfile';
-import { MyProfileOld } from './MyProfileOld';
 import { LoginScreen } from './LoginScreen';
 import { AddNewProfile } from './AddNewProfile';
 import Matching from './Matching';
@@ -153,7 +152,6 @@ export const App = () => {
       <Route path="/" element={<RequireAuth status={authStatus}>{canAccessAdd ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <PrivacyPolicy />}</RequireAuth>} />
       <Route path="/my-profile" element={<RequireAuth status={authStatus}><MyProfile /></RequireAuth>} />
       <Route path="/my-profile-new" element={<Navigate to="/my-profile" replace />} />
-      {isAdmin && <Route path="/my-profile-old" element={<RequireAuth status={authStatus}><MyProfileOld isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /></RequireAuth>} />}
       {canAccessAdd && <Route path="/add" element={<RequireAuth status={authStatus}><AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /></RequireAuth>} />}
       <Route path="/matching" element={<RequireAuth status={authStatus}><Matching /></RequireAuth>} />
       {/* Заводити й доповнювати картки може кожен, хто увійшов: право

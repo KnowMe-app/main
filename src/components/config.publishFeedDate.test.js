@@ -4,16 +4,6 @@
 
 jest.mock('firebase/app', () => ({ initializeApp: () => ({}) }));
 jest.mock('firebase/auth', () => ({ getAuth: () => ({ currentUser: { uid: '0ghb1LphfASV0Y3b6J010v4CDyD2' } }) }));
-jest.mock('firebase/firestore', () => ({
-  getFirestore: () => ({}),
-  collection: () => ({}),
-  doc: () => ({}),
-  getDoc: jest.fn(),
-  getDocs: jest.fn(),
-  setDoc: jest.fn(),
-  updateDoc: jest.fn(),
-  deleteField: jest.fn(),
-}));
 jest.mock('firebase/storage', () => ({
   getStorage: () => ({}),
   ref: () => ({}),

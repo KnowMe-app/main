@@ -6,7 +6,6 @@ import {
   fetchUserById,
   updateDataInRealtimeDB,
   updateProfileNodesInRTDB,
-  updateDataInFiresoreDB,
   pruneSearchIdValues,
   syncUserSearchIdIndex,
   fetchUserComment,
@@ -756,7 +755,6 @@ const EditProfile = () => {
 
         await syncUserSearchIdIndex(updatedState.userId, existingData, deletePayload, deletedKeys);
         await updateDataInRealtimeDB(updatedState.userId, deletePayload, 'update');
-        await updateDataInFiresoreDB(updatedState.userId, deletePayload, 'check', delCondition);
 
         debugProfileSave('remoteUpdate:success', { delCondition, deleteOnlyKeys });
       } else {
@@ -795,7 +793,6 @@ const EditProfile = () => {
         });
 
         await updateDataInRealtimeDB(updatedState.userId, uploadedInfo, 'update');
-        await updateDataInFiresoreDB(updatedState.userId, uploadedInfo, 'check', delCondition);
 
         debugProfileSave('remoteUpdate:success', {
           delCondition,

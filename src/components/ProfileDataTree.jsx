@@ -2,11 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components';
 import { revealCss } from '../styles/revealAnimation';
 import { get, ref, remove, set } from 'firebase/database';
-import { doc, getDoc } from 'firebase/firestore';
 import toast from 'react-hot-toast';
 import { FaExternalLinkAlt, FaTimes } from 'react-icons/fa';
-import { database, db } from './config';
-import { buildFirestoreConsoleLink, buildRtdbConsoleLink } from './profileFormNodeBlocks';
+import { database } from './config';
+import { buildRtdbConsoleLink } from './profileFormNodeBlocks';
 import {
   PROFILE_DATA_TREE_GROUPS,
   buildProfileDataSources,
@@ -39,17 +38,9 @@ const isBranch = value => value !== null && typeof value === 'object';
 const pathOf = segments => segments.join('/');
 
 const readSource = async source => {
-  if (source.store === 'firestore') {
-    const snapshot = await getDoc(doc(db, ...source.segments));
-    return snapshot.exists() ? snapshot.data() : null;
-  }
   const snapshot = await get(ref(database, pathOf(source.segments)));
   return snapshot.exists() ? snapshot.val() : null;
 };
-
-const consoleLinkFor = (source, segments) => (
-  source.store === 'firestore' ? buildFirestoreConsoleLink(segments) : buildRtdbConsoleLink(segments)
-);
 
 const BackendLink = ({ href, path }) => (
   <LinkIcon href={href} target="_blank" rel="noopener noreferrer" title={`Відкрити в консолі: ${path}`}>
@@ -113,7 +104,7 @@ const ScalarNode = ({ label, value, segments, source, editable, onWrite, onRemov
           onBlur={() => commit(draft)}
         />
       )}
-      <BackendLink href={consoleLinkFor(source, segments)} path={path} />
+      <BackendLink href={buildRtdbConsoleLink(segments)} path={path} />
       {editable ? (
         <RemoveButton type="button" aria-label={`Видалити ${path}`} onClick={() => onRemove(segments)}>
           <FaTimes size={10} />
@@ -139,7 +130,7 @@ const BranchNode = ({ label, value, segments, source, editable, depth, defaultOp
           <Meta>{describeTreeValue(value)}</Meta>
         </Toggle>
         <PathLabel title={path}>{path}</PathLabel>
-        <BackendLink href={consoleLinkFor(source, segments)} path={path} />
+        <BackendLink href={buildRtdbConsoleLink(segments)} path={path} />
         {editable && depth > 0 ? (
           <RemoveButton type="button" aria-label={`Видалити ${path}`} onClick={() => onRemove(segments)}>
             <FaTimes size={10} />
@@ -207,12 +198,12 @@ const EmptyRootValue = ({ segments, onWrite }) => {
 
 const SourceRoot = ({ source, entry, onLoad, onWrite, onRemove }) => {
   const path = pathOf(source.segments);
-  const href = consoleLinkFor(source, source.segments);
+  const href = buildRtdbConsoleLink(source.segments);
   const editable = !source.readOnly;
   const header = (
     <RootHead>
       <RootTitle>{source.title}</RootTitle>
-      <PathLabel title={path}>{source.store === 'firestore' ? `Firestore: ${path}` : path}</PathLabel>
+      <PathLabel title={path}>{path}</PathLabel>
       <BackendLink href={href} path={path} />
       {!source.linkOnly ? (
         <SmallButton type="button" onClick={() => onLoad(source)} disabled={entry?.status === 'loading'}>

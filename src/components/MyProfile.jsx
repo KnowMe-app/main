@@ -5,8 +5,7 @@ import { FaEye, FaEyeSlash, FaLock } from 'react-icons/fa';
 import styled, { css, keyframes } from 'styled-components';
 import {
   auth,
-  fetchProfileCardRole,
-  fetchUserData,
+  fetchUserById,
   normalizeStoredDates,
   readOwnCardLikedAudience,
   rememberOwnLikedAudience,
@@ -58,7 +57,7 @@ import {
   buildAuthSessionPayload,
   markAuthSession,
   MY_PROFILE_DRAFT_STORAGE_KEY,
-  persistUserWithFallback,
+  persistAccountProfile,
 } from './authProfilePersistence';
 import toast from 'react-hot-toast';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
@@ -958,6 +957,11 @@ export const MyProfile = () => {
   const authSessionGenerationRef = useRef(0);
   const saveQueueRef = useRef(Promise.resolve());
   const stateRef = useRef(state);
+  // Анкета так, як вона лежить у базі після останнього запису: з нею
+  // `makeUploadedInfo` звіряє наступне збереження. Доти перед кожним
+  // збереженням читався документ Firestore — а замінити його вузлами означало б
+  // пʼять читань RTDB на кожен blur. Читання одне — на відкритті.
+  const persistedProfileRef = useRef({ uid: '', data: null });
   const editedFieldsRef = useRef(new Set());
   const authHintTimersRef = useRef([]);
 
@@ -970,6 +974,7 @@ export const MyProfile = () => {
     latestFetchUidRef.current = '';
     activeAuthUidRef.current = '';
     saveQueueRef.current = Promise.resolve();
+    persistedProfileRef.current = { uid: '', data: null };
     editedFieldsRef.current = new Set();
     stateRef.current = {};
     setState({});
@@ -1065,19 +1070,26 @@ export const MyProfile = () => {
     setUserId(uid);
 
     try {
-      const [{ existingData }, cardRole] = await Promise.all([
-        fetchUserData(uid),
-        fetchProfileCardRole(uid).catch(() => null),
-      ]);
+      // Анкета — з вузлів RTDB, тією самою воронкою, що й для всіх
+      // (`readProfileFromNodes` усередині `fetchUserById`); власниця читає свої
+      // вузли без межі приватності. `fetchUserById` ділить читання, яке вже
+      // триває: вхід (`App`) питає ту саму анкету в ту саму мить, і окремий
+      // виклик тут коштував би ще пʼять читань. Службові позначки зведення
+      // (`__…`) у форму не йдуть.
+      const nodesProfile = await fetchUserById(uid);
+      const existingData = Object.fromEntries(Object.entries(nodesProfile || {})
+        .filter(([key]) => !key.startsWith('__')));
 
       if (!shouldApply() || latestFetchUidRef.current !== uid) {
         return false;
       }
+      persistedProfileRef.current = { uid, data: existingData };
 
-      // Роль показуємо ту саму, за якою гортає стрічка, — з картки. Firestore
-      // тримав роль з останнього входу, і форма її й показувала, хоч людина
-      // обирала іншу тут же, у «Хто ви».
-      const loadedProfile = normalizeProfileData(existingData || {});
+      // Роль показуємо ту саму, за якою гортає стрічка, — з картки: її несе
+      // `role` зведеної анкети. Колись форма брала роль з Firestore, куди її
+      // переписував кожен вхід, хоч людина обирала іншу тут же, у «Хто ви».
+      const cardRole = existingData.role ?? null;
+      const loadedProfile = normalizeProfileData(existingData);
       const currentCardRole = resolveViewerCurrentRole(cardRole);
       const roles = resolveMyProfileRoles({
         cardRole,
@@ -1549,8 +1561,8 @@ export const MyProfile = () => {
       showVerifyEmail
       isSessionActive={isProfileAccessConfirmed}
       onExit={handleExit}
-      // «Видалити анкету» стоїть у меню всюди, де є анкета (`ProfileScreen`,
-      // `MyProfileOld`, `AddNewProfile`), і саме тут його не передавали — тож
+      // «Видалити анкету» стоїть у меню всюди, де є анкета (`AddNewProfile`,
+      // колись і старі екрани профілю), і саме тут його не передавали — тож
       // `ProfileDotsMenu` цілу секцію «Анкета» не малював. Видалення профілю —
       // це лист на пошту з темою «Видаліть мою анкету» (`delProfile` в
       // `InfoModal`): акаунт і сліди в чужих списках знімає людина, а не
@@ -1770,7 +1782,7 @@ export const MyProfile = () => {
     return emailPattern.test(email);
   };
 
-  const persistUserProfile = persistUserWithFallback;
+  const persistUserProfile = persistAccountProfile;
 
   const handleAuthConfirm = async () => {
     const currentState = stateRef.current || {};
@@ -1878,7 +1890,14 @@ export const MyProfile = () => {
           authSessionGenerationRef.current !== sessionGeneration ||
           auth.currentUser?.uid !== targetUserId
         ) return;
-        const { existingData } = await fetchUserData(targetUserId);
+        if (persistedProfileRef.current.uid !== targetUserId) {
+          const nodesProfile = await fetchUserById(targetUserId);
+          persistedProfileRef.current = {
+            uid: targetUserId,
+            data: Object.fromEntries(Object.entries(nodesProfile || {}).filter(([key]) => !key.startsWith('__'))),
+          };
+        }
+        const existingData = persistedProfileRef.current.data || {};
         if (
           authSessionGenerationRef.current !== sessionGeneration ||
           auth.currentUser?.uid !== targetUserId
@@ -1905,6 +1924,13 @@ export const MyProfile = () => {
           await syncUserSearchIdIndex(targetUserId, existingData, uploadedInfo, searchIdFields);
         }
         await persistUserProfile(targetUserId, uploadedInfo, 'check');
+        // Записане стає новою базою порівняння — так, як його поклав писач.
+        if (persistedProfileRef.current.uid === targetUserId) {
+          persistedProfileRef.current = {
+            uid: targetUserId,
+            data: { ...existingData, ...normalizeStoredDates(uploadedInfo) },
+          };
+        }
       });
 
     return saveQueueRef.current;
@@ -2210,7 +2236,7 @@ export const MyProfile = () => {
   /*
    * Очищення оптимістичне: модалка закривається й поля порожніють тієї ж
    * миті, а запис іде слідом. Доки модалка чекала на `saveState` (черга,
-   * `fetchUserData`, кілька вузлів RTDB, програми), вона висіла кілька
+   * читання анкети, кілька вузлів RTDB, програми), вона висіла кілька
    * секунд після «Очистити», і здавалось, що дотик не спрацював. Відмова
    * повертає стан, якщо людина тим часом нічого не змінила, і каже про це.
    */

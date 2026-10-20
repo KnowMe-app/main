@@ -87,7 +87,7 @@ describe('single legacy collection reads', () => {
     expect(source).toContain("'__photosHydrated'");
     // Пейлоад ще й проходить приведення дат до формату бази — чистка від цього
     // не змінилась, просто вона тепер не остання ланка перед записом.
-    expect(source).toContain('normalizeStoredDates(stripTransientUserDataFields(uploadedInfo));');
+    expect(source).toContain('normalizeStoredDates(stripTransientUserDataFields(');
     expect(source.match(/markForRealtimeDeletion: condition === 'update'/g)).toHaveLength(2);
   });
 });

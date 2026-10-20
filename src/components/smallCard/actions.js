@@ -2,7 +2,6 @@ import {
   fetchUserById,
   updateDataInRealtimeDB,
   updateProfileNodesInRTDB,
-  updateDataInFiresoreDB
 } from "components/config";
 import { updateCachedUser } from "utils/cache";
 import { formatDateAndFormula, formatDateToServer } from "components/inputValidations";
@@ -563,7 +562,6 @@ export const handleSubmitAll = async (userData, overwrite) => {
 
   if (isAccountProfileCard(userData?.userId)) {
     await updateDataInRealtimeDB(userData.userId, uploadedInfo, 'update');
-    await updateDataInFiresoreDB(userData.userId, uploadedInfo, 'check');
   } else {
     await updateProfileNodesInRTDB(userData.userId, uploadedInfo, 'update');
   }

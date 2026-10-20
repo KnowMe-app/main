@@ -66,7 +66,6 @@ import {
   database,
   auth,
   updateDataInRealtimeDB,
-  updateDataInFiresoreDB,
   readOwnerGetInTouchSorted,
   setOwnerGetInTouch,
   setReactionUserValues,
@@ -1931,11 +1930,6 @@ const Matching = () => {
       toast.error(uiText(newValue ? 'Не вдалося опублікувати анкету. Спробуйте ще раз' : 'Не вдалося зняти анкету з публікації. Спробуйте ще раз', language));
       return;
     }
-    // Firestore — дзеркало анкети акаунта; у картки, заведеної адміном,
-    // документа там немає, і `update` відмовляє. Стрічку це не зачіпає.
-    updateDataInFiresoreDB(userId, sanitizeCardForBackend({ publish: newValue }), 'update').catch(err => {
-      console.warn('Failed to mirror publish into Firestore', err);
-    });
   }, [isAdmin, language]);
 
   // Spec §1: a non-empty query replaces the feed's contents with the results,

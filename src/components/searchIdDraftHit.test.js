@@ -23,16 +23,6 @@ jest.mock('react-hot-toast', () => {
   toast.custom = () => {};
   return { __esModule: true, default: toast, toast, Toaster: () => null };
 });
-jest.mock('firebase/firestore', () => ({
-  getFirestore: () => ({}),
-  collection: () => ({}),
-  doc: () => ({}),
-  getDoc: () => ({}),
-  getDocs: () => ({}),
-  setDoc: () => ({}),
-  updateDoc: () => ({}),
-  deleteField: () => ({}),
-}));
 jest.mock('firebase/storage', () => ({
   getStorage: () => ({}),
   ref: () => ({}),

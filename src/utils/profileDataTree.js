@@ -31,7 +31,6 @@ export const PROFILE_DATA_TREE_GROUPS = Object.freeze({
   public: 'Відгуки й програми',
   search: 'Індекс пошуку searchId',
   account: 'Що цей користувач веде сам',
-  external: 'Поза Realtime Database',
 });
 
 const PROFILE_NODE_TITLES = {
@@ -173,17 +172,10 @@ export const buildProfileDataSources = ({ cardId, viewerId = '', draftAuthorId =
         lazy: true,
       });
     });
+    // Документа Firestore `users/{id}` тут більше немає: з Firestore
+    // застосунок не працює зовсім, а показ лише читанням коштував запит.
     sources.push(
       { id: 'account:usersIndex', group: 'account', title: 'usersIndex', segments: ['usersIndex', id], lazy: true },
-      {
-        id: 'external:firestore',
-        group: 'external',
-        title: 'Firestore users',
-        segments: ['users', id],
-        store: 'firestore',
-        lazy: true,
-        readOnly: true,
-      },
     );
   }
 

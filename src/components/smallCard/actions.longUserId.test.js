@@ -2,7 +2,6 @@ jest.mock('components/config', () => ({
   fetchUserById: jest.fn(),
   updateProfileNodesInRTDB: jest.fn(),
   updateDataInRealtimeDB: jest.fn(),
-  updateDataInFiresoreDB: jest.fn(),
 }));
 jest.mock('utils/cache', () => ({ updateCachedUser: jest.fn() }));
 jest.mock('utils/multiAccountEdits', () => ({

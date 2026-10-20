@@ -3,7 +3,6 @@ import path from 'path';
 import { buildAuthProfilePayload, buildAuthSessionPayload } from './authProfilePersistence';
 
 jest.mock('./config', () => ({
-  updateDataInFiresoreDB: jest.fn(),
   updateProfileNodesInRTDB: jest.fn(),
   updateDataInRealtimeDB: jest.fn(),
 }));

@@ -1021,7 +1021,6 @@ const BY_UK = {
   'Так, вийти': 'Ja, uitloggen',
   'Виходимо…': 'Uitloggen…',
   'Мій профіль': 'Mijn profiel',
-  'Старий профіль': 'Oud profiel',
   'Додати анкету': 'Profiel toevoegen',
   'Адмін-додавання профілів': 'Profiel aanmaken door beheerder',
   'Пошук і порівняння анкет': 'Profielen zoeken en vergelijken',
