@@ -255,7 +255,7 @@ const Chip = styled.button`
   /* Вибране — заливкою, як чіп ролі в «Хто ви»: блідо-помаранчеве з
      помаранчевим текстом від невибраного з першого погляду не відрізнялось. */
   min-height: 36px; padding: 0 13px; border-radius: 99px; font-size: 14px; border: 1px solid ${({ selected }) => (selected ? 'var(--accent)' : 'var(--border)')};
-  background: ${({ selected }) => (selected ? 'var(--accent)' : 'var(--card)')}; color: ${({ selected }) => (selected ? '#fff' : 'var(--text)')};
+  background: ${({ selected }) => (selected ? 'var(--accent)' : 'var(--card)')}; color: ${({ selected }) => (selected ? 'var(--km-on-accent, #fff)' : 'var(--text)')};
   ${({ $missing }) => $missing && `
     border-color: #D44;
     box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);

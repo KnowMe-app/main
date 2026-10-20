@@ -303,7 +303,7 @@ const FieldChip = styled.button`
   padding:6px 13px; border-radius:99px; font-size:13px; font-weight:400; cursor:pointer;
   border:1px solid ${({ $selected }) => ($selected ? 'var(--km-accent)' : 'var(--km-border)')};
   background: ${({ $selected }) => ($selected ? 'var(--km-accent)' : 'var(--km-card)')};
-  color: ${({ $selected }) => ($selected ? '#fff' : 'var(--km-text)')};
+  color: ${({ $selected }) => ($selected ? 'var(--km-on-accent, #fff)' : 'var(--km-text)')};
 `;
 const NotesCard = styled(Card)`display:grid; gap:10px;`;
 /*
