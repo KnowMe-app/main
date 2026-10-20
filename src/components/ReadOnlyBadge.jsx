@@ -5,7 +5,7 @@ import React from 'react';
 const READ_ONLY_BADGE_STYLE = {
   position: 'fixed',
   left: 8,
-  bottom: 8,
+  bottom: 'calc(var(--km-bottom-nav-h, 0px) + 8px)',
   zIndex: 2147483000,
   padding: '4px 10px',
   borderRadius: 999,

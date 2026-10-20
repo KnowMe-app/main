@@ -101,7 +101,7 @@ import ProgramActionsMenu from './ProgramActionsMenu';
 const SAVE_DELAY_MS = 700;
 
 
-const ACCENT = 'var(--km-accent, #E8791A)';
+const ACCENT = 'var(--km-accent, #C9600F)';
 const BORDER = 'var(--km-border, #E8E8E2)';
 const MUTED = 'var(--km-muted, #62665F)';
 const TEXT = 'var(--km-text, #1A1A1A)';
@@ -405,7 +405,7 @@ const SectionHeader = styled.button`
     color: ${ACCENT};
     font-size: 12.5px;
     font-style: normal;
-    font-weight: 800;
+    font-weight: 700;
   }
   > span { min-width: 0; }
   h4 { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.3; }
@@ -777,7 +777,7 @@ const TotalBox = styled.div`
 
   > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   > div span { font-size: 13px; font-weight: 600; }
-  > div b { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  > div b { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
   > p { margin: 0; font-size: 12.5px; line-height: 1.45; color: ${MUTED}; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   > p.error { color: ${DANGER}; font-weight: 600; }
 `;

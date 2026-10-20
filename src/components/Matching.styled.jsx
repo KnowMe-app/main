@@ -8,15 +8,15 @@ const STACK_CARD_RADIUS = '18px';
 
 const matchingThemeVars = css`
   --matching-page-bg: ${({ $themeMode }) => ($themeMode === 'light'
-    ? '#FAFAF8'
+    ? '#FAF9F7'
     : 'radial-gradient(circle at 50% 0%, rgba(232, 121, 26, 0.11), transparent 32%), linear-gradient(180deg, #17120e 0%, #0c0a09 100%)')};
   --matching-shell-bg: ${({ $themeMode }) => ($themeMode === 'light'
-    ? '#FAFAF8'
+    ? '#FAF9F7'
     : 'radial-gradient(circle at 18% 0%, rgba(232, 121, 26, 0.16), transparent 28%), linear-gradient(180deg, #17120e 0%, #0c0a09 100%)')};
   --matching-card-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : '#17120e')};
-  --matching-card-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.14)')};
+  --matching-card-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#ECE9E4' : 'rgba(255, 214, 148, 0.14)')};
   --matching-card-shadow: ${({ $themeMode }) => ($themeMode === 'light'
-    ? '0 16px 34px rgba(22, 22, 22, 0.08)'
+    ? '0 1px 2px rgba(28, 27, 26, 0.04), 0 4px 14px rgba(28, 27, 26, 0.05)'
     : '0 18px 40px rgba(0, 0, 0, 0.3), 0 0 22px rgba(232, 121, 26, 0.05)')};
   --matching-header-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#1A1A1A' : '#fff8ec')};
   --matching-muted-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#62665F' : 'rgba(255, 248, 236, 0.88)')};
@@ -28,13 +28,13 @@ const matchingThemeVars = css`
    * дорівнює фону самої картки, тож плашки на ній не видно було взагалі — поле
    * «Додати коментар» читалось як підпис до кнопок під ним, а не як поле. */
   --matching-section-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.11)')};
-  --matching-section-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 10px 24px rgba(22, 22, 22, 0.06)' : '0 12px 28px rgba(0, 0, 0, 0.18)')};
+  --matching-section-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 1px 2px rgba(28, 27, 26, 0.04)' : '0 12px 28px rgba(0, 0, 0, 0.18)')};
   --matching-section-title: ${({ $themeMode }) => ($themeMode === 'light' ? '#1A1A1A' : '#ffd18a')};
   --matching-chip-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : 'rgba(255, 255, 255, 0.045)')};
   --matching-chip-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.12)')};
   --matching-chip-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#1A1A1A' : '#fff8ec')};
   --matching-chip-label: ${({ $themeMode }) => ($themeMode === 'light' ? '#7A7A72' : 'rgba(247, 185, 95, 0.76)')};
-  --matching-accent: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8791A' : '#F08A2C')};
+  --matching-accent: ${({ $themeMode }) => ($themeMode === 'light' ? '#C9600F' : '#F08A2C')};
   --matching-contact-text: ${({ $themeMode }) => ($themeMode === 'light' ? '#2A2A2A' : '#ffd899')};
   --matching-contact-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.12)')};
   --matching-hero-fallback: ${({ $themeMode }) => ($themeMode === 'light'
@@ -50,7 +50,7 @@ const matchingThemeVars = css`
   --matching-rail-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : '#17120e')};
   --matching-rail-border: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8E8E2' : 'rgba(255, 214, 148, 0.11)')};
   --matching-action-bg: ${({ $themeMode }) => ($themeMode === 'light' ? '#FFFFFF' : '#211b16')};
-  --matching-action-color: ${({ $themeMode }) => ($themeMode === 'light' ? '#E8791A' : '#fff8ec')};
+  --matching-action-color: ${({ $themeMode }) => ($themeMode === 'light' ? '#C9600F' : '#fff8ec')};
   --matching-action-shadow: ${({ $themeMode }) => ($themeMode === 'light' ? '0 8px 18px rgba(22, 22, 22, 0.10)' : '0 8px 18px rgba(0, 0, 0, 0.22)')};
   color-scheme: ${({ $themeMode }) => ($themeMode === 'light' ? 'light' : 'dark')};
   font-family: var(--km-font);
@@ -77,8 +77,8 @@ export const ROLE_COLORS = {
 
 export const getRoleColors = role => ROLE_COLORS[role] || {
   accent: color.accent5,
-  light: 'rgba(232,121,26,0.08)',
-  border: 'rgba(232,121,26,0.25)',
+  light: 'rgba(201,96,15,0.08)',
+  border: 'rgba(201,96,15,0.25)',
   text: color.accent3,
   tag: 'rgba(255,243,224,0.9)',
 };
@@ -404,7 +404,7 @@ export const BackendTrafficToggleButton = styled(ActionButton)`
 
 export const BackendTrafficToggleStatus = styled.span`
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1;
 `;
 
@@ -513,41 +513,36 @@ export const FilterRailChip = styled.button`
   gap: 5px;
   flex: 0 0 auto;
   max-width: 62vw;
-  height: 40px;
-  padding: 0 11px;
+  height: 36px;
+  padding: 0 12px;
   box-sizing: border-box;
   /* Зі зняттям поруч чіп віддає йому свій правий край: два окремі
    * заокруглені краї, накладені один на одний, читались як дві кнопки,
    * що наїхали одна на одну, а не як одна річ із двома діями. */
   border-radius: ${({ $clearable }) => ($clearable ? '999px 0 0 999px' : '999px')};
-  padding-right: ${({ $clearable }) => ($clearable ? '7px' : '11px')};
+  padding-right: ${({ $clearable }) => ($clearable ? '6px' : '12px')};
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
-  font-weight: ${({ $narrowed }) => ($narrowed ? '700' : '500')};
+  font-size: 13px;
+  font-weight: ${({ $narrowed }) => ($narrowed ? '600' : '500')};
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  border: 1px solid ${({ $danger, $narrowed, $open }) => {
-    if ($danger) return 'color-mix(in srgb, #d64545 55%, transparent)';
-    if ($open) return 'var(--matching-accent)';
-    return $narrowed ? 'var(--matching-accent)' : 'var(--matching-chip-border)';
-  }};
-  /* Після скороченого border, а не перед ним: той переписує всі чотири
-   * сторони, і знята права рамка поверталась — між чіпом і хрестиком
-   * стояла риска, яка ділила одну плашку навпіл. */
-  border-right-width: ${({ $clearable }) => ($clearable ? '0' : '1px')};
+  /* Без рамок: заливка сама каже, що це контрол, а звужена група —
+   * м'якою акцентною. Обведений кожен чіп змагався з колекціями й пошуком
+   * над ним, і ряд читався килимом контурів. */
+  border: 0;
   background: ${({ $danger, $narrowed, $open }) => {
     if ($danger) return 'color-mix(in srgb, #d64545 10%, transparent)';
-    if ($open) return 'color-mix(in srgb, var(--matching-accent) 22%, transparent)';
+    if ($open) return 'color-mix(in srgb, var(--matching-accent) 24%, transparent)';
     return $narrowed
-      ? 'color-mix(in srgb, var(--matching-accent) 12%, transparent)'
-      : 'var(--matching-chip-bg)';
+      ? 'color-mix(in srgb, var(--matching-accent) 14%, transparent)'
+      : 'var(--km-fill)';
   }};
   color: ${({ $danger, $narrowed }) => {
     if ($danger) return '#d64545';
-    return $narrowed ? 'var(--matching-accent)' : 'var(--matching-chip-text)';
+    return $narrowed ? 'var(--km-accent-text)' : 'var(--matching-chip-text)';
   }};
   /* Відкриту групу позначає заливка, а не кільце тіні: ряд прокручується
    * (overflow-x: auto), і тінь за межами чіпа він підрізав — чіп виглядав
@@ -588,22 +583,21 @@ export const FilterRailChipClear = styled.button`
   display: inline-grid;
   place-items: center;
   flex: 0 0 auto;
-  /* Висота та сама, що й у чіпа (40 px): хрестик — друга половина тієї
+  /* Висота та сама, що й у чіпа (36 px): хрестик — друга половина тієї
    * самої плашки. Стояло 30 px, і в адміна, у якого звужених груп кілька,
    * кожна плашка з хрестиком мала праворуч менше коло, ніж ліворуч. */
   width: 30px;
-  height: 40px;
+  height: 36px;
   box-sizing: border-box;
   padding: 0 4px 0 0;
-  border: 1px solid ${({ $danger }) => ($danger ? 'color-mix(in srgb, #d64545 55%, transparent)' : 'var(--matching-accent)')};
-  border-left: none;
+  border: 0;
   border-radius: 0 999px 999px 0;
   background: ${({ $danger, $open }) => {
     if ($danger) return 'color-mix(in srgb, #d64545 10%, transparent)';
-    if ($open) return 'color-mix(in srgb, var(--matching-accent) 22%, transparent)';
-    return 'color-mix(in srgb, var(--matching-accent) 12%, transparent)';
+    if ($open) return 'color-mix(in srgb, var(--matching-accent) 24%, transparent)';
+    return 'color-mix(in srgb, var(--matching-accent) 14%, transparent)';
   }};
-  color: ${({ $danger }) => ($danger ? '#d64545' : 'var(--matching-accent)')};
+  color: ${({ $danger }) => ($danger ? '#d64545' : 'var(--km-accent-text)')};
   font: inherit;
   font-size: 11px;
   line-height: 1;
@@ -658,7 +652,7 @@ export const FilterPopoverHeader = styled.div`
 export const FilterPopoverTitle = styled.h2`
   margin: 0;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.2;
   color: var(--matching-header-text);
 `;
@@ -719,7 +713,7 @@ export const MatchingSearchStatusMessage = styled.p`
   margin: 6px 0 0;
   padding: 8px 10px;
   border-radius: 10px;
-  background: rgba(232, 121, 26, 0.1);
+  background: rgba(201, 96, 15, 0.1);
   color: var(--matching-text, #2d2d2d);
   font-size: 13px;
   font-weight: 700;
@@ -727,7 +721,7 @@ export const MatchingSearchStatusMessage = styled.p`
 
 export const Title = styled.span`
   color: ${props => getRoleColors(props.$role).text};
-  font-weight: 800;
+  font-weight: 700;
   margin-bottom: 4px;
   margin-right: 4px;
   display: inline-block;
@@ -803,8 +797,8 @@ export const Icons = styled.div`
     width: 30px !important;
     height: 30px !important;
     border-radius: 8px;
-    background: rgba(232, 121, 26, 0.1);
-    border: 1px solid rgba(232, 121, 26, 0.22) !important;
+    background: rgba(201, 96, 15, 0.1);
+    border: 1px solid rgba(201, 96, 15, 0.22) !important;
     transition: all 0.15s ease;
   }
 
@@ -932,17 +926,20 @@ export const SearchField = styled.div`
   min-width: 0;
   display: flex;
   align-items: center;
-  height: 38px;
-  padding: 0 8px 0 10px;
-  gap: 6px;
+  height: 44px;
+  padding: 0 8px 0 14px;
+  gap: 8px;
   box-sizing: border-box;
-  border: 1px solid var(--matching-card-border);
-  border-radius: 50px;
-  background: var(--matching-card-bg);
+  /* Заливка замість рамки — те саме поле, що й на «Додати картку»
+     (\`SearchBar\`): контури тут змагались із колекціями й чіпами під ним. */
+  border: 1.5px solid transparent;
+  border-radius: 12px;
+  background: var(--km-fill);
   color: var(--matching-header-text);
 
   &:focus-within {
-    border-color: color-mix(in srgb, var(--matching-accent) 55%, transparent);
+    background: var(--matching-card-bg);
+    border-color: var(--matching-accent);
   }
 
   > svg {
@@ -1054,40 +1051,57 @@ export const ChipCount = styled.b`
  * порядку: хрестик, потім серце. «Усі» зроблено в тому ж стилі, щоб ряд
  * читався трьома рівними кнопками, а не кнопкою й двома значками.
  */
+/* Три колекції — одна доріжка з сегментами, вибраний — білий.
+ *
+ * Окремими кнопками з рамками «Обране» малювалось помаранчевим завжди, тож
+ * невибрана колекція виглядала активнішою за вибрану сіру «Усі». Тепер колір
+ * несе лише вибір; серце фарбується акцентом, лише коли вибране «Обране». */
+export const CollectionSegments = styled.div`
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 480px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--km-fill);
+
+  &:empty {
+    display: none;
+  }
+`;
+
 export const CollectionButton = styled.button`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  flex: 0 0 auto;
+  gap: 6px;
   min-width: 0;
-  height: 44px;
-  padding: 0 8px;
+  height: 38px;
+  padding: 0 6px;
   box-sizing: border-box;
-  border-radius: 10px;
+  border: 0;
+  border-radius: 9px;
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   line-height: 1;
   white-space: nowrap;
-  border: 1px solid ${({ $active, $accent }) => {
-    if (!$active) return 'var(--matching-card-border)';
-    return $accent ? 'var(--matching-accent)' : 'var(--matching-chip-text)';
-  }};
-  background: ${({ $active, $accent }) => {
-    if (!$active) return 'var(--matching-card-bg)';
-    return $accent
-      ? 'color-mix(in srgb, var(--matching-accent) 14%, transparent)'
-      : 'color-mix(in srgb, var(--matching-chip-text) 10%, transparent)';
-  }};
-  color: ${({ $accent, $active }) => {
-    if ($accent) return 'var(--matching-accent)';
-    return $active ? 'var(--matching-chip-text)' : 'var(--matching-muted-text)';
-  }};
+  background: ${({ $active }) => ($active ? 'var(--matching-card-bg)' : 'transparent')};
+  box-shadow: ${({ $active }) => ($active ? '0 1px 2px rgba(28, 27, 26, 0.12)' : 'none')};
+  color: ${({ $active }) => ($active ? 'var(--matching-chip-text)' : 'var(--matching-muted-text)')};
+
+  > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
   svg {
     flex: 0 0 auto;
+    color: ${({ $active, $accent }) => ($active && $accent ? 'var(--matching-accent)' : 'currentColor')};
   }
 
   &:disabled {
@@ -1102,10 +1116,10 @@ export const CollectionButton = styled.button`
 `;
 
 export const CollectionButtonCount = styled.b`
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
-  color: var(--matching-chip-label);
+  color: var(--matching-muted-text);
 `;
 
 /* Сортування деки — першим у ряду фільтрів і тієї самої висоти, що й чіп.
@@ -1547,7 +1561,7 @@ export const NoteLanes = styled.div`
  * Ліва межа рядка стрічки зайнята смужкою ролі на самому краї картки, а
  * доріжка стоїть на відступі картки (11 px) — тож дві риски не зливаються.
  */
-export const NOTE_LANE_PUBLIC_COLOR = 'color-mix(in srgb, var(--matching-accent, var(--km-accent, #e8791a)) 55%, transparent)';
+export const NOTE_LANE_PUBLIC_COLOR = 'color-mix(in srgb, var(--matching-accent, var(--km-accent, #C9600F)) 55%, transparent)';
 export const NOTE_LANE_PRIVATE_COLOR = 'color-mix(in srgb, #2e9b55 60%, transparent)';
 /* Прочитаний відгук під карткою фарбує смужку червоним і робить її ширшою.
    Акцентна смужка стоїть у кожній картці незалежно від того, чи є під нею

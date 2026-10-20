@@ -12,15 +12,26 @@
   --animation-timing-function: 300ms cubic-bezier(0.4, 0, 0.2, 1) 0s;
 
   /* KnowMe design tokens (shared across all screens) */
-  --km-accent: #E8791A;
-  --km-accent-mid: #F5A24B;
-  --km-accent-light: #FFF0E0;
-  --km-accent-ring: rgba(232, 121, 26, 0.16);
-  --km-bg: #FAFAF8;
+  /* Акцент темніший за колишній #E8791A: білий текст на тому помаранчевому
+     мав контраст ~3:1 — кнопки «Опублікувати», «Увійти» читались гірше за
+     підписи навколо. #C9600F дає 5.3:1 і лишається тим самим помаранчевим. */
+  --km-accent: #C9600F;
+  --km-accent-mid: #E8913F;
+  --km-accent-light: #FCEBDC;
+  --km-accent-ring: rgba(201, 96, 15, 0.18);
+  /* М'яка заливка вторинних елементів: поле пошуку, доріжка сегментів,
+     вибрані чіпи. Замість окремої рамки на кожному елементі — щоб контроли
+     не змагались один з одним контурами. */
+  --km-fill: #F0EDE8;
+  --km-accent-text: #9A470A;
+  /* Висота нижньої панелі вкладок на телефоні; 0 там, де її немає.
+     Фіксовані знизу елементи сторінок стають над нею. */
+  --km-bottom-nav-h: 0px;
+  --km-bg: #FAF9F7;
   --km-card: #FFFFFF;
   --km-text: #1A1A1A;
   --km-muted: #62665F;
-  --km-border: #E8E8E2;
+  --km-border: #E8E5E0;
   --km-danger: #B42318;
   --km-danger-bg: #FFF7F7;
   --km-danger-border: #F2C9C9;
@@ -28,7 +39,7 @@
   --km-success-bg: #EBF8EF;
   --km-radius: 14px;
   --km-radius-lg: 18px;
-  --km-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+  --km-shadow: 0 1px 2px rgba(28, 27, 26, 0.04), 0 2px 10px rgba(28, 27, 26, 0.04);
   --km-shadow-pop: 0 24px 80px rgba(0, 0, 0, 0.22);
   --km-font: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --km-font-display: var(--km-font);
@@ -39,6 +50,8 @@
   --km-accent-mid: #F5A24B;
   --km-accent-light: rgba(240, 138, 44, 0.16);
   --km-accent-ring: rgba(240, 138, 44, 0.22);
+  --km-fill: rgba(255, 248, 236, 0.07);
+  --km-accent-text: #F5A24B;
   --km-bg: #14100C;
   --km-card: #1C1712;
   --km-text: #FFF8EC;

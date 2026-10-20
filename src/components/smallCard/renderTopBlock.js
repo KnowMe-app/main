@@ -143,7 +143,7 @@ const topBlockAvatarButtonStyle = {
   border: 'none',
   boxShadow: '0 4px 12px rgba(17, 24, 39, 0.28)',
   background: 'rgba(255, 255, 255, 0.9)',
-  color: '#e8791a',
+  color: '#C9600F',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',

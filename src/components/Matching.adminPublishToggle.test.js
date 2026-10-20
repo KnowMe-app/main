@@ -37,12 +37,17 @@ describe('чіп фільтра з хрестиком — одна плашка'
   it('хрестик тієї самої висоти, що й чіп', () => {
     const chip = slice(styledSource, 'export const FilterRailChip = styled.button`', '`;');
     const clear = slice(styledSource, 'export const FilterRailChipClear = styled.button`', '`;');
-    expect(chip).toContain('height: 40px;');
-    expect(clear).toContain('height: 40px;');
+    expect(chip).toContain('height: 36px;');
+    expect(clear).toContain('height: 36px;');
   });
 
-  it('знята права рамка чіпа стоїть після скороченого border', () => {
+  // Рамок у чіпів рейки немає зовсім: межу між чіпом і хрестиком не
+  // ріже ні рамка, ні її знятий край — плашку тримає сама заливка.
+  it('чіп і хрестик без рамок', () => {
     const chip = slice(styledSource, 'export const FilterRailChip = styled.button`', '`;');
-    expect(chip.indexOf('border-right-width')).toBeGreaterThan(chip.indexOf('border: 1px solid'));
+    const clear = slice(styledSource, 'export const FilterRailChipClear = styled.button`', '`;');
+    expect(chip).toContain('border: 0;');
+    expect(clear).toContain('border: 0;');
+    expect(chip).not.toContain('border-right-width');
   });
 });

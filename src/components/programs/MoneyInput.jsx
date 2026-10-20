@@ -37,7 +37,7 @@ const AmountInput = styled.input`
   font-size: 15px;
   font-variant-numeric: tabular-nums;
 
-  &:focus { outline: 2px solid color-mix(in srgb, var(--km-accent, #E8791A) 40%, transparent); outline-offset: 0; }
+  &:focus { outline: 2px solid color-mix(in srgb, var(--km-accent, #C9600F) 40%, transparent); outline-offset: 0; }
 `;
 
 const Currencies = styled.div`
@@ -52,7 +52,7 @@ const CurrencyButton = styled.button`
   min-width: 38px;
   border: 0;
   border-left: 1px solid var(--km-border, #e7e1d8);
-  background: ${({ $on }) => ($on ? 'var(--km-accent, #E8791A)' : 'transparent')};
+  background: ${({ $on }) => ($on ? 'var(--km-accent, #C9600F)' : 'transparent')};
   color: ${({ $on }) => ($on ? '#fff' : 'var(--km-text, inherit)')};
   font: inherit;
   /* Розмір явний: успадкований брався з батька, і в рядку «Інша виплата»
@@ -78,7 +78,7 @@ const CompactRow = styled.div`
   background: var(--km-bg, #faf8f5);
   overflow: hidden;
 
-  &:focus-within { outline: 2px solid color-mix(in srgb, var(--km-accent, #E8791A) 40%, transparent); }
+  &:focus-within { outline: 2px solid color-mix(in srgb, var(--km-accent, #C9600F) 40%, transparent); }
 
   input {
     flex: 1 1 auto;

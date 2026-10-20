@@ -45,9 +45,9 @@ export const List = styled.div`
   padding: 2px 0 4px;
 `;
 
-// Смужка ролі на лівому краї — те, що лишилось від плитки з ініціалами.
-// Колір несе те саме «хто це», але не забирає ані ширини, ані уваги; для
-// анкети без ролі смужки просто немає.
+// Кольори ролей — для плашки на фото й коду біля імені. Смужки ролі на
+// лівому краї картки більше немає: вона читалась як збій верстки (рамка,
+// яка зʼїхала), а роль і так стоїть плашкою на знімку.
 export { ROLE_STRIPE_COLORS };
 
 export const CARD_PADDING = '11px';
@@ -56,26 +56,12 @@ export const Card = styled.div`
   position: relative;
   background: var(--matching-card-bg);
   border: 1px solid var(--matching-card-border);
-  border-radius: 20px;
+  border-radius: 16px;
+  box-shadow: var(--matching-card-shadow);
   padding: ${CARD_PADDING};
   cursor: pointer;
   overflow: hidden;
   transition: opacity 200ms ease, transform 200ms ease;
-
-  /* Смужка ролі лежить поверх фото: воно тепер починається від самого краю
-     картки, а смужка — це те, як рядок каже «хто це» ще до імені. */
-  ${({ $role }) => ROLE_STRIPE_COLORS[$role] && css`
-    &::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: 3px;
-      z-index: 1;
-      background: ${ROLE_STRIPE_COLORS[$role]};
-    }
-  `}
 `;
 
 export const Top = styled.div`
@@ -155,23 +141,35 @@ export const PhotoRoleBadge = styled.span`
   left: 9px;
   z-index: 2;
   max-width: calc(100% - 18px);
-  padding: 3px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.52);
-  backdrop-filter: blur(6px);
-  border: 1px solid ${({ $role }) => (ROLE_STRIPE_COLORS[$role]
-    ? `color-mix(in srgb, ${ROLE_STRIPE_COLORS[$role]} 70%, transparent)`
-    : 'rgba(255, 255, 255, 0.3)')};
-  color: ${({ $role }) => (ROLE_STRIPE_COLORS[$role]
-    ? `color-mix(in srgb, ${ROLE_STRIPE_COLORS[$role]} 55%, #ffffff)`
-    : '#fff')};
+  background: rgba(255, 255, 255, 0.94);
+  color: #1C1B1A;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.5;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+
+  /* Колір ролі — цяткою. Кольоровий текст на темній напівпрозорій підкладці
+   * на світлому знімку читався погано; світла плашка з темним текстом
+   * читається на будь-якому. */
+  ${({ $role }) => ROLE_STRIPE_COLORS[$role] && css`
+    &::before {
+      content: '';
+      flex: 0 0 auto;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: ${ROLE_STRIPE_COLORS[$role]};
+    }
+  `}
 `;
 
 /*
@@ -237,7 +235,7 @@ export const RoleCode = styled.span`
     ? `color-mix(in srgb, ${ROLE_STRIPE_COLORS[$role]} 14%, transparent)`
     : 'transparent')};
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.06em;
 `;
 
@@ -398,12 +396,11 @@ const ctrlButtonBase = css`
 // - return-to-feed, edit, counters - renders in the neutral card chrome.
 export const RowActionButton = styled.button`
   ${ctrlButtonBase}
-  border: 1px solid ${({ $accent, $on }) => ($accent && $on
-    ? 'var(--matching-accent)'
-    : 'var(--matching-card-border)')};
+  /* Заливка замість рамки — як решта контролів картки. */
+  border: 0;
   background: ${({ $accent, $on }) => ($accent && $on
     ? 'color-mix(in srgb, var(--matching-accent) 14%, transparent)'
-    : 'var(--matching-card-bg)')};
+    : 'var(--km-fill)')};
   /* Увімкнена кнопка — кольором тексту, а не приглушеним: сірий олівець на
      сірій рамці виглядав вимкненим. Вимкнену видно за прозорістю й
      курсором, наведення й натиск — за підкладкою, фокус — за обвідкою. */
@@ -411,11 +408,11 @@ export const RowActionButton = styled.button`
   transition: background-color 0.15s ease, border-color 0.15s ease;
 
   &:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--matching-header-text) 7%, var(--matching-card-bg));
+    background: color-mix(in srgb, var(--matching-header-text) 9%, var(--matching-card-bg));
   }
 
   &:active:not(:disabled) {
-    background: color-mix(in srgb, var(--matching-header-text) 13%, var(--matching-card-bg));
+    background: color-mix(in srgb, var(--matching-header-text) 14%, var(--matching-card-bg));
   }
 
   &:disabled {
@@ -713,7 +710,7 @@ export const ContactPhoneLink = styled.a`
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--matching-accent, var(--km-accent, #E8791A));
+  color: var(--matching-accent, var(--km-accent, #C9600F));
   text-decoration: none;
 
   &:active {
@@ -753,7 +750,7 @@ export const ContactIconLink = styled.a`
   }
 
   &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--matching-accent, var(--km-accent, #E8791A)) 60%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--matching-accent, var(--km-accent, #C9600F)) 60%, transparent);
     outline-offset: 1px;
   }
 
@@ -761,8 +758,8 @@ export const ContactIconLink = styled.a`
    * розмір, що й решта контактів. */
   ${({ $primary }) => $primary && css`
     color: #FFFFFF;
-    background: var(--matching-accent, var(--km-accent, #E8791A));
-    border-color: var(--matching-accent, var(--km-accent, #E8791A));
+    background: var(--matching-accent, var(--km-accent, #C9600F));
+    border-color: var(--matching-accent, var(--km-accent, #C9600F));
   `}
 
   &:active {
@@ -1194,7 +1191,7 @@ export const CommentPublishButton = styled.button`
   padding: 6px 14px;
   font: inherit;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
 
   &:disabled {
@@ -1334,7 +1331,7 @@ export const RowContactsButton = styled.button`
   color: ${({ $on }) => ($on ? 'var(--matching-accent, var(--km-accent, #e2762a))' : '#fff')};
   font: inherit;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
 
   &:focus-visible {
@@ -1357,8 +1354,9 @@ export const RowReactionPair = styled.div`
   align-items: center;
   flex: 2 1 0;
   height: 34px;
-  border: 1px solid var(--matching-card-border);
+  border: 0;
   border-radius: 10px;
+  background: var(--km-fill);
   overflow: hidden;
 
   > button {
@@ -1369,8 +1367,9 @@ export const RowReactionPair = styled.div`
     background: transparent;
   }
 
+  /* Пара — одна плашка з рискою кольору картки посередині, без рамки. */
   > button + button {
-    border-left: 1px solid var(--matching-card-border);
+    border-left: 2px solid var(--matching-card-bg);
   }
 `;
 
@@ -1471,7 +1470,7 @@ export const POSTPONE_LANE_COLOR = '#3D6FD1';
 
 const notesLaneColor = ({ $public, $postpone }) => {
   if ($postpone) return POSTPONE_LANE_COLOR;
-  return $public ? 'var(--matching-accent, var(--km-accent, #E8791A))' : '#2E9B55';
+  return $public ? 'var(--matching-accent, var(--km-accent, #C9600F))' : '#2E9B55';
 };
 
 export const NotesAddButton = styled.button`
@@ -1483,12 +1482,14 @@ export const NotesAddButton = styled.button`
   min-height: 36px;
   padding: 0 12px;
   border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--note-lane-color) 22%, transparent);
-  background: color-mix(in srgb, var(--note-lane-color) 7%, transparent);
+  /* Тонована підкладка без рамки — як чіпи фільтрів: три обведені кнопки
+     під кожною карткою додавали ще три контури до рамки самої картки. */
+  border: 0;
+  background: color-mix(in srgb, var(--note-lane-color) 10%, transparent);
   color: var(--note-lane-color);
   font: inherit;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
   cursor: pointer;
   transition: background-color 0.18s ease, border-color 0.18s ease;
 
@@ -1499,8 +1500,7 @@ export const NotesAddButton = styled.button`
   }
 
   &:hover {
-    background: color-mix(in srgb, var(--note-lane-color) 13%, transparent);
-    border-color: color-mix(in srgb, var(--note-lane-color) 40%, transparent);
+    background: color-mix(in srgb, var(--note-lane-color) 16%, transparent);
   }
 
   &:active {
@@ -1601,8 +1601,8 @@ export const PostponeBadge = styled.div`
 
 // Та сама плашка під імʼям, кольором акценту стрічки: «вам відкрили анкету».
 export const LikedAudienceBadge = styled(PostponeBadge)`
-  background: color-mix(in srgb, var(--matching-accent, var(--km-accent, #E8791A)) 12%, transparent);
-  color: var(--matching-accent, var(--km-accent, #E8791A));
+  background: color-mix(in srgb, var(--matching-accent, var(--km-accent, #C9600F)) 12%, transparent);
+  color: var(--matching-accent, var(--km-accent, #C9600F));
 `;
 
 // Текст нотатки в прев'ю — той самий, що стоїть у полі доріжки стрічки, лише

@@ -15,7 +15,7 @@ import styled from 'styled-components';
  * притискається до екрана. Закривається дотиком поза ним, Escape, вибором дії.
  */
 
-const ACCENT = 'var(--km-accent, #E8791A)';
+const ACCENT = 'var(--km-accent, #C9600F)';
 const BORDER = 'var(--km-border, #E8E8E2)';
 const TEXT = 'var(--km-text, #1A1A1A)';
 const CARD = 'var(--km-card, #fff)';
@@ -36,7 +36,7 @@ const Trigger = styled.button`
   background: ${CARD};
   color: ${TEXT};
   font: inherit;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
 
   &:focus-visible { outline: none; box-shadow: ${FOCUS_RING}; }

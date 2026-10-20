@@ -4336,7 +4336,7 @@ const InputFieldContainer = styled.div`
 
   &:focus-within {
     border-color: ${uiTokens.colors.borderFocus};
-    box-shadow: 0 0 0 3px rgba(232, 121, 26, 0.1);
+    box-shadow: 0 0 0 3px rgba(201, 96, 15, 0.1);
   }
   &::before {
     content: ${({ fieldName, value }) => {
@@ -4762,7 +4762,7 @@ const KeyValueRow = styled.div`
 
   &:focus-within {
     border-color: ${uiTokens.colors.borderFocus};
-    box-shadow: 0 0 0 3px rgba(232, 121, 26, 0.1);
+    box-shadow: 0 0 0 3px rgba(201, 96, 15, 0.1);
   }
 `;
 
@@ -4819,7 +4819,7 @@ const Button = styled.button`
 
   &:hover {
     border-color: ${uiTokens.colors.borderFocus};
-    background: rgba(232, 121, 26, 0.08);
+    background: rgba(201, 96, 15, 0.08);
   }
 
   &:focus-visible {

@@ -1,11 +1,24 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { getExtraLocale } from '../utils/locales';
-import { NavLink } from 'react-router-dom';
-import styled from 'styled-components';
+import { NavLink, useLocation } from 'react-router-dom';
+import styled, { createGlobalStyle } from 'styled-components';
 import { FaSearch, FaRegFolderOpen, FaRegUser, FaChevronLeft, FaEllipsisV, FaPen } from 'react-icons/fa';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { usePrimaryNavigationMenuSubscription, usePrimaryNavigationSlotState } from './PrimaryNavigationSlot';
 import { InfoModal } from './InfoModal';
+
+const BOTTOM_NAV_BREAKPOINT = 600;
+
+// На телефоні вкладки стоять унизу екрана (див. `Tabs`), тож сторінка мусить
+// лишити під собою місце, а фіксоване знизу — ставати над панеллю. Висоту
+// панелі несе `--km-bottom-nav-h`: поза цими трьома екранами її немає, і
+// змінна лишається нулем з `index.css`.
+const BottomNavSpace = createGlobalStyle`
+  @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
+    :root { --km-bottom-nav-h: calc(64px + env(safe-area-inset-bottom, 0px)); }
+    body { padding-bottom: var(--km-bottom-nav-h); }
+  }
+`;
 
 const Header = styled.header`
   background: var(--km-card);
@@ -16,75 +29,144 @@ const Header = styled.header`
 const Navigation = styled.nav`
   max-width: 1240px;
   margin: 0 auto;
-  padding: 12px 24px;
+  padding: 8px 24px;
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 12px;
   font-family: var(--km-font);
 
-  strong { margin-right: auto; font-size: 23px; letter-spacing: -0.8px; }
+  strong { margin-right: auto; font-size: 22px; font-weight: 600; letter-spacing: -0.6px; }
   strong span { color: var(--km-accent); }
+  @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
+    padding: 4px 6px;
+    gap: 4px;
+    min-height: 52px;
+    box-sizing: border-box;
+    strong { display: none; }
+  }
+`;
+
+// Назва поточного екрана — лише на телефоні: вкладки там унизу, і без неї
+// верхній рядок складався б з самих стрілки й «⋮».
+const ScreenTitle = styled.span`
+  display: none;
+  @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 6px;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+`;
+
+/* Вкладки. На широкому екрані — у рядку шапки, активна позначена кольором і
+ * рискою знизу. На телефоні — нижня панель: верхній рядок із трьома
+ * вкладками займав ~80 px над кожним екраном, до нього треба було
+ * тягнутись пальцем через увесь екран, а активна вкладка відрізнялась
+ * від сусідніх ледь помітною підкладкою. */
+const Tabs = styled.div`
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+
   a {
+    position: relative;
     min-height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
     padding: 0 14px;
-    border-radius: 12px;
+    border-radius: 10px;
     color: var(--km-muted);
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 500;
   }
-  a[aria-current='page'] { background: var(--km-accent-light); color: var(--km-text); }
+  a[aria-current='page'] { color: var(--km-accent); font-weight: 600; }
+  a[aria-current='page']::after {
+    content: '';
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: -9px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--km-accent);
+  }
   a:hover { background: var(--km-bg); color: var(--km-text); }
-  a:focus-visible { outline: 2px solid var(--km-accent); outline-offset: 3px; }
-  @media (max-width: 600px) {
-    padding: 8px;
-    gap: 4px;
-    strong { display: none; }
-    a { flex: 1; min-width: 0; padding: 6px 2px; flex-direction: column; gap: 5px; font-size: 12px; text-align: center; }
+  a[aria-current='page']:hover { color: var(--km-accent); }
+  a:focus-visible { outline: 2px solid var(--km-accent); outline-offset: 2px; }
+
+  @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 900;
+    gap: 0;
+    padding: 0 4px env(safe-area-inset-bottom, 0px);
+    height: var(--km-bottom-nav-h);
+    box-sizing: border-box;
+    background: var(--km-card);
+    border-top: 1px solid var(--km-border);
+
+    a {
+      flex: 1 1 0;
+      min-width: 0;
+      padding: 6px 2px;
+      flex-direction: column;
+      gap: 3px;
+      font-size: 11px;
+      text-align: center;
+      border-radius: 0;
+    }
+    a:hover { background: transparent; }
+    a[aria-current='page']::after { display: none; }
+    a svg { width: 56px; height: 28px; padding: 6px 0; box-sizing: border-box; border-radius: 14px; }
+    a[aria-current='page'] svg { background: var(--km-accent-light); }
   }
 `;
 
 // Місце під стрілку зарезервоване завжди: інакше вкладки стрибали б убік
 // щоразу, коли на сторінці зʼявляється чи зникає можливість повернутись.
 const SideSlot = styled.span`
-  flex: 0 0 36px;
-  width: 36px;
+  flex: 0 0 44px;
+  width: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  @media (max-width: 600px) {
-    flex-basis: 32px;
-    width: 32px;
+  /* На телефоні вкладок у цьому рядку немає, і стрибати нічому — порожнє
+     місце під стрілку лише відсувало назву екрана від краю. */
+  @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
+    &:empty { display: none; }
   }
 `;
 
+// Без рамки: стрілка й «⋮» — хром, а не дії, і обведені кола змагались з
+// вкладками за увагу. Мішень 44 px.
 const SlotButton = styled.button`
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1px solid var(--km-border);
-  border-radius: 50%;
-  background: var(--km-card);
-  color: var(--km-muted);
-  font-size: 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--km-text);
+  font-size: 16px;
   cursor: pointer;
-  &:hover { background: var(--km-accent-light); color: var(--km-accent); border-color: var(--km-accent); }
+  &:hover { background: var(--km-fill); }
   &:focus-visible { outline: 2px solid var(--km-accent); outline-offset: 2px; }
-  @media (max-width: 600px) {
-    width: 30px;
-    height: 30px;
-  }
 `;
 
-const MenuButton = styled(SlotButton)`
-  border-radius: 10px;
-`;
+const MenuButton = SlotButton;
 
 // Підпис вкладки карток каже, що на ній відкрито зараз: над формою
 // доповнення «Мої картки» обіцяли список власних карток, а лежала там чужа.
@@ -113,6 +195,10 @@ export default function PrimaryNavigation() {
     return subscribeMenu(() => refreshMenu(value => value + 1));
   }, [menuOpen, subscribeMenu]);
   const workspace = slot?.workspaceLabel ? texts[slot.workspaceLabel] : '';
+  const { pathname } = useLocation();
+  const screenTitle = pathname.startsWith('/matching/create-profile')
+    ? (workspace || texts.add)
+    : pathname.startsWith('/my-profile') ? texts.mine : texts.find;
   const backLabel = texts.back;
   const menuLabel = texts.menu;
   const closeMenu = useCallback(() => setMenuOpen(false), []);
@@ -128,6 +214,7 @@ export default function PrimaryNavigation() {
   );
   return (
     <Header>
+      <BottomNavSpace />
       <Navigation aria-label={texts.nav}>
         <strong>KnowMe<span>.</span></strong>
         <SideSlot>
@@ -137,12 +224,15 @@ export default function PrimaryNavigation() {
             </SlotButton>
           )}
         </SideSlot>
-        <NavLink to="/matching" end><FaSearch aria-hidden="true" />{texts.find}</NavLink>
-        <NavLink to="/matching/create-profile">
-          {workspace ? <FaPen aria-hidden="true" /> : <FaRegFolderOpen aria-hidden="true" />}
-          {workspace || texts.add}
-        </NavLink>
-        <NavLink to="/my-profile"><FaRegUser aria-hidden="true" />{texts.mine}</NavLink>
+        <ScreenTitle aria-hidden="true">{screenTitle}</ScreenTitle>
+        <Tabs>
+          <NavLink to="/matching" end><FaSearch aria-hidden="true" />{texts.find}</NavLink>
+          <NavLink to="/matching/create-profile">
+            {workspace ? <FaPen aria-hidden="true" /> : <FaRegFolderOpen aria-hidden="true" />}
+            {workspace || texts.add}
+          </NavLink>
+          <NavLink to="/my-profile"><FaRegUser aria-hidden="true" />{texts.mine}</NavLink>
+        </Tabs>
         <SideSlot>
           {slot?.renderMenu && (
             <MenuButton type="button" aria-label={menuLabel} title={menuLabel} onClick={() => setMenuOpen(true)}>

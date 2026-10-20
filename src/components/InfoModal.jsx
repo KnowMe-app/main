@@ -17,6 +17,12 @@ const ModalOverlay = styled.div`
   z-index: 1000;
   padding: 16px;
   box-sizing: border-box;
+
+  /* Меню «⋮» на телефоні — шторка знизу: вона виїжджає з-під пальця, а не
+   * стоїть посеред екрана, і до неї не треба тягнутись угору. */
+  @media (max-width: 600px) {
+    ${({ $sheet }) => ($sheet ? 'align-items: flex-end; padding: 0;' : '')}
+  }
 `;
 
 const OptionsList = styled.ul`
@@ -116,7 +122,7 @@ const OkButton = styled.button`
   min-height: 40px;
   padding: 8px 24px;
   border: none;
-  background: linear-gradient(135deg, var(--km-accent) 0%, var(--km-accent-mid) 100%);
+  background: var(--km-accent);
   color: #fff;
   border-radius: 99px;
   cursor: pointer;
@@ -127,7 +133,7 @@ const OkButton = styled.button`
 
   &:hover {
     filter: brightness(1.05);
-    box-shadow: 0 8px 22px rgba(232, 121, 26, 0.28);
+    box-shadow: 0 8px 22px rgba(201, 96, 15, 0.28);
   }
 
   &:active {
@@ -219,6 +225,27 @@ const MenuModalContent = styled(ModalContent)`
   border-radius: 22px;
   max-height: 90vh;
   overflow: auto;
+
+  @media (max-width: 600px) {
+    width: 100%;
+    max-height: 88dvh;
+    padding: 18px 8px calc(16px + env(safe-area-inset-bottom, 0px));
+    border-radius: 20px 20px 0 0;
+    border-width: 0;
+    box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.16);
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      width: 36px;
+      height: 4px;
+      margin-left: -18px;
+      border-radius: 2px;
+      background: var(--km-border);
+    }
+  }
 `;
 
 const OrangeStrong = styled.strong`
@@ -229,7 +256,7 @@ const OrangeStrong = styled.strong`
 export const ModalTitle = styled.h3`
   margin: 0 0 6px;
   font-size: 17px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--km-text);
 `;
@@ -485,7 +512,7 @@ export const InfoModal = ({
   };
 
   return (
-    <ModalOverlay onClick={handleOverlayClick}>
+    <ModalOverlay $sheet={text === 'dotsMenu'} onClick={handleOverlayClick}>
       <ContentComponent
         role={text === 'compareCards' ? 'dialog' : undefined}
         aria-modal={text === 'compareCards' ? true : undefined}

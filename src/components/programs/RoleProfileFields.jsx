@@ -76,9 +76,9 @@ const Segment = styled.button`
   min-height: 36px;
   padding: 0 13px;
   border-radius: 999px;
-  border: 1px solid ${({ $on }) => ($on ? 'var(--km-accent, #E8791A)' : 'var(--km-border, #e7e1d8)')};
-  background: ${({ $on }) => ($on ? 'color-mix(in srgb, var(--km-accent, #E8791A) 14%, transparent)' : 'transparent')};
-  color: ${({ $on }) => ($on ? 'var(--km-accent, #E8791A)' : 'var(--km-text, inherit)')};
+  border: 1px solid ${({ $on }) => ($on ? 'var(--km-accent, #C9600F)' : 'var(--km-border, #e7e1d8)')};
+  background: ${({ $on }) => ($on ? 'color-mix(in srgb, var(--km-accent, #C9600F) 14%, transparent)' : 'transparent')};
+  color: ${({ $on }) => ($on ? 'var(--km-accent, #C9600F)' : 'var(--km-text, inherit)')};
   font: inherit;
   font-size: 13px;
   font-weight: ${({ $on }) => ($on ? 700 : 500)};

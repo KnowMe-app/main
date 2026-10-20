@@ -63,6 +63,7 @@ import { buildMatchingSearchPath, MATCHING_PATH, readStoredMatchingSearchQuery }
 import { canGoBackInHistory, goBackOrTo } from 'utils/appBackNavigation';
 import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleCode, getRoleLabel } from './profileLayoutConfig';
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
+import { stripSectionEmoji } from '../utils/sectionTitle';
 import {
   applyOverlayToCard,
   applyOverlaysToCard,
@@ -109,9 +110,9 @@ const Page = styled.main`
 const Shell = styled.div`max-width: 920px; margin: 0 auto;`;
 const Button = styled.button`
   box-sizing: border-box;
-  min-height:50px; border: 1px solid var(--km-border); border-radius: 16px; padding: 12px 19px;
+  min-height:48px; border: 1px solid var(--km-border); border-radius: 12px; padding: 12px 18px;
   background: ${({ $primary }) => ($primary ? 'var(--km-accent)' : 'var(--km-card)')};
-  color: ${({ $primary }) => ($primary ? '#fff' : 'var(--km-text)')}; cursor:pointer; font:700 15px/1 var(--km-font);
+  color: ${({ $primary }) => ($primary ? '#fff' : 'var(--km-text)')}; cursor:pointer; font:600 15px/1 var(--km-font);
   display:inline-flex; align-items:center; justify-content:center; gap:9px;
   transition:transform 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
   &:hover:not(:disabled) { border-color:var(--km-accent); }
@@ -121,10 +122,9 @@ const Button = styled.button`
   @media (prefers-reduced-motion: reduce) { transition:none; }
 `;
 const SaveButton = styled(Button)`
-  background: linear-gradient(135deg, #E8791A 0%, #F5A24B 100%);
+  background: var(--km-accent);
   border-color: transparent;
   color: #fff;
-  box-shadow: 0 10px 24px var(--km-accent-ring);
 `;
 // Видалення чернетки стоїть поруч зі збереженням, але тоном сказано, що воно
 // незворотне: «зберегти» робить із чернетки картку, «видалити» зносить її з
@@ -159,7 +159,7 @@ const STATUS_VARIANT_COLOR = {
   overlay: 'var(--km-accent-mid)',
 };
 const Status = styled.span`
-  display:inline-block; padding:4px 9px; border-radius:999px; font-size:12px; font-weight:800;
+  display:inline-block; padding:4px 9px; border-radius:999px; font-size:12px; font-weight:600;
   background: ${({ $variant }) => STATUS_VARIANT_BACKGROUND[$variant] || 'var(--km-accent-light)'};
   color: ${({ $variant }) => STATUS_VARIANT_COLOR[$variant] || 'var(--km-accent)'};
 `;
@@ -168,16 +168,15 @@ const Status = styled.span`
 // ключами…»), памʼятки про чернетки й три різні підказки під кнопкою жили тут
 // раніше: разом вони з'їдали перший екран, а відповідали на питання, якого
 // читач не ставив.
+// Без картки-обгортки: рядок пошуку стоїть просто на сторінці, як у стрічці.
+// Обгортка з тінню довкола поля з власною заливкою була рамкою в рамці.
 const SearchSection = styled.section`
-  padding:20px; margin-bottom:18px; border:1px solid var(--km-border); border-radius:24px; background:var(--km-card);
-  box-shadow:var(--km-shadow), inset 0 1px 0 rgba(255,255,255,.04);
-  > div[style] { min-height:58px !important; margin:0 !important; padding:10px 16px !important; border-radius:17px !important; background:color-mix(in srgb, var(--km-bg) 62%, var(--km-card)) !important; }
-  > div[style]:hover { border-color:color-mix(in srgb, var(--km-accent) 45%, var(--km-border)); }
+  margin-bottom:8px;
+  > div[style] { min-height:52px; margin:0 !important; }
   textarea { font-size:16px; line-height:1.4; }
-  @media (max-width:600px) { padding:18px 16px; }
 `;
 const TechnicalMeta = styled(Meta)`font-size:12px; code { color:var(--km-text); }`;
-const SearchHint = styled(Meta)`font-size:13px; margin:12px 2px 0;`;
+const SearchHint = styled(Meta)`font-size:13px; margin:8px 2px 0;`;
 
 // --- Видача пошуку ---------------------------------------------------------
 // Розкладка та сама, що й у стрічці: спершу заготовка нової картки з набраного,
@@ -185,16 +184,16 @@ const SearchHint = styled(Meta)`font-size:13px; margin:12px 2px 0;`;
 // дістає ту саму відповідь, лише на екрані власних карток.
 const QueryDraftCard = styled.div`
   display:flex; align-items:center; gap:10px; margin:0 0 10px; padding:12px 14px; box-sizing:border-box;
-  border:1px dashed color-mix(in srgb, var(--km-accent) 55%, transparent); border-radius:16px; background:var(--km-card);
+  border:1px dashed color-mix(in srgb, var(--km-accent) 55%, transparent); border-radius:14px; background:var(--km-card);
 `;
 const QueryDraftBody = styled.div`flex:1 1 auto; min-width:0; display:grid; gap:2px;`;
-const QueryDraftLabel = styled.span`font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--km-muted);`;
-const QueryDraftValue = styled.span`font-size:15px; font-weight:700; line-height:1.3; color:var(--km-text); overflow-wrap:anywhere;`;
+const QueryDraftLabel = styled.span`font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--km-muted);`;
+const QueryDraftValue = styled.span`font-size:15px; font-weight:600; line-height:1.3; color:var(--km-text); overflow-wrap:anywhere;`;
 const QueryDraftNote = styled.span`font-size:12px; line-height:1.4; color:var(--km-muted);`;
 const QueryDraftButton = styled.button`
   flex:0 0 auto; display:inline-flex; align-items:center; gap:6px; min-height:36px; padding:7px 14px;
   border:1px solid var(--km-accent); border-radius:12px; background:transparent; color:var(--km-accent);
-  font:700 13px/1 var(--km-font); white-space:nowrap; cursor:pointer;
+  font:600 13px/1 var(--km-font); white-space:nowrap; cursor:pointer;
   &:hover:not(:disabled) { background:var(--km-accent-light); }
   &:focus-visible { outline:2px solid var(--km-accent); outline-offset:2px; }
   &:disabled { opacity:.45; cursor:not-allowed; }
@@ -202,16 +201,16 @@ const QueryDraftButton = styled.button`
 // Рядок видачі — картка людини: ініціал, імʼя, факти про неї й одна дія.
 const ResultCard = styled.div`
   display:flex; align-items:center; gap:12px; margin:0 0 10px; padding:12px 14px; box-sizing:border-box;
-  border:1px solid var(--km-border); border-radius:16px; background:var(--km-card);
+  border:1px solid var(--km-border); border-radius:14px; background:var(--km-card);
   @media (max-width:400px) { flex-wrap:wrap; > button { width:100%; } }
 `;
 const ResultAvatar = styled.span`
   width:42px; height:42px; flex:0 0 42px; display:grid; place-items:center; border-radius:14px; overflow:hidden;
-  background:var(--km-accent-light); color:var(--km-accent); font:800 17px/1 var(--km-font);
+  background:var(--km-accent-light); color:var(--km-accent); font:700 17px/1 var(--km-font);
   img { width:100%; height:100%; object-fit:cover; }
 `;
 const ResultBody = styled.div`flex:1 1 auto; min-width:0; display:grid; gap:3px;`;
-const ResultName = styled.span`font-size:15.5px; font-weight:700; line-height:1.3; color:var(--km-text); overflow-wrap:anywhere;`;
+const ResultName = styled.span`font-size:15.5px; font-weight:600; line-height:1.3; color:var(--km-text); overflow-wrap:anywhere;`;
 const ResultMeta = styled.span`font-size:12.5px; line-height:1.4; color:var(--km-muted); overflow-wrap:anywhere;`;
 const ResultAction = styled(QueryDraftButton)`border-color:var(--km-border); color:var(--km-text);
   &:hover:not(:disabled) { border-color:var(--km-accent); color:var(--km-accent); }
@@ -251,14 +250,15 @@ const FieldRow = styled.div`
     box-shadow:inset 3px 0 0 var(--km-accent);
   ` : '')}
 `;
-const FieldLabel = styled.div`font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.6px; color:var(--km-muted); margin-bottom:6px;`;
+// Підпис поля — той самий, що в «Моєму профілі» (`Label` там).
+const FieldLabel = styled.div`font-size:13px; font-weight:500; color:var(--km-muted); margin-bottom:6px;`;
 // The right-hand padding leaves room for the clear "×" that sits inside the
 // box (see InlineClearButton), the way My Profile's fields do it.
 const FieldInput = styled.input`
-  width:100%; box-sizing:border-box; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:10px;
+  width:100%; box-sizing:border-box; background:var(--km-fill); border:1.5px solid transparent; border-radius:10px;
   padding:10px 38px 10px 14px; font:400 16px/1.3 var(--km-font); color:var(--km-text); outline:none;
-  transition:border-color 150ms ease, box-shadow 150ms ease;
-  &:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
+  transition:border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+  &:focus { background:var(--km-card); border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
 `;
 const FieldControls = styled.div`display:grid; gap:8px;`;
 const FieldControl = styled.div`display:flex; align-items:center; gap:8px; min-width:0;`;
@@ -281,7 +281,7 @@ const ACTION_TONES = {
 };
 const FieldActionButton = styled.button`
   width:42px; height:42px; flex:0 0 42px; display:grid; place-items:center; padding:0;
-  border:1px solid var(--km-border); border-radius:10px; background:var(--km-card); cursor:pointer;
+  border:0; border-radius:10px; background:var(--km-fill); cursor:pointer;
   color:${({ $tone }) => (ACTION_TONES[$tone]?.color || 'var(--km-muted)')};
   &:hover:not(:disabled) {
     border-color:currentColor;
@@ -293,17 +293,17 @@ const FieldActionButton = styled.button`
 `;
 const AddValueButton = styled(FieldActionButton)`color:var(--km-accent);`;
 const FieldTextArea = styled.textarea`
-  width:100%; box-sizing:border-box; min-height:90px; background:var(--km-bg); border:1.5px solid var(--km-border); border-radius:10px;
+  width:100%; box-sizing:border-box; min-height:90px; background:var(--km-fill); border:1.5px solid transparent; border-radius:10px;
   padding:10px 38px 10px 14px; font:400 16px/1.4 var(--km-font); color:var(--km-text); outline:none; resize:vertical;
-  transition:border-color 150ms ease, box-shadow 150ms ease;
-  &:focus { border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
+  transition:border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+  &:focus { background:var(--km-card); border-color:var(--km-accent); box-shadow:0 0 0 3px var(--km-accent-ring); }
 `;
 const FieldChipRow = styled.div`display:flex; flex-wrap:wrap; gap:6px;`;
 const FieldChip = styled.button`
   padding:6px 13px; border-radius:99px; font-size:13px; font-weight:400; cursor:pointer;
-  border:1.5px solid ${({ $selected }) => ($selected ? 'var(--km-accent)' : 'var(--km-border)')};
-  background: ${({ $selected }) => ($selected ? 'var(--km-accent-light)' : 'var(--km-card)')};
-  color: ${({ $selected }) => ($selected ? 'var(--km-accent)' : 'var(--km-muted)')};
+  border:1px solid ${({ $selected }) => ($selected ? 'var(--km-accent)' : 'var(--km-border)')};
+  background: ${({ $selected }) => ($selected ? 'var(--km-accent)' : 'var(--km-card)')};
+  color: ${({ $selected }) => ($selected ? '#fff' : 'var(--km-text)')};
 `;
 const NotesCard = styled(Card)`display:grid; gap:10px;`;
 /*
@@ -520,11 +520,21 @@ export const HistoricalFieldEdit = ({ row, label, authorName, disabled, onRestor
     </VersionMeta>
   </VersionRow>;
 };
-const SectionHeader = styled.div`display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 2px 12px; color:var(--km-muted); font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;`;
-const Count = styled.span`min-width:28px; height:28px; padding:0 9px; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; border-radius:999px; background:color-mix(in srgb, var(--km-muted) 14%, var(--km-card)); color:var(--km-text); letter-spacing:0;`;
-const EmptyState = styled(Card)`min-height:170px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:7px; margin:0;`;
-const EmptyIcon = styled.span`width:44px; height:44px; display:grid; place-items:center; margin-bottom:5px; border-radius:14px; background:var(--km-accent-light); color:var(--km-accent); font-size:21px;`;
-const EmptyTitle = styled.p`font-size:19px; line-height:1.3; font-weight:650;`;
+// Заголовок списку — звичайним реченням, а лічильник — числом поруч, без
+// кружка: великі літери з розрядкою й сіра пігулка «0» кричали гучніше за
+// сам список.
+const SectionHeader = styled.div`display:flex; align-items:baseline; justify-content:flex-start; gap:8px; margin:24px 2px 10px; color:var(--km-text); font-size:15px; font-weight:600;`;
+const Count = styled.span`color:var(--km-muted); font-size:13px; font-weight:400;`;
+// Порожній список — один рядок: значок ліворуч, пояснення праворуч, пунктирна
+// межа замість картки з тінню. Пів екрана порожнечі по центру робили
+// «нічого немає» найбільшим елементом сторінки.
+const EmptyState = styled.div`
+  display:grid; grid-template-columns:40px minmax(0,1fr); column-gap:14px; row-gap:2px; align-items:center;
+  margin:0; padding:16px; border:1px dashed var(--km-border); border-radius:14px;
+  > p { grid-column:2; margin:0; font-size:13px; }
+`;
+const EmptyIcon = styled.span`grid-row:span 2; width:40px; height:40px; display:grid; place-items:center; border-radius:10px; background:var(--km-accent-light); color:var(--km-accent); font-size:19px;`;
+const EmptyTitle = styled.p`font-size:15px; line-height:1.35; font-weight:600; color:var(--km-text);`;
 const ProfileCard = styled(Card)`
   margin:0 0 14px; padding:18px 20px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px 18px; align-items:center;
   h2 { margin:5px 0 0; font-size:19px; line-height:1.25; overflow-wrap:anywhere; }
@@ -2233,7 +2243,7 @@ export const ProfileCreationWorkspace = () => {
       </ReviewCard>}
       {CREATE_FORM_SECTIONS.filter(section => section.key !== 'comment').map(section => (
         <FormSectionCard key={section.key}>
-          <FormSectionTitle>{uiText(section.title, language)}</FormSectionTitle>
+          <FormSectionTitle>{stripSectionEmoji(uiText(section.title, language))}</FormSectionTitle>
           {section.fields
             .filter(fieldName => section.key !== 'contacts' || isContactFieldOfferedForCard(fieldName, summaryCard))
             .map(fieldName => renderCreateField(fieldName))}
@@ -2329,7 +2339,7 @@ export const ProfileCreationWorkspace = () => {
         </NoteLanes>
       </NotesCard>
       {extraEditedFields.length > 0 && <FormSectionCard>
-        <FormSectionTitle>{uiText('🗂 Інші поля з правками', language)}</FormSectionTitle>
+        <FormSectionTitle>{stripSectionEmoji(uiText('🗂 Інші поля з правками', language))}</FormSectionTitle>
         {extraEditedFields.map(fieldName => renderCreateField(fieldName, { allowUnknown: true }))}
       </FormSectionCard>}
       {/* «Очистити все» — останнім у формі й лише над власною чернеткою (чи
