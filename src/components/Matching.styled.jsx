@@ -1059,7 +1059,9 @@ export const ChipCount = styled.b`
 export const CollectionSegments = styled.div`
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
+  /* Ширину сегмента дає його підпис: рівні третини обрізали довші мови
+   * («Not intere…», «Kein Inter…»), хоч «Усі» поруч мала зайве місце. */
+  grid-auto-columns: minmax(min-content, auto);
   gap: 2px;
   flex: 1 1 auto;
   min-width: 0;

@@ -39,10 +39,8 @@ const Head = styled.button`
   background: transparent;
   color: var(--muted, var(--km-muted));
   font: inherit;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: .6px;
-  text-transform: uppercase;
   text-align: left;
   cursor: pointer;
 `;
