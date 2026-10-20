@@ -13,9 +13,15 @@ const BOTTOM_NAV_BREAKPOINT = 600;
 // лишити під собою місце, а фіксоване знизу — ставати над панеллю. Висоту
 // панелі несе `--km-bottom-nav-h`: поза цими трьома екранами її немає, і
 // змінна лишається нулем з `index.css`.
+// `env(safe-area-inset-bottom)` тут немає навмисно. Без `viewport-fit=cover`
+// у meta viewport сторінка під жестову смугу й так не заходить, тож Chrome і
+// Safari дають там нуль, а Firefox на Android додає туди висоту власної
+// панелі, поки та видима: на верху сторінки панель вкладок росла на висоту
+// тулбара (підписи підскакували, під ними — порожня смуга), а з прокруткою
+// тулбар ховався, і панель «опускалась».
 const BottomNavSpace = createGlobalStyle`
   @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
-    :root { --km-bottom-nav-h: calc(64px + env(safe-area-inset-bottom, 0px)); }
+    :root { --km-bottom-nav-h: 64px; }
     body { padding-bottom: var(--km-bottom-nav-h); }
   }
 `;
@@ -109,7 +115,7 @@ const Tabs = styled.div`
     bottom: 0;
     z-index: 900;
     gap: 0;
-    padding: 0 4px env(safe-area-inset-bottom, 0px);
+    padding: 0 4px;
     height: var(--km-bottom-nav-h);
     box-sizing: border-box;
     background: var(--km-card);

@@ -493,11 +493,11 @@ const RoleCard = styled.div`
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 `;
+// Підпис звичайним реченням 13 px, як решта підписів (див. візуальну мову в
+// CLAUDE.md): великі літери тут лишились від старого вигляду.
 const RoleCardTitle = styled.div`
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .06em;
   color: var(--muted);
   margin-bottom: 12px;
 `;
