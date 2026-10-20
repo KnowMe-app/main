@@ -73,9 +73,10 @@ describe('збірка анкети з розділених вузлів', () =>
     expect(merged.language).toBe('uk');
   });
 
-  it('legacy лягає найпершим шаром і перекривається новими вузлами', () => {
-    // Поки анкета не переїхала, legacy — єдиний, хто щось знає. Щойно вузол
-    // непорожній, виграє він.
+  it('legacy-шару більше немає: анкета — лише пʼять вузлів', () => {
+    // Колись найнижчим шаром лягала анкета з колекції `users`. З нею
+    // застосунок більше не працює, тож і поле, якого немає у вузлах, нізвідки
+    // не береться.
     const merged = mergeProfileNodes({
       userId: AUTH_UID,
       legacy: { city: 'Львів', education: 'вища', phone: 'старий' },
@@ -85,7 +86,8 @@ describe('збірка анкети з розділених вузлів', () =>
 
     expect(merged.city).toBe('Київ');
     expect(merged.phone).toBe('+380671112233');
-    expect(merged.education).toBe('вища');
+    expect(merged).not.toHaveProperty('education');
+    expect(mergeProfileNodes({ userId: AUTH_UID, legacy: { city: 'Львів' } })).toBeNull();
   });
 
   it('не носить позначки колекції — колекція у вебі одна', () => {
@@ -94,7 +96,7 @@ describe('збірка анкети з розділених вузлів', () =>
       .not.toHaveProperty('__sourceCollection');
   });
 
-  it('порожні вузли означають «анкета сюди ще не переїхала»', () => {
+  it('порожні вузли означають «анкети з вузлів немає»', () => {
     expect(hasAnyProfileNode({})).toBe(false);
     expect(hasAnyProfileNode({ card: {}, details: null })).toBe(false);
     expect(hasAnyProfileNode({ contacts: { phone: '+380' } })).toBe(true);

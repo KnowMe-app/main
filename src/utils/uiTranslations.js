@@ -1096,8 +1096,6 @@ const EN_BY_UK = {
   'Пошук і порівняння анкет': 'Search and compare profiles',
   'Перевірка нових карток': 'Review of the new cards',
   'Ваші картки та створення нових': 'Your cards, and creating new ones',
-  'Міграція RTDB': 'RTDB migration',
-  'Розкласти анкети по нових вузлах': 'Lay the profiles out across the new nodes',
 
   // --- «Мій профіль» ---
   '👤 Особисті дані': '👤 Personal data',

@@ -18,13 +18,21 @@ describe('AddNewProfile offline load mode', () => {
     expect(addNewProfileSource).toContain('return OFFLINE_LOAD_FILTER;');
   });
 
-  it('filters local users ids before backend hydration and keeps getInTouch order', () => {
+  it('takes its source from the profile node files, not from users.json', () => {
+    // З колекцією `users` застосунок більше не працює; офлайн-режим читає ті
+    // самі файли вузлів, що й локальна індексація.
+    expect(offlineSource).toContain('onPickNodeFiles');
+    expect(offlineSource).not.toContain('Обрати users.json');
+    expect(addNewProfileSource).toContain('onPickNodeFiles={handlePickLocalNodeFiles}');
+  });
+
+  it('filters local node profile ids before backend hydration and keeps getInTouch order', () => {
     const getIdsBody = offlineSource.slice(
       offlineSource.indexOf('export const getOfflineFilteredIds'),
       offlineSource.indexOf('export const hydrateOfflineIdsPage')
     );
 
-    expect(getIdsBody).toContain('getMergedUsersFromLocalExportCollections()');
+    expect(getIdsBody).toContain('getLocalNodeProfiles()');
     expect(getIdsBody).toContain('filterMain(');
     expect(getIdsBody).toContain('OFFLINE_LOAD_FILTER');
     expect(getIdsBody).toContain('OFFLINE_FILTER_MAIN_OPTIONS');

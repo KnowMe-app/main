@@ -7827,7 +7827,6 @@ const Matching = () => {
                 searchOptions={{
                   searchIdPrefixes: MATCHING_SEARCH_ID_PREFIXES,
                   enabledSearchKeys: MATCHING_SEARCH_BAR_ENABLED_KEYS,
-                  cacheScope: { collections: ['users'] },
                   limitedFields: !hasFullProfileAccess,
                   // Видача малюється карткою; анкета читається на дотик, коли
                   // картку відкрили (`ensureFullProfile`). Див. `addCardHit`.

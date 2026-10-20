@@ -10,7 +10,6 @@ import EditProfile from './EditProfile';
 import MedicationsPage from './MedicationsPage';
 import FlowManager from './FlowManager';
 import BudgetPage from './BudgetPage';
-import RtdbMigrationTool from './RtdbMigrationTool';
 import InvoiceBuilderPage from './InvoiceBuilderPage';
 import DocumentsPage from './DocumentsPage';
 import PartiesPage from './PartiesPage';
@@ -165,12 +164,6 @@ export const App = () => {
       {isAdmin && <Route path="/edit/:userId" element={<RequireAuth status={authStatus}><EditProfile /></RequireAuth>} />}
       {isAdmin && <Route path="/medications/:userId" element={<RequireAuth status={authStatus}><MedicationsPage /></RequireAuth>} />}
       {isAdmin && <Route path="/flow" element={<RequireAuth status={authStatus}><FlowManager ownerId={auth.currentUser?.uid} /></RequireAuth>} />}
-      {/*
-        Інструмент міграції нічого не пише у Firebase, але читає локальні копії
-        обох колекцій цілком — тобто показує контакти всіх анкет. Тож маршрут
-        адмінський, як і решта інструментів роботи з сирими даними.
-      */}
-      {isAdmin && <Route path="/rtdb-migration" element={<RequireAuth status={authStatus}><RtdbMigrationTool /></RequireAuth>} />}
       {isAdmin && <Route path="/budget" element={<RequireAuth status={authStatus}><BudgetPage isAdmin={isAdmin} /></RequireAuth>} />}
       {canAccessInvoices && <Route path="/invoices" element={<RequireAuth status={authStatus}><InvoiceBuilderPage isAdmin={canAccessInvoices} /></RequireAuth>} />}
       {canAccessInvoices && <Route path="/documents" element={<RequireAuth status={authStatus}><DocumentsPage isAdmin={canAccessInvoices} /></RequireAuth>} />}

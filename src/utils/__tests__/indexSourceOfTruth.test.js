@@ -103,9 +103,10 @@ describe('індекси будуються з нових вузлів', () => {
 
     expect(loader).not.toContain("loadCollectionWithIndexCache('users'");
     expect(loader).toContain('mergeProfileNodeCollections(sources)');
-    // Локальний вхід (файл `users.json` під час міграції) legacy-шар приймати
-    // не перестав — саме заради нього злиття його й розуміє.
-    expect(merge).toContain('profile.publish = publish');
+    // Локальний вхід теж: legacy-шар `users`, який злиття колись приймало
+    // заради файлу міграції, прибрано разом із колекцією.
+    expect(merge).not.toContain('sources.users');
+    expect(merge).not.toContain('profile.publish = publish');
   });
 
   it('поточні дані для індексації читаються тим самим шляхом, що й анкета', () => {

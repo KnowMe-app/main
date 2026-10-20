@@ -3,7 +3,7 @@
 // Форма входу щоразу вимагала обрати роль і писала її в Firestore `users/{uid}`
 // та legacy `users/{uid}`, не чіпаючи картки `matchingCards/{uid}`. «Мій
 // профіль» читав роль із Firestore, стрічка — з картки. Скрипт вирівнює
-// Firestore (і legacy-дзеркало) за карткою; картки з кількома ролями лише
+// Firestore за карткою; картки з кількома ролями лише
 // називає — котра правдива, вирішує людина в «Моєму профілі». Логіка плану —
 // `src/utils/roleDivergence.js`.
 //
@@ -12,7 +12,11 @@
 // запис у чужі документи — лише адмінові).
 //
 //   node scripts/reportRoleDivergence.js            # суха прогонка, друкує звіт
-//   node scripts/reportRoleDivergence.js --apply    # записує роль картки в Firestore і legacy
+//   node scripts/reportRoleDivergence.js --apply    # записує роль картки в Firestore
+//
+// Legacy RTDB `users/{uid}` скрипт колись вирівнював теж. Вузол закрито й
+// видалено з правил, і з колекцією `users` застосунок більше не працює, тож
+// писати туди нема чого (та й правила відмовили б).
 /* eslint-disable no-console */
 require('@babel/register')({
   presets: [['@babel/preset-env', { targets: { node: 'current' } }]],
@@ -22,7 +26,7 @@ require('@babel/register')({
 
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInWithEmailAndPassword } = require('firebase/auth');
-const { getDatabase, ref, get, update } = require('firebase/database');
+const { getDatabase, ref, get } = require('firebase/database');
 const { getFirestore, collection, getDocs, doc, updateDoc } = require('firebase/firestore');
 
 const { buildRoleDivergencePlan } = require('../src/utils/roleDivergence');
@@ -88,14 +92,10 @@ async function main() {
     return;
   }
 
-  const legacyUpdates = {};
   for (const [id, roles] of Object.entries(updates)) {
     // eslint-disable-next-line no-await-in-loop
     await updateDoc(doc(firestore, 'users', id), roles);
-    legacyUpdates[`users/${id}/userRole`] = roles.userRole;
-    legacyUpdates[`users/${id}/role`] = roles.role;
   }
-  if (Object.keys(legacyUpdates).length) await update(ref(database), legacyUpdates);
   console.log(`Вирівняно акаунтів: ${Object.keys(updates).length}.`);
 }
 

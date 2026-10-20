@@ -25,8 +25,8 @@ import { LIKED_AUDIENCE_CARD_FLAG } from './likedAudience';
  * Справжня межа — у `database.rules.json`, де ті самі три випадки описані
  * правилом читання `profileDetails/$uid` і `profileContacts/$uid`. Тут вона
  * повторена в коді, який складає анкету: щоб застосунок не малював того, що
- * приїхало повз правила — зі старого кеша, з legacy-шару чи з вузла, права на
- * який колись розширять.
+ * приїхало повз правила — зі старого кеша чи з вузла, права на який колись
+ * розширять.
  */
 
 /**
@@ -132,8 +132,7 @@ export const canOfferProfileContacts = ({ card, viewerId, accessLevel } = {}) =>
  * Зводить прочитані вузли до того, що цьому читачеві справді належить бачити.
  *
  * Повертає ті самі частини, якщо анкета показана або читач має на неї право
- * поза стрічкою; інакше лишає саму картку — і знімає legacy-шар, бо контакти
- * фізично лежать і в ньому.
+ * поза стрічкою; інакше лишає саму картку.
  */
 export const scopeProfileNodesToViewer = ({
   profileId,
@@ -145,13 +144,12 @@ export const scopeProfileNodesToViewer = ({
   // (`isViewerInLikedAudienceOf` у `config.js`).
   sharedWithViewer = false,
   parts = {},
-  legacy = null,
 } = {}) => {
   const cappedToCard = !isCardInMatchingFeed(parts.card)
     && !sharedWithViewer
     && !canReadProfileOutsideFeed({ profileId, viewerId, accessLevel });
 
-  if (!cappedToCard) return { parts, legacy, cappedToCard };
+  if (!cappedToCard) return { parts, cappedToCard };
 
   return {
     parts: {
@@ -161,7 +159,6 @@ export const scopeProfileNodesToViewer = ({
       workflow: null,
       technical: null,
     },
-    legacy: null,
     cappedToCard,
   };
 };

@@ -73,7 +73,7 @@ import {
 } from '../utils/searchKeyUtils';
 import { isAdminUid, readStoredAccessLevel, stripPrivilegedProfileFields } from '../utils/accessLevel';
 import { hasFilledProfileDraftData } from '../utils/profileDraftContent';
-import { flattenOwnerValueToString } from '../utils/rtdbMigrationDerive';
+import { flattenOwnerValueToString } from '../utils/ownerValueString';
 import { isLongFormatUserId } from '../utils/userIdFormat';
 import {
   canReadProfileOutsideFeed,
@@ -2649,9 +2649,8 @@ export const resetViewerAccessLevelCache = () => viewerAccessLevelByUid.clear();
 /**
  * Читає анкету з нових вузлів.
  *
- * Це основний шлях: `users` лишається лише для мобільного застосунку. Тобто
- * джерелом істини для вебу є саме ці пʼять вузлів, і legacy читається тільки як
- * відкат для анкет, які ще не переїхали.
+ * Це єдиний шлях: джерело істини — саме ці пʼять вузлів. З колекцією `users`
+ * застосунок не працює взагалі.
  *
  * Читання паралельне і поштучне: контакти, робочі позначки і технічне беруться
  * лише тоді, коли їх справді показують. Для списку вистачає картки і деталей —
@@ -2670,41 +2669,6 @@ const readProfileNodePart = async (node, id) => {
   }
 };
 
-/**
- * Що з legacy-анкети ще має право говорити.
- *
- * Дзеркалення двостороннє: мобільний застосунок пише в `/users`, і веб мусить
- * бачити ці зміни. Але накласти legacy цілим шаром не можна — тоді поле, яке у
- * вебі навмисно стерли, поверталося б із кожним читанням.
- *
- * Межу проводить наявність вузла: якщо `profileContacts/{id}` існує, контакти
- * належать вебу, і legacy про них мовчить — стерте лишається стертим. Якщо
- * вузла немає, анкета в цій частині ще не переїхала, і legacy — єдиний, хто про
- * неї щось знає. Поля без власного вузла (`publish`, `userRole`) проходять
- * завжди: їх ніхто, крім legacy, і не тримає.
- */
-const legacyFieldsNodesDoNotOwn = (legacy, parts) => {
-  if (!legacy || typeof legacy !== 'object') return null;
-
-  const presentNodes = new Set(
-    Object.entries({
-      [PROFILE_NODES.matchingCards]: parts.card,
-      [PROFILE_NODES.profileDetails]: parts.details,
-      [PROFILE_NODES.profileContacts]: parts.contacts,
-      [PROFILE_NODES.profileWorkflow]: parts.workflow,
-      [PROFILE_NODES.profileTechnical]: parts.technical,
-    })
-      .filter(([, value]) => value && typeof value === 'object' && Object.keys(value).length)
-      .map(([node]) => node),
-  );
-
-  const kept = Object.fromEntries(
-    Object.entries(legacy).filter(([field]) => !presentNodes.has(resolveFieldOwnerNode(field))),
-  );
-
-  return Object.keys(kept).length ? kept : null;
-};
-
 export const readProfileFromNodes = async (userId, options = {}) => {
   const id = String(userId || '').trim();
   if (!id) return null;
@@ -2713,12 +2677,6 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     includeContacts = true,
     includeWorkflow = true,
     includeTechnical = false,
-    // Legacy-шар, який викликач уже тримає в руках, — з файлу офлайн-міграції
-    // або з іншого джерела поза базою. Сам його ніхто тут не читає: веб із
-    // `users` не читає взагалі, і читання «заради полів, яких вузли ще не
-    // тримають» перетворювало показ на показ копії — тієї самої, у якій ще
-    // лежить те, що у вебі вже стерли.
-    legacy = null,
   } = options;
 
   // Картка і рівень доступу читаються першими — і саме тому, що від них
@@ -2790,7 +2748,7 @@ export const readProfileFromNodes = async (userId, options = {}) => {
 
   // Та сама межа вдруге — уже на зведенні. Вище вона вирішує, чого не питати, а
   // тут — чого не показувати: у `parts` може приїхати вузол, якого ніхто не
-  // просив (legacy-шар від викликача), і зводити анкету з нього не можна.
+  // просив, і зводити анкету з нього не можна.
   // Правила бази кажуть те саме й по-справжньому: `profileDetails/$uid` і
   // `profileContacts/$uid` відкриті звичайному користувачеві лише доти, доки в
   // картці є дата `feedDate`.
@@ -2800,16 +2758,11 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     accessLevel,
     sharedWithViewer,
     parts: { card, details, contacts, workflow, technical },
-    legacy,
   });
   const parts = scoped.parts;
   if (!hasAnyProfileNode(parts)) return null;
 
-  const merged = mergeProfileNodes({
-    userId: id,
-    ...parts,
-    legacy: legacyFieldsNodesDoNotOwn(scoped.legacy, parts),
-  });
+  const merged = mergeProfileNodes({ userId: id, ...parts });
   if (!merged) return null;
 
   // `getInTouch` і `writer` підмішуються з `multiData` — це персональні
@@ -2898,9 +2851,9 @@ export const readProfileContacts = userId => {
  * Прочитати анкети за id.
  *
  * Читаються лише нові вузли, і картка стрічки серед них — саме вона і є тим
- * мінімумом, який завжди є в показаної анкети. Legacy-колекція звідси прибрана
- * навмисно: у вебі вона лишилась дзеркалом для мобільного застосунку, тобто
- * адресатом запису, а не джерелом показу. Читання з неї було ще й крихким —
+ * мінімумом, який завжди є в показаної анкети. Legacy-колекцію `users` звідси
+ * прибрано ще тоді, коли веб писав у неї дзеркало; тепер її закрито, і веб з
+ * нею не працює взагалі. Читання з неї було ще й крихким —
  * `users/{чужий id}` відкритий лише адмінам, тож на першій же відмові гинула
  * вся відповідь.
  */
@@ -3706,8 +3659,9 @@ const searchByDate = async (searchValue, uniqueUserIds, users) => {
  * колекції на кожен пошук. Прізвище шукається через `searchId`, де лежить
  * повне значення.
  *
- * Решту широкий пошук бере з legacy, а `matchingCards` дає ту частину, яку
- * legacy вже не має: анкету, заведену у вебі, знайти інакше нема де.
+ * Решту широкий пошук бере з `searchId` і префікса id картки: legacy `users`,
+ * з якої він колись брав решту, закрито, а анкету, заведену у вебі, інакше
+ * знайти нема де.
  */
 const MATCHING_CARD_TEXT_SEARCH_FIELDS = ['name'];
 
@@ -4526,8 +4480,7 @@ const setOwnerValue = async (path, ownerId, profileId, value, { stringOnly = fal
   // запису. База таку заливку відхиляє — провалена `.validate` повертається
   // PERMISSION_DENIED, — а відмову нижче ковтає `catch`, тож позначка тихо
   // не переносилась: на екрані її скопійовано, у базі немає. Зводимо до того
-  // самого рядка, який дала б форма картки (`join(', ')`), — так само, як це
-  // робить міграція на етапі плану.
+  // самого рядка, який дала б форма картки (`join(', ')`) — `flattenOwnerValueToString`.
   const scalarValue = stringOnly && value !== null && value !== undefined && typeof value !== 'string'
     ? flattenOwnerValueToString(value)
     : value;
@@ -8321,9 +8274,10 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
     });
   };
 
-  Object.entries(collectionsMap || {}).forEach(([collectionName, usersMap]) => {
-    const rootSegments = collectionName === 'users' ? ['users'] : [];
-
+  // Окремого кореня для мапи з назвою `users` тут більше немає: її приносив
+  // локальний `users.json`, а з колекцією `users` застосунок не працює. Мапи
+  // приходять зі зведених вузлів (`{ profiles }`), і всі лягають в один корінь.
+  Object.entries(collectionsMap || {}).forEach(([, usersMap]) => {
     Object.entries(usersMap || {}).forEach(([userId, userData]) => {
       if (!userId || !userData || typeof userData !== 'object') return;
 
@@ -8331,7 +8285,7 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
         const entries = resolveSearchKeyValuesByIndexType(indexType, userId, userData);
         entries.forEach(({ indexName, values }) => {
           values.filter(Boolean).forEach(value => {
-            assignNestedLeaf(payload, [...rootSegments, indexName, value, userId], true);
+            assignNestedLeaf(payload, [indexName, value, userId], true);
           });
         });
       });
