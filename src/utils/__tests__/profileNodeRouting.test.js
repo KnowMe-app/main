@@ -113,9 +113,9 @@ describe('блоки форми анкети', () => {
       const header = buildProfileFormBlockHeader(blockId, { profileId: 'a'.repeat(28) });
       expect(header.title).toBeTruthy();
       expect(header.path).toBeTruthy();
-      // Поля поза вузлами в базі не лежать ніде: legacy `users` закрито, тож
-      // посилання в консоль у цього блоку немає.
-      expect(header.href).toEqual(blockId === PROFILE_FORM_BLOCK_IDS.legacy
+      // Поля без вузла в базі не лежать ніде, тож посилання в консоль у
+      // цього блоку немає.
+      expect(header.href).toEqual(blockId === PROFILE_FORM_BLOCK_IDS.unstored
         ? ''
         : expect.stringContaining('console.firebase.google.com'));
     });
@@ -135,8 +135,12 @@ describe('блоки форми анкети', () => {
     // і запис із форми.
     expect(buildProfileFormBlockHeader(PROFILE_FORM_BLOCK_IDS.access, { profileId }).path)
       .toBe(`profileTechnical/${profileId}`);
-    expect(buildProfileFormBlockHeader(PROFILE_FORM_BLOCK_IDS.legacy, { profileId: 'short' }).path)
-      .not.toContain('users');
+    // Блок без вузла не вигадує шляху: підпис — його назва, і поля в ньому
+    // лише для читання, бо збереження їх відкидає.
+    const unstored = buildProfileFormBlockHeader(PROFILE_FORM_BLOCK_IDS.unstored, { profileId: 'short' });
+    expect(unstored.label).toBe('Не зберігається');
+    expect(unstored.readOnly).toBe(true);
+    expect(unstored.path).not.toContain('users');
   });
 
   it('кодує слеші так, як їх читає консоль Firebase', () => {
@@ -144,10 +148,15 @@ describe('блоки форми анкети', () => {
     expect(href.endsWith('~2FprofileDetails~2FP1')).toBe(true);
   });
 
-  it('невідоме поле лишається в legacy — так само, як у самих даних', () => {
-    expect(resolveProfileFormBlock('somethingNobodyMapped')).toBe(PROFILE_FORM_BLOCK_IDS.legacy);
-    expect(resolveProfileFormBlock('publish')).toBe(PROFILE_FORM_BLOCK_IDS.legacy);
+  it('невідоме поле — у блоці «Не зберігається», а publish — у картці', () => {
+    expect(resolveProfileFormBlock('somethingNobodyMapped')).toBe(PROFILE_FORM_BLOCK_IDS.unstored);
+    // `publish` писач картки перекладає у `feedDate`: він зберігається.
+    expect(resolveProfileFormBlock('publish')).toBe(PROFILE_FORM_BLOCK_IDS.matchingCards);
     expect(resolveProfileFormBlock('accessLevel')).toBe(PROFILE_FORM_BLOCK_IDS.access);
+    // Позначки власника зберігають окремі писачі — вимикати їх не можна.
+    ['myComment', 'writer', 'stimulationSchedule'].forEach(field => {
+      expect(resolveProfileFormBlock(field)).toBe(PROFILE_FORM_BLOCK_IDS.ownerMarks);
+    });
     expect(resolveProfileFormBlock('getInTouch')).toBe(PROFILE_FORM_BLOCK_IDS.getInTouch);
   });
 });

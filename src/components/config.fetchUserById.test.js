@@ -3,10 +3,18 @@ import path from 'path';
 
 describe('fetchUserById', () => {
   const source = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
-  const body = source.slice(
-    source.indexOf('export const fetchUserById'),
-    source.indexOf('export const removeKeyFromFirebase'),
-  );
+  // Тіло функції — до наступного експорту, а не до назви сусідньої функції:
+  // сусіда колись видалили, `indexOf` дав -1, і перевірки тихо поїхали по
+  // всьому `config.js`, проходячи випадково.
+  const start = source.indexOf('export const fetchUserById =');
+  const end = source.indexOf('\nexport ', start + 1);
+  const body = source.slice(start, end);
+
+  it('slices exactly the fetchUserById body', () => {
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    expect(body.length).toBeLessThan(5000);
+  });
 
   // Анкету складають нові вузли, і тільки вони. Legacy-колекція у вебі —
   // адресат дзеркального запису для мобільного застосунку, а не джерело: читати
