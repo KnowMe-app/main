@@ -904,7 +904,8 @@ export const ContactIconLink = styled.a`
 
 export const MatchingTopBar = styled.div`
   position: sticky;
-  top: 0;
+  /* На телефоні над ним липкий рядок навігації (\`--km-top-nav-h\`). */
+  top: var(--km-top-nav-h, 0px);
   z-index: 14;
   display: flex;
   align-items: center;
@@ -918,6 +919,10 @@ export const MatchingTopBar = styled.div`
     padding-left: 8px;
     padding-right: 8px;
   }
+
+  /* Пошук переїхав у рядок навігації, а адмінського перемикача немає —
+     порожній рядок займав би місце під навігацією. */
+  ${({ $empty }) => ($empty ? 'display: none;' : '')}
 `;
 
 export const SearchField = styled.div`
@@ -1329,7 +1334,7 @@ export const QueryDraftButton = styled.button`
 // розуміти, чому розгорнутий рядок не дотягується.
 export const ConnectionNotice = styled.div`
   position: sticky;
-  top: calc(max(8px, env(safe-area-inset-top)) + 46px);
+  top: calc(var(--km-top-nav-h, 0px) + max(8px, env(safe-area-inset-top)) + 46px);
   z-index: 13;
   margin: 0 10px 10px;
   padding: 10px 12px;

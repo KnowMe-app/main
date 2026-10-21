@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -33,7 +34,7 @@ import { hasFilledProfileDraftData } from '../utils/profileDraftContent';
 import { CONTACT_FIELDS, isHiddenTelegramValue } from './contactMethods';
 import { listProfileRoles } from '../utils/matchingPeerVisibility';
 import { fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
-import { usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
+import { usePrimaryNavigationHeaderTarget, usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
 import InfoModal, {
   ModalActionRow,
   ModalDangerButton,
@@ -1940,6 +1941,8 @@ export const ProfileCreationWorkspace = () => {
     }
   };
 
+  const navHeaderTarget = usePrimaryNavigationHeaderTarget();
+  const placeInNavHeader = element => (navHeaderTarget ? createPortal(element, navHeaderTarget) : element);
   const fieldsMap = useMemo(() => new Map([...pickerFields, PATRONYMIC_FIELD, ROLE_FIELD].map(field => [field.name, field])), []);
 
   // Every pending proposal and every superseded value, keyed by the field it
@@ -2482,6 +2485,9 @@ export const ProfileCreationWorkspace = () => {
             разом вони з'їдали перший екран, відповідаючи на питання, якого
             ніхто не ставив. */}
         <SearchSection aria-label={uiText('Пошук анкети', language)}>
+          {/* На телефоні поле пошуку стоїть у рядку навігації замість назви
+              «Додати картку» (`usePrimaryNavigationHeaderTarget`). */}
+          {placeInNavHeader(
           <SearchBar
             searchFunc={searchUsersOnly}
             search={search}
@@ -2514,11 +2520,17 @@ export const ProfileCreationWorkspace = () => {
             storageKey="profileCreationSearchQuery"
             searchOptions={PROFILE_SEARCH_OPTIONS}
             debounceMs={PROFILE_SEARCH_DEBOUNCE_MS}
-            wrapperStyle={{ width: '100%' }}
+            // У рядку навігації поле мусить влізти у висоту самого рядка
+            // (`TOP_NAV_HEIGHT`): зі своїми 10 px полів зверху й знизу воно
+            // розтягувало шапку до 77 px, і липкі блоки під нею ставали не туди.
+            wrapperStyle={navHeaderTarget
+              ? { width: '100%', margin: 0, height: 44, padding: '0 12px' }
+              : { width: '100%' }}
             leftIcon={<FiSearch size={21} aria-hidden="true" />}
             placeholder={uiText('Телефон, email, нік або посилання', language)}
             inputAriaLabel={uiText('Пошук анкети', language)}
           />
+          )}
           <SearchHint>{uiText(
             'Почніть із відомого контакту людини — телефона, пошти, ніка чи посилання на соцмережу. '
             + 'Перевіримо, чи така анкета вже існує.',

@@ -5,6 +5,7 @@ import { FaRegUser, FaUsers, FaSignOutAlt, FaTrashAlt, FaEraser, FaProjectDiagra
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
 import { LanguagePicker } from './LanguagePicker';
+import { KnowMeBrand } from './styles/knowme';
 import { useAppSettings } from 'hooks/useAppSettings';
 import { uiText } from 'utils/uiTranslations';
 import {
@@ -31,6 +32,12 @@ const MenuShell = styled.nav`
 
 const MenuHeader = styled.div`
   padding: 2px 10px 10px;
+`;
+
+// Лого живе тут: на телефоні верхній рядок віддано вмісту сторінки (пошук,
+// роль і статус), і окремого рядка під лого більше немає.
+const MenuBrand = styled.div`
+  margin-bottom: 8px;
 `;
 
 const MenuTitle = styled.h3`
@@ -276,6 +283,7 @@ export const ProfileDotsMenu = ({
   return (
     <MenuShell role="menu" aria-label={uiText('Навігаційне меню профілю', language)}>
       <MenuHeader>
+        <MenuBrand><KnowMeBrand tagline="" /></MenuBrand>
         <MenuTitle>{uiText('Меню профілю', language)}</MenuTitle>
         {/* «Швидка навігація» обіцяла пункти, яких тут немає, коли меню
             відкрите з рядка навігації (`omitPrimaryDestinations`). */}

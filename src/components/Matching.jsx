@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useLayoutEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
@@ -156,7 +157,7 @@ import {
   getRefineKeySpec,
 } from '../utils/matchingRefineKey';
 import { getCurrentDate } from './foramtDate';
-import { usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
+import { usePrimaryNavigationHeaderTarget, usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
 import MatchingHiddenList from './MatchingHiddenList';
 import { canOfferProfileContacts, isOwnProfileDraftCard } from '../utils/profileVisibilityScope';
 import ProfileRow, {
@@ -5444,6 +5445,8 @@ const Matching = () => {
   }, [deckHasMore, language, openFilterGroup, openFilterGroupCounts]);
 
   const isSearching = searchQuery.trim().length > 0;
+  const navHeaderTarget = usePrimaryNavigationHeaderTarget();
+  const placeInNavHeader = element => (navHeaderTarget ? createPortal(element, navHeaderTarget) : element);
   const feedColumnCount = useFeedColumns().list;
 
 
@@ -7898,7 +7901,10 @@ const Matching = () => {
     <>
       <Container $themeMode={themeMode}>
         <InnerContainer>
-          <MatchingTopBar>
+          <MatchingTopBar $empty={Boolean(navHeaderTarget) && !showBackendTrafficToggle}>
+            {/* На телефоні пошук стоїть у рядку навігації замість назви екрана
+                (`usePrimaryNavigationHeaderTarget`), на широкому — тут. */}
+            {placeInNavHeader(
             <SearchField>
               <FaSearch aria-hidden="true" />
               <SearchBar
@@ -7930,6 +7936,7 @@ const Matching = () => {
                 }}
               />
             </SearchField>
+            )}
             <TopActions>
               {showBackendTrafficToggle && (
                 <TopActionGroup aria-label={uiText('Адміністративні дії matching', language)}>
