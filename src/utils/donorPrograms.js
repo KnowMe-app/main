@@ -886,7 +886,11 @@ export const summarizeCardPrograms = (card, { viewerType = '', facts = null } = 
     program,
     result: viewerType && facts && program.type === viewerType ? evaluateProgram(program, facts) : null,
   }));
-  const matched = evaluated.filter(item => item.result?.matches).length;
+  // «Підходить» — лише те, що анкета підтвердила. Програму, вимоги якої
+  // анкета не каже (резус не вказано), заголовок рахував як підхожу, а чіп
+  // поруч писав «? Може підходити»: два сигнали, що суперечили один одному.
+  const matched = evaluated.filter(item => item.result?.matches && !item.result?.uncertain).length;
+  const uncertain = evaluated.filter(item => item.result?.uncertain).length;
   // Діапазон рядка — гарантовано за програму, а не сама фінальна виплата:
   // картка програми показує саме цю суму першою, і число в рядку мусить
   // бути тим самим числом, а не третім.
@@ -899,6 +903,7 @@ export const summarizeCardPrograms = (card, { viewerType = '', facts = null } = 
     allTotal: programs.length,
     ownTotal: own.length,
     matched: viewerType && facts && own.length ? matched : null,
+    uncertain: viewerType && facts && own.length ? uncertain : 0,
     evaluated,
     finals,
     byType,

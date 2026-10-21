@@ -65,7 +65,7 @@ describe('matching active-filter chips', () => {
   it('builds one chip per group that is off default', () => {
     const chips = buildMatchingFilterChips({
       age: withOff(age, ['le25']),
-      userRole: withOff(role, ['ag', 'ip', 'other']),
+      userRole: withOff(role, ['sm', 'ag', 'ip', 'other']),
     });
     expect(chips).toEqual([
       // «Інші» в ролі — справжня опція (клініки, сурогатні мами, анкети без

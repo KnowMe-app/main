@@ -76,7 +76,7 @@ import {
   saveCardPrograms,
   useProgramsVersion,
 } from '../utils/programsStore';
-import { loadProgramTerms, rememberProgramTerms } from './programs/programsRemote';
+import { forgetProgramTerm, isSuggestedProgramTerm, loadProgramTerms, rememberProgramTerms } from './programs/programsRemote';
 import { isProgramsOwnerRoleHidden, listPrograms, listProgramBonuses, resolveProgramsOwnerRole } from '../utils/donorPrograms';
 import { MyProfileCardPreview } from './MyProfileCardPreview';
 import { getCurrentValue } from './getCurrentValue';
@@ -291,6 +291,78 @@ const PublishHead = styled.div`
   > span { font-size: 13px; line-height: 1.45; color: var(--muted); }
 `;
 const PublishSingleAction = styled.div`margin-top:16px;`;
+// Три відповіді на «Ви — агенція?» не вміщаються рядком на телефоні.
+const RoleChangeActions = styled.div`
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+
+  > button { width: 100%; margin: 0; }
+`;
+/*
+ * Чого бракує до публікації — названо поіменно, і кожне веде до свого поля.
+ * Тост показувався й зникав, а кнопка «Опублікувати» стоїть унизу сторінки,
+ * тож людина гортала вгору й шукала поле наосліп.
+ */
+const PublishMissing = styled.div`
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+
+  > span { font-size: 13px; color: var(--muted); }
+`;
+const PublishMissingList = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+`;
+const PublishMissingChip = styled.button`
+  border: none;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: var(--km-fill);
+  color: var(--km-accent-text, var(--km-accent));
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+`;
+/*
+ * Липка дія внизу, поки анкету не опубліковано. Блок «Публікація» стоїть
+ * під усією анкетою — на телефоні це дев'ятий екран, — і до головної дії
+ * сторінки треба було догортати. Панель стоїть над нижньою навігацією
+ * (`--km-bottom-nav-h`) і веде або одразу до публікації, або до переліку
+ * того, чого бракує.
+ */
+const PublishDock = styled.div`
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--km-bottom-nav-h, 0px);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -6px 16px rgba(0, 0, 0, .06);
+
+  > span { flex: 1; min-width: 0; font-size: 13px; color: var(--muted); }
+`;
+const PublishDockButton = styled.button`
+  flex: 0 0 auto;
+  border: none;
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  background: ${({ $muted }) => ($muted ? 'var(--km-fill)' : 'var(--km-accent)')};
+  color: ${({ $muted }) => ($muted ? 'var(--text)' : '#fff')};
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+`;
+const PublishDockSpacer = styled.div`height: 76px;`;
 /*
  * Одна анкета — головна дія й поруч кошик «Очистити анкету». Кошик стоїть
  * тут на прохання власниці продукту: при кількох ролях він уже є в рядку
@@ -757,6 +829,24 @@ const OPTIONAL_PROFILE_FIELDS = new Set([
   'telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'website', 'vk',
   'reward', 'fathersname', 'lastCycle',
 ]);
+// Мінімум, без якого анкету донорки чи СМ публікувати не можна: те, що стоїть
+// у рядку стрічки (імʼя, вік, місто, зріст, вага, кров) і за чим агенція
+// вирішує, чи писати, плюс телефон — без нього писати нікуди. Обовʼязковими
+// тут були всі 42 поля, від форми носа до хобі, і донорка, яка не мала
+// пів години на анкету, у стрічку не потрапляла взагалі. Решта лишається в
+// анкеті й робить її повнішою, але публікацію не тримає.
+const PERSON_PUBLISH_REQUIRED_FIELDS = new Set([
+  'name', 'phone', 'birth', 'country', 'city', 'height', 'weight', 'blood', 'maritalStatus',
+]);
+const PERSON_ANKETA_FIELDS = baseSections
+  .filter(section => section.key !== 'social')
+  .flatMap(section => section.fields);
+const PERSON_OPTIONAL_PROFILE_FIELDS = new Set([
+  ...OPTIONAL_PROFILE_FIELDS,
+  ...PERSON_ANKETA_FIELDS.filter(name => !PERSON_PUBLISH_REQUIRED_FIELDS.has(name)),
+]);
+// Скільки назв полів називає тост; решту — числом.
+const MISSING_FIELDS_TOAST_LIMIT = 4;
 // Так/Ні, до яких людині є що дописати («Так: апендицит, 2019»).
 const YES_NO_DETAIL_FIELDS = new Set(['surgeries', 'chronicDiseases', 'allergy']);
 // Так/Ні, де життя буває складнішим за два варіанти: шлюб не лише
@@ -970,6 +1060,8 @@ export const MyProfile = () => {
   const [programTerms, setProgramTerms] = useState(null);
   // Роль, дані якої людина просить очистити, — поки відкрите підтвердження.
   const [clearRoleTarget, setClearRoleTarget] = useState('');
+  // Роль, на яку людина щойно натиснула в «Хто ви», — до її рішення в модалці.
+  const [roleChangeTarget, setRoleChangeTarget] = useState('');
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const stickyProgressRef = useRef(null);
@@ -1216,7 +1308,9 @@ export const MyProfile = () => {
   // Лише батьки — побажання переїжджають у «Кого шукаєте», прізвища не питають.
   const parentOnly = rolesList.length === 1 && rolesList[0] === 'ip';
   // Що публікацію не тримає для цього читача (`listRequiredSectionFields`).
-  const optionalProfileFields = parentOnly ? PARENT_ONLY_OPTIONAL_FIELDS : OPTIONAL_PROFILE_FIELDS;
+  const optionalProfileFields = parentOnly
+    ? PARENT_ONLY_OPTIONAL_FIELDS
+    : personRole ? PERSON_OPTIONAL_PROFILE_FIELDS : OPTIONAL_PROFILE_FIELDS;
   // Заголовки спільних розділів говорять мовою анкети, якій ці поля належать:
   // у донорки, яка ще й агентка, «Особисті дані» — її, а не агенції.
   //
@@ -1311,6 +1405,49 @@ export const MyProfile = () => {
     }
     await writeProfileRoles(roles, primaryRole);
   }, [hiddenRoles, language, rolesList, selectedRole, writeProfileRoles]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * «Хто ви» — це зміна ролі або друга анкета, і людина обирає, що саме.
+   *
+   * Чіпи ролей — набір: дотик до іншої ролі не замінював її, а мовчки
+   * додавав другу анкету. Донорка, яка натиснула «Агенція», діставала поруч
+   * розділи агенції й програм, «10 з 42» ставало «10 з 44», а стрічка
+   * перемикалась на інших людей — і ніщо не казало, що сталося. Тепер нова
+   * роль питає: замінити чи додати. Зняти зайву роль (коли їх кілька) — як і
+   * було, одним дотиком: це явна дія над уже відміченим.
+   */
+  const requestUserRole = useCallback(nextRole => {
+    const role = String(nextRole || '').trim().toLowerCase();
+    if (!role) return;
+    if (rolesList.includes(role)) {
+      toggleUserRole(role);
+      return;
+    }
+    setRoleChangeTarget(role);
+    setShowInfoModal('roleChange');
+  }, [rolesList, toggleUserRole]);
+
+  const replaceUserRole = useCallback(async role => {
+    setShowInfoModal(false);
+    setRoleChangeTarget('');
+    if (hiddenRoles.length) {
+      const nextState = { ...stateRef.current, hiddenRoles: '' };
+      stateRef.current = nextState;
+      setState(nextState);
+      try {
+        await saveState(nextState, { directFields: ['hiddenRoles'] });
+      } catch (error) {
+        console.warn('Failed to clean up the hidden profile role.', error);
+      }
+    }
+    await writeProfileRoles([role], role);
+  }, [hiddenRoles.length, writeProfileRoles]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addUserRole = useCallback(async role => {
+    setShowInfoModal(false);
+    setRoleChangeTarget('');
+    await toggleUserRole(role);
+  }, [toggleUserRole]);
 
   const isProfileAccessConfirmed = Boolean(userId || state.userId);
 
@@ -1491,6 +1628,33 @@ export const MyProfile = () => {
     if (!programsRole || programTerms) return;
     loadProgramTerms().then(setProgramTerms);
   }, [programsRole, programTerms]);
+
+  // Підказки редакторові: звичайній агенції — лише назви, які вжили
+  // щонайменше дві агенції, і без тестових; адмінові — усі, з хрестиком, яким
+  // він прибирає пропозицію зі словника.
+  const programTermSuggestions = useMemo(() => {
+    if (!programTerms) return null;
+    const usage = programTerms.usage || {};
+    const pick = list => (isAdmin ? list || [] : (list || []).filter(label => isSuggestedProgramTerm(label, usage)));
+    return {
+      payment: pick(programTerms.payment),
+      bonus: pick(programTerms.bonus),
+      onDelete: isAdmin
+        ? label => {
+          forgetProgramTerm(label)
+            .then(() => {
+              const key = String(label || '').trim().toLowerCase();
+              const keep = list => (list || []).filter(item => String(item || '').trim().toLowerCase() !== key);
+              setProgramTerms(previous => (previous ? { ...previous, payment: keep(previous.payment), bonus: keep(previous.bonus) } : previous));
+            })
+            .catch(error => {
+              console.warn('[programs] пропозицію не прибрано', error);
+              toast.error(uiText('Не вдалося прибрати пропозицію', language));
+            });
+        }
+        : undefined,
+    };
+  }, [isAdmin, language, programTerms]);
 
   const saveOwnPrograms = useCallback(record => {
     const targetUserId = userId || stateRef.current?.userId;
@@ -1990,9 +2154,10 @@ export const MyProfile = () => {
     return getFieldLabel(fieldsMap.get(fieldName), language) || fieldName;
   };
 
-  const validateRequiredProfileFields = (onlyRole = '') => {
-    const currentState = stateRef.current || {};
-    const miss = {};
+  // Усі порожні обовʼязкові поля — для тосту, переліку в «Публікації» й
+  // липкої панелі. Тост колись називав лише перше, і щоб дізнатись про
+  // наступне, треба було натискати «Опублікувати» знову й знову.
+  const listMissingRequiredFields = (onlyRole = '', currentState = stateRef.current || {}) => {
     let sectionRole = '';
     const sectionsToValidate = !onlyRole || rolesList.length < 2
       ? visibleSections
@@ -2003,7 +2168,7 @@ export const MyProfile = () => {
           || (ORGANISATION_ROLES.includes(sectionRole) && ORGANISATION_ROLES.includes(onlyRole));
         return SHARED_SECTION_KEYS.has(section.key) || belongsToSameQuestionnaire;
       });
-    const missingFieldNames = sectionsToValidate
+    return [...new Set(sectionsToValidate
       .flatMap(section => listRequiredSectionFields(section, { optional: optionalProfileFields }))
       // A shared person block is tagged with whichever of `ed`/`sm` was
       // assigned first. Reuse it for the other person role, but apply that
@@ -2012,8 +2177,12 @@ export const MyProfile = () => {
       .filter(fieldName => onlyRole !== 'sm' || !SURROGATE_HIDDEN_FIELDS.has(fieldName))
       .filter(fieldName => fieldName === 'programs'
         ? ownVisiblePrograms.length === 0
-        : String(currentState[fieldName] || '').trim() === '');
+        : String(currentState[fieldName] || '').trim() === ''))];
+  };
 
+  const validateRequiredProfileFields = (onlyRole = '') => {
+    const missingFieldNames = listMissingRequiredFields(onlyRole);
+    const miss = {};
     missingFieldNames.forEach(fieldName => {
       miss[fieldName] = true;
     });
@@ -2022,10 +2191,13 @@ export const MyProfile = () => {
 
     if (!missingFieldNames.length) return true;
 
-    const firstMissingField = missingFieldNames[0];
-    const firstMissingFieldLabel = resolveRequiredFieldLabel(firstMissingField);
-    toast.error(uiText('Заповніть обов’язкове поле: {label}', language, { label: firstMissingFieldLabel }));
-    scrollToSection(getSectionKeyByField(firstMissingField));
+    const labels = missingFieldNames.slice(0, MISSING_FIELDS_TOAST_LIMIT).map(resolveRequiredFieldLabel);
+    const rest = missingFieldNames.length - labels.length;
+    toast.error(rest > 0
+      ? uiText('Щоб опублікувати, заповніть: {labels} і ще {count}', language, { labels: labels.join(', '), count: rest })
+      : uiText('Щоб опублікувати, заповніть: {labels}', language, { labels: labels.join(', ') }),
+    { id: 'my-profile-missing-fields', duration: 6000 });
+    scrollToSection(getSectionKeyByField(missingFieldNames[0]));
     return false;
   };
 
@@ -2553,6 +2725,28 @@ export const MyProfile = () => {
   const publishedRoleCount = isPublished || isLikedAudience
     ? (rolesList.length ? rolesList.filter(role => !hiddenRoles.includes(role)).length : 1)
     : 0;
+  // Перелік того, чого бракує до публікації, рахується з того самого правила,
+  // що й перевірка на кнопці (`listMissingRequiredFields`).
+  const awaitingPublication = publishedRoleCount === 0 && !isLikedAudience;
+  const missingPublishFields = awaitingPublication ? listMissingRequiredFields('', state) : [];
+  const scrollToPublishCard = () => scrollToSection('publish');
+  // Поки сам блок «Публікація» на екрані, панель лише повторює його кнопку.
+  const [publishCardInView, setPublishCardInView] = useState(false);
+  useEffect(() => {
+    const node = sectionRefs.current.publish;
+    if (!node || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver(([entry]) => setPublishCardInView(entry.isIntersecting));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const publishFromDock = () => {
+    if (missingPublishFields.length || rolesList.length > 1) {
+      scrollToPublishCard();
+      return;
+    }
+    if (rolesList[0]) publishRole(rolesList[0]);
+    else publishProfile();
+  };
   // Лише основна роль: дві ролі поруч із назвою витискали статус на два
   // рядки, а «⋮» — за край екрана. Усі ролі людина бачить у «Хто ви».
   const brandTagline = uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === selectedRole)?.label || '', language);
@@ -2764,7 +2958,7 @@ export const MyProfile = () => {
               type="checkbox"
               checked={rolesList.includes(option.value)}
               disabled={rolesList.length === 1 && rolesList.includes(option.value)}
-              onChange={() => toggleUserRole(option.value)}
+              onChange={() => requestUserRole(option.value)}
             />
             {rolesList.includes(option.value) ? <FaCheck size={12} aria-hidden="true" /> : null}
             {uiText(option.label, language)}
@@ -2840,7 +3034,7 @@ export const MyProfile = () => {
               onSave={saveOwnPrograms}
               language={language}
               rates={programRates}
-              suggestions={programTerms}
+              suggestions={programTermSuggestions}
               profilePublished={state.publish === true || isLikedAudience}
               profileSharedWithLiked={isLikedAudience}
               onEditingChange={setEditingProgram}
@@ -2862,8 +3056,30 @@ export const MyProfile = () => {
         onClose={() => { if (!isClearingProfile) setShowInfoModal(false); }}
         // Підтвердження режиму «лише для вподобаних» малюється тією самою
         // модалкою підтвердження, що й «Очистити анкету».
-        text={showInfoModal === 'likedAudienceConfirm' ? 'delConfirm' : showInfoModal}
-        DelConfirm={() => (showInfoModal === 'likedAudienceConfirm' ? (
+        text={showInfoModal === 'likedAudienceConfirm' || showInfoModal === 'roleChange' ? 'delConfirm' : showInfoModal}
+        DelConfirm={() => (showInfoModal === 'roleChange' && roleChangeTarget ? (
+          <div data-testid="role-change-confirm">
+            <ModalTitle>
+              {uiText('Ви — {role}?', language, {
+                role: uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === roleChangeTarget)?.label || roleChangeTarget, language),
+              })}
+            </ModalTitle>
+            <ModalText>
+              {uiText('Можна замінити поточну роль або додати ще одну анкету — наприклад, якщо ви донорка й водночас працюєте агенцією. Від ролі залежать поля анкети й те, кого ви бачите в стрічці. Заповнені поля нікуди не зникають.', language)}
+            </ModalText>
+            <RoleChangeActions>
+              <ModalPrimaryButton type="button" onClick={() => replaceUserRole(roleChangeTarget)}>
+                {uiText('Замінити роль', language)}
+              </ModalPrimaryButton>
+              <ModalGhostButton type="button" onClick={() => addUserRole(roleChangeTarget)}>
+                {uiText('Додати ще одну анкету', language)}
+              </ModalGhostButton>
+              <ModalGhostButton type="button" onClick={() => { setShowInfoModal(false); setRoleChangeTarget(''); }}>
+                {uiText('Відмінити', language)}
+              </ModalGhostButton>
+            </RoleChangeActions>
+          </div>
+        ) : showInfoModal === 'likedAudienceConfirm' ? (
           <div data-testid="liked-audience-confirm">
             <ModalTitle>{uiText('Показувати анкету лише тим, кого ви вподобали?', language)}</ModalTitle>
             <ModalText>
@@ -2954,6 +3170,22 @@ export const MyProfile = () => {
               : 'Анкету поки не видно в стрічці. Опублікуйте, коли будете готові', language)}
         </span>
       </PublishHead>
+      {missingPublishFields.length ? (
+        <PublishMissing data-testid="publish-missing">
+          <span>{uiText('Щоб опублікувати, бракує полів: {count}', language, { count: missingPublishFields.length })}</span>
+          <PublishMissingList>
+            {missingPublishFields.map(fieldName => (
+              <PublishMissingChip
+                key={fieldName}
+                type="button"
+                onClick={() => scrollToSection(getSectionKeyByField(fieldName))}
+              >
+                {resolveRequiredFieldLabel(fieldName)}
+              </PublishMissingChip>
+            ))}
+          </PublishMissingList>
+        </PublishMissing>
+      ) : null}
       {rolesList.length > 1 ? (
         <RoleActionList>
           {rolesList.map(role => {
@@ -3067,5 +3299,20 @@ export const MyProfile = () => {
         </div>
       ) : null}
     </SubmitWrap>
+    {/* Відступ стоїть, поки панель узагалі можлива: інакше низ сторінки
+        стрибав би щоразу, як блок «Публікація» входить у кадр. */}
+    {awaitingPublication && isProfileAccessConfirmed && !editingProgram ? <PublishDockSpacer /> : null}
+    {awaitingPublication && isProfileAccessConfirmed && !editingProgram && !publishCardInView ? (
+      <PublishDock data-testid="publish-dock">
+        <span>
+          {missingPublishFields.length
+            ? uiText('Щоб опублікувати, бракує полів: {count}', language, { count: missingPublishFields.length })
+            : uiText('Анкету поки не видно в стрічці', language)}
+        </span>
+        <PublishDockButton type="button" $muted={missingPublishFields.length > 0} onClick={publishFromDock}>
+          {uiText(missingPublishFields.length ? 'Показати' : 'Опублікувати', language)}
+        </PublishDockButton>
+      </PublishDock>
+    ) : null}
   </Page>;
 };

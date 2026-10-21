@@ -112,7 +112,7 @@ describe('урізана проєкція пошукового влучання'
       source.indexOf('const addLimitedUser'),
     );
 
-    expect(readerBody).toContain('await readLimitedProfileFromMatchingCard(userId)');
+    expect(readerBody).toContain('await readLimitedProfileFromMatchingCard(userId, preloadedCard)');
     expect(source).not.toContain('readLimitedProfileFields');
   });
 

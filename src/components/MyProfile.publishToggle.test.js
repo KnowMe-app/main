@@ -154,11 +154,11 @@ describe('required-field toast names the field the way the form labels it', () =
   it('takes the role label before the dictionary label, and names programs in words', () => {
     const helper = source.slice(
       source.indexOf('const resolveRequiredFieldLabel = fieldName => {'),
-      source.indexOf('const validateRequiredProfileFields ='),
+      source.indexOf('const listMissingRequiredFields ='),
     );
     expect(helper).toContain("if (fieldName === 'programs') return uiText('Програми — додайте хоча б одну', language);");
     expect(helper).toContain('resolveMyProfileFieldText(fieldName,');
-    expect(source).toContain('const firstMissingFieldLabel = resolveRequiredFieldLabel(firstMissingField);');
+    expect(source).toContain('missingFieldNames.slice(0, MISSING_FIELDS_TOAST_LIMIT).map(resolveRequiredFieldLabel)');
     expect(resolveMyProfileFieldText('name', 'ag').label).toBe('Назва агенції');
     expect(resolveMyProfileFieldText('surname', 'ag').label).toBe('Контактна особа');
     expect(resolveMyProfileFieldText('moreInfo_main', 'cl').label).toBe('Про клініку');

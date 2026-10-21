@@ -115,6 +115,24 @@ export const isCardVisibleForHiddenRoles = (user, hiddenRoles = []) => {
 };
 
 /** Чи ця картка — відомий контрагент донорки. */
+/**
+ * Картка без ролей, яких цей читач у деці не бачить.
+ *
+ * Картку пропускає будь-яка видима роль (`isCardVisibleForHiddenRoles`), а
+ * рядок підписувала основна, тобто остання: анкета `['ip', 'ed']` — людина,
+ * що була батьками, а стала донором, — проходила в стрічку донорки через
+ * `ip`, а на фото стояло «Донор ооцитів». Донорка, яка шукала агенцію чи
+ * батьків, бачила конкурентку. Рядок мусить показувати ту анкету, заради якої
+ * картку пропустили. Без змін повертає той самий обʼєкт.
+ */
+export const withoutHiddenCardRoles = (user, hiddenRoles = []) => {
+  if (!user || !hiddenRoles.length) return user;
+  const roles = listProfileRoles(user);
+  const shown = roles.filter(role => !hiddenRoles.includes(role));
+  if (!shown.length || shown.length === roles.length) return user;
+  return { ...user, role: shown, userRole: shown };
+};
+
 export const isCounterpartyCard = user =>
   listProfileRoles(user).some(role => COUNTERPARTY_ROLES.has(role));
 
@@ -139,7 +157,7 @@ export const keepDonorCounterpartyCards = ({ users = [], viewerRole } = {}) => {
 export const DONOR_FEED_ROLE_FILTER_KEYS = Object.freeze(['ag', 'ip']);
 
 /** Усі чіпи «Типу профілю», у тому порядку, у якому їх малює шухляда. */
-export const FEED_ROLE_FILTER_KEYS = Object.freeze(['ed', 'ag', 'ip', 'other']);
+export const FEED_ROLE_FILTER_KEYS = Object.freeze(['ed', 'sm', 'ag', 'ip', 'other']);
 
 /**
  * Які чіпи «Типу профілю» показувати саме цьому читачеві.
@@ -148,11 +166,12 @@ export const FEED_ROLE_FILTER_KEYS = Object.freeze(['ed', 'ag', 'ip', 'other']);
  * чіп не може ані додати картку, ані прибрати — він лише обіцяє вибір, якого
  * немає. `?` лишається: під ним ходять `cl` і `pp`, тобто теж контрагенти.
  */
-export const listFeedRoleFilterKeysForViewer = viewerRole => (
-  isDonorViewer(viewerRole)
-    ? FEED_ROLE_FILTER_KEYS.filter(key => key !== PEER_HIDDEN_VIEWER_ROLE)
-    : FEED_ROLE_FILTER_KEYS
-);
+// Те саме з чіпом «Сурогатна мати» для СМ: дека особистої ролі не має анкет
+// своєї ролі (`listViewerHiddenCardRoles`), тож і чіпа для них не показуємо.
+export const listFeedRoleFilterKeysForViewer = viewerRole => {
+  const hidden = listViewerHiddenCardRoles(viewerRole);
+  return hidden.length ? FEED_ROLE_FILTER_KEYS.filter(key => !hidden.includes(key)) : FEED_ROLE_FILTER_KEYS;
+};
 
 /**
  * Приводить збережений «Тип профілю» до ролі, яку читач має **зараз**.
@@ -209,6 +228,29 @@ export const resolvePersonalViewerRoleDefault = (roleFilters, viewerRole) => {
     ? Object.keys(roleFilters)
     : FEED_ROLE_FILTER_KEYS;
   return keys.reduce((acc, key) => ({ ...acc, [key]: key === 'ag' }), {});
+};
+
+/**
+ * «Тип профілю» за замовчуванням для біологічних батьків — те, кого вони
+ * шукають (`seekingRole` анкети, уже розібраний `parseSeekingRoles`).
+ *
+ * Батьки й агенція гортали ту саму стрічку в тому самому порядку, а відповідь
+ * на «Кого шукаєте» не міняла в ній нічого: батьки, що шукають донорку,
+ * починали з сурогатних мам і агенцій. Клініка лежить у «Інших». Порожній
+ * набір — батьки ще не вирішили — лишає все: `null`.
+ */
+const SEEKING_TO_ROLE_FILTER_KEY = Object.freeze({ ed: 'ed', sm: 'sm', ag: 'ag', cl: 'other' });
+const PARENT_VIEWER_ROLES = new Set(['ip', 'pp']);
+
+export const resolveParentViewerRoleDefault = (roleFilters, viewerRole, seekingKeys = []) => {
+  const roles = listViewerRoles(viewerRole);
+  if (!roles.length || roles.some(role => !PARENT_VIEWER_ROLES.has(role))) return null;
+  const wanted = new Set((seekingKeys || []).map(key => SEEKING_TO_ROLE_FILTER_KEY[key]).filter(Boolean));
+  if (!wanted.size) return null;
+  const keys = roleFilters && typeof roleFilters === 'object' && Object.keys(roleFilters).length
+    ? [...new Set([...Object.keys(roleFilters), ...FEED_ROLE_FILTER_KEYS])]
+    : FEED_ROLE_FILTER_KEYS;
+  return keys.reduce((acc, key) => ({ ...acc, [key]: wanted.has(key) }), {});
 };
 
 /**

@@ -17,7 +17,10 @@ describe('LoginScreen returns the reader to the link they opened', () => {
   });
 
   it('lands on that address after a successful sign-in', () => {
-    expect(loginSource()).toContain('navigate(returnTo || MY_PROFILE_ROUTE, { replace: true });');
+    // Без адреси, з якої прийшли, опублікована анкета веде в стрічку, а решта —
+    // у «Мій профіль» (`resolveLandingRoute`); адреса завжди важить більше.
+    expect(loginSource()).toContain('const target = returnTo || (registered ? MY_PROFILE_ROUTE : await resolveLandingRoute(auth.currentUser?.uid));');
+    expect(loginSource()).toContain("return profile?.publish === true ? MATCHING_ROUTE : MY_PROFILE_ROUTE;");
   });
 
   /**
@@ -28,7 +31,7 @@ describe('LoginScreen returns the reader to the link they opened', () => {
    */
   it('decides "already signed in" by the auth status, not by localStorage', () => {
     const source = loginSource();
-    expect(source).toContain("if (authStatus !== 'in' || authFlowInProgressRef.current) return;");
+    expect(source).toContain("if (authStatus !== 'in' || authFlowInProgressRef.current) return undefined;");
     // Реєстрація: Firebase каже «увійшов» до запису анкети, і ефект не мусить
     // відвозити в «Мій профіль», поки роль ще не в картці.
     expect(source).toContain('authFlowInProgressRef.current = true;\n    try {');

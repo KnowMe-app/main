@@ -47,10 +47,16 @@ export const MATCHING_FILTER_GROUPS = [
       // це біологічні батьки. Узгоджено саме з карткою: слово в чіпі й на
       // плашці фото однакове.
       //
-      // «Інші», а не «?» чи «Без ролі»: під цю опцію `toRoleCategory` кладе й
-      // клініки, й сурогатних мам, і анкети без ролі взагалі.
+      // «Інші», а не «?» чи «Без ролі»: під цю опцію `toRoleCategory` кладе
+      // клініки й анкети без ролі взагалі.
+      //
+      // Сурогатна мати — окремий чіп: вона лежала в «Інших», і батьки, які
+      // шукають саме СМ, не могли відфільтрувати її від клінік і порожніх
+      // анкет. Збережений фільтр без цього ключа бере значення «Інших»
+      // (`getInitialFilters`), тож нічого, що людина бачила, не зникає.
       options: [
         { val: 'ed', label: 'Донор ооцитів' },
+        { val: 'sm', label: 'Сурогатна мати' },
         { val: 'ag', label: 'Агенція' },
         { val: 'ip', label: 'Біологічні батьки' },
         { val: 'other', label: 'Інші' },
@@ -159,6 +165,19 @@ export const buildMatchingFilterChipLabel = (group, values, language) => {
   const groupName = uiText(group.label, language);
   const on = options.filter(option => values[option.val]);
   if (!on.length) return { text: uiText('{group}: нічого', language, { group: groupName }), danger: true };
+
+  // «Тип профілю» каже, кого показано, а не кого прибрано: «крім Біологічні
+  // батьки, Інші» донорка читала як заборону, а не як вибір, і не розуміла,
+  // що батьків можна просто ввімкнути.
+  if (group.filterName === 'userRole' && on.length <= 2) {
+    return {
+      text: uiText('{group}: {values}', language, {
+        group: groupName,
+        values: on.map(option => localizeMatchingOptionLabel(option.label, language)).join(', '),
+      }),
+      danger: false,
+    };
+  }
 
   const offWithoutUnknown = off.filter(option => option.label !== '?');
   if (!offWithoutUnknown.length) {

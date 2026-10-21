@@ -22,6 +22,7 @@ import { auth, fetchUserById, resetViewerAccessLevelCache } from './config';
 import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
 import { ReadOnlyBadge } from './ReadOnlyBadge';
+import { ScreenErrorBoundary } from './ScreenErrorBoundary';
 
 // Тестовий акаунт бачить адмінські екрани, але база його правок там не приймає.
 // На матчингу він пише як звичайний користувач (своя анкета, реакції, нотатки,
@@ -142,6 +143,7 @@ export const App = () => {
       {authStatus === 'in' && isReadOnlyAdminUid(auth.currentUser?.uid) && !READ_ONLY_INSPECTOR_WRITABLE_PATHS.includes(normalizedPathname) ? (
         <ReadOnlyBadge />
       ) : null}
+      <ScreenErrorBoundary resetKey={normalizedPathname}>
       <Routes>
       {/* Публічні екрани не читають бази: це форма входу та текст угоди, на
           який веде кнопка «Умови» з самої форми. Решта застосунку — про
@@ -173,6 +175,7 @@ export const App = () => {
           (і адреса їде з ним), залогінений — у «Мій профіль». */}
       <Route path="*" element={<RequireAuth status={catchAllStatus}><Navigate to="/my-profile" replace /></RequireAuth>} />
       </Routes>
+      </ScreenErrorBoundary>
     </PrimaryNavigationSlotProvider>
   );
 };

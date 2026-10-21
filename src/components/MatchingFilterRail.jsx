@@ -49,6 +49,10 @@ export const MatchingFilterRail = ({
   // Сортування деки стоїть першим у тому самому ряду: ряд прокручується
   // вбік, і окремий рядок під нього не потрібен.
   leading = null,
+  // Місце, обране з пошуку («Показати анкети з Києва»): у шухляді для нього
+  // групи немає, тож чіп стоїть лише тут і знімається своїм хрестиком.
+  placeLabel = '',
+  onClearPlace,
   openGroup,
   onOpenGroup,
   onResetGroup,
@@ -95,6 +99,21 @@ export const MatchingFilterRail = ({
     <FilterRail>
       <FilterRailScroller ref={scrollerRef} role="group" aria-label={uiText('Фільтри стрічки', language)}>
         {leading}
+        {placeLabel && (
+          <FilterRailChipShell key="place">
+            <FilterRailChip type="button" data-filter-group="place" $narrowed $clearable onClick={onClearPlace}>
+              <span>{placeLabel}</span>
+            </FilterRailChip>
+            <FilterRailChipClear
+              type="button"
+              aria-label={uiText('Скинути групу «{group}»', language, { group: placeLabel })}
+              title={uiText('Скинути групу «{group}»', language, { group: placeLabel })}
+              onClick={onClearPlace}
+            >
+              ✕
+            </FilterRailChipClear>
+          </FilterRailChipShell>
+        )}
         {chips.map(chip => {
           const isOpen = chip.filterName === openGroup;
           return (

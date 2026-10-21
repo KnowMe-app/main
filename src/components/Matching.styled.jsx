@@ -1175,6 +1175,14 @@ const restoringScroll = css`
   visibility: hidden;
 `;
 
+// Колонка широкої стрічки (`layoutFeedColumns` у `Matching`).
+export const FeedColumn = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+`;
+
 export const FeedList = styled.div`
   display: flex;
   flex-direction: column;

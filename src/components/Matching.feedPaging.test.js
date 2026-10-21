@@ -172,7 +172,9 @@ describe('публічні коментарі', () => {
   // дописував би поверх власного запису, якого не бачить. Ціна не росте з
   // кількістю карток — піддерево власника читається одним запитом.
   it('читає власні нотатки для обох розкладок', () => {
-    expect(matching()).toContain("void loadCommentsFor(feedRows, { activeOnly: false });");
+    // Ефект тримається набору карток (`feedRowsIdsKey`), а не посилання на масив.
+    expect(matching()).toContain("void loadCommentsFor(rows, { activeOnly: false });");
+    expect(matching()).toContain("}, [feedRowsIdsKey, loadCommentsFor]);");
     expect(matching()).not.toContain("if (viewLayout !== 'list' || !feedRows.length) return;");
   });
 

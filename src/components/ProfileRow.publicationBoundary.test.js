@@ -14,7 +14,7 @@ describe('ProfileRow publication boundary', () => {
     expect(row).toContain('const shown = listProfileRoles(publishedUser);');
     expect(row).toContain('shown.filter(role => role === \'ip\')');
     expect(row).not.toMatch(/listProfileRoles\(user\)|getProfileRole\(user\)|isCounterpartyCard\(user\)/);
-    expect(matching).toContain('publishedUser={feedSourceWithoutOwnEdits.find');
+    expect(matching).toContain('publishedUser={withoutHiddenCardRoles(\n                        feedSourceWithoutOwnEdits.find');
     expect(matching).toContain('publishedUsers={feedSourceWithoutOwnEdits}');
     expect(hiddenList).toContain('publishedUser={publishedUsersById.get(user.userId) || user}');
   });

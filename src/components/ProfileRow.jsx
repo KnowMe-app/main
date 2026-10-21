@@ -932,7 +932,9 @@ export const splitFactsByGroup = (facts = []) => [
  * вони мовою інтерфейсу. Виклик без аргументу віддає українську за
  * замовчуванням лише тоді, коли мова інтерфейсу українська.
  */
-export const enrichGateLabel = language => uiText('Доповнити дані', language);
+// «Доповнити дані» не казало, що станеться: чиї дані, куди. Олівець пропонує
+// правку чужої картки — її бачить автор правки, а приймає адмін.
+export const enrichGateLabel = language => uiText('Запропонувати правку', language);
 
 /**
  * Дві доріжки нотаток — одна плашка, і стоїть вона в кожній картці.
@@ -1260,6 +1262,9 @@ const ProfileRow = ({
   // організації (`listCardAnketaRoles`): тоді стрічка ставить два рядки, і
   // кожен показує лише своє. Без неї рядок — уся картка, як і раніше.
   anketaRole = '',
+  // Друга анкета тієї самої людини, що стоїть поруч у стрічці (донорка, яка
+  // ще й агенція): без підпису два рядки з тим самим фото читались дублем.
+  siblingAnketaRole = '',
   // The feed projection remains the publication boundary after `user` is
   // hydrated with private/full-profile fields.
   publishedUser = user,
@@ -1563,6 +1568,7 @@ const ProfileRow = ({
           onClick={e => { e.stopPropagation(); primaryAction.onClick(user); }}
         >
           {primaryAction.icon}
+          {primaryAction.label ? <S.RowActionLabel>{primaryAction.label}</S.RowActionLabel> : null}
         </S.RowActionButton>
       )}
       {secondaryAction && (
@@ -1591,9 +1597,12 @@ const ProfileRow = ({
       <FaPencilAlt size={12} />
     </S.RowFooterButton>
   ) : null;
-  // Картка організації ставить рішення в стислий ряд разом з відгуком і
-  // памʼяткою (`ProfileNotes` з `compact`), а не окремим рядом під ними.
-  const compactDecisions = organisationLayout && !preview && (reactionPair || editButton)
+  // Рішення стоять у стислому ряду разом з відгуком і памʼяткою
+  // (`ProfileNotes` з `compact`) у кожній картці стрічки. Колись так було лише
+  // в організації, а картка донорки мала два ряди — три тоновані кнопки на
+  // всю ширину й під ними хрестик, серце й олівець, — тож серце в сусідніх
+  // картках стояло в різних місцях і рука не могла до нього звикнути.
+  const compactDecisions = !preview && (reactionPair || editButton)
     ? <S.CompactDecisions data-testid="compact-decisions">{reactionPair}{editButton}</S.CompactDecisions>
     : null;
 
@@ -1711,6 +1720,11 @@ const ProfileRow = ({
               </S.Location>
             </S.MetaRow>
           )}
+          {siblingAnketaRole ? (
+            <S.SiblingAnketaNote data-testid="sibling-anketa-note">
+              {uiText('Та сама людина має ще анкету: {role}', language, { role: getRoleLabel(siblingAnketaRole, language) })}
+            </S.SiblingAnketaNote>
+          ) : null}
           {/* Відкладена картка видна одразу, а не лише в кінці списку: плашка
               під імʼям каже, що до людини звертатись пізніше й коли саме. */}
           {/* Анкета, яку донорка чи СМ відкрила саме цьому читачеві
