@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { FaUser, FaLock } from 'react-icons/fa';
+import { FaUser, FaLock, FaEye, FaEyeSlash } from 'react-icons/fa';
 import { auth } from './config';
-import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { authNotifications } from './authNotifications';
@@ -310,6 +310,32 @@ const LinkButton = styled.button`
   cursor: pointer;
 `;
 
+const PasswordToggle = styled.button`
+  border: none;
+  background: transparent;
+  padding: 8px;
+  margin-right: -6px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  cursor: pointer;
+`;
+
+const ForgotRow = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+  font-size: 13px;
+`;
+
+const LoginTermsNote = styled.p`
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+`;
+
 const TermsButton = styled.button`
   border: none;
   background: transparent;
@@ -386,6 +412,10 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   // переводить на профіль вона сама — після запису (`navigateAfterAuth`).
   const authFlowInProgressRef = useRef(false);
   const navigatedAfterAuthRef = useRef(false);
+
+  // Пароль видно на прохання: набраний на телефоні наосліп, він найчастіше й
+  // «невірний».
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleCheckboxChange = () => {
     setIsChecked(!isChecked);
@@ -515,6 +545,40 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     }
   };
 
+  /**
+   * Лист для зміни пароля.
+   *
+   * Відновлення не було взагалі: хто забув пароль, втрачав анкету, а
+   * реєструвався вдруге — на іншу пошту, тобто дублем. Відповідь однакова для
+   * відомої й невідомої пошти: Firebase із захистом від перебору сам не каже,
+   * чи є акаунт, і форма теж не має цього розкривати.
+   */
+  const handlePasswordReset = async () => {
+    const normalizedEmail = normalizeAuthEmail(state.email);
+    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      authNotifications.resetEmailRequired();
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, normalizedEmail);
+      authNotifications.passwordResetSent(normalizedEmail);
+    } catch (error) {
+      if (error.code === 'auth/user-not-found') {
+        authNotifications.passwordResetSent(normalizedEmail);
+      } else if (error.code === 'auth/too-many-requests') {
+        authNotifications.tooManyRequests();
+      } else if (error.code === 'auth/invalid-email') {
+        authNotifications.invalidEmail();
+      } else {
+        console.error('Error sending password reset:', error);
+        authNotifications.genericAuthError();
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleAuth = async () => {
     const hasEmailTrailingSpace = /\s$/.test(state.email);
     const normalizedEmail = normalizeAuthEmail(state.email);
@@ -539,7 +603,9 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       return;
     }
 
-    if (!isChecked) {
+    // Згоду дають раз — створюючи акаунт. На кожному вході галочка лише
+    // заважала: вхід без неї зупинявся тостом, хоч згоду вже дано.
+    if (isRegisterMode && !isChecked) {
       authNotifications.termsRequired();
       return;
     }
@@ -642,7 +708,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
           <InputDiv $active={focused === 'password' || Boolean(state.password)}>
             <FieldIcon><FaLock /></FieldIcon>
             <InputField
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               id="login-password"
               name="password"
               placeholder=""
@@ -653,7 +719,22 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
               autoComplete="current-password"
             />
             <Label htmlFor="login-password">Пароль</Label>
+            <PasswordToggle
+              type="button"
+              onClick={() => setShowPassword(value => !value)}
+              aria-label={showPassword ? 'Сховати пароль' : 'Показати пароль'}
+              aria-pressed={showPassword}
+            >
+              {showPassword ? <FaEyeSlash /> : <FaEye />}
+            </PasswordToggle>
           </InputDiv>
+          {!isRegisterMode && (
+            <ForgotRow>
+              <LinkButton type="button" onClick={handlePasswordReset} disabled={isLoading}>
+                Забули пароль?
+              </LinkButton>
+            </ForgotRow>
+          )}
 
           {isRegisterMode && (
             <RoleBlock>
@@ -679,17 +760,25 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
             </RoleBlock>
           )}
 
-          <CheckboxContainer>
-            <CustomCheckbox id="login-terms" type="checkbox" checked={isChecked} onChange={handleCheckboxChange} />
-            <CheckboxLabel htmlFor="login-terms">
-              Я погоджуюся з Угодою користувача та надаю згоду на обробку моїх персональних даних відповідно до Політики конфіденційності.
-            </CheckboxLabel>
-            <TermsButton type="button" onClick={handleTermsClick}>Умови</TermsButton>
-          </CheckboxContainer>
+          {isRegisterMode && (
+            <CheckboxContainer>
+              <CustomCheckbox id="login-terms" type="checkbox" checked={isChecked} onChange={handleCheckboxChange} />
+              <CheckboxLabel htmlFor="login-terms">
+                Я погоджуюся з Угодою користувача та надаю згоду на обробку моїх персональних даних відповідно до Політики конфіденційності.
+              </CheckboxLabel>
+              <TermsButton type="button" onClick={handleTermsClick}>Умови</TermsButton>
+            </CheckboxContainer>
+          )}
 
           <SubmitButton type="button" onClick={handleAuth} disabled={isLoading}>
             {isLoading ? 'Зачекайте…' : (isRegisterMode ? 'Створити акаунт' : 'Увійти')}
           </SubmitButton>
+          {!isRegisterMode && (
+            <LoginTermsNote>
+              Входячи, ви погоджуєтесь з{' '}
+              <LinkButton type="button" onClick={handleTermsClick}>Угодою користувача</LinkButton>.
+            </LoginTermsNote>
+          )}
           {!isRegisterMode && loginFailedUnknownEmail && (
             <LoginHint aria-live="polite">
               Акаунта з такою поштою немає.{' '}

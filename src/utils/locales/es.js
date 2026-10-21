@@ -9,6 +9,13 @@ import { joinWithAnd, plural, sentenceCase } from './shared';
  * Текст, який ввела людина, не перекладається ніколи.
  */
 const BY_UK = {
+  'Щоб опублікувати, заповніть: {labels} і ще {count}': 'Para publicar, completa: {labels} y {count} más',
+  'Щоб опублікувати, заповніть: {labels}': 'Para publicar, completa: {labels}',
+  'Щоб опублікувати, бракує полів: {count}': 'Campos que faltan para publicar: {count}',
+  'Анкету поки не видно в стрічці': 'Tu perfil aún no aparece en el listado',
+  'Щось пішло не так': 'Algo salió mal',
+  'Екран не вдалося показати. Оновіть сторінку — введене раніше збережено.': 'No se pudo mostrar esta pantalla. Recarga la página: lo que introdujiste antes está guardado.',
+  'Оновити сторінку': 'Recargar página',
   'Шукаємо донора ооцитів': 'Buscamos donante de óvulos',
   'Шукаємо сурогатну маму': 'Buscamos gestante subrogada',
   'Основна виплата': 'Pago principal',

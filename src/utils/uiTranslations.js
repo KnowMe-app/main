@@ -22,6 +22,13 @@ import { ownEntry } from './locales/shared';
  * вибрані зі списку значення — `translateFieldValue`.
  */
 const EN_BY_UK = {
+  'Щоб опублікувати, заповніть: {labels} і ще {count}': 'To publish, fill in: {labels} and {count} more',
+  'Щоб опублікувати, заповніть: {labels}': 'To publish, fill in: {labels}',
+  'Щоб опублікувати, бракує полів: {count}': 'Fields missing before you can publish: {count}',
+  'Анкету поки не видно в стрічці': 'Your profile isn\'t in the feed yet',
+  'Щось пішло не так': 'Something went wrong',
+  'Екран не вдалося показати. Оновіть сторінку — введене раніше збережено.': 'This screen could not be shown. Reload the page — what you entered earlier is saved.',
+  'Оновити сторінку': 'Reload page',
   // Програми: основна виплата без вибору виду суми, гарантовані виплати в
   // сумі, додаткові — перемикачами; коментар організатора.
   'Шукаємо донора ооцитів': 'Seeking an egg donor',

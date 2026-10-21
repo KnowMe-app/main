@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useLayoutEffect, useMemo } from 're
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
+import { keepNotesForIds, mergeNotes } from 'utils/commentsStateMerge';
 import {
   ActionButton,
   CardWrapper,
@@ -1632,6 +1633,24 @@ const Matching = () => {
     if (typeof sessionStorage === 'undefined') return false;
     return Boolean(sessionStorage.getItem(SCROLL_ANCHOR_KEY) || sessionStorage.getItem(SCROLL_Y_KEY));
   });
+  /**
+   * Знімати позначку можна лише тоді, коли вона стоїть.
+   *
+   * Ефект відновлення залежить від `users` і кличе зняття на кожну нову деку.
+   * `setState(false)` поверх `false` React не завжди відкидає: поки в черзі
+   * компонента лежить відкладене функціональне оновлення `users`, синхронний
+   * виклик з layout-ефекту запускає новий рендер, той перераховує `users` новим
+   * масивом — і ефект спрацьовує знову. Донорка ловила це на «Обране» → «Усі»:
+   * білий екран з «Maximum update depth exceeded». Тож зняття питає ref, а не
+   * кличе сетер навмання.
+   */
+  const scrollRestorePendingRef = useRef(scrollRestorePending);
+  scrollRestorePendingRef.current = scrollRestorePending;
+  const clearScrollRestorePending = React.useCallback(() => {
+    if (!scrollRestorePendingRef.current) return;
+    scrollRestorePendingRef.current = false;
+    setScrollRestorePending(false);
+  }, []);
   const scrollPositionRef = useRef(0);
   // Чи прокрутив читач стрічку донизу відтоді, як приїхала остання порція.
   // Ref читають обробники, стан — рендер; тримаємо обидва в парі.
@@ -1773,7 +1792,7 @@ const Matching = () => {
     const savedAnchorId = sessionStorage.getItem(SCROLL_ANCHOR_KEY);
     if (savedY === null && !savedAnchorId) {
       // Відновлювати нема чого — отже, й ховати список нема від чого.
-      setScrollRestorePending(false);
+      clearScrollRestorePending();
       return undefined;
     }
 
@@ -1790,7 +1809,7 @@ const Matching = () => {
       restoreRef.current = true;
       sessionStorage.removeItem(SCROLL_Y_KEY);
       sessionStorage.removeItem(SCROLL_ANCHOR_KEY);
-      setScrollRestorePending(false);
+      clearScrollRestorePending();
     };
 
     /**
@@ -1834,7 +1853,7 @@ const Matching = () => {
 
     frame = requestAnimationFrame(tryRestore);
     return () => cancelAnimationFrame(frame);
-  }, [users]);
+  }, [users, clearScrollRestorePending]);
 
   /**
    * Стеля очікування: список не ховається довше, ніж триває саме відновлення.
@@ -1848,9 +1867,9 @@ const Matching = () => {
   const hasRenderedRows = users.length > 0;
   useEffect(() => {
     if (!scrollRestorePending || !hasRenderedRows) return undefined;
-    const timer = setTimeout(() => setScrollRestorePending(false), SCROLL_RESTORE_REVEAL_MS);
+    const timer = setTimeout(() => clearScrollRestorePending(), SCROLL_RESTORE_REVEAL_MS);
     return () => clearTimeout(timer);
-  }, [hasRenderedRows, scrollRestorePending]);
+  }, [clearScrollRestorePending, hasRenderedRows, scrollRestorePending]);
 
   const getOwnerId = () => auth.currentUser?.uid || localStorage.getItem('ownerId');
   const getMatchingMultiDataOwnerIds = React.useCallback(() => {
@@ -2036,20 +2055,8 @@ const Matching = () => {
     ];
     const ownOwnerId = getOwnerId();
     if (ownOwnerId) pruneComments(ownOwnerId, ids);
-    setComments(prev => {
-      const map = {};
-      ids.forEach(id => {
-        if (prev[id]) map[id] = prev[id];
-      });
-      return map;
-    });
-    setSharedComments(prev => {
-      const map = {};
-      ids.forEach(id => {
-        if (prev[id]) map[id] = prev[id];
-      });
-      return map;
-    });
+    setComments(prev => keepNotesForIds(prev, ids));
+    setSharedComments(prev => keepNotesForIds(prev, ids));
   }, [additionalAccessUsers, sharedReactionCandidateUsers, users]);
 
   /*
@@ -2363,8 +2370,8 @@ const Matching = () => {
     });
     saveComments(nextStore);
     if (!canApplyCommentsResult()) return;
-    setComments(prev => ({ ...prev, ...commentsMap }));
-    setSharedComments(prev => ({ ...prev, ...sharedCommentsMap }));
+    setComments(prev => mergeNotes(prev, commentsMap));
+    setSharedComments(prev => mergeNotes(prev, sharedCommentsMap));
   }, [getMatchingMultiDataOwnerIds]);
 
   useEffect(() => {
@@ -6236,10 +6243,17 @@ const Matching = () => {
     return undefined;
   }, [feedSource, fullProfileByUserId, photoCacheByUserId]);
 
+  // Нотатки питаються за набором карток, а не за посиланням на масив: `users`
+  // буває новим масивом з тими самими картками на кожен рендер (React
+  // перераховує відкладене функціональне оновлення), і ефект на посилання
+  // ставав циклом «прочитати нотатки → рендер → прочитати знову» — донорка
+  // діставала на «Обране» → «Усі» завислу вкладку.
+  const feedSourceIdsKey = feedSource.map(user => user?.userId || '').join('|');
   useEffect(() => {
-    if (!feedSource.length) return;
-    void loadCommentsFor(feedSource.slice(0, FEED_PHOTO_HYDRATION_LIMIT), { activeOnly: false });
-  }, [feedSource, loadCommentsFor]);
+    const source = feedSourceRef.current;
+    if (!source.length) return;
+    void loadCommentsFor(source.slice(0, FEED_PHOTO_HYDRATION_LIMIT), { activeOnly: false });
+  }, [feedSourceIdsKey, loadCommentsFor]);
 
   const additionalFiltersDebugSignatureRef = useRef('');
   useEffect(() => {
@@ -7758,10 +7772,16 @@ const Matching = () => {
    * одним запитом і кешує його (`docs/matching-feed-traffic.md`), тож плитка
    * галереї коштує рівно стільки ж, скільки список.
    */
+  // Той самий ключ набору карток, що й вище: рядки перебудовуються з
+  // `feedSource` на кожен рендер.
+  const feedRowsRef = useRef(feedRows);
+  feedRowsRef.current = feedRows;
+  const feedRowsIdsKey = feedRows.map(row => row?.userId || '').join('|');
   useEffect(() => {
-    if (!feedRows.length) return;
-    void loadCommentsFor(feedRows, { activeOnly: false });
-  }, [feedRows, loadCommentsFor]);
+    const rows = feedRowsRef.current;
+    if (!rows.length) return;
+    void loadCommentsFor(rows, { activeOnly: false });
+  }, [feedRowsIdsKey, loadCommentsFor]);
 
   const matchingMenuActions = [
     ...(isAdmin ? [{

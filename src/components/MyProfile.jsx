@@ -292,6 +292,70 @@ const PublishHead = styled.div`
 `;
 const PublishSingleAction = styled.div`margin-top:16px;`;
 /*
+ * Чого бракує до публікації — названо поіменно, і кожне веде до свого поля.
+ * Тост показувався й зникав, а кнопка «Опублікувати» стоїть унизу сторінки,
+ * тож людина гортала вгору й шукала поле наосліп.
+ */
+const PublishMissing = styled.div`
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+
+  > span { font-size: 13px; color: var(--muted); }
+`;
+const PublishMissingList = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+`;
+const PublishMissingChip = styled.button`
+  border: none;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: var(--km-fill);
+  color: var(--km-accent-text, var(--km-accent));
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+`;
+/*
+ * Липка дія внизу, поки анкету не опубліковано. Блок «Публікація» стоїть
+ * під усією анкетою — на телефоні це дев'ятий екран, — і до головної дії
+ * сторінки треба було догортати. Панель стоїть над нижньою навігацією
+ * (`--km-bottom-nav-h`) і веде або одразу до публікації, або до переліку
+ * того, чого бракує.
+ */
+const PublishDock = styled.div`
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--km-bottom-nav-h, 0px);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -6px 16px rgba(0, 0, 0, .06);
+
+  > span { flex: 1; min-width: 0; font-size: 13px; color: var(--muted); }
+`;
+const PublishDockButton = styled.button`
+  flex: 0 0 auto;
+  border: none;
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  background: ${({ $muted }) => ($muted ? 'var(--km-fill)' : 'var(--km-accent)')};
+  color: ${({ $muted }) => ($muted ? 'var(--text)' : '#fff')};
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+`;
+const PublishDockSpacer = styled.div`height: 76px;`;
+/*
  * Одна анкета — головна дія й поруч кошик «Очистити анкету». Кошик стоїть
  * тут на прохання власниці продукту: при кількох ролях він уже є в рядку
  * кожної анкети, а одну анкету очистити можна було лише з меню «⋮», якого
@@ -757,6 +821,24 @@ const OPTIONAL_PROFILE_FIELDS = new Set([
   'telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'website', 'vk',
   'reward', 'fathersname', 'lastCycle',
 ]);
+// Мінімум, без якого анкету донорки чи СМ публікувати не можна: те, що стоїть
+// у рядку стрічки (імʼя, вік, місто, зріст, вага, кров) і за чим агенція
+// вирішує, чи писати, плюс телефон — без нього писати нікуди. Обовʼязковими
+// тут були всі 42 поля, від форми носа до хобі, і донорка, яка не мала
+// пів години на анкету, у стрічку не потрапляла взагалі. Решта лишається в
+// анкеті й робить її повнішою, але публікацію не тримає.
+const PERSON_PUBLISH_REQUIRED_FIELDS = new Set([
+  'name', 'phone', 'birth', 'country', 'city', 'height', 'weight', 'blood', 'maritalStatus',
+]);
+const PERSON_ANKETA_FIELDS = baseSections
+  .filter(section => section.key !== 'social')
+  .flatMap(section => section.fields);
+const PERSON_OPTIONAL_PROFILE_FIELDS = new Set([
+  ...OPTIONAL_PROFILE_FIELDS,
+  ...PERSON_ANKETA_FIELDS.filter(name => !PERSON_PUBLISH_REQUIRED_FIELDS.has(name)),
+]);
+// Скільки назв полів називає тост; решту — числом.
+const MISSING_FIELDS_TOAST_LIMIT = 4;
 // Так/Ні, до яких людині є що дописати («Так: апендицит, 2019»).
 const YES_NO_DETAIL_FIELDS = new Set(['surgeries', 'chronicDiseases', 'allergy']);
 // Так/Ні, де життя буває складнішим за два варіанти: шлюб не лише
@@ -1216,7 +1298,9 @@ export const MyProfile = () => {
   // Лише батьки — побажання переїжджають у «Кого шукаєте», прізвища не питають.
   const parentOnly = rolesList.length === 1 && rolesList[0] === 'ip';
   // Що публікацію не тримає для цього читача (`listRequiredSectionFields`).
-  const optionalProfileFields = parentOnly ? PARENT_ONLY_OPTIONAL_FIELDS : OPTIONAL_PROFILE_FIELDS;
+  const optionalProfileFields = parentOnly
+    ? PARENT_ONLY_OPTIONAL_FIELDS
+    : personRole ? PERSON_OPTIONAL_PROFILE_FIELDS : OPTIONAL_PROFILE_FIELDS;
   // Заголовки спільних розділів говорять мовою анкети, якій ці поля належать:
   // у донорки, яка ще й агентка, «Особисті дані» — її, а не агенції.
   //
@@ -1990,9 +2074,10 @@ export const MyProfile = () => {
     return getFieldLabel(fieldsMap.get(fieldName), language) || fieldName;
   };
 
-  const validateRequiredProfileFields = (onlyRole = '') => {
-    const currentState = stateRef.current || {};
-    const miss = {};
+  // Усі порожні обовʼязкові поля — для тосту, переліку в «Публікації» й
+  // липкої панелі. Тост колись називав лише перше, і щоб дізнатись про
+  // наступне, треба було натискати «Опублікувати» знову й знову.
+  const listMissingRequiredFields = (onlyRole = '', currentState = stateRef.current || {}) => {
     let sectionRole = '';
     const sectionsToValidate = !onlyRole || rolesList.length < 2
       ? visibleSections
@@ -2003,7 +2088,7 @@ export const MyProfile = () => {
           || (ORGANISATION_ROLES.includes(sectionRole) && ORGANISATION_ROLES.includes(onlyRole));
         return SHARED_SECTION_KEYS.has(section.key) || belongsToSameQuestionnaire;
       });
-    const missingFieldNames = sectionsToValidate
+    return [...new Set(sectionsToValidate
       .flatMap(section => listRequiredSectionFields(section, { optional: optionalProfileFields }))
       // A shared person block is tagged with whichever of `ed`/`sm` was
       // assigned first. Reuse it for the other person role, but apply that
@@ -2012,8 +2097,12 @@ export const MyProfile = () => {
       .filter(fieldName => onlyRole !== 'sm' || !SURROGATE_HIDDEN_FIELDS.has(fieldName))
       .filter(fieldName => fieldName === 'programs'
         ? ownVisiblePrograms.length === 0
-        : String(currentState[fieldName] || '').trim() === '');
+        : String(currentState[fieldName] || '').trim() === ''))];
+  };
 
+  const validateRequiredProfileFields = (onlyRole = '') => {
+    const missingFieldNames = listMissingRequiredFields(onlyRole);
+    const miss = {};
     missingFieldNames.forEach(fieldName => {
       miss[fieldName] = true;
     });
@@ -2022,10 +2111,13 @@ export const MyProfile = () => {
 
     if (!missingFieldNames.length) return true;
 
-    const firstMissingField = missingFieldNames[0];
-    const firstMissingFieldLabel = resolveRequiredFieldLabel(firstMissingField);
-    toast.error(uiText('Заповніть обов’язкове поле: {label}', language, { label: firstMissingFieldLabel }));
-    scrollToSection(getSectionKeyByField(firstMissingField));
+    const labels = missingFieldNames.slice(0, MISSING_FIELDS_TOAST_LIMIT).map(resolveRequiredFieldLabel);
+    const rest = missingFieldNames.length - labels.length;
+    toast.error(rest > 0
+      ? uiText('Щоб опублікувати, заповніть: {labels} і ще {count}', language, { labels: labels.join(', '), count: rest })
+      : uiText('Щоб опублікувати, заповніть: {labels}', language, { labels: labels.join(', ') }),
+    { id: 'my-profile-missing-fields', duration: 6000 });
+    scrollToSection(getSectionKeyByField(missingFieldNames[0]));
     return false;
   };
 
@@ -2553,6 +2645,28 @@ export const MyProfile = () => {
   const publishedRoleCount = isPublished || isLikedAudience
     ? (rolesList.length ? rolesList.filter(role => !hiddenRoles.includes(role)).length : 1)
     : 0;
+  // Перелік того, чого бракує до публікації, рахується з того самого правила,
+  // що й перевірка на кнопці (`listMissingRequiredFields`).
+  const awaitingPublication = publishedRoleCount === 0 && !isLikedAudience;
+  const missingPublishFields = awaitingPublication ? listMissingRequiredFields('', state) : [];
+  const scrollToPublishCard = () => scrollToSection('publish');
+  // Поки сам блок «Публікація» на екрані, панель лише повторює його кнопку.
+  const [publishCardInView, setPublishCardInView] = useState(false);
+  useEffect(() => {
+    const node = sectionRefs.current.publish;
+    if (!node || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver(([entry]) => setPublishCardInView(entry.isIntersecting));
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const publishFromDock = () => {
+    if (missingPublishFields.length || rolesList.length > 1) {
+      scrollToPublishCard();
+      return;
+    }
+    if (rolesList[0]) publishRole(rolesList[0]);
+    else publishProfile();
+  };
   // Лише основна роль: дві ролі поруч із назвою витискали статус на два
   // рядки, а «⋮» — за край екрана. Усі ролі людина бачить у «Хто ви».
   const brandTagline = uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === selectedRole)?.label || '', language);
@@ -2954,6 +3068,22 @@ export const MyProfile = () => {
               : 'Анкету поки не видно в стрічці. Опублікуйте, коли будете готові', language)}
         </span>
       </PublishHead>
+      {missingPublishFields.length ? (
+        <PublishMissing data-testid="publish-missing">
+          <span>{uiText('Щоб опублікувати, бракує полів: {count}', language, { count: missingPublishFields.length })}</span>
+          <PublishMissingList>
+            {missingPublishFields.map(fieldName => (
+              <PublishMissingChip
+                key={fieldName}
+                type="button"
+                onClick={() => scrollToSection(getSectionKeyByField(fieldName))}
+              >
+                {resolveRequiredFieldLabel(fieldName)}
+              </PublishMissingChip>
+            ))}
+          </PublishMissingList>
+        </PublishMissing>
+      ) : null}
       {rolesList.length > 1 ? (
         <RoleActionList>
           {rolesList.map(role => {
@@ -3067,5 +3197,20 @@ export const MyProfile = () => {
         </div>
       ) : null}
     </SubmitWrap>
+    {/* Відступ стоїть, поки панель узагалі можлива: інакше низ сторінки
+        стрибав би щоразу, як блок «Публікація» входить у кадр. */}
+    {awaitingPublication && isProfileAccessConfirmed && !editingProgram ? <PublishDockSpacer /> : null}
+    {awaitingPublication && isProfileAccessConfirmed && !editingProgram && !publishCardInView ? (
+      <PublishDock data-testid="publish-dock">
+        <span>
+          {missingPublishFields.length
+            ? uiText('Щоб опублікувати, бракує полів: {count}', language, { count: missingPublishFields.length })
+            : uiText('Анкету поки не видно в стрічці', language)}
+        </span>
+        <PublishDockButton type="button" $muted={missingPublishFields.length > 0} onClick={publishFromDock}>
+          {uiText(missingPublishFields.length ? 'Показати' : 'Опублікувати', language)}
+        </PublishDockButton>
+      </PublishDock>
+    ) : null}
   </Page>;
 };
