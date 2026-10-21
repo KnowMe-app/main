@@ -11,8 +11,14 @@ describe('чернетка питає роль і параметри', () => {
     expect(source).toContain("{ key: 'params', title: 'Параметри', fields: ['height', 'weight', 'blood'] },");
   });
 
-  it('роль не пропонує в доповненні чужої картки', () => {
-    expect(source).toContain('!(section.ownDraftOnly && overlayTarget)');
+  it('роль не пропонує ні в доповненні чужої картки, ні в спільній чернетці', () => {
+    expect(source).toContain('!(section.ownDraftOnly && (overlayTarget || editingSharedDraft))');
+  });
+
+  it('чипи ролі — група, підписана заголовком розділу', () => {
+    // eslint-disable-next-line no-template-curly-in-string
+    expect(source).toContain("{ hideLabel: true, labelledBy: `create-section-${section.key}` }");
+    expect(source).toContain('aria-labelledby={labelledBy}');
   });
 });
 

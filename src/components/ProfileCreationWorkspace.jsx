@@ -2028,7 +2028,7 @@ export const ProfileCreationWorkspace = () => {
     </FieldTimeline>;
   };
 
-  const renderCreateField = (fieldName, { allowUnknown = false, hideLabel = false, placeholder } = {}) => {
+  const renderCreateField = (fieldName, { allowUnknown = false, hideLabel = false, placeholder, labelledBy } = {}) => {
     // A field with edits but no entry in the create catalogue still has to be
     // reviewable, so those fall back to a plain text row named after the field.
     const field = fieldsMap.get(fieldName) || (allowUnknown ? { name: fieldName } : null);
@@ -2059,7 +2059,11 @@ export const ProfileCreationWorkspace = () => {
     return <FieldRow key={fieldName} $pending={Boolean(pendingFieldEdits[fieldName]?.length)} $bare={hideLabel}>
       {!hideLabel && <FieldLabel>{label}</FieldLabel>}
       {listOfferedOptions(field.options, value).length > 0 ? (
-        <FieldChipRow>
+        <FieldChipRow
+          role="group"
+          aria-labelledby={labelledBy}
+          aria-label={labelledBy ? undefined : label}
+        >
           {listOfferedOptions(field.options, value).map(option => {
             const optionValue = getOptionValue(option);
             const selected = String(value) === String(optionValue);
@@ -2293,13 +2297,20 @@ export const ProfileCreationWorkspace = () => {
             : 'Для кожного поля показано окреме дерево: актуальне значення вгорі, оригінальне — внизу.', language)}
         </RevealMeta>}
       </ReviewCard>}
-      {CREATE_FORM_SECTIONS.filter(section => section.key !== 'comment' && !(section.ownDraftOnly && overlayTarget)).map(section => (
+      {/* «Лише власній чернетці» — це ні доповненню чужої картки, ні спільній
+          чернетці іншого автора: в обох дотик до чипа ролі записався б
+          пропозицією змінити чужу роль. */}
+      {CREATE_FORM_SECTIONS.filter(section => section.key !== 'comment' && !(section.ownDraftOnly && (overlayTarget || editingSharedDraft))).map(section => (
         <FormSectionCard key={section.key}>
-          <FormSectionTitle>{stripSectionEmoji(uiText(section.title, language))}</FormSectionTitle>
+          <FormSectionTitle id={`create-section-${section.key}`}>{stripSectionEmoji(uiText(section.title, language))}</FormSectionTitle>
           {section.fields
             .filter(fieldName => section.key !== 'contacts' || isContactFieldOfferedForCard(fieldName, summaryCard))
             // Розділ «Хто це» з одного поля — підпис поля повторював би заголовок.
-            .map(fieldName => renderCreateField(fieldName, { hideLabel: section.key === 'role' }))}
+            // Чипи тоді підписує заголовок розділу (`labelledBy`): диктор мусить
+            // чути питання «Хто це», а не самі назви ролей.
+            .map(fieldName => renderCreateField(fieldName, section.key === 'role'
+              ? { hideLabel: true, labelledBy: `create-section-${section.key}` }
+              : undefined))}
           {section.key === 'contacts' && extraContactFields.map(fieldName => (
             renderCreateField(fieldName, { allowUnknown: true })
           ))}
