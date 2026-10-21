@@ -282,6 +282,7 @@ describe('ProfileCreationWorkspace admin review', () => {
   });
 
   it('shows option-field history below the selected option', async () => {
+    // Поле ролі — власне поле форми («Хто це», `ROLE_FIELD`), а не текстове «роль» довідника.
     loadAllCreateProfileMutations.mockResolvedValue([{ ...draftMutation, data: { ...draftMutation.data, role: 'B' } }]);
     getOverlayHistoryForCard.mockResolvedValue([
       { entryId: 'role-a', fieldName: 'role', at: 10, action: 'edit', change: { from: '', to: 'A' } },
@@ -291,7 +292,7 @@ describe('ProfileCreationWorkspace admin review', () => {
     await openDraftAsAdmin();
     fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
 
-    expect(await screen.findByLabelText('Роль: значення з історії')).toHaveValue('A');
+    expect(await screen.findByLabelText('Хто це: значення з історії')).toHaveValue('A');
   });
 
   it('restores the value edited directly in the historical input', async () => {

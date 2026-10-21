@@ -8,6 +8,11 @@ import { usePrimaryNavigationMenuSubscription, usePrimaryNavigationSlotState } f
 import { InfoModal } from './InfoModal';
 
 const BOTTOM_NAV_BREAKPOINT = 600;
+// Висота нижньої панелі — числом у самій панелі, а не лише змінною: змінну
+// ставить глобальний стиль нижче, і поки його перевставляють (перемонтування
+// навігації), `--km-bottom-nav-h` на кадр падав до нуля з `index.css` —
+// панель схлопувалась і поверталась, тобто «стрибала».
+const BOTTOM_NAV_HEIGHT = 64;
 
 // На телефоні вкладки стоять унизу екрана (див. `Tabs`), тож сторінка мусить
 // лишити під собою місце, а фіксоване знизу — ставати над панеллю. Висоту
@@ -21,7 +26,7 @@ const BOTTOM_NAV_BREAKPOINT = 600;
 // тулбар ховався, і панель «опускалась».
 const BottomNavSpace = createGlobalStyle`
   @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
-    :root { --km-bottom-nav-h: 64px; }
+    :root { --km-bottom-nav-h: ${BOTTOM_NAV_HEIGHT}px; }
     body { padding-bottom: var(--km-bottom-nav-h); }
   }
 `;
@@ -116,7 +121,7 @@ const Tabs = styled.div`
     z-index: 900;
     gap: 0;
     padding: 0 4px;
-    height: var(--km-bottom-nav-h);
+    height: ${BOTTOM_NAV_HEIGHT}px;
     box-sizing: border-box;
     background: var(--km-card);
     border-top: 1px solid var(--km-border);

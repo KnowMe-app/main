@@ -3,7 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon2.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- interactive-widget=resizes-visual: клавіатура лягає поверх сторінки, а не
+         стискає її. Firefox на Android за замовчуванням стискав сторінку, і
+         нижня панель вкладок (position: fixed; bottom: 0) підскакувала над
+         клавіатурою на кожен фокус поля й падала на кожен blur — а форми
+         застосунку зберігаються саме на blur. Chrome так поводиться й без
+         цього ключа. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-visual" />
     <meta name="theme-color" content="#2B2620" />
     <meta
       name="description"

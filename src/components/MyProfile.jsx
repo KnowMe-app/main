@@ -2947,8 +2947,10 @@ export const MyProfile = () => {
     </AuthCard>}
 
     <RoleCard>
-      <RoleCardTitle>{uiText('Хто ви', language)}</RoleCardTitle>
-      <RoleOptions>
+      <RoleCardTitle id="my-profile-role-title">{uiText('Хто ви', language)}</RoleCardTitle>
+      {/* Група з назвою: читач екрана чує «Хто ви» перед кожним чипом, а не
+          голі «Агенція, прапорець». */}
+      <RoleOptions role="group" aria-labelledby="my-profile-role-title">
         {MY_PROFILE_ROLE_OPTIONS.map(option => (
           <RoleOption
             key={option.value}
