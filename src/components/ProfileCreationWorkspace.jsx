@@ -61,6 +61,7 @@ import { getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
 import { buildMatchingSearchPath, MATCHING_PATH, readStoredMatchingSearchQuery } from 'utils/matchingSearchLocation';
 import { canGoBackInHistory, goBackOrTo } from 'utils/appBackNavigation';
+import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
 import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleCode, getRoleLabel } from './profileLayoutConfig';
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
 import { stripSectionEmoji } from '../utils/sectionTitle';
@@ -565,8 +566,31 @@ const PROFILE_SEARCH_DEBOUNCE_MS = 250;
 // `pickerFieldsExtended`, малими літерами), тож форма має власний опис поля.
 const PATRONYMIC_FIELD = { name: 'fathersname', label: 'По батькові', ukrainian: 'По батькові', placeholder: 'Олександрівна', svg: 'no' };
 
+// Хто ця людина — донорка, СМ, батьки, агенція чи клініка. Без ролі
+// заведена картка стояла в стрічці без плашки, і фільтр «Тип профілю» клав її
+// в «Інші». Чипи — ті самі ролі й ті самі слова, що на реєстрації.
+const ROLE_FIELD = {
+  name: 'role',
+  label: 'Who is this',
+  ukrainian: 'Хто це',
+  // Довідник форми: англійське слово — `placeholder`, українське — `label`.
+  options: PROFILE_ROLE_OPTIONS.map(option => ({
+    value: option.value,
+    placeholder: getRoleLabel(option.value, 'en'),
+    label: option.label,
+  })),
+  // Підпис ролі — тим самим словом, що на плашці картки й у фільтрах.
+  optionLabel: (option, language) => uiText(option.label, language),
+};
+
 const CREATE_FORM_SECTIONS = [
   { key: 'personal', title: '👤 ПІБ і дата народження', fields: ['surname', 'name', 'fathersname', 'birth'] },
+  // Роль — лише власній чернетці (`ownDraftOnly`): у доповненні чужої картки
+  // дотик до чипа був би пропозицією змінити чужу роль.
+  { key: 'role', title: 'Хто це', fields: ['role'], ownDraftOnly: true },
+  // Те, що стоїть у рядку стрічки й за чим агенція вирішує, чи писати.
+  // Картка без цього в стрічці — імʼя й місто, тобто нічого.
+  { key: 'params', title: 'Параметри', fields: ['height', 'weight', 'blood'] },
   { key: 'location', title: '📍 Локація', fields: ['country', 'region', 'city'] },
   // VK тут немає: мережа заблокована в Україні з 2017 року, і поле для неї у
   // формі читалось як знак, чий це застосунок. Уже записані значення лишаються
@@ -1916,7 +1940,7 @@ export const ProfileCreationWorkspace = () => {
     }
   };
 
-  const fieldsMap = useMemo(() => new Map([...pickerFields, PATRONYMIC_FIELD].map(field => [field.name, field])), []);
+  const fieldsMap = useMemo(() => new Map([...pickerFields, PATRONYMIC_FIELD, ROLE_FIELD].map(field => [field.name, field])), []);
 
   // Every pending proposal and every superseded value, keyed by the field it
   // belongs to, so the questionnaire can render each of them in place instead
@@ -2045,7 +2069,7 @@ export const ProfileCreationWorkspace = () => {
               $selected={selected}
               onClick={() => commitFieldValue(fieldName, selected ? '' : optionValue)}
             >
-              {getOptionLabel(option, language)}
+              {field.optionLabel ? field.optionLabel(option, language) : getOptionLabel(option, language)}
             </FieldChip>;
           })}
         </FieldChipRow>
@@ -2269,12 +2293,13 @@ export const ProfileCreationWorkspace = () => {
             : 'Для кожного поля показано окреме дерево: актуальне значення вгорі, оригінальне — внизу.', language)}
         </RevealMeta>}
       </ReviewCard>}
-      {CREATE_FORM_SECTIONS.filter(section => section.key !== 'comment').map(section => (
+      {CREATE_FORM_SECTIONS.filter(section => section.key !== 'comment' && !(section.ownDraftOnly && overlayTarget)).map(section => (
         <FormSectionCard key={section.key}>
           <FormSectionTitle>{stripSectionEmoji(uiText(section.title, language))}</FormSectionTitle>
           {section.fields
             .filter(fieldName => section.key !== 'contacts' || isContactFieldOfferedForCard(fieldName, summaryCard))
-            .map(fieldName => renderCreateField(fieldName))}
+            // Розділ «Хто це» з одного поля — підпис поля повторював би заголовок.
+            .map(fieldName => renderCreateField(fieldName, { hideLabel: section.key === 'role' }))}
           {section.key === 'contacts' && extraContactFields.map(fieldName => (
             renderCreateField(fieldName, { allowUnknown: true })
           ))}

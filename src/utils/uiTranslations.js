@@ -22,6 +22,8 @@ import { ownEntry } from './locales/shared';
  * вибрані зі списку значення — `translateFieldValue`.
  */
 const EN_BY_UK = {
+  'Хто це': 'Who is this',
+  'Параметри': 'Measurements',
   'Прибрати пропозицію «{label}» для всіх': 'Remove the suggestion “{label}” for everyone',
   'Не вдалося прибрати пропозицію': 'Could not remove the suggestion',
   'Та сама людина має ще анкету: {role}': 'The same person also has a profile as: {role}',

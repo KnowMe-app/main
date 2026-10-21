@@ -9,6 +9,8 @@ import { joinWithAnd, plural, sentenceCase } from './shared';
  * Текст, який ввела людина, не перекладається ніколи.
  */
 const BY_UK = {
+  'Хто це': 'Quién es',
+  'Параметри': 'Medidas',
   'Прибрати пропозицію «{label}» для всіх': 'Quitar la sugerencia «{label}» para todos',
   'Не вдалося прибрати пропозицію': 'No se pudo quitar la sugerencia',
   'Та сама людина має ще анкету: {role}': 'La misma persona también tiene un perfil como: {role}',
