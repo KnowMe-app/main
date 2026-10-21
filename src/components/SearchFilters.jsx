@@ -166,6 +166,19 @@ export const buildMatchingFilterChipLabel = (group, values, language) => {
   const on = options.filter(option => values[option.val]);
   if (!on.length) return { text: uiText('{group}: нічого', language, { group: groupName }), danger: true };
 
+  // «Тип профілю» каже, кого показано, а не кого прибрано: «крім Біологічні
+  // батьки, Інші» донорка читала як заборону, а не як вибір, і не розуміла,
+  // що батьків можна просто ввімкнути.
+  if (group.filterName === 'userRole' && on.length <= 2) {
+    return {
+      text: uiText('{group}: {values}', language, {
+        group: groupName,
+        values: on.map(option => localizeMatchingOptionLabel(option.label, language)).join(', '),
+      }),
+      danger: false,
+    };
+  }
+
   const offWithoutUnknown = off.filter(option => option.label !== '?');
   if (!offWithoutUnknown.length) {
     return { text: uiText('{group}: лише заповнені', language, { group: groupName }), danger: false };

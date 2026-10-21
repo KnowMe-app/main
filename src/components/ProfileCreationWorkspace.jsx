@@ -2189,7 +2189,7 @@ export const ProfileCreationWorkspace = () => {
   } : undefined;
   const draftSecondaryAction = canReactToDraft ? {
     icon: draftLiked ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
-    title: uiText('В обране', language),
+    title: uiText(draftLiked ? 'Прибрати з обраного' : 'В обране', language),
     accent: true,
     active: draftLiked,
     onClick: () => { void toggleFavoriteUser(reactionArgs); },

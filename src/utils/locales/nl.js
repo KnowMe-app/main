@@ -9,6 +9,15 @@ import { joinWithAnd, plural, sentenceCase } from './shared';
  * Текст, який ввела людина, не перекладається ніколи.
  */
 const BY_UK = {
+  'Прибрати пропозицію «{label}» для всіх': 'Suggestie ‘{label}’ voor iedereen verwijderen',
+  'Не вдалося прибрати пропозицію': 'De suggestie kon niet worden verwijderd',
+  'Та сама людина має ще анкету: {role}': 'Dezelfde persoon heeft ook een profiel als: {role}',
+  'Прибрати з обраного': 'Uit favorieten verwijderen',
+  'Запропонувати правку': 'Wijziging voorstellen',
+  'Угода користувача': 'Gebruikersovereenkomst',
+  'Стрічка': 'Feed',
+  'Почати стрічку заново': 'Feed opnieuw beginnen',
+  'Скинути фільтри й завантажити анкети наново': 'Filters wissen en profielen opnieuw laden',
   'Останню зміну не збережено — див. повідомлення вище': 'De laatste wijziging is niet opgeslagen – zie het bericht hierboven',
   'Збережено о {time}': 'Opgeslagen om {time}',
   'Зберігається саме, щойно ви виходите з поля': 'Wordt automatisch opgeslagen zodra u een veld verlaat',

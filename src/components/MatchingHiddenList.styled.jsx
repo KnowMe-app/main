@@ -396,6 +396,10 @@ const ctrlButtonBase = css`
 // - return-to-feed, edit, counters - renders in the neutral card chrome.
 export const RowActionButton = styled.button`
   ${ctrlButtonBase}
+  &:has(> span) {
+    width: auto;
+    padding: 0 12px;
+  }
   /* Заливка замість рамки — як решта контролів картки. */
   border: 0;
   background: ${({ $accent, $on }) => ($accent && $on
@@ -425,6 +429,14 @@ export const RowActionButton = styled.button`
     outline-offset: 1px;
   }
 `;
+// Слово поруч зі значком — там, де значок сам не каже, що зробить дотик
+// (↺ «Повернути»). Кнопка тоді росте вшир, а не лишається квадратом.
+export const RowActionLabel = styled.span`
+  margin-left: 6px;
+  font-size: 13px;
+  font-weight: 600;
+`;
+
 
 export const ReturnButton = styled(RowActionButton)``;
 
@@ -1650,4 +1662,11 @@ export const OrganisationAboutEmpty = styled.p`
   margin: 0;
   font-size: 12.5px;
   color: var(--matching-muted-text);
+`;
+
+// Підпис другої анкети тієї самої людини (`siblingAnketaRole` у `ProfileRow`).
+export const SiblingAnketaNote = styled.p`
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--matching-header-text, var(--km-text)) 66%, transparent);
 `;

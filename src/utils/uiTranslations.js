@@ -22,6 +22,15 @@ import { ownEntry } from './locales/shared';
  * вибрані зі списку значення — `translateFieldValue`.
  */
 const EN_BY_UK = {
+  'Прибрати пропозицію «{label}» для всіх': 'Remove the suggestion “{label}” for everyone',
+  'Не вдалося прибрати пропозицію': 'Could not remove the suggestion',
+  'Та сама людина має ще анкету: {role}': 'The same person also has a profile as: {role}',
+  'Прибрати з обраного': 'Remove from favourites',
+  'Запропонувати правку': 'Suggest an edit',
+  'Угода користувача': 'User agreement',
+  'Стрічка': 'Feed',
+  'Почати стрічку заново': 'Start the feed over',
+  'Скинути фільтри й завантажити анкети наново': 'Reset filters and load profiles again',
   'Останню зміну не збережено — див. повідомлення вище': 'The last change was not saved — see the message above',
   'Збережено о {time}': 'Saved at {time}',
   'Зберігається саме, щойно ви виходите з поля': 'Saved automatically when you leave a field',

@@ -9,6 +9,15 @@ import { joinWithAnd, plural, sentenceCase } from './shared';
  * Текст, який ввела людина, не перекладається ніколи.
  */
 const BY_UK = {
+  'Прибрати пропозицію «{label}» для всіх': 'Vorschlag „{label}“ für alle entfernen',
+  'Не вдалося прибрати пропозицію': 'Der Vorschlag konnte nicht entfernt werden',
+  'Та сама людина має ще анкету: {role}': 'Dieselbe Person hat auch ein Profil als: {role}',
+  'Прибрати з обраного': 'Aus Favoriten entfernen',
+  'Запропонувати правку': 'Änderung vorschlagen',
+  'Угода користувача': 'Nutzungsvereinbarung',
+  'Стрічка': 'Feed',
+  'Почати стрічку заново': 'Feed neu starten',
+  'Скинути фільтри й завантажити анкети наново': 'Filter zurücksetzen und Profile neu laden',
   'Останню зміну не збережено — див. повідомлення вище': 'Die letzte Änderung wurde nicht gespeichert – siehe Meldung oben',
   'Збережено о {time}': 'Gespeichert um {time}',
   'Зберігається саме, щойно ви виходите з поля': 'Wird automatisch gespeichert, sobald Sie ein Feld verlassen',

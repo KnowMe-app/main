@@ -271,6 +271,8 @@ const MatchingHiddenList = ({
   const returnAction = useMemo(() => ({
     icon: <FaUndo size={13} />,
     title: uiText('Повернути в загальний список', language),
+    // Одна стрілка ↺ не казала, що робить; словом — «Повернути».
+    label: uiText('Повернути', language),
     onClick: handleReturn,
   }), [handleReturn, language]);
 

@@ -76,7 +76,7 @@ import {
   saveCardPrograms,
   useProgramsVersion,
 } from '../utils/programsStore';
-import { loadProgramTerms, rememberProgramTerms } from './programs/programsRemote';
+import { forgetProgramTerm, isSuggestedProgramTerm, loadProgramTerms, rememberProgramTerms } from './programs/programsRemote';
 import { isProgramsOwnerRoleHidden, listPrograms, listProgramBonuses, resolveProgramsOwnerRole } from '../utils/donorPrograms';
 import { MyProfileCardPreview } from './MyProfileCardPreview';
 import { getCurrentValue } from './getCurrentValue';
@@ -1629,6 +1629,33 @@ export const MyProfile = () => {
     loadProgramTerms().then(setProgramTerms);
   }, [programsRole, programTerms]);
 
+  // Підказки редакторові: звичайній агенції — лише назви, які вжили
+  // щонайменше дві агенції, і без тестових; адмінові — усі, з хрестиком, яким
+  // він прибирає пропозицію зі словника.
+  const programTermSuggestions = useMemo(() => {
+    if (!programTerms) return null;
+    const usage = programTerms.usage || {};
+    const pick = list => (isAdmin ? list || [] : (list || []).filter(label => isSuggestedProgramTerm(label, usage)));
+    return {
+      payment: pick(programTerms.payment),
+      bonus: pick(programTerms.bonus),
+      onDelete: isAdmin
+        ? label => {
+          forgetProgramTerm(label)
+            .then(() => {
+              const key = String(label || '').trim().toLowerCase();
+              const keep = list => (list || []).filter(item => String(item || '').trim().toLowerCase() !== key);
+              setProgramTerms(previous => (previous ? { ...previous, payment: keep(previous.payment), bonus: keep(previous.bonus) } : previous));
+            })
+            .catch(error => {
+              console.warn('[programs] пропозицію не прибрано', error);
+              toast.error(uiText('Не вдалося прибрати пропозицію', language));
+            });
+        }
+        : undefined,
+    };
+  }, [isAdmin, language, programTerms]);
+
   const saveOwnPrograms = useCallback(record => {
     const targetUserId = userId || stateRef.current?.userId;
     if (!targetUserId) return;
@@ -3007,7 +3034,7 @@ export const MyProfile = () => {
               onSave={saveOwnPrograms}
               language={language}
               rates={programRates}
-              suggestions={programTerms}
+              suggestions={programTermSuggestions}
               profilePublished={state.publish === true || isLikedAudience}
               profileSharedWithLiked={isLikedAudience}
               onEditingChange={setEditingProgram}

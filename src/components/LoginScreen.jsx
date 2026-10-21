@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { FaUser, FaLock, FaEye, FaEyeSlash } from 'react-icons/fa';
-import { auth } from './config';
+import { auth, fetchUserById } from './config';
 import { createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -16,6 +16,8 @@ import {
 } from './authProfilePersistence';
 import { readReturnToFromState } from 'utils/authRedirect';
 import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
+
+const MATCHING_ROUTE = '/matching';
 
 // Що кожна роль дає в застосунку — одним рядком під назвою. Без пояснення
 // пʼять однакових радіокнопок не казали, чим вони відрізняються.
@@ -197,14 +199,13 @@ const RoleBlock = styled.fieldset`
   border: none;
 `;
 
+// Підпис звичайним реченням, як решта підписів застосунку: великі літери
+// («ХТО ВИ?») читались вигуком.
 const RoleTitle = styled.legend`
   margin-bottom: 8px;
   color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: 15px;
+  font-weight: 700;
 `;
 
 const RoleGrid = styled.div`
@@ -473,9 +474,30 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
 
   const { todayDays, todayDash } = getCurrentDate();
 
-  const navigateAfterAuth = () => {
+  /**
+   * Куди вести після входу: опублікована анкета — у стрічку, решта — у «Мій
+   * профіль».
+   *
+   * Кожен вхід вів у «Мій профіль», і агенція, яка повертається гортати
+   * анкети, щоразу тиснула ще й «Пошук анкет». Профіль потрібен тому, хто
+   * ще не опублікувався, — йому туди й далі. Анкету читає той самий
+   * `fetchUserById`, що й вхід у `App` (читання ділиться), тож це не зайвий
+   * круг до бази.
+   */
+  const resolveLandingRoute = async uid => {
+    if (!uid) return MY_PROFILE_ROUTE;
+    try {
+      const profile = await fetchUserById(uid);
+      return profile?.publish === true ? MATCHING_ROUTE : MY_PROFILE_ROUTE;
+    } catch {
+      return MY_PROFILE_ROUTE;
+    }
+  };
+
+  const navigateAfterAuth = async ({ registered = false } = {}) => {
     navigatedAfterAuthRef.current = true;
-    navigate(returnTo || MY_PROFILE_ROUTE, { replace: true });
+    const target = returnTo || (registered ? MY_PROFILE_ROUTE : await resolveLandingRoute(auth.currentUser?.uid));
+    navigate(target, { replace: true });
   };
 
   const handleLogin = async email => {
@@ -496,7 +518,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
 
       markAuthSession({ email, userId: userCredential.user.uid });
       setIsLoggedIn(true);
-      navigateAfterAuth();
+      await navigateAfterAuth();
       console.log('User signed in:', userCredential.user);
       return true;
     } catch (error) {
@@ -529,7 +551,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
 
       markAuthSession({ email, userId: userCredential.user.uid });
       setIsLoggedIn(true);
-      navigateAfterAuth();
+      await navigateAfterAuth({ registered: true });
     } catch (error) {
       if (error.code === 'auth/email-already-in-use') {
         // `fetchSignInMethodsForEmail` мовчить, коли в проєкті ввімкнено
@@ -646,7 +668,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       setIsLoading(false);
       // Акаунт створено, а запис анкети впав: ефект нижче цей момент
       // пропустив, тож відвозимо звідси тут, як і було до гарда.
-      if (auth.currentUser && !navigatedAfterAuthRef.current) navigateAfterAuth();
+      if (auth.currentUser && !navigatedAfterAuthRef.current) void navigateAfterAuth({ registered: isRegisterMode });
     }
   };
 
@@ -655,9 +677,15 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   // протухлою сесією їхала звідси на захищений екран, той вертав її назад сюди,
   // і людина бачила два редиректи по колу замість форми.
   useEffect(() => {
-    if (authStatus !== 'in' || authFlowInProgressRef.current) return;
+    if (authStatus !== 'in' || authFlowInProgressRef.current) return undefined;
     setIsLoggedIn(true);
-    navigate(returnTo || MY_PROFILE_ROUTE, { replace: true });
+    let cancelled = false;
+    (returnTo ? Promise.resolve(returnTo) : resolveLandingRoute(auth.currentUser?.uid)).then(target => {
+      if (!cancelled) navigate(target, { replace: true });
+    });
+    return () => { cancelled = true; };
+    // resolveLandingRoute reads only the auth user and a shared fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authStatus, navigate, returnTo, setIsLoggedIn]);
 
   return (

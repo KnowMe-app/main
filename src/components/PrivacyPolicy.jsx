@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { useNavigate } from 'react-router-dom';
 import { termsAndConditions } from './termsAndConditions';
 import { useAppSettings } from 'hooks/useAppSettings';
+import { uiText } from 'utils/uiTranslations';
 import { KmPage, KmTopbar, KmIconButton, KnowMeBrand } from './styles/knowme';
 import InfoModal from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
@@ -108,7 +109,9 @@ export const PrivacyPolicy = () => {
   return (
     <KmPage>
       <KmTopbar>
-        <KnowMeBrand />
+        {/* Під назвою — що це за сторінка, а не англійський слоган «Egg donor»
+            посеред українського екрана. */}
+        <KnowMeBrand tagline={uiText('Угода користувача', language)} />
         <KmIconButton
           type="button"
           aria-label="Відкрити меню"

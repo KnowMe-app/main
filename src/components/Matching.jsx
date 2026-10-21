@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
 import { keepNotesForIds, mergeNotes } from 'utils/commentsStateMerge';
+import { useFeedColumns } from 'hooks/useFeedColumns';
 import { formatCityName, formatRegionName, resolveKnownPlace } from 'utils/profileNormalization';
 import {
   ActionButton,
@@ -26,6 +27,7 @@ import {
   FeedEndNotice,
   FeedEndHint,
   FeedList,
+  FeedColumn,
   FeedLoadPromptButton,
   ConnectionNotice,
   FeedNotice,
@@ -851,6 +853,21 @@ const PROGRAM_FACT_HELPERS = {
  * права різати деку невидимо: `getInitialFilters` її вже не переносить, а
  * фільтри, що прийшли повз панель, чистимо тут.
  */
+/*
+ * Рядки стрічки на широкому екрані — колонками, по черзі: перша картка в
+ * першу колонку, друга — в другу… Сітка рядками ставила поруч картку агенції
+ * без фото й донорку з фото на весь екран, і під короткою лишалась діра на пів
+ * екрана. Черга зберігає порядок новизни зліва направо, а колонки ростуть
+ * кожна своєю висотою.
+ */
+const layoutFeedColumns = (columnCount, rows) => {
+  if (!(columnCount > 1)) return rows;
+  return Array.from({ length: columnCount }, (_, column) => (
+    <FeedColumn key={`feed-column-${column}`}>
+      {rows.filter((_, index) => index % columnCount === column)}
+    </FeedColumn>
+  ));
+};
 const keepViewerVisibleMatchingFilters = candidateFilters => {
   if (!candidateFilters || candidateFilters.payment === undefined) return candidateFilters;
   const { payment: _hiddenPayment, ...visibleFilters } = candidateFilters;
@@ -5427,6 +5444,7 @@ const Matching = () => {
   }, [deckHasMore, language, openFilterGroup, openFilterGroupCounts]);
 
   const isSearching = searchQuery.trim().length > 0;
+  const feedColumnCount = useFeedColumns().list;
 
 
   // Spec §1: whatever the reader is looking at, the list, the gallery and the
@@ -7599,7 +7617,8 @@ const Matching = () => {
       },
       secondaryAction: {
         icon: liked ? <FaHeart size={13} /> : <FaRegHeart size={13} />,
-        title: uiText('В обране', language),
+        // Підпис каже, що зробить дотик: на вподобаній картці — зняти лайк.
+        title: uiText(liked ? 'Прибрати з обраного' : 'В обране', language),
         accent: true,
         active: liked,
         onClick: () => toggleRowAnketaReaction(user, anketaRole, 'favorites'),
@@ -7617,6 +7636,8 @@ const Matching = () => {
       primaryAction: {
         icon: <FaUndoAlt size={13} />,
         title: uiText('Повернути в загальний список', language),
+        // Одна стрілка ↺ не казала, що робить; словом — «Повернути».
+        label: uiText('Повернути', language),
         onClick: () => toggleRowAnketaReaction(user, anketaRole, 'dislikes'),
       },
     } : {}),
@@ -7843,8 +7864,11 @@ const Matching = () => {
     }] : []),
     {
       key: 'refreshCache',
-      label: uiText('Оновити кеш', language),
-      description: uiText('Скинути фільтри й перезавантажити анкети', language),
+      // «Оновити кеш» — слово з кухні: людина не знає, що таке кеш, і не
+      // наважується натиснути. Дія та сама — фільтри скидаються, анкети
+      // перечитуються з бази.
+      label: uiText('Почати стрічку заново', language),
+      description: uiText('Скинути фільтри й завантажити анкети наново', language),
       icon: <FaSyncAlt />,
       onClick: resetFiltersAndCache,
     },
@@ -7864,7 +7888,7 @@ const Matching = () => {
         onSelect={close}
         beforeNavigate={saveScrollPosition}
         extraActions={matchingMenuActions}
-        extraActionsLabel="Matching"
+        extraActionsLabel={uiText('Стрічка', language)}
         omitPrimaryDestinations
       />
     ),
@@ -8115,10 +8139,11 @@ const Matching = () => {
                       під плашкою «Агенція» стояли зріст, вага й пологи
                       (`listFeedRowAnketaRoles`). Кожна анкета — свій рядок, дані
                       ті самі, реакція — на людину. */}
-                  {feedRows.flatMap(user => resolveRowAnketaRoles(user).map(anketaRole => (
+                  {layoutFeedColumns(feedColumnCount, feedRows.flatMap(user => resolveRowAnketaRoles(user).map((anketaRole, index, rowRoles) => (
                     <ProfileRow
                       key={anketaRole ? `${user.userId}:${anketaRole}` : user.userId}
                       anketaRole={anketaRole}
+                      siblingAnketaRole={rowRoles.length > 1 ? rowRoles[rowRoles.length - 1 - index] : ''}
                       postpone={buildRowPostpone(user, anketaRole)}
                       sharedNotes={sharedComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
                       user={user}
@@ -8151,7 +8176,7 @@ const Matching = () => {
                       reviewsAction={buildRowReviewsAction(user.userId)}
                       {...buildRowReactionActions(user, anketaRole)}
                     />
-                  )))}
+                  ))))}
                 </FeedList>
                 </>
               )}

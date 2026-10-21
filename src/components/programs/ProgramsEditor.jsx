@@ -529,6 +529,29 @@ const TermChip = styled.button`
   &:focus-visible { outline: none; box-shadow: ${FOCUS_RING}; }
 `;
 
+const TermChipGroup = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+`;
+
+const TermDelete = styled.button`
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: ${TEXT};
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+
+  &:hover { opacity: 1; }
+  &:focus-visible { outline: none; box-shadow: ${FOCUS_RING}; }
+`;
+
 const TERM_SUGGESTIONS_SHOWN = 6;
 
 // Словник поповнює автозбереження, а воно спрацьовує й посеред набору, тож
@@ -1614,9 +1637,24 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
     return (
       <TermSuggestions data-testid="bonus-term-suggestions">
         {shown.map(label => (
-          <TermChip key={label} type="button" title={label} onMouseDown={keepFocus} onClick={() => setCustomBonuses(customBonuses.map((entry, i) => (i === index ? { ...entry, label } : entry)))}>
-            {label}
-          </TermChip>
+          <TermChipGroup key={label}>
+            <TermChip type="button" title={label} onMouseDown={keepFocus} onClick={() => setCustomBonuses(customBonuses.map((entry, i) => (i === index ? { ...entry, label } : entry)))}>
+              {label}
+            </TermChip>
+            {/* Хрестик — лише адмінові: він прибирає пропозицію зі словника
+                для всіх агенцій, а не з цієї програми. */}
+            {suggestions?.onDelete ? (
+              <TermDelete
+                type="button"
+                aria-label={uiText('Прибрати пропозицію «{label}» для всіх', language, { label })}
+                title={uiText('Прибрати пропозицію «{label}» для всіх', language, { label })}
+                onMouseDown={keepFocus}
+                onClick={() => suggestions.onDelete(label)}
+              >
+                ×
+              </TermDelete>
+            ) : null}
+          </TermChipGroup>
         ))}
       </TermSuggestions>
     );

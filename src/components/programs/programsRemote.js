@@ -1,7 +1,7 @@
 import { get, ref, remove, set, update } from 'firebase/database';
 import { database, isReactionPermissionDeniedError } from '../config';
 import { MATCHING_CARD_PROGRAMS_AT_FIELD } from '../../utils/matchingCardIndex';
-import { PROGRAM_WISH_FIELDS } from '../../utils/donorPrograms';
+import { listProgramBonuses, listPrograms, PROGRAM_WISH_FIELDS } from '../../utils/donorPrograms';
 import { setProgramsTransport } from '../../utils/programsStore';
 
 /*
@@ -158,7 +158,7 @@ export const migrateLegacyProfilePrograms = async (uid, legacyPrograms, save) =>
 // --- назви доплат, які вже вживають агенції ------------------------------
 
 export const PROGRAM_TERMS_ROOT = 'multiData/programTerms';
-const TERMS_CACHE_KEY = 'programTerms:v1';
+const TERMS_CACHE_KEY = 'programTerms:v2';
 const TERMS_TTL_MS = 24 * 60 * 60 * 1000;
 let termsRequest = null;
 
@@ -200,19 +200,21 @@ const toLabels = node => Object.values(node || {}).filter(value => typeof value 
 export const loadProgramTerms = () => {
   const cached = readTermsCache();
   if (cached && Date.now() - Number(cached.cachedAt || 0) < TERMS_TTL_MS) {
-    return Promise.resolve({ payment: cached.payment || [], bonus: cached.bonus || [] });
+    return Promise.resolve({ payment: cached.payment || [], bonus: cached.bonus || [], usage: cached.usage || {} });
   }
   if (termsRequest) return termsRequest;
   termsRequest = get(ref(database, PROGRAM_TERMS_ROOT))
     .then(snapshot => {
       const value = snapshot.exists() ? snapshot.val() : {};
-      const terms = { payment: toLabels(value.payment), bonus: toLabels(value.bonus) };
-      writeTermsCache(terms);
-      return terms;
+      return loadProgramTermUsage().then(usage => {
+        const terms = { payment: toLabels(value.payment), bonus: toLabels(value.bonus), usage };
+        writeTermsCache(terms);
+        return terms;
+      });
     })
     .catch(error => {
       console.warn('[programs] не вдалося прочитати назви доплат', error);
-      return { payment: cached?.payment || [], bonus: cached?.bonus || [] };
+      return { payment: cached?.payment || [], bonus: cached?.bonus || [], usage: cached?.usage || {} };
     })
     .finally(() => { termsRequest = null; });
   return termsRequest;
@@ -235,5 +237,57 @@ export const rememberProgramTerms = async (kind, labels) => {
       if (!isReactionPermissionDeniedError(error)) console.warn('[programs] назву доплати не записано', label, error);
     })));
   // Свіжість кеша не продовжується: дописане своє — ще не словник інших.
-  writeTermsCache({ payment: cached.payment || [], bonus: cached.bonus || [], [kind]: [...(cached[kind] || []), ...fresh] }, Number(cached.cachedAt) || 0);
+  writeTermsCache({ payment: cached.payment || [], bonus: cached.bonus || [], usage: cached.usage || {}, [kind]: [...(cached[kind] || []), ...fresh] }, Number(cached.cachedAt) || 0);
+};
+
+/**
+ * Скільки агенцій уживає кожну назву доплати — з самих програм.
+ *
+ * Словник поповнює кожне автозбереження будь-якої агенції, тож у ньому
+ * лежало все: «Тестова доплата», обрізки посеред набору, одноразові назви. І
+ * кожна нова агенція бачила це підказками. Підказкою тепер стає лише назва,
+ * яку вжили щонайменше дві агенції (`isSuggestedProgramTerm`). Програми
+ * відкриті кожному авторизованому й малі, тож це одне читання на добу разом зі
+ * словником, а не новий вузол.
+ */
+export const loadProgramTermUsage = () => get(ref(database, PROGRAMS_ROOT))
+  .then(snapshot => {
+    const usage = {};
+    Object.values(snapshot.exists() ? snapshot.val() || {} : {}).forEach(record => {
+      const keys = new Set(listPrograms(record, { includeHidden: false })
+        .flatMap(program => listProgramBonuses(program))
+        .filter(item => /^(other|bonus)-/.test(item.key))
+        .map(item => buildProgramTermKey(item.label))
+        .filter(Boolean));
+      keys.forEach(key => { usage[key] = (usage[key] || 0) + 1; });
+    });
+    return usage;
+  })
+  .catch(() => ({}));
+
+// Скільки різних агенцій мусить ужити назву, щоб її підказувати іншим.
+export const PROGRAM_TERM_MIN_OWNERS = 2;
+// Тестові назви — словами цілком: «тестостерон» лишається.
+const TEST_TERM_RE = /(^|[^\p{L}])(test|testing|тест|тестова|тестовий|тестове|тестові)(?=$|[^\p{L}])/iu;
+
+/** Чи підказувати назву звичайному редакторові програм. */
+export const isSuggestedProgramTerm = (label, usage = {}) => (
+  !TEST_TERM_RE.test(String(label || ''))
+  && (usage[buildProgramTermKey(label)] || 0) >= PROGRAM_TERM_MIN_OWNERS
+);
+
+/**
+ * Адмін прибирає пропозицію зі словника — обидва роди одним дотиком.
+ * Правило дає адмінові переписати й зняти будь-який ключ; на програми, де
+ * назва вже вжита, це не впливає — це лише підказка.
+ */
+export const forgetProgramTerm = async label => {
+  const key = buildProgramTermKey(label);
+  if (!key) return;
+  await Promise.all(['payment', 'bonus'].map(kind => remove(ref(database, `${PROGRAM_TERMS_ROOT}/${kind}/${key}`))));
+  const cached = readTermsCache();
+  if (cached) {
+    const keep = list => (list || []).filter(item => buildProgramTermKey(item) !== key);
+    writeTermsCache({ ...cached, payment: keep(cached.payment), bonus: keep(cached.bonus) }, Number(cached.cachedAt) || 0);
+  }
 };
