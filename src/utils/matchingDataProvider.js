@@ -1,4 +1,5 @@
 import { listPaymentBuckets } from './donorPrograms';
+import { cardMatchesPlace } from './profileNormalization';
 import { ensureProgramsForCards } from './programsStore';
 import { getProgramRates } from './programCurrency';
 import { get, limitToFirst, orderByKey, query, ref } from 'firebase/database';
@@ -934,6 +935,7 @@ const resolveRoleCategoryFromSearchKey = (userId, roleIndexSets) => {
   if (roleIndexSets.ag?.has(userId)) return 'ag';
   if (roleIndexSets.ip?.has(userId)) return 'ip';
   if (roleIndexSets.ed?.has(userId)) return 'ed';
+  if (roleIndexSets.sm?.has(userId)) return 'sm';
   if (roleIndexSets['?']?.has(userId) || roleIndexSets.no?.has(userId)) return 'other';
 
   return null;
@@ -969,6 +971,9 @@ const buildAllowedRoleIdsFromSearchKey = (roleFilters, roleIndexSets) => {
   if (roleFilters.ed) includeBucket('ed');
   else trackBucketOnly('ed');
 
+  if (isRoleCategoryAllowed(roleFilters, 'sm')) includeBucket('sm');
+  else trackBucketOnly('sm');
+
   if (roleFilters.other) {
     includeBucket('?');
     includeBucket('no');
@@ -995,7 +1000,19 @@ export const toRoleCategories = (user, roleIndexSets = null) => {
   const direct = values(user?.role).map(normalizeRole);
   const fallback = values(user?.userRole).map(normalizeRole);
   const resolved = direct.some(role => role !== 'no' && role !== '?') ? direct : fallback;
-  return [...new Set(resolved.map(role => (['ed', 'ag', 'ip'].includes(role) ? role : 'other')))];
+  return [...new Set(resolved.map(role => (['ed', 'sm', 'ag', 'ip'].includes(role) ? role : 'other')))];
+};
+
+/**
+ * Чи пропускає група «Тип профілю» цю категорію.
+ *
+ * Сурогатна мати має власний чіп, але фільтр, складений до нього, ключа `sm`
+ * не знає: там СМ ходила під «Інші», і її доля вирішується тим самим.
+ */
+export const isRoleCategoryAllowed = (roleFilters, category) => {
+  if (!roleFilters || typeof roleFilters !== 'object') return true;
+  if (category === 'sm' && roleFilters.sm === undefined) return Boolean(roleFilters.other);
+  return Boolean(roleFilters[category]);
 };
 
 export const toRoleCategory = (user, roleIndexSets = null) => toRoleCategories(user, roleIndexSets)[0] || 'other';
@@ -1129,7 +1146,7 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
         if (!roleIndexFilterMeta.allowedIds.has(user.userId)) return false;
       } else {
         const categories = toRoleCategories(user, roleIndexSets);
-        if (!categories.some(category => activeFilters.userRole[category])) return false;
+        if (!categories.some(category => isRoleCategoryAllowed(activeFilters.userRole, category))) return false;
       }
     }
 
@@ -1162,6 +1179,10 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
       const category = toCountryCategory(user);
       if (!activeFilters.country[category]) return false;
     }
+
+    // Місто чи область, які читач набрав у пошуку й обрав показати стрічкою
+    // (`resolveKnownPlace`). Індексу під місто немає — звірка йде по картці.
+    if (activeFilters.place?.uk && !cardMatchesPlace(user, activeFilters.place)) return false;
 
     // Виплата — з програм картки й за курсом НБУ (`listPaymentBuckets`).
     // Індексу під неї немає: програми дочитує джерело сторінки
@@ -1219,7 +1240,7 @@ export const getMatchingSearchKeyFilterDebugForUser = ({
   if (isMatchingFilterGroupActive(filters.userRole)) {
     const active = getActiveGroupFilterKeys(filters.userRole);
     let category = toRoleCategory(user, roleIndexSets);
-    let pass = Boolean(filters.userRole?.[category]);
+    let pass = isRoleCategoryAllowed(filters.userRole, category);
     const details = {
       active,
       category,

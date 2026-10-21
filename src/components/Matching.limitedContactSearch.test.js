@@ -97,12 +97,14 @@ describe('пошук за контактом у читача без повног
 
   it('віддає проєкцію картки стрічки, а не порожнечу', async () => {
     const result = await searchUsersOnly({ searchId: EMAIL }, searchOptions);
+    // Опублікована картка у видачі — та сама, що в стрічці (`__matchingSummary`),
+    // а не урізана: її й так бачить кожен авторизований.
     expect(result).toMatchObject({
       userId: CARD_ID,
       name: 'Ольга',
       surname: 'Ш.',
       city: 'Київ',
-      __limitedProfile: true,
+      __matchingSummary: true,
     });
     // Контакт, за яким шукали, у видачі не зʼявляється: межа приватності
     // лишається там, де стояла.

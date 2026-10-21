@@ -206,7 +206,7 @@ describe('resolvePersonalViewerRoleDefault', () => {
     const all = { ed: true, ag: true, ip: true, other: true };
     expect(resolvePersonalViewerRoleDefault(all, 'ed')).toEqual({ ed: false, ag: true, ip: false, other: false });
     expect(resolvePersonalViewerRoleDefault(all, ['sm'])).toEqual({ ed: false, ag: true, ip: false, other: false });
-    expect(resolvePersonalViewerRoleDefault(null, 'ed,sm')).toEqual({ ed: false, ag: true, ip: false, other: false });
+    expect(resolvePersonalViewerRoleDefault(null, 'ed,sm')).toEqual({ ed: false, sm: false, ag: true, ip: false, other: false });
   });
 
   it('організації, батькам і невідомій ролі умовчання не звужує', () => {
@@ -214,5 +214,39 @@ describe('resolvePersonalViewerRoleDefault', () => {
     expect(resolvePersonalViewerRoleDefault({ ed: true, ag: true }, 'ed,ag')).toBeNull();
     expect(resolvePersonalViewerRoleDefault({ ed: true, ag: true }, 'ip')).toBeNull();
     expect(resolvePersonalViewerRoleDefault({ ed: true, ag: true }, '')).toBeNull();
+  });
+});
+
+describe('withoutHiddenCardRoles', () => {
+  const { withoutHiddenCardRoles } = require('../matchingPeerVisibility');
+
+  it('shows a former parent who became a donor as parents in a donor feed', () => {
+    const card = { userId: 'x', role: ['ip', 'ed'] };
+    expect(withoutHiddenCardRoles(card, ['ed'])).toEqual({ userId: 'x', role: ['ip'], userRole: ['ip'] });
+  });
+
+  it('keeps the same card when nothing is hidden or nothing else is left', () => {
+    const agency = { role: ['ag'] };
+    const donor = { role: ['ed'] };
+    expect(withoutHiddenCardRoles(agency, ['ed'])).toBe(agency);
+    expect(withoutHiddenCardRoles(donor, ['ed'])).toBe(donor);
+    expect(withoutHiddenCardRoles(agency, [])).toBe(agency);
+  });
+});
+
+describe('resolveParentViewerRoleDefault', () => {
+  const { resolveParentViewerRoleDefault } = require('../matchingPeerVisibility');
+
+  it('батькам ставить тих, кого вони шукають; клініка — під «Інші»', () => {
+    expect(resolveParentViewerRoleDefault(null, 'ip', ['ed']))
+      .toEqual({ ed: true, sm: false, ag: false, ip: false, other: false });
+    expect(resolveParentViewerRoleDefault(null, 'ip', ['sm', 'cl']))
+      .toEqual({ ed: false, sm: true, ag: false, ip: false, other: true });
+  });
+
+  it('без відповіді на «Кого шукаєте» й для інших ролей не звужує', () => {
+    expect(resolveParentViewerRoleDefault(null, 'ip', [])).toBeNull();
+    expect(resolveParentViewerRoleDefault(null, 'ag', ['ed'])).toBeNull();
+    expect(resolveParentViewerRoleDefault(null, 'ip,ag', ['ed'])).toBeNull();
   });
 });

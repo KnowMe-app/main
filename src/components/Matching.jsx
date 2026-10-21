@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
 import { keepNotesForIds, mergeNotes } from 'utils/commentsStateMerge';
+import { formatCityName, formatRegionName, resolveKnownPlace } from 'utils/profileNormalization';
 import {
   ActionButton,
   CardWrapper,
@@ -196,6 +197,7 @@ import {
   listProfileRoles,
   readViewerRolesFromProfile,
   DONOR_FEED_ROLE_FILTER_KEYS,
+  withoutHiddenCardRoles,
 } from 'utils/matchingPeerVisibility';
 import { listCardAnketaRoles, listFeedRowAnketaRoles } from 'utils/cardAnketas';
 import {
@@ -1206,6 +1208,9 @@ const Matching = () => {
   // Перший день місячних читачки — з нього графік програми СМ рахує перенос
   // і пологи (`ProgramTimeline`). Уведене там пишеться назад у її анкету.
   const [viewerLastCycle, setViewerLastCycle] = useState('');
+  // Кого шукають батьки-читачі: з цього фільтр ставить «Тип профілю» за
+  // замовчуванням (`resolveParentViewerRoleDefault`).
+  const [viewerSeekingRole, setViewerSeekingRole] = useState('');
   // Роль читача потрібна не лише деці, а й дочитуванню сторінок: інакше запас
   // рахувався б по картках, які до екрана не доходять (`fetchChunk`).
   const currentUserRoleRef = useRef(currentUserRole);
@@ -2410,6 +2415,7 @@ const Matching = () => {
             setMultiDataOwnerIds(resolvedOwnerIds);
             setViewerProgramFacts(extractViewerProgramFacts(profile, PROGRAM_FACT_HELPERS));
             setViewerLastCycle(String((Array.isArray(profile?.lastCycle) ? profile.lastCycle[profile.lastCycle.length - 1] : profile?.lastCycle) || ''));
+            setViewerSeekingRole(String((Array.isArray(profile?.seekingRole) ? profile.seekingRole[profile.seekingRole.length - 1] : profile?.seekingRole) || ''));
             setCurrentUserRole(prev => (viewerRoleSignature(prev) === viewerRoleSignature(userRole) ? prev : userRole));
             localStorage.setItem('userRole', userRole);
             setCurrentUserRoleResolved(true);
@@ -3481,7 +3487,13 @@ const Matching = () => {
     }
   }, []);
 
-  const handleFiltersChange = React.useCallback(nextFilters => {
+  const handleFiltersChange = React.useCallback(incomingFilters => {
+    // Місце з пошуку живе поруч із фільтрами шухляди, а не в ній: панель про
+    // нього не знає й присилає свій стан без нього.
+    const place = filtersRef.current?.place;
+    const nextFilters = place && incomingFilters && !incomingFilters.place
+      ? { ...incomingFilters, place }
+      : incomingFilters;
     setDraftFilters(nextFilters);
     // Only edits made inside the open drawer are a draft. A change from anywhere
     // else - a chip's ✕, the panel's first notification carrying the stored
@@ -5402,15 +5414,17 @@ const Matching = () => {
       roleIndexSets,
       programRates,
     });
-    return counts ? { [openFilterGroup]: counts } : undefined;
-  }, [openFilterGroup, programRates, roleIndexSets, visibleUsers]);
+    // Поки стрічка має ще сторінки, число — нижня межа («12+»): без цього
+    // «Біологічні батьки 1» читалось як «у базі одні батьки».
+    return counts ? { [openFilterGroup]: { ...counts, __lowerBound: Boolean(deckHasMore) } } : undefined;
+  }, [deckHasMore, openFilterGroup, programRates, roleIndexSets, visibleUsers]);
 
   const openFilterGroupCountsNote = useMemo(() => {
     if (!openFilterGroup) return '';
     return openFilterGroupCounts
-      ? uiText('Числа — серед уже завантажених карток', language)
+      ? uiText(deckHasMore ? 'Числа — серед уже завантажених карток; гортайте стрічку, і вони зростуть' : 'Числа — серед усіх карток стрічки', language)
       : uiText('Групу звужує індекс, а не картка — чисел тут немає', language);
-  }, [language, openFilterGroup, openFilterGroupCounts]);
+  }, [deckHasMore, language, openFilterGroup, openFilterGroupCounts]);
 
   const isSearching = searchQuery.trim().length > 0;
 
@@ -6827,6 +6841,39 @@ const Matching = () => {
   }, [navigate, searchQuery, visibleUsers.length]);
 
 
+  /*
+   * Набране — місто чи область? Тоді видача пропонує стрічку з цього місця.
+   *
+   * Пошук шукає точний контакт чи імʼя, і «Київ» читав як імʼя: «Немає
+   * доступних профілів» і кнопка «Створити» картку з імʼям «Київ», хоча
+   * київських анкет у стрічці десяток. Тепер перший рядок видачі пропонує
+   * показати стрічку з цього місця — фільтром (`filters.place`), який
+   * знімається чіпом у рейці.
+   */
+  const searchPlace = useMemo(
+    () => (isSearching ? resolveKnownPlace(searchQuery) : null),
+    [isSearching, searchQuery],
+  );
+  const describePlace = React.useCallback(place => (
+    place.kind === 'oblast' ? formatRegionName(place.uk, language) : formatCityName(place.uk, language)
+  ), [language]);
+  const handleShowPlaceFeed = React.useCallback(() => {
+    if (!searchPlace) return;
+    applyFilters({ ...(filtersRef.current || {}), place: { kind: searchPlace.kind, uk: searchPlace.uk } });
+    localStorage.removeItem(SEARCH_KEY);
+    setSearchQuery('');
+    // Поле пошуку тримало фокус (дотик його не забирав), і випадна історія
+    // запитів лишалась розкритою поверх стрічки.
+    if (typeof document !== 'undefined') document.activeElement?.blur?.();
+  }, [applyFilters, searchPlace]);
+  const handleClearPlace = React.useCallback(() => {
+    const { place: _place, ...rest } = filtersRef.current || {};
+    applyFilters(rest);
+  }, [applyFilters]);
+  const placeFilterLabel = matchingUiFilters?.place?.uk
+    ? uiText('Місце: {place}', language, { place: describePlace(matchingUiFilters.place) })
+    : '';
+
   // Чіпи «Типу профілю» показують рівно те, що пропонує поповер цьому читачеві:
   // перелік один на обидва місця, інакше рейка казала б про позначку, якої в
   // групі вже немає.
@@ -6924,7 +6971,11 @@ const Matching = () => {
       key: 'default',
       label: uiText('Усі', language),
       title: uiText('До загального списку', language),
-      count: viewMode === 'default' ? filteredUsers.length : users.length,
+      // Числа біля «Усі» немає: це скільки карток встигло завантажитись, а не
+      // скільки їх є, і воно ще й міняло значення з вкладкою — «Усі 15» у
+      // стрічці ставало «Усі 1» на «Обраному». Агенція читала його як розмір
+      // бази, донорка — як «анкета одна». Біля колекцій число справжнє: це
+      // розмір мапи реакцій.
       onSelect: handleDefaultModeClick,
     },
     {
@@ -6949,12 +7000,10 @@ const Matching = () => {
   ], [
     dislikeUsers,
     favoriteUsers,
-    filteredUsers.length,
     language,
     handleDefaultModeClick,
     handleDislikeModeClick,
     handleFavoriteModeClick,
-    users.length,
     viewMode,
   ]);
 
@@ -7939,6 +7988,8 @@ const Matching = () => {
               onOpenGroup={handleOpenFilterGroup}
               onResetGroup={resetFilterGroup}
               onResetAll={resetAllFilters}
+              placeLabel={placeFilterLabel}
+              onClearPlace={handleClearPlace}
               applyCount={draftFilteredCount}
               onApply={applyDraftFilters}
               countsNote={openFilterGroupCountsNote}
@@ -7955,6 +8006,7 @@ const Matching = () => {
                 nonAdminAllActive={!isAdmin}
                 roleOptionKeys={roleOptionKeys}
                 viewerRole={donorRestrictionViewerRole}
+                viewerSeekingRole={viewerSeekingRole}
                 // Закрита рейка все одно тримає панель змонтованою — вона й є
                 // сховищем фільтрів, тож зняти її з дерева означало б губити
                 // чернетку й ганяти ефект перебору групи ролі на кожне відкриття.
@@ -8026,7 +8078,21 @@ const Matching = () => {
                   ним. Доти ця відповідь жила чіпом над видачею, тобто там, де
                   її читають фільтром, а в яке поле ляже набране, читач бачив
                   аж у формі. */}
-              {isSearching && queryDraft && (
+              {searchPlace && (
+                <QueryDraftCard data-testid="search-place-card">
+                  <QueryDraftBody>
+                    <QueryDraftLabel>{uiText(searchPlace.kind === 'oblast' ? 'Схоже на область' : 'Схоже на місто', language)}</QueryDraftLabel>
+                    <QueryDraftValue>{describePlace(searchPlace)}</QueryDraftValue>
+                    <QueryDraftNote>{uiText('Пошук знаходить точний телефон, пошту, нік або імʼя. Анкети з цього місця покаже стрічка.', language)}</QueryDraftNote>
+                  </QueryDraftBody>
+                  {/* Фокус лишається в полі пошуку: blur перезапускав пошук, картку
+                      перемальовувало між натисканням і відпусканням, і дотик губився. */}
+                  <QueryDraftButton type="button" onMouseDown={event => event.preventDefault()} onClick={handleShowPlaceFeed}>
+                    {uiText('Показати анкети', language)}
+                  </QueryDraftButton>
+                </QueryDraftCard>
+              )}
+              {isSearching && queryDraft && !searchPlace && (
                 <QueryDraftCard data-testid="query-draft-card">
                   <QueryDraftBody>
                     <QueryDraftLabel>{queryDraft.label}</QueryDraftLabel>
@@ -8056,7 +8122,10 @@ const Matching = () => {
                       postpone={buildRowPostpone(user, anketaRole)}
                       sharedNotes={sharedComments[user.userId] || EMPTY_PUBLIC_COMMENTS}
                       user={user}
-                      publishedUser={feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === user.userId) || user}
+                      publishedUser={withoutHiddenCardRoles(
+                        feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === user.userId) || user,
+                        anketaRole ? [] : feedRowHiddenRoles,
+                      )}
                       isAdmin={isAdmin}
                       onTogglePublish={togglePublish}
                       expanded={expandedRowIds.has(user.userId)}

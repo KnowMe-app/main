@@ -28,7 +28,7 @@ describe('limited search projection', () => {
       source.indexOf('export const fetchLimitedProfileById = async'),
       source.indexOf('const addLimitedUser = async'),
     );
-    expect(fetcher).toContain('readLimitedProfileFromMatchingCard(userId)');
+    expect(fetcher).toContain('readLimitedProfileFromMatchingCard(userId, preloadedCard)');
     expect(fetcher).not.toMatch(/users\//);
     expect(rules.users).toBeUndefined();
   });

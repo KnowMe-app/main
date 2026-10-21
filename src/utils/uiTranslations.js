@@ -22,6 +22,21 @@ import { ownEntry } from './locales/shared';
  * вибрані зі списку значення — `translateFieldValue`.
  */
 const EN_BY_UK = {
+  'Останню зміну не збережено — див. повідомлення вище': 'The last change was not saved — see the message above',
+  'Збережено о {time}': 'Saved at {time}',
+  'Зберігається саме, щойно ви виходите з поля': 'Saved automatically when you leave a field',
+  ' · ще {count} може підходити — уточніть анкету': ' · {count} more may fit — complete your profile',
+  'Ви — {role}?': 'Are you: {role}?',
+  'Можна замінити поточну роль або додати ще одну анкету — наприклад, якщо ви донорка й водночас працюєте агенцією. Від ролі залежать поля анкети й те, кого ви бачите в стрічці. Заповнені поля нікуди не зникають.': 'You can replace your current role or add another profile — for example, if you are a donor and also run an agency. The role decides which fields the profile has and whom you see in the feed. Filled-in fields are kept.',
+  'Додати ще одну анкету': 'Add another profile',
+  'Замінити роль': 'Replace role',
+  'Числа — серед уже завантажених карток; гортайте стрічку, і вони зростуть': 'Numbers count the cards loaded so far; scroll the feed and they will grow',
+  'Числа — серед усіх карток стрічки': 'Numbers count every card in the feed',
+  'Схоже на місто': 'Looks like a city',
+  'Схоже на область': 'Looks like a region',
+  'Пошук знаходить точний телефон, пошту, нік або імʼя. Анкети з цього місця покаже стрічка.': 'Search finds an exact phone, email, username or name. The feed will show profiles from this place.',
+  'Показати анкети': 'Show profiles',
+  'Місце: {place}': 'Place: {place}',
   'Щоб опублікувати, заповніть: {labels} і ще {count}': 'To publish, fill in: {labels} and {count} more',
   'Щоб опублікувати, заповніть: {labels}': 'To publish, fill in: {labels}',
   'Щоб опублікувати, бракує полів: {count}': 'Fields missing before you can publish: {count}',

@@ -9,6 +9,21 @@ import { joinWithAnd, plural, sentenceCase } from './shared';
  * Текст, який ввела людина, не перекладається ніколи.
  */
 const BY_UK = {
+  'Останню зміну не збережено — див. повідомлення вище': 'El último cambio no se guardó: consulta el mensaje de arriba',
+  'Збережено о {time}': 'Guardado a las {time}',
+  'Зберігається саме, щойно ви виходите з поля': 'Se guarda solo al salir de un campo',
+  ' · ще {count} може підходити — уточніть анкету': ' · {count} más podrían encajar: completa tu perfil',
+  'Ви — {role}?': '¿Eres: {role}?',
+  'Можна замінити поточну роль або додати ще одну анкету — наприклад, якщо ви донорка й водночас працюєте агенцією. Від ролі залежать поля анкети й те, кого ви бачите в стрічці. Заповнені поля нікуди не зникають.': 'Puedes reemplazar tu rol actual o añadir otro perfil, por ejemplo, si eres donante y además trabajas como agencia. El rol decide los campos del perfil y a quién ves en el listado. Los campos rellenados se conservan.',
+  'Додати ще одну анкету': 'Añadir otro perfil',
+  'Замінити роль': 'Reemplazar rol',
+  'Числа — серед уже завантажених карток; гортайте стрічку, і вони зростуть': 'Los números cuentan las tarjetas ya cargadas; desplázate por el listado y aumentarán',
+  'Числа — серед усіх карток стрічки': 'Los números cuentan todas las tarjetas del listado',
+  'Схоже на місто': 'Parece una ciudad',
+  'Схоже на область': 'Parece una región',
+  'Пошук знаходить точний телефон, пошту, нік або імʼя. Анкети з цього місця покаже стрічка.': 'La búsqueda encuentra un teléfono, correo, usuario o nombre exactos. El listado mostrará los perfiles de este lugar.',
+  'Показати анкети': 'Mostrar perfiles',
+  'Місце: {place}': 'Lugar: {place}',
   'Щоб опублікувати, заповніть: {labels} і ще {count}': 'Para publicar, completa: {labels} y {count} más',
   'Щоб опублікувати, заповніть: {labels}': 'Para publicar, completa: {labels}',
   'Щоб опублікувати, бракує полів: {count}': 'Campos que faltan para publicar: {count}',

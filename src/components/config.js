@@ -103,6 +103,7 @@ import {
   resolveMatchingCardAvatarFromProfile,
   withPublicationDate,
 } from '../utils/matchingCardIndex';
+import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
 import { isProgramsOwnerRoleHidden, resolveProgramsOwnerRole } from '../utils/donorPrograms';
 import { listProfileRoles } from '../utils/matchingPeerVisibility';
 import {
@@ -2964,9 +2965,9 @@ export const LIMITED_PROFILE_FIELDS = ['name', 'surname', 'birth', 'region', 'ci
  * Повне прізвище в картці не зберігається — тільки `surnameShort`. Для урізаної
  * проєкції це не втрата, а рівно та форма, яку вона й має показувати.
  */
-const readLimitedProfileFromMatchingCard = async userId => {
-  let card = null;
-  try {
+const readLimitedProfileFromMatchingCard = async (userId, preloadedCard) => {
+  let card = preloadedCard === undefined ? null : preloadedCard;
+  if (preloadedCard === undefined) try {
     const snapshot = await get(ref2(database, `${MATCHING_CARDS_ROOT}/${userId}`));
     card = snapshot.exists() ? snapshot.val() : null;
   } catch {
@@ -2982,6 +2983,9 @@ const readLimitedProfileFromMatchingCard = async userId => {
     if (card[field] !== undefined && card[field] !== null) projection[field] = card[field];
   });
   if (card.surnameShort) projection.surname = card.surnameShort;
+  // Роль їде й в урізаній проєкції: без неї видача не мала плашки, а агенцію
+  // називала іменем контактної особи («Surrohelp M.»).
+  if (card.role !== undefined && card.role !== null) projection.role = card.role;
   if (card.country) projection.country = card.country;
   if (card.avatar) projection.avatar = card.avatar;
   // Ключ стрічки їде разом з проєкцією: за ним видача пошуку відрізняє
@@ -2998,11 +3002,11 @@ const readLimitedProfileFromMatchingCard = async userId => {
 // Reads a search hit through the limited projection. Unlike the full read this
 // never touches the record's node, only the paths the rules open, so there is
 // nothing for the caller to strip afterwards.
-export const fetchLimitedProfileById = async userId => {
+export const fetchLimitedProfileById = async (userId, preloadedCard) => {
   if (!userId) return null;
   // Джерело одне — картка стрічки: один запит замість пʼяти, і вона є в
   // кожної анкети.
-  const projection = await readLimitedProfileFromMatchingCard(userId);
+  const projection = await readLimitedProfileFromMatchingCard(userId, preloadedCard);
   if (!projection) return null;
   const feedDate = String(projection[MATCHING_CARD_FEED_FIELD] || '').trim();
   return {
@@ -3018,8 +3022,27 @@ export const fetchLimitedProfileById = async userId => {
   };
 };
 
+/**
+ * Знайдене читачем без службового доступу.
+ *
+ * Опублікована картка — та сама, що в стрічці: її й так бачить кожен, хто
+ * увійшов, тож урізати її у видачі означало показати агенцію без назви, ролі,
+ * програм, контактів і без серця, тобто саме без того, заради чого її шукали.
+ * Урізана проєкція лишається для неопублікованого — того, що видно лише
+ * пошуком. Картка читається один раз на обидва випадки.
+ */
 const addLimitedUser = async (userId, users) => {
-  const profile = await fetchLimitedProfileById(userId);
+  let raw;
+  try {
+    raw = await readMatchingCardRaw(userId);
+  } catch {
+    raw = null;
+  }
+  if (raw && isCurrentMatchingCardSchema(raw) && normalizeFeedDateValue(raw[MATCHING_CARD_FEED_FIELD])) {
+    users[userId] = expandMatchingCard(userId, raw);
+    return;
+  }
+  const profile = await fetchLimitedProfileById(userId, raw);
   if (profile) users[userId] = profile;
 };
 

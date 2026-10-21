@@ -139,6 +139,8 @@ export const CheckboxGroup = ({ label, filterName, options, filters, onChange, o
           const readableLabel = typeof optionLabel === 'string' ? optionLabel : val;
           const groupLabel = label || filterName;
           const count = optionCounts ? optionCounts[val] || 0 : null;
+          // Нижня межа: стрічка ще не вся завантажена (`__lowerBound`).
+          const countText = count !== null && optionCounts.__lowerBound ? `${count}+` : count;
 
           return (
             <Chip
@@ -148,12 +150,12 @@ export const CheckboxGroup = ({ label, filterName, options, filters, onChange, o
               aria-pressed={isActive}
               aria-label={count === null
                 ? `${groupLabel}: ${readableLabel}`
-                : `${groupLabel}: ${readableLabel}, ${count}`}
+                : `${groupLabel}: ${readableLabel}, ${countText}`}
               onClick={() => handleToggle(val)}
               type="button"
             >
               {optionLabel}
-              {count !== null && <ChipCount aria-hidden="true">{count}</ChipCount>}
+              {count !== null && <ChipCount aria-hidden="true">{countText}</ChipCount>}
             </Chip>
           );
         })}

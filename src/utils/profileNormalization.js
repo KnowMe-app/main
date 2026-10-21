@@ -305,6 +305,46 @@ export const resolveOblastFromPlace = value => {
   return city ? OBLAST_ANY_INDEX.get(foldLocationKey(city.en))?.uk || null : null;
 };
 
+/**
+ * Набране в пошуку — це місто чи область із довідника?
+ *
+ * Пошук стрічки шукає точний контакт або імʼя, тож «Київ» він читав як імʼя й
+ * відповідав «немає», хоча київських анкет у стрічці десяток. Впізнане місце
+ * стає пропозицією фільтра стрічки (`cardMatchesPlace`). Повертає
+ * `{ kind: 'city' | 'oblast', uk, en }` або `null`.
+ */
+export const resolveKnownPlace = value => {
+  const text = cleanText(value).replace(/^(?:м\.|місто|г\.|город)\s*/i, '');
+  if (!text) return null;
+  const city = CITY_INDEX.get(foldLocationKey(text));
+  if (city) return { kind: 'city', uk: city.uk, en: city.en };
+  const oblast = resolveOblast(text);
+  if (oblast) return { kind: 'oblast', uk: oblast.uk, en: oblast.en };
+  return null;
+};
+
+/**
+ * Чи картка з цього місця. Місто звіряється з полем `city` за довідником (усі
+ * написання — «Киев», «Kyiv» — одне місто); область — з `region` або з
+ * областю, до якої довідник відносить місто картки.
+ */
+export const cardMatchesPlace = (card, place) => {
+  if (!place?.uk) return true;
+  const values = value => (Array.isArray(value) ? value : [value]).filter(item => item !== undefined && item !== null && item !== '');
+  const cities = values(card?.city).map(cleanText).filter(Boolean);
+  const regions = values(card?.region).map(cleanText).filter(Boolean);
+  const currentCity = cities[cities.length - 1] || '';
+  const currentRegion = regions[regions.length - 1] || '';
+  if (place.kind === 'city') {
+    const cityKey = foldLocationKey(currentCity.replace(/^(?:м\.|місто|г\.|город)\s*/i, ''));
+    const known = CITY_INDEX.get(cityKey);
+    return known ? known.uk === place.uk : cityKey === foldLocationKey(place.uk);
+  }
+  const oblast = resolveOblast(currentRegion) || OBLAST_ANY_INDEX.get(foldLocationKey(currentRegion.replace(OBLAST_SUFFIX_RE, '')));
+  if (oblast) return oblast.uk === place.uk;
+  return resolveOblastFromPlace(currentCity) === place.uk;
+};
+
 /** Місто мовою інтерфейсу, якщо довідник його знає; інакше — як написали. */
 export const formatCityName = (value, language) => {
   let text = cleanText(value);

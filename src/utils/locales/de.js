@@ -9,6 +9,21 @@ import { joinWithAnd, plural, sentenceCase } from './shared';
  * Текст, який ввела людина, не перекладається ніколи.
  */
 const BY_UK = {
+  'Останню зміну не збережено — див. повідомлення вище': 'Die letzte Änderung wurde nicht gespeichert – siehe Meldung oben',
+  'Збережено о {time}': 'Gespeichert um {time}',
+  'Зберігається саме, щойно ви виходите з поля': 'Wird automatisch gespeichert, sobald Sie ein Feld verlassen',
+  ' · ще {count} може підходити — уточніть анкету': ' · {count} weitere könnten passen – ergänzen Sie Ihr Profil',
+  'Ви — {role}?': 'Sind Sie: {role}?',
+  'Можна замінити поточну роль або додати ще одну анкету — наприклад, якщо ви донорка й водночас працюєте агенцією. Від ролі залежать поля анкети й те, кого ви бачите в стрічці. Заповнені поля нікуди не зникають.': 'Sie können Ihre aktuelle Rolle ersetzen oder ein weiteres Profil hinzufügen – etwa wenn Sie Spenderin sind und zugleich eine Agentur führen. Die Rolle bestimmt die Felder des Profils und wen Sie im Feed sehen. Ausgefüllte Felder bleiben erhalten.',
+  'Додати ще одну анкету': 'Weiteres Profil hinzufügen',
+  'Замінити роль': 'Rolle ersetzen',
+  'Числа — серед уже завантажених карток; гортайте стрічку, і вони зростуть': 'Die Zahlen zählen die bisher geladenen Karten; scrolle im Feed, dann steigen sie',
+  'Числа — серед усіх карток стрічки': 'Die Zahlen zählen alle Karten im Feed',
+  'Схоже на місто': 'Sieht nach einer Stadt aus',
+  'Схоже на область': 'Sieht nach einer Region aus',
+  'Пошук знаходить точний телефон, пошту, нік або імʼя. Анкети з цього місця покаже стрічка.': 'Die Suche findet eine genaue Telefonnummer, E-Mail, einen Benutzernamen oder Namen. Profile aus diesem Ort zeigt der Feed.',
+  'Показати анкети': 'Profile anzeigen',
+  'Місце: {place}': 'Ort: {place}',
   'Щоб опублікувати, заповніть: {labels} і ще {count}': 'Zum Veröffentlichen ausfüllen: {labels} und {count} weitere',
   'Щоб опублікувати, заповніть: {labels}': 'Zum Veröffentlichen ausfüllen: {labels}',
   'Щоб опублікувати, бракує полів: {count}': 'Bis zur Veröffentlichung fehlen Felder: {count}',

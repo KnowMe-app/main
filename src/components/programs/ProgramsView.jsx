@@ -1589,7 +1589,9 @@ export const AgencyProgramsPanel = ({
       matched: summary.matched,
       total: summary.ownTotal,
       programs: programsGenitive(summary.ownTotal, language),
-    })
+    }) + (summary.uncertain
+      ? uiText(' · ще {count} може підходити — уточніть анкету', language, { count: summary.uncertain })
+      : '')
     : '';
   const toggle = id => {
     if (openId === id) {

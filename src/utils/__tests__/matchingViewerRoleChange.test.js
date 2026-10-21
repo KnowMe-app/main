@@ -51,11 +51,12 @@ describe('поточна роль читача — остання з подан�
 });
 
 describe('шухляда не пропонує того, чого в деці не буває', () => {
-  it('донорці не показує ED, решті показує все', () => {
-    expect(listFeedRoleFilterKeysForViewer('ed')).toEqual(['ag', 'ip', 'other']);
-    expect(listFeedRoleFilterKeysForViewer(['ag', 'ed'])).toEqual(['ed', 'ag', 'ip', 'other']);
-    expect(listFeedRoleFilterKeysForViewer('ag')).toEqual(['ed', 'ag', 'ip', 'other']);
-    expect(listFeedRoleFilterKeysForViewer('')).toEqual(['ed', 'ag', 'ip', 'other']);
+  it('донорці не показує ED, СМ — SM, решті показує все', () => {
+    expect(listFeedRoleFilterKeysForViewer('ed')).toEqual(['sm', 'ag', 'ip', 'other']);
+    expect(listFeedRoleFilterKeysForViewer('sm')).toEqual(['ed', 'ag', 'ip', 'other']);
+    expect(listFeedRoleFilterKeysForViewer(['ag', 'ed'])).toEqual(['ed', 'sm', 'ag', 'ip', 'other']);
+    expect(listFeedRoleFilterKeysForViewer('ag')).toEqual(['ed', 'sm', 'ag', 'ip', 'other']);
+    expect(listFeedRoleFilterKeysForViewer('')).toEqual(['ed', 'sm', 'ag', 'ip', 'other']);
   });
 
   it('той самий перелік керує і групою в шухляді', () => {

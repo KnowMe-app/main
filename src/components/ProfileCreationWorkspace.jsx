@@ -406,6 +406,11 @@ const DraftBadges = styled.div`display:flex; flex-wrap:wrap; align-items:center;
  * сама картка знімає обидві біди: вона вже вміщає імʼя в рядок і вже однакова
  * скрізь. Палітру стрічки поза нею оголошує `MatchingThemeScope`.
  */
+const AutosaveLine = styled.p`
+  margin: 6px 4px 0;
+  font-size: 12px;
+  color: ${({ $error }) => ($error ? 'var(--km-danger, #b42318)' : 'var(--km-muted, #6b655e)')};
+`;
 const DraftPreview = styled(MatchingThemeScope)`
   max-width:460px; margin:0 auto 16px; border-radius:18px;
 `;
@@ -803,6 +808,10 @@ export const ProfileCreationWorkspace = () => {
   const [showDraftHistory, setShowDraftHistory] = useState(false);
   const [overlayTarget, setOverlayTarget] = useState(null);
   const [saving, setSaving] = useState(false);
+  // Стан автозбереження для рядка під шапкою. Форма зберігає кожне поле на
+  // blur, але мовчки: кнопки «Зберегти» немає, і людина, яка набрала анкету,
+  // не знала, чи щось лягло в базу.
+  const [autosave, setAutosave] = useState({ state: 'idle', at: 0 });
   const [overlayLoading, setOverlayLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -1589,8 +1598,13 @@ export const ProfileCreationWorkspace = () => {
       return saved;
     };
 
+    setAutosave(previous => (previous.state === 'saving' ? previous : { ...previous, state: 'saving' }));
     const queued = saveQueueRef.current.catch(() => {}).then(run);
     saveQueueRef.current = queued.catch(() => {});
+    queued.then(
+      () => setAutosave({ state: 'saved', at: Date.now() }),
+      () => setAutosave(previous => ({ ...previous, state: 'error' })),
+    );
     return queued;
   }, [overlayTarget, uid]);
 
@@ -2141,7 +2155,20 @@ export const ProfileCreationWorkspace = () => {
   // Рішення про власну збережену чернетку — та сама пара, що й у рядку
   // стрічки (хрестик ліворуч, серце праворуч, у спільній рамці). Доти тут
   // стояли окремі круглі кнопки іншого вигляду під смужкою заповненості.
-  const canReactToDraft = !access.isAdmin && !overlayTarget && !editingSharedDraft && Boolean(activeMutation?.updatedAt);
+  // Поки в чернетці немає навіть імені, хрестик і серце над нею питали
+  // рішення про порожнє місце («Новий профіль» з одним контактом).
+  const draftHasName = Boolean(String(getCurrentValue(draft?.name) ?? '').trim());
+  const canReactToDraft = !access.isAdmin && !overlayTarget && !editingSharedDraft && Boolean(activeMutation?.updatedAt) && draftHasName;
+  const autosaveTime = autosave.at
+    ? `${String(new Date(autosave.at).getHours()).padStart(2, '0')}:${String(new Date(autosave.at).getMinutes()).padStart(2, '0')}`
+    : '';
+  const autosaveText = autosave.state === 'saving'
+    ? uiText('Зберігаємо…', language)
+    : autosave.state === 'error'
+      ? uiText('Останню зміну не збережено — див. повідомлення вище', language)
+      : autosave.state === 'saved'
+        ? uiText('Збережено о {time}', language, { time: autosaveTime })
+        : uiText('Зберігається саме, щойно ви виходите з поля', language);
   const draftReactionId = activeMutation?.cardId;
   const draftDisliked = Boolean(draftReactionId && dislikeUsers[draftReactionId]);
   const draftLiked = Boolean(draftReactionId && favoriteUsers[draftReactionId]);
@@ -2180,6 +2207,7 @@ export const ProfileCreationWorkspace = () => {
           secondaryAction={draftSecondaryAction}
         />
       </DraftPreview>
+      <AutosaveLine data-testid="draft-autosave" aria-live="polite" $error={autosave.state === 'error'}>{autosaveText}</AutosaveLine>
       {hasDraftHeaderExtras && <DraftHeaderCard>
         {/* Стан чернетки — це те, що з нею буде далі, і сказати його є кому лише
             там, де воно щось означає: у власній чернетці й у черзі адміна.

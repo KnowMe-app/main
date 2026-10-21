@@ -291,6 +291,14 @@ const PublishHead = styled.div`
   > span { font-size: 13px; line-height: 1.45; color: var(--muted); }
 `;
 const PublishSingleAction = styled.div`margin-top:16px;`;
+// Три відповіді на «Ви — агенція?» не вміщаються рядком на телефоні.
+const RoleChangeActions = styled.div`
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+
+  > button { width: 100%; margin: 0; }
+`;
 /*
  * Чого бракує до публікації — названо поіменно, і кожне веде до свого поля.
  * Тост показувався й зникав, а кнопка «Опублікувати» стоїть унизу сторінки,
@@ -1052,6 +1060,8 @@ export const MyProfile = () => {
   const [programTerms, setProgramTerms] = useState(null);
   // Роль, дані якої людина просить очистити, — поки відкрите підтвердження.
   const [clearRoleTarget, setClearRoleTarget] = useState('');
+  // Роль, на яку людина щойно натиснула в «Хто ви», — до її рішення в модалці.
+  const [roleChangeTarget, setRoleChangeTarget] = useState('');
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const stickyProgressRef = useRef(null);
@@ -1395,6 +1405,49 @@ export const MyProfile = () => {
     }
     await writeProfileRoles(roles, primaryRole);
   }, [hiddenRoles, language, rolesList, selectedRole, writeProfileRoles]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * «Хто ви» — це зміна ролі або друга анкета, і людина обирає, що саме.
+   *
+   * Чіпи ролей — набір: дотик до іншої ролі не замінював її, а мовчки
+   * додавав другу анкету. Донорка, яка натиснула «Агенція», діставала поруч
+   * розділи агенції й програм, «10 з 42» ставало «10 з 44», а стрічка
+   * перемикалась на інших людей — і ніщо не казало, що сталося. Тепер нова
+   * роль питає: замінити чи додати. Зняти зайву роль (коли їх кілька) — як і
+   * було, одним дотиком: це явна дія над уже відміченим.
+   */
+  const requestUserRole = useCallback(nextRole => {
+    const role = String(nextRole || '').trim().toLowerCase();
+    if (!role) return;
+    if (rolesList.includes(role)) {
+      toggleUserRole(role);
+      return;
+    }
+    setRoleChangeTarget(role);
+    setShowInfoModal('roleChange');
+  }, [rolesList, toggleUserRole]);
+
+  const replaceUserRole = useCallback(async role => {
+    setShowInfoModal(false);
+    setRoleChangeTarget('');
+    if (hiddenRoles.length) {
+      const nextState = { ...stateRef.current, hiddenRoles: '' };
+      stateRef.current = nextState;
+      setState(nextState);
+      try {
+        await saveState(nextState, { directFields: ['hiddenRoles'] });
+      } catch (error) {
+        console.warn('Failed to clean up the hidden profile role.', error);
+      }
+    }
+    await writeProfileRoles([role], role);
+  }, [hiddenRoles.length, writeProfileRoles]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addUserRole = useCallback(async role => {
+    setShowInfoModal(false);
+    setRoleChangeTarget('');
+    await toggleUserRole(role);
+  }, [toggleUserRole]);
 
   const isProfileAccessConfirmed = Boolean(userId || state.userId);
 
@@ -2878,7 +2931,7 @@ export const MyProfile = () => {
               type="checkbox"
               checked={rolesList.includes(option.value)}
               disabled={rolesList.length === 1 && rolesList.includes(option.value)}
-              onChange={() => toggleUserRole(option.value)}
+              onChange={() => requestUserRole(option.value)}
             />
             {rolesList.includes(option.value) ? <FaCheck size={12} aria-hidden="true" /> : null}
             {uiText(option.label, language)}
@@ -2976,8 +3029,30 @@ export const MyProfile = () => {
         onClose={() => { if (!isClearingProfile) setShowInfoModal(false); }}
         // Підтвердження режиму «лише для вподобаних» малюється тією самою
         // модалкою підтвердження, що й «Очистити анкету».
-        text={showInfoModal === 'likedAudienceConfirm' ? 'delConfirm' : showInfoModal}
-        DelConfirm={() => (showInfoModal === 'likedAudienceConfirm' ? (
+        text={showInfoModal === 'likedAudienceConfirm' || showInfoModal === 'roleChange' ? 'delConfirm' : showInfoModal}
+        DelConfirm={() => (showInfoModal === 'roleChange' && roleChangeTarget ? (
+          <div data-testid="role-change-confirm">
+            <ModalTitle>
+              {uiText('Ви — {role}?', language, {
+                role: uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === roleChangeTarget)?.label || roleChangeTarget, language),
+              })}
+            </ModalTitle>
+            <ModalText>
+              {uiText('Можна замінити поточну роль або додати ще одну анкету — наприклад, якщо ви донорка й водночас працюєте агенцією. Від ролі залежать поля анкети й те, кого ви бачите в стрічці. Заповнені поля нікуди не зникають.', language)}
+            </ModalText>
+            <RoleChangeActions>
+              <ModalPrimaryButton type="button" onClick={() => replaceUserRole(roleChangeTarget)}>
+                {uiText('Замінити роль', language)}
+              </ModalPrimaryButton>
+              <ModalGhostButton type="button" onClick={() => addUserRole(roleChangeTarget)}>
+                {uiText('Додати ще одну анкету', language)}
+              </ModalGhostButton>
+              <ModalGhostButton type="button" onClick={() => { setShowInfoModal(false); setRoleChangeTarget(''); }}>
+                {uiText('Відмінити', language)}
+              </ModalGhostButton>
+            </RoleChangeActions>
+          </div>
+        ) : showInfoModal === 'likedAudienceConfirm' ? (
           <div data-testid="liked-audience-confirm">
             <ModalTitle>{uiText('Показувати анкету лише тим, кого ви вподобали?', language)}</ModalTitle>
             <ModalText>

@@ -9,6 +9,21 @@ import { joinWithAnd, plural, sentenceCase } from './shared';
  * Текст, який ввела людина, не перекладається ніколи.
  */
 const BY_UK = {
+  'Останню зміну не збережено — див. повідомлення вище': 'De laatste wijziging is niet opgeslagen – zie het bericht hierboven',
+  'Збережено о {time}': 'Opgeslagen om {time}',
+  'Зберігається саме, щойно ви виходите з поля': 'Wordt automatisch opgeslagen zodra u een veld verlaat',
+  ' · ще {count} може підходити — уточніть анкету': ' · nog {count} kunnen passen – vul uw profiel aan',
+  'Ви — {role}?': 'Bent u: {role}?',
+  'Можна замінити поточну роль або додати ще одну анкету — наприклад, якщо ви донорка й водночас працюєте агенцією. Від ролі залежать поля анкети й те, кого ви бачите в стрічці. Заповнені поля нікуди не зникають.': 'U kunt uw huidige rol vervangen of een extra profiel toevoegen – bijvoorbeeld als u donor bent en ook een bureau runt. De rol bepaalt de velden van het profiel en wie u in de feed ziet. Ingevulde velden blijven bewaard.',
+  'Додати ще одну анкету': 'Nog een profiel toevoegen',
+  'Замінити роль': 'Rol vervangen',
+  'Числа — серед уже завантажених карток; гортайте стрічку, і вони зростуть': 'De getallen tellen de tot nu toe geladen kaarten; scrol door de feed en ze groeien',
+  'Числа — серед усіх карток стрічки': 'De getallen tellen alle kaarten in de feed',
+  'Схоже на місто': 'Lijkt op een stad',
+  'Схоже на область': 'Lijkt op een regio',
+  'Пошук знаходить точний телефон, пошту, нік або імʼя. Анкети з цього місця покаже стрічка.': 'Zoeken vindt een exact telefoonnummer, e-mail, gebruikersnaam of naam. Profielen uit deze plaats toont de feed.',
+  'Показати анкети': 'Profielen tonen',
+  'Місце: {place}': 'Plaats: {place}',
   'Щоб опублікувати, заповніть: {labels} і ще {count}': 'Vul in om te publiceren: {labels} en nog {count}',
   'Щоб опублікувати, заповніть: {labels}': 'Vul in om te publiceren: {labels}',
   'Щоб опублікувати, бракує полів: {count}': 'Ontbrekende velden om te publiceren: {count}',

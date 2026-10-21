@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { SearchFilters } from './SearchFilters';
 import { REACTION_FILTER_DEFAULTS } from 'utils/reactionCategory';
+import { parseSeekingRoles } from 'utils/donorPrograms';
 import {
   alignRoleFilterGroupWithViewer,
+  resolveParentViewerRoleDefault,
   resolvePersonalViewerRoleDefault,
   viewerRoleSignature,
 } from 'utils/matchingPeerVisibility';
@@ -79,7 +81,7 @@ const defaultsAdd = {
 };
 
 const defaultsMatching = {
-  userRole: { ed: true, ag: false, ip: false, other: false },
+  userRole: { ed: true, sm: false, ag: false, ip: false, other: false },
   maritalStatus: { married: true, unmarried: true, other: true },
   // Групи крові тут немає — у матчингу лишився самий резус
   // (`MATCHING_FILTER_GROUPS` у `SearchFilters`). Ключа немає і в переліку
@@ -118,7 +120,7 @@ export const getDefaultFilters = ({ mode = 'default', nonAdminAllActive = false 
   if (!nonAdminAllActive) return defaultsMatching;
   return {
     ...defaultsMatching,
-    userRole: { ed: true, ag: true, ip: true, other: true },
+    userRole: { ed: true, sm: true, ag: true, ip: true, other: true },
   };
 };
 
@@ -134,7 +136,15 @@ export const getInitialFilters = ({ mode = 'default', storageKey, nonAdminAllAct
     const result = {};
     for (const key of Object.keys(defaultFilters)) {
       const savedKey = parsed[key] !== undefined ? key : key === 'userRole' ? 'role' : key;
-      result[key] = normalizeFilterGroup(parsed[savedKey], defaultFilters[key]);
+      const savedGroup = parsed[savedKey];
+      // Сурогатна мати жила під «Інші»: збережений до появи власного чіпа
+      // фільтр бере для неї значення «Інших», а не умовчання.
+      const migratedGroup = key === 'userRole'
+        && savedGroup && typeof savedGroup === 'object'
+        && savedGroup.sm === undefined && savedGroup.other !== undefined
+        ? { ...savedGroup, sm: savedGroup.other }
+        : savedGroup;
+      result[key] = normalizeFilterGroup(migratedGroup, defaultFilters[key]);
     }
     return result;
   } catch {
@@ -156,6 +166,7 @@ const FilterPanel = ({
   roleOptionKeys,
   paymentOptionKeys,
   viewerRole,
+  viewerSeekingRole = '',
   bloodSearchKeyMode = false,
   reactionFilterOptions,
   optionCounts,
@@ -212,24 +223,36 @@ const FilterPanel = ({
   const viewerRoleKey = viewerRoleSignature(viewerRole);
   const alignRoleFilterRef = useRef(viewerRole);
   alignRoleFilterRef.current = viewerRole;
+  // Батькам умовчання ставить відповідь на «Кого шукаєте», тож позначка
+  // «вже ставили» тримається й ролі, і цієї відповіді: змінили, кого шукають, —
+  // стрічка відкривається вже на нових.
+  const seekingKeys = parseSeekingRoles(viewerSeekingRole);
+  const seekingKey = seekingKeys.join(',');
   useEffect(() => {
     if (mode !== 'matching') return;
     const role = alignRoleFilterRef.current;
     // Донорці й СМ стрічка вперше (і після зміни ролі) відкривається на самих
-    // агенціях — `resolvePersonalViewerRoleDefault`.
-    const applyPersonalDefault = Boolean(viewerRoleKey)
-      && readRoleDefaultMarker() !== viewerRoleKey
-      && Boolean(resolvePersonalViewerRoleDefault(null, role));
-    if (applyPersonalDefault) writeRoleDefaultMarker(viewerRoleKey);
+    // агенціях — `resolvePersonalViewerRoleDefault`; батькам — на тих, кого
+    // вони шукають (`resolveParentViewerRoleDefault`).
+    const parentKeys = seekingKey ? seekingKey.split(',') : [];
+    const resolveDefault = roleFilters => resolvePersonalViewerRoleDefault(roleFilters, role)
+      || resolveParentViewerRoleDefault(roleFilters, role, parentKeys);
+    const markerValue = resolveParentViewerRoleDefault(null, role, parentKeys)
+      ? `${viewerRoleKey}|${seekingKey}`
+      : viewerRoleKey;
+    const applyRoleDefault = Boolean(viewerRoleKey)
+      && readRoleDefaultMarker() !== markerValue
+      && Boolean(resolveDefault(null));
+    if (applyRoleDefault) writeRoleDefaultMarker(markerValue);
     setFilters(current => {
       const roleFilters = current?.userRole;
-      const base = applyPersonalDefault
-        ? resolvePersonalViewerRoleDefault(roleFilters, role)
+      const base = applyRoleDefault
+        ? resolveDefault(roleFilters)
         : roleFilters;
       const aligned = alignRoleFilterGroupWithViewer(base, role);
       return aligned === roleFilters ? current : { ...current, userRole: aligned };
     });
-  }, [mode, viewerRoleKey]);
+  }, [mode, seekingKey, viewerRoleKey]);
 
   useEffect(() => {
     if (prevResetTokenRef.current === resetToken) return;
