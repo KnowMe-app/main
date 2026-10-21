@@ -121,7 +121,11 @@ describe('my-profile publication toggle', () => {
     expect(header).toContain('data-testid="liked-audience-chip" onClick={handleAuthBadgeClick}');
     expect(header).toContain("'Анкету бачать лише обрані'");
     expect(header).toContain('uiText(likedTexts.chipCount, language, { count: likedAudienceCount })');
-    expect(header).toContain('$restricted={isProfileAccessConfirmed && isLikedAudience}');
+    // Значок статусу один на обидві шапки (рядок навігації телефона й
+    // широкий екран), тож зібраний він над `return`.
+    expect(header).toContain('{publishStatusBadge}');
+    const badge = source.slice(source.indexOf('const publishStatusBadge = ('));
+    expect(badge).toContain('$restricted={isProfileAccessConfirmed && isLikedAudience}');
   });
 
   // Одна анкета теж очищується з «Публікації»: кошик відкриває ту саму

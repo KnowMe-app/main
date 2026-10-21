@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { FiChevronRight, FiTrash2, FiX } from 'react-icons/fi';
 import { FaCheck, FaEye, FaEyeSlash, FaLock } from 'react-icons/fa';
@@ -62,7 +63,7 @@ import {
 } from './authProfilePersistence';
 import toast from 'react-hot-toast';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
-import { usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
+import { usePrimaryNavigationHeaderTarget, usePrimaryNavigationSlot } from './PrimaryNavigationSlot';
 import { KnowMeBrand } from './styles/knowme';
 import { resolveMyProfileFieldText, resolveMyProfileSectionTitle } from '../utils/myProfileRoleTexts';
 import { ProgramsEditor } from './programs/ProgramsEditor';
@@ -134,6 +135,25 @@ const TopbarActions = styled.div`
 // анкеті — скільки заповнено і в якому розділі людина зараз. Коли прогрес
 // поїхав разом зі шапкою, вкладки зникали на першому ж екрані прокрутки, і
 // до іншого розділу лишалось гортати навмання.
+// Роль і статус у рядку навігації телефона.
+const NavProfileStatus = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 0 6px;
+`;
+const NavProfileRole = styled.span`
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+`;
 const HeaderPanel = styled.div`
   background: var(--card);
 `;
@@ -142,7 +162,7 @@ const HeaderPanel = styled.div`
 // шапка сама виїхала за екран.
 const StickyProgress = styled.div`
   position: sticky;
-  top: env(safe-area-inset-top, 0px);
+  top: calc(var(--km-top-nav-h, 0px) + env(safe-area-inset-top, 0px));
   z-index: 20;
   background: var(--card);
   border-bottom: 1px solid var(--border);
@@ -1038,6 +1058,7 @@ export const MyProfile = () => {
     canCreateProfiles: state.canCreateProfiles === true,
   });
   const isAdmin = access.isAdmin;
+  const navHeaderTarget = usePrimaryNavigationHeaderTarget();
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [isClearingProfile, setIsClearingProfile] = useState(false);
   // Скільки людей зараз бачать анкету, відкриту лише вподобаним (`null` —
@@ -1835,10 +1856,14 @@ export const MyProfile = () => {
     return () => observer.disconnect();
   }, []);
 
-  const getStickyOffset = useCallback(
-    () => stickyProgressRef.current?.getBoundingClientRect().height || 0,
-    [],
-  );
+  // Над смугою прогресу на телефоні ще й липкий рядок навігації.
+  const getStickyOffset = useCallback(() => {
+    const progress = stickyProgressRef.current?.getBoundingClientRect().height || 0;
+    const topNav = typeof window === 'undefined'
+      ? 0
+      : parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--km-top-nav-h')) || 0;
+    return progress + topNav;
+  }, []);
 
   const getSectionTargetTop = useCallback((sectionEl) => {
     const sectionTop = sectionEl.getBoundingClientRect().top + window.scrollY;
@@ -2782,27 +2807,45 @@ export const MyProfile = () => {
     };
   });
 
-  return <Page style={{ '--km-sticky-offset': `${stickyHeight}px` }}>
+  const publishStatusBadge = (
+    <StatusBadge
+      type="button"
+      $clickable
+      $published={state.publish === true || isLikedAudience}
+      $error={!isProfileAccessConfirmed}
+      $restricted={isProfileAccessConfirmed && isLikedAudience}
+      onClick={handleAuthBadgeClick}
+    >
+      {isProfileAccessConfirmed && isLikedAudience ? <FaLock size={9} aria-hidden="true" /> : '●'} {isProfileAccessConfirmed
+        ? uiText(state.publish === true ? 'Опублікована' : (isLikedAudience ? 'Лише обраним' : 'Не опублікована'), language)
+        : uiText('Логін не відбувся', language)}
+    </StatusBadge>
+  );
+
+  // Липке редактора програм стає під липкою смугою прогресу, а та — під липким
+  // рядком навігації телефона (`--km-top-nav-h`).
+  return <Page style={{ '--km-sticky-offset': `calc(var(--km-top-nav-h, 0px) + ${stickyHeight}px)` }}>
     <HeaderPanel>
-      <Topbar>
-        {/* Поруч із назвою — ролі людини її мовою. Тут стояло англійське
-            «Egg donor» за замовчуванням — і в агенції теж. */}
-        <TopbarBrand><KnowMeBrand tagline={brandTagline} /></TopbarBrand>
-        <TopbarActions>
-          <StatusBadge
-            type="button"
-            $clickable
-            $published={state.publish === true || isLikedAudience}
-            $error={!isProfileAccessConfirmed}
-            $restricted={isProfileAccessConfirmed && isLikedAudience}
-            onClick={handleAuthBadgeClick}
-          >
-            {isProfileAccessConfirmed && isLikedAudience ? <FaLock size={9} aria-hidden="true" /> : '●'} {isProfileAccessConfirmed
-              ? uiText(state.publish === true ? 'Опублікована' : (isLikedAudience ? 'Лише обраним' : 'Не опублікована'), language)
-              : uiText('Логін не відбувся', language)}
-          </StatusBadge>
-        </TopbarActions>
-      </Topbar>
+      {/* На телефоні роль і статус стоять у рядку навігації замість назви
+          «Мій профіль» (`usePrimaryNavigationHeaderTarget`), а лого — у меню
+          «⋮»: окремий рядок «KnowMe | роль | статус» під навігацією займав
+          місце, а назва екрана повторювала підсвічену вкладку внизу. */}
+      {navHeaderTarget ? createPortal(
+        <NavProfileStatus>
+          <NavProfileRole title={brandTagline}>{brandTagline}</NavProfileRole>
+          {publishStatusBadge}
+        </NavProfileStatus>,
+        navHeaderTarget,
+      ) : (
+        <Topbar>
+          {/* Поруч із назвою — ролі людини її мовою. Тут стояло англійське
+              «Egg donor» за замовчуванням — і в агенції теж. */}
+          <TopbarBrand><KnowMeBrand tagline={brandTagline} /></TopbarBrand>
+          <TopbarActions>
+            {publishStatusBadge}
+          </TopbarActions>
+        </Topbar>
+      )}
       {isProfileAccessConfirmed && isLikedAudience ? (
         <LikedAudienceChip type="button" data-testid="liked-audience-chip" onClick={handleAuthBadgeClick}>
           <LikedAudienceChipIcon aria-hidden="true"><FaLock size={13} /></LikedAudienceChipIcon>

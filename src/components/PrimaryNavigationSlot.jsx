@@ -16,6 +16,9 @@ const PrimaryNavigationSlotContext = createContext(null);
 
 export const PrimaryNavigationSlotProvider = ({ children }) => {
   const [slot, setSlot] = useState(null);
+  // DOM-вузол «гнізда» в рядку навігації (`PageHeaderSlot`), куди сторінка
+  // порталом кладе свій верхній блок — див. `usePrimaryNavigationHeaderTarget`.
+  const [headerNode, setHeaderNode] = useState(null);
   // Хто чекає на «сторінка перемалювалась» — відкрите меню (`subscribeMenu`).
   const menuListenersRef = useRef(new Set());
   const subscribeMenu = useCallback(listener => {
@@ -25,11 +28,51 @@ export const PrimaryNavigationSlotProvider = ({ children }) => {
   const notifyMenu = useCallback(() => {
     menuListenersRef.current.forEach(listener => listener());
   }, []);
-  const value = useMemo(() => ({ slot, setSlot, subscribeMenu, notifyMenu }), [notifyMenu, slot, subscribeMenu]);
+  const value = useMemo(
+    () => ({ slot, setSlot, subscribeMenu, notifyMenu, headerNode, setHeaderNode }),
+    [headerNode, notifyMenu, slot, subscribeMenu],
+  );
   return <PrimaryNavigationSlotContext.Provider value={value}>{children}</PrimaryNavigationSlotContext.Provider>;
 };
 
 export const usePrimaryNavigationSlotState = () => useContext(PrimaryNavigationSlotContext)?.slot || null;
+
+export const usePrimaryNavigationHeaderNodeSetter = () => useContext(PrimaryNavigationSlotContext)?.setHeaderNode || null;
+
+// Та сама межа, що й у `PrimaryNavigation`: до неї вкладки внизу, а верхній
+// рядок вільний під вміст сторінки.
+export const PRIMARY_NAVIGATION_PHONE_QUERY = '(max-width: 600px)';
+
+const readPhoneLayout = () => (
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(PRIMARY_NAVIGATION_PHONE_QUERY).matches
+    : false
+);
+
+/**
+ * Куди сторінці класти свій верхній блок на телефоні.
+ *
+ * На телефоні вкладки внизу, і верхній рядок навігації тримав саму назву
+ * екрана («Мій профіль», «Пошук анкет») — а просто під ним сторінка ставила
+ * ще рядок: пошук, лого з роллю й статусом. Тепер той рядок сторінки лягає в
+ * рядок навігації замість назви: сторінка рендерить його порталом у вузол,
+ * який віддає цей хук, — стан і обробники лишаються в сторінці, міняється
+ * лише місце в DOM. На широкому екрані (і поки вузла ще немає) — `null`, і
+ * сторінка малює блок на звичному місці.
+ */
+export const usePrimaryNavigationHeaderTarget = () => {
+  const node = useContext(PrimaryNavigationSlotContext)?.headerNode || null;
+  const [phone, setPhone] = useState(readPhoneLayout);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const query = window.matchMedia(PRIMARY_NAVIGATION_PHONE_QUERY);
+    const update = () => setPhone(query.matches);
+    update();
+    query.addEventListener?.('change', update);
+    return () => query.removeEventListener?.('change', update);
+  }, []);
+  return phone ? node : null;
+};
 
 /**
  * Підписка відкритого меню на рендери сторінки.

@@ -4,7 +4,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import styled, { createGlobalStyle } from 'styled-components';
 import { FaSearch, FaRegFolderOpen, FaRegUser, FaChevronLeft, FaEllipsisV, FaPen } from 'react-icons/fa';
 import { useAppSettings } from '../hooks/useAppSettings';
-import { usePrimaryNavigationMenuSubscription, usePrimaryNavigationSlotState } from './PrimaryNavigationSlot';
+import { usePrimaryNavigationHeaderNodeSetter, usePrimaryNavigationMenuSubscription, usePrimaryNavigationSlotState } from './PrimaryNavigationSlot';
 import { InfoModal } from './InfoModal';
 
 const BOTTOM_NAV_BREAKPOINT = 600;
@@ -24,9 +24,12 @@ const BOTTOM_NAV_HEIGHT = 64;
 // панелі, поки та видима: на верху сторінки панель вкладок росла на висоту
 // тулбара (підписи підскакували, під ними — порожня смуга), а з прокруткою
 // тулбар ховався, і панель «опускалась».
+// Верхній рядок на телефоні липкий (у ньому тепер пошук і статус сторінки), і
+// липке під ним стає нижче на його висоту — `--km-top-nav-h`.
+const TOP_NAV_HEIGHT = 53;
 const BottomNavSpace = createGlobalStyle`
   @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
-    :root { --km-bottom-nav-h: ${BOTTOM_NAV_HEIGHT}px; }
+    :root { --km-bottom-nav-h: ${BOTTOM_NAV_HEIGHT}px; --km-top-nav-h: ${TOP_NAV_HEIGHT}px; }
     body { padding-bottom: var(--km-bottom-nav-h); }
   }
 `;
@@ -35,6 +38,27 @@ const Header = styled.header`
   background: var(--km-card);
   border-bottom: 1px solid var(--km-border);
   color: var(--km-text);
+  @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    box-sizing: border-box;
+    min-height: ${TOP_NAV_HEIGHT}px;
+  }
+`;
+
+// Гніздо під верхній блок сторінки (`usePrimaryNavigationHeaderTarget`). Поки
+// сторінка нічого туди не поклала, стоїть назва екрана; поклала — назву
+// ховає сусідній селектор у `Navigation`.
+const PageHeaderSlot = styled.div`
+  display: none;
+  @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
+    display: flex;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+    &:empty { display: none; }
+  }
 `;
 
 const Navigation = styled.nav`
@@ -47,6 +71,7 @@ const Navigation = styled.nav`
   font-family: var(--km-font);
 
   strong { margin-right: auto; font-size: 22px; font-weight: 600; letter-spacing: -0.6px; }
+  [data-page-header]:not(:empty) + [data-screen-title] { display: none; }
   strong span { color: var(--km-accent); }
   @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
     padding: 4px 6px;
@@ -195,6 +220,7 @@ export default function PrimaryNavigation() {
   const { language } = useAppSettings();
   const texts = resolveNavTexts(language);
   const slot = usePrimaryNavigationSlotState();
+  const setHeaderNode = usePrimaryNavigationHeaderNodeSetter();
   const [menuOpen, setMenuOpen] = useState(false);
   // Пункти меню складає сторінка, і відкрите меню мусить іти за її станом:
   // поки воно відкрите, кожен рендер сторінки перемальовує і його
@@ -235,7 +261,8 @@ export default function PrimaryNavigation() {
             </SlotButton>
           )}
         </SideSlot>
-        <ScreenTitle aria-hidden="true">{screenTitle}</ScreenTitle>
+        <PageHeaderSlot data-page-header ref={setHeaderNode} />
+        <ScreenTitle data-screen-title aria-hidden="true">{screenTitle}</ScreenTitle>
         <Tabs>
           <NavLink to="/matching" end><FaSearch aria-hidden="true" />{texts.find}</NavLink>
           <NavLink to="/matching/create-profile">

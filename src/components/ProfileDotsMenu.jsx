@@ -5,6 +5,7 @@ import { FaRegUser, FaUsers, FaSignOutAlt, FaTrashAlt, FaEraser, FaProjectDiagra
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
 import { LanguagePicker } from './LanguagePicker';
+import { KnowMeBrand } from './styles/knowme';
 import { useAppSettings } from 'hooks/useAppSettings';
 import { uiText } from 'utils/uiTranslations';
 import {
@@ -29,23 +30,10 @@ const MenuShell = styled.nav`
   color: var(--km-text);
 `;
 
+// Лого живе тут: на телефоні верхній рядок віддано вмісту сторінки (пошук,
+// роль і статус), і окремого рядка під лого більше немає.
 const MenuHeader = styled.div`
   padding: 2px 10px 10px;
-`;
-
-const MenuTitle = styled.h3`
-  margin: 0;
-  color: var(--km-text);
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-`;
-
-const MenuSubtitle = styled.p`
-  margin: 4px 0 0;
-  color: var(--km-muted);
-  font-size: 13px;
-  line-height: 1.4;
 `;
 
 const MenuSection = styled.div`
@@ -276,10 +264,10 @@ export const ProfileDotsMenu = ({
   return (
     <MenuShell role="menu" aria-label={uiText('Навігаційне меню профілю', language)}>
       <MenuHeader>
-        <MenuTitle>{uiText('Меню профілю', language)}</MenuTitle>
-        {/* «Швидка навігація» обіцяла пункти, яких тут немає, коли меню
-            відкрите з рядка навігації (`omitPrimaryDestinations`). */}
-        <MenuSubtitle>{uiText(navItems.length ? 'Швидка навігація, дії з анкетою та налаштування акаунта.' : 'Дії з анкетою та налаштування акаунта.', language)}</MenuSubtitle>
+        {/* Під лого тут стояли «Меню профілю» й рядок «Дії з анкетою та
+            налаштування акаунта» — назва й переказ того, що й так видно
+            пунктами нижче; прибрано на прохання власниці продукту. */}
+        <KnowMeBrand tagline="" />
       </MenuHeader>
 
       {navItems.length > 0 && <MenuSection>

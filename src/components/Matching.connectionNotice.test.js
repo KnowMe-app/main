@@ -18,7 +18,7 @@ describe('matching realtime connection notice', () => {
     const styles = read('Matching.styled.jsx');
     const notice = styles.slice(styles.indexOf('export const ConnectionNotice'));
 
-    expect(notice).toContain('top: calc(max(8px, env(safe-area-inset-top)) + 46px);');
+    expect(notice).toContain('top: calc(var(--km-top-nav-h, 0px) + max(8px, env(safe-area-inset-top)) + 46px);');
     expect(notice).toContain('z-index: 13;');
   });
 });
