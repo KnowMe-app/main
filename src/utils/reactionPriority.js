@@ -132,7 +132,7 @@ export const resolvePrioritizedReactionMaps = ({
 };
 
 
-export const getCanShowMatchingUserDebug = (user, { isAdmin = false } = {}) => {
+export const getCanShowMatchingUserDebug = (user, { isAdmin = false, searchHit = false } = {}) => {
   const userId = String(user?.userId || '').trim();
   const rawPublish = user?.publish;
   const normalizedPublish = normalizePublish(rawPublish);
@@ -161,8 +161,12 @@ export const getCanShowMatchingUserDebug = (user, { isAdmin = false } = {}) => {
   // A card with a public comment is deliberately kept out of the general
   // matching feed - it stays fully searchable (search reads the profile nodes
   // directly, independent of this guard), just not surfaced in the deck.
+  // Пошук цю позначку не питає (`searchHit`): «searchable» тут довго
+  // означало лише «знаходиться в searchId», а показ знайденого проходив крізь
+  // цей самий фільтр — і чернетка з публічним коментарем «.» на точний номер
+  // відповідала «Немає доступних профілів».
   const normalizedPublicComment = String(user?.publicComment ?? '').trim();
-  if (normalizedPublicComment) {
+  if (normalizedPublicComment && !searchHit) {
     return {
       canShow: false,
       excludedFunction: 'canShowMatchingUser',
@@ -315,12 +319,15 @@ export const mergeMatchingCandidateUsers = ({
   keepReactedUserIds = null,
 } = {}) => {
   const isDefaultMode = viewMode === 'default';
-  const baseUsers = isAdmin ? users : users.filter(user => canShowMatchingUser(user, { isAdmin }));
+  // Видача пошуку — відповідь на запит про конкретну людину, а не дека:
+  // правило «картку з публічним коментарем у стрічку не пускати» її не звужує.
+  const searchHit = viewMode === 'search';
+  const baseUsers = isAdmin ? users : users.filter(user => canShowMatchingUser(user, { isAdmin, searchHit }));
 
   // Правила додаткового доступу нічого не забирають — вони додають. Колекція
   // одна, і базова дека вже відфільтрована по `publish`; окремо надані картки
   // просто доливаються до неї.
-  const canInjectCandidate = user => canShowMatchingUser(user, { isAdmin });
+  const canInjectCandidate = user => canShowMatchingUser(user, { isAdmin, searchHit });
 
   if (isDefaultMode) {
     // Надана картка потрапляє в загальний список лише разом зі стрічкою.
