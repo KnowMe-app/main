@@ -1,9 +1,9 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useCallback, useId, useState } from 'react';
 import styled from 'styled-components';
 import { FaCheck, FaChevronDown, FaGlobe } from 'react-icons/fa';
 import { APP_LANGUAGES, getLanguageNativeName } from 'utils/locales';
 import { uiText } from 'utils/uiTranslations';
-import { revealCss } from 'styles/revealAnimation';
+import Collapsible from './Collapsible';
 import { ItemDescription, ItemIcon, ItemLabel } from './ProfileDotsMenu.styled';
 
 /*
@@ -53,7 +53,6 @@ const Chevron = styled(FaChevronDown)`
 `;
 
 const Options = styled.div`
-  ${revealCss}
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
@@ -90,13 +89,12 @@ export const LanguagePicker = ({ language, setLanguage }) => {
   const [open, setOpen] = useState(false);
   const listId = useId();
   const groupName = useId();
-  const optionsRef = useRef(null);
-
   // Розгорнута сітка бере фокус на обрану мову: далі стрілки ходять по мовах.
-  useEffect(() => {
-    if (!open) return;
-    optionsRef.current?.querySelector('input:checked')?.focus();
-  }, [open]);
+  // Ref-функцією, а не ефектом на `open`: сітку монтує `Collapsible` своїм
+  // ефектом, тобто вже після ефекту цього компонента, і там її ще не було б.
+  const optionsRef = useCallback(node => {
+    node?.querySelector('input:checked')?.focus({ preventScroll: true });
+  }, []);
 
   const currentName = getLanguageNativeName(language);
   const hint = language === 'en' ? currentName : `${currentName} · Language`;
@@ -117,7 +115,9 @@ export const LanguagePicker = ({ language, setLanguage }) => {
         </span>
         <Chevron $open={open} aria-hidden="true" />
       </Row>
-      {open && (
+      {/* Розгортається й згортається висотою — так само, як деталі програми
+          й інші розкривні блоки (`Collapsible`), а не вистрибує. */}
+      <Collapsible open={open}>
         <Options
           id={listId}
           ref={optionsRef}
@@ -161,7 +161,7 @@ export const LanguagePicker = ({ language, setLanguage }) => {
             </Option>
           ))}
         </Options>
-      )}
+      </Collapsible>
     </div>
   );
 };

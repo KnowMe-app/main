@@ -1049,13 +1049,13 @@ export const ProfileNotes = ({
         <S.NotesAddRow data-testid="notes-add-row" $compact={compact}>
           {!showPublic && (
             <S.NotesAddButton type="button" $public onClick={openLane('public')}>
-              <FaRegCommentDots aria-hidden="true" />
+              {!compact && <FaRegCommentDots aria-hidden="true" />}
               <span>{uiText('Відгук', language)}</span>
             </S.NotesAddButton>
           )}
           {!showPrivate && (
             <S.NotesAddButton type="button" onClick={openLane('private')}>
-              <FaRegStickyNote aria-hidden="true" />
+              {!compact && <FaRegStickyNote aria-hidden="true" />}
               <span>{uiText('Памʼятка', language)}</span>
             </S.NotesAddButton>
           )}
@@ -1069,7 +1069,7 @@ export const ProfileNotes = ({
                 setOpened(previous => ({ ...previous, postpone: true }));
               }}
             >
-              <FaRegClock aria-hidden="true" />
+              {!compact && <FaRegClock aria-hidden="true" />}
               <span>{uiText('Відкласти', language)}</span>
             </S.NotesAddButton>
           )}

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { getExtraLocale } from '../utils/locales';
+import { createPortal } from 'react-dom';
 import { NavLink, useLocation } from 'react-router-dom';
 import styled, { createGlobalStyle } from 'styled-components';
 import { FaSearch, FaRegFolderOpen, FaRegUser, FaChevronLeft, FaEllipsisV, FaPen } from 'react-icons/fa';
@@ -33,6 +34,33 @@ const BottomNavSpace = createGlobalStyle`
     body { padding-bottom: var(--km-bottom-nav-h); }
   }
 `;
+
+// Нижня панель на телефоні рендериться порталом у `body`, а не всередині
+// шапки. Шапка там липка (`position: sticky`), і фіксована панель усередині
+// неї жила в шарі липкого предка: Firefox на Android зсуває такі шари
+// асинхронно під час прокрутки й лише потім доправляє головним потоком, тож
+// панель на прокрутці стрибала й підтискалась. До того ж `z-index` панелі
+// діяв лише в межах шапки (30), а не сторінки.
+const narrowQuery = `(max-width: ${BOTTOM_NAV_BREAKPOINT}px)`;
+const readNarrow = () => typeof window !== 'undefined'
+  && typeof window.matchMedia === 'function'
+  && window.matchMedia(narrowQuery).matches;
+const useNarrowScreen = () => {
+  const [narrow, setNarrow] = useState(readNarrow);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const media = window.matchMedia(narrowQuery);
+    const update = () => setNarrow(media.matches);
+    update();
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', update);
+      return () => media.removeEventListener('change', update);
+    }
+    media.addListener(update);
+    return () => media.removeListener(update);
+  }, []);
+  return narrow;
+};
 
 const Header = styled.header`
   background: var(--km-card);
@@ -218,6 +246,7 @@ const resolveNavTexts = language => NAV_TEXTS[language] || getExtraLocale(langua
 // at the end of the same row, and "back" — at its start.
 export default function PrimaryNavigation() {
   const { language } = useAppSettings();
+  const narrow = useNarrowScreen();
   const texts = resolveNavTexts(language);
   const slot = usePrimaryNavigationSlotState();
   const setHeaderNode = usePrimaryNavigationHeaderNodeSetter();
@@ -249,6 +278,17 @@ export default function PrimaryNavigation() {
     () => (renderSlotMenu ? renderSlotMenu({ close: closeMenu }) : null),
     [closeMenu, renderSlotMenu],
   );
+  // Поза `nav` шапки панель несе власний орієнтир для екранного читача.
+  const tabs = (
+    <Tabs {...(narrow ? { as: 'nav', 'aria-label': texts.nav } : {})}>
+      <NavLink to="/matching" end><FaSearch aria-hidden="true" />{texts.find}</NavLink>
+      <NavLink to="/matching/create-profile">
+        {workspace ? <FaPen aria-hidden="true" /> : <FaRegFolderOpen aria-hidden="true" />}
+        {workspace || texts.add}
+      </NavLink>
+      <NavLink to="/my-profile"><FaRegUser aria-hidden="true" />{texts.mine}</NavLink>
+    </Tabs>
+  );
   return (
     <Header>
       <BottomNavSpace />
@@ -263,14 +303,7 @@ export default function PrimaryNavigation() {
         </SideSlot>
         <PageHeaderSlot data-page-header ref={setHeaderNode} />
         <ScreenTitle data-screen-title aria-hidden="true">{screenTitle}</ScreenTitle>
-        <Tabs>
-          <NavLink to="/matching" end><FaSearch aria-hidden="true" />{texts.find}</NavLink>
-          <NavLink to="/matching/create-profile">
-            {workspace ? <FaPen aria-hidden="true" /> : <FaRegFolderOpen aria-hidden="true" />}
-            {workspace || texts.add}
-          </NavLink>
-          <NavLink to="/my-profile"><FaRegUser aria-hidden="true" />{texts.mine}</NavLink>
-        </Tabs>
+        {!narrow && tabs}
         <SideSlot>
           {slot?.renderMenu && (
             <MenuButton type="button" aria-label={menuLabel} title={menuLabel} onClick={() => setMenuOpen(true)}>
@@ -279,9 +312,14 @@ export default function PrimaryNavigation() {
           )}
         </SideSlot>
       </Navigation>
-      {menuOpen && slot?.renderMenu && (
-        <InfoModal onClose={closeMenu} text="dotsMenu" language={language} Context={SlotMenu} />
+      {/* Меню — теж порталом: усередині липкої шапки його `z-index` діяв би
+          лише в її межах (30), і нижня панель у `body` лягала б поверх
+          шторки. */}
+      {menuOpen && slot?.renderMenu && typeof document !== 'undefined' && createPortal(
+        <InfoModal onClose={closeMenu} text="dotsMenu" language={language} Context={SlotMenu} />,
+        document.body,
       )}
+      {narrow && typeof document !== 'undefined' && createPortal(tabs, document.body)}
     </Header>
   );
 }

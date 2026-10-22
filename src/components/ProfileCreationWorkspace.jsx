@@ -530,7 +530,10 @@ export const HistoricalFieldEdit = ({ row, label, authorName, disabled, onRestor
 // Заголовок списку — звичайним реченням, а лічильник — числом поруч, без
 // кружка: великі літери з розрядкою й сіра пігулка «0» кричали гучніше за
 // сам список.
-const SectionHeader = styled.div`display:flex; align-items:baseline; justify-content:flex-start; gap:8px; margin:24px 2px 10px; color:var(--km-text); font-size:15px; font-weight:600;`;
+// Перший заголовок сторінки відступу зверху не має: 24 px поверх відступу
+// самої сторінки ставили «Чергу на перевірку» на 40 px під шапкою, тоді як
+// стрічка й «Мій профіль» починаються за 12–16 px.
+const SectionHeader = styled.div`display:flex; align-items:baseline; justify-content:flex-start; gap:8px; margin:24px 2px 10px; color:var(--km-text); font-size:15px; font-weight:600; &:first-child { margin-top:0; }`;
 const Count = styled.span`color:var(--km-muted); font-size:13px; font-weight:400;`;
 // Порожній список — один рядок: значок ліворуч, пояснення праворуч, пунктирна
 // межа замість картки з тінню. Пів екрана порожнечі по центру робили
