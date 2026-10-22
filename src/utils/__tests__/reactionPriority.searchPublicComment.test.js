@@ -1,7 +1,7 @@
 import { mergeMatchingCandidateUsers } from '../reactionPriority';
 
-// Чернетка з публічним коментарем («.») у стрічку не йде, але на точний
-// запит пошуку мусить показатись: у `searchId` вона є.
+// Публічний коментар видимості не вирішує: чернетка з коментарем «.» мусить
+// показатись і на точний запит пошуку, і в стрічці автора.
 describe('публічний коментар і видача пошуку', () => {
   const draft = { userId: '-P4TZrBFKVtLMH1-jHVa', publicComment: ['.'], __matchingAccessAllowed: true };
 
@@ -10,7 +10,8 @@ describe('публічний коментар і видача пошуку', () 
       .toEqual([draft.userId]);
   });
 
-  it('стрічка її, як і раніше, не показує', () => {
-    expect(mergeMatchingCandidateUsers({ users: [{ ...draft, publish: true }], viewMode: 'default' })).toEqual([]);
+  it('стрічка її теж не ховає', () => {
+    expect(mergeMatchingCandidateUsers({ users: [{ ...draft, publish: true }], viewMode: 'default' }).map(user => user.userId))
+      .toEqual([draft.userId]);
   });
 });
