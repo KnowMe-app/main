@@ -132,7 +132,7 @@ export const resolvePrioritizedReactionMaps = ({
 };
 
 
-export const getCanShowMatchingUserDebug = (user, { isAdmin = false, searchHit = false } = {}) => {
+export const getCanShowMatchingUserDebug = (user, { isAdmin = false } = {}) => {
   const userId = String(user?.userId || '').trim();
   const rawPublish = user?.publish;
   const normalizedPublish = normalizePublish(rawPublish);
@@ -158,24 +158,12 @@ export const getCanShowMatchingUserDebug = (user, { isAdmin = false, searchHit =
     };
   }
 
-  // A card with a public comment is deliberately kept out of the general
-  // matching feed - it stays fully searchable (search reads the profile nodes
-  // directly, independent of this guard), just not surfaced in the deck.
-  // Пошук цю позначку не питає (`searchHit`): «searchable» тут довго
-  // означало лише «знаходиться в searchId», а показ знайденого проходив крізь
-  // цей самий фільтр — і чернетка з публічним коментарем «.» на точний номер
-  // відповідала «Немає доступних профілів».
-  const normalizedPublicComment = String(user?.publicComment ?? '').trim();
-  if (normalizedPublicComment && !searchHit) {
-    return {
-      canShow: false,
-      excludedFunction: 'canShowMatchingUser',
-      excludedCondition: 'Boolean(String(user.publicComment).trim())',
-      exactReason: `public_comment_present:userId=${userId}`,
-      excludedAtStage: 'final render guard',
-      reasonCode: 'public_comment_present',
-    };
-  }
+  // Правила «картку з публічним коментарем у стрічку не пускати» тут більше
+  // немає. Картка стрічки (`matchingCards`) поля `publicComment` не несе
+  // взагалі (`MATCHING_CARD_FORBIDDEN_FIELDS`), тож опубліковану анкету воно
+  // не ховало ніколи, а спрацьовувало лише там, де в руках повний запис: на
+  // власних чернетках і у видачі пошуку — тобто ховало знайдене на точний
+  // номер. Видимість вирішує публікація (`feedDate`), а не текстове поле.
 
   // Видимість не залежить від того, звідки приїхала картка: колекція у вебі
   // одна. Право показу дає явний доступ — правила додаткового доступу кажуть
@@ -319,15 +307,12 @@ export const mergeMatchingCandidateUsers = ({
   keepReactedUserIds = null,
 } = {}) => {
   const isDefaultMode = viewMode === 'default';
-  // Видача пошуку — відповідь на запит про конкретну людину, а не дека:
-  // правило «картку з публічним коментарем у стрічку не пускати» її не звужує.
-  const searchHit = viewMode === 'search';
-  const baseUsers = isAdmin ? users : users.filter(user => canShowMatchingUser(user, { isAdmin, searchHit }));
+  const baseUsers = isAdmin ? users : users.filter(user => canShowMatchingUser(user, { isAdmin }));
 
   // Правила додаткового доступу нічого не забирають — вони додають. Колекція
   // одна, і базова дека вже відфільтрована по `publish`; окремо надані картки
   // просто доливаються до неї.
-  const canInjectCandidate = user => canShowMatchingUser(user, { isAdmin, searchHit });
+  const canInjectCandidate = user => canShowMatchingUser(user, { isAdmin });
 
   if (isDefaultMode) {
     // Надана картка потрапляє в загальний список лише разом зі стрічкою.
