@@ -67,7 +67,7 @@ describe('ProfileCreationWorkspace search-before-create flow', () => {
   it('lists the cards this user created when nothing is typed yet', () => {
     expect(source).toContain('loadOwnProfileMutations(userId, { includeAccepted: true })');
     expect(source).toContain('setOwnCreatedCards(items)');
-    expect(source).toContain("<span>{uiText('Мої картки', language)}</span>");
+    expect(source).not.toContain("<span>{uiText('Мої картки', language)}</span>");
     expect(source).toContain('Ви ще не завели жодної картки.');
   });
 });

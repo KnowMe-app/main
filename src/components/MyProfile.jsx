@@ -353,6 +353,9 @@ const PublishMissingChip = styled.button`
  * сторінки треба було догортати. Панель стоїть над нижньою навігацією
  * (`--km-bottom-nav-h`) і веде або одразу до публікації, або до переліку
  * того, чого бракує.
+ * `env(safe-area-inset-bottom)` тут немає з тієї ж причини, що й у нижній
+ * навігації: Firefox на Android кладе туди висоту власного тулбара, і під
+ * кнопкою «Показати» стояла порожня смуга завбільшки з саму панель.
  */
 const PublishDock = styled.div`
   position: fixed;
@@ -363,7 +366,7 @@ const PublishDock = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
   background: var(--card);
   border-top: 1px solid var(--border);
   box-shadow: 0 -6px 16px rgba(0, 0, 0, .06);
@@ -382,7 +385,6 @@ const PublishDockButton = styled.button`
   font-weight: 700;
   cursor: pointer;
 `;
-const PublishDockSpacer = styled.div`height: 76px;`;
 /*
  * Одна анкета — головна дія й поруч кошик «Очистити анкету». Кошик стоїть
  * тут на прохання власниці продукту: при кількох ролях він уже є в рядку
@@ -2174,6 +2176,31 @@ export const MyProfile = () => {
 
   const getSectionKeyByField = fieldName => visibleSections.find(section => section.fields.includes(fieldName))?.key || 'personal';
 
+  // Перелік того, чого бракує, веде до самого поля, а не до початку розділу:
+  // телефон в «Особистих даних» стоїть під іменем, прізвищем, по батькові й
+  // поштою, і прокрутка до шапки розділу лишала його за нижньою панеллю —
+  // тост казав «заповніть Телефон», а поля на екрані не було.
+  const scrollToField = (fieldName) => {
+    const sectionKey = getSectionKeyByField(fieldName);
+    const fieldEl = typeof document === 'undefined'
+      ? null
+      : document.querySelector(`[data-profile-field="${fieldName}"]`);
+    if (!fieldEl) {
+      scrollToSection(sectionKey);
+      return;
+    }
+    setActiveTab(sectionKey);
+    isManualScrollRef.current = true;
+    if (programmaticScrollTimeoutRef.current) {
+      window.clearTimeout(programmaticScrollTimeoutRef.current);
+    }
+    const fieldTop = fieldEl.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo({ top: Math.max(0, Math.round(fieldTop - getStickyOffset() - SECTION_SCROLL_GAP)), behavior: 'smooth' });
+    programmaticScrollTimeoutRef.current = window.setTimeout(() => {
+      finishProgrammaticScroll();
+    }, PROGRAMMATIC_SCROLL_FALLBACK_MS);
+  };
+
   // Тост «Заповніть обовʼязкове поле» мусить назвати поле так само, як його
   // підписує форма: агенція бачила «Ім’я» замість «Назва агенції» (підпис ролі
   // — `resolveMyProfileFieldText`), а розділ програм, який полем у довіднику
@@ -2234,7 +2261,7 @@ export const MyProfile = () => {
       ? uiText('Щоб опублікувати, заповніть: {labels} і ще {count}', language, { labels: labels.join(', '), count: rest })
       : uiText('Щоб опублікувати, заповніть: {labels}', language, { labels: labels.join(', ') }),
     { id: 'my-profile-missing-fields', duration: 6000 });
-    scrollToSection(getSectionKeyByField(missingFieldNames[0]));
+    scrollToField(missingFieldNames[0]);
     return false;
   };
 
@@ -2639,7 +2666,7 @@ export const MyProfile = () => {
     const customSelected = canUseCustomOption
       && (Boolean(customOptionMode[name]) || hasCustomValue);
 
-    return <Field key={name}>
+    return <Field key={name} data-profile-field={name}>
       <Label>{roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language)}</Label>
       {offeredOptions.length > 0 ? (
         <>
@@ -3245,7 +3272,7 @@ export const MyProfile = () => {
               <PublishMissingChip
                 key={fieldName}
                 type="button"
-                onClick={() => scrollToSection(getSectionKeyByField(fieldName))}
+                onClick={() => scrollToField(fieldName)}
               >
                 {resolveRequiredFieldLabel(fieldName)}
               </PublishMissingChip>
@@ -3366,9 +3393,9 @@ export const MyProfile = () => {
         </div>
       ) : null}
     </SubmitWrap>
-    {/* Відступ стоїть, поки панель узагалі можлива: інакше низ сторінки
-        стрибав би щоразу, як блок «Публікація» входить у кадр. */}
-    {awaitingPublication && isProfileAccessConfirmed && !editingProgram ? <PublishDockSpacer /> : null}
+    {/* Відступу під панель немає: панель ховається, щойно блок «Публікація»
+        входить у кадр, а він і є низ сторінки — тож закрити собою вона нічого
+        не може. Відступ у 76 px стояв під «Публікацією» порожнім місцем. */}
     {awaitingPublication && isProfileAccessConfirmed && !editingProgram && !publishCardInView ? (
       <PublishDock data-testid="publish-dock">
         <span>
