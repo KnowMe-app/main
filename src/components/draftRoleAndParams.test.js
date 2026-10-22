@@ -8,7 +8,16 @@ describe('чернетка питає роль і параметри', () => {
 
   it('має розділи «Хто це» й «Параметри»', () => {
     expect(source).toContain("{ key: 'role', title: 'Хто це', fields: ['role'], ownDraftOnly: true },");
-    expect(source).toContain("{ key: 'params', title: 'Параметри', fields: ['height', 'weight', 'blood'] },");
+    expect(source).toContain("{ key: 'params', title: 'Параметри', fields: ['height', 'weight', 'blood'], personOnly: true },");
+  });
+
+  it('параметри питає лише в людини', () => {
+    const { offersSectionForCard } = require('./ProfileCreationWorkspace');
+    const params = { personOnly: true, fields: ['height', 'weight', 'blood'] };
+    expect(offersSectionForCard(params, {})).toBe(true);
+    expect(offersSectionForCard(params, { role: 'ed' })).toBe(true);
+    expect(offersSectionForCard(params, { role: 'ag' })).toBe(false);
+    expect(offersSectionForCard(params, { role: 'ag', height: '170' })).toBe(true);
   });
 
   it('роль не пропонує ні в доповненні чужої картки, ні в спільній чернетці', () => {

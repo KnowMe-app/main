@@ -3043,7 +3043,16 @@ const addLimitedUser = async (userId, users) => {
     return;
   }
   const profile = await fetchLimitedProfileById(userId, raw);
-  if (profile) users[userId] = profile;
+  if (profile) {
+    users[userId] = profile;
+    return;
+  }
+  // Картки стрічки в чернетки немає, тож урізаній проєкції тут нема з чого
+  // взятись — і читач без службового доступу на номер із власної (чи чужої)
+  // чернетки бачив «Немає доступних профілів», хоч `searchId` той номер знав.
+  // Повна видача (`addSearchHit`) цей крок робила давно; тут його не було.
+  const draft = await readProfileDraftForSearchHit(userId);
+  if (draft) users[userId] = draft;
 };
 
 /**

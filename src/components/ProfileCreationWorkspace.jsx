@@ -242,10 +242,10 @@ const FormSectionTitle = styled.h3`
 const FieldRow = styled.div`
   padding:14px 0; border-bottom:1px solid var(--km-border);
   &:last-child { border-bottom:none; }
-  /* Поле всередині доріжки нотатки: підпис уже стоїть над ним, і власного
-     відступу воно не додає — інакше два сусідні порожні поля стояли б на
-     різній висоті від своїх підписів. */
-  ${({ $bare }) => ($bare ? 'padding:0; border-bottom:none;' : '')}
+  /* Поле без підпису (чипи «Хто це» — їх підписує заголовок розділу). Відступ
+     лишається той самий, що в інших полів: з нульовим чипи прилипали до
+     смуги заголовка й до низу картки. */
+  ${({ $bare }) => ($bare ? 'padding:14px 0 16px; border-bottom:none;' : '')}
   ${({ $pending }) => ($pending ? `
     margin:0 -10px; padding-left:10px; padding-right:10px; border-radius:14px;
     background:color-mix(in srgb, var(--km-accent) 5%, transparent);
@@ -594,7 +594,9 @@ const CREATE_FORM_SECTIONS = [
   { key: 'role', title: 'Хто це', fields: ['role'], ownDraftOnly: true },
   // Те, що стоїть у рядку стрічки й за чим агенція вирішує, чи писати.
   // Картка без цього в стрічці — імʼя й місто, тобто нічого.
-  { key: 'params', title: 'Параметри', fields: ['height', 'weight', 'blood'] },
+  // Лише людині (`personOnly`, `offersSectionForCard`): агенції, клініці й
+  // батькам зріст, вага й група крові не належать — чернетка агенції питала їх.
+  { key: 'params', title: 'Параметри', fields: ['height', 'weight', 'blood'], personOnly: true },
   { key: 'location', title: '📍 Локація', fields: ['country', 'region', 'city'] },
   // VK тут немає: мережа заблокована в Україні з 2017 року, і поле для неї у
   // формі читалось як знак, чий це застосунок. Уже записані значення лишаються
@@ -629,6 +631,18 @@ export const isContactFieldOfferedForCard = (fieldName, card) => {
   const isPerson = roles.some(role => role === 'ed' || role === 'sm');
   const isOrganisation = roles.some(role => role === 'ag' || role === 'cl');
   return !isPerson || isOrganisation;
+};
+
+/*
+ * Розділ лише для людини (`personOnly`) стоїть, поки роль картки ще не обрана
+ * або серед ролей є донорка чи СМ. Уже записане значення розділ лишає: інакше
+ * зріст, введений до вибору ролі «Агенція», не було б де стерти.
+ */
+export const offersSectionForCard = (section, card) => {
+  if (!section?.personOnly) return true;
+  if (section.fields.some(fieldName => hasCurrentValue(card?.[fieldName]))) return true;
+  const roles = listProfileRoles(card);
+  return roles.length === 0 || roles.some(role => role === 'ed' || role === 'sm');
 };
 
 export const collectExtraContactFields = card => CONTACT_FIELDS
@@ -2306,7 +2320,8 @@ export const ProfileCreationWorkspace = () => {
       {/* «Лише власній чернетці» — це ні доповненню чужої картки, ні спільній
           чернетці іншого автора: в обох дотик до чипа ролі записався б
           пропозицією змінити чужу роль. */}
-      {CREATE_FORM_SECTIONS.filter(section => section.key !== 'comment' && !(section.ownDraftOnly && (overlayTarget || editingSharedDraft))).map(section => (
+      {CREATE_FORM_SECTIONS.filter(section => section.key !== 'comment' && !(section.ownDraftOnly && (overlayTarget || editingSharedDraft))
+        && offersSectionForCard(section, summaryCard)).map(section => (
         <FormSectionCard key={section.key}>
           <FormSectionTitle id={`create-section-${section.key}`}>{stripSectionEmoji(uiText(section.title, language))}</FormSectionTitle>
           {section.fields
@@ -2588,12 +2603,10 @@ export const ProfileCreationWorkspace = () => {
           {!searchLoading && !searchFailed && !hasExistingMatches && searchNotFound
             && <Meta>{uiText('Такої анкети ще немає — заведіть її першим рядком.', language)}</Meta>}
         </ResultsSection> : <>
-          {/* Порожній рядок пошуку — це не порожній екран: назва обіцяє власні
-              картки, і вони тут і лежать, разом із уже прийнятими. */}
-          <SectionHeader>
-            <span>{uiText('Мої картки', language)}</span>
-            <Count aria-label={uiText('{count} карток', language, { count: visibleOwnCards.length })}>{visibleOwnCards.length}</Count>
-          </SectionHeader>
+          {/* Порожній рядок пошуку — це не порожній екран: власні картки тут і
+              лежать, разом із уже прийнятими. Заголовка «Мої картки N» над ними
+              немає на прохання власниці продукту: список під поясненням і так
+              читається як «ваші картки», а число повторювало його довжину. */}
           {visibleOwnCards.length === 0 ? <EmptyState>
             <EmptyIcon><FiFolder aria-hidden="true" /></EmptyIcon>
             <EmptyTitle>{uiText('Ви ще не завели жодної картки.', language)}</EmptyTitle>
