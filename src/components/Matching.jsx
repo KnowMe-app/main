@@ -5132,6 +5132,13 @@ const Matching = () => {
     viewerId: ownerId,
   }), [donorRestrictionViewerRole, dislikeUsers, favoriteUsers, matchingUiFilters, ownerId, programRates, roleIndexSets, stickyReactedUserIds, users, viewMode]);
 
+  // Рейки в колекціях немає (див. розмітку), тож і відкрита група не мусить
+  // пережити перехід туди: інакше на поверненні в «Усі» панель відкривалась
+  // сама, без жодного дотику.
+  useEffect(() => {
+    if (viewMode !== 'default' && viewMode !== 'search' && openFilterGroup) setOpenFilterGroup(null);
+  }, [openFilterGroup, viewMode]);
+
   /**
    * Власна чернетка, яку питали по імені чи контакту, — теж відповідь пошуку.
    *
@@ -8009,8 +8016,12 @@ const Matching = () => {
           {/* Фільтри стоять під колекціями, а не навпаки: спершу читач
               обирає деку (усі / вподобані / приховані), а вже потім звужує
               її вміст. У пошуку рейки немає зовсім: видача — це відповідь на
-              набране, і звужує її рядок уточнення, а не фільтри стрічки. */}
-          {!isSearching && (
+              набране, і звужує її рядок уточнення, а не фільтри стрічки.
+              У колекціях «Не цікаві» й «Обране» — теж: їх складає сама мапа
+              реакцій (`reactionTabUsers`), і фільтри до неї не доходять.
+              Рейка там стояла й обіцяла звуження, якого не було: «Сімейний
+              стан: крім Заміжня» над списком, де заміжні лишались. */}
+          {!isSearching && viewMode === 'default' && (
             <MatchingFilterRail
               filters={matchingUiFilters}
               language={language}
