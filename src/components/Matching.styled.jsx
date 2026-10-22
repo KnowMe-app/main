@@ -912,7 +912,7 @@ export const MatchingTopBar = styled.div`
   gap: 8px;
   width: 100%;
   box-sizing: border-box;
-  padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  padding: max(8px, env(safe-area-inset-top)) 12px 0;
   background: var(--matching-page-bg);
 
   @media (max-width: 768px) {
@@ -934,6 +934,9 @@ export const SearchField = styled.div`
   height: 44px;
   padding: 0 8px 0 14px;
   gap: 8px;
+  /* У рядку навігації телефона поле нижче: при 44 px у рядку 52 px над і
+     під ним лишалось по 4 px, і поле впиралось у краї шапки. */
+  [data-page-header] & { height: 40px; }
   box-sizing: border-box;
   /* Заливка замість рамки — те саме поле, що й на «Додати картку»
      (\`SearchBar\`): контури тут змагались із колекціями й чіпами під ним. */
@@ -977,7 +980,11 @@ export const ChipsRow = styled.div`
   gap: 6px;
   width: 100%;
   box-sizing: border-box;
-  padding: 0 12px 8px;
+  /* Відступ зверху — свій, а не верхнього рядка: на телефоні пошук живе в
+     навігації, рядок над колекціями порожній і схований, і доріжка «Усі /
+     Не цікаві / Обране» прилипала до межі шапки — знизу відступ був, зверху
+     ні. */
+  padding: 10px 12px 8px;
 
   @media (max-width: 768px) {
     padding-left: 8px;
