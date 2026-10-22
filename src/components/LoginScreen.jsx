@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { FaUser, FaLock, FaEye, FaEyeSlash } from 'react-icons/fa';
+import { FaUser, FaLock, FaEye, FaEyeSlash, FaGlobe, FaChevronDown } from 'react-icons/fa';
 import { auth, fetchUserById } from './config';
 import { createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
@@ -16,6 +16,9 @@ import {
 } from './authProfilePersistence';
 import { readReturnToFromState } from 'utils/authRedirect';
 import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
+import { APP_LANGUAGES, getLanguageNativeName } from 'utils/locales';
+import { uiText } from 'utils/uiTranslations';
+import { useAppSettings } from '../hooks/useAppSettings';
 
 const MATCHING_ROUTE = '/matching';
 
@@ -57,6 +60,48 @@ const InnerContainer = styled.div`
   display: flex;
   flex-direction: column;
   gap: 16px;
+`;
+
+/*
+ * Вибір мови — над карткою входу, праворуч.
+ *
+ * Меню «⋮», де мова живе в застосунку, до входу недоступне, а людина, яка не
+ * читає українською, мусить зрозуміти форму ще до того, як увійде. Тут
+ * пігулка з назвою поточної мови її ж мовою, а під нею — рідний `select`:
+ * сім варіантів телефон покаже своїм списком, і стрілки клавіатури працюють
+ * без власної логіки. Вибір той самий, що й у меню (`appLanguage`), тож
+ * після входу застосунок відкривається вже обраною мовою.
+ */
+const LanguageRow = styled.div`
+  display: flex;
+  justify-content: flex-end;
+`;
+
+const LanguagePill = styled.label`
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--km-fill);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+
+  svg { color: var(--muted); flex: 0 0 auto; }
+  &:focus-within { box-shadow: 0 0 0 3px var(--km-accent-ring); }
+
+  select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    opacity: 0;
+    cursor: pointer;
+    font-size: 16px;
+  }
 `;
 
 const LoginCard = styled.div`
@@ -393,6 +438,8 @@ const Spinner = styled.div`
 // означати «нічого не робимо». Значення `'in'` тут відсилало б читача геть з
 // форми входу в того, хто змонтував її без цього пропа.
 export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
+  const { language, setLanguage } = useAppSettings();
+  const tr = (text, vars) => uiText(text, language, vars);
   const [isChecked, setIsChecked] = useState(false);
   const [selectedRole, setSelectedRole] = useState('');
   // Роль питається лише на вкладці «Створити акаунт». Досі її вимагали на
@@ -696,15 +743,32 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
         </LoadingOverlay>
       )}
       <InnerContainer>
+        <LanguageRow>
+          <LanguagePill title={language === 'en' ? 'Language' : `${tr('Мова')} · Language`}>
+            <FaGlobe aria-hidden="true" />
+            <span lang={language}>{getLanguageNativeName(language)}</span>
+            <FaChevronDown size={10} aria-hidden="true" />
+            <select
+              data-testid="login-language"
+              aria-label={language === 'en' ? 'Language' : `${tr('Мова')} · Language`}
+              value={language}
+              onChange={event => setLanguage(event.target.value)}
+            >
+              {APP_LANGUAGES.map(item => (
+                <option key={item.code} value={item.code} lang={item.code}>{item.nativeName}</option>
+              ))}
+            </select>
+          </LanguagePill>
+        </LanguageRow>
         <LoginCard>
           <BrandBlock>
             <WelcomeText>KnowMe<WelcomeAccent>.</WelcomeAccent></WelcomeText>
-            <WelcomeDescription>Знайомтеся з донорками, батьками та агенціями. Зберігайте анкети й знаходьте тих, хто вам підходить.</WelcomeDescription>
+            <WelcomeDescription>{tr('Знайомтеся з донорками, батьками та агенціями. Зберігайте анкети й знаходьте тих, хто вам підходить.')}</WelcomeDescription>
           </BrandBlock>
 
-          <ModeTabs role="tablist" aria-label="Вхід або реєстрація">
+          <ModeTabs role="tablist" aria-label={tr('Вхід або реєстрація')}>
             <ModeTab type="button" role="tab" aria-selected={!isRegisterMode} $active={!isRegisterMode} onClick={() => setAuthMode('login')}>
-              Увійти
+              {tr('Увійти')}
             </ModeTab>
             <ModeTab
               type="button"
@@ -713,7 +777,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
               $active={isRegisterMode}
               onClick={() => { setAuthMode('register'); setLoginFailedUnknownEmail(false); }}
             >
-              Створити акаунт
+              {tr('Створити акаунт')}
             </ModeTab>
           </ModeTabs>
 
@@ -730,7 +794,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
               onBlur={handleBlur}
               autoComplete="email"
             />
-            <Label htmlFor="login-email">Поштова скринька</Label>
+            <Label htmlFor="login-email">{tr('Поштова скринька')}</Label>
           </InputDiv>
 
           <InputDiv $active={focused === 'password' || Boolean(state.password)}>
@@ -746,11 +810,11 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
               onBlur={handleBlur}
               autoComplete="current-password"
             />
-            <Label htmlFor="login-password">Пароль</Label>
+            <Label htmlFor="login-password">{tr('Пароль')}</Label>
             <PasswordToggle
               type="button"
               onClick={() => setShowPassword(value => !value)}
-              aria-label={showPassword ? 'Сховати пароль' : 'Показати пароль'}
+              aria-label={tr(showPassword ? 'Сховати пароль' : 'Показати пароль')}
               aria-pressed={showPassword}
             >
               {showPassword ? <FaEyeSlash /> : <FaEye />}
@@ -759,15 +823,15 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
           {!isRegisterMode && (
             <ForgotRow>
               <LinkButton type="button" onClick={handlePasswordReset} disabled={isLoading}>
-                Забули пароль?
+                {tr('Забули пароль?')}
               </LinkButton>
             </ForgotRow>
           )}
 
           {isRegisterMode && (
             <RoleBlock>
-              <RoleTitle>Хто ви?</RoleTitle>
-              <RoleHint>Від ролі залежить, які поля покаже анкета й кого ви побачите у стрічці. Змінити її можна будь-коли в «Моєму профілі».</RoleHint>
+              <RoleTitle>{tr('Хто ви?')}</RoleTitle>
+              <RoleHint>{tr('Від ролі залежить, які поля покаже анкета й кого ви побачите у стрічці. Змінити її можна будь-коли в «Моєму профілі».')}</RoleHint>
               <RoleGrid>
                 {PROFILE_ROLE_OPTIONS.map(option => (
                   <RoleOption key={option.value} $selected={selectedRole === option.value}>
@@ -779,8 +843,8 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
                       onChange={e => setSelectedRole(e.target.value)}
                     />
                     <RoleText>
-                      <RoleName>{option.label}</RoleName>
-                      {ROLE_DESCRIPTIONS[option.value] && <RoleDescription>{ROLE_DESCRIPTIONS[option.value]}</RoleDescription>}
+                      <RoleName>{tr(option.label)}</RoleName>
+                      {ROLE_DESCRIPTIONS[option.value] && <RoleDescription>{tr(ROLE_DESCRIPTIONS[option.value])}</RoleDescription>}
                     </RoleText>
                   </RoleOption>
                 ))}
@@ -792,26 +856,30 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
             <CheckboxContainer>
               <CustomCheckbox id="login-terms" type="checkbox" checked={isChecked} onChange={handleCheckboxChange} />
               <CheckboxLabel htmlFor="login-terms">
-                Я погоджуюся з Угодою користувача та надаю згоду на обробку моїх персональних даних відповідно до Політики конфіденційності.
+                {tr('Я погоджуюся з Угодою користувача та надаю згоду на обробку моїх персональних даних відповідно до Політики конфіденційності.')}
               </CheckboxLabel>
-              <TermsButton type="button" onClick={handleTermsClick}>Умови</TermsButton>
+              <TermsButton type="button" onClick={handleTermsClick}>{tr('Умови')}</TermsButton>
             </CheckboxContainer>
           )}
 
           <SubmitButton type="button" onClick={handleAuth} disabled={isLoading}>
-            {isLoading ? 'Зачекайте…' : (isRegisterMode ? 'Створити акаунт' : 'Увійти')}
+            {tr(isLoading ? 'Зачекайте…' : (isRegisterMode ? 'Створити акаунт' : 'Увійти'))}
           </SubmitButton>
           {!isRegisterMode && (
             <LoginTermsNote>
-              Входячи, ви погоджуєтесь з{' '}
-              <LinkButton type="button" onClick={handleTermsClick}>Угодою користувача</LinkButton>.
+              {/* Посилання стоїть там, де його ставить переклад: у німецькій
+                  чи японській після нього ще йде частина речення. */}
+              {(() => {
+                const [before, after = ''] = tr('Входячи, ви погоджуєтесь з {link}.').split('{link}');
+                return <>{before}<LinkButton type="button" onClick={handleTermsClick}>{tr('Угодою користувача')}</LinkButton>{after}</>;
+              })()}
             </LoginTermsNote>
           )}
           {!isRegisterMode && loginFailedUnknownEmail && (
             <LoginHint aria-live="polite">
-              Акаунта з такою поштою немає.{' '}
+              {tr('Акаунта з такою поштою немає.')}{' '}
               <LinkButton type="button" onClick={() => { setAuthMode('register'); setLoginFailedUnknownEmail(false); }}>
-                Створити акаунт
+                {tr('Створити акаунт')}
               </LinkButton>
             </LoginHint>
           )}
