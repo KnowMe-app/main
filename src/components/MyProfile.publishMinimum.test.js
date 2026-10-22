@@ -31,4 +31,16 @@ describe('мінімум для публікації особистої анке
     expect(source).toContain('data-testid="publish-dock"');
     expect(source).toContain('bottom: var(--km-bottom-nav-h, 0px);');
   });
+
+  // Агенція, яка ще й СМ: агентська анкета не мусить чекати на дату
+  // народження й сімейний стан — це питання особистої анкети.
+  it('не вимагає особистих полів від анкети організації', () => {
+    expect(source).toContain('|| !personSharedFieldNames.has(fieldName))');
+    const block = source.slice(
+      source.indexOf('const personSharedFieldNames'),
+      source.indexOf('const personSharedFieldNames') + 400,
+    );
+    expect(block).toContain('.filter(name => !visibleNonDonorFields.has(name))');
+    expect(source).toContain('const byRole = rolesList.map(role => listMissingRequiredFields(role, state));');
+  });
 });

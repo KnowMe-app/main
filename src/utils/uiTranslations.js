@@ -445,13 +445,16 @@ const EN_BY_UK = {
   'Немає звʼязку — відгуки прочитаються, щойно він повернеться': 'No connection — reviews will load once it is back',
   'Уточнити': 'Add details',
   'Детальніше': 'Details',
-  'По батькові': 'Patronymic',
+  // По батькові буває лише в слов'янських іменах; у мовах, де його немає,
+  // поле зветься тим, що там стоїть на тому ж місці, — другим іменем, і
+  // приклад теж місцевий (у всіх модулях `utils/locales` так само).
+  'По батькові': 'Middle name',
   'Перший день останньої менструації': 'First day of last period',
   'Ускладнення здоровʼя, вагітності, пологів': 'Health, pregnancy or delivery complications',
   'Опишіть, що саме': 'Describe what exactly',
   'Бажана винагорода': 'Desired compensation',
   'Наприклад: від 1000 $, залежить від програми': 'For example: from $1000, depends on the program',
-  'Наприклад: Олександрівна': 'For example: Oleksandrivna',
+  'Наприклад: Олександрівна': 'For example: Grace',
   '{label} за номером': '{label} by number',
   'Сімейний стан': 'Marital status',
   'Повернути': 'Restore',
@@ -1308,7 +1311,7 @@ const EN_BY_UK = {
   'останні зміни': 'last change',
   'останній логін': 'last login',
   'опубліковано': 'published',
-  'по батькові': 'patronymic',
+  'по батькові': 'middle name',
   'додатковий лінк': 'other link',
 
   // --- підказки в полях (`placeholder`) ---

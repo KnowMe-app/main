@@ -925,6 +925,12 @@ const PERSON_ROLES = ['ed', 'sm'];
 // раз над анкетами ролей.
 const SHARED_SECTION_KEYS = new Set(['personal', 'social']);
 const ORGANISATION_ROLES = ['ag', 'cl'];
+// Поля спільних розділів, які питають лише в донорки й СМ
+// (`listMissingRequiredFields` для анкети іншої ролі їх не вимагає).
+const personSharedFieldNames = new Set(baseSections
+  .filter(section => SHARED_SECTION_KEYS.has(section.key))
+  .flatMap(section => section.fields)
+  .filter(name => !visibleNonDonorFields.has(name)));
 // Чого не питають у сурогатної мами, якщо донорської анкети в людини немає.
 //
 // Обидві ролі ділили одну анкету (`PERSON_ROLES`), і СМ заповнювала 49 полів
@@ -2200,6 +2206,12 @@ export const MyProfile = () => {
       // role's own questionnaire: an SM must not be blocked by donor-only
       // appearance and lifestyle fields merely because an ED role also exists.
       .filter(fieldName => onlyRole !== 'sm' || !SURROGATE_HIDDEN_FIELDS.has(fieldName))
+      // «Особисті дані» спільні для всіх анкет, але дата народження й
+      // сімейний стан у них — питання донорки чи СМ. Агенція, яка ще й СМ,
+      // публікуючи агентську анкету, діставала тост «заповніть дату
+      // народження, сімейний стан» і не публікувалась без даних анкети СМ.
+      .filter(fieldName => !onlyRole || rolesList.length < 2 || PERSON_ROLES.includes(onlyRole)
+        || !personSharedFieldNames.has(fieldName))
       .filter(fieldName => fieldName === 'programs'
         ? ownVisiblePrograms.length === 0
         : String(currentState[fieldName] || '').trim() === ''))];
@@ -2753,7 +2765,17 @@ export const MyProfile = () => {
   // Перелік того, чого бракує до публікації, рахується з того самого правила,
   // що й перевірка на кнопці (`listMissingRequiredFields`).
   const awaitingPublication = publishedRoleCount === 0 && !isLikedAudience;
-  const missingPublishFields = awaitingPublication ? listMissingRequiredFields('', state) : [];
+  // При кількох ролях анкети публікуються окремо, тож «бракує» — це те, що
+  // тримає основну анкету, і нічого, коли хоч одну вже можна опублікувати.
+  // Спільний перелік усіх ролей тут був, і агенція, яка ще й СМ, бачила під
+  // готовою агентською анкетою вимогу заповнити зріст і групу крові.
+  const missingPublishFields = (() => {
+    if (!awaitingPublication) return [];
+    if (rolesList.length < 2) return listMissingRequiredFields('', state);
+    const byRole = rolesList.map(role => listMissingRequiredFields(role, state));
+    if (byRole.some(list => list.length === 0)) return [];
+    return byRole[rolesList.indexOf(selectedRole)] || byRole[0];
+  })();
   const scrollToPublishCard = () => scrollToSection('publish');
   // Поки сам блок «Публікація» на екрані, панель лише повторює його кнопку.
   const [publishCardInView, setPublishCardInView] = useState(false);

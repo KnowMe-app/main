@@ -1443,25 +1443,28 @@ export const NotesAddRow = styled.div`
   /* Картка організації: відгук, памʼятка й рішення — один стислий ряд
      другорядних дій під головною («Подзвонити»). Двома рядами широких
      кольорових кнопок вони займали більше місця, ніж сама пропозиція. */
+  /* Один рядок без переносу: значки біля «Відгук», «Памʼятка» й «Відкласти»
+     прибрано (ProfileNotes з compact), тож три слова й рішення
+     вміщаються на ширині телефона, а на вужчому слова стискаються
+     трикрапкою, а не переносять серце на другий рядок. */
   ${({ $compact }) => $compact && css`
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
 
     > button {
+      flex: 1 1 auto;
+      min-width: 0;
       min-height: 32px;
-      padding: 0 10px;
-      border-color: var(--matching-card-border);
-      background: transparent;
-      color: var(--matching-header-text);
-      font-weight: 600;
+      padding: 0 7px;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
-    > button svg { color: var(--note-lane-color); }
-    > button:hover {
-      background: color-mix(in srgb, var(--matching-header-text) 7%, transparent);
-      border-color: var(--matching-card-border);
-    }
+    /* Без значка колір доріжки несе саме слово на тонованій підкладці. */
+    > button span { overflow: hidden; text-overflow: ellipsis; }
   `}
 `;
 
@@ -1469,11 +1472,14 @@ export const NotesAddRow = styled.div`
 export const CompactDecisions = styled.div`
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex: 0 0 auto;
+  gap: 4px;
   margin-left: auto;
 
-  > div { flex: 0 0 auto; width: 76px; height: 32px; }
-  > button { flex: 0 0 auto; width: 36px; height: 32px; }
+  /* Вужче, ніж було (76 і 36 px): на телефоні 360 px три слова інакше
+     стискались до «Від…». */
+  > div { flex: 0 0 auto; width: 66px; height: 32px; }
+  > button { flex: 0 0 auto; width: 32px; height: 32px; }
 `;
 
 // Колір доріжки «Пізніше» — синій: це не запис про людину (відгук, памʼятка),
