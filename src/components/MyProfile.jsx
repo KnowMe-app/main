@@ -197,14 +197,14 @@ const CONTENT_SECTION_TOP_GAP = 18;
 const SECTION_SCROLL_GAP = CONTENT_SECTION_TOP_GAP;
 const SCROLL_ACTIVE_SECTION_GAP = 16;
 const PROGRAMMATIC_SCROLL_FALLBACK_MS = 900;
-const ProgressWrap = styled.div`padding: 16px var(--page-gutter) 0;`;
+const ProgressWrap = styled.div`padding: 10px var(--page-gutter) 0;`;
 const NextFieldsRow = styled.div`
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-top: 8px;
-  font-size: 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
   color: var(--muted);
 `;
 const NextFieldChip = styled.button`
@@ -393,26 +393,29 @@ const PublishMissingChip = styled.button`
  * кнопкою «Показати» стояла порожня смуга завбільшки з саму панель.
  */
 const PublishDock = styled.div`
+  /* Плаває над нижньою навігацією тією самою пігулкою: суцільна смуга на
+     всю ширину разом із панеллю вкладок забирала чверть екрана. */
   position: fixed;
-  left: 0;
-  right: 0;
+  left: 12px;
+  right: 12px;
   bottom: var(--km-bottom-nav-h, 0px);
   z-index: 20;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  gap: 10px;
+  padding: 6px 6px 6px 16px;
+  border-radius: 28px;
   background: var(--card);
-  border-top: 1px solid var(--border);
-  box-shadow: 0 -6px 16px rgba(0, 0, 0, .06);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
 
   > span { flex: 1; min-width: 0; font-size: 13px; color: var(--muted); }
 `;
 const PublishDockButton = styled.button`
   flex: 0 0 auto;
   border: none;
-  border-radius: var(--radius);
-  padding: 12px 18px;
+  border-radius: 22px;
+  padding: 10px 18px;
   background: ${({ $muted }) => ($muted ? 'var(--km-fill)' : 'var(--km-accent)')};
   color: ${({ $muted }) => ($muted ? 'var(--text)' : '#fff')};
   font: inherit;
@@ -3080,7 +3083,7 @@ export const MyProfile = () => {
 
     <StickyProgress ref={stickyProgressRef} $compact={editingProgram}>
       <ProgressWrap>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
         {/* Рахує лише поля, без яких анкету не опублікувати, — так і підписано:
             голе «Заповнено 8 з 10 · 80%» стояло над розділами «2/13» і «0/13»,
             які рахують усі поля, і два числа суперечили одне одному. */}
@@ -3092,16 +3095,6 @@ export const MyProfile = () => {
       <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
         <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: 99, background: 'var(--accent)' }} />
       </div>
-      {nextEmptyFields.length && !editingProgram ? (
-        <NextFieldsRow data-testid="profile-next-fields">
-          <span>{uiText('Варто дописати:', language)}</span>
-          {nextEmptyFields.map(name => (
-            <NextFieldChip key={name} type="button" onClick={() => scrollToField(name)}>
-              {resolveRequiredFieldLabel(name)}
-            </NextFieldChip>
-          ))}
-        </NextFieldsRow>
-      ) : null}
     </ProgressWrap>
 
       <Tabs ref={tabsRef}>
@@ -3459,6 +3452,19 @@ export const MyProfile = () => {
             ))}
           </PublishMissingList>
         </PublishMissing>
+      ) : null}
+      {/* «Варто дописати» — поруч із публікацією, а не в липкій шапці: на
+          телефоні чотири чіпи там забирали третину екрана над кожним полем,
+          і на саму анкету лишалась половина висоти. */}
+      {nextEmptyFields.length && !editingProgram ? (
+        <NextFieldsRow data-testid="profile-next-fields">
+          <span>{uiText('Варто дописати:', language)}</span>
+          {nextEmptyFields.map(name => (
+            <NextFieldChip key={name} type="button" onClick={() => scrollToField(name)}>
+              {resolveRequiredFieldLabel(name)}
+            </NextFieldChip>
+          ))}
+        </NextFieldsRow>
       ) : null}
       {rolesList.length > 1 ? (
         <RoleActionList>
