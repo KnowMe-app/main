@@ -18,6 +18,7 @@ import { getExtraLocale } from './locales';
  */
 
 import { parseProfileDate } from './profileDate';
+import { parseDeliveryDateInput } from './deliveryDateInput';
 
 const MONTHS_IN_YEAR = 12;
 
@@ -31,13 +32,26 @@ export const DELIVERY_RECENCY_YEARS_THRESHOLD_MONTHS = 24;
  * Майбутня дата (описка в анкеті) дає `null`, а не відʼємне число: «мінус три
  * місяці від пологів» — це не відповідь, а вигляд помилки.
  */
-export const monthsSinceDate = (raw, now = new Date()) => {
+// Дата пологів буває й неповною — місяць («2019-05») чи рік («2019»): так
+// її кладе поле «Останні пологи», коли людина дня не назвала
+// (`deliveryDateInput`). Місяць рахується від першого числа, рік — від 1 липня.
+const readDateParts = raw => {
   const parsed = parseProfileDate(raw);
-  if (!parsed) return null;
+  if (parsed) return { year: Number(parsed.y), month: Number(parsed.mo), day: Number(parsed.d) };
+  const value = String(raw ?? '').trim();
+  if (!/^\d{4}(-\d{2})?$/.test(value)) return null;
+  const partial = parseDeliveryDateInput(value);
+  if (partial.reason) return null;
+  return partial.precision === 'year'
+    ? { year: partial.y, month: 7, day: 1 }
+    : { year: partial.y, month: partial.m, day: 1 };
+};
 
-  const year = Number(parsed.y);
-  const month = Number(parsed.mo);
-  const day = Number(parsed.d);
+export const monthsSinceDate = (raw, now = new Date()) => {
+  const parts = readDateParts(raw);
+  if (!parts) return null;
+
+  const { year, month, day } = parts;
   if (!year || !month || !day) return null;
 
   const months = (now.getFullYear() - year) * MONTHS_IN_YEAR + (now.getMonth() + 1 - month);

@@ -283,3 +283,25 @@ describe('окуляри реченням про зір', () => {
     expect(looksText('Лінзи')).toBe('Щодо зору й окулярів — лінзи.');
   });
 });
+
+// Відповіді СМ про досвід, ускладнення й звички картка не показувала ніде —
+// і дописувати їх у «Мому профілі» не було жодного видимого сенсу.
+describe('здоровʼя й спосіб життя в картці', () => {
+  it('показує відповіді СМ словами, а власний текст — як написали', () => {
+    const health = buildProfileDetailSections({
+      surrogacyExperience: 'Yes', healthComplications: 'No', smoking: 'No', alcohol: 'келих на свята', reward: 'від 18 000 $',
+    }, 'uk').find(section => section.key === 'health');
+    expect(health.title).toBe('Здоровʼя й спосіб життя');
+    expect(health.rows.map(row => [row.label, row.value])).toEqual([
+      ['Досвід сурогатного материнства', 'так'],
+      ['Ускладнення', 'не було'],
+      ['Куріння', 'ні'],
+      ['Алкоголь', 'келих на свята'],
+      ['Бажана винагорода', 'від 18 000 $'],
+    ]);
+  });
+
+  it('порожній розділ не малює', () => {
+    expect(buildProfileDetailSections({}, 'uk').find(section => section.key === 'health')).toBeUndefined();
+  });
+});

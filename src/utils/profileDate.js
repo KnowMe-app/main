@@ -45,6 +45,37 @@ export const formatProfileDate = raw => {
   return parsed ? `${parsed.d}.${parsed.mo}.${parsed.y.slice(2)}` : '';
 };
 
+/** Чи існує така дата в календарі: «15.20.19» розбирається, але 20-го місяця немає. */
+export const isRealProfileDate = parsed => {
+  if (!parsed) return false;
+  const day = Number(parsed.d);
+  const month = Number(parsed.mo);
+  const year = Number(parsed.y);
+  if (!year || month < 1 || month > 12 || day < 1) return false;
+  return day <= new Date(year, month, 0).getDate();
+};
+
+/**
+ * Що не так із датою минулої події (останні пологи, перший день циклу), яка
+ * вже лежить в анкеті: `''` — усе гаразд або поле порожнє, `'invalid'` — це
+ * не дата, `'future'` — дата, що ще не настала.
+ *
+ * Такі значення в базі є, і всі — від поля, яке їх пропустило: маска
+ * перетворювала «1.5.2019» на «15.20.19», а «2019» — на «20.19», і майбутній
+ * рік ішов у базу без жодного слова. Картка їх мовчки не показує
+ * (`deliveryRecency`), тож людина вважає поле заповненим, а читач бачить
+ * порожнє місце. Ця перевірка дає формі сказати про це людині.
+ */
+export const readPastDateIssue = (raw, now = new Date()) => {
+  const value = String(raw ?? '').trim();
+  if (!value) return '';
+  const parsed = parseProfileDate(value);
+  if (!isRealProfileDate(parsed)) return 'invalid';
+  const date = new Date(Number(parsed.y), Number(parsed.mo) - 1, Number(parsed.d));
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return date > today ? 'future' : '';
+};
+
 /**
  * Значення, яке може бути і кількістю, і датою.
  *
