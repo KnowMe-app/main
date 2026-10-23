@@ -84,6 +84,7 @@ import {
 import { forgetProgramTerm, isSuggestedProgramTerm, loadProgramTerms, rememberProgramTerms } from './programs/programsRemote';
 import { isProgramsOwnerRoleHidden, listPrograms, listProgramBonuses, resolveProgramsOwnerRole } from '../utils/donorPrograms';
 import { MyProfileCardPreview } from './MyProfileCardPreview';
+import { MyProfileShare } from './MyProfileShare';
 import { getCurrentValue } from './getCurrentValue';
 
 const Page = styled.div`
@@ -1193,6 +1194,10 @@ export const MyProfile = () => {
   // збереженням читався документ Firestore — а замінити його вузлами означало б
   // пʼять читань RTDB на кожен blur. Читання одне — на відкритті.
   const persistedProfileRef = useRef({ uid: '', data: null });
+  // Блок «Поділитися анкетою»: після кожного вдалого збереження він оновлює
+  // знімки за посиланнями (`profileSaved`), інакше гість бачив би стару анкету.
+  const shareBlockRef = useRef(null);
+  const getShareProfile = useCallback(() => stateRef.current, []);
   const editedFieldsRef = useRef(new Set());
   const authHintTimersRef = useRef([]);
   // Анкета ще їде з бази. Поки цього стану не було, сторінка малювала порожню
@@ -2261,6 +2266,7 @@ export const MyProfile = () => {
             data: { ...existingData, ...normalizeStoredDates(uploadedInfo) },
           };
         }
+        shareBlockRef.current?.profileSaved();
       });
 
     return saveQueueRef.current;
@@ -2640,6 +2646,8 @@ export const MyProfile = () => {
     setIsClearingProfile(true);
     try {
       await saveState(nextState, { directFields: ['publish', 'publishAudience', ...objectFields] });
+      // Посилання на очищену анкету показувало б те, що людина щойно стерла.
+      await shareBlockRef.current?.revokeShares();
       if (wasLikedAudience) await closeLikedAudience();
       // Програми лежать окремо від анкети, тож і знімаються окремо.
       if (ownProgramsCount && programsOwnerId) await saveCardPrograms(programsOwnerId, {});
@@ -2729,6 +2737,7 @@ export const MyProfile = () => {
 
     try {
       if (fields.length) await saveState(nextState, { directFields });
+      if (PERSON_ROLES.includes(role)) await shareBlockRef.current?.revokeShares({ role });
       // У батьків «одного роду» ролей немає (`sameKindRoles` порожній), а
       // програми їхні — коли поруч немає організації (`programsRole`).
       if (role === programsRole && !sharesFields && programsOwnerId) {
@@ -2965,12 +2974,19 @@ export const MyProfile = () => {
   })();
   const scrollToPublishCard = () => scrollToSection('publish');
   // Поки сам блок «Публікація» на екрані, панель лише повторює його кнопку.
+  // Під «Публікацією» стоїть ще «Поділитися анкетою», і низ сторінки тепер
+  // він: панель, що ховалась лише біля «Публікації», лягала на кнопку
+  // «Створити посилання». Тож ховається вона біля будь-якого з двох блоків.
   const [publishCardInView, setPublishCardInView] = useState(false);
   useEffect(() => {
-    const node = sectionRefs.current.publish;
-    if (!node || typeof IntersectionObserver === 'undefined') return undefined;
-    const observer = new IntersectionObserver(([entry]) => setPublishCardInView(entry.isIntersecting));
-    observer.observe(node);
+    const nodes = [sectionRefs.current.publish, sectionRefs.current.share].filter(Boolean);
+    if (!nodes.length || typeof IntersectionObserver === 'undefined') return undefined;
+    const visible = new Set();
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => (entry.isIntersecting ? visible.add(entry.target) : visible.delete(entry.target)));
+      setPublishCardInView(visible.size > 0);
+    });
+    nodes.forEach(node => observer.observe(node));
     return () => observer.disconnect();
   }, []);
   const publishFromDock = () => {
@@ -3263,6 +3279,11 @@ export const MyProfile = () => {
             stateRef.current = nextState;
             return nextState;
           });
+          // Фото пишуться повз `saveState` (`Photos` сам кличе писача), тож
+          // знімкам за посиланнями про них треба сказати окремо — і лише
+          // тоді, коли перелік посилань уже прочитано: інакше кожне
+          // відкриття сторінки з фото коштувало б ще одного читання.
+          shareBlockRef.current?.profileSaved({ onlyIfLoaded: true });
         }}
         uploadInputId="my-profile-photo-upload"
         language={language}
@@ -3582,6 +3603,24 @@ export const MyProfile = () => {
         </div>
       ) : null}
     </SubmitWrap>
+    {/* Поділитися анкетою — посилання для людини без акаунта. Стоїть під
+        «Публікацією», бо це теж рішення «хто бачить анкету», але інше: не
+        стрічка, а одна людина, якій власниця сама надішле посилання. Лише
+        над прочитаною анкетою (`userId` ставить вдале читання): над
+        локальною чернеткою після збою знімок оновився б чужим станом. */}
+    <div ref={node => { sectionRefs.current.share = node; }}>
+      {userId && !profileLoading ? (
+        <MyProfileShare
+          ref={shareBlockRef}
+          uid={userId}
+          getProfile={getShareProfile}
+          profile={state}
+          roles={rolesList}
+          selectedRole={selectedRole}
+          language={language}
+        />
+      ) : null}
+    </div>
     {/* Відступу під панель немає: панель ховається, щойно блок «Публікація»
         входить у кадр, а він і є низ сторінки — тож закрити собою вона нічого
         не може. Відступ у 76 px стояв під «Публікацією» порожнім місцем. */}

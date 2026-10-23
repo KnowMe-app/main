@@ -42,6 +42,29 @@ export const getStoredLanguage = () => {
   }
 };
 
+/** Чи обирала людина мову сама (у меню чи раніше на цьому пристрої). */
+export const hasStoredLanguagePreference = () => {
+  try {
+    return SUPPORTED_APP_LANGUAGES.includes(localStorage.getItem(LANGUAGE_STORAGE_KEY));
+  } catch (error) {
+    return false;
+  }
+};
+
+/**
+ * Перша з мов браузера, яку знає застосунок («de-AT» → «de»), або `''`.
+ * Потрібна там, де людина приходить ззовні й мови ще не обирала, — на
+ * анкеті за посиланням (`SharedProfilePage`): агенція з Німеччини мусить
+ * прочитати її німецькою, а не українською за замовчуванням.
+ */
+export const detectBrowserLanguage = (languages = typeof navigator !== 'undefined' ? navigator.languages || [navigator.language] : []) => {
+  for (const tag of languages || []) {
+    const code = String(tag || '').toLowerCase().split('-')[0];
+    if (SUPPORTED_APP_LANGUAGES.includes(code)) return code;
+  }
+  return '';
+};
+
 export const applyThemeModeToDocument = mode => {
   if (typeof document === 'undefined') return;
   document.documentElement.dataset.kmTheme = mode;
