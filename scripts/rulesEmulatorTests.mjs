@@ -2147,6 +2147,11 @@ await it('фото знімка — лише з його власної теки
   await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), withPhoto(`https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/avatar%2F${CARD}%2F1.jpg?alt=media`)));
   await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), withPhoto(`https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/profileShares%2F${SHARE_TOKEN_2}%2F0.jpg?alt=media`)));
   await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), withPhoto('https://example.com/profileShares%2Fx%2F0.jpg')));
+  // Потрібний шматок, захований у рядку запиту чи в імені файлу, — не та тека:
+  // адреса звіряється цілком, від початку до кінця.
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), withPhoto(`https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/avatar%2F${CARD}%2F1.jpg?alt=media&token=t&x=/o/profileShares%2F${SHARE_TOKEN}%2F`)));
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), withPhoto(`https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/avatar%2F${CARD}%2F1.jpg#/o/profileShares%2F${SHARE_TOKEN}%2F`)));
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), withPhoto(`https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/profileShares%2F${SHARE_TOKEN}%2F..%2F..%2Favatar%2F${CARD}%2F1.jpg?alt=media&token=t`)));
   await assertSucceeds(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), withPhoto(SHARE_PHOTO)));
 });
 

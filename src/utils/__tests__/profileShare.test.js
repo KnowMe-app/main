@@ -211,6 +211,20 @@ describe('контракт знімка з database.rules.json', () => {
     expect(keys.sort()).toEqual(['photos', 'surname', ...PROFILE_SHARE_GROUP_KEYS].sort());
   });
 
+  // `contains` сам по собі пропускав потрібний шматок, захований у рядку
+  // запиту, — тобто чужий аватар. Тож адреса звіряється цілком.
+  it('фото — копія в теці саме цього знімка, а не будь-яка адреса з потрібним шматком', () => {
+    const rule = card.photos.$index['.validate'];
+    const [, source] = /matches\((\/\^https.*?\$\/)\)/.exec(rule);
+    const pattern = new RegExp(source.slice(1, -1));
+    const token = 'shareTokenAAAAAAAAAAAAAA';
+    const fits = url => pattern.test(url) && url.includes(`/o/profileShares%2F${token}%2F`);
+    expect(fits(`https://firebasestorage.googleapis.com/v0/b/webringitapp.appspot.com/o/profileShares%2F${token}%2F0-mh4k2x1.jpg?alt=media&token=1f0e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b`)).toBe(true);
+    expect(fits(`https://firebasestorage.googleapis.com/v0/b/b/o/avatar%2Fu%2F1.jpg?alt=media&token=t&x=/o/profileShares%2F${token}%2F`)).toBe(false);
+    expect(fits(`https://firebasestorage.googleapis.com/v0/b/b/o/profileShares%2F${token}%2F..%2Favatar%2Fu.jpg?alt=media&token=t`)).toBe(false);
+    expect(fits(`https://firebasestorage.googleapis.com/v0/b/b/o/profileShares%2FotherTokenBBBBBBBBBBBBBB%2F0.jpg?alt=media&token=t`)).toBe(false);
+  });
+
   it('без входу читається лише картка знімка, а не вузол', () => {
     expect(card['.read']).not.toContain('auth');
     expect(share['.read']).toContain('auth != null');

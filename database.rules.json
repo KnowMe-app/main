@@ -1024,7 +1024,7 @@
           },
           "photos": {
             "$index": {
-              ".validate": "$index.matches(/^[0-5]$/) && newData.isString() && newData.val().length <= 1000 && newData.val().beginsWith('https://firebasestorage.googleapis.com/v0/b/') && newData.val().contains('/o/profileShares%2F' + $token + '%2F')"
+              ".validate": "$index.matches(/^[0-5]$/) && newData.isString() && newData.val().length <= 1000 && newData.val().matches(/^https:[/][/]firebasestorage[.]googleapis[.]com[/]v0[/]b[/][A-Za-z0-9._-]+[/]o[/]profileShares%2F[A-Za-z0-9_-]+%2F[A-Za-z0-9._-]+[?]alt=media&token=[A-Za-z0-9-]+$/) && newData.val().contains('/o/profileShares%2F' + $token + '%2F')"
             }
           },
           "$other": {
