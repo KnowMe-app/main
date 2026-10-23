@@ -95,3 +95,16 @@ describe('неповна дата пологів', () => {
     expect(getEffectiveCycleStatus({ lastDelivery: '2019-05', cycleStatus: 'pregnant' })).toBe('menstruation');
   });
 });
+
+// Поточний місяць чи рік поле читає як пологи, що вже були: явного статусу
+// такий запис не перебиває.
+describe('неповна дата пологів поточного періоду', () => {
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const thisYear = String(now.getFullYear());
+
+  it.each([thisMonth, thisYear])('«%s» лишає явний статус', value => {
+    expect(getEffectiveCycleStatus({ lastDelivery: value, cycleStatus: 'menstruation' })).toBe('menstruation');
+    expect(getEffectiveCycleStatus({ lastDelivery: value, cycleStatus: 'stimulation' })).toBe('stimulation');
+  });
+});

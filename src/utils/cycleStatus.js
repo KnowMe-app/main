@@ -27,20 +27,31 @@ const isFutureDate = date => {
 };
 
 // Дата пологів буває й неповною — `2027-01` чи `2027` (`deliveryDateInput`
-// кладе ту точність, яку дала людина). Для питання «ще вагітна?» неповна дата
-// означає останній день свого місяця чи року: очікувані «в січні» пологи
-// лишаються майбутніми до кінця січня. Поки тут читався лише `YYYY-MM-DD`,
-// СМ з очікуваними пологами «01.2027» в адмінці вагітною не вважалась.
-const parseDeliveryServerDate = value => {
+// кладе ту точність, яку дала людина). Неповна дата — це період, і про
+// вагітність каже лише тоді, коли весь він попереду: очікувані пологи «в
+// січні 2027» — вагітна. Поточний місяць чи рік («2026-10» у жовтні 2026)
+// поле читає як пологи, що вже були, тож явного статусу (місячні,
+// стимуляція) такий запис не перебиває — `current`. Минулий період — пологи
+// позаду. Поки тут читався лише `YYYY-MM-DD`, очікувані «01.2027» в адмінці
+// вагітністю не рахувались; поки неповна дата бралась кінцем свого періоду,
+// «2026» у жовтні 2026 робило вагітною кожну, хто народила цього року.
+const readDeliveryTiming = value => {
   const full = parseServerDate(value);
-  if (full) return full;
+  if (full) return isFutureDate(full) ? 'future' : 'past';
   if (typeof value !== 'string') return null;
   const match = /^(\d{4})(?:-(\d{2}))?$/.exec(value.trim());
   if (!match) return null;
   const year = Number(match[1]);
-  const month = match[2] ? Number(match[2]) : 12;
-  if (month < 1 || month > 12) return null;
-  return new Date(year, month, 0);
+  const month = match[2] ? Number(match[2]) : 0;
+  if (match[2] && (month < 1 || month > 12)) return null;
+  const start = new Date(year, month ? month - 1 : 0, 1);
+  const end = month ? new Date(year, month, 0) : new Date(year, 12, 0);
+  if (isFutureDate(start)) return 'future';
+  if (!isFutureDate(end)) {
+    const today = normalizeDate(new Date());
+    return end.getTime() < today.getTime() ? 'past' : 'current';
+  }
+  return 'current';
 };
 
 export const getExpectedDeliveryDate = lastCycleDate => {
@@ -60,15 +71,12 @@ const getExpectedDeliveryFromLastCycle = lastCycle => {
 export const getEffectiveCycleStatus = user => {
   if (!user) return undefined;
 
-  const parsedDelivery = parseDeliveryServerDate(user.lastDelivery);
-  if (parsedDelivery) {
-    if (isFutureDate(parsedDelivery)) {
-      return 'pregnant';
-    }
-
-    if (user.cycleStatus === 'pregnant') {
-      return 'menstruation';
-    }
+  const deliveryTiming = readDeliveryTiming(user.lastDelivery);
+  if (deliveryTiming === 'future') {
+    return 'pregnant';
+  }
+  if (deliveryTiming === 'past' && user.cycleStatus === 'pregnant') {
+    return 'menstruation';
   }
 
   if (user.cycleStatus === 'pregnant') {
