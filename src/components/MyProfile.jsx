@@ -32,6 +32,8 @@ import { stripSectionEmoji } from '../utils/sectionTitle';
 import { listViewerRoles, resolveViewerCurrentRole } from '../utils/matchingPeerVisibility';
 import { buildMatchingCardProjection, expandMatchingCard, parseHiddenRoles } from '../utils/matchingCardIndex';
 import { formatDateToDisplay, normalizePhoneValue } from './inputValidations';
+import LastDeliveryField from './LastDeliveryField';
+import { readPastDateIssue } from '../utils/profileDate';
 import {
   createUserWithEmailAndPassword,
   fetchSignInMethodsForEmail,
@@ -858,7 +860,13 @@ const AuthActionButton = styled(SubmitBtn)`
 
 const baseSections = [
   { key: 'personal', title: '👤 Особисті дані', fields: ['name', 'surname', 'fathersname', 'phone', 'birth', 'country', 'region', 'city', 'maritalStatus'] },
-  { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'lastCycle', 'surgeries', 'chronicDiseases', 'allergy', 'healthComplications', 'surrogacyExperience', 'ownKids', 'lastDelivery', 'csection', 'reward'] },
+  // «Перший день останньої менструації» — у самому кінці розділу. Стояв він
+  // одразу за кров'ю, першим питанням після обовʼязкових, і не відповіла на
+  // нього жодна з трьох СМ 23.10: інтимна дата без пояснення, у картці її не
+  // видно, а потрібна вона лише графіку програми. Питання, за якими агенція
+  // обирає (ускладнення, досвід, пологи, кесарів), тепер ідуть одразу за
+  // зростом, вагою й кров'ю.
+  { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'healthComplications', 'surrogacyExperience', 'ownKids', 'lastDelivery', 'csection', 'reward', 'lastCycle'] },
   { key: 'appearance', title: '✨ Зовнішність', fields: ['eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'faceShape', 'noseShape', 'lipsShape', 'chin', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race'] },
   // VK прибрано: мережа заблокована в Україні з 2017 року, і поле для неї в
   // анкеті читалось як знак, чий це застосунок. Уже записане значення з
@@ -868,15 +876,31 @@ const baseSections = [
   // (його не заповнював ніхто), а сайт — такий самий спосіб знайти людину,
   // як і сторінка в мережі. Показується він лише агенції й клініці.
   //
-  // «Про себе» стоїть перед «Соцмережами», а не після: соцмережі СМ і донорки
-  // часто свідомо не дають, і порожній блок мереж був стіною, за якою анкета
-  // для людини закінчувалась, — куріння, алкоголь і «Про себе» лишались
-  // незаповненими, а вкладка «Про себе» на телефоні ще й ховалась за краєм.
+  // «Про себе» стоїть перед «Соцмережами», а не після: куріння, алкоголь і
+  // розповідь важать для агенції більше за мережі, а останній розділ анкети
+  // найчастіше лишається недописаним — СМ 23.10 вписала Telegram у мережах і
+  // до «Про себе» вже не дійшла. Вкладка «Про себе» на телефоні ще й
+  // ховалась за краєм.
   { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'sport', 'education', 'profession', 'hobbies', 'twinsInFamily', 'moreInfo_main', 'surrogacyProgramInterest'] },
   { key: 'social', title: '📱 Соцмережі', fields: ['telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'website'] },
 ];
 
 const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery', 'lastCycle']);
+// Дати минулих подій. Майбутня чи неіснуюча дата в них — описка, а не
+// відповідь: поле з такою датою заповненим не рахується, і «Варто дописати»
+// веде людину назад до нього (`readPastDateIssue`).
+const PAST_DATE_FIELDS = new Set(['lastDelivery', 'lastCycle']);
+// Що «Варто дописати» під смужкою називає першим: те, за чим агенція обирає
+// донорку чи СМ, — пологи, кесарів, ускладнення, досвід, звички. Порядок
+// форми тут не годився: першими порожніми в ньому стоять по батькові й
+// область, і підказка вела б до полів, яких у картці майже не видно.
+const NEXT_FIELD_PRIORITY = [
+  'ownKids', 'lastDelivery', 'csection', 'healthComplications', 'surrogacyExperience',
+  'smoking', 'alcohol', 'moreInfo_main', 'reward',
+];
+// Чого «Варто дописати» не пропонує зовсім: пошта — це логін, а по батькові,
+// область і день циклу картці нічого не додають.
+const NEXT_FIELD_SKIPPED = new Set(['email', 'fathersname', 'region', 'lastCycle']);
 // Що можна не заповнювати перед публікацією. Із контактів обовʼязковий лише
 // телефон — Telegram, Instagram, сайт і решта є не в кожного, і порожнє поле
 // мережі, якою людина не користується, не має тримати анкету поза стрічкою.
@@ -1860,11 +1884,14 @@ export const MyProfile = () => {
 
   const fieldsMap = useMemo(() => new Map([...pickerFields, ...MY_PROFILE_EXTRA_FIELDS].map(field => [field.name, field])), []);
   // Програми заповнені, коли вони є в сховищі, а не в анкеті.
-  const isFieldFilled = useCallback(name => (name === 'programs'
+  const isFieldFilled = useCallback(name => {
     // Заповненим розділ робить програма, яку побачать читачі, а не порожня
     // чернетка: інакше анкета публікувалась би без жодної видимої програми.
-    ? ownVisiblePrograms.length > 0
-    : String(state[name] || '').trim() !== ''), [ownVisiblePrograms, state]);
+    if (name === 'programs') return ownVisiblePrograms.length > 0;
+    const value = String(state[name] || '').trim();
+    if (!value) return false;
+    return !PAST_DATE_FIELDS.has(name) || !readPastDateIssue(value);
+  }, [ownVisiblePrograms, state]);
   // Лічильник «3 з 8» поруч із відсотком: самі «8%» не казали, скільки
   // лишилось, а людина з чотирма фото й поштою не розуміла, звідки така цифра.
   // Рахуються лише обовʼязкові поля — ті самі, яких вимагає публікація
@@ -2690,6 +2717,18 @@ export const MyProfile = () => {
     const field = fieldsMap.get(name);
     if (!field) return null;
     const roleText = resolveMyProfileFieldText(name, name === 'agencyName' ? organisationRole : sectionTitleRole, rolesList);
+    // Останні пологи — місяць і рік зі списку, а не набрана дата: чому — у
+    // `LastDeliveryField`.
+    if (name === 'lastDelivery') {
+      return <Field key={name} data-profile-field={name}>
+        <Label>{roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language)}</Label>
+        <LastDeliveryField
+          value={state[name]}
+          language={language}
+          onCommit={next => saveFieldValue(name, next, field)}
+        />
+      </Field>;
+    }
     const fieldPlaceholder = roleText.placeholder ? uiText(roleText.placeholder, language) : asExamplePlaceholder(getFieldPlaceholder(field, language), language);
     const val = state[name] || '';
     // Винагороду пишуть розповіддю («від 1000 $, залежить від програми,
@@ -2830,13 +2869,17 @@ export const MyProfile = () => {
     </Field>;
   };
 
-  // Коли обовʼязкове заповнено, смужка рахує вже всю анкету. Доти вона
-  // показувала «10 з 10 · 100%» щойно людина дійшла до публікації — і СМ
-  // справедливо вважала анкету завершеною: пологи, ускладнення, досвід і
-  // «Про себе» лишались порожніми, бо застосунок сам сказав «готово».
-  // Соцмережі сюди не входять: їх часто свідомо не дають, і порожня мережа не
-  // робить анкету гіршою. Під смужкою — кілька наступних порожніх полів
-  // кнопками, які ведуть до самого поля.
+  // Коли обовʼязкове заповнено, смужка рахує вже всю анкету: «10 з 10 ·
+  // 100%» на публікаційному мінімумі казало «готово» про анкету, де пологи,
+  // кесарів і «Про себе» ще порожні. Соцмережі сюди не входять: їх часто
+  // свідомо не дають, і порожня мережа не робить анкету гіршою. Під смужкою —
+  // кілька наступних порожніх полів кнопками, які ведуть до самого поля,
+  // найважливіші першими (`NEXT_FIELD_PRIORITY`).
+  //
+  // Сама по собі смужка СМ не зупиняла: перша СМ, яку розбирали 23.10, після
+  // «100%» відповіла ще на ускладнення, досвід і кількість пологів і
+  // обірвалась на даті пологів — полі, яке не приймало звичайного вводу
+  // (`LastDeliveryField`).
   const requiredComplete = filledStats.total > 0 && filledStats.filled === filledStats.total;
   const completenessFields = visibleSections
     .filter(section => !section.custom && section.key !== 'social')
@@ -2849,7 +2892,11 @@ export const MyProfile = () => {
   const progressPct = requiredComplete
     ? (completeness.total ? Math.round((completeness.filled / completeness.total) * 100) : 100)
     : filledPct;
-  const nextEmptyFields = completenessFields.filter(name => !isFieldFilled(name)).slice(0, 3);
+  const emptyCompletenessFields = completenessFields.filter(name => !isFieldFilled(name) && !NEXT_FIELD_SKIPPED.has(name));
+  const nextEmptyFields = [
+    ...NEXT_FIELD_PRIORITY.filter(name => emptyCompletenessFields.includes(name)),
+    ...emptyCompletenessFields.filter(name => !NEXT_FIELD_PRIORITY.includes(name)),
+  ].slice(0, 3);
 
   // Прев'ю картки — та сама картка стрічки (`ProfileRow`), зібрана з
   // набраного тут. Зʼявляється, коли набрано бодай щось: порожня картка з

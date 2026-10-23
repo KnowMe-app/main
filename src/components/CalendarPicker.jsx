@@ -44,6 +44,9 @@ const calendarWords = language => {
   return { months: MONTHS.uk, weekdays: WEEKDAYS.uk };
 };
 
+/** Назви місяців мовою інтерфейсу — ті самі, що в заголовку календаря. */
+export const calendarMonthNames = language => calendarWords(language).months;
+
 const sameDay = (a, b) => Boolean(a && b)
   && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
