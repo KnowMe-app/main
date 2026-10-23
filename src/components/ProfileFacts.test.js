@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import {
   buildProfileDetailSections,
+  composeAboutText,
+  describeLifestyle,
   buildProfileStatStrip,
   buildProfileSummaryRows,
 } from './ProfileFacts';
@@ -284,24 +286,38 @@ describe('окуляри реченням про зір', () => {
   });
 });
 
-// Відповіді СМ про досвід, ускладнення й звички картка не показувала ніде —
-// і дописувати їх у «Мому профілі» не було жодного видимого сенсу.
+// Відповіді СМ про досвід, ускладнення й звички — реченнями в «Про себе», а
+// не табличкою «Куріння — ні»; винагорода — окремим розділом.
 describe('здоровʼя й спосіб життя в картці', () => {
-  it('показує відповіді СМ словами, а власний текст — як написали', () => {
-    const health = buildProfileDetailSections({
-      surrogacyExperience: 'Yes', healthComplications: 'No', smoking: 'No', alcohol: 'келих на свята', reward: 'від 18 000 $',
-    }, 'uk').find(section => section.key === 'health');
-    expect(health.title).toBe('Здоровʼя й спосіб життя');
-    expect(health.rows.map(row => [row.label, row.value])).toEqual([
-      ['Досвід сурогатного материнства', 'так'],
-      ['Ускладнення', 'не було'],
-      ['Куріння', 'ні'],
-      ['Алкоголь', 'келих на свята'],
-      ['Бажана винагорода', 'від 18 000 $'],
-    ]);
+  it('складає з відповідей речення від першої особи', () => {
+    expect(describeLifestyle({
+      surrogacyExperience: 'Yes', healthComplications: 'No', smoking: 'No', alcohol: 'No',
+    }, 'uk')).toBe('Маю досвід сурогатного материнства. Ускладнень під час вагітностей і пологів не було. Не курю й не вживаю алкоголю.');
   });
 
-  it('порожній розділ не малює', () => {
-    expect(buildProfileDetailSections({}, 'uk').find(section => section.key === 'health')).toBeUndefined();
+  it('власну відповідь лишає як написали', () => {
+    expect(describeLifestyle({ smoking: 'No', alcohol: 'келих на свята' }, 'uk'))
+      .toBe('Не курю. Алкоголь: келих на свята.');
+  });
+
+  it('дописує речення до «Про себе» й ставить крапку, якої бракувало', () => {
+    expect(composeAboutText('Люблю подорожувати', { smoking: 'No', alcohol: 'No' }, 'uk'))
+      .toBe('Люблю подорожувати. Не курю й не вживаю алкоголю.');
+    expect(composeAboutText('', { smoking: 'Yes' }, 'en')).toBe('I smoke.');
+    expect(composeAboutText('Про себе.', {}, 'uk')).toBe('Про себе.');
+  });
+
+  it('винагороду показує окремим розділом, а звичок у розділах немає', () => {
+    const sections = buildProfileDetailSections({
+      surrogacyExperience: 'Yes', smoking: 'No', reward: 'від 18 000 $',
+    }, 'uk');
+    expect(sections.find(section => section.key === 'health')).toBeUndefined();
+    const reward = sections.find(section => section.key === 'reward');
+    expect(reward.title).toBe('Бажана винагорода');
+    expect(reward.text).toBe('від 18 000 $');
+  });
+
+  it('порожнього розділу винагороди не малює', () => {
+    expect(buildProfileDetailSections({}, 'uk').find(section => section.key === 'reward')).toBeUndefined();
   });
 });

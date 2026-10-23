@@ -901,9 +901,14 @@ const NEXT_FIELD_PRIORITY = [
   'ownKids', 'lastDelivery', 'csection', 'healthComplications', 'surrogacyExperience',
   'smoking', 'alcohol', 'moreInfo_main', 'reward',
 ];
-// Чого «Варто дописати» не пропонує зовсім: пошта — це логін, а по батькові,
-// область і день циклу картці нічого не додають.
-const NEXT_FIELD_SKIPPED = new Set(['email', 'fathersname', 'region', 'lastCycle']);
+// Чого «Варто дописати» не пропонує зовсім: пошта — це логін, а по батькові
+// й область картці нічого не додають.
+const NEXT_FIELD_SKIPPED = new Set(['email', 'fathersname', 'region']);
+// Дві дати «Варто дописати» пропонує завжди, поки вони порожні, — і до
+// публікаційного мінімуму теж, і понад ліміт трьох підказок: дату останніх
+// пологів і день місячних пропустили всі три СМ 23.10, а саме за ними
+// агенція рахує, коли можлива програма (на прохання власниці продукту).
+const ALWAYS_SUGGESTED_FIELDS = ['lastDelivery', 'lastCycle'];
 // Що можна не заповнювати перед публікацією. Із контактів обовʼязковий лише
 // телефон — Telegram, Instagram, сайт і решта є не в кожного, і порожнє поле
 // мережі, якою людина не користується, не має тримати анкету поза стрічкою.
@@ -2908,10 +2913,16 @@ export const MyProfile = () => {
     ? (completeness.total ? Math.round((completeness.filled / completeness.total) * 100) : 100)
     : filledPct;
   const emptyCompletenessFields = completenessFields.filter(name => !isFieldFilled(name) && !NEXT_FIELD_SKIPPED.has(name));
+  const pinnedEmptyFields = ALWAYS_SUGGESTED_FIELDS.filter(name => emptyCompletenessFields.includes(name));
   const nextEmptyFields = [
-    ...NEXT_FIELD_PRIORITY.filter(name => emptyCompletenessFields.includes(name)),
-    ...emptyCompletenessFields.filter(name => !NEXT_FIELD_PRIORITY.includes(name)),
-  ].slice(0, 3);
+    ...pinnedEmptyFields,
+    ...(requiredComplete
+      ? [
+        ...NEXT_FIELD_PRIORITY.filter(name => emptyCompletenessFields.includes(name)),
+        ...emptyCompletenessFields.filter(name => !NEXT_FIELD_PRIORITY.includes(name)),
+      ].filter(name => !pinnedEmptyFields.includes(name)).slice(0, 3)
+      : []),
+  ];
 
   // Прев'ю картки — та сама картка стрічки (`ProfileRow`), зібрана з
   // набраного тут. Зʼявляється, коли набрано бодай щось: порожня картка з
@@ -3074,7 +3085,7 @@ export const MyProfile = () => {
       <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
         <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: 99, background: 'var(--accent)' }} />
       </div>
-      {requiredComplete && nextEmptyFields.length && !editingProgram ? (
+      {nextEmptyFields.length && !editingProgram ? (
         <NextFieldsRow data-testid="profile-next-fields">
           <span>{uiText('Варто дописати:', language)}</span>
           {nextEmptyFields.map(name => (
