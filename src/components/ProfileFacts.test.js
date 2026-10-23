@@ -271,7 +271,8 @@ describe('власні відповіді в реченнях анкети', () 
 
 
 describe('окуляри реченням про зір', () => {
-  const looksText = glasses => buildProfileDetailSections({ glasses }, 'uk')[0]?.text;
+  // Окуляри — у «Про себе», а не в «Обличчі й фігурі».
+  const looksText = glasses => describeLifestyle({ glasses }, 'uk');
 
   it('«ні» — це гарний зір', () => {
     expect(looksText('no')).toBe('Не ношу окулярів, зір хороший.');
@@ -292,7 +293,22 @@ describe('здоровʼя й спосіб життя в картці', () => {
   it('складає з відповідей речення від першої особи', () => {
     expect(describeLifestyle({
       surrogacyExperience: 'Yes', healthComplications: 'No', smoking: 'No', alcohol: 'No',
-    }, 'uk')).toBe('Маю досвід сурогатного материнства. Ускладнень під час вагітностей і пологів не було. Не курю й не вживаю алкоголю.');
+    }, 'uk')).toBe('Не курю й не вживаю алкоголю.');
+  });
+
+  it('досвід СМ і ускладнення стоять у рядку «Пологи»', () => {
+    const row = buildProfileSummaryRows({ ownKids: '4', surrogacyExperience: 'Yes', healthComplications: 'No' }, 'uk')
+      .find(item => item.key === 'reproduction');
+    expect(row.value).toBe('четверо пологів. Маю досвід сурогатного материнства. Ускладнень під час вагітностей і пологів не було.');
+  });
+
+  it('власну відповідь продовжує з малої', () => {
+    expect(describeLifestyle({ alcohol: 'На свята' }, 'uk')).toBe('Алкоголь: на свята.');
+  });
+
+  it('старе «average» у губах лягає в речення', () => {
+    expect(buildProfileDetailSections({ lipsShape: 'average', faceShape: 'Oval' }, 'uk')[0].text)
+      .toBe('У мене овальна форма обличчя та середні губи.');
   });
 
   it('власну відповідь лишає як написали', () => {

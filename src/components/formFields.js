@@ -97,6 +97,9 @@ export const lipsShapeOptions = [
   { placeholder: 'Thin', ukrainian: 'Тонкі' },
   { placeholder: 'Wide', ukrainian: 'Широкі' },
   { placeholder: 'Plump', ukrainian: 'Пишні' },
+  // Старі анкети мають «average»: без варіанта речення губило губи, і вони
+  // стояли окремим рядком англійською.
+  { placeholder: 'Average', ukrainian: 'Середні', legacy: true },
 ];
 
 export const chinShapeOptions = [

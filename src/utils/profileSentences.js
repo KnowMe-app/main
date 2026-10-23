@@ -161,7 +161,7 @@ const sentence = text => (text ? `${text.charAt(0).toLocaleUpperCase('uk-UA')}${
  * волосся читалось як розбіжність. `includeHair` — для екранів без того
  * рядка.
  */
-export const describeLooks = ({ user, lang, typed, includeHair = false }) => {
+export const describeLooks = ({ user, lang, typed, includeHair = false, includeGlasses = true }) => {
   const used = new Set();
   const word = field => {
     const result = presetSentenceWord(field, user?.[field], lang);
@@ -190,7 +190,7 @@ export const describeLooks = ({ user, lang, typed, includeHair = false }) => {
   // речення з двох чисел під заголовком, а поруч — «розмір грудей» у фігурі.
   const clothing = value('clothingSize');
   const shoe = value('shoeSize');
-  const glasses = describeGlasses(user?.glasses, lang);
+  const glasses = includeGlasses ? describeGlasses(user?.glasses, lang) : '';
   if (glasses) used.add('glasses');
 
   const parts = [];

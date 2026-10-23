@@ -4,7 +4,6 @@ import styled, { css } from 'styled-components';
 import {
   bmiValue,
   getBloodGroupDisplay,
-  glassesLabel,
   maritalStatusLabel,
   normalizeDisplayValue,
 } from './profileLayoutConfig';
@@ -15,7 +14,7 @@ import { profileUiText, resolveProfileLanguage, translateProfileLabel } from '..
 import { formatDeliveryRecency } from '../utils/deliveryRecency';
 import { formatProfileCountOrDate } from '../utils/profileDate';
 import { uiText } from '../utils/uiTranslations';
-import { describeHair, describeLooks, describeWork } from '../utils/profileSentences';
+import { describeGlasses, describeHair, describeLooks, describeWork } from '../utils/profileSentences';
 
 /*
  * Факти анкети — один блок на рядок стрічки й на відкриту картку.
@@ -354,12 +353,15 @@ export const buildProfileSummaryRows = (user, language) => {
     ? (extraList ? extraList([deliveries.text, cSection.text]) : `${deliveries.text}, ${cSection.text}`)
     : deliveries.text;
   const reproduction = [deliveryText, cSection.attach ? '' : cSection.text, donations].filter(Boolean);
-  if (reproduction.length) {
-    const hasDeliveries = Boolean(deliveries.text || cSection.text);
+  // Досвід СМ і ускладнення — про ті самі пологи, тож стоять тут, а не в
+  // «Про себе» (на прохання власниці продукту).
+  const pregnancyNotes = describeLifestyleFields(user, lang, PREGNANCY_FIELD_KEYS);
+  if (reproduction.length || pregnancyNotes) {
+    const hasDeliveries = Boolean(deliveries.text || cSection.text || pregnancyNotes);
     let label = 'Deliveries, donations';
     if (!donations) label = 'Deliveries';
     else if (!hasDeliveries) label = 'Donations';
-    rows.push({ key: 'reproduction', label: translateProfileLabel(label, lang), value: joinParts(reproduction) });
+    rows.push({ key: 'reproduction', label: translateProfileLabel(label, lang), value: [joinParts(reproduction), pregnancyNotes].filter(Boolean).join(reproduction.length ? '. ' : '') });
   }
 
   const marital = lowerFirst(maritalStatusLabel(normalizeDisplayValue(user?.maritalStatus), lang), lang);
@@ -372,7 +374,7 @@ export const buildProfileSummaryRows = (user, language) => {
 // повторюють.
 export const PROFILE_SUMMARY_FIELD_KEYS = Object.freeze([
   'height', 'weight', 'bmi', 'blood', 'eyeColor', 'hairColor', 'hairStructure', 'ownKids', 'lastDelivery',
-  ...CSECTION_KEYS, 'experience', 'maritalStatus',
+  ...CSECTION_KEYS, 'experience', 'maritalStatus', 'surrogacyExperience', 'healthComplications',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -421,18 +423,32 @@ const readYesNo = (user, field) => {
 
 export const LIFESTYLE_FIELD_KEYS = Object.freeze(Object.keys(LIFESTYLE_SENTENCES));
 
+const PREGNANCY_FIELD_KEYS = ['surrogacyExperience', 'healthComplications'];
+
+// Власна відповідь іде після «Алкоголь:» — з малої, як продовження речення
+// («Алкоголь: на свята.», а не «… На свята.»).
+const lifestyleSentence = (user, field, lang) => {
+  const answer = readYesNo(user, field);
+  if (!answer) return '';
+  const value = answer.kind === 'other' ? lowerFirst(answer.raw, lang) : answer.raw;
+  return uiText(LIFESTYLE_SENTENCES[field][answer.kind], lang, { value });
+};
+
+const describeLifestyleFields = (user, lang, fields) => fields
+  .map(field => lifestyleSentence(user, field, lang))
+  .filter(Boolean)
+  .join(' ');
+
+// «Про себе»: звички й зір. Досвід СМ і ускладнення — у рядку «Пологи»
+// (`buildProfileSummaryRows`), окуляри — тут, а не в «Обличчі й фігурі».
 export const describeLifestyle = (user, language) => {
   const lang = resolveProfileLanguage(language);
-  const answers = Object.fromEntries(LIFESTYLE_FIELD_KEYS.map(field => [field, readYesNo(user, field)]));
-  const sentence = field => {
-    const answer = answers[field];
-    if (!answer) return '';
-    return uiText(LIFESTYLE_SENTENCES[field][answer.kind], lang, { value: answer.raw });
-  };
-  const habits = answers.smoking?.kind === 'no' && answers.alcohol?.kind === 'no'
-    ? [uiText('Не курю й не вживаю алкоголю.', lang)]
-    : [sentence('smoking'), sentence('alcohol')];
-  return [sentence('surrogacyExperience'), sentence('healthComplications'), ...habits].filter(Boolean).join(' ');
+  const smoking = readYesNo(user, 'smoking');
+  const alcohol = readYesNo(user, 'alcohol');
+  const habits = smoking?.kind === 'no' && alcohol?.kind === 'no'
+    ? uiText('Не курю й не вживаю алкоголю.', lang)
+    : describeLifestyleFields(user, lang, ['smoking', 'alcohol']);
+  return [habits, describeGlasses(user?.glasses, lang)].filter(Boolean).join(' ');
 };
 
 /** «Про себе» людини разом із відповідями про здоровʼя й звички. */
@@ -453,7 +469,7 @@ const DETAIL_SECTIONS = [
   {
     key: 'looks',
     title: 'Face and figure',
-    describe: describeLooks,
+    describe: args => describeLooks({ ...args, includeGlasses: false }),
     fields: [
       { key: 'faceShape', label: 'Face shape', read: option('faceShape') },
       { key: 'noseShape', label: 'Nose', read: option('noseShape') },
@@ -464,7 +480,6 @@ const DETAIL_SECTIONS = [
       { key: 'race', label: 'Race', read: option('race') },
       { key: 'clothingSize', label: 'Clothing', read: typed('clothingSize') },
       { key: 'shoeSize', label: 'Shoe', read: typed('shoeSize') },
-      { key: 'glasses', label: 'Glasses', read: (user, lang) => lowerFirst(glassesLabel(user?.glasses, lang), lang) },
     ],
   },
   // Бажана винагорода — окремим розділом, а не в «Про себе»: це умова
