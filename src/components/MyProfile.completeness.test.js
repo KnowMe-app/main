@@ -21,8 +21,16 @@ describe('після обовʼязкового смужка рахує всю �
   // «Варто дописати» вело б до полів, яких у картці майже не видно.
   it('«Варто дописати» називає першими пологи, кесарів і ускладнення', () => {
     expect(source).toContain("'ownKids', 'lastDelivery', 'csection', 'healthComplications', 'surrogacyExperience',");
-    expect(source).toContain("const NEXT_FIELD_SKIPPED = new Set(['email', 'fathersname', 'region', 'lastCycle']);");
+    expect(source).toContain("const NEXT_FIELD_SKIPPED = new Set(['email', 'fathersname', 'region']);");
     expect(source).toContain('...NEXT_FIELD_PRIORITY.filter(name => emptyCompletenessFields.includes(name)),');
+  });
+
+  // Дату пологів і день місячних пропустили всі три СМ 23.10: їх «Варто
+  // дописати» пропонує завжди, поки порожні, — і до мінімуму, і понад три.
+  it('дату пологів і день місячних пропонує завжди, поки вони порожні', () => {
+    expect(source).toContain("const ALWAYS_SUGGESTED_FIELDS = ['lastDelivery', 'lastCycle'];");
+    expect(source).toContain('...pinnedEmptyFields,');
+    expect(source).toContain('{nextEmptyFields.length && !editingProgram ? (');
   });
 });
 

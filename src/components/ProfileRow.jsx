@@ -42,6 +42,7 @@ import {
   formatCSectionValue,
   ParentDetailSections,
   ProfileAboutSection,
+  composeAboutText,
   ProfileDetailSections,
   ProfileFactList,
   ProfileStatStrip,
@@ -1467,9 +1468,13 @@ const ProfileRow = ({
   );
   const personParentSections = !parentsLayout && !organisationLayout ? parentSections : [];
   const organisationParentSections = organisationLayout ? parentSections : [];
+  // Відповіді «Так/Ні» про досвід, ускладнення й звички стоять у «Про себе»
+  // реченнями (`composeAboutText`), а не табличкою; батьки пишуть «Про нас», і
+  // туди звички не дописуються.
+  const aboutSelf = parentsLayout || isOrganisationAnketa ? bio : composeAboutText(bio, user, language);
   const hasMoreDetails = parentsLayout
     ? Boolean(bio) || parentSections.length > 0
-    : detailSections.length > 0 || Boolean(bio) || personParentSections.length > 0;
+    : detailSections.length > 0 || Boolean(aboutSelf) || personParentSections.length > 0;
   // Розгортання картки організації: опис організації й, коли картка несе ще й
   // анкету батьків, її розділи — однією кнопкою. Поки анкету не прочитано,
   // кнопка кличе себе тим, що відкриє: «Більше про агенцію», а в рядку
@@ -1629,7 +1634,7 @@ const ProfileRow = ({
           {/* Під кнопкою — розділи повної анкети, ті самі й у тому самому
               порядку, що й у формі (`ProfileFacts`). */}
           <ProfileAboutSection
-            text={bio}
+            text={aboutSelf}
             language={language}
             accent={roleAccent}
             title={parentsLayout ? uiText('Про нас', language) : ''}

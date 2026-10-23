@@ -394,16 +394,54 @@ const describeEducation = (user, lang) => {
 const option = field => (user, lang) => readOptionValue(user, field, lang);
 const typed = field => user => readTypedValue(user, field);
 
-// «Так/Ні» з форми (`Yes`/`No`) — словом мови інтерфейсу; власна відповідь
-// («іноді», «прееклампсія в 2019») лишається як написали.
+// «Так/Ні» з форми (`Yes`/`No`); власна відповідь («іноді», «прееклампсія
+// в 2019») лишається як написали.
 const YES_ANSWERS = new Set(['yes', 'так', '+', 'true']);
 const NO_ANSWERS = new Set(['no', 'ні', 'false']);
-const yesNoAnswer = (field, noWord = 'ні') => (user, lang) => {
+
+/*
+ * Відповіді «Так/Ні» про досвід СМ, ускладнення й звички — реченнями від
+ * першої особи, що дописуються до «Про себе» (`ProfileRow`). Власна відповідь
+ * («келих на свята») стоїть як написали, після назви теми.
+ */
+const LIFESTYLE_SENTENCES = {
+  surrogacyExperience: { yes: 'Маю досвід сурогатного материнства.', no: 'Досвіду сурогатного материнства ще не маю.', other: 'Досвід сурогатного материнства: {value}.' },
+  healthComplications: { yes: 'Під час вагітностей чи пологів були ускладнення.', no: 'Ускладнень під час вагітностей і пологів не було.', other: 'Про ускладнення: {value}.' },
+  smoking: { yes: 'Курю.', no: 'Не курю.', other: 'Куріння: {value}.' },
+  alcohol: { yes: 'Алкоголь вживаю.', no: 'Алкоголю не вживаю.', other: 'Алкоголь: {value}.' },
+};
+
+const readYesNo = (user, field) => {
   const raw = readTypedValue(user, field);
   const lower = raw.toLowerCase();
-  if (YES_ANSWERS.has(lower)) return uiText('так', lang);
-  if (NO_ANSWERS.has(lower)) return uiText(noWord, lang);
-  return raw;
+  if (YES_ANSWERS.has(lower)) return { kind: 'yes', raw };
+  if (NO_ANSWERS.has(lower)) return { kind: 'no', raw };
+  return raw ? { kind: 'other', raw } : null;
+};
+
+export const LIFESTYLE_FIELD_KEYS = Object.freeze(Object.keys(LIFESTYLE_SENTENCES));
+
+export const describeLifestyle = (user, language) => {
+  const lang = resolveProfileLanguage(language);
+  const answers = Object.fromEntries(LIFESTYLE_FIELD_KEYS.map(field => [field, readYesNo(user, field)]));
+  const sentence = field => {
+    const answer = answers[field];
+    if (!answer) return '';
+    return uiText(LIFESTYLE_SENTENCES[field][answer.kind], lang, { value: answer.raw });
+  };
+  const habits = answers.smoking?.kind === 'no' && answers.alcohol?.kind === 'no'
+    ? [uiText('Не курю й не вживаю алкоголю.', lang)]
+    : [sentence('smoking'), sentence('alcohol')];
+  return [sentence('surrogacyExperience'), sentence('healthComplications'), ...habits].filter(Boolean).join(' ');
+};
+
+/** «Про себе» людини разом із відповідями про здоровʼя й звички. */
+export const composeAboutText = (bio, user, language) => {
+  const own = String(bio || '').trim();
+  const lifestyle = describeLifestyle(user, language);
+  if (!lifestyle) return own;
+  if (!own) return lifestyle;
+  return /[.!?…)]$/.test(own) ? `${own} ${lifestyle}` : `${own}. ${lifestyle}`;
 };
 
 /*
@@ -429,21 +467,16 @@ const DETAIL_SECTIONS = [
       { key: 'glasses', label: 'Glasses', read: (user, lang) => lowerFirst(glassesLabel(user?.glasses, lang), lang) },
     ],
   },
-  // Відповіді анкети СМ (і донорки) про здоровʼя й звички. Картка їх не
-  // показувала ніде: СМ відповідала на «досвід», «ускладнення», «куріння»,
-  // «винагороду» — і ні в стрічці, ні в прев'ю «Мого профілю» нічого не
-  // мінялось, тож дозаповнювати анкету не було жодного сенсу.
+  // Бажана винагорода — окремим розділом, а не в «Про себе»: це умова
+  // співпраці, а не розповідь про себе (на прохання власниці продукту).
+  // Відповіді про досвід, ускладнення, куріння й алкоголь пішли в «Про себе»
+  // реченнями (`describeLifestyle`): табличка «Куріння — ні» читалась як
+  // анкета, а не як людина.
   {
-    key: 'health',
-    title: 'Health and lifestyle',
-    describe: () => ({ text: '', used: new Set() }),
-    fields: [
-      { key: 'surrogacyExperience', label: 'Surrogacy experience', read: yesNoAnswer('surrogacyExperience') },
-      { key: 'healthComplications', label: 'Complications', read: yesNoAnswer('healthComplications', 'не було') },
-      { key: 'smoking', label: 'Smoking', read: yesNoAnswer('smoking') },
-      { key: 'alcohol', label: 'Alcohol', read: yesNoAnswer('alcohol') },
-      { key: 'reward', label: 'Desired compensation', read: typed('reward') },
-    ],
+    key: 'reward',
+    title: 'Desired compensation',
+    describe: ({ typed: read }) => ({ text: read('reward'), used: new Set(['reward']) }),
+    fields: [],
   },
   {
     key: 'work',
