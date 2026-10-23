@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import toast from 'react-hot-toast';
 import { btnCompare } from './btnCompare';
 import { saveComparisonField, fetchUserComment, saveMyCardComment } from '../config';
-import { mergeComparisonValues } from '../../utils/comparisonValues';
+import { appendComparisonValues, mergeComparisonText, mergeComparisonValues } from '../../utils/comparisonValues';
 
 jest.mock('react-hot-toast', () => ({ success: jest.fn(), error: jest.fn() }));
 jest.mock('../config', () => ({
@@ -38,10 +38,42 @@ beforeEach(() => {
 it.each([
   ['123', ['123', '456'], ['123', '456']],
   [['123', '123'], '123', ['123']],
-  [['123', '456'], ['456', '789'], ['456', '789', '123']],
+  [['123', '456'], ['456', '789'], ['123', '456', '789']],
   ['123', null, ['123']],
 ])('deduplicates each scalar/array item', (source, target, expected) => {
   expect(mergeComparisonValues(source, target)).toEqual(expected);
+});
+
+// Перенесене з дубліката — найстарша версія, а поточним лишається те, що
+// людина заповнила сама: у стрічці видно останню версію поля, а історію —
+// лише адмінові.
+describe('перенесене стає на початок історії поля', () => {
+  it('лишає поточне значення картки-отримувача останнім', () => {
+    expect(mergeComparisonValues(['380501111111', '380502222222'], '380673333333'))
+      .toEqual(['380501111111', '380502222222', '380673333333']);
+    expect(mergeComparisonValues('Коваль', ['Іваненко', 'Петренко'])).toEqual(['Коваль', 'Іваненко', 'Петренко']);
+  });
+
+  it('повтор в історії не зсуває поточного', () => {
+    expect(mergeComparisonValues('X', ['A', 'B', 'A'])).toEqual(['X', 'B', 'A']);
+    expect(mergeComparisonValues('A', ['A', 'B'])).toEqual(['A', 'B']);
+  });
+
+  it('порожнє поле бере перенесене як є, стерте лишається стертим', () => {
+    expect(mergeComparisonValues(['X', 'Y'], undefined)).toEqual(['X', 'Y']);
+    expect(mergeComparisonValues('X', ['A', ''])).toEqual(['X', 'A', '']);
+  });
+
+  it('текст з дубліката стає найстаршою версією, а не дописується до поточного', () => {
+    expect(mergeComparisonText(['чернетка', 'з дубліката'], ['мій текст'])).toEqual(['з дубліката', 'мій текст']);
+    expect(mergeComparisonText('мій текст', ['мій текст', 'новіший'])).toEqual(['мій текст', 'новіший']);
+    expect(mergeComparisonText('з дубліката', undefined)).toEqual(['з дубліката']);
+    expect(mergeComparisonText('з дубліката', ['мій текст', ''])).toEqual(['з дубліката', 'мій текст', '']);
+  });
+
+  it('фото — навпаки: власні лишаються першими, бо перше — головне', () => {
+    expect(appendComparisonValues(['dup.jpg'], ['own-main.jpg', 'own-2.jpg'])).toEqual(['own-main.jpg', 'own-2.jpg', 'dup.jpg']);
+  });
 });
 
 it.each(['height', 'weight'])('waits for %s confirmation and displays the returned value', async key => {
@@ -49,13 +81,13 @@ it.each(['height', 'weight'])('waits for %s confirmation and displays the return
   saveComparisonField.mockReturnValue(new Promise(done => { resolve = done; }));
   const { usersRef, setUsers } = await open({ [key]: '170' }, { [key]: '160' });
   fireEvent.click(screen.getByText('170'));
-  await waitFor(() => expect(saveComparisonField).toHaveBeenCalledWith('B', key, ['160', '170']));
+  await waitFor(() => expect(saveComparisonField).toHaveBeenCalledWith('B', key, ['170', '160']));
   expect(usersRef.current.B[key]).toBe('160');
   expect(setUsers).not.toHaveBeenCalled();
   expect(toast.success).not.toHaveBeenCalled();
-  await act(async () => resolve(['160', '170.0']));
-  expect(usersRef.current.B[key]).toEqual(['160', '170.0']);
-  expect(toast.success).toHaveBeenCalledWith(`${key} → 160, 170.0`, { duration: 2500 });
+  await act(async () => resolve(['170.0', '160']));
+  expect(usersRef.current.B[key]).toEqual(['170.0', '160']);
+  expect(toast.success).toHaveBeenCalledWith(`${key} → 170.0, 160`, { duration: 2500 });
 });
 
 it('keeps the old value and reports a rejected backend write', async () => {
@@ -115,25 +147,37 @@ it('does not append the same note twice when the transfer is repeated', async ()
   expect(saveMyCardComment).toHaveBeenCalledWith('B', 'already on B\n\nfrom A', 'admin');
 });
 
-it('keeps a free-text field whole and appends the transferred text instead of splitting it on commas', async () => {
+it('keeps a free-text field whole and puts the transferred text first instead of splitting it on commas', async () => {
   saveComparisonField.mockImplementation(async (_, __, value) => value);
   await open({ moreInfo_main: 'Працюю вчителем, маю двох дітей' }, { moreInfo_main: 'Люблю спорт, читання' });
   fireEvent.click(screen.getByText('Працюю вчителем, маю двох дітей'));
   await waitFor(() => expect(saveComparisonField).toHaveBeenCalled());
   expect(saveComparisonField).toHaveBeenCalledWith('B', 'moreInfo_main', [
+    'Працюю вчителем, маю двох дітей',
     'Люблю спорт, читання',
-    'Люблю спорт, читання\n\nПрацюю вчителем, маю двох дітей',
   ]);
 });
 
-it('keeps the receiving card\'s text history when appending', async () => {
+it('keeps the receiving card\'s text history and its current text last', async () => {
   saveComparisonField.mockImplementation(async (_, __, value) => value);
   await open({ allergy: 'пеніцилін' }, { allergy: ['пил', 'пилок, шерсть'] });
   fireEvent.click(screen.getByText('пеніцилін'));
   await waitFor(() => expect(saveComparisonField).toHaveBeenCalled());
   expect(saveComparisonField).toHaveBeenCalledWith('B', 'allergy', [
+    'пеніцилін',
     'пил',
     'пилок, шерсть',
-    'пилок, шерсть\n\nпеніцилін',
   ]);
+});
+
+it('transfers a phone as an older version, so the card keeps showing its own number', async () => {
+  saveComparisonField.mockImplementation(async (_, __, value) => value);
+  const { usersRef } = await open({ phone: '380501111111' }, { phone: ['380672222222', '380673333333'] });
+  fireEvent.click(screen.getByText('380501111111'));
+  await waitFor(() => expect(saveComparisonField).toHaveBeenCalledWith('B', 'phone', [
+    '380501111111',
+    '380672222222',
+    '380673333333',
+  ]));
+  await waitFor(() => expect(usersRef.current.B.phone).toEqual(['380501111111', '380672222222', '380673333333']));
 });

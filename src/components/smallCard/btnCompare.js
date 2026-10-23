@@ -20,6 +20,7 @@ import { updateCachedUser } from '../../utils/cache';
 import { isJsonStateCard } from '../../utils/jsonProfileImport';
 import {
   appendComparisonText,
+  appendComparisonValues,
   comparisonValuesForKey,
   currentPersonalComment,
   isFreeTextComparisonKey,
@@ -122,7 +123,8 @@ export const btnCompare = (
           const missing = (sourceValue || []).filter(url => !targetPhotos.has(photoComparisonKey(url, sourceUserId)));
           const copied = await copyProfilePhotosBetweenCards({ sourceUserId, targetUserId, photoUrls: missing });
           const target = (usersRef?.current || users)[targetUserId] || {};
-          const merged = mergeComparisonValues(copied, normalizePhotoList(target.photos));
+          // Власні фото лишаються першими: перше — головне (`appendComparisonValues`).
+          const merged = appendComparisonValues(copied, normalizePhotoList(target.photos));
           savedValue = await saveComparisonField(targetUserId, PHOTOS_KEY, merged);
           updateCachedUser({ userId: targetUserId, [PHOTOS_KEY]: savedValue });
         } else if (key === PUBLIC_COMMENTS_KEY) {
