@@ -1,78 +1,74 @@
 import React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import LastDeliveryField, { composeLastDeliveryDate } from './LastDeliveryField';
+import { fireEvent, render, screen } from '@testing-library/react';
+import LastDeliveryField from './LastDeliveryField';
 
-// «Останні пологи» — місяць і рік зі списку. Текстове поле з маскою не
-// приймало звичайного вводу: «1.5.2019» ставало «15.20.19», рік — «20.19», а
-// майбутній рік ішов у базу мовчки. Із трьох СМ 23.10 правильної дати не
-// лишила жодна.
-describe('останні пологи — місяць і рік', () => {
+// «Останні пологи» — текстове поле, яке не переписує набране під пальцем, а
+// під собою каже, що розпізнало: перевірка очима, чи вірно вписано.
+describe('останні пологи — текст із перевіркою', () => {
   const now = new Date(2026, 9, 23);
   const renderField = value => {
     const onCommit = jest.fn();
-    const view = render(<LastDeliveryField value={value} onCommit={onCommit} language="uk" now={now} />);
-    return { onCommit, view };
+    render(<LastDeliveryField value={value} onCommit={onCommit} language="uk" now={now} />);
+    return { onCommit, input: screen.getByTestId('last-delivery-input') };
   };
-  const month = () => screen.getByTestId('last-delivery-month');
-  const year = () => screen.getByTestId('last-delivery-year');
+  const note = () => screen.getByTestId('last-delivery-note').textContent;
 
-  it('записане показує вибраними місяцем і роком — і з бази, і з форми', () => {
-    renderField('12.05.2019');
-    expect(month().value).toBe('5');
-    expect(year().value).toBe('2019');
-    expect(screen.queryByTestId('last-delivery-issue')).toBeNull();
+  it('набране не форматується на ходу', () => {
+    const { input } = renderField('');
+    fireEvent.change(input, { target: { value: '1.5.' } });
+    expect(input.value).toBe('1.5.');
   });
 
-  it('рік із двох цифр, який уже лежить в анкеті, читає як 20xx', () => {
-    renderField('13.01.22');
-    expect(month().value).toBe('1');
-    expect(year().value).toBe('2022');
+  it('під полем — розпізнана дата й скільки минуло', () => {
+    const { input } = renderField('');
+    fireEvent.change(input, { target: { value: '1.5.2019' } });
+    expect(note()).toBe('Розпізнано 01.05.2019: пологи 7 років тому. Вірно?');
+    fireEvent.change(input, { target: { value: '04.2026' } });
+    expect(note()).toBe('Розпізнано 04.2026: пологи 6 міс тому. Вірно?');
   });
 
-  it('нову дату пише першим числом місяця й лише коли вибрано обидва', () => {
-    const { onCommit } = renderField('');
-    fireEvent.change(month(), { target: { value: '3' } });
+  it('близьке майбутнє — очікувані пологи через N тижнів', () => {
+    const { input } = renderField('');
+    fireEvent.change(input, { target: { value: '15.01.2027' } });
+    expect(note()).toBe('Розпізнано 15.01.2027: пологи очікуються через 12 тиж. Вірно?');
+  });
+
+  it('на blur пише розпізнане в тій точності, яку дала людина, і показує його в полі', () => {
+    const { input, onCommit } = renderField('');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'травень 2019' } });
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledWith('2019-05');
+    expect(input.value).toBe('05.2019');
+  });
+
+  it('нерозпізнане не пише, а пояснює', () => {
+    const { input, onCommit } = renderField('');
+    fireEvent.change(input, { target: { value: '12.05' } });
+    fireEvent.blur(input);
     expect(onCommit).not.toHaveBeenCalled();
-    fireEvent.change(year(), { target: { value: '2021' } });
-    expect(onCommit).toHaveBeenCalledWith('01.03.2021');
+    expect(note()).toBe('Додайте рік: наприклад, 12.05.2019.');
+    expect(input.value).toBe('12.05');
   });
 
-  it('уточнюючи рік, день записаної дати не губить', () => {
-    const { onCommit } = renderField('12.05.2019');
-    fireEvent.change(year(), { target: { value: '2020' } });
-    expect(onCommit).toHaveBeenCalledWith('12.05.2020');
-  });
-
-  it('майбутнього не пропонує: місяці після поточного в цьому році вимкнені', () => {
-    renderField('');
-    fireEvent.change(year(), { target: { value: '2026' } });
-    const options = within(month()).getAllByRole('option').filter(option => option.value);
-    expect(options.filter(option => option.disabled).map(option => option.value)).toEqual(['11', '12']);
-    expect(within(year()).queryByRole('option', { name: '2027' })).toBeNull();
-  });
-
-  it('збережену майбутню дату називає й просить вибрати ще раз', () => {
+  it('записану з описки дату з 2027 року показує з поясненням', () => {
     renderField('2027-10-01');
-    expect(month().value).toBe('');
-    expect(year().value).toBe('');
-    expect(screen.getByTestId('last-delivery-issue').textContent)
-      .toBe('Збережено 01.10.2027, а ця дата ще не настала. Оберіть місяць і рік ще раз.');
+    expect(note()).toBe('Ця дата ще надто далеко в майбутньому — перевірте рік.');
   });
 
-  it('те, що лишила стара маска, називає не датою', () => {
-    renderField('15.20.19');
-    expect(screen.getByTestId('last-delivery-issue').textContent)
-      .toBe('Збережено «15.20.19» — це не дата. Оберіть місяць і рік ще раз.');
+  it('записане з бази показує людським форматом', () => {
+    const { input } = renderField('2019-05-12');
+    expect(input.value).toBe('12.05.2019');
+    expect(note()).toBe('Розпізнано 12.05.2019: пологи 7 років тому. Вірно?');
   });
 
-  it('хрестик стирає записане', () => {
-    const { onCommit } = renderField('12.05.2019');
-    fireEvent.click(screen.getByRole('button', { name: 'Очистити поле' }));
+  it('незмінену дату вдруге не пише, стерту — пише порожньою', () => {
+    const { input, onCommit } = renderField('12.05.2019');
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
     expect(onCommit).toHaveBeenCalledWith('');
-  });
-
-  it('у поточному місяці день не виходить за сьогодні', () => {
-    expect(composeLastDeliveryDate({ month: '10', year: '2026', day: '28' }, now)).toBe('23.10.2026');
-    expect(composeLastDeliveryDate({ month: '2', year: '2023', day: '31' }, now)).toBe('28.02.2023');
   });
 });

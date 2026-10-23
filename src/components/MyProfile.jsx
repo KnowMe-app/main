@@ -34,6 +34,7 @@ import { buildMatchingCardProjection, expandMatchingCard, parseHiddenRoles } fro
 import { formatDateToDisplay, normalizePhoneValue } from './inputValidations';
 import LastDeliveryField from './LastDeliveryField';
 import { readPastDateIssue } from '../utils/profileDate';
+import { readDeliveryDate } from '../utils/deliveryDateInput';
 import {
   createUserWithEmailAndPassword,
   fetchSignInMethodsForEmail,
@@ -248,6 +249,8 @@ const Field = styled.div`padding:14px 0;border-bottom:1px solid var(--border); &
 // Підпис поля — звичайним реченням: 11 px великими з розрядкою читались
 // гірше за саме значення й кричали з кожного рядка форми.
 const Label = styled.div`font-size:13px;font-weight:500;color:var(--muted);margin-bottom:6px;`;
+// Навіщо поле — дрібним рядком під підписом (зараз лише в дня місячних).
+const FieldHint = styled.div`font-size:12px;line-height:1.4;color:var(--muted);margin:-2px 0 8px;`;
 const Input = styled.input`
   width: 100%;
   min-width: 0;
@@ -1338,10 +1341,15 @@ export const MyProfile = () => {
   // тут, на blur, а не під час набору: «Кие» — це ще не «Київ». Інакше в базу
   // йшло, як набрали, — «Украина», «Днепропетровская», зріст у футах, — і
   // стрічка потім показувала це як є (`utils/profileNormalization`).
+  // Дату пологів поле вже розібрало саме (`LastDeliveryField`) і віддає в
+  // точності, яку дала людина (`2019-05-12`, `2019-05`, `2019`); стара маска
+  // `formatDate` перекрутила б «2019-05» на «20.19.05».
   const normalizeFieldValue = (name, value, field) => (
     name === 'phone'
       ? normalizePhoneValue(value)
-      : normalizeProfileFieldInput(name, inputUpdateValue(value, field))
+      : name === 'lastDelivery'
+        ? String(value ?? '').trim()
+        : normalizeProfileFieldInput(name, inputUpdateValue(value, field))
   );
 
   const updateFieldValue = (name, value, field) => {
@@ -1890,6 +1898,9 @@ export const MyProfile = () => {
     if (name === 'programs') return ownVisiblePrograms.length > 0;
     const value = String(state[name] || '').trim();
     if (!value) return false;
+    // Пологи бувають і очікуваними (вагітність), і з точністю до місяця чи
+    // року — їх читає той самий розбір, що й поле.
+    if (name === 'lastDelivery') return readDeliveryDate(value).ok;
     return !PAST_DATE_FIELDS.has(name) || !readPastDateIssue(value);
   }, [ownVisiblePrograms, state]);
   // Лічильник «3 з 8» поруч із відсотком: самі «8%» не казали, скільки
@@ -2729,6 +2740,9 @@ export const MyProfile = () => {
         />
       </Field>;
     }
+    // Навіщо питаємо день місячних — одним рядком під підписом: без пояснення
+    // інтимну дату в анкеті пропустили всі три СМ 23.10.
+    const fieldHint = name === 'lastCycle' ? uiText('Це допоможе спрогнозувати дату прийому.', language) : '';
     const fieldPlaceholder = roleText.placeholder ? uiText(roleText.placeholder, language) : asExamplePlaceholder(getFieldPlaceholder(field, language), language);
     const val = state[name] || '';
     // Винагороду пишуть розповіддю («від 1000 $, залежить від програми,
@@ -2760,6 +2774,7 @@ export const MyProfile = () => {
 
     return <Field key={name} data-profile-field={name}>
       <Label>{roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language)}</Label>
+      {fieldHint ? <FieldHint>{fieldHint}</FieldHint> : null}
       {offeredOptions.length > 0 ? (
         <>
           <ChipRow>

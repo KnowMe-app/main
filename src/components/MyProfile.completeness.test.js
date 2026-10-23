@@ -31,7 +31,7 @@ describe('після обовʼязкового смужка рахує всю �
 describe('дати в анкеті донорки й СМ', () => {
   const source = fs.readFileSync(path.join(__dirname, 'MyProfile.jsx'), 'utf8');
 
-  it('останні пологи вибирають місяцем і роком, а не набирають', () => {
+  it('останні пологи — поле з власним розбором дати, а не маска', () => {
     expect(source).toContain("if (name === 'lastDelivery') {");
     expect(source).toContain('<LastDeliveryField');
   });
@@ -43,5 +43,13 @@ describe('дати в анкеті донорки й СМ', () => {
 
   it('перший день циклу — у кінці медичного розділу, а не першим після крові', () => {
     expect(source).toContain("'ownKids', 'lastDelivery', 'csection', 'reward', 'lastCycle'] },");
+  });
+});
+
+describe('підказка до дня місячних', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'MyProfile.jsx'), 'utf8');
+
+  it('пояснює, навіщо питаємо', () => {
+    expect(source).toContain("name === 'lastCycle' ? uiText('Це допоможе спрогнозувати дату прийому.', language)");
   });
 });
