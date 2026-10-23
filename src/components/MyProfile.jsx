@@ -401,7 +401,8 @@ const PublishDock = styled.div`
   left: 12px;
   right: 12px;
   bottom: var(--km-bottom-nav-h, 0px);
-  z-index: 20;
+  /* Над смугою згасання під навігацією (z-index 899), інакше її низ тонув би. */
+  z-index: 901;
   display: flex;
   align-items: center;
   gap: 10px;

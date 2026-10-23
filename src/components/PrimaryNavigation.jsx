@@ -37,6 +37,20 @@ const BottomNavSpace = createGlobalStyle`
   @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
     :root { --km-bottom-nav-h: ${BOTTOM_NAV_SPACE}px; --km-top-nav-h: ${TOP_NAV_HEIGHT}px; }
     body { padding-bottom: var(--km-bottom-nav-h); }
+    /* Під пігулкою вміст гасне в тло сторінки, як у Telegram: поки картки
+       визирали довкола напівпрозорої панелі й крізь неї, це читалось як
+       «навігація налізла на текст». */
+    body::after {
+      content: '';
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: calc(var(--km-bottom-nav-h) + 24px);
+      z-index: 899;
+      pointer-events: none;
+      background: linear-gradient(to bottom, transparent, var(--km-bg) 34%);
+    }
   }
 `;
 
@@ -172,7 +186,7 @@ const Tabs = styled.div`
   a:focus-visible { outline: 2px solid var(--km-accent); outline-offset: 2px; }
 
   @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
-    /* Плаваюча «пігулка» за зразком Telegram: напівпрозоре тло з розмиттям,
+    /* Плаваюча «пігулка» за зразком Telegram: суцільне тло над смугою згасання,
        тінь замість риски згори, активна вкладка — заливка під значком і
        підписом разом. Кольори — свої (акцент і його світла підкладка). */
     position: fixed;
@@ -186,10 +200,7 @@ const Tabs = styled.div`
     box-sizing: border-box;
     border-radius: ${BOTTOM_NAV_HEIGHT / 2}px;
     background: var(--km-card);
-    background: color-mix(in srgb, var(--km-card) 84%, transparent);
-    -webkit-backdrop-filter: blur(18px) saturate(1.6);
-    backdrop-filter: blur(18px) saturate(1.6);
-    border: 1px solid color-mix(in srgb, var(--km-border) 70%, transparent);
+    border: 1px solid var(--km-border);
     box-shadow: 0 8px 28px rgba(0, 0, 0, .14), 0 1px 3px rgba(0, 0, 0, .08);
 
     a {
