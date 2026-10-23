@@ -34,21 +34,24 @@ export const DELIVERY_RECENCY_YEARS_THRESHOLD_MONTHS = 24;
  */
 // Дата пологів буває й неповною — місяць («2019-05») чи рік («2019»): так
 // її кладе поле «Останні пологи», коли людина дня не назвала
-// (`deliveryDateInput`). Місяць рахується від першого числа, рік — від 1 липня.
-const readDateParts = raw => {
+// (`deliveryDateInput`). Місяць рахується від першого числа, рік — від
+// середини: 1 липня. Для поточного року середина — це середина вже минулої
+// його частини: поки липень не настав, «2026» від 1 липня була б майбутнім, і
+// картка мовчала про дату, яку поле щойно прийняло.
+const readDateParts = (raw, now) => {
   const parsed = parseProfileDate(raw);
   if (parsed) return { year: Number(parsed.y), month: Number(parsed.mo), day: Number(parsed.d) };
   const value = String(raw ?? '').trim();
   if (!/^\d{4}(-\d{2})?$/.test(value)) return null;
-  const partial = parseDeliveryDateInput(value);
+  const partial = parseDeliveryDateInput(value, now);
   if (partial.reason) return null;
-  return partial.precision === 'year'
-    ? { year: partial.y, month: 7, day: 1 }
-    : { year: partial.y, month: partial.m, day: 1 };
+  if (partial.precision !== 'year') return { year: partial.y, month: partial.m, day: 1 };
+  const month = partial.y === now.getFullYear() ? Math.min(7, Math.floor(now.getMonth() / 2) + 1) : 7;
+  return { year: partial.y, month, day: 1 };
 };
 
 export const monthsSinceDate = (raw, now = new Date()) => {
-  const parts = readDateParts(raw);
+  const parts = readDateParts(raw, now);
   if (!parts) return null;
 
   const { year, month, day } = parts;

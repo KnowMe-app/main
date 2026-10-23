@@ -15,19 +15,23 @@
  * ніхто не казав, не вигадується.
  */
 
+// Назви місяців мовами інтерфейсу: підказка під полем пропонує «Mai 2019»,
+// «mei 2019», «mayo 2019», — і розбір мусить приймати те, що сам радить.
+// Іспанське «ago» (серпень) стоїть лише повним «agos…»: голе «ago» — це
+// англійське «тому».
 const MONTH_STEMS = [
-  [1, ['січ', 'янв', 'jan']],
+  [1, ['січ', 'янв', 'jan', 'ene']],
   [2, ['лют', 'фев', 'feb']],
-  [3, ['берез', 'мар', 'mar']],
-  [4, ['квіт', 'апр', 'apr']],
-  [5, ['трав', 'мая', 'май', 'may']],
+  [3, ['берез', 'мар', 'mar', 'mär', 'maa']],
+  [4, ['квіт', 'апр', 'apr', 'abr']],
+  [5, ['трав', 'мая', 'май', 'may', 'mai', 'mei']],
   [6, ['черв', 'июн', 'jun']],
   [7, ['лип', 'июл', 'jul']],
-  [8, ['серп', 'авг', 'aug']],
+  [8, ['серп', 'авг', 'aug', 'agos']],
   [9, ['верес', 'сен', 'sep']],
-  [10, ['жовт', 'окт', 'oct']],
+  [10, ['жовт', 'окт', 'oct', 'okt']],
   [11, ['листоп', 'нояб', 'nov']],
-  [12, ['груд', 'дек', 'dec']],
+  [12, ['груд', 'дек', 'dec', 'dez', 'dic']],
 ];
 
 /** Скільки років назад пологи ще правдоподібні. */
@@ -73,11 +77,18 @@ const parseRelative = (text, now) => {
   const amount = /^\d+$/.test(amountRaw) ? Number(amountRaw) : 0.5;
   const unit = unitRaw.toLowerCase();
   const sign = future ? 1 : -1;
-  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  if (/^(р|год|лет|year)/.test(unit)) date.setMonth(date.getMonth() + sign * Math.round(amount * 12));
-  else if (/^(міс|мес|month)/.test(unit)) date.setMonth(date.getMonth() + sign * Math.round(amount));
-  else date.setDate(date.getDate() + sign * Math.round(amount * 7));
-  return make(date.getFullYear(), date.getMonth() + 1, 0, 'month');
+  // Тижні називають день: «через 10 тижнів» — це конкретна дата, і місяцем
+  // вона ставала б на тиждень-другий ближчою, а «через 1 тиждень» — поточним
+  // місяцем, тобто «пологи 0 міс тому».
+  if (/^(тиж|нед|week)/.test(unit)) {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + sign * Math.round(amount * 7));
+    return make(date.getFullYear(), date.getMonth() + 1, date.getDate(), 'day');
+  }
+  // Місяці й роки рахуються самими місяцями, без дня: `setMonth` від 31
+  // жовтня мінус вісім місяців переповнював лютий і давав березень.
+  const months = /^(р|год|лет|year)/.test(unit) ? Math.round(amount * 12) : Math.round(amount);
+  const index = now.getFullYear() * 12 + now.getMonth() + sign * months;
+  return make(Math.floor(index / 12), (index % 12) + 1, 0, 'month');
 };
 
 const parseWithMonthWord = (tokens, now) => {
@@ -86,11 +97,16 @@ const parseWithMonthWord = (tokens, now) => {
   const month = monthFromWord(tokens[monthIndex]);
   const before = tokens.slice(0, monthIndex).filter(token => /^\d+$/.test(token));
   const after = tokens.slice(monthIndex + 1).filter(token => /^\d+$/.test(token));
-  const yearRaw = after.find(token => token.length === 4 || token.length === 2)
-    || before.find(token => token.length === 4);
+  // Рік — чотири цифри, де б вони не стояли: «May 12 2019» — це 12 травня
+  // 2019, а не травень 2012. Без чотирьох цифр рік — останнє коротке число
+  // після місяця («May 12 19», «травень 19»).
+  const year4 = after.find(token => token.length === 4) || before.find(token => token.length === 4);
+  const shortAfter = after.filter(token => token.length <= 2);
+  const yearRaw = year4 || shortAfter[shortAfter.length - 1];
   if (!yearRaw) return { reason: 'noYear' };
   const year = expandYear(yearRaw, now);
-  const dayRaw = before.find(token => token.length <= 2);
+  const dayRaw = before.find(token => token.length <= 2)
+    || (year4 ? shortAfter[0] : shortAfter.length > 1 ? shortAfter[0] : undefined);
   if (dayRaw) return make(year, month, Number(dayRaw), 'day');
   return make(year, month, 0, 'month');
 };
@@ -145,6 +161,15 @@ export const parseDeliveryDateInput = (raw, now = new Date()) => {
 
   const relative = parseRelative(text.replace(/\s+/g, ' '), now);
   if (relative) return relative;
+
+  // «2019年5月12日», «2019年5月», «2019年» — японська й китайська.
+  const cjk = text.replace(/\s+/g, '').match(/^(\d{4})年(?:(\d{1,2})月(?:(\d{1,2})日)?)?$/u);
+  if (cjk) {
+    const [, y, m, d] = cjk;
+    if (d) return make(Number(y), Number(m), Number(d), 'day') || { reason: 'invalid' };
+    if (m) return make(Number(y), Number(m), 0, 'month') || { reason: 'invalid' };
+    return isYearLike(y, now) ? make(Number(y), 0, 0, 'year') : { reason: 'invalid' };
+  }
 
   const tokens = text.split(/[^\p{L}\d]+/u).filter(Boolean);
   if (tokens.some(token => /\p{L}/u.test(token))) {

@@ -276,7 +276,7 @@ export const describeGlasses = (value, lang) => {
     if (GLASSES_NO.has(key)) return glassesWords.no;
     if (GLASSES_YES.has(key)) return glassesWords.yes;
   }
-  if (GLASSES_NO.has(key)) return lang === 'en' ? "I don't wear glasses, my eyesight is good." : 'Окулярів не ношу, зір гарний.';
+  if (GLASSES_NO.has(key)) return lang === 'en' ? "I don't wear glasses, my eyesight is good." : 'Не ношу окулярів, зір хороший.';
   if (GLASSES_YES.has(key)) return lang === 'en' ? 'I wear glasses.' : 'Ношу окуляри.';
   // Власна відповідь. Число з діоптріями («-2.5», «+1,5», «-2/-3») — це вже
   // сам зір, і реченням він читається як «Мій зір — −2.5 діоптрії». Решта

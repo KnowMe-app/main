@@ -274,7 +274,7 @@ describe('окуляри реченням про зір', () => {
   const looksText = glasses => buildProfileDetailSections({ glasses }, 'uk')[0]?.text;
 
   it('«ні» — це гарний зір', () => {
-    expect(looksText('no')).toBe('Окулярів не ношу, зір гарний.');
+    expect(looksText('no')).toBe('Не ношу окулярів, зір хороший.');
   });
 
   it('діоптрії — це сам зір', () => {
