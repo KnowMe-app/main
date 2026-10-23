@@ -203,7 +203,9 @@ const NextFieldsRow = styled.div`
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-bottom: 12px;
+  /* Стоїть одразу під «бракує полів» у «Публікації»: без відступу згори
+     два переліки чіпів зливались в один. */
+  margin: 16px 0 14px;
   font-size: 13px;
   color: var(--muted);
 `;
