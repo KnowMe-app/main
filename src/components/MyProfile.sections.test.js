@@ -33,4 +33,13 @@ describe('My Profile section configuration', () => {
     expect(personalFields).toContain('phone');
     expect(personalFields).not.toContain('email');
   });
+
+  // Донорка ооцитів читала «Досвід у сурогатному материнстві» як помилку
+  // анкети: це питання до СМ. Донорці ж «Чи розглядаєте участь у програмі СМ»
+  // лишається.
+  it('не питає донорку без анкети СМ про досвід сурогатного материнства', () => {
+    expect(source).toContain("const DONOR_HIDDEN_FIELDS = new Set(['surrogacyExperience']);");
+    expect(source).toContain("const donorOnly = rolesList.includes('ed') && !rolesList.includes('sm');");
+    expect(source).toContain('.filter(name => !donorOnly || !DONOR_HIDDEN_FIELDS.has(name))');
+  });
 });

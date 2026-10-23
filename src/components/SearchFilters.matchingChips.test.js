@@ -35,7 +35,7 @@ describe('matching active-filter chips', () => {
 
   it('lists what is left once more than two options are off', () => {
     expect(buildMatchingFilterChipLabel(age, withOff(age, ['le25', '26_30', '31_33', '34_36'])))
-      .toEqual({ text: 'Вік: 37+, ?', danger: false });
+      .toEqual({ text: 'Вік: 37+, Не вказано', danger: false });
   });
 
   it('falls back to a count when neither side is short', () => {
@@ -60,6 +60,17 @@ describe('matching active-filter chips', () => {
       .toEqual({ text: 'Вік: лише заповнені', danger: false });
     expect(buildMatchingFilterChipLabel(country, withOff(country, ['unknown'])))
       .toEqual({ text: 'Країна: лише заповнені', danger: false });
+  });
+
+  // Голий «?» читач не розумів: під ним анкети, де значення не вказали.
+  it('names the no-data option in words, not with a bare "?"', () => {
+    MATCHING_FILTER_GROUPS.forEach(group => {
+      group.options.forEach(option => expect(option.label).not.toBe('?'));
+    });
+    expect(age.options.find(option => option.val === 'other')).toMatchObject({ label: 'Не вказано', unknown: true });
+    expect(country.options.find(option => option.val === 'unknown')).toMatchObject({ label: 'Не вказано', unknown: true });
+    // «Інші» в ролі — справжня категорія, а не «даних немає».
+    expect(role.options.find(option => option.val === 'other').unknown).toBeUndefined();
   });
 
   it('builds one chip per group that is off default', () => {

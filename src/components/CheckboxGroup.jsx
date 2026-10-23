@@ -138,7 +138,9 @@ export const CheckboxGroup = ({ label, filterName, options, filters, onChange, o
           const isActive = Boolean(groupValues[val]);
           const readableLabel = typeof optionLabel === 'string' ? optionLabel : val;
           const groupLabel = label || filterName;
-          const count = optionCounts ? optionCounts[val] || 0 : null;
+          // `null` — числа немає зовсім: опцію вимкнено, і дека її не вантажила
+          // (`withUnloadedFilterOptions`). Відсутній ключ — справді нуль.
+          const count = optionCounts && optionCounts[val] !== null ? optionCounts[val] || 0 : null;
           // Нижня межа: стрічка ще не вся завантажена (`__lowerBound`).
           const countText = count !== null && optionCounts.__lowerBound ? `${count}+` : count;
 

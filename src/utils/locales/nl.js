@@ -62,6 +62,8 @@ const BY_UK = {
   'Замінити роль': 'Rol vervangen',
   'Числа — серед уже завантажених карток; гортайте стрічку, і вони зростуть': 'De getallen tellen de tot nu toe geladen kaarten; scrol door de feed en ze groeien',
   'Числа — серед усіх карток стрічки': 'De getallen tellen alle kaarten in de feed',
+  'Числа — серед показаних карток': 'De getallen tellen de getoonde kaarten',
+  'Числа — серед показаних карток; вимкнені опції стрічка зараз не вантажить, тож чисел біля них немає': 'De getallen tellen de getoonde kaarten; uitgeschakelde opties worden nu niet geladen en hebben daarom geen getal',
   'Схоже на місто': 'Lijkt op een stad',
   'Схоже на область': 'Lijkt op een regio',
   'Пошук знаходить точний телефон, пошту, нік або імʼя. Анкети з цього місця покаже стрічка.': 'Zoeken vindt een exact telefoonnummer, e-mail, gebruikersnaam of naam. Profielen uit deze plaats toont de feed.',
@@ -623,7 +625,7 @@ const BY_UK = {
   'Відкрити публічні нотатки анкети у Firebase': 'Openbare notities van het profiel openen in Firebase',
   'В обране': 'Naar favorieten',
   'Анкету очищено й знято з публікації': 'Het profiel is leeggemaakt en de publicatie ingetrokken',
-  'Заповнено {filled} з {total}': '{filled} van {total} ingevuld',
+  'Для публікації заповнено {filled} з {total}': 'Voor publicatie: {filled} van {total} ingevuld',
   'Очистити анкету': 'Profiel leegmaken',
   'Стерти всі поля й зняти з публікації': 'Alle velden wissen en publicatie intrekken',
   'Наприклад: Марія': 'Bijvoorbeeld: Maria',
@@ -1290,7 +1292,7 @@ const BY_UK = {
   'Зберегти': 'Opslaan',
   'Видалити?': 'Verwijderen?',
   'Додайте свої фото, максимум {max} шт': 'Voeg uw foto\'s toe, tot {max}',
-  'Matching: не вдалося отримати дані протягом 5 секунд. Режим: {mode}. Перевірте мережу, Firebase rules та індекси.': 'Matching: geen gegevens binnen 5 seconden. Modus: {mode}. Controleer het netwerk, de Firebase-regels en de indexen.',
+  'Анкети вантажаться довше, ніж зазвичай. Схоже, інтернет повільний — зачекайте трохи.': 'Het laden van de profielen duurt langer dan normaal. De verbinding lijkt traag – wacht even.',
 };
 
 /** Підписи полів і заголовки блоків картки: англійський оригінал → нідерландський. */

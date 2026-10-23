@@ -62,6 +62,8 @@ const BY_UK = {
   'Замінити роль': 'Reemplazar rol',
   'Числа — серед уже завантажених карток; гортайте стрічку, і вони зростуть': 'Los números cuentan las tarjetas ya cargadas; desplázate por el listado y aumentarán',
   'Числа — серед усіх карток стрічки': 'Los números cuentan todas las tarjetas del listado',
+  'Числа — серед показаних карток': 'Los números cuentan las tarjetas mostradas',
+  'Числа — серед показаних карток; вимкнені опції стрічка зараз не вантажить, тож чисел біля них немає': 'Los números cuentan las tarjetas mostradas; las opciones desactivadas no se cargan ahora, así que no tienen número',
   'Схоже на місто': 'Parece una ciudad',
   'Схоже на область': 'Parece una región',
   'Пошук знаходить точний телефон, пошту, нік або імʼя. Анкети з цього місця покаже стрічка.': 'La búsqueda encuentra un teléfono, correo, usuario o nombre exactos. El listado mostrará los perfiles de este lugar.',
@@ -623,7 +625,7 @@ const BY_UK = {
   'Відкрити публічні нотатки анкети у Firebase': 'Abrir las notas públicas del perfil en Firebase',
   'В обране': 'A favoritos',
   'Анкету очищено й знято з публікації': 'El perfil se ha vaciado y retirado de la publicación',
-  'Заповнено {filled} з {total}': 'Completado {filled} de {total}',
+  'Для публікації заповнено {filled} з {total}': 'Para publicar: {filled} de {total} completados',
   'Очистити анкету': 'Vaciar el perfil',
   'Стерти всі поля й зняти з публікації': 'Borrar todos los campos y retirar la publicación',
   'Наприклад: Марія': 'Por ejemplo: María',
@@ -1290,7 +1292,7 @@ const BY_UK = {
   'Зберегти': 'Guardar',
   'Видалити?': '¿Eliminar?',
   'Додайте свої фото, максимум {max} шт': 'Añada sus fotos, hasta {max}',
-  'Matching: не вдалося отримати дані протягом 5 секунд. Режим: {mode}. Перевірте мережу, Firebase rules та індекси.': 'Matching: sin datos en 5 segundos. Modo: {mode}. Revise la red, las reglas de Firebase y los índices.',
+  'Анкети вантажаться довше, ніж зазвичай. Схоже, інтернет повільний — зачекайте трохи.': 'Los perfiles tardan más de lo habitual en cargarse. Parece que la conexión es lenta: espere un momento.',
 };
 
 /** Підписи полів і заголовки блоків картки: англійський оригінал → іспанський. */

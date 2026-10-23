@@ -62,6 +62,8 @@ const BY_UK = {
   'Замінити роль': 'Rolle ersetzen',
   'Числа — серед уже завантажених карток; гортайте стрічку, і вони зростуть': 'Die Zahlen zählen die bisher geladenen Karten; scrolle im Feed, dann steigen sie',
   'Числа — серед усіх карток стрічки': 'Die Zahlen zählen alle Karten im Feed',
+  'Числа — серед показаних карток': 'Die Zahlen zählen die angezeigten Karten',
+  'Числа — серед показаних карток; вимкнені опції стрічка зараз не вантажить, тож чисел біля них немає': 'Die Zahlen zählen die angezeigten Karten; ausgeschaltete Optionen werden gerade nicht geladen und haben daher keine Zahl',
   'Схоже на місто': 'Sieht nach einer Stadt aus',
   'Схоже на область': 'Sieht nach einer Region aus',
   'Пошук знаходить точний телефон, пошту, нік або імʼя. Анкети з цього місця покаже стрічка.': 'Die Suche findet eine genaue Telefonnummer, E-Mail, einen Benutzernamen oder Namen. Profile aus diesem Ort zeigt der Feed.',
@@ -623,7 +625,7 @@ const BY_UK = {
   'Відкрити публічні нотатки анкети у Firebase': 'Öffentliche Notizen des Profils in Firebase öffnen',
   'В обране': 'Zu Favoriten',
   'Анкету очищено й знято з публікації': 'Das Profil wurde geleert und die Veröffentlichung zurückgezogen',
-  'Заповнено {filled} з {total}': '{filled} von {total} ausgefüllt',
+  'Для публікації заповнено {filled} з {total}': 'Zum Veröffentlichen: {filled} von {total} ausgefüllt',
   'Очистити анкету': 'Profil leeren',
   'Стерти всі поля й зняти з публікації': 'Alle Felder löschen und Veröffentlichung zurückziehen',
   'Наприклад: Марія': 'Zum Beispiel: Maria',
@@ -1290,7 +1292,7 @@ const BY_UK = {
   'Зберегти': 'Speichern',
   'Видалити?': 'Löschen?',
   'Додайте свої фото, максимум {max} шт': 'Fügen Sie Ihre Fotos hinzu, bis zu {max}',
-  'Matching: не вдалося отримати дані протягом 5 секунд. Режим: {mode}. Перевірте мережу, Firebase rules та індекси.': 'Matching: keine Daten innerhalb von 5 Sekunden. Modus: {mode}. Prüfen Sie das Netzwerk, die Firebase-Regeln und die Indizes.',
+  'Анкети вантажаться довше, ніж зазвичай. Схоже, інтернет повільний — зачекайте трохи.': 'Die Profile laden länger als üblich. Die Verbindung scheint langsam zu sein – bitte warten Sie einen Moment.',
 };
 
 /** Підписи полів і заголовки блоків картки: англійський оригінал → німецький. */

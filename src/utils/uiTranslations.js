@@ -75,6 +75,8 @@ const EN_BY_UK = {
   'Замінити роль': 'Replace role',
   'Числа — серед уже завантажених карток; гортайте стрічку, і вони зростуть': 'Numbers count the cards loaded so far; scroll the feed and they will grow',
   'Числа — серед усіх карток стрічки': 'Numbers count every card in the feed',
+  'Числа — серед показаних карток': 'Numbers count the cards shown',
+  'Числа — серед показаних карток; вимкнені опції стрічка зараз не вантажить, тож чисел біля них немає': 'Numbers count the cards shown; options that are turned off are not loaded right now, so they have no number',
   'Схоже на місто': 'Looks like a city',
   'Схоже на область': 'Looks like a region',
   'Пошук знаходить точний телефон, пошту, нік або імʼя. Анкети з цього місця покаже стрічка.': 'Search finds an exact phone, email, username or name. The feed will show profiles from this place.',
@@ -672,7 +674,7 @@ const EN_BY_UK = {
   'Відкрити публічні нотатки анкети у Firebase': 'Open the profile’s public notes in Firebase',
   'В обране': 'To favourites',
   'Анкету очищено й знято з публікації': 'The profile is cleared and unpublished',
-  'Заповнено {filled} з {total}': 'Filled in {filled} of {total}',
+  'Для публікації заповнено {filled} з {total}': 'Required for publishing: {filled} of {total}',
   'Очистити анкету': 'Clear the profile',
   'Стерти всі поля й зняти з публікації': 'Erase all fields and unpublish',
   'Наприклад: Марія': 'For example: Maria',
@@ -1404,7 +1406,7 @@ const EN_BY_UK = {
   'Зберегти': 'Save',
   'Видалити?': 'Delete?',
   'Додайте свої фото, максимум {max} шт': 'Add your photos, up to {max}',
-  'Matching: не вдалося отримати дані протягом 5 секунд. Режим: {mode}. Перевірте мережу, Firebase rules та індекси.': 'Matching: no data within 5 seconds. Mode: {mode}. Check the network, Firebase rules and indexes.',
+  'Анкети вантажаться довше, ніж зазвичай. Схоже, інтернет повільний — зачекайте трохи.': 'Profiles are taking longer than usual to load. The connection seems slow — please wait a moment.',
 };
 
 /**

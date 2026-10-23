@@ -41,3 +41,18 @@ export const listFeedRowAnketaRoles = (user, hiddenRoles = []) => {
   const shown = roles.filter(role => !hiddenRoles.includes(role));
   return shown.length ? shown : roles;
 };
+
+/**
+ * Чи лишається від картки бодай одна анкета, яку читач бачить і яку
+ * пропускає «Тип профілю» (`isAllowedRole`).
+ *
+ * Фільтр картки питає всі її ролі, а рядок малює лише видимі читачеві: донорці
+ * донорських анкет не показують, і картка «батьки + донорка» проходила під
+ * «Агенцію» за донорською роллю, а малювалась рядком «Біологічні батьки».
+ * Картка без жодної видимої ролі тут не відсівається — її доля вирішена
+ * фільтром картки.
+ */
+export const cardHasAnketaForRoleFilter = (user, isAllowedRole, hiddenRoles = []) => {
+  const visibleRoles = listProfileRoles(user).filter(role => !hiddenRoles.includes(role));
+  return !visibleRoles.length || visibleRoles.some(isAllowedRole);
+};
