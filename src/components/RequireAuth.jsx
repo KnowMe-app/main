@@ -64,4 +64,15 @@ export const RequireAuth = ({ status, children }) => {
   return children;
 };
 
+/**
+ * Очікування екрана, код якого ще їде (`React.lazy` у `App.jsx`). Той самий
+ * спінер, що й у межі входу: людина бачить одне «зачекайте», а не два різні
+ * поспіль.
+ */
+export const ScreenLoading = () => (
+  <GateWrap role="status" aria-live="polite" data-testid="screen-loading">
+    <GateSpinner aria-hidden="true" />
+  </GateWrap>
+);
+
 export default RequireAuth;

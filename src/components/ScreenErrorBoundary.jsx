@@ -3,6 +3,31 @@ import styled from 'styled-components';
 import { uiText } from 'utils/uiTranslations';
 import { getStoredLanguage } from 'hooks/useAppSettings';
 
+const CHUNK_RELOAD_KEY = 'screenChunkReloadAt';
+const CHUNK_RELOAD_COOLDOWN_MS = 60 * 1000;
+
+export const isChunkLoadError = error => (
+  error?.name === 'ChunkLoadError' || /Loading (CSS )?chunk [\w-]+ failed/i.test(String(error?.message || ''))
+);
+
+/**
+ * Екрани вантажаться окремими файлами (`React.lazy` у `App.jsx`), а деплой на
+ * GitHub Pages стирає файли попередньої збірки. Вкладка, відкрита до деплою,
+ * на переході до ще не завантаженого екрана просить файл, якого вже немає, —
+ * і лікує це саме перезавантаження: нова `index.html` знає нові імена. Раз на
+ * хвилину, щоб справжній збій мережі не крутив перезавантаження по колу.
+ */
+const claimChunkReload = () => {
+  try {
+    const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0);
+    if (Date.now() - last < CHUNK_RELOAD_COOLDOWN_MS) return false;
+    sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /**
  * Збій одного екрана не має бути білою сторінкою.
  *
@@ -24,6 +49,7 @@ export class ScreenErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error('[ScreenErrorBoundary] екран упав', error, info?.componentStack);
+    if (isChunkLoadError(error) && claimChunkReload()) window.location.reload();
   }
 
   componentDidUpdate(prevProps) {

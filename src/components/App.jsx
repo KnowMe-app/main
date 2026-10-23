@@ -1,21 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate  } from 'react-router-dom';
-import { PrivacyPolicy } from './PrivacyPolicy';
-import { MyProfile } from './MyProfile';
 import { LoginScreen } from './LoginScreen';
-import { AddNewProfile } from './AddNewProfile';
-import Matching from './Matching';
-import EditProfile from './EditProfile';
-import MedicationsPage from './MedicationsPage';
-import FlowManager from './FlowManager';
-import BudgetPage from './BudgetPage';
-import InvoiceBuilderPage from './InvoiceBuilderPage';
-import DocumentsPage from './DocumentsPage';
-import PartiesPage from './PartiesPage';
-import ProfileCreationWorkspace from './ProfileCreationWorkspace';
 import PrimaryNavigation from './PrimaryNavigation';
 import { PrimaryNavigationSlotProvider } from './PrimaryNavigationSlot';
-import { RequireAuth } from './RequireAuth';
+import { RequireAuth, ScreenLoading } from './RequireAuth';
 import { onAuthStateChanged } from 'firebase/auth';
 import toast from 'react-hot-toast';
 import { auth, fetchUserById, resetViewerAccessLevelCache } from './config';
@@ -23,6 +11,28 @@ import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, 
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
 import { ReadOnlyBadge } from './ReadOnlyBadge';
 import { ScreenErrorBoundary } from './ScreenErrorBoundary';
+
+// Екрани вантажаться окремо від головного файлу. Доки вони стояли статичними
+// імпортами, кожен відвідувач ще до форми входу качав 6,6 МБ JS (1,67 МБ gzip),
+// зокрема PDF-, Excel- і Word-рушії адмінки, якими звичайний читач не
+// користується ніколи: на повільному 4G середній телефон показував білий екран
+// ~12 секунд. Форма входу лишається в головному файлі — вона перший екран
+// новачка. Стрічку, «Мій профіль» і форму картки браузер довантажує у вільну
+// хвилину (`webpackPrefetch`), тож після входу на них не чекають; адмінські
+// екрани — лише тим, хто їх відкриває.
+const pickNamed = (load, name) => () => load().then(module => ({ default: module[name] }));
+const PrivacyPolicy = lazy(pickNamed(() => import('./PrivacyPolicy'), 'PrivacyPolicy'));
+const MyProfile = lazy(pickNamed(() => import(/* webpackPrefetch: true */ './MyProfile'), 'MyProfile'));
+const Matching = lazy(() => import(/* webpackPrefetch: true */ './Matching'));
+const ProfileCreationWorkspace = lazy(() => import(/* webpackPrefetch: true */ './ProfileCreationWorkspace'));
+const AddNewProfile = lazy(pickNamed(() => import('./AddNewProfile'), 'AddNewProfile'));
+const EditProfile = lazy(() => import('./EditProfile'));
+const MedicationsPage = lazy(() => import('./MedicationsPage'));
+const FlowManager = lazy(() => import('./FlowManager'));
+const BudgetPage = lazy(() => import('./BudgetPage'));
+const InvoiceBuilderPage = lazy(() => import('./InvoiceBuilderPage'));
+const DocumentsPage = lazy(() => import('./DocumentsPage'));
+const PartiesPage = lazy(() => import('./PartiesPage'));
 
 // Тестовий акаунт бачить адмінські екрани, але база його правок там не приймає.
 // На матчингу він пише як звичайний користувач (своя анкета, реакції, нотатки,
@@ -64,21 +74,21 @@ export const App = () => {
       return;
     }
 
-    const isRootRoute = location.pathname === '/';
+    // Корінь `/` сюди більше не потрапляє: він сам веде не-адміна в «Мій
+    // профіль» (див. маршрут нижче). Поки корінь чекав на цей ефект, людина
+    // бачила там текст угоди, а історія тримала `/`, і «назад» повертав на нього.
     const isUnauthorizedAddRoute = location.pathname === '/add' && !canAccessAdd;
 
-    if (isRootRoute || isUnauthorizedAddRoute) {
-      // Екран, на який немає прав, не мовчить. Мовчазний редірект у «Мій
-      // профіль» читався як поломка: людина відкривала адресу, а застосунок
-      // без жодного слова показував їй її власну анкету — і відрізнити «прав
-      // немає» від «щось зламалось» було ніяк. Лишився тут один такий екран —
-      // адмінське `/add`; заводити картки може кожен, і `/matching/create-profile`
-      // більше нікого не відсилає.
-      if (isUnauthorizedAddRoute) {
-        toast.error('Немає права на цей екран. Попросіть адміністратора відкрити доступ.', {
-          id: 'route-access-denied',
-        });
-      }
+    // Екран, на який немає прав, не мовчить. Мовчазний редірект у «Мій
+    // профіль» читався як поломка: людина відкривала адресу, а застосунок
+    // без жодного слова показував їй її власну анкету — і відрізнити «прав
+    // немає» від «щось зламалось» було ніяк. Лишився тут один такий екран —
+    // адмінське `/add`; заводити картки може кожен, і `/matching/create-profile`
+    // більше нікого не відсилає.
+    if (isUnauthorizedAddRoute) {
+      toast.error('Немає права на цей екран. Попросіть адміністратора відкрити доступ.', {
+        id: 'route-access-denied',
+      });
       navigate('/my-profile');
     }
   }, [isLoggedIn, isAccessResolved, navigate, isAdmin, location.pathname, canAccessAdd]);
@@ -144,6 +154,7 @@ export const App = () => {
         <ReadOnlyBadge />
       ) : null}
       <ScreenErrorBoundary resetKey={normalizedPathname}>
+      <Suspense fallback={<ScreenLoading />}>
       <Routes>
       {/* Публічні екрани не читають бази: це форма входу та текст угоди, на
           який веде кнопка «Умови» з самої форми. Решта застосунку — про
@@ -151,7 +162,10 @@ export const App = () => {
       <Route path="/login" element={<LoginScreen setIsLoggedIn={setIsLoggedIn} authStatus={authStatus} />} />
       <Route path="/policy" element={<PrivacyPolicy />} />
 
-      <Route path="/" element={<RequireAuth status={authStatus}>{canAccessAdd ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <PrivacyPolicy />}</RequireAuth>} />
+      {/* Корінь — робочий стіл адміна, решту він веде в «Мій профіль». Поки
+          права не прочитані, тут очікування (`catchAllStatus`), а не текст
+          угоди, який залогінена людина бачила тут до редиректу. */}
+      <Route path="/" element={<RequireAuth status={catchAllStatus}>{isAdmin ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <Navigate to="/my-profile" replace />}</RequireAuth>} />
       <Route path="/my-profile" element={<RequireAuth status={authStatus}><MyProfile /></RequireAuth>} />
       <Route path="/my-profile-new" element={<Navigate to="/my-profile" replace />} />
       {canAccessAdd && <Route path="/add" element={<RequireAuth status={authStatus}><AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /></RequireAuth>} />}
@@ -175,6 +189,7 @@ export const App = () => {
           (і адреса їде з ним), залогінений — у «Мій профіль». */}
       <Route path="*" element={<RequireAuth status={catchAllStatus}><Navigate to="/my-profile" replace /></RequireAuth>} />
       </Routes>
+      </Suspense>
       </ScreenErrorBoundary>
     </PrimaryNavigationSlotProvider>
   );

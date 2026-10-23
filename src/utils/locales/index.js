@@ -1,9 +1,3 @@
-import ja from './ja';
-import es from './es';
-import de from './de';
-import nl from './nl';
-import zh from './zh';
-
 /**
  * Мови інтерфейсу понад українську й англійську.
  *
@@ -24,13 +18,34 @@ import zh from './zh';
  *
  * Рядок, якого в мові ще немає, читач бачить англійським: для того, хто обрав
  * не українську, англійська ближча.
+ *
+ * Модулі мов вантажаться на вимогу (`loadExtraLocale`), а не імпортом угорі:
+ * разом вони важили ~1,2 МБ головного файлу — більше за PDF- і Excel-рушії
+ * адмінки, — і їх качав кожен відвідувач, хоча майже всі читають українською.
+ * Тут лишаються самі метадані мов: їх показує вибір мови, поки жоден модуль
+ * не приїхав. Обрану мову `src/index.js` довантажує до першого кадру, а нову —
+ * `setLanguage` перед тим, як перемкнути (`hooks/useAppSettings`).
  */
-export const EXTRA_LOCALES = Object.freeze({ ja, es, de, nl, zh });
+const EXTRA_LANGUAGE_INFO = [
+  { code: 'es', nativeName: 'Español', locale: 'es-ES' },
+  { code: 'de', nativeName: 'Deutsch', locale: 'de-DE' },
+  { code: 'nl', nativeName: 'Nederlands', locale: 'nl-NL' },
+  { code: 'ja', nativeName: '日本語', locale: 'ja-JP' },
+  { code: 'zh', nativeName: '中文', locale: 'zh-CN' },
+];
+
+const EXTRA_LOCALE_LOADERS = {
+  es: () => import(/* webpackChunkName: "locale-es" */ './es'),
+  de: () => import(/* webpackChunkName: "locale-de" */ './de'),
+  nl: () => import(/* webpackChunkName: "locale-nl" */ './nl'),
+  ja: () => import(/* webpackChunkName: "locale-ja" */ './ja'),
+  zh: () => import(/* webpackChunkName: "locale-zh" */ './zh'),
+};
 
 const LANGUAGE_INFO = [
   { code: 'uk', nativeName: 'Українська', locale: 'uk-UA' },
   { code: 'en', nativeName: 'English', locale: 'en-GB' },
-  ...[es, de, nl, ja, zh].map(({ code, nativeName, locale }) => ({ code, nativeName, locale })),
+  ...EXTRA_LANGUAGE_INFO,
 ];
 
 /** Порядок у виборі мови: спершу мови аудиторії, далі решта. */
@@ -38,10 +53,43 @@ export const APP_LANGUAGES = Object.freeze(LANGUAGE_INFO);
 
 export const SUPPORTED_LANGUAGE_CODES = Object.freeze(APP_LANGUAGES.map(item => item.code));
 
+/** Мови, словник яких живе окремим модулем і вантажиться на вимогу. */
+export const EXTRA_LANGUAGE_CODES = Object.freeze(EXTRA_LANGUAGE_INFO.map(item => item.code));
+
 export const isSupportedLanguage = code => SUPPORTED_LANGUAGE_CODES.includes(code);
 
-/** Модуль мови понад українську й англійську, або `null`. */
-export const getExtraLocale = language => EXTRA_LOCALES[language] || null;
+const loadedLocales = {};
+const pendingLocales = {};
+
+/**
+ * Модуль мови понад українську й англійську, або `null` — і тоді, коли мова
+ * ще не довантажилась: до того її рядки йдуть англійською, як і будь-який
+ * рядок без перекладу.
+ */
+export const getExtraLocale = language => (
+  Object.prototype.hasOwnProperty.call(loadedLocales, language) ? loadedLocales[language] : null
+);
+
+/**
+ * Довантажує модуль мови; для української, англійської й невідомого коду — `null`.
+ * Повторний виклик під час вантаження ділить той самий запит.
+ */
+export const loadExtraLocale = language => {
+  const existing = getExtraLocale(language);
+  if (existing) return Promise.resolve(existing);
+  if (!Object.prototype.hasOwnProperty.call(EXTRA_LOCALE_LOADERS, language)) return Promise.resolve(null);
+  if (!pendingLocales[language]) {
+    pendingLocales[language] = EXTRA_LOCALE_LOADERS[language]()
+      .then(module => {
+        loadedLocales[language] = module.default;
+        return module.default;
+      })
+      .finally(() => {
+        delete pendingLocales[language];
+      });
+  }
+  return pendingLocales[language];
+};
 
 /** BCP 47 тег для `Intl` і `toLocaleString`. */
 export const getLanguageLocale = language => (

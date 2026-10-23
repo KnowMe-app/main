@@ -4,8 +4,10 @@ import path from 'path';
 import { uiText } from '../uiTranslations';
 import {
   APP_LANGUAGES,
-  EXTRA_LOCALES,
+  EXTRA_LANGUAGE_CODES,
   SUPPORTED_LANGUAGE_CODES,
+  getExtraLocale,
+  loadExtraLocale,
   formatRegionDisplayName,
   keepsNounCase,
   listMonthNames,
@@ -33,8 +35,15 @@ const placeholders = text => (String(text).match(/\{\w+\}/g) || []).sort().join(
 const english = readEnglishDictionary();
 const CYRILLIC = /[А-Яа-яІіЇїЄєҐґ]/;
 
-describe.each(Object.keys(EXTRA_LOCALES))('мова %s', code => {
-  const locale = EXTRA_LOCALES[code];
+// Словники мов вантажаться на вимогу (`loadExtraLocale`), тож перевірки
+// починаються, коли приїхали всі п'ять.
+beforeAll(() => Promise.all(EXTRA_LANGUAGE_CODES.map(code => loadExtraLocale(code))));
+
+describe.each(EXTRA_LANGUAGE_CODES)('мова %s', code => {
+  let locale;
+  beforeAll(() => {
+    locale = getExtraLocale(code);
+  });
 
   it('перекладає кожен рядок, який має англійський бік', () => {
     const missing = Object.keys(english).filter(key => !Object.prototype.hasOwnProperty.call(locale.byUk, key));

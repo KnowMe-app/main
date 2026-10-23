@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { SUPPORTED_LANGUAGE_CODES } from '../utils/locales';
+import { EXTRA_LANGUAGE_CODES, SUPPORTED_LANGUAGE_CODES, getExtraLocale, loadExtraLocale } from '../utils/locales';
 
 // Global app settings: colour theme (light/dark) and interface language
 // (any code from `utils/locales` — uk, en, es, de, nl, ja, zh).
@@ -61,11 +61,26 @@ const notifySettingsChange = () => {
   window.dispatchEvent(new Event(SETTINGS_EVENT));
 };
 
+// Словник мови понад українську й англійську — окремий модуль, і він мусить
+// приїхати до того, як мова стане поточною: інакше екран на мить перейшов би
+// на англійську (запасну для рядка без перекладу) й тільки потім на обрану.
+const needsLocaleModule = language => EXTRA_LANGUAGE_CODES.includes(language) && !getExtraLocale(language);
+
 export const useAppSettings = () => {
   const [settings, setSettings] = useState(readSettingsSnapshot);
 
   useEffect(() => {
-    const sync = () => setSettings(readSettingsSnapshot());
+    const sync = () => {
+      const snapshot = readSettingsSnapshot();
+      if (!needsLocaleModule(snapshot.language)) {
+        setSettings(snapshot);
+        return;
+      }
+      // Мову змінили в іншій вкладці: тут її словника ще може не бути.
+      loadExtraLocale(snapshot.language)
+        .catch(error => console.warn('[settings] словник мови не довантажився', error))
+        .finally(() => setSettings(readSettingsSnapshot()));
+    };
     window.addEventListener(SETTINGS_EVENT, sync);
     window.addEventListener('storage', sync);
     return () => {
@@ -95,13 +110,24 @@ export const useAppSettings = () => {
 
   const setLanguage = useCallback(lang => {
     const nextLanguage = SUPPORTED_APP_LANGUAGES.includes(lang) ? lang : DEFAULT_APP_LANGUAGE;
-    try {
-      localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
-    } catch (error) {
-      // ignore storage errors
+    const apply = () => {
+      try {
+        localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
+      } catch (error) {
+        // ignore storage errors
+      }
+      setSettings(prev => ({ ...prev, language: nextLanguage }));
+      notifySettingsChange();
+    };
+    if (!needsLocaleModule(nextLanguage)) {
+      apply();
+      return;
     }
-    setSettings(prev => ({ ...prev, language: nextLanguage }));
-    notifySettingsChange();
+    // Без мережі словник не приїде — мова однаково перемикається, а рядки
+    // йдуть англійською, як і будь-який рядок без перекладу.
+    loadExtraLocale(nextLanguage)
+      .catch(error => console.warn('[settings] словник мови не довантажився', error))
+      .finally(apply);
   }, []);
 
   return {
