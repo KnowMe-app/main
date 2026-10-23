@@ -14,6 +14,11 @@ const BOTTOM_NAV_BREAKPOINT = 600;
 // навігації), `--km-bottom-nav-h` на кадр падав до нуля з `index.css` —
 // панель схлопувалась і поверталась, тобто «стрибала».
 const BOTTOM_NAV_HEIGHT = 64;
+// Панель плаває над сторінкою, як у Telegram: відступ від низу й країв, а
+// сторінка лишає під собою місце на всю зайняту смугу плюс повітря — інакше
+// останній рядок тексту стояв під панеллю.
+const BOTTOM_NAV_GAP = 10;
+const BOTTOM_NAV_SPACE = BOTTOM_NAV_HEIGHT + BOTTOM_NAV_GAP * 2;
 
 // На телефоні вкладки стоять унизу екрана (див. `Tabs`), тож сторінка мусить
 // лишити під собою місце, а фіксоване знизу — ставати над панеллю. Висоту
@@ -30,7 +35,7 @@ const BOTTOM_NAV_HEIGHT = 64;
 const TOP_NAV_HEIGHT = 53;
 const BottomNavSpace = createGlobalStyle`
   @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
-    :root { --km-bottom-nav-h: ${BOTTOM_NAV_HEIGHT}px; --km-top-nav-h: ${TOP_NAV_HEIGHT}px; }
+    :root { --km-bottom-nav-h: ${BOTTOM_NAV_SPACE}px; --km-top-nav-h: ${TOP_NAV_HEIGHT}px; }
     body { padding-bottom: var(--km-bottom-nav-h); }
   }
 `;
@@ -167,32 +172,46 @@ const Tabs = styled.div`
   a:focus-visible { outline: 2px solid var(--km-accent); outline-offset: 2px; }
 
   @media (max-width: ${BOTTOM_NAV_BREAKPOINT}px) {
+    /* Плаваюча «пігулка» за зразком Telegram: напівпрозоре тло з розмиттям,
+       тінь замість риски згори, активна вкладка — заливка під значком і
+       підписом разом. Кольори — свої (акцент і його світла підкладка). */
     position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    left: ${BOTTOM_NAV_GAP + 2}px;
+    right: ${BOTTOM_NAV_GAP + 2}px;
+    bottom: ${BOTTOM_NAV_GAP}px;
     z-index: 900;
-    gap: 0;
-    padding: 0 4px;
+    gap: 2px;
+    padding: 5px;
     height: ${BOTTOM_NAV_HEIGHT}px;
     box-sizing: border-box;
+    border-radius: ${BOTTOM_NAV_HEIGHT / 2}px;
     background: var(--km-card);
-    border-top: 1px solid var(--km-border);
+    background: color-mix(in srgb, var(--km-card) 84%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(1.6);
+    backdrop-filter: blur(18px) saturate(1.6);
+    border: 1px solid color-mix(in srgb, var(--km-border) 70%, transparent);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .14), 0 1px 3px rgba(0, 0, 0, .08);
 
     a {
       flex: 1 1 0;
       min-width: 0;
-      padding: 6px 2px;
+      min-height: 0;
+      padding: 4px 2px;
       flex-direction: column;
-      gap: 3px;
+      gap: 2px;
       font-size: 11px;
+      font-weight: 600;
+      line-height: 1.15;
       text-align: center;
-      border-radius: 0;
+      border-radius: ${BOTTOM_NAV_HEIGHT / 2 - 5}px;
+      color: var(--km-text);
+      transition: background-color .2s ease, color .2s ease;
     }
-    a:hover { background: transparent; }
+    a:hover { background: transparent; color: var(--km-text); }
+    a[aria-current='page'],
+    a[aria-current='page']:hover { background: var(--km-accent-light); color: var(--km-accent); }
     a[aria-current='page']::after { display: none; }
-    a svg { width: 56px; height: 28px; padding: 6px 0; box-sizing: border-box; border-radius: 14px; }
-    a[aria-current='page'] svg { background: var(--km-accent-light); }
+    a svg { width: 22px; height: 22px; flex: 0 0 auto; }
   }
 `;
 
