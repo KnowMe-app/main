@@ -28,6 +28,7 @@ import { listOfferedOptions } from '../utils/offeredOptions';
 // Сірі «Україна», «Київська», «Київ» у порожніх полях чернетки читались як
 // уже введене — приклад підписується прикладом, як у «Моєму профілі».
 import { asExamplePlaceholder } from '../utils/examplePlaceholder';
+import { resolveMyProfileFieldText, resolveMyProfileSectionTitle } from '../utils/myProfileRoleTexts';
 import SearchBar, { detectSearchParams } from './SearchBar';
 import { getCurrentValue, hasCurrentValue } from './getCurrentValue';
 import { hasFilledProfileDraftData } from '../utils/profileDraftContent';
@@ -644,6 +645,42 @@ export const offersSectionForCard = (section, card) => {
   const roles = listProfileRoles(card);
   return roles.length === 0 || roles.some(role => role === 'ed' || role === 'sm');
 };
+
+/*
+ * Картка агенції, клініки чи батьків питає себе так само, як «Мій профіль»
+ * цієї ролі (`myProfileRoleTexts`): назву й контактну особу, «як до вас
+ * звертатись». Розділ «ПІБ і дата народження» з прикладом «Марія» над назвою
+ * агенції питав не про те, а дата народження контактної особи давала
+ * агенції вік у рядку стрічки. Людина серед ролей — і питання людські.
+ */
+export const resolveDraftAnketaRole = card => {
+  const roles = listProfileRoles(card);
+  if (!roles.length || roles.some(role => role === 'ed' || role === 'sm')) return '';
+  return roles.find(role => role === 'ag' || role === 'cl') || (roles.includes('ip') ? 'ip' : '');
+};
+
+// Чого анкета організації чи батьків не питає — так само, як «Мій профіль»
+// (батьки підписуються одним рядком, без прізвища). Уже записане значення
+// поле лишає: інакше його не було б де виправити чи стерти.
+const DRAFT_PERSON_ONLY_FIELDS = Object.freeze({
+  ag: ['fathersname', 'birth'],
+  cl: ['fathersname', 'birth'],
+  ip: ['surname', 'fathersname', 'birth'],
+});
+
+export const offersCreateFieldForCard = (fieldName, card) => {
+  const anketaRole = resolveDraftAnketaRole(card);
+  if (!DRAFT_PERSON_ONLY_FIELDS[anketaRole]?.includes(fieldName)) return true;
+  return hasCurrentValue(card?.[fieldName]);
+};
+
+// Організацію чи батьків називає `name`, тож воно стоїть першим, а «Контактна
+// особа» — під ним. Людині лишається звичний порядок ПІБ: прізвище, імʼя.
+export const orderPersonalFieldsForCard = (fields, card) => (
+  resolveDraftAnketaRole(card) && fields.includes('name')
+    ? ['name', ...fields.filter(fieldName => fieldName !== 'name')]
+    : fields
+);
 
 export const collectExtraContactFields = card => CONTACT_FIELDS
   .filter(fieldName => !CREATE_FORM_SECTION_FIELDS.has(fieldName) && hasCurrentValue(card?.[fieldName]));
@@ -2073,7 +2110,14 @@ export const ProfileCreationWorkspace = () => {
     // порожню форму схожою на заповнену. Лишається він хіба на зайвому
     // порожньому рядку, доданому «+»: інакше прибрати цей рядок було б нічим.
     const offersClear = item => String(item ?? '').trim() !== '' || fieldRowValues.length > 1;
-    const label = getFieldLabel(field, language) || fieldName;
+    // Підпис і приклад імені — мовою ролі картки (`resolveDraftAnketaRole`).
+    const roleText = draftAnketaRole && (fieldName === 'name' || fieldName === 'surname')
+      ? resolveMyProfileFieldText(fieldName, draftAnketaRole)
+      : {};
+    const label = (roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language)) || fieldName;
+    const examplePlaceholder = roleText.placeholder
+      ? uiText(roleText.placeholder, language)
+      : asExamplePlaceholder(getFieldPlaceholder(field, language), language);
     const currentValues = toFieldValues(value).map(item => String(item ?? '').trim()).filter(Boolean);
 
     return <FieldRow key={fieldName} $pending={Boolean(pendingFieldEdits[fieldName]?.length)} $bare={hideLabel}>
@@ -2103,7 +2147,7 @@ export const ProfileCreationWorkspace = () => {
             <InputShell>
               <FieldTextArea
                 value={item}
-                placeholder={placeholder ?? asExamplePlaceholder(getFieldPlaceholder(field, language), language)}
+                placeholder={placeholder ?? examplePlaceholder}
                 onChange={e => updateDraftFieldItem(fieldName, index, e.target.value)}
                 onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
               />
@@ -2121,7 +2165,7 @@ export const ProfileCreationWorkspace = () => {
                 // в `РРРР-ММ-ДД`: показувати ISO — це дата задом наперед.
                 value={isDateField ? formatDateToDisplay(item) : item}
                 inputMode={isDateField ? 'numeric' : undefined}
-                placeholder={placeholder ?? (isDateField ? uiText('дд.мм.рррр', language) : asExamplePlaceholder(getFieldPlaceholder(field, language), language))}
+                placeholder={placeholder ?? (isDateField ? uiText('дд.мм.рррр', language) : examplePlaceholder)}
                 onChange={e => updateDraftFieldItem(
                   fieldName,
                   index,
@@ -2147,6 +2191,7 @@ export const ProfileCreationWorkspace = () => {
     () => ({ ...(overlayTarget?.card || overlayTarget?.canonical || {}), ...(draft || {}) }),
     [draft, overlayTarget],
   );
+  const draftAnketaRole = resolveDraftAnketaRole(summaryCard);
   // Контакти шапки — рівно ті, що стоять у полях форми нижче: поточні
   // значення, а не історія (TikTok, стертий у полі, вгорі стояв би живим).
   // Шапка — картка стрічки (`ProfileRow`) з поточних значень полів
@@ -2323,9 +2368,13 @@ export const ProfileCreationWorkspace = () => {
       {CREATE_FORM_SECTIONS.filter(section => section.key !== 'comment' && !(section.ownDraftOnly && (overlayTarget || editingSharedDraft))
         && offersSectionForCard(section, summaryCard)).map(section => (
         <FormSectionCard key={section.key}>
-          <FormSectionTitle id={`create-section-${section.key}`}>{stripSectionEmoji(uiText(section.title, language))}</FormSectionTitle>
-          {section.fields
+          <FormSectionTitle id={`create-section-${section.key}`}>{stripSectionEmoji(uiText(
+            section.key === 'personal' ? resolveMyProfileSectionTitle('personal', draftAnketaRole, section.title) : section.title,
+            language,
+          ))}</FormSectionTitle>
+          {(section.key === 'personal' ? orderPersonalFieldsForCard(section.fields, summaryCard) : section.fields)
             .filter(fieldName => section.key !== 'contacts' || isContactFieldOfferedForCard(fieldName, summaryCard))
+            .filter(fieldName => section.key !== 'personal' || offersCreateFieldForCard(fieldName, summaryCard))
             // Розділ «Хто це» з одного поля — підпис поля повторював би заголовок.
             // Чипи тоді підписує заголовок розділу (`labelledBy`): диктор мусить
             // чути питання «Хто це», а не самі назви ролей.

@@ -2237,7 +2237,7 @@ export const MyProfile = () => {
   // не є, — сирим ключем «programs».
   const resolveRequiredFieldLabel = fieldName => {
     if (fieldName === 'programs') return uiText('Програми — додайте хоча б одну', language);
-    const roleText = resolveMyProfileFieldText(fieldName, fieldName === 'agencyName' ? organisationRole : sectionTitleRole);
+    const roleText = resolveMyProfileFieldText(fieldName, fieldName === 'agencyName' ? organisationRole : sectionTitleRole, rolesList);
     if (roleText.label) return uiText(roleText.label, language);
     return getFieldLabel(fieldsMap.get(fieldName), language) || fieldName;
   };
@@ -2666,7 +2666,7 @@ export const MyProfile = () => {
   const renderField = (name) => {
     const field = fieldsMap.get(name);
     if (!field) return null;
-    const roleText = resolveMyProfileFieldText(name, name === 'agencyName' ? organisationRole : sectionTitleRole);
+    const roleText = resolveMyProfileFieldText(name, name === 'agencyName' ? organisationRole : sectionTitleRole, rolesList);
     const fieldPlaceholder = roleText.placeholder ? uiText(roleText.placeholder, language) : asExamplePlaceholder(getFieldPlaceholder(field, language), language);
     const val = state[name] || '';
     // Винагороду пишуть розповіддю («від 1000 $, залежить від програми,
@@ -2745,7 +2745,7 @@ export const MyProfile = () => {
                 <Input
                   value={val}
                   $missing={missing[name]}
-                  placeholder={uiText('Введіть свій варіант', language)}
+                  placeholder={uiText(roleText.detailPlaceholder || 'Введіть свій варіант', language)}
                   onChange={e => updateFieldValue(name, e.target.value, field)}
                   onBlur={e => saveFieldValue(name, e.target.value, field)}
                 />

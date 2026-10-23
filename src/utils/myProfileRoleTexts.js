@@ -19,7 +19,21 @@ const COMMON_FIELD_TEXT = Object.freeze({
   name: { placeholder: 'Наприклад: Марія' },
   surname: { placeholder: 'Наприклад: Іваненко' },
   phone: { placeholder: 'Наприклад: +380671234567' },
+  // Приклад — донорський; у сурогатної мами свій (`ROLE_FIELD_TEXT.sm`).
   reward: { label: 'Бажана винагорода', placeholder: 'Наприклад: від 1000 $, залежить від програми' },
+  // «Детальніше» й «Уточнити» відкривають поле для власного тексту, і
+  // «Введіть свій варіант» питало там не про те: ускладнення чи алергію не
+  // обирають як варіант, їх описують. Підказка каже, що саме написати.
+  healthComplications: { detailPlaceholder: 'Наприклад: прееклампсія в другій вагітності' },
+  surgeries: { detailPlaceholder: 'Наприклад: апендицит у 2021' },
+  allergy: { detailPlaceholder: 'Наприклад: пеніцилін' },
+  chronicDiseases: { detailPlaceholder: 'Наприклад: гіпотиреоз, під контролем' },
+  maritalStatus: { detailPlaceholder: 'Наприклад: цивільний шлюб' },
+  smoking: { detailPlaceholder: 'Наприклад: кинула 2 роки тому' },
+  alcohol: { detailPlaceholder: 'Наприклад: келих вина на свята' },
+  // Чипи кесаревого — до двох, а в СМ пологів буває й чотири: «Свій варіант»
+  // тут — число, а не варіант.
+  csection: { detailPlaceholder: 'Наприклад: 3' },
 });
 
 const ROLE_FIELD_TEXT = Object.freeze({
@@ -42,6 +56,21 @@ const ROLE_FIELD_TEXT = Object.freeze({
     name: { label: 'Як до вас звертатись', placeholder: 'Наприклад: Олена й Андрій або «Пара з Києва»' },
     moreInfo_main: { label: 'Про нас', placeholder: 'Наприклад: ми разом девʼять років і мріємо про першу дитину' },
   },
+  // Програма сурогатної мами — десятки тисяч і щомісячні виплати, а приклад
+  // з донорської анкети («від 1000 $») підказував СМ суму вдесятеро меншу за
+  // ту, яку їй пропонують агенції. «Про себе» питає те, що читають у
+  // анкеті СМ: діти, вагітності, мотивація.
+  sm: {
+    reward: { placeholder: 'Наприклад: від 15 000 $ + щомісячні виплати' },
+    moreInfo_main: { placeholder: 'Діти, як минали вагітності, чому хочете стати сурогатною мамою' },
+  },
+});
+
+// Донорка, яка ще й СМ, пише в ті самі поля (`reward`, `moreInfo_main`) одну
+// відповідь на обидві анкети, тож і приклад мусить підходити обом, а не
+// тій ролі, яка випадково стоїть у переліку першою.
+const BOTH_PERSON_ANKETAS_FIELD_TEXT = Object.freeze({
+  reward: { placeholder: 'Наприклад: донація від 1000 $, програма СМ від 15 000 $' },
 });
 
 const ROLE_SECTION_TITLES = Object.freeze({
@@ -57,12 +86,25 @@ const normalizeRole = role => String(role || '').trim().toLowerCase();
 
 const isDonor = role => !role || role === 'ed';
 
-/** Підпис і підказка поля; порожній обʼєкт — лишити спільні з `pickerFields`. */
-export const resolveMyProfileFieldText = (name, role) => {
+const hasBothPersonAnketas = (role, roles) => {
+  if (!['', 'ed', 'sm'].includes(role) || !Array.isArray(roles)) return false;
+  const normalized = roles.map(normalizeRole);
+  return normalized.includes('ed') && normalized.includes('sm');
+};
+
+/**
+ * Підпис і підказка поля; порожній обʼєкт — лишити спільні з `pickerFields`.
+ * `roles` — усі ролі анкети: особисті поля донорки й СМ спільні, і підказку
+ * для них вирішує саме набір, а не одна роль.
+ */
+export const resolveMyProfileFieldText = (name, role, roles = []) => {
   const normalized = normalizeRole(role);
+  const byRole = hasBothPersonAnketas(normalized, roles)
+    ? BOTH_PERSON_ANKETAS_FIELD_TEXT
+    : ROLE_FIELD_TEXT[normalized];
   return {
     ...(COMMON_FIELD_TEXT[name] || {}),
-    ...(ROLE_FIELD_TEXT[normalized]?.[name] || {}),
+    ...(byRole?.[name] || {}),
   };
 };
 

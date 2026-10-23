@@ -32,6 +32,32 @@ describe('«Мій профіль» говорить мовою ролі', () =>
     expect(resolveMyProfileSectionTitle('personal', 'sm', '👤 Особисті дані')).toBe('👤 Особисті дані');
   });
 
+  // Приклад винагороди був один на всіх — донорський, «від 1000 $», — і
+  // сурогатна мама бачила суму вдесятеро меншу за свою програму.
+  it('підказка винагороди відповідає анкеті, яку заповнюють', () => {
+    expect(resolveMyProfileFieldText('reward', 'ed').placeholder).toBe('Наприклад: від 1000 $, залежить від програми');
+    expect(resolveMyProfileFieldText('reward', 'sm').placeholder).toBe('Наприклад: від 15 000 $ + щомісячні виплати');
+    expect(resolveMyProfileFieldText('reward', 'sm', ['ag', 'sm']).placeholder).toBe('Наприклад: від 15 000 $ + щомісячні виплати');
+    // Поле одне на обидві особисті анкети — і приклад теж на обидві, хоч
+    // би яка з ролей стояла першою.
+    expect(resolveMyProfileFieldText('reward', 'ed', ['sm', 'ed']).placeholder).toMatch(/1000 \$.*15 000 \$/);
+    expect(resolveMyProfileFieldText('reward', 'sm', ['ed', 'sm']).placeholder).toMatch(/1000 \$.*15 000 \$/);
+    expect(resolveMyProfileFieldText('reward', 'sm').label).toBe('Бажана винагорода');
+  });
+
+  it('«Про себе» сурогатної мами питає про дітей і вагітності', () => {
+    expect(resolveMyProfileFieldText('moreInfo_main', 'sm').placeholder).toMatch(/вагітності/);
+    // Донорка й людина з обома анкетами лишаються на загальній підказці.
+    expect(resolveMyProfileFieldText('moreInfo_main', 'ed').placeholder).toBeUndefined();
+    expect(resolveMyProfileFieldText('moreInfo_main', 'sm', ['ed', 'sm']).placeholder).toBeUndefined();
+  });
+
+  it('поле «Детальніше» підказує, що описати, а не «свій варіант»', () => {
+    ['healthComplications', 'surgeries', 'allergy', 'chronicDiseases', 'maritalStatus', 'smoking', 'alcohol', 'csection']
+      .forEach(name => expect(resolveMyProfileFieldText(name, 'sm').detailPlaceholder).toMatch(/^Наприклад: /));
+    expect(resolveMyProfileFieldText('eyeColor', 'ed').detailPlaceholder).toBeUndefined();
+  });
+
   it('сурогатну маму медичний розділ питає про вагітності', () => {
     expect(resolveMyProfileSectionTitle('medical', 'sm', '🏥 Медична інформація')).toBe('🤰 Здоровʼя й вагітності');
     expect(resolveMyProfileSectionTitle('medical', 'ed', '🏥 Медична інформація')).toBe('🏥 Медична інформація');
