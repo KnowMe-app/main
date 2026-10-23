@@ -2036,6 +2036,211 @@ await it('інспектор не пише ні анкет, ні чужих по
 await it('корінь бази інспекторові так само закритий', () =>
   assertFails(get(ref(db(INSPECTOR), '/'))));
 
+describe('анкета за посиланням — знімок читається без входу, але лише за токеном');
+
+// Знімок — не вікно в живі вузли: правила відкривають без входу рівно
+// `profileShares/{token}/card` і нічого більше. Перелічити знімки не може
+// ніхто, крім адмінів, тож вивантажити каталог так не вийде — інакше це був
+// би той самий відкритий анонімно `matchingCards`, від якого межа входу й
+// стоїть. Власниця, слот і строк гостеві закриті.
+const SHARE_TOKEN = 'shareTokenAAAAAAAAAAAAAAAAAAAAAA';
+const SHARE_TOKEN_2 = 'shareTokenBBBBBBBBBBBBBBBBBBBBBB';
+const SHARE_PHOTO = `https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/profileShares%2F${SHARE_TOKEN}%2F0.jpg?alt=media&token=t`;
+const SHARE_OPTIONS = { photos: 'all', surname: 'initial', location: true, body: true, family: true, about: true, contacts: false };
+const shareSlot = (token, extra = {}) => ({ token, role: 'ed', createdAt: 1761200000000, options: SHARE_OPTIONS, ...extra });
+const shareNode = (token, extra = {}) => ({
+  owner: SELF_SERVE,
+  slot: '0',
+  createdAt: 1761200000000,
+  updatedAt: 1761200000000,
+  card: { role: 'ed', name: 'Оксана', surname: 'К.', age: 27, ageAt: '2026-10-23', city: 'Київ', height: '168', photos: [SHARE_PHOTO.replace(SHARE_TOKEN, token)] },
+  ...extra,
+});
+const createShare = (uid, token, slot = '0', extra = {}) => update(ref(db(uid)), {
+  [`profileShares/${token}`]: { ...shareNode(token, extra), owner: uid, slot },
+  [`multiData/profileShareSlots/${uid}/${slot}`]: shareSlot(token),
+});
+const anonDb = () => testEnv.unauthenticatedContext().database();
+const wipeShares = () => testEnv.withSecurityRulesDisabled(async context => {
+  const database = context.database();
+  await set(ref(database, 'profileShares'), null);
+  await set(ref(database, 'multiData/profileShareSlots'), null);
+});
+
+await it('власниця створює знімок разом зі слотом одним записом', async () => {
+  await wipeShares();
+  await assertSucceeds(createShare(SELF_SERVE, SHARE_TOKEN));
+});
+
+await it('гість без входу читає картку знімка за токеном', async () => {
+  const snapshot = await assertSucceeds(get(ref(anonDb(), `profileShares/${SHARE_TOKEN}/card`)));
+  if (snapshot.val()?.name !== 'Оксана') throw new Error(`card не прочитано: ${JSON.stringify(snapshot.val())}`);
+});
+
+await it('гість не бачить ані власниці, ані строку, ані переліку знімків', async () => {
+  await assertFails(get(ref(anonDb(), `profileShares/${SHARE_TOKEN}`)));
+  await assertFails(get(ref(anonDb(), `profileShares/${SHARE_TOKEN}/owner`)));
+  await assertFails(get(ref(anonDb(), `profileShares/${SHARE_TOKEN}/slot`)));
+  await assertFails(get(ref(anonDb(), 'profileShares')));
+  await assertFails(get(ref(anonDb(), `multiData/profileShareSlots/${SELF_SERVE}`)));
+});
+
+await it('авторизований читач так само: картку — так, власницю й перелік — ні', async () => {
+  await assertSucceeds(get(ref(db(OUTSIDER), `profileShares/${SHARE_TOKEN}/card`)));
+  await assertFails(get(ref(db(OUTSIDER), `profileShares/${SHARE_TOKEN}/owner`)));
+  await assertFails(get(ref(db(OUTSIDER), 'profileShares')));
+  await assertFails(get(ref(db(OUTSIDER), `multiData/profileShareSlots/${SELF_SERVE}`)));
+});
+
+await it('власниця читає свій знімок цілком і свої слоти; адмін та інспектор — перелік', async () => {
+  await assertSucceeds(get(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`)));
+  await assertSucceeds(get(ref(db(SELF_SERVE), `multiData/profileShareSlots/${SELF_SERVE}`)));
+  await assertSucceeds(get(ref(db(SUPERADMIN), 'profileShares')));
+  await assertSucceeds(get(ref(db(INSPECTOR), 'profileShares')));
+});
+
+await it('неіснуючий токен віддає порожнечу, а не відмову', async () => {
+  const snapshot = await assertSucceeds(get(ref(anonDb(), 'profileShares/noSuchTokenCCCCCCCCCCCCCCCC/card')));
+  if (snapshot.exists()) throw new Error('порожній токен повернув дані');
+});
+
+await it('знімок, строк якого минув, гостеві не віддається', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `profileShares/${SHARE_TOKEN}/expiresAt`), Date.now() - 1000));
+  await assertFails(get(ref(anonDb(), `profileShares/${SHARE_TOKEN}/card`)));
+  await assertFails(get(ref(db(OUTSIDER), `profileShares/${SHARE_TOKEN}/card`)));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `profileShares/${SHARE_TOKEN}/expiresAt`), Date.now() + 86400000));
+  await assertSucceeds(get(ref(anonDb(), `profileShares/${SHARE_TOKEN}/card`)));
+});
+
+await it('власниця оновлює знімок, але дата створення не переписується', async () => {
+  const refreshed = { ...shareNode(SHARE_TOKEN), expiresAt: Date.now() + 86400000, updatedAt: Date.now() };
+  await assertSucceeds(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), refreshed));
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), { ...refreshed, createdAt: 1761300000000 }));
+});
+
+await it('строк — у майбутньому й не далі, ніж за 400 днів', async () => {
+  const base = { ...shareNode(SHARE_TOKEN), updatedAt: Date.now() };
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), { ...base, expiresAt: Date.now() - 1000 }));
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), { ...base, expiresAt: Date.now() + 500 * 86400000 }));
+  await assertSucceeds(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), { ...base, expiresAt: Date.now() + 30 * 86400000 }));
+});
+
+// Знімок пускає лише перелічені поля: дати народження (є вік), історії поля,
+// робочих позначок чи службових прав у ньому бути не може, хай що поклав клієнт.
+await it('картка знімка не приймає полів поза переліком', async () => {
+  const base = shareNode(SHARE_TOKEN, { updatedAt: Date.now() });
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), { ...base, card: { ...base.card, birth: '1999-05-12' } }));
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), { ...base, card: { ...base.card, accessLevel: 'matching:view' } }));
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), { ...base, card: { ...base.card, phone: ['+380501112233', '+380671112233'] } }));
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), { ...base, card: { ...base.card, role: 'ag' } }));
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), { ...base, owner: SELF_SERVE, extra: 1 }));
+  await assertSucceeds(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), { ...base, card: { ...base.card, phone: '+380501112233' } }));
+});
+
+// Фото — лише копії в теці самого знімка: чужий аватар чи зовнішня адреса
+// зробили б із посилання сторінку KnowMe з будь-чиїм знімком.
+await it('фото знімка — лише з його власної теки у Storage', async () => {
+  const base = shareNode(SHARE_TOKEN, { updatedAt: Date.now() });
+  const withPhoto = url => ({ ...base, card: { ...base.card, photos: [url] } });
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), withPhoto(`https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/avatar%2F${CARD}%2F1.jpg?alt=media`)));
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), withPhoto(`https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/profileShares%2F${SHARE_TOKEN_2}%2F0.jpg?alt=media`)));
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), withPhoto('https://example.com/profileShares%2Fx%2F0.jpg')));
+  await assertSucceeds(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN}`), withPhoto(SHARE_PHOTO)));
+});
+
+await it('знімок без власного слоту чи з чужою власницею не створюється', async () => {
+  // Слот не записано — знімка, якого не видно в переліку власниці, не буває.
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN_2}`), { ...shareNode(SHARE_TOKEN_2), slot: '1' }));
+  // Слот показує на інший токен.
+  await assertFails(update(ref(db(SELF_SERVE)), {
+    [`profileShares/${SHARE_TOKEN_2}`]: { ...shareNode(SHARE_TOKEN_2), slot: '1' },
+    [`multiData/profileShareSlots/${SELF_SERVE}/1`]: shareSlot(SHARE_TOKEN),
+  }));
+  // Знімок від імені іншої людини.
+  await assertFails(update(ref(db(OUTSIDER)), {
+    [`profileShares/${SHARE_TOKEN_2}`]: { ...shareNode(SHARE_TOKEN_2), owner: SELF_SERVE, slot: '1' },
+    [`multiData/profileShareSlots/${SELF_SERVE}/1`]: shareSlot(SHARE_TOKEN_2),
+  }));
+  await assertFails(update(ref(db(OUTSIDER)), {
+    [`profileShares/${SHARE_TOKEN_2}`]: { ...shareNode(SHARE_TOKEN_2), owner: SELF_SERVE, slot: '1' },
+    [`multiData/profileShareSlots/${OUTSIDER}/1`]: shareSlot(SHARE_TOKEN_2),
+  }));
+});
+
+await it('чужий знімок не переписати, не забрати й не видалити', async () => {
+  await assertFails(set(ref(db(OUTSIDER), `profileShares/${SHARE_TOKEN}/card/name`), 'Інша'));
+  await assertFails(update(ref(db(OUTSIDER)), {
+    [`profileShares/${SHARE_TOKEN}`]: { ...shareNode(SHARE_TOKEN), owner: OUTSIDER },
+    [`multiData/profileShareSlots/${OUTSIDER}/0`]: shareSlot(SHARE_TOKEN),
+  }));
+  await assertFails(set(ref(db(OUTSIDER), `profileShares/${SHARE_TOKEN}`), null));
+  await assertFails(set(ref(db(OUTSIDER), `multiData/profileShareSlots/${SELF_SERVE}/0`), null));
+  await assertFails(set(ref(anonDb(), `profileShares/${SHARE_TOKEN}/card/name`), 'Анонім'));
+});
+
+// Слотів п'ять, і кожен знімок стоїть у своєму: більше п'яти живих посилань
+// в однієї людини бути не може, а знімка, якого власниця не бачить у своєму
+// переліку (і тому не може відкликати), не лишається.
+await it('слотів п\'ять, і слот не віддає токена, доки живий його знімок', async () => {
+  await assertFails(update(ref(db(SELF_SERVE)), {
+    [`profileShares/${SHARE_TOKEN_2}`]: { ...shareNode(SHARE_TOKEN_2), slot: '5' },
+    [`multiData/profileShareSlots/${SELF_SERVE}/5`]: shareSlot(SHARE_TOKEN_2),
+  }));
+  // Перезаписати слот 0 новим токеном, лишивши старий знімок живим, — ні.
+  await assertFails(update(ref(db(SELF_SERVE)), {
+    [`profileShares/${SHARE_TOKEN_2}`]: { ...shareNode(SHARE_TOKEN_2), slot: '0' },
+    [`multiData/profileShareSlots/${SELF_SERVE}/0`]: shareSlot(SHARE_TOKEN_2),
+  }));
+  // Зняти слот, лишивши знімок, — теж ні.
+  await assertFails(set(ref(db(SELF_SERVE), `multiData/profileShareSlots/${SELF_SERVE}/0`), null));
+  // Замінити разом зі старим знімком — так.
+  await assertSucceeds(update(ref(db(SELF_SERVE)), {
+    [`profileShares/${SHARE_TOKEN}`]: null,
+    [`profileShares/${SHARE_TOKEN_2}`]: { ...shareNode(SHARE_TOKEN_2), slot: '0' },
+    [`multiData/profileShareSlots/${SELF_SERVE}/0`]: shareSlot(SHARE_TOKEN_2),
+  }));
+  await assertSucceeds(createShare(SELF_SERVE, SHARE_TOKEN, '4'));
+});
+
+await it('відкликання знімає знімок і слот разом, і гість більше не читає нічого', async () => {
+  await assertSucceeds(update(ref(db(SELF_SERVE)), {
+    [`profileShares/${SHARE_TOKEN}`]: null,
+    [`multiData/profileShareSlots/${SELF_SERVE}/4`]: null,
+  }));
+  const snapshot = await assertSucceeds(get(ref(anonDb(), `profileShares/${SHARE_TOKEN}/card`)));
+  if (snapshot.exists()) throw new Error('відкликаний знімок досі читається');
+});
+
+await it('адмін знімає чужий знімок, але не створює й не править його', async () => {
+  await assertFails(set(ref(db(SUPERADMIN), `profileShares/${SHARE_TOKEN_2}/card/name`), 'Адмін'));
+  await assertFails(update(ref(db(SUPERADMIN)), {
+    [`profileShares/${SHARE_TOKEN}`]: { ...shareNode(SHARE_TOKEN), owner: SUPERADMIN, slot: '0' },
+    [`multiData/profileShareSlots/${SELF_SERVE}/3`]: shareSlot(SHARE_TOKEN),
+  }));
+  await assertFails(set(ref(db(INSPECTOR), `profileShares/${SHARE_TOKEN_2}`), null));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `profileShares/${SHARE_TOKEN_2}`), null));
+  await wipeShares();
+});
+
+// Знятий адміном знімок не повертається тим самим токеном: інакше наступне ж
+// автозбереження анкети відновлювало б його, і модерація скасовувалась би
+// сама. Слот, що лишився, власниця прибирає — тим самим записом, яким
+// відкликає посилання (знімок у ньому вже `null`).
+await it('знятого адміном знімка власниця не відновлює, а слот прибирає', async () => {
+  await assertSucceeds(createShare(SELF_SERVE, SHARE_TOKEN_2, '0'));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `profileShares/${SHARE_TOKEN_2}`), null));
+  await assertFails(set(ref(db(SELF_SERVE), `profileShares/${SHARE_TOKEN_2}`), { ...shareNode(SHARE_TOKEN_2), slot: '0', updatedAt: Date.now() }));
+  await assertSucceeds(update(ref(db(SELF_SERVE)), {
+    [`profileShares/${SHARE_TOKEN_2}`]: null,
+    [`multiData/profileShareSlots/${SELF_SERVE}/0`]: null,
+  }));
+  // Новий токен у звільненому слоті — звичайне нове посилання.
+  await assertSucceeds(createShare(SELF_SERVE, SHARE_TOKEN, '0'));
+  await wipeShares();
+});
+
 describe('legacy /users закрито для всіх');
 
 // Вузол видалено з правил: ні читати, ні писати його не може ніхто, зокрема

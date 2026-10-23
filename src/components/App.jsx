@@ -22,6 +22,7 @@ import { ScreenErrorBoundary } from './ScreenErrorBoundary';
 // екрани — лише тим, хто їх відкриває.
 const pickNamed = (load, name) => () => load().then(module => ({ default: module[name] }));
 const PrivacyPolicy = lazy(pickNamed(() => import('./PrivacyPolicy'), 'PrivacyPolicy'));
+const SharedProfilePage = lazy(pickNamed(() => import('./SharedProfilePage'), 'SharedProfilePage'));
 const MyProfile = lazy(pickNamed(() => import(/* webpackPrefetch: true */ './MyProfile'), 'MyProfile'));
 const Matching = lazy(() => import(/* webpackPrefetch: true */ './Matching'));
 const ProfileCreationWorkspace = lazy(() => import(/* webpackPrefetch: true */ './ProfileCreationWorkspace'));
@@ -161,6 +162,11 @@ export const App = () => {
           конкретних людей, тож стоїть за межею входу. */}
       <Route path="/login" element={<LoginScreen setIsLoggedIn={setIsLoggedIn} authStatus={authStatus} />} />
       <Route path="/policy" element={<PrivacyPolicy />} />
+      {/* Анкета за посиланням: без входу, але читає рівно один вузол —
+          знімок `profileShares/{token}/card`, який власниця сама випустила
+          й може відкликати (`utils/profileShare`). Межа входу решти
+          застосунку від цього не зрушує: каталогу звідси не перелічити. */}
+      <Route path="/p/:token" element={<SharedProfilePage />} />
 
       {/* Корінь — робочий стіл адміна, решту він веде в «Мій профіль». Поки
           права не прочитані, тут очікування (`catchAllStatus`), а не текст

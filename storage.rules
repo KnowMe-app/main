@@ -50,6 +50,24 @@ service firebase.storage {
       allow write: if request.auth.uid == userId || isFullAdmin();
     }
 
+    // Копії фото для анкети за посиланням (`utils/profileShareRemote`). Гість
+    // їх не читає через правила — він бере адресу з токеном, записану в
+    // знімок, а вона правил не питає. Саме тому фото копіюються, а не
+    // посилаються на `avatar/`: відкликане посилання видаляє копії, і адреса,
+    // яку встигли переслати окремо, перестає працювати; адреса оригіналу жила
+    // б далі й ще й називала б uid власниці. Хто власник, правила Storage
+    // дізнатись з RTDB не можуть, тож він лежить у метаданих файлу.
+    match /profileShares/{token}/{fileName} {
+      allow read: if request.auth != null
+        && (resource.metadata.owner == request.auth.uid || isFullAdmin() || isReadOnlyInspector());
+      allow create: if request.auth != null
+        && request.resource.metadata.owner == request.auth.uid
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if request.auth != null
+        && (resource.metadata.owner == request.auth.uid || isFullAdmin());
+    }
+
     // Everything the builder pages store (invoice assets, clinic logos under
     // documentsBuilder/parties/cases/clinics/{clinicId}/logo/..., etc.).
     match /documentsBuilder/{allPaths=**} {

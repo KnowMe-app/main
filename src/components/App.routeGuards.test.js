@@ -5,10 +5,12 @@ const appSource = () => fs.readFileSync(path.join(__dirname, 'App.jsx'), 'utf8')
 
 /**
  * Публічні екрани перелічені поіменно, і перелік цей короткий навмисно: усе
- * інше в застосунку — про конкретних людей. Обидва нічого не читають з бази
- * (форма входу та текст угоди), тож і показувати їх незалогіненому безпечно.
+ * інше в застосунку — про конкретних людей. Форма входу й текст угоди нічого
+ * не читають з бази. Анкета за посиланням (`/p/:token`) читає рівно один
+ * вузол — знімок, який власниця сама випустила (`profileShares/{token}/card`),
+ * і саме це стереже тест нижче.
  */
-const PUBLIC_ROUTES = ['/login', '/policy'];
+const PUBLIC_ROUTES = ['/login', '/policy', '/p/:token'];
 
 // Маршрути, які самі лише перенаправляють: гардити їх нема сенсу, бо вони
 // нічого не рендерять — ціль перенаправлення вже за межею.
@@ -47,6 +49,16 @@ describe('App route guards', () => {
     expect(source).toContain('<Route path="/matching/create-profile"');
     expect(source).not.toContain("location.pathname === '/matching/create-profile'");
     expect(source).not.toContain('{canCreateProfiles && <Route');
+  });
+
+  // Анкета за посиланням — єдиний публічний екран, що питає базу, і питає
+  // він самий лише знімок. Поки це так, межа входу решти застосунку ціла:
+  // ні стрічки, ні анкет, ні контактів звідси не прочитати.
+  it('публічна анкета за посиланням читає лише знімок', () => {
+    const pageSource = fs.readFileSync(path.join(__dirname, 'SharedProfilePage.jsx'), 'utf8');
+    expect(pageSource).toContain('readSharedProfileCard(token)');
+    expect(pageSource).not.toMatch(/from '\.\/config'/);
+    expect(pageSource).not.toMatch(/fetchUserById|readProfileFromNodes|profileContacts\//);
   });
 
   it('reads every route in the table', () => {
@@ -114,7 +126,7 @@ describe('App route guards', () => {
   // словники мов більше не їдуть кожному відвідувачу ще до форми входу.
   it('loads every screen except the login form lazily', () => {
     const source = appSource();
-    ['PrivacyPolicy', 'MyProfile', 'AddNewProfile', 'Matching', 'EditProfile', 'MedicationsPage', 'FlowManager',
+    ['PrivacyPolicy', 'SharedProfilePage', 'MyProfile', 'AddNewProfile', 'Matching', 'EditProfile', 'MedicationsPage', 'FlowManager',
       'BudgetPage', 'InvoiceBuilderPage', 'DocumentsPage', 'PartiesPage', 'ProfileCreationWorkspace'].forEach(screen => {
       expect(source).toMatch(new RegExp(`const ${screen} = lazy\\(`));
       expect(source).not.toMatch(new RegExp(`^import (\\{ )?${screen}( \\})? from`, 'm'));

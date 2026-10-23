@@ -742,6 +742,66 @@
             ".validate": "$termKey.length <= 60 && newData.isString() && newData.val().length > 1 && newData.val().length <= 60"
           }
         }
+      },
+      "profileShareSlots": {
+        "$uid": {
+          ".read": "auth != null && (auth.uid == $uid || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+          "$slot": {
+            ".write": "auth != null && auth.uid == $uid && (newData.exists() || !data.exists() || !newData.parent().parent().parent().parent().child('profileShares').child(data.child('token').val()).exists())",
+            ".validate": "$slot.matches(/^[0-4]$/) && newData.hasChildren(['token', 'role', 'createdAt', 'options']) && (!data.exists() || data.child('token').val() == newData.child('token').val() || !newData.parent().parent().parent().parent().child('profileShares').child(data.child('token').val()).exists())",
+            "token": {
+              ".validate": "newData.isString() && newData.val().length >= 22 && newData.val().length <= 64"
+            },
+            "role": {
+              ".validate": "newData.val() == 'ed' || newData.val() == 'sm'"
+            },
+            "createdAt": {
+              ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now + 600000"
+            },
+            "expiresAt": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "options": {
+              "photos": {
+                ".validate": "newData.val() == 'none' || newData.val() == 'main' || newData.val() == 'all'"
+              },
+              "surname": {
+                ".validate": "newData.val() == 'none' || newData.val() == 'initial' || newData.val() == 'full'"
+              },
+              "location": {
+                ".validate": "newData.isBoolean()"
+              },
+              "body": {
+                ".validate": "newData.isBoolean()"
+              },
+              "family": {
+                ".validate": "newData.isBoolean()"
+              },
+              "about": {
+                ".validate": "newData.isBoolean()"
+              },
+              "contacts": {
+                ".validate": "newData.isBoolean()"
+              },
+              "$other": {
+                ".validate": false
+              }
+            },
+            "photoSources": {
+              "$index": {
+                ".validate": "$index.matches(/^[0-5]$/) && newData.isString() && newData.val().length <= 1000"
+              }
+            },
+            "photoCopies": {
+              "$index": {
+                ".validate": "$index.matches(/^[0-5]$/) && newData.isString() && newData.val().length <= 1000 && newData.val().beginsWith('https://firebasestorage.googleapis.com/v0/b/')"
+              }
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
       }
     },
     "comments": {
@@ -794,6 +854,182 @@
         },
         "updatedAt": {
           ".validate": "newData.isNumber() || !newData.exists()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "profileShares": {
+      ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+      "$token": {
+        ".read": "auth != null && data.child('owner').val() == auth.uid",
+        ".write": "auth != null && ((!data.exists() && !newData.exists()) || (!data.exists() && newData.child('owner').val() == auth.uid && root.child('multiData').child('profileShareSlots').child(auth.uid).child(newData.child('slot').val()).child('token').val() != $token) || (data.child('owner').val() == auth.uid && (!newData.exists() || newData.child('owner').val() == auth.uid)) || (!newData.exists() && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')))",
+        ".validate": "$token.length >= 22 && $token.length <= 64 && $token.matches(/^[A-Za-z0-9_-]+$/) && newData.hasChildren(['owner', 'slot', 'createdAt', 'updatedAt', 'card']) && newData.child('slot').isString() && newData.parent().parent().child('multiData').child('profileShareSlots').child(auth.uid).child(newData.child('slot').val()).child('token').val() == $token",
+        "owner": {
+          ".validate": "newData.isString() && newData.val() == auth.uid"
+        },
+        "slot": {
+          ".validate": "newData.isString() && newData.val().matches(/^[0-4]$/)"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now + 600000 && (!data.exists() || data.val() == newData.val())"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now + 600000"
+        },
+        "expiresAt": {
+          ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 34560000000"
+        },
+        "card": {
+          ".read": "!data.parent().child('expiresAt').exists() || data.parent().child('expiresAt').val() > now",
+          ".validate": "newData.hasChildren(['role', 'name'])",
+          "role": {
+            ".validate": "newData.val() == 'ed' || newData.val() == 'sm'"
+          },
+          "name": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 120"
+          },
+          "age": {
+            ".validate": "newData.isNumber() && newData.val() >= 14 && newData.val() <= 90"
+          },
+          "ageAt": {
+            ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/)"
+          },
+          "height": {
+            ".validate": "(newData.isString() && newData.val().length >= 1 && newData.val().length <= 20) || (newData.isNumber() && newData.val() > 0 && newData.val() < 1000)"
+          },
+          "weight": {
+            ".validate": "(newData.isString() && newData.val().length >= 1 && newData.val().length <= 20) || (newData.isNumber() && newData.val() > 0 && newData.val() < 1000)"
+          },
+          "bmi": {
+            ".validate": "(newData.isString() && newData.val().length >= 1 && newData.val().length <= 20) || (newData.isNumber() && newData.val() > 0 && newData.val() < 1000)"
+          },
+          "surname": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "country": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "region": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "city": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "blood": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "maritalStatus": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "ownKids": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "csection": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "lastDelivery": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "experience": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "eyeColor": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "hairColor": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "hairStructure": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "bodyType": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "faceShape": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "noseShape": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "lipsShape": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "chin": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "breastSize": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "clothingSize": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "shoeSize": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "glasses": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "race": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "smoking": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "alcohol": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "surrogacyExperience": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "healthComplications": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 1000"
+          },
+          "education": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 1000"
+          },
+          "profession": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 1000"
+          },
+          "reward": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 1000"
+          },
+          "moreInfo_main": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 4000"
+          },
+          "phone": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "email": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "telegram": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "whatsapp": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "viber": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "instagram": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "facebook": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "tiktok": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200"
+          },
+          "photos": {
+            "$index": {
+              ".validate": "$index.matches(/^[0-5]$/) && newData.isString() && newData.val().length <= 1000 && newData.val().beginsWith('https://firebasestorage.googleapis.com/v0/b/') && newData.val().contains('/o/profileShares%2F' + $token + '%2F')"
+            }
+          },
+          "$other": {
+            ".validate": false
+          }
         },
         "$other": {
           ".validate": false
