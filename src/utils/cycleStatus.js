@@ -26,6 +26,23 @@ const isFutureDate = date => {
   return normalizedDate.getTime() > today.getTime();
 };
 
+// Дата пологів буває й неповною — `2027-01` чи `2027` (`deliveryDateInput`
+// кладе ту точність, яку дала людина). Для питання «ще вагітна?» неповна дата
+// означає останній день свого місяця чи року: очікувані «в січні» пологи
+// лишаються майбутніми до кінця січня. Поки тут читався лише `YYYY-MM-DD`,
+// СМ з очікуваними пологами «01.2027» в адмінці вагітною не вважалась.
+const parseDeliveryServerDate = value => {
+  const full = parseServerDate(value);
+  if (full) return full;
+  if (typeof value !== 'string') return null;
+  const match = /^(\d{4})(?:-(\d{2}))?$/.exec(value.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = match[2] ? Number(match[2]) : 12;
+  if (month < 1 || month > 12) return null;
+  return new Date(year, month, 0);
+};
+
 export const getExpectedDeliveryDate = lastCycleDate => {
   if (!lastCycleDate) return null;
   const expectedDelivery = new Date(lastCycleDate);
@@ -43,7 +60,7 @@ const getExpectedDeliveryFromLastCycle = lastCycle => {
 export const getEffectiveCycleStatus = user => {
   if (!user) return undefined;
 
-  const parsedDelivery = parseServerDate(user.lastDelivery);
+  const parsedDelivery = parseDeliveryServerDate(user.lastDelivery);
   if (parsedDelivery) {
     if (isFutureDate(parsedDelivery)) {
       return 'pregnant';

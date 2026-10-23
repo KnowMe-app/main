@@ -909,6 +909,12 @@ const NEXT_FIELD_SKIPPED = new Set(['email', 'fathersname', 'region']);
 // пологів і день місячних пропустили всі три СМ 23.10, а саме за ними
 // агенція рахує, коли можлива програма (на прохання власниці продукту).
 const ALWAYS_SUGGESTED_FIELDS = ['lastDelivery', 'lastCycle'];
+// Поля власних розділів ролі, які теж рахує повнота анкети: «Як шукаєте»
+// батьків і програми. Поки власні розділи відкидались цілком, анкета батьків
+// показувала 100 % з порожнім «Як шукаєте», а агенція — без жодної програми.
+// «Де програма» сюди не входить: це старе поле, видне, лише поки записане.
+const CUSTOM_COMPLETENESS_FIELDS = new Set(['seeking', 'parentVia', 'programs']);
+const CUSTOM_FIELD_LABELS = { seeking: 'Кого шукаєте', parentVia: 'Як шукаєте' };
 // Що можна не заповнювати перед публікацією. Із контактів обовʼязковий лише
 // телефон — Telegram, Instagram, сайт і решта є не в кожного, і порожнє поле
 // мережі, якою людина не користується, не має тримати анкету поза стрічкою.
@@ -2303,6 +2309,7 @@ export const MyProfile = () => {
   // не є, — сирим ключем «programs».
   const resolveRequiredFieldLabel = fieldName => {
     if (fieldName === 'programs') return uiText('Програми — додайте хоча б одну', language);
+    if (CUSTOM_FIELD_LABELS[fieldName]) return uiText(CUSTOM_FIELD_LABELS[fieldName], language);
     const roleText = resolveMyProfileFieldText(fieldName, fieldName === 'agencyName' ? organisationRole : sectionTitleRole, rolesList);
     if (roleText.label) return uiText(roleText.label, language);
     return getFieldLabel(fieldsMap.get(fieldName), language) || fieldName;
@@ -2902,9 +2909,9 @@ export const MyProfile = () => {
   // (`LastDeliveryField`).
   const requiredComplete = filledStats.total > 0 && filledStats.filled === filledStats.total;
   const completenessFields = visibleSections
-    .filter(section => !section.custom && section.key !== 'social')
+    .filter(section => section.key !== 'social')
     .flatMap(section => section.fields)
-    .filter(name => fieldsMap.has(name));
+    .filter(name => fieldsMap.has(name) || CUSTOM_COMPLETENESS_FIELDS.has(name));
   const completeness = {
     filled: completenessFields.filter(isFieldFilled).length,
     total: completenessFields.length,

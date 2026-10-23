@@ -51,7 +51,11 @@ describe('розпізнавання дати останніх пологів', 
     ['6 місяців тому', '2026-04'],
     ['2 роки тому', '2024-10'],
     ['півроку тому', '2026-04'],
-    ['через 10 тижнів', '2027-01'],
+    ['Mai 2019', '2019-05'],
+    ['mei 2019', '2019-05'],
+    ['mayo 2019', '2019-05'],
+    ['agosto 2018', '2018-08'],
+    ['2019年5月', '2019-05'],
   ])('місяць: «%s» → %s', (text, expected) => {
     expect(stored(text)).toBe(expected);
   });
@@ -61,6 +65,13 @@ describe('розпізнавання дати останніх пологів', 
     ['12 мая 2019', '2019-05-12'],
     ['1 березня 2020 р.', '2020-03-01'],
     ['3 August 2018', '2018-08-03'],
+    ['May 12 2019', '2019-05-12'],
+    ['August 3 2018', '2018-08-03'],
+    ['May 12, 19', '2019-05-12'],
+    ['12. März 2019', '2019-03-12'],
+    ['2019年5月12日', '2019-05-12'],
+    ['через 10 тижнів', '2027-01-01'],
+    ['3 тижні тому', '2026-10-02'],
   ])('день словами: «%s» → %s', (text, expected) => {
     expect(stored(text)).toBe(expected);
   });
@@ -104,5 +115,24 @@ describe('розпізнавання дати останніх пологів', 
     expect(monthsSinceDate('2026-04', now)).toBe(6);
     expect(monthsSinceDate('2024', now)).toBe(27);
     expect(monthsSinceDate('2019-05-12', now)).toBe(89);
+  });
+
+  it('відносні місяці не переповнюють короткий місяць', () => {
+    const endOfOctober = new Date(2026, 9, 31);
+    expect(toStoredDeliveryDate(parseDeliveryDateInput('8 місяців тому', endOfOctober))).toBe('2026-02');
+    expect(toStoredDeliveryDate(parseDeliveryDateInput('6 місяців тому', endOfOctober))).toBe('2026-04');
+  });
+
+  it('«через 1 тиждень» лишається майбутнім', () => {
+    const read = readDeliveryDate('через 1 тиждень', now);
+    expect(read.future).toBe(true);
+    expect(read.weeksAhead).toBe(1);
+  });
+
+  it('поточний рік до липня картка не ховає', () => {
+    const march = new Date(2026, 2, 15);
+    expect(readDeliveryDate('2026', march).ok).toBe(true);
+    expect(monthsSinceDate('2026', march)).toBe(1);
+    expect(monthsSinceDate('2026', new Date(2026, 0, 10))).toBe(0);
   });
 });

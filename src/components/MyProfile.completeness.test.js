@@ -8,7 +8,9 @@ describe('після обовʼязкового смужка рахує всю �
 
   it('перемикає підпис і відсоток на повноту анкети без соцмереж', () => {
     expect(source).toContain("uiText('Анкету заповнено на {filled} з {total}', language, completeness)");
-    expect(source).toContain(".filter(section => !section.custom && section.key !== 'social')");
+    expect(source).toContain(".filter(section => section.key !== 'social')");
+    expect(source).toContain(".filter(name => fieldsMap.has(name) || CUSTOM_COMPLETENESS_FIELDS.has(name));");
+    expect(source).toContain("const CUSTOM_COMPLETENESS_FIELDS = new Set(['seeking', 'parentVia', 'programs']);");
     expect(source).toContain('data-testid="profile-next-fields"');
   });
 

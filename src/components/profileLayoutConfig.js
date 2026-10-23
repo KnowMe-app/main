@@ -316,7 +316,7 @@ const glassesDisplayValue = (user, language) => {
     const lang = resolveProfileLanguage(language);
     const extra = getExtraLocale(lang);
     if (extra) return extra.sentences.glasses.short;
-    return lang === 'en' ? 'no, good eyesight' : 'не носить, зір гарний';
+    return lang === 'en' ? 'no, good eyesight' : 'не носить, зір хороший';
   }
   return glassesLabel(user?.glasses, language);
 };

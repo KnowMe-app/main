@@ -79,3 +79,19 @@ describe('getEffectiveCycleStatus', () => {
     expect(getEffectiveCycleStatus(user)).toBeUndefined();
   });
 });
+
+// Поле «Останні пологи» кладе й неповну дату — `2027-01`, `2027`. Очікувані
+// «в січні» пологи — це вагітність до кінця січня.
+describe('неповна дата пологів', () => {
+  it('майбутній місяць і рік — вагітна', () => {
+    const next = new Date();
+    next.setMonth(next.getMonth() + 2, 1);
+    const month = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+    expect(getEffectiveCycleStatus({ lastDelivery: month, cycleStatus: 'menstruation' })).toBe('pregnant');
+    expect(getEffectiveCycleStatus({ lastDelivery: String(new Date().getFullYear() + 1), cycleStatus: 'menstruation' })).toBe('pregnant');
+  });
+
+  it('минулий місяць знімає вагітність', () => {
+    expect(getEffectiveCycleStatus({ lastDelivery: '2019-05', cycleStatus: 'pregnant' })).toBe('menstruation');
+  });
+});
