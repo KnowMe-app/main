@@ -195,6 +195,24 @@ const SECTION_SCROLL_GAP = CONTENT_SECTION_TOP_GAP;
 const SCROLL_ACTIVE_SECTION_GAP = 16;
 const PROGRAMMATIC_SCROLL_FALLBACK_MS = 900;
 const ProgressWrap = styled.div`padding: 16px var(--page-gutter) 0;`;
+const NextFieldsRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+`;
+const NextFieldChip = styled.button`
+  border: none;
+  border-radius: 99px;
+  padding: 4px 10px;
+  background: var(--km-fill, var(--border));
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+`;
 /* Вкладки розділів — текст із рискою під активною, а заповнений розділ
  * позначає зелена галочка. Тут стояли пігулки з емодзі, де помаранчева
  * заливка («тут ви зараз») і зелена рамка («заповнено») накладались на
@@ -849,8 +867,13 @@ const baseSections = [
   // Сайт — теж тут: окремий блок «Послуги й досвід», де він стояв, прибрано
   // (його не заповнював ніхто), а сайт — такий самий спосіб знайти людину,
   // як і сторінка в мережі. Показується він лише агенції й клініці.
-  { key: 'social', title: '📱 Соцмережі', fields: ['telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'website'] },
+  //
+  // «Про себе» стоїть перед «Соцмережами», а не після: соцмережі СМ і донорки
+  // часто свідомо не дають, і порожній блок мереж був стіною, за якою анкета
+  // для людини закінчувалась, — куріння, алкоголь і «Про себе» лишались
+  // незаповненими, а вкладка «Про себе» на телефоні ще й ховалась за краєм.
   { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'sport', 'education', 'profession', 'hobbies', 'twinsInFamily', 'moreInfo_main', 'surrogacyProgramInterest'] },
+  { key: 'social', title: '📱 Соцмережі', fields: ['telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'website'] },
 ];
 
 const MY_PROFILE_DATE_FIELDS = new Set(['birth', 'lastDelivery', 'lastCycle']);
@@ -2807,6 +2830,27 @@ export const MyProfile = () => {
     </Field>;
   };
 
+  // Коли обовʼязкове заповнено, смужка рахує вже всю анкету. Доти вона
+  // показувала «10 з 10 · 100%» щойно людина дійшла до публікації — і СМ
+  // справедливо вважала анкету завершеною: пологи, ускладнення, досвід і
+  // «Про себе» лишались порожніми, бо застосунок сам сказав «готово».
+  // Соцмережі сюди не входять: їх часто свідомо не дають, і порожня мережа не
+  // робить анкету гіршою. Під смужкою — кілька наступних порожніх полів
+  // кнопками, які ведуть до самого поля.
+  const requiredComplete = filledStats.total > 0 && filledStats.filled === filledStats.total;
+  const completenessFields = visibleSections
+    .filter(section => !section.custom && section.key !== 'social')
+    .flatMap(section => section.fields)
+    .filter(name => fieldsMap.has(name));
+  const completeness = {
+    filled: completenessFields.filter(isFieldFilled).length,
+    total: completenessFields.length,
+  };
+  const progressPct = requiredComplete
+    ? (completeness.total ? Math.round((completeness.filled / completeness.total) * 100) : 100)
+    : filledPct;
+  const nextEmptyFields = completenessFields.filter(name => !isFieldFilled(name)).slice(0, 3);
+
   // Прев'ю картки — та сама картка стрічки (`ProfileRow`), зібрана з
   // набраного тут. Зʼявляється, коли набрано бодай щось: порожня картка з
   // ініціалами нічого не показує. Сховані ролі картка не несе, як і в стрічці.
@@ -2960,12 +3004,24 @@ export const MyProfile = () => {
         {/* Рахує лише поля, без яких анкету не опублікувати, — так і підписано:
             голе «Заповнено 8 з 10 · 80%» стояло над розділами «2/13» і «0/13»,
             які рахують усі поля, і два числа суперечили одне одному. */}
-        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{uiText('Для публікації заповнено {filled} з {total}', language, filledStats)}</span>
-        <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>{filledPct}%</span>
+        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{requiredComplete
+          ? uiText('Анкету заповнено на {filled} з {total}', language, completeness)
+          : uiText('Для публікації заповнено {filled} з {total}', language, filledStats)}</span>
+        <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>{progressPct}%</span>
       </div>
       <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
-        <div style={{ width: `${filledPct}%`, height: '100%', borderRadius: 99, background: 'var(--accent)' }} />
+        <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: 99, background: 'var(--accent)' }} />
       </div>
+      {requiredComplete && nextEmptyFields.length && !editingProgram ? (
+        <NextFieldsRow data-testid="profile-next-fields">
+          <span>{uiText('Варто дописати:', language)}</span>
+          {nextEmptyFields.map(name => (
+            <NextFieldChip key={name} type="button" onClick={() => scrollToField(name)}>
+              {resolveRequiredFieldLabel(name)}
+            </NextFieldChip>
+          ))}
+        </NextFieldsRow>
+      ) : null}
     </ProgressWrap>
 
       <Tabs ref={tabsRef}>

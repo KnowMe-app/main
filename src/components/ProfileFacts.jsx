@@ -394,6 +394,18 @@ const describeEducation = (user, lang) => {
 const option = field => (user, lang) => readOptionValue(user, field, lang);
 const typed = field => user => readTypedValue(user, field);
 
+// «Так/Ні» з форми (`Yes`/`No`) — словом мови інтерфейсу; власна відповідь
+// («іноді», «прееклампсія в 2019») лишається як написали.
+const YES_ANSWERS = new Set(['yes', 'так', '+', 'true']);
+const NO_ANSWERS = new Set(['no', 'ні', 'false']);
+const yesNoAnswer = (field, noWord = 'ні') => (user, lang) => {
+  const raw = readTypedValue(user, field);
+  const lower = raw.toLowerCase();
+  if (YES_ANSWERS.has(lower)) return uiText('так', lang);
+  if (NO_ANSWERS.has(lower)) return uiText(noWord, lang);
+  return raw;
+};
+
 /*
  * Розділ = речення з відповідей, вибраних зі списку (`utils/profileSentences`),
  * плюс рядки «підпис — значення» для того, що людина набрала сама: власна
@@ -415,6 +427,22 @@ const DETAIL_SECTIONS = [
       { key: 'clothingSize', label: 'Clothing', read: typed('clothingSize') },
       { key: 'shoeSize', label: 'Shoe', read: typed('shoeSize') },
       { key: 'glasses', label: 'Glasses', read: (user, lang) => lowerFirst(glassesLabel(user?.glasses, lang), lang) },
+    ],
+  },
+  // Відповіді анкети СМ (і донорки) про здоровʼя й звички. Картка їх не
+  // показувала ніде: СМ відповідала на «досвід», «ускладнення», «куріння»,
+  // «винагороду» — і ні в стрічці, ні в прев'ю «Мого профілю» нічого не
+  // мінялось, тож дозаповнювати анкету не було жодного сенсу.
+  {
+    key: 'health',
+    title: 'Health and lifestyle',
+    describe: () => ({ text: '', used: new Set() }),
+    fields: [
+      { key: 'surrogacyExperience', label: 'Surrogacy experience', read: yesNoAnswer('surrogacyExperience') },
+      { key: 'healthComplications', label: 'Complications', read: yesNoAnswer('healthComplications', 'не було') },
+      { key: 'smoking', label: 'Smoking', read: yesNoAnswer('smoking') },
+      { key: 'alcohol', label: 'Alcohol', read: yesNoAnswer('alcohol') },
+      { key: 'reward', label: 'Desired compensation', read: typed('reward') },
     ],
   },
   {

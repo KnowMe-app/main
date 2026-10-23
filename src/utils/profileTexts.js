@@ -47,6 +47,12 @@ const UK_BY_EN_LABEL = {
   'Face and figure': 'Обличчя й фігура',
   'Education and work': 'Освіта й робота',
   Sizes: 'Розміри',
+  'Health and lifestyle': 'Здоровʼя й спосіб життя',
+  'Surrogacy experience': 'Досвід сурогатного материнства',
+  'Complications': 'Ускладнення',
+  'Smoking': 'Куріння',
+  'Alcohol': 'Алкоголь',
+  'Desired compensation': 'Бажана винагорода',
 
   // hero / метрики
   Height: 'Зріст',
