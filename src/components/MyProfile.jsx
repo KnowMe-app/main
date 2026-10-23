@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { FiChevronRight, FiTrash2, FiX } from 'react-icons/fi';
 import { FaCheck, FaEye, FaEyeSlash, FaLock } from 'react-icons/fa';
 import styled, { css, keyframes } from 'styled-components';
+import { ScreenLoading } from './RequireAuth';
 import {
   auth,
   fetchUserById,
@@ -104,6 +105,17 @@ const Page = styled.div`
   color: var(--text);
   min-height: 100vh;
 `;
+
+// Очікування анкети стоїть поверх невидимої сторінки (див. `profileLoading`).
+const ProfileLoadingOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+`;
+
 const Topbar = styled.div`
   background: var(--card);
   border-bottom: 1px solid var(--border);
@@ -951,6 +963,12 @@ const SURROGATE_HIDDEN_FIELDS = new Set([
   // пологів» (`healthComplications`), а решту перевіряє клініка обстеженням.
   'allergy', 'chronicDiseases', 'surgeries',
 ]);
+// Чого не питають у донорки ооцитів, якщо анкети СМ у людини немає: досвід
+// сурогатного материнства — питання до сурогатної мами, а донорка ооцитів
+// читала його як помилку анкети. «Чи розглядаєте участь у програмі СМ»
+// (`surrogacyProgramInterest`) лишається — це питання саме до донорки.
+// Записане значення з анкети не зникає.
+const DONOR_HIDDEN_FIELDS = new Set(['surrogacyExperience']);
 // Назва анкети в рядку «Публікації» — «Анкета донора», а не голе «Донор
 // ооцитів»: публікується анкета, а не роль.
 const MY_PROFILE_ANKETA_LABELS = {
@@ -1110,6 +1128,11 @@ export const MyProfile = () => {
   const persistedProfileRef = useRef({ uid: '', data: null });
   const editedFieldsRef = useRef(new Set());
   const authHintTimersRef = useRef([]);
+  // Анкета ще їде з бази. Поки цього стану не було, сторінка малювала порожню
+  // форму: «Заповнено 0 з 10 · 0%», «бракує полів: 10», статус «Не
+  // опублікована» — і лише за мить справжні дані. Людина, що повернулась до
+  // своєї анкети, бачила її стертою, а опублікована — неопублікованою.
+  const [profileLoading, setProfileLoading] = useState(() => Boolean(auth.currentUser));
 
   useEffect(() => {
     stateRef.current = state;
@@ -1214,6 +1237,7 @@ export const MyProfile = () => {
   const loadAuthenticatedProfile = useCallback(async (uid, shouldApply = () => true) => {
     latestFetchUidRef.current = uid;
     setUserId(uid);
+    setProfileLoading(true);
 
     try {
       // Анкета — з вузлів RTDB, тією самою воронкою, що й для всіх
@@ -1249,6 +1273,7 @@ export const MyProfile = () => {
         loadedProfile.role = primaryRole;
       }
       mergeLoadedProfileData(loadedProfile, uid);
+      setProfileLoading(false);
       return true;
     } catch (error) {
       console.warn('Failed to load MyProfile profile data.', error);
@@ -1257,6 +1282,7 @@ export const MyProfile = () => {
       }
       setUserId('');
       restoreLocalDraft();
+      setProfileLoading(false);
       return false;
     }
   }, [mergeLoadedProfileData, normalizeProfileData, restoreLocalDraft]);
@@ -1334,6 +1360,8 @@ export const MyProfile = () => {
   const isDonorRole = Boolean(personRole) || !normalizedRole || ['donor', 'до'].includes(normalizedRole);
   // СМ без донорської анкети — скорочений набір (`SURROGATE_HIDDEN_FIELDS`).
   const surrogateOnly = rolesList.includes('sm') && !rolesList.includes('ed');
+  // Донорка без анкети СМ не відповідає на питання до СМ (`DONOR_HIDDEN_FIELDS`).
+  const donorOnly = rolesList.includes('ed') && !rolesList.includes('sm');
   // Лише батьки — побажання переїжджають у «Кого шукаєте», прізвища не питають.
   const parentOnly = rolesList.length === 1 && rolesList[0] === 'ip';
   // Що публікацію не тримає для цього читача (`listRequiredSectionFields`).
@@ -1566,6 +1594,7 @@ export const MyProfile = () => {
           .filter(name => organisationRole || !ORGANISATION_ONLY_FIELDS.has(name))
           .filter(name => !organisationOnly || !ORGANISATION_SKIPPED_FIELDS.has(name) || keepSkippedField(name))
           .filter(name => !surrogateOnly || !SURROGATE_HIDDEN_FIELDS.has(name))
+          .filter(name => !donorOnly || !DONOR_HIDDEN_FIELDS.has(name))
           .filter(name => !parentOnly || !PARENT_ONLY_HIDDEN_FIELDS.has(name))
           .filter(name => !parentOnly || !PARENT_ONLY_SKIPPED_FIELDS.has(name) || keepSkippedField(name))
           // Побажання батьків стоять у «Кого шукаєте» (`extraFields`).
@@ -1611,7 +1640,7 @@ export const MyProfile = () => {
     // Без жодної ролі донорки чи СМ «Про себе» — спільне, а не чиясь анкета.
     const rest = personAssigned ? [] : personSections;
     return [...shared, ...blocks, ...rest];
-  }, [additionalRoleSections, isDonorRole, organisationRole, parentOnly, personRole, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole, state, surrogateOnly, organisationOnly]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [additionalRoleSections, isDonorRole, organisationRole, parentOnly, personRole, roleSections, roleSectionsFor, rolesList, sectionTitleRole, sections, selectedRole, state, surrogateOnly, donorOnly, organisationOnly]); // eslint-disable-line react-hooks/exhaustive-deps
   const programRates = useProgramRates(Boolean(programsRole));
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
 
@@ -1727,6 +1756,7 @@ export const MyProfile = () => {
         localStorage.removeItem('ownerId');
         resetAuthenticatedProfileState();
         restoreLocalDraft();
+        setProfileLoading(false);
         return;
       }
 
@@ -2207,7 +2237,7 @@ export const MyProfile = () => {
   // не є, — сирим ключем «programs».
   const resolveRequiredFieldLabel = fieldName => {
     if (fieldName === 'programs') return uiText('Програми — додайте хоча б одну', language);
-    const roleText = resolveMyProfileFieldText(fieldName, fieldName === 'agencyName' ? organisationRole : sectionTitleRole);
+    const roleText = resolveMyProfileFieldText(fieldName, fieldName === 'agencyName' ? organisationRole : sectionTitleRole, rolesList);
     if (roleText.label) return uiText(roleText.label, language);
     return getFieldLabel(fieldsMap.get(fieldName), language) || fieldName;
   };
@@ -2636,7 +2666,7 @@ export const MyProfile = () => {
   const renderField = (name) => {
     const field = fieldsMap.get(name);
     if (!field) return null;
-    const roleText = resolveMyProfileFieldText(name, name === 'agencyName' ? organisationRole : sectionTitleRole);
+    const roleText = resolveMyProfileFieldText(name, name === 'agencyName' ? organisationRole : sectionTitleRole, rolesList);
     const fieldPlaceholder = roleText.placeholder ? uiText(roleText.placeholder, language) : asExamplePlaceholder(getFieldPlaceholder(field, language), language);
     const val = state[name] || '';
     // Винагороду пишуть розповіддю («від 1000 $, залежить від програми,
@@ -2715,7 +2745,7 @@ export const MyProfile = () => {
                 <Input
                   value={val}
                   $missing={missing[name]}
-                  placeholder={uiText('Введіть свій варіант', language)}
+                  placeholder={uiText(roleText.detailPlaceholder || 'Введіть свій варіант', language)}
                   onChange={e => updateFieldValue(name, e.target.value, field)}
                   onBlur={e => saveFieldValue(name, e.target.value, field)}
                 />
@@ -2873,13 +2903,24 @@ export const MyProfile = () => {
 
   // Липке редактора програм стає під липкою смугою прогресу, а та — під липким
   // рядком навігації телефона (`--km-top-nav-h`).
-  return <Page style={{ '--km-sticky-offset': `calc(var(--km-top-nav-h, 0px) + ${stickyHeight}px)` }}>
+  // Поки анкета їде, сторінка змонтована, але невидима (`visibility`, а не
+  // ранній `return`): її ефекти міряють липку смугу й стежать за розділами, і
+  // з порожніми refs вони б уже не перепідʼєднались.
+  return <>
+  {profileLoading ? <ProfileLoadingOverlay><ScreenLoading /></ProfileLoadingOverlay> : null}
+  <Page
+    aria-busy={profileLoading || undefined}
+    style={{
+      '--km-sticky-offset': `calc(var(--km-top-nav-h, 0px) + ${stickyHeight}px)`,
+      ...(profileLoading ? { visibility: 'hidden' } : null),
+    }}
+  >
     <HeaderPanel>
       {/* На телефоні роль і статус стоять у рядку навігації замість назви
           «Мій профіль» (`usePrimaryNavigationHeaderTarget`), а лого — у меню
           «⋮»: окремий рядок «KnowMe | роль | статус» під навігацією займав
           місце, а назва екрана повторювала підсвічену вкладку внизу. */}
-      {navHeaderTarget ? createPortal(
+      {navHeaderTarget && profileLoading ? null : navHeaderTarget ? createPortal(
         <NavProfileStatus>
           <NavProfileRole title={brandTagline}>{brandTagline}</NavProfileRole>
           {publishStatusBadge}
@@ -2916,7 +2957,10 @@ export const MyProfile = () => {
     <StickyProgress ref={stickyProgressRef} $compact={editingProgram}>
       <ProgressWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{uiText('Заповнено {filled} з {total}', language, filledStats)}</span>
+        {/* Рахує лише поля, без яких анкету не опублікувати, — так і підписано:
+            голе «Заповнено 8 з 10 · 80%» стояло над розділами «2/13» і «0/13»,
+            які рахують усі поля, і два числа суперечили одне одному. */}
+        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{uiText('Для публікації заповнено {filled} з {total}', language, filledStats)}</span>
         <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>{filledPct}%</span>
       </div>
       <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
@@ -3408,5 +3452,6 @@ export const MyProfile = () => {
         </PublishDockButton>
       </PublishDock>
     ) : null}
-  </Page>;
+  </Page>
+  </>;
 };

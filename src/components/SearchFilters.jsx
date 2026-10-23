@@ -24,6 +24,11 @@ const FiltersCard = styled.div`
   margin: ${({ $bare }) => ($bare ? '0' : '0 0 8px')};
 `;
 
+// Опція «даних немає» в групах стрічки. Тут стояв голий «?», і читач не знав,
+// що під ним: анкети без віку, без резусу, без сімейного стану. Впізнає таку
+// опцію позначка `unknown`, а не підпис (див. `isUnknownFilterOption`).
+const UNKNOWN_OPTION_LABEL = 'Не вказано';
+
 /*
  * Групи фільтрів стрічки — один перелік на рейку чіпів і на поповер групи.
  *
@@ -71,7 +76,7 @@ export const MATCHING_FILTER_GROUPS = [
       options: [
         { val: 'married', label: 'Заміжня' },
         { val: 'unmarried', label: 'Не заміжня' },
-        { val: 'other', label: '?' },
+        { val: 'other', label: UNKNOWN_OPTION_LABEL, unknown: true },
       ],
     },
     // Групи крові в цьому переліку немає навмисно: лишився самий резус.
@@ -95,7 +100,7 @@ export const MATCHING_FILTER_GROUPS = [
       options: [
         { val: '+', label: 'Rh+' },
         { val: '-', label: 'Rh-' },
-        { val: 'other', label: '?' },
+        { val: 'other', label: UNKNOWN_OPTION_LABEL, unknown: true },
       ],
     },
     {
@@ -108,7 +113,7 @@ export const MATCHING_FILTER_GROUPS = [
         { val: '31_33', label: '31-33' },
         { val: '34_36', label: '34-36' },
         { val: '37_plus', label: '37+' },
-        { val: 'other', label: '?' },
+        { val: 'other', label: UNKNOWN_OPTION_LABEL, unknown: true },
       ],
     },
     {
@@ -120,7 +125,7 @@ export const MATCHING_FILTER_GROUPS = [
         { val: '18_5_24_9', label: '18.5-24.9' },
         { val: '25_29_9', label: '25-29.9' },
         { val: '30_plus', label: '30+' },
-        { val: 'other', label: '?' },
+        { val: 'other', label: UNKNOWN_OPTION_LABEL, unknown: true },
       ],
     },
     {
@@ -129,7 +134,7 @@ export const MATCHING_FILTER_GROUPS = [
       options: [
         { val: 'ua', label: 'Україна' },
         { val: 'other', label: 'Інша країна' },
-        { val: 'unknown', label: '?' },
+        { val: 'unknown', label: UNKNOWN_OPTION_LABEL, unknown: true },
       ],
     },
   ];
@@ -151,6 +156,10 @@ export const MATCHING_FILTER_GROUPS = [
  */
 export const localizeMatchingOptionLabel = (label, language) =>
   (typeof label === 'string' ? uiText(label, language) : label);
+
+// «Даних немає»: у стрічці — позначка `unknown`, в адмінських групах — і далі
+// голий «?».
+const isUnknownFilterOption = option => Boolean(option?.unknown) || option?.label === '?';
 
 export const buildMatchingFilterChipLabel = (group, values, language) => {
   const options = group.options || [];
@@ -179,7 +188,7 @@ export const buildMatchingFilterChipLabel = (group, values, language) => {
     };
   }
 
-  const offWithoutUnknown = off.filter(option => option.label !== '?');
+  const offWithoutUnknown = off.filter(option => !isUnknownFilterOption(option));
   if (!offWithoutUnknown.length) {
     return { text: uiText('{group}: лише заповнені', language, { group: groupName }), danger: false };
   }

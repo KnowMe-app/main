@@ -125,12 +125,12 @@ export const SearchRefineBar = ({
           aria-pressed
           aria-label={uiText('Зняти уточнення {spec}: {value}', language, {
             spec: specLabel,
-            value: activeOption?.label || activeValue,
+            value: activeOption ? uiText(activeOption.label, language) : activeValue,
           })}
           title={uiText('Зняти уточнення', language)}
           onClick={() => onSelectValue(null)}
         >
-          <span>{`${specLabel} · ${activeOption?.label || activeValue}`}</span>
+          <span>{`${specLabel} · ${activeOption ? uiText(activeOption.label, language) : activeValue}`}</span>
           <RefineValueCount>{total}</RefineValueCount>
           <span aria-hidden="true">✕</span>
         </RefineValueChip>
@@ -162,10 +162,10 @@ export const SearchRefineBar = ({
             // Нульове значення гасне, а не зникає: чіп, що пропадає під пальцем,
             // смикає ряд саме тоді, коли в нього цілять.
             disabled={option.count === 0}
-            title={`${specLabel}: ${option.label} — ${option.count}`}
+            title={`${specLabel}: ${uiText(option.label, language)} — ${option.count}`}
             onClick={() => onSelectValue(option.value)}
           >
-            <span>{option.label}</span>
+            <span>{uiText(option.label, language)}</span>
             <RefineValueCount>{option.count}</RefineValueCount>
           </RefineValueChip>
         ))}

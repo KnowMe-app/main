@@ -1,6 +1,7 @@
 import {
   countMatchingFilterOptions,
   matchingFilterGroupHasCounts,
+  withUnloadedFilterOptions,
 } from '../matchingFilterCounts';
 
 const thisYear = new Date().getFullYear();
@@ -38,5 +39,22 @@ describe('числа біля опцій фільтра', () => {
   it('порожня дека дає порожній набір, а не падіння', () => {
     expect(countMatchingFilterOptions({ filterName: 'age' })).toEqual({});
     expect(countMatchingFilterOptions({ filterName: 'age', users: null })).toEqual({});
+  });
+});
+
+// Дека набрана вже під фільтром, тож вимкненої опції в ній немає за побудовою:
+// СМ бачила «Біологічні батьки 0» там, де їх півтора десятка.
+describe('опції, яких дека не вантажила', () => {
+  it('вимкнена опція активної групи лишається без числа, а не з нулем', () => {
+    const counts = countMatchingFilterOptions({ filterName: 'userRole', users: FEED });
+    expect(withUnloadedFilterOptions(counts, { ag: true, ip: false, ed: false, other: false }))
+      .toEqual({ ...counts, ip: null, ed: null, other: null });
+  });
+
+  it('незаймана група й відсутній фільтр числа не чіпають', () => {
+    const counts = countMatchingFilterOptions({ filterName: 'age', users: FEED });
+    expect(withUnloadedFilterOptions(counts, { le25: true, '26_30': true, other: true })).toBe(counts);
+    expect(withUnloadedFilterOptions(counts, undefined)).toBe(counts);
+    expect(withUnloadedFilterOptions(null, { le25: false })).toBeNull();
   });
 });

@@ -83,10 +83,25 @@ describe('Matching redesigned profile regressions', () => {
     const matchingSource = source();
 
     expect(matchingSource).toContain("id: 'matching-slow-load'");
-    expect(matchingSource).toContain('не вдалося отримати дані протягом 5 секунд');
-    expect(matchingSource).toContain('Перевірте мережу, Firebase rules та індекси');
+    expect(matchingSource).toContain('Анкети вантажаться довше, ніж зазвичай');
     expect(matchingSource).toContain('}, 5000);');
     expect(matchingSource).toContain("toast.dismiss('matching-slow-load');");
+  });
+
+  // Людині — що відбувається, розробникові — режим у консолі. Технічний текст
+  // про «Firebase rules та індекси» на повільному звʼязку бачив кожен читач.
+  it('keeps diagnostics of a slow first page out of the toast', () => {
+    const matchingSource = source();
+    const timer = matchingSource.slice(
+      matchingSource.indexOf('const slowLoadTimer = setTimeout('),
+      matchingSource.indexOf('}, 5000);'),
+    );
+    const toastCall = timer.slice(timer.indexOf('toast('));
+
+    expect(timer).toContain("console.warn('[Matching] перша порція стрічки вантажиться довше 5 с'");
+    expect(toastCall).not.toContain('Firebase rules');
+    expect(toastCall).not.toContain('Режим:');
+    expect(toastCall).not.toContain('{ mode }');
   });
 
   /*

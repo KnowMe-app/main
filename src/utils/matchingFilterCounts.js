@@ -9,6 +9,7 @@ import {
 } from './matchingDataProvider';
 import { listPaymentBuckets } from './donorPrograms';
 import { getProgramRates } from './programCurrency';
+import { hasActiveSearchKeyFilterGroup } from './searchKeyBuckets';
 
 /**
  * Скільки карток підпадає під кожну опцію групи — серед уже завантажених.
@@ -71,4 +72,21 @@ export const countMatchingFilterOptions = ({ filterName, users = [], roleIndexSe
     counts[key] = (counts[key] || 0) + 1;
   });
   return counts;
+};
+
+/**
+ * Числа групи, яка сама звужує деку: вимкненим опціям — `null`, тобто «числа
+ * немає».
+ *
+ * Сторінки джерела набираються вже відфільтрованими
+ * (`collectFilteredMatchingSourceCards`), тож вимкненої опції в деці немає за
+ * побудовою, і порахувати її тут неможливо. Нуль біля неї означав «стрічка їх
+ * не вантажила», а читався як «таких анкет немає»: СМ бачила «Біологічні
+ * батьки 0» під підписом «серед усіх карток стрічки», а ввімкнувши опцію,
+ * діставала півтора десятка анкет.
+ */
+export const withUnloadedFilterOptions = (counts, appliedGroup) => {
+  if (!counts || !hasActiveSearchKeyFilterGroup(appliedGroup)) return counts;
+  const unloaded = Object.keys(appliedGroup).filter(key => appliedGroup[key] === false);
+  return { ...counts, ...Object.fromEntries(unloaded.map(key => [key, null])) };
 };

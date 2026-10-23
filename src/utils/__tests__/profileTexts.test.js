@@ -19,6 +19,9 @@ describe('картка говорить однією мовою', () => {
   it('англійський інтерфейс не підставляє українських відповідей', () => {
     expect(maritalStatusLabel('no', 'en')).toBe('Single');
     expect(maritalStatusLabel('yes', 'en')).toBe('Married');
+    // Старі анкети з адмінки пишуть «так» плюсом; картка казала «Сімейний стан: +».
+    expect(maritalStatusLabel('+', 'en')).toBe('Married');
+    expect(maritalStatusLabel('+', 'uk')).toBe('заміжня');
     expect(derivedValueTexts('ownKids', 'en')).toEqual(['Yes', 'No']);
   });
 

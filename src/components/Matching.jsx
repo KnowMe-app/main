@@ -93,7 +93,8 @@ import SearchBar, { detectSearchParams, getSearchCacheKeyForParams } from './Sea
 import FilterPanel, { getDefaultFilters } from './FilterPanel';
 import MatchingFilterRail from './MatchingFilterRail';
 import { MATCHING_FILTER_GROUPS, buildMatchingFilterChips } from './SearchFilters';
-import { countMatchingFilterOptions } from '../utils/matchingFilterCounts';
+import { countMatchingFilterOptions, withUnloadedFilterOptions } from '../utils/matchingFilterCounts';
+import { hasActiveSearchKeyFilterGroup } from '../utils/searchKeyBuckets';
 import { getFieldLabel, pickerFields } from './formFields';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
 import {
@@ -202,7 +203,7 @@ import {
   DONOR_FEED_ROLE_FILTER_KEYS,
   withoutHiddenCardRoles,
 } from 'utils/matchingPeerVisibility';
-import { listCardAnketaRoles, listFeedRowAnketaRoles } from 'utils/cardAnketas';
+import { cardHasAnketaForRoleFilter, listCardAnketaRoles, listFeedRowAnketaRoles } from 'utils/cardAnketas';
 import {
   isCardFullyReacted,
   listWholeCardReactionIds,
@@ -291,7 +292,9 @@ import {
   getMatchingSearchKeyFilterDebugForUser,
   getMatchingUiFilterDebugSummary,
   isMatchingCardId,
+  isRoleCategoryAllowed,
   isSameMatchingCursor,
+  roleFilterCategoryOf,
 } from 'utils/matchingDataProvider';
 import {
   normalizeMatchingInitialLoadError,
@@ -340,6 +343,9 @@ const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
 const MATCHING_DATA_SOURCE_MODE_KEY = 'matchingDataSourceMode';
 const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
 const LAST_LOGIN_WRITTEN_KEY_PREFIX = 'matchingLastLogin2Written:';
+// Чи пропускає «Тип профілю» анкету цієї ролі — те саме правило, що й для
+// картки цілком (`roleFilterCategoryOf`).
+const allowsAnketaRole = (roleFilter, role) => isRoleCategoryAllowed(roleFilter, roleFilterCategoryOf(role));
 const MATCHING_DEBUG_VERSION = 'autoload-diagnostics-v2';
 const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 const DEBUG_SHARED_CARD_ID = 'ID0001';
@@ -5320,11 +5326,16 @@ const Matching = () => {
     const slowLoadTimer = setTimeout(() => {
       if (requestId !== initialRequestIdRef.current || !loadingStateRef.current) return;
       const mode = viewModeRef.current || viewMode || 'unknown';
+      // Режим і підказку про правила й індекси бачить розробник у консолі, а
+      // не людина: «Matching… Режим: default… Firebase rules та індекси» на
+      // повільному мобільному звʼязку читалось як «застосунок зламався», хоча
+      // запит просто ще летить і закінчиться сам.
+      console.warn('[Matching] перша порція стрічки вантажиться довше 5 с', { mode, requestId });
       toast(
-        uiText('Matching: не вдалося отримати дані протягом 5 секунд. Режим: {mode}. Перевірте мережу, Firebase rules та індекси.', language, { mode }),
+        uiText('Анкети вантажаться довше, ніж зазвичай. Схоже, інтернет повільний — зачекайте трохи.', language),
         {
           id: 'matching-slow-load',
-          icon: '⚠️',
+          icon: '⏳',
           duration: 10000,
         },
       );
@@ -5399,9 +5410,10 @@ const Matching = () => {
   const draftFilteredCount = useMemo(() => {
     if (!showFilters) return 0;
     if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers.length;
-    return applyMatchingUiFiltersToUsers({
+    const appliedFilters = keepViewerVisibleMatchingFilters(draftFilters);
+    const passed = applyMatchingUiFiltersToUsers({
       users: visibleUsers,
-      filters: keepViewerVisibleMatchingFilters(draftFilters),
+      filters: appliedFilters,
       filterMainFn: filterMain,
       favoriteUsers,
       dislikeUsers,
@@ -5409,8 +5421,19 @@ const Matching = () => {
       roleIndexSets,
       programRates,
       viewMode,
-    }).length;
+    });
+    // «Показати N» рахує рядки, які стрічка справді намалює: рядок без
+    // видимої читачеві анкети дозволеного типу не малюється
+    // (`resolveRowAnketaRoles`), і кнопка обіцяла б на одну картку більше.
+    const roleFilter = viewMode === 'default' && !searchQuery.trim() && hasActiveSearchKeyFilterGroup(appliedFilters?.userRole)
+      ? appliedFilters.userRole
+      : null;
+    if (!roleFilter) return passed.length;
+    const hiddenRoles = listViewerHiddenCardRoles(donorRestrictionViewerRole);
+    return passed.filter(user => cardHasAnketaForRoleFilter(user, role => allowsAnketaRole(roleFilter, role), hiddenRoles)).length;
   }, [
+    donorRestrictionViewerRole,
+    searchQuery,
     dislikeUsers,
     draftFilters,
     favoriteUsers,
@@ -5433,23 +5456,32 @@ const Matching = () => {
    */
   const openFilterGroupCounts = useMemo(() => {
     if (!openFilterGroup) return undefined;
-    const counts = countMatchingFilterOptions({
+    // Дека набрана вже під застосованими фільтрами, тож вимкненим опціям цієї ж
+    // групи числа немає, а не нуль (`withUnloadedFilterOptions`).
+    const counts = withUnloadedFilterOptions(countMatchingFilterOptions({
       filterName: openFilterGroup,
       users: visibleUsers,
       roleIndexSets,
       programRates,
-    });
+    }), filters?.[openFilterGroup]);
     // Поки стрічка має ще сторінки, число — нижня межа («12+»): без цього
     // «Біологічні батьки 1» читалось як «у базі одні батьки».
     return counts ? { [openFilterGroup]: { ...counts, __lowerBound: Boolean(deckHasMore) } } : undefined;
-  }, [deckHasMore, openFilterGroup, programRates, roleIndexSets, visibleUsers]);
+  }, [deckHasMore, filters, openFilterGroup, programRates, roleIndexSets, visibleUsers]);
 
   const openFilterGroupCountsNote = useMemo(() => {
     if (!openFilterGroup) return '';
-    return openFilterGroupCounts
-      ? uiText(deckHasMore ? 'Числа — серед уже завантажених карток; гортайте стрічку, і вони зростуть' : 'Числа — серед усіх карток стрічки', language)
-      : uiText('Групу звужує індекс, а не картка — чисел тут немає', language);
-  }, [deckHasMore, language, openFilterGroup, openFilterGroupCounts]);
+    if (!openFilterGroupCounts) return uiText('Групу звужує індекс, а не картка — чисел тут немає', language);
+    if (hasActiveSearchKeyFilterGroup(filters?.[openFilterGroup])) {
+      return uiText('Числа — серед показаних карток; вимкнені опції стрічка зараз не вантажить, тож чисел біля них немає', language);
+    }
+    if (deckHasMore) return uiText('Числа — серед уже завантажених карток; гортайте стрічку, і вони зростуть', language);
+    // «Серед усіх карток» — лише тоді, коли деку не звужує жоден фільтр: інакше
+    // в ній самі ті картки, що пройшли решту груп.
+    const deckIsNarrowed = Boolean(filters?.place?.uk)
+      || Object.values(filters || {}).some(hasActiveSearchKeyFilterGroup);
+    return uiText(deckIsNarrowed ? 'Числа — серед показаних карток' : 'Числа — серед усіх карток стрічки', language);
+  }, [deckHasMore, filters, language, openFilterGroup, openFilterGroupCounts]);
 
   const isSearching = searchQuery.trim().length > 0;
   const navHeaderTarget = usePrimaryNavigationHeaderTarget();
@@ -7592,13 +7624,32 @@ const Matching = () => {
    * під пальцем до наступної збірки деки). У колекціях — лише анкети, яких
    * стосується реакція цієї колекції: «в обраних саме донорська».
    */
+  // «Тип профілю» обирає анкету, а не людину. Картка проходить фільтр, щойно
+  // будь-яка її роль дозволена, — і рядок малював усі її анкети: СМ під «Тип
+  // профілю: Агенція» бачила донорські анкети донорок-агенток, а донорка — анкету
+  // батьків у картки «батьки + донорка» (її донорську роль фільтр пропускає,
+  // бо приховану від донорки опцію тримає ввімкненою). Пошук і колекції чіпи
+  // не звужують, тож лише стрічка.
+  const feedRoleFilter = viewMode === 'default' && !isSearching && hasActiveSearchKeyFilterGroup(filters?.userRole)
+    ? filters.userRole
+    : null;
   const resolveRowAnketaRoles = user => {
     const id = user?.userId;
     // Hydration merges the complete profile (including unpublished roles) into
     // a row. The matching-card projection remains the visibility boundary.
     const projection = feedSourceWithoutOwnEdits.find(candidate => candidate?.userId === id) || user;
-    const roles = listFeedRowAnketaRoles(projection, feedRowHiddenRoles);
-    if (!roles[0]) return roles;
+    const listed = listFeedRowAnketaRoles(projection, feedRowHiddenRoles);
+    if (!listed[0]) {
+      // Неподілена картка (ділиться лише пара «людина + організація») — один
+      // рядок, підписаний її видимою читачеві роллю, тож фільтр питає саме ці
+      // ролі (`cardHasAnketaForRoleFilter`).
+      return !feedRoleFilter
+        || cardHasAnketaForRoleFilter(projection, role => allowsAnketaRole(feedRoleFilter, role), feedRowHiddenRoles)
+        ? listed
+        : [];
+    }
+    const roles = feedRoleFilter ? listed.filter(role => allowsAnketaRole(feedRoleFilter, role)) : listed;
+    if (!roles.length) return roles;
     let shown = roles;
     if (viewMode === 'favorites') shown = roles.filter(role => reactionCoversAnketa(favoriteUsers[id], role));
     else if (viewMode === 'dislikes') shown = roles.filter(role => reactionCoversAnketa(dislikeUsers[id], role));
@@ -8199,7 +8250,10 @@ const Matching = () => {
                 </>
               )}
               {loading && feedRows.length === 0 && <MatchingSkeleton />}
-              {!loading && feedRows.length === 0 && !loadError && (
+              {/* Над порожньою видачею за місцем уже стоїть картка «Схоже на
+                  місто · Показати анкети», і «Немає доступних профілів» під нею
+                  суперечило їй: анкети з цього місця є, їх показує стрічка. */}
+              {!loading && feedRows.length === 0 && !loadError && !searchPlace && (
                 <FeedNotice>
                   <div>{emptyFeedMessage}</div>
                   {/* Назвати причину мало: кінець списку тут не видно нікому,

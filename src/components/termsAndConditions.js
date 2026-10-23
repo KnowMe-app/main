@@ -10,22 +10,15 @@ export const termsAndConditions = [
     style: 'title',
   },
   {
-    en: 'Date of Last Update: 10 October 2026',
-    uk: 'Дата останнього оновлення: 10 жовтня 2026 року',
+    en: 'Date of Last Update: 23 October 2026',
+    uk: 'Дата останнього оновлення: 23 жовтня 2026 року',
     style: 'headerItalic',
   },
 
   ///////////////////
-  {
-    en: 'Disclaimer',
-    uk: 'Дисклаймер',
-    style: 'header',
-  },
-  {
-    en: 'The App is currently offered to users in test mode, which is why certain service functions are temporarily limited, and technical issues and errors may occur. For questions or suggestions, please contact us using the email (KnowMeEggDonor@gmail.com) or the link at the bottom of the page.',
-    uk: 'Наразі Застосунок пропонується у тестовому режимі, у зв’язку з чим окремі функції сервісу тимчасово обмежуються, можливі технічні проблеми та помилки. З запитаннями або побажаннями звертайтеся за адресою електронної пошти (KnowMeEggDonor@gmail.com) або за посиланням внизу сторінки.',
-    style: 'text',
-  },
+  // Розділу «Дисклаймер» про тестовий режим тут більше немає: застосунок
+  // працює повноцінно, а пошта для звернень названа нижче, у розділі про
+  // Ліцензіара.
   {
     en: "The term App refers to any version of the software, including the web version and mobile apps available through the website or for download from Play Market, App Store, and other platforms. In this context, App may be used to refer to both the web application and the mobile applications.",
     uk: "Термін Застосунок означає будь-яку версію програмного забезпечення, включаючи веб-версію та мобільні додатки, що доступні через веб-сайт або з завантаженням з Play Market, App Store та інших платформ. У цьому контексті Застосунок може використовуватися для позначення як веб-додатка, так і мобільних додатків.",

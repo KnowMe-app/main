@@ -112,6 +112,17 @@ describe('короткі факти', () => {
     expect(value({ csection: '2', experience: '1' })).toBe('2 кесаревих · 1 донація');
   });
 
+  // Чип «Ні» форма пише мінусом, а мінус для показу — порожнє поле: СМ
+  // відповідала «кесаревого не було», а рядок про це мовчав.
+  it('читає «Ні» з форми як пологи природним шляхом', () => {
+    const value = (user, lang = 'uk') => valueOf(buildProfileSummaryRows(user, lang), 'reproduction');
+    expect(value({ ownKids: '4', csection: '-' })).toBe('четверо пологів, усі природним шляхом');
+    expect(value({ ownKids: '1', csection: ['2', '-'] })).toBe('одні пологи, природним шляхом');
+    expect(value({ ownKids: '2', csection: '-' }, 'en')).toBe('2 deliveries, both natural');
+    // Без пологів «природним шляхом» не відповідає ні на що.
+    expect(value({ csection: '-' })).toBeUndefined();
+  });
+
   it('узгоджує числівник і відповідає словами на нуль', () => {
     expect(valueOf(buildProfileSummaryRows({ ownKids: '0', experience: '0' }, 'uk'), 'reproduction'))
       .toBe('пологів не було · донацій ще не було');

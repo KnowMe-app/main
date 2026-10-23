@@ -247,8 +247,21 @@ const describeCSectionExtra = (words, value, deliveries) => {
   return { text: words.other(value), attach: false };
 };
 
+/*
+ * «Ні» форма пише мінусом (`csectionOptions`), а для показу мінус — заглушка
+ * порожнього поля (`normalizeDisplayValue`). Тож відповідь «кесаревого не
+ * було» картка ковтала ще до `formatCSectionValue`, який читає мінус як нуль:
+ * СМ відповідала на питання, а її анкета виглядала незаповненою, і рядок
+ * мовчав про «усі природним шляхом» — те, за чим СМ і обирають.
+ */
+const readCSectionAnswer = user => {
+  const shown = normalizeDisplayValue(user?.[resolveCSectionKey(user)]);
+  if (shown) return shown;
+  return CSECTION_KEYS.some(key => String(getCurrentValue(user?.[key]) ?? '').trim() === '-') ? '-' : '';
+};
+
 const describeCSection = (user, lang, deliveries) => {
-  const raw = normalizeDisplayValue(user?.[resolveCSectionKey(user)]);
+  const raw = readCSectionAnswer(user);
   if (!raw) return { text: '', attach: false };
   const value = formatCSectionValue(raw);
   const extraWords = getExtraLocale(lang)?.sentences.cSection;

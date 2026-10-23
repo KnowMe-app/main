@@ -46,6 +46,11 @@ export const REFINE_OTHER_BUCKET = 'other';
  */
 export const REFINE_CITY_LIMIT = 6;
 
+// Підписи — українські рядки-ключі словника: рядок уточнення пропускає їх
+// крізь `uiText`. Тут стояли голий «?» і англійські «Ukraine», «Other» посеред
+// українського екрана.
+const REFINE_UNKNOWN_LABEL = 'Не вказано';
+
 const trimmed = value => String(value ?? '').trim();
 
 const cityBucketOf = user => trimmed(user?.city) || REFINE_OTHER_BUCKET;
@@ -63,7 +68,7 @@ export const MATCHING_REFINE_KEYS = [
       { value: '31_33', label: '31–33' },
       { value: '34_36', label: '34–36' },
       { value: '37_plus', label: '37+' },
-      { value: REFINE_OTHER_BUCKET, label: '?' },
+      { value: REFINE_OTHER_BUCKET, label: REFINE_UNKNOWN_LABEL },
     ],
   },
   {
@@ -84,7 +89,7 @@ export const MATCHING_REFINE_KEYS = [
       // а «Rh+» — як значення.
       { value: '+', label: 'Rh+' },
       { value: '-', label: 'Rh−' },
-      { value: REFINE_OTHER_BUCKET, label: '?' },
+      { value: REFINE_OTHER_BUCKET, label: REFINE_UNKNOWN_LABEL },
     ],
   },
   {
@@ -102,9 +107,9 @@ export const MATCHING_REFINE_KEYS = [
     filterName: 'country',
     categorize: toCountryCategory,
     buckets: [
-      { value: 'ua', label: 'Ukraine' },
-      { value: 'other', label: 'Other' },
-      { value: 'unknown', label: '?' },
+      { value: 'ua', label: 'Україна' },
+      { value: 'other', label: 'Інша країна' },
+      { value: 'unknown', label: REFINE_UNKNOWN_LABEL },
     ],
   },
 ];
@@ -169,7 +174,7 @@ export const buildRefineOptions = (key, users = []) => {
 
   const otherCount = counts.get(REFINE_OTHER_BUCKET) || 0;
   if (!otherCount) return named;
-  return [...named, { value: REFINE_OTHER_BUCKET, label: spec.otherLabel || '?', count: otherCount }];
+  return [...named, { value: REFINE_OTHER_BUCKET, label: spec.otherLabel || REFINE_UNKNOWN_LABEL, count: otherCount }];
 };
 
 /** Звуження видачі — чистий фільтр по вже наявних картках. */

@@ -99,6 +99,30 @@ describe('App route guards', () => {
     expect(catchAll.chunk).toContain('status={catchAllStatus}');
   });
 
+  // Корінь — робочий стіл адміна. Поки права їхали з бази, не-адмін бачив тут
+  // текст угоди, а потім ефект перекидав його в «Мій профіль», лишаючи `/` в
+  // історії: «назад» повертав на той самий редирект.
+  it('the root waits for the access level and sends a non-admin straight to My Profile', () => {
+    const root = parseRoutes().find(route => route.path === '/');
+    expect(root.chunk).toContain('status={catchAllStatus}');
+    expect(root.chunk).toContain('<Navigate to="/my-profile" replace />');
+    expect(root.chunk).not.toContain('<PrivacyPolicy');
+    expect(appSource()).not.toContain("const isRootRoute = location.pathname === '/';");
+  });
+
+  // Екрани вантажаться окремими файлами: адмінські PDF/Excel/Word-рушії й
+  // словники мов більше не їдуть кожному відвідувачу ще до форми входу.
+  it('loads every screen except the login form lazily', () => {
+    const source = appSource();
+    ['PrivacyPolicy', 'MyProfile', 'AddNewProfile', 'Matching', 'EditProfile', 'MedicationsPage', 'FlowManager',
+      'BudgetPage', 'InvoiceBuilderPage', 'DocumentsPage', 'PartiesPage', 'ProfileCreationWorkspace'].forEach(screen => {
+      expect(source).toMatch(new RegExp(`const ${screen} = lazy\\(`));
+      expect(source).not.toMatch(new RegExp(`^import (\\{ )?${screen}( \\})? from`, 'm'));
+    });
+    expect(source).toContain("import { LoginScreen } from './LoginScreen';");
+    expect(source).toContain('<Suspense fallback={<ScreenLoading />}>');
+  });
+
   // Стан входу питається у Firebase і ставиться до будь-яких очікувань: рівень
   // доступу читається з бази вже після, а межа мусить спрацювати одразу.
   it('resolves the auth status before the access level is read', () => {

@@ -37,7 +37,11 @@ export const normalizeDisplayValue = value => {
 
 export const shouldRenderField = value => Boolean(normalizeDisplayValue(value));
 
-const YES_TOKENS = new Set(['yes', 'true']);
+// «+» — так записано «так» у старих анкетах з адмінки. Фільтр стрічки давно
+// читає його як «заміжня» (`toMaritalStatusCategory`), а картка показувала
+// голий плюс: «Сімейний стан: +». Мінус окремо не потрібен — для показу він
+// заглушка порожнього поля (`EMPTY_PLACEHOLDER_VALUES`).
+const YES_TOKENS = new Set(['yes', 'true', '+']);
 const NO_TOKENS = new Set(['no', 'false']);
 
 // Відповідь «так/ні» рахує застосунок, а не вводить людина, — тож і мова в неї

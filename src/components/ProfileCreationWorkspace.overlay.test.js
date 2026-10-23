@@ -197,3 +197,19 @@ describe('ProfileCreationWorkspace history tones', () => {
     expect(screen.getByTestId('history-value-C')).toHaveStyle('border-color: #d94b4b');
   });
 });
+
+// Картка агенції питала «ПІБ і дата народження» з по батькові — тобто про
+// людину, якої в анкеті організації немає.
+describe('чернетка агенції питає себе мовою своєї ролі', () => {
+  it('називає розділ роллю й не питає по батькові', async () => {
+    loadOwnProfileMutations.mockResolvedValue([]);
+    loadSharedProfileMutations.mockResolvedValue([{ ...sharedDraft, data: { ...sharedDraft.data, role: 'ag' } }]);
+    render(<ProfileCreationWorkspace />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Відкрити: / }));
+    // Самі рядки телефону: порожнього «по батькові» агенції не пропонують.
+    await waitFor(() => expect(screen.getAllByRole('textbox')).toHaveLength(2));
+    expect(screen.getByRole('heading', { level: 3, name: 'Агенція' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'ПІБ і дата народження' })).toBeNull();
+  });
+});

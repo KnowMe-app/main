@@ -1000,8 +1000,15 @@ export const toRoleCategories = (user, roleIndexSets = null) => {
   const direct = values(user?.role).map(normalizeRole);
   const fallback = values(user?.userRole).map(normalizeRole);
   const resolved = direct.some(role => role !== 'no' && role !== '?') ? direct : fallback;
-  return [...new Set(resolved.map(role => (['ed', 'sm', 'ag', 'ip'].includes(role) ? role : 'other')))];
+  return [...new Set(resolved.map(roleFilterCategoryOf))];
 };
+
+/**
+ * Опція «Типу профілю», під яку йде одна роль: клініка, старі `pp` і порожня
+ * роль — під «Інші». Те саме правило для картки цілком (`toRoleCategories`) і
+ * для окремої анкети в рядку стрічки.
+ */
+export const roleFilterCategoryOf = role => (['ed', 'sm', 'ag', 'ip'].includes(role) ? role : 'other');
 
 /**
  * Чи пропускає група «Тип профілю» цю категорію.
