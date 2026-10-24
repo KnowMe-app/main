@@ -4,16 +4,18 @@ import { REACTION_FILTER_DEFAULTS } from 'utils/reactionCategory';
 import { parseSeekingRoles } from 'utils/donorPrograms';
 import {
   alignRoleFilterGroupWithViewer,
+  resolveAgencyViewerRoleDefault,
   resolveParentViewerRoleDefault,
   resolvePersonalViewerRoleDefault,
   viewerRoleSignature,
 } from 'utils/matchingPeerVisibility';
 
 /*
- * Для якої ролі читача «Тип профілю» вже стояв за замовчуванням особистої
- * ролі (самі агенції). Позначка потрібна, щоб умовчання спрацювало **раз** на
- * роль: далі читачка вмикає батьків чи «Інших» сама, і наступне відкриття
- * стрічки не має знову звужувати їй деку.
+ * Для якої ролі читача «Тип профілю» вже стояв за замовчуванням своєї ролі
+ * (донорці й СМ — самі агенції, агенції — усі, крім агенцій і батьків,
+ * батькам — ті, кого шукають). Позначка потрібна, щоб умовчання спрацювало **раз** на роль: далі
+ * читач вмикає решту сам, і наступне відкриття стрічки не має знову звужувати
+ * йому деку.
  */
 export const MATCHING_ROLE_DEFAULT_MARKER_KEY = 'matchingRoleDefaultFor';
 const readRoleDefaultMarker = () => {
@@ -233,10 +235,12 @@ const FilterPanel = ({
     const role = alignRoleFilterRef.current;
     // Донорці й СМ стрічка вперше (і після зміни ролі) відкривається на самих
     // агенціях — `resolvePersonalViewerRoleDefault`; батькам — на тих, кого
-    // вони шукають (`resolveParentViewerRoleDefault`).
+    // вони шукають (`resolveParentViewerRoleDefault`); агенції — без інших
+    // агенцій і батьків (`resolveAgencyViewerRoleDefault`).
     const parentKeys = seekingKey ? seekingKey.split(',') : [];
     const resolveDefault = roleFilters => resolvePersonalViewerRoleDefault(roleFilters, role)
-      || resolveParentViewerRoleDefault(roleFilters, role, parentKeys);
+      || resolveParentViewerRoleDefault(roleFilters, role, parentKeys)
+      || resolveAgencyViewerRoleDefault(roleFilters, role);
     const markerValue = resolveParentViewerRoleDefault(null, role, parentKeys)
       ? `${viewerRoleKey}|${seekingKey}`
       : viewerRoleKey;

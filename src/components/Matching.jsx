@@ -93,7 +93,7 @@ import SearchBar, { detectSearchParams, getSearchCacheKeyForParams } from './Sea
 import FilterPanel, { getDefaultFilters } from './FilterPanel';
 import MatchingFilterRail from './MatchingFilterRail';
 import { MATCHING_FILTER_GROUPS, buildMatchingFilterChips } from './SearchFilters';
-import { countMatchingFilterOptions, withUnloadedFilterOptions } from '../utils/matchingFilterCounts';
+import { countMatchingFilterOptions, isDraftFilterCountExact, withUnloadedFilterOptions } from '../utils/matchingFilterCounts';
 import { hasActiveSearchKeyFilterGroup } from '../utils/searchKeyBuckets';
 import { getFieldLabel, pickerFields } from './formFields';
 import { getCacheKey, clearAllCardsCache, setFavoriteIds } from "../utils/cache";
@@ -5469,19 +5469,14 @@ const Matching = () => {
     return counts ? { [openFilterGroup]: { ...counts, __lowerBound: Boolean(deckHasMore) } } : undefined;
   }, [deckHasMore, filters, openFilterGroup, programRates, roleIndexSets, visibleUsers]);
 
-  const openFilterGroupCountsNote = useMemo(() => {
-    if (!openFilterGroup) return '';
-    if (!openFilterGroupCounts) return uiText('Групу звужує індекс, а не картка — чисел тут немає', language);
-    if (hasActiveSearchKeyFilterGroup(filters?.[openFilterGroup])) {
-      return uiText('Числа — серед показаних карток; вимкнені опції стрічка зараз не вантажить, тож чисел біля них немає', language);
-    }
-    if (deckHasMore) return uiText('Числа — серед уже завантажених карток; гортайте стрічку, і вони зростуть', language);
-    // «Серед усіх карток» — лише тоді, коли деку не звужує жоден фільтр: інакше
-    // в ній самі ті картки, що пройшли решту груп.
-    const deckIsNarrowed = Boolean(filters?.place?.uk)
-      || Object.values(filters || {}).some(hasActiveSearchKeyFilterGroup);
-    return uiText(deckIsNarrowed ? 'Числа — серед показаних карток' : 'Числа — серед усіх карток стрічки', language);
-  }, [deckHasMore, filters, language, openFilterGroup, openFilterGroupCounts]);
+  // Пояснень під числами тут більше немає: «вимкнені опції стрічка зараз не
+  // вантажить», «гортайте стрічку, і вони зростуть» описували, як влаштовано
+  // завантаження, а читачеві лише заважали. Нижню межу каже саме число («12+»),
+  // а кнопка не обіцяє числа, якого не знає (`isDraftFilterCountExact`).
+  const draftFilterCountExact = useMemo(
+    () => isDraftFilterCountExact({ appliedFilters: filters, draftFilters, deckHasMore }),
+    [deckHasMore, draftFilters, filters],
+  );
 
   const isSearching = searchQuery.trim().length > 0;
   const navHeaderTarget = usePrimaryNavigationHeaderTarget();
@@ -8084,8 +8079,8 @@ const Matching = () => {
               placeLabel={placeFilterLabel}
               onClearPlace={handleClearPlace}
               applyCount={draftFilteredCount}
+              applyCountExact={draftFilterCountExact}
               onApply={applyDraftFilters}
-              countsNote={openFilterGroupCountsNote}
             >
               <FilterPanel
                 mode="matching"

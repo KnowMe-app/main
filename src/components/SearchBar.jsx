@@ -1294,6 +1294,26 @@ const SearchBar = ({
     lastCommittedSearchRef.current = null;
   }, [search]);
 
+  /*
+   * Запит стерли ззовні — пошук, що вже летить, мусить пропасти, як після ✕.
+   *
+   * Буває, що набране прибирає сам екран: у стрічці так робить «Показати
+   * анкети» з картки міста, в адмінці — перехід до колекції. І в тому ж жесті
+   * поле втрачає фокус, а `onBlur` ще бачить старий рядок і запускає пошук
+   * «Харкова». Його порожня видача приїжджала вже після того, як стрічка
+   * повернулась, і перемикала екран назад у пошук: без карток, без фільтрів і
+   * без виходу, крім перезавантаження. Відповідь на запит, якого більше немає,
+   * нікому не потрібна — тож стерте значення списує все, що в дорозі.
+   */
+  const previousSearchRef = useRef(search);
+  useEffect(() => {
+    const hadQuery = Boolean(String(previousSearchRef.current || '').trim());
+    previousSearchRef.current = search;
+    if (!hadQuery || String(search || '').trim()) return;
+    activeSearchRequestRef.current += 1;
+    repeatedSearchCollectorRef.current = null;
+  }, [search]);
+
   const collectSearchOutput = (output, requestId = null) => {
     const collector = repeatedSearchCollectorRef.current;
     if (
@@ -2443,6 +2463,15 @@ const SearchBar = ({
   useEffect(() => {
     if (!debounceMs) return undefined;
     if (lastDebouncedQueryRef.current === search) return undefined;
+    // Порожній рядок — не запит. Стрічку на нього повертає сам екран, а
+    // «пошук» порожнього віддавав порожню видачу, і та перемикала екран назад
+    // у режим пошуку: стрічка вантажилась удруге, а після «Показати анкети»
+    // з картки міста не верталась зовсім. Запамʼятати його треба все одно —
+    // інакше той самий запит, набраний знову, вже не шукався б.
+    if (!String(search || '').trim()) {
+      lastDebouncedQueryRef.current = search;
+      return undefined;
+    }
     const timer = setTimeout(() => {
       lastDebouncedQueryRef.current = search;
       void writeDataRef.current(search);

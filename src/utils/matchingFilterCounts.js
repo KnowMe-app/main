@@ -90,3 +90,23 @@ export const withUnloadedFilterOptions = (counts, appliedGroup) => {
   const unloaded = Object.keys(appliedGroup).filter(key => appliedGroup[key] === false);
   return { ...counts, ...Object.fromEntries(unloaded.map(key => [key, null])) };
 };
+
+/**
+ * Чи правдиве число на «Показати N» — тобто чи нема чого показати поза
+ * вже завантаженим.
+ *
+ * Кнопка рахує по деці в памʼяті, а застосований фільтр дочитує джерело,
+ * доки сторінка не набереться (`collectFilteredMatchingSourceCards`). Тож
+ * число точне лише тоді, коли стрічку дочитано до кінця **й** чернетка не
+ * вмикає того, що застосований фільтр уже відсіяв: відсіяного в деці немає
+ * за побудовою. Інакше це нижня межа, і кнопка обіцяла «Показати 2», а
+ * застосований фільтр показував пʼятдесят сім анкет.
+ */
+export const isDraftFilterCountExact = ({ appliedFilters, draftFilters, deckHasMore } = {}) => {
+  if (deckHasMore) return false;
+  return !Object.entries(draftFilters || {}).some(([groupName, draftGroup]) => {
+    const appliedGroup = appliedFilters?.[groupName];
+    if (!draftGroup || typeof draftGroup !== 'object' || !appliedGroup || typeof appliedGroup !== 'object') return false;
+    return Object.keys(draftGroup).some(key => draftGroup[key] === true && appliedGroup[key] === false);
+  });
+};

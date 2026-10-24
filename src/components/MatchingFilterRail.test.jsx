@@ -32,7 +32,7 @@ const setup = (props = {}) => {
       onResetAll={onResetAll}
       onApply={onApply}
       applyCount={props.applyCount ?? 12}
-      countsNote={props.countsNote || ''}
+      applyCountExact={props.applyCountExact ?? true}
     >
       <div data-testid="filter-panel" />
     </MatchingFilterRail>,
@@ -113,6 +113,15 @@ describe('рейка фільтрів', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onApply).toHaveBeenCalledTimes(2);
+  });
+
+  it('не обіцяє числа, якого не знає', () => {
+    // Кнопка рахує завантажене, а застосований фільтр дочитує джерело:
+    // «Показати 2» оберталось пʼятдесятьма сімома анкетами.
+    const { onApply } = setup({ openGroup: 'age', applyCount: 2, applyCountExact: false });
+    expect(screen.queryByText('Показати 2')).toBeNull();
+    fireEvent.click(screen.getByText('Показати'));
+    expect(onApply).toHaveBeenCalledTimes(1);
   });
 
   it('тримає панель фільтрів змонтованою й із закритим поповером', () => {
