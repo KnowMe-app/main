@@ -138,6 +138,12 @@ describe('per-row exchange rate currency', () => {
 
     expect(getFlowRowDisplayCurrency(eurRow)).toBe('eur');
     expect(getFlowRowDisplayCurrency(usdRow)).toBe('usd');
+    // Курс, вписаний у рядок, — свідомий вибір валюти, і перемикач угорі його не перебиває.
+    expect(getFlowRowDisplayCurrency(eurRow, 'usd')).toBe('eur');
+    expect(getFlowRowDisplayCurrency(usdRow, 'eur')).toBe('usd');
+    expect(getFlowRowDisplayCurrency({ amount: '1015' }, 'eur')).toBe('eur');
+    expect(getFlowRowDisplayCurrency({ amount: '1015' }, 'usd')).toBe('usd');
+    expect(getFlowRowDisplayCurrency({ amount: '1015' })).toBe('usd');
     expect(calculateFlowRowCurrencyAmount({ ...options, row: eurRow, currency: 'eur' })).toBe(20);
     expect(calculateFlowRowCurrencyAmount({ ...options, row: eurRow, currency: 'usd' })).toBe(25.375);
     expect(calculateFlowRowCurrencyAmount({ ...options, row: usdRow, currency: 'usd' })).toBe(25);

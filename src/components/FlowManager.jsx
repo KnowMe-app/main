@@ -74,6 +74,30 @@ const TopActionBtn = styled.button`
   }
 `;
 
+// Валюта еквівалента в кінці рядка — доріжка з двох сегментів, як інші вибори «одне з кількох».
+const CurrencyToggle = styled.div`
+  display: inline-flex;
+  margin-right: auto;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--km-fill, var(--km-border));
+`;
+
+const CurrencyToggleBtn = styled.button`
+  border: none;
+  border-radius: 8px;
+  min-width: 34px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  color: ${({ $selected }) => ($selected ? 'var(--km-text)' : 'var(--km-muted)')};
+  background: ${({ $selected }) => ($selected ? 'var(--km-card)' : 'transparent')};
+  box-shadow: ${({ $selected }) => ($selected ? '0 1px 2px rgba(0, 0, 0, 0.12)' : 'none')};
+`;
+
 const CopyBtn = styled(TopActionBtn)`
   svg {
     width: 17px;
@@ -657,8 +681,18 @@ const extractCustomRateFromText = value => {
   return { text: rawText, customUsdRate: '', customEurRate: '' };
 };
 
-// Валюта, в якій рядок показує еквівалент: євро, якщо курс рядка задано в євро.
-export const getFlowRowDisplayCurrency = row => (normalizeCustomUsdRate(row?.customEurRate) ? 'eur' : 'usd');
+// Валюта, в якій рядок показує еквівалент. Курс, вписаний у сам рядок («курс 50.75 €»,
+// «курс 41 $»), — свідомий вибір валюти для цього рядка, і перемикач угорі його не перебиває;
+// решта рядків іде у валюті перемикача.
+export const FLOW_DISPLAY_CURRENCIES = ['usd', 'eur'];
+const DEFAULT_FLOW_DISPLAY_CURRENCY = 'usd';
+const getValidFlowDisplayCurrency = value =>
+  FLOW_DISPLAY_CURRENCIES.includes(value) ? value : DEFAULT_FLOW_DISPLAY_CURRENCY;
+export const getFlowRowDisplayCurrency = (row, defaultCurrency = DEFAULT_FLOW_DISPLAY_CURRENCY) => {
+  if (normalizeCustomUsdRate(row?.customEurRate)) return 'eur';
+  if (normalizeCustomUsdRate(row?.customUsdRate)) return 'usd';
+  return getValidFlowDisplayCurrency(defaultCurrency);
+};
 const FLOW_CURRENCY_SIGNS = { usd: '$', eur: '€' };
 
 // Збережений курс рядка — четверта частина суми: «50.75» (долар) або «50.75EUR».
@@ -964,6 +998,7 @@ const getFlowExchangeRateModeLabel = value =>
 const flowDraftStorageKey = ownerId => `flow-draft:${ownerId || 'anon'}`;
 const flowLastCategoryStorageKey = ownerId => `flow-last-category:${ownerId || 'anon'}`;
 const flowExchangeRateModeStorageKey = ownerId => `flow-exchange-rate-mode:${ownerId || 'anon'}`;
+const flowDisplayCurrencyStorageKey = ownerId => `flow-display-currency:${ownerId || 'anon'}`;
 const flowCustomUsdRateStorageKey = ownerId => `flow-custom-usd-rate:${ownerId || 'anon'}`;
 
 export const flattenFlowEntriesFromBackend = flowNode => {
@@ -1114,6 +1149,7 @@ export const FlowManager = ({ ownerId }) => {
   const [historicalRatesByDate, setHistoricalRatesByDate] = useState({});
   const [exchangeRateMode, setExchangeRateMode] = useState(DEFAULT_FLOW_EXCHANGE_RATE_MODE);
   const [isExchangeModalOpen, setIsExchangeModalOpen] = useState(false);
+  const [displayCurrency, setDisplayCurrency] = useState(DEFAULT_FLOW_DISPLAY_CURRENCY);
   const [customUsdRate, setCustomUsdRate] = useState('');
   const [customUsdRateDraft, setCustomUsdRateDraft] = useState('');
   const [isCustomUsdRateFocused, setIsCustomUsdRateFocused] = useState(false);
@@ -1275,6 +1311,28 @@ export const FlowManager = ({ ownerId }) => {
       console.error('Unable to persist flow exchange rate mode into localStorage', error);
     }
   }, [exchangeRateMode, ownerId]);
+
+  useEffect(() => {
+    if (!ownerId) return;
+    try {
+      const savedCurrency = localStorage.getItem(flowDisplayCurrencyStorageKey(ownerId));
+      setDisplayCurrency(getValidFlowDisplayCurrency(savedCurrency));
+    } catch (error) {
+      console.error('Unable to restore flow display currency from localStorage', error);
+      setDisplayCurrency(DEFAULT_FLOW_DISPLAY_CURRENCY);
+    }
+  }, [ownerId]);
+
+  const selectDisplayCurrency = currency => {
+    const nextCurrency = getValidFlowDisplayCurrency(currency);
+    setDisplayCurrency(nextCurrency);
+    if (!ownerId) return;
+    try {
+      localStorage.setItem(flowDisplayCurrencyStorageKey(ownerId), nextCurrency);
+    } catch (error) {
+      console.error('Unable to persist flow display currency into localStorage', error);
+    }
+  };
 
   useEffect(() => {
     if (!ownerId) return;
@@ -1832,6 +1890,22 @@ export const FlowManager = ({ ownerId }) => {
   return (
     <Wrap>
       <TopControls>
+        <CurrencyToggle role="radiogroup" aria-label="Валюта еквівалента в рядках">
+          {FLOW_DISPLAY_CURRENCIES.map(currency => (
+            <CurrencyToggleBtn
+              key={currency}
+              type="button"
+              role="radio"
+              aria-checked={displayCurrency === currency}
+              $selected={displayCurrency === currency}
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => selectDisplayCurrency(currency)}
+              title={currency === 'eur' ? 'Показувати еквівалент у євро' : 'Показувати еквівалент у доларах'}
+            >
+              {FLOW_CURRENCY_SIGNS[currency]}
+            </CurrencyToggleBtn>
+          ))}
+        </CurrencyToggle>
         <TopActionBtn
           type="button"
           onMouseDown={e => e.preventDefault()}
@@ -2149,17 +2223,17 @@ export const FlowManager = ({ ownerId }) => {
                           {formatDisplayDate(row.date)} {resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate })} {row.description}
                           {(() => {
                             const displayAmount = resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate });
-                            const displayCurrency = getFlowRowDisplayCurrency(row);
+                            const rowCurrency = getFlowRowDisplayCurrency(row, displayCurrency);
                             const amountInCurrency = calculateFlowRowCurrencyAmount({
                               row: { ...row, amount: displayAmount },
-                              currency: displayCurrency,
+                              currency: rowCurrency,
                               exchangeRateMode,
                               exchangeRates,
                               historicalRatesByDate,
                               customUsdRate,
                             });
                             return amountInCurrency !== 0
-                              ? ` / ${formatCurrencyValue(amountInCurrency)} ${FLOW_CURRENCY_SIGNS[displayCurrency]}`
+                              ? ` / ${formatCurrencyValue(amountInCurrency)} ${FLOW_CURRENCY_SIGNS[rowCurrency]}`
                               : '';
                           })()}
                         </EventText>
