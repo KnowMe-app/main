@@ -3,25 +3,68 @@ import { Navigate, useLocation } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
 import { LOGIN_ROUTE, buildReturnToFromLocation } from 'utils/authRedirect';
 
-const spin = keyframes`
-  to { transform: rotate(360deg); }
+const run = keyframes`
+  from { transform: translateX(-100%); }
+  to { transform: translateX(260%); }
 `;
 
 const GateWrap = styled.div`
   min-height: 60vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 18px;
 `;
 
-const GateSpinner = styled.div`
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 3px solid var(--km-border, #e3e3e3);
-  border-top-color: var(--km-accent, #b98b5e);
-  animation: ${spin} 0.8s linear infinite;
+// Той самий знак, що й заставка в `public/index.html`: спінер після неї
+// читався як другий, інший екран очікування, а лейбл — і є очікування.
+const GateMark = styled.div`
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--km-text, #1a1a1a);
+
+  span {
+    color: var(--km-accent, #c9600f);
+  }
 `;
+
+const GateBar = styled.div`
+  width: 112px;
+  height: 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--km-accent, #c9600f) 16%, transparent);
+  overflow: hidden;
+
+  span {
+    display: block;
+    width: 40%;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--km-accent, #c9600f);
+    animation: ${run} 1.1s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    span {
+      width: 100%;
+      opacity: 0.5;
+      animation: none;
+    }
+  }
+`;
+
+const LoadingMark = () => (
+  <>
+    <GateMark aria-hidden="true">
+      KnowMe<span>.</span>
+    </GateMark>
+    <GateBar aria-hidden="true">
+      <span />
+    </GateBar>
+  </>
+);
 
 /**
  * Межа входу: екран не монтується, поки не відомо, хто читач.
@@ -46,7 +89,7 @@ export const RequireAuth = ({ status, children }) => {
   if (status === 'pending') {
     return (
       <GateWrap role="status" aria-live="polite" data-testid="auth-gate-pending">
-        <GateSpinner aria-hidden="true" />
+        <LoadingMark />
       </GateWrap>
     );
   }
@@ -66,12 +109,12 @@ export const RequireAuth = ({ status, children }) => {
 
 /**
  * Очікування екрана, код якого ще їде (`React.lazy` у `App.jsx`). Той самий
- * спінер, що й у межі входу: людина бачить одне «зачекайте», а не два різні
- * поспіль.
+ * знак, що й у межі входу й у заставці: людина бачить одне «зачекайте», а не
+ * лейбл, а слідом за ним спінер.
  */
 export const ScreenLoading = () => (
   <GateWrap role="status" aria-live="polite" data-testid="screen-loading">
-    <GateSpinner aria-hidden="true" />
+    <LoadingMark />
   </GateWrap>
 );
 
