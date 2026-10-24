@@ -38,8 +38,8 @@ describe('«Тип профілю» за замовчуванням для до�
     expect(last().userRole).toEqual({ ed: true, sm: true, ag: true, ip: true, other: true });
   });
 
-  it('агенції лишає все', () => {
-    const { last } = renderPanel('ag');
+  it('клініці лишає все', () => {
+    const { last } = renderPanel('cl');
     expect(last().userRole).toEqual({ ed: true, sm: true, ag: true, ip: true, other: true });
     expect(store.has(MATCHING_ROLE_DEFAULT_MARKER_KEY)).toBe(false);
   });
@@ -49,6 +49,28 @@ describe('«Тип профілю» за замовчуванням для до�
     expect(last().userRole.ip).toBe(true);
     rerender(<FilterPanel mode="matching" nonAdminAllActive viewerRole="ed" onChange={onChange} />);
     expect(last().userRole).toEqual({ ed: true, sm: false, ag: true, ip: false, other: false });
+  });
+});
+
+describe('«Тип профілю» за замовчуванням для агенції', () => {
+  it('агенція вперше бачить донорок і СМ, без інших агенцій і батьків', () => {
+    const { last } = renderPanel('ag');
+    // «Інші» (анкети без ролі, клініки) лишаються: інакше стрічка йшла б
+    // переліченням бакетів індексу, тобто не за датою публікації.
+    expect(last().userRole).toEqual({ ed: true, sm: true, ag: false, ip: false, other: true });
+    expect(store.get(MATCHING_ROLE_DEFAULT_MARKER_KEY)).toBe('ag');
+  });
+
+  it('донорка-агентка гортає як агенція', () => {
+    const { last } = renderPanel(['ed', 'ag']);
+    expect(last().userRole).toEqual({ ed: true, sm: true, ag: false, ip: false, other: true });
+  });
+
+  it('вдруге умовчання не перебиває вибору агенції', () => {
+    store.set(MATCHING_ROLE_DEFAULT_MARKER_KEY, 'ag');
+    store.set('matchingFilters', JSON.stringify({ userRole: { ed: true, sm: true, ag: true, ip: false, other: true } }));
+    const { last } = renderPanel('ag');
+    expect(last().userRole).toEqual({ ed: true, sm: true, ag: true, ip: false, other: true });
   });
 });
 

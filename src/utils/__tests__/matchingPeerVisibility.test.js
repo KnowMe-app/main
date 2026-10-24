@@ -234,6 +234,32 @@ describe('withoutHiddenCardRoles', () => {
   });
 });
 
+describe('resolveAgencyViewerRoleDefault', () => {
+  const { resolveAgencyViewerRoleDefault } = require('../matchingPeerVisibility');
+
+  it('агенції за замовчуванням ховає агенції й батьків, а «Інших» лишає', () => {
+    expect(resolveAgencyViewerRoleDefault(null, 'ag'))
+      .toEqual({ ed: true, sm: true, ag: false, ip: false, other: true });
+    expect(resolveAgencyViewerRoleDefault({ ed: true, ag: true }, 'ed,ag'))
+      .toEqual({ ed: true, sm: true, ag: false, ip: false, other: true });
+  });
+
+  it('умовчання агенції індексу не перелічує, тож стрічка лишається за датою', () => {
+    const { buildMatchingIndexFilterGroups } = require('../matchingDataProvider');
+    const userRole = resolveAgencyViewerRoleDefault(null, 'ag');
+    const roleGroup = buildMatchingIndexFilterGroups({ filters: { userRole } })
+      .find(group => group.indexName === 'role');
+    expect(roleGroup.readMode).toBe('exclude');
+  });
+
+  it('клініці, батькам, донорці й невідомій ролі не звужує', () => {
+    expect(resolveAgencyViewerRoleDefault(null, 'cl')).toBeNull();
+    expect(resolveAgencyViewerRoleDefault(null, 'ip')).toBeNull();
+    expect(resolveAgencyViewerRoleDefault(null, 'ed')).toBeNull();
+    expect(resolveAgencyViewerRoleDefault(null, '')).toBeNull();
+  });
+});
+
 describe('resolveParentViewerRoleDefault', () => {
   const { resolveParentViewerRoleDefault } = require('../matchingPeerVisibility');
 
