@@ -465,6 +465,14 @@ export const composeAboutText = (bio, user, language) => {
  * плюс рядки «підпис — значення» для того, що людина набрала сама: власна
  * відповідь у речення не лягає, бо її рід і відмінок невідомі.
  */
+// Валюта бажаної винагороди за замовчуванням — долари: голе «1350» читач
+// не знав, у чому рахувати. Текст, де валюту вже названо, не чіпаємо.
+const withDefaultRewardCurrency = (text) => {
+  if (typeof text !== 'string') return text;
+  const trimmed = text.trim();
+  return /^\d[\d\s.,]*$/.test(trimmed) ? `${trimmed} $` : text;
+};
+
 const DETAIL_SECTIONS = [
   {
     key: 'looks',
@@ -490,7 +498,7 @@ const DETAIL_SECTIONS = [
   {
     key: 'reward',
     title: 'Desired compensation',
-    describe: ({ typed: read }) => ({ text: read('reward'), used: new Set(['reward']) }),
+    describe: ({ typed: read }) => ({ text: withDefaultRewardCurrency(read('reward')), used: new Set(['reward']) }),
     fields: [],
   },
   {
