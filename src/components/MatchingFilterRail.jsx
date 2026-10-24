@@ -7,7 +7,6 @@ import {
   FilterPopoverGhostButton,
   FilterPopoverHeader,
   FilterPopoverHeaderActions,
-  FilterPopoverNote,
   FilterPopoverScrim,
   FilterPopoverTitle,
   FilterRail,
@@ -32,8 +31,8 @@ import { uiText } from '../utils/uiTranslations';
  *   набране: друга дія «закрити й забути» на тому самому жесті означала б, що
  *   читач втрачає роботу, не зробивши нічого явного. «Показати N» лишається
  *   головною кнопкою не тому, що без неї не застосується, а тому, що називає
- *   наслідок: N — це вже пораховано, по завантаженому, без жодного круга до
- *   бази.
+ *   наслідок: N рахується по завантаженому, без жодного круга до бази, і
+ *   стоїть на кнопці лише тоді, коли воно точне (`applyCountExact`).
  *
  * - **Панель груп живе не тут, а в сторінці.** `children` — це змонтований
  *   `FilterPanel`, і він мусить лишатись змонтованим і з закритим поповером:
@@ -58,8 +57,11 @@ export const MatchingFilterRail = ({
   onResetGroup,
   onResetAll,
   applyCount = 0,
+  // Число на кнопці — лише тоді, коли воно правдиве. Рахує його завантажене, а
+  // застосований фільтр дочитує джерело: «Показати 2» оберталось пʼятдесятьма
+  // сімома анкетами. Не знаємо числа — кнопка каже просто «Показати».
+  applyCountExact = true,
   onApply,
-  countsNote = '',
   children,
 }) => {
   const scrollerRef = useRef(null);
@@ -188,11 +190,12 @@ export const MatchingFilterRail = ({
         </FilterPopoverHeader>
         <FilterPopoverBody>
           {children}
-          {countsNote && <FilterPopoverNote>{countsNote}</FilterPopoverNote>}
         </FilterPopoverBody>
         <FilterPopoverFooter>
           <FilterApplyButton type="button" onClick={close}>
-            {uiText('Показати {count}', language, { count: applyCount })}
+            {applyCountExact
+              ? uiText('Показати {count}', language, { count: applyCount })
+              : uiText('Показати', language)}
           </FilterApplyButton>
         </FilterPopoverFooter>
       </FilterPopover>

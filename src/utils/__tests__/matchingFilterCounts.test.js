@@ -1,5 +1,6 @@
 import {
   countMatchingFilterOptions,
+  isDraftFilterCountExact,
   matchingFilterGroupHasCounts,
   withUnloadedFilterOptions,
 } from '../matchingFilterCounts';
@@ -56,5 +57,29 @@ describe('опції, яких дека не вантажила', () => {
     expect(withUnloadedFilterOptions(counts, { le25: true, '26_30': true, other: true })).toBe(counts);
     expect(withUnloadedFilterOptions(counts, undefined)).toBe(counts);
     expect(withUnloadedFilterOptions(null, { le25: false })).toBeNull();
+  });
+});
+
+// «Показати 2» на кнопці, а після застосування — пʼятдесят сім анкет: кнопка
+// рахувала завантажене, а застосований фільтр дочитував джерело.
+describe('число на «Показати N»', () => {
+  const applied = { age: { le25: false, '26_30': true, other: false }, rh: { '+': true, '-': true, other: true } };
+
+  it('нижня межа, поки стрічка має ще сторінки', () => {
+    expect(isDraftFilterCountExact({ appliedFilters: applied, draftFilters: applied, deckHasMore: true })).toBe(false);
+  });
+
+  it('нижня межа, коли чернетка вмикає відсіяне застосованим фільтром', () => {
+    const draft = { ...applied, age: { ...applied.age, le25: true } };
+    expect(isDraftFilterCountExact({ appliedFilters: applied, draftFilters: draft, deckHasMore: false })).toBe(false);
+  });
+
+  it('точне, коли стрічку дочитано, а чернетка лише звужує', () => {
+    const draft = { ...applied, rh: { ...applied.rh, '-': false } };
+    expect(isDraftFilterCountExact({ appliedFilters: applied, draftFilters: draft, deckHasMore: false })).toBe(true);
+    // Місце з пошуку лежить поруч із групами, і рядки в ньому позначками не є.
+    const withPlace = { ...applied, place: { kind: 'city', uk: 'Харків' } };
+    expect(isDraftFilterCountExact({ appliedFilters: withPlace, draftFilters: withPlace, deckHasMore: false })).toBe(true);
+    expect(isDraftFilterCountExact({ appliedFilters: applied, draftFilters: undefined, deckHasMore: false })).toBe(true);
   });
 });

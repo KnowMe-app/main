@@ -694,13 +694,6 @@ export const FilterPopoverBody = styled.div`
 
 /* Числа біля опцій — по завантаженому, а не по всій базі, і рядок каже
  * це прямо, а не вдає точності, якої не має. */
-export const FilterPopoverNote = styled.p`
-  margin: 9px 0 0;
-  font-size: 11px;
-  line-height: 1.35;
-  color: var(--matching-chip-label);
-`;
-
 export const FilterPopoverFooter = styled.div`
   display: flex;
   align-items: center;
