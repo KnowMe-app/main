@@ -1213,6 +1213,8 @@ const BY_UK = {
   'Умови': 'Voorwaarden',
   'Підтвердити і продовжити': 'Bevestigen en doorgaan',
   'Хто ви': 'Wie u bent',
+  'Змінити': 'Wijzigen',
+  'Готово': 'Klaar',
   'Роль вирішує, які поля показує анкета і в якій вкладці її шукають. Змінити її можна будь-коли.': 'De rol bepaalt welke velden het profiel toont en in welk tabblad het wordt gezocht. U kunt hem altijd wijzigen.',
   'Додайте до 5 фото. Перше — головне': 'Voeg tot 5 foto\'s toe. De eerste is de hoofdfoto',
   'Опублікувати анкету': 'Profiel publiceren',

@@ -1213,6 +1213,8 @@ const BY_UK = {
   'Умови': 'Bedingungen',
   'Підтвердити і продовжити': 'Bestätigen und weiter',
   'Хто ви': 'Wer Sie sind',
+  'Змінити': 'Ändern',
+  'Готово': 'Fertig',
   'Роль вирішує, які поля показує анкета і в якій вкладці її шукають. Змінити її можна будь-коли.': 'Die Rolle bestimmt, welche Felder das Profil zeigt und in welchem Tab es gesucht wird. Sie lässt sich jederzeit ändern.',
   'Додайте до 5 фото. Перше — головне': 'Fügen Sie bis zu 5 Fotos hinzu. Das erste ist das Hauptfoto',
   'Опублікувати анкету': 'Profil veröffentlichen',

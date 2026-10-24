@@ -104,6 +104,14 @@ const Page = styled.div`
      стрічкою (10 px) «Мій профіль» виглядав вужчим екраном. */
   --page-gutter: 20px;
   @media (max-width: 600px) { --page-gutter: 10px; }
+  /* Колонка анкети на широкому екрані. Без стелі поле «Зріст» на моніторі
+     тягнулось на 1200 px, прев'ю картки стояло вузьким острівцем посередині,
+     а панель публікації — від краю до краю: форма виглядала розсипаною по
+     екрану. Бічний відступ блоків — більший із відступу сторінки й половини
+     того, що лишається поза колонкою; відсотки тут рахуються від ширини
+     сторінки, тож змінну читають лише прямі блоки сторінки й липкої смуги. */
+  --page-max: 800px;
+  --page-side: max(var(--page-gutter), calc((100% - var(--page-max)) / 2));
   font-family: var(--km-font);
   background: var(--bg);
   color: var(--text);
@@ -123,7 +131,7 @@ const ProfileLoadingOverlay = styled.div`
 const Topbar = styled.div`
   background: var(--card);
   border-bottom: 1px solid var(--border);
-  padding: 14px var(--page-gutter);
+  padding: 14px var(--page-side);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -138,6 +146,23 @@ const TopbarBrand = styled.div`
   overflow: hidden;
   @media (min-width: 601px) {
     display: none;
+  }
+`;
+// На ширшому за 600 px екрані назву застосунку несе навігація, і рядок
+// тримав сам лише статус праворуч — порожня смуга на всю ширину з однією
+// пігулкою. Ліворуч тепер роль, як у рядку навігації телефона.
+const TopbarRole = styled.div`
+  display: none;
+  @media (min-width: 601px) {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
   }
 `;
 const TopbarActions = styled.div`
@@ -198,7 +223,7 @@ const CONTENT_SECTION_TOP_GAP = 18;
 const SECTION_SCROLL_GAP = CONTENT_SECTION_TOP_GAP;
 const SCROLL_ACTIVE_SECTION_GAP = 16;
 const PROGRAMMATIC_SCROLL_FALLBACK_MS = 900;
-const ProgressWrap = styled.div`padding: 10px var(--page-gutter) 0;`;
+const ProgressWrap = styled.div`padding: 10px var(--page-side) 0;`;
 const NextFieldsRow = styled.div`
   display: flex;
   flex-wrap: wrap;
@@ -225,7 +250,7 @@ const NextFieldChip = styled.button`
  * одну кнопку, і без підказки не було видно, що з двох означає колір; а
  * емодзі (📷 🏢 💶) єдині на екрані розмовляли іншою мовою, ніж лінійні
  * значки навігації. */
-const Tabs = styled.div`padding:4px var(--page-gutter) 0;display:flex;gap:20px;overflow:auto;scrollbar-width:none;&::-webkit-scrollbar{display:none;}`;
+const Tabs = styled.div`padding:4px var(--page-side) 0;display:flex;gap:20px;overflow:auto;scrollbar-width:none;&::-webkit-scrollbar{display:none;}`;
 const Tab = styled.button`
   flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px;
   min-height: 44px; padding: 0; border: 0; background: transparent;
@@ -235,7 +260,7 @@ const Tab = styled.button`
   svg { color: var(--km-success); flex: 0 0 auto; }
 `;
 const Card = styled.div`
-  margin: 0 var(--page-gutter) 16px;
+  margin: 0 var(--page-side) 16px;
   background: var(--card);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -311,16 +336,24 @@ const ClearFieldButton = styled.button`
 const ChipRow = styled.div`display:flex;flex-wrap:wrap;gap:6px;`;
 const Chip = styled.button`
   /* Вибране — заливкою, як чіп ролі в «Хто ви»: блідо-помаранчеве з
-     помаранчевим текстом від невибраного з першого погляду не відрізнялось. */
-  min-height: 36px; padding: 0 13px; border-radius: 99px; font-size: 14px; border: 1px solid ${({ selected }) => (selected ? 'var(--accent)' : 'var(--border)')};
-  background: ${({ selected }) => (selected ? 'var(--accent)' : 'var(--card)')}; color: ${({ selected }) => (selected ? 'var(--km-on-accent, #fff)' : 'var(--text)')};
+     помаранчевим текстом від невибраного з першого погляду не відрізнялось.
+     Невибране — заливкою без рамки, як решта вторинних контролів (поля тієї
+     ж форми, чіпи стрічки, чіпи «Поділитися анкетою»): білі пігулки з сірим
+     контуром були єдиним місцем на екрані з контурами, і стіна з семидесяти
+     таких у «Зовнішності» читалась сіткою рамок, а не відповідями. */
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 36px; padding: 0 13px; border-radius: 99px; font-size: 14px; border: 1px solid ${({ selected }) => (selected ? 'var(--accent)' : 'transparent')};
+  background: ${({ selected }) => (selected ? 'var(--accent)' : 'var(--km-fill)')}; color: ${({ selected }) => (selected ? 'var(--km-on-accent, #fff)' : 'var(--text)')};
+  cursor: pointer;
+  &:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--km-accent-ring); }
+  svg { flex: 0 0 auto; }
   ${({ $missing }) => $missing && `
     border-color: #D44;
     box-shadow: 0 0 0 3px rgba(221, 68, 68, .1);
   `}
 `;
 const SubmitWrap = styled.div`
-  margin: 8px var(--page-gutter) 24px;
+  margin: 8px var(--page-side) 24px;
   padding: 18px;
   background: var(--card);
   border: 1px solid var(--border);
@@ -399,8 +432,10 @@ const PublishDock = styled.div`
   /* Плаває над нижньою навігацією тією самою пігулкою: суцільна смуга на
      всю ширину разом із панеллю вкладок забирала чверть екрана. */
   position: fixed;
-  left: 12px;
-  right: 12px;
+  /* На широкому екрані — під колонкою анкети, а не від краю до краю: напис
+     ліворуч і кнопка праворуч розходились на весь монітор. */
+  left: max(12px, calc((100% - var(--page-max, 800px)) / 2));
+  right: max(12px, calc((100% - var(--page-max, 800px)) / 2));
   bottom: var(--km-bottom-nav-h, 0px);
   /* Над смугою згасання під навігацією (z-index 899), інакше її низ тонув би. */
   z-index: 901;
@@ -421,7 +456,7 @@ const PublishDockButton = styled.button`
   border-radius: 22px;
   padding: 10px 18px;
   background: ${({ $muted }) => ($muted ? 'var(--km-fill)' : 'var(--km-accent)')};
-  color: ${({ $muted }) => ($muted ? 'var(--text)' : '#fff')};
+  color: ${({ $muted }) => ($muted ? 'var(--text)' : 'var(--km-on-accent, #fff)')};
   font: inherit;
   font-size: 15px;
   font-weight: 700;
@@ -489,7 +524,7 @@ const RolePublishStatus = styled.span`
   gap:6px;
   font-size:12px;
   font-weight:600;
-  color:#2E9B55;
+  color:var(--km-success);
 
   &::before { content:''; width:7px; height:7px; border-radius:50%; background:currentColor; }
 `;
@@ -513,7 +548,7 @@ const RoleActionPair = styled.div`
     justify-content:center;
     border:0;
     background:transparent;
-    color:${({ $primary }) => ($primary ? '#fff' : 'var(--text)')};
+    color:${({ $primary }) => ($primary ? 'var(--km-on-accent, #fff)' : 'var(--text)')};
     font-size:14px;
     font-weight:${({ $primary }) => ($primary ? 700 : 600)};
     white-space:nowrap;
@@ -529,8 +564,8 @@ const RolePairClearBtn = styled.button`
   width:42px;
   padding:0;
 
-  && { color:${({ $primary }) => ($primary ? 'rgba(255,255,255,0.9)' : 'var(--muted)')}; }
-  &&:hover, &&:focus-visible { color:${({ $primary }) => ($primary ? '#fff' : '#D44')}; }
+  && { color:${({ $primary }) => ($primary ? 'var(--km-on-accent, #fff)' : 'var(--muted)')}; }
+  &&:hover, &&:focus-visible { color:${({ $primary }) => ($primary ? 'var(--km-on-accent, #fff)' : 'var(--km-danger)')}; }
 `;
 // Зняти з публікації — дія того самого розміру, але не головна: помаранчевий
 // градієнт лишається за «Опублікувати», а не за протилежним.
@@ -622,20 +657,58 @@ const LIKED_AUDIENCE_TEXTS = Object.freeze({
 
 // Роль — перше рішення в анкеті: від неї залежить, які поля взагалі показувати.
 // Тому вона стоїть над формою окремим рядом, а не полем усередині секції.
+// Але рішення це вже ухвалене на реєстрації, і змінюють його рідко, тож
+// згорнуте воно — один рядок «Хто ви · Донор ооцитів · Змінити»
+// (`rolePickerOpen`). Розгорнутий блок з пʼятьма чіпами й поясненням займав
+// ~200 px угорі: на телефоні 360×640 перший екран «Мого профілю» був шапкою,
+// вибором ролі й половиною прев'ю — без жодного фото й жодного поля анкети.
 const RoleCard = styled.div`
-  margin: ${CONTENT_SECTION_TOP_GAP}px var(--page-gutter) 16px;
-  padding: 16px 18px;
+  margin: ${CONTENT_SECTION_TOP_GAP}px var(--page-side) 16px;
+  padding: ${({ $open }) => ($open ? '16px 18px' : '6px 8px 6px 18px')};
   background: var(--card);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 `;
+const RoleSummary = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  ${({ $open }) => ($open ? 'margin-bottom: 12px;' : '')}
+
+  > b {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+  }
+`;
 // Підпис звичайним реченням 13 px, як решта підписів (див. візуальну мову в
 // CLAUDE.md): великі літери тут лишились від старого вигляду.
 const RoleCardTitle = styled.div`
+  flex: 0 0 auto;
   font-size: 13px;
   font-weight: 600;
   color: var(--muted);
-  margin-bottom: 12px;
+`;
+const RoleToggleButton = styled.button`
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 99px;
+  background: var(--km-fill);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  &:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--km-accent-ring); }
 `;
 const RoleOptions = styled.div`display:flex;flex-wrap:wrap;gap:8px;`;
 // Чіп ролі сам і є перемикачем: квадратик чекбокса всередині заливки
@@ -654,9 +727,9 @@ const RoleOption = styled.label`
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  border: 1px solid ${({ $active }) => ($active ? 'var(--accent)' : 'var(--border)')};
-  background: ${({ $active }) => ($active ? 'var(--accent)' : 'var(--card)')};
-  color: ${({ $active }) => ($active ? '#fff' : 'var(--text)')};
+  border: 1px solid ${({ $active }) => ($active ? 'var(--accent)' : 'transparent')};
+  background: ${({ $active }) => ($active ? 'var(--accent)' : 'var(--km-fill)')};
+  color: ${({ $active }) => ($active ? 'var(--km-on-accent, #fff)' : 'var(--text)')};
 
   input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
   &:focus-within { box-shadow: 0 0 0 3px var(--km-accent-ring); }
@@ -672,7 +745,7 @@ const AnketaDivider = styled.div`
   align-items: baseline;
   flex-wrap: wrap;
   gap: 4px 8px;
-  margin: 28px var(--page-gutter) 12px;
+  margin: 28px var(--page-side) 12px;
   padding-top: 16px;
   border-top: 2px solid var(--border);
 
@@ -691,7 +764,7 @@ const PhotoSection = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin: ${({ $isFirstContent }) => ($isFirstContent ? `${CONTENT_SECTION_TOP_GAP}px` : '0')} var(--page-gutter) 20px;
+  margin: ${({ $isFirstContent }) => ($isFirstContent ? `${CONTENT_SECTION_TOP_GAP}px` : '0')} var(--page-side) 20px;
   padding: 18px;
   background: var(--card);
   border-radius: var(--radius);
@@ -700,7 +773,7 @@ const PhotoSection = styled.div`
   min-width: 0;
   scroll-margin-top: ${CONTENT_SECTION_TOP_GAP}px;
 `;
-const SubmitBtn = styled.button`width:100%;padding:16px;background:var(--km-accent);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
+const SubmitBtn = styled.button`width:100%;padding:16px;background:var(--km-accent);color:var(--km-on-accent, #fff);border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
 
 const AuthCard = styled(FirstContentCard)``;
@@ -721,8 +794,10 @@ const StatusBadge = styled.button`
   /* Неопублікована анкета — звичайний стан нової анкети, а не помилка:
      червоний тут лякав кожного, хто щойно зареєструвався. Червоним лишається
      лише «Логін не відбувся» — це справді збій. */
-  background: ${({ $published, $error }) => ($error ? '#FEE9E9' : $published ? '#EBF8EF' : 'var(--km-fill)')};
-  color: ${({ $published, $error }) => ($error ? '#D44' : $published ? '#2E9B55' : 'var(--muted)')};
+  /* Кольори — з токенів теми: світло-мʼятна пігулка з #EBF8EF у темній темі
+     світилась плямою на темній шапці. */
+  background: ${({ $published, $error }) => ($error ? 'var(--km-danger-bg)' : $published ? 'var(--km-success-bg)' : 'var(--km-fill)')};
+  color: ${({ $published, $error }) => ($error ? 'var(--km-danger)' : $published ? 'var(--km-success)' : 'var(--muted)')};
   cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
   /* Лише для обраних — не зелене «опубліковано для всіх»: колір акценту й
      замок, щоб із першого погляду було видно, що коло обмежене. */
@@ -745,8 +820,8 @@ const LikedAudienceChip = styled.button`
   display: flex;
   align-items: center;
   gap: 12px;
-  width: calc(100% - 2 * var(--page-gutter));
-  margin: 10px var(--page-gutter) 12px;
+  width: calc(100% - 2 * var(--page-side));
+  margin: 10px var(--page-side) 12px;
   padding: 10px 12px 10px 14px;
   border: 1.5px solid rgba(201, 96, 15,0.35);
   border-radius: 14px;
@@ -1177,6 +1252,8 @@ export const MyProfile = () => {
   const [clearRoleTarget, setClearRoleTarget] = useState('');
   // Роль, на яку людина щойно натиснула в «Хто ви», — до її рішення в модалці.
   const [roleChangeTarget, setRoleChangeTarget] = useState('');
+  // «Хто ви» розгорнуте — п'ять чипів ролей замість рядка з поточною роллю.
+  const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const stickyProgressRef = useRef(null);
@@ -2811,6 +2888,7 @@ export const MyProfile = () => {
               return <Chip
                 key={`${name}-${optionValue}`}
                 selected={selected}
+                aria-pressed={selected}
                 $missing={missing[name]}
                 onClick={() => {
                   setCustomOptionMode(prev => ({ ...prev, [name]: false }));
@@ -2824,6 +2902,7 @@ export const MyProfile = () => {
                 }}
                 type="button"
               >
+                {selected ? <FaCheck size={11} aria-hidden="true" /> : null}
                 {getOptionLabel(option, language)}
               </Chip>;
             })}
@@ -2831,6 +2910,7 @@ export const MyProfile = () => {
               <Chip
                 key={`${name}-custom-option`}
                 selected={customSelected}
+                aria-pressed={customSelected}
                 onClick={() => {
                   setCustomOptionMode(prev => ({ ...prev, [name]: true }));
                   if (!customSelected) {
@@ -2839,6 +2919,7 @@ export const MyProfile = () => {
                 }}
                 type="button"
               >
+                {customSelected ? <FaCheck size={11} aria-hidden="true" /> : null}
                 {uiText(noOrDetails ? 'Детальніше' : (isYesNoField && yesNoAllowsDetails ? 'Уточнити' : 'Свій варіант'), language)}
               </Chip>
             ) : null}
@@ -3077,6 +3158,7 @@ export const MyProfile = () => {
           {/* Поруч із назвою — ролі людини її мовою. Тут стояло англійське
               «Egg donor» за замовчуванням — і в агенції теж. */}
           <TopbarBrand><KnowMeBrand tagline={brandTagline} /></TopbarBrand>
+          <TopbarRole>{brandTagline}</TopbarRole>
           <TopbarActions>
             {publishStatusBadge}
           </TopbarActions>
@@ -3230,11 +3312,25 @@ export const MyProfile = () => {
       </FieldGroup>
     </AuthCard>}
 
-    <RoleCard>
-      <RoleCardTitle id="my-profile-role-title">{uiText('Хто ви', language)}</RoleCardTitle>
+    <RoleCard $open={rolePickerOpen} data-testid="my-profile-role-card">
+      <RoleSummary $open={rolePickerOpen}>
+        <RoleCardTitle id="my-profile-role-title">{uiText('Хто ви', language)}</RoleCardTitle>
+        {rolePickerOpen ? null : (
+          <b>{rolesList.map(role => uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role, language)).join(' · ')}</b>
+        )}
+        <RoleToggleButton
+          type="button"
+          aria-expanded={rolePickerOpen}
+          aria-controls="my-profile-role-options"
+          onClick={() => setRolePickerOpen(open => !open)}
+        >
+          {uiText(rolePickerOpen ? 'Готово' : 'Змінити', language)}
+        </RoleToggleButton>
+      </RoleSummary>
+      {rolePickerOpen ? <>
       {/* Група з назвою: читач екрана чує «Хто ви» перед кожним чипом, а не
           голі «Агенція, прапорець». */}
-      <RoleOptions role="group" aria-labelledby="my-profile-role-title">
+      <RoleOptions id="my-profile-role-options" role="group" aria-labelledby="my-profile-role-title">
         {MY_PROFILE_ROLE_OPTIONS.map(option => (
           <RoleOption
             key={option.value}
@@ -3252,7 +3348,7 @@ export const MyProfile = () => {
         ))}
       </RoleOptions>
       <RoleHint>{uiText('Роль вирішує, які поля показує анкета і в якій вкладці її шукають. Змінити її можна будь-коли.', language)}</RoleHint>
-
+      </> : null}
     </RoleCard>
 
     {/* Прев'ю — один блок з перемикачем ролей, а не по повній картці на
@@ -3310,7 +3406,7 @@ export const MyProfile = () => {
       <SectionCard ref={node => { sectionRefs.current[section.key] = node; }}>
         <Header>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{stripSectionEmoji(uiText(section.title, language))}</div>
-          <div style={{ marginLeft: 'auto', fontSize: 11, color: sectionProgress[section.key]?.complete ? '#2E9B55' : 'var(--muted)', background: sectionProgress[section.key]?.complete ? '#EBF8EF' : 'var(--border)', padding: '2px 8px', borderRadius: 99 }}>
+          <div style={{ marginLeft: 'auto', fontSize: 11, color: sectionProgress[section.key]?.complete ? 'var(--km-success)' : 'var(--muted)', background: sectionProgress[section.key]?.complete ? 'var(--km-success-bg)' : 'var(--border)', padding: '2px 8px', borderRadius: 99 }}>
             {/* Програми — це записи, а не поле: «1/1» при трьох програмах
                 казав лише, що поле «programs» не порожнє. Тут — скільки їх. */}
             {section.custom === 'programs'

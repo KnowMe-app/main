@@ -48,7 +48,7 @@ import { revealCss } from '../styles/revealAnimation';
  */
 
 const Wrap = styled.section`
-  margin: 0 var(--page-gutter) 24px;
+  margin: 0 var(--page-side, var(--page-gutter)) 24px;
   padding: 18px;
   background: var(--card);
   border: 1px solid var(--border);

@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import styled from 'styled-components';
+import { FiChevronDown } from 'react-icons/fi';
 import { revealCss } from '../styles/revealAnimation';
 import ProfileRow from './ProfileRow';
 import { MatchingThemeScope } from './Matching.styled';
@@ -24,7 +25,7 @@ import { uiText } from '../utils/uiTranslations';
 const COLLAPSED_KEY = 'myProfileCardPreviewCollapsed';
 
 const Wrap = styled.section`
-  margin: 0 var(--page-gutter, 20px) 16px;
+  margin: 0 var(--page-side, var(--page-gutter, 20px)) 16px;
 `;
 
 const Head = styled.button`
@@ -45,8 +46,10 @@ const Head = styled.button`
   cursor: pointer;
 `;
 
-const Caret = styled.span`
-  display: inline-block;
+// Лінійний шеврон, як у решти розкривних блоків: символ «▼» шрифту був
+// єдиним суцільним трикутником на екрані й стояв жирнішим за сам підпис.
+const Caret = styled(FiChevronDown)`
+  flex: 0 0 auto;
   transform: rotate(${({ $open }) => ($open ? '180deg' : '0deg')});
 `;
 
@@ -128,7 +131,7 @@ export const MyProfileCardPreview = ({ previews = [], language, rates, displayCu
     <Wrap data-testid="my-profile-card-preview">
       <Head type="button" aria-expanded={open} onClick={toggle}>
         <span>{uiText('Так вас бачать у стрічці', language)}</span>
-        <Caret $open={open} aria-hidden="true">▼</Caret>
+        <Caret $open={open} size={18} aria-hidden="true" />
       </Head>
       {open ? (
         <Reveal>
