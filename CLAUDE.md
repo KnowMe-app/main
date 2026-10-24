@@ -90,8 +90,9 @@ npm install --no-save playwright-core  # Chromium уже в образі, кач
 
 **Тестовий акаунт — інспектор, на адмінських екранах лише на читання**
 (`READONLY_ADMIN_UIDS` у `utils/accessLevel.js`). Застосунок пускає його на
-всі екрани як адміна, зокрема на `AddNewProfile`, а `database.rules.json` і
-`storage.rules` дають його UID на адмінських вузлах лише читання — тож правка
+всі екрани як адміна, зокрема на `AddNewProfile`, а `database.rules.json` дає
+його UID на адмінських вузлах лише читання (у `storage.rules` — лише на копіях
+фото за посиланням; теки `documentsBuilder/` у Storage він не бачить) — тож правка
 чужої анкети відлітає з `PERMISSION_DENIED`, а внизу екрана стоїть «Лише
 читання». **На матчингу (`/matching`, `/matching/create-profile`,
 `/my-profile`) і в конструкторі документів (`/documents`, `/parties`) він
