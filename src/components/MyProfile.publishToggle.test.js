@@ -128,13 +128,17 @@ describe('my-profile publication toggle', () => {
     expect(badge).toContain('$restricted={isProfileAccessConfirmed && isLikedAudience}');
   });
 
-  // Одна анкета теж очищується з «Публікації»: кошик відкриває ту саму
-  // модалку, що й меню «⋮», і стирає поля порожніми версіями.
-  it('offers a trash button that clears the profile through the confirmation modal', () => {
-    const single = source.slice(source.indexOf('<PublishSingleAction'), source.indexOf('</PublishSingleAction>'));
-    expect(single).toContain('data-testid="publish-clear-profile"');
-    expect(single).toContain("onClick={() => { setClearRoleTarget(''); setShowInfoModal('delConfirm'); }}");
-    expect(single).toContain("aria-label={uiText('Очистити анкету', language)}");
+  // Очищення — у самому кінці «Публікації», після способів показу, а не
+  // кошиком поруч із «Опублікувати»; при кількох анкетах — по кнопці на кожну.
+  // Обидва шляхи йдуть через ту саму модалку, що й меню «⋮».
+  it('offers clear buttons at the end of Publication that go through the confirmation modal', () => {
+    const list = source.slice(source.indexOf('<ClearAnketaList'), source.indexOf('</ClearAnketaList>'));
+    expect(source.indexOf('<ClearAnketaList')).toBeGreaterThan(source.indexOf('data-testid="publish-way-link"'));
+    expect(list).toContain('data-testid="publish-clear-profile"');
+    expect(list).toContain("onClick={() => { setClearRoleTarget(''); setShowInfoModal('delConfirm'); }}");
+    expect(list).toContain('rolesList.length > 1 ? rolesList.map(role => (');
+    expect(list).toContain("onClick={() => { setClearRoleTarget(role); setShowInfoModal('delConfirm'); }}");
+    expect(source.slice(source.indexOf('<PublishSingleAction'), source.indexOf('</PublishSingleAction>'))).not.toContain('FiTrash2');
     expect(source).toContain('<ModalDangerButton type="button" disabled={isClearingProfile} onClick={clearProfileFields}>');
   });
 

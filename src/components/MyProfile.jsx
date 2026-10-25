@@ -288,7 +288,23 @@ const Card = styled.div`
 const FirstContentCard = styled(Card)`margin-top: ${CONTENT_SECTION_TOP_GAP}px;`;
 const Header = styled.div`display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg);`;
 const FieldGroup = styled.div`padding:0 18px;`;
-const Field = styled.div`padding:14px 0;border-bottom:1px solid var(--border); &:last-child{border-bottom:none;}`;
+const fieldHighlight = keyframes`
+  0%, 70% { background: var(--km-accent-light); box-shadow: -18px 0 0 var(--km-accent-light), 18px 0 0 var(--km-accent-light), inset 3px 0 0 var(--km-accent); }
+  100% { background: transparent; box-shadow: none; }
+`;
+// Поле, до якого привели «Варто дописати» чи перелік того, чого бракує, на
+// мить підсвічується (`data-highlight`, ставить `scrollToField`): прокрутка
+// зупиняла поле десь посеред екрана серед інших таких самих, і людина не
+// бачила, яке з них просили заповнити. Тло тягнеться на відступ розділу тінню,
+// а не відступом, — інакше поле зсувалось би під пальцем.
+const Field = styled.div`
+  padding:14px 0;
+  border-bottom:1px solid var(--border);
+  &:last-child{border-bottom:none;}
+  &[data-highlight] { animation: ${fieldHighlight} 2.4s ease-out; }
+  /* Підпис поля — перший нащадок (Label), він теж бере акцент. */
+  &[data-highlight] > div:first-child { color: var(--accent); }
+`;
 // Підпис поля — звичайним реченням: 11 px великими з розрядкою читались
 // гірше за саме значення й кричали з кожного рядка форми.
 const Label = styled.div`font-size:13px;font-weight:500;color:var(--muted);margin-bottom:6px;`;
@@ -464,6 +480,10 @@ const PublishDock = styled.div`
   box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
 
   > span { flex: 1; min-width: 0; font-size: 13px; color: var(--muted); }
+
+  /* Поки людина набирає, панель над клавіатурою лише закривала б поле
+     (\`km-keyboard-open\` ставить \`PrimaryNavigation\`). */
+  :root.km-keyboard-open & { display: none; }
 `;
 const PublishDockButton = styled.button`
   flex: 0 0 auto;
@@ -478,35 +498,39 @@ const PublishDockButton = styled.button`
   cursor: pointer;
 `;
 /*
- * Одна анкета — головна дія й поруч кошик «Очистити анкету». Кошик стоїть
- * тут на прохання власниці продукту: при кількох ролях він уже є в рядку
- * кожної анкети, а одну анкету очистити можна було лише з меню «⋮», якого
- * біля «Публікації» ніхто не шукав. Незворотність тримає модалка
- * (`DelConfirm`), а саме очищення — `clearProfileFields`: порожні рядки
- * лягають новими версіями полів, тож адмін бачить історію.
+ * «Очистити анкету» — окремим рядком у самому кінці «Публікації», а не
+ * кошиком поруч із «Опублікувати»: незворотна дія стояла впритул до головної,
+ * і в анкети з кількома ролями кошик сидів у кожній парі кнопок, хоч до
+ * публікації не мав стосунку (на прохання власниці продукту). При кількох
+ * анкетах — по кнопці на кожну («Очистити дані: Донор ооцитів»). Незворотність
+ * тримає модалка (`DelConfirm`), а саме очищення — `clearProfileFields` /
+ * `clearRoleFields`: порожні рядки лягають новими версіями полів, тож адмін
+ * бачить історію.
  */
-const PublishSingleRow = styled.div`
+const ClearAnketaList = styled.div`
   display:flex;
+  flex-direction:column;
   align-items:flex-start;
-  gap:10px;
-
-  > div { flex:1 1 auto; min-width:0; }
+  gap:2px;
+  margin-top:18px;
+  padding-top:10px;
+  border-top:1px solid var(--border);
 `;
-const ClearProfileBtn = styled.button`
-  flex:none;
+const ClearAnketaBtn = styled.button`
   display:inline-flex;
   align-items:center;
-  justify-content:center;
-  width:52px;
-  height:52px;
-  padding:0;
-  border:1.5px solid var(--border);
-  border-radius:var(--radius);
-  background:var(--card);
+  gap:8px;
+  min-height:40px;
+  padding:0 4px;
+  border:0;
+  background:transparent;
   color:var(--muted);
+  font:inherit;
+  font-size:14px;
+  font-weight:500;
   cursor:pointer;
 
-  &:hover, &:focus-visible { color:#D44; border-color:#D44; }
+  &:hover, &:focus-visible { color:var(--km-danger, #D44); }
 `;
 const RoleActionList = styled.div`
   display:flex;
@@ -543,9 +567,9 @@ const RolePublishStatus = styled.span`
 
   &::before { content:''; width:7px; height:7px; border-radius:50%; background:currentColor; }
 `;
-// Спаяна пара: головна дія + кошик. Опублікувати — заповнена помаранчевим,
-// приховати — рамкою: та сама градація, що й між головною й другорядною
-// кнопками на решті екрана.
+// Дія анкети в її рядку. Опублікувати — заповнена помаранчевим, приховати —
+// рамкою: та сама градація, що й між головною й другорядною кнопками на решті
+// екрана. Кошика тут більше немає — він у кінці блоку (`ClearAnketaList`).
 const RoleActionPair = styled.div`
   display:flex;
   flex:none;
@@ -575,13 +599,6 @@ const RoleActionPair = styled.div`
   }
 `;
 const RolePairMainBtn = styled.button`padding:0 16px;`;
-const RolePairClearBtn = styled.button`
-  width:42px;
-  padding:0;
-
-  && { color:${({ $primary }) => ($primary ? 'var(--km-on-accent, #fff)' : 'var(--muted)')}; }
-  &&:hover, &&:focus-visible { color:${({ $primary }) => ($primary ? 'var(--km-on-accent, #fff)' : 'var(--km-danger)')}; }
-`;
 // Зняти з публікації — дія того самого розміру, але не головна: помаранчевий
 // градієнт лишається за «Опублікувати», а не за протилежним.
 const UnpublishBtn = styled.button`
@@ -2658,6 +2675,14 @@ export const MyProfile = () => {
     }
     const fieldTop = fieldEl.getBoundingClientRect().top + window.scrollY;
     window.scrollTo({ top: Math.max(0, Math.round(fieldTop - getStickyOffset() - SECTION_SCROLL_GAP)), behavior: 'smooth' });
+    // Підсвітка — на тому самому вузлі, без стану сторінки: перемальовувати
+    // всю анкету заради двох секунд кольору не варто. Повторний дотик
+    // перезапускає анімацію (знімається атрибут, і браузер бачить новий).
+    fieldEl.removeAttribute('data-highlight');
+    void fieldEl.offsetWidth;
+    fieldEl.setAttribute('data-highlight', '');
+    window.clearTimeout(fieldEl.__highlightTimer);
+    fieldEl.__highlightTimer = window.setTimeout(() => fieldEl.removeAttribute('data-highlight'), 2600);
     programmaticScrollTimeoutRef.current = window.setTimeout(() => {
       finishProgrammaticScroll();
     }, PROGRAMMATIC_SCROLL_FALLBACK_MS);
@@ -4020,7 +4045,6 @@ export const MyProfile = () => {
               || MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label
               || role;
             const rolePublished = (isPublished || isLikedAudience) && !hiddenRoles.includes(role);
-            const clearLabel = uiText('Очистити дані: {role}', language, { role: uiText(label, language) });
             return (
               <RoleActionRow key={role} data-testid={`publish-role-${role}`}>
                 <RoleActionMeta>
@@ -4039,29 +4063,16 @@ export const MyProfile = () => {
                       {uiText('Опублікувати', language)}
                     </RolePairMainBtn>
                   )}
-                  {isProfileAccessConfirmed ? (
-                    <RolePairClearBtn
-                      type="button"
-                      $primary={!rolePublished}
-                      aria-label={clearLabel}
-                      title={clearLabel}
-                      onClick={() => { setClearRoleTarget(role); setShowInfoModal('delConfirm'); }}
-                    >
-                      <FiTrash2 size={17} aria-hidden="true" />
-                    </RolePairClearBtn>
-                  ) : null}
                 </RoleActionPair>
               </RoleActionRow>
             );
           })}
         </RoleActionList>
       ) : (
-        // Одна анкета — одна кнопка й поруч кошик. З роллю дія та сама, що й
-        // у рядку ролі (`publishRole`/`unpublishRole`); анкета без ролі —
+        // Одна анкета — одна кнопка. З роллю дія та сама, що й у рядку ролі
+        // (`publishRole`/`unpublishRole`); анкета без ролі —
         // `publishProfile`/`hideProfile`.
         <PublishSingleAction data-testid={rolesList[0] ? `publish-role-${rolesList[0]}` : undefined}>
-          <PublishSingleRow>
-            <div>
               {rolesList[0] ? (
                 isLikedAudience ? (
                   <SubmitBtn type="button" onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати для всіх', language)}</SubmitBtn>
@@ -4075,19 +4086,6 @@ export const MyProfile = () => {
               ) : (
                 <SubmitBtn type="button" onClick={publishProfile}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
               )}
-            </div>
-            {isProfileAccessConfirmed ? (
-              <ClearProfileBtn
-                type="button"
-                data-testid="publish-clear-profile"
-                aria-label={uiText('Очистити анкету', language)}
-                title={uiText('Очистити анкету', language)}
-                onClick={() => { setClearRoleTarget(''); setShowInfoModal('delConfirm'); }}
-              >
-                <FiTrash2 size={19} aria-hidden="true" />
-              </ClearProfileBtn>
-            ) : null}
-          </PublishSingleRow>
         </PublishSingleAction>
       )}
         {isLikedAudience && rolesList.length > 1 ? (
@@ -4152,6 +4150,32 @@ export const MyProfile = () => {
             onSharesChange={setShareCount}
           />
         </WayCard>
+      ) : null}
+      {isProfileAccessConfirmed ? (
+        <ClearAnketaList data-testid="publish-clear-list">
+          {rolesList.length > 1 ? rolesList.map(role => (
+            <ClearAnketaBtn
+              key={role}
+              type="button"
+              data-testid={`publish-clear-role-${role}`}
+              onClick={() => { setClearRoleTarget(role); setShowInfoModal('delConfirm'); }}
+            >
+              <FiTrash2 size={16} aria-hidden="true" />
+              {uiText('Очистити дані: {role}', language, {
+                role: uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label || role, language),
+              })}
+            </ClearAnketaBtn>
+          )) : (
+            <ClearAnketaBtn
+              type="button"
+              data-testid="publish-clear-profile"
+              onClick={() => { setClearRoleTarget(''); setShowInfoModal('delConfirm'); }}
+            >
+              <FiTrash2 size={16} aria-hidden="true" />
+              {uiText('Очистити анкету', language)}
+            </ClearAnketaBtn>
+          )}
+        </ClearAnketaList>
       ) : null}
     </SubmitWrap>
     {/* Відступу під панель немає: панель ховається, щойно блок «Публікація»
