@@ -8,6 +8,7 @@ import { ScreenLoading } from './RequireAuth';
 import {
   auth,
   fetchUserById,
+  ensureOwnAvatarCacheControl,
   normalizeStoredDates,
   readOwnCardLikedAudience,
   rememberOwnLikedAudience,
@@ -86,6 +87,7 @@ import { isProgramsOwnerRoleHidden, listPrograms, listProgramBonuses, resolvePro
 import { MyProfileCardPreview } from './MyProfileCardPreview';
 import { MyProfileShare } from './MyProfileShare';
 import { getCurrentValue } from './getCurrentValue';
+import { clearMyProfileCache, patchMyProfileCache, readMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
 import { listShareableProfileRoles } from '../utils/profileShare';
 import {
   DEFAULT_REWARD_CURRENCY,
@@ -1488,11 +1490,67 @@ const getStoredAuthenticatedOwnerId = () => (
   localStorage.getItem('isLoggedIn') === 'true' ? localStorage.getItem('ownerId') || '' : ''
 );
 
+const normalizeMyProfileData = (data = {}) => Object.entries(data).reduce((acc, [key, value]) => {
+  if (key === 'password') {
+    return acc;
+  }
+
+  if (key === 'photos' && Array.isArray(value)) {
+    acc[key] = value;
+    return acc;
+  }
+
+  const current = Array.isArray(value)
+    ? (value.length > 0 ? value[value.length - 1] : '')
+    : value;
+  // У базі дата лежить як `РРРР-ММ-ДД`, а поле просить `дд.мм.рррр` — і
+  // саме в ньому людина її вводила. Показувати ISO означало б і збивати
+  // людину з пантелику, і віддавати в розбір поля формат, якого воно не чекає.
+  acc[key] = MY_PROFILE_DATE_FIELDS.has(key) && typeof current === 'string'
+    ? formatDateToDisplay(current)
+    : current;
+  return acc;
+}, {});
+
+// Анкета з бази (чи з памʼяті пристрою — та сама форма) → значення форми й
+// ролі. Один шлях на обидва джерела, щоб кешований показ не розходився зі
+// свіжим.
+const buildMyProfileView = existingData => {
+  // Роль показуємо ту саму, за якою гортає стрічка, — з картки: її несе
+  // `role` зведеної анкети. Колись форма брала роль з Firestore, куди її
+  // переписував кожен вхід, хоч людина обирала іншу тут же, у «Хто ви».
+  const cardRole = existingData.role ?? null;
+  const loadedProfile = normalizeMyProfileData(existingData);
+  const currentCardRole = resolveViewerCurrentRole(cardRole);
+  const roles = resolveMyProfileRoles({
+    cardRole,
+    storedRole: existingData?.userRole,
+    hiddenRoles: existingData?.hiddenRoles,
+  });
+  const primaryRole = roles[roles.length - 1] || currentCardRole;
+  if (primaryRole) {
+    loadedProfile.userRole = primaryRole;
+    loadedProfile.role = primaryRole;
+  }
+  return { loadedProfile, roles };
+};
+
+// Анкета, прочитана чи записана минулого разу (`utils/myProfileCache`): з нею
+// сторінка зʼявляється одразу, а не після заставки на час читання бази.
+const readCachedMyProfileView = () => {
+  const uid = auth.currentUser?.uid || getStoredAuthenticatedOwnerId();
+  const data = readMyProfileCache(uid);
+  return data ? { uid, ...buildMyProfileView(data) } : null;
+};
+
 export const MyProfile = () => {
   // «Мій профіль» — той самий набір полів, що й картка в матчингу, тож і мова
   // в нього та сама: підписи, чіпи варіантів, заголовки блоків і тости.
   const { language } = useAppSettings();
-  const [state, setState] = useState(() => readMyProfileDraft() || {});
+  const [cachedProfileView] = useState(readCachedMyProfileView);
+  const [state, setState] = useState(() => (cachedProfileView
+    ? { userRole: 'ed', ...cachedProfileView.loadedProfile, userId: cachedProfileView.uid }
+    : readMyProfileDraft() || {}));
   const navigate = useNavigate();
   const currentUid = auth.currentUser?.uid || getStoredAuthenticatedOwnerId();
   const access = resolveAccess({
@@ -1509,7 +1567,7 @@ export const MyProfile = () => {
   const [likedAudienceCount, setLikedAudienceCount] = useState(null);
   const likedAudienceReconciledForRef = useRef('');
   const [isEmailVerified, setIsEmailVerified] = useState(false);
-  const [userId, setUserId] = useState('');
+  const [userId, setUserId] = useState(() => cachedProfileView?.uid || '');
   const [activeTab, setActiveTab] = useState('auth');
   const [editingProgram, setEditingProgram] = useState(false);
   const [stickyHeight, setStickyHeight] = useState(0);
@@ -1520,7 +1578,7 @@ export const MyProfile = () => {
   const [authHintStep, setAuthHintStep] = useState('');
   // Ролі анкети, основна — остання. Порожньо — анкета ще не прочитана,
   // і роль бере `state.userRole`.
-  const [profileRoles, setProfileRoles] = useState([]);
+  const [profileRoles, setProfileRoles] = useState(() => cachedProfileView?.roles || []);
   const [programTerms, setProgramTerms] = useState(null);
   // Роль, дані якої людина просить очистити, — поки відкрите підтвердження.
   const [clearRoleTarget, setClearRoleTarget] = useState('');
@@ -1539,7 +1597,10 @@ export const MyProfile = () => {
   const programmaticScrollTimeoutRef = useRef(null);
   const scrollFrameRef = useRef(null);
   const latestFetchUidRef = useRef('');
-  const activeAuthUidRef = useRef('');
+  // Анкета з кеша вже на екрані — і вже за цим uid: інакше перший сигнал входу
+  // прочитав би її як «чужий стан» і стер.
+  const activeAuthUidRef = useRef(cachedProfileView?.uid || '');
+  const cachedProfileUidRef = useRef(cachedProfileView?.uid || '');
   const authSessionGenerationRef = useRef(0);
   const saveQueueRef = useRef(Promise.resolve());
   const stateRef = useRef(state);
@@ -1558,7 +1619,9 @@ export const MyProfile = () => {
   // форму: «Заповнено 0 з 10 · 0%», «бракує полів: 10», статус «Не
   // опублікована» — і лише за мить справжні дані. Людина, що повернулась до
   // своєї анкети, бачила її стертою, а опублікована — неопублікованою.
-  const [profileLoading, setProfileLoading] = useState(() => Boolean(auth.currentUser));
+  // Анкета з памʼяті пристрою цього очікування не потребує: вона справжня,
+  // лише, можливо, трохи старша за базу.
+  const [profileLoading, setProfileLoading] = useState(() => Boolean(auth.currentUser) && !cachedProfileView);
 
   useEffect(() => {
     stateRef.current = state;
@@ -1568,6 +1631,7 @@ export const MyProfile = () => {
     authSessionGenerationRef.current += 1;
     latestFetchUidRef.current = '';
     activeAuthUidRef.current = '';
+    cachedProfileUidRef.current = '';
     saveQueueRef.current = Promise.resolve();
     persistedProfileRef.current = { uid: '', data: null };
     editedFieldsRef.current = new Set();
@@ -1622,28 +1686,6 @@ export const MyProfile = () => {
     }
   }, []);
 
-  const normalizeProfileData = useCallback((data = {}) => Object.entries(data).reduce((acc, [key, value]) => {
-    if (key === 'password') {
-      return acc;
-    }
-
-    if (key === 'photos' && Array.isArray(value)) {
-      acc[key] = value;
-      return acc;
-    }
-
-    const current = Array.isArray(value)
-      ? (value.length > 0 ? value[value.length - 1] : '')
-      : value;
-    // У базі дата лежить як `РРРР-ММ-ДД`, а поле просить `дд.мм.рррр` — і
-    // саме в ньому людина її вводила. Показувати ISO означало б і збивати
-    // людину з пантелику, і віддавати в розбір поля формат, якого воно не чекає.
-    acc[key] = MY_PROFILE_DATE_FIELDS.has(key) && typeof current === 'string'
-      ? formatDateToDisplay(current)
-      : current;
-    return acc;
-  }, {}), []);
-
   const mergeLoadedProfileData = useCallback((loadedData, uid) => {
     setState(prevState => {
       const protectedFields = editedFieldsRef.current;
@@ -1663,7 +1705,9 @@ export const MyProfile = () => {
   const loadAuthenticatedProfile = useCallback(async (uid, shouldApply = () => true) => {
     latestFetchUidRef.current = uid;
     setUserId(uid);
-    setProfileLoading(true);
+    // Анкета з кеша вже на екрані — свіже ляже поверх неї без заставки.
+    const showsCachedProfile = cachedProfileUidRef.current === uid;
+    if (!showsCachedProfile) setProfileLoading(true);
 
     try {
       // Анкета — з вузлів RTDB, тією самою воронкою, що й для всіх
@@ -1679,25 +1723,18 @@ export const MyProfile = () => {
       if (!shouldApply() || latestFetchUidRef.current !== uid) {
         return false;
       }
-      persistedProfileRef.current = { uid, data: existingData };
-
-      // Роль показуємо ту саму, за якою гортає стрічка, — з картки: її несе
-      // `role` зведеної анкети. Колись форма брала роль з Firestore, куди її
-      // переписував кожен вхід, хоч людина обирала іншу тут же, у «Хто ви».
-      const cardRole = existingData.role ?? null;
-      const loadedProfile = normalizeProfileData(existingData);
-      const currentCardRole = resolveViewerCurrentRole(cardRole);
-      const roles = resolveMyProfileRoles({
-        cardRole,
-        storedRole: existingData?.userRole,
-        hiddenRoles: existingData?.hiddenRoles,
-      });
-      setProfileRoles(roles);
-      const primaryRole = roles[roles.length - 1] || currentCardRole;
-      if (primaryRole) {
-        loadedProfile.userRole = primaryRole;
-        loadedProfile.role = primaryRole;
+      // `fetchUserById` ковтає збій мережі й віддає `null` — так само, як про
+      // анкету, якої немає. Порожнеча поверх показаної з кеша анкети стерла б
+      // її з екрана через самий лише збій, тож тоді лишається показане.
+      if (!nodesProfile && showsCachedProfile) {
+        setProfileLoading(false);
+        return true;
       }
+      persistedProfileRef.current = { uid, data: existingData };
+      if (nodesProfile) writeMyProfileCache(uid, existingData);
+
+      const { loadedProfile, roles } = buildMyProfileView(existingData);
+      setProfileRoles(roles);
       mergeLoadedProfileData(loadedProfile, uid);
       setProfileLoading(false);
       return true;
@@ -1711,7 +1748,7 @@ export const MyProfile = () => {
       setProfileLoading(false);
       return false;
     }
-  }, [mergeLoadedProfileData, normalizeProfileData, restoreLocalDraft]);
+  }, [mergeLoadedProfileData, restoreLocalDraft]);
 
   // Країна, область, місто й зріст приводяться до канонічного вигляду саме
   // тут, на blur, а не під час набору: «Кие» — це ще не «Київ». Інакше в базу
@@ -1870,6 +1907,10 @@ export const MyProfile = () => {
 
     try {
       await updateProfileRole(targetUserId, roles);
+      // Роль пишеться повз `saveState`, тож і памʼять пристрою — окремо:
+      // інакше наступне відкриття на мить показало б попередню роль.
+      const storedRole = roles.length === 1 ? roles[0] : roles;
+      patchMyProfileCache(targetUserId, { role: storedRole, userRole: storedRole });
     } catch (error) {
       console.warn('Failed to change profile role.', error);
       toast.error(uiText('Не вдалося змінити роль — спробуйте ще раз', language));
@@ -2196,6 +2237,7 @@ export const MyProfile = () => {
       if (!user?.uid) {
         localStorage.removeItem('isLoggedIn');
         localStorage.removeItem('ownerId');
+        clearMyProfileCache();
         resetAuthenticatedProfileState();
         restoreLocalDraft();
         setProfileLoading(false);
@@ -2217,6 +2259,13 @@ export const MyProfile = () => {
     };
   }, [loadAuthenticatedProfile, resetAuthenticatedProfileState, restoreLocalDraft]);
 
+  // Фото, завантажені до кешування в браузері, дістають його тут — раз на
+  // пристрій (`ensureOwnAvatarCacheControl`), коли анкета вже на екрані.
+  useEffect(() => {
+    if (!userId || profileLoading) return;
+    ensureOwnAvatarCacheControl(userId);
+  }, [userId, profileLoading]);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
       setIsEmailVerified(Boolean(user?.emailVerified));
@@ -2235,6 +2284,7 @@ export const MyProfile = () => {
       console.warn('Failed to finish MyProfile autosave before logout.', error);
     });
     resetAuthenticatedProfileState();
+    clearMyProfileCache();
     await signOut(auth);
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('ownerId');
@@ -2630,6 +2680,7 @@ export const MyProfile = () => {
             uid: targetUserId,
             data: { ...existingData, ...normalizeStoredDates(uploadedInfo) },
           };
+          writeMyProfileCache(targetUserId, persistedProfileRef.current.data);
         }
         shareBlockRef.current?.profileSaved();
       });

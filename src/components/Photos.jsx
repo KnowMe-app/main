@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import {
   deletePhotos,
   getUrlofUploadedAvatar,
@@ -51,6 +51,28 @@ const PhotoItem = styled.div`
   background: ${({ $compact }) => ($compact ? 'var(--km-card, #fff)' : '#fff')};
 `;
 
+// Поки файл їде, на його місці — сіра заглушка розміру мініатюри, а не
+// alt-текст: Firefox малює «Фото профілю 1» дрібним шрифтом просто в кружку,
+// і людина бачила підписи замість фото. Текст лишається для читача екрана,
+// а очима його не видно (`color: transparent`, прозорість до `load`).
+const photoSkeletonPulse = keyframes`
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+`;
+
+const PhotoSkeleton = styled.span`
+  position: absolute;
+  inset: 0;
+  border-radius: ${({ $compact }) => ($compact ? '50%' : '6px')};
+  background: var(--km-fill, #F0EDE8);
+  animation: ${photoSkeletonPulse} 1.2s ease-in-out infinite;
+  pointer-events: none;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+`;
+
 const PhotoImage = styled.img`
   object-fit: cover;
   width: 100%;
@@ -58,7 +80,39 @@ const PhotoImage = styled.img`
   display: block;
   border-radius: ${({ $compact }) => ($compact ? '50%' : '6px')};
   cursor: pointer;
+  color: transparent;
+  opacity: ${({ $loaded }) => ($loaded ? 1 : 0)};
+  transition: opacity 0.15s ease;
 `;
+
+const PhotoThumb = ({ compact, src, alt, onClick }) => {
+  const [loaded, setLoaded] = useState(false);
+  const imageRef = useRef(null);
+  // Файл із кеша браузера буває готовий ще до того, як React повісив
+  // `onLoad`, — тоді подія вже не прийде, і заглушка висіла б вічно.
+  useEffect(() => {
+    const image = imageRef.current;
+    if (image?.complete && image.naturalWidth > 0) setLoaded(true);
+  }, [src]);
+  return <>
+    {loaded ? null : <PhotoSkeleton $compact={compact} aria-hidden="true" />}
+    <PhotoImage
+      ref={imageRef}
+      $compact={compact}
+      $loaded={loaded}
+      src={src}
+      alt={alt}
+      decoding="async"
+      onClick={onClick}
+      onLoad={() => setLoaded(true)}
+      onError={e => {
+        console.error('Image failed to load', src, e);
+        e.target.onerror = null;
+        e.target.src = '/favicon2.ico';
+      }}
+    />
+  </>;
+};
 
 // «×» видаляє файл зі сховища, тож перший дотик лише питає («Видалити?»),
 // а видаляє другий. Доти 20-піксельний хрестик на краю мініатюри знищував
@@ -886,16 +940,11 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
         {displayedPhotos.map((url, index) => {
           const actualIndex = hideFirstPhoto ? index + 1 : index;
           return <PhotoItem $compact={compact} key={`${url}-${actualIndex}`}>
-            <PhotoImage
-              $compact={compact}
+            <PhotoThumb
+              compact={compact}
               src={url}
               alt={`Фото профілю ${actualIndex + 1}`}
               onClick={() => handlePhotoClick(url, actualIndex)}
-              onError={e => {
-                console.error('Image failed to load', url, e);
-                e.target.onerror = null;
-                e.target.src = '/favicon2.ico';
-              }}
             />
             <DeleteButton
               $compact={compact}
