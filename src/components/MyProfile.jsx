@@ -291,21 +291,39 @@ const FirstContentCard = styled(Card)`margin-top: ${CONTENT_SECTION_TOP_GAP}px;`
 const Header = styled.div`display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg);`;
 const FieldGroup = styled.div`padding:0 18px;`;
 const fieldHighlight = keyframes`
-  0%, 70% { background: var(--km-accent-light); box-shadow: -18px 0 0 var(--km-accent-light), 18px 0 0 var(--km-accent-light), inset 3px 0 0 var(--km-accent); }
-  100% { background: transparent; box-shadow: none; }
+  0% { opacity: 0; }
+  8%, 70% { opacity: 1; }
+  100% { opacity: 0; }
 `;
 // Поле, до якого привели «Варто дописати» чи перелік того, чого бракує, на
 // мить підсвічується (`data-highlight`, ставить `scrollToField`): прокрутка
 // зупиняла поле десь посеред екрана серед інших таких самих, і людина не
-// бачила, яке з них просили заповнити. Тло тягнеться на відступ розділу тінню,
-// а не відступом, — інакше поле зсувалось би під пальцем.
+// бачила, яке з них просили заповнити. Тло — окремий шар (`::before`) на всю
+// ширину картки, від краю до краю, зі смужкою акценту на краю картки: поки тло
+// добудовувалось тінями, а смужка стояла `inset` на самому полі, вона
+// впиралась у текст підпису, а тло з обох боків від неї читалось латкою.
+// Шар позиціонується, а не росте відступом, — інакше поле зсувалось би під
+// пальцем; `position`/`isolation` — лише на час підсвітки: постійний контекст
+// накладання в кожного поля ховав би під сусіднім полем спливні елементи.
 const Field = styled.div`
   padding:14px 0;
   border-bottom:1px solid var(--border);
   &:last-child{border-bottom:none;}
-  &[data-highlight] { animation: ${fieldHighlight} 2.4s ease-out; }
+  &[data-highlight] { position: relative; isolation: isolate; }
+  &[data-highlight]::before {
+    content: '';
+    position: absolute;
+    /* -1px згори й знизу накриває риски між полями, -18px — відступ розділу. */
+    inset: -1px -18px;
+    z-index: -1;
+    background: var(--km-accent-light);
+    box-shadow: inset 3px 0 0 var(--km-accent);
+    opacity: 0;
+    animation: ${fieldHighlight} 2.4s ease-out;
+    pointer-events: none;
+  }
   /* Підпис поля — перший нащадок (Label), він теж бере акцент. */
-  &[data-highlight] > div:first-child { color: var(--accent); }
+  &[data-highlight] > div:first-child { color: var(--accent); transition: color .3s; }
 `;
 // Підпис поля — звичайним реченням: 11 px великими з розрядкою читались
 // гірше за саме значення й кричали з кожного рядка форми.
