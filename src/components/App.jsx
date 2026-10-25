@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import { auth, fetchUserById, resetViewerAccessLevelCache } from './config';
 import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
+import { clearMyProfileCache } from 'utils/myProfileCache';
 import { ReadOnlyBadge } from './ReadOnlyBadge';
 import { ScreenErrorBoundary } from './ScreenErrorBoundary';
 
@@ -128,6 +129,9 @@ export const App = () => {
         // читача, форма входу бачила «вже увійшли» й відсилала його на
         // захищений екран, а той — назад на форму: два редиректи по колу.
         localStorage.removeItem('isLoggedIn');
+        // Власна анкета з «Мого профілю» (`utils/myProfileCache`) — теж стан
+        // входу: на спільному пристрої наступний читач її мати не мусить.
+        clearMyProfileCache();
         clearStoredAccessRights();
         // Прочитаний рівень доступу — теж стан входу: без цього наступний
         // читач у тій самій вкладці дістав би обіцянку, видану попередньому.

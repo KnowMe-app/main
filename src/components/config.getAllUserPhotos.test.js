@@ -37,4 +37,21 @@ describe('getAllUserPhotos', () => {
   it('keeps the Storage listing as the other half of the gallery', () => {
     expect(getAllUserPhotosBody).toContain('await getUserStorageAvatarPhotos(userId)');
   });
+
+  // Перше фото — головне, і порядок пише «Зробити головним» у анкету. Поки
+  // лістинг Storage (за абеткою імен) стояв першим, після кожного відкриття
+  // головним ставав найстаріший файл: фото мінялось на інше просто на очах.
+  it('keeps the profile order and appends Storage-only files after it', () => {
+    expect(getAllUserPhotosBody).toContain('[...databaseUrls, ...storageUrls]');
+    expect(getAllUserPhotosBody).not.toContain('[...storageUrls, ...databaseUrls]');
+    expect(getAllUserPhotosBody).toContain('storagePhotoIdentity(url)');
+  });
+
+  it('caches uploaded profile photos in the browser', () => {
+    const uploadBody = source.slice(
+      source.indexOf('export const getUrlofUploadedAvatar'),
+      source.indexOf('const getFileBlob = file =>'),
+    );
+    expect(uploadBody).toContain("rootFolder === 'avatar' ? { cacheControl: AVATAR_CACHE_CONTROL } : undefined");
+  });
 });

@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes } from 'firebase/storage';
+import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes, updateMetadata } from 'firebase/storage';
 import {
   getDatabase,
   ref as ref2,
@@ -595,9 +595,44 @@ export const getUrlofUploadedAvatar = async (photo, userId, options = {}) => {
   pathSegments.push(fileName);
   const filePath = pathSegments.join('/');
   const linkToFile = ref(storage, filePath); // створюємо посилання на місце збереження фото в Firebase
-  await uploadBytes(linkToFile, file); // завантажуємо фото
+  await uploadBytes(linkToFile, file, rootFolder === 'avatar' ? { cacheControl: AVATAR_CACHE_CONTROL } : undefined); // завантажуємо фото
   const url = await getDownloadURL(linkToFile); // отримуємо URL-адресу завантаженого фото
   return url;
+};
+
+// Фото анкети браузер тримає в себе, а не перепитує на кожному відкритті.
+// Без цього Storage віддає файл з `Cache-Control: private, max-age=0`, тобто
+// кожна мініатюра «Мого профілю» й стрічки щоразу йшла в мережу заново — на
+// телефоні це секунди порожніх кружків. Імʼя файлу унікальне й не
+// перезаписується (заміна фото — це новий файл), тож рік кешу нічого не
+// застарює: видалене фото просто більше ніде не згадано.
+const AVATAR_CACHE_CONTROL = 'private, max-age=31536000, immutable';
+const AVATAR_CACHE_CONTROL_MARK_PREFIX = 'km.avatarCacheControl.v1:';
+
+// Фото, завантажені до цієї зміни, кешу не мають. Дописати його може лише
+// власниця (правило `avatar/{userId}` пускає запис самій власниці й адмінам),
+// тож робить це «Мій профіль» — раз на пристрій, бо метадані лежать у сховищі
+// й однакові для всіх, хто дивиться.
+export const ensureOwnAvatarCacheControl = async userId => {
+  if (!userId || auth.currentUser?.uid !== userId) return;
+  const markKey = `${AVATAR_CACHE_CONTROL_MARK_PREFIX}${userId}`;
+  try {
+    if (localStorage.getItem(markKey)) return;
+  } catch {
+    return;
+  }
+  try {
+    const items = await collectUserStorageAvatarItems(userId);
+    const results = await Promise.allSettled(
+      items.map(item => updateMetadata(item, { cacheControl: AVATAR_CACHE_CONTROL })),
+    );
+    // Позначка — лише коли дописалось усе: інакше наступне відкриття спробує ще.
+    if (results.every(result => result.status === 'fulfilled')) {
+      localStorage.setItem(markKey, '1');
+    }
+  } catch (error) {
+    console.warn('Failed to set cache metadata on profile photos.', error);
+  }
 };
 
 const getFileBlob = file => {
@@ -5149,6 +5184,11 @@ export const getUserStorageAvatarPhotoFiles = async userId => {
  * означало б другу копію тієї самої анкети в трафіку на кожну картку, тож
  * береться саме поле.
  */
+const storagePhotoIdentity = url => {
+  const match = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/([^?#]+)/.exec(String(url || ''));
+  return match ? `storage:${match[1]}` : String(url || '');
+};
+
 const readPhotosFromProfileNode = async userId => {
   try {
     const snapshot = await get(ref2(database, `${PROFILE_NODES.profileDetails}/${userId}/photos`));
@@ -5178,11 +5218,24 @@ export const getAllUserPhotos = async (userId, { includeStorage = true, knownPho
     databaseUrls = fromProfileNode || [];
   }
 
-  const urls = [...storageUrls, ...databaseUrls]
+  // Порядок задає анкета: перше фото — головне, і «Зробити головним» пише
+  // саме цей перелік. Storage віддає файли за абеткою імен, і поки його
+  // половина стояла першою, головним після кожного відкриття ставав
+  // найстаріший файл: людина бачила спершу своє фото, а за мить — інше на
+  // тому самому місці. Файли Storage, яких анкета не знає, йдуть у кінець.
+  const urls = [...databaseUrls, ...storageUrls]
     .map(convertDriveLinkToImage)
     .filter(Boolean);
 
-  return Array.from(new Set(filterOutMedicationPhotos(urls, userId)));
+  // Той самий файл буває під двома адресами (інший токен доступу), тож
+  // повтор упізнається за шляхом у сховищі, а не за рядком адреси.
+  const seen = new Set();
+  return filterOutMedicationPhotos(urls, userId).filter(url => {
+    const key = storagePhotoIdentity(url);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 };
 
 // ---------------------------------------------------------------------------
