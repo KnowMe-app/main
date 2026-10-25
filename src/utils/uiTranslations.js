@@ -1316,10 +1316,6 @@ const EN_BY_UK = {
   'Хто ви': 'Who you are',
   'Змінити': 'Change',
   'Готово': 'Done',
-  'Заповнено': 'Filled in',
-  'Потрібно для публікації: {list}': 'Needed to publish: {list}',
-  'Можна додати: {list}': 'You can add: {list}',
-  '{labels} і ще {count}': '{labels} and {count} more',
   'Роль вирішує, які поля показує анкета і в якій вкладці її шукають. Змінити її можна будь-коли.':
     'The role decides which fields the profile shows and which tab it is searched in. It can be changed at any time.',
   'Додайте до 5 фото. Перше — головне': 'Add up to 5 photos. The first one is the main one',
