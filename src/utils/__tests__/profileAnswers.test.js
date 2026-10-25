@@ -4,7 +4,6 @@ import {
   formatRewardForDisplay,
   parseProgramPlaces,
   parseRewardValue,
-  readCSectionChoice,
   readHabitExtraKind,
   readYesDetails,
   readYesWithDetails,
@@ -75,24 +74,6 @@ describe('«Так» з подробицею', () => {
     expect(readYesDetails('Yes')).toBe('');
     expect(readYesDetails('апендицит у 2021')).toBe('апендицит у 2021');
     expect(readYesDetails('No')).toBe('');
-  });
-});
-
-describe('кесарів розтин', () => {
-  it('«Не було / Один / Два або більше» з тих самих значень, що й фільтр', () => {
-    expect(readCSectionChoice('-')).toBe('-');
-    expect(readCSectionChoice('0')).toBe('-');
-    expect(readCSectionChoice('1')).toBe('1');
-    expect(readCSectionChoice('2')).toBe('2');
-    expect(readCSectionChoice('3')).toBe('2');
-    expect(readCSectionChoice('12.03.2020')).toBe('');
-  });
-
-  it('нюанси видно в повній анкеті', () => {
-    const note = buildProfileDetailSections({ csection: '1', csectionNote: 'потім природні пологи' }, 'uk')
-      .find(section => section.key === 'csectionNote');
-    expect(note.title).toBe('Пологи');
-    expect(note.text).toBe('потім природні пологи');
   });
 });
 

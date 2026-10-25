@@ -58,15 +58,15 @@ describe('соцмережі чіпами', () => {
 });
 
 // «Свій варіант» стояв біля пʼятнадцяти питань; лишився там, де відповідь
-// справді не вкладається у варіанти, і там, де своє значення вже записане.
+// справді не вкладається у варіанти (перелік затвердила власниця продукту), і
+// там, де своє значення вже записане.
 describe('«Свій варіант» — лише де потрібен', () => {
-  it('пропонується лише етнічній групі й уже записаному своєму значенню', () => {
-    expect(source).toContain("const CUSTOM_OPTION_FIELDS = new Set(['race']);");
+  it('пропонується етнічній групі, шлюбу, кесаревому й уже записаному своєму значенню', () => {
+    expect(source).toContain("const CUSTOM_OPTION_FIELDS = new Set(['race', 'maritalStatus', 'csection']);");
     expect(source).toContain('const canUseCustomOption = CUSTOM_OPTION_FIELDS.has(name) || hasCustomValue;');
   });
 
   it('уточнення відкривається після відповіді, якої стосується', () => {
-    expect(source).toContain("csection: { name: 'csectionNote'");
     expect(source).toContain("programPlace: { name: 'programPlaceNote'");
     expect(source).toContain("{withDetails && chosen === 'Yes' ? (");
   });

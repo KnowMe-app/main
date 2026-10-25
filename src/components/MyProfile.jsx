@@ -88,7 +88,6 @@ import { MyProfileShare } from './MyProfileShare';
 import { getCurrentValue } from './getCurrentValue';
 import { listShareableProfileRoles } from '../utils/profileShare';
 import {
-  CSECTION_CHOICES,
   DEFAULT_REWARD_CURRENCY,
   MY_PROFILE_HABIT_CHOICES,
   PROGRAM_PLACE_CHOICES,
@@ -99,7 +98,6 @@ import {
   encodeProgramPlaces,
   parseProgramPlaces,
   parseRewardValue,
-  readCSectionChoice,
   readYesDetails,
   readYesWithDetails,
 } from '../utils/profileAnswers';
@@ -1175,21 +1173,22 @@ const PERSON_OPTIONAL_PROFILE_FIELDS = new Set([
 const MISSING_FIELDS_TOAST_LIMIT = 4;
 /*
  * «Свій варіант» — лише там, де відповідь справді не вкладається у варіанти:
- * етнічна група буває змішаною. Стояв він біля пʼятнадцяти питань, від форми
- * носа до куріння, і щоразу питав людину, чи її відповідь «особлива», —
- * а картка своєї відповіді в речення не ставить (`utils/profileSentences`).
- * Записану колись свою відповідь форма показує й далі (`hasCustomValue`),
- * інакше вона зникла б з екрана.
+ * етнічна група буває змішаною, шлюб — у процесі розлучення, а кесаревих у
+ * СМ буває й три-чотири (чіпи — лише до двох). Стояв він біля пʼятнадцяти
+ * питань, від форми носа до куріння, і щоразу питав людину, чи її відповідь
+ * «особлива», — а картка своєї відповіді в речення не ставить
+ * (`utils/profileSentences`). Перелік затвердила власниця продукту. Записану
+ * колись свою відповідь форма показує й далі (`hasCustomValue`), інакше вона
+ * зникла б з екрана.
  *
  * Уточнення тепер живуть після відповіді, якої стосуються: «Так» в операціях
- * чи алергіях відкриває «Що саме?» (`YES_WITH_DETAILS_FIELDS`), кесарів —
- * нюанси, «За кордоном» — країни (`FOLLOW_UP_FIELDS`).
+ * чи алергіях відкриває «Що саме?» (`YES_WITH_DETAILS_FIELDS`), «За кордоном»
+ * — країни (`FOLLOW_UP_FIELDS`).
  */
-const CUSTOM_OPTION_FIELDS = new Set(['race']);
+const CUSTOM_OPTION_FIELDS = new Set(['race', 'maritalStatus', 'csection']);
 // Поле-уточнення, яке відкривається після відповіді основного поля, і
 // відповіді, після яких воно потрібне.
 const FOLLOW_UP_FIELDS = Object.freeze({
-  csection: { name: 'csectionNote', label: 'Нюанси, якщо були', when: value => ['1', '2'].includes(readCSectionChoice(value)) },
   programPlace: { name: 'programPlaceNote', label: 'Які країни?', when: value => parseProgramPlaces(value).includes('abroad') },
 });
 const FOLLOW_UP_FIELD_NAMES = Object.values(FOLLOW_UP_FIELDS).map(followUp => followUp.name);
@@ -3252,20 +3251,18 @@ export const MyProfile = () => {
     }
 
     // Готові варіанти «Мого профілю» замість спільного довідника: куріння й
-    // алкоголь (`MY_PROFILE_HABIT_CHOICES`), кесарів (`CSECTION_CHOICES`),
-    // «Ні / Так» з подробицею після «Так» (`YES_WITH_DETAILS_FIELDS`).
+    // алкоголь (`MY_PROFILE_HABIT_CHOICES`), «Ні / Так» з подробицею після
+    // «Так» (`YES_WITH_DETAILS_FIELDS`). Кесарів лишився на довіднику
+    // («Ні / 1 / 2 / Свій варіант») — так вирішила власниця продукту.
     const ownChoices = MY_PROFILE_HABIT_CHOICES[name]
-      || (name === 'csection' ? CSECTION_CHOICES : null)
       || (YES_WITH_DETAILS_FIELDS.includes(name) ? [{ value: 'No', label: 'Ні' }, { value: 'Yes', label: 'Так' }] : null);
     if (ownChoices) {
       const withDetails = YES_WITH_DETAILS_FIELDS.includes(name);
       const chosen = withDetails
         ? readYesWithDetails(val)
-        : name === 'csection'
-          ? readCSectionChoice(val)
-          : ownChoices.find(choice => choice.value.toLowerCase() === String(val).trim().toLowerCase())?.value || '';
-      // Записана колись своя відповідь («кинула 2 роки тому», дата
-      // кесаревого) лишається на екрані полем, а не зникає.
+        : ownChoices.find(choice => choice.value.toLowerCase() === String(val).trim().toLowerCase())?.value || '';
+      // Записана колись своя відповідь («кинула 2 роки тому») лишається на
+      // екрані полем, а не зникає.
       const legacyCustom = !withDetails && String(val).trim() !== '' && !chosen;
       const details = withDetails ? readYesDetails(val) : '';
       return <Field key={name} data-profile-field={name}>

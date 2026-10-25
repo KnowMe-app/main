@@ -492,15 +492,6 @@ const describeProgramPlace = (user, lang) => {
 };
 
 const DETAIL_SECTIONS = [
-  // Нюанси кесаревого («після кесаревого народжувала природним шляхом») —
-  // лише в повній анкеті: рядок стрічки бере самі поля картки, а нюансів у
-  // ній немає.
-  {
-    key: 'csectionNote',
-    title: 'Deliveries',
-    describe: ({ typed: read }) => ({ text: read('csectionNote'), used: new Set(['csectionNote']) }),
-    fields: [],
-  },
   {
     key: 'looks',
     title: 'Face and figure',

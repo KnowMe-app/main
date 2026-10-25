@@ -66,7 +66,11 @@ describe('«Мій профіль» говорить мовою ролі', () =>
   it('пологи питає всі, і свої, і за програмою', () => {
     expect(resolveMyProfileFieldText('ownKids', 'sm').label).toBe('Скільки всього було пологів?');
     expect(resolveMyProfileFieldText('ownKids', 'ed').hint).toMatch(/за програмою сурогатного материнства/);
-    expect(resolveMyProfileFieldText('csection', 'sm').label).toBe('Скільки було кесаревих розтинів?');
+    // Кесарів лишився з підписом довідника («Кесарів розтин») і числом у
+    // «Своєму варіанті» — так вирішила власниця продукту.
+    expect(resolveMyProfileFieldText('csection', 'sm').label).toBeUndefined();
+    expect(resolveMyProfileFieldText('csection', 'sm').detailPlaceholder).toBe('Наприклад: 3');
+    expect(resolveMyProfileFieldText('maritalStatus', 'ed').detailPlaceholder).toBe('Наприклад: у процесі розлучення');
   });
 
   it('поле «Детальніше» підказує, що описати, а не «свій варіант»', () => {

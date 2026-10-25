@@ -48,16 +48,15 @@ const COMMON_FIELD_TEXT = Object.freeze({
   allergy: { detailPlaceholder: 'Наприклад: пеніцилін' },
   chronicDiseases: { detailPlaceholder: 'Наприклад: гіпотиреоз, під контролем' },
   glasses: { detailPlaceholder: 'Наприклад: −2,5 або лише для читання' },
-  // Своя відповідь лишилась тут лише для вже записаних: форма їх більше не
-  // пропонує (`MY_PROFILE_HABIT_CHOICES`, `CSECTION_CHOICES`).
-  maritalStatus: { detailPlaceholder: 'Наприклад: цивільний шлюб' },
+  // Шлюб — не лише «так» чи «ні»: людина буває в процесі розлучення.
+  maritalStatus: { detailPlaceholder: 'Наприклад: у процесі розлучення' },
+  // Своя відповідь у куріння й алкоголю лишилась лише для вже записаних:
+  // форма її більше не пропонує (`MY_PROFILE_HABIT_CHOICES`).
   smoking: { detailPlaceholder: 'Наприклад: кинула 2 роки тому' },
   alcohol: { detailPlaceholder: 'Наприклад: келих вина на свята' },
-  // Подробиця кесаревого — після «Один» чи «Два або більше» (`csectionNote`).
-  csection: {
-    label: 'Скільки було кесаревих розтинів?',
-    detailPlaceholder: 'Наприклад: потім природні пологи',
-  },
+  // Чипи кесаревого — до двох, а в СМ пологів буває й чотири: «Свій варіант»
+  // тут — число, а не варіант.
+  csection: { detailPlaceholder: 'Наприклад: 3' },
   programPlace: { detailPlaceholder: 'Наприклад: Грузія, Кіпр' },
 });
 
