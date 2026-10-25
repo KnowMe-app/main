@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
+import { FaCheck } from 'react-icons/fa';
 import {
   PARENT_SEEKING_OPTIONS,
   PARENT_VIA_OPTIONS,
@@ -33,14 +34,19 @@ const Stack = styled.div`
   padding: 14px 0;
 `;
 
+/*
+ * Цей блок стоїть посеред форми «Мого профілю», тож і виглядає, як вона:
+ * підпис — звичайним реченням 13 px (`Label` у `MyProfile`), поле — заливкою
+ * без рамки, чіп — як відповідь у формі. Тут були підписи 11 px великими з
+ * розрядкою («КОГО ШУКАЄТЕ»), поля з рамкою й блідо-помаранчеві чіпи, і
+ * розділ «Кого шукаєте» читався вклейкою з іншого застосунку.
+ */
 const FieldLabel = styled.div`
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--km-muted, #6f675f);
 `;
 
@@ -48,16 +54,20 @@ const TextInput = styled.input`
   box-sizing: border-box;
   width: 100%;
   min-height: 42px;
-  padding: 0 12px;
-  border: 1px solid var(--km-border, #e7e1d8);
+  padding: 0 14px;
+  border: 1.5px solid transparent;
   border-radius: 10px;
-  background: var(--km-bg, #faf8f5);
+  background: var(--km-fill, #F0EDE8);
   color: var(--km-text, inherit);
   font: inherit;
   font-size: 15px;
   font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
+  outline: none;
+  &:focus {
+    background: var(--km-card, #fff);
+    border-color: var(--km-accent, #C9600F);
+    box-shadow: 0 0 0 3px var(--km-accent-ring, rgba(201, 96, 15, 0.18));
+  }
 `;
 
 const Grid = styled.div`
@@ -73,18 +83,23 @@ const Segments = styled.div`
 `;
 
 const Segment = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: 36px;
   padding: 0 13px;
   border-radius: 999px;
-  border: 1px solid ${({ $on }) => ($on ? 'var(--km-accent, #C9600F)' : 'var(--km-border, #e7e1d8)')};
-  background: ${({ $on }) => ($on ? 'color-mix(in srgb, var(--km-accent, #C9600F) 14%, transparent)' : 'transparent')};
-  color: ${({ $on }) => ($on ? 'var(--km-accent, #C9600F)' : 'var(--km-text, inherit)')};
+  /* Вибране — кольором тексту, як відповідь у решті форми: акцент на цьому
+     екрані лишається за «Опублікувати». */
+  border: 1px solid ${({ $on }) => ($on ? 'var(--km-text, #1A1A1A)' : 'transparent')};
+  background: ${({ $on }) => ($on ? 'var(--km-text, #1A1A1A)' : 'var(--km-fill, #F0EDE8)')};
+  color: ${({ $on }) => ($on ? 'var(--km-card, #fff)' : 'var(--km-text, inherit)')};
   font: inherit;
-  font-size: 13px;
-  font-weight: ${({ $on }) => ($on ? 700 : 500)};
-  letter-spacing: 0;
-  text-transform: none;
+  font-size: 14px;
+  font-weight: 400;
   cursor: pointer;
+  &:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--km-accent-ring, rgba(201, 96, 15, 0.18)); }
+  svg { flex: 0 0 auto; }
 `;
 
 const SubTitle = styled.div`
@@ -113,6 +128,7 @@ const Choice = ({ options, value, onChange, language, multiple = false }) => (
       const on = multiple ? value.includes(option.key) : value === option.key;
       return (
         <Segment key={option.key} type="button" $on={on} aria-pressed={on} onClick={() => onChange(option.key)}>
+          {on ? <FaCheck size={11} aria-hidden="true" /> : null}
           {uiText(option.label, language)}
         </Segment>
       );
@@ -124,8 +140,6 @@ const SetAsideList = styled.p`
   margin: 0;
   font-size: 14px;
   font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
   color: var(--km-text, inherit);
 `;
 
@@ -134,8 +148,6 @@ const Hint = styled.p`
   font-size: 12px;
   font-weight: 400;
   line-height: 1.45;
-  letter-spacing: 0;
-  text-transform: none;
   color: var(--km-muted, #6f675f);
 `;
 

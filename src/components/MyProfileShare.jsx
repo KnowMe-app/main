@@ -48,7 +48,7 @@ import { revealCss } from '../styles/revealAnimation';
  */
 
 const Wrap = styled.section`
-  margin: 0 var(--page-gutter) 24px;
+  margin: 0 var(--page-side, var(--page-gutter)) 24px;
   padding: 18px;
   background: var(--card);
   border: 1px solid var(--border);
@@ -76,8 +76,12 @@ const PrimaryButton = styled.button`
   padding: 0 16px;
   border: none;
   border-radius: 12px;
-  background: var(--km-accent);
-  color: #fff;
+  /* «Поділитися» — не головна дія сторінки: кнопка, що відкриває блок, сіра
+     (проп quiet), а помаранчевою лишається сама «Створити посилання» в ньому й
+     «Опублікувати» над ним. Три помаранчеві кнопки поспіль не казали, яка
+     з них головна. */
+  background: ${({ $quiet }) => ($quiet ? 'var(--km-fill)' : 'var(--km-accent)')};
+  color: ${({ $quiet }) => ($quiet ? 'var(--text)' : 'var(--km-on-accent, #fff)')};
   font: inherit;
   font-size: 15px;
   font-weight: 600;
@@ -207,7 +211,8 @@ const Chips = styled.div`
   gap: 6px;
 `;
 
-// Вибраний чіп — суцільна заливка акцентом з білим текстом і галочкою.
+// Вибраний чіп — суцільна заливка з галочкою; кольором тексту, як вибрані
+// відповіді анкети над цим блоком, бо акцент «Мого профілю» — за «Опублікувати».
 const Chip = styled.button`
   display: inline-flex;
   align-items: center;
@@ -216,8 +221,8 @@ const Chip = styled.button`
   padding: 0 12px;
   border: 0;
   border-radius: 999px;
-  background: ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--km-fill)')};
-  color: ${({ $active }) => ($active ? '#fff' : 'var(--text)')};
+  background: ${({ $active }) => ($active ? 'var(--km-text)' : 'var(--km-fill)')};
+  color: ${({ $active }) => ($active ? 'var(--km-card)' : 'var(--text)')};
   font: inherit;
   font-size: 14px;
   font-weight: 500;
@@ -685,6 +690,7 @@ const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRol
         <>
           <PrimaryButton
             type="button"
+            $quiet
             disabled={nameMissing || slotsFull}
             onClick={openComposer}
             data-testid="share-open"
