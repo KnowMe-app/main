@@ -26,6 +26,34 @@ export const PROFILE_DATE_FIELDS = new Set([
   'getInTouch',
 ]);
 
+export const resolveBirthDateFromAgeInput = (rawValue, currentDate = new Date()) => {
+  const ageMatch = String(rawValue ?? '').trim().match(/\d+/);
+  if (!ageMatch) return '';
+
+  const age = Number.parseInt(ageMatch[0], 10);
+  if (!Number.isFinite(age) || age < 15 || age > 90) return '';
+
+  const currentYear =
+    currentDate instanceof Date && !Number.isNaN(currentDate.getTime())
+      ? currentDate.getFullYear()
+      : new Date().getFullYear();
+
+  return `01.01.${currentYear - age}`;
+};
+
+// «30р» у полі дати народження — це вік, а не недонабрана дата: так адмін
+// записує людину, про яку відомо лише, скільки їй років. На blur він стає
+// `01.01.<рік>` — тим самим принципом, що й поле `age`, і так само, як
+// `getInTouch` розуміє «6м» чи «1р». Перше січня тут і є позначка «точної дати
+// немає, лише вік». Голе число теж вік: двоцифрова «дата» датою не буває.
+const BIRTH_AGE_SHORTHAND_PATTERN = /^(\d{1,2})\s*(?:р|рік|роки|років|y|yo|years?)?\.?$/i;
+
+export const resolveBirthDateFromAgeShorthand = (rawValue, currentDate = new Date()) => {
+  const match = String(rawValue ?? '').trim().match(BIRTH_AGE_SHORTHAND_PATTERN);
+  if (!match) return '';
+  return resolveBirthDateFromAgeInput(match[1], currentDate);
+};
+
 const pad2 = value => String(value).padStart(2, '0');
 
 export const parseProfileDate = raw => {

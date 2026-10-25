@@ -1,4 +1,4 @@
-import { resolveBirthDateFromAgeShorthand } from './ProfileForm';
+import { resolveBirthDateFromAgeShorthand } from './profileDate';
 
 describe('resolveBirthDateFromAgeShorthand', () => {
   const now = new Date(2026, 9, 25);

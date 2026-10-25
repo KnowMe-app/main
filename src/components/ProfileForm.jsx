@@ -23,7 +23,7 @@ import {
 } from 'components/inputValidations';
 import { parseUkTriggerQuery } from 'utils/parseUkTrigger';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
-import { resolvePpTechnicalInputTarget } from 'utils/ppTechnicalInputTarget';
+import { resolvePpTechnicalInputTargets } from 'utils/ppTechnicalInputTarget';
 import { appendFieldValue, appendTextBlockValue } from 'utils/ppTechnicalInputAppend';
 import {
   buildOverlayFieldEntries,
@@ -81,7 +81,11 @@ import {
 import { appendEmptyFieldRow, canAppendFieldRow, fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
 import { NestedObjectField, isNestedObjectValue } from './NestedObjectField';
 import { ProfileDataTree } from './ProfileDataTree';
-import { PROFILE_DATE_FIELDS } from 'utils/profileDate';
+import {
+  PROFILE_DATE_FIELDS,
+  resolveBirthDateFromAgeInput,
+  resolveBirthDateFromAgeShorthand,
+} from 'utils/profileDate';
 
 const get = (...args) =>
   withAdminDownloadToast(firebaseGet(...args), {
@@ -209,34 +213,6 @@ const nestedIndentStyle = {
 
 
 const resolveFieldNameBase = fieldName => String(fieldName || '').replace(/-\d+$/, '');
-
-export const resolveBirthDateFromAgeInput = (rawValue, currentDate = new Date()) => {
-  const ageMatch = String(rawValue ?? '').trim().match(/\d+/);
-  if (!ageMatch) return '';
-
-  const age = Number.parseInt(ageMatch[0], 10);
-  if (!Number.isFinite(age) || age < 15 || age > 90) return '';
-
-  const currentYear =
-    currentDate instanceof Date && !Number.isNaN(currentDate.getTime())
-      ? currentDate.getFullYear()
-      : new Date().getFullYear();
-
-  return `01.01.${currentYear - age}`;
-};
-
-// «30р» у полі дати народження — це вік, а не недонабрана дата: так адмін
-// записує людину, про яку відомо лише, скільки їй років. На blur він стає
-// `01.01.<рік>` — тим самим принципом, що й поле `age`, і так само, як
-// `getInTouch` розуміє «6м» чи «1р». Перше січня тут і є позначка «точної дати
-// немає, лише вік». Голе число теж вік: двоцифрова «дата» датою не буває.
-const BIRTH_AGE_SHORTHAND_PATTERN = /^(\d{1,2})\s*(?:р|рік|роки|років|y|yo|years?)?\.?$/i;
-
-export const resolveBirthDateFromAgeShorthand = (rawValue, currentDate = new Date()) => {
-  const match = String(rawValue ?? '').trim().match(BIRTH_AGE_SHORTHAND_PATTERN);
-  if (!match) return '';
-  return resolveBirthDateFromAgeInput(match[1], currentDate);
-};
 
 const BIRTH_DATE_FIELDS = new Set(['birth', 'birthWife', 'birthHusband']);
 
@@ -2906,21 +2882,15 @@ ${entries.join('\n')}`;
           applyPpTechnicalKeyValueEntry(nextState, fieldName, normalizedValue);
         });
       } else if (!parsed) {
-        const resolvedTechnicalTarget = resolvePpTechnicalInputTarget(rawValue, {
+        // Контакти й імʼя дописуються в історію поля, а дата народження з
+        // віку («30р») замінює наявну — так само, як `поле: значення`.
+        resolvePpTechnicalInputTargets(rawValue, {
           normalizePhone: normalizePhoneValue,
+        }).forEach(({ fieldName, value }) => {
+          const normalizedTechnicalValue = normalizePpTechnicalTargetValue(fieldName, value);
+          if (!normalizedTechnicalValue) return;
+          applyPpTechnicalKeyValueEntry(nextState, fieldName, normalizedTechnicalValue);
         });
-
-        if (resolvedTechnicalTarget) {
-          const normalizedTechnicalValue = normalizePpTechnicalTargetValue(
-            resolvedTechnicalTarget.fieldName,
-            resolvedTechnicalTarget.value
-          );
-          nextState[resolvedTechnicalTarget.fieldName] = appendFieldValue(
-            nextState[resolvedTechnicalTarget.fieldName],
-            normalizedTechnicalValue,
-            resolvedTechnicalTarget.fieldName
-          );
-        }
       } else {
         const { contactType, contactValues, name, surname } = parsed;
 

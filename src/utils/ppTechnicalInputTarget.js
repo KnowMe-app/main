@@ -1,3 +1,5 @@
+import { resolveBirthDateFromAgeShorthand } from './profileDate';
+
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
 export const normalizeUrlForStorage = rawValue => {
@@ -106,6 +108,35 @@ export const resolvePpTechnicalInputGenericUrlTarget = rawValue => {
   return null;
 };
 
+// Самі лише слова з літер (апостроф і дефіс — частина слова: «Мар'яна»,
+// «Ганна-Марія»). Усе інше — цифри, крапки, «@» — лишається одним значенням.
+const PERSON_NAME_WORD_PATTERN = /^[\p{L}][\p{L}'’ʼ-]*$/u;
+
+/**
+ * Розбір рядка технічного інпута в одне чи кілька полів анкети.
+ *
+ * «Оксана Соколова» — це імʼя й прізвище, а не одне імʼя з пробілом: перше
+ * слово йде в `name`, решта — у `surname`, тим самим порядком, що й тригер
+ * «ук …» (`parseUkTriggerQuery`). Порядку «прізвище імʼя» з тексту не
+ * вгадати, тож «Соколова Оксана» теж стане імʼям «Соколова» — правиться
+ * полями нижче.
+ */
+export const resolvePpTechnicalInputTargets = (rawValue, options = {}) => {
+  const target = resolvePpTechnicalInputTarget(rawValue, options);
+  if (!target) return [];
+  if (target.fieldName !== 'name') return [target];
+
+  const words = String(target.value).split(/\s+/).filter(Boolean);
+  if (words.length < 2 || !words.every(word => PERSON_NAME_WORD_PATTERN.test(word))) {
+    return [target];
+  }
+
+  return [
+    { fieldName: 'name', value: words[0] },
+    { fieldName: 'surname', value: words.slice(1).join(' ') },
+  ];
+};
+
 export const resolvePpTechnicalInputTarget = (rawValue, { normalizePhone } = {}) => {
   const trimmed = String(rawValue || '').trim();
   if (!trimmed) return null;
@@ -115,6 +146,14 @@ export const resolvePpTechnicalInputTarget = (rawValue, { normalizePhone } = {})
 
   if (EMAIL_REGEX.test(trimmed)) {
     return { fieldName: 'email', value: trimmed };
+  }
+
+  // «30р» чи «30» — вік: дата народження `01.01.<рік>`, як у полі дати
+  // (див. `resolveBirthDateFromAgeShorthand`). Стоїть перед телефоном, бо
+  // голе «30» інакше пішло б номером; двоцифрового номера не буває.
+  const birthFromAge = resolveBirthDateFromAgeShorthand(trimmed);
+  if (birthFromAge) {
+    return { fieldName: 'birth', value: birthFromAge };
   }
 
   const normalizedPhone = typeof normalizePhone === 'function' ? normalizePhone(trimmed) : '';
