@@ -26,6 +26,8 @@ export const PROFILE_DATE_FIELDS = new Set([
   'getInTouch',
 ]);
 
+const pad2 = value => String(value).padStart(2, '0');
+
 export const resolveBirthDateFromAgeInput = (rawValue, currentDate = new Date()) => {
   const ageMatch = String(rawValue ?? '').trim().match(/\d+/);
   if (!ageMatch) return '';
@@ -54,7 +56,45 @@ export const resolveBirthDateFromAgeShorthand = (rawValue, currentDate = new Dat
   return resolveBirthDateFromAgeInput(match[1], currentDate);
 };
 
-const pad2 = value => String(value).padStart(2, '0');
+// «14т», «5м», «2р» у технічному інпуті — давність останніх пологів:
+// стільки тижнів, місяців чи років тому. Записується дата, яка з цього
+// виходить, — так само, як `getInTouch` перекладає «6м» у дату наперед.
+// Роки — лише до 14: «15р» і більше читається як вік (дата народження,
+// `resolveBirthDateFromAgeShorthand`), і стоїть та перевірка раніше.
+const DELIVERY_AGO_PATTERN = /^(\d{1,3})\s*(т|тиж|t|w|м|міс|m|р|рік|роки|років|y)\.?$/i;
+const DELIVERY_AGO_LIMITS = { week: 520, month: 240, year: 14 };
+
+const resolveDeliveryAgoUnit = rawUnit => {
+  const unit = rawUnit.toLowerCase();
+  if (['т', 'тиж', 't', 'w'].includes(unit)) return 'week';
+  if (['м', 'міс', 'm'].includes(unit)) return 'month';
+  return 'year';
+};
+
+export const resolveLastDeliveryFromShorthand = (rawValue, currentDate = new Date()) => {
+  const match = String(rawValue ?? '').trim().match(DELIVERY_AGO_PATTERN);
+  if (!match) return '';
+
+  const amount = Number.parseInt(match[1], 10);
+  const unit = resolveDeliveryAgoUnit(match[2]);
+  if (!amount || amount > DELIVERY_AGO_LIMITS[unit]) return '';
+
+  const base =
+    currentDate instanceof Date && !Number.isNaN(currentDate.getTime()) ? currentDate : new Date();
+  let date;
+  if (unit === 'week') {
+    date = new Date(base.getFullYear(), base.getMonth(), base.getDate() - amount * 7);
+  } else {
+    // Місяцями, без переповнення: 31 травня мінус три місяці — це кінець
+    // лютого, а не 3 березня.
+    const months = unit === 'month' ? amount : amount * 12;
+    const target = new Date(base.getFullYear(), base.getMonth() - months, 1);
+    const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+    date = new Date(target.getFullYear(), target.getMonth(), Math.min(base.getDate(), lastDay));
+  }
+
+  return `${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}.${date.getFullYear()}`;
+};
 
 export const parseProfileDate = raw => {
   const value = String(raw || '').trim();
