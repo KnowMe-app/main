@@ -45,15 +45,25 @@ import { revealCss } from '../styles/revealAnimation';
  *
  * Перелік посилань читається не на відкритті сторінки (там кожне читання
  * пораховане), а коли блок зʼявився на екрані чи анкету вперше збережено.
+ *
+ * У «Моєму профілі» блок стоїть третім способом показу анкети всередині
+ * «Публікації» (`embedded`): назву й пояснення («Лише за посиланням —
+ * найбільше анонімності») малює вона, а тут лишаються самі посилання. Окремою
+ * карткою під «Публікацією» він читався як ще одна функція, а не як відповідь
+ * на те саме питання — хто бачить анкету.
  */
 
 const Wrap = styled.section`
-  margin: 0 var(--page-side, var(--page-gutter)) 24px;
-  padding: 18px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  ${({ $embedded }) => ($embedded ? `
+    margin: 12px 0 0;
+  ` : `
+    margin: 0 var(--page-side, var(--page-gutter)) 24px;
+    padding: 18px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  `)}
 `;
 
 const Head = styled.div`
@@ -84,6 +94,16 @@ const PrimaryButton = styled.button`
   cursor: pointer;
 
   &:disabled { opacity: 0.55; cursor: default; }
+`;
+
+// Відкрити налаштування посилання всередині «Публікації» — тією самою
+// кнопкою з рамкою, що й «Опублікувати лише для вподобаних»: головна дія
+// блоку одна — «Опублікувати», а способи показу поруч з нею рівні між собою.
+const OpenButton = styled(PrimaryButton)`
+  margin-top: 0;
+  background: var(--card);
+  color: var(--text);
+  border: 1.5px solid var(--border);
 `;
 
 const GhostButton = styled.button`
@@ -271,7 +291,7 @@ const formatShareDate = (value, language) => getDateTimeFormat(
 const REFRESH_DELAY_MS = 2500;
 const PREVIEW_PROGRAMS_CONTEXT = Object.freeze({ viewerType: '', facts: null });
 
-const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRole = '', language }, ref) => {
+const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRole = '', language, embedded = false, onSharesChange }, ref) => {
   const { themeMode } = useAppSettings();
   const [shares, setShares] = useState(null);
   const [composer, setComposer] = useState(null);
@@ -297,6 +317,11 @@ const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRol
     sharesRef.current = next;
     setShares(next);
   }, []);
+
+  // «Публікація» каже, чи анкету вже бачать за посиланням.
+  useEffect(() => {
+    if (shares) onSharesChange?.(shares.length);
+  }, [onSharesChange, shares]);
 
   // Перелік — раз на сторінку, і лише коли він справді потрібен.
   const ensureLoaded = useCallback(() => {
@@ -516,15 +541,18 @@ const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRol
   };
 
   const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  const OpenControl = embedded ? OpenButton : PrimaryButton;
 
   return (
-    <Wrap ref={wrapRef} data-testid="share-card">
-      <Head>
-        <b>{uiText('Поділитися анкетою', language)}</b>
-        <span>
-          {uiText('Посилання для людини без акаунта в KnowMe: вона побачить анкету так само, як у стрічці, своєю мовою. Що в ній видно, вирішуєте ви, а відкликати посилання можна будь-коли.', language)}
-        </span>
-      </Head>
+    <Wrap ref={wrapRef} data-testid="share-card" $embedded={embedded}>
+      {embedded ? null : (
+        <Head>
+          <b>{uiText('Поділитися анкетою', language)}</b>
+          <span>
+            {uiText('Посилання для людини без акаунта в KnowMe: вона побачить анкету так само, як у стрічці, своєю мовою. Що в ній видно, вирішуєте ви, а відкликати посилання можна будь-коли.', language)}
+          </span>
+        </Head>
+      )}
 
       {shares?.length ? (
         <List>
@@ -683,15 +711,16 @@ const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRol
         </Composer>
       ) : (
         <>
-          <PrimaryButton
+          <OpenControl
             type="button"
             disabled={nameMissing || slotsFull}
             onClick={openComposer}
             data-testid="share-open"
+            style={embedded && shares?.length ? { marginTop: 12 } : undefined}
           >
             <FiLink aria-hidden="true" />
             {uiText(shares?.length ? 'Нове посилання' : 'Створити посилання', language)}
-          </PrimaryButton>
+          </OpenControl>
           {nameMissing ? <Hint>{uiText('Щоб поділитися анкетою, вкажіть імʼя.', language)}</Hint> : null}
           {slotsFull ? <Hint>{uiText('Усі {count} посилань зайняті — відкличте одне, щоб створити нове.', language, { count: PROFILE_SHARE_SLOT_COUNT })}</Hint> : null}
         </>

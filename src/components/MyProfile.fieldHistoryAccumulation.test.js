@@ -28,12 +28,17 @@ describe('editing a field on my-profile does not force it through as a plain ove
     expect(fnBody).not.toContain('directFields');
   });
 
+  // Відповідь чіпом пишуть одним місцем (`commitChoice`): і довідникові
+  // варіанти, і готові варіанти «Мого профілю», і місце програми.
   it('the chip-select onClick handler calls triggerAutosave without directFields', () => {
-    const chipOnClickStart = source.indexOf("onClick={() => {\n                  setCustomOptionMode(prev => ({ ...prev, [name]: false }));");
-    expect(chipOnClickStart).toBeGreaterThan(-1);
-    const chipOnClickBody = source.slice(chipOnClickStart, source.indexOf('}}', chipOnClickStart));
-    expect(chipOnClickBody).toContain('triggerAutosave(nextState);');
-    expect(chipOnClickBody).not.toContain('directFields');
+    const commitBody = source.slice(
+      source.indexOf('const commitChoice = (name, value, extra = {}) => {'),
+      source.indexOf('const followUpReset = (name, nextValue) => {'),
+    );
+    expect(commitBody).toContain('triggerAutosave(nextState);');
+    expect(commitBody).not.toContain('directFields');
+    expect(source).toContain("onClick: () => commitChoice(name, String(state[name] || '') === String(optionValue) ? '' : optionValue),");
+    expect(source).toContain('commitChoice(name, nextValue, followUpReset(name, nextValue));');
   });
 
   it('publishProfile still forces publish through as a plain scalar (it is a workflow flag, not history-tracked data)', () => {

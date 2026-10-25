@@ -9,7 +9,10 @@ describe('після обовʼязкового смужка рахує всю �
   it('перемикає підпис і відсоток на повноту анкети без соцмереж', () => {
     expect(source).toContain("uiText('Анкету заповнено на {filled} з {total}', language, completeness)");
     expect(source).toContain(".filter(section => section.key !== 'social')");
-    expect(source).toContain(".filter(name => fieldsMap.has(name) || CUSTOM_COMPLETENESS_FIELDS.has(name));");
+    expect(source).toContain(".filter(name => fieldsMap.has(name) || CUSTOM_COMPLETENESS_FIELDS.has(name))");
+    // День місячних застаріває щомісяця — повноту анкети він не рахує.
+    expect(source).toContain(".filter(name => !COMPLETENESS_SKIPPED_FIELDS.has(name));");
+    expect(source).toContain("const COMPLETENESS_SKIPPED_FIELDS = new Set(['lastCycle']);");
     expect(source).toContain("const CUSTOM_COMPLETENESS_FIELDS = new Set(['seeking', 'parentVia', 'programs']);");
     expect(source).toContain('data-testid="profile-next-fields"');
   });
@@ -27,12 +30,17 @@ describe('після обовʼязкового смужка рахує всю �
     expect(source).toContain('...NEXT_FIELD_PRIORITY.filter(name => emptyCompletenessFields.includes(name)),');
   });
 
-  // Дату пологів і день місячних пропустили всі три СМ 23.10: їх «Варто
-  // дописати» пропонує завжди, поки порожні, — і до мінімуму, і понад три.
-  it('дату пологів і день місячних пропонує завжди, поки вони порожні', () => {
-    expect(source).toContain("const ALWAYS_SUGGESTED_FIELDS = ['lastDelivery', 'lastCycle'];");
+  // Дату пологів пропустили всі три СМ 23.10: її «Варто дописати» пропонує
+  // завжди, поки порожня, — і до мінімуму, і понад три. День місячних
+  // звідти пішов: він міняється щомісяця й публікацію не тримає.
+  it('дату пологів пропонує завжди, поки вона порожня, а день місячних — ні', () => {
+    expect(source).toContain("const ALWAYS_SUGGESTED_FIELDS = ['lastDelivery'];");
     expect(source).toContain('...pinnedEmptyFields,');
     expect(source).toContain('{nextEmptyFields.length && !editingProgram ? (');
+  });
+
+  it('«Де ви готові проходити програму» «Варто дописати» називає першим', () => {
+    expect(source).toMatch(/const NEXT_FIELD_PRIORITY = \[\n  'programPlace',/);
   });
 });
 
@@ -51,8 +59,11 @@ describe('дати в анкеті донорки й СМ', () => {
     expect(source).toContain('return !PAST_DATE_FIELDS.has(name) || !readPastDateIssue(value);');
   });
 
-  it('перший день циклу — у кінці медичного розділу, а не першим після крові', () => {
-    expect(source).toContain("'ownKids', 'lastDelivery', 'csection', 'reward', 'lastCycle'] },");
+  // День місячних — у «Готовності до програми», останнім: це подробиця для
+  // графіка найближчої програми, а не медичний факт анкети.
+  it('перший день циклу — у кінці розділу готовності до програми', () => {
+    expect(source).toContain("{ key: 'program', title: '🤝 Готовність до програми', fields: ['programPlace', 'reward', 'surrogacyProgramInterest', 'lastCycle'] },");
+    expect(source).toContain("'ownKids', 'lastDelivery', 'csection'] },");
   });
 });
 
@@ -60,6 +71,7 @@ describe('підказка до дня місячних', () => {
   const source = fs.readFileSync(path.join(__dirname, 'MyProfile.jsx'), 'utf8');
 
   it('пояснює, навіщо питаємо', () => {
-    expect(source).toContain("name === 'lastCycle' ? uiText('Це допоможе спрогнозувати дату прийому.', language)");
+    expect(source).toContain("? uiText('Це допоможе спрогнозувати дату прийому.', language)");
+    expect(source).toContain("const fieldHint = name === 'lastCycle'");
   });
 });

@@ -33,23 +33,44 @@ describe('«Мій профіль» говорить мовою ролі', () =>
   });
 
   // Приклад винагороди був один на всіх — донорський, «від 1000 $», — і
-  // сурогатна мама бачила суму вдесятеро меншу за свою програму.
+  // сурогатна мама бачила суму вдесятеро меншу за свою програму. Тепер
+  // винагорода — сума й валюта, тож приклад — саме число.
   it('підказка винагороди відповідає анкеті, яку заповнюють', () => {
-    expect(resolveMyProfileFieldText('reward', 'ed').placeholder).toBe('Наприклад: від 1000 $, залежить від програми');
-    expect(resolveMyProfileFieldText('reward', 'sm').placeholder).toBe('Наприклад: від 15 000 $ + щомісячні виплати');
-    expect(resolveMyProfileFieldText('reward', 'sm', ['ag', 'sm']).placeholder).toBe('Наприклад: від 15 000 $ + щомісячні виплати');
-    // Поле одне на обидві особисті анкети — і приклад теж на обидві, хоч
+    expect(resolveMyProfileFieldText('reward', 'ed').placeholder).toBe('Наприклад: 1000');
+    expect(resolveMyProfileFieldText('reward', 'sm').placeholder).toBe('Наприклад: 15000');
+    expect(resolveMyProfileFieldText('reward', 'sm', ['ag', 'sm']).placeholder).toBe('Наприклад: 15000');
+    // Поле одне на обидві особисті анкети — і пояснення теж на обидві, хоч
     // би яка з ролей стояла першою.
-    expect(resolveMyProfileFieldText('reward', 'ed', ['sm', 'ed']).placeholder).toMatch(/1000 \$.*15 000 \$/);
-    expect(resolveMyProfileFieldText('reward', 'sm', ['ed', 'sm']).placeholder).toMatch(/1000 \$.*15 000 \$/);
+    expect(resolveMyProfileFieldText('reward', 'ed', ['sm', 'ed']).hint).toMatch(/донацію чи програму СМ/);
+    expect(resolveMyProfileFieldText('reward', 'sm', ['ed', 'sm']).hint).toMatch(/донацію чи програму СМ/);
     expect(resolveMyProfileFieldText('reward', 'sm').label).toBe('Бажана винагорода');
+    expect(resolveMyProfileFieldText('reward', 'ed').hint).toMatch(/^Орієнтир за всю програму/);
   });
 
   it('«Про себе» сурогатної мами питає про дітей і вагітності', () => {
     expect(resolveMyProfileFieldText('moreInfo_main', 'sm').placeholder).toMatch(/вагітності/);
     // Донорка й людина з обома анкетами лишаються на загальній підказці.
-    expect(resolveMyProfileFieldText('moreInfo_main', 'ed').placeholder).toBeUndefined();
-    expect(resolveMyProfileFieldText('moreInfo_main', 'sm', ['ed', 'sm']).placeholder).toBeUndefined();
+    expect(resolveMyProfileFieldText('moreInfo_main', 'ed').placeholder).toMatch(/^Наприклад: /);
+    expect(resolveMyProfileFieldText('moreInfo_main', 'sm', ['ed', 'sm']).placeholder).toBe(resolveMyProfileFieldText('moreInfo_main', 'ed').placeholder);
+  });
+
+  // «Про себе» необовʼязкове, і підказка каже, що саме написати й скільки.
+  it('«Про себе» донорки й СМ пояснює, що варто розповісти, а організації — ні', () => {
+    const hint = 'Що майбутнім батькам або агентству варто знати про вас? Достатньо 2–3 речень.';
+    expect(resolveMyProfileFieldText('moreInfo_main', 'ed').hint).toBe(hint);
+    expect(resolveMyProfileFieldText('moreInfo_main', 'sm').hint).toBe(hint);
+    ['ag', 'cl', 'ip'].forEach(role => expect(resolveMyProfileFieldText('moreInfo_main', role).hint).toBe(''));
+  });
+
+  // `ownKids` — усі пологи, а не власні діти.
+  it('пологи питає всі, і свої, і за програмою', () => {
+    expect(resolveMyProfileFieldText('ownKids', 'sm').label).toBe('Скільки всього було пологів?');
+    expect(resolveMyProfileFieldText('ownKids', 'ed').hint).toMatch(/за програмою сурогатного материнства/);
+    // Кесарів лишився з підписом довідника («Кесарів розтин») і числом у
+    // «Своєму варіанті» — так вирішила власниця продукту.
+    expect(resolveMyProfileFieldText('csection', 'sm').label).toBeUndefined();
+    expect(resolveMyProfileFieldText('csection', 'sm').detailPlaceholder).toBe('Наприклад: 3');
+    expect(resolveMyProfileFieldText('maritalStatus', 'ed').detailPlaceholder).toBe('Наприклад: у процесі розлучення');
   });
 
   it('поле «Детальніше» підказує, що описати, а не «свій варіант»', () => {

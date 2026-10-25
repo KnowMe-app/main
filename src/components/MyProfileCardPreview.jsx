@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import styled from 'styled-components';
-import { FiChevronDown } from 'react-icons/fi';
+import { FiChevronDown, FiEye } from 'react-icons/fi';
 import { revealCss } from '../styles/revealAnimation';
 import ProfileRow from './ProfileRow';
 import { MatchingThemeScope } from './Matching.styled';
@@ -8,7 +8,7 @@ import { useAppSettings } from '../hooks/useAppSettings';
 import { uiText } from '../utils/uiTranslations';
 
 /*
- * «Так вас бачать у стрічці» — угорі «Мого профілю».
+ * «Переглянути мою анкету» — у блоці «Публікація», над кнопкою «Опублікувати».
  *
  * Картка та сама, що в стрічці (`ProfileRow`), і зібрана з того, що людина
  * щойно набрала: інакше «як мене побачать» доводилось би вгадувати, а
@@ -18,32 +18,42 @@ import { uiText } from '../utils/uiTranslations';
  *
  * Ролей буває дві, і кожна в стрічці — окрема картка (`previews`). Тут вони
  * стоять перемикачем, а не одна під одною: дві картки з фото на всю ширину
- * ставили саму форму на два екрани нижче. Згорнути блок можна — вибір
- * памʼятає браузер.
+ * ставили саму форму на два екрани нижче.
+ *
+ * Стояла картка угорі сторінки й розгорнутою: на телефоні вона займала весь
+ * перший екран ще до першого питання, а людина, яка відкрила «Мій профіль»
+ * дописати поле, гортала повз власні фото. Тепер вона згорнута під кнопку і
+ * стоїть там, де вона справді потрібна, — перед публікацією: подивитись, як
+ * анкету побачать, і лише тоді її випустити (на прохання власниці продукту).
+ * Розгортається щоразу наново, а не з памʼяті браузера: відкрита картка над
+ * кнопкою «Опублікувати» знову відсувала б саму дію.
  */
 
-const COLLAPSED_KEY = 'myProfileCardPreviewCollapsed';
-
 const Wrap = styled.section`
-  margin: 0 var(--page-side, var(--page-gutter, 20px)) 16px;
+  margin: 16px 0 0;
 `;
 
+// Тиха кнопка на всю ширину: головна дія блоку — «Опублікувати», а перегляд
+// лише допомагає до неї дійти.
 const Head = styled.button`
   display: flex;
   align-items: center;
-  justify-content: space-between;
   width: 100%;
+  min-height: 44px;
   gap: 10px;
-  margin-bottom: 8px;
-  padding: 0;
+  padding: 0 14px;
   border: 0;
-  background: transparent;
-  color: var(--muted, var(--km-muted));
+  border-radius: 12px;
+  background: var(--km-fill);
+  color: var(--text, var(--km-text));
   font: inherit;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   text-align: left;
   cursor: pointer;
+
+  > span { flex: 1 1 auto; }
+  &:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--km-accent-ring); }
 `;
 
 // Лінійний шеврон, як у решти розкривних блоків: символ «▼» шрифту був
@@ -59,7 +69,7 @@ const Tabs = styled.div`
   display: inline-flex;
   flex-wrap: wrap;
   gap: 2px;
-  margin-bottom: 10px;
+  margin: 12px 0 0;
   padding: 3px;
   border-radius: 12px;
   background: var(--km-fill);
@@ -81,17 +91,9 @@ const Tab = styled.button`
 
 const Frame = styled(MatchingThemeScope)`
   max-width: 460px;
-  margin: 0 auto;
+  margin: 12px auto 0;
   border-radius: 18px;
 `;
-
-const readCollapsed = () => {
-  try {
-    return window.localStorage.getItem(COLLAPSED_KEY) === '1';
-  } catch {
-    return false;
-  }
-};
 
 // Розгорнуте прев'ю зʼявляється тією самою анімацією, що й решта розкривних
 // блоків анкети (`styles/revealAnimation`).
@@ -101,7 +103,7 @@ const Reveal = styled.div`
 
 export const MyProfileCardPreview = ({ previews = [], language, rates, displayCurrency, onDisplayCurrencyChange }) => {
   const { themeMode } = useAppSettings();
-  const [open, setOpen] = useState(() => !readCollapsed());
+  const [open, setOpen] = useState(false);
   const [activeRole, setActiveRole] = useState('');
   // «Детальніше» в прев'ю розгортає ту саму анкету, що й у стрічці.
   const [expanded, setExpanded] = useState(false);
@@ -116,21 +118,11 @@ export const MyProfileCardPreview = ({ previews = [], language, rates, displayCu
   const active = previews.find(item => item.role === activeRole) || previews[0];
   if (!active) return null;
 
-  const toggle = () => {
-    setOpen(previous => {
-      try {
-        window.localStorage.setItem(COLLAPSED_KEY, previous ? '1' : '0');
-      } catch {
-        // приватне вікно: вибір живе до перезавантаження
-      }
-      return !previous;
-    });
-  };
-
   return (
     <Wrap data-testid="my-profile-card-preview">
-      <Head type="button" aria-expanded={open} onClick={toggle}>
-        <span>{uiText('Так вас бачать у стрічці', language)}</span>
+      <Head type="button" aria-expanded={open} onClick={() => setOpen(previous => !previous)}>
+        <FiEye size={18} aria-hidden="true" />
+        <span>{uiText(open ? 'Сховати перегляд анкети' : 'Переглянути мою анкету', language)}</span>
         <Caret $open={open} size={18} aria-hidden="true" />
       </Head>
       {open ? (
