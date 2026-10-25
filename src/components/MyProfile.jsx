@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { FiChevronRight, FiTrash2, FiX } from 'react-icons/fi';
+import { FiChevronDown, FiChevronRight, FiTrash2, FiX } from 'react-icons/fi';
 import { FaCheck, FaEye, FaEyeSlash, FaLock } from 'react-icons/fa';
 import styled, { css, keyframes } from 'styled-components';
 import { ScreenLoading } from './RequireAuth';
+import Collapsible, { COLLAPSE_DURATION_MS } from './Collapsible';
 import {
   auth,
   fetchUserById,
@@ -171,11 +172,14 @@ const TopbarActions = styled.div`
   gap: 10px;
   margin-left: auto;
 `;
-// Шапка з назвою й меню «⋮» їде з рештою сторінки, а прогрес із вкладками
-// розділів лишається вгорі (`StickyProgress`): це єдиний орієнтир у довгій
-// анкеті — скільки заповнено і в якому розділі людина зараз. Коли прогрес
-// поїхав разом зі шапкою, вкладки зникали на першому ж екрані прокрутки, і
-// до іншого розділу лишалось гортати навмання.
+// Шапка з назвою й меню «⋮» їде з рештою сторінки, а вкладки розділів
+// лишаються вгорі (`StickyProgress`): це орієнтир у довгій анкеті — в якому
+// розділі людина зараз. Коли вкладки їхали разом зі шапкою, вони зникали на
+// першому ж екрані прокрутки, і до іншого розділу лишалось гортати навмання.
+// Рядок «Анкету заповнено…» з прогресом липнув разом із ними — і їде тепер
+// зі шапкою: на телефоні 360×640 липке згори (86 px) разом із панеллю
+// публікації й навігацією знизу забирало 43% екрана, а число заповненого
+// потрібне на вході, а не на кожному екрані прокрутки.
 // Роль і статус у рядку навігації телефона.
 const NavProfileStatus = styled.div`
   display: flex;
@@ -207,14 +211,6 @@ const StickyProgress = styled.div`
   z-index: 20;
   background: var(--card);
   border-bottom: 1px solid var(--border);
-
-  /* Поки відкрита програма, смуга «Заповнено N з M» нічого не каже про
-     програму, а на телефоні разом із вкладками забирала понад сотню пікселів
-     над полями. Лишаються самі вкладки, тонше. */
-  ${({ $compact }) => ($compact ? `
-    > div:first-child { display: none; }
-    > div:last-child { padding-top: 8px; padding-bottom: 8px; }
-  ` : '')}
 `;
 const CONTENT_SECTION_TOP_GAP = 18;
 // Наскільки вище за верх розділу зупиняється scrollToSection() і де scroll-spy
@@ -256,7 +252,9 @@ const Tab = styled.button`
   min-height: 44px; padding: 0; border: 0; background: transparent;
   font-size: 14px; font-weight: ${({ $active }) => ($active ? 600 : 500)};
   color: ${({ $active }) => ($active ? 'var(--text)' : 'var(--muted)')};
-  box-shadow: inset 0 -2px 0 ${({ $active }) => ($active ? 'var(--accent)' : 'transparent')};
+  /* Риска активної вкладки — кольором тексту: вкладки — це навігація, а не
+     дія, і помаранчевою рискою вони змагались із кнопкою «Опублікувати». */
+  box-shadow: inset 0 -2px 0 ${({ $active }) => ($active ? 'var(--text)' : 'transparent')};
   svg { color: var(--km-success); flex: 0 0 auto; }
 `;
 const Card = styled.div`
@@ -272,6 +270,73 @@ const Card = styled.div`
 `;
 const FirstContentCard = styled(Card)`margin-top: ${CONTENT_SECTION_TOP_GAP}px;`;
 const Header = styled.div`display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg);`;
+/*
+ * Шапка розділу анкети — сама кнопка згортання (`isSectionOpen`).
+ *
+ * Анкета донорки — дев'ять екранів телефона, а «Зовнішність» — стіна з
+ * сімдесяти п'яти чипів, і все це стояло розгорнутим одночасно. Тепер
+ * розгорнуті лише розділи, де бракує потрібного для публікації (і
+ * програми — у агенції це головне), решта згорнуті до шапки з тим, що в
+ * них ще можна дописати. Розгортається й згортається висотою
+ * (`Collapsible`), як деталі програми в стрічці.
+ *
+ * Лічильника «3/12» біля назви більше немає: він рахував усі поля розділу,
+ * а зеленим ставав за обовʼязковими, і разом із галочкою вкладки та
+ * «12 з 44» угорі три числа про одне суперечили одне одному. Число лишилось
+ * одне — угорі, а розділ каже лише «готово» (галочкою, як вкладка).
+ */
+const SectionHeader = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 14px 12px 18px;
+  border: 0;
+  border-bottom: 1px solid ${({ $open }) => ($open ? 'var(--border)' : 'transparent')};
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color ${COLLAPSE_DURATION_MS}ms ease;
+
+  &:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--km-accent-ring); }
+  > svg {
+    flex: 0 0 auto;
+    color: var(--muted);
+    transform: rotate(${({ $open }) => ($open ? '180deg' : '0deg')});
+    transition: transform ${COLLAPSE_DURATION_MS}ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  @media (prefers-reduced-motion: reduce) { transition: none; > svg { transition: none; } }
+`;
+const SectionHeaderText = styled.span`
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+`;
+const SectionTitle = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+
+  > small { font-size: 13px; font-weight: 500; color: var(--muted); }
+  > svg { flex: 0 0 auto; color: var(--km-success); }
+`;
+// Що в згорнутому розділі ще порожнє — назвами полів, а не числом.
+const SectionSummary = styled.span`
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted);
+`;
 const FieldGroup = styled.div`padding:0 18px;`;
 const Field = styled.div`padding:14px 0;border-bottom:1px solid var(--border); &:last-child{border-bottom:none;}`;
 // Підпис поля — звичайним реченням: 11 px великими з розрядкою читались
@@ -334,16 +399,39 @@ const ClearFieldButton = styled.button`
   cursor: pointer;
 `;
 const ChipRow = styled.div`display:flex;flex-wrap:wrap;gap:6px;`;
+// Варіантів у полі-виборі від стількох — після відповіді вони згортаються до
+// самої відповіді з «Змінити» (`openChoiceFields`). Так/Ні й інші короткі
+// переліки стоять як є: згорнути там нічого.
+const COMPACT_CHOICE_MIN_OPTIONS = 5;
+const ChoiceChangeButton = styled.button`
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 99px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  &:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--km-accent-ring); }
+`;
 const Chip = styled.button`
-  /* Вибране — заливкою, як чіп ролі в «Хто ви»: блідо-помаранчеве з
+  /* Вибране — суцільною заливкою з галочкою: блідо-помаранчеве з
      помаранчевим текстом від невибраного з першого погляду не відрізнялось.
+     Заливка — кольором тексту, а не акцентом: заповнена анкета — це десятки
+     відповідей, і помаранчевими пігулками вони заливали екран так, що
+     «Опублікувати» вже нічим не виділялось. Акцент на цьому екрані
+     лишається за головною дією.
      Невибране — заливкою без рамки, як решта вторинних контролів (поля тієї
      ж форми, чіпи стрічки, чіпи «Поділитися анкетою»): білі пігулки з сірим
      контуром були єдиним місцем на екрані з контурами, і стіна з семидесяти
      таких у «Зовнішності» читалась сіткою рамок, а не відповідями. */
   display: inline-flex; align-items: center; gap: 6px;
-  min-height: 36px; padding: 0 13px; border-radius: 99px; font-size: 14px; border: 1px solid ${({ selected }) => (selected ? 'var(--accent)' : 'transparent')};
-  background: ${({ selected }) => (selected ? 'var(--accent)' : 'var(--km-fill)')}; color: ${({ selected }) => (selected ? 'var(--km-on-accent, #fff)' : 'var(--text)')};
+  min-height: 36px; padding: 0 13px; border-radius: 99px; font-size: 14px; border: 1px solid ${({ selected }) => (selected ? 'var(--text)' : 'transparent')};
+  background: ${({ selected }) => (selected ? 'var(--text)' : 'var(--km-fill)')}; color: ${({ selected }) => (selected ? 'var(--card)' : 'var(--text)')};
   cursor: pointer;
   &:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--km-accent-ring); }
   svg { flex: 0 0 auto; }
@@ -412,7 +500,7 @@ const PublishMissingChip = styled.button`
   border-radius: 999px;
   padding: 7px 12px;
   background: var(--km-fill);
-  color: var(--km-accent-text, var(--km-accent));
+  color: var(--text);
   font: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -600,8 +688,10 @@ const LikedAudienceNote = styled.div`
   margin-top:12px;
   padding:12px 14px;
   border-radius:12px;
-  background:var(--accent-light, rgba(201, 96, 15,0.08));
-  border:1px solid rgba(201, 96, 15,0.28);
+  /* Пояснення, а не попередження: сіра заливка, як решта вторинного.
+     Персикова плашка з помаранчевою рамкою була третьою помаранчевою
+     плямою «Публікації» поруч із двома кнопками. */
+  background:var(--km-fill);
   font-size:13px;
   line-height:1.5;
   color:var(--text);
@@ -727,9 +817,10 @@ const RoleOption = styled.label`
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  border: 1px solid ${({ $active }) => ($active ? 'var(--accent)' : 'transparent')};
-  background: ${({ $active }) => ($active ? 'var(--accent)' : 'var(--km-fill)')};
-  color: ${({ $active }) => ($active ? 'var(--km-on-accent, #fff)' : 'var(--text)')};
+  /* Вибрана роль — як вибрана відповідь у формі (Chip): кольором тексту. */
+  border: 1px solid ${({ $active }) => ($active ? 'var(--text)' : 'transparent')};
+  background: ${({ $active }) => ($active ? 'var(--text)' : 'var(--km-fill)')};
+  color: ${({ $active }) => ($active ? 'var(--card)' : 'var(--text)')};
 
   input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
   &:focus-within { box-shadow: 0 0 0 3px var(--km-accent-ring); }
@@ -1254,6 +1345,15 @@ export const MyProfile = () => {
   const [roleChangeTarget, setRoleChangeTarget] = useState('');
   // «Хто ви» розгорнуте — п'ять чипів ролей замість рядка з поточною роллю.
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
+  // Розділи анкети, які людина сама розгорнула чи згорнула (ключ → bool),
+  // поверх умовчання (`isSectionOpen`).
+  const [sectionOpenOverrides, setSectionOpenOverrides] = useState({});
+  // Умовчання розділу фіксується раз, на прочитаній анкеті: інакше розділ
+  // згортався б сам посеред набору — щойно людина заповнить останнє
+  // обовʼязкове поле.
+  const sectionOpenDefaultsRef = useRef({});
+  // Поля-вибори, де після відповіді натиснули «Змінити»: знову всі варіанти.
+  const [openChoiceFields, setOpenChoiceFields] = useState({});
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const stickyProgressRef = useRef(null);
@@ -1299,6 +1399,9 @@ export const MyProfile = () => {
     setUserId('');
     setMissing({});
     setHasAgreed(false);
+    setSectionOpenOverrides({});
+    sectionOpenDefaultsRef.current = {};
+    setOpenChoiceFields({});
   }, []);
 
   const restoreLocalDraft = useCallback(() => {
@@ -2034,6 +2137,32 @@ export const MyProfile = () => {
     return acc;
   }, {}), [isFieldFilled, optionalProfileFields, visibleSections]);
 
+  // Розгорнутий за умовчанням — лише розділ, де бракує потрібного для
+  // публікації, і програми (у агенції це головне, а кожна програма й так
+  // згорнута в редакторі до рядка). Поки анкета їде, сторінка невидима, і
+  // розділи стоять розгорнутими: умовчання рахується вже з прочитаного.
+  const isSectionOpen = section => {
+    if (Object.prototype.hasOwnProperty.call(sectionOpenOverrides, section.key)) {
+      return sectionOpenOverrides[section.key];
+    }
+    if (profileLoading) return true;
+    const defaults = sectionOpenDefaultsRef.current;
+    if (!Object.prototype.hasOwnProperty.call(defaults, section.key)) {
+      const required = listRequiredSectionFields(section, { optional: optionalProfileFields });
+      defaults[section.key] = section.custom === 'programs'
+        || (required.length > 0 && !required.every(isFieldFilled));
+    }
+    return defaults[section.key];
+  };
+  const openSections = useCallback(keys => {
+    const known = new Set(visibleSections.map(section => section.key));
+    const toOpen = keys.filter(key => known.has(key));
+    if (!toOpen.length) return;
+    setSectionOpenOverrides(prev => (toOpen.every(key => prev[key] === true)
+      ? prev
+      : { ...prev, ...Object.fromEntries(toOpen.map(key => [key, true])) }));
+  }, [visibleSections]);
+
 
   const getSectionEntries = useCallback(() => navSections
     .map(section => ({ key: section.key, node: sectionRefs.current[section.key] }))
@@ -2093,9 +2222,12 @@ export const MyProfile = () => {
     }
   }, []);
 
+  // Вкладка веде до розділу розгорнутим: людина торкнулась «Зовнішність»,
+  // щоб її заповнити, а не щоб побачити згорнуту шапку.
   const scrollToSection = useCallback((sectionKey) => {
     const sectionEl = sectionRefs.current[sectionKey];
     setActiveTab(sectionKey);
+    openSections([sectionKey]);
     if (!sectionEl) return;
 
     isManualScrollRef.current = true;
@@ -2110,7 +2242,7 @@ export const MyProfile = () => {
     programmaticScrollTimeoutRef.current = window.setTimeout(() => {
       finishProgrammaticScroll();
     }, PROGRAMMATIC_SCROLL_FALLBACK_MS);
-  }, [finishProgrammaticScroll, getSectionTargetTop]);
+  }, [finishProgrammaticScroll, getSectionTargetTop, openSections]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -2371,11 +2503,20 @@ export const MyProfile = () => {
   // телефон в «Особистих даних» стоїть під іменем, прізвищем, по батькові й
   // поштою, і прокрутка до шапки розділу лишала його за нижньою панеллю —
   // тост казав «заповніть Телефон», а поля на екрані не було.
-  const scrollToField = (fieldName) => {
+  //
+  // Поле згорнутого розділу в DOM ще немає: розділ розгортається, і прокрутка
+  // чекає, поки `Collapsible` змонтує поля (два рендери). Позиція поля від
+  // руху висоти не залежить — росте сам розділ під ним, а не те, що над ним.
+  const scrollToField = (fieldName, { afterOpen = false } = {}) => {
     const sectionKey = getSectionKeyByField(fieldName);
     const fieldEl = typeof document === 'undefined'
       ? null
       : document.querySelector(`[data-profile-field="${fieldName}"]`);
+    if (!fieldEl && !afterOpen && typeof window !== 'undefined') {
+      openSections([sectionKey]);
+      window.setTimeout(() => scrollToField(fieldName, { afterOpen: true }), 60);
+      return;
+    }
     if (!fieldEl) {
       scrollToSection(sectionKey);
       return;
@@ -2402,6 +2543,24 @@ export const MyProfile = () => {
     const roleText = resolveMyProfileFieldText(fieldName, fieldName === 'agencyName' ? organisationRole : sectionTitleRole, rolesList);
     if (roleText.label) return uiText(roleText.label, language);
     return getFieldLabel(fieldsMap.get(fieldName), language) || fieldName;
+  };
+
+  // Підпис згорнутого розділу: чого бракує для публікації, а коли все
+  // потрібне є — що ще можна дописати. Назвами полів, як їх підписує форма:
+  // голе число тут уже було («3/12») і нічого не казало про те, що всередині.
+  const describeCollapsedSection = section => {
+    if (section.custom === 'programs') return '';
+    const required = listRequiredSectionFields(section, { optional: optionalProfileFields });
+    const missingRequired = required.filter(name => !isFieldFilled(name));
+    const pool = missingRequired.length
+      ? missingRequired
+      : section.fields.filter(name => !isFieldFilled(name));
+    if (!pool.length) return '';
+    const labels = pool.slice(0, 3).map(resolveRequiredFieldLabel).join(', ');
+    const list = pool.length > 3
+      ? uiText('{labels} і ще {count}', language, { labels, count: pool.length - 3 })
+      : labels;
+    return uiText(missingRequired.length ? 'Потрібно для публікації: {list}' : 'Можна додати: {list}', language, { list });
   };
 
   // Усі порожні обовʼязкові поля — для тосту, переліку в «Публікації» й
@@ -2446,6 +2605,10 @@ export const MyProfile = () => {
     setMissing(prev => ({ ...prev, ...miss }));
 
     if (!missingFieldNames.length) return true;
+
+    // Порожні обовʼязкові поля мусять бути на екрані з червоною рамкою, а не
+    // в згорнутому розділі.
+    openSections(missingFieldNames.map(getSectionKeyByField));
 
     const labels = missingFieldNames.slice(0, MISSING_FIELDS_TOAST_LIMIT).map(resolveRequiredFieldLabel);
     const rest = missingFieldNames.length - labels.length;
@@ -2875,12 +3038,20 @@ export const MyProfile = () => {
       || name === 'csection';
     const customSelected = canUseCustomOption
       && (Boolean(customOptionMode[name]) || hasCustomValue);
+    // Відповідь, вибрана з довгого переліку, стоїть сама з «Змінити»: дев'ять
+    // кольорів очей, десять форм носа й підборіддя після відповіді лише
+    // подовжували анкету. Перелік розгортається й згортається висотою.
+    const selectedOfferedOption = offeredOptions.find(option => String(val) === String(getOptionValue(option)));
+    const choiceCollapsed = Boolean(selectedOfferedOption) && !customSelected
+      && offeredOptions.length >= COMPACT_CHOICE_MIN_OPTIONS && !openChoiceFields[name];
+    const fieldLabel = roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language);
 
     return <Field key={name} data-profile-field={name}>
-      <Label>{roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language)}</Label>
+      <Label>{fieldLabel}</Label>
       {fieldHint ? <FieldHint>{fieldHint}</FieldHint> : null}
       {offeredOptions.length > 0 ? (
         <>
+          <Collapsible open={!choiceCollapsed}>
           <ChipRow>
             {offeredOptions.map(option => {
               const optionValue = getOptionValue(option);
@@ -2896,6 +3067,7 @@ export const MyProfile = () => {
                   const nextState = { ...stateRef.current, [name]: isSelected ? '' : optionValue };
                   editedFieldsRef.current.add(name);
                   setMissing(prev => ({ ...prev, [name]: false }));
+                  setOpenChoiceFields(prev => (prev[name] ? { ...prev, [name]: false } : prev));
                   stateRef.current = nextState;
                   setState(nextState);
                   triggerAutosave(nextState);
@@ -2923,7 +3095,36 @@ export const MyProfile = () => {
                 {uiText(noOrDetails ? 'Детальніше' : (isYesNoField && yesNoAllowsDetails ? 'Уточнити' : 'Свій варіант'), language)}
               </Chip>
             ) : null}
+            {openChoiceFields[name] && selectedOfferedOption && !customSelected ? (
+              <ChoiceChangeButton type="button" onClick={() => setOpenChoiceFields(prev => ({ ...prev, [name]: false }))}>
+                {uiText('Готово', language)}
+              </ChoiceChangeButton>
+            ) : null}
           </ChipRow>
+          </Collapsible>
+          <Collapsible open={choiceCollapsed}>
+            {selectedOfferedOption ? (
+              <ChipRow>
+                <Chip
+                  type="button"
+                  selected
+                  aria-expanded={false}
+                  onClick={() => setOpenChoiceFields(prev => ({ ...prev, [name]: true }))}
+                >
+                  <FaCheck size={11} aria-hidden="true" />
+                  {getOptionLabel(selectedOfferedOption, language)}
+                </Chip>
+                <ChoiceChangeButton
+                  type="button"
+                  aria-expanded={false}
+                  aria-label={uiText('Змінити: {label}', language, { label: fieldLabel })}
+                  onClick={() => setOpenChoiceFields(prev => ({ ...prev, [name]: true }))}
+                >
+                  {uiText('Змінити', language)}
+                </ChoiceChangeButton>
+              </ChipRow>
+            ) : null}
+          </Collapsible>
           {canUseCustomOption && customSelected ? (
             <CustomOptionWrap>
               <FieldControl>
@@ -3180,24 +3381,26 @@ export const MyProfile = () => {
           <FiChevronRight size={18} aria-label={uiText('Змінити, хто бачить анкету', language)} />
         </LikedAudienceChip>
       ) : null}
+
+      <ProgressWrap>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+          {/* Рахує лише поля, без яких анкету не опублікувати, — так і підписано:
+              голе «Заповнено 8 з 10 · 80%» стояло над розділами «2/13» і «0/13»,
+              які рахують усі поля, і два числа суперечили одне одному. Число
+              й смуга — кольором тексту, а не акцентом: помаранчевий на екрані
+              лишається за головною дією, «Опублікувати». */}
+          <span style={{ fontSize: 13, color: 'var(--muted)' }}>{requiredComplete
+            ? uiText('Анкету заповнено на {filled} з {total}', language, completeness)
+            : uiText('Для публікації заповнено {filled} з {total}', language, filledStats)}</span>
+          <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{progressPct}%</span>
+        </div>
+        <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+          <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: 99, background: 'var(--text)' }} />
+        </div>
+      </ProgressWrap>
     </HeaderPanel>
 
-    <StickyProgress ref={stickyProgressRef} $compact={editingProgram}>
-      <ProgressWrap>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-        {/* Рахує лише поля, без яких анкету не опублікувати, — так і підписано:
-            голе «Заповнено 8 з 10 · 80%» стояло над розділами «2/13» і «0/13»,
-            які рахують усі поля, і два числа суперечили одне одному. */}
-        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{requiredComplete
-          ? uiText('Анкету заповнено на {filled} з {total}', language, completeness)
-          : uiText('Для публікації заповнено {filled} з {total}', language, filledStats)}</span>
-        <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>{progressPct}%</span>
-      </div>
-      <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
-        <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: 99, background: 'var(--accent)' }} />
-      </div>
-    </ProgressWrap>
-
+    <StickyProgress ref={stickyProgressRef}>
       <Tabs ref={tabsRef}>
         {navSections.map(s => {
           const info = s.key === 'photo'
@@ -3394,6 +3597,8 @@ export const MyProfile = () => {
       const anketaLabel = section.anketaRole
         ? MY_PROFILE_ROLE_OPTIONS.find(option => option.value === section.anketaRole)?.label || section.anketaRole
         : '';
+      const sectionOpen = isSectionOpen(section);
+      const sectionSummary = sectionOpen ? '' : describeCollapsedSection(section);
       return (
       <React.Fragment key={section.key}>
       {anketaLabel ? (
@@ -3404,33 +3609,45 @@ export const MyProfile = () => {
         </AnketaDivider>
       ) : null}
       <SectionCard ref={node => { sectionRefs.current[section.key] = node; }}>
-        <Header>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{stripSectionEmoji(uiText(section.title, language))}</div>
-          <div style={{ marginLeft: 'auto', fontSize: 11, color: sectionProgress[section.key]?.complete ? 'var(--km-success)' : 'var(--muted)', background: sectionProgress[section.key]?.complete ? 'var(--km-success-bg)' : 'var(--border)', padding: '2px 8px', borderRadius: 99 }}>
-            {/* Програми — це записи, а не поле: «1/1» при трьох програмах
-                казав лише, що поле «programs» не порожнє. Тут — скільки їх. */}
-            {section.custom === 'programs'
-              ? ownProgramsCount
-              : `${sectionProgress[section.key]?.filled || 0}/${sectionProgress[section.key]?.total || section.fields.length}`}
-          </div>
-        </Header>
-        <FieldGroup>
-          {section.custom === 'programs' ? (
-            <ProgramsEditor
-              programs={ownPrograms}
-              onSave={saveOwnPrograms}
-              language={language}
-              rates={programRates}
-              suggestions={programTermSuggestions}
-              profilePublished={state.publish === true || isLikedAudience}
-              profileSharedWithLiked={isLikedAudience}
-              onEditingChange={setEditingProgram}
-            />
-          ) : null}
-          {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} showProgramLocation={showParentProgramLocation} /> : null}
-          {section.custom && section.extraFields?.length ? section.extraFields.map(renderField) : null}
-          {!section.custom ? section.fields.map(renderField) : null}
-        </FieldGroup>
+        <SectionHeader
+          type="button"
+          $open={sectionOpen}
+          aria-expanded={sectionOpen}
+          aria-controls={`my-profile-section-${section.key}`}
+          onClick={() => setSectionOpenOverrides(prev => ({ ...prev, [section.key]: !sectionOpen }))}
+        >
+          <SectionHeaderText>
+            <SectionTitle>
+              {stripSectionEmoji(uiText(section.title, language))}
+              {/* Програми — це записи, а не поле: скільки їх, а не «1/1». */}
+              {section.custom === 'programs' && ownProgramsCount > 0 ? <small>· {ownProgramsCount}</small> : null}
+              {sectionProgress[section.key]?.complete ? <FaCheck size={11} aria-label={uiText('Заповнено', language)} /> : null}
+            </SectionTitle>
+            {sectionSummary ? <SectionSummary>{sectionSummary}</SectionSummary> : null}
+          </SectionHeaderText>
+          <FiChevronDown size={18} aria-hidden="true" />
+        </SectionHeader>
+        {/* Ключ міняється, коли анкета дочитана: розділи, що за умовчанням
+            згорнуті, ставатимуть такими без руху — сторінка до того невидима. */}
+        <Collapsible key={profileLoading ? 'loading' : 'ready'} open={sectionOpen} id={`my-profile-section-${section.key}`}>
+          <FieldGroup>
+            {section.custom === 'programs' ? (
+              <ProgramsEditor
+                programs={ownPrograms}
+                onSave={saveOwnPrograms}
+                language={language}
+                rates={programRates}
+                suggestions={programTermSuggestions}
+                profilePublished={state.publish === true || isLikedAudience}
+                profileSharedWithLiked={isLikedAudience}
+                onEditingChange={setEditingProgram}
+              />
+            ) : null}
+            {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} showProgramLocation={showParentProgramLocation} /> : null}
+            {section.custom && section.extraFields?.length ? section.extraFields.map(renderField) : null}
+            {!section.custom ? section.fields.map(renderField) : null}
+          </FieldGroup>
+        </Collapsible>
       </SectionCard>
       </React.Fragment>
       );
