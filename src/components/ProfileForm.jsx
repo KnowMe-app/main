@@ -225,6 +225,21 @@ export const resolveBirthDateFromAgeInput = (rawValue, currentDate = new Date())
   return `01.01.${currentYear - age}`;
 };
 
+// «30р» у полі дати народження — це вік, а не недонабрана дата: так адмін
+// записує людину, про яку відомо лише, скільки їй років. На blur він стає
+// `01.01.<рік>` — тим самим принципом, що й поле `age`, і так само, як
+// `getInTouch` розуміє «6м» чи «1р». Перше січня тут і є позначка «точної дати
+// немає, лише вік». Голе число теж вік: двоцифрова «дата» датою не буває.
+const BIRTH_AGE_SHORTHAND_PATTERN = /^(\d{1,2})\s*(?:р|рік|роки|років|y|yo|years?)?\.?$/i;
+
+export const resolveBirthDateFromAgeShorthand = (rawValue, currentDate = new Date()) => {
+  const match = String(rawValue ?? '').trim().match(BIRTH_AGE_SHORTHAND_PATTERN);
+  if (!match) return '';
+  return resolveBirthDateFromAgeInput(match[1], currentDate);
+};
+
+const BIRTH_DATE_FIELDS = new Set(['birth', 'birthWife', 'birthHusband']);
+
 
 const PROFILE_FORM_RESTORE_LOG_PREFIX = '[ProfileRestore][ProfileForm]';
 
@@ -3478,6 +3493,25 @@ ${entries.join('\n')}`;
 
                               if (!trimmed) {
                                 handleDelKeyValue('getInTouch');
+                                return;
+                              }
+                            }
+
+                            if (BIRTH_DATE_FIELDS.has(field.name)) {
+                              const birthFromAge = resolveBirthDateFromAgeShorthand(latestDraft[field.name]);
+
+                              if (birthFromAge) {
+                                const nextState = {
+                                  ...latestDraft,
+                                  [field.name]: birthFromAge,
+                                };
+
+                                setState(nextState, {
+                                  source: 'blur',
+                                  caller: 'ProfileForm.scalarInput.onBlur',
+                                  reason: 'birth-age-shorthand-normalized',
+                                });
+                                submitWithNormalization(nextState, 'overwrite');
                                 return;
                               }
                             }
