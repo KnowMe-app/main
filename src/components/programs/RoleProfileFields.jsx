@@ -89,11 +89,9 @@ const Segment = styled.button`
   min-height: 36px;
   padding: 0 13px;
   border-radius: 999px;
-  /* Вибране — кольором тексту, як відповідь у решті форми: акцент на цьому
-     екрані лишається за «Опублікувати». */
-  border: 1px solid ${({ $on }) => ($on ? 'var(--km-text, #1A1A1A)' : 'transparent')};
-  background: ${({ $on }) => ($on ? 'var(--km-text, #1A1A1A)' : 'var(--km-fill, #F0EDE8)')};
-  color: ${({ $on }) => ($on ? 'var(--km-card, #fff)' : 'var(--km-text, inherit)')};
+  border: 1px solid ${({ $on }) => ($on ? 'var(--km-accent, #C9600F)' : 'transparent')};
+  background: ${({ $on }) => ($on ? 'var(--km-accent, #C9600F)' : 'var(--km-fill, #F0EDE8)')};
+  color: ${({ $on }) => ($on ? 'var(--km-on-accent, #fff)' : 'var(--km-text, inherit)')};
   font: inherit;
   font-size: 14px;
   font-weight: 400;
