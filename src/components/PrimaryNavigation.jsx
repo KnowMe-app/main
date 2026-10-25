@@ -71,13 +71,34 @@ const isTypingTarget = node => {
   if (node.matches('textarea')) return true;
   return node.matches('input') && !['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file'].includes(node.type);
 };
+// Клавіатуру на Android ховає й системна кнопка «Назад», а поле при цьому
+// лишається у фокусі — і панель, що судила з самого фокуса, не поверталась,
+// доки людина не торкнеться чогось іншого: три вкладки й `publish-dock`
+// зникали разом із клавіатурою, але назад не приходили. Тому фокус лише
+// вмикає «клавіатура відкрита», а вимикає ще й `visualViewport`: побачили,
+// що видима висота стиснулась під клавіатуру, а потім розправилась, — значить,
+// клавіатуру сховали, хоч поле й у фокусі. Браузер, який стиснення не показує,
+// лишається на самому фокусі, як і було.
+const KEYBOARD_MIN_HEIGHT_PX = 120;
 const useKeyboardOpen = enabled => {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!enabled || typeof document === 'undefined') return undefined;
     const coarse = typeof window.matchMedia !== 'function' || window.matchMedia('(pointer: coarse)').matches;
     if (!coarse) return undefined;
-    const update = () => setOpen(isTypingTarget(document.activeElement));
+    const viewport = window.visualViewport || null;
+    // Висота без клавіатури. З `interactive-widget=resizes-visual` клавіатура
+    // стискає лише видиму область, а `innerHeight` лишається повним; найбільше
+    // побачене переживає й браузери, що стискають обидва.
+    let fullHeight = Math.max(window.innerHeight || 0, viewport?.height || 0);
+    let sawKeyboard = false;
+    let dismissed = false;
+    const isViewportShrunk = () => {
+      if (!viewport) return false;
+      fullHeight = Math.max(fullHeight, viewport.height);
+      return fullHeight - viewport.height > KEYBOARD_MIN_HEIGHT_PX;
+    };
+    const update = () => setOpen(isTypingTarget(document.activeElement) && !dismissed);
     // Фокус між двома полями проходить через body: без відкладення панель
     // блимала б на кожному переході «Далі» на клавіатурі.
     let timer = null;
@@ -85,13 +106,36 @@ const useKeyboardOpen = enabled => {
       clearTimeout(timer);
       timer = setTimeout(update, 60);
     };
-    document.addEventListener('focusin', schedule);
+    const handleFocusIn = () => {
+      // Нове поле — нова клавіатура: чекаємо її стиснення заново.
+      sawKeyboard = isViewportShrunk();
+      dismissed = false;
+      schedule();
+    };
+    const handleViewportResize = () => {
+      // Без поля у фокусі клавіатури немає, і видима висота — повна: так
+      // повну висоту переміряє й поворот екрана, де вона стає меншою.
+      if (viewport && !isTypingTarget(document.activeElement)) {
+        fullHeight = viewport.height;
+      }
+      if (isViewportShrunk()) {
+        // Дотик у те саме поле знову відкрив клавіатуру.
+        sawKeyboard = true;
+        dismissed = false;
+      } else if (sawKeyboard && isTypingTarget(document.activeElement)) {
+        dismissed = true;
+      }
+      schedule();
+    };
+    document.addEventListener('focusin', handleFocusIn);
     document.addEventListener('focusout', schedule);
+    viewport?.addEventListener('resize', handleViewportResize);
     update();
     return () => {
       clearTimeout(timer);
-      document.removeEventListener('focusin', schedule);
+      document.removeEventListener('focusin', handleFocusIn);
       document.removeEventListener('focusout', schedule);
+      viewport?.removeEventListener('resize', handleViewportResize);
       setOpen(false);
     };
   }, [enabled]);
