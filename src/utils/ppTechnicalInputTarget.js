@@ -1,4 +1,4 @@
-import { resolveBirthDateFromAgeShorthand } from './profileDate';
+import { resolveBirthDateFromAgeShorthand, resolveLastDeliveryFromShorthand } from './profileDate';
 
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
@@ -154,6 +154,23 @@ export const resolvePpTechnicalInputTarget = (rawValue, { normalizePhone } = {})
   const birthFromAge = resolveBirthDateFromAgeShorthand(trimmed);
   if (birthFromAge) {
     return { fieldName: 'birth', value: birthFromAge };
+  }
+
+  // «2+», «3-» — група крові з резусом, так вона й лежить у `blood`.
+  const bloodMatch = trimmed.match(/^([1-4])\s*([+-])$/);
+  if (bloodMatch) {
+    return { fieldName: 'blood', value: `${bloodMatch[1]}${bloodMatch[2]}` };
+  }
+
+  // «КС2», «кр2» — кількість кесаревих розтинів; нуль у довіднику — «-».
+  const csectionMatch = trimmed.match(/^(?:кс|кр)\s*(\d)$/i);
+  if (csectionMatch) {
+    return { fieldName: 'csection', value: csectionMatch[1] === '0' ? '-' : csectionMatch[1] };
+  }
+
+  const lastDeliveryFromAgo = resolveLastDeliveryFromShorthand(trimmed);
+  if (lastDeliveryFromAgo) {
+    return { fieldName: 'lastDelivery', value: lastDeliveryFromAgo };
   }
 
   const normalizedPhone = typeof normalizePhone === 'function' ? normalizePhone(trimmed) : '';

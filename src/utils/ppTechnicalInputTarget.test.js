@@ -81,3 +81,26 @@ describe('resolvePpTechnicalInputTargets', () => {
     expect(resolvePpTechnicalInputTargets('+380501234567', { normalizePhone })[0].fieldName).toBe('phone');
   });
 });
+
+describe('resolvePpTechnicalInputTarget — анкетні скорочення', () => {
+  const normalizePhone = () => '';
+
+  it.each([
+    ['2+', { fieldName: 'blood', value: '2+' }],
+    ['3 -', { fieldName: 'blood', value: '3-' }],
+    ['КС2', { fieldName: 'csection', value: '2' }],
+    ['кс2', { fieldName: 'csection', value: '2' }],
+    ['КР1', { fieldName: 'csection', value: '1' }],
+    ['кр 0', { fieldName: 'csection', value: '-' }],
+  ])('%p', (input, expected) => {
+    expect(resolvePpTechnicalInputTarget(input, { normalizePhone })).toEqual(expected);
+  });
+
+  it.each(['14т', '5м', '2р'])('%p goes to lastDelivery', input => {
+    expect(resolvePpTechnicalInputTarget(input, { normalizePhone }).fieldName).toBe('lastDelivery');
+  });
+
+  it('30р stays birth date', () => {
+    expect(resolvePpTechnicalInputTarget('30р', { normalizePhone }).fieldName).toBe('birth');
+  });
+});
