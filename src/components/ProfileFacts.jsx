@@ -15,6 +15,7 @@ import { formatDeliveryRecency } from '../utils/deliveryRecency';
 import { formatProfileCountOrDate } from '../utils/profileDate';
 import { uiText } from '../utils/uiTranslations';
 import { describeGlasses, describeHair, describeLooks, describeWork } from '../utils/profileSentences';
+import { PROGRAM_PLACE_CHOICES, formatRewardForDisplay, parseProgramPlaces, readHabitExtraKind } from '../utils/profileAnswers';
 
 /*
  * Факти анкети — один блок на рядок стрічки й на відкриту картку.
@@ -406,11 +407,14 @@ const NO_ANSWERS = new Set(['no', 'ні', 'false']);
  * першої особи, що дописуються до «Про себе» (`ProfileRow`). Власна відповідь
  * («келих на свята») стоїть як написали, після назви теми.
  */
+// «Іноді» й «Припинила» — готові варіанти куріння й алкоголю
+// (`utils/profileAnswers`), а не своя відповідь: без власних речень картка
+// показувала б їх сирим словом з бази («Куріння: sometimes»).
 const LIFESTYLE_SENTENCES = {
   surrogacyExperience: { yes: 'Маю досвід сурогатного материнства.', no: 'Ще не брала участі в програмі сурогатного материнства.', other: 'Досвід сурогатного материнства: {value}.' },
   healthComplications: { yes: 'Під час вагітностей чи пологів були ускладнення.', no: 'Ускладнень під час вагітностей і пологів не було.', other: 'Про ускладнення: {value}.' },
-  smoking: { yes: 'Курю.', no: 'Не курю.', other: 'Куріння: {value}.' },
-  alcohol: { yes: 'Вживаю алкоголь.', no: 'Не вживаю алкоголю.', other: 'Алкоголь: {value}.' },
+  smoking: { yes: 'Курю.', no: 'Не курю.', sometimes: 'Курю іноді.', quit: 'Кинула курити.', other: 'Куріння: {value}.' },
+  alcohol: { yes: 'Вживаю алкоголь.', no: 'Не вживаю алкоголю.', sometimes: 'Алкоголь вживаю іноді.', other: 'Алкоголь: {value}.' },
 };
 
 const readYesNo = (user, field) => {
@@ -418,6 +422,8 @@ const readYesNo = (user, field) => {
   const lower = raw.toLowerCase();
   if (YES_ANSWERS.has(lower)) return { kind: 'yes', raw };
   if (NO_ANSWERS.has(lower)) return { kind: 'no', raw };
+  const extraKind = readHabitExtraKind(raw);
+  if (extraKind && LIFESTYLE_SENTENCES[field]?.[extraKind]) return { kind: extraKind, raw };
   return raw ? { kind: 'other', raw } : null;
 };
 
@@ -465,15 +471,36 @@ export const composeAboutText = (bio, user, language) => {
  * плюс рядки «підпис — значення» для того, що людина набрала сама: власна
  * відповідь у речення не лягає, бо її рід і відмінок невідомі.
  */
-// Валюта бажаної винагороди за замовчуванням — долари: голе «1350» читач
-// не знав, у чому рахувати. Текст, де валюту вже названо, не чіпаємо.
-const withDefaultRewardCurrency = (text) => {
-  if (typeof text !== 'string') return text;
-  const trimmed = text.trim();
-  return /^\d[\d\s.,]*$/.test(trimmed) ? `${trimmed} $` : text;
+// Бажана винагорода: сума з розрядами й валютою (голе «1350» — долари:
+// читач не знав, у чому рахувати), «Хочу обговорити» — словами мовою
+// читача, старий текст — як написали (`utils/profileAnswers`).
+const describeReward = (raw, lang) => formatRewardForDisplay(raw, uiText('За домовленістю', lang));
+
+// Де людина готова проходити програму — коди з форми (`programPlace`) мовою
+// читача, а країни, які вона дописала після «За кордоном», — як написала.
+const describeProgramPlace = (user, lang) => {
+  const codes = parseProgramPlaces(readTypedValue(user, 'programPlace'));
+  if (!codes.length) return '';
+  const labels = codes.map(code => {
+    const text = uiText(PROGRAM_PLACE_CHOICES.find(choice => choice.value === code).phrase, lang);
+    const countries = code === 'abroad' ? readTypedValue(user, 'programPlaceNote') : '';
+    return countries ? `${text} (${countries})` : text;
+  });
+  const extraList = getExtraLocale(lang)?.sentences.clauses;
+  const places = extraList ? extraList(labels) : labels.join(', ');
+  return uiText('Готова проходити програму: {places}.', lang, { places });
 };
 
 const DETAIL_SECTIONS = [
+  // Нюанси кесаревого («після кесаревого народжувала природним шляхом») —
+  // лише в повній анкеті: рядок стрічки бере самі поля картки, а нюансів у
+  // ній немає.
+  {
+    key: 'csectionNote',
+    title: 'Deliveries',
+    describe: ({ typed: read }) => ({ text: read('csectionNote'), used: new Set(['csectionNote']) }),
+    fields: [],
+  },
   {
     key: 'looks',
     title: 'Face and figure',
@@ -495,10 +522,18 @@ const DETAIL_SECTIONS = [
   // Відповіді про досвід, ускладнення, куріння й алкоголь пішли в «Про себе»
   // реченнями (`describeLifestyle`): табличка «Куріння — ні» читалась як
   // анкета, а не як людина.
+  // Де готова проходити програму — поруч із винагородою: обидва — умови
+  // програми, а не розповідь про себе.
+  {
+    key: 'programPlace',
+    title: 'Program',
+    describe: ({ user, lang }) => ({ text: describeProgramPlace(user, lang), used: new Set(['programPlace', 'programPlaceNote']) }),
+    fields: [],
+  },
   {
     key: 'reward',
     title: 'Desired compensation',
-    describe: ({ typed: read }) => ({ text: withDefaultRewardCurrency(read('reward')), used: new Set(['reward']) }),
+    describe: ({ typed: read, lang }) => ({ text: describeReward(read('reward'), lang), used: new Set(['reward']) }),
     fields: [],
   },
   {

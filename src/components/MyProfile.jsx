@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { FiChevronRight, FiTrash2, FiX } from 'react-icons/fi';
+import { FiChevronRight, FiPlus, FiTrash2, FiX } from 'react-icons/fi';
 import { FaCheck, FaEye, FaEyeSlash, FaLock } from 'react-icons/fa';
 import styled, { css, keyframes } from 'styled-components';
 import { ScreenLoading } from './RequireAuth';
@@ -86,6 +86,23 @@ import { isProgramsOwnerRoleHidden, listPrograms, listProgramBonuses, resolvePro
 import { MyProfileCardPreview } from './MyProfileCardPreview';
 import { MyProfileShare } from './MyProfileShare';
 import { getCurrentValue } from './getCurrentValue';
+import { listShareableProfileRoles } from '../utils/profileShare';
+import {
+  CSECTION_CHOICES,
+  DEFAULT_REWARD_CURRENCY,
+  MY_PROFILE_HABIT_CHOICES,
+  PROGRAM_PLACE_CHOICES,
+  REWARD_CURRENCIES,
+  REWARD_NEGOTIABLE,
+  YES_WITH_DETAILS_FIELDS,
+  composeRewardValue,
+  encodeProgramPlaces,
+  parseProgramPlaces,
+  parseRewardValue,
+  readCSectionChoice,
+  readYesDetails,
+  readYesWithDetails,
+} from '../utils/profileAnswers';
 
 const Page = styled.div`
   /* Локальні псевдоніми з глобальних KnowMe-токенів: сторінка автоматично підтримує світлу/темну тему. */
@@ -596,22 +613,55 @@ const LikedAudienceBtn = styled(UnpublishBtn)`
   gap:8px;
 
 `;
-const LikedAudienceNote = styled.div`
-  margin-top:12px;
-  padding:12px 14px;
-  border-radius:12px;
-  background:var(--accent-light, rgba(201, 96, 15,0.08));
-  border:1px solid rgba(201, 96, 15,0.28);
+/*
+ * Хто бачитиме анкету — три способи, від найширшого до найанонімнішого:
+ * усі в стрічці, лише вподобані, лише за посиланням. Кожен — окрема плашка з
+ * назвою, тим, що він означає, і своєю кнопкою; поточний — рамкою акценту й
+ * позначкою «Зараз так». Доти «лише вподобаним» було другою кнопкою під
+ * «Опублікувати» з помаранчевою приміткою, а посилання — окремою карткою
+ * «Поділитися анкетою» під «Публікацією», і що це три відповіді на одне
+ * питання, людина мусила здогадатись сама.
+ */
+const WaysTitle = styled.div`
+  margin:18px 0 0;
+  font-size:15px;
+  font-weight:700;
+  color:var(--text);
+`;
+const WayCard = styled.div`
+  ${({ $plain, $current }) => ($plain ? 'margin-top:16px;' : `
+    margin-top:10px;
+    padding:14px;
+    border-radius:14px;
+    border:1.5px solid ${$current ? 'var(--accent)' : 'var(--border)'};
+    background:var(--card);
+  `)}
+  scroll-margin-top:${CONTENT_SECTION_TOP_GAP}px;
+
+  ${PublishSingleAction} { margin-top:12px; }
+  > ${LikedAudienceBtn} { margin-top:12px; }
+`;
+const WayHead = styled.div`
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:6px 8px;
+
+  > b { font-size:15px; font-weight:700; color:var(--text); }
+`;
+const WayTag = styled.span`
+  padding:2px 9px;
+  border-radius:99px;
+  font-size:12px;
+  font-weight:600;
+  background:${({ $current }) => ($current ? 'var(--accent)' : 'var(--km-fill)')};
+  color:${({ $current }) => ($current ? 'var(--km-on-accent, #fff)' : 'var(--muted)')};
+`;
+const WayText = styled.p`
+  margin:6px 0 0;
   font-size:13px;
   line-height:1.5;
-  color:var(--text);
-
-  > b { display:block; margin-bottom:4px; font-size:14px; font-weight:700; }
-  > p { margin:0; }
-  > p + p { margin-top:6px; }
-`;
-const LikedAudienceCaveat = styled.p`
-  && { color:var(--muted); }
+  color:${({ $muted }) => ($muted ? 'var(--muted)' : 'var(--text)')};
 `;
 
 /*
@@ -775,6 +825,90 @@ const PhotoSection = styled.div`
 `;
 const SubmitBtn = styled.button`width:100%;padding:16px;background:var(--km-accent);color:var(--km-on-accent, #fff);border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
+// Підпис уточнення під відповіддю — тихіше за підпис самого питання.
+const FollowUpLabel = styled.div`
+  margin-bottom:6px;
+  font-size:12px;
+  color:var(--muted);
+
+  > span { opacity:.8; }
+  > span::before { content:'· '; }
+`;
+// «Додайте ще: Telegram, Instagram…» під заповненими соцмережами.
+const AddMoreRow = styled.div`
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:6px;
+  padding:14px 0;
+
+  > span { flex-basis:100%; margin-bottom:2px; font-size:13px; color:var(--muted); }
+`;
+const AddMoreChip = styled.button`
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  min-height:36px;
+  padding:0 13px;
+  border:0;
+  border-radius:99px;
+  background:var(--km-fill);
+  color:var(--text);
+  font:inherit;
+  font-size:14px;
+  cursor:pointer;
+
+  svg { color:var(--muted); }
+  &:focus-visible { outline:none; box-shadow:0 0 0 3px var(--km-accent-ring); }
+`;
+// Сума винагороди й валюта в одному рядку; валюта — доріжка «одне з
+// кількох» з білим вибраним сегментом, як решта таких виборів.
+const RewardRow = styled.div`
+  display:flex;
+  align-items:stretch;
+  gap:8px;
+
+  > :first-child { flex:1 1 auto; min-width:0; }
+`;
+const CurrencyTrack = styled.div`
+  flex:none;
+  display:inline-flex;
+  gap:2px;
+  padding:3px;
+  border-radius:12px;
+  background:var(--km-fill);
+`;
+const CurrencySegment = styled.button`
+  min-width:40px;
+  padding:0 8px;
+  border:0;
+  border-radius:9px;
+  background:${({ $active }) => ($active ? 'var(--card)' : 'transparent')};
+  box-shadow:${({ $active }) => ($active ? '0 1px 2px rgba(28, 27, 26, 0.12)' : 'none')};
+  color:${({ $active }) => ($active ? 'var(--text)' : 'var(--muted)')};
+  font:inherit;
+  font-size:15px;
+  font-weight:${({ $active }) => ($active ? 700 : 500)};
+  cursor:pointer;
+`;
+const RewardLegacyNote = styled.div`
+  margin-top:10px;
+  font-size:13px;
+  line-height:1.45;
+  color:var(--muted);
+
+  > q { color:var(--text); }
+  > button {
+    margin-left:6px;
+    padding:0;
+    border:0;
+    background:transparent;
+    color:var(--km-accent-text, var(--accent));
+    font:inherit;
+    font-weight:600;
+    cursor:pointer;
+  }
+`;
 
 const AuthCard = styled(FirstContentCard)``;
 const hintPulse = keyframes`
@@ -951,7 +1085,14 @@ const baseSections = [
   // видно, а потрібна вона лише графіку програми. Питання, за якими агенція
   // обирає (ускладнення, досвід, пологи, кесарів), тепер ідуть одразу за
   // зростом, вагою й кров'ю.
-  { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'healthComplications', 'surrogacyExperience', 'ownKids', 'lastDelivery', 'csection', 'reward', 'lastCycle'] },
+  { key: 'medical', title: '🏥 Медична інформація', fields: ['height', 'weight', 'blood', 'surgeries', 'chronicDiseases', 'allergy', 'healthComplications', 'surrogacyExperience', 'ownKids', 'lastDelivery', 'csection'] },
+  // Готовність до програми — окремим розділом одразу за медичним: «Де ви
+  // готові проходити програму» агенція питає першим, коли підбирає програму,
+  // а серед медичних питань його не було зовсім. Сюди ж — винагорода, інтерес
+  // донорки до програми СМ і день місячних: той міняється щомісяця, тож це
+  // не факт анкети, а подробиця для графіка найближчої програми, і
+  // публікацію він не тримає.
+  { key: 'program', title: '🤝 Готовність до програми', fields: ['programPlace', 'reward', 'surrogacyProgramInterest', 'lastCycle'] },
   { key: 'appearance', title: '✨ Зовнішність', fields: ['eyeColor', 'hairColor', 'hairStructure', 'bodyType', 'faceShape', 'noseShape', 'lipsShape', 'chin', 'clothingSize', 'shoeSize', 'breastSize', 'glasses', 'race'] },
   // VK прибрано: мережа заблокована в Україні з 2017 року, і поле для неї в
   // анкеті читалось як знак, чий це застосунок. Уже записане значення з
@@ -966,7 +1107,7 @@ const baseSections = [
   // найчастіше лишається недописаним — СМ 23.10 вписала Telegram у мережах і
   // до «Про себе» вже не дійшла. Вкладка «Про себе» на телефоні ще й
   // ховалась за краєм.
-  { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'sport', 'education', 'profession', 'hobbies', 'twinsInFamily', 'moreInfo_main', 'surrogacyProgramInterest'] },
+  { key: 'lifestyle', title: '🌿 Спосіб життя', fields: ['smoking', 'alcohol', 'sport', 'education', 'profession', 'hobbies', 'twinsInFamily', 'moreInfo_main'] },
   { key: 'social', title: '📱 Соцмережі', fields: ['telegram', 'facebook', 'instagram', 'tiktok', 'twitter', 'linkedin', 'youtube', 'website'] },
 ];
 
@@ -979,18 +1120,26 @@ const PAST_DATE_FIELDS = new Set(['lastDelivery', 'lastCycle']);
 // донорку чи СМ, — пологи, кесарів, ускладнення, досвід, звички. Порядок
 // форми тут не годився: першими порожніми в ньому стоять по батькові й
 // область, і підказка вела б до полів, яких у картці майже не видно.
+// «Де ви готові проходити програму» — першим: без нього агенція не знає, чи
+// пропонувати програму в іншому місті чи країні.
 const NEXT_FIELD_PRIORITY = [
+  'programPlace',
   'ownKids', 'lastDelivery', 'csection', 'healthComplications', 'surrogacyExperience',
   'smoking', 'alcohol', 'moreInfo_main', 'reward',
 ];
 // Чого «Варто дописати» не пропонує зовсім: пошта — це логін, а по батькові
 // й область картці нічого не додають.
 const NEXT_FIELD_SKIPPED = new Set(['email', 'fathersname', 'region']);
-// Дві дати «Варто дописати» пропонує завжди, поки вони порожні, — і до
-// публікаційного мінімуму теж, і понад ліміт трьох підказок: дату останніх
-// пологів і день місячних пропустили всі три СМ 23.10, а саме за ними
-// агенція рахує, коли можлива програма (на прохання власниці продукту).
-const ALWAYS_SUGGESTED_FIELDS = ['lastDelivery', 'lastCycle'];
+// Дату останніх пологів «Варто дописати» пропонує завжди, поки вона порожня,
+// — і до публікаційного мінімуму теж, і понад ліміт трьох підказок: її
+// пропустили всі три СМ 23.10, а саме за нею агенція рахує, коли можлива
+// програма (на прохання власниці продукту). День місячних тут стояв поруч і
+// пішов: він міняється щомісяця, тож це не пропуск в анкеті, а подробиця
+// для графіка найближчої програми (розділ «Готовність до програми»).
+const ALWAYS_SUGGESTED_FIELDS = ['lastDelivery'];
+// Чого не рахує повнота анкети: день місячних застаріває за місяць, і
+// анкета, заповнена вчора на 100 %, сьогодні не стала гіршою.
+const COMPLETENESS_SKIPPED_FIELDS = new Set(['lastCycle']);
 // Поля власних розділів ролі, які теж рахує повнота анкети: «Як шукаєте»
 // батьків і програми. Поки власні розділи відкидались цілком, анкета батьків
 // показувала 100 % з порожнім «Як шукаєте», а агенція — без жодної програми.
@@ -1024,14 +1173,26 @@ const PERSON_OPTIONAL_PROFILE_FIELDS = new Set([
 ]);
 // Скільки назв полів називає тост; решту — числом.
 const MISSING_FIELDS_TOAST_LIMIT = 4;
-// Так/Ні, до яких людині є що дописати («Так: апендицит, 2019»).
-const YES_NO_DETAIL_FIELDS = new Set(['surgeries', 'chronicDiseases', 'allergy']);
-// Так/Ні, де життя буває складнішим за два варіанти: шлюб не лише
-// офіційний, курять і пʼють «іноді». Тут чіп зветься «Свій варіант».
-const YES_NO_CUSTOM_FIELDS = new Set(['maritalStatus', 'smoking', 'alcohol']);
-// «Ні» або розповідь: відповідь «так» без подробиць нічого не каже, тож
-// другим чіпом стоїть «Детальніше», і за ним — власний текст.
-const NO_OR_DETAILS_FIELDS = new Set(['healthComplications']);
+/*
+ * «Свій варіант» — лише там, де відповідь справді не вкладається у варіанти:
+ * етнічна група буває змішаною. Стояв він біля пʼятнадцяти питань, від форми
+ * носа до куріння, і щоразу питав людину, чи її відповідь «особлива», —
+ * а картка своєї відповіді в речення не ставить (`utils/profileSentences`).
+ * Записану колись свою відповідь форма показує й далі (`hasCustomValue`),
+ * інакше вона зникла б з екрана.
+ *
+ * Уточнення тепер живуть після відповіді, якої стосуються: «Так» в операціях
+ * чи алергіях відкриває «Що саме?» (`YES_WITH_DETAILS_FIELDS`), кесарів —
+ * нюанси, «За кордоном» — країни (`FOLLOW_UP_FIELDS`).
+ */
+const CUSTOM_OPTION_FIELDS = new Set(['race']);
+// Поле-уточнення, яке відкривається після відповіді основного поля, і
+// відповіді, після яких воно потрібне.
+const FOLLOW_UP_FIELDS = Object.freeze({
+  csection: { name: 'csectionNote', label: 'Нюанси, якщо були', when: value => ['1', '2'].includes(readCSectionChoice(value)) },
+  programPlace: { name: 'programPlaceNote', label: 'Які країни?', when: value => parseProgramPlaces(value).includes('abroad') },
+});
+const FOLLOW_UP_FIELD_NAMES = Object.values(FOLLOW_UP_FIELDS).map(followUp => followUp.name);
 
 // Підпис прикладу («Наприклад: …») — `utils/examplePlaceholder`: той самий
 // і в чернетці, і в доповненні картки.
@@ -1045,9 +1206,12 @@ const OBJECT_PROFILE_FIELDS = new Set(['parentPreferences', 'services']);
 // спільним блоком. Тут колись був перелік-виняток, у якому бракувало по
 // батькові, дати народження й сімейного стану, — і «очистити анкету СМ»
 // стирало їх у людини, яка лишалась ще й агенцією.
-const DONOR_ROLE_FIELDS = new Set(baseSections
-  .filter(section => !['personal', 'social'].includes(section.key))
-  .flatMap(section => section.fields));
+const DONOR_ROLE_FIELDS = new Set([
+  ...baseSections
+    .filter(section => !['personal', 'social'].includes(section.key))
+    .flatMap(section => section.fields),
+  ...FOLLOW_UP_FIELD_NAMES,
+]);
 const PARENT_ROLE_FIELDS = new Set(['seeking', 'programLocation', 'parentVia', 'parentPreferences', 'services']);
 
 // Батьки підписуються одним рядком «Як до вас звертатись» («Олена й
@@ -1137,6 +1301,9 @@ const MY_PROFILE_EXTRA_FIELDS = [
   // працює адмінка (`fieldLastCycle`); нового ключа не заводимо.
   { name: 'lastCycle', label: 'Перший день останньої менструації', ukrainian: 'Перший день останньої менструації', placeholder: 'дд.мм.рррр', svg: 'no' },
   { name: 'healthComplications', label: 'Ускладнення здоровʼя, вагітності, пологів', ukrainian: 'Ускладнення здоровʼя, вагітності, пологів', placeholder: 'Опишіть, що саме', svg: 'no', options: [{ placeholder: 'No', ukrainian: 'Ні' }] },
+  // Де людина готова проходити програму — коди через кому
+  // (`utils/profileAnswers`), кілька відповідей разом.
+  { name: 'programPlace', label: 'Де ви готові проходити програму?', ukrainian: 'Де ви готові проходити програму?', placeholder: '', svg: 'no' },
 ];
 
 /**
@@ -1210,6 +1377,97 @@ const buildMyProfileDraft = profileState => {
   return draftState;
 };
 
+/*
+ * Бажана винагорода — сума, валюта й «Хочу обговорити» (`utils/profileAnswers`).
+ *
+ * Тут було текстове поле, і в ньому писали що завгодно: «від 1000 $,
+ * залежить від програми», «1350», «обговорюється» — агенція не могла ні
+ * порівняти суми, ні зрозуміти, чи «1350» — це долари. Записується так само
+ * рядком (`15000 $`, `Negotiable`), тож поле в базі й картка лишились ті самі.
+ * Старий текст форма не перекручує: він стоїть під полем, доки людина не
+ * вкаже суму чи не зітре його.
+ */
+const RewardField = ({ value, placeholder, language, missing, onCommit }) => {
+  const parsed = parseRewardValue(value);
+  const [amount, setAmount] = useState(parsed.kind === 'amount' ? String(parsed.amount) : '');
+  const [currency, setCurrency] = useState(parsed.kind === 'amount' ? parsed.currency : DEFAULT_REWARD_CURRENCY);
+  // Анкета приїжджає з бази вже після першого рендера.
+  useEffect(() => {
+    const next = parseRewardValue(value);
+    if (next.kind === 'amount') {
+      setAmount(String(next.amount));
+      setCurrency(next.currency);
+    } else if (next.kind === 'negotiable' || next.kind === 'empty') {
+      setAmount('');
+    }
+  }, [value]);
+
+  const negotiable = parsed.kind === 'negotiable' && !amount;
+  const commitAmount = (nextAmount, nextCurrency) => {
+    const composed = composeRewardValue({ amount: nextAmount, currency: nextCurrency });
+    if (composed) {
+      if (composed !== value) onCommit(composed);
+      return;
+    }
+    // Стерта сума стирає й записану суму, а не старий текст і не «обговорити».
+    if (parsed.kind === 'amount') onCommit('');
+  };
+
+  return <>
+    <RewardRow>
+      <FieldControl>
+        <Input
+          value={amount}
+          inputMode="decimal"
+          $missing={missing}
+          placeholder={placeholder}
+          aria-label={uiText('Сума', language)}
+          onChange={event => setAmount(event.target.value.replace(/[^\d\s.,]/g, ''))}
+          onBlur={event => commitAmount(event.target.value, currency)}
+        />
+      </FieldControl>
+      <CurrencyTrack role="radiogroup" aria-label={uiText('Валюта', language)}>
+        {REWARD_CURRENCIES.map(sign => (
+          <CurrencySegment
+            key={sign}
+            type="button"
+            role="radio"
+            aria-checked={currency === sign}
+            $active={currency === sign}
+            onMouseDown={event => event.preventDefault()}
+            onClick={() => {
+              setCurrency(sign);
+              if (amount) commitAmount(amount, sign);
+            }}
+          >
+            {sign}
+          </CurrencySegment>
+        ))}
+      </CurrencyTrack>
+    </RewardRow>
+    <ChipRow style={{ marginTop: 10 }}>
+      <Chip
+        type="button"
+        selected={negotiable}
+        aria-pressed={negotiable}
+        onClick={() => {
+          setAmount('');
+          onCommit(negotiable ? '' : REWARD_NEGOTIABLE);
+        }}
+      >
+        {negotiable ? <FaCheck size={11} aria-hidden="true" /> : null}
+        {uiText('Хочу обговорити', language)}
+      </Chip>
+    </ChipRow>
+    {parsed.kind === 'text' ? (
+      <RewardLegacyNote>
+        {uiText('Зараз в анкеті:', language)} <q>{parsed.text}</q>
+        <button type="button" onClick={() => onCommit('')}>{uiText('Стерти', language)}</button>
+      </RewardLegacyNote>
+    ) : null}
+  </>;
+};
+
 const getStoredAuthenticatedOwnerId = () => (
   localStorage.getItem('isLoggedIn') === 'true' ? localStorage.getItem('ownerId') || '' : ''
 );
@@ -1254,6 +1512,9 @@ export const MyProfile = () => {
   const [roleChangeTarget, setRoleChangeTarget] = useState('');
   // «Хто ви» розгорнуте — п'ять чипів ролей замість рядка з поточною роллю.
   const [rolePickerOpen, setRolePickerOpen] = useState(false);
+  // Скільки живих посилань на анкету (`MyProfileShare`) — для рядка стану в
+  // «Публікації»: анкета без стрічки, але з посиланням, не «невидима».
+  const [shareCount, setShareCount] = useState(0);
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const stickyProgressRef = useRef(null);
@@ -1546,6 +1807,17 @@ export const MyProfile = () => {
     shownSkippedFieldsRef.current.add(name);
     return true;
   };
+  // Поле соцмережі, яке людина щойно відкрила чіпом «Додайте ще» — у нього
+  // одразу ставиться курсор (`renderSocialFields`).
+  const [revealedField, setRevealedField] = useState('');
+  const revealField = name => {
+    shownSkippedFieldsRef.current.add(name);
+    setRevealedField(name);
+  };
+  useEffect(() => {
+    if (!revealedField || typeof document === 'undefined') return;
+    document.querySelector(`[data-profile-field="${revealedField}"] input`)?.focus();
+  }, [revealedField]);
   // «Де програма» батьків — лише записане (`buildParentRoleSections`).
   const showParentProgramLocation = rolesList.includes('ip') && keepSkippedField('programLocation');
   const hiddenRoles = useMemo(() => parseHiddenRoles(state.hiddenRoles), [state.hiddenRoles]);
@@ -2701,8 +2973,9 @@ export const MyProfile = () => {
 
   const clearProfileFields = async () => {
     const currentState = stateRef.current || {};
-    const clearableFields = visibleSections
-      .flatMap(section => section.fields)
+    // Уточнення (нюанси кесаревого, країни) полями розділів не є, але
+    // належать анкеті так само.
+    const clearableFields = [...visibleSections.flatMap(section => section.fields), ...FOLLOW_UP_FIELD_NAMES]
       .filter(name => !CLEAR_ALL_PROTECTED_FIELDS.has(name) && name !== 'programs')
       .filter(name => String(currentState[name] ?? '').trim() !== '');
 
@@ -2828,15 +3101,107 @@ export const MyProfile = () => {
     }
   };
 
+  // Відповідь чіпом пишеться одразу, без blur. `extra` — поля, які ця
+  // відповідь робить зайвими (нюанси кесаревого після «Не було»).
+  const commitChoice = (name, value, extra = {}) => {
+    setCustomOptionMode(prev => ({ ...prev, [name]: false }));
+    const nextState = { ...stateRef.current, [name]: value, ...extra };
+    [name, ...Object.keys(extra)].forEach(key => editedFieldsRef.current.add(key));
+    setMissing(prev => ({ ...prev, [name]: false }));
+    stateRef.current = nextState;
+    setState(nextState);
+    triggerAutosave(nextState);
+  };
+
+  // Уточнення, яке втратило сенс після нової відповіді, стирається разом із
+  // нею — але лише записане: порожній рядок у полі, якого не було, зайвий.
+  const followUpReset = (name, nextValue) => {
+    const followUp = FOLLOW_UP_FIELDS[name];
+    if (!followUp || followUp.when(nextValue)) return {};
+    return String(getCurrentValue(stateRef.current?.[followUp.name]) ?? '').trim() ? { [followUp.name]: '' } : {};
+  };
+
+  const renderClearButton = (name, field, onClear) => (
+    <ClearFieldButton
+      type="button"
+      onMouseDown={event => event.preventDefault()}
+      onClick={onClear || (() => clearFieldValue(name, field))}
+      aria-label={uiText('Очистити поле', language)}
+    >
+      <FiX size={16} />
+    </ClearFieldButton>
+  );
+
+  const renderTextControl = ({ name, field, value, placeholder, multiline = false, inputMode }) => {
+    const Control = multiline ? TextArea : Input;
+    return (
+      <FieldControl>
+        <Control
+          value={value}
+          $missing={missing[name]}
+          placeholder={placeholder}
+          inputMode={inputMode}
+          onChange={e => updateFieldValue(name, e.target.value, field)}
+          onBlur={e => saveFieldValue(name, e.target.value, field)}
+        />
+        {value ? renderClearButton(name, field) : null}
+      </FieldControl>
+    );
+  };
+
+  // Уточнення під відповіддю: окреме поле анкети (`FOLLOW_UP_FIELDS`), а не
+  // заміна відповіді, тож «Один» лишається «Один», хай що дописали.
+  const renderFollowUp = (name, roleText) => {
+    const followUp = FOLLOW_UP_FIELDS[name];
+    if (!followUp || !followUp.when(state[name])) return null;
+    const followUpField = { name: followUp.name };
+    return (
+      <CustomOptionWrap data-profile-field={followUp.name}>
+        <FollowUpLabel>{uiText(followUp.label, language)} <span>{uiText('необовʼязково', language)}</span></FollowUpLabel>
+        {renderTextControl({
+          name: followUp.name,
+          field: followUpField,
+          value: getCurrentValue(state[followUp.name]) || '',
+          placeholder: uiText(roleText.detailPlaceholder || '', language),
+        })}
+      </CustomOptionWrap>
+    );
+  };
+
+  const renderChoiceChip = ({ key, selected, label, onClick, missingField }) => (
+    <Chip
+      key={key}
+      selected={selected}
+      aria-pressed={selected}
+      $missing={missingField}
+      onClick={onClick}
+      type="button"
+    >
+      {selected ? <FaCheck size={11} aria-hidden="true" /> : null}
+      {label}
+    </Chip>
+  );
+
   const renderField = (name) => {
     const field = fieldsMap.get(name);
     if (!field) return null;
     const roleText = resolveMyProfileFieldText(name, name === 'agencyName' ? organisationRole : sectionTitleRole, rolesList);
-    // Останні пологи — місяць і рік зі списку, а не набрана дата: чому — у
+    const label = roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language);
+    // Навіщо поле і як на нього відповісти — дрібним рядком під підписом:
+    // без пояснення день місячних пропустили всі три СМ 23.10, а «Кількість
+    // пологів» СМ читали як кількість власних дітей.
+    const fieldHint = name === 'lastCycle'
+      ? uiText('Це допоможе спрогнозувати дату прийому.', language)
+      : roleText.hint ? uiText(roleText.hint, language) : '';
+    const head = <>
+      <Label>{label}</Label>
+      {fieldHint ? <FieldHint>{fieldHint}</FieldHint> : null}
+    </>;
+    // Останні пологи — набрана дата з власним розбором: чому — у
     // `LastDeliveryField`.
     if (name === 'lastDelivery') {
       return <Field key={name} data-profile-field={name}>
-        <Label>{roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language)}</Label>
+        {head}
         <LastDeliveryField
           value={state[name]}
           language={language}
@@ -2844,152 +3209,190 @@ export const MyProfile = () => {
         />
       </Field>;
     }
-    // Навіщо питаємо день місячних — одним рядком під підписом: без пояснення
-    // інтимну дату в анкеті пропустили всі три СМ 23.10.
-    const fieldHint = name === 'lastCycle' ? uiText('Це допоможе спрогнозувати дату прийому.', language) : '';
     const fieldPlaceholder = roleText.placeholder ? uiText(roleText.placeholder, language) : asExamplePlaceholder(getFieldPlaceholder(field, language), language);
     const val = state[name] || '';
-    // Винагороду пишуть розповіддю («від 1000 $, залежить від програми,
-    // компенсація дороги»), а не однією цифрою — тож і поле для неї текстове.
-    const isTextArea = name === 'moreInfo_main' || name === 'reward';
-    const isAppearanceField = sections.find(section => section.key === 'appearance')?.fields.includes(name);
+
+    if (name === 'reward') {
+      return <Field key={name} data-profile-field={name}>
+        {head}
+        <RewardField
+          value={getCurrentValue(val) || ''}
+          placeholder={fieldPlaceholder}
+          language={language}
+          missing={missing[name]}
+          onCommit={next => saveFieldValue(name, next, field)}
+        />
+      </Field>;
+    }
+
+    // Кілька відповідей разом: у своєму місті, в іншому, за кордоном.
+    if (name === 'programPlace') {
+      const places = parseProgramPlaces(val);
+      return <Field key={name} data-profile-field={name}>
+        {head}
+        <ChipRow role="group" aria-label={label}>
+          {PROGRAM_PLACE_CHOICES.map(choice => {
+            const selected = places.includes(choice.value);
+            return renderChoiceChip({
+              key: `${name}-${choice.value}`,
+              selected,
+              label: uiText(choice.label, language),
+              missingField: missing[name],
+              onClick: () => {
+                const nextValue = encodeProgramPlaces(selected
+                  ? places.filter(code => code !== choice.value)
+                  : [...places, choice.value]);
+                commitChoice(name, nextValue, followUpReset(name, nextValue));
+              },
+            });
+          })}
+        </ChipRow>
+        {renderFollowUp(name, roleText)}
+      </Field>;
+    }
+
+    // Готові варіанти «Мого профілю» замість спільного довідника: куріння й
+    // алкоголь (`MY_PROFILE_HABIT_CHOICES`), кесарів (`CSECTION_CHOICES`),
+    // «Ні / Так» з подробицею після «Так» (`YES_WITH_DETAILS_FIELDS`).
+    const ownChoices = MY_PROFILE_HABIT_CHOICES[name]
+      || (name === 'csection' ? CSECTION_CHOICES : null)
+      || (YES_WITH_DETAILS_FIELDS.includes(name) ? [{ value: 'No', label: 'Ні' }, { value: 'Yes', label: 'Так' }] : null);
+    if (ownChoices) {
+      const withDetails = YES_WITH_DETAILS_FIELDS.includes(name);
+      const chosen = withDetails
+        ? readYesWithDetails(val)
+        : name === 'csection'
+          ? readCSectionChoice(val)
+          : ownChoices.find(choice => choice.value.toLowerCase() === String(val).trim().toLowerCase())?.value || '';
+      // Записана колись своя відповідь («кинула 2 роки тому», дата
+      // кесаревого) лишається на екрані полем, а не зникає.
+      const legacyCustom = !withDetails && String(val).trim() !== '' && !chosen;
+      const details = withDetails ? readYesDetails(val) : '';
+      return <Field key={name} data-profile-field={name}>
+        {head}
+        <ChipRow>
+          {ownChoices.map(choice => {
+            const selected = chosen === choice.value;
+            return renderChoiceChip({
+              key: `${name}-${choice.value}`,
+              selected,
+              label: uiText(choice.label, language),
+              missingField: missing[name],
+              onClick: () => {
+                const nextValue = selected ? '' : choice.value;
+                commitChoice(name, nextValue, followUpReset(name, nextValue));
+              },
+            });
+          })}
+          {legacyCustom ? renderChoiceChip({ key: `${name}-custom-option`, selected: true, label: uiText('Свій варіант', language), onClick: () => {} }) : null}
+        </ChipRow>
+        {legacyCustom ? (
+          <CustomOptionWrap>
+            {renderTextControl({ name, field, value: val, placeholder: uiText(roleText.detailPlaceholder || 'Введіть свій варіант', language) })}
+          </CustomOptionWrap>
+        ) : null}
+        {withDetails && chosen === 'Yes' ? (
+          <CustomOptionWrap>
+            <FollowUpLabel>{uiText('Що саме?', language)} <span>{uiText('необовʼязково', language)}</span></FollowUpLabel>
+            <FieldControl>
+              <Input
+                value={details}
+                placeholder={uiText(roleText.detailPlaceholder || '', language)}
+                onChange={e => updateFieldValue(name, e.target.value || 'Yes', field)}
+                onBlur={e => saveFieldValue(name, e.target.value.trim() ? e.target.value : 'Yes', field)}
+              />
+              {details ? renderClearButton(name, field, () => saveFieldValue(name, 'Yes', field)) : null}
+            </FieldControl>
+          </CustomOptionWrap>
+        ) : null}
+        {renderFollowUp(name, roleText)}
+      </Field>;
+    }
+
+    const isTextArea = name === 'moreInfo_main';
     // Форма пропонує лише чинні варіанти (`listOfferedOptions`): дублікати
     // («Карі» й «Коричневі») і «Так/Ні» там, де питають текст чи рівень,
     // лишились у довіднику для вже записаних анкет, а не для вибору.
     const offeredOptions = listOfferedOptions(field.options, val);
     const optionValues = offeredOptions.map(getOptionValue).map(String);
-    const optionLabels = offeredOptions.map(option => getOptionLabel(option)).map(String);
-    const isYesNoField = optionValues.includes('No')
-      && optionValues.includes('Yes')
-      && optionLabels.includes('Ні')
-      && optionLabels.includes('Так');
     const hasCustomValue = String(val).trim() !== '' && !optionValues.includes(String(val));
-    // «Свій варіант» біля кожного Так/Ні був шумом: курити «по-своєму» нема як.
-    // Він лишився там, де людині є що уточнити (операції, хвороби, алергії), і
-    // там, де в анкеті вже лежить своє значення — інакше воно зникло б з екрана.
-    const yesNoAllowsDetails = YES_NO_DETAIL_FIELDS.has(name);
-    const noOrDetails = NO_OR_DETAILS_FIELDS.has(name);
-    const canUseCustomOption = isAppearanceField
-      || (isYesNoField && (yesNoAllowsDetails || YES_NO_CUSTOM_FIELDS.has(name) || hasCustomValue))
-      || noOrDetails
-      || name === 'csection';
+    // «Свій варіант» — лише там, де відповідь не вкладається у варіанти
+    // (`CUSTOM_OPTION_FIELDS`), і там, де своє значення вже записане.
+    const canUseCustomOption = CUSTOM_OPTION_FIELDS.has(name) || hasCustomValue;
     const customSelected = canUseCustomOption
       && (Boolean(customOptionMode[name]) || hasCustomValue);
 
     return <Field key={name} data-profile-field={name}>
-      <Label>{roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language)}</Label>
-      {fieldHint ? <FieldHint>{fieldHint}</FieldHint> : null}
+      {head}
       {offeredOptions.length > 0 ? (
         <>
           <ChipRow>
             {offeredOptions.map(option => {
               const optionValue = getOptionValue(option);
               const selected = String(val) === String(optionValue);
-              return <Chip
-                key={`${name}-${optionValue}`}
-                selected={selected}
-                aria-pressed={selected}
-                $missing={missing[name]}
-                onClick={() => {
-                  setCustomOptionMode(prev => ({ ...prev, [name]: false }));
-                  const isSelected = String(state[name] || '') === String(optionValue);
-                  const nextState = { ...stateRef.current, [name]: isSelected ? '' : optionValue };
-                  editedFieldsRef.current.add(name);
-                  setMissing(prev => ({ ...prev, [name]: false }));
-                  stateRef.current = nextState;
-                  setState(nextState);
-                  triggerAutosave(nextState);
-                }}
-                type="button"
-              >
-                {selected ? <FaCheck size={11} aria-hidden="true" /> : null}
-                {getOptionLabel(option, language)}
-              </Chip>;
+              return renderChoiceChip({
+                key: `${name}-${optionValue}`,
+                selected,
+                label: getOptionLabel(option, language),
+                missingField: missing[name],
+                onClick: () => commitChoice(name, String(state[name] || '') === String(optionValue) ? '' : optionValue),
+              });
             })}
-            {canUseCustomOption ? (
-              <Chip
-                key={`${name}-custom-option`}
-                selected={customSelected}
-                aria-pressed={customSelected}
-                onClick={() => {
-                  setCustomOptionMode(prev => ({ ...prev, [name]: true }));
-                  if (!customSelected) {
-                    updateFieldValue(name, '', field);
-                  }
-                }}
-                type="button"
-              >
-                {customSelected ? <FaCheck size={11} aria-hidden="true" /> : null}
-                {uiText(noOrDetails ? 'Детальніше' : (isYesNoField && yesNoAllowsDetails ? 'Уточнити' : 'Свій варіант'), language)}
-              </Chip>
-            ) : null}
+            {canUseCustomOption ? renderChoiceChip({
+              key: `${name}-custom-option`,
+              selected: customSelected,
+              label: uiText('Свій варіант', language),
+              onClick: () => {
+                setCustomOptionMode(prev => ({ ...prev, [name]: true }));
+                if (!customSelected) {
+                  updateFieldValue(name, '', field);
+                }
+              },
+            }) : null}
           </ChipRow>
           {canUseCustomOption && customSelected ? (
             <CustomOptionWrap>
-              <FieldControl>
-                <Input
-                  value={val}
-                  $missing={missing[name]}
-                  placeholder={uiText(roleText.detailPlaceholder || 'Введіть свій варіант', language)}
-                  onChange={e => updateFieldValue(name, e.target.value, field)}
-                  onBlur={e => saveFieldValue(name, e.target.value, field)}
-                />
-                {val ? (
-                  <ClearFieldButton
-                    type="button"
-                    onMouseDown={event => event.preventDefault()}
-                    onClick={() => clearFieldValue(name, field)}
-                    aria-label={uiText('Очистити поле', language)}
-                  >
-                    <FiX size={16} />
-                  </ClearFieldButton>
-                ) : null}
-              </FieldControl>
+              {renderTextControl({ name, field, value: val, placeholder: uiText(roleText.detailPlaceholder || 'Введіть свій варіант', language) })}
             </CustomOptionWrap>
           ) : null}
         </>
-      ) : isTextArea ? (
-        <FieldControl>
-          <TextArea
-            value={val}
-            $missing={missing[name]}
-            placeholder={fieldPlaceholder}
-            onChange={e => updateFieldValue(name, e.target.value, field)}
-            onBlur={e => saveFieldValue(name, e.target.value, field)}
-          />
-          {val ? (
-            <ClearFieldButton
-              type="button"
-              onMouseDown={event => event.preventDefault()}
-              onClick={() => clearFieldValue(name, field)}
-              aria-label={uiText('Очистити поле', language)}
-            >
-              <FiX size={16} />
-            </ClearFieldButton>
-          ) : null}
-        </FieldControl>
-      ) : (
-        <FieldControl>
-          <Input
-            value={val}
-            $missing={missing[name]}
-            placeholder={fieldPlaceholder}
-            onChange={e => updateFieldValue(name, e.target.value, field)}
-            onBlur={e => saveFieldValue(name, e.target.value, field)}
-          />
-          {val ? (
-            <ClearFieldButton
-              type="button"
-              onMouseDown={event => event.preventDefault()}
-              onClick={() => clearFieldValue(name, field)}
-              aria-label={uiText('Очистити поле', language)}
-            >
-              <FiX size={16} />
-            </ClearFieldButton>
-          ) : null}
-        </FieldControl>
-      )}
+      ) : renderTextControl({
+        name,
+        field,
+        value: val,
+        placeholder: fieldPlaceholder,
+        multiline: isTextArea,
+        // Кількість пологів — число: цифрова клавіатура замість літер.
+        inputMode: name === 'ownKids' ? 'numeric' : undefined,
+      })}
     </Field>;
+  };
+
+  /*
+   * Соцмережі — лише ті, що вже заповнені, полями, а решта — чіпами «Додайте
+   * ще:». Чотири-пʼять порожніх полів «username» стояли в кожній анкеті, хоч
+   * обовʼязковий із контактів лише телефон, і людина, яка мереж давати не
+   * хоче, гортала повз них. Дотик до чіпа відкриває поле й ставить у нього
+   * курсор. Відкрите чи колись заповнене поле лишається на місці до кінця
+   * сесії (`keepSkippedField`): інакше стерте поле зникало б з-під пальця.
+   */
+  const renderSocialFields = section => {
+    const shown = section.fields.filter(name => keepSkippedField(name));
+    const offered = section.fields.filter(name => !shown.includes(name) && fieldsMap.has(name));
+    return <>
+      {shown.map(renderField)}
+      {offered.length ? (
+        <AddMoreRow data-testid="social-add-more">
+          <span>{uiText(shown.length ? 'Додайте ще:' : 'Додайте, якщо хочете, щоб вас знаходили й там:', language)}</span>
+          {offered.map(name => (
+            <AddMoreChip key={name} type="button" onClick={() => revealField(name)}>
+              <FiPlus size={13} aria-hidden="true" />
+              {getFieldLabel(fieldsMap.get(name), language)}
+            </AddMoreChip>
+          ))}
+        </AddMoreRow>
+      ) : null}
+    </>;
   };
 
   // Коли обовʼязкове заповнено, смужка рахує вже всю анкету: «10 з 10 ·
@@ -3007,7 +3410,8 @@ export const MyProfile = () => {
   const completenessFields = visibleSections
     .filter(section => section.key !== 'social')
     .flatMap(section => section.fields)
-    .filter(name => fieldsMap.has(name) || CUSTOM_COMPLETENESS_FIELDS.has(name));
+    .filter(name => fieldsMap.has(name) || CUSTOM_COMPLETENESS_FIELDS.has(name))
+    .filter(name => !COMPLETENESS_SKIPPED_FIELDS.has(name));
   const completeness = {
     filled: completenessFields.filter(isFieldFilled).length,
     total: completenessFields.length,
@@ -3035,6 +3439,14 @@ export const MyProfile = () => {
   const isLikedAudience = !isPublished && isLikedAudienceProfile(state);
   const canOfferLikedAudience = canOfferLikedAudiencePublication(rolesList);
   const likedTexts = LIKED_AUDIENCE_TEXTS[resolveLikedAudienceKind(rolesList)];
+  // Посилання — лише на особисту анкету (`listShareableProfileRoles`): картка
+  // агенції — це програми, а під них знімку потрібна власна перевірка.
+  const canShareByLink = Boolean(userId) && !profileLoading
+    && listShareableProfileRoles({ role: rolesList }, selectedRole).length > 0;
+  // Скільки способів показати анкету має ця людина: стрічка завжди, коло
+  // вподобаних і посилання — не в кожної ролі. Один спосіб — і блок лишається
+  // простим: кнопка без назв і пояснень.
+  const visibilityWayCount = 1 + (canOfferLikedAudience ? 1 : 0) + (canShareByLink ? 1 : 0);
   // Скільки анкет справді в стрічці — для підсумку над рядками «Публікації».
   const publishedRoleCount = isPublished || isLikedAudience
     ? (rolesList.length ? rolesList.filter(role => !hiddenRoles.includes(role)).length : 1)
@@ -3351,20 +3763,6 @@ export const MyProfile = () => {
       </> : null}
     </RoleCard>
 
-    {/* Прев'ю — один блок з перемикачем ролей, а не по повній картці на
-        роль: дві картки з фото на всю ширину ставили форму на два екрани
-        нижче, і людина, яка відкрила «Мій профіль» дописати поле, гортала
-        повз власні фото двічі. */}
-    {showCardPreview && previewCards.length ? (
-      <MyProfileCardPreview
-        previews={previewCards}
-        language={language}
-        rates={programRates}
-        displayCurrency={programDisplayCurrency}
-        onDisplayCurrencyChange={setProgramDisplayCurrency}
-      />
-    ) : null}
-
     <PhotoSection ref={node => { sectionRefs.current.photo = node; }} $isFirstContent={isProfileAccessConfirmed}>
       <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>{uiText('Додайте до 5 фото. Перше — головне', language)}</p>
       <Photos
@@ -3429,7 +3827,8 @@ export const MyProfile = () => {
           ) : null}
           {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} showProgramLocation={showParentProgramLocation} /> : null}
           {section.custom && section.extraFields?.length ? section.extraFields.map(renderField) : null}
-          {!section.custom ? section.fields.map(renderField) : null}
+          {!section.custom && section.key === 'social' ? renderSocialFields(section) : null}
+          {!section.custom && section.key !== 'social' ? section.fields.map(renderField) : null}
         </FieldGroup>
       </SectionCard>
       </React.Fragment>
@@ -3542,21 +3941,37 @@ export const MyProfile = () => {
       />
     )}
 
-    {/* Публікація — одне місце на все, що вирішує, чи видно анкету
-        (вигляд — у коментарі до `PublishHead`). «Очистити» питає
-        підтвердження тією самою модалкою (`clearRoleTarget`), що й пункт
-        меню «⋮». */}
+    {/* Публікація — одне місце на все, що вирішує, хто бачить анкету
+        (вигляд — у коментарях до `PublishHead` і `WayCard`). «Очистити»
+        питає підтвердження тією самою модалкою (`clearRoleTarget`), що й
+        пункт меню «⋮». */}
     <SubmitWrap ref={node => { sectionRefs.current.publish = node; }} data-testid="publish-card">
       <PublishHead>
         <b>{uiText('Публікація', language)}</b>
-        <span>
+        <span data-testid="publish-status">
           {uiText(isLikedAudience
             ? 'Анкету бачать лише ті, кого ви вподобали. Для решти її немає ні в стрічці, ні в пошуку'
             : publishedRoleCount > 0
               ? 'Анкету бачать у стрічці. Приховати її можна будь-коли'
-              : 'Анкету поки не видно в стрічці. Опублікуйте, коли будете готові', language)}
+              : shareCount > 0
+                ? 'Анкети немає ні в стрічці, ні в пошуку — її бачать лише ті, кому ви надіслали посилання'
+                : visibilityWayCount > 1
+                  ? 'Анкету поки не бачить ніхто. Перегляньте її й оберіть, хто її бачитиме'
+                  : 'Анкету поки не видно в стрічці. Опублікуйте, коли будете готові', language)}
         </span>
       </PublishHead>
+      {/* Перегляд — перед рішенням: спершу подивитись, як анкету побачать,
+          і лише тоді обирати, кому її показати. Прев'ю — один блок з
+          перемикачем ролей, а не по повній картці на роль. */}
+      {showCardPreview && previewCards.length ? (
+        <MyProfileCardPreview
+          previews={previewCards}
+          language={language}
+          rates={programRates}
+          displayCurrency={programDisplayCurrency}
+          onDisplayCurrencyChange={setProgramDisplayCurrency}
+        />
+      ) : null}
       {missingPublishFields.length ? (
         <PublishMissing data-testid="publish-missing">
           <span>{uiText('Щоб опублікувати, бракує полів: {count}', language, { count: missingPublishFields.length })}</span>
@@ -3586,6 +4001,21 @@ export const MyProfile = () => {
           ))}
         </NextFieldsRow>
       ) : null}
+      {visibilityWayCount > 1 ? (
+        <WaysTitle>{uiText('Хто бачитиме анкету', language)}</WaysTitle>
+      ) : null}
+      <WayCard $plain={visibilityWayCount < 2} $current={visibilityWayCount > 1 && publishedRoleCount > 0 && !isLikedAudience} data-testid="publish-way-feed">
+        {visibilityWayCount > 1 ? (
+          <>
+            <WayHead>
+              <b>{uiText('Усі в стрічці', language)}</b>
+              {publishedRoleCount > 0 && !isLikedAudience ? <WayTag $current>{uiText('Зараз так', language)}</WayTag> : null}
+            </WayHead>
+            <WayText>{uiText(likedTexts === LIKED_AUDIENCE_TEXTS.organisation
+              ? 'Анкету й програми знаходять у стрічці й пошуку всі, хто увійшов у KnowMe. Так звернень найбільше.'
+              : 'Анкету знаходять у стрічці й пошуку агенції, клініки й біологічні батьки. Так пропозицій найбільше.', language)}</WayText>
+          </>
+        ) : null}
       {rolesList.length > 1 ? (
         <RoleActionList>
           {rolesList.map(role => {
@@ -3629,18 +4059,15 @@ export const MyProfile = () => {
           })}
         </RoleActionList>
       ) : (
-        // Одна анкета — опис і одна кнопка. З роллю дія та сама, що й у
-        // рядку ролі (`publishRole`/`unpublishRole`); анкета без ролі —
+        // Одна анкета — одна кнопка й поруч кошик. З роллю дія та сама, що й
+        // у рядку ролі (`publishRole`/`unpublishRole`); анкета без ролі —
         // `publishProfile`/`hideProfile`.
         <PublishSingleAction data-testid={rolesList[0] ? `publish-role-${rolesList[0]}` : undefined}>
           <PublishSingleRow>
             <div>
               {rolesList[0] ? (
                 isLikedAudience ? (
-                  <>
-                    <SubmitBtn type="button" onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати для всіх', language)}</SubmitBtn>
-                    <LikedAudienceBtn type="button" onClick={hideProfile}>{uiText('Приховати анкету', language)}</LikedAudienceBtn>
-                  </>
+                  <SubmitBtn type="button" onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати для всіх', language)}</SubmitBtn>
                 ) : publishedRoleCount > 0 ? (
                   <UnpublishBtn type="button" onClick={() => unpublishRole(rolesList[0])}>{uiText('Приховати анкету', language)}</UnpublishBtn>
                 ) : (
@@ -3666,57 +4093,70 @@ export const MyProfile = () => {
           </PublishSingleRow>
         </PublishSingleAction>
       )}
+        {isLikedAudience && rolesList.length > 1 ? (
+          <LikedAudienceBtn type="button" onClick={publishProfile}>{uiText('Опублікувати для всіх', language)}</LikedAudienceBtn>
+        ) : null}
+      </WayCard>
       {canOfferLikedAudience ? (
-        <div data-testid="publish-liked-audience">
+        <WayCard $current={isLikedAudience} data-testid="publish-liked-audience">
+          <WayHead>
+            <b>{uiText('Лише ті, кого ви вподобали', language)}</b>
+            {isLikedAudience ? <WayTag $current>{uiText('Зараз так', language)}</WayTag> : null}
+          </WayHead>
           {isLikedAudience ? (
-            rolesList.length > 1 ? (
-              <LikedAudienceBtn type="button" onClick={publishProfile}>{uiText('Опублікувати для всіх', language)}</LikedAudienceBtn>
-            ) : null
+            <WayText>
+              {likedAudienceCount === 0
+                ? uiText(likedTexts.nobodyYet, language)
+                : likedAudienceCount > 0
+                  ? uiText('Зараз анкету бачать: {count}. Знімете вподобання — і для них вона одразу закриється.', language, { count: likedAudienceCount })
+                  : uiText(likedTexts.howTo, language)}
+            </WayText>
+          ) : (
+            <WayText>{uiText(likedTexts.offer, language)}</WayText>
+          )}
+          <WayText $muted>{uiText(likedTexts.caveat, language)}</WayText>
+          {isLikedAudience ? (
+            <LikedAudienceBtn type="button" onClick={hideProfile}>{uiText('Приховати анкету', language)}</LikedAudienceBtn>
           ) : (
             <LikedAudienceBtn type="button" onClick={requestLikedAudiencePublication}>
               {uiText(isPublished ? likedTexts.restrictButton : likedTexts.publishButton, language)}
             </LikedAudienceBtn>
           )}
-          <LikedAudienceNote>
-            <b>{uiText('Лише для тих, кого ви вподобали', language)}</b>
-            {isLikedAudience ? (
-              <p>
-                {likedAudienceCount === 0
-                  ? uiText(likedTexts.nobodyYet, language)
-                  : likedAudienceCount > 0
-                    ? uiText('Зараз анкету бачать: {count}. Знімете вподобання — і для них вона одразу закриється.', language, { count: likedAudienceCount })
-                    : uiText(likedTexts.howTo, language)}
-              </p>
-            ) : (
-              <p>
-                {uiText(likedTexts.offer, language)}
-              </p>
-            )}
-            <LikedAudienceCaveat>
-              {uiText(likedTexts.caveat, language)}
-            </LikedAudienceCaveat>
-          </LikedAudienceNote>
-        </div>
+        </WayCard>
+      ) : null}
+      {/* Посилання — третій спосіб показу, і найанонімніший: анкети немає ні
+          в стрічці, ні в пошуку, а бачить її лише той, кому власниця сама
+          надішле посилання. Стояв він окремою карткою «Поділитися анкетою»
+          під «Публікацією», і читався як ще одна функція, а не як відповідь
+          на те саме питання. Лише над прочитаною анкетою (`userId` ставить
+          вдале читання): над локальною чернеткою після збою знімок оновився б
+          чужим станом. */}
+      {canShareByLink ? (
+        <WayCard $current={shareCount > 0 && publishedRoleCount === 0} ref={node => { sectionRefs.current.share = node; }} data-testid="publish-way-link">
+          <WayHead>
+            <b>{uiText('Лише за посиланням', language)}</b>
+            {shareCount > 0 && publishedRoleCount === 0
+              ? <WayTag $current>{uiText('Зараз так', language)}</WayTag>
+              : <WayTag>{uiText('Найбільше анонімності', language)}</WayTag>}
+          </WayHead>
+          <WayText>{uiText('Анкети немає ні в стрічці, ні в пошуку. Ви самі надсилаєте посилання тим, кому бажаєте, — акаунт у KnowMe їм не потрібен. Що видно за посиланням, вирішуєте ви, а відкликати його можна будь-коли.', language)}</WayText>
+          {publishedRoleCount > 0 && !isLikedAudience ? (
+            <WayText $muted>{uiText('Зараз анкета ще й у стрічці. Щоб її бачили лише за посиланням, приховайте її.', language)}</WayText>
+          ) : null}
+          <MyProfileShare
+            ref={shareBlockRef}
+            uid={userId}
+            getProfile={getShareProfile}
+            profile={state}
+            roles={rolesList}
+            selectedRole={selectedRole}
+            language={language}
+            embedded
+            onSharesChange={setShareCount}
+          />
+        </WayCard>
       ) : null}
     </SubmitWrap>
-    {/* Поділитися анкетою — посилання для людини без акаунта. Стоїть під
-        «Публікацією», бо це теж рішення «хто бачить анкету», але інше: не
-        стрічка, а одна людина, якій власниця сама надішле посилання. Лише
-        над прочитаною анкетою (`userId` ставить вдале читання): над
-        локальною чернеткою після збою знімок оновився б чужим станом. */}
-    <div ref={node => { sectionRefs.current.share = node; }}>
-      {userId && !profileLoading ? (
-        <MyProfileShare
-          ref={shareBlockRef}
-          uid={userId}
-          getProfile={getShareProfile}
-          profile={state}
-          roles={rolesList}
-          selectedRole={selectedRole}
-          language={language}
-        />
-      ) : null}
-    </div>
     {/* Відступу під панель немає: панель ховається, щойно блок «Публікація»
         входить у кадр, а він і є низ сторінки — тож закрити собою вона нічого
         не може. Відступ у 76 px стояв під «Публікацією» порожнім місцем. */}
