@@ -51,8 +51,57 @@ const BottomNavSpace = createGlobalStyle`
       pointer-events: none;
       background: linear-gradient(to bottom, transparent, var(--km-bg) 34%);
     }
+    /* Поки відкрита клавіатура, панелі немає зовсім (\`useKeyboardOpen\`):
+       вона ставала над клавіатурою, а під нею лишалась порожня смуга тла
+       сторінки (відступ і згасання) — на телефоні 360×640 разом із клавіатурою
+       це пів екрана, і саме поле, яке людина заповнює, ховалось. Відступ
+       знизу знімається теж, тож і липке (\`publish-dock\`) опускається. */
+    :root.km-keyboard-open { --km-bottom-nav-h: 0px; }
+    :root.km-keyboard-open body::after { display: none; }
   }
 `;
+
+// Чи відкрита екранна клавіатура: фокус у полі для набору на сенсорному
+// екрані. Розмір `visualViewport` тут ненадійний — Firefox і Chrome на
+// Android по-різному стискають сторінку (`interactive-widget`), а фокус
+// однаковий скрізь.
+const isTypingTarget = node => {
+  if (!node || typeof node.matches !== 'function') return false;
+  if (node.isContentEditable) return true;
+  if (node.matches('textarea')) return true;
+  return node.matches('input') && !['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file'].includes(node.type);
+};
+const useKeyboardOpen = enabled => {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!enabled || typeof document === 'undefined') return undefined;
+    const coarse = typeof window.matchMedia !== 'function' || window.matchMedia('(pointer: coarse)').matches;
+    if (!coarse) return undefined;
+    const update = () => setOpen(isTypingTarget(document.activeElement));
+    // Фокус між двома полями проходить через body: без відкладення панель
+    // блимала б на кожному переході «Далі» на клавіатурі.
+    let timer = null;
+    const schedule = () => {
+      clearTimeout(timer);
+      timer = setTimeout(update, 60);
+    };
+    document.addEventListener('focusin', schedule);
+    document.addEventListener('focusout', schedule);
+    update();
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('focusin', schedule);
+      document.removeEventListener('focusout', schedule);
+      setOpen(false);
+    };
+  }, [enabled]);
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    document.documentElement.classList.toggle('km-keyboard-open', open);
+    return () => document.documentElement.classList.remove('km-keyboard-open');
+  }, [open]);
+  return open;
+};
 
 // Нижня панель на телефоні рендериться порталом у `body`, а не всередині
 // шапки. Шапка там липка (`position: sticky`), і фіксована панель усередині
@@ -277,6 +326,7 @@ const resolveNavTexts = language => NAV_TEXTS[language] || getExtraLocale(langua
 export default function PrimaryNavigation() {
   const { language } = useAppSettings();
   const narrow = useNarrowScreen();
+  const keyboardOpen = useKeyboardOpen(narrow);
   const texts = resolveNavTexts(language);
   const slot = usePrimaryNavigationSlotState();
   const setHeaderNode = usePrimaryNavigationHeaderNodeSetter();
@@ -349,7 +399,7 @@ export default function PrimaryNavigation() {
         <InfoModal onClose={closeMenu} text="dotsMenu" language={language} Context={SlotMenu} />,
         document.body,
       )}
-      {narrow && typeof document !== 'undefined' && createPortal(tabs, document.body)}
+      {narrow && !keyboardOpen && typeof document !== 'undefined' && createPortal(tabs, document.body)}
     </Header>
   );
 }
