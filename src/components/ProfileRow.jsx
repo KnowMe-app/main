@@ -1711,9 +1711,11 @@ const ProfileRow = ({
               дволітерний код ролі, і лише там, де знімка немає — тобто де
               плашці ролі нема на чому лежати. */}
           <S.NameRow>
-            <S.Name>
-              {name}
-              {age && <>, {age}</>}
+            {/* Довге прізвище обрізається само, а вік стоїть завжди: «…» в
+                кінці рядка ковтав саме вік («Люда Остропольська, …»). */}
+            <S.Name title={age ? `${name}, ${age}` : name}>
+              <S.NameText>{name}</S.NameText>
+              {age && <S.NameAge>, {age}</S.NameAge>}
             </S.Name>
             {!photo && roleCode && <S.RoleCode $role={rowRole}>{getRoleLabel(rowRole, language)}</S.RoleCode>}
           </S.NameRow>

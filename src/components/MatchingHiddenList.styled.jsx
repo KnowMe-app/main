@@ -216,9 +216,20 @@ export const Name = styled.div`
   line-height: 1.2;
   letter-spacing: 0;
   color: var(--matching-header-text);
+  display: flex;
+  min-width: 0;
   white-space: nowrap;
+`;
+
+// Ім'я з прізвищем — те, що можна скоротити «…»; вік поруч не скорочується.
+export const NameText = styled.span`
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+`;
+
+export const NameAge = styled.span`
+  flex: 0 0 auto;
 `;
 
 /* Дволітерний код ролі поруч з іменем: у рядку так само немає ширини під
