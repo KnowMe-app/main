@@ -134,6 +134,16 @@ describe('«Поділитися анкетою»', () => {
     expect(screen.getByTestId('share-open').disabled).toBe(true);
   });
 
+  it('без телефону в анкеті створити посилання не дає, але веде до поля', () => {
+    const noPhone = { ...PROFILE, phone: ['+380501112233', ''] };
+    const onFillField = jest.fn();
+    mountBlock({ profile: noPhone, getProfile: () => noPhone, onFillField });
+    expect(screen.getByTestId('share-open').disabled).toBe(true);
+    expect(screen.getByTestId('share-phone-missing').textContent).toContain('вкажіть телефон');
+    fireEvent.click(screen.getByText('Вказати телефон'));
+    expect(onFillField).toHaveBeenCalledWith('phone');
+  });
+
   it('відкликання питає ще раз, а тоді знімає рядок', async () => {
     readOwnProfileShareSlots.mockResolvedValue([SHARE]);
     refreshProfileShare.mockImplementation(async ({ share }) => ({ changed: false, share }));

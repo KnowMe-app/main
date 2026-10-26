@@ -1353,6 +1353,8 @@ const BY_UK = {
   'Посилання ще не можна створити: на сервері не оновлено правила бази.': 'Links können noch nicht erstellt werden: Die Datenbankregeln auf dem Server wurden nicht aktualisiert.',
   'Усі {count} посилань зайняті — відкличте одне, щоб створити нове.': 'Alle {count} Links sind belegt – widerrufen Sie einen, um einen neuen zu erstellen.',
   'Щоб поділитися анкетою, вкажіть імʼя.': 'Geben Sie Ihren Namen an, um Ihr Profil zu teilen.',
+  'Щоб поділитися анкетою, вкажіть телефон. Показувати його за посиланням чи ні — вирішуєте ви.': 'Geben Sie eine Telefonnummer an, um Ihr Profil zu teilen. Ob der Link sie zeigt, entscheiden Sie.',
+  'Вказати телефон': 'Telefonnummer angeben',
   'Не вдалося створити посилання': 'Der Link konnte nicht erstellt werden',
   'Посилання відкликано': 'Link widerrufen',
   'Не вдалося відкликати посилання': 'Der Link konnte nicht widerrufen werden',

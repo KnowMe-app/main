@@ -13,6 +13,7 @@ import {
   buildProfileShareCard,
   buildProfileShareUrl,
   canShareProfileCard,
+  profileHasPhoneForShare,
   findFreeProfileShareSlot,
   generateProfileShareToken,
   isProfileShareExpired,
@@ -40,6 +41,7 @@ import {
 export const PROFILE_SHARE_ERRORS = Object.freeze({
   slotsFull: 'PROFILE_SHARE_SLOTS_FULL',
   incomplete: 'PROFILE_SHARE_INCOMPLETE',
+  phoneMissing: 'PROFILE_SHARE_PHONE_MISSING',
   rulesMissing: 'PROFILE_SHARE_RULES_MISSING',
 });
 
@@ -165,6 +167,7 @@ export const createProfileShare = async ({ uid, profile, role, options, expiryDa
   const settings = normalizeProfileShareOptions(options);
   const draft = buildProfileShareCard(profile, { role, options: settings });
   if (!canShareProfileCard(draft)) throw shareError(PROFILE_SHARE_ERRORS.incomplete);
+  if (!profileHasPhoneForShare(profile)) throw shareError(PROFILE_SHARE_ERRORS.phoneMissing);
 
   const token = generateProfileShareToken();
   const photos = await copyPhotosToProfileShare({ token, uid, sourceUrls: selectProfileSharePhotos(profile, settings) });

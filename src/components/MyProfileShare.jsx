@@ -23,6 +23,7 @@ import {
   buildProfileShareCard,
   buildProfileShareUrl,
   canShareProfileCard,
+  profileHasPhoneForShare,
   expandProfileShareCard,
   listShareableProfileRoles,
   selectProfileSharePhotos,
@@ -131,6 +132,17 @@ const Hint = styled.p`
   font-size: 13px;
   line-height: 1.45;
   color: var(--muted);
+`;
+
+const FillFieldLink = styled.button`
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--matching-accent, var(--km-accent, #C9600F));
+  text-decoration: underline;
+  cursor: pointer;
 `;
 
 const List = styled.ul`
@@ -291,7 +303,7 @@ const formatShareDate = (value, language) => getDateTimeFormat(
 const REFRESH_DELAY_MS = 2500;
 const PREVIEW_PROGRAMS_CONTEXT = Object.freeze({ viewerType: '', facts: null });
 
-const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRole = '', language, embedded = false, onSharesChange }, ref) => {
+const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRole = '', language, embedded = false, onSharesChange, onFillField }, ref) => {
   const { themeMode } = useAppSettings();
   const [shares, setShares] = useState(null);
   const [composer, setComposer] = useState(null);
@@ -453,6 +465,9 @@ const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRol
 
   const slotsFull = (shares?.length || 0) >= PROFILE_SHARE_SLOT_COUNT;
   const nameMissing = !canShareProfileCard(buildProfileShareCard(profile || {}, { role: shareableRoles[0] }));
+  // Телефон обовʼязковий в анкеті, а показ його за посиланням — вибір
+  // власниці (`profileHasPhoneForShare`).
+  const phoneMissing = !nameMissing && !profileHasPhoneForShare(profile || {});
 
   const openComposer = () => {
     ensureLoaded();
@@ -518,7 +533,9 @@ const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRol
           ? 'Усі {count} посилань зайняті — відкличте одне, щоб створити нове.'
           : error?.code === PROFILE_SHARE_ERRORS.incomplete
             ? 'Щоб поділитися анкетою, вкажіть імʼя.'
-            : 'Не вдалося створити посилання';
+            : error?.code === PROFILE_SHARE_ERRORS.phoneMissing
+              ? 'Щоб поділитися анкетою, вкажіть телефон. Показувати його за посиланням чи ні — вирішуєте ви.'
+              : 'Не вдалося створити посилання';
       toast.error(uiText(message, language, { count: PROFILE_SHARE_SLOT_COUNT }), { id: 'profile-share-error' });
     } finally {
       setBusy(false);
@@ -700,7 +717,7 @@ const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRol
             <Hint style={{ margin: 0 }}>
               {uiText('Посилання показує анкету такою, як зараз, і оновлюється разом з нею.', language)}
             </Hint>
-            <PrimaryButton type="button" disabled={busy || slotsFull} onClick={create} data-testid="share-create">
+            <PrimaryButton type="button" disabled={busy || slotsFull || phoneMissing} onClick={create} data-testid="share-create">
               <FiLink aria-hidden="true" />
               {uiText(busy ? 'Створюємо…' : 'Створити посилання', language)}
             </PrimaryButton>
@@ -713,7 +730,7 @@ const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRol
         <>
           <OpenControl
             type="button"
-            disabled={nameMissing || slotsFull}
+            disabled={nameMissing || phoneMissing || slotsFull}
             onClick={openComposer}
             data-testid="share-open"
             style={embedded && shares?.length ? { marginTop: 12 } : undefined}
@@ -722,6 +739,19 @@ const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRol
             {uiText(shares?.length ? 'Нове посилання' : 'Створити посилання', language)}
           </OpenControl>
           {nameMissing ? <Hint>{uiText('Щоб поділитися анкетою, вкажіть імʼя.', language)}</Hint> : null}
+          {phoneMissing ? (
+            <Hint data-testid="share-phone-missing">
+              {uiText('Щоб поділитися анкетою, вкажіть телефон. Показувати його за посиланням чи ні — вирішуєте ви.', language)}
+              {onFillField ? (
+                <>
+                  {' '}
+                  <FillFieldLink type="button" onClick={() => onFillField('phone')}>
+                    {uiText('Вказати телефон', language)}
+                  </FillFieldLink>
+                </>
+              ) : null}
+            </Hint>
+          ) : null}
           {slotsFull ? <Hint>{uiText('Усі {count} посилань зайняті — відкличте одне, щоб створити нове.', language, { count: PROFILE_SHARE_SLOT_COUNT })}</Hint> : null}
         </>
       )}
