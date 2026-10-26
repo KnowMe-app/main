@@ -4217,6 +4217,7 @@ export const MyProfile = () => {
             language={language}
             embedded
             onSharesChange={setShareCount}
+            onFillField={scrollToField}
           />
         </WayCard>
       ) : null}

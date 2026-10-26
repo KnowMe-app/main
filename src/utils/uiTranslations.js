@@ -1466,6 +1466,8 @@ const EN_BY_UK = {
   'Посилання ще не можна створити: на сервері не оновлено правила бази.': 'Links cannot be created yet: the database rules on the server have not been updated.',
   'Усі {count} посилань зайняті — відкличте одне, щоб створити нове.': 'All {count} links are in use — revoke one to create a new one.',
   'Щоб поділитися анкетою, вкажіть імʼя.': 'Add your name to share your profile.',
+  'Щоб поділитися анкетою, вкажіть телефон. Показувати його за посиланням чи ні — вирішуєте ви.': 'Add a phone number to share your profile. Whether the link shows it is up to you.',
+  'Вказати телефон': 'Add phone number',
   'Не вдалося створити посилання': 'Could not create the link',
   'Посилання відкликано': 'Link revoked',
   'Не вдалося відкликати посилання': 'Could not revoke the link',

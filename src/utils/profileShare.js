@@ -203,6 +203,17 @@ export const buildProfileShareCard = (profile, { role, options, photos = [], tod
 
 export const canShareProfileCard = card => Boolean(card?.name) && PROFILE_SHARE_ROLES.includes(card?.role);
 
+/*
+ * Телефон в анкеті — умова посилання, а не його вміст. Посилання створювалось
+ * з самим лише іменем, і власниці, які обрали «Лише за посиланням», так і не
+ * вписали номера: за посиланням анкета, а звʼязатися з людиною — ніяк, навіть
+ * коли вона потім вирішить показати контакти. Тож номер обовʼязковий в анкеті,
+ * а чи показувати його гостеві, вирішує власниця (`contacts`, за замовчуванням
+ * вимкнено). Перевіряється анкета, а не знімок: у знімку без контактів
+ * телефону немає й не має бути.
+ */
+export const profileHasPhoneForShare = profile => String(getCurrentValue(profile?.phone) ?? '').trim() !== '';
+
 /**
  * Дата народження, з якої `ProfileRow` порахує саме той вік, що в знімку.
  *

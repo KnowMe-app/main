@@ -70,6 +70,13 @@ describe('створення посилання', () => {
     expect(uploadBytes.mock.calls[0][2]).toEqual({ contentType: 'image/jpeg', customMetadata: { owner: 'owner' } });
   });
 
+  it('без телефону в анкеті нічого не копіює й не пише', async () => {
+    await expect(createProfileShare({ uid: 'owner', profile: { ...PROFILE, phone: '' }, role: 'ed', options: { contacts: false } }))
+      .rejects.toMatchObject({ code: PROFILE_SHARE_ERRORS.phoneMissing });
+    expect(uploadBytes).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it('без вільного слоту нічого не копіює й не пише', async () => {
     const slots = ['0', '1', '2', '3', '4'].map(slot => ({ slot, token: `t${slot}` }));
     await expect(createProfileShare({ uid: 'owner', profile: PROFILE, role: 'ed', slots }))
