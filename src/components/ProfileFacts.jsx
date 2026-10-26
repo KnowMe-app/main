@@ -28,8 +28,8 @@ import { PROGRAM_PLACE_CHOICES, formatRewardForDisplay, parseProgramPlaces, read
  * картку з одних і тих самих трьох частин:
  *
  * 1. смуга показників (`buildProfileStatStrip`) — зріст, вага, ІМТ, кров;
- * 2. короткі факти (`buildProfileSummaryRows`) — зовнішність, пологи й
- *    донації, сімейний стан;
+ * 2. короткі факти (`buildProfileSummaryRows`) — пологи й донації,
+ *    сімейний стан, зовнішність;
  * 3. розділи повної анкети (`buildProfileDetailSections`) — обличчя й фігура,
  *    (разом із розмірами й зором), освіта й робота.
  *
@@ -343,9 +343,6 @@ export const buildProfileSummaryRows = (user, language) => {
   const lang = resolveProfileLanguage(language);
   const rows = [];
 
-  const appearance = describeAppearance(user, lang);
-  if (appearance) rows.push({ key: 'appearance', label: translateProfileLabel('Appearance', lang), value: appearance });
-
   const deliveries = describeDeliveries(user, lang);
   const cSection = describeCSection(user, lang, deliveries);
   const donations = describeDonations(user, lang);
@@ -367,6 +364,11 @@ export const buildProfileSummaryRows = (user, language) => {
 
   const marital = lowerFirst(maritalStatusLabel(normalizeDisplayValue(user?.maritalStatus), lang), lang);
   if (marital) rows.push({ key: 'marital', label: translateProfileLabel('Marital status', lang), value: marital });
+
+  // Зовнішність — після пологів і сімейного стану: те, за чим обирають СМ і
+  // донорку, читається першим (на прохання власниці продукту).
+  const appearance = describeAppearance(user, lang);
+  if (appearance) rows.push({ key: 'appearance', label: translateProfileLabel('Appearance', lang), value: appearance });
 
   return rows;
 };
