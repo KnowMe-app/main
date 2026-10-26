@@ -28,8 +28,8 @@ import { PROGRAM_PLACE_CHOICES, formatRewardForDisplay, parseProgramPlaces, read
  * картку з одних і тих самих трьох частин:
  *
  * 1. смуга показників (`buildProfileStatStrip`) — зріст, вага, ІМТ, кров;
- * 2. короткі факти (`buildProfileSummaryRows`) — зовнішність, пологи й
- *    донації, сімейний стан;
+ * 2. короткі факти (`buildProfileSummaryRows`) — пологи й донації,
+ *    сімейний стан, зовнішність;
  * 3. розділи повної анкети (`buildProfileDetailSections`) — обличчя й фігура,
  *    (разом із розмірами й зором), освіта й робота.
  *
@@ -169,84 +169,6 @@ const readCount = raw => {
   return { text };
 };
 
-// «Пологи» — множинний іменник, і «2 пологи» українською не кажуть: до
-// чотирьох це збірний числівник, далі — звичайний.
-const UK_DELIVERY_WORDS = ['', 'одні пологи', 'двоє пологів', 'троє пологів', 'четверо пологів'];
-
-/*
- * Давність пологів видно й тоді, коли кількості в анкеті немає: у частини
- * анкет заповнена сама дата останніх. Відкрита картка її показувала («3 роки
- * після пологів»), а рядок стрічки мовчав — бо питав спершу кількість.
- */
-// Мови з `utils/locales` — зі своїх шаблонів: «出産2回、最後は13か月前».
-const describeDeliveriesExtra = (words, list, read, recency) => {
-  if (!read) return recency ? { text: words.recencyOnly(recency), had: true, count: null } : { text: '', had: false, count: null };
-  if (read.count === 0) return { text: words.none, had: false, count: 0 };
-  if (read.text) return { text: words.text(read.text), had: true, count: null };
-  const base = read.yes ? words.yes : words.count(read.count);
-  const text = recency ? list([base, read.count === 1 ? words.recencySingle(recency) : words.recencyLast(recency)]) : base;
-  return { text, had: true, count: read.yes ? null : read.count };
-};
-
-const describeDeliveries = (user, lang) => {
-  const recency = formatDeliveryRecency(normalizeDisplayValue(user?.lastDelivery), lang);
-  const read = readCount(normalizeDisplayValue(user?.ownKids));
-  const extra = getExtraLocale(lang);
-  if (extra) return describeDeliveriesExtra(extra.sentences.deliveries, extra.sentences.clauses, read, recency);
-  if (!read) {
-    if (!recency) return { text: '', had: false, count: null };
-    return { text: lang === 'uk' ? `останні пологи ${recency} тому` : `last delivery ${recency} ago`, had: true, count: null };
-  }
-  if (read.count === 0) return { text: lang === 'uk' ? 'пологів не було' : 'no deliveries', had: false, count: 0 };
-  if (read.text) return { text: `${lang === 'uk' ? 'пологи' : 'deliveries'}: ${read.text}`, had: true, count: null };
-
-  const count = read.count;
-  let text;
-  if (read.yes) text = lang === 'uk' ? 'були пологи' : 'had deliveries';
-  else if (lang === 'uk') text = UK_DELIVERY_WORDS[count] || `${count} пологів`;
-  else text = `${count} ${count === 1 ? 'delivery' : 'deliveries'}`;
-
-  if (recency) {
-    const single = count === 1;
-    if (lang === 'uk') text += single ? `, ${recency} тому` : `, останні ${recency} тому`;
-    else text += single ? `, ${recency} ago` : `, last ${recency} ago`;
-  }
-  return { text, had: true, count: read.yes ? null : count };
-};
-
-// «1 кесарів», «2 кесаревих» — коли кількість пологів невідома, кесарів
-// лишається окремою частиною з числом перед словом, як і в сусідів.
-const ukCSectionWord = count => (count % 10 === 1 && count % 100 !== 11 ? 'кесарів' : 'кесаревих');
-
-/*
- * Як минули пологи — продовженням того самого речення, а не окремою
- * частиною: «двоє пологів, останні 13 міс тому, обидва кесаревим розтином».
- * Доти тут стояло «двоє пологів · 2 кесаревих» — два числа поруч, які читач
- * мусив звести сам, — а нуль кесаревих казав «одні пологи · природні пологи».
- *
- * Повертає `{ text, attach }`: `attach` — дописати через кому до пологів
- * (кількість пологів відома), інакше це окрема частина рядка.
- */
-const UK_ALL_OF = count => (count === 2 ? 'обидва' : 'усі');
-const EN_ALL_OF = count => (count === 2 ? 'both' : 'all');
-
-const describeCSectionExtra = (words, value, deliveries) => {
-  const total = Number.isInteger(deliveries.count) && deliveries.count > 0 ? deliveries.count : null;
-  if (value === '0') {
-    if (!deliveries.had) return { text: '', attach: false };
-    return { text: total && total > 1 ? words.allNatural(total) : words.natural, attach: true };
-  }
-  if (/^\d+$/.test(value)) {
-    const count = Number(value);
-    if (total) {
-      if (count >= total) return { text: total === 1 ? words.caesarean : words.allCaesarean(total), attach: true };
-      return { text: words.mixed(count, total - count), attach: true };
-    }
-    return { text: words.count(count), attach: false };
-  }
-  return { text: words.other(value), attach: false };
-};
-
 /*
  * «Ні» форма пише мінусом (`csectionOptions`), а для показу мінус — заглушка
  * порожнього поля (`normalizeDisplayValue`). Тож відповідь «кесаревого не
@@ -260,113 +182,187 @@ const readCSectionAnswer = user => {
   return CSECTION_KEYS.some(key => String(getCurrentValue(user?.[key]) ?? '').trim() === '-') ? '-' : '';
 };
 
-const describeCSection = (user, lang, deliveries) => {
-  const raw = readCSectionAnswer(user);
-  if (!raw) return { text: '', attach: false };
-  const value = formatCSectionValue(raw);
-  const extraWords = getExtraLocale(lang)?.sentences.cSection;
-  if (extraWords) return describeCSectionExtra(extraWords, value, deliveries);
-  const uk = lang === 'uk';
-  const total = Number.isInteger(deliveries.count) && deliveries.count > 0 ? deliveries.count : null;
+/*
+ * Пологи й кесарів — одним рядком «Пологи», де головне видно до першої коми:
+ * «**3**, з яких **2 КР**, останні 3 роки тому» чи «**2**, **без КР**, …».
+ * Кількість — цифрою (підпис уже каже «Пологи», тож слово вдруге не
+ * повторюється), без кесаревого — зеленим, кесарів — жовтим, давність —
+ * сірим у кінці. Доти тут стояло речення «троє пологів, одні — кесаревим
+ * розтином, решта природним шляхом», і число з кесаревим читач мусив
+ * вишукувати в ньому сам (обрано власницею продукту, варіант A2 мокапу).
+ *
+ * Рядок віддає і `value` (простий текст — тести, пошук очима), і `parts`
+ * з тоном кожного шматка, який малює `ProfileFactList`.
+ */
+const TONE_COUNT = 'count';
+const TONE_NATURAL = 'natural';
+const TONE_CAESAREAN = 'caesarean';
+const TONE_MUTED = 'muted';
 
-  // «Природним шляхом» має сенс лише поруч із пологами: без них це відповідь
-  // на питання, якого ніхто не ставив.
-  if (value === '0') {
-    if (!deliveries.had) return { text: '', attach: false };
-    const way = uk ? 'природним шляхом' : 'natural';
-    if (!total || total === 1) return { text: way, attach: true };
-    return { text: `${uk ? UK_ALL_OF(total) : EN_ALL_OF(total)} ${way}`, attach: true };
-  }
-  if (/^\d+$/.test(value)) {
-    const count = Number(value);
-    if (total) {
-      const caesarean = uk ? 'кесаревим розтином' : 'by C-section';
-      if (count >= total) {
-        return {
-          text: total === 1 ? caesarean : `${uk ? UK_ALL_OF(total) : EN_ALL_OF(total)} ${caesarean}`,
-          attach: true,
-        };
-      }
-      // Частина пологів — кесаревим, решта — природним шляхом.
-      const rest = total - count;
-      if (uk) {
-        const first = count === 1 ? 'одні' : String(count);
-        const other = rest === 1 && total === 2 ? 'другі' : 'решта';
-        return { text: `${first} — кесаревим розтином, ${other} природним шляхом`, attach: true };
-      }
-      return { text: `${count} by C-section, ${rest} natural`, attach: true };
-    }
-    return {
-      text: uk ? `${count} ${ukCSectionWord(count)}` : `${count} ${count === 1 ? 'C-section' : 'C-sections'}`,
-      attach: false,
-    };
-  }
-  // Дата операції чи власний текст — підписом спереду.
-  return { text: `${uk ? 'кесарів' : 'C-section'} ${value}`, attach: false };
+// Слова рядка для української й англійської; решта мов — `sentences` у
+// своєму модулі (`utils/locales`) тієї ж форми.
+const DELIVERY_WORDS = {
+  uk: {
+    deliveries: {
+      none: 'не було',
+      yes: 'були',
+      recencyOnly: r => `останні ${r} тому`,
+      recencySingle: r => `${r} тому`,
+      recencyLast: r => `останні ${r} тому`,
+    },
+    cSection: {
+      none: 'без КР',
+      single: 'КР',
+      all: () => 'усі КР',
+      part: n => ['з яких ', `${n} КР`],
+      atLeast: n => ['з яких ', `щонайменше ${n} КР`],
+      count: n => `${n} КР`,
+      countAtLeast: n => `щонайменше ${n} КР`,
+    },
+    donations: { none: 'ще не було', yes: 'були' },
+  },
+  en: {
+    deliveries: {
+      none: 'none',
+      yes: 'yes',
+      recencyOnly: r => `last ${r} ago`,
+      recencySingle: r => `${r} ago`,
+      recencyLast: r => `last ${r} ago`,
+    },
+    cSection: {
+      none: 'no C-section',
+      single: 'C-section',
+      all: n => (n === 2 ? 'both C-section' : 'all C-section'),
+      part: n => ['including ', `${n} C-section`],
+      atLeast: n => ['including ', `at least ${n} C-section`],
+      count: n => `${n} C-section`,
+      countAtLeast: n => `at least ${n} C-section`,
+    },
+    donations: { none: 'none yet', yes: 'yes' },
+  },
 };
 
-const ukDonationWord = count => {
-  const tens = count % 100;
-  if (tens >= 11 && tens <= 14) return 'донацій';
-  const ones = count % 10;
-  if (ones === 1) return 'донація';
-  if (ones >= 2 && ones <= 4) return 'донації';
-  return 'донацій';
+const resolveDeliveryWords = lang => getExtraLocale(lang)?.sentences || DELIVERY_WORDS[lang] || DELIVERY_WORDS.en;
+
+/*
+ * Відповідь про кесарів: `'0'` — не було, число — скільки, «2+» — щонайменше
+ * стільки (саме «2+» не пишемо: поруч з резусом і групою крові воно читалось
+ * як «РК 2+»), решта — свій текст людини, і для нього окремий рядок «КР».
+ */
+const readCSectionCount = value => {
+  if (value === '0') return { count: 0 };
+  const match = /^(\d+)\s*\+$/.exec(value);
+  if (match) return { count: Number(match[1]), atLeast: true };
+  if (/^\d+$/.test(value)) return { count: Number(value) };
+  return null;
+};
+
+const describeDeliveries = (user, lang) => {
+  const words = resolveDeliveryWords(lang);
+  const read = readCount(normalizeDisplayValue(user?.ownKids));
+  const recency = formatDeliveryRecency(normalizeDisplayValue(user?.lastDelivery), lang);
+  const rawCSection = readCSectionAnswer(user);
+  const cSectionValue = rawCSection ? formatCSectionValue(rawCSection) : '';
+  const cSection = cSectionValue ? readCSectionCount(cSectionValue) : null;
+  const customCSection = cSectionValue && !cSection ? cSectionValue : '';
+
+  if (read?.count === 0) {
+    return { parts: [{ text: words.deliveries.none, tone: TONE_MUTED }], customCSection };
+  }
+
+  const parts = [];
+  const total = read && Number.isInteger(read.count) ? read.count : null;
+  if (total) parts.push({ text: String(total), tone: TONE_COUNT });
+  else if (read?.yes) parts.push({ text: words.deliveries.yes });
+  else if (read?.text) parts.push({ text: read.text });
+
+  if (cSection) {
+    const { count, atLeast } = cSection;
+    // «Без КР» має сенс лише поруч із пологами: без них це відповідь на
+    // питання, якого ніхто не ставив.
+    if (count === 0) {
+      if (parts.length) parts.push({ text: words.cSection.none, tone: TONE_NATURAL });
+    } else if (!total) {
+      parts.push({ text: atLeast ? words.cSection.countAtLeast(count) : words.cSection.count(count), tone: TONE_CAESAREAN });
+    } else if (!atLeast && count >= total) {
+      parts.push({ text: total === 1 ? words.cSection.single : words.cSection.all(total), tone: TONE_CAESAREAN });
+    } else {
+      // «з яких» — звичайним текстом, жовтим лише саме «2 КР» (як у мокапі).
+      const [lead, text] = atLeast ? words.cSection.atLeast(count) : words.cSection.part(count);
+      parts.push({ lead, text, tone: TONE_CAESAREAN });
+    }
+  }
+
+  if (recency) {
+    let text = words.deliveries.recencyLast(recency);
+    if (!parts.length) text = words.deliveries.recencyOnly(recency);
+    else if (total === 1) text = words.deliveries.recencySingle(recency);
+    parts.push({ text, tone: TONE_MUTED });
+  }
+
+  return { parts, customCSection };
 };
 
 const describeDonations = (user, lang) => {
   const read = readCount(normalizeDisplayValue(user?.experience));
-  if (!read) return '';
-  const extraWords = getExtraLocale(lang)?.sentences.donations;
-  if (extraWords) {
-    if (read.count === 0) return extraWords.none;
-    if (read.text) return extraWords.text(read.text);
-    if (read.yes) return extraWords.yes;
-    return extraWords.count(read.count);
-  }
-  if (read.count === 0) return lang === 'uk' ? 'донацій ще не було' : 'no donations yet';
-  if (read.text) return `${lang === 'uk' ? 'донації' : 'donations'}: ${read.text}`;
-  if (read.yes) return lang === 'uk' ? 'були донації' : 'has donated';
-  return lang === 'uk'
-    ? `${read.count} ${ukDonationWord(read.count)}`
-    : `${read.count} ${read.count === 1 ? 'donation' : 'donations'}`;
+  if (!read) return null;
+  const words = resolveDeliveryWords(lang).donations;
+  if (read.count === 0) return [{ text: words.none, tone: TONE_MUTED }];
+  if (read.text) return [{ text: read.text }];
+  if (read.yes) return [{ text: words.yes }];
+  return [{ text: String(read.count), tone: TONE_COUNT }];
 };
 
-// Число не відривається від свого слова («6 / донацій» на двох рядках), а
-// крапка-розділювач — від попередньої частини: переноситься рядок лише між
-// частинами.
-const joinParts = parts => parts
-  .map(part => part.replace(/(\d) (?=\S)/g, '$1 '))
-  .join(' · ');
+// Шматки рядка через кому (японська й китайська — своїм знаком,
+// `deliveries.separator`); розділювач перед сірою давністю теж сірий.
+const joinRowParts = (parts, separator = ', ') => parts.flatMap(({ lead, ...part }, index) => [
+  ...(index === 0 ? [] : [{ text: separator, tone: part.tone === TONE_MUTED ? TONE_MUTED : undefined }]),
+  ...(lead ? [{ text: lead }] : []),
+  part,
+]);
+
+// Число не відривається від свого слова («2 / КР», «16 / міс» на двох
+// рядках): переноситься рядок лише між шматками.
+const keepNumbersWithWords = text => String(text).replace(/(\d) (?=\S)/g, '$1\u00a0');
+
+const factRow = (key, label, rawParts) => {
+  const parts = rawParts.map(part => ({ ...part, text: keepNumbersWithWords(part.text) }));
+  return { key, label, value: parts.map(part => part.text).join(''), parts };
+};
 
 export const buildProfileSummaryRows = (user, language) => {
   const lang = resolveProfileLanguage(language);
   const rows = [];
 
-  const appearance = describeAppearance(user, lang);
-  if (appearance) rows.push({ key: 'appearance', label: translateProfileLabel('Appearance', lang), value: appearance });
-
   const deliveries = describeDeliveries(user, lang);
-  const cSection = describeCSection(user, lang, deliveries);
-  const donations = describeDonations(user, lang);
-  const extraList = getExtraLocale(lang)?.sentences.clauses;
-  const deliveryText = cSection.attach && deliveries.text
-    ? (extraList ? extraList([deliveries.text, cSection.text]) : `${deliveries.text}, ${cSection.text}`)
-    : deliveries.text;
-  const reproduction = [deliveryText, cSection.attach ? '' : cSection.text, donations].filter(Boolean);
+  const deliveryParts = joinRowParts(deliveries.parts, resolveDeliveryWords(lang).deliveries.separator);
   // Досвід СМ і ускладнення — про ті самі пологи, тож стоять тут, а не в
   // «Про себе» (на прохання власниці продукту).
   const pregnancyNotes = describeLifestyleFields(user, lang, PREGNANCY_FIELD_KEYS);
-  if (reproduction.length || pregnancyNotes) {
-    const hasDeliveries = Boolean(deliveries.text || cSection.text || pregnancyNotes);
-    let label = 'Deliveries, donations';
-    if (!donations) label = 'Deliveries';
-    else if (!hasDeliveries) label = 'Donations';
-    rows.push({ key: 'reproduction', label: translateProfileLabel(label, lang), value: [joinParts(reproduction), pregnancyNotes].filter(Boolean).join(reproduction.length ? '. ' : '') });
+  if (pregnancyNotes) {
+    if (deliveryParts.length) deliveryParts.push({ text: '. ' });
+    deliveryParts.push({ text: pregnancyNotes });
   }
+  if (deliveryParts.length) rows.push(factRow('reproduction', translateProfileLabel('Deliveries', lang), deliveryParts));
+
+  // Свій текст про кесарів («планове у 2019, екстрене у 2022») у рядок
+  // пологів не вкладається — йому окремий рядок «КР», тим самим жовтим.
+  if (deliveries.customCSection) {
+    rows.push(factRow('cSection', translateProfileLabel('C-section', lang), [{ text: deliveries.customCSection, tone: TONE_CAESAREAN }]));
+  }
+
+  // Донації — окремим рядком і цифрою: з пологами в одному рядку вони
+  // губили обидва числа.
+  const donations = describeDonations(user, lang);
+  if (donations) rows.push(factRow('donations', translateProfileLabel('Donations', lang), donations));
 
   const marital = lowerFirst(maritalStatusLabel(normalizeDisplayValue(user?.maritalStatus), lang), lang);
   if (marital) rows.push({ key: 'marital', label: translateProfileLabel('Marital status', lang), value: marital });
+
+  // Зовнішність — після пологів і сімейного стану: те, за чим обирають СМ і
+  // донорку, читається першим (на прохання власниці продукту).
+  const appearance = describeAppearance(user, lang);
+  if (appearance) rows.push({ key: 'appearance', label: translateProfileLabel('Appearance', lang), value: appearance });
 
   return rows;
 };
@@ -654,6 +650,30 @@ const FactValue = styled.dd`
   overflow-wrap: anywhere;
 `;
 
+// Тони шматків рядка (`parts`): цифра жирніше й крупніше, «без КР» —
+// зеленим, кесарів — жовтим, давність — сірим.
+const FACT_TONE_STYLES = {
+  [TONE_COUNT]: css`
+    font-weight: 700;
+    font-size: 1.12em;
+  `,
+  [TONE_NATURAL]: css`
+    font-weight: 700;
+    color: var(--km-fact-natural, #23824A);
+  `,
+  [TONE_CAESAREAN]: css`
+    font-weight: 700;
+    color: var(--km-fact-caesarean, #946B00);
+  `,
+  [TONE_MUTED]: css`
+    color: ${MUTED};
+  `,
+};
+
+const FactPart = styled.span`
+  ${({ $tone }) => FACT_TONE_STYLES[$tone] || ''}
+`;
+
 export const ProfileFactList = ({ rows, large = false }) => {
   if (!rows || rows.length === 0) return null;
   return (
@@ -661,7 +681,13 @@ export const ProfileFactList = ({ rows, large = false }) => {
       {rows.map(row => (
         <React.Fragment key={row.key}>
           <FactLabel>{row.label}</FactLabel>
-          <FactValue $large={large}>{row.value}</FactValue>
+          <FactValue $large={large}>
+            {row.parts
+              ? row.parts.map((part, index) => (part.tone
+                ? <FactPart key={index} $tone={part.tone}>{part.text}</FactPart>
+                : <React.Fragment key={index}>{part.text}</React.Fragment>))
+              : row.value}
+          </FactValue>
         </React.Fragment>
       ))}
     </FactList>
