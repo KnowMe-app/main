@@ -22,6 +22,8 @@ describe('назва організації в рядку стрічки', () =>
 
   it('донорку й далі називає іменем з віком', () => {
     renderRow({ userId: 'ED1', role: 'ed', name: 'Оксана', birth: '01.01.1998' });
-    expect(screen.getByText(/Оксана, \d+/)).toBeInTheDocument();
+    // Імʼя й вік — окремі шматки (обрізається прізвище, а не вік), тож
+    // разом вони стоять у підказці рядка імені.
+    expect(screen.getByTitle(/Оксана, \d+/)).toBeInTheDocument();
   });
 });
