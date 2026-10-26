@@ -87,55 +87,89 @@ describe('короткі факти', () => {
     expect(valueOf(buildProfileSummaryRows({ hairColor: 'Brunette', hairStructure: 'Wavy' }, 'uk'), 'appearance')).toBe('темне хвилясте волосся');
   });
 
-  it('називає пологи пологами й каже давність останніх', () => {
+  // Варіант A2 мокапу: підпис «Пологи», далі цифра, кесарів і давність.
+  it('пише кількість пологів цифрою й каже давність останніх', () => {
     const rows = buildProfileSummaryRows({ ownKids: '2', lastDelivery: monthsAgo(18), experience: '1' }, 'uk');
-    expect(labelOf(rows, 'reproduction')).toBe('Пологи, донації');
-    expect(valueOf(rows, 'reproduction')).toBe('двоє пологів, останні 18 міс тому · 1 донація');
+    expect(labelOf(rows, 'reproduction')).toBe('Пологи');
+    expect(valueOf(rows, 'reproduction')).toBe('2, останні 18 міс тому');
+    expect(rows.find(row => row.key === 'reproduction').parts[0]).toEqual({ text: '2', tone: 'count' });
   });
 
   // Відкрита картка казала «3 роки після пологів», а рядок мовчав: він питав
   // спершу кількість, а в анкеті лежала сама дата.
   it('каже давність пологів і без їхньої кількості', () => {
-    const rows = buildProfileSummaryRows({ lastDelivery: monthsAgo(36), experience: '0' }, 'uk');
-    expect(valueOf(rows, 'reproduction')).toBe('останні пологи 3 роки тому · донацій ще не було');
+    const rows = buildProfileSummaryRows({ lastDelivery: monthsAgo(36) }, 'uk');
+    expect(valueOf(rows, 'reproduction')).toBe('останні 3 роки тому');
   });
 
-  it('каже, як минули пологи, тим самим реченням', () => {
+  it('каже кесарів одразу після кількості', () => {
     const value = user => valueOf(buildProfileSummaryRows(user, 'uk'), 'reproduction');
-    expect(value({ ownKids: '2', lastDelivery: monthsAgo(13), csection: '2' }))
-      .toBe('двоє пологів, останні 13 міс тому, обидва кесаревим розтином');
-    expect(value({ ownKids: '2', csection: '0' })).toBe('двоє пологів, обидва природним шляхом');
-    expect(value({ ownKids: '2', csection: '1' })).toBe('двоє пологів, одні — кесаревим розтином, другі природним шляхом');
-    expect(value({ ownKids: '3', csection: '1' })).toBe('троє пологів, одні — кесаревим розтином, решта природним шляхом');
-    expect(value({ ownKids: '3', csection: '3' })).toBe('троє пологів, усі кесаревим розтином');
-    expect(value({ ownKids: '1', csection: 'не було' })).toBe('одні пологи, природним шляхом');
-    expect(value({ ownKids: '1', csection: '1' })).toBe('одні пологи, кесаревим розтином');
-    // Кількість пологів невідома — кесарів лишається окремою частиною.
-    expect(value({ csection: '2', experience: '1' })).toBe('2 кесаревих · 1 донація');
+    expect(value({ ownKids: '3', lastDelivery: monthsAgo(37), csection: '2' })).toBe('3, з яких 2 КР, останні 3 роки тому');
+    expect(value({ ownKids: '2', lastDelivery: monthsAgo(16), csection: '0' })).toBe('2, без КР, останні 16 міс тому');
+    expect(value({ ownKids: '3', csection: '1' })).toBe('3, з яких 1 КР');
+    expect(value({ ownKids: '3', csection: '3' })).toBe('3, усі КР');
+    expect(value({ ownKids: '1', csection: 'не було' })).toBe('1, без КР');
+    expect(value({ ownKids: '1', lastDelivery: monthsAgo(25), csection: '1' })).toBe('1, КР, 2 роки тому');
+    // Кількість пологів невідома — кесарів стоїть сам.
+    expect(value({ csection: '2' })).toBe('2 КР');
+  });
+
+  it('фарбує «без КР» зеленим, а кесарів — жовтим', () => {
+    const tones = user => buildProfileSummaryRows(user, 'uk')
+      .find(row => row.key === 'reproduction').parts.filter(part => part.tone).map(part => part.tone);
+    expect(tones({ ownKids: '2', csection: '0', lastDelivery: monthsAgo(16) })).toEqual(['count', 'natural', 'muted', 'muted']);
+    const parts = buildProfileSummaryRows({ ownKids: '3', csection: '2' }, 'uk')
+      .find(row => row.key === 'reproduction').parts;
+    // «з яких» — звичайним текстом, жовте лише «2 КР».
+    expect(parts.map(part => [part.text.replace(/\u00a0/g, ' '), part.tone])).toEqual([
+      ['3', 'count'], [', ', undefined], ['з яких ', undefined], ['2 КР', 'caesarean'],
+    ]);
+  });
+
+  // «2+» поруч із резусом і групою крові читалось як «РК 2+».
+  it('пише «2+» словами, а не плюсом', () => {
+    const value = user => valueOf(buildProfileSummaryRows(user, 'uk'), 'reproduction');
+    expect(value({ ownKids: '4', csection: '2+' })).toBe('4, з яких щонайменше 2 КР');
+    expect(value({ csection: '2+' })).toBe('щонайменше 2 КР');
+  });
+
+  // Свій текст про кесарів у рядок пологів не вкладається.
+  it('ставить свій текст про кесарів окремим рядком «КР»', () => {
+    const rows = buildProfileSummaryRows({ ownKids: '3', csection: 'планове у 2019, екстрене у 2022' }, 'uk');
+    expect(valueOf(rows, 'reproduction')).toBe('3');
+    expect(labelOf(rows, 'cSection')).toBe('КР');
+    expect(valueOf(rows, 'cSection')).toBe('планове у 2019, екстрене у 2022');
+    expect(rows.find(row => row.key === 'cSection').parts[0].tone).toBe('caesarean');
   });
 
   // Чип «Ні» форма пише мінусом, а мінус для показу — порожнє поле: СМ
   // відповідала «кесаревого не було», а рядок про це мовчав.
-  it('читає «Ні» з форми як пологи природним шляхом', () => {
+  it('читає «Ні» з форми як «без КР»', () => {
     const value = (user, lang = 'uk') => valueOf(buildProfileSummaryRows(user, lang), 'reproduction');
-    expect(value({ ownKids: '4', csection: '-' })).toBe('четверо пологів, усі природним шляхом');
-    expect(value({ ownKids: '1', csection: ['2', '-'] })).toBe('одні пологи, природним шляхом');
-    expect(value({ ownKids: '2', csection: '-' }, 'en')).toBe('2 deliveries, both natural');
-    // Без пологів «природним шляхом» не відповідає ні на що.
+    expect(value({ ownKids: '4', csection: '-' })).toBe('4, без КР');
+    expect(value({ ownKids: '1', csection: ['2', '-'] })).toBe('1, без КР');
+    expect(value({ ownKids: '2', csection: '-' }, 'en')).toBe('2, no C-section');
+    // Без пологів «без КР» не відповідає ні на що.
     expect(value({ csection: '-' })).toBeUndefined();
   });
 
-  it('узгоджує числівник і відповідає словами на нуль', () => {
-    expect(valueOf(buildProfileSummaryRows({ ownKids: '0', experience: '0' }, 'uk'), 'reproduction'))
-      .toBe('пологів не було · донацій ще не було');
-    expect(valueOf(buildProfileSummaryRows({ experience: '3' }, 'uk'), 'reproduction')).toBe('3 донації');
-    expect(valueOf(buildProfileSummaryRows({ experience: '11' }, 'uk'), 'reproduction')).toBe('11 донацій');
-    expect(labelOf(buildProfileSummaryRows({ experience: '2' }, 'uk'), 'reproduction')).toBe('Донації');
+  it('ставить донації окремим рядком і цифрою', () => {
+    const rows = buildProfileSummaryRows({ ownKids: '0', experience: '0' }, 'uk');
+    expect(valueOf(rows, 'reproduction')).toBe('не було');
+    expect(labelOf(rows, 'donations')).toBe('Донації');
+    expect(valueOf(rows, 'donations')).toBe('ще не було');
+    expect(valueOf(buildProfileSummaryRows({ experience: '3' }, 'uk'), 'donations')).toBe('3');
+    expect(valueOf(buildProfileSummaryRows({ experience: '3' }, 'uk'), 'reproduction')).toBeUndefined();
+  });
+
+  it('ставить рядки в порядку: пологи, донації, сімейний стан, зовнішність', () => {
+    const rows = buildProfileSummaryRows({ ...fullProfile, experience: '2' }, 'uk');
+    expect(rows.map(row => row.key)).toEqual(['reproduction', 'donations', 'marital', 'appearance']);
   });
 
   it('не відриває числа від слова при переносі', () => {
-    const value = buildProfileSummaryRows({ ownKids: '2', lastDelivery: monthsAgo(6), experience: '6' }, 'uk')[0].value;
-    expect(value).toBe('двоє пологів, останні 6 міс тому · 6 донацій');
+    const value = buildProfileSummaryRows({ ownKids: '2', lastDelivery: monthsAgo(6), csection: '1' }, 'uk')[0].value;
+    expect(value).toBe('2, з яких 1\u00a0КР, останні 6\u00a0міс тому');
   });
 
   it('каже сімейний стан словом, а не «так/ні»', () => {
@@ -146,7 +180,8 @@ describe('короткі факти', () => {
     const rows = buildProfileSummaryRows({ eyeColor: 'Hazel', hairColor: 'Fair', ownKids: '2', experience: '1' }, 'en');
     expect(labelOf(rows, 'appearance')).toBe('Appearance');
     expect(valueOf(rows, 'appearance')).toBe('hazel eyes, fair hair');
-    expect(valueOf(rows, 'reproduction')).toBe('2 deliveries · 1 donation');
+    expect(valueOf(rows, 'reproduction')).toBe('2');
+    expect(valueOf(rows, 'donations')).toBe('1');
   });
 
   /*
@@ -299,7 +334,7 @@ describe('здоровʼя й спосіб життя в картці', () => {
   it('досвід СМ і ускладнення стоять у рядку «Пологи»', () => {
     const row = buildProfileSummaryRows({ ownKids: '4', surrogacyExperience: 'Yes', healthComplications: 'No' }, 'uk')
       .find(item => item.key === 'reproduction');
-    expect(row.value).toBe('четверо пологів. Маю досвід сурогатного материнства. Ускладнень під час вагітностей і пологів не було.');
+    expect(plain(row.value)).toBe('4. Маю досвід сурогатного материнства. Ускладнень під час вагітностей і пологів не було.');
   });
 
   it('власну відповідь продовжує з малої', () => {
