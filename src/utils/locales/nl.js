@@ -704,6 +704,7 @@ const BY_UK = {
   'зріст від {value} см': 'lengte vanaf {value} cm',
   'до {value} пологів': 'tot {value} bevallingen',
   'Інша доплата': 'Andere bonus',
+  'Не було': 'Geen',
   'Без КР': 'Geen keizersnede',
   'Без програм': 'Geen programma\'s',
   'Будь-який': 'Alle',

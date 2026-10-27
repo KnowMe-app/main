@@ -753,6 +753,7 @@ const EN_BY_UK = {
   'зріст від {value} см': 'height from {value} cm',
   'до {value} пологів': 'up to {value} deliveries',
   'Інша доплата': 'Other bonus',
+  'Не було': 'None',
   'Без КР': 'No C-section',
   'Без програм': 'No programs',
   'Будь-який': 'Any',

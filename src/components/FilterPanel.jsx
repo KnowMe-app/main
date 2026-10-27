@@ -107,6 +107,8 @@ const defaultsMatching = {
     other: true,
   },
   country: { ua: true, other: true, unknown: true },
+  deliveries: { 0: true, 1: true, 2: true, '3_plus': true, other: true },
+  cesarean: { cs0: true, cs1: true, cs2plus: true, other: true },
 };
 
 const normalizeFilterGroup = (value, defaults) => {

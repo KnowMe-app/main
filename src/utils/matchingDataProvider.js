@@ -1,5 +1,6 @@
 import { listPaymentBuckets } from './donorPrograms';
 import { cardMatchesPlace } from './profileNormalization';
+import { getCurrentValue } from 'components/getCurrentValue';
 import { ensureProgramsForCards } from './programsStore';
 import { getProgramRates } from './programCurrency';
 import { get, limitToFirst, orderByKey, query, ref } from 'firebase/database';
@@ -1128,6 +1129,40 @@ export const toAgeCategory = user => {
   return 'other';
 };
 
+/*
+ * Кількість пологів і кесаревих — з тих самих полів картки, які показує рядок
+ * «Пологи» (`ownKids`, `csection` — проєкція зводить аліаси кесаревого до
+ * нього). Індексу під них немає: це пост-фільтр по картці, як «Виплата».
+ * «Ні» форма пише мінусом (`csectionOptions`) — це нуль, а не «не вказано».
+ */
+const readCountAnswer = raw => {
+  const text = String(getCurrentValue(raw) ?? '').trim().toLowerCase();
+  if (!text) return null;
+  if (text === '-' || ['no', 'ні', 'немає', 'none'].includes(text)) return 0;
+  const match = /^(\d+)\s*\+?$/.exec(text);
+  return match ? Number(match[1]) : null;
+};
+
+export const toDeliveriesCategory = user => {
+  const count = readCountAnswer(user?.ownKids);
+  if (count === null) return 'other';
+  if (count >= 3) return '3_plus';
+  return String(count);
+};
+
+const CSECTION_CARD_KEYS = ['csection', 'cSection', 'c_section', 'cesareanSection'];
+
+export const toCesareanCategory = user => {
+  const key = CSECTION_CARD_KEYS.find(name => String(getCurrentValue(user?.[name]) ?? '').trim());
+  const count = key ? readCountAnswer(user[key]) : null;
+  if (count === null) {
+    // Без пологів кесаревого не буває — анкета відповіла й на це питання.
+    return readCountAnswer(user?.ownKids) === 0 ? 'cs0' : 'other';
+  }
+  if (count >= 2) return 'cs2plus';
+  return `cs${count}`;
+};
+
 // Same rule the index writer uses, so the two can never disagree on a boundary.
 export const toBmiCategory = user => resolveBmiBucket(user);
 
@@ -1185,6 +1220,14 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
     if (isMatchingFilterGroupActive(activeFilters.country)) {
       const category = toCountryCategory(user);
       if (!activeFilters.country[category]) return false;
+    }
+
+    if (isMatchingFilterGroupActive(activeFilters.deliveries)) {
+      if (!activeFilters.deliveries[toDeliveriesCategory(user)]) return false;
+    }
+
+    if (isMatchingFilterGroupActive(activeFilters.cesarean)) {
+      if (!activeFilters.cesarean[toCesareanCategory(user)]) return false;
     }
 
     // Місто чи область, які читач набрав у пошуку й обрав показати стрічкою
