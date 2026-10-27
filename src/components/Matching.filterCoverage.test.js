@@ -29,12 +29,13 @@ describe('every Matching filter reaches the index', () => {
     const { applyMatchingSearchKeyFilters } = require('../utils/matchingDataProvider');
     const users = [
       { userId: 'a', ownKids: '2', csection: '-' },
-      { userId: 'b', ownKids: '3', csection: '1' },
+      { userId: 'b', ownKids: '5', csection: '1' },
       { userId: 'c', ownKids: ['1', '0'] },
       { userId: 'd' },
     ];
-    const deliveries = { 0: false, 1: false, 2: true, '3_plus': true, other: false };
-    expect(applyMatchingSearchKeyFilters(users, { deliveries }).map(user => user.userId)).toEqual(['a', 'b']);
+    const deliveries = { 0: false, le4: true, ge5: false, other: false };
+    expect(applyMatchingSearchKeyFilters(users, { deliveries }).map(user => user.userId)).toEqual(['a']);
+    expect(applyMatchingSearchKeyFilters(users, { deliveries: { 0: false, le4: false, ge5: true, other: false } }).map(user => user.userId)).toEqual(['b']);
     const cesarean = { cs0: true, cs1: false, cs2plus: false, other: false };
     expect(applyMatchingSearchKeyFilters(users, { cesarean }).map(user => user.userId)).toEqual(['a', 'c']);
   });

@@ -1146,8 +1146,8 @@ const readCountAnswer = raw => {
 export const toDeliveriesCategory = user => {
   const count = readCountAnswer(user?.ownKids);
   if (count === null) return 'other';
-  if (count >= 3) return '3_plus';
-  return String(count);
+  if (count === 0) return '0';
+  return count <= 4 ? 'le4' : 'ge5';
 };
 
 const CSECTION_CARD_KEYS = ['csection', 'cSection', 'c_section', 'cesareanSection'];

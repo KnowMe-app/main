@@ -704,6 +704,7 @@ const BY_UK = {
   'зріст від {value} см': 'altura desde {value} cm',
   'до {value} пологів': 'hasta {value} partos',
   'Інша доплата': 'Otro extra',
+  'Без дітей': 'Sin hijos',
   'Не було': 'Ninguno',
   'Без КР': 'Sin cesárea',
   'Без програм': 'Sin programas',
