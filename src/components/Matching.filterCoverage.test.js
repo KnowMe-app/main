@@ -52,7 +52,10 @@ describe('every Matching filter reaches the index', () => {
     '%s produces an index group once an option is switched off',
     (filterName, group) => {
       const [firstOption] = group.options;
-      const filters = { [filterName]: { ...allOn(group), [firstOption.val]: false } };
+      // Групи про людину індекс бере лише тоді, коли агенцій і батьків у деці
+      // немає (`counterpartiesInDeck`), — тож дека тут сама донорська.
+      const onlyPersonalAnketas = filterName === 'userRole' ? {} : { userRole: { ed: true, sm: true, ag: false, ip: false, other: true } };
+      const filters = { ...onlyPersonalAnketas, [filterName]: { ...allOn(group), [firstOption.val]: false } };
 
       const indexGroups = buildMatchingIndexFilterGroups({ filters, collectionSource: 'users' });
       expect(indexGroups.length).toBeGreaterThan(0);

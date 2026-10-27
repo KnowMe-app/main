@@ -42,8 +42,9 @@ describe('поточна роль читача — остання з подан�
       { userId: 'agency', role: 'ag' },
       { userId: 'donorAgent', role: ['ed', 'ag'] },
     ];
+    // Донорка не бачить і СМ: вона шукає агенцію чи батьків, а не колегу.
     expect(keepDonorCounterpartyCards({ users: feed, viewerRole: 'ed' }).map(user => user.userId))
-      .toEqual(['surrogate', 'agency', 'donorAgent']);
+      .toEqual(['agency', 'donorAgent']);
     expect(keepDonorCounterpartyCards({ users: feed, viewerRole: ['ed', 'sm'] }).map(user => user.userId))
       .toEqual(['agency', 'donorAgent']);
     expect(keepDonorCounterpartyCards({ users: feed, viewerRole: ['ag', 'ed'] })).toEqual(feed);
@@ -51,9 +52,9 @@ describe('поточна роль читача — остання з подан�
 });
 
 describe('шухляда не пропонує того, чого в деці не буває', () => {
-  it('донорці не показує ED, СМ — SM, решті показує все', () => {
-    expect(listFeedRoleFilterKeysForViewer('ed')).toEqual(['sm', 'ag', 'ip', 'other']);
-    expect(listFeedRoleFilterKeysForViewer('sm')).toEqual(['ed', 'ag', 'ip', 'other']);
+  it('донорці й СМ не показує ні ED, ні SM, решті показує все', () => {
+    expect(listFeedRoleFilterKeysForViewer('ed')).toEqual(['ag', 'ip', 'other']);
+    expect(listFeedRoleFilterKeysForViewer('sm')).toEqual(['ag', 'ip', 'other']);
     expect(listFeedRoleFilterKeysForViewer(['ag', 'ed'])).toEqual(['ed', 'sm', 'ag', 'ip', 'other']);
     expect(listFeedRoleFilterKeysForViewer('ag')).toEqual(['ed', 'sm', 'ag', 'ip', 'other']);
     expect(listFeedRoleFilterKeysForViewer('')).toEqual(['ed', 'sm', 'ag', 'ip', 'other']);

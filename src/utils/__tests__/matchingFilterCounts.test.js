@@ -16,10 +16,12 @@ const FEED = [
 
 describe('числа біля опцій фільтра', () => {
   it('рахує по тих самих межах, що й сам фільтр', () => {
+    // Агенцію групи про людину не звужують, тож і в «Не вказано» вона не
+    // рахується (`isPersonalFilterExemptCard`).
     expect(countMatchingFilterOptions({ filterName: 'age', users: FEED }))
-      .toEqual({ le25: 1, '26_30': 1, other: 1 });
+      .toEqual({ le25: 1, '26_30': 1 });
     expect(countMatchingFilterOptions({ filterName: 'rh', users: FEED }))
-      .toEqual({ '+': 1, '-': 1, other: 1 });
+      .toEqual({ '+': 1, '-': 1 });
     expect(countMatchingFilterOptions({ filterName: 'country', users: FEED }))
       .toEqual({ ua: 1, other: 1, unknown: 1 });
     expect(countMatchingFilterOptions({ filterName: 'userRole', users: FEED }))

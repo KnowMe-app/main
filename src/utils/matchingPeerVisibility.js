@@ -88,10 +88,19 @@ export const resolveViewerCurrentRole = viewerRole => {
  */
 const PERSON_VIEWER_ROLES = new Set(['ed', 'sm']);
 
+/*
+ * Ховаються **обидві** особисті ролі, а не лише власна. Донорка шукає агенцію,
+ * клініку чи батьків, а не сурогатну маму: поки ховалась сама її роль, у
+ * стрічці донорки стояли СМ, і рейка пропонувала їй чіп «Сурогатна мати» —
+ * а з ним сімейний стан, пологи й резус, тобто фільтри під кандидаток, яких
+ * донорка не шукає. Те саме з СМ і донорками.
+ */
+const PERSON_HIDDEN_CARD_ROLES = Object.freeze(['ed', 'sm']);
+
 export const listViewerHiddenCardRoles = viewerRole => {
   const roles = [...new Set(listViewerRoles(viewerRole))];
   if (!roles.length || roles.some(role => !PERSON_VIEWER_ROLES.has(role))) return [];
-  return roles;
+  return [...PERSON_HIDDEN_CARD_ROLES];
 };
 
 /** Чи ця людина дивиться стрічку як донорка (і лише як людина, без ролі організації). */

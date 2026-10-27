@@ -1,4 +1,5 @@
 import {
+  isPersonalFilterExemptCard,
   toAgeCategory,
   toBmiCategory,
   toCountryCategory,
@@ -12,6 +13,7 @@ import {
 import { listPaymentBuckets } from './donorPrograms';
 import { getProgramRates } from './programCurrency';
 import { hasActiveSearchKeyFilterGroup } from './searchKeyBuckets';
+import { isPersonalFilterGroup } from './matchingPersonalFilters';
 
 /**
  * Скільки карток підпадає під кожну опцію групи — серед уже завантажених.
@@ -71,6 +73,10 @@ export const countMatchingFilterOptions = ({ filterName, users = [], roleIndexSe
       toRoleCategories(user, roleIndexSets).forEach(key => { counts[key] = (counts[key] || 0) + 1; });
       return;
     }
+    // Агенцію й батьків група про людину не звужує (`isPersonalFilterExemptCard`),
+    // тож і в «Не вказано» вони не рахуються: число обіцяло б, що зняття
+    // «Не вказано» прибере їх із деки.
+    if (isPersonalFilterGroup(filterName) && isPersonalFilterExemptCard(user, roleIndexSets)) return;
     const bucket = filterName === 'userRole' ? categorize(user, roleIndexSets) : categorize(user);
     const key = bucket === undefined || bucket === null || bucket === '' ? 'other' : String(bucket);
     counts[key] = (counts[key] || 0) + 1;

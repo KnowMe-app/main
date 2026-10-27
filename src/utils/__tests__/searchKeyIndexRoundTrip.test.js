@@ -448,7 +448,11 @@ describe('заповненість зі стрічки прибрано', () => 
 
 describe('the filters that used to have no index at all', () => {
   it('answers a BMI filter from the index, agreeing with the post-filter', async () => {
-    const filters = { bmi: { lt18_5: true, '18_5_24_9': true, '25_29_9': false, '30_plus': false, other: false } };
+    // ІМТ індекс бере, лише коли агенцій і батьків у деці немає (`counterpartiesInDeck`).
+    const filters = {
+      userRole: { ed: true, sm: true, ag: false, ip: false, other: true },
+      bmi: { lt18_5: true, '18_5_24_9': true, '25_29_9': false, '30_plus': false, other: false },
+    };
     const expected = expectedByPostFilter(filters);
 
     const { usedIndex, userIds } = await readCandidates(filters);
