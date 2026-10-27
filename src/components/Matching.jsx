@@ -44,7 +44,7 @@ import {
   SearchField,
 } from './Matching.styled';
 import {
-  fetchUserById,
+  loadViewerProfile,
   lazyLoadProfilePhotos,
   fetchFavoriteUsers,
   fetchDislikeUsers,
@@ -124,6 +124,14 @@ import {
   readLiveReactionSnapshot,
   settleLiveReactionEntry,
 } from '../utils/liveReactionSnapshots';
+import {
+  readFreshReactionSnapshot,
+  subscribeReactionCachePatches,
+  writeReactionSnapshot,
+} from '../utils/matchingReactionCache';
+import { readPersistedFeedSnapshot, writePersistedFeedSnapshot } from '../utils/matchingFeedSnapshot';
+import { readTimedCacheEntry, writeTimedCacheEntry } from '../utils/matchingCachePolicy';
+import { readRememberedViewerId } from '../utils/rememberedSession';
 import {
   cleanupMatchingLocalStorageCache,
   logMatchingLocalStorageDebugStats,
@@ -350,6 +358,7 @@ const MATCHING_DEBUG_VERSION = 'autoload-diagnostics-v2';
 const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 const DEBUG_SHARED_CARD_ID = 'ID0001';
 const ADDITIONAL_PROFILE_CACHE_TTL_MS = 45 * 1000;
+const SEARCH_KEY_SETS_CACHE_PREFIX = 'km.matchingSearchKeySets.v1:';
 const INITIAL_LOAD_ERROR_TOAST_ID = 'matching-initial-load-error';
 const ADDITIONAL_MATCHING_LOG_LIMIT = 300;
 const buildEmptyReactionPagination = () => ({ ids: [], nextOffset: 0, hasMore: false, accessSnapshotKey: '' });
@@ -793,6 +802,14 @@ async function resolveAdditionalSearchKeySetKeysForMatching(profile, accessUserI
     });
   }
 
+  // Ключі наборів міняє лише адмін, а вузол `searchKeySets` віддає разом із
+  // ключами й самі набори — найважче читання старту стрічки. Тож за загальним
+  // правилом кеша матчингу свіжий перелік береться з памʼяті пристрою; ключ
+  // містить `searchKeySets`, тож його стирає й скид кеша матчингу.
+  const cacheKey = `${SEARCH_KEY_SETS_CACHE_PREFIX}${normalizedAccessUserId}`;
+  const cachedKeys = readTimedCacheEntry(cacheKey);
+  if (Array.isArray(cachedKeys?.keys)) return cachedKeys.keys;
+
   const prefix = `${normalizedAccessUserId}_`;
   const snap = await get(query(refDb(database, 'searchKeySets'), orderByKey(), startAt(prefix), endAt(`${prefix}\uf8ff`)));
   if (snap.exists()) {
@@ -812,6 +829,7 @@ async function resolveAdditionalSearchKeySetKeysForMatching(profile, accessUserI
   debugAdditionalToast(normalizedAccessUserId, 'resolve keys: final', {
     searchKeySetsOfExactUser: searchKeySetKeys,
   });
+  writeTimedCacheEntry(cacheKey, { keys: searchKeySetKeys });
 
   return searchKeySetKeys;
 }
@@ -988,11 +1006,47 @@ const readFeedSnapshot = () => {
   return lastFeedSnapshot;
 };
 
+/*
+ * Той самий знімок після перезавантаження сторінки — з памʼяті пристрою
+ * (`utils/matchingFeedSnapshot`): id деки складаються в картки з кеша карток,
+ * а реакції читача — з кеша реакцій. Читач — той, кого пристрій памʼятає
+ * (`ownerId`), і показується знімок ще до відповіді Firebase: межа входу
+ * пускає сюди за памʼяттю сесії (`RequireAuth` з `allowRemembered`), а власні
+ * запити стрічки однаково чекають на вхід — їх запускає `onAuthStateChanged`.
+ */
+const readPersistedFeedSnapshotForMount = () => {
+  let owner = '';
+  try {
+    owner = localStorage.getItem('ownerId') || '';
+  } catch {
+    return null;
+  }
+  if (!owner || readQueryFromUrl().trim()) return null;
+  const persisted = readPersistedFeedSnapshot(owner);
+  if (!persisted) return null;
+  const { cards } = composeCachedCards(persisted.ids);
+  const users = persisted.ids
+    .map(id => (cards[id] ? { ...cards[id], userId: cards[id].userId || id } : null))
+    .filter(Boolean);
+  if (!users.length) return null;
+  const ownFavorites = normalizeReactionMap(readFreshReactionSnapshot(owner, owner, 'favorites') || {});
+  const ownDislikes = normalizeReactionMap(readFreshReactionSnapshot(owner, owner, 'dislikes') || {});
+  return {
+    ownerId: owner,
+    at: persisted.cachedAt,
+    users,
+    favoriteUsers: ownFavorites,
+    dislikeUsers: ownDislikes,
+    ownFavoriteUsers: ownFavorites,
+    ownDislikeUsers: ownDislikes,
+  };
+};
+
 const Matching = () => {
   const navigate = useNavigate();
   const routeLocation = useLocation();
   const feedSnapshotRef = useRef(undefined);
-  if (feedSnapshotRef.current === undefined) feedSnapshotRef.current = readFeedSnapshot();
+  if (feedSnapshotRef.current === undefined) feedSnapshotRef.current = readFeedSnapshot() || readPersistedFeedSnapshotForMount();
   const feedSnapshot = feedSnapshotRef.current;
   const restoredFeedSnapshotRef = useRef(Boolean(feedSnapshot));
   const [users, setUsers] = useState(() => feedSnapshot?.users || []);
@@ -1177,6 +1231,12 @@ const Matching = () => {
       ownDislikeUsers,
     };
   }, [dislikeUsers, favoriteUsers, ownDislikeUsers, ownFavoriteUsers, ownerId, searchQuery, users, viewMode]);
+  // На пристрій — лише id деки: реакції мають власний кеш, а картки — свій.
+  const feedSnapshotIdsKey = users.map(user => user?.userId || '').join('|');
+  useEffect(() => {
+    if (!ownerId || viewMode !== 'default' || searchQuery.trim() || !feedSnapshotIdsKey) return;
+    writePersistedFeedSnapshot({ ownerId, ids: feedSnapshotIdsKey.split('|') });
+  }, [feedSnapshotIdsKey, ownerId, searchQuery, viewMode]);
   const [personalCreateProfiles, setPersonalCreateProfiles] = useState([]);
   useEffect(() => {
     const syncCopiedComment = event => {
@@ -1217,13 +1277,18 @@ const Matching = () => {
     dislikeSnapshots: {},
     loadedFavoriteOwnerIds: new Set(),
     loadedDislikeOwnerIds: new Set(),
+    // Власники, чиї мапи взято з кеша реакцій (`utils/matchingReactionCache`):
+    // підписки на них немає, і власні реакції доходять сюди правкою кеша.
+    cacheServedOwnerIds: new Set(),
     apply: () => {},
   });
   const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
   const [currentUserRole, setCurrentUserRole] = useState(() => localStorage.getItem('userRole') || '');
-  // A cached role is useful for rendering, but it cannot start a deck: the
-  // authenticated profile also owns the shared reaction scope that must be
-  // snapshotted by the initial request.
+  // A bare cached role (`localStorage.userRole`) is useful for rendering, but it
+  // cannot start a deck: the viewer profile also owns the shared reaction scope
+  // that must be snapshotted by the initial request. That profile may itself
+  // come from the device cache (`loadViewerProfile`) — what matters is that
+  // role and reaction owners arrive together.
   const [currentUserRoleResolved, setCurrentUserRoleResolved] = useState(false);
   // Анкета читача в тому обсязі, який потрібен вимогам програм (вік, ІМТ,
   // резус, пологи, КР, сімейний стан). Читається з тієї самої анкети, що й
@@ -1319,8 +1384,12 @@ const Matching = () => {
     touchedOwnOverlayIdsRef.current = new Set();
   }, [ownerId]);
   const [roleIndexSets] = useState(null);
+  // До відповіді Firebase стрічка вже стоїть на екрані з кеша (`allowRemembered`
+  // у `App`), і читач у неї той, кого памʼятає пристрій. Без цього адмін до
+  // входу рахувався звичайним читачем: панель фільтрів ставила йому умовчання
+  // ролі, а після входу перебирала їх назад — і стрічка вантажилась двічі.
   const access = resolveAccess({
-    uid: auth.currentUser?.uid,
+    uid: auth.currentUser?.uid || readRememberedViewerId(),
     accessLevel: currentAccessLevel,
     userRole: currentUserRole,
     canCreateProfiles: currentCanCreateProfiles,
@@ -2178,11 +2247,15 @@ const Matching = () => {
 
     const profileRequestVersion = additionalProfileRequestVersionRef.current + 1;
     additionalProfileRequestVersionRef.current = profileRequestVersion;
-    const profilePath = `fetchUserById(${normalizedAccessUserId})`;
+    const profilePath = `loadViewerProfile(${normalizedAccessUserId})`;
     try {
+      // Памʼять цього шару — 45 секунд, а за нею стоїть кеш анкети пристрою
+      // (`loadViewerProfile`, шість годин): права з правил доступу міняє адмін,
+      // і за загальним правилом кеша матчингу вони доїжджають щонайпізніше
+      // через TTL, а не ціною повної анкети з бази на кожну порцію реакцій.
       const fetchedProfile = prefetchedProfile !== undefined
         ? prefetchedProfile
-        : await fetchUserById(normalizedAccessUserId);
+        : await loadViewerProfile(normalizedAccessUserId);
       const profileFound = Boolean(fetchedProfile && typeof fetchedProfile === 'object');
 
       if (!profileFound) {
@@ -2424,7 +2497,9 @@ const Matching = () => {
 
         const syncAccessProfile = async () => {
           try {
-            const profile = await fetchUserById(user.uid);
+            // Свіжа (до шести годин) анкета — з памʼяті пристрою, без бази:
+            // роль і спільні власники реакцій з неї ж (`loadViewerProfile`).
+            const profile = await loadViewerProfile(user.uid);
             const accessLevel = profile?.accessLevel || '';
             const userRole = readViewerRolesFromProfile(profile);
             const canCreateProfiles = profile?.canCreateProfiles === true;
@@ -2558,6 +2633,22 @@ const Matching = () => {
     store.owners.clear();
   }, []);
 
+  // Луна власної реакції для мап, узятих з кеша: підписки на них немає, тож
+  // `onValue` не повернув би запис, і наступний перерахунок пріоритету
+  // (зміна переліку власників, знімок іншого власника) відкотив би на екрані
+  // щойно поставлене серце. Правку кеша несе сам писач (`config.js`).
+  useEffect(() => subscribeReactionCachePatches(({ viewerId, ownerId: patchedOwnerId, kind, cardId, value }) => {
+    const store = reactionSubscriptionsRef.current;
+    if (viewerId !== getOwnerId() || !store.cacheServedOwnerIds.has(patchedOwnerId)) return;
+    const snapshots = kind === 'dislikes' ? store.dislikeSnapshots : store.favoriteSnapshots;
+    const next = { ...(snapshots[patchedOwnerId] || {}) };
+    if (value === undefined) delete next[cardId];
+    else next[cardId] = value;
+    snapshots[patchedOwnerId] = next;
+    settleLiveReactionEntry(ensureLiveReactionEntry(liveReactionSnapshotsRef.current, kind, patchedOwnerId), next);
+    store.apply();
+  }), []);
+
   useEffect(() => {
     const ownerIds = getMatchingMultiDataOwnerIds();
     const store = reactionSubscriptionsRef.current;
@@ -2677,6 +2768,32 @@ const Matching = () => {
 
     const applyPrioritizedReactionMaps = () => store.apply();
     ownerIds.filter(ownerId => !store.owners.has(ownerId)).forEach(effectiveOwnerId => {
+      const favoriteLive = ensureLiveReactionEntry(liveReactionSnapshotsRef.current, 'favorites', effectiveOwnerId);
+      const dislikeLive = ensureLiveReactionEntry(liveReactionSnapshotsRef.current, 'dislikes', effectiveOwnerId);
+      const viewerIdForCache = getOwnerId();
+
+      // Загальне правило кеша матчингу: свіжі мапи власника — з памʼяті
+      // пристрою, і тоді підписки немає зовсім. Обидві, бо пріоритет реакцій
+      // рахується з пари, і половина з бази поруч із половиною з кеша нічого
+      // не заощадила б.
+      const cachedFavorites = readFreshReactionSnapshot(viewerIdForCache, effectiveOwnerId, 'favorites');
+      const cachedDislikes = cachedFavorites ? readFreshReactionSnapshot(viewerIdForCache, effectiveOwnerId, 'dislikes') : null;
+      if (cachedFavorites && cachedDislikes) {
+        favoriteSnapshots[effectiveOwnerId] = cachedFavorites;
+        dislikeSnapshots[effectiveOwnerId] = cachedDislikes;
+        settleLiveReactionEntry(favoriteLive, cachedFavorites);
+        settleLiveReactionEntry(dislikeLive, cachedDislikes);
+        loadedFavoriteOwnerIds.add(effectiveOwnerId);
+        loadedDislikeOwnerIds.add(effectiveOwnerId);
+        store.cacheServedOwnerIds.add(effectiveOwnerId);
+        store.owners.set(effectiveOwnerId, [() => {
+          favoriteLive.active = false;
+          dislikeLive.active = false;
+          store.cacheServedOwnerIds.delete(effectiveOwnerId);
+        }]);
+        return;
+      }
+
       const favRef = refDb(database, `multiData/favorites/${effectiveOwnerId}`);
       const disRef = refDb(database, `multiData/dislikes/${effectiveOwnerId}`);
 
@@ -2693,12 +2810,11 @@ const Matching = () => {
         store.apply();
       };
 
-      const favoriteLive = ensureLiveReactionEntry(liveReactionSnapshotsRef.current, 'favorites', effectiveOwnerId);
-      const dislikeLive = ensureLiveReactionEntry(liveReactionSnapshotsRef.current, 'dislikes', effectiveOwnerId);
       const unsubFav = onValue(favRef, snap => {
         const viewerId = getOwnerId();
         const isDebugViewer = shouldDebugAdditionalMatching(viewerId);
         favoriteSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
+        writeReactionSnapshot(viewerIdForCache, effectiveOwnerId, 'favorites', favoriteSnapshots[effectiveOwnerId]);
         settleLiveReactionEntry(favoriteLive, favoriteSnapshots[effectiveOwnerId]);
         loadedFavoriteOwnerIds.add(effectiveOwnerId);
         debugSharedReactionsLog(viewerId, 'loaded favorites snapshot for ownerId', {
@@ -2716,6 +2832,7 @@ const Matching = () => {
         const viewerId = getOwnerId();
         const isDebugViewer = shouldDebugAdditionalMatching(viewerId);
         dislikeSnapshots[effectiveOwnerId] = snap.exists() ? snap.val() : {};
+        writeReactionSnapshot(viewerIdForCache, effectiveOwnerId, 'dislikes', dislikeSnapshots[effectiveOwnerId]);
         settleLiveReactionEntry(dislikeLive, dislikeSnapshots[effectiveOwnerId]);
         loadedDislikeOwnerIds.add(effectiveOwnerId);
         debugSharedReactionsLog(viewerId, 'loaded dislikes snapshot for ownerId', {
@@ -3060,8 +3177,12 @@ const Matching = () => {
     initialLoadInFlightRef.current = true;
     loadingRef.current = true;
     setInitialPublicWindowComplete(false);
-    // Деку, показану зі знімка вкладки (`readFeedSnapshot`), не стираємо: на
-    // час читання реакцій на екрані лишається вона, а не скелетон.
+    // Деку, показану зі знімка вкладки чи пристрою (`readFeedSnapshot`,
+    // `readPersistedFeedSnapshotForMount`), не стираємо: на час читання на
+    // екрані лишається вона, а не скелетон. Але й не дописуємо до неї: знімок
+    // міг бути зібраний за іншої ролі чи фільтрів, тож перша ж відповідь
+    // бекенду його замінює, а не стає за ним (`replacesRestoredDeck`).
+    let replacesRestoredDeck = restoredFeedSnapshotRef.current;
     if (restoredFeedSnapshotRef.current) restoredFeedSnapshotRef.current = false;
     else setUsers([]); // clear previous list to avoid caching wrong data
     loadedIdsRef.current = new Set();
@@ -3259,10 +3380,13 @@ const Matching = () => {
         });
       }
       let resumeCursor;
-      // Стрічка адміна — це питання «хто щойно зʼявився», і відповідь на нього
-      // не може лежати в кеші шість годин: голова її щоразу читається з бази
-      // (`fetchAdminLastLoginCardsPage`, один запит на сторінку).
-      if (cacheResume.usable && viewModeRef.current === startMode && !isAdmin) {
+      // Стрічка адміна живе за тим самим правилом кеша, що й решта
+      // (`utils/matchingCachePolicy`): свіжа — з памʼяті пристрою, протухла —
+      // з бази. Тут стояв виняток «голова адмінської стрічки щоразу з бази»,
+      // і кожне перезавантаження сторінки адміна платило запит
+      // `profileTechnical` і читання карток сторінки. Нові входи видно
+      // щонайпізніше через TTL або одразу — «Почати стрічку заново».
+      if (cacheResume.usable && viewModeRef.current === startMode) {
         writeMatchingDebugLog('matchingLocalCacheUsed', {
           cacheKey: feedListKey,
           cardsCount: cached.length,
@@ -3288,6 +3412,9 @@ const Matching = () => {
         });
         loadedIdsRef.current = new Set(filteredCached.map(u => u.userId));
         setUsers(filteredCached);
+        // Деку з кеша вже поставлено замість знімка: дочитане з бази нижче
+        // стає за нею, а не замість неї.
+        replacesRestoredDeck = false;
         setIdsForQuery(feedListKey, filteredCached.map(u => u.userId));
         void loadCommentsFor(filteredCached);
         if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
@@ -3350,7 +3477,9 @@ const Matching = () => {
           const unique = part.filter(u => !loadedIdsRef.current.has(u.userId));
           if (unique.length) {
             unique.forEach(u => loadedIdsRef.current.add(u.userId));
-            setUsers(prev => [...prev, ...unique]);
+            const replaces = replacesRestoredDeck;
+            replacesRestoredDeck = false;
+            setUsers(prev => (replaces ? unique : [...prev, ...unique]));
             void loadCommentsFor(unique);
           }
           }
@@ -3389,8 +3518,10 @@ const Matching = () => {
         rememberFeedSummaryCards(res.users);
         rememberFeedPagination({ cursor: res.lastKey, hasMore: res.hasMore, signature: feedCacheSignature });
       }
+      const replacesWithResult = replacesRestoredDeck;
+      replacesRestoredDeck = false;
       setUsers(prev => {
-        const map = new Map(prev.map(u => [u.userId, u]));
+        const map = new Map((replacesWithResult ? [] : prev).map(u => [u.userId, u]));
         res.users.forEach(u => map.set(u.userId, u));
         const result = Array.from(map.values());
         setIdsForQuery(feedListKey, result.map(u => u.userId));
@@ -3452,7 +3583,7 @@ const Matching = () => {
         setLoading(false);
       }
     }
-  }, [announcePublicFeedUnavailable, beginInitialRequest, buildFeedCacheSignature, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, isAdmin, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, programRates, recordInitialLoadDiagnostic, rememberFeedPagination, rememberFeedSummaryCards, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [announcePublicFeedUnavailable, beginInitialRequest, buildFeedCacheSignature, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, programRates, recordInitialLoadDiagnostic, rememberFeedPagination, rememberFeedSummaryCards, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     setLoadError(null);
@@ -3499,9 +3630,17 @@ const Matching = () => {
     }
 
     if (currentMode === 'default') {
-      loadedIdsRef.current = new Set();
       setInitialPublicWindowComplete(false);
-      setUsers([]);
+      // Перша звістка панелі фільтрів приходить на монтуванні, ще до
+      // `loadInitial`. Деку зі знімка (`restoredFeedSnapshotRef`) вона не
+      // стирає: `loadInitial` попереду й складе деку вже під ці фільтри, а до
+      // того на екрані лишається знімок, а не скелетон. Поки тут стояло
+      // безумовне `setUsers([])`, знімок зникав раніше, ніж його встигали
+      // побачити, — і після перезавантаження, і після «назад».
+      if (!restoredFeedSnapshotRef.current) {
+        loadedIdsRef.current = new Set();
+        setUsers([]);
+      }
       setAdditionalAccessUsers([]);
       setAdditionalNextOffset(0);
       additionalHasMoreRef.current = false;
@@ -6258,6 +6397,9 @@ const Matching = () => {
   // кожне фото робило власний, тож стрічка з 60 рядків перемальовувалась 60
   // разів поспіль — і щоразу цілком, бо `feedRows` перебудовував усі обʼєкти.
   useEffect(() => {
+    // Дека з кеша буває на екрані ще до відповіді Firebase (`allowRemembered`):
+    // фото, яких немає в кеші адрес, питаються вже після входу.
+    if (!ownerId) return undefined;
     const pool = feedSource.slice(0, FEED_PHOTO_HYDRATION_LIMIT);
     // Аватар проєкції — це одне фото, і рядку стрічки його досить. Шар деталей
     // гортає всі фото, тож картка, яку відкрили (а отже, догідратували повною
@@ -6310,7 +6452,7 @@ const Matching = () => {
       if (stats && typeof console.table === 'function') console.table([stats]);
     });
     return undefined;
-  }, [feedSource, fullProfileByUserId, photoCacheByUserId]);
+  }, [feedSource, fullProfileByUserId, ownerId, photoCacheByUserId]);
 
   // Нотатки питаються за набором карток, а не за посиланням на масив: `users`
   // буває новим масивом з тими самими картками на кожен рендер (React
@@ -8121,7 +8263,10 @@ const Matching = () => {
           {/* `as="div"`, бо всередині кнопка: `OwnerStatusMessage` — це `p`, а
               браузер розриває абзац на першому ж блоковому нащадку, і кнопка
               поїхала б з-під власного тексту. */}
-          {!ownerId && (
+          {/* Деку з кеша до відповіді Firebase (`allowRemembered`) напис
+              «Перевіряємо сесію…» лише перекривав би: перевірка йде, а
+              читач уже гортає те, що бачив минулого разу. */}
+          {!ownerId && (ownerId === '' || !users.length) && (
             <OwnerStatusMessage as="div">
               {ownerId === '' ? (
                 <>
@@ -8221,7 +8366,10 @@ const Matching = () => {
                       onToggleExpand={handleToggleRowExpand}
                       onEditProfile={handleRowEditProfile}
                       onContactAction={handleRowContactAction}
-                      onRequestContacts={handleRequestRowContacts}
+                      // Дека з кеша буває на екрані ще до відповіді Firebase
+                      // (`allowRemembered`), а право на контакти рахується від
+                      // читача: спитане без нього памʼяталось би як «закрито».
+                      onRequestContacts={ownerId ? handleRequestRowContacts : undefined}
                       canViewContacts={canOfferProfileContacts({
                         card: user,
                         viewerId: ownerId,

@@ -100,7 +100,7 @@ describe('limited search projection', () => {
     // Межа тут одна — вхід. Рівень доступу звужує видачу всередині екрана
     // (`limitedFields`), а не закриває сам маршрут: пошук потрібен кожному, хто
     // увійшов, а не самим лише адмінам.
-    expect(app).toContain('<Route path="/matching" element={<RequireAuth status={authStatus}><Matching /></RequireAuth>} />');
+    expect(app).toContain('<Route path="/matching" element={<RequireAuth status={authStatus} allowRemembered><Matching /></RequireAuth>} />');
     expect(app).not.toContain('canAccessMatching && <Route path="/matching"');
     // The search field is no longer behind an admin check.
     expect(read('Matching.jsx')).not.toContain('{isAdmin && (\n              <SearchField>');

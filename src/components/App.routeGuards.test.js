@@ -140,9 +140,28 @@ describe('App route guards', () => {
   it('resolves the auth status before the access level is read', () => {
     const source = appSource();
     const setStatus = source.indexOf("setAuthStatus(user ? 'in' : 'out');");
-    const fetchProfile = source.indexOf('await fetchUserById(user.uid)');
+    const fetchProfile = source.indexOf('await loadViewerProfile(user.uid)');
     expect(setStatus).toBeGreaterThan(-1);
     expect(setStatus).toBeLessThan(fetchProfile);
+  });
+
+  // Стрічка показує деку з кеша ще до відповіді Firebase — і лише вона:
+  // форми правки й «Мій профіль» пишуть у базу і чекають на вхід, як раніше.
+  it('lets only the feed render from a remembered session while Firebase answers', () => {
+    const remembered = parseRoutes()
+      .filter(route => /<RequireAuth[^>]*\ballowRemembered\b/.test(route.chunk))
+      .map(route => route.path);
+    expect(remembered).toEqual(['/matching']);
+  });
+
+  // Анкета, реакції й остання дека — памʼять пристрою про конкретного
+  // читача, і вихід з акаунта стирає її разом з позначкою входу.
+  it('clears the per-viewer matching caches when Firebase reports no user', () => {
+    const source = appSource();
+    const outBranch = source.slice(source.indexOf("localStorage.removeItem('isLoggedIn');"));
+    ['clearMyProfileCache();', 'clearReactionCache();', 'clearPersistedFeedSnapshot();'].forEach(call => {
+      expect(outBranch).toContain(call);
+    });
   });
 
   // Позначка входу в `localStorage` переживала вихід із сесії, і форма входу
