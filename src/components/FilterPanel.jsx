@@ -9,6 +9,7 @@ import {
   resolvePersonalViewerRoleDefault,
   viewerRoleSignature,
 } from 'utils/matchingPeerVisibility';
+import { alignPersonalFilterGroupsWithRoles } from 'utils/matchingPersonalFilters';
 
 /*
  * Для якої ролі читача «Тип профілю» вже стояв за замовчуванням своєї ролі
@@ -259,6 +260,18 @@ const FilterPanel = ({
       return aligned === roleFilters ? current : { ...current, userRole: aligned };
     });
   }, [mode, seekingKey, viewerRoleKey]);
+
+  // Групи про людину (сімейний стан, пологи, резус…) читачеві не показують,
+  // коли «Тип профілю» не лишає в деці особистих анкет, — і збережене в них
+  // звуження знімається тут же, у стані: інакше воно різало б деку невидимо.
+  const roleOptionKeysKey = Array.isArray(roleOptionKeys) ? roleOptionKeys.join(',') : '';
+  const roleOptionKeysRef = useRef(roleOptionKeys);
+  roleOptionKeysRef.current = roleOptionKeys;
+  const roleFilterGroup = filters?.userRole;
+  useEffect(() => {
+    if (mode !== 'matching') return;
+    setFilters(current => alignPersonalFilterGroupsWithRoles(current, roleOptionKeysRef.current));
+  }, [mode, roleFilterGroup, roleOptionKeysKey]);
 
   useEffect(() => {
     if (prevResetTokenRef.current === resetToken) return;

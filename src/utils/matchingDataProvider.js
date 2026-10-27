@@ -229,7 +229,17 @@ export const buildMatchingIndexFilterGroups = ({ filters = {} } = {}) => {
       ...buildExcludeBucketMeta({ group: roleFilters, allBuckets: ROLE_BUCKETS, bucketMap: ROLE_BUCKET_FILTER_KEYS, allowedBuckets: roleBuckets }),
     }
   );
-  const maritalStatusBuckets = buildMaritalStatusBuckets(filters);
+  // Групи про людину індекс бере, лише коли агенцій і батьків у деці немає.
+  // Інакше перетин бакетів «Не заміжня» відкидав би й агенції — у них цього
+  // поля немає, — а пост-фільтр (`isPersonalFilterExemptCard`) їх лишає.
+  // Тоді звужує сам пост-фільтр, і стрічка йде звичайною пагінацією.
+  const counterpartiesInDeck = !hasActiveFilterGroup(roleFilters)
+    || isRoleCategoryAllowed(roleFilters, 'ag')
+    || isRoleCategoryAllowed(roleFilters, 'ip');
+  const personalFilters = counterpartiesInDeck
+    ? { ...filters, maritalStatus: undefined, bloodGroup: undefined, rh: undefined, age: undefined, bmi: undefined }
+    : filters;
+  const maritalStatusBuckets = buildMaritalStatusBuckets(personalFilters);
   addGroup(
     groups,
     'maritalStatus',
@@ -241,7 +251,7 @@ export const buildMatchingIndexFilterGroups = ({ filters = {} } = {}) => {
       ...buildExcludeBucketMeta({ group: filters?.maritalStatus, allBuckets: MARITAL_STATUS_BUCKETS, bucketMap: MARITAL_STATUS_BUCKET_MAP, allowedBuckets: maritalStatusBuckets }),
     }
   );
-  const bloodBuckets = buildBloodBuckets(filters);
+  const bloodBuckets = buildBloodBuckets(personalFilters);
   addGroup(
     groups,
     'blood',
@@ -260,7 +270,7 @@ export const buildMatchingIndexFilterGroups = ({ filters = {} } = {}) => {
   addGroup(
     groups,
     'age',
-    buildAgeBuckets(filters),
+    buildAgeBuckets(personalFilters),
     {
       source: 'searchKey/users',
       ...getFilterGroupDebugState('age', filters?.age),
@@ -303,7 +313,7 @@ export const buildMatchingIndexFilterGroups = ({ filters = {} } = {}) => {
     }
   );
 
-  const bmiBuckets = selectSearchKeyBuckets(filters?.bmi, BMI_SEARCH_KEY_BUCKETS);
+  const bmiBuckets = selectSearchKeyBuckets(personalFilters?.bmi, BMI_SEARCH_KEY_BUCKETS);
   addGroup(
     groups,
     'bmi',
@@ -1176,6 +1186,19 @@ export const getMatchingFiltersWithoutSearchKeyGroups = filters => {
   return base;
 };
 
+/*
+ * Агенція й біологічні батьки на питання про людину не відповідають: у них
+ * немає ні сімейного стану, ні пологів, ні резусу. Коли «Тип профілю» пускає в
+ * деку і донорок, і агенцій, «Не заміжня» звужує донорок — а агенції мусять
+ * лишитись, інакше фільтр про донорок мовчки вичищав би з деки всі агенції
+ * (вони падали в «Не вказано»). Клініки й анкети без ролі тут не рахуються:
+ * вони під «Іншими», а під ними ходять і старі анкети донорок.
+ */
+export const isPersonalFilterExemptCard = (user, roleIndexSets = null) => {
+  const categories = toRoleCategories(user, roleIndexSets);
+  return categories.length > 0 && categories.every(category => category === 'ag' || category === 'ip');
+};
+
 export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = null, programRates = getProgramRates()) => {
   const activeFilters = filters || {};
   const roleIndexFilterMeta = isMatchingFilterGroupActive(activeFilters.userRole)
@@ -1192,27 +1215,29 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
       }
     }
 
-    if (isMatchingFilterGroupActive(activeFilters.maritalStatus)) {
+    const personalExempt = isPersonalFilterExemptCard(user, roleIndexSets);
+
+    if (!personalExempt && isMatchingFilterGroupActive(activeFilters.maritalStatus)) {
       const category = toMaritalStatusCategory(user);
       if (!activeFilters.maritalStatus[category]) return false;
     }
 
-    if (isMatchingFilterGroupActive(activeFilters.bloodGroup)) {
+    if (!personalExempt && isMatchingFilterGroupActive(activeFilters.bloodGroup)) {
       const category = toBloodGroupCategory(user);
       // `unknown` — це «картка не носить групи», а не «група не підійшла».
       if (category !== BLOOD_GROUP_UNKNOWN && !activeFilters.bloodGroup[category]) return false;
     }
 
-    if (isMatchingFilterGroupActive(activeFilters.rh)) {
+    if (!personalExempt && isMatchingFilterGroupActive(activeFilters.rh)) {
       const category = toRhCategory(user);
       if (!activeFilters.rh[category]) return false;
     }
 
-    if (isMatchingFilterGroupActive(activeFilters.age)) {
+    if (!personalExempt && isMatchingFilterGroupActive(activeFilters.age)) {
       const category = toAgeCategory(user);
       if (!activeFilters.age[category]) return false;
     }
-    if (isMatchingFilterGroupActive(activeFilters.bmi)) {
+    if (!personalExempt && isMatchingFilterGroupActive(activeFilters.bmi)) {
       const category = toBmiCategory(user);
       if (!activeFilters.bmi[category]) return false;
     }
@@ -1222,11 +1247,11 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
       if (!activeFilters.country[category]) return false;
     }
 
-    if (isMatchingFilterGroupActive(activeFilters.deliveries)) {
+    if (!personalExempt && isMatchingFilterGroupActive(activeFilters.deliveries)) {
       if (!activeFilters.deliveries[toDeliveriesCategory(user)]) return false;
     }
 
-    if (isMatchingFilterGroupActive(activeFilters.cesarean)) {
+    if (!personalExempt && isMatchingFilterGroupActive(activeFilters.cesarean)) {
       if (!activeFilters.cesarean[toCesareanCategory(user)]) return false;
     }
 

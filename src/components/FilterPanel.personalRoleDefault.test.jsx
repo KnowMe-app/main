@@ -19,15 +19,17 @@ const renderPanel = viewerRole => {
 };
 
 describe('«Тип профілю» за замовчуванням для донорки й СМ', () => {
+  // Донорок і СМ особистому читачеві не показують зовсім (ні в деці, ні
+  // чіпом), тож їхні позначки стоять увімкненими: невидима позначка не ріже.
   it('донорка вперше бачить самі агенції', () => {
     const { last } = renderPanel('ed');
-    expect(last().userRole).toEqual({ ed: true, sm: false, ag: true, ip: false, other: false });
+    expect(last().userRole).toEqual({ ed: true, sm: true, ag: true, ip: false, other: false });
     expect(store.get(MATCHING_ROLE_DEFAULT_MARKER_KEY)).toBe('ed');
   });
 
   it('СМ вперше бачить самі агенції', () => {
     const { last } = renderPanel(['sm']);
-    expect(last().userRole).toEqual({ ed: false, sm: true, ag: true, ip: false, other: false });
+    expect(last().userRole).toEqual({ ed: true, sm: true, ag: true, ip: false, other: false });
   });
 
   it('вдруге умовчання не перебиває вибору читачки', () => {
@@ -48,7 +50,7 @@ describe('«Тип профілю» за замовчуванням для до�
     const { last, rerender, onChange } = renderPanel('');
     expect(last().userRole.ip).toBe(true);
     rerender(<FilterPanel mode="matching" nonAdminAllActive viewerRole="ed" onChange={onChange} />);
-    expect(last().userRole).toEqual({ ed: true, sm: false, ag: true, ip: false, other: false });
+    expect(last().userRole).toEqual({ ed: true, sm: true, ag: true, ip: false, other: false });
   });
 });
 

@@ -5,8 +5,8 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import { revealCss } from '../styles/revealAnimation';
-import { FiChevronDown, FiClock, FiFolder, FiPlus, FiSave, FiSearch, FiUsers, FiX } from 'react-icons/fi';
-import { FaHeart, FaRegHeart, FaTimes, FaUndoAlt } from 'react-icons/fa';
+import { FiChevronDown, FiClock, FiFolder, FiPlus, FiSave, FiUsers, FiX } from 'react-icons/fi';
+import { FaHeart, FaRegHeart, FaSearch, FaTimes, FaUndoAlt } from 'react-icons/fa';
 
 import {
   addMatchingSearchQuery,
@@ -45,7 +45,7 @@ import InfoModal, {
 } from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import ProfileRow, { PublicCommentBlock, ReviewsStateNote, describeReviewsState } from './ProfileRow';
-import { MatchingThemeScope, NoteClearButton, NoteFieldRow, NoteLane, NoteLaneHead, NoteLanes } from './Matching.styled';
+import { MatchingThemeScope, NoteClearButton, SearchField, NoteFieldRow, NoteLane, NoteLaneHead, NoteLanes } from './Matching.styled';
 import { NOTE_TEXT_LINE_HEIGHT, NOTE_TEXT_SIZE } from './noteTypography';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { profileUiText } from 'utils/profileTexts';
@@ -2555,6 +2555,10 @@ export const ProfileCreationWorkspace = () => {
           {/* На телефоні поле пошуку стоїть у рядку навігації замість назви
               «Додати картку» (`usePrimaryNavigationHeaderTarget`). */}
           {placeInNavHeader(
+          // Поле те саме, що в стрічці (`SearchField`): два пошуки поруч у
+          // нижніх вкладках виглядали різними екранами — інша іконка, висота й рамка.
+          <SearchField>
+          <FaSearch aria-hidden="true" />
           <SearchBar
             searchFunc={searchUsersOnly}
             search={search}
@@ -2587,16 +2591,12 @@ export const ProfileCreationWorkspace = () => {
             storageKey="profileCreationSearchQuery"
             searchOptions={PROFILE_SEARCH_OPTIONS}
             debounceMs={PROFILE_SEARCH_DEBOUNCE_MS}
-            // У рядку навігації поле мусить влізти у висоту самого рядка
-            // (`TOP_NAV_HEIGHT`): зі своїми 10 px полів зверху й знизу воно
-            // розтягувало шапку до 77 px, і липкі блоки під нею ставали не туди.
-            wrapperStyle={navHeaderTarget
-              ? { width: '100%', margin: 0, height: 44, padding: '0 12px' }
-              : { width: '100%' }}
-            leftIcon={<FiSearch size={21} aria-hidden="true" />}
+            wrapperStyle={{ width: '100%', margin: 0, border: 'none', background: 'transparent', padding: 0, boxShadow: 'none' }}
+            leftIcon={null}
             placeholder={uiText('Телефон, email, нік або посилання', language)}
             inputAriaLabel={uiText('Пошук анкети', language)}
           />
+          </SearchField>
           )}
           <SearchHint>{uiText(
             'Почніть із відомого контакту людини — телефона, пошти, ніка чи посилання на соцмережу. '

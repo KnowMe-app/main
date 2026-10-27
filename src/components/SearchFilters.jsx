@@ -9,6 +9,7 @@ import { CheckboxGroup } from './CheckboxGroup';
 import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
 import { PAYMENT_FILTER_BUCKETS, PAYMENT_FILTER_NONE } from 'utils/donorPrograms';
 import { uiText } from 'utils/uiTranslations';
+import { isPersonalFilterGroup, roleSelectionAllowsPersonalAnketas } from 'utils/matchingPersonalFilters';
 import { useAppSettings } from '../hooks/useAppSettings';
 
 /* Оболонка груп. У поповері рейки вона гола (`$bare`): поповер сам уже
@@ -252,11 +253,21 @@ export const buildMatchingFilterChipLabel = (group, values, language) => {
  * шухляді вже не малюють, ряд чіпів однаково писав би «Тип профілю: крім ED» —
  * про позначку, якої вона не бачить і зняти не може.
  */
-export const resolveMatchingFilterGroups = ({ roleOptionKeys, paymentOptionKeys } = {}) => {
-  if (!Array.isArray(roleOptionKeys) && !Array.isArray(paymentOptionKeys)) return MATCHING_FILTER_GROUPS;
+/*
+ * `roleFilters` — поточний «Тип профілю». Групи про людину (сімейний стан,
+ * пологи, резус, вік…) стоять лише тоді, коли в деці можуть бути особисті
+ * анкети (`roleSelectionAllowsPersonalAnketas`): донорці, яка гортає агенції
+ * й батьків, і агенції, яка обрала самих агенцій, вони нічого не звужують.
+ * Без `roleFilters` групи не відсіюються — так їх бачать адмінські екрани.
+ */
+export const resolveMatchingFilterGroups = ({ roleOptionKeys, paymentOptionKeys, roleFilters } = {}) => {
+  const hidePersonal = roleFilters !== undefined && !roleSelectionAllowsPersonalAnketas(roleFilters, roleOptionKeys);
+  if (!Array.isArray(roleOptionKeys) && !Array.isArray(paymentOptionKeys) && !hidePersonal) return MATCHING_FILTER_GROUPS;
   const allowedRoles = Array.isArray(roleOptionKeys) ? new Set(roleOptionKeys) : null;
   const allowedPayments = Array.isArray(paymentOptionKeys) ? new Set(paymentOptionKeys) : null;
-  return MATCHING_FILTER_GROUPS.map(group => {
+  return MATCHING_FILTER_GROUPS
+    .filter(group => !(hidePersonal && isPersonalFilterGroup(group.filterName)))
+    .map(group => {
     if (group.filterName === 'userRole' && allowedRoles) {
       return { ...group, options: group.options.filter(option => allowedRoles.has(option.val)) };
     }
@@ -290,7 +301,7 @@ export const listPaymentFilterKeysForViewer = viewerType => [
  * чіп, якого цьому читачеві не показують, не з’являється й тут.
  */
 export const buildMatchingFilterRailChips = (filters, language, { roleOptionKeys, paymentOptionKeys } = {}) => {
-  const chips = resolveMatchingFilterGroups({ roleOptionKeys, paymentOptionKeys }).map(group => {
+  const chips = resolveMatchingFilterGroups({ roleOptionKeys, paymentOptionKeys, roleFilters: filters?.userRole ?? null }).map(group => {
     const groupLabel = uiText(group.label, language);
     const summary = buildMatchingFilterChipLabel(group, filters?.[group.filterName], language);
     return {
@@ -318,7 +329,7 @@ export const buildMatchingFilterRailChips = (filters, language, { roleOptionKeys
 };
 
 export const buildMatchingFilterChips = (filters, language, { roleOptionKeys, paymentOptionKeys } = {}) =>
-  resolveMatchingFilterGroups({ roleOptionKeys, paymentOptionKeys })
+  resolveMatchingFilterGroups({ roleOptionKeys, paymentOptionKeys, roleFilters: filters?.userRole ?? null })
   .map(group => {
     const label = buildMatchingFilterChipLabel(group, filters?.[group.filterName], language);
     if (!label) return null;
@@ -355,7 +366,7 @@ export const SearchFilters = ({
     : REACTION_FILTER_OPTIONS);
 
   if (mode === 'matching') {
-    groups = resolveMatchingFilterGroups({ roleOptionKeys, paymentOptionKeys });
+    groups = resolveMatchingFilterGroups({ roleOptionKeys, paymentOptionKeys, roleFilters: filters?.userRole ?? null });
   } else {
     groups = [
       {
