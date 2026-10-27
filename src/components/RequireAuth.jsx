@@ -8,8 +8,14 @@ const run = keyframes`
   to { transform: translateX(260%); }
 `;
 
+// Геометрія — та сама, що в `.km-splash` з `public/index.html`: на весь
+// екран і з власним тлом. Тут стояло `min-height: 60vh` — знак центрувався в
+// 60 % висоти, тобто вище за заставку, і на кожному екрані на різну відстань:
+// після заставки лого підстрибувало, а під блоком лишалась смуга іншого тла.
 const GateWrap = styled.div`
-  min-height: 60vh;
+  position: fixed;
+  inset: 0;
+  background: var(--km-bg, #faf9f7);
   display: flex;
   flex-direction: column;
   align-items: center;
