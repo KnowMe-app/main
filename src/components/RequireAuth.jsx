@@ -2,6 +2,7 @@ import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
 import { LOGIN_ROUTE, buildReturnToFromLocation } from 'utils/authRedirect';
+import { readRememberedViewerId } from 'utils/rememberedSession';
 
 const run = keyframes`
   from { transform: translateX(-100%); }
@@ -88,9 +89,21 @@ const LoadingMark = () => (
  *   'in'      — читач увійшов, пускаємо далі;
  *   'out'     — читач не увійшов, ведемо на форму входу разом з адресою,
  *               з якої він сюди прийшов.
+ *
+ * `allowRemembered` — екран, який на 'pending' уже можна показати з кеша
+ * пристрою, якщо пристрій памʼятає сесію (`readRememberedViewerId`). Сам
+ * Firebase перед відповіддю ходить на сервер Google перевірити сесію, і на
+ * телефоні це помітні частки секунди заставки на кожному перезавантаженні.
+ * Такий екран мусить сам не питати базу до відповіді Firebase (стрічка
+ * запускає свої запити з `onAuthStateChanged`); скаже Firebase 'out' — межа
+ * поведе на вхід, як і без цього.
  */
-export const RequireAuth = ({ status, children }) => {
+export const RequireAuth = ({ status, allowRemembered = false, children }) => {
   const location = useLocation();
+
+  if (status === 'pending' && allowRemembered && readRememberedViewerId()) {
+    return children;
+  }
 
   if (status === 'pending') {
     return (

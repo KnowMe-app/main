@@ -1,7 +1,9 @@
+import { MATCHING_CACHE_TTL_MS } from './matchingCachePolicy';
 import {
   MY_PROFILE_CACHE_TTL_MS,
   clearMyProfileCache,
   patchMyProfileCache,
+  readFreshMyProfileCache,
   readMyProfileCache,
   writeMyProfileCache,
 } from './myProfileCache';
@@ -27,6 +29,16 @@ describe('памʼять «Мого профілю»', () => {
   it('забуває анкету, старшу за тиждень', () => {
     writeMyProfileCache('uid-a', { name: 'Оксана' }, 0);
     expect(readMyProfileCache('uid-a', MY_PROFILE_CACHE_TTL_MS + 1)).toBeNull();
+  });
+
+  // Старт матчингу бере звідси роль і права й бази не питає зовсім, тож тут
+  // строк загальний для кеша матчингу (шість годин), а не тиждень показу.
+  it('для старту матчингу віддає анкету лише свіжою — до шести годин', () => {
+    writeMyProfileCache('uid-a', { name: 'Оксана', accessLevel: 'matching:view' }, 1000);
+    expect(readFreshMyProfileCache('uid-a', 1000 + MATCHING_CACHE_TTL_MS)).toEqual({ name: 'Оксана', accessLevel: 'matching:view' });
+    expect(readFreshMyProfileCache('uid-a', 1001 + MATCHING_CACHE_TTL_MS)).toBeNull();
+    expect(readMyProfileCache('uid-a', 1001 + MATCHING_CACHE_TTL_MS)).toEqual({ name: 'Оксана', accessLevel: 'matching:view' });
+    expect(readFreshMyProfileCache('uid-b', 2000)).toBeNull();
   });
 
   it('дописує поле в уже збережену анкету й не заводить нової', () => {

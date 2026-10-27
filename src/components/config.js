@@ -130,6 +130,8 @@ import { withAdminDownloadToast } from '../utils/backendDownloadToast';
 import { normalizeProfileRole } from '../utils/profileRole';
 import { createSaveComparisonField } from '../utils/comparisonFieldAdapter';
 import { mergeDuplicateProfileValues, normalizePhoneForStorage, sanitizeUploadedInfoPhones } from '../utils/profileValueNormalization';
+import { patchCachedReactionValue } from '../utils/matchingReactionCache';
+import { readFreshMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -902,6 +904,30 @@ export const setOwnLikedAudienceEntries = async (ownerId, enabled) => {
   }
 };
 
+/*
+ * Кожен запис реакції спершу править кеш реакцій пристрою
+ * (`utils/matchingReactionCache`), а на відмові бази відкочує правку. Стрічка,
+ * яка взяла мапу з кеша, підписки на неї не тримає — і власна реакція мусить
+ * дійти до неї так само, як дійшла б луною `onValue`.
+ */
+const writeReactionsThroughCache = async (changes, write) => {
+  const viewerId = auth.currentUser?.uid;
+  const applied = changes.map(({ kind, ownerId, userId, value }) => ({
+    kind,
+    ownerId,
+    userId,
+    result: patchCachedReactionValue(viewerId, ownerId, kind, userId, value),
+  }));
+  try {
+    return await write();
+  } catch (error) {
+    applied
+      .filter(change => change.result.patched)
+      .forEach(change => patchCachedReactionValue(viewerId, change.ownerId, change.kind, change.userId, change.result.previous));
+    throw error;
+  }
+};
+
 // Значення лайку — мітка часу, як у дизлайку (`addDislikeUser`): колекція
 // «Обрані» стоїть за часом реакції (`orderReactionIdsByRecency`), і без мітки
 // порядок довелось би брати з кожної картки окремим читанням. Старі `true`
@@ -911,8 +937,12 @@ export const addFavoriteUser = async (userId, ownerId, likedAt) => {
     const owner = auth.currentUser;
     if (!owner) return;
     const timestamp = typeof likedAt === 'number' ? likedAt : Date.now();
-    await set(ref2(database, `multiData/favorites/${ownerId || owner.uid}/${userId}`), timestamp);
-    void syncLikedAudienceAfterReaction(ownerId || owner.uid, userId, timestamp);
+    const resolvedOwnerId = ownerId || owner.uid;
+    await writeReactionsThroughCache(
+      [{ kind: 'favorites', ownerId: resolvedOwnerId, userId, value: timestamp }],
+      () => set(ref2(database, `multiData/favorites/${resolvedOwnerId}/${userId}`), timestamp),
+    );
+    void syncLikedAudienceAfterReaction(resolvedOwnerId, userId, timestamp);
   } catch (error) {
     console.error('Error adding favorite user:', error);
   }
@@ -922,8 +952,12 @@ export const removeFavoriteUser = async (userId, ownerId) => {
   try {
     const owner = auth.currentUser;
     if (!owner) return;
-    await remove(ref2(database, `multiData/favorites/${ownerId || owner.uid}/${userId}`));
-    void syncLikedAudienceAfterReaction(ownerId || owner.uid, userId, null);
+    const resolvedOwnerId = ownerId || owner.uid;
+    await writeReactionsThroughCache(
+      [{ kind: 'favorites', ownerId: resolvedOwnerId, userId, value: null }],
+      () => remove(ref2(database, `multiData/favorites/${resolvedOwnerId}/${userId}`)),
+    );
+    void syncLikedAudienceAfterReaction(resolvedOwnerId, userId, null);
   } catch (error) {
     console.error('Error removing favorite user:', error);
   }
@@ -937,10 +971,15 @@ export const removeFavoriteUser = async (userId, ownerId) => {
 export const setReactionUserValue = async (kind, userId, ownerId, value) => {
   const owner = auth.currentUser;
   if (!owner) return;
-  const path = `multiData/${kind === 'dislikes' ? 'dislikes' : 'favorites'}/${ownerId || owner.uid}/${userId}`;
-  if (value === undefined || value === null || value === false) await remove(ref2(database, path));
-  else await set(ref2(database, path), value);
-  if (kind !== 'dislikes') void syncLikedAudienceAfterReaction(ownerId || owner.uid, userId, value);
+  const reactionKind = kind === 'dislikes' ? 'dislikes' : 'favorites';
+  const resolvedOwnerId = ownerId || owner.uid;
+  const path = `multiData/${reactionKind}/${resolvedOwnerId}/${userId}`;
+  const removes = value === undefined || value === null || value === false;
+  await writeReactionsThroughCache(
+    [{ kind: reactionKind, ownerId: resolvedOwnerId, userId, value: removes ? null : value }],
+    () => (removes ? remove(ref2(database, path)) : set(ref2(database, path), value)),
+  );
+  if (kind !== 'dislikes') void syncLikedAudienceAfterReaction(resolvedOwnerId, userId, value);
 };
 
 /**
@@ -962,9 +1001,18 @@ export const setReactionUserValues = async ({
   if (!owner) return;
   const resolvedOwnerId = ownerId || owner.uid;
   const updates = {};
-  if (favoriteChanged) updates[`favorites/${resolvedOwnerId}/${userId}`] = favoriteValue ?? null;
-  if (dislikeChanged) updates[`dislikes/${resolvedOwnerId}/${userId}`] = dislikeValue ?? null;
-  if (Object.keys(updates).length) await update(ref2(database, 'multiData'), updates);
+  const changes = [];
+  if (favoriteChanged) {
+    updates[`favorites/${resolvedOwnerId}/${userId}`] = favoriteValue ?? null;
+    changes.push({ kind: 'favorites', ownerId: resolvedOwnerId, userId, value: favoriteValue ?? null });
+  }
+  if (dislikeChanged) {
+    updates[`dislikes/${resolvedOwnerId}/${userId}`] = dislikeValue ?? null;
+    changes.push({ kind: 'dislikes', ownerId: resolvedOwnerId, userId, value: dislikeValue ?? null });
+  }
+  if (Object.keys(updates).length) {
+    await writeReactionsThroughCache(changes, () => update(ref2(database, 'multiData'), updates));
+  }
   if (favoriteChanged) void syncLikedAudienceAfterReaction(resolvedOwnerId, userId, favoriteValue);
 };
 
@@ -973,7 +1021,11 @@ export const addDislikeUser = async (userId, ownerId, dislikedAt) => {
     const owner = auth.currentUser;
     if (!owner) return;
     const timestamp = typeof dislikedAt === 'number' ? dislikedAt : Date.now();
-    await set(ref2(database, `multiData/dislikes/${ownerId || owner.uid}/${userId}`), timestamp);
+    const resolvedOwnerId = ownerId || owner.uid;
+    await writeReactionsThroughCache(
+      [{ kind: 'dislikes', ownerId: resolvedOwnerId, userId, value: timestamp }],
+      () => set(ref2(database, `multiData/dislikes/${resolvedOwnerId}/${userId}`), timestamp),
+    );
   } catch (error) {
     console.error('Error adding dislike user:', error);
   }
@@ -1156,7 +1208,11 @@ export const removeDislikeUser = async (userId, ownerId) => {
   try {
     const owner = auth.currentUser;
     if (!owner) return;
-    await remove(ref2(database, `multiData/dislikes/${ownerId || owner.uid}/${userId}`));
+    const resolvedOwnerId = ownerId || owner.uid;
+    await writeReactionsThroughCache(
+      [{ kind: 'dislikes', ownerId: resolvedOwnerId, userId, value: null }],
+      () => remove(ref2(database, `multiData/dislikes/${resolvedOwnerId}/${userId}`)),
+    );
   } catch (error) {
     console.error('Error removing dislike user:', error);
   }
@@ -9975,6 +10031,27 @@ const fetchUserByIdOnce = async userId => {
     console.error('Помилка під час пошуку користувача: ', error);
     return null;
   }
+};
+
+/**
+ * Власна анкета читача на старті сторінки — за загальним правилом кеша
+ * матчингу (`utils/matchingCachePolicy`).
+ *
+ * Вхід (`App`) і стрічка питали її на кожному перезавантаженні — одинадцять
+ * читань вузлів і лістинг фото в Storage, — лише заради ролі, прав і спільних
+ * власників реакцій. Тепер свіжа (до шести годин) анкета з памʼяті пристрою
+ * (`readFreshMyProfileCache`, той самий запис, з якого малюється «Мій
+ * профіль») відповідає без бази, а прочитана з бази лягає туди ж. Свіжою її
+ * тримає й сама правка: «Мій профіль» пише в цей кеш кожне збереження.
+ */
+export const loadViewerProfile = async userId => {
+  const uid = String(userId || '');
+  if (!uid) return null;
+  const cached = readFreshMyProfileCache(uid);
+  if (cached) return { ...cached, userId: cached.userId || uid };
+  const profile = await fetchUserById(uid);
+  if (profile) writeMyProfileCache(uid, profile);
+  return profile;
 };
 
 export const loadDuplicateUsers = async () => {

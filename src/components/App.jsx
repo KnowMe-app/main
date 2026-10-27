@@ -6,10 +6,13 @@ import { PrimaryNavigationSlotProvider } from './PrimaryNavigationSlot';
 import { RequireAuth, ScreenLoading } from './RequireAuth';
 import { onAuthStateChanged } from 'firebase/auth';
 import toast from 'react-hot-toast';
-import { auth, fetchUserById, resetViewerAccessLevelCache } from './config';
+import { auth, loadViewerProfile, resetViewerAccessLevelCache } from './config';
 import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
 import { clearMyProfileCache } from 'utils/myProfileCache';
+import { clearReactionCache } from 'utils/matchingReactionCache';
+import { clearPersistedFeedSnapshot } from 'utils/matchingFeedSnapshot';
+import { readRememberedViewerId } from 'utils/rememberedSession';
 import { ReadOnlyBadge } from './ReadOnlyBadge';
 import { ScreenErrorBoundary } from './ScreenErrorBoundary';
 
@@ -105,7 +108,9 @@ export const App = () => {
         let userRole = '';
         let canCreateProfilesForUser = false;
         try {
-          const profile = await fetchUserById(user.uid);
+          // Права й роль — з анкети в памʼяті пристрою, поки вона свіжа
+          // (`loadViewerProfile`, шість годин); інакше з бази.
+          const profile = await loadViewerProfile(user.uid);
           accessLevel = profile?.accessLevel || '';
           userRole = profile?.userRole || profile?.role || '';
           canCreateProfilesForUser = profile?.canCreateProfiles === true;
@@ -132,6 +137,10 @@ export const App = () => {
         // Власна анкета з «Мого профілю» (`utils/myProfileCache`) — теж стан
         // входу: на спільному пристрої наступний читач її мати не мусить.
         clearMyProfileCache();
+        // Так само реакції й остання дека стрічки: вони теж памʼять пристрою
+        // про конкретного читача (`utils/matchingCachePolicy`).
+        clearReactionCache();
+        clearPersistedFeedSnapshot();
         clearStoredAccessRights();
         // Прочитаний рівень доступу — теж стан входу: без цього наступний
         // читач у тій самій вкладці дістав би обіцянку, видану попередньому.
@@ -151,10 +160,15 @@ export const App = () => {
   // профіль» за мить до того, як її права приїхали з бази.
   const catchAllStatus = authStatus === 'in' && !isAccessResolved ? 'pending' : authStatus;
   const normalizedPathname = location.pathname.replace(/\/+$/, '') || '/';
+  // Стрічка показує деку з кеша ще до відповіді Firebase (`allowRemembered`
+  // на її маршруті), тож і навігація під нею — та сама, що після входу.
+  const showsRememberedMatching = authStatus === 'pending'
+    && normalizedPathname === '/matching'
+    && Boolean(readRememberedViewerId());
 
   return (
     <PrimaryNavigationSlotProvider>
-      {authStatus === 'in' && ['/matching', '/matching/create-profile', '/my-profile'].includes(normalizedPathname) && <PrimaryNavigation />}
+      {(authStatus === 'in' || showsRememberedMatching) && ['/matching', '/matching/create-profile', '/my-profile'].includes(normalizedPathname) && <PrimaryNavigation />}
       {authStatus === 'in' && isReadOnlyAdminUid(auth.currentUser?.uid) && !READ_ONLY_INSPECTOR_WRITABLE_PATHS.includes(normalizedPathname) ? (
         <ReadOnlyBadge />
       ) : null}
@@ -179,7 +193,11 @@ export const App = () => {
       <Route path="/my-profile" element={<RequireAuth status={authStatus}><MyProfile /></RequireAuth>} />
       <Route path="/my-profile-new" element={<Navigate to="/my-profile" replace />} />
       {canAccessAdd && <Route path="/add" element={<RequireAuth status={authStatus}><AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /></RequireAuth>} />}
-      <Route path="/matching" element={<RequireAuth status={authStatus}><Matching /></RequireAuth>} />
+      {/* Стрічка — єдиний екран, який на 'pending' показують з кеша
+          пристрою (`allowRemembered`): свої запити вона однаково запускає з
+          `onAuthStateChanged`, а на 'out' межа веде на вхід. Форми правки
+          й «Мій профіль» чекають на Firebase, як і раніше. */}
+      <Route path="/matching" element={<RequireAuth status={authStatus} allowRemembered><Matching /></RequireAuth>} />
       {/* Заводити й доповнювати картки може кожен, хто увійшов: право
           `canCreateProfiles` більше цього екрана не стереже. За ним лишились
           лише службові читання цілих вузлів (перелік усіх чернеток, усі шари

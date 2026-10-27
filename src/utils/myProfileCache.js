@@ -20,6 +20,8 @@
  * міг би їх дістати з `localStorage`.
  */
 
+import { isMatchingCacheFresh } from './matchingCachePolicy';
+
 const STORAGE_KEY_PREFIX = 'km.myProfile.v1:';
 
 // Тиждень: старше — це вже не «показати миттєво, поки їде свіже», а показати
@@ -40,6 +42,26 @@ export const readMyProfileCache = (uid, now = Date.now()) => {
     return data;
   } catch {
     // Зіпсований чи заблокований `localStorage` коштує лише миттєвого показу.
+    return null;
+  }
+};
+
+/**
+ * Та сама анкета як джерело для старту матчингу (`loadViewerProfile`): роль,
+ * права й спільні власники реакцій. Тут уже не «показати, поки їде свіже», а
+ * «свіже не питати зовсім», тож строк — загальний для кеша матчингу, шість
+ * годин, а не тиждень (`utils/matchingCachePolicy`).
+ */
+export const readFreshMyProfileCache = (uid, now = Date.now()) => {
+  if (!uid) return null;
+  try {
+    const raw = localStorage.getItem(buildKey(uid));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const data = parsed?.data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+    return isMatchingCacheFresh(parsed.cachedAt, { now }) ? data : null;
+  } catch {
     return null;
   }
 };
