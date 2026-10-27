@@ -21,7 +21,24 @@ describe('every Matching filter reaches the index', () => {
   // Програми лежать у самій картці стрічки (`programsBrief`), тож фільтр
   // коштує нуль читань, а дочитування сторінки (`collectFilteredMatchingSourceCards`)
   // рахує картки вже після нього — дір у сторінці немає.
-  const CARD_BORNE_GROUPS = new Set(['payment']);
+  // Пологи й кесарів — так само: поля `ownKids` і `csection` несе сама
+  // картка стрічки, індекс їй не потрібен.
+  const CARD_BORNE_GROUPS = new Set(['payment', 'deliveries', 'cesarean']);
+
+  it('пологи й кесарів фільтрує картка', () => {
+    const { applyMatchingSearchKeyFilters } = require('../utils/matchingDataProvider');
+    const users = [
+      { userId: 'a', ownKids: '2', csection: '-' },
+      { userId: 'b', ownKids: '5', csection: '1' },
+      { userId: 'c', ownKids: ['1', '0'] },
+      { userId: 'd' },
+    ];
+    const deliveries = { 0: false, le4: true, ge5: false, other: false };
+    expect(applyMatchingSearchKeyFilters(users, { deliveries }).map(user => user.userId)).toEqual(['a']);
+    expect(applyMatchingSearchKeyFilters(users, { deliveries: { 0: false, le4: false, ge5: true, other: false } }).map(user => user.userId)).toEqual(['b']);
+    const cesarean = { cs0: true, cs1: false, cs2plus: false, other: false };
+    expect(applyMatchingSearchKeyFilters(users, { cesarean }).map(user => user.userId)).toEqual(['a', 'c']);
+  });
 
   it('виплату фільтрують програми картки, а не індекс', () => {
     const { applyMatchingSearchKeyFilters } = require('../utils/matchingDataProvider');

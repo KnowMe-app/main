@@ -94,6 +94,30 @@ export const MATCHING_FILTER_GROUPS = [
     // `getInitialFilters` переносить лише ті ключі, які є в переліку за
     // замовчуванням, а фільтр, якого читачеві більше не показують, не має
     // права далі різати деку мовчки.
+    // Пологи й кесарів — з полів картки стрічки (`ownKids`, `csection`), тож
+    // і числа біля опцій, і звуження бачать те саме, що рядок «Пологи».
+    {
+      filterName: 'deliveries',
+      label: 'Пологи',
+      compact: true,
+      options: [
+        { val: '0', label: 'Без дітей' },
+        { val: 'le4', label: '≤4' },
+        { val: 'ge5', label: '≥5' },
+        { val: 'other', label: UNKNOWN_OPTION_LABEL, unknown: true },
+      ],
+    },
+    {
+      filterName: 'cesarean',
+      label: 'Кесарів розтин',
+      compact: true,
+      options: [
+        { val: 'cs0', label: 'Не було' },
+        { val: 'cs1', label: '1' },
+        { val: 'cs2plus', label: '≥2' },
+        { val: 'other', label: UNKNOWN_OPTION_LABEL, unknown: true },
+      ],
+    },
     {
       filterName: 'rh',
       label: 'Резус',

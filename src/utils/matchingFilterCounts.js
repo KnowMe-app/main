@@ -2,6 +2,8 @@ import {
   toAgeCategory,
   toBmiCategory,
   toCountryCategory,
+  toCesareanCategory,
+  toDeliveriesCategory,
   toMaritalStatusCategory,
   toRhCategory,
   toRoleCategory,
@@ -37,6 +39,8 @@ const CATEGORIZERS = {
   age: toAgeCategory,
   bmi: toBmiCategory,
   country: toCountryCategory,
+  deliveries: toDeliveriesCategory,
+  cesarean: toCesareanCategory,
   payment: listPaymentBuckets,
 };
 
