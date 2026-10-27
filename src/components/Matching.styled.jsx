@@ -931,21 +931,22 @@ export const SearchField = styled.div`
      під ним лишалось по 4 px, і поле впиралось у краї шапки. */
   [data-page-header] & { height: 40px; }
   box-sizing: border-box;
+  /* Запасні значення — поле стоїть і на «Додати картку», поза матчингом. */
   /* Заливка замість рамки — те саме поле, що й на «Додати картку»
      (\`SearchBar\`): контури тут змагались із колекціями й чіпами під ним. */
   border: 1.5px solid transparent;
   border-radius: 12px;
-  background: var(--km-fill);
-  color: var(--matching-header-text);
+  background: var(--km-fill, #f1ede8);
+  color: var(--matching-header-text, var(--km-text, #1f1b16));
 
   &:focus-within {
-    background: var(--matching-card-bg);
-    border-color: var(--matching-accent);
+    background: var(--matching-card-bg, var(--km-card, #fff));
+    border-color: var(--matching-accent, var(--km-accent, #C9600F));
   }
 
   > svg {
     flex: 0 0 auto;
-    color: var(--matching-muted-text);
+    color: var(--matching-muted-text, var(--km-muted, #6b6259));
     font-size: 13px;
   }
 `;
