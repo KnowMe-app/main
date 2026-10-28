@@ -19,8 +19,11 @@ import { CACHE_TTL_MS } from './cacheConstants';
  * адміна — навіть коли все це лежало в браузері з попереднього разу. Помножене
  * на кількість читачів, це і було навантаження на бекенд.
  *
- * Виняток — коментарі (`MATCHING_COMMENTS_CACHE_TTL_MS`): це те, що читачі
- * пишуть одне одному просто зараз.
+ * Нотатки (`MATCHING_COMMENTS_CACHE_TTL_MS`) колись були винятком на десять
+ * хвилин — тепер ті самі шість годин: чату тут немає, а власна нотатка лягає
+ * в кеш одразу після запису (`rememberCommentWrite`). Так само живуть
+ * контакти (`utils/matchingContactsCache`), дати «Відкласти», анкети «лише для
+ * вподобаних» і публічні відгуки (`utils/matchingTimedStore`).
  */
 export const MATCHING_CACHE_TTL_MS = CACHE_TTL_MS;
 

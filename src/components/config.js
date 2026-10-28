@@ -131,7 +131,20 @@ import { normalizeProfileRole } from '../utils/profileRole';
 import { createSaveComparisonField } from '../utils/comparisonFieldAdapter';
 import { mergeDuplicateProfileValues, normalizePhoneForStorage, sanitizeUploadedInfoPhones } from '../utils/profileValueNormalization';
 import { patchCachedReactionValue } from '../utils/matchingReactionCache';
+import { rememberCommentWrite } from '../utils/commentsStorage';
+import { forgetProfileContacts, readFreshProfileContacts, writeProfileContacts } from '../utils/matchingContactsCache';
+import { createMatchingTimedStore } from '../utils/matchingTimedStore';
+import { noteRealtimeDemand } from '../utils/realtimeConnectionManager';
 import { readFreshMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
+import {
+  PHOTO_THUMB_MAX_DIMENSION,
+  PHOTO_THUMB_MAX_KB,
+  buildPhotoThumbKey,
+  buildPhotoThumbPath,
+  isPhotoThumbPath,
+  isPhotoThumbUrl,
+  readStoragePathFromUrl,
+} from '../utils/photoThumbs';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -162,8 +175,12 @@ if (typeof window !== 'undefined') {
   window.__getBackendDownloadToastUid = getCurrentAdminUid;
 }
 
+// Кожне читання — це потреба в зʼєднанні: призупинене менеджером
+// (`utils/realtimeConnectionManager`) відновлюється до запиту, інакше `get`
+// чекав би, доки людина торкнеться екрана.
 const get = (...args) => {
   incrementMatchingLoadStat('rtdbReads');
+  noteRealtimeDemand();
   return withAdminDownloadToast(firebaseGet(...args), {
     getUid: getCurrentAdminUid,
     operation: 'get',
@@ -602,6 +619,38 @@ export const getUrlofUploadedAvatar = async (photo, userId, options = {}) => {
   return url;
 };
 
+// Мініатюра для стрічки (`utils/photoThumbs`) з уже завантаженого файлу.
+// Збій не валить завантаження фото: без мініатюри стрічка покаже оригінал.
+const uploadPhotoThumb = async (originalPath, source) => {
+  const thumbPath = buildPhotoThumbPath(originalPath);
+  if (!thumbPath || !source) return '';
+  const thumbFile = await compressPhoto(source, PHOTO_THUMB_MAX_KB, { maxDimension: PHOTO_THUMB_MAX_DIMENSION });
+  const thumbRef = ref(storage, thumbPath);
+  await uploadBytes(thumbRef, await getFileBlob(thumbFile), {
+    contentType: 'image/jpeg',
+    cacheControl: AVATAR_CACHE_CONTROL,
+  });
+  return getDownloadURL(thumbRef);
+};
+
+/**
+ * Фото анкети разом із мініатюрою для стрічки: `{ url, thumbUrl }`.
+ *
+ * Мініатюра лягає поруч з оригіналом (`avatar/{uid}/thumbs/`), а її адресу
+ * викликач кладе в анкету (`photoThumbs`) тим самим записом, що й перелік
+ * фото, — тоді й картка стрічки перебудовується вже з мініатюрою.
+ */
+export const uploadAvatarWithThumb = async (photo, userId) => {
+  const url = await getUrlofUploadedAvatar(photo, userId);
+  let thumbUrl = '';
+  try {
+    thumbUrl = await uploadPhotoThumb(readStoragePathFromUrl(url), photo);
+  } catch (error) {
+    console.warn('[photos] мініатюра для стрічки не створилась — стрічка покаже оригінал', error);
+  }
+  return { url, thumbUrl };
+};
+
 // Фото анкети браузер тримає в себе, а не перепитує на кожному відкритті.
 // Без цього Storage віддає файл з `Cache-Control: private, max-age=0`, тобто
 // кожна мініатюра «Мого профілю» й стрічки щоразу йшла в мережу заново — на
@@ -648,7 +697,7 @@ const getFileBlob = file => {
   });
 };
 
-const compressPhoto = (file, maxSizeKB) => {
+const compressPhoto = (file, maxSizeKB, { maxDimension = MAX_COMPRESSED_IMAGE_DIMENSION } = {}) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = event => {
@@ -658,8 +707,8 @@ const compressPhoto = (file, maxSizeKB) => {
         const ctx = canvas.getContext('2d');
         const maxSizeBytes = maxSizeKB * 1024;
         const maxSourceDimension = Math.max(img.width, img.height);
-        let scale = maxSourceDimension > MAX_COMPRESSED_IMAGE_DIMENSION
-          ? MAX_COMPRESSED_IMAGE_DIMENSION / maxSourceDimension
+        let scale = maxSourceDimension > maxDimension
+          ? maxDimension / maxSourceDimension
           : 1;
 
         const renderAtScale = nextScale => {
@@ -790,9 +839,23 @@ const mayViewerReadCardPrivateNodes = async (id, card) => (
  */
 const LIKED_AUDIENCE_CARDS_LIMIT = 60;
 
+// Перелік таких карток — шість годин на пристрої (`utils/matchingCachePolicy`):
+// стрічка питала його на кожному відкритті, а відкривають анкету рідко.
+// Доступу кеш не дає: приватні вузли однаково питають правила, а зняте
+// вподобання закриває їх миттєво — довше живе лише сама картка в деці.
+const likedAudienceCardsStore = createMatchingTimedStore('likedAudienceCards', { maxEntries: 10 });
+
 export const fetchLikedAudienceCards = async ({ limit = LIKED_AUDIENCE_CARDS_LIMIT } = {}) => {
   const viewerId = auth.currentUser?.uid || '';
   if (!viewerId) return [];
+  const stored = likedAudienceCardsStore.read(viewerId);
+  if (Array.isArray(stored)) return stored.slice(0, limit);
+  const cards = await readLikedAudienceCards(viewerId, limit);
+  likedAudienceCardsStore.write(viewerId, cards);
+  return cards;
+};
+
+const readLikedAudienceCards = async (viewerId, limit) => {
   const inbox = await readOwnLikedAudienceInbox({ force: true });
   const ownerIds = orderLikedAudienceOwnerIds(inbox)
     .filter(id => id !== viewerId)
@@ -1703,7 +1766,42 @@ export const fetchPublicProfileComments = async (profileIds = []) => {
   }
 };
 
+/*
+ * Публічні відгуки для стрічки — за загальним правилом кеша матчингу
+ * (`utils/matchingCachePolicy`): картка з прапорцем `hasPublicReview` читала
+ * свої відгуки на кожному відкритті сторінки. Свій запис відгуку (додати,
+ * правити, зняти) забуває кеш картки (`forgetCachedPublicReviews`), тож свіже
+ * приїде наступним же читанням; чужі відгуки — щонайпізніше через TTL.
+ * Збій читання в кеш не лягає: порожній список тоді не відповідь, а помилка.
+ */
+const publicReviewsStore = createMatchingTimedStore('publicReviews', { maxEntries: 600 });
+const forgetCachedPublicReviews = profileId => publicReviewsStore.forget(String(profileId || ''));
+
+export const fetchPublicProfileCommentsCached = async (profileIds = []) => {
+  const ids = Array.from(new Set((profileIds || []).filter(Boolean).map(String)));
+  const result = {};
+  const missing = [];
+  ids.forEach(id => {
+    const stored = publicReviewsStore.read(id);
+    if (Array.isArray(stored)) result[id] = stored;
+    else missing.push(id);
+  });
+  if (!missing.length) return result;
+  try {
+    const fetched = await readPublicProfileComments(missing);
+    Object.entries(fetched).forEach(([id, comments]) => {
+      publicReviewsStore.write(id, comments);
+      result[id] = comments;
+    });
+  } catch (error) {
+    console.error('Error fetching public comments:', error);
+    missing.forEach(id => { result[id] = []; });
+  }
+  return result;
+};
+
 export const addPublicProfileComment = async ({ profileId, text, authorName = '' }) => {
+  forgetCachedPublicReviews(profileId);
   const user = auth.currentUser;
   if (!user) throw new Error('User not authenticated');
   if (!profileId) throw new Error('profileId обовʼязковий');
@@ -1766,6 +1864,7 @@ export const addPublicProfileCommentAs = async ({
   authorName = '',
   createdAt,
 }) => {
+  forgetCachedPublicReviews(profileId);
   const user = auth.currentUser;
   if (!user) throw new Error('User not authenticated');
   if (!isAdminUid(user.uid)) throw new Error('Публічний запис від чужого імені створює лише адмін');
@@ -1809,6 +1908,7 @@ export const addPublicProfileCommentAs = async ({
 // authorId and createdAt are immutable after creation, so an edit only ever
 // touches the text and the updatedAt stamp - the rules reject anything else.
 export const updatePublicProfileComment = async ({ profileId, commentId, text }) => {
+  forgetCachedPublicReviews(profileId);
   const user = auth.currentUser;
   if (!user) throw new Error('User not authenticated');
   if (!profileId || !commentId) throw new Error('profileId і commentId обовʼязкові');
@@ -1840,6 +1940,7 @@ export const updatePublicProfileComment = async ({ profileId, commentId, text })
 // пускає видалення тому самому колу (автор або адмін), тож обидві дороги —
 // стерти текст і натиснути «видалити» — ведуть сюди.
 export const deletePublicProfileComment = async ({ profileId, commentId }) => {
+  forgetCachedPublicReviews(profileId);
   const user = auth.currentUser;
   if (!user) throw new Error('User not authenticated');
   if (!profileId || !commentId) throw new Error('profileId і commentId обовʼязкові');
@@ -1876,6 +1977,7 @@ export const setUserComment = async (cardId, text, ownerId) => {
     const updatedAt = Date.now();
     await set(ref2(database, getCommentPath(commentsOwnerId, cardId)), { text, updatedAt });
     invalidateOwnerCommentsCache(commentsOwnerId);
+    rememberCommentWrite(commentsOwnerId, cardId, text, updatedAt);
     return { lastAction: updatedAt, text };
   } catch (error) {
     console.error('Error setting comment:', error);
@@ -1898,6 +2000,7 @@ export const updateCommentByOwner = async ({ ownerId, cardId, text }) => {
     const updatedAt = Date.now();
     await set(ref2(database, getCommentPath(ownerId, cardId)), { text, updatedAt });
     invalidateOwnerCommentsCache(ownerId);
+    rememberCommentWrite(ownerId, cardId, text, updatedAt);
     return { lastAction: updatedAt, ownerId };
   } catch (error) {
     console.error('Error updating comment by owner:', error);
@@ -1916,6 +2019,7 @@ export const deleteCommentByOwner = async ({ ownerId, cardId }) => {
     }
     await remove(ref2(database, getCommentPath(ownerId, cardId)));
     invalidateOwnerCommentsCache(ownerId);
+    rememberCommentWrite(ownerId, cardId, '');
     return true;
   } catch (error) {
     console.error('Error deleting comment by owner:', error);
@@ -2904,7 +3008,15 @@ export const readProfileContacts = userId => {
   if (!id) return Promise.resolve({ allowed: false, contacts: null });
   const memo = profileContactsMemo.get(id);
   if (memo && Date.now() - memo.at < PROFILE_CONTACTS_MEMO_TTL_MS) return memo.promise;
+  // Шість годин на пристрої — і контакти, і «закрито» (`utils/matchingContactsCache`).
+  const viewerId = String(auth.currentUser?.uid || '');
+  const stored = viewerId ? readFreshProfileContacts(viewerId, id) : null;
+  if (stored) return Promise.resolve(stored);
 
+  // У кеш лягає лише справжня відповідь бази. `readProfileNodePart` ковтає
+  // збій і віддає «порожньо», тож без цієї позначки збій мережі памʼятався б
+  // шість годин як «контактів немає».
+  let cacheable = Boolean(viewerId);
   const promise = (async () => {
     const accessLevel = await resolveViewerAccessLevel();
     const privileged = canReadProfileOutsideFeed({
@@ -2914,11 +3026,22 @@ export const readProfileContacts = userId => {
     });
     if (!privileged) {
       const card = await readProfileNodePart(PROFILE_NODES.matchingCards, id);
+      if (!card) cacheable = false;
       if (!(await mayViewerReadCardPrivateNodes(id, card))) return { allowed: false, contacts: null };
     }
-    const contacts = await readProfileNodePart(PROFILE_NODES.profileContacts, id);
+    let contacts = null;
+    try {
+      const snapshot = await get(ref2(database, `${PROFILE_NODES.profileContacts}/${id}`));
+      contacts = snapshot.exists() ? snapshot.val() : null;
+    } catch (error) {
+      cacheable = false;
+      console.warn('[profileNodes] вузол не прочитано', { node: PROFILE_NODES.profileContacts, userId: id, error });
+    }
     return { allowed: true, contacts: contacts && typeof contacts === 'object' ? contacts : {} };
-  })();
+  })().then(result => {
+    if (cacheable) writeProfileContacts(viewerId, id, result);
+    return result;
+  });
   profileContactsMemo.set(id, { at: Date.now(), promise });
   promise.catch(() => profileContactsMemo.delete(id));
   return promise;
@@ -4333,6 +4456,12 @@ const fanOutProfileNodes = async (userId, payload) => {
   const paths = Object.keys(patch);
   // Порожній патч — це не відмова: писати не було чого.
   if (!paths.length) return true;
+  // Контакти картки змінились — пристрій мусить забути збережені
+  // (`utils/matchingContactsCache`), інакше показував би старі до кінця TTL.
+  if (paths.some(path => path.startsWith(`${PROFILE_NODES.profileContacts}/`))) {
+    profileContactsMemo.delete(String(userId || ''));
+    forgetProfileContacts(String(userId || ''));
+  }
 
   // Запис іде вузол за вузлом, а не одним патчем від кореня, і саме тому, що
   // мультилокаційний `update` атомарний. Права на нові вузли різні: редактор
@@ -4599,9 +4728,46 @@ export const invalidateOwnerGetInTouchMap = ownerId => (
   invalidateOwnerValueMap(OWNER_GET_IN_TOUCH_PATH, ownerId)
 );
 
-export const setOwnerGetInTouch = (ownerId, profileId, value) => (
-  setOwnerValue(OWNER_GET_IN_TOUCH_PATH, ownerId, profileId, value, { stringOnly: true })
-);
+/*
+ * Дати «Відкласти» читача (`utils/matchingPostpone`) — шість годин на
+ * пристрої: стрічка питала їх на кожному відкритті. Це власні позначки
+ * читача, тож кожен запис лягає в кеш одразу (`setOwnerGetInTouch`), а з
+ * чужого пристрою доїде щонайпізніше через TTL.
+ */
+const postponeDatesStore = createMatchingTimedStore('postponeDates', { maxEntries: 20 });
+
+export const setOwnerGetInTouch = async (ownerId, profileId, value) => {
+  const saved = await setOwnerValue(OWNER_GET_IN_TOUCH_PATH, ownerId, profileId, value, { stringOnly: true });
+  if (saved) {
+    const id = String(profileId || '').trim();
+    postponeDatesStore.patch(String(ownerId || '').trim(), dates => {
+      const next = { ...(dates || {}) };
+      if (typeof value === 'string' && value.trim()) next[id] = value.trim();
+      else delete next[id];
+      return next;
+    });
+  }
+  return saved;
+};
+
+// Майбутні дати «Відкласти» (`from` — завтра) у формі рядків
+// `readOwnerGetInTouchSorted`: свіжа мапа — з пристрою, інакше один запит.
+export const readOwnerPostponeDates = async (ownerId, { from } = {}) => {
+  const owner = String(ownerId || '').trim();
+  if (!owner) return [];
+  const isUpcoming = date => typeof date === 'string' && (!from || date >= from);
+  const stored = postponeDatesStore.read(owner);
+  if (stored && typeof stored === 'object') {
+    return Object.entries(stored)
+      .filter(([, date]) => isUpcoming(date))
+      .map(([userId, getInTouch]) => ({ userId, getInTouch }));
+  }
+  const rows = await readOwnerGetInTouchSorted(owner, { from });
+  postponeDatesStore.write(owner, Object.fromEntries(rows
+    .filter(row => isUpcoming(row.getInTouch))
+    .map(row => [row.userId, row.getInTouch])));
+  return rows;
+};
 
 export const readOwnerWriterMap = ownerId => readOwnerValueMap(OWNER_WRITER_PATH, ownerId);
 
@@ -4980,6 +5146,14 @@ export const deletePhotos = async (userId, photoUrls = []) => {
         }
         const fileRef = ref(storage, filePath);
         await deleteObject(fileRef);
+        // Мініатюра живе й помирає разом з оригіналом: інакше вона лишилась би
+        // в Storage файлом, на який ніщо не посилається.
+        const thumbPath = buildPhotoThumbPath(filePath);
+        if (thumbPath) {
+          await deleteObject(ref(storage, thumbPath)).catch(thumbError => {
+            if (thumbError?.code !== 'storage/object-not-found') console.warn('Photo thumb delete error:', thumbError);
+          });
+        }
       } catch (error) {
         if (error?.code !== 'storage/object-not-found') {
           console.error('Photo delete error:', error);
@@ -5079,7 +5253,7 @@ export const copyProfilePhotosBetweenCards = async ({ sourceUserId, targetUserId
       || getStorageContentTypeFromName({ name: relativePath })
       || 'image/jpeg';
     const targetRef = ref(storage, `avatar/${targetUserId}/${relativePath}`);
-    await uploadBytes(targetRef, byteArray, { contentType });
+    await uploadBytes(targetRef, byteArray, { contentType, cacheControl: AVATAR_CACHE_CONTROL });
     copied.push(await getDownloadURL(targetRef));
   }
   return copied;
@@ -5140,6 +5314,9 @@ const bytesToBase64 = bytes => {
 };
 
 const isMedicationStorageItem = (item, userId) => String(item?.fullPath || '').startsWith(`avatar/${userId}/medication/`);
+// Мініатюри стрічки (`utils/photoThumbs`) — не окремі фото анкети: у переліку
+// фото вони стали б другою копією кожного знімка.
+const isServiceStorageItem = (item, userId) => isMedicationStorageItem(item, userId) || isPhotoThumbPath(item?.fullPath);
 
 export const getUserStorageAvatarPhotos = async userId => {
   if (!userId) return [];
@@ -5148,7 +5325,7 @@ export const getUserStorageAvatarPhotos = async userId => {
     const items = await collectUserStorageAvatarItems(userId);
     const settledUrls = await Promise.allSettled(
       items
-        .filter(item => !isMedicationStorageItem(item, userId))
+        .filter(item => !isServiceStorageItem(item, userId))
         .map(item => getDownloadURL(item))
     );
     return settledUrls
@@ -5185,7 +5362,7 @@ export const getUserStorageAvatarPhotoFiles = async userId => {
     return { items: [], error: `listAll(avatar/${userId}) failed: ${error?.code || ''} ${error?.message || String(error)}`.trim() };
   }
 
-  const photoItems = items.filter(item => !isMedicationStorageItem(item, userId));
+  const photoItems = items.filter(item => !isServiceStorageItem(item, userId));
   const files = await Promise.all(
     photoItems.map(async item => {
       const file = {
@@ -5594,6 +5771,133 @@ export const isEditedCopyOfOrphanComment = (orphan, candidate) => {
   let prefix = 0;
   while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix += 1;
   return prefix / a.length >= ORPHAN_COPY_MIN_PREFIX_SHARE;
+};
+
+// Відмова Storage має свій код (`storage/unauthorized`), відмова бази — свій;
+// звіт разових робіт називає обидві однаково: правил чи прав бракує.
+const isStorageOrDatabaseDenied = error => String(error?.code || '') === 'storage/unauthorized'
+  || isSearchIdPermissionDenied(error);
+const describePhotoBackfillError = (error, path) => ({
+  ...(path ? { path } : {}),
+  message: error?.message || String(error),
+  permissionDenied: isStorageOrDatabaseDenied(error),
+});
+
+/**
+ * Разова дописка річного кешу браузера всім фото анкет у Storage.
+ *
+ * Нові фото кладуться з `AVATAR_CACHE_CONTROL`, а старим його дописує лише сама
+ * власниця, відкривши «Мій профіль» (`ensureOwnAvatarCacheControl`). Решта
+ * файлів віддавалась з `private, max-age=0`, і стрічка після кожного
+ * перезавантаження качала ті самі фото заново — 5,7 МБ на 33 знімки на
+ * тестовому акаунті. Писати метадані чужих файлів правила Storage дають лише
+ * повним адмінам, тож це робота панелі індексації, а не стрічки. Імена файлів
+ * унікальні й не перезаписуються, тож рік кешу нічого не застарює.
+ */
+export const backfillAvatarCacheControl = async ({ onProgress } = {}) => {
+  const report = { folders: 0, files: 0, updated: 0, failed: [], listError: null, aborted: false };
+  let folders;
+  try {
+    folders = (await listAll(ref(storage, 'avatar'))).prefixes;
+  } catch (error) {
+    report.listError = describePhotoBackfillError(error, 'avatar');
+    return report;
+  }
+  report.folders = folders.length;
+  let done = 0;
+  await mapWithConcurrency(folders, 4, async folder => {
+    if (report.aborted) return;
+    try {
+      const items = await collectUserStorageAvatarItems(folder.name);
+      report.files += items.length;
+      await mapWithConcurrency(items, 4, async item => {
+        if (report.aborted) return;
+        try {
+          await updateMetadata(item, { cacheControl: AVATAR_CACHE_CONTROL });
+          report.updated += 1;
+        } catch (error) {
+          const failure = describePhotoBackfillError(error, item.fullPath);
+          report.failed.push(failure);
+          // Без права запису впаде кожен файл — тисяча однакових відмов
+          // нічого не додасть до першої.
+          if (failure.permissionDenied) report.aborted = true;
+        }
+      });
+    } catch (error) {
+      report.failed.push(describePhotoBackfillError(error, folder.fullPath));
+    }
+    done += 1;
+    if (onProgress) onProgress({ done, total: folders.length });
+  });
+  return report;
+};
+
+// Байти фото: `getBytes`, а де він падає на CORS — звичайний GET за адресою
+// (той самий запасний шлях, що й у `getStorageFileDataUrl`).
+const readStoragePhotoBlob = async (path, url) => {
+  let bytes;
+  try {
+    bytes = await getBytes(ref(storage, path));
+  } catch (bytesError) {
+    const response = await fetch(url);
+    if (!response.ok) throw bytesError;
+    bytes = await response.arrayBuffer();
+  }
+  const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  return new Blob([byteArray], { type: getStorageContentTypeFromBytes(byteArray) || 'image/jpeg' });
+};
+
+/**
+ * Разова побудова мініатюр головних фото карток стрічки (`utils/photoThumbs`).
+ *
+ * Нове фото отримує мініатюру на завантаженні (`uploadAvatarWithThumb`), а
+ * картки, чиє головне фото лежить давно, — тут: оригінал читається один раз,
+ * зменшується в браузері адміна, кладеться поруч і стає `avatar` картки. Мапа
+ * `photoThumbs` в анкеті пишеться тим самим записом, інакше перша ж
+ * перебудова картки з анкети повернула б їй оригінал.
+ */
+export const backfillFeedPhotoThumbs = async ({ onProgress } = {}) => {
+  const report = { cards: 0, candidates: 0, written: [], already: 0, failed: [], readError: null, aborted: false };
+  let cards;
+  try {
+    const snapshot = await get(ref2(database, MATCHING_CARDS_ROOT));
+    cards = snapshot.exists() ? snapshot.val() || {} : {};
+  } catch (error) {
+    report.readError = describePhotoBackfillError(error, MATCHING_CARDS_ROOT);
+    return report;
+  }
+  const entries = Object.entries(cards);
+  report.cards = entries.length;
+  const candidates = entries.filter(([, card]) => {
+    const avatar = typeof card?.avatar === 'string' ? card.avatar : '';
+    if (!avatar) return false;
+    if (isPhotoThumbUrl(avatar)) {
+      report.already += 1;
+      return false;
+    }
+    return Boolean(buildPhotoThumbPath(readStoragePathFromUrl(avatar)));
+  });
+  report.candidates = candidates.length;
+  let done = 0;
+  await mapWithConcurrency(candidates, 3, async ([id, card]) => {
+    if (report.aborted) return;
+    try {
+      const path = readStoragePathFromUrl(card.avatar);
+      const thumbUrl = await uploadPhotoThumb(path, await readStoragePhotoBlob(path, card.avatar));
+      await update(ref2(database), {
+        [`${PROFILE_NODES.profileDetails}/${id}/photoThumbs/${buildPhotoThumbKey(card.avatar)}`]: thumbUrl,
+        [`${MATCHING_CARDS_ROOT}/${id}/avatar`]: thumbUrl,
+      });
+      report.written.push(id);
+    } catch (error) {
+      const failure = { id, ...describePhotoBackfillError(error) };
+      report.failed.push(failure);
+      if (failure.permissionDenied) report.aborted = true;
+    }
+    done += 1;
+    if (onProgress) onProgress({ done, total: candidates.length });
+  });
+  return report;
 };
 
 /**

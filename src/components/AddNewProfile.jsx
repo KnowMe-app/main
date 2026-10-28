@@ -37,6 +37,8 @@ import {
   backfillProfileDraftOwners,
   backfillMatchingCardPublicReviewFlags,
   backfillMatchingCardBlood,
+  backfillAvatarCacheControl,
+  backfillFeedPhotoThumbs,
   createSelectedSearchKeyIndexes,
   buildSearchIdIndexPayloadFromCollections,
   buildSearchKeyIndexPayloadFromCollections,
@@ -96,6 +98,7 @@ import { readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { PROFILE_FORM_EXTENDED_MODE_KEY, readBackendLinksEnabled } from 'utils/backendLinksMode';
 import { describePublicReviewFlagBackfill } from 'utils/publicReviewFlagBackfillReport';
 import { describeMatchingCardBloodBackfill } from 'utils/matchingCardBloodBackfillReport';
+import { describeAvatarCacheControlBackfill, describeFeedPhotoThumbsBackfill } from 'utils/photoBackfillReport';
 import { normalizePhoneState } from './inputValidations';
 import { openComparedCard as openComparedCardNavigation, restoreComparedCard } from './comparedCardNavigation';
 import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
@@ -620,6 +623,21 @@ const INDEX_JOB_GROUPS = [
         key: 'matchingCardBlood',
         label: 'Група крові в картках',
         hint: '→ matchingCards/{id}/blood',
+      },
+      {
+        // Разова робота: нові фото кладуться з річним кешем браузера, а старі
+        // віддавались з `max-age=0` і качались заново на кожне перезавантаження
+        // стрічки. Пише метадані файлів — потрібен повний адмін.
+        key: 'photoCacheControl',
+        label: 'Кеш фото на рік',
+        hint: '→ Storage avatar/** cacheControl',
+      },
+      {
+        // Разова робота: мініатюри головних фото для стрічки
+        // (`utils/photoThumbs`). Нове фото отримує її саме на завантаженні.
+        key: 'feedPhotoThumbs',
+        label: 'Мініатюри фото в стрічці',
+        hint: '→ avatar/{id}/thumbs, matchingCards/{id}/avatar',
       },
     ],
   },
@@ -1353,6 +1371,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     searchLocalIdAndKey: false,
     searchLocalImtHeightWeight: false,
     matchingCardBlood: false,
+    photoCacheControl: false,
+    feedPhotoThumbs: false,
   };
   const defaultSelectedSearchKeyIndexes = SEARCH_KEY_INDEX_OPTIONS.reduce((acc, option) => {
     acc[option.key] = true;
@@ -6514,6 +6534,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       !selectedIndexJobs.profileMutationOwners &&
       !selectedIndexJobs.matchingCardPublicComments &&
       !selectedIndexJobs.matchingCardBlood &&
+      !selectedIndexJobs.photoCacheControl &&
+      !selectedIndexJobs.feedPhotoThumbs &&
       !selectedIndexJobs.searchKeyUsersAll &&
       !selectedIndexJobs.searchKeySetReindex &&
       !selectedIndexJobs.searchLocalIdAndKey &&
@@ -6587,6 +6609,36 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         const { tone, message } = describeMatchingCardBloodBackfill(report);
         if (tone === 'error') {
           console.error('[AddNewProfile] blood backfill failures', report);
+          toast.error(message, { id: toastId, duration: 20000 });
+        } else {
+          toast.success(message, { id: toastId, duration: 10000 });
+        }
+      }
+
+      if (selectedIndexJobs.photoCacheControl) {
+        const toastId = 'index-photo-cache-control-progress';
+        toast.loading('Ставимо фото кеш браузера на рік...', { id: toastId });
+        const report = await backfillAvatarCacheControl({
+          onProgress: ({ done, total }) => toast.loading(`Кеш фото: анкет ${done}/${total}...`, { id: toastId }),
+        });
+        const { tone, message } = describeAvatarCacheControlBackfill(report);
+        if (tone === 'error') {
+          console.error('[AddNewProfile] photo cache-control backfill failures', report);
+          toast.error(message, { id: toastId, duration: 20000 });
+        } else {
+          toast.success(message, { id: toastId, duration: 10000 });
+        }
+      }
+
+      if (selectedIndexJobs.feedPhotoThumbs) {
+        const toastId = 'index-feed-photo-thumbs-progress';
+        toast.loading('Робимо мініатюри головних фото...', { id: toastId });
+        const report = await backfillFeedPhotoThumbs({
+          onProgress: ({ done, total }) => toast.loading(`Мініатюри фото: ${done}/${total}...`, { id: toastId }),
+        });
+        const { tone, message } = describeFeedPhotoThumbsBackfill(report);
+        if (tone === 'error') {
+          console.error('[AddNewProfile] feed photo thumbs backfill failures', report);
           toast.error(message, { id: toastId, duration: 20000 });
         } else {
           toast.success(message, { id: toastId, duration: 10000 });

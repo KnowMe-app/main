@@ -56,7 +56,7 @@ import {
   saveMyCardComment,
   addPublicProfileComment,
   deletePublicProfileComment,
-  fetchPublicProfileComments,
+  fetchPublicProfileCommentsCached,
   updatePublicProfileComment,
   COMMENTS_ROOT_PATH,
   PUBLIC_COMMENTS_ROOT_PATH,
@@ -71,7 +71,7 @@ import {
   database,
   auth,
   updateDataInRealtimeDB,
-  readOwnerGetInTouchSorted,
+  readOwnerPostponeDates,
   setOwnerGetInTouch,
   setReactionUserValues,
   fetchLikedAudienceCards,
@@ -132,6 +132,7 @@ import {
 import { readPersistedFeedSnapshot, writePersistedFeedSnapshot } from '../utils/matchingFeedSnapshot';
 import { readTimedCacheEntry, writeTimedCacheEntry } from '../utils/matchingCachePolicy';
 import { readRememberedViewerId } from '../utils/rememberedSession';
+import { noteRealtimeDemand, startRealtimeConnectionManager } from '../utils/realtimeConnectionManager';
 import {
   cleanupMatchingLocalStorageCache,
   logMatchingLocalStorageDebugStats,
@@ -259,7 +260,6 @@ import {
   saveComments,
   setLocalComment,
   COMMENTS_UPDATED_EVENT,
-  pruneComments,
   shouldUseServerComment,
 } from '../utils/commentsStorage';
 import {
@@ -595,6 +595,7 @@ const debugReactionFlowLog = (stage, data = {}) => {
 
 const get = (...args) => {
   incrementMatchingLoadStat('rtdbReads');
+  noteRealtimeDemand();
   return withAdminDownloadToast(firebaseGet(...args), {
     operation: 'get',
     source: 'Matching',
@@ -1396,6 +1397,11 @@ const Matching = () => {
   });
   const isAdmin = access.isAdmin;
   const realtimeConnection = useRealtimeConnection();
+  // Зʼєднання з базою — лише поки на стрічку дивляться
+  // (`utils/realtimeConnectionManager`): фонова вкладка й екран без дотику
+  // сокета не тримають. Лише тут, а не на всьому застосунку: адмінські роботи
+  // `AddNewProfile` йдуть і у фоновій вкладці.
+  useEffect(() => startRealtimeConnectionManager(database), []);
 
   /**
    * Роль, за якою деку й фільтри звужують до «донорка бачить лише
@@ -2151,8 +2157,11 @@ const Matching = () => {
       ...additionalAccessUsers.map(u => u.userId),
       ...sharedReactionCandidateUsers.map(u => u.userId),
     ];
-    const ownOwnerId = getOwnerId();
-    if (ownOwnerId) pruneComments(ownOwnerId, ids);
+    // Кеш памʼяток на пристрої тут більше не підрізається під деку: він живе
+    // шість годин (`MATCHING_COMMENTS_CACHE_TTL_MS`), і старе відсіює сам строк.
+    // Підрізаний під показане, він після перезавантаження (дека — знімок
+    // першої сторінки) губив памʼятки решти карток, і повторна прокрутка тих
+    // самих екранів читала їх з бази заново — по запиту на картку.
     setComments(prev => keepNotesForIds(prev, ids));
     setSharedComments(prev => keepNotesForIds(prev, ids));
   }, [additionalAccessUsers, sharedReactionCandidateUsers, users]);
@@ -2794,6 +2803,7 @@ const Matching = () => {
         return;
       }
 
+      noteRealtimeDemand();
       const favRef = refDb(database, `multiData/favorites/${effectiveOwnerId}`);
       const disRef = refDb(database, `multiData/dislikes/${effectiveOwnerId}`);
 
@@ -7508,7 +7518,7 @@ const Matching = () => {
     if (!id || publicCommentsRequestedRef.current.has(id)) return;
     publicCommentsRequestedRef.current.add(id);
     setPublicCommentsLoading(previous => ({ ...previous, [id]: true }));
-    fetchPublicProfileComments([id])
+    fetchPublicProfileCommentsCached([id])
       .then(result => {
         // Порожня відповідь — теж відповідь: без неї кнопка лишалась би на
         // місці, і людина тиснула б її знову за тим самим порожнім списком.
@@ -7685,7 +7695,9 @@ const Matching = () => {
     setPostponeSortDates({});
     if (!ownerId) return undefined;
     let cancelled = false;
-    readOwnerGetInTouchSorted(ownerId, { from: tomorrowIsoDate() }).then(rows => {
+    // Шість годин на пристрої (`readOwnerPostponeDates`): свої ж позначки
+    // лягають туди на записі.
+    readOwnerPostponeDates(ownerId, { from: tomorrowIsoDate() }).then(rows => {
       if (cancelled) return;
       const next = {};
       rows.forEach(row => {

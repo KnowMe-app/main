@@ -22,7 +22,7 @@ describe('стан звʼязку з базою', () => {
   afterEach(() => jest.useRealTimers());
 
   it('не кричить «немає звʼязку», поки перше зʼєднання ще встигає', () => {
-    const { result } = renderHook(() => useRealtimeConnection({ grace: 5000, blip: 2000 }));
+    const { result } = renderHook(() => useRealtimeConnection({ grace: 5000, blip: 2000, lazy: false }));
     emit(false);
     act(() => { jest.advanceTimersByTime(2000); });
     expect(result.current).toBe('pending');
@@ -33,7 +33,7 @@ describe('стан звʼязку з базою', () => {
   });
 
   it('не замінює початковий grace коротшим таймером обриву', () => {
-    const { result } = renderHook(() => useRealtimeConnection({ grace: 5000, blip: 2000 }));
+    const { result } = renderHook(() => useRealtimeConnection({ grace: 5000, blip: 2000, lazy: false }));
     emit(false);
     act(() => { jest.advanceTimersByTime(2000); });
     expect(result.current).toBe('pending');
@@ -42,7 +42,7 @@ describe('стан звʼязку з базою', () => {
   });
 
   it('каже «немає звʼязку», коли зʼєднання так і не зʼявилось', () => {
-    const { result } = renderHook(() => useRealtimeConnection({ grace: 5000, blip: 2000 }));
+    const { result } = renderHook(() => useRealtimeConnection({ grace: 5000, blip: 2000, lazy: false }));
     act(() => { jest.advanceTimersByTime(5000); });
     expect(result.current).toBe('offline');
     emit(true);
@@ -50,7 +50,7 @@ describe('стан звʼязку з базою', () => {
   });
 
   it('пропускає коротке моргання мережі, але не довгий обрив', () => {
-    const { result } = renderHook(() => useRealtimeConnection({ grace: 5000, blip: 2000 }));
+    const { result } = renderHook(() => useRealtimeConnection({ grace: 5000, blip: 2000, lazy: false }));
     emit(true);
     emit(false);
     act(() => { jest.advanceTimersByTime(1000); });
@@ -60,5 +60,23 @@ describe('стан звʼязку з базою', () => {
     emit(false);
     act(() => { jest.advanceTimersByTime(2000); });
     expect(result.current).toBe('offline');
+  });
+
+  // Підписка на `.info/connected` сама відкриває сокет, тож лінива плашка
+  // чекає першого справжнього запиту — а до нього «немає звʼязку» не каже.
+  it('мовчить і не підписується, поки базу ніхто не питав', () => {
+    const { result } = renderHook(() => useRealtimeConnection({ grace: 5000, blip: 2000 }));
+    act(() => { jest.advanceTimersByTime(10000); });
+    expect(result.current).toBe('idle');
+    expect(mockListeners).toHaveLength(0);
+  });
+
+  it('після першого запиту стежить як завжди, а призупинене не називає обривом', () => {
+    const manager = require('../utils/realtimeConnectionManager');
+    const { result } = renderHook(() => useRealtimeConnection({ grace: 5000, blip: 2000 }));
+    act(() => { manager.noteRealtimeDemand(); });
+    expect(result.current).toBe('pending');
+    emit(true);
+    expect(result.current).toBe('online');
   });
 });

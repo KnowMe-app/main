@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import styled, { keyframes } from 'styled-components';
 import {
   deletePhotos,
-  getUrlofUploadedAvatar,
+  uploadAvatarWithThumb,
   getAllUserPhotos,
   updateDataInRealtimeDB,
 } from './config';
@@ -12,6 +12,7 @@ import PhotoViewer from './PhotoViewer';
 import { uiText } from '../utils/uiTranslations';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
+import { buildPhotoThumbKey, prunePhotoThumbs } from '../utils/photoThumbs';
 
 const Container = styled.div`
   display: flex;
@@ -639,8 +640,23 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.userId, photoValues, setState, isUploadingPhotos]);
 
-  const savePhotoList = async updatedPhotos => {
-    await updateDataInRealtimeDB(state.userId, { photos: updatedPhotos }, 'update');
+  // Мініатюри стрічки (`utils/photoThumbs`) пишуться тим самим записом, що й
+  // перелік фото: картка стрічки перебудовується з анкети саме після нього, і
+  // окремий запис мапи приїхав би вже після того, як вона взяла оригінал.
+  // Мапа щоразу підрізана під перелік — мініатюр видаленого фото в ній немає.
+  // Порожня мапа пишеться як `null`: інакше після останнього видаленого фото
+  // в анкеті лишалась адреса файлу, якого вже немає.
+  const savePhotoList = async (updatedPhotos, addedThumbs = null) => {
+    const previousThumbs = state.photoThumbs && typeof state.photoThumbs === 'object' ? state.photoThumbs : {};
+    const photoThumbs = prunePhotoThumbs({ ...previousThumbs, ...(addedThumbs || {}) }, updatedPhotos);
+    const hasThumbs = Object.keys(photoThumbs).length > 0;
+    const payload = { photos: updatedPhotos };
+    if (hasThumbs) payload.photoThumbs = photoThumbs;
+    else if (Object.keys(previousThumbs).length) payload.photoThumbs = null;
+    await updateDataInRealtimeDB(state.userId, payload, 'update');
+    if ('photoThumbs' in payload) {
+      setState(prevState => ({ ...prevState, photoThumbs: hasThumbs ? photoThumbs : null }));
+    }
   };
 
   const handleDeletePhoto = async index => {
@@ -710,12 +726,16 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
     commitPhotosUpdate([...currentPhotos, ...previewUrls]);
 
     try {
-      const newUrls = await Promise.all(
-        files.map(photo => getUrlofUploadedAvatar(photo, state.userId))
+      const uploaded = await Promise.all(
+        files.map(photo => uploadAvatarWithThumb(photo, state.userId))
       );
+      const newUrls = uploaded.map(entry => entry.url);
+      const addedThumbs = Object.fromEntries(uploaded
+        .filter(entry => entry.thumbUrl)
+        .map(entry => [buildPhotoThumbKey(entry.url), entry.thumbUrl]));
       const updatedPhotos = [...currentPhotos, ...newUrls];
       commitPhotosUpdate(updatedPhotos);
-      await savePhotoList(updatedPhotos);
+      await savePhotoList(updatedPhotos, addedThumbs);
     } catch (error) {
       commitPhotosUpdate(currentPhotos);
       console.error('Error uploading photos:', error);
