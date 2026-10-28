@@ -6640,6 +6640,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         if (tone === 'error') {
           console.error('[AddNewProfile] feed photo thumbs backfill failures', report);
           toast.error(message, { id: toastId, duration: 20000 });
+        } else if (tone === 'warning') {
+          // Биті посилання на фото — не збій роботи, але id карток треба
+          // встигнути прочитати.
+          console.warn('[AddNewProfile] feed photo thumbs: photos missing in Storage', report.missing);
+          toast(message, { id: toastId, icon: '⚠️', duration: 20000 });
         } else {
           toast.success(message, { id: toastId, duration: 10000 });
         }
