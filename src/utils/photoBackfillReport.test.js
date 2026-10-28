@@ -26,4 +26,9 @@ describe('звіти разових робіт над фото', () => {
     expect(describeFeedPhotoThumbsBackfill({ cards: 10, candidates: 4, written: ['a'], failed: [{}, {}, {}] }).message)
       .toBe('Карток: 10. Мініатюр створено: 1 з 4, уже були: 0, помилок: 3.');
   });
+
+  it('називає фото, пропущені як не з теки анкети', () => {
+    expect(describeFeedPhotoThumbsBackfill({ cards: 10, candidates: 2, already: 1, foreign: 3, written: ['a', 'b'], failed: [] }).message)
+      .toBe('Карток: 10. Мініатюр створено: 2 з 2, уже були: 1, пропущено фото не з теки анкети: 3.');
+  });
 });

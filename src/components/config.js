@@ -5833,12 +5833,15 @@ export const backfillAvatarCacheControl = async ({ onProgress } = {}) => {
 };
 
 // Байти фото: `getBytes`, а де він падає на CORS — звичайний GET за адресою
-// (той самий запасний шлях, що й у `getStorageFileDataUrl`).
+// (той самий запасний шлях, що й у `getStorageFileDataUrl`). GET — лише за
+// адресою файлу нашого бакета: адресу пише власниця картки, і браузер адміна
+// не мусить ходити туди, куди вона скаже.
 const readStoragePhotoBlob = async (path, url) => {
   let bytes;
   try {
     bytes = await getBytes(ref(storage, path));
   } catch (bytesError) {
+    if (storagePathFromDownloadUrl(url) !== path) throw bytesError;
     const response = await fetch(url);
     if (!response.ok) throw bytesError;
     bytes = await response.arrayBuffer();
@@ -5856,8 +5859,20 @@ const readStoragePhotoBlob = async (path, url) => {
  * `photoThumbs` в анкеті пишеться тим самим записом, інакше перша ж
  * перебудова картки з анкети повернула б їй оригінал.
  */
+// Адреса в `avatar` — дані власниці картки, а робота пише правами адміна.
+// Поки шлях брався з адреси як є, картка з адресою чужого фото
+// (`avatar/{інший uid}/…`) отримувала б мініатюру того фото в чужій теці й
+// свіжу адресу на неї у свій `avatar` — тобто адмін видав би їй чуже фото.
+// Тож кандидат — лише фото з власної теки картки й лише з бакета проєкту.
+const resolveOwnFeedAvatarPath = (id, avatar) => {
+  const path = storagePathFromDownloadUrl(avatar);
+  return path && path.startsWith(`avatar/${id}/`) && buildPhotoThumbPath(path) ? path : '';
+};
+
 export const backfillFeedPhotoThumbs = async ({ onProgress } = {}) => {
-  const report = { cards: 0, candidates: 0, written: [], already: 0, failed: [], readError: null, aborted: false };
+  const report = {
+    cards: 0, candidates: 0, written: [], already: 0, foreign: 0, failed: [], readError: null, aborted: false,
+  };
   let cards;
   try {
     const snapshot = await get(ref2(database, MATCHING_CARDS_ROOT));
@@ -5868,21 +5883,23 @@ export const backfillFeedPhotoThumbs = async ({ onProgress } = {}) => {
   }
   const entries = Object.entries(cards);
   report.cards = entries.length;
-  const candidates = entries.filter(([, card]) => {
+  const candidates = entries.filter(([id, card]) => {
     const avatar = typeof card?.avatar === 'string' ? card.avatar : '';
     if (!avatar) return false;
     if (isPhotoThumbUrl(avatar)) {
       report.already += 1;
       return false;
     }
-    return Boolean(buildPhotoThumbPath(readStoragePathFromUrl(avatar)));
+    if (resolveOwnFeedAvatarPath(id, avatar)) return true;
+    report.foreign += 1;
+    return false;
   });
   report.candidates = candidates.length;
   let done = 0;
   await mapWithConcurrency(candidates, 3, async ([id, card]) => {
     if (report.aborted) return;
     try {
-      const path = readStoragePathFromUrl(card.avatar);
+      const path = resolveOwnFeedAvatarPath(id, card.avatar);
       const thumbUrl = await uploadPhotoThumb(path, await readStoragePhotoBlob(path, card.avatar));
       await update(ref2(database), {
         [`${PROFILE_NODES.profileDetails}/${id}/photoThumbs/${buildPhotoThumbKey(card.avatar)}`]: thumbUrl,

@@ -30,8 +30,11 @@ export const describeFeedPhotoThumbsBackfill = (report = {}) => {
     return { tone: 'error', message: `Картки не прочитано: ${report.readError.message}.${hint}` };
   }
   const failed = report.failed || [];
+  // Пропущене — фото не з теки самої анкети (зовнішня адреса чи чужа тека):
+  // мініатюру йому робота не робить свідомо, див. `backfillFeedPhotoThumbs`.
   const summary = `Карток: ${report.cards || 0}. Мініатюр створено: ${(report.written || []).length}`
-    + ` з ${report.candidates || 0}, уже були: ${report.already || 0}`;
+    + ` з ${report.candidates || 0}, уже були: ${report.already || 0}`
+    + (report.foreign ? `, пропущено фото не з теки анкети: ${report.foreign}` : '');
   if (!failed.length) return { tone: 'success', message: `${summary}.` };
   return { tone: 'error', message: `${summary}${failureTail(failed)}` };
 };
