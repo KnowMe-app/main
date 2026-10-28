@@ -96,6 +96,24 @@ export const setLocalComment = (...args) => {
   }
 };
 
+/**
+ * Те саме, що `setLocalComment`, але мовчки: для писача в `config.js`.
+ *
+ * Памʼятку пишуть кілька екранів (рядок стрічки, форма адміна, `FieldComment`,
+ * порівняння дублікатів), а стрічка бере її з цього кеша шість годин
+ * (`utils/matchingCachePolicy`) — тож записане мусить лягати сюди, хоч би
+ * звідки його писали. Події тут немає навмисно: рядок стрічки, де людина ще
+ * набирає, чекає власну подію й перебив би новіший текст старішим, почувши
+ * чужу посеред набору.
+ */
+export const rememberCommentWrite = (ownerId, cardId, text, lastAction = now()) => {
+  if (!ownerId || !cardId) return;
+  const comments = loadComments();
+  comments[ownerId] = comments[ownerId] || {};
+  comments[ownerId][cardId] = { text: String(text || ''), lastAction, cachedAt: now(), empty: !String(text || '').trim() };
+  saveComments(comments);
+};
+
 export const shouldUseServerComment = (server, local) => {
   if (!server) return false;
   if (!local) return true;
@@ -131,3 +149,13 @@ export const getLocalComment = (ownerIdOrCardId, maybeCardId) => {
 };
 
 export const isCommentCacheEntryFresh = isFresh;
+
+// Памʼятки — особисті записи читача, і живуть вони тут шість годин: на
+// спільному пристрої наступний читач їх мати не мусить (`App`, вихід).
+export const clearCommentsCache = () => {
+  try {
+    localStorage.removeItem(COMMENTS_KEY);
+  } catch {
+    // нічого: без `localStorage` і кеша немає
+  }
+};

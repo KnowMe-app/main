@@ -12,6 +12,9 @@ import { applyStoredAppSettings } from 'hooks/useAppSettings';
 import { clearMyProfileCache } from 'utils/myProfileCache';
 import { clearReactionCache } from 'utils/matchingReactionCache';
 import { clearPersistedFeedSnapshot } from 'utils/matchingFeedSnapshot';
+import { clearContactsCache } from 'utils/matchingContactsCache';
+import { clearCommentsCache } from 'utils/commentsStorage';
+import { clearMatchingTimedStores } from 'utils/matchingTimedStore';
 import { readRememberedViewerId } from 'utils/rememberedSession';
 import { ReadOnlyBadge } from './ReadOnlyBadge';
 import { ScreenErrorBoundary } from './ScreenErrorBoundary';
@@ -141,6 +144,9 @@ export const App = () => {
         // про конкретного читача (`utils/matchingCachePolicy`).
         clearReactionCache();
         clearPersistedFeedSnapshot();
+        clearContactsCache();
+        clearCommentsCache();
+        clearMatchingTimedStores();
         clearStoredAccessRights();
         // Прочитаний рівень доступу — теж стан входу: без цього наступний
         // читач у тій самій вкладці дістав би обіцянку, видану попередньому.

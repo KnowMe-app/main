@@ -14,12 +14,26 @@ const sliceBetween = (source, from, to) => source.slice(source.indexOf(from), so
 describe('контакти: спершу кеш, точкове читання', () => {
   it('readProfileContacts питає лише картку й profileContacts, і межу ставить до запиту', () => {
     const reader = sliceBetween(config(), 'export const readProfileContacts = userId =>', '/**\n * Прочитати анкети за id.');
-    expect(reader).toContain('readProfileNodePart(PROFILE_NODES.profileContacts, id)');
+    expect(reader).toMatch(/get\(ref2\(database, `\$\{PROFILE_NODES\.profileContacts\}\/\$\{id\}`\)\)/);
     expect(reader).not.toContain('PROFILE_NODES.profileDetails');
     expect(reader).not.toContain('PROFILE_NODES.profileWorkflow');
     // Свіжа картка — до контактів, і лише для читача без права поза стрічкою.
     expect(reader.indexOf('isCardInMatchingFeed(card)')).toBeLessThan(reader.indexOf('PROFILE_NODES.profileContacts'));
     expect(reader).toContain('profileContactsMemo.get(id)');
+  });
+
+  // Загальне правило кеша матчингу: свіжа відповідь (і контакти, і «закрито»)
+  // — з памʼяті пристрою, а в памʼять лягає лише справжня відповідь бази.
+  it('readProfileContacts бере свіжу відповідь з пристрою і кладе туди лише справжню', () => {
+    const reader = sliceBetween(config(), 'export const readProfileContacts = userId =>', '/**\n * Прочитати анкети за id.');
+    expect(reader.indexOf('readFreshProfileContacts(viewerId, id)')).toBeLessThan(reader.indexOf('resolveViewerAccessLevel()'));
+    expect(reader).toContain('if (cacheable) writeProfileContacts(viewerId, id, result);');
+    expect(reader).toMatch(/catch \(error\) \{\n\s+cacheable = false;/);
+  });
+
+  it('правка контактів картки знімає її запис з памʼяті пристрою', () => {
+    const writer = sliceBetween(config(), 'const fanOutProfileNodes = async', 'const byNode = paths.reduce(');
+    expect(writer).toContain('forgetProfileContacts(String(userId || \'\'));');
   });
 
   it('fetchUsersByIds бере кешоване тіло раніше, ніж читати анкету цілком', () => {

@@ -57,7 +57,9 @@ export const MATCHING_CARD_DERIVED_FIELDS = Object.freeze({
   // приватності, у `profileDetails`. Стрічка фільтрує за групою через індекс
   // `searchKey/blood`, а не за карткою.
   rh: ['blood'],
-  avatar: ['avatar', 'photos'],
+  // Мініатюра головного фото (`photoThumbs`, `utils/photoThumbs`) — теж
+  // вхід картки: зʼявилась мініатюра — картка бере її замість оригіналу.
+  avatar: ['avatar', 'photos', 'photoThumbs'],
   feedDate: ['publish', 'lastLogin2', 'lastLogin'],
   // Публікація «лише для вподобаних» (`utils/likedAudience`): картка несе коло
   // читачів поруч із `feedDate: false`, і саме його питають правила бази.
@@ -252,6 +254,8 @@ export const PROFILE_DETAIL_FIELDS = Object.freeze([
   'blood',
   'photos',
   'photo',
+  // мініатюри фото для стрічки: імʼя файлу оригіналу → адреса мініатюри
+  'photoThumbs',
 
   // зовнішність
   'hairStructure',

@@ -72,6 +72,7 @@ import PhotoViewer from './PhotoViewer';
 // відгук і власна нотатка, — і два екрани не можуть казати про них різне.
 import { NoteClearButton, NoteFieldRow, NoteLane, NoteLaneHead, PublishDot, SharedCommentText } from './Matching.styled';
 import { isMatchingCardPublished, isMatchingSummaryCard, MATCHING_CARD_REVIEW_FLAG_FIELD } from '../utils/matchingCardIndex';
+import { resolveFeedPhoto } from '../utils/photoThumbs';
 import { SectionToggle } from './programs/ProgramsView';
 
 const pickCurrentText = value => String(getCurrentValue(value) ?? '').trim();
@@ -1315,15 +1316,19 @@ const ProfileRow = ({
   const age = isOrganisationIdentity ? '' : getProfileAge(user);
   const location = getLocationLine(user, language);
   const photos = getProfilePhotos(user);
+  // Рядок малює мініатюри (`utils/photoThumbs`): фото тут шириною ~380 px, а
+  // оригінал важить до мегабайта. Перегляд на весь екран — оригінали (`photos`),
+  // з того самого місця переліку.
+  const rowPhotos = photos.map(url => resolveFeedPhoto(url, user?.photoThumbs));
   const requestPhotos = useCallback(() => {
     if (onRequestPhotos) onRequestPhotos(user);
   }, [onRequestPhotos, user]);
   const photoSwipe = usePhotoSwipe({
-    photos,
+    photos: rowPhotos,
     complete: user?.__allPhotosLoaded === true,
     onRequestPhotos: onRequestPhotos && !isLimited ? requestPhotos : undefined,
   });
-  const photo = photoSwipe.current || photos[0];
+  const photo = photoSwipe.current || rowPhotos[0];
   // Дотик до фото відкриває його на весь екран (`PhotoViewer`) з того знімка,
   // який зараз у рядку. Відкритої картки, куди дотик вів раніше, більше
   // немає: вона показувала те саме, що рядок, лише більшим фото.

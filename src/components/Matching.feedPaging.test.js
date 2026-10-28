@@ -190,7 +190,7 @@ describe('публічні коментарі', () => {
       source.indexOf('const requestPublicComments = React.useCallback'),
       source.indexOf('const handleCreatePublicComment'),
     );
-    expect(effect).toContain('fetchPublicProfileComments([id])');
+    expect(effect).toContain('fetchPublicProfileCommentsCached([id])');
     expect(effect).not.toContain('detailOpen');
     expect(effect).not.toContain("viewLayout === 'list'");
     // Автопідвантаження — за прапорцем картки, а не за всім списком підряд.

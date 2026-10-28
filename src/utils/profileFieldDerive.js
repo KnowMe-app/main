@@ -13,6 +13,7 @@
  */
 
 import { getCurrentValue, hasCurrentValue } from 'components/getCurrentValue';
+import { pickPhotoThumb } from './photoThumbs';
 
 /** Значення, яке взагалі є. `0` і `false` — є; `''`, `null`, `undefined` — немає. */
 export const hasMeaningfulValue = value => {
@@ -200,13 +201,18 @@ const normalizePhotoList = value => {
 };
 
 /**
- * Основне фото анкети — перше з `photos`.
+ * Основне фото анкети — перше з `photos`, а для стрічки — його мініатюра.
  *
  * `photos` у живих даних буває і рядком, і масивом, і обʼєктом з числовими
  * ключами (так RTDB віддає масив із дірками). Розкладка тут одна на всіх, тож
- * аватар у стрічці і перше фото в картці — це один і той самий знімок.
+ * аватар у стрічці і перше фото в картці — це один і той самий знімок. Картка
+ * стрічки бере його мініатюру (`photoThumbs`, `utils/photoThumbs`), коли вона
+ * є: рядок показує фото шириною ~380 px, а оригінал важить до мегабайта.
  */
-export const resolveMatchingCardAvatarFromProfile = data => normalizePhotoList(data?.photos)[0] || '';
+export const resolveMatchingCardAvatarFromProfile = data => {
+  const main = normalizePhotoList(data?.photos)[0] || '';
+  return pickPhotoThumb(main, data?.photoThumbs) || main;
+};
 
 /** Плоский список рядків із будь-якої форми, у якій лежить роль. */
 const roleVariants = value => {

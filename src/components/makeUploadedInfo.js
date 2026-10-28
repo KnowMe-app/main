@@ -68,7 +68,12 @@ export const makeUploadedInfo = (existingData, state, overwrite) => {
       field === 'lastLogin' ||
       field === 'lastLogin2' ||
       field === 'modifiedUser'||
-      field === 'saved_age' || field === 'saved_height' || field === 'saved_weight' || field === 'saved_reward'|| field === 'saved_eyeColor' || field === 'saved_blood' || field === 'saved_country'
+      field === 'saved_age' || field === 'saved_height' || field === 'saved_weight' || field === 'saved_reward'|| field === 'saved_eyeColor' || field === 'saved_blood' || field === 'saved_country' ||
+      // Мапа мініатюр (`utils/photoThumbs`) — не історія версій: «змінене»
+      // значення тут ставало б масивом `[стара мапа, нова мапа]`, і стрічка
+      // мовчки поверталась би до оригіналів. Пише її `Photos`, тож у формі
+      // лежить уже поточна мапа.
+      field === 'photoThumbs'
     ) {
       // console.log('Перезатираємо поле яке відправляємо');
       uploadedInfo[field] = state[field];
