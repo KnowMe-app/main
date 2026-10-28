@@ -41,12 +41,12 @@ describe('звіти разових робіт над фото', () => {
   it('файл, якого вже немає, — не помилка роботи, а картки з id', () => {
     const report = describeFeedPhotoThumbsBackfill({
       cards: 21642, candidates: 2, already: 262, external: 310, externalHosts: { 'drive.google.com': 310 },
-      written: [], failed: [], missing: [{ id: 'Q4Cb' }, { id: 'WnTw' }],
+      written: [], failed: [], missing: [{ id: 'cardA' }, { id: 'cardB' }],
     });
     expect(report).toEqual({
       tone: 'warning',
       message: 'Карток: 21642. Мініатюр створено: 0 з 2, уже були: 262, пропущено фото поза Storage: 310 (drive.google.com).'
-        + ' Фото, якого вже немає в Storage, — у 2: Q4Cb, WnTw.',
+        + ' Фото, якого вже немає в Storage, — у 2: cardA, cardB.',
     });
     const many = describeFeedPhotoThumbsBackfill({ candidates: 7, written: [], failed: [], missing: 'abcdefg'.split('').map(id => ({ id })) });
     expect(many.message).toContain('— у 7: a, b, c, d, e і ще 2.');
