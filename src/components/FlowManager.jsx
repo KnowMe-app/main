@@ -790,6 +790,39 @@ const resolveFlowDisplayAmount = ({
 
 const getFlowAmountNumberForTotals = options => toAmountNumber(resolveFlowDisplayAmount(options));
 
+// Підсумок групи в $ і € — баланс у гривнях, переведений за курсом режиму, а не
+// сума еквівалентів рядків. Курс, вписаний у рядок («курс 50.75 €»), фіксує
+// еквівалент *цього* рядка й гривневу суму його формули, але в підсумку
+// лишав залишок: група «Мама» стояла на 0 грн і водночас на 2.48 €, бо один
+// рядок рахувався за 50.75, а решта за 50.98. Глобальний курс «1 $ = … грн»
+// стоїть за режим для всіх рядків, тож у підсумку він лишається.
+export const sumFlowCategoryTotals = ({
+  rows = [],
+  exchangeRateMode,
+  exchangeRates,
+  historicalRatesByDate = {},
+  customUsdRate,
+  defaultCategory = 'general',
+}) =>
+  rows.reduce((acc, row) => {
+    const group = normalizeCategoryPath(row.group) || defaultCategory;
+    if (!acc[group]) {
+      acc[group] = { uah: 0, usd: 0, eur: 0 };
+    }
+    const rateOptions = { exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate };
+    const amountUah = getFlowAmountNumberForTotals({ amount: row.amount, row, ...rateOptions });
+    const totalsRow = {
+      ...row,
+      amount: formatCategorySum(amountUah),
+      customUsdRate: '',
+      customEurRate: '',
+    };
+    acc[group].uah += amountUah;
+    acc[group].usd += calculateFlowRowCurrencyAmount({ row: totalsRow, currency: 'usd', ...rateOptions });
+    acc[group].eur += calculateFlowRowCurrencyAmount({ row: totalsRow, currency: 'eur', ...rateOptions });
+    return acc;
+  }, {});
+
 const FLOW_FORMULA_TOKEN_REGEX = /[0-9.,+\-*/%()\s×xXхХ÷:−–—$]/;
 const FLOW_FORMULA_OPERATOR_END_REGEX = /[+\-*/%(×xXхХ÷:−–—]$/;
 const FLOW_AMOUNT_START_REGEX = /^(?:[+-]?\d+(?:[.,]\d+)?|=)/;
@@ -1204,41 +1237,14 @@ export const FlowManager = ({ ownerId }) => {
 
   const categorySums = useMemo(
     () =>
-      flowRows.reduce((acc, row) => {
-        const group = normalizeCategoryPath(row.group) || DEFAULT_FLOW_CATEGORY;
-        if (!acc[group]) {
-          acc[group] = { uah: 0, usd: 0, eur: 0 };
-        }
-        const amountUah = getFlowAmountNumberForTotals({
-          amount: row.amount,
-          row,
-          exchangeRateMode,
-          exchangeRates,
-          historicalRatesByDate,
-          customUsdRate,
-        });
-        const displayAmountRow = { ...row, amount: formatCategorySum(amountUah) };
-        const amountUsdDerived = calculateFlowRowCurrencyAmount({
-          row: displayAmountRow,
-          currency: 'usd',
-          exchangeRateMode,
-          exchangeRates,
-          historicalRatesByDate,
-          customUsdRate,
-        });
-        const amountEurDerived = calculateFlowRowCurrencyAmount({
-          row: displayAmountRow,
-          currency: 'eur',
-          exchangeRateMode,
-          exchangeRates,
-          historicalRatesByDate,
-          customUsdRate,
-        });
-        acc[group].uah += amountUah;
-        acc[group].usd += amountUsdDerived;
-        acc[group].eur += amountEurDerived;
-        return acc;
-      }, {}),
+      sumFlowCategoryTotals({
+        rows: flowRows,
+        exchangeRateMode,
+        exchangeRates,
+        historicalRatesByDate,
+        customUsdRate,
+        defaultCategory: DEFAULT_FLOW_CATEGORY,
+      }),
     [customUsdRate, exchangeRateMode, exchangeRates, flowRows, historicalRatesByDate]
   );
   const sortedFlowRows = useMemo(() => sortRowsByGroupAndDate(flowRows), [flowRows]);
