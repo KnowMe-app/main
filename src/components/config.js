@@ -4368,7 +4368,7 @@ const normalizeIndexedValues = value => Array.isArray(value)
  */
 const readProfileForMatchingCard = async id => readProfileFromNodes(id, { includeTechnical: true });
 
-const runMatchingCardRefresh = async (id, payload, condition, storedProfile = null) => {
+const runMatchingCardRefresh = async (id, payload, condition) => {
   try {
     // Перечитане знизу, збережене зверху. `publish` власного вузла не має —
     // у нових вузлах він виражений наявністю `feedDate` у самій картці, тобто
@@ -4376,12 +4376,13 @@ const runMatchingCardRefresh = async (id, payload, condition, storedProfile = nu
     // публікації не спрацювало б жодного разу: картка перебудувалась би зі
     // старою датою і лишилась у стрічці.
     //
-    // Анкету, яку викликач щойно сам прочитав з бази (`storedProfile`, див.
-    // `takeFreshViewerProfileRead`), вдруге не читаємо: це ті самі вузли, і
-    // пейлоад однаково лягає зверху.
-    const stored = condition === 'update'
-      ? (storedProfile || await readProfileForMatchingCard(id))
-      : null;
+    // Читається саме тут, після запису, а не береться з читання, яке викликач
+    // зробив раніше. Так уже було (28.10, запис дати входу брав анкету зі
+    // старту сторінки — п'ять читань на день економії), і відкотили: картка
+    // збирається з анкети цілком, тож копія, старша за чуже збереження між
+    // нею й цим місцем (інша вкладка, той самий старт), переписала б його —
+    // а `name` живе лише в картці, тобто правка зникала б назовсім.
+    const stored = condition === 'update' ? await readProfileForMatchingCard(id) : null;
     const merged = condition === 'update' ? { ...(stored || {}), ...payload } : payload;
     // Публікація без жодної дати в анкеті стає датою сама (`withPublicationDate`):
     // інакше `publish: true` лягав в анкету, а картка лишалась поза стрічкою.
@@ -4921,14 +4922,12 @@ const ownerGetInTouchHasLegacyGroups = ownerId => {
   return pending;
 };
 
-const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition, { storedProfile = null } = {}) => {
+const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) => {
   const id = String(userId || '').trim();
   if (!id) return;
 
   const active = matchingCardRefreshes.get(id);
   if (active) {
-    // Відкладений прогін іде вже після запису активного, тож прочитане
-    // викликачем раніше могло того запису не бачити — такий прогін перечитує.
     active.pending = { payload, condition };
     return active.done;
   }
@@ -4937,10 +4936,10 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition, 
   matchingCardRefreshes.set(id, entry);
   entry.done = (async () => {
     try {
-      let next = { payload, condition, storedProfile };
+      let next = { payload, condition };
       while (next) {
         entry.pending = null;
-        await runMatchingCardRefresh(id, next.payload, next.condition, next.storedProfile);
+        await runMatchingCardRefresh(id, next.payload, next.condition);
         next = entry.pending;
       }
     } finally {
@@ -5015,7 +5014,7 @@ export const updateProfileRole = async (userId, nextRole) => {
   });
 };
 
-export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition, options = {}) => {
+export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
   try {
     // Права (`accessLevel`, `canCreateProfiles`, `multiDataSourceUserIds`)
     // видають лише адміни, і правила бази відкидають їх від будь-кого іншого —
@@ -5029,7 +5028,7 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition, op
     const nodesWritten = await fanOutProfileNodes(userId, cleanedUploadedInfo);
     if (!nodesWritten) throwProfileWriteFailure(userId, 'вузли анкети');
 
-    await refreshMatchingCardAfterProfileWrite(userId, cleanedUploadedInfo, condition, options);
+    await refreshMatchingCardAfterProfileWrite(userId, cleanedUploadedInfo, condition);
   } catch (error) {
     console.error(
       'Сталася помилка під час збереження даних в Realtime Database2:',
@@ -10424,38 +10423,9 @@ export const loadViewerProfile = async userId => {
   if (!uid) return null;
   const cached = readFreshMyProfileCache(uid);
   if (cached) return { ...cached, userId: cached.userId || uid };
-  const pending = fetchUserById(uid);
-  viewerProfileNetworkReads.set(uid, { pending, startedAt: Date.now() });
-  const profile = await pending;
+  const profile = await fetchUserById(uid);
   if (profile) writeMyProfileCache(uid, profile);
   return profile;
-};
-
-// Анкета читача, яку `loadViewerProfile` щойно взяв з бази, — для одного
-// запису на старті сторінки: дати входу (`Matching`, раз на день).
-//
-// Перше відкриття дня майже завжди приходить і з протухлою (понад шість
-// годин) власною анкетою, тож на старті йшли два читання тих самих вузлів
-// поспіль: одне — заради ролі й прав, друге — у писачі дати, щоб перебудувати
-// картку стрічки (`runMatchingCardRefresh`). Тепер писач бере перше, і
-// вузли анкети з карткою вдруге не читаються (на тестовому акаунті 21
-// читання → 16). Віддається лише читання з бази, не кеш: кешу до шести
-// годин, і зібрана з нього картка відкотила б свіжіші поля. І лише щойно
-// розпочате (`VIEWER_PROFILE_HANDOFF_MS`) і один раз — старше могло не бачити
-// записів, зроблених після нього.
-const VIEWER_PROFILE_HANDOFF_MS = 30 * 1000;
-const viewerProfileNetworkReads = new Map();
-
-export const takeFreshViewerProfileRead = async (userId, now = Date.now()) => {
-  const uid = String(userId || '');
-  const entry = viewerProfileNetworkReads.get(uid);
-  viewerProfileNetworkReads.delete(uid);
-  if (!entry || now - entry.startedAt > VIEWER_PROFILE_HANDOFF_MS) return null;
-  try {
-    return cloneFetchedProfile(await entry.pending) || null;
-  } catch {
-    return null;
-  }
 };
 
 export const loadDuplicateUsers = async () => {

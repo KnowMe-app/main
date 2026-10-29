@@ -10,9 +10,7 @@ describe('дзеркалення анкет у matchingCards', () => {
     // Хук стоїть у самих писачах, а не у викликачів: правити анкету можна з
     // кількох екранів, і на котромусь із них його забули б поставити.
     const source = config();
-    // `options` несе лише анкету, яку викликач уже прочитав (`storedProfile`),
-    // а не дозвіл картку не оновлювати.
-    expect(source.match(/await refreshMatchingCardAfterProfileWrite\(userId, cleanedUploadedInfo, condition(, options)?\);/g))
+    expect(source.match(/await refreshMatchingCardAfterProfileWrite\(userId, cleanedUploadedInfo, condition\);/g))
       .toHaveLength(2);
   });
 
