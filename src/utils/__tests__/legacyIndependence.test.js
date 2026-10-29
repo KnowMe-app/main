@@ -67,6 +67,8 @@ describe('збереження анкети не залежить від legacy-
     // жодного разу.
     const refresh = sliceFn('const runMatchingCardRefresh = async', '// Проєкція стрічки');
     expect(refresh).toContain('{ ...(stored || {}), ...payload }');
+    // Перечитується після запису, а не береться зі старшого читання викликача.
+    expect(refresh).toContain("const stored = condition === 'update' ? await readProfileForMatchingCard(id) : null;");
   });
 
   it('попередній стан для звірки індексів читається з вузлів', () => {
