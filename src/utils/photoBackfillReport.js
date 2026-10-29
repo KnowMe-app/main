@@ -7,11 +7,32 @@
  */
 const DENIED_HINT = 'Потрібен повний адмін: правила Storage пускають запис фото лише власниці й адмінам.';
 
+// Причину першої помилки — словами в самому тості: на телефоні консолі, куди
+// `AddNewProfile` кладе повний звіт, немає, і «помилок: 2» не казало нічого.
+const FAILURE_REASON_MAX_LENGTH = 140;
+
 const failureTail = failed => {
   if (!failed.length) return '';
   const denied = failed.some(entry => entry.permissionDenied);
-  return `, помилок: ${failed.length}.${denied ? ` ${DENIED_HINT}` : ''}`;
+  if (denied) return `, помилок: ${failed.length}. ${DENIED_HINT}`;
+  const first = failed[0] || {};
+  const reason = String(first.message || '').trim();
+  const shortReason = reason.length > FAILURE_REASON_MAX_LENGTH ? `${reason.slice(0, FAILURE_REASON_MAX_LENGTH)}…` : reason;
+  const where = first.id || first.path || '';
+  return `, помилок: ${failed.length}.${shortReason ? ` Перша${where ? ` (${where})` : ''}: ${shortReason}` : ''}`;
 };
+
+const withFullStop = text => (/[.!?…]$/.test(text) ? text : `${text}.`);
+
+const LISTED_IDS_MAX = 5;
+const listIds = ids => (ids.length > LISTED_IDS_MAX
+  ? `${ids.slice(0, LISTED_IDS_MAX).join(', ')} і ще ${ids.length - LISTED_IDS_MAX}`
+  : ids.join(', '));
+
+const describeHosts = hosts => Object.entries(hosts || {})
+  .sort(([, a], [, b]) => b - a)
+  .map(([host, count]) => (Object.keys(hosts).length > 1 ? `${host} ${count}` : host))
+  .join(', ');
 
 export const describeAvatarCacheControlBackfill = (report = {}) => {
   if (report.listError) {
@@ -21,7 +42,7 @@ export const describeAvatarCacheControlBackfill = (report = {}) => {
   const failed = report.failed || [];
   const summary = `Анкет із фото: ${report.folders || 0}, файлів: ${report.files || 0}. Кеш на рік поставлено: ${report.updated || 0}`;
   if (!failed.length) return { tone: 'success', message: `${summary}.` };
-  return { tone: 'error', message: `${summary}${failureTail(failed)}` };
+  return { tone: 'error', message: withFullStop(`${summary}${failureTail(failed)}`) };
 };
 
 export const describeFeedPhotoThumbsBackfill = (report = {}) => {
@@ -30,11 +51,21 @@ export const describeFeedPhotoThumbsBackfill = (report = {}) => {
     return { tone: 'error', message: `Картки не прочитано: ${report.readError.message}.${hint}` };
   }
   const failed = report.failed || [];
-  // Пропущене — фото не з теки самої анкети (зовнішня адреса чи чужа тека):
-  // мініатюру йому робота не робить свідомо, див. `backfillFeedPhotoThumbs`.
+  const missing = report.missing || [];
+  // Пропущене мініатюри не отримує свідомо (див. `backfillFeedPhotoThumbs`), і
+  // причин дві різні: адреса поза Storage проєкту (Google Drive тощо) і файл з
+  // чужої теки. Одним числом «не з теки анкети» вони читались як друге.
   const summary = `Карток: ${report.cards || 0}. Мініатюр створено: ${(report.written || []).length}`
     + ` з ${report.candidates || 0}, уже були: ${report.already || 0}`
-    + (report.foreign ? `, пропущено фото не з теки анкети: ${report.foreign}` : '');
-  if (!failed.length) return { tone: 'success', message: `${summary}.` };
-  return { tone: 'error', message: `${summary}${failureTail(failed)}` };
+    + (report.external ? `, пропущено фото поза Storage: ${report.external} (${describeHosts(report.externalHosts)})` : '')
+    + (report.foreign ? `, пропущено фото з чужої теки: ${report.foreign}` : '');
+  // Анкета посилається на файл, якого в Storage вже немає: робота тут не
+  // винна, але картка показує порожнє фото, і адмінові треба знати, яка.
+  const missingSentence = missing.length
+    ? ` Фото, якого вже немає в Storage, — у ${missing.length}: ${listIds(missing.map(entry => entry.id))}.`
+    : '';
+  const message = `${withFullStop(`${summary}${failureTail(failed)}`)}${missingSentence}`;
+  if (failed.length) return { tone: 'error', message };
+  if (missing.length) return { tone: 'warning', message };
+  return { tone: 'success', message };
 };

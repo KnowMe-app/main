@@ -25,6 +25,17 @@ describe('мініатюри старих фото: лише фото з вла�
     expect(job).not.toContain('readStoragePathFromUrl(');
   });
 
+  it('зниклий файл іде в звіт окремо, а не помилкою', () => {
+    const job = sliceBetween(config(), 'export const backfillFeedPhotoThumbs = async', '\nexport const ');
+    expect(job).toContain('if (await isStoragePhotoMissing(path, error)) {');
+    expect(job).toContain('report.missing.push({ id, path });');
+    // Адреса поза Storage — не «чужа тека».
+    expect(job).toContain('if (storagePathFromDownloadUrl(avatar)) {');
+    const missing = sliceBetween(config(), 'const isStoragePhotoMissing = async', '\n};');
+    expect(missing).toContain("error?.code === 'storage/object-not-found'");
+    expect(missing).toContain('await getMetadata(ref(storage, path));');
+  });
+
   it('запасний GET іде лише за адресою того самого файлу нашого бакета', () => {
     const reader = sliceBetween(config(), 'const readStoragePhotoBlob = async (path, url) =>', '\n};');
     expect(reader.indexOf('if (storagePathFromDownloadUrl(url) !== path) throw bytesError;'))

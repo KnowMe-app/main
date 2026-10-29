@@ -45,6 +45,7 @@ import {
 } from './Matching.styled';
 import {
   loadViewerProfile,
+  takeFreshViewerProfileRead,
   lazyLoadProfilePhotos,
   fetchFavoriteUsers,
   fetchDislikeUsers,
@@ -2616,7 +2617,17 @@ const Matching = () => {
       let lastLoginWritten = '';
       try { lastLoginWritten = localStorage.getItem(lastLoginMarkerKey) || ''; } catch { lastLoginWritten = ''; }
       if (lastLoginWritten !== todayDash) {
-        Promise.resolve(updateDataInRealtimeDB(user.uid, sanitizeCardForBackend({ lastLogin2: todayDash }), 'update'))
+        // Основа картки — анкета, по яку `syncAccessProfile` вище щойно пішов у
+        // базу, якщо пішов (`takeFreshViewerProfileRead`): інакше перше
+        // відкриття дня читало б ті самі вузли двічі поспіль. Була анкета з
+        // кеша — писач перечитує сам, як і раніше.
+        Promise.resolve(takeFreshViewerProfileRead(user.uid))
+          .then(storedProfile => updateDataInRealtimeDB(
+            user.uid,
+            sanitizeCardForBackend({ lastLogin2: todayDash }),
+            'update',
+            { storedProfile },
+          ))
           .then(() => {
             try { localStorage.setItem(lastLoginMarkerKey, todayDash); } catch { /* памʼять браузера недоступна */ }
           })

@@ -20,7 +20,7 @@ describe('Matching cache-first start', () => {
     const start = config.indexOf('export const loadViewerProfile');
     const body = config.slice(start, config.indexOf('\nexport ', start + 1));
     expect(body.indexOf('readFreshMyProfileCache(uid)')).toBeGreaterThan(-1);
-    expect(body.indexOf('readFreshMyProfileCache(uid)')).toBeLessThan(body.indexOf('await fetchUserById(uid)'));
+    expect(body.indexOf('readFreshMyProfileCache(uid)')).toBeLessThan(body.indexOf('fetchUserById(uid)'));
     expect(body).toContain('writeMyProfileCache(uid, profile)');
   });
 

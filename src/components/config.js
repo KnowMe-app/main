@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes, updateMetadata } from 'firebase/storage';
+import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes, getMetadata, updateMetadata } from 'firebase/storage';
 import {
   getDatabase,
   ref as ref2,
@@ -4368,14 +4368,20 @@ const normalizeIndexedValues = value => Array.isArray(value)
  */
 const readProfileForMatchingCard = async id => readProfileFromNodes(id, { includeTechnical: true });
 
-const runMatchingCardRefresh = async (id, payload, condition) => {
+const runMatchingCardRefresh = async (id, payload, condition, storedProfile = null) => {
   try {
     // Перечитане знизу, збережене зверху. `publish` власного вузла не має —
     // у нових вузлах він виражений наявністю `feedDate` у самій картці, тобто
     // перечитування дає його *попередній* стан. Без цього накладання зняття
     // публікації не спрацювало б жодного разу: картка перебудувалась би зі
     // старою датою і лишилась у стрічці.
-    const stored = condition === 'update' ? await readProfileForMatchingCard(id) : null;
+    //
+    // Анкету, яку викликач щойно сам прочитав з бази (`storedProfile`, див.
+    // `takeFreshViewerProfileRead`), вдруге не читаємо: це ті самі вузли, і
+    // пейлоад однаково лягає зверху.
+    const stored = condition === 'update'
+      ? (storedProfile || await readProfileForMatchingCard(id))
+      : null;
     const merged = condition === 'update' ? { ...(stored || {}), ...payload } : payload;
     // Публікація без жодної дати в анкеті стає датою сама (`withPublicationDate`):
     // інакше `publish: true` лягав в анкету, а картка лишалась поза стрічкою.
@@ -4915,12 +4921,14 @@ const ownerGetInTouchHasLegacyGroups = ownerId => {
   return pending;
 };
 
-const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) => {
+const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition, { storedProfile = null } = {}) => {
   const id = String(userId || '').trim();
   if (!id) return;
 
   const active = matchingCardRefreshes.get(id);
   if (active) {
+    // Відкладений прогін іде вже після запису активного, тож прочитане
+    // викликачем раніше могло того запису не бачити — такий прогін перечитує.
     active.pending = { payload, condition };
     return active.done;
   }
@@ -4929,10 +4937,10 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) 
   matchingCardRefreshes.set(id, entry);
   entry.done = (async () => {
     try {
-      let next = { payload, condition };
+      let next = { payload, condition, storedProfile };
       while (next) {
         entry.pending = null;
-        await runMatchingCardRefresh(id, next.payload, next.condition);
+        await runMatchingCardRefresh(id, next.payload, next.condition, next.storedProfile);
         next = entry.pending;
       }
     } finally {
@@ -5007,7 +5015,7 @@ export const updateProfileRole = async (userId, nextRole) => {
   });
 };
 
-export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
+export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition, options = {}) => {
   try {
     // Права (`accessLevel`, `canCreateProfiles`, `multiDataSourceUserIds`)
     // видають лише адміни, і правила бази відкидають їх від будь-кого іншого —
@@ -5021,7 +5029,7 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
     const nodesWritten = await fanOutProfileNodes(userId, cleanedUploadedInfo);
     if (!nodesWritten) throwProfileWriteFailure(userId, 'вузли анкети');
 
-    await refreshMatchingCardAfterProfileWrite(userId, cleanedUploadedInfo, condition);
+    await refreshMatchingCardAfterProfileWrite(userId, cleanedUploadedInfo, condition, options);
   } catch (error) {
     console.error(
       'Сталася помилка під час збереження даних в Realtime Database2:',
@@ -5869,9 +5877,45 @@ const resolveOwnFeedAvatarPath = (id, avatar) => {
   return path && path.startsWith(`avatar/${id}/`) && buildPhotoThumbPath(path) ? path : '';
 };
 
+// Адреса поза Storage проєкту (Google Drive у карток імпорту `AB…`) — це не
+// «чужа тека»: перший звіт клав обидва випадки в одне число, і 310 фото з
+// Drive читались як 310 спроб видати картці чуже фото.
+const describeExternalAvatarHost = avatar => {
+  try {
+    return new URL(String(avatar || '')).hostname || 'не адреса';
+  } catch {
+    return 'не адреса';
+  }
+};
+
+// Анкета, що посилається на файл, якого в Storage вже немає, — не збій роботи,
+// а биті дані: такій картці стрічка показує порожнє фото. Тому вона йде в звіт
+// окремим переліком з id. `getBytes` на зниклий файл відповідає
+// `object-not-found` не завжди: де він падає на CORS, запасний GET отримує 403
+// (токен адреси без файлу не перевіряється), тож питаємо метадані.
+const isStoragePhotoMissing = async (path, error) => {
+  if (error?.code === 'storage/object-not-found') return true;
+  try {
+    await getMetadata(ref(storage, path));
+    return false;
+  } catch (metadataError) {
+    return metadataError?.code === 'storage/object-not-found';
+  }
+};
+
 export const backfillFeedPhotoThumbs = async ({ onProgress } = {}) => {
   const report = {
-    cards: 0, candidates: 0, written: [], already: 0, foreign: 0, failed: [], readError: null, aborted: false,
+    cards: 0,
+    candidates: 0,
+    written: [],
+    already: 0,
+    external: 0,
+    externalHosts: {},
+    foreign: 0,
+    missing: [],
+    failed: [],
+    readError: null,
+    aborted: false,
   };
   let cards;
   try {
@@ -5891,15 +5935,21 @@ export const backfillFeedPhotoThumbs = async ({ onProgress } = {}) => {
       return false;
     }
     if (resolveOwnFeedAvatarPath(id, avatar)) return true;
-    report.foreign += 1;
+    if (storagePathFromDownloadUrl(avatar)) {
+      report.foreign += 1;
+    } else {
+      const host = describeExternalAvatarHost(avatar);
+      report.external += 1;
+      report.externalHosts[host] = (report.externalHosts[host] || 0) + 1;
+    }
     return false;
   });
   report.candidates = candidates.length;
   let done = 0;
   await mapWithConcurrency(candidates, 3, async ([id, card]) => {
     if (report.aborted) return;
+    const path = resolveOwnFeedAvatarPath(id, card.avatar);
     try {
-      const path = resolveOwnFeedAvatarPath(id, card.avatar);
       const thumbUrl = await uploadPhotoThumb(path, await readStoragePhotoBlob(path, card.avatar));
       await update(ref2(database), {
         [`${PROFILE_NODES.profileDetails}/${id}/photoThumbs/${buildPhotoThumbKey(card.avatar)}`]: thumbUrl,
@@ -5907,9 +5957,13 @@ export const backfillFeedPhotoThumbs = async ({ onProgress } = {}) => {
       });
       report.written.push(id);
     } catch (error) {
-      const failure = { id, ...describePhotoBackfillError(error) };
-      report.failed.push(failure);
-      if (failure.permissionDenied) report.aborted = true;
+      if (await isStoragePhotoMissing(path, error)) {
+        report.missing.push({ id, path });
+      } else {
+        const failure = { id, ...describePhotoBackfillError(error, path) };
+        report.failed.push(failure);
+        if (failure.permissionDenied) report.aborted = true;
+      }
     }
     done += 1;
     if (onProgress) onProgress({ done, total: candidates.length });
@@ -10370,9 +10424,38 @@ export const loadViewerProfile = async userId => {
   if (!uid) return null;
   const cached = readFreshMyProfileCache(uid);
   if (cached) return { ...cached, userId: cached.userId || uid };
-  const profile = await fetchUserById(uid);
+  const pending = fetchUserById(uid);
+  viewerProfileNetworkReads.set(uid, { pending, startedAt: Date.now() });
+  const profile = await pending;
   if (profile) writeMyProfileCache(uid, profile);
   return profile;
+};
+
+// Анкета читача, яку `loadViewerProfile` щойно взяв з бази, — для одного
+// запису на старті сторінки: дати входу (`Matching`, раз на день).
+//
+// Перше відкриття дня майже завжди приходить і з протухлою (понад шість
+// годин) власною анкетою, тож на старті йшли два читання тих самих вузлів
+// поспіль: одне — заради ролі й прав, друге — у писачі дати, щоб перебудувати
+// картку стрічки (`runMatchingCardRefresh`). Тепер писач бере перше, і
+// вузли анкети з карткою вдруге не читаються (на тестовому акаунті 21
+// читання → 16). Віддається лише читання з бази, не кеш: кешу до шести
+// годин, і зібрана з нього картка відкотила б свіжіші поля. І лише щойно
+// розпочате (`VIEWER_PROFILE_HANDOFF_MS`) і один раз — старше могло не бачити
+// записів, зроблених після нього.
+const VIEWER_PROFILE_HANDOFF_MS = 30 * 1000;
+const viewerProfileNetworkReads = new Map();
+
+export const takeFreshViewerProfileRead = async (userId, now = Date.now()) => {
+  const uid = String(userId || '');
+  const entry = viewerProfileNetworkReads.get(uid);
+  viewerProfileNetworkReads.delete(uid);
+  if (!entry || now - entry.startedAt > VIEWER_PROFILE_HANDOFF_MS) return null;
+  try {
+    return cloneFetchedProfile(await entry.pending) || null;
+  } catch {
+    return null;
+  }
 };
 
 export const loadDuplicateUsers = async () => {
