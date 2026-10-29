@@ -21,6 +21,7 @@ const {
   flattenFlowEntriesFromBackend,
   getFlowRowDisplayCurrency,
   parseFlowEntryLine,
+  sumFlowCategoryTotals,
 } = require('./FlowManager');
 
 describe('parseFlowEntryLine', () => {
@@ -161,5 +162,44 @@ describe('per-row exchange rate currency', () => {
     });
     expect(rows.find(row => row.entryId === 'a')).toMatchObject({ customUsdRate: '', customEurRate: '50.75' });
     expect(rows.find(row => row.entryId === 'b')).toMatchObject({ customUsdRate: '40.6', customEurRate: '' });
+  });
+});
+
+describe('sumFlowCategoryTotals', () => {
+  const { resolveFlowExchangeRatesForMode } = require('./config');
+
+  // Група «Мама» на проді: 0 грн, 0 $ і водночас 2.48 €, бо рядок 07.10 мав
+  // власний курс 50.75 €, а решта йшли за поточним 50.98.
+  it('keeps a per-row rate out of the group total', () => {
+    resolveFlowExchangeRatesForMode.mockReturnValue({ usd: 41.6, eur: 50.98 });
+    const rows = [
+      { group: 'Мама', date: '2026-10-01', amount: '2221.73' },
+      { group: 'Мама', date: '2026-10-02', amount: '48439' },
+      { group: 'Мама', date: '2026-10-07', amount: '27981.29', customEurRate: '50.75' },
+      { group: 'Мама', date: '2026-10-08', amount: '20000' },
+      { group: 'Мама', date: '2026-10-24', amount: '3104' },
+      { group: 'Мама', date: '2026-10-29', amount: '-101746.02' },
+    ];
+    const options = { exchangeRateMode: 'current', exchangeRates: { usd: 41.6, eur: 50.98 }, historicalRatesByDate: {}, customUsdRate: '' };
+    const totals = sumFlowCategoryTotals({ ...options, rows }).Мама;
+    expect(totals.uah).toBeCloseTo(0, 6);
+    expect(totals.usd).toBeCloseTo(0, 6);
+    expect(totals.eur).toBeCloseTo(0, 6);
+    // Еквівалент самого рядка курс і далі тримає.
+    expect(calculateFlowRowCurrencyAmount({ ...options, row: rows[2], currency: 'eur' })).toBeCloseTo(551.36, 2);
+  });
+
+  it('still totals at the global dollar rate', () => {
+    resolveFlowExchangeRatesForMode.mockReturnValue({ usd: 40, eur: 50 });
+    const totals = sumFlowCategoryTotals({
+      rows: [{ group: 'g', date: '2026-10-01', amount: '1000' }, { group: 'g', date: '2026-10-02', amount: '600', customUsdRate: '30' }],
+      exchangeRateMode: 'current',
+      exchangeRates: { usd: 40, eur: 50 },
+      historicalRatesByDate: {},
+      customUsdRate: '32',
+    }).g;
+    expect(totals.uah).toBe(1600);
+    expect(totals.usd).toBeCloseTo(50, 6);
+    expect(totals.eur).toBeCloseTo(32, 6);
   });
 });
