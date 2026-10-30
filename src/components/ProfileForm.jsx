@@ -78,7 +78,13 @@ import {
   resolveProfileFormBlock,
   PROFILE_FORM_BLOCK_IDS,
 } from './profileFormNodeBlocks';
-import { appendEmptyFieldRow, canAppendFieldRow, fieldAcceptsMultipleValues } from 'utils/profileFieldRows';
+import {
+  appendEmptyFieldRow,
+  canAppendFieldRow,
+  fieldAcceptsMultipleValues,
+  isUnfilledNewFieldRow,
+  markFieldRowErased,
+} from 'utils/profileFieldRows';
 import { NestedObjectField, isNestedObjectValue } from './NestedObjectField';
 import { ProfileDataTree } from './ProfileDataTree';
 import {
@@ -3218,6 +3224,25 @@ ${entries.join('\n')}`;
                             idx,
                             value: state?.[field.name],
                           });
+                          // Зайшли в рядок, доданий «+», і вийшли, нічого не
+                          // набравши, — це явне «поточного значення немає»
+                          // (`isUnfilledNewFieldRow`). Пишемо порожню останню
+                          // версію: попереднє значення лишається в історії, а
+                          // стрічка його більше не показує.
+                          const latestDraft = latestProfileDraftRef.current || state || {};
+                          const rows = latestDraft[field.name];
+                          if (fieldAcceptsMultipleValues(field.name) && isUnfilledNewFieldRow(rows, idx)) {
+                            const nextState = { ...latestDraft, [field.name]: markFieldRowErased(rows, idx) };
+                            latestProfileDraftRef.current = nextState;
+                            setState(prevState => ({
+                              ...prevState,
+                              [field.name]: Array.isArray(prevState?.[field.name])
+                                ? markFieldRowErased(prevState[field.name], idx)
+                                : prevState?.[field.name],
+                            }));
+                            submitWithNormalization(nextState, 'overwrite');
+                            return;
+                          }
                           handleBlur(`${field.name}-${idx}`);
                         }}
                       />

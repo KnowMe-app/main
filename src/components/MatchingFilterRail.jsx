@@ -179,13 +179,10 @@ export const MatchingFilterRail = ({
                 {uiText('Усі', language)}
               </FilterPopoverGhostButton>
             )}
-            <FilterPopoverGhostButton
-              type="button"
-              aria-label={uiText('Закрити групу фільтра', language)}
-              onClick={close}
-            >
-              ✕
-            </FilterPopoverGhostButton>
+            {/* Хрестика тут немає навмисно: він застосовував зміни так само,
+                як «Показати», хоча хрестик читають як «скасувати». Закривають
+                поповер «Показати» знизу, тап поза ним і Escape — і всі три
+                застосовують, тобто кажуть одне. */}
           </FilterPopoverHeaderActions>
         </FilterPopoverHeader>
         <FilterPopoverBody>

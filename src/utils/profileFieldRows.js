@@ -36,6 +36,27 @@ export const appendEmptyFieldRow = currentValue => (
     : [currentValue, undefined]
 );
 
+/**
+ * Чи цей рядок — щойно доданий «+» і так і не заповнений.
+ *
+ * Сам дотик до «+» нічого не пише (див. вище). Але адмін, який після «+»
+ * **зайшов** у порожній рядок і вийшов із нього, нічого не набравши, каже
+ * рівно те, що означає порожня остання версія: «поточного значення немає».
+ * Так ховають попередній інстаграм чи телефон зі стрічки, лишаючи його в
+ * історії поля. Поки цей рядок лишався `undefined`, писач знімав його, і в
+ * базі лежало самé попереднє значення — його й далі бачили всі.
+ */
+export const isUnfilledNewFieldRow = (values, idx) => (
+  Array.isArray(values)
+  && idx > 0
+  && idx === values.length - 1
+  && (values[idx] === undefined || values[idx] === null)
+  && !isEmptyFieldRow(values[idx - 1])
+);
+
+/** Рядок `idx` стає позначкою стирання — порожньою останньою версією. */
+export const markFieldRowErased = (values, idx) => values.map((item, i) => (i === idx ? '' : item));
+
 /** Чи має сенс пропонувати ще один рядок: попередній уже заповнений. */
 export const canAppendFieldRow = currentValue => {
   if (!Array.isArray(currentValue)) return !isEmptyFieldRow(currentValue);

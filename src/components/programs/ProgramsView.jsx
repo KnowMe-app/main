@@ -200,12 +200,13 @@ export const presentPayRange = (breakdown, displayCurrency, rates) => {
 
 // --- спільні частини -------------------------------------------------------------
 
+// Підпис розділу — звичайним реченням, як решта підписів матчингу:
+// «ВИМОГИ», «ДОДАТКОВО ПОКРИВАЄТЬСЯ» великими літерами були єдиним місцем
+// картки, що кричало.
 const SectionTitle = styled.h5`
   margin: 0 0 6px;
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 600;
   color: ${MUTED};
 `;
 

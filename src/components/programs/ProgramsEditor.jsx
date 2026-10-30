@@ -595,17 +595,22 @@ const Segments = styled.div`
 `;
 
 // Вибір — та сама пігулка скрізь: тип програми, покриття, ознаки картки.
+// Вигляд той самий, що в «Моєму профілі»: невибране — заливкою без рамки,
+// вибране — суцільний акцент із галочкою. Контур без галочки тут був третім
+// варіантом «вибраного» на одному екрані.
 const Pill = styled.button`
   min-height: 36px;
   padding: 0 13px;
   border-radius: 999px;
-  border: 1px solid ${({ $on }) => ($on ? ACCENT : BORDER)};
-  background: ${({ $on }) => ($on ? `color-mix(in srgb, ${ACCENT} 14%, transparent)` : 'transparent')};
-  color: ${({ $on }) => ($on ? ACCENT : TEXT)};
+  border: 1px solid transparent;
+  background: ${({ $on }) => ($on ? ACCENT : 'var(--km-fill)')};
+  color: ${({ $on }) => ($on ? 'var(--km-on-accent, #fff)' : TEXT)};
   font: inherit;
   font-size: 13.5px;
   font-weight: ${({ $on }) => ($on ? 700 : 500)};
   cursor: pointer;
+
+  ${({ $on }) => ($on ? '&::before { content: "✓"; margin-right: 6px; }' : '')}
 
   &:focus-visible { outline: none; box-shadow: ${FOCUS_RING}; }
   &:disabled { opacity: 0.4; cursor: not-allowed; }

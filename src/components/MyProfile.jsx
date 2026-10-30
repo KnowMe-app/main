@@ -726,7 +726,7 @@ const LIKED_AUDIENCE_TEXTS = Object.freeze({
   organisation: Object.freeze({
     publishButton: 'Опублікувати лише для вподобаних',
     restrictButton: 'Показувати лише вподобаним',
-    offer: 'Анкету й програми побачать лише ті, кого ви вподобали — донори ооцитів, сурогатні мами, біологічні батьки чи інші агенції, зокрема вподобані раніше, — і лише доки вподобання стоїть. Для всіх інших їх не буде ні в стрічці, ні в пошуку.',
+    offer: 'Анкету й програми побачать лише ті, кого ви вподобали — донори ооцитів, сурогатні мами, біологічні батьки чи агенції, зокрема вподобані раніше, — і лише доки вподобання стоїть. Для всіх інших їх не буде ні в стрічці, ні в пошуку.',
     caveat: 'Так більше закритості, але менше звернень: анкету й програми побачить менше людей, тож і відгукнеться на них, найімовірніше, менше кандидаток.',
     nobodyYet: 'Ви ще нікого не вподобали, тож зараз анкету й програми не бачить ніхто. Вподобайте донора, сурогатну маму чи батьків у стрічці — і вони одразу їх побачать.',
     howTo: 'Вподобайте донора, сурогатну маму чи батьків у стрічці — і вони одразу побачать анкету й програми. Знімете вподобання — і для них вони закриються.',
@@ -2762,7 +2762,11 @@ export const MyProfile = () => {
   // — `resolveMyProfileFieldText`), а розділ програм, який полем у довіднику
   // не є, — сирим ключем «programs».
   const resolveRequiredFieldLabel = fieldName => {
-    if (fieldName === 'programs') return uiText('Програми — додайте хоча б одну', language);
+    // Схована програма — це не відсутня: «додайте хоча б одну» агенція з
+    // програмою читала як збій. Просимо показати.
+    if (fieldName === 'programs') {
+      return uiText(ownProgramsCount > 0 ? 'Програми — покажіть хоча б одну' : 'Програми — додайте хоча б одну', language);
+    }
     if (CUSTOM_FIELD_LABELS[fieldName]) return uiText(CUSTOM_FIELD_LABELS[fieldName], language);
     const roleText = resolveMyProfileFieldText(fieldName, fieldName === 'agencyName' ? organisationRole : sectionTitleRole, rolesList);
     if (roleText.label) return uiText(roleText.label, language);
@@ -3610,6 +3614,11 @@ export const MyProfile = () => {
           previewDraft.userId,
           buildMatchingCardProjection(previewDraft.userId, previewDraft),
         ),
+        // Повна група крові лежить у картці лише опублікованої анкети
+        // (`resolveCardBlood`), тож проєкція неопублікованої давала самий
+        // резус: прев'ю казало «Rh+», а читачі після публікації бачать «A+».
+        // Прев'ю показує картку такою, якою вона стане.
+        blood: previewDraft.blood,
         // Програми належать лише організаційним карткам, а не сусідній ролі.
         programs: role === programsRole && ownVisiblePrograms.length ? ownPrograms : null,
       },

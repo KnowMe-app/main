@@ -200,41 +200,28 @@ export const buildMatchingFilterChipLabel = (group, values, language) => {
   const on = options.filter(option => values[option.val]);
   if (!on.length) return { text: uiText('{group}: нічого', language, { group: groupName }), danger: true };
 
-  // «Тип профілю» каже, кого показано, а не кого прибрано: «крім Біологічні
-  // батьки, Інші» донорка читала як заборону, а не як вибір, і не розуміла,
-  // що батьків можна просто ввімкнути.
-  if (group.filterName === 'userRole' && on.length <= 2) {
-    return {
-      text: uiText('{group}: {values}', language, {
-        group: groupName,
-        values: on.map(option => localizeMatchingOptionLabel(option.label, language)).join(', '),
-      }),
-      danger: false,
-    };
-  }
-
   const offWithoutUnknown = off.filter(option => !isUnknownFilterOption(option));
   if (!offWithoutUnknown.length) {
     return { text: uiText('{group}: лише заповнені', language, { group: groupName }), danger: false };
   }
 
-  if (offWithoutUnknown.length <= 2) {
-    return {
-      text: uiText('{group}: крім {values}', language, {
-        group: groupName,
-        values: offWithoutUnknown.map(option => localizeMatchingOptionLabel(option.label, language)).join(', '),
-      }),
-      danger: false,
-    };
+  const listValues = list => list.map(option => localizeMatchingOptionLabel(option.label, language)).join(', ');
+
+  // Чіп каже, кого показано, коли це коротше: обране «≥5» чіп називав
+  // «Пологи: крім Без дітей, ≤4», а обрану «Україну» — «Країна: крім Інша
+  // країна», мовчачи, що «Не вказано» теж сховано. «Тип профілю» — позитивно
+  // й до трьох значень: агенція за замовчуванням бачила «крім Агенція,
+  // Біологічні батьки», а донорка колись читала такий чіп як заборону.
+  const positiveLimit = group.filterName === 'userRole' ? 3 : 2;
+  if (on.length <= positiveLimit) {
+    return { text: uiText('{group}: {values}', language, { group: groupName, values: listValues(on) }), danger: false };
   }
-  if (on.length <= 2) {
-    return {
-      text: uiText('{group}: {values}', language, {
-        group: groupName,
-        values: on.map(option => localizeMatchingOptionLabel(option.label, language)).join(', '),
-      }),
-      danger: false,
-    };
+
+  // «Крім…» називає все сховане, зокрема «Не вказано»: без нього підпис
+  // обіцяв картки, яких у деці немає.
+  const offListed = off.length <= 3 ? off : null;
+  if (offListed && offWithoutUnknown.length <= 2) {
+    return { text: uiText('{group}: крім {values}', language, { group: groupName, values: listValues(offListed) }), danger: false };
   }
   return {
     text: uiText('{group}: {shown} з {total}', language, {

@@ -1291,10 +1291,8 @@ export const QueryDraftBody = styled.div`
 `;
 
 export const QueryDraftLabel = styled.span`
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--matching-muted-text);
 `;
 
@@ -1391,8 +1389,11 @@ export const FilterApplyButton = styled.button`
   padding: 10px 16px;
   border: none;
   border-radius: 12px;
-  background: var(--matching-accent);
-  color: #fff;
+  /* Білий на акценті давав 4,07:1 у світлій темі й 2,51:1 у темній. Акцент
+     трохи темніший, а текст — \`--km-on-accent\` (у темній темі він темний):
+     ~5:1 в обох темах. */
+  background: color-mix(in srgb, var(--matching-accent) 88%, #000);
+  color: var(--km-on-accent, #fff);
   font: inherit;
   font-size: 14px;
   font-weight: 700;

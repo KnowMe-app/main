@@ -49,10 +49,8 @@ const MenuSection = styled.div`
 const SectionLabel = styled.div`
   margin: 4px 10px 4px;
   color: var(--km-muted);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 `;
 
 const ActivePill = styled.span`

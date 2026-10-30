@@ -99,6 +99,20 @@ import {
   saveCreateProfileMutation,
 } from 'utils/profileMutations';
 
+// Чернетку й доповнення заповнює не та людина, про яку картка, а підписи
+// «Мого профілю» звертаються до власника: «Про вас», «Як до вас
+// звертатись». На чужій картці це читалось як питання до самого редактора.
+const THIRD_PERSON_TEXT = Object.freeze({
+  'Як до вас звертатись': 'Як звертатись до людини',
+  '👤 Про вас': '👤 Про людину',
+});
+const toThirdPerson = text => THIRD_PERSON_TEXT[text] || text;
+const toThirdPersonFieldText = fieldText => ({
+  ...fieldText,
+  ...(fieldText.label ? { label: toThirdPerson(fieldText.label) } : {}),
+  ...(fieldText.placeholder ? { placeholder: toThirdPerson(fieldText.placeholder) } : {}),
+});
+
 const Page = styled.main`
   min-height: 100vh;
   padding: 16px 20px max(80px, env(safe-area-inset-bottom));
@@ -2116,7 +2130,7 @@ export const ProfileCreationWorkspace = () => {
     const offersClear = item => String(item ?? '').trim() !== '' || fieldRowValues.length > 1;
     // Підпис і приклад імені — мовою ролі картки (`resolveDraftAnketaRole`).
     const roleText = draftAnketaRole && (fieldName === 'name' || fieldName === 'surname')
-      ? resolveMyProfileFieldText(fieldName, draftAnketaRole)
+      ? toThirdPersonFieldText(resolveMyProfileFieldText(fieldName, draftAnketaRole))
       : {};
     const label = (roleText.label ? uiText(roleText.label, language) : getFieldLabel(field, language)) || fieldName;
     const examplePlaceholder = roleText.placeholder
@@ -2373,7 +2387,7 @@ export const ProfileCreationWorkspace = () => {
         && offersSectionForCard(section, summaryCard)).map(section => (
         <FormSectionCard key={section.key}>
           <FormSectionTitle id={`create-section-${section.key}`}>{stripSectionEmoji(uiText(
-            section.key === 'personal' ? resolveMyProfileSectionTitle('personal', draftAnketaRole, section.title) : section.title,
+            section.key === 'personal' ? toThirdPerson(resolveMyProfileSectionTitle('personal', draftAnketaRole, section.title)) : section.title,
             language,
           ))}</FormSectionTitle>
           {(section.key === 'personal' ? orderPersonalFieldsForCard(section.fields, summaryCard) : section.fields)

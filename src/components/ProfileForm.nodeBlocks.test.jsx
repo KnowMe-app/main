@@ -71,6 +71,27 @@ describe('блоки форми анкети', () => {
     expect(handleClear).toHaveBeenCalledWith('name');
   });
 
+  it('порожній рядок після «+», з якого вийшли, записується як стирання', () => {
+    const handleSubmit = jest.fn();
+    const handleBlur = jest.fn();
+    renderForm({ state: { userId: 'AC00042', instagram: ['surrohelp', undefined] }, handleSubmit, handleBlur });
+    const emptyRow = screen.getByRole('textbox', { name: 'Instagram — 2' });
+    fireEvent.focus(emptyRow);
+    fireEvent.blur(emptyRow);
+    expect(handleBlur).not.toHaveBeenCalled();
+    expect(handleSubmit).toHaveBeenCalled();
+    expect(handleSubmit.mock.calls[0][0].instagram).toEqual(['surrohelp', '']);
+  });
+
+  it('вихід із заповненого рядка лишається звичайним blur', () => {
+    const handleSubmit = jest.fn();
+    const handleBlur = jest.fn();
+    renderForm({ state: { userId: 'AC00042', instagram: ['surrohelp', 'newnick'] }, handleSubmit, handleBlur });
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Instagram — 2' }));
+    expect(handleBlur).toHaveBeenCalledWith('instagram-1');
+    expect(handleSubmit).not.toHaveBeenCalled();
+  });
+
   it('позначає окремі значення масиву й очищає саме вибраний рядок', () => {
     const handleClear = jest.fn();
     renderForm({ state: { userId: 'AC00042', name: ['Анна', 'Марія'] }, handleClear });

@@ -168,6 +168,10 @@ export const resetMatchingLocalStorageCache = (reason = 'manual') => {
 
 const unwrapVersionedCards = value => {
   if (!value || typeof value !== 'object') return {};
+  // Порожній кеш — не застарілий. Відсутній ключ \`loadJson\` віддає як \`{}\`,
+  // і без цієї перевірки кожен \`loadCards()\` «скидав застарілий кеш»: ~400
+  // разів за одне відкриття стрічки донорки, з \`removeItem\` і новим читанням.
+  if (!Object.keys(value).length) return {};
   if (value.__cacheVersion !== CARDS_CACHE_VERSION) return null;
   if (value.ownerId !== getCardsCacheOwnerId()) return null;
   return value.items && typeof value.items === 'object' ? value.items : {};
