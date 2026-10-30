@@ -20,7 +20,17 @@ describe('LoginScreen returns the reader to the link they opened', () => {
     // Без адреси, з якої прийшли, опублікована анкета веде в стрічку, а решта —
     // у «Мій профіль» (`resolveLandingRoute`); адреса завжди важить більше.
     expect(loginSource()).toContain('const target = returnTo || (registered ? MY_PROFILE_ROUTE : await resolveLandingRoute(auth.currentUser?.uid));');
-    expect(loginSource()).toContain("return profile?.publish === true ? MATCHING_ROUTE : MY_PROFILE_ROUTE;");
+    expect(loginSource()).toContain('.then(profile => (profile?.publish === true ? MATCHING_ROUTE : MY_PROFILE_ROUTE))');
+  });
+
+  it('never keeps the sign-in spinner waiting on the database', () => {
+    // Запис RTDB чекає підтвердження сервера, а читання без звʼязку висить:
+    // вхід, який Firebase уже прийняв, стояв під спінером без кінця. Дата
+    // входу пишеться у фоні, а вибір екрана має стелю часу.
+    const source = loginSource();
+    expect(source).toContain("void persistAccountProfile(userCredential.user.uid, uploadedInfo, 'update')");
+    expect(source).not.toContain("await persistAccountProfile(userCredential.user.uid, uploadedInfo, 'update')");
+    expect(source).toContain('return await Promise.race([read, timeout]);');
   });
 
   /**

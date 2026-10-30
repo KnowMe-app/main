@@ -437,6 +437,10 @@ const Spinner = styled.div`
 // `authStatus` за замовчуванням — `'pending'`, а не `'in'`: «не сказали» мусить
 // означати «нічого не робимо». Значення `'in'` тут відсилало б читача геть з
 // форми входу в того, хто змонтував її без цього пропа.
+// Скільки форма входу чекає на анкету, щоб вирішити, куди вести
+// (`resolveLandingRoute`).
+const LANDING_ROUTE_TIMEOUT_MS = 4000;
+
 export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   const { language, setLanguage } = useAppSettings();
   const tr = (text, vars) => uiText(text, language, vars);
@@ -531,13 +535,24 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
    * `fetchUserById`, що й вхід у `App` (читання ділиться), тож це не зайвий
    * круг до бази.
    */
+  //
+  // Чекати на анкету довше за `LANDING_ROUTE_TIMEOUT_MS` форма не має права:
+  // читання бази без звʼязку не падає, а висить (а `fetchUserById` ще й лістить
+  // фото в Storage), і вхід, який уже відбувся, стояв під спінером без кінця.
+  // Не встигли — «Мій профіль»: він малюється з памʼяті пристрою.
   const resolveLandingRoute = async uid => {
     if (!uid) return MY_PROFILE_ROUTE;
+    let timer = null;
+    const timeout = new Promise(resolve => {
+      timer = setTimeout(() => resolve(MY_PROFILE_ROUTE), LANDING_ROUTE_TIMEOUT_MS);
+    });
+    const read = fetchUserById(uid)
+      .then(profile => (profile?.publish === true ? MATCHING_ROUTE : MY_PROFILE_ROUTE))
+      .catch(() => MY_PROFILE_ROUTE);
     try {
-      const profile = await fetchUserById(uid);
-      return profile?.publish === true ? MATCHING_ROUTE : MY_PROFILE_ROUTE;
-    } catch {
-      return MY_PROFILE_ROUTE;
+      return await Promise.race([read, timeout]);
+    } finally {
+      clearTimeout(timer);
     }
   };
 
@@ -557,9 +572,12 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
         todayDash,
       });
 
-      // Вхід — це сесія Firebase, а не запис дати входу: відмова бази на
-      // `lastLogin` не мусить не пускати людину в застосунок.
-      await persistAccountProfile(userCredential.user.uid, uploadedInfo, 'update').catch(error => {
+      // Вхід — це сесія Firebase, а не запис дати входу: ні відмова бази на
+      // `lastLogin`, ні її мовчання не мусять не пускати людину в застосунок.
+      // Тому запис іде у фоні: запис RTDB чекає підтвердження сервера, і без
+      // звʼязку з базою (мобільна мережа, сокет, що не піднявся) `await` тут
+      // тримав форму під спінером без кінця — хоч Firebase уже сказав «увійшов».
+      void persistAccountProfile(userCredential.user.uid, uploadedInfo, 'update').catch(error => {
         console.warn('[login] не вдалося записати дату входу', error);
       });
 
