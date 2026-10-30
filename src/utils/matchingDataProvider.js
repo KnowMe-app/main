@@ -7,7 +7,7 @@ import { get, limitToFirst, orderByKey, query, ref } from 'firebase/database';
 import { collectAgeIdsByFilters, database } from 'components/config';
 import { getCard, getIndexIdsByQuery, MATCHING_INDEX_CACHE_VERSION, serializeQueryFilters, setIndexIdsForQuery } from './cardIndex';
 import { collectFilteredMatchingSourceCards } from './matchingSourceBackfill';
-import { keepDonorCounterpartyCards } from './matchingPeerVisibility';
+import { FEED_ROLE_FILTER_KEYS, keepDonorCounterpartyCards, listViewerHiddenCardRoles } from './matchingPeerVisibility';
 import { isCardFullyReacted } from './anketaReactions';
 import { LIKED_AUDIENCE_CARD_FLAG } from './likedAudience';
 import { getIndexedIdsByRules, normalizeSearchKeySetKeys } from './filterSetsIndex';
@@ -214,7 +214,32 @@ const buildAgeBuckets = filters => {
 const buildPointBuckets = (filters, filterName, bucketMap = {}) =>
   mapSelectedFilterBuckets(filters?.[filterName], bucketMap);
 
-export const buildMatchingIndexFilterGroups = ({ filters = {} } = {}) => {
+/*
+ * Ролі, яких читач у деці не бачить, план індексу не читає.
+ *
+ * Донорці й СМ `FilterPanel` тримає ввімкненими приховані від них `ed`/`sm`
+ * (`alignRoleFilterGroupWithViewer`: невидима позначка не має права звужувати
+ * деку). Для показу це так, а план індексу брав через це бакети донорок і СМ
+ * цілком — і холодне відкриття стрічки донорки коштувало ~375 читань, з них
+ * 334 точкові картки й 16 відмов, заради 14 агенцій: решту одразу відкидав
+ * `keepDonorCounterpartyCards`. Звужуємо лише групу, яка й так звужує
+ * (якась показана опція знята); «усе ввімкнено» лишається без групи.
+ */
+export const withoutViewerHiddenRoleBuckets = (filters, viewerRole) => {
+  const roleFilters = filters?.userRole;
+  if (!roleFilters || typeof roleFilters !== 'object') return filters;
+  const hidden = listViewerHiddenCardRoles(viewerRole);
+  if (!hidden.length) return filters;
+  const offered = FEED_ROLE_FILTER_KEYS.filter(key => !hidden.includes(key));
+  if (offered.every(key => roleFilters[key] !== false)) return filters;
+  if (!hidden.some(key => roleFilters[key])) return filters;
+  const userRole = { ...roleFilters };
+  hidden.forEach(key => { if (key in userRole) userRole[key] = false; });
+  return { ...filters, userRole };
+};
+
+export const buildMatchingIndexFilterGroups = ({ filters: rawFilters = {}, viewerRole = '' } = {}) => {
+  const filters = withoutViewerHiddenRoleBuckets(rawFilters || {}, viewerRole);
   const groups = [];
   const roleBuckets = buildRoleBuckets(filters);
   const roleFilters = filters?.userRole || filters?.role;
@@ -651,7 +676,7 @@ export const fetchMatchingIndexedCandidates = async ({
   useIndexIdCache = true,
   maxHydrationPages = 2,
 } = {}) => {
-  const filterGroups = buildMatchingIndexFilterGroups({ filters });
+  const filterGroups = buildMatchingIndexFilterGroups({ filters, viewerRole });
   const excludedSet = new Set((Array.isArray(excludeIds) ? excludeIds : [...(excludeIds || [])]).filter(Boolean));
   const safeOffset = normalizeOffset(offset);
   const safeLimit = normalizeLimit(limit);

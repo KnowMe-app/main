@@ -31,7 +31,10 @@ export const MATCHING_QUERY_MAX_IDS = 2000;
 // вважався відповіддю «таких анкет немає»: у браузерах, де фільтр по країні
 // встиг спрацювати до виправлення, лежить порожній повний список — і кеш
 // показував би ту саму порожню деку далі (`fetchMatchingIndexedCandidates`).
-export const MATCHING_INDEX_CACHE_VERSION = 2;
+// Версія 3: план індексу донорки й СМ більше не бере бакети `ed`/`sm`
+// (`withoutViewerHiddenRoleBuckets`), а збережені списки на 322 id під тим
+// самим ключем фільтрів тримали б старий план ще шість годин.
+export const MATCHING_INDEX_CACHE_VERSION = 3;
 export const MATCHING_SUMMARY_CARDS_CACHE_VERSION = 1;
 export const MATCHING_SUMMARY_CARDS_MAX = 2000;
 const MATCHING_LOCAL_STORAGE_KEYS = new Set([

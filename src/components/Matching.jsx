@@ -3295,6 +3295,7 @@ const Matching = () => {
 
       const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
         filters: filtersRef.current || {},
+        viewerRole: donorRestrictionViewerRoleRef.current,
       });
       const isBackendOnlyMode = matchingDataSourceMode === 'backend';
       if (activeIndexFilterGroups.length > 0) {
@@ -4954,6 +4955,7 @@ const Matching = () => {
 
       const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
         filters: filtersRef.current || {},
+        viewerRole: donorRestrictionViewerRoleRef.current,
       });
       if (activeIndexFilterGroups.length > 0) {
         const indexedPage = await collectMatchingIndexedLoadMorePage({
@@ -7321,6 +7323,12 @@ const Matching = () => {
     // Адреса видачі їде разом із наміром: закрита форма повертає рівно до тих
     // самих знайдених карток, а не на порожній екран пошуку.
     const returnTo = buildMatchingSearchPath(searchQuery);
+    // Власну анкету правлять у «Моєму профілі». Олівець на ній вів у
+    // «Доповнення» — тобто правка ставала пропозицією-шаром до власної картки.
+    if (ownerId && user.userId === ownerId) {
+      navigate('/my-profile');
+      return;
+    }
     if (user.__profileMutationOperation === 'create') {
       navigate(`/matching/create-profile?cardId=${encodeURIComponent(user.userId)}`, { state: { returnTo } });
       return;
@@ -7328,7 +7336,7 @@ const Matching = () => {
     navigate('/matching/create-profile', { state: { enrichCardId: user.userId, returnTo } });
     // saveScrollPosition reads a ref and never changes identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigate, searchQuery]);
+  }, [navigate, ownerId, searchQuery]);
 
   const handleRowEditProfile = React.useCallback(user => {
     lastSeenCardIdRef.current = user?.userId || '';
@@ -7819,6 +7827,7 @@ const Matching = () => {
   };
 
   const buildRowReactionActions = (user, anketaRole = '') => {
+    if (ownerId && user?.userId === ownerId) return {};
     const disliked = reactionCoversAnketa(dislikeUsers[user.userId], anketaRole);
     const liked = reactionCoversAnketa(favoriteUsers[user.userId], anketaRole);
     return {
@@ -7866,6 +7875,9 @@ const Matching = () => {
     onRequestPhotos: requestCardPhotos,
     postpone: buildRowPostpone(user, anketaRole),
     secondaryAction: buildRowReactionActions(user, anketaRole).secondaryAction,
+    // Без контексту `CardRoleBlock` програм не малює: та сама агенція в
+    // «Усіх» показувала умови й винагороду, а в «Не цікавих» — лише назву.
+    programsContext,
   });
 
   useEffect(() => {
@@ -7957,7 +7969,9 @@ const Matching = () => {
    */
   const toggleRowAnketaReaction = React.useCallback(async (user, anketaRole, kind) => {
     const id = user?.userId;
-    if (!id) return;
+    // Власна картка (її знаходить пошук) — не кандидат: серце на ній писало
+    // `favorites/{я}/{я}`, тобто клало читача в його ж «Обране».
+    if (!id || (ownerId && id === ownerId)) return;
     if (!anketaRole) {
       if (kind === 'favorites') toggleRowFavorite(user);
       else toggleRowHidden(user);

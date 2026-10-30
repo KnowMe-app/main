@@ -8,6 +8,7 @@ import {
 } from './noteTypography';
 // Кольори ролей спільні з відкритою карткою — див. `matchingRoleColors`.
 import { ROLE_STRIPE_COLORS } from './matchingRoleColors';
+import { FEED_WIDE_MIN_WIDTH, FEED_XWIDE_MIN_WIDTH } from '../hooks/useFeedColumns';
 // Сама цятка публікації спільна з плиткою галереї — колір і форма мають бути
 // тими самими, міняється лише місце, де вона лежить.
 import { PublishDot } from './Matching.styled';
@@ -38,11 +39,30 @@ export const HiddenHeaderTitle = styled.div`
   }
 `;
 
+// На широкому екрані «Не цікаві» стоять тією самою сіткою, що й стрічка
+// (`FeedList`): одна картка на всю ширину розтягувалась до ~1220 px, і
+// портретне фото ставало смугою 1218×320 — голову відрізано, мініатюра
+// розмита. Службові рядки (скелетон, помилка, примітка) — на всю ширину.
 export const List = styled.div`
   display: flex;
   flex-direction: column;
   gap: 9px;
   padding: 2px 0 4px;
+
+  @media (min-width: ${FEED_WIDE_MIN_WIDTH}px) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 14px;
+
+    > :not([data-card-id]) {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (min-width: ${FEED_XWIDE_MIN_WIDTH}px) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 `;
 
 // Кольори ролей — для плашки на фото й коду біля імені. Смужки ролі на
@@ -938,23 +958,27 @@ export const Sentinel = styled.div`
   height: 1px;
 `;
 
+// Тост малюється в порталі react-hot-toast, поза областю, де оголошено
+// `--matching-*`: без запасних значень тло ставало прозорим, а текст —
+// білим кольором body, тобто «Анкету повернуто · Скасувати» не було видно
+// зовсім, і скасувати повернення було нічим.
 export const ToastWrap = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
-  background: var(--matching-card-bg);
-  color: var(--matching-header-text);
-  border: 1px solid var(--matching-card-border);
+  background: var(--matching-card-bg, var(--km-card, #fff));
+  color: var(--matching-header-text, var(--km-text, #1C1B1A));
+  border: 1px solid var(--matching-card-border, var(--km-border, #E4DED6));
   border-radius: 14px;
   padding: 10px 14px;
-  box-shadow: var(--matching-card-shadow);
+  box-shadow: var(--matching-card-shadow, var(--km-shadow-pop));
   font-size: 13px;
 `;
 
 export const ToastUndo = styled.button`
   border: 0;
   background: transparent;
-  color: var(--matching-accent);
+  color: var(--matching-accent, var(--km-accent, #C9600F));
   font: inherit;
   font-weight: 700;
   font-size: 13px;
@@ -1490,6 +1514,10 @@ export const CompactDecisions = styled.div`
   /* Вужче, ніж було (76 і 36 px): на телефоні 360 px три слова інакше
      стискались до «Від…». */
   > div { flex: 0 0 auto; width: 66px; height: 32px; }
+  /* Пара з підписаною дією («↺ Повернути» в «Не цікавих») росте під підпис:
+     у 66 px з \`overflow: hidden\` підпис різався до «Пове», а серце поруч
+     зникало зовсім. */
+  > div:has(> button > span) { width: auto; }
   > button { flex: 0 0 auto; width: 32px; height: 32px; }
 `;
 

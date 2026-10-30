@@ -389,6 +389,17 @@ export const normalizePhoneState = currentState => {
       return `${day}.${month}.${separated.year}`;
     }
 
+    // Набрана крапка — межа частини дати, а не сміття. Поки маска її знімала й
+    // різала цифри по дві, «1.5.1995», набране без нулів, ставало «15.19.95» —
+    // і так ішло в базу. Недонабрану дату з роздільниками лишаємо як є: повну
+    // (з чотирма цифрами року) вище вже розібрав `parseSeparatedDate`.
+    const typedParts = String(value ?? '').trim()
+      .match(/^(\d{1,2})[./\-\s]+(\d{0,2})(?:[./\-\s]+(\d{0,4}))?$/);
+    if (typedParts) {
+      const [, day, month, year] = typedParts;
+      return year === undefined ? `${day}.${month}` : `${day}.${month}.${year}`;
+    }
+
     let cleaned = removeNotNumbers(String(value ?? ''));
     cleaned = removeSpaceAndNewLine(cleaned);
     const match = cleaned.match(/^(\d{0,2})(\d{0,2})(\d{0,4})$/); // Розбиваємо на групи (DD, MM, YYYY)
