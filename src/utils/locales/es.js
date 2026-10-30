@@ -51,6 +51,7 @@ const BY_UK = {
   'Угода користувача': 'Acuerdo de usuario',
   'Стрічка': 'Listado',
   'Почати стрічку заново': 'Empezar el listado de nuevo',
+  "Зворотній зв'язок": 'Comentarios',
   'Скинути фільтри й завантажити анкети наново': 'Restablecer filtros y volver a cargar los perfiles',
   'Останню зміну не збережено — див. повідомлення вище': 'El último cambio no se guardó: consulta el mensaje de arriba',
   'Збережено о {time}': 'Guardado a las {time}',

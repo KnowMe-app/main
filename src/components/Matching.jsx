@@ -177,7 +177,7 @@ import {
 } from './ProfileFacts';
 import { DRAFT_FEED_ORDER_FIELD, placeOwnDraftsInFeed, resolveDraftFeedOrderDate } from '../utils/matchingDraftPlacement';
 import { liftReturnedCards, listReturnedReactionIds, placeReturnedCardsFirst } from '../utils/matchingReturnedCards';
-import { FaTimes, FaHeart, FaStethoscope, FaSyncAlt, FaSearch } from 'react-icons/fa';
+import { FaTimes, FaHeart, FaStethoscope, FaSyncAlt, FaSearch, FaEnvelope } from 'react-icons/fa';
 import { FaRegHeart, FaUndoAlt } from 'react-icons/fa';
 import { getContactEntries } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
@@ -320,6 +320,9 @@ export {
   runInitialRequestWithTimeout,
 } from 'utils/matchingLoadError';
 
+
+// Пошта для відгуків про застосунок — пункт «Зворотній зв'язок» у меню стрічки.
+const FEEDBACK_EMAIL = 'KnowMeEggDonor@gmail.com';
 
 const MATCHING_SEARCH_BAR_ENABLED_KEYS = {
   searchId: true,
@@ -8081,6 +8084,17 @@ const Matching = () => {
       description: uiText('Скинути фільтри й завантажити анкети наново', language),
       icon: <FaSyncAlt />,
       onClick: resetFiltersAndCache,
+    },
+    {
+      key: 'feedback',
+      // Пошта в описі видна словами: на пристрої без поштового клієнта
+      // mailto не відкриє нічого, і адресу людина перепише з меню сама.
+      label: uiText('Зворотній зв\'язок', language),
+      description: FEEDBACK_EMAIL,
+      icon: <FaEnvelope />,
+      onClick: () => {
+        window.location.href = `mailto:${FEEDBACK_EMAIL}`;
+      },
     },
   ];
 

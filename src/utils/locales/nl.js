@@ -51,6 +51,7 @@ const BY_UK = {
   'Угода користувача': 'Gebruikersovereenkomst',
   'Стрічка': 'Feed',
   'Почати стрічку заново': 'Feed opnieuw beginnen',
+  "Зворотній зв'язок": 'Feedback',
   'Скинути фільтри й завантажити анкети наново': 'Filters wissen en profielen opnieuw laden',
   'Останню зміну не збережено — див. повідомлення вище': 'De laatste wijziging is niet opgeslagen – zie het bericht hierboven',
   'Збережено о {time}': 'Opgeslagen om {time}',
