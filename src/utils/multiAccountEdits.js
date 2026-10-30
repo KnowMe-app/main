@@ -479,12 +479,31 @@ export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
   return Object.values(overlaysByEditor)[0] || null;
 };
 
-export const getOverlaysForCard = async (cardUserId, { includeAdminOnly = true } = {}) => {
+/*
+ * `editorUserId` — читач, для якого вузол картки цілком може бути закритий.
+ *
+ * `edits/{картка}` цілком правила відкривають лише адмінам, службовому
+ * доступу й авторові чернетки. Звичайний читач отримував `permission_denied`,
+ * форма доповнення ковтала відмову й відкривалась без його власного шару — і
+ * перше ж збереження перезаписувало шар тим, що було на екрані, тобто мовчки
+ * стирало дописане раніше. Свій шар (`edits/{картка}/{читач}`) правила
+ * відкривають кожному, тож на відмові читаємо саме його.
+ */
+export const getOverlaysForCard = async (cardUserId, { includeAdminOnly = true, editorUserId = '' } = {}) => {
   if (!cardUserId) return {};
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return {};
 
-  const snapshot = await get(ref2(database, `${EDITS_ROOT}/${normalizedCardId}`));
+  let snapshot;
+  try {
+    snapshot = await get(ref2(database, `${EDITS_ROOT}/${normalizedCardId}`));
+  } catch (error) {
+    if (!editorUserId) throw error;
+    const ownSnapshot = await get(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`));
+    const own = ownSnapshot.exists() ? normalizeEditorNode(ownSnapshot.val(), normalizedCardId, editorUserId) : null;
+    if (!own || (!includeAdminOnly && own.adminOnly)) return {};
+    return { [editorUserId]: own };
+  }
   if (!snapshot.exists()) return {};
 
   const result = {};

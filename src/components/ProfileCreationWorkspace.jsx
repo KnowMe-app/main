@@ -872,6 +872,10 @@ export const ProfileCreationWorkspace = () => {
   const { language, themeMode } = useAppSettings();
   const [searchParams, setSearchParams] = useSearchParams();
   const [uid, setUid] = useState('');
+  // Для колбеків без залежностей (`refreshDraftOverlays`): їм потрібен читач,
+  // щоб на відмові вузла картки дочитати хоча б власний шар.
+  const uidRef = useRef('');
+  uidRef.current = uid;
   const [access, setAccess] = useState(null);
   const [mutations, setMutations] = useState([]);
   // Усе, що цей читач тут завів, — разом із уже прийнятими картками. Черга
@@ -987,7 +991,7 @@ export const ProfileCreationWorkspace = () => {
 
     let overlays = {};
     try {
-      overlays = await getOverlaysForCard(current.cardId);
+      overlays = await getOverlaysForCard(current.cardId, { editorUserId: uidRef.current });
     } catch (error) {
       console.warn('[ProfileCreationWorkspace] draft overlays unavailable', error);
     }
@@ -1415,7 +1419,7 @@ export const ProfileCreationWorkspace = () => {
     });
     let overlays = {};
     try {
-      overlays = await getOverlaysForCard(profile.userId);
+      overlays = await getOverlaysForCard(profile.userId, { editorUserId: uid });
     } catch (error) {
       console.warn('[ProfileCreationWorkspace] existing overlay unavailable', error);
     }
@@ -1630,7 +1634,7 @@ export const ProfileCreationWorkspace = () => {
 
         let refreshedOverlays = overlays;
         try {
-          refreshedOverlays = await getOverlaysForCard(current.cardId);
+          refreshedOverlays = await getOverlaysForCard(current.cardId, { editorUserId: uid });
         } catch (error) {
           console.warn('[ProfileCreationWorkspace] draft overlays unavailable after save', error);
         }
