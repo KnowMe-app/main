@@ -3231,7 +3231,12 @@ ${entries.join('\n')}`;
                           // стрічка його більше не показує.
                           const latestDraft = latestProfileDraftRef.current || state || {};
                           const rows = latestDraft[field.name];
-                          if (fieldAcceptsMultipleValues(field.name) && isUnfilledNewFieldRow(rows, idx)) {
+                          // Поля доступу (правила, джерела даних) — переліки, а не
+                          // версії: порожній елемент там нічого не «стирає».
+                          const isAccessListField = field.name === ADDITIONAL_ACCESS_FIELD
+                            || field.name === MULTI_DATA_ACCESS_FIELD
+                            || field.name === 'accessLevel';
+                          if (!isAccessListField && fieldAcceptsMultipleValues(field.name) && isUnfilledNewFieldRow(rows, idx)) {
                             const nextState = { ...latestDraft, [field.name]: markFieldRowErased(rows, idx) };
                             latestProfileDraftRef.current = nextState;
                             setState(prevState => ({
