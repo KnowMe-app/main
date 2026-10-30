@@ -82,14 +82,15 @@ export const ToolGroup = styled.div`
 
 export const ToolGroupTitle = styled.div`
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px;
+  gap: 2px 6px;
   margin-bottom: 8px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--km-muted);
+  color: ${({ $danger }) => ($danger ? 'var(--km-danger)' : 'var(--km-muted)')};
 `;
 
 export const ToolGroupNote = styled.span`
@@ -357,5 +358,84 @@ export const ModalTitleRow = styled.h3`
   font-family: var(--km-font-display);
   font-size: 17px;
   font-weight: 700;
+  color: var(--km-text);
+`;
+
+// --- Список і добірки -------------------------------------------------------
+//
+// Що показати — щоденна робота, тож добірки стоять на виду, а не в панелі, яку
+// треба розгортати. Чіпи — заливкою без рамки, вибраний — суцільним акцентом з
+// білим текстом: та сама візуальна мова, що й чіпи фільтрів на матчингу.
+
+export const ListPanel = styled.section`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
+  border-radius: var(--km-radius, 14px);
+
+  ${ToolDrawer} {
+    margin-top: 0;
+  }
+`;
+
+export const CollectionRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+`;
+
+export const CollectionChip = styled.button`
+  min-height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--km-fill, var(--km-bg))')};
+  color: ${({ $active }) => ($active ? 'var(--km-on-accent, #fff)' : 'var(--km-text)')};
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: ${({ $active }) => ($active ? 700 : 500)};
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--km-accent-ring);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+`;
+
+export const StimulationRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--km-border);
+`;
+
+export const StimulationLabel = styled.span`
+  font-size: 12px;
+  color: var(--km-muted);
+`;
+
+// Порожня видача й дія з неї — поруч: «створити картку» стояла в панелі
+// адміністратора, далеко від того місця, де видно, що нічого не знайшлось.
+export const EmptySearchResult = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 8px 0;
+  font-size: 14px;
   color: var(--km-text);
 `;

@@ -85,7 +85,12 @@ import {
   ToolGroup,
   ToolGroupNote,
   ToolGroupTitle,
-  ToolIconButton,
+  ListPanel,
+  CollectionRow,
+  CollectionChip,
+  EmptySearchResult,
+  StimulationRow,
+  StimulationLabel,
   ToolRow,
 } from './AddNewProfileAdminPanel.styled';
 import { OverlayReviewQueue } from './AddNewProfileOverlayReview';
@@ -141,7 +146,6 @@ import {
 import { saveToContact, saveToContactCsv } from './ExportContact';
 import { TopBlock } from './smallCard/renderTopBlock';
 import StimulationSchedule from './StimulationSchedule';
-import { ReactComponent as BabyIcon } from 'assets/icons/baby.svg';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 // import { UploadJson } from './topBtns/uploadNewJSON';
 import { btnMerge } from './smallCard/btnMerge';
@@ -643,20 +647,24 @@ const INDEX_JOB_GROUPS = [
   },
 ];
 
-// Стан панелі памʼятає браузер: адмін або тримає її розгорнутою весь день, або
-// не відкриває зовсім, і питати про це на кожному вході — зайве.
-const ADMIN_CONSOLE_OPEN_KEY = 'addAdminConsoleOpen';
+// Стан «Інструментів» памʼятає браузер. Ключ новий, а не старий
+// `addAdminConsoleOpen`: там панель несла й добірки, тож стояла розгорнутою
+// майже в усіх, а тепер у ній лише рідкісне й небезпечне — і стартує вона
+// згорнутою.
+const ADMIN_CONSOLE_OPEN_KEY = 'addAdminToolsOpen';
 
-// Підпис сортування на самій кнопці налаштувань: режим міняє те, звідки
-// береться список, а дізнатись про нього можна було лише розгорнувши панель.
+// Підпис сортування на самій кнопці: режим міняє те, звідки береться список,
+// а дізнатись про нього можна було лише розгорнувши панель. Абревіатури
+// (GIT, LA) знав лише автор, тож основні режими названо словами, а код
+// лишився дрібним підписом поруч — за ним режим шукають у лозі й у коді.
 const LOAD_SORT_MODE_LABELS = {
-  GIT: 'GIT',
-  GITnew: 'GITnew',
-  LA: 'lastAction',
+  GIT: 'Кому дзвонити · GIT',
+  GITnew: 'Кому дзвонити',
+  LA: 'Остання дія',
   NoGIT: 'NoGIT',
-  SearchIdKeyOnly: 'NoGIT+IdKey',
-  [OFFLINE_LOAD_MODE]: 'offline',
-  [LAST_ACTION2_SORT_MODE]: 'lastAction 2',
+  SearchIdKeyOnly: 'NoGIT + індекс',
+  [OFFLINE_LOAD_MODE]: 'З JSON-файлів',
+  [LAST_ACTION2_SORT_MODE]: 'Остання дія по днях',
 };
 
 const describeLoadSortMode = mode => LOAD_SORT_MODE_LABELS[mode] || String(mode || '');
@@ -687,6 +695,13 @@ const SortModeContainer = styled.div`
 
 
 
+
+// Код режиму — дрібно поруч зі словом: за ним режим шукають у лозі й у коді.
+const SortModeCode = styled.span`
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--km-muted);
+`;
 
 const SortModeLabel = styled.label`
   display: inline-flex;
@@ -751,59 +766,68 @@ const SearchScopeBlockHeader = styled.div`
   margin-bottom: 8px;
 `;
 
-const SearchScopeItems = styled.div`
+// Доріжка з білим вибраним сегментом — той самий вибір «одне з кількох», що й
+// на решті екранів (колекції стрічки, тема, вхід/реєстрація).
+const DepthTrack = styled.div`
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--km-fill, var(--km-bg));
 `;
 
-const SearchScopeDivider = styled.hr`
-  flex-basis: 100%;
-  border: 0;
-  border-top: 1px solid var(--km-border);
-  margin: 4px 0;
+const DepthSegment = styled.button`
+  flex: 1;
+  min-height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: ${({ $active }) => ($active ? 'var(--km-card)' : 'transparent')};
+  box-shadow: ${({ $active }) => ($active ? '0 1px 2px rgba(0, 0, 0, 0.12)' : 'none')};
+  color: ${({ $active, $danger }) => {
+    if ($active && $danger) return 'var(--km-danger)';
+    return $active ? 'var(--km-text)' : 'var(--km-muted)';
+  }};
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: ${({ $active }) => ($active ? 700 : 500)};
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--km-accent-ring);
+  }
 `;
 
-
-
-const ScopeChip = styled.button`
-  padding: 3px 9px;
-  border-radius: 20px;
-  border: 1.5px solid ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--km-border)')};
-  background: ${({ $active }) => ($active ? 'var(--km-accent-light)' : 'var(--km-card)')};
-  color: ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--km-muted)')};
+const DepthHint = styled.p`
+  display: block;
+  margin: 6px 2px 0;
   font-size: 12px;
-  font-weight: ${({ $active }) => ($active ? '600' : '400')};
-  cursor: pointer;
-  line-height: 1.5;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
-  display: inline-flex;
-  align-items: center;
-
-  &:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-
-  &:hover:not(:disabled) {
-    border-color: var(--km-accent);
-    color: var(--km-accent);
-  }
+  font-weight: 400;
+  line-height: 1.45;
+  color: ${({ $danger }) => ($danger ? 'var(--km-danger)' : 'var(--km-muted)')};
 `;
 
-const ToggleSearchScopeButton = styled.button`
-  border: 1px solid var(--km-accent-mid);
-  border-radius: 6px;
-  background: var(--km-accent-light);
-  color: var(--km-accent);
-  font-size: 11px;
-  line-height: 1;
-  padding: 5px 8px;
+const SearchFiltersToggle = styled.label`
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--km-border);
+  font-size: 13px;
+  color: var(--km-text);
   cursor: pointer;
-  flex-shrink: 0;
 
-  &:hover {
-    background: var(--km-accent-light);
+  input[type='checkbox'] {
+    margin-top: 3px;
+    flex-shrink: 0;
+    accent-color: var(--km-accent);
+  }
+
+  ${DepthHint} {
+    margin: 2px 0 0;
   }
 `;
 
@@ -1455,90 +1479,99 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   });
 
 
-  const SEARCH_SCOPE_BLOCKS = [
-    {
-      id: 'id-search',
-      title: 'Пошук по ID',
-      options: [
-        { key: 'searchId', label: 'searchId (точний)' },
-        { key: 'useResultFilters', label: 'фільтри', isFilterToggle: true },
-        { key: 'equalToAllCards', label: 'equalTo по всіх карточках (за поточним ключем)' },
-        { key: 'searchKey', label: 'searchKey bucket/date' },
-        { key: 'partialUserId', label: 'userId (частковий збіг)' },
-        { key: 'broadTextSearch', label: 'широкий пошук (contains, усі поля users)' },
-      ],
-    },
-    {
-      id: 'search-keys',
-      title: 'Пошук в searchId / equalTo',
-      options: [
-        { key: 'phone', label: 'phone', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'telegram', label: 'telegram', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'instagram', label: 'instagram', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'ameblo', label: 'ameblo', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'facebook', label: 'facebook', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'email', label: 'email', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'vk', label: 'vk', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'tiktok', label: 'tiktok', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'linkedin', label: 'linkedin', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'youtube', label: 'youtube', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'twitter', label: 'twitter', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'line', label: 'line', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'otherLink', label: 'otherLink', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'other', label: 'other', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'myComment', label: 'myComment', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'name', label: 'name', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'surname', label: 'surname', supportsSearchId: true, supportsEqualTo: true },
-        { key: 'cycleStatus', label: 'cycleStatus', supportsSearchId: false, supportsEqualTo: true },
-        { key: 'getInTouch', label: 'getInTouch', supportsSearchId: false, supportsEqualTo: true, supportsSearchKey: true, isDate: true },
-        { key: 'lastAction', label: 'lastAction', supportsSearchId: false, supportsEqualTo: true, supportsSearchKey: true, isDate: true },
-        { key: 'lastLogin2', label: 'lastLogin2', supportsSearchId: false, supportsEqualTo: true, isDate: true },
-        { key: 'createdAt', label: 'createdAt', supportsSearchId: false, supportsEqualTo: true, isDate: true },
-        { key: 'lastCycle', label: 'lastCycle', supportsSearchId: false, supportsEqualTo: true, isDate: true },
-        { key: 'lastLogin', label: 'lastLogin', supportsSearchId: false, supportsEqualTo: true, isDate: true },
-      ],
-    },
-  ];
-
-  const SEARCH_KEY_OPTIONS = SEARCH_SCOPE_BLOCKS.find(block => block.id === 'search-keys')?.options || [];
-  const TOGGLEABLE_SEARCH_KEYS = [
-    'searchId',
-    'equalToAllCards',
-    'searchKey',
-    'partialUserId',
-    'broadTextSearch',
-    ...SEARCH_KEY_OPTIONS.map(option => option.key),
+  // Поля, за якими шукає `SearchBar`. Обирати їх чіпами більше не треба: ключ
+  // `searchId` — саме значення, поле лежить у записі, а нормалізацію набраного
+  // вибирає розпізнане поле (`searchIdDetectedField`). Тут стояло два десятки
+  // чіпів (`phone`, `ameblo`, `otherLink`, `lastLogin2`…), і вимкнений чіп лише
+  // ховав знайдене — запит однаково читав той самий один ключ. Тож поля тепер
+  // увімкнені завжди, а адмін обирає не «де», а «як глибоко» шукати.
+  const SEARCH_KEY_OPTIONS = [
+    { key: 'phone', label: 'phone', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'telegram', label: 'telegram', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'instagram', label: 'instagram', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'ameblo', label: 'ameblo', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'facebook', label: 'facebook', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'email', label: 'email', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'vk', label: 'vk', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'tiktok', label: 'tiktok', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'linkedin', label: 'linkedin', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'youtube', label: 'youtube', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'twitter', label: 'twitter', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'line', label: 'line', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'otherLink', label: 'otherLink', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'other', label: 'other', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'myComment', label: 'myComment', supportsSearchId: false, supportsEqualTo: true },
+    { key: 'name', label: 'name', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'surname', label: 'surname', supportsSearchId: true, supportsEqualTo: true },
+    { key: 'cycleStatus', label: 'cycleStatus', supportsSearchId: false, supportsEqualTo: true },
+    { key: 'getInTouch', label: 'getInTouch', supportsSearchId: false, supportsEqualTo: true, supportsSearchKey: true, isDate: true },
+    { key: 'lastAction', label: 'lastAction', supportsSearchId: false, supportsEqualTo: true, supportsSearchKey: true, isDate: true },
+    { key: 'lastLogin2', label: 'lastLogin2', supportsSearchId: false, supportsEqualTo: true, isDate: true },
+    { key: 'createdAt', label: 'createdAt', supportsSearchId: false, supportsEqualTo: true, isDate: true },
+    { key: 'lastCycle', label: 'lastCycle', supportsSearchId: false, supportsEqualTo: true, isDate: true },
+    { key: 'lastLogin', label: 'lastLogin', supportsSearchId: false, supportsEqualTo: true, isDate: true },
   ];
   const CONTACT_SEARCH_KEYS = ['phone', 'telegram', 'instagram', 'ameblo', 'facebook', 'email', 'vk', 'tiktok', 'linkedin', 'youtube', 'twitter', 'line', 'otherLink', 'other'];
 
-  const defaultEnabledSearchKeys = SEARCH_SCOPE_BLOCKS.flatMap(block => block.options).reduce(
-    (acc, option) => {
-      // equalTo-пошук і широкий (contains по всіх полях) пошук мають вмикатись тільки
-      // явним чекбоксом користувача. Раніше через дефолт `true` для всіх ключів
-      // ці режими запускались неочікувано і ганяли зайві запити до Firebase.
-      acc[option.key] = option.key !== 'equalToAllCards' && option.key !== 'searchKey' && option.key !== 'broadTextSearch';
-      return acc;
+  // Глибина пошуку — три сходинки за ціною, і кожна містить попередню. Шість
+  // незалежних перемикачів режимів давали комбінації, у яких частина полів
+  // ставала недоступною, і пояснити, чому пошук «не знаходить», міг лише автор.
+  // equalTo й contains по всіх картках вмикались тільки явним вибором і далі
+  // вмикаються тільки ним: раніше дефолт `true` ганяв зайві запити до Firebase.
+  const SEARCH_DEPTH_MODES = [
+    {
+      key: 'exact',
+      label: 'Точно',
+      hint: 'Індекс searchId і частина ID картки — поле розпізнається саме, один запит.',
     },
-    {},
-  );
+    {
+      key: 'date',
+      label: '+ дати',
+      hint: 'Ще й набрана дата: «кому дзвонити» (getInTouch) і остання дія (lastAction) з індексу searchKey.',
+    },
+    {
+      key: 'full',
+      label: 'Повний перебір',
+      hint: 'Ще й equalTo та «містить» по всіх картках. Читає всю базу — лише коли індекс не знаходить.',
+      danger: true,
+    },
+  ];
+  const SEARCH_DEPTH_FLAGS = {
+    exact: { searchId: true, partialUserId: true, searchKey: false, equalToAllCards: false, broadTextSearch: false },
+    date: { searchId: true, partialUserId: true, searchKey: true, equalToAllCards: false, broadTextSearch: false },
+    full: { searchId: true, partialUserId: true, searchKey: true, equalToAllCards: true, broadTextSearch: true },
+  };
+  const buildEnabledSearchKeys = depth => ({
+    ...SEARCH_KEY_OPTIONS.reduce((acc, option) => {
+      acc[option.key] = true;
+      return acc;
+    }, {}),
+    ...(SEARCH_DEPTH_FLAGS[depth] || SEARCH_DEPTH_FLAGS.exact),
+  });
+  // Збережені раніше перемикачі читаються як найближча сходинка: що було
+  // увімкнено з дорогого, те й лишається.
+  const resolveSearchDepth = flags => {
+    if (flags?.equalToAllCards || flags?.broadTextSearch) return 'full';
+    if (flags?.searchKey) return 'date';
+    return 'exact';
+  };
 
   const [enabledSearchKeys, setEnabledSearchKeys] = useState(() => {
     const storedRaw = localStorage.getItem(SEARCH_OPTIONS_STORAGE_KEY);
-    if (!storedRaw) return defaultEnabledSearchKeys;
+    if (!storedRaw) return buildEnabledSearchKeys('exact');
 
     try {
       const parsed = JSON.parse(storedRaw);
-      if (!parsed || typeof parsed !== 'object') return defaultEnabledSearchKeys;
-
-      return Object.keys(defaultEnabledSearchKeys).reduce((acc, key) => {
-      acc[key] = typeof parsed[key] === 'boolean' ? parsed[key] : defaultEnabledSearchKeys[key];
-      return acc;
-    }, {});
+      if (!parsed || typeof parsed !== 'object') return buildEnabledSearchKeys('exact');
+      return buildEnabledSearchKeys(resolveSearchDepth(parsed));
     } catch (error) {
       console.warn('[AddNewProfile] Failed to parse search options from localStorage', error);
-      return defaultEnabledSearchKeys;
+      return buildEnabledSearchKeys('exact');
     }
   });
+  const searchDepth = resolveSearchDepth(enabledSearchKeys);
+  const activeSearchDepthMode =
+    SEARCH_DEPTH_MODES.find(mode => mode.key === searchDepth) || SEARCH_DEPTH_MODES[0];
 
   const [showSearchOptions, setShowSearchOptions] = useState(false);
   const [useSearchResultFilters, setUseSearchResultFilters] = useState(() => {
@@ -1562,31 +1595,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const shouldAutoRunOtherFallback =
     enabledContactSearchCount === 0 || enabledContactSearchCount === CONTACT_SEARCH_KEYS.length;
 
-  const handleSearchScopeChange = (key, disabled = false) => {
-    if (disabled) return;
-    if (key === 'useResultFilters') {
-      setUseSearchResultFilters(prev => !prev);
-      return;
-    }
-    setEnabledSearchKeys(prev => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  };
-
-  const areAllSearchScopesEnabled = TOGGLEABLE_SEARCH_KEYS.every(key => Boolean(enabledSearchKeys[key]));
-
-  const toggleAllSearchScopes = () => {
-    setEnabledSearchKeys(prev => {
-      const shouldEnableAll = TOGGLEABLE_SEARCH_KEYS.some(key => !prev[key]);
-      const next = { ...prev };
-
-      TOGGLEABLE_SEARCH_KEYS.forEach(key => {
-        next[key] = shouldEnableAll;
-      });
-
-      return next;
-    });
+  const handleSearchDepthChange = depth => {
+    setEnabledSearchKeys(buildEnabledSearchKeys(depth));
   };
 
   useEffect(() => {
@@ -2551,11 +2561,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [currentFilter, setCurrentFilter] = useState('');
   const [loadSortMode, setLoadSortMode] = useState(LOAD_SORT_MODES.GIT_NEW);
   const [isLoadOptionsOpen, setIsLoadOptionsOpen] = useState(false);
+  const [isListFiltersOpen, setIsListFiltersOpen] = useState(false);
   const [isAdminConsoleOpen, setIsAdminConsoleOpen] = useState(() => {
     try {
-      return localStorage.getItem(ADMIN_CONSOLE_OPEN_KEY) !== 'false';
+      return localStorage.getItem(ADMIN_CONSOLE_OPEN_KEY) === 'true';
     } catch (error) {
-      return true;
+      return false;
     }
   });
 
@@ -7212,8 +7223,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
    * то курсор, то перегляд дублікатів — і друга добірка поспіль показувала хвіст
    * першої. Скидання тут одне на всіх.
    */
-  const describeAdminConsoleState = () =>
-    CARD_COLLECTION_LABELS[currentFilter] || `сортування ${describeLoadSortMode(loadSortMode)}`;
+  const describeAdminConsoleState = () => 'дублікати, імпорт і експорт, кеш, обслуговування бази';
+
+  // «Список» — це добірка за замовчуванням: усе, що не окрема добірка, гортає
+  // список за обраним сортуванням.
+  const isPlainListActive =
+    !CARD_COLLECTION_LABELS[currentFilter] && !isSearchersView && !isDuplicateView;
 
   const selectedIndexCount =
     Object.values(selectedIndexJobs || {}).filter(Boolean).length
@@ -7625,57 +7640,42 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
         {showSearchOptions && (
           <SearchScopeContainer>
-            {SEARCH_SCOPE_BLOCKS.map(block => (
-              <SearchScopeBlock key={block.id}>
-                <SearchScopeBlockHeader>
-                  <SearchScopeBlockTitle>{block.title}</SearchScopeBlockTitle>
-                  {block.id === 'id-search' && (
-                    <ToggleSearchScopeButton type="button" onClick={toggleAllSearchScopes}>
-                      {areAllSearchScopesEnabled ? 'Вимкнути всі' : 'Увімкнути всі'}
-                    </ToggleSearchScopeButton>
-                  )}
-                </SearchScopeBlockHeader>
-                <SearchScopeItems>
-                  {(() => {
-                    const options = block.id === 'search-keys'
-                      ? [...block.options.filter(option => !option.isDate), ...block.options.filter(option => option.isDate)]
-                      : block.options;
-                    const hasDateOptions = block.id === 'search-keys' && options.some(option => option.isDate);
-
-                    return options.map((option, index) => {
-                      const isSearchModeOption = block.id === 'search-keys';
-                      const searchIdModeOnly = enabledSearchKeys.searchId && !enabledSearchKeys.equalToAllCards && !enabledSearchKeys.searchKey;
-                      const equalToModeOnly = enabledSearchKeys.equalToAllCards && !enabledSearchKeys.searchId && !enabledSearchKeys.searchKey;
-                      const searchKeyModeOnly = enabledSearchKeys.searchKey && !enabledSearchKeys.searchId && !enabledSearchKeys.equalToAllCards;
-                      const disabled = isSearchModeOption && (
-                        (searchIdModeOnly && !option.supportsSearchId) ||
-                        (equalToModeOnly && !option.supportsEqualTo) ||
-                        (searchKeyModeOnly && !option.supportsSearchKey)
-                      );
-
-                      const isFirstDateOption = option.isDate && options[index - 1] && !options[index - 1].isDate;
-
-                      return (
-                        <React.Fragment key={option.key}>
-                          {hasDateOptions && isFirstDateOption && <SearchScopeDivider />}
-                          <ScopeChip
-                            type="button"
-                            $active={option.isFilterToggle ? useSearchResultFilters : Boolean(enabledSearchKeys[option.key])}
-                            aria-pressed={option.isFilterToggle ? useSearchResultFilters : Boolean(enabledSearchKeys[option.key])}
-                            disabled={disabled}
-                            onClick={() => handleSearchScopeChange(option.key, disabled)}
-                          >
-                            {option.isFilterToggle
-                              ? `фільтри ${useSearchResultFilters ? 'ON' : 'OFF'}`
-                              : option.label}
-                          </ScopeChip>
-                        </React.Fragment>
-                      );
-                    });
-                  })()}
-                </SearchScopeItems>
-              </SearchScopeBlock>
-            ))}
+            <SearchScopeBlock>
+              <SearchScopeBlockHeader>
+                <SearchScopeBlockTitle>Як глибоко шукати</SearchScopeBlockTitle>
+              </SearchScopeBlockHeader>
+              <DepthTrack role="radiogroup" aria-label="Глибина пошуку">
+                {SEARCH_DEPTH_MODES.map(mode => (
+                  <DepthSegment
+                    key={mode.key}
+                    type="button"
+                    role="radio"
+                    aria-checked={searchDepth === mode.key}
+                    $active={searchDepth === mode.key}
+                    $danger={mode.danger}
+                    onClick={() => handleSearchDepthChange(mode.key)}
+                  >
+                    {mode.label}
+                  </DepthSegment>
+                ))}
+              </DepthTrack>
+              <DepthHint $danger={activeSearchDepthMode.danger}>{activeSearchDepthMode.hint}</DepthHint>
+              <SearchFiltersToggle>
+                <input
+                  type="checkbox"
+                  checked={useSearchResultFilters}
+                  onChange={() => setUseSearchResultFilters(prev => !prev)}
+                />
+                <span>
+                  Звужувати видачу фільтрами списку
+                  <DepthHint as="span">
+                    {useSearchResultFilters
+                      ? 'Знайдене, що не проходить фільтри, не показується.'
+                      : 'Показується все знайдене, фільтри ігноруються.'}
+                  </DepthHint>
+                </span>
+              </SearchFiltersToggle>
+            </SearchScopeBlock>
           </SearchScopeContainer>
         )}
         {isResolvingEditMode ? null : state.userId ? (
@@ -7813,9 +7813,221 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 карток.
               </p>
             )}
-            {userNotFound && hasSearched && (
-              <p style={{ textAlign: 'center', color: 'var(--km-text)' }}>No result</p>
+            {userNotFound && (
+              <EmptySearchResult>
+                {hasSearched && <span>Нічого не знайдено.</span>}
+                <ToolButton
+                  type="button"
+                  $tone="primary"
+                  onClick={handleAddUser}
+                  disabled={adding}
+                  title="Завести картку з набраного в пошуку"
+                >
+                  {adding ? <span className="spinner" /> : '+ Створити картку'}
+                </ToolButton>
+              </EmptySearchResult>
             )}
+            {/*
+              Що показати — щоденна робота адміна, тож добірки стоять на виду, а
+              не в панелі, яку треба розгортати. Поруч — лише сортування й фільтри
+              самого списку; рідкісне й небезпечне пішло в «Інструменти» нижче.
+            */}
+            <ListPanel>
+              <CollectionRow role="group" aria-label="Що показати">
+                <CollectionChip
+                  type="button"
+                  $active={isPlainListActive}
+                  aria-pressed={isPlainListActive}
+                  onClick={handleLoadUsers}
+                  {...createLongPressHandlers('Завантажує список анкет за поточними сортуванням і фільтрами')}
+                >
+                  Список
+                </CollectionChip>
+                <CollectionChip
+                  type="button"
+                  $active={currentFilter === FEED_DATE_FILTER}
+                  aria-pressed={currentFilter === FEED_DATE_FILTER}
+                  onClick={() => openCardCollection(FEED_DATE_FILTER)}
+                  title="Той самий порядок, що й у стрічці matching: за lastLogin (feedDate), від найновіших"
+                  {...createLongPressHandlers(
+                    'Показує картки в порядку стрічки matching — за lastLogin, найновіші зверху',
+                  )}
+                >
+                  Стрічка
+                </CollectionChip>
+                <CollectionChip
+                  type="button"
+                  $active={currentFilter === 'FAVORITE'}
+                  aria-pressed={currentFilter === 'FAVORITE'}
+                  onClick={() => openCardCollection('FAVORITE')}
+                  title="Картки, які ви вподобали"
+                >
+                  Обрані
+                </CollectionChip>
+                <CollectionChip
+                  type="button"
+                  $active={currentFilter === 'CYCLE_FAVORITE'}
+                  aria-pressed={currentFilter === 'CYCLE_FAVORITE'}
+                  onClick={() => openCardCollection('CYCLE_FAVORITE')}
+                  aria-label="Cycle favorites"
+                  title="Анкети в стимуляції та вагітності"
+                >
+                  Цикл
+                </CollectionChip>
+                {isAdmin && (
+                  <CollectionChip
+                    type="button"
+                    $active={currentFilter === OVERLAY_REVIEW_FILTER}
+                    aria-pressed={currentFilter === OVERLAY_REVIEW_FILTER}
+                    onClick={() => openCardCollection(OVERLAY_REVIEW_FILTER)}
+                    title="Усі картки, у які читачі дописали дані й це ще ніхто не розсудив"
+                    {...createLongPressHandlers(
+                      'Черга доповнень: кожне дописане значення окремо, з кнопками «прийняти» і «видалити»',
+                    )}
+                  >
+                    Доповнення
+                  </CollectionChip>
+                )}
+                {isAdmin && (
+                  <CollectionChip
+                    type="button"
+                    $active={isSearchersView}
+                    aria-pressed={isSearchersView}
+                    onClick={handleShowSearchers}
+                    disabled={isLoadingSearchers}
+                    title="Показати картки тих, хто шукав, разом з їхніми запитами"
+                    {...createLongPressHandlers(
+                      'Читає multiData/searchQueries і малює картки читачів; під карткою — їхні запити, '
+                        + 'натискання повторює той самий пошук',
+                    )}
+                  >
+                    {isLoadingSearchers ? '...' : 'Хто шукав'}
+                  </CollectionChip>
+                )}
+              </CollectionRow>
+              <ToolRow>
+                <ToolButton
+                  type="button"
+                  $active={isLoadOptionsOpen}
+                  onClick={() => setIsLoadOptionsOpen(prev => !prev)}
+                  aria-expanded={isLoadOptionsOpen}
+                  title="Звідки й у якому порядку береться «Список»"
+                >
+                  Сортування: {describeLoadSortMode(loadSortMode)} ▾
+                </ToolButton>
+                <ToolButton
+                  type="button"
+                  $active={isListFiltersOpen}
+                  onClick={() => setIsListFiltersOpen(prev => !prev)}
+                  aria-expanded={isListFiltersOpen}
+                  title="Фільтри списку: група крові, вік, роль, реакції…"
+                >
+                  Фільтри ▾
+                </ToolButton>
+              </ToolRow>
+              {isLoadOptionsOpen && (
+                <ToolDrawer>
+                  <ToolDrawerTitle>Основні</ToolDrawerTitle>
+                  <SortModeContainer>
+                    <SortModeLabel>
+                      <input
+                        type="radio"
+                        name="load-sort-mode"
+                        value={LOAD_SORT_MODES.GIT_NEW}
+                        checked={loadSortMode === LOAD_SORT_MODES.GIT_NEW}
+                        onChange={event => handleLoadSortModeChange(event.target.value)}
+                      />
+                      Кому дзвонити <SortModeCode>GITnew</SortModeCode>
+                    </SortModeLabel>
+                    <SortModeLabel>
+                      <input
+                        type="radio"
+                        name="load-sort-mode"
+                        value={LOAD_SORT_MODES.LAST_ACTION}
+                        checked={loadSortMode === LOAD_SORT_MODES.LAST_ACTION}
+                        onChange={event => handleLoadSortModeChange(event.target.value)}
+                      />
+                      Остання дія <SortModeCode>LA</SortModeCode>
+                    </SortModeLabel>
+                    <LastAction2SortModeButton
+                      SortModeLabel={SortModeLabel}
+                      loadSortMode={loadSortMode}
+                      onChange={handleLoadSortModeChange}
+                      label={<>Остання дія по днях <SortModeCode>LA2</SortModeCode></>}
+                    />
+                  </SortModeContainer>
+                  <ToolDrawerTitle>Інші режими</ToolDrawerTitle>
+                  <SortModeContainer>
+                    <SortModeLabel>
+                      <input
+                        type="radio"
+                        name="load-sort-mode"
+                        value={LOAD_SORT_MODES.GIT}
+                        checked={loadSortMode === LOAD_SORT_MODES.GIT}
+                        onChange={event => handleLoadSortModeChange(event.target.value)}
+                      />
+                      GIT
+                    </SortModeLabel>
+                    <SortModeLabel>
+                      <input
+                        type="radio"
+                        name="load-sort-mode"
+                        value={LOAD_SORT_MODES.NO_GIT}
+                        checked={loadSortMode === LOAD_SORT_MODES.NO_GIT}
+                        onChange={event => handleLoadSortModeChange(event.target.value)}
+                      />
+                      NoGIT
+                    </SortModeLabel>
+                    <SortModeLabel>
+                      <input
+                        type="radio"
+                        name="load-sort-mode"
+                        value={LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
+                        checked={loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
+                        onChange={event => handleLoadSortModeChange(event.target.value)}
+                      />
+                      NoGIT + індекс
+                    </SortModeLabel>
+                    <AddNewProfileOfflineLoadControls
+                      SortModeLabel={SortModeLabel}
+                      LocalIndexActions={LocalIndexActions}
+                      loadSortMode={loadSortMode}
+                      onModeChange={handleLoadSortModeChange}
+                      onPickNodeFiles={handlePickLocalNodeFiles}
+                      loadedNodes={localIndexSources.loadedNodes}
+                      label="З JSON-файлів"
+                    />
+                  </SortModeContainer>
+                </ToolDrawer>
+              )}
+              {isListFiltersOpen && (
+                <ToolDrawer>
+                  <FilterPanel
+                    key={filterStorageKey}
+                    onChange={handleFilterChange}
+                    storageKey={filterStorageKey}
+                    bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode || offlineLoadMode}
+                    reactionFilterOptions={offlineLoadMode ? OFFLINE_REACTION_FILTER_OPTIONS : undefined}
+                    allowedFilterNames={(searchIdAndSearchKeyOnlyMode || offlineLoadMode) ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'getInTouch', 'bmi', 'country'] : undefined}
+                  />
+                </ToolDrawer>
+              )}
+              {stimulationScheduleProfiles.length > 0 && (
+                <StimulationRow>
+                  <StimulationLabel>У стимуляції:</StimulationLabel>
+                  {stimulationScheduleProfiles.map(user => (
+                    <ToolButton
+                      key={`schedule-${user.userId}`}
+                      type="button"
+                      onClick={() => handleOpenProfileById(user)}
+                      title={user?.surname || ''}
+                    >
+                      {getSurnameLabel(user)}
+                    </ToolButton>
+                  ))}
+                </StimulationRow>
+              )}
+            </ListPanel>
             <ConsolePanel>
               <ConsoleHeader
                 type="button"
@@ -7823,225 +8035,95 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 aria-expanded={isAdminConsoleOpen}
                 onClick={() => setIsAdminConsoleOpen(prev => !prev)}
               >
-                <ConsoleTitle>Панель адміністратора</ConsoleTitle>
+                <ConsoleTitle>Інструменти</ConsoleTitle>
                 <ConsoleHint>{describeAdminConsoleState()}</ConsoleHint>
                 <ConsoleChevron $open={isAdminConsoleOpen} aria-hidden="true">▼</ConsoleChevron>
               </ConsoleHeader>
-
               {isAdminConsoleOpen && (
                 <ConsoleBody>
                   <ToolGroup>
                     <ToolGroupTitle>
-                      Список
-                      <ToolGroupNote>що показати й у якому порядку</ToolGroupNote>
-                    </ToolGroupTitle>
-                    <ToolRow>
-                      {userNotFound && (
-                        <ToolButton
-                          type="button"
-                          $tone="primary"
-                          onClick={handleAddUser}
-                          disabled={adding}
-                          title="Завести картку з набраного в пошуку"
-                        >
-                          {adding ? <span className="spinner" /> : '+ Створити картку'}
-                        </ToolButton>
-                      )}
-                      <ToolButton
-                        type="button"
-                        $tone="primary"
-                        onClick={handleLoadUsers}
-                        {...createLongPressHandlers('Завантажує список анкет за поточними фільтрами')}
-                      >
-                        Завантажити
-                      </ToolButton>
-                      <ToolButton
-                        type="button"
-                        $active={isLoadOptionsOpen}
-                        onClick={() => setIsLoadOptionsOpen(prev => !prev)}
-                        aria-expanded={isLoadOptionsOpen}
-                        title="Сортування й фільтри завантаження"
-                      >
-                        ⚙ {describeLoadSortMode(loadSortMode)}
-                      </ToolButton>
-                      <ToolIconButton
-                        type="button"
-                        onClick={downloadLoadDebugLogs}
-                        aria-label="Зберегти load debug log у файл"
-                        title="Зберегти load debug log у файл"
-                      >
-                        🧾
-                      </ToolIconButton>
-                    </ToolRow>
-
-                    {isLoadOptionsOpen && (
-                      <ToolDrawer>
-                        <ToolDrawerTitle>Сортування</ToolDrawerTitle>
-                        <SortModeContainer>
-                          <SortModeLabel>
-                            <input
-                              type="radio"
-                              name="load-sort-mode"
-                              value={LOAD_SORT_MODES.GIT}
-                              checked={loadSortMode === LOAD_SORT_MODES.GIT}
-                              onChange={event => handleLoadSortModeChange(event.target.value)}
-                            />
-                            GIT
-                          </SortModeLabel>
-                          <SortModeLabel>
-                            <input
-                              type="radio"
-                              name="load-sort-mode"
-                              value={LOAD_SORT_MODES.GIT_NEW}
-                              checked={loadSortMode === LOAD_SORT_MODES.GIT_NEW}
-                              onChange={event => handleLoadSortModeChange(event.target.value)}
-                            />
-                            GITnew
-                          </SortModeLabel>
-                          <SortModeLabel>
-                            <input
-                              type="radio"
-                              name="load-sort-mode"
-                              value={LOAD_SORT_MODES.LAST_ACTION}
-                              checked={loadSortMode === LOAD_SORT_MODES.LAST_ACTION}
-                              onChange={event => handleLoadSortModeChange(event.target.value)}
-                            />
-                            LA
-                          </SortModeLabel>
-                          <LastAction2SortModeButton
-                            SortModeLabel={SortModeLabel}
-                            loadSortMode={loadSortMode}
-                            onChange={handleLoadSortModeChange}
-                          />
-                          <SortModeLabel>
-                            <input
-                              type="radio"
-                              name="load-sort-mode"
-                              value={LOAD_SORT_MODES.NO_GIT}
-                              checked={loadSortMode === LOAD_SORT_MODES.NO_GIT}
-                              onChange={event => handleLoadSortModeChange(event.target.value)}
-                            />
-                            NoGIT
-                          </SortModeLabel>
-                          <SortModeLabel>
-                            <input
-                              type="radio"
-                              name="load-sort-mode"
-                              value={LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
-                              checked={loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
-                              onChange={event => handleLoadSortModeChange(event.target.value)}
-                            />
-                            NoGIT+IdKey
-                          </SortModeLabel>
-                          <AddNewProfileOfflineLoadControls
-                            SortModeLabel={SortModeLabel}
-                            LocalIndexActions={LocalIndexActions}
-                            loadSortMode={loadSortMode}
-                            onModeChange={handleLoadSortModeChange}
-                            onPickNodeFiles={handlePickLocalNodeFiles}
-                            loadedNodes={localIndexSources.loadedNodes}
-                          />
-                        </SortModeContainer>
-                        <ToolDrawerTitle>Фільтри</ToolDrawerTitle>
-                        <FilterPanel
-                          key={filterStorageKey}
-                          onChange={handleFilterChange}
-                          storageKey={filterStorageKey}
-                          bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode || offlineLoadMode}
-                          reactionFilterOptions={offlineLoadMode ? OFFLINE_REACTION_FILTER_OPTIONS : undefined}
-                          allowedFilterNames={(searchIdAndSearchKeyOnlyMode || offlineLoadMode) ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'getInTouch', 'bmi', 'country'] : undefined}
-                        />
-                      </ToolDrawer>
-                    )}
-                  </ToolGroup>
-
-                  <ToolGroup>
-                    <ToolGroupTitle>
-                      Добірки
-                      <ToolGroupNote>списки, зібрані питанням, а не фільтрами</ToolGroupNote>
+                      Дублікати
+                      <ToolGroupNote>пошук і злиття у завантаженому списку</ToolGroupNote>
                     </ToolGroupTitle>
                     <ToolRow>
                       <ToolButton
                         type="button"
-                        $active={currentFilter === 'FAVORITE'}
-                        onClick={() => openCardCollection('FAVORITE')}
-                        title="Картки, які ви вподобали"
-                      >
-                        ❤ Обрані
-                      </ToolButton>
-                      <ToolButton
-                        type="button"
-                        $active={currentFilter === 'CYCLE_FAVORITE'}
-                        onClick={() => openCardCollection('CYCLE_FAVORITE')}
-                        aria-label="Cycle favorites"
-                        title="Анкети в стимуляції та вагітності"
-                      >
-                        <BabyIcon style={{ width: '14px', height: '14px' }} /> Цикл
-                      </ToolButton>
-                      <ToolButton
-                        type="button"
-                        $active={currentFilter === FEED_DATE_FILTER}
-                        onClick={() => openCardCollection(FEED_DATE_FILTER)}
-                        title="Той самий порядок, що й у стрічці matching: за lastLogin (feedDate), від найновіших"
-                        {...createLongPressHandlers(
-                          'Показує картки в порядку стрічки matching — за lastLogin, найновіші зверху',
-                        )}
-                      >
-                        🕒 Стрічка
-                      </ToolButton>
-                      <ToolButton
-                        type="button"
+                        $active={isDuplicateView}
                         onClick={searchDuplicates}
                         {...createLongPressHandlers('Шукає дублікати карток')}
                       >
-                        Дублікати
+                        Знайти дублікати
                       </ToolButton>
-                      {isAdmin && (
-                        <ToolButton
-                          type="button"
-                          $active={isSearchersView}
-                          onClick={handleShowSearchers}
-                          disabled={isLoadingSearchers}
-                          title="Показати картки тих, хто шукав, разом з їхніми запитами"
-                          {...createLongPressHandlers(
-                            'Читає multiData/searchQueries і малює картки читачів; під карткою — їхні запити, '
-                              + 'натискання повторює той самий пошук',
-                          )}
-                        >
-                          {isLoadingSearchers ? '...' : '🔎 Хто шукав'}
-                        </ToolButton>
-                      )}
-                      {isAdmin && (
-                        <ToolButton
-                          type="button"
-                          $active={currentFilter === OVERLAY_REVIEW_FILTER}
-                          onClick={() => openCardCollection(OVERLAY_REVIEW_FILTER)}
-                          title="Усі картки, у які читачі дописали дані й це ще ніхто не розсудив"
-                          {...createLongPressHandlers(
-                            'Черга доповнень: кожне дописане значення окремо, з кнопками «прийняти» і «видалити»',
-                          )}
-                        >
-                          ✎ Доповнення
-                        </ToolButton>
-                      )}
-                      {stimulationScheduleProfiles.map(user => (
-                        <ToolButton
-                          key={`schedule-${user.userId}`}
-                          type="button"
-                          onClick={() => handleOpenProfileById(user)}
-                          title={user?.surname || ''}
-                        >
-                          {getSurnameLabel(user)}
-                        </ToolButton>
-                      ))}
+                      <ToolButton
+                        type="button"
+                        onClick={() => {
+                          btnMerge(users, setUsers, setDuplicates);
+                        }}
+                        {...createLongPressHandlers('Об’єднує знайдені дублікати в локальному списку')}
+                      >
+                        Об’єднати
+                      </ToolButton>
                     </ToolRow>
                   </ToolGroup>
-
+                  <ToolGroup>
+                    <ToolGroupTitle>
+                      Дані
+                      <ToolGroupNote>імпорт і експорт</ToolGroupNote>
+                    </ToolGroupTitle>
+                    <ToolRow>
+                      <ToolButton
+                        type="button"
+                        onClick={() => setShowSaveModal(true)}
+                        {...createLongPressHandlers('Відкриває меню з варіантами збереження контактів')}
+                      >
+                        Зберегти контакти
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        onClick={() => excelImportInputRef.current?.click()}
+                        disabled={isExcelImporting}
+                        title="Імпорт Excel в 3 JSON"
+                        {...createLongPressHandlers('Імпортує Excel і конвертує в JSON формати')}
+                      >
+                        {isExcelImporting ? '...' : 'Імпорт XLSX'}
+                      </ToolButton>
+                    </ToolRow>
+                  </ToolGroup>
+                  <ToolGroup>
+                    <ToolGroupTitle>
+                      Сервіс
+                      <ToolGroupNote>кеш браузера, без бекенду</ToolGroupNote>
+                    </ToolGroupTitle>
+                    <ToolRow>
+                      <ToolButton
+                        type="button"
+                        onClick={handleInfo}
+                        {...createLongPressHandlers('Показує кількість завантажених карток')}
+                      >
+                        Інфо
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        onClick={handleClearCache}
+                        {...createLongPressHandlers('Очищає локальний кеш карток')}
+                      >
+                        Очистити кеш
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        onClick={downloadLoadDebugLogs}
+                        title="Зберегти load debug log у файл"
+                      >
+                        Лог завантаження
+                      </ToolButton>
+                    </ToolRow>
+                  </ToolGroup>
                   {(searchIdAndSearchKeyOnlyMode || isAdmin) && (
                     <ToolGroup>
-                      <ToolGroupTitle>
-                        Індексація
-                        <ToolGroupNote>перебудова індексів і карток стрічки</ToolGroupNote>
+                      <ToolGroupTitle $danger>
+                        Обслуговування бази
+                        <ToolGroupNote>перебудова індексів і разові міграції — пишуть у базу цілим вузлом</ToolGroupNote>
                       </ToolGroupTitle>
                       <ToolRow>
                         {searchIdAndSearchKeyOnlyMode && (
@@ -8052,7 +8134,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                             onClick={() => setShowSearchKeyIndexPanel(prev => !prev)}
                             title="Меню індексації"
                           >
-                            Індекси
+                            Індекси ▾
                           </ToolButton>
                         )}
                         {isAdmin && (
@@ -8067,8 +8149,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                             {isMatchingCardsIndexing ? '...' : 'Картки стрічки'}
                           </ToolButton>
                         )}
+                        {isAdmin && LEGACY_IMPORT_ID_PREFIXES.map(prefix => (
+                          <ToolButton
+                            key={`migrate-comments-${prefix}`}
+                            type="button"
+                            $tone="danger"
+                            onClick={() => handleMigrateLegacyComments(prefix)}
+                            disabled={Boolean(migratingCommentsPrefix)}
+                            title={`Перенести коментарі карток ${prefix}… у публічні відгуки`}
+                            {...createLongPressHandlers(
+                              `Переносить приватні коментарі карток ${prefix}… у публічні відгуки: `
+                                + 'автор — з поля writer, текст лишається той самий',
+                            )}
+                          >
+                            {migratingCommentsPrefix === prefix ? '...' : `Коментарі ${prefix}… у відгуки`}
+                          </ToolButton>
+                        ))}
                       </ToolRow>
-
                       {searchIdAndSearchKeyOnlyMode && showSearchKeyIndexPanel && (
                         <ToolDrawer>
                           <ToolDrawerNote>
@@ -8134,83 +8231,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       )}
                     </ToolGroup>
                   )}
-
-                  <ToolGroup>
-                    <ToolGroupTitle>
-                      Дані
-                      <ToolGroupNote>імпорт, експорт, перенос коментарів</ToolGroupNote>
-                    </ToolGroupTitle>
-                    <ToolRow>
-                      <ToolButton
-                        type="button"
-                        onClick={() => setShowSaveModal(true)}
-                        {...createLongPressHandlers('Відкриває меню з варіантами збереження контактів')}
-                      >
-                        Зберегти контакти
-                      </ToolButton>
-                      <ToolButton
-                        type="button"
-                        onClick={() => excelImportInputRef.current?.click()}
-                        disabled={isExcelImporting}
-                        title="Імпорт Excel в 3 JSON"
-                        {...createLongPressHandlers('Імпортує Excel і конвертує в JSON формати')}
-                      >
-                        {isExcelImporting ? '...' : 'Імпорт XLSX'}
-                      </ToolButton>
-                      <ToolButton
-                        type="button"
-                        onClick={() => {
-                          btnMerge(users, setUsers, setDuplicates);
-                        }}
-                        {...createLongPressHandlers('Об’єднує знайдені дублікати в локальному списку')}
-                      >
-                        Об’єднати
-                      </ToolButton>
-                      {isAdmin && LEGACY_IMPORT_ID_PREFIXES.map(prefix => (
-                        <ToolButton
-                          key={`migrate-comments-${prefix}`}
-                          type="button"
-                          $tone="danger"
-                          onClick={() => handleMigrateLegacyComments(prefix)}
-                          disabled={Boolean(migratingCommentsPrefix)}
-                          title={`Перенести коментарі карток ${prefix}… у публічні відгуки`}
-                          {...createLongPressHandlers(
-                            `Переносить приватні коментарі карток ${prefix}… у публічні відгуки: `
-                              + 'автор — з поля writer, текст лишається той самий',
-                          )}
-                        >
-                          {migratingCommentsPrefix === prefix ? '...' : `${prefix} 💬 у відгуки`}
-                        </ToolButton>
-                      ))}
-                    </ToolRow>
-                  </ToolGroup>
-
-                  <ToolGroup>
-                    <ToolGroupTitle>
-                      Сервіс
-                      <ToolGroupNote>кеш браузера, без бекенду</ToolGroupNote>
-                    </ToolGroupTitle>
-                    <ToolRow>
-                      <ToolButton
-                        type="button"
-                        onClick={handleInfo}
-                        {...createLongPressHandlers('Показує кількість завантажених карток')}
-                      >
-                        Інфо
-                      </ToolButton>
-                      <ToolButton
-                        type="button"
-                        onClick={handleClearCache}
-                        {...createLongPressHandlers('Очищає локальний кеш карток')}
-                      >
-                        Очистити кеш
-                      </ToolButton>
-                    </ToolRow>
-                  </ToolGroup>
                 </ConsoleBody>
               )}
             </ConsolePanel>
-
             <input
               ref={excelImportInputRef}
               type="file"

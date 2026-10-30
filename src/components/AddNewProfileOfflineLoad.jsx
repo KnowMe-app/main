@@ -27,6 +27,7 @@ export const AddNewProfileOfflineLoadControls = ({
   onModeChange,
   onPickNodeFiles,
   loadedNodes = [],
+  label = 'offline',
 }) => (
   <>
     <SortModeLabel>
@@ -37,7 +38,7 @@ export const AddNewProfileOfflineLoadControls = ({
         checked={normalizeOfflineLoadMode(loadSortMode) === OFFLINE_LOAD_MODE}
         onChange={event => onModeChange(event.target.value)}
       />
-      offline
+      {label}
     </SortModeLabel>
     {normalizeOfflineLoadMode(loadSortMode) === OFFLINE_LOAD_MODE && (
       <LocalIndexActions>
