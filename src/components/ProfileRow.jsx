@@ -73,7 +73,22 @@ import PhotoViewer from './PhotoViewer';
 import { NoteClearButton, NoteFieldRow, NoteLane, NoteLaneHead, PublishDot, SharedCommentText } from './Matching.styled';
 import { isMatchingCardPublished, isMatchingSummaryCard, MATCHING_CARD_REVIEW_FLAG_FIELD } from '../utils/matchingCardIndex';
 import { resolveFeedPhoto } from '../utils/photoThumbs';
+import { isOwnProfileDraftCard } from '../utils/profileVisibilityScope';
 import { SectionToggle } from './programs/ProgramsView';
+
+// Чернетку з видачі пошуку несе той самий прапорець `create`, що й власну, —
+// тож «бачите лише ви» показуємо лише тоді, коли автор — сам читач (або
+// автора в картці немає: так приходять власні чернетки стрічки).
+const isViewerOwnDraft = card => {
+  if (!isOwnProfileDraftCard(card)) return false;
+  const author = String(card?.__profileMutationCreatedBy || '').trim();
+  if (!author) return true;
+  try {
+    return author === String(localStorage.getItem('ownerId') || '');
+  } catch {
+    return false;
+  }
+};
 
 const pickCurrentText = value => String(getCurrentValue(value) ?? '').trim();
 
@@ -1516,11 +1531,20 @@ const ProfileRow = ({
    * різні кнопки в різних кутках картки: широкий рядок «Доповнити дані» під
    * фактами й значок олівця в стовпчику праворуч.
    */
+  const isViewerOwnCard = useMemo(() => {
+    try {
+      return Boolean(user?.userId) && user.userId === String(localStorage.getItem('ownerId') || '');
+    } catch {
+      return false;
+    }
+  }, [user?.userId]);
   const editAction = useMemo(() => {
-    if (onEnrich) return { title: enrichGateLabel(language), onClick: onEnrich };
+    // Власну анкету олівець веде в «Мій профіль» (`handleRowEnrichProfile`),
+    // тож і підпис — «Редагувати», а не «Запропонувати правку».
+    if (onEnrich) return { title: isViewerOwnCard ? uiText('Редагувати анкету', language) : enrichGateLabel(language), onClick: onEnrich };
     if (isAdmin && onEditProfile && !isLimited) return { title: uiText('Редагувати анкету', language), onClick: onEditProfile };
     return null;
-  }, [isAdmin, isLimited, language, onEditProfile, onEnrich]);
+  }, [isAdmin, isLimited, isViewerOwnCard, language, onEditProfile, onEnrich]);
 
   // Читання відгуків більше не чекає на дотик: його починає сам ефект стрічки,
   // щойно в проєкції картки стоїть прапорець `hasPublicReview` (`Matching.jsx`,
@@ -1682,6 +1706,7 @@ const ProfileRow = ({
         <S.Photo
           {...photoSwipe.handlers}
           $loading={photoSwipe.loading}
+          $organisation={organisationLayout}
           data-testid="row-photo"
           onClick={openPhotoViewer}
         >
@@ -1732,6 +1757,9 @@ const ProfileRow = ({
               </S.Location>
             </S.MetaRow>
           )}
+          {isViewerOwnDraft(user) && !preview ? (
+            <S.DraftBadge data-testid="own-draft-badge">{uiText('Чернетка · бачите лише ви', language)}</S.DraftBadge>
+          ) : null}
           {siblingAnketaRole ? (
             <S.SiblingAnketaNote data-testid="sibling-anketa-note">
               {uiText('Та сама людина має ще анкету: {role}', language, { role: getRoleLabel(siblingAnketaRole, language) })}

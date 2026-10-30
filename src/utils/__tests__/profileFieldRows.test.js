@@ -60,3 +60,26 @@ describe('форма не зберігає порожній рядок', () => {
     expect(buttonBlock).not.toContain('submitWithNormalization');
   });
 });
+
+/*
+ * Порожній рядок після «+», у який зайшли й вийшли нічого не набравши, — це
+ * явна позначка стирання: попереднє значення лишається в історії, а
+ * поточним стає порожнє. Сам «+» без входу в рядок нічого не пише.
+ */
+describe('isUnfilledNewFieldRow / markFieldRowErased', () => {
+  const { isUnfilledNewFieldRow, markFieldRowErased } = require('../profileFieldRows');
+
+  it('впізнає лише щойно доданий порожній останній рядок', () => {
+    expect(isUnfilledNewFieldRow(['surrohelp', undefined], 1)).toBe(true);
+    expect(isUnfilledNewFieldRow(['surrohelp', null], 1)).toBe(true);
+    expect(isUnfilledNewFieldRow(['surrohelp', undefined], 0)).toBe(false);
+    expect(isUnfilledNewFieldRow(['surrohelp', 'new'], 1)).toBe(false);
+    expect(isUnfilledNewFieldRow(['surrohelp', ''], 1)).toBe(false);
+    expect(isUnfilledNewFieldRow([undefined], 0)).toBe(false);
+    expect(isUnfilledNewFieldRow('surrohelp', 0)).toBe(false);
+  });
+
+  it('робить із нього порожню останню версію', () => {
+    expect(markFieldRowErased(['surrohelp', undefined], 1)).toEqual(['surrohelp', '']);
+  });
+});

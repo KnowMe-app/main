@@ -49,13 +49,16 @@ const Chip = styled.button`
     if (!$active) return 'var(--matching-chip-border, var(--km-border))';
     return $calm ? 'var(--matching-chip-border, var(--km-border))' : 'var(--km-accent)';
   }};
+  /* Вибране в звуженій групі — суцільний акцент, як вибраний чип «Мого
+     профілю», а не світла підкладка з контуром: третій вигляд «вибраного»
+     на сусідніх екранах читався як інший стан. */
   background: ${({ $active, $calm }) => {
     if (!$active) return 'transparent';
-    return $calm ? 'var(--matching-chip-bg, var(--km-card))' : 'var(--km-accent-light)';
+    return $calm ? 'var(--matching-chip-bg, var(--km-card))' : 'var(--km-accent)';
   }};
   color: ${({ $active, $calm }) => {
     if (!$active) return 'var(--matching-chip-label, var(--km-muted))';
-    return $calm ? 'var(--matching-chip-text, var(--km-text))' : 'var(--km-accent)';
+    return $calm ? 'var(--matching-chip-text, var(--km-text))' : 'var(--km-on-accent, #fff)';
   }};
   opacity: ${({ $active }) => ($active ? 1 : 0.62)};
   font-family: var(--km-font);
@@ -71,9 +74,14 @@ const Chip = styled.button`
 
   &:hover {
     border-color: var(--km-accent);
-    color: var(--km-accent);
     opacity: 1;
     transform: translateY(-1px);
+  }
+
+  /* Колір акценту на наведенні — лише невибраному: на суцільному акценті
+     текст того самого кольору зникав би. */
+  &:hover:not([aria-pressed="true"]) {
+    color: var(--km-accent);
   }
 
   &:focus-visible {
@@ -140,7 +148,10 @@ export const CheckboxGroup = ({ label, filterName, options, filters, onChange, o
           const groupLabel = label || filterName;
           // `null` — числа немає зовсім: опцію вимкнено, і дека її не вантажила
           // (`withUnloadedFilterOptions`). Відсутній ключ — справді нуль.
-          const count = optionCounts && optionCounts[val] !== null ? optionCounts[val] || 0 : null;
+          const rawCount = optionCounts && optionCounts[val] !== null ? optionCounts[val] || 0 : null;
+          // «0+» не каже нічого: стрічка ще не вся завантажена, і серед
+          // показаного таких немає — це не нуль і не число. Тоді числа немає.
+          const count = rawCount === 0 && optionCounts?.__lowerBound ? null : rawCount;
           // Нижня межа: стрічка ще не вся завантажена (`__lowerBound`).
           const countText = count !== null && optionCounts.__lowerBound ? `${count}+` : count;
 

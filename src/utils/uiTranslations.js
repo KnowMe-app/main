@@ -64,7 +64,10 @@ const EN_BY_UK = {
   'Угода користувача': 'User agreement',
   'Стрічка': 'Feed',
   'Почати стрічку заново': 'Start the feed over',
-  "Зворотній зв'язок": 'Feedback',
+  "Зворотний зв'язок": 'Feedback',
+  'Як звертатись до людини': 'How to address them',
+  '👤 Про людину': '👤 About the person',
+  'Чернетка · бачите лише ви': 'Draft · only you can see it',
   'Скинути фільтри й завантажити анкети наново': 'Reset filters and load profiles again',
   'Останню зміну не збережено — див. повідомлення вище': 'The last change was not saved — see the message above',
   'Збережено о {time}': 'Saved at {time}',
@@ -1272,8 +1275,8 @@ const EN_BY_UK = {
   'Змінити, хто бачить анкету': 'Change who can see the profile',
   'Опублікувати лише для вподобаних': 'Publish only for those you liked',
   'Показувати лише вподобаним': 'Show only to those you liked',
-  'Анкету й програми побачать лише ті, кого ви вподобали — донори ооцитів, сурогатні мами, біологічні батьки чи інші агенції, зокрема вподобані раніше, — і лише доки вподобання стоїть. Для всіх інших їх не буде ні в стрічці, ні в пошуку.':
-    'Only those you liked — egg donors, surrogates, intended parents or other agencies, including those liked earlier — will see the profile and the programmes, and only while the like stays. For everyone else they will be absent from the feed and from search.',
+  'Анкету й програми побачать лише ті, кого ви вподобали — донори ооцитів, сурогатні мами, біологічні батьки чи агенції, зокрема вподобані раніше, — і лише доки вподобання стоїть. Для всіх інших їх не буде ні в стрічці, ні в пошуку.':
+    'Only those you liked — egg donors, surrogates, intended parents or agencies, including those liked earlier — will see the profile and the programmes, and only while the like stays. For everyone else they will be absent from the feed and from search.',
   'Так більше закритості, але менше звернень: анкету й програми побачить менше людей, тож і відгукнеться на них, найімовірніше, менше кандидаток.':
     'This keeps you more private but brings fewer enquiries: fewer people will see the profile and the programmes, so most likely fewer candidates will respond.',
   'Ви ще нікого не вподобали, тож зараз анкету й програми не бачить ніхто. Вподобайте донора, сурогатну маму чи батьків у стрічці — і вони одразу їх побачать.':
@@ -1419,6 +1422,7 @@ const EN_BY_UK = {
   'Увійти': 'Sign in',
   'Перевіряємо сесію…': 'Checking your session…',
   'Програми — додайте хоча б одну': 'Programs — add at least one',
+  'Програми — покажіть хоча б одну': 'Programs — show at least one',
   // Фото, перегляд фото, меню навігації — екрани матчингу й «Мій профіль».
   'Підтвердити видалення фото {n}': 'Confirm deleting photo {n}',
   'Видалити фото {n}': 'Delete photo {n}',

@@ -164,7 +164,8 @@ describe('required-field toast names the field the way the form labels it', () =
       source.indexOf('const resolveRequiredFieldLabel = fieldName => {'),
       source.indexOf('const listMissingRequiredFields ='),
     );
-    expect(helper).toContain("if (fieldName === 'programs') return uiText('Програми — додайте хоча б одну', language);");
+    // Схована програма — «покажіть», відсутня — «додайте».
+    expect(helper).toContain("ownProgramsCount > 0 ? 'Програми — покажіть хоча б одну' : 'Програми — додайте хоча б одну'");
     expect(helper).toContain('resolveMyProfileFieldText(fieldName,');
     expect(source).toContain('missingFieldNames.slice(0, MISSING_FIELDS_TOAST_LIMIT).map(resolveRequiredFieldLabel)');
     expect(resolveMyProfileFieldText('name', 'ag').label).toBe('Назва агенції');

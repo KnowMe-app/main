@@ -140,6 +140,17 @@ export const Photo = styled.div`
     opacity: ${({ $loading }) => ($loading ? 0.6 : 1)};
     transition: opacity 0.15s ease;
   }
+
+  /* Знімок організації — здебільшого логотип. Портрет 4:5 з cover робив з
+     логотипа півтора екрана телефона й різав написи по краях. Нижча смуга й
+     contain показують логотип цілим, а картка агенції коротшає до програм. */
+  ${({ $organisation }) => $organisation && css`
+    aspect-ratio: 16 / 9;
+    max-height: 220px;
+
+    /* \`&&\`: шар сцени (\`PhotoSwipeStage\`) сам ставить cover з подвоєним класом. */
+    && img { object-fit: contain; }
+  `}
 `;
 
 /*
@@ -289,11 +300,30 @@ export const RoleTag = styled.span`
     : 'var(--matching-card-border)')};
 `;
 
+// Плашка ролі поруч з іменем (картка без фото) переходить на свій рядок,
+// коли разом вони не влазять: доти «Анастасія Остр…» скорочувалась на
+// 360 px, щоб звільнити місце для «Донор ооцитів».
 export const NameRow = styled.div`
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 2px 6px;
   min-width: 0;
+`;
+
+// Власна чернетка в стрічці виглядала як опублікована анкета: читач, що її
+// завів, не бачив, що для інших її в стрічці немає.
+export const DraftBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--km-fill, rgba(0, 0, 0, 0.05));
+  color: color-mix(in srgb, var(--matching-header-text, var(--km-text)) 75%, transparent);
+  font-size: 12px;
+  font-weight: 600;
 `;
 
 export const MetaRow = styled.div`
@@ -1491,7 +1521,7 @@ export const NotesAddRow = styled.div`
     > button {
       flex: 1 1 auto;
       min-width: 0;
-      min-height: 32px;
+      min-height: 36px;
       padding: 0 7px;
       font-size: 12px;
       overflow: hidden;
@@ -1500,6 +1530,16 @@ export const NotesAddRow = styled.div`
     }
     /* Без значка колір доріжки несе саме слово на тонованій підкладці. */
     > button span { overflow: hidden; text-overflow: ellipsis; }
+
+    /* На вузькому телефоні (320–380 px) три слова й рішення в один рядок не
+       влазять: «Від…», «Пам'…», «Відкл…». Тоді рішення переходять на власний
+       рядок праворуч, а слова лишаються цілими. */
+    @media (max-width: 380px) {
+      flex-wrap: wrap;
+      row-gap: 6px;
+
+      > button { min-width: max-content; }
+    }
   `}
 `;
 
@@ -1513,12 +1553,12 @@ export const CompactDecisions = styled.div`
 
   /* Вужче, ніж було (76 і 36 px): на телефоні 360 px три слова інакше
      стискались до «Від…». */
-  > div { flex: 0 0 auto; width: 66px; height: 32px; }
+  > div { flex: 0 0 auto; width: 72px; height: 36px; }
   /* Пара з підписаною дією («↺ Повернути» в «Не цікавих») росте під підпис:
      у 66 px з \`overflow: hidden\` підпис різався до «Пове», а серце поруч
      зникало зовсім. */
   > div:has(> button > span) { width: auto; }
-  > button { flex: 0 0 auto; width: 32px; height: 32px; }
+  > button { flex: 0 0 auto; width: 36px; height: 36px; }
 `;
 
 // Колір доріжки «Пізніше» — синій: це не запис про людину (відгук, памʼятка),
@@ -1543,7 +1583,10 @@ export const NotesAddButton = styled.button`
      під кожною карткою додавали ще три контури до рамки самої картки. */
   border: 0;
   background: color-mix(in srgb, var(--note-lane-color) 10%, transparent);
-  color: var(--note-lane-color);
+  /* Чистий колір доріжки як текст 12–13 px мав 3,5–4:1 (зелений і помаранчевий
+     у світлій темі, синій — у темній). Домішка кольору тексту теми темнить його
+     у світлій і світлить у темній: ≥5:1 в обох. */
+  color: color-mix(in srgb, var(--note-lane-color) 75%, var(--matching-header-text, var(--km-text, #1A1A1A)));
   font: inherit;
   font-size: 13px;
   font-weight: 600;

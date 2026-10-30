@@ -48,11 +48,22 @@ describe('matching active-filter chips', () => {
     expect(buildMatchingFilterChipLabel(age, values)).toEqual({ text: 'Вік: нічого', danger: true });
   });
 
-  it('keeps the no-data option out of the "крім" count', () => {
-    // "?" plus two real values off would read as three exclusions if "?" counted;
-    // it does not, so this still collapses to a two-value "крім".
+  it('names the hidden no-data option inside "крім"', () => {
+    // Поки «Не вказано» в переліку не згадувалось, чіп обіцяв анкети без віку,
+    // яких у деці не було.
     expect(buildMatchingFilterChipLabel(age, withOff(age, ['le25', '26_30', 'other'])))
-      .toEqual({ text: 'Вік: крім ≤25, 26-30', danger: false });
+      .toEqual({ text: 'Вік: крім ≤25, 26-30, Не вказано', danger: false });
+  });
+
+  it('says what is shown when one or two options are left', () => {
+    const country = groupByName('country');
+    expect(buildMatchingFilterChipLabel(country, withOff(country, ['other', 'unknown'])))
+      .toEqual({ text: 'Країна: Україна', danger: false });
+  });
+
+  it('keeps "Тип профілю" positive for up to three shown roles', () => {
+    expect(buildMatchingFilterChipLabel(role, withOff(role, ['ag', 'ip'])).text)
+      .toBe('Тип профілю: Донор ооцитів, Сурогатна мати, Інші');
   });
 
   it('reads dropping only the no-data option as "лише заповнені"', () => {

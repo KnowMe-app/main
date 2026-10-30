@@ -321,7 +321,7 @@ export {
 } from 'utils/matchingLoadError';
 
 
-// Пошта для відгуків про застосунок — пункт «Зворотній зв'язок» у меню стрічки.
+// Пошта для відгуків про застосунок — пункт «Зворотний зв'язок» у меню стрічки.
 const FEEDBACK_EMAIL = 'KnowMeEggDonor@gmail.com';
 
 const MATCHING_SEARCH_BAR_ENABLED_KEYS = {
@@ -8103,7 +8103,7 @@ const Matching = () => {
       key: 'feedback',
       // Пошта в описі видна словами: на пристрої без поштового клієнта
       // mailto не відкриє нічого, і адресу людина перепише з меню сама.
-      label: uiText('Зворотній зв\'язок', language),
+      label: uiText('Зворотний зв\'язок', language),
       description: FEEDBACK_EMAIL,
       icon: <FaEnvelope />,
       onClick: () => {
