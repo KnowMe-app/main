@@ -64,6 +64,7 @@ const EN_BY_UK = {
   'Угода користувача': 'User agreement',
   'Стрічка': 'Feed',
   'Почати стрічку заново': 'Start the feed over',
+  "Зворотній зв'язок": 'Feedback',
   'Скинути фільтри й завантажити анкети наново': 'Reset filters and load profiles again',
   'Останню зміну не збережено — див. повідомлення вище': 'The last change was not saved — see the message above',
   'Збережено о {time}': 'Saved at {time}',
