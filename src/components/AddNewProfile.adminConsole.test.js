@@ -44,7 +44,7 @@ describe('AddNewProfile admin console', () => {
   it('порядок стрічки бере та сама сторінка, що й matching', () => {
     const loaderBody = source.slice(
       source.indexOf('const loadMoreUsersFeedDate ='),
-      source.indexOf('const loadMoreUsers21 ='),
+      source.indexOf('const handlePageChange = async page => {'),
     );
 
     // Збіг порядку з `/matching` тримає спільний код, а не домовленість: своя

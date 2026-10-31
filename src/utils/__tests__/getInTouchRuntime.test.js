@@ -82,8 +82,10 @@ describe('позначки власника читаються і пишутьс
     // Дата в `searchKey/getInTouch` сидить у назві денного бакета, тож діапазон
     // по ній не береться, і код ішов календарем по одному дню за круг. Тепер
     // межу і порядок робить база на вузлі власника, а гортання назад просить
-    // пару (значення, ключ).
-    expect(configSource).toContain('const collectOwnerGetInTouchCandidateIds');
+    // пару (значення, ключ). Сторінку будь-якого стану позначки (кому
+    // дзвонити, заплановані, «99») читає одна функція — двигун «Списку»
+    // (`utils/cardListEngine`) просить у неї лише діапазон.
+    expect(configSource).toContain('export const readCardListGetInTouchPage');
     expect(configSource).toContain('constraints.push(endBefore(before.value, String(before.key || \'\')))');
     expect(configSource).not.toContain('collectSearchKeyGetInTouchCandidateIds');
     expect(configSource).not.toContain('SEARCH_KEY_GET_IN_TOUCH_LOOKBACK_DAYS_PER_PAGE');
@@ -94,7 +96,7 @@ describe('позначки власника читаються і пишутьс
     // впорядкований запит перевернутої форми не бачить узагалі. Один рядок на
     // сесію — і мовчазної втрати немає.
     expect(configSource).toContain('const ownerGetInTouchHasLegacyGroups');
-    expect(configSource).toContain('const sliceOwnerGetInTouchMapPage');
+    expect(configSource).toContain('const sliceOwnerGetInTouchMapRange');
   });
 
   it('графік стимуляції ходить тією самою реалізацією', () => {

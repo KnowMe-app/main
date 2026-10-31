@@ -8,7 +8,6 @@ import {
   searchUsersCollectionInRTDB,
   updateProfileNodesInRTDB,
   updateDataInRealtimeDB,
-  fetchPaginatedUsers,
   fetchFavoriteUsers,
   fetchDislikeUsers,
   isReactionPermissionDeniedError,
@@ -23,8 +22,6 @@ import {
   loadDuplicateUsers,
   removeCardAndSearchId,
   fetchAllUsersFromRTDB,
-  fetchFilteredUsersByPage,
-  fetchUsersByLastActionPaged,
   addStimulationShortcutId,
   removeStimulationShortcutId,
   replaceStimulationShortcutIds,
@@ -42,24 +39,27 @@ import {
   createSelectedSearchKeyIndexes,
   buildSearchIdIndexPayloadFromCollections,
   buildSearchKeyIndexPayloadFromCollections,
-  fetchUsersBySearchKeyBloodPaged,
+  createCardListBackendAdapters,
+  readOwnerGetInTouchMap,
   fetchUsersByIds,
   lazyLoadProfilePhotos,
   addMatchingSearchQuery,
   fetchMatchingCardsPage,
   saveMyCardComment,
 } from './config';
-import { fetchUsersBySearchKeyGitNewPaged } from './gitNewLoad';
+import { buildOfflineCardListRows } from './AddNewProfileOfflineLoad';
+import { CardListPlanControls } from './CardListPlanControls';
 import {
-  AddNewProfileOfflineLoadControls,
-  OFFLINE_LOAD_FILTER,
-  OFFLINE_LOAD_MODE,
-  LEGACY_OFFLINE_LOAD_FILTER,
-  OFFLINE_REACTION_FILTER_OPTIONS,
-  normalizeOfflineLoadFilter,
-  normalizeOfflineLoadMode,
-  loadMoreUsersOffline as loadMoreUsersOfflineMode,
-} from './AddNewProfileOfflineLoad';
+  CARD_LIST_FILTER,
+  DEFAULT_CARD_LIST_PLAN,
+  buildCardListPlanKey,
+  describeCardListPlan,
+  normalizeCardListPlan,
+  planAcceptsGetInTouch,
+  planFromLegacyLoadSortMode,
+  resolveLastActionLowerBound,
+} from 'utils/cardListPlan';
+import { describeCardListStats, loadCardListPage, restoreCardListState } from 'utils/cardListEngine';
 import {
   BucketChip,
   BucketGrid,
@@ -119,22 +119,25 @@ import {
   syncFavorites,
   cacheFavoriteUsers,
 } from 'utils/favoritesStorage';
-import { getLoad2Cards, cacheLoad2Users } from 'utils/load2Storage';
+import { cacheLoad2Users } from 'utils/load2Storage';
 import { cacheDplUsers, getDplCards } from 'utils/dplStorage';
 import {
   getDislikes,
   syncDislikes,
   cacheDislikedUsers,
 } from 'utils/dislikesStorage';
-import { passesReactionFilter } from 'utils/reactionCategory';
+import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
 import {
   setIdsForQuery,
+  setQueryPagination,
   getIdsByQuery,
+  getQueryEntry,
   getCard,
   getCardsByIds,
   loadCards,
   normalizeQueryKey,
   serializeQueryFilters,
+  TTL_MS as CARD_CACHE_TTL_MS,
 } from 'utils/cardIndex';
 import {
   getStoredStimulationShortcutIds,
@@ -186,7 +189,6 @@ import {
   formatDateToDisplay,
   formatDateToServer,
 } from 'components/inputValidations';
-import { normalizeLastAction } from 'utils/normalizeLastAction';
 import { sortUsersByStimulationSchedule } from 'utils/stimulationScheduleSort';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
 import { rebuildAllFilterSetIndexes } from 'utils/filterSetsIndex';
@@ -206,18 +208,6 @@ import {
   collectDraftProfilesForIndexing,
 } from 'utils/profileDraftIndexing';
 import { buildFullCardKeyMap } from 'utils/cardKeyMap';
-import {
-  LAST_ACTION2_FILTER,
-  LAST_ACTION2_FILTER_STORAGE_KEY,
-  LAST_ACTION2_SORT_MODE,
-  LastAction2SortModeButton,
-  createInitialLA2State,
-  getLA2AcceptedOrder,
-  loadMoreUsersLastAction2 as loadMoreUsersLastAction2Mode,
-  resetLA2StateRef,
-  restoreLA2State,
-  serializeLA2State,
-} from './LastAction2Mode';
 
 const get = (...args) =>
   withAdminDownloadToast(firebaseGet(...args), {
@@ -653,21 +643,25 @@ const INDEX_JOB_GROUPS = [
 // згорнутою.
 const ADMIN_CONSOLE_OPEN_KEY = 'addAdminToolsOpen';
 
-// Підпис сортування на самій кнопці: режим міняє те, звідки береться список,
-// а дізнатись про нього можна було лише розгорнувши панель. Абревіатури
-// (GIT, LA) знав лише автор, тож основні режими названо словами, а код
-// лишився дрібним підписом поруч — за ним режим шукають у лозі й у коді.
-const LOAD_SORT_MODE_LABELS = {
-  GIT: 'Кому дзвонити · GIT',
-  GITnew: 'Кому дзвонити',
-  LA: 'Остання дія',
-  NoGIT: 'NoGIT',
-  SearchIdKeyOnly: 'NoGIT + індекс',
-  [OFFLINE_LOAD_MODE]: 'З JSON-файлів',
-  [LAST_ACTION2_SORT_MODE]: 'Остання дія по днях',
+// План «Списку» — галочки двигуна (`utils/cardListPlan`), памʼятає браузер.
+// Ключ новий: старий режим (`loadSortMode`) у браузері не зберігався зовсім,
+// лише в знімку «назад до списку», і звідти його переводить
+// `planFromLegacyLoadSortMode`.
+const CARD_LIST_PLAN_STORAGE_KEY = 'addCardListPlan';
+
+const readStoredCardListPlan = () => {
+  try {
+    const raw = localStorage.getItem(CARD_LIST_PLAN_STORAGE_KEY);
+    return raw ? normalizeCardListPlan(JSON.parse(raw)) : normalizeCardListPlan(DEFAULT_CARD_LIST_PLAN);
+  } catch (error) {
+    return normalizeCardListPlan(DEFAULT_CARD_LIST_PLAN);
+  }
 };
 
-const describeLoadSortMode = mode => LOAD_SORT_MODE_LABELS[mode] || String(mode || '');
+// Добірки, якими «Список» колись перемикався між режимами, — у знімках
+// попереднього списку, збережених до появи двигуна. Усі вони тепер один
+// список, а що саме в ньому — каже план.
+const LEGACY_LIST_FILTERS = new Set(['DATE2', 'DATE2.1', 'GITnew', 'LAST_ACTION', 'LAST_ACTION2', 'OFFLINE', 'OFLINE']);
 
 // Добірка, відкрита зараз, — те єдине, що варто бачити в згорнутій панелі:
 // інакше згорнута панель мовчить, і незрозуміло, чому в списку саме ці картки.
@@ -677,63 +671,6 @@ const CARD_COLLECTION_LABELS = {
   [FEED_DATE_FILTER]: 'стрічка · lastLogin',
   [OVERLAY_REVIEW_FILTER]: 'черга доповнень',
 };
-
-
-const SortModeContainer = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  margin: 8px 0;
-  padding: 8px 12px;
-  background: var(--km-card);
-  border: 1px solid var(--km-border);
-  border-radius: 10px;
-`;
-
-
-
-
-
-
-// Код режиму — дрібно поруч зі словом: за ним режим шукають у лозі й у коді.
-const SortModeCode = styled.span`
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--km-muted);
-`;
-
-const SortModeLabel = styled.label`
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--km-text);
-  cursor: pointer;
-  padding: 3px 8px;
-  border-radius: 6px;
-  border: 1.5px solid transparent;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-
-  input[type='radio'] {
-    display: none;
-  }
-
-  &:has(input:checked) {
-    background: var(--km-accent-light);
-    border-color: var(--km-accent);
-    color: var(--km-accent);
-    font-weight: 600;
-  }
-
-  &:hover:not(:has(input:checked)) {
-    background: var(--km-border);
-    border-color: var(--km-border);
-  }
-`;
-
-
-
 
 
 const SearchScopeContainer = styled.div`
@@ -1052,108 +989,18 @@ const summarizeLoadFiltersForLog = filters => ({
   raw: filters || {},
 });
 
-const countLoadFilterDrop = (acc, reason) => {
-  if (!reason) return acc;
-  acc[reason] = (acc[reason] || 0) + 1;
-  return acc;
+// Ключ кешу переліку «Списку»: власник, склад плану, фільтри й сьогоднішня
+// дата. Дата — бо «кому дзвонити» щодня інший: учорашній перелік, піднятий з
+// кешу, ховав би тих, кому дзвонити сьогодні.
+const toLocalIsoDate = () => {
+  const now = new Date();
+  const pad = value => String(value).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 };
 
-const EXCLUDED_GET_IN_TOUCH_DATES = ['2099-99-99', '9999-99-99', '99.99.2099', '99.99.9999'];
-
-const isFutureGetInTouchDate = value => {
-  const normalized = String(value ?? '').trim();
-  if (!normalized || EXCLUDED_GET_IN_TOUCH_DATES.includes(normalized)) return false;
-
-  const today = new Date().toISOString().split('T')[0];
-  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized > today;
-
-  const dottedMatch = normalized.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (!dottedMatch) return false;
-
-  const [, day, month, year] = dottedMatch;
-  return `${year}-${month}-${day}` > today;
-};
-
-const isExistingIsoDate = value => {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-};
-
-const shouldShowGetInTouchInGit = value => {
-  const normalized = String(value ?? '').trim();
-  if (EXCLUDED_GET_IN_TOUCH_DATES.includes(normalized)) return false;
-  if (!normalized) return true;
-
-  const today = new Date().toISOString().split('T')[0];
-  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-    return !isExistingIsoDate(normalized) || normalized <= today;
-  }
-
-  const dottedMatch = normalized.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (!dottedMatch) return true;
-
-  const [, day, month, year] = dottedMatch;
-  const isoDate = `${year}-${month}-${day}`;
-  return !isExistingIsoDate(isoDate) || isoDate <= today;
-};
-
-const removeUserIdFromQuery = (queryKey, userId) => {
-  if (!queryKey || !userId) return false;
-
-  const existingIds = getIdsByQuery(queryKey);
-  const nextIds = existingIds.filter(id => id !== userId);
-  if (nextIds.length === existingIds.length) return false;
-
-  setIdsForQuery(queryKey, nextIds);
-  return true;
-};
-
-const filterGitNewVisibleUsers = (queryKey, usersObj = {}) => {
-  const normalizedUsers = usersObj && typeof usersObj === 'object' ? usersObj : {};
-  const droppedIds = [];
-
-  const visibleUsers = Object.entries(normalizedUsers).reduce((acc, [id, user]) => {
-    const userId = user?.userId || id;
-    if (!userId) return acc;
-
-    if (isFutureGetInTouchDate(user?.getInTouch)) {
-      droppedIds.push(userId);
-      return acc;
-    }
-
-    acc[userId] = { ...user, userId };
-    return acc;
-  }, {});
-
-  if (droppedIds.length > 0) {
-    const droppedSet = new Set(droppedIds);
-    const existingIds = getIdsByQuery(queryKey);
-    const nextIds = existingIds.filter(id => !droppedSet.has(id));
-    if (nextIds.length !== existingIds.length) setIdsForQuery(queryKey, nextIds);
-  }
-
-  return { visibleUsers, droppedIds };
-};
-
-const appendGitUsersToQuery = (queryKey, usersObj = {}) => {
-  const normalizedUsers = usersObj && typeof usersObj === 'object' ? usersObj : {};
-  const existingIds = getIdsByQuery(queryKey);
-  const nextIds = [...existingIds];
-
-  Object.entries(normalizedUsers).forEach(([id, user]) => {
-    const userId = user?.userId || id;
-    if (!userId) return;
-    if (!nextIds.includes(userId)) nextIds.push(userId);
-  });
-
-  if (nextIds.length !== existingIds.length) {
-    setIdsForQuery(queryKey, nextIds);
-  }
-
-  return normalizedUsers;
-};
-
+const buildCardListSessionKey = (ownerUid, plan, filters) => normalizeQueryKey(
+  `cardlist:${ownerUid || 'anon'}:${buildCardListPlanKey(plan)}:${serializeQueryFilters(filters || {})}:${toLocalIsoDate()}`,
+);
 
 const getProfileRestoreTimestamp = () => {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -1347,15 +1194,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     [areHistorySnapshotsEqual, cloneProfileState],
   );
 
-  const LOAD_SORT_MODES = {
-    GIT: 'GIT',
-    GIT_NEW: 'GITnew',
-    LAST_ACTION: 'LA',
-    LAST_ACTION2: LAST_ACTION2_SORT_MODE,
-    NO_GIT: 'NoGIT',
-    SEARCH_ID_KEY_ONLY: 'SearchIdKeyOnly',
-    OFFLINE: OFFLINE_LOAD_MODE,
-  };
   const SEARCH_KEY_INDEX_OPTIONS = [
     { key: 'blood', label: 'blood' },
     { key: 'maritalStatus', label: 'maritalStatus' },
@@ -1728,7 +1566,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [filters, setFilters] = useState(() => getInitialFilters({ storageKey: 'addFilters' }));
   const filtersRef = useRef(filters);
   const skipNextReloadRef = useRef(false);
-  const searchKeyCoverageRef = useRef({});
   const loadDebugLogsRef = useRef([]);
   const renderCacheHydrationIdsRef = useRef(new Set());
   const hasInitializedFiltersRef = useRef(false);
@@ -1867,8 +1704,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     filtersRef.current = filters;
   }, [filters]);
 
-  useEffect(() => () => {
-    isMountedRef.current = false;
+  // `true` ставиться на кожному монтуванні, а не лише початковим значенням:
+  // `StrictMode` у розробці монтує ефекти двічі, і після першого прибирання
+  // ref лишався `false` назавжди — у dev мовчки не працювало все, що на нього
+  // спирається (ярлики стимуляції, мапи реакцій, «Список»).
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   const handleBlur = name => {
@@ -1880,105 +1724,42 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     });
   };
 
-  const hideFutureGitNewCardAndLoadNext = submittedState => {
+  /*
+   * Картка, яка після збереження більше не належить «Списку» (адмін поставив
+   * дату дзвінка в майбутнє, а план бере лише «кому дзвонити»), іде зі списку
+   * одразу, а на її місце довантажується наступна. Так робив лише GITnew, а
+   * GIT і офлайн-режим — кожен своєю гілкою; тепер правило одне на будь-який
+   * план, і належність рахує той самий `planAcceptsGetInTouch`, за яким
+   * двигун цей список і збирав.
+   */
+  const hideCardLeavingListAndLoadNext = submittedState => {
     const userId = submittedState?.userId;
-    if (currentFilter !== 'GITnew' || !userId || !isFutureGetInTouchDate(submittedState.getInTouch)) {
-      return false;
-    }
+    if (currentFilter !== CARD_LIST_FILTER || !userId) return false;
+    if (!(cardListRef.current.state?.order || []).includes(userId)) return false;
+    if (planAcceptsGetInTouch(cardListPlan, submittedState.getInTouch)) return false;
 
-    const queryKey = buildListQueryKey('GITnew', filters);
-    removeUserIdFromQuery(queryKey, userId);
+    forgetCardListId(userId);
     setUsers(prevUsers => {
       if (!prevUsers || !prevUsers[userId]) return prevUsers;
       const { [userId]: _hiddenUser, ...restUsers } = prevUsers;
       return restUsers;
     });
 
-    appendLoadDebugLog('handleSubmit:gitNew-hide-future-getInTouch', {
-      queryKey,
+    appendLoadDebugLog('handleSubmit:card-list-hide-and-refill', {
       userId,
-      getInTouch: submittedState.getInTouch,
+      getInTouch: submittedState.getInTouch ?? null,
+      plan: describeCardListPlan(cardListPlan),
       currentPage,
     });
 
-    ensureGitNewLoadedCount(Math.max(PAGE_SIZE, currentPage * PAGE_SIZE), filters, {
-      forceVisibleUpdate: true,
-    }).catch(error => {
-      appendLoadDebugLog('handleSubmit:gitNew-load-next-error', {
-        queryKey,
+    ensureCardListLoaded(Math.max(PAGE_SIZE, currentPage * PAGE_SIZE), { whileEditing: true }).catch(error => {
+      appendLoadDebugLog('handleSubmit:card-list-refill-error', {
         userId,
         message: error?.message || String(error),
       });
     });
 
     return true;
-  };
-
-  const hideOfflineCardAndLoadNext = submittedState => {
-    const userId = submittedState?.userId;
-    if (currentFilter !== OFFLINE_LOAD_FILTER || !userId) {
-      return false;
-    }
-
-    const queryKey = buildListQueryKey(OFFLINE_LOAD_FILTER, filters);
-    removeUserIdFromQuery(queryKey, userId);
-    setUsers(prevUsers => {
-      if (!prevUsers || !prevUsers[userId]) return prevUsers;
-      const { [userId]: _hiddenUser, ...restUsers } = prevUsers;
-      return restUsers;
-    });
-
-    appendLoadDebugLog('handleSubmit:offline-remove-from-query-and-refill', {
-      queryKey,
-      userId,
-      currentPage,
-    });
-
-    loadMoreUsersOffline(filters, {
-      targetLoadedCount: PAGE_SIZE,
-      forceVisibleUpdate: true,
-    }).catch(error => {
-      appendLoadDebugLog('handleSubmit:offline-load-next-error', {
-        queryKey,
-        userId,
-        message: error?.message || String(error),
-      });
-    });
-
-    return true;
-  };
-
-  const refillGitAfterGetInTouchChange = (submittedState, previousData = null) => {
-    if (currentFilter !== 'DATE2' || !submittedState?.userId) return;
-    if (previousData && previousData.getInTouch === submittedState.getInTouch) return;
-
-    const willHideSubmittedCard = isFutureGetInTouchDate(submittedState.getInTouch);
-    if (willHideSubmittedCard) {
-      setUsers(prevUsers => {
-        if (!prevUsers || !prevUsers[submittedState.userId]) return prevUsers;
-        const { [submittedState.userId]: _hiddenUser, ...restUsers } = prevUsers;
-        return restUsers;
-      });
-    }
-
-    const visibleCount = Math.max(0, countObjectKeys(users) - (willHideSubmittedCard && users?.[submittedState.userId] ? 1 : 0));
-    if (visibleCount >= PAGE_SIZE || !hasMore) return;
-
-    appendLoadDebugLog('handleSubmit:git-refill-after-getInTouch-change', {
-      userId: submittedState.userId,
-      previousGetInTouch: previousData?.getInTouch ?? null,
-      nextGetInTouch: submittedState.getInTouch ?? null,
-      visibleCount,
-      targetVisibleCount: PAGE_SIZE,
-      hasMore,
-    });
-
-    Promise.resolve(loadMoreUsers2(filters)).catch(error => {
-      appendLoadDebugLog('handleSubmit:git-refill-after-getInTouch-error', {
-        userId: submittedState.userId,
-        message: error?.message || String(error),
-      });
-    });
   };
 
   // The actual network write, run one at a time (see enqueueProfileSync)
@@ -2065,7 +1846,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         toast.error(`Індексація не виконана (${details}), продовжуємо збереження`);
       }
     }
-    refillGitAfterGetInTouchChange(optimisticCard, existingData);
 
     console.log('[SAVE] userId:', syncedState.userId);
 
@@ -2327,9 +2107,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       reason: 'background-save-started-local-is-source-of-truth',
     });
     cacheFetchedUsers({ [syncedState.userId]: optimisticCard }, cacheLoad2Users, filters);
-    const gitNewCardHidden = hideFutureGitNewCardAndLoadNext(optimisticCard);
-    const offlineCardHidden = hideOfflineCardAndLoadNext(optimisticCard);
-    if (!gitNewCardHidden && !offlineCardHidden) {
+    const cardLeftList = hideCardLeavingListAndLoadNext(optimisticCard);
+    if (!cardLeftList) {
       setUsers(prev => ({ ...prev, [syncedState.userId]: optimisticCard }));
     }
 
@@ -2553,13 +2332,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [users, setUsers] = useState({});
   const [listPhotoCacheByUserId, setListPhotoCacheByUserId] = useState({});
   const [hasMore, setHasMore] = useState(true); // Стан для перевірки, чи є ще користувачі
-  const [lastKey, setLastKey] = useState(null); // Стан для зберігання останнього ключа
-  const [lastKey21, setLastKey21] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState('');
-  const [loadSortMode, setLoadSortMode] = useState(LOAD_SORT_MODES.GIT_NEW);
+  // Що показує «Список» — план галочок, а не режим (`utils/cardListPlan`).
+  const [cardListPlan, setCardListPlan] = useState(readStoredCardListPlan);
+  const cardListPlanKey = buildCardListPlanKey(cardListPlan);
+  const [cardListStatsText, setCardListStatsText] = useState('');
   const [isLoadOptionsOpen, setIsLoadOptionsOpen] = useState(false);
   const [isListFiltersOpen, setIsListFiltersOpen] = useState(false);
   const [isAdminConsoleOpen, setIsAdminConsoleOpen] = useState(() => {
@@ -2578,23 +2358,28 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   }, [isAdminConsoleOpen]);
   const [loadRequestId, setLoadRequestId] = useState(0);
-  const [dateOffset2, setDateOffset2] = useState(0);
-  const dateOffset2Ref = useRef(0);
   // Курсор стрічки — пара (дата, id), а не ключ вузла, тож власний ref:
   // див. `loadMoreUsersFeedDate`.
   const feedCursorRef = useRef(null);
-  const [dateAfterKeys2, setDateAfterKeys2] = useState(null);
-  const dateAfterKeys2Ref = useRef(null);
-  const [dateOffset21, setDateOffset21] = useState(0);
-  const [dateOffsetLA, setDateOffsetLA] = useState(0);
-  const la2StateRef = useRef(createInitialLA2State());
+  // Сеанс двигуна «Списку»: ключ (власник, план, фільтри, день), стан потоків
+  // з курсорами й порядком і запит, що триває. Живе в ref, а не в стані, з
+  // тієї самої причини, що й курсор стрічки: ефект перезавантаження читає
+  // стан зі старого замикання, а курсор мусить бути саме останнім.
+  const cardListRef = useRef({ key: '', state: null, pending: null });
+  // Порядок, у якому двигун прийняв картки, — він і є порядок показу
+  // (`getSortedIds`): сторінка N на екрані — це рівно сторінка N з бази.
+  const cardListOrderRef = useRef([]);
+  // Повторне натискання «Список» перечитує перелік з бази, минаючи кеш
+  // переліку (анкети й далі беруться з кешу, якщо він увімкнений).
+  const forceCardListRefreshRef = useRef(false);
+  const cardListPlanRef = useRef(cardListPlan);
+  cardListPlanRef.current = cardListPlan;
   const initialFav = getFavorites();
   const [favoriteUsersData, setFavoriteUsersData] = useState(initialFav);
   const initialDis = getDislikes();
   const [dislikeUsersData, setDislikeUsersData] = useState(initialDis);
   const [, setCacheCount] = useState(0);
   const [, setBackendCount] = useState(0);
-  const gitNewPendingLoadsRef = useRef({});
   const [profileSource, setProfileSource] = useState('');
   const profileSourceRef = useRef(profileSource);
   const [isResolvingEditMode, setIsResolvingEditMode] = useState(false);
@@ -2610,34 +2395,25 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const canApplyLoadResultsToUsers = () =>
     !isEditingRef.current && !searchListIsolationRef.current;
 
-  const updateDateOffset2 = value => {
-    dateOffset2Ref.current = value;
-    setDateOffset2(value);
-  };
-
-  const updateDateAfterKeys2 = value => {
-    dateAfterKeys2Ref.current = value;
-    setDateAfterKeys2(value);
-  };
-
   const downloadLoadDebugLogs = useCallback(() => {
     const logs = loadDebugLogsRef.current || [];
+    const cardListSession = cardListRef.current;
 
     downloadJsonFile(`load-debug-${buildJsonDownloadStamp()}.json`, {
       userAgent: typeof window !== 'undefined' ? window.navigator?.userAgent || '' : '',
       url: typeof window !== 'undefined' ? window.location?.href || '' : '',
       timestamp: new Date().toISOString(),
       currentFilter,
-      loadSortMode,
+      cardListPlan,
+      cardListSession: {
+        key: cardListSession.key,
+        order: cardListSession.state?.order?.length || 0,
+        streamIndex: cardListSession.state?.streamIndex ?? null,
+        streams: cardListSession.state?.streams || {},
+      },
       search,
       searchBarQueryActive,
       hasMore,
-      lastKey,
-      lastKey21,
-      dateOffset2,
-      dateAfterKeys2,
-      dateOffset21,
-      dateOffsetLA,
       usersCount: countObjectKeys(users),
       filters: summarizeLoadFiltersForLog(filters),
       logsCount: logs.length,
@@ -2647,17 +2423,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     toast.success(`Load log збережено (${logs.length})`);
     return logs.length;
   }, [
+    cardListPlan,
     currentFilter,
-    dateOffset2,
-    dateAfterKeys2,
-    dateOffset21,
-    dateOffsetLA,
     downloadJsonFile,
     filters,
     hasMore,
-    lastKey,
-    lastKey21,
-    loadSortMode,
     search,
     searchBarQueryActive,
     users,
@@ -2678,19 +2448,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
+    // Знімок несе стан двигуна (курсори й порядок), а не курсори кожного
+    // режиму окремо: «назад до списку» продовжує гортати рівно звідти, де
+    // список зупинився.
     const snapshot = {
       userIds,
       currentFilter,
       currentPage,
       hasMore,
-      lastKey: lastKey ?? null,
-      lastKey21: lastKey21 ?? null,
-      dateOffset2,
-      dateAfterKeys2,
-      dateOffset21,
-      dateOffsetLA,
-      la2State: currentFilter === LAST_ACTION2_FILTER ? serializeLA2State(la2StateRef.current) : undefined,
-      loadSortMode,
+      cardListPlan,
+      cardListKey: cardListRef.current.key || '',
+      cardListState: currentFilter === CARD_LIST_FILTER ? cardListRef.current.state : null,
       search,
       hasSearched,
     };
@@ -2701,7 +2469,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       currentFilter,
       currentPage,
       hasMore,
-      loadSortMode,
+      cardListPlan: describeCardListPlan(cardListPlan),
       hasSearched,
       search,
     });
@@ -2714,13 +2482,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     currentFilter,
     currentPage,
     hasMore,
-    lastKey,
-    lastKey21,
-    dateOffset2,
-    dateAfterKeys2,
-    dateOffset21,
-    dateOffsetLA,
-    loadSortMode,
+    cardListPlan,
     search,
     hasSearched,
   ]);
@@ -2891,87 +2653,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
-    const isSearchKeyMode = loadSortMode === 'SearchIdKeyOnly';
-    const canInstantlyFilterInSearchKeyMode =
-      isSearchKeyMode && currentFilter === 'DATE2.1' && Object.keys(users || {}).length > 0;
-
-    if (canInstantlyFilterInSearchKeyMode) {
-      const groups = ['bloodGroup', 'rh', 'maritalStatus'];
-      const hasExpandedGroup = groups.some(group => {
-        const prevGroup = prevValue[group] || {};
-        const nextGroup = nextValue[group] || {};
-        const options = new Set([...Object.keys(prevGroup), ...Object.keys(nextGroup)]);
-        return Array.from(options).some(
-          key => prevGroup[key] === false && nextGroup[key] === true,
-        );
-      });
-
-      if (!hasExpandedGroup) {
-        const filteredUsers = filterMain(
-          Object.entries(users || {}),
-          'DATE2.1',
-          nextValue,
-          favoriteUsersData,
-          dislikeUsersData,
-          { requireCurrentOrPastGetInTouch: isSearchKeyMode },
-        ).reduce((acc, [, user]) => {
-          if (user?.userId) {
-            acc[user.userId] = user;
-          }
-          return acc;
-        }, {});
-
-        skipNextReloadRef.current = true;
-        filtersRef.current = nextValue;
-        setFilters(nextValue);
-        setUsers(filteredUsers);
-        setCurrentPage(1);
-        setSearchLoading(false);
-        setHasSearched(true);
-        return;
-      }
-    }
-
-    if (currentFilter === LAST_ACTION2_FILTER) {
-      filtersRef.current = nextValue;
-      setUsers({});
-      setCurrentPage(1);
-      setHasMore(true);
-      setSearchLoading(true);
-      setHasSearched(true);
-      resetLA2StateRef(la2StateRef);
-      setFilters(nextValue);
-      return;
-    }
-
-    if (currentFilter === 'LAST_ACTION') {
-      filtersRef.current = nextValue;
-      setUsers({});
-      setCurrentPage(1);
-      setHasMore(true);
-      setDateOffsetLA(0);
-      setSearchLoading(true);
-      setHasSearched(true);
-      setFilters(nextValue);
-      return;
-    }
-
+    // Тут стояли три окремі гілки — миттєве звуження для «NoGIT + індекс»,
+    // скидання курсора LA і стану LA2. Двигун один, тож і реакція на фільтри
+    // одна: показані картки звужує сам показ (`filterRenderCards`) ще до
+    // відповіді бази, а список перезбирає ефект перезавантаження.
     filtersRef.current = nextValue;
     setSearchLoading(true);
     setHasSearched(true);
     setFilters(nextValue);
   }, [
-    currentFilter,
-    setDateOffsetLA,
-    dislikeUsersData,
-    favoriteUsersData,
-    loadSortMode,
-    setCurrentPage,
     setFilters,
     setHasSearched,
     setSearchLoading,
-    setUsers,
-    users,
   ]);
 
   useEffect(() => {
@@ -3206,64 +2899,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     [buildQueryKey],
   );
 
-  const resolveFilterByLoadSortMode = mode => {
-    switch (normalizeOfflineLoadMode(mode)) {
-      case LOAD_SORT_MODES.LAST_ACTION:
-        return 'LAST_ACTION';
-      case LOAD_SORT_MODES.LAST_ACTION2:
-        return LAST_ACTION2_FILTER;
-      case LOAD_SORT_MODES.GIT_NEW:
-        return 'GITnew';
-      case LOAD_SORT_MODES.NO_GIT:
-      case LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY:
-        return 'DATE2.1';
-      case LOAD_SORT_MODES.OFFLINE:
-        return OFFLINE_LOAD_FILTER;
-      case LOAD_SORT_MODES.GIT:
-      default:
-        return 'DATE2';
-    }
-  };
-
-  const filterStorageKey =
-    loadSortMode === LOAD_SORT_MODES.LAST_ACTION
-      ? 'addFiltersLA'
-      : loadSortMode === LOAD_SORT_MODES.LAST_ACTION2
-      ? LAST_ACTION2_FILTER_STORAGE_KEY
-      : 'addFilters';
-
-  const gitNewMode = loadSortMode === LOAD_SORT_MODES.GIT_NEW;
-  const offlineLoadMode = loadSortMode === LOAD_SORT_MODES.OFFLINE;
-  const searchIdAndSearchKeyOnlyMode = loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY || gitNewMode;
-
-  const effectiveEnabledSearchKeys = searchIdAndSearchKeyOnlyMode
-    ? {
-        ...enabledSearchKeys,
-        searchId: true,
-        equalToAllCards: enabledSearchKeys.equalToAllCards,
-        searchKey: enabledSearchKeys.searchKey,
-        // Не вимикаємо partialUserId примусово: якщо чекбокс увімкнений,
-        // користувач очікує пошук за префіксом id картки.
-        partialUserId: enabledSearchKeys.partialUserId,
-      }
-    : enabledSearchKeys;
-
-  const handleLoadSortModeChange = useCallback(mode => {
-    setLoadSortMode(normalizeOfflineLoadMode(mode));
-  }, []);
-
-  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-  const isDateInRange = dateStr => {
-    const currentCardsById = loadCards();
-    const dates = Object.keys(users || {})
-      .map(id => (currentCardsById[id] || users[id])?.getInTouch)
-      .filter(d => dateRegex.test(d));
-    if (dates.length === 0) return true;
-    dates.sort();
-    const min = dates[0];
-    const max = dates[dates.length - 1];
-    return dateStr >= min && dateStr <= max;
-  };
+  // Чи лишається картка в списку з такою датою дзвінка. Передається карткам
+  // списку (`UsersList` → `smallCard/actions`): картка, якій щойно поставили
+  // дату поза станами плану, зникає з-під пальця анімацією, а не висить до
+  // перезавантаження. Доти так поводився лише GIT, і межею там був діапазон
+  // дат завантажених карток, а не склад списку.
+  const isDateInRange = dateStr => planAcceptsGetInTouch(cardListPlan, dateStr);
 
   const getInTouchSortValue = useCallback(d => {
     const today = new Date().toISOString().split('T')[0];
@@ -3287,34 +2928,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return 0;
   }, [getInTouchSortValue]);
 
-  const getSearchKeyReactionSortDirection = useCallback(reactionFilters => {
-    if (!searchIdAndSearchKeyOnlyMode || !reactionFilters || typeof reactionFilters !== 'object') {
-      return null;
-    }
-
-    const hasExplicitReactionSelection = Object.values(reactionFilters).some(value => value === false);
-    if (!hasExplicitReactionSelection) {
-      return null;
-    }
-
-    const selectedKeys = Object.entries(reactionFilters)
-      .filter(([, enabled]) => Boolean(enabled))
-      .map(([key]) => key);
-
-    if (selectedKeys.length !== 1) {
-      return null;
-    }
-
-    if (selectedKeys[0] === 'pastGetInTouch') {
-      return 'desc';
-    }
-
-    if (selectedKeys[0] === 'futureGetInTouch') {
-      return 'asc';
-    }
-
-    return null;
-  }, [searchIdAndSearchKeyOnlyMode]);
 
   const refreshStimulationShortcuts = useCallback(async (providedIds = null) => {
     try {
@@ -3517,11 +3130,328 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     loadDislikeIdsOnce();
   }, [loadDislikeIdsOnce]);
 
+  // ---------------------------------------------------------------------------
+  // «Список» — один двигун на будь-який план галочок (`utils/cardListEngine`).
+  //
+  // Тут стояли сім завантажувачів (GIT, GITnew, NoGIT, «NoGIT + індекс», LA,
+  // LA2, офлайн), кожен зі своїм курсором, кешем і обробкою сторінок, і кожна
+  // зміна в одному розходилась з рештою. Тепер екран лише тримає сеанс
+  // двигуна (`cardListRef`), кладе прийняте в `users` і памʼятає перелік у
+  // кеші запитів, а що саме читати — вирішує план.
+  // ---------------------------------------------------------------------------
+
+  const resolveCardListOwnerUid = () => auth.currentUser?.uid || ownerId || '';
+
+  // Мапи реакцій потрібні фільтру реакцій і «тільки обрані»; поки вони не
+  // приїхали з входу на екран, їх дочитують тут — так само, як робили старі
+  // завантажувачі, але одним місцем.
+  const resolveCardListReactionMaps = async currentFilters => {
+    let favoritesMap = favoriteUsersData || {};
+    let dislikedMap = dislikeUsersData || {};
+    const reaction = currentFilters?.reaction;
+    const needsReactions = Boolean(currentFilters?.favorite?.favOnly)
+      || Boolean(reaction && Object.values(reaction).some(value => value === false));
+    if (needsReactions) {
+      if (!Object.keys(favoritesMap).length) favoritesMap = await loadFavoriteIdsOnce();
+      if (!Object.keys(dislikedMap).length) dislikedMap = await loadDislikeIdsOnce();
+    }
+    return { favoritesMap, dislikedMap };
+  };
+
+  const persistCardListSession = session => {
+    if (!cardListPlanRef.current.cacheFirst || !session?.key || !session.state) return;
+    // Перелік — окремо, стан потоків — поруч, без того самого переліку вдруге.
+    setIdsForQuery(session.key, session.state.order);
+    setQueryPagination(session.key, { engineState: { ...session.state, order: undefined } });
+  };
+
+  /*
+   * Перелік, зібраний за останні шість годин тим самим планом і фільтрами,
+   * піднімається з кешу без жодного запиту: анкети — з кешу карток, курсори —
+   * зі стану двигуна, тож наступна сторінка продовжує гортати базу рівно
+   * звідти, де перелік зупинився. Бракує в кеші бодай однієї анкети — перелік
+   * збирається заново: дірка в середині списку гірша за круг до бази.
+   */
+  const restoreCardListFromCache = (sessionKey, plan) => {
+    const entry = getQueryEntry(sessionKey);
+    if (!entry?.cachedAt || Date.now() - entry.cachedAt > CARD_CACHE_TTL_MS) return null;
+    const engineState = entry.pagination?.engineState;
+    if (!engineState) return null;
+    const state = restoreCardListState({ ...engineState, order: entry.ids }, plan);
+    if (!state || !state.order.length) return null;
+
+    const usersMap = {};
+    for (const id of state.order) {
+      const card = getCard(id);
+      if (!card) return null;
+      usersMap[id] = { ...card, userId: card.userId || id };
+    }
+    // Картка, якій тут же поставили дату поза планом, у кеші вже нова — і в
+    // піднятий перелік не повертається.
+    const order = state.order.filter(id => planAcceptsGetInTouch(plan, usersMap[id].getInTouch));
+    return {
+      state: { ...state, order },
+      usersMap: Object.fromEntries(order.map(id => [id, usersMap[id]])),
+    };
+  };
+
+  const describeCardListStream = streamKey => (
+    {
+      due: 'Кому дзвонити',
+      future: 'Заплановані',
+      undated: 'Без дати',
+      never: 'Не дзвонити',
+      lastAction: 'Остання дія',
+      files: 'JSON-файли',
+    }[streamKey] || streamKey
+  );
+
+  // `whileEditing` — для догортання на місце картки, яка щойно пішла зі
+  // списку з відкритої форми (`hideCardLeavingListAndLoadNext`): решта
+  // завантажень, поки картка відкрита, не йде — список під формою не видно, а
+  // прийняте без показу розійшлося б зі знімком «назад до списку».
+  const loadMoreCardList = async ({
+    reset = false,
+    limit = PAGE_SIZE,
+    forceFresh = false,
+    background = false,
+    whileEditing = false,
+  } = {}) => {
+    if (isEditingRef.current && !whileEditing) return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
+    const plan = cardListPlanRef.current;
+    const currentFilters = filtersRef.current || {};
+    const sessionKey = buildCardListSessionKey(resolveCardListOwnerUid(), plan, currentFilters);
+    let session = cardListRef.current;
+
+    if (reset || session.key !== sessionKey) {
+      session = { key: sessionKey, state: null, pending: null, localRows: null };
+      cardListRef.current = session;
+      if (plan.cacheFirst && !forceFresh) {
+        const restored = restoreCardListFromCache(sessionKey, plan);
+        if (restored) {
+          session.state = restored.state;
+          cardListOrderRef.current = restored.state.order;
+          if (canApplyLoadResultsToUsers()) setUsers(restored.usersMap);
+          setHasMore(restored.state.hasMore);
+          setCardListStatsText(`з кешу переліку: ${restored.state.order.length} у списку · 0 запитів до бази`);
+          appendLoadDebugLog('cardList:restored-from-cache', {
+            sessionKey,
+            plan: describeCardListPlan(plan),
+            ids: restored.state.order.length,
+            hasMore: restored.state.hasMore,
+          });
+          return { cacheCount: restored.state.order.length, backendCount: 0, hasMore: restored.state.hasMore };
+        }
+      }
+    }
+
+    if (session.pending) {
+      await session.pending.catch(() => null);
+      if (cardListRef.current !== session) return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
+    }
+
+    const isFirstPage = !session.state;
+    const baseOrder = session.state?.order || [];
+    const run = (async () => {
+      const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const { favoritesMap, dislikedMap } = await resolveCardListReactionMaps(currentFilters);
+
+      let localRows = null;
+      if (plan.fromFiles) {
+        if (!session.localRows) {
+          const profiles = getLocalNodeProfiles();
+          if (!profiles) {
+            toast.error('Оберіть файли вузлів анкет — «Перелік з JSON-файлів» бере кандидатів з них');
+            setHasMore(false);
+            return { cacheCount: 0, backendCount: 0, hasMore: false };
+          }
+          // У файлах вузлів позначок немає: вони належать тому, хто їх
+          // поставив, і лежать у `multiData/getInTouch` — одним читанням.
+          const marks = await readOwnerGetInTouchMap(resolveCardListOwnerUid());
+          session.localRows = buildOfflineCardListRows({
+            profiles,
+            marks,
+            plan,
+            accept: entries => filterMain(entries, CARD_LIST_FILTER, currentFilters, favoritesMap, dislikedMap),
+          });
+        }
+        localRows = session.localRows;
+      }
+
+      const adapters = createCardListBackendAdapters({
+        filters: currentFilters,
+        favoritesMap,
+        dislikedMap,
+        lastActionSince: plan.byLastAction ? resolveLastActionLowerBound(currentFilters?.lastAction) : null,
+        localRows,
+      });
+      const isStale = () => cardListRef.current !== session || !isMountedRef.current;
+      const toUsersMap = list => list.reduce((acc, user) => {
+        if (user?.userId) acc[user.userId] = user;
+        return acc;
+      }, {});
+
+      // Перша сторінка нового сеансу *замінює* показане, і лише тоді, коли
+      // вже є що показати: до того на екрані лишається попередній список,
+      // звужений новими фільтрами ще до відповіді (`filterRenderCards`), а не
+      // порожнеча зі скелетоном.
+      let replaced = false;
+      const mayApplyUsers = () => !searchListIsolationRef.current && (whileEditing || !isEditingRef.current);
+      const applyUsers = list => {
+        if (isStale() || !mayApplyUsers()) return;
+        const map = toUsersMap(list);
+        if (isFirstPage && !replaced) {
+          replaced = true;
+          setUsers(map);
+        } else {
+          setUsers(prev => mergeWithoutOverwrite(prev, map));
+        }
+      };
+
+      const result = await loadCardListPage({
+        plan,
+        state: session.state,
+        limit,
+        adapters,
+        isStale,
+        onProgress: list => {
+          cardListOrderRef.current = [...baseOrder, ...list.map(user => user.userId)];
+          applyUsers(list);
+        },
+      });
+      if (result.ignored || isStale()) {
+        return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
+      }
+
+      session.state = result.state;
+      cardListOrderRef.current = result.state.order;
+      if (isFirstPage && !replaced) {
+        replaced = true;
+        if (mayApplyUsers()) setUsers(toUsersMap(result.users));
+      } else {
+        applyUsers(result.users);
+      }
+      setHasMore(result.hasMore);
+      persistCardListSession(session);
+
+      result.errors.forEach(error => {
+        toast.error(
+          `«${describeCardListStream(error.stream)}» недоступне: ${error.code || error.message}`,
+          { id: `card-list-${error.stream}` },
+        );
+      });
+
+      const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt;
+      const statsText = describeCardListStats(result.stats, { ms: elapsed });
+      setCardListStatsText(background ? `наперед: ${statsText}` : statsText);
+      appendLoadDebugLog('cardList:page', {
+        sessionKey,
+        plan: describeCardListPlan(plan),
+        limit,
+        background,
+        stats: result.stats,
+        hasMore: result.hasMore,
+        errors: result.errors,
+        elapsedMs: Math.round(elapsed),
+      });
+
+      const fromCache = result.stats.fromCache || 0;
+      return {
+        cacheCount: Math.min(fromCache, result.users.length),
+        backendCount: Math.max(0, result.users.length - fromCache),
+        hasMore: result.hasMore,
+      };
+    })();
+
+    session.pending = run;
+    const clearPending = () => {
+      if (session.pending === run) session.pending = null;
+    };
+    run.then(clearPending, clearPending);
+    return run;
+  };
+
+  /*
+   * Догорнути список до `targetCount` карток. Сторінка двигуна може віддати
+   * менше, ніж просили (вузький фільтр за межею кругів), тож тут кілька
+   * спроб — але не без кінця: дві поспіль без жодної нової картки зупиняють
+   * догортання, а «далі» лишається за адміном.
+   */
+  const ensureCardListLoaded = async (targetCount, { background = false, whileEditing = false } = {}) => {
+    let emptyCalls = 0;
+    let last = { hasMore };
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const session = cardListRef.current;
+      const loaded = session.state?.order?.length || 0;
+      if (session.state && (!session.state.hasMore || loaded >= targetCount)) {
+        return { hasMore: session.state.hasMore };
+      }
+      // eslint-disable-next-line no-await-in-loop
+      last = await loadMoreCardList({ limit: Math.max(1, targetCount - loaded), background, whileEditing });
+      if (last?.ignored) return last;
+      const after = cardListRef.current.state?.order?.length || 0;
+      if (after <= loaded) {
+        emptyCalls += 1;
+        if (emptyCalls >= 2) break;
+      } else {
+        emptyCalls = 0;
+      }
+    }
+    return last;
+  };
+
+  const prefetchCardListPage = page => {
+    if (!cardListPlanRef.current.prefetch) return;
+    ensureCardListLoaded((page + 1) * PAGE_SIZE, { background: true }).catch(error => {
+      appendLoadDebugLog('cardList:prefetch-error', { page, message: error?.message || String(error) });
+    });
+  };
+
+  // Картка пішла зі списку (дата поза планом) — і з переліку сеансу, і з
+  // кешу переліку: інакше «назад до списку» чи перезавантаження повернули б її.
+  const forgetCardListId = userId => {
+    const session = cardListRef.current;
+    if (!session.state) return;
+    session.state = { ...session.state, order: session.state.order.filter(id => id !== userId) };
+    cardListOrderRef.current = session.state.order;
+    persistCardListSession(session);
+  };
+
+  /*
+   * Картка, якій у самому списку поставили дату поза планом, згасає
+   * анімацією (`_pendingRemove`, див. `smallCard/actions`) і зникає з `users`
+   * сама (`UsersList`). Тут вона йде й з переліку сеансу, а на її місце
+   * догортається наступна, — але лише *після* згасання: забута раніше, вона
+   * стрибнула б у кінець списку посеред анімації.
+   */
+  const leavingCardIdsRef = useRef(new Set());
+  useEffect(() => {
+    const leaving = leavingCardIdsRef.current;
+    if (currentFilter !== CARD_LIST_FILTER) {
+      leaving.clear();
+      return;
+    }
+    Object.values(users || {}).forEach(user => {
+      if (user?._pendingRemove && user.userId) leaving.add(String(user.userId));
+    });
+    const gone = [...leaving].filter(id => !users?.[id]);
+    if (!gone.length) return;
+    gone.forEach(id => {
+      leaving.delete(id);
+      forgetCardListId(id);
+    });
+    appendLoadDebugLog('cardList:card-left-list', { ids: gone, currentPage });
+    ensureCardListLoaded(Math.max(PAGE_SIZE, currentPage * PAGE_SIZE)).catch(error => {
+      appendLoadDebugLog('cardList:refill-error', { message: error?.message || String(error) });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users, currentFilter]);
+
   useEffect(() => {
     if (skipNextReloadRef.current) {
       appendLoadDebugLog('reload-effect:skip-next-reload', {
         currentFilter,
-        loadSortMode,
+        cardListPlan: describeCardListPlan(cardListPlanRef.current),
         search,
         filters: summarizeLoadFiltersForLog(filters),
       });
@@ -3531,18 +3461,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     appendLoadDebugLog('reload-effect:start', {
       currentFilter,
-      loadSortMode,
+      cardListPlan: describeCardListPlan(cardListPlanRef.current),
       search,
       searchBarQueryActive,
       searchListIsolated,
       filters: summarizeLoadFiltersForLog(filters),
       previousUsersCount: countObjectKeys(users),
       hasMore,
-      lastKey,
-      lastKey21,
-      dateOffset2,
-      dateOffset21,
-      dateOffsetLA,
     });
 
     if (searchListIsolated) {
@@ -3562,17 +3487,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
-    setUsers({});
-    setLastKey(null);
-    setLastKey21(null);
+    // «Список» показаного не стирає: його перша сторінка замінить список сама,
+    // щойно буде що показати (див. `loadMoreCardList`). Решта добірок
+    // починають з порожнього, як і раніше.
+    const isCardList = currentFilter === CARD_LIST_FILTER;
+    if (!isCardList) setUsers({});
     setHasMore(true);
     setCurrentPage(1);
     setCacheCount(0);
     setBackendCount(0);
-    setDateOffsetLA(0);
-    updateDateOffset2(0);
-    updateDateAfterKeys2(null);
-    setDateOffset21(0);
 
     if (!currentFilter) {
       appendLoadDebugLog('reload-effect:stop-empty-current-filter', {
@@ -3586,168 +3509,30 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setSearchLoading(true);
     setHasSearched(true);
 
-    if (currentFilter === 'DATE2') {
-      appendLoadDebugLog('reload-effect:branch', { branch: 'DATE2', loader: 'loadMoreUsers2' });
-      loadMoreUsers2()
-        .then(({ cacheCount, backendCount }) => {
-          setCacheCount(cacheCount);
-          setBackendCount(backendCount);
+    if (isCardList) {
+      const forceFresh = forceCardListRefreshRef.current;
+      forceCardListRefreshRef.current = false;
+      appendLoadDebugLog('reload-effect:branch', {
+        branch: CARD_LIST_FILTER,
+        loader: 'loadMoreCardList',
+        plan: describeCardListPlan(cardListPlanRef.current),
+        forceFresh,
+      });
+      loadMoreCardList({ reset: true, forceFresh })
+        .then(result => {
+          if (result?.ignored) return;
+          setCacheCount(result.cacheCount);
+          setBackendCount(result.backendCount);
+          if (result.hasMore) prefetchCardListPage(1);
         })
         .catch(error => {
-          appendLoadDebugLog('reload-effect:DATE2-error', {
+          appendLoadDebugLog('reload-effect:card-list-error', {
             message: error?.message || String(error),
             stack: error?.stack || null,
           });
+          toast.error(`Список не завантажився: ${error?.code || error?.message || 'unknown'}`);
           setCacheCount(0);
           setBackendCount(0);
-        })
-        .finally(() => setSearchLoading(false));
-      return;
-    }
-
-    if (currentFilter === OFFLINE_LOAD_FILTER) {
-      appendLoadDebugLog('reload-effect:branch', { branch: OFFLINE_LOAD_FILTER, loader: 'loadMoreUsersOffline' });
-      loadMoreUsersOffline(filters, { reset: true })
-        .then(({ cacheCount, backendCount, ignored }) => {
-          if (ignored) return;
-          setCacheCount(cacheCount);
-          setBackendCount(backendCount);
-        })
-        .finally(() => setSearchLoading(false));
-      return;
-    }
-
-    if (currentFilter === 'GITnew') {
-      appendLoadDebugLog('reload-effect:branch', { branch: 'GITnew', loader: 'loadMoreUsersGitNew' });
-      loadMoreUsersGitNew()
-        .then(({ cacheCount, backendCount, ignored }) => {
-          if (ignored) return;
-          setCacheCount(cacheCount);
-          setBackendCount(backendCount);
-
-          const loadedFromCacheOnly = Number(backendCount) === 0 && Number(cacheCount) >= PAGE_SIZE;
-          if (loadedFromCacheOnly) {
-            appendLoadDebugLog('reload-effect:gitNew-prefetch-skipped', {
-              reason: 'first page already loaded from cache',
-              cacheCount,
-              backendCount,
-              threshold: PAGE_SIZE,
-            });
-            return;
-          }
-
-          ensureGitNewLoadedCount(PAGE_SIZE * 3, filters).catch(error => {
-            appendLoadDebugLog('reload-effect:gitNew-prefetch-error', {
-              message: error?.message || String(error),
-            });
-          });
-        })
-        .finally(() => setSearchLoading(false));
-      return;
-    }
-
-    if (currentFilter === 'DATE2.1') {
-      appendLoadDebugLog('reload-effect:branch', {
-        branch: 'DATE2.1',
-        searchIdAndSearchKeyOnlyMode,
-      });
-      const queryKey = buildListQueryKey('DATE2.1', filters);
-      const ids = getIdsByQuery(queryKey);
-      const cachedCards = ids.map(id => getCard(id)).filter(Boolean);
-      if (cachedCards.length > 0 || (ids.length === 0 && searchKeyCoverageRef.current[serializeQueryFilters(filters)])) {
-        const cachedUsers = filterMain(
-          cachedCards.map(user => [user.userId, user]),
-          'DATE2.1',
-          filters,
-          favoriteUsersData,
-          dislikeUsersData,
-          { requireCurrentOrPastGetInTouch: searchIdAndSearchKeyOnlyMode },
-        ).reduce((acc, [, user]) => {
-          acc[user.userId] = user;
-          return acc;
-        }, {});
-        const cachedUserIds = Object.keys(cachedUsers);
-        appendLoadDebugLog('date2.1:cache-hit-or-covered', {
-          queryKey,
-          idsCount: ids.length,
-          cachedCardsCount: cachedCards.length,
-          filteredCachedCardsCount: cachedUserIds.length,
-          coverage: Boolean(searchKeyCoverageRef.current[serializeQueryFilters(filters)]),
-          zeroReason: cachedUserIds.length === 0 ? 'filterMain removed all users from cached query' : null,
-        });
-        setUsers(cachedUsers);
-        setCacheCount(cachedUserIds.length);
-        setBackendCount(0);
-        setSearchLoading(false);
-        setHasMore(false);
-        return;
-      }
-
-      if (searchIdAndSearchKeyOnlyMode) {
-        const baseFilters = {};
-        const baseKey = buildListQueryKey('DATE2.1', baseFilters);
-        const baseCovered = Boolean(searchKeyCoverageRef.current[serializeQueryFilters(baseFilters)]);
-        if (baseCovered) {
-          const baseIds = getIdsByQuery(baseKey);
-          const baseCards = baseIds.map(id => getCard(id)).filter(Boolean);
-          const derivedUsers = filterMain(
-            baseCards.map(user => [user.userId, user]),
-            'DATE2.1',
-            filters,
-            favoriteUsersData,
-            dislikeUsersData,
-            { requireCurrentOrPastGetInTouch: true },
-          ).reduce((acc, [, user]) => {
-            acc[user.userId] = user;
-            return acc;
-          }, {});
-          const derivedIds = Object.keys(derivedUsers);
-          appendLoadDebugLog('date2.1:derived-from-base-cache', {
-            baseKey,
-            baseIdsCount: baseIds.length,
-            baseCardsCount: baseCards.length,
-            derivedIdsCount: derivedIds.length,
-            zeroReason: derivedIds.length === 0 ? 'filterMain removed all users from covered base cache' : null,
-          });
-          setIdsForQuery(queryKey, derivedIds);
-          setUsers(derivedUsers);
-          setCacheCount(derivedIds.length);
-          setBackendCount(0);
-          setSearchLoading(false);
-          setHasMore(false);
-          return;
-        }
-      }
-
-      const loadPromise = searchIdAndSearchKeyOnlyMode
-        ? loadMoreUsersSearchKey()
-        : loadMoreUsers21();
-      loadPromise
-        .then(({ cacheCount, backendCount, ignored }) => {
-          if (ignored) return;
-          setCacheCount(cacheCount);
-          setBackendCount(backendCount);
-        })
-        .finally(() => setSearchLoading(false));
-      return;
-    }
-    if (currentFilter === 'LAST_ACTION') {
-      appendLoadDebugLog('reload-effect:branch', { branch: 'LAST_ACTION', loader: 'loadMoreUsersLastAction' });
-      loadMoreUsersLastAction()
-        .then(({ cacheCount, backendCount }) => {
-          setCacheCount(cacheCount);
-          setBackendCount(backendCount);
-        })
-        .finally(() => setSearchLoading(false));
-      return;
-    }
-
-    if (currentFilter === LAST_ACTION2_FILTER) {
-      appendLoadDebugLog('reload-effect:branch', { branch: LAST_ACTION2_FILTER, loader: 'loadMoreUsersLastAction2' });
-      loadMoreUsersLastAction2()
-        .then(({ cacheCount, backendCount }) => {
-          setCacheCount(cacheCount);
-          setBackendCount(backendCount);
         })
         .finally(() => setSearchLoading(false));
       return;
@@ -3795,39 +3580,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
-    const queryKey = buildListQueryKey(currentFilter, filters);
-    const ids = getIdsByQuery(queryKey);
-    const cards = ids.map(id => getCard(id)).filter(Boolean);
-    if (cards.length > 0) {
-      appendLoadDebugLog('generic:query-cache-hit', {
-        queryKey,
-        idsCount: ids.length,
-        cardsCount: cards.length,
-      });
-      const cachedUsers = cards.reduce((acc, u) => {
-        acc[u.userId] = u;
-        return acc;
-      }, {});
-      setUsers(cachedUsers);
-      setCacheCount(cards.length);
-      setBackendCount(0);
-      setSearchLoading(false);
-    } else {
-      appendLoadDebugLog('generic:query-cache-miss', {
-        queryKey,
-        idsCount: ids.length,
-        cardsCount: cards.length,
-        loader: 'loadMoreUsers',
-      });
-      loadMoreUsers(currentFilter)
-        .then(({ cacheCount, backendCount }) => {
-          setCacheCount(cacheCount);
-          setBackendCount(backendCount);
-        })
-        .finally(() => setSearchLoading(false));
-    }
+    // Невідома добірка (знімок старої версії екрана) нічого не вантажить:
+    // такі знімки переводить у «Список» `handleBackToPreviousList`.
+    appendLoadDebugLog('reload-effect:unknown-filter', { currentFilter });
+    setSearchLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, currentFilter, search, loadRequestId, searchIdAndSearchKeyOnlyMode, searchListIsolated]);
+  }, [filters, currentFilter, search, loadRequestId, cardListPlanKey, searchListIsolated]);
 
 
   const [adding, setAdding] = useState(false);
@@ -3875,7 +3633,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             searchIdPrefixes: selectedSearchIdPrefixes,
             equalToKeys: selectedEqualToKeys,
             searchKeyFields: selectedSearchKeyFields,
-            enabledSearchKeys: effectiveEnabledSearchKeys,
+            enabledSearchKeys,
           });
           setIdsForQuery(profileSearchCacheKey, [newProfile.userId]);
         }
@@ -4192,20 +3950,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
 
-  const loadMoreUsersLastAction2 = (currentFilters = filters) =>
-    loadMoreUsersLastAction2Mode({
-      la2StateRef,
-      currentFilters,
-      currentPage,
-      hasMore,
-      isEditingRef,
-      fetchUserById,
-      mergeWithoutOverwrite,
-      cacheFetchedUsers,
-      setUsers,
-      setHasMore,
-    });
-
   useEffect(() => {
     const handleMoreActionsBackNavigation = () => {
       if (!shouldReturnToMoreActionsRef.current) return;
@@ -4231,322 +3975,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [state.userId, setState]);
 
 
-  const loadMoreUsers = async (filterForload, currentFilters = filters) => {
-    const includeSpecialFutureDates = searchBarQueryActive;
-    appendLoadDebugLog('loadMoreUsers:start', {
-      filterForload,
-      param: lastKey,
-      includeSpecialFutureDates,
-      filters: summarizeLoadFiltersForLog(currentFilters),
-      hasMore,
-    });
-    if (isEditingRef.current) {
-      appendLoadDebugLog('loadMoreUsers:return-zero', {
-        reason: 'isEditingRef.current is true',
-        filterForload,
-      });
-      return { count: 0, hasMore };
-    }
-    const param = lastKey;
-    let favRaw = getFavorites();
-    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
-    let dislikedUsersMap = Object.fromEntries(
-      Object.entries(getDislikes()).filter(([, v]) => v),
-    );
-    const reactionFilters = currentFilters?.reaction;
-    const hasExplicitReactionSelection =
-      reactionFilters && Object.values(reactionFilters).some(value => value === false);
-    const ownerUid = auth.currentUser?.uid || ownerId;
-    if (hasExplicitReactionSelection && ownerUid) {
-      if (reactionFilters.like && Object.keys(fav).length === 0) {
-        fav = await fetchFavoriteUsers(ownerUid);
-        setFavoriteUsersData(fav);
-        syncFavorites(fav);
-      }
-      if (reactionFilters.dislike && Object.keys(dislikedUsersMap).length === 0) {
-        dislikedUsersMap = await fetchDislikeUsers(ownerUid);
-        setDislikeUsersData(dislikedUsersMap);
-        syncDislikes(dislikedUsersMap);
-      }
-    }
-    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0 && ownerUid) {
-      fav = await fetchFavoriteUsers(ownerUid);
-      setFavoriteUsersData(fav);
-      syncFavorites(fav);
-    }
-    appendLoadDebugLog('loadMoreUsers:maps-ready', {
-      favoritesCount: countObjectKeys(fav),
-      dislikesCount: countObjectKeys(dislikedUsersMap),
-      favoriteOnly: Boolean(currentFilters.favorite?.favOnly),
-      hasExplicitReactionSelection,
-    });
-
-    const res = await fetchPaginatedUsers(
-      param,
-      filterForload,
-      currentFilters,
-      fav,
-      {
-        includeSpecialFutureDates,
-        dislikedUsers: dislikedUsersMap,
-      },
-    );
-    const rawUsersEntries = res && typeof res.users === 'object' ? Object.entries(res.users) : [];
-    appendLoadDebugLog('loadMoreUsers:backend-response', {
-      hasResponse: Boolean(res),
-      rawUsersCount: rawUsersEntries.length,
-      lastKey: res?.lastKey ?? null,
-      hasMore: Boolean(res?.hasMore),
-      zeroReason: rawUsersEntries.length === 0 ? 'backend returned empty res.users' : null,
-    });
-
-    // Перевіряємо, чи є користувачі у відповіді
-    if (rawUsersEntries.length > 0) {
-      const dropReasons = {};
-
-      // Використовуємо Object.entries для обробки res.users
-      const fetchedUsers = rawUsersEntries
-        .filter(([id]) => {
-          const keep = !currentFilters.favorite?.favOnly || fav[id];
-          if (!keep) countLoadFilterDrop(dropReasons, 'favoriteOnly');
-          return keep;
-        })
-        .reduce((acc, [userId, user]) => {
-        // Перевірка наявності поля userId, щоб уникнути помилок
-        if (user.userId) {
-          acc[user.userId] = user; // Додаємо користувача до об'єкта
-        } else {
-          acc[userId] = user; // Якщо немає userId, використовуйте ключ об'єкта
-        }
-        return acc;
-      }, {});
-      cacheFetchedUsers(fetchedUsers, cacheLoad2Users, currentFilters);
-
-      // Оновлюємо стан користувачів
-      if (canApplyLoadResultsToUsers()) {
-        setUsers(prevUsers => mergeWithoutOverwrite(prevUsers, fetchedUsers));
-      }
-      const queryKey = buildListQueryKey(filterForload, currentFilters);
-      const existingIds = getIdsByQuery(queryKey);
-      setIdsForQuery(queryKey, [
-        ...new Set([...existingIds, ...Object.keys(fetchedUsers)]),
-      ]);
-      setLastKey(res.lastKey); // Оновлюємо lastKey для наступного запиту
-      setHasMore(res.hasMore); // Оновлюємо hasMore
-      const backendCount = Object.keys(fetchedUsers).length;
-      appendLoadDebugLog('loadMoreUsers:result', {
-        rawUsersCount: rawUsersEntries.length,
-        backendCount,
-        dropReasons,
-        nextLastKey: res.lastKey ?? null,
-        hasMore: Boolean(res.hasMore),
-        zeroReason: backendCount === 0 ? 'all backend users were removed by current filters' : null,
-      });
-      return { cacheCount: 0, backendCount, hasMore: res.hasMore };
-    } else {
-      setHasMore(false); // Якщо немає більше користувачів, оновлюємо hasMore
-      appendLoadDebugLog('loadMoreUsers:return-zero', {
-        reason: 'backend response has no users',
-        filterForload,
-        param,
-        hasResponse: Boolean(res),
-        lastKey: res?.lastKey ?? null,
-        hasMore: Boolean(res?.hasMore),
-      });
-      return { cacheCount: 0, backendCount: 0, hasMore: false };
-    }
-  };
-
-  const loadMoreUsersGitSimple = async (currentFilters = filters) => {
-    const activeDateAfterKeys2 = dateAfterKeys2Ref.current;
-    const activeDateOffset2 = dateOffset2Ref.current;
-    appendLoadDebugLog('loadMoreUsersGitSimple:start', {
-      queryMode: 'DATE2',
-      dateOffset2: activeDateOffset2,
-      hasBackendCursor: Boolean(activeDateAfterKeys2),
-      pageSize: PAGE_SIZE,
-      hasMore,
-      filters: summarizeLoadFiltersForLog(currentFilters),
-    });
-
-    if (isEditingRef.current) {
-      appendLoadDebugLog('loadMoreUsersGitSimple:return-zero', {
-        reason: 'isEditingRef.current is true',
-      });
-      return { cacheCount: 0, backendCount: 0, hasMore };
-    }
-
-    let favRaw = getFavorites();
-    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
-    let dislikedUsersMap = Object.fromEntries(
-      Object.entries(getDislikes()).filter(([, v]) => v),
-    );
-    const reactionFilters = currentFilters?.reaction;
-    const hasExplicitReactionSelection =
-      reactionFilters && Object.values(reactionFilters).some(value => value === false);
-    const ownerUid = auth.currentUser?.uid || ownerId;
-
-    if (hasExplicitReactionSelection && ownerUid) {
-      if (reactionFilters.like && Object.keys(fav).length === 0) {
-        fav = await fetchFavoriteUsers(ownerUid);
-        setFavoriteUsersData(fav);
-        syncFavorites(fav);
-      }
-      if (reactionFilters.dislike && Object.keys(dislikedUsersMap).length === 0) {
-        dislikedUsersMap = await fetchDislikeUsers(ownerUid);
-        setDislikeUsersData(dislikedUsersMap);
-        syncDislikes(dislikedUsersMap);
-      }
-    }
-    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0 && ownerUid) {
-      fav = await fetchFavoriteUsers(ownerUid);
-      setFavoriteUsersData(fav);
-      syncFavorites(fav);
-    }
-
-    const loadedIds = [];
-    const loadDropReasons = {};
-    appendLoadDebugLog('loadMoreUsersGitSimple:before-fetchFilteredUsersByPage', {
-      queryMode: 'DATE2',
-      dateOffset2: activeDateOffset2,
-      hasBackendCursor: Boolean(activeDateAfterKeys2),
-      pageSize: PAGE_SIZE,
-      filters: summarizeLoadFiltersForLog(currentFilters),
-    });
-    let res;
-    try {
-      res = await fetchFilteredUsersByPage(
-        activeDateAfterKeys2 ? 0 : activeDateOffset2,
-        undefined,
-        id => fetchUserById(id),
-        currentFilters,
-        fav,
-        dislikedUsersMap,
-        filterMain,
-        partial => {
-          const normalizedPartial = Object.entries(partial || {}).reduce((acc, [id, user]) => {
-            const userId = user?.userId || id;
-            if (!userId) return acc;
-            acc[userId] = { ...user, userId };
-            return acc;
-          }, {});
-          const partialIds = Object.keys(normalizedPartial);
-          if (!partialIds.length) {
-            appendLoadDebugLog('loadMoreUsersGitSimple:progress-empty', {
-              queryMode: 'DATE2',
-              reason: 'onProgress received no visible users after filterMain',
-              dateOffset2: activeDateOffset2,
-              targetVisibleCount: PAGE_SIZE,
-            });
-            return;
-          }
-          cacheFetchedUsers(normalizedPartial, cacheLoad2Users, currentFilters);
-          if (canApplyLoadResultsToUsers()) {
-            setUsers(prev => mergeWithoutOverwrite(prev, normalizedPartial));
-          } else {
-            appendLoadDebugLog('loadMoreUsersGitSimple:apply-blocked', {
-              queryMode: 'DATE2',
-              isEditing: isEditingRef.current,
-              searchListIsolated: searchListIsolationRef.current,
-              usersToApply: partialIds.length,
-              source: 'progress',
-            });
-          }
-          partialIds.forEach(id => {
-            if (!loadedIds.includes(id)) loadedIds.push(id);
-          });
-          appendLoadDebugLog('loadMoreUsersGitSimple:progress', {
-            queryMode: 'DATE2',
-            partialCount: partialIds.length,
-            loadedIdsCount: loadedIds.length,
-            targetVisibleCount: PAGE_SIZE,
-          });
-        },
-        {
-          debugLog: (step, payload) => appendLoadDebugLog(step, payload),
-          afterKeys: activeDateAfterKeys2,
-        },
-      );
-      appendLoadDebugLog('loadMoreUsersGitSimple:after-fetchFilteredUsersByPage', {
-        queryMode: 'DATE2',
-        hasResponse: Boolean(res),
-        rawUsersCount: countObjectKeys(res?.users || {}),
-        lastKey: res?.lastKey ?? null,
-        hasMore: Boolean(res?.hasMore),
-      });
-    } catch (error) {
-      appendLoadDebugLog('loadMoreUsersGitSimple:error', {
-        queryMode: 'DATE2',
-        message: error?.message || String(error),
-        stack: error?.stack || null,
-      });
-      throw error;
-    }
-
-    const backendEntries = Object.entries(res?.users || {});
-    const normalizedUsers = backendEntries.reduce((acc, [id, user]) => {
-      const userId = user?.userId || id;
-      if (!userId) {
-        countLoadFilterDrop(loadDropReasons, 'missingUserId');
-        return acc;
-      }
-      acc[userId] = { ...user, userId };
-      return acc;
-    }, {});
-    const backendIds = Object.keys(normalizedUsers);
-
-    cacheFetchedUsers(normalizedUsers, cacheLoad2Users, currentFilters);
-    if (canApplyLoadResultsToUsers()) {
-      setUsers(prev => mergeWithoutOverwrite(prev, normalizedUsers));
-    } else if (backendIds.length) {
-      appendLoadDebugLog('loadMoreUsersGitSimple:apply-blocked', {
-        queryMode: 'DATE2',
-        isEditing: isEditingRef.current,
-        searchListIsolated: searchListIsolationRef.current,
-        usersToApply: backendIds.length,
-        source: 'result',
-      });
-    }
-    backendIds.forEach(id => {
-      if (!loadedIds.includes(id)) loadedIds.push(id);
-    });
-
-    const nextOffset = Number.isFinite(Number(res?.lastKey)) ? Number(res.lastKey) : activeDateOffset2 + backendIds.length;
-    const nextVisibleOffset = activeDateAfterKeys2 ? activeDateOffset2 + backendIds.length : nextOffset;
-    const nextHasMore = Boolean(res?.hasMore);
-    updateDateOffset2(nextVisibleOffset);
-    updateDateAfterKeys2(res?.afterKeys || null);
-    setHasMore(nextHasMore);
-
-    const queryKey = buildListQueryKey('DATE2', currentFilters);
-    const existingIds = getIdsByQuery(queryKey);
-    setIdsForQuery(queryKey, [...new Set([...existingIds, ...loadedIds])]);
-
-    appendLoadDebugLog('loadMoreUsersGitSimple:result', {
-      queryMode: 'DATE2',
-      rawUsersCount: backendEntries.length,
-      backendCount: backendIds.length,
-      loadedIdsCount: loadedIds.length,
-      previousOffset: activeDateOffset2,
-      nextOffset: nextVisibleOffset,
-      backendCursorOffset: nextOffset,
-      hasBackendCursor: Boolean(res?.afterKeys),
-      hasMore: nextHasMore,
-      targetVisibleCount: PAGE_SIZE,
-      stopReason: backendIds.length >= PAGE_SIZE
-        ? 'target-visible-reached'
-        : nextHasMore
-          ? 'partial-page-backend-has-more'
-          : 'backend-exhausted',
-      dropReasons: loadDropReasons,
-      zeroReason: backendIds.length === 0 ? 'backend getInTouch scan produced no accepted users' : null,
-    });
-
-    return { cacheCount: 0, backendCount: backendIds.length, hasMore: nextHasMore };
-  };
-
-  const loadMoreUsers2 = async (currentFilters = filters) => loadMoreUsersGitSimple(currentFilters);
-
   /**
    * Сторінка карток у **порядку стрічки матчингу** — той самий вузол, той самий
    * ключ, той самий курсор.
@@ -4559,8 +3987,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
    * самої пагінації. Тому тут викликається та сама `fetchMatchingCardsPage`,
    * що й у стрічці: збіг порядку гарантує спільний код, а не домовленість.
    *
-   * Курсор у неї — пара (дата, id), а не ключ, тож він лягає в той самий
-   * `lastKey`, яким користуються інші режими: стан скидає `handleLoadUsers`.
+   * Курсор у неї — пара (дата, id), а не ключ, тож він живе у власному
+   * `feedCursorRef`: стан скидають `openCardCollection` і `handleLoadUsers`.
    *
    * Картки догідратовуються повними анкетами, як і в решті режимів цього
    * екрана: список тут показує `UsersList`, якому потрібна анкета, а не
@@ -4623,1030 +4051,48 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return { cacheCount: 0, backendCount: Object.keys(orderedUsers).length, hasMore: nextHasMore };
   };
 
-  const loadMoreUsers21 = async (currentFilters = filters) => {
-    return loadMoreUsers2Base(currentFilters, {
-      validateGetInTouchDate: true,
-      useDateByDateBackendFetch: false,
-      queryMode: 'DATE2.1',
-    });
-  };
-
-  const loadMoreUsersGitNew = async (currentFilters = filters, { targetLoadedCount = PAGE_SIZE, background = false, forceVisibleUpdate = false } = {}) => {
-    const filtersKey = serializeQueryFilters(currentFilters);
-    const activeFiltersKey = () => serializeQueryFilters(filtersRef.current);
-    const queryKey = buildListQueryKey('GITnew', currentFilters);
-    const requestedCount = Math.max(PAGE_SIZE, Number(targetLoadedCount) || PAGE_SIZE);
-    const cachedIds = getIdsByQuery(queryKey);
-    const cachedCards = cachedIds.map(id => getCard(id)).filter(Boolean);
-    const { visibleUsers: visibleCachedCards, droppedIds: droppedCachedIds } = filterGitNewVisibleUsers(
-      queryKey,
-      cachedCards.reduce((acc, user) => {
-        if (user?.userId) acc[user.userId] = user;
-        return acc;
-      }, {}),
-    );
-    const visibleCachedUsers = Object.values(visibleCachedCards);
-
-    if (visibleCachedUsers.length >= requestedCount || (!hasMore && visibleCachedUsers.length > 0)) {
-      const cachedUsers = visibleCachedUsers.slice(0, requestedCount).reduce((acc, user) => {
-        acc[user.userId] = user;
-        return acc;
-      }, {});
-      if (!searchListIsolationRef.current && (!isEditingRef.current || forceVisibleUpdate)) setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
-      appendLoadDebugLog('loadMoreUsersGitNew:query-cache-hit', {
-        queryKey,
-        cachedIdsCount: cachedIds.length,
-        cachedCardsCount: cachedCards.length,
-        visibleCachedCardsCount: visibleCachedUsers.length,
-        droppedFutureGetInTouchCount: droppedCachedIds.length,
-        requestedCount,
-        hasMore,
-        forceVisibleUpdate,
-      });
-      return {
-        cacheCount: Object.keys(cachedUsers).length,
-        backendCount: 0,
-        hasMore,
-      };
-    }
-
-    if (gitNewPendingLoadsRef.current[queryKey]) {
-      appendLoadDebugLog('loadMoreUsersGitNew:reuse-pending', {
-        queryKey,
-        requestedCount,
-        cachedIdsCount: cachedIds.length,
-        forceVisibleUpdate,
-      });
-
-      if (!forceVisibleUpdate) return gitNewPendingLoadsRef.current[queryKey];
-
-      return gitNewPendingLoadsRef.current[queryKey].then(result => {
-        const pendingIds = getIdsByQuery(queryKey);
-        const pendingCards = pendingIds.map(id => getCard(id)).filter(Boolean);
-        const { visibleUsers } = filterGitNewVisibleUsers(
-          queryKey,
-          pendingCards.reduce((acc, user) => {
-            if (user?.userId) acc[user.userId] = user;
-            return acc;
-          }, {}),
-        );
-        const visibleSlice = Object.values(visibleUsers).slice(0, requestedCount).reduce((acc, user) => {
-          acc[user.userId] = user;
-          return acc;
-        }, {});
-        if (!searchListIsolationRef.current && (!isEditingRef.current || forceVisibleUpdate)) {
-          setUsers(prev => mergeWithoutOverwrite(prev, visibleSlice));
-        }
-        return result;
-      });
-    }
-
-    const cursor = lastKey21 ?? dateOffset21;
-    const beforeIds = getIdsByQuery(queryKey);
-    appendLoadDebugLog('loadMoreUsersGitNew:start', {
-      queryKey,
-      cursor,
-      limit: PAGE_SIZE,
-      requestedCount,
-      background,
-      forceVisibleUpdate,
-      cachedIdsCount: beforeIds.length,
-      filters: summarizeLoadFiltersForLog(currentFilters),
-    });
-
-    gitNewPendingLoadsRef.current[queryKey] = fetchUsersBySearchKeyGitNewPaged({
-      filterSettings: currentFilters,
-      offset: cursor,
-      limit: PAGE_SIZE,
-      favoritesMap: favoriteUsersData,
-      dislikedMap: dislikeUsersData,
-      debug: (step, payload) => appendLoadDebugLog(step, payload),
-      onProgress: partialUsers => {
-        if (filtersKey !== activeFiltersKey()) return;
-        const normalizedPartialUsers = appendGitUsersToQuery(queryKey, partialUsers);
-        const { visibleUsers: visiblePartialUsers, droppedIds: droppedPartialIds } = filterGitNewVisibleUsers(
-          queryKey,
-          normalizedPartialUsers,
-        );
-        cacheFetchedUsers(visiblePartialUsers, cacheLoad2Users, currentFilters);
-        if (!searchListIsolationRef.current && (!isEditingRef.current || forceVisibleUpdate)) {
-          setUsers(prev => mergeWithoutOverwrite(prev, visiblePartialUsers));
-        }
-        appendLoadDebugLog('loadMoreUsersGitNew:progress', {
-          queryKey,
-          partialCount: countObjectKeys(visiblePartialUsers),
-          droppedFutureGetInTouchCount: droppedPartialIds.length,
-          queryIdsCount: getIdsByQuery(queryKey).length,
-          requestedCount,
-          forceVisibleUpdate,
-        });
-      },
-    })
-      .then(res => {
-        if (filtersKey !== activeFiltersKey()) {
-          return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
-        }
-
-        const normalizedUsers = appendGitUsersToQuery(queryKey, res?.users || {});
-        const { visibleUsers, droppedIds } = filterGitNewVisibleUsers(queryKey, normalizedUsers);
-        cacheFetchedUsers(visibleUsers, cacheLoad2Users, currentFilters);
-        if (!searchListIsolationRef.current && (!isEditingRef.current || forceVisibleUpdate)) setUsers(prev => mergeWithoutOverwrite(prev, visibleUsers));
-
-        const afterIds = getIdsByQuery(queryKey);
-        const backendCount = Math.max(0, afterIds.length - beforeIds.length);
-        setLastKey21(res?.lastKey ?? null);
-        setDateOffset21(res?.lastKey ?? 0);
-        setHasMore(Boolean(res?.hasMore));
-        appendLoadDebugLog('loadMoreUsersGitNew:result', {
-          queryKey,
-          backendCount,
-          usersCount: countObjectKeys(visibleUsers),
-          droppedFutureGetInTouchCount: droppedIds.length,
-          queryIdsCount: afterIds.length,
-          loadedIdsCount: Array.isArray(res?.loadedIds) ? res.loadedIds.length : 0,
-          nextCursor: res?.lastKey ?? null,
-          hasMore: Boolean(res?.hasMore),
-          background,
-          forceVisibleUpdate,
-        });
-        return { cacheCount: 0, backendCount, hasMore: Boolean(res?.hasMore) };
-      })
-      .finally(() => {
-        delete gitNewPendingLoadsRef.current[queryKey];
-      });
-
-    return gitNewPendingLoadsRef.current[queryKey];
-  };
-
-  const loadMoreUsersSearchKey = async (currentFilters = filters) => {
-    appendLoadDebugLog('loadMoreUsersSearchKey:start', {
-      offset: lastKey21 ?? dateOffset21,
-      limit: PAGE_SIZE,
-      filters: summarizeLoadFiltersForLog(currentFilters),
-      hasMore,
-    });
-    let favRaw = getFavorites();
-    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
-    let dislikedUsersMap = Object.fromEntries(
-      Object.entries(getDislikes()).filter(([, v]) => v),
-    );
-    const reactionFilters = currentFilters?.reaction;
-    const hasExplicitReactionSelection =
-      reactionFilters && Object.values(reactionFilters).some(value => value === false);
-    const ownerUid = auth.currentUser?.uid || ownerId;
-    if (hasExplicitReactionSelection && ownerUid) {
-      if (reactionFilters.like && Object.keys(fav).length === 0) {
-        fav = await fetchFavoriteUsers(ownerUid);
-        setFavoriteUsersData(fav);
-        syncFavorites(fav);
-      }
-      if (reactionFilters.dislike && Object.keys(dislikedUsersMap).length === 0) {
-        dislikedUsersMap = await fetchDislikeUsers(ownerUid);
-        setDislikeUsersData(dislikedUsersMap);
-        syncDislikes(dislikedUsersMap);
-      }
-    }
-    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0 && ownerUid) {
-      fav = await fetchFavoriteUsers(ownerUid);
-      setFavoriteUsersData(fav);
-      syncFavorites(fav);
-    }
-
-    if (isSingleReactionSelection(currentFilters?.reaction, 'dislike')) {
-      appendLoadDebugLog('loadMoreUsersSearchKey:delegate-disliked-cards', {
-        reason: 'single dislike reaction selection',
-      });
-      return showDislikedCards();
-    }
-
-    if (isEditingRef.current) {
-      appendLoadDebugLog('loadMoreUsersSearchKey:return-zero', {
-        reason: 'isEditingRef.current is true',
-      });
-      return { cacheCount: 0, backendCount: 0, hasMore };
-    }
-
-    appendLoadDebugLog('loadMoreUsersSearchKey:maps-ready', {
-      favoritesCount: countObjectKeys(fav),
-      dislikesCount: countObjectKeys(dislikedUsersMap),
-      favoriteOnly: Boolean(currentFilters.favorite?.favOnly),
-      hasExplicitReactionSelection,
-    });
-
-    const fetchOffset = lastKey21 ?? dateOffset21;
-    const fetchLimit = PAGE_SIZE;
-    const filtersKey = serializeQueryFilters(currentFilters);
-    let res;
-
-    appendLoadDebugLog('loadMoreUsersSearchKey:before-fetchUsersBySearchKeyBloodPaged', {
-      offset: fetchOffset,
-      limit: fetchLimit,
-      hasMore,
-      filters: summarizeLoadFiltersForLog(currentFilters),
-      filtersKey,
-      search,
-      dateOffset21,
-      lastKey21,
-    });
-
-    try {
-      res = await fetchUsersBySearchKeyBloodPaged({
-        filterSettings: currentFilters,
-        offset: fetchOffset,
-        limit: fetchLimit,
-        favoritesMap: fav,
-        dislikedMap: dislikedUsersMap,
-        debug: (step, payload) => appendLoadDebugLog(step, payload),
-        onProgress: partial => {
-          if (filtersKey !== serializeQueryFilters(filtersRef.current)) return;
-          cacheFetchedUsers(partial, cacheLoad2Users, currentFilters);
-          if (canApplyLoadResultsToUsers()) {
-            setUsers(prev => mergeWithoutOverwrite(prev, partial));
-          }
-        },
-      });
-
-      const responseUsers = res?.users || {};
-      const responseUserIds = Object.entries(responseUsers).map(([id, user]) => user?.userId || id);
-      appendLoadDebugLog('loadMoreUsersSearchKey:after-fetchUsersBySearchKeyBloodPaged', {
-        hasResponse: Boolean(res),
-        rawUsersCount: Object.keys(responseUsers).length,
-        usersCount: Object.keys(responseUsers).length,
-        loadedIdsCount: Array.isArray(res?.loadedIds) ? res.loadedIds.length : 0,
-        loadedIdsSample: Array.isArray(res?.loadedIds) ? res.loadedIds.slice(0, 10) : [],
-        usersIdsSample: responseUserIds.slice(0, 10),
-        lastKey: res?.lastKey ?? null,
-        hasMore: Boolean(res?.hasMore),
-        fullResponseKeys: res && typeof res === 'object' ? Object.keys(res) : [],
-      });
-    } catch (error) {
-      appendLoadDebugLog('loadMoreUsersSearchKey:error-fetchUsersBySearchKeyBloodPaged', {
-        message: error?.message || String(error),
-        stack: error?.stack || null,
-        name: error?.name || null,
-        filters: summarizeLoadFiltersForLog(currentFilters),
-        currentFilters: summarizeLoadFiltersForLog(currentFilters),
-        offset: fetchOffset,
-        limit: fetchLimit,
-      });
-      throw error;
-    }
-
-    if (filtersKey !== serializeQueryFilters(filtersRef.current)) {
-      appendLoadDebugLog('loadMoreUsersSearchKey:ignore-stale-response', {
-        requestFiltersKey: filtersKey,
-        activeFiltersKey: serializeQueryFilters(filtersRef.current),
-      });
-      return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
-    }
-
-    const searchKeyRawEntries = Object.entries(res?.users || {});
-    const searchKeyDropReasons = {};
-    appendLoadDebugLog('loadMoreUsersSearchKey:backend-response', {
-      rawUsersCount: searchKeyRawEntries.length,
-      lastKey: res?.lastKey ?? null,
-      hasMore: Boolean(res?.hasMore),
-      zeroReason: searchKeyRawEntries.length === 0 ? 'searchKey backend returned empty users' : null,
-    });
-
-    const normalizedUsers = searchKeyRawEntries.reduce((acc, [id, user]) => {
-      const targetId = user?.userId || id;
-      if (!targetId || !user) {
-        countLoadFilterDrop(searchKeyDropReasons, 'invalidUser');
-        return acc;
-      }
-      // fetchUsersBySearchKeyBloodPaged вже повертає картки після filterMain.
-      // Не запускаємо повторно ту саму перевірку для кожної картки у UI.
-      acc[targetId] = { ...user, userId: targetId };
-      return acc;
-    }, {});
-
-    cacheFetchedUsers(normalizedUsers, cacheLoad2Users, currentFilters);
-    if (canApplyLoadResultsToUsers()) {
-      setUsers(prev => mergeWithoutOverwrite(prev, normalizedUsers));
-    }
-
-    const queryKey = buildListQueryKey('DATE2.1', currentFilters);
-    const existingIds = getIdsByQuery(queryKey);
-    setIdsForQuery(queryKey, [...new Set([...existingIds, ...Object.keys(normalizedUsers)])]);
-
-    const backendCount = Object.keys(normalizedUsers).length;
-    appendLoadDebugLog('loadMoreUsersSearchKey:result', {
-      rawUsersCount: searchKeyRawEntries.length,
-      backendCount,
-      dropReasons: searchKeyDropReasons,
-      nextLastKey: res?.lastKey ?? null,
-      hasMore: Boolean(res?.hasMore),
-      zeroReason: backendCount === 0
-        ? searchKeyRawEntries.length === 0
-          ? 'backend returned 0 users'
-          : 'all searchKey backend users were removed by filters'
-        : null,
-    });
-    setLastKey21(res?.lastKey ?? null);
-    setDateOffset21(prev => prev + backendCount);
-    setHasMore(Boolean(res?.hasMore));
-    if (res?.hasMore === false) {
-      searchKeyCoverageRef.current[filtersKey] = true;
-    }
-
-    return { cacheCount: 0, backendCount, hasMore: Boolean(res?.hasMore) };
-  };
-
-  const loadMoreUsers2Base = async (
-    currentFilters = filters,
-    {
-      validateGetInTouchDate = true,
-      useDateByDateBackendFetch = true,
-      queryMode = 'DATE2',
-    } = {},
-  ) => {
-    appendLoadDebugLog('loadMoreUsers2Base:start', {
-      queryMode,
-      validateGetInTouchDate,
-      useDateByDateBackendFetch,
-      dateOffset2,
-      dateOffset21,
-      lastKey21,
-      hasMore,
-      filters: summarizeLoadFiltersForLog(currentFilters),
-    });
-    let favRaw = getFavorites();
-    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
-    let dislikedUsersMap = Object.fromEntries(
-      Object.entries(getDislikes()).filter(([, v]) => v),
-    );
-    const reactionFilters = currentFilters?.reaction;
-    const hasExplicitReactionSelection =
-      reactionFilters && Object.values(reactionFilters).some(value => value === false);
-    const ownerUid = auth.currentUser?.uid || ownerId;
-    if (hasExplicitReactionSelection && ownerUid) {
-      if (reactionFilters.like && Object.keys(fav).length === 0) {
-        fav = await fetchFavoriteUsers(ownerUid);
-        setFavoriteUsersData(fav);
-        syncFavorites(fav);
-      }
-      if (reactionFilters.dislike && Object.keys(dislikedUsersMap).length === 0) {
-        dislikedUsersMap = await fetchDislikeUsers(ownerUid);
-        setDislikeUsersData(dislikedUsersMap);
-        syncDislikes(dislikedUsersMap);
-      }
-    }
-    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0 && ownerUid) {
-      fav = await fetchFavoriteUsers(ownerUid);
-      setFavoriteUsersData(fav);
-      syncFavorites(fav);
-    }
-
-    if (isEditingRef.current) {
-      appendLoadDebugLog('loadMoreUsers2Base:return-zero', {
-        queryMode,
-        reason: 'isEditingRef.current is true',
-      });
-      return { cacheCount: 0, backendCount: 0, hasMore };
-    }
-
-    appendLoadDebugLog('loadMoreUsers2Base:maps-ready', {
-      queryMode,
-      favoritesCount: countObjectKeys(fav),
-      dislikesCount: countObjectKeys(dislikedUsersMap),
-      favoriteOnly: Boolean(currentFilters.favorite?.favOnly),
-      hasExplicitReactionSelection,
-    });
-
-
-    const { cards: cachedArr, fromCache } = await getLoad2Cards(
-      currentFilters,
-      id => fetchUserById(id),
-    );
-    let cacheCount = 0;
-    let backendCount = 0;
-
-    const isValid = shouldShowGetInTouchInGit;
-    const cacheDropReasons = {};
-    const filteredArr = cachedArr.filter(u => {
-      if (validateGetInTouchDate && !isValid(u.getInTouch)) {
-        countLoadFilterDrop(cacheDropReasons, 'getInTouch');
-        return false;
-      }
-      if (currentFilters.favorite?.favOnly && !fav[u.userId]) {
-        countLoadFilterDrop(cacheDropReasons, 'favoriteOnly');
-        return false;
-      }
-      if (!passesReactionFilter(u, currentFilters?.reaction, fav, dislikedUsersMap)) {
-        countLoadFilterDrop(cacheDropReasons, 'reaction');
-        return false;
-      }
-      return true;
-    });
-
-    let offset = useDateByDateBackendFetch ? dateOffset2 : dateOffset21;
-    appendLoadDebugLog('loadMoreUsers2Base:cache-filtered', {
-      queryMode,
-      fromCache,
-      cachedCount: cachedArr.length,
-      filteredCount: filteredArr.length,
-      offset,
-      pageSize: PAGE_SIZE,
-      dropReasons: cacheDropReasons,
-      zeroReason: filteredArr.length === 0 && cachedArr.length > 0 ? 'cache users were removed by filters' : null,
-    });
-    const loadedIds = [];
-
-    const slice = filteredArr.slice(offset, offset + PAGE_SIZE);
-    appendLoadDebugLog('loadMoreUsers2Base:cache-slice', {
-      queryMode,
-      offset,
-      sliceCount: slice.length,
-      filteredCount: filteredArr.length,
-      zeroReason: slice.length === 0 && filteredArr.length > 0 ? 'offset is outside filtered cache range' : null,
-    });
-    if (slice.length > 0) {
-      const cachedUsers = slice.reduce((acc, u) => {
-        acc[u.userId] = u;
-        return acc;
-      }, {});
-      cacheFetchedUsers(cachedUsers, cacheLoad2Users, currentFilters);
-      if (canApplyLoadResultsToUsers()) {
-        setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
-      }
-      loadedIds.push(...Object.keys(cachedUsers));
-      offset += slice.length;
-      if (fromCache) cacheCount += slice.length;
-      else backendCount += slice.length;
-    }
-
-    let more = filteredArr.length > offset;
-
-    if (!more && slice.length < PAGE_SIZE) {
-      if (useDateByDateBackendFetch) {
-        appendLoadDebugLog('loadMoreUsers2Base:backend-fetch-filtered-page:start', {
-          queryMode,
-          offset,
-          reason: 'cache does not have enough users for requested page',
-        });
-        const res = await fetchFilteredUsersByPage(
-          offset,
-          undefined,
-          undefined,
-          currentFilters,
-          fav,
-          dislikedUsersMap,
-          undefined,
-          partial => {
-            const filteredPartial = currentFilters.favorite?.favOnly
-              ? Object.fromEntries(Object.entries(partial).filter(([id]) => fav[id]))
-              : partial;
-            cacheFetchedUsers(filteredPartial, cacheLoad2Users, currentFilters);
-            if (canApplyLoadResultsToUsers()) {
-              setUsers(prev => mergeWithoutOverwrite(prev, filteredPartial));
-            }
-            loadedIds.push(...Object.keys(filteredPartial));
-            backendCount += Object.keys(filteredPartial).length;
-          },
-        );
-
-        const backendEntries = Object.entries(res?.users || {});
-        appendLoadDebugLog('loadMoreUsers2Base:backend-fetch-filtered-page:response', {
-          queryMode,
-          rawUsersCount: backendEntries.length,
-          lastKey: res?.lastKey ?? null,
-          hasMore: Boolean(res?.hasMore),
-          zeroReason: backendEntries.length === 0 ? 'fetchFilteredUsersByPage returned empty users' : null,
-        });
-
-        if (backendEntries.length > 0) {
-          const normalizedUsers = backendEntries.reduce((acc, [userId, user]) => {
-            const targetId = user.userId || userId;
-            acc[targetId] = { ...user, userId: targetId };
-            return acc;
-          }, {});
-
-          const backendDropReasons = {};
-          const filteredUsers = Object.fromEntries(
-            Object.entries(normalizedUsers).filter(([, user]) => {
-              if (currentFilters.favorite?.favOnly && !fav[user.userId]) {
-                countLoadFilterDrop(backendDropReasons, 'favoriteOnly');
-                return false;
-              }
-              if (validateGetInTouchDate && !isValid(user.getInTouch)) {
-                countLoadFilterDrop(backendDropReasons, 'getInTouch');
-                return false;
-              }
-              const keepByReaction = passesReactionFilter(
-                user,
-                currentFilters?.reaction,
-                fav,
-                dislikedUsersMap,
-              );
-              if (!keepByReaction) countLoadFilterDrop(backendDropReasons, 'reaction');
-              return keepByReaction;
-            }),
-          );
-
-          appendLoadDebugLog('loadMoreUsers2Base:backend-fetch-filtered-page:filtered', {
-            queryMode,
-            rawUsersCount: backendEntries.length,
-            filteredCount: countObjectKeys(filteredUsers),
-            dropReasons: backendDropReasons,
-            zeroReason: countObjectKeys(filteredUsers) === 0 ? 'all fetchFilteredUsersByPage users were removed by filters' : null,
-          });
-
-          cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
-          if (canApplyLoadResultsToUsers()) {
-            setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
-          }
-          loadedIds.push(...Object.keys(filteredUsers));
-          offset = res.lastKey;
-          more = !!res.hasMore;
-          backendCount += Object.keys(filteredUsers).length;
-        } else {
-          more = false;
-        }
-      } else {
-        let nextKey = lastKey21;
-        let loadedForPage = slice.length;
-        let backendHasMore = true;
-
-        while (loadedForPage < PAGE_SIZE && backendHasMore) {
-          appendLoadDebugLog('loadMoreUsers2Base:backend-loop:start', {
-            queryMode,
-            nextKey,
-            loadedForPage,
-            pageSize: PAGE_SIZE,
-          });
-          const res = await fetchPaginatedUsers(
-            nextKey,
-            'DATE3',
-            currentFilters,
-            fav,
-            {
-              skipGetInTouchFilter: true,
-              dislikedUsers: dislikedUsersMap,
-            },
-          );
-
-          if (!res || !res.users) {
-            appendLoadDebugLog('loadMoreUsers2Base:backend-loop:empty-response', {
-              queryMode,
-              nextKey,
-              hasResponse: Boolean(res),
-              responseLastKey: res?.lastKey ?? null,
-            });
-            backendHasMore = false;
-            nextKey = res?.lastKey ?? null;
-            break;
-          }
-
-          const loopBackendEntries = Object.entries(res.users);
-          appendLoadDebugLog('loadMoreUsers2Base:backend-loop:response', {
-            queryMode,
-            rawUsersCount: loopBackendEntries.length,
-            responseLastKey: res.lastKey ?? null,
-            responseHasMore: Boolean(res.hasMore),
-          });
-
-          const normalizedUsers = loopBackendEntries.reduce((acc, [userId, user]) => {
-            const targetId = user.userId || userId;
-            acc[targetId] = { ...user, userId: targetId };
-            return acc;
-          }, {});
-
-          const loopDropReasons = {};
-          const filteredUsers = Object.fromEntries(
-            Object.entries(normalizedUsers).filter(([, user]) => {
-              if (currentFilters.favorite?.favOnly && !fav[user.userId]) {
-                countLoadFilterDrop(loopDropReasons, 'favoriteOnly');
-                return false;
-              }
-              if (validateGetInTouchDate && !isValid(user.getInTouch)) {
-                countLoadFilterDrop(loopDropReasons, 'getInTouch');
-                return false;
-              }
-              const keepByReaction = passesReactionFilter(
-                user,
-                currentFilters?.reaction,
-                fav,
-                dislikedUsersMap,
-              );
-              if (!keepByReaction) countLoadFilterDrop(loopDropReasons, 'reaction');
-              return keepByReaction;
-            }),
-          );
-
-          const filteredIds = Object.keys(filteredUsers);
-          appendLoadDebugLog('loadMoreUsers2Base:backend-loop:filtered', {
-            queryMode,
-            rawUsersCount: loopBackendEntries.length,
-            filteredCount: filteredIds.length,
-            dropReasons: loopDropReasons,
-            zeroReason: filteredIds.length === 0 ? 'all fetchPaginatedUsers DATE3 users were removed by filters' : null,
-          });
-
-
-          if (filteredIds.length > 0) {
-            cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
-            if (canApplyLoadResultsToUsers()) {
-              setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
-            }
-            loadedIds.push(...filteredIds);
-            backendCount += filteredIds.length;
-            loadedForPage += filteredIds.length;
-            offset += filteredIds.length;
-          }
-
-          nextKey = res.lastKey ?? null;
-          backendHasMore = !!res.hasMore && nextKey !== null;
-        }
-
-        more = backendHasMore;
-        setLastKey21(nextKey);
-      }
-    }
-
-    if (useDateByDateBackendFetch) {
-      updateDateOffset2(offset);
-    } else {
-      setDateOffset21(offset);
-    }
-    setHasMore(more);
-    appendLoadDebugLog('loadMoreUsers2Base:result', {
-      queryMode,
-      cacheCount,
-      backendCount,
-      loadedIdsCount: loadedIds.length,
-      offset,
-      hasMore: more,
-      zeroReason: loadedIds.length === 0
-        ? 'cache slice and backend fetch produced no accepted users'
-        : null,
-    });
-    const queryKey = buildListQueryKey(queryMode, currentFilters);
-    const existingIds = getIdsByQuery(queryKey);
-    setIdsForQuery(queryKey, [...new Set([...existingIds, ...loadedIds])]);
-    return { cacheCount, backendCount, hasMore: more };
-  };
-
-  const loadMoreUsersOffline = async (currentFilters = filters, options = {}) => loadMoreUsersOfflineMode({
-    currentFilters,
-    ...options,
-    pageSize: PAGE_SIZE,
-    hasMore,
-    buildListQueryKey,
-    serializeQueryFilters,
-    getActiveFiltersKey: () => serializeQueryFilters(filtersRef.current),
-    getLocalNodeProfiles,
-    filterMain,
-    favoriteUsersData,
-    dislikeUsersData,
-    fetchUsersByIds,
-    cacheFetchedUsers,
-    cacheLoad2Users,
-    setIdsForQuery,
-    canApplyLoadResultsToUsers,
-    setUsers,
-    mergeWithoutOverwrite,
-    setDateOffset21,
-    setHasMore,
-    appendLoadDebugLog,
-    summarizeLoadFiltersForLog,
-    toast,
-  });
-
-  const loadMoreUsersLastAction = async (currentFilters = filters) => {
-    appendLoadDebugLog('loadMoreUsersLastAction:start', {
-      dateOffsetLA,
-      hasMore,
-      filters: summarizeLoadFiltersForLog(currentFilters),
-    });
-    let favRaw = getFavorites();
-    let fav = Object.fromEntries(Object.entries(favRaw).filter(([, v]) => v));
-    let dislikedUsersMap = Object.fromEntries(
-      Object.entries(getDislikes()).filter(([, v]) => v),
-    );
-    const reactionFilters = currentFilters?.reaction;
-    const hasExplicitReactionSelection =
-      reactionFilters && Object.values(reactionFilters).some(value => value === false);
-    const ownerUid = auth.currentUser?.uid || ownerId;
-    if (hasExplicitReactionSelection && ownerUid) {
-      if (reactionFilters.like && Object.keys(fav).length === 0) {
-        fav = await fetchFavoriteUsers(ownerUid);
-        setFavoriteUsersData(fav);
-        syncFavorites(fav);
-      }
-      if (reactionFilters.dislike && Object.keys(dislikedUsersMap).length === 0) {
-        dislikedUsersMap = await fetchDislikeUsers(ownerUid);
-        setDislikeUsersData(dislikedUsersMap);
-        syncDislikes(dislikedUsersMap);
-      }
-    }
-    if (currentFilters.favorite?.favOnly && Object.keys(favRaw).length === 0 && ownerUid) {
-      fav = await fetchFavoriteUsers(ownerUid);
-      setFavoriteUsersData(fav);
-      syncFavorites(fav);
-    }
-
-    if (isEditingRef.current) {
-      appendLoadDebugLog('loadMoreUsersLastAction:return-zero', {
-        reason: 'isEditingRef.current is true',
-      });
-      return { cacheCount: 0, backendCount: 0, hasMore };
-    }
-
-    appendLoadDebugLog('loadMoreUsersLastAction:maps-ready', {
-      favoritesCount: countObjectKeys(fav),
-      dislikesCount: countObjectKeys(dislikedUsersMap),
-      favoriteOnly: Boolean(currentFilters.favorite?.favOnly),
-      hasExplicitReactionSelection,
-    });
-
-
-    const { cards: cachedArr, fromCache } = await getLoad2Cards(
-      currentFilters,
-      id => fetchUserById(id),
-    );
-    const sortedCachedArr = [...cachedArr].sort(
-      (a, b) => normalizeLastAction(b?.lastAction) - normalizeLastAction(a?.lastAction),
-    );
-
-    let cacheCount = 0;
-    let backendCount = 0;
-
-    const slice = sortedCachedArr.slice(dateOffsetLA, dateOffsetLA + PAGE_SIZE);
-    appendLoadDebugLog('loadMoreUsersLastAction:cache-slice', {
-      fromCache,
-      cachedCount: cachedArr.length,
-      sortedCachedCount: sortedCachedArr.length,
-      dateOffsetLA,
-      sliceCount: slice.length,
-      zeroReason: slice.length === 0 && sortedCachedArr.length > 0 ? 'dateOffsetLA is outside sorted cache range' : null,
-    });
-    if (slice.length > 0) {
-      const cachedUsers = slice.reduce((acc, user) => {
-        acc[user.userId] = user;
-        return acc;
-      }, {});
-
-      cacheFetchedUsers(cachedUsers, cacheLoad2Users, currentFilters);
-      if (canApplyLoadResultsToUsers()) {
-        setUsers(prev => mergeWithoutOverwrite(prev, cachedUsers));
-      }
-      if (fromCache) cacheCount += slice.length;
-      else backendCount += slice.length;
-    }
-
-    const hasCachedMore = sortedCachedArr.length > dateOffsetLA + slice.length;
-    if (slice.length === PAGE_SIZE || hasCachedMore) {
-      const nextOffset = dateOffsetLA + slice.length;
-      setDateOffsetLA(nextOffset);
-      setHasMore(hasCachedMore);
-      appendLoadDebugLog('loadMoreUsersLastAction:result-from-cache', {
-        cacheCount,
-        backendCount,
-        hasMore: hasCachedMore,
-        nextOffset,
-      });
-      return { cacheCount, backendCount, hasMore: hasCachedMore };
-    }
-
-    const backendOffset = dateOffsetLA + slice.length;
-    const loadLastActionFilteredPage = async ({
-      targetCount = PAGE_SIZE,
-      startOffset = backendOffset,
-      startDateOffsetLA = backendOffset,
-    }) => {
-      const collected = {};
-      let cursor = Number.isFinite(startOffset) ? startOffset : 0;
-      let dateOffset = Number.isFinite(startDateOffsetLA) ? startDateOffsetLA : cursor;
-      let hasMoreLA = true;
-      let guard = 0;
-
-      while (Object.keys(collected).length < targetCount && hasMoreLA && guard < 200) {
-        guard += 1;
-        // В LAST_ACTION завжди тягнемо RAW batch без checkbox-фільтрів, а потім фільтруємо локально.
-        // eslint-disable-next-line no-await-in-loop
-        const rawBatch = await fetchUsersByLastActionPaged(
-          cursor,
-          PAGE_SIZE,
-          undefined,
-          id => fetchUserById(id),
-          {},
-          fav,
-          dislikedUsersMap,
-          filterMain
-        );
-        const rawEntries = Object.entries(rawBatch?.users || {});
-        const filteredEntries = filterMain(
-          rawEntries,
-          'LAST_ACTION',
-          currentFilters,
-          fav,
-          dislikedUsersMap,
-        );
-
-        filteredEntries.forEach(([id, user]) => {
-          if (!collected[id]) {
-            collected[id] = user;
-          }
-        });
-
-        const nextCursor = Number.isFinite(rawBatch?.lastKey) ? rawBatch.lastKey : cursor + rawEntries.length;
-        cursor = nextCursor;
-        dateOffset = nextCursor;
-        hasMoreLA = Boolean(rawBatch?.hasMore);
-
-        appendLoadDebugLog('loadMoreUsersLastAction:checkbox-batch', {
-          rawUsersCount: rawEntries.length,
-          filteredCount: filteredEntries.length,
-          hasMore: hasMoreLA,
-          cursor,
-          dateOffset,
-          lastKey: rawBatch?.lastKey ?? null,
-          visibleCount: Object.keys(collected).length,
-          zeroReason: rawEntries.length > 0 && filteredEntries.length === 0 ? 'filterMain removed LAST_ACTION batch' : null,
-        });
-        const debugMessage = `[LA][checkbox] raw=${rawEntries.length}, filtered=${filteredEntries.length}, next=${hasMoreLA}, cursor=${cursor}, dateOffset=${dateOffset}, lastKey=${rawBatch?.lastKey ?? 'n/a'}, visible=${Object.keys(collected).length}`;
-        console.info(debugMessage);
-        toast(debugMessage, { duration: 1800 });
-
-        if (rawEntries.length === 0 && !hasMoreLA) break;
-      }
-
-      return { users: collected, cursor, dateOffsetLA: dateOffset, hasMore: hasMoreLA };
-    };
-
-    const hasCheckboxFilters = Object.values(currentFilters || {}).some(value => {
-      if (!value || value === 'off') return false;
-      if (typeof value === 'object') return Object.values(value).some(Boolean);
-      return true;
-    });
-    const res = hasCheckboxFilters
-      ? await loadLastActionFilteredPage({
-          targetCount: PAGE_SIZE,
-          startOffset: backendOffset,
-          startDateOffsetLA: backendOffset,
-        })
-      : await fetchUsersByLastActionPaged(
-          backendOffset,
-          PAGE_SIZE,
-          undefined,
-          id => fetchUserById(id),
-          currentFilters,
-          fav,
-          dislikedUsersMap,
-          filterMain
-        );
-
-    const lastActionRawCount = countObjectKeys(res?.users);
-    appendLoadDebugLog('loadMoreUsersLastAction:backend-response', {
-      hasCheckboxFilters,
-      backendOffset,
-      rawUsersCount: lastActionRawCount,
-      lastKey: res?.lastKey ?? null,
-      dateOffsetLA: res?.dateOffsetLA ?? null,
-      hasMore: Boolean(res?.hasMore),
-      zeroReason: lastActionRawCount === 0 ? 'LAST_ACTION backend returned empty users' : null,
-    });
-
-    if (res && Object.keys(res.users || {}).length > 0) {
-      const filteredUsers = currentFilters.favorite?.favOnly
-        ? Object.fromEntries(Object.entries(res.users).filter(([id]) => fav[id]))
-        : res.users;
-      cacheFetchedUsers(filteredUsers, cacheLoad2Users, currentFilters);
-      if (canApplyLoadResultsToUsers()) {
-        setUsers(prev => mergeWithoutOverwrite(prev, filteredUsers));
-      }
-      const nextOffset = Number.isFinite(res.dateOffsetLA) ? res.dateOffsetLA : res.lastKey;
-      setDateOffsetLA(nextOffset);
-      setHasMore(res.hasMore);
-      backendCount += Object.keys(filteredUsers).length;
-      appendLoadDebugLog('loadMoreUsersLastAction:result', {
-        rawUsersCount: lastActionRawCount,
-        filteredCount: countObjectKeys(filteredUsers),
-        cacheCount,
-        backendCount,
-        hasMore: Boolean(res.hasMore),
-        zeroReason: countObjectKeys(filteredUsers) === 0 ? 'favoriteOnly removed all LAST_ACTION users' : null,
-      });
-      return { cacheCount, backendCount, hasMore: res.hasMore };
-    }
-
-    setHasMore(false);
-    appendLoadDebugLog('loadMoreUsersLastAction:return-zero', {
-      reason: 'cache and backend produced no users',
-      sliceCount: slice.length,
-      backendOffset,
-      lastActionRawCount,
-    });
-    if (slice.length > 0) {
-      setDateOffsetLA(prev => prev + slice.length);
-    }
-    return { cacheCount, backendCount, hasMore: false };
-  };
-
-  const getGitNewQueryCardsCount = (currentFilters = filters) => {
-    const queryKey = buildListQueryKey('GITnew', currentFilters);
-    const cards = getIdsByQuery(queryKey).map(id => getCard(id)).filter(Boolean);
-    const { visibleUsers } = filterGitNewVisibleUsers(
-      queryKey,
-      cards.reduce((acc, user) => {
-        if (user?.userId) acc[user.userId] = user;
-        return acc;
-      }, {}),
-    );
-
-    return Object.keys(visibleUsers).length;
-  };
-
-  const ensureGitNewLoadedCount = async (needed, currentFilters = filters, options = {}) => {
-    let more = hasMore;
-    let previousCardsCount = getGitNewQueryCardsCount(currentFilters);
-
-    while (more && previousCardsCount < needed) {
-      const result = await loadMoreUsersGitNew(currentFilters, { targetLoadedCount: needed, background: true, ...options });
-      if (result?.ignored) return result;
-
-      const nextCardsCount = getGitNewQueryCardsCount(currentFilters);
-      more = Boolean(result?.hasMore);
-      if (nextCardsCount <= previousCardsCount) break;
-      previousCardsCount = nextCardsCount;
-    }
-
-    return { hasMore: more };
-  };
-
   const handlePageChange = async page => {
+    // «Список» перемикає сторінку одразу: що вже прийнято, видно без
+    // чекання, а бракуюче двигун догортає у фоні — і, якщо так у плані, ще
+    // одну сторінку наперед.
+    if (currentFilter === CARD_LIST_FILTER) {
+      setCurrentPage(page);
+      setCacheCount(0);
+      setBackendCount(0);
+      ensureCardListLoaded(page * PAGE_SIZE)
+        .then(result => {
+          if (result?.ignored) return;
+          appendLoadDebugLog('handlePageChange:card-list-loaded', { page, hasMore: result?.hasMore });
+          if (result?.hasMore) prefetchCardListPage(page);
+        })
+        .catch(error => {
+          appendLoadDebugLog('handlePageChange:card-list-error', {
+            page,
+            message: error?.message || String(error),
+          });
+        });
+      return;
+    }
+
     const needed = page * PAGE_SIZE;
     let loaded = Object.keys(users).length;
     let more = hasMore;
     let cacheLoaded = 0;
     let backendLoaded = 0;
-    let emptyDate2Batches = 0;
-
-    if (currentFilter === 'GITnew') {
-      setCurrentPage(page);
-      setCacheCount(0);
-      setBackendCount(0);
-      if (more && loaded < needed) {
-        ensureGitNewLoadedCount(needed, filters)
-          .then(({ ignored } = {}) => {
-            if (!ignored) {
-              appendLoadDebugLog('handlePageChange:gitNew-background-loaded', { page, needed });
-            }
-          })
-          .catch(error => {
-            appendLoadDebugLog('handlePageChange:gitNew-background-error', {
-              page,
-              needed,
-              message: error?.message || String(error),
-            });
-          });
-      }
-      return;
-    }
 
     while (more && loaded < needed) {
       const { cacheCount, backendCount, hasMore: nextMore, ignored } =
         currentFilter === 'FAVORITE'
           ? await loadNextReactionBatch()
-          : currentFilter === 'DATE2'
-          ? await loadMoreUsers2()
-          : currentFilter === 'GITnew'
-          ? await loadMoreUsersGitNew()
-          : currentFilter === 'DATE2.1'
-          ? searchIdAndSearchKeyOnlyMode
-            ? await loadMoreUsersSearchKey()
-            : await loadMoreUsers21()
-          : currentFilter === OFFLINE_LOAD_FILTER
-          ? await loadMoreUsersOffline()
-          : currentFilter === 'LAST_ACTION'
-          ? await loadMoreUsersLastAction()
-          : currentFilter === LAST_ACTION2_FILTER
-          ? await loadMoreUsersLastAction2()
           : currentFilter === FEED_DATE_FILTER
           ? await loadMoreUsersFeedDate()
-          : await loadMoreUsers(currentFilter);
+          : { cacheCount: 0, backendCount: 0, hasMore: false };
       if (ignored) return;
       cacheLoaded += cacheCount;
       backendLoaded += backendCount;
       loaded += cacheCount + backendCount;
       more = nextMore;
-      if (cacheCount + backendCount === 0 && nextMore) {
-        if (currentFilter === 'DATE2') {
-          emptyDate2Batches += 1;
-          appendLoadDebugLog('handlePageChange:DATE2-empty-batch', {
-            page,
-            needed,
-            emptyDate2Batches,
-            hasMore: nextMore,
-          });
-          if (emptyDate2Batches >= 3) break;
-        } else {
-          more = false;
-        }
-      } else {
-        emptyDate2Batches = 0;
-      }
+      if (cacheCount + backendCount === 0 && nextMore) more = false;
     }
     setCacheCount(cacheLoaded);
     setBackendCount(backendLoaded);
@@ -5802,7 +4248,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     reactionPagingRef.current = null;
     setUsers({});
     setHasMore(false);
-    setLastKey(null);
     setCurrentPage(1);
     setCacheCount(0);
     setBackendCount(0);
@@ -5893,7 +4338,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       dislikedMap: isFavorite ? { ...dislikeUsersData } : { ...dislikeUsersData, ...reactionMap },
     };
     setUsers({});
-    setLastKey(null);
     setCurrentPage(1);
     return loadNextReactionBatch();
   }, [
@@ -5909,22 +4353,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const loadFavoriteUsers = async () => showFavoriteCards();
 
-  const isSingleReactionSelection = useCallback((reactionFilters, targetKey) => {
-    if (!reactionFilters || typeof reactionFilters !== 'object') return false;
-    const selectedKeys = Object.entries(reactionFilters)
-      .filter(([, value]) => value)
-      .map(([key]) => key);
-    return selectedKeys.length === 1 && selectedKeys[0] === targetKey;
-  }, []);
-
-  // Пошук за `searchKey` з однією реакцією «дизлайк» кличе це і на старті
-  // списку, і на кожну наступну сторінку: другий виклик продовжує вже
-  // розпочату вибірку, а не збирає її знову з нуля.
-  const showDislikedCards = useCallback(() => (
-    reactionPagingRef.current?.kind === 'dislike'
-      ? loadNextReactionBatch()
-      : startReactionPaging('dislike')
-  ), [loadNextReactionBatch, startReactionPaging]);
 
 
 
@@ -5950,7 +4378,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     cacheFetchedUsers(cycleUsers, cacheLoad2Users, filters);
     setUsers(sorted);
     setHasMore(false);
-    setLastKey(null);
     setCurrentPage(1);
     setCacheCount(0);
     setBackendCount(sortedUsers.length);
@@ -6259,8 +4686,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setUserNotFound(false);
     setHasMore(true);
     setCurrentPage(1);
-    setLastKey(null);
-    setLastKey21(null);
     setSearchBarQueryActive(false);
     setLastSearchBarQuery('');
     setCacheCount(0);
@@ -6932,12 +5357,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   useEffect(() => {
-    if (!searchIdAndSearchKeyOnlyMode) {
-      setShowSearchKeyIndexPanel(false);
-    }
-  }, [searchIdAndSearchKeyOnlyMode]);
-
-  useEffect(() => {
     setBackendDownloadToastsEnabled(downloadSizeToastsEnabled);
   }, [downloadSizeToastsEnabled]);
 
@@ -6985,28 +5404,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return ids;
     }
 
-    if (currentFilter === LAST_ACTION2_FILTER) {
-      const acceptedOrder = getLA2AcceptedOrder(la2StateRef);
-      return ids.sort((a, b) => acceptedOrder.indexOf(a) - acceptedOrder.indexOf(b));
+    // «Список» показує картки рівно в тому порядку, в якому їх прийняв
+    // двигун: сторінка на екрані — це сторінка з бази. Доти показ
+    // пересортовував завантажене за `getInTouch`, і в GIT, що вантажив від
+    // найдавніших дат, кожна дописана сторінка лягала *над* показаною.
+    // Картка поза порядком (щойно відкрита з пошуку) стає в кінець.
+    if (currentFilter === CARD_LIST_FILTER) {
+      const position = new Map(cardListOrderRef.current.map((id, index) => [id, index]));
+      const rank = id => (position.has(id) ? position.get(id) : Number.MAX_SAFE_INTEGER);
+      return ids.sort((a, b) => rank(a) - rank(b));
     }
 
-    if (currentFilter === 'LAST_ACTION') {
-      return ids.sort((a, b) => {
-        const left = normalizeLastAction(getVisibleCard(a)?.lastAction) || 0;
-        const right = normalizeLastAction(getVisibleCard(b)?.lastAction) || 0;
-        return right - left;
-      });
-    }
-
-    const reactionSortDirection = getSearchKeyReactionSortDirection(filters?.reaction);
-    if (reactionSortDirection) {
-      return ids.sort((a, b) => {
-        const left = getVisibleCard(a)?.getInTouch || '';
-        const right = getVisibleCard(b)?.getInTouch || '';
-        return reactionSortDirection === 'desc'
-          ? right.localeCompare(left)
-          : left.localeCompare(right);
-      });
+    // Стрічка — так само: порядок сторінки `fetchMatchingCardsPage` і є
+    // відповідь («як у стрічці matching»), а пересортування за `getInTouch`
+    // його ламало.
+    if (currentFilter === FEED_DATE_FILTER) {
+      return ids;
     }
 
     return ids.sort((a, b) => compareUsersByGetInTouch(getVisibleCard(a), getVisibleCard(b)));
@@ -7041,13 +5454,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (isDuplicateView || isSearchersView || isJsonProfileListView) return cards;
     if (searchBarQueryActive && !useSearchResultFilters) return cards;
 
+    // Стани позначки (кому дзвонити, заплановані…) тримає план двигуна, а не
+    // показ: тут лише фільтри панелі, щоб звуження було видно одразу, ще до
+    // відповіді бази.
     return filterMain(
       cards.map(card => [card.userId, card]),
       currentFilter,
       filters,
       favoriteUsersData,
       dislikeUsersData,
-      { requireCurrentOrPastGetInTouch: searchIdAndSearchKeyOnlyMode && currentFilter === 'DATE2.1' },
     ).map(([, card]) => card);
   };
   const renderSourceCards = sortedIds
@@ -7113,6 +5528,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return acc;
   }, {});
 
+  // Фото картки списку питаються **раз** на картку. Ефект залежить від
+  // `paginatedUsers` — нового обʼєкта на кожен рендер, — і кожне оновлення
+  // списку (а «Список» приходить порціями) запускав ті самі лістинги
+  // Storage й читання `profileDetails/{id}/photos` заново: прапорець
+  // `cancelled` лише ігнорував відповідь, а не скасовував запит. На двадцяти
+  // показаних картках це було по шість читань фото на кожну.
+  const listPhotoRequestedRef = useRef(new Set());
   useEffect(() => {
     const visibleIds = displayedUserIdsKey.split('|').filter(Boolean);
     const idsToLoad = visibleIds.filter(id => {
@@ -7120,12 +5542,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (!user?.userId) return false;
       if (hasProfilePhotos(user)) return false;
       if (user.__photosHydrated === true) return false;
+      if (listPhotoRequestedRef.current.has(id)) return false;
       return !listPhotoCacheByUserId[id];
     });
 
-    if (idsToLoad.length === 0) return undefined;
-
-    let cancelled = false;
+    if (idsToLoad.length === 0) return;
+    idsToLoad.forEach(id => listPhotoRequestedRef.current.add(id));
 
     Promise.all(
       idsToLoad.map(async id => {
@@ -7134,7 +5556,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       }),
     )
       .then(entries => {
-        if (cancelled) return;
+        if (!isMountedRef.current) return;
         setListPhotoCacheByUserId(prev => {
           const next = { ...prev };
           entries.forEach(([id, photos]) => {
@@ -7144,15 +5566,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         });
       })
       .catch(error => {
+        // Невдале читання можна повторити: картка знову стане кандидатом.
+        idsToLoad.forEach(id => listPhotoRequestedRef.current.delete(id));
         console.error('[RENDER] failed to lazy load list photos', {
           ids: idsToLoad,
           message: error?.message || String(error),
         });
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [displayedUserIdsKey, listPhotoCacheByUserId, paginatedUsers]);
 
   useEffect(() => {
@@ -7243,11 +5663,40 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setUsers({});
     setHasMore(true);
     setCurrentPage(1);
-    setLastKey(null);
     feedCursorRef.current = null;
     setDuplicates('');
     setIsDuplicateView(false);
     setCurrentFilter(nextFilter);
+  };
+
+  /*
+   * Галочка в «Що в списку» міняє план, і список перезбирається сам (ефект
+   * перезавантаження стежить за `cardListPlanKey`): окремої кнопки
+   * «застосувати» немає, як її не було й у радіокнопок. Галочки, які на склад
+   * списку не впливають (кеш, наперед, індекс), діють з наступної сторінки і
+   * перезбирання не викликають. Відкрита інша добірка (обрані, цикл)
+   * поступається «Списку»: план змінюють саме для нього.
+   */
+  const handleCardListPlanChange = nextPlan => {
+    const normalized = normalizeCardListPlan(nextPlan);
+    setCardListPlan(normalized);
+    try {
+      localStorage.setItem(CARD_LIST_PLAN_STORAGE_KEY, JSON.stringify(normalized));
+    } catch (error) {
+      // Памʼять браузера закрита — план діятиме до перезавантаження.
+    }
+    appendLoadDebugLog('card-list-plan:change', {
+      from: describeCardListPlan(cardListPlan),
+      to: describeCardListPlan(normalized),
+      plan: normalized,
+    });
+    if (currentFilter !== CARD_LIST_FILTER && !searchListIsolationRef.current) {
+      setUsers({});
+      cardListOrderRef.current = [];
+      setDuplicates('');
+      setIsDuplicateView(false);
+      setCurrentFilter(CARD_LIST_FILTER);
+    }
   };
 
   const handleLoadUsers = () => {
@@ -7268,21 +5717,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setUsers({});
     setHasMore(true);
     setCurrentPage(1);
-    setLastKey(null);
-    updateDateOffset2(0);
-    updateDateAfterKeys2(null);
-    setDateOffset21(0);
-    setDateOffsetLA(0);
-    resetLA2StateRef(la2StateRef);
-    setLastKey21(null);
     feedCursorRef.current = null;
     setDuplicates('');
     setIsDuplicateView(false);
 
-    const nextFilter = resolveFilterByLoadSortMode(loadSortMode);
+    // Повторне натискання на відкритому «Списку» — це «оновити»: перелік
+    // читається з бази заново, повз кеш переліку. Перше відкриття бере
+    // перелік з кешу, якщо план той самий і йому менше шести годин.
+    forceCardListRefreshRef.current = currentFilter === CARD_LIST_FILTER;
+    cardListOrderRef.current = [];
+    cardListRef.current = { key: '', state: null, pending: null };
+
+    const nextFilter = CARD_LIST_FILTER;
     appendLoadDebugLog('manual-load:click', {
       nextFilter,
-      loadSortMode,
+      cardListPlan: describeCardListPlan(cardListPlan),
+      forceFresh: forceCardListRefreshRef.current,
       search,
       filters: summarizeLoadFiltersForLog(filters),
       previousUsersCount: countObjectKeys(users),
@@ -7343,7 +5793,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       missingCachedUserIds,
       currentFilter: snapshot.currentFilter || '',
       currentPage: snapshot.currentPage || 1,
-      loadSortMode: snapshot.loadSortMode || 'GITnew',
+      cardListPlan: snapshot.cardListPlan ? describeCardListPlan(snapshot.cardListPlan) : snapshot.loadSortMode || '',
       hasSearched: Boolean(snapshot.hasSearched),
     });
 
@@ -7353,36 +5803,33 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setUserNotFound(false);
     }
 
-    const restoredCurrentFilter = normalizeOfflineLoadFilter(snapshot.currentFilter || '');
-    const restoredLoadSortMode = normalizeOfflineLoadMode(snapshot.loadSortMode || 'GITnew');
-
-    if (snapshot.currentFilter === LEGACY_OFFLINE_LOAD_FILTER && restoredCurrentFilter === OFFLINE_LOAD_FILTER) {
-      const legacyQueryKey = buildListQueryKey(LEGACY_OFFLINE_LOAD_FILTER, filters);
-      const restoredQueryKey = buildListQueryKey(restoredCurrentFilter, filters);
-      const legacyOfflineIds = getIdsByQuery(legacyQueryKey);
-      if (legacyOfflineIds.length && !getIdsByQuery(restoredQueryKey).length) {
-        setIdsForQuery(restoredQueryKey, legacyOfflineIds);
-        logProfileRestoreStep('previous-list:migrate-legacy-offline-query-ids', {
-          legacyQueryKey,
-          restoredQueryKey,
-          idsCount: legacyOfflineIds.length,
-        });
-      }
-    }
+    // Знімки, збережені до двигуна, несуть режим (`loadSortMode`) і добірку
+    // режиму (`DATE2`, `GITnew`…): обидва переводяться в «Список» з
+    // відповідним планом, інакше «назад до списку» відкрив би порожнечу.
+    const isLegacyListSnapshot = LEGACY_LIST_FILTERS.has(snapshot.currentFilter || '');
+    const restoredCurrentFilter = isLegacyListSnapshot ? CARD_LIST_FILTER : snapshot.currentFilter || '';
+    const restoredPlan = snapshot.cardListPlan
+      ? normalizeCardListPlan(snapshot.cardListPlan)
+      : planFromLegacyLoadSortMode(snapshot.loadSortMode, cardListPlanRef.current);
 
     setCurrentFilter(restoredCurrentFilter);
     setCurrentPage(snapshot.currentPage || 1);
     setHasMore(typeof snapshot.hasMore === 'boolean' ? snapshot.hasMore : true);
-    setLastKey(snapshot.lastKey ?? null);
-    setLastKey21(snapshot.lastKey21 ?? null);
-    updateDateOffset2(snapshot.dateOffset2 || 0);
-    updateDateAfterKeys2(snapshot.dateAfterKeys2 || null);
-    setDateOffset21(snapshot.dateOffset21 || 0);
-    setDateOffsetLA(snapshot.dateOffsetLA || 0);
-    if (snapshot.la2State) {
-      la2StateRef.current = restoreLA2State(snapshot.la2State);
+    if (restoredCurrentFilter === CARD_LIST_FILTER) {
+      const plan = restoredPlan || cardListPlanRef.current;
+      const restoredState = restoreCardListState(snapshot.cardListState, plan);
+      if (restoredState && snapshot.cardListKey) {
+        // Сеанс двигуна вертається разом зі списком: наступна сторінка
+        // продовжує гортати базу з того самого курсора.
+        cardListRef.current = { key: snapshot.cardListKey, state: restoredState, pending: null, localRows: null };
+        cardListOrderRef.current = restoredState.order;
+      } else {
+        cardListOrderRef.current = (snapshot.userIds || []).filter(Boolean);
+      }
+      if (restoredPlan && buildCardListPlanKey(restoredPlan) !== buildCardListPlanKey(cardListPlanRef.current)) {
+        setCardListPlan(restoredPlan);
+      }
     }
-    setLoadSortMode(restoredLoadSortMode);
     setSearch(snapshot.search || '');
     setHasSearched(Boolean(snapshot.hasSearched) || Object.keys(restoredUsers).length > 0);
     logProfileRestoreStep('previous-list:restore-complete-clear-profile-state', {
@@ -7390,7 +5837,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       restoredUsersCount: Object.keys(restoredUsers).length,
     });
     setState({});
-  }, [buildListQueryKey, filters, location.pathname, location.search, navigate, setSearch, setState, state?.userId]);
+  }, [location.pathname, location.search, navigate, setSearch, setState, state?.userId]);
 
   useEffect(() => {
     if (!state?.userId) {
@@ -7600,13 +6047,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             filterForload={currentFilter}
             favoriteUsers={favoriteUsersData}
             dislikeUsers={dislikeUsersData}
-            enabledSearchKeys={effectiveEnabledSearchKeys}
+            enabledSearchKeys={enabledSearchKeys}
             searchOptions={{
               searchIdPrefixes: selectedSearchIdPrefixes,
               equalToKeys: selectedEqualToKeys,
               searchKeyFields: selectedSearchKeyFields,
               autoOtherFallback: shouldAutoRunOtherFallback,
-              enabledSearchKeys: effectiveEnabledSearchKeys,
+              enabledSearchKeys,
             }}
             searchHistoryLimit={15}
             suppressInitialSearchExecution={Boolean(
@@ -7911,9 +6358,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   $active={isLoadOptionsOpen}
                   onClick={() => setIsLoadOptionsOpen(prev => !prev)}
                   aria-expanded={isLoadOptionsOpen}
-                  title="Звідки й у якому порядку береться «Список»"
+                  title="Що збирає «Список»: стани дати дзвінка, порядок і як вантажити"
                 >
-                  Сортування: {describeLoadSortMode(loadSortMode)} ▾
+                  Що в списку: {describeCardListPlan(cardListPlan)} ▾
                 </ToolButton>
                 <ToolButton
                   type="button"
@@ -7927,88 +6374,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </ToolRow>
               {isLoadOptionsOpen && (
                 <ToolDrawer>
-                  <ToolDrawerTitle>Основні</ToolDrawerTitle>
-                  <SortModeContainer>
-                    <SortModeLabel>
-                      <input
-                        type="radio"
-                        name="load-sort-mode"
-                        value={LOAD_SORT_MODES.GIT_NEW}
-                        checked={loadSortMode === LOAD_SORT_MODES.GIT_NEW}
-                        onChange={event => handleLoadSortModeChange(event.target.value)}
-                      />
-                      Кому дзвонити <SortModeCode>GITnew</SortModeCode>
-                    </SortModeLabel>
-                    <SortModeLabel>
-                      <input
-                        type="radio"
-                        name="load-sort-mode"
-                        value={LOAD_SORT_MODES.LAST_ACTION}
-                        checked={loadSortMode === LOAD_SORT_MODES.LAST_ACTION}
-                        onChange={event => handleLoadSortModeChange(event.target.value)}
-                      />
-                      Остання дія <SortModeCode>LA</SortModeCode>
-                    </SortModeLabel>
-                    <LastAction2SortModeButton
-                      SortModeLabel={SortModeLabel}
-                      loadSortMode={loadSortMode}
-                      onChange={handleLoadSortModeChange}
-                      label={<>Остання дія по днях <SortModeCode>LA2</SortModeCode></>}
-                    />
-                  </SortModeContainer>
-                  <ToolDrawerTitle>Інші режими</ToolDrawerTitle>
-                  <SortModeContainer>
-                    <SortModeLabel>
-                      <input
-                        type="radio"
-                        name="load-sort-mode"
-                        value={LOAD_SORT_MODES.GIT}
-                        checked={loadSortMode === LOAD_SORT_MODES.GIT}
-                        onChange={event => handleLoadSortModeChange(event.target.value)}
-                      />
-                      GIT
-                    </SortModeLabel>
-                    <SortModeLabel>
-                      <input
-                        type="radio"
-                        name="load-sort-mode"
-                        value={LOAD_SORT_MODES.NO_GIT}
-                        checked={loadSortMode === LOAD_SORT_MODES.NO_GIT}
-                        onChange={event => handleLoadSortModeChange(event.target.value)}
-                      />
-                      NoGIT
-                    </SortModeLabel>
-                    <SortModeLabel>
-                      <input
-                        type="radio"
-                        name="load-sort-mode"
-                        value={LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
-                        checked={loadSortMode === LOAD_SORT_MODES.SEARCH_ID_KEY_ONLY}
-                        onChange={event => handleLoadSortModeChange(event.target.value)}
-                      />
-                      NoGIT + індекс
-                    </SortModeLabel>
-                    <AddNewProfileOfflineLoadControls
-                      SortModeLabel={SortModeLabel}
-                      LocalIndexActions={LocalIndexActions}
-                      loadSortMode={loadSortMode}
-                      onModeChange={handleLoadSortModeChange}
-                      onPickNodeFiles={handlePickLocalNodeFiles}
-                      loadedNodes={localIndexSources.loadedNodes}
-                      label="З JSON-файлів"
-                    />
-                  </SortModeContainer>
+                  <CardListPlanControls
+                    plan={cardListPlan}
+                    onChange={handleCardListPlanChange}
+                    onPickFiles={handlePickLocalNodeFiles}
+                    loadedNodes={localIndexSources.loadedNodes}
+                    statsText={cardListStatsText}
+                  />
                 </ToolDrawer>
               )}
               {isListFiltersOpen && (
                 <ToolDrawer>
+                  {/* Фільтри одні на будь-який план: окремі сховища під LA й LA2
+                      і урізаний перелік груп під «індексні» режими пішли разом
+                      із режимами. Варіанти «no» (порожньо) лишились — їх знає і
+                      `filterMain`, і індекс. */}
                   <FilterPanel
-                    key={filterStorageKey}
                     onChange={handleFilterChange}
-                    storageKey={filterStorageKey}
-                    bloodSearchKeyMode={searchIdAndSearchKeyOnlyMode || offlineLoadMode}
-                    reactionFilterOptions={offlineLoadMode ? OFFLINE_REACTION_FILTER_OPTIONS : undefined}
-                    allowedFilterNames={(searchIdAndSearchKeyOnlyMode || offlineLoadMode) ? ['bloodGroup', 'rh', 'maritalStatus', 'contact', 'age', 'imt', 'height', 'role', 'userId', 'fields', 'csection', 'reaction', 'getInTouch', 'bmi', 'country'] : undefined}
+                    storageKey="addFilters"
+                    bloodSearchKeyMode
+                    reactionFilterOptions={REACTION_FILTER_OPTIONS}
                   />
                 </ToolDrawer>
               )}
@@ -8119,118 +6504,118 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                       </ToolButton>
                     </ToolRow>
                   </ToolGroup>
-                  {(searchIdAndSearchKeyOnlyMode || isAdmin) && (
-                    <ToolGroup>
-                      <ToolGroupTitle $danger>
-                        Обслуговування бази
-                        <ToolGroupNote>перебудова індексів і разові міграції — пишуть у базу цілим вузлом</ToolGroupNote>
-                      </ToolGroupTitle>
-                      <ToolRow>
-                        {searchIdAndSearchKeyOnlyMode && (
-                          <ToolButton
-                            type="button"
-                            $active={showSearchKeyIndexPanel}
-                            aria-expanded={showSearchKeyIndexPanel}
-                            onClick={() => setShowSearchKeyIndexPanel(prev => !prev)}
-                            title="Меню індексації"
-                          >
-                            Індекси ▾
-                          </ToolButton>
-                        )}
-                        {isAdmin && (
-                          <ToolButton
-                            type="button"
-                            $tone="danger"
-                            onClick={openMatchingCardsModal}
-                            disabled={isMatchingCardsIndexing}
-                            title="Зібрати урізані картки matchingCards для швидкої стрічки матчингу"
-                            {...createLongPressHandlers('Збирає matchingCards.json локально для ручного імпорту — або будує вузол одразу на бекенді')}
-                          >
-                            {isMatchingCardsIndexing ? '...' : 'Картки стрічки'}
-                          </ToolButton>
-                        )}
-                        {isAdmin && LEGACY_IMPORT_ID_PREFIXES.map(prefix => (
-                          <ToolButton
-                            key={`migrate-comments-${prefix}`}
-                            type="button"
-                            $tone="danger"
-                            onClick={() => handleMigrateLegacyComments(prefix)}
-                            disabled={Boolean(migratingCommentsPrefix)}
-                            title={`Перенести коментарі карток ${prefix}… у публічні відгуки`}
-                            {...createLongPressHandlers(
-                              `Переносить приватні коментарі карток ${prefix}… у публічні відгуки: `
-                                + 'автор — з поля writer, текст лишається той самий',
-                            )}
-                          >
-                            {migratingCommentsPrefix === prefix ? '...' : `Коментарі ${prefix}… у відгуки`}
-                          </ToolButton>
-                        ))}
-                      </ToolRow>
-                      {searchIdAndSearchKeyOnlyMode && showSearchKeyIndexPanel && (
-                        <ToolDrawer>
-                          <ToolDrawerNote>
-                            Обране нижче запускається однією кнопкою. Локальні роботи читають
-                            вибрані JSON-файли й нічого не пишуть у базу; бекендні переписують
-                            вузол цілком.
-                          </ToolDrawerNote>
-
-                          {INDEX_JOB_GROUPS.map(group => (
-                            <CheckGroup key={group.id}>
-                              <CheckGroupTitle>
-                                {group.title}
-                                <CheckGroupNote>{group.note}</CheckGroupNote>
-                              </CheckGroupTitle>
-                              {group.jobs.map(job => (
-                                <CheckRow key={job.key}>
-                                  <input
-                                    type="checkbox"
-                                    checked={Boolean(selectedIndexJobs[job.key])}
-                                    onChange={() => toggleIndexJobSelection(job.key)}
-                                  />
-                                  <span>
-                                    {job.label}
-                                    {job.hint && <CheckHint>{job.hint}</CheckHint>}
-                                  </span>
-                                </CheckRow>
-                              ))}
-                            </CheckGroup>
-                          ))}
-
-                          <CheckGroup>
-                            <CheckGroupTitle>
-                              Бакети searchKey
-                              <CheckGroupNote>по одному вузлу на фільтр</CheckGroupNote>
-                            </CheckGroupTitle>
-                            <BucketGrid>
-                              {SEARCH_KEY_INDEX_OPTIONS.map(option => (
-                                <BucketChip
-                                  key={option.key}
-                                  type="button"
-                                  $active={Boolean(selectedSearchKeyIndexes[option.key])}
-                                  aria-pressed={Boolean(selectedSearchKeyIndexes[option.key])}
-                                  onClick={() => toggleSearchKeyIndexSelection(option.key)}
-                                >
-                                  {option.label}
-                                </BucketChip>
-                              ))}
-                            </BucketGrid>
-                          </CheckGroup>
-
-                          <ToolRow style={{ marginTop: '10px' }}>
-                            <ToolButton
-                              type="button"
-                              $tone="danger"
-                              onClick={runSelectedIndexes}
-                              title="Запустити індексацію обраних чекбоксів"
-                            >
-                              Індексувати обране
-                              {selectedIndexCount > 0 && <ToolCount>{selectedIndexCount}</ToolCount>}
-                            </ToolButton>
-                          </ToolRow>
-                        </ToolDrawer>
+                  {/* Панель індексації була видна лише в режимах GITnew і «NoGIT +
+                      індекс» — випадкова звʼязка: індекси не залежать від того,
+                      як гортається «Список». Тепер вона є завжди, як і була в
+                      режимі за замовчуванням. */}
+                  <ToolGroup>
+                    <ToolGroupTitle $danger>
+                      Обслуговування бази
+                      <ToolGroupNote>перебудова індексів і разові міграції — пишуть у базу цілим вузлом</ToolGroupNote>
+                    </ToolGroupTitle>
+                    <ToolRow>
+                      <ToolButton
+                        type="button"
+                        $active={showSearchKeyIndexPanel}
+                        aria-expanded={showSearchKeyIndexPanel}
+                        onClick={() => setShowSearchKeyIndexPanel(prev => !prev)}
+                        title="Меню індексації"
+                      >
+                        Індекси ▾
+                      </ToolButton>
+                      {isAdmin && (
+                        <ToolButton
+                          type="button"
+                          $tone="danger"
+                          onClick={openMatchingCardsModal}
+                          disabled={isMatchingCardsIndexing}
+                          title="Зібрати урізані картки matchingCards для швидкої стрічки матчингу"
+                          {...createLongPressHandlers('Збирає matchingCards.json локально для ручного імпорту — або будує вузол одразу на бекенді')}
+                        >
+                          {isMatchingCardsIndexing ? '...' : 'Картки стрічки'}
+                        </ToolButton>
                       )}
-                    </ToolGroup>
-                  )}
+                      {isAdmin && LEGACY_IMPORT_ID_PREFIXES.map(prefix => (
+                        <ToolButton
+                          key={`migrate-comments-${prefix}`}
+                          type="button"
+                          $tone="danger"
+                          onClick={() => handleMigrateLegacyComments(prefix)}
+                          disabled={Boolean(migratingCommentsPrefix)}
+                          title={`Перенести коментарі карток ${prefix}… у публічні відгуки`}
+                          {...createLongPressHandlers(
+                            `Переносить приватні коментарі карток ${prefix}… у публічні відгуки: `
+                              + 'автор — з поля writer, текст лишається той самий',
+                          )}
+                        >
+                          {migratingCommentsPrefix === prefix ? '...' : `Коментарі ${prefix}… у відгуки`}
+                        </ToolButton>
+                      ))}
+                    </ToolRow>
+                    {showSearchKeyIndexPanel && (
+                      <ToolDrawer>
+                        <ToolDrawerNote>
+                          Обране нижче запускається однією кнопкою. Локальні роботи читають
+                          вибрані JSON-файли й нічого не пишуть у базу; бекендні переписують
+                          вузол цілком.
+                        </ToolDrawerNote>
+
+                        {INDEX_JOB_GROUPS.map(group => (
+                          <CheckGroup key={group.id}>
+                            <CheckGroupTitle>
+                              {group.title}
+                              <CheckGroupNote>{group.note}</CheckGroupNote>
+                            </CheckGroupTitle>
+                            {group.jobs.map(job => (
+                              <CheckRow key={job.key}>
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(selectedIndexJobs[job.key])}
+                                  onChange={() => toggleIndexJobSelection(job.key)}
+                                />
+                                <span>
+                                  {job.label}
+                                  {job.hint && <CheckHint>{job.hint}</CheckHint>}
+                                </span>
+                              </CheckRow>
+                            ))}
+                          </CheckGroup>
+                        ))}
+
+                        <CheckGroup>
+                          <CheckGroupTitle>
+                            Бакети searchKey
+                            <CheckGroupNote>по одному вузлу на фільтр</CheckGroupNote>
+                          </CheckGroupTitle>
+                          <BucketGrid>
+                            {SEARCH_KEY_INDEX_OPTIONS.map(option => (
+                              <BucketChip
+                                key={option.key}
+                                type="button"
+                                $active={Boolean(selectedSearchKeyIndexes[option.key])}
+                                aria-pressed={Boolean(selectedSearchKeyIndexes[option.key])}
+                                onClick={() => toggleSearchKeyIndexSelection(option.key)}
+                              >
+                                {option.label}
+                              </BucketChip>
+                            ))}
+                          </BucketGrid>
+                        </CheckGroup>
+
+                        <ToolRow style={{ marginTop: '10px' }}>
+                          <ToolButton
+                            type="button"
+                            $tone="danger"
+                            onClick={runSelectedIndexes}
+                            title="Запустити індексацію обраних чекбоксів"
+                          >
+                            Індексувати обране
+                            {selectedIndexCount > 0 && <ToolCount>{selectedIndexCount}</ToolCount>}
+                          </ToolButton>
+                        </ToolRow>
+                      </ToolDrawer>
+                    )}
+                  </ToolGroup>
                 </ConsoleBody>
               )}
             </ConsolePanel>

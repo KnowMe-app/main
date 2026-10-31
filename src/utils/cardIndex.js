@@ -425,14 +425,26 @@ const hasCachedContactValue = value => {
  * контакти». Анкета без жодного контакту тому повною не вважається — для
  * картки, в якої контактів справді немає, це коштує одне читання на дотик.
  */
-export const getCompleteCachedProfile = id => {
+const findCompleteCachedProfile = id => {
   if (!id || !mayCacheContacts(id)) return null;
   const card = getCard(id);
   if (!card || card.cacheVersion !== CARDS_CACHE_VERSION) return null;
   if (!PROFILE_CONTACT_FIELDS.some(field => hasCachedContactValue(card[field]))) return null;
-  incrementMatchingLoadStat('fullProfileCacheHits');
   return card;
 };
+
+export const getCompleteCachedProfile = id => {
+  const card = findCompleteCachedProfile(id);
+  if (card) incrementMatchingLoadStat('fullProfileCacheHits');
+  return card;
+};
+
+/**
+ * Те саме питання без лічильника влучань: двигун «Списку» на `AddNewProfile`
+ * питає його *до* читання, щоб не звертатись до індексу за анкетою, яку й
+ * так візьме з кешу (`utils/cardListEngine`). Влучання рахує саме читання.
+ */
+export const hasCompleteCachedProfile = id => Boolean(findCompleteCachedProfile(id));
 
 /**
  * Тіло кешованої анкети — без вимоги, щоб у ньому лежали контакти.

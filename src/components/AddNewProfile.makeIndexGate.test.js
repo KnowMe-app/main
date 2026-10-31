@@ -49,7 +49,7 @@ describe('AddNewProfile.jsx no longer has a hidden write-skip gate on handleSubm
   it('handleBlur passes overwrite so a changed scalar field replaces cleanly instead of becoming an array', () => {
     const handleBlurBody = source.slice(
       source.indexOf('const handleBlur = () => {'),
-      source.indexOf('const hideFutureGitNewCardAndLoadNext')
+      source.indexOf('const hideCardLeavingListAndLoadNext')
     );
 
     expect(handleBlurBody).toContain("handleSubmit(normalizedState, 'overwrite');");

@@ -8,6 +8,13 @@ import { formatDateAndFormula, formatDateToServer } from "components/inputValida
 import { makeUploadedInfo } from "components/makeUploadedInfo";
 import { getUserStateShape, markUserPendingRemove, updateUserInState } from "./userStateUpdate";
 import { isAccountProfileCard } from "utils/multiAccountEdits";
+import { CARD_LIST_FILTER } from "utils/cardListPlan";
+
+// Картка «Списку» на `AddNewProfile`, якій щойно поставили дату дзвінка поза
+// станами плану (скажімо, «через тиждень» у «Кому дзвонити»), зникає
+// анімацією — так, як колись робив лише GIT (`'DATE2'`). Чи лишається вона в
+// списку, каже сам екран (`isDateInRange` = `planAcceptsGetInTouch`).
+const removesCardWhenDateLeavesList = currentFilter => currentFilter === CARD_LIST_FILTER;
 
 export const handleChange = (
   setUsers,
@@ -107,7 +114,7 @@ export const handleChange = (
 
     if (
       formatted.getInTouch &&
-      opts.currentFilter === 'DATE2' &&
+      removesCardWhenDateLeavesList(opts.currentFilter) &&
       opts.isDateInRange &&
       !opts.isDateInRange(formatted.getInTouch)
     ) {
@@ -188,7 +195,7 @@ export const handleChange = (
 
   if (
     key === 'getInTouch' &&
-    options.currentFilter === 'DATE2' &&
+    removesCardWhenDateLeavesList(options.currentFilter) &&
     options.isDateInRange &&
     !options.isDateInRange(newValue)
   ) {
