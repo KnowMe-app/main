@@ -1371,6 +1371,25 @@ const ProfilePdfExportButton = ({ cardData, photoUrls }) => {
   );
 };
 
+// Фото картки без жодного фото питаються раз на вкладку, а не на кожен
+// рендер. Ефект нижче залежить від `cardData` — нового обʼєкта щоразу, як
+// список отримує наступну порцію, — і кожна порція перезапускала лістинг
+// Storage для кожної такої картки. Відповідь «фото немає» теж памʼятається:
+// інакше картка без фото питала б щоразу заново. Свіжі фото відкритої
+// анкети читає форма (`Photos`), а не ця памʼять.
+const topBlockPhotoRequests = new Map();
+const requestTopBlockPhotos = userId => {
+  let pending = topBlockPhotoRequests.get(userId);
+  if (!pending) {
+    pending = getAllUserPhotos(userId).catch(error => {
+      topBlockPhotoRequests.delete(userId);
+      throw error;
+    });
+    topBlockPhotoRequests.set(userId, pending);
+  }
+  return pending;
+};
+
 export const TopBlock = ({
   userData,
   setUsers,
@@ -1541,7 +1560,7 @@ export const TopBlock = ({
     let isMounted = true;
     const hydrateTopBlockPhotos = async () => {
       try {
-        const urls = await getAllUserPhotos(cardData.userId);
+        const urls = await requestTopBlockPhotos(cardData.userId);
         if (!isMounted) return;
         const filteredUrls = filterOutMedicationPhotos(urls, cardData.userId);
         if (!filteredUrls.length) return;
