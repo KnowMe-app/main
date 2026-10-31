@@ -16,9 +16,29 @@ describe('AddNewProfile admin console', () => {
     // Плаский контейнер кнопок пішов разом зі своїм стилем.
     expect(source).not.toContain('<ButtonsContainer>');
 
-    ['Список', 'Добірки', 'Індексація', 'Дані', 'Сервіс'].forEach(group => {
-      expect(source).toMatch(new RegExp(`<ToolGroupTitle>\\s+${group}\\s`));
+    ['Дублікати', 'Дані', 'Сервіс', 'Обслуговування бази'].forEach(group => {
+      expect(source).toMatch(new RegExp(`<ToolGroupTitle(?: \\$danger)?>\\s+${group}\\s`));
     });
+  });
+
+  it('добірки стоять на виду, а не в панелі, яку треба розгортати', () => {
+    // Що показати — щоденна робота; у згорнутих «Інструментах» лишається
+    // рідкісне й небезпечне, і вони стартують згорнутими.
+    const listPanel = source.slice(source.indexOf('<ListPanel>'), source.indexOf('</ListPanel>'));
+    ['Список', 'Стрічка', 'Обрані', 'Цикл', 'Доповнення', "'Хто шукав'"].forEach(label => {
+      expect(listPanel).toContain(label);
+    });
+    expect(source.indexOf('</ListPanel>')).toBeLessThan(source.indexOf('<ConsolePanel>'));
+    expect(source).toContain("return localStorage.getItem(ADMIN_CONSOLE_OPEN_KEY) === 'true';");
+  });
+
+  it('пошук обирає глибину, а не два десятки полів', () => {
+    // Ключ `searchId` — саме значення, поле розпізнає `SearchBar`, тож чіпи
+    // полів лише ховали знайдене. Поля ввімкнені завжди.
+    expect(source).not.toContain('SEARCH_SCOPE_BLOCKS');
+    expect(source).toContain("exact: { searchId: true, partialUserId: true, searchKey: false, equalToAllCards: false, broadTextSearch: false },");
+    expect(source).toContain("full: { searchId: true, partialUserId: true, searchKey: true, equalToAllCards: true, broadTextSearch: true },");
+    expect(source).toContain('return buildEnabledSearchKeys(resolveSearchDepth(parsed));');
   });
 
   it('порядок стрічки бере та сама сторінка, що й matching', () => {

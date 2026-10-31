@@ -272,7 +272,7 @@ export const loadMoreUsersLastAction2 = async ({
   return { cacheCount: 0, backendCount: Object.keys(pageUsers).length, hasMore: la2State.hasMore };
 };
 
-export const LastAction2SortModeButton = ({ SortModeLabel, loadSortMode, onChange }) => (
+export const LastAction2SortModeButton = ({ SortModeLabel, loadSortMode, onChange, label = 'LA2' }) => (
   <SortModeLabel>
     <input
       type="radio"
@@ -281,6 +281,6 @@ export const LastAction2SortModeButton = ({ SortModeLabel, loadSortMode, onChang
       checked={loadSortMode === LAST_ACTION2_SORT_MODE}
       onChange={event => onChange(event.target.value)}
     />
-    LA2
+    {label}
   </SortModeLabel>
 );
