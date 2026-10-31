@@ -72,6 +72,7 @@ import {
 } from '../utils/searchKeyUtils';
 import { isAdminUid, readStoredAccessLevel, stripPrivilegedProfileFields } from '../utils/accessLevel';
 import { hasFilledProfileDraftData } from '../utils/profileDraftContent';
+import { getCardListField, normalizeCardListQuery, readFieldTimestamp } from '../utils/cardListQuery';
 import { flattenOwnerValueToString } from '../utils/ownerValueString';
 import {
   canReadProfileOutsideFeed,
@@ -4864,7 +4865,9 @@ export const readOwnerGetInTouchSorted = async (
   // скінчилась попередня сторінка.
   if (after && after.value !== undefined && after.value !== null) {
     constraints.push(startAfter(after.value, String(after.key || '')));
-  } else if (from) {
+  } else if (from !== undefined && from !== null) {
+    // `''` теж межа, а не «без межі»: `startAt('')` відсікає все не-рядкове
+    // (`true`, числа), що лягло в позначки повз дату.
     constraints.push(startAt(from));
   }
   // Курсор сильніший за верхню межу: він уже стоїть усередині неї, а два
@@ -6422,7 +6425,10 @@ const fetchAdminLastLoginCardsPageUncoalesced = async ({ limit = 10, cursor = nu
     ...(normalizedCursor
       ? [normalizedCursor.userId ? endBefore(normalizedCursor.date, normalizedCursor.userId) : endBefore(normalizedCursor.date)]
       : []),
-    limitToLast(safeLimit + 1),
+    // З курсором «не включно» сервер віддає на рядок менше за ліміт
+    // (`readLimitForCursorPage`): без поправки друга повна сторінка адмінської
+    // стрічки виглядала останньою.
+    limitToLast(readLimitForCursorPage(safeLimit, Boolean(normalizedCursor))),
   ));
   const rows = [];
   snapshot.forEach(child => {
@@ -8789,64 +8795,27 @@ export const buildSearchKeyIndexPayloadFromCollections = (collectionsMap, indexT
 
 const SEARCH_KEY_POINT_MEMBERSHIP_CONCURRENCY = 12;
 
-const toIsoToday = () => {
-  const now = new Date();
-  return toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
-};
-
-/**
- * Курсор списку «кому дзвонити» — пара (значення, ключ), а не зсув.
- *
- * Зсув тут не годиться: між двома сторінками адмін ставить і знімає позначки,
- * і список зсувається під ним. Пара ж називає точку в самому впорядкованому
- * вузлі, тож наступна сторінка починається рівно там, де скінчилась попередня,
- * хай що сталося вище.
- *
- * Старі значення (число `0`, JSON денного бакета) приходять зі збереженого
- * стану екрана і означають «з початку».
- */
-const normalizeOwnerGetInTouchCursor = cursor => {
-  if (!cursor || typeof cursor === 'number') return null;
-  if (typeof cursor === 'object') {
-    return cursor.value ? { value: String(cursor.value), key: String(cursor.key || '') } : null;
-  }
-
-  const normalized = String(cursor).trim();
-  if (!normalized || normalized === '0') return null;
-
-  try {
-    const parsed = JSON.parse(normalized);
-    if (parsed?.value) return { value: String(parsed.value), key: String(parsed.key || '') };
-  } catch {
-    // Не наш курсор — попередня форма гортала денні бакети `searchKey`.
-  }
-  return null;
-};
-
-const serializeOwnerGetInTouchCursor = row => JSON.stringify({ value: row.getInTouch, key: row.userId });
-
 /*
- * Стани позначки — діапазони значень у вузлі власника.
+ * Читач «Списку» на `AddNewProfile` (`utils/cardListEngine`): сторінка
+ * карток, упорядкованих за полем запиту (`utils/cardListQuery`).
  *
- * Дата лежить рядком `РРРР-ММ-ДД`, тож «до сьогодні», «після сьогодні» і «99»
- * — це межі `orderByValue()`, які ставить сама база: сторінка будь-якого стану
- * коштує один запит, і нічого понад неї. Нотатки й інші не-дати теж
- * потрапляють у ці діапазони рядковим порівнянням («01.02.2024» менше за
- * будь-яку ISO-дату цього століття), тож стан кожного рядка ще раз доводить
- * двигун (`classifyGetInTouchMark`); курсор такий рядок однаково проходить,
- * інакше сторінка застрягла б на ньому.
+ * Поле читається тим способом, яким база вміє його впорядкувати сама:
  *
- * «Без дати» діапазону не має — це картки, у яких позначки немає зовсім, —
- * і читається з `matchingCards` за ключем (`readCardListCardKeysPage`).
+ * - `ownerValue` — позначка читача (`multiData/getInTouch/{власник}`,
+ *   `.indexOn: ".value"`): `orderByValue()` у межах діапазону;
+ * - `child` — поле вузла анкети з `.indexOn` у правилах
+ *   (`profileWorkflow/lastAction`, `profileTechnical/lastLogin`,
+ *   `matchingCards/feedDate`…): `orderByChild()`;
+ * - `ownerMap` — мапа читача без індексу (обрані, «не цікаві»): вона і є
+ *   перелік, у памʼяті екрана вона вже лежить, тож сторінка ріжеться тут;
+ * - `key` — ключ картки `matchingCards`.
+ *
+ * Сторінка будь-якого поля — один запит, і нічого понад неї. Курсор — пара
+ * (значення, ключ) останнього відданого рядка: між сторінками адмін ставить і
+ * знімає позначки, і зсув з'їхав би. Рядки, що в діапазон бази потрапили
+ * рядковим порівнянням, але значенням поля не є (нотатка в даті дзвінка),
+ * відсіює двигун; курсор їх однаково проходить, інакше сторінка застрягла б.
  */
-const CARD_LIST_FUTURE_LAST = '2099-12-31';
-const CARD_LIST_NEVER_FIRST = '2099-99-99';
-const CARD_LIST_NEVER_LAST = '9999-99-99';
-
-const toIsoTomorrow = () => {
-  const now = new Date();
-  return toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
-};
 
 /*
  * Скільки рядків питати, щоб і сторінку віддати, і чесно відповісти на «чи
@@ -8860,13 +8829,6 @@ const toIsoTomorrow = () => {
  */
 const readLimitForCursorPage = (safeLimit, hasCursor) => safeLimit + (hasCursor ? 2 : 1);
 
-const resolveOwnerGetInTouchSegmentRange = segment => {
-  if (segment === 'due') return { to: toIsoToday(), latestFirst: true };
-  if (segment === 'future') return { from: toIsoTomorrow(), to: CARD_LIST_FUTURE_LAST, latestFirst: false };
-  if (segment === 'never') return { from: CARD_LIST_NEVER_FIRST, to: CARD_LIST_NEVER_LAST, latestFirst: false };
-  return null;
-};
-
 // Порівняння в тому порядку, в якому рядки впорядковує RTDB, — за кодами
 // символів, а не за абеткою мови: `localeCompare` ставив би `a` перед `B`.
 const compareCodeUnits = (left, right) => {
@@ -8874,12 +8836,48 @@ const compareCodeUnits = (left, right) => {
   return left < right ? -1 : 1;
 };
 
+/*
+ * Межі типу, коли діапазон запиту межі не ставить. Дата — рядок, і
+ * `startAt('')` відсікає все не-рядкове (`false` у `feedDate`, `null`), а
+ * верхня межа — обʼєкти й нотатки літерами; рівно `''` знизу — ще й умова
+ * кореневого правила `matchingCards` для читача без адмінських прав. Мітка
+ * часу — число, і межі чисел відсікають рядки та обʼєкти.
+ */
+const CARD_LIST_TYPE_EDGES = {
+  date: { from: '', to: '2100-01-01' },
+  timestamp: { from: 0, to: Number.MAX_SAFE_INTEGER },
+  key: {},
+};
+
+const parseCardListCursor = cursor => {
+  if (!cursor) return null;
+  try {
+    const parsed = typeof cursor === 'string' ? JSON.parse(cursor) : cursor;
+    if (parsed && parsed.value !== undefined && parsed.value !== null) {
+      return { value: parsed.value, key: String(parsed.key || '') };
+    }
+  } catch {
+    // Не наш курсор — попередні версії екрана гортали зсувом.
+  }
+  return null;
+};
+
+const serializeCardListCursor = row => (row ? JSON.stringify({ value: row.value, key: row.userId }) : null);
+
+const finishCardListPage = (rows, safeLimit) => {
+  const page = rows.slice(0, safeLimit);
+  return {
+    rows: page,
+    nextCursor: serializeCardListCursor(page[page.length - 1]),
+    hasMore: rows.length > safeLimit,
+  };
+};
+
 /**
  * Та сама сторінка, але з мапи власника — шлях для вузла, у якому ще лежить
  * стара, перевернута форма запису (див. `ownerGetInTouchHasLegacyGroups`).
- *
- * Нарізка повторює те, що в швидкому шляху робить база, — діапазон стану,
- * сортування за парою (значення, ключ) і відсікання строго за курсором.
+ * Нарізка повторює те, що в швидкому шляху робить база: діапазон, сортування
+ * за парою (значення, ключ) і відсікання строго за курсором.
  */
 const sliceOwnerGetInTouchMapRange = (map, { from, to, latestFirst, cursor, readLimit }) => {
   const rows = Object.entries(map || {})
@@ -8895,178 +8893,240 @@ const sliceOwnerGetInTouchMapRange = (map, { from, to, latestFirst, cursor, read
   return afterCursor.slice(0, readLimit);
 };
 
-/**
- * Сторінка одного стану позначки (`due` / `future` / `never`) — з вузла
- * самого читача `multiData/getInTouch/{owner}`, де позначка лежить
- * **значенням** під карткою, а правила оголошують на ньому
- * `".indexOn": ".value"`. Порядок і межу дати робить база: «кому дзвонити» —
- * `endAt(сьогодні) + limitToLast`, тобто від сьогодні назад; заплановані й
- * «99» — `startAt(…) + endAt(…) + limitToFirst`, від найближчої.
- *
- * Доти «кому дзвонити» питали глобальний індекс `searchKey/getInTouch`, де
- * дата сидить у **назві** денного бакета: діапазон по ній не береться, тож
- * код ішов календарем по одному дню за круг — і одна сторінка могла впертись
- * у понад тисячу послідовних кругів. Заразом зникла розбіжність: `getInTouch`
- * — позначка **того, хто її поставив**, а той індекс був глобальний.
- *
- * Курсор — пара (значення, ключ) останнього відданого рядка, а не зсув: між
- * сторінками адмін ставить і знімає позначки, і зсув з'їхав би. Рядок понад
- * сторінку питається лише щоб відповісти на «чи є далі» — у видачу він не
- * їде, інакше приїхав би вдруге вже наступною сторінкою.
- */
-export const readCardListGetInTouchPage = async ({ segment = 'due', cursor = null, limit = PAGE_SIZE } = {}) => {
+const readOwnerValuePage = async ({ direction, bounds, cursor, limit }) => {
   const ownerId = auth.currentUser?.uid || '';
-  const range = resolveOwnerGetInTouchSegmentRange(segment);
-  if (!ownerId || !range) return { rows: [], nextCursor: null, hasMore: false };
-
+  if (!ownerId) return { rows: [], nextCursor: null, hasMore: false };
   const safeLimit = Math.max(1, Number(limit) || PAGE_SIZE);
-  const position = normalizeOwnerGetInTouchCursor(cursor);
+  const position = parseCardListCursor(cursor);
   const readLimit = readLimitForCursorPage(safeLimit, Boolean(position));
+  const latestFirst = direction === 'desc';
+  const from = bounds.from ?? CARD_LIST_TYPE_EDGES.date.from;
+  const to = bounds.to ?? CARD_LIST_TYPE_EDGES.date.to;
 
   // Проба форми запису йде **разом** зі сторінкою, а не перед нею: поставлена
-  // попереду, вона додавала б зайвий послідовний круг на перше малювання —
-  // кожній сесії, заради випадку, якого в переважної більшості власників немає.
-  // Ціна помилкової ставки нульова: на старій формі впорядкований запит однаково
-  // вертає порожньо (обʼєкти лежать за межею), тож викидати нічого.
+  // попереду, вона додавала б послідовний круг на перше малювання — кожній
+  // сесії, заради випадку, якого в більшості власників немає. На старій формі
+  // впорядкований запит однаково вертає порожньо (обʼєкти лежать за межею).
   const [hasLegacyGroups, sortedRows] = await Promise.all([
     ownerGetInTouchHasLegacyGroups(ownerId),
     readOwnerGetInTouchSorted(ownerId, {
-      from: range.from,
-      to: range.to,
+      from,
+      to,
       limit: readLimit,
-      latestFirst: range.latestFirst,
-      before: range.latestFirst ? position : null,
-      after: range.latestFirst ? null : position,
+      latestFirst,
+      before: latestFirst ? position : null,
+      after: latestFirst ? null : position,
     }),
   ]);
-
   const rows = hasLegacyGroups
-    ? sliceOwnerGetInTouchMapRange(await readOwnerGetInTouchMap(ownerId), { ...range, cursor: position, readLimit })
+    ? sliceOwnerGetInTouchMapRange(await readOwnerGetInTouchMap(ownerId), { from, to, latestFirst, cursor: position, readLimit })
     : sortedRows;
 
-  const page = rows.slice(0, safeLimit);
   // Позначку цих карток база щойно віддала — анкета (`readProfileFromNodes`)
-  // не мусить питати її вдруге точковим читанням: одне читання з семи на
-  // кожну картку сторінки.
-  primeOwnerValuePoints(OWNER_GET_IN_TOUCH_PATH, ownerId, page.map(row => [row.userId, row.getInTouch]));
-  const lastRow = page[page.length - 1] || null;
+  // не питає її вдруге точковим читанням.
+  primeOwnerValuePoints(OWNER_GET_IN_TOUCH_PATH, ownerId, rows.map(row => [row.userId, row.getInTouch]));
+  return finishCardListPage(rows.map(row => ({ userId: row.userId, value: row.getInTouch })), safeLimit);
+};
+
+const readChildValuePage = async ({ field, direction, bounds, cursor, limit }) => {
+  const { path, child } = field.source;
+  const edges = CARD_LIST_TYPE_EDGES[field.type] || {};
+  const safeLimit = Math.max(1, Number(limit) || PAGE_SIZE);
+  const position = parseCardListCursor(cursor);
+  const readLimit = readLimitForCursorPage(safeLimit, Boolean(position));
+  const from = bounds.from ?? edges.from;
+  const to = bounds.to ?? edges.to;
+
+  const constraints = [orderByChild(child)];
+  if (direction === 'desc') {
+    constraints.push(startAt(from));
+    // Курсор сильніший за верхню межу: він уже стоїть усередині неї, а два
+    // обмеження зверху в одному запиті база не приймає.
+    constraints.push(position ? endBefore(position.value, position.key) : endAt(to));
+    constraints.push(limitToLast(readLimit));
+  } else {
+    constraints.push(position ? startAfter(position.value, position.key) : startAt(from));
+    constraints.push(endAt(to));
+    constraints.push(limitToFirst(readLimit));
+  }
+
+  const snapshot = await get(query(ref2(database, path), ...constraints));
+  const rows = [];
+  // Блокове тіло навмисно: `forEach` знімка перериває обхід, щойно колбек
+  // вернув truthy, а `push` вертає нову довжину масиву.
+  snapshot.forEach(item => {
+    rows.push({ userId: item.key, value: item.val()?.[child] });
+  });
+  // База віддає за зростанням навіть на `limitToLast`.
+  if (direction === 'desc') rows.reverse();
+  return finishCardListPage(rows, safeLimit);
+};
+
+/**
+ * Сторінка мапи читача (обрані, «не цікаві»). Мапа без індексу, тож база
+ * однаково віддала б її цілком; у памʼяті екрана вона вже є
+ * (`favoriteUsersData`), і сторінка ріжеться тут — нуль запитів. Порядок —
+ * за часом реакції; старі записи без часу (`true`, код анкети) стоять після
+ * датованих. Курсор — та сама пара, що й у бази, а не зсув: зняте серце на
+ * першій сторінці інакше з'їдало б картку на другій.
+ */
+const readOwnerMapPage = ({ map, direction, bounds, cursor, limit }) => {
+  const safeLimit = Math.max(1, Number(limit) || PAGE_SIZE);
+  const latestFirst = direction === 'desc';
+  // Ключ сортування: датовані (0) перед недатованими (1), далі час у
+  // напрямку списку, далі id — повний порядок, тож курсор однозначний.
+  const sortKey = row => [row.at === null ? 1 : 0, row.at === null ? 0 : (latestFirst ? -row.at : row.at), row.userId];
+  const compare = (left, right) => {
+    const a = sortKey(left);
+    const b = sortKey(right);
+    return (a[0] - b[0]) || (a[1] - b[1]) || compareCodeUnits(a[2], b[2]);
+  };
+  const rows = Object.entries(map || {})
+    .filter(([, value]) => Boolean(value))
+    .map(([userId, value]) => ({ userId, value, at: readFieldTimestamp(value) }))
+    .filter(row => (bounds.from === undefined || (row.at !== null && row.at >= bounds.from))
+      && (bounds.to === undefined || (row.at !== null && row.at <= bounds.to)))
+    .sort(compare);
+
+  const position = parseCardListCursor(cursor);
+  const afterCursor = position
+    ? rows.filter(row => compare(row, { userId: position.key, at: readFieldTimestamp(position.value) }) > 0)
+    : rows;
   return {
-    rows: page,
-    nextCursor: lastRow ? serializeOwnerGetInTouchCursor(lastRow) : null,
-    hasMore: rows.length > safeLimit,
+    ...finishCardListPage(afterCursor.slice(0, safeLimit + 1).map(({ userId, value }) => ({ userId, value })), safeLimit),
+    local: true,
   };
 };
 
 /**
- * Сторінка id карток за ключем — потік стану «без дати».
+ * Сторінка ключів `matchingCards` — і поле «Ключ картки», і потік «без
+ * значення»: `matchingCards` є в кожної анкети, тож це повний перелік.
  *
- * `matchingCards` є в кожної анкети, тож це повний перелік; стан кожної картки
- * двигун доводить точковим читанням позначки (`readCardListGetInTouchMarks`),
- * а не анкетою, і картку з датою відкидає до її читання. Рядки тут — лише
- * ключі: проєкція стрічки для списку `AddNewProfile` не годиться (йому
- * потрібна анкета), тож нічого з неї не береться.
+ * Картку база однаково віддає цілком (лише ключів RTDB не віддає), тож поле,
+ * яке лежить у самій картці (`feedDate`), їде з рядком (`known`) — потоку
+ * «без значення» не треба питати його вдруге. Решту полів двигун питає
+ * точково (`readCardListFieldValues`).
  */
-export const readCardListCardKeysPage = async ({ cursor = null, limit = PAGE_SIZE } = {}) => {
+export const readCardListKeyPage = async ({ direction = 'asc', cursor = null, limit = PAGE_SIZE, fieldKey = null } = {}) => {
   const safeLimit = Math.max(1, Number(limit) || PAGE_SIZE);
+  const position = cursor ? String(cursor) : '';
+  const readLimit = readLimitForCursorPage(safeLimit, Boolean(position));
+  const field = fieldKey ? getCardListField(fieldKey) : null;
+  const carriedChild = field?.source.kind === 'child' && field.source.path === PROFILE_NODES.matchingCards
+    ? field.source.child
+    : null;
   const constraints = [orderByKey()];
-  if (cursor) constraints.push(startAfter(String(cursor)));
-  constraints.push(limitToFirst(readLimitForCursorPage(safeLimit, Boolean(cursor))));
+  if (direction === 'desc') {
+    if (position) constraints.push(endBefore(position));
+    constraints.push(limitToLast(readLimit));
+  } else {
+    if (position) constraints.push(startAfter(position));
+    constraints.push(limitToFirst(readLimit));
+  }
 
   const snapshot = await get(query(ref2(database, PROFILE_NODES.matchingCards), ...constraints));
-  const keys = [];
-  // Блокове тіло навмисно: `forEach` знімка перериває обхід, щойно колбек
-  // вернув truthy, а `push` вертає нову довжину масиву.
-  snapshot.forEach(child => {
-    keys.push(child.key);
+  const rows = [];
+  snapshot.forEach(item => {
+    rows.push(carriedChild
+      ? { userId: item.key, value: item.val()?.[carriedChild], known: true }
+      : { userId: item.key, value: item.key });
   });
-
-  const page = keys.slice(0, safeLimit);
+  if (direction === 'desc') rows.reverse();
+  const page = rows.slice(0, safeLimit);
   return {
-    rows: page.map(userId => ({ userId })),
-    nextCursor: page.length ? page[page.length - 1] : null,
-    hasMore: keys.length > safeLimit,
+    rows: page,
+    nextCursor: page.length ? page[page.length - 1].userId : null,
+    hasMore: rows.length > safeLimit,
   };
 };
 
-const normalizeLastActionCursor = cursor => {
-  if (!cursor) return null;
-  try {
-    const parsed = typeof cursor === 'string' ? JSON.parse(cursor) : cursor;
-    const value = Number(parsed?.value);
-    return Number.isFinite(value) ? { value, key: String(parsed?.key || '') } : null;
-  } catch {
-    return null;
+/** Сторінка значень поля запиту — одна точка входу для будь-якого поля. */
+export const readCardListValuePage = async ({ query: rawQuery, bounds = {}, cursor = null, limit = PAGE_SIZE, maps = {} } = {}) => {
+  const cardQuery = normalizeCardListQuery(rawQuery);
+  const field = getCardListField(cardQuery.field);
+  const options = { field, direction: cardQuery.direction, bounds, cursor, limit };
+  switch (field.source.kind) {
+    case 'ownerValue': return readOwnerValuePage(options);
+    case 'child': return readChildValuePage(options);
+    case 'ownerMap': return readOwnerMapPage({ ...options, map: maps[field.source.map] });
+    default: return readCardListKeyPage({ direction: cardQuery.direction, cursor, limit });
   }
 };
 
-/**
- * Сторінка за останньою дією — один запит `profileWorkflow`, впорядкований
- * базою (`.indexOn: lastAction`), від найсвіжішої дії.
- *
- * Тут стояли два різні завантажувачі того самого порядку. LA на кожну
- * сторінку перечитував дні від сьогодні заново (до сімох паралельних запитів
- * на тиждень) і кожну картку тягнув повним `fetchUserById`; LA2 обходив
- * денні бакети `searchKey/lastAction` по одному за круг — до шестисот кругів,
- * коли дні порожні. Тепер сторінка — один запит з курсором парою (значення,
- * ключ), а фільтр «за 7 днів» стає нижньою межею самого запиту (`since`).
- *
- * `endAt(MAX_SAFE_INTEGER)` відсікає рядкові значення: у RTDB рядки йдуть
- * після чисел, і `limitToLast` без межі віддав би першими саме їх.
- */
-export const readCardListLastActionPage = async ({ cursor = null, limit = PAGE_SIZE, since = null } = {}) => {
-  const safeLimit = Math.max(1, Number(limit) || PAGE_SIZE);
-  const position = normalizeLastActionCursor(cursor);
-  const constraints = [
-    orderByChild('lastAction'),
-    startAt(Number.isFinite(since) ? since : 0),
-    position ? endBefore(position.value, position.key) : endAt(Number.MAX_SAFE_INTEGER),
-    limitToLast(readLimitForCursorPage(safeLimit, Boolean(position))),
-  ];
+// Від скількох карток за раз значення поля вузла дешевше взяти відрізком
+// ключів, ніж точковими читаннями.
+const CARD_LIST_RANGE_PROBE_MIN = 8;
 
-  const snapshot = await get(query(ref2(database, PROFILE_NODES.profileWorkflow), ...constraints));
-  const rows = [];
-  snapshot.forEach(child => {
-    rows.push({ userId: child.key, lastAction: child.val()?.lastAction });
-  });
-  // База віддає за зростанням навіть на `limitToLast`.
-  rows.reverse();
-
-  const page = rows.slice(0, safeLimit);
-  const lastRow = page[page.length - 1] || null;
-  return {
-    rows: page,
-    nextCursor: lastRow ? JSON.stringify({ value: lastRow.lastAction, key: lastRow.userId }) : null,
-    hasMore: rows.length > safeLimit,
-  };
-};
-
-/**
- * Свіжі позначки читача для кількох карток — точковими читаннями
- * (`readOwnerValueForProfile`), а не мапою власника цілком. Памʼять цих
- * читань та сама, з якої `readProfileFromNodes` бере позначку анкети, тож
- * для картки, яка дожила до анкети, друге читання позначки не коштує нічого.
- */
-// Від скількох кандидатів за раз мапа власника дешевша за точкові читання.
-// Вузький фільтр змушує потік «без дати» перебирати сотні карток заради
+// Від скількох карток за раз мапа власника дешевша за точкові читання.
+// Вузький фільтр змушує потік «без значення» перебирати сотні карток заради
 // сторінки, і по читанню позначки на кожну це було більшістю ціни сторінки;
 // мапа — одне читання на вкладку, і далі з неї ж бере позначку анкета.
 const CARD_LIST_MARKS_MAP_THRESHOLD = 40;
 
-export const readCardListGetInTouchMarks = async ids => {
-  const ownerId = auth.currentUser?.uid || '';
-  if (!ownerId) return {};
+/**
+ * Свіжі значення поля для кількох карток — потік «без значення» питає їх,
+ * щоб відкинути картку зі значенням ще до анкети. Позначка власника —
+ * точково (`readOwnerValueForProfile`, памʼять та сама, з якої анкета бере
+ * позначку) або мапою, коли карток багато; поле вузла — точковим читанням
+ * самого поля, а не анкети.
+ */
+export const readCardListFieldValues = async (fieldKey, ids, { maps = {} } = {}) => {
+  const field = getCardListField(fieldKey);
   const uniqueIds = [...new Set((ids || []).filter(Boolean).map(String))];
-  if (uniqueIds.length >= CARD_LIST_MARKS_MAP_THRESHOLD) {
-    const map = await readOwnerGetInTouchMap(ownerId);
-    return Object.fromEntries(uniqueIds.map(id => [id, map?.[id]]));
+  if (!uniqueIds.length) return {};
+
+  if (field.source.kind === 'ownerMap') {
+    const map = maps[field.source.map] || {};
+    return Object.fromEntries(uniqueIds.map(id => [id, map[id]]));
   }
-  const entries = await Promise.all(uniqueIds.map(async id => {
-    const mark = await readOwnerValueForProfile(OWNER_GET_IN_TOUCH_PATH, ownerId, id, {
-      hasLegacyGroups: ownerGetInTouchHasLegacyGroups,
-    });
-    return [id, mark.found ? mark.value : undefined];
-  }));
-  return Object.fromEntries(entries);
+
+  if (field.source.kind === 'ownerValue') {
+    const ownerId = auth.currentUser?.uid || '';
+    if (!ownerId) return {};
+    if (uniqueIds.length >= CARD_LIST_MARKS_MAP_THRESHOLD) {
+      const map = await readOwnerGetInTouchMap(ownerId);
+      return Object.fromEntries(uniqueIds.map(id => [id, map?.[id]]));
+    }
+    const entries = await Promise.all(uniqueIds.map(async id => {
+      const mark = await readOwnerValueForProfile(OWNER_GET_IN_TOUCH_PATH, ownerId, id, {
+        hasLegacyGroups: ownerGetInTouchHasLegacyGroups,
+      });
+      return [id, mark.found ? mark.value : undefined];
+    }));
+    return Object.fromEntries(entries);
+  }
+
+  if (field.source.kind === 'child') {
+    const { path, child } = field.source;
+    // Порція карток потоку «без значення» — сусіди за ключем, тож їхні вузли
+    // лежать одним відрізком і читаються одним запитом за ключами, а не
+    // запитом на кожну картку: поле, яке є майже в усіх (остання дія),
+    // інакше коштувало тисячу точкових читань на сторінку. Ключ, схожий на
+    // ціле число, RTDB ставить в інший порядок, ніж рядкове порівняння, — для
+    // такої порції відрізок не рахується, і значення питаються поштучно.
+    const sortedIds = [...uniqueIds].sort(compareCodeUnits);
+    const canReadRange = sortedIds.length >= CARD_LIST_RANGE_PROBE_MIN && !sortedIds.some(id => /^-?\d{1,10}$/.test(id));
+    if (canReadRange) {
+      const snapshot = await get(query(
+        ref2(database, path),
+        orderByKey(),
+        startAt(sortedIds[0]),
+        endAt(sortedIds[sortedIds.length - 1]),
+      ));
+      const nodes = {};
+      snapshot.forEach(item => {
+        nodes[item.key] = item.val();
+      });
+      return Object.fromEntries(uniqueIds.map(id => [id, nodes[id]?.[child]]));
+    }
+    const entries = await Promise.all(uniqueIds.map(async id => {
+      const snapshot = await get(ref2(database, `${path}/${id}/${child}`));
+      return [id, snapshot.exists() ? snapshot.val() : undefined];
+    }));
+    return Object.fromEntries(entries);
+  }
+
+  return {};
 };
 
 // The getInTouch deck pages both collections at once, so its bulk reads span both
@@ -9669,36 +9729,27 @@ export const createCardListIndexPrefilter = (filterSettings = {}, { favoritesMap
 /**
  * Адаптери двигуна «Списку» над справжньою базою.
  *
- * Тут лише «звідки взяти»: що з цього показати й у якому порядку, вирішує
- * двигун за планом галочок (`utils/cardListPlan`). Потік JSON-файлів
- * приходить готовим переліком (`localRows`) — його зводить екран із файлів,
- * які обрав адмін, а сторінка з нього — зріз за зсувом.
+ * Тут лише «звідки взяти»: що показати й у якому порядку, вирішує двигун за
+ * запитом (`utils/cardListQuery`). Мапи реакцій (`favoritesMap`,
+ * `dislikedMap`) — ті самі, що вже лежать у памʼяті екрана: вони і фільтр
+ * реакцій, і перелік «Обраних» та «Не цікавих».
  */
 export const createCardListBackendAdapters = ({
   filters = {},
   favoritesMap = {},
   dislikedMap = {},
-  lastActionSince = null,
-  localRows = null,
-} = {}) => ({
-  readStreamPage: async ({ stream, cursor, limit }) => {
-    if (stream.source === 'getInTouch') return readCardListGetInTouchPage({ segment: stream.segment, cursor, limit });
-    if (stream.source === 'cardKeys') return readCardListCardKeysPage({ cursor, limit });
-    if (stream.source === 'lastAction') return readCardListLastActionPage({ cursor, limit, since: lastActionSince });
-    if (stream.source === 'files') {
-      const rows = Array.isArray(localRows) ? localRows : [];
-      const offset = Math.max(0, Number(cursor) || 0);
-      const page = rows.slice(offset, offset + Math.max(1, Number(limit) || PAGE_SIZE));
-      return { rows: page, nextCursor: offset + page.length, hasMore: offset + page.length < rows.length };
-    }
-    return { rows: [], nextCursor: null, hasMore: false };
-  },
-  readMarks: readCardListGetInTouchMarks,
-  isCached: hasCompleteCachedProfile,
-  prefilter: createCardListIndexPrefilter(filters, { favoritesMap, dislikedMap }),
-  hydrate: (ids, { cacheFirst = true } = {}) => fetchUsersByIds(ids, { skipCache: !cacheFirst }),
-  accept: entries => filterMain(entries, 'CARD_LIST', filters, favoritesMap, dislikedMap),
-});
+} = {}) => {
+  const maps = { favorites: favoritesMap, dislikes: dislikedMap };
+  return {
+    readValuePage: options => readCardListValuePage({ ...options, maps }),
+    readKeyPage: options => readCardListKeyPage({ ...options, direction: 'asc' }),
+    readValues: (fieldKey, ids) => readCardListFieldValues(fieldKey, ids, { maps }),
+    isCached: hasCompleteCachedProfile,
+    prefilter: createCardListIndexPrefilter(filters, { favoritesMap, dislikedMap }),
+    hydrate: (ids, { cacheFirst = true } = {}) => fetchUsersByIds(ids, { skipCache: !cacheFirst }),
+    accept: entries => filterMain(entries, 'CARD_LIST', filters, favoritesMap, dislikedMap),
+  };
+};
 
 
 // Тут довго лежала закоментована транзакційна версія `updateSearchId`. Її

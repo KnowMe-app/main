@@ -1,87 +1,65 @@
-import { classifyGetInTouchMark } from './reactionCategory';
 import {
-  buildCardListPlanKey,
-  hasAllCardListSegments,
-  listCardListSegments,
-  normalizeCardListPlan,
-} from './cardListPlan';
+  buildCardListQueryKey,
+  fieldHasMissing,
+  getCardListField,
+  isFieldValueMissing,
+  normalizeCardListQuery,
+  resolveCardListRange,
+} from './cardListQuery';
 
 /*
- * Двигун «Списку» на `AddNewProfile`: один на будь-який план галочок
- * (`utils/cardListPlan`).
+ * Двигун «Списку» на `AddNewProfile`: одна сторінка за запитом
+ * (`utils/cardListQuery`) — поле, напрямок, діапазон, фільтри панелі.
  *
- * Сторінка збирається одним конвеєром, і порядок кроків у ньому — це і є ціна
- * сторінки:
+ * Потоків кандидатів два, і обидва — у порядку списку:
  *
- * 1. **потік кандидатів** — id у порядку списку, одним запитом на порцію:
- *    позначки власника `getInTouch` (кожен стан своїм діапазоном, база вже
- *    впорядкувала й обрізала), картки за ключем (`matchingCards`) для «без
- *    дати», `profileWorkflow` за `lastAction`, або перелік з JSON-файлів;
- * 2. **позначка** — свіжа з самого потоку або точковим читанням: стан картки
- *    вирішує вона, а не кешована анкета (кеш живе шість годин, позначку за цей
- *    час переставляють);
- * 3. **відсів індексом** — групи фільтрів, які знає `searchKey`, лише для
- *    анкет, яких немає в кеші: кешовану фільтри перевіряють задарма, а
- *    відкинута тут картка не коштує анкети;
- * 4. **анкети** — спершу з кешу браузера, решта з бази;
- * 5. **фільтри панелі** — `filterMain` на анкеті.
+ * - **значення** — картки, впорядковані за полем у діапазоні, одним запитом
+ *   до бази на порцію (індекс поля робить порядок і межі);
+ * - **без значення** — картки за ключем `matchingCards`, у яких поля немає
+ *   (точкова перевірка значення; картка з ним відкидається до читання анкети).
  *
- * Курсор кожного потоку стоїть на останньому *прочитаному* рядку, а
- * непрочитаний залишок порції лежить у стані (`buffer`) і йде першим на
- * наступній сторінці: так зайвий рядок не перечитується й не губиться. Саме
- * на цьому губились картки в стрічці, поки курсор стояв у кінці сторінки
- * джерела (див. CLAUDE.md, «Курсор стрічки…»).
+ * Далі для кожної порції той самий конвеєр, і його порядок — це ціна
+ * сторінки: значення поля перевіряється на діапазон → групи фільтрів, які
+ * знає `searchKey`, питаються поточково **лише для анкет, яких немає в кеші**
+ * (кешовану фільтри перевірять задарма) → анкети спершу з кешу → `filterMain`.
  *
- * Двигун не знає ні Firebase, ні React: базу йому дають адаптери, і саме
- * тому кожен крок можна перевірити тестом з підрахунком запитів.
+ * Курсор потоку стоїть на останньому *прочитаному* рядку, а непрочитаний
+ * залишок порції лежить у стані (`buffer`) і йде першим на наступній
+ * сторінці: зайвий рядок не перечитується й не губиться.
+ *
+ * Двигун не знає ні Firebase, ні React — базу йому дають адаптери, і кожен
+ * крок можна перевірити тестом із підрахунком запитів.
  */
 
-export const CARD_LIST_ENGINE_VERSION = 1;
+export const CARD_LIST_ENGINE_VERSION = 2;
 
 // Скільки кругів (читань порції чи обробок кандидатів) одна сторінка може
-// зробити, перш ніж віддати те, що встигла зібрати. Вузькі фільтри інакше
-// перетворюють «наступну сторінку» на обхід усієї бази за один дотик.
+// зробити, перш ніж віддати зібране: вузький фільтр інакше перетворює
+// «наступну сторінку» на обхід усієї бази за один дотик.
 export const CARD_LIST_MAX_ROUNDS = 25;
-// Найбільша порція id за один запит. Рядок потоку — десятки байтів, тож
-// велика порція дешевша за ще один круг, але межа потрібна: потік «без дати»
-// читає картки `matchingCards` цілком.
+// Найбільша порція id за запит: рядок потоку — десятки байтів, тож велика
+// порція дешевша за ще один круг, але потік «без значення» читає картки
+// `matchingCards` цілком.
 export const CARD_LIST_MAX_READ = 100;
-// Нижня межа оцінки «скільки кандидатів дотягує до списку»: на неї ділиться
-// потреба сторінки, щоб узяти порцію одразу з запасом.
-const MIN_ACCEPTANCE_RATE = 0.2;
+// Нижня межа оцінки «скільки кандидатів доживає до списку»: на неї ділиться
+// потреба сторінки, щоб узяти порцію одразу з запасом. Низька навмисно:
+// коли до списку доживає кожна п'ятдесята картка (усі, де немає останньої
+// дії), межа 20% тримала порцію в п'ять разів більшою за потребу, і сторінка
+// збиралась десятками дрібних кругів. Стелю порції тримає `maxRead`.
+const MIN_ACCEPTANCE_RATE = 0.05;
 
-/**
- * Потоки кандидатів для плану — у тому порядку, в якому їх видно у списку.
- *
- * `marks` каже, звідки двигун бере позначку: `row` — з самого рядка потоку
- * (запит до позначок власника), `probe` — точковим читанням перед анкетою,
- * `hydrated` — з анкети (коли план бере всі стани і питати нема про що).
- */
-export const buildCardListStreams = plan => {
-  const normalized = normalizeCardListPlan(plan);
-  if (normalized.fromFiles) {
-    return [{ key: 'files', source: 'files', marks: 'row', accepts: 'plan' }];
-  }
-  if (normalized.byLastAction) {
-    return [{
-      key: 'lastAction',
-      source: 'lastAction',
-      marks: hasAllCardListSegments(normalized) ? 'hydrated' : 'probe',
-      accepts: 'plan',
-    }];
-  }
-  return listCardListSegments(normalized).map(segment => ({
-    key: segment,
-    source: segment === 'undated' ? 'cardKeys' : 'getInTouch',
-    segment,
-    marks: segment === 'undated' ? 'probe' : 'row',
-    accepts: 'segment',
-  }));
+export const buildCardListStreams = rawQuery => {
+  const query = normalizeCardListQuery(rawQuery);
+  const field = getCardListField(query.field);
+  const streams = [];
+  if (query.missing !== 'only') streams.push({ key: 'value', kind: 'value' });
+  if (fieldHasMissing(field) && query.missing !== 'exclude') streams.push({ key: 'missing', kind: 'missing' });
+  return streams;
 };
 
-export const createCardListState = plan => ({
+export const createCardListState = query => ({
   version: CARD_LIST_ENGINE_VERSION,
-  planKey: buildCardListPlanKey(plan),
+  queryKey: buildCardListQueryKey(query),
   streamIndex: 0,
   streams: {},
   order: [],
@@ -90,17 +68,17 @@ export const createCardListState = plan => ({
 
 /**
  * Стан, збережений раніше (кеш переліку, знімок «назад до списку»), — лише
- * якщо він від того самого плану й тієї самої версії двигуна. Чужий стан
+ * якщо він від того самого запиту й тієї самої версії двигуна. Чужий стан
  * гортав би інші потоки чужими курсорами.
  */
-export const restoreCardListState = (raw, plan) => {
+export const restoreCardListState = (raw, query) => {
   if (!raw || typeof raw !== 'object') return null;
   if (raw.version !== CARD_LIST_ENGINE_VERSION) return null;
-  if (raw.planKey !== buildCardListPlanKey(plan)) return null;
+  if (raw.queryKey !== buildCardListQueryKey(query)) return null;
   const streams = raw.streams && typeof raw.streams === 'object' ? raw.streams : {};
   return {
     version: CARD_LIST_ENGINE_VERSION,
-    planKey: raw.planKey,
+    queryKey: raw.queryKey,
     streamIndex: Number.isInteger(raw.streamIndex) && raw.streamIndex >= 0 ? raw.streamIndex : 0,
     streams: Object.fromEntries(Object.entries(streams).map(([key, slot]) => [key, {
       cursor: slot?.cursor ?? null,
@@ -137,8 +115,8 @@ const computeHasMore = (streams, state) => streams
 export const createCardListStats = () => ({
   listReads: 0,
   candidates: 0,
-  markProbes: 0,
-  segmentRejected: 0,
+  valueProbes: 0,
+  rangeRejected: 0,
   indexChecked: 0,
   indexRejected: 0,
   hydrated: 0,
@@ -149,32 +127,38 @@ export const createCardListStats = () => ({
   rounds: 0,
 });
 
-const hasMarkValue = value => value !== undefined && value !== null && String(value).trim() !== '';
+const hasValue = value => value !== undefined && value !== null && String(value).trim() !== '';
 
 /**
- * Одна сторінка списку: до `limit` нових карток у порядку плану.
+ * Одна сторінка списку: до `limit` нових карток у порядку запиту.
  *
- * Повертає нові картки (`users` — масив анкет у порядку списку), новий стан
- * (курсори й залишки порцій), `hasMore` і лічильники кроків (`stats`), за
- * якими видно, скільки коштувала сторінка. `isStale` питається після кожного
- * кола до бази: застаріла відповідь (адмін тим часом змінив план чи фільтри)
- * повертається з `ignored`, і стан викликача лишається недоторканим.
+ * Повертає нові картки (`users` — анкети в порядку списку), новий стан
+ * (курсори й залишки порцій), `hasMore`, лічильники кроків (`stats`) і
+ * помилки потоків (`errors`: потік, що впав, не валить решту). `isStale`
+ * питається після кожного кола до бази: застаріла відповідь (адмін тим часом
+ * змінив запит чи фільтри) приходить з `ignored`, і стан викликача
+ * лишається недоторканим. `cacheFirst: false` — «оновити»: анкети з бази,
+ * повз кеш.
  */
 export const loadCardListPage = async ({
-  plan: rawPlan,
+  query: rawQuery,
   state: rawState,
   limit = 20,
   adapters = {},
+  cacheFirst = true,
   isStale = () => false,
   onProgress = null,
+  now = new Date(),
   maxRounds = CARD_LIST_MAX_ROUNDS,
   maxRead = CARD_LIST_MAX_READ,
 } = {}) => {
-  const plan = normalizeCardListPlan(rawPlan);
-  const streams = buildCardListStreams(plan);
-  const state = cloneState(rawState && rawState.planKey === buildCardListPlanKey(plan)
+  const query = normalizeCardListQuery(rawQuery);
+  const field = getCardListField(query.field);
+  const range = resolveCardListRange(query, now);
+  const streams = buildCardListStreams(query);
+  const state = cloneState(rawState && rawState.queryKey === buildCardListQueryKey(query)
     ? rawState
-    : createCardListState(plan));
+    : createCardListState(query));
   const stats = createCardListStats();
   const errors = [];
   const accepted = [];
@@ -182,86 +166,82 @@ export const loadCardListPage = async ({
   const targetCount = Math.max(1, Number(limit) || 1);
   let acceptanceRate = 1;
 
-  const isCached = id => Boolean(plan.cacheFirst && typeof adapters.isCached === 'function' && adapters.isCached(id));
+  const isCached = id => Boolean(cacheFirst && typeof adapters.isCached === 'function' && adapters.isCached(id));
 
   const finish = (extra = {}) => {
     state.hasMore = computeHasMore(streams, state);
-    return {
-      users: accepted,
-      state,
-      hasMore: state.hasMore,
-      stats,
-      errors,
-      ...extra,
-    };
+    return { users: accepted, state, hasMore: state.hasMore, stats, errors, ...extra };
   };
 
+  const readStreamPage = (stream, cursor, readLimit) => (stream.kind === 'value'
+    ? adapters.readValuePage({ query, bounds: range.bounds, cursor, limit: readLimit })
+    : adapters.readKeyPage({ cursor, limit: readLimit, fieldKey: field.key }));
+
   const processRows = async (stream, rows) => {
-    const rowById = new Map(rows.map(row => [row.userId, row]));
-    const ids = rows.map(row => row.userId);
-    stats.candidates += ids.length;
+    stats.candidates += rows.length;
+    let candidates = rows;
 
-    // 2. Позначка. Свіжа — з рядка чи точкового читання; кешованій анкеті
-    // стан картки не довіряється.
-    let marks = null;
-    if (stream.marks === 'row') {
-      marks = Object.fromEntries(rows.map(row => [row.userId, row.getInTouch]));
-    } else if (stream.marks === 'probe' && typeof adapters.readMarks === 'function') {
-      marks = (await adapters.readMarks(ids)) || {};
-      stats.markProbes += ids.length;
-      if (isStale()) return null;
+    // 1. Значення поля: у потоці значень воно приїхало з рядком і ще раз
+    // перевіряється на діапазон (рядкова межа бази пропускає нотатки й
+    // крапкові дати); у потоці «без значення» його питають точково, і картка
+    // зі значенням іде геть ще до анкети.
+    if (stream.kind === 'value') {
+      candidates = rows.filter(row => range.accepts(row.value));
+    } else {
+      // Поле, яке лежить у самій картці переліку, приїхало з рядком (`known`):
+      // питати його вдруге нема чого.
+      const unknownIds = rows.filter(row => !row.known).map(row => row.userId);
+      let values = {};
+      if (unknownIds.length) {
+        values = (await adapters.readValues(field.key, unknownIds)) || {};
+        if (isStale()) return null;
+        stats.valueProbes += unknownIds.length;
+      }
+      candidates = rows
+        .map(row => (row.known ? row : { ...row, value: values[row.userId] }))
+        .filter(row => isFieldValueMissing(field.key, row.value));
     }
+    stats.rangeRejected += rows.length - candidates.length;
 
-    const segmentAccepts = mark => (stream.accepts === 'segment'
-      ? classifyGetInTouchMark(mark) === stream.segment
-      : Boolean(plan.segments[classifyGetInTouchMark(mark)]));
-
-    let candidates = marks ? ids.filter(id => segmentAccepts(marks[id])) : ids;
-    stats.segmentRejected += ids.length - candidates.length;
-
-    // 3. Відсів індексом — лише там, де він заощаджує анкету: кешовану
-    // фільтри перевірять на ній самій, без жодного запиту.
-    if (plan.indexPrefilter && typeof adapters.prefilter === 'function' && candidates.length) {
-      const uncached = candidates.filter(id => !isCached(id));
+    // 2. Відсів індексом — лише там, де він заощаджує анкету.
+    if (typeof adapters.prefilter === 'function' && candidates.length) {
+      const uncached = candidates.map(row => row.userId).filter(id => !isCached(id));
       if (uncached.length) {
         const passed = new Set(((await adapters.prefilter(uncached)) || []).map(String));
         if (isStale()) return null;
         stats.indexChecked += uncached.length;
         const rejected = new Set(uncached.filter(id => !passed.has(id)));
         stats.indexRejected += rejected.size;
-        candidates = candidates.filter(id => !rejected.has(id));
+        candidates = candidates.filter(row => !rejected.has(row.userId));
       }
     }
-
     if (!candidates.length) return [];
 
-    // 4. Анкети.
-    stats.fromCache += candidates.filter(isCached).length;
-    stats.hydrated += candidates.length;
-    const profiles = (await adapters.hydrate(candidates, { cacheFirst: plan.cacheFirst })) || {};
+    // 3. Анкети.
+    const ids = candidates.map(row => row.userId);
+    stats.fromCache += ids.filter(isCached).length;
+    stats.hydrated += ids.length;
+    const profiles = (await adapters.hydrate(ids, { cacheFirst })) || {};
     if (isStale()) return null;
 
     const entries = [];
-    candidates.forEach(id => {
-      const profile = profiles[id];
+    candidates.forEach(row => {
+      const profile = profiles[row.userId];
       if (!profile) {
         stats.missing += 1;
         return;
       }
-      const user = { ...profile, userId: profile.userId || id };
-      const row = rowById.get(id) || {};
-      if (marks) {
-        if (hasMarkValue(marks[id])) user.getInTouch = marks[id];
-        else delete user.getInTouch;
-      } else if (!plan.segments[classifyGetInTouchMark(user.getInTouch)]) {
-        stats.segmentRejected += 1;
-        return;
+      const user = { ...profile, userId: profile.userId || row.userId };
+      // Свіже значення поля — поверх кешованої анкети: картка показує те, за
+      // чим її щойно відібрали, а не те, що лежало в кеші шість годин тому.
+      if (field.profileKey) {
+        if (hasValue(row.value)) user[field.profileKey] = row.value;
+        else delete user[field.profileKey];
       }
-      if (row.lastAction !== undefined && row.lastAction !== null) user.lastAction = row.lastAction;
-      entries.push([id, user]);
+      entries.push([row.userId, user]);
     });
 
-    // 5. Фільтри панелі.
+    // 4. Фільтри панелі.
     const kept = typeof adapters.accept === 'function' ? adapters.accept(entries) || [] : entries;
     stats.filterRejected += entries.length - kept.length;
     const keptIds = new Set(kept.map(([id]) => id));
@@ -278,24 +258,24 @@ export const loadCardListPage = async ({
 
     if (slot.buffer.length < wanted && !slot.exhausted) {
       stats.rounds += 1;
-      let page;
+      let page = null;
       try {
-        // 1. Потік кандидатів.
         // eslint-disable-next-line no-await-in-loop
-        page = await adapters.readStreamPage({ stream, cursor: slot.cursor, limit: wanted - slot.buffer.length, plan });
+        page = await readStreamPage(stream, slot.cursor, wanted - slot.buffer.length);
       } catch (error) {
         errors.push({ stream: stream.key, message: error?.message || String(error), code: error?.code || null });
         slot.exhausted = true;
-        page = null;
       }
       if (isStale()) return { ...finish(), ignored: true };
-      stats.listReads += 1;
+      // Сторінка, нарізана з мапи в памʼяті екрана (обрані, «не цікаві»),
+      // запитом до бази не є — і в ціну сторінки не рахується.
+      if (!page?.local) stats.listReads += 1;
       if (page) {
-        const known = new Set(slot.buffer.map(row => row.userId));
+        const buffered = new Set(slot.buffer.map(row => row.userId));
         (page.rows || []).forEach(row => {
           const id = row?.userId ? String(row.userId) : '';
-          if (!id || seen.has(id) || known.has(id)) return;
-          known.add(id);
+          if (!id || seen.has(id) || buffered.has(id)) return;
+          buffered.add(id);
           slot.buffer.push({ ...row, userId: id });
         });
         slot.cursor = page.nextCursor ?? slot.cursor;
@@ -304,21 +284,17 @@ export const loadCardListPage = async ({
     }
 
     if (!slot.buffer.length) {
-      if (slot.exhausted) {
-        state.streamIndex += 1;
-        continue;
-      }
-      stats.rounds += 1;
+      if (slot.exhausted) state.streamIndex += 1;
+      else stats.rounds += 1;
       continue;
     }
 
-    // Анкета не читається понад потребу сторінки, коли кешу немає: кожна
-    // зайва — п'ять вузлів, які могли й не знадобитись. З кешем порція може
-    // бути більшою: прийняте понад сторінку повертається в залишок і
-    // наступного разу береться з кешу.
-    const chunkSize = plan.cacheFirst ? Math.min(slot.buffer.length, wanted) : Math.min(slot.buffer.length, need);
-    // Картка, яку вже взяв інший потік (позначку переставили між двома
-    // читаннями), у список удруге не йде.
+    // Без кешу анкета не читається понад потребу сторінки: кожна зайва — шість
+    // вузлів, які могли й не знадобитись. З кешем порція більша, а прийняте
+    // понад сторінку повертається в залишок і наступного разу йде з кешу.
+    const chunkSize = Math.min(slot.buffer.length, cacheFirst ? wanted : need);
+    // Картка, яку вже взяв інший потік (значення змінили між двома
+    // читаннями), удруге в список не йде.
     const chunk = slot.buffer.splice(0, chunkSize).filter(row => !seen.has(row.userId));
     stats.rounds += 1;
     if (!chunk.length) continue;
@@ -327,8 +303,8 @@ export const loadCardListPage = async ({
     if (processed === null) return { ...finish(), ignored: true };
 
     const acceptedById = new Map(processed);
-    let taken = 0;
     const putBack = [];
+    let taken = 0;
     chunk.forEach(row => {
       const user = acceptedById.get(row.userId);
       if (!user) return;
@@ -351,7 +327,7 @@ export const loadCardListPage = async ({
   return finish();
 };
 
-/** Ціна сторінки словами — для рядка під шухлядою й для логу. */
+/** Ціна сторінки словами — для рядка під панеллю списку й для логу. */
 export const describeCardListStats = (stats, { ms } = {}) => {
   if (!stats) return '';
   const fromBackend = Math.max(0, (stats.hydrated || 0) - (stats.fromCache || 0) - (stats.missing || 0));
@@ -360,7 +336,7 @@ export const describeCardListStats = (stats, { ms } = {}) => {
     `${stats.accepted || 0} у списку`,
     `анкет з кешу ${stats.fromCache || 0}, з бази ${fromBackend}`,
   ];
-  if (stats.markProbes) parts.push(`позначок перевірено ${stats.markProbes}`);
+  if (stats.valueProbes) parts.push(`значень перевірено ${stats.valueProbes}`);
   if (stats.indexChecked) parts.push(`індекс відсіяв ${stats.indexRejected || 0} з ${stats.indexChecked}`);
   if (stats.filterRejected) parts.push(`фільтри відсіяли ${stats.filterRejected}`);
   if (Number.isFinite(ms)) parts.push(`${Math.round(ms)} мс`);

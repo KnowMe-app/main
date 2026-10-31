@@ -40,25 +40,23 @@ import {
   buildSearchIdIndexPayloadFromCollections,
   buildSearchKeyIndexPayloadFromCollections,
   createCardListBackendAdapters,
-  readOwnerGetInTouchMap,
-  fetchUsersByIds,
   lazyLoadProfilePhotos,
   addMatchingSearchQuery,
-  fetchMatchingCardsPage,
   saveMyCardComment,
 } from './config';
-import { buildOfflineCardListRows } from './AddNewProfileOfflineLoad';
-import { CardListPlanControls } from './CardListPlanControls';
+import { CardListQueryControls } from './CardListQueryControls';
 import {
   CARD_LIST_FILTER,
-  DEFAULT_CARD_LIST_PLAN,
-  buildCardListPlanKey,
-  describeCardListPlan,
-  normalizeCardListPlan,
-  planAcceptsGetInTouch,
-  planFromLegacyLoadSortMode,
-  resolveLastActionLowerBound,
-} from 'utils/cardListPlan';
+  CARD_LIST_PRIMARY_PRESETS,
+  DEFAULT_CARD_LIST_QUERY,
+  buildCardListQueryKey,
+  cardListKeepsValue,
+  describeCardListQuery,
+  findCardListPreset,
+  getCardListField,
+  normalizeCardListQuery,
+  queryFromLegacyListState,
+} from 'utils/cardListQuery';
 import { describeCardListStats, loadCardListPage, restoreCardListState } from 'utils/cardListEngine';
 import {
   BucketChip,
@@ -117,20 +115,16 @@ import { UsersList } from './UsersList';
 import {
   getFavorites,
   syncFavorites,
-  cacheFavoriteUsers,
 } from 'utils/favoritesStorage';
-import { cacheLoad2Users } from 'utils/load2Storage';
 import { cacheDplUsers, getDplCards } from 'utils/dplStorage';
 import {
   getDislikes,
   syncDislikes,
-  cacheDislikedUsers,
 } from 'utils/dislikesStorage';
 import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
 import {
   setIdsForQuery,
   setQueryPagination,
-  getIdsByQuery,
   getQueryEntry,
   getCard,
   getCardsByIds,
@@ -544,12 +538,12 @@ const DownloadSizeToastStatus = styled.span`
 
 const LONG_PRESS_MS = 600;
 
-// Дві добірки, які не гортають колекцію, а відповідають на окреме адмінське
-// питання. `OVERLAY_REVIEW` показує не список анкет, а чергу доповнень (власний
-// компонент), тож у пагінацію й у завантажувачі він не заходить зовсім;
-// `FEED_DATE` — навпаки, звичайний список, тільки в порядку стрічки матчингу.
+// Добірка, яка не гортає колекцію, а відповідає на окреме адмінське питання:
+// `OVERLAY_REVIEW` показує не список анкет, а чергу доповнень (власний
+// компонент), тож у пагінацію й у завантажувачі він не заходить зовсім.
+// Стрічка й обрані колись теж були окремими добірками зі своїми
+// завантажувачами — тепер це запити «Списку» (`utils/cardListQuery`).
 const OVERLAY_REVIEW_FILTER = 'OVERLAY_REVIEW';
-const FEED_DATE_FILTER = 'FEED_DATE';
 
 // Роботи індексації, згруповані за тим, **що вони роблять**, а не за тим, коли
 // їх дописали. Локальні читають вибрані JSON-файли й лишають результат у
@@ -643,32 +637,31 @@ const INDEX_JOB_GROUPS = [
 // згорнутою.
 const ADMIN_CONSOLE_OPEN_KEY = 'addAdminToolsOpen';
 
-// План «Списку» — галочки двигуна (`utils/cardListPlan`), памʼятає браузер.
-// Ключ новий: старий режим (`loadSortMode`) у браузері не зберігався зовсім,
-// лише в знімку «назад до списку», і звідти його переводить
-// `planFromLegacyLoadSortMode`.
-const CARD_LIST_PLAN_STORAGE_KEY = 'addCardListPlan';
+// Запит «Списку» — поле, напрямок, період і «без значення»
+// (`utils/cardListQuery`), памʼятає браузер. Старі режими (`loadSortMode`) у
+// браузері не зберігались зовсім, лише в знімку «назад до списку», і звідти їх
+// переводить `queryFromLegacyListState`.
+const CARD_LIST_QUERY_STORAGE_KEY = 'addCardListQuery';
 
-const readStoredCardListPlan = () => {
+const readStoredCardListQuery = () => {
   try {
-    const raw = localStorage.getItem(CARD_LIST_PLAN_STORAGE_KEY);
-    return raw ? normalizeCardListPlan(JSON.parse(raw)) : normalizeCardListPlan(DEFAULT_CARD_LIST_PLAN);
+    const raw = localStorage.getItem(CARD_LIST_QUERY_STORAGE_KEY);
+    return normalizeCardListQuery(raw ? JSON.parse(raw) : DEFAULT_CARD_LIST_QUERY);
   } catch (error) {
-    return normalizeCardListPlan(DEFAULT_CARD_LIST_PLAN);
+    return normalizeCardListQuery(DEFAULT_CARD_LIST_QUERY);
   }
 };
 
 // Добірки, якими «Список» колись перемикався між режимами, — у знімках
 // попереднього списку, збережених до появи двигуна. Усі вони тепер один
-// список, а що саме в ньому — каже план.
-const LEGACY_LIST_FILTERS = new Set(['DATE2', 'DATE2.1', 'GITnew', 'LAST_ACTION', 'LAST_ACTION2', 'OFFLINE', 'OFLINE']);
+// список, а що саме в ньому — каже запит (`queryFromLegacyListState`).
+const LEGACY_LIST_FILTERS = new Set([
+  'DATE2', 'DATE2.1', 'GITnew', 'LAST_ACTION', 'LAST_ACTION2', 'OFFLINE', 'OFLINE', 'FEED_DATE', 'FAVORITE',
+]);
 
-// Добірка, відкрита зараз, — те єдине, що варто бачити в згорнутій панелі:
-// інакше згорнута панель мовчить, і незрозуміло, чому в списку саме ці картки.
+// Добірки поза «Списком»: їх підсвічує власна кнопка, а не запит.
 const CARD_COLLECTION_LABELS = {
-  FAVORITE: 'обрані',
   CYCLE_FAVORITE: 'цикл',
-  [FEED_DATE_FILTER]: 'стрічка · lastLogin',
   [OVERLAY_REVIEW_FILTER]: 'черга доповнень',
 };
 
@@ -989,18 +982,29 @@ const summarizeLoadFiltersForLog = filters => ({
   raw: filters || {},
 });
 
-// Ключ кешу переліку «Списку»: власник, склад плану, фільтри й сьогоднішня
-// дата. Дата — бо «кому дзвонити» щодня інший: учорашній перелік, піднятий з
-// кешу, ховав би тих, кому дзвонити сьогодні.
+// Ключ кешу переліку «Списку»: власник, запит, фільтри й сьогоднішня дата.
+// Дата — бо «кому дзвонити» щодня інший: учорашній перелік, піднятий з кешу,
+// ховав би тих, кому дзвонити сьогодні.
 const toLocalIsoDate = () => {
   const now = new Date();
   const pad = value => String(value).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 };
 
-const buildCardListSessionKey = (ownerUid, plan, filters) => normalizeQueryKey(
-  `cardlist:${ownerUid || 'anon'}:${buildCardListPlanKey(plan)}:${serializeQueryFilters(filters || {})}:${toLocalIsoDate()}`,
+const buildCardListSessionKey = (ownerUid, cardListQuery, filters) => normalizeQueryKey(
+  `cardlist:${ownerUid || 'anon'}:${buildCardListQueryKey(cardListQuery)}:${serializeQueryFilters(filters || {})}:${toLocalIsoDate()}`,
 );
+
+// Анкета, щойно збережена чи прочитана тут, лягає в кеш карток поверх того,
+// що там уже лежить: з нього «Список» і «назад до списку» піднімають картки
+// без круга до бази.
+const rememberCardsInCache = usersObj => {
+  const existing = loadCards();
+  Object.entries(usersObj || {}).forEach(([id, data]) => {
+    if (!id || !data) return;
+    updateCard(id, existing[id] ? { ...existing[id], ...data } : data);
+  });
+};
 
 const getProfileRestoreTimestamp = () => {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -1565,7 +1569,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
   const [filters, setFilters] = useState(() => getInitialFilters({ storageKey: 'addFilters' }));
   const filtersRef = useRef(filters);
-  const skipNextReloadRef = useRef(false);
   const loadDebugLogsRef = useRef([]);
   const renderCacheHydrationIdsRef = useRef(new Set());
   const hasInitializedFiltersRef = useRef(false);
@@ -1726,17 +1729,18 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   /*
    * Картка, яка після збереження більше не належить «Списку» (адмін поставив
-   * дату дзвінка в майбутнє, а план бере лише «кому дзвонити»), іде зі списку
+   * дату дзвінка в майбутнє, а список — «кому дзвонити»), іде зі списку
    * одразу, а на її місце довантажується наступна. Так робив лише GITnew, а
    * GIT і офлайн-режим — кожен своєю гілкою; тепер правило одне на будь-який
-   * план, і належність рахує той самий `planAcceptsGetInTouch`, за яким
-   * двигун цей список і збирав.
+   * запит, і належність рахує той самий `cardListKeepsValue`, за яким двигун
+   * цей список і збирав. Форма править дату дзвінка — її й питаємо: для
+   * запиту за іншим полем вона нічого не міняє.
    */
   const hideCardLeavingListAndLoadNext = submittedState => {
     const userId = submittedState?.userId;
     if (currentFilter !== CARD_LIST_FILTER || !userId) return false;
     if (!(cardListRef.current.state?.order || []).includes(userId)) return false;
-    if (planAcceptsGetInTouch(cardListPlan, submittedState.getInTouch)) return false;
+    if (cardListKeepsValue(cardListQuery, 'getInTouch', submittedState.getInTouch)) return false;
 
     forgetCardListId(userId);
     setUsers(prevUsers => {
@@ -1748,7 +1752,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     appendLoadDebugLog('handleSubmit:card-list-hide-and-refill', {
       userId,
       getInTouch: submittedState.getInTouch ?? null,
-      plan: describeCardListPlan(cardListPlan),
+      query: describeCardListQuery(cardListQuery),
       currentPage,
     });
 
@@ -2001,7 +2005,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         deletedKeys.forEach(key => pendingDeletedKeysRef.current.delete(key));
 
         const savedCachedCard = updateCachedUser(localCardState, { removeKeys }) || localCardState;
-        cacheFetchedUsers({ [syncedState.userId]: savedCachedCard }, cacheLoad2Users, filters);
+        rememberCardsInCache({ [syncedState.userId]: savedCachedCard });
         liveFieldsRef.current = savedCachedCard;
         setState(savedCachedCard, {
           source: 'saveResponse',
@@ -2106,7 +2110,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       applied: true,
       reason: 'background-save-started-local-is-source-of-truth',
     });
-    cacheFetchedUsers({ [syncedState.userId]: optimisticCard }, cacheLoad2Users, filters);
+    rememberCardsInCache({ [syncedState.userId]: optimisticCard });
     const cardLeftList = hideCardLeavingListAndLoadNext(optimisticCard);
     if (!cardLeftList) {
       setUsers(prev => ({ ...prev, [syncedState.userId]: optimisticCard }));
@@ -2336,9 +2340,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [hasSearched, setHasSearched] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [currentFilter, setCurrentFilter] = useState('');
-  // Що показує «Список» — план галочок, а не режим (`utils/cardListPlan`).
-  const [cardListPlan, setCardListPlan] = useState(readStoredCardListPlan);
-  const cardListPlanKey = buildCardListPlanKey(cardListPlan);
+  // Що показує «Список» — запит: поле, напрямок, період, «без значення»
+  // (`utils/cardListQuery`), а не режим.
+  const [cardListQuery, setCardListQuery] = useState(readStoredCardListQuery);
+  const cardListQueryKey = buildCardListQueryKey(cardListQuery);
   const [cardListStatsText, setCardListStatsText] = useState('');
   const [isLoadOptionsOpen, setIsLoadOptionsOpen] = useState(false);
   const [isListFiltersOpen, setIsListFiltersOpen] = useState(false);
@@ -2358,28 +2363,23 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   }, [isAdminConsoleOpen]);
   const [loadRequestId, setLoadRequestId] = useState(0);
-  // Курсор стрічки — пара (дата, id), а не ключ вузла, тож власний ref:
-  // див. `loadMoreUsersFeedDate`.
-  const feedCursorRef = useRef(null);
-  // Сеанс двигуна «Списку»: ключ (власник, план, фільтри, день), стан потоків
-  // з курсорами й порядком і запит, що триває. Живе в ref, а не в стані, з
-  // тієї самої причини, що й курсор стрічки: ефект перезавантаження читає
-  // стан зі старого замикання, а курсор мусить бути саме останнім.
+  // Сеанс двигуна «Списку»: ключ (власник, запит, фільтри, день), стан потоків
+  // з курсорами й порядком і запит до бази, що триває. Живе в ref, а не в
+  // стані: ефект перезавантаження читає стан зі старого замикання, а курсор
+  // мусить бути саме останнім — інакше перша сторінка почалася б із середини.
   const cardListRef = useRef({ key: '', state: null, pending: null });
   // Порядок, у якому двигун прийняв картки, — він і є порядок показу
   // (`getSortedIds`): сторінка N на екрані — це рівно сторінка N з бази.
   const cardListOrderRef = useRef([]);
-  // Повторне натискання «Список» перечитує перелік з бази, минаючи кеш
-  // переліку (анкети й далі беруться з кешу, якщо він увімкнений).
+  // «Оновити» (і повторний дотик до відкритого списку) читає і перелік, і
+  // анкети з бази, повз обидва кеші.
   const forceCardListRefreshRef = useRef(false);
-  const cardListPlanRef = useRef(cardListPlan);
-  cardListPlanRef.current = cardListPlan;
+  const cardListQueryRef = useRef(cardListQuery);
+  cardListQueryRef.current = cardListQuery;
   const initialFav = getFavorites();
   const [favoriteUsersData, setFavoriteUsersData] = useState(initialFav);
   const initialDis = getDislikes();
   const [dislikeUsersData, setDislikeUsersData] = useState(initialDis);
-  const [, setCacheCount] = useState(0);
-  const [, setBackendCount] = useState(0);
   const [profileSource, setProfileSource] = useState('');
   const profileSourceRef = useRef(profileSource);
   const [isResolvingEditMode, setIsResolvingEditMode] = useState(false);
@@ -2404,7 +2404,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       url: typeof window !== 'undefined' ? window.location?.href || '' : '',
       timestamp: new Date().toISOString(),
       currentFilter,
-      cardListPlan,
+      cardListQuery,
       cardListSession: {
         key: cardListSession.key,
         order: cardListSession.state?.order?.length || 0,
@@ -2423,7 +2423,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     toast.success(`Load log збережено (${logs.length})`);
     return logs.length;
   }, [
-    cardListPlan,
+    cardListQuery,
     currentFilter,
     downloadJsonFile,
     filters,
@@ -2456,7 +2456,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       currentFilter,
       currentPage,
       hasMore,
-      cardListPlan,
+      cardListQuery,
       cardListKey: cardListRef.current.key || '',
       cardListState: currentFilter === CARD_LIST_FILTER ? cardListRef.current.state : null,
       search,
@@ -2469,7 +2469,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       currentFilter,
       currentPage,
       hasMore,
-      cardListPlan: describeCardListPlan(cardListPlan),
+      cardListQuery: describeCardListQuery(cardListQuery),
       hasSearched,
       search,
     });
@@ -2482,7 +2482,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     currentFilter,
     currentPage,
     hasMore,
-    cardListPlan,
+    cardListQuery,
     search,
     hasSearched,
   ]);
@@ -2883,28 +2883,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setSearchLoading,
   ]);
 
-  const cacheFetchedUsers = useCallback(
-    (usersObj, cacheFn, currentFilters = filters) => {
-      cacheFn(usersObj, currentFilters);
-    },
-    [filters]
-  );
-
-  const buildQueryKey = useCallback((mode, currentFilters = {}, term = '') =>
-    normalizeQueryKey(
-      `${mode || 'all'}:${term || ''}:${serializeQueryFilters(currentFilters)}`,
-    ), []);
-  const buildListQueryKey = useCallback(
-    (mode, currentFilters = {}) => buildQueryKey(mode, currentFilters, ''),
-    [buildQueryKey],
-  );
-
   // Чи лишається картка в списку з такою датою дзвінка. Передається карткам
   // списку (`UsersList` → `smallCard/actions`): картка, якій щойно поставили
-  // дату поза станами плану, зникає з-під пальця анімацією, а не висить до
+  // дату поза запитом, зникає з-під пальця анімацією, а не висить до
   // перезавантаження. Доти так поводився лише GIT, і межею там був діапазон
   // дат завантажених карток, а не склад списку.
-  const isDateInRange = dateStr => planAcceptsGetInTouch(cardListPlan, dateStr);
+  const isDateInRange = dateStr => cardListKeepsValue(cardListQuery, 'getInTouch', dateStr);
 
   const getInTouchSortValue = useCallback(d => {
     const today = new Date().toISOString().split('T')[0];
@@ -3085,14 +3069,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return ids;
   }, [ownerId, refreshStimulationShortcuts, isMountedRef]);
 
-  // Стан посторінкового списку обраних чи дизлайкнутих (`startReactionPaging`).
-  // Нова умова списку (фільтр, режим) починає його спочатку: інакше перехід
-  // на сторінку продовжив би вибірку, зібрану під старі фільтри.
-  const reactionPagingRef = useRef(null);
-  useEffect(() => {
-    reactionPagingRef.current = null;
-  }, [currentFilter, filters]);
-
   const loadFavoriteIdsOnce = useCallback(async (targetOwnerId = ownerId) => {
     if (!targetOwnerId) return {};
 
@@ -3131,53 +3107,55 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [loadDislikeIdsOnce]);
 
   // ---------------------------------------------------------------------------
-  // «Список» — один двигун на будь-який план галочок (`utils/cardListEngine`).
+  // «Список» — один двигун на будь-який запит (`utils/cardListEngine`).
   //
   // Тут стояли сім завантажувачів (GIT, GITnew, NoGIT, «NoGIT + індекс», LA,
-  // LA2, офлайн), кожен зі своїм курсором, кешем і обробкою сторінок, і кожна
-  // зміна в одному розходилась з рештою. Тепер екран лише тримає сеанс
-  // двигуна (`cardListRef`), кладе прийняте в `users` і памʼятає перелік у
-  // кеші запитів, а що саме читати — вирішує план.
+  // LA2, офлайн) і ще два окремі — стрічка й обрані, кожен зі своїм курсором,
+  // кешем і обробкою сторінок, і кожна зміна в одному розходилась з рештою.
+  // Тепер екран лише тримає сеанс двигуна (`cardListRef`), кладе прийняте в
+  // `users` і памʼятає перелік у кеші запитів, а що саме читати — каже запит:
+  // поле, напрямок, період і «без значення».
   // ---------------------------------------------------------------------------
 
   const resolveCardListOwnerUid = () => auth.currentUser?.uid || ownerId || '';
 
-  // Мапи реакцій потрібні фільтру реакцій і «тільки обрані»; поки вони не
-  // приїхали з входу на екран, їх дочитують тут — так само, як робили старі
-  // завантажувачі, але одним місцем.
-  const resolveCardListReactionMaps = async currentFilters => {
+  // Мапи реакцій потрібні фільтру реакцій, «тільки обрані» і самим спискам
+  // «Обрані» та «Не цікаві» (там вони і є перелік); поки вони не приїхали з
+  // входу на екран, їх дочитують тут.
+  const resolveCardListReactionMaps = async (currentFilters, cardListQueryValue) => {
     let favoritesMap = favoriteUsersData || {};
     let dislikedMap = dislikeUsersData || {};
     const reaction = currentFilters?.reaction;
-    const needsReactions = Boolean(currentFilters?.favorite?.favOnly)
+    const listField = getCardListField(cardListQueryValue?.field).key;
+    const needsFavorites = listField === 'favorite' || Boolean(currentFilters?.favorite?.favOnly)
       || Boolean(reaction && Object.values(reaction).some(value => value === false));
-    if (needsReactions) {
-      if (!Object.keys(favoritesMap).length) favoritesMap = await loadFavoriteIdsOnce();
-      if (!Object.keys(dislikedMap).length) dislikedMap = await loadDislikeIdsOnce();
-    }
+    const needsDislikes = listField === 'dislike'
+      || Boolean(reaction && Object.values(reaction).some(value => value === false));
+    if (needsFavorites && !Object.keys(favoritesMap).length) favoritesMap = await loadFavoriteIdsOnce();
+    if (needsDislikes && !Object.keys(dislikedMap).length) dislikedMap = await loadDislikeIdsOnce();
     return { favoritesMap, dislikedMap };
   };
 
   const persistCardListSession = session => {
-    if (!cardListPlanRef.current.cacheFirst || !session?.key || !session.state) return;
+    if (!session?.key || !session.state) return;
     // Перелік — окремо, стан потоків — поруч, без того самого переліку вдруге.
     setIdsForQuery(session.key, session.state.order);
     setQueryPagination(session.key, { engineState: { ...session.state, order: undefined } });
   };
 
   /*
-   * Перелік, зібраний за останні шість годин тим самим планом і фільтрами,
+   * Перелік, зібраний за останні шість годин тим самим запитом і фільтрами,
    * піднімається з кешу без жодного запиту: анкети — з кешу карток, курсори —
    * зі стану двигуна, тож наступна сторінка продовжує гортати базу рівно
    * звідти, де перелік зупинився. Бракує в кеші бодай однієї анкети — перелік
    * збирається заново: дірка в середині списку гірша за круг до бази.
    */
-  const restoreCardListFromCache = (sessionKey, plan) => {
+  const restoreCardListFromCache = (sessionKey, cardListQueryValue) => {
     const entry = getQueryEntry(sessionKey);
     if (!entry?.cachedAt || Date.now() - entry.cachedAt > CARD_CACHE_TTL_MS) return null;
     const engineState = entry.pagination?.engineState;
     if (!engineState) return null;
-    const state = restoreCardListState({ ...engineState, order: entry.ids }, plan);
+    const state = restoreCardListState({ ...engineState, order: entry.ids }, cardListQueryValue);
     if (!state || !state.order.length) return null;
 
     const usersMap = {};
@@ -3186,25 +3164,19 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (!card) return null;
       usersMap[id] = { ...card, userId: card.userId || id };
     }
-    // Картка, якій тут же поставили дату поза планом, у кеші вже нова — і в
+    // Картка, якій тут же поставили дату поза запитом, у кеші вже нова — і в
     // піднятий перелік не повертається.
-    const order = state.order.filter(id => planAcceptsGetInTouch(plan, usersMap[id].getInTouch));
+    const order = state.order.filter(id => cardListKeepsValue(cardListQueryValue, 'getInTouch', usersMap[id].getInTouch));
     return {
       state: { ...state, order },
       usersMap: Object.fromEntries(order.map(id => [id, usersMap[id]])),
     };
   };
 
-  const describeCardListStream = streamKey => (
-    {
-      due: 'Кому дзвонити',
-      future: 'Заплановані',
-      undated: 'Без дати',
-      never: 'Не дзвонити',
-      lastAction: 'Остання дія',
-      files: 'JSON-файли',
-    }[streamKey] || streamKey
-  );
+  const describeCardListStream = (streamKey, cardListQueryValue) => {
+    const field = getCardListField(cardListQueryValue?.field);
+    return streamKey === 'missing' ? `${field.label}: ${field.missingLabel}` : field.label;
+  };
 
   // `whileEditing` — для догортання на місце картки, яка щойно пішла зі
   // списку з відкритої форми (`hideCardLeavingListAndLoadNext`): решта
@@ -3217,17 +3189,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     background = false,
     whileEditing = false,
   } = {}) => {
-    if (isEditingRef.current && !whileEditing) return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
-    const plan = cardListPlanRef.current;
+    if (isEditingRef.current && !whileEditing) return { hasMore, ignored: true };
+    const listQuery = cardListQueryRef.current;
     const currentFilters = filtersRef.current || {};
-    const sessionKey = buildCardListSessionKey(resolveCardListOwnerUid(), plan, currentFilters);
+    const sessionKey = buildCardListSessionKey(resolveCardListOwnerUid(), listQuery, currentFilters);
     let session = cardListRef.current;
 
     if (reset || session.key !== sessionKey) {
-      session = { key: sessionKey, state: null, pending: null, localRows: null };
+      session = { key: sessionKey, state: null, pending: null, fresh: forceFresh };
       cardListRef.current = session;
-      if (plan.cacheFirst && !forceFresh) {
-        const restored = restoreCardListFromCache(sessionKey, plan);
+      if (!forceFresh) {
+        const restored = restoreCardListFromCache(sessionKey, listQuery);
         if (restored) {
           session.state = restored.state;
           cardListOrderRef.current = restored.state.order;
@@ -3236,55 +3208,26 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           setCardListStatsText(`з кешу переліку: ${restored.state.order.length} у списку · 0 запитів до бази`);
           appendLoadDebugLog('cardList:restored-from-cache', {
             sessionKey,
-            plan: describeCardListPlan(plan),
+            query: describeCardListQuery(listQuery),
             ids: restored.state.order.length,
             hasMore: restored.state.hasMore,
           });
-          return { cacheCount: restored.state.order.length, backendCount: 0, hasMore: restored.state.hasMore };
+          return { hasMore: restored.state.hasMore };
         }
       }
     }
 
     if (session.pending) {
       await session.pending.catch(() => null);
-      if (cardListRef.current !== session) return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
+      if (cardListRef.current !== session) return { hasMore, ignored: true };
     }
 
     const isFirstPage = !session.state;
     const baseOrder = session.state?.order || [];
     const run = (async () => {
       const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      const { favoritesMap, dislikedMap } = await resolveCardListReactionMaps(currentFilters);
-
-      let localRows = null;
-      if (plan.fromFiles) {
-        if (!session.localRows) {
-          const profiles = getLocalNodeProfiles();
-          if (!profiles) {
-            toast.error('Оберіть файли вузлів анкет — «Перелік з JSON-файлів» бере кандидатів з них');
-            setHasMore(false);
-            return { cacheCount: 0, backendCount: 0, hasMore: false };
-          }
-          // У файлах вузлів позначок немає: вони належать тому, хто їх
-          // поставив, і лежать у `multiData/getInTouch` — одним читанням.
-          const marks = await readOwnerGetInTouchMap(resolveCardListOwnerUid());
-          session.localRows = buildOfflineCardListRows({
-            profiles,
-            marks,
-            plan,
-            accept: entries => filterMain(entries, CARD_LIST_FILTER, currentFilters, favoritesMap, dislikedMap),
-          });
-        }
-        localRows = session.localRows;
-      }
-
-      const adapters = createCardListBackendAdapters({
-        filters: currentFilters,
-        favoritesMap,
-        dislikedMap,
-        lastActionSince: plan.byLastAction ? resolveLastActionLowerBound(currentFilters?.lastAction) : null,
-        localRows,
-      });
+      const { favoritesMap, dislikedMap } = await resolveCardListReactionMaps(currentFilters, listQuery);
+      const adapters = createCardListBackendAdapters({ filters: currentFilters, favoritesMap, dislikedMap });
       const isStale = () => cardListRef.current !== session || !isMountedRef.current;
       const toUsersMap = list => list.reduce((acc, user) => {
         if (user?.userId) acc[user.userId] = user;
@@ -3309,19 +3252,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       };
 
       const result = await loadCardListPage({
-        plan,
+        query: listQuery,
         state: session.state,
         limit,
         adapters,
+        // «Оновити» читає анкети з бази лише для першої сторінки сеансу:
+        // далі гортання йде звичайним шляхом, спершу з кешу.
+        cacheFirst: !(session.fresh && isFirstPage),
         isStale,
         onProgress: list => {
           cardListOrderRef.current = [...baseOrder, ...list.map(user => user.userId)];
           applyUsers(list);
         },
       });
-      if (result.ignored || isStale()) {
-        return { cacheCount: 0, backendCount: 0, hasMore, ignored: true };
-      }
+      if (result.ignored || isStale()) return { hasMore, ignored: true };
 
       session.state = result.state;
       cardListOrderRef.current = result.state.order;
@@ -3336,7 +3280,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       result.errors.forEach(error => {
         toast.error(
-          `«${describeCardListStream(error.stream)}» недоступне: ${error.code || error.message}`,
+          `«${describeCardListStream(error.stream, listQuery)}» недоступне: ${error.code || error.message}`,
           { id: `card-list-${error.stream}` },
         );
       });
@@ -3346,7 +3290,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setCardListStatsText(background ? `наперед: ${statsText}` : statsText);
       appendLoadDebugLog('cardList:page', {
         sessionKey,
-        plan: describeCardListPlan(plan),
+        query: describeCardListQuery(listQuery),
         limit,
         background,
         stats: result.stats,
@@ -3354,13 +3298,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         errors: result.errors,
         elapsedMs: Math.round(elapsed),
       });
-
-      const fromCache = result.stats.fromCache || 0;
-      return {
-        cacheCount: Math.min(fromCache, result.users.length),
-        backendCount: Math.max(0, result.users.length - fromCache),
-        hasMore: result.hasMore,
-      };
+      return { hasMore: result.hasMore };
     })();
 
     session.pending = run;
@@ -3400,14 +3338,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return last;
   };
 
+  // Наступна сторінка — наперед, у фоні: перехід на неї показує готове, а
+  // ціна — рівно одна сторінка, а не весь список.
   const prefetchCardListPage = page => {
-    if (!cardListPlanRef.current.prefetch) return;
     ensureCardListLoaded((page + 1) * PAGE_SIZE, { background: true }).catch(error => {
       appendLoadDebugLog('cardList:prefetch-error', { page, message: error?.message || String(error) });
     });
   };
 
-  // Картка пішла зі списку (дата поза планом) — і з переліку сеансу, і з
+  // Картка пішла зі списку (дата поза запитом) — і з переліку сеансу, і з
   // кешу переліку: інакше «назад до списку» чи перезавантаження повернули б її.
   const forgetCardListId = userId => {
     const session = cardListRef.current;
@@ -3418,7 +3357,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   /*
-   * Картка, якій у самому списку поставили дату поза планом, згасає
+   * Картка, якій у самому списку поставили дату поза запитом, згасає
    * анімацією (`_pendingRemove`, див. `smallCard/actions`) і зникає з `users`
    * сама (`UsersList`). Тут вона йде й з переліку сеансу, а на її місце
    * догортається наступна, — але лише *після* згасання: забута раніше, вона
@@ -3448,20 +3387,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [users, currentFilter]);
 
   useEffect(() => {
-    if (skipNextReloadRef.current) {
-      appendLoadDebugLog('reload-effect:skip-next-reload', {
-        currentFilter,
-        cardListPlan: describeCardListPlan(cardListPlanRef.current),
-        search,
-        filters: summarizeLoadFiltersForLog(filters),
-      });
-      skipNextReloadRef.current = false;
-      return;
-    }
-
     appendLoadDebugLog('reload-effect:start', {
       currentFilter,
-      cardListPlan: describeCardListPlan(cardListPlanRef.current),
+      cardListQuery: describeCardListQuery(cardListQueryRef.current),
       search,
       searchBarQueryActive,
       searchListIsolated,
@@ -3480,8 +3408,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       });
       setCurrentPage(1);
       setHasMore(false);
-      setCacheCount(0);
-      setBackendCount(0);
       setSearchLoading(false);
       setHasSearched(Boolean((search || lastSearchBarQuery || '').trim()));
       return;
@@ -3494,8 +3420,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (!isCardList) setUsers({});
     setHasMore(true);
     setCurrentPage(1);
-    setCacheCount(0);
-    setBackendCount(0);
 
     if (!currentFilter) {
       appendLoadDebugLog('reload-effect:stop-empty-current-filter', {
@@ -3515,14 +3439,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       appendLoadDebugLog('reload-effect:branch', {
         branch: CARD_LIST_FILTER,
         loader: 'loadMoreCardList',
-        plan: describeCardListPlan(cardListPlanRef.current),
+        query: describeCardListQuery(cardListQueryRef.current),
         forceFresh,
       });
       loadMoreCardList({ reset: true, forceFresh })
         .then(result => {
           if (result?.ignored) return;
-          setCacheCount(result.cacheCount);
-          setBackendCount(result.backendCount);
           if (result.hasMore) prefetchCardListPage(1);
         })
         .catch(error => {
@@ -3531,8 +3453,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             stack: error?.stack || null,
           });
           toast.error(`Список не завантажився: ${error?.code || error?.message || 'unknown'}`);
-          setCacheCount(0);
-          setBackendCount(0);
         })
         .finally(() => setSearchLoading(false));
       return;
@@ -3549,31 +3469,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
 
-    if (currentFilter === FEED_DATE_FILTER) {
-      appendLoadDebugLog('reload-effect:branch', { branch: FEED_DATE_FILTER, loader: 'loadMoreUsersFeedDate' });
-      loadMoreUsersFeedDate()
-        .then(({ cacheCount, backendCount }) => {
-          setCacheCount(cacheCount);
-          setBackendCount(backendCount);
-        })
-        .catch(error => {
-          appendLoadDebugLog('reload-effect:feedDate-error', {
-            message: error?.message || String(error),
-          });
-          toast.error(`Стрічка недоступна: ${error?.code || error?.message || 'unknown'}`);
-          setCacheCount(0);
-          setBackendCount(0);
-        })
-        .finally(() => setSearchLoading(false));
-      return;
-    }
-
-    if (currentFilter === 'FAVORITE') {
-      appendLoadDebugLog('reload-effect:branch', { branch: 'FAVORITE', loader: 'loadFavoriteUsers' });
-      loadFavoriteUsers().finally(() => setSearchLoading(false));
-      return;
-    }
-
     if (currentFilter === 'CYCLE_FAVORITE') {
       appendLoadDebugLog('reload-effect:branch', { branch: 'CYCLE_FAVORITE', loader: 'loadCycleFavorites' });
       loadCycleFavorites().finally(() => setSearchLoading(false));
@@ -3585,7 +3480,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     appendLoadDebugLog('reload-effect:unknown-filter', { currentFilter });
     setSearchLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, currentFilter, search, loadRequestId, cardListPlanKey, searchListIsolated]);
+  }, [filters, currentFilter, search, loadRequestId, cardListQueryKey, searchListIsolated]);
 
 
   const [adding, setAdding] = useState(false);
@@ -3638,11 +3533,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           setIdsForQuery(profileSearchCacheKey, [newProfile.userId]);
         }
       }
-      cacheFetchedUsers(
-        { [newProfile.userId]: newProfile },
-        cacheLoad2Users,
-        filters,
-      );
+      rememberCardsInCache({ [newProfile.userId]: newProfile });
       setUsers(prev => ({ ...prev, [newProfile.userId]: newProfile }));
       logProfileRestoreStep('add-user:set-state-open-profile-form', {
         userId: newProfile.userId,
@@ -3975,128 +3866,25 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [state.userId, setState]);
 
 
-  /**
-   * Сторінка карток у **порядку стрічки матчингу** — той самий вузол, той самий
-   * ключ, той самий курсор.
-   *
-   * На `/matching` список упорядковує `feedDate` (у розгорнутій картці це
-   * `lastLogin2`), і адмінові регулярно треба подивитись рівно те, що зараз
-   * бачить читач: «хто вгорі стрічки». Решта режимів цього екрана гортає
-   * `getInTouch`, `lastAction` чи ключ вузла — жоден з них порядку стрічки не
-   * повторює, і зводити їх до нього вручну означало б другу реалізацію тієї
-   * самої пагінації. Тому тут викликається та сама `fetchMatchingCardsPage`,
-   * що й у стрічці: збіг порядку гарантує спільний код, а не домовленість.
-   *
-   * Курсор у неї — пара (дата, id), а не ключ, тож він живе у власному
-   * `feedCursorRef`: стан скидають `openCardCollection` і `handleLoadUsers`.
-   *
-   * Картки догідратовуються повними анкетами, як і в решті режимів цього
-   * екрана: список тут показує `UsersList`, якому потрібна анкета, а не
-   * проєкція.
-   */
-  const loadMoreUsersFeedDate = async (currentFilters = filters) => {
-    if (isEditingRef.current) {
-      appendLoadDebugLog('loadMoreUsersFeedDate:return-zero', {
-        reason: 'isEditingRef.current is true',
-      });
-      return { cacheCount: 0, backendCount: 0, hasMore };
-    }
-
-    // Курсор живе в ref, а не в стані: ефект перезавантаження читає стан із
-    // замикання того рендеру, у якому його призначили, тож щойно скинутий
-    // `lastKey` приїхав би сюди старим — і перша сторінка почалася б із
-    // середини стрічки. Та сама причина, що й у `dateOffset2Ref`.
-    const cursor = feedCursorRef.current;
-    appendLoadDebugLog('loadMoreUsersFeedDate:start', { cursor, pageSize: PAGE_SIZE });
-
-    const page = await fetchMatchingCardsPage({ limit: PAGE_SIZE, cursor });
-    const pageIds = (page?.users || []).map(card => card?.userId).filter(Boolean);
-
-    if (!pageIds.length) {
-      setHasMore(false);
-      appendLoadDebugLog('loadMoreUsersFeedDate:empty-page', { cursor });
-      return { cacheCount: 0, backendCount: 0, hasMore: false };
-    }
-
-    const hydrated = await fetchUsersByIds(pageIds);
-    // Порядок сторінки — це і є відповідь: `fetchUsersByIds` віддає мапу, у якій
-    // його немає, тож список збирається за `pageIds`, а не за ключами мапи.
-    const orderedUsers = pageIds.reduce((acc, id) => {
-      const card = (page.users || []).find(item => item?.userId === id);
-      const full = hydrated?.[id];
-      if (!card && !full) return acc;
-      acc[id] = { ...(card || {}), ...(full || {}), userId: id };
-      return acc;
-    }, {});
-
-    cacheFetchedUsers(orderedUsers, cacheLoad2Users, currentFilters);
-    if (canApplyLoadResultsToUsers()) {
-      setUsers(prev => mergeWithoutOverwrite(prev, orderedUsers));
-    }
-
-    const nextHasMore = Boolean(page?.hasMore);
-    feedCursorRef.current = page?.lastKey || null;
-    setHasMore(nextHasMore);
-
-    const queryKey = buildListQueryKey(FEED_DATE_FILTER, currentFilters);
-    const existingIds = getIdsByQuery(queryKey);
-    setIdsForQuery(queryKey, [...new Set([...existingIds, ...Object.keys(orderedUsers)])]);
-
-    appendLoadDebugLog('loadMoreUsersFeedDate:result', {
-      backendCount: Object.keys(orderedUsers).length,
-      hasMore: nextHasMore,
-      nextCursor: page?.lastKey || null,
-    });
-
-    return { cacheCount: 0, backendCount: Object.keys(orderedUsers).length, hasMore: nextHasMore };
-  };
-
   const handlePageChange = async page => {
     // «Список» перемикає сторінку одразу: що вже прийнято, видно без
-    // чекання, а бракуюче двигун догортає у фоні — і, якщо так у плані, ще
-    // одну сторінку наперед.
-    if (currentFilter === CARD_LIST_FILTER) {
-      setCurrentPage(page);
-      setCacheCount(0);
-      setBackendCount(0);
-      ensureCardListLoaded(page * PAGE_SIZE)
-        .then(result => {
-          if (result?.ignored) return;
-          appendLoadDebugLog('handlePageChange:card-list-loaded', { page, hasMore: result?.hasMore });
-          if (result?.hasMore) prefetchCardListPage(page);
-        })
-        .catch(error => {
-          appendLoadDebugLog('handlePageChange:card-list-error', {
-            page,
-            message: error?.message || String(error),
-          });
-        });
-      return;
-    }
-
-    const needed = page * PAGE_SIZE;
-    let loaded = Object.keys(users).length;
-    let more = hasMore;
-    let cacheLoaded = 0;
-    let backendLoaded = 0;
-
-    while (more && loaded < needed) {
-      const { cacheCount, backendCount, hasMore: nextMore, ignored } =
-        currentFilter === 'FAVORITE'
-          ? await loadNextReactionBatch()
-          : currentFilter === FEED_DATE_FILTER
-          ? await loadMoreUsersFeedDate()
-          : { cacheCount: 0, backendCount: 0, hasMore: false };
-      if (ignored) return;
-      cacheLoaded += cacheCount;
-      backendLoaded += backendCount;
-      loaded += cacheCount + backendCount;
-      more = nextMore;
-      if (cacheCount + backendCount === 0 && nextMore) more = false;
-    }
-    setCacheCount(cacheLoaded);
-    setBackendCount(backendLoaded);
+    // чекання, а бракуюче двигун догортає у фоні — і ще одну сторінку
+    // наперед. Решта добірок (цикл, дублікати) приходить цілою, і сторінка
+    // там — лише зріз показаного.
     setCurrentPage(page);
+    if (currentFilter !== CARD_LIST_FILTER) return;
+    ensureCardListLoaded(page * PAGE_SIZE)
+      .then(result => {
+        if (result?.ignored) return;
+        appendLoadDebugLog('handlePageChange:card-list-loaded', { page, hasMore: result?.hasMore });
+        if (result?.hasMore) prefetchCardListPage(page);
+      })
+      .catch(error => {
+        appendLoadDebugLog('handlePageChange:card-list-error', {
+          page,
+          message: error?.message || String(error),
+        });
+      });
   };
 
   const saveContactsBySelectedFormat = useCallback((contacts, format = contactExportFormat) => {
@@ -4244,114 +4032,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     saveContactsBySelectedFormat(res);
   };
 
-  const resetReactionUsersState = useCallback(() => {
-    reactionPagingRef.current = null;
-    setUsers({});
-    setHasMore(false);
-    setCurrentPage(1);
-    setCacheCount(0);
-    setBackendCount(0);
-
-    return { users: {}, ids: [], cacheCount: 0, backendCount: 0, hasMore: false };
-  }, []);
-
-  /*
-   * Обрані й дизлайкнуті — посторінково, а не всією колекцією одразу.
-   *
-   * Тут читались повні анкети **всіх** вподобаних (чи дизлайкнутих) за раз —
-   * сотні `fetchUserById` по пʼять вузлів кожен, а в дизлайків ще й двічі, —
-   * лише щоб упорядкувати й відфільтрувати список, з якого на екрані одна
-   * сторінка. Тепер з бази береться сама мапа id (вона легка), а анкети —
-   * порціями по сторінці: спершу з кеша браузера, решта точково, і наступну
-   * порцію просить перехід на наступну сторінку (`handlePageChange`). Порядок
-   * — від найсвіжішої реакції, де значення реакції — мітка часу; фільтри
-   * картотеки застосовуються до кожної порції, тож порція добирається, доки
-   * сторінка не набереться або id не скінчаться.
-   */
-  const loadNextReactionBatch = useCallback(async ({ targetCount = PAGE_SIZE } = {}) => {
-    const paging = reactionPagingRef.current;
-    if (!paging) return { cacheCount: 0, backendCount: 0, hasMore: false };
-
-    const added = {};
-    let cacheCount = 0;
-    let backendCount = 0;
-    while (Object.keys(added).length < targetCount && paging.next < paging.ids.length) {
-      const slice = paging.ids.slice(paging.next, paging.next + PAGE_SIZE);
-      paging.next += slice.length;
-      const loadedSlice = await Promise.all(slice.map(async id => {
-        const cached = getCard(id);
-        if (cached) return { id, user: { ...cached, userId: cached.userId || id }, fromCache: true };
-        const user = await fetchUserById(id).catch(() => null);
-        return user ? { id, user, fromCache: false } : null;
-      }));
-      if (paging !== reactionPagingRef.current) {
-        return { ignored: true, cacheCount: 0, backendCount: 0, hasMore: false };
-      }
-      const fromBackend = {};
-      for (const entry of loadedSlice) {
-        if (!entry) continue;
-        if (entry.fromCache) {
-          cacheCount += 1;
-        } else {
-          backendCount += 1;
-          fromBackend[entry.id] = entry.user;
-        }
-      }
-      if (Object.keys(fromBackend).length) cacheFetchedUsers(fromBackend, paging.cacheFn);
-      filterMain(
-        loadedSlice.filter(Boolean).map(({ id, user }) => [id, user]),
-        currentFilter || 'DATE2',
-        filters,
-        paging.favoritesMap,
-        paging.dislikedMap,
-      ).forEach(([id, user]) => {
-        added[id] = user;
-      });
-    }
-
-    const more = paging.next < paging.ids.length;
-    setUsers(prev => ({ ...prev, ...added }));
-    setHasMore(more);
-    setCacheCount(cacheCount);
-    setBackendCount(backendCount);
-    return { cacheCount, backendCount, hasMore: more };
-  }, [cacheFetchedUsers, currentFilter, filters]);
-
-  const startReactionPaging = useCallback(async kind => {
-    const owner = auth.currentUser?.uid;
-    if (!owner) return resetReactionUsersState();
-
-    const isFavorite = kind === 'favorite';
-    const remote = isFavorite ? await loadFavoriteIdsOnce(owner) : await loadDislikeIdsOnce(owner);
-    const reactionMap = Object.fromEntries(Object.entries(remote || {}).filter(([, value]) => value));
-    const ids = Object.entries(reactionMap)
-      .sort(([, left], [, right]) => (Number(right) || 0) - (Number(left) || 0))
-      .map(([id]) => id);
-
-    setIdsForQuery(isFavorite ? 'favorite' : 'dislike', ids);
-    reactionPagingRef.current = {
-      kind,
-      ids,
-      next: 0,
-      cacheFn: isFavorite ? cacheFavoriteUsers : cacheDislikedUsers,
-      favoritesMap: isFavorite ? { ...favoriteUsersData, ...reactionMap } : { ...favoriteUsersData },
-      dislikedMap: isFavorite ? { ...dislikeUsersData } : { ...dislikeUsersData, ...reactionMap },
-    };
-    setUsers({});
-    setCurrentPage(1);
-    return loadNextReactionBatch();
-  }, [
-    dislikeUsersData,
-    favoriteUsersData,
-    loadDislikeIdsOnce,
-    loadFavoriteIdsOnce,
-    loadNextReactionBatch,
-    resetReactionUsersState,
-  ]);
-
-  const showFavoriteCards = useCallback(() => startReactionPaging('favorite'), [startReactionPaging]);
-
-  const loadFavoriteUsers = async () => showFavoriteCards();
 
 
 
@@ -4375,12 +4055,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return acc;
     }, {});
 
-    cacheFetchedUsers(cycleUsers, cacheLoad2Users, filters);
+    rememberCardsInCache(cycleUsers);
     setUsers(sorted);
     setHasMore(false);
     setCurrentPage(1);
-    setCacheCount(0);
-    setBackendCount(sortedUsers.length);
   };
 
   const runStimulationShortcutIndexing = useCallback(async () => {
@@ -4663,7 +4341,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return;
     }
     const { mergedUsers, totalDuplicates } = await loadDuplicateUsers();
-    cacheFetchedUsers(mergedUsers, cacheDplUsers);
+    cacheDplUsers(mergedUsers);
     setUsers(prevUsers => ({ ...prevUsers, ...mergedUsers }));
     setDuplicates(totalDuplicates);
     setIsDuplicateView(true);
@@ -4688,8 +4366,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setCurrentPage(1);
     setSearchBarQueryActive(false);
     setLastSearchBarQuery('');
-    setCacheCount(0);
-    setBackendCount(0);
     setDuplicates('');
     setIsDuplicateView(false);
     searchListIsolationRef.current = false;
@@ -5391,7 +5067,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const shouldPaginate = searchBarQueryActive
     ? Object.keys(users || {}).length > PAGE_SIZE
-    : currentFilter !== 'FAVORITE' && currentFilter !== 'CYCLE_FAVORITE';
+    : currentFilter !== 'CYCLE_FAVORITE';
   // Видача зі списку анкет JSON — це групи «анкета з файлу → знайдене», і
   // порядок у них і є зміст: сортувалка картотеки розносила картку з файлу й
   // її знахідки по різних місцях, а ⇄ порівнювала сусідів із чужих груп.
@@ -5405,21 +5081,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     // «Список» показує картки рівно в тому порядку, в якому їх прийняв
-    // двигун: сторінка на екрані — це сторінка з бази. Доти показ
-    // пересортовував завантажене за `getInTouch`, і в GIT, що вантажив від
-    // найдавніших дат, кожна дописана сторінка лягала *над* показаною.
+    // двигун: сторінка на екрані — це сторінка з бази, за яким полем її не
+    // впорядкуй. Доти показ пересортовував завантажене за `getInTouch`, і в
+    // GIT, що вантажив від найдавніших дат, кожна дописана сторінка лягала
+    // *над* показаною, а стрічка й обрані втрачали власний порядок.
     // Картка поза порядком (щойно відкрита з пошуку) стає в кінець.
     if (currentFilter === CARD_LIST_FILTER) {
       const position = new Map(cardListOrderRef.current.map((id, index) => [id, index]));
       const rank = id => (position.has(id) ? position.get(id) : Number.MAX_SAFE_INTEGER);
       return ids.sort((a, b) => rank(a) - rank(b));
-    }
-
-    // Стрічка — так само: порядок сторінки `fetchMatchingCardsPage` і є
-    // відповідь («як у стрічці matching»), а пересортування за `getInTouch`
-    // його ламало.
-    if (currentFilter === FEED_DATE_FILTER) {
-      return ids;
     }
 
     return ids.sort((a, b) => compareUsersByGetInTouch(getVisibleCard(a), getVisibleCard(b)));
@@ -5646,9 +5316,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const describeAdminConsoleState = () => 'дублікати, імпорт і експорт, кеш, обслуговування бази';
 
   // «Список» — це добірка за замовчуванням: усе, що не окрема добірка, гортає
-  // список за обраним сортуванням.
-  const isPlainListActive =
+  // список за обраним запитом. Чіп підсвічує готовий запит, якому відповідає
+  // відкритий список; свій запит (зібраний у «Сортуванні») стоїть окремим чіпом.
+  const isCardListActive =
     !CARD_COLLECTION_LABELS[currentFilter] && !isSearchersView && !isDuplicateView;
+  const activeCardListPreset = findCardListPreset(cardListQuery);
 
   const selectedIndexCount =
     Object.values(selectedIndexJobs || {}).filter(Boolean).length
@@ -5663,43 +5335,29 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setUsers({});
     setHasMore(true);
     setCurrentPage(1);
-    feedCursorRef.current = null;
     setDuplicates('');
     setIsDuplicateView(false);
     setCurrentFilter(nextFilter);
   };
 
   /*
-   * Галочка в «Що в списку» міняє план, і список перезбирається сам (ефект
-   * перезавантаження стежить за `cardListPlanKey`): окремої кнопки
-   * «застосувати» немає, як її не було й у радіокнопок. Галочки, які на склад
-   * списку не впливають (кеш, наперед, індекс), діють з наступної сторінки і
-   * перезбирання не викликають. Відкрита інша добірка (обрані, цикл)
-   * поступається «Списку»: план змінюють саме для нього.
+   * Відкрити «Список» за запитом — готовим (чіп), зібраним у «Сортуванні» чи
+   * тим самим, що вже відкритий.
+   *
+   * Той самий запит на відкритому списку — це «оновити»: перелік і анкети
+   * читаються з бази заново, повз обидва кеші, а показаний список стоїть на
+   * екрані, доки нова перша сторінка його не замінить. Інший запит — це інший
+   * список: показане зникає одразу, а перелік, зібраний тим самим запитом і
+   * фільтрами за останні шість годин, піднімається з кешу без жодного запиту.
    */
-  const handleCardListPlanChange = nextPlan => {
-    const normalized = normalizeCardListPlan(nextPlan);
-    setCardListPlan(normalized);
-    try {
-      localStorage.setItem(CARD_LIST_PLAN_STORAGE_KEY, JSON.stringify(normalized));
-    } catch (error) {
-      // Памʼять браузера закрита — план діятиме до перезавантаження.
-    }
-    appendLoadDebugLog('card-list-plan:change', {
-      from: describeCardListPlan(cardListPlan),
-      to: describeCardListPlan(normalized),
-      plan: normalized,
-    });
-    if (currentFilter !== CARD_LIST_FILTER && !searchListIsolationRef.current) {
-      setUsers({});
-      cardListOrderRef.current = [];
-      setDuplicates('');
-      setIsDuplicateView(false);
-      setCurrentFilter(CARD_LIST_FILTER);
-    }
-  };
+  const openCardList = (nextQuery = cardListQueryRef.current, { refresh = false } = {}) => {
+    const normalized = normalizeCardListQuery(nextQuery);
+    const isRefresh = refresh || (
+      currentFilter === CARD_LIST_FILTER
+      && !searchListIsolationRef.current
+      && buildCardListQueryKey(normalized) === buildCardListQueryKey(cardListQueryRef.current)
+    );
 
-  const handleLoadUsers = () => {
     searchListIsolationRef.current = false;
     setSearch('');
     if (location.search) {
@@ -5714,31 +5372,46 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setSearchBarQueryActive(false);
     setLastSearchBarQuery('');
     setUserNotFound(false);
-    setUsers({});
+    if (!isRefresh) {
+      setUsers({});
+      cardListOrderRef.current = [];
+    }
     setHasMore(true);
     setCurrentPage(1);
-    feedCursorRef.current = null;
     setDuplicates('');
     setIsDuplicateView(false);
 
-    // Повторне натискання на відкритому «Списку» — це «оновити»: перелік
-    // читається з бази заново, повз кеш переліку. Перше відкриття бере
-    // перелік з кешу, якщо план той самий і йому менше шести годин.
-    forceCardListRefreshRef.current = currentFilter === CARD_LIST_FILTER;
-    cardListOrderRef.current = [];
+    cardListQueryRef.current = normalized;
+    setCardListQuery(normalized);
+    try {
+      localStorage.setItem(CARD_LIST_QUERY_STORAGE_KEY, JSON.stringify(normalized));
+    } catch (error) {
+      // Памʼять браузера закрита — запит діятиме до перезавантаження.
+    }
+    forceCardListRefreshRef.current = isRefresh;
     cardListRef.current = { key: '', state: null, pending: null };
 
-    const nextFilter = CARD_LIST_FILTER;
-    appendLoadDebugLog('manual-load:click', {
-      nextFilter,
-      cardListPlan: describeCardListPlan(cardListPlan),
-      forceFresh: forceCardListRefreshRef.current,
+    appendLoadDebugLog('card-list:open', {
+      query: describeCardListQuery(normalized),
+      refresh: isRefresh,
       search,
       filters: summarizeLoadFiltersForLog(filters),
       previousUsersCount: countObjectKeys(users),
     });
-    setCurrentFilter(nextFilter);
+    setCurrentFilter(CARD_LIST_FILTER);
     setLoadRequestId(prev => prev + 1);
+  };
+
+  // Зміна в «Сортуванні» збирає список заново сама: окремої кнопки
+  // «застосувати» немає. Дотик до вже обраного варіанта нічого не міняє — це
+  // не «оновити», для того є окрема кнопка.
+  const handleCardListQueryChange = nextQuery => {
+    const normalized = normalizeCardListQuery(nextQuery);
+    if (
+      currentFilter === CARD_LIST_FILTER
+      && buildCardListQueryKey(normalized) === buildCardListQueryKey(cardListQueryRef.current)
+    ) return;
+    openCardList(normalized);
   };
 
   const handleBackToPreviousList = useCallback(() => {
@@ -5793,7 +5466,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       missingCachedUserIds,
       currentFilter: snapshot.currentFilter || '',
       currentPage: snapshot.currentPage || 1,
-      cardListPlan: snapshot.cardListPlan ? describeCardListPlan(snapshot.cardListPlan) : snapshot.loadSortMode || '',
+      cardListQuery: snapshot.cardListQuery ? describeCardListQuery(snapshot.cardListQuery) : snapshot.loadSortMode || '',
       hasSearched: Boolean(snapshot.hasSearched),
     });
 
@@ -5804,30 +5477,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     // Знімки, збережені до двигуна, несуть режим (`loadSortMode`) і добірку
-    // режиму (`DATE2`, `GITnew`…): обидва переводяться в «Список» з
-    // відповідним планом, інакше «назад до списку» відкрив би порожнечу.
+    // режиму (`DATE2`, `GITnew`, `FEED_DATE`, `FAVORITE`…): обидва
+    // переводяться в «Список» з відповідним запитом, інакше «назад до списку»
+    // відкрив би порожнечу.
     const isLegacyListSnapshot = LEGACY_LIST_FILTERS.has(snapshot.currentFilter || '');
     const restoredCurrentFilter = isLegacyListSnapshot ? CARD_LIST_FILTER : snapshot.currentFilter || '';
-    const restoredPlan = snapshot.cardListPlan
-      ? normalizeCardListPlan(snapshot.cardListPlan)
-      : planFromLegacyLoadSortMode(snapshot.loadSortMode, cardListPlanRef.current);
+    const restoredQuery = snapshot.cardListQuery
+      ? normalizeCardListQuery(snapshot.cardListQuery)
+      : queryFromLegacyListState({ loadSortMode: snapshot.loadSortMode, currentFilter: snapshot.currentFilter });
 
     setCurrentFilter(restoredCurrentFilter);
     setCurrentPage(snapshot.currentPage || 1);
     setHasMore(typeof snapshot.hasMore === 'boolean' ? snapshot.hasMore : true);
     if (restoredCurrentFilter === CARD_LIST_FILTER) {
-      const plan = restoredPlan || cardListPlanRef.current;
-      const restoredState = restoreCardListState(snapshot.cardListState, plan);
+      const listQuery = restoredQuery || cardListQueryRef.current;
+      const restoredState = restoreCardListState(snapshot.cardListState, listQuery);
       if (restoredState && snapshot.cardListKey) {
         // Сеанс двигуна вертається разом зі списком: наступна сторінка
         // продовжує гортати базу з того самого курсора.
-        cardListRef.current = { key: snapshot.cardListKey, state: restoredState, pending: null, localRows: null };
+        cardListRef.current = { key: snapshot.cardListKey, state: restoredState, pending: null };
         cardListOrderRef.current = restoredState.order;
       } else {
         cardListOrderRef.current = (snapshot.userIds || []).filter(Boolean);
       }
-      if (restoredPlan && buildCardListPlanKey(restoredPlan) !== buildCardListPlanKey(cardListPlanRef.current)) {
-        setCardListPlan(restoredPlan);
+      if (restoredQuery && buildCardListQueryKey(restoredQuery) !== buildCardListQueryKey(cardListQueryRef.current)) {
+        cardListQueryRef.current = restoredQuery;
+        setCardListQuery(restoredQuery);
       }
     }
     setSearch(snapshot.search || '');
@@ -6281,36 +5956,35 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             */}
             <ListPanel>
               <CollectionRow role="group" aria-label="Що показати">
-                <CollectionChip
-                  type="button"
-                  $active={isPlainListActive}
-                  aria-pressed={isPlainListActive}
-                  onClick={handleLoadUsers}
-                  {...createLongPressHandlers('Завантажує список анкет за поточними сортуванням і фільтрами')}
-                >
-                  Список
-                </CollectionChip>
-                <CollectionChip
-                  type="button"
-                  $active={currentFilter === FEED_DATE_FILTER}
-                  aria-pressed={currentFilter === FEED_DATE_FILTER}
-                  onClick={() => openCardCollection(FEED_DATE_FILTER)}
-                  title="Той самий порядок, що й у стрічці matching: за lastLogin (feedDate), від найновіших"
-                  {...createLongPressHandlers(
-                    'Показує картки в порядку стрічки matching — за lastLogin, найновіші зверху',
-                  )}
-                >
-                  Стрічка
-                </CollectionChip>
-                <CollectionChip
-                  type="button"
-                  $active={currentFilter === 'FAVORITE'}
-                  aria-pressed={currentFilter === 'FAVORITE'}
-                  onClick={() => openCardCollection('FAVORITE')}
-                  title="Картки, які ви вподобали"
-                >
-                  Обрані
-                </CollectionChip>
+                {/* Готові запити «Списку» — один двигун, різні поля
+                    (`utils/cardListQuery`). Повторний дотик до відкритого — «оновити». */}
+                {CARD_LIST_PRIMARY_PRESETS.map(preset => {
+                  const active = isCardListActive && currentFilter === CARD_LIST_FILTER
+                    && activeCardListPreset?.key === preset.key;
+                  return (
+                    <CollectionChip
+                      key={preset.key}
+                      type="button"
+                      $active={active}
+                      aria-pressed={active}
+                      onClick={() => openCardList(preset.query)}
+                      title={active ? 'Відкрито · ще дотик — оновити з бази' : describeCardListQuery(preset.query)}
+                    >
+                      {preset.label}
+                    </CollectionChip>
+                  );
+                })}
+                {currentFilter === CARD_LIST_FILTER && isCardListActive && !activeCardListPreset?.primary && (
+                  <CollectionChip
+                    type="button"
+                    $active
+                    aria-pressed
+                    onClick={() => openCardList(cardListQuery)}
+                    title="Свій запит із «Сортування» · ще дотик — оновити з бази"
+                  >
+                    {describeCardListQuery(cardListQuery)}
+                  </CollectionChip>
+                )}
                 <CollectionChip
                   type="button"
                   $active={currentFilter === 'CYCLE_FAVORITE'}
@@ -6358,9 +6032,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   $active={isLoadOptionsOpen}
                   onClick={() => setIsLoadOptionsOpen(prev => !prev)}
                   aria-expanded={isLoadOptionsOpen}
-                  title="Що збирає «Список»: стани дати дзвінка, порядок і як вантажити"
+                  title="За яким полем, у якому порядку й за який період збирається «Список»"
                 >
-                  Що в списку: {describeCardListPlan(cardListPlan)} ▾
+                  Сортування: {describeCardListQuery(cardListQuery)} ▾
                 </ToolButton>
                 <ToolButton
                   type="button"
@@ -6371,21 +6045,28 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 >
                   Фільтри ▾
                 </ToolButton>
+                {currentFilter === CARD_LIST_FILTER && isCardListActive && (
+                  <ToolButton
+                    type="button"
+                    onClick={() => openCardList(cardListQuery, { refresh: true })}
+                    title="Перечитати перелік і анкети з бази, повз кеш"
+                  >
+                    ↻ Оновити
+                  </ToolButton>
+                )}
               </ToolRow>
               {isLoadOptionsOpen && (
                 <ToolDrawer>
-                  <CardListPlanControls
-                    plan={cardListPlan}
-                    onChange={handleCardListPlanChange}
-                    onPickFiles={handlePickLocalNodeFiles}
-                    loadedNodes={localIndexSources.loadedNodes}
+                  <CardListQueryControls
+                    query={cardListQuery}
+                    onChange={handleCardListQueryChange}
                     statsText={cardListStatsText}
                   />
                 </ToolDrawer>
               )}
               {isListFiltersOpen && (
                 <ToolDrawer>
-                  {/* Фільтри одні на будь-який план: окремі сховища під LA й LA2
+                  {/* Фільтри одні на будь-який запит: окремі сховища під LA й LA2
                       і урізаний перелік груп під «індексні» режими пішли разом
                       із режимами. Варіанти «no» (порожньо) лишились — їх знає і
                       `filterMain`, і індекс. */}
@@ -6636,6 +6317,17 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             />
             {currentFilter === OVERLAY_REVIEW_FILTER && (
               <OverlayReviewQueue onOpenCard={handleOpenProfileById} />
+            )}
+            {currentFilter === CARD_LIST_FILTER && !searchListIsolated && !searchLoading && !hasMore
+              && countObjectKeys(users) === 0 && (
+              // Порожній список мусить сказати, що він порожній і чому: голе
+              // місце під панеллю читалось як «ще вантажиться».
+              <EmptySearchResult data-testid="card-list-empty">
+                <span>
+                  «{describeCardListQuery(cardListQuery)}» — карток немає. Інше поле чи період — у «Сортуванні»,
+                  звуження — у «Фільтрах».
+                </span>
+              </EmptySearchResult>
             )}
             {!userNotFound && currentFilter !== OVERLAY_REVIEW_FILTER && (
               <>

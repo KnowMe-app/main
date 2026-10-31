@@ -1,5 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import { CARD_LIST_PRIMARY_PRESETS, getCardListField, getCardListPreset } from 'utils/cardListQuery';
+import { MATCHING_CARD_ORDER_FIELD } from 'utils/matchingCardIndex';
 
 // Адмінська панель на `AddNewProfile`.
 //
@@ -7,7 +9,7 @@ import path from 'path';
 // протилежні за ціною речі поруч без жодної різниці на вигляд («Очистити кеш»
 // і «Картки», тобто перебудова вузла на всю колекцію). Тест стереже саме те, що
 // коштувало розбору: групи лишились групами, дві нові добірки ведуть туди, куди
-// обіцяють, а порядок стрічки береться зі стрічки, а не збирається тут удруге.
+// обіцяють, а «Стрічка» гортається тим самим полем і межами, що й `/matching`.
 describe('AddNewProfile admin console', () => {
   const source = fs.readFileSync(path.join(__dirname, 'AddNewProfile.jsx'), 'utf8');
 
@@ -25,7 +27,12 @@ describe('AddNewProfile admin console', () => {
     // Що показати — щоденна робота; у згорнутих «Інструментах» лишається
     // рідкісне й небезпечне, і вони стартують згорнутими.
     const listPanel = source.slice(source.indexOf('<ListPanel>'), source.indexOf('</ListPanel>'));
-    ['Список', 'Стрічка', 'Обрані', 'Цикл', 'Доповнення', "'Хто шукав'"].forEach(label => {
+    // Готові запити «Списку» малюються з одного переліку, а не кнопкою на
+    // кожен завантажувач.
+    expect(listPanel).toContain('CARD_LIST_PRIMARY_PRESETS.map(');
+    expect(CARD_LIST_PRIMARY_PRESETS.map(preset => preset.label))
+      .toEqual(['Кому дзвонити', 'Остання дія', 'Стрічка', 'Обрані']);
+    ['Цикл', 'Доповнення', "'Хто шукав'", 'Сортування:', '↻ Оновити'].forEach(label => {
       expect(listPanel).toContain(label);
     });
     expect(source.indexOf('</ListPanel>')).toBeLessThan(source.indexOf('<ConsolePanel>'));
@@ -41,34 +48,27 @@ describe('AddNewProfile admin console', () => {
     expect(source).toContain('return buildEnabledSearchKeys(resolveSearchDepth(parsed));');
   });
 
-  it('порядок стрічки бере та сама сторінка, що й matching', () => {
-    const loaderBody = source.slice(
-      source.indexOf('const loadMoreUsersFeedDate ='),
-      source.indexOf('const handlePageChange = async page => {'),
-    );
-
-    // Збіг порядку з `/matching` тримає спільний код, а не домовленість: своя
-    // сортувалка тут розійшлася б зі стрічкою при першій же зміні в ній.
-    expect(loaderBody).toContain('fetchMatchingCardsPage({ limit: PAGE_SIZE, cursor })');
-    // Курсор — у ref: ефект перезавантаження читає стан зі старого замикання,
-    // і сторінка почалася б із середини стрічки.
-    expect(loaderBody).toContain('const cursor = feedCursorRef.current;');
-    expect(loaderBody).toContain('feedCursorRef.current = page?.lastKey || null;');
-    // Порядок сторінки — це і є відповідь, а мапа з `fetchUsersByIds` його не несе.
-    expect(loaderBody).toContain('const orderedUsers = pageIds.reduce(');
+  it('«Стрічка» — запит «Списку» за полем і межами стрічки matching', () => {
+    // Окремий завантажувач стрічки (`loadMoreUsersFeedDate`) з власним
+    // курсором пішов: «Стрічка» — це той самий двигун за полем, за яким
+    // гортає `/matching`, з тими самими межами (`startAt('')`,
+    // `endAt(сьогодні)`). Що й порядок той самий, стереже
+    // `config.cardListBackend.test.js` проти справжнього `fetchMatchingCardsPage`.
+    const feed = getCardListPreset('feed');
+    expect(feed.query).toEqual({ field: 'feedDate', direction: 'desc', range: 'upToToday', missing: 'exclude' });
+    expect(getCardListField('feedDate').source).toEqual({ kind: 'child', path: 'matchingCards', child: MATCHING_CARD_ORDER_FIELD });
+    expect(source).not.toContain('loadMoreUsersFeedDate');
+    expect(source).not.toContain('FEED_DATE_FILTER');
   });
 
-  it('обидві нові добірки мають кнопку й окрему гілку завантаження', () => {
-    expect(source).toContain("const FEED_DATE_FILTER = 'FEED_DATE';");
+  it('усі готові списки — один двигун, а черга доповнень — окрема добірка', () => {
+    expect(source).toContain('onClick={() => openCardList(preset.query)}');
+    expect(source).not.toContain('loadNextReactionBatch');
+    expect(source).not.toContain('startReactionPaging');
+
     expect(source).toContain("const OVERLAY_REVIEW_FILTER = 'OVERLAY_REVIEW';");
-
-    expect(source).toContain('onClick={() => openCardCollection(FEED_DATE_FILTER)}');
     expect(source).toContain('onClick={() => openCardCollection(OVERLAY_REVIEW_FILTER)}');
-
-    expect(source).toContain('if (currentFilter === FEED_DATE_FILTER) {');
     expect(source).toContain('if (currentFilter === OVERLAY_REVIEW_FILTER) {');
-    // Сторінка стрічки догортується тим самим лічильником сторінок, що й решта.
-    expect(source).toContain(': currentFilter === FEED_DATE_FILTER\n          ? await loadMoreUsersFeedDate()');
   });
 
   it('черга доповнень — адмінська й показується замість списку анкет', () => {

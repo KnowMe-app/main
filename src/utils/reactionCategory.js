@@ -115,28 +115,6 @@ export const isGetInTouchDateOnOrBeforeToday = value => {
   return Boolean(getInTouchDate && getInTouchDate <= getTodayAtMidnight());
 };
 
-/**
- * Стан позначки `getInTouch` — у тих самих межах, що й категорії реакції
- * нижче (`getReactionCategory`), але без лайків і дизлайків: тут питання не
- * «як читач поставився до анкети», а «коли їй дзвонити».
- *
- * - `due` — дата сьогодні або раніше («Кому дзвонити»);
- * - `future` — дата після сьогодні («Заплановані»);
- * - `never` — «99» (`2099-99-99` і родичі): її ставить дизлайк;
- * - `undated` — позначки немає, вона порожня або це не дата (нотатка).
- *
- * На ці чотири стани ділить картки «Список» на `AddNewProfile`
- * (`utils/cardListPlan`), і правило мусить бути одне з фільтром реакцій:
- * інакше «Кому дзвонити» і «-» у фільтрі розійшлися б на першій нотатці.
- */
-export const classifyGetInTouchMark = value => {
-  const normalized = normalizeGetInTouch(value);
-  if (!normalized) return 'undated';
-  if (isSpecialGetInTouchValue(normalized)) return 'never';
-  if (!isValidGetInTouchDate(normalized)) return 'undated';
-  return isGetInTouchDateOnOrBeforeToday(normalized) ? 'due' : 'future';
-};
-
 export const getReactionCategory = (user, favorites = {}, dislikes = {}) => {
   if (!user || typeof user !== 'object') {
     return REACTION_FILTER_KEYS.NONE;

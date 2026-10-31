@@ -3,14 +3,10 @@
 // щоб рахувати кожен запит.
 //
 // Перевіряється те, що адмін відчуває як швидкість і платить як трафік:
-// скільки запитів коштує сторінка, які межі ставить сама база, що курсор
-// продовжує рівно там, де скінчилась попередня сторінка, — і що в список не
-// потрапляє нічого чужого його станам (майбутні дзвінки, нотатки, «99»).
-//
-// Частина тестів перенесена з `config.ownerGetInTouchPaging.test.js` разом із
-// гарантіями, які він стеріг для колишнього GITnew: один запит кандидатів на
-// сторінку, курсор парою (значення, ключ), проба форми запису паралельно зі
-// сторінкою, стара форма запису не зникає мовчки.
+// скільки запитів коштує сторінка будь-якого поля, які межі ставить сама
+// база, що курсор продовжує рівно там, де скінчилась попередня сторінка, — і
+// що в список не потрапляє нічого поза діапазоном запиту (майбутні дзвінки,
+// нотатки, «99», `false` замість дати).
 
 jest.mock('firebase/app', () => ({ initializeApp: () => ({}) }));
 
@@ -51,9 +47,12 @@ jest.mock('firebase/database', () => ({
   increment: jest.fn(),
 }));
 
+const DAY = 24 * 60 * 60 * 1000;
+const NOW = new Date();
+const NOW_MS = NOW.getTime();
+
 const isoDaysFromToday = shift => {
-  const now = new Date();
-  const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + shift);
+  const date = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() + shift);
   const pad = value => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 };
@@ -76,11 +75,36 @@ const OWNER_MARKS = {
   note: '99',
   gone: '2099-99-99',
 };
-const PLAIN_IDS = ['plain1', 'plain2'];
-const ALL_IDS = [...Object.keys(OWNER_MARKS), ...PLAIN_IDS].sort();
+const ALL_IDS = [...Object.keys(OWNER_MARKS), 'plain1', 'plain2'].sort();
 
-const LAST_ACTIONS = { plain1: 5000, today1: 4000, later: 3000, past2: 2000, gone: 1000 };
+const LAST_ACTIONS = {
+  plain1: NOW_MS - DAY,
+  today1: NOW_MS - 2 * DAY,
+  later: NOW_MS - 3 * DAY,
+  past2: NOW_MS - 20 * DAY,
+  gone: NOW_MS - 400 * DAY,
+};
+// `false` — анкету сховали навмисно; ключа немає — її ще не публікували.
+const FEED_DATES = { today1: TODAY, past1: WEEK_AGO, plain1: false };
+const CREATED_AT = { plain2: NOW_MS - DAY, past1: NOW_MS - 2 * DAY };
 const MARRIED = new Set(['today2', 'past2', 'plain1']);
+
+const nodeOf = (root, id) => {
+  switch (root) {
+    case 'matchingCards':
+      return { name: `Картка ${id}`, ...(FEED_DATES[id] !== undefined ? { feedDate: FEED_DATES[id] } : {}) };
+    case 'profileDetails':
+      return { surname: 'Тест', maritalStatus: MARRIED.has(id) ? 'Yes' : 'No' };
+    case 'profileContacts':
+      return { phone: '380000000000' };
+    case 'profileWorkflow':
+      return LAST_ACTIONS[id] ? { lastAction: LAST_ACTIONS[id] } : null;
+    case 'profileTechnical':
+      return CREATED_AT[id] ? { createdAt: CREATED_AT[id] } : null;
+    default:
+      return null;
+  }
+};
 
 const snapshotOf = value => ({
   exists: () => value !== null && value !== undefined,
@@ -97,50 +121,53 @@ const orderedSnapshotOf = rows => ({
   forEach: callback => rows.forEach(([key, val]) => callback({ key, val: () => val })),
 });
 
-const compare = (left, right) => (left === right ? 0 : left < right ? -1 : 1);
+// Порядок RTDB: відсутнє → false → true → числа → рядки → обʼєкти.
+const typeRank = value => {
+  if (value === null || value === undefined) return 0;
+  if (value === false) return 1;
+  if (value === true) return 2;
+  if (typeof value === 'number') return 3;
+  if (typeof value === 'string') return 4;
+  return 5;
+};
+const compareKeys = (left, right) => (left === right ? 0 : left < right ? -1 : 1);
+const compareValues = (left, right) => {
+  const rank = typeRank(left) - typeRank(right);
+  if (rank) return rank;
+  return typeRank(left) >= 3 && typeRank(left) <= 4 ? compareKeys(left, right) : 0;
+};
 
 /**
  * Впорядкований запит у тих межах, які вміє RTDB: одна нижня межа
  * (`startAt`/`startAfter`), одна верхня (`endAt`/`endBefore`) і ліміт з
- * одного з кінців.
+ * одного з кінців. Рядок — `[ключ, значення для порядку, тіло]`.
  *
  * І з тією поведінкою, яку видно на справжньому сервері: межа «не включно»
  * (`startAfter`/`endBefore`) рахується в ліміт, тож на `limitToLast(21)` з
- * курсором приходить двадцять рядків. Через це колишній GITnew вважав другу
- * сторінку останньою.
+ * курсором приходить двадцять рядків.
  */
 const runOrderedQuery = (rows, constraints) => {
-  const sorted = [...rows].sort(([keyA, valueA], [keyB, valueB]) => compare(valueA, valueB) || compare(keyA, keyB));
+  const sorted = [...rows].sort((a, b) => compareValues(a[1], b[1]) || compareKeys(a[0], b[0]));
   const lower = constraints.find(part => part?.t === 'startAt' || part?.t === 'startAfter');
   const upper = constraints.find(part => part?.t === 'endAt' || part?.t === 'endBefore');
   const first = constraints.find(part => part?.t === 'limitToFirst');
   const last = constraints.find(part => part?.t === 'limitToLast');
-  const position = ([key, value], bound) => compare(value, bound.value) || (bound.key === undefined ? 0 : compare(key, bound.key));
+  const position = (row, bound) => compareValues(row[1], bound.value) || (bound.key === undefined ? 0 : compareKeys(row[0], bound.key));
 
   let result = sorted;
-  if (lower) {
-    result = result.filter(row => (lower.t === 'startAt' ? compare(row[1], lower.value) >= 0 : position(row, lower) > 0));
-  }
-  if (upper) {
-    result = result.filter(row => (upper.t === 'endAt' ? compare(row[1], upper.value) <= 0 : position(row, upper) < 0));
-  }
+  if (lower) result = result.filter(row => (lower.t === 'startAt' ? position(row, lower) >= 0 : position(row, lower) > 0));
+  if (upper) result = result.filter(row => (upper.t === 'endAt' ? position(row, upper) <= 0 : position(row, upper) < 0));
   const exclusiveBound = lower?.t === 'startAfter' || upper?.t === 'endBefore';
   if (first) result = result.slice(0, exclusiveBound ? first.n - 1 : first.n);
   if (last) result = result.slice(-(exclusiveBound ? last.n - 1 : last.n));
-  return result;
+  return orderedSnapshotOf(result.map(([key, , payload]) => [key, payload]));
 };
 
-const profileNodes = id => ({
-  [`matchingCards/${id}`]: { name: `Картка ${id}`, feedDate: TODAY },
-  [`profileDetails/${id}`]: { surname: 'Тест', maritalStatus: MARRIED.has(id) ? 'Yes' : 'No' },
-  [`profileContacts/${id}`]: { phone: '380000000000' },
-  [`profileWorkflow/${id}`]: LAST_ACTIONS[id] ? { lastAction: LAST_ACTIONS[id] } : {},
-});
-
-const nodes = ALL_IDS.reduce((acc, id) => Object.assign(acc, profileNodes(id)), {});
+const ORDERED_ROOTS = ['matchingCards', 'profileWorkflow', 'profileTechnical'];
 
 let log;
 let ownerMarks;
+let cardIds;
 
 const kindOf = (path, constraints) => {
   if (path === `multiData/getInTouch/${OWNER}`) {
@@ -149,14 +176,19 @@ const kindOf = (path, constraints) => {
     return isProbe ? 'legacyProbe' : 'ownerRange';
   }
   if (path.startsWith(`multiData/getInTouch/${OWNER}/`)) return 'markPoint';
-  if (path === 'matchingCards' && constraints.length) return 'cardKeys';
-  if (path === 'profileWorkflow' && constraints.length) return 'lastActionRange';
+  const [root, , child] = path.split('/');
+  if (ORDERED_ROOTS.includes(path) && constraints.length) {
+    const order = constraints.find(part => part?.t === 'orderByChild')?.field || 'key';
+    return `${root}:${order}`;
+  }
+  if (ORDERED_ROOTS.includes(root) && child) return 'valuePoint';
   if (path.startsWith('searchKey')) return 'indexPoint';
   return 'profileNode';
 };
 
-const installDatabase = ({ marks = OWNER_MARKS, legacyProbeGate = null, cardIds = ALL_IDS } = {}) => {
+const installDatabase = ({ marks = OWNER_MARKS, legacyProbeGate = null, ids = ALL_IDS } = {}) => {
   ownerMarks = marks;
+  cardIds = ids;
   mockGet.mockImplementation(async request => {
     const [rawPath, ...constraints] = Array.isArray(request) ? request : [request];
     const path = String(rawPath);
@@ -166,44 +198,46 @@ const installDatabase = ({ marks = OWNER_MARKS, legacyProbeGate = null, cardIds 
     if (kind === 'legacyProbe' && legacyProbeGate) await legacyProbeGate;
     if (kind === 'ownerMap') return snapshotOf(ownerMarks);
     if (kind === 'legacyProbe' || kind === 'ownerRange') {
-      return orderedSnapshotOf(runOrderedQuery(Object.entries(ownerMarks), constraints));
+      return runOrderedQuery(Object.entries(ownerMarks).map(([key, value]) => [key, value, value]), constraints);
     }
     if (kind === 'markPoint') return snapshotOf(ownerMarks[path.split('/').pop()] ?? null);
-    if (kind === 'cardKeys') {
-      const keyRows = [...cardIds].sort().map(id => [id, id]);
-      const after = constraints.find(part => part?.t === 'startAfter');
-      const limit = constraints.find(part => part?.t === 'limitToFirst');
-      const effectiveLimit = limit ? (after ? limit.n - 1 : limit.n) : undefined;
-      const rows = keyRows.filter(([key]) => !after || key > after.value).slice(0, effectiveLimit);
-      return orderedSnapshotOf(rows.map(([key]) => [key, profileNodes(key)[`matchingCards/${key}`]]));
+    if (ORDERED_ROOTS.includes(path)) {
+      const order = constraints.find(part => part?.t === 'orderByChild')?.field;
+      const rows = cardIds
+        .map(id => [id, nodeOf(path, id)])
+        .filter(([, node]) => node !== null)
+        .map(([id, node]) => [id, order ? node[order] ?? null : id, node]);
+      return runOrderedQuery(rows, constraints);
     }
-    if (kind === 'lastActionRange') {
-      const rows = runOrderedQuery(Object.entries(LAST_ACTIONS), constraints);
-      return orderedSnapshotOf(rows.map(([key, value]) => [key, { lastAction: value }]));
+    if (kind === 'valuePoint') {
+      const [root, id, child] = path.split('/');
+      return snapshotOf(nodeOf(root, id)?.[child] ?? null);
     }
     if (kind === 'indexPoint') {
       const [, index, bucket, id] = path.split('/');
       if (index === 'maritalStatus') return snapshotOf(bucket === (MARRIED.has(id) ? '+' : '-') ? true : null);
       return snapshotOf(null);
     }
-    if (path.startsWith(`multiData/`)) return snapshotOf(null);
-    // Анкета є в кожного id, що потрапив у потік, — і в доданих тестом.
-    const [, id] = path.split('/');
-    return snapshotOf(nodes[path] ?? (id ? profileNodes(id)[path] : null) ?? null);
+    if (path.startsWith('multiData/')) return snapshotOf(null);
+    const [root, id] = path.split('/');
+    return snapshotOf(id ? nodeOf(root, id) : null);
   });
 };
 
 let config;
 let engine;
-let planModule;
+let queryModule;
 
-const loadPage = ({ plan, state, limit = 20, filters = {}, extra = {} }) => engine.loadCardListPage({
-  plan,
+const loadPage = ({ query, state, limit = 20, filters = {}, maps = {}, cacheFirst = true }) => engine.loadCardListPage({
+  query,
   state,
   limit,
-  adapters: config.createCardListBackendAdapters({ filters, ...extra }),
+  cacheFirst,
+  now: NOW,
+  adapters: config.createCardListBackendAdapters({ filters, ...maps }),
 });
 
+const preset = key => queryModule.getCardListPreset(key).query;
 const ids = page => page.users.map(user => user.userId);
 const queriesOf = kind => log.filter(entry => entry.kind === kind);
 // Анкета — це читання її вузлів; `profileDetails/{id}` питається рівно раз на
@@ -211,6 +245,7 @@ const queriesOf = kind => log.filter(entry => entry.kind === kind);
 const hydratedIds = () => [...new Set(queriesOf('profileNode')
   .map(entry => entry.path.match(/^profileDetails\/(.+)$/)?.[1])
   .filter(Boolean))].sort();
+const constraintsOf = kind => queriesOf(kind)[0]?.constraints;
 
 beforeEach(() => {
   jest.resetModules();
@@ -226,43 +261,37 @@ beforeEach(() => {
   // eslint-disable-next-line global-require
   engine = require('utils/cardListEngine');
   // eslint-disable-next-line global-require
-  planModule = require('utils/cardListPlan');
+  queryModule = require('utils/cardListQuery');
 });
-
-const callPlan = () => planModule.DEFAULT_CARD_LIST_PLAN;
 
 describe('«Кому дзвонити» — з вузла власника, впорядкованого базою', () => {
   it('від сьогодні назад, без майбутнього, нотатки й «99»', async () => {
-    const page = await loadPage({ plan: callPlan(), limit: 10 });
+    const page = await loadPage({ query: preset('call'), limit: 10 });
 
     expect(ids(page)).toEqual(['today2', 'today1', 'past1', 'past2']);
     expect(page.hasMore).toBe(false);
   });
 
-  it('межу «сьогодні» ставить запит: endAt(сьогодні) і limitToLast(сторінка + 1)', async () => {
-    await loadPage({ plan: callPlan(), limit: 3 });
+  it('межі ставить запит: від рядка до сьогодні, хвіст на сторінку плюс розвідник', async () => {
+    await loadPage({ query: preset('call'), limit: 3 });
 
-    const [range] = queriesOf('ownerRange');
-    expect(range.constraints).toEqual(expect.arrayContaining([
+    expect(constraintsOf('ownerRange')).toEqual(expect.arrayContaining([
       { t: 'orderByValue' },
+      expect.objectContaining({ t: 'startAt', value: '' }),
       expect.objectContaining({ t: 'endAt', value: TODAY }),
       expect.objectContaining({ t: 'limitToLast', n: 4 }),
     ]));
-  });
-
-  it('сторінку збирає один запит кандидатів, а не обхід календаря', async () => {
-    await loadPage({ plan: callPlan(), limit: 3 });
     expect(queriesOf('ownerRange')).toHaveLength(1);
   });
 
   it('друга сторінка просить курсор парою (значення, ключ), а не зсув', async () => {
-    const first = await loadPage({ plan: callPlan(), limit: 2 });
+    const first = await loadPage({ query: preset('call'), limit: 2 });
     expect(ids(first)).toEqual(['today2', 'today1']);
 
     log = [];
-    const second = await loadPage({ plan: callPlan(), state: first.state, limit: 2 });
+    const second = await loadPage({ query: preset('call'), state: first.state, limit: 2 });
 
-    expect(queriesOf('ownerRange')[0].constraints).toEqual(expect.arrayContaining([
+    expect(constraintsOf('ownerRange')).toEqual(expect.arrayContaining([
       expect.objectContaining({ t: 'endBefore', value: TODAY, key: 'today1' }),
     ]));
     expect(ids(second)).toEqual(['past1', 'past2']);
@@ -272,11 +301,11 @@ describe('«Кому дзвонити» — з вузла власника, вп
     // Сервер рахує межу «не включно» в ліміт. Без поправки друга повна
     // сторінка виглядала останньою, і список «кому дзвонити» зупинявся.
     const many = Object.fromEntries(Array.from({ length: 6 }, (_, index) => [`m${index}`, WEEK_AGO]));
-    installDatabase({ marks: many });
+    installDatabase({ marks: many, ids: Object.keys(many) });
 
-    const first = await loadPage({ plan: callPlan(), limit: 2 });
-    const second = await loadPage({ plan: callPlan(), state: first.state, limit: 2 });
-    const third = await loadPage({ plan: callPlan(), state: second.state, limit: 2 });
+    const first = await loadPage({ query: preset('call'), limit: 2 });
+    const second = await loadPage({ query: preset('call'), state: first.state, limit: 2 });
+    const third = await loadPage({ query: preset('call'), state: second.state, limit: 2 });
 
     expect([...ids(first), ...ids(second), ...ids(third)]).toEqual(['m5', 'm4', 'm3', 'm2', 'm1', 'm0']);
     expect(second.hasMore).toBe(true);
@@ -295,7 +324,7 @@ describe('«Кому дзвонити» — з вузла власника, вп
     const gate = new Promise(resolve => { releaseProbe = resolve; });
     installDatabase({ legacyProbeGate: gate });
 
-    const pending = loadPage({ plan: callPlan(), limit: 2 });
+    const pending = loadPage({ query: preset('call'), limit: 2 });
     await Promise.resolve();
     await Promise.resolve();
     expect(log.map(entry => entry.kind)).toEqual(expect.arrayContaining(['legacyProbe', 'ownerRange']));
@@ -304,40 +333,35 @@ describe('«Кому дзвонити» — з вузла власника, вп
     expect(ids(await pending)).toEqual(['today2', 'today1']);
   });
 
-  it('анкети читаються лише для карток сторінки — п\'ять вузлів кожна, і жодного лістингу фото', async () => {
-    await loadPage({ plan: callPlan(), limit: 2 });
+  it('анкети читаються лише для карток сторінки, і позначку анкета вдруге не питає', async () => {
+    await loadPage({ query: preset('call'), limit: 2 });
 
     expect(hydratedIds()).toEqual(['today1', 'today2']);
-    // Позначку приніс сам запит переліку — анкета не питає її вдруге.
     expect(queriesOf('markPoint')).toHaveLength(0);
   });
 
   it('повторна сторінка з кешу браузера не читає анкет удруге', async () => {
-    const first = await loadPage({ plan: callPlan(), limit: 2 });
-    expect(ids(first)).toEqual(['today2', 'today1']);
+    await loadPage({ query: preset('call'), limit: 2 });
 
     log = [];
-    const again = await loadPage({ plan: callPlan(), limit: 2 });
+    const again = await loadPage({ query: preset('call'), limit: 2 });
     expect(ids(again)).toEqual(['today2', 'today1']);
     expect(queriesOf('profileNode')).toHaveLength(0);
     expect(again.stats.fromCache).toBe(2);
   });
 
-  it('без кешу браузера анкети читаються з бази навіть тоді, коли вони в кеші', async () => {
-    await loadPage({ plan: callPlan(), limit: 2 });
+  it('«оновити» читає анкети з бази навіть тоді, коли вони в кеші', async () => {
+    await loadPage({ query: preset('call'), limit: 2 });
     log = [];
-    const fresh = await loadPage({ plan: { ...callPlan(), cacheFirst: false }, limit: 2 });
+    const fresh = await loadPage({ query: preset('call'), limit: 2, cacheFirst: false });
 
     expect(ids(fresh)).toEqual(['today2', 'today1']);
-    expect(queriesOf('profileNode').length).toBeGreaterThan(0);
+    expect(hydratedIds()).toEqual(['today1', 'today2']);
   });
-});
-
-describe('відсів індексом', () => {
-  const married = { maritalStatus: { married: true, unmarried: false, other: false, empty: false } };
 
   it('відкинута індексом картка не коштує анкети, а прийняте ще раз перевіряє filterMain', async () => {
-    const page = await loadPage({ plan: callPlan(), limit: 10, filters: married });
+    const married = { maritalStatus: { married: true, unmarried: false, other: false, empty: false } };
+    const page = await loadPage({ query: preset('call'), limit: 10, filters: married });
 
     expect(ids(page)).toEqual(['today2', 'past2']);
     expect(hydratedIds()).toEqual(['past2', 'today2']);
@@ -345,23 +369,14 @@ describe('відсів індексом', () => {
     // бакетів і без анкет перед перевіркою.
     expect(queriesOf('indexPoint')).toHaveLength(4);
   });
-
-  it('без «Відсіву індексом» той самий фільтр дає той самий список, але ціною анкет', async () => {
-    const page = await loadPage({ plan: { ...callPlan(), indexPrefilter: false }, limit: 10, filters: married });
-
-    expect(ids(page)).toEqual(['today2', 'past2']);
-    expect(queriesOf('indexPoint')).toHaveLength(0);
-    expect(hydratedIds()).toEqual(['past1', 'past2', 'today1', 'today2']);
-  });
 });
 
-describe('інші стани', () => {
+describe('дата дзвінка — інші діапазони', () => {
   it('заплановані — від найближчої, межі ставить запит', async () => {
-    const plan = planModule.normalizeCardListPlan({ segments: { due: false, future: true } });
-    const page = await loadPage({ plan, limit: 10 });
+    const page = await loadPage({ query: preset('scheduled'), limit: 10 });
 
     expect(ids(page)).toEqual(['later', 'later2']);
-    expect(queriesOf('ownerRange')[0].constraints).toEqual(expect.arrayContaining([
+    expect(constraintsOf('ownerRange')).toEqual(expect.arrayContaining([
       expect.objectContaining({ t: 'startAt', value: TOMORROW }),
       expect.objectContaining({ t: 'endAt', value: '2099-12-31' }),
       expect.objectContaining({ t: 'limitToFirst' }),
@@ -369,26 +384,28 @@ describe('інші стани', () => {
   });
 
   it('заплановані гортаються курсором знизу', async () => {
-    const plan = planModule.normalizeCardListPlan({ segments: { due: false, future: true } });
-    const first = await loadPage({ plan, limit: 1 });
+    const first = await loadPage({ query: preset('scheduled'), limit: 1 });
     log = [];
-    const second = await loadPage({ plan, state: first.state, limit: 1 });
+    const second = await loadPage({ query: preset('scheduled'), state: first.state, limit: 1 });
 
     expect(ids(first)).toEqual(['later']);
     expect(ids(second)).toEqual(['later2']);
-    expect(queriesOf('ownerRange')[0].constraints).toEqual(expect.arrayContaining([
+    expect(constraintsOf('ownerRange')).toEqual(expect.arrayContaining([
       expect.objectContaining({ t: 'startAfter', value: TOMORROW, key: 'later' }),
     ]));
   });
 
-  it('«Без дати» — картки за ключем, позначка точково, картка з датою не читається', async () => {
-    const plan = planModule.normalizeCardListPlan({ segments: { due: false, undated: true } });
-    const page = await loadPage({ plan, limit: 10 });
+  it('«99» — окремий діапазон', async () => {
+    const page = await loadPage({ query: { field: 'getInTouch', range: 'never' }, limit: 10 });
+    expect(ids(page)).toEqual(['gone']);
+  });
+
+  it('без дати — картки за ключем, позначка точково, картка з датою не читається', async () => {
+    const page = await loadPage({ query: preset('undated'), limit: 10 });
 
     expect(ids(page)).toEqual(['note', 'plain1', 'plain2']);
-    expect(queriesOf('cardKeys').length).toBeGreaterThan(0);
+    expect(queriesOf('matchingCards:key').length).toBeGreaterThan(0);
     expect(hydratedIds()).toEqual(['note', 'plain1', 'plain2']);
-    // Позначки читались по одній, а не мапою власника цілком.
     expect(queriesOf('ownerMap')).toHaveLength(0);
   });
 
@@ -396,10 +413,9 @@ describe('інші стани', () => {
     // Вузький фільтр змушує перебирати сотні карток заради сторінки, і
     // точкове читання позначки на кожну ставало більшістю ціни сторінки.
     const plain = Array.from({ length: 60 }, (_, index) => `p${String(index).padStart(2, '0')}`);
-    installDatabase({ marks: { p03: TODAY }, cardIds: plain });
-    const plan = planModule.normalizeCardListPlan({ segments: { due: false, undated: true } });
+    installDatabase({ marks: { p03: TODAY }, ids: plain });
 
-    const page = await loadPage({ plan, limit: 50 });
+    const page = await loadPage({ query: preset('undated'), limit: 50 });
 
     expect(page.users).toHaveLength(50);
     expect(ids(page)).not.toContain('p03');
@@ -407,73 +423,179 @@ describe('інші стани', () => {
     expect(queriesOf('markPoint')).toHaveLength(0);
   });
 
-  it('«Не дзвонити» — лише «99»', async () => {
-    const plan = planModule.normalizeCardListPlan({ segments: { due: false, never: true } });
-    const page = await loadPage({ plan, limit: 10 });
-    expect(ids(page)).toEqual(['gone']);
-  });
-
-  it('колишній NoGIT: дзвінки, потім картки без дати, кожна один раз', async () => {
-    const plan = planModule.applyCardListPreset(callPlan(), 'notScheduled');
-    const page = await loadPage({ plan, limit: 20 });
+  it('дзвінки, потім картки без дати — кожна один раз', async () => {
+    const page = await loadPage({ query: preset('callAndUndated'), limit: 20 });
     expect(ids(page)).toEqual(['today2', 'today1', 'past1', 'past2', 'note', 'plain1', 'plain2']);
   });
 });
 
-describe('за останньою дією', () => {
-  it('один запит profileWorkflow від найсвіжішої дії', async () => {
-    const plan = planModule.applyCardListPreset(callPlan(), 'activity');
-    const page = await loadPage({ plan, limit: 10 });
+describe('поле вузла анкети з індексом — остання дія', () => {
+  it('один запит profileWorkflow від найсвіжішої дії, межі — числа', async () => {
+    const page = await loadPage({ query: preset('activity'), limit: 10 });
 
     expect(ids(page)).toEqual(['plain1', 'today1', 'later', 'past2', 'gone']);
-    const [range] = queriesOf('lastActionRange');
-    expect(range.constraints).toEqual(expect.arrayContaining([
+    expect(constraintsOf('profileWorkflow:lastAction')).toEqual(expect.arrayContaining([
       { t: 'orderByChild', field: 'lastAction' },
+      expect.objectContaining({ t: 'startAt', value: 0 }),
       expect.objectContaining({ t: 'endAt', value: Number.MAX_SAFE_INTEGER }),
       expect.objectContaining({ t: 'limitToLast' }),
     ]));
-    expect(queriesOf('lastActionRange')).toHaveLength(1);
+    expect(queriesOf('profileWorkflow:lastAction')).toHaveLength(1);
   });
 
-  it('фільтр «за N днів» стає нижньою межею самого запиту', async () => {
-    const plan = planModule.applyCardListPreset(callPlan(), 'activity');
-    await loadPage({ plan, limit: 10, extra: { lastActionSince: 2500 } });
+  it('«за 30 днів» стає нижньою межею самого запиту', async () => {
+    const page = await loadPage({ query: { field: 'lastAction', range: 'last30' }, limit: 10 });
 
-    expect(queriesOf('lastActionRange')[0].constraints).toEqual(expect.arrayContaining([
-      expect.objectContaining({ t: 'startAt', value: 2500 }),
+    expect(ids(page)).toEqual(['plain1', 'today1', 'later', 'past2']);
+    const from = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - 30).getTime();
+    expect(constraintsOf('profileWorkflow:lastAction')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ t: 'startAt', value: from }),
     ]));
   });
 
   it('друга сторінка — курсор парою (дія, ключ)', async () => {
-    const plan = planModule.applyCardListPreset(callPlan(), 'activity');
-    const first = await loadPage({ plan, limit: 2 });
+    const first = await loadPage({ query: preset('activity'), limit: 2 });
     log = [];
-    const second = await loadPage({ plan, state: first.state, limit: 2 });
+    const second = await loadPage({ query: preset('activity'), state: first.state, limit: 2 });
 
     expect(ids(second)).toEqual(['later', 'past2']);
-    expect(queriesOf('lastActionRange')[0].constraints).toEqual(expect.arrayContaining([
-      expect.objectContaining({ t: 'endBefore', value: 4000, key: 'today1' }),
+    expect(constraintsOf('profileWorkflow:lastAction')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ t: 'endBefore', value: LAST_ACTIONS.today1, key: 'today1' }),
     ]));
   });
 
-  it('звужений до «Кому дзвонити» — позначки точково, анкети лише прийнятих', async () => {
-    const plan = planModule.normalizeCardListPlan({ ...planModule.applyCardListPreset(callPlan(), 'activity'), segments: { due: true } });
-    const page = await loadPage({ plan, limit: 10 });
+  it('«спершу старі» — той самий запит з іншого кінця', async () => {
+    const page = await loadPage({ query: { field: 'lastAction', direction: 'asc' }, limit: 10 });
+    expect(ids(page)).toEqual(['gone', 'past2', 'later', 'today1', 'plain1']);
+    expect(constraintsOf('profileWorkflow:lastAction')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ t: 'limitToFirst' }),
+    ]));
+  });
 
-    expect(ids(page)).toEqual(['today1', 'past2']);
-    expect(hydratedIds()).toEqual(['past2', 'today1']);
+  it('без жодної дії — значення порції одним відрізком ключів, анкети лише в тих, кого не відкинуто', async () => {
+    // Дія є майже в усіх, тож до списку доживає мала частка карток; поштучно
+    // це коштувало тисячу читань на сторінку (замір наживо: 1870).
+    const page = await loadPage({ query: { field: 'lastAction', missing: 'only' }, limit: 10 });
+
+    expect(ids(page)).toEqual(['later2', 'note', 'past1', 'plain2', 'today2']);
+    expect(constraintsOf('profileWorkflow:key')).toEqual(expect.arrayContaining([
+      { t: 'orderByKey' },
+      expect.objectContaining({ t: 'startAt', value: 'gone' }),
+      expect.objectContaining({ t: 'endAt', value: 'today2' }),
+    ]));
+    expect(queriesOf('valuePoint').filter(entry => entry.path.endsWith('/lastAction'))).toHaveLength(0);
+    expect(hydratedIds()).toEqual(['later2', 'note', 'past1', 'plain2', 'today2']);
+  });
+
+  it('мала порція чи ключі-числа — значення поштучно', async () => {
+    installDatabase({ ids: ['a1', 'b1', 'plain1'] });
+    const small = await loadPage({ query: { field: 'lastAction', missing: 'only' }, limit: 10 });
+    expect(ids(small)).toEqual(['a1', 'b1']);
+    expect(queriesOf('profileWorkflow:key')).toHaveLength(0);
+
+    // Ключ, схожий на ціле число, RTDB ставить перед рядками, тож відрізок
+    // за рядковими межами його б не захопив.
+    log = [];
+    const numeric = Array.from({ length: 9 }, (_, index) => String(100 + index));
+    installDatabase({ ids: numeric });
+    const page = await loadPage({ query: { field: 'lastAction', missing: 'only' }, limit: 20 });
+    expect(page.users).toHaveLength(9);
+    expect(queriesOf('profileWorkflow:key')).toHaveLength(0);
+    expect(queriesOf('valuePoint').filter(entry => entry.path.endsWith('/lastAction'))).toHaveLength(9);
   });
 });
 
-describe('JSON-файли', () => {
-  it('перелік з файлів гортається без жодного запиту переліку до бази', async () => {
-    const plan = planModule.normalizeCardListPlan({ ...callPlan(), fromFiles: true });
-    const localRows = [{ userId: 'past1', getInTouch: YESTERDAY }, { userId: 'today1', getInTouch: TODAY }];
-    const page = await loadPage({ plan, limit: 10, extra: { localRows } });
+describe('поле самої картки — дата публікації', () => {
+  it('«Стрічка» — один запит matchingCards, `false` межа відсікає сама', async () => {
+    const page = await loadPage({ query: preset('feed'), limit: 10 });
 
-    expect(ids(page)).toEqual(['past1', 'today1']);
-    expect(queriesOf('ownerRange')).toHaveLength(0);
-    expect(queriesOf('cardKeys')).toHaveLength(0);
+    expect(ids(page)).toEqual(['today1', 'past1']);
+    expect(constraintsOf('matchingCards:feedDate')).toEqual(expect.arrayContaining([
+      { t: 'orderByChild', field: 'feedDate' },
+      expect.objectContaining({ t: 'startAt', value: '' }),
+    ]));
+  });
+
+  it('неопубліковані — значення приїхало з карткою переліку, точкових читань немає', async () => {
+    const page = await loadPage({ query: { field: 'feedDate', missing: 'only' }, limit: 20 });
+
+    expect(ids(page)).toEqual(['gone', 'later', 'later2', 'note', 'past2', 'plain1', 'plain2', 'today2']);
+    expect(queriesOf('valuePoint').filter(entry => entry.path.endsWith('/feedDate'))).toHaveLength(0);
+  });
+});
+
+describe('«Стрічка» в адмінці — той самий порядок, що й на /matching', () => {
+  it('ті самі картки в тому самому порядку, що й сторінки fetchMatchingCardsPage', async () => {
+    // Окремого завантажувача стрічки в адмінці більше немає: її гортає той
+    // самий двигун, що й решту списків. Цей тест і є гарантія, що від цього
+    // вона не розійшлась зі стрічкою читача — ні складом (майбутня дата й
+    // `false` поза нею), ні порядком (однакові дати — за id).
+    const extra = { feedA: TODAY, feedB: TODAY, feedC: YESTERDAY, feedD: WEEK_AGO, future: TOMORROW };
+    Object.assign(FEED_DATES, extra);
+    installDatabase({ ids: [...ALL_IDS, ...Object.keys(extra)].sort() });
+    try {
+      const feedIds = [];
+      let cursor = null;
+      for (let guard = 0; guard < 10; guard += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const page = await config.fetchMatchingCardsPage({ limit: 2, cursor });
+        feedIds.push(...page.users.map(user => user.userId));
+        if (!page.hasMore) break;
+        cursor = page.lastKey;
+      }
+
+      const listIds = [];
+      let state = null;
+      for (let guard = 0; guard < 10; guard += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const page = await loadPage({ query: preset('feed'), state, limit: 2 });
+        listIds.push(...ids(page));
+        state = page.state;
+        if (!page.hasMore) break;
+      }
+
+      expect(feedIds).toEqual(['today1', 'feedB', 'feedA', 'feedC', 'past1', 'feedD']);
+      expect(listIds).toEqual(feedIds);
+    } finally {
+      Object.keys(extra).forEach(key => delete FEED_DATES[key]);
+    }
+  });
+});
+
+describe('мапа читача — обрані', () => {
+  const favoritesMap = {
+    fresh: NOW_MS - DAY,
+    legacyTrue: true,
+    older: NOW_MS - 2 * DAY,
+    legacyRole: 'ed',
+  };
+
+  it('від найсвіжішого серця, старі записи без часу — в кінці, і жодного запиту переліку', async () => {
+    const page = await loadPage({ query: preset('favorites'), limit: 10, maps: { favoritesMap } });
+
+    expect(ids(page)).toEqual(['fresh', 'older', 'legacyRole', 'legacyTrue']);
+    // Читаються лише анкети: ні впорядкованого вузла, ні діапазону позначок —
+    // і рядок ціни сторінки не вигадує «запиту переліку».
+    expect(log.filter(entry => entry.kind.includes(':') || entry.kind === 'ownerRange')).toHaveLength(0);
+    expect(page.stats.listReads).toBe(0);
+  });
+
+  it('зняте серце на першій сторінці не з\'їдає картки на другій', async () => {
+    const first = await loadPage({ query: preset('favorites'), limit: 2, maps: { favoritesMap } });
+    expect(ids(first)).toEqual(['fresh', 'older']);
+
+    const { fresh, ...withoutFresh } = favoritesMap;
+    const second = await loadPage({ query: preset('favorites'), state: first.state, limit: 2, maps: { favoritesMap: withoutFresh } });
+    expect(ids(second)).toEqual(['legacyRole', 'legacyTrue']);
+  });
+});
+
+describe('мітка часу вузла — реєстрація', () => {
+  it('«Нові анкети» — один запит profileTechnical за createdAt', async () => {
+    const page = await loadPage({ query: preset('registered'), limit: 10 });
+
+    expect(ids(page)).toEqual(['plain2', 'past1']);
+    expect(queriesOf('profileTechnical:createdAt')).toHaveLength(1);
   });
 });
 
@@ -498,12 +620,12 @@ describe('стара форма запису не зникає зі списку
         return snapshotOf(legacyMarks);
       }
       if (path.startsWith('multiData/')) return snapshotOf(null);
-      const id = path.split('/')[1];
-      return snapshotOf(profileNodes(id)[path] ?? null);
+      const [root, id] = path.split('/');
+      return snapshotOf(id ? nodeOf(root, id) : null);
     });
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-    const page = await loadPage({ plan: callPlan(), limit: 3 });
+    const page = await loadPage({ query: preset('call'), limit: 3 });
 
     expect(ids(page)).toEqual(['legacy3', 'legacy2', 'legacy1']);
     expect(warn).toHaveBeenCalledWith(
