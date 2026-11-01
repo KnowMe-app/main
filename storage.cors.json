@@ -1,6 +1,6 @@
 [
   {
-    "origin": ["https://knowme-app.github.io", "http://localhost:3000"],
+    "origin": ["https://knowme.pp.ua", "https://www.knowme.pp.ua", "https://knowme-app.github.io", "http://localhost:3000"],
     "method": ["GET", "HEAD", "PUT", "POST", "DELETE"],
     "maxAgeSeconds": 3600,
     "responseHeader": [

@@ -14,7 +14,7 @@ import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
 // pdf.js's fake-worker fallback dynamically imports the same broken file and fails too ("Setting
 // up fake worker failed"), killing every preview on the deployed site. Compiling it as a real
 // worker chunk bundles those helpers in, and the chunk URL resolves against the deployed public
-// path (the GitHub Pages /main/ sub-path) like any other chunk.
+// path (the root of knowme.pp.ua) like any other chunk.
 const ensurePdfWorker = () => {
   if (GlobalWorkerOptions.workerPort) return;
   GlobalWorkerOptions.workerPort = new Worker(
