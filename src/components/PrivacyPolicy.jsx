@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import styled from 'styled-components';
 import { useNavigate } from 'react-router-dom';
 import { termsAndConditions } from './termsAndConditions';
-import { useAppSettings } from 'hooks/useAppSettings';
+import { useAppSettings, hasStoredLanguagePreference } from 'hooks/useAppSettings';
 import { uiText } from 'utils/uiTranslations';
 import { KmPage, KmTopbar, KmIconButton, KnowMeBrand } from './styles/knowme';
 import InfoModal from './InfoModal';
@@ -85,7 +85,12 @@ const Paragraph = styled.p`
 
 export const PrivacyPolicy = () => {
   const navigate = useNavigate();
-  const { language } = useAppSettings();
+  const { language: appLanguage } = useAppSettings();
+  // Угода типово англійською: її читають і з-за кордону (агенції, батьки), а
+  // українською вона відкривається лише тому, хто сам обрав мову в меню.
+  // Застосунок загалом стоїть українською (DEFAULT_APP_LANGUAGE), тож тут
+  // питаємо саме явний вибір, а не поточну мову.
+  const language = hasStoredLanguagePreference() ? appLanguage : 'en';
   const [showDotsMenu, setShowDotsMenu] = useState(false);
 
   const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
