@@ -71,7 +71,10 @@ describe('AddNewProfile admin console', () => {
 
   it('усі колекції — один двигун, а черга доповнень — окрема добірка', () => {
     expect(source).toContain('const normalized = buildCardListQueryFromSelection(nextSelection);');
-    expect(source).toContain('openCardList(normalized);');
+    expect(source).toContain("openCardList(normalized, { reopen: listPanelView !== 'list' });");
+    // Порожня сторінка посеред колекції лишає «далі»: інакше картки за
+    // курсором після сторінки без збігів були б недосяжні.
+    expect(source).toContain("(renderVisibleIds.length > 0 || (hasMore && listPanelView !== 'idle' && !searchLoading))");
     expect(source).not.toContain('loadNextReactionBatch');
     expect(source).not.toContain('startReactionPaging');
 

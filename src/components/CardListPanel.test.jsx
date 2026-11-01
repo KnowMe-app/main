@@ -46,6 +46,14 @@ describe('CardListPanel', () => {
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
+  it('з дублікатів чи пошуку дотик повертає ту саму колекцію з її порядком', () => {
+    const selection = resolveCardListSelection({ field: 'favorite', direction: 'asc' });
+    const { onSelect, onRefresh } = renderPanel({ view: 'duplicates', selection });
+    fireEvent.click(screen.getByRole('button', { name: 'Обрані' }));
+    expect(onRefresh).not.toHaveBeenCalled();
+    expect(onSelect).toHaveBeenCalledWith(selection);
+  });
+
   it('порядок і період — лише ті, що має колекція', () => {
     const { onSelect } = renderPanel({ selection: resolveCardListSelection({ field: 'lastAction' }) });
     const order = screen.getByRole('radiogroup', { name: 'Порядок' });
@@ -104,6 +112,7 @@ describe('CardListPanel', () => {
   it('стан словами', () => {
     expect(describeCardListStatus({ loading: true, count: 0 })).toBe('Завантажуємо…');
     expect(describeCardListStatus({ count: 0, hasMore: false })).toBe('Карток немає.');
+    expect(describeCardListStatus({ count: 0, hasMore: true })).toBe('На цій сторінці нічого — далі є ще.');
     expect(describeCardListStatus({ count: 40, hasMore: true })).toBe('Завантажено 40 — є ще.');
     expect(describeCardListStatus({ count: 21 })).toBe('Усього 21 картка.');
     expect(describeCardListStatus({ count: 12 })).toBe('Усього 12 карток.');

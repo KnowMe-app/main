@@ -295,7 +295,7 @@ const pluralCards = count => {
 /** Скільки показано словами: «Усього 34 картки» чи «Завантажено 40 — є ще». */
 export const describeCardListStatus = ({ loading = false, count = 0, hasMore = false } = {}) => {
   if (loading && count === 0) return 'Завантажуємо…';
-  if (count === 0) return hasMore ? 'Поки нічого — гортаємо далі.' : 'Карток немає.';
+  if (count === 0) return hasMore ? 'На цій сторінці нічого — далі є ще.' : 'Карток немає.';
   if (hasMore) return `Завантажено ${count} — є ще.`;
   return `Усього ${count} ${pluralCards(count)}.`;
 };
@@ -390,8 +390,11 @@ export const CardListPanel = ({
     setMoreOpen(false);
     // Повторний дотик до відкритої колекції — «оновити», а не «скинути»:
     // обраний порядок і період лишаються.
-    if (listShown && collection.key === key) {
-      onRefresh?.();
+    if (collection.key === key) {
+      if (listShown) onRefresh?.();
+      // Поверх колекції стоїть інший перегляд (дублікати, пошук): дотик
+      // повертає саме її, з обраним порядком і періодом.
+      else onSelect?.({ ...selection });
       return;
     }
     setCustomOpen(false);

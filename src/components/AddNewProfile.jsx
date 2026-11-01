@@ -5404,10 +5404,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
    * список: показане зникає одразу, а перелік, зібраний тим самим запитом і
    * фільтрами за останні шість годин, піднімається з кешу без жодного запиту.
    */
-  const openCardList = (nextQuery = cardListQueryRef.current, { refresh = false } = {}) => {
+  const openCardList = (nextQuery = cardListQueryRef.current, { refresh = false, reopen = false } = {}) => {
     const normalized = normalizeCardListQuery(nextQuery);
     const isRefresh = refresh || (
-      currentFilter === CARD_LIST_FILTER
+      !reopen
+      && currentFilter === CARD_LIST_FILTER
       && !searchListIsolationRef.current
       && buildCardListQueryKey(normalized) === buildCardListQueryKey(cardListQueryRef.current)
     );
@@ -5462,11 +5463,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const handleCardListSelectionChange = nextSelection => {
     const normalized = buildCardListQueryFromSelection(nextSelection);
     if (
-      currentFilter === CARD_LIST_FILTER
-      && !searchListIsolationRef.current
+      listPanelView === 'list'
       && buildCardListQueryKey(normalized) === buildCardListQueryKey(cardListQueryRef.current)
     ) return;
-    openCardList(normalized);
+    // Поверх «Списку» буває службовий перегляд (дублікати, «хто шукав»), а
+    // `currentFilter` і запит лишаються ті самі: тоді та сама колекція — це
+    // «повернутись до неї», а не «оновити» з показаними чужими картками.
+    openCardList(normalized, { reopen: listPanelView !== 'list' });
   };
 
   // Фільтри з чіпа над списком: та сама дорога, що й з шухляди
@@ -6123,8 +6126,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 renderCardFooter={renderSearcherFooter}
               />
                 {/* Пагінація без жодної картки («1 / 2» над порожнім місцем)
-                    обіцяла другу сторінку того, чого ще не відкрили. */}
-                {renderVisibleIds.length > 0 && (
+                    обіцяла другу сторінку того, чого ще не відкрили. Але
+                    порожня сторінка зі вузьким фільтром буває й посеред
+                    колекції: двигун упирається в стелю кругів і каже
+                    `hasMore`, — тоді «далі» лишається єдиним шляхом до
+                    карток за курсором, і ховати його не можна. */}
+                {(renderVisibleIds.length > 0 || (hasMore && listPanelView !== 'idle' && !searchLoading)) && (
                   <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
                 )}
               </>
