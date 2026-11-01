@@ -150,7 +150,7 @@ describe('службове', () => {
   });
 
   it('посилання веде на маршрут /p/ під basename застосунку', () => {
-    expect(buildProfileShareUrl('abc', 'https://knowme-app.github.io')).toBe('https://knowme-app.github.io/main/p/abc');
+    expect(buildProfileShareUrl('abc', 'https://knowme.pp.ua')).toBe('https://knowme.pp.ua/p/abc');
   });
 
   it('вільний слот — перший незайнятий з п\'яти', () => {

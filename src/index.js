@@ -16,7 +16,7 @@ const renderApp = () => root.render(
   <React.StrictMode>
     <Provider store={store}>
       <PersistGate loading={null} persistor={persistor}>
-        <BrowserRouter basename="/main">
+        <BrowserRouter basename="/">
           <App />
           <Toaster
             toastOptions={{

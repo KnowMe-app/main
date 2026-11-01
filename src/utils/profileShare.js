@@ -264,7 +264,9 @@ export const generateProfileShareToken = (cryptoSource = window.crypto) => {
 export const isProfileShareToken = token => /^[A-Za-z0-9_-]{22,64}$/.test(String(token || ''));
 
 export const buildProfileShareUrl = (token, origin = typeof window !== 'undefined' ? window.location.origin : '') => {
-  const base = process.env.PUBLIC_URL || '/main';
+  // Застосунок живе в корені knowme.pp.ua; PUBLIC_URL збірки з `homepage` у
+  // package.json тут порожній. Запасне '/main' лишалось від github.io/main.
+  const base = process.env.PUBLIC_URL || '';
   return `${origin}${base}/p/${token}`;
 };
 

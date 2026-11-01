@@ -64,7 +64,7 @@ npm run test:rules        # сценарії доступу в емулятор�
 скрипті вони беруться з `process.env` і нікуди більше не потрапляють.
 
 ```bash
-BROWSER=none PORT=3000 npm start &     # http://localhost:3000/main/ (basename="/main")
+BROWSER=none PORT=3000 npm start &     # http://localhost:3000/ (basename="/"; прод — https://knowme.pp.ua)
 npm install --no-save playwright-core  # Chromium уже в образі, качати нічого
 ```
 
@@ -170,6 +170,13 @@ demo-x`, правила — `curl -X PUT "http://127.0.0.1:9099/.settings/rules.
 
 Пуш у `main` запускає `.github/workflows/deploy.yml`: install → lint → build → gh-pages.
 `.env` збирається з GitHub Secrets, локально його немає.
+
+**Прод живе в корені `https://knowme.pp.ua`** (з 01.11; доти — `knowme-app.github.io/main`).
+`public/CNAME` мусить лежати в репозиторії: деплой чистить `gh-pages`, і `CNAME`, який
+GitHub кладе туди з налаштувань Pages, зник би з першою ж збіркою разом із доменом.
+`basename="/"`, `pathSegmentsToKeep = 0` у `404.html` і `homepage` у `package.json` — одне
+рішення; повернення підшляху вимагає змінити всі три. Старі адреси `/main/...` знімає
+скрипт у `public/index.html` ще до роутера.
 
 **Правила бази CI не викочує.** `database.rules.json` деплоїться руками:
 `npx firebase deploy --only database` (проєкт `webringitapp`). Зміна правил у репозиторії

@@ -133,6 +133,21 @@
           );
         }
       })(window.location);
+
+      // Застосунок переїхав з knowme-app.github.io/main у корінь knowme.pp.ua.
+      // Старі посилання (зокрема на анкету — /main/p/{токен}) GitHub Pages сам
+      // переводить на новий домен, але адреса виду knowme.pp.ua/main/... може
+      // лишитись у закладках і в пересланих повідомленнях. Маршруту /main у
+      // застосунку немає, тож знімаємо префікс тут, до роутера, без перезавантаження.
+      (function (l) {
+        if (/^\/main(\/|$)/.test(l.pathname)) {
+          window.history.replaceState(
+            null,
+            null,
+            (l.pathname.slice('/main'.length) || '/') + l.search + l.hash
+          );
+        }
+      })(window.location);
     </script>
     <!-- End Single Page Apps for GitHub Pages -->
   </head>

@@ -5,7 +5,7 @@ KnowMe is a React application for managing egg-donor profiles, profile matching,
 ## Tech stack
 
 - React 18 and react-scripts
-- React Router with the `/main` GitHub Pages basename
+- React Router served from the root of the custom domain `knowme.pp.ua`
 - Redux Toolkit and Redux Persist
 - Firebase Authentication, Firestore, Realtime Database, and Storage
 - styled-components
@@ -68,7 +68,9 @@ The workflow:
 5. runs `npm run lint:js` and `npm run build`;
 6. publishes the `build/` directory to the `gh-pages` branch.
 
-The production URL is configured in `package.json` as `https://KnowMe-app.github.io/main`.
+The production URL is configured in `package.json` as `https://knowme.pp.ua`. `public/CNAME`
+ships with every build, so the deploy (which cleans `gh-pages`) never drops the custom domain.
+The old address `https://knowme-app.github.io/main` is redirected by GitHub Pages itself.
 
 ## Realtime Database rules
 
@@ -86,7 +88,9 @@ agreement — an enumerated list drifts from the ProfileForm options and produce
 
 ## Routing
 
-The app is hosted under `/main`, so the router is configured with `basename="/main"` in `src/index.js`.
+The app is hosted at the root of `https://knowme.pp.ua`, so the router uses `basename="/"` in `src/index.js`
+and `public/404.html` keeps `pathSegmentsToKeep = 0`. Legacy `/main/...` paths are stripped by a small
+script in `public/index.html` before React Router starts.
 
 ## Search filters
 
