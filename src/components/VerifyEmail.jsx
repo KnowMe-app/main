@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { onAuthStateChanged, sendEmailVerification } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import { MdMarkEmailRead } from 'react-icons/md';
 import { auth } from './config';
 import { ItemDescription, ItemIcon, ItemLabel, MenuItem } from './ProfileDotsMenu.styled';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { uiText } from '../utils/uiTranslations';
+import { requestVerificationEmail } from '../utils/emailVerification';
 
 // 180 секунд — стільки Firebase просить зачекати між листами.
 const RESEND_DELAY_SECONDS = 180;
@@ -32,30 +33,39 @@ export const VerifyEmail = () => {
     () => JSON.parse(localStorage.getItem('isCounting')) || false
   );
 
-  const handleVerifyAgain = () => {
-    try {
-      const unsubscribe = onAuthStateChanged(auth, async user => {
-        if (user) {
-          localStorage.setItem('ownerId', user.uid);
-          try {
-            await sendEmailVerification(user);
-            setIsCounting(true);
-          } catch (error) {
-            if (error.code === 'auth/too-many-requests') {
-              console.log('Забагато запитів');
-            } else {
-              console.log('Помилка надсилання підтвердження');
-            }
-          }
-        } else {
-          localStorage.removeItem('ownerId');
-        }
+  /*
+   * Меню показують лише тому, хто увійшов, тож користувач зазвичай уже є в
+   * `auth.currentUser`. Поки сесію ще не відновлено — чекаємо одну відповідь
+   * Firebase і відписуємось. Раніше тут лишалась жива підписка
+   * `onAuthStateChanged`, яка слала новий лист на кожну наступну зміну стану
+   * входу, а кожен дотик додавав ще одну.
+   */
+  const waitForUser = () =>
+    new Promise(resolve => {
+      let answered = false;
+      let unsubscribe = null;
+      unsubscribe = onAuthStateChanged(auth, user => {
+        answered = true;
+        if (unsubscribe) unsubscribe();
+        resolve(user);
       });
-      return () => {
-        unsubscribe();
-      };
+      // Відповідь могла прийти ще до того, як повернулась сама відписка.
+      if (answered && unsubscribe) unsubscribe();
+    });
+
+  const handleVerifyAgain = async () => {
+    const user = auth.currentUser || (await waitForUser());
+    if (!user) return;
+    try {
+      await requestVerificationEmail(user, { auth, language });
+      setIsCounting(true);
     } catch (error) {
-      console.log('Error in UserRoleScreen :>> ', error);
+      if (error?.code === 'auth/too-many-requests') {
+        // Лист щойно пішов: відлік покаже, коли можна знову.
+        setIsCounting(true);
+      } else {
+        console.warn('Verification email was not sent:', error?.code || error);
+      }
     }
   };
 

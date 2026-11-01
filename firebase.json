@@ -1,4 +1,12 @@
 {
   "database": { "rules": "database.rules.json" },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "runtime": "nodejs22",
+      "ignore": ["node_modules", ".git", "test", "firebase-debug.log", "firebase-debug.*.log", "*.local"]
+    }
+  ],
   "emulators": { "database": { "port": 9099 }, "ui": { "enabled": false } }
 }

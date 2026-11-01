@@ -40,10 +40,10 @@ import {
   createUserWithEmailAndPassword,
   fetchSignInMethodsForEmail,
   onAuthStateChanged,
-  sendEmailVerification,
   signInWithEmailAndPassword,
   signOut,
 } from 'firebase/auth';
+import { requestVerificationEmail } from '../utils/emailVerification';
 import Photos from './Photos';
 import InfoModal, {
   ModalActionRow,
@@ -2603,7 +2603,15 @@ export const MyProfile = () => {
         authenticatedProfileLoaded = await loadAuthenticatedProfile(userCredential.user.uid);
       } else {
         userCredential = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
-        await sendEmailVerification(userCredential.user);
+        // Лист не тримає реєстрацію: відмова надіслати його не мусить
+        // лишати новий акаунт без анкети (`utils/emailVerification`).
+        requestVerificationEmail(userCredential.user, {
+          auth,
+          language,
+          role: draftProfileData.userRole || draftProfileData.role,
+        }).catch(error => {
+          console.warn('Verification email was not sent:', error?.code || error);
+        });
         uploadedInfo = buildAuthProfilePayload({
           email: normalizedEmail,
           userId: userCredential.user.uid,

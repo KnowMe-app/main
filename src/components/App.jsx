@@ -30,6 +30,7 @@ import { ScreenErrorBoundary } from './ScreenErrorBoundary';
 const pickNamed = (load, name) => () => load().then(module => ({ default: module[name] }));
 const PrivacyPolicy = lazy(pickNamed(() => import('./PrivacyPolicy'), 'PrivacyPolicy'));
 const SharedProfilePage = lazy(pickNamed(() => import('./SharedProfilePage'), 'SharedProfilePage'));
+const AuthActionPage = lazy(pickNamed(() => import('./AuthActionPage'), 'AuthActionPage'));
 const MyProfile = lazy(pickNamed(() => import(/* webpackPrefetch: true */ './MyProfile'), 'MyProfile'));
 const Matching = lazy(() => import(/* webpackPrefetch: true */ './Matching'));
 const ProfileCreationWorkspace = lazy(() => import(/* webpackPrefetch: true */ './ProfileCreationWorkspace'));
@@ -191,6 +192,10 @@ export const App = () => {
           й може відкликати (`utils/profileShare`). Межа входу решти
           застосунку від цього не зрушує: каталогу звідси не перелічити. */}
       <Route path="/p/:token" element={<SharedProfilePage />} />
+      {/* Посилання з листів Firebase Auth (підтвердження пошти, зміна пароля):
+          їх відкривають там, де людина ще не входила. Бази сторінка не
+          читає — лише Firebase Auth з одноразовим кодом з адреси. */}
+      <Route path="/auth/action" element={<AuthActionPage />} />
 
       {/* Корінь — робочий стіл адміна, решту він веде в «Мій профіль». Поки
           права не прочитані, тут очікування (`catchAllStatus`), а не текст
