@@ -1223,6 +1223,10 @@ const SearchBar = ({
   debounceMs = 0,
   // Лише AddNewProfile: `{…}` у рядку — список анкет із файлу, а не запит.
   allowJsonProfileList = false,
+  // Кнопка вибору файлу стоїть деінде (у «Інструментах»), і кличе вона
+  // цей самий інпут за id: у полі пошуку кнопка «Завантажити JSON» займала
+  // третину рядка, хоч користуються нею вкрай рідко.
+  jsonUploadInputId,
 }) => {
   const activeSearchRequestRef = useRef(0);
   const jsonFileInputRef = useRef(null);
@@ -2525,15 +2529,18 @@ const SearchBar = ({
       </InputFieldContainer>
       {allowJsonProfileList && (
         <>
-          <JsonUploadButton
-            type="button"
-            onMouseDown={e => e.preventDefault()}
-            onClick={() => jsonFileInputRef.current?.click()}
-          >
-            Завантажити JSON
-          </JsonUploadButton>
+          {!jsonUploadInputId && (
+            <JsonUploadButton
+              type="button"
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => jsonFileInputRef.current?.click()}
+            >
+              Завантажити JSON
+            </JsonUploadButton>
+          )}
           <input
             ref={jsonFileInputRef}
+            id={jsonUploadInputId}
             type="file"
             accept="application/json,.json"
             hidden

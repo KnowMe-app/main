@@ -345,36 +345,34 @@ export const buildCardListQueryKey = rawQuery => {
 };
 
 /*
- * Готові запити. Перші чотири стоять чіпами в панелі списку (`primary`), решта
- * — у шухляді «Сортування». Колишні режими (`legacyModes`) переводяться сюди ж,
- * коли знімок «назад до списку» збережено ще старою версією екрана.
+ * Готові запити — назви, якими лог і знімки «назад до списку» називають
+ * запит, і місток зі старих версій екрана: колишні режими (`legacyModes`) і
+ * добірки (`legacyFilters`) переводяться сюди, коли знімок збережено ще до
+ * двигуна. Що стоїть на екрані, вирішує не цей перелік, а колекції панелі
+ * (`utils/cardListCollections`).
  */
 export const CARD_LIST_PRESETS = Object.freeze([
   {
     key: 'call',
     label: 'Кому дзвонити',
-    primary: true,
     query: { field: 'getInTouch', direction: 'desc', range: 'upToToday', missing: 'exclude' },
     legacyModes: ['GITnew', 'GIT', 'SearchIdKeyOnly', 'offline', 'ofline'],
   },
   {
     key: 'activity',
     label: 'Остання дія',
-    primary: true,
     query: { field: 'lastAction', direction: 'desc', range: 'any', missing: 'exclude' },
     legacyModes: ['LA', 'LA2'],
   },
   {
     key: 'feed',
     label: 'Стрічка',
-    primary: true,
     query: { field: 'feedDate', direction: 'desc', range: 'upToToday', missing: 'exclude' },
     legacyFilters: ['FEED_DATE'],
   },
   {
     key: 'favorites',
     label: 'Обрані',
-    primary: true,
     query: { field: 'favorite', direction: 'desc', range: 'any', missing: 'exclude' },
     legacyFilters: ['FAVORITE'],
   },
@@ -410,8 +408,6 @@ export const CARD_LIST_PRESETS = Object.freeze([
     query: { field: 'lastLogin', direction: 'desc', range: 'any', missing: 'exclude' },
   },
 ]);
-
-export const CARD_LIST_PRIMARY_PRESETS = Object.freeze(CARD_LIST_PRESETS.filter(preset => preset.primary));
 
 export const getCardListPreset = key => CARD_LIST_PRESETS.find(preset => preset.key === key) || null;
 

@@ -1,12 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import styled from 'styled-components';
-import { FaFacebookF, FaInstagram, FaTelegramPlane, FaVk } from 'react-icons/fa';
-import { PhoneHandsetIcon } from './icons/PhoneHandsetIcon';
-import { MdEmail } from 'react-icons/md';
-import { SiTiktok } from 'react-icons/si';
-import { FaXTwitter } from 'react-icons/fa6';
 import { CheckboxGroup } from './CheckboxGroup';
-import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
+import { REACTION_FILTER_KEYS } from 'utils/reactionCategory';
 import { PAYMENT_FILTER_BUCKETS, PAYMENT_FILTER_NONE } from 'utils/donorPrograms';
 import { uiText } from 'utils/uiTranslations';
 import { isPersonalFilterGroup, roleSelectionAllowsPersonalAnketas } from 'utils/matchingPersonalFilters';
@@ -324,6 +319,367 @@ export const buildMatchingFilterChips = (filters, language, { roleOptionKeys, pa
   })
   .filter(Boolean);
 
+/*
+ * Фільтри картотеки адміна (`AddNewProfile`) — розділами, українською.
+ *
+ * Тут стояли чотирнадцять груп підряд англійськими кодами — `LA`, `IMT`,
+ * `C-section`, опції `cs2+`, `pp`, `∅`, `+`/`-` для дати дзвінка, `unknown
+ * format`, — і зрозуміти їх міг лише той, хто їх писав. Ключі опцій ті самі,
+ * що й були (їх читає `filterMain` і індекс `searchKey`, а збережений стан
+ * лежить у `localStorage`), — змінились лише слова й порядок.
+ *
+ * Розділи йдуть від того, про що адмін питає найчастіше: людина й здоровʼя —
+ * це відбір донорки, «ваша робота з карткою» — позначки й остання дія, а
+ * службові групи (контакти, тип id, кількість полів, довжина коментаря) —
+ * інструменти чистки бази, тож вони згорнуті.
+ *
+ * Опції «даних немає» позначено `unknown`: підпис активного фільтра каже про
+ * них окремо («лише заповнені»), як і в стрічці matching.
+ */
+const NOT_SET_LABEL = 'Не вказано';
+const OTHER_VALUE_LABEL = 'Інше значення';
+
+export const ADMIN_FILTER_SECTIONS = [
+  {
+    key: 'person',
+    title: 'Людина',
+    groups: [
+      {
+        filterName: 'role',
+        label: 'Роль',
+        options: [
+          { val: 'ed', label: 'Донор ооцитів' },
+          { val: 'sm', label: 'Сурогатна мати' },
+          { val: 'ag', label: 'Агенція' },
+          { val: 'ip', label: 'Біологічні батьки' },
+          { val: 'pp', label: 'Батьки (стара анкета)' },
+          { val: 'cl', label: 'Клініка' },
+          { val: 'other', label: OTHER_VALUE_LABEL, unknown: true },
+          { val: 'empty', label: NOT_SET_LABEL, unknown: true },
+        ],
+      },
+      {
+        filterName: 'age',
+        label: 'Вік',
+        compact: true,
+        options: [
+          { val: 'le25', label: '≤25' },
+          { val: '26_30', label: '26–30' },
+          { val: '31_33', label: '31–33' },
+          { val: '34_36', label: '34–36' },
+          { val: '37_42', label: '37–42' },
+          { val: '43_plus', label: '43+' },
+          { val: 'other', label: OTHER_VALUE_LABEL, unknown: true },
+          { val: 'empty', label: NOT_SET_LABEL, unknown: true },
+        ],
+      },
+      {
+        filterName: 'maritalStatus',
+        label: 'Сімейний стан',
+        options: [
+          { val: 'married', label: 'Заміжня' },
+          { val: 'unmarried', label: 'Не заміжня' },
+          { val: 'other', label: OTHER_VALUE_LABEL, unknown: true },
+          { val: 'empty', label: NOT_SET_LABEL, unknown: true },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'health',
+    title: 'Здоровʼя',
+    groups: [
+      {
+        filterName: 'bloodGroup',
+        label: 'Група крові',
+        compact: true,
+        options: [
+          { val: '1', label: '1' },
+          { val: '2', label: '2' },
+          { val: '3', label: '3' },
+          { val: '4', label: '4' },
+          { val: 'other', label: OTHER_VALUE_LABEL, unknown: true },
+          { val: 'empty', label: NOT_SET_LABEL, unknown: true },
+        ],
+      },
+      {
+        filterName: 'rh',
+        label: 'Резус',
+        compact: true,
+        options: [
+          { val: '+', label: 'Rh+' },
+          { val: '-', label: 'Rh−' },
+          { val: 'other', label: OTHER_VALUE_LABEL, unknown: true },
+          { val: 'empty', label: NOT_SET_LABEL, unknown: true },
+        ],
+      },
+      {
+        filterName: 'imt',
+        label: 'ІМТ',
+        compact: true,
+        options: [
+          { val: 'le28', label: '≤28' },
+          { val: '29_31', label: '29–31' },
+          { val: '32_35', label: '32–35' },
+          { val: '36_plus', label: '36+' },
+          { val: 'other', label: OTHER_VALUE_LABEL, unknown: true },
+          { val: 'no', label: NOT_SET_LABEL, unknown: true },
+        ],
+      },
+      {
+        filterName: 'height',
+        label: 'Зріст',
+        compact: true,
+        options: [
+          { val: 'lt163', label: '<163' },
+          { val: '163_176', label: '163–176' },
+          { val: '177_180', label: '177–180' },
+          { val: '181_plus', label: '181+' },
+          { val: 'other', label: OTHER_VALUE_LABEL, unknown: true },
+          { val: 'no', label: NOT_SET_LABEL, unknown: true },
+        ],
+      },
+      {
+        filterName: 'csection',
+        label: 'Кесарів розтин',
+        options: [
+          { val: 'cs0', label: 'Не було' },
+          { val: 'cs1', label: '1' },
+          { val: 'cs2plus', label: '2 і більше' },
+          { val: 'other', label: OTHER_VALUE_LABEL, unknown: true },
+          { val: 'no', label: NOT_SET_LABEL, unknown: true },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'work',
+    title: 'Ваша робота з карткою',
+    groups: [
+      {
+        // Категорію рахує `getReactionCategory`: «99» і реакції важать більше
+        // за дату, а минула дата — це строго раніше за сьогодні.
+        filterName: 'reaction',
+        label: 'Мої позначки',
+        options: [
+          { val: REACTION_FILTER_KEYS.PAST_GET_IN_TOUCH, label: 'Дата дзвінка минула' },
+          { val: REACTION_FILTER_KEYS.FUTURE_GET_IN_TOUCH, label: 'Дзвінок сьогодні чи пізніше' },
+          { val: REACTION_FILTER_KEYS.LIKE, label: 'Обрані' },
+          { val: REACTION_FILTER_KEYS.DISLIKE, label: 'Не цікаві' },
+          { val: REACTION_FILTER_KEYS.SPECIAL_99, label: 'Не дзвонити (99)' },
+          { val: REACTION_FILTER_KEYS.QUESTION, label: 'Нотатка замість дати' },
+          { val: REACTION_FILTER_KEYS.NONE, label: 'Без позначок' },
+        ],
+      },
+      {
+        // Межі накопичувальні (`isLastActionAllowedByFilters`): «≤ 7 днів»
+        // уже містить «сьогодні», тож обирати тут треба одну.
+        filterName: 'lastAction',
+        label: 'Остання дія',
+        compact: true,
+        options: [
+          { val: 'today', label: 'Сьогодні' },
+          { val: 'yesterday', label: 'Вчора' },
+          { val: 'last3days', label: '≤ 3 днів' },
+          { val: 'last7days', label: '≤ 7 днів' },
+          { val: 'last14days', label: '≤ 14 днів' },
+          { val: 'last30days', label: '≤ 30 днів' },
+          { val: 'no', label: 'Не було' },
+          { val: '?', label: 'Дата нечитна', unknown: true },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'service',
+    title: 'Службові',
+    note: 'для чистки бази',
+    collapsible: true,
+    groups: [
+      {
+        // Картка проходить, коли в ній є бодай один з обраних контактів.
+        filterName: 'contact',
+        label: 'Є контакт',
+        options: [
+          { val: 'phone', label: 'Телефон' },
+          { val: 'telegram', label: 'Telegram' },
+          { val: 'telegram2', label: 'Telegram 2' },
+          { val: 'instagram', label: 'Instagram' },
+          { val: 'facebook', label: 'Facebook' },
+          { val: 'tiktok', label: 'TikTok' },
+          { val: 'email', label: 'Пошта' },
+          { val: 'twitter', label: 'X' },
+          { val: 'line', label: 'LINE' },
+          { val: 'ameblo', label: 'Ameblo' },
+          { val: 'vk', label: 'VK' },
+          { val: 'otherLink', label: 'Сайт' },
+        ],
+      },
+      {
+        filterName: 'userId',
+        label: 'ID картки',
+        options: [
+          { val: 'long', label: 'Акаунт (довгий id)' },
+          { val: 'mid', label: '9–20 знаків' },
+          { val: 'aa', label: 'aa…' },
+          { val: 'ab', label: 'ab…' },
+          { val: 'id', label: 'ID…' },
+          { val: 'vk', label: 'vk…' },
+          { val: 'other', label: 'Інший' },
+        ],
+      },
+      {
+        filterName: 'fields',
+        label: 'Заповнено полів',
+        compact: true,
+        options: [
+          { val: 'le5', label: '≤5' },
+          { val: 'f6_10', label: '6–10' },
+          { val: 'f11_20', label: '11–20' },
+          { val: 'f20_plus', label: '20+' },
+        ],
+      },
+      {
+        filterName: 'commentLength',
+        label: 'Коментар, слів',
+        compact: true,
+        options: [
+          { val: 'w0_9', label: '0–9' },
+          { val: 'w10_29', label: '10–29' },
+          { val: 'w30_49', label: '30–49' },
+          { val: 'w50_99', label: '50–99' },
+          { val: 'w100_199', label: '100–199' },
+          { val: 'w200_plus', label: '200+' },
+          { val: 'other', label: 'Без коментаря' },
+        ],
+      },
+    ],
+  },
+];
+
+export const ADMIN_FILTER_GROUPS = ADMIN_FILTER_SECTIONS.flatMap(section => section.groups);
+
+const filterAdminGroups = (groups, { hideUserId, hideCommentLength, allowedFilterNames } = {}) => {
+  const allowedSet = Array.isArray(allowedFilterNames) && allowedFilterNames.length > 0
+    ? new Set(allowedFilterNames)
+    : null;
+  return groups.filter(group => !(hideUserId && group.filterName === 'userId')
+    && !(hideCommentLength && group.filterName === 'commentLength')
+    && (!allowedSet || allowedSet.has(group.filterName)));
+};
+
+/**
+ * Активні фільтри адміна — підписами для чіпів над списком («Вік: 26–30»,
+ * «Роль: крім Агенція»). Правило підпису те саме, що в стрічці
+ * (`buildMatchingFilterChipLabel`): коротше з «кого показано» і «крім кого».
+ */
+export const buildAdminFilterChips = filters => ADMIN_FILTER_GROUPS
+  .map(group => {
+    const label = buildMatchingFilterChipLabel(group, filters?.[group.filterName], 'uk');
+    if (!label) return null;
+    return { filterName: group.filterName, groupLabel: group.label, ...label };
+  })
+  .filter(Boolean);
+
+const SectionTitle = styled.div`
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--km-text);
+`;
+
+const SectionNote = styled.span`
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--km-muted);
+`;
+
+const Section = styled.section`
+  & + & {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--km-border);
+  }
+`;
+
+const SectionToggle = styled.button`
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--km-text);
+  text-align: left;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 3px solid var(--km-accent-ring);
+    outline-offset: 2px;
+  }
+`;
+
+const SectionBody = styled.div`
+  margin-top: 10px;
+`;
+
+const AdminFilterSections = ({ filters, onChange, optionCounts, groupOptions }) => {
+  const [openSections, setOpenSections] = useState({});
+  const sections = ADMIN_FILTER_SECTIONS
+    .map(section => ({ ...section, groups: filterAdminGroups(section.groups, groupOptions) }))
+    .filter(section => section.groups.length > 0);
+
+  const renderGroups = groups => groups.map(group => (
+    <CheckboxGroup
+      key={group.filterName}
+      label={group.label}
+      filterName={group.filterName}
+      options={group.options}
+      optionCounts={optionCounts?.[group.filterName]}
+      filters={filters}
+      onChange={onChange}
+      selectOnly
+      compact={group.compact}
+    />
+  ));
+
+  return sections.map(section => {
+    if (!section.collapsible) {
+      return (
+        <Section key={section.key} data-testid={`admin-filter-section-${section.key}`}>
+          <SectionTitle>{section.title}</SectionTitle>
+          {renderGroups(section.groups)}
+        </Section>
+      );
+    }
+    // Згорнутий розділ, у якому вже щось звужено, розгортається сам:
+    // фільтр, якого не видно, діяв би мовчки.
+    const narrowed = section.groups.some(group => group.options.some(option => filters?.[group.filterName]?.[option.val] === false));
+    const open = openSections[section.key] ?? narrowed;
+    return (
+      <Section key={section.key} data-testid={`admin-filter-section-${section.key}`}>
+        <SectionToggle
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpenSections(previous => ({ ...previous, [section.key]: !open }))}
+        >
+          {open ? '▾' : '▸'} {section.title}
+          {section.note && <SectionNote>{section.note}</SectionNote>}
+        </SectionToggle>
+        {open && <SectionBody>{renderGroups(section.groups)}</SectionBody>}
+      </Section>
+    );
+  });
+};
+
 export const SearchFilters = ({
   filters,
   onChange,
@@ -333,241 +689,29 @@ export const SearchFilters = ({
   allowedFilterNames,
   roleOptionKeys,
   paymentOptionKeys,
-  bloodSearchKeyMode = false,
-  reactionFilterOptions,
   optionCounts,
   bare = false,
 }) => {
   const { language } = useAppSettings();
-  let groups = [];
-  const contactIconStyle = { display: 'inline-flex', alignItems: 'center' };
-  const reactionOptions = reactionFilterOptions || (bloodSearchKeyMode
-    ? [
-        { key: 'pastGetInTouch', label: 'past' },
-        { key: 'futureGetInTouch', label: 'future' },
-        { key: 'like', label: '❤️' },
-        { key: 'special99', label: '✖' },
-        { key: 'question', label: '?' },
-        { key: 'none', label: 'no' },
-      ]
-    : REACTION_FILTER_OPTIONS);
 
-  if (mode === 'matching') {
-    groups = resolveMatchingFilterGroups({ roleOptionKeys, paymentOptionKeys, roleFilters: filters?.userRole ?? null });
-  } else {
-    groups = [
-      {
-        filterName: 'reaction',
-        label: 'Reaction',
-        options: reactionOptions.map(option => ({
-          val: option.key,
-          label: option.label,
-        })),
-      },
-      {
-        filterName: 'lastAction',
-        label: 'LA',
-        compact: true,
-        options: [
-          { val: 'today', label: 'Today' },
-          { val: 'yesterday', label: 'Yesterday' },
-          { val: 'last3days', label: '3d' },
-          { val: 'last7days', label: '7d' },
-          { val: 'last14days', label: '14d' },
-          { val: 'last30days', label: '30d' },
-          { val: 'no', label: 'empty' },
-          { val: '?', label: 'unknown format' },
-        ],
-      },
-      {
-        filterName: 'csection',
-        label: 'C-section',
-        options: [
-          { val: 'cs2plus', label: 'cs2+' },
-          { val: 'cs1', label: 'cs1' },
-          { val: 'cs0', label: 'cs0' },
-          { val: 'other', label: '?' },
-          { val: 'no', label: 'no' },
-        ],
-      },
-      {
-        filterName: 'role',
-        label: 'Role',
-        options: [
-          { val: 'ed', label: 'ed' },
-          { val: 'sm', label: 'sm' },
-          { val: 'ag', label: 'ag' },
-          { val: 'ip', label: 'ip' },
-          { val: 'pp', label: 'pp' },
-          { val: 'cl', label: 'cl' },
-          { val: 'other', label: '?' },
-          ...(bloodSearchKeyMode
-            ? [
-                { val: 'empty', label: 'no' },
-              ]
-            : []),
-        ],
-      },
-      {
-        filterName: 'maritalStatus',
-        label: 'Marital status',
-        options: [
-          { val: 'married', label: 'Married' },
-          { val: 'unmarried', label: 'Single' },
-          { val: 'other', label: '?' },
-          ...(bloodSearchKeyMode
-            ? [
-                { val: 'empty', label: 'no' },
-              ]
-            : []),
-        ],
-      },
-      {
-        filterName: 'bloodGroup',
-        label: 'Blood group',
-        options: [
-          { val: '1', label: '1' },
-          { val: '2', label: '2' },
-          { val: '3', label: '3' },
-          { val: '4', label: '4' },
-          { val: 'other', label: '?' },
-          ...(bloodSearchKeyMode
-            ? [
-                { val: 'empty', label: 'no' },
-              ]
-            : []),
-        ],
-      },
-      {
-        filterName: 'rh',
-        label: 'Rh',
-        options: [
-          { val: '+', label: '+' },
-          { val: '-', label: '-' },
-          { val: 'other', label: '?' },
-          ...(bloodSearchKeyMode
-            ? [
-                { val: 'empty', label: 'no' },
-              ]
-            : []),
-        ],
-      },
-      {
-        filterName: 'age',
-        label: 'Age',
-        options: [
-          { val: 'le25', label: '≤25' },
-          { val: '26_30', label: '26-30' },
-          { val: '31_33', label: '31-33' },
-          { val: '34_36', label: '34-36' },
-          { val: '37_42', label: '37-42' },
-          { val: '43_plus', label: '43+' },
-          { val: 'other', label: '?' },
-          ...(bloodSearchKeyMode
-            ? [
-                { val: 'empty', label: 'no' },
-              ]
-            : []),
-        ],
-      },
-      {
-        filterName: 'imt',
-        label: 'IMT',
-        compact: true,
-        options: [
-          { val: 'le28', label: '≤28' },
-          { val: '29_31', label: '29-31' },
-          { val: '32_35', label: '32-35' },
-          { val: '36_plus', label: '36+' },
-          { val: 'other', label: '?' },
-          { val: 'no', label: 'no' },
-        ],
-      },
-      {
-        filterName: 'height',
-        label: 'Height',
-        compact: true,
-        options: [
-          { val: 'lt163', label: '<163' },
-          { val: '163_176', label: '163-176' },
-          { val: '177_180', label: '177-180' },
-          { val: '181_plus', label: '181+' },
-          { val: 'other', label: '?' },
-          { val: 'no', label: 'no' },
-        ],
-      },
-      {
-        filterName: 'contact',
-        label: 'Контакти',
-        compact: true,
-        options: [
-          { val: 'vk', label: <span style={contactIconStyle} title="VK"><FaVk /></span> },
-          { val: 'instagram', label: <span style={contactIconStyle} title="Instagram"><FaInstagram /></span> },
-          { val: 'ameblo', label: <span style={contactIconStyle} title="Ameblo">AB</span> },
-          { val: 'facebook', label: <span style={contactIconStyle} title="Facebook"><FaFacebookF /></span> },
-          { val: 'phone', label: <span style={contactIconStyle} title="Телефон"><PhoneHandsetIcon /></span> },
-          { val: 'telegram', label: <span style={contactIconStyle} title="Telegram"><FaTelegramPlane /></span> },
-          {
-            val: 'telegram2',
-            label: (
-              <span style={contactIconStyle} title="Telegram #2">
-                <FaTelegramPlane />
-                <span style={{ marginLeft: '4px' }}>#2</span>
-              </span>
-            ),
-          },
-          { val: 'tiktok', label: <span style={contactIconStyle} title="TikTok"><SiTiktok /></span> },
-          { val: 'email', label: <span style={contactIconStyle} title="Пошта"><MdEmail /></span> },
-          { val: 'twitter', label: <span style={contactIconStyle} title="Twitter / X"><FaXTwitter /></span> },
-          { val: 'line', label: <span style={contactIconStyle} title="Line">LINE</span> },
-          { val: 'otherLink', label: <span style={contactIconStyle} title="Website">www</span> },
-        ],
-      },
-      {
-        filterName: 'userId',
-        label: 'UserId',
-        options: [
-          { val: 'vk', label: 'vk' },
-          { val: 'aa', label: 'aa' },
-          { val: 'ab', label: 'ab' },
-          { val: 'id', label: 'ID' },
-          { val: 'long', label: '>20' },
-          { val: 'mid', label: '>8<20' },
-          { val: 'other', label: '?' },
-        ],
-      },
-      {
-        filterName: 'fields',
-        label: 'Fields',
-        options: [
-          { val: 'le5', label: '≤5' },
-          { val: 'f6_10', label: '6-10' },
-          { val: 'f11_20', label: '11-20' },
-          { val: 'f20_plus', label: '20+' },
-        ],
-      },
-      {
-        filterName: 'commentLength',
-        label: 'Comment words',
-        options: [
-          { val: 'w0_9', label: '0-9' },
-          { val: 'w10_29', label: '10-29' },
-          { val: 'w30_49', label: '30-49' },
-          { val: 'w50_99', label: '50-99' },
-          { val: 'w100_199', label: '100-199' },
-          { val: 'w200_plus', label: '200+' },
-          { val: 'other', label: 'Все інше' },
-        ],
-      },
-    ];
+  if (mode !== 'matching') {
+    // Тап по чіпу обирає те, що шукаєте (`selectOnly`), як і в стрічці
+    // matching: «Група крові → 2» лишає саму другу групу. Доти тут було
+    // віднімання — група стартувала з усім увімкненим, і щоб побачити другу
+    // групу крові, треба було вимкнути п'ять інших.
+    return (
+      <FiltersCard $bare={bare}>
+        <AdminFilterSections
+          filters={filters}
+          onChange={onChange}
+          optionCounts={optionCounts}
+          groupOptions={{ hideUserId, hideCommentLength, allowedFilterNames }}
+        />
+      </FiltersCard>
+    );
   }
 
-  if (hideUserId) {
-    groups = groups.filter(g => g.filterName !== 'userId');
-  }
-  if (hideCommentLength) {
-    groups = groups.filter(g => g.filterName !== 'commentLength');
-  }
+  let groups = resolveMatchingFilterGroups({ roleOptionKeys, paymentOptionKeys, roleFilters: filters?.userRole ?? null });
   if (Array.isArray(allowedFilterNames) && allowedFilterNames.length > 0) {
     const allowedSet = new Set(allowedFilterNames);
     groups = groups.filter(group => allowedSet.has(group.filterName));
@@ -580,20 +724,18 @@ export const SearchFilters = ({
           key={group.filterName}
           // У поповері рейки (`bare`) назва групи вже стоїть у шапці, і другий
           // такий самий підпис під нею читався як два різні заголовки.
-          label={bare ? '' : (mode === 'matching' ? uiText(group.label, language) : group.label)}
+          label={bare ? '' : uiText(group.label, language)}
           filterName={group.filterName}
-          options={mode === 'matching'
-            ? group.options.map(option => ({
-              ...option,
-              label: localizeMatchingOptionLabel(option.label, language),
-            }))
-            : group.options}
+          options={group.options.map(option => ({
+            ...option,
+            label: localizeMatchingOptionLabel(option.label, language),
+          }))}
           // Числа «серед завантажених» — рахує їх сторінка, бо лише вона
           // знає, яка саме дека зараз на екрані.
           optionCounts={optionCounts?.[group.filterName]}
           filters={filters}
           onChange={onChange}
-          selectOnly={mode === 'matching'}
+          selectOnly
           compact={group.compact}
         />
       ))}

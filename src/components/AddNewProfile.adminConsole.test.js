@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { CARD_LIST_PRIMARY_PRESETS, getCardListField, getCardListPreset } from 'utils/cardListQuery';
+import { getCardListField, getCardListPreset } from 'utils/cardListQuery';
+import { CARD_LIST_PRIMARY_COLLECTIONS } from 'utils/cardListCollections';
 import { MATCHING_CARD_ORDER_FIELD } from 'utils/matchingCardIndex';
 
 // Адмінська панель на `AddNewProfile`.
@@ -23,20 +24,27 @@ describe('AddNewProfile admin console', () => {
     });
   });
 
-  it('добірки стоять на виду, а не в панелі, яку треба розгортати', () => {
+  it('що показати — панель «Списку» на виду, а «Інструменти» — під списком', () => {
     // Що показати — щоденна робота; у згорнутих «Інструментах» лишається
-    // рідкісне й небезпечне, і вони стартують згорнутими.
-    const listPanel = source.slice(source.indexOf('<ListPanel>'), source.indexOf('</ListPanel>'));
-    // Готові запити «Списку» малюються з одного переліку, а не кнопкою на
-    // кожен завантажувач.
-    expect(listPanel).toContain('CARD_LIST_PRIMARY_PRESETS.map(');
-    expect(CARD_LIST_PRIMARY_PRESETS.map(preset => preset.label))
-      .toEqual(['Кому дзвонити', 'Остання дія', 'Стрічка', 'Обрані']);
-    ['Цикл', 'Доповнення', "'Хто шукав'", 'Сортування:', '↻ Оновити'].forEach(label => {
-      expect(listPanel).toContain(label);
+    // рідкісне й небезпечне, і вони стартують згорнутими. Стоять вони під
+    // списком, а не між панеллю й картками, якими вона керує.
+    const panel = source.slice(source.indexOf('<CardListPanel'), source.indexOf('</CardListPanel>'));
+    expect(panel).toContain('selection={cardListSelection}');
+    expect(panel).toContain('onSelect={handleCardListSelectionChange}');
+    expect(panel).toContain('specialViews={listPanelSpecialViews}');
+    expect(panel).toContain('filterChips={activeListFilterChips}');
+    expect(CARD_LIST_PRIMARY_COLLECTIONS.map(collection => collection.label))
+      .toEqual(['Кому дзвонити', 'Обрані', 'Стрічка', 'Усі картки']);
+    ["label: 'Цикл'", "label: 'Доповнення'", "label: 'Хто шукав'"].forEach(label => {
+      expect(source).toContain(label);
     });
-    expect(source.indexOf('</ListPanel>')).toBeLessThan(source.indexOf('<ConsolePanel>'));
+    expect(source.indexOf('</CardListPanel>')).toBeLessThan(source.indexOf('<UsersList'));
+    expect(source.indexOf('<UsersList')).toBeLessThan(source.indexOf('<ConsolePanel>'));
     expect(source).toContain("return localStorage.getItem(ADMIN_CONSOLE_OPEN_KEY) === 'true';");
+    // Шухляди «Сортування» з готовими списками, полями й «картками без
+    // значення» більше немає: та сама «Обрані» стояла в ній тричі.
+    expect(source).not.toContain('CardListQueryControls');
+    expect(source).not.toContain('CARD_LIST_PRIMARY_PRESETS');
   });
 
   it('пошук обирає глибину, а не два десятки полів', () => {
@@ -61,13 +69,14 @@ describe('AddNewProfile admin console', () => {
     expect(source).not.toContain('FEED_DATE_FILTER');
   });
 
-  it('усі готові списки — один двигун, а черга доповнень — окрема добірка', () => {
-    expect(source).toContain('onClick={() => openCardList(preset.query)}');
+  it('усі колекції — один двигун, а черга доповнень — окрема добірка', () => {
+    expect(source).toContain('const normalized = buildCardListQueryFromSelection(nextSelection);');
+    expect(source).toContain('openCardList(normalized);');
     expect(source).not.toContain('loadNextReactionBatch');
     expect(source).not.toContain('startReactionPaging');
 
     expect(source).toContain("const OVERLAY_REVIEW_FILTER = 'OVERLAY_REVIEW';");
-    expect(source).toContain('onClick={() => openCardCollection(OVERLAY_REVIEW_FILTER)}');
+    expect(source).toContain('onSelect: () => openCardCollection(OVERLAY_REVIEW_FILTER),');
     expect(source).toContain('if (currentFilter === OVERLAY_REVIEW_FILTER) {');
   });
 
