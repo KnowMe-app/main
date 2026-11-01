@@ -9598,7 +9598,11 @@ export const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], d
           const result = await hasSearchKeyPointMembership({ userId, group, collectDiagnostics: shouldCollectDiagnostics });
           checks.push({ group, result });
 
-          if (group.key === 'blood') {
+          // Зведення крові є лише з діагностикою: двигун «Списку» її вимикає
+          // (`createCardListIndexPrefilter`), і без цієї умови кожен фільтр
+          // крові чи резусу падав на `bloodSummary.acceptedCount` — «Список
+          // не завантажився: Cannot read properties of null».
+          if (bloodSummary && group.key === 'blood') {
             const profileDebug = getProfileBloodDebug(profilesById[userId]);
             const actualBucket = toSingleBucketOrList(result.userBuckets);
             const hasConsistentSingleBucket = result.userBuckets.length === 1

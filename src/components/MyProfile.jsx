@@ -898,12 +898,16 @@ const AddMoreChip = styled.button`
 `;
 // Сума винагороди й валюта в одному рядку; валюта — доріжка «одне з
 // кількох» з білим вибраним сегментом, як решта таких виборів.
+// Поле суми не стискається нижче ширини підказки («Наприклад: 15000»): на
+// телефоні перемикач валют забирав пів рядка, і підказка обрізалась до
+// «Наприклад: 15(». Коли обом не вистачає місця, валюта переноситься під поле.
 const RewardRow = styled.div`
   display:flex;
+  flex-wrap:wrap;
   align-items:stretch;
   gap:8px;
 
-  > :first-child { flex:1 1 auto; min-width:0; }
+  > :first-child { flex:1 1 13em; min-width:0; }
 `;
 const CurrencyTrack = styled.div`
   flex:none;
