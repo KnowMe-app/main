@@ -45,7 +45,8 @@ describe('перелік читачів із їхніми запитами', () 
 
   it('читається на явне натискання, а не при відкритті екрана', () => {
     expect(source).toContain('const owners = (await fetchAllSearchQueryOwners()).slice(0, SEARCHERS_LIMIT);');
-    expect(source).toContain('onClick={handleShowSearchers}');
+    // Кнопка «Хто шукав» — добірка панелі «Списку»: обробник іде їй як `onSelect`.
+    expect(source).toContain('onSelect: handleShowSearchers,');
     expect(source).not.toContain('useEffect(() => { handleShowSearchers');
   });
 

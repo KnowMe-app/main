@@ -361,57 +361,10 @@ export const ModalTitleRow = styled.h3`
   color: var(--km-text);
 `;
 
-// --- Список і добірки -------------------------------------------------------
+// --- Список ------------------------------------------------------------------
 //
-// Що показати — щоденна робота, тож добірки стоять на виду, а не в панелі, яку
-// треба розгортати. Чіпи — заливкою без рамки, вибраний — суцільним акцентом з
-// білим текстом: та сама візуальна мова, що й чіпи фільтрів на матчингу.
-
-export const ListPanel = styled.section`
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 8px 0;
-  padding: 10px 12px;
-  background: var(--km-card);
-  border: 1px solid var(--km-border);
-  border-radius: var(--km-radius, 14px);
-
-  ${ToolDrawer} {
-    margin-top: 0;
-  }
-`;
-
-export const CollectionRow = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-`;
-
-export const CollectionChip = styled.button`
-  min-height: 34px;
-  padding: 0 14px;
-  border: none;
-  border-radius: 999px;
-  background: ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--km-fill, var(--km-bg))')};
-  color: ${({ $active }) => ($active ? 'var(--km-on-accent, #fff)' : 'var(--km-text)')};
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: ${({ $active }) => ($active ? 700 : 500)};
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-
-  &:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 3px var(--km-accent-ring);
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: wait;
-  }
-`;
+// Панель «Списку» (що показати, порядок, фільтри) живе в `CardListPanel`; тут
+// лишились рядок «У стимуляції» і порожня видача, які стоять поруч із нею.
 
 export const StimulationRow = styled.div`
   display: flex;

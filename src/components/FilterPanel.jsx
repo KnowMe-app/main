@@ -172,8 +172,6 @@ const FilterPanel = ({
   paymentOptionKeys,
   viewerRole,
   viewerSeekingRole = '',
-  bloodSearchKeyMode = false,
-  reactionFilterOptions,
   optionCounts,
   bare = false,
 }) => {
@@ -301,8 +299,6 @@ const FilterPanel = ({
       hideUserId={hideUserId}
       hideCommentLength={hideCommentLength}
       mode={mode}
-      bloodSearchKeyMode={bloodSearchKeyMode}
-      reactionFilterOptions={reactionFilterOptions}
       allowedFilterNames={allowedFilterNames}
       roleOptionKeys={roleOptionKeys}
       paymentOptionKeys={paymentOptionKeys}

@@ -44,19 +44,23 @@ import {
   addMatchingSearchQuery,
   saveMyCardComment,
 } from './config';
-import { CardListQueryControls } from './CardListQueryControls';
+import { CardListPanel } from './CardListPanel';
 import {
   CARD_LIST_FILTER,
-  CARD_LIST_PRIMARY_PRESETS,
   DEFAULT_CARD_LIST_QUERY,
   buildCardListQueryKey,
   cardListKeepsValue,
   describeCardListQuery,
-  findCardListPreset,
   getCardListField,
   normalizeCardListQuery,
   queryFromLegacyListState,
 } from 'utils/cardListQuery';
+import {
+  buildCardListQueryFromSelection,
+  canonicalizeCardListQuery,
+  describeCardListSelection,
+  resolveCardListSelection,
+} from 'utils/cardListCollections';
 import { describeCardListStats, loadCardListPage, restoreCardListState } from 'utils/cardListEngine';
 import {
   BucketChip,
@@ -83,9 +87,6 @@ import {
   ToolGroup,
   ToolGroupNote,
   ToolGroupTitle,
-  ListPanel,
-  CollectionRow,
-  CollectionChip,
   EmptySearchResult,
   StimulationRow,
   StimulationLabel,
@@ -121,7 +122,6 @@ import {
   getDislikes,
   syncDislikes,
 } from 'utils/dislikesStorage';
-import { REACTION_FILTER_OPTIONS } from 'utils/reactionCategory';
 import {
   setIdsForQuery,
   setQueryPagination,
@@ -146,7 +146,8 @@ import StimulationSchedule from './StimulationSchedule';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 // import { UploadJson } from './topBtns/uploadNewJSON';
 import { btnMerge } from './smallCard/btnMerge';
-import FilterPanel, { getInitialFilters } from './FilterPanel';
+import FilterPanel, { getDefaultFilters, getInitialFilters } from './FilterPanel';
+import { buildAdminFilterChips } from './SearchFilters';
 import SearchBar, { detectSearchParams, getSearchCacheKeyForParams } from './SearchBar';
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
@@ -643,14 +644,25 @@ const ADMIN_CONSOLE_OPEN_KEY = 'addAdminToolsOpen';
 // переводить `queryFromLegacyListState`.
 const CARD_LIST_QUERY_STORAGE_KEY = 'addCardListQuery';
 
+// Збережений запит показується колекцією панелі (`utils/cardListCollections`):
+// запит, зібраний колись у старій шухляді «Сортування» поза колекціями, стає
+// найближчим вибором, інакше панель не мала б чим його назвати.
 const readStoredCardListQuery = () => {
   try {
     const raw = localStorage.getItem(CARD_LIST_QUERY_STORAGE_KEY);
-    return normalizeCardListQuery(raw ? JSON.parse(raw) : DEFAULT_CARD_LIST_QUERY);
+    return canonicalizeCardListQuery(raw ? JSON.parse(raw) : DEFAULT_CARD_LIST_QUERY);
   } catch (error) {
-    return normalizeCardListQuery(DEFAULT_CARD_LIST_QUERY);
+    return canonicalizeCardListQuery(DEFAULT_CARD_LIST_QUERY);
   }
 };
+
+// Фільтри картотеки адміна в памʼяті браузера: їх читає `FilterPanel`, а
+// чіпи діючих фільтрів над списком правлять той самий запис.
+const ADD_FILTERS_STORAGE_KEY = 'addFilters';
+
+// Інпут файлу живе в `SearchBar` (список з JSON — це пошук за кожною анкетою
+// файлу), а кнопка — у «Інструменти → Дані».
+const JSON_PROFILE_LIST_INPUT_ID = 'add-json-profile-list';
 
 // Добірки, якими «Список» колись перемикався між режимами, — у знімках
 // попереднього списку, збережених до появи двигуна. Усі вони тепер один
@@ -659,11 +671,6 @@ const LEGACY_LIST_FILTERS = new Set([
   'DATE2', 'DATE2.1', 'GITnew', 'LAST_ACTION', 'LAST_ACTION2', 'OFFLINE', 'OFLINE', 'FEED_DATE', 'FAVORITE',
 ]);
 
-// Добірки поза «Списком»: їх підсвічує власна кнопка, а не запит.
-const CARD_COLLECTION_LABELS = {
-  CYCLE_FAVORITE: 'цикл',
-  [OVERLAY_REVIEW_FILTER]: 'черга доповнень',
-};
 
 
 const SearchScopeContainer = styled.div`
@@ -1567,7 +1574,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   );
 
   const [searchKeyValuePair, setSearchKeyValuePair] = useState(null);
-  const [filters, setFilters] = useState(() => getInitialFilters({ storageKey: 'addFilters' }));
+  const [filters, setFilters] = useState(() => getInitialFilters({ storageKey: ADD_FILTERS_STORAGE_KEY }));
   const filtersRef = useRef(filters);
   const loadDebugLogsRef = useRef([]);
   const renderCacheHydrationIdsRef = useRef(new Set());
@@ -2344,9 +2351,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // (`utils/cardListQuery`), а не режим.
   const [cardListQuery, setCardListQuery] = useState(readStoredCardListQuery);
   const cardListQueryKey = buildCardListQueryKey(cardListQuery);
+  const cardListSelection = resolveCardListSelection(cardListQuery);
   const [cardListStatsText, setCardListStatsText] = useState('');
-  const [isLoadOptionsOpen, setIsLoadOptionsOpen] = useState(false);
   const [isListFiltersOpen, setIsListFiltersOpen] = useState(false);
+  // ✕ на чіпі фільтра й «Скинути всі» правлять фільтри повз відкриту шухляду:
+  // `FilterPanel` тримає свій стан, і жетони кажуть йому перечитати групу.
+  const [listFiltersResetToken, setListFiltersResetToken] = useState(0);
+  const [listFilterGroupReset, setListFilterGroupReset] = useState({ token: 0, name: '' });
   const [isAdminConsoleOpen, setIsAdminConsoleOpen] = useState(() => {
     try {
       return localStorage.getItem(ADMIN_CONSOLE_OPEN_KEY) === 'true';
@@ -5315,12 +5326,51 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
    */
   const describeAdminConsoleState = () => 'дублікати, імпорт і експорт, кеш, обслуговування бази';
 
-  // «Список» — це добірка за замовчуванням: усе, що не окрема добірка, гортає
-  // список за обраним запитом. Чіп підсвічує готовий запит, якому відповідає
-  // відкритий список; свій запит (зібраний у «Сортуванні») стоїть окремим чіпом.
-  const isCardListActive =
-    !CARD_COLLECTION_LABELS[currentFilter] && !isSearchersView && !isDuplicateView;
-  const activeCardListPreset = findCardListPreset(cardListQuery);
+  // Що зараз під панеллю «Списку». Службові перегляди («Інструменти», список
+  // з JSON) і пошук важать більше за обрану колекцію: поки вони на екрані,
+  // підсвічена колекція брехала б, звідки взялись картки.
+  const listPanelView = (() => {
+    if (isDuplicateView) return 'duplicates';
+    if (isSearchersView) return 'searchers';
+    if (isJsonProfileListView) return 'json';
+    if (searchListIsolated) return 'search';
+    if (currentFilter === 'CYCLE_FAVORITE') return 'cycle';
+    if (currentFilter === OVERLAY_REVIEW_FILTER) return 'overlays';
+    if (currentFilter === CARD_LIST_FILTER) return 'list';
+    return 'idle';
+  })();
+  // Черга доповнень, «хто шукав», дублікати й JSON фільтрами не звужуються
+  // (`filterRenderCards`), тож і кнопки фільтрів біля них немає.
+  const listPanelFiltersApply = !['overlays', 'searchers', 'duplicates', 'json'].includes(listPanelView);
+  const activeListFilterChips = buildAdminFilterChips(filters);
+  const listPanelSpecialViews = [
+    {
+      key: 'cycle',
+      label: 'Цикл',
+      hint: 'Анкети в стимуляції та вагітності.',
+      primary: true,
+      onSelect: () => openCardCollection('CYCLE_FAVORITE'),
+    },
+    ...(isAdmin ? [
+      {
+        key: 'overlays',
+        label: 'Доповнення',
+        hint: 'Дописане читачами, що чекає вашого рішення: кожне значення окремо.',
+        // Черга рахує себе сама: «Карток немає» над нею означало б, що
+        // доповнень немає, тоді як список анкет тут просто не наповнюється.
+        ownStatus: true,
+        onSelect: () => openCardCollection(OVERLAY_REVIEW_FILTER),
+      },
+      {
+        key: 'searchers',
+        label: 'Хто шукав',
+        hint: 'Читачі й їхні запити пошуку; дотик до запиту повторює пошук.',
+        onSelect: handleShowSearchers,
+        disabled: isLoadingSearchers,
+        loading: isLoadingSearchers,
+      },
+    ] : []),
+  ];
 
   const selectedIndexCount =
     Object.values(selectedIndexJobs || {}).filter(Boolean).length
@@ -5338,10 +5388,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setDuplicates('');
     setIsDuplicateView(false);
     setCurrentFilter(nextFilter);
+    // Повторний дотик до відкритої добірки — «оновити»: без нового запиту
+    // ефект завантаження не спрацьовував, і добірка лишалась порожньою.
+    setLoadRequestId(prev => prev + 1);
   };
 
   /*
-   * Відкрити «Список» за запитом — готовим (чіп), зібраним у «Сортуванні» чи
+   * Відкрити «Список» за запитом — зібраним із вибору в панелі (колекція,
+   * порядок, період; `utils/cardListCollections`) чи
    * тим самим, що вже відкритий.
    *
    * Той самий запит на відкритому списку — це «оновити»: перелік і анкети
@@ -5402,16 +5456,44 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     setLoadRequestId(prev => prev + 1);
   };
 
-  // Зміна в «Сортуванні» збирає список заново сама: окремої кнопки
-  // «застосувати» немає. Дотик до вже обраного варіанта нічого не міняє — це
-  // не «оновити», для того є окрема кнопка.
-  const handleCardListQueryChange = nextQuery => {
-    const normalized = normalizeCardListQuery(nextQuery);
+  // Вибір у панелі збирає список заново сам: окремої кнопки «застосувати»
+  // немає. Дотик до вже обраного варіанта нічого не міняє — це не «оновити»,
+  // для того є «↻ Оновити» і повторний дотик до відкритої колекції.
+  const handleCardListSelectionChange = nextSelection => {
+    const normalized = buildCardListQueryFromSelection(nextSelection);
     if (
       currentFilter === CARD_LIST_FILTER
+      && !searchListIsolationRef.current
       && buildCardListQueryKey(normalized) === buildCardListQueryKey(cardListQueryRef.current)
     ) return;
     openCardList(normalized);
+  };
+
+  // Фільтри з чіпа над списком: та сама дорога, що й з шухляди
+  // (`handleFilterChange`), плюс запис у памʼять браузера — шухляда, відкрита
+  // пізніше, читає стан саме звідти.
+  const applyListFiltersOutsidePanel = nextFilters => {
+    try {
+      localStorage.setItem(ADD_FILTERS_STORAGE_KEY, JSON.stringify(nextFilters));
+    } catch (error) {
+      // Памʼять браузера закрита — фільтр діятиме до перезавантаження.
+    }
+    hasInitializedFiltersRef.current = true;
+    handleFilterChange(nextFilters);
+  };
+
+  const handleRemoveListFilter = filterName => {
+    const current = filtersRef.current || filters;
+    const group = current?.[filterName];
+    if (!group) return;
+    const restored = Object.keys(group).reduce((acc, option) => ({ ...acc, [option]: true }), {});
+    applyListFiltersOutsidePanel({ ...current, [filterName]: restored });
+    setListFilterGroupReset(previous => ({ token: previous.token + 1, name: filterName }));
+  };
+
+  const handleResetListFilters = () => {
+    applyListFiltersOutsidePanel(JSON.parse(JSON.stringify(getDefaultFilters())));
+    setListFiltersResetToken(previous => previous + 1);
   };
 
   const handleBackToPreviousList = useCallback(() => {
@@ -5691,6 +5773,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             key={`add-search-${searchBarResetVersion}`}
             searchFunc={searchUsersCollectionInRTDB}
             allowJsonProfileList
+            jsonUploadInputId={JSON_PROFILE_LIST_INPUT_ID}
             search={search}
             setSearch={value => {
               setSearch(value);
@@ -5920,164 +6003,40 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         ) : (
           <div>
             {/*
-              Черга доповнень рахує себе сама й показує свій лічильник: «Знайдено
-              0 карток» над нею означало б, що доповнень немає, тоді як список
-              анкет тут просто не наповнюється.
+              Що показати, у якому порядку й чим звузити — три питання панелі
+              «Списку» (`CardListPanel`). Рідкісне й небезпечне — у «Інструментах»
+              під списком.
             */}
-            {(searchLoading || hasSearched) && !userNotFound && currentFilter !== OVERLAY_REVIEW_FILTER && (
-              <p style={{ textAlign: 'center', color: 'var(--km-text)' }}>
-                Знайдено{' '}
-                {searchLoading ? (
-                  <span className="spinner" />
-                ) : (
-                  renderVisibleIds.length
-                )}{' '}
-                карток.
-              </p>
-            )}
-            {userNotFound && (
-              <EmptySearchResult>
-                {hasSearched && <span>Нічого не знайдено.</span>}
-                <ToolButton
-                  type="button"
-                  $tone="primary"
-                  onClick={handleAddUser}
-                  disabled={adding}
-                  title="Завести картку з набраного в пошуку"
-                >
-                  {adding ? <span className="spinner" /> : '+ Створити картку'}
-                </ToolButton>
-              </EmptySearchResult>
-            )}
-            {/*
-              Що показати — щоденна робота адміна, тож добірки стоять на виду, а
-              не в панелі, яку треба розгортати. Поруч — лише сортування й фільтри
-              самого списку; рідкісне й небезпечне пішло в «Інструменти» нижче.
-            */}
-            <ListPanel>
-              <CollectionRow role="group" aria-label="Що показати">
-                {/* Готові запити «Списку» — один двигун, різні поля
-                    (`utils/cardListQuery`). Повторний дотик до відкритого — «оновити». */}
-                {CARD_LIST_PRIMARY_PRESETS.map(preset => {
-                  const active = isCardListActive && currentFilter === CARD_LIST_FILTER
-                    && activeCardListPreset?.key === preset.key;
-                  return (
-                    <CollectionChip
-                      key={preset.key}
-                      type="button"
-                      $active={active}
-                      aria-pressed={active}
-                      onClick={() => openCardList(preset.query)}
-                      title={active ? 'Відкрито · ще дотик — оновити з бази' : describeCardListQuery(preset.query)}
-                    >
-                      {preset.label}
-                    </CollectionChip>
-                  );
-                })}
-                {currentFilter === CARD_LIST_FILTER && isCardListActive && !activeCardListPreset?.primary && (
-                  <CollectionChip
-                    type="button"
-                    $active
-                    aria-pressed
-                    onClick={() => openCardList(cardListQuery)}
-                    title="Свій запит із «Сортування» · ще дотик — оновити з бази"
-                  >
-                    {describeCardListQuery(cardListQuery)}
-                  </CollectionChip>
-                )}
-                <CollectionChip
-                  type="button"
-                  $active={currentFilter === 'CYCLE_FAVORITE'}
-                  aria-pressed={currentFilter === 'CYCLE_FAVORITE'}
-                  onClick={() => openCardCollection('CYCLE_FAVORITE')}
-                  aria-label="Cycle favorites"
-                  title="Анкети в стимуляції та вагітності"
-                >
-                  Цикл
-                </CollectionChip>
-                {isAdmin && (
-                  <CollectionChip
-                    type="button"
-                    $active={currentFilter === OVERLAY_REVIEW_FILTER}
-                    aria-pressed={currentFilter === OVERLAY_REVIEW_FILTER}
-                    onClick={() => openCardCollection(OVERLAY_REVIEW_FILTER)}
-                    title="Усі картки, у які читачі дописали дані й це ще ніхто не розсудив"
-                    {...createLongPressHandlers(
-                      'Черга доповнень: кожне дописане значення окремо, з кнопками «прийняти» і «видалити»',
-                    )}
-                  >
-                    Доповнення
-                  </CollectionChip>
-                )}
-                {isAdmin && (
-                  <CollectionChip
-                    type="button"
-                    $active={isSearchersView}
-                    aria-pressed={isSearchersView}
-                    onClick={handleShowSearchers}
-                    disabled={isLoadingSearchers}
-                    title="Показати картки тих, хто шукав, разом з їхніми запитами"
-                    {...createLongPressHandlers(
-                      'Читає multiData/searchQueries і малює картки читачів; під карткою — їхні запити, '
-                        + 'натискання повторює той самий пошук',
-                    )}
-                  >
-                    {isLoadingSearchers ? '...' : 'Хто шукав'}
-                  </CollectionChip>
-                )}
-              </CollectionRow>
-              <ToolRow>
-                <ToolButton
-                  type="button"
-                  $active={isLoadOptionsOpen}
-                  onClick={() => setIsLoadOptionsOpen(prev => !prev)}
-                  aria-expanded={isLoadOptionsOpen}
-                  title="За яким полем, у якому порядку й за який період збирається «Список»"
-                >
-                  Сортування: {describeCardListQuery(cardListQuery)} ▾
-                </ToolButton>
-                <ToolButton
-                  type="button"
-                  $active={isListFiltersOpen}
-                  onClick={() => setIsListFiltersOpen(prev => !prev)}
-                  aria-expanded={isListFiltersOpen}
-                  title="Фільтри списку: група крові, вік, роль, реакції…"
-                >
-                  Фільтри ▾
-                </ToolButton>
-                {currentFilter === CARD_LIST_FILTER && isCardListActive && (
-                  <ToolButton
-                    type="button"
-                    onClick={() => openCardList(cardListQuery, { refresh: true })}
-                    title="Перечитати перелік і анкети з бази, повз кеш"
-                  >
-                    ↻ Оновити
-                  </ToolButton>
-                )}
-              </ToolRow>
-              {isLoadOptionsOpen && (
-                <ToolDrawer>
-                  <CardListQueryControls
-                    query={cardListQuery}
-                    onChange={handleCardListQueryChange}
-                    statsText={cardListStatsText}
-                  />
-                </ToolDrawer>
+            <CardListPanel
+              selection={cardListSelection}
+              onSelect={handleCardListSelectionChange}
+              view={listPanelView}
+              specialViews={listPanelSpecialViews}
+              status={{ loading: searchLoading, count: renderVisibleIds.length, hasMore }}
+              searchText={(lastSearchBarQuery || search || '').trim()}
+              searchFiltersApplied={useSearchResultFilters}
+              onRefresh={() => openCardList(cardListQuery, { refresh: true })}
+              statsText={cardListStatsText}
+              filterChips={activeListFilterChips}
+              filtersOpen={isListFiltersOpen}
+              onToggleFilters={() => setIsListFiltersOpen(prev => !prev)}
+              onRemoveFilter={handleRemoveListFilter}
+              onResetFilters={handleResetListFilters}
+              filtersApply={listPanelFiltersApply}
+              filtersDrawer={(
+                // Фільтри одні на будь-який запит: окремі сховища під LA й LA2
+                // і урізаний перелік груп під «індексні» режими пішли разом із
+                // режимами. Варіанти «Не вказано» лишились — їх знає і
+                // `filterMain`, і індекс.
+                <FilterPanel
+                  onChange={handleFilterChange}
+                  storageKey={ADD_FILTERS_STORAGE_KEY}
+                  resetToken={listFiltersResetToken}
+                  groupResetToken={listFilterGroupReset.token}
+                  groupResetName={listFilterGroupReset.name}
+                />
               )}
-              {isListFiltersOpen && (
-                <ToolDrawer>
-                  {/* Фільтри одні на будь-який запит: окремі сховища під LA й LA2
-                      і урізаний перелік груп під «індексні» режими пішли разом
-                      із режимами. Варіанти «no» (порожньо) лишились — їх знає і
-                      `filterMain`, і індекс. */}
-                  <FilterPanel
-                    onChange={handleFilterChange}
-                    storageKey="addFilters"
-                    bloodSearchKeyMode
-                    reactionFilterOptions={REACTION_FILTER_OPTIONS}
-                  />
-                </ToolDrawer>
-              )}
+            >
               {stimulationScheduleProfiles.length > 0 && (
                 <StimulationRow>
                   <StimulationLabel>У стимуляції:</StimulationLabel>
@@ -6093,7 +6052,87 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   ))}
                 </StimulationRow>
               )}
-            </ListPanel>
+            </CardListPanel>
+            {/* «Нічого не знайдено» — відповідь пошуку, тож стоїть там, де стоїть
+                видача: під панеллю, а не над нею. */}
+            {userNotFound && (
+              <EmptySearchResult>
+                {hasSearched && <span>Нічого не знайдено.</span>}
+                <ToolButton
+                  type="button"
+                  $tone="primary"
+                  onClick={handleAddUser}
+                  disabled={adding}
+                  title="Завести картку з набраного в пошуку"
+                >
+                  {adding ? <span className="spinner" /> : '+ Створити картку'}
+                </ToolButton>
+              </EmptySearchResult>
+            )}
+            <input
+              ref={excelImportInputRef}
+              type="file"
+              accept=".xls,.xlsx"
+              style={{ display: 'none' }}
+              onChange={handleExcelProfilesUpload}
+            />
+            <input
+              ref={localNodeFilesInputRef}
+              type="file"
+              accept="application/json,.json"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleLocalNodeFilesSelected}
+            />
+            {currentFilter === OVERLAY_REVIEW_FILTER && (
+              <OverlayReviewQueue onOpenCard={handleOpenProfileById} />
+            )}
+            {currentFilter === CARD_LIST_FILTER && !searchListIsolated && !searchLoading && !hasMore
+              && countObjectKeys(users) === 0 && (
+              // Порожній список мусить сказати, що він порожній і чому: голе
+              // місце під панеллю читалось як «ще вантажиться».
+              <EmptySearchResult data-testid="card-list-empty">
+                <span>
+                  «{describeCardListSelection(cardListSelection)}» — карток немає.
+                  {activeListFilterChips.length > 0 ? ' Спробуйте зняти фільтри.' : ''}
+                </span>
+              </EmptySearchResult>
+            )}
+            {!userNotFound && currentFilter !== OVERLAY_REVIEW_FILTER && (
+              <>
+                <UsersList
+                  setCompare={value => {
+                    if (value === null) comparisonScrollRef.current = 0;
+                    setCompare(value);
+                  }}
+                  onOpenComparedCard={openComparedCard}
+                  setShowInfoModal={setShowInfoModal}
+                  onOpenMoreActions={openMoreActionsModal}
+                  users={paginatedUsersWithPhotos}
+                  onOpenMedications={openMedicationsModal}
+                  favoriteUsers={favoriteUsersData}
+                  setFavoriteUsers={setFavoriteUsersData}
+                  dislikeUsers={dislikeUsersData}
+                  setDislikeUsers={setDislikeUsersData}
+                  setUsers={setUsers}
+                  setSearch={setSearch}
+                  setState={setState}
+                setUserIdToDelete={setUserIdToDelete}
+                currentFilter={currentFilter}
+                isDateInRange={isDateInRange}
+                renderCardFooter={renderSearcherFooter}
+              />
+                {/* Пагінація без жодної картки («1 / 2» над порожнім місцем)
+                    обіцяла другу сторінку того, чого ще не відкрили. */}
+                {renderVisibleIds.length > 0 && (
+                  <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
+                )}
+              </>
+            )}
+            {/*
+              «Інструменти» — під списком: панель над карткою керує саме
+              списком, і згорнута консоль між ними розривала одне з другим.
+            */}
             <ConsolePanel>
               <ConsoleHeader
                 type="button"
@@ -6153,6 +6192,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                         {...createLongPressHandlers('Імпортує Excel і конвертує в JSON формати')}
                       >
                         {isExcelImporting ? '...' : 'Імпорт XLSX'}
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        onClick={() => document.getElementById(JSON_PROFILE_LIST_INPUT_ID)?.click()}
+                        title="Відкрити список анкет з JSON-файлу: кожна анкета з файлу — і те, що за нею знайдено"
+                      >
+                        Список з JSON
                       </ToolButton>
                     </ToolRow>
                   </ToolGroup>
@@ -6300,62 +6346,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                 </ConsoleBody>
               )}
             </ConsolePanel>
-            <input
-              ref={excelImportInputRef}
-              type="file"
-              accept=".xls,.xlsx"
-              style={{ display: 'none' }}
-              onChange={handleExcelProfilesUpload}
-            />
-            <input
-              ref={localNodeFilesInputRef}
-              type="file"
-              accept="application/json,.json"
-              multiple
-              style={{ display: 'none' }}
-              onChange={handleLocalNodeFilesSelected}
-            />
-            {currentFilter === OVERLAY_REVIEW_FILTER && (
-              <OverlayReviewQueue onOpenCard={handleOpenProfileById} />
-            )}
-            {currentFilter === CARD_LIST_FILTER && !searchListIsolated && !searchLoading && !hasMore
-              && countObjectKeys(users) === 0 && (
-              // Порожній список мусить сказати, що він порожній і чому: голе
-              // місце під панеллю читалось як «ще вантажиться».
-              <EmptySearchResult data-testid="card-list-empty">
-                <span>
-                  «{describeCardListQuery(cardListQuery)}» — карток немає. Інше поле чи період — у «Сортуванні»,
-                  звуження — у «Фільтрах».
-                </span>
-              </EmptySearchResult>
-            )}
-            {!userNotFound && currentFilter !== OVERLAY_REVIEW_FILTER && (
-              <>
-                <UsersList
-                  setCompare={value => {
-                    if (value === null) comparisonScrollRef.current = 0;
-                    setCompare(value);
-                  }}
-                  onOpenComparedCard={openComparedCard}
-                  setShowInfoModal={setShowInfoModal}
-                  onOpenMoreActions={openMoreActionsModal}
-                  users={paginatedUsersWithPhotos}
-                  onOpenMedications={openMedicationsModal}
-                  favoriteUsers={favoriteUsersData}
-                  setFavoriteUsers={setFavoriteUsersData}
-                  dislikeUsers={dislikeUsersData}
-                  setDislikeUsers={setDislikeUsersData}
-                  setUsers={setUsers}
-                  setSearch={setSearch}
-                  setState={setState}
-                setUserIdToDelete={setUserIdToDelete}
-                currentFilter={currentFilter}
-                isDateInRange={isDateInRange}
-                renderCardFooter={renderSearcherFooter}
-              />
-                <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
-              </>
-            )}
             {/* Передача користувачів у UsersList */}
           </div>
         )}
