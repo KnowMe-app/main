@@ -27,37 +27,62 @@ const { getDatabase } = require('firebase-admin/database');
 const { ALLOWED_ORIGINS, MAIL_FROM, REGION } = require('./config');
 const { normalizeEmailLanguage, normalizeEmailRole, renderVerifyEmail } = require('./emails/verifyEmail');
 const { buildVerifyEmailActionLink, extractOobCode } = require('./emails/actionLink');
-const { decideVerificationSend } = require('./verificationQuota');
+const { decideGlobalSend, decideVerificationSend, emailQuotaKey } = require('./verificationQuota');
 const { sendWithResend } = require('./mail/resend');
 
 initializeApp();
 
 const RESEND_API_KEY = defineSecret('RESEND_API_KEY');
 
-const quotaRef = uid => getDatabase().ref(`emailVerificationSends/${uid}`);
+const QUOTA_ROOT = 'emailVerificationSends';
 
 /**
- * Займає місце в межі відправок. Повертає функцію, що віддає його назад:
- * лист, який не пішов, межу не мусить їсти — інакше п'ять збоїв сервісу за
- * добу лишали б людину без жодного листа (на `resource-exhausted` застосунок
+ * Займає місце в одній межі відправок (`verificationQuota.js`). Повертає
+ * `null`, коли межу вичерпано, інакше — функцію, що віддає місце назад: лист,
+ * який не пішов, межу не мусить їсти — інакше п'ять збоїв сервісу за добу
+ * лишали б людину без жодного листа (на `resource-exhausted` застосунок
  * навмисно не шле й стандартного).
  */
-const claimSendSlot = async (uid, now) => {
-  let decision = null;
+const claimSlot = async (path, decide, now) => {
+  const ref = getDatabase().ref(path);
   let previous = null;
-  const result = await quotaRef(uid).transaction(current => {
+  let decision = null;
+  const result = await ref.transaction(current => {
     previous = current;
-    decision = decideVerificationSend(current, now);
+    decision = decide(current, now);
     return decision.allowed ? decision.next : undefined;
   });
-  if (!result.committed) {
-    throw new HttpsError('resource-exhausted', 'Too many verification emails. Try again later.', {
-      reason: decision ? decision.reason : 'unknown',
-    });
-  }
-  return () => quotaRef(uid)
+  if (!result.committed) return { release: null, reason: decision ? decision.reason : 'unknown' };
+  const release = () => ref
     .transaction(current => (current && current.lastAt === now ? previous || null : undefined))
-    .catch(error => logger.warn('verification quota release failed', { uid, error: error.message }));
+    .catch(error => logger.warn('verification quota release failed', { path, error: error.message }));
+  return { release, reason: '' };
+};
+
+/**
+ * Три межі по черзі: акаунт, адреса, усі разом. Відмова будь-якої віддає
+ * місця, вже зайняті попередніми. Межа людини — `resource-exhausted`
+ * (застосунок стандартного листа не шле), стеля на всіх — `unavailable`
+ * (застосунок шле стандартний лист Firebase із власними межами).
+ */
+const claimSendSlots = async (uid, email, now) => {
+  const claimed = [];
+  const releaseAll = () => Promise.all(claimed.map(release => release()));
+  const steps = [
+    [`${QUOTA_ROOT}/byUid/${uid}`, decideVerificationSend, 'resource-exhausted'],
+    [`${QUOTA_ROOT}/byEmail/${emailQuotaKey(email)}`, decideVerificationSend, 'resource-exhausted'],
+    [`${QUOTA_ROOT}/total`, decideGlobalSend, 'unavailable'],
+  ];
+  for (const [path, decide, refusal] of steps) {
+    const { release, reason } = await claimSlot(path, decide, now);
+    if (!release) {
+      await releaseAll();
+      logger.warn('verification email refused by quota', { uid, reason });
+      throw new HttpsError(refusal, 'Too many verification emails. Try again later.', { reason });
+    }
+    claimed.push(release);
+  }
+  return releaseAll;
 };
 
 /** Поточна роль з картки стрічки — коли застосунок її не передав (меню «Підтвердити email»). */
@@ -93,7 +118,7 @@ exports.sendVerificationEmail = onCall(
     const role = normalizeEmailRole(data.role) || await readCardRole(uid);
 
     const now = Date.now();
-    const releaseSlot = await claimSendSlot(uid, now);
+    const releaseSlots = await claimSendSlots(uid, user.email, now);
 
     try {
       const generated = await getAuth().generateEmailVerificationLink(user.email);
@@ -121,7 +146,8 @@ exports.sendVerificationEmail = onCall(
       logger.info('verification email sent', { uid, language: message.language, role: message.role, id: sent && sent.id });
       return { status: 'sent' };
     } catch (error) {
-      await releaseSlot();
+      await releaseSlots();
+      // Повідомлення помилки адреси не несе (`mail/resend.js`), лише статус і назву.
       logger.error('verification email failed', { uid, error: error.message, status: error.status });
       throw new HttpsError('unavailable', 'Verification email could not be sent.');
     }

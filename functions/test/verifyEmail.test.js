@@ -9,7 +9,14 @@ const {
   renderVerifyEmail,
 } = require('../emails/verifyEmail');
 const { buildVerifyEmailActionLink, extractOobCode } = require('../emails/actionLink');
-const { decideVerificationSend, MAX_PER_DAY, MIN_INTERVAL_MS } = require('../verificationQuota');
+const {
+  GLOBAL_MAX_PER_DAY,
+  MAX_PER_DAY,
+  MIN_INTERVAL_MS,
+  decideGlobalSend,
+  decideVerificationSend,
+  emailQuotaKey,
+} = require('../verificationQuota');
 const { sendWithResend } = require('../mail/resend');
 
 const LINK = 'https://knowme.pp.ua/auth/action?mode=verifyEmail&oobCode=abc123&lang=uk';
@@ -134,10 +141,43 @@ test('Resend: запит з ключем, відмова сервісу — по
   assert.equal(calls[0].init.headers['Idempotency-Key'], 'verify-1');
   assert.deepEqual(JSON.parse(calls[0].init.body).to, ['a@example.com']);
 
-  const failingFetch = async () => ({ ok: false, status: 403, text: async () => 'domain is not verified' });
+  // Resend повторює у відмові поля запиту, зокрема адресу. У повідомлення
+  // помилки (а з ним — у журнал функції) вона не мусить потрапити.
+  const failingFetch = async () => ({
+    ok: false,
+    status: 422,
+    json: async () => ({ name: 'validation_error', message: 'Invalid `to` field: victim@example.com' }),
+  });
   await assert.rejects(
-    sendWithResend({ apiKey: 'k', from: 'f', to: 't', subject: 's', html: 'h', text: 't', fetchImpl: failingFetch }),
-    error => error.status === 403 && /domain is not verified/.test(error.message),
+    sendWithResend({ apiKey: 'k', from: 'f', to: 'victim@example.com', subject: 's', html: 'h', text: 't', fetchImpl: failingFetch }),
+    error => error.status === 422
+      && error.message === 'Resend responded 422 (validation_error)'
+      && !error.message.includes('victim@example.com'),
+  );
+  const unreadableFetch = async () => ({ ok: false, status: 500, json: async () => { throw new Error('not json'); } });
+  await assert.rejects(
+    sendWithResend({ apiKey: 'k', from: 'f', to: 't', subject: 's', html: 'h', text: 't', fetchImpl: unreadableFetch }),
+    error => error.message === 'Resend responded 500',
   );
   await assert.rejects(sendWithResend({ from: 'f', to: 't' }), /RESEND_API_KEY/);
+});
+
+test('стеля на всіх: лічильник за добу, нова доба — з нуля', () => {
+  const now = Date.UTC(2026, 10, 1, 12, 0, 0);
+  const full = { lastAt: now - 1000, day: '2026-11-01', count: GLOBAL_MAX_PER_DAY };
+  const refused = decideGlobalSend(full, now);
+  assert.equal(refused.allowed, false);
+  assert.equal(refused.reason, 'global-limit');
+  // Інтервалу тут немає: різні люди можуть отримати лист у ту саму мить.
+  const almost = { lastAt: now, day: '2026-11-01', count: GLOBAL_MAX_PER_DAY - 1 };
+  assert.equal(decideGlobalSend(almost, now).allowed, true);
+  assert.equal(decideGlobalSend(full, Date.UTC(2026, 10, 2, 0, 0, 1)).next.count, 1);
+});
+
+test('ключ адреси — хеш без самої адреси, регістр і пробіли не важать', () => {
+  const key = emailQuotaKey(' Victim@Example.com ');
+  assert.equal(key, emailQuotaKey('victim@example.com'));
+  assert.match(key, /^[0-9a-f]{64}$/);
+  assert.ok(!key.includes('victim'));
+  assert.notEqual(key, emailQuotaKey('other@example.com'));
 });

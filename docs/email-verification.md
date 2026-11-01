@@ -15,7 +15,8 @@ src/utils/emailVerification.js ── requestVerificationEmail()
         │     стандартний sendEmailVerification мовою інтерфейсу
         ▼
 functions/index.js ── sendVerificationEmail (Cloud Functions 2nd gen)
-        │  • межа: раз на хвилину, 5 на добу (RTDB emailVerificationSends/{uid})
+        │  • межі: акаунт і адреса — раз на хвилину, 5 на добу; усі — 100 на добу
+        │    (RTDB emailVerificationSends/{byUid,byEmail,total}, адреса — хешем)
         │  • Admin SDK: generateEmailVerificationLink → лише oobCode
         │  • шаблон functions/emails/verifyEmail.js (uk/en, плашка ролі)
         │  • відправка: Resend від KnowMe <hello@knowme.pp.ua>
@@ -30,9 +31,13 @@ src/components/AuthActionPage.jsx ── applyActionCode → «Пошту під
 Firebase (на один невдалий запит до функції більше). Після деплою функція
 вмикається сама, без прапорця в збірці.
 
-Межа функції (`resource-exhausted`) — не збій: стандартного листа тоді не шлемо, а
-відповідаємо `auth/too-many-requests`, як Firebase на надто часті листи. Лист, який
-не пішов (сервіс відмовив), місце в межі повертає.
+Межа акаунта чи адреси (`resource-exhausted`) — не збій: стандартного листа тоді не
+шлемо, а відповідаємо `auth/too-many-requests`, як Firebase на надто часті листи.
+Межа адреси окремо від акаунта навмисно: акаунт на чужу адресу можна видалити й
+завести знову з новим uid. Стеля на всіх (`GLOBAL_MAX_PER_DAY`, під денний ліміт
+тарифу Resend) відповідає `unavailable` — і застосунок шле стандартний лист Firebase.
+Лист, який не пішов (сервіс відмовив), місця в межах повертає. У журнал функції
+адреса не потрапляє: з відмови Resend лишаються статус і назва помилки.
 
 ## Що зробити руками, один раз
 
