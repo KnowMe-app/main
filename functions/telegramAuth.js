@@ -75,11 +75,16 @@ const BOT_TEXTS = Object.freeze({
     + 'Пароль і пошта не потрібні.\n\n'
     + 'Якщо ви не відкривали KnowMe щойно — нічого не натискайте.',
   shareButton: '📱 Поділитися номером',
+  // Окремим повідомленням, бо прибрати клавіатуру «Поділитися номером» і
+  // дати кнопку посилання одне повідомлення не може: `reply_markup` один.
+  contactReceived: '✅ Номер підтверджено.',
   done: code => `Ваш код для входу в KnowMe: ${code}\n\n`
-    + 'Введіть його на сторінці KnowMe, де ви натиснули «Увійти через Telegram».\n\n'
+    + 'Що далі: натисніть «Повернутися в KnowMe» нижче (або перейдіть у браузер, '
+    + 'де ви натиснули «Увійти через Telegram») і введіть цей код у поле на сторінці.\n\n'
     + '⚠️ Нікому не повідомляйте цей код — навіть якщо просять «підтвердити номер». '
     + 'Хто його знає, той увійде у ваш акаунт.',
-  alreadyDone: 'Код для входу вже надіслано вище. Введіть його в KnowMe.',
+  alreadyDone: 'Код для входу вже надіслано вище. Поверніться в KnowMe й введіть його.',
+  returnButton: 'Повернутися в KnowMe',
   foreignContact: 'Надішліть, будь ласка, свій номер кнопкою «📱 Поділитися номером», а не чужий контакт.',
   noLogin: 'Щоб увійти, відкрийте KnowMe і натисніть «Увійти через Telegram».',
   expired: 'Час на вхід минув. Відкрийте KnowMe і натисніть «Увійти через Telegram» ще раз.',
@@ -95,6 +100,14 @@ const contactKeyboard = () => ({
 
 const openAppButton = () => ({
   inline_keyboard: [[{ text: 'Відкрити KnowMe', url: APP_URL }]],
+});
+
+// Після коду людина мусить повернутись на сайт, а в Telegram посилання на
+// нього не було — лише текст «введіть на сторінці». Кнопка веде на `/login`:
+// спроба лежить у `localStorage` браузера, тож і нова вкладка показує поле
+// для коду (`src/utils/telegramAuth.js`).
+const returnToAppButton = () => ({
+  inline_keyboard: [[{ text: BOT_TEXTS.returnButton, url: APP_URL }]],
 });
 
 /**
@@ -126,7 +139,7 @@ const handleStart = async ({ nonce, tgId, chatId }, { db, sendMessage, now }) =>
     return outcome;
   }
   if (outcome === 'ready') {
-    await sendMessage(chatId, BOT_TEXTS.alreadyDone, { remove_keyboard: true });
+    await sendMessage(chatId, BOT_TEXTS.alreadyDone, returnToAppButton());
     return outcome;
   }
   await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, { key, at: now });
@@ -213,7 +226,8 @@ const handleContact = async ({ message, tgId, chatId }, deps) => {
     profile: { phone, firstName, lastName, username },
   });
   await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
-  await sendMessage(chatId, BOT_TEXTS.done(code), { remove_keyboard: true });
+  await sendMessage(chatId, BOT_TEXTS.contactReceived, { remove_keyboard: true });
+  await sendMessage(chatId, BOT_TEXTS.done(code), returnToAppButton());
   return isNew ? 'registered' : 'signed-in';
 };
 

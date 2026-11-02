@@ -33,6 +33,22 @@ describe('LoginScreen: вхід через Telegram', () => {
     expect(source).toContain('setTelegramSignup({ uid, profileData });');
   });
 
+  // Бот заводить акаунт Firebase ще до коду. Спроба, що зірвалась після цього,
+  // лишала акаунт без анкети, і наступний вхід ішов як звичайний: номер, яким
+  // людина поділилась у боті, не потрапляв в анкету.
+  it('реєстрацію доводить анкета, а не прапорець бота «новий акаунт»', () => {
+    const source = loginSource();
+    expect(source).toContain('const needsRegistration = result.isNew || !(await hasAccountRegistration(uid).catch(() => true));');
+    expect(source).toContain('if (needsRegistration) {');
+  });
+
+  // Кнопка «Повернутися в KnowMe» з бота відкриває сайт новою вкладкою —
+  // спроба мусить бути видна й там, інакше поля для коду немає.
+  it('нова вкладка підхоплює спробу, а стара відпускає завершену деінде', () => {
+    const source = loginSource();
+    expect(source).toContain("window.addEventListener('storage', handleStorage);");
+  });
+
   // Посилання на бота може підсунути чужа людина: без коду, який бот показав
   // власникові Telegram, токен забрав би браузер того, хто посилання згенерував.
   it('вхід завершує код із бота, а не саме очікування', () => {

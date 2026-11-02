@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { FaUser, FaLock, FaEye, FaEyeSlash, FaGlobe, FaChevronDown, FaTelegramPlane } from 'react-icons/fa';
 import toast from 'react-hot-toast';
-import { auth, fetchUserById } from './config';
+import { auth, fetchUserById, hasAccountRegistration } from './config';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, fetchSignInMethodsForEmail, signInWithCustomToken } from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -31,6 +31,7 @@ import {
   pollTelegramLogin,
   readTelegramLoginAttempt,
   saveTelegramLoginAttempt,
+  TELEGRAM_LOGIN_STORAGE_KEY,
   TELEGRAM_LOGIN_TTL_MS,
   TELEGRAM_POLL_INTERVAL_MS,
 } from 'utils/telegramAuth';
@@ -584,6 +585,8 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   // посилання на бота може підсунути чужа людина, і тоді номер ділила б
   // жертва, а сесію забирав би той, хто посилання згенерував.
   const [telegramCodeRequested, setTelegramCodeRequested] = useState(false);
+  const telegramAttemptRef = useRef(telegramAttempt);
+  telegramAttemptRef.current = telegramAttempt;
   const [telegramCode, setTelegramCode] = useState('');
 
   const handleCheckboxChange = () => {
@@ -848,7 +851,14 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       const credential = await signInWithCustomToken(auth, result.token);
       const uid = credential.user.uid;
       const profileData = buildTelegramProfileData(result.profile);
-      if (result.isNew) {
+      // «Новий» для бота — акаунт Firebase, щойно заведений. Але бот заводить
+      // його ще до коду, і спроба, що зірвалась після цього, лишала акаунт без
+      // анкети: наступний вхід ішов як звичайний, і номер, яким людина
+      // поділилась, не потрапляв нікуди. Тож реєстрацію доводить анкета, а не
+      // бот. Збій читання — звичайний вхід: краще не дописати анкету, ніж
+      // спитати роль у того, хто давно її обрав.
+      const needsRegistration = result.isNew || !(await hasAccountRegistration(uid).catch(() => true));
+      if (needsRegistration) {
         if (!attempt.role) {
           // Межа входу не відвозить звідси, поки роль не обрано:
           // `authFlowInProgressRef` лишається піднятим.
@@ -923,6 +933,23 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       setIsLoading(false);
     }
   };
+
+  // Спроба спільна для вкладок (`localStorage`): кнопка бота відкриває сайт
+  // новою вкладкою, і та, що відкрилась, підхоплює спробу. Вкладка, у якій
+  // вхід почали, — навпаки: коли спробу завершили чи скасували деінде, вона
+  // мовчки її відпускає, а не опитує зниклий запис до тоста «час минув».
+  useEffect(() => {
+    if (!telegramAvailable) return undefined;
+    const handleStorage = event => {
+      if (event.key !== TELEGRAM_LOGIN_STORAGE_KEY) return;
+      const shared = readTelegramLoginAttempt();
+      if (telegramAttemptRef.current?.nonce === shared?.nonce) return;
+      setTelegramCodeRequested(false);
+      setTelegramAttempt(shared);
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [telegramAvailable]);
 
   // Поки людина в боті, форма питає функцію, чи номер уже прийшов. Фонова
   // вкладка не питає (на телефоні вона й так заморожена), а повернення до неї
