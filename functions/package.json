@@ -1,7 +1,7 @@
 {
   "name": "knowme-functions",
   "private": true,
-  "description": "Cloud Functions KnowMe: власний лист підтвердження пошти",
+  "description": "Cloud Functions KnowMe: власні листи підтвердження пошти й вхід через Telegram",
   "main": "index.js",
   "engines": {
     "node": "22"
