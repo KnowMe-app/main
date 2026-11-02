@@ -152,6 +152,26 @@ const PROFILES = {
     height: '160',
     weight: '52',
   },
+  [uid('AnsweredNo')]: {
+    // Так анкету пише «Мій профіль»: відповідь `No` на «Чи перебуваєте в
+    // офіційному шлюбі» і дата народження в `РРРР-ММ-ДД`. Індекс клав `No` у
+    // «Не вказано», а `filterMain` різав дату крапками — і фільтр «Не
+    // заміжня, 26–30» на «Списку» не знаходив жодної такої анкети.
+    userId: uid('AnsweredNo'),
+    role: 'ed',
+    maritalStatus: 'No',
+    blood: '3+',
+    birth: '1998-06-15',
+    height: '168',
+    weight: '60',
+    csection: '0',
+  },
+  [uid('AnsweredNi')]: {
+    userId: uid('AnsweredNi'),
+    role: 'ed',
+    maritalStatus: 'Ні',
+    birth: '1997-02-03',
+  },
   [uid('Unknown')]: {
     // Everything present but unparseable: the `?` buckets.
     userId: uid('Unknown'),
@@ -375,6 +395,10 @@ describe('what the reader gets back', () => {
       filters: { age: { le25: false, '26_30': false, '31_33': true, '34_36': true, '37_plus': true, other: false } },
     },
     {
+      name: 'a marital status filter that keeps only the unmarried',
+      filters: { maritalStatus: { married: false, unmarried: true, other: false, empty: false } },
+    },
+    {
       name: 'two groups at once',
       filters: {
         userRole: { ed: true, ag: false, ip: true, other: false },
@@ -416,6 +440,74 @@ describe('what the reader gets back', () => {
   });
 });
 
+
+describe('«Список» на AddNewProfile: індекс і filterMain відповідають однаково', () => {
+  const ageToday = birth => {
+    const [year, month, day] = birth.split('-').map(Number);
+    const today = new Date();
+    let age = today.getFullYear() - year;
+    if (today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day)) age -= 1;
+    return age;
+  };
+  const ageBucket = age => {
+    if (age <= 25) return 'le25';
+    if (age <= 30) return '26_30';
+    if (age <= 33) return '31_33';
+    if (age <= 36) return '34_36';
+    if (age <= 42) return '37_42';
+    return '43_plus';
+  };
+  const ALL_AGE = { le25: false, '26_30': false, '31_33': false, '34_36': false, '37_42': false, '43_plus': false, other: false, empty: false };
+  const acceptedByFilterMain = filters => config
+    .filterMain(PROFILE_LIST.map(profile => [profile.userId, profile]), 'CARD_LIST', filters)
+    .map(([id]) => id)
+    .sort();
+
+  it('reads `No` and `Ні` as «Не заміжня»', () => {
+    const filters = { maritalStatus: { married: false, unmarried: true, other: false, empty: false } };
+    expect(acceptedByFilterMain(filters)).toEqual(
+      expect.arrayContaining([uid('AnsweredNo'), uid('AnsweredNi'), uid('Agency')]),
+    );
+  });
+
+  it('counts the age of a birth date stored as РРРР-ММ-ДД, and of the current version in a history', () => {
+    const noBucket = ageBucket(ageToday('1998-06-15'));
+    const niBucket = ageBucket(ageToday('1997-02-03'));
+    expect(acceptedByFilterMain({ age: { ...ALL_AGE, [noBucket]: true } })).toContain(uid('AnsweredNo'));
+    expect(acceptedByFilterMain({ age: { ...ALL_AGE, [niBucket]: true } })).toContain(uid('AnsweredNi'));
+
+    // Масив — історія версій: вік рахує поточна, тобто остання.
+    const withHistory = ['history', { userId: 'history', birth: ['01.01.1970', '1997-02-03'] }];
+    const keep = filters => config.filterMain([withHistory], 'CARD_LIST', filters).length === 1;
+    expect(keep({ age: { ...ALL_AGE, [niBucket]: true } })).toBe(true);
+    expect(keep({ age: { ...ALL_AGE, '43_plus': true } })).toBe(false);
+  });
+
+  it.each([
+    { name: 'unmarried only', filters: { maritalStatus: { married: false, unmarried: true, other: false, empty: false } } },
+    { name: 'married only', filters: { maritalStatus: { married: true, unmarried: false, other: false, empty: false } } },
+    {
+      name: 'unmarried with Rh+ and no C-section',
+      filters: {
+        maritalStatus: { married: false, unmarried: true, other: false, empty: false },
+        rh: { '+': true, '-': false, other: true, empty: true },
+        csection: { cs0: true, cs1: true, cs2plus: false, other: true, no: true },
+      },
+    },
+  ])('the index prefilter never drops what filterMain keeps: $name', async ({ filters }) => {
+    const prefilter = config.createCardListIndexPrefilter(filters);
+    expect(typeof prefilter).toBe('function');
+    const passed = await prefilter(PROFILE_LIST.map(profile => profile.userId));
+    const expected = acceptedByFilterMain(filters);
+    expect(expected.length).toBeGreaterThan(0);
+    expect(passed).toEqual(expect.arrayContaining(expected));
+  });
+
+  it('writes `No` into the «Не заміжня» bucket, not into «Не вказано»', () => {
+    const index = writtenIndex();
+    expect([...index.maritalStatus['-']]).toEqual(expect.arrayContaining([uid('AnsweredNo'), uid('AnsweredNi')]));
+  });
+});
 
 describe('заповненість зі стрічки прибрано', () => {
   const emptyCardId = uid('Empty');

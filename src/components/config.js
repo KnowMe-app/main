@@ -28,6 +28,7 @@ import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
 import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { formatDateToDisplay, formatDateToServer } from './inputValidations';
+import { getCurrentValue } from './getCurrentValue';
 import toast from 'react-hot-toast';
 import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCachedProfileBody, getCompleteCachedProfile, hasCompleteCachedProfile, incrementMatchingLoadStat, removeCard } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
@@ -6979,20 +6980,33 @@ const normalizeMaritalStatusIndexValue = rawValue => {
     return '+';
   }
 
+  // `No` / `Ні` — це відповідь на питання форми «Чи перебуваєте в
+  // офіційному шлюбі» (`yesNoOptions`), тобто «не заміжня», а не «даних
+  // немає». Тут `no` колись стояло серед порожніх значень: «Мій профіль»
+  // пише саме `No`, і кожна донорка, що відповіла «Ні», лягала в бакет
+  // «Не вказано» (або, з `withoutEmptySearchKeyBucket`, не лягала нікуди) —
+  // фільтр «Не заміжня» відсіював їх індексом ще до анкети. Так само цю
+  // відповідь читають `filterMain`, стрічка (`matchingDataProvider`),
+  // програми й правила доступу.
   const negativeValues = new Set([
+    'no',
+    'ні',
     'незаміжня',
     'не заміжня',
+    'незамужем',
     'неодружена',
     'неодружений',
+    'не одружена',
     'single',
     'unmarried',
+    'not married',
   ]);
 
   if (negativeValues.has(compact) || negativeValues.has(normalizedNoSpace)) {
     return '-';
   }
 
-  const noDataValues = new Set(['no', 'none', 'нема', 'немає', 'відсутньо', 'unknown', 'null']);
+  const noDataValues = new Set(['none', 'нема', 'немає', 'відсутньо', 'unknown', 'null']);
   if (noDataValues.has(compact) || noDataValues.has(normalizedNoSpace)) {
     return 'no';
   }
@@ -9717,8 +9731,24 @@ export const filterIdsBySearchKeyPointGroups = async ({ ids = [], groups = [], d
  * фільтром крові список «кому дзвонити» платив за свій відсів більше, ніж
  * заощаджував.
  */
+/*
+ * Відсів індексом — лише заощадження: після нього анкету однаково перевіряє
+ * `filterMain`, тож індекс може пропустити зайве, але не має права відкинути
+ * те, що фільтр прийняв би. Індекс сімейного стану записаний до виправлення
+ * словника: відповідь `No` («не в шлюбі») лежить у ньому в `no` (а `Ні` — у
+ * `?`), поки адмін не перебудує індекс `maritalStatus`. Тож «Не заміжня» тут
+ * пропускає й ці два бакети — відкидає лише заміжніх, а точну відповідь дає
+ * анкета.
+ */
+const widenStaleMaritalStatusGroup = (group, filterSettings) => {
+  if (group?.key !== 'maritalStatus' || !filterSettings?.maritalStatus?.unmarried) return group;
+  const buckets = [...new Set([...(group.buckets || []), 'no', '?'])];
+  return withSearchKeyReadPlan({ ...group, buckets });
+};
+
 export const createCardListIndexPrefilter = (filterSettings = {}, { favoritesMap = {}, dislikedMap = {} } = {}) => {
   const groups = buildActiveSearchKeyFilterGroups(filterSettings, { favoritesMap, dislikedMap })
+    .map(group => widenStaleMaritalStatusGroup(group, filterSettings))
     .filter(group => group.supportsPointCheck && !isBroadSearchKeyPointGroup(group))
     .filter(group => (group.buckets || []).length > 0);
   if (!groups.length) return null;
@@ -9922,12 +9952,13 @@ const getUserRoleCategory = value => {
   return 'other';
 };
 
+// Той самий словник, що й у записувача індексу: поки їх було два, відсів
+// індексом і `filterMain` відповідали на один фільтр по-різному. Масив — це
+// історія версій, і фільтр питає поточну.
 const getMaritalStatusCategory = value => {
-  const m = normalizeSingleFilterValue(value.maritalStatus);
-  if (!m) return 'empty';
-  if (['yes', 'так', '+', 'married', 'одружена', 'заміжня'].includes(m)) return 'married';
-  if (['no', 'ні', '-', 'unmarried', 'single', 'незаміжня'].includes(m)) return 'unmarried';
-  return 'other';
+  const current = getCurrentValue(value?.maritalStatus);
+  if (!normalizeSingleFilterValue(current)) return 'empty';
+  return getMaritalStatusFilterKey(normalizeMaritalStatusIndexValue(current));
 };
 
 const getBloodGroupCategory = value => {
@@ -9946,13 +9977,30 @@ const getRhCategory = value => {
   return 'other';
 };
 
+// Повний вік на сьогодні — так само, як його рахує індекс
+// (`getBirthDateRangeByAge`), а не різниця років.
+const getAgeFromBirth = (rawBirth, today = new Date()) => {
+  const display = formatDateToDisplay(String(rawBirth).trim());
+  const match = display.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!match) return null;
+  const day = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const year = Number.parseInt(match[3], 10);
+  if (!(month >= 1 && month <= 12 && day >= 1 && day <= 31)) return null;
+  let age = today.getFullYear() - year;
+  if (today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day)) age -= 1;
+  return age;
+};
+
+// Дата народження лежить у базі як `РРРР-ММ-ДД`, а тут її різали крапками:
+// `'1998-04-12'.split('.')[2]` — `undefined`, тож кожна така анкета падала в
+// «Інше значення», і фільтр віку відсіював майже всю базу (індекс при цьому
+// вік рахував правильно — він знає обидва написання). Масив — історія версій.
 const getAgeCategory = value => {
-  if (!value.birth || typeof value.birth !== 'string' || !value.birth.trim()) return 'empty';
-  const birthParts = value.birth.split('.');
-  const birthYear = parseInt(birthParts[2], 10);
-  if (!Number.isFinite(birthYear)) return 'other';
-  const currentYear = new Date().getFullYear();
-  const age = currentYear - birthYear;
+  const birth = getCurrentValue(value?.birth);
+  if (birth === undefined || birth === null || !String(birth).trim()) return 'empty';
+  const age = getAgeFromBirth(birth);
+  if (!Number.isFinite(age)) return 'other';
   if (age <= 25) return 'le25';
   if (age >= 26 && age <= 30) return '26_30';
   if (age >= 31 && age <= 33) return '31_33';
