@@ -26,8 +26,20 @@ const memoryDb = () => {
       if (value === null) data.delete(path);
       else data.set(path, structuredClone(value));
     },
+    // Як справжня RTDB: перший виклик обробника транзакції бачить локальний
+    // кеш, а в функції без слухачів він порожній — `null`, хоч на сервері
+    // запис є. Повернений `undefined` тут-таки скасовує транзакцію; будь-що
+    // інше сервер відхиляє (хеш не збігся) і кличе обробник уже з даними.
     transaction: async (path, update) => {
-      const next = update(data.has(path) ? structuredClone(data.get(path)) : null);
+      const actual = data.has(path) ? structuredClone(data.get(path)) : null;
+      const guess = update(null);
+      if (guess === undefined) return { committed: false };
+      if (actual === null) {
+        if (guess === null) data.delete(path);
+        else data.set(path, structuredClone(guess));
+        return { committed: true };
+      }
+      const next = update(actual);
       if (next === undefined) return { committed: false };
       if (next === null) data.delete(path);
       else data.set(path, structuredClone(next));
