@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { FaUser, FaLock, FaEye, FaEyeSlash, FaGlobe, FaChevronDown } from 'react-icons/fa';
 import { auth, fetchUserById } from './config';
-import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { authNotifications } from './authNotifications';
@@ -15,7 +15,7 @@ import {
   persistAccountProfile,
 } from './authProfilePersistence';
 import { readReturnToFromState } from 'utils/authRedirect';
-import { applyAuthEmailLanguage, requestVerificationEmail } from 'utils/emailVerification';
+import { requestPasswordResetEmail, requestVerificationEmail } from 'utils/emailVerification';
 import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
 import { APP_LANGUAGES, getLanguageNativeName } from 'utils/locales';
 import { uiText } from 'utils/uiTranslations';
@@ -656,9 +656,9 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     }
     setIsLoading(true);
     try {
-      // Лист Firebase іде мовою інтерфейсу, а не мовою шаблону з консолі.
-      applyAuthEmailLanguage(auth, language);
-      await sendPasswordResetEmail(auth, normalizedEmail);
+      // Брендований лист KnowMe мовою інтерфейсу; коли функція не відповіла —
+      // стандартний лист Firebase тією ж мовою (`utils/emailVerification`).
+      await requestPasswordResetEmail(normalizedEmail, { auth, language });
       authNotifications.passwordResetSent(normalizedEmail);
     } catch (error) {
       if (error.code === 'auth/user-not-found') {

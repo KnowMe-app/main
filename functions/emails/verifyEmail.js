@@ -3,11 +3,8 @@
 /**
  * Лист «Підтвердіть пошту» — HTML і текстова версія.
  *
- * Це той самий шаблон, що й мокап, затверджений перед роботою: таблиці й
- * інлайн-стилі, бо поштові клієнти (Gmail, Outlook) зовнішніх стилів не
- * читають, а `<style>` частина з них викидає. Тому кожен колір стоїть двічі:
- * інлайном для світлої теми й класом у `<style>` для темної — її беруть Apple
- * Mail, iOS і Outlook; Gmail перефарбовує лист сам.
+ * Той самий шаблон, що й затверджений мокап; розмітка спільна з листом зміни
+ * пароля (`layout.js`), тут — лише слова й блок «Що далі» під роль.
  *
  * Модуль чистий — без firebase, без мережі, — тож його тестують `node --test`
  * і він же годиться для прев'ю.
@@ -17,7 +14,25 @@
  * `src/utils/locales`). Новий рядок листа дописується в обидві.
  */
 
-const APP_URL = 'https://knowme.pp.ua';
+const {
+  APP_URL,
+  FONT,
+  POLICY_URL,
+  button,
+  escapeHtml,
+  fallbackLink,
+  heading,
+  lead,
+  mixHex,
+  normalizeEmailLanguage,
+  note,
+  renderShell,
+  rule,
+  signature,
+  spacer,
+  strong,
+  wordmark,
+} = require('./layout');
 
 const ROLE_COLORS = Object.freeze({
   // Ті самі кольори, що в `src/components/matchingRoleColors.js`.
@@ -159,9 +174,6 @@ const COPY = {
   },
 };
 
-/** Мова листа: українська лишається українською, решта — англійська. */
-const normalizeEmailLanguage = value => (String(value || '').trim().toLowerCase().startsWith('uk') ? 'uk' : 'en');
-
 /**
  * Роль для листа. Роль картки буває рядком, масивом («і донорка, і агенція») і
  * рядком через кому; поточна — **остання** (так її читає стрічка,
@@ -175,25 +187,6 @@ const normalizeEmailRole = value => {
     .filter(item => EMAIL_ROLES.includes(item));
   return known.length ? known[known.length - 1] : '';
 };
-
-const escapeHtml = value =>
-  String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
-/** Колір `hex`, змішаний з `baseHex` у пропорції `amount` (0–1). */
-const mixHex = (hex, baseHex, amount) => {
-  const a = parseInt(hex.slice(1), 16);
-  const b = parseInt(baseHex.slice(1), 16);
-  const channel = (shift) => Math.round(((a >> shift) & 255) * amount + ((b >> shift) & 255) * (1 - amount));
-  const value = (1 << 24) + (channel(16) << 16) + (channel(8) << 8) + channel(0);
-  return `#${value.toString(16).slice(1).toUpperCase()}`;
-};
-
-const FONT = "'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 /**
  * @param {object} options
@@ -213,23 +206,6 @@ const renderVerifyEmail = ({ email, link, language, role, forceDark = false } = 
   const t = COPY[lang];
   const variant = roleCode ? t.roles[roleCode] : t.generic;
   const roleColor = roleCode ? ROLE_COLORS[roleCode] : '';
-  const policyUrl = `${APP_URL}/policy`;
-  const safeLink = escapeHtml(link);
-  const safeEmail = escapeHtml(email);
-  const emailStrong = `<b class="km-text" style="color:#1A1A1A;font-weight:600">${safeEmail}</b>`;
-
-  const darkRules = [
-    '.km-bg{background:#14100C!important}',
-    '.km-card{background:#1F1A15!important;border-color:#3A3128!important}',
-    '.km-text{color:#FFF8EC!important}',
-    '.km-body{color:#E9E1D3!important}',
-    '.km-muted{color:#B8AE9F!important}',
-    '.km-rule{border-color:#3A3128!important}',
-    '.km-num{background:#3A2614!important;color:#F5A24B!important}',
-    '.km-link{color:#F5A24B!important}',
-    '.km-dot span{color:#F08A2C!important}',
-    roleColor ? `.km-chip{background:${mixHex(roleColor, '#1F1A15', 0.24)}!important}` : '',
-  ].join('');
 
   const chip = variant.chip
     ? '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:30px 0 18px"><tr>'
@@ -237,7 +213,7 @@ const renderVerifyEmail = ({ email, link, language, role, forceDark = false } = 
       + `<span style="display:inline-block;width:8px;height:8px;border-radius:4px;background:${roleColor};vertical-align:middle;margin-right:7px"></span>`
       + `<span class="km-text" style="color:#1A1A1A;vertical-align:middle">${escapeHtml(variant.chip)}</span>`
       + '</td></tr></table>'
-    : '<div style="height:30px;line-height:30px;font-size:0">&nbsp;</div>';
+    : spacer(30);
 
   const steps = variant.steps
     .map(([title, text], index) => '<tr>'
@@ -249,65 +225,29 @@ const renderVerifyEmail = ({ email, link, language, role, forceDark = false } = 
       + '</td></tr>')
     .join('');
 
-  // Прехедер — рядок під темою у списку вхідних. Пробіли нульової ширини після
-  // нього не дають клієнтові дописати туди початок тексту листа.
-  const preheaderPad = '&#8199;&#847;'.repeat(40);
-
-  const html = '<!doctype html>'
-    + `<html lang="${lang}" xmlns="http://www.w3.org/1999/xhtml">`
-    + '<head>'
-    + '<meta charset="utf-8">'
-    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
-    + '<meta name="x-apple-disable-message-reformatting">'
-    + '<meta name="color-scheme" content="light dark">'
-    + '<meta name="supported-color-schemes" content="light dark">'
-    + `<title>${escapeHtml(t.subject)}</title>`
-    + '<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">'
-    + '<style>'
-    + 'body{margin:0;padding:0;-webkit-text-size-adjust:100%}'
-    + 'a{text-decoration:none}'
-    + '@media (max-width:600px){'
-    + '.km-outer{padding:16px 10px 28px!important}'
-    + '.km-card{padding:28px 22px 24px!important;border-radius:16px!important}'
-    + '.km-h1{font-size:26px!important;line-height:32px!important}'
-    + '.km-btn,.km-btn td{width:100%!important}'
-    + '.km-btn a{display:block!important;box-sizing:border-box;text-align:center}'
-    + '}'
-    + `@media (prefers-color-scheme:dark){${darkRules}}`
-    + '[data-ogsc] .km-card{background:#1F1A15!important}'
-    + (forceDark ? darkRules : '')
-    + '</style>'
-    + '</head>'
-    + '<body class="km-bg" style="margin:0;padding:0;background:#F3F0EB">'
-    + `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#F3F0EB;opacity:0">${escapeHtml(t.preheader)}${preheaderPad}</div>`
-    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="km-bg" style="background:#F3F0EB">'
-    + '<tr><td align="center" class="km-outer" style="padding:32px 16px 40px">'
-    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px">'
-    + `<tr><td class="km-card" style="background:#FFFFFF;border:1px solid #E8E5E0;border-radius:20px;padding:36px 40px 32px;font-family:${FONT}">`
-    + `<div class="km-text km-dot" style="font-family:${FONT};font-size:22px;line-height:26px;font-weight:700;letter-spacing:-0.4px;color:#1A1A1A">KnowMe<span style="color:#C9600F">.</span></div>`
+  const cardHtml = wordmark()
     + chip
-    + `<h1 class="km-text km-h1" style="margin:0 0 12px;font-family:${FONT};font-size:30px;line-height:36px;font-weight:700;letter-spacing:-0.5px;color:#1A1A1A">${escapeHtml(t.h1)}</h1>`
-    + `<p class="km-body" style="margin:0 0 26px;font-size:16px;line-height:25px;color:#3A3A36">${escapeHtml(t.lead).replace('{email}', emailStrong)}</p>`
-    + '<table role="presentation" cellpadding="0" cellspacing="0" border="0" class="km-btn"><tr>'
-    + '<td align="center" bgcolor="#C9600F" style="border-radius:12px;background:#C9600F">'
-    + `<a href="${safeLink}" target="_blank" style="display:inline-block;padding:15px 30px;font-family:${FONT};font-size:17px;line-height:20px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:12px">${escapeHtml(t.cta)}</a>`
-    + '</td></tr></table>'
-    + `<p class="km-muted" style="margin:14px 0 0;font-size:14px;line-height:21px;color:#62665F">${escapeHtml(t.why)}</p>`
-    + '<div class="km-rule" style="border-top:1px solid #EEEAE4;margin:30px 0 22px;font-size:0;line-height:0">&nbsp;</div>'
+    + heading(t.h1)
+    + lead(escapeHtml(t.lead).replace('{email}', strong(email)))
+    + button(link, t.cta)
+    + note(t.why)
+    + rule(30, 22)
     + `<div class="km-muted" style="margin:0 0 14px;font-size:13px;line-height:18px;font-weight:600;color:#62665F">${escapeHtml(t.next)}</div>`
     + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${steps}</table>`
-    + '<div class="km-rule" style="border-top:1px solid #EEEAE4;margin:8px 0 18px;font-size:0;line-height:0">&nbsp;</div>'
-    + `<p class="km-muted" style="margin:0 0 6px;font-size:13px;line-height:19px;color:#62665F">${escapeHtml(t.fallback)}</p>`
-    + `<p style="margin:0 0 22px;font-size:13px;line-height:19px;word-break:break-all"><a href="${safeLink}" target="_blank" class="km-link" style="color:#9A470A;text-decoration:underline">${safeLink}</a></p>`
-    + `<p class="km-text" style="margin:0;font-size:15px;line-height:22px;font-weight:600;color:#1A1A1A">${escapeHtml(t.sign)}</p>`
-    + '</td></tr>'
-    + `<tr><td style="padding:20px 8px 0;font-family:${FONT};text-align:center">`
-    + `<p class="km-muted" style="margin:0 0 8px;font-size:12px;line-height:18px;color:#8A867F">${escapeHtml(t.footer).replace('{email}', safeEmail)}</p>`
-    + `<p style="margin:0;font-size:12px;line-height:18px"><a href="${policyUrl}" target="_blank" class="km-link" style="color:#9A470A;text-decoration:underline">${escapeHtml(t.policy)}</a></p>`
-    + '</td></tr>'
-    + '</table>'
-    + '</td></tr></table>'
-    + '</body></html>';
+    + rule(8, 18)
+    + fallbackLink(t.fallback, link)
+    + signature(t.sign);
+
+  const html = renderShell({
+    lang,
+    subject: t.subject,
+    preheader: t.preheader,
+    cardHtml,
+    footerText: t.footer.replace('{email}', email),
+    policyLabel: t.policy,
+    extraDarkRules: roleColor ? `.km-chip{background:${mixHex(roleColor, '#1F1A15', 0.24)}!important}` : '',
+    forceDark,
+  });
 
   // Текстова версія: її показують клієнти без HTML, і з нею лист рідше
   // потрапляє в спам.
@@ -327,7 +267,7 @@ const renderVerifyEmail = ({ email, link, language, role, forceDark = false } = 
     t.sign,
     '',
     t.footer.replace('{email}', email),
-    `${t.policy}: ${policyUrl}`,
+    `${t.policy}: ${POLICY_URL}`,
   ].join('\n');
 
   return { subject: t.subject, preheader: t.preheader, html, text, language: lang, role: roleCode };

@@ -83,6 +83,32 @@ Firebase (на один невдалий запит до функції біль
   Адреси там немає, лише uid, мова й роль. Якщо щоразу `unavailable` —
   дивіться `Brevo responded 400/403` (відправник не підтверджений) чи `401` (ключ).
 
+## Лист зміни пароля («Забули пароль?»)
+
+Друга функція того ж модуля — `sendPasswordResetEmail` (`functions/index.js`,
+шаблон `functions/emails/passwordReset.js`, розкладка спільна — `emails/layout.js`).
+Шаблони Firebase в консолі цього проєкту заблоковані («Email template updates are
+currently unavailable»), тож стандартний лист лишався англійським і вів на
+`firebaseapp.com`. Тепер «Забули пароль?» (`LoginScreen` →
+`requestPasswordResetEmail` у `src/utils/emailVerification.js`) шле брендований
+лист, кнопка якого веде на `/auth/action?mode=resetPassword`, а `AuthActionPage`
+питає новий пароль. Не відповіла функція — стандартний лист Firebase мовою
+інтерфейсу.
+
+Функцію кличуть **без входу**, тож вона:
+- відповідає `sent` і тоді, коли акаунта з такою адресою немає (форма не мусить
+  розкривати, чи зареєстрована пошта);
+- рахує межі на адресу (`resetByEmail`, як у листа підтвердження) і на IP
+  (`resetByIp`, 30 на добу, раз на 10 с — за IP мобільного оператора сидять
+  сотні людей), і не повертає їх навіть без акаунта, інакше перебір адрес був би
+  безкоштовним;
+- до спільної стелі (`total`) доходить лише тоді, коли акаунт є.
+
+IP — остання адреса з `X-Forwarded-For` (першу може вписати сам клієнт). Скільки
+адрес у ланцюжку, пише журнал (`password reset requested`, поле `xffParts`):
+якщо там стабільно 2 без підробки, остання — це вже адреса фронтенду Google, і
+`readClientIp` треба брати передостанню.
+
 ## Що змінювати де
 
 | Що | Де |
@@ -91,4 +117,6 @@ Firebase (на один невдалий запит до функції біль
 | Адреса відправника, регіон, CORS | `functions/config.js` |
 | Регіон на боці клієнта | `VERIFICATION_FUNCTION_REGION` у `src/utils/emailVerification.js` — мусить збігатися з `functions/config.js` (стереже тест) |
 | Межа відправок | `functions/verificationQuota.js` |
+| Текст листа зміни пароля | `functions/emails/passwordReset.js` (обидві мови) |
+| Спільна розкладка листів | `functions/emails/layout.js` |
 | Сторінка після кнопки | `src/components/AuthActionPage.jsx`, рядки — у словниках усіх семи мов |

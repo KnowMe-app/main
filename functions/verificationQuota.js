@@ -42,19 +42,32 @@ const utcDay = now => new Date(now).toISOString().slice(0, 10);
  * функція — її викликає транзакція.
  * @returns {{ allowed: boolean, next: object|null, reason: string }}
  */
-const decideVerificationSend = (previous, now) => {
+const decidePersonalSend = (previous, now, { minIntervalMs = MIN_INTERVAL_MS, maxPerDay = MAX_PER_DAY } = {}) => {
   const day = utcDay(now);
   const lastAt = Number(previous && previous.lastAt) || 0;
   const count = previous && previous.day === day ? Number(previous.count) || 0 : 0;
 
-  if (lastAt && now - lastAt < MIN_INTERVAL_MS) {
+  if (lastAt && now - lastAt < minIntervalMs) {
     return { allowed: false, next: null, reason: 'too-soon' };
   }
-  if (count >= MAX_PER_DAY) {
+  if (count >= maxPerDay) {
     return { allowed: false, next: null, reason: 'daily-limit' };
   }
   return { allowed: true, next: { lastAt: now, day, count: count + 1 }, reason: '' };
 };
+
+const decideVerificationSend = (previous, now) => decidePersonalSend(previous, now);
+
+/**
+ * Межа на одну IP-адресу для листа зміни пароля. Той лист просять без входу,
+ * тож межі акаунта в нього немає: без цієї межі один скрипт обходив би межу
+ * адреси, перебираючи чужі скриньки, і за добу спалив би всю стелю на всіх.
+ * Число щедре — за одним IP мобільного оператора сидять сотні людей.
+ */
+const IP_MIN_INTERVAL_MS = 10 * 1000;
+const IP_MAX_PER_DAY = 30;
+const decideIpSend = (previous, now) =>
+  decidePersonalSend(previous, now, { minIntervalMs: IP_MIN_INTERVAL_MS, maxPerDay: IP_MAX_PER_DAY });
 
 /** Рішення для стелі на всіх: лише лічильник за добу. */
 const decideGlobalSend = (previous, now) => {
@@ -70,11 +83,17 @@ const decideGlobalSend = (previous, now) => {
 const emailQuotaKey = email =>
   crypto.createHash('sha256').update(String(email || '').trim().toLowerCase()).digest('hex');
 
+/** Ключ IP: адреса лежить хешем, як і пошта. */
+const ipQuotaKey = ip => crypto.createHash('sha256').update(`ip|${String(ip || '').trim()}`).digest('hex');
+
 module.exports = {
   GLOBAL_MAX_PER_DAY,
+  IP_MAX_PER_DAY,
   MAX_PER_DAY,
   MIN_INTERVAL_MS,
   decideGlobalSend,
+  decideIpSend,
   decideVerificationSend,
   emailQuotaKey,
+  ipQuotaKey,
 };

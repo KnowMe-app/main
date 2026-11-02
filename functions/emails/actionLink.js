@@ -1,6 +1,6 @@
 'use strict';
 
-const { APP_URL } = require('./verifyEmail');
+const { APP_URL } = require('./layout');
 
 /**
  * Посилання з листа веде на сторінку застосунку `/auth/action`, а не на сіру
@@ -26,13 +26,21 @@ const extractOobCode = generatedLink => {
   return nested ? extractOobCode(nested) : '';
 };
 
-const buildVerifyEmailActionLink = ({ oobCode, language }) => {
-  if (!oobCode) throw new Error('buildVerifyEmailActionLink: oobCode is required');
+const ACTION_MODES = Object.freeze(['verifyEmail', 'resetPassword']);
+
+const buildActionLink = ({ mode, oobCode, language }) => {
+  if (!ACTION_MODES.includes(mode)) throw new Error(`buildActionLink: unknown mode ${mode}`);
+  if (!oobCode) throw new Error('buildActionLink: oobCode is required');
   const url = new URL('/auth/action', APP_URL);
-  url.searchParams.set('mode', 'verifyEmail');
+  url.searchParams.set('mode', mode);
   url.searchParams.set('oobCode', oobCode);
   if (language) url.searchParams.set('lang', language);
   return url.toString();
 };
 
-module.exports = { buildVerifyEmailActionLink, extractOobCode };
+const buildVerifyEmailActionLink = ({ oobCode, language }) => {
+  if (!oobCode) throw new Error('buildVerifyEmailActionLink: oobCode is required');
+  return buildActionLink({ mode: 'verifyEmail', oobCode, language });
+};
+
+module.exports = { buildActionLink, buildVerifyEmailActionLink, extractOobCode };

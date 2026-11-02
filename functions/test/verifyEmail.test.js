@@ -184,3 +184,38 @@ test('ключ адреси — хеш без самої адреси, регі�
   assert.ok(!key.includes('victim'));
   assert.notEqual(key, emailQuotaKey('other@example.com'));
 });
+
+const { renderPasswordResetEmail } = require('../emails/passwordReset');
+const { buildActionLink } = require('../emails/actionLink');
+const { decideIpSend, ipQuotaKey, IP_MAX_PER_DAY } = require('../verificationQuota');
+
+test('лист зміни пароля: та сама розкладка, кнопка на resetPassword, обидві мови', () => {
+  const link = buildActionLink({ mode: 'resetPassword', oobCode: 'R1', language: 'uk' });
+  assert.equal(link, 'https://knowme.pp.ua/auth/action?mode=resetPassword&oobCode=R1&lang=uk');
+  assert.throws(() => buildActionLink({ mode: 'signIn', oobCode: 'x' }), /unknown mode/);
+
+  const uk = renderPasswordResetEmail({ email: 'a@example.com', link, language: 'uk' });
+  assert.equal(uk.subject, 'Зміна пароля в KnowMe');
+  assert.match(uk.html, /Задати новий пароль<\/a>/);
+  assert.match(uk.html, /KnowMe<span style="color:#C9600F">\.<\/span>/);
+  assert.ok(uk.html.includes('mode=resetPassword&amp;oobCode=R1'));
+  assert.ok(uk.text.includes(link));
+
+  const en = renderPasswordResetEmail({ email: 'a@example.com', link, language: 'ja' });
+  assert.equal(en.subject, 'Reset your KnowMe password');
+  assert.throws(() => renderPasswordResetEmail({ link }), /email is required/);
+});
+
+test('межа на IP щедріша за межу адреси, а ключ IP — хеш', () => {
+  const now = Date.UTC(2026, 10, 2, 12, 0, 0);
+  let state = null;
+  for (let i = 0; i < IP_MAX_PER_DAY; i += 1) {
+    const decision = decideIpSend(state, now + i * 11000);
+    assert.equal(decision.allowed, true, `send ${i + 1}`);
+    state = decision.next;
+  }
+  assert.equal(decideIpSend(state, now + IP_MAX_PER_DAY * 11000).reason, 'daily-limit');
+  assert.equal(decideIpSend({ lastAt: now, day: '2026-11-02', count: 1 }, now + 5000).reason, 'too-soon');
+  assert.match(ipQuotaKey('203.0.113.7'), /^[0-9a-f]{64}$/);
+  assert.notEqual(ipQuotaKey('203.0.113.7'), emailQuotaKey('203.0.113.7'));
+});

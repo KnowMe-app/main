@@ -1,4 +1,4 @@
-import { sendEmailVerification } from 'firebase/auth';
+import { sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth';
 
 /**
  * Лист «Підтвердіть пошту» — один вхід на весь застосунок.
@@ -23,6 +23,7 @@ import { sendEmailVerification } from 'firebase/auth';
 // Мусить збігатися з `REGION` у `functions/config.js`.
 export const VERIFICATION_FUNCTION_REGION = 'europe-west1';
 export const VERIFICATION_FUNCTION_NAME = 'sendVerificationEmail';
+export const PASSWORD_RESET_FUNCTION_NAME = 'sendPasswordResetEmail';
 const CALL_TIMEOUT_MS = 20000;
 
 // Firebase знає китайську лише з регіоном.
@@ -48,6 +49,13 @@ const tooManyRequests = () => {
   return error;
 };
 
+const callMailFunction = async (app, name, payload) => {
+  const { getFunctions, httpsCallable } = await import(/* webpackChunkName: "firebase-functions" */ 'firebase/functions');
+  const call = httpsCallable(getFunctions(app, VERIFICATION_FUNCTION_REGION), name, { timeout: CALL_TIMEOUT_MS });
+  const { data } = await call(payload);
+  return data;
+};
+
 /**
  * @param {import('firebase/auth').User} user
  * @param {{ auth: import('firebase/auth').Auth, language?: string, role?: string|string[] }} options
@@ -59,11 +67,7 @@ export const requestVerificationEmail = async (user, { auth, language, role } = 
 
   if (app) {
     try {
-      const { getFunctions, httpsCallable } = await import(/* webpackChunkName: "firebase-functions" */ 'firebase/functions');
-      const call = httpsCallable(getFunctions(app, VERIFICATION_FUNCTION_REGION), VERIFICATION_FUNCTION_NAME, {
-        timeout: CALL_TIMEOUT_MS,
-      });
-      const { data } = await call({ language: language || '', role: role || '' });
+      const data = await callMailFunction(app, VERIFICATION_FUNCTION_NAME, { language: language || '', role: role || '' });
       if (data?.status === 'sent' || data?.status === 'already-verified') {
         return { via: 'knowme', status: data.status };
       }
@@ -76,5 +80,40 @@ export const requestVerificationEmail = async (user, { auth, language, role } = 
 
   applyAuthEmailLanguage(auth, language);
   await sendEmailVerification(user);
+  return { via: 'firebase', status: 'sent' };
+};
+
+/**
+ * Лист «Зміна пароля» («Забули пароль?»). Той самий порядок, що й у листа
+ * підтвердження: спершу брендований лист функції `sendPasswordResetEmail`
+ * (кнопка веде на `/auth/action`, де `AuthActionPage` питає новий пароль), а
+ * коли вона не відповіла — стандартний лист Firebase мовою інтерфейсу.
+ *
+ * Функція відповідає `sent` і тоді, коли акаунта з такою адресою немає, — як і
+ * Firebase із захистом від перебору: форма не мусить розкривати, чи є акаунт.
+ * Межа відправок — `auth/too-many-requests`, невалідна адреса —
+ * `auth/invalid-email`, тож обробник на екрані входу лишився тим самим.
+ *
+ * @param {string} email
+ * @param {{ auth: import('firebase/auth').Auth, language?: string }} options
+ */
+export const requestPasswordResetEmail = async (email, { auth, language } = {}) => {
+  const app = auth?.app;
+  if (app) {
+    try {
+      const data = await callMailFunction(app, PASSWORD_RESET_FUNCTION_NAME, { email, language: language || '' });
+      if (data?.status === 'sent') return { via: 'knowme', status: 'sent' };
+      console.warn('[passwordReset] unexpected function response, using the Firebase email', data);
+    } catch (error) {
+      if (error?.code === 'functions/resource-exhausted') throw tooManyRequests();
+      if (error?.code === 'functions/invalid-argument') {
+        throw Object.assign(new Error('Invalid email'), { code: 'auth/invalid-email' });
+      }
+      console.warn('[passwordReset] KnowMe email failed, using the Firebase email', error?.code || error);
+    }
+  }
+
+  applyAuthEmailLanguage(auth, language);
+  await sendPasswordResetEmail(auth, email);
   return { via: 'firebase', status: 'sent' };
 };
