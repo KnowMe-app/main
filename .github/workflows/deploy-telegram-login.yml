@@ -1,0 +1,95 @@
+name: Deploy Telegram login (functions + webhook)
+
+# Розгортання входу через Telegram без комп'ютера: власниця продукту працює з
+# телефона, а `firebase deploy` і `curl setWebhook` потребують термінала.
+# Запускається лише вручну (Actions → цей workflow → Run workflow) і лише з
+# main. Робить усе, що в docs/telegram-login.md описано руками:
+#   1. кладе токен бота й новий секрет вебхука в Secret Manager;
+#   2. дає сервісному акаунту функцій право підписувати токени входу;
+#   3. розгортає telegramWebhook і completeTelegramLogin;
+#   4. реєструє вебхук у Telegram з тим самим секретом.
+# Повторний запуск безпечний: секрет вебхука міняється разом із реєстрацією.
+#
+# Потрібні секрети репозиторію:
+#   FIREBASE_SERVICE_ACCOUNT — JSON-ключ сервісного акаунта з роллю Owner
+#   TELEGRAM_BOT_TOKEN       — токен від @BotFather
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: telegram-login-deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: webringitapp
+  REGION: europe-west1
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check secrets
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          [ -n "$SA" ] || { echo "::error::Немає секрету FIREBASE_SERVICE_ACCOUNT"; exit 1; }
+          [ -n "$BOT" ] || { echo "::error::Немає секрету TELEGRAM_BOT_TOKEN"; exit 1; }
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install functions dependencies
+        run: cd functions && npm ci
+
+      - name: Store secrets in Secret Manager
+        env:
+          BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          WEBHOOK_SECRET="$(openssl rand -hex 32)"
+          echo "::add-mask::$WEBHOOK_SECRET"
+          echo "WEBHOOK_SECRET=$WEBHOOK_SECRET" >> "$GITHUB_ENV"
+          printf '%s' "$BOT" | npx --yes firebase-tools@latest functions:secrets:set TELEGRAM_BOT_TOKEN --data-file - --project "$PROJECT_ID" --non-interactive --force
+          printf '%s' "$WEBHOOK_SECRET" | npx --yes firebase-tools@latest functions:secrets:set TELEGRAM_WEBHOOK_SECRET --data-file - --project "$PROJECT_ID" --non-interactive --force
+
+      - name: Allow functions to sign login tokens
+        run: |
+          NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+          SA="${NUMBER}-compute@developer.gserviceaccount.com"
+          gcloud iam service-accounts add-iam-policy-binding "$SA" \
+            --project "$PROJECT_ID" \
+            --member "serviceAccount:${SA}" \
+            --role roles/iam.serviceAccountTokenCreator \
+            --quiet >/dev/null
+
+      - name: Deploy functions
+        run: |
+          npx --yes firebase-tools@latest deploy \
+            --only functions:telegramWebhook,functions:completeTelegramLogin \
+            --project "$PROJECT_ID" --non-interactive --force
+
+      - name: Register Telegram webhook
+        env:
+          BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          URL="$(gcloud functions describe telegramWebhook --region "$REGION" --project "$PROJECT_ID" --format='value(serviceConfig.uri)')"
+          [ -n "$URL" ] || { echo "::error::Не знайдено адреси telegramWebhook"; exit 1; }
+          RESPONSE="$(curl -sS "https://api.telegram.org/bot${BOT}/setWebhook" \
+            --data-urlencode "url=${URL}" \
+            --data-urlencode "secret_token=${WEBHOOK_SECRET}" \
+            --data-urlencode 'allowed_updates=["message"]')"
+          echo "$RESPONSE" | grep -q '"ok":true' || { echo "::error::Telegram відмовив: $RESPONSE"; exit 1; }
+          USERNAME="$(curl -sS "https://api.telegram.org/bot${BOT}/getMe" | sed -n 's/.*"username":"\([^"]*\)".*/\1/p')"
+          echo "### Готово ✅" >> "$GITHUB_STEP_SUMMARY"
+          echo "Бот: @${USERNAME}. Змінна REACT_APP_TELEGRAM_BOT_USERNAME = \`${USERNAME}\`" >> "$GITHUB_STEP_SUMMARY"
