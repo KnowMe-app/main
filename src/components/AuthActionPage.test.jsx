@@ -89,11 +89,22 @@ describe('AuthActionPage', () => {
 
   it('використаний код поверх підтвердженої пошти — «вже підтверджено», а не помилка', async () => {
     mockAuth.currentUser = { email: 'a@example.com', emailVerified: true, reload: jest.fn(() => Promise.resolve()) };
-    firebaseAuth.checkActionCode.mockRejectedValue(expiredError());
+    firebaseAuth.checkActionCode.mockResolvedValue({ data: { email: 'A@example.com' } });
+    firebaseAuth.applyActionCode.mockRejectedValue(expiredError());
 
     renderAt('/auth/action?mode=verifyEmail&oobCode=used');
 
     expect(await screen.findByText('Пошту вже підтверджено')).toBeTruthy();
+  });
+
+  it('прострочене посилання чужої пошти не стає успіхом підтвердженого акаунта цього браузера', async () => {
+    mockAuth.currentUser = { email: 'a@example.com', emailVerified: true, reload: jest.fn(() => Promise.resolve()) };
+    firebaseAuth.checkActionCode.mockRejectedValue(expiredError());
+
+    renderAt('/auth/action?mode=verifyEmail&oobCode=foreign');
+
+    expect(await screen.findByText('Посилання вже не діє')).toBeTruthy();
+    expect(screen.queryByText('Пошту вже підтверджено')).toBeNull();
   });
 
   it('застаріле посилання: той, хто увійшов, шле новий лист звідси ж', async () => {

@@ -73,18 +73,26 @@ const reloadSignedInUser = async () => {
 };
 
 const verifyEmailAction = async oobCode => {
+  // «Уже підтверджено» кажемо лише про акаунт, на який веде саме це посилання:
+  // увімкнений `emailVerified` іншого акаунта цього браузера про код не каже
+  // нічого, і прострочене посилання чужої пошти виглядало б успіхом.
+  let targetEmail = '';
   try {
     const info = await checkActionCode(auth, oobCode);
+    targetEmail = info?.data?.email || '';
     await applyActionCode(auth, oobCode);
     const user = await reloadSignedInUser();
-    return { status: 'verified', email: info?.data?.email || user?.email || '', signedIn: Boolean(user) };
+    return { status: 'verified', email: targetEmail || user?.email || '', signedIn: Boolean(user) };
   } catch (error) {
     const user = await reloadSignedInUser();
-    if (user?.emailVerified) {
+    const sameAccount = Boolean(
+      targetEmail && user?.email && user.email.toLowerCase() === targetEmail.toLowerCase(),
+    );
+    if (sameAccount && user.emailVerified) {
       return { status: 'alreadyVerified', email: user.email || '', signedIn: true };
     }
     if (EXPIRED_CODES.has(error?.code)) {
-      return { status: 'expired', email: user?.email || '', signedIn: Boolean(user) };
+      return { status: 'expired', email: targetEmail || '', signedIn: Boolean(user) };
     }
     return { status: 'failed', signedIn: Boolean(user), code: error?.code || '' };
   }

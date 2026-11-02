@@ -19,6 +19,7 @@
  */
 
 const { onCall, HttpsError } = require('firebase-functions/https');
+const { onValueCreated } = require('firebase-functions/database');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const { initializeApp } = require('firebase-admin/app');
@@ -44,6 +45,8 @@ initializeApp();
 const BREVO_API_KEY = defineSecret('BREVO_API_KEY');
 
 const QUOTA_ROOT = 'emailVerificationSends';
+// Заявки на лист зміни пароля (адмін-SDK; правилами вузол закритий, як і корінь).
+const RESET_OUTBOX = 'emailOutbox/passwordReset';
 
 /**
  * Займає місце в одній межі відправок (`verificationQuota.js`). Повертає
@@ -243,20 +246,54 @@ exports.sendPasswordResetEmail = onCall(
       return respond(error);
     }
 
-    let releaseGlobal;
     try {
-      releaseGlobal = await claimSteps([[`${QUOTA_ROOT}/resetTotal`, decideResetGlobalSend, 'unavailable']], now, { kind: 'reset' });
+      await claimSteps([[`${QUOTA_ROOT}/resetTotal`, decideResetGlobalSend, 'unavailable']], now, { kind: 'reset' });
     } catch (error) {
       return respond(error);
     }
+
+    // Чи є акаунт, тут не питаємо зовсім: і посилання, і Brevo — робота лише
+    // для наявного акаунта, і поки відповідь чекала на неї, повільний Brevo
+    // (поріг часу лише нижня межа) казав про акаунт затримкою. Тепер обидві
+    // гілки однаково кладуть заявку в чергу, а лист шле `deliverPasswordResetEmail`.
+    try {
+      await getDatabase().ref(RESET_OUTBOX).push({ email, language, at: now });
+    } catch (error) {
+      logger.error('password reset enqueue failed', { error: error.message });
+      return respond(new HttpsError('unavailable', 'Password reset email could not be sent.'));
+    }
+    return respond({ status: 'sent' });
+  },
+);
+
+/**
+ * Черга листів зміни пароля: заявку кладе `sendPasswordResetEmail`, а тут —
+ * уже поза відповіддю гостеві — перевіряється акаунт і йде лист. Заявка
+ * знімається одразу (вона несе адресу). Збій тут до застосунку не доходить,
+ * тож стандартного листа Firebase на нього не буде — це ціна того, що
+ * відповідь не залежить від акаунта; місце в денній стелі такий збій займає.
+ */
+exports.deliverPasswordResetEmail = onValueCreated(
+  {
+    ref: `${RESET_OUTBOX}/{requestId}`,
+    region: REGION,
+    secrets: [BREVO_API_KEY],
+    memory: '256MiB',
+    timeoutSeconds: 60,
+    maxInstances: 5,
+  },
+  async event => {
+    const { email, language } = event.data.val() || {};
+    await event.data.ref.remove().catch(error => logger.warn('reset outbox cleanup failed', { error: error.message }));
+    if (!email) return;
 
     let generated;
     try {
       generated = await getAuth().generatePasswordResetLink(email);
     } catch (error) {
-      if (NO_ACCOUNT_CODES.has(error.code)) return respond({ status: 'sent' });
+      if (NO_ACCOUNT_CODES.has(error.code)) return;
       logger.error('password reset link failed', { error: error.message, code: error.code });
-      return respond(new HttpsError('unavailable', 'Password reset email could not be sent.'));
+      return;
     }
 
     try {
@@ -264,7 +301,6 @@ exports.sendPasswordResetEmail = onCall(
       if (!oobCode) throw new Error('generated link has no oobCode');
       const link = buildActionLink({ mode: 'resetPassword', oobCode, language });
       const message = renderPasswordResetEmail({ email, link, language });
-
       const sent = await sendWithBrevo({
         apiKey: BREVO_API_KEY.value(),
         sender: MAIL_SENDER,
@@ -275,13 +311,8 @@ exports.sendPasswordResetEmail = onCall(
         tags: ['reset_password', `lang_${message.language}`],
       });
       logger.info('password reset email sent', { language: message.language, id: sent && sent.messageId });
-      return respond({ status: 'sent' });
     } catch (error) {
-      // Лист, який не пішов, денної стелі не їсть: застосунок зараз пошле
-      // стандартний лист Firebase, а наш бюджет лишиться наступним.
-      await releaseGlobal();
       logger.error('password reset email failed', { error: error.message, status: error.status });
-      return respond(new HttpsError('unavailable', 'Password reset email could not be sent.'));
     }
   },
 );
