@@ -264,7 +264,19 @@ const completeTelegramLogin = async (nonce, codeInput, { db, now }) => {
   let claimed = null;
   let attemptsLeft = 0;
   await db.transaction(path, current => {
-    if (!current || current.status !== 'ready') {
+    // Обробник кличуть кілька разів, тож підсумок рахується щоразу заново.
+    claimed = null;
+    attemptsLeft = 0;
+    if (current === null) {
+      // Перший виклик бачить локальний кеш, а у функції він порожній, хоч
+      // запис щойно прочитано. `undefined` тут скасовував транзакцію без
+      // сервера, і правильний код відповідав «час минув» — на кожному вході.
+      // `null` у `null` сервер з наявним записом відхиляє й кличе обробник
+      // уже з даними; зниклий запис так і лишається зниклим.
+      outcome = 'gone';
+      return null;
+    }
+    if (current.status !== 'ready') {
       outcome = 'gone';
       return undefined;
     }
