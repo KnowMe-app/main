@@ -29,7 +29,14 @@ const { ALLOWED_ORIGINS, MAIL_SENDER, REGION } = require('./config');
 const { normalizeEmailLanguage, normalizeEmailRole, renderVerifyEmail } = require('./emails/verifyEmail');
 const { renderPasswordResetEmail } = require('./emails/passwordReset');
 const { buildActionLink, buildVerifyEmailActionLink, extractOobCode } = require('./emails/actionLink');
-const { decideGlobalSend, decideIpSend, decideVerificationSend, emailQuotaKey, ipQuotaKey } = require('./verificationQuota');
+const {
+  decideGlobalSend,
+  decideIpSend,
+  decideResetGlobalSend,
+  decideVerificationSend,
+  emailQuotaKey,
+  ipQuotaKey,
+} = require('./verificationQuota');
 const { sendWithBrevo } = require('./mail/brevo');
 
 initializeApp();
@@ -177,9 +184,10 @@ const NO_ACCOUNT_CODES = new Set(['auth/user-not-found', 'auth/email-not-found']
  * правила, і кожне закриває свою дірку:
  *
  * - **відповідь не каже, чи є акаунт.** Без акаунта — `sent`, як і з ним; межі
- *   (зокрема спільна стеля) займаються **до** перевірки акаунта, а відповідь
- *   триває щонайменше `RESET_MIN_RESPONSE_MS` — інакше різниця в часі (лист
- *   іде лише тоді, коли акаунт є) відповідала б на те саме питання;
+ *   (зокрема денна стеля листів зміни пароля — своя, окремо від листів
+ *   підтвердження) займаються **до** перевірки акаунта, а відповідь триває
+ *   щонайменше `RESET_MIN_RESPONSE_MS` — інакше різниця в часі (лист іде лише
+ *   тоді, коли акаунт є) відповідала б на те саме питання;
  * - **жодна межа не лишає людину без листа.** Вичерпана межа — це
  *   `unavailable`, а не відмова: застосунок тоді шле стандартний лист Firebase
  *   (з його власними межами). Поки межа адреси відповідала
@@ -193,7 +201,9 @@ const NO_ACCOUNT_CODES = new Set(['auth/user-not-found', 'auth/email-not-found']
  * Кнопка веде на `/auth/action?mode=resetPassword`, де `AuthActionPage` питає
  * новий пароль.
  */
-const RESET_MIN_RESPONSE_MS = 1500;
+// Поріг із запасом над звичайною відправкою через Brevo (~0,5–1 с): гілка з
+// листом і гілка без акаунта мусять закінчуватись в один і той самий момент.
+const RESET_MIN_RESPONSE_MS = 2500;
 const waitUntil = deadline => new Promise(resolve => setTimeout(resolve, Math.max(0, deadline - Date.now())));
 
 exports.sendPasswordResetEmail = onCall(
@@ -228,8 +238,14 @@ exports.sendPasswordResetEmail = onCall(
       await claimSteps([
         ...(ip ? [[`${QUOTA_ROOT}/resetByIp/${ipQuotaKey(ip)}`, decideIpSend, 'unavailable']] : []),
         [`${QUOTA_ROOT}/resetByEmail/${emailQuotaKey(email)}`, decideVerificationSend, 'unavailable'],
-        [`${QUOTA_ROOT}/total`, decideGlobalSend, 'unavailable'],
       ], now, { kind: 'reset' });
+    } catch (error) {
+      return respond(error);
+    }
+
+    let releaseGlobal;
+    try {
+      releaseGlobal = await claimSteps([[`${QUOTA_ROOT}/resetTotal`, decideResetGlobalSend, 'unavailable']], now, { kind: 'reset' });
     } catch (error) {
       return respond(error);
     }
@@ -261,6 +277,9 @@ exports.sendPasswordResetEmail = onCall(
       logger.info('password reset email sent', { language: message.language, id: sent && sent.messageId });
       return respond({ status: 'sent' });
     } catch (error) {
+      // Лист, який не пішов, денної стелі не їсть: застосунок зараз пошле
+      // стандартний лист Firebase, а наш бюджет лишиться наступним.
+      await releaseGlobal();
       logger.error('password reset email failed', { error: error.message, status: error.status });
       return respond(new HttpsError('unavailable', 'Password reset email could not be sent.'));
     }

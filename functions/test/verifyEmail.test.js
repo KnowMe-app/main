@@ -219,3 +219,17 @@ test('межа на IP щедріша за межу адреси, а ключ IP
   assert.match(ipQuotaKey('203.0.113.7'), /^[0-9a-f]{64}$/);
   assert.notEqual(ipQuotaKey('203.0.113.7'), emailQuotaKey('203.0.113.7'));
 });
+
+test('стелі поділені: зміна пароля має власну й разом вони під тарифом Brevo', () => {
+  const { GLOBAL_MAX_PER_DAY, RESET_GLOBAL_MAX_PER_DAY, decideResetGlobalSend, ipBucket } = require('../verificationQuota');
+  assert.ok(GLOBAL_MAX_PER_DAY + RESET_GLOBAL_MAX_PER_DAY < 300);
+  const now = Date.UTC(2026, 10, 2, 12, 0, 0);
+  const full = { day: '2026-11-02', count: RESET_GLOBAL_MAX_PER_DAY };
+  assert.equal(decideResetGlobalSend(full, now).allowed, false);
+  assert.equal(decideResetGlobalSend({ day: '2026-11-02', count: RESET_GLOBAL_MAX_PER_DAY - 1 }, now).allowed, true);
+
+  // IPv6 — підмережею /64, IPv4 — як є.
+  assert.equal(ipBucket('2001:db8:1:2:aaaa:bbbb:cccc:dddd'), ipBucket('2001:db8:1:2::1'));
+  assert.notEqual(ipBucket('2001:db8:1:2::1'), ipBucket('2001:db8:1:3::1'));
+  assert.equal(ipBucket('203.0.113.7'), '203.0.113.7');
+});

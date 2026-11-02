@@ -31,9 +31,13 @@ const crypto = require('crypto');
  */
 const MIN_INTERVAL_MS = 60 * 1000;
 const MAX_PER_DAY = 5;
-// Під денну межу тарифу поштового сервісу (Brevo free — 300 на добу, із
-// запасом на ручні листи); більший тариф — більше число.
-const GLOBAL_MAX_PER_DAY = 250;
+// Під денну межу тарифу поштового сервісу (Brevo free — 300 на добу), і
+// вона поділена між листами: підтвердження — 200, зміна пароля — 80, разом
+// 280 із запасом. Окремий лічильник для зміни пароля — бо його кличуть без
+// входу, і перебір вигаданих адрес інакше з'їдав би листи підтвердження
+// новим людям. Більший тариф — більші числа.
+const GLOBAL_MAX_PER_DAY = 200;
+const RESET_GLOBAL_MAX_PER_DAY = 80;
 
 const utcDay = now => new Date(now).toISOString().slice(0, 10);
 
@@ -70,10 +74,10 @@ const decideIpSend = (previous, now) =>
   decidePersonalSend(previous, now, { minIntervalMs: IP_MIN_INTERVAL_MS, maxPerDay: IP_MAX_PER_DAY });
 
 /** Рішення для стелі на всіх: лише лічильник за добу. */
-const decideGlobalSend = (previous, now) => {
+const decideGlobalSend = (previous, now, maxPerDay = GLOBAL_MAX_PER_DAY) => {
   const day = utcDay(now);
   const count = previous && previous.day === day ? Number(previous.count) || 0 : 0;
-  if (count >= GLOBAL_MAX_PER_DAY) {
+  if (count >= maxPerDay) {
     return { allowed: false, next: null, reason: 'global-limit' };
   }
   return { allowed: true, next: { lastAt: now, day, count: count + 1 }, reason: '' };
@@ -83,17 +87,33 @@ const decideGlobalSend = (previous, now) => {
 const emailQuotaKey = email =>
   crypto.createHash('sha256').update(String(email || '').trim().toLowerCase()).digest('hex');
 
-/** Ключ IP: адреса лежить хешем, як і пошта. */
-const ipQuotaKey = ip => crypto.createHash('sha256').update(`ip|${String(ip || '').trim()}`).digest('hex');
+const decideResetGlobalSend = (previous, now) => decideGlobalSend(previous, now, RESET_GLOBAL_MAX_PER_DAY);
+
+/**
+ * Ключ IP: адреса лежить хешем, як і пошта. IPv6 рахується підмережею /64 —
+ * провайдер видає її одному абонентові цілком, і по адресі на запит межу
+ * інакше обходили б, не змінюючи пристрою.
+ */
+const ipBucket = ip => {
+  const value = String(ip || '').trim().toLowerCase();
+  if (!value.includes(':')) return value;
+  const [head] = value.split('::');
+  const groups = value.includes('::') ? head.split(':').filter(Boolean) : value.split(':');
+  return `${groups.slice(0, 4).concat(['0', '0', '0', '0']).slice(0, 4).join(':')}::/64`;
+};
+const ipQuotaKey = ip => crypto.createHash('sha256').update(`ip|${ipBucket(ip)}`).digest('hex');
 
 module.exports = {
   GLOBAL_MAX_PER_DAY,
   IP_MAX_PER_DAY,
+  RESET_GLOBAL_MAX_PER_DAY,
   MAX_PER_DAY,
   MIN_INTERVAL_MS,
   decideGlobalSend,
   decideIpSend,
+  decideResetGlobalSend,
   decideVerificationSend,
   emailQuotaKey,
+  ipBucket,
   ipQuotaKey,
 };
