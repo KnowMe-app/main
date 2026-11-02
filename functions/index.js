@@ -7,7 +7,7 @@
  * (лише тема, відправник і адреса для відповіді), і людина отримувала сірий
  * англомовний рядок з довгим посиланням на `firebaseapp.com`. Тепер Firebase
  * лише видає одноразовий код (`generateEmailVerificationLink`), а лист —
- * шаблон KnowMe (`emails/verifyEmail.js`) — іде через поштовий сервіс від
+ * шаблон KnowMe (`emails/verifyEmail.js`) — іде через поштовий сервіс (Brevo) від
  * імені `knowme.pp.ua`, і кнопка веде на сторінку застосунку `/auth/action`.
  *
  * Застосунок кличе функцію сам (`src/utils/emailVerification.js`), а коли вона
@@ -24,15 +24,15 @@ const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getDatabase } = require('firebase-admin/database');
 
-const { ALLOWED_ORIGINS, MAIL_FROM, REGION } = require('./config');
+const { ALLOWED_ORIGINS, MAIL_SENDER, REGION } = require('./config');
 const { normalizeEmailLanguage, normalizeEmailRole, renderVerifyEmail } = require('./emails/verifyEmail');
 const { buildVerifyEmailActionLink, extractOobCode } = require('./emails/actionLink');
 const { decideGlobalSend, decideVerificationSend, emailQuotaKey } = require('./verificationQuota');
-const { sendWithResend } = require('./mail/resend');
+const { sendWithBrevo } = require('./mail/brevo');
 
 initializeApp();
 
-const RESEND_API_KEY = defineSecret('RESEND_API_KEY');
+const BREVO_API_KEY = defineSecret('BREVO_API_KEY');
 
 const QUOTA_ROOT = 'emailVerificationSends';
 
@@ -100,7 +100,7 @@ exports.sendVerificationEmail = onCall(
   {
     region: REGION,
     cors: ALLOWED_ORIGINS,
-    secrets: [RESEND_API_KEY],
+    secrets: [BREVO_API_KEY],
     memory: '256MiB',
     timeoutSeconds: 30,
     maxInstances: 5,
@@ -128,26 +128,22 @@ exports.sendVerificationEmail = onCall(
       const link = buildVerifyEmailActionLink({ oobCode, language });
       const message = renderVerifyEmail({ email: user.email, link, language, role });
 
-      const sent = await sendWithResend({
-        apiKey: RESEND_API_KEY.value(),
-        from: MAIL_FROM,
+      const sent = await sendWithBrevo({
+        apiKey: BREVO_API_KEY.value(),
+        sender: MAIL_SENDER,
         to: user.email,
         subject: message.subject,
         html: message.html,
         text: message.text,
-        idempotencyKey: `verify-${uid}-${now}`,
-        tags: [
-          { name: 'category', value: 'verify_email' },
-          { name: 'language', value: message.language },
-        ],
+        tags: ['verify_email', `lang_${message.language}`],
       });
 
       // Адресу в журнал не пишемо: uid досить, щоб знайти людину.
-      logger.info('verification email sent', { uid, language: message.language, role: message.role, id: sent && sent.id });
+      logger.info('verification email sent', { uid, language: message.language, role: message.role, id: sent && sent.messageId });
       return { status: 'sent' };
     } catch (error) {
       await releaseSlots();
-      // Повідомлення помилки адреси не несе (`mail/resend.js`), лише статус і назву.
+      // Повідомлення помилки адреси не несе (`mail/brevo.js`), лише статус і назву.
       logger.error('verification email failed', { uid, error: error.message, status: error.status });
       throw new HttpsError('unavailable', 'Verification email could not be sent.');
     }

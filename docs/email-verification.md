@@ -19,7 +19,7 @@ functions/index.js ── sendVerificationEmail (Cloud Functions 2nd gen)
         │    (RTDB emailVerificationSends/{byUid,byEmail,total}, адреса — хешем)
         │  • Admin SDK: generateEmailVerificationLink → лише oobCode
         │  • шаблон functions/emails/verifyEmail.js (uk/en, плашка ролі)
-        │  • відправка: Resend від KnowMe <hello@knowme.pp.ua>
+        │  • відправка: Brevo від KnowMe <hello@knowme.pp.ua>
         ▼
 кнопка в листі → https://knowme.pp.ua/auth/action?mode=verifyEmail&oobCode=…&lang=uk
         │
@@ -35,20 +35,23 @@ Firebase (на один невдалий запит до функції біль
 шлемо, а відповідаємо `auth/too-many-requests`, як Firebase на надто часті листи.
 Межа адреси окремо від акаунта навмисно: акаунт на чужу адресу можна видалити й
 завести знову з новим uid. Стеля на всіх (`GLOBAL_MAX_PER_DAY`, під денний ліміт
-тарифу Resend) відповідає `unavailable` — і застосунок шле стандартний лист Firebase.
+тарифу Brevo: 300 на добу безкоштовно, стеля — 250) відповідає `unavailable` — і застосунок шле стандартний лист Firebase.
 Лист, який не пішов (сервіс відмовив), місця в межах повертає. У журнал функції
-адреса не потрапляє: з відмови Resend лишаються статус і назва помилки.
+адреса не потрапляє: з відмови Brevo лишаються статус і код помилки.
 
 ## Що зробити руками, один раз
 
 1. **План Blaze** на проєкті `webringitapp` — без нього Cloud Functions не деплояться.
-2. **Resend** (https://resend.com): додати домен `knowme.pp.ua` і внести в DNS у
-   реєстратора записи, які він покаже (SPF, DKIM; DMARC — бажано). Поки домен не
-   підтверджено, Resend відповідає 403, і застосунок шле стандартний лист.
-3. **Ключ Resend — секретом Firebase**, не в код і не в `.env`:
+2. **Brevo** (https://app.brevo.com): підтвердити телефон акаунта (без цього
+   Brevo не шле нічого), далі Senders, Domains & Dedicated IPs → Domains →
+   додати `knowme.pp.ua` і внести в DNS у реєстратора записи, які він покаже
+   (Brevo code, DKIM, DMARC). Домен Resend не прийняв — сервіс тому й змінено.
+   Поки домен не підтверджено, Brevo відмовляє, і застосунок шле стандартний лист.
+   Ключ — SMTP & API → API keys (`xkeysib-…`).
+3. **Ключ Brevo — секретом Firebase**, не в код і не в `.env`:
    ```bash
    cd functions && npm ci
-   npx firebase-tools functions:secrets:set RESEND_API_KEY --project webringitapp
+   npx firebase-tools functions:secrets:set BREVO_API_KEY --project webringitapp
    ```
 4. **Деплой функції** (CI її не викочує, як і правила бази):
    ```bash
@@ -73,7 +76,7 @@ Firebase (на один невдалий запит до функції біль
   `knowme.pp.ua/auth/action` з «Пошту підтверджено».
 - Журнал функції: `npx firebase-tools functions:log --only sendVerificationEmail`.
   Адреси там немає, лише uid, мова й роль. Якщо щоразу `unavailable` —
-  дивіться `Resend responded 403` (домен не підтверджено) чи `401` (ключ).
+  дивіться `Brevo responded 400/403` (відправник не підтверджений) чи `401` (ключ).
 
 ## Що змінювати де
 

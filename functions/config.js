@@ -9,11 +9,11 @@
  *
  * Адреса відправника — на домені застосунку: його треба підтвердити в
  * поштовому сервісі (записи DNS у реєстратора `knowme.pp.ua`). Ключ сервісу —
- * секрет Firebase `RESEND_API_KEY`, у коді його немає.
+ * секрет Firebase `BREVO_API_KEY`, у коді його немає.
  */
 module.exports = Object.freeze({
   REGION: 'europe-west1',
-  MAIL_FROM: 'KnowMe <hello@knowme.pp.ua>',
+  MAIL_SENDER: Object.freeze({ name: 'KnowMe', email: 'hello@knowme.pp.ua' }),
   ALLOWED_ORIGINS: [
     'https://knowme.pp.ua',
     'https://www.knowme.pp.ua',

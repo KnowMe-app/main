@@ -181,7 +181,7 @@ GitHub кладе туди з налаштувань Pages, зник би з п�
 
 **Cloud Functions CI теж не викочує** (`functions/`, поки одна — лист підтвердження
 пошти): `npx firebase-tools deploy --only functions`, план Blaze, секрет
-`RESEND_API_KEY`, домен у Resend — `docs/email-verification.md`. Поки функцію не
+`BREVO_API_KEY`, домен у Brevo — `docs/email-verification.md`. Поки функцію не
 розгорнуто, застосунок шле стандартний лист Firebase, тож реєстрація від деплою не
 залежить.
 

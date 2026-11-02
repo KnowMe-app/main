@@ -17,7 +17,7 @@ const {
   decideVerificationSend,
   emailQuotaKey,
 } = require('../verificationQuota');
-const { sendWithResend } = require('../mail/resend');
+const { sendWithBrevo } = require('../mail/brevo');
 
 const LINK = 'https://knowme.pp.ua/auth/action?mode=verifyEmail&oobCode=abc123&lang=uk';
 
@@ -119,47 +119,50 @@ test('межа відправок: раз на хвилину й п’ять н�
   assert.equal(nextDay.next.count, 1);
 });
 
-test('Resend: запит з ключем, відмова сервісу — помилка зі статусом', async () => {
+test('Brevo: запит з ключем, відмова сервісу — помилка зі статусом', async () => {
   const calls = [];
   const okFetch = async (url, init) => {
     calls.push({ url, init });
-    return { ok: true, json: async () => ({ id: 'email_1' }) };
+    return { ok: true, json: async () => ({ messageId: '<m1@smtp-relay.mailin.fr>' }) };
   };
-  const result = await sendWithResend({
+  const result = await sendWithBrevo({
     apiKey: 'test-key',
-    from: 'KnowMe <hello@knowme.pp.ua>',
+    sender: { name: 'KnowMe', email: 'hello@knowme.pp.ua' },
     to: 'a@example.com',
     subject: 'S',
     html: '<p>h</p>',
     text: 't',
-    idempotencyKey: 'verify-1',
+    tags: ['verify_email'],
     fetchImpl: okFetch,
   });
-  assert.deepEqual(result, { id: 'email_1' });
-  assert.equal(calls[0].url, 'https://api.resend.com/emails');
-  assert.equal(calls[0].init.headers.Authorization, 'Bearer test-key');
-  assert.equal(calls[0].init.headers['Idempotency-Key'], 'verify-1');
-  assert.deepEqual(JSON.parse(calls[0].init.body).to, ['a@example.com']);
+  assert.deepEqual(result, { messageId: '<m1@smtp-relay.mailin.fr>' });
+  assert.equal(calls[0].url, 'https://api.brevo.com/v3/smtp/email');
+  assert.equal(calls[0].init.headers['api-key'], 'test-key');
+  const body = JSON.parse(calls[0].init.body);
+  assert.deepEqual(body.to, [{ email: 'a@example.com' }]);
+  assert.deepEqual(body.sender, { name: 'KnowMe', email: 'hello@knowme.pp.ua' });
+  assert.equal(body.htmlContent, '<p>h</p>');
+  assert.equal(body.textContent, 't');
 
-  // Resend повторює у відмові поля запиту, зокрема адресу. У повідомлення
+  // Сервіс повторює у відмові поля запиту, зокрема адресу. У повідомлення
   // помилки (а з ним — у журнал функції) вона не мусить потрапити.
   const failingFetch = async () => ({
     ok: false,
-    status: 422,
-    json: async () => ({ name: 'validation_error', message: 'Invalid `to` field: victim@example.com' }),
+    status: 400,
+    json: async () => ({ code: 'invalid_parameter', message: 'email is not valid: victim@example.com' }),
   });
   await assert.rejects(
-    sendWithResend({ apiKey: 'k', from: 'f', to: 'victim@example.com', subject: 's', html: 'h', text: 't', fetchImpl: failingFetch }),
-    error => error.status === 422
-      && error.message === 'Resend responded 422 (validation_error)'
+    sendWithBrevo({ apiKey: 'k', sender: {}, to: 'victim@example.com', subject: 's', html: 'h', text: 't', fetchImpl: failingFetch }),
+    error => error.status === 400
+      && error.message === 'Brevo responded 400 (invalid_parameter)'
       && !error.message.includes('victim@example.com'),
   );
   const unreadableFetch = async () => ({ ok: false, status: 500, json: async () => { throw new Error('not json'); } });
   await assert.rejects(
-    sendWithResend({ apiKey: 'k', from: 'f', to: 't', subject: 's', html: 'h', text: 't', fetchImpl: unreadableFetch }),
-    error => error.message === 'Resend responded 500',
+    sendWithBrevo({ apiKey: 'k', sender: {}, to: 't', subject: 's', html: 'h', text: 't', fetchImpl: unreadableFetch }),
+    error => error.message === 'Brevo responded 500',
   );
-  await assert.rejects(sendWithResend({ from: 'f', to: 't' }), /RESEND_API_KEY/);
+  await assert.rejects(sendWithBrevo({ sender: {}, to: 't' }), /BREVO_API_KEY/);
 });
 
 test('стеля на всіх: лічильник за добу, нова доба — з нуля', () => {

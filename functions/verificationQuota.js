@@ -31,8 +31,9 @@ const crypto = require('crypto');
  */
 const MIN_INTERVAL_MS = 60 * 1000;
 const MAX_PER_DAY = 5;
-// Під денну межу тарифу поштового сервісу; більший тариф — більше число.
-const GLOBAL_MAX_PER_DAY = 100;
+// Під денну межу тарифу поштового сервісу (Brevo free — 300 на добу, із
+// запасом на ручні листи); більший тариф — більше число.
+const GLOBAL_MAX_PER_DAY = 250;
 
 const utcDay = now => new Date(now).toISOString().slice(0, 10);
 
