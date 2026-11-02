@@ -103,7 +103,7 @@ exports.sendVerificationEmail = onCall(
     secrets: [BREVO_API_KEY],
     memory: '256MiB',
     timeoutSeconds: 30,
-    maxInstances: 5,
+    maxInstances: 2,
   },
   async request => {
     const uid = request.auth && request.auth.uid;
