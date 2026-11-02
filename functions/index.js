@@ -173,18 +173,29 @@ const readClientIp = rawRequest => {
 const NO_ACCOUNT_CODES = new Set(['auth/user-not-found', 'auth/email-not-found']);
 
 /**
- * Лист «Зміна пароля». Його просять **без входу** («Забули пароль?»), тож:
+ * Лист «Зміна пароля». Його просять **без входу** («Забули пароль?»), тож три
+ * правила, і кожне закриває свою дірку:
  *
- * - відповідь однакова, чи є акаунт з такою адресою, чи ні (`sent`): інакше
- *   функція стала б перевіркою «чи зареєстрована ця пошта в KnowMe»;
- * - межі — на адресу (як у листа підтвердження) і на IP, бо межі акаунта тут
- *   немає; до стелі на всіх запит доходить лише тоді, коли акаунт є, тож
- *   перебір вигаданих адрес лист не надсилає й денної стелі не їсть.
+ * - **відповідь не каже, чи є акаунт.** Без акаунта — `sent`, як і з ним; межі
+ *   (зокрема спільна стеля) займаються **до** перевірки акаунта, а відповідь
+ *   триває щонайменше `RESET_MIN_RESPONSE_MS` — інакше різниця в часі (лист
+ *   іде лише тоді, коли акаунт є) відповідала б на те саме питання;
+ * - **жодна межа не лишає людину без листа.** Вичерпана межа — це
+ *   `unavailable`, а не відмова: застосунок тоді шле стандартний лист Firebase
+ *   (з його власними межами). Поки межа адреси відповідала
+ *   `resource-exhausted`, будь-хто міг п'ятьма запитами на добу заблокувати
+ *   чуже відновлення пароля; межа IP так само могла б зачепити всіх за одним
+ *   NAT чи за адресою фронтенду;
+ * - межі (адреса, IP, усі разом) стережуть не людину, а **наш** лист: бюджет
+ *   Brevo і репутацію домену `knowme.pp.ua`. Тому їх не повертаємо й без
+ *   акаунта — перебір адрес не мусить бути безкоштовним.
  *
  * Кнопка веде на `/auth/action?mode=resetPassword`, де `AuthActionPage` питає
- * новий пароль. Відмова сервісу — `unavailable`, і застосунок шле стандартний
- * лист Firebase (`src/utils/emailVerification.js`).
+ * новий пароль.
  */
+const RESET_MIN_RESPONSE_MS = 1500;
+const waitUntil = deadline => new Promise(resolve => setTimeout(resolve, Math.max(0, deadline - Date.now())));
+
 exports.sendPasswordResetEmail = onCall(
   {
     region: REGION,
@@ -195,6 +206,7 @@ exports.sendPasswordResetEmail = onCall(
     maxInstances: 5,
   },
   async request => {
+    const startedAt = Date.now();
     const data = request.data || {};
     const email = String(data.email || '').trim().toLowerCase();
     if (!email || email.length > 254 || !EMAIL_PATTERN.test(email)) {
@@ -203,26 +215,33 @@ exports.sendPasswordResetEmail = onCall(
     const language = normalizeEmailLanguage(data.language);
     const now = Date.now();
     const { ip, xffParts } = readClientIp(request.rawRequest);
-    logger.info('password reset requested', { language, xffParts });
+    logger.info('password reset requested', { language, xffParts, hasIp: Boolean(ip) });
 
-    const personalSteps = [
-      ...(ip ? [[`${QUOTA_ROOT}/resetByIp/${ipQuotaKey(ip)}`, decideIpSend, 'resource-exhausted']] : []),
-      [`${QUOTA_ROOT}/resetByEmail/${emailQuotaKey(email)}`, decideVerificationSend, 'resource-exhausted'],
-    ];
-    // Місця в особистих межах не повертаються, навіть коли акаунта немає:
-    // інакше перебір чужих адрес нічого б не коштував.
-    await claimSteps(personalSteps, now, { kind: 'reset' });
+    // Однаковий кінець для будь-якої гілки: не раніше за поріг часу.
+    const respond = async result => {
+      await waitUntil(startedAt + RESET_MIN_RESPONSE_MS);
+      if (result instanceof Error) throw result;
+      return result;
+    };
+
+    try {
+      await claimSteps([
+        ...(ip ? [[`${QUOTA_ROOT}/resetByIp/${ipQuotaKey(ip)}`, decideIpSend, 'unavailable']] : []),
+        [`${QUOTA_ROOT}/resetByEmail/${emailQuotaKey(email)}`, decideVerificationSend, 'unavailable'],
+        [`${QUOTA_ROOT}/total`, decideGlobalSend, 'unavailable'],
+      ], now, { kind: 'reset' });
+    } catch (error) {
+      return respond(error);
+    }
 
     let generated;
     try {
       generated = await getAuth().generatePasswordResetLink(email);
     } catch (error) {
-      if (NO_ACCOUNT_CODES.has(error.code)) return { status: 'sent' };
+      if (NO_ACCOUNT_CODES.has(error.code)) return respond({ status: 'sent' });
       logger.error('password reset link failed', { error: error.message, code: error.code });
-      throw new HttpsError('unavailable', 'Password reset email could not be sent.');
+      return respond(new HttpsError('unavailable', 'Password reset email could not be sent.'));
     }
-
-    const releaseGlobal = await claimSteps([[`${QUOTA_ROOT}/total`, decideGlobalSend, 'unavailable']], now, { kind: 'reset' });
 
     try {
       const oobCode = extractOobCode(generated);
@@ -240,11 +259,10 @@ exports.sendPasswordResetEmail = onCall(
         tags: ['reset_password', `lang_${message.language}`],
       });
       logger.info('password reset email sent', { language: message.language, id: sent && sent.messageId });
-      return { status: 'sent' };
+      return respond({ status: 'sent' });
     } catch (error) {
-      await releaseGlobal();
       logger.error('password reset email failed', { error: error.message, status: error.status });
-      throw new HttpsError('unavailable', 'Password reset email could not be sent.');
+      return respond(new HttpsError('unavailable', 'Password reset email could not be sent.'));
     }
   },
 );
