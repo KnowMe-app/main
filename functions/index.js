@@ -18,7 +18,7 @@
  * Деплой — руками, як і правила бази: `docs/email-verification.md`.
  */
 
-const { onCall, HttpsError } = require('firebase-functions/https');
+const { onCall, onRequest, HttpsError } = require('firebase-functions/https');
 const { onValueCreated } = require('firebase-functions/database');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
@@ -39,6 +39,13 @@ const {
   ipQuotaKey,
 } = require('./verificationQuota');
 const { sendWithBrevo } = require('./mail/brevo');
+const {
+  completeTelegramLogin,
+  createAdminDb,
+  createTelegramSender,
+  handleTelegramUpdate,
+  isWebhookSecretValid,
+} = require('./telegramAuth');
 
 initializeApp();
 
@@ -313,6 +320,74 @@ exports.deliverPasswordResetEmail = onValueCreated(
       logger.info('password reset email sent', { language: message.language, id: sent && sent.messageId });
     } catch (error) {
       logger.error('password reset email failed', { error: error.message, status: error.status });
+    }
+  },
+);
+
+/**
+ * Вхід через Telegram (`telegramAuth.js`).
+ *
+ * `telegramWebhook` — адреса, яку бот отримує в `setWebhook` разом із
+ * `secret_token`: Telegram шле його в заголовку, і без нього запит відкидається
+ * (інакше будь-хто міг би підкинути «контакт» від чужого імені). Відповідь
+ * завжди 200, коли секрет збігся: на помилку Telegram повторює те саме
+ * оновлення, і збій перетворився б на зливу повторів.
+ *
+ * `completeTelegramLogin` кличуть без входу — входу ще немає. Право забрати
+ * токен дає `nonce`, який застосунок згенерував сам, разом із кодом, який бот
+ * показав власникові акаунта Telegram (захист від підсунутого посилання).
+ */
+const TELEGRAM_BOT_TOKEN = defineSecret('TELEGRAM_BOT_TOKEN');
+const TELEGRAM_WEBHOOK_SECRET = defineSecret('TELEGRAM_WEBHOOK_SECRET');
+
+exports.telegramWebhook = onRequest(
+  {
+    region: REGION,
+    secrets: [TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET],
+    memory: '256MiB',
+    timeoutSeconds: 30,
+    maxInstances: 5,
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).end();
+      return;
+    }
+    if (!isWebhookSecretValid(req.get('X-Telegram-Bot-Api-Secret-Token'), TELEGRAM_WEBHOOK_SECRET.value())) {
+      res.status(403).end();
+      return;
+    }
+    try {
+      const outcome = await handleTelegramUpdate(req.body, {
+        db: createAdminDb(getDatabase()),
+        auth: getAuth(),
+        sendMessage: createTelegramSender(TELEGRAM_BOT_TOKEN.value()),
+        now: Date.now(),
+      });
+      // Номер і імʼя в журнал не пишемо: досить результату.
+      logger.info('telegram update handled', { outcome });
+    } catch (error) {
+      logger.error('telegram update failed', { error: error.message, status: error.status });
+    }
+    res.status(200).send('ok');
+  },
+);
+
+exports.completeTelegramLogin = onCall(
+  {
+    region: REGION,
+    cors: ALLOWED_ORIGINS,
+    memory: '256MiB',
+    timeoutSeconds: 15,
+    maxInstances: 10,
+  },
+  async request => {
+    const data = request.data || {};
+    try {
+      return await completeTelegramLogin(data.nonce, data.code, { db: createAdminDb(getDatabase()), now: Date.now() });
+    } catch (error) {
+      logger.error('telegram login completion failed', { error: error.message });
+      throw new HttpsError('unavailable', 'Telegram login could not be completed.');
     }
   },
 );

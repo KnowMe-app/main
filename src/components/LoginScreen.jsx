@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { FaUser, FaLock, FaEye, FaEyeSlash, FaGlobe, FaChevronDown } from 'react-icons/fa';
+import { FaUser, FaLock, FaEye, FaEyeSlash, FaGlobe, FaChevronDown, FaTelegramPlane } from 'react-icons/fa';
+import toast from 'react-hot-toast';
 import { auth, fetchUserById } from './config';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, fetchSignInMethodsForEmail, signInWithCustomToken } from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { authNotifications } from './authNotifications';
 import {
   buildAuthLoginPayload,
   buildAuthProfilePayload,
+  buildAuthSessionPayload,
   markAuthSession,
   MY_PROFILE_ROUTE,
   normalizeAuthEmail,
@@ -20,6 +22,18 @@ import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
 import { APP_LANGUAGES, getLanguageNativeName } from 'utils/locales';
 import { uiText } from 'utils/uiTranslations';
 import { useAppSettings } from '../hooks/useAppSettings';
+import {
+  buildTelegramLoginLink,
+  buildTelegramProfileData,
+  clearTelegramLoginAttempt,
+  createTelegramLoginNonce,
+  isTelegramLoginAvailable,
+  pollTelegramLogin,
+  readTelegramLoginAttempt,
+  saveTelegramLoginAttempt,
+  TELEGRAM_LOGIN_TTL_MS,
+  TELEGRAM_POLL_INTERVAL_MS,
+} from 'utils/telegramAuth';
 
 const MATCHING_ROUTE = '/matching';
 
@@ -400,6 +414,90 @@ const TermsButton = styled.button`
   }
 `;
 
+/*
+ * Вхід через Telegram — головна кнопка форми (на прохання власниці продукту:
+ * для донорок і СМ телефон — це Telegram, а пошта — ділове листування).
+ * Колір — Telegram, затемнений до контрасту з білим понад 4:1; пошта
+ * лишається запасом під посиланням «Немає Telegram?».
+ */
+const TelegramButton = styled.a`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: #1f7ab8;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: filter 0.18s ease, transform 0.18s ease;
+
+  svg { flex: 0 0 auto; }
+  &:hover { filter: brightness(1.08); }
+  &:active { transform: scale(0.99); }
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(31, 122, 184, 0.35);
+  }
+`;
+
+const TelegramHint = styled.p`
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+`;
+
+const TelegramWaiting = styled.div`
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--km-fill);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+
+  strong { display: block; margin-bottom: 4px; font-size: 14px; }
+`;
+
+const TelegramWaitingActions = styled.div`
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 8px;
+`;
+
+const EmailToggleRow = styled.p`
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 14px;
+`;
+
+const OrDivider = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 12px;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+`;
+
 const CustomCheckbox = styled.input`
   width: 18px;
   height: 18px;
@@ -469,6 +567,24 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   // Пароль видно на прохання: набраний на телефоні наосліп, він найчастіше й
   // «невірний».
   const [showPassword, setShowPassword] = useState(false);
+
+  // Telegram — основний вхід; пошта розгортається посиланням «Немає
+  // Telegram?». Без налаштованого бота форма поштова, як і була.
+  const telegramAvailable = isTelegramLoginAvailable();
+  const [emailFormOpen, setEmailFormOpen] = useState(!telegramAvailable);
+  const showEmailForm = !telegramAvailable || emailFormOpen;
+  // `nonce` готовий ще до дотику: посилання на бота — звичайний `<a href>`.
+  const [telegramNonce, setTelegramNonce] = useState(() => (telegramAvailable ? createTelegramLoginNonce() : ''));
+  // Спроба, що чекає на номер у боті. Переживає перезавантаження вкладки.
+  const [telegramAttempt, setTelegramAttempt] = useState(() => (telegramAvailable ? readTelegramLoginAttempt() : null));
+  // Новий акаунт з Telegram, якому ще треба обрати роль (вхід почали з
+  // вкладки «Увійти», де ролі не питають).
+  const [telegramSignup, setTelegramSignup] = useState(null);
+  // Бот отримав номер і показав людині код. Без коду функція токена не дає:
+  // посилання на бота може підсунути чужа людина, і тоді номер ділила б
+  // жертва, а сесію забирав би той, хто посилання згенерував.
+  const [telegramCodeRequested, setTelegramCodeRequested] = useState(false);
+  const [telegramCode, setTelegramCode] = useState('');
 
   const handleCheckboxChange = () => {
     setIsChecked(!isChecked);
@@ -676,6 +792,184 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     }
   };
 
+  const resetTelegramAttempt = () => {
+    setTelegramCodeRequested(false);
+    setTelegramCode('');
+    clearTelegramLoginAttempt();
+    setTelegramAttempt(null);
+    setTelegramNonce(createTelegramLoginNonce());
+  };
+
+  // Дотик до «Увійти через Telegram». Посилання відкривається саме (`href`),
+  // тут лише перевірка реєстрації й запам'ятована спроба.
+  const handleTelegramClick = event => {
+    if (isRegisterMode && !isChecked) {
+      event.preventDefault();
+      authNotifications.termsRequired();
+      return;
+    }
+    if (isRegisterMode && !selectedRole) {
+      event.preventDefault();
+      authNotifications.registrationRoleRequired();
+      return;
+    }
+    const attempt = { nonce: telegramNonce, startedAt: Date.now(), role: isRegisterMode ? selectedRole : '' };
+    saveTelegramLoginAttempt(attempt);
+    setTelegramAttempt(attempt);
+  };
+
+  // Анкета нового акаунта з Telegram: підтверджений номер, нік і імʼя з
+  // Telegram, роль — з форми. Пошти немає: людина без неї й реєструвалась.
+  const finishTelegramRegistration = async (uid, profileData, role) => {
+    const uploadedInfo = {
+      ...profileData,
+      areTermsConfirmed: todayDays,
+      registrationDate: todayDays,
+      ...buildAuthSessionPayload({ todayDays, todayDash }),
+      userId: uid,
+      userRole: role,
+    };
+    try {
+      await persistAccountProfile(uid, uploadedInfo, 'set');
+    } catch (error) {
+      console.error('[telegram] не вдалося записати анкету', error);
+    }
+    markAuthSession({ email: '', userId: uid });
+    setIsLoggedIn(true);
+    await navigateAfterAuth({ registered: true });
+    authFlowInProgressRef.current = false;
+  };
+
+  const completeTelegramAuth = async (result, attempt) => {
+    authFlowInProgressRef.current = true;
+    setIsLoading(true);
+    resetTelegramAttempt();
+    try {
+      const credential = await signInWithCustomToken(auth, result.token);
+      const uid = credential.user.uid;
+      const profileData = buildTelegramProfileData(result.profile);
+      if (result.isNew) {
+        if (!attempt.role) {
+          // Межа входу не відвозить звідси, поки роль не обрано:
+          // `authFlowInProgressRef` лишається піднятим.
+          setTelegramSignup({ uid, profileData });
+          return;
+        }
+        await finishTelegramRegistration(uid, profileData, attempt.role);
+        return;
+      }
+      // Як і вхід поштою: дата входу пишеться у фоні й вхід не тримає.
+      void persistAccountProfile(uid, { ...buildAuthSessionPayload({ todayDays, todayDash }), userId: uid }, 'update').catch(error => {
+        console.warn('[telegram] не вдалося записати дату входу', error);
+      });
+      markAuthSession({ email: '', userId: uid });
+      setIsLoggedIn(true);
+      await navigateAfterAuth();
+      authFlowInProgressRef.current = false;
+    } catch (error) {
+      authFlowInProgressRef.current = false;
+      console.error('[telegram] вхід не вдався', error);
+      toast.error(tr('Не вдалося увійти через Telegram. Спробуйте ще раз або увійдіть поштою'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleTelegramCodeSubmit = async event => {
+    event?.preventDefault?.();
+    const attempt = telegramAttempt;
+    const code = telegramCode.replace(/\D/g, '');
+    if (!attempt) return;
+    if (code.length !== 6) {
+      toast.error(tr('Введіть шість цифр коду з Telegram'));
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const result = await pollTelegramLogin(auth.app, attempt.nonce, code);
+      if (result?.status === 'ready' && result.token) {
+        await completeTelegramAuth(result, attempt);
+        return;
+      }
+      if (result?.status === 'wrong-code') {
+        setTelegramCode('');
+        toast.error(tr('Невірний код. Залишилось спроб: {count}', { count: result.attemptsLeft }));
+        return;
+      }
+      resetTelegramAttempt();
+      toast.error(tr('Час на вхід через Telegram минув. Спробуйте ще раз'));
+    } catch (error) {
+      console.error('[telegram] код не перевірено', error);
+      toast.error(tr('Не вдалося увійти через Telegram. Спробуйте ще раз або увійдіть поштою'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleTelegramSignupContinue = async () => {
+    if (!telegramSignup) return;
+    if (!isChecked) {
+      authNotifications.termsRequired();
+      return;
+    }
+    if (!selectedRole) {
+      authNotifications.registrationRoleRequired();
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await finishTelegramRegistration(telegramSignup.uid, telegramSignup.profileData, selectedRole);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Поки людина в боті, форма питає функцію, чи номер уже прийшов. Фонова
+  // вкладка не питає (на телефоні вона й так заморожена), а повернення до неї
+  // питає одразу — вхід завершується тієї ж миті, як людина повернулась.
+  useEffect(() => {
+    if (!telegramAttempt || telegramCodeRequested) return undefined;
+    let cancelled = false;
+    let busy = false;
+    const tick = async () => {
+      if (cancelled || busy || document.visibilityState === 'hidden') return;
+      if (Date.now() - telegramAttempt.startedAt > TELEGRAM_LOGIN_TTL_MS) {
+        resetTelegramAttempt();
+        toast.error(tr('Час на вхід через Telegram минув. Спробуйте ще раз'));
+        return;
+      }
+      busy = true;
+      try {
+        const result = await pollTelegramLogin(auth.app, telegramAttempt.nonce);
+        if (cancelled) return;
+        if (result?.status === 'code-required') {
+          cancelled = true;
+          setTelegramCodeRequested(true);
+        } else if (result?.status === 'expired' || result?.status === 'invalid') {
+          resetTelegramAttempt();
+          toast.error(tr('Час на вхід через Telegram минув. Спробуйте ще раз'));
+        }
+      } catch (error) {
+        // Мережа чи нерозгорнута функція — пробуємо далі до кінця строку.
+        console.warn('[telegram] перевірка входу не вдалася', error?.code || error);
+      } finally {
+        busy = false;
+      }
+    };
+    const timer = setInterval(tick, TELEGRAM_POLL_INTERVAL_MS);
+    document.addEventListener('visibilitychange', tick);
+    window.addEventListener('focus', tick);
+    tick();
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+      window.removeEventListener('focus', tick);
+    };
+    // Обробники читають лише стан форми на момент відповіді.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [telegramAttempt, telegramCodeRequested]);
+
   const handleAuth = async () => {
     const hasEmailTrailingSpace = /\s$/.test(state.email);
     const normalizedEmail = normalizeAuthEmail(state.email);
@@ -794,6 +1088,43 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
             <WelcomeDescription>{tr('Знайомтеся з донорками, батьками та агенціями. Зберігайте анкети й знаходьте тих, хто вам підходить.')}</WelcomeDescription>
           </BrandBlock>
 
+          {telegramSignup ? (
+            <>
+              <RoleHint>{tr('Майже готово: оберіть, хто ви')}</RoleHint>
+              <RoleBlock>
+                <RoleTitle>{tr('Хто ви?')}</RoleTitle>
+                <RoleHint>{tr('Від ролі залежить, які поля покаже анкета й кого ви побачите у стрічці. Змінити її можна будь-коли в «Моєму профілі».')}</RoleHint>
+                <RoleGrid>
+                  {PROFILE_ROLE_OPTIONS.map(option => (
+                    <RoleOption key={option.value} $selected={selectedRole === option.value}>
+                      <RoleRadio
+                        type="radio"
+                        name="userRole"
+                        value={option.value}
+                        checked={selectedRole === option.value}
+                        onChange={e => setSelectedRole(e.target.value)}
+                      />
+                      <RoleText>
+                        <RoleName>{tr(option.label)}</RoleName>
+                        {ROLE_DESCRIPTIONS[option.value] && <RoleDescription>{tr(ROLE_DESCRIPTIONS[option.value])}</RoleDescription>}
+                      </RoleText>
+                    </RoleOption>
+                  ))}
+                </RoleGrid>
+              </RoleBlock>
+              <CheckboxContainer>
+                <CustomCheckbox id="login-terms" type="checkbox" checked={isChecked} onChange={handleCheckboxChange} />
+                <CheckboxLabel htmlFor="login-terms">
+                  {tr('Я погоджуюся з Угодою користувача та надаю згоду на обробку моїх персональних даних відповідно до Політики конфіденційності.')}
+                </CheckboxLabel>
+                <TermsButton type="button" onClick={handleTermsClick}>{tr('Умови')}</TermsButton>
+              </CheckboxContainer>
+              <SubmitButton type="button" onClick={handleTelegramSignupContinue} disabled={isLoading}>
+                {tr(isLoading ? 'Зачекайте…' : 'Продовжити')}
+              </SubmitButton>
+            </>
+          ) : (
+          <>
           <ModeTabs role="tablist" aria-label={tr('Вхід або реєстрація')}>
             <ModeTab type="button" role="tab" aria-selected={!isRegisterMode} $active={!isRegisterMode} onClick={() => setAuthMode('login')}>
               {tr('Увійти')}
@@ -808,7 +1139,102 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
               {tr('Створити акаунт')}
             </ModeTab>
           </ModeTabs>
+          {isRegisterMode && (
+            <RoleBlock>
+              <RoleTitle>{tr('Хто ви?')}</RoleTitle>
+              <RoleHint>{tr('Від ролі залежить, які поля покаже анкета й кого ви побачите у стрічці. Змінити її можна будь-коли в «Моєму профілі».')}</RoleHint>
+              <RoleGrid>
+                {PROFILE_ROLE_OPTIONS.map(option => (
+                  <RoleOption key={option.value} $selected={selectedRole === option.value}>
+                    <RoleRadio
+                      type="radio"
+                      name="userRole"
+                      value={option.value}
+                      checked={selectedRole === option.value}
+                      onChange={e => setSelectedRole(e.target.value)}
+                    />
+                    <RoleText>
+                      <RoleName>{tr(option.label)}</RoleName>
+                      {ROLE_DESCRIPTIONS[option.value] && <RoleDescription>{tr(ROLE_DESCRIPTIONS[option.value])}</RoleDescription>}
+                    </RoleText>
+                  </RoleOption>
+                ))}
+              </RoleGrid>
+            </RoleBlock>
+          )}
+          {isRegisterMode && (
+            <CheckboxContainer>
+              <CustomCheckbox id="login-terms" type="checkbox" checked={isChecked} onChange={handleCheckboxChange} />
+              <CheckboxLabel htmlFor="login-terms">
+                {tr('Я погоджуюся з Угодою користувача та надаю згоду на обробку моїх персональних даних відповідно до Політики конфіденційності.')}
+              </CheckboxLabel>
+              <TermsButton type="button" onClick={handleTermsClick}>{tr('Умови')}</TermsButton>
+            </CheckboxContainer>
+          )}
 
+          {telegramAvailable && (
+            <>
+              <TelegramButton
+                href={buildTelegramLoginLink(telegramNonce)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={handleTelegramClick}
+                data-testid="login-telegram"
+              >
+                <FaTelegramPlane size={20} aria-hidden="true" />
+                {tr(isRegisterMode ? 'Зареєструватися через Telegram' : 'Увійти через Telegram')}
+              </TelegramButton>
+              {telegramAttempt && telegramCodeRequested ? (
+                <TelegramWaiting as="form" aria-live="polite" onSubmit={handleTelegramCodeSubmit}>
+                  <strong>{tr('Введіть код із Telegram')}</strong>
+                  {tr('Бот надіслав вам шість цифр. Нікому їх не повідомляйте.')}
+                  <InputDiv $active>
+                    <InputField
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      name="telegramCode"
+                      data-testid="login-telegram-code"
+                      maxLength={7}
+                      value={telegramCode}
+                      onChange={event => setTelegramCode(event.target.value.replace(/[^\d ]/g, ''))}
+                      aria-label={tr('Код із Telegram')}
+                      style={{ padding: '16px 0', textAlign: 'center', fontSize: 22, letterSpacing: '0.3em' }}
+                      autoFocus
+                    />
+                  </InputDiv>
+                  <SubmitButton type="submit" disabled={isLoading}>{tr(isLoading ? 'Зачекайте…' : 'Увійти')}</SubmitButton>
+                  <TelegramWaitingActions>
+                    <LinkButton type="button" onClick={resetTelegramAttempt}>{tr('Скасувати вхід')}</LinkButton>
+                  </TelegramWaitingActions>
+                </TelegramWaiting>
+              ) : telegramAttempt ? (
+                <TelegramWaiting aria-live="polite">
+                  <strong>{tr('Чекаємо на номер у Telegram…')}</strong>
+                  {tr('Відкрийте бота KnowMe й натисніть «Поділитися номером». Бот надішле код для входу.')}
+                  <TelegramWaitingActions>
+                    <LinkButton as="a" href={buildTelegramLoginLink(telegramAttempt.nonce)} target="_blank" rel="noopener noreferrer">
+                      {tr('Відкрити Telegram ще раз')}
+                    </LinkButton>
+                    <LinkButton type="button" onClick={resetTelegramAttempt}>{tr('Скасувати вхід')}</LinkButton>
+                  </TelegramWaitingActions>
+                </TelegramWaiting>
+              ) : (
+                <TelegramHint>{tr('Без пароля й пошти: бот попросить поділитися номером телефону.')}</TelegramHint>
+              )}
+            </>
+          )}
+          {telegramAvailable && !emailFormOpen && (
+            <EmailToggleRow>
+              <LinkButton type="button" onClick={() => setEmailFormOpen(true)} data-testid="login-email-toggle">
+                {tr(isRegisterMode ? 'Немає Telegram? Зареєструватися поштою' : 'Немає Telegram? Увійти поштою')}
+              </LinkButton>
+            </EmailToggleRow>
+          )}
+
+          {showEmailForm && (
+          <>
+          {telegramAvailable && <OrDivider>{tr('або поштою')}</OrDivider>}
           <InputDiv $active={focused === 'email' || Boolean(state.email)}>
             <FieldIcon><FaUser /></FieldIcon>
             <InputField
@@ -855,44 +1281,11 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
               </LinkButton>
             </ForgotRow>
           )}
-
-          {isRegisterMode && (
-            <RoleBlock>
-              <RoleTitle>{tr('Хто ви?')}</RoleTitle>
-              <RoleHint>{tr('Від ролі залежить, які поля покаже анкета й кого ви побачите у стрічці. Змінити її можна будь-коли в «Моєму профілі».')}</RoleHint>
-              <RoleGrid>
-                {PROFILE_ROLE_OPTIONS.map(option => (
-                  <RoleOption key={option.value} $selected={selectedRole === option.value}>
-                    <RoleRadio
-                      type="radio"
-                      name="userRole"
-                      value={option.value}
-                      checked={selectedRole === option.value}
-                      onChange={e => setSelectedRole(e.target.value)}
-                    />
-                    <RoleText>
-                      <RoleName>{tr(option.label)}</RoleName>
-                      {ROLE_DESCRIPTIONS[option.value] && <RoleDescription>{tr(ROLE_DESCRIPTIONS[option.value])}</RoleDescription>}
-                    </RoleText>
-                  </RoleOption>
-                ))}
-              </RoleGrid>
-            </RoleBlock>
-          )}
-
-          {isRegisterMode && (
-            <CheckboxContainer>
-              <CustomCheckbox id="login-terms" type="checkbox" checked={isChecked} onChange={handleCheckboxChange} />
-              <CheckboxLabel htmlFor="login-terms">
-                {tr('Я погоджуюся з Угодою користувача та надаю згоду на обробку моїх персональних даних відповідно до Політики конфіденційності.')}
-              </CheckboxLabel>
-              <TermsButton type="button" onClick={handleTermsClick}>{tr('Умови')}</TermsButton>
-            </CheckboxContainer>
-          )}
-
           <SubmitButton type="button" onClick={handleAuth} disabled={isLoading}>
             {tr(isLoading ? 'Зачекайте…' : (isRegisterMode ? 'Створити акаунт' : 'Увійти'))}
           </SubmitButton>
+          </>
+          )}
           {!isRegisterMode && (
             <LoginTermsNote>
               {/* Посилання стоїть там, де його ставить переклад: у німецькій
@@ -910,6 +1303,8 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
                 {tr('Створити акаунт')}
               </LinkButton>
             </LoginHint>
+          )}
+          </>
           )}
         </LoginCard>
       </InnerContainer>
