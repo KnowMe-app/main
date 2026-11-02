@@ -303,7 +303,8 @@ exports.sendPasswordResetEmail = onCall(
  * оновлення, і збій перетворився б на зливу повторів.
  *
  * `completeTelegramLogin` кличуть без входу — входу ще немає. Право забрати
- * токен дає лише знання `nonce`, який застосунок згенерував сам.
+ * токен дає `nonce`, який застосунок згенерував сам, разом із кодом, який бот
+ * показав власникові акаунта Telegram (захист від підсунутого посилання).
  */
 const TELEGRAM_BOT_TOKEN = defineSecret('TELEGRAM_BOT_TOKEN');
 const TELEGRAM_WEBHOOK_SECRET = defineSecret('TELEGRAM_WEBHOOK_SECRET');
@@ -350,9 +351,9 @@ exports.completeTelegramLogin = onCall(
     maxInstances: 10,
   },
   async request => {
-    const nonce = request.data && request.data.nonce;
+    const data = request.data || {};
     try {
-      return await completeTelegramLogin(nonce, { db: createAdminDb(getDatabase()), now: Date.now() });
+      return await completeTelegramLogin(data.nonce, data.code, { db: createAdminDb(getDatabase()), now: Date.now() });
     } catch (error) {
       logger.error('telegram login completion failed', { error: error.message });
       throw new HttpsError('unavailable', 'Telegram login could not be completed.');

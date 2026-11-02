@@ -580,6 +580,11 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   // Новий акаунт з Telegram, якому ще треба обрати роль (вхід почали з
   // вкладки «Увійти», де ролі не питають).
   const [telegramSignup, setTelegramSignup] = useState(null);
+  // Бот отримав номер і показав людині код. Без коду функція токена не дає:
+  // посилання на бота може підсунути чужа людина, і тоді номер ділила б
+  // жертва, а сесію забирав би той, хто посилання згенерував.
+  const [telegramCodeRequested, setTelegramCodeRequested] = useState(false);
+  const [telegramCode, setTelegramCode] = useState('');
 
   const handleCheckboxChange = () => {
     setIsChecked(!isChecked);
@@ -788,6 +793,8 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   };
 
   const resetTelegramAttempt = () => {
+    setTelegramCodeRequested(false);
+    setTelegramCode('');
     clearTelegramLoginAttempt();
     setTelegramAttempt(null);
     setTelegramNonce(createTelegramLoginNonce());
@@ -868,6 +875,37 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     }
   };
 
+  const handleTelegramCodeSubmit = async event => {
+    event?.preventDefault?.();
+    const attempt = telegramAttempt;
+    const code = telegramCode.replace(/\D/g, '');
+    if (!attempt) return;
+    if (code.length !== 6) {
+      toast.error(tr('Введіть шість цифр коду з Telegram'));
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const result = await pollTelegramLogin(auth.app, attempt.nonce, code);
+      if (result?.status === 'ready' && result.token) {
+        await completeTelegramAuth(result, attempt);
+        return;
+      }
+      if (result?.status === 'wrong-code') {
+        setTelegramCode('');
+        toast.error(tr('Невірний код. Залишилось спроб: {count}', { count: result.attemptsLeft }));
+        return;
+      }
+      resetTelegramAttempt();
+      toast.error(tr('Час на вхід через Telegram минув. Спробуйте ще раз'));
+    } catch (error) {
+      console.error('[telegram] код не перевірено', error);
+      toast.error(tr('Не вдалося увійти через Telegram. Спробуйте ще раз або увійдіть поштою'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleTelegramSignupContinue = async () => {
     if (!telegramSignup) return;
     if (!isChecked) {
@@ -890,7 +928,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   // вкладка не питає (на телефоні вона й так заморожена), а повернення до неї
   // питає одразу — вхід завершується тієї ж миті, як людина повернулась.
   useEffect(() => {
-    if (!telegramAttempt) return undefined;
+    if (!telegramAttempt || telegramCodeRequested) return undefined;
     let cancelled = false;
     let busy = false;
     const tick = async () => {
@@ -904,9 +942,9 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       try {
         const result = await pollTelegramLogin(auth.app, telegramAttempt.nonce);
         if (cancelled) return;
-        if (result?.status === 'ready' && result.token) {
+        if (result?.status === 'code-required') {
           cancelled = true;
-          await completeTelegramAuth(result, telegramAttempt);
+          setTelegramCodeRequested(true);
         } else if (result?.status === 'expired' || result?.status === 'invalid') {
           resetTelegramAttempt();
           toast.error(tr('Час на вхід через Telegram минув. Спробуйте ще раз'));
@@ -930,7 +968,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     };
     // Обробники читають лише стан форми на момент відповіді.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [telegramAttempt]);
+  }, [telegramAttempt, telegramCodeRequested]);
 
   const handleAuth = async () => {
     const hasEmailTrailingSpace = /\s$/.test(state.email);
@@ -1146,10 +1184,34 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
                 <FaTelegramPlane size={20} aria-hidden="true" />
                 {tr(isRegisterMode ? 'Зареєструватися через Telegram' : 'Увійти через Telegram')}
               </TelegramButton>
-              {telegramAttempt ? (
+              {telegramAttempt && telegramCodeRequested ? (
+                <TelegramWaiting as="form" aria-live="polite" onSubmit={handleTelegramCodeSubmit}>
+                  <strong>{tr('Введіть код із Telegram')}</strong>
+                  {tr('Бот надіслав вам шість цифр. Нікому їх не повідомляйте.')}
+                  <InputDiv $active>
+                    <InputField
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      name="telegramCode"
+                      data-testid="login-telegram-code"
+                      maxLength={7}
+                      value={telegramCode}
+                      onChange={event => setTelegramCode(event.target.value.replace(/[^\d ]/g, ''))}
+                      aria-label={tr('Код із Telegram')}
+                      style={{ padding: '16px 0', textAlign: 'center', fontSize: 22, letterSpacing: '0.3em' }}
+                      autoFocus
+                    />
+                  </InputDiv>
+                  <SubmitButton type="submit" disabled={isLoading}>{tr(isLoading ? 'Зачекайте…' : 'Увійти')}</SubmitButton>
+                  <TelegramWaitingActions>
+                    <LinkButton type="button" onClick={resetTelegramAttempt}>{tr('Скасувати вхід')}</LinkButton>
+                  </TelegramWaitingActions>
+                </TelegramWaiting>
+              ) : telegramAttempt ? (
                 <TelegramWaiting aria-live="polite">
                   <strong>{tr('Чекаємо на номер у Telegram…')}</strong>
-                  {tr('Відкрийте бота KnowMe й натисніть «Поділитися номером». Вхід завершиться сам.')}
+                  {tr('Відкрийте бота KnowMe й натисніть «Поділитися номером». Бот надішле код для входу.')}
                   <TelegramWaitingActions>
                     <LinkButton as="a" href={buildTelegramLoginLink(telegramAttempt.nonce)} target="_blank" rel="noopener noreferrer">
                       {tr('Відкрити Telegram ще раз')}

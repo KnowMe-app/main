@@ -21,8 +21,15 @@ const crypto = require('crypto');
  * 3. Контакт — бот знаходить чи заводить акаунт Firebase
  *    (`telegramAccounts/{tgId}` → uid), випускає custom token і кладе його в
  *    спробу.
- * 4. Застосунок питає `completeTelegramLogin` з тим самим `nonce`, забирає
+ * 4. Бот показує людині одноразовий код із шести цифр. Застосунок питає
+ *    `completeTelegramLogin` з тим самим `nonce` **і цим кодом**, забирає
  *    токен рівно один раз і входить `signInWithCustomToken`.
+ *
+ * Чому код, а не самий `nonce`: посилання на бота може згенерувати будь-хто й
+ * підсунути чужій людині («підтвердіть номер»). Без коду номер ділила б
+ * жертва, а сесію забирав би браузер того, хто згенерував посилання. Код
+ * бачить лише власник акаунта Telegram, і ввести його мусить той браузер, що
+ * чекає, — рівень SMS-коду. П'ять хибних спроб спалюють вхід.
  *
  * Усі вузли пише лише функція (Admin SDK); у `database.rules.json` їх немає,
  * тож клієнтам вони закриті коренем — викочувати правила не треба.
@@ -36,6 +43,11 @@ const LOGINS_ROOT = 'telegramLogins';
 const LOGINS_BY_TG_ROOT = 'telegramLoginsByTg';
 const ACCOUNTS_ROOT = 'telegramAccounts';
 const APP_URL = 'https://knowme.pp.ua/login';
+const MAX_CODE_ATTEMPTS = 5;
+
+const defaultRandomCode = () => String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+const hashCode = (key, code) => crypto.createHash('sha256').update(`${key}:${code}`).digest('hex');
+const normalizeCode = code => String(code || '').replace(/\D/g, '');
 
 // base64url від 16 байт — 22 знаки; Telegram пускає в `start` до 64 знаків
 // [A-Za-z0-9_-]. Довшого чи коротшого застосунок не шле.
@@ -63,7 +75,11 @@ const BOT_TEXTS = Object.freeze({
     + 'Пароль і пошта не потрібні.\n\n'
     + 'Якщо ви не відкривали KnowMe щойно — нічого не натискайте.',
   shareButton: '📱 Поділитися номером',
-  done: 'Готово ✅ Поверніться в KnowMe — вхід завершиться сам.',
+  done: code => `Ваш код для входу в KnowMe: ${code}\n\n`
+    + 'Введіть його на сторінці KnowMe, де ви натиснули «Увійти через Telegram».\n\n'
+    + '⚠️ Нікому не повідомляйте цей код — навіть якщо просять «підтвердити номер». '
+    + 'Хто його знає, той увійде у ваш акаунт.',
+  alreadyDone: 'Код для входу вже надіслано вище. Введіть його в KnowMe.',
   foreignContact: 'Надішліть, будь ласка, свій номер кнопкою «📱 Поділитися номером», а не чужий контакт.',
   noLogin: 'Щоб увійти, відкрийте KnowMe і натисніть «Увійти через Telegram».',
   expired: 'Час на вхід минув. Відкрийте KnowMe і натисніть «Увійти через Telegram» ще раз.',
@@ -110,7 +126,7 @@ const handleStart = async ({ nonce, tgId, chatId }, { db, sendMessage, now }) =>
     return outcome;
   }
   if (outcome === 'ready') {
-    await sendMessage(chatId, BOT_TEXTS.done, { remove_keyboard: true });
+    await sendMessage(chatId, BOT_TEXTS.alreadyDone, { remove_keyboard: true });
     return outcome;
   }
   await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, { key, at: now });
@@ -182,6 +198,7 @@ const handleContact = async ({ message, tgId, chatId }, deps) => {
 
   const { uid, isNew } = await resolveAccount({ tgId, displayName }, deps);
   const token = await auth.createCustomToken(uid);
+  const code = (deps.randomCode || defaultRandomCode)();
 
   await db.set(loginPath, {
     tgId,
@@ -190,11 +207,13 @@ const handleContact = async ({ message, tgId, chatId }, deps) => {
     readyAt: now,
     uid,
     token,
+    codeHash: hashCode(pointer.key, code),
+    attempts: 0,
     isNew,
     profile: { phone, firstName, lastName, username },
   });
   await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
-  await sendMessage(chatId, BOT_TEXTS.done, { remove_keyboard: true });
+  await sendMessage(chatId, BOT_TEXTS.done(code), { remove_keyboard: true });
   return isNew ? 'registered' : 'signed-in';
 };
 
@@ -221,13 +240,14 @@ const handleTelegramUpdate = async (update, deps) => {
 };
 
 /**
- * Застосунок забирає вхід. Токен віддається рівно один раз: спроба
- * видаляється транзакцією, і другий запит з тим самим `nonce` отримує
- * `pending`/`expired`, а не ще одну сесію.
+ * Застосунок забирає вхід. Токен віддається лише з кодом, який бот показав
+ * власникові акаунта Telegram, і рівно один раз: спроба видаляється
+ * транзакцією. Хибний код рахується; на `MAX_CODE_ATTEMPTS` спроба згорає.
  */
-const completeTelegramLogin = async (nonce, { db, now }) => {
+const completeTelegramLogin = async (nonce, codeInput, { db, now }) => {
   if (!isValidNonce(nonce)) return { status: 'invalid' };
-  const path = `${LOGINS_ROOT}/${hashNonce(nonce)}`;
+  const key = hashNonce(nonce);
+  const path = `${LOGINS_ROOT}/${key}`;
   const record = await db.get(path);
   if (!record) return { status: 'pending', started: false };
   if (isExpired(record, now)) {
@@ -237,19 +257,41 @@ const completeTelegramLogin = async (nonce, { db, now }) => {
   }
   if (record.status !== 'ready') return { status: 'pending', started: true };
 
+  const code = normalizeCode(codeInput);
+  if (!code) return { status: 'code-required' };
+
+  let outcome = 'gone';
   let claimed = null;
-  const result = await db.transaction(path, current => {
-    if (!current || current.status !== 'ready') return undefined;
-    claimed = current;
-    return null;
+  let attemptsLeft = 0;
+  await db.transaction(path, current => {
+    if (!current || current.status !== 'ready') {
+      outcome = 'gone';
+      return undefined;
+    }
+    if (current.codeHash === hashCode(key, code)) {
+      outcome = 'ready';
+      claimed = current;
+      return null;
+    }
+    const attempts = (Number(current.attempts) || 0) + 1;
+    attemptsLeft = Math.max(0, MAX_CODE_ATTEMPTS - attempts);
+    if (attemptsLeft === 0) {
+      outcome = 'expired';
+      return null;
+    }
+    outcome = 'wrong-code';
+    return { ...current, attempts };
   });
-  if (!result.committed || !claimed) return { status: 'pending', started: true };
-  return {
-    status: 'ready',
-    token: claimed.token,
-    isNew: Boolean(claimed.isNew),
-    profile: claimed.profile || {},
-  };
+  if (outcome === 'ready' && claimed) {
+    return {
+      status: 'ready',
+      token: claimed.token,
+      isNew: Boolean(claimed.isNew),
+      profile: claimed.profile || {},
+    };
+  }
+  if (outcome === 'wrong-code') return { status: 'wrong-code', attemptsLeft };
+  return { status: 'expired' };
 };
 
 /**
@@ -297,6 +339,7 @@ module.exports = {
   LOGINS_BY_TG_ROOT,
   LOGINS_ROOT,
   LOGIN_TTL_MS,
+  MAX_CODE_ATTEMPTS,
   completeTelegramLogin,
   createAdminDb,
   createTelegramSender,

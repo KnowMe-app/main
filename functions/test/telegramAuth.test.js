@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const {
   LOGIN_TTL_MS,
+  MAX_CODE_ATTEMPTS,
   completeTelegramLogin,
   handleTelegramUpdate,
   hashNonce,
@@ -66,6 +67,7 @@ const setup = (now = 1_000_000) => {
     auth: fakeAuth(),
     sendMessage: async (chatId, text, markup) => { sent.push({ chatId, text, markup }); },
     now,
+    randomCode: () => '123456',
   };
   return { deps, sent };
 };
@@ -102,29 +104,33 @@ test('повний потік: /start → контакт → застосуно�
   // Сирий nonce у базі не лежить — лише хеш.
   assert.ok([...deps.db.data.keys()].every(key => !key.includes(NONCE)));
 
-  assert.deepEqual(await completeTelegramLogin(NONCE, deps), { status: 'pending', started: true });
+  assert.deepEqual(await completeTelegramLogin(NONCE, '', deps), { status: 'pending', started: true });
 
   assert.equal(await handleTelegramUpdate(contactFrom(TG_ID), deps), 'registered');
-  const ready = await completeTelegramLogin(NONCE, deps);
+  // Код бачить лише власник акаунта Telegram — у повідомленні бота.
+  assert.match(sent[sent.length - 1].text, /123456/);
+  // Без коду браузер, що чекає, токена не отримує.
+  assert.deepEqual(await completeTelegramLogin(NONCE, '', deps), { status: 'code-required' });
+  const ready = await completeTelegramLogin(NONCE, '123 456', deps);
   assert.equal(ready.status, 'ready');
   assert.equal(ready.isNew, true);
   assert.match(ready.token, /^token-for-uid/);
   assert.deepEqual(ready.profile, { phone: '380501234567', firstName: 'Оксана', lastName: 'Коваль', username: 'oksana_k' });
 
   // Другий запит з тим самим nonce сесії не отримує.
-  assert.notEqual((await completeTelegramLogin(NONCE, deps)).status, 'ready');
+  assert.notEqual((await completeTelegramLogin(NONCE, '123456', deps)).status, 'ready');
 });
 
 test('другий вхід того самого акаунта Telegram — той самий uid, не новий акаунт', async () => {
   const { deps } = setup();
   await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps);
   await handleTelegramUpdate(contactFrom(TG_ID), deps);
-  const first = await completeTelegramLogin(NONCE, deps);
+  const first = await completeTelegramLogin(NONCE, '123456', deps);
 
   const second = 'ZyXwVuTsRqPoNmLkJiHgFe';
   await handleTelegramUpdate(privateMessage({ text: `/start ${second}` }), deps);
   assert.equal(await handleTelegramUpdate(contactFrom(TG_ID), deps), 'signed-in');
-  const again = await completeTelegramLogin(second, deps);
+  const again = await completeTelegramLogin(second, '123456', deps);
   assert.equal(again.isNew, false);
   assert.equal(again.token, first.token);
   assert.equal(deps.auth.users.size, 1);
@@ -134,7 +140,7 @@ test('пересланий чужий контакт входу не дає', as
   const { deps } = setup();
   await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps);
   assert.equal(await handleTelegramUpdate(contactFrom(999), deps), 'foreign-contact');
-  assert.deepEqual(await completeTelegramLogin(NONCE, deps), { status: 'pending', started: true });
+  assert.deepEqual(await completeTelegramLogin(NONCE, '', deps), { status: 'pending', started: true });
 });
 
 test('спробу, яку взяв один акаунт Telegram, інший не перехоплює', async () => {
@@ -152,7 +158,7 @@ test('прострочена спроба не дає входу', async () => {
   await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps);
   const later = { ...deps, now: deps.now + LOGIN_TTL_MS + 1 };
   assert.equal(await handleTelegramUpdate(contactFrom(TG_ID), later), 'expired');
-  assert.equal((await completeTelegramLogin(NONCE, later)).status, 'expired');
+  assert.equal((await completeTelegramLogin(NONCE, '123456', later)).status, 'expired');
   assert.equal(deps.db.data.has(`telegramLogins/${hashNonce(NONCE)}`), false);
 });
 
@@ -165,5 +171,26 @@ test('група — не вхід', async () => {
 
 test('недійсний nonce у застосунку — invalid', async () => {
   const { deps } = setup();
-  assert.deepEqual(await completeTelegramLogin('short', deps), { status: 'invalid' });
+  assert.deepEqual(await completeTelegramLogin('short', '123456', deps), { status: 'invalid' });
+});
+
+test('підсунуте посилання: хто згенерував nonce, без коду жертви не входить, а перебір коду спалює вхід', async () => {
+  const { deps } = setup();
+  await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps);
+  await handleTelegramUpdate(contactFrom(TG_ID), deps);
+  for (let i = 1; i < MAX_CODE_ATTEMPTS; i += 1) {
+    assert.deepEqual(await completeTelegramLogin(NONCE, '000000', deps), { status: 'wrong-code', attemptsLeft: MAX_CODE_ATTEMPTS - i });
+  }
+  assert.equal((await completeTelegramLogin(NONCE, '000000', deps)).status, 'expired');
+  // Навіть правильний код після цього не дає входу.
+  assert.notEqual((await completeTelegramLogin(NONCE, '123456', deps)).status, 'ready');
+});
+
+test('у базі лежить хеш коду, а не сам код', async () => {
+  const { deps } = setup();
+  deps.randomCode = () => '987654';
+  await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps);
+  await handleTelegramUpdate(contactFrom(TG_ID), deps);
+  const record = deps.db.data.get(`telegramLogins/${hashNonce(NONCE)}`);
+  assert.ok(!JSON.stringify(record).includes('987654'));
 });

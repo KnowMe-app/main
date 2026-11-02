@@ -32,4 +32,13 @@ describe('LoginScreen: вхід через Telegram', () => {
     const source = loginSource();
     expect(source).toContain('setTelegramSignup({ uid, profileData });');
   });
+
+  // Посилання на бота може підсунути чужа людина: без коду, який бот показав
+  // власникові Telegram, токен забрав би браузер того, хто посилання згенерував.
+  it('вхід завершує код із бота, а не саме очікування', () => {
+    const source = loginSource();
+    expect(source).toContain("if (result?.status === 'code-required') {");
+    expect(source).toContain('pollTelegramLogin(auth.app, attempt.nonce, code)');
+    expect(source).toContain('autoComplete="one-time-code"');
+  });
 });

@@ -71,14 +71,16 @@ export const clearTelegramLoginAttempt = () => {
 };
 
 /**
- * Питає функцію, чи бот уже отримав номер. `ready` несе custom token —
+ * Питає функцію, чи бот уже отримав номер. Коли отримав — `code-required`:
+ * токен віддається лише з кодом, який бот показав людині в Telegram
+ * (захист від підсунутого посилання на бота). `ready` несе custom token —
  * функція віддає його рівно один раз.
- * @returns {Promise<{ status: 'pending'|'ready'|'expired'|'invalid', started?: boolean, token?: string, isNew?: boolean, profile?: object }>}
+ * @returns {Promise<{ status: 'pending'|'code-required'|'wrong-code'|'ready'|'expired'|'invalid', started?: boolean, attemptsLeft?: number, token?: string, isNew?: boolean, profile?: object }>}
  */
-export const pollTelegramLogin = async (app, nonce) => {
+export const pollTelegramLogin = async (app, nonce, code = '') => {
   const { getFunctions, httpsCallable } = await import(/* webpackChunkName: "firebase-functions" */ 'firebase/functions');
   const call = httpsCallable(getFunctions(app, VERIFICATION_FUNCTION_REGION), TELEGRAM_COMPLETE_FUNCTION_NAME, { timeout: 15000 });
-  const { data } = await call({ nonce });
+  const { data } = await call({ nonce, code });
   return data || { status: 'pending' };
 };
 

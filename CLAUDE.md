@@ -1252,8 +1252,10 @@ Flow, `fetchNbuUahExchangeRatesByDate`). Оригінал показується
 - **Вхід і реєстрація — спершу Telegram, пошта — запас** (`docs/telegram-login.md`,
   02.11, на прохання власниці продукту: телефон — реальний канал для донорок і СМ,
   пошта — ділове листування). Бот просить «Поділитися номером», функція
-  `telegramWebhook` заводить акаунт і custom token, форма забирає його через
-  `completeTelegramLogin` (`utils/telegramAuth`). Без `REACT_APP_TELEGRAM_BOT_USERNAME`
+  `telegramWebhook` заводить акаунт і custom token і шле людині код із шести
+  цифр; форма забирає токен через `completeTelegramLogin` (`utils/telegramAuth`)
+  **лише з цим кодом** — без нього підсунуте посилання на бота віддавало б
+  сесію жертви тому, хто посилання згенерував. Без `REACT_APP_TELEGRAM_BOT_USERNAME`
   кнопки немає й форма поштова — змінну в GitHub ставлять останньою, після деплою
   функцій і `setWebhook`. Акаунти Telegram і пошти не звʼязуються за номером
   навмисно: номер у чужій анкеті віддав би чужий акаунт.
