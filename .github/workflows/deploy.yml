@@ -40,6 +40,9 @@ jobs:
           echo "REACT_APP_USER1=${{ secrets.REACT_APP_USER1 }}" >> .env
           echo "REACT_APP_OPENAI_API_KEY=${{ secrets.REACT_APP_OPENAI_API_KEY }}" >> .env
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
+          # Імʼя бота входу через Telegram (без @). Не секрет — змінна репозиторію;
+          # порожня — кнопки Telegram на вході немає, лишається пошта.
+          echo "REACT_APP_TELEGRAM_BOT_USERNAME=${{ vars.REACT_APP_TELEGRAM_BOT_USERNAME }}" >> .env
 
       - name: Install, lint, build 🔧
         run: |
