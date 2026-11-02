@@ -14,7 +14,7 @@ describe('вхід: пароль і згода', () => {
   const source = read('LoginScreen.jsx');
 
   it('надсилає лист для зміни пароля з вкладки «Увійти»', () => {
-    expect(source).toContain('await sendPasswordResetEmail(auth, normalizedEmail);');
+    expect(source).toContain('await requestPasswordResetEmail(normalizedEmail, { auth, language });');
     expect(source).toContain('Забули пароль?');
   });
 

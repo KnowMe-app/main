@@ -8,9 +8,10 @@ const appSource = () => fs.readFileSync(path.join(__dirname, 'App.jsx'), 'utf8')
  * інше в застосунку — про конкретних людей. Форма входу й текст угоди нічого
  * не читають з бази. Анкета за посиланням (`/p/:token`) читає рівно один
  * вузол — знімок, який власниця сама випустила (`profileShares/{token}/card`),
- * і саме це стереже тест нижче.
+ * і саме це стереже тест нижче. Сторінка посилань з листів (`/auth/action`)
+ * бази не читає зовсім — лише Firebase Auth з одноразовим кодом з адреси.
  */
-const PUBLIC_ROUTES = ['/login', '/policy', '/p/:token'];
+const PUBLIC_ROUTES = ['/login', '/policy', '/p/:token', '/auth/action'];
 
 // Маршрути, які самі лише перенаправляють: гардити їх нема сенсу, бо вони
 // нічого не рендерять — ціль перенаправлення вже за межею.
@@ -59,6 +60,15 @@ describe('App route guards', () => {
     expect(pageSource).toContain('readSharedProfileCard(token)');
     expect(pageSource).not.toMatch(/from '\.\/config'/);
     expect(pageSource).not.toMatch(/fetchUserById|readProfileFromNodes|profileContacts\//);
+  });
+
+  // Посилання з листа відкривають там, де людина ще не входила, тож сторінка
+  // публічна. Тримає її публічною лише те, що бази вона не читає: ні
+  // `config`-читачів анкети, ні `get`/`ref` бази — самі виклики Firebase Auth.
+  it('сторінка посилань з листів не читає бази', () => {
+    const pageSource = fs.readFileSync(path.join(__dirname, 'AuthActionPage.jsx'), 'utf8');
+    expect(pageSource).toContain("import { auth } from './config';");
+    expect(pageSource).not.toMatch(/firebase\/database|fetchUserById|readProfileFromNodes|profileContacts/);
   });
 
   it('reads every route in the table', () => {

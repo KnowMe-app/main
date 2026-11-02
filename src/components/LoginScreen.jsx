@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { FaUser, FaLock, FaEye, FaEyeSlash, FaGlobe, FaChevronDown } from 'react-icons/fa';
 import { auth, fetchUserById } from './config';
-import { createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { authNotifications } from './authNotifications';
@@ -15,6 +15,7 @@ import {
   persistAccountProfile,
 } from './authProfilePersistence';
 import { readReturnToFromState } from 'utils/authRedirect';
+import { requestPasswordResetEmail, requestVerificationEmail } from 'utils/emailVerification';
 import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
 import { APP_LANGUAGES, getLanguageNativeName } from 'utils/locales';
 import { uiText } from 'utils/uiTranslations';
@@ -611,7 +612,14 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
         isRegistration: true,
       });
 
-      await sendEmailVerification(userCredential.user);
+      // Лист підтвердження не тримає реєстрацію. Поки тут стояв `await`,
+      // відмова Firebase (надто часті листи) кидала всю реєстрацію в `catch`:
+      // акаунт уже існував, а анкета не записувалась, і людина бачила
+      // «помилку входу». Лист — брендований KnowMe, а коли функція не
+      // відповіла, — стандартний Firebase (`utils/emailVerification`).
+      requestVerificationEmail(userCredential.user, { auth, language, role: selectedRole }).catch(error => {
+        console.warn('Verification email was not sent:', error?.code || error);
+      });
       await persistAccountProfile(userCredential.user.uid, uploadedInfo, 'set');
 
       markAuthSession({ email, userId: userCredential.user.uid });
@@ -648,7 +656,9 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     }
     setIsLoading(true);
     try {
-      await sendPasswordResetEmail(auth, normalizedEmail);
+      // Брендований лист KnowMe мовою інтерфейсу; коли функція не відповіла —
+      // стандартний лист Firebase тією ж мовою (`utils/emailVerification`).
+      await requestPasswordResetEmail(normalizedEmail, { auth, language });
       authNotifications.passwordResetSent(normalizedEmail);
     } catch (error) {
       if (error.code === 'auth/user-not-found') {
