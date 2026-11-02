@@ -12,6 +12,11 @@ name: Deploy Telegram login (functions + webhook)
 #
 # Потрібні секрети репозиторію:
 #   FIREBASE_SERVICE_ACCOUNT — JSON-ключ сервісного акаунта з роллю Owner
+#
+# Owner і JSON-ключ — свідомий компроміс: налаштувати з телефона Workload
+# Identity Federation чи набір вузьких ролей власниця не може. Тому сторонні
+# дії й firebase-tools закріплені точними версіями (SHA), а ключ після
+# розгортання відкликається (docs/telegram-login.md).
 #   TELEGRAM_BOT_TOKEN       — токен від @BotFather
 
 on:
@@ -44,11 +49,11 @@ jobs:
           [ -n "$SA" ] || { echo "::error::Немає секрету FIREBASE_SERVICE_ACCOUNT"; exit 1; }
           [ -n "$BOT" ] || { echo "::error::Немає секрету TELEGRAM_BOT_TOKEN"; exit 1; }
 
-      - uses: google-github-actions/auth@v2
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
 
       - name: Install functions dependencies
         run: cd functions && npm ci
@@ -60,8 +65,8 @@ jobs:
           WEBHOOK_SECRET="$(openssl rand -hex 32)"
           echo "::add-mask::$WEBHOOK_SECRET"
           echo "WEBHOOK_SECRET=$WEBHOOK_SECRET" >> "$GITHUB_ENV"
-          printf '%s' "$BOT" | npx --yes firebase-tools@latest functions:secrets:set TELEGRAM_BOT_TOKEN --data-file - --project "$PROJECT_ID" --non-interactive --force
-          printf '%s' "$WEBHOOK_SECRET" | npx --yes firebase-tools@latest functions:secrets:set TELEGRAM_WEBHOOK_SECRET --data-file - --project "$PROJECT_ID" --non-interactive --force
+          printf '%s' "$BOT" | npx --yes firebase-tools@15.34.0 functions:secrets:set TELEGRAM_BOT_TOKEN --data-file - --project "$PROJECT_ID" --non-interactive --force
+          printf '%s' "$WEBHOOK_SECRET" | npx --yes firebase-tools@15.34.0 functions:secrets:set TELEGRAM_WEBHOOK_SECRET --data-file - --project "$PROJECT_ID" --non-interactive --force
 
       - name: Allow functions to sign login tokens
         run: |
@@ -75,7 +80,7 @@ jobs:
 
       - name: Deploy functions
         run: |
-          npx --yes firebase-tools@latest deploy \
+          npx --yes firebase-tools@15.34.0 deploy \
             --only functions:telegramWebhook,functions:completeTelegramLogin \
             --project "$PROJECT_ID" --non-interactive --force
 
