@@ -26,6 +26,7 @@ import {
   buildTelegramLoginLink,
   buildTelegramProfileData,
   clearTelegramLoginAttempt,
+  readTelegramCodeFromHash,
   createTelegramLoginNonce,
   isTelegramLoginAvailable,
   pollTelegramLogin,
@@ -588,6 +589,13 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   const telegramAttemptRef = useRef(telegramAttempt);
   telegramAttemptRef.current = telegramAttempt;
   const [telegramCode, setTelegramCode] = useState('');
+  // Код з кнопки бота «Увійти в KnowMe» (`#tgcode=`). Підставляється, щойно
+  // функція скаже, що номер прийшов і чекає коду; без спроби в цьому браузері
+  // він не робить нічого.
+  const telegramHashCodeRef = useRef(null);
+  if (telegramHashCodeRef.current === null) {
+    telegramHashCodeRef.current = telegramAvailable ? readTelegramCodeFromHash() : '';
+  }
 
   const handleCheckboxChange = () => {
     setIsChecked(!isChecked);
@@ -944,6 +952,21 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     }
     handleTelegramCodeChange(match[1].replace(/\D/g, ''));
   };
+
+  useEffect(() => {
+    const code = telegramHashCodeRef.current;
+    if (!code) return;
+    if (!telegramAttempt) {
+      telegramHashCodeRef.current = '';
+      toast(tr('Відкрийте вкладку, де почали вхід через Telegram, і введіть код {code}', { code }));
+      return;
+    }
+    if (!telegramCodeRequested) return;
+    telegramHashCodeRef.current = '';
+    handleTelegramCodeChange(code);
+    // Обробник читає лише стан форми на момент підстановки.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [telegramAttempt, telegramCodeRequested]);
 
   const handleTelegramSignupContinue = async () => {
     if (!telegramSignup) return;

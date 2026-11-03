@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { FaTelegramPlane } from 'react-icons/fa';
@@ -9,6 +9,7 @@ import {
   clearTelegramLinkAttempt,
   createTelegramLoginNonce,
   isTelegramLoginAvailable,
+  readTelegramCodeFromHash,
   readTelegramLinkAttempt,
   saveTelegramLinkAttempt,
 } from 'utils/telegramAuth';
@@ -28,10 +29,25 @@ const TelegramLinkCard = ({ auth, language }) => {
   const [busy, setBusy] = useState(false);
   const [linked, setLinked] = useState(false);
   const t = (text, vars) => uiText(text, language, vars);
+  // Код з кнопки бота «Привʼязати Telegram» (`#tgcode=`) — лише для спроби,
+  // що лежить у цьому браузері.
+  const hashCodeRef = useRef(null);
+  if (hashCodeRef.current === null) hashCodeRef.current = readTelegramCodeFromHash();
 
   useEffect(() => {
     if (uid) setAttempt(readTelegramLinkAttempt(uid));
   }, [uid]);
+
+  useEffect(() => {
+    const pending = hashCodeRef.current;
+    // Ті самі умови, що й ранній вихід нижче: інакше `change` у цьому рендері
+    // ще не оголошено.
+    if (!pending || !uid || !attempt || !hasPassword || !isTelegramLoginAvailable()) return;
+    hashCodeRef.current = '';
+    change(pending);
+    // Обробник читає лише стан картки на момент підстановки.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid, attempt, hasPassword]);
 
   if (!uid || !hasPassword || !isTelegramLoginAvailable()) return null;
 

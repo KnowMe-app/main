@@ -37,6 +37,7 @@ const BY_UK = {
   'Невірний код. Залишилось спроб: {count}': 'Código incorrecto. Intentos restantes: {count}',
   'Відкрити Telegram ще раз': 'Abrir Telegram de nuevo',
   'Вставити код': 'Pegar código',
+  'Відкрийте вкладку, де почали вхід через Telegram, і введіть код {code}': 'Abre la pestaña donde empezaste a iniciar sesión con Telegram e introduce el código {code}',
   'Не вдалося прочитати буфер обміну. Введіть код вручну': 'No se pudo leer el portapapeles. Introduce el código manualmente',
   'У буфері немає коду. Торкніться коду в Telegram, щоб скопіювати його': 'No hay código en el portapapeles. Toca el código en Telegram para copiarlo',
   'Вхід через Telegram': 'Acceso con Telegram',
