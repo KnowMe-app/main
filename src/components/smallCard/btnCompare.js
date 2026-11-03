@@ -100,6 +100,11 @@ export const btnCompare = (
 
   let pairIds = [];
   let requestId;
+  // Перемалювання не стоїть у черзі запису (див. `copyValue`), тож два
+  // «перенести» поспіль дають два перемалювання, що летять одночасно. Кожне
+  // знімає анкети **до** своїх читань, і старше, що повернулось останнім,
+  // клало б у таблицю значення до другого запису. Показує лише найновіше.
+  let refreshGeneration = 0;
   const copyValue = async (key, sourceValue, targetUserId, sourceUserId, targetValue) => {
     if (!targetUserId) return;
     const latestTarget = (usersRef?.current || users)[targetUserId];
@@ -172,6 +177,7 @@ export const btnCompare = (
   };
 
   const refreshComparison = async (reloadProfiles = false) => {
+    const generation = ++refreshGeneration;
     if (reloadProfiles) {
       const latestBefore = usersRef?.current || users;
       const profiles = await Promise.all(pairIds
@@ -195,7 +201,7 @@ export const btnCompare = (
       remoteId(currentUserRaw) ? getAllUserPhotos(currentUserRaw.userId) : [],
       remoteId(nextUserRaw) ? getAllUserPhotos(nextUserRaw.userId) : [],
     ]);
-    if (requestId !== latestCompareRequest) return;
+    if (requestId !== latestCompareRequest || generation !== refreshGeneration) return;
 
     // Тексти — лише для показу різниці; переносить відгуки не ця таблиця, а
     // `copyPublicCommentsBetweenCards`, яка читає їх наново разом з автором.
