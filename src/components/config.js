@@ -5206,6 +5206,36 @@ export const deletePhotos = async (userId, photoUrls = []) => {
 const FIREBASE_STORAGE_HOST = 'firebasestorage.googleapis.com';
 
 /**
+ * Запасний GET байтів файлу Storage за адресою `getDownloadURL`.
+ *
+ * Сам файл (`alt=media`) віддає не API Firebase, а бакет GCS, і заголовок
+ * `Access-Control-Allow-Origin` на ньому ставить лише CORS бакета
+ * (`storage.cors.json`, викочується руками через `gsutil cors set`). Коли домен
+ * сайту там не названий, браузер ріже відповідь, і `fetch` кидає голе
+ * «Failed to fetch» — так 03.11 падало перенесення фото дублікатів на
+ * `knowme.pp.ua`: бакет пускав лише старий `knowme-app.github.io`. Тож
+ * мережеву відмову перекладаємо на причину й команду, а не показуємо як є.
+ */
+const fetchStorageFileBytes = async (url, fallbackError) => {
+  let response;
+  try {
+    response = await fetch(url);
+  } catch (networkError) {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const bucket = storage?.app?.options?.storageBucket || '<бакет>';
+    const error = new Error(
+      `Storage не віддає файл фото сайту ${origin} (CORS бакета не дозволяє цей домен). `
+      + `Потрібно викотити storage.cors.json: gsutil cors set storage.cors.json gs://${bucket}`,
+    );
+    error.code = 'storage/cors-blocked';
+    error.cause = networkError;
+    throw error;
+  }
+  if (!response.ok) throw fallbackError;
+  return response.arrayBuffer();
+};
+
+/**
  * Шлях файлу в Storage з адреси `getDownloadURL` (або `''`, якщо це не файл
  * нашого бакета).
  *
@@ -5285,9 +5315,7 @@ export const copyProfilePhotosBetweenCards = async ({ sourceUserId, targetUserId
     } catch (bytesError) {
       // Той самий запасний шлях, що й у `getStorageFileDataUrl`: getBytes
       // падає на CORS там, де звичайний GET за адресою проходить.
-      const response = await fetch(url);
-      if (!response.ok) throw bytesError;
-      bytes = await response.arrayBuffer();
+      bytes = await fetchStorageFileBytes(url, bytesError);
     }
     const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     const contentType = getStorageContentTypeFromBytes(byteArray)
@@ -5905,9 +5933,7 @@ const readStoragePhotoBlob = async (path, url) => {
     bytes = await getBytes(ref(storage, path));
   } catch (bytesError) {
     if (storagePathFromDownloadUrl(url) !== path) throw bytesError;
-    const response = await fetch(url);
-    if (!response.ok) throw bytesError;
-    bytes = await response.arrayBuffer();
+    bytes = await fetchStorageFileBytes(url, bytesError);
   }
   const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   return new Blob([byteArray], { type: getStorageContentTypeFromBytes(byteArray) || 'image/jpeg' });

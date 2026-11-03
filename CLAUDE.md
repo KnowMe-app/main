@@ -184,6 +184,15 @@ GitHub кладе туди з налаштувань Pages, зник би з п�
 рішення; повернення підшляху вимагає змінити всі три. Старі адреси `/main/...` знімає
 скрипт у `public/index.html` ще до роутера.
 
+**CORS бакета Storage CI не викочує** (`storage.cors.json`): `gsutil cors set
+storage.cors.json gs://<бакет>`. Файл фото (`alt=media`) віддає бакет GCS, і без
+домену сайту в цьому переліку браузер не читає байтів — `getBytes` і запасний GET
+падають з «Failed to fetch». Показувати фото `<img>` це не заважає, тож поломку видно
+лише там, де байти читаються: перенесення фото дублікатів, копії фото посилання,
+мініатюри. 03.11 бакет усе ще пускав лише `knowme-app.github.io`, хоч файл уже
+називав `knowme.pp.ua`; перевірка — `curl -sI -H 'Origin: https://knowme.pp.ua'
+'<адреса фото з токеном>'` мусить нести `access-control-allow-origin`.
+
 **Cloud Functions CI теж не викочує** (`functions/`: листи підтвердження пошти й
 зміни пароля): `npx firebase-tools deploy --only functions`, план Blaze, секрет
 `BREVO_API_KEY`, домен у Brevo — `docs/email-verification.md`. Поки функцію не

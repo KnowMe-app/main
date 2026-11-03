@@ -39,6 +39,6 @@ describe('мініатюри старих фото: лише фото з вла�
   it('запасний GET іде лише за адресою того самого файлу нашого бакета', () => {
     const reader = sliceBetween(config(), 'const readStoragePhotoBlob = async (path, url) =>', '\n};');
     expect(reader.indexOf('if (storagePathFromDownloadUrl(url) !== path) throw bytesError;'))
-      .toBeLessThan(reader.indexOf('await fetch(url)'));
+      .toBeLessThan(reader.indexOf('await fetchStorageFileBytes(url, bytesError)'));
   });
 });
