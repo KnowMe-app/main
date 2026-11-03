@@ -78,9 +78,16 @@ const BOT_TEXTS = Object.freeze({
   // Окремим повідомленням, бо прибрати клавіатуру «Поділитися номером» і
   // дати кнопку посилання одне повідомлення не може: `reply_markup` один.
   contactReceived: '✅ Номер підтверджено.',
-  done: code => `Ваш код для входу в KnowMe: ${code}\n\n`
-    + 'Що далі: натисніть «Повернутися в KnowMe» нижче (або перейдіть у браузер, '
-    + 'де ви натиснули «Увійти через Telegram») і введіть цей код у поле на сторінці.\n\n'
+  // Код — у `<code>`: Telegram копіює моноширинний текст одним дотиком, а
+  // сторінка входу вставляє його з буфера кнопкою «Вставити код». Код у
+  // кнопку повернення не кладеться навмисно: тоді його не треба було б
+  // вводити там, де вхід почали, і він перестав би захищати від підсунутого
+  // посилання на бота (docs/telegram-login.md). Решта тексту — без `<`, `>`
+  // і `&`, тож HTML-розмітка її не ламає.
+  done: code => `Ваш код для входу в KnowMe: <code>${code}</code>\n\n`
+    + 'Що далі: торкніться коду — він скопіюється. Потім натисніть «Повернутися в KnowMe» '
+    + 'нижче (або перейдіть у браузер, де ви натиснули «Увійти через Telegram») '
+    + 'і там «Вставити код».\n\n'
     + '⚠️ Нікому не повідомляйте цей код — навіть якщо просять «підтвердити номер». '
     + 'Хто його знає, той увійде у ваш акаунт.',
   alreadyDone: 'Код для входу вже надіслано вище. Поверніться в KnowMe й введіть його.',
@@ -227,7 +234,7 @@ const handleContact = async ({ message, tgId, chatId }, deps) => {
   });
   await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
   await sendMessage(chatId, BOT_TEXTS.contactReceived, { remove_keyboard: true });
-  await sendMessage(chatId, BOT_TEXTS.done(code), returnToAppButton());
+  await sendMessage(chatId, BOT_TEXTS.done(code), returnToAppButton(), { html: true });
   return isNew ? 'registered' : 'signed-in';
 };
 
@@ -333,7 +340,7 @@ const createAdminDb = database => ({
   },
 });
 
-const createTelegramSender = (token, fetchImpl = fetch) => async (chatId, text, replyMarkup) => {
+const createTelegramSender = (token, fetchImpl = fetch) => async (chatId, text, replyMarkup, options = {}) => {
   const response = await fetchImpl(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -341,6 +348,7 @@ const createTelegramSender = (token, fetchImpl = fetch) => async (chatId, text, 
       chat_id: chatId,
       text,
       disable_web_page_preview: true,
+      ...(options.html ? { parse_mode: 'HTML' } : {}),
       ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
     }),
   });
