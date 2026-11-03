@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import toast from 'react-hot-toast';
 import { btnCompare } from './btnCompare';
-import { saveComparisonField, fetchUserComment, saveMyCardComment } from '../config';
+import { saveComparisonField, fetchUserComment, saveMyCardComment, getAllUserPhotos } from '../config';
 import { appendComparisonValues, mergeComparisonText, mergeComparisonValues } from '../../utils/comparisonValues';
 
 jest.mock('react-hot-toast', () => ({ success: jest.fn(), error: jest.fn() }));
@@ -27,7 +27,7 @@ const open = async (fields, target = {}) => {
   fireEvent.click(screen.getByTitle('Порівняти'));
   await waitFor(() => expect(setCompare).toHaveBeenCalledTimes(2));
   render(setCompare.mock.calls[1][0]);
-  return { usersRef, setUsers };
+  return { usersRef, setUsers, setCompare };
 };
 
 beforeEach(() => {
@@ -111,6 +111,25 @@ it('serializes rapid transfers to the same card without losing either field', as
   await act(async () => resolve(['170']));
   await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(2));
   expect(usersRef.current.B).toMatchObject({ height: ['170'], weight: ['60'] });
+});
+
+// Перемалювання стоїть поза чергою запису, тож два «перенести» поспіль дають
+// два перемалювання одночасно. Старше, що повернулось останнім, не має
+// класти в таблицю значення до другого запису.
+it('ignores an older comparison refresh that finishes after a newer one', async () => {
+  saveComparisonField.mockImplementation(async (_, __, value) => value);
+  const { setCompare } = await open({ height: '170', weight: '60' });
+  const callsAfterOpen = setCompare.mock.calls.length;
+  let releaseFirst;
+  const held = new Promise(done => { releaseFirst = done; });
+  getAllUserPhotos.mockImplementationOnce(() => held).mockImplementationOnce(() => held);
+  fireEvent.click(screen.getByText('170'));
+  await waitFor(() => expect(getAllUserPhotos).toHaveBeenCalledTimes(4));
+  fireEvent.click(screen.getByText('60'));
+  await waitFor(() => expect(setCompare.mock.calls.length).toBe(callsAfterOpen + 1));
+  await act(async () => releaseFirst([]));
+  await act(async () => { await Promise.resolve(); });
+  expect(setCompare.mock.calls.length).toBe(callsAfterOpen + 1);
 });
 
 it('copies only the current personal comment and uses the acknowledged text', async () => {
