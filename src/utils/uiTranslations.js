@@ -61,7 +61,7 @@ const EN_BY_UK = {
   'Спершу поділіться номером у боті, потім введіть код': 'Share your number in the bot first, then enter the code',
   'Час на привʼязку минув. Спробуйте ще раз': 'Linking time has expired. Please try again',
   'Не вдалося привʼязати Telegram. Спробуйте ще раз': 'Could not link Telegram. Please try again',
-  'Скасувати': 'Cancel',
+  'Скасувати привʼязку': 'Cancel linking',
   'Скасувати вхід': 'Cancel sign-in',
   'Майже готово: оберіть, хто ви': 'Almost done: tell us who you are',
   'Продовжити': 'Continue',

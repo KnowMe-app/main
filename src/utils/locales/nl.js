@@ -48,6 +48,7 @@ const BY_UK = {
   'Спершу поділіться номером у боті, потім введіть код': 'Deel eerst je nummer in de bot en voer dan de code in',
   'Час на привʼязку минув. Спробуйте ще раз': 'De tijd om te koppelen is verstreken. Probeer het opnieuw',
   'Не вдалося привʼязати Telegram. Спробуйте ще раз': 'Telegram kon niet worden gekoppeld. Probeer het opnieuw',
+  'Скасувати привʼязку': 'Koppelen annuleren',
   'Скасувати вхід': 'Inloggen annuleren',
   'Майже готово: оберіть, хто ви': 'Bijna klaar: vertel ons wie je bent',
   'Продовжити': 'Doorgaan',

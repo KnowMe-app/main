@@ -125,7 +125,7 @@ const TelegramLinkCard = ({ auth, language }) => {
             <Link as="a" href={buildTelegramLoginLink(attempt.nonce)} target="_blank" rel="noopener noreferrer">
               {t('Відкрити Telegram ще раз')}
             </Link>
-            <Link type="button" onClick={reset}>{t('Скасувати')}</Link>
+            <Link type="button" onClick={reset}>{t('Скасувати привʼязку')}</Link>
           </Actions>
         </form>
       ) : (

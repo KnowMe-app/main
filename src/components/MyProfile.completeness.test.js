@@ -40,7 +40,7 @@ describe('після обовʼязкового смужка рахує всю �
   });
 
   it('«Де ви готові проходити програму» «Варто дописати» називає першим', () => {
-    expect(source).toMatch(/const NEXT_FIELD_PRIORITY = \[\n  'programPlace',/);
+    expect(source).toMatch(/const NEXT_FIELD_PRIORITY = \[\n {2}'programPlace',/);
   });
 });
 
