@@ -2,6 +2,7 @@ import { handleChange } from './actions';
 import { utilCalculateMonthsAgo } from './utilCalculateMonthsAgo';
 import { AttentionButton } from 'components/styles';
 import { formatDateToDisplay } from 'components/inputValidations';
+import { getCurrentValue } from '../getCurrentValue';
 
 export const fieldDeliveryInfo = (args, legacySetState, legacyUserData, legacySubmitOptions = {}) => {
   const {
@@ -17,7 +18,10 @@ export const fieldDeliveryInfo = (args, legacySetState, legacyUserData, legacySu
         userData: legacyUserData,
         submitOptions: legacySubmitOptions,
       };
-  const { ownKids, lastDelivery, csection } = userData;
+  const { csection } = userData;
+  // Поля з історією версій: масив показуємо поточною версією.
+  const ownKids = getCurrentValue(userData.ownKids);
+  const lastDelivery = getCurrentValue(userData.lastDelivery);
   const formattedLastDelivery = formatDateToDisplay(lastDelivery);
 
   const csectionItems = Array.isArray(csection)

@@ -750,14 +750,21 @@ const buildName = data => {
   return nameParts.length > 0 ? nameParts.join(' ') : '';
 };
 
+// Ці поля живуть у базі з історією версій (масивом після перенесення з
+// дубліката чи правки), тож картка показує поточну версію (`getCurrentValue`),
+// а не масив цілком: React склеював би версії в один рядок.
 const renderIdentityMeta = data => {
   const parts = [];
-  if (data.maritalStatus) parts.push(fieldMaritalStatus(data.maritalStatus));
-  if (data.blood) parts.push(fieldBlood(data.blood));
-  if (data.height) parts.push(data.height);
-  if (data.height && data.weight) parts.push('/');
-  if (data.weight) parts.push(`${data.weight}-`);
-  if (data.weight && data.height) parts.push(fieldIMT(data.weight, data.height));
+  const height = getCurrentValue(data.height);
+  const weight = getCurrentValue(data.weight);
+  const maritalStatus = fieldMaritalStatus(data.maritalStatus);
+  const blood = fieldBlood(data.blood);
+  if (maritalStatus) parts.push(maritalStatus);
+  if (blood) parts.push(blood);
+  if (height) parts.push(height);
+  if (height && weight) parts.push('/');
+  if (weight) parts.push(`${weight}-`);
+  if (weight && height) parts.push(fieldIMT(weight, height));
   return parts.map((part, index) => <React.Fragment key={index}>{part}</React.Fragment>);
 };
 
@@ -1468,7 +1475,9 @@ export const TopBlock = ({
     const currentUid = auth.currentUser?.uid || '';
     return multiDataComments.filter(comment => (comment.ownerId || comment.authorId || '') !== currentUid);
   }, [multiDataComments]);
-  const region = normalizeRegion(cardData.region);
+  // `region` теж буває масивом версій: без розгортання `normalizeRegion` його
+  // пропускав, і «область» не дописувалась.
+  const region = normalizeRegion(getCurrentValue(cardData.region));
   const showSideActions = !additionalActions;
   const hasHiddenCycleFieldRole = hasRoleWithoutCycle(cardData);
   const userPhotoUrls = getUserProfilePhotoUrls(cardData);
