@@ -48,6 +48,7 @@ const BY_UK = {
   'Спершу поділіться номером у боті, потім введіть код': 'Primero comparte tu número en el bot y luego introduce el código',
   'Час на привʼязку минув. Спробуйте ще раз': 'Se acabó el tiempo para vincular. Inténtalo de nuevo',
   'Не вдалося привʼязати Telegram. Спробуйте ще раз': 'No se pudo vincular Telegram. Inténtalo de nuevo',
+  'Скасувати привʼязку': 'Cancelar vinculación',
   'Скасувати вхід': 'Cancelar acceso',
   'Майже готово: оберіть, хто ви': 'Casi listo: dinos quién eres',
   'Продовжити': 'Continuar',
