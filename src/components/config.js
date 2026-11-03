@@ -5264,17 +5264,18 @@ export const photoComparisonKey = (url, userId) => {
 export const copyProfilePhotosBetweenCards = async ({ sourceUserId, targetUserId, photoUrls = [] }) => {
   if (!sourceUserId || !targetUserId) throw new Error('Картку не визначено');
   const sourcePrefix = `avatar/${sourceUserId}/`;
-  const copied = [];
-  for (const url of photoUrls.filter(Boolean)) {
+  // Фото копіюються паралельно, а не по одному: кожне — це завантаження
+  // оригіналу й вивантаження копії, і п'ять фото поспіль на телефоні йшли
+  // десятками секунд. Порядок лишається порядком переліку (`Promise.all`).
+  const copyOne = async url => {
     const sourcePath = storagePathFromDownloadUrl(url);
     // Фото препаратів — не фото анкети, хай чия це тека.
-    if (sourcePath.split('/').includes('medication')) continue;
+    if (sourcePath.split('/').includes('medication')) return null;
     if (!sourcePath.startsWith(sourcePrefix)) {
       // Чужий файл нашого бакета чи зовнішнє посилання: переноситься лише
       // адреса, і тільки https — байти звідти не тягнемо.
-      if (!sourcePath && !/^https:\/\//i.test(String(url))) continue;
-      copied.push(url);
-      continue;
+      if (!sourcePath && !/^https:\/\//i.test(String(url))) return null;
+      return url;
     }
     const relativePath = sourcePath.slice(sourcePrefix.length);
     const sourceRef = ref(storage, sourcePath);
@@ -5294,9 +5295,10 @@ export const copyProfilePhotosBetweenCards = async ({ sourceUserId, targetUserId
       || 'image/jpeg';
     const targetRef = ref(storage, `avatar/${targetUserId}/${relativePath}`);
     await uploadBytes(targetRef, byteArray, { contentType, cacheControl: AVATAR_CACHE_CONTROL });
-    copied.push(await getDownloadURL(targetRef));
-  }
-  return copied;
+    return getDownloadURL(targetRef);
+  };
+  const copied = await Promise.all(photoUrls.filter(Boolean).map(copyOne));
+  return copied.filter(Boolean);
 };
 
 const normalizePhotoValues = value => {
