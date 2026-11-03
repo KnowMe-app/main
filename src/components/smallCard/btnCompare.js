@@ -161,8 +161,11 @@ export const btnCompare = (
         if (usersRef) usersRef.current = updateTarget(usersRef.current);
         setUsers(updateTarget);
         toast.success(`${key} → ${Array.isArray(savedValue) ? savedValue.join(', ') : savedValue}`, { duration: 2500 });
-        await refreshComparison();
       });
+      // Перемалювання таблиці — поза чергою запису картки: воно читає нотатки,
+      // відгуки й два лістинги Storage, і поки стояло в черзі, кожне наступне
+      // «перенести» чекало ще й на нього.
+      await refreshComparison();
     } catch (error) {
       toast.error(`Не вдалося зберегти ${key}: ${error?.message || error}`);
     }
