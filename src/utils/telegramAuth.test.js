@@ -34,6 +34,8 @@ describe('вхід через Telegram — клієнт', () => {
     const attempt = { nonce: 'n'.repeat(22), startedAt: 1000, role: 'ed' };
     saveTelegramLoginAttempt(attempt);
     expect(readTelegramLoginAttempt(2000)).toEqual(attempt);
+    // Спільна для вкладок: кнопка бота відкриває сайт новою вкладкою.
+    expect(JSON.parse(window.localStorage.getItem('km.telegramLogin.v1'))).toEqual(attempt);
     expect(readTelegramLoginAttempt(1000 + TELEGRAM_LOGIN_TTL_MS + 1)).toBeNull();
     saveTelegramLoginAttempt(attempt);
     clearTelegramLoginAttempt();

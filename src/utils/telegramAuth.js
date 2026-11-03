@@ -10,7 +10,10 @@ import { VERIFICATION_FUNCTION_REGION } from './emailVerification';
  *
  * Поки людина в Telegram, вкладка застосунку може й перезавантажитись
  * (мобільний браузер вивантажує фонові вкладки), тож спроба лежить у
- * `sessionStorage` і продовжується на монтуванні форми входу.
+ * `localStorage` і продовжується на монтуванні форми входу. Саме `local`, а не
+ * `session`: після коду бот дає кнопку «Повернутися в KnowMe», і телефон
+ * відкриває її **новою** вкладкою — `sessionStorage` там порожній, і людина з
+ * кодом у руках бачила чисту форму входу без поля для нього.
  *
  * Без імені бота (`REACT_APP_TELEGRAM_BOT_USERNAME`) кнопки немає зовсім, і
  * форма лишається поштовою — так застосунок не обіцяє входу, якого ще не
@@ -42,7 +45,7 @@ export const buildTelegramLoginLink = (nonce, botUsername = TELEGRAM_BOT_USERNAM
 
 export const saveTelegramLoginAttempt = attempt => {
   try {
-    sessionStorage.setItem(TELEGRAM_LOGIN_STORAGE_KEY, JSON.stringify(attempt));
+    localStorage.setItem(TELEGRAM_LOGIN_STORAGE_KEY, JSON.stringify(attempt));
   } catch {
     // Приватний режим: спроба живе лише в памʼяті сторінки.
   }
@@ -50,10 +53,10 @@ export const saveTelegramLoginAttempt = attempt => {
 
 export const readTelegramLoginAttempt = (now = Date.now()) => {
   try {
-    const attempt = JSON.parse(sessionStorage.getItem(TELEGRAM_LOGIN_STORAGE_KEY) || 'null');
+    const attempt = JSON.parse(localStorage.getItem(TELEGRAM_LOGIN_STORAGE_KEY) || 'null');
     if (!attempt || typeof attempt.nonce !== 'string' || !Number.isFinite(attempt.startedAt)) return null;
     if (now - attempt.startedAt > TELEGRAM_LOGIN_TTL_MS) {
-      sessionStorage.removeItem(TELEGRAM_LOGIN_STORAGE_KEY);
+      localStorage.removeItem(TELEGRAM_LOGIN_STORAGE_KEY);
       return null;
     }
     return attempt;
@@ -64,6 +67,8 @@ export const readTelegramLoginAttempt = (now = Date.now()) => {
 
 export const clearTelegramLoginAttempt = () => {
   try {
+    localStorage.removeItem(TELEGRAM_LOGIN_STORAGE_KEY);
+    // Спроби, збережені до переїзду в `localStorage`, теж прибираються.
     sessionStorage.removeItem(TELEGRAM_LOGIN_STORAGE_KEY);
   } catch {
     // нічого

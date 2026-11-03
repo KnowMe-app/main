@@ -121,6 +121,10 @@ test('повний потік: /start → контакт → застосуно�
   assert.equal(await handleTelegramUpdate(contactFrom(TG_ID), deps), 'registered');
   // Код бачить лише власник акаунта Telegram — у повідомленні бота.
   assert.match(sent[sent.length - 1].text, /123456/);
+  // Після коду треба повернутись на сайт — повідомлення з кодом несе кнопку
+  // туди, а клавіатуру «Поділитися номером» прибирає попереднє.
+  assert.equal(sent[sent.length - 1].markup.inline_keyboard[0][0].url, 'https://knowme.pp.ua/login');
+  assert.equal(sent[sent.length - 2].markup.remove_keyboard, true);
   // Без коду браузер, що чекає, токена не отримує.
   assert.deepEqual(await completeTelegramLogin(NONCE, '', deps), { status: 'code-required' });
   const ready = await completeTelegramLogin(NONCE, '123 456', deps);
