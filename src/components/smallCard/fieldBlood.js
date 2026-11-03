@@ -1,11 +1,11 @@
 import { AttentionDiv } from 'components/styles';
-import { getCurrentValue } from '../getCurrentValue';
+import { formatValueVersions } from './valueVersions';
 
-// `blood` — поле з історією версій: масив показуємо поточною версією, а не
-// склеєними всіма («РК 2+3-»).
+// `blood` — поле з історією версій: адмін бачить усі («РК 3- → 2+»), а не
+// склеєні React-ом в один рядок.
 export const fieldBlood = blood => {
-  const current = getCurrentValue(blood);
-  if (current === undefined || current === null || String(current).trim() === '') return null;
+  const text = formatValueVersions(blood);
+  if (!text) return null;
 
   return (
     <AttentionDiv
@@ -14,7 +14,7 @@ export const fieldBlood = blood => {
         color: 'black',
       }}
     >
-      РК {current}
+      РК {text}
     </AttentionDiv>
   );
 };

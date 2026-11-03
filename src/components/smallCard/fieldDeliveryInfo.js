@@ -3,6 +3,7 @@ import { utilCalculateMonthsAgo } from './utilCalculateMonthsAgo';
 import { AttentionButton } from 'components/styles';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { getCurrentValue } from '../getCurrentValue';
+import { formatValueVersions } from './valueVersions';
 
 export const fieldDeliveryInfo = (args, legacySetState, legacyUserData, legacySubmitOptions = {}) => {
   const {
@@ -19,9 +20,11 @@ export const fieldDeliveryInfo = (args, legacySetState, legacyUserData, legacySu
         submitOptions: legacySubmitOptions,
       };
   const { csection } = userData;
-  // Поля з історією версій: масив показуємо поточною версією.
-  const ownKids = getCurrentValue(userData.ownKids);
+  // Поля з історією версій: рахунок (місяці від пологів) — з поточної версії,
+  // а показ — усі версії у форматі скаляра, зі стиранням («… → стерто»).
   const lastDelivery = getCurrentValue(userData.lastDelivery);
+  const ownKidsText = formatValueVersions(userData.ownKids);
+  const lastDeliveryText = formatValueVersions(userData.lastDelivery, formatDateToDisplay);
   const formattedLastDelivery = formatDateToDisplay(lastDelivery);
 
   const csectionItems = Array.isArray(csection)
@@ -102,10 +105,11 @@ export const fieldDeliveryInfo = (args, legacySetState, legacyUserData, legacySu
           .replace(/\//g, '.')
       : null;
 
-  if (!ownKids && monthsAgo === null && !csectionText) return null;
+  if (!ownKidsText && !lastDeliveryText && monthsAgo === null && !csectionText) return null;
 
   const parts = [];
-  if (effectiveLastDelivery) parts.push(`${effectiveLastDelivery} пологи`);
+  const deliveryText = lastDeliveryText || effectiveLastDelivery;
+  if (deliveryText) parts.push(`${deliveryText} пологи`);
 
   if (monthsAgo !== null) {
     if (monthsAgo > 24) {
@@ -122,7 +126,7 @@ export const fieldDeliveryInfo = (args, legacySetState, legacyUserData, legacySu
     }
   }
 
-  if (ownKids) parts.push(`всього ${ownKids},`);
+  if (ownKidsText) parts.push(`всього ${ownKidsText},`);
 
   // Повертаємо результат
   return (

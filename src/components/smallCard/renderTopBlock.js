@@ -35,6 +35,7 @@ import { fieldBirth } from './fieldBirth';
 import { fieldBlood } from './fieldBlood';
 import { fieldMaritalStatus } from './fieldMaritalStatus';
 import { fieldIMT } from './fieldIMT';
+import { formatValueVersions } from './valueVersions';
 import { normalizeDisplayValue } from '../profileLayoutConfig';
 import { PROFILE_BACKEND_REFRESH_EVENT } from '../../utils/profileBackendRefresh';
 import { formatDateToDisplay } from 'components/inputValidations';
@@ -751,12 +752,12 @@ const buildName = data => {
 };
 
 // Ці поля живуть у базі з історією версій (масивом після перенесення з
-// дубліката чи правки), тож картка показує поточну версію (`getCurrentValue`),
-// а не масив цілком: React склеював би версії в один рядок.
+// дубліката чи правки). Адмін бачить усі версії, кожну у форматі скаляра, і
+// стирання теж (`formatValueVersions`); ІМТ рахується з поточних.
 const renderIdentityMeta = data => {
   const parts = [];
-  const height = getCurrentValue(data.height);
-  const weight = getCurrentValue(data.weight);
+  const height = formatValueVersions(data.height);
+  const weight = formatValueVersions(data.weight);
   const maritalStatus = fieldMaritalStatus(data.maritalStatus);
   const blood = fieldBlood(data.blood);
   if (maritalStatus) parts.push(maritalStatus);
@@ -764,7 +765,7 @@ const renderIdentityMeta = data => {
   if (height) parts.push(height);
   if (height && weight) parts.push('/');
   if (weight) parts.push(`${weight}-`);
-  if (weight && height) parts.push(fieldIMT(weight, height));
+  if (weight && height) parts.push(fieldIMT(data.weight, data.height));
   return parts.map((part, index) => <React.Fragment key={index}>{part}</React.Fragment>);
 };
 
@@ -1476,8 +1477,8 @@ export const TopBlock = ({
     return multiDataComments.filter(comment => (comment.ownerId || comment.authorId || '') !== currentUid);
   }, [multiDataComments]);
   // `region` теж буває масивом версій: без розгортання `normalizeRegion` його
-  // пропускав, і «область» не дописувалась.
-  const region = normalizeRegion(getCurrentValue(cardData.region));
+  // пропускав, і «область» не дописувалась. Адмін бачить усі версії.
+  const region = formatValueVersions(cardData.region, normalizeRegion);
   const showSideActions = !additionalActions;
   const hasHiddenCycleFieldRole = hasRoleWithoutCycle(cardData);
   const userPhotoUrls = getUserProfilePhotoUrls(cardData);
@@ -2296,8 +2297,10 @@ export const TopBlock = ({
                     поле з історією (`getCurrentValue`): масив версій сюди
                     приїжджає, коли дату вже редагували, і без розгортання
                     `formatDateToDisplay` не впізнавав у ньому рядок — дата
-                    лишалась нечитаною, а вік узагалі не рахувався. */}
-                {formatDateToDisplay(getCurrentValue(cardData.birth))} {fieldBirth(cardData.birth)}
+                    лишалась нечитаною, а вік узагалі не рахувався. Адмін
+                    бачить усі версії дати (`formatValueVersions`), вік —
+                    з поточної. */}
+                {formatValueVersions(cardData.birth, formatDateToDisplay)} {fieldBirth(cardData.birth)}
               </span>
             ),
             identityMeta.length > 0 && (
