@@ -1,21 +1,30 @@
 import { AttentionDiv } from 'components/styles';
+import { formatValueVersions } from './valueVersions';
 
-export const fieldMaritalStatus = maritalStatus => {
-  let text;
-  switch (maritalStatus) {
-    case 'Yes':
-    case 'Так':
+export const formatMaritalStatus = value => {
+  switch (String(value).trim().toLowerCase()) {
+    case 'yes':
+    case 'так':
     case '+':
-      text = 'Заміжня';
-      break;
-    case 'No':
-    case 'Ні':
+      return 'Заміжня';
+    case 'no':
+    case 'ні':
     case '-':
-      text = 'Незаміжня';
-      break;
+      return 'Незаміжня';
     default:
-      text = maritalStatus || '';
+      return value;
   }
+};
+
+/**
+ * `maritalStatus` — поле з історією версій: після перенесення з дубліката
+ * (`mergeComparisonValues`) у базі лежить масив. Поки тут порівнювали саме
+ * поле, `['Yes']` не збігався з жодним `case`, і картка адміна показувала
+ * сире «Yes». Адмін бачить усі версії, кожну перекладеною, і стирання теж
+ * («Заміжня → стерто»).
+ */
+export const fieldMaritalStatus = maritalStatus => {
+  const text = formatValueVersions(maritalStatus, formatMaritalStatus);
   return text ? (
     <AttentionDiv style={{ backgroundColor: 'orange' }}>{text}</AttentionDiv>
   ) : null;
