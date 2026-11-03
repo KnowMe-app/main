@@ -123,7 +123,9 @@ test('повний потік: /start → контакт → застосуно�
   assert.match(sent[sent.length - 1].text, /123456/);
   // Після коду треба повернутись на сайт — повідомлення з кодом несе кнопку
   // туди, а клавіатуру «Поділитися номером» прибирає попереднє.
-  assert.equal(sent[sent.length - 1].markup.inline_keyboard[0][0].url, 'https://knowme.pp.ua/login');
+  const doneMarkup = sent[sent.length - 1].markup.inline_keyboard;
+  assert.match(doneMarkup[0][0].copy_text.text, /^\d{6}$/);
+  assert.equal(doneMarkup[1][0].url, 'https://knowme.pp.ua/login');
   assert.equal(sent[sent.length - 2].markup.remove_keyboard, true);
   // Без коду браузер, що чекає, токена не отримує.
   assert.deepEqual(await completeTelegramLogin(NONCE, '', deps), { status: 'code-required' });

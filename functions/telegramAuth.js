@@ -85,13 +85,14 @@ const BOT_TEXTS = Object.freeze({
   // посилання на бота (docs/telegram-login.md). Решта тексту — без `<`, `>`
   // і `&`, тож HTML-розмітка її не ламає.
   done: code => `Ваш код для входу в KnowMe: <code>${code}</code>\n\n`
-    + 'Що далі: торкніться коду — він скопіюється. Потім натисніть «Повернутися в KnowMe» '
+    + 'Що далі: натисніть «Скопіювати код», потім «Повернутися в KnowMe» '
     + 'нижче (або перейдіть у браузер, де ви натиснули «Увійти через Telegram») '
     + 'і там «Вставити код».\n\n'
     + '⚠️ Нікому не повідомляйте цей код — навіть якщо просять «підтвердити номер». '
     + 'Хто його знає, той увійде у ваш акаунт.',
   alreadyDone: 'Код для входу вже надіслано вище. Поверніться в KnowMe й введіть його.',
   returnButton: 'Повернутися в KnowMe',
+  copyButton: 'Скопіювати код',
   foreignContact: 'Надішліть, будь ласка, свій номер кнопкою «📱 Поділитися номером», а не чужий контакт.',
   noLogin: 'Щоб увійти, відкрийте KnowMe і натисніть «Увійти через Telegram».',
   expired: 'Час на вхід минув. Відкрийте KnowMe і натисніть «Увійти через Telegram» ще раз.',
@@ -115,6 +116,16 @@ const openAppButton = () => ({
 // для коду (`src/utils/telegramAuth.js`).
 const returnToAppButton = () => ({
   inline_keyboard: [[{ text: BOT_TEXTS.returnButton, url: APP_URL }]],
+});
+
+// Кнопка «Скопіювати код» (`copy_text`, Bot API 7.11): дотик до самого коду
+// копіює його не в кожному клієнті й не кожна людина про це знає, а кнопку
+// видно. Під нею — повернення на сайт, де «Вставити код» бере його з буфера.
+const codeButtons = code => ({
+  inline_keyboard: [
+    [{ text: `📋 ${BOT_TEXTS.copyButton} ${code}`, copy_text: { text: String(code) } }],
+    [{ text: BOT_TEXTS.returnButton, url: APP_URL }],
+  ],
 });
 
 /**
@@ -234,7 +245,7 @@ const handleContact = async ({ message, tgId, chatId }, deps) => {
   });
   await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
   await sendMessage(chatId, BOT_TEXTS.contactReceived, { remove_keyboard: true });
-  await sendMessage(chatId, BOT_TEXTS.done(code), returnToAppButton(), { html: true });
+  await sendMessage(chatId, BOT_TEXTS.done(code), codeButtons(code), { html: true });
   return isNew ? 'registered' : 'signed-in';
 };
 
