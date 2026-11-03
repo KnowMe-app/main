@@ -59,6 +59,7 @@ import { useAppSettings } from 'hooks/useAppSettings';
 import { resolveAccess } from 'utils/accessLevel';
 import { getCurrentDate } from './foramtDate';
 import { authNotifications } from './authNotifications';
+import TelegramLinkCard from './TelegramLinkCard';
 import {
   buildAuthProfilePayload,
   buildAuthSessionPayload,
@@ -4268,6 +4269,9 @@ export const MyProfile = () => {
           )}
         </ClearAnketaList>
       ) : null}
+      {/* Привʼязка Telegram до акаунта з поштою: без неї вхід через Telegram
+          заводив другий акаунт із порожньою анкетою. */}
+      {isProfileAccessConfirmed ? <TelegramLinkCard auth={auth} language={language} /> : null}
     </SubmitWrap>
     {/* Відступу під панель немає: панель ховається, щойно блок «Публікація»
         входить у кадр, а він і є низ сторінки — тож закрити собою вона нічого

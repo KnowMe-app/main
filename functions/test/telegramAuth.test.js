@@ -222,3 +222,38 @@ test('код у листі бота — у <code> з parse_mode HTML, щоб к�
   assert.equal(calls[0].parse_mode, 'HTML');
   assert.equal(calls[1].parse_mode, undefined);
 });
+
+test('привʼязка: акаунт пошти починає, бот дає код, і Telegram веде в цей акаунт', async () => {
+  const { deps, sent } = setup();
+  const LINK_NONCE = 'L'.repeat(22);
+  // Без входу привʼязку не почати.
+  assert.equal((await completeTelegramLogin(LINK_NONCE, '', { ...deps, intent: 'link' })).status, 'invalid');
+  await completeTelegramLogin(LINK_NONCE, '', { ...deps, intent: 'link', callerUid: 'email-uid' });
+  await handleTelegramUpdate(privateMessage({ text: `/start ${LINK_NONCE}` }), deps);
+  assert.match(sent[sent.length - 1].text, /Привʼязка Telegram/);
+  assert.equal(await handleTelegramUpdate(contactFrom(Number(TG_ID)), deps), 'link-ready');
+  const done = sent[sent.length - 1];
+  assert.match(done.text, /Код для привʼязки/);
+  assert.equal(done.markup.inline_keyboard[1][0].url, 'https://knowme.pp.ua/my-profile');
+  // Акаунта Telegram не заведено.
+  assert.equal(await deps.db.get(`telegramAccounts/${TG_ID}`), null);
+  // Чужий акаунт кодом не скористається й спроб не спалить.
+  assert.equal((await completeTelegramLogin(LINK_NONCE, '123456', { ...deps, callerUid: 'other' })).status, 'invalid');
+  const linked = await completeTelegramLogin(LINK_NONCE, '123456', { ...deps, callerUid: 'email-uid' });
+  assert.equal(linked.status, 'linked');
+  assert.equal((await deps.db.get(`telegramAccounts/${TG_ID}`)).uid, 'email-uid');
+});
+
+test('привʼязка переписує старий акаунт Telegram і памʼятає його', async () => {
+  const { deps } = setup();
+  await deps.db.set(`telegramAccounts/${TG_ID}`, { uid: 'tg-uid', createdAt: 1 });
+  const LINK_NONCE = 'M'.repeat(22);
+  await completeTelegramLogin(LINK_NONCE, '', { ...deps, intent: 'link', callerUid: 'email-uid' });
+  await handleTelegramUpdate(privateMessage({ text: `/start ${LINK_NONCE}` }), deps);
+  await handleTelegramUpdate(contactFrom(Number(TG_ID)), deps);
+  const linked = await completeTelegramLogin(LINK_NONCE, '123456', { ...deps, callerUid: 'email-uid' });
+  assert.equal(linked.hadOtherAccount, true);
+  const mapping = await deps.db.get(`telegramAccounts/${TG_ID}`);
+  assert.equal(mapping.uid, 'email-uid');
+  assert.equal(mapping.previousUid, 'tg-uid');
+});

@@ -384,7 +384,14 @@ exports.completeTelegramLogin = onCall(
   async request => {
     const data = request.data || {};
     try {
-      return await completeTelegramLogin(data.nonce, data.code, { db: createAdminDb(getDatabase()), now: Date.now() });
+      // `intent: 'link'` — привʼязка Telegram до акаунта, у який уже увійшли
+      // (`request.auth`); вхід без акаунта її не почне й не завершить.
+      return await completeTelegramLogin(data.nonce, data.code, {
+        db: createAdminDb(getDatabase()),
+        now: Date.now(),
+        callerUid: (request.auth && request.auth.uid) || null,
+        intent: data.intent === 'link' ? 'link' : '',
+      });
     } catch (error) {
       logger.error('telegram login completion failed', { error: error.message });
       throw new HttpsError('unavailable', 'Telegram login could not be completed.');

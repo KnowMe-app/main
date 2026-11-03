@@ -43,6 +43,7 @@ const LOGINS_ROOT = 'telegramLogins';
 const LOGINS_BY_TG_ROOT = 'telegramLoginsByTg';
 const ACCOUNTS_ROOT = 'telegramAccounts';
 const APP_URL = 'https://knowme.pp.ua/login';
+const PROFILE_URL = 'https://knowme.pp.ua/my-profile';
 const MAX_CODE_ATTEMPTS = 5;
 
 const defaultRandomCode = () => String(crypto.randomInt(0, 1000000)).padStart(6, '0');
@@ -98,6 +99,16 @@ const BOT_TEXTS = Object.freeze({
   expired: 'Час на вхід минув. Відкрийте KnowMe і натисніть «Увійти через Telegram» ще раз.',
   claimed: 'Це посилання для входу вже використано. Відкрийте KnowMe і натисніть «Увійти через Telegram» ще раз.',
   failed: 'Не вдалося завершити вхід. Спробуйте ще раз за хвилину.',
+  linkAskContact:
+    'Привʼязка Telegram до акаунта KnowMe (knowme.pp.ua).\n\n'
+    + 'Натисніть «📱 Поділитися номером» нижче. Після цього «Увійти через Telegram» '
+    + 'відкриватиме ваш наявний акаунт, а не новий.\n\n'
+    + 'Якщо ви не відкривали «Мій профіль» щойно — нічого не натискайте.',
+  linkDone: code => `Код для привʼязки Telegram: <code>${code}</code>\n\n`
+    + 'Що далі: натисніть «Скопіювати код», потім «Повернутися в KnowMe» нижче '
+    + 'і там «Вставити код».\n\n'
+    + '⚠️ Нікому не повідомляйте цей код. Хто його знає, той привʼяже ваш Telegram до свого акаунта.',
+  returnToProfileButton: 'Повернутися в KnowMe',
 });
 
 const contactKeyboard = () => ({
@@ -121,10 +132,10 @@ const returnToAppButton = () => ({
 // Кнопка «Скопіювати код» (`copy_text`, Bot API 7.11): дотик до самого коду
 // копіює його не в кожному клієнті й не кожна людина про це знає, а кнопку
 // видно. Під нею — повернення на сайт, де «Вставити код» бере його з буфера.
-const codeButtons = code => ({
+const codeButtons = (code, url = APP_URL) => ({
   inline_keyboard: [
     [{ text: `📋 ${BOT_TEXTS.copyButton} ${code}`, copy_text: { text: String(code) } }],
-    [{ text: BOT_TEXTS.returnButton, url: APP_URL }],
+    [{ text: BOT_TEXTS.returnButton, url }],
   ],
 });
 
@@ -140,6 +151,7 @@ const handleStart = async ({ nonce, tgId, chatId }, { db, sendMessage, now }) =>
   }
   const key = hashNonce(nonce);
   let outcome = 'pending';
+  let linking = false;
   await db.transaction(`${LOGINS_ROOT}/${key}`, current => {
     if (current && current.tgId && current.tgId !== tgId) {
       outcome = 'claimed';
@@ -150,7 +162,16 @@ const handleStart = async ({ nonce, tgId, chatId }, { db, sendMessage, now }) =>
       return undefined;
     }
     outcome = 'pending';
-    return { tgId, chatId, status: 'pending', createdAt: (current && current.createdAt) || now };
+    linking = Boolean(current && current.linkUid);
+    // Спроба привʼязки (`linkUid`) заводиться застосунком ще до `/start`
+    // (`startTelegramLink`) і мусить пережити цей запис.
+    return {
+      tgId,
+      chatId,
+      status: 'pending',
+      createdAt: (current && current.createdAt) || now,
+      ...(current && current.linkUid ? { linkUid: current.linkUid } : {}),
+    };
   });
   if (outcome === 'claimed') {
     await sendMessage(chatId, BOT_TEXTS.claimed, openAppButton());
@@ -161,7 +182,7 @@ const handleStart = async ({ nonce, tgId, chatId }, { db, sendMessage, now }) =>
     return outcome;
   }
   await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, { key, at: now });
-  await sendMessage(chatId, BOT_TEXTS.askContact, contactKeyboard());
+  await sendMessage(chatId, linking ? BOT_TEXTS.linkAskContact : BOT_TEXTS.askContact, contactKeyboard());
   return outcome;
 };
 
@@ -227,6 +248,27 @@ const handleContact = async ({ message, tgId, chatId }, deps) => {
   const username = String(from.username || '').trim();
   const displayName = [firstName, lastName].filter(Boolean).join(' ').slice(0, 100);
 
+  if (login.linkUid) {
+    // Привʼязка: акаунта не заводимо й токена не випускаємо — мапу
+    // `telegramAccounts/{tgId}` переписує лише `completeTelegramLogin`, коли
+    // код увела та сама людина, що почала привʼязку зі свого акаунта.
+    const linkCode = (deps.randomCode || defaultRandomCode)();
+    await db.set(loginPath, {
+      tgId,
+      status: 'ready',
+      createdAt: login.createdAt,
+      readyAt: now,
+      linkUid: login.linkUid,
+      codeHash: hashCode(pointer.key, linkCode),
+      attempts: 0,
+      profile: { phone, firstName, lastName, username },
+    });
+    await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
+    await sendMessage(chatId, BOT_TEXTS.contactReceived, { remove_keyboard: true });
+    await sendMessage(chatId, BOT_TEXTS.linkDone(linkCode), codeButtons(linkCode, PROFILE_URL), { html: true });
+    return 'link-ready';
+  }
+
   const { uid, isNew } = await resolveAccount({ tgId, displayName }, deps);
   const token = await auth.createCustomToken(uid);
   const code = (deps.randomCode || defaultRandomCode)();
@@ -276,12 +318,26 @@ const handleTelegramUpdate = async (update, deps) => {
  * власникові акаунта Telegram, і рівно один раз: спроба видаляється
  * транзакцією. Хибний код рахується; на `MAX_CODE_ATTEMPTS` спроба згорає.
  */
-const completeTelegramLogin = async (nonce, codeInput, { db, now }) => {
+const completeTelegramLogin = async (nonce, codeInput, { db, now, callerUid = null, intent = '' }) => {
   if (!isValidNonce(nonce)) return { status: 'invalid' };
   const key = hashNonce(nonce);
   const path = `${LOGINS_ROOT}/${key}`;
   const record = await db.get(path);
-  if (!record) return { status: 'pending', started: false };
+  if (!record) {
+    // Початок привʼязки: застосунок, що вже увійшов (поштою), заводить спробу
+    // зі своїм uid. Без входу привʼязувати нема до чого.
+    if (intent === 'link') {
+      if (!callerUid) return { status: 'invalid' };
+      await db.transaction(path, current => {
+        if (current) return undefined;
+        return { linkUid: callerUid, status: 'pending', createdAt: now };
+      });
+    }
+    return { status: 'pending', started: false };
+  }
+  // Спробу привʼязки завершує лише той акаунт, що її почав: інакше хтось
+  // інший прочитаним кодом привʼязав би чужий Telegram до себе.
+  if (record.linkUid && record.linkUid !== callerUid) return { status: 'invalid' };
   if (isExpired(record, now)) {
     await db.set(path, null);
     if (record.tgId) await db.set(`${LOGINS_BY_TG_ROOT}/${record.tgId}`, null);
@@ -326,6 +382,21 @@ const completeTelegramLogin = async (nonce, codeInput, { db, now }) => {
     outcome = 'wrong-code';
     return { ...current, attempts };
   });
+  if (outcome === 'ready' && claimed && claimed.linkUid) {
+    // Людина довела обидва: увійшла в акаунт і бачить код у своєму Telegram.
+    // Старий акаунт, заведений через Telegram раніше, лишається як є —
+    // його анкету адмін зводить «Порівнянням»; вхід через Telegram відтепер
+    // відкриває акаунт, до якого привʼязали.
+    const previous = await db.get(`${ACCOUNTS_ROOT}/${claimed.tgId}`);
+    const previousUid = previous && previous.uid && previous.uid !== claimed.linkUid ? previous.uid : null;
+    await db.set(`${ACCOUNTS_ROOT}/${claimed.tgId}`, {
+      uid: claimed.linkUid,
+      createdAt: (previous && previous.createdAt) || now,
+      linkedAt: now,
+      ...(previousUid ? { previousUid } : {}),
+    });
+    return { status: 'linked', hadOtherAccount: Boolean(previousUid), profile: claimed.profile || {} };
+  }
   if (outcome === 'ready' && claimed) {
     return {
       status: 'ready',
