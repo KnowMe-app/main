@@ -210,3 +210,13 @@ test('у базі лежить хеш коду, а не сам код', async ()
   const record = deps.db.data.get(`telegramLogins/${hashNonce(NONCE)}`);
   assert.ok(!JSON.stringify(record).includes('987654'));
 });
+
+test('код у листі бота — у <code> з parse_mode HTML, щоб копіювався дотиком', async () => {
+  const { createTelegramSender } = require('../telegramAuth');
+  const calls = [];
+  const send = createTelegramSender('t', async (url, init) => { calls.push(JSON.parse(init.body)); return { ok: true, json: async () => ({ ok: true }) }; });
+  await send(1, 'Ваш код: <code>123456</code>', undefined, { html: true });
+  await send(1, 'інше');
+  assert.equal(calls[0].parse_mode, 'HTML');
+  assert.equal(calls[1].parse_mode, undefined);
+});

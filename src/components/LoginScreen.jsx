@@ -885,10 +885,10 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     }
   };
 
-  const handleTelegramCodeSubmit = async event => {
+  const handleTelegramCodeSubmit = async (event, typedCode = telegramCode) => {
     event?.preventDefault?.();
     const attempt = telegramAttempt;
-    const code = telegramCode.replace(/\D/g, '');
+    const code = String(typedCode).replace(/\D/g, '');
     if (!attempt) return;
     if (code.length !== 6) {
       toast.error(tr('Введіть шість цифр коду з Telegram'));
@@ -914,6 +914,35 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Шість цифр у полі — це вже весь код, і кнопка «Увійти» після них лише
+  // зайвий дотик: вхід іде сам (і з набору, і з вставки).
+  const handleTelegramCodeChange = value => {
+    const cleaned = String(value).replace(/[^\d ]/g, '');
+    setTelegramCode(cleaned);
+    if (cleaned.replace(/\D/g, '').length === 6 && !isLoading) {
+      handleTelegramCodeSubmit(null, cleaned);
+    }
+  };
+
+  // Бот шле код у `<code>`, і Telegram копіює його одним дотиком. Буфер
+  // читається лише з дотику до кнопки: браузер без жесту його не віддає, а
+  // мовчки читати буфер на поверненні вкладки — це читати чуже.
+  const handleTelegramCodePaste = async () => {
+    let text = '';
+    try {
+      text = await navigator.clipboard.readText();
+    } catch (error) {
+      toast.error(tr('Не вдалося прочитати буфер обміну. Введіть код вручну'));
+      return;
+    }
+    const match = /(?:^|\D)(\d{3}\s?\d{3})(?!\d)/.exec(String(text || ''));
+    if (!match) {
+      toast.error(tr('У буфері немає коду. Торкніться коду в Telegram, щоб скопіювати його'));
+      return;
+    }
+    handleTelegramCodeChange(match[1].replace(/\D/g, ''));
   };
 
   const handleTelegramSignupContinue = async () => {
@@ -1224,7 +1253,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
                       data-testid="login-telegram-code"
                       maxLength={7}
                       value={telegramCode}
-                      onChange={event => setTelegramCode(event.target.value.replace(/[^\d ]/g, ''))}
+                      onChange={event => handleTelegramCodeChange(event.target.value)}
                       aria-label={tr('Код із Telegram')}
                       style={{ padding: '16px 0', textAlign: 'center', fontSize: 22, letterSpacing: '0.3em' }}
                       autoFocus
@@ -1232,6 +1261,11 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
                   </InputDiv>
                   <SubmitButton type="submit" disabled={isLoading}>{tr(isLoading ? 'Зачекайте…' : 'Увійти')}</SubmitButton>
                   <TelegramWaitingActions>
+                    {typeof navigator !== 'undefined' && navigator.clipboard?.readText && (
+                      <LinkButton type="button" onClick={handleTelegramCodePaste} disabled={isLoading} data-testid="login-telegram-paste">
+                        {tr('Вставити код')}
+                      </LinkButton>
+                    )}
                     <LinkButton type="button" onClick={resetTelegramAttempt}>{tr('Скасувати вхід')}</LinkButton>
                   </TelegramWaitingActions>
                 </TelegramWaiting>
