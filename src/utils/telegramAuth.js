@@ -105,3 +105,51 @@ export const buildTelegramProfileData = (profile = {}) => {
   if (lastName) data.surname = lastName;
   return data;
 };
+
+/**
+ * Привʼязка Telegram до акаунта, у який уже увійшли (поштою). Та сама функція
+ * й той самий бот, що й вхід, але спробу заводить сам акаунт (`intent: 'link'`),
+ * і завершити її може лише він: бот не заводить нового акаунта, а функція
+ * після правильного коду переписує мапу `telegramAccounts/{tgId}` на цей uid.
+ * Без цього людина, яка зареєструвалась поштою, входом через Telegram
+ * заводила собі другий акаунт з порожньою анкетою.
+ */
+export const TELEGRAM_LINK_STORAGE_KEY = 'km.telegramLink.v1';
+
+export const saveTelegramLinkAttempt = attempt => {
+  try {
+    localStorage.setItem(TELEGRAM_LINK_STORAGE_KEY, JSON.stringify(attempt));
+  } catch {
+    // приватний режим
+  }
+};
+
+export const readTelegramLinkAttempt = (uid, now = Date.now()) => {
+  try {
+    const attempt = JSON.parse(localStorage.getItem(TELEGRAM_LINK_STORAGE_KEY) || 'null');
+    if (!attempt || typeof attempt.nonce !== 'string' || !Number.isFinite(attempt.startedAt)) return null;
+    if (attempt.uid !== uid || now - attempt.startedAt > TELEGRAM_LOGIN_TTL_MS) {
+      localStorage.removeItem(TELEGRAM_LINK_STORAGE_KEY);
+      return null;
+    }
+    return attempt;
+  } catch {
+    return null;
+  }
+};
+
+export const clearTelegramLinkAttempt = () => {
+  try {
+    localStorage.removeItem(TELEGRAM_LINK_STORAGE_KEY);
+  } catch {
+    // нічого
+  }
+};
+
+/** @returns {Promise<{ status: 'pending'|'code-required'|'wrong-code'|'linked'|'expired'|'invalid', attemptsLeft?: number, hadOtherAccount?: boolean }>} */
+export const callTelegramLink = async (app, nonce, code = '') => {
+  const { getFunctions, httpsCallable } = await import(/* webpackChunkName: "firebase-functions" */ 'firebase/functions');
+  const call = httpsCallable(getFunctions(app, VERIFICATION_FUNCTION_REGION), TELEGRAM_COMPLETE_FUNCTION_NAME, { timeout: 15000 });
+  const { data } = await call({ nonce, code, intent: 'link' });
+  return data || { status: 'pending' };
+};
