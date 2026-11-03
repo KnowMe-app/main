@@ -153,3 +153,25 @@ export const callTelegramLink = async (app, nonce, code = '') => {
   const { data } = await call({ nonce, code, intent: 'link' });
   return data || { status: 'pending' };
 };
+
+// Кнопка бота після номера веде на сайт з кодом у фрагменті (`#tgcode=…`):
+// фрагмент на сервер не йде, а сторінка підставляє код у спробу, що лежить у
+// цьому браузері. Nonce у посиланні немає, тож у браузері без спроби код не
+// робить нічого. Фрагмент знімається з адреси одразу, щоб код не лишався в
+// історії й не їхав далі разом із посиланням.
+export const TELEGRAM_CODE_HASH_KEY = 'tgcode';
+
+export const readTelegramCodeFromHash = () => {
+  if (typeof window === 'undefined') return '';
+  const hash = String(window.location?.hash || '').replace(/^#/, '');
+  if (!hash) return '';
+  const code = String(new URLSearchParams(hash).get(TELEGRAM_CODE_HASH_KEY) || '').replace(/\D/g, '');
+  if (!/^\d{6}$/.test(code)) return '';
+  try {
+    const { pathname, search } = window.location;
+    window.history.replaceState(window.history.state, '', `${pathname}${search}`);
+  } catch {
+    // Без History API код просто лишається в адресі.
+  }
+  return code;
+};

@@ -121,11 +121,14 @@ test('повний потік: /start → контакт → застосуно�
   assert.equal(await handleTelegramUpdate(contactFrom(TG_ID), deps), 'registered');
   // Код бачить лише власник акаунта Telegram — у повідомленні бота.
   assert.match(sent[sent.length - 1].text, /123456/);
-  // Після коду треба повернутись на сайт — повідомлення з кодом несе кнопку
-  // туди, а клавіатуру «Поділитися номером» прибирає попереднє.
+  // Після коду треба повернутись на сайт — повідомлення з кодом несе одну
+  // кнопку туди з кодом у фрагменті (без nonce), а клавіатуру «Поділитися
+  // номером» прибирає попереднє.
   const doneMarkup = sent[sent.length - 1].markup.inline_keyboard;
-  assert.match(doneMarkup[0][0].copy_text.text, /^\d{6}$/);
-  assert.equal(doneMarkup[1][0].url, 'https://knowme.pp.ua/login');
+  assert.equal(doneMarkup.length, 1);
+  assert.equal(doneMarkup[0].length, 1);
+  assert.equal(doneMarkup[0][0].url, 'https://knowme.pp.ua/login#tgcode=123456');
+  assert.ok(!doneMarkup[0][0].url.includes(NONCE));
   assert.equal(sent[sent.length - 2].markup.remove_keyboard, true);
   // Без коду браузер, що чекає, токена не отримує.
   assert.deepEqual(await completeTelegramLogin(NONCE, '', deps), { status: 'code-required' });
@@ -234,7 +237,7 @@ test('привʼязка: акаунт пошти починає, бот дає 
   assert.equal(await handleTelegramUpdate(contactFrom(Number(TG_ID)), deps), 'link-ready');
   const done = sent[sent.length - 1];
   assert.match(done.text, /Код для привʼязки/);
-  assert.equal(done.markup.inline_keyboard[1][0].url, 'https://knowme.pp.ua/my-profile');
+  assert.match(done.markup.inline_keyboard[0][0].url, /^https:\/\/knowme\.pp\.ua\/my-profile#tgcode=\d{6}$/);
   // Акаунта Telegram не заведено.
   assert.equal(await deps.db.get(`telegramAccounts/${TG_ID}`), null);
   // Чужий акаунт кодом не скористається й спроб не спалить.

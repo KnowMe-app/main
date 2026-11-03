@@ -72,28 +72,29 @@ const isExpired = (record, now) => !record || !Number.isFinite(record.createdAt)
 const BOT_TEXTS = Object.freeze({
   askContact:
     'Вхід у KnowMe (knowme.pp.ua).\n\n'
-    + 'Натисніть кнопку «📱 Поділитися номером» нижче — так ми підтвердимо, що це ви. '
+    + 'Натисніть зелену кнопку «📱 Поділитися номером» унизу екрана — так ми підтвердимо, що це ви. '
     + 'Пароль і пошта не потрібні.\n\n'
     + 'Якщо ви не відкривали KnowMe щойно — нічого не натискайте.',
   shareButton: '📱 Поділитися номером',
   // Окремим повідомленням, бо прибрати клавіатуру «Поділитися номером» і
   // дати кнопку посилання одне повідомлення не може: `reply_markup` один.
   contactReceived: '✅ Номер підтверджено.',
-  // Код — у `<code>`: Telegram копіює моноширинний текст одним дотиком, а
-  // сторінка входу вставляє його з буфера кнопкою «Вставити код». Код у
-  // кнопку повернення не кладеться навмисно: тоді його не треба було б
-  // вводити там, де вхід почали, і він перестав би захищати від підсунутого
-  // посилання на бота (docs/telegram-login.md). Решта тексту — без `<`, `>`
-  // і `&`, тож HTML-розмітка її не ламає.
+  // Код — у `<code>`: Telegram копіює моноширинний текст одним дотиком, і
+  // це запасний шлях для входу, початого на іншому пристрої. Основний —
+  // одна кнопка «Увійти в KnowMe»: вона несе код у фрагменті адреси
+  // (`#tgcode=…`, на сервер не йде), і сторінка підставляє його сама — але
+  // лише в спробу, що лежить у цьому браузері. Nonce у кнопці немає, тож
+  // жертва підсунутого посилання, натиснувши її, завершити чужу спробу не
+  // може, а код до того, хто посилання згенерував, не потрапляє
+  // (docs/telegram-login.md). Решта тексту — без `<`, `>` і `&`.
   done: code => `Ваш код для входу в KnowMe: <code>${code}</code>\n\n`
-    + 'Що далі: натисніть «Скопіювати код», потім «Повернутися в KnowMe» '
-    + 'нижче (або перейдіть у браузер, де ви натиснули «Увійти через Telegram») '
-    + 'і там «Вставити код».\n\n'
+    + 'Натисніть «Увійти в KnowMe» нижче — код підставиться сам.\n'
+    + 'Почали вхід на іншому пристрої? Торкніться коду, щоб скопіювати, і введіть його там.\n\n'
     + '⚠️ Нікому не повідомляйте цей код — навіть якщо просять «підтвердити номер». '
     + 'Хто його знає, той увійде у ваш акаунт.',
   alreadyDone: 'Код для входу вже надіслано вище. Поверніться в KnowMe й введіть його.',
   returnButton: 'Повернутися в KnowMe',
-  copyButton: 'Скопіювати код',
+  loginButton: '✅ Увійти в KnowMe',
   foreignContact: 'Надішліть, будь ласка, свій номер кнопкою «📱 Поділитися номером», а не чужий контакт.',
   noLogin: 'Щоб увійти, відкрийте KnowMe і натисніть «Увійти через Telegram».',
   expired: 'Час на вхід минув. Відкрийте KnowMe і натисніть «Увійти через Telegram» ще раз.',
@@ -105,16 +106,24 @@ const BOT_TEXTS = Object.freeze({
     + 'відкриватиме ваш наявний акаунт, а не новий.\n\n'
     + 'Якщо ви не відкривали «Мій профіль» щойно — нічого не натискайте.',
   linkDone: code => `Код для привʼязки Telegram: <code>${code}</code>\n\n`
-    + 'Що далі: натисніть «Скопіювати код», потім «Повернутися в KnowMe» нижче '
-    + 'і там «Вставити код».\n\n'
+    + 'Натисніть «Привʼязати Telegram» нижче — код підставиться сам.\n'
+    + 'Почали на іншому пристрої? Торкніться коду, щоб скопіювати, і введіть його там.\n\n'
     + '⚠️ Нікому не повідомляйте цей код. Хто його знає, той привʼяже ваш Telegram до свого акаунта.',
-  returnToProfileButton: 'Повернутися в KnowMe',
+  linkButton: '✅ Привʼязати Telegram',
 });
 
+// Кнопку `request_contact` Telegram дає лише в клавіатурі під полем вводу —
+// під повідомленням (`inline_keyboard`) такої немає. Тож робимо помітною її:
+// `style: 'success'` (Bot API 9.4) фарбує кнопку в зелений, як кнопка коду;
+// клієнти без підтримки поле пропускають. `is_persistent` не дає згорнути
+// клавіатуру в значок, а підказка в полі вводу показує, куди натиснути.
+// `one_time_keyboard` не ставимо: клавіатуру прибирає `remove_keyboard` після
+// контакту, а після чужого контакту вона мусить лишитись.
 const contactKeyboard = () => ({
-  keyboard: [[{ text: BOT_TEXTS.shareButton, request_contact: true }]],
+  keyboard: [[{ text: BOT_TEXTS.shareButton, request_contact: true, style: 'success' }]],
   resize_keyboard: true,
-  one_time_keyboard: true,
+  is_persistent: true,
+  input_field_placeholder: 'Натисніть «Поділитися номером» ↓',
 });
 
 const openAppButton = () => ({
@@ -129,14 +138,14 @@ const returnToAppButton = () => ({
   inline_keyboard: [[{ text: BOT_TEXTS.returnButton, url: APP_URL }]],
 });
 
-// Кнопка «Скопіювати код» (`copy_text`, Bot API 7.11): дотик до самого коду
-// копіює його не в кожному клієнті й не кожна людина про це знає, а кнопку
-// видно. Під нею — повернення на сайт, де «Вставити код» бере його з буфера.
-const codeButtons = (code, url = APP_URL) => ({
-  inline_keyboard: [
-    [{ text: `📋 ${BOT_TEXTS.copyButton} ${code}`, copy_text: { text: String(code) } }],
-    [{ text: BOT_TEXTS.returnButton, url }],
-  ],
+// Одна кнопка замість двох («Скопіювати код» + «Повернутися в KnowMe»):
+// кнопка Telegram має рівно одну дію, а копіювати й потім вставляти — два
+// зайві кроки. Код їде у фрагменті (`#tgcode=`), і сторінка підставляє його в
+// спробу цього браузера (`readTelegramCodeFromHash` у src/utils/telegramAuth).
+const buildCodeUrl = (code, url = APP_URL) => `${url}#tgcode=${encodeURIComponent(String(code))}`;
+
+const codeButtons = (code, url = APP_URL, text = BOT_TEXTS.loginButton) => ({
+  inline_keyboard: [[{ text, url: buildCodeUrl(code, url), style: 'success' }]],
 });
 
 /**
@@ -265,7 +274,7 @@ const handleContact = async ({ message, tgId, chatId }, deps) => {
     });
     await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
     await sendMessage(chatId, BOT_TEXTS.contactReceived, { remove_keyboard: true });
-    await sendMessage(chatId, BOT_TEXTS.linkDone(linkCode), codeButtons(linkCode, PROFILE_URL), { html: true });
+    await sendMessage(chatId, BOT_TEXTS.linkDone(linkCode), codeButtons(linkCode, PROFILE_URL, BOT_TEXTS.linkButton), { html: true });
     return 'link-ready';
   }
 
