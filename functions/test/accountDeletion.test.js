@@ -225,6 +225,25 @@ test('збій запису вузлів лишає акаунт і вмикає
   assert.deepEqual(log, ['disabled:true', 'disabled:false']);
 });
 
+test('вимкнений акаунт (зокрема адміном) не видаляється й не вмикається назад', async () => {
+  const { deps, log, updates } = fakeDeps({}, { getAuthUser: async () => ({ uid: UID, disabled: true }) });
+  const result = await deleteAccountData(deps, UID);
+  assert.equal(result.disabled, true);
+  assert.equal(result.deletedAuth, false);
+  assert.deepEqual(log, []);
+  assert.deepEqual(updates, []);
+});
+
+test('відповідь знімається лише тоді, коли id відгуку не стоїть під чужим відгуком', () => {
+  const updates = buildPublicCommentUpdates({
+    AA1: { shared: { authorId: UID }, own: { authorId: UID } },
+    AA2: { shared: { authorId: 'victim' } },
+  }, UID, IDS);
+  assert.equal(updates['comments/AA1/shared'], null);
+  assert.ok(!Object.prototype.hasOwnProperty.call(updates, 'replies/shared'));
+  assert.equal(updates['replies/own'], null);
+});
+
 test('великі переліки пишуться порціями', async () => {
   const searchId = {};
   for (let index = 0; index < 1000; index += 1) searchId[`v${index}`] = { phone: UID };

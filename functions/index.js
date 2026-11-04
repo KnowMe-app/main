@@ -462,6 +462,9 @@ exports.deleteOwnAccount = onCall(
       log: (step, error) => logger.error('account deletion step failed', { uid, step, error: error.message }),
     }, uid);
 
+    if (result.disabled) {
+      throw new HttpsError('permission-denied', 'This account is disabled.');
+    }
     if (!result.deletedAuth) {
       throw new HttpsError('internal', 'Profile could not be fully deleted.', { failed: result.failed });
     }

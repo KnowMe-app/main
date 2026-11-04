@@ -316,13 +316,23 @@ const buildEditsHistoryUpdates = (historyRoot, uid, cardIds) => {
 const buildPublicCommentUpdates = (commentsRoot, uid, cardIds) => {
   const ids = toIdSet(cardIds);
   const updates = {};
+  // `replies/{commentId}` не називає картки, а ключ відгуку пише клієнт, тож
+  // той самий id може стояти й під чужим відгуком іншої картки. Відповідь
+  // знімаємо лише тоді, коли **кожен** відгук із цим id — цієї людини.
+  const foreignCommentIds = new Set();
+  Object.values(commentsRoot || {}).forEach(comments => {
+    if (!isPlainObject(comments)) return;
+    Object.entries(comments).forEach(([commentId, comment]) => {
+      if (!isPlainObject(comment) || comment.authorId !== uid) foreignCommentIds.add(commentId);
+    });
+  });
   Object.entries(commentsRoot || {}).forEach(([profileId, comments]) => {
     if (ids.has(profileId) || !isPlainObject(comments)) return;
     const ownIds = Object.keys(comments).filter(commentId => isPlainObject(comments[commentId]) && comments[commentId].authorId === uid);
     if (!ownIds.length) return;
     ownIds.forEach(commentId => {
       updates[`comments/${profileId}/${commentId}`] = null;
-      updates[`replies/${commentId}`] = null;
+      if (!foreignCommentIds.has(commentId)) updates[`replies/${commentId}`] = null;
     });
     if (ownIds.length === Object.keys(comments).length) {
       updates[`matchingCards/${profileId}/hasPublicReview`] = null;
@@ -419,6 +429,17 @@ const deleteAccountData = async (deps, uid) => {
     }
   };
   const sweep = (name, path, build) => step(name, async () => apply(name, build(await read(path))));
+
+  // Акаунт, який уже вимкнено (зокрема адміном), не видаляємо й не чіпаємо:
+  // callable пускає ще живий ID-токен вимкненого акаунта, і без цієї
+  // перевірки збій посеред видалення вмикав би його назад.
+  // «Не знайдено» — повтор після збою, коли акаунт уже видалено, а токен
+  // ще живий: тоді лише дочищаємо дані.
+  const authUser = await deps.getAuthUser(uid).catch(error => {
+    if (error && error.code === AUTH_NOT_FOUND) return null;
+    throw error;
+  });
+  if (authUser && authUser.disabled) return { failed: ['disabled'], counts, deletedAuth: false, disabled: true };
 
   await step('authDisable', () => deps.setAuthDisabled(uid, true));
 
