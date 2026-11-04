@@ -25,6 +25,7 @@ const logger = require('firebase-functions/logger');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getDatabase } = require('firebase-admin/database');
+const { getStorage } = require('firebase-admin/storage');
 
 const { ALLOWED_ORIGINS, MAIL_SENDER, REGION } = require('./config');
 const { normalizeEmailLanguage, normalizeEmailRole, renderVerifyEmail } = require('./emails/verifyEmail');
@@ -396,5 +397,85 @@ exports.completeTelegramLogin = onCall(
       logger.error('telegram login completion failed', { error: error.message });
       throw new HttpsError('unavailable', 'Telegram login could not be completed.');
     }
+  },
+);
+
+/**
+ * Самовидалення профілю («Видалити профіль» у меню «⋮» «Мого профілю»).
+ *
+ * Доти «Видалити анкету» відкривало адресу пошти: людина писала лист, адмін
+ * видаляв руками. Тепер це один дотик з підтвердженням, а склад і порядок
+ * видалення — `accountDeletion.js`. Після видалення йде лист «Профіль
+ * видалено»; збій листа видалення не відкочує — дані вже стерті, і казати
+ * людині «не вдалося» було б неправдою.
+ *
+ * Свіжість входу Firebase не перевіряє (Admin SDK видаляє будь-кого), тож
+ * перевіряємо самі: токен, виданий понад `RECENT_SIGN_IN_MS` тому, — відмова
+ * `failed-precondition`, і застосунок просить увійти ще раз. Інакше вкладка,
+ * забута відкритою на чужому компʼютері, була б кнопкою «стерти все».
+ */
+const RECENT_SIGN_IN_MS = 24 * 60 * 60 * 1000;
+const { deleteAccountData, isProtectedUid, isValidUid } = require('./accountDeletion');
+const { renderAccountDeletedEmail } = require('./emails/accountDeleted');
+
+exports.deleteOwnAccount = onCall(
+  {
+    region: REGION,
+    cors: ALLOWED_ORIGINS,
+    secrets: [BREVO_API_KEY],
+    memory: '512MiB',
+    timeoutSeconds: 120,
+    maxInstances: 3,
+  },
+  async request => {
+    const uid = request.auth && request.auth.uid;
+    if (!uid) throw new HttpsError('unauthenticated', 'Sign in to delete your profile.');
+    if (!isValidUid(uid) || isProtectedUid(uid)) {
+      throw new HttpsError('permission-denied', 'This account cannot be deleted from the app.');
+    }
+    const authTime = Number(request.auth.token && request.auth.token.auth_time) * 1000;
+    if (!authTime || Date.now() - authTime > RECENT_SIGN_IN_MS) {
+      throw new HttpsError('failed-precondition', 'Sign in again to delete your profile.', { reason: 'recent-login' });
+    }
+
+    const data = request.data || {};
+    const language = normalizeEmailLanguage(data.language);
+    const user = await getAuth().getUser(uid).catch(() => null);
+    const email = user && user.email;
+
+    const db = getDatabase();
+    const result = await deleteAccountData({
+      read: async path => (await db.ref(path).get()).val(),
+      update: updates => db.ref().update(updates),
+      deleteFiles: prefix => getStorage().bucket().deleteFiles({ prefix }),
+      deleteAuthUser: id => getAuth().deleteUser(id),
+      log: (step, error) => logger.error('account deletion step failed', { uid, step, error: error.message }),
+    }, uid);
+
+    if (!result.deletedAuth) {
+      throw new HttpsError('internal', 'Profile could not be fully deleted.', { failed: result.failed });
+    }
+
+    let emailSent = false;
+    if (email) {
+      try {
+        const message = renderAccountDeletedEmail({ email, language });
+        await sendWithBrevo({
+          apiKey: BREVO_API_KEY.value(),
+          sender: MAIL_SENDER,
+          to: email,
+          subject: message.subject,
+          html: message.html,
+          text: message.text,
+          tags: ['account_deleted', `lang_${message.language}`],
+        });
+        emailSent = true;
+      } catch (error) {
+        logger.warn('account deleted email failed', { uid, error: error.message, status: error.status });
+      }
+    }
+
+    logger.info('account deleted', { uid, failed: result.failed, emailSent });
+    return { status: 'deleted', emailSent, partial: result.failed };
   },
 );

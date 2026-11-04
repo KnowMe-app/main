@@ -9,8 +9,9 @@ applyUkrainianInterface();
 /**
  * Дві дії з анкетою цілком, і вони різні.
  *
- * «Видалити анкету» — це лист на пошту: акаунт і сліди в чужих списках знімає
- * людина. Пункт цей із меню зник (`ProfileDotsMenu` малює секцію «Анкета»,
+ * «Видалити анкету» — самовидалення одним дотиком з підтвердженням (Cloud
+ * Function `deleteOwnAccount`), а лист на пошту лишився запасом: без входу й
+ * коли функція не відповіла. Пункт цей із меню колись зник (`ProfileDotsMenu` малює секцію «Анкета»,
  * лише коли йому передали `onDeleteProfile`), і разом з ним зникла єдина
  * звідси дорога до видалення.
  *
@@ -25,8 +26,18 @@ describe('my-profile: видалення і очищення анкети', () =
   const source = fs.readFileSync(path.join(__dirname, 'MyProfile.jsx'), 'utf8');
 
   it('повертає в меню пункт «Видалити анкету» й не кличе в застосунок', () => {
-    expect(source).toContain("onDeleteProfile={() => setShowInfoModal('delProfile')}");
+    expect(source).toContain("setShowInfoModal(isProfileAccessConfirmed ? 'deleteAccount' : 'delProfile');");
     expect(source).not.toContain('viewProfile');
+  });
+
+  // Видалення — лише після модалки, і автозбереження в дорозі дочікуємо до
+  // виклику: інакше воно записало б анкету назад після того, як сервер її стер.
+  it('видаляє профіль лише з модалки й після черги автозбереження', () => {
+    const modal = source.slice(source.indexOf('data-testid="delete-account-confirm"'), source.indexOf("showInfoModal === 'roleChange' && roleChangeTarget ? ("));
+    expect(modal).toContain('onClick={deleteOwnAccount}');
+    const handler = source.slice(source.indexOf('const deleteOwnAccount = async'), source.indexOf('const handleExit = async'));
+    expect(handler.indexOf('saveQueueRef.current')).toBeLessThan(handler.indexOf('requestOwnAccountDeletion'));
+    expect(handler).toContain('await signOut(auth)');
   });
 
   // Незворотна дія стояла кнопкою просто під «Опублікувати» — на відстані

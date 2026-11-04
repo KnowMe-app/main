@@ -195,7 +195,15 @@ storage.cors.json gs://<бакет>`. Файл фото (`alt=media`) відда
 
 **Cloud Functions CI теж не викочує** (`functions/`: листи підтвердження пошти й
 зміни пароля): `npx firebase-tools deploy --only functions`, план Blaze, секрет
-`BREVO_API_KEY`, домен у Brevo — `docs/email-verification.md`. Поки функцію не
+`BREVO_API_KEY`, домен у Brevo — `docs/email-verification.md`. Там же
+`deleteOwnAccount` — **самовидалення профілю** («Видалити анкету» в меню «⋮»
+«Мого профілю», модалка `deleteAccount`): адмін-SDK стирає вузли анкети,
+власні `multiData`, ключі `searchId`/`searchKey/users`, заявки на унікальність,
+посилання й фото Storage, потім Auth-акаунт, і шле лист «Профіль видалено»
+(`functions/emails/accountDeleted.js`). Склад — `functions/accountDeletion.js`;
+адмінів та інспектора функція не видаляє, давній вхід (понад добу) — відмова
+«увійдіть знову». Поки функцію не розгорнуто, модалка пропонує старий запит
+поштою; правил під неї викочувати не треба. Поки функцію не
 розгорнуто, застосунок шле стандартний лист Firebase, тож реєстрація від деплою не
 залежить.
 
