@@ -70,9 +70,13 @@ service firebase.storage {
 
     // Everything the builder pages store (invoice assets, clinic logos under
     // documentsBuilder/parties/cases/clinics/{clinicId}/logo/..., etc.).
+    //
+    // Тут стояло ще й читання для тестового акаунта (`isReadOnlyInspector`),
+    // але в Firebase його так і не викотили: розгорнуті правила дають теку
+    // самим лише редакторам конструктора. Файл тримає те, що стоїть у проді, —
+    // інакше наступний деплой мовчки відкрив би інспекторові логотипи клінік.
     match /documentsBuilder/{allPaths=**} {
-      allow read: if isBuilderAdmin() || isReadOnlyInspector();
-      allow write: if isBuilderAdmin();
+      allow read, write: if isBuilderAdmin();
     }
   }
 }
