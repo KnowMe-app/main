@@ -26,6 +26,7 @@ const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getDatabase } = require('firebase-admin/database');
 const { getStorage } = require('firebase-admin/storage');
+const { getFirestore } = require('firebase-admin/firestore');
 
 const { ALLOWED_ORIGINS, MAIL_SENDER, REGION } = require('./config');
 const { normalizeEmailLanguage, normalizeEmailRole, renderVerifyEmail } = require('./emails/verifyEmail');
@@ -448,7 +449,16 @@ exports.deleteOwnAccount = onCall(
       read: async path => (await db.ref(path).get()).val(),
       update: updates => db.ref().update(updates),
       deleteFiles: prefix => getStorage().bucket().deleteFiles({ prefix }),
+      setAuthDisabled: (id, disabled) => getAuth().updateUser(id, { disabled }),
       deleteAuthUser: id => getAuth().deleteUser(id),
+      getAuthUser: id => getAuth().getUser(id),
+      // Firestore-копії анкети (`users`, `newUsers`): застосунок їх більше не
+      // читає, але дані там лежать. Немає бази Firestore — крок просто падає й
+      // потрапляє в `partial`, видалення це не зупиняє.
+      deleteLegacyDocs: async id => {
+        const firestore = getFirestore();
+        await Promise.all(['users', 'newUsers'].map(collection => firestore.collection(collection).doc(id).delete()));
+      },
       log: (step, error) => logger.error('account deletion step failed', { uid, step, error: error.message }),
     }, uid);
 
@@ -475,7 +485,7 @@ exports.deleteOwnAccount = onCall(
       }
     }
 
-    logger.info('account deleted', { uid, failed: result.failed, emailSent });
+    logger.info('account deleted', { uid, failed: result.failed, counts: result.counts, emailSent });
     return { status: 'deleted', emailSent, partial: result.failed };
   },
 );

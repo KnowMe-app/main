@@ -4,10 +4,18 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  buildEditsHistoryUpdates,
+  buildEditsUpdates,
   buildIdentityClaimUpdates,
+  buildLikedAudienceUpdates,
   buildOwnedPaths,
+  buildOwnerCardUpdates,
+  buildPublicCommentUpdates,
   buildSearchIdUpdates,
+  buildSearchKeySetUpdates,
   buildSearchKeyUpdates,
+  buildSharedAccessUpdates,
+  buildTelegramUpdates,
   deleteAccountData,
   isProtectedUid,
   listShareTokens,
@@ -15,15 +23,17 @@ const {
 const { renderAccountDeletedEmail } = require('../emails/accountDeleted');
 
 const UID = 'abcdefghijklmnopqrst1234';
+const DRAFT = '-Ndraft1';
+const IDS = new Set([UID, DRAFT]);
 
-test('searchId: знімається id, а чужі анкети під тим самим значенням лишаються', () => {
+test('searchId: знімаються видалені id, а чужі анкети під тим самим значенням лишаються', () => {
   const updates = buildSearchIdUpdates({
     '380671112233': { phone: UID },
     'олена': { name: ['AA0001', UID], surname: 'AA0731' },
-    'oksana': { name: [UID, 'AA1', 'AA2'] },
+    'oksana': { name: [UID, 'AA1', DRAFT, 'AA2'] },
     'legacy': UID,
     'other': { phone: 'AA0002' },
-  }, UID);
+  }, IDS);
   assert.deepEqual(updates, {
     'searchId/380671112233/phone': null,
     'searchId/олена/name': 'AA0001',
@@ -32,25 +42,75 @@ test('searchId: знімається id, а чужі анкети під тим 
   });
 });
 
-test('searchKey і заявки на унікальність: лише записи цієї картки', () => {
+test('searchKey, зрізи доступу й заявки на унікальність: лише записи видалених карток', () => {
   assert.deepEqual(buildSearchKeyUpdates({
     role: { ed: { [UID]: true, other: true }, ag: { other: true } },
     age: { a26_30: { [UID]: true } },
-  }, UID), {
-    'searchKey/users/role/ed/abcdefghijklmnopqrst1234': null,
-    'searchKey/users/age/a26_30/abcdefghijklmnopqrst1234': null,
+  }, IDS), {
+    [`searchKey/users/role/ed/${UID}`]: null,
+    [`searchKey/users/age/a26_30/${UID}`]: null,
   });
-  assert.deepEqual(buildIdentityClaimUpdates({ k1: UID, k2: 'AA1' }, UID), {
+  assert.deepEqual(buildSearchKeySetUpdates({ owner__1: { role: { ed: { [UID]: true, x: true } } } }, IDS), {
+    [`searchKeySets/owner__1/role/ed/${UID}`]: null,
+  });
+  assert.deepEqual(buildIdentityClaimUpdates({ k1: UID, k2: 'AA1', k3: DRAFT }, IDS), {
     'multiData/profileIdentityClaims/k1': null,
+    'multiData/profileIdentityClaims/k3': null,
   });
 });
 
-test('видаляються вузли анкети, власні multiData й legacy-копія', () => {
-  const paths = buildOwnedPaths(UID);
-  ['matchingCards', 'profileDetails', 'profileContacts', 'profileWorkflow', 'profileTechnical', 'users', 'comments']
+test('чужі лайки, дизлайки, позначки й нотатки про видалену картку знімаються', () => {
+  assert.deepEqual(buildOwnerCardUpdates('favorites', {
+    agency: { [UID]: 'ed', AA1: true },
+    [UID]: { AA2: true },
+  }, UID, IDS), { [`multiData/favorites/agency/${UID}`]: null });
+  // Стара перевернута форма `getInTouch`.
+  assert.deepEqual(buildOwnerCardUpdates('getInTouch', {
+    admin: { '2026-11-01': { [UID]: true, AA1: true }, [DRAFT]: '2026-12-01' },
+  }, UID, IDS), {
+    [`multiData/getInTouch/admin/2026-11-01/${UID}`]: null,
+    [`multiData/getInTouch/admin/${DRAFT}`]: null,
+  });
+  assert.deepEqual(buildLikedAudienceUpdates({ reader: { [UID]: true, other: true }, [UID]: { x: true } }, UID, IDS), {
+    [`multiData/likedAudience/reader/${UID}`]: null,
+  });
+});
+
+test('сліди на чужих картках: доповнення, журнал, відгуки з прапорцем, спільний доступ, Telegram', () => {
+  assert.deepEqual(buildEditsUpdates({ AA1: { [UID]: {}, other: {} }, [UID]: { x: {} } }, UID, IDS), {
+    [`multiData/edits/AA1/${UID}`]: null,
+  });
+  assert.deepEqual(buildEditsHistoryUpdates({ AA1: { e1: { editorUserId: UID }, e2: { editorUserId: 'x' } } }, UID, IDS), {
+    'multiData/editsHistory/AA1/e1': null,
+  });
+  assert.deepEqual(buildPublicCommentUpdates({
+    AA1: { c1: { authorId: UID }, c2: { authorId: 'x' } },
+    AA2: { c3: { authorId: UID } },
+  }, UID, IDS), {
+    'comments/AA1/c1': null,
+    'replies/c1': null,
+    'comments/AA2/c3': null,
+    'replies/c3': null,
+    // Під AA2 відгуків більше немає — прапорець картки теж іде.
+    'matchingCards/AA2/hasPublicReview': null,
+  });
+  assert.deepEqual(buildSharedAccessUpdates({ helper: { multiDataSourceUserIds: { [UID]: true, z: true } } }, UID, IDS), {
+    [`profileTechnical/helper/multiDataSourceUserIds/${UID}`]: null,
+  });
+  assert.deepEqual(buildTelegramUpdates({ 1: { uid: UID }, 2: { uid: 'x', previousUid: UID }, 3: { uid: 'y' } }, UID), {
+    'telegramAccounts/1': null,
+    'telegramAccounts/2/previousUid': null,
+  });
+});
+
+test('видаляються вузли анкети й чернеток, власні multiData, legacy-копії', () => {
+  const paths = buildOwnedPaths(UID, [DRAFT]);
+  ['matchingCards', 'profileDetails', 'profileContacts', 'profileWorkflow', 'profileTechnical', 'users', 'usersIndex', 'comments']
     .forEach(root => assert.ok(paths.includes(`${root}/${UID}`), root));
   assert.ok(paths.includes(`multiData/favorites/${UID}`));
-  assert.ok(paths.includes(`multiData/programs/${UID}`));
+  assert.ok(paths.includes(`multiData/profileMutations/${UID}`));
+  assert.ok(paths.includes(`comments/${DRAFT}`));
+  assert.ok(paths.includes(`multiData/profileMutationOwners/${DRAFT}`));
 });
 
 test('адмінів і інспектора видалити не можна', () => {
@@ -63,50 +123,90 @@ test('токени посилань беруться зі слотів', () => {
   assert.deepEqual(listShareTokens({ 0: { token: 'tokentokentoken1' }, 2: { token: 'bad token' } }), ['tokentokentoken1']);
 });
 
+const notFound = () => Object.assign(new Error('nf'), { code: 'auth/user-not-found' });
+
 const fakeDeps = (data, overrides = {}) => {
+  const log = [];
   const updates = [];
   const files = [];
-  const auth = [];
+  let authExists = true;
   return {
+    log,
     updates,
     files,
-    auth,
     deps: {
       read: async path => data[path] ?? null,
       update: async next => { updates.push(next); },
       deleteFiles: async prefix => { files.push(prefix); },
-      deleteAuthUser: async id => { auth.push(id); },
+      setAuthDisabled: async (id, disabled) => { log.push(`disabled:${disabled}`); },
+      deleteAuthUser: async id => { log.push(`delete:${id}`); authExists = false; },
+      getAuthUser: async () => { if (!authExists) throw notFound(); return { uid: UID }; },
       ...overrides,
     },
   };
 };
 
-test('повне видалення: база, фото, посилання, а наприкінці — акаунт', async () => {
-  const { deps, updates, files, auth } = fakeDeps({
-    [`multiData/favorites/${UID}`]: { readerA: true },
+test('повне видалення: чужі сліди, база, фото, посилання, а наприкінці — перевірене видалення акаунта', async () => {
+  const { deps, updates, files, log } = fakeDeps({
     [`multiData/profileShareSlots/${UID}`]: { 0: { token: 'tokentokentoken1' } },
-    searchId: { '380': { phone: UID } },
+    [`multiData/profileMutations/${UID}`]: { [DRAFT]: { operation: 'create' } },
+    searchId: { '380': { phone: UID }, '381': { phone: DRAFT } },
+    'multiData/favorites': { agency: { [UID]: true, [DRAFT]: true } },
+    'multiData/dislikes': { donor: { [UID]: 123 } },
+    'multiData/likedAudience': { readerA: { [UID]: true } },
+    comments: { AA1: { c1: { authorId: UID } } },
   });
   const result = await deleteAccountData(deps, UID);
-  assert.deepEqual(result, { failed: [], deletedAuth: true });
+  assert.deepEqual(result.failed, []);
+  assert.equal(result.deletedAuth, true);
   const merged = Object.assign({}, ...updates);
   assert.equal(merged['searchId/380/phone'], null);
+  assert.equal(merged['searchId/381/phone'], null);
+  assert.equal(merged[`multiData/favorites/agency/${UID}`], null);
+  assert.equal(merged[`multiData/favorites/agency/${DRAFT}`], null);
+  assert.equal(merged[`multiData/dislikes/donor/${UID}`], null);
   assert.equal(merged[`multiData/likedAudience/readerA/${UID}`], null);
+  assert.equal(merged['comments/AA1/c1'], null);
   assert.equal(merged['profileShares/tokentokentoken1'], null);
   assert.equal(merged[`profileDetails/${UID}`], null);
-  assert.deepEqual(files, [`avatar/${UID}/`, 'profileShares/tokentokentoken1/']);
-  assert.deepEqual(auth, [UID]);
+  assert.equal(merged[`multiData/profileMutationOwners/${DRAFT}`], null);
+  assert.deepEqual(files, [`avatar/${UID}/`, `avatar/${DRAFT}/`, 'profileShares/tokentokentoken1/']);
+  // Спершу вимкнули вхід, наприкінці — видалили.
+  assert.deepEqual(log, ['disabled:true', `delete:${UID}`]);
 });
 
-test('збій запису вузлів лишає акаунт: людина ще може увійти й повторити', async () => {
-  const { deps, auth } = fakeDeps({}, {
+test('акаунт, який після deleteUser усе ще є, — це збій, а не успіх', async () => {
+  const { deps } = fakeDeps({}, { deleteAuthUser: async () => {}, getAuthUser: async () => ({ uid: UID }) });
+  const result = await deleteAccountData(deps, UID);
+  assert.deepEqual(result.failed, ['auth']);
+  assert.equal(result.deletedAuth, false);
+});
+
+test('повтор після часткового збою: акаунта вже немає — вважається видаленим', async () => {
+  const { deps } = fakeDeps({}, { deleteAuthUser: async () => { throw notFound(); }, getAuthUser: async () => { throw notFound(); } });
+  const result = await deleteAccountData(deps, UID);
+  assert.equal(result.deletedAuth, true);
+});
+
+test('збій запису вузлів лишає акаунт і вмикає його назад: людина може увійти й повторити', async () => {
+  const { deps, log } = fakeDeps({}, {
     update: async next => {
       if (Object.prototype.hasOwnProperty.call(next, `profileDetails/${UID}`)) throw new Error('boom');
     },
   });
   const result = await deleteAccountData(deps, UID);
-  assert.deepEqual(result, { failed: ['nodes'], deletedAuth: false });
-  assert.deepEqual(auth, []);
+  assert.deepEqual(result.failed, ['nodes']);
+  assert.equal(result.deletedAuth, false);
+  assert.deepEqual(log, ['disabled:true', 'disabled:false']);
+});
+
+test('великі переліки пишуться порціями', async () => {
+  const searchId = {};
+  for (let index = 0; index < 1000; index += 1) searchId[`v${index}`] = { phone: UID };
+  const { deps, updates } = fakeDeps({ searchId });
+  const result = await deleteAccountData(deps, UID);
+  assert.equal(result.counts.searchId, 1000);
+  assert.ok(updates.every(chunk => Object.keys(chunk).length <= 400));
 });
 
 test('лист «Профіль видалено» — без кнопки, мовою людини', () => {
