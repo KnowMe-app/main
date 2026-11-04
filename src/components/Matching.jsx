@@ -65,6 +65,7 @@ import {
   isProfileBuiltFromCache,
   readProfileContacts,
   fetchAdminLastLoginCardsPage,
+  matchingFeedStateReader,
   fetchMatchingCardsPage,
   fetchMatchingCardsByIds,
   clearMatchingCardsPageInFlight,
@@ -119,6 +120,7 @@ import {
   setQueryPagination,
 } from '../utils/cardIndex';
 import { normalizeFeedCursor, resolveFeedCacheResume } from '../utils/matchingFeedCacheResume';
+import { useFreshFeedStateGate } from '../hooks/useFreshFeedStateGate';
 import {
   ensureLiveReactionEntry,
   failLiveReactionEntry,
@@ -8063,10 +8065,26 @@ const Matching = () => {
   // цікаві»): і там відкладена картка — «на потім». У пошуку — ні: там
   // питання «де ця людина», і відповідь не може стояти в кінці.
   const placePostponedLast = ['default', 'favorites', 'dislikes'].includes(viewMode) && !isSearching;
-  const feedRows = useMemo(() => {
+  const feedRowsUnchecked = useMemo(() => {
     const rows = feedSource.map(user => withOwnEdits(withLazyPhotos(user)));
     return placePostponedLast ? placePostponedCardsLast(rows, readRowPostponeSortDate) : rows;
   }, [feedSource, placePostponedLast, readRowPostponeSortDate, withLazyPhotos, withOwnEdits]);
+
+  /*
+   * Перед показом — свіжий `feedDate` (`useFreshFeedStateGate`): картка з кешу
+   * пристрою могла бути схована чи видалена відтоді, як її бачили, і стрічка,
+   * колекції та пошук показували б її далі до шести годин. Картка без свіжого
+   * стану чекає на точкове читання й до нього не показується; сторінки, що
+   * щойно прийшли з бази, свій стан уже несуть (`primeMatchingFeedState`).
+   * Свою анкету читач бачить завжди, а стрічка адміна навмисно показує й
+   * сховані — перевірка її не стосується.
+   */
+  const skipOwnCardFeedCheck = React.useCallback(row => Boolean(ownerId) && row?.userId === ownerId, [ownerId]);
+  const { rows: feedRows, pendingCount: feedStatePendingCount } = useFreshFeedStateGate(feedRowsUnchecked, {
+    reader: matchingFeedStateReader,
+    enabled: !isAdmin,
+    skip: skipOwnCardFeedCheck,
+  });
 
   /**
    * Власні нотатки — для всіх показаних карток, а не для самої активної.
@@ -8441,11 +8459,13 @@ const Matching = () => {
                 </FeedList>
                 </>
               )}
-              {loading && feedRows.length === 0 && <MatchingSkeleton />}
+              {/* Поки свіжий стан карток ще читається, порожня дека — це
+                  очікування, а не «нічого немає». */}
+              {(loading || feedStatePendingCount > 0) && feedRows.length === 0 && <MatchingSkeleton />}
               {/* Над порожньою видачею за місцем уже стоїть картка «Схоже на
                   місто · Показати анкети», і «Немає доступних профілів» під нею
                   суперечило їй: анкети з цього місця є, їх показує стрічка. */}
-              {!loading && feedRows.length === 0 && !loadError && !searchPlace && (
+              {!loading && feedStatePendingCount === 0 && feedRows.length === 0 && !loadError && !searchPlace && (
                 <FeedNotice>
                   <div>{emptyFeedMessage}</div>
                   {/* Назвати причину мало: кінець списку тут не видно нікому,

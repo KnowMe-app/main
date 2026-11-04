@@ -1,8 +1,14 @@
-import { createFeedDenialReader, filterFeedDeniedSearchResult } from './searchFeedDenial';
+import {
+  createFeedStateReader,
+  filterFeedDeniedSearchResult,
+  gateRowsByFeedState,
+  isFeedStateDeniedForFeed,
+  isFeedStateDeniedForSearch,
+} from './searchFeedDenial';
+
+const card = (userId, extra = {}) => ({ userId, name: userId, ...extra });
 
 describe('сховану анкету пошук не знаходить', () => {
-  const card = (userId, extra = {}) => ({ userId, name: userId, ...extra });
-
   it('відкидає картку, чий свіжий feedDate — false, навіть коли кеш несе дату', async () => {
     const readDenied = async id => id === 'deleted';
     const result = await filterFeedDeniedSearchResult({
@@ -10,7 +16,6 @@ describe('сховану анкету пошук не знаходить', () =>
       alive: card('alive', { feedDate: '2026-10-02' }),
       draft: card('draft', { __profileMutationOperation: 'create' }),
     }, { readDenied });
-    // Одна жива + чернетка — мапа з двох.
     expect(Object.keys(result).sort()).toEqual(['alive', 'draft']);
   });
 
@@ -21,37 +26,78 @@ describe('сховану анкету пошук не знаходить', () =>
     expect(await filterFeedDeniedSearchResult(null, { readDenied })).toBeNull();
   });
 
-  it('явне false у самій картці не питає базу', async () => {
+  it('явне false у самій картці базу не питає', async () => {
     const readDenied = jest.fn(async () => false);
     expect(await filterFeedDeniedSearchResult(card('x', { feedDate: false }), { readDenied })).toEqual({});
-    expect(await filterFeedDeniedSearchResult(card('y', { publish: false }), { readDenied })).toEqual({});
     expect(readDenied).not.toHaveBeenCalled();
   });
+});
 
-  it('чернетка не питає базу: картки стрічки в неї немає', async () => {
-    const readDenied = jest.fn(async () => true);
-    const draft = card('d', { __profileMutationOperation: 'create' });
-    expect(await filterFeedDeniedSearchResult(draft, { readDenied })).toBe(draft);
-    expect(readDenied).not.toHaveBeenCalled();
+describe('правило показу', () => {
+  it('пошук ховає будь-яке false, стрічка — крім кола «лише для вподобаних»', () => {
+    expect(isFeedStateDeniedForSearch({ feedDate: false })).toBe(true);
+    expect(isFeedStateDeniedForSearch({ feedDate: false, audience: 'liked' })).toBe(true);
+    expect(isFeedStateDeniedForFeed({ feedDate: false })).toBe(true);
+    expect(isFeedStateDeniedForFeed({ feedDate: 'false' })).toBe(true);
+    expect(isFeedStateDeniedForFeed({ feedDate: false, audience: 'liked' })).toBe(false);
+    expect(isFeedStateDeniedForFeed({ feedDate: '2026-10-01' })).toBe(false);
+    // Неопублікована (ключа немає) — не схована: пошук її знаходить.
+    expect(isFeedStateDeniedForFeed({ feedDate: null })).toBe(false);
   });
+});
 
-  it('читач памʼятає відповідь хвилину, а збій читання картку лишає', async () => {
+describe('читач стану картки', () => {
+  it('памʼятає відповідь, ділить політ, а prime знімає потребу читати', async () => {
     let clock = 0;
     const reads = [];
-    const read = createFeedDenialReader(async id => {
+    const reader = createFeedStateReader(async id => {
       reads.push(id);
-      if (id === 'broken') throw new Error('offline');
-      return id === 'deleted' ? false : '2026-10-01';
-    }, { now: () => clock });
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(await read('deleted')).toBe(true);
-    expect(await read('deleted')).toBe(true);
+      return { feedDate: id === 'deleted' ? false : '2026-10-01', audience: null };
+    }, { ttlMs: 1000, now: () => clock });
+    const [first, second] = await Promise.all([reader.read('deleted'), reader.read('deleted')]);
+    expect(first).toEqual({ feedDate: false, audience: null });
+    expect(second).toBe(first);
     expect(reads).toEqual(['deleted']);
-    clock = 61 * 1000;
-    await read('deleted');
-    expect(reads).toEqual(['deleted', 'deleted']);
-    expect(await read('alive')).toBe(false);
-    expect(await read('broken')).toBe(false);
+    expect(reader.peek('deleted')).toEqual({ feedDate: false, audience: null });
+    clock = 2000;
+    expect(reader.peek('deleted')).toBeUndefined();
+
+    reader.prime('fresh', { feedDate: '2026-11-01' });
+    expect(await reader.read('fresh')).toEqual({ feedDate: '2026-11-01' });
+    expect(reads).toEqual(['deleted']);
+  });
+
+  it('збій читання стану не дає і картку не ховає', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const reader = createFeedStateReader(async () => { throw new Error('offline'); });
+    expect(await reader.read('x')).toBeNull();
+    expect(reader.peek('x')).toBeUndefined();
     warn.mockRestore();
+  });
+});
+
+describe('рядки стрічки перед показом', () => {
+  const states = {
+    alive: { feedDate: '2026-10-01' },
+    deleted: { feedDate: false },
+    liked: { feedDate: false, audience: 'liked' },
+  };
+  const peek = id => states[id];
+
+  it('сховане й видалене не показується, неперевірене чекає, а не мигає', () => {
+    const rows = [card('alive'), card('deleted'), card('liked'), card('unknown'), card('d', { __profileMutationOperation: 'create' }), card('me')];
+    const { visible, pendingIds } = gateRowsByFeedState(rows, {
+      peek,
+      isChecked: () => false,
+      skip: row => row.userId === 'me',
+    });
+    expect(visible.map(row => row.userId)).toEqual(['alive', 'liked', 'd', 'me']);
+    expect(pendingIds).toEqual(['unknown']);
+  });
+
+  it('прочитане без стану (збій) — показується: без звʼязку стрічка не порожніє', () => {
+    const { visible, pendingIds } = gateRowsByFeedState([card('unknown')], { peek, isChecked: () => true });
+    expect(visible.map(row => row.userId)).toEqual(['unknown']);
+    expect(pendingIds).toEqual([]);
   });
 });

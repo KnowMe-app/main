@@ -137,7 +137,11 @@ import { rememberCommentWrite } from '../utils/commentsStorage';
 import { forgetProfileContacts, readFreshProfileContacts, writeProfileContacts } from '../utils/matchingContactsCache';
 import { createMatchingTimedStore } from '../utils/matchingTimedStore';
 import { noteRealtimeDemand } from '../utils/realtimeConnectionManager';
-import { createFeedDenialReader, filterFeedDeniedSearchResult as filterFeedDeniedResult } from '../utils/searchFeedDenial';
+import {
+  createFeedStateReader,
+  filterFeedDeniedSearchResult as filterFeedDeniedResult,
+  isFeedStateDeniedForSearch,
+} from '../utils/searchFeedDenial';
 import { readFreshMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
 import {
   PHOTO_THUMB_MAX_DIMENSION,
@@ -3587,12 +3591,35 @@ export const searchUserByPartialUserIdUsers = async (userId, users) => {
   }
 };
 
-// Сховану анкету пошук не знаходить: рішення — свіже `feedDate` з бази, а не
-// картка з кеша (`utils/searchFeedDenial`).
-const readFreshFeedDenial = createFeedDenialReader(async userId => {
-  const snapshot = await get(ref2(database, `${MATCHING_CARDS_ROOT}/${userId}/${MATCHING_CARD_FEED_FIELD}`));
-  return snapshot.exists() ? snapshot.val() : null;
-});
+// Сховану анкету не показують ні пошук, ні стрічка: рішення — свіжий стан
+// картки з бази, а не картка з кеша (`utils/searchFeedDenial`). Стан —
+// точковий `feedDate`, а не картка цілком (вона важить на порядок більше), і
+// лише коли там `false`, ще й `audience`: тільки тоді він щось вирішує
+// («лише для вподобаних»). Так картка коштує одне читання, а не два — на
+// теплому перезавантаженні це 10 запитів на деку замість 20. Памʼять
+// вкладки — пʼять хвилин.
+const FEED_STATE_TTL_MS = 5 * 60 * 1000;
+const readCardFeedState = async userId => {
+  const base = `${MATCHING_CARDS_ROOT}/${userId}`;
+  const feedSnapshot = await get(ref2(database, `${base}/${MATCHING_CARD_FEED_FIELD}`));
+  const feedDate = feedSnapshot.exists() ? feedSnapshot.val() : null;
+  if (feedDate !== false && feedDate !== 'false') return { feedDate, audience: null };
+  const audienceSnapshot = await get(ref2(database, `${base}/audience`));
+  return { feedDate, audience: audienceSnapshot.exists() ? audienceSnapshot.val() : null };
+};
+
+export const matchingFeedStateReader = createFeedStateReader(readCardFeedState, { ttlMs: FEED_STATE_TTL_MS });
+
+/** Стан, який уже приїхав разом із сирою карткою, — у памʼять, без другого кругу. */
+export const primeMatchingFeedState = (userId, rawCard) => {
+  if (!userId || !rawCard || typeof rawCard !== 'object') return;
+  matchingFeedStateReader.prime(userId, {
+    feedDate: rawCard[MATCHING_CARD_FEED_FIELD] ?? null,
+    audience: rawCard.audience ?? null,
+  });
+};
+
+const readFreshFeedDenial = async userId => isFeedStateDeniedForSearch(await matchingFeedStateReader.read(userId));
 
 export const filterFeedDeniedSearchResult = result => filterFeedDeniedResult(result, { readDenied: readFreshFeedDenial });
 
@@ -5612,7 +5639,10 @@ const buildMatchingCardRef = userId => ref2(database, `${MATCHING_CARDS_ROOT}/${
 
 const readMatchingCardRaw = async userId => {
   const snapshot = await get(buildMatchingCardRef(userId));
-  return snapshot.exists() ? snapshot.val() : null;
+  const raw = snapshot.exists() ? snapshot.val() : null;
+  // Картку щойно прочитано з бази — її стан стрічці перепитувати нема чого.
+  if (raw) primeMatchingFeedState(userId, raw);
+  return raw;
 };
 
 /**
@@ -6381,6 +6411,9 @@ const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null } =
   const hasMore = entries.length > safeLimit;
   if (hasMore) entries = entries.slice(0, safeLimit);
 
+  // Сторінка щойно з бази несе свіжий `feedDate` — перевірка стрічки перед
+  // показом (`useFreshFeedStateGate`) за ці картки вдруге не платить.
+  entries.forEach(([id, card]) => primeMatchingFeedState(id, card));
   const users = entries
     .map(([id, card]) => expandMatchingCard(id, card))
     .filter(Boolean);
