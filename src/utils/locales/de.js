@@ -1151,7 +1151,7 @@ const BY_UK = {
   "Ви увійшли надто давно. Вийдіть, увійдіть знову й повторіть видалення — так ми певні, що це ви.": "Ihre Anmeldung liegt zu lange zurück. Melden Sie sich ab, wieder an und wiederholen Sie das Löschen, damit wir wissen, dass Sie es sind.",
   "Цей акаунт службовий, і видалити його з застосунку не можна.": "Dies ist ein Dienstkonto und kann nicht in der App gelöscht werden.",
   "Не вдалося видалити профіль. Спробуйте ще раз або напишіть нам на пошту з темою «Видаліть мою анкету»:": "Das Profil konnte nicht gelöscht werden. Versuchen Sie es erneut oder schreiben Sie uns mit dem Betreff „Mein Profil löschen“:",
-  "Акаунт буде видалено, а анкета одразу зникне зі стрічки й з посилань. Решту — анкету, фото, програми, реакції й памʼятки — адміністратор остаточно видалить з бази найближчим часом. Повернути акаунт не вийде. На пошту прийде лист-підтвердження.": "Ihr Konto wird gelöscht, und Ihr Profil verschwindet sofort aus dem Feed und aus Links. Den Rest – Profil, Fotos, Programme, Reaktionen und Notizen – löscht ein Administrator in Kürze endgültig aus der Datenbank. Das Konto lässt sich nicht wiederherstellen. Sie erhalten eine Bestätigung per E-Mail.",
+  "Акаунт і анкету буде видалено: анкета зникне зі стрічки, пошуку й посилань. Повернути їх не вийде. На пошту прийде лист-підтвердження.": "Ihr Konto und Ihr Profil werden gelöscht: Das Profil verschwindet aus dem Feed, der Suche und aus Links. Das lässt sich nicht rückgängig machen. Sie erhalten eine Bestätigung per E-Mail.",
   "Вийти й увійти знову": "Abmelden und erneut anmelden",
   "Видаляємо…": "Wird gelöscht…",
   "Видалити профіль": "Profil löschen",

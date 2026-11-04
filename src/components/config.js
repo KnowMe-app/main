@@ -137,6 +137,7 @@ import { rememberCommentWrite } from '../utils/commentsStorage';
 import { forgetProfileContacts, readFreshProfileContacts, writeProfileContacts } from '../utils/matchingContactsCache';
 import { createMatchingTimedStore } from '../utils/matchingTimedStore';
 import { noteRealtimeDemand } from '../utils/realtimeConnectionManager';
+import { createFeedDenialReader, filterFeedDeniedSearchResult as filterFeedDeniedResult } from '../utils/searchFeedDenial';
 import { readFreshMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
 import {
   PHOTO_THUMB_MAX_DIMENSION,
@@ -3586,7 +3587,20 @@ export const searchUserByPartialUserIdUsers = async (userId, users) => {
   }
 };
 
-export const searchUsersOnly = async (searchedValue, options = {}) => {
+// Сховану анкету пошук не знаходить: рішення — свіже `feedDate` з бази, а не
+// картка з кеша (`utils/searchFeedDenial`).
+const readFreshFeedDenial = createFeedDenialReader(async userId => {
+  const snapshot = await get(ref2(database, `${MATCHING_CARDS_ROOT}/${userId}/${MATCHING_CARD_FEED_FIELD}`));
+  return snapshot.exists() ? snapshot.val() : null;
+});
+
+export const filterFeedDeniedSearchResult = result => filterFeedDeniedResult(result, { readDenied: readFreshFeedDenial });
+
+export const searchUsersOnly = async (searchedValue, options = {}) => (
+  filterFeedDeniedSearchResult(await searchUsersOnlyUnfiltered(searchedValue, options))
+);
+
+const searchUsersOnlyUnfiltered = async (searchedValue, options = {}) => {
   // `cardsOnly` — опція сторінки matching, а не нова поведінка пошуку.
   // Дефолт лишається тим самим: знайдене гідратується з вузлів анкети. Див.
   // `addCardHit` — чому видача matching просить саме проєкцію.

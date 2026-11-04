@@ -51,6 +51,7 @@ import {
   recordContactAction,
   addMatchingSearchQuery,
   filterMain,
+  filterFeedDeniedSearchResult,
   searchUsersOnly,
   fetchUserComments,
   saveMyCardComment,
@@ -4509,7 +4510,15 @@ const Matching = () => {
     setMatchingSearchStatus(uiText('Не вдалося виконати пошук. Спробуйте ще раз.', language));
   }, [language]);
 
-  const searchUsers = async (params, options = {}) => {
+  // Кеш видачі (нижче) віддає картки повз `searchUsersOnly`, тож і сховану
+  // анкету (`feedDate: false` — сховали чи видалили акаунт) він віддав би з
+  // тією датою, яку бачив. Свіжу перевірку проходить кожна видача — і з
+  // кеша, і з бекенду (`filterFeedDeniedSearchResult`, памʼять таба хвилина).
+  const searchUsers = async (params, options = {}) => (
+    filterFeedDeniedSearchResult(await searchUsersFromCacheOrBackend(params, options))
+  );
+
+  const searchUsersFromCacheOrBackend = async (params, options = {}) => {
     const cacheEpoch = getMatchingLocalStorageCacheEpoch();
     const canWriteMatchingCache = () => cacheEpoch === getMatchingLocalStorageCacheEpoch();
     // A limited hit is a projection, not a record. It never touches the shared card

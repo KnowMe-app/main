@@ -33,8 +33,8 @@ describe('пошук у matching для читача без повного до�
   it('те саме на шляху, яким результат приходить із searchUsers', () => {
     const source = matchingSource();
     const searchUsers = source.slice(
-      source.indexOf('  const searchUsers = async (params, options = {}) => {'),
-      source.indexOf('  const similarUsers = ', source.indexOf('  const searchUsers = async (params, options = {}) => {')),
+      source.indexOf('  const searchUsersFromCacheOrBackend = async (params, options = {}) => {'),
+      source.indexOf('  const similarUsers = ', source.indexOf('  const searchUsersFromCacheOrBackend = async (params, options = {}) => {')),
     );
 
     expect(searchUsers).toContain('const filtered = arr.filter(u => isMatchingCardId(u?.userId));');
@@ -62,7 +62,7 @@ describe('пошук у matching для читача без повного до�
   it('позначка не пише в спільний кеш карток — лише у відповідь на запит', () => {
     const source = matchingSource();
     const searchUsers = source.slice(
-      source.indexOf('  const searchUsers = async (params, options = {}) => {'),
+      source.indexOf('  const searchUsersFromCacheOrBackend = async (params, options = {}) => {'),
       source.indexOf('  const handleExit = async () => {'),
     );
 
