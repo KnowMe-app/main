@@ -19,6 +19,7 @@ const {
   deleteAccountData,
   isProtectedUid,
   listShareTokens,
+  verifyDraftCardIds,
 } = require('../accountDeletion');
 const { renderAccountDeletedEmail } = require('../emails/accountDeleted');
 
@@ -113,6 +114,30 @@ test('видаляються вузли анкети й чернеток, вла
   assert.ok(paths.includes(`multiData/profileMutationOwners/${DRAFT}`));
 });
 
+test('чернеткою вважається лише доведене сервером: чужа анкета під id «чернетки» не видаляється', async () => {
+  const VICTIM_ACCOUNT = 'victimvictimvictimvictim1';
+  const drafts = {
+    [DRAFT]: { operation: 'create', createdBy: UID, cardId: DRAFT },
+    AA0001: { operation: 'create', createdBy: UID, cardId: 'AA0001' },
+    [VICTIM_ACCOUNT]: { operation: 'create', createdBy: UID, cardId: VICTIM_ACCOUNT },
+    '-Nshared': { operation: 'create', createdBy: UID, cardId: '-Nshared' },
+    '-Nforged': { operation: 'create', createdBy: 'someoneElse', cardId: '-Nforged' },
+    '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2': { operation: 'create', createdBy: UID, cardId: '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' },
+  };
+  const data = {
+    'multiData/profileMutations': { [UID]: drafts, other: { '-Nshared': {} } },
+    'profileDetails/AA0001': { name: 'Оксана' },
+  };
+  const deps = {
+    read: async path => data[path] ?? null,
+    getAuthUser: async id => {
+      if (id === VICTIM_ACCOUNT) return { uid: id };
+      throw Object.assign(new Error('nf'), { code: 'auth/user-not-found' });
+    },
+  };
+  assert.deepEqual(await verifyDraftCardIds(deps, UID, drafts), [DRAFT]);
+});
+
 test('адмінів і інспектора видалити не можна', () => {
   assert.ok(isProtectedUid('3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'));
   assert.ok(isProtectedUid('vtDxkDMjCwYuTDqTUnZsO29bpQr1'));
@@ -140,7 +165,7 @@ const fakeDeps = (data, overrides = {}) => {
       deleteFiles: async prefix => { files.push(prefix); },
       setAuthDisabled: async (id, disabled) => { log.push(`disabled:${disabled}`); },
       deleteAuthUser: async id => { log.push(`delete:${id}`); authExists = false; },
-      getAuthUser: async () => { if (!authExists) throw notFound(); return { uid: UID }; },
+      getAuthUser: async id => { if (id !== UID || !authExists) throw notFound(); return { uid: UID }; },
       ...overrides,
     },
   };
@@ -149,7 +174,7 @@ const fakeDeps = (data, overrides = {}) => {
 test('повне видалення: чужі сліди, база, фото, посилання, а наприкінці — перевірене видалення акаунта', async () => {
   const { deps, updates, files, log } = fakeDeps({
     [`multiData/profileShareSlots/${UID}`]: { 0: { token: 'tokentokentoken1' } },
-    [`multiData/profileMutations/${UID}`]: { [DRAFT]: { operation: 'create' } },
+    [`multiData/profileMutations/${UID}`]: { [DRAFT]: { operation: 'create', createdBy: UID, cardId: DRAFT } },
     searchId: { '380': { phone: UID }, '381': { phone: DRAFT } },
     'multiData/favorites': { agency: { [UID]: true, [DRAFT]: true } },
     'multiData/dislikes': { donor: { [UID]: 123 } },

@@ -20,7 +20,8 @@
  *   якщо під карткою більше нічого не лишилось), права спільного доступу;
  * - **чернетки, які вона завела**: картка-чернетка без авторки нікому не
  *   належить, тож іде так само, як анкета, — з індексів, заявок і чужих
- *   реакцій теж.
+ *   реакцій теж. Але лише доведені сервером (`verifyDraftCardIds`): перелік
+ *   чернеток пише клієнт, і повірити йому означало б дати стерти чужу анкету.
  *
  * Модуль чистий (без Firebase): `index.js` дає йому базу, сховище й Auth, а
  * `test/accountDeletion.test.js` перевіряє склад і порядок без мережі.
@@ -86,9 +87,56 @@ const isPlainObject = value => Boolean(value) && typeof value === 'object' && !A
 
 const toIdSet = ids => (ids instanceof Set ? ids : new Set(ids));
 
-/** Id чернеток, які завела людина (`multiData/profileMutations/{uid}/{картка}`). */
+/** Кандидати в чернетки людини (`multiData/profileMutations/{uid}/{картка}`) — ще не перевірені. */
 const listDraftCardIds = drafts => Object.keys(isPlainObject(drafts) ? drafts : {})
   .filter(id => /^[A-Za-z0-9_-]{1,128}$/.test(id));
+
+/**
+ * Які з кандидатів справді чернетки цієї людини — і лише її.
+ *
+ * Запис `profileMutations/{uid}/{картка}` пише сам клієнт, і правила не
+ * питають, чия це картка: будь-хто може завести «чернетку» під id чужої
+ * анкети, а `profileMutationOwners` — перебити. Повіривши цьому переліку,
+ * видалення стерло б чужу анкету, фото й чужі реакції на неї. Тому id
+ * чернеткою вважається лише тоді, коли сервер сам це довів:
+ * - запис має форму чернетки (`operation: 'create'`, `createdBy` і `cardId`
+ *   збігаються);
+ * - це не акаунт, не службовий uid і не сама людина;
+ * - під id немає жодного вузла готової анкети — у чернетки їх немає, а в
+ *   прийнятої чи заведеної адміном картки є;
+ * - немає Auth-акаунта з таким id;
+ * - ніхто інший не має чернетки з тим самим id (обхід усього
+ *   `profileMutations`): інакше чужа спільна чернетка пішла б разом з цією.
+ * Не пройшов — знімається лише власний запис людини (`profileMutations/{uid}`
+ * іде в `buildOwnedPaths` цілком), а картка й усе навколо лишаються.
+ */
+const verifyDraftCardIds = async (deps, uid, drafts) => {
+  const candidates = listDraftCardIds(drafts);
+  if (!candidates.length) return [];
+  const allMutations = await deps.read('multiData/profileMutations');
+  const verified = [];
+  for (const id of candidates) {
+    const record = drafts[id];
+    if (id === uid || isProtectedUid(id)) continue;
+    if (!isPlainObject(record) || record.operation !== 'create' || record.createdBy !== uid || record.cardId !== id) continue;
+    const sharedWithOthers = Object.entries(isPlainObject(allMutations) ? allMutations : {})
+      .some(([creator, cards]) => creator !== uid && isPlainObject(cards) && Object.prototype.hasOwnProperty.call(cards, id));
+    if (sharedWithOthers) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const nodes = await Promise.all(PROFILE_NODE_ROOTS.map(root => deps.read(`${root}/${id}`)));
+    if (nodes.some(value => value !== null && value !== undefined)) continue;
+    let isAccount = true;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await deps.getAuthUser(id);
+    } catch (error) {
+      if (error && error.code === 'auth/user-not-found') isAccount = false;
+    }
+    if (isAccount) continue;
+    verified.push(id);
+  }
+  return verified;
+};
 
 /** Шляхи, які видаляються цілком. */
 const buildOwnedPaths = (uid, cardIds = [uid]) => {
@@ -378,7 +426,9 @@ const deleteAccountData = async (deps, uid) => {
   const slots = await read(`multiData/profileShareSlots/${uid}`).catch(() => null);
   const drafts = await read(`multiData/profileMutations/${uid}`).catch(() => null);
   const shareTokens = listShareTokens(slots);
-  const cardIds = new Set([uid, ...listDraftCardIds(drafts)]);
+  let draftIds = [];
+  await step('drafts', async () => { draftIds = await verifyDraftCardIds(deps, uid, drafts); });
+  const cardIds = new Set([uid, ...draftIds]);
 
   await sweep('searchId', 'searchId', root => buildSearchIdUpdates(root, cardIds));
   await sweep('searchKey', 'searchKey/users', root => buildSearchKeyUpdates(root, cardIds));
@@ -464,4 +514,5 @@ module.exports = {
   isValidUid,
   listDraftCardIds,
   listShareTokens,
+  verifyDraftCardIds,
 };
