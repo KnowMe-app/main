@@ -166,7 +166,7 @@ describe('видача пошуку кешується і читається з 
   it('спершу кеш проєкцій, і лише потім мережа', () => {
     const source = matching();
     const searcher = source.slice(
-      source.indexOf('const searchUsers = async (params, options = {}) => {'),
+      source.indexOf('const searchUsersFromCacheOrBackend = async (params, options = {}) => {'),
       source.indexOf('const res = await searchUsersOnly(params, options);'),
     );
 
@@ -234,3 +234,19 @@ describe('стрічку звужує рейка, а видачу — рядок
     );
   });
 });
+
+describe('сховану анкету пошук не віддає й з кеша', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const matching = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+  const config = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
+
+  it('кожна видача Matching — і з кеша, і з бекенду — іде через свіжу перевірку feedDate', () => {
+    expect(matching).toContain('filterFeedDeniedSearchResult(await searchUsersFromCacheOrBackend(params, options))');
+  });
+
+  it('searchUsersOnly (стрічка й форма «Додати картку») фільтрує сам', () => {
+    expect(config).toContain('filterFeedDeniedSearchResult(await searchUsersOnlyUnfiltered(searchedValue, options))');
+  });
+});
+

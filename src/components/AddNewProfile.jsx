@@ -148,6 +148,7 @@ import { getEffectiveCycleStatus } from 'utils/cycleStatus';
 import { btnMerge } from './smallCard/btnMerge';
 import FilterPanel, { getDefaultFilters, getInitialFilters } from './FilterPanel';
 import { buildAdminFilterChips } from './SearchFilters';
+import { AccountDeletionQueue } from './AddNewProfileAccountDeletions';
 import SearchBar, { detectSearchParams, getSearchCacheKeyForParams } from './SearchBar';
 import { Pagination } from './Pagination';
 import { ProfileForm, getFieldsToRender } from './ProfileForm';
@@ -6010,6 +6011,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               «Списку» (`CardListPanel`). Рідкісне й небезпечне — у «Інструментах»
               під списком.
             */}
+            {/*
+              Видалені людьми акаунти, база яких ще не очищена: горить, поки
+              черга не порожня (`AddNewProfileAccountDeletions`).
+            */}
+            {isAdmin && <AccountDeletionQueue />}
             <CardListPanel
               selection={cardListSelection}
               onSelect={handleCardListSelectionChange}

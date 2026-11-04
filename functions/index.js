@@ -25,6 +25,8 @@ const logger = require('firebase-functions/logger');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getDatabase } = require('firebase-admin/database');
+const { getStorage } = require('firebase-admin/storage');
+const { getFirestore } = require('firebase-admin/firestore');
 
 const { ALLOWED_ORIGINS, MAIL_SENDER, REGION } = require('./config');
 const { normalizeEmailLanguage, normalizeEmailRole, renderVerifyEmail } = require('./emails/verifyEmail');
@@ -396,5 +398,180 @@ exports.completeTelegramLogin = onCall(
       logger.error('telegram login completion failed', { error: error.message });
       throw new HttpsError('unavailable', 'Telegram login could not be completed.');
     }
+  },
+);
+
+/**
+ * Видалення акаунта — два кроки (`accountDeletion.js`).
+ *
+ * 1. `deleteOwnAccount` — людина в «Моєму профілі» («Видалити анкету»):
+ *    анкета ховається (`feedDate: false`), посилання без входу гаснуть, запис
+ *    лягає в чергу `accountDeletions`, а Auth-акаунт видаляється. Слідом — лист
+ *    «Профіль видалено»; збій листа видалення не відкочує.
+ * 2. `purgeDeletedAccount` — адмін на `AddNewProfile` (сповіщення горить, поки
+ *    черга не порожня, `listPendingAccountDeletions`): спершу аналіз
+ *    (`dryRun` — план без жодного запису, його бачить і інспектор), потім
+ *    повне очищення бази від картки й усіх її звʼязків. Видаляє лише повний
+ *    адмін і лише uid із черги — живий акаунт цим шляхом не стерти.
+ *
+ * Свіжість входу Firebase для callable не перевіряє, тож перевіряємо самі:
+ * токен, виданий понад `RECENT_SIGN_IN_MS` тому, — відмова
+ * `failed-precondition`, і застосунок просить увійти ще раз. Інакше вкладка,
+ * забута відкритою на чужому компʼютері, була б кнопкою «стерти акаунт».
+ */
+const RECENT_SIGN_IN_MS = 24 * 60 * 60 * 1000;
+const {
+  ACCOUNT_DELETIONS_ROOT,
+  canPurgeAccounts,
+  canViewDeletionQueue,
+  isProtectedUid,
+  isValidUid,
+  listAccountDeletionQueue,
+  purgeAccountData,
+  requestAccountDeletion,
+} = require('./accountDeletion');
+const { renderAccountDeletedEmail } = require('./emails/accountDeleted');
+
+const LEGACY_DOC_COLLECTIONS = ['users', 'newUsers'];
+
+const accountDeletionDeps = () => {
+  const db = getDatabase();
+  return {
+    read: async path => (await db.ref(path).get()).val(),
+    update: updates => db.ref().update(updates),
+    deleteFiles: prefix => getStorage().bucket().deleteFiles({ prefix }),
+    deleteAuthUser: id => getAuth().deleteUser(id),
+    getAuthUser: id => getAuth().getUser(id),
+    // Firestore-копії анкети (`users`, `newUsers`): застосунок їх більше не
+    // читає, але дані там лежать. Немає бази Firestore — крок падає й
+    // потрапляє у `failed`, решту очищення це не зупиняє.
+    deleteLegacyDocs: async id => {
+      const firestore = getFirestore();
+      await Promise.all(LEGACY_DOC_COLLECTIONS.map(collection => firestore.collection(collection).doc(id).delete()));
+    },
+    // Для аналізу: скільки файлів під текою і які Firestore-копії справді є.
+    countFiles: async prefix => {
+      const [files] = await getStorage().bucket().getFiles({ prefix });
+      return files.length;
+    },
+    listLegacyDocs: async id => {
+      const firestore = getFirestore();
+      const snapshots = await Promise.all(LEGACY_DOC_COLLECTIONS.map(collection => firestore.collection(collection).doc(id).get()));
+      return snapshots.filter(snapshot => snapshot.exists).map(snapshot => snapshot.ref.path);
+    },
+  };
+};
+
+const sendAccountDeletedEmail = async ({ uid, email, language }) => {
+  if (!email) return false;
+  try {
+    const message = renderAccountDeletedEmail({ email, language });
+    await sendWithBrevo({
+      apiKey: BREVO_API_KEY.value(),
+      sender: MAIL_SENDER,
+      to: email,
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+      tags: ['account_deleted', `lang_${message.language}`],
+    });
+    return true;
+  } catch (error) {
+    logger.warn('account deleted email failed', { uid, error: error.message, status: error.status });
+    return false;
+  }
+};
+
+exports.deleteOwnAccount = onCall(
+  {
+    region: REGION,
+    cors: ALLOWED_ORIGINS,
+    secrets: [BREVO_API_KEY],
+    memory: '256MiB',
+    timeoutSeconds: 60,
+    maxInstances: 3,
+  },
+  async request => {
+    const uid = request.auth && request.auth.uid;
+    if (!uid) throw new HttpsError('unauthenticated', 'Sign in to delete your profile.');
+    if (!isValidUid(uid) || isProtectedUid(uid)) {
+      throw new HttpsError('permission-denied', 'This account cannot be deleted from the app.');
+    }
+    const authTime = Number(request.auth.token && request.auth.token.auth_time) * 1000;
+    if (!authTime || Date.now() - authTime > RECENT_SIGN_IN_MS) {
+      throw new HttpsError('failed-precondition', 'Sign in again to delete your profile.', { reason: 'recent-login' });
+    }
+
+    const language = normalizeEmailLanguage((request.data || {}).language);
+    // Адресу беремо до видалення: після нього її вже ніде немає.
+    const user = await getAuth().getUser(uid).catch(() => null);
+    const email = user && user.email;
+
+    let result;
+    try {
+      result = await requestAccountDeletion(accountDeletionDeps(), uid);
+    } catch (error) {
+      logger.error('account deletion request failed', { uid, error: error.message });
+      throw new HttpsError('internal', 'Profile could not be deleted.', { failed: ['request'] });
+    }
+    if (result.status === 'disabled') throw new HttpsError('permission-denied', 'This account is disabled.');
+
+    const emailSent = await sendAccountDeletedEmail({ uid, email, language });
+    logger.info('account deletion requested', { uid, emailSent });
+    return { status: 'deleted', emailSent };
+  },
+);
+
+exports.listPendingAccountDeletions = onCall(
+  { region: REGION, cors: ALLOWED_ORIGINS, memory: '256MiB', timeoutSeconds: 30, maxInstances: 3 },
+  async request => {
+    const uid = request.auth && request.auth.uid;
+    if (!uid || !canViewDeletionQueue(uid)) throw new HttpsError('permission-denied', 'Admins only.');
+    const db = getDatabase();
+    const queue = listAccountDeletionQueue((await db.ref(ACCOUNT_DELETIONS_ROOT).get()).val());
+    // Імʼя й роль — з картки, яка ще лежить до очищення: адмінові треба знати,
+    // кого саме він стирає, а не самий uid.
+    const items = await Promise.all(queue.map(async entry => {
+      const card = (await db.ref(`matchingCards/${entry.uid}`).get()).val() || {};
+      const current = value => (Array.isArray(value) ? value.filter(item => item != null).slice(-1)[0] : value);
+      return {
+        ...entry,
+        name: [current(card.name), current(card.surnameShort)].filter(part => typeof part === 'string' && part).join(' '),
+        role: Array.isArray(card.role) ? card.role.join(',') : (typeof card.role === 'string' ? card.role : ''),
+        hasCard: Boolean(card && Object.keys(card).length),
+      };
+    }));
+    return { items, canPurge: canPurgeAccounts(uid) };
+  },
+);
+
+exports.purgeDeletedAccount = onCall(
+  { region: REGION, cors: ALLOWED_ORIGINS, memory: '1GiB', timeoutSeconds: 300, maxInstances: 1 },
+  async request => {
+    const adminUid = request.auth && request.auth.uid;
+    const dryRun = Boolean((request.data || {}).dryRun);
+    // Аналіз нічого не пише — його бачить і інспектор; видалення — лише
+    // повний адмін.
+    const allowed = dryRun ? canViewDeletionQueue(adminUid) : canPurgeAccounts(adminUid);
+    if (!adminUid || !allowed) throw new HttpsError('permission-denied', 'Full admins only.');
+    const uid = String((request.data || {}).uid || '');
+    if (!isValidUid(uid) || isProtectedUid(uid)) throw new HttpsError('invalid-argument', 'Invalid account id.');
+
+    const db = getDatabase();
+    const queued = (await db.ref(`${ACCOUNT_DELETIONS_ROOT}/${uid}`).get()).val();
+    // Лише те, що людина сама попросила видалити: живий акаунт адмін цим
+    // шляхом не зітре навіть помилковим дотиком.
+    if (!queued) throw new HttpsError('not-found', 'This account is not waiting for deletion.');
+
+    const result = await purgeAccountData({
+      ...accountDeletionDeps(),
+      log: (step, error) => logger.error('account purge step failed', { uid, step, dryRun, error: error.message }),
+    }, uid, { dryRun });
+    if (dryRun) {
+      logger.info('account purge analysed', { uid, by: adminUid, steps: result.plan.steps.length, failed: result.failed });
+      return { dryRun: true, plan: result.plan, failed: result.failed, draftIds: result.draftIds };
+    }
+    logger.info('account purged', { uid, by: adminUid, failed: result.failed, counts: result.counts });
+    return { complete: result.complete, failed: result.failed, counts: result.counts, draftIds: result.draftIds };
   },
 );

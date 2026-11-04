@@ -88,6 +88,7 @@ import { isProgramsOwnerRoleHidden, listPrograms, listProgramBonuses, resolvePro
 import { MyProfileCardPreview } from './MyProfileCardPreview';
 import { MyProfileShare } from './MyProfileShare';
 import { getCurrentValue } from './getCurrentValue';
+import { ACCOUNT_DELETION_EMAIL, requestOwnAccountDeletion } from '../utils/accountDeletion';
 import { clearMyProfileCache, patchMyProfileCache, readMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
 import { listShareableProfileRoles } from '../utils/profileShare';
 import {
@@ -1605,6 +1606,9 @@ export const MyProfile = () => {
   const [programTerms, setProgramTerms] = useState(null);
   // Роль, дані якої людина просить очистити, — поки відкрите підтвердження.
   const [clearRoleTarget, setClearRoleTarget] = useState('');
+  // Самовидалення: '' — питаємо; 'pending' — сервер стирає; решта — причина
+  // відмови словом (`classifyAccountDeletionError`).
+  const [accountDeletion, setAccountDeletion] = useState('');
   // Роль, на яку людина щойно натиснула в «Хто ви», — до її рішення в модалці.
   const [roleChangeTarget, setRoleChangeTarget] = useState('');
   // «Хто ви» розгорнуте — п'ять чипів ролей замість рядка з поточною роллю.
@@ -2302,6 +2306,38 @@ export const MyProfile = () => {
     }
   }, [state.areTermsConfirmed, hasAgreed]);
 
+  /**
+   * «Видалити профіль» — крок людини (`utils/accountDeletion`): сервер видаляє
+   * акаунт входу, ховає анкету (`feedDate: false`), гасить посилання й ставить
+   * запис у чергу адміна, а саму картку й усі її звʼязки прибирає вже адмін
+   * («Видалені акаунти» на `AddNewProfile`). Після успіху сесії немає:
+   * Firebase-акаунт стерто, тож лишається вийти локально й показати вхід.
+   * Автозбереження, що в дорозі, дочікуємо **до** виклику — інакше воно
+   * повернуло б анкеті `feedDate` уже після того, як сервер її сховав.
+   */
+  const deleteOwnAccount = async () => {
+    if (accountDeletion === 'pending') return;
+    setAccountDeletion('pending');
+    await saveQueueRef.current.catch(() => {});
+    const result = await requestOwnAccountDeletion({ auth, language });
+    if (result.status !== 'deleted') {
+      setAccountDeletion(result.status);
+      return;
+    }
+    localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
+    resetAuthenticatedProfileState();
+    clearMyProfileCache();
+    await signOut(auth).catch(() => {});
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('ownerId');
+    setShowInfoModal(false);
+    setAccountDeletion('');
+    toast.success(result.emailSent
+      ? uiText('Профіль видалено. Підтвердження надіслали на вашу пошту.', language)
+      : uiText('Профіль видалено.', language));
+    navigate('/login');
+  };
+
   const handleExit = async () => {
     await saveQueueRef.current.catch(error => {
       console.warn('Failed to finish MyProfile autosave before logout.', error);
@@ -2326,11 +2362,15 @@ export const MyProfile = () => {
       onExit={handleExit}
       // «Видалити анкету» стоїть у меню всюди, де є анкета (`AddNewProfile`,
       // колись і старі екрани профілю), і саме тут його не передавали — тож
-      // `ProfileDotsMenu` цілу секцію «Анкета» не малював. Видалення профілю —
-      // це лист на пошту з темою «Видаліть мою анкету» (`delProfile` в
-      // `InfoModal`): акаунт і сліди в чужих списках знімає людина, а не
-      // кнопка.
-      onDeleteProfile={() => setShowInfoModal('delProfile')}
+      // `ProfileDotsMenu` цілу секцію «Анкета» не малював. Видаляло його
+      // спершу листом на пошту (`delProfile` в `InfoModal`): людина писала,
+      // адмін стирав руками. Тепер це один дотик з підтвердженням
+      // (`deleteAccount`, Cloud Function `deleteOwnAccount`), а лист лишився
+      // запасом — без входу й коли функція не відповіла.
+      onDeleteProfile={() => {
+        setAccountDeletion('');
+        setShowInfoModal(isProfileAccessConfirmed ? 'deleteAccount' : 'delProfile');
+      }}
       onSelect={close || (() => setShowInfoModal(false))}
       // «Очистити все» стояло кнопкою просто під «Опублікувати» — незворотна
       // дія поруч із головною, на відстані одного промаху пальцем. Тепер вона
@@ -3952,11 +3992,45 @@ export const MyProfile = () => {
 
     {showInfoModal && (
       <InfoModal
-        onClose={() => { if (!isClearingProfile) setShowInfoModal(false); }}
+        onClose={() => { if (!isClearingProfile && accountDeletion !== 'pending') setShowInfoModal(false); }}
         // Підтвердження режиму «лише для вподобаних» малюється тією самою
         // модалкою підтвердження, що й «Очистити анкету».
-        text={showInfoModal === 'likedAudienceConfirm' || showInfoModal === 'roleChange' ? 'delConfirm' : showInfoModal}
-        DelConfirm={() => (showInfoModal === 'roleChange' && roleChangeTarget ? (
+        text={showInfoModal === 'likedAudienceConfirm' || showInfoModal === 'roleChange' || showInfoModal === 'deleteAccount' ? 'delConfirm' : showInfoModal}
+        DelConfirm={() => (showInfoModal === 'deleteAccount' ? (
+          <div data-testid="delete-account-confirm">
+            <ModalTitle>{uiText('Видалити профіль назавжди?', language)}</ModalTitle>
+            {accountDeletion === 'recent-login' ? (
+              <ModalText>{uiText('Ви увійшли надто давно. Вийдіть, увійдіть знову й повторіть видалення — так ми певні, що це ви.', language)}</ModalText>
+            ) : accountDeletion === 'protected' ? (
+              <ModalText>{uiText('Цей акаунт службовий, і видалити його з застосунку не можна.', language)}</ModalText>
+            ) : accountDeletion === 'unavailable' || accountDeletion === 'partial' ? (
+              <>
+                <ModalText>{uiText('Не вдалося видалити профіль. Спробуйте ще раз або напишіть нам на пошту з темою «Видаліть мою анкету»:', language)}</ModalText>
+                <ModalText>
+                  <a href={`mailto:${ACCOUNT_DELETION_EMAIL}?subject=${encodeURIComponent('Видаліть мою анкету')}`}>{ACCOUNT_DELETION_EMAIL}</a>
+                </ModalText>
+              </>
+            ) : (
+              <ModalText>
+                {uiText('Акаунт і анкету буде видалено: анкета зникне зі стрічки, пошуку й посилань. Повернути їх не вийде. На пошту прийде лист-підтвердження.', language)}
+              </ModalText>
+            )}
+            <ModalActionRow>
+              <ModalGhostButton type="button" disabled={accountDeletion === 'pending'} onClick={() => setShowInfoModal(false)}>
+                {uiText('Відмінити', language)}
+              </ModalGhostButton>
+              {accountDeletion === 'recent-login' ? (
+                <ModalPrimaryButton type="button" onClick={handleExit}>
+                  {uiText('Вийти й увійти знову', language)}
+                </ModalPrimaryButton>
+              ) : accountDeletion !== 'protected' && (
+                <ModalDangerButton type="button" data-testid="delete-account-submit" disabled={accountDeletion === 'pending'} onClick={deleteOwnAccount}>
+                  {accountDeletion === 'pending' ? uiText('Видаляємо…', language) : uiText('Видалити профіль', language)}
+                </ModalDangerButton>
+              )}
+            </ModalActionRow>
+          </div>
+        ) : showInfoModal === 'roleChange' && roleChangeTarget ? (
           <div data-testid="role-change-confirm">
             <ModalTitle>
               {uiText('Ви — {role}?', language, {
