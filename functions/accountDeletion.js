@@ -391,6 +391,11 @@ const chunkUpdates = updates => {
 
 const AUTH_NOT_FOUND = 'auth/user-not-found';
 
+// Скільки шляхів одного кроку віддає аналіз: решту адмін бачить числом.
+// Звичайна анкета дає десятки шляхів, а без стелі одна картка з тисячами
+// реакцій роздула б відповідь функції.
+const PLAN_PATHS_LIMIT = 200;
+
 // Черга видалених акаунтів, які ще чекають на повне очищення адміном.
 // Вузла в `database.rules.json` немає навмисно: корінь закритий, тож клієнт
 // його не читає й не пише — лише функції (`requestAccountDeletion` ставить
@@ -494,6 +499,16 @@ const listAccountDeletionQueue = queueRoot => Object.entries(isPlainObject(queue
  * Auth-акаунт тут лише підстраховка: людина видалила його сама, але якщо той
  * крок упав посередині, очищення доводить справу до кінця.
  *
+ * **Аналіз (`dryRun`)** — той самий прохід тими самими будівниками, але без
+ * жодного запису: замість `update` кожен крок кладе свої шляхи в план, фото
+ * лише рахуються (`deps.countFiles`), акаунт входу й Firestore-копії лише
+ * перевіряються. Адмін бачить план очима й лише тоді запускає видалення.
+ * Будівник один на обидва режими навмисно: окремий «аналізатор» розійшовся б
+ * зі справжнім видаленням з першою ж правкою, і план показував би не те, що
+ * стреться. Власні вузли в плані — лише ті, що справді лежать у базі
+ * (`read` кожного шляху): порожній шлях адмінові нічого не каже.
+ * Видалення після аналізу рахує все заново — між ними база могла змінитись.
+ *
  * @param {object} deps
  * @param {(path: string) => Promise<any>} deps.read
  * @param {(updates: object) => Promise<void>} deps.update
@@ -501,12 +516,19 @@ const listAccountDeletionQueue = queueRoot => Object.entries(isPlainObject(queue
  * @param {(uid: string) => Promise<void>} deps.deleteAuthUser
  * @param {(uid: string) => Promise<any>} deps.getAuthUser
  * @param {(uid: string) => Promise<void>} [deps.deleteLegacyDocs]
+ * @param {(prefix: string) => Promise<number>} [deps.countFiles] — для аналізу
+ * @param {(uid: string) => Promise<string[]>} [deps.listLegacyDocs] — для аналізу
  * @param {string} uid
  */
-const purgeAccountData = async (deps, uid, { now = Date.now() } = {}) => {
-  const { read, update, deleteFiles } = deps;
+const purgeAccountData = async (deps, uid, { now = Date.now(), dryRun = false } = {}) => {
+  const { read, deleteFiles } = deps;
   const failed = [];
   const counts = {};
+  const plan = { steps: [], storage: [], authExists: false, legacyDocs: [] };
+  // У режимі аналізу запис не йде нікуди — навіть випадковий.
+  const update = dryRun
+    ? async () => { throw new Error('dry run must not write'); }
+    : deps.update;
   const step = async (name, run) => {
     try {
       await run();
@@ -516,8 +538,26 @@ const purgeAccountData = async (deps, uid, { now = Date.now() } = {}) => {
     }
   };
   const apply = async (name, updates) => {
+    const paths = Object.keys(updates);
+    counts[name] = paths.length;
+    if (dryRun) {
+      if (paths.length) {
+        plan.steps.push({
+          step: name,
+          count: paths.length,
+          paths: paths.slice(0, PLAN_PATHS_LIMIT),
+          // Що буде записано замість видаленого (`searchId` з кількома
+          // анкетами під ключем лишає решту id), — щоб адмін бачив, що чужі
+          // анкети не постраждають.
+          kept: Object.fromEntries(paths
+            .filter(path => updates[path] !== null)
+            .slice(0, PLAN_PATHS_LIMIT)
+            .map(path => [path, updates[path]])),
+        });
+      }
+      return;
+    }
     const chunks = chunkUpdates(updates);
-    counts[name] = Object.keys(updates).length;
     for (const chunk of chunks) {
       // eslint-disable-next-line no-await-in-loop
       await update(chunk);
@@ -533,7 +573,13 @@ const purgeAccountData = async (deps, uid, { now = Date.now() } = {}) => {
   await step('drafts', async () => { draftIds = await verifyDraftCardIds(deps, uid, drafts); });
   const cardIds = new Set([uid, ...draftIds]);
 
-  await step('auth', () => deleteAuthAndVerify(deps, uid));
+  await step('auth', async () => {
+    if (dryRun) {
+      plan.authExists = Boolean(await readAuthUserOrNull(deps, uid));
+      return;
+    }
+    await deleteAuthAndVerify(deps, uid);
+  });
   await sweep('searchId', 'searchId', root => buildSearchIdUpdates(root, cardIds));
   await sweep('searchKey', 'searchKey/users', root => buildSearchKeyUpdates(root, cardIds));
   await sweep('searchKeySets', 'searchKeySets', root => buildSearchKeySetUpdates(root, cardIds));
@@ -555,20 +601,38 @@ const purgeAccountData = async (deps, uid, { now = Date.now() } = {}) => {
     await apply('profileShares', updates);
   });
   await step('nodes', async () => {
+    let paths = [...new Set(buildOwnedPaths(uid, [...cardIds]))];
+    if (dryRun) {
+      const present = await Promise.all(paths.map(async path => {
+        const value = await read(path);
+        return value !== null && value !== undefined;
+      }));
+      paths = paths.filter((path, index) => present[index]);
+    }
     const updates = {};
-    buildOwnedPaths(uid, [...cardIds]).forEach(path => { updates[path] = null; });
+    paths.forEach(path => { updates[path] = null; });
     await apply('nodes', updates);
   });
+  const storagePrefixes = [
+    ...[...cardIds].map(id => `avatar/${id}/`),
+    ...shareTokens.map(token => `profileShares/${token}/`),
+  ];
   await step('storage', async () => {
-    for (const id of cardIds) {
-      // eslint-disable-next-line no-await-in-loop
-      await deleteFiles(`avatar/${id}/`);
-    }
-    for (const token of shareTokens) {
-      // eslint-disable-next-line no-await-in-loop
-      await deleteFiles(`profileShares/${token}/`);
+    for (const prefix of storagePrefixes) {
+      if (dryRun) {
+        // eslint-disable-next-line no-await-in-loop
+        const files = deps.countFiles ? await deps.countFiles(prefix) : null;
+        if (files !== 0) plan.storage.push({ prefix, files });
+      } else {
+        // eslint-disable-next-line no-await-in-loop
+        await deleteFiles(prefix);
+      }
     }
   });
+  if (dryRun) {
+    if (deps.listLegacyDocs) await step('legacyDocs', async () => { plan.legacyDocs = await deps.listLegacyDocs(uid); });
+    return { dryRun: true, failed, plan, draftIds };
+  }
   if (deps.deleteLegacyDocs) await step('legacyDocs', () => deps.deleteLegacyDocs(uid));
 
   const queuePath = `${ACCOUNT_DELETIONS_ROOT}/${uid}`;

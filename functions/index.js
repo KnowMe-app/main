@@ -409,9 +409,10 @@ exports.completeTelegramLogin = onCall(
  *    лягає в чергу `accountDeletions`, а Auth-акаунт видаляється. Слідом — лист
  *    «Профіль видалено»; збій листа видалення не відкочує.
  * 2. `purgeDeletedAccount` — адмін на `AddNewProfile` (сповіщення горить, поки
- *    черга не порожня, `listPendingAccountDeletions`): повне очищення бази від
- *    картки й усіх її звʼязків. Лише повний адмін і лише uid із черги — живий
- *    акаунт цим шляхом не стерти.
+ *    черга не порожня, `listPendingAccountDeletions`): спершу аналіз
+ *    (`dryRun` — план без жодного запису, його бачить і інспектор), потім
+ *    повне очищення бази від картки й усіх її звʼязків. Видаляє лише повний
+ *    адмін і лише uid із черги — живий акаунт цим шляхом не стерти.
  *
  * Свіжість входу Firebase для callable не перевіряє, тож перевіряємо самі:
  * токен, виданий понад `RECENT_SIGN_IN_MS` тому, — відмова
@@ -431,6 +432,8 @@ const {
 } = require('./accountDeletion');
 const { renderAccountDeletedEmail } = require('./emails/accountDeleted');
 
+const LEGACY_DOC_COLLECTIONS = ['users', 'newUsers'];
+
 const accountDeletionDeps = () => {
   const db = getDatabase();
   return {
@@ -444,7 +447,17 @@ const accountDeletionDeps = () => {
     // потрапляє у `failed`, решту очищення це не зупиняє.
     deleteLegacyDocs: async id => {
       const firestore = getFirestore();
-      await Promise.all(['users', 'newUsers'].map(collection => firestore.collection(collection).doc(id).delete()));
+      await Promise.all(LEGACY_DOC_COLLECTIONS.map(collection => firestore.collection(collection).doc(id).delete()));
+    },
+    // Для аналізу: скільки файлів під текою і які Firestore-копії справді є.
+    countFiles: async prefix => {
+      const [files] = await getStorage().bucket().getFiles({ prefix });
+      return files.length;
+    },
+    listLegacyDocs: async id => {
+      const firestore = getFirestore();
+      const snapshots = await Promise.all(LEGACY_DOC_COLLECTIONS.map(collection => firestore.collection(collection).doc(id).get()));
+      return snapshots.filter(snapshot => snapshot.exists).map(snapshot => snapshot.ref.path);
     },
   };
 };
@@ -536,7 +549,11 @@ exports.purgeDeletedAccount = onCall(
   { region: REGION, cors: ALLOWED_ORIGINS, memory: '1GiB', timeoutSeconds: 300, maxInstances: 1 },
   async request => {
     const adminUid = request.auth && request.auth.uid;
-    if (!adminUid || !canPurgeAccounts(adminUid)) throw new HttpsError('permission-denied', 'Full admins only.');
+    const dryRun = Boolean((request.data || {}).dryRun);
+    // Аналіз нічого не пише — його бачить і інспектор; видалення — лише
+    // повний адмін.
+    const allowed = dryRun ? canViewDeletionQueue(adminUid) : canPurgeAccounts(adminUid);
+    if (!adminUid || !allowed) throw new HttpsError('permission-denied', 'Full admins only.');
     const uid = String((request.data || {}).uid || '');
     if (!isValidUid(uid) || isProtectedUid(uid)) throw new HttpsError('invalid-argument', 'Invalid account id.');
 
@@ -548,8 +565,12 @@ exports.purgeDeletedAccount = onCall(
 
     const result = await purgeAccountData({
       ...accountDeletionDeps(),
-      log: (step, error) => logger.error('account purge step failed', { uid, step, error: error.message }),
-    }, uid);
+      log: (step, error) => logger.error('account purge step failed', { uid, step, dryRun, error: error.message }),
+    }, uid, { dryRun });
+    if (dryRun) {
+      logger.info('account purge analysed', { uid, by: adminUid, steps: result.plan.steps.length, failed: result.failed });
+      return { dryRun: true, plan: result.plan, failed: result.failed, draftIds: result.draftIds };
+    }
     logger.info('account purged', { uid, by: adminUid, failed: result.failed, counts: result.counts });
     return { complete: result.complete, failed: result.failed, counts: result.counts, draftIds: result.draftIds };
   },

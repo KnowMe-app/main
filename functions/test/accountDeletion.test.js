@@ -258,6 +258,54 @@ test('крок адміна: чужі сліди, база, фото, посил
   assert.deepEqual(files, [`avatar/${UID}/`, `avatar/${DRAFT}/`, 'profileShares/tokentokentoken1/']);
 });
 
+test('аналіз: той самий план, що й видалення, але без жодного запису', async () => {
+  const data = {
+    [`multiData/profileShareSlots/${UID}`]: { 0: { token: 'tokentokentoken1' } },
+    searchId: { '380': { phone: UID }, 'олена': { name: ['AA1', UID] } },
+    'multiData/favorites': { agency: { [UID]: true } },
+    [`matchingCards/${UID}`]: { name: 'Оксана' },
+    [`profileDetails/${UID}`]: { about: 'x' },
+    [`multiData/profileShareSlots/${UID}`]: { 0: { token: 'tokentokentoken1' } },
+  };
+  const counted = [];
+  const { deps, updates, files, log } = fakeDeps(data, {
+    countFiles: async prefix => { counted.push(prefix); return prefix.startsWith('avatar/') ? 3 : 0; },
+    listLegacyDocs: async () => ['users/' + UID],
+  });
+  const result = await purgeAccountData(deps, UID, { dryRun: true });
+  // Нічого не записано, нічого не видалено, акаунт входу не чіпали.
+  assert.deepEqual(updates, []);
+  assert.deepEqual(files, []);
+  assert.deepEqual(log, []);
+  assert.equal(result.dryRun, true);
+  assert.equal(result.plan.authExists, true);
+  const byStep = Object.fromEntries(result.plan.steps.map(entry => [entry.step, entry]));
+  assert.deepEqual(byStep.searchId.paths, ['searchId/380/phone', 'searchId/олена/name']);
+  // Чужа анкета під тим самим ключем лишається — план це показує.
+  assert.deepEqual(byStep.searchId.kept, { 'searchId/олена/name': 'AA1' });
+  assert.deepEqual(byStep.favorites.paths, [`multiData/favorites/agency/${UID}`]);
+  // Власні вузли — лише ті, що справді лежать у базі.
+  assert.deepEqual(byStep.nodes.paths.sort(), [
+    `matchingCards/${UID}`,
+    `multiData/profileShareSlots/${UID}`,
+    `profileDetails/${UID}`,
+  ]);
+  assert.deepEqual(result.plan.storage, [{ prefix: `avatar/${UID}/`, files: 3 }]);
+  assert.deepEqual(counted, [`avatar/${UID}/`, 'profileShares/tokentokentoken1/']);
+  assert.deepEqual(result.plan.legacyDocs, ['users/' + UID]);
+});
+
+test('аналіз: довгий перелік шляхів обрізається, а число лишається повним', async () => {
+  const searchId = {};
+  for (let index = 0; index < 450; index += 1) searchId[`v${index}`] = { phone: UID };
+  const { deps } = fakeDeps({ searchId }, { getAuthUser: async () => { throw notFound(); } });
+  const result = await purgeAccountData(deps, UID, { dryRun: true });
+  const entry = result.plan.steps.find(item => item.step === 'searchId');
+  assert.equal(entry.count, 450);
+  assert.equal(entry.paths.length, 200);
+  assert.equal(result.plan.authExists, false);
+});
+
 test('крок адміна: акаунт входу, що лишився після збою людини, теж видаляється', async () => {
   const { deps, log } = fakeDeps({});
   const result = await purgeAccountData(deps, UID);

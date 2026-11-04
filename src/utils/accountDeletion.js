@@ -103,6 +103,66 @@ export const purgeDeletedAccount = async ({ auth, uid } = {}) => {
   }
 };
 
+/**
+ * Аналіз перед очищенням: той самий прохід сервера, але без жодного запису
+ * (`dryRun`). Повертає план — які шляхи в яких колекціях буде видалено,
+ * скільки файлів фото, чи існує ще акаунт входу й Firestore-копії.
+ * @returns {Promise<{ plan: object|null, failed: string[], error: string }>}
+ */
+export const analyzeDeletedAccount = async ({ auth, uid } = {}) => {
+  if (!auth?.app || !auth?.currentUser || !uid) return { plan: null, failed: [], error: 'unauthenticated' };
+  try {
+    const data = await callFunction(auth, PURGE_ACCOUNT_FUNCTION_NAME, { uid, dryRun: true }, PURGE_TIMEOUT_MS);
+    return {
+      plan: data?.plan && typeof data.plan === 'object' ? data.plan : null,
+      failed: Array.isArray(data?.failed) ? data.failed : [],
+      error: data?.plan ? '' : 'empty-plan',
+    };
+  } catch (error) {
+    console.warn('[accountDeletion] analyzeDeletedAccount failed', error?.code || error);
+    return { plan: null, failed: [], error: String(error?.code || 'unavailable') };
+  }
+};
+
+/**
+ * Колекція шляху — те, що адмін упізнає в консолі бази: `multiData/{вузол}`
+ * для позначок і реакцій, корінь для решти.
+ */
+export const resolvePlanCollection = path => {
+  const parts = String(path || '').split('/').filter(Boolean);
+  if (parts[0] === 'multiData' && parts[1]) return `multiData/${parts[1]}`;
+  return parts[0] || '';
+};
+
+/**
+ * План, згрупований за колекціями, у порядку від найбільшої. Кожен шлях
+ * несе значення, яке лишиться замість видаленого (`kept`), — так видно,
+ * що спільний ключ `searchId` не зітре чужих анкет. Кроки, чий перелік
+ * сервер обрізав, називаються окремо: інакше «показано 200» читалось би як
+ * «видалиться 200».
+ */
+export const groupPurgePlan = plan => {
+  const groups = new Map();
+  const truncated = [];
+  (plan?.steps || []).forEach(entry => {
+    const paths = Array.isArray(entry?.paths) ? entry.paths : [];
+    if (Number(entry?.count) > paths.length) truncated.push({ step: entry.step, shown: paths.length, count: Number(entry.count) });
+    paths.forEach(path => {
+      const collection = resolvePlanCollection(path);
+      if (!groups.has(collection)) groups.set(collection, { collection, steps: new Set(), items: [] });
+      const group = groups.get(collection);
+      group.steps.add(entry.step);
+      const kept = entry?.kept && Object.prototype.hasOwnProperty.call(entry.kept, path) ? entry.kept[path] : undefined;
+      group.items.push({ path, kept });
+    });
+  });
+  const collections = [...groups.values()]
+    .map(group => ({ ...group, steps: [...group.steps], count: group.items.length }))
+    .sort((a, b) => b.count - a.count || a.collection.localeCompare(b.collection));
+  const total = (plan?.steps || []).reduce((sum, entry) => sum + (Number(entry?.count) || 0), 0);
+  return { collections, truncated, total };
+};
+
 /** Скільки записів знято — одним рядком для звіту адміна. */
 export const summarizePurgeCounts = counts => Object.values(counts || {})
   .reduce((sum, value) => sum + (Number(value) || 0), 0);

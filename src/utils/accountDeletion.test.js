@@ -1,4 +1,4 @@
-import { classifyAccountDeletionError, listPendingAccountDeletions, purgeDeletedAccount, requestOwnAccountDeletion } from './accountDeletion';
+import { analyzeDeletedAccount, classifyAccountDeletionError, groupPurgePlan, listPendingAccountDeletions, purgeDeletedAccount, requestOwnAccountDeletion, resolvePlanCollection } from './accountDeletion';
 
 const mockCall = jest.fn();
 jest.mock('firebase/functions', () => ({
@@ -40,5 +40,24 @@ describe('accountDeletion', () => {
     mockCall.mockResolvedValue({ data: { complete: false, failed: ['nodes'], counts: { searchId: 3 } } });
     await expect(purgeDeletedAccount({ auth, uid: 'abc' })).resolves.toEqual({ complete: false, failed: ['nodes'], counts: { searchId: 3 }, error: '' });
     expect(mockCall).toHaveBeenCalledWith({ uid: 'abc' });
+  });
+
+  it('аналіз іде тим самим викликом з dryRun і повертає план', async () => {
+    mockCall.mockResolvedValue({ data: { dryRun: true, plan: { steps: [] }, failed: [] } });
+    await expect(analyzeDeletedAccount({ auth, uid: 'abc' })).resolves.toEqual({ plan: { steps: [] }, failed: [], error: '' });
+    expect(mockCall).toHaveBeenCalledWith({ uid: 'abc', dryRun: true });
+  });
+
+  it('план групується за колекціями, обрізані кроки названо окремо', () => {
+    expect(resolvePlanCollection('multiData/favorites/agency/x')).toBe('multiData/favorites');
+    expect(resolvePlanCollection('searchId/380/phone')).toBe('searchId');
+    const grouped = groupPurgePlan({ steps: [
+      { step: 'favorites', count: 1, paths: ['multiData/favorites/a/x'] },
+      { step: 'searchId', count: 450, paths: ['searchId/1/phone', 'searchId/2/phone'], kept: { 'searchId/2/phone': 'AA1' } },
+    ] });
+    expect(grouped.total).toBe(451);
+    expect(grouped.collections.map(group => [group.collection, group.count])).toEqual([['searchId', 2], ['multiData/favorites', 1]]);
+    expect(grouped.collections[0].items[1]).toEqual({ path: 'searchId/2/phone', kept: 'AA1' });
+    expect(grouped.truncated).toEqual([{ step: 'searchId', shown: 2, count: 450 }]);
   });
 });
