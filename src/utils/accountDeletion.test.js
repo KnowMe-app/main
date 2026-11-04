@@ -1,9 +1,10 @@
-import { classifyAccountDeletionError, requestOwnAccountDeletion } from './accountDeletion';
+import { classifyAccountDeletionError, listPendingAccountDeletions, purgeDeletedAccount, requestOwnAccountDeletion } from './accountDeletion';
 
 const mockCall = jest.fn();
 jest.mock('firebase/functions', () => ({
-  getFunctions: jest.fn(() => ({})),
-  httpsCallable: jest.fn(() => (...args) => mockCall(...args)),
+  // Звичайні функції, а не `jest.fn`: CRA скидає реалізації моків між тестами.
+  getFunctions: () => ({}),
+  httpsCallable: () => (...args) => mockCall(...args),
 }));
 
 describe('accountDeletion', () => {
@@ -28,5 +29,16 @@ describe('accountDeletion', () => {
   it('без входу сервер не кличе', async () => {
     await expect(requestOwnAccountDeletion({ auth: { app: {}, currentUser: null } })).resolves.toEqual({ status: 'unavailable' });
     expect(mockCall).not.toHaveBeenCalled();
+  });
+
+  it('черга адміна: відмова — це причина, а не порожня черга', async () => {
+    mockCall.mockRejectedValue({ code: 'functions/permission-denied' });
+    await expect(listPendingAccountDeletions({ auth })).resolves.toEqual({ items: [], canPurge: false, error: 'functions/permission-denied' });
+  });
+
+  it('очищення передає uid і повертає перелік кроків, що впали', async () => {
+    mockCall.mockResolvedValue({ data: { complete: false, failed: ['nodes'], counts: { searchId: 3 } } });
+    await expect(purgeDeletedAccount({ auth, uid: 'abc' })).resolves.toEqual({ complete: false, failed: ['nodes'], counts: { searchId: 3 }, error: '' });
+    expect(mockCall).toHaveBeenCalledWith({ uid: 'abc' });
   });
 });

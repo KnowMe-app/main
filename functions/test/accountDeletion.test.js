@@ -16,9 +16,13 @@ const {
   buildSearchKeyUpdates,
   buildSharedAccessUpdates,
   buildTelegramUpdates,
-  deleteAccountData,
+  canPurgeAccounts,
+  canViewDeletionQueue,
   isProtectedUid,
+  listAccountDeletionQueue,
   listShareTokens,
+  purgeAccountData,
+  requestAccountDeletion,
   verifyDraftCardIds,
 } = require('../accountDeletion');
 const { renderAccountDeletedEmail } = require('../emails/accountDeleted');
@@ -163,7 +167,6 @@ const fakeDeps = (data, overrides = {}) => {
       read: async path => data[path] ?? null,
       update: async next => { updates.push(next); },
       deleteFiles: async prefix => { files.push(prefix); },
-      setAuthDisabled: async (id, disabled) => { log.push(`disabled:${disabled}`); },
       deleteAuthUser: async id => { log.push(`delete:${id}`); authExists = false; },
       getAuthUser: async id => { if (id !== UID || !authExists) throw notFound(); return { uid: UID }; },
       ...overrides,
@@ -171,8 +174,63 @@ const fakeDeps = (data, overrides = {}) => {
   };
 };
 
-test('повне видалення: чужі сліди, база, фото, посилання, а наприкінці — перевірене видалення акаунта', async () => {
-  const { deps, updates, files, log } = fakeDeps({
+test('крок людини: анкета ховається, посилання гаснуть, запис у черзі, акаунт входу видалено', async () => {
+  const { deps, updates, log } = fakeDeps({
+    [`matchingCards/${UID}`]: { name: 'Оксана', feedDate: '2026-10-01', audience: 'liked' },
+    [`multiData/profileShareSlots/${UID}`]: { 0: { token: 'tokentokentoken1' } },
+  });
+  const result = await requestAccountDeletion(deps, UID, { now: 1000 });
+  assert.deepEqual(result, { status: 'requested', authDeleted: true });
+  assert.deepEqual(updates[0], {
+    [`accountDeletions/${UID}`]: { requestedAt: 1000, via: 'self' },
+    [`matchingCards/${UID}/feedDate`]: false,
+    [`matchingCards/${UID}/audience`]: null,
+    'profileShares/tokentokentoken1': null,
+  });
+  // Сама анкета й решта даних лишаються — їх очищає адмін.
+  assert.ok(!Object.keys(updates[0]).some(path => path.startsWith('profileDetails') || path === `matchingCards/${UID}`));
+  assert.deepEqual(updates[1], { [`accountDeletions/${UID}/authDeletedAt`]: 1000 });
+  assert.deepEqual(log, [`delete:${UID}`]);
+});
+
+test('крок людини: картки-привида не заводить, повтор не переписує час першого запиту', async () => {
+  const { deps, updates } = fakeDeps({ [`accountDeletions/${UID}`]: { requestedAt: 500 } }, {
+    getAuthUser: async () => { throw notFound(); },
+  });
+  await requestAccountDeletion(deps, UID, { now: 1000 });
+  assert.deepEqual(updates[0], { [`accountDeletions/${UID}`]: { requestedAt: 500, via: 'self' } });
+});
+
+test('крок людини: вимкнений акаунт не чіпається', async () => {
+  const { deps, updates, log } = fakeDeps({}, { getAuthUser: async () => ({ uid: UID, disabled: true }) });
+  assert.deepEqual(await requestAccountDeletion(deps, UID), { status: 'disabled', authDeleted: false });
+  assert.deepEqual(updates, []);
+  assert.deepEqual(log, []);
+});
+
+test('крок людини: акаунт, що лишився після deleteUser, — збій, а не успіх', async () => {
+  const { deps } = fakeDeps({}, { deleteAuthUser: async () => {}, getAuthUser: async () => ({ uid: UID }) });
+  await assert.rejects(() => requestAccountDeletion(deps, UID), /still exists/);
+});
+
+test('черга: найстаріший запит першим, сміття відкинуто', () => {
+  assert.deepEqual(listAccountDeletionQueue({
+    [UID]: { requestedAt: 20, authDeletedAt: 21 },
+    bbbbbbbbbbbbbbbbbbbbbbbb: { requestedAt: 10 },
+    'bad id': { requestedAt: 1 },
+    cccccccccccccccccccccccc: 'junk',
+  }).map(entry => entry.uid), ['bbbbbbbbbbbbbbbbbbbbbbbb', UID]);
+});
+
+test('права: очищає лише повний адмін, чергу бачить і інспектор', () => {
+  assert.ok(canPurgeAccounts('3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'));
+  assert.ok(!canPurgeAccounts('vtDxkDMjCwYuTDqTUnZsO29bpQr1'));
+  assert.ok(canViewDeletionQueue('vtDxkDMjCwYuTDqTUnZsO29bpQr1'));
+  assert.ok(!canViewDeletionQueue(UID));
+});
+
+test('крок адміна: чужі сліди, база, фото, посилання — і запис черги знято', async () => {
+  const { deps, updates, files } = fakeDeps({
     [`multiData/profileShareSlots/${UID}`]: { 0: { token: 'tokentokentoken1' } },
     [`multiData/profileMutations/${UID}`]: { [DRAFT]: { operation: 'create', createdBy: UID, cardId: DRAFT } },
     searchId: { '380': { phone: UID }, '381': { phone: DRAFT } },
@@ -180,10 +238,10 @@ test('повне видалення: чужі сліди, база, фото, п
     'multiData/dislikes': { donor: { [UID]: 123 } },
     'multiData/likedAudience': { readerA: { [UID]: true } },
     comments: { AA1: { c1: { authorId: UID } } },
-  });
-  const result = await deleteAccountData(deps, UID);
+  }, { getAuthUser: async () => { throw notFound(); } });
+  const result = await purgeAccountData(deps, UID);
   assert.deepEqual(result.failed, []);
-  assert.equal(result.deletedAuth, true);
+  assert.equal(result.complete, true);
   const merged = Object.assign({}, ...updates);
   assert.equal(merged['searchId/380/phone'], null);
   assert.equal(merged['searchId/381/phone'], null);
@@ -193,45 +251,32 @@ test('повне видалення: чужі сліди, база, фото, п
   assert.equal(merged[`multiData/likedAudience/readerA/${UID}`], null);
   assert.equal(merged['comments/AA1/c1'], null);
   assert.equal(merged['profileShares/tokentokentoken1'], null);
+  assert.equal(merged[`matchingCards/${UID}`], null);
   assert.equal(merged[`profileDetails/${UID}`], null);
   assert.equal(merged[`multiData/profileMutationOwners/${DRAFT}`], null);
+  assert.equal(merged[`accountDeletions/${UID}`], null);
   assert.deepEqual(files, [`avatar/${UID}/`, `avatar/${DRAFT}/`, 'profileShares/tokentokentoken1/']);
-  // Спершу вимкнули вхід, наприкінці — видалили.
-  assert.deepEqual(log, ['disabled:true', `delete:${UID}`]);
 });
 
-test('акаунт, який після deleteUser усе ще є, — це збій, а не успіх', async () => {
-  const { deps } = fakeDeps({}, { deleteAuthUser: async () => {}, getAuthUser: async () => ({ uid: UID }) });
-  const result = await deleteAccountData(deps, UID);
-  assert.deepEqual(result.failed, ['auth']);
-  assert.equal(result.deletedAuth, false);
+test('крок адміна: акаунт входу, що лишився після збою людини, теж видаляється', async () => {
+  const { deps, log } = fakeDeps({});
+  const result = await purgeAccountData(deps, UID);
+  assert.equal(result.complete, true);
+  assert.deepEqual(log, [`delete:${UID}`]);
 });
 
-test('повтор після часткового збою: акаунта вже немає — вважається видаленим', async () => {
-  const { deps } = fakeDeps({}, { deleteAuthUser: async () => { throw notFound(); }, getAuthUser: async () => { throw notFound(); } });
-  const result = await deleteAccountData(deps, UID);
-  assert.equal(result.deletedAuth, true);
-});
-
-test('збій запису вузлів лишає акаунт і вмикає його назад: людина може увійти й повторити', async () => {
-  const { deps, log } = fakeDeps({}, {
+test('крок адміна: збій лишає запис у черзі з переліком кроків — сповіщення не гасне', async () => {
+  const { deps, updates } = fakeDeps({}, {
+    getAuthUser: async () => { throw notFound(); },
     update: async next => {
       if (Object.prototype.hasOwnProperty.call(next, `profileDetails/${UID}`)) throw new Error('boom');
+      updates.push(next);
     },
   });
-  const result = await deleteAccountData(deps, UID);
+  const result = await purgeAccountData(deps, UID, { now: 7 });
+  assert.equal(result.complete, false);
   assert.deepEqual(result.failed, ['nodes']);
-  assert.equal(result.deletedAuth, false);
-  assert.deepEqual(log, ['disabled:true', 'disabled:false']);
-});
-
-test('вимкнений акаунт (зокрема адміном) не видаляється й не вмикається назад', async () => {
-  const { deps, log, updates } = fakeDeps({}, { getAuthUser: async () => ({ uid: UID, disabled: true }) });
-  const result = await deleteAccountData(deps, UID);
-  assert.equal(result.disabled, true);
-  assert.equal(result.deletedAuth, false);
-  assert.deepEqual(log, []);
-  assert.deepEqual(updates, []);
+  assert.deepEqual(updates[updates.length - 1], { [`accountDeletions/${UID}/lastPurge`]: { at: 7, failed: ['nodes'] } });
 });
 
 test('відповідь знімається лише тоді, коли id відгуку не стоїть під чужим відгуком', () => {
@@ -244,11 +289,11 @@ test('відповідь знімається лише тоді, коли id в�
   assert.equal(updates['replies/own'], null);
 });
 
-test('великі переліки пишуться порціями', async () => {
+test('крок адміна: великі переліки пишуться порціями', async () => {
   const searchId = {};
   for (let index = 0; index < 1000; index += 1) searchId[`v${index}`] = { phone: UID };
-  const { deps, updates } = fakeDeps({ searchId });
-  const result = await deleteAccountData(deps, UID);
+  const { deps, updates } = fakeDeps({ searchId }, { getAuthUser: async () => { throw notFound(); } });
+  const result = await purgeAccountData(deps, UID);
   assert.equal(result.counts.searchId, 1000);
   assert.ok(updates.every(chunk => Object.keys(chunk).length <= 400));
 });

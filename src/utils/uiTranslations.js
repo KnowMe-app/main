@@ -1222,7 +1222,7 @@ const EN_BY_UK = {
   "Ви увійшли надто давно. Вийдіть, увійдіть знову й повторіть видалення — так ми певні, що це ви.": "You signed in too long ago. Sign out, sign in again and repeat the deletion, so we know it's you.",
   "Цей акаунт службовий, і видалити його з застосунку не можна.": "This is a service account and can't be deleted from the app.",
   "Не вдалося видалити профіль. Спробуйте ще раз або напишіть нам на пошту з темою «Видаліть мою анкету»:": "Couldn't delete the profile. Try again or email us with the subject “Delete my profile”:",
-  "Буде видалено анкету, фото, програми, реакції, памʼятки, посилання на анкету й сам акаунт. Повернути їх не вийде. На пошту прийде лист-підтвердження.": "Your profile, photos, programs, reactions, notes, profile links and the account itself will be deleted. This can't be undone. A confirmation email will be sent to you.",
+  "Акаунт буде видалено, а анкета одразу зникне зі стрічки й з посилань. Решту — анкету, фото, програми, реакції й памʼятки — адміністратор остаточно видалить з бази найближчим часом. Повернути акаунт не вийде. На пошту прийде лист-підтвердження.": "Your account will be deleted, and your profile will disappear from the feed and from links right away. The rest — profile, photos, programs, reactions and notes — will be permanently removed from the database by an administrator shortly. The account can't be restored. A confirmation email will be sent to you.",
   "Вийти й увійти знову": "Sign out and sign in again",
   "Видаляємо…": "Deleting…",
   "Видалити профіль": "Delete profile",

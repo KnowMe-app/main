@@ -1151,7 +1151,7 @@ const BY_UK = {
   "Ви увійшли надто давно. Вийдіть, увійдіть знову й повторіть видалення — так ми певні, що це ви.": "Iniciaste sesión hace demasiado tiempo. Cierra sesión, vuelve a entrar y repite la eliminación, así sabremos que eres tú.",
   "Цей акаунт службовий, і видалити його з застосунку не можна.": "Esta es una cuenta de servicio y no se puede eliminar desde la aplicación.",
   "Не вдалося видалити профіль. Спробуйте ще раз або напишіть нам на пошту з темою «Видаліть мою анкету»:": "No se pudo eliminar el perfil. Inténtalo de nuevo o escríbenos con el asunto «Eliminad mi perfil»:",
-  "Буде видалено анкету, фото, програми, реакції, памʼятки, посилання на анкету й сам акаунт. Повернути їх не вийде. На пошту прийде лист-підтвердження.": "Se eliminarán el perfil, las fotos, los programas, las reacciones, las notas, los enlaces al perfil y la propia cuenta. No se puede deshacer. Recibirás un correo de confirmación.",
+  "Акаунт буде видалено, а анкета одразу зникне зі стрічки й з посилань. Решту — анкету, фото, програми, реакції й памʼятки — адміністратор остаточно видалить з бази найближчим часом. Повернути акаунт не вийде. На пошту прийде лист-підтвердження.": "Tu cuenta se eliminará y tu perfil desaparecerá del feed y de los enlaces de inmediato. El resto (perfil, fotos, programas, reacciones y notas) lo borrará definitivamente un administrador en breve. La cuenta no se puede recuperar. Recibirás un correo de confirmación.",
   "Вийти й увійти знову": "Cerrar sesión y volver a entrar",
   "Видаляємо…": "Eliminando…",
   "Видалити профіль": "Eliminar perfil",

@@ -1,7 +1,9 @@
 'use strict';
 
 /**
- * Самовидалення акаунта: що саме стирається й у якому порядку.
+ * Видалення акаунта у два кроки: людина видаляє свій акаунт входу й ховає
+ * анкету (`requestAccountDeletion`), а адмін потім очищає базу цілком
+ * (`purgeAccountData`). Нижче — що саме стирає очищення.
  *
  * Чому на сервері, а не в браузері: анкета акаунта лежить у пʼяти вузлах, а її
  * сліди — ще в двох десятках місць (`searchId`, `searchKey`, реакції, памʼятки,
@@ -30,11 +32,14 @@
 // Ті самі, що в `src/utils/accessLevel.js`. Адмінів і спільний акаунт
 // інспектора самовидалення не стосується: один дотик знищив би доступ до
 // адмінки або тестовий акаунт усієї команди.
-const PROTECTED_UIDS = Object.freeze([
-  '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2',
-  '0ghb1LphfASV0Y3b6J010v4CDyD2',
-  'vtDxkDMjCwYuTDqTUnZsO29bpQr1',
-]);
+const ADMIN_UIDS = Object.freeze(['3LiD7JGCJTSJoVMU7fdR1ZrcIZH2', '0ghb1LphfASV0Y3b6J010v4CDyD2']);
+const READONLY_ADMIN_UIDS = Object.freeze(['vtDxkDMjCwYuTDqTUnZsO29bpQr1']);
+const PROTECTED_UIDS = Object.freeze([...ADMIN_UIDS, ...READONLY_ADMIN_UIDS]);
+
+// Чергу бачить і інспектор (лише читання), а очищення запускає повний адмін:
+// воно пише в базу від імені всіх, чиї реакції й позначки знімає.
+const canViewDeletionQueue = uid => PROTECTED_UIDS.includes(uid);
+const canPurgeAccounts = uid => ADMIN_UIDS.includes(uid);
 
 const PROFILE_NODE_ROOTS = Object.freeze([
   'matchingCards',
@@ -386,29 +391,119 @@ const chunkUpdates = updates => {
 
 const AUTH_NOT_FOUND = 'auth/user-not-found';
 
+// Черга видалених акаунтів, які ще чекають на повне очищення адміном.
+// Вузла в `database.rules.json` немає навмисно: корінь закритий, тож клієнт
+// його не читає й не пише — лише функції (`requestAccountDeletion` ставить
+// запис, `purgeAccountData` знімає, а адмін бачить чергу через
+// `listPendingAccountDeletions`). Правил під це викочувати не треба.
+const ACCOUNT_DELETIONS_ROOT = 'accountDeletions';
+
+const readAuthUserOrNull = async (deps, uid) => {
+  try {
+    return await deps.getAuthUser(uid);
+  } catch (error) {
+    if (error && error.code === AUTH_NOT_FOUND) return null;
+    throw error;
+  }
+};
+
+/** Видаляє Auth-акаунт і перевіряє читанням, що його справді немає. */
+const deleteAuthAndVerify = async (deps, uid) => {
+  try {
+    await deps.deleteAuthUser(uid);
+  } catch (error) {
+    // Повтор: акаунта вже немає — це й потрібно.
+    if (!error || error.code !== AUTH_NOT_FOUND) throw error;
+  }
+  if (await readAuthUserOrNull(deps, uid)) throw new Error('auth user still exists after deleteUser');
+};
+
 /**
- * Повне видалення. Помилка одного кроку не зупиняє решту — краще стерти все,
- * що можна, ніж лишити половину; про кожен збій кроку повертаємо назву.
+ * Крок людини: «Видалити анкету» в «Моєму профілі».
  *
- * Акаунт входу на початку **вимикається** (`disabled`): поки сервер стирає,
- * ні новий вхід, ні оновлення токена на іншому пристрої не запишуть анкету
- * назад. Видаляється він лише тоді, коли стерлись власні вузли: інакше
- * людина лишилась би з даними, до яких більше не може увійти, — тоді акаунт
- * вмикаємо назад, і повтор можливий. Що акаунта справді немає, перевіряємо
- * окремим читанням (`getAuthUser` → `auth/user-not-found`), а не довіряємо
- * самій відповіді на видалення.
+ * Людина видаляє **лише свій акаунт входу** й ховає анкету — повне
+ * очищення бази (сама картка, індекси, чужі реакції й позначки, фото) робить
+ * адмін окремим кроком (`purgeAccountData`), бо воно зачіпає дані багатьох
+ * людей і має йти під наглядом. Тут:
+ * - картка зникає зі стрічки (`feedDate: false`) і з кола «лише для
+ *   вподобаних» (`audience` знімається): правила одразу закривають
+ *   `profileDetails` і `profileContacts`, лишається сама картка, яку адмін
+ *   прибере;
+ * - знімки посилань без входу (`profileShares/{token}`) видаляються одразу:
+ *   гість читає їх без входу, і посилання на видалений акаунт не мусить
+ *   показувати анкету, поки адмін дійде до черги. Слоти й копії фото
+ *   прибирає вже очищення;
+ * - у чергу `accountDeletions/{uid}` лягає запис — його бачить адмін;
+ * - Auth-акаунт видаляється, і функція перевіряє читанням, що його немає.
+ *
+ * Акаунт, уже вимкнений (зокрема адміном), не чіпаємо: callable пускає ще
+ * живий токен вимкненого акаунта.
+ *
+ * @returns {Promise<{ status: 'requested'|'disabled', authDeleted: boolean }>}
+ */
+const requestAccountDeletion = async (deps, uid, { now = Date.now() } = {}) => {
+  const authUser = await readAuthUserOrNull(deps, uid);
+  if (authUser && authUser.disabled) return { status: 'disabled', authDeleted: false };
+
+  const card = await deps.read(`matchingCards/${uid}`);
+  const slots = await deps.read(`multiData/profileShareSlots/${uid}`).catch(() => null);
+  const previous = await deps.read(`${ACCOUNT_DELETIONS_ROOT}/${uid}`).catch(() => null);
+
+  const updates = {
+    [`${ACCOUNT_DELETIONS_ROOT}/${uid}`]: {
+      // Повтор після збою не переписує час першого запиту: черга впорядкована
+      // саме за ним.
+      requestedAt: isPlainObject(previous) && Number.isFinite(previous.requestedAt) ? previous.requestedAt : now,
+      via: 'self',
+    },
+  };
+  // Порожньої картки не заводимо: `feedDate` у неіснуючому вузлі створив би
+  // картку-привид з одним полем.
+  if (isPlainObject(card)) {
+    updates[`matchingCards/${uid}/feedDate`] = false;
+    updates[`matchingCards/${uid}/audience`] = null;
+  }
+  listShareTokens(slots).forEach(token => { updates[`profileShares/${token}`] = null; });
+  await deps.update(updates);
+
+  if (authUser) await deleteAuthAndVerify(deps, uid);
+  await deps.update({ [`${ACCOUNT_DELETIONS_ROOT}/${uid}/authDeletedAt`]: now });
+  return { status: 'requested', authDeleted: true };
+};
+
+/** Записи черги в порядку запиту — найстаріший першим. */
+const listAccountDeletionQueue = queueRoot => Object.entries(isPlainObject(queueRoot) ? queueRoot : {})
+  .filter(([uid, entry]) => isValidUid(uid) && isPlainObject(entry))
+  .map(([uid, entry]) => ({
+    uid,
+    requestedAt: Number(entry.requestedAt) || 0,
+    authDeletedAt: Number(entry.authDeletedAt) || 0,
+    lastPurge: isPlainObject(entry.lastPurge) ? entry.lastPurge : null,
+  }))
+  .sort((a, b) => a.requestedAt - b.requestedAt || a.uid.localeCompare(b.uid));
+
+/**
+ * Крок адміна: повне очищення бази від видаленого акаунта.
+ *
+ * Помилка одного кроку не зупиняє решту — краще стерти все, що можна, ніж
+ * лишити половину; про кожен збій кроку повертаємо назву. Запис у черзі
+ * знімається лише після чистого прогону: інакше сповіщення в адмінці гасло б
+ * над недочищеною базою. Збій лишає запис із `lastPurge`, і повтор безпечний —
+ * кожен крок ідемпотентний.
+ *
+ * Auth-акаунт тут лише підстраховка: людина видалила його сама, але якщо той
+ * крок упав посередині, очищення доводить справу до кінця.
  *
  * @param {object} deps
  * @param {(path: string) => Promise<any>} deps.read
  * @param {(updates: object) => Promise<void>} deps.update
  * @param {(prefix: string) => Promise<void>} deps.deleteFiles
- * @param {(uid: string, disabled: boolean) => Promise<void>} deps.setAuthDisabled
  * @param {(uid: string) => Promise<void>} deps.deleteAuthUser
  * @param {(uid: string) => Promise<any>} deps.getAuthUser
  * @param {(uid: string) => Promise<void>} [deps.deleteLegacyDocs]
  * @param {string} uid
  */
-const deleteAccountData = async (deps, uid) => {
+const purgeAccountData = async (deps, uid, { now = Date.now() } = {}) => {
   const { read, update, deleteFiles } = deps;
   const failed = [];
   const counts = {};
@@ -430,19 +525,6 @@ const deleteAccountData = async (deps, uid) => {
   };
   const sweep = (name, path, build) => step(name, async () => apply(name, build(await read(path))));
 
-  // Акаунт, який уже вимкнено (зокрема адміном), не видаляємо й не чіпаємо:
-  // callable пускає ще живий ID-токен вимкненого акаунта, і без цієї
-  // перевірки збій посеред видалення вмикав би його назад.
-  // «Не знайдено» — повтор після збою, коли акаунт уже видалено, а токен
-  // ще живий: тоді лише дочищаємо дані.
-  const authUser = await deps.getAuthUser(uid).catch(error => {
-    if (error && error.code === AUTH_NOT_FOUND) return null;
-    throw error;
-  });
-  if (authUser && authUser.disabled) return { failed: ['disabled'], counts, deletedAuth: false, disabled: true };
-
-  await step('authDisable', () => deps.setAuthDisabled(uid, true));
-
   // Спершу те, що треба прочитати, поки воно ще лежить.
   const slots = await read(`multiData/profileShareSlots/${uid}`).catch(() => null);
   const drafts = await read(`multiData/profileMutations/${uid}`).catch(() => null);
@@ -451,6 +533,7 @@ const deleteAccountData = async (deps, uid) => {
   await step('drafts', async () => { draftIds = await verifyDraftCardIds(deps, uid, drafts); });
   const cardIds = new Set([uid, ...draftIds]);
 
+  await step('auth', () => deleteAuthAndVerify(deps, uid));
   await sweep('searchId', 'searchId', root => buildSearchIdUpdates(root, cardIds));
   await sweep('searchKey', 'searchKey/users', root => buildSearchKeyUpdates(root, cardIds));
   await sweep('searchKeySets', 'searchKeySets', root => buildSearchKeySetUpdates(root, cardIds));
@@ -488,32 +571,19 @@ const deleteAccountData = async (deps, uid) => {
   });
   if (deps.deleteLegacyDocs) await step('legacyDocs', () => deps.deleteLegacyDocs(uid));
 
-  if (failed.includes('nodes')) {
-    await step('authEnable', () => deps.setAuthDisabled(uid, false));
-    return { failed, counts, deletedAuth: false };
-  }
+  const queuePath = `${ACCOUNT_DELETIONS_ROOT}/${uid}`;
+  await step('queue', () => (failed.length
+    ? update({ [`${queuePath}/lastPurge`]: { at: now, failed: [...failed] } })
+    : update({ [queuePath]: null })));
 
-  await step('auth', async () => {
-    try {
-      await deps.deleteAuthUser(uid);
-    } catch (error) {
-      // Повтор після часткового збою: акаунта вже немає — це й потрібно.
-      if (!error || error.code !== AUTH_NOT_FOUND) throw error;
-    }
-    let stillExists = true;
-    try {
-      await deps.getAuthUser(uid);
-    } catch (error) {
-      if (error && error.code === AUTH_NOT_FOUND) stillExists = false;
-      else throw error;
-    }
-    if (stillExists) throw new Error('auth user still exists after deleteUser');
-  });
-
-  return { failed, counts, deletedAuth: !failed.includes('auth') };
+  return { failed, counts, complete: failed.length === 0, draftIds };
 };
 
 module.exports = {
+  ACCOUNT_DELETIONS_ROOT,
+  ADMIN_UIDS,
+  canPurgeAccounts,
+  canViewDeletionQueue,
   OWNED_MULTIDATA_NODES,
   OWNER_CARD_NODES,
   PROFILE_NODE_ROOTS,
@@ -530,10 +600,12 @@ module.exports = {
   buildSearchKeyUpdates,
   buildSharedAccessUpdates,
   buildTelegramUpdates,
-  deleteAccountData,
   isProtectedUid,
   isValidUid,
+  listAccountDeletionQueue,
   listDraftCardIds,
   listShareTokens,
+  purgeAccountData,
+  requestAccountDeletion,
   verifyDraftCardIds,
 };

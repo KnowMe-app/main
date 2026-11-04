@@ -1151,7 +1151,7 @@ const BY_UK = {
   "Ви увійшли надто давно. Вийдіть, увійдіть знову й повторіть видалення — так ми певні, що це ви.": "Je bent te lang geleden ingelogd. Log uit, log opnieuw in en herhaal het verwijderen, zodat we weten dat jij het bent.",
   "Цей акаунт службовий, і видалити його з застосунку не можна.": "Dit is een serviceaccount en kan niet in de app worden verwijderd.",
   "Не вдалося видалити профіль. Спробуйте ще раз або напишіть нам на пошту з темою «Видаліть мою анкету»:": "Het profiel kon niet worden verwijderd. Probeer het opnieuw of mail ons met als onderwerp „Verwijder mijn profiel”:",
-  "Буде видалено анкету, фото, програми, реакції, памʼятки, посилання на анкету й сам акаунт. Повернути їх не вийде. На пошту прийде лист-підтвердження.": "Je profiel, foto’s, programma’s, reacties, notities, profiellinks en het account zelf worden verwijderd. Dit kan niet ongedaan worden gemaakt. Je ontvangt een bevestiging per e-mail.",
+  "Акаунт буде видалено, а анкета одразу зникне зі стрічки й з посилань. Решту — анкету, фото, програми, реакції й памʼятки — адміністратор остаточно видалить з бази найближчим часом. Повернути акаунт не вийде. На пошту прийде лист-підтвердження.": "Je account wordt verwijderd en je profiel verdwijnt meteen uit de feed en uit links. De rest – profiel, foto’s, programma’s, reacties en notities – verwijdert een beheerder binnenkort definitief uit de database. Het account kan niet worden hersteld. Je ontvangt een bevestiging per e-mail.",
   "Вийти й увійти знову": "Uitloggen en opnieuw inloggen",
   "Видаляємо…": "Bezig met verwijderen…",
   "Видалити профіль": "Profiel verwijderen",
