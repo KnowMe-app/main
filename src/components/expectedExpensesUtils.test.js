@@ -377,7 +377,7 @@ describe('expected expenses package templates', () => {
     expect(milestones[4].services.find(entry => entry.name === 'Deposit for the C-section')).toMatchObject({ price: 2700 });
     // Positions that exist in the price list come from it, so their price is the price list's.
     expect(milestones[2].services[3]).toMatchObject({ kind: 'item', catalogId: '40' });
-    expect(milestones[3].services[3]).toMatchObject({ kind: 'item', catalogId: '20' });
+    expect(milestones[3].services[3]).toMatchObject({ kind: 'custom', name: 'Apartment for SM till delivery (3 months)', price: 1800 });
     expect(milestones[4].services[4]).toMatchObject({ kind: 'item', catalogId: '66' });
     const ids = milestones.flatMap(milestone => milestone.services.map(entry => entry.id));
     expect(new Set(ids).size).toBe(ids.length);

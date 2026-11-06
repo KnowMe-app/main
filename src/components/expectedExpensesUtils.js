@@ -498,9 +498,10 @@ const catalogRow = catalogId => ({ kind: 'item', catalogId: String(catalogId) })
 // пологів на останньому. Борги за ліки й пошту в конкретну країну зразок не несе — це справа
 // конкретних батьків, а не програми. Позиція, яка є в прайсі (`budget/items`), стоїть посиланням
 // на прайс, а не власним рядком: ціна в плані мусить бути та сама, що в прайсі (в інвойсах справи
-// стояли 1650 за обстеження й 1800 за квартиру — прайс каже 1700 і 600). Депозити СМ, кесарів,
-// непередбачене й реєстрація — не ті самі позиції, що в прайсі (там помісячні «from 100»,
-// компенсація СМ за кесарів, реєстрація в ціні програми), тож лишаються власними рядками.
+// стояло 1650 за обстеження — прайс каже 1700). Депозити СМ, кесарів, непередбачене, реєстрація
+// й квартира на 3 місяці (1800; у прайсі #20 за 600 — інша позиція) — не ті самі позиції, що в
+// прайсі (там помісячні «from 100», компенсація СМ за кесарів, реєстрація в ціні програми), тож
+// лишаються власними рядками.
 export const DEFAULT_EXPECTED_EXPENSES_TEMPLATES = {
   'special offer': {
     name: 'Special Offer',
@@ -518,7 +519,7 @@ export const DEFAULT_EXPECTED_EXPENSES_TEMPLATES = {
         title: 'On the 18th week of pregnancy',
         services: [
           ...depositRows(400),
-          catalogRow(20), // SM apartment in Kyiv before delivery
+          { kind: 'custom', name: 'Apartment for SM till delivery (3 months)', price: 1800 },
           { kind: 'custom', name: 'Documents for fetal recognition + post', price: 75 },
         ],
       },
