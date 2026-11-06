@@ -63,6 +63,18 @@ export const getExpectedExpensesPackagePrice = pkg => {
   return packagePrice;
 };
 
+// A package with no payment schedule of its own is billed in one go, so its plan is a single
+// milestone for 100% of the package price. (A schedule-less package that opens a two-part offer -
+// see resolveInitialPaymentOffer below - is handled there instead.) Завантаження сирих груп цього
+// запасного графіка не бере навмисно: там групи вирівнюються по кроках справжнього графіка, і
+// вигаданий крок мовчки злив би їх в одну.
+export const resolveExpectedExpensesSchedule = (catalog, pkg) => {
+  const schedule = resolveProgramPaymentSchedule(catalog, pkg);
+  if (Array.isArray(schedule?.payments) && schedule.payments.length) return schedule;
+  if (!pkg) return null;
+  return { id: '', name: '', payments: [{ title: pkg.name || 'Payment', percent: 100 }] };
+};
+
 export const buildMilestonesFromSchedule = (pkg, schedule, { taxPercent = 0 } = {}) =>
   (Array.isArray(schedule?.payments) ? schedule.payments : []).map((payment, index) => ({
     id: createEntryId(),
@@ -86,6 +98,90 @@ export const buildExpectedExpensesPlan = (pkg, schedule, { taxPercent = 0 } = {}
   packageId: String(pkg?.id ?? ''),
   packageSnapshot: buildPackageSnapshot(pkg),
   milestones: buildMilestonesFromSchedule(pkg, schedule, { taxPercent }),
+});
+
+// --- Two-part offers: an initial payment billed first, then the programme fee on its own schedule --------------------------------
+//
+// «Special Offer - Initial Payment» (без графіка, сплачується першим і окремо) і «Special Offer -
+// Programme Fee» (графік ps-6: 4 × 25%) — це одна програма, розкладена на два пакети каталогу. План
+// на будь-який із них мусить мати 5 етапів: спершу весь Initial Payment, далі графік Programme Fee.
+// Явного звʼязку між пакетами в каталозі немає, тож пару впізнає спільна назва до « - »: рівно один
+// пакет без графіка (initial) і рівно один із графіком (programme).
+const OFFER_NAME_SEPARATOR = /\s+[-–—]\s+/;
+
+const splitOfferName = name => {
+  const parts = String(name || '').split(OFFER_NAME_SEPARATOR);
+  if (parts.length < 2) return null;
+  const suffix = parts.pop().trim();
+  const prefix = parts.join(' - ').trim();
+  return prefix && suffix ? { prefix, suffix } : null;
+};
+
+const hasOwnSchedule = (catalog, pkg) => {
+  const schedule = resolveProgramPaymentSchedule(catalog, pkg);
+  return Array.isArray(schedule?.payments) && schedule.payments.length > 0;
+};
+
+export const resolveInitialPaymentOffer = (catalog, pkg) => {
+  const own = splitOfferName(pkg?.name);
+  if (!own) return null;
+  const prefixKey = own.prefix.toLowerCase();
+  const siblings = (Array.isArray(catalog?.packages) ? catalog.packages : [])
+    .filter(candidate => splitOfferName(candidate?.name)?.prefix.toLowerCase() === prefixKey);
+  const initials = siblings.filter(candidate => !hasOwnSchedule(catalog, candidate));
+  const programmes = siblings.filter(candidate => hasOwnSchedule(catalog, candidate));
+  if (initials.length !== 1 || programmes.length !== 1) return null;
+  const [initialPackage] = initials;
+  const [programmePackage] = programmes;
+  if (String(initialPackage.id) === String(programmePackage.id)) return null;
+  return {
+    name: own.prefix,
+    initialTitle: splitOfferName(initialPackage.name).suffix,
+    initialPackage,
+    programmePackage,
+    programmeSchedule: resolveProgramPaymentSchedule(catalog, programmePackage),
+  };
+};
+
+// `initialPackage`/`programmePackage` must already carry resolved numeric prices. `schedule`
+// overrides the programme's own schedule (the "apply schedule from catalog" picker).
+export const buildInitialPaymentOfferMilestones = (offer, { taxPercent = 0, schedule } = {}) => [
+  {
+    id: createEntryId(),
+    title: offer.initialTitle || offer.initialPackage?.name || 'Initial payment',
+    taxPercent,
+    showPackageOverview: true,
+    services: [makePercentOfPackageEntry(offer.initialPackage?.id, 100, { expectedExpenseRole: 'scheduled' })],
+  },
+  ...buildMilestonesFromSchedule(offer.programmePackage, schedule || offer.programmeSchedule, { taxPercent })
+    .map(milestone => ({ ...milestone, showPackageOverview: false })),
+];
+
+export const buildInitialPaymentOfferSnapshot = offer => {
+  const seen = new Set();
+  const childIds = [offer.initialPackage, offer.programmePackage]
+    .flatMap(pkg => (Array.isArray(pkg?.children) ? pkg.children : []))
+    .filter(catalogId => {
+      const key = String(catalogId);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return {
+    name: offer.name,
+    description: offer.programmePackage?.description || offer.initialPackage?.description || '',
+    listedPrice: (Number(offer.initialPackage?.listedPrice) || 0) + (Number(offer.programmePackage?.listedPrice) || 0),
+    currency: offer.programmePackage?.currency || offer.initialPackage?.currency || 'EUR',
+    children: buildPackageOverviewChildren({ children: childIds }),
+  };
+};
+
+// The plan keeps the package the admin picked as its packageId: the "package share" check then sums
+// that package's own rows, which is 100% for either half of the offer.
+export const buildInitialPaymentOfferPlan = (offer, { packageId, taxPercent = 0 } = {}) => ({
+  packageId: String(packageId ?? offer.initialPackage?.id ?? ''),
+  packageSnapshot: buildInitialPaymentOfferSnapshot(offer),
+  milestones: buildInitialPaymentOfferMilestones(offer, { taxPercent }),
 });
 
 // --- Building a plan from a raw "expectedExpenses" upload -----------------------------------------------------------------------
@@ -316,3 +412,132 @@ export const computeMilestonesPackageSharePercent = (milestones, packageId, pack
         }
         return entrySum + (Number(entry.percent) || 0);
       }, 0), 0);
+
+// --- Package templates: the typical extras of every milestone ----------------------------------------------------------------------
+//
+// План будується з графіка пакета, а графік знає лише частку ціни програми — депозити на транспорт
+// і ліки СМ, квартиру, кесарів, речі для немовляти адмін щоразу дописував руками. Шаблон пакета
+// тримає ці «інші витрати» по етапах: `invoiceBuilder/expectedExpensesTemplates/{ключ}` =
+// `{ name, milestones: [{ title, services }] }`, де services — лише нерозкладові рядки (частку ціни
+// програми план щоразу рахує з графіка сам). Етапи зіставляються за порядком: шаблон — це «що
+// типово доплачують на N-му платежі», а не на платежі з певною назвою.
+
+const stripEntryIds = entry => {
+  if (!entry || typeof entry !== 'object') return entry;
+  const { id, ...rest } = entry;
+  return Array.isArray(rest.children) ? { ...rest, children: rest.children.map(stripEntryIds) } : rest;
+};
+
+const isScheduledEntry = entry => entry?.expectedExpenseRole === 'scheduled';
+
+// Ключ шаблону: у пропозиції з Initial Payment обидва пакети дають той самий план, тож і шаблон
+// один — під пакетом Initial Payment.
+export const resolveExpectedExpensesTemplateKey = (catalog, pkg) => {
+  const offer = resolveInitialPaymentOffer(catalog, pkg);
+  const id = offer ? offer.initialPackage?.id : pkg?.id;
+  return id == null || id === '' ? '' : String(id);
+};
+
+export const normalizeExpectedExpensesTemplate = raw => {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.milestones)) return null;
+  return {
+    name: String(raw.name || ''),
+    milestones: raw.milestones.map(milestone => ({
+      title: String(milestone?.title || ''),
+      services: normalizeServiceEntries(Array.isArray(milestone?.services) ? milestone.services : [])
+        .filter(entry => !isScheduledEntry(entry))
+        .map(stripEntryIds),
+    })),
+  };
+};
+
+export const extractExpectedExpensesTemplate = plan => normalizeExpectedExpensesTemplate({
+  name: plan?.packageSnapshot?.name || '',
+  milestones: (Array.isArray(plan?.milestones) ? plan.milestones : []).map(milestone => ({
+    title: milestone.title,
+    services: milestone.services,
+  })),
+});
+
+// Власний рядок, названий так само, як позиція прайсу, стає посиланням на неї: інакше шаблон,
+// збережений із плану, де позицію вписали руками, ніс би свою ціну замість прайсової.
+const normalizeName = name => String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+export const linkEntryToCatalog = (entry, catalogItems) => {
+  if (entry?.kind !== 'custom' || !Array.isArray(catalogItems)) return entry;
+  const key = normalizeName(entry.name);
+  const item = key ? catalogItems.find(candidate => normalizeName(candidate?.name) === key) : null;
+  return item ? { ...catalogRow(item.id), id: entry.id } : entry;
+};
+
+export const applyExpectedExpensesTemplate = (milestones, template, { catalogItems } = {}) => {
+  const templateMilestones = Array.isArray(template?.milestones) ? template.milestones : [];
+  return (Array.isArray(milestones) ? milestones : []).map((milestone, index) => {
+    const extras = templateMilestones[index]?.services || [];
+    if (!extras.length) return milestone;
+    return {
+      ...milestone,
+      services: [
+        ...milestone.services,
+        ...normalizeServiceEntries(extras.map(entry => linkEntryToCatalog({ ...entry, id: createEntryId() }, catalogItems))),
+      ],
+    };
+  });
+};
+
+const depositRows = amount => [
+  { kind: 'custom', name: 'Deposit for transportation of SM', price: amount },
+  { kind: 'custom', name: 'Deposit for medications of SM', price: amount },
+];
+
+const catalogRow = catalogId => ({ kind: 'item', catalogId: String(catalogId) });
+
+// Вшиті зразки на випадок, коли в базі шаблону ще немає: перше створення плану адміном кладе його
+// в базу, і далі правиться вже той. Special Offer — за інвойсами справи Kikawa (2025–2026): Initial
+// Payment без доплат (його послуги — сам пакет), далі депозити СМ на кожному платежі й витрати
+// пологів на останньому. Борги за ліки й пошту в конкретну країну зразок не несе — це справа
+// конкретних батьків, а не програми. Позиція, яка є в прайсі (`budget/items`), стоїть посиланням
+// на прайс, а не власним рядком: ціна в плані мусить бути та сама, що в прайсі (в інвойсах справи
+// стояло 1650 за обстеження — прайс каже 1700). Депозити СМ, кесарів, непередбачене, реєстрація
+// й квартира на 3 місяці (1800; у прайсі #20 за 600 — інша позиція) — не ті самі позиції, що в
+// прайсі (там помісячні «from 100», компенсація СМ за кесарів, реєстрація в ціні програми), тож
+// лишаються власними рядками.
+export const DEFAULT_EXPECTED_EXPENSES_TEMPLATES = {
+  'special offer': {
+    name: 'Special Offer',
+    milestones: [
+      { title: 'Initial Payment', services: [] },
+      { title: 'On confirmation of pregnancy by ultrasound', services: depositRows(300) },
+      {
+        title: 'On the 12th week of pregnancy',
+        services: [
+          ...depositRows(300),
+          catalogRow(40), // Pregnancy comprehensive examination
+        ],
+      },
+      {
+        title: 'On the 18th week of pregnancy',
+        services: [
+          ...depositRows(400),
+          { kind: 'custom', name: 'Apartment for SM till delivery (3 months)', price: 1800 },
+          { kind: 'custom', name: 'Documents for fetal recognition + post', price: 75 },
+        ],
+      },
+      {
+        title: 'On the 36th week of pregnancy',
+        services: [
+          { kind: 'custom', name: 'Deposit for medications during and after delivery (standard protocol)', price: 500 },
+          { kind: 'custom', name: 'Deposit for unexpected expenses (e.g. extended hospital stay, nanny services, etc.)', price: 3000 },
+          { kind: 'custom', name: 'Deposit for the C-section', price: 2700 },
+          catalogRow(66), // Newborn baby items
+          { kind: 'custom', name: 'Extra expenses for the registration process', price: 250 },
+        ],
+      },
+    ],
+  },
+};
+
+export const resolveDefaultExpectedExpensesTemplate = planName => {
+  const raw = DEFAULT_EXPECTED_EXPENSES_TEMPLATES[String(planName || '').trim().toLowerCase()];
+  return raw ? normalizeExpectedExpensesTemplate(raw) : null;
+};

@@ -788,12 +788,25 @@ describe('InvoiceBuilderPage', () => {
       expect(persistedCalls.length).toBeGreaterThan(0);
       const plan = persistedCalls[persistedCalls.length - 1][1];
       expect(plan.packageId).toBe('p7');
-      expect(plan.milestones).toHaveLength(4);
-      plan.milestones.forEach(milestone => {
+      // 06.11: the Programme Fee is one half of a two-part offer - its Initial Payment (p6) is
+      // billed first and separately, then the four 25% payments of ps-6.
+      expect(plan.milestones).toHaveLength(5);
+      expect(plan.milestones[0].services[0]).toMatchObject({ kind: 'percent', packageId: 'p6', percent: 100 });
+      plan.milestones.slice(1).forEach(milestone => {
         expect(milestone.services[0]).toMatchObject({ kind: 'percent', packageId: 'p7', percent: 25 });
       });
-      // 29,700 EUR x 25% = 7,425 EUR per milestone (checklist item in the import spec), before tax.
-      expect(container.innerHTML).toContain('Subtotal: €7,425');
+      // 29,700 EUR x 25% = 7,425 EUR per milestone (checklist item in the import spec), before tax -
+      // plus the Special Offer template's SM deposits (2 x 300) on the first programme payment.
+      expect(container.innerHTML).toContain('Subtotal: €8,025');
+      expect(plan.milestones[1].services.slice(1).map(entry => entry.name)).toEqual([
+        'Deposit for transportation of SM',
+        'Deposit for medications of SM',
+      ]);
+      // No template on the backend yet -> the bundled sample is written there, under the
+      // Initial Payment package, for the admin to edit later.
+      const templateCall = set.mock.calls.find(([path]) => path === 'invoiceBuilder/expectedExpensesTemplates/p6');
+      expect(templateCall).toBeTruthy();
+      expect(templateCall[1].milestones).toHaveLength(5);
 
       await act(async () => { root.unmount(); });
     });
