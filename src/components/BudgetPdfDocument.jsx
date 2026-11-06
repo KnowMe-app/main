@@ -20,7 +20,7 @@ import {
 
 ensurePdfFontsRegistered();
 
-const DOC_LABEL = 'Program Budget';
+const DOC_LABEL = 'Programme Budget';
 const PROGRAM_COL_WIDTH = 56;
 
 // Bare (no-currency) number for a table cell, as opposed to formatMoney (budgetCatalogUtils),
@@ -360,8 +360,8 @@ const renderAmountCell = amount => {
 export const IncludedServicesTable = ({
   packages = [],
   includedRows,
-  title = 'Included services by program',
-  note = 'An "x" marks the services included in each program package.',
+  title = 'Included services by programme',
+  note = 'An "x" marks the services included in each programme package.',
   sectionStyle,
   dense = false,
   compact = false,
@@ -559,7 +559,7 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
   const dateLabel = formatDisplayDate(new Date());
 
   return (
-    <Document title="UKRCOM - Program Budget" subject="Surrogacy program budget" creator="UKRCOM">
+    <Document title="UKRCOM - Programme Budget" subject="Surrogacy programme budget" creator="UKRCOM">
       <Page size="A4" style={styles.page} wrap>
         <BronzeMotif />
         <ContinuedTag label={DOC_LABEL} />
@@ -567,12 +567,12 @@ const BudgetPdfDocument = ({ catalog, rates = null }) => {
         <BrandRule />
         <TitleBlock
           eyebrow="Programme catalog"
-          title="Program Budget"
+          title="Programme Budget"
           subtitle="Every programme UKRCOM offers, what it includes, and how the payment schedule breaks down."
         />
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Programs</Text>
+          <Text style={styles.sectionTitle}>Programmes</Text>
           {packages.map((program, index) => (
             <View
               key={program.id}

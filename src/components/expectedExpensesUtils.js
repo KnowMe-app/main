@@ -527,17 +527,17 @@ export const DEFAULT_EXPECTED_EXPENSES_TEMPLATES = {
   'special offer': {
     name: 'Special Offer',
     milestones: [
-      { title: 'Initial Payment', services: [] },
-      { title: 'On confirmation of pregnancy by ultrasound', services: depositRows(300) },
+      { title: 'Initial payment', services: [] },
+      { title: 'Upon ultrasound confirmation of pregnancy', services: depositRows(300) },
       {
-        title: 'On the 12th week of pregnancy',
+        title: 'At 12 weeks of pregnancy',
         services: [
           ...depositRows(300),
-          catalogRow(40), // Pregnancy comprehensive examination
+          catalogRow(40), // Comprehensive prenatal examination
         ],
       },
       {
-        title: 'On the 18th week of pregnancy',
+        title: 'At 18 weeks of pregnancy',
         services: [
           ...depositRows(400),
           { kind: 'custom', name: 'Accommodation for the surrogate mother until delivery (3 months)', price: 1800 },
@@ -545,7 +545,7 @@ export const DEFAULT_EXPECTED_EXPENSES_TEMPLATES = {
         ],
       },
       {
-        title: 'On the 36th week of pregnancy',
+        title: 'At 36 weeks of pregnancy',
         services: [
           { kind: 'custom', name: 'Deposit for medications during and after delivery (standard protocol)', price: 500 },
           { kind: 'custom', name: 'Deposit for unexpected expenses (e.g. extended hospital stay, nanny services, etc.)', price: 3000 },

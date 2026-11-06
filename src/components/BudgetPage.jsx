@@ -35,7 +35,7 @@ const BUDGET_EDIT_MODE_STORAGE_KEY = 'budget:edit-mode';
 const GUARANTEED_PACKAGE_IDS = new Set(['4', '5']);
 const FALLBACK_FIREBASE_PROJECT_ID = 'webringitapp';
 const BUDGET_COLLECTION_LABELS = {
-  packages: 'program',
+  packages: 'programme',
   items: 'expense',
 };
 const UKRCOM_MARKER = 'REPRODUCTIVE AGENCY "UKRCOM"';
@@ -1209,7 +1209,7 @@ const BudgetPage = ({ isAdmin = false }) => {
         import('./BudgetPdfDocument'),
       ]);
       const blob = await pdf(React.createElement(BudgetPdfDocument, { catalog, rates: exchangeRates })).toBlob();
-      saveAs(blob, `program-budget-${new Date().toISOString().slice(0, 10)}.pdf`);
+      saveAs(blob, `programme-budget-${new Date().toISOString().slice(0, 10)}.pdf`);
       toast.success('Budget PDF exported.');
     } catch (exportError) {
       console.error('Unable to export budget PDF', exportError);
@@ -1536,7 +1536,7 @@ const BudgetPage = ({ isAdmin = false }) => {
     updateCatalogRecord('packages', programId, { paymentScheduleId: scheduleId });
     try {
       await update(ref(database, `budget/packages/${packageIndex}`), { paymentScheduleId: scheduleId });
-      toast.success('Program payment schedule linked.');
+      toast.success('Programme payment schedule linked.');
     } catch (saveError) {
       console.error('Unable to link payment schedule', saveError);
       toast.error('Unable to link payment schedule.');
@@ -2041,7 +2041,7 @@ const BudgetPage = ({ isAdmin = false }) => {
         <Header>
           <div>
             <Eyebrow>{(catalog.technical?.agency?.name || UKRCOM_MARKER).toUpperCase()}</Eyebrow>
-            <Title>Program Budget</Title>
+            <Title>Programme Budget</Title>
           </div>
           <PageNavMenu />
         </Header>
@@ -2098,7 +2098,7 @@ const BudgetPage = ({ isAdmin = false }) => {
 
         {!loading && !error ? (
           <>
-            <Section aria-label="Programs" $compact={!isEditMode}>
+            <Section aria-label="Programmes" $compact={!isEditMode}>
               <ProgramsGrid>
                 {sortedPackages.map(program => {
                   const isOpen = Boolean(openPrograms[program.id]);
@@ -2116,7 +2116,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                   return (
                     <ProgramCard key={program.id} $guaranteed={isGuaranteed} $compact={!isEditMode}>
                       {isPopular ? <Badge>{POPULAR_PACKAGE_BADGE}</Badge> : null}
-                      {isGuaranteed ? <ProgramMeta>Guaranteed program</ProgramMeta> : null}
+                      {isGuaranteed ? <ProgramMeta>Guaranteed programme</ProgramMeta> : null}
                       {isEditMode ? (
                         renderInlineRecordEditor('packages', program, {
                           priceField: 'listedPrice',
@@ -2206,7 +2206,7 @@ const BudgetPage = ({ isAdmin = false }) => {
                           ) : null}
                         </IncludedList>
                       ) : null}
-                      <CTA type="button">Request this program</CTA>
+                      <CTA type="button">Request this programme</CTA>
                     </ProgramCard>
                   );
                 })}
