@@ -14,6 +14,7 @@ import {
   buildInitialPaymentOfferPlan,
   applyExpectedExpensesTemplate,
   extractExpectedExpensesTemplate,
+  linkEntryToCatalog,
   resolveDefaultExpectedExpensesTemplate,
   resolveExpectedExpensesSchedule,
   resolveExpectedExpensesTemplateKey,
@@ -374,6 +375,10 @@ describe('expected expenses package templates', () => {
     expect(milestones.map(milestone => milestone.services.length)).toEqual([1, 3, 4, 5, 6]);
     expect(milestones[1].services[1]).toMatchObject({ kind: 'custom', name: 'Deposit for transportation of SM', price: 300 });
     expect(milestones[4].services.find(entry => entry.name === 'Deposit for the C-section')).toMatchObject({ price: 2700 });
+    // Positions that exist in the price list come from it, so their price is the price list's.
+    expect(milestones[2].services[3]).toMatchObject({ kind: 'item', catalogId: '40' });
+    expect(milestones[3].services[3]).toMatchObject({ kind: 'item', catalogId: '20' });
+    expect(milestones[4].services[4]).toMatchObject({ kind: 'item', catalogId: '66' });
     const ids = milestones.flatMap(milestone => milestone.services.map(entry => entry.id));
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -392,5 +397,19 @@ describe('expected expenses package templates', () => {
     };
     const template = extractExpectedExpensesTemplate(plan);
     expect(template).toEqual({ name: 'Special Offer', milestones: [{ title: 'P1', services: [{ kind: 'custom', name: 'Deposit', price: 300 }] }] });
+  });
+});
+
+describe('linkEntryToCatalog', () => {
+  const catalogItems = [{ id: 66, name: 'Newborn baby items', price: 150 }];
+
+  it('turns a custom row named like a price-list position into that position', () => {
+    expect(linkEntryToCatalog({ id: 'x', kind: 'custom', name: ' newborn  BABY items', price: 99 }, catalogItems))
+      .toEqual({ id: 'x', kind: 'item', catalogId: '66' });
+  });
+
+  it('leaves other rows alone', () => {
+    const entry = { id: 'y', kind: 'custom', name: 'Deposit for the C-section', price: 2700 };
+    expect(linkEntryToCatalog(entry, catalogItems)).toBe(entry);
   });
 });

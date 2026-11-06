@@ -3013,7 +3013,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         .then(() => setExpectedExpensesTemplates(current => ({ ...current, [key]: template })))
         .catch(error => console.warn('Unable to seed the expected expenses template', error));
     }
-    return { ...plan, milestones: applyExpectedExpensesTemplate(plan.milestones, template) };
+    return { ...plan, milestones: applyExpectedExpensesTemplate(plan.milestones, template, { catalogItems }) };
   };
 
   const saveExpectedExpensesTemplate = () => {

@@ -459,7 +459,18 @@ export const extractExpectedExpensesTemplate = plan => normalizeExpectedExpenses
   })),
 });
 
-export const applyExpectedExpensesTemplate = (milestones, template) => {
+// Власний рядок, названий так само, як позиція прайсу, стає посиланням на неї: інакше шаблон,
+// збережений із плану, де позицію вписали руками, ніс би свою ціну замість прайсової.
+const normalizeName = name => String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+export const linkEntryToCatalog = (entry, catalogItems) => {
+  if (entry?.kind !== 'custom' || !Array.isArray(catalogItems)) return entry;
+  const key = normalizeName(entry.name);
+  const item = key ? catalogItems.find(candidate => normalizeName(candidate?.name) === key) : null;
+  return item ? { ...catalogRow(item.id), id: entry.id } : entry;
+};
+
+export const applyExpectedExpensesTemplate = (milestones, template, { catalogItems } = {}) => {
   const templateMilestones = Array.isArray(template?.milestones) ? template.milestones : [];
   return (Array.isArray(milestones) ? milestones : []).map((milestone, index) => {
     const extras = templateMilestones[index]?.services || [];
@@ -468,7 +479,7 @@ export const applyExpectedExpensesTemplate = (milestones, template) => {
       ...milestone,
       services: [
         ...milestone.services,
-        ...normalizeServiceEntries(extras.map(entry => ({ ...entry, id: createEntryId() }))),
+        ...normalizeServiceEntries(extras.map(entry => linkEntryToCatalog({ ...entry, id: createEntryId() }, catalogItems))),
       ],
     };
   });
@@ -479,11 +490,17 @@ const depositRows = amount => [
   { kind: 'custom', name: 'Deposit for medications of SM', price: amount },
 ];
 
+const catalogRow = catalogId => ({ kind: 'item', catalogId: String(catalogId) });
+
 // Вшиті зразки на випадок, коли в базі шаблону ще немає: перше створення плану адміном кладе його
 // в базу, і далі правиться вже той. Special Offer — за інвойсами справи Kikawa (2025–2026): Initial
 // Payment без доплат (його послуги — сам пакет), далі депозити СМ на кожному платежі й витрати
 // пологів на останньому. Борги за ліки й пошту в конкретну країну зразок не несе — це справа
-// конкретних батьків, а не програми.
+// конкретних батьків, а не програми. Позиція, яка є в прайсі (`budget/items`), стоїть посиланням
+// на прайс, а не власним рядком: ціна в плані мусить бути та сама, що в прайсі (в інвойсах справи
+// стояли 1650 за обстеження й 1800 за квартиру — прайс каже 1700 і 600). Депозити СМ, кесарів,
+// непередбачене й реєстрація — не ті самі позиції, що в прайсі (там помісячні «from 100»,
+// компенсація СМ за кесарів, реєстрація в ціні програми), тож лишаються власними рядками.
 export const DEFAULT_EXPECTED_EXPENSES_TEMPLATES = {
   'special offer': {
     name: 'Special Offer',
@@ -494,14 +511,14 @@ export const DEFAULT_EXPECTED_EXPENSES_TEMPLATES = {
         title: 'On the 12th week of pregnancy',
         services: [
           ...depositRows(300),
-          { kind: 'custom', name: 'Comprehensive examination of pregnant women, 1-3 trimester of pregnancy', price: 1650 },
+          catalogRow(40), // Pregnancy comprehensive examination
         ],
       },
       {
         title: 'On the 18th week of pregnancy',
         services: [
           ...depositRows(400),
-          { kind: 'custom', name: 'Apartment for SM till delivery', price: 1800 },
+          catalogRow(20), // SM apartment in Kyiv before delivery
           { kind: 'custom', name: 'Documents for fetal recognition + post', price: 75 },
         ],
       },
@@ -511,7 +528,7 @@ export const DEFAULT_EXPECTED_EXPENSES_TEMPLATES = {
           { kind: 'custom', name: 'Deposit for medications during and after delivery (standard protocol)', price: 500 },
           { kind: 'custom', name: 'Deposit for unexpected expenses (e.g. extended hospital stay, nanny services, etc.)', price: 3000 },
           { kind: 'custom', name: 'Deposit for the C-section', price: 2700 },
-          { kind: 'custom', name: 'Items for the newborn (clothing, linens, diapers, etc.)', price: 150 },
+          catalogRow(66), // Newborn baby items
           { kind: 'custom', name: 'Extra expenses for the registration process', price: 250 },
         ],
       },
