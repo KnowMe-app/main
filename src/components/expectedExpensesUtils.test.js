@@ -11,7 +11,9 @@ import {
   isRawExpectedExpensesGroups,
   normalizeExpectedExpensesData,
   removeMilestoneService,
+  buildInitialPaymentOfferPlan,
   resolveExpectedExpensesSchedule,
+  resolveInitialPaymentOffer,
   resolveMilestoneServiceRows,
   resolvePackageOverviewRows,
   serializeExpectedExpensesData,
@@ -276,16 +278,15 @@ describe('expectedExpensesUtils', () => {
   });
 });
 
-// Bug report (06.11): "Special Offer - Initial Payment" has no payment schedule in the catalog, and
-// the Expected expenses tab refused to build a plan for it at all.
+// A package with no payment schedule used to be refused outright on the Expected expenses tab.
 describe('resolveExpectedExpensesSchedule', () => {
-  const pkg = { id: 'p6', name: 'Special Offer — Initial Payment', listedPrice: 7580, children: [] };
+  const pkg = { id: 'p6', name: 'One-off consultation', listedPrice: 7580, children: [] };
 
   it('falls back to one 100% milestone for a package without a schedule', () => {
     const schedule = resolveExpectedExpensesSchedule({ technical: { paymentSchedules: [] } }, pkg);
     const plan = buildExpectedExpensesPlan(pkg, schedule);
     expect(plan.milestones).toHaveLength(1);
-    expect(plan.milestones[0].title).toBe('Special Offer — Initial Payment');
+    expect(plan.milestones[0].title).toBe('One-off consultation');
     expect(plan.milestones[0].services[0]).toMatchObject({ kind: 'percent', packageId: 'p6', percent: 100 });
   });
 
@@ -293,5 +294,55 @@ describe('resolveExpectedExpensesSchedule', () => {
     const own = { id: 'ps-1', payments: [{ title: 'A', amount: 100 }, { title: 'B', amount: 200 }] };
     const schedule = resolveExpectedExpensesSchedule({ technical: { paymentSchedules: [own] } }, { ...pkg, paymentScheduleId: 'ps-1' });
     expect(schedule).toBe(own);
+  });
+});
+
+// Bug report (06.11): Initial Payment is billed first and separately, then the Programme Fee follows
+// its own 4-payment schedule - picking either package must build that 5-step plan.
+describe('resolveInitialPaymentOffer / buildInitialPaymentOfferPlan', () => {
+  const catalog = {
+    packages: [
+      { id: 3, name: 'IVF + ED + SM', listedPrice: 46000, children: [1, 2], paymentScheduleId: 'ps-3' },
+      { id: 6, name: 'Special Offer - Initial Payment', listedPrice: 8300, hidden: true, children: [1, 2, 4] },
+      { id: 7, name: 'Special Offer - Programme Fee', listedPrice: 29700, hidden: true, children: [4, 18], paymentScheduleId: 'ps-6' },
+    ],
+    technical: {
+      paymentSchedules: [
+        { id: 'ps-3', payments: [{ amount: 16000, title: 'To start the program' }, { amount: 30000, title: 'Later' }] },
+        { id: 'ps-6', payments: [
+          { percent: 25, title: 'On confirmation of pregnancy by ultrasound' },
+          { percent: 25, title: 'On the 12th week of pregnancy' },
+          { percent: 25, title: 'On the 18th week of pregnancy' },
+          { percent: 25, title: 'On the 36th week of pregnancy' },
+        ] },
+      ],
+    },
+  };
+
+  it.each([6, 7])('builds initial payment + 4 programme payments when package %s is picked', id => {
+    const pkg = catalog.packages.find(candidate => candidate.id === id);
+    const offer = resolveInitialPaymentOffer(catalog, pkg);
+    expect(offer).toMatchObject({ name: 'Special Offer', initialTitle: 'Initial Payment' });
+    const plan = buildInitialPaymentOfferPlan(offer, { packageId: id, taxPercent: 14 });
+    expect(plan.packageId).toBe(String(id));
+    expect(plan.packageSnapshot).toMatchObject({ name: 'Special Offer', listedPrice: 38000 });
+    expect(plan.packageSnapshot.children.map(entry => String(entry.catalogId))).toEqual(['1', '2', '4', '18']);
+    expect(plan.milestones.map(milestone => milestone.title)).toEqual([
+      'Initial Payment',
+      'On confirmation of pregnancy by ultrasound',
+      'On the 12th week of pregnancy',
+      'On the 18th week of pregnancy',
+      'On the 36th week of pregnancy',
+    ]);
+    expect(plan.milestones[0].services[0]).toMatchObject({ kind: 'percent', packageId: '6', percent: 100 });
+    plan.milestones.slice(1).forEach(milestone => {
+      expect(milestone.services[0]).toMatchObject({ kind: 'percent', packageId: '7', percent: 25 });
+      expect(milestone.showPackageOverview).toBe(false);
+    });
+    expect(computeMilestonesPackageSharePercent(plan.milestones, plan.packageId, id === 6 ? 8300 : 29700)).toBe(100);
+  });
+
+  it('leaves ordinary packages alone', () => {
+    expect(resolveInitialPaymentOffer(catalog, catalog.packages[0])).toBeNull();
   });
 });

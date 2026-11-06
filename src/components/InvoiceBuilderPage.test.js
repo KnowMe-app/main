@@ -788,8 +788,11 @@ describe('InvoiceBuilderPage', () => {
       expect(persistedCalls.length).toBeGreaterThan(0);
       const plan = persistedCalls[persistedCalls.length - 1][1];
       expect(plan.packageId).toBe('p7');
-      expect(plan.milestones).toHaveLength(4);
-      plan.milestones.forEach(milestone => {
+      // 06.11: the Programme Fee is one half of a two-part offer - its Initial Payment (p6) is
+      // billed first and separately, then the four 25% payments of ps-6.
+      expect(plan.milestones).toHaveLength(5);
+      expect(plan.milestones[0].services[0]).toMatchObject({ kind: 'percent', packageId: 'p6', percent: 100 });
+      plan.milestones.slice(1).forEach(milestone => {
         expect(milestone.services[0]).toMatchObject({ kind: 'percent', packageId: 'p7', percent: 25 });
       });
       // 29,700 EUR x 25% = 7,425 EUR per milestone (checklist item in the import spec), before tax.

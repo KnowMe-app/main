@@ -63,12 +63,11 @@ export const getExpectedExpensesPackagePrice = pkg => {
   return packagePrice;
 };
 
-// A package with no payment schedule of its own (e.g. the lump-sum "Special Offer - Initial
-// Payment") is billed in one go, so its plan is a single milestone for 100% of the package price.
-// Без цього такий пакет на вкладці Expected expenses не обирався взагалі: план будувався лише з
-// графіка, і вибір відкидався тостом «This package has no payment schedule in the catalog».
-// Завантаження сирих груп цього запасного графіка не бере навмисно: там групи вирівнюються по
-// кроках справжнього графіка, і вигаданий крок мовчки злив би їх в одну.
+// A package with no payment schedule of its own is billed in one go, so its plan is a single
+// milestone for 100% of the package price. (A schedule-less package that opens a two-part offer -
+// see resolveInitialPaymentOffer below - is handled there instead.) Завантаження сирих груп цього
+// запасного графіка не бере навмисно: там групи вирівнюються по кроках справжнього графіка, і
+// вигаданий крок мовчки злив би їх в одну.
 export const resolveExpectedExpensesSchedule = (catalog, pkg) => {
   const schedule = resolveProgramPaymentSchedule(catalog, pkg);
   if (Array.isArray(schedule?.payments) && schedule.payments.length) return schedule;
@@ -99,6 +98,90 @@ export const buildExpectedExpensesPlan = (pkg, schedule, { taxPercent = 0 } = {}
   packageId: String(pkg?.id ?? ''),
   packageSnapshot: buildPackageSnapshot(pkg),
   milestones: buildMilestonesFromSchedule(pkg, schedule, { taxPercent }),
+});
+
+// --- Two-part offers: an initial payment billed first, then the programme fee on its own schedule --------------------------------
+//
+// «Special Offer - Initial Payment» (без графіка, сплачується першим і окремо) і «Special Offer -
+// Programme Fee» (графік ps-6: 4 × 25%) — це одна програма, розкладена на два пакети каталогу. План
+// на будь-який із них мусить мати 5 етапів: спершу весь Initial Payment, далі графік Programme Fee.
+// Явного звʼязку між пакетами в каталозі немає, тож пару впізнає спільна назва до « - »: рівно один
+// пакет без графіка (initial) і рівно один із графіком (programme).
+const OFFER_NAME_SEPARATOR = /\s+[-–—]\s+/;
+
+const splitOfferName = name => {
+  const parts = String(name || '').split(OFFER_NAME_SEPARATOR);
+  if (parts.length < 2) return null;
+  const suffix = parts.pop().trim();
+  const prefix = parts.join(' - ').trim();
+  return prefix && suffix ? { prefix, suffix } : null;
+};
+
+const hasOwnSchedule = (catalog, pkg) => {
+  const schedule = resolveProgramPaymentSchedule(catalog, pkg);
+  return Array.isArray(schedule?.payments) && schedule.payments.length > 0;
+};
+
+export const resolveInitialPaymentOffer = (catalog, pkg) => {
+  const own = splitOfferName(pkg?.name);
+  if (!own) return null;
+  const prefixKey = own.prefix.toLowerCase();
+  const siblings = (Array.isArray(catalog?.packages) ? catalog.packages : [])
+    .filter(candidate => splitOfferName(candidate?.name)?.prefix.toLowerCase() === prefixKey);
+  const initials = siblings.filter(candidate => !hasOwnSchedule(catalog, candidate));
+  const programmes = siblings.filter(candidate => hasOwnSchedule(catalog, candidate));
+  if (initials.length !== 1 || programmes.length !== 1) return null;
+  const [initialPackage] = initials;
+  const [programmePackage] = programmes;
+  if (String(initialPackage.id) === String(programmePackage.id)) return null;
+  return {
+    name: own.prefix,
+    initialTitle: splitOfferName(initialPackage.name).suffix,
+    initialPackage,
+    programmePackage,
+    programmeSchedule: resolveProgramPaymentSchedule(catalog, programmePackage),
+  };
+};
+
+// `initialPackage`/`programmePackage` must already carry resolved numeric prices. `schedule`
+// overrides the programme's own schedule (the "apply schedule from catalog" picker).
+export const buildInitialPaymentOfferMilestones = (offer, { taxPercent = 0, schedule } = {}) => [
+  {
+    id: createEntryId(),
+    title: offer.initialTitle || offer.initialPackage?.name || 'Initial payment',
+    taxPercent,
+    showPackageOverview: true,
+    services: [makePercentOfPackageEntry(offer.initialPackage?.id, 100, { expectedExpenseRole: 'scheduled' })],
+  },
+  ...buildMilestonesFromSchedule(offer.programmePackage, schedule || offer.programmeSchedule, { taxPercent })
+    .map(milestone => ({ ...milestone, showPackageOverview: false })),
+];
+
+export const buildInitialPaymentOfferSnapshot = offer => {
+  const seen = new Set();
+  const childIds = [offer.initialPackage, offer.programmePackage]
+    .flatMap(pkg => (Array.isArray(pkg?.children) ? pkg.children : []))
+    .filter(catalogId => {
+      const key = String(catalogId);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return {
+    name: offer.name,
+    description: offer.programmePackage?.description || offer.initialPackage?.description || '',
+    listedPrice: (Number(offer.initialPackage?.listedPrice) || 0) + (Number(offer.programmePackage?.listedPrice) || 0),
+    currency: offer.programmePackage?.currency || offer.initialPackage?.currency || 'EUR',
+    children: buildPackageOverviewChildren({ children: childIds }),
+  };
+};
+
+// The plan keeps the package the admin picked as its packageId: the "package share" check then sums
+// that package's own rows, which is 100% for either half of the offer.
+export const buildInitialPaymentOfferPlan = (offer, { packageId, taxPercent = 0 } = {}) => ({
+  packageId: String(packageId ?? offer.initialPackage?.id ?? ''),
+  packageSnapshot: buildInitialPaymentOfferSnapshot(offer),
+  milestones: buildInitialPaymentOfferMilestones(offer, { taxPercent }),
 });
 
 // --- Building a plan from a raw "expectedExpenses" upload -----------------------------------------------------------------------

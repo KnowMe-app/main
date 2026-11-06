@@ -77,6 +77,9 @@ import {
   addMilestoneService,
   buildExpectedExpensesPlan,
   buildExpectedExpensesPlanFromRawGroups,
+  buildInitialPaymentOfferMilestones,
+  buildInitialPaymentOfferPlan,
+  buildInitialPaymentOfferSnapshot,
   buildMilestonesFromSchedule,
   computeMilestoneAmountDue,
   computeMilestoneSubtotal,
@@ -88,6 +91,7 @@ import {
   normalizeExpectedExpensesData,
   removeMilestoneService,
   resolveExpectedExpensesSchedule,
+  resolveInitialPaymentOffer,
   resolveMilestoneServiceRows,
   serializeExpectedExpensesData,
   setMilestoneField,
@@ -2972,7 +2976,27 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     return { ...pkg, listedPrice: resolvedPrice };
   };
 
+  // Initial Payment + Programme Fee (див. resolveInitialPaymentOffer): обидві половини з цінами,
+  // розвʼязаними так само, як для звичайного пакета, або null (тост уже пояснив чому).
+  const getResolvedInitialPaymentOffer = pkg => {
+    const offer = resolveInitialPaymentOffer({ packages: catalogPackages, technical: catalogTechnical }, pkg);
+    if (!offer) return null;
+    const initialPackage = getResolvedExpectedExpensesPackage(offer.initialPackage);
+    if (!initialPackage) return { failed: true };
+    const programmePackage = getResolvedExpectedExpensesPackage(offer.programmePackage);
+    if (!programmePackage) return { failed: true };
+    return { ...offer, initialPackage, programmePackage };
+  };
+
   const createExpectedExpensesPlan = pkg => {
+    const offer = getResolvedInitialPaymentOffer(pkg);
+    if (offer?.failed) return;
+    if (offer) {
+      const plan = buildInitialPaymentOfferPlan(offer, { packageId: pkg.id, taxPercent: defaultExpectedExpensesTaxPercent });
+      persistExpectedExpenses(plan, 'Expected expenses template created.');
+      setShowExpectedExpensesPicker(false);
+      return;
+    }
     const schedule = resolveExpectedExpensesSchedule({ technical: catalogTechnical }, pkg);
     if (!schedule || !Array.isArray(schedule.payments) || !schedule.payments.length) {
       toast.error('This package has no payment schedule in the catalog.');
@@ -3080,12 +3104,18 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     // Resolved (and validated positive) the same way a brand-new plan is - an unresolved formula
     // price must never silently fall back to the raw "=..." string, which would zero out every
     // freshly-rebuilt percent-of-package row below.
-    const resolvedPackage = getResolvedExpectedExpensesPackage(pkg);
-    if (!resolvedPackage) return;
+    const offer = getResolvedInitialPaymentOffer(pkg);
+    if (offer?.failed) return;
+    const resolvedPackage = offer ? null : getResolvedExpectedExpensesPackage(pkg);
+    if (!offer && !resolvedPackage) return;
     if (typeof window !== 'undefined' && !window.confirm(
       'Recalculate milestones from this schedule? Titles reset to the schedule and the package-share row is recomputed; extra services on each milestone are kept.',
     )) return;
-    const freshMilestones = buildMilestonesFromSchedule(resolvedPackage, schedule, { taxPercent: defaultExpectedExpensesTaxPercent });
+    // У пропозиції з Initial Payment графік стосується лише Programme Fee, а першим етапом іде
+    // окремий Initial Payment — тож свіжі етапи будуються тією самою функцією, що й новий план.
+    const freshMilestones = offer
+      ? buildInitialPaymentOfferMilestones(offer, { taxPercent: defaultExpectedExpensesTaxPercent, schedule })
+      : buildMilestonesFromSchedule(resolvedPackage, schedule, { taxPercent: defaultExpectedExpensesTaxPercent });
     // A milestone saved before expectedExpenseRole existed has no explicit marker on its scheduled
     // row, so it can't be told apart from a manually-added percent-of-package row by itself. Only
     // guess when EVERY existing milestone's first row looks like that same unmarked pattern - one
@@ -3114,10 +3144,12 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     });
     persistExpectedExpenses({
       ...expectedExpenses,
-      packageSnapshot: {
-        ...expectedExpenses.packageSnapshot,
-        listedPrice: resolvedPackage.listedPrice,
-      },
+      packageSnapshot: offer
+        ? buildInitialPaymentOfferSnapshot(offer)
+        : {
+          ...expectedExpenses.packageSnapshot,
+          listedPrice: resolvedPackage.listedPrice,
+        },
       milestones: nextMilestones,
     }, successMessage);
   };
@@ -3129,7 +3161,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       toast.error('The original package is no longer in the catalog.');
       return;
     }
-    const schedule = resolveExpectedExpensesSchedule({ technical: catalogTechnical }, pkg);
+    const offer = resolveInitialPaymentOffer({ packages: catalogPackages, technical: catalogTechnical }, pkg);
+    const schedule = offer ? offer.programmeSchedule : resolveExpectedExpensesSchedule({ technical: catalogTechnical }, pkg);
     rebuildExpectedExpensesFromSchedule(schedule, 'Schedule recalculated.');
   };
 
