@@ -11,6 +11,7 @@ import {
   isRawExpectedExpensesGroups,
   normalizeExpectedExpensesData,
   removeMilestoneService,
+  resolveExpectedExpensesSchedule,
   resolveMilestoneServiceRows,
   resolvePackageOverviewRows,
   serializeExpectedExpensesData,
@@ -272,5 +273,25 @@ describe('expectedExpensesUtils', () => {
       const giftRow = normalized.milestones[5].services.find(entry => entry.priceLabel === 'GIFT');
       expect(giftRow).toMatchObject({ price: 0, priceLabel: 'GIFT' });
     });
+  });
+});
+
+// Bug report (06.11): "Special Offer - Initial Payment" has no payment schedule in the catalog, and
+// the Expected expenses tab refused to build a plan for it at all.
+describe('resolveExpectedExpensesSchedule', () => {
+  const pkg = { id: 'p6', name: 'Special Offer — Initial Payment', listedPrice: 7580, children: [] };
+
+  it('falls back to one 100% milestone for a package without a schedule', () => {
+    const schedule = resolveExpectedExpensesSchedule({ technical: { paymentSchedules: [] } }, pkg);
+    const plan = buildExpectedExpensesPlan(pkg, schedule);
+    expect(plan.milestones).toHaveLength(1);
+    expect(plan.milestones[0].title).toBe('Special Offer — Initial Payment');
+    expect(plan.milestones[0].services[0]).toMatchObject({ kind: 'percent', packageId: 'p6', percent: 100 });
+  });
+
+  it('keeps the catalog schedule when the package has one', () => {
+    const own = { id: 'ps-1', payments: [{ title: 'A', amount: 100 }, { title: 'B', amount: 200 }] };
+    const schedule = resolveExpectedExpensesSchedule({ technical: { paymentSchedules: [own] } }, { ...pkg, paymentScheduleId: 'ps-1' });
+    expect(schedule).toBe(own);
   });
 });

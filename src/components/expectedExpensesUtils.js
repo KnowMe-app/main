@@ -63,6 +63,19 @@ export const getExpectedExpensesPackagePrice = pkg => {
   return packagePrice;
 };
 
+// A package with no payment schedule of its own (e.g. the lump-sum "Special Offer - Initial
+// Payment") is billed in one go, so its plan is a single milestone for 100% of the package price.
+// Без цього такий пакет на вкладці Expected expenses не обирався взагалі: план будувався лише з
+// графіка, і вибір відкидався тостом «This package has no payment schedule in the catalog».
+// Завантаження сирих груп цього запасного графіка не бере навмисно: там групи вирівнюються по
+// кроках справжнього графіка, і вигаданий крок мовчки злив би їх в одну.
+export const resolveExpectedExpensesSchedule = (catalog, pkg) => {
+  const schedule = resolveProgramPaymentSchedule(catalog, pkg);
+  if (Array.isArray(schedule?.payments) && schedule.payments.length) return schedule;
+  if (!pkg) return null;
+  return { id: '', name: '', payments: [{ title: pkg.name || 'Payment', percent: 100 }] };
+};
+
 export const buildMilestonesFromSchedule = (pkg, schedule, { taxPercent = 0 } = {}) =>
   (Array.isArray(schedule?.payments) ? schedule.payments : []).map((payment, index) => ({
     id: createEntryId(),

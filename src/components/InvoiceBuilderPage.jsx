@@ -87,6 +87,7 @@ import {
   isRawExpectedExpensesGroups,
   normalizeExpectedExpensesData,
   removeMilestoneService,
+  resolveExpectedExpensesSchedule,
   resolveMilestoneServiceRows,
   serializeExpectedExpensesData,
   setMilestoneField,
@@ -2972,7 +2973,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   };
 
   const createExpectedExpensesPlan = pkg => {
-    const schedule = resolveProgramPaymentSchedule({ technical: catalogTechnical }, pkg);
+    const schedule = resolveExpectedExpensesSchedule({ technical: catalogTechnical }, pkg);
     if (!schedule || !Array.isArray(schedule.payments) || !schedule.payments.length) {
       toast.error('This package has no payment schedule in the catalog.');
       return;
@@ -3128,7 +3129,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       toast.error('The original package is no longer in the catalog.');
       return;
     }
-    const schedule = resolveProgramPaymentSchedule({ technical: catalogTechnical }, pkg);
+    const schedule = resolveExpectedExpensesSchedule({ technical: catalogTechnical }, pkg);
     rebuildExpectedExpensesFromSchedule(schedule, 'Schedule recalculated.');
   };
 
