@@ -14,7 +14,9 @@ import {
   buildInitialPaymentOfferPlan,
   applyExpectedExpensesTemplate,
   extractExpectedExpensesTemplate,
+  describeInitialPaymentOffer,
   linkEntryToCatalog,
+  summarizeMilestones,
   listScheduledRowIncludedServices,
   resolveDefaultExpectedExpensesTemplate,
   resolveExpectedExpensesSchedule,
@@ -375,10 +377,10 @@ describe('expected expenses package templates', () => {
     const milestones = applyExpectedExpensesTemplate(plan.milestones, resolveDefaultExpectedExpensesTemplate(plan.packageSnapshot.name));
     expect(milestones.map(milestone => milestone.services.length)).toEqual([1, 3, 4, 5, 6]);
     expect(milestones[1].services[1]).toMatchObject({ kind: 'custom', name: 'Deposit for transportation of SM', price: 300 });
-    expect(milestones[4].services.find(entry => entry.name === 'Deposit for the C-section')).toMatchObject({ price: 2700 });
+    expect(milestones[4].services.find(entry => entry.name === 'Deposit for a caesarean section')).toMatchObject({ price: 2700 });
     // Positions that exist in the price list come from it, so their price is the price list's.
     expect(milestones[2].services[3]).toMatchObject({ kind: 'item', catalogId: '40' });
-    expect(milestones[3].services[3]).toMatchObject({ kind: 'custom', name: 'Apartment for SM till delivery (3 months)', price: 1800 });
+    expect(milestones[3].services[3]).toMatchObject({ kind: 'custom', name: 'Accommodation for the surrogate mother until delivery (3 months)', price: 1800 });
     expect(milestones[4].services[4]).toMatchObject({ kind: 'item', catalogId: '66' });
     const ids = milestones.flatMap(milestone => milestone.services.map(entry => entry.id));
     expect(new Set(ids).size).toBe(ids.length);
@@ -429,5 +431,37 @@ describe('listScheduledRowIncludedServices', () => {
   it('lists nothing under a share of the programme', () => {
     const row = { kind: 'percent', packageId: '7', percent: 25, expectedExpenseRole: 'scheduled' };
     expect(listScheduledRowIncludedServices(row, catalogItemsById, priceContext)).toEqual([]);
+  });
+});
+
+// 06.11 PDF review: "an initial lump-sum payment, then the programme fee in 4 equal instalments"
+// read as 38,000 on top of the initial payment.
+describe('describeInitialPaymentOffer', () => {
+  it('states the stages with their amounts, the initial payment inside the total', () => {
+    const offer = {
+      initialPackage: { listedPrice: 8300 },
+      programmePackage: { listedPrice: 29700 },
+      programmeSchedule: { payments: [25, 25, 25, 25].map(percent => ({ percent })) },
+    };
+    expect(describeInitialPaymentOffer(offer)).toBe(
+      'The programme fee of EUR 38,000 is payable in five stages: an initial payment of EUR 8,300, followed by four equal instalments of EUR 7,425.',
+    );
+  });
+});
+
+describe('summarizeMilestones', () => {
+  it('sums programme share, extras, tax and total for the closing table', () => {
+    const priceContext = { packagesById: new Map([['7', { id: 7, listedPrice: 29700 }]]) };
+    const milestones = [{
+      title: 'A',
+      taxPercent: 8.5,
+      services: [
+        { id: 's', kind: 'percent', packageId: '7', percent: 25, expectedExpenseRole: 'scheduled' },
+        { id: 'd', kind: 'custom', name: 'Deposit', price: 800 },
+      ],
+    }];
+    const { rows, totals } = summarizeMilestones(milestones, new Map(), priceContext);
+    expect(rows[0]).toMatchObject({ programme: 7425, additional: 800, tax: 699.13, total: 8924.13 });
+    expect(totals.total).toBe(8924.13);
   });
 });

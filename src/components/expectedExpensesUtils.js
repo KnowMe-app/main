@@ -157,6 +157,27 @@ export const buildInitialPaymentOfferMilestones = (offer, { taxPercent = 0, sche
     .map(milestone => ({ ...milestone, showPackageOverview: false })),
 ];
 
+// Опис схеми оплати в PDF складається з чисел, а не з описів пакетів каталогу: «initial lump-sum
+// payment, then the programme fee in 4 equal instalments» читалось як «внесок, а потім ще 38 000
+// чотирма платежами», хоча 38 000 уже включають початковий платіж (зауваження до PDF, 06.11).
+const formatEuroText = amount => `EUR ${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(amount)}`;
+const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+const numberWord = count => NUMBER_WORDS[count] || String(count);
+
+export const describeInitialPaymentOffer = offer => {
+  const initialPrice = Number(offer?.initialPackage?.listedPrice) || 0;
+  const programmePrice = Number(offer?.programmePackage?.listedPrice) || 0;
+  const payments = Array.isArray(offer?.programmeSchedule?.payments) ? offer.programmeSchedule.payments : [];
+  const amounts = payments.map(payment => resolvePaymentAmount(payment, programmePrice) || 0);
+  if (!initialPrice || !amounts.length) return offer?.programmePackage?.description || offer?.initialPackage?.description || '';
+  const equal = amounts.every(amount => amount === amounts[0]);
+  const instalments = equal
+    ? `${numberWord(amounts.length)} equal instalments of ${formatEuroText(amounts[0])}`
+    : `${numberWord(amounts.length)} instalments (${amounts.map(formatEuroText).join(', ')})`;
+  return `The programme fee of ${formatEuroText(initialPrice + programmePrice)} is payable in ${numberWord(amounts.length + 1)} stages: `
+    + `an initial payment of ${formatEuroText(initialPrice)}, followed by ${instalments}.`;
+};
+
 export const buildInitialPaymentOfferSnapshot = offer => {
   const seen = new Set();
   const childIds = [offer.initialPackage, offer.programmePackage]
@@ -169,7 +190,7 @@ export const buildInitialPaymentOfferSnapshot = offer => {
     });
   return {
     name: offer.name,
-    description: offer.programmePackage?.description || offer.initialPackage?.description || '',
+    description: describeInitialPaymentOffer(offer),
     listedPrice: (Number(offer.initialPackage?.listedPrice) || 0) + (Number(offer.programmePackage?.listedPrice) || 0),
     currency: offer.programmePackage?.currency || offer.initialPackage?.currency || 'EUR',
     children: buildPackageOverviewChildren({ children: childIds }),
@@ -519,8 +540,8 @@ export const DEFAULT_EXPECTED_EXPENSES_TEMPLATES = {
         title: 'On the 18th week of pregnancy',
         services: [
           ...depositRows(400),
-          { kind: 'custom', name: 'Apartment for SM till delivery (3 months)', price: 1800 },
-          { kind: 'custom', name: 'Documents for fetal recognition + post', price: 75 },
+          { kind: 'custom', name: 'Accommodation for the surrogate mother until delivery (3 months)', price: 1800 },
+          { kind: 'custom', name: 'Documents for prenatal recognition and postage', price: 75 },
         ],
       },
       {
@@ -528,7 +549,7 @@ export const DEFAULT_EXPECTED_EXPENSES_TEMPLATES = {
         services: [
           { kind: 'custom', name: 'Deposit for medications during and after delivery (standard protocol)', price: 500 },
           { kind: 'custom', name: 'Deposit for unexpected expenses (e.g. extended hospital stay, nanny services, etc.)', price: 3000 },
-          { kind: 'custom', name: 'Deposit for the C-section', price: 2700 },
+          { kind: 'custom', name: 'Deposit for a caesarean section', price: 2700 },
           catalogRow(66), // Newborn baby items
           { kind: 'custom', name: 'Extra expenses for the registration process', price: 250 },
         ],
@@ -553,4 +574,24 @@ export const listScheduledRowIncludedServices = (row, catalogItemsById, priceCon
   return children
     .map(catalogId => catalogItemsById?.get?.(String(catalogId))?.name)
     .filter(name => typeof name === 'string' && name.trim());
+};
+
+// Підсумок усього плану (зауваження до PDF, 06.11: «відсутня фінальна зведена таблиця із загальною
+// прогнозованою сумою»): по етапу — частка програми, інші витрати, податок і разом, плюс підсумок.
+const toCents = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+export const summarizeMilestones = (milestones, catalogItemsById, priceContext = {}) => {
+  const rows = (Array.isArray(milestones) ? milestones : []).map(milestone => {
+    const serviceRows = resolveMilestoneServiceRows(milestone, catalogItemsById, priceContext);
+    const { scheduledRows, additionalRows } = splitScheduledRows(serviceRows);
+    const programme = computeMilestoneSubtotal(scheduledRows);
+    const additional = computeMilestoneSubtotal(additionalRows);
+    const subtotal = computeMilestoneSubtotal(serviceRows);
+    // До центів так само, як картка етапу показує «Estimated total»: підсумок мусить бути сумою
+    // тих чисел, які клієнт бачить вище, а не сумою неокруглених.
+    const total = toCents(computeMilestoneAmountDue(subtotal, milestone.taxPercent));
+    return { title: milestone.title, programme, additional, tax: toCents(total - subtotal), total };
+  });
+  const sum = field => toCents(rows.reduce((acc, row) => acc + (Number(row[field]) || 0), 0));
+  return { rows, totals: { programme: sum('programme'), additional: sum('additional'), tax: sum('tax'), total: sum('total') } };
 };

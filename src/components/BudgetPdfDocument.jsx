@@ -473,7 +473,7 @@ export const PaymentScheduleTable = ({ packages, rows, totals, title = 'Payment 
           </View>
           {totals.map((total, columnIndex) => (
             <View key={`schedule-total-${columnIndex}`} style={[styles.programCell, light ? styles.lightProgramCell : null]}>
-              <Text style={styles.programCellHead}>{total == null ? '-' : formatAmount(total)}</Text>
+              <Text style={styles.programCellHead}>{total == null ? '-' : (typeof total === 'string' ? sanitizePdfText(total) : formatAmount(total))}</Text>
             </View>
           ))}
         </View>
