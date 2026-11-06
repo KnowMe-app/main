@@ -1,0 +1,240 @@
+{
+  "packageId": "6",
+  "packageSnapshot": {
+    "name": "Special Offer",
+    "description": "Special offer: an initial lump-sum payment, then the programme fee in 4 equal instalments.",
+    "listedPrice": 38000,
+    "currency": "EUR",
+    "children": [
+      {
+        "id": "offer-child-1",
+        "kind": "item",
+        "catalogId": "1"
+      },
+      {
+        "id": "offer-child-2",
+        "kind": "item",
+        "catalogId": "2"
+      },
+      {
+        "id": "offer-child-3",
+        "kind": "item",
+        "catalogId": "4"
+      },
+      {
+        "id": "offer-child-4",
+        "kind": "item",
+        "catalogId": "14"
+      },
+      {
+        "id": "offer-child-5",
+        "kind": "item",
+        "catalogId": "12"
+      },
+      {
+        "id": "offer-child-6",
+        "kind": "item",
+        "catalogId": "3"
+      },
+      {
+        "id": "offer-child-7",
+        "kind": "item",
+        "catalogId": "5"
+      },
+      {
+        "id": "offer-child-8",
+        "kind": "item",
+        "catalogId": "11"
+      },
+      {
+        "id": "offer-child-9",
+        "kind": "item",
+        "catalogId": "18"
+      },
+      {
+        "id": "offer-child-10",
+        "kind": "item",
+        "catalogId": "21"
+      },
+      {
+        "id": "offer-child-11",
+        "kind": "item",
+        "catalogId": "22"
+      },
+      {
+        "id": "offer-child-12",
+        "kind": "item",
+        "catalogId": "23"
+      },
+      {
+        "id": "offer-child-13",
+        "kind": "item",
+        "catalogId": "24"
+      },
+      {
+        "id": "offer-child-14",
+        "kind": "item",
+        "catalogId": "25"
+      }
+    ]
+  },
+  "milestones": [
+    {
+      "id": "m1",
+      "title": "Initial Payment",
+      "taxPercent": 8.5,
+      "showPackageOverview": true,
+      "services": [
+        {
+          "id": "m1-share",
+          "kind": "percent",
+          "packageId": "6",
+          "percent": 100,
+          "expectedExpenseRole": "scheduled"
+        }
+      ]
+    },
+    {
+      "id": "m2",
+      "title": "On confirmation of pregnancy by ultrasound",
+      "taxPercent": 8.5,
+      "showPackageOverview": false,
+      "services": [
+        {
+          "id": "m2-share",
+          "kind": "percent",
+          "packageId": "7",
+          "percent": 25,
+          "expectedExpenseRole": "scheduled"
+        },
+        {
+          "id": "m2-extra-1",
+          "kind": "custom",
+          "name": "Deposit for transportation of SM",
+          "price": 300
+        },
+        {
+          "id": "m2-extra-2",
+          "kind": "custom",
+          "name": "Deposit for medications of SM",
+          "price": 300
+        }
+      ]
+    },
+    {
+      "id": "m3",
+      "title": "On the 12th week of pregnancy",
+      "taxPercent": 8.5,
+      "showPackageOverview": false,
+      "services": [
+        {
+          "id": "m3-share",
+          "kind": "percent",
+          "packageId": "7",
+          "percent": 25,
+          "expectedExpenseRole": "scheduled"
+        },
+        {
+          "id": "m3-extra-1",
+          "kind": "custom",
+          "name": "Deposit for transportation of SM",
+          "price": 300
+        },
+        {
+          "id": "m3-extra-2",
+          "kind": "custom",
+          "name": "Deposit for medications of SM",
+          "price": 300
+        },
+        {
+          "id": "m3-extra-3",
+          "kind": "item",
+          "catalogId": "40"
+        }
+      ]
+    },
+    {
+      "id": "m4",
+      "title": "On the 18th week of pregnancy",
+      "taxPercent": 8.5,
+      "showPackageOverview": false,
+      "services": [
+        {
+          "id": "m4-share",
+          "kind": "percent",
+          "packageId": "7",
+          "percent": 25,
+          "expectedExpenseRole": "scheduled"
+        },
+        {
+          "id": "m4-extra-1",
+          "kind": "custom",
+          "name": "Deposit for transportation of SM",
+          "price": 400
+        },
+        {
+          "id": "m4-extra-2",
+          "kind": "custom",
+          "name": "Deposit for medications of SM",
+          "price": 400
+        },
+        {
+          "id": "m4-extra-3",
+          "kind": "custom",
+          "name": "Apartment for SM till delivery (3 months)",
+          "price": 1800
+        },
+        {
+          "id": "m4-extra-4",
+          "kind": "custom",
+          "name": "Documents for fetal recognition + post",
+          "price": 75
+        }
+      ]
+    },
+    {
+      "id": "m5",
+      "title": "On the 36th week of pregnancy",
+      "taxPercent": 8.5,
+      "showPackageOverview": false,
+      "services": [
+        {
+          "id": "m5-share",
+          "kind": "percent",
+          "packageId": "7",
+          "percent": 25,
+          "expectedExpenseRole": "scheduled"
+        },
+        {
+          "id": "m5-extra-1",
+          "kind": "custom",
+          "name": "Deposit for medications during and after delivery (standard protocol)",
+          "price": 500
+        },
+        {
+          "id": "m5-extra-2",
+          "kind": "custom",
+          "name": "Deposit for unexpected expenses (e.g. extended hospital stay, nanny services, etc.)",
+          "price": 3000
+        },
+        {
+          "id": "m5-extra-3",
+          "kind": "custom",
+          "name": "Deposit for the C-section",
+          "price": 2700
+        },
+        {
+          "id": "m5-extra-4",
+          "kind": "item",
+          "catalogId": "66"
+        },
+        {
+          "id": "m5-extra-5",
+          "kind": "custom",
+          "name": "Extra expenses for the registration process",
+          "price": 250
+        }
+      ]
+    }
+  ]
+}

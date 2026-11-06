@@ -10,6 +10,7 @@ import { buildCaseTitle, buildPayerName } from './invoiceCatalogUtils';
 import {
   computeMilestoneAmountDue,
   computeMilestoneSubtotal,
+  listScheduledRowIncludedServices,
   resolveMilestoneServiceRows,
   resolvePackageOverviewRows,
   splitScheduledRows,
@@ -72,6 +73,13 @@ const styles = StyleSheet.create({
     color: PDF_COLOR.inkSoft,
     paddingRight: 10,
   },
+  includedServiceLine: {
+    fontFamily: PDF_FONT.body,
+    fontSize: 8,
+    color: PDF_COLOR.inkSoft,
+    paddingLeft: 8,
+    marginTop: 1,
+  },
   additionalPrice: {
     fontFamily: PDF_FONT.body,
     fontSize: 8.5,
@@ -108,7 +116,7 @@ const styles = StyleSheet.create({
 // every other row (SM deposits, catalog add-ons, gifts) as the same plain line, and the milestone's
 // own total. Never repeats the package name, included services, or payment schedule - those render
 // exactly once, above, in the shared programme-overview block.
-const PaymentBlock = ({ index, milestone, rows, currency, gap }) => {
+const PaymentBlock = ({ index, milestone, rows, currency, gap, catalogItemsById, priceContext }) => {
   const { scheduledRows, additionalRows } = splitScheduledRows(rows);
   const subtotal = computeMilestoneSubtotal(rows);
   const taxPercent = Number(milestone.taxPercent) || 0;
@@ -124,6 +132,12 @@ const PaymentBlock = ({ index, milestone, rows, currency, gap }) => {
           <Text style={styles.additionalPrice}>{formatMoney(row.price, currency)}</Text>
         </View>
       ))}
+      {scheduledRows.flatMap(row => listScheduledRowIncludedServices(row, catalogItemsById, priceContext)
+        .map((name, serviceIndex) => (
+          <Text key={`${row.key}-included-${serviceIndex}`} style={styles.includedServiceLine}>
+            {sanitizePdfText(`• ${name}`)}
+          </Text>
+        )))}
       {additionalRows.map(row => (
         <View key={row.key} style={styles.additionalRow}>
           <Text style={styles.additionalName}>{sanitizePdfText(row.name)}</Text>
@@ -240,7 +254,7 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
                 keeps the heading from stranding at a page bottom with every block on the next. */}
             {milestones.map((milestone, index) => {
               const block = (
-                <PaymentBlock index={index} milestone={milestone} rows={milestoneRows[index]} currency={currency} gap={betweenPaymentsGap} />
+                <PaymentBlock index={index} milestone={milestone} rows={milestoneRows[index]} currency={currency} gap={betweenPaymentsGap} catalogItemsById={catalogItemsById} priceContext={priceContext} />
               );
               return index === 0 ? (
                 <View key={milestone.id || index} wrap={false}>
