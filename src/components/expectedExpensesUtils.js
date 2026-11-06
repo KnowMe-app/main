@@ -541,3 +541,16 @@ export const resolveDefaultExpectedExpensesTemplate = planName => {
   const raw = DEFAULT_EXPECTED_EXPENSES_TEMPLATES[String(planName || '').trim().toLowerCase()];
   return raw ? normalizeExpectedExpensesTemplate(raw) : null;
 };
+
+// Етап, що оплачує пакет цілком (Initial Payment спецпропозиції: 100% пакета), — це не частка
+// програми, а окрема покупка, і клієнт мусить бачити, за що платить. У PDF під «Scheduled payment»
+// такого етапу стоїть перелік послуг пакета з прайсу (назви, без цін: ціна пакета — його власна).
+// Частки програми (25%…) переліку не несуть: склад програми PDF показує раз, угорі.
+export const listScheduledRowIncludedServices = (row, catalogItemsById, priceContext = {}) => {
+  if (row?.kind !== 'percent' || row.expectedExpenseRole !== 'scheduled' || !(Number(row.percent) >= 100)) return [];
+  const pkg = priceContext.packagesById?.get?.(String(row.packageId));
+  const children = Array.isArray(pkg?.children) ? pkg.children : [];
+  return children
+    .map(catalogId => catalogItemsById?.get?.(String(catalogId))?.name)
+    .filter(name => typeof name === 'string' && name.trim());
+};

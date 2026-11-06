@@ -15,6 +15,7 @@ import {
   applyExpectedExpensesTemplate,
   extractExpectedExpensesTemplate,
   linkEntryToCatalog,
+  listScheduledRowIncludedServices,
   resolveDefaultExpectedExpensesTemplate,
   resolveExpectedExpensesSchedule,
   resolveExpectedExpensesTemplateKey,
@@ -411,5 +412,22 @@ describe('linkEntryToCatalog', () => {
   it('leaves other rows alone', () => {
     const entry = { id: 'y', kind: 'custom', name: 'Deposit for the C-section', price: 2700 };
     expect(linkEntryToCatalog(entry, catalogItems)).toBe(entry);
+  });
+});
+
+// 06.11: the Initial Payment block of the PDF said only "Scheduled payment" - the client could not
+// see what the 8,300 EUR pays for.
+describe('listScheduledRowIncludedServices', () => {
+  const catalogItemsById = new Map([['1', { id: 1, name: 'Program coordination and support' }], ['11', { id: 11, name: 'Embryo storage for 1 year' }]]);
+  const priceContext = { packagesById: new Map([['6', { id: 6, name: 'Special Offer - Initial Payment', children: [1, 11] }], ['7', { id: 7, children: [1] }]]) };
+
+  it('lists the package services under a payment that buys the whole package', () => {
+    const row = { kind: 'percent', packageId: '6', percent: 100, expectedExpenseRole: 'scheduled' };
+    expect(listScheduledRowIncludedServices(row, catalogItemsById, priceContext)).toEqual(['Program coordination and support', 'Embryo storage for 1 year']);
+  });
+
+  it('lists nothing under a share of the programme', () => {
+    const row = { kind: 'percent', packageId: '7', percent: 25, expectedExpenseRole: 'scheduled' };
+    expect(listScheduledRowIncludedServices(row, catalogItemsById, priceContext)).toEqual([]);
   });
 });
