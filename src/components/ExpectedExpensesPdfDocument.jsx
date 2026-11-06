@@ -14,6 +14,7 @@ import {
   resolveMilestoneServiceRows,
   resolvePackageOverviewRows,
   splitScheduledRows,
+  summarizeMilestones,
 } from './expectedExpensesUtils';
 
 ensurePdfFontsRegistered();
@@ -191,6 +192,15 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
   const packagesMeta = [{ id: 'programme', label: 'Programme', priceLabel: formatAmount(listedPrice) }];
 
   const milestoneRows = milestones.map(milestone => resolveMilestoneServiceRows(milestone, catalogItemsById, priceContext));
+  const summary = summarizeMilestones(milestones, catalogItemsById, priceContext);
+  const summaryColumns = [
+    { id: 'programme', label: 'Programme', priceLabel: currency },
+    { id: 'additional', label: 'Additional', priceLabel: currency },
+    { id: 'tax', label: 'Tax', priceLabel: currency },
+    { id: 'total', label: 'Total', priceLabel: currency },
+  ];
+  const usesSmAbbreviation = milestoneRows.some(rows => rows.some(row => /\bSM\b/.test(String(row.name || ''))))
+    || overviewRows.some(row => /\bSM\b/.test(String(row.name || '')));
   // Only the auto-generated "share of the programme fee" row belongs in this schedule - it mirrors
   // the package's own payment schedule, whose column already sums to the whole programme fee
   // (Programme 46,000 above). Any other row (SM deposits, catalog add-ons, gifts, ...) is a one-off
@@ -234,7 +244,10 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
           compact
           includedRows={includedRows}
           title="Included in this programme"
-          note="Every item below is already covered by the programme fee."
+          // SM у назвах рядків клієнт не мусить розшифровувати сам: перше вживання — саме ця таблиця.
+          note={usesSmAbbreviation
+            ? 'Every item below is already covered by the programme fee. SM - surrogate mother.'
+            : 'Every item below is already covered by the programme fee.'}
           sectionStyle={{ marginTop: aboveIncludedServicesGap }}
         />
 
@@ -268,9 +281,31 @@ const ExpectedExpensesPdfDocument = ({ plan, customers, catalogItemsById, priceC
           </View>
         ) : null}
 
+        {/* Зведена таблиця (зауваження 06.11): для фінансової пропозиції загальна прогнозована
+            сума — головне число, а досі її доводилось складати з карток етапів самому. */}
+        {/* Таблиця коротка (рядок на етап), тож стоїть цілою: без цього заголовок лишався внизу
+            сторінки, а сама таблиця переїжджала на наступну. */}
+        {summary.rows.length ? (
+          <View wrap={false}>
+          <PaymentScheduleTable
+            title="Summary of expected expenses"
+            leadLabel="Payment"
+            packages={summaryColumns}
+            rows={summary.rows.map(row => ({
+              title: row.title || 'Payment',
+              amounts: [row.programme, row.additional, row.tax, row.total].map(formatAmountTwoDecimals),
+            }))}
+            totals={[summary.totals.programme, summary.totals.additional, summary.totals.tax, summary.totals.total].map(formatAmountTwoDecimals)}
+            light
+            sectionStyle={{ marginTop: abovePaymentsGap }}
+          />
+          </View>
+        ) : null}
+
         <Text style={styles.refundNote}>
           {sanitizePdfText('Estimate only, not an invoice. Any unused portion of a deposit is refunded or carried forward at the next stage.')}
         </Text>
+
 
         <Footer />
       </Page>
