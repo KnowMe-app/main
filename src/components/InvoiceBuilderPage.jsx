@@ -90,7 +90,12 @@ import {
   isRawExpectedExpensesGroups,
   normalizeExpectedExpensesData,
   removeMilestoneService,
+  applyExpectedExpensesTemplate,
+  extractExpectedExpensesTemplate,
+  normalizeExpectedExpensesTemplate,
+  resolveDefaultExpectedExpensesTemplate,
   resolveExpectedExpensesSchedule,
+  resolveExpectedExpensesTemplateKey,
   resolveInitialPaymentOffer,
   resolveMilestoneServiceRows,
   serializeExpectedExpensesData,
@@ -103,6 +108,7 @@ const CATALOG_ITEMS_PATH = 'budget/items';
 const CATALOG_PACKAGES_PATH = 'budget/packages';
 const CATALOG_TECHNICAL_PATH = 'budget/technical';
 const EXPECTED_EXPENSES_PATH = 'invoiceBuilder/expectedExpenses';
+const EXPECTED_EXPENSES_TEMPLATES_PATH = 'invoiceBuilder/expectedExpensesTemplates';
 
 const toArray = value => {
   if (Array.isArray(value)) return value;
@@ -2142,6 +2148,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
   // round7 spec D: Expected Expenses is a standalone section of the Builder, not a step inside the
   // regular invoice-creation flow - a top-level tab keeps the two entirely separate on screen.
   const [activeTab, setActiveTab] = useState('invoice');
+  // Типові «інші витрати» по етапах для кожного пакета (expectedExpensesUtils, «Package templates»).
+  const [expectedExpensesTemplates, setExpectedExpensesTemplates] = useState({});
   const fileInputRef = useRef(null);
   const expectedExpensesFileInputRef = useRef(null);
 
@@ -2157,6 +2165,8 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         get(ref(database, EXPECTED_EXPENSES_PATH)),
       ]);
       setData(normalizeInvoiceData(invoiceSnapshot.exists() ? invoiceSnapshot.val() : null));
+      const rawTemplates = invoiceSnapshot.exists() ? invoiceSnapshot.val()?.expectedExpensesTemplates : null;
+      setExpectedExpensesTemplates(rawTemplates && typeof rawTemplates === 'object' ? rawTemplates : {});
       setCatalogItems(toArray(itemsSnapshot.exists() ? itemsSnapshot.val() : []));
       setCatalogPackages(toArray(packagesSnapshot.exists() ? packagesSnapshot.val() : []));
       const technicalValue = technicalSnapshot.exists() ? technicalSnapshot.val() : {};
@@ -2988,12 +2998,46 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     return { ...offer, initialPackage, programmePackage };
   };
 
+  const catalogForTemplates = { packages: catalogPackages, technical: catalogTechnical };
+
+  // Дописує в щойно збудований план типові витрати пакета. Шаблону в базі ще немає, а в коді є
+  // зразок — зразок кладеться і в план, і в базу (пише лише повний адмін; відмову правил тут не
+  // показуємо: план однаково збережеться з витратами, а шаблон можна записати кнопкою пізніше).
+  const withPackageTemplate = (plan, pkg) => {
+    const key = resolveExpectedExpensesTemplateKey(catalogForTemplates, pkg);
+    const stored = key ? normalizeExpectedExpensesTemplate(expectedExpensesTemplates[key]) : null;
+    const template = stored || resolveDefaultExpectedExpensesTemplate(plan.packageSnapshot?.name);
+    if (!template) return plan;
+    if (!stored && key) {
+      set(ref(database, `${EXPECTED_EXPENSES_TEMPLATES_PATH}/${key}`), template)
+        .then(() => setExpectedExpensesTemplates(current => ({ ...current, [key]: template })))
+        .catch(error => console.warn('Unable to seed the expected expenses template', error));
+    }
+    return { ...plan, milestones: applyExpectedExpensesTemplate(plan.milestones, template) };
+  };
+
+  const saveExpectedExpensesTemplate = () => {
+    if (!expectedExpenses?.packageId) return;
+    const pkg = catalogPackagesById.get(String(expectedExpenses.packageId));
+    const key = pkg ? resolveExpectedExpensesTemplateKey(catalogForTemplates, pkg) : '';
+    if (!key) {
+      toast.error('The plan\'s package is no longer in the catalog.');
+      return;
+    }
+    if (typeof window !== 'undefined' && !window.confirm(
+      `Save the extra expenses of every milestone as the template for "${expectedExpenses.packageSnapshot?.name || pkg.name}"? New plans for this package will start with them.`,
+    )) return;
+    const template = extractExpectedExpensesTemplate(expectedExpenses);
+    setExpectedExpensesTemplates(current => ({ ...current, [key]: template }));
+    persistPath(`${EXPECTED_EXPENSES_TEMPLATES_PATH}/${key}`, template, 'Package template saved.');
+  };
+
   const createExpectedExpensesPlan = pkg => {
     const offer = getResolvedInitialPaymentOffer(pkg);
     if (offer?.failed) return;
     if (offer) {
       const plan = buildInitialPaymentOfferPlan(offer, { packageId: pkg.id, taxPercent: defaultExpectedExpensesTaxPercent });
-      persistExpectedExpenses(plan, 'Expected expenses template created.');
+      persistExpectedExpenses(withPackageTemplate(plan, pkg), 'Expected expenses template created.');
       setShowExpectedExpensesPicker(false);
       return;
     }
@@ -3005,7 +3049,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
     const resolvedPackage = getResolvedExpectedExpensesPackage(pkg);
     if (!resolvedPackage) return;
     const plan = buildExpectedExpensesPlan(resolvedPackage, schedule, { taxPercent: defaultExpectedExpensesTaxPercent });
-    persistExpectedExpenses(plan, 'Expected expenses template created.');
+    persistExpectedExpenses(withPackageTemplate(plan, pkg), 'Expected expenses template created.');
     setShowExpectedExpensesPicker(false);
   };
 
@@ -4399,6 +4443,15 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
                       >
                         <FaFilePdf /> {isGeneratingExpectedExpenses ? 'Generating…' : 'PDF'}
                       </PrimaryMiniButton>
+                      {expectedExpenses.packageId ? (
+                        <SmallButton
+                          type="button"
+                          onClick={saveExpectedExpensesTemplate}
+                          title="Save each milestone's extra expenses as this package's template - new plans for the package start with them"
+                        >
+                          <FaSave /> Save as template
+                        </SmallButton>
+                      ) : null}
                       <DangerButton type="button" onClick={deleteExpectedExpensesPlan}><FaTrash /> Delete plan</DangerButton>
                     </>
                   ) : null}

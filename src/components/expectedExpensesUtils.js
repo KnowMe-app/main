@@ -412,3 +412,114 @@ export const computeMilestonesPackageSharePercent = (milestones, packageId, pack
         }
         return entrySum + (Number(entry.percent) || 0);
       }, 0), 0);
+
+// --- Package templates: the typical extras of every milestone ----------------------------------------------------------------------
+//
+// План будується з графіка пакета, а графік знає лише частку ціни програми — депозити на транспорт
+// і ліки СМ, квартиру, кесарів, речі для немовляти адмін щоразу дописував руками. Шаблон пакета
+// тримає ці «інші витрати» по етапах: `invoiceBuilder/expectedExpensesTemplates/{ключ}` =
+// `{ name, milestones: [{ title, services }] }`, де services — лише нерозкладові рядки (частку ціни
+// програми план щоразу рахує з графіка сам). Етапи зіставляються за порядком: шаблон — це «що
+// типово доплачують на N-му платежі», а не на платежі з певною назвою.
+
+const stripEntryIds = entry => {
+  if (!entry || typeof entry !== 'object') return entry;
+  const { id, ...rest } = entry;
+  return Array.isArray(rest.children) ? { ...rest, children: rest.children.map(stripEntryIds) } : rest;
+};
+
+const isScheduledEntry = entry => entry?.expectedExpenseRole === 'scheduled';
+
+// Ключ шаблону: у пропозиції з Initial Payment обидва пакети дають той самий план, тож і шаблон
+// один — під пакетом Initial Payment.
+export const resolveExpectedExpensesTemplateKey = (catalog, pkg) => {
+  const offer = resolveInitialPaymentOffer(catalog, pkg);
+  const id = offer ? offer.initialPackage?.id : pkg?.id;
+  return id == null || id === '' ? '' : String(id);
+};
+
+export const normalizeExpectedExpensesTemplate = raw => {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.milestones)) return null;
+  return {
+    name: String(raw.name || ''),
+    milestones: raw.milestones.map(milestone => ({
+      title: String(milestone?.title || ''),
+      services: normalizeServiceEntries(Array.isArray(milestone?.services) ? milestone.services : [])
+        .filter(entry => !isScheduledEntry(entry))
+        .map(stripEntryIds),
+    })),
+  };
+};
+
+export const extractExpectedExpensesTemplate = plan => normalizeExpectedExpensesTemplate({
+  name: plan?.packageSnapshot?.name || '',
+  milestones: (Array.isArray(plan?.milestones) ? plan.milestones : []).map(milestone => ({
+    title: milestone.title,
+    services: milestone.services,
+  })),
+});
+
+export const applyExpectedExpensesTemplate = (milestones, template) => {
+  const templateMilestones = Array.isArray(template?.milestones) ? template.milestones : [];
+  return (Array.isArray(milestones) ? milestones : []).map((milestone, index) => {
+    const extras = templateMilestones[index]?.services || [];
+    if (!extras.length) return milestone;
+    return {
+      ...milestone,
+      services: [
+        ...milestone.services,
+        ...normalizeServiceEntries(extras.map(entry => ({ ...entry, id: createEntryId() }))),
+      ],
+    };
+  });
+};
+
+const depositRows = amount => [
+  { kind: 'custom', name: 'Deposit for transportation of SM', price: amount },
+  { kind: 'custom', name: 'Deposit for medications of SM', price: amount },
+];
+
+// Вшиті зразки на випадок, коли в базі шаблону ще немає: перше створення плану адміном кладе його
+// в базу, і далі правиться вже той. Special Offer — за інвойсами справи Kikawa (2025–2026): Initial
+// Payment без доплат (його послуги — сам пакет), далі депозити СМ на кожному платежі й витрати
+// пологів на останньому. Борги за ліки й пошту в конкретну країну зразок не несе — це справа
+// конкретних батьків, а не програми.
+export const DEFAULT_EXPECTED_EXPENSES_TEMPLATES = {
+  'special offer': {
+    name: 'Special Offer',
+    milestones: [
+      { title: 'Initial Payment', services: [] },
+      { title: 'On confirmation of pregnancy by ultrasound', services: depositRows(300) },
+      {
+        title: 'On the 12th week of pregnancy',
+        services: [
+          ...depositRows(300),
+          { kind: 'custom', name: 'Comprehensive examination of pregnant women, 1-3 trimester of pregnancy', price: 1650 },
+        ],
+      },
+      {
+        title: 'On the 18th week of pregnancy',
+        services: [
+          ...depositRows(400),
+          { kind: 'custom', name: 'Apartment for SM till delivery', price: 1800 },
+          { kind: 'custom', name: 'Documents for fetal recognition + post', price: 75 },
+        ],
+      },
+      {
+        title: 'On the 36th week of pregnancy',
+        services: [
+          { kind: 'custom', name: 'Deposit for medications during and after delivery (standard protocol)', price: 500 },
+          { kind: 'custom', name: 'Deposit for unexpected expenses (e.g. extended hospital stay, nanny services, etc.)', price: 3000 },
+          { kind: 'custom', name: 'Deposit for the C-section', price: 2700 },
+          { kind: 'custom', name: 'Items for the newborn (clothing, linens, diapers, etc.)', price: 150 },
+          { kind: 'custom', name: 'Extra expenses for the registration process', price: 250 },
+        ],
+      },
+    ],
+  },
+};
+
+export const resolveDefaultExpectedExpensesTemplate = planName => {
+  const raw = DEFAULT_EXPECTED_EXPENSES_TEMPLATES[String(planName || '').trim().toLowerCase()];
+  return raw ? normalizeExpectedExpensesTemplate(raw) : null;
+};

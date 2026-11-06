@@ -12,7 +12,11 @@ import {
   normalizeExpectedExpensesData,
   removeMilestoneService,
   buildInitialPaymentOfferPlan,
+  applyExpectedExpensesTemplate,
+  extractExpectedExpensesTemplate,
+  resolveDefaultExpectedExpensesTemplate,
   resolveExpectedExpensesSchedule,
+  resolveExpectedExpensesTemplateKey,
   resolveInitialPaymentOffer,
   resolveMilestoneServiceRows,
   resolvePackageOverviewRows,
@@ -344,5 +348,49 @@ describe('resolveInitialPaymentOffer / buildInitialPaymentOfferPlan', () => {
 
   it('leaves ordinary packages alone', () => {
     expect(resolveInitialPaymentOffer(catalog, catalog.packages[0])).toBeNull();
+  });
+});
+
+// 06.11: the typical extras of each milestone (SM deposits, apartment, C-section...) live in a
+// package template instead of being retyped on every plan.
+describe('expected expenses package templates', () => {
+  const catalog = {
+    packages: [
+      { id: 6, name: 'Special Offer - Initial Payment', listedPrice: 8300, children: [] },
+      { id: 7, name: 'Special Offer - Programme Fee', listedPrice: 29700, children: [], paymentScheduleId: 'ps-6' },
+    ],
+    technical: { paymentSchedules: [{ id: 'ps-6', payments: [25, 25, 25, 25].map((percent, index) => ({ percent, title: `P${index + 1}` })) }] },
+  };
+
+  it('keys both halves of the offer by the Initial Payment package', () => {
+    expect(resolveExpectedExpensesTemplateKey(catalog, catalog.packages[0])).toBe('6');
+    expect(resolveExpectedExpensesTemplateKey(catalog, catalog.packages[1])).toBe('6');
+  });
+
+  it('applies the bundled Special Offer sample milestone by milestone', () => {
+    const offer = resolveInitialPaymentOffer(catalog, catalog.packages[1]);
+    const plan = buildInitialPaymentOfferPlan(offer, { packageId: 7 });
+    const milestones = applyExpectedExpensesTemplate(plan.milestones, resolveDefaultExpectedExpensesTemplate(plan.packageSnapshot.name));
+    expect(milestones.map(milestone => milestone.services.length)).toEqual([1, 3, 4, 5, 6]);
+    expect(milestones[1].services[1]).toMatchObject({ kind: 'custom', name: 'Deposit for transportation of SM', price: 300 });
+    expect(milestones[4].services.find(entry => entry.name === 'Deposit for the C-section')).toMatchObject({ price: 2700 });
+    const ids = milestones.flatMap(milestone => milestone.services.map(entry => entry.id));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('extracts only the extras, without ids, so the template round-trips', () => {
+    const plan = {
+      packageSnapshot: { name: 'Special Offer' },
+      milestones: [{
+        id: 'm1',
+        title: 'P1',
+        services: [
+          { id: 'a', kind: 'percent', packageId: '7', percent: 25, expectedExpenseRole: 'scheduled' },
+          { id: 'b', kind: 'custom', name: 'Deposit', price: 300 },
+        ],
+      }],
+    };
+    const template = extractExpectedExpensesTemplate(plan);
+    expect(template).toEqual({ name: 'Special Offer', milestones: [{ title: 'P1', services: [{ kind: 'custom', name: 'Deposit', price: 300 }] }] });
   });
 });
