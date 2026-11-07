@@ -30,6 +30,7 @@ import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
 import { APP_LANGUAGES, getLanguageNativeName } from 'utils/locales';
 import { uiText } from 'utils/uiTranslations';
 import { useAppSettings } from '../hooks/useAppSettings';
+import Collapsible from './Collapsible';
 import {
   buildTelegramLoginLink,
   buildTelegramProfileData,
@@ -594,6 +595,13 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   const telegramAttemptRef = useRef(telegramAttempt);
   telegramAttemptRef.current = telegramAttempt;
   const [telegramCode, setTelegramCode] = useState('');
+  // Блок очікування згортається анімацією, тобто ще кілька кадрів
+  // малюється після того, як спробу скасовано: він показує останню спробу,
+  // а не порожнечу (і не падає на `telegramAttempt.nonce`).
+  const lastTelegramViewRef = useRef({ attempt: null, codeRequested: false });
+  if (telegramAttempt) lastTelegramViewRef.current = { attempt: telegramAttempt, codeRequested: telegramCodeRequested };
+  const shownTelegramAttempt = telegramAttempt || lastTelegramViewRef.current.attempt;
+  const shownTelegramCodeRequested = telegramAttempt ? telegramCodeRequested : lastTelegramViewRef.current.codeRequested;
   // Код з кнопки бота «Увійти в KnowMe» (`#tgcode=`). Підставляється, щойно
   // функція скаже, що номер прийшов і чекає коду; без спроби в цьому браузері
   // він не робить нічого.
@@ -1287,7 +1295,10 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
               {tr('Створити акаунт')}
             </ModeTab>
           </ModeTabs>
-          {isRegisterMode && (
+          {/* Усе, що зʼявляється й зникає на цій формі, рухається тією самою
+              анімацією, що й решта застосунку (`Collapsible`): вкладка, пошта,
+              очікування Telegram, підказки. Доти рядки вистрибували. */}
+          <Collapsible open={isRegisterMode}>
             <RoleBlock>
               <RoleTitle>{tr('Хто ви?')}</RoleTitle>
               <RoleHint>{tr('Від ролі залежить, які поля покаже анкета й кого ви побачите у стрічці. Змінити її можна будь-коли в «Моєму профілі».')}</RoleHint>
@@ -1309,8 +1320,6 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
                 ))}
               </RoleGrid>
             </RoleBlock>
-          )}
-          {isRegisterMode && (
             <CheckboxContainer>
               <CustomCheckbox id="login-terms" type="checkbox" checked={isChecked} onChange={handleCheckboxChange} />
               <CheckboxLabel htmlFor="login-terms">
@@ -1318,7 +1327,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
               </CheckboxLabel>
               <TermsButton type="button" onClick={handleTermsClick}>{tr('Умови')}</TermsButton>
             </CheckboxContainer>
-          )}
+          </Collapsible>
 
           <AuthMethods>
             {telegramAvailable && (
@@ -1349,7 +1358,8 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
               {tr(isRegisterMode ? 'Створити поштою' : 'Увійти поштою')}
             </AuthMethodButton>
           </AuthMethods>
-          {telegramAvailable && telegramAttempt && telegramCodeRequested ? (
+          <Collapsible open={telegramAvailable && Boolean(telegramAttempt)}>
+          {shownTelegramAttempt && shownTelegramCodeRequested ? (
             <TelegramWaiting as="form" aria-live="polite" onSubmit={handleTelegramCodeSubmit}>
               <strong>{tr('Введіть код із Telegram')}</strong>
               {tr('Бот надіслав вам шість цифр. Нікому їх не повідомляйте.')}
@@ -1378,23 +1388,24 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
                 <LinkButton type="button" onClick={resetTelegramAttempt}>{tr('Скасувати вхід')}</LinkButton>
               </TelegramWaitingActions>
             </TelegramWaiting>
-          ) : telegramAvailable && telegramAttempt ? (
+          ) : shownTelegramAttempt ? (
             <TelegramWaiting aria-live="polite">
               <strong>{tr('Чекаємо на номер у Telegram…')}</strong>
               {tr('Відкрийте бота KnowMe й натисніть «Поділитися номером». Бот надішле код для входу.')}
               <TelegramWaitingActions>
-                <LinkButton as="a" href={buildTelegramLoginLink(telegramAttempt.nonce)} target="_blank" rel="noopener noreferrer">
+                <LinkButton as="a" href={buildTelegramLoginLink(shownTelegramAttempt.nonce)} target="_blank" rel="noopener noreferrer">
                   {tr('Відкрити Telegram ще раз')}
                 </LinkButton>
                 <LinkButton type="button" onClick={resetTelegramAttempt}>{tr('Скасувати вхід')}</LinkButton>
               </TelegramWaitingActions>
             </TelegramWaiting>
-          ) : telegramAvailable ? (
-            <TelegramHint>{tr('Telegram попросить поділитися номером телефону. Google і пошта — без номера.')}</TelegramHint>
           ) : null}
+          </Collapsible>
+          <Collapsible open={telegramAvailable && !telegramAttempt}>
+            <TelegramHint>{tr('Telegram попросить поділитися номером телефону. Google і пошта — без номера.')}</TelegramHint>
+          </Collapsible>
 
-          {showEmailForm && (
-          <div id="login-email-form">
+          <Collapsible open={showEmailForm} id="login-email-form">
           <InputDiv $active={focused === 'email' || Boolean(state.email)}>
             <FieldIcon><FaUser /></FieldIcon>
             <InputField
@@ -1434,19 +1445,18 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
               {showPassword ? <FaEyeSlash /> : <FaEye />}
             </PasswordToggle>
           </InputDiv>
-          {!isRegisterMode && (
+          <Collapsible open={!isRegisterMode}>
             <ForgotRow>
               <LinkButton type="button" onClick={handlePasswordReset} disabled={isLoading}>
                 {tr('Забули пароль?')}
               </LinkButton>
             </ForgotRow>
-          )}
+          </Collapsible>
           <SubmitButton type="button" onClick={handleAuth} disabled={isLoading}>
             {tr(isLoading ? 'Зачекайте…' : (isRegisterMode ? 'Створити акаунт' : 'Увійти'))}
           </SubmitButton>
-          </div>
-          )}
-          {!isRegisterMode && (
+          </Collapsible>
+          <Collapsible open={!isRegisterMode}>
             <LoginTermsNote>
               {/* Посилання стоїть там, де його ставить переклад: у німецькій
                   чи японській після нього ще йде частина речення. */}
@@ -1455,15 +1465,15 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
                 return <>{before}<LinkButton type="button" onClick={handleTermsClick}>{tr('Угодою користувача')}</LinkButton>{after}</>;
               })()}
             </LoginTermsNote>
-          )}
-          {!isRegisterMode && loginFailedUnknownEmail && (
+          </Collapsible>
+          <Collapsible open={!isRegisterMode && loginFailedUnknownEmail}>
             <LoginHint aria-live="polite">
               {tr('Акаунта з такою поштою немає.')}{' '}
               <LinkButton type="button" onClick={() => { setAuthMode('register'); setLoginFailedUnknownEmail(false); }}>
                 {tr('Створити акаунт')}
               </LinkButton>
             </LoginHint>
-          )}
+          </Collapsible>
           </>
           )}
         </LoginCard>

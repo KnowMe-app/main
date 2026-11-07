@@ -33,3 +33,16 @@ describe('LoginScreen: вхід через Google і рівні кнопки', (
     expect(handler).toContain('setTelegramSignup({ uid, profileData });');
   });
 });
+
+// Анімація розгортання на всю програму одна (`Collapsible`), і форма входу
+// нею користується: доти поля пошти й блок ролей вистрибували.
+describe('LoginScreen: розгортання тією ж анімацією, що й застосунок', () => {
+  it('пошта, вкладка реєстрації й очікування Telegram — у Collapsible', () => {
+    const source = loginSource();
+    expect(source).toContain("import Collapsible from './Collapsible';");
+    expect(source).toContain('<Collapsible open={showEmailForm} id="login-email-form">');
+    expect(source).toContain('<Collapsible open={isRegisterMode}>');
+    expect(source).toContain('<Collapsible open={telegramAvailable && Boolean(telegramAttempt)}>');
+    expect(source).not.toContain('{showEmailForm && (');
+  });
+});
