@@ -25,7 +25,9 @@ describe('вхід: пароль і згода', () => {
 
   it('вимагає згоди лише при реєстрації', () => {
     expect(source).toContain('if (isRegisterMode && !isChecked) {');
-    expect(source).toContain('{isRegisterMode && (\n            <CheckboxContainer>');
+    // Галочка стоїть у тому ж блоці вкладки «Створити акаунт», що й ролі.
+    const registerBlock = source.slice(source.indexOf('<Collapsible open={isRegisterMode}>'));
+    expect(registerBlock.slice(0, registerBlock.indexOf('</Collapsible>'))).toContain('<CheckboxContainer>');
   });
 
   it('дає подивитись набраний пароль', () => {

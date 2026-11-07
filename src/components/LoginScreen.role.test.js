@@ -32,7 +32,7 @@ describe('роль на екрані входу', () => {
 
   it('показує вибір ролі лише для реєстрації — з усіх ролей, що знає застосунок, і з поясненням', () => {
     const source = login();
-    expect(source).toContain('{isRegisterMode && (');
+    expect(source).toContain('<Collapsible open={isRegisterMode}>\n            <RoleBlock>');
     expect(source).toContain('PROFILE_ROLE_OPTIONS.map(option => (');
     expect(source).toContain('ROLE_DESCRIPTIONS[option.value]');
   });
