@@ -1,7 +1,7 @@
 {
   "files": {
     "main.css": "/static/css/main.c0085265.css",
-    "main.js": "/static/js/main.26fc13e9.js",
+    "main.js": "/static/js/main.6d65a5f2.js",
     "static/js/6153.44375a61.chunk.js": "/static/js/6153.44375a61.chunk.js",
     "static/js/8565.5a0b48dd.chunk.js": "/static/js/8565.5a0b48dd.chunk.js",
     "static/js/8751.c747c945.chunk.js": "/static/js/8751.c747c945.chunk.js",
@@ -16,11 +16,11 @@
     "static/js/2161.6b8cde21.chunk.js": "/static/js/2161.6b8cde21.chunk.js",
     "static/js/6933.727f90ec.chunk.js": "/static/js/6933.727f90ec.chunk.js",
     "static/js/6570.41f3131d.chunk.js": "/static/js/6570.41f3131d.chunk.js",
-    "locale-es.js": "/static/js/locale-es.58fa042a.chunk.js",
-    "locale-de.js": "/static/js/locale-de.a47ff4db.chunk.js",
-    "locale-nl.js": "/static/js/locale-nl.4dd8e6a2.chunk.js",
-    "locale-ja.js": "/static/js/locale-ja.7d9d236d.chunk.js",
-    "locale-zh.js": "/static/js/locale-zh.e80b8e43.chunk.js",
+    "locale-es.js": "/static/js/locale-es.9fa646c4.chunk.js",
+    "locale-de.js": "/static/js/locale-de.5391a164.chunk.js",
+    "locale-nl.js": "/static/js/locale-nl.30963329.chunk.js",
+    "locale-ja.js": "/static/js/locale-ja.ef85ed0a.chunk.js",
+    "locale-zh.js": "/static/js/locale-zh.addf8daa.chunk.js",
     "firebase-functions.js": "/static/js/firebase-functions.2222ead6.chunk.js",
     "static/js/8671.547b55b7.chunk.js": "/static/js/8671.547b55b7.chunk.js",
     "static/js/5748.31c2b0b0.chunk.js": "/static/js/5748.31c2b0b0.chunk.js",
@@ -61,7 +61,7 @@
     "index.html": "/index.html",
     "static/media/clipboard.svg": "/static/media/clipboard.f0e746ddd6f621177e34fed32194e532.svg",
     "main.c0085265.css.map": "/static/css/main.c0085265.css.map",
-    "main.26fc13e9.js.map": "/static/js/main.26fc13e9.js.map",
+    "main.6d65a5f2.js.map": "/static/js/main.6d65a5f2.js.map",
     "6153.44375a61.chunk.js.map": "/static/js/6153.44375a61.chunk.js.map",
     "8565.5a0b48dd.chunk.js.map": "/static/js/8565.5a0b48dd.chunk.js.map",
     "8751.c747c945.chunk.js.map": "/static/js/8751.c747c945.chunk.js.map",
@@ -76,11 +76,11 @@
     "2161.6b8cde21.chunk.js.map": "/static/js/2161.6b8cde21.chunk.js.map",
     "6933.727f90ec.chunk.js.map": "/static/js/6933.727f90ec.chunk.js.map",
     "6570.41f3131d.chunk.js.map": "/static/js/6570.41f3131d.chunk.js.map",
-    "locale-es.58fa042a.chunk.js.map": "/static/js/locale-es.58fa042a.chunk.js.map",
-    "locale-de.a47ff4db.chunk.js.map": "/static/js/locale-de.a47ff4db.chunk.js.map",
-    "locale-nl.4dd8e6a2.chunk.js.map": "/static/js/locale-nl.4dd8e6a2.chunk.js.map",
-    "locale-ja.7d9d236d.chunk.js.map": "/static/js/locale-ja.7d9d236d.chunk.js.map",
-    "locale-zh.e80b8e43.chunk.js.map": "/static/js/locale-zh.e80b8e43.chunk.js.map",
+    "locale-es.9fa646c4.chunk.js.map": "/static/js/locale-es.9fa646c4.chunk.js.map",
+    "locale-de.5391a164.chunk.js.map": "/static/js/locale-de.5391a164.chunk.js.map",
+    "locale-nl.30963329.chunk.js.map": "/static/js/locale-nl.30963329.chunk.js.map",
+    "locale-ja.ef85ed0a.chunk.js.map": "/static/js/locale-ja.ef85ed0a.chunk.js.map",
+    "locale-zh.addf8daa.chunk.js.map": "/static/js/locale-zh.addf8daa.chunk.js.map",
     "firebase-functions.2222ead6.chunk.js.map": "/static/js/firebase-functions.2222ead6.chunk.js.map",
     "8671.547b55b7.chunk.js.map": "/static/js/8671.547b55b7.chunk.js.map",
     "5748.31c2b0b0.chunk.js.map": "/static/js/5748.31c2b0b0.chunk.js.map",
@@ -120,6 +120,6 @@
   },
   "entrypoints": [
     "static/css/main.c0085265.css",
-    "static/js/main.26fc13e9.js"
+    "static/js/main.6d65a5f2.js"
   ]
 }
