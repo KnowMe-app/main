@@ -28,7 +28,7 @@ const { getDatabase } = require('firebase-admin/database');
 const { getStorage } = require('firebase-admin/storage');
 const { getFirestore } = require('firebase-admin/firestore');
 
-const { ALLOWED_ORIGINS, MAIL_SENDER, REGION } = require('./config');
+const { ALLOWED_ORIGINS, DATABASE_REGION, MAIL_SENDER, REGION } = require('./config');
 const { normalizeEmailLanguage, normalizeEmailRole, renderVerifyEmail } = require('./emails/verifyEmail');
 const { renderPasswordResetEmail } = require('./emails/passwordReset');
 const { buildActionLink, buildVerifyEmailActionLink, extractOobCode } = require('./emails/actionLink');
@@ -285,7 +285,10 @@ exports.sendPasswordResetEmail = onCall(
 exports.deliverPasswordResetEmail = onValueCreated(
   {
     ref: `${RESET_OUTBOX}/{requestId}`,
-    region: REGION,
+    // Тригер бази стоїть у регіоні самої бази, а не функцій: інстанс
+    // `webringitapp-default-rtdb` живе в us-central1, і Eventarc на
+    // europe-west1 відповідає «pattern cannot match any databases in region».
+    region: DATABASE_REGION,
     secrets: [BREVO_API_KEY],
     memory: '256MiB',
     timeoutSeconds: 60,
