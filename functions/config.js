@@ -13,6 +13,9 @@
  */
 module.exports = Object.freeze({
   REGION: 'europe-west1',
+  // Регіон інстансу RTDB (`*.firebaseio.com` = us-central1). Тригери бази
+  // (`onValueCreated`) Eventarc приймає лише тут, хоч callable живуть у REGION.
+  DATABASE_REGION: 'us-central1',
   MAIL_SENDER: Object.freeze({ name: 'KnowMe', email: 'hello@knowme.pp.ua' }),
   ALLOWED_ORIGINS: [
     'https://knowme.pp.ua',
