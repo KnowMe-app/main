@@ -4,15 +4,15 @@ const path = require('path');
 const loginSource = () => fs.readFileSync(path.join(__dirname, 'LoginScreen.jsx'), 'utf8');
 
 /**
- * Telegram — основний вхід (на прохання власниці продукту: для донорок і СМ
- * телефон — це Telegram, а пошта — ділове листування). Пошта лишається
- * запасом під «Немає Telegram?».
+ * Вхід через Telegram (на прохання власниці продукту: для донорок і СМ
+ * телефон — це Telegram). З 07.11 він — одна з трьох рівних кнопок поруч
+ * із Google і поштою (`LoginScreen.google.test.js`).
  */
 describe('LoginScreen: вхід через Telegram', () => {
   it('без налаштованого бота форма поштова, з ботом пошта згорнута', () => {
     const source = loginSource();
     expect(source).toContain('const [emailFormOpen, setEmailFormOpen] = useState(!telegramAvailable);');
-    expect(source).toContain('const showEmailForm = !telegramAvailable || emailFormOpen;');
+    expect(source).toContain('const showEmailForm = emailFormOpen;');
   });
 
   it('кнопка Telegram — звичайне посилання, щоб браузер не блокував вікно', () => {
@@ -23,7 +23,7 @@ describe('LoginScreen: вхід через Telegram', () => {
 
   it('реєстрація через Telegram вимагає згоди й ролі, як і поштою', () => {
     const source = loginSource();
-    const handler = source.slice(source.indexOf('const handleTelegramClick ='), source.indexOf('const finishTelegramRegistration ='));
+    const handler = source.slice(source.indexOf('const handleTelegramClick ='), source.indexOf('const finishProviderRegistration ='));
     expect(handler).toContain('if (isRegisterMode && !isChecked) {');
     expect(handler).toContain('if (isRegisterMode && !selectedRole) {');
   });

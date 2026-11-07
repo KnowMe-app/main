@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { FaUser, FaLock, FaEye, FaEyeSlash, FaGlobe, FaChevronDown, FaTelegramPlane } from 'react-icons/fa';
+import { FaUser, FaLock, FaEye, FaEyeSlash, FaGlobe, FaChevronDown, FaTelegramPlane, FaEnvelope } from 'react-icons/fa';
+import { FcGoogle } from 'react-icons/fc';
 import toast from 'react-hot-toast';
 import { auth, fetchUserById, hasAccountRegistration } from './config';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, fetchSignInMethodsForEmail, signInWithCustomToken } from 'firebase/auth';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  fetchSignInMethodsForEmail,
+  signInWithCustomToken,
+  signInWithPopup,
+  getAdditionalUserInfo,
+} from 'firebase/auth';
 import { getCurrentDate } from './foramtDate';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { authNotifications } from './authNotifications';
@@ -36,6 +44,7 @@ import {
   TELEGRAM_LOGIN_TTL_MS,
   TELEGRAM_POLL_INTERVAL_MS,
 } from 'utils/telegramAuth';
+import { buildGoogleProfileData, createGoogleAuthProvider, isGoogleSignInCancelled } from 'utils/googleAuth';
 
 const MATCHING_ROUTE = '/matching';
 
@@ -417,37 +426,55 @@ const TermsButton = styled.button`
 `;
 
 /*
- * Вхід через Telegram — головна кнопка форми (на прохання власниці продукту:
- * для донорок і СМ телефон — це Telegram, а пошта — ділове листування).
- * Колір — Telegram, затемнений до контрасту з білим понад 4:1; пошта
- * лишається запасом під посиланням «Немає Telegram?».
+ * Способи входу — три однакові кнопки: Telegram, Google, пошта (07.11, на
+ * прохання власниці продукту). Telegram тут стояв головною синьою кнопкою, а
+ * пошта — посиланням «Немає Telegram?» під нею, і людина, яка не хоче
+ * ділитися номером телефону, читала це як «інакше не можна». Тепер жоден
+ * спосіб не головніший: та сама висота, рамка й тло, колір несе лише значок.
  */
-const TelegramButton = styled.a`
+const AuthMethods = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+`;
+
+const AuthMethodButton = styled.button`
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
   width: 100%;
+  min-height: 52px;
   box-sizing: border-box;
-  margin-top: 18px;
-  padding: 16px;
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #1f7ab8;
-  color: #fff;
-  font-size: 16px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  /* 15 px, а не 16: «Створити через Telegram» на 360 px інакше
+     переносився, і одна кнопка ставала вищою за дві інші. */
+  font-size: 15px;
   font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
   text-decoration: none;
-  cursor: pointer;
-  transition: filter 0.18s ease, transform 0.18s ease;
+  cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
+  transition: background-color 0.18s ease, transform 0.18s ease;
 
   svg { flex: 0 0 auto; }
-  &:hover { filter: brightness(1.08); }
+  &[aria-expanded='true'] { background: var(--km-fill); }
+  &:hover { background: var(--km-fill); }
   &:active { transform: scale(0.99); }
   &:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 4px rgba(31, 122, 184, 0.35);
+    box-shadow: 0 0 0 4px var(--km-accent-ring);
   }
 `;
+
+const TELEGRAM_ICON_COLOR = '#229ED9';
 
 const TelegramHint = styled.p`
   margin: 8px 0 0;
@@ -475,29 +502,6 @@ const TelegramWaitingActions = styled.div`
   justify-content: center;
   gap: 16px;
   margin-top: 8px;
-`;
-
-const EmailToggleRow = styled.p`
-  margin: 16px 0 0;
-  text-align: center;
-  font-size: 14px;
-`;
-
-const OrDivider = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 18px;
-  color: var(--muted);
-  font-size: 12px;
-
-  &::before,
-  &::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-  }
 `;
 
 const CustomCheckbox = styled.input`
@@ -570,17 +574,18 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   // «невірний».
   const [showPassword, setShowPassword] = useState(false);
 
-  // Telegram — основний вхід; пошта розгортається посиланням «Немає
-  // Telegram?». Без налаштованого бота форма поштова, як і була.
+  // Пошта — одна з трьох рівних кнопок і розгортає поля під собою. Без
+  // налаштованого бота вона відкрита одразу: лишаються пошта й Google.
   const telegramAvailable = isTelegramLoginAvailable();
   const [emailFormOpen, setEmailFormOpen] = useState(!telegramAvailable);
-  const showEmailForm = !telegramAvailable || emailFormOpen;
+  const showEmailForm = emailFormOpen;
   // `nonce` готовий ще до дотику: посилання на бота — звичайний `<a href>`.
   const [telegramNonce, setTelegramNonce] = useState(() => (telegramAvailable ? createTelegramLoginNonce() : ''));
   // Спроба, що чекає на номер у боті. Переживає перезавантаження вкладки.
   const [telegramAttempt, setTelegramAttempt] = useState(() => (telegramAvailable ? readTelegramLoginAttempt() : null));
   // Новий акаунт з Telegram, якому ще треба обрати роль (вхід почали з
   // вкладки «Увійти», де ролі не питають).
+  // Те саме й для нового акаунта з Google.
   const [telegramSignup, setTelegramSignup] = useState(null);
   // Бот отримав номер і показав людині код. Без коду функція токена не дає:
   // посилання на бота може підсунути чужа людина, і тоді номер ділила б
@@ -829,9 +834,10 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     setTelegramAttempt(attempt);
   };
 
-  // Анкета нового акаунта з Telegram: підтверджений номер, нік і імʼя з
-  // Telegram, роль — з форми. Пошти немає: людина без неї й реєструвалась.
-  const finishTelegramRegistration = async (uid, profileData, role) => {
+  // Анкета нового акаунта з Telegram чи Google: підтверджений номер, нік і
+  // імʼя з Telegram (пошти немає — людина без неї й реєструвалась) або пошта
+  // й імʼя з Google (номера немає), роль — з форми.
+  const finishProviderRegistration = async (uid, profileData, role) => {
     const uploadedInfo = {
       ...profileData,
       areTermsConfirmed: todayDays,
@@ -843,9 +849,9 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     try {
       await persistAccountProfile(uid, uploadedInfo, 'set');
     } catch (error) {
-      console.error('[telegram] не вдалося записати анкету', error);
+      console.error('[auth] не вдалося записати анкету', error);
     }
-    markAuthSession({ email: '', userId: uid });
+    markAuthSession({ email: profileData.email || '', userId: uid });
     setIsLoggedIn(true);
     await navigateAfterAuth({ registered: true });
     authFlowInProgressRef.current = false;
@@ -873,7 +879,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
           setTelegramSignup({ uid, profileData });
           return;
         }
-        await finishTelegramRegistration(uid, profileData, attempt.role);
+        await finishProviderRegistration(uid, profileData, attempt.role);
         return;
       }
       // Як і вхід поштою: дата входу пишеться у фоні й вхід не тримає.
@@ -889,6 +895,69 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       console.error('[telegram] вхід не вдався', error);
       toast.error(tr('Не вдалося увійти через Telegram. Спробуйте ще раз або увійдіть поштою'));
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Вхід через Google — вікном (`signInWithPopup`), а не переходом: сайт живе
+   * на `knowme.pp.ua`, а вхід Firebase — на домені проєкту, і перехід туди й
+   * назад браузери з розділеним сховищем (Safari, Chrome без сторонніх cookies)
+   * закінчують без сесії. Новий акаунт і акаунт без анкети проходять ту саму
+   * дорогу, що й Telegram: без обраної ролі форма питає її, не відпускаючи.
+   */
+  const handleGoogleClick = async () => {
+    if (isRegisterMode && !isChecked) {
+      authNotifications.termsRequired();
+      return;
+    }
+    if (isRegisterMode && !selectedRole) {
+      authNotifications.registrationRoleRequired();
+      return;
+    }
+    authFlowInProgressRef.current = true;
+    setIsLoading(true);
+    let awaitingRole = false;
+    try {
+      const credential = await signInWithPopup(auth, createGoogleAuthProvider());
+      const uid = credential.user.uid;
+      const profileData = buildGoogleProfileData(credential.user, getAdditionalUserInfo(credential)?.profile);
+      const isNew = Boolean(getAdditionalUserInfo(credential)?.isNewUser);
+      const needsRegistration = isNew || !(await hasAccountRegistration(uid).catch(() => true));
+      if (needsRegistration) {
+        if (!isRegisterMode || !selectedRole) {
+          awaitingRole = true;
+          setTelegramSignup({ uid, profileData });
+          return;
+        }
+        await finishProviderRegistration(uid, profileData, selectedRole);
+        return;
+      }
+      const email = profileData.email || '';
+      // Як і вхід поштою: дата входу пишеться у фоні й вхід не тримає.
+      void persistAccountProfile(uid, buildAuthLoginPayload({ email, userId: uid, todayDays, todayDash }), 'update').catch(error => {
+        console.warn('[google] не вдалося записати дату входу', error);
+      });
+      markAuthSession({ email, userId: uid });
+      setIsLoggedIn(true);
+      await navigateAfterAuth();
+    } catch (error) {
+      if (isGoogleSignInCancelled(error)) return;
+      if (error?.code === 'auth/popup-blocked') {
+        toast.error(tr('Браузер заблокував вікно Google. Дозвольте спливні вікна й спробуйте ще раз'));
+      } else if (error?.code === 'auth/account-exists-with-different-credential') {
+        toast.error(tr('Ця пошта вже має акаунт KnowMe. Увійдіть поштою й паролем'));
+      } else if (error?.code === 'auth/operation-not-allowed' || error?.code === 'auth/unauthorized-domain') {
+        console.error('[google] вхід не налаштовано в Firebase', error);
+        toast.error(tr('Вхід через Google ще не ввімкнено. Увійдіть іншим способом'));
+      } else {
+        console.error('[google] вхід не вдався', error);
+        toast.error(tr('Не вдалося увійти через Google. Спробуйте ще раз або оберіть інший спосіб'));
+      }
+    } finally {
+      // Новий акаунт чекає на роль: межа входу не відвозить звідси, доки її
+      // не обрано (`handleTelegramSignupContinue`).
+      if (!awaitingRole) authFlowInProgressRef.current = false;
       setIsLoading(false);
     }
   };
@@ -980,7 +1049,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     }
     setIsLoading(true);
     try {
-      await finishTelegramRegistration(telegramSignup.uid, telegramSignup.profileData, selectedRole);
+      await finishProviderRegistration(telegramSignup.uid, telegramSignup.profileData, selectedRole);
     } finally {
       setIsLoading(false);
     }
@@ -1251,74 +1320,81 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
             </CheckboxContainer>
           )}
 
-          {telegramAvailable && (
-            <>
-              <TelegramButton
+          <AuthMethods>
+            {telegramAvailable && (
+              <AuthMethodButton
+                as="a"
                 href={buildTelegramLoginLink(telegramNonce)}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={handleTelegramClick}
                 data-testid="login-telegram"
               >
-                <FaTelegramPlane size={20} aria-hidden="true" />
-                {tr(isRegisterMode ? 'Зареєструватися через Telegram' : 'Увійти через Telegram')}
-              </TelegramButton>
-              {telegramAttempt && telegramCodeRequested ? (
-                <TelegramWaiting as="form" aria-live="polite" onSubmit={handleTelegramCodeSubmit}>
-                  <strong>{tr('Введіть код із Telegram')}</strong>
-                  {tr('Бот надіслав вам шість цифр. Нікому їх не повідомляйте.')}
-                  <InputDiv $active>
-                    <InputField
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      name="telegramCode"
-                      data-testid="login-telegram-code"
-                      maxLength={7}
-                      value={telegramCode}
-                      onChange={event => handleTelegramCodeChange(event.target.value)}
-                      aria-label={tr('Код із Telegram')}
-                      style={{ padding: '16px 0', textAlign: 'center', fontSize: 22, letterSpacing: '0.3em' }}
-                      autoFocus
-                    />
-                  </InputDiv>
-                  <SubmitButton type="submit" disabled={isLoading}>{tr(isLoading ? 'Зачекайте…' : 'Увійти')}</SubmitButton>
-                  <TelegramWaitingActions>
-                    {typeof navigator !== 'undefined' && navigator.clipboard?.readText && (
-                      <LinkButton type="button" onClick={handleTelegramCodePaste} disabled={isLoading} data-testid="login-telegram-paste">
-                        {tr('Вставити код')}
-                      </LinkButton>
-                    )}
-                    <LinkButton type="button" onClick={resetTelegramAttempt}>{tr('Скасувати вхід')}</LinkButton>
-                  </TelegramWaitingActions>
-                </TelegramWaiting>
-              ) : telegramAttempt ? (
-                <TelegramWaiting aria-live="polite">
-                  <strong>{tr('Чекаємо на номер у Telegram…')}</strong>
-                  {tr('Відкрийте бота KnowMe й натисніть «Поділитися номером». Бот надішле код для входу.')}
-                  <TelegramWaitingActions>
-                    <LinkButton as="a" href={buildTelegramLoginLink(telegramAttempt.nonce)} target="_blank" rel="noopener noreferrer">
-                      {tr('Відкрити Telegram ще раз')}
-                    </LinkButton>
-                    <LinkButton type="button" onClick={resetTelegramAttempt}>{tr('Скасувати вхід')}</LinkButton>
-                  </TelegramWaitingActions>
-                </TelegramWaiting>
-              ) : (
-                <TelegramHint>{tr('Без пароля й пошти: бот попросить поділитися номером телефону.')}</TelegramHint>
-              )}
-            </>
-          )}
-          {telegramAvailable && !emailFormOpen && (
-            <EmailToggleRow>
-              <LinkButton type="button" onClick={() => setEmailFormOpen(true)} data-testid="login-email-toggle">
-                {tr(isRegisterMode ? 'Немає Telegram? Зареєструватися поштою' : 'Немає Telegram? Увійти поштою')}
-              </LinkButton>
-            </EmailToggleRow>
-          )}
+                <FaTelegramPlane size={20} color={TELEGRAM_ICON_COLOR} aria-hidden="true" />
+                {tr(isRegisterMode ? 'Створити через Telegram' : 'Увійти через Telegram')}
+              </AuthMethodButton>
+            )}
+            <AuthMethodButton type="button" onClick={handleGoogleClick} disabled={isLoading} data-testid="login-google">
+              <FcGoogle size={20} aria-hidden="true" />
+              {tr(isRegisterMode ? 'Створити через Google' : 'Увійти через Google')}
+            </AuthMethodButton>
+            <AuthMethodButton
+              type="button"
+              onClick={() => setEmailFormOpen(open => !open)}
+              aria-expanded={showEmailForm}
+              aria-controls="login-email-form"
+              data-testid="login-email-toggle"
+            >
+              <FaEnvelope size={18} color="var(--accent)" aria-hidden="true" />
+              {tr(isRegisterMode ? 'Створити поштою' : 'Увійти поштою')}
+            </AuthMethodButton>
+          </AuthMethods>
+          {telegramAvailable && telegramAttempt && telegramCodeRequested ? (
+            <TelegramWaiting as="form" aria-live="polite" onSubmit={handleTelegramCodeSubmit}>
+              <strong>{tr('Введіть код із Telegram')}</strong>
+              {tr('Бот надіслав вам шість цифр. Нікому їх не повідомляйте.')}
+              <InputDiv $active>
+                <InputField
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  name="telegramCode"
+                  data-testid="login-telegram-code"
+                  maxLength={7}
+                  value={telegramCode}
+                  onChange={event => handleTelegramCodeChange(event.target.value)}
+                  aria-label={tr('Код із Telegram')}
+                  style={{ padding: '16px 0', textAlign: 'center', fontSize: 22, letterSpacing: '0.3em' }}
+                  autoFocus
+                />
+              </InputDiv>
+              <SubmitButton type="submit" disabled={isLoading}>{tr(isLoading ? 'Зачекайте…' : 'Увійти')}</SubmitButton>
+              <TelegramWaitingActions>
+                {typeof navigator !== 'undefined' && navigator.clipboard?.readText && (
+                  <LinkButton type="button" onClick={handleTelegramCodePaste} disabled={isLoading} data-testid="login-telegram-paste">
+                    {tr('Вставити код')}
+                  </LinkButton>
+                )}
+                <LinkButton type="button" onClick={resetTelegramAttempt}>{tr('Скасувати вхід')}</LinkButton>
+              </TelegramWaitingActions>
+            </TelegramWaiting>
+          ) : telegramAvailable && telegramAttempt ? (
+            <TelegramWaiting aria-live="polite">
+              <strong>{tr('Чекаємо на номер у Telegram…')}</strong>
+              {tr('Відкрийте бота KnowMe й натисніть «Поділитися номером». Бот надішле код для входу.')}
+              <TelegramWaitingActions>
+                <LinkButton as="a" href={buildTelegramLoginLink(telegramAttempt.nonce)} target="_blank" rel="noopener noreferrer">
+                  {tr('Відкрити Telegram ще раз')}
+                </LinkButton>
+                <LinkButton type="button" onClick={resetTelegramAttempt}>{tr('Скасувати вхід')}</LinkButton>
+              </TelegramWaitingActions>
+            </TelegramWaiting>
+          ) : telegramAvailable ? (
+            <TelegramHint>{tr('Telegram попросить поділитися номером телефону. Google і пошта — без номера.')}</TelegramHint>
+          ) : null}
 
           {showEmailForm && (
-          <>
-          {telegramAvailable && <OrDivider>{tr('або поштою')}</OrDivider>}
+          <div id="login-email-form">
           <InputDiv $active={focused === 'email' || Boolean(state.email)}>
             <FieldIcon><FaUser /></FieldIcon>
             <InputField
@@ -1368,7 +1444,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
           <SubmitButton type="button" onClick={handleAuth} disabled={isLoading}>
             {tr(isLoading ? 'Зачекайте…' : (isRegisterMode ? 'Створити акаунт' : 'Увійти'))}
           </SubmitButton>
-          </>
+          </div>
           )}
           {!isRegisterMode && (
             <LoginTermsNote>
