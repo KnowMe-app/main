@@ -313,9 +313,13 @@ test('прибирання: прострочені спроби й вказів�
       broken: { status: 'pending' },
     },
     telegramLoginsByTg: {
-      1: { key: 'old' },
-      2: { key: 'fresh' },
-      3: { key: 'missing' },
+      1: { key: 'old', at: now - 1000 },
+      2: { key: 'fresh', at: now - 1000 },
+      // Спроби немає в знімку, а вказівник старий — сміття.
+      3: { key: 'missing', at: now - LOGIN_TTL_MS - 6 * 60 * 1000 },
+      // Спроби немає в знімку, але вказівник свіжий: `/start` між двома
+      // читаннями. Такого не чіпаємо.
+      4: { key: 'raced', at: now - 1000 },
     },
   };
   const db = {
@@ -333,7 +337,7 @@ test('прибирання: прострочені спроби й вказів�
   // Запас після строку: браузерний годинник може відставати, тож щойно
   // прострочену спробу ще не чіпаємо.
   assert.deepEqual(Object.keys(data.telegramLogins).sort(), ['fresh', 'grace']);
-  assert.deepEqual(Object.keys(data.telegramLoginsByTg), ['2']);
+  assert.deepEqual(Object.keys(data.telegramLoginsByTg).sort(), ['2', '4']);
 });
 
 test('збій прибирання вхід не зупиняє', async () => {
@@ -344,4 +348,13 @@ test('збій прибирання вхід не зупиняє', async () => {
     return realGet(path);
   };
   assert.equal(await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps), 'pending');
+});
+
+test('новий /start тієї самої людини знімає її попередню незавершену спробу', async () => {
+  const { deps } = setup();
+  await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps);
+  const second = 'ZyXwVuTsRqPoNmLkJiHgFe';
+  await handleTelegramUpdate(privateMessage({ text: `/start ${second}` }), deps);
+  assert.equal(await deps.db.get(`telegramLogins/${hashNonce(NONCE)}`), null);
+  assert.equal((await deps.db.get(`telegramLogins/${hashNonce(second)}`)).status, 'pending');
 });

@@ -190,6 +190,17 @@ const handleStart = async ({ nonce, tgId, chatId }, { db, sendMessage, now }) =>
     await sendMessage(chatId, BOT_TEXTS.alreadyDone, returnToAppButton());
     return outcome;
   }
+  // Попередня незавершена спроба тієї самої людини більше не потрібна: вхід
+  // іде за новим посиланням. Так один акаунт Telegram, хоч скільки разів
+  // натисни «старт», тримає в базі одну спробу, а не по запису на дотик.
+  const previous = await db.get(`${LOGINS_BY_TG_ROOT}/${tgId}`);
+  if (previous && previous.key && previous.key !== key) {
+    await db.transaction(`${LOGINS_ROOT}/${previous.key}`, current => {
+      if (current === null) return null;
+      if (!current || current.tgId !== tgId || current.status !== 'pending' || current.linkUid) return undefined;
+      return null;
+    });
+  }
   await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, { key, at: now });
   await sendMessage(chatId, linking ? BOT_TEXTS.linkAskContact : BOT_TEXTS.askContact, contactKeyboard());
   return outcome;
@@ -347,24 +358,39 @@ const rememberTelegramContact = async ({ tgId, uid, profile }, { db, now }) => {
  * ніж тримати окремий розклад. Збій прибирання вхід не зупиняє.
  */
 const LOGIN_SWEEP_GRACE_MS = 5 * 60 * 1000;
+// Стеля роботи одного прибирання й частота: спам `/start` інакше змушував би
+// кожне оновлення читати й чистити весь вузол.
+const LOGIN_SWEEP_MAX_DELETES = 200;
+const LOGIN_SWEEP_INTERVAL_MS = 60 * 1000;
+let lastLoginSweepAt = -Infinity;
 
 const sweepExpiredLogins = async ({ db, now }) => {
-  const isStale = record => !record || !Number.isFinite(record.createdAt)
-    || now - record.createdAt > LOGIN_TTL_MS + LOGIN_SWEEP_GRACE_MS;
+  const isStale = at => !Number.isFinite(at) || now - at > LOGIN_TTL_MS + LOGIN_SWEEP_GRACE_MS;
   const logins = (await db.get(LOGINS_ROOT)) || {};
   const removed = new Set();
   for (const [key, record] of Object.entries(logins)) {
-    if (!isStale(record)) continue;
+    if (removed.size >= LOGIN_SWEEP_MAX_DELETES) break;
+    if (!isStale(record && record.createdAt)) continue;
     await db.set(`${LOGINS_ROOT}/${key}`, null);
     removed.add(key);
   }
+  // Вказівник читається вже після знімка спроб, і свіжий `/start` між двома
+  // читаннями дає вказівник на спробу, якої знімок не бачив. Тож знімається
+  // лише вказівник, що сам старий, або той, чию спробу щойно прибрано, —
+  // інакше людина посеред входу діставала б «спробу не знайдено».
   const pointers = (await db.get(LOGINS_BY_TG_ROOT)) || {};
   for (const [tgId, pointer] of Object.entries(pointers)) {
     const key = pointer && pointer.key;
-    if (key && logins[key] && !removed.has(key)) continue;
+    if (!removed.has(key) && !isStale(pointer && pointer.at)) continue;
     await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
   }
   return removed.size;
+};
+
+const maybeSweepExpiredLogins = async deps => {
+  if (deps.now - lastLoginSweepAt < LOGIN_SWEEP_INTERVAL_MS) return;
+  lastLoginSweepAt = deps.now;
+  await maybeSweepExpiredLogins(deps);
 };
 
 /**
