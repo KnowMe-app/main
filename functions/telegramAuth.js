@@ -302,6 +302,23 @@ const handleContact = async ({ message, tgId, chatId }, deps) => {
 };
 
 /**
+ * Контакти нового акаунта лягають в анкету разом з самим акаунтом. Решту
+ * анкети пише застосунок одразу після входу, але між кодом і тим записом
+ * браузер може зникнути (мережа, закрита вкладка), а номер мусить лишитись
+ * там, де його шукає адмін, — у `profileContacts/{uid}`. Вузол уже записаний
+ * (повторний акаунт, гонка) не переписується. Ті самі значення й та сама
+ * форма, що їх пише застосунок (`buildTelegramProfileData`).
+ */
+const seedProfileContacts = async ({ uid, profile }, { db }) => {
+  const contacts = {};
+  if (profile && profile.phone) contacts.phone = String(profile.phone);
+  const username = String((profile && profile.username) || '').trim().replace(/^@/, '');
+  if (username) contacts.telegram = username;
+  if (!Object.keys(contacts).length) return;
+  await db.transaction(`profileContacts/${uid}`, current => (current ? undefined : contacts));
+};
+
+/**
  * Контакт із Telegram лягає поруч з uid у `telegramAccounts/{tgId}/contact`.
  * Анкету пише застосунок, і лише після вибору ролі — тож людина, що закрила
  * вкладку на виборі ролі, лишала акаунт із входом, але без жодного вузла, а
@@ -438,6 +455,7 @@ const completeTelegramLogin = async (nonce, codeInput, { db, auth, now, callerUi
     const profile = claimed.profile || {};
     const { uid, isNew } = await resolveAccount({ tgId: claimed.tgId, displayName: claimed.displayName || '' }, { db, auth, now });
     await rememberTelegramContact({ tgId: claimed.tgId, uid, profile }, { db, now });
+    if (isNew) await seedProfileContacts({ uid, profile }, { db });
     const token = await auth.createCustomToken(uid);
     return { status: 'ready', token, isNew, profile };
   }

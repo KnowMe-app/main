@@ -33,6 +33,19 @@ describe('LoginScreen: вхід через Telegram', () => {
     expect(source).toContain('setTelegramSignup({ uid, profileData });');
   });
 
+  // Людина, що закрила вкладку на виборі ролі, лишала акаунт без жодного
+  // вузла — і номер з Telegram губився. Дані пишуться до питання про роль, і
+  // без дати реєстрації: її пише лише крок ролі.
+  it('дані з Telegram і Google лягають в анкету ще до вибору ролі', () => {
+    const source = loginSource();
+    const helper = source.slice(source.indexOf('const persistProviderProfileBeforeRole ='), source.indexOf('const completeTelegramAuth ='));
+    expect(helper).toContain("'set'");
+    expect(helper).not.toContain('registrationDate');
+    expect(helper).not.toContain('userRole');
+    const writes = source.match(/await persistProviderProfileBeforeRole\(uid, profileData\);\n\s+(?:\/\/[^\n]*\n\s+)*setTelegramSignup\(\{ uid, profileData \}\);/g) || [];
+    expect(writes).toHaveLength(2);
+  });
+
   // Бот заводить акаунт Firebase ще до коду. Спроба, що зірвалась після цього,
   // лишала акаунт без анкети, і наступний вхід ішов як звичайний: номер, яким
   // людина поділилась у боті, не потрапляв в анкету.

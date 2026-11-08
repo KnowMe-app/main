@@ -865,6 +865,26 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     authFlowInProgressRef.current = false;
   };
 
+  // Дані з Telegram чи Google лягають в анкету тієї ж миті, коли акаунт
+  // зʼявився, — ще до вибору ролі. Доти анкету писав лише крок ролі, і людина,
+  // що закрила вкладку на ньому, лишала акаунт із входом, але без жодного
+  // вузла: номера, яким вона поділилась, не було ніде (03–05.11, три такі
+  // акаунти). Дати реєстрації тут немає навмисно — її пише лише крок ролі, і
+  // за нею `hasAccountRegistration` наступного входу знову спитає роль.
+  // Режим `set` — заради `searchId`: адмін мусить знаходити таку анкету за
+  // номером. Збій запису вхід не тримає.
+  const persistProviderProfileBeforeRole = async (uid, profileData) => {
+    try {
+      await persistAccountProfile(uid, {
+        ...profileData,
+        ...buildAuthSessionPayload({ todayDays, todayDash }),
+        userId: uid,
+      }, 'set');
+    } catch (error) {
+      console.error('[auth] не вдалося записати дані до вибору ролі', error);
+    }
+  };
+
   const completeTelegramAuth = async (result, attempt) => {
     authFlowInProgressRef.current = true;
     setIsLoading(true);
@@ -882,6 +902,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       const needsRegistration = result.isNew || !(await hasAccountRegistration(uid).catch(() => true));
       if (needsRegistration) {
         if (!attempt.role) {
+          await persistProviderProfileBeforeRole(uid, profileData);
           // Межа входу не відвозить звідси, поки роль не обрано:
           // `authFlowInProgressRef` лишається піднятим.
           setTelegramSignup({ uid, profileData });
@@ -935,6 +956,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       if (needsRegistration) {
         if (!isRegisterMode || !selectedRole) {
           awaitingRole = true;
+          await persistProviderProfileBeforeRole(uid, profileData);
           setTelegramSignup({ uid, profileData });
           return;
         }

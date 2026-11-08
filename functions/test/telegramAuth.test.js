@@ -285,3 +285,19 @@ test('номер із Telegram лишається біля uid, навіть я�
     phone: '380501234567', firstName: 'Оксана', lastName: 'Коваль', username: 'oksana_k', at: 1_000_000,
   });
 });
+
+test('новий акаунт одразу має контакти в анкеті, наявних не переписує', async () => {
+  const { deps } = setup();
+  await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps);
+  await handleTelegramUpdate(contactFrom(TG_ID), deps);
+  await completeTelegramLogin(NONCE, '123456', deps);
+  const { uid } = await deps.db.get(`telegramAccounts/${TG_ID}`);
+  assert.deepEqual(await deps.db.get(`profileContacts/${uid}`), { phone: '380501234567', telegram: 'oksana_k' });
+
+  await deps.db.set(`profileContacts/${uid}`, { phone: '380000000000' });
+  const second = 'ZyXwVuTsRqPoNmLkJiHgFe';
+  await handleTelegramUpdate(privateMessage({ text: `/start ${second}` }), deps);
+  await handleTelegramUpdate(contactFrom(TG_ID), deps);
+  await completeTelegramLogin(second, '123456', deps);
+  assert.deepEqual(await deps.db.get(`profileContacts/${uid}`), { phone: '380000000000' });
+});
