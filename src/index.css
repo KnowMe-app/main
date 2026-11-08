@@ -145,23 +145,6 @@ code {
     monospace;
 }
 
-.spinner {
-  display: inline-block;
-  box-sizing: border-box;
-  border: 2px solid #ccc;
-  border-top-color: #555;
-  border-radius: 50%;
-  width: 16px;
-  height: 16px;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .stimulation-custom-event-input::placeholder {
   color: rgba(0, 0, 0, 0.55);
   opacity: 1;

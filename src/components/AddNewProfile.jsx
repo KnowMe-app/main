@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
+import BrandLoader from './BrandLoader';
 import * as XLSX from 'xlsx';
 // import { FaUser, FaTelegramPlane, FaFacebookF, FaInstagram, FaVk, FaMailBulk, FaPhone } from 'react-icons/fa';
 import {
@@ -3614,7 +3615,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     return (
       <>
         {isDeleting ? (
-          <span className="spinner" />
+          <BrandLoader size="compact" label="Видаляємо…" />
         ) : (
           <>
             <ModalTitle>Видалити профіль?</ModalTitle>
@@ -6074,7 +6075,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   disabled={adding}
                   title="Завести картку з набраного в пошуку"
                 >
-                  {adding ? <span className="spinner" /> : '+ Створити картку'}
+                  {adding ? <BrandLoader size="inline" onAccent label="Створюємо…" /> : '+ Створити картку'}
                 </ToolButton>
               </EmptySearchResult>
             )}

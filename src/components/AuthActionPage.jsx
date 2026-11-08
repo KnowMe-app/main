@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
+import BrandLoader from './BrandLoader';
 import {
   applyActionCode,
   checkActionCode,
@@ -8,7 +9,7 @@ import {
   onAuthStateChanged,
   verifyPasswordResetCode,
 } from 'firebase/auth';
-import { MdLockReset, MdMarkEmailRead, MdOutlineLinkOff, MdRefresh } from 'react-icons/md';
+import { MdLockReset, MdMarkEmailRead, MdOutlineLinkOff } from 'react-icons/md';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
 import { auth } from './config';
 import { hasStoredLanguagePreference, useAppSettings } from '../hooks/useAppSettings';
@@ -223,7 +224,7 @@ export const AuthActionPage = () => {
       case 'working':
         return {
           tone: 'neutral',
-          icon: <MdRefresh />,
+          icon: null,
           title: mode === 'verifyEmail' ? tr('Підтверджуємо пошту…') : tr('Перевіряємо посилання…'),
         };
       case 'verified':
@@ -330,13 +331,20 @@ export const AuthActionPage = () => {
 
   return (
     <Page data-testid="auth-action-page" data-status={state.status}>
-      <Brand aria-label="KnowMe">
+      {/* Поки посилання перевіряється, лейбл стоїть у самій картці
+          (`BrandLoader`), а верхній лише тримає місце: два «KnowMe.» один над
+          одним читались би як помилка, а зникнення — як стрибок сторінки. */}
+      <Brand aria-label="KnowMe" style={state.status === 'working' ? { visibility: 'hidden' } : undefined}>
         KnowMe<span>.</span>
       </Brand>
       <Card role="status" aria-live="polite" aria-busy={state.status === 'working'}>
-        <Badge $tone={view.tone} aria-hidden="true" $spin={state.status === 'working'}>
-          {view.icon}
-        </Badge>
+        {state.status === 'working' ? (
+          <BrandLoader size="compact" />
+        ) : (
+          <Badge $tone={view.tone} aria-hidden="true">
+            {view.icon}
+          </Badge>
+        )}
         <Title>{view.title}</Title>
         {view.text && <Text>{view.text}</Text>}
 
@@ -442,11 +450,6 @@ const Badge = styled.div`
   font-size: 26px;
   background: ${({ $tone }) => (BADGE_TONES[$tone] || BADGE_TONES.neutral)[0]};
   color: ${({ $tone }) => (BADGE_TONES[$tone] || BADGE_TONES.neutral)[1]};
-
-  svg { animation: ${({ $spin }) => ($spin ? 'km-auth-action-spin 1.1s linear infinite' : 'none')}; }
-
-  @keyframes km-auth-action-spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { svg { animation: none; } }
 `;
 
 const Title = styled.h1`

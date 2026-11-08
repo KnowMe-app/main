@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import styled, { keyframes } from 'styled-components';
+import BrandLoader from './BrandLoader';
 import {
   deletePhotos,
   uploadAvatarWithThumb,
@@ -334,21 +335,6 @@ const CropSavingStatus = styled.div`
   color: ${color.gray3};
   font-size: 14px;
   font-weight: 600;
-`;
-
-const CropSavingSpinner = styled.span`
-  width: 16px;
-  height: 16px;
-  border: 2px solid #fde3c2;
-  border-top-color: ${color.accent5};
-  border-radius: 50%;
-  animation: crop-saving-spin 0.8s linear infinite;
-
-  @keyframes crop-saving-spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 `;
 
 const CropButton = styled.button`
@@ -941,7 +927,7 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
         <CropActions>
           {isCropSaving && (
             <CropSavingStatus role="status" aria-live="polite">
-              <CropSavingSpinner aria-hidden="true" />
+              <BrandLoader size="inline" />
               {pendingCropFiles.length > 1 ? t('Обробляємо фото…') : t('Фото завантажується на сервер…')}
             </CropSavingStatus>
           )}
