@@ -12,6 +12,7 @@ const {
   isWebhookSecretValid,
   normalizeTelegramPhone,
   parseStartPayload,
+  sweepExpiredLogins,
 } = require('../telegramAuth');
 
 const NONCE = 'AbCdEfGhIjKlMnOpQrStUv';
@@ -300,4 +301,60 @@ test('новий акаунт одразу має контакти в анкет
   await handleTelegramUpdate(contactFrom(TG_ID), deps);
   await completeTelegramLogin(second, '123456', deps);
   assert.deepEqual(await deps.db.get(`profileContacts/${uid}`), { phone: '380000000000' });
+});
+
+test('прибирання: прострочені спроби й вказівники на них зникають, живі лишаються', async () => {
+  const now = 10_000_000;
+  const data = {
+    telegramLogins: {
+      old: { status: 'ready', createdAt: now - LOGIN_TTL_MS - 6 * 60 * 1000, profile: { phone: '380' } },
+      grace: { status: 'pending', createdAt: now - LOGIN_TTL_MS - 60 * 1000 },
+      fresh: { status: 'pending', createdAt: now - 1000 },
+      broken: { status: 'pending' },
+    },
+    telegramLoginsByTg: {
+      1: { key: 'old', at: now - 1000 },
+      2: { key: 'fresh', at: now - 1000 },
+      // Спроби немає в знімку, а вказівник старий — сміття.
+      3: { key: 'missing', at: now - LOGIN_TTL_MS - 6 * 60 * 1000 },
+      // Спроби немає в знімку, але вказівник свіжий: `/start` між двома
+      // читаннями. Такого не чіпаємо.
+      4: { key: 'raced', at: now - 1000 },
+    },
+  };
+  const db = {
+    get: async path => {
+      const [root, key] = path.split('/');
+      return key ? (data[root] || {})[key] ?? null : data[root] ?? null;
+    },
+    set: async (path, value) => {
+      const [root, key] = path.split('/');
+      if (value === null) delete data[root][key];
+      else data[root][key] = value;
+    },
+  };
+  assert.equal(await sweepExpiredLogins({ db, now }), 2);
+  // Запас після строку: браузерний годинник може відставати, тож щойно
+  // прострочену спробу ще не чіпаємо.
+  assert.deepEqual(Object.keys(data.telegramLogins).sort(), ['fresh', 'grace']);
+  assert.deepEqual(Object.keys(data.telegramLoginsByTg).sort(), ['2', '4']);
+});
+
+test('збій прибирання вхід не зупиняє', async () => {
+  const { deps } = setup();
+  const realGet = deps.db.get;
+  deps.db.get = async path => {
+    if (path === 'telegramLogins' || path === 'telegramLoginsByTg') throw new Error('boom');
+    return realGet(path);
+  };
+  assert.equal(await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps), 'pending');
+});
+
+test('новий /start тієї самої людини знімає її попередню незавершену спробу', async () => {
+  const { deps } = setup();
+  await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps);
+  const second = 'ZyXwVuTsRqPoNmLkJiHgFe';
+  await handleTelegramUpdate(privateMessage({ text: `/start ${second}` }), deps);
+  assert.equal(await deps.db.get(`telegramLogins/${hashNonce(NONCE)}`), null);
+  assert.equal((await deps.db.get(`telegramLogins/${hashNonce(second)}`)).status, 'pending');
 });
