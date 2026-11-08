@@ -336,6 +336,38 @@ const rememberTelegramContact = async ({ tgId, uid, profile }, { db, now }) => {
 };
 
 /**
+ * Прибирання спроб входу. Спроба живе 10 хвилин, але зникала лише тоді, коли
+ * застосунок питав про неї після строку, — а людина, що закрила вкладку,
+ * не питає вже ніколи. Тож `telegramLogins` накопичував кожен `/start` і
+ * кожен незабраний номер (з телефоном і, до 07.11, з токеном входу) назавжди.
+ * Тепер кожне оновлення від бота знімає те, що пережило строк із запасом
+ * (`LOGIN_SWEEP_GRACE_MS`: годинник браузера, який закриває спробу сам, може
+ * відставати), і вказівники `telegramLoginsByTg` на зниклі спроби. Вузли
+ * малі — лише живі спроби останніх хвилин, — тож читати їх цілком дешевше,
+ * ніж тримати окремий розклад. Збій прибирання вхід не зупиняє.
+ */
+const LOGIN_SWEEP_GRACE_MS = 5 * 60 * 1000;
+
+const sweepExpiredLogins = async ({ db, now }) => {
+  const isStale = record => !record || !Number.isFinite(record.createdAt)
+    || now - record.createdAt > LOGIN_TTL_MS + LOGIN_SWEEP_GRACE_MS;
+  const logins = (await db.get(LOGINS_ROOT)) || {};
+  const removed = new Set();
+  for (const [key, record] of Object.entries(logins)) {
+    if (!isStale(record)) continue;
+    await db.set(`${LOGINS_ROOT}/${key}`, null);
+    removed.add(key);
+  }
+  const pointers = (await db.get(LOGINS_BY_TG_ROOT)) || {};
+  for (const [tgId, pointer] of Object.entries(pointers)) {
+    const key = pointer && pointer.key;
+    if (key && logins[key] && !removed.has(key)) continue;
+    await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
+  }
+  return removed.size;
+};
+
+/**
  * Одне оновлення від Telegram. Відповідає лише в приватному чаті з ботом:
  * у групі контакт і `/start` не означають входу.
  */
@@ -344,6 +376,8 @@ const handleTelegramUpdate = async (update, deps) => {
   if (!message || !message.chat || message.chat.type !== 'private' || !message.from) return 'ignored';
   const tgId = String(message.from.id);
   const chatId = message.chat.id;
+
+  await sweepExpiredLogins(deps).catch(() => {});
 
   try {
     if (message.contact) return await handleContact({ message, tgId, chatId }, deps);
@@ -510,6 +544,7 @@ module.exports = {
   LOGINS_ROOT,
   LOGIN_TTL_MS,
   MAX_CODE_ATTEMPTS,
+  sweepExpiredLogins,
   completeTelegramLogin,
   createAdminDb,
   createTelegramSender,
