@@ -278,26 +278,61 @@ const handleContact = async ({ message, tgId, chatId }, deps) => {
     return 'link-ready';
   }
 
-  const { uid, isNew } = await resolveAccount({ tgId, displayName }, deps);
-  const token = await auth.createCustomToken(uid);
+  // Акаунт Firebase тут ще не заводиться — лише коли застосунок забере вхід
+  // правильним кодом (`completeTelegramLogin`). Доки акаунт заводив вебхук,
+  // кожна людина, що поділилась номером і не ввела код, лишала в Auth акаунт
+  // без жодного входу («(anonymous)» у консолі), а номер жив лише в цій
+  // спробі й зникав з нею — акаунт був, а знайти, чий він, не було як.
   const code = (deps.randomCode || defaultRandomCode)();
-
   await db.set(loginPath, {
     tgId,
     status: 'ready',
     createdAt: login.createdAt,
     readyAt: now,
-    uid,
-    token,
     codeHash: hashCode(pointer.key, code),
     attempts: 0,
-    isNew,
+    displayName,
     profile: { phone, firstName, lastName, username },
   });
   await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
   await sendMessage(chatId, BOT_TEXTS.contactReceived, { remove_keyboard: true });
   await sendMessage(chatId, BOT_TEXTS.done(code), codeButtons(code), { html: true });
-  return isNew ? 'registered' : 'signed-in';
+  const known = await db.get(`${ACCOUNTS_ROOT}/${tgId}`);
+  return known && known.uid ? 'signed-in' : 'registered';
+};
+
+/**
+ * Контакти нового акаунта лягають в анкету разом з самим акаунтом. Решту
+ * анкети пише застосунок одразу після входу, але між кодом і тим записом
+ * браузер може зникнути (мережа, закрита вкладка), а номер мусить лишитись
+ * там, де його шукає адмін, — у `profileContacts/{uid}`. Вузол уже записаний
+ * (повторний акаунт, гонка) не переписується. Ті самі значення й та сама
+ * форма, що їх пише застосунок (`buildTelegramProfileData`).
+ */
+const seedProfileContacts = async ({ uid, profile }, { db }) => {
+  const contacts = {};
+  if (profile && profile.phone) contacts.phone = String(profile.phone);
+  const username = String((profile && profile.username) || '').trim().replace(/^@/, '');
+  if (username) contacts.telegram = username;
+  if (!Object.keys(contacts).length) return;
+  await db.transaction(`profileContacts/${uid}`, current => (current ? undefined : contacts));
+};
+
+/**
+ * Контакт із Telegram лягає поруч з uid у `telegramAccounts/{tgId}/contact`.
+ * Анкету пише застосунок, і лише після вибору ролі — тож людина, що закрила
+ * вкладку на виборі ролі, лишала акаунт із входом, але без жодного вузла, а
+ * номер, яким вона поділилась, не лежав ніде: спроба входу стирається, щойно
+ * код прийнято. Тепер номер лишається тут (вузол читають лише функції й
+ * консоль адміна, видалення акаунта стирає його разом з мапою).
+ */
+const rememberTelegramContact = async ({ tgId, uid, profile }, { db, now }) => {
+  if (!profile || !profile.phone) return;
+  await db.transaction(`${ACCOUNTS_ROOT}/${tgId}`, current => {
+    if (current === null) return null;
+    if (!current || current.uid !== uid) return undefined;
+    return { ...current, contact: { ...profile, at: now } };
+  });
 };
 
 /**
@@ -327,7 +362,7 @@ const handleTelegramUpdate = async (update, deps) => {
  * власникові акаунта Telegram, і рівно один раз: спроба видаляється
  * транзакцією. Хибний код рахується; на `MAX_CODE_ATTEMPTS` спроба згорає.
  */
-const completeTelegramLogin = async (nonce, codeInput, { db, now, callerUid = null, intent = '' }) => {
+const completeTelegramLogin = async (nonce, codeInput, { db, auth, now, callerUid = null, intent = '' }) => {
   if (!isValidNonce(nonce)) return { status: 'invalid' };
   const key = hashNonce(nonce);
   const path = `${LOGINS_ROOT}/${key}`;
@@ -403,16 +438,26 @@ const completeTelegramLogin = async (nonce, codeInput, { db, now, callerUid = nu
       createdAt: (previous && previous.createdAt) || now,
       linkedAt: now,
       ...(previousUid ? { previousUid } : {}),
+      ...(claimed.profile && claimed.profile.phone ? { contact: { ...claimed.profile, at: now } } : {}),
     });
     return { status: 'linked', hadOtherAccount: Boolean(previousUid), profile: claimed.profile || {} };
   }
-  if (outcome === 'ready' && claimed) {
+  if (outcome === 'ready' && claimed && claimed.token) {
+    // Спроба, яку вебхук завів ще до цієї зміни: акаунт і токен уже є.
     return {
       status: 'ready',
       token: claimed.token,
       isNew: Boolean(claimed.isNew),
       profile: claimed.profile || {},
     };
+  }
+  if (outcome === 'ready' && claimed) {
+    const profile = claimed.profile || {};
+    const { uid, isNew } = await resolveAccount({ tgId: claimed.tgId, displayName: claimed.displayName || '' }, { db, auth, now });
+    await rememberTelegramContact({ tgId: claimed.tgId, uid, profile }, { db, now });
+    if (isNew) await seedProfileContacts({ uid, profile }, { db });
+    const token = await auth.createCustomToken(uid);
+    return { status: 'ready', token, isNew, profile };
   }
   if (outcome === 'wrong-code') return { status: 'wrong-code', attemptsLeft };
   return { status: 'expired' };

@@ -1325,8 +1325,13 @@ Flow, `fetchNbuUahExchangeRatesByDate`). Оригінал показується
   відповідає тостом «Вхід через Google ще не ввімкнено».
   Telegram (`docs/telegram-login.md`, 02.11: телефон — реальний канал для донорок
   і СМ). Бот просить «Поділитися номером», функція
-  `telegramWebhook` заводить акаунт і custom token і шле людині код із шести
-  цифр; форма забирає токен через `completeTelegramLogin` (`utils/telegramAuth`)
+  `telegramWebhook` шле людині код із шести цифр, а акаунт, custom token і
+  контакт поруч з uid (`telegramAccounts/{tgId}/contact`) заводить уже
+  `completeTelegramLogin` на правильному коді (07.11: акаунти з вебхука, чий
+  код так і не ввели, висіли в Auth «(anonymous)» без жодного сліду). Дані анкети
+  не чекають на роль: функція одразу кладе контакти в `profileContacts`, а форма
+  пише анкету до питання про роль (`persistProviderProfileBeforeRole`, без
+  `registrationDate`); форма забирає токен через `completeTelegramLogin` (`utils/telegramAuth`)
   **лише з цим кодом** — без нього підсунуте посилання на бота віддавало б
   сесію жертви тому, хто посилання згенерував. Без `REACT_APP_TELEGRAM_BOT_USERNAME`
   кнопки немає й форма поштова — змінну в GitHub ставлять останньою, після деплою

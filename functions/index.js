@@ -393,6 +393,7 @@ exports.completeTelegramLogin = onCall(
       // (`request.auth`); вхід без акаунта її не почне й не завершить.
       return await completeTelegramLogin(data.nonce, data.code, {
         db: createAdminDb(getDatabase()),
+        auth: getAuth(),
         now: Date.now(),
         callerUid: (request.auth && request.auth.uid) || null,
         intent: data.intent === 'link' ? 'link' : '',

@@ -260,3 +260,44 @@ test('привʼязка переписує старий акаунт Telegram �
   assert.equal(mapping.uid, 'email-uid');
   assert.equal(mapping.previousUid, 'tg-uid');
 });
+
+test('номер без коду акаунта не заводить: акаунт зʼявляється лише з правильним кодом', async () => {
+  const { deps } = setup();
+  await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps);
+  assert.equal(await handleTelegramUpdate(contactFrom(TG_ID), deps), 'registered');
+  // Людина поділилась номером і не ввела код — у Auth нічого («(anonymous)»
+  // без входу більше не буває).
+  assert.equal(deps.auth.users.size, 0);
+  assert.equal(await deps.db.get(`telegramAccounts/${TG_ID}`), null);
+  const ready = await completeTelegramLogin(NONCE, '123456', deps);
+  assert.equal(ready.status, 'ready');
+  assert.equal(deps.auth.users.size, 1);
+});
+
+test('номер із Telegram лишається біля uid, навіть якщо анкету так і не записали', async () => {
+  const { deps } = setup();
+  await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps);
+  await handleTelegramUpdate(contactFrom(TG_ID), deps);
+  const ready = await completeTelegramLogin(NONCE, '123456', deps);
+  const account = await deps.db.get(`telegramAccounts/${TG_ID}`);
+  assert.match(ready.token, new RegExp(account.uid));
+  assert.deepEqual(account.contact, {
+    phone: '380501234567', firstName: 'Оксана', lastName: 'Коваль', username: 'oksana_k', at: 1_000_000,
+  });
+});
+
+test('новий акаунт одразу має контакти в анкеті, наявних не переписує', async () => {
+  const { deps } = setup();
+  await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps);
+  await handleTelegramUpdate(contactFrom(TG_ID), deps);
+  await completeTelegramLogin(NONCE, '123456', deps);
+  const { uid } = await deps.db.get(`telegramAccounts/${TG_ID}`);
+  assert.deepEqual(await deps.db.get(`profileContacts/${uid}`), { phone: '380501234567', telegram: 'oksana_k' });
+
+  await deps.db.set(`profileContacts/${uid}`, { phone: '380000000000' });
+  const second = 'ZyXwVuTsRqPoNmLkJiHgFe';
+  await handleTelegramUpdate(privateMessage({ text: `/start ${second}` }), deps);
+  await handleTelegramUpdate(contactFrom(TG_ID), deps);
+  await completeTelegramLogin(second, '123456', deps);
+  assert.deepEqual(await deps.db.get(`profileContacts/${uid}`), { phone: '380000000000' });
+});
