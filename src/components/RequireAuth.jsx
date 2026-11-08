@@ -1,13 +1,9 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import styled, { keyframes } from 'styled-components';
+import styled from 'styled-components';
+import BrandLoader from './BrandLoader';
 import { LOGIN_ROUTE, buildReturnToFromLocation } from 'utils/authRedirect';
 import { readRememberedViewerId } from 'utils/rememberedSession';
-
-const run = keyframes`
-  from { transform: translateX(-100%); }
-  to { transform: translateX(260%); }
-`;
 
 // Геометрія — та сама, що в `.km-splash` з `public/index.html`: на весь
 // екран і з власним тлом. Тут стояло `min-height: 60vh` — знак центрувався в
@@ -24,54 +20,10 @@ const GateWrap = styled.div`
   gap: 18px;
 `;
 
-// Той самий знак, що й заставка в `public/index.html`: спінер після неї
-// читався як другий, інший екран очікування, а лейбл — і є очікування.
-const GateMark = styled.div`
-  font-size: 32px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--km-text, #1a1a1a);
-
-  span {
-    color: var(--km-accent, #c9600f);
-  }
-`;
-
-const GateBar = styled.div`
-  width: 112px;
-  height: 3px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--km-accent, #c9600f) 16%, transparent);
-  overflow: hidden;
-
-  span {
-    display: block;
-    width: 40%;
-    height: 100%;
-    border-radius: inherit;
-    background: var(--km-accent, #c9600f);
-    animation: ${run} 1.1s ease-in-out infinite;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    span {
-      width: 100%;
-      opacity: 0.5;
-      animation: none;
-    }
-  }
-`;
-
-const LoadingMark = () => (
-  <>
-    <GateMark aria-hidden="true">
-      KnowMe<span>.</span>
-    </GateMark>
-    <GateBar aria-hidden="true">
-      <span />
-    </GateBar>
-  </>
-);
+// Той самий знак, що й заставка в `public/index.html` (`BrandLoader`):
+// спінер після неї читався як другий, інший екран очікування, а лейбл — і є
+// очікування.
+const LoadingMark = () => <BrandLoader size="screen" />;
 
 /**
  * Межа входу: екран не монтується, поки не відомо, хто читач.

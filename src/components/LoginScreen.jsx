@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
+import BrandLoader from './BrandLoader';
 import { FaUser, FaLock, FaEye, FaEyeSlash, FaGlobe, FaChevronDown, FaTelegramPlane, FaEnvelope } from 'react-icons/fa';
 import { FcGoogle } from 'react-icons/fc';
 import toast from 'react-hot-toast';
@@ -513,31 +514,17 @@ const CustomCheckbox = styled.input`
   flex-shrink: 0;
 `;
 
+// Суцільне тло, як у заставки: крізь напівпрозоре розмите тло форма
+// проступала під лейблом (`BrandLoader`) і заважала його читати.
 const LoadingOverlay = styled.div`
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, var(--bg) 80%, transparent);
-  backdrop-filter: blur(2px);
+  background: var(--bg);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
   pointer-events: all;
-`;
-
-const Spinner = styled.div`
-  width: 44px;
-  height: 44px;
-  border: 4px solid var(--accent-light);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 `;
 
 // `authStatus` за замовчуванням — `'pending'`, а не `'in'`: «не сказали» мусить
@@ -1238,8 +1225,8 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   return (
     <Container>
       {isLoading && (
-        <LoadingOverlay>
-          <Spinner />
+        <LoadingOverlay role="status" aria-live="polite">
+          <BrandLoader size="screen" />
         </LoadingOverlay>
       )}
       <InnerContainer>
