@@ -351,7 +351,8 @@ const rememberTelegramContact = async ({ tgId, uid, profile }, { db, now }) => {
  * застосунок питав про неї після строку, — а людина, що закрила вкладку,
  * не питає вже ніколи. Тож `telegramLogins` накопичував кожен `/start` і
  * кожен незабраний номер (з телефоном і, до 07.11, з токеном входу) назавжди.
- * Тепер кожне оновлення від бота знімає те, що пережило строк із запасом
+ * Тепер оновлення від бота (не частіше за раз на хвилину на інстанс,
+ * `maybeSweepExpiredLogins`) знімає те, що пережило строк із запасом
  * (`LOGIN_SWEEP_GRACE_MS`: годинник браузера, який закриває спробу сам, може
  * відставати), і вказівники `telegramLoginsByTg` на зниклі спроби. Вузли
  * малі — лише живі спроби останніх хвилин, — тож читати їх цілком дешевше,
@@ -378,11 +379,24 @@ const sweepExpiredLogins = async ({ db, now }) => {
   // читаннями дає вказівник на спробу, якої знімок не бачив. Тож знімається
   // лише вказівник, що сам старий, або той, чию спробу щойно прибрано, —
   // інакше людина посеред входу діставала б «спробу не знайдено».
+  //
+  // Рішення про вказівник ухвалене за знімком, а свіжий `/start` може
+  // переписати його вже після читання — тож знімається він транзакцією й лише
+  // тоді, коли в базі лежить той самий вказівник (той самий `key` і `at`).
+  // Безумовний `set(null)` зносив би новий вказівник за старим рішенням, і
+  // контакт людини посеред входу діставав би `no-login`.
   const pointers = (await db.get(LOGINS_BY_TG_ROOT)) || {};
   for (const [tgId, pointer] of Object.entries(pointers)) {
     const key = pointer && pointer.key;
-    if (!removed.has(key) && !isStale(pointer && pointer.at)) continue;
-    await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
+    const at = pointer && pointer.at;
+    if (!removed.has(key) && !isStale(at)) continue;
+    await db.transaction(`${LOGINS_BY_TG_ROOT}/${tgId}`, current => {
+      // Перший виклик бачить порожній локальний кеш: `null` нічого не пише,
+      // а сервер, у якого запис є, покличе обробник ще раз уже з даними.
+      if (current === null) return null;
+      if (current.key !== key || current.at !== at) return undefined;
+      return null;
+    });
   }
   return removed.size;
 };
@@ -390,7 +404,7 @@ const sweepExpiredLogins = async ({ db, now }) => {
 const maybeSweepExpiredLogins = async deps => {
   if (deps.now - lastLoginSweepAt < LOGIN_SWEEP_INTERVAL_MS) return;
   lastLoginSweepAt = deps.now;
-  await maybeSweepExpiredLogins(deps);
+  await sweepExpiredLogins(deps);
 };
 
 /**
@@ -403,7 +417,7 @@ const handleTelegramUpdate = async (update, deps) => {
   const tgId = String(message.from.id);
   const chatId = message.chat.id;
 
-  await sweepExpiredLogins(deps).catch(() => {});
+  await maybeSweepExpiredLogins(deps).catch(() => {});
 
   try {
     if (message.contact) return await handleContact({ message, tgId, chatId }, deps);
@@ -570,6 +584,7 @@ module.exports = {
   LOGINS_ROOT,
   LOGIN_TTL_MS,
   MAX_CODE_ATTEMPTS,
+  maybeSweepExpiredLogins,
   sweepExpiredLogins,
   completeTelegramLogin,
   createAdminDb,

@@ -10,6 +10,7 @@ const {
   handleTelegramUpdate,
   hashNonce,
   isWebhookSecretValid,
+  maybeSweepExpiredLogins,
   normalizeTelegramPhone,
   parseStartPayload,
   sweepExpiredLogins,
@@ -332,12 +333,58 @@ test('прибирання: прострочені спроби й вказів�
       if (value === null) delete data[root][key];
       else data[root][key] = value;
     },
+    transaction: async (path, update) => {
+      const [root, key] = path.split('/');
+      const current = (data[root] || {})[key] ?? null;
+      const next = update(current);
+      if (next === undefined) return { committed: false };
+      if (next === null) delete data[root][key];
+      else data[root][key] = next;
+      return { committed: true };
+    },
   };
   assert.equal(await sweepExpiredLogins({ db, now }), 2);
   // Запас після строку: браузерний годинник може відставати, тож щойно
   // прострочену спробу ще не чіпаємо.
   assert.deepEqual(Object.keys(data.telegramLogins).sort(), ['fresh', 'grace']);
   assert.deepEqual(Object.keys(data.telegramLoginsByTg).sort(), ['2', '4']);
+});
+
+test('прибирання не зносить вказівник, який свіжий /start переписав після знімка', async () => {
+  const now = 10_000_000;
+  const stale = now - LOGIN_TTL_MS - 6 * 60 * 1000;
+  const db = memoryDb();
+  db.data.set('telegramLogins', {});
+  db.data.set('telegramLoginsByTg', { 7: { key: 'old', at: stale } });
+  db.data.set('telegramLoginsByTg/7', { key: 'old', at: stale });
+  const realGet = db.get;
+  db.get = async path => {
+    const value = await realGet(path);
+    // Знімок вказівників уже прочитано — тепер приходить новий `/start`.
+    if (path === 'telegramLoginsByTg') db.data.set('telegramLoginsByTg/7', { key: 'new', at: now });
+    return value;
+  };
+  await sweepExpiredLogins({ db, now });
+  assert.deepEqual(db.data.get('telegramLoginsByTg/7'), { key: 'new', at: now });
+});
+
+test('прибирання з вебхука — не частіше за раз на хвилину, і справді прибирає', async () => {
+  // Великі мітки часу, щоб попередні тести (з меншим `now`) не впливали на дросель.
+  const base = 9_000_000_000_000;
+  let reads = 0;
+  const db = {
+    get: async path => {
+      if (path === 'telegramLogins') reads += 1;
+      return null;
+    },
+    set: async () => {},
+    transaction: async () => ({ committed: false }),
+  };
+  await maybeSweepExpiredLogins({ db, now: base });
+  await maybeSweepExpiredLogins({ db, now: base + 1000 });
+  assert.equal(reads, 1);
+  await maybeSweepExpiredLogins({ db, now: base + 61_000 });
+  assert.equal(reads, 2);
 });
 
 test('збій прибирання вхід не зупиняє', async () => {
