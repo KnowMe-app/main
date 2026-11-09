@@ -9,6 +9,11 @@ name: Test and deploy Storage rules
 # проді є щось, чого репозиторій не знає, це видно до того, як воно зникне.
 # Правила не секрет — той самий файл лежить у публічному репозиторії.
 #
+# CORS бакета (`storage.cors.json`) іде тим самим шляхом: доти його ставили
+# руками `gsutil cors set`, і 03.11 бакет усе ще пускав лише старий домен, хоч
+# файл у репозиторії давно називав `knowme.pp.ua`, — фото, байти яких читає
+# код (мініатюри, копії для посилань), падали з «Failed to fetch».
+#
 # Ручний запуск з `deploy: false` лише показує різницю, нічого не міняючи.
 #
 # Потрібні секрети: FIREBASE_SERVICE_ACCOUNT, REACT_APP_STORAGE_BUCKET.
@@ -18,16 +23,18 @@ on:
     branches: [main]
     paths:
       - storage.rules
+      - storage.cors.json
       - scripts/storageRulesEmulatorTests.mjs
       - .github/workflows/deploy-storage-rules.yml
   pull_request:
     paths:
       - storage.rules
+      - storage.cors.json
       - scripts/storageRulesEmulatorTests.mjs
   workflow_dispatch:
     inputs:
       deploy:
-        description: 'Викотити правила (false — лише показати різницю з продом)'
+        description: 'Викотити правила й CORS (false — лише показати різницю з продом)'
         type: boolean
         default: false
 
@@ -83,11 +90,11 @@ jobs:
           [ -n "$SA" ] || { echo "::error::Немає секрету FIREBASE_SERVICE_ACCOUNT"; exit 1; }
           [ -n "$BUCKET" ] || { echo "::error::Немає секрету REACT_APP_STORAGE_BUCKET"; exit 1; }
 
-      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
       - name: Diff production rules against the repository
         env:
@@ -122,3 +129,31 @@ jobs:
           npx --yes firebase-tools@15.34.0 deploy --only storage \
             --project "$PROJECT_ID" --non-interactive --force
           echo "### Правила Storage викочено ✅" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Diff bucket CORS against the repository
+        env:
+          BUCKET: ${{ secrets.REACT_APP_STORAGE_BUCKET }}
+        # Обидва боки нормалізуються однаково (ключі за абеткою), тож різниця
+        # — це справді інший перелік доменів, методів чи заголовків.
+        run: |
+          gcloud storage buckets describe "gs://$BUCKET" --format=json \
+            | jq -S '.cors_config // []' > "$RUNNER_TEMP/prod.cors.json"
+          jq -S '.' storage.cors.json > "$RUNNER_TEMP/repo.cors.json"
+          {
+            echo "### CORS бакета: прод → репозиторій"
+            if diff -q "$RUNNER_TEMP/prod.cors.json" "$RUNNER_TEMP/repo.cors.json" > /dev/null; then
+              echo "Бакет уже збігається з репозиторієм."
+            else
+              echo '```diff'
+              diff -u --label prod "$RUNNER_TEMP/prod.cors.json" --label repo "$RUNNER_TEMP/repo.cors.json" || true
+              echo '```'
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply bucket CORS
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
+        env:
+          BUCKET: ${{ secrets.REACT_APP_STORAGE_BUCKET }}
+        run: |
+          gcloud storage buckets update "gs://$BUCKET" --cors-file=storage.cors.json
+          echo "### CORS бакета застосовано ✅" | tee -a "$GITHUB_STEP_SUMMARY"
