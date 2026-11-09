@@ -18,6 +18,7 @@ npm test                  # watch-режим
 CI=true npx react-scripts test --watchAll=false                          # весь набір один раз
 CI=true npx react-scripts test --testPathPattern "cardIndex" --watchAll=false   # одна сюїта
 npm run test:rules        # сценарії доступу в емуляторі RTDB (потрібна Java)
+npm run test:storage-rules  # сценарії доступу в емуляторі Storage (потрібна Java)
 cd functions && npm test  # Cloud Functions (лист підтвердження): node --test, без мережі
 ```
 

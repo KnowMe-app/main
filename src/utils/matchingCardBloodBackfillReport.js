@@ -1,4 +1,4 @@
-const DEPLOY_HINT = 'Викотіть правила: npx firebase deploy --only database';
+import { RULES_DEPLOY_HINT as DEPLOY_HINT } from './rulesDeployHint';
 
 /**
  * Звіт разової дописки групи крові словами.

@@ -19,6 +19,7 @@
 // навпаки, лишається в журналі (`editsHistory`): «чому цього немає в анкеті»
 // — питання, на яке відповідати доводиться.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { RULES_DEPLOY_HINT } from '../utils/rulesDeployHint';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 
@@ -419,8 +420,7 @@ export const OverlayReviewQueue = ({ onOpenCard }) => {
 
       {state.status === 'error' && (
         <ToolDrawerNote>
-          Не вдалося прочитати чергу: {state.error}. Найімовірніше, правила бази ще не
-          викочені — <code>npx firebase deploy --only database</code>.
+          Не вдалося прочитати чергу: {state.error}. {RULES_DEPLOY_HINT}.
         </ToolDrawerNote>
       )}
 

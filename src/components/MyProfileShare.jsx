@@ -528,7 +528,7 @@ const MyProfileShareBlock = ({ uid, getProfile, profile, roles = [], selectedRol
     } catch (error) {
       console.warn('[profileShare] посилання не створено', error);
       const message = error?.code === PROFILE_SHARE_ERRORS.rulesMissing
-        ? 'Посилання ще не можна створити: на сервері не оновлено правила бази.'
+        ? 'Посилання ще не можна створити: сервер відмовив. Спробуйте пізніше або напишіть адміністраторові.'
         : error?.code === PROFILE_SHARE_ERRORS.slotsFull
           ? 'Усі {count} посилань зайняті — відкличте одне, щоб створити нове.'
           : error?.code === PROFILE_SHARE_ERRORS.incomplete

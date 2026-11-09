@@ -16,6 +16,6 @@ describe('звіт дописки групи крові', () => {
       failed: [{ id: 'a', permissionDenied: true }, { id: 'b', permissionDenied: true }],
     });
     expect(tone).toBe('error');
-    expect(message).toContain('npx firebase deploy --only database');
+    expect(message).toContain('Test and deploy RTDB rules');
   });
 });
