@@ -33,6 +33,7 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "test:rules": "npx --yes firebase-tools@13 emulators:exec --only database --project demo-knowme-rules \"node scripts/rulesEmulatorTests.mjs\"",
+    "test:storage-rules": "npx --yes firebase-tools@13 emulators:exec --only storage --project demo-knowme-storage \"node scripts/storageRulesEmulatorTests.mjs\"",
     "eject": "react-scripts eject",
     "lint:js": "eslint src/**/*.{js,jsx}",
     "qa:pdf": "NODE_PATH=./src node scripts/pdfQaCheck.js",
