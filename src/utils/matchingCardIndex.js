@@ -125,15 +125,6 @@ const CSECTION_ALIASES = ['cSection', 'csection', 'c_section', 'cesareanSection'
  */
 export const MATCHING_CARD_PROGRAMS_AT_FIELD = 'programsAt';
 
-/** Поля картки, під які правила бази викочуються руками. */
-//
-// `audience` (публікація «лише для вподобаних», `utils/likedAudience`) тут теж:
-// поки правила його не знають, картка пишеться без нього — тобто з самим
-// `feedDate: false`, схованою від усіх. Відступ у бік приватності, а не
-// розкриття: режим обіцяв показати анкету меншому колу, і поки база його не
-// розуміє, вона не показує її нікому.
-export const MATCHING_CARD_PROGRAM_FIELDS = Object.freeze([MATCHING_CARD_PROGRAMS_AT_FIELD, 'seekingRole', 'agencyName', 'blood', MATCHING_CARD_AUDIENCE_FIELD]);
-
 /**
  * Ролі, які людина сховала (`hiddenRoles`, рядок кодів через кому — масив у
  * полі анкети читався б як історія версій). Донорка, яка ще й підбирає
@@ -145,15 +136,6 @@ export const parseHiddenRoles = value => [...new Set(String(Array.isArray(value)
   .filter(Boolean))];
 
 export const normalizeSeekingRole = value => encodeSeekingRoles(value);
-
-/**
- * «Кого шукають» словами, які приймає ще не викочене правило картки (`ed`,
- * `sm`, `both`): агенцію й клініку з набору знято. Цим значенням картка
- * пишеться ще раз, коли база відкинула набір з агенцією чи клінікою.
- */
-export const legacySeekingRole = value => encodeSeekingRoles(
-  String(normalizeSeekingRole(value)).split(',').filter(key => key === 'ed' || key === 'sm' || key === 'both'),
-);
 
 const trimmed = value => {
   if (value === null || value === undefined) return '';

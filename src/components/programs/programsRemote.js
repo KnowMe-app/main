@@ -1,7 +1,7 @@
 import { get, ref, remove, set, update } from 'firebase/database';
 import { database, isReactionPermissionDeniedError } from '../config';
 import { MATCHING_CARD_PROGRAMS_AT_FIELD } from '../../utils/matchingCardIndex';
-import { listProgramBonuses, listPrograms, PROGRAM_WISH_FIELDS } from '../../utils/donorPrograms';
+import { listProgramBonuses, listPrograms } from '../../utils/donorPrograms';
 import { setProgramsTransport } from '../../utils/programsStore';
 
 /*
@@ -32,111 +32,25 @@ const writeProgramsUpdate = (uid, items, at, { advertise = true } = {}) => {
   });
 };
 
-/**
- * Програми без кількості місяців щомісячної виплати.
+/*
+ * Запис програм — один `update` без відступів.
  *
- * `payments.monthly.months` — ключ, якого правила знають лише після ручного
- * викочування (`$other: false` на виплаті). Доти програма з ним відлітала б
- * цілком, разом із сумами, — тож запис повторюється без нього, а підсумок
- * рахує орієнтовні дев'ять місяців (`DEFAULT_MONTHLY_MONTHS`).
+ * Тут стояв ланцюжок «повторити без нових полів» (`stripMonthlyMonths`,
+ * `stripExtendedProgramFields`, `stripCustomCoverage`…): поки правила бази
+ * викочувались руками, `$other: false` відкидав програму з полем, якого прод
+ * ще не знав, і запис повторювався урізаним, а повна версія лишалась у
+ * браузері власниці. З 09.11 правила викочує CI після емулятора
+ * (`deploy-database-rules.yml`), тож прод знає ті самі поля, що й код, і
+ * відмова тепер означає справжню помилку — її треба бачити, а не тихо писати
+ * програму без вимог чи виплат.
  */
-export const stripMonthlyMonths = items => Object.fromEntries(Object.entries(items || {}).map(([id, program]) => {
-  const monthly = program?.payments?.monthly;
-  if (!monthly || monthly.months === undefined) return [id, program];
-  const { months: _months, ...rest } = monthly;
-  return [id, { ...program, payments: { ...program.payments, monthly: rest } }];
-}));
-
-/**
- * Поля програми, яких правила не знають до ручного викочування: вид суми,
- * «до …» з умовою, подробиці виплат графіка, рівні вимог, етапи, переїзд,
- * подробиці покриття, вибрані ознаки. На кожному з них `$other: false`
- * відкинув би програму цілком — тож запис повторюється без них, а повна
- * версія лишається в браузері власниці (`programsStore`).
- */
-// Найновіші поля — рід виплати (`guaranteed`: у суму програми чи
-// перемикачем у картці), а зі старших записів — `counting` і `featured`. Їх
-// знімається спершу окремо: правила, що вже знають решту розширених полів,
-// не мусять коштувати агенції назви, етапів і графіка лише через ці. Без
-// `guaranteed` у базі виплата бере типовий рід (`isGuaranteedPayment`).
-const NEWEST_PROGRAM_FIELDS = Object.freeze(['featured', 'customRequirements', 'customCoverage']);
-const NEWEST_PAYMENT_FIELDS = Object.freeze(['counting', 'guaranteed']);
-const EXTENDED_PROGRAM_FIELDS = Object.freeze(['name', 'payKind', 'payMax', 'startNow', 'requirementMeta', 'stages', 'relocation', 'coverageDetails', 'highlights', ...NEWEST_PROGRAM_FIELDS]);
-const EXTENDED_PAYMENT_FIELDS = Object.freeze(['when', 'condition', 'includes', ...NEWEST_PAYMENT_FIELDS]);
-
-const omit = (value, keys) => Object.fromEntries(Object.entries(value || {}).filter(([key]) => !keys.includes(key)));
-
-const stripProgramFields = (items, programFields, paymentFields) => Object.fromEntries(Object.entries(items || {}).map(([id, program]) => {
-  if (!program || typeof program !== 'object') return [id, program];
-  const next = omit(program, programFields);
-  if (program.payments) {
-    next.payments = Object.fromEntries(Object.entries(program.payments).map(([key, money]) => [key, omit(money, paymentFields)]));
-  }
-  if (Array.isArray(program.otherPayments)) next.otherPayments = program.otherPayments.map(item => omit(item, paymentFields));
-  if (Array.isArray(program.bonuses) && paymentFields.includes('condition')) next.bonuses = program.bonuses.map(item => omit(item, ['condition']));
-  return [id, next];
-}));
-
-export const stripExtendedProgramFields = items => stripProgramFields(items, EXTENDED_PROGRAM_FIELDS, EXTENDED_PAYMENT_FIELDS);
-export const stripNewestProgramFields = items => stripProgramFields(items, NEWEST_PROGRAM_FIELDS, NEWEST_PAYMENT_FIELDS);
-// Власні вимоги агенції (`customRequirements`) — найсвіжіше поле: правила,
-// що вже знають `guaranteed`, не мусять коштувати агенції роду виплат лише
-// через нього, тож спершу знімається саме воно.
-export const stripCustomRequirements = items => stripProgramFields(items, ['customRequirements'], []);
-// Своє в «Що ще дає програма» (`customCoverage`) — ще свіжіше: спершу
-// знімається лише воно, потім разом із власними вимогами.
-export const stripCustomCoverage = items => stripProgramFields(items, ['customCoverage'], []);
-
-/**
- * Програми без найновіших вимог (група крові, АМГ, «звідки не беруть») і з
- * коментарем у старій межі 600 знаків. Поки правила не викочено, ці поля
- * відкинули б програму цілком; знімаються вони першими й лишаються знятими
- * в кожному наступному відступі — усі старші версії правил їх теж не знають.
- */
-const LATEST_REQUIREMENT_FIELDS = Object.freeze(['bloodGroups', 'amhFrom', 'regionsExcluded']);
-const LEGACY_NOTE_MAX_LENGTH = 600;
-export const stripLatestRequirementFields = items => Object.fromEntries(Object.entries(items || {}).map(([id, program]) => {
-  if (!program || typeof program !== 'object') return [id, program];
-  const next = { ...program };
-  if (program.requirements) next.requirements = omit(program.requirements, LATEST_REQUIREMENT_FIELDS);
-  if (typeof program.note === 'string' && program.note.length > LEGACY_NOTE_MAX_LENGTH) next.note = program.note.slice(0, LEGACY_NOTE_MAX_LENGTH);
-  return [id, next];
-}));
-
-/**
- * Програми без побажань до донорки (`PROGRAM_WISH_FIELDS`: колір очей,
- * волосся, освіта). Найновіші поля — знімаються першими й лишаються знятими
- * в кожному наступному відступі.
- */
-export const stripProgramWishFields = items => Object.fromEntries(Object.entries(items || {}).map(([id, program]) => {
-  if (!program || typeof program !== 'object' || !program.requirements) return [id, program];
-  return [id, { ...program, requirements: omit(program.requirements, PROGRAM_WISH_FIELDS) }];
-}));
-
 export const writeProgramsToDb = async (uid, items, at, options = {}) => {
   try {
     await writeProgramsUpdate(uid, items, at, options);
   } catch (error) {
-    if (!isReactionPermissionDeniedError(error)) throw error;
-    // Від новішого до старішого: спершу без нових полів, далі ще й без
-    // кількості місяців — кожна з цих версій правил у проді вже бувала.
-    const withoutWishes = stripProgramWishFields(items);
-    const base = stripLatestRequirementFields(withoutWishes);
-    const fallbacks = [withoutWishes, base, stripCustomCoverage(base), stripCustomRequirements(stripCustomCoverage(base)), stripNewestProgramFields(base), stripExtendedProgramFields(base), stripMonthlyMonths(stripExtendedProgramFields(base))];
-    let previous = JSON.stringify(items);
-    for (const fallback of fallbacks) {
-      const serialized = JSON.stringify(fallback);
-      if (serialized === previous) continue;
-      previous = serialized;
-      try {
-        await writeProgramsUpdate(uid, fallback, at, options);
-        console.warn('[programs] правила бази ще не знають частини полів програм — програми записано без них, повна версія лишилась у цьому браузері. Викотіть правила: npx firebase deploy --only database', { uid });
-        return { partial: true };
-      } catch (retryError) {
-        if (!isReactionPermissionDeniedError(retryError)) throw retryError;
-      }
+    if (isReactionPermissionDeniedError(error)) {
+      console.warn('[programs] база не прийняла програми (PERMISSION_DENIED)', { uid });
     }
-    console.warn('[programs] база не прийняла програми — правила `multiData/programs` і `matchingCards/…/programsAt` викочуються руками: npx firebase deploy --only database', { uid });
     throw error;
   }
 };

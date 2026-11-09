@@ -475,36 +475,6 @@ describe('програми з оголошень: що зберігається'
   });
 });
 
-describe('запис програм, поки правила не викочені', () => {
-  // eslint-disable-next-line global-require
-  const { stripCustomCoverage, stripExtendedProgramFields } = require('../../components/programs/programsRemote');
-
-  it('своє в покритті знімається першим і окремо', () => {
-    const items = { p1: { id: 'p1', type: 'sm', coverage: ['housing'], customCoverage: ['Подарунок'], customRequirements: [{ text: 'x' }] } };
-    expect(stripCustomCoverage(items)).toEqual({ p1: { id: 'p1', type: 'sm', coverage: ['housing'], customRequirements: [{ text: 'x' }] } });
-  });
-
-  it('прибирає лише нові поля й лишає те, що правила вже приймають', () => {
-    const items = {
-      p1: {
-        id: 'p1', type: 'sm', name: 'X', payKind: 'total', startNow: true, location: 'Київ',
-        payments: { final: { amount: 1, currency: 'USD', when: 'потім' }, monthly: { amount: 2, currency: 'USD', months: 9, includes: { label: 'одяг', amount: 1, currency: 'USD' } } },
-        otherPayments: [{ label: 'a', amount: 3, currency: 'USD', condition: 'c' }],
-        bonuses: [{ label: 'b', amount: 4, currency: 'USD', condition: 'c' }],
-        stages: [{ stage: 'other', place: 'Львів' }], highlights: ['startNow'], requirementMeta: { age: { level: 'free' } },
-      },
-    };
-    expect(stripExtendedProgramFields(items)).toEqual({
-      p1: {
-        id: 'p1', type: 'sm', location: 'Київ',
-        payments: { final: { amount: 1, currency: 'USD' }, monthly: { amount: 2, currency: 'USD', months: 9 } },
-        otherPayments: [{ label: 'a', amount: 3, currency: 'USD' }],
-        bonuses: [{ label: 'b', amount: 4, currency: 'USD' }],
-      },
-    });
-  });
-});
-
 describe('доплати рахуються просто', () => {
   const usd = amount => ({ amount, currency: 'USD' });
 
@@ -643,14 +613,6 @@ describe('група крові, АМГ і звідки не беруть', () =
 
   it('коментар вміщає до 1000 знаків', () => {
     expect(normalizeProgram({ type: 'sm', note: 'x'.repeat(1200) }, 'p4').note).toHaveLength(1000);
-  });
-
-  it('поки правила не викочено, нові вимоги знімаються, а коментар коротшає до 600', () => {
-    // eslint-disable-next-line global-require
-    const { stripLatestRequirementFields } = require('../../components/programs/programsRemote');
-    const stripped = stripLatestRequirementFields({ p1: { ...program, note: 'x'.repeat(700) } });
-    expect(stripped.p1.requirements).toEqual({ rh: '+', marital: 'any', ownKids: 'any', csectionMax: 'any' });
-    expect(stripped.p1.note).toHaveLength(600);
   });
 });
 

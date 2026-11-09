@@ -116,9 +116,9 @@ const fetchPrograms = (uid, at) => {
     .then(data => {
       const items = data?.items && typeof data.items === 'object' ? data.items : {};
       // Власна, ще не дописана в базу версія (`pending`) не старша за базову —
-      // це та сама або новіша правка, і база її не перебиває: інакше власниця,
-      // глянувши на свою картку в стрічці, втрачала б поля, яких правила ще
-      // не приймають (`stripExtendedProgramFields`).
+      // це та сама або новіша правка (запис, що відлетів через мережу), і
+      // база її не перебиває: інакше власниця, глянувши на свою картку в
+      // стрічці, втрачала б щойно набране.
       const local = readEntry(uid);
       if (local?.pending && local.at >= (Number(data?.updatedAt) || 0)) return local.items;
       writeEntry(uid, { at: Number(data?.updatedAt) || at, items, pending: false });

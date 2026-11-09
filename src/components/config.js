@@ -89,8 +89,6 @@ import { PROFILE_CONTACT_FIELDS, PROFILE_NODES, resolveFieldOwnerNode, resolveCa
 import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_FEED_FIELD,
-  MATCHING_CARD_PROGRAM_FIELDS,
-  legacySeekingRole,
   MATCHING_CARD_PROGRAMS_AT_FIELD,
   MATCHING_CARD_ORDER_FIELD,
   MATCHING_CARD_REVIEW_FLAG_FIELD,
@@ -5793,49 +5791,13 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
     });
     if (programsVersionPatch === null) projectionPatch[MATCHING_CARD_PROGRAMS_AT_FIELD] = null;
 
-    try {
-      await update(buildMatchingCardRef(id), projectionPatch);
-    } catch (error) {
-      // Правила `matchingCards` закриті переліком полів (`$other: false`) і
-      // викочуються руками. Поки нові поля (`programsAt`, `seekingRole`) туди
-      // не доїхали, картка з ними
-      // відлітала б **цілком** — разом з імʼям, фото й датою публікації, — і
-      // стрічка показувала б агенцію старою. Тож без нових полів картка
-      // пишеться ще раз, а про причину каже консоль.
-      //
-      // Знімаються лише ті нові поля, яких у картці ще немає. Поле, що вже лежить
-      // у картці, правила прийняли — і перелік тут накопичувальний: поки
-      // знімалось усе підряд, очікування правила під `blood` переписувало картку
-      // без `agencyName` і `seekingRole`, яких тоді ж записувала стара база.
-      const unprovenFields = MATCHING_CARD_PROGRAM_FIELDS.filter(field => (
-        field in projection && !(existing && Object.prototype.hasOwnProperty.call(existing, field))
-      ));
-      const withoutPrograms = { ...projection };
-      unprovenFields.forEach(field => { delete withoutPrograms[field]; });
-      // «Кого шукають» з агенцією чи клінікою — нове значення поля, яке в
-      // картці вже лежить, тож переліком нових полів його не зняти: картка
-      // відлітала б цілком. Його переписує старими словами (лише донорка
-      // й СМ), а без них — знімає.
-      const seekingFallback = 'seekingRole' in withoutPrograms ? legacySeekingRole(withoutPrograms.seekingRole) : '';
-      const seekingDowngraded = 'seekingRole' in withoutPrograms && seekingFallback !== withoutPrograms.seekingRole;
-      if (seekingDowngraded) {
-        if (seekingFallback) withoutPrograms.seekingRole = seekingFallback;
-        else delete withoutPrograms.seekingRole;
-      }
-      if (!isReactionPermissionDeniedError(error) || (!unprovenFields.length && !seekingDowngraded)) throw error;
-      console.warn('[matchingCards] правила бази ще не приймають нових полів картки — картку записано без них. Викотіть правила: npx firebase deploy --only database', { userId: id, fields: seekingDowngraded ? [...unprovenFields, 'seekingRole'] : unprovenFields });
-      const fallbackPatch = { ...withoutPrograms };
-      independentlyOwnedFields.forEach(field => { delete fallbackPatch[field]; });
-      Object.keys(existing || {}).forEach(field => {
-        if (!(field in withoutPrograms) && !independentlyOwnedFields.has(field)) fallbackPatch[field] = null;
-      });
-      // Зняти версію схованої ролі можна завжди: правила не перевіряють того,
-      // що видаляється.
-      if (programsVersionPatch === null) fallbackPatch[MATCHING_CARD_PROGRAMS_AT_FIELD] = null;
-      await update(buildMatchingCardRef(id), fallbackPatch);
-      await restoreProgramsVersion();
-      return withoutPrograms;
-    }
+    // Правила `matchingCards` закриті переліком полів (`$other: false`). Тут
+    // стояв повтор запису без нових полів (`programsAt`, `seekingRole` з
+    // агенцією, `blood`, `audience`…), поки правила викочувались руками й
+    // відкидали картку з ними цілком. З 09.11 правила викочує CI разом з
+    // кодом, тож відмова — справжня помилка, і картку без полів, які людина
+    // щойно заповнила, тихо не пишемо: її ловить `catch` нижче.
+    await update(buildMatchingCardRef(id), projectionPatch);
     await restoreProgramsVersion();
     return projection;
   } catch (error) {

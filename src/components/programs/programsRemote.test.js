@@ -47,8 +47,9 @@ it('«Мій профіль» передає це писачеві через с
   expect(patch['matchingCards/U2/programsAt']).toBeNull();
 });
 
-it('без правила під побажання програма пишеться без них, а решта вимог лишається', () => {
-  const { stripProgramWishFields } = require('./programsRemote');
-  const items = { p1: { id: 'p1', type: 'ed', requirements: { bloodGroups: '2,3', eyeColors: 'Brown', education: 'higher' } } };
-  expect(stripProgramWishFields(items).p1.requirements).toEqual({ bloodGroups: '2,3' });
+it('відмову бази не обходить урізаним записом — кидає її далі', async () => {
+  mockUpdate.mockRejectedValue(new Error('PERMISSION_DENIED'));
+  const withWishes = { p1: { ...program, requirements: { bloodGroups: '2,3', eyeColors: 'Brown' } } };
+  await expect(writeProgramsToDb('U1', withWishes, 5)).rejects.toThrow('PERMISSION_DENIED');
+  expect(mockUpdate).toHaveBeenCalledTimes(1);
 });
