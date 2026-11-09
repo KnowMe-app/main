@@ -45,8 +45,17 @@ service firebase.storage {
       return request.auth != null && request.auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
     }
 
+    // Фото анкети читає кожен, хто увійшов (стрічка, пошук, перегляд на весь
+    // екран), і перелік фото однієї анкети — теж: стрічка добирає знімки
+    // картки без аватара лістингом її теки. А от перелік **кореня** `avatar/` —
+    // це список тек усіх анкет, тобто id кожної, зокрема схованої й
+    // видаленої, з дорогою до її фото. Його бачать лише повні адміни (роботи
+    // «Кеш фото на рік» і «Мініатюри фото») та інспектор. На переліку кореня
+    // `userId` порожній — за цим його й відрізняємо.
     match /avatar/{userId}/{allPaths=**} {
-      allow read: if request.auth != null;
+      allow get: if request.auth != null;
+      allow list: if request.auth != null
+        && (userId != '' || isFullAdmin() || isReadOnlyInspector());
       allow write: if request.auth.uid == userId || isFullAdmin();
     }
 

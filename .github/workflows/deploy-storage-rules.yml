@@ -1,0 +1,124 @@
+name: Test and deploy Storage rules
+
+# Правила Storage викочує CI, як і правила бази (`deploy-database-rules.yml`).
+# Доти `storage.rules` деплоївся руками з консолі, і прод міг тижнями жити не
+# тим, що в репозиторії, — вчора саме така розбіжність у правилах бази
+# зламала перебудову індексу першого ж дня після автодеплою.
+#
+# Тому перед деплоєм у Summary лягає різниця «прод → репозиторій»: якщо в
+# проді є щось, чого репозиторій не знає, це видно до того, як воно зникне.
+# Правила не секрет — той самий файл лежить у публічному репозиторії.
+#
+# Ручний запуск з `deploy: false` лише показує різницю, нічого не міняючи.
+#
+# Потрібні секрети: FIREBASE_SERVICE_ACCOUNT, REACT_APP_STORAGE_BUCKET.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - storage.rules
+      - scripts/storageRulesEmulatorTests.mjs
+      - .github/workflows/deploy-storage-rules.yml
+  pull_request:
+    paths:
+      - storage.rules
+      - scripts/storageRulesEmulatorTests.mjs
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Викотити правила (false — лише показати різницю з продом)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: storage-rules-deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: webringitapp
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Storage rules scenarios in the emulator
+        run: npm run test:storage-rules
+
+  deploy:
+    needs: test
+    # На PR з цього ж репозиторію крок біжить лише до різниці з продом: її
+    # видно ще до злиття, а не після автодеплою. PR з форку секретів не має.
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+      || (github.event_name != 'pull_request' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Check secrets
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          BUCKET: ${{ secrets.REACT_APP_STORAGE_BUCKET }}
+        run: |
+          [ -n "$SA" ] || { echo "::error::Немає секрету FIREBASE_SERVICE_ACCOUNT"; exit 1; }
+          [ -n "$BUCKET" ] || { echo "::error::Немає секрету REACT_APP_STORAGE_BUCKET"; exit 1; }
+
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
+
+      - name: Diff production rules against the repository
+        env:
+          BUCKET: ${{ secrets.REACT_APP_STORAGE_BUCKET }}
+        # Різниця йде і в Summary, і в журнал кроку (`tee`): журнал читається
+        # через API, тож звірку видно й тому, хто не відкриває сторінку прогону.
+        run: |
+          TOKEN="$(gcloud auth print-access-token)"
+          API="https://firebaserules.googleapis.com/v1"
+          RELEASE="$(curl -sS -H "Authorization: Bearer $TOKEN" "$API/projects/$PROJECT_ID/releases/firebase.storage/$BUCKET")"
+          RULESET="$(printf '%s' "$RELEASE" | jq -r '.rulesetName // empty')"
+          {
+            echo "### Правила Storage: прод → репозиторій"
+            if [ -z "$RULESET" ]; then
+              echo "У проді релізу правил не знайдено — викочується перший."
+            else
+              curl -sS -H "Authorization: Bearer $TOKEN" "$API/$RULESET" \
+                | jq -r '.source.files[0].content' > "$RUNNER_TEMP/prod.rules"
+              if diff -q "$RUNNER_TEMP/prod.rules" storage.rules > /dev/null; then
+                echo "Прод уже збігається з репозиторієм."
+              else
+                echo '```diff'
+                diff -u --label prod "$RUNNER_TEMP/prod.rules" --label repo storage.rules || true
+                echo '```'
+              fi
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy Storage rules
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
+        run: |
+          npx --yes firebase-tools@15.34.0 deploy --only storage \
+            --project "$PROJECT_ID" --non-interactive --force
+          echo "### Правила Storage викочено ✅" >> "$GITHUB_STEP_SUMMARY"

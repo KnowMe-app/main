@@ -1,0 +1,35 @@
+name: Lint and tests
+
+# Ті самі перевірки, що й у деплої (`deploy.yml`), але на PR: червоний тест
+# видно до злиття, а не в ту мить, коли він уже зупинив викочування сайту.
+# Нічого не збирає й не деплоїть.
+
+on:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint:js
+
+      - name: Tests
+        run: CI=true npx react-scripts test --watchAll=false
+
+      - name: Cloud Functions tests
+        run: cd functions && npm ci && npm test

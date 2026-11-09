@@ -5,6 +5,7 @@ import PrimaryNavigation from './PrimaryNavigation';
 import { PrimaryNavigationSlotProvider } from './PrimaryNavigationSlot';
 import { RequireAuth, ScreenLoading } from './RequireAuth';
 import { onAuthStateChanged } from 'firebase/auth';
+import { scheduleLatencyProbe } from './latencyProbeRemote';
 import toast from 'react-hot-toast';
 import { auth, loadViewerProfile, resetViewerAccessLevelCache } from './config';
 import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
@@ -130,6 +131,9 @@ export const App = () => {
         localStorage.setItem('userRole', userRole);
         persistCanCreateProfiles(canCreateProfilesForUser);
         setIsAccessResolved(true);
+        // Раз на добу з пристрою — скільки йде найменше читання бази
+        // (`utils/latencyProbe`): цифри для рішення про регіон бази.
+        scheduleLatencyProbe(user.uid);
       } else {
         localStorage.removeItem('ownerId');
         localStorage.removeItem('accessLevel');

@@ -432,6 +432,10 @@ describe('відхилене значення йде і з шару, і з searc
         return { exists: () => true, val: () => OVERLAY_TWO_PHONES.editorA };
       }
       if (path === 'multiData/edits/card-1') return { exists: () => true, val: () => OVERLAY_TWO_PHONES };
+      // Журнал читається порожнім: збій його чищення кидає навмисно
+      // (`throwOnError` у `purgeOverlayHistoryEntries`), а тут перевіряється
+      // інше — що непрочитана анкета не дає зняти ключ з індексу.
+      if (path === 'multiData/editsHistory/card-1') return { exists: () => false, val: () => null };
       throw new Error('PERMISSION_DENIED');
     });
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});

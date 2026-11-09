@@ -862,6 +862,20 @@
         }
       }
     },
+    "latencyProbes": {
+      ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1')",
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid",
+        ".validate": "newData.hasChildren()",
+        "$day": {
+          ".validate": "newData.hasChildren() && $day.matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)",
+          "$bucket": {
+            ".validate": "$bucket.matches(/^(le100|le200|le300|le500|le800|le1500|le3000|over)$/) && newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000"
+          }
+        }
+      }
+    },
     "profileShares": {
       ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
       "$token": {

@@ -1,0 +1,102 @@
+name: Test and deploy Cloud Functions
+
+# Cloud Functions (листи, видалення акаунта, вхід через Telegram) викочує CI
+# після власних тестів (`functions/test`, без мережі). Доти їх деплоїли руками,
+# і частина коду в репозиторії стояла з приміткою «поки функцію не розгорнуто…».
+#
+# `firebase deploy --only functions --force` мовчки **видаляє** в проді
+# функції, яких немає в коді. Тому перед деплоєм розгорнуті функції звіряються
+# з експортами `functions/index.js`: зайва в проді — зупинка з поясненням, а не
+# тихе видалення. Видалити функцію — рішення людини, не CI.
+#
+# Потрібні секрети репозиторію: FIREBASE_SERVICE_ACCOUNT. Секрети самих
+# функцій (BREVO_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET) мусять
+# уже лежати в Secret Manager — інакше деплой відмовить і назве, якого бракує.
+
+on:
+  # Сам файл воркфлоу тригером не стоїть навмисно: перше розгортання —
+  # вручну, спершу з `deploy: false`, щоб побачити звірку з продом.
+  push:
+    branches: [main]
+    paths:
+      - functions/**
+  pull_request:
+    paths:
+      - functions/**
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Розгорнути функції (false — лише тести й звірка з продом)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: functions-deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: webringitapp
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Functions tests
+        run: cd functions && npm ci && npm test
+
+  deploy:
+    needs: test
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+      || (github.event_name != 'pull_request' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Check secret
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          [ -n "$SA" ] || { echo "::error::Немає секрету FIREBASE_SERVICE_ACCOUNT"; exit 1; }
+
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Install functions dependencies
+        run: cd functions && npm ci
+
+      - name: Compare deployed functions with the code
+        run: |
+          grep -oE '^exports\.[A-Za-z0-9_]+' functions/index.js | sed 's/^exports\.//' | sort -u > "$RUNNER_TEMP/code.txt"
+          npx --yes firebase-tools@15.34.0 functions:list --project "$PROJECT_ID" --json > "$RUNNER_TEMP/list.json"
+          jq -r '.result[]? | (.id // .name // empty)' "$RUNNER_TEMP/list.json" | sed 's#.*/##' | sort -u > "$RUNNER_TEMP/prod.txt"
+          ONLY_PROD="$(comm -13 "$RUNNER_TEMP/code.txt" "$RUNNER_TEMP/prod.txt")"
+          ONLY_CODE="$(comm -23 "$RUNNER_TEMP/code.txt" "$RUNNER_TEMP/prod.txt")"
+          {
+            echo "### Cloud Functions: прод проти коду"
+            echo "- У коді й у проді: $(comm -12 "$RUNNER_TEMP/code.txt" "$RUNNER_TEMP/prod.txt" | paste -sd ', ' -)"
+            echo "- Лише в коді (буде розгорнуто вперше): ${ONLY_CODE:-немає}" | paste -sd ' ' -
+            echo "- Лише в проді (деплой їх видалив би): ${ONLY_PROD:-немає}" | paste -sd ' ' -
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$ONLY_PROD" ]; then
+            echo "::error::У проді є функції, яких немає в коді: $(echo $ONLY_PROD). Деплой їх видалив би — зупиняюсь. Видаліть їх свідомо (firebase functions:delete) або поверніть у код."
+            exit 1
+          fi
+
+      - name: Deploy functions
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
+        run: |
+          npx --yes firebase-tools@15.34.0 deploy --only functions \
+            --project "$PROJECT_ID" --non-interactive --force
+          echo "### Cloud Functions розгорнуто ✅" >> "$GITHUB_STEP_SUMMARY"

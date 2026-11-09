@@ -109,7 +109,9 @@ describe('matching row structure', () => {
     const styles = rowStyles();
     const photo = styles.slice(styles.indexOf('export const Photo = styled.div`'));
     expect(photo).toContain('aspect-ratio: 4 / 5;');
-    expect(photo).toContain('max-height: 58vh;');
+    // Стелю висоти зменшили 29.09: імʼя й метрики мусять бути видно разом із
+    // фото без гортання навіть на телефоні.
+    expect(photo).toContain('max-height: min(40vh, 320px);');
     // Від краю до краю картки: підкладку знімає відʼємний відступ на її
     // власне поле, а не окреме правило десь поруч.
     expect(photo).toContain(`margin: -\${CARD_PADDING} -\${CARD_PADDING} 9px;`);
@@ -139,8 +141,15 @@ describe('matching row structure', () => {
   });
 
   it('clamps a comment to two lines', () => {
-    expect(rowStyles()).toContain('-webkit-line-clamp: 2;');
-    expect(rowStyles()).not.toContain('-webkit-line-clamp: 3;');
+    // Саме коментар (`CommentText`), а не файл цілком: опис організації
+    // (`OrganisationAboutText`) з 06.10 свідомо згортається до трьох рядків.
+    const styles = rowStyles();
+    const comment = styles.slice(
+      styles.indexOf('export const CommentText = styled.p`'),
+      styles.indexOf('`;', styles.indexOf('export const CommentText = styled.p`')),
+    );
+    expect(comment).toContain('-webkit-line-clamp: 2;');
+    expect(comment).not.toContain('-webkit-line-clamp: 3;');
   });
 
   it('spends the accent colour only on the favourite action', () => {

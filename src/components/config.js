@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app';
+import { RULES_DEPLOY_HINT } from '../utils/rulesDeployHint';
 import { getAuth } from 'firebase/auth';
 import { getDownloadURL as firebaseGetDownloadURL, getStorage, uploadBytes, ref, deleteObject, listAll as firebaseListAll, getBytes, getMetadata, updateMetadata } from 'firebase/storage';
 import {
@@ -943,7 +944,7 @@ const syncLikedAudienceAfterReaction = async (ownerId, viewerId, favoriteValue) 
     announceLikedAudienceChange({ viewerId: viewer, opened: Boolean(favoriteValue) });
   } catch (error) {
     console.warn(
-      '[likedAudience] вподобання збережено, але перелік відкритих анкет не оновлено. Викотіть правила: npx firebase deploy --only database',
+      `[likedAudience] вподобання збережено, але перелік відкритих анкет не оновлено. ${RULES_DEPLOY_HINT}`,
       { ownerId: owner, viewerId: viewer, error },
     );
   }
@@ -966,7 +967,7 @@ export const setOwnLikedAudienceEntries = async (ownerId, enabled) => {
     return { ok: true, count };
   } catch (error) {
     console.warn(
-      '[likedAudience] не вдалося оновити перелік відкритих анкет. Викотіть правила: npx firebase deploy --only database',
+      `[likedAudience] не вдалося оновити перелік відкритих анкет. ${RULES_DEPLOY_HINT}`,
       { ownerId: owner, enabled, error },
     );
     return { ok: false, count: 0, error };
@@ -6604,10 +6605,9 @@ const buildBackfillProjection = async (rawProfile, userId, includeStorageAvatars
  * доводиться лістити Storage. Це саме та робота, яку раніше робив кожен
  * переглядач при кожному завантаженні стрічки; тут вона робиться один раз.
  */
-// PERMISSION_DENIED тут майже завжди означає одне: правила бази ще не викочені,
-// і вузла `matchingCards` для них не існує — тоді діє заборона з кореня. Сира
-// відповідь Firebase цього не каже й не підказує, що робити, тож перекладаємо її
-// в текст, з якого видно і причину, і два виходи.
+// PERMISSION_DENIED тут — або червоний прогін правил (вони не доїхали), або
+// справжня межа доступу. Сира відповідь Firebase цього не каже й не підказує,
+// що робити, тож перекладаємо її в текст, з якого видно і причину, і вихід.
 const MATCHING_CARDS_FAILURE_STAGES = {
   read: 'читання анкет',
   cleanup: 'прибирання застарілих карток у matchingCards',
@@ -6619,9 +6619,7 @@ const describeMatchingCardsFailure = (error, { stage }) => {
 
   const where = MATCHING_CARDS_FAILURE_STAGES[stage] || stage;
   const explained = new Error(
-    `Немає доступу: ${where}. Найімовірніше, не викочені правила бази — вузлів `
-      + '`matchingCards` для правил ще не існує, тож діє заборона '
-      + 'з кореня. Виконайте `firebase deploy --only database`. Або зберіть '
+    `Немає доступу: ${where}. ${RULES_DEPLOY_HINT}. Або зберіть `
       + 'matchingCards.json локально і залийте його вручну: ручний імпорт іде повз правила.',
   );
   explained.cause = error;

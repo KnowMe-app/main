@@ -3031,7 +3031,7 @@ export const MyProfile = () => {
       if (!cardShared) {
         rememberOwnLikedAudience(ownerUid, false);
         toast.error(uiText(
-          'Анкету сховано від усіх, але показ лише вподобаним ще не діє: базу ще не оновлено. Спробуйте пізніше або напишіть адміністраторові',
+          'Анкету сховано від усіх, але показ лише вподобаним увімкнути не вдалося. Спробуйте ще раз або напишіть адміністраторові',
           language,
         ), { duration: 8000 });
         return;
@@ -3040,7 +3040,7 @@ export const MyProfile = () => {
       if (entries.ok) setLikedAudienceCount(entries.count);
       if (!entries.ok) {
         toast.error(uiText(
-          'Анкету відкрито лише вподобаним, але агенції поки не знайдуть її у стрічці: базу ще не оновлено',
+          'Анкету відкрито лише вподобаним, але агенції поки не знайдуть її у стрічці. Спробуйте ще раз пізніше',
           language,
         ), { duration: 8000 });
       } else {

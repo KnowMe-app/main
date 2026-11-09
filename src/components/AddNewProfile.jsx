@@ -1,4 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { RULES_DEPLOY_HINT } from '../utils/rulesDeployHint';
+import { readLatencySummary } from './latencyProbeRemote';
+import { formatLatencySummary } from '../utils/latencyProbe';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import BrandLoader from './BrandLoader';
@@ -4364,6 +4367,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     alert(`Loaded cards: ${Object.keys(users || {}).length}`);
   };
 
+  /*
+   * Затримка бази з телефонів справжніх читачів (`utils/latencyProbe`): кожен
+   * пристрій раз на добу міряє найменше читання й кладе його в кошик. Зведення
+   * — одне читання вузла цілком, тож воно на явне натискання.
+   */
+  const handleShowLatencySummary = async () => {
+    const toastId = 'latency-summary';
+    toast.loading('Читаю заміри затримки…', { id: toastId });
+    try {
+      const summary = await readLatencySummary({ days: 7 });
+      toast.success(formatLatencySummary(summary), { id: toastId, duration: 20000 });
+    } catch (error) {
+      toast.error(`Заміри не прочитано: ${error?.message || error}`, { id: toastId });
+    }
+  };
+
   const handleClearCache = () => {
     clearAllCardsCache();
     localStorage.removeItem(SEARCH_KEY);
@@ -5002,13 +5021,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
       if (stats.failed || stats.unreadableOwnerIds.length) {
         console.error('[AddNewProfile] legacy comments migration failures', stats.failures);
-        // Звіт «перенесено 0/1» без причини не каже нічого, а причина майже
-        // завжди одна й та сама — правила бази ще не викочені, бо CI їх не
-        // викочує. Тому вона названа прямо в тості, разом з командою.
+        // Звіт «перенесено 0/1» без причини не каже нічого, тож причина названа
+        // прямо в тості. Правила тепер викочує CI, і відмова означає червоний
+        // прогін або справжню межу доступу (`RULES_DEPLOY_HINT`).
         const reason = stats.unreadableOwnerIds.length
           ? `Не прочитано власників: ${stats.unreadableOwnerIds.join(', ')}. Їхні записи не змінено.`
           : stats.permissionDenied
-          ? 'База відмовила (PERMISSION_DENIED): правила ще не викочені — npx firebase deploy --only database'
+          ? `База відмовила (PERMISSION_DENIED). ${RULES_DEPLOY_HINT}.`
           // Картку теж називаємо: коли з пачки падає одна, шукати її очима по
           // всій партії — це та сама робота, що вже зроблена тут.
           : stats.failures[0]
@@ -6219,7 +6238,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   <ToolGroup>
                     <ToolGroupTitle>
                       Сервіс
-                      <ToolGroupNote>кеш браузера, без бекенду</ToolGroupNote>
+                      <ToolGroupNote>кеш браузера й замір бази</ToolGroupNote>
                     </ToolGroupTitle>
                     <ToolRow>
                       <ToolButton
@@ -6242,6 +6261,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                         title="Зберегти load debug log у файл"
                       >
                         Лог завантаження
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        onClick={handleShowLatencySummary}
+                        title="Зведення замірів затримки бази з пристроїв читачів за тиждень (одне читання)"
+                      >
+                        Затримка бази
                       </ToolButton>
                     </ToolRow>
                   </ToolGroup>

@@ -47,7 +47,7 @@ describe('describePublicReviewFlagBackfill', () => {
     });
     expect(tone).toBe('error');
     expect(message).toContain('Не вдалося: 7 — a, b, c, d, e і ще 2');
-    expect(message).toContain('npx firebase deploy --only database');
+    expect(message).toContain('Test and deploy RTDB rules');
   });
 
   it('shows the first non-permission failure with its card id', () => {

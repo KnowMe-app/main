@@ -101,10 +101,11 @@ describe('пошук у matching для читача без повного до�
   // хвіст не ставить, доки стрічка має сторінки (`matchingDraftPlacement.test`).
   it('чернетки стоять у деці за датою, а не в хвості пагінації', () => {
     const source = matchingSource();
-    const merge = source.slice(
-      source.indexOf('const visibleUsers = useMemo(() => mergeMatchingCandidateUsers({'),
-      source.indexOf('additionalAccessUsers,\n    sharedReactionCandidateUsers,'),
-    );
+    // Злиття деки обгорнуте в `liftReturnedCards` (повернене з колекції стоїть
+    // на початку «Усіх»), тож межу шукаємо за самим викликом злиття.
+    const start = source.indexOf('const visibleUsers = useMemo(() => liftReturnedCards(mergeMatchingCandidateUsers({');
+    const merge = source.slice(start, source.indexOf('additionalAccessUsers,\n    likedAudienceUsers,', start));
+    expect(start).toBeGreaterThan(-1);
     expect(merge).toContain('drafts: initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS,');
     expect(merge).toContain('hasMore,');
     expect(merge).not.toContain('[...users, ...(initialPublicWindowComplete');

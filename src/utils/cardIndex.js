@@ -264,6 +264,33 @@ const saveJson = (key, value, { debounceMs = 0 } = {}) => {
   pendingSaveTimers.set(key, setTimeout(() => flushSaveJson(key), debounceMs));
 };
 
+/**
+ * Дописати в `localStorage` усе, що чекає на таймер.
+ *
+ * Записи кеша відкладені (300–800 мс), щоб серія правок лягала одним записом.
+ * Але вкладку закривають і ховають саме після дії — серце, памʼятка, правка
+ * анкети, — і відкладене в цей момент губилось: таймер не встигав, а
+ * наступне відкриття бачило кеш без щойно зробленого. Тож на `pagehide` і
+ * сховану вкладку черга дописується одразу. Тести кличуть це перед читанням
+ * сирого `localStorage`.
+ */
+export const flushPendingMatchingCacheWrites = () => {
+  [...pendingSaveTimers.keys()].forEach(key => {
+    const timer = pendingSaveTimers.get(key);
+    if (timer) clearTimeout(timer);
+    flushSaveJson(key);
+  });
+};
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('pagehide', flushPendingMatchingCacheWrites);
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushPendingMatchingCacheWrites();
+    });
+  }
+}
+
 export const loadCards = () => {
   const parsed = loadJson(CARDS_KEY);
   const cards = unwrapVersionedCards(parsed);

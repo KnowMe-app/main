@@ -1310,10 +1310,10 @@ const EN_BY_UK = {
     'Seen right now by: {count}. Remove a like and the profile closes for them at once.',
   'Вподобайте агенцію, клініку чи біологічних батьків у стрічці — і вони одразу побачать анкету. Знімете вподобання — і для них вона закриється.':
     'Like an agency, a clinic or intended parents in the feed and they will see the profile straight away. Remove the like and it closes for them.',
-  'Анкету сховано від усіх, але показ лише вподобаним ще не діє: базу ще не оновлено. Спробуйте пізніше або напишіть адміністраторові':
-    'The profile is hidden from everyone, but showing it to liked ones does not work yet: the database has not been updated. Try later or contact the administrator',
-  'Анкету відкрито лише вподобаним, але агенції поки не знайдуть її у стрічці: базу ще не оновлено':
-    'The profile is open to liked ones only, but agencies cannot find it in the feed yet: the database has not been updated',
+  'Анкету сховано від усіх, але показ лише вподобаним увімкнути не вдалося. Спробуйте ще раз або напишіть адміністраторові':
+    'The profile is hidden from everyone, but showing it only to liked ones could not be turned on. Try again or contact the administrator',
+  'Анкету відкрито лише вподобаним, але агенції поки не знайдуть її у стрічці. Спробуйте ще раз пізніше':
+    'The profile is open only to liked ones, but agencies will not find it in the feed yet. Try again later',
   'Анкету бачать лише ті, кого ви вподобали': 'Only those you liked can see the profile',
   'Анкету сховано від усіх. Її побачать ті, кого ви вподобаєте': 'The profile is hidden from everyone. Those you like will see it',
   'Ви вподобали — тепер вони бачать вашу анкету': 'Liked — they can now see your profile',
@@ -1523,7 +1523,7 @@ const EN_BY_UK = {
   'Посилання скопійовано': 'Link copied',
   'Посилання створено': 'Link created',
   'Фото не скопіювались ({count}) — посилання створено без них.': 'Photos could not be copied ({count}) — the link was created without them.',
-  'Посилання ще не можна створити: на сервері не оновлено правила бази.': 'Links cannot be created yet: the database rules on the server have not been updated.',
+  'Посилання ще не можна створити: сервер відмовив. Спробуйте пізніше або напишіть адміністраторові.': 'Links cannot be created yet: the server refused. Try later or contact the administrator.',
   'Усі {count} посилань зайняті — відкличте одне, щоб створити нове.': 'All {count} links are in use — revoke one to create a new one.',
   'Щоб поділитися анкетою, вкажіть імʼя.': 'Add your name to share your profile.',
   'Щоб поділитися анкетою, вкажіть телефон. Показувати його за посиланням чи ні — вирішуєте ви.': 'Add a phone number to share your profile. Whether the link shows it is up to you.',

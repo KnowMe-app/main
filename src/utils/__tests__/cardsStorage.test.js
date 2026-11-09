@@ -1,9 +1,34 @@
 import { updateCard, getCardsByList, addCardToList } from '../cardsStorage';
-import { setIdsForQuery } from '../cardIndex';
+import {
+  setIdsForQuery,
+  loadCards,
+  saveCards,
+  getQueryEntry,
+  resetMatchingLocalStorageCache,
+  flushPendingMatchingCacheWrites,
+} from '../cardIndex';
+
+// Кеш карток тримає копію в памʼяті й пише в `localStorage` із затримкою, а
+// самі картки лежать в обгортці з версією й власником. Тож стан між тестами
+// скидає `resetMatchingLocalStorageCache` (самого `localStorage.clear()` мало —
+// памʼять лишалась), а читається він через `loadCards`, не сирим `getItem`.
+const SIX_HOURS = 6 * 60 * 60 * 1000;
+
+const seedExpiredFavorite = (card, expired) => {
+  saveCards({ '1': { ...card, cachedAt: expired } }, { immediate: true });
+  const now = Date.now;
+  Date.now = () => expired;
+  try {
+    setIdsForQuery('favorite', ['1']);
+  } finally {
+    Date.now = now;
+  }
+};
 
 describe('cardsStorage', () => {
   beforeEach(() => {
     localStorage.clear();
+    resetMatchingLocalStorageCache('test');
   });
 
   it('returns fromCache false when list is empty', async () => {
@@ -17,7 +42,8 @@ describe('cardsStorage', () => {
   it('updates card and triggers remote save', () => {
     const remoteSave = jest.fn().mockResolvedValue(undefined);
     const card = updateCard('1', { title: 'Card 1' }, remoteSave);
-    const stored = JSON.parse(localStorage.getItem('cards'));
+    flushPendingMatchingCacheWrites();
+    const stored = loadCards();
     expect(stored['1'].title).toBe('Card 1');
     expect(remoteSave).toHaveBeenCalledWith({ title: 'Card 1', userId: '1' });
     expect(card).toHaveProperty('cachedAt');
@@ -26,10 +52,16 @@ describe('cardsStorage', () => {
     expect(card.lastAction).toBeUndefined();
   });
 
+  it('пише в localStorage одразу на flush, а не чекає таймера', () => {
+    updateCard('1', { title: 'Card 1' });
+    flushPendingMatchingCacheWrites();
+    expect(localStorage.getItem('cards')).toContain('Card 1');
+  });
+
   it('removes specified keys from card', () => {
     updateCard('1', { title: 'Old', email: 'a' });
     updateCard('1', { title: 'New' }, undefined, ['email']);
-    const stored = JSON.parse(localStorage.getItem('cards'));
+    const stored = loadCards();
     expect(stored['1'].email).toBeUndefined();
     expect(stored['1'].title).toBe('New');
   });
@@ -41,14 +73,8 @@ describe('cardsStorage', () => {
     updateCard('1', { title: 'Updated' });
 
     const remoteFetch = jest.fn();
-    const { cards: load2Cards, fromCache: fromCache1 } = await getCardsByList(
-      'load2',
-      remoteFetch,
-    );
-    const { cards: favoriteCards, fromCache: fromCache2 } = await getCardsByList(
-      'favorite',
-      remoteFetch,
-    );
+    const { cards: load2Cards, fromCache: fromCache1 } = await getCardsByList('load2', remoteFetch);
+    const { cards: favoriteCards, fromCache: fromCache2 } = await getCardsByList('favorite', remoteFetch);
 
     expect(remoteFetch).not.toHaveBeenCalled();
     expect(fromCache1).toBe(true);
@@ -58,33 +84,22 @@ describe('cardsStorage', () => {
   });
 
   it('refreshes expired card from backend', async () => {
-    const SIX_HOURS = 6 * 60 * 60 * 1000;
     const expired = Date.now() - SIX_HOURS - 1000;
-    const oldCard = { userId: '1', title: 'Old', lastAction: expired };
-    localStorage.setItem('cards', JSON.stringify({ '1': oldCard }));
-    setIdsForQuery('favorite', ['1']);
-    // expire list entry
-    const queries = JSON.parse(localStorage.getItem('queries'));
-    queries['favorite'].cachedAt = expired;
-    localStorage.setItem('queries', JSON.stringify(queries));
+    seedExpiredFavorite({ userId: '1', title: 'Old' }, expired);
+    expect(getQueryEntry('favorite')?.cachedAt).toBe(expired);
 
-    const remoteFetch = jest
-      .fn()
-      .mockResolvedValue({ userId: '1', title: 'Fresh' });
+    const remoteFetch = jest.fn().mockResolvedValue({ userId: '1', title: 'Fresh' });
     const { cards, fromCache } = await getCardsByList('favorite', remoteFetch);
 
     expect(remoteFetch).toHaveBeenCalledWith('1');
     expect(fromCache).toBe(false);
     expect(cards[0].title).toBe('Fresh');
-    const stored = JSON.parse(localStorage.getItem('cards'));
-    expect(stored['1'].title).toBe('Fresh');
+    expect(loadCards()['1'].title).toBe('Fresh');
   });
 
   it('returns stale cards from cache when list is fresh', async () => {
-    const SIX_HOURS = 6 * 60 * 60 * 1000;
     const expired = Date.now() - SIX_HOURS - 1000;
-    const oldCard = { userId: '1', title: 'Old', lastAction: expired };
-    localStorage.setItem('cards', JSON.stringify({ '1': oldCard }));
+    saveCards({ '1': { userId: '1', title: 'Old', cachedAt: expired } }, { immediate: true });
     setIdsForQuery('favorite', ['1']);
 
     const remoteFetch = jest.fn();
@@ -95,4 +110,3 @@ describe('cardsStorage', () => {
     expect(cards[0].title).toBe('Old');
   });
 });
-

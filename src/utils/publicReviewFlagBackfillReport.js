@@ -7,7 +7,7 @@
 // причину та картки, бо шукати їх очима по двохсот id — та сама робота, що вже
 // зроблена в звіті.
 
-const DEPLOY_HINT = 'Правила бази ще не викочені — npx firebase deploy --only database';
+import { RULES_DEPLOY_HINT as DEPLOY_HINT } from './rulesDeployHint';
 const LISTED_IDS_MAX = 5;
 
 const listIds = ids => {
