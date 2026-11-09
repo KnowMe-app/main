@@ -1,7 +1,7 @@
-// Поки правило під нове поле картки не викочено, писач повторює запис без
-// нього. Повторювати треба без **нового** поля, а не без усього переліку:
-// поле, що вже лежить у картці, база прийняла раніше, і зняти його означало б
-// тихо стерти чинні дані — назву агенції чи «кого шукаємо».
+// Правила бази викочує CI разом з кодом (09.11), тож писач картки більше не
+// повторює запис «без нових полів». Відмова бази — справжня помилка: картку
+// не переписують урізаною (без групи крові, яку людина щойно вписала), а
+// лишають як була й кажуть про збій.
 
 jest.mock('firebase/app', () => ({ initializeApp: () => ({}) }));
 jest.mock('firebase/auth', () => ({ getAuth: () => ({ currentUser: { uid: '0ghb1LphfASV0Y3b6J010v4CDyD2' } }) }));
@@ -25,10 +25,9 @@ const { syncMatchingCardIndex } = require('./config');
 
 const ID = 'agencyDonorUid0000000000000';
 
-it('без правила під blood картка зберігає назву агенції, яку вже мала', async () => {
+it('відмова бази не переписує картку урізаною', async () => {
   const card = {};
   mockUpdate.mockImplementation(async (_path, patch) => {
-    // Стара база: `blood` у картці ще не знає.
     if ('blood' in patch && patch.blood !== null) throw new Error('PERMISSION_DENIED: Permission denied');
     Object.entries(patch).forEach(([key, value]) => {
       if (value === null) delete card[key];
@@ -37,16 +36,18 @@ it('без правила під blood картка зберігає назву 
   });
   const existingCard = { name: 'Ірина', role: ['ed', 'ag'], agencyName: 'Мрія', feedDate: '2026-10-01' };
   Object.assign(card, existingCard);
+  const error = jest.spyOn(console, 'error').mockImplementation(() => {});
   const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-  await syncMatchingCardIndex(ID, {
+  const result = await syncMatchingCardIndex(ID, {
     name: 'Ірина', role: ['ed', 'ag'], agencyName: 'Мрія', blood: '2+',
     publish: true, lastLogin2: '2026-10-04',
   }, { existingCard, avatar: '' });
 
-  expect(card.agencyName).toBe('Мрія');
-  expect(card.feedDate).toBe('2026-10-04');
-  expect(card.blood).toBeUndefined();
-  expect(warn).toHaveBeenCalledWith(expect.stringContaining('правила бази'), expect.objectContaining({ fields: ['blood'] }));
+  expect(result).toBeNull();
+  expect(mockUpdate).toHaveBeenCalledTimes(1);
+  expect(card).toEqual(existingCard);
+  expect(error).toHaveBeenCalled();
+  error.mockRestore();
   warn.mockRestore();
 });

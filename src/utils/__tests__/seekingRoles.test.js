@@ -1,5 +1,5 @@
 import { encodeSeekingRoles, parseSeekingRoles, toggleSeekingRole } from '../donorPrograms';
-import { buildMatchingCardProjection, legacySeekingRole, normalizeSeekingRole } from '../matchingCardIndex';
+import { buildMatchingCardProjection, normalizeSeekingRole } from '../matchingCardIndex';
 
 describe('кого шукають біологічні батьки — набір', () => {
   it('старе «Обох» читається як донорка й СМ, незнайоме відкидається', () => {
@@ -17,10 +17,8 @@ describe('кого шукають біологічні батьки — набі
     expect(toggleSeekingRole('ag', 'ag')).toBe('');
   });
 
-  it('картка несе набір, а запасне значення — лише донорку й СМ', () => {
+  it('картка несе набір', () => {
     expect(normalizeSeekingRole('ed,ag')).toBe('ed,ag');
-    expect(legacySeekingRole('ed,sm,ag')).toBe('both');
-    expect(legacySeekingRole('ag,cl')).toBe('');
     expect(buildMatchingCardProjection('u1', { seeking: 'ag,cl', userRole: 'ip' }).seekingRole).toBe('ag,cl');
   });
 });
