@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { readLatencySummary } from './latencyProbeRemote';
+import { formatLatencySummary } from '../utils/latencyProbe';
 import toast from 'react-hot-toast';
 import styled from 'styled-components';
 import BrandLoader from './BrandLoader';
@@ -4364,6 +4366,22 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     alert(`Loaded cards: ${Object.keys(users || {}).length}`);
   };
 
+  /*
+   * Затримка бази з телефонів справжніх читачів (`utils/latencyProbe`): кожен
+   * пристрій раз на добу міряє найменше читання й кладе його в кошик. Зведення
+   * — одне читання вузла цілком, тож воно на явне натискання.
+   */
+  const handleShowLatencySummary = async () => {
+    const toastId = 'latency-summary';
+    toast.loading('Читаю заміри затримки…', { id: toastId });
+    try {
+      const summary = await readLatencySummary({ days: 7 });
+      toast.success(formatLatencySummary(summary), { id: toastId, duration: 20000 });
+    } catch (error) {
+      toast.error(`Заміри не прочитано: ${error?.message || error}`, { id: toastId });
+    }
+  };
+
   const handleClearCache = () => {
     clearAllCardsCache();
     localStorage.removeItem(SEARCH_KEY);
@@ -6219,7 +6237,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                   <ToolGroup>
                     <ToolGroupTitle>
                       Сервіс
-                      <ToolGroupNote>кеш браузера, без бекенду</ToolGroupNote>
+                      <ToolGroupNote>кеш браузера й замір бази</ToolGroupNote>
                     </ToolGroupTitle>
                     <ToolRow>
                       <ToolButton
@@ -6242,6 +6260,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
                         title="Зберегти load debug log у файл"
                       >
                         Лог завантаження
+                      </ToolButton>
+                      <ToolButton
+                        type="button"
+                        onClick={handleShowLatencySummary}
+                        title="Зведення замірів затримки бази з пристроїв читачів за тиждень (одне читання)"
+                      >
+                        Затримка бази
                       </ToolButton>
                     </ToolRow>
                   </ToolGroup>

@@ -2045,6 +2045,28 @@ await it('інспектор не пише ні анкет, ні чужих по
 await it('корінь бази інспекторові так само закритий', () =>
   assertFails(get(ref(db(INSPECTOR), '/'))));
 
+describe('latencyProbes — замір затримки бази з пристроїв');
+
+// Кожен пише лише свої лічильники (мілісекунди за кошиками, нічого
+// особистого), а зведення по всіх читають адміни та інспектор.
+await it('читач пише й читає свої кошики, чужих — ні', async () => {
+  await assertSucceeds(update(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}`), { '2026-11-09/le300': 1 }));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}/2026-11-09`)));
+  await assertFails(update(ref(db(ORDINARY_VIEWER), `latencyProbes/${OUTSIDER}`), { '2026-11-09/le300': 1 }));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), 'latencyProbes')));
+});
+
+await it('у вузол лягають лише кошики з числами', async () => {
+  await assertFails(update(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}`), { '2026-11-09/name': 'Оксана' }));
+  await assertFails(update(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}`), { 'вчора/le300': 1 }));
+  await assertFails(update(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}`), { '2026-11-09/le300': 'x' }));
+});
+
+await it('зведення по всіх читають адмін та інспектор', async () => {
+  await assertSucceeds(get(ref(db(SUPERADMIN), 'latencyProbes')));
+  await assertSucceeds(get(ref(db('vtDxkDMjCwYuTDqTUnZsO29bpQr1'), 'latencyProbes')));
+});
+
 describe('перебудова індексу searchKey — вузол цілком знімає лише повний адмін');
 
 // Перебудова бакетів (`createSelectedSearchKeyIndexes` → `resetSearchKeyIndexNodes`)
