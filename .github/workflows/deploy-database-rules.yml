@@ -1,0 +1,90 @@
+name: Test and deploy RTDB rules
+
+# Крок 2: правила бази викочує CI, а не людина руками.
+#
+# Поки `database.rules.json` деплоївся вручну, прод тижнями жив зі старими
+# правилами, а код мусив уміти писати і з новими, і зі старими (усі ті
+# «доти `writeProgramsToDb` пише без поля»). Тепер пуш у main, що міняє
+# правила, сам доїжджає до бази — але лише після сценаріїв доступу в емуляторі.
+#
+# Емулятор тут не формальність: файл із конструкцією, якої база не знає
+# (наприклад `\s` у регулярці), база відхиляє ЦІЛКОМ і лишає в проді попередній
+# набір. `npm run test:rules` ловить і це, і кожну межу доступу з ТЗ.
+#
+# Ручний запуск (Actions → цей workflow → Run workflow) — щоб вирівняти прод з
+# репозиторієм без нового коміта, зокрема вперше.
+#
+# Потрібен секрет FIREBASE_SERVICE_ACCOUNT (той самий, що для входу через
+# Telegram). Без нього тести однаково біжать, а деплой падає з поясненням.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - database.rules.json
+      - scripts/rulesEmulatorTests.mjs
+      - .github/workflows/deploy-database-rules.yml
+  pull_request:
+    paths:
+      - database.rules.json
+      - scripts/rulesEmulatorTests.mjs
+  workflow_dispatch:
+
+concurrency:
+  group: database-rules-deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: webringitapp
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # Емулятор бази — це jar.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rules scenarios in the emulator
+        run: npm run test:rules
+
+  deploy:
+    needs: test
+    # PR лише тестується. Деплой — тільки з main.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check secret
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          [ -n "$SA" ] || { echo "::error::Немає секрету FIREBASE_SERVICE_ACCOUNT — правила не викочено"; exit 1; }
+
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Deploy database rules
+        run: |
+          npx --yes firebase-tools@15.34.0 deploy --only database \
+            --project "$PROJECT_ID" --non-interactive --force
+          echo "### Правила бази викочено ✅" >> "$GITHUB_STEP_SUMMARY"
+          echo "Коміт: \`${GITHUB_SHA::7}\`" >> "$GITHUB_STEP_SUMMARY"
