@@ -149,7 +149,6 @@ const BY_UK = {
   'Більше про біологічних батьків': 'Meer over de wensouders',
   'Умови виплати': 'Voorwaarden',
   'Додати доплату: {label}': 'Toeslag toevoegen: {label}',
-  'Збережено частково — нові поля поки лише в цьому браузері': 'Gedeeltelijk opgeslagen — nieuwe velden staan voorlopig alleen in deze browser',
   'Вік, років': 'Leeftijd, jaren',
   'Наприклад: СМ у Києві': 'Bijv. Draagmoederschap in Kyiv',
   'Наприклад: за досвід СМ': 'Bijv. voor ervaring als draagmoeder',

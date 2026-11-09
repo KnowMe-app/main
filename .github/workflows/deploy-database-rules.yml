@@ -28,6 +28,7 @@ on:
     paths:
       - database.rules.json
       - scripts/rulesEmulatorTests.mjs
+      - .github/workflows/deploy-database-rules.yml
   workflow_dispatch:
 
 concurrency:

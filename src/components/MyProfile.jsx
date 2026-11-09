@@ -2231,7 +2231,7 @@ export const MyProfile = () => {
     // Проміс каже редакторові, чи прийняла база запис («Збережено» чи «поки
     // лише в цьому браузері»).
     return saveCardPrograms(targetUserId, record || {}, { advertise: programsAdvertiseRef.current })
-      .then(saved => {
+      .then(() => {
         // Словник назв — підказка іншим агенціям, а не частина запису: його
         // відмова не робить збережені програми незбереженими.
         // Виплат і доплат більше не два списки — дописане агенцією йде
@@ -2239,10 +2239,10 @@ export const MyProfile = () => {
         Promise.all([
           rememberProgramTerms('bonus', list.flatMap(program => listProgramBonuses(program).filter(item => /^(other|bonus)-/.test(item.key)).map(item => item.label))),
         ]).catch(error => console.warn('[programs] назви виплат не записались у словник', error));
-        // Правила бази ще не знають частини полів — програму записано без
-        // них, а повна версія лишилась у браузері (`pending`). «Збережено»
-        // тут було б неправдою для тих, хто читає програму з бази.
-        return saved?.partial ? 'partial' : true;
+        // «Збережено частково» тут уже немає: запис програм — один `update`
+        // без урізаних повторів (правила викочує CI), тож він або ліг цілком,
+        // або впав і йде в `catch`.
+        return true;
       })
       .catch(error => {
         console.warn('[programs] програми не збереглись у базі', error);

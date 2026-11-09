@@ -149,7 +149,6 @@ const BY_UK = {
   'Більше про біологічних батьків': 'Mehr über die Wunscheltern',
   'Умови виплати': 'Bedingungen',
   'Додати доплату: {label}': 'Zuschlag hinzufügen: {label}',
-  'Збережено частково — нові поля поки лише в цьому браузері': 'Teilweise gespeichert — neue Felder sind vorerst nur in diesem Browser',
   'Вік, років': 'Alter, Jahre',
   'Наприклад: СМ у Києві': 'Z. B. Leihmutterschaft in Kyjiw',
   'Наприклад: за досвід СМ': 'Z. B. für Erfahrung als Leihmutter',

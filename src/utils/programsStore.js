@@ -216,12 +216,11 @@ export const saveCardPrograms = async (uid, programs, { advertise = true } = {})
   writeEntry(id, { at, items, pending: true });
   notify();
   if (!transport.write) return { at, items, saved: false };
-  const result = await transport.write(id, items, at, { advertise });
-  // Записане без частини полів (правила ще не викочені) лишається «не в
-  // базі»: наступне відкриття профілю спробує дописати повну версію.
-  const partial = result?.partial === true;
-  writeEntry(id, { at, items, pending: partial });
-  return { at, items, saved: true, ...(partial ? { partial: true } : {}) };
+  await transport.write(id, items, at, { advertise });
+  // Урізаного запису «без нових полів» більше немає (правила викочує CI):
+  // або база прийняла програми цілком, або запис кинув і `pending` лишився.
+  writeEntry(id, { at, items, pending: false });
+  return { at, items, saved: true };
 };
 
 export const retryPendingPrograms = async (uid, options) => {
