@@ -2060,6 +2060,9 @@ await it('у вузол лягають лише кошики з числами',
   await assertFails(update(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}`), { '2026-11-09/name': 'Оксана' }));
   await assertFails(update(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}`), { 'вчора/le300': 1 }));
   await assertFails(update(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}`), { '2026-11-09/le300': 'x' }));
+  // Рядок замість вузла на рівні читача чи дня обійшов би перевірку кошиків.
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}`), 'x'.repeat(1000)));
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}/2026-11-09`), 'x'.repeat(1000)));
 });
 
 await it('зведення по всіх читають адмін та інспектор', async () => {
