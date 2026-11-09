@@ -134,6 +134,7 @@ import { patchCachedReactionValue } from '../utils/matchingReactionCache';
 import { rememberCommentWrite } from '../utils/commentsStorage';
 import { forgetProfileContacts, readFreshProfileContacts, writeProfileContacts } from '../utils/matchingContactsCache';
 import { createMatchingTimedStore } from '../utils/matchingTimedStore';
+import { pickCardActivity } from '../utils/cardActivity';
 import { noteRealtimeDemand } from '../utils/realtimeConnectionManager';
 import {
   createFeedStateReader,
@@ -2993,6 +2994,37 @@ const profileContactsMemo = new Map();
 // пишуть у базу інші екрани, і зайвий ключ поїхав би туди разом із нею.
 const profilesBuiltFromCache = new WeakSet();
 export const isProfileBuiltFromCache = profile => Boolean(profile && typeof profile === 'object' && profilesBuiltFromCache.has(profile));
+
+/**
+ * Давність останньої дії по картці для адміна (`utils/cardActivity`):
+ * останній вхід, а без нього — реєстрація.
+ *
+ * Картка стрічки цих дат не несе (і не мусить: її бачить кожен авторизований),
+ * а повна анкета приїжджає лише на дотик, тож дата питається окремо — одним
+ * читанням `profileTechnical/{id}` на картку, і лише адміном (вузол інакше
+ * закритий). Узяти три поля трьома точковими запитами дешевше не виходить:
+ * у карток імпорту вузла немає зовсім, і вони платили б три порожні круги.
+ * Відповідь — і «немає дати» теж — лягає на пристрій на ті самі шість годин
+ * (`matchingTimedStore`), а запит, що вже летить, ділиться.
+ */
+const cardActivityStore = createMatchingTimedStore('cardActivity', { maxEntries: 1500 });
+const cardActivityInFlight = new Map();
+export const readCardActivity = userId => {
+  const id = String(userId || '').trim();
+  if (!id) return Promise.resolve(null);
+  const stored = cardActivityStore.read(id);
+  if (stored) return Promise.resolve(stored.activity || null);
+  if (cardActivityInFlight.has(id)) return cardActivityInFlight.get(id);
+  const pending = get(ref2(database, `${PROFILE_NODES.profileTechnical}/${id}`))
+    .then(snapshot => {
+      const activity = pickCardActivity(snapshot.exists() ? snapshot.val() : null);
+      cardActivityStore.write(id, { activity });
+      return activity;
+    })
+    .finally(() => { cardActivityInFlight.delete(id); });
+  cardActivityInFlight.set(id, pending);
+  return pending;
+};
 
 /**
  * Контакти однієї анкети — одним точковим читанням `profileContacts/{id}`.

@@ -355,6 +355,30 @@ export const Location = styled.div`
   }
 `;
 
+// Давність останньої дії — службова позначка адміна в кінці рядка з місцем.
+// Дрібніше й блідіше за локацію, цифри табличні: у стовпчику карток підписи
+// читаються одним поглядом униз. Давнє (понад рік) блідне ще сильніше —
+// це й є відповідь «картка мертва», без червоного, бо це не збій.
+export const ActivityStamp = styled.span`
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--matching-muted-text, var(--km-muted, #8a8580));
+  opacity: ${({ $stale }) => ($stale ? 0.55 : 0.85)};
+
+  svg {
+    width: 10px;
+    height: 10px;
+    flex: none;
+  }
+`;
+
 // Spec §5 correction 1: tabular numerals turn the metrics into a vertical
 // column of digits running down the entire list instead of ragged text.
 export const FactsRow = styled.div`

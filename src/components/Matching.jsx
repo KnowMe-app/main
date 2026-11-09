@@ -64,6 +64,7 @@ import {
   fetchUsersByIds,
   isProfileBuiltFromCache,
   readProfileContacts,
+  readCardActivity,
   fetchAdminLastLoginCardsPage,
   matchingFeedStateReader,
   fetchMatchingCardsPage,
@@ -7875,6 +7876,7 @@ const Matching = () => {
       },
     } : {}),
     onEnrich: isAdmin ? undefined : handleRowEnrichProfile,
+    onRequestActivity: isAdmin ? readCardActivity : undefined,
     onRequestContacts: handleRequestRowContacts,
     canViewContacts: canOfferProfileContacts({
       card: user,
@@ -8428,6 +8430,7 @@ const Matching = () => {
                         anketaRole ? [] : feedRowHiddenRoles,
                       )}
                       isAdmin={isAdmin}
+                      onRequestActivity={isAdmin ? readCardActivity : undefined}
                       onTogglePublish={togglePublish}
                       expanded={expandedRowIds.has(user.userId)}
                       onToggleExpand={handleToggleRowExpand}
