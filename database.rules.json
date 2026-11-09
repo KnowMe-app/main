@@ -37,6 +37,7 @@
     "searchKey": {
       ".read": "auth != null",
       "$indexName": {
+        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
         "$value": {
           "$userId": {
             ".write": "auth != null && (auth.uid == $userId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write'))",
@@ -46,6 +47,7 @@
       },
       "users": {
         "$indexName": {
+          ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
           "$value": {
             "$userId": {
               ".write": "auth != null && (auth.uid == $userId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write'))",

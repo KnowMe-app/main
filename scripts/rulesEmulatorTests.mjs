@@ -2045,6 +2045,31 @@ await it('інспектор не пише ні анкет, ні чужих по
 await it('корінь бази інспекторові так само закритий', () =>
   assertFails(get(ref(db(INSPECTOR), '/'))));
 
+describe('перебудова індексу searchKey — вузол цілком знімає лише повний адмін');
+
+// Перебудова бакетів (`createSelectedSearchKeyIndexes` → `resetSearchKeyIndexNodes`)
+// спершу знімає вузол індексу цілком, а потім заливає його пачками. Право
+// писати на рівні `searchKey/{індекс}` з правил колись прибрали, а прод жив зі
+// старими правилами, доки їх не почав викочувати CI (09.11), — і першого ж
+// дня перебудова `maritalStatus` упала на PERMISSION_DENIED. Знімати чи
+// заливати вузол цілком може лише повний адмін: інспектор читає, але не пише,
+// а звичайний читач і далі пише рівно свою позицію.
+await it('адмін знімає й заливає вузол індексу цілком', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), 'searchKey/maritalStatus'), { no: { [CARD]: true } }));
+  await assertSucceeds(remove(ref(db(SUPERADMIN), 'searchKey/maritalStatus')));
+  await assertSucceeds(set(ref(db(SUPERADMIN), 'searchKey/maritalStatus'), { no: { [CARD]: true } }));
+  await assertSucceeds(remove(ref(db(SUPERADMIN), 'searchKey/users/maritalStatus')));
+});
+
+await it('інспектор і звичайний читач вузла індексу цілком не знімають', async () => {
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), 'searchKey/maritalStatus'), { no: { [CARD]: true } }));
+  await assertFails(remove(ref(db(INSPECTOR), 'searchKey/maritalStatus')));
+  await assertFails(remove(ref(db(OUTSIDER), 'searchKey/maritalStatus')));
+  await assertFails(remove(ref(db(INSPECTOR), 'searchKey/users/maritalStatus')));
+});
+
 describe('анкета за посиланням — знімок читається без входу, але лише за токеном');
 
 // Знімок — не вікно в живі вузли: правила відкривають без входу рівно
