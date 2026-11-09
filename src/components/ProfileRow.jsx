@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import { FaArrowRight, FaChevronDown, FaLock, FaMapMarkerAlt, FaPencilAlt, FaRegClock, FaRegCommentDots, FaRegStickyNote } from 'react-icons/fa';
 import { LIKED_AUDIENCE_CARD_FLAG } from 'utils/likedAudience';
+import { activityAgeDays, describeCardActivity, parseActivityDate } from '../utils/cardActivity';
 import {
   getProfileAge,
   getProfileBio,
@@ -1289,6 +1290,9 @@ const ProfileRow = ({
   postpone,
   // Нотатки інших власників спільного доступу — див. `ProfileNotes`.
   sharedNotes,
+  // Лише адмінові: `userId => Promise<{ date, kind } | null>` — останній вхід
+  // або реєстрація (`readCardActivity`). Без читача підпису давності немає.
+  onRequestActivity,
 }) => {
   // A limited profile is the projection a viewer without full access gets back
   // from a search: surname, name, age, region, city, and the public comment. There
@@ -1423,6 +1427,49 @@ const ProfileRow = ({
     observer.observe(node);
     return () => observer.disconnect();
   }, [onRequestContacts, shouldLoadContacts, user]);
+
+  // Давність останньої дії — адмінові, сірим поруч із місцем. Картка
+  // адмінської стрічки вже несе дату входу (`__recentAt`, за нею й гортали),
+  // решта питає `profileTechnical` один раз, коли рядок наближається до
+  // екрана — так само, як контакти вище.
+  const knownActivity = user?.__adminLastLogin === true && user?.__recentAt
+    ? { date: parseActivityDate(user.__recentAt), kind: 'login' }
+    : null;
+  const activityUserId = user?.userId || '';
+  const shouldLoadActivity = Boolean(isAdmin && onRequestActivity && activityUserId)
+    && !preview && !isViewerOwnDraft(user) && !knownActivity?.date;
+  const [loadedActivity, setLoadedActivity] = useState(null);
+  useEffect(() => {
+    setLoadedActivity(null);
+    if (!shouldLoadActivity) return undefined;
+    let cancelled = false;
+    const request = () => {
+      Promise.resolve(onRequestActivity(activityUserId))
+        .then(activity => { if (!cancelled) setLoadedActivity(activity ? { ...activity, userId: activityUserId } : null); })
+        .catch(() => {});
+    };
+    const node = cardRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      request();
+      return () => { cancelled = true; };
+    }
+    const observer = new IntersectionObserver(observed => {
+      if (observed.some(entry => entry.isIntersecting)) {
+        observer.disconnect();
+        request();
+      }
+    }, { rootMargin: '600px 0px' });
+    observer.observe(node);
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [activityUserId, onRequestActivity, shouldLoadActivity]);
+  const activity = knownActivity?.date
+    ? knownActivity
+    : (loadedActivity?.userId === activityUserId ? loadedActivity : null);
+  const activityText = isAdmin ? describeCardActivity(activity, language) : null;
+  const activityStale = (activityAgeDays(activity?.date) ?? 0) > 365;
 
   // Стрілка стоїть у кожному нефільтрованому рядку й числа біля себе не несе.
   //
@@ -1749,12 +1796,27 @@ const ProfileRow = ({
             </S.Name>
             {!photo && roleCode && <S.RoleCode $role={rowRole}>{getRoleLabel(rowRole, language)}</S.RoleCode>}
           </S.NameRow>
-          {hasLocation && (
+          {(hasLocation || activityText) && (
             <S.MetaRow>
-              <S.Location>
-                <FaMapMarkerAlt aria-hidden="true" />
-                <span>{location}</span>
-              </S.Location>
+              {hasLocation && (
+                <S.Location>
+                  <FaMapMarkerAlt aria-hidden="true" />
+                  <span>{location}</span>
+                </S.Location>
+              )}
+              {/* Давність дії — адмінова службова позначка, а не факт про
+                  людину: дрібно, сірим і в кінці рядка, щоб не змагатись із
+                  місцем. Точна дата — у підказці. */}
+              {activityText && (
+                <S.ActivityStamp
+                  data-testid="row-activity"
+                  title={activityText.title}
+                  $stale={activityStale}
+                >
+                  <FaRegClock aria-hidden="true" />
+                  <span>{activityText.label}</span>
+                </S.ActivityStamp>
+              )}
             </S.MetaRow>
           )}
           {isViewerOwnDraft(user) && !preview ? (
@@ -1987,6 +2049,7 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.expanded === next.expanded
   && prev.clientComment === next.clientComment
   && prev.isAdmin === next.isAdmin
+  && prev.onRequestActivity === next.onRequestActivity
   && prev.onTogglePublish === next.onTogglePublish
   && prev.primaryAction?.active === next.primaryAction?.active
   && prev.secondaryAction?.active === next.secondaryAction?.active
