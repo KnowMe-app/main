@@ -1,0 +1,127 @@
+name: Back up (and remove) legacy RTDB nodes
+
+# Крок 1 прибирання бази: вивантажити мертві вузли `users`, `newUsers`,
+# `adminRecent` і — лише на явне прохання — видалити їх.
+#
+# Чому workflow, а не скрипт: власниця продукту працює з телефона, а
+# `firebase database:get` потребує термінала. Запуск — Actions → цей workflow →
+# Run workflow, лише з main.
+#
+# Куди йде копія: у бакет Storage проєкту, тека `backups/legacy-nodes/<run>/`.
+# НЕ в артефакт Actions: репозиторій публічний, а в `users` лежать повні старі
+# анкети з контактами — артефакт публічного репозиторію може завантажити
+# будь-хто з акаунтом GitHub. Тека `backups/` у `storage.rules` не згадана, тож
+# клієнтам закрита; файли видно в консолі Firebase → Storage.
+#
+# Що потрапляє в журнал: лише лічильники й дати (`scripts/legacyNodeStats.mjs`).
+# Журнал публічного репозиторію теж читає будь-хто.
+#
+# Перший запуск — без видалення: зведення в Summary покаже, скільки записів і
+# яка в них найсвіжіша дата (відповідь на «чи в newUsers досі пишуть»). Друге —
+# з `remove: true` і словом ВИДАЛИТИ в `confirm`; видалення йде лише після того,
+# як копію кожного вузла перевірено в бакеті.
+#
+# Потрібні секрети: FIREBASE_SERVICE_ACCOUNT (той самий, що для входу через
+# Telegram) і REACT_APP_STORAGE_BUCKET (вже є для збірки).
+
+on:
+  workflow_dispatch:
+    inputs:
+      remove:
+        description: 'Після копії видалити вузли з бази'
+        type: boolean
+        default: false
+      confirm:
+        description: 'Щоб видалити — впишіть ВИДАЛИТИ'
+        type: string
+        default: ''
+
+concurrency:
+  group: legacy-nodes-backup
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: webringitapp
+  NODES: users newUsers adminRecent
+
+jobs:
+  backup:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check inputs and secrets
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          BUCKET: ${{ secrets.REACT_APP_STORAGE_BUCKET }}
+          REMOVE: ${{ inputs.remove }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          [ -n "$SA" ] || { echo "::error::Немає секрету FIREBASE_SERVICE_ACCOUNT"; exit 1; }
+          [ -n "$BUCKET" ] || { echo "::error::Немає секрету REACT_APP_STORAGE_BUCKET"; exit 1; }
+          if [ "$REMOVE" = "true" ] && [ "$CONFIRM" != "ВИДАЛИТИ" ]; then
+            echo "::error::Видалення попрошено, але в confirm не вписано ВИДАЛИТИ — нічого не роблю"
+            exit 1
+          fi
+
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2.2.1
+
+      - name: Export nodes
+        run: |
+          mkdir -p "$RUNNER_TEMP/legacy"
+          for node in $NODES; do
+            # Вивід — лише у файл: у stdout це були б самі анкети.
+            npx --yes firebase-tools@15.34.0 database:get "/$node" \
+              --project "$PROJECT_ID" --non-interactive -o "$RUNNER_TEMP/legacy/$node.json" > /dev/null
+            [ -s "$RUNNER_TEMP/legacy/$node.json" ] || { echo "::error::Порожнє вивантаження $node"; exit 1; }
+            node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$RUNNER_TEMP/legacy/$node.json" \
+              || { echo "::error::Вивантаження $node — не JSON"; exit 1; }
+          done
+
+      - name: Summarize (counts and dates only)
+        run: |
+          {
+            echo "### Legacy-вузли станом на $(date -u +%Y-%m-%d)"
+            echo
+            for node in $NODES; do
+              node scripts/legacyNodeStats.mjs "$RUNNER_TEMP/legacy/$node.json" "$node"
+              echo
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload to Storage
+        env:
+          BUCKET: ${{ secrets.REACT_APP_STORAGE_BUCKET }}
+        run: |
+          DEST="gs://${BUCKET}/backups/legacy-nodes/$(date -u +%Y%m%d)-${GITHUB_RUN_ID}"
+          echo "DEST=$DEST" >> "$GITHUB_ENV"
+          for node in $NODES; do
+            gzip -9 -k "$RUNNER_TEMP/legacy/$node.json"
+            gcloud storage cp "$RUNNER_TEMP/legacy/$node.json.gz" "$DEST/$node.json.gz" --quiet
+            # Видалення нижче покладається саме на цю перевірку: копія лежить у
+            # бакеті й має той самий розмір, що й локальний файл.
+            LOCAL="$(stat -c %s "$RUNNER_TEMP/legacy/$node.json.gz")"
+            REMOTE="$(gcloud storage objects describe "$DEST/$node.json.gz" --format='value(size)')"
+            [ "$LOCAL" = "$REMOTE" ] || { echo "::error::Копія $node у бакеті не збіглась ($LOCAL ≠ $REMOTE)"; exit 1; }
+          done
+          echo "Копія: \`backups/legacy-nodes/$(basename "$DEST")/\` у Storage" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove nodes
+        if: inputs.remove && inputs.confirm == 'ВИДАЛИТИ'
+        run: |
+          for node in $NODES; do
+            npx --yes firebase-tools@15.34.0 database:remove "/$node" \
+              --project "$PROJECT_ID" --non-interactive --force
+            LEFT="$(npx --yes firebase-tools@15.34.0 database:get "/$node" --shallow --project "$PROJECT_ID" --non-interactive)"
+            [ "$LEFT" = "null" ] || { echo "::error::$node після видалення не порожній"; exit 1; }
+            echo "- \`$node\` видалено" >> "$GITHUB_STEP_SUMMARY"
+          done
