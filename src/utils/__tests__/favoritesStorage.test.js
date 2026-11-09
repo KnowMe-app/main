@@ -4,19 +4,21 @@ import {
   cacheFavoriteUsers,
   getFavoriteCards,
 } from '../favoritesStorage';
-import { setIdsForQuery } from '../cardIndex';
+import { setIdsForQuery, saveCards, getQueryEntry, resetMatchingLocalStorageCache } from '../cardIndex';
 
+// Стан кеша — у памʼяті й у `localStorage` із затримкою: між тестами його
+// скидає `resetMatchingLocalStorageCache`, а читається він через API кеша.
 describe('favoritesStorage', () => {
   beforeEach(() => {
     localStorage.clear();
+    resetMatchingLocalStorageCache('test');
   });
 
   it('stores favorite ids only in queries', () => {
     setFavorite('1', true);
     setFavorite('2', true);
     setFavorite('1', false);
-    const queries = JSON.parse(localStorage.getItem('queries'));
-    expect(queries['favorite'].ids).toEqual(['2']);
+    expect(getQueryEntry('favorite').ids).toEqual(['2']);
   });
 
   it('retrieves favorites from queries', () => {
@@ -29,15 +31,13 @@ describe('favoritesStorage', () => {
     const { cards, fromCache } = await getFavoriteCards();
     expect(cards[0].title).toBe('Fav Card');
     expect(fromCache).toBe(true);
-    const queries = JSON.parse(localStorage.getItem('queries'));
-    expect(queries['favorite'].ids).toEqual(['1']);
+    expect(getQueryEntry('favorite').ids).toEqual(['1']);
   });
 
   it('returns stale cached favorites when list entry is fresh', async () => {
     const SIX_HOURS = 6 * 60 * 60 * 1000;
     const expired = Date.now() - SIX_HOURS - 1000;
-    const oldCard = { userId: '1', title: 'Old Fav', lastAction: expired };
-    localStorage.setItem('cards', JSON.stringify({ '1': oldCard }));
+    saveCards({ '1': { userId: '1', title: 'Old Fav', cachedAt: expired } }, { immediate: true });
     setIdsForQuery('favorite', ['1']);
 
     const remoteFetch = jest.fn();

@@ -44,10 +44,16 @@ jobs:
           # порожня — кнопки Telegram на вході немає, лишається пошта.
           echo "REACT_APP_TELEGRAM_BOT_USERNAME=${{ vars.REACT_APP_TELEGRAM_BOT_USERNAME }}" >> .env
 
-      - name: Install, lint, build 🔧
+      # Тести стоять між lint і збіркою: червоний тест зупиняє деплой. Доти
+      # CI робив лише lint і збірку, і зміна, яка ламала поведінку, доїжджала в
+      # прод мовчки — а на `main` лежало 31 червоний тест, на які вже ніхто не
+      # дивився. Тести функцій біжать без мережі (`node --test`).
+      - name: Install, lint, test, build 🔧
         run: |
           npm install
           npm run lint:js
+          CI=true npx react-scripts test --watchAll=false
+          (cd functions && npm ci && npm test)
           npm run build
 
       - name: Deploy 🚀

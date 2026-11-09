@@ -1,8 +1,12 @@
 import { cacheDplUsers, getDplCards } from '../dplStorage';
+import { getQueryEntry, resetMatchingLocalStorageCache } from '../cardIndex';
 
+// Стан кеша — у памʼяті й у `localStorage` із затримкою: між тестами його
+// скидає `resetMatchingLocalStorageCache`, а читається він через API кеша.
 describe('dplStorage', () => {
   beforeEach(() => {
     localStorage.clear();
+    resetMatchingLocalStorageCache('test');
   });
 
   it('stores ids in queries and retrieves cards', async () => {
@@ -10,7 +14,6 @@ describe('dplStorage', () => {
     const { cards, fromCache } = await getDplCards();
     expect(cards[0].title).toBe('Card 1');
     expect(fromCache).toBe(true);
-    const queries = JSON.parse(localStorage.getItem('queries'));
-    expect(queries['dpl'].ids).toEqual(['1']);
+    expect(getQueryEntry('dpl').ids).toEqual(['1']);
   });
 });

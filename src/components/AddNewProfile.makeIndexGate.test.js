@@ -24,7 +24,9 @@ describe('AddNewProfile.jsx no longer has a hidden write-skip gate on handleSubm
 
   it('handleSubmit no longer accepts a 4th "makeIndex" parameter', () => {
     expect(source).not.toContain('makeIndex');
-    expect(source).toContain('const handleSubmit = (newState, overwrite, delCondition) => {');
+    // Четвертий аргумент тепер — прибрані версії масиву для `searchId`
+    // (`pruneSearchIdValues`), а не прапорець «не писати»: запис він не зупиняє.
+    expect(source).toContain('const handleSubmit = (newState, overwrite, delCondition, removedIndexValues) => {');
   });
 
   it('the long-userId branch writes to Firebase unconditionally (no truthy-string-skips-write gate)', () => {
@@ -47,11 +49,16 @@ describe('AddNewProfile.jsx no longer has a hidden write-skip gate on handleSubm
   });
 
   it('handleBlur passes overwrite so a changed scalar field replaces cleanly instead of becoming an array', () => {
+    // З 28.07 blur перезаписує лише своє поле: `overwrite` несе імʼя поля, а
+    // не 'overwrite' на всю анкету (`makeUploadedInfo`: `overwrite === field`) —
+    // інакше чужа правка іншого поля, що прийшла тим часом, губилась.
+    // Поведінку стереже `AddNewProfile.blurOverwrite.test.js`.
     const handleBlurBody = source.slice(
-      source.indexOf('const handleBlur = () => {'),
+      source.indexOf('const handleBlur = name => {'),
       source.indexOf('const hideCardLeavingListAndLoadNext')
     );
 
-    expect(handleBlurBody).toContain("handleSubmit(normalizedState, 'overwrite');");
+    expect(handleBlurBody).toContain("const baseFieldName = String(name || '').replace(/-\\d+$/, '');");
+    expect(handleBlurBody).toContain('handleSubmit(normalizedState, baseFieldName);');
   });
 });

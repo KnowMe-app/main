@@ -31,6 +31,13 @@ const makeSnapshot = (value = null) => ({
 const loadModule = () => require('../matchingDataProvider');
 
 
+// Групи про людину (сімейний стан, кров, резус, вік, ІМТ) індекс бере лише
+// тоді, коли в деці самі особисті анкети: з агенцією чи батьками в деці їх
+// звужує пост-фільтр (`counterpartiesInDeck` у `buildMatchingIndexFilterGroups`),
+// інакше «Не заміжня» вичищала б з деки всі агенції. Тому тести цих груп
+// звужують «Тип профілю» до донорок.
+const PERSONAL_DECK_ROLE = Object.freeze({ ed: true, ag: false, ip: false, other: false });
+
 describe('buildMatchingIndexFilterGroups bucket selection', () => {
   beforeEach(() => {
     jest.resetModules();
@@ -69,7 +76,7 @@ describe('buildMatchingIndexFilterGroups bucket selection', () => {
 
     const groups = buildMatchingIndexFilterGroups({
       filters: {
-        role: { ed: true, sm: true, ag: true, ip: true, pp: true, cl: true, other: true, empty: false },
+        role: { ed: true, sm: true, ag: false, ip: false, pp: false, cl: false, other: true, empty: false },
         maritalStatus: { married: true, unmarried: true, other: true, empty: false },
         bloodGroup: { 1: true, 2: true, 3: true, 4: true, other: true, empty: false },
         rh: { '+': true, '-': true, other: true, empty: false },
@@ -149,7 +156,9 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     const { fetchMatchingIndexedCandidates } = loadModule();
     const roles = {
       user00000000000000000001: 'ed',
-      user00000000000000000002: '',
+      // СМ донорці теж не показують (`listViewerHiddenCardRoles`): картку
+      // без ролі вона з 03.10 бачить — ховаються лише колеги.
+      user00000000000000000002: 'sm',
       user00000000000000000003: 'ag',
     };
     const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(
@@ -207,6 +216,7 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     const { fetchMatchingIndexedCandidates } = loadModule();
     const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
     const filters = {
+      userRole: PERSONAL_DECK_ROLE,
       age: {
         le25: true,
         '26_30': true,
@@ -256,7 +266,7 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     const { buildMatchingIndexFilterGroups } = loadModule();
 
     const groups = buildMatchingIndexFilterGroups({
-      filters: { rh: { '+': true, '-': false, other: false } },
+      filters: { userRole: PERSONAL_DECK_ROLE, rh: { '+': true, '-': false, other: false } },
     });
     const bloodGroup = groups.find(group => group.indexName === 'blood');
 
@@ -283,7 +293,7 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
     const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
     const filters = {
       // role narrows to one bucket, maritalStatus only rejects the "-" bucket.
-      userRole: { ed: false, ag: true, ip: false, other: false },
+      userRole: PERSONAL_DECK_ROLE,
       maritalStatus: { married: true, unmarried: false, other: true },
     };
 
@@ -299,7 +309,7 @@ describe('fetchMatchingIndexedCandidates index-id cache', () => {
 
     const result = await fetchMatchingIndexedCandidates({ filters, limit: 5, hydrateUsersByIds });
 
-    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/role/ag');
+    expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/role/ed');
     expect(mockFirebaseRef).toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/maritalStatus/-');
     expect(mockFirebaseRef).not.toHaveBeenCalledWith({ app: 'test-db' }, 'searchKey/users/maritalStatus/no');
     expect(result.pageIds).toEqual(['user00000000000000000001', 'user00000000000000000003']);
@@ -390,9 +400,9 @@ describe('fetchMatchingIndexedCandidates bounded bucket reads', () => {
     const { fetchMatchingIndexedCandidates, MATCHING_SEARCH_KEY_BUCKET_READ_CAP } = loadModule();
     const hydrateUsersByIds = jest.fn(async ids => Object.fromEntries(ids.map(id => [id, { userId: id }])));
 
-    // `role/ag` селективний, `maritalStatus/-` лишає пів бази і впирається в межу.
+    // `role/ed` селективний, `maritalStatus/-` лишає пів бази і впирається в межу.
     mockFirebaseGet.mockImplementation(async path => {
-      if (path === 'searchKey/users/role/ag') {
+      if (path === 'searchKey/users/role/ed') {
         return makeSnapshot({
           user00000000000000000001: true,
           user00000000000000000002: true,
@@ -406,7 +416,7 @@ describe('fetchMatchingIndexedCandidates bounded bucket reads', () => {
 
     const result = await fetchMatchingIndexedCandidates({
       filters: {
-        userRole: { ag: true, ed: false, ip: false, other: false },
+        userRole: PERSONAL_DECK_ROLE,
         maritalStatus: { unmarried: true, married: false, other: false, empty: false },
       },
       limit: 5,
