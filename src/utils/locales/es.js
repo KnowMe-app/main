@@ -149,7 +149,6 @@ const BY_UK = {
   'Більше про біологічних батьків': 'Más sobre los padres de intención',
   'Умови виплати': 'Condiciones',
   'Додати доплату: {label}': 'Añadir suplemento: {label}',
-  'Збережено частково — нові поля поки лише в цьому браузері': 'Guardado en parte: los campos nuevos por ahora solo están en este navegador',
   'Вік, років': 'Edad, años',
   'Наприклад: СМ у Києві': 'P. ej. Gestación subrogada en Kyiv',
   'Наприклад: за досвід СМ': 'P. ej. por experiencia en gestación subrogada',

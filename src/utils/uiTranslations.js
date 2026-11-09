@@ -166,7 +166,6 @@ const EN_BY_UK = {
   // Редактор програм: пʼять розділів, виплати блоками, сценарій доплат.
   'Умови виплати': 'Conditions',
   'Додати доплату: {label}': 'Add supplement: {label}',
-  'Збережено частково — нові поля поки лише в цьому браузері': 'Partly saved — new fields are only in this browser for now',
   'Вік, років': 'Age, years',
   'Наприклад: СМ у Києві': 'E.g. Surrogacy in Kyiv',
   'Наприклад: за досвід СМ': 'E.g. for surrogacy experience',

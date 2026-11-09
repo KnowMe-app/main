@@ -5297,7 +5297,7 @@ const fetchStorageFileBytes = async (url, fallbackError) => {
     const bucket = storage?.app?.options?.storageBucket || '<бакет>';
     const error = new Error(
       `Storage не віддає файл фото сайту ${origin} (CORS бакета не дозволяє цей домен). `
-      + `Потрібно викотити storage.cors.json: gsutil cors set storage.cors.json gs://${bucket}`,
+      + `Перелік доменів — storage.cors.json; його викочує CI ("Test and deploy Storage rules"), бакет gs://${bucket}`,
     );
     error.code = 'storage/cors-blocked';
     error.cause = networkError;

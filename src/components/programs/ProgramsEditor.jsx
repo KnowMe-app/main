@@ -150,7 +150,7 @@ const SaveState = styled.span`
   flex: 0 0 auto;
   font-size: 12px;
   font-weight: 600;
-  color: ${({ $state }) => ($state === 'failed' ? DANGER : $state === 'partial' ? '#B7791F' : $state === 'saved' ? 'var(--km-success, #2E9B55)' : MUTED)};
+  color: ${({ $state }) => ($state === 'failed' ? DANGER : $state === 'saved' ? 'var(--km-success, #2E9B55)' : MUTED)};
 `;
 
 const ProgramBox = styled.div`
@@ -2202,7 +2202,6 @@ const listEditablePrograms = programs => listPrograms(programs, { includeHidden:
 // не означало: записує кожна правка, а успіх — звичайний випадок. Відмова й
 // частковий запис — інша річ: набране лишилось лише в цьому браузері.
 const SAVE_LABELS = Object.freeze({
-  partial: 'Збережено частково — нові поля поки лише в цьому браузері',
   failed: 'Поки лише в цьому браузері',
 });
 
@@ -2249,7 +2248,7 @@ export const ProgramsEditor = ({ programs, onSave, language, rates, defaultType 
     const seq = saveSeqRef.current;
     if (mountedRef.current) setSaveState('saving');
     result.then(ok => {
-      if (mountedRef.current && seq === saveSeqRef.current) setSaveState(ok === false ? 'failed' : ok === 'partial' ? 'partial' : 'saved');
+      if (mountedRef.current && seq === saveSeqRef.current) setSaveState(ok === false ? 'failed' : 'saved');
     });
   };
 

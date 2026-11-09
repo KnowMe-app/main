@@ -27,10 +27,13 @@ on:
       - scripts/storageRulesEmulatorTests.mjs
       - .github/workflows/deploy-storage-rules.yml
   pull_request:
+    # Сам файл воркфлоу теж: інакше нові кроки (звірка CORS) уперше біжать
+    # аж після злиття, просто з деплоєм, і їхню різницю ніхто не бачить заздалегідь.
     paths:
       - storage.rules
       - storage.cors.json
       - scripts/storageRulesEmulatorTests.mjs
+      - .github/workflows/deploy-storage-rules.yml
   workflow_dispatch:
     inputs:
       deploy:
