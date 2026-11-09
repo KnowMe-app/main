@@ -92,6 +92,8 @@ jobs:
       - name: Diff production rules against the repository
         env:
           BUCKET: ${{ secrets.REACT_APP_STORAGE_BUCKET }}
+        # Різниця йде і в Summary, і в журнал кроку (`tee`): журнал читається
+        # через API, тож звірку видно й тому, хто не відкриває сторінку прогону.
         run: |
           TOKEN="$(gcloud auth print-access-token)"
           API="https://firebaserules.googleapis.com/v1"
@@ -112,7 +114,7 @@ jobs:
                 echo '```'
               fi
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy Storage rules
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
