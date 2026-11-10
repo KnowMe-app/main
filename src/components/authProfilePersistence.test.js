@@ -7,7 +7,7 @@ describe('persistAccountProfile', () => {
   // Анкета акаунта живе лише у вузлах RTDB: ні Firestore, ні повторного
   // «запасного» запису в ті самі вузли, який нічого не рятував.
   it('writes the profile nodes once and lets a failure reach the caller', () => {
-    expect(source).toContain("await updateDataInRealtimeDB(userId, uploadedInfo, mode === 'set' ? undefined : 'update');");
+    expect(source).toContain("await updateDataInRealtimeDB(userId, uploadedInfo, mode === 'set' ? undefined : 'update', { revisionNeutral });");
     expect(source).not.toContain('updateDataInFiresoreDB');
     expect(source).not.toContain('updateProfileNodesInRTDB');
     expect(source).not.toContain('canonicalWriteFailed');

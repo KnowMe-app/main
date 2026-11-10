@@ -1066,6 +1066,10 @@ const Matching = () => {
   // Нові анкети з голови стрічки, що приїхали, поки людина гортала посеред
   // деки (`utils/matchingFeedHead`): чекають на плашку «Нові анкети: N».
   const [feedHeadNewUsers, setFeedHeadNewUsers] = useState([]);
+  // Перезапуск завантаження карток наданого доступу без зміни фільтрів:
+  // «Оновити стрічку» скидає їх разом із кешем, а ефект, що їх вантажить,
+  // залежить від фільтрів і правил, яких оновлення не міняє.
+  const [accessScopedReloadToken, setAccessScopedReloadToken] = useState(0);
   const usersRef = useRef(users);
   // Public source readiness is deliberately separate from the rendered deck:
   // own drafts and access-scoped cards must never satisfy the first ten-card
@@ -1093,6 +1097,11 @@ const Matching = () => {
   const ownFavoriteUsersRef = useRef(ownFavoriteUsers);
   const ownDislikeUsersRef = useRef(ownDislikeUsers);
   const [viewMode, setViewMode] = useState('default');
+  // Нові анкети з голови стрічки стосуються лише стрічки: у пошуку чи
+  // колекції їх плашка підмішала б чужі картки у видачу.
+  useEffect(() => {
+    if (viewMode !== 'default') setFeedHeadNewUsers(current => (current.length ? [] : current));
+  }, [viewMode]);
   // Розкладка одна — список повних рядків. Галерея показувала ту саму картку
   // урізаною (без контактів, фактів і програм), і перемикач між ними став
   // рудиментом: кожен, хто його знаходив, повертався до списку.
@@ -3121,6 +3130,7 @@ const Matching = () => {
     loadAccessScopedCards();
     return () => { cancelled = true; };
   }, [
+    accessScopedReloadToken,
     announcePublicFeedUnavailable,
     currentAdditionalAccessRules,
     currentSearchKeySetKeys,
@@ -3795,6 +3805,9 @@ const Matching = () => {
     setLoading(false);
     setViewMode('default');
     if (!keepFilters) setFilterResetToken(prev => prev + 1);
+    // Надані картки щойно скинуто, а фільтри лишились тими самими — їхній
+    // ефект сам не перезапуститься, і неопубліковані надані анкети зникли б.
+    if (keepFilters) setAccessScopedReloadToken(prev => prev + 1);
 
     if (debugMatchingCache) {
       console.info('[Matching cache] reset removed keys:', removedLocalStorageKeys);
@@ -3809,14 +3822,22 @@ const Matching = () => {
   const refreshFeedKeepingFilters = React.useCallback(() => restartFeed({ keepFilters: true }), [restartFeed]);
 
   // Плашка «Нові анкети: N»: нове стає нагору, а екран — на початок стрічки.
+  // Список id стрічки в кеші теж дописується: інакше прийняте плашкою
+  // зникало б на наступному відкритті (кешований список замінює знімок деки)
+  // і знову оголошувалось би новим.
   const showFeedHeadNewUsers = React.useCallback(() => {
     const fresh = feedHeadNewUsers;
     setFeedHeadNewUsers([]);
-    if (!fresh.length) return;
+    if (!fresh.length || viewModeRef.current !== 'default') return;
+    const feedListKey = buildFeedListKey(buildFeedCacheSignature());
     fresh.forEach(u => loadedIdsRef.current.add(u.userId));
-    setUsers(prev => prependFeedHead(prev, fresh));
+    setUsers(prev => {
+      const result = prependFeedHead(prev, fresh);
+      if (result !== prev) setIdsForQuery(feedListKey, result.map(u => u.userId));
+      return result;
+    });
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [feedHeadNewUsers]);
+  }, [buildFeedCacheSignature, feedHeadNewUsers]);
 
   // Чи картка є в загальній стрічці. Та, що є, видна всім, кому взагалі
   // відкрито матчинг; та, якої немає, — лише тим, кому її відкрили правилами
@@ -8502,7 +8523,7 @@ const Matching = () => {
               )}
               {feedRows.length > 0 && viewLayout === 'list' && (
                 <>
-                {feedHeadNewUsers.length > 0 && (
+                {feedHeadNewUsers.length > 0 && viewMode === 'default' && (
                   <FeedHeadNewButton type="button" data-testid="feed-head-new" onClick={showFeedHeadNewUsers}>
                     {uiText('Нові анкети: {count}', language, { count: feedHeadNewUsers.length })}
                   </FeedHeadNewButton>

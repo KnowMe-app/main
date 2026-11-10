@@ -15,6 +15,7 @@ const setup = () => {
     readProfileFromNodes: jest.fn(async () => ({ height: ['160'], weight: ['50'] })),
     syncUserSearchIdIndex: jest.fn(), syncUserSearchKeyIndex: jest.fn(),
     refreshMatchingCardAfterProfileWrite: jest.fn(),
+    bumpProfileRevision: jest.fn(async () => {}),
     clearMatchingSearchResultCache: jest.fn(), setOwnerWriter: jest.fn(), setOwnerGetInTouch: jest.fn(),
   };
   return { db, deps, save: createSaveComparisonField(deps) };
@@ -28,6 +29,18 @@ it.each(['height', 'weight'])('writes %s to its canonical node and confirms it b
   expect(db[`matchingCards/B/${field === 'height' ? 'weight' : 'height'}`]).toEqual([field === 'height' ? '50' : '160']);
   expect(deps.syncUserSearchKeyIndex).toHaveBeenCalled();
   expect(deps.set).toHaveBeenCalledWith('profileWorkflow/B/lastAction', expect.any(Number));
+  // Поле картки пишеться повз перебудову — нову версію анкети ставить сам запис, після нього.
+  expect(deps.bumpProfileRevision).toHaveBeenCalledWith('B');
+  expect(deps.bumpProfileRevision.mock.invocationCallOrder[0])
+    .toBeGreaterThan(deps.set.mock.invocationCallOrder[0]);
+  expect(deps.refreshMatchingCardAfterProfileWrite).not.toHaveBeenCalled();
+});
+
+it('поле поза карткою ставить версію через перебудову картки, а не окремо', async () => {
+  const { deps, save } = setup();
+  await save('B', 'phone', '380671234567');
+  expect(deps.refreshMatchingCardAfterProfileWrite).toHaveBeenCalled();
+  expect(deps.bumpProfileRevision).not.toHaveBeenCalled();
 });
 
 it.each([

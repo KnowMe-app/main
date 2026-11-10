@@ -705,7 +705,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       // Тому запис іде у фоні: запис RTDB чекає підтвердження сервера, і без
       // звʼязку з базою (мобільна мережа, сокет, що не піднявся) `await` тут
       // тримав форму під спінером без кінця — хоч Firebase уже сказав «увійшов».
-      void persistAccountProfile(userCredential.user.uid, uploadedInfo, 'update').catch(error => {
+      void persistAccountProfile(userCredential.user.uid, uploadedInfo, 'update', { revisionNeutral: true }).catch(error => {
         console.warn('[login] не вдалося записати дату входу', error);
       });
 
@@ -952,7 +952,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       }
       const email = profileData.email || '';
       // Як і вхід поштою: дата входу пишеться у фоні й вхід не тримає.
-      void persistAccountProfile(uid, buildAuthLoginPayload({ email, userId: uid, todayDays, todayDash }), 'update').catch(error => {
+      void persistAccountProfile(uid, buildAuthLoginPayload({ email, userId: uid, todayDays, todayDash }), 'update', { revisionNeutral: true }).catch(error => {
         console.warn('[google] не вдалося записати дату входу', error);
       });
       markAuthSession({ email, userId: uid });

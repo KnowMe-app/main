@@ -17,8 +17,11 @@ export const isValidAuthEmail = email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email
 // рятував — відмова вузлів повторювалась, а падіння Firestore лише
 // перезаписувало вже збережене, — тож відмова тепер просто доходить до того,
 // хто кликав: людина мусить знати, що анкета не збереглась.
-export const persistAccountProfile = async (userId, uploadedInfo, mode = 'update') => {
-  await updateDataInRealtimeDB(userId, uploadedInfo, mode === 'set' ? undefined : 'update');
+// `revisionNeutral` — запис, що анкети не міняє (вхід: дата входу, згода й та
+// сама пошта). Без позначки кожен вхід поштою ставив би нову версію анкети
+// (`rev`) і скидав її кеш у всіх читачів.
+export const persistAccountProfile = async (userId, uploadedInfo, mode = 'update', { revisionNeutral = false } = {}) => {
+  await updateDataInRealtimeDB(userId, uploadedInfo, mode === 'set' ? undefined : 'update', { revisionNeutral });
 
   // Реєстрація — це поява анкети, тож тут же зʼявляються і її пошукові індекси.
   //

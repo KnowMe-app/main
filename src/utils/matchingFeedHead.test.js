@@ -58,7 +58,27 @@ describe('Matching підключає верх стрічки', () => {
     expect(restart).toContain("if (!keepFilters) {\n      localStorage.removeItem('matchingFilters');");
   });
 
-  it('плашка «Нові анкети» стоїть над списком', () => {
+  it('плашка «Нові анкети» стоїть над списком і лише в стрічці', () => {
     expect(source).toContain('data-testid="feed-head-new"');
+    expect(source).toContain("{feedHeadNewUsers.length > 0 && viewMode === 'default' && (");
+    // Пошук чи колекція знімають чергу: інакше плашка підмішала б у видачу чужі картки.
+    expect(source).toContain("if (viewMode !== 'default') setFeedHeadNewUsers(current => (current.length ? [] : current));");
+  });
+
+  it('прийняте плашкою дописується в кешований список стрічки', () => {
+    const handler = source.slice(
+      source.indexOf('const showFeedHeadNewUsers = React.useCallback('),
+      source.indexOf('}, [buildFeedCacheSignature, feedHeadNewUsers]);'),
+    );
+    expect(handler).toContain("if (!fresh.length || viewModeRef.current !== 'default') return;");
+    expect(handler).toContain('setIdsForQuery(feedListKey, result.map(u => u.userId));');
+  });
+
+  // Фільтри лишились тими самими, тож ефект наданого доступу сам не
+  // перезапуститься — а його картки оновлення щойно скинуло.
+  it('«Оновити стрічку» перезапускає картки наданого доступу', () => {
+    const restart = source.slice(source.indexOf('const restartFeed = React.useCallback('), source.indexOf('const resetFiltersAndCache ='));
+    expect(restart).toContain('if (keepFilters) setAccessScopedReloadToken(prev => prev + 1);');
+    expect(source).toContain('  }, [\n    accessScopedReloadToken,\n    announcePublicFeedUnavailable,');
   });
 });
