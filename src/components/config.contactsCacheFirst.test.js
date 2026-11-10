@@ -38,7 +38,7 @@ describe('контакти: спершу кеш, точкове читання',
 
   it('fetchUsersByIds бере кешоване тіло раніше, ніж читати анкету цілком', () => {
     const fetcher = sliceBetween(config(), 'export const fetchUsersByIds = async', 'const snaps = await Promise.all(');
-    expect(fetcher).toContain('getCachedProfileBody(id)');
+    expect(fetcher).toContain('getCachedProfileBody(id, cacheOptionsFor(id))');
     expect(fetcher).toContain('await readProfileContacts(id)');
     // Зібране з кеша назад у кеш не кладеться — інакше старе тіло жило б ще TTL.
     expect(fetcher).not.toContain('updateCard(id, contacts)');

@@ -158,6 +158,16 @@ export const MATCHING_CARD_PROGRAMS_FIELDS = Object.freeze(['programsAt']);
 // розумів, яка це група.
 export const MATCHING_CARD_MIRRORED_FIELDS = Object.freeze(['agencyName', 'blood']);
 
+/**
+ * Версія анкети (`rev`, час сервера) — коли востаннє змінилось те, що бачить
+ * читач повної анкети. Той самий рід поля, що `programsAt`: кеш браузера
+ * звіряє з нею повну анкету й не перечитує незмінену. Пише її лише
+ * `syncMatchingCardIndex` після запису вузлів, тож з анкетою вона назад не
+ * їде: роутер записів її не знає (`OWNERSHIP` пропускає) — інакше збереження
+ * форми з прочитаною колись версією відкотило б її назад.
+ */
+export const MATCHING_CARD_REVISION_FIELDS = Object.freeze(['rev']);
+
 /** Повний набір ключів, які має право лежати в картці стрічки. */
 export const MATCHING_CARD_ALLOWED_FIELDS = Object.freeze([
   ...MATCHING_CARD_DIRECT_FIELDS,
@@ -165,6 +175,7 @@ export const MATCHING_CARD_ALLOWED_FIELDS = Object.freeze([
   ...MATCHING_CARD_REVIEW_FIELDS,
   ...MATCHING_CARD_PROGRAMS_FIELDS,
   ...MATCHING_CARD_MIRRORED_FIELDS,
+  ...MATCHING_CARD_REVISION_FIELDS,
 ]);
 
 /**
@@ -495,7 +506,9 @@ export const OWNER_MULTI_DATA_STRING_FIELDS = Object.freeze(
 );
 
 const OWNERSHIP = [
-  [PROFILE_NODES.matchingCards, MATCHING_CARD_ALLOWED_FIELDS.filter(field => !MATCHING_CARD_MIRRORED_FIELDS.includes(field))],
+  [PROFILE_NODES.matchingCards, MATCHING_CARD_ALLOWED_FIELDS.filter(field => (
+    !MATCHING_CARD_MIRRORED_FIELDS.includes(field) && !MATCHING_CARD_REVISION_FIELDS.includes(field)
+  ))],
   [PROFILE_NODES.profileContacts, PROFILE_CONTACT_FIELDS],
   [PROFILE_NODES.profileWorkflow, PROFILE_WORKFLOW_FIELDS],
   [PROFILE_NODES.profileTechnical, PROFILE_TECHNICAL_FIELDS],

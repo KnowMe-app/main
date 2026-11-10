@@ -201,9 +201,10 @@ describe('видача пошуку кешується і читається з 
       source.indexOf('const withLazyPhotos = React.useCallback('),
     );
 
-    expect(opener).toContain('const cached = getCompleteCachedProfile(userId);');
-    expect(opener.indexOf('const cached = getCompleteCachedProfile(userId);'))
-      .toBeLessThan(opener.indexOf('fetchUsersByIds([userId])'));
+    // Кеш звіряється з версією анкети з картки стрічки (`rev`), коли вона є.
+    expect(opener).toContain('const cached = getCompleteCachedProfile(userId, revisionOptions);');
+    expect(opener.indexOf('const cached = getCompleteCachedProfile(userId, revisionOptions);'))
+      .toBeLessThan(opener.indexOf('fetchUsersByIds([userId]'));
   });
 });
 

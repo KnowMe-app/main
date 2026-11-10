@@ -129,7 +129,8 @@ describe('acceptCreateProfileMutation', () => {
     expect(profile).toEqual(finalData);
     expect(syncUserSearchKeyIndex).toHaveBeenCalledWith('card-1', {}, finalData);
     // Публікація анкети одразу дає їй урізану картку для стрічки матчингу.
-    expect(syncMatchingCardIndex).toHaveBeenCalledWith('card-1', finalData);
+    // Публікація — нова версія анкети (`rev`) для кешу читачів.
+    expect(syncMatchingCardIndex).toHaveBeenCalledWith('card-1', finalData, { bumpRevision: true });
     // searchId index entries are written through a transaction of their own.
     expect(runTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ path: expect.stringMatching(/^searchId\//) }),

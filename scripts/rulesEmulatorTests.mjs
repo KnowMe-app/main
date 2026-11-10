@@ -17,7 +17,7 @@ import {
   assertFails,
 } from '@firebase/rules-unit-testing';
 import fs from 'node:fs';
-import { ref, get, set, update, remove, query, orderByChild, orderByKey, orderByValue, startAt, endAt, limitToFirst, limitToLast } from 'firebase/database';
+import { ref, get, set, update, remove, query, orderByChild, orderByKey, orderByValue, startAt, endAt, limitToFirst, limitToLast, serverTimestamp } from 'firebase/database';
 
 const SUPERADMIN = '0ghb1LphfASV0Y3b6J010v4CDyD2';
 const MATCHING_VIEWER = 'matchingViewerUid0000000000';
@@ -206,6 +206,22 @@ await it('картка приймає версію програм і «кого 
     set(ref(context.database(), `matchingCards/${CARD}/programsAt`), null));
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `matchingCards/${CARD}/seekingRole`), null));
+});
+
+// Версія анкети (`rev`): час сервера, який ставить писач картки після запису
+// вузлів. Браузер читача звіряє з нею кеш повної анкети, тож пише її той
+// самий, хто пише картку, і лише числом, не з майбутнього.
+await it('картка приймає версію анкети від того, хто її пише', async () => {
+  await assertSucceeds(update(ref(db(SUPERADMIN), `matchingCards/${CARD}`), { rev: serverTimestamp() }));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/rev`), 1762770000000));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/rev`), 'вчора'));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/rev`), Date.now() + 24 * 60 * 60 * 1000));
+  await assertFails(set(ref(db(OUTSIDER), `matchingCards/${CARD}/rev`), 1762770000000));
+  await assertSucceeds(update(ref(db(PROFILE_OWNER), `matchingCards/${PROFILE_OWNER}`), { rev: serverTimestamp() }));
+  await testEnv.withSecurityRulesDisabled(context => update(ref(context.database()), {
+    [`matchingCards/${CARD}/rev`]: null,
+    [`matchingCards/${PROFILE_OWNER}/rev`]: null,
+  }));
 });
 
 // Копія з анкети (`MATCHING_CARD_MIRRORED_FIELDS`): назва агенції в картці

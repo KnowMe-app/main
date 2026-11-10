@@ -452,16 +452,53 @@ const hasCachedContactValue = value => {
  * контакти». Анкета без жодного контакту тому повною не вважається — для
  * картки, в якої контактів справді немає, це коштує одне читання на дотик.
  */
-const findCompleteCachedProfile = id => {
-  if (!id || !mayCacheContacts(id)) return null;
-  const card = getCard(id);
-  if (!card || card.cacheVersion !== CARDS_CACHE_VERSION) return null;
-  if (!PROFILE_CONTACT_FIELDS.some(field => hasCachedContactValue(card[field]))) return null;
-  return card;
+/**
+ * Версія анкети (`rev` у картці стрічки, час сервера): повна анкета в кеші
+ * несе ту, з якою її прочитали (`readProfileFromNodes` читає картку першою).
+ * Відома версія важить більше за годинник: збіглась — анкета чинна й понад
+ * TTL, розійшлась — застаріла й у межах TTL.
+ */
+const readCachedRevision = card => {
+  const rev = Number(card?.rev);
+  return Number.isFinite(rev) && rev > 0 ? rev : 0;
 };
 
-export const getCompleteCachedProfile = id => {
-  const card = findCompleteCachedProfile(id);
+/**
+ * Стеля віку навіть для анкети тієї самої версії. Версію ставить писач картки,
+ * і якщо колись не поставив (збій запису, писач повз `syncMatchingCardIndex`),
+ * без стелі кеш тримав би стару анкету доти, доки її не правитимуть знову.
+ */
+export const PROFILE_REVISION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+const isWithinRevisionMaxAge = card => {
+  const at = toTimestamp(card?.cachedAt) || toTimestamp(card?.lastAction);
+  return at > 0 && Date.now() - at <= PROFILE_REVISION_MAX_AGE_MS;
+};
+
+const isCompleteCachedCard = (id, card) => (
+  Boolean(card)
+  && card.cacheVersion === CARDS_CACHE_VERSION
+  && PROFILE_CONTACT_FIELDS.some(field => hasCachedContactValue(card[field]))
+);
+
+const findCompleteCachedProfile = (id, { revision = 0 } = {}) => {
+  if (!id || !mayCacheContacts(id)) return null;
+  const expected = readCachedRevision({ rev: revision });
+  if (expected) {
+    const stored = loadCards()[id];
+    if (!isCompleteCachedCard(id, stored) || !isWithinRevisionMaxAge(stored)) return null;
+    return readCachedRevision(stored) === expected ? stored : null;
+  }
+  const card = getCard(id);
+  return isCompleteCachedCard(id, card) ? card : null;
+};
+
+/**
+ * Повна анкета з кешу. `revision` — версія з картки стрічки, яку показують:
+ * з нею кеш віддає лише анкету тієї самої версії, зате й старшу за TTL.
+ */
+export const getCompleteCachedProfile = (id, options) => {
+  const card = findCompleteCachedProfile(id, options);
   if (card) incrementMatchingLoadStat('fullProfileCacheHits');
   return card;
 };
@@ -481,8 +518,14 @@ export const hasCompleteCachedProfile = id => Boolean(findCompleteCachedProfile(
  * «спершу кеш» бере звідси тіло, а з бекенду дочитує самий лише вузол
  * контактів (`readProfileContacts`), а не пʼять вузлів анкети заново.
  */
-export const getCachedProfileBody = id => {
+export const getCachedProfileBody = (id, { revision = 0 } = {}) => {
   if (!id) return null;
+  const expected = readCachedRevision({ rev: revision });
+  if (expected) {
+    const stored = loadCards()[id];
+    if (!stored || stored.cacheVersion !== CARDS_CACHE_VERSION || !isWithinRevisionMaxAge(stored)) return null;
+    return readCachedRevision(stored) === expected ? stored : null;
+  }
   const card = getCard(id);
   if (!card || card.cacheVersion !== CARDS_CACHE_VERSION) return null;
   return card;
@@ -915,7 +958,12 @@ export const composeCachedCards = (ids, options = {}) => {
     const fullAt = full ? (toTimestamp(full.cachedAt) || toTimestamp(full.lastAction)) : 0;
     const summaryEntry = summaries[id];
     const summaryAt = summaryEntry?.card ? getEntryCacheTimestamp(summaryEntry) : 0;
-    const fullIsFresh = Boolean(full) && fresh(fullAt);
+    // Розійшлись версії анкети (`rev`) — повна застаріла, хоч би яка свіжа за
+    // годинником: проєкція вже знає про правку, якої в ній немає.
+    const fullRevision = readCachedRevision(full);
+    const summaryRevision = readCachedRevision(summaryEntry?.card);
+    const fullIsStaleByRevision = Boolean(fullRevision && summaryRevision && fullRevision !== summaryRevision);
+    const fullIsFresh = Boolean(full) && fresh(fullAt) && !fullIsStaleByRevision;
     const summaryIsFresh = Boolean(summaryEntry?.card) && fresh(summaryAt);
 
     if (fullIsFresh && (!summaryIsFresh || fullAt >= summaryAt)) {

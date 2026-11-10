@@ -722,7 +722,7 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
   // картка не з'являлась ані в стрічці, ані в пошуку за частиною id.
   await withProfileSaveStage(
     'matching-card-index',
-    () => syncMatchingCardIndex(cardId, acceptedProfile),
+    () => syncMatchingCardIndex(cardId, acceptedProfile, { bumpRevision: true }),
   );
 
   // Cleanup is best-effort: legacy overlays and child-only history rules must
