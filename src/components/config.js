@@ -6669,25 +6669,49 @@ export const fetchAdminLastLoginCardsPage = (options = {}) => {
  * Id, для якого проєкції ще немає (або вона старої версії), повертається в
  * `missingIds` — викликач догідратує його повною анкетою.
  */
+/*
+ * Картки, які правила цьому читачеві закрили. Відмова на `matchingCards/{id}`
+ * — не збій, а відповідь «сховано» (`feedDate: false` поза колом «лише для
+ * вподобаних»; так само її читає `readCardFeedState`). Індекс фільтра знає й
+ * сховані анкети, тож донорка щовідкриття читала ту саму закриту картку двічі:
+ * тут, а потім ще раз повною анкетою (`fetchUsersByIds`) — і обидва рази
+ * отримувала відмову. Відповідь памʼятається за загальним правилом кеша
+ * (шість годин, `utils/matchingCachePolicy`) окремо для кожного читача.
+ */
+const deniedCardsStore = createMatchingTimedStore('deniedCards', { maxEntries: 1000 });
+const deniedCardKey = (viewerId, cardId) => `${viewerId}|${cardId}`;
+
 export const fetchMatchingCardsByIds = async (ids = []) => {
   const uniqueIds = [...new Set((ids || []).filter(Boolean).map(String))];
-  if (!uniqueIds.length) return { cards: {}, missingIds: [] };
+  if (!uniqueIds.length) return { cards: {}, missingIds: [], deniedIds: [] };
 
+  const viewerId = String(auth.currentUser?.uid || '').trim();
   const cards = {};
   const missingIds = [];
+  const deniedIds = [];
   await Promise.all(uniqueIds.map(async id => {
+    if (viewerId && deniedCardsStore.read(deniedCardKey(viewerId, id)) === true) {
+      deniedIds.push(id);
+      return;
+    }
     try {
       const raw = await readMatchingCardRaw(id);
       const expanded = isCurrentMatchingCardSchema(raw) ? expandMatchingCard(id, raw) : null;
       if (expanded) cards[id] = expanded;
       else missingIds.push(id);
     } catch (error) {
+      if (viewerId && isSearchIdPermissionDenied(error)) {
+        deniedCardsStore.write(deniedCardKey(viewerId, id), true);
+        primeMatchingFeedState(id, { [MATCHING_CARD_FEED_FIELD]: false });
+        deniedIds.push(id);
+        return;
+      }
       console.warn('[matchingCards] не вдалося прочитати урізану картку', { userId: id, error });
       missingIds.push(id);
     }
   }));
 
-  return { cards, missingIds };
+  return { cards, missingIds, deniedIds };
 };
 
 const MATCHING_CARDS_BACKFILL_BATCH_SIZE = 200;
