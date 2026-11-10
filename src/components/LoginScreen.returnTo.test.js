@@ -28,7 +28,8 @@ describe('LoginScreen returns the reader to the link they opened', () => {
     // вхід, який Firebase уже прийняв, стояв під спінером без кінця. Дата
     // входу пишеться у фоні, а вибір екрана має стелю часу.
     const source = loginSource();
-    expect(source).toContain("void persistAccountProfile(userCredential.user.uid, uploadedInfo, 'update')");
+    // Вхід анкети не міняє — нової версії (`rev`) він не ставить.
+    expect(source).toContain("void persistAccountProfile(userCredential.user.uid, uploadedInfo, 'update', { revisionNeutral: true })");
     expect(source).not.toContain("await persistAccountProfile(userCredential.user.uid, uploadedInfo, 'update')");
     expect(source).toContain('return await Promise.race([read, timeout]);');
   });

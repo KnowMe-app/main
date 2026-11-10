@@ -114,7 +114,18 @@ describe('черга перебудов картки', () => {
       source.indexOf('const refreshMatchingCardAfterProfileWrite = async'),
       source.indexOf('return entry.done;\n};'),
     );
-    expect(queue).toContain('const bumpRevision = Boolean(active.pending?.bumpRevision) || changesProfileRevision(payload);');
+    expect(queue).toContain('const writeBumpsRevision = !revisionNeutral && changesProfileRevision(payload);');
+    expect(queue).toContain('const bumpRevision = Boolean(active.pending?.bumpRevision) || writeBumpsRevision;');
     expect(queue).toContain('await runMatchingCardRefresh(id, next.payload, next.condition, next.bumpRevision);');
+  });
+});
+
+describe('вхід версії не ставить', () => {
+  it('обидва входи (пошта й Google) пишуть анкету з revisionNeutral', () => {
+    const login = require('fs').readFileSync(require('path').join(__dirname, 'LoginScreen.jsx'), 'utf8');
+    const persistCalls = login.match(/persistAccountProfile\([^;]*buildAuthLoginPayload|persistAccountProfile\(userCredential\.user\.uid, uploadedInfo[^)]*\)/g) || [];
+    expect(persistCalls.length).toBeGreaterThanOrEqual(2);
+    expect(login).toContain("void persistAccountProfile(userCredential.user.uid, uploadedInfo, 'update', { revisionNeutral: true })");
+    expect(login).toContain("todayDays, todayDash }), 'update', { revisionNeutral: true })");
   });
 });

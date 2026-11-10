@@ -10,7 +10,9 @@ describe('дзеркалення анкет у matchingCards', () => {
     // Хук стоїть у самих писачах, а не у викликачів: правити анкету можна з
     // кількох екранів, і на котромусь із них його забули б поставити.
     const source = config();
-    expect(source.match(/await refreshMatchingCardAfterProfileWrite\(userId, cleanedUploadedInfo, condition\);/g))
+    // `updateDataInRealtimeDB` ще й передає, чи міняє запис версію анкети
+    // (`revisionNeutral` — вхід).
+    expect(source.match(/await refreshMatchingCardAfterProfileWrite\(userId, cleanedUploadedInfo, condition(, \{ revisionNeutral \})?\);/g))
       .toHaveLength(2);
   });
 

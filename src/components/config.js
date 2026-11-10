@@ -5076,7 +5076,8 @@ const ownerGetInTouchHasLegacyGroups = ownerId => {
   return pending;
 };
 
-const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) => {
+const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition, { revisionNeutral = false } = {}) => {
+  const writeBumpsRevision = !revisionNeutral && changesProfileRevision(payload);
   const id = String(userId || '').trim();
   if (!id) return;
 
@@ -5086,7 +5087,7 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) 
     // останній запис. Рішення про нову версію (`rev`) при цьому не
     // перезаписується, а складається: правка анкети, за якою в черзі стала дата
     // входу, інакше лишилась би без версії, і читачі тримали б стару анкету.
-    const bumpRevision = Boolean(active.pending?.bumpRevision) || changesProfileRevision(payload);
+    const bumpRevision = Boolean(active.pending?.bumpRevision) || writeBumpsRevision;
     active.pending = { payload, condition, bumpRevision };
     return active.done;
   }
@@ -5095,7 +5096,7 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) 
   matchingCardRefreshes.set(id, entry);
   entry.done = (async () => {
     try {
-      let next = { payload, condition, bumpRevision: changesProfileRevision(payload) };
+      let next = { payload, condition, bumpRevision: writeBumpsRevision };
       while (next) {
         entry.pending = null;
         await runMatchingCardRefresh(id, next.payload, next.condition, next.bumpRevision);
@@ -5173,7 +5174,7 @@ export const updateProfileRole = async (userId, nextRole) => {
   });
 };
 
-export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) => {
+export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition, { revisionNeutral = false } = {}) => {
   try {
     // Права (`accessLevel`, `canCreateProfiles`, `multiDataSourceUserIds`)
     // видають лише адміни, і правила бази відкидають їх від будь-кого іншого —
@@ -5187,7 +5188,7 @@ export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition) =>
     const nodesWritten = await fanOutProfileNodes(userId, cleanedUploadedInfo);
     if (!nodesWritten) throwProfileWriteFailure(userId, 'вузли анкети');
 
-    await refreshMatchingCardAfterProfileWrite(userId, cleanedUploadedInfo, condition);
+    await refreshMatchingCardAfterProfileWrite(userId, cleanedUploadedInfo, condition, { revisionNeutral });
   } catch (error) {
     console.error(
       'Сталася помилка під час збереження даних в Realtime Database2:',
