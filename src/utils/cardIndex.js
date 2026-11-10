@@ -497,6 +497,19 @@ const findCompleteCachedProfile = (id, { revision = 0 } = {}) => {
 };
 
 /**
+ * Версія анкети, з якою її поклали в кеш, — якщо запис ще в межах стелі віку.
+ * Протухлу за TTL анкету з версією не треба читати цілком: вистачить спитати
+ * в бази саму версію (`matchingCards/{id}/rev`), і якщо вона та сама — анкета
+ * чинна. Так робить «Список» на `AddNewProfile`.
+ */
+export const readStoredProfileRevision = id => {
+  if (!id) return 0;
+  const stored = loadCards()[id];
+  if (!stored || stored.cacheVersion !== CARDS_CACHE_VERSION || !isWithinRevisionMaxAge(stored)) return 0;
+  return readCachedRevision(stored);
+};
+
+/**
  * Повна анкета з кешу. `revision` — версія з картки стрічки, яку показують:
  * з нею кеш віддає лише анкету тієї самої версії, зате й старшу за TTL.
  */

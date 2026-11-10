@@ -31,7 +31,7 @@ import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { formatDateToDisplay, formatDateToServer } from './inputValidations';
 import { getCurrentValue } from './getCurrentValue';
 import toast from 'react-hot-toast';
-import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCachedProfileBody, getCompleteCachedProfile, hasCompleteCachedProfile, incrementMatchingLoadStat, removeCard } from '../utils/cardIndex';
+import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCachedProfileBody, getCompleteCachedProfile, hasCompleteCachedProfile, incrementMatchingLoadStat, readStoredProfileRevision, removeCard } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
 import {
   SEARCH_QUERIES_ROOT_PATH,
@@ -9978,6 +9978,32 @@ export const createCardListIndexPrefilter = (filterSettings = {}, { favoritesMap
 };
 
 /**
+ * Версії анкет, які лежать у кеші з версією, але протухли за годинником.
+ *
+ * Сторінка «Списку» після шести годин читала кожну анкету цілком — сім вузлів
+ * на картку, ~140 читань на двадцять карток, — хоч здебільшого жодна з них не
+ * мінялась. Тепер для такої анкети спершу питається сама версія
+ * (`matchingCards/{id}/rev`, одне точкове читання): та сама — анкета з кешу
+ * (`fetchUsersByIds` з `revisions`), інша чи невідома — читається цілком, як
+ * раніше. Свіжі за годинником і зовсім не кешовані анкети не питаються.
+ */
+const readRevisionsForStaleCachedProfiles = async ids => {
+  const staleIds = (ids || []).filter(id => id && !hasCompleteCachedProfile(id) && readStoredProfileRevision(id) > 0);
+  if (!staleIds.length) return null;
+  const entries = await Promise.all(staleIds.map(async id => {
+    try {
+      const snapshot = await get(ref2(database, `${MATCHING_CARDS_ROOT}/${id}/${MATCHING_CARD_REVISION_FIELD}`));
+      const revision = Number(snapshot.exists() ? snapshot.val() : 0);
+      return Number.isFinite(revision) && revision > 0 ? [id, revision] : null;
+    } catch {
+      return null;
+    }
+  }));
+  const revisions = Object.fromEntries(entries.filter(Boolean));
+  return Object.keys(revisions).length ? revisions : null;
+};
+
+/**
  * Адаптери двигуна «Списку» над справжньою базою.
  *
  * Тут лише «звідки взяти»: що показати й у якому порядку, вирішує двигун за
@@ -9997,7 +10023,10 @@ export const createCardListBackendAdapters = ({
     readValues: (fieldKey, ids) => readCardListFieldValues(fieldKey, ids, { maps }),
     isCached: hasCompleteCachedProfile,
     prefilter: createCardListIndexPrefilter(filters, { favoritesMap, dislikedMap }),
-    hydrate: (ids, { cacheFirst = true } = {}) => fetchUsersByIds(ids, { skipCache: !cacheFirst }),
+    hydrate: async (ids, { cacheFirst = true } = {}) => {
+      if (!cacheFirst) return fetchUsersByIds(ids, { skipCache: true });
+      return fetchUsersByIds(ids, { revisions: await readRevisionsForStaleCachedProfiles(ids) });
+    },
     accept: entries => filterMain(entries, 'CARD_LIST', filters, favoritesMap, dislikedMap),
   };
 };
