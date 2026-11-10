@@ -4,7 +4,7 @@ export const createSaveComparisonField = deps => async (userId, field, value) =>
     auth, database, resolveCanonicalFieldName, resolveFieldOwnerNode, PROFILE_NODES,
     buildMatchingCardProjection, normalizeStoredDates, sanitizeUploadedInfoPhones,
     ref2, set, get, readProfileFromNodes, syncUserSearchIdIndex, syncUserSearchKeyIndex,
-    refreshMatchingCardAfterProfileWrite,
+    refreshMatchingCardAfterProfileWrite, bumpProfileRevision,
     clearMatchingSearchResultCache, setOwnerWriter, setOwnerGetInTouch,
   } = deps;
   const ownerId = auth.currentUser?.uid;
@@ -37,6 +37,11 @@ export const createSaveComparisonField = deps => async (userId, field, value) =>
     await syncUserSearchKeyIndex(userId, previous, next);
     if (node !== PROFILE_NODES.matchingCards) {
       await refreshMatchingCardAfterProfileWrite(userId, changed, 'update');
+    } else if (typeof bumpProfileRevision === 'function') {
+      // Поле картки пишеться напряму, повз перебудову картки, — тож і нову
+      // версію анкети (`rev`) ставить сам цей запис, після нього. Інакше кеш
+      // читачів, що звіряє анкету з версією, тримав би її стару копію.
+      await bumpProfileRevision(userId);
     }
   }
   const snapshot = await get(ref2(database, path));

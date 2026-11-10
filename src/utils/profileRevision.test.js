@@ -72,6 +72,11 @@ describe('кеш повної анкети звіряється з версіє�
     expect(getCachedProfileBody(OWNER, { revision: 200 })).toBeNull();
   });
 
+  it('новіша за показану картку анкета (дочитана після правки) теж чинна', () => {
+    saveCards({ [OWNER]: fullCard({ rev: 200 }) });
+    expect(getCompleteCachedProfile(OWNER, { revision: 100 })).toMatchObject({ rev: 200 });
+  });
+
   it('анкета без версії (кешована до неї) на відомій версії перечитується', () => {
     saveCards({ [OWNER]: fullCard() });
     expect(getCompleteCachedProfile(OWNER, { revision: 100 })).toBeNull();
@@ -83,6 +88,14 @@ describe('кеш повної анкети звіряється з версіє�
     flushPendingMatchingCacheWrites();
     const { cards } = composeCachedCards([OWNER]);
     expect(cards[OWNER].name).toBe('Оксана Нова');
+  });
+
+  it('повна анкета новіша за кешовану проєкцію — лишається повна', () => {
+    setCachedMatchingSummaryCards({ [OWNER]: { userId: OWNER, name: 'Оксана стара', rev: 100, __matchingSummary: true } });
+    flushPendingMatchingCacheWrites();
+    saveCards({ [OWNER]: fullCard({ name: 'Оксана нова', rev: 200, cachedAt: Date.now() + 1 }) });
+    const { cards } = composeCachedCards([OWNER]);
+    expect(cards[OWNER].name).toBe('Оксана нова');
   });
 
   it('на тій самій версії лишається повна анкета', () => {

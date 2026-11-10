@@ -455,9 +455,12 @@ const hasCachedContactValue = value => {
 /**
  * Версія анкети (`rev` у картці стрічки, час сервера): повна анкета в кеші
  * несе ту, з якою її прочитали (`readProfileFromNodes` читає картку першою).
- * Відома версія важить більше за годинник: збіглась — анкета чинна й понад
- * TTL, розійшлась — застаріла й у межах TTL.
+ * Відома версія важить більше за годинник: кешована не старша за показану —
+ * анкета чинна й понад TTL; старша — застаріла й у межах TTL. Новіша за
+ * показану буває, коли анкету щойно дочитали, а в кеші лежить ще стара
+ * картка стрічки: тоді права саме анкета.
  */
+const isRevisionCurrent = (stored, expected) => readCachedRevision(stored) >= expected;
 const readCachedRevision = card => {
   const rev = Number(card?.rev);
   return Number.isFinite(rev) && rev > 0 ? rev : 0;
@@ -487,7 +490,7 @@ const findCompleteCachedProfile = (id, { revision = 0 } = {}) => {
   if (expected) {
     const stored = loadCards()[id];
     if (!isCompleteCachedCard(id, stored) || !isWithinRevisionMaxAge(stored)) return null;
-    return readCachedRevision(stored) === expected ? stored : null;
+    return isRevisionCurrent(stored, expected) ? stored : null;
   }
   const card = getCard(id);
   return isCompleteCachedCard(id, card) ? card : null;
@@ -524,7 +527,7 @@ export const getCachedProfileBody = (id, { revision = 0 } = {}) => {
   if (expected) {
     const stored = loadCards()[id];
     if (!stored || stored.cacheVersion !== CARDS_CACHE_VERSION || !isWithinRevisionMaxAge(stored)) return null;
-    return readCachedRevision(stored) === expected ? stored : null;
+    return isRevisionCurrent(stored, expected) ? stored : null;
   }
   const card = getCard(id);
   if (!card || card.cacheVersion !== CARDS_CACHE_VERSION) return null;
@@ -958,11 +961,12 @@ export const composeCachedCards = (ids, options = {}) => {
     const fullAt = full ? (toTimestamp(full.cachedAt) || toTimestamp(full.lastAction)) : 0;
     const summaryEntry = summaries[id];
     const summaryAt = summaryEntry?.card ? getEntryCacheTimestamp(summaryEntry) : 0;
-    // Розійшлись версії анкети (`rev`) — повна застаріла, хоч би яка свіжа за
-    // годинником: проєкція вже знає про правку, якої в ній немає.
+    // Повна анкета старша за версією (`rev`), ніж проєкція, — застаріла, хоч
+    // би яка свіжа за годинником: проєкція вже знає про правку, якої в ній
+    // немає. Новіша за проєкцію лишається: її дочитали вже після правки.
     const fullRevision = readCachedRevision(full);
     const summaryRevision = readCachedRevision(summaryEntry?.card);
-    const fullIsStaleByRevision = Boolean(fullRevision && summaryRevision && fullRevision !== summaryRevision);
+    const fullIsStaleByRevision = Boolean(fullRevision && summaryRevision && fullRevision < summaryRevision);
     const fullIsFresh = Boolean(full) && fresh(fullAt) && !fullIsStaleByRevision;
     const summaryIsFresh = Boolean(summaryEntry?.card) && fresh(summaryAt);
 

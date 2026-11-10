@@ -5144,7 +5144,7 @@ export const saveComparisonField = async (userId, field, value) => createSaveCom
   auth, database, resolveCanonicalFieldName, resolveFieldOwnerNode, PROFILE_NODES,
   buildMatchingCardProjection, normalizeStoredDates, sanitizeUploadedInfoPhones, ref2, set, get,
   readProfileFromNodes, syncUserSearchIdIndex, syncUserSearchKeyIndex,
-  refreshMatchingCardAfterProfileWrite,
+  refreshMatchingCardAfterProfileWrite, bumpProfileRevision,
   clearMatchingSearchResultCache, setOwnerWriter, setOwnerGetInTouch,
 })(userId, field, value);
 
@@ -5947,6 +5947,21 @@ export const recordDailyLogin = async (userId, todayDash) => {
   );
   if (result?.committed && result.snapshot?.val?.() === date) {
     primeMatchingFeedState(id, { ...card, [MATCHING_CARD_FEED_FIELD]: date });
+  }
+};
+
+/**
+ * Нова версія анкети (`rev`, час сервера) для запису, що пише картку стрічки
+ * напряму, повз `syncMatchingCardIndex` (порівняння дублікатів). Кличеться
+ * після запису поля в картку — отже картка вже є.
+ */
+export const bumpProfileRevision = async userId => {
+  const id = String(userId || '').trim();
+  if (!id) return;
+  try {
+    await update(buildMatchingCardRef(id), { [MATCHING_CARD_REVISION_FIELD]: serverTimestamp() });
+  } catch (error) {
+    console.warn('[matchingCards] не вдалося поставити версію анкети', { userId: id, error });
   }
 };
 
