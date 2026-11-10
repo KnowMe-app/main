@@ -157,6 +157,7 @@ import {
   readCardRevision,
 } from '../utils/matchingCardIndex';
 import { isFeedStateDeniedForFeed } from '../utils/searchFeedDenial';
+import { replaceFeedProjections } from '../utils/freshFeedProjection';
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
 import { readBackendLinksEnabled } from '../utils/backendLinksMode';
@@ -8179,19 +8180,13 @@ const Matching = () => {
   /*
    * Свіжі картки, які приніс сторож стану (`onFreshStates` нижче): рядок з
    * кешу пристрою міг нести проєкцію шестигодинної давності — стару версію
-   * анкети (`rev`), програм (`programsAt`), фото. Лягають вони лише на
-   * проєкцію: повну анкету рядка, дочитану після показу, свіжіша за неї
-   * картка не підміняє. Памʼять — до зміни читача.
+   * анкети (`rev`), програм (`programsAt`), фото. Вони лягають у кеш проєкцій
+   * і **в сам `users`**, а не накладкою на показ: з `users` складаються і
+   * рядки, і `feedSourceRef`, з якого розгортання питає повну анкету, — тож
+   * `ensureFullProfile` звіряє кеш зі свіжою версією, а наступна сторінка чи
+   * «Оновити стрічку» перебиває її, як будь-який новіший запис. Проєкція
+   * замінюється цілком (`replaceFeedProjection`): стерте поле мусить зникнути.
    */
-  const [freshFeedCardsById, setFreshFeedCardsById] = useState({});
-  useEffect(() => {
-    setFreshFeedCardsById(current => (Object.keys(current).length ? {} : current));
-  }, [ownerId]);
-  const withFreshFeedCard = React.useCallback(user => {
-    const fresh = user?.userId ? freshFeedCardsById[user.userId] : null;
-    if (!fresh || !isMatchingSummaryCard(user)) return user;
-    return { ...user, ...fresh };
-  }, [freshFeedCardsById]);
   const rememberFreshFeedStates = React.useCallback(states => {
     const cards = {};
     Object.entries(states || {}).forEach(([id, state]) => {
@@ -8201,13 +8196,13 @@ const Matching = () => {
     });
     if (!Object.keys(cards).length) return;
     setCachedMatchingSummaryCards(cards);
-    setFreshFeedCardsById(current => ({ ...current, ...cards }));
+    setUsers(current => replaceFeedProjections(current, cards, isMatchingSummaryCard));
   }, []);
 
   const feedRowsUnchecked = useMemo(() => {
-    const rows = feedSource.map(user => withOwnEdits(withLazyPhotos(withFreshFeedCard(user))));
+    const rows = feedSource.map(user => withOwnEdits(withLazyPhotos(user)));
     return placePostponedLast ? placePostponedCardsLast(rows, readRowPostponeSortDate) : rows;
-  }, [feedSource, placePostponedLast, readRowPostponeSortDate, withFreshFeedCard, withLazyPhotos, withOwnEdits]);
+  }, [feedSource, placePostponedLast, readRowPostponeSortDate, withLazyPhotos, withOwnEdits]);
 
   /*
    * Перед показом — свіжий `feedDate` (`useFreshFeedStateGate`): картка з кешу
