@@ -30,4 +30,18 @@ describe('useFreshFeedStateGate', () => {
     const { result } = renderHook(() => useFreshFeedStateGate(rows, { reader, enabled: false }));
     expect(result.current.rows).toBe(rows);
   });
+
+  it('прочитані стани віддає до того, як рядки відкриються', async () => {
+    const reader = createFeedStateReader(async id => ({ feedDate: '2026-10-01', card: { name: id } }));
+    const seen = [];
+    let hook;
+    const onFreshStates = jest.fn(states => { seen.push(hook.result.current.rows.length); return states; });
+    hook = renderHook(() => useFreshFeedStateGate(rows, { reader, onFreshStates }));
+    await waitFor(() => expect(hook.result.current.pendingCount).toBe(0));
+    expect(onFreshStates).toHaveBeenCalledTimes(1);
+    expect(Object.keys(onFreshStates.mock.calls[0][0]).sort()).toEqual(['alive', 'deleted']);
+    expect(onFreshStates.mock.calls[0][0].alive.card).toEqual({ name: 'alive' });
+    // У ту мить рядки ще сховані.
+    expect(seen).toEqual([0]);
+  });
 });
