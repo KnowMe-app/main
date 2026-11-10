@@ -8,7 +8,7 @@ describe('нова анкета одразу потрапляє в усі три
 
   it('makeNewUser пише картку стрічки', () => {
     expect(config()).toContain(
-      'await syncMatchingCardIndex(newUserId, newUser, { existingCard: null, includeStorageAvatar: false });',
+      'await syncMatchingCardIndex(newUserId, newUser, { existingCard: null, includeStorageAvatar: false, bumpRevision: true });',
     );
   });
 

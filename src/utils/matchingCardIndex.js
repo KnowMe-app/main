@@ -126,6 +126,19 @@ const CSECTION_ALIASES = ['cSection', 'csection', 'c_section', 'cesareanSection'
 export const MATCHING_CARD_PROGRAMS_AT_FIELD = 'programsAt';
 
 /**
+ * Версія анкети (`profileNodeSchema`, `MATCHING_CARD_REVISION_FIELDS`). Як і
+ * `programsAt`, з анкети не рахується, а переноситься з попередньої картки;
+ * ставить нову сам писач (`syncMatchingCardIndex` з `bumpRevision`).
+ */
+export const MATCHING_CARD_REVISION_FIELD = 'rev';
+
+/** Версія анкети з картки чи з повної анкети, що несе поля картки; `0` — немає. */
+export const readCardRevision = card => {
+  const rev = Number(card?.[MATCHING_CARD_REVISION_FIELD]);
+  return Number.isFinite(rev) && rev > 0 ? rev : 0;
+};
+
+/**
  * Ролі, які людина сховала (`hiddenRoles`, рядок кодів через кому — масив у
  * полі анкети читався б як історія версій). Донорка, яка ще й підбирає
  * донорок як агентка, може зняти одну з анкет, не знімаючи іншої.
@@ -459,6 +472,8 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   if (Number.isFinite(programsAt) && programsAt > 0 && !isProgramsOwnerRoleHidden(listProfileRoles(data), hiddenRoles)) {
     projection[MATCHING_CARD_PROGRAMS_AT_FIELD] = programsAt;
   }
+  const revision = readCardRevision(options.existingCard);
+  if (revision) projection[MATCHING_CARD_REVISION_FIELD] = revision;
 
   return projection;
 };

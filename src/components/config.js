@@ -97,6 +97,7 @@ import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_FEED_FIELD,
   MATCHING_CARD_PROGRAMS_AT_FIELD,
+  MATCHING_CARD_REVISION_FIELD,
   MATCHING_CARD_ORDER_FIELD,
   MATCHING_CARD_REVIEW_FLAG_FIELD,
   areMatchingCardProjectionsEqual,
@@ -3110,7 +3111,14 @@ export const readProfileContacts = userId => {
  * `users/{чужий id}` відкритий лише адмінам, тож на першій же відмові гинула
  * вся відповідь.
  */
-export const fetchUsersByIds = async (ids, { skipCache = false } = {}) => {
+export const fetchUsersByIds = async (ids, { skipCache = false, revisions = null } = {}) => {
+  // `revisions` — версії анкет (`rev`) з карток стрічки, які показують: для
+  // такого id кеш віддає лише анкету тієї самої версії, зате й старшу за TTL.
+  // Без версії — годинник, як раніше.
+  const cacheOptionsFor = id => {
+    const revision = Number(revisions?.[id]);
+    return Number.isFinite(revision) && revision > 0 ? { revision } : undefined;
+  };
   try {
     const uniqueIds = [...new Set((ids || []).filter(Boolean).map(String))];
     const result = {};
@@ -3129,7 +3137,7 @@ export const fetchUsersByIds = async (ids, { skipCache = false } = {}) => {
       // з першого відкриття були і телефон, і повне прізвище, з другого
       // приїжджала обрізаною — з кеша, без жодного запиту, отже й без шансу
       // це помітити. Умову рахує та сама функція, якою кеш наповнюється.
-      const cached = getCompleteCachedProfile(id);
+      const cached = getCompleteCachedProfile(id, cacheOptionsFor(id));
       if (!cached) {
         missingIds.push(id);
         return;
@@ -3142,7 +3150,7 @@ export const fetchUsersByIds = async (ids, { skipCache = false } = {}) => {
     // (`readProfileContacts`). Картка поза стрічкою (для читача без права
     // поза нею) йде звичайним читанням: його межа віддасть саму картку.
     const bodyOnly = skipCache ? [] : await Promise.all(missingIds.map(async id => {
-      const body = getCachedProfileBody(id);
+      const body = getCachedProfileBody(id, cacheOptionsFor(id));
       if (!body) return [id, null];
       try {
         const { allowed, contacts } = await readProfileContacts(id);
@@ -3846,7 +3854,7 @@ export const makeNewUser = async (searchedValue, rawQuery = '') => {
   await syncUserSearchKeyIndex(newUserId, {}, newUser);
   // І одразу отримує урізану картку, інакше вона зʼявиться в стрічці тільки
   // після наступної індексації.
-  await syncMatchingCardIndex(newUserId, newUser, { existingCard: null, includeStorageAvatar: false });
+  await syncMatchingCardIndex(newUserId, newUser, { existingCard: null, includeStorageAvatar: false, bumpRevision: true });
   // І повний `searchId` по всіх полях, а не лише по тому, з якого її створили.
   // Запит на кшталт «УК СМ …» кладе в анкету і імʼя, і прізвище, і контакт —
   // але нижче в індекс іде тільки ключ самого запиту, тож за рештою полів нова
@@ -4473,6 +4481,20 @@ const normalizeIndexedValues = value => Array.isArray(value)
  */
 const readProfileForMatchingCard = async id => readProfileFromNodes(id, { includeTechnical: true });
 
+/**
+ * Чи міняє запис те, що бачить читач повної анкети, — тобто чи ставити нову
+ * версію (`rev`). Службові позначки цього не роблять: дата входу пишеться
+ * щодня, `lastAction` — на кожну дію адміна, а позначки власника (`getInTouch`,
+ * `writer`, графік стимуляції) живуть у `multiData` й анкетою не є. Нова
+ * версія на них скидала б кеш анкети в усіх читачів без жодної зміни в ній.
+ */
+const PROFILE_REVISION_NEUTRAL_FIELDS = new Set([
+  'userId', 'lastLogin', 'lastLogin2', 'lastAction', 'areTermsConfirmed',
+  'getInTouch', 'writer', 'stimulationSchedule', 'cachedAt', 'cacheVersion',
+]);
+export const changesProfileRevision = payload => Boolean(payload) && typeof payload === 'object'
+  && Object.keys(payload).some(key => !key.startsWith('__') && !PROFILE_REVISION_NEUTRAL_FIELDS.has(key));
+
 const runMatchingCardRefresh = async (id, payload, condition) => {
   try {
     // Перечитане знизу, збережене зверху. `publish` власного вузла не має —
@@ -4496,7 +4518,7 @@ const runMatchingCardRefresh = async (id, payload, condition) => {
       today: getCurrentDate().todayDash,
     });
     if (!nextData || typeof nextData !== 'object') return;
-    await syncMatchingCardIndex(id, nextData);
+    await syncMatchingCardIndex(id, nextData, { bumpRevision: changesProfileRevision(payload) });
   } catch (error) {
     console.warn('[matchingCards] не вдалося оновити картку після збереження анкети', { userId: id, error });
   }
@@ -5834,7 +5856,12 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
       }
     };
 
+    // Версія анкети (`rev`) — після запису вузлів: прочитана раніше за
+    // вузли, вона дала б читачеві покласти в кеш старе тіло з новою версією.
+    // Ставить її сервер (`serverTimestamp`), а не годинник браузера.
+    const bumpRevision = options.bumpRevision === true;
     if (existing && areMatchingCardProjectionsEqual(existing, projection)) {
+      if (bumpRevision) await update(buildMatchingCardRef(id), { [MATCHING_CARD_REVISION_FIELD]: serverTimestamp() });
       await restoreProgramsVersion();
       return projection;
     }
@@ -5843,13 +5870,14 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
     // above. A field-level patch never writes programsAt on its own, so a
     // concurrent program save cannot be rolled back by this profile save;
     // the one exception is a hidden owner role (`resolveProgramsVersionPatch`).
-    const independentlyOwnedFields = new Set([MATCHING_CARD_PROGRAMS_AT_FIELD]);
+    const independentlyOwnedFields = new Set([MATCHING_CARD_PROGRAMS_AT_FIELD, MATCHING_CARD_REVISION_FIELD]);
     const projectionPatch = { ...projection };
     independentlyOwnedFields.forEach(field => { delete projectionPatch[field]; });
     Object.keys(existing || {}).forEach(field => {
       if (!(field in projection) && !independentlyOwnedFields.has(field)) projectionPatch[field] = null;
     });
     if (programsVersionPatch === null) projectionPatch[MATCHING_CARD_PROGRAMS_AT_FIELD] = null;
+    if (bumpRevision) projectionPatch[MATCHING_CARD_REVISION_FIELD] = serverTimestamp();
 
     // Правила `matchingCards` закриті переліком полів (`$other: false`). Тут
     // стояв повтор запису без нових полів (`programsAt`, `seekingRole` з

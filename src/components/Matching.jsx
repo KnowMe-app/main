@@ -153,6 +153,7 @@ import {
   MATCHING_CARD_REVIEW_FLAG_FIELD,
   isMatchingCardPublished,
   isMatchingSummaryCard,
+  readCardRevision,
 } from '../utils/matchingCardIndex';
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
@@ -6396,13 +6397,19 @@ const Matching = () => {
     // на контакти тримається на `feedDate`, їх у кеш не кладуть, і віддати таку
     // анкету означало б, що телефон зникає з другого відкриття
     // (`getCompleteCachedProfile`).
-    const cached = getCompleteCachedProfile(userId);
+    //
+    // Версія анкети з картки стрічки (`rev`) важить більше за годинник:
+    // збіглась — анкета з кешу чинна й понад шість годин, розійшлась — її
+    // правили, і кеш не відповідає навіть у межах TTL.
+    const rowRevision = readCardRevision(user);
+    const revisionOptions = rowRevision ? { revision: rowRevision } : undefined;
+    const cached = getCompleteCachedProfile(userId, revisionOptions);
     if (cached) {
       setFullProfileByUserId(previous => ({ ...previous, [userId]: cached }));
       return Promise.resolve();
     }
 
-    return fetchUsersByIds([userId])
+    return fetchUsersByIds([userId], rowRevision ? { revisions: { [userId]: rowRevision } } : undefined)
       .then(hydrated => {
         const profile = hydrated?.[userId];
         if (!profile) return;
