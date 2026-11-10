@@ -49,23 +49,32 @@
 
 ```
 matchingCards/{userId} = {
-  name, surname, birth, city, region, country,
-  height, weight, bmi, maritalStatus, csection, blood, ownKids, lastDelivery,
-  role, userRole, lastLogin2, lastAction, getInTouch,
-  avatar,       // один готовий URL — Storage при показі не чіпається
-  contacts,     // "phone,telegram" — лише перелік ключів, без значень
-  fieldsCount,  // порахований на повній анкеті
-  publish,      // тільки коли false
-  v             // версія схеми
+  // поля анкети як є (MATCHING_CARD_DIRECT_FIELDS)
+  name, birth, city, region, country, height, weight, bmi,
+  ownKids, csection, lastDelivery, maritalStatus, experience, eyeColor, hairColor,
+  // похідні (MATCHING_CARD_DERIVED_FIELDS)
+  role, surnameShort, rh, seekingRole,
+  avatar,         // один готовий URL (мініатюра головного фото) — Storage при показі не чіпається
+  feedDate,       // дата — у стрічці; false — сховано; ключа немає — не публікували
+  audience,       // 'liked' — «лише для вподобаних»
+  // копії й версії
+  agencyName, blood,  // копії з profileDetails; blood — лише в опублікованої
+  hasPublicReview,    // є публічний відгук
+  programsAt,         // версія multiData/programs/{uid}
+  rev                 // версія анкети: час сервера останньої правки показаного
 }
 ```
 
-Контракт лежить у `src/utils/matchingCardIndex.js`; писач і читач беруть його
-звідти, тож розійтись не можуть. Порожні поля не пишуться — «немає значення» це
+Контракт лежить у `src/utils/matchingCardIndex.js`, перелік полів — у
+`src/utils/profileNodeSchema.js` (`MATCHING_CARD_ALLOWED_FIELDS`), а правила
+бази приймають рівно його (`$other: false`); писач і читач беруть його звідти,
+тож розійтись не можуть. Полів `contacts`, `fieldsCount`, `lastLogin2`,
+`publish` і версії схеми `v` у картці більше немає: контакти — окреме право
+(`profileContacts`), а публікацію й порядок несе `feedDate`. Порожні поля не пишуться — «немає значення» це
 відсутність ключа, як і в `searchKey`.
 
 **Читання.** Сторінка стрічки — один запит по `matchingCards` з
-`orderByChild('lastLogin2')`, замість сторінки повних анкет плюс поштучної
+`orderByChild('feedDate')`, замість сторінки повних анкет плюс поштучної
 гідратації. Пошук по індексу `searchKey` теж спершу питає проєкції і йде в
 анкети лише за тими id, чиєї проєкції ще немає. Порожній вузол або відмова в
 доступі мовчки повертають читача до анкет.
@@ -101,7 +110,15 @@ Storage для анкет без `photos` — один рекурсивний о
 стрічки.
 
 Будь-який зі шляхів потрібен для анкет, які з моменту появи проєкції ще жодного
-разу не зберігали, і щоб перебудувати вузол після зміни схеми (`v`).
+разу не зберігали, і щоб перебудувати вузол після зміни схеми.
+
+**Версія анкети (`rev`).** Кеш повної анкети звіряється не лише з годинником
+(шість годин), а й з `rev` картки: та сама версія — анкета з кешу навіть понад
+TTL (до тижня), інша — перечитується навіть у межах TTL. Ставить її
+`syncMatchingCardIndex` з `bumpRevision` після запису вузлів і лише на правку
+показаного (`changesProfileRevision`); дата входу, `lastAction` і позначки
+власника її не міняють. «Список» на `AddNewProfile` протухлу анкету з версією
+звіряє одним читанням `matchingCards/{id}/rev` замість семи вузлів.
 
 ### Фото понад аватар — на свайп
 
@@ -217,9 +234,9 @@ best-effort: втрата позначки коштує показу шару в
 торкнулась зміна, не можна, а «щойно завела, а пошук її не бачить» — це не та
 ціна, яку варто платити за кілобайти списків id.
 
-## Сторінка одна — 24 картки, без паузи
+## Сторінка одна — 10 карток, без паузи
 
-`MATCHING_FEED_PAGE_SIZE` (24, `utils/matchingFeedPaging.js`) задає і перший
+`MATCHING_FEED_PAGE_SIZE` (10, `utils/matchingFeedPaging.js`) задає і перший
 екран усіх трьох входів — стрічки, фільтрів і видачі пошуку, — і кожну наступну
 порцію, для будь-якого читача.
 
@@ -300,7 +317,7 @@ scoped-індекс був єдиним джерелом для такого г�
 |---|---|
 | Рідкісне значення (рідка кров, вузький вік) | `searchKey` — називає id напряму |
 | Часте значення (заміжня, Україна, є телефон) | скан `matchingCards` + пост-фільтр |
-| Без фільтрів | скан `matchingCards` по `lastLogin2` |
+| Без фільтрів | скан `matchingCards` по `feedDate` |
 | Доступ за правилами | копія індексу в наборі `searchKeySets` |
 
 ## Як заміряти

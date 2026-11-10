@@ -2,7 +2,11 @@ name: Lint and tests
 
 # Ті самі перевірки, що й у деплої (`deploy.yml`), але на PR: червоний тест
 # видно до злиття, а не в ту мить, коли він уже зупинив викочування сайту.
-# Нічого не збирає й не деплоїть.
+# Нічого не деплоїть, але збирає прод-збірку: з `CI=true` CRA вважає
+# попередження eslint-плагіна збірки помилками (`no-loop-func` тощо), а
+# `npm run lint:js` їх не бачить — так 10.11 деплой сайту зупинився вже
+# після злиття. Без `.env`: змінні Firebase у збірці лише підставляються,
+# і без них вона проходить так само.
 
 on:
   pull_request:
@@ -33,3 +37,6 @@ jobs:
 
       - name: Cloud Functions tests
         run: cd functions && npm ci && npm test
+
+      - name: Production build
+        run: CI=true npm run build
