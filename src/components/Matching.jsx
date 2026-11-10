@@ -28,6 +28,7 @@ import {
   FeedEndNotice,
   FeedEndHint,
   FeedList,
+  FeedHeadNewButton,
   FeedColumn,
   FeedLoadPromptButton,
   ConnectionNotice,
@@ -122,6 +123,7 @@ import {
   setQueryPagination,
 } from '../utils/cardIndex';
 import { normalizeFeedCursor, resolveFeedCacheResume } from '../utils/matchingFeedCacheResume';
+import { prependFeedHead, selectFreshFeedHead, shouldPrependFeedHeadNow } from '../utils/matchingFeedHead';
 import { useFreshFeedStateGate } from '../hooks/useFreshFeedStateGate';
 import {
   ensureLiveReactionEntry,
@@ -1060,6 +1062,9 @@ const Matching = () => {
   const feedSnapshot = feedSnapshotRef.current;
   const restoredFeedSnapshotRef = useRef(Boolean(feedSnapshot));
   const [users, setUsers] = useState(() => feedSnapshot?.users || []);
+  // Нові анкети з голови стрічки, що приїхали, поки людина гортала посеред
+  // деки (`utils/matchingFeedHead`): чекають на плашку «Нові анкети: N».
+  const [feedHeadNewUsers, setFeedHeadNewUsers] = useState([]);
   const usersRef = useRef(users);
   // Public source readiness is deliberately separate from the rendered deck:
   // own drafts and access-scoped cards must never satisfy the first ten-card
@@ -3218,6 +3223,7 @@ const Matching = () => {
     // міг бути зібраний за іншої ролі чи фільтрів, тож перша ж відповідь
     // бекенду його замінює, а не стає за ним (`replacesRestoredDeck`).
     let replacesRestoredDeck = restoredFeedSnapshotRef.current;
+    setFeedHeadNewUsers([]);
     if (restoredFeedSnapshotRef.current) restoredFeedSnapshotRef.current = false;
     else setUsers([]); // clear previous list to avoid caching wrong data
     loadedIdsRef.current = new Set();
@@ -3455,6 +3461,36 @@ const Matching = () => {
         void loadCommentsFor(filteredCached);
         if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
         setViewMode('default');
+
+        // Верх стрічки — з бази на кожному відкритті з кешу (`utils/matchingFeedHead`):
+        // інакше той, хто гортає щодня, нових анкет угорі не бачив, бо кожна
+        // дочитана сторінка продовжує списку життя. Читається перша порція з
+        // голови, без курсора, і курсора хвоста не чіпає. Людина вгорі — нове
+        // стає нагору одразу; посеред стрічки — чекає на плашку.
+        const cachedFeedIds = new Set(filteredCached.map(u => u.userId));
+        void (async () => {
+          try {
+            const head = await fetchChunk(INITIAL_LOAD, undefined, exclude);
+            if (!canApplyInitialLoadWithFilters()) return;
+            const fresh = selectFreshFeedHead({ headUsers: head?.users, knownIds: loadedIdsRef.current })
+              .filter(u => isMatchingCardId(u.userId) && !cachedFeedIds.has(u.userId));
+            if (!fresh.length) return;
+            rememberFeedSummaryCards(fresh);
+            void loadCommentsFor(fresh);
+            if (shouldPrependFeedHeadNow(typeof window === 'undefined' ? 0 : window.scrollY)) {
+              fresh.forEach(u => loadedIdsRef.current.add(u.userId));
+              setUsers(prev => {
+                const result = prependFeedHead(prev, fresh);
+                if (result !== prev) setIdsForQuery(feedListKey, result.map(u => u.userId));
+                return result;
+              });
+            } else {
+              setFeedHeadNewUsers(fresh);
+            }
+          } catch (error) {
+            console.warn('[loadInitial] feed head refresh failed', error);
+          }
+        })();
 
         // Минулого разу джерело дочитали до кінця за цих самих фільтрів — отже
         // нових карток у ньому шукати нема де, скільки б їх не лишилось на
@@ -3707,12 +3743,17 @@ const Matching = () => {
     setOpenFilterGroup(null);
   }, [applyFilters]);
 
-  const resetFiltersAndCache = React.useCallback(() => {
+  // «Почати стрічку заново» скидає й фільтри, «Оновити стрічку» (`keepFilters`)
+  // — лише кеш: людина, яка хотіла побачити нове під своїми фільтрами, не
+  // мусить збирати їх наново.
+  const restartFeed = React.useCallback(({ keepFilters = false } = {}) => {
     const debugMatchingCache = isAdmin || shouldDebugAdditionalMatching(ownerId);
-    const removedLocalStorageKeys = clearMatchingCache('matching reset filters and cache');
+    const removedLocalStorageKeys = clearMatchingCache(keepFilters ? 'matching refresh feed' : 'matching reset filters and cache');
     clearMatchingCardsPageInFlight();
-    localStorage.removeItem('matchingFilters');
-    localStorage.removeItem(SEARCH_KEY);
+    if (!keepFilters) {
+      localStorage.removeItem('matchingFilters');
+      localStorage.removeItem(SEARCH_KEY);
+    }
 
     emptyAutoLoadMoreAttemptsRef.current = 0;
     autoLoadMoreSignatureRef.current = '';
@@ -3732,11 +3773,14 @@ const Matching = () => {
     additionalMatchingApplyVersionRef.current += 1;
     invalidateReactionAsyncWork();
     resetReactionPaginationState();
-    filtersRef.current = {};
+    if (!keepFilters) filtersRef.current = {};
     viewModeRef.current = 'default';
-    setFilters({});
-    setDraftFilters({});
+    if (!keepFilters) {
+      setFilters({});
+      setDraftFilters({});
+    }
     setUsers([]);
+    setFeedHeadNewUsers([]);
     additionalAccessUsersRef.current = [];
     setAdditionalAccessUsers([]);
     setAdditionalNextOffset(0);
@@ -3749,7 +3793,7 @@ const Matching = () => {
     setHasMore(true);
     setLoading(false);
     setViewMode('default');
-    setFilterResetToken(prev => prev + 1);
+    if (!keepFilters) setFilterResetToken(prev => prev + 1);
 
     if (debugMatchingCache) {
       console.info('[Matching cache] reset removed keys:', removedLocalStorageKeys);
@@ -3757,8 +3801,21 @@ const Matching = () => {
     }
 
     loadInitial();
-    toast.success(uiText('Фільтри та кеш скинуто', language));
+    toast.success(uiText(keepFilters ? 'Стрічку оновлено' : 'Фільтри та кеш скинуто', language));
   }, [invalidateReactionAsyncWork, isAdmin, language, loadInitial, ownerId, resetReactionPaginationState]);
+
+  const resetFiltersAndCache = React.useCallback(() => restartFeed(), [restartFeed]);
+  const refreshFeedKeepingFilters = React.useCallback(() => restartFeed({ keepFilters: true }), [restartFeed]);
+
+  // Плашка «Нові анкети: N»: нове стає нагору, а екран — на початок стрічки.
+  const showFeedHeadNewUsers = React.useCallback(() => {
+    const fresh = feedHeadNewUsers;
+    setFeedHeadNewUsers([]);
+    if (!fresh.length) return;
+    fresh.forEach(u => loadedIdsRef.current.add(u.userId));
+    setUsers(prev => prependFeedHead(prev, fresh));
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [feedHeadNewUsers]);
 
   // Чи картка є в загальній стрічці. Та, що є, видна всім, кому взагалі
   // відкрито матчинг; та, якої немає, — лише тим, кому її відкрили правилами
@@ -8138,6 +8195,13 @@ const Matching = () => {
       onClick: () => setDiagnosticsEnabled(current => !current),
     }] : []),
     {
+      key: 'refreshFeed',
+      label: uiText('Оновити стрічку', language),
+      description: uiText('Завантажити анкети наново, не скидаючи фільтрів', language),
+      icon: <FaSyncAlt />,
+      onClick: refreshFeedKeepingFilters,
+    },
+    {
       key: 'refreshCache',
       // «Оновити кеш» — слово з кухні: людина не знає, що таке кеш, і не
       // наважується натиснути. Дія та сама — фільтри скидаються, анкети
@@ -8431,6 +8495,11 @@ const Matching = () => {
               )}
               {feedRows.length > 0 && viewLayout === 'list' && (
                 <>
+                {feedHeadNewUsers.length > 0 && (
+                  <FeedHeadNewButton type="button" data-testid="feed-head-new" onClick={showFeedHeadNewUsers}>
+                    {uiText('Нові анкети: {count}', language, { count: feedHeadNewUsers.length })}
+                  </FeedHeadNewButton>
+                )}
                 <FeedList $restoringScroll={scrollRestorePending}>
                   {/* Донорка, яка ще й агентка, — дві анкети, а не одна:
                       під плашкою «Агенція» стояли зріст, вага й пологи
