@@ -17,10 +17,16 @@ import { gateRowsByFeedState } from '../utils/searchFeedDenial';
  *
  * `enabled: false` — стрічка адміна: вона навмисно показує й сховані анкети.
  *
+ * `onFreshStates` отримує прочитані стани (`{ id: state }`) **до** того, як
+ * рядки відкриються: читач несе в стані й саму картку (`state.card`), і
+ * рядок з кешу показується вже з нею, а не підміняється під пальцем.
+ *
  * @param {object[]} rows
- * @param {{ reader: { read: Function, peek: Function }, enabled?: boolean, skip?: (row: object) => boolean }} options
+ * @param {{ reader: { read: Function, peek: Function }, enabled?: boolean, skip?: (row: object) => boolean, onFreshStates?: (states: object) => void }} options
  */
-export const useFreshFeedStateGate = (rows, { reader, enabled = true, skip }) => {
+export const useFreshFeedStateGate = (rows, { reader, enabled = true, skip, onFreshStates }) => {
+  const onFreshStatesRef = useRef(onFreshStates);
+  onFreshStatesRef.current = onFreshStates;
   // Перевірене в цьому монтуванні: відповідь прийшла (зі станом чи без —
   // збій читання картку не ховає). Лічильник лише будить рендер.
   const checkedRef = useRef(new Set());
@@ -44,10 +50,14 @@ export const useFreshFeedStateGate = (rows, { reader, enabled = true, skip }) =>
     if (!pendingKey) return;
     const ids = pendingKey.split('|');
     let cancelled = false;
-    Promise.all(ids.map(id => reader.read(id).then(() => {
+    const states = {};
+    Promise.all(ids.map(id => reader.read(id).then(state => {
       checkedRef.current.add(id);
+      if (state) states[id] = state;
     }))).then(() => {
-      if (!cancelled && mountedRef.current) setVersion(value => value + 1);
+      if (cancelled || !mountedRef.current) return;
+      if (Object.keys(states).length) onFreshStatesRef.current?.(states);
+      setVersion(value => value + 1);
     });
     return () => { cancelled = true; };
   }, [pendingKey, reader]);

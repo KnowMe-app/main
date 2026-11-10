@@ -3646,12 +3646,16 @@ export const searchUserByPartialUserIdUsers = async (userId, users) => {
 };
 
 // Сховану анкету не показують ні пошук, ні стрічка: рішення — свіжий стан
-// картки з бази, а не картка з кеша (`utils/searchFeedDenial`). Стан —
-// точковий `feedDate`, а не картка цілком (вона важить на порядок більше), і
-// лише коли там `false`, ще й `audience`: тільки тоді він щось вирішує
-// («лише для вподобаних»). Так картка коштує одне читання, а не два — на
-// теплому перезавантаженні це 10 запитів на деку замість 20. Памʼять
-// вкладки — пʼять хвилин.
+// картки з бази, а не картка з кеша (`utils/searchFeedDenial`). Читається
+// картка цілком, одним запитом (10.11): `feedDate` і `audience` приїжджають
+// разом, а решта картки — заодно свіжа проєкція для кешованого рядка. Доти
+// тут був точковий `feedDate` (і другим запитом `audience` схованої), а рядок
+// з кешу пристрою ніс до шести годин стару версію анкети (`rev`), програм
+// (`programsAt`) і фото — і за старою версією `ensureFullProfile` вирішував,
+// чи годиться кешована повна анкета. Запитів стільки ж (10 на деку теплого
+// перезавантаження), байтів — кілька сотень на картку. Право читання те саме:
+// окремих `.read` на полях картки правила не мають, тож цілу картку бачить
+// рівно той, хто бачив її `feedDate`. Памʼять вкладки — пʼять хвилин.
 const FEED_STATE_TTL_MS = 5 * 60 * 1000;
 //
 // Відмова правил тут — не збій, а відповідь. `matchingCards/$uid` закритий
@@ -3661,13 +3665,15 @@ const FEED_STATE_TTL_MS = 5 * 60 * 1000;
 // і поки відмова йшла в «збій — картку лишаємо», сховану чи видалену анкету
 // агенції вона й далі бачила з кешу. Мережевий збій лишається збоєм.
 const readCardFeedState = async userId => {
-  const base = `${MATCHING_CARDS_ROOT}/${userId}`;
   try {
-    const feedSnapshot = await get(ref2(database, `${base}/${MATCHING_CARD_FEED_FIELD}`));
-    const feedDate = feedSnapshot.exists() ? feedSnapshot.val() : null;
-    if (feedDate !== false && feedDate !== 'false') return { feedDate, audience: null };
-    const audienceSnapshot = await get(ref2(database, `${base}/audience`));
-    return { feedDate, audience: audienceSnapshot.exists() ? audienceSnapshot.val() : null };
+    const snapshot = await get(ref2(database, `${MATCHING_CARDS_ROOT}/${userId}`));
+    const card = snapshot.exists() ? snapshot.val() : null;
+    if (!card || typeof card !== 'object') return { feedDate: null, audience: null };
+    return {
+      feedDate: card[MATCHING_CARD_FEED_FIELD] ?? null,
+      audience: card.audience ?? null,
+      card,
+    };
   } catch (error) {
     if (isSearchIdPermissionDenied(error)) return { feedDate: false, audience: null };
     throw error;

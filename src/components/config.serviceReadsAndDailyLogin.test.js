@@ -115,22 +115,33 @@ afterEach(() => {
 });
 
 describe('перевірка стану стрічки', () => {
+  // Картка читається цілком і одним запитом: стан і заодно свіжа проєкція.
   it('відмова правил означає «сховано», а не збій', async () => {
-    serveNodes({ [`matchingCards/${CARD_ID}/feedDate`]: permissionDenied() });
+    serveNodes({ [`matchingCards/${CARD_ID}`]: permissionDenied() });
     await expect(matchingFeedStateReader.read(CARD_ID)).resolves.toEqual({ feedDate: false, audience: null });
   });
 
   it('мережевий збій лишається збоєм — картку не ховаємо', async () => {
-    serveNodes({ [`matchingCards/${CARD_ID}/feedDate`]: new Error('network') });
+    serveNodes({ [`matchingCards/${CARD_ID}`]: new Error('network') });
     await expect(matchingFeedStateReader.read(CARD_ID)).resolves.toBeNull();
   });
 
-  it('«лише для вподобаних», яку читачці відкрила реакція, лишається видимою', async () => {
-    serveNodes({
-      [`matchingCards/${CARD_ID}/feedDate`]: false,
-      [`matchingCards/${CARD_ID}/audience`]: 'liked',
-    });
-    await expect(matchingFeedStateReader.read(CARD_ID)).resolves.toEqual({ feedDate: false, audience: 'liked' });
+  it('«лише для вподобаних», яку читачці відкрила реакція, лишається видимою — одним читанням', async () => {
+    const requested = serveNodes({ [`matchingCards/${CARD_ID}`]: { name: 'Оксана', feedDate: false, audience: 'liked' } });
+    await expect(matchingFeedStateReader.read(CARD_ID)).resolves.toMatchObject({ feedDate: false, audience: 'liked' });
+    expect(requested).toEqual([`matchingCards/${CARD_ID}`]);
+  });
+
+  it('опублікована картка приходить разом зі станом — зі свіжою версією анкети', async () => {
+    const card = { name: 'Оксана', feedDate: '2026-11-01', rev: 1762770000000, programsAt: 5 };
+    const requested = serveNodes({ [`matchingCards/${CARD_ID}`]: card });
+    await expect(matchingFeedStateReader.read(CARD_ID)).resolves.toEqual({ feedDate: '2026-11-01', audience: null, card });
+    expect(requested).toEqual([`matchingCards/${CARD_ID}`]);
+  });
+
+  it('картки немає — стан «не публікували», без картки', async () => {
+    serveNodes({});
+    await expect(matchingFeedStateReader.read(CARD_ID)).resolves.toEqual({ feedDate: null, audience: null });
   });
 });
 
