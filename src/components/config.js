@@ -72,7 +72,13 @@ import {
   shouldSkipBroadFallbackForExactSearchId,
   splitSearchIdCandidateKeys,
 } from '../utils/searchKeyUtils';
-import { isAdminUid, readStoredAccessLevel, stripPrivilegedProfileFields } from '../utils/accessLevel';
+import {
+  canAccessAddByLevel,
+  isAdminUid,
+  readStoredAccessLevel,
+  readStoredCanCreateProfiles,
+  stripPrivilegedProfileFields,
+} from '../utils/accessLevel';
 import { hasFilledProfileDraftData } from '../utils/profileDraftContent';
 import { getCardListField, normalizeCardListQuery, readFieldTimestamp } from '../utils/cardListQuery';
 import { flattenOwnerValueToString } from '../utils/ownerValueString';
@@ -2904,12 +2910,19 @@ export const readProfileFromNodes = async (userId, options = {}) => {
   const sharedWithViewer = !privileged && !isCardInMatchingFeed(card)
     && isCardSharedWithLikedAudience(card) && await isViewerInLikedAudienceOf(id);
   const mayReadPrivateNodes = privileged || isCardInMatchingFeed(card) || sharedWithViewer;
+  // Робочі дані (`profileWorkflow`) і позначки ведення картки (`writer`,
+  // `stimulationSchedule`) — службові. Правила відкривають `profileWorkflow`
+  // власниці, адмінам, редакторам матчингу й тим, хто заводить картки, а
+  // позначки пише лише той, хто картку веде. Звичайний читач чужої анкети тут
+  // щоразу отримував відмову й дві порожні відповіді — три з семи запитів на
+  // кожне відкриття картки, що нічого не показували.
+  const handlesCardWork = privileged || readStoredCanCreateProfiles() || canAccessAddByLevel(accessLevel);
 
   const [details, contacts, workflow, technical] = mayReadPrivateNodes
     ? await Promise.all([
       readProfileNodePart(PROFILE_NODES.profileDetails, id),
       includeContacts ? readProfileNodePart(PROFILE_NODES.profileContacts, id) : null,
-      includeWorkflow ? readProfileNodePart(PROFILE_NODES.profileWorkflow, id) : null,
+      includeWorkflow && handlesCardWork ? readProfileNodePart(PROFILE_NODES.profileWorkflow, id) : null,
       includeTechnical ? readProfileNodePart(PROFILE_NODES.profileTechnical, id) : null,
     ])
     : [null, null, null, null];
@@ -2967,10 +2980,12 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     // його не читав ніхто, крім чернеток: у готовій анкеті ключа не було, тож
     // форма адміна не малювала для графіка навіть поля, а список «графік
     // стимуляції» на `AddNewProfile` не знаходив жодного.
+    // `getInTouch` читає кожен: це й «Відкласти» звичайного читача.
+    const notMarked = { found: false };
     const [getInTouchMark, writerMark, stimulationScheduleMark] = await Promise.all([
       readOwnerValueForProfile(OWNER_GET_IN_TOUCH_PATH, ownerId, id, { hasLegacyGroups: ownerGetInTouchHasLegacyGroups }),
-      readOwnerValueForProfile(OWNER_WRITER_PATH, ownerId, id),
-      readOwnerValueForProfile(OWNER_STIMULATION_SCHEDULE_PATH, ownerId, id),
+      handlesCardWork ? readOwnerValueForProfile(OWNER_WRITER_PATH, ownerId, id) : notMarked,
+      handlesCardWork ? readOwnerValueForProfile(OWNER_STIMULATION_SCHEDULE_PATH, ownerId, id) : notMarked,
     ]);
     if (getInTouchMark.found) merged.getInTouch = getInTouchMark.value;
     else delete merged.getInTouch;
@@ -3630,13 +3645,25 @@ export const searchUserByPartialUserIdUsers = async (userId, users) => {
 // теплому перезавантаженні це 10 запитів на деку замість 20. Памʼять
 // вкладки — пʼять хвилин.
 const FEED_STATE_TTL_MS = 5 * 60 * 1000;
+//
+// Відмова правил тут — не збій, а відповідь. `matchingCards/$uid` закритий
+// лише тоді, коли `feedDate` — `false` і читач не в колі «лише для
+// вподобаних», а донорці (`ed`) й акаунту без ролі кореневого доступу правила
+// не дають. Тож донорка не може прочитати навіть `feedDate` схованої картки,
+// і поки відмова йшла в «збій — картку лишаємо», сховану чи видалену анкету
+// агенції вона й далі бачила з кешу. Мережевий збій лишається збоєм.
 const readCardFeedState = async userId => {
   const base = `${MATCHING_CARDS_ROOT}/${userId}`;
-  const feedSnapshot = await get(ref2(database, `${base}/${MATCHING_CARD_FEED_FIELD}`));
-  const feedDate = feedSnapshot.exists() ? feedSnapshot.val() : null;
-  if (feedDate !== false && feedDate !== 'false') return { feedDate, audience: null };
-  const audienceSnapshot = await get(ref2(database, `${base}/audience`));
-  return { feedDate, audience: audienceSnapshot.exists() ? audienceSnapshot.val() : null };
+  try {
+    const feedSnapshot = await get(ref2(database, `${base}/${MATCHING_CARD_FEED_FIELD}`));
+    const feedDate = feedSnapshot.exists() ? feedSnapshot.val() : null;
+    if (feedDate !== false && feedDate !== 'false') return { feedDate, audience: null };
+    const audienceSnapshot = await get(ref2(database, `${base}/audience`));
+    return { feedDate, audience: audienceSnapshot.exists() ? audienceSnapshot.val() : null };
+  } catch (error) {
+    if (isSearchIdPermissionDenied(error)) return { feedDate: false, audience: null };
+    throw error;
+  }
 };
 
 export const matchingFeedStateReader = createFeedStateReader(readCardFeedState, { ttlMs: FEED_STATE_TTL_MS });
@@ -5836,6 +5863,37 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
   } catch (error) {
     console.error('[matchingCards] не вдалося оновити урізану картку', { userId: id, error });
     return null;
+  }
+};
+
+/**
+ * Щоденний запис дати входу — точково, без перебудови картки з анкети.
+ *
+ * Дата входу — це й ключ стрічки: опублікована анкета бере `feedDate` з
+ * `lastLogin2` (`resolveFeedDate`), тож вхід піднімає її вгору. Запис ішов
+ * загальним писачем (`updateDataInRealtimeDB`), а той після кожного запису
+ * перечитує анкету з усіх вузлів і картку, щоб зібрати проєкцію заново, —
+ * ~9 читань на кожного активного читача щодня заради одного поля. Тепер:
+ * дата лягає в `profileTechnical`, картка читається одна, і коли вона в
+ * стрічці — переставляється сам `feedDate`. Сховану, «лише для вподобаних» чи
+ * неопубліковану вхід не міняє, як не міняла й перебудова. Картки немає
+ * зовсім — тоді, як і раніше, повний писач: він її й заведе.
+ */
+export const recordDailyLogin = async (userId, todayDash) => {
+  const id = String(userId || '').trim();
+  const date = normalizeFeedDateValue(todayDash);
+  if (!id || !date) return;
+  const card = await readMatchingCardRaw(id);
+  if (!card) {
+    await updateDataInRealtimeDB(id, { lastLogin2: date }, 'update');
+    return;
+  }
+  const written = await fanOutProfileNodes(id, { lastLogin2: date });
+  if (!written) throwProfileWriteFailure(id, 'дата входу');
+  const currentFeedDate = normalizeFeedDateValue(card[MATCHING_CARD_FEED_FIELD]);
+  if (currentFeedDate && currentFeedDate < date) {
+    await update(buildMatchingCardRef(id), { [MATCHING_CARD_FEED_FIELD]: date });
+    primeMatchingFeedState(id, { ...card, [MATCHING_CARD_FEED_FIELD]: date });
   }
 };
 
