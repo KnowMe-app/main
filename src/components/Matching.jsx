@@ -74,6 +74,7 @@ import {
   database,
   auth,
   updateDataInRealtimeDB,
+  recordDailyLogin,
   readOwnerPostponeDates,
   setOwnerGetInTouch,
   setReactionUserValues,
@@ -2638,7 +2639,9 @@ const Matching = () => {
       let lastLoginWritten = '';
       try { lastLoginWritten = localStorage.getItem(lastLoginMarkerKey) || ''; } catch { lastLoginWritten = ''; }
       if (lastLoginWritten !== todayDash) {
-        Promise.resolve(updateDataInRealtimeDB(user.uid, sanitizeCardForBackend({ lastLogin2: todayDash }), 'update'))
+        // Точково (`recordDailyLogin`): дата входу й, для опублікованої
+        // анкети, `feedDate` картки — без перечитування всієї анкети.
+        Promise.resolve(recordDailyLogin(user.uid, todayDash))
           .then(() => {
             try { localStorage.setItem(lastLoginMarkerKey, todayDash); } catch { /* памʼять браузера недоступна */ }
           })
