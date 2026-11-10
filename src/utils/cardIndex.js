@@ -247,22 +247,26 @@ const MATCHING_CACHE_PRUNE_SHARE = 0.2;
 const pruneOversizedCards = (value, stringified) => {
   const items = value?.items;
   if (!items || typeof items !== 'object') return null;
-  let next = { ...items };
+  // Від найстарішої до найновішої — один раз, а далі лише зсув межі: так у
+  // циклі немає функцій, що замикають змінну, яку цикл міняє.
+  const ordered = Object.keys(items)
+    .sort((a, b) => getEntryCacheTimestamp(items[a]) - getEntryCacheTimestamp(items[b]));
+  const keepFrom = start => ordered.slice(start).reduce((acc, id) => {
+    acc[id] = items[id];
+    return acc;
+  }, {});
+  let dropped = 0;
+  let next = items;
   let text = stringified;
   while (text.length > MATCHING_CACHE_MAX_CHARS) {
-    const ids = Object.keys(next);
-    if (!ids.length) return null;
-    const dropCount = Math.max(1, Math.ceil(ids.length * MATCHING_CACHE_PRUNE_SHARE));
-    ids
-      .sort((a, b) => getEntryCacheTimestamp(next[a]) - getEntryCacheTimestamp(next[b]))
-      .slice(0, dropCount)
-      .forEach(id => { delete next[id]; });
-    next = { ...next };
+    const remaining = ordered.length - dropped;
+    if (remaining <= 0) return null;
+    dropped += Math.max(1, Math.ceil(remaining * MATCHING_CACHE_PRUNE_SHARE));
+    next = keepFrom(dropped);
     text = JSON.stringify({ ...value, items: next });
   }
   return { value: { ...value, items: next }, text };
 };
-
 const flushSaveJson = key => {
   const value = pendingSaveValues.get(key);
   pendingSaveValues.delete(key);
