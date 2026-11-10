@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaArrowRight, FaChevronDown, FaLock, FaMapMarkerAlt, FaPencilAlt, FaRegClock, FaRegCommentDots, FaRegStickyNote } from 'react-icons/fa';
+import { FaArrowRight, FaChevronDown, FaLock, FaRegTrashAlt, FaMapMarkerAlt, FaPencilAlt, FaRegClock, FaRegCommentDots, FaRegStickyNote } from 'react-icons/fa';
 import { LIKED_AUDIENCE_CARD_FLAG } from 'utils/likedAudience';
 import { activityAgeDays, describeCardActivity, parseActivityDate } from '../utils/cardActivity';
 import {
@@ -1293,6 +1293,7 @@ const ProfileRow = ({
   // Лише адмінові: `userId => Promise<{ date, kind } | null>` — останній вхід
   // або реєстрація (`readCardActivity`). Без читача підпису давності немає.
   onRequestActivity,
+  deletionPending = false,
 }) => {
   // A limited profile is the projection a viewer without full access gets back
   // from a search: surname, name, age, region, city, and the public comment. There
@@ -1819,6 +1820,18 @@ const ProfileRow = ({
               )}
             </S.MetaRow>
           )}
+          {/* Видалений власником акаунт, якого адмін ще не очистив: стрічка
+              адміна показує й сховані анкети, і без плашки картка поруч із
+              новою реєстрацією тієї ж людини читалась дублем. */}
+          {isAdmin && deletionPending ? (
+            <S.DeletionPendingBadge
+              data-testid="deletion-pending-badge"
+              title={uiText('Власник видалив акаунт. Картку стирає очищення бази на сторінці адміністрування', language)}
+            >
+              <FaRegTrashAlt aria-hidden="true" />
+              <span>{uiText('Акаунт видалено · чекає очищення бази', language)}</span>
+            </S.DeletionPendingBadge>
+          ) : null}
           {isViewerOwnDraft(user) && !preview ? (
             <S.DraftBadge data-testid="own-draft-badge">{uiText('Чернетка · бачите лише ви', language)}</S.DraftBadge>
           ) : null}
@@ -2050,6 +2063,7 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.clientComment === next.clientComment
   && prev.isAdmin === next.isAdmin
   && prev.onRequestActivity === next.onRequestActivity
+  && prev.deletionPending === next.deletionPending
   && prev.onTogglePublish === next.onTogglePublish
   && prev.primaryAction?.active === next.primaryAction?.active
   && prev.secondaryAction?.active === next.secondaryAction?.active

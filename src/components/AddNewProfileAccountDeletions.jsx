@@ -24,6 +24,7 @@ import styled from 'styled-components';
 import { getRoleLabel } from './profileLayoutConfig';
 import { auth } from './config';
 import { removeCard } from 'utils/cardIndex';
+import { forgetPendingAccountDeletions } from 'utils/pendingAccountDeletions';
 import {
   analyzeDeletedAccount,
   groupPurgePlan,
@@ -391,6 +392,9 @@ export const AccountDeletionQueue = () => {
       return;
     }
     removeCard(uid);
+    // Позначка «видалено» в стрічці адміна читає ту саму чергу з памʼяті
+    // вкладки — очищена картка не мусить нести її далі.
+    forgetPendingAccountDeletions();
     // Після видалення план застарів у будь-якому разі: повтор після збою
     // мусить знову пройти через аналіз.
     setPlans(prev => {
