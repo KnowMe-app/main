@@ -1189,6 +1189,25 @@ export const FeedColumn = styled.div`
   min-width: 0;
 `;
 
+// Плашка «Нові анкети: N» (`utils/matchingFeedHead`): липка, щоб її було
+// видно з будь-якого місця стрічки, і пласка, як решта акцентних кнопок.
+export const FeedHeadNewButton = styled.button`
+  position: sticky;
+  top: calc(var(--km-top-nav-h, 0px) + 8px);
+  z-index: 5;
+  display: block;
+  margin: 0 auto 10px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--matching-accent, var(--km-accent, #C9600F));
+  color: var(--km-on-accent, #fff);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+`;
+
 export const FeedList = styled.div`
   display: flex;
   flex-direction: column;
