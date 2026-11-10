@@ -130,3 +130,22 @@ describe('закриті читачеві картки з індексу', () =>
     expect(requested).toContain(`matchingCards/${HIDDEN}`);
   });
 });
+
+describe('явне оновлення стрічки знімає памʼять закритих карток', () => {
+  it('ключ deniedCards скидає той самий скид, що й решту кешу матчингу', () => {
+    const { isMatchingLocalStorageCacheKey } = require('../utils/cardIndex');
+    const { MATCHING_DENIED_CARDS_STORAGE_KEY } = require('../utils/matchingTimedStore');
+    expect(isMatchingLocalStorageCacheKey(MATCHING_DENIED_CARDS_STORAGE_KEY)).toBe(true);
+  });
+
+  it('після скиду знову опубліковану картку читають заново', async () => {
+    const { clearMatchingCache } = require('../utils/cardIndex');
+    serve({ [`matchingCards/${HIDDEN}`]: permissionDenied() });
+    await fetchMatchingCardsByIds([HIDDEN]);
+    clearMatchingCache('test refresh');
+    const requested = serve({ [`matchingCards/${HIDDEN}`]: { name: 'Агенція', role: 'ag', feedDate: '2026-11-10' } });
+    const result = await fetchMatchingCardsByIds([HIDDEN]);
+    expect(requested).toContain(`matchingCards/${HIDDEN}`);
+    expect(Object.keys(result.cards)).toEqual([HIDDEN]);
+  });
+});

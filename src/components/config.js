@@ -141,7 +141,7 @@ import { mergeDuplicateProfileValues, normalizePhoneForStorage, sanitizeUploaded
 import { patchCachedReactionValue } from '../utils/matchingReactionCache';
 import { rememberCommentWrite } from '../utils/commentsStorage';
 import { forgetProfileContacts, readFreshProfileContacts, writeProfileContacts } from '../utils/matchingContactsCache';
-import { createMatchingTimedStore } from '../utils/matchingTimedStore';
+import { MATCHING_DENIED_CARDS_STORE, createMatchingTimedStore } from '../utils/matchingTimedStore';
 import { pickCardActivity } from '../utils/cardActivity';
 import { noteRealtimeDemand } from '../utils/realtimeConnectionManager';
 import {
@@ -6678,7 +6678,7 @@ export const fetchAdminLastLoginCardsPage = (options = {}) => {
  * отримувала відмову. Відповідь памʼятається за загальним правилом кеша
  * (шість годин, `utils/matchingCachePolicy`) окремо для кожного читача.
  */
-const deniedCardsStore = createMatchingTimedStore('deniedCards', { maxEntries: 1000 });
+const deniedCardsStore = createMatchingTimedStore(MATCHING_DENIED_CARDS_STORE, { maxEntries: 1000 });
 const deniedCardKey = (viewerId, cardId) => `${viewerId}|${cardId}`;
 
 export const fetchMatchingCardsByIds = async (ids = []) => {

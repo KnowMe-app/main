@@ -9,6 +9,7 @@ import {
   getQueryEntry,
   sanitizeMatchingCardForCache,
   CARDS_CACHE_VERSION,
+  CARD_WRITE_BATCH_MS,
 } from './cardIndex';
 import { normalizeLastAction } from './normalizeLastAction';
 
@@ -166,7 +167,7 @@ export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
   });
 
   cards[cardId] = updatedCard;
-  saveCards(cards, { immediate: true });
+  saveCards(cards, { debounceMs: CARD_WRITE_BATCH_MS });
   touchCardInQueries(cardId);
   if (typeof remoteSave === 'function') {
     const { lastAction, cachedAt, cacheVersion, ...toSend } = updatedCard;

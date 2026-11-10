@@ -3,6 +3,7 @@ import { normalizeLastAction } from './normalizeLastAction';
 import { readStoredAccessLevel } from './accessLevel';
 import { PROFILE_CONTACT_FIELDS } from './profileNodeSchema';
 import { canReadProfileOutsideFeed } from './profileVisibilityScope';
+import { MATCHING_DENIED_CARDS_STORAGE_KEY } from './matchingTimedStore';
 
 export const CARDS_KEY = 'cards';
 export const QUERIES_KEY = 'queries';
@@ -44,6 +45,8 @@ const MATCHING_LOCAL_STORAGE_KEYS = new Set([
   MATCHING_SUMMARY_CARDS_KEY,
 ]);
 const MATCHING_LOCAL_STORAGE_PREFIXES = ['searchKey:', 'searchHistory:', 'cardsCache:'];
+// Скидаються разом із кешем матчингу, але під стелю розміру не підпадають.
+const MATCHING_RESET_EXTRA_KEYS = new Set([MATCHING_DENIED_CARDS_STORAGE_KEY]);
 const MATCHING_LOCAL_STORAGE_SUBSTRINGS = [
   'matchingindex',
   'searchkeysets',
@@ -54,6 +57,7 @@ export const isMatchingLocalStorageCacheKey = key => {
   const lower = normalized.toLowerCase();
   return (
     MATCHING_LOCAL_STORAGE_KEYS.has(normalized) ||
+    MATCHING_RESET_EXTRA_KEYS.has(normalized) ||
     MATCHING_LOCAL_STORAGE_PREFIXES.some(prefix => normalized.startsWith(prefix)) ||
     MATCHING_LOCAL_STORAGE_SUBSTRINGS.some(fragment => lower.includes(fragment))
   );
@@ -229,12 +233,50 @@ const loadJson = key => {
   }
 };
 
+/**
+ * Переріс стелю — прибрати найстаріші анкети, а не стерти всі.
+ *
+ * Кеш повних анкет — один ключ, і поки він переростав стелю, запис скидав його
+ * цілком: адмін, що гортав сотні карток, раз у кілька днів втрачав увесь кеш
+ * і читав усе з бази заново. Тепер з нього по пʼятій частині знімаються
+ * анкети з найстарішою міткою (`cachedAt`), доки запис не влізе. Шлях рідкий,
+ * тож повторна серіалізація тут не важить.
+ */
+const MATCHING_CACHE_PRUNE_SHARE = 0.2;
+
+const pruneOversizedCards = (value, stringified) => {
+  const items = value?.items;
+  if (!items || typeof items !== 'object') return null;
+  let next = { ...items };
+  let text = stringified;
+  while (text.length > MATCHING_CACHE_MAX_CHARS) {
+    const ids = Object.keys(next);
+    if (!ids.length) return null;
+    const dropCount = Math.max(1, Math.ceil(ids.length * MATCHING_CACHE_PRUNE_SHARE));
+    ids
+      .sort((a, b) => getEntryCacheTimestamp(next[a]) - getEntryCacheTimestamp(next[b]))
+      .slice(0, dropCount)
+      .forEach(id => { delete next[id]; });
+    next = { ...next };
+    text = JSON.stringify({ ...value, items: next });
+  }
+  return { value: { ...value, items: next }, text };
+};
+
 const flushSaveJson = key => {
   const value = pendingSaveValues.get(key);
   pendingSaveValues.delete(key);
   pendingSaveTimers.delete(key);
   try {
-    const stringified = JSON.stringify(value);
+    let stringified = JSON.stringify(value);
+    if (key === CARDS_KEY && stringified.length > MATCHING_CACHE_MAX_CHARS) {
+      const pruned = pruneOversizedCards(value, stringified);
+      if (pruned) {
+        logMatchingCacheWarning('pruned oldest cards to fit the cache', [{ key, before: Object.keys(value.items || {}).length, after: Object.keys(pruned.value.items).length }]);
+        localJsonCache.set(key, pruned.value);
+        stringified = pruned.text;
+      }
+    }
     if (shouldGuardMatchingCacheKey(key) && stringified.length > MATCHING_CACHE_MAX_CHARS) {
       logMatchingCacheWarning(`skip writing oversized key ${key}`, [{ key, stringLength: stringified.length, approxMb: toApproxMb(stringified), reason: 'max chars exceeded on write' }]);
       resetMatchingStorageKey(key);
@@ -301,8 +343,18 @@ export const loadCards = () => {
   }
   return cards;
 };
-export const saveCards = (cards, { immediate = false } = {}) =>
-  saveJson(CARDS_KEY, wrapVersionedCards(cards), { debounceMs: immediate ? 0 : 800 });
+/**
+ * Запис картки в кеш — коротким пакетом, а не негайно. Кеш повних анкет — один
+ * ключ, і кожна картка, покладена «негайно», серіалізувала й писала його
+ * цілком: сторінка з двадцяти карток — двадцять повних перезаписів підряд
+ * (у кеші на тисячу анкет ~9 мс кожен на сервері, на телефоні в рази більше).
+ * Памʼять вкладки бачить картку одразу (`localJsonCache`), а черга дописується
+ * й на `pagehide` (`flushPendingMatchingCacheWrites`).
+ */
+export const CARD_WRITE_BATCH_MS = 50;
+
+export const saveCards = (cards, { immediate = false, debounceMs } = {}) =>
+  saveJson(CARDS_KEY, wrapVersionedCards(cards), { debounceMs: immediate ? 0 : (debounceMs ?? 800) });
 
 export const loadQueries = () => loadJson(QUERIES_KEY);
 export const loadIndexQueries = () => loadJson(INDEX_QUERIES_KEY);
@@ -588,7 +640,7 @@ export const saveCard = card => {
       normalized !== undefined ? normalized : sanitizedCard.lastAction;
   }
   cards[card.userId] = merged;
-  saveCards(cards, { immediate: true });
+  saveCards(cards, { debounceMs: CARD_WRITE_BATCH_MS });
   return merged;
 };
 
