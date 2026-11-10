@@ -1729,6 +1729,13 @@ export const LikedAudienceBadge = styled(PostponeBadge)`
   color: var(--matching-accent, var(--km-accent, #C9600F));
 `;
 
+// Видалений власником акаунт у стрічці адміна (`deletionPending` у
+// `ProfileRow`): кольором збою, бо картку ще треба стерти.
+export const DeletionPendingBadge = styled(PostponeBadge)`
+  background: color-mix(in srgb, var(--km-danger, #B3261E) 12%, transparent);
+  color: var(--km-danger, #B3261E);
+`;
+
 // Текст нотатки в прев'ю — той самий, що стоїть у полі доріжки стрічки, лише
 // без поля: прев'ю показує записане, а не дає писати.
 export const PreviewNoteText = styled.div`

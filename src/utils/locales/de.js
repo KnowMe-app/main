@@ -682,6 +682,8 @@ const BY_UK = {
   'Не відкладати': 'Nicht zurückstellen',
   'Відмінити': 'Abbrechen',
   'Звернутись після {date} — після оновлення сторінки картка стане в кінець списку': 'Nach dem {date} wieder melden — nach dem Neuladen der Seite rückt die Karte ans Ende der Liste',
+  'Акаунт видалено · чекає очищення бази': 'Konto gelöscht · wartet auf Datenbankbereinigung',
+  'Власник видалив акаунт. Картку стирає очищення бази на сторінці адміністрування': 'Der Inhaber hat das Konto gelöscht. Die Karte wird durch die Datenbankbereinigung auf der Admin-Seite entfernt',
   'Звернутись після {date}': 'Nach dem {date} wieder melden',
   'Вхід {when}': 'Anmeldung {when}',
   'Реєстрація {when}': 'Registriert {when}',

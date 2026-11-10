@@ -230,6 +230,7 @@ import {
   placePostponedCardsLast,
   tomorrowIsoDate,
 } from 'utils/matchingPostpone';
+import { readPendingAccountDeletionIds } from 'utils/pendingAccountDeletions';
 import { handleEmptyFetch } from './loadMoreUtils';
 import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMore';
 import { useProgramDisplayCurrency, useProgramRates } from '../hooks/useProgramRates';
@@ -1404,6 +1405,20 @@ const Matching = () => {
   });
   const isAdmin = access.isAdmin;
   const realtimeConnection = useRealtimeConnection();
+  // Видалені власником акаунти, що чекають адмінського очищення бази
+  // (`utils/pendingAccountDeletions`). Стрічка адміна показує й сховані
+  // анкети, тож така картка поруч із новою реєстрацією тієї ж людини
+  // виглядала дублем. Ефект на `ownerId`, а не на `auth.currentUser`: до
+  // відповіді Firebase стрічка стоїть з кеша, а функцію без входу не спитаєш.
+  const [pendingDeletionIds, setPendingDeletionIds] = useState(() => new Set());
+  useEffect(() => {
+    if (!isAdmin || !ownerId || !auth.currentUser) return undefined;
+    let cancelled = false;
+    readPendingAccountDeletionIds({ auth }).then(ids => {
+      if (!cancelled) setPendingDeletionIds(ids);
+    });
+    return () => { cancelled = true; };
+  }, [isAdmin, ownerId]);
   // Зʼєднання з базою — лише поки на стрічку дивляться
   // (`utils/realtimeConnectionManager`): фонова вкладка й екран без дотику
   // сокета не тримають. Лише тут, а не на всьому застосунку: адмінські роботи
@@ -7877,6 +7892,7 @@ const Matching = () => {
     } : {}),
     onEnrich: isAdmin ? undefined : handleRowEnrichProfile,
     onRequestActivity: isAdmin ? readCardActivity : undefined,
+    deletionPending: isAdmin && pendingDeletionIds.has(user.userId),
     onRequestContacts: handleRequestRowContacts,
     canViewContacts: canOfferProfileContacts({
       card: user,
@@ -8431,6 +8447,7 @@ const Matching = () => {
                       )}
                       isAdmin={isAdmin}
                       onRequestActivity={isAdmin ? readCardActivity : undefined}
+                      deletionPending={isAdmin && pendingDeletionIds.has(user.userId)}
                       onTogglePublish={togglePublish}
                       expanded={expandedRowIds.has(user.userId)}
                       onToggleExpand={handleToggleRowExpand}

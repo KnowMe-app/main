@@ -731,6 +731,8 @@ const EN_BY_UK = {
   'Не відкладати': 'Do not postpone',
   'Відмінити': 'Cancel',
   'Звернутись після {date} — після оновлення сторінки картка стане в кінець списку': 'Get back after {date} — after a page reload the card moves to the end of the list',
+  'Акаунт видалено · чекає очищення бази': 'Account deleted · awaiting database cleanup',
+  'Власник видалив акаунт. Картку стирає очищення бази на сторінці адміністрування': 'The owner deleted the account. The card is erased by the database cleanup on the admin page',
   'Звернутись після {date}': 'Get back after {date}',
   'Вхід {when}': 'Signed in {when}',
   'Реєстрація {when}': 'Registered {when}',

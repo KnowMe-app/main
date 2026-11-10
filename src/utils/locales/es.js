@@ -682,6 +682,8 @@ const BY_UK = {
   'Не відкладати': 'No aplazar',
   'Відмінити': 'Cancelar',
   'Звернутись після {date} — після оновлення сторінки картка стане в кінець списку': 'Volver después del {date}: al recargar la página la tarjeta pasa al final de la lista',
+  'Акаунт видалено · чекає очищення бази': 'Cuenta eliminada · pendiente de limpieza de la base',
+  'Власник видалив акаунт. Картку стирає очищення бази на сторінці адміністрування': 'El propietario eliminó la cuenta. La tarjeta se borra con la limpieza de la base en la página de administración',
   'Звернутись після {date}': 'Volver después del {date}',
   'Вхід {when}': 'Entró {when}',
   'Реєстрація {when}': 'Registro {when}',

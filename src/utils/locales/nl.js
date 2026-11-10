@@ -682,6 +682,8 @@ const BY_UK = {
   'Не відкладати': 'Niet uitstellen',
   'Відмінити': 'Annuleren',
   'Звернутись після {date} — після оновлення сторінки картка стане в кінець списку': 'Na {date} terugkomen — na het herladen van de pagina gaat de kaart naar het einde van de lijst',
+  'Акаунт видалено · чекає очищення бази': 'Account verwijderd · wacht op opschoning van de database',
+  'Власник видалив акаунт. Картку стирає очищення бази на сторінці адміністрування': 'De eigenaar heeft het account verwijderd. De kaart wordt gewist door de database-opschoning op de beheerpagina',
   'Звернутись після {date}': 'Na {date} terugkomen',
   'Вхід {when}': 'Ingelogd {when}',
   'Реєстрація {when}': 'Geregistreerd {when}',
