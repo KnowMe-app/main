@@ -5890,9 +5890,28 @@ export const recordDailyLogin = async (userId, todayDash) => {
   }
   const written = await fanOutProfileNodes(id, { lastLogin2: date });
   if (!written) throwProfileWriteFailure(id, 'дата входу');
-  const currentFeedDate = normalizeFeedDateValue(card[MATCHING_CARD_FEED_FIELD]);
-  if (currentFeedDate && currentFeedDate < date) {
-    await update(buildMatchingCardRef(id), { [MATCHING_CARD_FEED_FIELD]: date });
+  if (!normalizeFeedDateValue(card[MATCHING_CARD_FEED_FIELD])) return;
+  // Дата переставляється транзакцією й лише поверх дати. Між читанням картки
+  // вище й цим записом людина могла сховати анкету (`feedDate: false`) чи
+  // ввімкнути «лише для вподобаних»: безумовний запис повернув би її в
+  // стрічку, а з нею — деталі й контакти під правилами бази. Черги
+  // `refreshMatchingCardAfterProfileWrite`, яка впорядковувала цей запис зі
+  // збереженням анкети, тут немає — тож рішення бере значення на сервері.
+  //
+  // `null` у першому виклику — це ще не сервер, а локальна копія вузла, якого
+  // ніхто не слухає. Перерваний на ньому, запис до сервера не дійшов би
+  // зовсім. Тому на `null` повертається `null`: на справді порожньому вузлі
+  // це нічого не міняє, а на заповненому сервер відхилить запис і покличе
+  // транзакцію ще раз — уже зі справжнім значенням.
+  const result = await runTransaction(
+    ref2(database, `${MATCHING_CARDS_ROOT}/${id}/${MATCHING_CARD_FEED_FIELD}`),
+    current => {
+      if (current === null || current === undefined) return null;
+      const currentDate = normalizeFeedDateValue(current);
+      return currentDate && currentDate < date ? date : undefined;
+    },
+  );
+  if (result?.committed && result.snapshot?.val?.() === date) {
     primeMatchingFeedState(id, { ...card, [MATCHING_CARD_FEED_FIELD]: date });
   }
 };
