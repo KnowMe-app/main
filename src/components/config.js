@@ -4495,7 +4495,7 @@ const PROFILE_REVISION_NEUTRAL_FIELDS = new Set([
 export const changesProfileRevision = payload => Boolean(payload) && typeof payload === 'object'
   && Object.keys(payload).some(key => !key.startsWith('__') && !PROFILE_REVISION_NEUTRAL_FIELDS.has(key));
 
-const runMatchingCardRefresh = async (id, payload, condition) => {
+const runMatchingCardRefresh = async (id, payload, condition, bumpRevision = changesProfileRevision(payload)) => {
   try {
     // Перечитане знизу, збережене зверху. `publish` власного вузла не має —
     // у нових вузлах він виражений наявністю `feedDate` у самій картці, тобто
@@ -4518,7 +4518,7 @@ const runMatchingCardRefresh = async (id, payload, condition) => {
       today: getCurrentDate().todayDash,
     });
     if (!nextData || typeof nextData !== 'object') return;
-    await syncMatchingCardIndex(id, nextData, { bumpRevision: changesProfileRevision(payload) });
+    await syncMatchingCardIndex(id, nextData, { bumpRevision });
   } catch (error) {
     console.warn('[matchingCards] не вдалося оновити картку після збереження анкети', { userId: id, error });
   }
@@ -5082,7 +5082,12 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) 
 
   const active = matchingCardRefreshes.get(id);
   if (active) {
-    active.pending = { payload, condition };
+    // Відкладений прогін один на всіх, хто прийшов за час очікування, і бере
+    // останній запис. Рішення про нову версію (`rev`) при цьому не
+    // перезаписується, а складається: правка анкети, за якою в черзі стала дата
+    // входу, інакше лишилась би без версії, і читачі тримали б стару анкету.
+    const bumpRevision = Boolean(active.pending?.bumpRevision) || changesProfileRevision(payload);
+    active.pending = { payload, condition, bumpRevision };
     return active.done;
   }
 
@@ -5090,10 +5095,10 @@ const refreshMatchingCardAfterProfileWrite = async (userId, payload, condition) 
   matchingCardRefreshes.set(id, entry);
   entry.done = (async () => {
     try {
-      let next = { payload, condition };
+      let next = { payload, condition, bumpRevision: changesProfileRevision(payload) };
       while (next) {
         entry.pending = null;
-        await runMatchingCardRefresh(id, next.payload, next.condition);
+        await runMatchingCardRefresh(id, next.payload, next.condition, next.bumpRevision);
         next = entry.pending;
       }
     } finally {

@@ -103,3 +103,18 @@ describe('syncMatchingCardIndex і версія', () => {
     expect(cardWrites()).toEqual([]);
   });
 });
+
+describe('черга перебудов картки', () => {
+  // Відкладений прогін один на всіх, хто прийшов за час очікування, і бере
+  // останній запис. Рішення про версію мусить складатись: правка анкети, за
+  // якою в черзі стала дата входу, інакше лишилась би без нової версії.
+  it('рішення про нову версію в черзі складається, а не перезаписується', () => {
+    const source = require('fs').readFileSync(require('path').join(__dirname, 'config.js'), 'utf8');
+    const queue = source.slice(
+      source.indexOf('const refreshMatchingCardAfterProfileWrite = async'),
+      source.indexOf('return entry.done;\n};'),
+    );
+    expect(queue).toContain('const bumpRevision = Boolean(active.pending?.bumpRevision) || changesProfileRevision(payload);');
+    expect(queue).toContain('await runMatchingCardRefresh(id, next.payload, next.condition, next.bumpRevision);');
+  });
+});

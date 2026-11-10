@@ -463,6 +463,18 @@ const readCachedRevision = card => {
   return Number.isFinite(rev) && rev > 0 ? rev : 0;
 };
 
+/**
+ * Стеля віку навіть для анкети тієї самої версії. Версію ставить писач картки,
+ * і якщо колись не поставив (збій запису, писач повз `syncMatchingCardIndex`),
+ * без стелі кеш тримав би стару анкету доти, доки її не правитимуть знову.
+ */
+export const PROFILE_REVISION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+const isWithinRevisionMaxAge = card => {
+  const at = toTimestamp(card?.cachedAt) || toTimestamp(card?.lastAction);
+  return at > 0 && Date.now() - at <= PROFILE_REVISION_MAX_AGE_MS;
+};
+
 const isCompleteCachedCard = (id, card) => (
   Boolean(card)
   && card.cacheVersion === CARDS_CACHE_VERSION
@@ -474,7 +486,7 @@ const findCompleteCachedProfile = (id, { revision = 0 } = {}) => {
   const expected = readCachedRevision({ rev: revision });
   if (expected) {
     const stored = loadCards()[id];
-    if (!isCompleteCachedCard(id, stored)) return null;
+    if (!isCompleteCachedCard(id, stored) || !isWithinRevisionMaxAge(stored)) return null;
     return readCachedRevision(stored) === expected ? stored : null;
   }
   const card = getCard(id);
@@ -511,7 +523,7 @@ export const getCachedProfileBody = (id, { revision = 0 } = {}) => {
   const expected = readCachedRevision({ rev: revision });
   if (expected) {
     const stored = loadCards()[id];
-    if (!stored || stored.cacheVersion !== CARDS_CACHE_VERSION) return null;
+    if (!stored || stored.cacheVersion !== CARDS_CACHE_VERSION || !isWithinRevisionMaxAge(stored)) return null;
     return readCachedRevision(stored) === expected ? stored : null;
   }
   const card = getCard(id);

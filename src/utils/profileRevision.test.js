@@ -10,6 +10,7 @@ import {
   saveCards,
   setCachedMatchingSummaryCards,
   CARDS_CACHE_VERSION,
+  PROFILE_REVISION_MAX_AGE_MS,
 } from './cardIndex';
 import { buildMatchingCardProjection, readCardRevision } from './matchingCardIndex';
 import { MATCHING_CARD_ALLOWED_FIELDS, resolveFieldOwnerNode } from './profileNodeSchema';
@@ -56,6 +57,12 @@ describe('кеш повної анкети звіряється з версіє�
     expect(getCompleteCachedProfile(OWNER)).toBeNull();
     expect(getCompleteCachedProfile(OWNER, { revision: 100 })).toMatchObject({ surname: 'Коваленко' });
     expect(getCachedProfileBody(OWNER, { revision: 100 })).toMatchObject({ surname: 'Коваленко' });
+  });
+
+  it('навіть тієї самої версії анкета не живе в кеші понад тиждень', () => {
+    saveCards({ [OWNER]: fullCard({ rev: 100, cachedAt: Date.now() - PROFILE_REVISION_MAX_AGE_MS - 1000 }) });
+    expect(getCompleteCachedProfile(OWNER, { revision: 100 })).toBeNull();
+    expect(getCachedProfileBody(OWNER, { revision: 100 })).toBeNull();
   });
 
   it('інша версія — анкету правили, кеш не відповідає навіть у межах TTL', () => {
