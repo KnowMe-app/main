@@ -12,6 +12,15 @@ import { isMatchingCacheFresh, removeCacheEntriesByPrefix } from './matchingCach
  */
 export const MATCHING_TIMED_STORE_PREFIX = 'km.matchingStore.v1:';
 
+/**
+ * Памʼять «ця картка читачеві закрита» (`fetchMatchingCardsByIds`). Негативна
+ * відповідь, тож її скидає й явне «Оновити стрічку» / «Почати стрічку
+ * заново» (`isMatchingLocalStorageCacheKey`): анкету, яку знову опублікували,
+ * людина мусить мати як повернути, не виходячи з акаунта й не чекаючи TTL.
+ */
+export const MATCHING_DENIED_CARDS_STORE = 'deniedCards';
+export const MATCHING_DENIED_CARDS_STORAGE_KEY = `${MATCHING_TIMED_STORE_PREFIX}${MATCHING_DENIED_CARDS_STORE}`;
+
 const readAll = storageKey => {
   try {
     const parsed = JSON.parse(localStorage.getItem(storageKey) || '{}');

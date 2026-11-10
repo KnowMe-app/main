@@ -3761,6 +3761,9 @@ const Matching = () => {
     const debugMatchingCache = isAdmin || shouldDebugAdditionalMatching(ownerId);
     const removedLocalStorageKeys = clearMatchingCache(keepFilters ? 'matching refresh feed' : 'matching reset filters and cache');
     clearMatchingCardsPageInFlight();
+    // Стан стрічки в памʼяті вкладки (пʼять хвилин) теж знімається: разом із
+    // памʼяттю закритих карток він ховав би щойно знову опубліковану анкету.
+    matchingFeedStateReader.clear();
     if (!keepFilters) {
       localStorage.removeItem('matchingFilters');
       localStorage.removeItem(SEARCH_KEY);
