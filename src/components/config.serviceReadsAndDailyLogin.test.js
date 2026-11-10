@@ -25,6 +25,24 @@ jest.mock('firebase/storage', () => ({
 
 const mockGet = jest.fn();
 const mockUpdate = jest.fn(async () => {});
+// Транзакція поводиться як сервер RTDB: перший виклик бачить локальну копію
+// (вузол ніхто не слухає — `null`), і якщо записане не збігається з тим, що
+// лежить на сервері, викликається ще раз уже з серверним значенням.
+const mockServer = {};
+const mockTransactionWrites = [];
+const mockRunTransaction = jest.fn();
+// Реалізація ставиться в `beforeEach`: CRA вмикає `resetMocks`, і задана тут
+// вона зникла б перед першим же тестом.
+const serverTransaction = async (path, updater) => {
+  const key = String(path);
+  const server = Object.prototype.hasOwnProperty.call(mockServer, key) ? mockServer[key] : null;
+  let next = updater(null);
+  if (next !== undefined && server !== null) next = updater(server);
+  if (next === undefined) return { committed: false, snapshot: { val: () => server } };
+  mockServer[key] = next;
+  mockTransactionWrites.push([key, next]);
+  return { committed: true, snapshot: { val: () => next } };
+};
 jest.mock('firebase/database', () => ({
   getDatabase: () => ({}),
   ref: (_db, path) => path,
@@ -33,7 +51,7 @@ jest.mock('firebase/database', () => ({
   update: (...args) => mockUpdate(...args),
   remove: jest.fn(),
   push: jest.fn(),
-  runTransaction: jest.fn(),
+  runTransaction: (...args) => mockRunTransaction(...args),
   orderByChild: jest.fn(),
   query: (...parts) => parts,
   orderByKey: jest.fn(),
@@ -80,6 +98,10 @@ const serveNodes = nodes => {
 beforeEach(() => {
   mockGet.mockReset();
   mockUpdate.mockClear();
+  mockRunTransaction.mockReset();
+  mockRunTransaction.mockImplementation(serverTransaction);
+  mockTransactionWrites.length = 0;
+  Object.keys(mockServer).forEach(key => { delete mockServer[key]; });
   resetViewerAccessLevelCache();
   matchingFeedStateReader.clear();
   localStorage.clear();
@@ -166,38 +188,51 @@ describe('відкриття чужої анкети не питає служб�
 
 describe('щоденний запис дати входу', () => {
   const TODAY = '2026-11-10';
+  const FEED_PATH = `matchingCards/${CARD_ID}/feedDate`;
   const writtenPaths = () => mockUpdate.mock.calls.flatMap(([target, patch]) => (
     Object.keys(patch).map(key => (String(target) === '/' ? key : `${target}/${key}`))
   ));
+  const loginWith = async (card, serverFeedDate = card?.feedDate) => {
+    mockAuth.currentUser = { uid: CARD_ID };
+    if (serverFeedDate !== undefined) mockServer[FEED_PATH] = serverFeedDate;
+    const requested = serveNodes({ [`matchingCards/${CARD_ID}`]: card });
+    await recordDailyLogin(CARD_ID, TODAY);
+    return requested;
+  };
 
   it('опублікована анкета: дата входу й feedDate картки — без перечитування анкети', async () => {
-    mockAuth.currentUser = { uid: CARD_ID };
-    const requested = serveNodes({ [`matchingCards/${CARD_ID}`]: { name: 'Оксана', feedDate: '2026-11-01' } });
-    await recordDailyLogin(CARD_ID, TODAY);
+    const requested = await loginWith({ name: 'Оксана', feedDate: '2026-11-01' });
 
     expect(requested).toEqual([`matchingCards/${CARD_ID}`]);
-    expect(writtenPaths()).toEqual(expect.arrayContaining([
-      `profileTechnical/${CARD_ID}/lastLogin`,
-      `matchingCards/${CARD_ID}/feedDate`,
-    ]));
-    const cardWrite = mockUpdate.mock.calls.find(([target]) => String(target) === `matchingCards/${CARD_ID}`);
-    expect(cardWrite[1]).toEqual({ feedDate: TODAY });
+    expect(writtenPaths()).toContain(`profileTechnical/${CARD_ID}/lastLogin`);
+    expect(mockServer[FEED_PATH]).toBe(TODAY);
   });
 
-  it('схована анкета вхід у стрічку не повертає', async () => {
-    mockAuth.currentUser = { uid: CARD_ID };
-    serveNodes({ [`matchingCards/${CARD_ID}`]: { name: 'Оксана', feedDate: false } });
-    await recordDailyLogin(CARD_ID, TODAY);
+  // Анкету сховали (чи ввімкнули «лише для вподобаних» — це теж `false`) між
+  // читанням картки й записом дати: рішення бере сервер, а не прочитана
+  // хвилину тому картка.
+  it('сховану, поки йшов запис, анкету вхід не повертає в стрічку', async () => {
+    await loginWith({ name: 'Оксана', feedDate: '2026-11-01' }, false);
+
+    expect(mockServer[FEED_PATH]).toBe(false);
+    expect(mockTransactionWrites.filter(([, value]) => value === TODAY)).toHaveLength(0);
+  });
+
+  it('схована анкета транзакції навіть не запускає', async () => {
+    await loginWith({ name: 'Оксана', feedDate: false });
 
     expect(writtenPaths()).toContain(`profileTechnical/${CARD_ID}/lastLogin`);
-    expect(writtenPaths()).not.toContain(`matchingCards/${CARD_ID}/feedDate`);
+    expect(mockRunTransaction).not.toHaveBeenCalled();
   });
 
   it('неопублікована анкета лишається неопублікованою', async () => {
-    mockAuth.currentUser = { uid: CARD_ID };
-    serveNodes({ [`matchingCards/${CARD_ID}`]: { name: 'Оксана' } });
-    await recordDailyLogin(CARD_ID, TODAY);
+    await loginWith({ name: 'Оксана' });
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+  });
 
-    expect(writtenPaths()).not.toContain(`matchingCards/${CARD_ID}/feedDate`);
+  it('дата, новіша чи та сама, не відкочується', async () => {
+    await loginWith({ name: 'Оксана', feedDate: TODAY });
+    expect(mockServer[FEED_PATH]).toBe(TODAY);
+    expect(mockTransactionWrites).toHaveLength(0);
   });
 });
