@@ -117,7 +117,7 @@ describe('Matching shared reaction card UI', () => {
     // Відкритої картки в стрічці більше немає: шар деталей повторював рядок
     // із більшим фото й прибраний разом із гортанням деки стрілками (дотик до
     // фото відкриває `PhotoViewer`, дотик деінде розгортає рядок).
-    expect(matchingSource).toContain('const feedSourceWithoutOwnEdits = filteredUsers;');
+    expect(matchingSource).toContain('() => filteredUsers.map(user => resolveStoredProjection(user, isMatchingSummaryCard)),');
     expect(matchingSource).not.toContain('SwipeableCard');
     expect(matchingSource).not.toContain('DetailLayer');
     expect(matchingSource).not.toContain('Дозавантажити карточки');

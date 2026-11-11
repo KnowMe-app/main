@@ -21,17 +21,15 @@ describe('свіжа картка зі сторожа стану', () => {
     expect(handler()).toContain('setCachedMatchingSummaryCards(cards);');
   });
 
-  // Накладка лише на показ лишала б розгортання (`feedSourceRef`) на старій
-  // версії й переживала б «Оновити стрічку»; у `users` свіжу картку перебиває
-  // будь-яка новіша сторінка.
-  it('свіжа проєкція лягає в сам стан стрічки, а не накладкою на показ', () => {
-    expect(handler()).toContain('const replace = current => replaceFeedProjections(current, cards, isMatchingSummaryCard);');
-    // Кожне джерело рядків деки, а не лише `users`: «лише для вподобаних»,
-    // надані правилами й спільні реакції доливаються в деку збирачем.
-    ['setUsers(replace);', 'setLikedAudienceUsers(replace);', 'setAdditionalAccessUsers(replace);', 'setSharedReactionCandidateUsers(replace);']
-      .forEach(line => expect(handler()).toContain(line));
-    expect(source).not.toContain('freshFeedCardsById');
+  // Свіжа проєкція — в одному сховищі вкладки, а рядок будь-якого джерела
+  // деки бере її звідти: латати кожен стан окремо коштувало багів.
+  it('свіжа проєкція йде в одне сховище, а рядки беруть її звідти', () => {
+    expect(handler()).not.toContain('setUsers(');
+    expect(source).toContain('const cardStoreVersion = useSyncExternalStore(subscribeCardStore, getCardStoreVersion);');
+    expect(source).toContain('() => filteredUsers.map(user => resolveStoredProjection(user, isMatchingSummaryCard)),');
     expect(source).toContain('feedSource.map(user => withOwnEdits(withLazyPhotos(user)))');
+    const restart = source.slice(source.indexOf('const restartFeed = React.useCallback('), source.indexOf('const resetFiltersAndCache ='));
+    expect(restart).toContain('clearCardStore();');
   });
 
   // Журнал змін: сторож не читає картки, доки журнал не прочитано, а
