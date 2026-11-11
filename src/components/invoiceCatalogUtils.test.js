@@ -1,4 +1,5 @@
 import {
+  describeNegativeRowsLabel,
   addCatalogChildToPackage,
   addCustomChildToPackage,
   applyPaymentPurposePlaceholders,
@@ -777,5 +778,16 @@ describe('invoiceCatalogUtils', () => {
     const template = 'Old style {invoiceNumber} stays literal.';
     expect(applyPaymentPurposePlaceholders(template, { invoiceNumber: '1/2026', invoiceDate: '01.01.2026' }))
       .toBe('Old style {invoiceNumber} stays literal.');
+  });
+});
+
+// 11.11: знижка в рядку «Discount» у підсумку рахунку ставала «Credits».
+describe('describeNegativeRowsLabel', () => {
+  it('names discounts as Discount, a single other row by its name, a mix as Adjustments', () => {
+    expect(describeNegativeRowsLabel([{ name: 'Package', price: 8300 }])).toBe('');
+    expect(describeNegativeRowsLabel([{ name: 'Discount', price: -720 }])).toBe('Discount');
+    expect(describeNegativeRowsLabel([{ name: 'Special offer discount', price: -100 }, { name: 'Знижка', price: -50 }])).toBe('Discount');
+    expect(describeNegativeRowsLabel([{ name: 'Prepayment received', price: -1000 }])).toBe('Prepayment received');
+    expect(describeNegativeRowsLabel([{ name: 'Discount', price: -720 }, { name: 'Prepayment', price: -100 }])).toBe('Adjustments');
   });
 });
