@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { buildCardChangePath, recordCardChange } = require('../cardChanges');
+const { CARD_CHANGE_BUCKET_MS, buildCardChangePath, recordCardChange, shouldRecordCardChange } = require('../cardChanges');
 
 test('журнал: шлях — id картки під matchingCardChanges', () => {
   assert.equal(buildCardChangePath('abcdefghijklmnopqrst1234'), 'matchingCardChanges/abcdefghijklmnopqrst1234');
@@ -16,10 +16,42 @@ test('журнал: непридатний id не пишеться', () => {
   assert.equal(buildCardChangePath(undefined), null);
 });
 
-test('журнал: будь-який запис картки ставить час сервера', async () => {
+const LIVE = { name: 'Оксана', feedDate: '2026-11-10' };
+
+test('журнал: правка видимої картки пише кошик часу, а не точну мітку', async () => {
   const written = [];
-  assert.equal(await recordCardChange('card1', { setTimestamp: async path => { written.push(path); } }), true);
-  assert.deepEqual(written, ['matchingCardChanges/card1']);
-  assert.equal(await recordCardChange('', { setTimestamp: async path => { written.push(path); } }), false);
+  const now = 1_762_800_123_456;
+  const setValue = async (path, value) => { written.push([path, value]); };
+  assert.equal(await recordCardChange('card1', { before: LIVE, after: { ...LIVE, name: 'Олена' }, now, setValue }), true);
+  assert.deepEqual(written, [['matchingCardChanges/card1', Math.floor(now / CARD_CHANGE_BUCKET_MS) * CARD_CHANGE_BUCKET_MS]]);
+  assert.equal(await recordCardChange('', { before: LIVE, after: null, now, setValue }), false);
   assert.equal(written.length, 1);
+});
+
+test('журнал: сховане до й після — не пишеться, перехід у сховане — пишеться', () => {
+  const hidden = { name: 'Оксана', feedDate: false };
+  assert.equal(shouldRecordCardChange(hidden, { ...hidden, name: 'Олена' }), false);
+  assert.equal(shouldRecordCardChange({ name: 'x' }, { name: 'y' }), false);
+  assert.equal(shouldRecordCardChange(hidden, null), false);
+  assert.equal(shouldRecordCardChange(LIVE, hidden), true);
+  assert.equal(shouldRecordCardChange(hidden, LIVE), true);
+  assert.equal(shouldRecordCardChange(LIVE, null), true);
+  assert.equal(shouldRecordCardChange(null, LIVE), true);
+});
+
+test('журнал: «лише для вподобаних» — видима картка', () => {
+  const liked = { name: 'Оксана', feedDate: false, audience: 'liked' };
+  assert.equal(shouldRecordCardChange(liked, { ...liked, name: 'Олена' }), true);
+});
+
+test('журнал: сама дата входу в стрічці — не пишеться', () => {
+  assert.equal(shouldRecordCardChange(LIVE, { ...LIVE, feedDate: '2026-11-11' }), false);
+  assert.equal(shouldRecordCardChange(LIVE, { ...LIVE, feedDate: '2026-11-11', rev: 5 }), true);
+});
+
+test('журнал: видалена схована картка знімає свій запис', async () => {
+  const written = [];
+  const setValue = async (path, value) => { written.push([path, value]); };
+  assert.equal(await recordCardChange('card1', { before: { feedDate: false }, after: null, setValue }), false);
+  assert.deepEqual(written, [['matchingCardChanges/card1', null]]);
 });

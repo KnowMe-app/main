@@ -24,7 +24,7 @@ const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
-const { getDatabase, ServerValue } = require('firebase-admin/database');
+const { getDatabase } = require('firebase-admin/database');
 const { getStorage } = require('firebase-admin/storage');
 const { getFirestore } = require('firebase-admin/firestore');
 
@@ -581,9 +581,10 @@ exports.purgeDeletedAccount = onCall(
 );
 
 /**
- * Журнал змін карток стрічки (`cardChanges.js`): будь-який запис у
- * `matchingCards/{cardId}` — і поля, і всієї картки, і її видалення — ставить
- * `matchingCardChanges/{cardId}` = час сервера. Пристрій читача питає журнал
+ * Журнал змін карток стрічки (`cardChanges.js`): запис у
+ * `matchingCards/{cardId}` — поля, всієї картки, її видалення — ставить
+ * `matchingCardChanges/{cardId}` = 15-хвилинний кошик часу; сховані картки й
+ * сама дата входу туди не потрапляють (`shouldRecordCardChange`). Пристрій читача питає журнал
  * один раз на відкриття стрічки й перечитує лише змінене. Тригер, а не
  * писачі: пропущений писач лишав би картку застарілою в кожного читача.
  */
@@ -601,7 +602,9 @@ exports.recordMatchingCardChange = onValueWritten(
   async event => {
     try {
       await recordCardChange(event.params.cardId, {
-        setTimestamp: path => getDatabase().ref(path).set(ServerValue.TIMESTAMP),
+        before: event.data.before.val(),
+        after: event.data.after.val(),
+        setValue: (path, value) => getDatabase().ref(path).set(value),
       });
     } catch (error) {
       logger.error('card change journal write failed', { cardId: event.params.cardId, error: error.message });
