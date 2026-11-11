@@ -36,21 +36,30 @@ const bucketCardChangeTime = ms => Math.floor(ms / CARD_CHANGE_BUCKET_MS) * CARD
 
 const isDateFeed = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 
-/** Картку видно комусь поза власницею: дата в стрічці або коло вподобаних. */
+/**
+ * Картку видно комусь поза власницею — та сама умова, що в правилах
+ * `matchingCards/$uid`: закрита лише картка з `feedDate: false` (і та —
+ * відкрита колу вподобаних). Неопублікована (ключа немає) відкрита кожному
+ * й видна в пошуку, тож її перехід у сховане журнал мусить знати.
+ */
 const isCardVisible = card => Boolean(card) && typeof card === 'object'
-  && (isDateFeed(card.feedDate) || card.audience === 'liked');
+  && (card.feedDate !== false || card.audience === 'liked');
 
 /**
  * Чи писати цей запис у журнал.
  *
- * - Картка поза стрічкою до й після (схована, видалена, неопублікована) —
- *   ні: журнал читає кожен, і такий запис розкривав би, що людина зі
- *   схованою анкетою щось правила. Перехід «видно → сховано» — так: без
- *   нього пристрої далі показували б анкету з кешу.
+ * - Схована (`feedDate: false`, поза колом вподобаних) до й після — ні:
+ *   журнал читає кожен, і такий запис розкривав би, що людина зі схованою
+ *   анкетою щось правила. Будь-який перехід у сховане й видалення — так:
+ *   без нього пристрої далі показували б анкету з кешу.
  * - Змінилась сама дата в стрічці (вхід раз на день) — ні: це мітка
  *   активності людини, а для кешу вона лише порядок, не видимість.
  */
 const shouldRecordCardChange = (before, after) => {
+  // Видалення пишеться завжди, а запис журналу ніколи не знімається: пристрій,
+  // що ще не прочитав запис про приховування, інакше так і лишився б з
+  // анкетою, яку показував до видалення акаунта.
+  if (after === null || after === undefined) return Boolean(before);
   if (!isCardVisible(before) && !isCardVisible(after)) return false;
   if (before && after && typeof before === 'object' && typeof after === 'object') {
     const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
@@ -75,13 +84,6 @@ const buildCardChangePath = cardId => {
 const recordCardChange = async (cardId, { before, after, now = Date.now(), setValue }) => {
   const path = buildCardChangePath(cardId);
   if (!path) return false;
-  // Картку видалено, коли її вже ніхто не бачив (очищення акаунта після
-  // приховування): запис журналу знімається — id картки, якої більше немає,
-  // не мусить лишатись у переліку, який читає кожен.
-  if ((after === null || after === undefined) && !isCardVisible(before)) {
-    await setValue(path, null);
-    return false;
-  }
   if (!shouldRecordCardChange(before, after)) return false;
   await setValue(path, bucketCardChangeTime(now));
   return true;

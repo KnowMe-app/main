@@ -28,13 +28,19 @@ test('журнал: правка видимої картки пише кошик
   assert.equal(written.length, 1);
 });
 
-test('журнал: сховане до й після — не пишеться, перехід у сховане — пишеться', () => {
+test('журнал: сховане до й після — не пишеться, будь-який перехід у сховане — пишеться', () => {
   const hidden = { name: 'Оксана', feedDate: false };
   assert.equal(shouldRecordCardChange(hidden, { ...hidden, name: 'Олена' }), false);
-  assert.equal(shouldRecordCardChange({ name: 'x' }, { name: 'y' }), false);
-  assert.equal(shouldRecordCardChange(hidden, null), false);
   assert.equal(shouldRecordCardChange(LIVE, hidden), true);
   assert.equal(shouldRecordCardChange(hidden, LIVE), true);
+  // Неопублікована відкрита кожному (і видна в пошуку): її перехід у сховане
+  // журнал мусить знати, як і її правки.
+  assert.equal(shouldRecordCardChange({ name: 'x' }, { name: 'x', feedDate: false }), true);
+  assert.equal(shouldRecordCardChange({ name: 'x' }, { name: 'y' }), true);
+});
+
+test('журнал: видалення пишеться завжди, навіть схованої картки', () => {
+  assert.equal(shouldRecordCardChange({ feedDate: false }, null), true);
   assert.equal(shouldRecordCardChange(LIVE, null), true);
   assert.equal(shouldRecordCardChange(null, LIVE), true);
 });
@@ -49,9 +55,9 @@ test('журнал: сама дата входу в стрічці — не пи
   assert.equal(shouldRecordCardChange(LIVE, { ...LIVE, feedDate: '2026-11-11', rev: 5 }), true);
 });
 
-test('журнал: видалена схована картка знімає свій запис', async () => {
+test('журнал: видалена схована картка дає новий запис, а не знімає старий', async () => {
   const written = [];
   const setValue = async (path, value) => { written.push([path, value]); };
-  assert.equal(await recordCardChange('card1', { before: { feedDate: false }, after: null, setValue }), false);
-  assert.deepEqual(written, [['matchingCardChanges/card1', null]]);
+  assert.equal(await recordCardChange('card1', { before: { feedDate: false }, after: null, now: CARD_CHANGE_BUCKET_MS * 3 + 5, setValue }), true);
+  assert.deepEqual(written, [['matchingCardChanges/card1', CARD_CHANGE_BUCKET_MS * 3]]);
 });
