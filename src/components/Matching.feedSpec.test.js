@@ -39,7 +39,7 @@ describe('matching feed structure', () => {
     expect(memo).toContain("if (viewMode === 'search') return searchRefinedUsers.slice(0, searchRevealCount);");
     // Сортування стрічки прибрано: дека стоїть у власному порядку — за
     // датою публікації.
-    expect(source).toContain('() => filteredUsers.map(user => resolveStoredProjection(user, isMatchingSummaryCard)),');
+    expect(source).toContain('const feedSourceWithoutOwnEdits = filteredUsers;');
     expect(source).not.toContain('sortCardsByMode(');
     // Поверх списку лягає лише власне доповнення читача — і лише там, де воно є:
     // порожня мапа віддає той самий масив, бо від нього залежать і гідратація

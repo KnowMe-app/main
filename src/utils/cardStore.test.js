@@ -3,7 +3,10 @@ import {
   clearCardStore,
   getCardStoreVersion,
   getStoredProjection,
+  patchStoredProjection,
   resolveStoredProjection,
+  resolveStoredProjectionList,
+  restoreStoredProjection,
   subscribeCardStore,
   switchCardStoreViewer,
   upsertStoredProjections,
@@ -67,5 +70,42 @@ describe('одне сховище проєкцій', () => {
     ['a', 'b', 'c'].forEach(id => upsertStoredProjections('viewer', { [id]: card(id) }));
     await Promise.resolve();
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('список джерела бере свіжі проєкції, а без змін лишається тим самим масивом', () => {
+    const list = [card('a', { birth: '1990-01-01', rev: 1 }), card('b', { rev: 1 })];
+    expect(resolveStoredProjectionList(list, isProjection)).toBe(list);
+    upsertStoredProjections('viewer', { a: card('a', { birth: '1985-01-01', rev: 2 }) });
+    const resolved = resolveStoredProjectionList(list, isProjection);
+    expect(resolved).not.toBe(list);
+    expect(resolved[0].birth).toBe('1985-01-01');
+    expect(resolved[1]).toBe(list[1]);
+    upsertStoredProjections('viewer', { b: card('b', { rev: 1 }) });
+    expect(resolveStoredProjectionList([resolved[0]], isProjection)[0]).toBe(resolved[0]);
+  });
+
+  it('локальна правка публікації лягає в сховище й відкочується', () => {
+    const stored = card('a', { publish: true, feedDate: '2026-11-10', rev: 1 });
+    upsertStoredProjections('viewer', { a: stored });
+    const receipt = patchStoredProjection('a', current => ({ ...current, publish: false, feedDate: false }));
+    expect(receipt.previous).toBe(stored);
+    const row = card('a', { publish: false, feedDate: false, rev: 1 });
+    expect(resolveStoredProjection(row, isProjection)).toBe(row);
+    restoreStoredProjection('a', receipt);
+    expect(getStoredProjection('a')).toBe(stored);
+  });
+
+  it('відкат не перебиває відповідь бази, що прийшла, поки запис летів', () => {
+    upsertStoredProjections('viewer', { a: card('a', { publish: true, rev: 1 }) });
+    const receipt = patchStoredProjection('a', current => ({ ...current, publish: false }));
+    const fresher = card('a', { publish: true, name: 'Нова', rev: 2 });
+    upsertStoredProjections('viewer', { a: fresher });
+    restoreStoredProjection('a', receipt);
+    expect(getStoredProjection('a')).toBe(fresher);
+  });
+
+  it('правка без проєкції в сховищі нічого не пише', () => {
+    expect(patchStoredProjection('missing', current => ({ ...current, publish: false }))).toBeNull();
+    expect(getStoredProjection('missing')).toBeNull();
   });
 });

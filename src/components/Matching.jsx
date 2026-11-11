@@ -160,7 +160,7 @@ import {
   readCardRevision,
 } from '../utils/matchingCardIndex';
 import { isFeedStateDeniedForFeed } from '../utils/searchFeedDenial';
-import { clearCardStore, getCardStoreVersion, resolveStoredProjection, subscribeCardStore, switchCardStoreViewer } from '../utils/cardStore';
+import { clearCardStore, getCardStoreVersion, patchStoredProjection, resolveStoredProjectionList, restoreStoredProjection, subscribeCardStore, switchCardStoreViewer } from '../utils/cardStore';
 import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
@@ -2087,6 +2087,20 @@ const Matching = () => {
       setFullProfileByUserId(prev => (prev[userId] ? { ...prev, [userId]: patchPublication(prev[userId]) } : prev));
     };
     applyLocally();
+    // Рядок бере проєкцію зі сховища вкладки (`storedUsers`), тож правка лише
+    // в `users` перебилась би прочитаною раніше: цятка показувала б старий
+    // стан, і повторний дотик просив би того самого, а не протилежного. Тож
+    // правиться й сховище — одразу, як і `users`, а відмова бази повертає
+    // обидва.
+    const storedPatch = patchStoredProjection(userId, patchPublication);
+    const revertLocally = () => {
+      const restore = card => (card
+        ? { ...card, publish: user.publish, [MATCHING_CARD_FEED_FIELD]: user[MATCHING_CARD_FEED_FIELD] }
+        : card);
+      setUsers(prev => prev.map(u => (u.userId === userId ? restore(u) : u)));
+      setFullProfileByUserId(prev => (prev[userId] ? { ...prev, [userId]: restore(prev[userId]) } : prev));
+      restoreStoredProjection(userId, storedPatch);
+    };
     try {
       const backendPayload = sanitizeCardForBackend({ publish: newValue });
       await updateDataInRealtimeDB(userId, backendPayload, 'update');
@@ -2100,6 +2114,7 @@ const Matching = () => {
       }
     } catch (err) {
       console.error('Failed to toggle publish', err);
+      revertLocally();
       toast.error(uiText(newValue ? 'Не вдалося опублікувати анкету. Спробуйте ще раз' : 'Не вдалося зняти анкету з публікації. Спробуйте ще раз', language));
       return;
     }
@@ -5461,6 +5476,41 @@ const Matching = () => {
   // `reactionTabUsers`).
   const [returnedToFeedCards, setReturnedToFeedCards] = useState(EMPTY_USERS);
 
+  // Рядок бере найсвіжішу прочитану з бази проєкцію з одного сховища вкладки
+  // (`utils/cardStore`), хоч би з якого джерела деки він прийшов: `users`,
+  // «лише для вподобаних», надані правилами, спільні реакції. Підставляється
+  // вона **в джерела, до фільтрів і відбору кандидатів**: поки сховище
+  // накладалось лише на показ, фільтр («вік 26–30») звіряв стару картку, а
+  // рядок показував нову — і картка, що вже не підходить, лишалась у деці.
+  // З того ж масиву питає повну анкету розгортання (`feedSourceRef`), тож
+  // воно звіряє кеш із тією самою версією, що й показ.
+  const cardStoreVersion = useSyncExternalStore(subscribeCardStore, getCardStoreVersion);
+  /* eslint-disable react-hooks/exhaustive-deps -- `cardStoreVersion`: сховище поповнилось */
+  const storedUsers = useMemo(
+    () => resolveStoredProjectionList(users, isMatchingSummaryCard),
+    [users, cardStoreVersion],
+  );
+  const storedLikedAudienceUsers = useMemo(
+    () => resolveStoredProjectionList(likedAudienceUsers, isMatchingSummaryCard),
+    [likedAudienceUsers, cardStoreVersion],
+  );
+  const storedAdditionalAccessUsers = useMemo(
+    () => resolveStoredProjectionList(additionalAccessUsers, isMatchingSummaryCard),
+    [additionalAccessUsers, cardStoreVersion],
+  );
+  const storedSharedReactionCandidateUsers = useMemo(
+    () => resolveStoredProjectionList(sharedReactionCandidateUsers, isMatchingSummaryCard),
+    [sharedReactionCandidateUsers, cardStoreVersion],
+  );
+  // Повернене з колекції стоїть знімком, узятим у мить повернення: без
+  // сховища новіша проєкція до нього не доходила б, і рядок із фільтрами
+  // бачили б старе імʼя, фото й версію.
+  const storedReturnedToFeedCards = useMemo(
+    () => resolveStoredProjectionList(returnedToFeedCards, isMatchingSummaryCard),
+    [returnedToFeedCards, cardStoreVersion],
+  );
+  /* eslint-enable react-hooks/exhaustive-deps */
+
   const visibleUsers = useMemo(() => liftReturnedCards(mergeMatchingCandidateUsers({
     // Власні щойно створені анкети видно завжди — вони не чекають на
     // погодження адміном, щоб зʼявитись у власника в стрічці. Але стрічка — це
@@ -5476,17 +5526,17 @@ const Matching = () => {
     // у кінець, доки стрічка має сторінки, — інакше дописана сторінка лягала б
     // над нею, і приріст знаходився б тільки прокруткою вгору.
     users: viewMode === 'search'
-      ? [...personalDraftSearchMatches, ...users]
+      ? [...personalDraftSearchMatches, ...storedUsers]
       : placeOwnDraftsInFeed({
         drafts: initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS,
         users: viewMode === 'default'
-          ? placeReturnedCardsFirst({ users, returnedCards: returnedToFeedCards, favoriteUsers, dislikeUsers })
-          : users,
+          ? placeReturnedCardsFirst({ users: storedUsers, returnedCards: storedReturnedToFeedCards, favoriteUsers, dislikeUsers })
+          : storedUsers,
         hasMore,
       }),
-    additionalAccessUsers,
-    likedAudienceUsers,
-    sharedReactionCandidateUsers,
+    additionalAccessUsers: storedAdditionalAccessUsers,
+    likedAudienceUsers: storedLikedAudienceUsers,
+    sharedReactionCandidateUsers: storedSharedReactionCandidateUsers,
     isAdmin,
     viewMode,
     hasAdditionalAccessRules: parsedAdditionalAccessRules.length > 0,
@@ -5501,9 +5551,9 @@ const Matching = () => {
     // Поки його знало лише друге, картка все одно зникала з-під пальця: до
     // фільтрів вона просто не доходила.
     keepReactedUserIds: stickyReactedUserIds,
-  }), viewMode === 'default' ? returnedToFeedCards : EMPTY_USERS), [
-    additionalAccessUsers,
-    likedAudienceUsers,
+  }), viewMode === 'default' ? storedReturnedToFeedCards : EMPTY_USERS), [
+    storedAdditionalAccessUsers,
+    storedLikedAudienceUsers,
     dislikeUsers,
     favoriteUsers,
     ownDislikeUsers,
@@ -5513,11 +5563,11 @@ const Matching = () => {
     parsedAdditionalAccessRules,
     personalDraftSearchMatches,
     hasMore,
-    sharedReactionCandidateUsers,
+    storedSharedReactionCandidateUsers,
     stickyReactedUserIds,
-    users,
+    storedUsers,
     personalCreateProfiles,
-    returnedToFeedCards,
+    storedReturnedToFeedCards,
     viewMode,
     donorRestrictionViewerRole,
     ownerId,
@@ -5538,10 +5588,10 @@ const Matching = () => {
 
     const candidateUsersById = new Map();
     [
-      ...users,
-      ...likedAudienceUsers,
-      ...additionalAccessUsers,
-      ...sharedReactionCandidateUsers,
+      ...storedUsers,
+      ...storedLikedAudienceUsers,
+      ...storedAdditionalAccessUsers,
+      ...storedSharedReactionCandidateUsers,
       ...personalCreateProfiles,
     ].forEach(user => {
       if (!user?.userId || candidateUsersById.has(user.userId)) return;
@@ -5563,15 +5613,15 @@ const Matching = () => {
         return true;
       });
   }, [
-    additionalAccessUsers,
-    likedAudienceUsers,
+    storedAdditionalAccessUsers,
+    storedLikedAudienceUsers,
     dislikeUsers,
     favoriteUsers,
     isAdmin,
     personalCreateProfiles,
-    sharedReactionCandidateUsers,
+    storedSharedReactionCandidateUsers,
     stickyReactedUserIds,
-    users,
+    storedUsers,
     viewMode,
   ]);
 
@@ -5777,18 +5827,9 @@ const Matching = () => {
   // Spec §1: whatever the reader is looking at, the list, the gallery and the
   // detail layer all index into this one array - so opening row N and paging
   // from it can never disagree about which card is which.
-  // Рядок бере найсвіжішу прочитану з бази проєкцію з одного сховища вкладки
-  // (`utils/cardStore`), хоч би з якого джерела деки він прийшов: `users`,
-  // «лише для вподобаних», надані правилами, спільні реакції чи колекції. З
-  // цього ж масиву питає повну анкету розгортання (`feedSourceRef`), тож воно
-  // звіряє кеш із тією самою версією, що й показ.
-  const cardStoreVersion = useSyncExternalStore(subscribeCardStore, getCardStoreVersion);
-  const feedSourceWithoutOwnEdits = useMemo(
-    () => filteredUsers.map(user => resolveStoredProjection(user, isMatchingSummaryCard)),
-    // `cardStoreVersion` — сигнал, що сховище поповнилось.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filteredUsers, cardStoreVersion],
-  );
+  // Свіжі проєкції зі сховища тут уже стоять: їх підставлено в самі джерела
+  // деки (`storedUsers` і сусіди), ще до фільтрів.
+  const feedSourceWithoutOwnEdits = filteredUsers;
 
   /**
    * Картка показується разом із тим, що читач сам у неї дописав.

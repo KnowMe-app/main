@@ -26,7 +26,23 @@ describe('свіжа картка зі сторожа стану', () => {
   it('свіжа проєкція йде в одне сховище, а рядки беруть її звідти', () => {
     expect(handler()).not.toContain('setUsers(');
     expect(source).toContain('const cardStoreVersion = useSyncExternalStore(subscribeCardStore, getCardStoreVersion);');
-    expect(source).toContain('() => filteredUsers.map(user => resolveStoredProjection(user, isMatchingSummaryCard)),');
+    // Свіжа проєкція стоїть у джерелах деки ще до фільтрів: фільтр і показ
+    // бачать ту саму версію картки.
+    expect(source).toContain('() => resolveStoredProjectionList(users, isMatchingSummaryCard),');
+    expect(source).toContain('() => resolveStoredProjectionList(likedAudienceUsers, isMatchingSummaryCard),');
+    expect(source).toContain('() => resolveStoredProjectionList(additionalAccessUsers, isMatchingSummaryCard),');
+    expect(source).toContain('() => resolveStoredProjectionList(sharedReactionCandidateUsers, isMatchingSummaryCard),');
+    const visible = source.slice(source.indexOf('const visibleUsers = useMemo('), source.indexOf('const reactionTabUsers = useMemo('));
+    expect(visible).toContain('placeReturnedCardsFirst({ users: storedUsers, returnedCards: storedReturnedToFeedCards,');
+    expect(visible).toContain("viewMode === 'default' ? storedReturnedToFeedCards : EMPTY_USERS");
+    expect(source).toContain('() => resolveStoredProjectionList(returnedToFeedCards, isMatchingSummaryCard),');
+    expect(visible).toContain('likedAudienceUsers: storedLikedAudienceUsers,');
+    expect(visible).toContain('additionalAccessUsers: storedAdditionalAccessUsers,');
+    expect(visible).toContain('sharedReactionCandidateUsers: storedSharedReactionCandidateUsers,');
+    const reactionTab = source.slice(source.indexOf('const reactionTabUsers = useMemo('), source.indexOf('const reactionTabUsersRef'));
+    expect(reactionTab).toContain('...storedUsers,');
+    expect(reactionTab).not.toMatch(/\.\.\.users,/);
+    expect(source).toContain('const feedSourceWithoutOwnEdits = filteredUsers;');
     expect(source).toContain('feedSource.map(user => withOwnEdits(withLazyPhotos(user)))');
     const restart = source.slice(source.indexOf('const restartFeed = React.useCallback('), source.indexOf('const resetFiltersAndCache ='));
     expect(restart).toContain('clearCardStore();');
@@ -53,5 +69,15 @@ describe('свіжа картка зі сторожа стану', () => {
     expect(hydrate).toContain('cardChangesSyncRef.current.catch(() => null)');
     expect(hydrate).toContain('setTimeout(resolve, CARD_CHANGES_WAIT_MS)');
     expect(source).toContain('cardChangesSyncRef.current = sync;');
+  });
+
+  // Адмін зняв чи повернув публікацію: правка йде й у сховище, інакше
+  // прочитана раніше проєкція перебила б її в рядку, а відмова бази
+  // повертає обидва.
+  it('публікація адміна правує й сховище, а відмова її відкочує', () => {
+    const toggle = source.slice(source.indexOf('const togglePublish = React.useCallback('), source.indexOf('const applySearchResults ='));
+    expect(toggle).toContain('const storedPatch = patchStoredProjection(userId, patchPublication);');
+    expect(toggle).toContain('restoreStoredProjection(userId, storedPatch);');
+    expect(toggle.indexOf('revertLocally();')).toBeGreaterThan(toggle.indexOf('} catch (err) {'));
   });
 });

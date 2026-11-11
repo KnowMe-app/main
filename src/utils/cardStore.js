@@ -102,6 +102,56 @@ export const resolveStoredProjection = (user, isProjection) => {
   return replaceFeedProjection(user, stored);
 };
 
+/**
+ * Ті самі заміни на списку джерела деки; без змін — той самий масив (тоді
+ * мемо `Matching`, що від нього залежать, не перераховуються).
+ */
+export const resolveStoredProjectionList = (users, isProjection) => {
+  if (!Array.isArray(users) || !projections.size) return users;
+  let changed = false;
+  const next = users.map(user => {
+    const resolved = resolveStoredProjection(user, isProjection);
+    if (resolved !== user) changed = true;
+    return resolved;
+  });
+  return changed ? next : users;
+};
+
+/**
+ * Локальна правка картки, яку база вже прийняла (адмін зняв чи повернув
+ * публікацію). Сховище пишуть лише відповіді бази, але без цієї правки
+ * прочитана раніше проєкція перебила б її в кожному рядку
+ * (`resolveStoredProjection`), і повторний дотик просив би протилежного.
+ * Немає проєкції в сховищі — нічого перебивати, і запису немає.
+ *
+ * @returns {{ previous: object, patched: object }|null} квитанція для
+ *   `restoreStoredProjection`.
+ */
+export const patchStoredProjection = (id, patch) => {
+  const key = id ? String(id) : '';
+  const current = key ? projections.get(key) : null;
+  if (!current || typeof patch !== 'function') return null;
+  const next = patch(current);
+  if (!next || next === current) return null;
+  projections.set(key, next);
+  notify();
+  return { previous: current, patched: next };
+};
+
+/**
+ * Відкотити правку `patchStoredProjection` (відмова бази) — **лише якщо в
+ * сховищі досі вона**. Відповідь бази, що прийшла, поки запис летів, новіша
+ * за знімок до правки (інша версія, інші поля), і повернути поверх неї
+ * старий знімок означало б відкотити й її.
+ */
+export const restoreStoredProjection = (id, receipt) => {
+  const key = id ? String(id) : '';
+  if (!key || !receipt?.previous) return;
+  if (projections.get(key) !== receipt.patched) return;
+  projections.set(key, receipt.previous);
+  notify();
+};
+
 export const __resetCardStoreForTests = () => {
   notifyScheduled = false;
   projections.clear();

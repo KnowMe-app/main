@@ -88,7 +88,7 @@ describe('пошук у matching для читача без повного до�
   // завела картку з цієї ж видачі, поверталась у видачу без неї.
   it('у відповідь на запит ідуть лише ті власні чернетки, що з ним збіглися', () => {
     const source = matchingSource();
-    expect(source).toContain("users: viewMode === 'search'\n      ? [...personalDraftSearchMatches, ...users]\n      : placeOwnDraftsInFeed({");
+    expect(source).toContain("users: viewMode === 'search'\n      ? [...personalDraftSearchMatches, ...storedUsers]\n      : placeOwnDraftsInFeed({");
     expect(source).toContain('const personalDraftSearchMatches = useMemo(() => {');
     expect(source).toContain('const detected = detectSearchParams(searchQuery.trim());');
     expect(source).toContain('findMatchingProfileMutations(');
