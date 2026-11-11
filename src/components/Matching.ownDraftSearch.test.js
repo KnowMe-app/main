@@ -29,7 +29,7 @@ describe('Matching: власні чернетки у видачі пошуку',
   });
 
   it('ставить збіглі чернетки у видачу, а всю їх пачку лишає самій деці', () => {
-    expect(source).toContain("users: viewMode === 'search'\n      ? [...personalDraftSearchMatches, ...users]");
+    expect(source).toContain("users: viewMode === 'search'\n      ? [...personalDraftSearchMatches, ...storedUsers]");
     // Дека за замовчуванням і далі бере всю пачку власних чернеток — але лише
     // після першого вікна публічних карток, і ставить кожну за її датою.
     expect(source).toContain('      : placeOwnDraftsInFeed({\n        drafts: initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS,');

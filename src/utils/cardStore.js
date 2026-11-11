@@ -102,6 +102,49 @@ export const resolveStoredProjection = (user, isProjection) => {
   return replaceFeedProjection(user, stored);
 };
 
+/**
+ * Ті самі заміни на списку джерела деки; без змін — той самий масив (тоді
+ * мемо `Matching`, що від нього залежать, не перераховуються).
+ */
+export const resolveStoredProjectionList = (users, isProjection) => {
+  if (!Array.isArray(users) || !projections.size) return users;
+  let changed = false;
+  const next = users.map(user => {
+    const resolved = resolveStoredProjection(user, isProjection);
+    if (resolved !== user) changed = true;
+    return resolved;
+  });
+  return changed ? next : users;
+};
+
+/**
+ * Локальна правка картки, яку база вже прийняла (адмін зняв чи повернув
+ * публікацію). Сховище пишуть лише відповіді бази, але без цієї правки
+ * прочитана раніше проєкція перебила б її в кожному рядку
+ * (`resolveStoredProjection`), і повторний дотик просив би протилежного.
+ * Немає проєкції в сховищі — нічого перебивати, і запису немає.
+ *
+ * @returns {object|null} попередня проєкція — щоб повернути її на відмові.
+ */
+export const patchStoredProjection = (id, patch) => {
+  const key = id ? String(id) : '';
+  const current = key ? projections.get(key) : null;
+  if (!current || typeof patch !== 'function') return null;
+  const next = patch(current);
+  if (!next || next === current) return current;
+  projections.set(key, next);
+  notify();
+  return current;
+};
+
+/** Повернути проєкцію, яку замінила `patchStoredProjection` (відмова бази). */
+export const restoreStoredProjection = (id, previous) => {
+  const key = id ? String(id) : '';
+  if (!key || !previous || !projections.has(key)) return;
+  projections.set(key, previous);
+  notify();
+};
+
 export const __resetCardStoreForTests = () => {
   notifyScheduled = false;
   projections.clear();
