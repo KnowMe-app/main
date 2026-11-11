@@ -24,6 +24,7 @@ import {
   serverTimestamp,
   runTransaction,
   increment,
+  onValue,
 } from 'firebase/database';
 import { PAGE_SIZE, BATCH_SIZE, MEDICATION_SCHEDULE_CLEANUP_DAY_LIMIT } from './constants';
 import { filterOutMedicationPhotos } from '../utils/photoFilters';
@@ -3690,6 +3691,32 @@ const readCardFeedState = async userId => {
  * `startAt` (час сервера). Правила пускають лише такий запит — за значенням,
  * з початком і стелею рядків.
  */
+/**
+ * Оцінка часу сервера: годинник пристрою плюс `.info/serverTimeOffset`
+ * (його SDK знає з самого зʼєднання, читання бази це не коштує). `null` —
+ * зсуву не дочекались.
+ */
+export const readServerNow = () => new Promise(resolve => {
+  let settled = false;
+  let unsubscribe = null;
+  const finish = value => {
+    if (settled) return;
+    settled = true;
+    if (typeof unsubscribe === 'function') unsubscribe();
+    resolve(value);
+  };
+  try {
+    unsubscribe = onValue(ref2(database, '.info/serverTimeOffset'), snapshot => {
+      const offset = Number(snapshot.val());
+      finish(Number.isFinite(offset) ? Date.now() + offset : null);
+    }, () => finish(null));
+    if (settled && typeof unsubscribe === 'function') unsubscribe();
+  } catch {
+    finish(null);
+  }
+  setTimeout(() => finish(null), 2000);
+});
+
 export const readMatchingCardChangesSince = async (startAtValue, limit) => {
   const snapshot = await get(query(
     ref2(database, 'matchingCardChanges'),

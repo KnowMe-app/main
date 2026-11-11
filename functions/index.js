@@ -598,6 +598,11 @@ exports.recordMatchingCardChange = onValueWritten(
     memory: '256MiB',
     timeoutSeconds: 30,
     maxInstances: 10,
+    // Загублений запис журналу — це картка, яку пристрої вважатимуть
+    // незмінною (зокрема сховану — видимою), тож збій запису не ковтається:
+    // помилка йде нагору, і Eventarc повторює подію. Запис ідемпотентний
+    // (той самий кошик часу або новіший), тож повтор нічого не псує.
+    retry: true,
   },
   async event => {
     try {
@@ -608,6 +613,7 @@ exports.recordMatchingCardChange = onValueWritten(
       });
     } catch (error) {
       logger.error('card change journal write failed', { cardId: event.params.cardId, error: error.message });
+      throw error;
     }
   },
 );

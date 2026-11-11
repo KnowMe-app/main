@@ -69,6 +69,7 @@ import {
   fetchAdminLastLoginCardsPage,
   matchingFeedStateReader,
   readMatchingCardChangesSince,
+  readServerNow,
   fetchMatchingCardsPage,
   fetchMatchingCardsByIds,
   clearMatchingCardsPageInFlight,
@@ -160,7 +161,7 @@ import {
 } from '../utils/matchingCardIndex';
 import { isFeedStateDeniedForFeed } from '../utils/searchFeedDenial';
 import { replaceFeedProjections } from '../utils/freshFeedProjection';
-import { syncCardChanges } from '../utils/matchingCardChanges';
+import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
 import { readBackendLinksEnabled } from '../utils/backendLinksMode';
@@ -8232,12 +8233,22 @@ const Matching = () => {
     syncCardChanges({
       viewerId: ownerId,
       readChangesSince: readMatchingCardChangesSince,
+      readServerNow,
       forgetCardBodies: forgetCachedCardBodies,
+      forgetFeedStateMemo: ({ ids, persistedOnly } = {}) => {
+        if (persistedOnly) matchingFeedStateReader.forgetPersisted();
+        if (ids) matchingFeedStateReader.forget(ids);
+      },
     }).finally(() => {
       clearTimeout(fallback);
       if (!cancelled) setCardChangesReady(true);
     });
-    return () => { cancelled = true; clearTimeout(fallback); };
+    return () => {
+      cancelled = true;
+      clearTimeout(fallback);
+      revokeFeedStateTrust(ownerId);
+      matchingFeedStateReader.forgetPersisted();
+    };
   }, [isAdmin, ownerId]);
 
 
