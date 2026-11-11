@@ -12,6 +12,7 @@ import {
   computeInvoiceAmountDue,
   computeInvoiceSubtotal,
   computeInvoiceTotal,
+  describeNegativeRowsLabel,
   resolveInvoiceDocType,
   resolveInvoiceServiceRows,
 } from './invoiceCatalogUtils';
@@ -372,6 +373,7 @@ const InvoicePdfDocument = ({
     return price < 0 ? sum + price : sum;
   }, 0);
   const servicesTotal = subtotal - creditsTotal;
+  const creditsLabel = describeNegativeRowsLabel(chargeableRows) || 'Adjustments';
   const taxAmount = total - subtotal;
   const noteList = Array.isArray(notes)
     ? notes
@@ -479,7 +481,7 @@ const InvoicePdfDocument = ({
                   <Text style={pdfBaseStyles.totalCardRowValue}>{formatMoneyTwoDecimals(servicesTotal)}</Text>
                 </View>
                 <View style={pdfBaseStyles.totalCardRow}>
-                  <Text style={pdfBaseStyles.totalCardRowLabel}>Credits</Text>
+                  <Text style={pdfBaseStyles.totalCardRowLabel}>{sanitizePdfText(creditsLabel)}</Text>
                   <Text style={pdfBaseStyles.totalCardRowValue}>
                     {`${TYPOGRAPHIC_MINUS}${formatMoneyTwoDecimals(Math.abs(creditsTotal))}`}
                   </Text>

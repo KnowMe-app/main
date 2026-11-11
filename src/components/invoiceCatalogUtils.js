@@ -921,3 +921,19 @@ export const getTodayYmd = () => {
   const today = new Date();
   return `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
 };
+
+// Підпис від'ємних рядків у підсумку рахунку. Тут стояло зашите «Credits» на будь-який мінус, і
+// знижка в рядку «Discount» у підсумку ставала «Credits» — а кредит у рахунку читається як
+// зарахування (передоплата, кредит-нота), тобто клієнт питав, яку суму за ним рахують. Тепер
+// підпис бере зміст рядків: самі знижки — «Discount», один інший рядок — його назва, суміш —
+// нейтральне «Adjustments».
+const DISCOUNT_ROW_PATTERN = /discount|знижк|скидк/i;
+
+export const describeNegativeRowsLabel = rows => {
+  const negative = (Array.isArray(rows) ? rows : []).filter(row => (Number(row?.price) || 0) < 0);
+  if (!negative.length) return '';
+  const names = negative.map(row => String(row?.name || '').trim());
+  if (names.every(name => DISCOUNT_ROW_PATTERN.test(name))) return 'Discount';
+  if (negative.length === 1 && names[0]) return names[0];
+  return 'Adjustments';
+};
