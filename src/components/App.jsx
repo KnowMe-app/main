@@ -139,8 +139,8 @@ export const App = () => {
         // (`utils/latencyProbe`): цифри для рішення про регіон бази.
         scheduleLatencyProbe(user.uid);
       } else {
-        // Черга записів лишається на диску свого читача — у ній те, чого база
-        // ще не має, — але без входу її досилати нікому.
+        // Черга записів — теж памʼять пристрою про читача (текст памʼяток,
+        // кого вподобано), тож стирається разом з рештою (`utils/writeOutbox`).
         stopWriteOutbox();
         localStorage.removeItem('ownerId');
         localStorage.removeItem('accessLevel');

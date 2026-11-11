@@ -212,10 +212,22 @@ export const startWriteOutbox = uid => {
 };
 
 /**
- * Вихід: черга лишається на диску свого читача (у ній те, чого база ще не
- * має, — стерти означало б загубити), але досилати її без входу нікому.
+ * Вихід: черга стирається, як і решта памʼяті пристрою про читача (`App`,
+ * гілка `out`). У ній текст памʼяток і те, кого людина вподобала, а на
+ * спільному пристрої наступний читач цього мати не мусить. Ціна —
+ * незвідане без звʼязку пропадає, якщо вийти, не дочекавшись звʼязку: ту
+ * саму ціну вже платять кеш анкети, реакцій і памʼяток.
  */
-export const stopWriteOutbox = () => startWriteOutbox(null);
+export const stopWriteOutbox = () => {
+  startWriteOutbox(null);
+  try {
+    Object.keys(localStorage)
+      .filter(key => key.startsWith(STORAGE_KEY_PREFIX))
+      .forEach(key => localStorage.removeItem(key));
+  } catch {
+    // без `localStorage` стирати нічого
+  }
+};
 
 /**
  * Поставити запис у чергу й одразу відправити.

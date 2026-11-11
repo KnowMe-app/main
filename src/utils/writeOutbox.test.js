@@ -128,17 +128,19 @@ describe('черга записів пристрою', () => {
     }
   });
 
-  it('відмова, що прийшла після виходу, запису не знімає', async () => {
+  it('вихід стирає чергу з диска, а пізня відмова її не відкочує', async () => {
     const pending = deferred();
     const handler = jest.fn();
     registerOutboxRejectionHandler('reactions', handler);
     configureWriteOutbox({ send: () => pending.promise });
     enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/favorites/u1/a': 1 }, meta: { type: 'reactions' } }).catch(() => {});
+    expect(stored('u1')).toHaveLength(1);
     stopWriteOutbox();
+    expect(localStorage.getItem(storageKey('u1'))).toBeNull();
     pending.reject(denied());
     await flush();
+    // Кеш реакцій вихід і так стирає — відкочувати нічого.
     expect(handler).not.toHaveBeenCalled();
-    expect(stored('u1')).toHaveLength(1);
   });
 
   it('черги читачів окремі', () => {
