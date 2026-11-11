@@ -33,7 +33,9 @@ describe('свіжа картка зі сторожа стану', () => {
     expect(source).toContain('() => resolveStoredProjectionList(additionalAccessUsers, isMatchingSummaryCard),');
     expect(source).toContain('() => resolveStoredProjectionList(sharedReactionCandidateUsers, isMatchingSummaryCard),');
     const visible = source.slice(source.indexOf('const visibleUsers = useMemo('), source.indexOf('const reactionTabUsers = useMemo('));
-    expect(visible).toContain('placeReturnedCardsFirst({ users: storedUsers,');
+    expect(visible).toContain('placeReturnedCardsFirst({ users: storedUsers, returnedCards: storedReturnedToFeedCards,');
+    expect(visible).toContain("viewMode === 'default' ? storedReturnedToFeedCards : EMPTY_USERS");
+    expect(source).toContain('() => resolveStoredProjectionList(returnedToFeedCards, isMatchingSummaryCard),');
     expect(visible).toContain('likedAudienceUsers: storedLikedAudienceUsers,');
     expect(visible).toContain('additionalAccessUsers: storedAdditionalAccessUsers,');
     expect(visible).toContain('sharedReactionCandidateUsers: storedSharedReactionCandidateUsers,');
@@ -74,8 +76,8 @@ describe('свіжа картка зі сторожа стану', () => {
   // повертає обидва.
   it('публікація адміна правує й сховище, а відмова її відкочує', () => {
     const toggle = source.slice(source.indexOf('const togglePublish = React.useCallback('), source.indexOf('const applySearchResults ='));
-    expect(toggle).toContain('const storedBefore = patchStoredProjection(userId, patchPublication);');
-    expect(toggle).toContain('restoreStoredProjection(userId, storedBefore);');
+    expect(toggle).toContain('const storedPatch = patchStoredProjection(userId, patchPublication);');
+    expect(toggle).toContain('restoreStoredProjection(userId, storedPatch);');
     expect(toggle.indexOf('revertLocally();')).toBeGreaterThan(toggle.indexOf('} catch (err) {'));
   });
 });

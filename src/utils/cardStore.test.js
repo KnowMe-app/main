@@ -87,12 +87,21 @@ describe('одне сховище проєкцій', () => {
   it('локальна правка публікації лягає в сховище й відкочується', () => {
     const stored = card('a', { publish: true, feedDate: '2026-11-10', rev: 1 });
     upsertStoredProjections('viewer', { a: stored });
-    const before = patchStoredProjection('a', current => ({ ...current, publish: false, feedDate: false }));
-    expect(before).toBe(stored);
+    const receipt = patchStoredProjection('a', current => ({ ...current, publish: false, feedDate: false }));
+    expect(receipt.previous).toBe(stored);
     const row = card('a', { publish: false, feedDate: false, rev: 1 });
     expect(resolveStoredProjection(row, isProjection)).toBe(row);
-    restoreStoredProjection('a', before);
+    restoreStoredProjection('a', receipt);
     expect(getStoredProjection('a')).toBe(stored);
+  });
+
+  it('відкат не перебиває відповідь бази, що прийшла, поки запис летів', () => {
+    upsertStoredProjections('viewer', { a: card('a', { publish: true, rev: 1 }) });
+    const receipt = patchStoredProjection('a', current => ({ ...current, publish: false }));
+    const fresher = card('a', { publish: true, name: 'Нова', rev: 2 });
+    upsertStoredProjections('viewer', { a: fresher });
+    restoreStoredProjection('a', receipt);
+    expect(getStoredProjection('a')).toBe(fresher);
   });
 
   it('правка без проєкції в сховищі нічого не пише', () => {

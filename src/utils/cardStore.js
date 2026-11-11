@@ -124,24 +124,31 @@ export const resolveStoredProjectionList = (users, isProjection) => {
  * (`resolveStoredProjection`), і повторний дотик просив би протилежного.
  * Немає проєкції в сховищі — нічого перебивати, і запису немає.
  *
- * @returns {object|null} попередня проєкція — щоб повернути її на відмові.
+ * @returns {{ previous: object, patched: object }|null} квитанція для
+ *   `restoreStoredProjection`.
  */
 export const patchStoredProjection = (id, patch) => {
   const key = id ? String(id) : '';
   const current = key ? projections.get(key) : null;
   if (!current || typeof patch !== 'function') return null;
   const next = patch(current);
-  if (!next || next === current) return current;
+  if (!next || next === current) return null;
   projections.set(key, next);
   notify();
-  return current;
+  return { previous: current, patched: next };
 };
 
-/** Повернути проєкцію, яку замінила `patchStoredProjection` (відмова бази). */
-export const restoreStoredProjection = (id, previous) => {
+/**
+ * Відкотити правку `patchStoredProjection` (відмова бази) — **лише якщо в
+ * сховищі досі вона**. Відповідь бази, що прийшла, поки запис летів, новіша
+ * за знімок до правки (інша версія, інші поля), і повернути поверх неї
+ * старий знімок означало б відкотити й її.
+ */
+export const restoreStoredProjection = (id, receipt) => {
   const key = id ? String(id) : '';
-  if (!key || !previous || !projections.has(key)) return;
-  projections.set(key, previous);
+  if (!key || !receipt?.previous) return;
+  if (projections.get(key) !== receipt.patched) return;
+  projections.set(key, receipt.previous);
   notify();
 };
 

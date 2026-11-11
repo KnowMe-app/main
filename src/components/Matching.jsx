@@ -2092,14 +2092,14 @@ const Matching = () => {
     // стан, і повторний дотик просив би того самого, а не протилежного. Тож
     // правиться й сховище — одразу, як і `users`, а відмова бази повертає
     // обидва.
-    const storedBefore = patchStoredProjection(userId, patchPublication);
+    const storedPatch = patchStoredProjection(userId, patchPublication);
     const revertLocally = () => {
       const restore = card => (card
         ? { ...card, publish: user.publish, [MATCHING_CARD_FEED_FIELD]: user[MATCHING_CARD_FEED_FIELD] }
         : card);
       setUsers(prev => prev.map(u => (u.userId === userId ? restore(u) : u)));
       setFullProfileByUserId(prev => (prev[userId] ? { ...prev, [userId]: restore(prev[userId]) } : prev));
-      restoreStoredProjection(userId, storedBefore);
+      restoreStoredProjection(userId, storedPatch);
     };
     try {
       const backendPayload = sanitizeCardForBackend({ publish: newValue });
@@ -5502,6 +5502,13 @@ const Matching = () => {
     () => resolveStoredProjectionList(sharedReactionCandidateUsers, isMatchingSummaryCard),
     [sharedReactionCandidateUsers, cardStoreVersion],
   );
+  // Повернене з колекції стоїть знімком, узятим у мить повернення: без
+  // сховища новіша проєкція до нього не доходила б, і рядок із фільтрами
+  // бачили б старе імʼя, фото й версію.
+  const storedReturnedToFeedCards = useMemo(
+    () => resolveStoredProjectionList(returnedToFeedCards, isMatchingSummaryCard),
+    [returnedToFeedCards, cardStoreVersion],
+  );
   /* eslint-enable react-hooks/exhaustive-deps */
 
   const visibleUsers = useMemo(() => liftReturnedCards(mergeMatchingCandidateUsers({
@@ -5523,7 +5530,7 @@ const Matching = () => {
       : placeOwnDraftsInFeed({
         drafts: initialPublicWindowComplete ? personalCreateProfiles : EMPTY_USERS,
         users: viewMode === 'default'
-          ? placeReturnedCardsFirst({ users: storedUsers, returnedCards: returnedToFeedCards, favoriteUsers, dislikeUsers })
+          ? placeReturnedCardsFirst({ users: storedUsers, returnedCards: storedReturnedToFeedCards, favoriteUsers, dislikeUsers })
           : storedUsers,
         hasMore,
       }),
@@ -5544,7 +5551,7 @@ const Matching = () => {
     // Поки його знало лише друге, картка все одно зникала з-під пальця: до
     // фільтрів вона просто не доходила.
     keepReactedUserIds: stickyReactedUserIds,
-  }), viewMode === 'default' ? returnedToFeedCards : EMPTY_USERS), [
+  }), viewMode === 'default' ? storedReturnedToFeedCards : EMPTY_USERS), [
     storedAdditionalAccessUsers,
     storedLikedAudienceUsers,
     dislikeUsers,
@@ -5560,7 +5567,7 @@ const Matching = () => {
     stickyReactedUserIds,
     storedUsers,
     personalCreateProfiles,
-    returnedToFeedCards,
+    storedReturnedToFeedCards,
     viewMode,
     donorRestrictionViewerRole,
     ownerId,
