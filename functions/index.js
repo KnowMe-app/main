@@ -19,7 +19,7 @@
  */
 
 const { onCall, onRequest, HttpsError } = require('firebase-functions/https');
-const { onValueCreated } = require('firebase-functions/database');
+const { onValueCreated, onValueWritten } = require('firebase-functions/database');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const { initializeApp } = require('firebase-admin/app');
@@ -577,5 +577,37 @@ exports.purgeDeletedAccount = onCall(
     }
     logger.info('account purged', { uid, by: adminUid, failed: result.failed, counts: result.counts });
     return { complete: result.complete, failed: result.failed, counts: result.counts, draftIds: result.draftIds };
+  },
+);
+
+/**
+ * Журнал змін карток стрічки (`cardChanges.js`): запис у
+ * `matchingCards/{cardId}` — поля, всієї картки, її видалення — ставить
+ * `matchingCardChanges/{cardId}` = 15-хвилинний кошик часу; сховані картки й
+ * сама дата входу туди не потрапляють (`shouldRecordCardChange`). Пристрій читача питає журнал
+ * один раз на відкриття стрічки й перечитує лише змінене. Тригер, а не
+ * писачі: пропущений писач лишав би картку застарілою в кожного читача.
+ */
+const { MATCHING_CARDS_ROOT, recordCardChange } = require('./cardChanges');
+
+exports.recordMatchingCardChange = onValueWritten(
+  {
+    ref: `${MATCHING_CARDS_ROOT}/{cardId}`,
+    // Тригер бази — у регіоні самої бази (див. `deliverPasswordResetEmail`).
+    region: DATABASE_REGION,
+    memory: '256MiB',
+    timeoutSeconds: 30,
+    maxInstances: 10,
+  },
+  async event => {
+    try {
+      await recordCardChange(event.params.cardId, {
+        before: event.data.before.val(),
+        after: event.data.after.val(),
+        setValue: (path, value) => getDatabase().ref(path).set(value),
+      });
+    } catch (error) {
+      logger.error('card change journal write failed', { cardId: event.params.cardId, error: error.message });
+    }
   },
 );

@@ -16,6 +16,8 @@ import { gateRowsByFeedState } from '../utils/searchFeedDenial';
  * перевірку лише картки з кешу.
  *
  * `enabled: false` — стрічка адміна: вона навмисно показує й сховані анкети.
+ * `ready: false` — рядки без стану ще чекають, але читання не починається:
+ * спершу журнал змін (`utils/matchingCardChanges`).
  *
  * `onFreshStates` отримує прочитані стани (`{ id: state }`) **до** того, як
  * рядки відкриються: читач несе в стані й саму картку (`state.card`), і
@@ -24,7 +26,7 @@ import { gateRowsByFeedState } from '../utils/searchFeedDenial';
  * @param {object[]} rows
  * @param {{ reader: { read: Function, peek: Function }, enabled?: boolean, skip?: (row: object) => boolean, onFreshStates?: (states: object) => void }} options
  */
-export const useFreshFeedStateGate = (rows, { reader, enabled = true, skip, onFreshStates }) => {
+export const useFreshFeedStateGate = (rows, { reader, enabled = true, ready = true, skip, onFreshStates }) => {
   const onFreshStatesRef = useRef(onFreshStates);
   onFreshStatesRef.current = onFreshStates;
   // Перевірене в цьому монтуванні: відповідь прийшла (зі станом чи без —
@@ -43,11 +45,14 @@ export const useFreshFeedStateGate = (rows, { reader, enabled = true, skip, onFr
     });
     // `version` — сигнал, що памʼять читача поповнилась.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, enabled, reader, skip, version]);
+  }, [rows, enabled, ready, reader, skip, version]);
 
   const pendingKey = gate.pendingIds.join('|');
   useEffect(() => {
-    if (!pendingKey) return;
+    // `ready: false` — журнал змін ще не прочитано: перевірені стани пристрою
+    // поки не чинні, і читати кожну картку з бази зарано — більшість із них
+    // журнал зараз підтвердить без запиту.
+    if (!pendingKey || !ready) return;
     const ids = pendingKey.split('|');
     let cancelled = false;
     const states = {};
@@ -60,7 +65,7 @@ export const useFreshFeedStateGate = (rows, { reader, enabled = true, skip, onFr
       setVersion(value => value + 1);
     });
     return () => { cancelled = true; };
-  }, [pendingKey, reader]);
+  }, [pendingKey, reader, ready]);
 
   return { rows: gate.visible, pendingCount: gate.pendingIds.length };
 };

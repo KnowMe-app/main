@@ -57,6 +57,11 @@
         }
       }
     },
+    "matchingCardChanges": {
+      ".indexOn": ".value",
+      ".read": "auth != null && query.orderByValue == true && query.startAt != null && query.limitToFirst <= 2000",
+      ".write": false
+    },
     "matchingCards": {
       ".indexOn": [
         "feedDate",

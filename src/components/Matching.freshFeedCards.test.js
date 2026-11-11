@@ -25,8 +25,23 @@ describe('свіжа картка зі сторожа стану', () => {
   // версії й переживала б «Оновити стрічку»; у `users` свіжу картку перебиває
   // будь-яка новіша сторінка.
   it('свіжа проєкція лягає в сам стан стрічки, а не накладкою на показ', () => {
-    expect(handler()).toContain('setUsers(current => replaceFeedProjections(current, cards, isMatchingSummaryCard));');
+    expect(handler()).toContain('const replace = current => replaceFeedProjections(current, cards, isMatchingSummaryCard);');
+    // Кожне джерело рядків деки, а не лише `users`: «лише для вподобаних»,
+    // надані правилами й спільні реакції доливаються в деку збирачем.
+    ['setUsers(replace);', 'setLikedAudienceUsers(replace);', 'setAdditionalAccessUsers(replace);', 'setSharedReactionCandidateUsers(replace);']
+      .forEach(line => expect(handler()).toContain(line));
     expect(source).not.toContain('freshFeedCardsById');
     expect(source).toContain('feedSource.map(user => withOwnEdits(withLazyPhotos(user)))');
+  });
+
+  // Журнал змін: сторож не читає картки, доки журнал не прочитано, а
+  // незмінені підтверджує перевіреним станом пристрою.
+  it('сторож чекає на журнал змін', () => {
+    expect(source).toContain('ready: cardChangesReady,');
+    const start = source.indexOf('const [cardChangesReady, setCardChangesReady]');
+    const sync = source.slice(start, source.indexOf('}, [isAdmin, ownerId]);', start));
+    expect(sync).toContain('readChangesSince: readMatchingCardChangesSince,');
+    expect(sync).toContain('forgetCardBodies: forgetCachedCardBodies,');
+    expect(sync).toContain('CARD_CHANGES_WAIT_MS');
   });
 });

@@ -68,6 +68,7 @@ import {
   readCardActivity,
   fetchAdminLastLoginCardsPage,
   matchingFeedStateReader,
+  readMatchingCardChangesSince,
   fetchMatchingCardsPage,
   fetchMatchingCardsByIds,
   clearMatchingCardsPageInFlight,
@@ -118,6 +119,7 @@ import {
   composeCachedCards,
   getQueryEntry,
   setCachedMatchingSummaryCards,
+  forgetCachedCardBodies,
   setIdsForQuery,
   setIndexIdsForQuery,
   setQueryPagination,
@@ -158,6 +160,7 @@ import {
 } from '../utils/matchingCardIndex';
 import { isFeedStateDeniedForFeed } from '../utils/searchFeedDenial';
 import { replaceFeedProjections } from '../utils/freshFeedProjection';
+import { syncCardChanges } from '../utils/matchingCardChanges';
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
 import { readBackendLinksEnabled } from '../utils/backendLinksMode';
@@ -1057,6 +1060,9 @@ const readPersistedFeedSnapshotForMount = () => {
     ownDislikeUsers: ownDislikes,
   };
 };
+
+// Скільки стрічка чекає на журнал змін, перш ніж перевіряти картки по одній.
+const CARD_CHANGES_WAIT_MS = 4000;
 
 const Matching = () => {
   const navigate = useNavigate();
@@ -8187,6 +8193,11 @@ const Matching = () => {
    * «Оновити стрічку» перебиває її, як будь-який новіший запис. Проєкція
    * замінюється цілком (`replaceFeedProjection`): стерте поле мусить зникнути.
    */
+  // Рядки складаються не лише з `users`: «лише для вподобаних», надані
+  // правилами й картки спільних реакцій лежать у своїх станах і в деку
+  // доливаються збирачем (`mergeMatchingCandidateUsers`), тож свіжа проєкція
+  // лягає в кожен з них — інакше такий рядок лишався б зі старим фото й
+  // версією, а `ensureFullProfile` отримував би стару версію анкети.
   const rememberFreshFeedStates = React.useCallback(states => {
     const cards = {};
     Object.entries(states || {}).forEach(([id, state]) => {
@@ -8196,8 +8207,40 @@ const Matching = () => {
     });
     if (!Object.keys(cards).length) return;
     setCachedMatchingSummaryCards(cards);
-    setUsers(current => replaceFeedProjections(current, cards, isMatchingSummaryCard));
+    const replace = current => replaceFeedProjections(current, cards, isMatchingSummaryCard);
+    setUsers(replace);
+    setLikedAudienceUsers(replace);
+    setAdditionalAccessUsers(replace);
+    setSharedReactionCandidateUsers(replace);
   }, []);
+
+  /*
+   * Журнал змін карток (`utils/matchingCardChanges`): один запит на відкриття
+   * стрічки — що змінилось після останнього разу. Змінене викидається з кешу,
+   * а сторож стану (`ready`) не починає читати картки, доки журнал не
+   * прочитано: незмінені він підтвердить сам, з перевіреного стану пристрою.
+   * Збій чи повільний журнал (понад `CARD_CHANGES_WAIT_MS`) — сторож читає
+   * картки, як раніше. Стрічці адміна сторож не потрібен.
+   */
+  const [cardChangesReady, setCardChangesReady] = useState(false);
+  useEffect(() => {
+    if (isAdmin) { setCardChangesReady(true); return undefined; }
+    if (!ownerId) return undefined;
+    let cancelled = false;
+    setCardChangesReady(false);
+    const fallback = setTimeout(() => { if (!cancelled) setCardChangesReady(true); }, CARD_CHANGES_WAIT_MS);
+    syncCardChanges({
+      viewerId: ownerId,
+      readChangesSince: readMatchingCardChangesSince,
+      forgetCardBodies: forgetCachedCardBodies,
+    }).finally(() => {
+      clearTimeout(fallback);
+      if (!cancelled) setCardChangesReady(true);
+    });
+    return () => { cancelled = true; clearTimeout(fallback); };
+  }, [isAdmin, ownerId]);
+
+
 
   const feedRowsUnchecked = useMemo(() => {
     const rows = feedSource.map(user => withOwnEdits(withLazyPhotos(user)));
@@ -8217,6 +8260,7 @@ const Matching = () => {
   const { rows: feedRows, pendingCount: feedStatePendingCount } = useFreshFeedStateGate(feedRowsUnchecked, {
     reader: matchingFeedStateReader,
     enabled: !isAdmin,
+    ready: cardChangesReady,
     skip: skipOwnCardFeedCheck,
     onFreshStates: rememberFreshFeedStates,
   });

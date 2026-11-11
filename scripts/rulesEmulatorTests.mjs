@@ -2321,6 +2321,44 @@ await it('знятого адміном знімка власниця не ві�
   await wipeShares();
 });
 
+describe('журнал змін карток стрічки');
+
+// Журнал (`matchingCardChanges/{картка}` = час сервера) пише лише тригер
+// функцій з Admin SDK. Читач питає «що змінилось після мого останнього разу»
+// — запитом за значенням, від мітки й зі стелею 2000 рядків. Вузол цілком і
+// точкові читання закриті. Межу «лише недавні» правило поставити не може:
+// порівняння `query.startAt` з числом мова правил не виконує (перевірено в
+// емуляторі: `>= now - …`, `> 0` — відмова й дозволеному запиту).
+const CHANGES_NOW = Date.now();
+await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), 'matchingCardChanges'), {
+  [CARD]: CHANGES_NOW - 1000,
+  [HIDDEN_CARD]: CHANGES_NOW - 2000,
+}));
+
+await it('читач бачить недавні зміни запитом за значенням із межею', async () => {
+  for (const uid of [ORDINARY_VIEWER, OUTSIDER, MATCHING_VIEWER]) {
+    await assertSucceeds(get(query(ref(db(uid), 'matchingCardChanges'),
+      orderByValue(), startAt(CHANGES_NOW - 60 * 60 * 1000), limitToFirst(2000))));
+  }
+});
+
+await it('увесь журнал, точкове читання чи запит без початку й межі — відмова', async () => {
+  await assertFails(get(ref(db(ORDINARY_VIEWER), 'matchingCardChanges')));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `matchingCardChanges/${CARD}`)));
+  await assertFails(get(query(ref(db(ORDINARY_VIEWER), 'matchingCardChanges'),
+    orderByValue(), limitToFirst(2000))));
+  await assertFails(get(query(ref(db(ORDINARY_VIEWER), 'matchingCardChanges'),
+    orderByValue(), startAt(CHANGES_NOW - 60 * 60 * 1000))));
+  await assertFails(get(query(ref(db(ORDINARY_VIEWER), 'matchingCardChanges'),
+    orderByValue(), startAt(CHANGES_NOW - 60 * 60 * 1000), limitToFirst(5000))));
+});
+
+await it('писати журнал не може ніхто з клієнтів, навіть адмін', async () => {
+  for (const uid of [SUPERADMIN, CARD, ORDINARY_VIEWER]) {
+    await assertFails(set(ref(db(uid), `matchingCardChanges/${CARD}`), serverTimestamp()));
+  }
+});
+
 describe('legacy /users закрито для всіх');
 
 // Вузол видалено з правил: ні читати, ні писати його не може ніхто, зокрема
