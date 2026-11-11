@@ -78,6 +78,7 @@ import {
   buildExpectedExpensesPlan,
   buildExpectedExpensesPlanFromRawGroups,
   buildInitialPaymentOfferMilestones,
+  buildInitialPaymentOfferOverview,
   buildInitialPaymentOfferPlan,
   buildInitialPaymentOfferSnapshot,
   buildMilestonesFromSchedule,
@@ -1256,8 +1257,10 @@ const CustomLineAdder = ({
         } : undefined}
       >
         <PackageAddRow $indent={indent}>
-          <PackageQuickField
-            rows={1}
+          {/* AutoTextArea, як і назва вже доданого рядка: довга назва переноситься й розтягує
+              поле під час набору, а не ховається за краєм одного рядка до натискання Add. */}
+          <AutoTextArea
+            as={PackageQuickField}
             placeholder="Add a custom line…"
             value={name}
             onChange={event => setName(event.target.value)}
@@ -2277,8 +2280,21 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       // Expected Expenses read it from.
       technical: catalogTechnical,
       resolvePackagePrice: pkg => resolveBudgetPriceAmount(pkg?.listedPrice, { itemsById: catalogItemsById, rates: exchangeRates, packagesById: catalogPackagesById }),
+      // Пакет Initial Payment у рахунку описується всією програмою, як у прогнозі витрат
+      // (resolveServiceRow в invoiceCatalogUtils). Ціни — тим самим розвʼязувачем, без тостів:
+      // нерозвʼязана ціна просто лишає пакет таким, яким він є в каталозі.
+      resolveProgrammeOffer: pkg => {
+        const offer = resolveInitialPaymentOffer({ packages: catalogPackages, technical: catalogTechnical }, pkg);
+        if (!offer) return null;
+        const resolvePrice = candidate => resolveBudgetPriceAmount(candidate?.listedPrice, { itemsById: catalogItemsById, rates: exchangeRates, packagesById: catalogPackagesById });
+        return buildInitialPaymentOfferOverview({
+          ...offer,
+          initialPackage: { ...offer.initialPackage, listedPrice: resolvePrice(offer.initialPackage) },
+          programmePackage: { ...offer.programmePackage, listedPrice: resolvePrice(offer.programmePackage) },
+        }, pkg);
+      },
     }),
-    [catalogItemsById, exchangeRates, catalogPackagesById, catalogTechnical],
+    [catalogItemsById, exchangeRates, catalogPackagesById, catalogPackages, catalogTechnical],
   );
 
   const invoiceServiceRows = useMemo(
