@@ -162,6 +162,7 @@ import {
 import { isFeedStateDeniedForFeed } from '../utils/searchFeedDenial';
 import { clearCardStore, getCardStoreVersion, patchStoredProjection, resolveStoredProjectionList, restoreStoredProjection, subscribeCardStore, switchCardStoreViewer } from '../utils/cardStore';
 import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
+import { getWriteOutboxPendingCount, subscribeWriteOutbox, WRITE_OUTBOX_REJECTED_EVENT } from '../utils/writeOutbox';
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
 import { readBackendLinksEnabled } from '../utils/backendLinksMode';
@@ -5485,6 +5486,18 @@ const Matching = () => {
   // З того ж масиву питає повну анкету розгортання (`feedSourceRef`), тож
   // воно звіряє кеш із тією самою версією, що й показ.
   const cardStoreVersion = useSyncExternalStore(subscribeCardStore, getCardStoreVersion);
+  const outboxPendingCount = useSyncExternalStore(subscribeWriteOutbox, getWriteOutboxPendingCount);
+  // Відмову бази черга вже відкотила на пристрої; людині лишається сказати,
+  // чому серце чи памʼятка зникли. Відмову запису з цієї вкладки показує
+  // той, хто його писав, — тут лише дослане з минулої (`replayed`).
+  useEffect(() => {
+    const handleRejected = event => {
+      if (!event?.detail?.replayed) return;
+      toast.error(uiText('База не прийняла реакцію чи памʼятку — її знято.', language), { id: 'write-outbox-rejected' });
+    };
+    window.addEventListener(WRITE_OUTBOX_REJECTED_EVENT, handleRejected);
+    return () => window.removeEventListener(WRITE_OUTBOX_REJECTED_EVENT, handleRejected);
+  }, [language]);
   /* eslint-disable react-hooks/exhaustive-deps -- `cardStoreVersion`: сховище поповнилось */
   const storedUsers = useMemo(
     () => resolveStoredProjectionList(users, isMatchingSummaryCard),
@@ -8494,6 +8507,15 @@ const Matching = () => {
           {realtimeConnection === 'offline' && (
             <ConnectionNotice role="status">
               {uiText('Немає звʼязку з базою. Показано збережене: повні анкети, контакти й відгуки довантажаться, щойно звʼязок повернеться.', language)}
+            </ConnectionNotice>
+          )}
+          {/* Без звʼязку реакції й памʼятки чекають у черзі пристрою
+              (`utils/writeOutbox`). Людина мусить знати, що вони не загубились,
+              але й що база їх ще не має. Поки звʼязок є, черга спорожніє за
+              частку секунди, тож підказка лише мигала б — її немає. */}
+          {realtimeConnection === 'offline' && outboxPendingCount > 0 && (
+            <ConnectionNotice role="status" data-testid="write-outbox-pending">
+              {uiText('Ще не надіслано: {count}. Надішлеться, щойно звʼязок повернеться — навіть якщо закрити вкладку.', language, { count: outboxPendingCount })}
             </ConnectionNotice>
           )}
           {matchingSearchStatus && (

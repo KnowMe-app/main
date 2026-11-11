@@ -6,6 +6,7 @@ import { PrimaryNavigationSlotProvider } from './PrimaryNavigationSlot';
 import { RequireAuth, ScreenLoading } from './RequireAuth';
 import { onAuthStateChanged } from 'firebase/auth';
 import { scheduleLatencyProbe } from './latencyProbeRemote';
+import { startWriteOutbox, stopWriteOutbox } from 'utils/writeOutbox';
 import toast from 'react-hot-toast';
 import { auth, loadViewerProfile, resetViewerAccessLevelCache } from './config';
 import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
@@ -109,6 +110,9 @@ export const App = () => {
       setAuthStatus(user ? 'in' : 'out');
       if (user) {
         localStorage.setItem('ownerId', user.uid);
+        // Дослати реакції й памʼятки, які база ще не підтвердила, — зокрема
+        // ті, що лишились із вкладки, закритої без звʼязку (`utils/writeOutbox`).
+        startWriteOutbox(user.uid);
         let accessLevel = '';
         let userRole = '';
         let canCreateProfilesForUser = false;
@@ -135,6 +139,9 @@ export const App = () => {
         // (`utils/latencyProbe`): цифри для рішення про регіон бази.
         scheduleLatencyProbe(user.uid);
       } else {
+        // Черга записів лишається на диску свого читача — у ній те, чого база
+        // ще не має, — але без входу її досилати нікому.
+        stopWriteOutbox();
         localStorage.removeItem('ownerId');
         localStorage.removeItem('accessLevel');
         localStorage.removeItem('userRole');

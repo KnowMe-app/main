@@ -498,6 +498,8 @@ const BY_UK = {
   'Показати номер': 'Mostrar número',
   'Подзвонити': 'Llamar',
   'Немає звʼязку з базою. Показано збережене: повні анкети, контакти й відгуки довантажаться, щойно звʼязок повернеться.': 'Sin conexión con la base de datos. Se muestran los datos guardados: los perfiles completos, los contactos y las reseñas se cargarán en cuanto vuelva la conexión.',
+  'Ще не надіслано: {count}. Надішлеться, щойно звʼязок повернеться — навіть якщо закрити вкладку.': 'Aún sin enviar: {count}. Se enviará en cuanto vuelva la conexión, aunque cierres la pestaña.',
+  'База не прийняла реакцію чи памʼятку — її знято.': 'La base de datos no aceptó una reacción o nota; se ha quitado.',
   'Немає звʼязку — відгуки прочитаються, щойно він повернеться': 'Sin conexión: las reseñas se cargarán cuando vuelva',
   'Уточнити': 'Añadir detalles',
   'Детальніше': 'Detalles',
