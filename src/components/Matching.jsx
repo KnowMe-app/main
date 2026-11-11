@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useLayoutEffect, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useLayoutEffect, useMemo, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -160,7 +160,7 @@ import {
   readCardRevision,
 } from '../utils/matchingCardIndex';
 import { isFeedStateDeniedForFeed } from '../utils/searchFeedDenial';
-import { replaceFeedProjections } from '../utils/freshFeedProjection';
+import { clearCardStore, getCardStoreVersion, resolveStoredProjection, subscribeCardStore, switchCardStoreViewer } from '../utils/cardStore';
 import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
@@ -3787,6 +3787,7 @@ const Matching = () => {
     // Стан стрічки в памʼяті вкладки (пʼять хвилин) теж знімається: разом із
     // памʼяттю закритих карток він ховав би щойно знову опубліковану анкету.
     matchingFeedStateReader.clear();
+    clearCardStore();
     if (!keepFilters) {
       localStorage.removeItem('matchingFilters');
       localStorage.removeItem(SEARCH_KEY);
@@ -5776,7 +5777,18 @@ const Matching = () => {
   // Spec §1: whatever the reader is looking at, the list, the gallery and the
   // detail layer all index into this one array - so opening row N and paging
   // from it can never disagree about which card is which.
-  const feedSourceWithoutOwnEdits = filteredUsers;
+  // Рядок бере найсвіжішу прочитану з бази проєкцію з одного сховища вкладки
+  // (`utils/cardStore`), хоч би з якого джерела деки він прийшов: `users`,
+  // «лише для вподобаних», надані правилами, спільні реакції чи колекції. З
+  // цього ж масиву питає повну анкету розгортання (`feedSourceRef`), тож воно
+  // звіряє кеш із тією самою версією, що й показ.
+  const cardStoreVersion = useSyncExternalStore(subscribeCardStore, getCardStoreVersion);
+  const feedSourceWithoutOwnEdits = useMemo(
+    () => filteredUsers.map(user => resolveStoredProjection(user, isMatchingSummaryCard)),
+    // `cardStoreVersion` — сигнал, що сховище поповнилось.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredUsers, cardStoreVersion],
+  );
 
   /**
    * Картка показується разом із тим, що читач сам у неї дописав.
@@ -8207,11 +8219,11 @@ const Matching = () => {
    * «Оновити стрічку» перебиває її, як будь-який новіший запис. Проєкція
    * замінюється цілком (`replaceFeedProjection`): стерте поле мусить зникнути.
    */
-  // Рядки складаються не лише з `users`: «лише для вподобаних», надані
-  // правилами й картки спільних реакцій лежать у своїх станах і в деку
-  // доливаються збирачем (`mergeMatchingCandidateUsers`), тож свіжа проєкція
-  // лягає в кожен з них — інакше такий рядок лишався б зі старим фото й
-  // версією, а `ensureFullProfile` отримував би стару версію анкети.
+  // Свіжа картка сторожа лягає в одне сховище проєкцій (`utils/cardStore`,
+  // усередині `expandVerifiedMatchingCard`), а рядки будь-якого джерела деки
+  // беруть її звідти (`resolveStoredProjection` у `feedSourceWithoutOwnEdits`).
+  // Доти її латали в кожному стані окремо — `users`, «лише для вподобаних»,
+  // надані, спільні реакції, — і кожен пропущений стан був окремим багом.
   const rememberFreshFeedStates = React.useCallback(states => {
     const cards = {};
     Object.entries(states || {}).forEach(([id, state]) => {
@@ -8221,11 +8233,6 @@ const Matching = () => {
     });
     if (!Object.keys(cards).length) return;
     setCachedMatchingSummaryCards(cards);
-    const replace = current => replaceFeedProjections(current, cards, isMatchingSummaryCard);
-    setUsers(replace);
-    setLikedAudienceUsers(replace);
-    setAdditionalAccessUsers(replace);
-    setSharedReactionCandidateUsers(replace);
   }, []);
 
   /*
@@ -8238,6 +8245,7 @@ const Matching = () => {
    */
   const [cardChangesReady, setCardChangesReady] = useState(false);
   useEffect(() => {
+    if (ownerId) switchCardStoreViewer(ownerId);
     if (isAdmin) { setCardChangesReady(true); return undefined; }
     if (!ownerId) return undefined;
     let cancelled = false;

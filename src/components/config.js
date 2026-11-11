@@ -145,6 +145,7 @@ import { forgetProfileContacts, readFreshProfileContacts, writeProfileContacts }
 import { MATCHING_DENIED_CARDS_STORE, createMatchingTimedStore } from '../utils/matchingTimedStore';
 import { pickCardActivity } from '../utils/cardActivity';
 import { noteRealtimeDemand } from '../utils/realtimeConnectionManager';
+import { upsertStoredProjections } from '../utils/cardStore';
 import {
   VERIFIED_PROJECTION_HASH_FIELD,
   distrustVerifiedFeedStates,
@@ -3759,8 +3760,13 @@ export const expandVerifiedMatchingCard = (id, raw) => {
   const expanded = expandMatchingCard(id, raw);
   if (!expanded) return expanded;
   const hash = hashProjection(raw);
-  rememberVerifiedProjection(currentFeedStateViewer(), id, hash);
-  return { ...expanded, [VERIFIED_PROJECTION_HASH_FIELD]: hash };
+  const viewerId = currentFeedStateViewer();
+  rememberVerifiedProjection(viewerId, id, hash);
+  const verified = { ...expanded, [VERIFIED_PROJECTION_HASH_FIELD]: hash };
+  // Одне сховище проєкцій вкладки (`utils/cardStore`): рядок будь-якого
+  // джерела стрічки бере звідси найсвіжішу з прочитаних.
+  upsertStoredProjections(viewerId, { [id]: verified });
+  return verified;
 };
 
 /** Стан, який уже приїхав разом із сирою карткою, — у памʼять, без другого кругу. */
