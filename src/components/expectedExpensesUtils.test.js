@@ -380,6 +380,19 @@ describe('resolveInitialPaymentOffer / buildInitialPaymentOfferPlan', () => {
     });
     expect(row).toMatchObject({ price: 8300, programmeTotal: 38000, description: overview.description });
     expect(row.scheduleRows.map(payment => payment.amount)).toEqual([8300, 7425, 7425, 7425, 7425]);
+
+    // Змінена в рахунку ціна пакета йде і в опис, і в загальну суму, і в перший платіж графіка.
+    const overridden = resolveServiceRow({ ...makeCatalogPackageEntry({ id: 6 }), priceOverride: 8000 }, new Map(), {
+      packagesById,
+      technical: catalog.technical,
+      resolveProgrammeOffer: (pkg, { initialPrice }) => {
+        const resolved = resolveInitialPaymentOffer(catalog, pkg);
+        return buildInitialPaymentOfferOverview({ ...resolved, initialPackage: { ...resolved.initialPackage, listedPrice: initialPrice } }, pkg);
+      },
+    });
+    expect(overridden).toMatchObject({ price: 8000, programmeTotal: 37700 });
+    expect(overridden.description).toContain('initial payment of EUR 8,000');
+    expect(overridden.scheduleRows[0].amount).toBe(8000);
   });
 });
 
