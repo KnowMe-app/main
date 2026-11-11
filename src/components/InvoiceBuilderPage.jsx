@@ -2283,13 +2283,18 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
       // Пакет Initial Payment у рахунку описується всією програмою, як у прогнозі витрат
       // (resolveServiceRow в invoiceCatalogUtils). Ціни — тим самим розвʼязувачем, без тостів:
       // нерозвʼязана ціна просто лишає пакет таким, яким він є в каталозі.
-      resolveProgrammeOffer: pkg => {
+      // `initialPrice` — сума, яку виставляє рахунок (зокрема змінена адміном ціна пакета).
+      resolveProgrammeOffer: (pkg, { initialPrice } = {}) => {
         const offer = resolveInitialPaymentOffer({ packages: catalogPackages, technical: catalogTechnical }, pkg);
         if (!offer) return null;
         const resolvePrice = candidate => resolveBudgetPriceAmount(candidate?.listedPrice, { itemsById: catalogItemsById, rates: exchangeRates, packagesById: catalogPackagesById });
+        const billedInitial = Number(initialPrice);
         return buildInitialPaymentOfferOverview({
           ...offer,
-          initialPackage: { ...offer.initialPackage, listedPrice: resolvePrice(offer.initialPackage) },
+          initialPackage: {
+            ...offer.initialPackage,
+            listedPrice: Number.isFinite(billedInitial) && billedInitial > 0 ? billedInitial : resolvePrice(offer.initialPackage),
+          },
           programmePackage: { ...offer.programmePackage, listedPrice: resolvePrice(offer.programmePackage) },
         }, pkg);
       },

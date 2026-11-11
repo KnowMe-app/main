@@ -708,15 +708,19 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
     // каталозі каже «part 1 of 2», тож перший рахунок клієнта описував не ту програму, що прогноз
     // витрат: 8 300 замість 38 000, без графіка з пʼяти етапів (зауваження до PDF, 11.11). Сторінка
     // підставляє програму цілком через priceContext — імпорт сюди дав би коло модулів.
+    const billedPrice = hasPriceOverride
+      ? roundMoney(resolveBudgetPriceAmount(entry.priceOverride, { ...priceContext, itemsById: catalogItemsById }) ?? entry.priceOverride)
+      : defaultPrice;
+    // Огляд програми рахується від суми, яку цей рахунок справді виставляє: зі зміненою ціною
+    // пакета (8 000 замість 8 300) опис, загальна сума й перший платіж графіка інакше лишались
+    // каталожними й суперечили сумі рахунку в тому самому PDF.
     const programmeOffer = pkg && typeof priceContext.resolveProgrammeOffer === 'function'
-      ? priceContext.resolveProgrammeOffer(pkg)
+      ? priceContext.resolveProgrammeOffer(pkg, { initialPrice: billedPrice })
       : null;
     const packageSchedule = resolvePackageEntrySchedule(
       entry,
       listedPriceAmount,
-      hasPriceOverride
-        ? roundMoney(resolveBudgetPriceAmount(entry.priceOverride, { ...priceContext, itemsById: catalogItemsById }) ?? entry.priceOverride)
-        : defaultPrice,
+      billedPrice,
       { ...priceContext, itemsById: catalogItemsById },
     );
     return {
@@ -736,9 +740,7 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       name: entry.name ?? pkg?.name ?? `Package ${entry.catalogId}`,
       description: entry.description ?? programmeOffer?.description ?? pkg?.description ?? '',
       ...(programmeOffer ? { programmeTotal: programmeOffer.total, programmePaymentTitle: programmeOffer.paymentTitle } : {}),
-      price: hasPriceOverride
-        ? roundMoney(resolveBudgetPriceAmount(entry.priceOverride, { ...priceContext, itemsById: catalogItemsById }) ?? entry.priceOverride)
-        : defaultPrice,
+      price: billedPrice,
       billDirectly: Boolean(entry.billDirectly),
       childrenTotal,
       hasPriceOverride,
