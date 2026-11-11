@@ -1,4 +1,5 @@
 import {
+  buildPayerDocumentFileName,
   describeNegativeRowsLabel,
   addCatalogChildToPackage,
   addCustomChildToPackage,
@@ -789,5 +790,15 @@ describe('describeNegativeRowsLabel', () => {
     expect(describeNegativeRowsLabel([{ name: 'Special offer discount', price: -100 }, { name: 'Знижка', price: -50 }])).toBe('Discount');
     expect(describeNegativeRowsLabel([{ name: 'Prepayment received', price: -1000 }])).toBe('Prepayment received');
     expect(describeNegativeRowsLabel([{ name: 'Discount', price: -720 }, { name: 'Prepayment', price: -100 }])).toBe('Adjustments');
+  });
+});
+
+// 11.11: файли рахунку й реквізитів називає платник — «Invoice - MediBridge.pdf».
+describe('buildPayerDocumentFileName', () => {
+  it('names the file after the payer, without characters file systems reject', () => {
+    expect(buildPayerDocumentFileName('Invoice', [{ name: 'MediBridge (New case)' }])).toBe('Invoice - MediBridge (New case).pdf');
+    expect(buildPayerDocumentFileName('Payment details', [{ name: 'John Smith' }, { name: 'Jane Smith' }])).toBe('Payment details - John Smith and Jane Smith.pdf');
+    expect(buildPayerDocumentFileName('Invoice', [{ name: 'A/B: "Co"' }])).toBe('Invoice - A B Co.pdf');
+    expect(buildPayerDocumentFileName('Invoice', [])).toBe('Invoice - Client.pdf');
   });
 });

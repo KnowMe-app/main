@@ -417,7 +417,14 @@ const InvoicePdfDocument = ({
   // A "% of package" row (a programme milestone share) and any custom/catalog service row share one
   // "Breakdown" table, one row style, one running numbering - splitting them into two headed
   // sections was the second-biggest source of clutter on this document (declutter spec §2).
-  const breakdownRows = rows.filter(row => row.kind !== 'package');
+  // Пакет, за який рахунок справді виставляє гроші (billDirectly чи власний пакет без каталогу),
+  // стоїть першим рядком розбивки. Без нього «Breakdown» складався з самого «Discount −720», а
+  // 8 300 було лише в підсумку — розбивка читалась так, ніби клієнт платить за знижку (11.11).
+  // Опис пакета тут не повторюється: він уже в блоці пакета над розбивкою.
+  const billedPackageRows = chargeableRows
+    .filter(row => row.kind === 'package')
+    .map(row => ({ ...row, description: '' }));
+  const breakdownRows = [...billedPackageRows, ...rows.filter(row => row.kind !== 'package')];
   const breakdownListRows = breakdownRows.map(buildBreakdownRow);
   // The DD.MM.YYYY `invoiceDate` string (invoiceCatalogUtils.generateInvoiceIdentifiers) is the
   // legal-text date used inside the payment-purpose placeholder only - the human-readable date

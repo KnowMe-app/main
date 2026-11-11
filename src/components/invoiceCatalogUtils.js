@@ -889,6 +889,19 @@ export const buildUkrcomFileName = (docType, customers, dateYmd) => {
   return `UKRCOM-${docType}-${lastName}-${datePart}.pdf`;
 };
 
+// Назва файлу, яку бачить клієнт: «Invoice - MediBridge.pdf», «Payment details - MediBridge.pdf»
+// (11.11, на прохання власниці продукту). Платник — той самий, що в рахунку («Prepared
+// exclusively for …»), тобто англійською, як його записано. Символи, яких не приймає файлова
+// система (Windows найсуворіша), знімаються.
+export const buildPayerDocumentFileName = (docLabel, customers) => {
+  const payer = buildPayerName(customers)
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '');
+  return `${docLabel} - ${payer || 'Client'}.pdf`;
+};
+
 export const formatInvoiceNumberDate = date => `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()}`;
 
 export const formatInvoicePurposeDate = date => `${pad2(date.getDate())}.${pad2(date.getMonth() + 1)}.${date.getFullYear()}`;
