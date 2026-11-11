@@ -703,6 +703,22 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       ? resolveBudgetPriceAmount(pkg.listedPrice, { ...priceContext, itemsById: catalogItemsById })
       : null;
     const defaultPrice = listedPriceAmount == null ? childrenTotal : roundMoney(listedPriceAmount);
+    // «Special Offer - Initial Payment» — перша половина програми з двох пакетів каталогу (див.
+    // resolveInitialPaymentOffer в expectedExpensesUtils). Сам пакет графіка не має, а його опис у
+    // каталозі каже «part 1 of 2», тож перший рахунок клієнта описував не ту програму, що прогноз
+    // витрат: 8 300 замість 38 000, без графіка з пʼяти етапів (зауваження до PDF, 11.11). Сторінка
+    // підставляє програму цілком через priceContext — імпорт сюди дав би коло модулів.
+    const programmeOffer = pkg && typeof priceContext.resolveProgrammeOffer === 'function'
+      ? priceContext.resolveProgrammeOffer(pkg)
+      : null;
+    const packageSchedule = resolvePackageEntrySchedule(
+      entry,
+      listedPriceAmount,
+      hasPriceOverride
+        ? roundMoney(resolveBudgetPriceAmount(entry.priceOverride, { ...priceContext, itemsById: catalogItemsById }) ?? entry.priceOverride)
+        : defaultPrice,
+      { ...priceContext, itemsById: catalogItemsById },
+    );
     return {
       key: entry.id,
       id: entry.id,
@@ -718,7 +734,8 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
       // point at, so PackageBlock must fall back to rendering the full details inline instead.
       isHiddenCatalog: Boolean(pkg?.hidden),
       name: entry.name ?? pkg?.name ?? `Package ${entry.catalogId}`,
-      description: entry.description ?? pkg?.description ?? '',
+      description: entry.description ?? programmeOffer?.description ?? pkg?.description ?? '',
+      ...(programmeOffer ? { programmeTotal: programmeOffer.total, programmePaymentTitle: programmeOffer.paymentTitle } : {}),
       price: hasPriceOverride
         ? roundMoney(resolveBudgetPriceAmount(entry.priceOverride, { ...priceContext, itemsById: catalogItemsById }) ?? entry.priceOverride)
         : defaultPrice,
@@ -729,14 +746,11 @@ export const resolveServiceRow = (entry, catalogItemsById, priceContext = {}) =>
         ? { priceInput: String(entry.priceOverride).trim() }
         : (!hasPriceOverride && isPriceFormulaInput(pkg?.listedPrice) ? { priceInput: String(pkg.listedPrice).trim() } : {})),
       children: resolvedChildren,
-      scheduleRows: resolvePackageEntrySchedule(
-        entry,
-        listedPriceAmount,
-        hasPriceOverride
-          ? roundMoney(resolveBudgetPriceAmount(entry.priceOverride, { ...priceContext, itemsById: catalogItemsById }) ?? entry.priceOverride)
-          : defaultPrice,
-        { ...priceContext, itemsById: catalogItemsById },
-      ),
+      // Власний графік рахунку (entry.schedule) важить більше; без нього пакет без графіка бере
+      // етапи всієї програми — ті самі, що в прогнозі витрат.
+      scheduleRows: (!packageSchedule.length && !Array.isArray(entry.schedule) && programmeOffer?.scheduleRows?.length)
+        ? programmeOffer.scheduleRows.map((payment, index) => ({ key: `${entry.id}-schedule-${index}`, ...payment }))
+        : packageSchedule,
     };
   }
 

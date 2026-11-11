@@ -308,7 +308,13 @@ const PackageBlock = ({ row, showSchedule }) => {
       <View style={styles.packageBlockHeader} wrap={false}>
         <Text style={styles.packageBlockName}>{sanitizePdfText(row.name)}</Text>
         {row.description ? <Text style={styles.descriptionText}>{sanitizePdfText(row.description)}</Text> : null}
-        <Text style={styles.packageBlockFee}>{`Cost of the package ${totalLabel}`}</Text>
+        {/* Пакет Initial Payment — перший із пʼяти платежів програми: «Cost of the package 8,300»
+            без загальної суми читалось як ціна всієї програми (див. resolveServiceRow). */}
+        <Text style={styles.packageBlockFee}>
+          {row.programmeTotal
+            ? `Total programme fee ${formatMoney(row.programmeTotal)} · ${row.programmePaymentTitle || 'Initial payment'} ${totalLabel}`
+            : `Cost of the package ${totalLabel}`}
+        </Text>
       </View>
       {fullDetailNote ? <Text style={styles.sectionNote}>{sanitizePdfText(fullDetailNote)}</Text> : null}
       {/* Compact two-per-row layout (design-tasks-4 §7) - shared with Expected Expenses'

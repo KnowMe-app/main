@@ -178,6 +178,30 @@ export const describeInitialPaymentOffer = offer => {
     + `an initial payment of ${formatEuroText(initialPrice)}, followed by ${instalments}.`;
 };
 
+// Перший рахунок клієнта за пропозицією з Initial Payment мусить описувати ту саму програму, що й
+// прогноз витрат: опис етапів, загальну суму й графік із пʼяти платежів (Initial Payment, далі
+// графік Programme Fee). Лише для пакета Initial Payment — рахунки Programme Fee несуть власний
+// графік. `offer` — з розвʼязаними числовими цінами обох пакетів.
+export const buildInitialPaymentOfferOverview = (offer, pkg) => {
+  if (!offer || String(pkg?.id) !== String(offer.initialPackage?.id)) return null;
+  const initialPrice = Number(offer.initialPackage?.listedPrice) || 0;
+  const programmePrice = Number(offer.programmePackage?.listedPrice) || 0;
+  if (!initialPrice || !programmePrice) return null;
+  const payments = Array.isArray(offer.programmeSchedule?.payments) ? offer.programmeSchedule.payments : [];
+  return {
+    description: describeInitialPaymentOffer(offer),
+    total: initialPrice + programmePrice,
+    paymentTitle: offer.initialTitle || 'Initial payment',
+    scheduleRows: [
+      { title: offer.initialTitle || 'Initial payment', amount: initialPrice },
+      ...payments.map((payment, index) => {
+        const amount = resolvePaymentAmount(payment, programmePrice);
+        return { title: payment?.title || `Payment ${index + 2}`, amount: amount == null ? null : amount };
+      }),
+    ],
+  };
+};
+
 export const buildInitialPaymentOfferSnapshot = offer => {
   const seen = new Set();
   const childIds = [offer.initialPackage, offer.programmePackage]

@@ -14,6 +14,7 @@ import {
   buildInitialPaymentOfferPlan,
   applyExpectedExpensesTemplate,
   extractExpectedExpensesTemplate,
+  buildInitialPaymentOfferOverview,
   describeInitialPaymentOffer,
   linkEntryToCatalog,
   summarizeMilestones,
@@ -29,7 +30,7 @@ import {
   updateMilestoneServiceField,
 } from './expectedExpensesUtils';
 import expectedExpensesSeed from '../data/expectedExpensesSeed.json';
-import { makeCustomEntry } from './invoiceCatalogUtils';
+import { makeCustomEntry, makeCatalogPackageEntry, resolveServiceRow } from './invoiceCatalogUtils';
 
 const pkg = {
   id: '3',
@@ -352,6 +353,33 @@ describe('resolveInitialPaymentOffer / buildInitialPaymentOfferPlan', () => {
 
   it('leaves ordinary packages alone', () => {
     expect(resolveInitialPaymentOffer(catalog, catalog.packages[0])).toBeNull();
+  });
+
+  // 11.11: перший рахунок за пакетом Initial Payment описував «part 1 of 2» за 8 300 без графіка,
+  // а прогноз — програму 38 000 у пʼять етапів.
+  it('describes the whole programme on the Initial Payment invoice, like the expected expenses', () => {
+    const [, initialPackage, programmePackage] = catalog.packages;
+    const offer = resolveInitialPaymentOffer(catalog, initialPackage);
+    const overview = buildInitialPaymentOfferOverview(offer, initialPackage);
+    expect(overview.total).toBe(38000);
+    expect(overview.description).toBe(describeInitialPaymentOffer(offer));
+    expect(overview.scheduleRows).toEqual([
+      { title: 'Initial Payment', amount: 8300 },
+      { title: 'On confirmation of pregnancy by ultrasound', amount: 7425 },
+      { title: 'On the 12th week of pregnancy', amount: 7425 },
+      { title: 'On the 18th week of pregnancy', amount: 7425 },
+      { title: 'On the 36th week of pregnancy', amount: 7425 },
+    ]);
+    expect(buildInitialPaymentOfferOverview(offer, programmePackage)).toBeNull();
+
+    const packagesById = new Map(catalog.packages.map(pkg => [String(pkg.id), { ...pkg, description: 'part 1 of 2' }]));
+    const row = resolveServiceRow(makeCatalogPackageEntry({ id: 6 }), new Map(), {
+      packagesById,
+      technical: catalog.technical,
+      resolveProgrammeOffer: pkg => buildInitialPaymentOfferOverview(resolveInitialPaymentOffer(catalog, pkg), pkg),
+    });
+    expect(row).toMatchObject({ price: 8300, programmeTotal: 38000, description: overview.description });
+    expect(row.scheduleRows.map(payment => payment.amount)).toEqual([8300, 7425, 7425, 7425, 7425]);
   });
 });
 
