@@ -32,6 +32,7 @@ import {
   buildCaseTitle,
   buildPayerLocation,
   buildPayerName,
+  buildPayerDocumentFileName,
   buildUkrcomFileName,
   cloneEntryWithNewId,
   computeInvoiceAmountDue,
@@ -3634,7 +3635,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
         console.error('Invoice PDF generation failed on first attempt, retrying', firstAttemptError);
         blob = await pdf(React.createElement(InvoicePdfDocument, documentProps)).toBlob();
       }
-      saveAs(blob, `invoice-${invoiceNumber.replace(/\//g, '-')}.pdf`);
+      saveAs(blob, buildPayerDocumentFileName('Invoice', data.customers));
 
       // Payment Details is always its own file now, generated together with the Invoice so its
       // amount due is guaranteed to stay in sync (spec §3) - never a second page of the invoice.
@@ -3654,7 +3655,7 @@ const InvoiceBuilderPage = ({ isAdmin = false }) => {
           console.error('Payment details PDF generation failed on first attempt, retrying', firstAttemptError);
           paymentDetailsBlob = await pdf(React.createElement(PaymentDetailsPdfDocument, paymentDetailsProps)).toBlob();
         }
-        saveAs(paymentDetailsBlob, buildUkrcomFileName('PaymentDetails', data.customers, invoiceDateInput));
+        saveAs(paymentDetailsBlob, buildPayerDocumentFileName('Payment details', data.customers));
       }
 
       const nextRecentServices = reorderRecentServices(data.recentServices, data.invoiceServices);
