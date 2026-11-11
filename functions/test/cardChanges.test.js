@@ -39,9 +39,10 @@ test('журнал: сховане до й після — не пишеться,
   assert.equal(shouldRecordCardChange({ name: 'x' }, { name: 'y' }), true);
 });
 
-test('журнал: видалення пишеться завжди, навіть схованої картки', () => {
-  assert.equal(shouldRecordCardChange({ feedDate: false }, null), true);
+test('журнал: видалення видимої пишеться, схованої — ні', () => {
   assert.equal(shouldRecordCardChange(LIVE, null), true);
+  assert.equal(shouldRecordCardChange({ name: 'x' }, null), true);
+  assert.equal(shouldRecordCardChange({ feedDate: false }, null), false);
   assert.equal(shouldRecordCardChange(null, LIVE), true);
 });
 
@@ -55,9 +56,9 @@ test('журнал: сама дата входу в стрічці — не пи
   assert.equal(shouldRecordCardChange(LIVE, { ...LIVE, feedDate: '2026-11-11', rev: 5 }), true);
 });
 
-test('журнал: видалена схована картка дає новий запис, а не знімає старий', async () => {
+test('журнал: видалена схована картка не пише й не знімає запису', async () => {
   const written = [];
   const setValue = async (path, value) => { written.push([path, value]); };
-  assert.equal(await recordCardChange('card1', { before: { feedDate: false }, after: null, now: CARD_CHANGE_BUCKET_MS * 3 + 5, setValue }), true);
-  assert.deepEqual(written, [['matchingCardChanges/card1', CARD_CHANGE_BUCKET_MS * 3]]);
+  assert.equal(await recordCardChange('card1', { before: { feedDate: false }, after: null, setValue }), false);
+  assert.deepEqual(written, []);
 });
