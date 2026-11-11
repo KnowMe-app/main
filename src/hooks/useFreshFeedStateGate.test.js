@@ -44,4 +44,17 @@ describe('useFreshFeedStateGate', () => {
     // У ту мить рядки ще сховані.
     expect(seen).toEqual([0]);
   });
+
+  it('поки журнал змін не прочитано (ready: false), картки не читаються', async () => {
+    const read = jest.fn(async () => ({ feedDate: '2026-10-01' }));
+    const reader = createFeedStateReader(read);
+    const { result, rerender } = renderHook(({ ready }) => useFreshFeedStateGate(rows, { reader, ready }), {
+      initialProps: { ready: false },
+    });
+    expect(result.current.rows).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
+    rerender({ ready: true });
+    await waitFor(() => expect(result.current.pendingCount).toBe(0));
+    expect(read).toHaveBeenCalledTimes(2);
+  });
 });

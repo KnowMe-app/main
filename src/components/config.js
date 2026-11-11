@@ -145,6 +145,11 @@ import { MATCHING_DENIED_CARDS_STORE, createMatchingTimedStore } from '../utils/
 import { pickCardActivity } from '../utils/cardActivity';
 import { noteRealtimeDemand } from '../utils/realtimeConnectionManager';
 import {
+  distrustVerifiedFeedStates,
+  readVerifiedFeedState,
+  rememberVerifiedFeedState,
+} from '../utils/matchingCardChanges';
+import {
   createFeedStateReader,
   filterFeedDeniedSearchResult as filterFeedDeniedResult,
   isFeedStateDeniedForSearch,
@@ -3680,7 +3685,34 @@ const readCardFeedState = async userId => {
   }
 };
 
-export const matchingFeedStateReader = createFeedStateReader(readCardFeedState, { ttlMs: FEED_STATE_TTL_MS });
+/**
+ * Журнал змін карток (`utils/matchingCardChanges`): що змінилось від мітки
+ * `startAt` (час сервера). Правила пускають лише такий запит — за значенням,
+ * з початком і стелею рядків.
+ */
+export const readMatchingCardChangesSince = async (startAtValue, limit) => {
+  const snapshot = await get(query(
+    ref2(database, 'matchingCardChanges'),
+    orderByValue(),
+    startAt(startAtValue),
+    limitToFirst(limit),
+  ));
+  const rows = [];
+  snapshot.forEach(child => {
+    rows.push({ id: child.key, at: Number(child.val()) });
+  });
+  return rows;
+};
+
+const currentFeedStateViewer = () => auth.currentUser?.uid || localStorage.getItem('ownerId') || '';
+export const matchingFeedStateReader = createFeedStateReader(readCardFeedState, {
+  ttlMs: FEED_STATE_TTL_MS,
+  persist: {
+    load: id => readVerifiedFeedState(currentFeedStateViewer(), id),
+    save: (id, state) => rememberVerifiedFeedState(currentFeedStateViewer(), id, state),
+    clear: () => distrustVerifiedFeedStates(currentFeedStateViewer()),
+  },
+});
 
 /** Стан, який уже приїхав разом із сирою карткою, — у памʼять, без другого кругу. */
 export const primeMatchingFeedState = (userId, rawCard) => {

@@ -1111,6 +1111,39 @@ export const touchCardInQueries = cardId => {
   if (changed) saveQueries(queries);
 };
 
+/**
+ * Журнал змін карток (`utils/matchingCardChanges`) назвав картки, змінені
+ * після останньої синхронізації: їхні тіла — повна анкета й проєкція —
+ * більше не чинні. Списки id лишаються: картку, якої немає в жодному
+ * сховищі, складання списку (`composeCachedCards`) дочитає точково.
+ *
+ * Без `ids` — забути всі тіла: перша синхронізація пристрою не знає, що
+ * змінилось до неї.
+ */
+export const forgetCachedCardBodies = ids => {
+  const all = ids === undefined;
+  const targets = all ? null : new Set((Array.isArray(ids) ? ids : [...(ids || [])]).filter(Boolean).map(String));
+  if (!all && !targets.size) return 0;
+  let forgotten = 0;
+
+  const cards = loadCards();
+  const keptCards = {};
+  Object.keys(cards).forEach(id => {
+    if (all || targets.has(id)) { forgotten += 1; return; }
+    keptCards[id] = cards[id];
+  });
+  if (Object.keys(keptCards).length !== Object.keys(cards).length) saveCards(keptCards);
+
+  const summaries = loadMatchingSummaryCards();
+  const keptSummaries = {};
+  Object.keys(summaries).forEach(id => {
+    if (all || targets.has(id)) { forgotten += 1; return; }
+    keptSummaries[id] = summaries[id];
+  });
+  if (Object.keys(keptSummaries).length !== Object.keys(summaries).length) saveMatchingSummaryCards(keptSummaries);
+  return forgotten;
+};
+
 export const removeCard = id => {
   if (!id) return;
 

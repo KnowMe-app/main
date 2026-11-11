@@ -19,12 +19,12 @@
  */
 
 const { onCall, onRequest, HttpsError } = require('firebase-functions/https');
-const { onValueCreated } = require('firebase-functions/database');
+const { onValueCreated, onValueWritten } = require('firebase-functions/database');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
-const { getDatabase } = require('firebase-admin/database');
+const { getDatabase, ServerValue } = require('firebase-admin/database');
 const { getStorage } = require('firebase-admin/storage');
 const { getFirestore } = require('firebase-admin/firestore');
 
@@ -577,5 +577,34 @@ exports.purgeDeletedAccount = onCall(
     }
     logger.info('account purged', { uid, by: adminUid, failed: result.failed, counts: result.counts });
     return { complete: result.complete, failed: result.failed, counts: result.counts, draftIds: result.draftIds };
+  },
+);
+
+/**
+ * Журнал змін карток стрічки (`cardChanges.js`): будь-який запис у
+ * `matchingCards/{cardId}` — і поля, і всієї картки, і її видалення — ставить
+ * `matchingCardChanges/{cardId}` = час сервера. Пристрій читача питає журнал
+ * один раз на відкриття стрічки й перечитує лише змінене. Тригер, а не
+ * писачі: пропущений писач лишав би картку застарілою в кожного читача.
+ */
+const { MATCHING_CARDS_ROOT, recordCardChange } = require('./cardChanges');
+
+exports.recordMatchingCardChange = onValueWritten(
+  {
+    ref: `${MATCHING_CARDS_ROOT}/{cardId}`,
+    // Тригер бази — у регіоні самої бази (див. `deliverPasswordResetEmail`).
+    region: DATABASE_REGION,
+    memory: '256MiB',
+    timeoutSeconds: 30,
+    maxInstances: 10,
+  },
+  async event => {
+    try {
+      await recordCardChange(event.params.cardId, {
+        setTimestamp: path => getDatabase().ref(path).set(ServerValue.TIMESTAMP),
+      });
+    } catch (error) {
+      logger.error('card change journal write failed', { cardId: event.params.cardId, error: error.message });
+    }
   },
 );
