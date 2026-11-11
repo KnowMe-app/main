@@ -86,11 +86,25 @@ export const syncCardChanges = deps => {
   return pending;
 };
 
-const runSync = async ({ viewerId, readChangesSince, forgetCardBodies, now = Date.now }) => {
+const runSync = async ({
+  viewerId,
+  readChangesSince,
+  forgetCardBodies,
+  forgetFeedStateMemo = () => {},
+  readServerNow = async () => null,
+  now = Date.now,
+}) => {
+  // Довіра — лише результат цієї синхронізації. Знята на старті, вона не
+  // переживає збою чи повільного журналу з попереднього відкриття стрічки,
+  // а памʼять читача стану забуває все, що брала з перевіреного стану:
+  // рендер до синхронізації міг його туди підтягнути.
+  if (trustedViewer === viewerId) trustedViewer = null;
+  forgetFeedStateMemo({ persistedOnly: true });
+
   const state = readCardChangesSyncState(viewerId);
   const clientNow = now();
-  const startOver = !state || clientNow - state.lastSync > CARD_CHANGES_MAX_GAP_MS;
-  const startAt = startOver
+  const startOverByClock = !state || clientNow - state.lastSync > CARD_CHANGES_MAX_GAP_MS;
+  const startAt = startOverByClock
     ? clientNow - CARD_CHANGES_FIRST_WINDOW_MS
     : state.lastSync - CARD_CHANGES_OVERLAP_MS;
 
@@ -101,6 +115,14 @@ const runSync = async ({ viewerId, readChangesSince, forgetCardBodies, now = Dat
     console.warn('[cardChanges] журнал не прочитано, перевіряємо картки як раніше', error?.code || error);
     return { trusted: false, changedIds: new Set() };
   }
+  // Час сервера (`.info/serverTimeOffset`, без читання бази): мітку не
+  // можна ставити годинником пристрою. Пристрій, що на дві доби поспішає,
+  // поставив би мітку в майбутнє сервера, і всі справжні зміни нижче неї
+  // наступні синхронізації пропускали б, вважаючи кеш чинним.
+  const serverNow = await readServerNow().catch(() => null);
+  const startOver = startOverByClock
+    || (Number.isFinite(serverNow) && state.lastSync > serverNow + CARD_CHANGES_OVERLAP_MS);
+
   const list = Array.isArray(rows) ? rows.filter(row => row?.id && Number.isFinite(row.at)) : [];
   const overflow = list.length >= CARD_CHANGES_PAGE_LIMIT;
   const maxSeen = list.reduce((max, row) => Math.max(max, row.at), 0);
@@ -111,18 +133,28 @@ const runSync = async ({ viewerId, readChangesSince, forgetCardBodies, now = Dat
   if (!trusted) {
     forgetCardBodies();
     forgetVerifiedFeedStates(viewerId);
+    forgetFeedStateMemo({ ids: changedIds });
   } else if (changedIds.size) {
     forgetCardBodies([...changedIds]);
     forgetVerifiedFeedStates(viewerId, changedIds);
+    forgetFeedStateMemo({ ids: changedIds });
   }
   flushVerifiedFeedStates();
 
-  const lastSync = Math.max(state?.lastSync || 0, maxSeen || (startOver ? startAt : 0));
-  writeCardChangesSyncState(viewerId, { lastSync });
-  // Довіра вмикається й на першій синхронізації: перевірених станів тоді
-  // немає зовсім (щойно забуті), а все, що ляже далі, прочитано з бази.
-  markTrusted(viewerId);
-  return { trusted, changedIds };
+  // Мітка — лише з часу сервера: найпізніше побачене в журналі, а на першій
+  // синхронізації без записів — час сервера мінус перекриття. Не відомий час
+  // сервера й записів немає — мітки не ставимо (наступне відкриття почне
+  // знову), а довіри не даємо.
+  const baseline = startOver
+    ? Math.max(maxSeen, Number.isFinite(serverNow) ? serverNow - CARD_CHANGES_OVERLAP_MS : 0)
+    : Math.max(state.lastSync, maxSeen);
+  if (baseline > 0) {
+    writeCardChangesSyncState(viewerId, { lastSync: baseline });
+    // Довіра вмикається й на першій синхронізації: перевірених станів тоді
+    // немає зовсім (щойно забуті), а все, що ляже далі, прочитано з бази.
+    markTrusted(viewerId);
+  }
+  return { trusted: trusted && baseline > 0, changedIds };
 };
 
 
@@ -196,6 +228,18 @@ export const flushVerifiedFeedStates = () => {
 
 export const rememberVerifiedFeedState = (viewerId, cardId, state, { now = Date.now() } = {}) => {
   if (!viewerId || !cardId || !state) return;
+  // `feedDate: false` залежить не лише від картки: «лише для вподобаних»
+  // відкриває чи закриває реакція власниці (`multiData/favorites`), а відмову
+  // правил (донорці) — права читача. Ні те, ні інше картки не міняє, тож
+  // журнал про це не скаже — такі стани щоразу перевіряє база.
+  if (state.feedDate === false || state.feedDate === 'false') {
+    const entries = loadVerified(viewerId);
+    if (entries[String(cardId)]) {
+      delete entries[String(cardId)];
+      persistVerified();
+    }
+    return;
+  }
   const entries = loadVerified(viewerId);
   entries[String(cardId)] = { s: { feedDate: state.feedDate ?? null, audience: state.audience ?? null }, at: now };
   persistVerified();
@@ -208,6 +252,10 @@ export const readVerifiedFeedState = (viewerId, cardId, { now = Date.now() } = {
   if (!isFeedStateTrusted(viewerId) || !cardId) return undefined;
   const entry = loadVerified(viewerId)[String(cardId)];
   if (!entry || now - entry.at > VERIFIED_FEED_STATE_MAX_AGE_MS) return undefined;
+  // Записи «сховано» тут уже не пишуться (див. `rememberVerifiedFeedState`),
+  // а збережені раніше не читаються: «лише для вподобаних» могли закрити без
+  // жодного запису в картку.
+  if (entry.s?.feedDate === false || entry.s?.feedDate === 'false') return undefined;
   return entry.s;
 };
 
@@ -229,6 +277,15 @@ export const distrustVerifiedFeedStates = viewerId => {
 };
 
 const markTrusted = viewerId => { trustedViewer = viewerId; };
+
+/**
+ * Стрічку закрили: довіра не переживає її. Наступне відкриття бачить
+ * перевірений стан лише після власної синхронізації журналу — інакше перший
+ * рендер узяв би стан, якого журнал ще не підтвердив.
+ */
+export const revokeFeedStateTrust = viewerId => {
+  if (!viewerId || trustedViewer === viewerId) trustedViewer = null;
+};
 
 export const __resetCardChangesSessionForTests = () => {
   changedThisSession.clear();

@@ -44,11 +44,14 @@ export const createFeedStateReader = (readState, { ttlMs = 60 * 1000, now = () =
     memo.set(userId, { at: now(), state: state || {} });
     if (persist && state) persist.save(userId, state);
   };
+  // Узяте з `persist` позначається: синхронізація журналу знімає саме такі
+  // записи (`forgetPersisted`), бо чинні вони лише разом із довірою, яку
+  // синхронізація щоразу ставить заново.
   const peek = userId => {
     const cached = memo.get(userId);
     if (cached && now() - cached.at < ttlMs) return cached.state;
     const stored = persist ? persist.load(userId) : undefined;
-    if (stored) memo.set(userId, { at: now(), state: stored });
+    if (stored) memo.set(userId, { at: now(), state: stored, persisted: true });
     return stored;
   };
   const read = async userId => {
@@ -75,6 +78,12 @@ export const createFeedStateReader = (readState, { ttlMs = 60 * 1000, now = () =
     peek,
     prime: (userId, state) => { if (userId) remember(userId, state); },
     clear: () => { memo.clear(); inFlight.clear(); if (persist?.clear) persist.clear(); },
+    /** Забути памʼять про ці картки (журнал каже, що їх змінено). */
+    forget: ids => { [...(ids || [])].forEach(id => memo.delete(String(id))); },
+    /** Забути все, що памʼять узяла з перевіреного стану пристрою. */
+    forgetPersisted: () => {
+      memo.forEach((entry, id) => { if (entry.persisted) memo.delete(id); });
+    },
   };
 };
 

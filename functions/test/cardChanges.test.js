@@ -62,3 +62,10 @@ test('журнал: видалена схована картка не пише �
   assert.equal(await recordCardChange('card1', { before: { feedDate: false }, after: null, setValue }), false);
   assert.deepEqual(written, []);
 });
+
+test('тригер журналу повторює подію на збої запису, а не ковтає її', () => {
+  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'index.js'), 'utf8');
+  const trigger = source.slice(source.indexOf('exports.recordMatchingCardChange'));
+  assert.match(trigger, /retry: true,/);
+  assert.match(trigger, /logger\.error\('card change journal write failed'[^;]*;\s*throw error;/);
+});

@@ -1,4 +1,5 @@
 import {
+  revokeFeedStateTrust,
   CARD_CHANGES_MAX_GAP_MS,
   CARD_CHANGES_OVERLAP_MS,
   CARD_CHANGES_PAGE_LIMIT,
@@ -99,12 +100,12 @@ describe('перевірений стан стрічки', () => {
   });
 
   it('стан переживає перезавантаження сторінки', async () => {
-    rememberVerifiedFeedState(VIEWER, 'a', { feedDate: false }, { now: NOW });
+    rememberVerifiedFeedState(VIEWER, 'a', { feedDate: '2026-11-01' }, { now: NOW });
     flushVerifiedFeedStates();
     __resetCardChangesSessionForTests();
     localStorage.setItem(`km.matchingCardChanges.v1:${VIEWER}`, JSON.stringify({ lastSync: NOW - 60_000 }));
     await syncCardChanges(deps([]));
-    expect(readVerifiedFeedState(VIEWER, 'a', { now: NOW })).toEqual({ feedDate: false, audience: null });
+    expect(readVerifiedFeedState(VIEWER, 'a', { now: NOW })).toEqual({ feedDate: '2026-11-01', audience: null });
   });
 
   it('«Оновити стрічку» знімає довіру й забуває стани', async () => {
@@ -126,5 +127,85 @@ describe('перевірений стан стрічки', () => {
     const second = createFeedStateReader(read, { persist });
     expect(second.peek('a')).toEqual({ feedDate: '2026-11-01', audience: null });
     expect(read).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('зауваження до журналу', () => {
+  const seed = lastSync => localStorage.setItem(`km.matchingCardChanges.v1:${VIEWER}`, JSON.stringify({ lastSync }));
+
+  it('збій журналу знімає довіру, дану попередньою синхронізацією', async () => {
+    seed(NOW - 60_000);
+    await syncCardChanges(deps([]));
+    expect(isFeedStateTrusted(VIEWER)).toBe(true);
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await syncCardChanges(deps([], { readChangesSince: jest.fn(async () => { throw new Error('net'); }) }));
+    expect(isFeedStateTrusted(VIEWER)).toBe(false);
+    console.warn.mockRestore();
+  });
+
+  it('стрічку закрили — довіри до наступної синхронізації немає', async () => {
+    seed(NOW - 60_000);
+    await syncCardChanges(deps([]));
+    revokeFeedStateTrust(VIEWER);
+    expect(isFeedStateTrusted(VIEWER)).toBe(false);
+  });
+
+  it('синхронізація забуває в памʼяті читача підтягнуте з пристрою і змінені картки', async () => {
+    seed(NOW - 60_000);
+    const forgetFeedStateMemo = jest.fn();
+    await syncCardChanges(deps([{ id: 'x', at: NOW - 10 }], { forgetFeedStateMemo }));
+    expect(forgetFeedStateMemo).toHaveBeenCalledWith({ persistedOnly: true });
+    const withIds = forgetFeedStateMemo.mock.calls.find(([arg]) => arg.ids);
+    expect([...withIds[0].ids]).toEqual(['x']);
+  });
+
+  it('«сховано» не запамʼятовується й не читається: «лише для вподобаних» закриває реакція, а не картка', async () => {
+    seed(NOW - 60_000);
+    await syncCardChanges(deps([]));
+    rememberVerifiedFeedState(VIEWER, 'liked', { feedDate: false, audience: 'liked' }, { now: NOW });
+    expect(readVerifiedFeedState(VIEWER, 'liked', { now: NOW })).toBeUndefined();
+    localStorage.setItem(`km.matchingFeedState.v1:${VIEWER}`, JSON.stringify({ old: { s: { feedDate: false, audience: 'liked' }, at: NOW } }));
+    __resetCardChangesSessionForTests();
+    seed(NOW - 60_000);
+    await syncCardChanges(deps([]));
+    expect(readVerifiedFeedState(VIEWER, 'old', { now: NOW })).toBeUndefined();
+  });
+
+  it('годинник пристрою на дві доби вперед не ставить мітку в майбутнє сервера', async () => {
+    const serverNow = NOW;
+    const ahead = () => NOW + 2 * 24 * 60 * 60 * 1000;
+    const result = await syncCardChanges(deps([], { now: ahead, readServerNow: async () => serverNow }));
+    expect(result.trusted).toBe(false);
+    expect(readCardChangesSyncState(VIEWER).lastSync).toBe(serverNow - CARD_CHANGES_OVERLAP_MS);
+  });
+
+  it('мітка вже в майбутньому сервера — як уперше', async () => {
+    seed(NOW + 2 * 24 * 60 * 60 * 1000);
+    const d = deps([], { now: () => NOW + 2 * 24 * 60 * 60 * 1000, readServerNow: async () => NOW });
+    expect((await syncCardChanges(d)).trusted).toBe(false);
+    expect(d.forgetCardBodies).toHaveBeenCalledWith();
+    expect(readCardChangesSyncState(VIEWER).lastSync).toBe(NOW - CARD_CHANGES_OVERLAP_MS);
+  });
+
+  it('першу синхронізацію без записів і без часу сервера не довіряємо й мітки не ставимо', async () => {
+    const result = await syncCardChanges(deps([]));
+    expect(result.trusted).toBe(false);
+    expect(isFeedStateTrusted(VIEWER)).toBe(false);
+    expect(readCardChangesSyncState(VIEWER)).toBeNull();
+  });
+});
+
+describe('памʼять читача стану', () => {
+  it('forget і forgetPersisted', () => {
+    const store = new Map([['p', { feedDate: '2026-11-01' }]]);
+    const reader = createFeedStateReader(jest.fn(), { persist: { load: id => store.get(id), save: () => {} } });
+    reader.prime('a', { feedDate: '2026-11-02' });
+    expect(reader.peek('p')).toEqual({ feedDate: '2026-11-01' });
+    store.clear();
+    reader.forgetPersisted();
+    expect(reader.peek('p')).toBeUndefined();
+    expect(reader.peek('a')).toEqual({ feedDate: '2026-11-02' });
+    reader.forget(['a']);
+    expect(reader.peek('a')).toBeUndefined();
   });
 });
