@@ -69,6 +69,7 @@ import {
   fetchAdminLastLoginCardsPage,
   matchingFeedStateReader,
   readMatchingCardChangesSince,
+  expandVerifiedMatchingCard,
   readServerNow,
   fetchMatchingCardsPage,
   fetchMatchingCardsByIds,
@@ -154,7 +155,6 @@ import {
   MATCHING_CARD_FEED_FIELD,
   MATCHING_CARD_ORDER_FIELD,
   MATCHING_CARD_REVIEW_FLAG_FIELD,
-  expandMatchingCard,
   isMatchingCardPublished,
   isMatchingSummaryCard,
   readCardRevision,
@@ -1073,6 +1073,8 @@ const Matching = () => {
   const feedSnapshot = feedSnapshotRef.current;
   const restoredFeedSnapshotRef = useRef(Boolean(feedSnapshot));
   const [users, setUsers] = useState(() => feedSnapshot?.users || []);
+  // Синхронізація журналу змін цього показу стрічки (див. `cardChangesReady`).
+  const cardChangesSyncRef = useRef(null);
   // Нові анкети з голови стрічки, що приїхали, поки людина гортала посеред
   // деки (`utils/matchingFeedHead`): чекають на плашку «Нові анкети: N».
   const [feedHeadNewUsers, setFeedHeadNewUsers] = useState([]);
@@ -2931,6 +2933,17 @@ const Matching = () => {
   const hydrateMatchingFeedCards = React.useCallback(async ids => {
     const uniqueIds = [...new Set((ids || []).filter(Boolean))];
     if (!uniqueIds.length) return {};
+    // Спершу журнал змін (`cardChangesSyncRef`, не довше `CARD_CHANGES_WAIT_MS`):
+    // лише після нього проєкція старша за TTL може лишитись у кеші
+    // (`isProjectionVerified`). Інакше дочитування встигало раніше за журнал і
+    // перечитувало з бази всю деку, якої ніхто не міняв. Рядки від цього не
+    // пізніші: сторож стану однаково тримає їх до журналу.
+    if (cardChangesSyncRef.current) {
+      await Promise.race([
+        cardChangesSyncRef.current.catch(() => null),
+        new Promise(resolve => setTimeout(resolve, CARD_CHANGES_WAIT_MS)),
+      ]);
+    }
 
     // Список id для цієї сторінки вже міг прийти з кеша — тоді читати з бекенду
     // ті самі картки ще раз немає за чим. Тому спершу локальний кеш — повна
@@ -8203,7 +8216,7 @@ const Matching = () => {
     const cards = {};
     Object.entries(states || {}).forEach(([id, state]) => {
       if (!state?.card || isFeedStateDeniedForFeed(state)) return;
-      const expanded = expandMatchingCard(id, state.card);
+      const expanded = expandVerifiedMatchingCard(id, state.card);
       if (expanded) cards[id] = expanded;
     });
     if (!Object.keys(cards).length) return;
@@ -8230,7 +8243,7 @@ const Matching = () => {
     let cancelled = false;
     setCardChangesReady(false);
     const fallback = setTimeout(() => { if (!cancelled) setCardChangesReady(true); }, CARD_CHANGES_WAIT_MS);
-    syncCardChanges({
+    const sync = syncCardChanges({
       viewerId: ownerId,
       readChangesSince: readMatchingCardChangesSince,
       readServerNow,
@@ -8239,7 +8252,9 @@ const Matching = () => {
         if (persistedOnly) matchingFeedStateReader.forgetPersisted();
         if (ids) matchingFeedStateReader.forget(ids);
       },
-    }).finally(() => {
+    });
+    cardChangesSyncRef.current = sync;
+    sync.finally(() => {
       clearTimeout(fallback);
       if (!cancelled) setCardChangesReady(true);
     });

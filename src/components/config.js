@@ -32,7 +32,7 @@ import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { formatDateToDisplay, formatDateToServer } from './inputValidations';
 import { getCurrentValue } from './getCurrentValue';
 import toast from 'react-hot-toast';
-import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCachedProfileBody, getCompleteCachedProfile, hasCompleteCachedProfile, incrementMatchingLoadStat, readStoredProfileRevision, removeCard } from '../utils/cardIndex';
+import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCachedProfileBody, getCompleteCachedProfile, hasCompleteCachedProfile, incrementMatchingLoadStat, readStoredProfileRevision, removeCard, setProjectionFreshnessCheck } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
 import {
   SEARCH_QUERIES_ROOT_PATH,
@@ -146,9 +146,13 @@ import { MATCHING_DENIED_CARDS_STORE, createMatchingTimedStore } from '../utils/
 import { pickCardActivity } from '../utils/cardActivity';
 import { noteRealtimeDemand } from '../utils/realtimeConnectionManager';
 import {
+  VERIFIED_PROJECTION_HASH_FIELD,
   distrustVerifiedFeedStates,
+  hashProjection,
+  isProjectionVerified,
   readVerifiedFeedState,
   rememberVerifiedFeedState,
+  rememberVerifiedProjection,
 } from '../utils/matchingCardChanges';
 import {
   createFeedStateReader,
@@ -3324,7 +3328,7 @@ const addLimitedUser = async (userId, users) => {
     raw = null;
   }
   if (raw && isCurrentMatchingCardSchema(raw) && normalizeFeedDateValue(raw[MATCHING_CARD_FEED_FIELD])) {
-    users[userId] = expandMatchingCard(userId, raw);
+    users[userId] = expandVerifiedMatchingCard(userId, raw);
     return;
   }
   const profile = await fetchLimitedProfileById(userId, raw);
@@ -3564,7 +3568,7 @@ const addCardHit = async (userId, users) => {
   let expanded = null;
   try {
     const raw = await readMatchingCardRaw(userId);
-    expanded = isCurrentMatchingCardSchema(raw) ? expandMatchingCard(userId, raw) : null;
+    expanded = isCurrentMatchingCardSchema(raw) ? expandVerifiedMatchingCard(userId, raw) : null;
   } catch {
     expanded = null;
   }
@@ -3740,6 +3744,24 @@ export const matchingFeedStateReader = createFeedStateReader(readCardFeedState, 
     clear: () => distrustVerifiedFeedStates(currentFeedStateViewer()),
   },
 });
+
+// Проєкція з кешу живе понад TTL, коли журнал змін підтвердив її відбиток.
+setProjectionFreshnessCheck((id, card) => isProjectionVerified(currentFeedStateViewer(), id, card));
+
+/**
+ * Картка стрічки, щойно прочитана з бази, — розгорнута й з відбитком вмісту
+ * (`hashProjection`), який заразом лягає в перевірені проєкції читача. Кожен
+ * шлях, що розгортає сиру картку з бази для стрічки чи пошуку, іде сюди:
+ * лише така проєкція може пережити в кеші шість годин, коли журнал каже, що
+ * картку не міняли (`isProjectionVerified`).
+ */
+export const expandVerifiedMatchingCard = (id, raw) => {
+  const expanded = expandMatchingCard(id, raw);
+  if (!expanded) return expanded;
+  const hash = hashProjection(raw);
+  rememberVerifiedProjection(currentFeedStateViewer(), id, hash);
+  return { ...expanded, [VERIFIED_PROJECTION_HASH_FIELD]: hash };
+};
 
 /** Стан, який уже приїхав разом із сирою карткою, — у памʼять, без другого кругу. */
 export const primeMatchingFeedState = (userId, rawCard) => {
@@ -6601,7 +6623,7 @@ const fetchMatchingCardsPageUncoalesced = async ({ limit = 10, cursor = null } =
   // показом (`useFreshFeedStateGate`) за ці картки вдруге не платить.
   entries.forEach(([id, card]) => primeMatchingFeedState(id, card));
   const users = entries
-    .map(([id, card]) => expandMatchingCard(id, card))
+    .map(([id, card]) => expandVerifiedMatchingCard(id, card))
     .filter(Boolean);
   const cursorOf = ([id, card]) => ({ date: String(card?.[MATCHING_CARD_ORDER_FIELD] || ''), userId: id });
   const lastEntry = entries[entries.length - 1];
@@ -6761,7 +6783,7 @@ export const fetchMatchingCardsByIds = async (ids = []) => {
     }
     try {
       const raw = await readMatchingCardRaw(id);
-      const expanded = isCurrentMatchingCardSchema(raw) ? expandMatchingCard(id, raw) : null;
+      const expanded = isCurrentMatchingCardSchema(raw) ? expandVerifiedMatchingCard(id, raw) : null;
       if (expanded) cards[id] = expanded;
       else missingIds.push(id);
     } catch (error) {

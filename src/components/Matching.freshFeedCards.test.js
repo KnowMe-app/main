@@ -17,7 +17,7 @@ describe('свіжа картка зі сторожа стану', () => {
 
   it('у кеш лягає лише видима картка, розгорнута як проєкція', () => {
     expect(handler()).toContain('if (!state?.card || isFeedStateDeniedForFeed(state)) return;');
-    expect(handler()).toContain('const expanded = expandMatchingCard(id, state.card);');
+    expect(handler()).toContain('const expanded = expandVerifiedMatchingCard(id, state.card);');
     expect(handler()).toContain('setCachedMatchingSummaryCards(cards);');
   });
 
@@ -43,5 +43,17 @@ describe('свіжа картка зі сторожа стану', () => {
     expect(sync).toContain('readChangesSince: readMatchingCardChangesSince,');
     expect(sync).toContain('forgetCardBodies: forgetCachedCardBodies,');
     expect(sync).toContain('CARD_CHANGES_WAIT_MS');
+  });
+
+  // Дочитування стрічки чекає на журнал: інакше воно встигало раніше за
+  // синхронізацію й перечитувало всю деку, якої ніхто не міняв.
+  it('дочитування стрічки спершу чекає на журнал змін', () => {
+    const hydrate = source.slice(
+      source.indexOf('const hydrateMatchingFeedCards = React.useCallback('),
+      source.indexOf('const isBackendOnlyMode = matchingDataSourceMode'),
+    );
+    expect(hydrate).toContain('cardChangesSyncRef.current.catch(() => null)');
+    expect(hydrate).toContain('setTimeout(resolve, CARD_CHANGES_WAIT_MS)');
+    expect(source).toContain('cardChangesSyncRef.current = sync;');
   });
 });

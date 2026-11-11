@@ -133,13 +133,16 @@ const runSync = async ({
   if (!trusted) {
     forgetCardBodies();
     forgetVerifiedFeedStates(viewerId);
+    forgetVerifiedProjections(viewerId);
     forgetFeedStateMemo({ ids: changedIds });
   } else if (changedIds.size) {
     forgetCardBodies([...changedIds]);
     forgetVerifiedFeedStates(viewerId, changedIds);
+    forgetVerifiedProjections(viewerId, changedIds);
     forgetFeedStateMemo({ ids: changedIds });
   }
   flushVerifiedFeedStates();
+  flushVerifiedProjections();
 
   // Мітка — лише з часу сервера: найпізніше побачене в журналі, а на першій
   // синхронізації без записів — час сервера мінус перекриття. Не відомий час
@@ -274,6 +277,7 @@ export const forgetVerifiedFeedStates = (viewerId, ids) => {
 export const distrustVerifiedFeedStates = viewerId => {
   if (trustedViewer === viewerId) trustedViewer = null;
   forgetVerifiedFeedStates(viewerId);
+  forgetVerifiedProjections(viewerId);
 };
 
 const markTrusted = viewerId => { trustedViewer = viewerId; };
@@ -288,6 +292,10 @@ export const revokeFeedStateTrust = viewerId => {
 };
 
 export const __resetCardChangesSessionForTests = () => {
+  projectionViewer = null;
+  projectionEntries = {};
+  if (projectionTimer) clearTimeout(projectionTimer);
+  projectionTimer = null;
   changedThisSession.clear();
   inFlight.clear();
   verifiedViewer = null;
@@ -295,4 +303,115 @@ export const __resetCardChangesSessionForTests = () => {
   trustedViewer = null;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = null;
+};
+
+/*
+ * Перевірені проєкції картки стрічки — щоб тіло кешу жило понад TTL, коли
+ * журнал каже, що картку не міняли.
+ *
+ * Годинника запису (`cachedAt`) тут мало: стрічка сама кладе в кеш проєкції
+ * зі свого стану (`rememberFeedSummaryCards`), і стара картка, викинута
+ * журналом, повернулась би туди з новою міткою часу. Тому кожна проєкція, що
+ * прийшла з бази, несе відбиток вмісту (`__verifiedHash`), і відбиток лягає
+ * сюди. Довіра понад TTL — лише коли відбиток проєкції в кеші той самий, що
+ * тут: журнал знімає записи змінених карток, а наступне читання з бази
+ * поставить новий відбиток, якого стара копія не має.
+ */
+export const VERIFIED_PROJECTION_PREFIX = 'km.matchingVerifiedCards.v1:';
+export const VERIFIED_PROJECTION_HASH_FIELD = '__verifiedHash';
+const VERIFIED_PROJECTION_MAX_ENTRIES = 3000;
+
+let projectionViewer = null;
+let projectionEntries = {};
+let projectionTimer = null;
+
+const stableStringify = value => {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+};
+
+/** Відбиток сирої картки з бази: однаковий для однакового вмісту. */
+export const hashProjection = raw => {
+  const text = stableStringify(raw ?? null);
+  let hash = 5381;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash * 33) ^ text.charCodeAt(index)) >>> 0;
+  }
+  return `${hash.toString(36)}.${text.length.toString(36)}`;
+};
+
+const projectionKey = viewerId => `${VERIFIED_PROJECTION_PREFIX}${viewerId}`;
+
+const loadProjections = viewerId => {
+  if (projectionViewer === viewerId) return projectionEntries;
+  projectionViewer = viewerId;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(projectionKey(viewerId)) || '{}');
+    projectionEntries = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    projectionEntries = {};
+  }
+  return projectionEntries;
+};
+
+const writeProjectionsNow = () => {
+  if (!projectionViewer) return;
+  const ids = Object.keys(projectionEntries);
+  if (ids.length > VERIFIED_PROJECTION_MAX_ENTRIES) {
+    ids
+      .sort((a, b) => projectionEntries[a].at - projectionEntries[b].at)
+      .slice(0, ids.length - VERIFIED_PROJECTION_MAX_ENTRIES)
+      .forEach(id => { delete projectionEntries[id]; });
+  }
+  try {
+    localStorage.setItem(projectionKey(projectionViewer), JSON.stringify(projectionEntries));
+  } catch {
+    // переповнений `localStorage`: проєкції перечитаються з бази за TTL
+  }
+};
+
+const persistProjections = () => {
+  if (projectionTimer) return;
+  projectionTimer = setTimeout(() => {
+    projectionTimer = null;
+    writeProjectionsNow();
+  }, 50);
+};
+
+export const flushVerifiedProjections = () => {
+  if (!projectionTimer) return;
+  clearTimeout(projectionTimer);
+  projectionTimer = null;
+  writeProjectionsNow();
+};
+
+export const rememberVerifiedProjection = (viewerId, cardId, hash, { now = Date.now() } = {}) => {
+  if (!viewerId || !cardId || !hash) return;
+  loadProjections(viewerId)[String(cardId)] = { h: hash, at: now };
+  persistProjections();
+};
+
+export const forgetVerifiedProjections = (viewerId, ids) => {
+  if (!viewerId) return;
+  const entries = loadProjections(viewerId);
+  if (ids === undefined) {
+    Object.keys(entries).forEach(id => { delete entries[id]; });
+  } else {
+    [...ids].forEach(id => { delete entries[String(id)]; });
+  }
+  persistProjections();
+};
+
+/**
+ * Проєкція з кешу чинна понад TTL: журнал у цьому показі сторінки
+ * синхронізовано, її відбиток — той, що прийшов з бази востаннє, і запис не
+ * старший за тиждень (страховка на зміну, якої журнал не побачив).
+ */
+export const isProjectionVerified = (viewerId, cardId, card, { now = Date.now() } = {}) => {
+  if (!isFeedStateTrusted(viewerId) || !cardId) return false;
+  const hash = card?.[VERIFIED_PROJECTION_HASH_FIELD];
+  if (!hash) return false;
+  const entry = loadProjections(viewerId)[String(cardId)];
+  return Boolean(entry) && entry.h === hash && now - entry.at <= VERIFIED_FEED_STATE_MAX_AGE_MS;
 };

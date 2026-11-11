@@ -954,6 +954,22 @@ const saveMatchingSummaryCards = items => saveJson(
   { debounceMs: 300 },
 );
 
+/**
+ * Перевірка «проєкція чинна понад TTL» — журнал змін (`utils/matchingCardChanges`,
+ * `isProjectionVerified`). Ставить її `config.js`: кеш карток нижче рівнем і
+ * про журнал не знає. Без неї (тести, адмінські екрани до входу) — сам TTL.
+ */
+let projectionFreshnessCheck = null;
+export const setProjectionFreshnessCheck = check => {
+  projectionFreshnessCheck = typeof check === 'function' ? check : null;
+};
+const isProjectionFreshByJournal = (id, card, cachedAt, now) => (
+  Boolean(projectionFreshnessCheck)
+  && cachedAt > 0
+  && now - cachedAt <= PROFILE_REVISION_MAX_AGE_MS
+  && Boolean(projectionFreshnessCheck(id, card))
+);
+
 export const getCachedMatchingSummaryCards = (ids, options = {}) => {
   const { ttlMs = MATCHING_SUMMARY_CARD_TTL_MS } = options || {};
   const uniqueIds = [...new Set((Array.isArray(ids) ? ids : []).filter(Boolean).map(String))];
@@ -972,7 +988,7 @@ export const getCachedMatchingSummaryCards = (ids, options = {}) => {
       missingIds.push(id);
       return;
     }
-    if (now - cachedAt > ttlMs) {
+    if (now - cachedAt > ttlMs && !isProjectionFreshByJournal(id, entry.card, cachedAt, now)) {
       delete stored[id];
       expired = true;
       missingIds.push(id);
@@ -1037,7 +1053,8 @@ export const composeCachedCards = (ids, options = {}) => {
     const summaryRevision = readCachedRevision(summaryEntry?.card);
     const fullIsStaleByRevision = Boolean(fullRevision && summaryRevision && fullRevision < summaryRevision);
     const fullIsFresh = Boolean(full) && fresh(fullAt) && !fullIsStaleByRevision;
-    const summaryIsFresh = Boolean(summaryEntry?.card) && fresh(summaryAt);
+    const summaryIsFresh = Boolean(summaryEntry?.card)
+      && (fresh(summaryAt) || isProjectionFreshByJournal(id, summaryEntry.card, summaryAt, now));
 
     if (fullIsFresh && (!summaryIsFresh || fullAt >= summaryAt)) {
       cards[id] = { ...full, userId: full.userId || id };
