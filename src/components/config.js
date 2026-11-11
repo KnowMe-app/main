@@ -140,7 +140,8 @@ import { normalizeProfileRole } from '../utils/profileRole';
 import { createSaveComparisonField } from '../utils/comparisonFieldAdapter';
 import { mergeDuplicateProfileValues, normalizePhoneForStorage, sanitizeUploadedInfoPhones } from '../utils/profileValueNormalization';
 import { patchCachedReactionValue } from '../utils/matchingReactionCache';
-import { rememberCommentWrite } from '../utils/commentsStorage';
+import { forgetCachedComment, rememberCommentWrite } from '../utils/commentsStorage';
+import { configureWriteOutbox, enqueueOutboxWrite, registerOutboxRejectionHandler } from '../utils/writeOutbox';
 import { forgetProfileContacts, readFreshProfileContacts, writeProfileContacts } from '../utils/matchingContactsCache';
 import { MATCHING_DENIED_CARDS_STORE, createMatchingTimedStore } from '../utils/matchingTimedStore';
 import { pickCardActivity } from '../utils/cardActivity';
@@ -997,8 +998,16 @@ export const setOwnLikedAudienceEntries = async (ownerId, enabled) => {
  * (`utils/matchingReactionCache`), а на відмові бази відкочує правку. Стрічка,
  * яка взяла мапу з кеша, підписки на неї не тримає — і власна реакція мусить
  * дійти до неї так само, як дійшла б луною `onValue`.
+ *
+ * Сам запис іде через чергу пристрою (`utils/writeOutbox`): без звʼязку
+ * реакція переживає перезавантаження й закриття вкладки й досилається на
+ * наступному вході. Шляхи виводяться з самих змін —
+ * `multiData/{вид}/{власник}/{картка}`, — тож писач не може записати одне, а
+ * в кеші поправити інше. Відкат на відмові описаний даними (`meta`), бо після
+ * перезавантаження функції з цієї вкладки вже немає
+ * (`registerOutboxRejectionHandler('reactions', …)` нижче).
  */
-const writeReactionsThroughCache = async (changes, write) => {
+const writeReactionsThroughCache = async changes => {
   const viewerId = auth.currentUser?.uid;
   const applied = changes.map(({ kind, ownerId, userId, value }) => ({
     kind,
@@ -1006,15 +1015,43 @@ const writeReactionsThroughCache = async (changes, write) => {
     userId,
     result: patchCachedReactionValue(viewerId, ownerId, kind, userId, value),
   }));
-  try {
-    return await write();
-  } catch (error) {
-    applied
-      .filter(change => change.result.patched)
-      .forEach(change => patchCachedReactionValue(viewerId, change.ownerId, change.kind, change.userId, change.result.previous));
-    throw error;
-  }
+  const patch = Object.fromEntries(changes.map(({ kind, ownerId, userId, value }) => [
+    `multiData/${kind}/${ownerId}/${userId}`,
+    value ?? null,
+  ]));
+  return enqueueOutboxWrite({
+    uid: viewerId,
+    patch,
+    meta: {
+      type: 'reactions',
+      viewerId,
+      changes: applied
+        .filter(change => change.result.patched)
+        .map(({ kind, ownerId, userId, result }) => ({ kind, ownerId, userId, previous: result.previous ?? null })),
+    },
+  });
 };
+
+configureWriteOutbox({
+  send: patch => {
+    // Призупинена база запис не відкидає, а тримає — кличемо зʼєднання, як
+    // і для читання (`utils/realtimeConnectionManager`).
+    noteRealtimeDemand();
+    return update(ref2(database), patch);
+  },
+});
+
+registerOutboxRejectionHandler('reactions', meta => {
+  (meta?.changes || []).forEach(change => {
+    patchCachedReactionValue(meta.viewerId, change.ownerId, change.kind, change.userId, change.previous);
+  });
+});
+
+// Памʼятку, яку база не прийняла, пристрій забуває, а не тримає вигаданою:
+// наступний показ перечитає справжню.
+registerOutboxRejectionHandler('comment', meta => {
+  forgetCachedComment(meta?.ownerId, meta?.cardId);
+});
 
 // Значення лайку — мітка часу, як у дизлайку (`addDislikeUser`): колекція
 // «Обрані» стоїть за часом реакції (`orderReactionIdsByRecency`), і без мітки
@@ -1028,7 +1065,6 @@ export const addFavoriteUser = async (userId, ownerId, likedAt) => {
     const resolvedOwnerId = ownerId || owner.uid;
     await writeReactionsThroughCache(
       [{ kind: 'favorites', ownerId: resolvedOwnerId, userId, value: timestamp }],
-      () => set(ref2(database, `multiData/favorites/${resolvedOwnerId}/${userId}`), timestamp),
     );
     void syncLikedAudienceAfterReaction(resolvedOwnerId, userId, timestamp);
   } catch (error) {
@@ -1043,7 +1079,6 @@ export const removeFavoriteUser = async (userId, ownerId) => {
     const resolvedOwnerId = ownerId || owner.uid;
     await writeReactionsThroughCache(
       [{ kind: 'favorites', ownerId: resolvedOwnerId, userId, value: null }],
-      () => remove(ref2(database, `multiData/favorites/${resolvedOwnerId}/${userId}`)),
     );
     void syncLikedAudienceAfterReaction(resolvedOwnerId, userId, null);
   } catch (error) {
@@ -1061,11 +1096,9 @@ export const setReactionUserValue = async (kind, userId, ownerId, value) => {
   if (!owner) return;
   const reactionKind = kind === 'dislikes' ? 'dislikes' : 'favorites';
   const resolvedOwnerId = ownerId || owner.uid;
-  const path = `multiData/${reactionKind}/${resolvedOwnerId}/${userId}`;
   const removes = value === undefined || value === null || value === false;
   await writeReactionsThroughCache(
     [{ kind: reactionKind, ownerId: resolvedOwnerId, userId, value: removes ? null : value }],
-    () => (removes ? remove(ref2(database, path)) : set(ref2(database, path), value)),
   );
   if (kind !== 'dislikes') void syncLikedAudienceAfterReaction(resolvedOwnerId, userId, value);
 };
@@ -1088,19 +1121,15 @@ export const setReactionUserValues = async ({
   const owner = auth.currentUser;
   if (!owner) return;
   const resolvedOwnerId = ownerId || owner.uid;
-  const updates = {};
   const changes = [];
   if (favoriteChanged) {
-    updates[`favorites/${resolvedOwnerId}/${userId}`] = favoriteValue ?? null;
     changes.push({ kind: 'favorites', ownerId: resolvedOwnerId, userId, value: favoriteValue ?? null });
   }
   if (dislikeChanged) {
-    updates[`dislikes/${resolvedOwnerId}/${userId}`] = dislikeValue ?? null;
     changes.push({ kind: 'dislikes', ownerId: resolvedOwnerId, userId, value: dislikeValue ?? null });
   }
-  if (Object.keys(updates).length) {
-    await writeReactionsThroughCache(changes, () => update(ref2(database, 'multiData'), updates));
-  }
+  // Обидві сторони — один запис черги, тобто один атомарний `update`.
+  if (changes.length) await writeReactionsThroughCache(changes);
   if (favoriteChanged) void syncLikedAudienceAfterReaction(resolvedOwnerId, userId, favoriteValue);
 };
 
@@ -1112,7 +1141,6 @@ export const addDislikeUser = async (userId, ownerId, dislikedAt) => {
     const resolvedOwnerId = ownerId || owner.uid;
     await writeReactionsThroughCache(
       [{ kind: 'dislikes', ownerId: resolvedOwnerId, userId, value: timestamp }],
-      () => set(ref2(database, `multiData/dislikes/${resolvedOwnerId}/${userId}`), timestamp),
     );
   } catch (error) {
     console.error('Error adding dislike user:', error);
@@ -1299,7 +1327,6 @@ export const removeDislikeUser = async (userId, ownerId) => {
     const resolvedOwnerId = ownerId || owner.uid;
     await writeReactionsThroughCache(
       [{ kind: 'dislikes', ownerId: resolvedOwnerId, userId, value: null }],
-      () => remove(ref2(database, `multiData/dislikes/${resolvedOwnerId}/${userId}`)),
     );
   } catch (error) {
     console.error('Error removing dislike user:', error);
@@ -1986,6 +2013,24 @@ const normalizeComment = value => ({
   lastAction: typeof value?.updatedAt === 'number' ? value.updatedAt : 0,
 });
 
+/*
+ * Памʼятка йде через чергу пристрою (`utils/writeOutbox`), як і реакції:
+ * без звʼязку вона переживає перезавантаження й досилається на наступному
+ * вході. У кеш памʼяток вона лягає **до** запису, а не після: черга може
+ * чекати звʼязку годинами, і екран мусить показувати набране весь цей час
+ * (новіша за базу памʼятка перемагає — `shouldUseServerComment`). Відмова
+ * бази забуває її з кеша (`registerOutboxRejectionHandler('comment', …)`).
+ */
+const writeCommentThroughOutbox = ({ uid, ownerId, cardId, value }) => {
+  rememberCommentWrite(ownerId, cardId, value?.text || '', value?.updatedAt || Date.now());
+  invalidateOwnerCommentsCache(ownerId);
+  return enqueueOutboxWrite({
+    uid,
+    patch: { [getCommentPath(ownerId, cardId)]: value },
+    meta: { type: 'comment', ownerId, cardId },
+  });
+};
+
 // Особистий коментар адміна до картки — multiData/comments/{ownerId}/{cardId} = { text, updatedAt }.
 // Рівно один запис на пару ownerId+cardId: повторне збереження оновлює його
 // (set), а не створює новий запис із випадковим ключем (push() не використовується).
@@ -2000,9 +2045,7 @@ export const setUserComment = async (cardId, text, ownerId) => {
     }
     const commentsOwnerId = ownerId || user.uid;
     const updatedAt = Date.now();
-    await set(ref2(database, getCommentPath(commentsOwnerId, cardId)), { text, updatedAt });
-    invalidateOwnerCommentsCache(commentsOwnerId);
-    rememberCommentWrite(commentsOwnerId, cardId, text, updatedAt);
+    await writeCommentThroughOutbox({ uid: user.uid, ownerId: commentsOwnerId, cardId, value: { text, updatedAt } });
     return { lastAction: updatedAt, text };
   } catch (error) {
     console.error('Error setting comment:', error);
@@ -2023,9 +2066,7 @@ export const updateCommentByOwner = async ({ ownerId, cardId, text }) => {
       throw new Error('ownerId, cardId і text обовʼязкові');
     }
     const updatedAt = Date.now();
-    await set(ref2(database, getCommentPath(ownerId, cardId)), { text, updatedAt });
-    invalidateOwnerCommentsCache(ownerId);
-    rememberCommentWrite(ownerId, cardId, text, updatedAt);
+    await writeCommentThroughOutbox({ uid: user.uid, ownerId, cardId, value: { text, updatedAt } });
     return { lastAction: updatedAt, ownerId };
   } catch (error) {
     console.error('Error updating comment by owner:', error);
@@ -2042,9 +2083,7 @@ export const deleteCommentByOwner = async ({ ownerId, cardId }) => {
     if (!ownerId || !cardId) {
       throw new Error('ownerId і cardId обовʼязкові');
     }
-    await remove(ref2(database, getCommentPath(ownerId, cardId)));
-    invalidateOwnerCommentsCache(ownerId);
-    rememberCommentWrite(ownerId, cardId, '');
+    await writeCommentThroughOutbox({ uid: user.uid, ownerId, cardId, value: null });
     return true;
   } catch (error) {
     console.error('Error deleting comment by owner:', error);

@@ -25,12 +25,18 @@ describe('власні записи тримають кеші матчингу �
     });
   });
 
-  it('памʼятка лягає в кеш нотаток після запису', () => {
+  // Памʼятка лягає в кеш нотаток ще до запису: черга пристрою
+  // (`utils/writeOutbox`) може чекати звʼязку годинами, і екран мусить
+  // показувати набране весь цей час.
+  it('памʼятка лягає в кеш нотаток через чергу записів', () => {
     const source = config();
     ['export const setUserComment = async', 'export const updateCommentByOwner = async', 'export const deleteCommentByOwner = async']
       .forEach(header => {
-        expect(sliceBetween(source, header, '\nexport const ')).toContain('rememberCommentWrite(');
+        expect(sliceBetween(source, header, '\nexport const ')).toContain('writeCommentThroughOutbox(');
       });
+    const writer = sliceBetween(source, 'const writeCommentThroughOutbox =', '\n};');
+    expect(writer.indexOf('rememberCommentWrite(')).toBeGreaterThan(-1);
+    expect(writer.indexOf('rememberCommentWrite(')).toBeLessThan(writer.indexOf('enqueueOutboxWrite('));
   });
 
   it('дата «Відкласти» правує кеш дат лише після вдалого запису', () => {

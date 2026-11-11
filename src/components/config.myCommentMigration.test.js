@@ -18,7 +18,8 @@ describe('myComment moves off the card into multiData/comments/{ownerId}/{cardId
       source.indexOf('export const updateCommentByOwner')
     );
     expect(source).toContain("export const COMMENTS_ROOT_PATH = 'multiData/comments';");
-    expect(fnBody).toContain('getCommentPath(commentsOwnerId, cardId)');
+    expect(fnBody).toContain('writeCommentThroughOutbox({ uid: user.uid, ownerId: commentsOwnerId, cardId, value: { text, updatedAt } })');
+    expect(source).toContain('patch: { [getCommentPath(ownerId, cardId)]: value },');
     expect(fnBody).not.toContain('push(');
     expect(fnBody).not.toContain('orderByChild');
     expect(fnBody).not.toContain('authorId');
@@ -31,9 +32,10 @@ describe('myComment moves off the card into multiData/comments/{ownerId}/{cardId
       source.indexOf('export const fetchUserComment')
     );
     expect(fnBody).not.toContain('getLegacyCommentPath');
-    expect(fnBody).toContain('set(ref2(database, getCommentPath(commentsOwnerId, cardId))');
-    expect(fnBody).toContain('set(ref2(database, getCommentPath(ownerId, cardId))');
-    expect(fnBody).toContain('remove(ref2(database, getCommentPath(ownerId, cardId)))');
+    // Запис, правка й видалення памʼятки — той самий шлях через чергу
+    // пристрою (`utils/writeOutbox`); `null` знімає памʼятку.
+    expect(fnBody).toContain('await writeCommentThroughOutbox({ uid: user.uid, ownerId, cardId, value: { text, updatedAt } });');
+    expect(fnBody).toContain('await writeCommentThroughOutbox({ uid: user.uid, ownerId, cardId, value: null });');
   });
 
   it('exposes a saveMyCardComment helper that writes via setUserComment and deletes when text is empty', () => {

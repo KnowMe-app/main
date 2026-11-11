@@ -114,6 +114,19 @@ export const rememberCommentWrite = (ownerId, cardId, text, lastAction = now()) 
   saveComments(comments);
 };
 
+/**
+ * Забути памʼятку картки на пристрої — щоб наступний показ перечитав її з
+ * бази. Нею черга записів відкочує памʼятку, яку база не прийняла
+ * (`utils/writeOutbox`): вигаданої, ніде не збереженої, пристрій не тримає.
+ */
+export const forgetCachedComment = (ownerId, cardId) => {
+  if (!ownerId || !cardId) return;
+  const comments = loadComments();
+  if (!comments[ownerId]?.[cardId]) return;
+  delete comments[ownerId][cardId];
+  saveComments(comments);
+};
+
 export const shouldUseServerComment = (server, local) => {
   if (!server) return false;
   if (!local) return true;
