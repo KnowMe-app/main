@@ -1256,8 +1256,10 @@ const CustomLineAdder = ({
         } : undefined}
       >
         <PackageAddRow $indent={indent}>
-          <PackageQuickField
-            rows={1}
+          {/* AutoTextArea, як і назва вже доданого рядка: довга назва переноситься й розтягує
+              поле під час набору, а не ховається за краєм одного рядка до натискання Add. */}
+          <AutoTextArea
+            as={PackageQuickField}
             placeholder="Add a custom line…"
             value={name}
             onChange={event => setName(event.target.value)}
