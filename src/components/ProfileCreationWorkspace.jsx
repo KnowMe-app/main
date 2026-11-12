@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { isRetryableOutboxError } from 'utils/writeOutbox';
 import styled from 'styled-components';
 import { revealCss } from '../styles/revealAnimation';
 import { FiChevronDown, FiClock, FiFolder, FiPlus, FiSave, FiUsers, FiX } from 'react-icons/fi';
@@ -1128,9 +1129,16 @@ export const ProfileCreationWorkspace = () => {
     // Відгук анонімний: імені автора він не несе ні на екрані, ні в базі.
     // Лишається `authorId` — його вимагають правила, щоб автор міг свій
     // відгук правити й знімати, — але імʼя під відгуком більше не пишеться.
-    const created = await addPublicProfileComment({ profileId, text });
+    // Відгук іде через чергу пристрою й показується одразу; база, що
+    // відмовила, прибирає його з екрана (`delivered`).
+    const { delivered, ...created } = await addPublicProfileComment({ profileId, text });
     setPublicComments(previous => [...previous, created]);
-  }, []);
+    delivered?.catch(error => {
+      if (isRetryableOutboxError(error)) return;
+      setPublicComments(previous => previous.filter(comment => comment.id !== created.id));
+      toast.error(uiText('Відгук не опубліковано: сервер відмовив', language));
+    });
+  }, [language]);
 
   const handleUpdatePublicComment = useCallback(async (profileId, commentId, text) => {
     const updated = await updatePublicProfileComment({ profileId, commentId, text });

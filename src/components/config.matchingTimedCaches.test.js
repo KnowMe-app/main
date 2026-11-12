@@ -21,7 +21,10 @@ describe('власні записи тримають кеші матчингу �
     ].forEach(header => {
       const body = sliceBetween(source, header, '\nexport const ');
       expect(body).toContain('forgetCachedPublicReviews(profileId);');
-      expect(body.indexOf('forgetCachedPublicReviews(profileId);')).toBeLessThan(body.indexOf('await '));
+      // Новий відгук іде через чергу пристрою й на базу не чекає.
+      const write = body.indexOf('await ') >= 0 ? body.indexOf('await ') : body.indexOf('enqueueOutboxWrite(');
+      expect(write).toBeGreaterThan(-1);
+      expect(body.indexOf('forgetCachedPublicReviews(profileId);')).toBeLessThan(write);
     });
   });
 
@@ -37,6 +40,19 @@ describe('власні записи тримають кеші матчингу �
     const writer = sliceBetween(source, 'const writeCommentThroughOutbox =', '\n};');
     expect(writer.indexOf('rememberCommentWrite(')).toBeGreaterThan(-1);
     expect(writer.indexOf('rememberCommentWrite(')).toBeLessThan(writer.indexOf('enqueueOutboxWrite('));
+  });
+
+  // «Відкласти» зі стрічки — через чергу пристрою: дата лягає в кеш одразу,
+  // а відмова бази повертає попередню (і досланому з минулої вкладки теж).
+  it('«Відкласти» зі стрічки йде через чергу записів і вміє відкотитись', () => {
+    const source = config();
+    const writer = sliceBetween(source, 'export const postponeCardForOwner =', '\n};');
+    expect(writer.indexOf('rememberOwnerGetInTouchLocally(')).toBeLessThan(writer.indexOf('enqueueOutboxWrite('));
+    expect(writer).toContain("meta: { type: 'postpone'");
+    expect(source).toContain("registerOutboxRejectionHandler('postpone',");
+    expect(source).toContain("registerOutboxRejectionHandler('publicReview',");
+    const matching = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
+    expect(matching).toContain('postponeCardForOwner({ ownerId, profileId: id, value: nextDate, previous })');
   });
 
   it('дата «Відкласти» правує кеш дат лише після вдалого запису', () => {

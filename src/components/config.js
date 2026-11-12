@@ -1893,20 +1893,31 @@ export const addPublicProfileComment = async ({ profileId, text, authorName = ''
   }
 
   const listRef = ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}`);
+  // Ключ push SDK складає на пристрої, без бази, — тож відгук має адресу й
+  // без звʼязку.
   const commentRef = push(listRef);
-  // Прапорець картки лягає в тому самому запиті, яким лягає відгук: перший
+  // Відгук іде через чергу записів пристрою (`utils/writeOutbox`), як
+  // реакції й памʼятки: без звʼязку `update` SDK висить у памʼяті вкладки, і
+  // закрита вкладка губила вже показаний людині відгук. Тут на запис не
+  // чекаємо — відгук показується одразу, а `delivered` каже, коли база його
+  // прийняла (відмова — помилка; той, хто писав, прибирає відгук з екрана).
+  // Прапорець картки лягає в тому самому записі, яким лягає відгук: перший
   // відгук на картку без цього доїжджав би до бази, а рядок стрічки — ні, аж
   // до наступного, нічим не повʼязаного збереження анкети.
-  await update(ref2(database), {
-    [`${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentRef.key}`]: {
-      text: trimmed,
-      authorId: user.uid,
-      authorName: String(authorName || '').slice(0, 200),
-      createdAt: serverTimestamp(),
-      updatedAt: null,
-      visibility: 'public',
+  const delivered = enqueueOutboxWrite({
+    uid: user.uid,
+    patch: {
+      [`${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentRef.key}`]: {
+        text: trimmed,
+        authorId: user.uid,
+        authorName: String(authorName || '').slice(0, 200),
+        createdAt: serverTimestamp(),
+        updatedAt: null,
+        visibility: 'public',
+      },
+      [matchingCardPublicReviewFlagPath(profileId)]: true,
     },
-    [matchingCardPublicReviewFlagPath(profileId)]: true,
+    meta: { type: 'publicReview', profileId: String(profileId) },
   });
 
   return {
@@ -1917,8 +1928,16 @@ export const addPublicProfileComment = async ({ profileId, text, authorName = ''
     createdAt: Date.now(),
     updatedAt: null,
     visibility: 'public',
+    delivered,
   };
 };
+
+// Відмова бази відгуку, досланого з минулої вкладки: на пристрої його
+// показувати не можна — забути кеш відгуків картки, наступне читання візьме
+// правду з бази. Відмову з цієї вкладки прибирає з екрана той, хто писав.
+registerOutboxRejectionHandler('publicReview', meta => {
+  if (meta?.profileId) forgetCachedPublicReviews(meta.profileId);
+});
 
 // Публічний запис від імені того, хто акаунта не має.
 //
@@ -5067,6 +5086,56 @@ export const invalidateOwnerGetInTouchMap = ownerId => (
  * чужого пристрою доїде щонайпізніше через TTL.
  */
 const postponeDatesStore = createMatchingTimedStore('postponeDates', { maxEntries: 20 });
+
+/*
+ * «Відкласти» зі стрічки — через чергу записів пристрою (`utils/writeOutbox`),
+ * як реакції й памʼятки. `setOwnerGetInTouch` спершу читає попереднє значення
+ * з бази, а без звʼязку те читання висить: людина бачила плашку «Звернутись
+ * після …», а закрита вкладка губила запис. Тут попереднє значення дає той,
+ * хто пише (стрічка тримає дати в стані), дата одразу лягає в кеш дат і в
+ * памʼять позначок власника, а відмова бази повертає попереднє — і в
+ * цій вкладці (`delivered` відмовляє), і досланому з минулої
+ * (`registerOutboxRejectionHandler('postpone', …)`).
+ */
+const rememberOwnerGetInTouchLocally = (owner, id, value) => {
+  const hasValue = typeof value === 'string' && value.trim() !== '';
+  postponeDatesStore.patch(owner, dates => {
+    const next = { ...(dates || {}) };
+    if (hasValue) next[id] = value.trim();
+    else delete next[id];
+    return next;
+  });
+  ownerValuePointCache.set(
+    ownerValuePointKey(OWNER_GET_IN_TOUCH_PATH, owner, id),
+    Promise.resolve(hasValue ? { found: true, value: value.trim() } : { found: false }),
+  );
+  // Мапа власника цілком лише перечитається: правити її на місці тут нема
+  // заради чого, а стара копія з переліку «кому дзвонити» брехала б.
+  invalidateOwnerValueMap(OWNER_GET_IN_TOUCH_PATH, owner);
+};
+
+export const postponeCardForOwner = ({ ownerId, profileId, value, previous = '' }) => {
+  const user = auth.currentUser;
+  const owner = String(ownerId || '').trim();
+  const id = String(profileId || '').trim();
+  if (!user || !owner || !id) return Promise.reject(new Error('Не вдалося відкласти картку'));
+  const nextValue = typeof value === 'string' && value.trim() ? value.trim() : null;
+  rememberOwnerGetInTouchLocally(owner, id, nextValue || '');
+  return enqueueOutboxWrite({
+    uid: user.uid,
+    patch: { [`${OWNER_GET_IN_TOUCH_PATH}/${owner}/${id}`]: nextValue },
+    meta: { type: 'postpone', ownerId: owner, cardId: id, previous: typeof previous === 'string' ? previous : '' },
+  });
+};
+
+registerOutboxRejectionHandler('postpone', (meta, _error, { patch } = {}) => {
+  const owner = String(meta?.ownerId || '');
+  const id = String(meta?.cardId || '');
+  if (!owner || !id) return;
+  // Новіше значення шляху могло витіснити цей запис — тоді відкочувати нічого.
+  if (patch && !Object.prototype.hasOwnProperty.call(patch, `${OWNER_GET_IN_TOUCH_PATH}/${owner}/${id}`)) return;
+  rememberOwnerGetInTouchLocally(owner, id, meta?.previous || '');
+});
 
 export const setOwnerGetInTouch = async (ownerId, profileId, value) => {
   const saved = await setOwnerValue(OWNER_GET_IN_TOUCH_PATH, ownerId, profileId, value, { stringOnly: true });
