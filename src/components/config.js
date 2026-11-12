@@ -1209,6 +1209,11 @@ const normalizeContactChannel = channel => String(channel || 'other').replace(/[
  * `increment()` рахує на сервері: читати вузол перед записом не треба, і
  * дотик коштує один запис без жодного читання.
  */
+// Тип запису черги для дотику до контакту: його відмова (зокрема повтор,
+// який правило відхилило як уже записаний) людині не показується.
+export const CONTACT_ACTION_OUTBOX_TYPE = 'contactAction';
+const createContactOpId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`.replace(/[^A-Za-z0-9]/g, '').slice(0, 24);
+
 export const recordContactAction = async (userId, ownerId, channel) => {
   try {
     const owner = auth.currentUser;
@@ -1218,13 +1223,20 @@ export const recordContactAction = async (userId, ownerId, channel) => {
     // дотик інакше висів би в памʼяті вкладки й губився з нею, а витіснення
     // за шляхом склеїло б кілька дотиків в один.
     const base = `multiData/contactViews/${ownerId || owner.uid}/${userId}`;
+    // Номер дотику (`ops/{id}`) іде тим самим атомарним записом: правило
+    // приймає номер лише раз, тож той самий запис, досланий удруге (друга
+    // вкладка, вкладку закрили до підтвердження), база відхиляє цілком — і
+    // лічильник не росте двічі. Черга вважає це відмовою й запис знімає.
+    const opId = createContactOpId();
     await enqueueOutboxWrite({
       uid: owner.uid,
       additive: true,
+      meta: { type: CONTACT_ACTION_OUTBOX_TYPE },
       patch: {
         [`${base}/count`]: increment(1),
         [`${base}/lastAt`]: serverTimestamp(),
         [`${base}/channels/${key}`]: increment(1),
+        [`${base}/ops/${opId}`]: true,
       },
     });
   } catch (error) {

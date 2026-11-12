@@ -53,5 +53,8 @@ describe('контакти: спершу кеш, точкове читання',
     // Через чергу пристрою й додаванням: дотики без звʼязку не склеюються.
     expect(writer).toContain('enqueueOutboxWrite(');
     expect(writer).toContain('additive: true');
+    // Номер дотику — тим самим записом: повтор правило відхиляє цілком.
+    expect(writer).toContain('[`${base}/ops/${opId}`]: true');
+    expect(writer).toContain('meta: { type: CONTACT_ACTION_OUTBOX_TYPE }');
   });
 });

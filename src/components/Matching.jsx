@@ -49,6 +49,7 @@ import {
   lazyLoadProfilePhotos,
   fetchFavoriteUsers,
   fetchDislikeUsers,
+  CONTACT_ACTION_OUTBOX_TYPE,
   recordContactAction,
   addMatchingSearchQuery,
   filterMain,
@@ -5529,6 +5530,9 @@ const Matching = () => {
   useEffect(() => {
     const handleRejected = event => {
       if (!event?.detail?.replayed) return;
+      // Дотик до контакту — статистика, а його «відмова» здебільшого означає
+      // повтор, який база вже має (`ops/{id}` у правилах), а не втрату.
+      if (event.detail.meta?.type === CONTACT_ACTION_OUTBOX_TYPE) return;
       toast.error(uiText('База не прийняла реакцію чи памʼятку — її знято.', language), { id: 'write-outbox-rejected' });
     };
     window.addEventListener(WRITE_OUTBOX_REJECTED_EVENT, handleRejected);
