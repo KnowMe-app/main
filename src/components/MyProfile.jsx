@@ -3157,17 +3157,22 @@ export const MyProfile = () => {
    * секунд після «Очистити», і здавалось, що дотик не спрацював. Відмова
    * повертає стан, якщо людина тим часом нічого не змінила, і каже про це.
    */
+  // Повертає, чи відкат справді відбувся: після нової правки на екрані вже
+  // не очищена анкета, і відкочувати її (а з нею й незбережене) не можна.
   const rollbackClear = (previousState, nextState) => {
-    if (stateRef.current !== nextState) return;
+    if (stateRef.current !== nextState) return false;
     stateRef.current = previousState;
     setState(previousState);
+    return true;
   };
 
+  // `publish` і `publishAudience` пишуться напряму, як і обʼєкти.
+  const CLEAR_DIRECT_FIELDS = ['publish', 'publishAudience'];
   const rememberClearedFields = (names, clearedState) => {
     const pendingUid = userId || stateRef.current.userId;
     names.forEach(name => {
       rememberPendingProfileEdit(pendingUid, name, clearedState[name], {
-        direct: OBJECT_PROFILE_FIELDS.has(name),
+        direct: OBJECT_PROFILE_FIELDS.has(name) || CLEAR_DIRECT_FIELDS.includes(name),
         searchId: isSearchIdIndexedField(name),
       });
     });
@@ -3190,8 +3195,11 @@ export const MyProfile = () => {
     clearableFields.forEach(name => { nextState[name] = OBJECT_PROFILE_FIELDS.has(name) ? null : ''; });
     // Стерте — теж правка: незбережене до цього (старе значення, що чекало
     // звʼязку) інакше лягло б поверх очищеної анкети на наступному відкритті й
-    // повернуло б те, що людина щойно стерла.
-    rememberClearedFields(clearableFields, nextState);
+    // повернуло б те, що людина щойно стерла. Зняття з публікації — частина
+    // тієї самої дії: досилання очищення без нього лишило б порожню анкету в
+    // стрічці.
+    const pendingClearFields = [...clearableFields, ...CLEAR_DIRECT_FIELDS];
+    rememberClearedFields(pendingClearFields, nextState);
     stateRef.current = nextState;
     setState(nextState);
     localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
@@ -3209,10 +3217,11 @@ export const MyProfile = () => {
       if (ownProgramsCount && programsOwnerId) await saveCardPrograms(programsOwnerId, {});
     } catch (error) {
       console.error('clear profile error', error);
-      rollbackClear(currentState, nextState);
       // Очищення не вдалось — незбережене мусить знову нести те, що лишилось
       // на екрані, а не стерте: інакше наступне відкриття таки стерло б анкету.
-      rememberClearedFields(clearableFields, currentState);
+      // Але лише коли екран справді відкотили: правка, зроблена поки летіло
+      // очищення, лишає на екрані очищене, і незбережене мусить казати те саме.
+      if (rollbackClear(currentState, nextState)) rememberClearedFields(pendingClearFields, currentState);
       toast.error(uiText('Не вдалося очистити анкету. Спробуйте ще раз', language));
     } finally {
       setIsClearingProfile(false);
@@ -3306,8 +3315,7 @@ export const MyProfile = () => {
       if (sharesFields) await toggleUserRole(role);
     } catch (error) {
       console.error('clear role error', error);
-      rollbackClear(currentState, nextState);
-      rememberClearedFields(fields, currentState);
+      if (rollbackClear(currentState, nextState)) rememberClearedFields(fields, currentState);
       toast.error(uiText('Не вдалося очистити дані ролі. Спробуйте ще раз', language));
     }
   };

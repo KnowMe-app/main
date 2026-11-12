@@ -120,6 +120,34 @@ describe('кеш карток в IndexedDB', () => {
     expect(localStorage.getItem('cards')).toBeNull();
   });
 
+  it('копії localStorage й IndexedDB зводяться по картці, а не цілою копією', async () => {
+    const wait = () => new Promise(resolve => setTimeout(resolve, 5));
+    const idbTab = loadModule();
+    await idbTab.preloadCardCacheFromIndexedDb();
+    mockIdbFailures.get = true;
+    const fallback = loadModule();
+    await expect(fallback.preloadCardCacheFromIndexedDb()).resolves.toBe(false);
+    mockIdbFailures.get = false;
+    fallback.saveCard({ userId: 'a', name: 'Before' });
+    fallback.flushPendingMatchingCacheWrites();
+    await wait();
+    idbTab.saveCard({ userId: 'a', name: 'After' });
+    idbTab.flushPendingMatchingCacheWrites();
+    await flush();
+    await wait();
+    // Обгортка localStorage новіша (B записано останнім), а картка a — ні.
+    fallback.saveCard({ userId: 'b', name: 'B' });
+    fallback.flushPendingMatchingCacheWrites();
+    const next = loadModule();
+    await next.preloadCardCacheFromIndexedDb();
+    expect(next.loadCards().a.name).toBe('After');
+    expect(next.loadCards().b.name).toBe('B');
+    await flush();
+    expect(mockIdbStore.get('cards').items.a.name).toBe('After');
+    expect(mockIdbStore.get('cards').items.b.name).toBe('B');
+    expect(localStorage.getItem('cards')).toBeNull();
+  });
+
   it('скидання, якого IndexedDB не підтвердила, не повертається на наступному старті', async () => {
     const first = loadModule();
     await first.preloadCardCacheFromIndexedDb();
