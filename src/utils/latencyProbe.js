@@ -12,6 +12,8 @@
  * бік — `components/latencyProbeRemote.js`.
  */
 
+import { READONLY_ADMIN_UIDS } from './accessLevel';
+
 export const LATENCY_PROBES_ROOT = 'latencyProbes';
 
 /** Межі кошиків у мілісекундах; останній — «довше за все перелічене». */
@@ -19,6 +21,43 @@ export const LATENCY_BUCKETS = Object.freeze([100, 200, 300, 500, 800, 1500, 300
 export const LATENCY_OVERFLOW_BUCKET = 'over';
 
 export const LATENCY_PROBE_DONE_KEY_PREFIX = 'km.latencyProbe.v1:';
+
+/**
+ * Заміри з України лягають у кошики з префіксом `ua_` (`ua_le300`). Країну
+ * знає лише часовий пояс пристрою — без геолокації й без IP: питання «чи
+ * переїжджати в Європу» про читачів в Україні, а решта (зокрема тестові
+ * запуски з контейнера розробки, що сидить у США) його лише розмивала.
+ */
+export const LATENCY_REGION_PREFIX = 'ua_';
+const UKRAINE_TIME_ZONES = new Set([
+  'Europe/Kyiv',
+  'Europe/Kiev',
+  'Europe/Uzhgorod',
+  'Europe/Zaporozhye',
+  'Europe/Simferopol',
+]);
+
+export const isUkraineTimeZone = timeZone => UKRAINE_TIME_ZONES.has(String(timeZone || ''));
+
+export const readDeviceTimeZone = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * Не міряти взагалі: інспектор (тестовий акаунт), QA-акаунти з вигаданою
+ * поштою й автоматизований браузер (`navigator.webdriver` — Playwright,
+ * Selenium). Їхні заміри — це мережа машини розробки, а не телефони читачів,
+ * і в першому ж тижні вони дали більшість «≤ 100 мс».
+ */
+export const isLatencyProbeExcluded = ({ uid, email, webdriver } = {}) => {
+  if (webdriver === true) return true;
+  if (uid && READONLY_ADMIN_UIDS.includes(uid)) return true;
+  return /@example\.com$/i.test(String(email || '').trim());
+};
 
 export const latencyBucketFor = ms => {
   const value = Number(ms);
@@ -59,10 +98,10 @@ export const markProbedToday = ({ storage, uid, day }) => {
  * Шляхи для одного `update` від `latencyProbes/{uid}`: кошик заміру й
  * лічильник днів. `increment` передається ззовні, щоб модуль лишався чистим.
  */
-export const buildLatencyProbeUpdate = ({ day, rttMs, increment }) => {
+export const buildLatencyProbeUpdate = ({ day, rttMs, increment, ukraine = false }) => {
   const bucket = latencyBucketFor(rttMs);
   if (!day || !bucket || typeof increment !== 'function') return null;
-  return { [`${day}/${bucket}`]: increment(1) };
+  return { [`${day}/${ukraine ? LATENCY_REGION_PREFIX : ''}${bucket}`]: increment(1) };
 };
 
 const percentileBucket = (counts, total, share) => {
@@ -82,30 +121,7 @@ export const describeLatencyBucket = key => {
   return `≤ ${key.slice(2)} мс`;
 };
 
-/**
- * Зведення по вузлу `latencyProbes` за останні `days` днів: скільки замірів,
- * з кількох пристроїв-акаунтів, медіана й 90-й перцентиль (з точністю до
- * кошика) і частка замірів до 300 мс.
- */
-export const summarizeLatencyProbes = (node, { days = 7, today = new Date() } = {}) => {
-  const fromDay = toLocalDayKey(new Date(today.getTime() - (days - 1) * 24 * 60 * 60 * 1000));
-  const counts = {};
-  let total = 0;
-  let viewers = 0;
-  Object.values(node || {}).forEach(byDay => {
-    let counted = false;
-    Object.entries(byDay || {}).forEach(([day, buckets]) => {
-      if (day < fromDay || !buckets || typeof buckets !== 'object') return;
-      LATENCY_BUCKET_KEYS.forEach(key => {
-        const value = Number(buckets[key]) || 0;
-        if (!value) return;
-        counts[key] = (counts[key] || 0) + value;
-        total += value;
-        counted = true;
-      });
-    });
-    if (counted) viewers += 1;
-  });
+const summarizeCounts = (counts, total, viewers, days) => {
   const fast = ['le100', 'le200', 'le300'].reduce((sum, key) => sum + (counts[key] || 0), 0);
   return {
     days,
@@ -118,11 +134,60 @@ export const summarizeLatencyProbes = (node, { days = 7, today = new Date() } = 
   };
 };
 
+/**
+ * Зведення по вузлу `latencyProbes` за останні `days` днів: скільки замірів,
+ * з кількох пристроїв-акаунтів, медіана й 90-й перцентиль (з точністю до
+ * кошика) і частка замірів до 300 мс — окремо для України (`ukraine`) і для
+ * всіх (`all`). Інспектора не рахує ніде: його заміри — з машини розробки,
+ * зокрема ті, що лягли до того, як клієнт перестав його міряти.
+ */
+export const summarizeLatencyProbes = (node, { days = 7, today = new Date() } = {}) => {
+  const fromDay = toLocalDayKey(new Date(today.getTime() - (days - 1) * 24 * 60 * 60 * 1000));
+  const scopes = {
+    all: { counts: {}, total: 0, viewers: 0 },
+    ukraine: { counts: {}, total: 0, viewers: 0 },
+  };
+  Object.entries(node || {}).forEach(([uid, byDay]) => {
+    if (READONLY_ADMIN_UIDS.includes(uid)) return;
+    const seen = { all: false, ukraine: false };
+    Object.entries(byDay || {}).forEach(([day, buckets]) => {
+      if (day < fromDay || !buckets || typeof buckets !== 'object') return;
+      LATENCY_BUCKET_KEYS.forEach(key => {
+        const plain = Number(buckets[key]) || 0;
+        const local = Number(buckets[`${LATENCY_REGION_PREFIX}${key}`]) || 0;
+        const add = (scope, value) => {
+          if (!value) return;
+          scopes[scope].counts[key] = (scopes[scope].counts[key] || 0) + value;
+          scopes[scope].total += value;
+          seen[scope] = true;
+        };
+        add('all', plain + local);
+        add('ukraine', local);
+      });
+    });
+    if (seen.all) scopes.all.viewers += 1;
+    if (seen.ukraine) scopes.ukraine.viewers += 1;
+  });
+  const all = summarizeCounts(scopes.all.counts, scopes.all.total, scopes.all.viewers, days);
+  return {
+    ...all,
+    all,
+    ukraine: summarizeCounts(scopes.ukraine.counts, scopes.ukraine.total, scopes.ukraine.viewers, days),
+  };
+};
+
+const formatScope = (label, scope) => {
+  if (!scope?.total) return `${label}: замірів ще немає.`;
+  return `${label}: ${scope.total} замірів з ${scope.viewers} акаунтів, медіана ${describeLatencyBucket(scope.median)}, `
+    + `90% — ${describeLatencyBucket(scope.p90)}, до 300 мс — ${Math.round(scope.fastShare * 100)}%.`;
+};
+
 export const formatLatencySummary = summary => {
-  if (!summary?.total) return `За ${summary?.days || 7} днів замірів ще немає.`;
+  const days = summary?.days || 7;
+  if (!summary?.total) return `За ${days} днів замірів ще немає.`;
   return [
-    `За ${summary.days} днів: ${summary.total} замірів з ${summary.viewers} акаунтів.`,
-    `Медіана ${describeLatencyBucket(summary.median)}, 90% — ${describeLatencyBucket(summary.p90)}.`,
-    `До 300 мс: ${Math.round(summary.fastShare * 100)}%.`,
+    `За ${days} днів.`,
+    formatScope('Україна (за часовим поясом пристрою)', summary.ukraine),
+    formatScope('Усі', summary.all || summary),
   ].join(' ');
 };

@@ -1,6 +1,8 @@
 import {
   buildLatencyProbeUpdate,
   formatLatencySummary,
+  isLatencyProbeExcluded,
+  isUkraineTimeZone,
   latencyBucketFor,
   markProbedToday,
   shouldProbeToday,
@@ -34,6 +36,24 @@ describe('кошики затримки', () => {
   it('запис — один лічильник у кошику дня, без жодних інших полів', () => {
     expect(buildLatencyProbeUpdate({ day: '2026-11-09', rttMs: 240, increment: n => ({ inc: n }) }))
       .toEqual({ '2026-11-09/le300': { inc: 1 } });
+  });
+});
+
+describe('кого міряти й звідки', () => {
+  it('заміри з України лягають у кошик з префіксом', () => {
+    expect(buildLatencyProbeUpdate({ day: '2026-11-09', rttMs: 240, increment: n => n, ukraine: true }))
+      .toEqual({ '2026-11-09/ua_le300': 1 });
+    expect(isUkraineTimeZone('Europe/Kyiv')).toBe(true);
+    expect(isUkraineTimeZone('Europe/Kiev')).toBe(true);
+    expect(isUkraineTimeZone('Europe/Warsaw')).toBe(false);
+    expect(isUkraineTimeZone('')).toBe(false);
+  });
+
+  it('не міряє автоматизований браузер, інспектора й QA-пошту', () => {
+    expect(isLatencyProbeExcluded({ uid: 'u1', webdriver: true })).toBe(true);
+    expect(isLatencyProbeExcluded({ uid: 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' })).toBe(true);
+    expect(isLatencyProbeExcluded({ uid: 'u1', email: 'knowme.qa.1.a@example.com' })).toBe(true);
+    expect(isLatencyProbeExcluded({ uid: 'u1', email: 'reader@gmail.com', webdriver: false })).toBe(false);
   });
 });
 
@@ -79,8 +99,22 @@ describe('зведення для адміна', () => {
     expect(formatLatencySummary(summarizeLatencyProbes(null, { today }))).toBe('За 7 днів замірів ще немає.');
   });
 
-  it('звіт — одним рядком з медіаною, 90% і часткою швидких', () => {
-    const text = formatLatencySummary(summarizeLatencyProbes({ a: { '2026-11-09': { le200: 9, over: 1 } } }, { today }));
-    expect(text).toBe('За 7 днів: 10 замірів з 1 акаунтів. Медіана ≤ 200 мс, 90% — ≤ 200 мс. До 300 мс: 90%.');
+  it('звіт — окремо Україна й усі, з медіаною, 90% і часткою швидких', () => {
+    const text = formatLatencySummary(summarizeLatencyProbes({
+      a: { '2026-11-09': { ua_le200: 9, ua_over: 1 } },
+      b: { '2026-11-09': { le100: 10 } },
+    }, { today }));
+    expect(text).toBe('За 7 днів. '
+      + 'Україна (за часовим поясом пристрою): 10 замірів з 1 акаунтів, медіана ≤ 200 мс, 90% — ≤ 200 мс, до 300 мс — 90%. '
+      + 'Усі: 20 замірів з 2 акаунтів, медіана ≤ 100 мс, 90% — ≤ 200 мс, до 300 мс — 95%.');
+  });
+
+  it('інспектора не рахує ніде — його заміри з машини розробки', () => {
+    const summary = summarizeLatencyProbes({
+      vtDxkDMjCwYuTDqTUnZsO29bpQr1: { '2026-11-09': { le100: 30 } },
+      a: { '2026-11-09': { ua_le300: 2 } },
+    }, { today });
+    expect(summary.all.total).toBe(2);
+    expect(summary.ukraine.total).toBe(2);
   });
 });
