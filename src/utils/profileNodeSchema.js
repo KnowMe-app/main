@@ -135,7 +135,10 @@ export const twinSourceRank = field => {
  * відгуку тригер функцій `syncPublicReviewFlag` — правка й видалення відгуку
  * прапорця не чіпають (див. `matchingCardIndex.js`).
  */
-export const MATCHING_CARD_REVIEW_FIELDS = Object.freeze(['hasPublicReview']);
+// `reviewsAt` — час останньої зміни відгуків картки: ставить лише тригер
+// функцій на кожен запис відгуку, і від нього журнал змін карток каже іншим
+// пристроям, що їхній кеш відгуків застарів.
+export const MATCHING_CARD_REVIEW_FIELDS = Object.freeze(['hasPublicReview', 'reviewsAt']);
 
 /**
  * Той самий рід поля: час зміни програм (`multiData/programs/{uid}`), який

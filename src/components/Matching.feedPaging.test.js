@@ -190,11 +190,13 @@ describe('публічні коментарі', () => {
       source.indexOf('const requestPublicComments = React.useCallback'),
       source.indexOf('const handleCreatePublicComment'),
     );
-    expect(effect).toContain('fetchPublicProfileCommentsCached([id])');
+    // Версія відгуків картки (`reviewsAt`) і прапорець — разом із запитом:
+    // кеш пристрою за ними знає, що його список застарів.
+    expect(effect).toContain('fetchPublicProfileCommentsCached([id], { versions: { [id]: version }, expected: { [id]: expected } })');
     expect(effect).not.toContain('detailOpen');
     expect(effect).not.toContain("viewLayout === 'list'");
     // Автопідвантаження — за прапорцем картки, а не за всім списком підряд.
-    expect(effect).toContain('if (user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]) requestPublicComments(user.userId);');
+    expect(effect).toContain('if (flagged || version) requestPublicComments(user.userId, { version, expected: flagged });');
   });
 });
 

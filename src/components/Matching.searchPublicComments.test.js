@@ -16,8 +16,8 @@ describe('видача пошуку читає публічні відгуки �
   });
 
   it('стрічка й далі читає лише за прапорцем', () => {
-    expect(source).toContain(
-      'if (user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]) requestPublicComments(user.userId);',
-    );
+    // За прапорцем — або за версією відгуків картки (`reviewsAt`): картка з
+    // версією без прапорця — відгуки зняли, і список треба перечитати.
+    expect(source).toContain('if (flagged || version) requestPublicComments(user.userId, { version, expected: flagged });');
   });
 });

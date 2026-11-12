@@ -161,6 +161,7 @@ import {
   isMatchingCardPublished,
   isMatchingSummaryCard,
   readCardRevision,
+  readCardReviewsVersion,
 } from '../utils/matchingCardIndex';
 import { isFeedStateDeniedForFeed } from '../utils/searchFeedDenial';
 import {
@@ -7831,19 +7832,23 @@ const Matching = () => {
   // наперед, для якої картки читання взагалі має сенс. Відгук лишається рідким
   // (одиниці карток на сотні), тож ефект нижче б'є запитом не по всій деці, а
   // по тих кількох id, де прапорець уже стоїть.
-  const requestPublicComments = React.useCallback(profileId => {
+  // Памʼять «вже просили» — на версію відгуків картки (`reviewsAt`), а не на
+  // картку: новий відгук з іншого пристрою міняє версію, і та сама вкладка
+  // мусить перечитати, а не тримати прочитаний колись список.
+  const requestPublicComments = React.useCallback((profileId, { version = 0, expected = false } = {}) => {
     const id = String(profileId || '').trim();
-    if (!id || publicCommentsRequestedRef.current.has(id)) return;
-    publicCommentsRequestedRef.current.add(id);
+    const requestKey = `${id}@${version}`;
+    if (!id || publicCommentsRequestedRef.current.has(requestKey)) return;
+    publicCommentsRequestedRef.current.add(requestKey);
     setPublicCommentsLoading(previous => ({ ...previous, [id]: true }));
-    fetchPublicProfileCommentsCached([id])
+    fetchPublicProfileCommentsCached([id], { versions: { [id]: version }, expected: { [id]: expected } })
       .then(result => {
         // Порожня відповідь — теж відповідь: без неї кнопка лишалась би на
         // місці, і людина тиснула б її знову за тим самим порожнім списком.
         setPublicComments(previous => ({ ...previous, [id]: result?.[id] || [] }));
       })
       .catch(error => {
-        publicCommentsRequestedRef.current.delete(id);
+        publicCommentsRequestedRef.current.delete(requestKey);
         console.error('[Matching] Failed to load public comments', error);
       })
       .finally(() => setPublicCommentsLoading(previous => {
@@ -7859,12 +7864,19 @@ const Matching = () => {
   // рівно по нових id: `requestPublicComments` сам відсіює вже запитані
   // (`publicCommentsRequestedRef`), тож довантаження сторінки не перепитує
   // картки, які дека вже показувала.
+  //
+  // Картки беруться зі сховища вкладки (`storedUsers`), а не з самого стану:
+  // свіжа проєкція з журналу змін несе нову версію відгуків (`reviewsAt`), і
+  // лише за нею кеш пристрою знає, що його список застарів. Картка з версією,
+  // але без прапорця, — відгуки зняли: її список теж перечитується.
   useEffect(() => {
     if (!ownerId) return;
-    users.forEach(user => {
-      if (user?.[MATCHING_CARD_REVIEW_FLAG_FIELD]) requestPublicComments(user.userId);
+    storedUsers.forEach(user => {
+      const flagged = user?.[MATCHING_CARD_REVIEW_FLAG_FIELD] === true;
+      const version = readCardReviewsVersion(user);
+      if (flagged || version) requestPublicComments(user.userId, { version, expected: flagged });
     });
-  }, [ownerId, requestPublicComments, users]);
+  }, [ownerId, requestPublicComments, storedUsers]);
 
   // Видача пошуку прапорцю не вірить: відгук, записаний до появи
   // `hasPublicReview` (або перенесений імпортом), прапорця в картці не має, і

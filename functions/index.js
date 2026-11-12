@@ -628,7 +628,9 @@ exports.recordMatchingCardChange = onValueWritten(
 const {
   PUBLIC_COMMENTS_ROOT,
   MATCHING_CARDS_ROOT: REVIEW_FLAG_CARDS_ROOT,
+  changesReview,
   changesReviewPresence,
+  stampReviewsChange,
   syncPublicReviewFlag,
 } = require('./publicReviewFlag');
 
@@ -644,16 +646,25 @@ exports.syncPublicReviewFlag = onValueWritten(
     retry: true,
   },
   async event => {
-    if (!changesReviewPresence(event.data.before.val(), event.data.after.val())) return;
+    const before = event.data.before.val();
+    const after = event.data.after.val();
+    if (!changesReview(before, after)) return;
     const { profileId } = event.params;
+    const updateCard = (id, updater) => getDatabase().ref(`${REVIEW_FLAG_CARDS_ROOT}/${id}`).transaction(updater);
     try {
-      await syncPublicReviewFlag(profileId, {
-        readHasAny: async id => {
-          const snapshot = await getDatabase().ref(`${PUBLIC_COMMENTS_ROOT}/${id}`).orderByKey().limitToFirst(1).get();
-          return snapshot.exists();
-        },
-        updateCard: (id, updater) => getDatabase().ref(`${REVIEW_FLAG_CARDS_ROOT}/${id}`).transaction(updater),
-      });
+      if (changesReviewPresence(before, after)) {
+        await syncPublicReviewFlag(profileId, {
+          readHasAny: async id => {
+            const snapshot = await getDatabase().ref(`${PUBLIC_COMMENTS_ROOT}/${id}`).orderByKey().limitToFirst(1).get();
+            return snapshot.exists();
+          },
+          updateCard,
+        });
+      }
+      // Кожен запис відгуку — нова версія відгуків картки: від неї змінюється
+      // картка, журнал змін каже про неї іншим пристроям, а їхній кеш
+      // відгуків перечитується (`fetchPublicProfileCommentsCached`).
+      await stampReviewsChange(profileId, { updateCard });
     } catch (error) {
       logger.error('public review flag sync failed', { profileId, error: error.message });
       throw error;
