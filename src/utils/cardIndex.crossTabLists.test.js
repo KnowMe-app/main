@@ -82,4 +82,52 @@ describe('списки карток між вкладками', () => {
     spy.mockRestore();
     expect(Object.keys(storedLists())).toEqual(['mine']);
   });
+
+  // Зняття курсора — свідома правка: курсор на диску з новішим `savedAt`
+  // не мусить повернутись злиттям, навіть в одній вкладці.
+  it('знятий курсор не повертається з диска', () => {
+    const tab = loadTab();
+    const start = Date.now();
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(start);
+    tab.setIdsForQuery('feed:x', ['a']);
+    tab.flushPendingMatchingCacheWrites();
+    spy.mockReturnValue(start + 100);
+    tab.setQueryPagination('feed:x', { cursor: 'c1', hasMore: true });
+    tab.flushPendingMatchingCacheWrites();
+    spy.mockReturnValue(start + 200);
+    tab.setQueryPagination('feed:x', null);
+    tab.flushPendingMatchingCacheWrites();
+    spy.mockRestore();
+    expect(storedLists()['feed:x'].pagination).toBeUndefined();
+    expect(tab.getQueryEntry('feed:x').pagination).toBeNull();
+  });
+
+  // Дві вкладки, кожна під стелею, разом — понад неї: злитий запис не
+  // обходить межу, а втрачає найстаріші списки, і новий лишається.
+  it('злиті списки понад стелю втрачають найстаріші, а не весь ключ', () => {
+    const tabA = loadTab();
+    const tabB = loadTab();
+    const bigIds = prefix => Array.from({ length: 2000 }, (_, index) => `${prefix}${String(index).padStart(6, '0')}${'x'.repeat(90)}`);
+    const start = Date.now();
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(start);
+    tabA.getQueryEntry('a0');
+    tabB.getQueryEntry('b0');
+    for (let i = 0; i < 11; i += 1) {
+      spy.mockReturnValue(start + 10 + i);
+      tabA.setIdsForQuery(`a${i}`, bigIds(`a${i}-`));
+    }
+    tabA.flushPendingMatchingCacheWrites();
+    for (let i = 0; i < 11; i += 1) {
+      spy.mockReturnValue(start + 100 + i);
+      tabB.setIdsForQuery(`b${i}`, bigIds(`b${i}-`));
+    }
+    tabB.flushPendingMatchingCacheWrites();
+    spy.mockRestore();
+    const raw = localStorage.getItem('queries');
+    expect(raw).not.toBeNull();
+    expect(raw.length).toBeLessThanOrEqual(tabB.MATCHING_CACHE_MAX_CHARS);
+    const keys = Object.keys(JSON.parse(raw));
+    expect(keys).toContain('b10');
+    expect(keys).not.toContain('a0');
+  });
 });
