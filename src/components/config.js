@@ -1214,10 +1214,18 @@ export const recordContactAction = async (userId, ownerId, channel) => {
     const owner = auth.currentUser;
     if (!owner || !userId) return;
     const key = normalizeContactChannel(channel);
-    await update(ref2(database, `multiData/contactViews/${ownerId || owner.uid}/${userId}`), {
-      count: increment(1),
-      lastAt: serverTimestamp(),
-      [`channels/${key}`]: increment(1),
+    // Через чергу записів пристрою, і додаванням (`additive`): без звʼязку
+    // дотик інакше висів би в памʼяті вкладки й губився з нею, а витіснення
+    // за шляхом склеїло б кілька дотиків в один.
+    const base = `multiData/contactViews/${ownerId || owner.uid}/${userId}`;
+    await enqueueOutboxWrite({
+      uid: owner.uid,
+      additive: true,
+      patch: {
+        [`${base}/count`]: increment(1),
+        [`${base}/lastAt`]: serverTimestamp(),
+        [`${base}/channels/${key}`]: increment(1),
+      },
     });
   } catch (error) {
     console.error('Error recording contact action:', error);

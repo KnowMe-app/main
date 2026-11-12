@@ -75,6 +75,25 @@ describe('черга записів пристрою', () => {
     expect(entries[1].patch).toEqual({ 'multiData/favorites/u1/a': null });
   });
 
+  // Лічильник дотиків до контактів: кожен дотик без звʼязку мусить
+  // дорахуватись, а не склеїтись з попереднім за спільним шляхом.
+  it('запис, що додається (`additive`), не витісняє й не витісняється', () => {
+    // Без відправника записи лише стоять у черзі — як без звʼязку.
+    const tap = { 'multiData/contactViews/u1/c/count': { '.sv': { increment: 1 } } };
+    enqueueOutboxWrite({ uid: 'u1', additive: true, patch: tap });
+    enqueueOutboxWrite({ uid: 'u1', additive: true, patch: tap });
+    expect(stored('u1')).toHaveLength(2);
+    expect(stored('u1').every(entry => entry.additive === true && entry.patch['multiData/contactViews/u1/c/count'])).toBe(true);
+  });
+
+  it('звичайний запис того самого шляху не витісняє запису, що додається', () => {
+    startWriteOutbox('u1');
+    // Записи інших вкладок на диску, ще не відправлені.
+    localStorage.setItem(`${prefix('u1')}a1`, JSON.stringify({ id: 'a1', patch: { 'x/count': 1 }, additive: true, createdAt: 1 }));
+    enqueueOutboxWrite({ uid: 'u1', patch: { 'x/count': 5 } });
+    expect(stored('u1').map(entry => entry.id)).toContain('a1');
+  });
+
   it('витіснений цілком запис відповідає відповіддю нового', async () => {
     const first = enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/favorites/u1/a': 1 } });
     enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/favorites/u1/a': 2 } });

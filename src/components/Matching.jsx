@@ -164,6 +164,12 @@ import { clearCardStore, getCardStoreVersion, patchStoredProjection, resolveStor
 import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
 import { getWriteOutboxPendingCount, isRetryableOutboxError, subscribeWriteOutbox, WRITE_OUTBOX_REJECTED_EVENT } from '../utils/writeOutbox';
 import { restorePublicComment } from '../utils/publicReviewRollback';
+import {
+  capturePendingProfileGenerations,
+  readPendingProfileEdits,
+  rememberPendingProfileEdit,
+  settlePendingProfileEdits,
+} from '../utils/myProfilePendingEdits';
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
 import { readBackendLinksEnabled } from '../utils/backendLinksMode';
@@ -1476,11 +1482,19 @@ const Matching = () => {
   const viewerProgramType = isAdmin ? '' : resolveViewerProgramType(currentUserRole);
   const programRates = useProgramRates(true);
   const [programDisplayCurrency, setProgramDisplayCurrency] = useProgramDisplayCurrency();
+  // Дата пишеться тим самим шляхом, що й анкета (`updateDataInRealtimeDB`), а
+  // без звʼязку той запис висить у памʼяті вкладки й губився з нею. Тож вона
+  // спершу лягає в незбережене «Мого профілю» (`utils/myProfilePendingEdits`) і
+  // знімається лише після запису: закрита вкладка її не губить — стрічка
+  // показує її поверх анкети, а «Мій профіль» на відкритті досилає.
   const saveViewerLastCycle = React.useCallback(async value => {
     setViewerLastCycle(value);
     if (!ownerId) return;
+    rememberPendingProfileEdit(ownerId, 'lastCycle', value);
+    const generations = capturePendingProfileGenerations(ownerId);
     try {
       await updateDataInRealtimeDB(ownerId, { lastCycle: value }, 'update');
+      settlePendingProfileEdits(ownerId, { lastCycle: value }, generations);
     } catch (error) {
       console.warn('[Matching] не вдалося записати дату місячних з графіка програми', error);
     }
@@ -2589,7 +2603,11 @@ const Matching = () => {
             // search-key discovery and additional-access refresh asynchronous.
             setMultiDataOwnerIds(resolvedOwnerIds);
             setViewerProgramFacts(extractViewerProgramFacts(profile, PROGRAM_FACT_HELPERS));
-            setViewerLastCycle(String((Array.isArray(profile?.lastCycle) ? profile.lastCycle[profile.lastCycle.length - 1] : profile?.lastCycle) || ''));
+            // Дата з графіка, яку база ще не прийняла (`saveViewerLastCycle`
+            // кладе її в незбережене «Мого профілю»), стоїть поверх анкети.
+            const pendingLastCycle = readPendingProfileEdits(user.uid).fields.lastCycle;
+            const loadedLastCycle = pendingLastCycle !== undefined ? pendingLastCycle : profile?.lastCycle;
+            setViewerLastCycle(String((Array.isArray(loadedLastCycle) ? loadedLastCycle[loadedLastCycle.length - 1] : loadedLastCycle) || ''));
             setViewerSeekingRole(String((Array.isArray(profile?.seekingRole) ? profile.seekingRole[profile.seekingRole.length - 1] : profile?.seekingRole) || ''));
             setCurrentUserRole(prev => (viewerRoleSignature(prev) === viewerRoleSignature(userRole) ? prev : userRole));
             localStorage.setItem('userRole', userRole);

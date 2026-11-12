@@ -47,8 +47,11 @@ describe('контакти: спершу кеш, точкове читання',
 
   it('дотик до контакту рахується записом без читання', () => {
     const writer = sliceBetween(config(), 'export const recordContactAction = async', '// Історія пошуку');
-    expect(writer).toContain('count: increment(1)');
-    expect(writer).toMatch(/\[`channels\/\$\{key\}`\]: increment\(1\)/);
+    expect(writer).toContain('[`${base}/count`]: increment(1)');
+    expect(writer).toMatch(/\[`\$\{base\}\/channels\/\$\{key\}`\]: increment\(1\)/);
     expect(writer).not.toMatch(/\bget\(|runTransaction/);
+    // Через чергу пристрою й додаванням: дотики без звʼязку не склеюються.
+    expect(writer).toContain('enqueueOutboxWrite(');
+    expect(writer).toContain('additive: true');
   });
 });
