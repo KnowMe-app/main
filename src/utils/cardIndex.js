@@ -118,12 +118,13 @@ const clearIndexedDbInvalidation = key => {
  * для сумісних копій: та сама версія кешу й той самий читач (`ownerId`), інакше
  * `null`, і рішення приймається цілою копією, як раніше.
  *
- * Картка, якої в одній копії немає, береться з іншої: стерти картку з кешу
- * вкладка могла, але частіше вона її просто не бачила (вкладка на
- * `localStorage` стартує з того, що там лежало, тобто майже з нічого). Стара
- * картка, що так повернулась, свіжою не стає: повну анкету звіряє версія `rev`,
- * а проєкцію — відбиток у перевірених (`isProjectionVerified`), який журнал
- * змін уже зняв.
+ * Картка, якої в одній копії немає, береться з іншої **лише коли та копія
+ * не могла її бачити**: запис картки новіший за останнє збереження копії
+ * (`cachedAt` обгортки). Інакше її відсутність — це свідоме забуття
+ * (`forgetCachedCardBodies` за журналом змін, скидання), і повернути її
+ * означало б воскресити застаріле тіло: проєкцію кеш бере в межах TTL без
+ * перевірки відбитка, а журнал, чия мітка вже пішла далі, про цю зміну більше
+ * не скаже. Загублене так — лише промах кешу, картку дочитає стрічка.
  */
 const mergeCardSnapshots = (local, idb) => {
   if (!local || !idb) return null;
@@ -131,14 +132,23 @@ const mergeCardSnapshots = (local, idb) => {
   if (String(local.ownerId ?? '') !== String(idb.ownerId ?? '')) return null;
   const isItems = value => value && typeof value === 'object' && !Array.isArray(value);
   if (!isItems(local.items) || !isItems(idb.items)) return null;
-  const items = { ...idb.items };
+  const localSavedAt = toTimestamp(local.cachedAt);
+  const idbSavedAt = toTimestamp(idb.cachedAt);
+  const items = {};
+  Object.entries(idb.items).forEach(([id, entry]) => {
+    if (id in local.items || getEntryCacheTimestamp(entry) > localSavedAt) items[id] = entry;
+  });
   Object.entries(local.items).forEach(([id, entry]) => {
-    if (!(id in items) || getEntryCacheTimestamp(entry) >= getEntryCacheTimestamp(items[id])) items[id] = entry;
+    if (id in idb.items) {
+      if (!(id in items) || getEntryCacheTimestamp(entry) >= getEntryCacheTimestamp(items[id])) items[id] = entry;
+    } else if (getEntryCacheTimestamp(entry) > idbSavedAt) {
+      items[id] = entry;
+    }
   });
   return {
     ...idb,
     ...local,
-    cachedAt: Math.max(toTimestamp(local.cachedAt), toTimestamp(idb.cachedAt)),
+    cachedAt: Math.max(localSavedAt, idbSavedAt),
     items,
   };
 };
@@ -1341,7 +1351,12 @@ export const forgetCachedCardBodies = ids => {
     if (all || targets.has(id)) { forgotten += 1; return; }
     keptCards[id] = cards[id];
   });
-  if (Object.keys(keptCards).length !== Object.keys(cards).length) saveCards(keptCards);
+  // Пишеться завжди, навіть коли в цій вкладці забувати не було чого: час
+  // збереження копії — доказ для зведення копій (`mergeCardSnapshots`), що
+  // все старше за нього, чого в копії немає, забуто свідомо. Без запису друга
+  // копія (IndexedDB чи `localStorage` іншої вкладки) повернула б тіло, про
+  // зміну якого журнал уже не скаже.
+  saveCards(keptCards);
 
   const summaries = loadMatchingSummaryCards();
   const keptSummaries = {};
@@ -1349,7 +1364,7 @@ export const forgetCachedCardBodies = ids => {
     if (all || targets.has(id)) { forgotten += 1; return; }
     keptSummaries[id] = summaries[id];
   });
-  if (Object.keys(keptSummaries).length !== Object.keys(summaries).length) saveMatchingSummaryCards(keptSummaries);
+  saveMatchingSummaryCards(keptSummaries);
   return forgotten;
 };
 
