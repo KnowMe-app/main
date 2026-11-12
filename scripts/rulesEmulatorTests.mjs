@@ -17,7 +17,7 @@ import {
   assertFails,
 } from '@firebase/rules-unit-testing';
 import fs from 'node:fs';
-import { ref, get, set, update, remove, query, orderByChild, orderByKey, orderByValue, startAt, endAt, limitToFirst, limitToLast, serverTimestamp } from 'firebase/database';
+import { ref, get, set, update, remove, query, orderByChild, orderByKey, orderByValue, startAt, endAt, limitToFirst, limitToLast, serverTimestamp, increment } from 'firebase/database';
 
 const SUPERADMIN = '0ghb1LphfASV0Y3b6J010v4CDyD2';
 const MATCHING_VIEWER = 'matchingViewerUid0000000000';
@@ -694,6 +694,21 @@ await it('делегований читач читає журнал власни
 
 await it('стороння чужого журналу не читає', () =>
   assertFails(get(ref(db(OUTSIDER), `multiData/contactViews/${PROFILE_OWNER}`))));
+
+// Кожен дотик несе свій номер (`ops/{id}`), і номер приймається лише раз:
+// той самий запис черги, досланий удруге (друга вкладка, вкладку закрили до
+// підтвердження), відхиляється цілком — разом із `increment`.
+await it('номер дотику приймається один раз, і повтор не додає лічильника', async () => {
+  const base = `multiData/contactViews/${PROFILE_OWNER}/opsCard0000000000000`;
+  const tap = { [`${base}/count`]: increment(1), [`${base}/ops/tapAAAAAAAA01`]: true };
+  await assertSucceeds(update(ref(db(PROFILE_OWNER)), tap));
+  await assertFails(update(ref(db(PROFILE_OWNER)), tap));
+  const snapshot = await get(ref(db(PROFILE_OWNER), `${base}/count`));
+  if (snapshot.val() !== 1) throw new Error(`лічильник ${snapshot.val()}, очікувалось 1`);
+  await assertSucceeds(update(ref(db(PROFILE_OWNER)), { [`${base}/count`]: increment(1), [`${base}/ops/tapAAAAAAAA02`]: true }));
+  await assertFails(update(ref(db(PROFILE_OWNER)), { [`${base}/ops/bad id`]: true }));
+  await assertFails(update(ref(db(PROFILE_OWNER)), { [`${base}/ops/tapAAAAAAAA03`]: 'x' }));
+});
 
 describe('права після переїзду в profileTechnical');
 
