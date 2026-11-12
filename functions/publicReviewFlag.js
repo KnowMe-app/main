@@ -20,6 +20,40 @@ const MATCHING_CARDS_ROOT = 'matchingCards';
 
 const isUsableId = id => typeof id === 'string' && id.trim() !== '' && !/[.#$\[\]/]/.test(id);
 
+/**
+ * Час останньої зміни відгуків картки (`matchingCards/{картка}/reviewsAt`).
+ *
+ * Прапорець міняється лише на першому відгуку й на останньому видаленому, тож
+ * другий відгук, правка й видалення одного з кількох картку не чіпали — і
+ * журнал змін карток (`recordMatchingCardChange`) про них мовчав: інший читач
+ * показував з кешу пристрою (шість годин, разом із порожньою відповіддю)
+ * старий список. Ця мітка міняє картку на **кожен** запис відгуку, тож журнал
+ * про нього каже, а кеш відгуків звіряє з нею свою версію.
+ */
+const REVIEWS_AT_FIELD = 'reviewsAt';
+
+/** Чи змінився відгук узагалі (зʼявився, зник чи змінився текст). */
+const changesReview = (before, after) => JSON.stringify(before ?? null) !== JSON.stringify(after ?? null);
+
+/**
+ * Поставити мітку зміни відгуків наявній картці. Мітка росте строго: два
+ * записи в ту саму мілісекунду інакше дали б ту саму версію, і кеш, що вже
+ * прочитав перший, не перечитав би другого.
+ */
+const stampReviewsChange = async (profileId, { updateCard, now = Date.now() }) => {
+  if (!isUsableId(profileId)) return false;
+  let stamped = false;
+  await updateCard(profileId, card => {
+    // Той самий випадок, що й нижче: `null` — локальна копія, а не «немає».
+    if (card === null || card === undefined) return null;
+    if (typeof card !== 'object') return undefined;
+    const previous = Number(card[REVIEWS_AT_FIELD]) || 0;
+    stamped = true;
+    return { ...card, [REVIEWS_AT_FIELD]: Math.max(now, previous + 1) };
+  });
+  return stamped;
+};
+
 /** Чи змінилась наявність відгуку (зʼявився чи зник), а не його текст. */
 const changesReviewPresence = (before, after) => Boolean(before) !== Boolean(after);
 
@@ -69,6 +103,9 @@ const syncPublicReviewFlag = async (profileId, { readHasAny, updateCard }) => {
 module.exports = {
   PUBLIC_COMMENTS_ROOT,
   MATCHING_CARDS_ROOT,
+  REVIEWS_AT_FIELD,
+  changesReview,
+  stampReviewsChange,
   changesReviewPresence,
   syncPublicReviewFlag,
 };

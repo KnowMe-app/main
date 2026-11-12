@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { changesReviewPresence, syncPublicReviewFlag } = require('../publicReviewFlag');
+const { changesReview, changesReviewPresence, stampReviewsChange, syncPublicReviewFlag } = require('../publicReviewFlag');
 
 const cardStore = initial => {
   const cards = { ...initial };
@@ -76,4 +76,22 @@ test('відгуки: розбіжність, що не сходиться, — 
   let flip = false;
   const readHasAny = async () => { flip = !flip; return flip; };
   await assert.rejects(syncPublicReviewFlag('c1', { readHasAny, updateCard: store.updateCard }));
+});
+
+test('відгуки: будь-яка зміна відгуку — нова мітка reviewsAt наявної картки', async () => {
+  assert.equal(changesReview({ text: 'a' }, { text: 'b' }), true);
+  assert.equal(changesReview({ text: 'a' }, { text: 'a' }), false);
+  const store = cardStore({ c1: { name: 'Оксана', reviewsAt: 500 } });
+  assert.equal(await stampReviewsChange('c1', { updateCard: store.updateCard, now: 1000 }), true);
+  assert.equal(store.cards.c1.reviewsAt, 1000);
+  assert.equal(store.cards.c1.name, 'Оксана');
+  // Той самий момент — однаково нова версія.
+  await stampReviewsChange('c1', { updateCard: store.updateCard, now: 1000 });
+  assert.equal(store.cards.c1.reviewsAt, 1001);
+});
+
+test('відгуки: картки немає — мітки не заводимо', async () => {
+  const store = cardStore({});
+  assert.equal(await stampReviewsChange('draft1', { updateCard: store.updateCard, now: 1000 }), false);
+  assert.ok(!store.cards.draft1);
 });

@@ -98,6 +98,7 @@ import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_FEED_FIELD,
   MATCHING_CARD_PROGRAMS_AT_FIELD,
+  MATCHING_CARD_REVIEWS_AT_FIELD,
   MATCHING_CARD_REVISION_FIELD,
   MATCHING_CARD_ORDER_FIELD,
   MATCHING_CARD_REVIEW_FLAG_FIELD,
@@ -1875,26 +1876,47 @@ export const fetchPublicProfileComments = async (profileIds = []) => {
  * (`utils/matchingCachePolicy`): картка з прапорцем `hasPublicReview` читала
  * свої відгуки на кожному відкритті сторінки. Свій запис відгуку (додати,
  * правити, зняти) забуває кеш картки (`forgetCachedPublicReviews`), тож свіже
- * приїде наступним же читанням; чужі відгуки — щонайпізніше через TTL.
+ * приїде наступним же читанням.
+ *
+ * **Чужі відгуки звіряються з версією, а не годинником** (13.11). Кеш пристрою
+ * (шість годин) памʼятає й порожню відповідь, і поки його тримав сам TTL,
+ * відгук, написаний з іншого пристрою, читач бачив аж за шість годин — навіть
+ * після перезавантаження. Тепер запис кешу несе версію відгуків картки
+ * (`reviewsAt`, її ставить тригер функцій на кожен запис відгуку) і
+ * перечитується, коли картка принесла новішу (`versions`). Картка до появи
+ * мітки версії не має — тоді хоча б порожній запис кешу при прапорці «є
+ * відгуки» (`expected`) — не відповідь.
  * Збій читання в кеш не лягає: порожній список тоді не відповідь, а помилка.
  */
 const publicReviewsStore = createMatchingTimedStore('publicReviews', { maxEntries: 600 });
 const forgetCachedPublicReviews = profileId => publicReviewsStore.forget(String(profileId || ''));
 
-export const fetchPublicProfileCommentsCached = async (profileIds = []) => {
+const readStoredPublicReviews = (id, { version = 0, expected = false } = {}) => {
+  const stored = publicReviewsStore.read(id);
+  if (!stored) return null;
+  // Записи до версій — сам масив.
+  const comments = Array.isArray(stored) ? stored : (Array.isArray(stored.comments) ? stored.comments : null);
+  if (!comments) return null;
+  const storedVersion = Array.isArray(stored) ? 0 : Number(stored.version) || 0;
+  if (version > storedVersion) return null;
+  if (expected && !comments.length) return null;
+  return comments;
+};
+
+export const fetchPublicProfileCommentsCached = async (profileIds = [], { versions = {}, expected = {} } = {}) => {
   const ids = Array.from(new Set((profileIds || []).filter(Boolean).map(String)));
   const result = {};
   const missing = [];
   ids.forEach(id => {
-    const stored = publicReviewsStore.read(id);
-    if (Array.isArray(stored)) result[id] = stored;
+    const stored = readStoredPublicReviews(id, { version: Number(versions[id]) || 0, expected: expected[id] === true });
+    if (stored) result[id] = stored;
     else missing.push(id);
   });
   if (!missing.length) return result;
   try {
     const fetched = await readPublicProfileComments(missing);
     Object.entries(fetched).forEach(([id, comments]) => {
-      publicReviewsStore.write(id, comments);
+      publicReviewsStore.write(id, { comments, version: Number(versions[id]) || 0 });
       result[id] = comments;
     });
   } catch (error) {
@@ -6250,6 +6272,8 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
       MATCHING_CARD_PROGRAMS_AT_FIELD,
       MATCHING_CARD_REVISION_FIELD,
       MATCHING_CARD_REVIEW_FLAG_FIELD,
+      // Мітку зміни відгуків пише лише тригер функцій.
+      MATCHING_CARD_REVIEWS_AT_FIELD,
     ]);
     const projectionPatch = { ...projection };
     independentlyOwnedFields.forEach(field => { delete projectionPatch[field]; });

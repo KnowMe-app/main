@@ -83,6 +83,21 @@ export const MATCHING_CARD_ORDER_FIELD = MATCHING_CARD_FEED_FIELD;
  */
 export const MATCHING_CARD_REVIEW_FLAG_FIELD = 'hasPublicReview';
 
+/**
+ * Час останньої зміни відгуків картки. Ставить його лише тригер функцій
+ * (`stampReviewsChange`) на **кожен** запис відгуку, і проєкція його лише
+ * переносить: прапорець міняється тільки на першому й останньому відгуку, тож
+ * без цієї мітки другий відгук чи правка картку не міняли, журнал змін карток
+ * про них мовчав, а кеш відгуків інших читачів показував старий список.
+ */
+export const MATCHING_CARD_REVIEWS_AT_FIELD = 'reviewsAt';
+
+/** Версія відгуків картки; `0` — невідома (картка до появи мітки). */
+export const readCardReviewsVersion = card => {
+  const at = Number(card?.[MATCHING_CARD_REVIEWS_AT_FIELD]);
+  return Number.isFinite(at) && at > 0 ? at : 0;
+};
+
 /** Прапорець на розгорнутій картці: це проєкція, а не повна анкета. */
 export const MATCHING_SUMMARY_FLAG = '__matchingSummary';
 
@@ -477,6 +492,8 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   }
   const revision = readCardRevision(options.existingCard);
   if (revision) projection[MATCHING_CARD_REVISION_FIELD] = revision;
+  const reviewsVersion = readCardReviewsVersion(options.existingCard);
+  if (reviewsVersion) projection[MATCHING_CARD_REVIEWS_AT_FIELD] = reviewsVersion;
 
   return projection;
 };

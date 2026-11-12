@@ -1610,6 +1610,14 @@ await it('друга межа теж межа — навіть адміну', as
 });
 
 // Перший відгук під карткою пишеться одним `update` разом із прапорцем
+// `reviewsAt` — мітка зміни відгуків, яку ставить тригер функцій; поле
+// картки, тож правило `$other: false` мусить його знати, інакше перебудова
+// картки з перенесеною міткою відлітала б цілком.
+await it('картка приймає мітку зміни відгуків reviewsAt (число)', async () => {
+  await assertSucceeds(update(ref(db(SUPERADMIN)), { [`matchingCards/${CARD}/reviewsAt`]: Date.now() }));
+  await assertFails(update(ref(db(SUPERADMIN)), { [`matchingCards/${CARD}/reviewsAt`]: 'x' }));
+});
+
 // `hasPublicReview` (`addPublicProfileComment*`). `root` у правилах — це база
 // ДО запису, тож умова «прапорець дорівнює наявності відгуків» мусить питати
 // стан після запису, інакше перший же відгук під карткою без відгуків
