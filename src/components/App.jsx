@@ -12,6 +12,7 @@ import { auth, loadViewerProfile, resetViewerAccessLevelCache } from './config';
 import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
 import { clearMyProfileCache } from 'utils/myProfileCache';
+import { clearPendingProfileEdits } from 'utils/myProfilePendingEdits';
 import { clearReactionCache } from 'utils/matchingReactionCache';
 import { clearPersistedFeedSnapshot } from 'utils/matchingFeedSnapshot';
 import { clearContactsCache } from 'utils/matchingContactsCache';
@@ -152,6 +153,8 @@ export const App = () => {
         // Власна анкета з «Мого профілю» (`utils/myProfileCache`) — теж стан
         // входу: на спільному пристрої наступний читач її мати не мусить.
         clearMyProfileCache();
+        // Незбережені правки анкети — теж памʼять пристрою про читача.
+        clearPendingProfileEdits();
         // Так само реакції й остання дека стрічки: вони теж памʼять пристрою
         // про конкретного читача (`utils/matchingCachePolicy`).
         clearReactionCache();
