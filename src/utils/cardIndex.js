@@ -470,6 +470,10 @@ const pruneOversizedCards = (value, stringified) => {
   return { value: { ...value, items: next }, text };
 };
 const listEntryTime = entry => Math.max(
+  // Будь-яка правка списку ставить свій час — і та, що лише знімає курсор:
+  // без неї знятий курсор (новіший `pagination.savedAt` на диску) злиття
+  // повертало б, і стрічка дочитувала б від свідомо скасованого курсора.
+  Number(entry?.listChangedAt) || 0,
   Number(entry?.cachedAt) || 0,
   Number(entry?.lastAction) || 0,
   Number(entry?.pagination?.savedAt) || 0,
@@ -510,6 +514,23 @@ const mergeListsFromDisk = (key, value) => {
   return merged || value;
 };
 
+/**
+ * Злиті списки понад стелю: зняти найстаріші списки (за часом правки), доки
+ * запис не влізе. Скинути ключ цілком означало б загубити й щойно записане.
+ */
+const pruneOversizedLists = lists => {
+  const ordered = Object.keys(lists).sort((a, b) => listEntryTime(lists[a]) - listEntryTime(lists[b]));
+  let next = { ...lists };
+  let text = JSON.stringify(next);
+  for (const listKey of ordered) {
+    if (text.length <= MATCHING_CACHE_MAX_CHARS) break;
+    delete next[listKey];
+    text = JSON.stringify(next);
+  }
+  if (text.length > MATCHING_CACHE_MAX_CHARS) return null;
+  return { value: next, text };
+};
+
 const flushSaveJson = key => {
   const value = pendingSaveValues.get(key);
   pendingSaveValues.delete(key);
@@ -524,11 +545,31 @@ const flushSaveJson = key => {
     return;
   }
   try {
-    let stringified = JSON.stringify(value);
-    if (key === CARDS_KEY && stringified.length > MATCHING_CACHE_MAX_CHARS) {
-      const pruned = pruneOversizedCards(value, stringified);
+    // Списки зливаються з диском **до** перевірки розміру: дві вкладки, кожна
+    // зі своїми списками під стелею, разом могли б її перейти, і злитий запис
+    // обійшов би межу (наступна вкладка скинула б увесь ключ на читанні).
+    let toWrite = value;
+    if (LIST_KEYS.has(key)) {
+      const merged = mergeListsFromDisk(key, toWrite);
+      if (merged !== toWrite) {
+        localJsonCache.set(key, merged);
+        toWrite = merged;
+      }
+    }
+    let stringified = JSON.stringify(toWrite);
+    if (LIST_KEYS.has(key) && stringified.length > MATCHING_CACHE_MAX_CHARS) {
+      const pruned = pruneOversizedLists(toWrite);
       if (pruned) {
-        logMatchingCacheWarning('pruned oldest cards to fit the cache', [{ key, before: Object.keys(value.items || {}).length, after: Object.keys(pruned.value.items).length }]);
+        logMatchingCacheWarning('pruned oldest lists to fit the cache', [{ key, before: Object.keys(toWrite).length, after: Object.keys(pruned.value).length }]);
+        localJsonCache.set(key, pruned.value);
+        toWrite = pruned.value;
+        stringified = pruned.text;
+      }
+    }
+    if (key === CARDS_KEY && stringified.length > MATCHING_CACHE_MAX_CHARS) {
+      const pruned = pruneOversizedCards(toWrite, stringified);
+      if (pruned) {
+        logMatchingCacheWarning('pruned oldest cards to fit the cache', [{ key, before: Object.keys(toWrite.items || {}).length, after: Object.keys(pruned.value.items).length }]);
         localJsonCache.set(key, pruned.value);
         stringified = pruned.text;
       }
@@ -537,13 +578,6 @@ const flushSaveJson = key => {
       logMatchingCacheWarning(`skip writing oversized key ${key}`, [{ key, stringLength: stringified.length, approxMb: toApproxMb(stringified), reason: 'max chars exceeded on write' }]);
       resetMatchingStorageKey(key);
       return;
-    }
-    if (LIST_KEYS.has(key)) {
-      const merged = mergeListsFromDisk(key, value);
-      if (merged !== value) {
-        localJsonCache.set(key, merged);
-        stringified = JSON.stringify(merged);
-      }
     }
     incrementMatchingLoadStat('localStorageWrites');
     localStorage.setItem(key, stringified);
@@ -991,6 +1025,7 @@ export const setIdsForQuery = (queryKey, ids, options = {}) => {
     ids: nextIds,
     cachedAt: now,
     lastAction: now,
+    listChangedAt: now,
     ...(isNegativeHit ? { isNegativeHit: true } : {}),
     ...(pagination ? { pagination } : {}),
   };
@@ -1016,7 +1051,8 @@ export const setQueryPagination = (queryKey, pagination) => {
   if (!pagination) {
     if (!entry?.pagination) return;
     const { pagination: _removed, ...rest } = entry;
-    queries[key] = rest;
+    // Зняття курсора — теж правка списку, новіша за курсор на диску.
+    queries[key] = { ...rest, listChangedAt: Date.now() };
     saveQueries(queries);
     return;
   }
@@ -1024,6 +1060,7 @@ export const setQueryPagination = (queryKey, pagination) => {
   queries[key] = {
     ...(entry || { ids: [], cachedAt: now, lastAction: now }),
     pagination: { ...pagination, savedAt: now },
+    listChangedAt: now,
   };
   saveQueries(queries);
 };
@@ -1162,7 +1199,7 @@ export const setIndexIdsForQuery = (queryKey, ids, options = {}) => {
     }]);
   }
 
-  queries[key] = { ids: nextIds, cachedAt: now, lastAction: now, complete: isComplete, meta: meta && typeof meta === 'object' ? meta : null, cacheVersion };
+  queries[key] = { ids: nextIds, cachedAt: now, lastAction: now, listChangedAt: now, complete: isComplete, meta: meta && typeof meta === 'object' ? meta : null, cacheVersion };
   saveIndexQueries(queries);
   logMatchingCacheDebug('index ids cache save', { key, idsCount: nextIds.length, complete: isComplete, truncated });
 };
