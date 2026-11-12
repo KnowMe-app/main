@@ -1,10 +1,13 @@
 import { get, increment, ref, update } from 'firebase/database';
-import { database } from './config';
+import { auth, database } from './config';
 import { noteRealtimeDemand } from '../utils/realtimeConnectionManager';
 import {
   LATENCY_PROBES_ROOT,
   buildLatencyProbeUpdate,
+  isLatencyProbeExcluded,
+  isUkraineTimeZone,
   markProbedToday,
+  readDeviceTimeZone,
   shouldProbeToday,
   summarizeLatencyProbes,
   toLocalDayKey,
@@ -36,6 +39,8 @@ export const runLatencyProbe = async uid => {
   const day = toLocalDayKey();
   const storage = typeof window !== 'undefined' ? window.localStorage : null;
   if (!shouldProbeToday({ storage, uid, day })) return null;
+  const webdriver = typeof navigator !== 'undefined' && navigator.webdriver === true;
+  if (isLatencyProbeExcluded({ uid, email: auth?.currentUser?.email, webdriver })) return null;
   // Сокета ще немає — сьогодні не міряємо, а не відкриваємо його заради цього.
   if (!database?._instanceStarted) return null;
 
@@ -44,7 +49,7 @@ export const runLatencyProbe = async uid => {
   const first = await timeOneRead(path);
   const second = await timeOneRead(path);
   const rttMs = Math.min(first, second);
-  const patch = buildLatencyProbeUpdate({ day, rttMs, increment });
+  const patch = buildLatencyProbeUpdate({ day, rttMs, increment, ukraine: isUkraineTimeZone(readDeviceTimeZone()) });
   if (!patch) return null;
   await update(ref(database, `${LATENCY_PROBES_ROOT}/${uid}`), patch);
   markProbedToday({ storage, uid, day });

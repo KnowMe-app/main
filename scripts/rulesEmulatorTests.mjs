@@ -2081,6 +2081,13 @@ await it('у вузол лягають лише кошики з числами',
   await assertFails(set(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}/2026-11-09`), 'x'.repeat(1000)));
 });
 
+// Заміри з України — ті самі кошики з префіксом `ua_` (часовий пояс пристрою).
+await it('кошик з префіксом країни приймається, інший префікс — ні', async () => {
+  await assertSucceeds(update(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}`), { '2026-11-09/ua_le300': 1 }));
+  await assertFails(update(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}`), { '2026-11-09/us_le300': 1 }));
+  await assertFails(update(ref(db(ORDINARY_VIEWER), `latencyProbes/${ORDINARY_VIEWER}`), { '2026-11-09/ua_': 1 }));
+});
+
 await it('зведення по всіх читають адмін та інспектор', async () => {
   await assertSucceeds(get(ref(db(SUPERADMIN), 'latencyProbes')));
   await assertSucceeds(get(ref(db('vtDxkDMjCwYuTDqTUnZsO29bpQr1'), 'latencyProbes')));
