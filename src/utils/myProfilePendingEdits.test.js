@@ -31,7 +31,19 @@ describe('незбережені правки «Мого профілю»', () =
     settlePendingProfileEdits('u1', { city: 'Київ', name: 'Оксана' }, firstSave);
     expect(readPendingProfileEdits('u1').fields).toEqual({ name: 'Оксана' });
     settlePendingProfileEdits('u1', { name: 'Оксана' }, capturePendingProfileGenerations('u1'));
-    expect(localStorage.getItem('km.myProfilePending.v1:u1')).toBeNull();
+    expect(readPendingProfileEdits('u1').fields).toEqual({});
+  });
+
+  it('покоління не повторюються після того, як усі правки знято', () => {
+    rememberPendingProfileEdit('u1', 'city', 'Київ');
+    const firstSave = capturePendingProfileGenerations('u1');
+    const secondSave = capturePendingProfileGenerations('u1');
+    settlePendingProfileEdits('u1', { city: 'Київ' }, firstSave);
+    expect(readPendingProfileEdits('u1').fields).toEqual({});
+    // Нова правка після порожнього запису — нове покоління, а не знову 1.
+    rememberPendingProfileEdit('u1', 'city', 'Львів');
+    settlePendingProfileEdits('u1', { city: 'Київ' }, secondSave);
+    expect(readPendingProfileEdits('u1').fields).toEqual({ city: 'Львів' });
   });
 
   it('A → B → A: старий запис з тим самим значенням не знімає новішої правки', () => {
@@ -80,11 +92,13 @@ describe('MyProfile дописує незбережене', () => {
 
   it('очищення пише стерте в незбережене, а відмова повертає попереднє', () => {
     const clear = source.slice(source.indexOf('const clearProfileFields = async'), source.indexOf('const listAnketaFields = '));
-    expect(clear.indexOf('rememberClearedFields(clearableFields, nextState);')).toBeLessThan(clear.indexOf('await saveState('));
-    expect(clear).toContain('rememberClearedFields(clearableFields, currentState);');
+    expect(clear.indexOf('rememberClearedFields(pendingClearFields, nextState);')).toBeLessThan(clear.indexOf('await saveState('));
+    expect(clear).toContain("const pendingClearFields = [...clearableFields, ...CLEAR_DIRECT_FIELDS];");
+    expect(clear).toContain('if (rollbackClear(currentState, nextState)) rememberClearedFields(pendingClearFields, currentState);');
     const clearRole = source.slice(source.indexOf('const clearRoleFields = async'), source.indexOf('const commitChoice = '));
     expect(clearRole).toContain('rememberClearedFields(fields, nextState);');
-    expect(clearRole).toContain('rememberClearedFields(fields, currentState);');
+    expect(clearRole).toContain('if (rollbackClear(currentState, nextState)) rememberClearedFields(fields, currentState);');
+    expect(source).toContain("const CLEAR_DIRECT_FIELDS = ['publish', 'publishAudience'];");
   });
 
   it('відповідь чіпом теж лягає в незбережене', () => {

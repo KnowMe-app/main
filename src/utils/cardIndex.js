@@ -113,6 +113,37 @@ const clearIndexedDbInvalidation = key => {
 };
 
 /**
+ * Звести дві копії кешу карток (`localStorage` вкладки, що лишилась на ньому, і
+ * IndexedDB) по картках — новіша за `cachedAt` запису картки перемагає. Лише
+ * для сумісних копій: та сама версія кешу й той самий читач (`ownerId`), інакше
+ * `null`, і рішення приймається цілою копією, як раніше.
+ *
+ * Картка, якої в одній копії немає, береться з іншої: стерти картку з кешу
+ * вкладка могла, але частіше вона її просто не бачила (вкладка на
+ * `localStorage` стартує з того, що там лежало, тобто майже з нічого). Стара
+ * картка, що так повернулась, свіжою не стає: повну анкету звіряє версія `rev`,
+ * а проєкцію — відбиток у перевірених (`isProjectionVerified`), який журнал
+ * змін уже зняв.
+ */
+const mergeCardSnapshots = (local, idb) => {
+  if (!local || !idb) return null;
+  if (local.__cacheVersion === undefined || local.__cacheVersion !== idb.__cacheVersion) return null;
+  if (String(local.ownerId ?? '') !== String(idb.ownerId ?? '')) return null;
+  const isItems = value => value && typeof value === 'object' && !Array.isArray(value);
+  if (!isItems(local.items) || !isItems(idb.items)) return null;
+  const items = { ...idb.items };
+  Object.entries(local.items).forEach(([id, entry]) => {
+    if (!(id in items) || getEntryCacheTimestamp(entry) >= getEntryCacheTimestamp(items[id])) items[id] = entry;
+  });
+  return {
+    ...idb,
+    ...local,
+    cachedAt: Math.max(toTimestamp(local.cachedAt), toTimestamp(idb.cachedAt)),
+    items,
+  };
+};
+
+/**
  * Підвантажити кеш карток з IndexedDB у памʼять вкладки — до першого кадру
  * (`index.js`), щоб стрічка з кешу малювалась одразу, як і з `localStorage`.
  * Перший раз переносить туди те, що лежало в `localStorage`, і звідти стирає.
@@ -149,6 +180,17 @@ export const preloadCardCacheFromIndexedDb = async () => {
         fromLocal = null;
       }
       if (!fromLocal || typeof fromLocal !== 'object') fromLocal = null;
+      // Обидві копії одного читача й однієї версії — зводимо по картці: кожна
+      // вкладка могла оновити свої картки, і ціла копія за часом обгортки
+      // відкотила б те, що свіжіше в іншій.
+      const merged = mergeCardSnapshots(fromLocal, fromIdb);
+      if (merged) {
+        localJsonCache.set(key, merged);
+        idbPut(key, merged)
+          .then(() => { try { localStorage.removeItem(key); } catch { /* нічого */ } })
+          .catch(() => {});
+        return;
+      }
       const localIsNewer = Boolean(fromLocal)
         && (!fromIdb || toTimestamp(fromLocal.cachedAt) >= toTimestamp(fromIdb.cachedAt));
       const chosen = localIsNewer ? fromLocal : fromIdb;

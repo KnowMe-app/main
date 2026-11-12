@@ -36,12 +36,13 @@ export const readPendingProfileEdits = uid => {
   }
 };
 
+// Запис лишається й тоді, коли правок не лишилось: у ньому лічильник
+// поколінь (`seq`). Поки порожній запис знімався, перше ж підтвердження
+// скидало лічильник, нова правка знову діставала покоління 1 — і друге
+// збереження, що ще летіло зі своїм знімком поколінь (там теж 1), знімало
+// правку, якої не несло.
 const writePending = (uid, pending) => {
   try {
-    if (!Object.keys(pending.fields).length) {
-      localStorage.removeItem(storageKey(uid));
-      return;
-    }
     localStorage.setItem(storageKey(uid), JSON.stringify({ ...pending, updatedAt: Date.now() }));
   } catch {
     // Без `localStorage` правка живе лише в памʼяті вкладки — як і було.
