@@ -72,16 +72,29 @@ const readEntries = uid => {
       .filter(key => key.startsWith(prefix))
       .map(key => readEntryFromDisk(uid, key.slice(prefix.length)))
       .filter(Boolean);
+    // Лише ці записи справді лежать окремими ключами — тільки про них
+    // відсутній ключ означатиме «дослано іншою вкладкою» (`diskIds`).
+    if (uid === activeUid) fromKeys.forEach(entry => diskIds.add(entry.id));
     // Черга з першої версії лежала одним масивом під `…:{читач}` —
-    // переносимо її в окремі ключі, щоб недосланого не загубити.
-    const legacyRaw = localStorage.getItem(`${STORAGE_KEY_PREFIX}${uid}`);
+    // переносимо її в окремі ключі. Масив знімається лише тоді, коли всі
+    // ключі записались: біля стелі `localStorage` окремі ключі важать більше
+    // за масив, і стерти масив до запису означало б загубити недослане.
+    const legacyKey = `${STORAGE_KEY_PREFIX}${uid}`;
+    const legacyRaw = localStorage.getItem(legacyKey);
     if (legacyRaw) {
       const legacy = JSON.parse(legacyRaw)?.entries;
-      localStorage.removeItem(`${STORAGE_KEY_PREFIX}${uid}`);
+      const known = new Set(fromKeys.map(entry => entry.id));
+      let allWritten = true;
       (Array.isArray(legacy) ? legacy : []).filter(isEntry).forEach(entry => {
-        writeEntryToDisk(uid, entry);
+        if (known.has(entry.id)) return;
+        // Що не записалось, лишається в памʼяті вкладки без позначки «на
+        // диску» (`writeEntryToDisk` ставить її лише на вдалому записі) — і
+        // відправляється, а не відкидається як «дослане іншою вкладкою».
+        if (!writeEntryToDisk(uid, entry)) allWritten = false;
+        known.add(entry.id);
         fromKeys.push(entry);
       });
+      if (allWritten) localStorage.removeItem(legacyKey);
     }
     return fromKeys.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   } catch {
@@ -105,6 +118,16 @@ const removeEntryFromDisk = (uid, id) => {
   if (!uid || !id) return;
   try {
     localStorage.removeItem(entryKey(uid, id));
+    // Старий масив, який не вдалося зняти при переносі (стеля сховища),
+    // мусить забути й цей запис — інакше наступний старт дослав би вже
+    // записане вдруге поверх новішого значення.
+    const legacyKey = `${STORAGE_KEY_PREFIX}${uid}`;
+    const legacyRaw = localStorage.getItem(legacyKey);
+    if (legacyRaw) {
+      const rest = (JSON.parse(legacyRaw)?.entries || []).filter(entry => entry?.id !== id);
+      if (rest.length) localStorage.setItem(legacyKey, JSON.stringify({ entries: rest }));
+      else localStorage.removeItem(legacyKey);
+    }
   } catch {
     // нічого
   }
@@ -266,7 +289,6 @@ export const startWriteOutbox = uid => {
     activeUid = next;
     diskIds.clear();
     entries = next ? readEntries(next) : [];
-    entries.forEach(entry => diskIds.add(entry.id));
     inFlight.clear();
     retryAttempt = 0;
     if (retryTimer) {

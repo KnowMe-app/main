@@ -9,6 +9,7 @@ import { store, persistor } from 'redux/store';
 import { Toaster } from 'react-hot-toast';
 import { getStoredLanguage } from 'hooks/useAppSettings';
 import { loadExtraLocale } from 'utils/locales';
+import { registerServiceWorker } from './serviceWorkerRegistration';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
@@ -40,3 +41,6 @@ const renderApp = () => root.render(
 loadExtraLocale(getStoredLanguage())
   .catch(error => console.warn('[i18n] словник мови не довантажився', error))
   .finally(renderApp);
+
+// Застосунок відкривається з пристрою й без мережі (`src/service-worker.js`).
+registerServiceWorker();

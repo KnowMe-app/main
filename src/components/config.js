@@ -3741,9 +3741,30 @@ const FEED_STATE_TTL_MS = 5 * 60 * 1000;
 // не дають. Тож донорка не може прочитати навіть `feedDate` схованої картки,
 // і поки відмова йшла в «збій — картку лишаємо», сховану чи видалену анкету
 // агенції вона й далі бачила з кешу. Мережевий збій лишається збоєм.
+/*
+ * Без мережі `get` SDK не падає, а висить, доки звʼязок не повернеться. Для
+ * перевірок, які стрічка чекає перед показом (стан картки, журнал змін), це
+ * означало порожній екран без кінця: застосунок відкривався з пристрою
+ * (`src/service-worker.js`), а картки з кешу так і не показувались. Тому без
+ * мережі такі читання відмовляють одразу, а з поганою — за
+ * `FEED_CHECK_TIMEOUT_MS`. Відмова тут — «збій», а збій перевірки картку не
+ * ховає (`createFeedStateReader`): як і раніше, без звʼязку видно збережене.
+ */
+const FEED_CHECK_TIMEOUT_MS = 5000;
+const isDeviceOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+const offlineError = () => Object.assign(new Error('Client is offline'), { code: 'offline' });
+const getFeedCheck = target => {
+  if (isDeviceOffline()) return Promise.reject(offlineError());
+  let timer = null;
+  return Promise.race([
+    get(target),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(offlineError()), FEED_CHECK_TIMEOUT_MS); }),
+  ]).finally(() => clearTimeout(timer));
+};
+
 const readCardFeedState = async userId => {
   try {
-    const snapshot = await get(ref2(database, `${MATCHING_CARDS_ROOT}/${userId}`));
+    const snapshot = await getFeedCheck(ref2(database, `${MATCHING_CARDS_ROOT}/${userId}`));
     const card = snapshot.exists() ? snapshot.val() : null;
     if (!card || typeof card !== 'object') return { feedDate: null, audience: null };
     return {
@@ -3789,7 +3810,7 @@ export const readServerNow = () => new Promise(resolve => {
 });
 
 export const readMatchingCardChangesSince = async (startAtValue, limit) => {
-  const snapshot = await get(query(
+  const snapshot = await getFeedCheck(query(
     ref2(database, 'matchingCardChanges'),
     orderByValue(),
     startAt(startAtValue),
