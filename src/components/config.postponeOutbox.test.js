@@ -1,0 +1,94 @@
+// «Відкласти» через чергу записів пристрою: відкат мусить повертати
+// підтверджене базою, а не інший, теж відхилений запис.
+jest.mock('firebase/app', () => ({ initializeApp: () => ({}) }));
+const mockAuth = { currentUser: null };
+jest.mock('firebase/auth', () => ({ getAuth: () => mockAuth }));
+jest.mock('firebase/storage', () => ({
+  getStorage: () => ({}),
+  ref: () => ({}),
+  getDownloadURL: jest.fn(),
+  uploadBytes: jest.fn(),
+  deleteObject: jest.fn(),
+  listAll: jest.fn(async () => ({ items: [], prefixes: [] })),
+  getBytes: jest.fn(),
+}));
+
+const mockUpdate = jest.fn();
+jest.mock('firebase/database', () => ({
+  getDatabase: () => ({}),
+  ref: (_db, path) => path,
+  get: jest.fn(),
+  set: jest.fn(),
+  update: (...args) => mockUpdate(...args),
+  remove: jest.fn(),
+  push: jest.fn(),
+  runTransaction: jest.fn(),
+  orderByChild: jest.fn(),
+  query: (...parts) => parts,
+  orderByKey: jest.fn(),
+  orderByValue: jest.fn(),
+  startAfter: jest.fn(),
+  limitToFirst: jest.fn(),
+  limitToLast: jest.fn(),
+  startAt: jest.fn(),
+  endAt: jest.fn(),
+  endBefore: jest.fn(),
+  equalTo: jest.fn(),
+  serverTimestamp: jest.fn(),
+  goOffline: jest.fn(),
+  goOnline: jest.fn(),
+  onValue: jest.fn(() => () => {}),
+}));
+
+const { postponeCardForOwner } = require('./config');
+
+const OWNER = 'ownerUid000000000000000000';
+const CARD = 'cardUid0000000000000000000';
+const STORE_KEY = 'km.matchingStore.v1:postponeDates';
+const permissionDenied = () => Object.assign(new Error('Permission denied'), { code: 'PERMISSION_DENIED' });
+const storedDate = () => JSON.parse(localStorage.getItem(STORE_KEY) || '{}')[OWNER]?.value?.[CARD];
+
+describe('«Відкласти» через чергу записів', () => {
+  let pending;
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem(STORE_KEY, JSON.stringify({ [OWNER]: { cachedAt: Date.now(), value: { [CARD]: '2026-12-01' } } }));
+    mockAuth.currentUser = { uid: OWNER };
+    pending = [];
+    mockUpdate.mockImplementation(() => new Promise((resolve, reject) => pending.push({ resolve, reject })));
+  });
+
+  it('дві відхилені правки підряд повертають підтверджену дату, а не першу правку', async () => {
+    const first = postponeCardForOwner({ ownerId: OWNER, profileId: CARD, value: '2027-01-01', previous: '2026-12-01' });
+    const second = postponeCardForOwner({ ownerId: OWNER, profileId: CARD, value: '2027-02-01', previous: '2027-01-01' });
+    first.catch(() => {});
+    second.catch(() => {});
+    expect(storedDate()).toBe('2027-02-01');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(pending).toHaveLength(2);
+
+    pending[0].reject(permissionDenied());
+    const firstError = await first.then(() => null, error => error);
+    // Друга правка ще летить — на екрані лишається вона.
+    expect(firstError.postponeShown).toBe('2027-02-01');
+    expect(storedDate()).toBe('2027-02-01');
+
+    pending[1].reject(permissionDenied());
+    const secondError = await second.then(() => null, error => error);
+    expect(secondError.postponeShown).toBe('2026-12-01');
+    expect(storedDate()).toBe('2026-12-01');
+  });
+
+  it('прийнята правка стає підтвердженою для наступної відмови', async () => {
+    const first = postponeCardForOwner({ ownerId: OWNER, profileId: CARD, value: '2027-01-01', previous: '2026-12-01' });
+    const second = postponeCardForOwner({ ownerId: OWNER, profileId: CARD, value: '2027-02-01', previous: '2027-01-01' });
+    second.catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, 0));
+    pending[0].resolve();
+    await first;
+    pending[1].reject(permissionDenied());
+    const error = await second.then(() => null, caught => caught);
+    expect(error.postponeShown).toBe('2027-01-01');
+    expect(storedDate()).toBe('2027-01-01');
+  });
+});

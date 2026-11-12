@@ -141,7 +141,7 @@ import { createSaveComparisonField } from '../utils/comparisonFieldAdapter';
 import { mergeDuplicateProfileValues, normalizePhoneForStorage, sanitizeUploadedInfoPhones } from '../utils/profileValueNormalization';
 import { patchCachedReactionValue } from '../utils/matchingReactionCache';
 import { forgetCachedComment, rememberCommentWrite } from '../utils/commentsStorage';
-import { configureWriteOutbox, enqueueOutboxWrite, registerOutboxRejectionHandler, registerOutboxSuccessHandler } from '../utils/writeOutbox';
+import { configureWriteOutbox, enqueueOutboxWrite, isRetryableOutboxError, registerOutboxRejectionHandler, registerOutboxSuccessHandler } from '../utils/writeOutbox';
 import { forgetProfileContacts, readFreshProfileContacts, writeProfileContacts } from '../utils/matchingContactsCache';
 import { MATCHING_DENIED_CARDS_STORE, createMatchingTimedStore } from '../utils/matchingTimedStore';
 import { pickCardActivity } from '../utils/cardActivity';
@@ -5114,17 +5114,77 @@ const rememberOwnerGetInTouchLocally = (owner, id, value) => {
   invalidateOwnerValueMap(OWNER_GET_IN_TOUCH_PATH, owner);
 };
 
+/*
+ * Підтверджена дата й записи, що ще летять, — по картці, у памʼяті вкладки.
+ * Без цього два відкладення тієї самої картки без звʼязку (грудень → січень
+ * → лютий) і дві відмови відкочували друге до першого, теж відхиленого:
+ * обидва записи стоять у польоті одразу, тож новіший старішого не витісняє,
+ * і кожен відкат повертав «попереднє з екрана». Відкат тепер показує
+ * найновіший запис, що ще летить, а коли таких немає — підтверджене базою.
+ * У `meta.previous` лягає підтверджене на мить запису, а не значення з
+ * екрана: досланий з минулої вкладки запис відкочується без цієї памʼяті.
+ */
+const POSTPONE_TAB_ID = Math.random().toString(36).slice(2, 10);
+let postponeWriteSeq = 0;
+const postponeWrites = new Map();
+const settledPostponeRejections = new Map();
+const postponeWriteKey = (owner, id) => `${owner}::${id}`;
+
+const trackPostponeWrite = (owner, id, value, previous) => {
+  const key = postponeWriteKey(owner, id);
+  let tracked = postponeWrites.get(key);
+  if (!tracked) {
+    tracked = { confirmed: previous, outstanding: [] };
+    postponeWrites.set(key, tracked);
+  }
+  postponeWriteSeq += 1;
+  const seq = `${POSTPONE_TAB_ID}:${postponeWriteSeq}`;
+  tracked.outstanding.push({ seq, value });
+  return { seq, baseline: tracked.confirmed };
+};
+
+// Що показувати після того, як запис `seq` прийнято чи відхилено; `null` —
+// цей запис уже не відстежується (повторний виклик).
+const settlePostponeWrite = (owner, id, seq, accepted) => {
+  const key = postponeWriteKey(owner, id);
+  const tracked = postponeWrites.get(key);
+  if (!tracked) return null;
+  const index = tracked.outstanding.findIndex(write => write.seq === seq);
+  if (index < 0) return null;
+  const [write] = tracked.outstanding.splice(index, 1);
+  if (accepted) tracked.confirmed = write.value;
+  const shown = tracked.outstanding.length
+    ? tracked.outstanding[tracked.outstanding.length - 1].value
+    : tracked.confirmed;
+  if (!tracked.outstanding.length) postponeWrites.delete(key);
+  return shown;
+};
+
 export const postponeCardForOwner = ({ ownerId, profileId, value, previous = '' }) => {
   const user = auth.currentUser;
   const owner = String(ownerId || '').trim();
   const id = String(profileId || '').trim();
   if (!user || !owner || !id) return Promise.reject(new Error('Не вдалося відкласти картку'));
   const nextValue = typeof value === 'string' && value.trim() ? value.trim() : null;
+  const { seq, baseline } = trackPostponeWrite(owner, id, nextValue || '', typeof previous === 'string' ? previous : '');
   rememberOwnerGetInTouchLocally(owner, id, nextValue || '');
   return enqueueOutboxWrite({
     uid: user.uid,
     patch: { [`${OWNER_GET_IN_TOUCH_PATH}/${owner}/${id}`]: nextValue },
-    meta: { type: 'postpone', ownerId: owner, cardId: id, previous: typeof previous === 'string' ? previous : '' },
+    meta: { type: 'postpone', ownerId: owner, cardId: id, previous: baseline, seq },
+  }).then(() => {
+    settlePostponeWrite(owner, id, seq, true);
+  }, error => {
+    // Обробник відмови (нижче) спрацьовує раніше за цю відмову й уже
+    // вирішив, що показати; запис, витіснений новішим, сюди приходить сам.
+    let shown = settledPostponeRejections.get(seq);
+    settledPostponeRejections.delete(seq);
+    if (shown === undefined) {
+      shown = settlePostponeWrite(owner, id, seq, false);
+      if (shown !== null && !isRetryableOutboxError(error)) rememberOwnerGetInTouchLocally(owner, id, shown);
+    }
+    if (error && typeof error === 'object') error.postponeShown = shown === null ? baseline : shown;
+    throw error;
   });
 };
 
@@ -5134,6 +5194,14 @@ registerOutboxRejectionHandler('postpone', (meta, _error, { patch } = {}) => {
   if (!owner || !id) return;
   // Новіше значення шляху могло витіснити цей запис — тоді відкочувати нічого.
   if (patch && !Object.prototype.hasOwnProperty.call(patch, `${OWNER_GET_IN_TOUCH_PATH}/${owner}/${id}`)) return;
+  const shown = meta?.seq ? settlePostponeWrite(owner, id, meta.seq, false) : null;
+  if (shown !== null) {
+    settledPostponeRejections.set(meta.seq, shown);
+    rememberOwnerGetInTouchLocally(owner, id, shown);
+    return;
+  }
+  // Досланий з минулої вкладки: памʼяті записів немає, а `previous` —
+  // підтверджене на мить запису.
   rememberOwnerGetInTouchLocally(owner, id, meta?.previous || '');
 });
 
