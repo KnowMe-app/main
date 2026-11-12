@@ -23,7 +23,8 @@ describe('цятка публікації адміна', () => {
 
   it('міняє і рядок, і вже прочитану повну анкету', () => {
     expect(toggle).toContain('setUsers(prev => prev.map(u => (u.userId === userId ? patchPublication(u) : u)));');
-    expect(toggle).toContain('setFullProfileByUserId(prev => (prev[userId] ? { ...prev, [userId]: patchPublication(prev[userId]) } : prev));');
+    expect(toggle).toContain('patchStoredFullProfile(userId, patchPublication);');
+    expect(toggle).toContain('patchStoredFullProfile(userId, restore);');
   });
 
   it('після запису правит обидва кеші, а відмову називає', () => {

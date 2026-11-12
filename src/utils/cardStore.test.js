@@ -1,7 +1,13 @@
 import {
   __resetCardStoreForTests,
   clearCardStore,
+  getCardStoreGeneration,
   getCardStoreVersion,
+  getStoredFullProfile,
+  listStaleStoredFullProfileIds,
+  mergeStoredFullProfile,
+  patchStoredFullProfile,
+  upsertStoredFullProfile,
   getStoredProjection,
   patchStoredProjection,
   resolveStoredProjection,
@@ -107,5 +113,55 @@ describe('одне сховище проєкцій', () => {
   it('правка без проєкції в сховищі нічого не пише', () => {
     expect(patchStoredProjection('missing', current => ({ ...current, publish: false }))).toBeNull();
     expect(getStoredProjection('missing')).toBeNull();
+  });
+});
+
+describe('повні анкети в тому самому сховищі', () => {
+  it('анкету, старішу за свіжу проєкцію, не віддає й називає застарілою', () => {
+    upsertStoredProjections('viewer', { a: card('a', { rev: 1 }) });
+    upsertStoredFullProfile('a', { userId: 'a', education: 'Стара', rev: 1 });
+    expect(getStoredFullProfile('a')).toMatchObject({ education: 'Стара' });
+    expect(listStaleStoredFullProfileIds()).toEqual([]);
+
+    upsertStoredProjections('viewer', { a: card('a', { rev: 2 }) });
+    expect(getStoredFullProfile('a')).toBeNull();
+    expect(listStaleStoredFullProfileIds()).toEqual(['a']);
+
+    upsertStoredFullProfile('a', { userId: 'a', education: 'Нова', rev: 2 });
+    expect(getStoredFullProfile('a')).toMatchObject({ education: 'Нова' });
+    expect(listStaleStoredFullProfileIds()).toEqual([]);
+  });
+
+  it('старіша версія анкети не перебиває новішу', () => {
+    upsertStoredFullProfile('a', { userId: 'a', name: 'Нова', rev: 3 });
+    upsertStoredFullProfile('a', { userId: 'a', name: 'Стара', rev: 2 });
+    expect(getStoredFullProfile('a')).toMatchObject({ name: 'Нова' });
+  });
+
+  it('без версії з якогось боку анкета не вважається застарілою', () => {
+    upsertStoredProjections('viewer', { a: card('a', { rev: 5 }) });
+    upsertStoredFullProfile('a', { userId: 'a', name: 'Без версії' });
+    expect(getStoredFullProfile('a')).toMatchObject({ name: 'Без версії' });
+  });
+
+  it('контакти дописуються, правка змінює лише наявну анкету', () => {
+    mergeStoredFullProfile('a', { phone: '380500000000' });
+    patchStoredFullProfile('a', current => ({ ...current, publish: false }));
+    patchStoredFullProfile('missing', current => ({ ...current, publish: false }));
+    expect(getStoredFullProfile('a')).toEqual({ phone: '380500000000', publish: false });
+    expect(getStoredFullProfile('missing')).toBeNull();
+  });
+
+  it('скидання й інший читач забувають анкети й рахують покоління', () => {
+    upsertStoredFullProfile('a', { userId: 'a', rev: 1 });
+    const before = getCardStoreGeneration();
+    clearCardStore();
+    expect(getStoredFullProfile('a')).toBeNull();
+    expect(getCardStoreGeneration()).toBe(before + 1);
+    switchCardStoreViewer('viewer');
+    upsertStoredFullProfile('b', { userId: 'b', rev: 1 });
+    switchCardStoreViewer('other');
+    expect(getStoredFullProfile('b')).toBeNull();
+    expect(getCardStoreGeneration()).toBe(before + 3);
   });
 });

@@ -160,7 +160,21 @@ import {
   readCardRevision,
 } from '../utils/matchingCardIndex';
 import { isFeedStateDeniedForFeed } from '../utils/searchFeedDenial';
-import { clearCardStore, getCardStoreVersion, patchStoredProjection, resolveStoredProjectionList, restoreStoredProjection, subscribeCardStore, switchCardStoreViewer } from '../utils/cardStore';
+import {
+  clearCardStore,
+  getCardStoreGeneration,
+  getCardStoreVersion,
+  getStoredFullProfile,
+  listStaleStoredFullProfileIds,
+  mergeStoredFullProfile,
+  patchStoredFullProfile,
+  patchStoredProjection,
+  resolveStoredProjectionList,
+  restoreStoredProjection,
+  subscribeCardStore,
+  switchCardStoreViewer,
+  upsertStoredFullProfile,
+} from '../utils/cardStore';
 import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
 import { getWriteOutboxPendingCount, isRetryableOutboxError, subscribeWriteOutbox, WRITE_OUTBOX_REJECTED_EVENT } from '../utils/writeOutbox';
 import { restorePublicComment } from '../utils/publicReviewRollback';
@@ -2100,7 +2114,7 @@ const Matching = () => {
       : card);
     const applyLocally = () => {
       setUsers(prev => prev.map(u => (u.userId === userId ? patchPublication(u) : u)));
-      setFullProfileByUserId(prev => (prev[userId] ? { ...prev, [userId]: patchPublication(prev[userId]) } : prev));
+      patchStoredFullProfile(userId, patchPublication);
     };
     applyLocally();
     // Рядок бере проєкцію зі сховища вкладки (`storedUsers`), тож правка лише
@@ -2114,7 +2128,7 @@ const Matching = () => {
         ? { ...card, publish: user.publish, [MATCHING_CARD_FEED_FIELD]: user[MATCHING_CARD_FEED_FIELD] }
         : card);
       setUsers(prev => prev.map(u => (u.userId === userId ? restore(u) : u)));
-      setFullProfileByUserId(prev => (prev[userId] ? { ...prev, [userId]: restore(prev[userId]) } : prev));
+      patchStoredFullProfile(userId, restore);
       restoreStoredProjection(userId, storedPatch);
     };
     try {
@@ -6462,15 +6476,31 @@ const Matching = () => {
   // рядок і шар деталей показують більше — освіту, зовнішність, контакти — тож
   // повна анкета читається саме там: одна картка на дотик читача замість
   // сорока наперед.
-  const [fullProfileByUserId, setFullProfileByUserId] = useState({});
+  //
+  // Прочитана анкета лягає в сховище вкладки (`utils/cardStore`) поруч із
+  // проєкцією, а не в окремий стан: лише там видно, що свіжа проєкція несе
+  // новішу версію (`rev`), ніж анкета, — і тоді анкета не кладеться поверх
+  // рядка (`getStoredFullProfile` віддає `null`), а дочитується. Окремим
+  // станом вона перебивала б свіжу картку старими полями до перезавантаження.
   // Контакти, дочитані для рядка стрічки окремо від анкети (`handleRequestRowContacts`).
   const [cardContactsByUserId, setCardContactsByUserId] = useState({});
   const fullProfileRequestsRef = useRef(new Set());
   const contactRequestsRef = useRef(new Set());
+  const fullProfileGenerationRef = useRef(getCardStoreGeneration());
 
   const ensureFullProfile = React.useCallback(user => {
     const userId = user?.userId;
     if (!userId) return Promise.resolve();
+    // Сховище скинули («Оновити стрічку», інший читач) — памʼять запитаного
+    // більше не правда: анкети в сховищі немає, і її треба просити знову.
+    const generation = getCardStoreGeneration();
+    if (fullProfileGenerationRef.current !== generation) {
+      fullProfileGenerationRef.current = generation;
+      fullProfileRequestsRef.current.clear();
+      contactRequestsRef.current.clear();
+    }
+    // Відповідь, що летіла до скидання, належить забутому стану.
+    const stillCurrent = () => getCardStoreGeneration() === generation;
     // Читач сам попросив саме цю картку — відкрив її, розгорнув рядок або
     // натиснув трубку. Питання «чи лежить тут моє доповнення» коштує тут один
     // вузол на дотик, і поставити його треба незалежно від переліку власних
@@ -6507,8 +6537,8 @@ const Matching = () => {
       contactRequestsRef.current.add(userId);
       return readProfileContacts(userId)
         .then(({ allowed, contacts }) => {
-          if (!allowed || !contacts || !Object.keys(contacts).length) return;
-          setFullProfileByUserId(previous => ({ ...previous, [userId]: { ...(previous[userId] || {}), ...contacts } }));
+          if (!allowed || !contacts || !Object.keys(contacts).length || !stillCurrent()) return;
+          mergeStoredFullProfile(userId, contacts);
         })
         .catch(error => {
           contactRequestsRef.current.delete(userId);
@@ -6537,18 +6567,18 @@ const Matching = () => {
     const revisionOptions = rowRevision ? { revision: rowRevision } : undefined;
     const cached = getCompleteCachedProfile(userId, revisionOptions);
     if (cached) {
-      setFullProfileByUserId(previous => ({ ...previous, [userId]: cached }));
+      upsertStoredFullProfile(userId, cached);
       return Promise.resolve();
     }
 
     return fetchUsersByIds([userId], rowRevision ? { revisions: { [userId]: rowRevision } } : undefined)
       .then(hydrated => {
         const profile = hydrated?.[userId];
-        if (!profile) return;
+        if (!profile || !stillCurrent()) return;
         // Зібране з кеша (тіло плюс точково дочитані контакти) назад у кеш не
         // кладеться: запис оновив би `cachedAt`, і старе тіло жило б ще TTL.
         if (!isProfileBuiltFromCache(profile)) updateCard(userId, profile);
-        setFullProfileByUserId(previous => ({ ...previous, [userId]: profile }));
+        upsertStoredFullProfile(userId, profile);
       })
       .catch(error => {
         fullProfileRequestsRef.current.delete(userId);
@@ -6556,9 +6586,30 @@ const Matching = () => {
       });
   }, []);
 
+  // Свіжа проєкція принесла новішу версію (`rev`), ніж повна анкета, яку
+  // вже показували: анкету правили. Сховище таку анкету не віддає
+  // (`getStoredFullProfile`), і рядок на мить лишається з самою проєкцією —
+  // а розгорнутий рядок без освіти й контактів. Тож анкета дочитується тут
+  // сама, раз на версію: якщо база ще віддала стару, повтор не крутиться.
+  const staleFullProfileRefetchRef = useRef(new Map());
+  useEffect(() => {
+    const staleIds = listStaleStoredFullProfileIds();
+    if (!staleIds.length) return;
+    const rowsById = new Map(feedSource.map(row => [String(row?.userId || ''), row]));
+    staleIds.forEach(id => {
+      const row = rowsById.get(id);
+      if (!row) return;
+      const revision = readCardRevision(row);
+      if (staleFullProfileRefetchRef.current.get(id) === revision) return;
+      staleFullProfileRefetchRef.current.set(id, revision);
+      fullProfileRequestsRef.current.delete(id);
+      ensureFullProfile(row);
+    });
+  }, [cardStoreVersion, ensureFullProfile, feedSource]);
+
   const withLazyPhotos = React.useCallback(user => {
     if (!user?.userId) return user;
-    const fullProfile = fullProfileByUserId[user.userId];
+    const fullProfile = getStoredFullProfile(user.userId);
     const cachedPhotos = photoCacheByUserId[user.userId];
     const cardContacts = cardContactsByUserId[user.userId];
     if (!fullProfile && !cachedPhotos && !cardContacts) return user;
@@ -6585,7 +6636,9 @@ const Matching = () => {
     // нічого не питає (`usePhotoSwipe`).
     if (cachedPhotos) merged.__allPhotosLoaded = true;
     return merged;
-  }, [cardContactsByUserId, fullProfileByUserId, photoCacheByUserId]);
+    // `cardStoreVersion` — щоб показ перечитав сховище, коли туди лягла анкета.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardContactsByUserId, cardStoreVersion, photoCacheByUserId]);
 
   // Свайп по фото в рядку чи плитці просить решту знімків картки. Проєкція
   // стрічки несе один аватар, і дочитувати перелік на кожну показану картку
@@ -6648,7 +6701,7 @@ const Matching = () => {
     const needsPhotos = user => {
       if (!user?.userId || photoCacheByUserId[user.userId]) return false;
       if (!user.__photosHydrated) return true;
-      return isMatchingSummaryCard(user) && Boolean(fullProfileByUserId[user.userId]);
+      return isMatchingSummaryCard(user) && Boolean(getStoredFullProfile(user.userId));
     };
     // Картка, чиє фото вже питають, удруге не питається: ефект перезапускається
     // на кожну зміну `feedSource`, а відповідь лягає в `photoCacheByUserId`
@@ -6693,7 +6746,8 @@ const Matching = () => {
       if (stats && typeof console.table === 'function') console.table([stats]);
     });
     return undefined;
-  }, [feedSource, fullProfileByUserId, ownerId, photoCacheByUserId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardStoreVersion, feedSource, ownerId, photoCacheByUserId]);
 
   // Нотатки питаються за набором карток, а не за посиланням на масив: `users`
   // буває новим масивом з тими самими картками на кожен рендер (React
