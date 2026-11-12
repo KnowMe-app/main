@@ -90,7 +90,7 @@ import { MyProfileShare } from './MyProfileShare';
 import { getCurrentValue } from './getCurrentValue';
 import { ACCOUNT_DELETION_EMAIL, requestOwnAccountDeletion } from '../utils/accountDeletion';
 import { clearMyProfileCache, patchMyProfileCache, readMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
-import { clearPendingProfileEdits, readPendingProfileEdits, rememberPendingProfileEdit, settlePendingProfileEdits } from '../utils/myProfilePendingEdits';
+import { capturePendingProfileGenerations, clearPendingProfileEdits, readPendingProfileEdits, rememberPendingProfileEdit, settlePendingProfileEdits } from '../utils/myProfilePendingEdits';
 import { listShareableProfileRoles } from '../utils/profileShare';
 import {
   DEFAULT_REWARD_CURRENCY,
@@ -2733,6 +2733,9 @@ export const MyProfile = () => {
     const targetUserId = userId || nextState?.userId || stateRef.current.userId;
     if (!targetUserId) return Promise.resolve();
     const sessionGeneration = authSessionGenerationRef.current;
+    // Покоління незбережених правок у мить виклику: цей запис підтверджує
+    // рівно їх, а не новіші правки, що стануть у чергу після нього.
+    const capturedPendingGenerations = capturePendingProfileGenerations(targetUserId);
 
     saveQueueRef.current = saveQueueRef.current
       .catch(() => undefined)
@@ -2777,7 +2780,7 @@ export const MyProfile = () => {
         await persistUserProfile(targetUserId, uploadedInfo, 'check');
         // Записане знімається з незбережених правок — лише ті поля, що
         // відтоді не мінялись (`settlePendingProfileEdits`).
-        settlePendingProfileEdits(targetUserId, nextState);
+        settlePendingProfileEdits(targetUserId, nextState, capturedPendingGenerations);
         // Записане стає новою базою порівняння — так, як його поклав писач.
         if (persistedProfileRef.current.uid === targetUserId) {
           persistedProfileRef.current = {
@@ -3160,6 +3163,16 @@ export const MyProfile = () => {
     setState(previousState);
   };
 
+  const rememberClearedFields = (names, clearedState) => {
+    const pendingUid = userId || stateRef.current.userId;
+    names.forEach(name => {
+      rememberPendingProfileEdit(pendingUid, name, clearedState[name], {
+        direct: OBJECT_PROFILE_FIELDS.has(name),
+        searchId: isSearchIdIndexedField(name),
+      });
+    });
+  };
+
   const clearProfileFields = async () => {
     const currentState = stateRef.current || {};
     // Уточнення (нюанси кесаревого, країни) полями розділів не є, але
@@ -3175,6 +3188,10 @@ export const MyProfile = () => {
     // знімаються цілком (`null`) і напряму, як і `publish`.
     const objectFields = clearableFields.filter(name => OBJECT_PROFILE_FIELDS.has(name));
     clearableFields.forEach(name => { nextState[name] = OBJECT_PROFILE_FIELDS.has(name) ? null : ''; });
+    // Стерте — теж правка: незбережене до цього (старе значення, що чекало
+    // звʼязку) інакше лягло б поверх очищеної анкети на наступному відкритті й
+    // повернуло б те, що людина щойно стерла.
+    rememberClearedFields(clearableFields, nextState);
     stateRef.current = nextState;
     setState(nextState);
     localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
@@ -3193,6 +3210,9 @@ export const MyProfile = () => {
     } catch (error) {
       console.error('clear profile error', error);
       rollbackClear(currentState, nextState);
+      // Очищення не вдалось — незбережене мусить знову нести те, що лишилось
+      // на екрані, а не стерте: інакше наступне відкриття таки стерло б анкету.
+      rememberClearedFields(clearableFields, currentState);
       toast.error(uiText('Не вдалося очистити анкету. Спробуйте ще раз', language));
     } finally {
       setIsClearingProfile(false);
@@ -3268,6 +3288,7 @@ export const MyProfile = () => {
       nextState[name] = OBJECT_PROFILE_FIELDS.has(name) ? null : '';
       if (OBJECT_PROFILE_FIELDS.has(name)) directFields.push(name);
     });
+    rememberClearedFields(fields, nextState);
     stateRef.current = nextState;
     setState(nextState);
     setShowInfoModal(false);
@@ -3286,6 +3307,7 @@ export const MyProfile = () => {
     } catch (error) {
       console.error('clear role error', error);
       rollbackClear(currentState, nextState);
+      rememberClearedFields(fields, currentState);
       toast.error(uiText('Не вдалося очистити дані ролі. Спробуйте ще раз', language));
     }
   };
@@ -3296,6 +3318,12 @@ export const MyProfile = () => {
     setCustomOptionMode(prev => ({ ...prev, [name]: false }));
     const nextState = { ...stateRef.current, [name]: value, ...extra };
     [name, ...Object.keys(extra)].forEach(key => editedFieldsRef.current.add(key));
+    // Відповідь чіпом — така сама правка, як набране поле: без звʼязку вона
+    // мусить пережити вкладку (`utils/myProfilePendingEdits`).
+    const pendingUid = userId || stateRef.current.userId;
+    Object.entries({ [name]: value, ...extra }).forEach(([key, nextValue]) => {
+      rememberPendingProfileEdit(pendingUid, key, nextValue, { searchId: isSearchIdIndexedField(key) });
+    });
     setMissing(prev => ({ ...prev, [name]: false }));
     stateRef.current = nextState;
     setState(nextState);
