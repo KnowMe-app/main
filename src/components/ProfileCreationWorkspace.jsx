@@ -1132,7 +1132,14 @@ export const ProfileCreationWorkspace = () => {
     // Відгук іде через чергу пристрою й показується одразу; база, що
     // відмовила, прибирає його з екрана (`delivered`).
     const { delivered, ...created } = await addPublicProfileComment({ profileId, text });
-    setPublicComments(previous => [...previous, created]);
+    // Поки база не прийняла, відгук не правиться й не знімається
+    // (`pendingDelivery`): правка й видалення йдуть повз чергу.
+    setPublicComments(previous => [...previous, { ...created, pendingDelivery: Boolean(delivered) }]);
+    delivered?.then(() => {
+      setPublicComments(previous => previous.map(comment => (comment.id === created.id
+        ? { ...comment, pendingDelivery: false }
+        : comment)));
+    }, () => {});
     delivered?.catch(error => {
       if (isRetryableOutboxError(error)) return;
       setPublicComments(previous => previous.filter(comment => comment.id !== created.id));

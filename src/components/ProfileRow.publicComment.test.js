@@ -344,3 +344,21 @@ describe('плейсхолдер там, де відгуки вже прочит
     expect(publicCommentPlainPlaceholder('uk')).toBe('Додати анонімний відгук');
   });
 });
+
+// Відгук у черзі пристрою (`pendingDelivery`) ще не в базі: правка й
+// видалення пишуть напряму, повз чергу, тож до підтвердження їх немає.
+describe('review still waiting in the device queue', () => {
+  it('cannot be edited or removed and says it is not sent yet', () => {
+    setup({ comments: [{ ...ownComment, pendingDelivery: true }] });
+    expect(screen.getByTestId('public-comment-pending')).toHaveTextContent('Ще не надіслано');
+    expect(screen.queryByLabelText('Видалити коментар')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('мій запис'));
+    expect(screen.queryByRole('button', { name: 'Зберегти відгук' })).not.toBeInTheDocument();
+  });
+
+  it('becomes editable once the base accepted it', () => {
+    setup({ comments: [{ ...ownComment, pendingDelivery: false }] });
+    expect(screen.queryByTestId('public-comment-pending')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Видалити коментар')).toBeInTheDocument();
+  });
+});

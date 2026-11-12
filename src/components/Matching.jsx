@@ -7808,10 +7808,20 @@ const Matching = () => {
     // Відгук іде через чергу пристрою й показується одразу; база, що
     // відмовила, прибирає його з екрана (`delivered`).
     const { delivered, ...created } = await addPublicProfileComment({ profileId, text });
+    // Поки база не прийняла, відгук позначений `pendingDelivery`: правка й
+    // видалення йдуть повз чергу, тож до того їх не пропонуємо.
     setPublicComments(previous => ({
       ...previous,
-      [profileId]: [...(previous[profileId] || []), created],
+      [profileId]: [...(previous[profileId] || []), { ...created, pendingDelivery: Boolean(delivered) }],
     }));
+    delivered?.then(() => {
+      setPublicComments(previous => ({
+        ...previous,
+        [profileId]: (previous[profileId] || []).map(comment => (comment.id === created.id
+          ? { ...comment, pendingDelivery: false }
+          : comment)),
+      }));
+    }, () => {});
     delivered?.catch(error => {
       if (isRetryableOutboxError(error)) return;
       setPublicComments(previous => ({
@@ -7962,7 +7972,11 @@ const Matching = () => {
     postponeCardForOwner({ ownerId, profileId: id, value: nextDate, previous }).catch(error => {
       if (isRetryableOutboxError(error)) return;
       if (postponeOwnerRef.current !== requestOwnerId) return;
-      setPostponeDates(current => ({ ...current, [id]: previous || '' }));
+      // Не «попереднє з екрана»: воно могло бути теж відхиленим записом.
+      // Показуємо те, що порахувала черга — найновіший запис у польоті чи
+      // підтверджене базою (`error.postponeShown`).
+      const shown = typeof error?.postponeShown === 'string' ? error.postponeShown : (previous || '');
+      setPostponeDates(current => ({ ...current, [id]: shown }));
       toast.error(uiText('Не вдалося відкласти картку. Спробуйте ще раз', language));
     });
     if (nextDate) {

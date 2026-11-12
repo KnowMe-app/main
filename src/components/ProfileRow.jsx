@@ -823,7 +823,12 @@ export const PublicCommentBlock = ({
       <PublicCommentsBackendLink backendHref={backendHref} />
       {visibleRows.map(comment => {
         const isOwn = Boolean(viewerId) && comment.authorId === viewerId;
-        const canEdit = isOwn || canModerate;
+        // Відгук, що ще чекає бази в черзі пристрою (`pendingDelivery`), не
+        // правиться й не знімається: правка й видалення пишуть напряму, повз
+        // чергу, і без звʼязку загубились би з закритою вкладкою, а черга
+        // потім однаково опублікувала б початковий текст.
+        const awaitingDelivery = comment.pendingDelivery === true;
+        const canEdit = (isOwn || canModerate) && !awaitingDelivery;
         // Знімати можна лише те, що вже лежить у базі: оптимістичний рядок
         // прибирає сам запис, а не видалення.
         const canRemove = canEdit && Boolean(onDelete) && storedIds.has(comment.id);
@@ -858,6 +863,9 @@ export const PublicCommentBlock = ({
                   стояли, і лишити відгук, не назвавши себе, було не можна. */}
               <S.CommentMeta>
                 <span>{formatCommentDate(comment.createdAt)}</span>
+                {awaitingDelivery && (
+                  <span data-testid="public-comment-pending">{uiText('Ще не надіслано', language)}</span>
+                )}
                 {comment.failed && (
                   <S.CommentRetry
                     type="button"
