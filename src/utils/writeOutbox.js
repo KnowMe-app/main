@@ -191,11 +191,17 @@ const removeEntry = (uid, id) => {
   if (entries.length !== before) notify();
 };
 
-const rejectEntry = (entry, error) => {
+const rejectEntry = (sentEntry, error) => {
   // Хтось у цій вкладці чекає на відповідь — він і скаже людині про відмову
   // своїми словами. Ніхто не чекає — запис досланий з минулої вкладки, і
   // сказати про нього може лише слухач події (`replayed`).
-  const replayed = !waiters.has(entry.id);
+  const replayed = !waiters.has(sentEntry.id);
+  // `meta` — свіжа, з диска чи памʼяті, а не знята на мить відправлення:
+  // поки запис летів, підтвердження попереднього могло переписати, до чого
+  // відкочувати (`updatePendingOutboxMeta`).
+  const latest = readEntryFromDisk(activeUid, sentEntry.id)
+    || entries.find(item => item.id === sentEntry.id);
+  const entry = latest?.meta ? { ...sentEntry, meta: latest.meta } : sentEntry;
   removeEntry(activeUid, entry.id);
   const handler = entry.meta?.type ? rejectionHandlers.get(entry.meta.type) : null;
   if (handler) {
@@ -416,6 +422,30 @@ export const registerOutboxRejectionHandler = (type, handler) => {
 export const registerOutboxSuccessHandler = (type, handler) => {
   if (!type || typeof handler !== 'function') return;
   successHandlers.set(type, handler);
+};
+
+/**
+ * Переписати `meta` записів, що ще чекають (і в цій вкладці, і на диску —
+ * записи інших вкладок теж). Потрібне, коли підтвердження одного запису міняє,
+ * до чого відкочувати наступні: «Відкласти» зберігає в `meta.previous`
+ * підтверджене базою, і після підтвердження січня лютий, що ще чекає, мусить
+ * відкочуватись до січня, а не до грудня, — зокрема досланий з минулої
+ * вкладки, де памʼяті про записи вже немає.
+ */
+export const updatePendingOutboxMeta = (matches, update) => {
+  if (!activeUid || typeof matches !== 'function' || typeof update !== 'function') return 0;
+  let changed = 0;
+  const apply = entry => {
+    if (!entry?.meta || !matches(entry)) return entry;
+    changed += 1;
+    return { ...entry, meta: update(entry.meta) };
+  };
+  readEntries(activeUid).forEach(entry => {
+    const next = apply(entry);
+    if (next !== entry) writeEntryToDisk(activeUid, next);
+  });
+  entries = entries.map(apply);
+  return changed;
 };
 
 /** Скільки записів ще не підтвердила база. */

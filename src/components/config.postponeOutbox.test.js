@@ -41,6 +41,7 @@ jest.mock('firebase/database', () => ({
 }));
 
 const { postponeCardForOwner } = require('./config');
+const { startWriteOutbox, stopWriteOutbox } = require('../utils/writeOutbox');
 
 const OWNER = 'ownerUid000000000000000000';
 const CARD = 'cardUid0000000000000000000';
@@ -90,5 +91,32 @@ describe('«Відкласти» через чергу записів', () => {
     const error = await second.then(() => null, caught => caught);
     expect(error.postponeShown).toBe('2027-01-01');
     expect(storedDate()).toBe('2027-01-01');
+  });
+
+  // Дві правки з минулої вкладки: січень база прийняла, лютий відхилила.
+  // Памʼяті записів у новій вкладці немає, тож відкат іде за `meta.previous`
+  // — і мусить бути січнем, а не груднем, з яким обидва стали в чергу.
+  it('досланий з минулої вкладки відкочується до прийнятого перед ним', async () => {
+    const path = `multiData/getInTouch/${OWNER}/${CARD}`;
+    const entry = (id, value, createdAt) => ({
+      id,
+      patch: { [path]: value },
+      meta: { type: 'postpone', ownerId: OWNER, cardId: CARD, previous: '2026-12-01' },
+      createdAt,
+    });
+    // Нова вкладка: черга ще нікому не належить, записи лежать на диску.
+    startWriteOutbox(null);
+    localStorage.setItem(`km.writeOutbox.v1:${OWNER}:e1`, JSON.stringify(entry('e1', '2027-01-01', 1)));
+    localStorage.setItem(`km.writeOutbox.v1:${OWNER}:e2`, JSON.stringify(entry('e2', '2027-02-01', 2)));
+    startWriteOutbox(OWNER);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(pending).toHaveLength(2);
+    pending[0].resolve();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(JSON.parse(localStorage.getItem(`km.writeOutbox.v1:${OWNER}:e2`)).meta.previous).toBe('2027-01-01');
+    pending[1].reject(permissionDenied());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(storedDate()).toBe('2027-01-01');
+    stopWriteOutbox();
   });
 });
