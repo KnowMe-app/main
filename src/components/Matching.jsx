@@ -163,6 +163,7 @@ import { isFeedStateDeniedForFeed } from '../utils/searchFeedDenial';
 import { clearCardStore, getCardStoreVersion, patchStoredProjection, resolveStoredProjectionList, restoreStoredProjection, subscribeCardStore, switchCardStoreViewer } from '../utils/cardStore';
 import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
 import { getWriteOutboxPendingCount, isRetryableOutboxError, subscribeWriteOutbox, WRITE_OUTBOX_REJECTED_EVENT } from '../utils/writeOutbox';
+import { restorePublicComment } from '../utils/publicReviewRollback';
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
 import { readBackendLinksEnabled } from '../utils/backendLinksMode';
@@ -7832,28 +7833,46 @@ const Matching = () => {
     });
   }, [language]);
 
+  // Правка й видалення відгуку йдуть через чергу пристрою й показуються
+  // одразу; відмова бази повертає відгук таким, яким він був
+  // (`restorePublicComment`), і каже про це тостом.
+  const rollBackPublicCommentOnRejection = React.useCallback((delivered, profileId, previousComment) => {
+    delivered?.catch(error => {
+      if (isRetryableOutboxError(error)) return;
+      setPublicComments(previous => ({
+        ...previous,
+        [profileId]: restorePublicComment(previous[profileId], previousComment),
+      }));
+      toast.error(uiText('Зміну відгуку не збережено: сервер відмовив', language));
+    });
+  }, [language]);
+
   const handleUpdatePublicComment = React.useCallback(async (profileId, commentId, text) => {
-    const updated = await updatePublicProfileComment({ profileId, commentId, text });
+    const previousComment = (publicComments[profileId] || []).find(comment => comment.id === commentId) || null;
+    const { delivered, deleted, ...updated } = await updatePublicProfileComment({ profileId, commentId, text }) || {};
     setPublicComments(previous => {
       const current = previous[profileId] || [];
-      const next = updated
+      const next = !deleted
         ? current.map(comment => (comment.id === commentId
           ? { ...comment, text: updated.text, updatedAt: updated.updatedAt }
           : comment))
         : current.filter(comment => comment.id !== commentId);
       return { ...previous, [profileId]: next };
     });
-  }, []);
+    rollBackPublicCommentOnRejection(delivered, profileId, previousComment);
+  }, [publicComments, rollBackPublicCommentOnRejection]);
 
   // Публічний запис про третю особу мусить мати кому зняти: автор прибирає
   // власний, адмін — будь-який.
   const handleDeletePublicComment = React.useCallback(async (profileId, commentId) => {
-    await deletePublicProfileComment({ profileId, commentId });
+    const previousComment = (publicComments[profileId] || []).find(comment => comment.id === commentId) || null;
+    const { delivered } = await deletePublicProfileComment({ profileId, commentId }) || {};
     setPublicComments(previous => ({
       ...previous,
       [profileId]: (previous[profileId] || []).filter(comment => comment.id !== commentId),
     }));
-  }, []);
+    rollBackPublicCommentOnRejection(delivered, profileId, previousComment);
+  }, [publicComments, rollBackPublicCommentOnRejection]);
 
   /**
    * Слот відгуків — один на всі списки й на обидві розкладки.

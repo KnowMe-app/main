@@ -72,9 +72,12 @@ export const MATCHING_CARD_ORDER_FIELD = MATCHING_CARD_FEED_FIELD;
  * Прапорець «на цю картку є публічний відгук» — щоб рядок стрічки підвантажив
  * і показав відгук сам, без кліку «перевірити наявність».
  *
- * Джерело правди для нього — не анкета, а `comments/{userId}`: писачі
- * `add/update/deletePublicProfileComment` у `config.js` виставляють його тим
- * самим записом, яким чіпають сам відгук. Тому `buildMatchingCardProjection`
+ * Джерело правди для нього — не анкета, а `comments/{userId}`: новий відгук
+ * ставить його тим самим записом (`addPublicProfileComment`), а на кожну
+ * появу й зникнення відгуку його перераховує тригер функцій
+ * `syncPublicReviewFlag` (правка й видалення відгуку йдуть через чергу
+ * пристрою й прапорця не чіпають; перебудова картки — теж, див.
+ * `independentlyOwnedFields` у `syncMatchingCardIndex`). Тому `buildMatchingCardProjection`
  * тут його не рахує — рахувати нема з чого, `data` цієї функції відгуків не
  * бачить, — а лише переносить те, що вже стояло в попередній картці.
  */

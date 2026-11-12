@@ -1803,14 +1803,6 @@ export const resolvePublicCommentMaxLength = uid => (
 const matchingCardPublicReviewFlagPath = profileId =>
   `${MATCHING_CARDS_ROOT}/${profileId}/${MATCHING_CARD_REVIEW_FLAG_FIELD}`;
 
-/** Чи лишається під карткою хоч один відгук, крім (можливо) того, що знімається. */
-const hasRemainingPublicComments = async (profileId, excludeCommentId) => {
-  const snapshot = await firebaseGet(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}`));
-  if (!snapshot.exists()) return false;
-  const keys = Object.keys(snapshot.val() || {});
-  return keys.some(key => key !== excludeCommentId);
-};
-
 const normalizePublicComment = (id, value) => ({
   id,
   text: typeof value?.text === 'string' ? value.text : '',
@@ -2012,6 +2004,14 @@ export const addPublicProfileCommentAs = async ({
 
 // authorId and createdAt are immutable after creation, so an edit only ever
 // touches the text and the updatedAt stamp - the rules reject anything else.
+//
+// Правка й видалення відгуку йдуть через чергу записів пристрою
+// (`utils/writeOutbox`), як і новий відгук: на базу тут не чекаємо, а
+// `delivered` у відповіді каже, коли вона прийняла. Прапорця
+// `hasPublicReview` ні той, ні інший більше не чіпає — його перераховує
+// тригер функцій (`syncPublicReviewFlag`). Доти видалення спершу читало, чи
+// лишились інші відгуки, і без звʼязку це читання висіло: зняти чи поправити
+// відгук без мережі було не можна.
 export const updatePublicProfileComment = async ({ profileId, commentId, text }) => {
   forgetCachedPublicReviews(profileId);
   const user = auth.currentUser;
@@ -2019,25 +2019,23 @@ export const updatePublicProfileComment = async ({ profileId, commentId, text })
   if (!profileId || !commentId) throw new Error('profileId і commentId обовʼязкові');
 
   const trimmed = String(text || '').trim();
-  if (!trimmed) {
-    const stillHasOthers = await hasRemainingPublicComments(profileId, commentId);
-    await update(ref2(database), {
-      [`${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`]: null,
-      [matchingCardPublicReviewFlagPath(profileId)]: stillHasOthers,
-    });
-    return null;
-  }
+  // Стертий текст — це і є зняття відгуку.
+  if (!trimmed) return deletePublicProfileComment({ profileId, commentId });
   const maxLength = resolvePublicCommentMaxLength(user.uid);
   if (trimmed.length > maxLength) {
     throw new Error(`Коментар довший за ${maxLength} символів (${trimmed.length})`);
   }
 
-  await update(ref2(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`), {
-    text: trimmed,
-    updatedAt: serverTimestamp(),
+  const commentPath = `${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`;
+  const delivered = enqueueOutboxWrite({
+    uid: user.uid,
+    patch: {
+      [`${commentPath}/text`]: trimmed,
+      [`${commentPath}/updatedAt`]: serverTimestamp(),
+    },
+    meta: { type: 'publicReview', profileId: String(profileId) },
   });
-
-  return { id: commentId, text: trimmed, updatedAt: Date.now() };
+  return { id: commentId, text: trimmed, updatedAt: Date.now(), delivered };
 };
 
 // Автор прибирає власний запис, адмін — будь-який: публічний коментар про третю
@@ -2050,12 +2048,12 @@ export const deletePublicProfileComment = async ({ profileId, commentId }) => {
   if (!user) throw new Error('User not authenticated');
   if (!profileId || !commentId) throw new Error('profileId і commentId обовʼязкові');
 
-  const stillHasOthers = await hasRemainingPublicComments(profileId, commentId);
-  await update(ref2(database), {
-    [`${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`]: null,
-    [matchingCardPublicReviewFlagPath(profileId)]: stillHasOthers,
+  const delivered = enqueueOutboxWrite({
+    uid: user.uid,
+    patch: { [`${PUBLIC_COMMENTS_ROOT_PATH}/${profileId}/${commentId}`]: null },
+    meta: { type: 'publicReview', profileId: String(profileId) },
   });
-  return null;
+  return { deleted: true, delivered };
 };
 
 export const COMMENTS_ROOT_PATH = 'multiData/comments';
@@ -6217,7 +6215,16 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
     // above. A field-level patch never writes programsAt on its own, so a
     // concurrent program save cannot be rolled back by this profile save;
     // the one exception is a hidden owner role (`resolveProgramsVersionPatch`).
-    const independentlyOwnedFields = new Set([MATCHING_CARD_PROGRAMS_AT_FIELD, MATCHING_CARD_REVISION_FIELD]);
+    // `hasPublicReview` — так само: ним володіють відгуки й тригер функцій
+    // `syncPublicReviewFlag`, а правило вимагає, щоб він збігався з
+    // `comments/{id}`. Поки тригер не перерахував прапорець після видалення
+    // відгуку (секунди, а коли функція впала — довше), перенесене звідси
+    // `true` відкидало б усю перебудову картки.
+    const independentlyOwnedFields = new Set([
+      MATCHING_CARD_PROGRAMS_AT_FIELD,
+      MATCHING_CARD_REVISION_FIELD,
+      MATCHING_CARD_REVIEW_FLAG_FIELD,
+    ]);
     const projectionPatch = { ...projection };
     independentlyOwnedFields.forEach(field => { delete projectionPatch[field]; });
     Object.keys(existing || {}).forEach(field => {

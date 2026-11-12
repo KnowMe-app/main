@@ -499,6 +499,7 @@ const BY_UK = {
   'Подзвонити': 'Anrufen',
   'Немає звʼязку з базою. Показано збережене: повні анкети, контакти й відгуки довантажаться, щойно звʼязок повернеться.': 'Keine Verbindung zur Datenbank. Es werden gespeicherte Daten angezeigt: vollständige Profile, Kontakte und Bewertungen werden geladen, sobald die Verbindung zurück ist.',
   'Ще не надіслано': 'Noch nicht gesendet',
+  'Зміну відгуку не збережено: сервер відмовив': 'Änderung der Bewertung nicht gespeichert: Der Server hat abgelehnt',
   'Відгук не опубліковано: сервер відмовив': 'Bewertung nicht veröffentlicht: Der Server hat abgelehnt',
   'Ще не збережено: {count}. Збережеться, щойно звʼязок повернеться — навіть якщо закрити вкладку.': 'Noch nicht gespeichert: {count}. Wird gespeichert, sobald die Verbindung zurück ist – auch wenn Sie den Tab schließen.',
   'Ще не надіслано: {count}. Надішлеться, щойно звʼязок повернеться — навіть якщо закрити вкладку.': 'Noch nicht gesendet: {count}. Wird gesendet, sobald die Verbindung zurück ist – auch wenn Sie den Tab schließen.',

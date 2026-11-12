@@ -130,9 +130,10 @@ export const twinSourceRank = field => {
  * Прапорець «на цю картку є публічний відгук» — третя категорія поля картки,
  * не пряма копія й не похідна з анкети: джерело правди для нього не анкета, а
  * вузол `comments/{uid}`, з яким `buildMatchingCardProjection` узагалі не
- * працює. Пишуть його `addPublicProfileComment`/`updatePublicProfileComment`/
- * `deletePublicProfileComment` тим самим записом, яким чіпають сам відгук —
- * див. коментар над `MATCHING_CARDS_ROOT` у `matchingCardIndex.js`.
+ * працює. Ставить його новий відгук тим самим записом, яким пише себе
+ * (`addPublicProfileComment`), а перераховує на кожну появу й зникнення
+ * відгуку тригер функцій `syncPublicReviewFlag` — правка й видалення відгуку
+ * прапорця не чіпають (див. `matchingCardIndex.js`).
  */
 export const MATCHING_CARD_REVIEW_FIELDS = Object.freeze(['hasPublicReview']);
 

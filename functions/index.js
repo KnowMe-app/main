@@ -617,3 +617,46 @@ exports.recordMatchingCardChange = onValueWritten(
     }
   },
 );
+
+/**
+ * Прапорець картки «є публічні відгуки» (`publicReviewFlag.js`): поява чи
+ * зникнення відгуку в `comments/{profileId}` перераховує
+ * `matchingCards/{profileId}/hasPublicReview`. Доти його писав клієнт і перед
+ * видаленням читав, чи лишились інші відгуки, — без звʼязку те читання
+ * висіло, і зняти чи поправити відгук через чергу пристрою було не можна.
+ */
+const {
+  PUBLIC_COMMENTS_ROOT,
+  MATCHING_CARDS_ROOT: REVIEW_FLAG_CARDS_ROOT,
+  changesReviewPresence,
+  syncPublicReviewFlag,
+} = require('./publicReviewFlag');
+
+exports.syncPublicReviewFlag = onValueWritten(
+  {
+    ref: `${PUBLIC_COMMENTS_ROOT}/{profileId}/{commentId}`,
+    region: DATABASE_REGION,
+    memory: '256MiB',
+    timeoutSeconds: 30,
+    maxInstances: 10,
+    // Загублений прапорець — це відгук, якого стрічка не покаже (або порожня
+    // доріжка там, де відгуків уже немає); перерахунок ідемпотентний.
+    retry: true,
+  },
+  async event => {
+    if (!changesReviewPresence(event.data.before.val(), event.data.after.val())) return;
+    const { profileId } = event.params;
+    try {
+      await syncPublicReviewFlag(profileId, {
+        readHasAny: async id => {
+          const snapshot = await getDatabase().ref(`${PUBLIC_COMMENTS_ROOT}/${id}`).orderByKey().limitToFirst(1).get();
+          return snapshot.exists();
+        },
+        updateCard: (id, updater) => getDatabase().ref(`${REVIEW_FLAG_CARDS_ROOT}/${id}`).transaction(updater),
+      });
+    } catch (error) {
+      logger.error('public review flag sync failed', { profileId, error: error.message });
+      throw error;
+    }
+  },
+);
