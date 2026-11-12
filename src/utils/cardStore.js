@@ -22,9 +22,17 @@ import { replaceFeedProjection } from './freshFeedProjection';
  * Скидається разом зі стрічкою («Оновити стрічку», зміна читача).
  */
 const projections = new Map();
+// Повні анкети карток (`ensureFullProfile` у стрічці): прочитані з бази чи
+// взяті з кешу пристрою на дотик. Лежать поруч із проєкціями, бо лише тут
+// видно, чи анкета ще відповідає показаній картці (`isStoredFullProfileStale`).
+const fullProfiles = new Map();
 const listeners = new Set();
 let storeViewer = null;
 let storeVersion = 0;
+// Скільки разів сховище скидали («Оновити стрічку», інший читач). Стрічка
+// памʼятає, які анкети вже просила; після скидання ця памʼять бреше, а
+// відповідь, що летіла до скидання, належить уже забутому стану.
+let storeGeneration = 0;
 
 // Сторінка стрічки пише десять проєкцій поспіль — одне сповіщення на всі:
 // інакше кожна картка давала б окремий перерендер `Matching`. Версія
@@ -48,14 +56,18 @@ const notify = () => {
 
 export const getCardStoreVersion = () => storeVersion;
 
+export const getCardStoreGeneration = () => storeGeneration;
+
 export const subscribeCardStore = listener => {
   listeners.add(listener);
   return () => listeners.delete(listener);
 };
 
 export const clearCardStore = () => {
-  if (!projections.size) return;
+  storeGeneration += 1;
+  if (!projections.size && !fullProfiles.size) return;
   projections.clear();
+  fullProfiles.clear();
   notify();
 };
 
@@ -64,8 +76,10 @@ export const switchCardStoreViewer = viewerId => {
   const next = viewerId || null;
   if (next === storeViewer) return;
   storeViewer = next;
-  if (projections.size) {
+  storeGeneration += 1;
+  if (projections.size || fullProfiles.size) {
     projections.clear();
+    fullProfiles.clear();
     notify();
   }
 };
@@ -152,10 +166,75 @@ export const restoreStoredProjection = (id, receipt) => {
   notify();
 };
 
+/**
+ * Повна анкета картки — у тому самому сховищі, що й проєкції.
+ *
+ * Доти вона жила окремим станом стрічки (`fullProfileByUserId`) і лягала
+ * поверх рядка завжди: сховище приносило свіжішу картку (нова версія `rev` —
+ * анкету правили), а розгорнутий рядок показував поверх неї стару анкету.
+ * Старіша за наявну версією анкета не лягає; та сама — пізніший запис
+ * перемагає.
+ */
+export const upsertStoredFullProfile = (id, profile) => {
+  const key = id ? String(id) : '';
+  if (!key || !profile || typeof profile !== 'object') return;
+  const current = fullProfiles.get(key);
+  if (current === profile) return;
+  if (current && readCardRevision(profile) < readCardRevision(current)) return;
+  fullProfiles.set(key, profile);
+  notify();
+};
+
+/** Дописати до анкети частину (контакти, дочитані окремо) — без перевірки версії. */
+export const mergeStoredFullProfile = (id, partial) => {
+  const key = id ? String(id) : '';
+  if (!key || !partial || typeof partial !== 'object') return;
+  fullProfiles.set(key, { ...(fullProfiles.get(key) || {}), ...partial });
+  notify();
+};
+
+/** Локальна правка анкети (той самий випадок, що `patchStoredProjection`). */
+export const patchStoredFullProfile = (id, patch) => {
+  const key = id ? String(id) : '';
+  const current = key ? fullProfiles.get(key) : null;
+  if (!current || typeof patch !== 'function') return;
+  const next = patch(current);
+  if (!next || next === current) return;
+  fullProfiles.set(key, next);
+  notify();
+};
+
+/**
+ * Анкета старіша за проєкцію в сховищі: картку відтоді правили. Таку анкету
+ * не можна класти поверх рядка — вона перебила б свіжі поля старими, — її
+ * треба дочитати. Без версії з якогось боку — не відомо, тож не застаріла.
+ */
+export const isStoredFullProfileStale = id => {
+  const key = id ? String(id) : '';
+  const full = key ? fullProfiles.get(key) : null;
+  const projection = key ? projections.get(key) : null;
+  if (!full || !projection) return false;
+  const fullRevision = readCardRevision(full);
+  const projectionRevision = readCardRevision(projection);
+  return fullRevision > 0 && projectionRevision > fullRevision;
+};
+
+/** Чинна анкета картки або `null` (немає чи застаріла). */
+export const getStoredFullProfile = id => {
+  const key = id ? String(id) : '';
+  if (!key || isStoredFullProfileStale(key)) return null;
+  return fullProfiles.get(key) || null;
+};
+
+/** Анкета є, але застаріла — дочитати (`ensureFullProfile` у стрічці). */
+export const listStaleStoredFullProfileIds = () => [...fullProfiles.keys()].filter(isStoredFullProfileStale);
+
 export const __resetCardStoreForTests = () => {
   notifyScheduled = false;
+  fullProfiles.clear();
   projections.clear();
   listeners.clear();
   storeViewer = null;
   storeVersion = 0;
+  storeGeneration = 0;
 };
