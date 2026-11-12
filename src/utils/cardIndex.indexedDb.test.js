@@ -148,6 +148,47 @@ describe('кеш карток в IndexedDB', () => {
     expect(localStorage.getItem('cards')).toBeNull();
   });
 
+  it('зведення копій не воскрешає картку, яку інша вкладка забула за журналом', async () => {
+    const wait = () => new Promise(resolve => setTimeout(resolve, 5));
+    const idbTab = loadModule();
+    await idbTab.preloadCardCacheFromIndexedDb();
+    idbTab.saveCard({ userId: 'a', name: 'Old' });
+    idbTab.flushPendingMatchingCacheWrites();
+    await flush();
+    await wait();
+    mockIdbFailures.get = true;
+    const fallback = loadModule();
+    await expect(fallback.preloadCardCacheFromIndexedDb()).resolves.toBe(false);
+    mockIdbFailures.get = false;
+    // Вкладка на localStorage картки a не мала, але журнал сказав, що вона змінилась.
+    fallback.forgetCachedCardBodies(['a']);
+    fallback.flushPendingMatchingCacheWrites();
+    const next = loadModule();
+    await next.preloadCardCacheFromIndexedDb();
+    expect(next.loadCards().a).toBeUndefined();
+    await flush();
+    expect(mockIdbStore.get('cards').items.a).toBeUndefined();
+  });
+
+  it('картка, записана після останнього збереження іншої копії, лишається', async () => {
+    const wait = () => new Promise(resolve => setTimeout(resolve, 5));
+    mockIdbFailures.get = true;
+    const fallback = loadModule();
+    await expect(fallback.preloadCardCacheFromIndexedDb()).resolves.toBe(false);
+    mockIdbFailures.get = false;
+    fallback.saveCard({ userId: 'b', name: 'B' });
+    fallback.flushPendingMatchingCacheWrites();
+    await wait();
+    const idbTab = loadModule();
+    await idbTab.preloadCardCacheFromIndexedDb();
+    idbTab.saveCard({ userId: 'a', name: 'A' });
+    idbTab.flushPendingMatchingCacheWrites();
+    await flush();
+    const next = loadModule();
+    await next.preloadCardCacheFromIndexedDb();
+    expect(next.loadCards().a.name).toBe('A');
+  });
+
   it('скидання, якого IndexedDB не підтвердила, не повертається на наступному старті', async () => {
     const first = loadModule();
     await first.preloadCardCacheFromIndexedDb();
