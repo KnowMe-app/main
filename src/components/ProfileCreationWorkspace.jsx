@@ -1100,8 +1100,13 @@ export const ProfileCreationWorkspace = () => {
    *
    * Читання одне на відкриту форму: картка тут одна, а не список.
    */
+  // Картка, чиї відгуки зараз у `publicComments`. Відмова бази приходить
+  // пізно — людина могла вже відкрити іншу картку, і відкат, що не звіряє
+  // картку, вставив би відгук про одну людину під іншою.
+  const publicCommentsCardIdRef = useRef(null);
   useEffect(() => {
     const cardId = overlayTarget?.userId;
+    publicCommentsCardIdRef.current = cardId || null;
     if (!cardId) {
       setPublicComments([]);
       setPublicCommentsState({ loading: false, loaded: false });
@@ -1150,10 +1155,14 @@ export const ProfileCreationWorkspace = () => {
 
   // Правка й видалення відгуку — через чергу пристрою, одразу на екрані;
   // відмова бази повертає відгук таким, яким він був.
-  const rollBackPublicCommentOnRejection = useCallback((delivered, previousComment) => {
+  const rollBackPublicCommentOnRejection = useCallback((delivered, previousComment, profileId) => {
     delivered?.catch(error => {
       if (isRetryableOutboxError(error)) return;
-      setPublicComments(previous => restorePublicComment(previous, previousComment));
+      // Інша картка на екрані — її список не чіпаємо; повернений відгук
+      // приїде з базою, коли картку відкриють знову.
+      if (publicCommentsCardIdRef.current === profileId) {
+        setPublicComments(previous => restorePublicComment(previous, previousComment));
+      }
       toast.error(uiText('Зміну відгуку не збережено: сервер відмовив', language));
     });
   }, [language]);
@@ -1166,14 +1175,14 @@ export const ProfileCreationWorkspace = () => {
         ? { ...comment, text: updated.text, updatedAt: updated.updatedAt }
         : comment))
       : previous.filter(comment => comment.id !== commentId)));
-    rollBackPublicCommentOnRejection(delivered, previousComment);
+    rollBackPublicCommentOnRejection(delivered, previousComment, profileId);
   }, [publicComments, rollBackPublicCommentOnRejection]);
 
   const handleDeletePublicComment = useCallback(async (profileId, commentId) => {
     const previousComment = publicComments.find(comment => comment.id === commentId) || null;
     const { delivered } = await deletePublicProfileComment({ profileId, commentId }) || {};
     setPublicComments(previous => previous.filter(comment => comment.id !== commentId));
-    rollBackPublicCommentOnRejection(delivered, previousComment);
+    rollBackPublicCommentOnRejection(delivered, previousComment, profileId);
   }, [publicComments, rollBackPublicCommentOnRejection]);
 
   useEffect(() => {

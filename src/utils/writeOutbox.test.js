@@ -293,4 +293,36 @@ describe('черга записів пристрою', () => {
     expect(localStorage.getItem('km.writeOutbox.v1:u1')).toBeNull();
     expect(stored('u1')).toHaveLength(0);
   });
+
+  // Дві вкладки того самого акаунта бачать на диску той самий незавершений
+  // лічильник — відправити його мусить лише одна.
+  it('запис, що додається, з двох вкладок відправляється один раз', async () => {
+    const tap = { 'multiData/contactViews/u1/c/count': 1 };
+    const pendingA = deferred();
+    const sendA = jest.fn(() => pendingA.promise);
+    configureWriteOutbox({ send: sendA });
+    startWriteOutbox('u1');
+    enqueueOutboxWrite({ uid: 'u1', additive: true, patch: tap });
+    await flush();
+    expect(sendA).toHaveBeenCalledTimes(1);
+
+    let tabB;
+    jest.isolateModules(() => {
+      tabB = require('./writeOutbox');
+    });
+    const sendB = jest.fn(() => Promise.resolve());
+    tabB.configureWriteOutbox({ send: sendB });
+    tabB.startWriteOutbox('u1');
+    await flush();
+    expect(sendB).not.toHaveBeenCalled();
+
+    pendingA.resolve();
+    await flush();
+    expect(stored('u1')).toHaveLength(0);
+    tabB.flushWriteOutbox();
+    await flush();
+    expect(sendB).not.toHaveBeenCalled();
+    expect(tabB.getWriteOutboxPendingCount()).toBe(0);
+    tabB.__resetWriteOutboxForTests();
+  });
 });

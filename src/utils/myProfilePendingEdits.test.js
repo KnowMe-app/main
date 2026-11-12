@@ -36,6 +36,15 @@ describe('незбережені правки «Мого профілю»', () =
     expect(readPendingProfileEdits('u1').fields).toEqual({});
   });
 
+  // Дата циклу з графіка програми пишеться окремо від решти анкети: її
+  // запис не мусить знімати місто, яке людина правила й ще не зберегла.
+  it('часткове збереження знімає лише поля, які воно несло', () => {
+    rememberPendingProfileEdit('u1', 'city', 'Київ');
+    rememberPendingProfileEdit('u1', 'lastCycle', '2026-11-01');
+    settlePendingProfileEdits('u1', { lastCycle: '2026-11-01' }, capturePendingProfileGenerations('u1'));
+    expect(readPendingProfileEdits('u1').fields).toEqual({ city: 'Київ' });
+  });
+
   it('покоління не повторюються після того, як усі правки знято', () => {
     rememberPendingProfileEdit('u1', 'city', 'Київ');
     const firstSave = capturePendingProfileGenerations('u1');
@@ -68,7 +77,7 @@ describe('незбережені правки «Мого профілю»', () =
     const unsubscribe = subscribePendingProfileEdits(() => calls.push(countPendingProfileEdits('u1')));
     rememberPendingProfileEdit('u1', 'city', 'Київ');
     rememberPendingProfileEdit('u1', 'name', 'Оксана');
-    settlePendingProfileEdits('u1', {}, capturePendingProfileGenerations('u1'));
+    settlePendingProfileEdits('u1', { city: 'Київ', name: 'Оксана' }, capturePendingProfileGenerations('u1'));
     clearPendingProfileEdits();
     unsubscribe();
     rememberPendingProfileEdit('u1', 'city', 'Львів');

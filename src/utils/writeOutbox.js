@@ -217,7 +217,88 @@ const rejectEntry = (sentEntry, error) => {
   settleWaiter(entry.id, error);
 };
 
-const sendEntry = original => {
+// Запис, що додається (лічильник через `increment`), повторювати не можна:
+// друга вкладка того самого акаунта читає з диска той самий незавершений
+// запис і відправила б його вдруге — один дотик рахувався б двічі. Значення
+// за шляхом від повтору не страждають, тож координуються лише такі записи.
+//
+// Відправляє його та вкладка, що взяла замок на запис. Замок — Web Locks
+// (`navigator.locks`): браузер тримає його, доки відправка не скінчилась, і
+// сам знімає, коли вкладку закрили. Без нього — оренда в `localStorage`
+// (`km.writeOutboxLease.v1:…`, не з префіксом черги — інакше вона читалась
+// би як запис), яку власниця продовжує, поки запис летить. Ціна однакова:
+// якщо вкладку закрили, коли база вже прийняла запис, а підтвердження не
+// дійшло, інша вкладка дошле його ще раз — доставка «щонайменше раз».
+const LEASE_KEY_PREFIX = 'km.writeOutboxLease.v1:';
+const LEASE_MS = 30 * 1000;
+const TAB_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+const leaseKey = (uid, id) => `${LEASE_KEY_PREFIX}${uid}:${id}`;
+
+const takeStorageLease = (uid, id) => {
+  try {
+    const raw = localStorage.getItem(leaseKey(uid, id));
+    const lease = raw ? JSON.parse(raw) : null;
+    if (lease && lease.tab !== TAB_ID && Number(lease.until) > Date.now()) return null;
+    const write = () => localStorage.setItem(leaseKey(uid, id), JSON.stringify({ tab: TAB_ID, until: Date.now() + LEASE_MS }));
+    write();
+    const renew = setInterval(write, LEASE_MS / 3);
+    return () => {
+      clearInterval(renew);
+      try {
+        const current = JSON.parse(localStorage.getItem(leaseKey(uid, id)) || 'null');
+        if (current?.tab === TAB_ID) localStorage.removeItem(leaseKey(uid, id));
+      } catch {
+        // оренда сама згасне за LEASE_MS
+      }
+    };
+  } catch {
+    // Без сховища запис живе лише в памʼяті цієї вкладки — ділити нема з ким.
+    return () => {};
+  }
+};
+
+/**
+ * Виконати `run` під замком запису, якщо його вдалось узяти. `run` отримує
+ * функцію, яку треба покликати, коли відправка скінчилась. Повертає `false`,
+ * коли замок у іншої вкладки.
+ */
+const withExclusiveDelivery = (uid, id, run) => {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : null;
+  if (locks && typeof locks.request === 'function') {
+    return locks.request(`${leaseKey(uid, id)}`, { ifAvailable: true }, lock => {
+      if (!lock) return false;
+      return new Promise(release => run(release)).then(() => true);
+    }).catch(() => false);
+  }
+  const release = takeStorageLease(uid, id);
+  if (!release) return Promise.resolve(false);
+  return new Promise(done => run(done)).then(() => {
+    release();
+    return true;
+  });
+};
+
+const sendAdditiveEntry = original => {
+  const uid = activeUid;
+  // Доки чекаємо на замок, ця вкладка запис удруге не бере.
+  inFlight.add(original.id);
+  let acquired = false;
+  withExclusiveDelivery(uid, original.id, release => {
+    acquired = true;
+    inFlight.delete(original.id);
+    // Під замком диск перечитується: поки ми чекали, інша вкладка могла
+    // запис уже дослати й зняти — тоді `sendEntry` його просто забуде.
+    sendEntry(original, release);
+  }).then(gotLock => {
+    if (gotLock || acquired) return;
+    inFlight.delete(original.id);
+    // Шле інша вкладка. Її успіх зніме ключ, і наступна спроба тут запис
+    // забуде; закрита посеред дороги — замок згасне, і дошле ця.
+    if (uid === activeUid) scheduleRetry();
+  });
+};
+
+const sendEntry = (original, release = null) => {
   const uid = activeUid;
   // Диск — спільна правда вкладок: іншою вкладкою запис могли вже дослати
   // (ключа немає) або витіснити частину його шляхів новішим значенням.
@@ -227,6 +308,7 @@ const sendEntry = original => {
     entries = entries.filter(entry => entry.id !== original.id);
     notify();
     settleWaiter(original.id);
+    if (release) release();
     return;
   }
   const entry = fromDisk || original;
@@ -237,6 +319,7 @@ const sendEntry = original => {
   } catch (error) {
     sending = Promise.reject(error);
   }
+  if (release) sending.then(release, release);
   sending.then(
     () => {
       inFlight.delete(entry.id);
@@ -273,7 +356,7 @@ export const flushWriteOutbox = () => {
   if (!sendPatch || !activeUid) return;
   entries
     .filter(entry => !inFlight.has(entry.id))
-    .forEach(sendEntry);
+    .forEach(entry => (entry.additive ? sendAdditiveEntry(entry) : sendEntry(entry)));
 };
 
 /**
@@ -401,7 +484,10 @@ export const enqueueOutboxWrite = ({ uid, patch, meta = null, additive = false }
   });
   writeEntryToDisk(activeUid, entry);
   notify();
-  if (sendPatch) sendEntry(entry);
+  if (sendPatch) {
+    if (additive) sendAdditiveEntry(entry);
+    else sendEntry(entry);
+  }
   return delivered;
 };
 

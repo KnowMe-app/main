@@ -60,3 +60,20 @@ test('відгуки: непридатний id не читається', async 
   assert.equal(await syncPublicReviewFlag('a/b', { readHasAny, updateCard: async () => {} }), false);
   assert.equal(read, false);
 });
+
+test('відгуки: відгук, доданий поки писали «немає», повертає прапорець', async () => {
+  const store = cardStore({ c1: { name: 'Оксана', hasPublicReview: true } });
+  // Тригер видалення прочитав «немає», а до кінця його запису зʼявився новий
+  // відгук, чий тригер уже відпрацював (прапорець і так стояв).
+  const answers = [false, true, true];
+  const readHasAny = async () => answers.shift();
+  assert.equal(await syncPublicReviewFlag('c1', { readHasAny, updateCard: store.updateCard }), true);
+  assert.equal(store.cards.c1.hasPublicReview, true);
+});
+
+test('відгуки: розбіжність, що не сходиться, — помилка для повтору тригера', async () => {
+  const store = cardStore({ c1: { name: 'Оксана' } });
+  let flip = false;
+  const readHasAny = async () => { flip = !flip; return flip; };
+  await assert.rejects(syncPublicReviewFlag('c1', { readHasAny, updateCard: store.updateCard }));
+});

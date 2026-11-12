@@ -1505,7 +1505,10 @@ const Matching = () => {
     setViewerLastCycle(value);
     if (!ownerId) return;
     rememberPendingProfileEdit(ownerId, 'lastCycle', value);
-    const generations = capturePendingProfileGenerations(ownerId);
+    // Лише покоління самої дати: решта незбереженого «Мого профілю» цим
+    // записом не їде, і знімати її не можна.
+    const { lastCycle: lastCycleGeneration } = capturePendingProfileGenerations(ownerId);
+    const generations = lastCycleGeneration === undefined ? {} : { lastCycle: lastCycleGeneration };
     try {
       await updateDataInRealtimeDB(ownerId, { lastCycle: value }, 'update');
       settlePendingProfileEdits(ownerId, { lastCycle: value }, generations);
