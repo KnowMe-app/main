@@ -234,27 +234,61 @@ const LEASE_MS = 30 * 1000;
 const TAB_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 const leaseKey = (uid, id) => `${LEASE_KEY_PREFIX}${uid}:${id}`;
 
-const takeStorageLease = (uid, id) => {
+// Скільки чекати між заявкою на оренду й перевіркою, що вона ще наша.
+// Читання й запис заявки — синхронні й ідуть упритул, тож за цей час будь-яка
+// конкурентна заявка вже лягла б, і виграє та, що лягла останньою.
+const LEASE_SETTLE_MS = 60;
+const randomSettle = () => LEASE_SETTLE_MS + Math.floor(Math.random() * 40);
+const readLease = (uid, id) => {
+  const raw = localStorage.getItem(leaseKey(uid, id));
+  return raw ? JSON.parse(raw) : null;
+};
+
+/**
+ * Запасна оренда в `localStorage`, коли Web Locks немає. Сховище не вміє
+ * «порівняти й записати», тож дві вкладки можуть разом побачити вільну
+ * оренду й обидві подати заявку. Тому заявка несе власний номер, а
+ * відправляти можна лише після паузи й перевірки, що в ключі досі наш
+ * номер: з двох заявок лишається остання, і друга вкладка відступає.
+ * Продовжується оренда лише власницею — чужу заявку таймер не перебиває.
+ *
+ * @returns {Promise<(() => void)|null>} зняти оренду, або `null` — не наша.
+ */
+const takeStorageLease = async (uid, id) => {
+  const nonce = `${TAB_ID}:${Math.random().toString(36).slice(2, 10)}`;
   try {
-    const raw = localStorage.getItem(leaseKey(uid, id));
-    const lease = raw ? JSON.parse(raw) : null;
-    if (lease && lease.tab !== TAB_ID && Number(lease.until) > Date.now()) return null;
-    const write = () => localStorage.setItem(leaseKey(uid, id), JSON.stringify({ tab: TAB_ID, until: Date.now() + LEASE_MS }));
-    write();
-    const renew = setInterval(write, LEASE_MS / 3);
-    return () => {
-      clearInterval(renew);
-      try {
-        const current = JSON.parse(localStorage.getItem(leaseKey(uid, id)) || 'null');
-        if (current?.tab === TAB_ID) localStorage.removeItem(leaseKey(uid, id));
-      } catch {
-        // оренда сама згасне за LEASE_MS
-      }
-    };
+    const lease = readLease(uid, id);
+    if (lease && lease.nonce !== nonce && Number(lease.until) > Date.now()) return null;
+    localStorage.setItem(leaseKey(uid, id), JSON.stringify({ nonce, until: Date.now() + LEASE_MS }));
   } catch {
     // Без сховища запис живе лише в памʼяті цієї вкладки — ділити нема з ким.
     return () => {};
   }
+  await new Promise(resolve => setTimeout(resolve, randomSettle()));
+  try {
+    if (readLease(uid, id)?.nonce !== nonce) return null;
+  } catch {
+    return null;
+  }
+  const renew = setInterval(() => {
+    try {
+      if (readLease(uid, id)?.nonce !== nonce) {
+        clearInterval(renew);
+        return;
+      }
+      localStorage.setItem(leaseKey(uid, id), JSON.stringify({ nonce, until: Date.now() + LEASE_MS }));
+    } catch {
+      // оренда сама згасне за LEASE_MS
+    }
+  }, LEASE_MS / 3);
+  return () => {
+    clearInterval(renew);
+    try {
+      if (readLease(uid, id)?.nonce === nonce) localStorage.removeItem(leaseKey(uid, id));
+    } catch {
+      // оренда сама згасне за LEASE_MS
+    }
+  };
 };
 
 /**
@@ -270,11 +304,12 @@ const withExclusiveDelivery = (uid, id, run) => {
       return new Promise(release => run(release)).then(() => true);
     }).catch(() => false);
   }
-  const release = takeStorageLease(uid, id);
-  if (!release) return Promise.resolve(false);
-  return new Promise(done => run(done)).then(() => {
-    release();
-    return true;
+  return takeStorageLease(uid, id).then(release => {
+    if (!release) return false;
+    return new Promise(done => run(done)).then(() => {
+      release();
+      return true;
+    });
   });
 };
 
@@ -286,6 +321,13 @@ const sendAdditiveEntry = original => {
   withExclusiveDelivery(uid, original.id, release => {
     acquired = true;
     inFlight.delete(original.id);
+    // Замок узято асинхронно: поки чекали, читач міг змінитись. Запис
+    // попереднього не мусить піти під новою сесією й зняти себе з чужої
+    // черги — він лишається на диску свого читача до його входу.
+    if (uid !== activeUid) {
+      release();
+      return;
+    }
     // Під замком диск перечитується: поки ми чекали, інша вкладка могла
     // запис уже дослати й зняти — тоді `sendEntry` його просто забуде.
     sendEntry(original, release);
