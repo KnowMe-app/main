@@ -243,4 +243,35 @@ describe('черга записів пристрою', () => {
     await flush();
     expect(handler).toHaveBeenCalledWith({ type: 'reactions' }, { replayed: false, patch: { 'multiData/dislikes/u1/a': null } });
   });
+
+  it('перенос старої черги біля стелі сховища не губить записів', async () => {
+    localStorage.setItem('km.writeOutbox.v1:u1', JSON.stringify({ entries: [
+      { id: 'a', patch: { 'x/a': 1 }, createdAt: 1 },
+      { id: 'b', patch: { 'x/b': 1 }, createdAt: 2 },
+      { id: 'c', patch: { 'x/c': 1 }, createdAt: 3 },
+    ] }));
+    // Сховище приймає лише два нові ключі.
+    const realSetItem = Storage.prototype.setItem;
+    let writes = 0;
+    const spy = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(function setItem(key, value) {
+      if (key.startsWith('km.writeOutbox.v1:u1:')) {
+        writes += 1;
+        if (writes > 2) throw new Error('QuotaExceededError');
+      }
+      return realSetItem.call(this, key, value);
+    });
+    const send = jest.fn(() => Promise.resolve());
+    try {
+      configureWriteOutbox({ send });
+      startWriteOutbox('u1');
+    } finally {
+      spy.mockRestore();
+    }
+    // Відправлено всі три; старий масив тримав їх, доки перенос не вдався,
+    // а підтвердження зняли їх і звідти — вдруге не дошлеться нічого.
+    expect(send).toHaveBeenCalledTimes(3);
+    await flush();
+    expect(localStorage.getItem('km.writeOutbox.v1:u1')).toBeNull();
+    expect(stored('u1')).toHaveLength(0);
+  });
 });
