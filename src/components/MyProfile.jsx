@@ -90,6 +90,7 @@ import { MyProfileShare } from './MyProfileShare';
 import { getCurrentValue } from './getCurrentValue';
 import { ACCOUNT_DELETION_EMAIL, requestOwnAccountDeletion } from '../utils/accountDeletion';
 import { clearMyProfileCache, patchMyProfileCache, readMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
+import { clearPendingProfileEdits, readPendingProfileEdits, rememberPendingProfileEdit, settlePendingProfileEdits } from '../utils/myProfilePendingEdits';
 import { listShareableProfileRoles } from '../utils/profileShare';
 import {
   DEFAULT_REWARD_CURRENCY,
@@ -1564,7 +1565,11 @@ const buildMyProfileView = existingData => {
 const readCachedMyProfileView = () => {
   const uid = auth.currentUser?.uid || getStoredAuthenticatedOwnerId();
   const data = readMyProfileCache(uid);
-  return data ? { uid, ...buildMyProfileView(data) } : null;
+  if (!data) return null;
+  const view = buildMyProfileView(data);
+  // Незбережене з минулої вкладки (`utils/myProfilePendingEdits`) — поверх
+  // кеша: людина бачить свою правку, а не те, що встигла записати база.
+  return { uid, ...view, loadedProfile: { ...view.loadedProfile, ...readPendingProfileEdits(uid).fields } };
 };
 
 export const MyProfile = () => {
@@ -1630,6 +1635,10 @@ export const MyProfile = () => {
   const cachedProfileUidRef = useRef(cachedProfileView?.uid || '');
   const authSessionGenerationRef = useRef(0);
   const saveQueueRef = useRef(Promise.resolve());
+  // `saveState` оголошено нижче за завантаження анкети, а дописати незбережені
+  // правки (`utils/myProfilePendingEdits`) треба саме з завантаження — тож
+  // воно кличе його через цей ref.
+  const saveStateRef = useRef(null);
   const stateRef = useRef(state);
   // Анкета так, як вона лежить у базі після останнього запису: з нею
   // `makeUploadedInfo` звіряє наступне збереження. Доти перед кожним
@@ -1640,7 +1649,9 @@ export const MyProfile = () => {
   // знімки за посиланнями (`profileSaved`), інакше гість бачив би стару анкету.
   const shareBlockRef = useRef(null);
   const getShareProfile = useCallback(() => stateRef.current, []);
-  const editedFieldsRef = useRef(new Set());
+  // Незбережені правки — теж «відредаговане»: свіжа анкета з бази не мусить
+  // їх перебити (`mergeLoadedProfileData`).
+  const editedFieldsRef = useRef(new Set(Object.keys(readPendingProfileEdits(cachedProfileView?.uid).fields)));
   const authHintTimersRef = useRef([]);
   // Анкета ще їде з бази. Поки цього стану не було, сторінка малювала порожню
   // форму: «Заповнено 0 з 10 · 0%», «бракує полів: 10», статус «Не
@@ -1714,9 +1725,11 @@ export const MyProfile = () => {
   }, []);
 
   const mergeLoadedProfileData = useCallback((loadedData, uid) => {
+    const pendingFields = readPendingProfileEdits(uid).fields;
+    Object.keys(pendingFields).forEach(name => editedFieldsRef.current.add(name));
     setState(prevState => {
       const protectedFields = editedFieldsRef.current;
-      const nextState = { userRole: 'ed', ...loadedData, userId: uid };
+      const nextState = { userRole: 'ed', ...loadedData, ...pendingFields, userId: uid };
 
       protectedFields.forEach(fieldName => {
         if (Object.prototype.hasOwnProperty.call(prevState, fieldName)) {
@@ -1764,6 +1777,17 @@ export const MyProfile = () => {
       setProfileRoles(roles);
       mergeLoadedProfileData(loadedProfile, uid);
       setProfileLoading(false);
+      // Правки, які минула вкладка не встигла записати (без звʼязку чи
+      // закрита посеред запису), дописує той самий `saveState` — тепер, коли
+      // база порівняння свіжа. Лише після справжнього читання: на збої
+      // мережі (`nodesProfile === null`) запис однаково не дійде.
+      const pending = readPendingProfileEdits(uid);
+      if (nodesProfile && Object.keys(pending.fields).length) {
+        saveStateRef.current?.(
+          { userRole: 'ed', ...loadedProfile, ...pending.fields, userId: uid },
+          { directFields: pending.directFields, searchIdFields: pending.searchIdFields },
+        )?.catch?.(error => console.warn('Replaying pending MyProfile edits failed.', error));
+      }
       return true;
     } catch (error) {
       console.warn('Failed to load MyProfile profile data.', error);
@@ -1813,6 +1837,9 @@ export const MyProfile = () => {
   const saveFieldValue = (name, value, field) => {
     const updatedValue = normalizeFieldValue(name, value, field);
     editedFieldsRef.current.add(name);
+    // Спершу на пристрій: без звʼязку запис висить у памʼяті вкладки, і
+    // закрита вкладка губила б правку (`utils/myProfilePendingEdits`).
+    rememberPendingProfileEdit(userId || stateRef.current.userId, name, updatedValue, { searchId: isSearchIdIndexedField(name) });
     setMissing(prev => ({ ...prev, [name]: false }));
 
     const nextState = {
@@ -2265,6 +2292,7 @@ export const MyProfile = () => {
         localStorage.removeItem('isLoggedIn');
         localStorage.removeItem('ownerId');
         clearMyProfileCache();
+        clearPendingProfileEdits();
         resetAuthenticatedProfileState();
         restoreLocalDraft();
         setProfileLoading(false);
@@ -2327,6 +2355,7 @@ export const MyProfile = () => {
     localStorage.removeItem(MY_PROFILE_DRAFT_STORAGE_KEY);
     resetAuthenticatedProfileState();
     clearMyProfileCache();
+    clearPendingProfileEdits();
     await signOut(auth).catch(() => {});
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('ownerId');
@@ -2344,6 +2373,7 @@ export const MyProfile = () => {
     });
     resetAuthenticatedProfileState();
     clearMyProfileCache();
+    clearPendingProfileEdits();
     await signOut(auth);
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('ownerId');
@@ -2745,6 +2775,9 @@ export const MyProfile = () => {
           await syncUserSearchIdIndex(targetUserId, existingData, uploadedInfo, searchIdFields);
         }
         await persistUserProfile(targetUserId, uploadedInfo, 'check');
+        // Записане знімається з незбережених правок — лише ті поля, що
+        // відтоді не мінялись (`settlePendingProfileEdits`).
+        settlePendingProfileEdits(targetUserId, nextState);
         // Записане стає новою базою порівняння — так, як його поклав писач.
         if (persistedProfileRef.current.uid === targetUserId) {
           persistedProfileRef.current = {
@@ -2759,10 +2792,13 @@ export const MyProfile = () => {
     return saveQueueRef.current;
   };
 
+  saveStateRef.current = saveState;
+
   // Поля нових розділів пишуться напряму (`directFields`): програми й
   // побажання — обʼєкти, а `makeUploadedInfo` зводить значення до історії
   // версій, яка для них нічого не означає.
   const saveRoleField = (name, value) => {
+    rememberPendingProfileEdit(userId || stateRef.current.userId, name, value, { direct: true });
     const nextState = { ...stateRef.current, [name]: value };
     stateRef.current = nextState;
     setState(nextState);
