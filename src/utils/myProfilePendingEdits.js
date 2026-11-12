@@ -106,7 +106,11 @@ export const settlePendingProfileEdits = (uid, savedState, capturedGenerations =
   const pending = readPendingProfileEdits(uid);
   const names = Object.keys(pending.fields);
   if (!names.length) return;
+  // Знімається лише те, що цей запис справді ніс: часткове збереження (дата
+  // циклу з графіка програми) інакше знімало б і чужі правки того самого
+  // покоління — місто чи телефон, яких у базі ще немає.
   const settled = names.filter(name => {
+    if (!Object.prototype.hasOwnProperty.call(savedState, name)) return false;
     const generation = pending.generations[name];
     if (generation !== undefined) return capturedGenerations[name] === generation;
     return sameValue(pending.fields[name], savedState[name]);
