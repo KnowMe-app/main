@@ -84,6 +84,34 @@ const INDEXED_DB_PRELOAD_TIMEOUT_MS = 1500;
 let indexedDbReady = false;
 const usesIndexedDb = key => indexedDbReady && INDEXED_DB_KEYS.has(key);
 
+// Скинуті ключі, які IndexedDB ще не підтвердила стертими (`resetMatchingStorageKey`).
+const INDEXED_DB_INVALIDATIONS_KEY = 'km.cardCacheIdbInvalidated.v1';
+const readIndexedDbInvalidations = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(INDEXED_DB_INVALIDATIONS_KEY) || '[]');
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    return new Set();
+  }
+};
+const writeIndexedDbInvalidations = keys => {
+  try {
+    if (keys.size) localStorage.setItem(INDEXED_DB_INVALIDATIONS_KEY, JSON.stringify([...keys]));
+    else localStorage.removeItem(INDEXED_DB_INVALIDATIONS_KEY);
+  } catch {
+    // нічого
+  }
+};
+const markIndexedDbInvalidation = key => {
+  const keys = readIndexedDbInvalidations();
+  keys.add(key);
+  writeIndexedDbInvalidations(keys);
+};
+const clearIndexedDbInvalidation = key => {
+  const keys = readIndexedDbInvalidations();
+  if (keys.delete(key)) writeIndexedDbInvalidations(keys);
+};
+
 /**
  * Підвантажити кеш карток з IndexedDB у памʼять вкладки — до першого кадру
  * (`index.js`), щоб стрічка з кешу малювалась одразу, як і з `localStorage`.
@@ -100,26 +128,42 @@ export const preloadCardCacheFromIndexedDb = async () => {
       idbGetMany(keys),
       new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('IndexedDB preload timeout')), INDEXED_DB_PRELOAD_TIMEOUT_MS); }),
     ]);
+    const invalidated = readIndexedDbInvalidations();
     keys.forEach(key => {
-      if (values[key] && typeof values[key] === 'object') {
-        localJsonCache.set(key, values[key]);
+      // Ключ скинули, коли IndexedDB не далась стерти (`resetMatchingStorageKey`):
+      // те, що там лежить, — скинуте, і підняти його означало б скасувати скидання.
+      const fromIdb = !invalidated.has(key) && values[key] && typeof values[key] === 'object' ? values[key] : null;
+      if (invalidated.has(key)) {
+        idbDelete(key).then(() => clearIndexedDbInvalidation(key)).catch(() => {});
+      }
+      // `localStorage` тут лежить лише тоді, коли попередня вкладка лишилась на
+      // ньому (тайм-аут підвантаження) і писала туди — тобто він новіший за
+      // IndexedDB. Звіряємо за `cachedAt`, а не беремо IndexedDB наосліп: інакше
+      // картка, збережена в тій вкладці, на наступному старті поверталась би
+      // до старої версії.
+      let fromLocal = null;
+      try {
+        const raw = localStorage.getItem(key);
+        fromLocal = raw ? JSON.parse(raw) : null;
+      } catch {
+        fromLocal = null;
+      }
+      if (!fromLocal || typeof fromLocal !== 'object') fromLocal = null;
+      const localIsNewer = Boolean(fromLocal)
+        && (!fromIdb || toTimestamp(fromLocal.cachedAt) >= toTimestamp(fromIdb.cachedAt));
+      const chosen = localIsNewer ? fromLocal : fromIdb;
+      if (chosen) localJsonCache.set(key, chosen);
+      if (!fromLocal) return;
+      if (!localIsNewer) {
+        // Старіша копія, яку не зняли минулого разу, — просто прибрати.
+        try { localStorage.removeItem(key); } catch { /* нічого */ }
         return;
       }
       // Перенос з `localStorage`: значення лягає в IndexedDB, а ключ
       // `localStorage` знімається лише після вдалого запису.
-      let migrated = null;
-      try {
-        const raw = localStorage.getItem(key);
-        migrated = raw ? JSON.parse(raw) : null;
-      } catch {
-        migrated = null;
-      }
-      if (migrated && typeof migrated === 'object') {
-        localJsonCache.set(key, migrated);
-        idbPut(key, migrated)
-          .then(() => { try { localStorage.removeItem(key); } catch { /* нічого */ } })
-          .catch(() => {});
-      }
+      idbPut(key, fromLocal)
+        .then(() => { try { localStorage.removeItem(key); } catch { /* нічого */ } })
+        .catch(() => {});
     });
     indexedDbReady = true;
     return true;
@@ -218,7 +262,12 @@ const resetMatchingStorageKey = key => {
   // підвантажити: підвантаження обмежене в часі, і вкладка, що лишилась на
   // `localStorage`, інакше скидала б кеш, лишаючи в IndexedDB старий —
   // наступна вкладка підняла б його знову.
-  if (INDEXED_DB_KEYS.has(key) && isIndexedDbAvailable()) idbDelete(key).catch(() => {});
+  // Позначка стоїть, доки стирання не підтвердилось: база буває тимчасово
+  // недоступна, і без позначки наступна вкладка підняла б скинутий кеш.
+  if (INDEXED_DB_KEYS.has(key) && isIndexedDbAvailable()) {
+    markIndexedDbInvalidation(key);
+    idbDelete(key).then(() => clearIndexedDbInvalidation(key)).catch(() => {});
+  }
   localJsonCache.delete(key);
   pendingSaveValues.delete(key);
   const timer = pendingSaveTimers.get(key);
@@ -364,7 +413,7 @@ const flushSaveJson = key => {
     const next = key === CARDS_KEY ? pruneCardsByCount(value) : value;
     if (next !== value) localJsonCache.set(key, next);
     incrementMatchingLoadStat('indexedDbWrites');
-    idbPut(key, next).catch(error => {
+    idbPut(key, next).then(() => clearIndexedDbInvalidation(key)).catch(error => {
       console.warn('[matchingCache] запис кешу в IndexedDB не вдався', error?.message || error);
     });
     return;

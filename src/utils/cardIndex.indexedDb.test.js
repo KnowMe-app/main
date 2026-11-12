@@ -2,11 +2,18 @@
 // `localStorage`, запис і скидання. У jsdom IndexedDB немає, тож сховище
 // підмінене памʼяттю з тим самим інтерфейсом.
 const mockIdbStore = new Map();
+const mockIdbFailures = { get: false, delete: false };
 jest.mock('./idbKeyValue', () => ({
   isIndexedDbAvailable: () => true,
-  idbGetMany: async keys => Object.fromEntries(keys.map(key => [key, mockIdbStore.get(key)])),
+  idbGetMany: async keys => {
+    if (mockIdbFailures.get) throw new Error('IndexedDB preload timeout');
+    return Object.fromEntries(keys.map(key => [key, mockIdbStore.get(key)]));
+  },
   idbPut: async (key, value) => { mockIdbStore.set(key, JSON.parse(JSON.stringify(value))); },
-  idbDelete: async key => { mockIdbStore.delete(key); },
+  idbDelete: async key => {
+    if (mockIdbFailures.delete) throw new Error('IndexedDB unavailable');
+    mockIdbStore.delete(key);
+  },
 }));
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -21,6 +28,8 @@ const loadModule = () => {
 
 beforeEach(() => {
   mockIdbStore.clear();
+  mockIdbFailures.get = false;
+  mockIdbFailures.delete = false;
   localStorage.clear();
   localStorage.setItem('ownerId', 'viewer');
 });
@@ -86,5 +95,47 @@ describe('кеш карток в IndexedDB', () => {
     const next = loadModule();
     await next.preloadCardCacheFromIndexedDb();
     expect(next.getCachedMatchingSummaryCards(['a']).cards.a).toBeUndefined();
+  });
+
+  it('вкладка на localStorage після тайм-ауту: наступне підвантаження бере новіше', async () => {
+    const first = loadModule();
+    await first.preloadCardCacheFromIndexedDb();
+    first.saveCard({ userId: 'a', name: 'Before' });
+    first.flushPendingMatchingCacheWrites();
+    await flush();
+    // Наступна вкладка не дочекалась IndexedDB і писала в localStorage.
+    mockIdbFailures.get = true;
+    const fallback = loadModule();
+    await expect(fallback.preloadCardCacheFromIndexedDb()).resolves.toBe(false);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    fallback.saveCard({ userId: 'a', name: 'After' });
+    fallback.flushPendingMatchingCacheWrites();
+    // Третя вкладка знову з IndexedDB — картка не відкочується до Before.
+    mockIdbFailures.get = false;
+    const next = loadModule();
+    await next.preloadCardCacheFromIndexedDb();
+    expect(next.loadCards().a.name).toBe('After');
+    await flush();
+    expect(mockIdbStore.get('cards').items.a.name).toBe('After');
+    expect(localStorage.getItem('cards')).toBeNull();
+  });
+
+  it('скидання, якого IndexedDB не підтвердила, не повертається на наступному старті', async () => {
+    const first = loadModule();
+    await first.preloadCardCacheFromIndexedDb();
+    first.saveCard({ userId: 'a', name: 'Скинуте' });
+    first.flushPendingMatchingCacheWrites();
+    await flush();
+    mockIdbFailures.delete = true;
+    first.resetMatchingLocalStorageCache('test');
+    await flush();
+    expect(mockIdbStore.has('cards')).toBe(true);
+    mockIdbFailures.delete = false;
+    const next = loadModule();
+    await next.preloadCardCacheFromIndexedDb();
+    expect(next.loadCards()).toEqual({});
+    await flush();
+    expect(mockIdbStore.has('cards')).toBe(false);
+    expect(localStorage.getItem('km.cardCacheIdbInvalidated.v1')).toBeNull();
   });
 });
