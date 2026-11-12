@@ -28,6 +28,8 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+// Запасна оренда між вкладками чекає на перевірку заявки (до 100 мс).
+const settleLease = () => new Promise(resolve => setTimeout(resolve, 150));
 const denied = () => Object.assign(new Error('PERMISSION_DENIED: Permission denied'), { code: 'PERMISSION_DENIED' });
 
 beforeEach(() => {
@@ -303,7 +305,7 @@ describe('черга записів пристрою', () => {
     configureWriteOutbox({ send: sendA });
     startWriteOutbox('u1');
     enqueueOutboxWrite({ uid: 'u1', additive: true, patch: tap });
-    await flush();
+    await settleLease();
     expect(sendA).toHaveBeenCalledTimes(1);
 
     let tabB;
@@ -313,16 +315,62 @@ describe('черга записів пристрою', () => {
     const sendB = jest.fn(() => Promise.resolve());
     tabB.configureWriteOutbox({ send: sendB });
     tabB.startWriteOutbox('u1');
-    await flush();
+    await settleLease();
     expect(sendB).not.toHaveBeenCalled();
 
     pendingA.resolve();
     await flush();
     expect(stored('u1')).toHaveLength(0);
     tabB.flushWriteOutbox();
-    await flush();
+    await settleLease();
     expect(sendB).not.toHaveBeenCalled();
     expect(tabB.getWriteOutboxPendingCount()).toBe(0);
     tabB.__resetWriteOutboxForTests();
+  });
+
+  // Дві вкладки відкрились разом і обидві бачать вільну оренду: заявки
+  // мусять розвʼязатись до відправки, а не після неї.
+  it('дві вкладки, що стартують разом, відправляють лічильник один раз', async () => {
+    localStorage.setItem(`${prefix('u1')}a1`, JSON.stringify({
+      id: 'a1', patch: { 'x/count': 1 }, additive: true, createdAt: 1,
+    }));
+    const tabs = [];
+    jest.isolateModules(() => { tabs.push(require('./writeOutbox')); });
+    jest.isolateModules(() => { tabs.push(require('./writeOutbox')); });
+    const sends = [];
+    tabs.forEach((tab, index) => tab.configureWriteOutbox({ send: patch => {
+      sends.push(index);
+      return new Promise(() => {});
+    } }));
+    // Сховище в двох процесах: обидві вкладки прочитали оренду до того, як
+    // будь-яка її записала, — тож обидві бачать її вільною.
+    const realGetItem = Storage.prototype.getItem;
+    let blindReads = 2;
+    const spy = jest.spyOn(Storage.prototype, 'getItem').mockImplementation(function getItem(key) {
+      if (String(key).startsWith('km.writeOutboxLease.v1:') && blindReads > 0) {
+        blindReads -= 1;
+        return null;
+      }
+      return realGetItem.call(this, key);
+    });
+    tabs.forEach(tab => tab.startWriteOutbox('u1'));
+    await settleLease();
+    spy.mockRestore();
+    expect(blindReads).toBe(0);
+    expect(sends).toHaveLength(1);
+    tabs.forEach(tab => tab.__resetWriteOutboxForTests());
+  });
+
+  // Поки чекали на замок, увійшов інший читач: запис попереднього не
+  // відправляється під новою сесією й лишається на його диску.
+  it('запис, замок на який узято після зміни читача, не відправляється', async () => {
+    const send = jest.fn(() => Promise.resolve());
+    configureWriteOutbox({ send });
+    startWriteOutbox('u1');
+    enqueueOutboxWrite({ uid: 'u1', additive: true, patch: { 'x/count': 1 } });
+    startWriteOutbox('u2');
+    await settleLease();
+    expect(send).not.toHaveBeenCalled();
+    expect(stored('u1')).toHaveLength(1);
   });
 });
