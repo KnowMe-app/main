@@ -2,6 +2,7 @@ import {
   __resetWriteOutboxForTests,
   configureWriteOutbox,
   enqueueOutboxWrite,
+  flushWriteOutbox,
   getWriteOutboxPendingCount,
   isRetryableOutboxError,
   registerOutboxRejectionHandler,
@@ -418,5 +419,57 @@ describe('черга записів пристрою', () => {
     await flush();
     expect(send).toHaveBeenCalledTimes(1);
     expect(stored('u1')).toHaveLength(1);
+  });
+
+  // Поки квиток оновлюється, людина ставить нове значення того самого шляху:
+  // повтор старого запису не мусить його перебити.
+  it('новіше значення шляху витісняє запис, що чекає на квиток', async () => {
+    const denied = () => Object.assign(new Error('Permission denied'), { code: 'PERMISSION_DENIED' });
+    const sent = [];
+    let refreshDone;
+    const refreshAuth = jest.fn(() => new Promise(resolve => { refreshDone = resolve; }));
+    const send = jest.fn(patch => {
+      sent.push(patch['multiData/comments/u1/c']);
+      return sent.length === 1 ? Promise.reject(denied()) : Promise.resolve();
+    });
+    configureWriteOutbox({ send, refreshAuth });
+    startWriteOutbox('u1');
+    const oldWrite = enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/comments/u1/c': 'old' } });
+    await flush();
+    expect(refreshAuth).toHaveBeenCalledTimes(1);
+    const newWrite = enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/comments/u1/c': 'new' } });
+    await flush();
+    refreshDone('token');
+    await Promise.all([oldWrite, newWrite]);
+    await flush();
+    expect(sent).toEqual(['old', 'new']);
+    expect(stored('u1')).toHaveLength(0);
+  });
+
+  // Відмова → квиток оновлено → обрив → (без звʼязку квиток протух знову) →
+  // відмова: друга відмова теж мусить оновити квиток, а не зняти запис.
+  it('після обриву наступна відмова знову оновлює квиток', async () => {
+    const denied = () => Object.assign(new Error('Permission denied'), { code: 'PERMISSION_DENIED' });
+    const offline = () => Object.assign(new Error('Client is offline'), { code: 'unavailable' });
+    const outcomes = [denied(), offline(), denied()];
+    const send = jest.fn(() => {
+      const next = outcomes.shift();
+      return next ? Promise.reject(next) : Promise.resolve();
+    });
+    const refreshAuth = jest.fn(() => Promise.resolve('token'));
+    configureWriteOutbox({ send, refreshAuth });
+    startWriteOutbox('u1');
+    const delivered = enqueueOutboxWrite({ uid: 'u1', patch: { 'x/y': 1 } });
+    await flush();
+    await flush();
+    // Відмова → квиток → повтор → обрив: запис чекає на наступну спробу.
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(stored('u1')).toHaveLength(1);
+    // Звʼязок повернувся (квиток тим часом протух знову): відмова → квиток → запис.
+    flushWriteOutbox();
+    await expect(delivered).resolves.toBeUndefined();
+    expect(refreshAuth).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(4);
+    expect(stored('u1')).toHaveLength(0);
   });
 });

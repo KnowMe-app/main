@@ -39,6 +39,11 @@ let entries = [];
 let retryTimer = null;
 let retryAttempt = 0;
 const inFlight = new Set();
+// Записи, що чекають на оновлений квиток входу після відмови. Відправляти їх
+// не можна (`flushWriteOutbox` їх пропускає), а витісняти новішим значенням
+// того самого шляху — можна й треба: поки квиток оновлювався, людина могла
+// поставити нове значення, і повтор старого перебив би його.
+const awaitingAuth = new Set();
 const waiters = new Map();
 const listeners = new Set();
 const rejectionHandlers = new Map();
@@ -177,7 +182,7 @@ export const isRetryableOutboxError = error => {
 };
 
 const scheduleRetry = () => {
-  if (retryTimer || !entries.some(entry => !inFlight.has(entry.id))) return;
+  if (retryTimer || !entries.some(entry => !inFlight.has(entry.id) && !awaitingAuth.has(entry.id))) return;
   const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** retryAttempt);
   retryAttempt += 1;
   retryTimer = setTimeout(() => {
@@ -394,6 +399,10 @@ const sendEntry = (original, release = null) => {
       // лишається в черзі свого читача до його наступного входу.
       if (uid !== activeUid) return;
       if (isRetryableOutboxError(error)) {
+        // Обрив — не відмова зі свіжим квитком: поки пристрій знову без
+        // звʼязку, квиток може протухнути ще раз, і наступна відмова мусить
+        // знову його оновити, а не зняти запис.
+        authRetried.delete(entry.id);
         scheduleRetry();
         return;
       }
@@ -409,18 +418,23 @@ const sendEntry = (original, release = null) => {
       // запис лишається до наступної спроби.
       if (isPermissionDeniedError(error) && refreshAuth && !authRetried.has(entry.id)) {
         authRetried.add(entry.id);
-        inFlight.add(entry.id);
+        awaitingAuth.add(entry.id);
         Promise.resolve()
           .then(() => refreshAuth())
           .then(
             () => {
-              inFlight.delete(entry.id);
+              awaitingAuth.delete(entry.id);
               if (uid !== activeUid) return;
-              if (entry.additive) sendAdditiveEntry(entry);
-              else sendEntry(entry);
+              // Повтор — того, що від запису лишилось зараз: новіше значення
+              // шляху могло його урізати чи витіснити цілком (тоді його вже
+              // немає в черзі, а відповідь йому дасть новий запис).
+              const current = entries.find(item => item.id === entry.id);
+              if (!current) return;
+              if (current.additive) sendAdditiveEntry(current);
+              else sendEntry(current);
             },
             () => {
-              inFlight.delete(entry.id);
+              awaitingAuth.delete(entry.id);
               authRetried.delete(entry.id);
               if (uid === activeUid) scheduleRetry();
             },
@@ -437,7 +451,7 @@ const sendEntry = (original, release = null) => {
 export const flushWriteOutbox = () => {
   if (!sendPatch || !activeUid) return;
   entries
-    .filter(entry => !inFlight.has(entry.id))
+    .filter(entry => !inFlight.has(entry.id) && !awaitingAuth.has(entry.id))
     .forEach(entry => (entry.additive ? sendAdditiveEntry(entry) : sendEntry(entry)));
 };
 
@@ -463,6 +477,7 @@ export const startWriteOutbox = uid => {
     entries = next ? readEntries(next) : [];
     inFlight.clear();
     authRetried.clear();
+    awaitingAuth.clear();
     retryAttempt = 0;
     if (retryTimer) {
       clearTimeout(retryTimer);
@@ -642,6 +657,7 @@ export const __resetWriteOutboxForTests = () => {
   entries = [];
   inFlight.clear();
   authRetried.clear();
+  awaitingAuth.clear();
   waiters.clear();
   listeners.clear();
   rejectionHandlers.clear();
