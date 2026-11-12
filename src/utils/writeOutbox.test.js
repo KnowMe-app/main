@@ -373,4 +373,50 @@ describe('черга записів пристрою', () => {
     expect(send).not.toHaveBeenCalled();
     expect(stored('u1')).toHaveLength(1);
   });
+
+  // Без мережі квиток входу протухає, і перший запис після повернення
+  // звʼязку база відхиляє як від невідомого. Це не відмова запису: квиток
+  // оновлюється, і запис іде ще раз.
+  it('відмова правил спершу оновлює квиток входу й повторює запис', async () => {
+    const denied = () => Object.assign(new Error('PERMISSION_DENIED: Permission denied'), { code: 'PERMISSION_DENIED' });
+    const send = jest.fn()
+      .mockImplementationOnce(() => Promise.reject(denied()))
+      .mockImplementationOnce(() => Promise.resolve());
+    const refreshAuth = jest.fn(() => Promise.resolve('token'));
+    const rejected = jest.fn();
+    registerOutboxRejectionHandler('memo', rejected);
+    configureWriteOutbox({ send, refreshAuth });
+    startWriteOutbox('u1');
+    const delivered = enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/comments/u1/c': { text: 'T.' } }, meta: { type: 'memo' } });
+    await expect(delivered).resolves.toBeUndefined();
+    expect(refreshAuth).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(rejected).not.toHaveBeenCalled();
+    expect(stored('u1')).toHaveLength(0);
+  });
+
+  it('відмова зі свіжим квитком — остаточна', async () => {
+    const denied = () => Object.assign(new Error('Permission denied'), { code: 'PERMISSION_DENIED' });
+    const send = jest.fn(() => Promise.reject(denied()));
+    const refreshAuth = jest.fn(() => Promise.resolve('token'));
+    configureWriteOutbox({ send, refreshAuth });
+    startWriteOutbox('u1');
+    const delivered = enqueueOutboxWrite({ uid: 'u1', patch: { 'x/y': 1 } });
+    await expect(delivered).rejects.toBeTruthy();
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(stored('u1')).toHaveLength(0);
+  });
+
+  it('квиток не оновився (немає мережі) — запис лишається в черзі', async () => {
+    const denied = () => Object.assign(new Error('Permission denied'), { code: 'PERMISSION_DENIED' });
+    const send = jest.fn(() => Promise.reject(denied()));
+    const refreshAuth = jest.fn(() => Promise.reject(new Error('auth/network-request-failed')));
+    configureWriteOutbox({ send, refreshAuth });
+    startWriteOutbox('u1');
+    enqueueOutboxWrite({ uid: 'u1', patch: { 'x/y': 1 } }).catch(() => {});
+    await flush();
+    await flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(stored('u1')).toHaveLength(1);
+  });
 });

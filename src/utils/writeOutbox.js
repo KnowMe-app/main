@@ -31,6 +31,9 @@ const RETRY_BASE_MS = 2000;
 const RETRY_MAX_MS = 60 * 1000;
 
 let sendPatch = null;
+let refreshAuth = null;
+// Записи, яким після відмови вже раз оновили квиток входу (див. нижче).
+const authRetried = new Set();
 let activeUid = null;
 let entries = [];
 let retryTimer = null;
@@ -157,6 +160,11 @@ const errorText = error => `${error?.code || ''} ${error?.message || ''}`.toLowe
  * Відмова правил (і будь-яка інша відповідь бази «ні») — остаточна. Решта —
  * запис скасовано, звʼязок обірвано — лишає запис у черзі.
  */
+const isPermissionDeniedError = error => {
+  const text = errorText(error);
+  return text.includes('permission') || text.includes('denied');
+};
+
 export const isRetryableOutboxError = error => {
   const text = errorText(error);
   if (text.includes('permission') || text.includes('denied')) return false;
@@ -365,6 +373,7 @@ const sendEntry = (original, release = null) => {
   sending.then(
     () => {
       inFlight.delete(entry.id);
+      authRetried.delete(entry.id);
       retryAttempt = 0;
       const replayed = !waiters.has(entry.id);
       removeEntry(uid, entry.id);
@@ -388,6 +397,37 @@ const sendEntry = (original, release = null) => {
         scheduleRetry();
         return;
       }
+      // Відмова правил буває й не про запис, а про сесію: без мережі квиток
+      // входу (година життя) протухає, а після повернення звʼязку SDK
+      // досилає записи, що в ньому висіли, ще до того, як оновив квиток, — і
+      // база відповідає «немає права». Остаточною така відмова ставала
+      // відразу: запис знімався, памʼятка й відгук відкочувались, тобто
+      // тимчасова сесія коштувала людині написаного (перевірено на телефоні:
+      // без звʼязку памʼятка й відгук, звʼязок повернувся — у базі нічого).
+      // Тож спершу квиток оновлюється примусово, і запис іде ще раз; відмова
+      // зі свіжим квитком — уже справжня. Не вдалось оновити (немає мережі) —
+      // запис лишається до наступної спроби.
+      if (isPermissionDeniedError(error) && refreshAuth && !authRetried.has(entry.id)) {
+        authRetried.add(entry.id);
+        inFlight.add(entry.id);
+        Promise.resolve()
+          .then(() => refreshAuth())
+          .then(
+            () => {
+              inFlight.delete(entry.id);
+              if (uid !== activeUid) return;
+              if (entry.additive) sendAdditiveEntry(entry);
+              else sendEntry(entry);
+            },
+            () => {
+              inFlight.delete(entry.id);
+              authRetried.delete(entry.id);
+              if (uid === activeUid) scheduleRetry();
+            },
+          );
+        return;
+      }
+      authRetried.delete(entry.id);
       rejectEntry(entry, error);
     },
   );
@@ -406,8 +446,9 @@ export const flushWriteOutbox = () => {
  * `config.js`, щоб черга не тягнула Firebase у тести й не замикала імпорти
  * по колу.
  */
-export const configureWriteOutbox = ({ send }) => {
+export const configureWriteOutbox = ({ send, refreshAuth: refresh }) => {
   sendPatch = typeof send === 'function' ? send : null;
+  refreshAuth = typeof refresh === 'function' ? refresh : null;
 };
 
 /**
@@ -421,6 +462,7 @@ export const startWriteOutbox = uid => {
     diskIds.clear();
     entries = next ? readEntries(next) : [];
     inFlight.clear();
+    authRetried.clear();
     retryAttempt = 0;
     if (retryTimer) {
       clearTimeout(retryTimer);
@@ -595,9 +637,11 @@ export const __resetWriteOutboxForTests = () => {
   retryTimer = null;
   retryAttempt = 0;
   sendPatch = null;
+  refreshAuth = null;
   activeUid = null;
   entries = [];
   inFlight.clear();
+  authRetried.clear();
   waiters.clear();
   listeners.clear();
   rejectionHandlers.clear();
