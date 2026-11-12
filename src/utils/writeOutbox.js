@@ -336,12 +336,16 @@ export const stopWriteOutbox = () => {
  *   відмовить (`type` → `registerOutboxRejectionHandler`).
  * @returns {Promise<void>} — коли база підтвердила; відмова правил — помилка.
  */
-export const enqueueOutboxWrite = ({ uid, patch, meta = null }) => {
+export const enqueueOutboxWrite = ({ uid, patch, meta = null, additive = false }) => {
   if (!uid || !patch || !Object.keys(patch).length) return Promise.resolve();
   if (String(uid) !== activeUid) startWriteOutbox(uid);
-  const paths = new Set(Object.keys(patch));
+  // `additive` — запис, що додається до попередніх (лічильник через
+  // `increment`), а не замінює їх: новіший не витісняє старішого й сам не
+  // витісняється, інакше дотики, зроблені без звʼязку, рахувались би одним.
+  const paths = new Set(additive ? [] : Object.keys(patch));
   const superseded = [];
   const coalesce = entry => {
+    if (entry.additive) return entry;
     const remaining = Object.fromEntries(Object.entries(entry.patch).filter(([path]) => !paths.has(path)));
     if (Object.keys(remaining).length === Object.keys(entry.patch).length) return entry;
     if (!Object.keys(remaining).length) return null;
@@ -379,7 +383,9 @@ export const enqueueOutboxWrite = ({ uid, patch, meta = null }) => {
     })
     .filter(Boolean);
   const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-  const entry = { id, patch, meta, createdAt: Date.now() };
+  const entry = additive
+    ? { id, patch, meta, createdAt: Date.now(), additive: true }
+    : { id, patch, meta, createdAt: Date.now() };
   entries = [...entries, entry];
   const delivered = new Promise((resolve, reject) => {
     waiters.set(id, {
