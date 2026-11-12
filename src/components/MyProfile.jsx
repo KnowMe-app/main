@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { FiChevronRight, FiPlus, FiTrash2, FiX } from 'react-icons/fi';
@@ -90,7 +90,15 @@ import { MyProfileShare } from './MyProfileShare';
 import { getCurrentValue } from './getCurrentValue';
 import { ACCOUNT_DELETION_EMAIL, requestOwnAccountDeletion } from '../utils/accountDeletion';
 import { clearMyProfileCache, patchMyProfileCache, readMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
-import { capturePendingProfileGenerations, clearPendingProfileEdits, readPendingProfileEdits, rememberPendingProfileEdit, settlePendingProfileEdits } from '../utils/myProfilePendingEdits';
+import {
+  capturePendingProfileGenerations,
+  clearPendingProfileEdits,
+  countPendingProfileEdits,
+  readPendingProfileEdits,
+  rememberPendingProfileEdit,
+  settlePendingProfileEdits,
+  subscribePendingProfileEdits,
+} from '../utils/myProfilePendingEdits';
 import { listShareableProfileRoles } from '../utils/profileShare';
 import {
   DEFAULT_REWARD_CURRENCY,
@@ -1572,6 +1580,29 @@ const readCachedMyProfileView = () => {
   return { uid, ...view, loadedProfile: { ...view.loadedProfile, ...readPendingProfileEdits(uid).fields } };
 };
 
+// Чи є в браузера мережа — для плашки «Ще не збережено». Звʼязок із базою
+// тут не слухається: «Мій профіль» не тримає підписки на `.info/connected`, а
+// без мережі запис однаково висить у памʼяті вкладки.
+const subscribeBrowserOnline = listener => {
+  window.addEventListener('online', listener);
+  window.addEventListener('offline', listener);
+  return () => {
+    window.removeEventListener('online', listener);
+    window.removeEventListener('offline', listener);
+  };
+};
+const getBrowserOnline = () => (typeof navigator === 'undefined' ? true : navigator.onLine !== false);
+
+const PendingEditsNotice = styled.div`
+  margin: 8px var(--page-side) 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--km-fill, rgba(0, 0, 0, 0.05));
+`;
+
 export const MyProfile = () => {
   // «Мій профіль» — той самий набір полів, що й картка в матчингу, тож і мова
   // в нього та сама: підписи, чіпи варіантів, заголовки блоків і тости.
@@ -1597,6 +1628,15 @@ export const MyProfile = () => {
   const likedAudienceReconciledForRef = useRef('');
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [userId, setUserId] = useState(() => cachedProfileView?.uid || '');
+  // Правки, які база ще не прийняла (`utils/myProfilePendingEdits`): без
+  // мережі поле виглядає збереженим, а запис чекає. Людина мусить знати, що
+  // правка не загубилась, але й що база її ще не має.
+  const pendingEditsUid = userId || state.userId || '';
+  const pendingEditsCount = useSyncExternalStore(
+    subscribePendingProfileEdits,
+    () => countPendingProfileEdits(pendingEditsUid),
+  );
+  const browserOnline = useSyncExternalStore(subscribeBrowserOnline, getBrowserOnline);
   const [activeTab, setActiveTab] = useState('auth');
   const [editingProgram, setEditingProgram] = useState(false);
   const [stickyHeight, setStickyHeight] = useState(0);
@@ -3837,6 +3877,16 @@ export const MyProfile = () => {
         <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: 99, background: 'var(--accent)' }} />
       </div>
     </ProgressWrap>
+    {/* У липкій панелі, а не в шапці: правлять поле внизу сторінки, і плашка
+        вгорі була б уже за екраном. Стоїть між смугою й вкладками —
+        компактний режим (`$compact`) ховає першу дитину й тоншить останню.
+        Поки мережа є, незбережене спорожніє за мить після blur — плашка лише
+        мигала б, тож її тоді немає (як і «Ще не надіслано» стрічки). */}
+    {!browserOnline && pendingEditsCount > 0 ? (
+      <PendingEditsNotice role="status" data-testid="my-profile-pending">
+        {uiText('Ще не збережено: {count}. Збережеться, щойно звʼязок повернеться — навіть якщо закрити вкладку.', language, { count: pendingEditsCount })}
+      </PendingEditsNotice>
+    ) : null}
 
       <Tabs ref={tabsRef}>
         {navSections.map(s => {
