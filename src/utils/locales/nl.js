@@ -498,6 +498,7 @@ const BY_UK = {
   'Показати номер': 'Nummer tonen',
   'Подзвонити': 'Bellen',
   'Немає звʼязку з базою. Показано збережене: повні анкети, контакти й відгуки довантажаться, щойно звʼязок повернеться.': 'Geen verbinding met de database. Opgeslagen gegevens worden getoond: volledige profielen, contacten en beoordelingen laden zodra de verbinding terug is.',
+  'Ще не збережено: {count}. Збережеться, щойно звʼязок повернеться — навіть якщо закрити вкладку.': 'Nog niet opgeslagen: {count}. Wordt opgeslagen zodra de verbinding terug is, ook als je het tabblad sluit.',
   'Ще не надіслано: {count}. Надішлеться, щойно звʼязок повернеться — навіть якщо закрити вкладку.': 'Nog niet verzonden: {count}. Wordt verzonden zodra de verbinding terug is, ook als je het tabblad sluit.',
   'База не прийняла реакцію чи памʼятку — її знято.': 'De database heeft een reactie of notitie niet geaccepteerd; deze is verwijderd.',
   'Немає звʼязку — відгуки прочитаються, щойно він повернеться': 'Geen verbinding — beoordelingen laden zodra die terug is',

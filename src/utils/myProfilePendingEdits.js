@@ -41,13 +41,29 @@ export const readPendingProfileEdits = uid => {
 // скидало лічильник, нова правка знову діставала покоління 1 — і друге
 // збереження, що ще летіло зі своїм знімком поколінь (там теж 1), знімало
 // правку, якої не несло.
+// Підписники — плашка «Ще не збережено» в «Моєму профілі»
+// (`subscribePendingProfileEdits` через `useSyncExternalStore`).
+const listeners = new Set();
+const notify = () => listeners.forEach(listener => {
+  try { listener(); } catch { /* нічого */ }
+});
+
 const writePending = (uid, pending) => {
   try {
     localStorage.setItem(storageKey(uid), JSON.stringify({ ...pending, updatedAt: Date.now() }));
   } catch {
     // Без `localStorage` правка живе лише в памʼяті вкладки — як і було.
   }
+  notify();
 };
+
+export const subscribePendingProfileEdits = listener => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
+
+/** Скільки полів чекає запису — число, тож `useSyncExternalStore` не перемальовує зайве. */
+export const countPendingProfileEdits = uid => Object.keys(readPendingProfileEdits(uid).fields).length;
 
 /**
  * Запамʼятати правку поля. `direct` — поле пишеться як є (програми,
@@ -117,4 +133,5 @@ export const clearPendingProfileEdits = () => {
   } catch {
     // нічого
   }
+  notify();
 };

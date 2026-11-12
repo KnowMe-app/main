@@ -3,9 +3,11 @@ import path from 'path';
 import {
   capturePendingProfileGenerations,
   clearPendingProfileEdits,
+  countPendingProfileEdits,
   readPendingProfileEdits,
   rememberPendingProfileEdit,
   settlePendingProfileEdits,
+  subscribePendingProfileEdits,
 } from './myProfilePendingEdits';
 
 beforeEach(() => localStorage.clear());
@@ -61,6 +63,18 @@ describe('незбережені правки «Мого профілю»', () =
     expect(readPendingProfileEdits('u1').fields).toEqual({});
   });
 
+  it('сповіщає підписників і рахує незбережені поля', () => {
+    const calls = [];
+    const unsubscribe = subscribePendingProfileEdits(() => calls.push(countPendingProfileEdits('u1')));
+    rememberPendingProfileEdit('u1', 'city', 'Київ');
+    rememberPendingProfileEdit('u1', 'name', 'Оксана');
+    settlePendingProfileEdits('u1', {}, capturePendingProfileGenerations('u1'));
+    clearPendingProfileEdits();
+    unsubscribe();
+    rememberPendingProfileEdit('u1', 'city', 'Львів');
+    expect(calls).toEqual([1, 2, 0, 0]);
+  });
+
   it('вихід стирає правки всіх читачів пристрою', () => {
     rememberPendingProfileEdit('u1', 'city', 'Київ');
     rememberPendingProfileEdit('u2', 'city', 'Львів');
@@ -99,6 +113,12 @@ describe('MyProfile дописує незбережене', () => {
     expect(clearRole).toContain('rememberClearedFields(fields, nextState);');
     expect(clearRole).toContain('if (rollbackClear(currentState, nextState)) rememberClearedFields(fields, currentState);');
     expect(source).toContain("const CLEAR_DIRECT_FIELDS = ['publish', 'publishAudience'];");
+  });
+
+  it('без мережі показує, скільки правок ще не збережено', () => {
+    expect(source).toContain('useSyncExternalStore(subscribeBrowserOnline, getBrowserOnline)');
+    expect(source).toContain('{!browserOnline && pendingEditsCount > 0 ? (');
+    expect(source).toContain('data-testid="my-profile-pending"');
   });
 
   it('відповідь чіпом теж лягає в незбережене', () => {
