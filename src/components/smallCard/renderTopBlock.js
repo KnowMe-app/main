@@ -1677,18 +1677,21 @@ export const TopBlock = ({
     try {
       // Порожній текст — це і є зняття запису: інакше відгук нічим не
       // прибрати, і він лишався б назавжди (те саме правило, що й у стрічці).
-      const updated = await updatePublicProfileComment({
+      // Запис іде через чергу пристрою (`delivered`): адмінка чекає на базу,
+      // бо тут тост каже «збережено», а не «поставлено в чергу».
+      const { delivered, deleted, ...updated } = await updatePublicProfileComment({
         profileId: cardData.userId,
         commentId,
         text: prepared,
-      });
+      }) || {};
+      await delivered;
       dropCachedPublicComments(cardData.userId);
-      setPublicComments(prev => (updated
+      setPublicComments(prev => (!deleted
         ? prev.map(item => (item.id === commentId
           ? { ...item, text: updated.text, updatedAt: updated.updatedAt }
           : item))
         : prev.filter(item => item.id !== commentId)));
-      toast.success(updated ? 'Публічний відгук збережено' : 'Публічний відгук видалено');
+      toast.success(!deleted ? 'Публічний відгук збережено' : 'Публічний відгук видалено');
       setIsCommentModalOpen(false);
       setSelectedComment(null);
     } catch (error) {
@@ -1771,7 +1774,8 @@ export const TopBlock = ({
         return;
       }
       try {
-        await deletePublicProfileComment({ profileId: cardData.userId, commentId: comment.commentId });
+        const { delivered } = await deletePublicProfileComment({ profileId: cardData.userId, commentId: comment.commentId }) || {};
+        await delivered;
         dropCachedPublicComments(cardData.userId);
         setPublicComments(prev => prev.filter(item => item.id !== comment.commentId));
         toast.success('Публічний відгук видалено');

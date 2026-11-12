@@ -4,6 +4,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { isRetryableOutboxError } from 'utils/writeOutbox';
+import { restorePublicComment } from 'utils/publicReviewRollback';
 import styled from 'styled-components';
 import { revealCss } from '../styles/revealAnimation';
 import { FiChevronDown, FiClock, FiFolder, FiPlus, FiSave, FiUsers, FiX } from 'react-icons/fi';
@@ -1147,19 +1148,33 @@ export const ProfileCreationWorkspace = () => {
     });
   }, [language]);
 
+  // Правка й видалення відгуку — через чергу пристрою, одразу на екрані;
+  // відмова бази повертає відгук таким, яким він був.
+  const rollBackPublicCommentOnRejection = useCallback((delivered, previousComment) => {
+    delivered?.catch(error => {
+      if (isRetryableOutboxError(error)) return;
+      setPublicComments(previous => restorePublicComment(previous, previousComment));
+      toast.error(uiText('Зміну відгуку не збережено: сервер відмовив', language));
+    });
+  }, [language]);
+
   const handleUpdatePublicComment = useCallback(async (profileId, commentId, text) => {
-    const updated = await updatePublicProfileComment({ profileId, commentId, text });
-    setPublicComments(previous => (updated
+    const previousComment = publicComments.find(comment => comment.id === commentId) || null;
+    const { delivered, deleted, ...updated } = await updatePublicProfileComment({ profileId, commentId, text }) || {};
+    setPublicComments(previous => (!deleted
       ? previous.map(comment => (comment.id === commentId
         ? { ...comment, text: updated.text, updatedAt: updated.updatedAt }
         : comment))
       : previous.filter(comment => comment.id !== commentId)));
-  }, []);
+    rollBackPublicCommentOnRejection(delivered, previousComment);
+  }, [publicComments, rollBackPublicCommentOnRejection]);
 
   const handleDeletePublicComment = useCallback(async (profileId, commentId) => {
-    await deletePublicProfileComment({ profileId, commentId });
+    const previousComment = publicComments.find(comment => comment.id === commentId) || null;
+    const { delivered } = await deletePublicProfileComment({ profileId, commentId }) || {};
     setPublicComments(previous => previous.filter(comment => comment.id !== commentId));
-  }, []);
+    rollBackPublicCommentOnRejection(delivered, previousComment);
+  }, [publicComments, rollBackPublicCommentOnRejection]);
 
   useEffect(() => {
     const requestedCardId = searchParams.get('cardId');
