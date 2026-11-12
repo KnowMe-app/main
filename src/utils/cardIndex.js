@@ -4,6 +4,7 @@ import { readStoredAccessLevel } from './accessLevel';
 import { PROFILE_CONTACT_FIELDS } from './profileNodeSchema';
 import { canReadProfileOutsideFeed } from './profileVisibilityScope';
 import { MATCHING_DENIED_CARDS_STORAGE_KEY } from './matchingTimedStore';
+import { idbDelete, idbGetMany, idbPut, isIndexedDbAvailable } from './idbKeyValue';
 
 export const CARDS_KEY = 'cards';
 export const QUERIES_KEY = 'queries';
@@ -65,6 +66,83 @@ export const isMatchingLocalStorageCacheKey = key => {
 const localJsonCache = new Map();
 const pendingSaveTimers = new Map();
 const pendingSaveValues = new Map();
+
+/*
+ * Кеш повних анкет і проєкцій стрічки живе в IndexedDB (`utils/idbKeyValue`),
+ * а не в `localStorage`: це два найбільші обʼєкти кешу, і `localStorage` писав
+ * їх синхронно рядком (~9 мс головного потоку на запис тисячі анкет) під
+ * стелею ~5 МБ. Синхронний API цього модуля лишився: `index.js` до першого
+ * кадру підвантажує обидва ключі в памʼять вкладки (`preloadCardCacheFromIndexedDb`),
+ * далі читання йдуть з памʼяті, а запис — в IndexedDB асинхронно. Без
+ * IndexedDB (тести, приватний режим) — `localStorage`, як і було.
+ */
+const INDEXED_DB_KEYS = new Set([CARDS_KEY, MATCHING_SUMMARY_CARDS_KEY]);
+// IndexedDB тримає скільки завгодно, але кеш без межі ріс би вічно: стеля —
+// за кількістю анкет, а не за довжиною рядка (рядка тут більше немає).
+const INDEXED_DB_MAX_CARDS = 5000;
+const INDEXED_DB_PRELOAD_TIMEOUT_MS = 1500;
+let indexedDbReady = false;
+const usesIndexedDb = key => indexedDbReady && INDEXED_DB_KEYS.has(key);
+
+/**
+ * Підвантажити кеш карток з IndexedDB у памʼять вкладки — до першого кадру
+ * (`index.js`), щоб стрічка з кешу малювалась одразу, як і з `localStorage`.
+ * Перший раз переносить туди те, що лежало в `localStorage`, і звідти стирає.
+ * Повільна чи недоступна база — лишаємось на `localStorage` (рішення на всю
+ * вкладку: половина ключів в одному сховищі, половина в іншому розійшлася б).
+ */
+export const preloadCardCacheFromIndexedDb = async () => {
+  if (indexedDbReady || !isIndexedDbAvailable()) return false;
+  const keys = [...INDEXED_DB_KEYS];
+  let timer = null;
+  try {
+    const values = await Promise.race([
+      idbGetMany(keys),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('IndexedDB preload timeout')), INDEXED_DB_PRELOAD_TIMEOUT_MS); }),
+    ]);
+    keys.forEach(key => {
+      if (values[key] && typeof values[key] === 'object') {
+        localJsonCache.set(key, values[key]);
+        return;
+      }
+      // Перенос з `localStorage`: значення лягає в IndexedDB, а ключ
+      // `localStorage` знімається лише після вдалого запису.
+      let migrated = null;
+      try {
+        const raw = localStorage.getItem(key);
+        migrated = raw ? JSON.parse(raw) : null;
+      } catch {
+        migrated = null;
+      }
+      if (migrated && typeof migrated === 'object') {
+        localJsonCache.set(key, migrated);
+        idbPut(key, migrated)
+          .then(() => { try { localStorage.removeItem(key); } catch { /* нічого */ } })
+          .catch(() => {});
+      }
+    });
+    indexedDbReady = true;
+    return true;
+  } catch (error) {
+    console.warn('[matchingCache] IndexedDB недоступна, кеш карток лишається в localStorage', error?.message || error);
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const pruneCardsByCount = value => {
+  const items = value?.items;
+  if (!items || typeof items !== 'object') return value;
+  const ids = Object.keys(items);
+  if (ids.length <= INDEXED_DB_MAX_CARDS) return value;
+  const keep = ids
+    .sort((a, b) => getEntryCacheTimestamp(items[b]) - getEntryCacheTimestamp(items[a]))
+    .slice(0, Math.floor(INDEXED_DB_MAX_CARDS * (1 - MATCHING_CACHE_PRUNE_SHARE)));
+  const next = { ...value, items: Object.fromEntries(keep.map(id => [id, items[id]])) };
+  logMatchingCacheWarning('pruned oldest cards to fit the cache', [{ key: 'indexedDB', before: ids.length, after: keep.length }]);
+  return next;
+};
 let matchingLocalStorageCacheEpoch = 0;
 
 // Асинхронні читачі фіксують це значення перед мережею і не повертають стару
@@ -136,6 +214,7 @@ const resetMatchingStorageKey = key => {
   } catch {
     // ignore storage reset errors
   }
+  if (usesIndexedDb(key)) idbDelete(key).catch(() => {});
   localJsonCache.delete(key);
   pendingSaveValues.delete(key);
   const timer = pendingSaveTimers.get(key);
@@ -210,6 +289,12 @@ const getEntryCacheTimestamp = entry => {
 
 const loadJson = key => {
   if (localJsonCache.has(key)) return localJsonCache.get(key);
+  // Ключ IndexedDB уже підвантажено: немає в памʼяті — немає взагалі (його
+  // скинули), а в `localStorage` по нього ходити нема чого.
+  if (usesIndexedDb(key)) {
+    localJsonCache.set(key, {});
+    return localJsonCache.get(key);
+  }
   try {
     incrementMatchingLoadStat('localStorageReads');
     const raw = localStorage.getItem(key);
@@ -271,6 +356,15 @@ const flushSaveJson = key => {
   const value = pendingSaveValues.get(key);
   pendingSaveValues.delete(key);
   pendingSaveTimers.delete(key);
+  if (usesIndexedDb(key)) {
+    const next = key === CARDS_KEY ? pruneCardsByCount(value) : value;
+    if (next !== value) localJsonCache.set(key, next);
+    incrementMatchingLoadStat('indexedDbWrites');
+    idbPut(key, next).catch(error => {
+      console.warn('[matchingCache] запис кешу в IndexedDB не вдався', error?.message || error);
+    });
+    return;
+  }
   try {
     let stringified = JSON.stringify(value);
     if (key === CARDS_KEY && stringified.length > MATCHING_CACHE_MAX_CHARS) {
