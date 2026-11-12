@@ -6591,11 +6591,22 @@ const Matching = () => {
   // (`getStoredFullProfile`), і рядок на мить лишається з самою проєкцією —
   // а розгорнутий рядок без освіти й контактів. Тож анкета дочитується тут
   // сама, раз на версію: якщо база ще віддала стару, повтор не крутиться.
+  //
+  // Те саме з розгорнутим рядком, чию анкету сховище забуло: «Оновити
+  // стрічку» скидає сховище (`clearCardStore`), а розгорнутість лишається, і
+  // рядок стояв би розгорнутим без освіти й контактів, доки його не згорнуть
+  // і не відкриють знову. Повтор тут не множиться: `ensureFullProfile`
+  // памʼятає запитане до наступного скидання.
   const staleFullProfileRefetchRef = useRef(new Map());
   useEffect(() => {
     const staleIds = listStaleStoredFullProfileIds();
-    if (!staleIds.length) return;
+    const missingExpanded = [...expandedRowIds].filter(id => id && !getStoredFullProfile(id));
+    if (!staleIds.length && !missingExpanded.length) return;
     const rowsById = new Map(feedSource.map(row => [String(row?.userId || ''), row]));
+    missingExpanded.forEach(id => {
+      const row = rowsById.get(String(id));
+      if (row) ensureFullProfile(row);
+    });
     staleIds.forEach(id => {
       const row = rowsById.get(id);
       if (!row) return;
@@ -6605,7 +6616,7 @@ const Matching = () => {
       fullProfileRequestsRef.current.delete(id);
       ensureFullProfile(row);
     });
-  }, [cardStoreVersion, ensureFullProfile, feedSource]);
+  }, [cardStoreVersion, ensureFullProfile, expandedRowIds, feedSource]);
 
   const withLazyPhotos = React.useCallback(user => {
     if (!user?.userId) return user;
