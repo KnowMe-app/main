@@ -141,7 +141,14 @@ import { createSaveComparisonField } from '../utils/comparisonFieldAdapter';
 import { mergeDuplicateProfileValues, normalizePhoneForStorage, sanitizeUploadedInfoPhones } from '../utils/profileValueNormalization';
 import { patchCachedReactionValue } from '../utils/matchingReactionCache';
 import { forgetCachedComment, rememberCommentWrite } from '../utils/commentsStorage';
-import { configureWriteOutbox, enqueueOutboxWrite, isRetryableOutboxError, registerOutboxRejectionHandler, registerOutboxSuccessHandler } from '../utils/writeOutbox';
+import {
+  configureWriteOutbox,
+  enqueueOutboxWrite,
+  isRetryableOutboxError,
+  registerOutboxRejectionHandler,
+  registerOutboxSuccessHandler,
+  updatePendingOutboxMeta,
+} from '../utils/writeOutbox';
 import { forgetProfileContacts, readFreshProfileContacts, writeProfileContacts } from '../utils/matchingContactsCache';
 import { MATCHING_DENIED_CARDS_STORE, createMatchingTimedStore } from '../utils/matchingTimedStore';
 import { pickCardActivity } from '../utils/cardActivity';
@@ -5203,6 +5210,23 @@ registerOutboxRejectionHandler('postpone', (meta, _error, { patch } = {}) => {
   // Досланий з минулої вкладки: памʼяті записів немає, а `previous` —
   // підтверджене на мить запису.
   rememberOwnerGetInTouchLocally(owner, id, meta?.previous || '');
+});
+
+// Підтверджене стає новою точкою відкату для записів тієї самої картки, що
+// ще чекають, — і на диску: досланий з минулої вкладки запис відкочується
+// за `meta.previous`, а памʼяті записів (`postponeWrites`) там уже немає.
+registerOutboxSuccessHandler('postpone', (meta, { patch } = {}) => {
+  const owner = String(meta?.ownerId || '');
+  const id = String(meta?.cardId || '');
+  const path = `${OWNER_GET_IN_TOUCH_PATH}/${owner}/${id}`;
+  if (!owner || !id || !patch || !Object.prototype.hasOwnProperty.call(patch, path)) return;
+  const confirmed = typeof patch[path] === 'string' ? patch[path] : '';
+  updatePendingOutboxMeta(
+    entry => entry.meta?.type === 'postpone'
+      && String(entry.meta.ownerId || '') === owner
+      && String(entry.meta.cardId || '') === id,
+    entryMeta => ({ ...entryMeta, previous: confirmed }),
+  );
 });
 
 export const setOwnerGetInTouch = async (ownerId, profileId, value) => {
