@@ -80,7 +80,7 @@ import {
   updateDataInRealtimeDB,
   recordDailyLogin,
   readOwnerPostponeDates,
-  setOwnerGetInTouch,
+  postponeCardForOwner,
   setReactionUserValues,
   fetchLikedAudienceCards,
 } from './config';
@@ -162,7 +162,7 @@ import {
 import { isFeedStateDeniedForFeed } from '../utils/searchFeedDenial';
 import { clearCardStore, getCardStoreVersion, patchStoredProjection, resolveStoredProjectionList, restoreStoredProjection, subscribeCardStore, switchCardStoreViewer } from '../utils/cardStore';
 import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
-import { getWriteOutboxPendingCount, subscribeWriteOutbox, WRITE_OUTBOX_REJECTED_EVENT } from '../utils/writeOutbox';
+import { getWriteOutboxPendingCount, isRetryableOutboxError, subscribeWriteOutbox, WRITE_OUTBOX_REJECTED_EVENT } from '../utils/writeOutbox';
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
 import { MATCHING_SEARCH_ID_PREFIXES } from '../utils/matchingSearchPrefixes';
 import { readBackendLinksEnabled } from '../utils/backendLinksMode';
@@ -7805,12 +7805,22 @@ const Matching = () => {
     // Відгук анонімний: імені автора він не несе ні на екрані, ні в базі.
     // Лишається `authorId` — його вимагають правила, щоб автор міг свій
     // відгук правити й знімати, — але імʼя під відгуком більше не пишеться.
-    const created = await addPublicProfileComment({ profileId, text });
+    // Відгук іде через чергу пристрою й показується одразу; база, що
+    // відмовила, прибирає його з екрана (`delivered`).
+    const { delivered, ...created } = await addPublicProfileComment({ profileId, text });
     setPublicComments(previous => ({
       ...previous,
       [profileId]: [...(previous[profileId] || []), created],
     }));
-  }, []);
+    delivered?.catch(error => {
+      if (isRetryableOutboxError(error)) return;
+      setPublicComments(previous => ({
+        ...previous,
+        [profileId]: (previous[profileId] || []).filter(comment => comment.id !== created.id),
+      }));
+      toast.error(uiText('Відгук не опубліковано: сервер відмовив', language));
+    });
+  }, [language]);
 
   const handleUpdatePublicComment = React.useCallback(async (profileId, commentId, text) => {
     const updated = await updatePublicProfileComment({ profileId, commentId, text });
@@ -7940,19 +7950,21 @@ const Matching = () => {
     postponeOwnerRef.current === ownerId ? postponeSortDates[row?.userId] : ''
   ), [ownerId, postponeSortDates]);
 
-  const saveRowPostpone = React.useCallback(async (user, nextDate) => {
+  // Через чергу записів пристрою (`postponeCardForOwner`): без звʼязку запис
+  // чекає на пристрої й переживає закриту вкладку, тож на базу тут не чекаємо
+  // — плашка й тост одразу, а відмова бази повертає попередню дату.
+  const saveRowPostpone = React.useCallback((user, nextDate) => {
     const id = user?.userId;
     if (!id || !ownerId) return;
     const previous = readRowPostponeDate(user);
     const requestOwnerId = ownerId;
     setPostponeDates(current => ({ ...current, [id]: nextDate }));
-    const saved = await setOwnerGetInTouch(ownerId, id, nextDate);
-    if (postponeOwnerRef.current !== requestOwnerId) return;
-    if (!saved) {
+    postponeCardForOwner({ ownerId, profileId: id, value: nextDate, previous }).catch(error => {
+      if (isRetryableOutboxError(error)) return;
+      if (postponeOwnerRef.current !== requestOwnerId) return;
       setPostponeDates(current => ({ ...current, [id]: previous || '' }));
       toast.error(uiText('Не вдалося відкласти картку. Спробуйте ще раз', language));
-      return;
-    }
+    });
     if (nextDate) {
       toast.success(uiText('Звернутись після {date} — після оновлення сторінки картка стане в кінець списку', language, { date: formatPostponeDate(nextDate) }));
     } else {
