@@ -32,6 +32,8 @@ import {
   FeedColumn,
   FeedLoadPromptButton,
   ConnectionNotice,
+  ConnectionNoticeClose,
+  ConnectionNoticeText,
   FeedNotice,
   FeedSentinel,
   FeedWrap,
@@ -1456,6 +1458,13 @@ const Matching = () => {
   });
   const isAdmin = access.isAdmin;
   const realtimeConnection = useRealtimeConnection();
+  // Плашку «немає звʼязку» людина може закрити: без мережі вона інакше стоїть
+  // поверх карток увесь час. Закрита повертається лише з новим — коли в черзі
+  // стало більше записів або звʼязок рвався знову.
+  const [connectionNoticeDismissed, setConnectionNoticeDismissed] = useState(null);
+  useEffect(() => {
+    if (realtimeConnection !== 'offline') setConnectionNoticeDismissed(null);
+  }, [realtimeConnection]);
   // Видалені власником акаунти, що чекають адмінського очищення бази
   // (`utils/pendingAccountDeletions`). Стрічка адміна показує й сховані
   // анкети, тож така картка поруч із новою реєстрацією тієї ж людини
@@ -8639,18 +8648,30 @@ const Matching = () => {
           </MatchingTopBar>
           {/* Статус не залежить від вибраної колекції чи наявності кешованих
               рядків: без них особливо важливо пояснити довгий скелетон. */}
-          {realtimeConnection === 'offline' && (
-            <ConnectionNotice role="status">
-              {uiText('Немає звʼязку з базою. Показано збережене: повні анкети, контакти й відгуки довантажаться, щойно звʼязок повернеться.', language)}
-            </ConnectionNotice>
-          )}
-          {/* Без звʼязку реакції й памʼятки чекають у черзі пристрою
-              (`utils/writeOutbox`). Людина мусить знати, що вони не загубились,
-              але й що база їх ще не має. Поки звʼязок є, черга спорожніє за
-              частку секунди, тож підказка лише мигала б — її немає. */}
-          {realtimeConnection === 'offline' && outboxPendingCount > 0 && (
-            <ConnectionNotice role="status" data-testid="write-outbox-pending">
-              {uiText('Ще не надіслано: {count}. Надішлеться, щойно звʼязок повернеться — навіть якщо закрити вкладку.', language, { count: outboxPendingCount })}
+          {/* Одна плашка на обидва повідомлення: дві липкі на тій самій висоті
+              лягали одна на одну. Без звʼязку реакції й памʼятки чекають у
+              черзі пристрою (`utils/writeOutbox`) — людина мусить знати, що
+              вони не загубились, але й що база їх ще не має. Поки звʼязок є,
+              черга спорожніє за частку секунди, тож другого рядка немає. */}
+          {realtimeConnection === 'offline'
+            && (!connectionNoticeDismissed || outboxPendingCount > connectionNoticeDismissed.pending) && (
+            <ConnectionNotice role="status" $belowTopBar={!(Boolean(navHeaderTarget) && !showBackendTrafficToggle)}>
+              <ConnectionNoticeText>
+                <span>{uiText('Немає звʼязку з базою. Показано збережене: повні анкети, контакти й відгуки довантажаться, щойно звʼязок повернеться.', language)}</span>
+                {outboxPendingCount > 0 && (
+                  <span data-testid="write-outbox-pending">
+                    {uiText('Ще не надіслано: {count}. Надішлеться, щойно звʼязок повернеться — навіть якщо закрити вкладку.', language, { count: outboxPendingCount })}
+                  </span>
+                )}
+              </ConnectionNoticeText>
+              <ConnectionNoticeClose
+                type="button"
+                aria-label={uiText('Закрити', language)}
+                title={uiText('Закрити', language)}
+                onClick={() => setConnectionNoticeDismissed({ pending: outboxPendingCount })}
+              >
+                ×
+              </ConnectionNoticeClose>
             </ConnectionNotice>
           )}
           {matchingSearchStatus && (

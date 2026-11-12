@@ -47,6 +47,17 @@ const OWNER = 'ownerUid000000000000000000';
 const CARD = 'cardUid0000000000000000000';
 const STORE_KEY = 'km.matchingStore.v1:postponeDates';
 const permissionDenied = () => Object.assign(new Error('Permission denied'), { code: 'PERMISSION_DENIED' });
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+// Відмова правил остаточна лише зі свіжим квитком: черга спершу оновлює
+// квиток і шле ще раз (`refreshAuth`), тож тест відхиляє й повтор.
+const denyFinally = async (pending, index) => {
+  const before = pending.length;
+  pending[index].reject(permissionDenied());
+  await tick();
+  await tick();
+  expect(pending.length).toBe(before + 1);
+  pending[pending.length - 1].reject(permissionDenied());
+};
 const storedDate = () => JSON.parse(localStorage.getItem(STORE_KEY) || '{}')[OWNER]?.value?.[CARD];
 
 describe('«Відкласти» через чергу записів', () => {
@@ -54,7 +65,7 @@ describe('«Відкласти» через чергу записів', () => {
   beforeEach(() => {
     localStorage.clear();
     localStorage.setItem(STORE_KEY, JSON.stringify({ [OWNER]: { cachedAt: Date.now(), value: { [CARD]: '2026-12-01' } } }));
-    mockAuth.currentUser = { uid: OWNER };
+    mockAuth.currentUser = { uid: OWNER, getIdToken: () => Promise.resolve('token') };
     pending = [];
     mockUpdate.mockImplementation(() => new Promise((resolve, reject) => pending.push({ resolve, reject })));
   });
@@ -68,13 +79,13 @@ describe('«Відкласти» через чергу записів', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(pending).toHaveLength(2);
 
-    pending[0].reject(permissionDenied());
+    await denyFinally(pending, 0);
     const firstError = await first.then(() => null, error => error);
     // Друга правка ще летить — на екрані лишається вона.
     expect(firstError.postponeShown).toBe('2027-02-01');
     expect(storedDate()).toBe('2027-02-01');
 
-    pending[1].reject(permissionDenied());
+    await denyFinally(pending, 1);
     const secondError = await second.then(() => null, error => error);
     expect(secondError.postponeShown).toBe('2026-12-01');
     expect(storedDate()).toBe('2026-12-01');
@@ -87,7 +98,7 @@ describe('«Відкласти» через чергу записів', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
     pending[0].resolve();
     await first;
-    pending[1].reject(permissionDenied());
+    await denyFinally(pending, 1);
     const error = await second.then(() => null, caught => caught);
     expect(error.postponeShown).toBe('2027-01-01');
     expect(storedDate()).toBe('2027-01-01');
@@ -114,8 +125,8 @@ describe('«Відкласти» через чергу записів', () => {
     pending[0].resolve();
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(JSON.parse(localStorage.getItem(`km.writeOutbox.v1:${OWNER}:e2`)).meta.previous).toBe('2027-01-01');
-    pending[1].reject(permissionDenied());
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await denyFinally(pending, 1);
+    await tick();
     expect(storedDate()).toBe('2027-01-01');
     stopWriteOutbox();
   });

@@ -1352,16 +1352,46 @@ export const QueryDraftButton = styled.button`
 // розуміти, чому розгорнутий рядок не дотягується.
 export const ConnectionNotice = styled.div`
   position: sticky;
-  top: calc(var(--km-top-nav-h, 0px) + max(8px, env(safe-area-inset-top)) + 46px);
+  /* Одразу під тим, що липне вище: на телефоні рядок пошуку живе в
+     навігації (\`--km-top-nav-h\`), і шапка стрічки порожня, тож 46 px під
+     неї ставили плашку посеред карток; на широкому екрані — під шапкою з
+     пошуком. */
+  top: ${({ $belowTopBar }) => ($belowTopBar
+    ? 'calc(var(--km-top-nav-h, 0px) + max(8px, env(safe-area-inset-top)) + 46px)'
+    : 'calc(var(--km-top-nav-h, 0px) + 6px)')};
   z-index: 13;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin: 0 10px 10px;
-  padding: 10px 12px;
+  padding: 8px 6px 8px 12px;
   border-radius: 12px;
   font-size: 13px;
   line-height: 1.4;
   color: #7A3E00;
   background: #FFF1DC;
   border: 1px solid #F3C98B;
+`;
+
+export const ConnectionNoticeText = styled.div`
+  display: grid;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+`;
+
+export const ConnectionNoticeClose = styled.button`
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  margin: -4px 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
 `;
 
 export const FeedNotice = styled.div`

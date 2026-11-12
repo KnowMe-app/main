@@ -1053,6 +1053,12 @@ configureWriteOutbox({
     noteRealtimeDemand();
     return update(ref2(database), patch);
   },
+  // Квиток входу протухає без мережі, і перший запис після повернення
+  // звʼязку база може відхилити як від невідомого — черга оновлює квиток
+  // примусово й пробує ще раз, перш ніж вважати відмову остаточною.
+  refreshAuth: () => (auth.currentUser
+    ? auth.currentUser.getIdToken(true)
+    : Promise.reject(new Error('no signed-in user'))),
 });
 
 // Шлях зміни реакції — той самий, що в `writeReactionsThroughCache`. Обробники
