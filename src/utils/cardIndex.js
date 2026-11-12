@@ -214,7 +214,11 @@ const resetMatchingStorageKey = key => {
   } catch {
     // ignore storage reset errors
   }
-  if (usesIndexedDb(key)) idbDelete(key).catch(() => {});
+  // Стирається завжди, коли IndexedDB є, а не лише коли вкладка встигла її
+  // підвантажити: підвантаження обмежене в часі, і вкладка, що лишилась на
+  // `localStorage`, інакше скидала б кеш, лишаючи в IndexedDB старий —
+  // наступна вкладка підняла б його знову.
+  if (INDEXED_DB_KEYS.has(key) && isIndexedDbAvailable()) idbDelete(key).catch(() => {});
   localJsonCache.delete(key);
   pendingSaveValues.delete(key);
   const timer = pendingSaveTimers.get(key);
@@ -1015,7 +1019,10 @@ export const setIndexIdsForQuery = (queryKey, ids, options = {}) => {
  */
 const loadMatchingSummaryCards = () => {
   const parsed = loadJson(MATCHING_SUMMARY_CARDS_KEY);
-  if (parsed?.__cacheVersion !== MATCHING_SUMMARY_CARDS_CACHE_VERSION) {
+  // Проєкції привʼязані до читача, як і повні анкети (`unwrapVersionedCards`):
+  // на спільному пристрої кеш одного читача наступному не дістається. Кеш без
+  // мітки (старіший за неї) скидається так само, як чужий.
+  if (parsed?.__cacheVersion !== MATCHING_SUMMARY_CARDS_CACHE_VERSION || parsed?.ownerId !== getCardsCacheOwnerId()) {
     if (parsed && Object.keys(parsed).length > 0) {
       resetMatchingStorageKey(MATCHING_SUMMARY_CARDS_KEY);
     }
@@ -1044,7 +1051,7 @@ const pruneMatchingSummaryCards = items => {
 
 const saveMatchingSummaryCards = items => saveJson(
   MATCHING_SUMMARY_CARDS_KEY,
-  { __cacheVersion: MATCHING_SUMMARY_CARDS_CACHE_VERSION, cachedAt: Date.now(), items },
+  { __cacheVersion: MATCHING_SUMMARY_CARDS_CACHE_VERSION, ownerId: getCardsCacheOwnerId(), cachedAt: Date.now(), items },
   { debounceMs: 300 },
 );
 

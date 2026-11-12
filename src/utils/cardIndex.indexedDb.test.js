@@ -65,4 +65,26 @@ describe('кеш карток в IndexedDB', () => {
     expect(mockIdbStore.has('cards')).toBe(false);
     expect(cardIndex.loadCards()).toEqual({});
   });
+
+  it('скидання стирає IndexedDB і тоді, коли вкладка її не підвантажила', async () => {
+    mockIdbStore.set('cards', { __cacheVersion: 1, items: { old: {} } });
+    const cardIndex = loadModule();
+    // Підвантаження не було (тайм-аут) — вкладка на localStorage.
+    cardIndex.resetMatchingLocalStorageCache('test');
+    await flush();
+    expect(mockIdbStore.has('cards')).toBe(false);
+  });
+
+  it('проєкції стрічки привʼязані до читача', async () => {
+    const cardIndex = loadModule();
+    await cardIndex.preloadCardCacheFromIndexedDb();
+    cardIndex.setCachedMatchingSummaryCards({ a: { userId: 'a', name: 'Оксана', __matchingSummary: true } });
+    cardIndex.flushPendingMatchingCacheWrites();
+    await flush();
+    expect(cardIndex.getCachedMatchingSummaryCards(['a']).cards.a).toBeTruthy();
+    localStorage.setItem('ownerId', 'someone-else');
+    const next = loadModule();
+    await next.preloadCardCacheFromIndexedDb();
+    expect(next.getCachedMatchingSummaryCards(['a']).cards.a).toBeUndefined();
+  });
 });
