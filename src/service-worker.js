@@ -9,9 +9,9 @@
  *
  * - **файли збірки** (`/static/…`, імʼя з хешем, тож вміст під ним не
  *   міняється ніколи) — з кешу пристрою, мережа їм не потрібна;
- * - **сторінка** (навігація) — спершу мережа з коротким тайм-аутом, а без
- *   неї — збережена копія `index.html`: свіжий деплой приходить одразу, а без
- *   звʼязку застосунок однаково відкривається;
+ * - **сторінка** (навігація) — мережа проти тайм-ауту: встигла за 3 с —
+ *   свіжа сторінка (деплой приходить одразу), ні чи без звʼязку — оболонка з
+ *   precache (`index.html` поточної збірки);
  * - наперед кешується **лише оболонка** (`index.html`, головний JS і CSS):
  *   у збірці ще й адмінські рушії PDF, Excel і Word (~6 МБ), і качати їх
  *   кожному відвідувачеві на встановленні не можна. Решта лягає в кеш, щойно
@@ -32,7 +32,7 @@
 import { clientsClaim } from 'workbox-core';
 import { cleanupOutdatedCaches, matchPrecache, precacheAndRoute } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
-import { CacheFirst, NetworkFirst, StaleWhileRevalidate } from 'workbox-strategies';
+import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 
@@ -83,25 +83,41 @@ registerRoute(
   }),
 );
 
-// Сторінка: мережа, а за 3 с без відповіді чи без звʼязку — збережена.
-// Кешується лише відповідь 200: глибоке посилання GitHub Pages віддає
-// `404.html` з переходом, і такий перехід не мусить ставати копією сторінки.
-const pageStrategy = new NetworkFirst({
-  cacheName: 'km-pages',
-  networkTimeoutSeconds: 3,
-  plugins: [new CacheableResponsePlugin({ statuses: [200] })],
-});
+// Сторінка: мережа проти тайм-ауту, а не `NetworkFirst`.
+//
+// Окремого кешу сторінок (`km-pages`) тут був і пішов. По-перше, тайм-аут
+// `NetworkFirst` лише заглядає в кеш цієї адреси, а промахнувшись, чекає
+// мережу далі: глибоке посилання (`/matching`) на GitHub Pages приходить як
+// `404.html` і в кеш не лягає ніколи, тож на завислому звʼязку сторінка
+// висіла без кінця, а оболонка нижче була недосяжна. По-друге, збережена
+// HTML переживала деплой і посилалась на головні JS/CSS, які precache нової
+// збірки вже прибрав, — застосунок без звʼязку не стартував зовсім.
+// Будь-яка адреса застосунку — та сама оболонка, а поточна оболонка вже лежить
+// у precache разом із файлами, на які посилається, — її й віддаємо.
+const NAVIGATION_TIMEOUT_MS = 3000;
 
 registerRoute(
   ({ request, url }) => request.mode === 'navigate' && isOwnOrigin(url),
-  async params => {
+  async ({ request }) => {
+    const network = fetch(request);
+    let timer = null;
+    const timedOut = new Promise(resolve => {
+      timer = setTimeout(() => resolve(null), NAVIGATION_TIMEOUT_MS);
+    });
     try {
-      const response = await pageStrategy.handle(params);
+      const response = await Promise.race([network.catch(() => null), timedOut]);
       if (response) return response;
-    } catch {
-      // без мережі й без копії цієї адреси — оболонка нижче
+    } finally {
+      clearTimeout(timer);
     }
-    // Будь-яка адреса застосунку — та сама оболонка: маршрути розбирає роутер.
-    return (await matchPrecache('/index.html')) || Response.error();
+    const shell = await matchPrecache('/index.html');
+    if (shell) return shell;
+    // Оболонки немає (воркер щойно ставиться) — дочекатись мережі як є.
+    return network.catch(() => Response.error());
   },
 );
+
+// Кеш сторінок попередньої версії воркера — див. вище, чому його більше немає.
+self.addEventListener('activate', event => {
+  event.waitUntil(caches.delete('km-pages'));
+});

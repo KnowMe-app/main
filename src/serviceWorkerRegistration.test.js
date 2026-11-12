@@ -27,9 +27,14 @@ describe('service worker', () => {
     expect(source).not.toContain('precacheAndRoute(self.__WB_MANIFEST');
   });
 
-  it('сторінка — спершу мережа, без неї — збережена оболонка', () => {
-    expect(source).toContain('networkTimeoutSeconds: 3');
-    expect(source).toContain("return (await matchPrecache('/index.html')) || Response.error();");
+  it('сторінка — мережа проти тайм-ауту, інакше оболонка поточної збірки', () => {
+    // Тайм-аут діє й тоді, коли копії адреси немає (глибоке посилання),
+    // а збереженої HTML минулого деплою немає зовсім.
+    expect(source).toContain('const NAVIGATION_TIMEOUT_MS = 3000;');
+    expect(source).toContain('await Promise.race([network.catch(() => null), timedOut]);');
+    expect(source).toContain("const shell = await matchPrecache('/index.html');");
+    expect(source).not.toContain('new NetworkFirst(');
+    expect(source).toContain("caches.delete('km-pages')");
   });
 
   it('не чіпає чужих доменів, крім шрифтів', () => {
