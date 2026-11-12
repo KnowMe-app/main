@@ -5,12 +5,19 @@ import {
   getWriteOutboxPendingCount,
   isRetryableOutboxError,
   registerOutboxRejectionHandler,
+  registerOutboxSuccessHandler,
   startWriteOutbox,
   stopWriteOutbox,
 } from './writeOutbox';
 
-const storageKey = uid => `km.writeOutbox.v1:${uid}`;
-const stored = uid => JSON.parse(localStorage.getItem(storageKey(uid)) || '{"entries":[]}').entries;
+const prefix = uid => `km.writeOutbox.v1:${uid}:`;
+const stored = uid => Object.keys(localStorage)
+  .filter(key => key.startsWith(prefix(uid)))
+  .map(key => JSON.parse(localStorage.getItem(key)))
+  .sort((a, b) => a.createdAt - b.createdAt);
+const diskSnapshot = uid => Object.fromEntries(Object.keys(localStorage)
+  .filter(key => key.startsWith(prefix(uid)))
+  .map(key => [key, localStorage.getItem(key)]));
 const deferred = () => {
   let resolve;
   let reject;
@@ -40,22 +47,22 @@ describe('черга записів пристрою', () => {
     pending.resolve();
     await delivered;
     expect(stored('u1')).toHaveLength(0);
-    expect(localStorage.getItem(storageKey('u1'))).toBeNull();
+    expect(stored('u1')).toHaveLength(0);
   });
 
   it('досилає після перезавантаження те, що лишилось на диску', async () => {
     configureWriteOutbox({ send: () => new Promise(() => {}) });
     enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/comments/u1/a': { text: 'x', updatedAt: 1 } } });
     // «Перезавантаження»: памʼять вкладки стерта, диск лишився.
-    const disk = localStorage.getItem(storageKey('u1'));
+    const disk = diskSnapshot('u1');
     __resetWriteOutboxForTests();
-    localStorage.setItem(storageKey('u1'), disk);
+    Object.entries(disk).forEach(([key, value]) => localStorage.setItem(key, value));
     const send = jest.fn(() => Promise.resolve());
     configureWriteOutbox({ send });
     startWriteOutbox('u1');
     expect(send).toHaveBeenCalledWith({ 'multiData/comments/u1/a': { text: 'x', updatedAt: 1 } });
     await flush();
-    expect(localStorage.getItem(storageKey('u1'))).toBeNull();
+    expect(stored('u1')).toHaveLength(0);
   });
 
   it('новіше значення шляху витісняє старіше, поки те не відправлене', async () => {
@@ -87,7 +94,7 @@ describe('черга записів пристрою', () => {
     const meta = { type: 'reactions', viewerId: 'u1', changes: [{ kind: 'favorites', ownerId: 'u1', userId: 'a', previous: null }] };
     await expect(enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/favorites/u1/a': 1 }, meta })).rejects.toThrow('PERMISSION_DENIED');
     expect(handler).toHaveBeenCalledWith(meta, expect.any(Error));
-    expect(localStorage.getItem(storageKey('u1'))).toBeNull();
+    expect(stored('u1')).toHaveLength(0);
   });
 
   it('подія відмови каже, чи запис дослано з минулої вкладки', async () => {
@@ -99,7 +106,7 @@ describe('черга записів пристрою', () => {
       await enqueueOutboxWrite({ uid: 'u1', patch: { 'a/b': 1 } }).catch(() => {});
       expect(events[0].replayed).toBe(false);
       // Запис з диска, на який у вкладці ніхто не чекає.
-      localStorage.setItem(storageKey('u2'), JSON.stringify({ entries: [{ id: 'old', patch: { 'a/c': 1 } }] }));
+      localStorage.setItem(`${prefix('u2')}old`, JSON.stringify({ id: 'old', patch: { 'a/c': 1 }, createdAt: 1 }));
       startWriteOutbox('u2');
       await flush();
       expect(events[1].replayed).toBe(true);
@@ -122,7 +129,7 @@ describe('черга записів пристрою', () => {
       jest.advanceTimersByTime(2000);
       await delivered;
       expect(send).toHaveBeenCalledTimes(2);
-      expect(localStorage.getItem(storageKey('u1'))).toBeNull();
+      expect(stored('u1')).toHaveLength(0);
     } finally {
       jest.useRealTimers();
     }
@@ -136,7 +143,7 @@ describe('черга записів пристрою', () => {
     enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/favorites/u1/a': 1 }, meta: { type: 'reactions' } }).catch(() => {});
     expect(stored('u1')).toHaveLength(1);
     stopWriteOutbox();
-    expect(localStorage.getItem(storageKey('u1'))).toBeNull();
+    expect(stored('u1')).toHaveLength(0);
     pending.reject(denied());
     await flush();
     // Кеш реакцій вихід і так стирає — відкочувати нічого.
@@ -155,5 +162,73 @@ describe('черга записів пристрою', () => {
     expect(isRetryableOutboxError(denied())).toBe(false);
     expect(isRetryableOutboxError(new Error('set at /x failed: write_cancelled'))).toBe(true);
     expect(isRetryableOutboxError(new Error('something else'))).toBe(false);
+  });
+
+  it('дві вкладки не стирають записів одна одної', async () => {
+    configureWriteOutbox({ send: () => new Promise(() => {}) });
+    enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/comments/u1/a': { text: 'з першої' } } });
+    // «Друга вкладка»: своя памʼять черги, той самий диск.
+    __resetWriteOutboxForTests();
+    configureWriteOutbox({ send: () => new Promise(() => {}) });
+    enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/comments/u1/b': { text: 'з другої' } } });
+    const paths = stored('u1').map(entry => Object.keys(entry.patch)[0]).sort();
+    expect(paths).toEqual(['multiData/comments/u1/a', 'multiData/comments/u1/b']);
+  });
+
+  it('новіше значення витісняє на диску запис іншої вкладки', () => {
+    configureWriteOutbox({ send: () => new Promise(() => {}) });
+    enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/favorites/u1/a': 1 } });
+    __resetWriteOutboxForTests();
+    enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/favorites/u1/a': null } });
+    const entries = stored('u1');
+    expect(entries).toHaveLength(1);
+    expect(entries[0].patch).toEqual({ 'multiData/favorites/u1/a': null });
+  });
+
+  it('запис, якого вже немає на диску, не відправляється вдруге', () => {
+    const send = jest.fn(() => new Promise(() => {}));
+    localStorage.setItem(`${prefix('u1')}x`, JSON.stringify({ id: 'x', patch: { 'a/b': 1 }, createdAt: 1 }));
+    startWriteOutbox('u1');
+    expect(getWriteOutboxPendingCount()).toBe(1);
+    // Інша вкладка дослала запис і зняла ключ — ця не шле його ще раз.
+    localStorage.removeItem(`${prefix('u1')}x`);
+    configureWriteOutbox({ send });
+    startWriteOutbox('u1');
+    expect(send).not.toHaveBeenCalled();
+    expect(getWriteOutboxPendingCount()).toBe(0);
+  });
+
+  it('підтвердження після зміни акаунта знімає запис з черги свого читача', async () => {
+    const pending = deferred();
+    configureWriteOutbox({ send: () => pending.promise });
+    enqueueOutboxWrite({ uid: 'u1', patch: { 'a/b': 1 } });
+    startWriteOutbox('u2');
+    pending.resolve();
+    await flush();
+    expect(stored('u1')).toHaveLength(0);
+  });
+
+  it('продовження після підтвердження знає, чи запис дослано з минулої вкладки', async () => {
+    const handler = jest.fn();
+    registerOutboxSuccessHandler('reactions', handler);
+    configureWriteOutbox({ send: () => Promise.resolve() });
+    await enqueueOutboxWrite({ uid: 'u1', patch: { 'a/b': 1 }, meta: { type: 'reactions' } });
+    expect(handler).toHaveBeenLastCalledWith({ type: 'reactions' }, { replayed: false });
+    localStorage.setItem(`${prefix('u1')}old`, JSON.stringify({ id: 'old', patch: { 'a/c': 1 }, meta: { type: 'reactions' }, createdAt: 1 }));
+    startWriteOutbox('u2');
+    startWriteOutbox('u1');
+    await flush();
+    expect(handler).toHaveBeenLastCalledWith({ type: 'reactions' }, { replayed: true });
+  });
+
+  it('переносить чергу з першої версії (один масив) в окремі ключі', async () => {
+    localStorage.setItem('km.writeOutbox.v1:u1', JSON.stringify({ entries: [{ id: 'legacy', patch: { 'a/b': 1 }, createdAt: 1 }] }));
+    const send = jest.fn(() => Promise.resolve());
+    configureWriteOutbox({ send });
+    startWriteOutbox('u1');
+    expect(send).toHaveBeenCalledWith({ 'a/b': 1 });
+    expect(localStorage.getItem('km.writeOutbox.v1:u1')).toBeNull();
+    await flush();
+    expect(stored('u1')).toHaveLength(0);
   });
 });

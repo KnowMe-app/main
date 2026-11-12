@@ -141,7 +141,7 @@ import { createSaveComparisonField } from '../utils/comparisonFieldAdapter';
 import { mergeDuplicateProfileValues, normalizePhoneForStorage, sanitizeUploadedInfoPhones } from '../utils/profileValueNormalization';
 import { patchCachedReactionValue } from '../utils/matchingReactionCache';
 import { forgetCachedComment, rememberCommentWrite } from '../utils/commentsStorage';
-import { configureWriteOutbox, enqueueOutboxWrite, registerOutboxRejectionHandler } from '../utils/writeOutbox';
+import { configureWriteOutbox, enqueueOutboxWrite, registerOutboxRejectionHandler, registerOutboxSuccessHandler } from '../utils/writeOutbox';
 import { forgetProfileContacts, readFreshProfileContacts, writeProfileContacts } from '../utils/matchingContactsCache';
 import { MATCHING_DENIED_CARDS_STORE, createMatchingTimedStore } from '../utils/matchingTimedStore';
 import { pickCardActivity } from '../utils/cardActivity';
@@ -1025,9 +1025,16 @@ const writeReactionsThroughCache = async changes => {
     meta: {
       type: 'reactions',
       viewerId,
-      changes: applied
-        .filter(change => change.result.patched)
-        .map(({ kind, ownerId, userId, result }) => ({ kind, ownerId, userId, previous: result.previous ?? null })),
+      // `previous` — для відкату на відмові, лише там, де кеш справді правився;
+      // `value` — для продовження після підтвердження (перелік «лише для
+      // вподобаних»), для кожної зміни.
+      changes: applied.map(({ kind, ownerId, userId, result }, index) => ({
+        kind,
+        ownerId,
+        userId,
+        value: changes[index].value ?? null,
+        ...(result.patched ? { previous: result.previous ?? null } : { unpatched: true }),
+      })),
     },
   });
 };
@@ -1042,8 +1049,19 @@ configureWriteOutbox({
 });
 
 registerOutboxRejectionHandler('reactions', meta => {
-  (meta?.changes || []).forEach(change => {
+  (meta?.changes || []).filter(change => !change.unpatched).forEach(change => {
     patchCachedReactionValue(meta.viewerId, change.ownerId, change.kind, change.userId, change.previous);
+  });
+});
+
+// Вподобання власниці «лише для вподобаних» відкриває її анкету через
+// обернений перелік (`syncLikedAudienceAfterReaction`). У цій вкладці його
+// пише сам писач реакції слідом за записом, а запис, досланий з минулої
+// вкладки, свого писача вже не має — перелік дописує це продовження.
+registerOutboxSuccessHandler('reactions', (meta, { replayed }) => {
+  if (!replayed) return;
+  (meta?.changes || []).filter(change => change.kind === 'favorites').forEach(change => {
+    void syncLikedAudienceAfterReaction(change.ownerId, change.userId, change.value);
   });
 });
 
