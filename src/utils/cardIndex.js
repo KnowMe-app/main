@@ -64,6 +64,11 @@ export const isMatchingLocalStorageCacheKey = key => {
   );
 };
 const localJsonCache = new Map();
+// Коли вкладка востаннє бачила диск для ключа списків (прочитала чи записала).
+// Списки (`queries`, `matchingIndexQueries`) лежать одним ключем на всі
+// вкладки, а кожна тримає свою копію в памʼяті: запис цілої копії стирав
+// списки й стан пагінації, які тим часом записала інша вкладка.
+const listKeysSyncedAt = new Map();
 const pendingSaveTimers = new Map();
 const pendingSaveValues = new Map();
 
@@ -77,6 +82,8 @@ const pendingSaveValues = new Map();
  * IndexedDB (тести, приватний режим) — `localStorage`, як і було.
  */
 const INDEXED_DB_KEYS = new Set([CARDS_KEY, MATCHING_SUMMARY_CARDS_KEY]);
+// Списки id — один ключ на всі вкладки; пишуться злиттям по списку (`mergeListsFromDisk`).
+const LIST_KEYS = new Set([QUERIES_KEY, INDEX_QUERIES_KEY]);
 // IndexedDB тримає скільки завгодно, але кеш без межі ріс би вічно: стеля —
 // за кількістю анкет, а не за довжиною рядка (рядка тут більше немає).
 const INDEXED_DB_MAX_CARDS = 5000;
@@ -321,6 +328,9 @@ const resetMatchingStorageKey = key => {
     idbDelete(key).then(() => clearIndexedDbInvalidation(key)).catch(() => {});
   }
   localJsonCache.delete(key);
+  // Скинуте вкладкою не повертається з диска: старіші за скидання списки
+  // інших вкладок злиття не візьме.
+  if (LIST_KEYS.has(key)) listKeysSyncedAt.set(key, Date.now());
   pendingSaveValues.delete(key);
   const timer = pendingSaveTimers.get(key);
   if (timer) clearTimeout(timer);
@@ -405,6 +415,7 @@ const loadJson = key => {
     const raw = localStorage.getItem(key);
     if (!raw) {
       localJsonCache.set(key, {});
+      if (LIST_KEYS.has(key)) listKeysSyncedAt.set(key, Date.now());
       return {};
     }
     if (shouldGuardMatchingCacheKey(key) && raw.length > MATCHING_CACHE_MAX_CHARS) {
@@ -415,6 +426,7 @@ const loadJson = key => {
     }
     const parsed = JSON.parse(raw) || {};
     localJsonCache.set(key, parsed);
+    if (LIST_KEYS.has(key)) listKeysSyncedAt.set(key, Date.now());
     return parsed;
   } catch {
     if (shouldGuardMatchingCacheKey(key)) resetMatchingStorageKey(key);
@@ -457,6 +469,47 @@ const pruneOversizedCards = (value, stringified) => {
   }
   return { value: { ...value, items: next }, text };
 };
+const listEntryTime = entry => Math.max(
+  Number(entry?.cachedAt) || 0,
+  Number(entry?.lastAction) || 0,
+  Number(entry?.pagination?.savedAt) || 0,
+);
+
+/**
+ * Злити свою копію списків з тим, що на диску, по списку, а не цілою копією.
+ * Список, який є в обох, — новіший за часом запису. Списку немає в нашій
+ * копії — береться з диска, лише коли його записали **після** того, як ця
+ * вкладка востаннє бачила диск: старіший вона бачила й прибрала свідомо
+ * (TTL, «Оновити стрічку», витіснення найстаріших стрічок).
+ */
+const mergeListsFromDisk = (key, value) => {
+  let disk = null;
+  try {
+    const raw = localStorage.getItem(key);
+    disk = raw ? JSON.parse(raw) : null;
+  } catch {
+    disk = null;
+  }
+  if (!disk || typeof disk !== 'object') return value;
+  const syncedAt = listKeysSyncedAt.get(key) || 0;
+  let merged = null;
+  Object.entries(disk).forEach(([listKey, diskEntry]) => {
+    const own = value[listKey];
+    const diskTime = listEntryTime(diskEntry);
+    const take = own ? diskTime > listEntryTime(own) : diskTime > syncedAt;
+    if (!take) return;
+    if (!merged) merged = { ...value };
+    merged[listKey] = diskEntry;
+  });
+  if (merged && key === QUERIES_KEY) {
+    const newestFeedKey = Object.keys(merged)
+      .filter(listKey => listKey.startsWith(FEED_LIST_KEY_PREFIX))
+      .sort((a, b) => listEntryTime(merged[b]) - listEntryTime(merged[a]))[0];
+    if (newestFeedKey) pruneFeedListKeys(merged, newestFeedKey);
+  }
+  return merged || value;
+};
+
 const flushSaveJson = key => {
   const value = pendingSaveValues.get(key);
   pendingSaveValues.delete(key);
@@ -485,8 +538,16 @@ const flushSaveJson = key => {
       resetMatchingStorageKey(key);
       return;
     }
+    if (LIST_KEYS.has(key)) {
+      const merged = mergeListsFromDisk(key, value);
+      if (merged !== value) {
+        localJsonCache.set(key, merged);
+        stringified = JSON.stringify(merged);
+      }
+    }
     incrementMatchingLoadStat('localStorageWrites');
     localStorage.setItem(key, stringified);
+    if (LIST_KEYS.has(key)) listKeysSyncedAt.set(key, Date.now());
   } catch {
     // ignore write errors
   }
