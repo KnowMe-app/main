@@ -33,22 +33,37 @@ const changesReviewPresence = (before, after) => Boolean(before) !== Boolean(aft
  * прапорця не ставимо: інакше запис поля завів би картку з одним полем
  * (чернетка, видалена анкета), і стрічка показала б порожній рядок.
  */
+// Скільки разів звіряти прапорець із вузлом відгуків, поки вони не зійдуться.
+const MAX_RECONCILE_ROUNDS = 5;
+
 const syncPublicReviewFlag = async (profileId, { readHasAny, updateCard }) => {
   if (!isUsableId(profileId)) return false;
-  const hasAny = Boolean(await readHasAny(profileId));
   let changed = false;
-  await updateCard(profileId, card => {
-    // `null` — не «картки немає», а часто локальна копія неслуханого вузла
-    // на першому виклику транзакції: перерваний тут запис не дочекався б
-    // справжньої картки з сервера. Повертаємо `null` — сервер, де картка є,
-    // викличе ще раз уже з нею, а де її немає, запис `null` нічого не заведе.
-    if (card === null || card === undefined) return null;
-    if (typeof card !== 'object') return undefined;
-    if (Boolean(card.hasPublicReview) === hasAny && (hasAny || card.hasPublicReview === false)) return undefined;
-    changed = true;
-    return { ...card, hasPublicReview: hasAny };
-  });
-  return changed;
+  let hasAny = Boolean(await readHasAny(profileId));
+  // Транзакція стереже картку, а не вузол відгуків, прочитаний окремо: тригер
+  // видалення міг прочитати «відгуків немає», а тим часом хтось додав новий,
+  // і його тригер уже відпрацював. Записане тоді `false` ховало б живий
+  // відгук назавжди — наступної події, що виправила б прапорець, немає. Тож
+  // після запису вузол перечитується, і розбіжність записується знову.
+  for (let round = 0; round < MAX_RECONCILE_ROUNDS; round += 1) {
+    const expected = hasAny;
+    await updateCard(profileId, card => {
+      // `null` — не «картки немає», а часто локальна копія неслуханого вузла
+      // на першому виклику транзакції: перерваний тут запис не дочекався б
+      // справжньої картки з сервера. Повертаємо `null` — сервер, де картка є,
+      // викличе ще раз уже з нею, а де її немає, запис `null` нічого не заведе.
+      if (card === null || card === undefined) return null;
+      if (typeof card !== 'object') return undefined;
+      if (Boolean(card.hasPublicReview) === expected && (expected || card.hasPublicReview === false)) return undefined;
+      changed = true;
+      return { ...card, hasPublicReview: expected };
+    });
+    hasAny = Boolean(await readHasAny(profileId));
+    if (hasAny === expected) return changed;
+  }
+  // Відгуки міняються швидше, ніж ми встигаємо звірити: нехай тригер
+  // повторить подію (`retry: true`), а не лишить прапорець неперевіреним.
+  throw new Error(`hasPublicReview для ${profileId} не зійшовся з відгуками за ${MAX_RECONCILE_ROUNDS} спроб`);
 };
 
 module.exports = {
