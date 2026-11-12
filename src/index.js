@@ -10,6 +10,7 @@ import { Toaster } from 'react-hot-toast';
 import { getStoredLanguage } from 'hooks/useAppSettings';
 import { loadExtraLocale } from 'utils/locales';
 import { registerServiceWorker } from './serviceWorkerRegistration';
+import { preloadCardCacheFromIndexedDb } from 'utils/cardIndex';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
@@ -38,9 +39,15 @@ const renderApp = () => root.render(
 // Словник обраної мови — до першого кадру: модулі мов вантажаться на вимогу
 // (`utils/locales`), і без цього той, хто обрав японську, бачив би перший
 // екран англійською. Українській і англійській чекати нема чого.
-loadExtraLocale(getStoredLanguage())
-  .catch(error => console.warn('[i18n] словник мови не довантажився', error))
-  .finally(renderApp);
+//
+// Так само кеш карток (`utils/cardIndex`): він живе в IndexedDB, яка читається
+// лише асинхронно, і без підвантаження перший кадр стрічки не мав би з чого
+// скласти деку. Підвантаження обмежене в часі й без бази не падає.
+Promise.all([
+  loadExtraLocale(getStoredLanguage())
+    .catch(error => console.warn('[i18n] словник мови не довантажився', error)),
+  preloadCardCacheFromIndexedDb().catch(() => false),
+]).finally(renderApp);
 
 // Застосунок відкривається з пристрою й без мережі (`src/service-worker.js`).
 registerServiceWorker();
