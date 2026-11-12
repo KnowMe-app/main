@@ -177,7 +177,7 @@ const rejectEntry = (entry, error) => {
   const handler = entry.meta?.type ? rejectionHandlers.get(entry.meta.type) : null;
   if (handler) {
     try {
-      handler(entry.meta, error);
+      handler(entry.meta, error, { patch: entry.patch });
     } catch (handlerError) {
       console.warn('[writeOutbox] відкат відхиленого запису впав', handlerError);
     }
@@ -217,7 +217,7 @@ const sendEntry = original => {
       const handler = entry.meta?.type ? successHandlers.get(entry.meta.type) : null;
       if (handler) {
         try {
-          handler(entry.meta, { replayed });
+          handler(entry.meta, { replayed, patch: entry.patch });
         } catch (handlerError) {
           console.warn('[writeOutbox] продовження підтвердженого запису впало', handlerError);
         }
@@ -373,7 +373,11 @@ export const enqueueOutboxWrite = ({ uid, patch, meta = null }) => {
 
 export const WRITE_OUTBOX_REJECTED_EVENT = 'km:write-outbox-rejected';
 
-/** Відкат правки пристрою для записів одного типу `meta.type`. */
+/**
+ * Відкат правки пристрою для записів одного типу `meta.type`. Кличеться з
+ * `(meta, error, { patch })` — відкочувати лише шляхи, що лишились у `patch`:
+ * витіснені належать новішому запису.
+ */
 export const registerOutboxRejectionHandler = (type, handler) => {
   if (!type || typeof handler !== 'function') return;
   rejectionHandlers.set(type, handler);
@@ -381,8 +385,11 @@ export const registerOutboxRejectionHandler = (type, handler) => {
 
 /**
  * Продовження підтвердженого запису для типу `meta.type`. Кличеться з
- * `{ replayed }`: `true` — запис дослано з минулої вкладки, і продовження,
- * яке зробив би сам писач, ніхто вже не зробить.
+ * `{ replayed, patch }`: `replayed` — запис дослано з минулої вкладки, і
+ * продовження, яке зробив би сам писач, ніхто вже не зробить; `patch` — що
+ * справді відправлено. `meta` описує запис таким, яким його поставили, а
+ * новіше значення могло витіснити частину шляхів: діяти можна лише на ті,
+ * що лишились у `patch`.
  */
 export const registerOutboxSuccessHandler = (type, handler) => {
   if (!type || typeof handler !== 'function') return;

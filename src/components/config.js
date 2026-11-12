@@ -1048,8 +1048,16 @@ configureWriteOutbox({
   },
 });
 
-registerOutboxRejectionHandler('reactions', meta => {
-  (meta?.changes || []).filter(change => !change.unpatched).forEach(change => {
+// Шлях зміни реакції — той самий, що в `writeReactionsThroughCache`. Обробники
+// діють лише на зміни, чий шлях лишився у відправленому записі: новіше
+// значення того самого шляху витісняє його зі старого запису, а `meta`
+// старого запису про це не знає.
+const reactionChangePath = change => `multiData/${change.kind}/${change.ownerId}/${change.userId}`;
+const reactionChangesStillSent = (meta, patch) => (meta?.changes || [])
+  .filter(change => Object.prototype.hasOwnProperty.call(patch || {}, reactionChangePath(change)));
+
+registerOutboxRejectionHandler('reactions', (meta, error, { patch } = {}) => {
+  reactionChangesStillSent(meta, patch).filter(change => !change.unpatched).forEach(change => {
     patchCachedReactionValue(meta.viewerId, change.ownerId, change.kind, change.userId, change.previous);
   });
 });
@@ -1058,10 +1066,11 @@ registerOutboxRejectionHandler('reactions', meta => {
 // обернений перелік (`syncLikedAudienceAfterReaction`). У цій вкладці його
 // пише сам писач реакції слідом за записом, а запис, досланий з минулої
 // вкладки, свого писача вже не має — перелік дописує це продовження.
-registerOutboxSuccessHandler('reactions', (meta, { replayed }) => {
+registerOutboxSuccessHandler('reactions', (meta, { replayed, patch } = {}) => {
   if (!replayed) return;
-  (meta?.changes || []).filter(change => change.kind === 'favorites').forEach(change => {
-    void syncLikedAudienceAfterReaction(change.ownerId, change.userId, change.value);
+  reactionChangesStillSent(meta, patch).filter(change => change.kind === 'favorites').forEach(change => {
+    // Значення — те, що справді записано, а не те, що лежить у `meta`.
+    void syncLikedAudienceAfterReaction(change.ownerId, change.userId, patch[reactionChangePath(change)]);
   });
 });
 

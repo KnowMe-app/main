@@ -93,7 +93,7 @@ describe('черга записів пристрою', () => {
     configureWriteOutbox({ send: () => Promise.reject(denied()) });
     const meta = { type: 'reactions', viewerId: 'u1', changes: [{ kind: 'favorites', ownerId: 'u1', userId: 'a', previous: null }] };
     await expect(enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/favorites/u1/a': 1 }, meta })).rejects.toThrow('PERMISSION_DENIED');
-    expect(handler).toHaveBeenCalledWith(meta, expect.any(Error));
+    expect(handler).toHaveBeenCalledWith(meta, expect.any(Error), { patch: { 'multiData/favorites/u1/a': 1 } });
     expect(stored('u1')).toHaveLength(0);
   });
 
@@ -213,12 +213,12 @@ describe('черга записів пристрою', () => {
     registerOutboxSuccessHandler('reactions', handler);
     configureWriteOutbox({ send: () => Promise.resolve() });
     await enqueueOutboxWrite({ uid: 'u1', patch: { 'a/b': 1 }, meta: { type: 'reactions' } });
-    expect(handler).toHaveBeenLastCalledWith({ type: 'reactions' }, { replayed: false });
+    expect(handler).toHaveBeenLastCalledWith({ type: 'reactions' }, { replayed: false, patch: { 'a/b': 1 } });
     localStorage.setItem(`${prefix('u1')}old`, JSON.stringify({ id: 'old', patch: { 'a/c': 1 }, meta: { type: 'reactions' }, createdAt: 1 }));
     startWriteOutbox('u2');
     startWriteOutbox('u1');
     await flush();
-    expect(handler).toHaveBeenLastCalledWith({ type: 'reactions' }, { replayed: true });
+    expect(handler).toHaveBeenLastCalledWith({ type: 'reactions' }, { replayed: true, patch: { 'a/c': 1 } });
   });
 
   it('переносить чергу з першої версії (один масив) в окремі ключі', async () => {
@@ -230,5 +230,17 @@ describe('черга записів пристрою', () => {
     expect(localStorage.getItem('km.writeOutbox.v1:u1')).toBeNull();
     await flush();
     expect(stored('u1')).toHaveLength(0);
+  });
+
+  it('обробник бачить лише шляхи, що лишились після витіснення', async () => {
+    const handler = jest.fn();
+    registerOutboxSuccessHandler('reactions', handler);
+    // Без відправника обидва записи стоять у черзі; другий витісняє шлях першого.
+    enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/favorites/u1/a': 1, 'multiData/dislikes/u1/a': null }, meta: { type: 'reactions' } });
+    enqueueOutboxWrite({ uid: 'u1', patch: { 'multiData/favorites/u1/a': null } });
+    configureWriteOutbox({ send: () => Promise.resolve() });
+    startWriteOutbox('u1');
+    await flush();
+    expect(handler).toHaveBeenCalledWith({ type: 'reactions' }, { replayed: false, patch: { 'multiData/dislikes/u1/a': null } });
   });
 });
