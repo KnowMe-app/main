@@ -39,31 +39,74 @@ const inFlight = new Set();
 const waiters = new Map();
 const listeners = new Set();
 const rejectionHandlers = new Map();
+const successHandlers = new Map();
+// Записи, що справді лежать на диску. Лише про них відсутність ключа означає
+// «дослано чи витіснено іншою вкладкою»; без `localStorage` запис живе в
+// памʼяті вкладки, і викинути його за відсутнім ключем означало б загубити.
+const diskIds = new Set();
 
-const storageKey = uid => `${STORAGE_KEY_PREFIX}${uid}`;
+// Кожен запис — окремий ключ (`…:{читач}:{id}`), а не один масив на читача.
+// Дві вкладки того самого акаунта тримають кожна свою памʼять черги, і поки
+// черга лежала одним ключем, друга вкладка, зберігаючи свій знімок, стирала з
+// диска записи першої: памʼятка, написана без звʼязку в одній вкладці, зникала
+// від дії в іншій. Окремий ключ вкладка пише й знімає лише свій.
+const userPrefix = uid => `${STORAGE_KEY_PREFIX}${uid}:`;
+const entryKey = (uid, id) => `${userPrefix(uid)}${id}`;
+
+const isEntry = entry => Boolean(entry?.id && entry.patch && typeof entry.patch === 'object');
+
+const readEntryFromDisk = (uid, id) => {
+  try {
+    const raw = localStorage.getItem(entryKey(uid, id));
+    const parsed = raw ? JSON.parse(raw) : null;
+    return isEntry(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
 
 const readEntries = uid => {
   try {
-    const raw = localStorage.getItem(storageKey(uid));
-    const parsed = raw ? JSON.parse(raw) : null;
-    return Array.isArray(parsed?.entries)
-      ? parsed.entries.filter(entry => entry?.id && entry.patch && typeof entry.patch === 'object')
-      : [];
+    const prefix = userPrefix(uid);
+    const fromKeys = Object.keys(localStorage)
+      .filter(key => key.startsWith(prefix))
+      .map(key => readEntryFromDisk(uid, key.slice(prefix.length)))
+      .filter(Boolean);
+    // Черга з першої версії лежала одним масивом під `…:{читач}` —
+    // переносимо її в окремі ключі, щоб недосланого не загубити.
+    const legacyRaw = localStorage.getItem(`${STORAGE_KEY_PREFIX}${uid}`);
+    if (legacyRaw) {
+      const legacy = JSON.parse(legacyRaw)?.entries;
+      localStorage.removeItem(`${STORAGE_KEY_PREFIX}${uid}`);
+      (Array.isArray(legacy) ? legacy : []).filter(isEntry).forEach(entry => {
+        writeEntryToDisk(uid, entry);
+        fromKeys.push(entry);
+      });
+    }
+    return fromKeys.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   } catch {
     return [];
   }
 };
 
-const persist = () => {
-  if (!activeUid) return;
+function writeEntryToDisk(uid, entry) {
+  if (!uid || !entry) return false;
   try {
-    if (entries.length) {
-      localStorage.setItem(storageKey(activeUid), JSON.stringify({ entries }));
-    } else {
-      localStorage.removeItem(storageKey(activeUid));
-    }
+    localStorage.setItem(entryKey(uid, entry.id), JSON.stringify(entry));
+    if (uid === activeUid) diskIds.add(entry.id);
+    return true;
   } catch {
     // Без `localStorage` черга живе в памʼяті вкладки — як і було до неї.
+    return false;
+  }
+}
+
+const removeEntryFromDisk = (uid, id) => {
+  if (!uid || !id) return;
+  try {
+    localStorage.removeItem(entryKey(uid, id));
+  } catch {
+    // нічого
   }
 };
 
@@ -112,13 +155,17 @@ const scheduleRetry = () => {
   }, delay);
 };
 
-const removeEntry = id => {
+const removeEntry = (uid, id) => {
+  // Диск — за читачем запису, а не за поточним: підтвердження буває вже
+  // після зміни акаунта, і запис, лишений у черзі свого читача, на його
+  // наступному вході досилався б удруге — поверх новішого значення, яке
+  // той тим часом поставив з іншого пристрою.
+  removeEntryFromDisk(uid, id);
+  if (uid !== activeUid) return;
+  diskIds.delete(id);
   const before = entries.length;
   entries = entries.filter(entry => entry.id !== id);
-  if (entries.length !== before) {
-    persist();
-    notify();
-  }
+  if (entries.length !== before) notify();
 };
 
 const rejectEntry = (entry, error) => {
@@ -126,11 +173,11 @@ const rejectEntry = (entry, error) => {
   // своїми словами. Ніхто не чекає — запис досланий з минулої вкладки, і
   // сказати про нього може лише слухач події (`replayed`).
   const replayed = !waiters.has(entry.id);
-  removeEntry(entry.id);
+  removeEntry(activeUid, entry.id);
   const handler = entry.meta?.type ? rejectionHandlers.get(entry.meta.type) : null;
   if (handler) {
     try {
-      handler(entry.meta, error);
+      handler(entry.meta, error, { patch: entry.patch });
     } catch (handlerError) {
       console.warn('[writeOutbox] відкат відхиленого запису впав', handlerError);
     }
@@ -141,8 +188,19 @@ const rejectEntry = (entry, error) => {
   settleWaiter(entry.id, error);
 };
 
-const sendEntry = entry => {
+const sendEntry = original => {
   const uid = activeUid;
+  // Диск — спільна правда вкладок: іншою вкладкою запис могли вже дослати
+  // (ключа немає) або витіснити частину його шляхів новішим значенням.
+  const fromDisk = readEntryFromDisk(uid, original.id);
+  if (!fromDisk && diskIds.has(original.id)) {
+    diskIds.delete(original.id);
+    entries = entries.filter(entry => entry.id !== original.id);
+    notify();
+    settleWaiter(original.id);
+    return;
+  }
+  const entry = fromDisk || original;
   inFlight.add(entry.id);
   let sending;
   try {
@@ -154,9 +212,16 @@ const sendEntry = entry => {
     () => {
       inFlight.delete(entry.id);
       retryAttempt = 0;
-      // Відповідь могла прийти вже після виходу: черга іншого читача цього
-      // запису не знає, а свою пристрій уже записав на диск.
-      if (uid === activeUid) removeEntry(entry.id);
+      const replayed = !waiters.has(entry.id);
+      removeEntry(uid, entry.id);
+      const handler = entry.meta?.type ? successHandlers.get(entry.meta.type) : null;
+      if (handler) {
+        try {
+          handler(entry.meta, { replayed, patch: entry.patch });
+        } catch (handlerError) {
+          console.warn('[writeOutbox] продовження підтвердженого запису впало', handlerError);
+        }
+      }
       settleWaiter(entry.id);
     },
     error => {
@@ -199,7 +264,9 @@ export const startWriteOutbox = uid => {
   const next = uid ? String(uid) : null;
   if (next !== activeUid) {
     activeUid = next;
+    diskIds.clear();
     entries = next ? readEntries(next) : [];
+    entries.forEach(entry => diskIds.add(entry.id));
     inFlight.clear();
     retryAttempt = 0;
     if (retryTimer) {
@@ -246,23 +313,41 @@ export const enqueueOutboxWrite = ({ uid, patch, meta = null }) => {
   if (String(uid) !== activeUid) startWriteOutbox(uid);
   const paths = new Set(Object.keys(patch));
   const superseded = [];
-  // Новіше значення шляху витісняє старіше, поки те ще не відправлене.
+  const coalesce = entry => {
+    const remaining = Object.fromEntries(Object.entries(entry.patch).filter(([path]) => !paths.has(path)));
+    if (Object.keys(remaining).length === Object.keys(entry.patch).length) return entry;
+    if (!Object.keys(remaining).length) return null;
+    return { ...entry, patch: remaining };
+  };
+  // Новіше значення шляху витісняє старіше, поки те ще не відправлене, — і
+  // на диску теж: запис іншої вкладки, що чекає звʼязку, інакше дослався б
+  // після цього й повернув старе значення.
+  readEntries(activeUid)
+    .filter(entry => !inFlight.has(entry.id) && !entries.some(own => own.id === entry.id))
+    .forEach(entry => {
+      const next = coalesce(entry);
+      if (next === entry) return;
+      if (next) writeEntryToDisk(activeUid, next);
+      else removeEntryFromDisk(activeUid, entry.id);
+    });
   entries = entries
     .map(entry => {
       if (inFlight.has(entry.id)) return entry;
-      const remaining = Object.fromEntries(Object.entries(entry.patch).filter(([path]) => !paths.has(path)));
-      if (Object.keys(remaining).length === Object.keys(entry.patch).length) return entry;
-      if (!Object.keys(remaining).length) {
-        // Витіснений цілком: той, хто чекав на нього, отримує відповідь
-        // нового запису — його значення стало остаточним.
-        const waiter = waiters.get(entry.id);
-        if (waiter) {
-          waiters.delete(entry.id);
-          superseded.push(waiter);
-        }
-        return null;
+      const next = coalesce(entry);
+      if (next === entry) return entry;
+      if (next) {
+        writeEntryToDisk(activeUid, next);
+        return next;
       }
-      return { ...entry, patch: remaining };
+      removeEntryFromDisk(activeUid, entry.id);
+      // Витіснений цілком: той, хто чекав на нього, отримує відповідь
+      // нового запису — його значення стало остаточним.
+      const waiter = waiters.get(entry.id);
+      if (waiter) {
+        waiters.delete(entry.id);
+        superseded.push(waiter);
+      }
+      return null;
     })
     .filter(Boolean);
   const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -280,7 +365,7 @@ export const enqueueOutboxWrite = ({ uid, patch, meta = null }) => {
       },
     });
   });
-  persist();
+  writeEntryToDisk(activeUid, entry);
   notify();
   if (sendPatch) sendEntry(entry);
   return delivered;
@@ -288,10 +373,27 @@ export const enqueueOutboxWrite = ({ uid, patch, meta = null }) => {
 
 export const WRITE_OUTBOX_REJECTED_EVENT = 'km:write-outbox-rejected';
 
-/** Відкат правки пристрою для записів одного типу `meta.type`. */
+/**
+ * Відкат правки пристрою для записів одного типу `meta.type`. Кличеться з
+ * `(meta, error, { patch })` — відкочувати лише шляхи, що лишились у `patch`:
+ * витіснені належать новішому запису.
+ */
 export const registerOutboxRejectionHandler = (type, handler) => {
   if (!type || typeof handler !== 'function') return;
   rejectionHandlers.set(type, handler);
+};
+
+/**
+ * Продовження підтвердженого запису для типу `meta.type`. Кличеться з
+ * `{ replayed, patch }`: `replayed` — запис дослано з минулої вкладки, і
+ * продовження, яке зробив би сам писач, ніхто вже не зробить; `patch` — що
+ * справді відправлено. `meta` описує запис таким, яким його поставили, а
+ * новіше значення могло витіснити частину шляхів: діяти можна лише на ті,
+ * що лишились у `patch`.
+ */
+export const registerOutboxSuccessHandler = (type, handler) => {
+  if (!type || typeof handler !== 'function') return;
+  successHandlers.set(type, handler);
 };
 
 /** Скільки записів ще не підтвердила база. */
@@ -313,6 +415,8 @@ export const __resetWriteOutboxForTests = () => {
   waiters.clear();
   listeners.clear();
   rejectionHandlers.clear();
+  successHandlers.clear();
+  diskIds.clear();
 };
 
 // Звʼязок повернувся — дослати те, що чекало на повтор після збою.
