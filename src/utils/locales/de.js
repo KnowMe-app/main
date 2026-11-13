@@ -462,6 +462,8 @@ const BY_UK = {
   'Додайте виплату': 'Zahlung hinzufügen',
   'Зберігаємо…': 'Wird gespeichert…',
   'Немає звʼязку — шукали лише серед анкет, збережених на цьому пристрої': 'Keine Verbindung — nur unter den auf diesem Gerät gespeicherten Profilen gesucht',
+  'Немає звʼязку — решта анкет завантажиться, щойно він повернеться': 'Keine Verbindung — die übrigen Profile laden, sobald sie zurück ist',
+  'Немає звʼязку — для цих фільтрів анкет на пристрої ще немає. Стрічка завантажиться, щойно звʼязок повернеться.': 'Keine Verbindung — für diese Filter sind noch keine Profile auf dem Gerät. Der Feed lädt, sobald die Verbindung zurück ist.',
   'Немає звʼязку — збережемо, щойно він зʼявиться': 'Keine Verbindung — wird gespeichert, sobald sie wieder da ist',
   'Збережено': 'Gespeichert',
   'Поки лише в цьому браузері': 'Vorerst nur in diesem Browser',

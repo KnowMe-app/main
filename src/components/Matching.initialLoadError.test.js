@@ -152,7 +152,7 @@ describe('Matching initial loading error diagnostics', () => {
     // Помилку показує сама стрічка. Діагностика з кодом і JSON жила в шарі
     // відкритої картки, а там вона малювалась лише при відкритій картці без
     // анкети — тобто не малювалась ніколи; шар прибрано разом із карткою.
-    const errorUi = section('              {loadError && feedRows.length === 0 && (', '              {showFeedRetry && (');
+    const errorUi = section('              {loadError && feedRows.length === 0 && deviceOnline && (', '              {deviceOnline && showFeedRetry && (');
 
     expect(reporter).toContain('toast.error(diagnostic.userMessage');
     expect(reporter).toContain('id: INITIAL_LOAD_ERROR_TOAST_ID');

@@ -1102,6 +1102,16 @@ const readPersistedFeedSnapshotForMount = () => {
 // Скільки стрічка чекає на журнал змін, перш ніж перевіряти картки по одній.
 const CARD_CHANGES_WAIT_MS = 4000;
 
+const subscribeDeviceOnline = listener => {
+  window.addEventListener('online', listener);
+  window.addEventListener('offline', listener);
+  return () => {
+    window.removeEventListener('online', listener);
+    window.removeEventListener('offline', listener);
+  };
+};
+const readDeviceOnline = () => (typeof navigator === 'undefined' ? true : navigator.onLine !== false);
+
 const Matching = () => {
   const navigate = useNavigate();
   const routeLocation = useLocation();
@@ -5603,6 +5613,7 @@ const Matching = () => {
   // воно звіряє кеш із тією самою версією, що й показ.
   const cardStoreVersion = useSyncExternalStore(subscribeCardStore, getCardStoreVersion);
   const outboxPendingCount = useSyncExternalStore(subscribeWriteOutbox, getWriteOutboxPendingCount);
+  const deviceOnline = useSyncExternalStore(subscribeDeviceOnline, readDeviceOnline, () => true);
   // Відмову бази черга вже відкотила на пристрої; людині лишається сказати,
   // чому серце чи памʼятка зникли. Відмову запису з цієї вкладки показує
   // той, хто його писав, — тут лише дослане з минулої (`replayed`).
@@ -7891,6 +7902,24 @@ const Matching = () => {
     endOfDeckLoadRef.current('feed-retry', { limit: MATCHING_FEED_PAGE_SIZE });
   }, []);
 
+  /*
+   * Звʼязок повернувся — те, що без нього не вдалося, стрічка повторює сама:
+   * порожня дека з помилкою — заново, недочитаний хвіст — наступну сторінку.
+   * Без мережі там стояло «Не вдалося завантажити профілі» (чи вічний
+   * скелетон), і людина мусила здогадатись натиснути «Спробувати ще раз».
+   */
+  const offlineRecoveryRef = useRef({});
+  offlineRecoveryRef.current = { loadError, hasRows: renderedCardsLength > 0, showFeedRetry, reloadDefault, handleFeedRetry };
+  useEffect(() => {
+    const handleOnline = () => {
+      const state = offlineRecoveryRef.current;
+      if (state.loadError && !state.hasRows) state.reloadDefault();
+      else if (state.showFeedRetry) state.handleFeedRetry();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
+
   // Стрічка читає відгуки не на кожен рядок, а на той, у якого вже є що
   // читати. Раніше вона не читала нічого наперед узагалі: кнопка «Перевірити
   // наявність відгуків» у ряду рішень робила запит рівно стільки разів,
@@ -8999,7 +9028,13 @@ const Matching = () => {
               )}
               {/* Поки свіжий стан карток ще читається, порожня дека — це
                   очікування, а не «нічого немає». */}
-              {(loading || feedStatePendingCount > 0) && feedRows.length === 0 && <MatchingSkeleton />}
+              {(loading || feedStatePendingCount > 0) && feedRows.length === 0 && (deviceOnline ? <MatchingSkeleton /> : (
+                // Без мережі скелетон обіцяв, що картки от-от будуть, — а їх
+                // для цих фільтрів на пристрої немає, і база не відповість.
+                <FeedNotice data-testid="feed-offline-empty">
+                  <div>{uiText('Немає звʼязку — для цих фільтрів анкет на пристрої ще немає. Стрічка завантажиться, щойно звʼязок повернеться.', language)}</div>
+                </FeedNotice>
+              ))}
               {/* Над порожньою видачею за місцем уже стоїть картка «Схоже на
                   місто · Показати анкети», і «Немає доступних профілів» під нею
                   суперечило їй: анкети з цього місця є, їх показує стрічка. */}
@@ -9015,7 +9050,12 @@ const Matching = () => {
                   )}
                 </FeedNotice>
               )}
-              {loadError && feedRows.length === 0 && (
+              {loadError && feedRows.length === 0 && !deviceOnline && !loading && (
+                <FeedNotice data-testid="feed-offline-empty">
+                  <div>{uiText('Немає звʼязку — для цих фільтрів анкет на пристрої ще немає. Стрічка завантажиться, щойно звʼязок повернеться.', language)}</div>
+                </FeedNotice>
+              )}
+              {loadError && feedRows.length === 0 && deviceOnline && (
                 <FeedNotice role="alert">
                   <div>{uiText('Не вдалося завантажити профілі.', language)}</div>
                   <div>{loadError.userMessage}</div>
@@ -9024,7 +9064,14 @@ const Matching = () => {
                   </ActionButton>
                 </FeedNotice>
               )}
-              {showFeedRetry && (
+              {/* Без мережі хвіст не дочитається, і «Завантажую…» чи «Показати
+                  ще» обіцяли те, чого не буде; повтор зробить сам «online». */}
+              {!deviceOnline && renderedCardsLength > 0 && deckHasMore && (
+                <FeedEndNotice data-testid="feed-offline-tail">
+                  <FeedEndHint>{uiText('Немає звʼязку — решта анкет завантажиться, щойно він повернеться', language)}</FeedEndHint>
+                </FeedEndNotice>
+              )}
+              {deviceOnline && showFeedRetry && (
                 <FeedEndNotice>
                   <FeedLoadPromptButton type="button" onClick={handleFeedRetry}>
                     {uiText('Показати ще', language)}
@@ -9033,7 +9080,7 @@ const Matching = () => {
               )}
               {/* Поки наступна сторінка їде, кінець списку інакше порожній, і
                   пауза читалась би як «більше нічого немає». */}
-              {loading && renderedCardsLength > 0 && (
+              {deviceOnline && loading && renderedCardsLength > 0 && (
                 <FeedEndNotice>
                   <FeedEndHint>{uiText('Завантажую…', language)}</FeedEndHint>
                 </FeedEndNotice>

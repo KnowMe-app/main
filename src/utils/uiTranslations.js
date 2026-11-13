@@ -481,6 +481,8 @@ const EN_BY_UK = {
   'Додайте виплату': 'Add a payment',
   'Зберігаємо…': 'Saving…',
   'Немає звʼязку — шукали лише серед анкет, збережених на цьому пристрої': 'No connection — searched only among profiles saved on this device',
+  'Немає звʼязку — решта анкет завантажиться, щойно він повернеться': 'No connection — the rest of the profiles will load as soon as it is back',
+  'Немає звʼязку — для цих фільтрів анкет на пристрої ще немає. Стрічка завантажиться, щойно звʼязок повернеться.': 'No connection — there are no profiles for these filters on this device yet. The feed will load as soon as the connection is back.',
   'Немає звʼязку — збережемо, щойно він зʼявиться': 'No connection — will save as soon as it is back',
   'Збережено': 'Saved',
   'Поки лише в цьому браузері': 'Only in this browser for now',
