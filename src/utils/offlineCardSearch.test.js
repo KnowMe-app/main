@@ -36,4 +36,16 @@ describe('пошук без звʼязку серед збереженого', (
     // І без розпізнаного поля число, схоже на номер, знаходить посилання теж.
     expect(searchCardsOnDevice(cards, { searchId: '100012345678901' }, { contactsById }).map(c => c.userId)).toEqual(['b']);
   });
+  // Запит, що називає поле, шукає лише в ньому (ревʼю #3395).
+  it('нік Telegram не знаходить картку з тим самим ніком в Instagram', () => {
+    const contactsById = { a: { instagram: 'maria_k' } };
+    expect(searchCardsOnDevice(cards, { telegram: 'maria_k' }, { contactsById }).map(c => c.userId)).toEqual(['b']);
+    expect(searchCardsOnDevice(cards, { instagram: 'maria_k' }, { contactsById }).map(c => c.userId)).toEqual(['a']);
+  });
+
+  it('знайдене за кешем контактів несе контакт із собою', () => {
+    const [found] = searchCardsOnDevice(cards, { instagram: 'insta_only' }, { contactsById: { a: { instagram: 'insta_only' } } });
+    expect(found.userId).toBe('a');
+    expect(found.instagram).toBe('insta_only');
+  });
 });

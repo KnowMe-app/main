@@ -1863,7 +1863,15 @@ const SearchBar = ({
     if (!res) {
       return res;
     }
-    if (offlineSearch) return res;
+    // Але й без мережі видача проходить той самий фільтр поля, що й зі
+    // звʼязком: запит «telegram: x» не мусить віддавати картку, де `x` — нік
+    // в Instagram (ревʼю #3395). Пропускаються лише записи в кеш.
+    if (offlineSearch) {
+      if (Object.keys(res).length === 0) return res;
+      const filteredOffline = filterSearchResultByParams(res, params, extraOptions);
+      if (!filteredOffline || Object.keys(filteredOffline).length === 0) return Array.isArray(res) ? [] : {};
+      return filteredOffline;
+    }
 
     if (Object.keys(res).length === 0) {
       if (key && value && !skipCache) {

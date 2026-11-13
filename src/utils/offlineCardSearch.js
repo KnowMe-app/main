@@ -16,6 +16,22 @@ const TEXT_FIELDS = [
   'telegram', 'instagram', 'facebook', 'tiktok', 'email', 'userId',
 ];
 const CONTACT_TEXT_FIELDS = ['telegram', 'instagram', 'facebook', 'tiktok', 'email'];
+const CONTACT_FIELDS = ['phone', ...CONTACT_TEXT_FIELDS];
+// Ключі, які не називають поля: набране без розпізнаного поля `SearchBar`
+// кладе в `name`, а `searchId` — сам ключ індексу. На них питаються всі поля.
+const BROAD_KEYS = new Set(['', 'name', 'names', 'searchId']);
+
+// Контакт, знайдений у кеші контактів читача, мусить їхати разом із карткою:
+// `SearchBar` перевіряє видачу полем запиту (`filterSearchResultByParams`), а
+// повна анкета в кеші контактів не несе (`sanitizeMatchingCardForCache`) —
+// без цього знайдене за ніком відкидалось би вже на екрані.
+const withCachedContacts = (card, contacts) => {
+  const missing = CONTACT_FIELDS.filter(field => toValues(card[field]).length === 0 && toValues(contacts[field]).length > 0);
+  if (!missing.length) return card;
+  const merged = { ...card };
+  missing.forEach(field => { merged[field] = contacts[field]; });
+  return merged;
+};
 
 const toValues = value => (Array.isArray(value) ? value : [value])
   .filter(item => item !== undefined && item !== null && item !== '')
@@ -45,7 +61,8 @@ export const readOfflineSearchQuery = params => {
  * @param {object[]} cards картки з пристрою (`userId` обовʼязковий)
  * @param {object} params той самий `{ поле: значення }`, що йде в пошук
  * @param {{ contactsById?: Record<string, object> }} [options]
- * @returns {object[]} знайдені картки, у порядку, в якому їх дали
+ * @returns {object[]} знайдені картки, у порядку, в якому їх дали (з контактами
+ *   з кешу контактів, яких у самій картці немає)
  */
 export const searchCardsOnDevice = (cards, params, { contactsById = {}, detectedField = '' } = {}) => {
   const query = readOfflineSearchQuery(params);
@@ -58,13 +75,21 @@ export const searchCardsOnDevice = (cards, params, { contactsById = {}, detected
   const isPhoneQuery = PHONE_KEYS.has(query.key) || PHONE_KEYS.has(field) || (!field && looksNumeric);
   const needle = normalizeText(query.text);
   if (!isPhoneQuery && needle.length < 2) return [];
+  // Запит, що називає поле («telegram: x»), шукає лише в ньому — як і пошук
+  // зі звʼязком: інакше нік у Telegram знаходив би картку з таким самим
+  // ніком в Instagram (ревʼю #3395).
+  const ownField = !BROAD_KEYS.has(query.key) && !PHONE_KEYS.has(query.key) && TEXT_FIELDS.includes(query.key)
+    ? query.key
+    : '';
+  const textFields = ownField ? [ownField] : TEXT_FIELDS;
+  const contactTextFields = ownField ? CONTACT_TEXT_FIELDS.filter(field => field === ownField) : CONTACT_TEXT_FIELDS;
 
   return (Array.isArray(cards) ? cards : []).filter(card => {
     if (!card?.userId) return false;
     const contacts = contactsById[card.userId] || {};
     const texts = [
-      ...TEXT_FIELDS.flatMap(field => toValues(card[field])),
-      ...CONTACT_TEXT_FIELDS.flatMap(field => toValues(contacts[field])),
+      ...textFields.flatMap(field => toValues(card[field])),
+      ...contactTextFields.flatMap(field => toValues(contacts[field])),
     ];
     if (isPhoneQuery) {
       const phones = [...toValues(card.phone), ...toValues(contacts.phone)];
@@ -75,5 +100,5 @@ export const searchCardsOnDevice = (cards, params, { contactsById = {}, detected
         && texts.some(text => digitsOf(text).includes(queryDigits));
     }
     return texts.some(text => normalizeText(text).includes(needle));
-  });
+  }).map(card => withCachedContacts(card, contactsById[card.userId] || {}));
 };
