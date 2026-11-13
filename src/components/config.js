@@ -140,8 +140,13 @@ import { withAdminDownloadToast } from '../utils/backendDownloadToast';
 import { normalizeProfileRole } from '../utils/profileRole';
 import { createSaveComparisonField } from '../utils/comparisonFieldAdapter';
 import { mergeDuplicateProfileValues, normalizePhoneForStorage, sanitizeUploadedInfoPhones } from '../utils/profileValueNormalization';
-import { patchCachedReactionValue } from '../utils/matchingReactionCache';
-import { forgetCachedComment, rememberCommentWrite } from '../utils/commentsStorage';
+import { forgetReactionSnapshot, patchCachedReactionValue } from '../utils/matchingReactionCache';
+import {
+  configureOwnerMarkVersions,
+  ensureOwnerMarksChecked,
+  registerOwnerMarkInvalidator,
+} from '../utils/ownerMarkVersions';
+import { forgetCachedComment, forgetOwnerComments, rememberCommentWrite } from '../utils/commentsStorage';
 import {
   configureWriteOutbox,
   enqueueOutboxWrite,
@@ -882,6 +887,9 @@ const likedAudienceCardsStore = createMatchingTimedStore('likedAudienceCards', {
 export const fetchLikedAudienceCards = async ({ limit = LIKED_AUDIENCE_CARDS_LIMIT } = {}) => {
   const viewerId = auth.currentUser?.uid || '';
   if (!viewerId) return [];
+  // Перелік пишуть інші власниці (лайком), тож про новий запис пристрій
+  // дізнається лише з версії позначок (`utils/ownerMarkVersions`).
+  await ensureOwnerMarksChecked(viewerId, [viewerId]);
   const stored = likedAudienceCardsStore.read(viewerId);
   if (Array.isArray(stored)) return stored.slice(0, limit);
   const cards = await readLikedAudienceCards(viewerId, limit);
@@ -3881,6 +3889,33 @@ export const readServerNow = () => new Promise(resolve => {
   setTimeout(() => finish(null), 2000);
 });
 
+/**
+ * Версія позначок власника (`functions/ownerMarks.js`) — один точковий запит.
+ * Без мережі й на повільній мережі відмовляє одразу (`getFeedCheck`), а
+ * відмова означає «нічого не забувати»: лишається TTL.
+ */
+export const readOwnerMarkVersions = async (ownerId, viewerId) => {
+  // Версія «лише для вподобаних» лежить окремо (`functions/ownerMarks.js`):
+  // її читає сама читачка, а не спільні власники.
+  const [shared, likedAudience] = await Promise.all([
+    getFeedCheck(ref2(database, `multiData/ownerMarksAt/${ownerId}`)),
+    ownerId === viewerId ? getFeedCheck(ref2(database, `multiData/likedAudienceAt/${ownerId}`)) : null,
+  ]);
+  const versions = shared.exists() && typeof shared.val() === 'object' ? { ...shared.val() } : {};
+  if (likedAudience?.exists()) versions.likedAudience = likedAudience.val();
+  return versions;
+};
+
+configureOwnerMarkVersions({ read: readOwnerMarkVersions });
+registerOwnerMarkInvalidator('comments', (viewerId, ownerId) => {
+  forgetOwnerComments(ownerId);
+  invalidateOwnerCommentsCache(ownerId);
+});
+registerOwnerMarkInvalidator('favorites', (viewerId, ownerId) => forgetReactionSnapshot(viewerId, ownerId, 'favorites'));
+registerOwnerMarkInvalidator('dislikes', (viewerId, ownerId) => forgetReactionSnapshot(viewerId, ownerId, 'dislikes'));
+registerOwnerMarkInvalidator('getInTouch', (viewerId, ownerId) => postponeDatesStore.forget(ownerId));
+registerOwnerMarkInvalidator('likedAudience', (viewerId, ownerId) => likedAudienceCardsStore.forget(ownerId));
+
 export const readMatchingCardChangesSince = async (startAtValue, limit) => {
   const snapshot = await getFeedCheck(query(
     ref2(database, 'matchingCardChanges'),
@@ -5295,6 +5330,9 @@ export const readOwnerPostponeDates = async (ownerId, { from } = {}) => {
   const owner = String(ownerId || '').trim();
   if (!owner) return [];
   const isUpcoming = date => typeof date === 'string' && (!from || date >= from);
+  // Дату могли поставити з іншого пристрою: версія позначок
+  // (`utils/ownerMarkVersions`) забуває кеш, і тоді — один запит.
+  await ensureOwnerMarksChecked(auth.currentUser?.uid || owner, [owner]);
   const stored = postponeDatesStore.read(owner);
   if (stored && typeof stored === 'object') {
     return Object.entries(stored)

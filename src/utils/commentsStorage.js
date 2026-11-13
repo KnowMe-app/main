@@ -127,6 +127,19 @@ export const forgetCachedComment = (ownerId, cardId) => {
   saveComments(comments);
 };
 
+/**
+ * Забути всі памʼятки власника на пристрої — версія його позначок новіша за
+ * побачену (`utils/ownerMarkVersions`): памʼятку змінили з іншого пристрою чи
+ * спільний власник, і котру саме — версія не каже.
+ */
+export const forgetOwnerComments = ownerId => {
+  if (!ownerId) return;
+  const comments = loadComments();
+  if (!comments[ownerId]) return;
+  delete comments[ownerId];
+  saveComments(comments);
+};
+
 export const shouldUseServerComment = (server, local) => {
   if (!server) return false;
   if (!local) return true;

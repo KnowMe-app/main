@@ -101,4 +101,19 @@ export const patchCachedReactionValue = (viewerId, ownerId, kind, cardId, value)
   return result;
 };
 
+/**
+ * Забути мапу власника — версія його реакцій новіша за побачену
+ * (`utils/ownerMarkVersions`): реакцію поставили з іншого пристрою чи спільний
+ * власник, і наступне відкриття мусить підписатись на мапу, а не взяти кеш.
+ */
+export const forgetReactionSnapshot = (viewerId, ownerId, kind) => {
+  if (!viewerId || !ownerId || !KINDS.has(kind)) return;
+  const store = readStore(viewerId);
+  if (!store[ownerId]?.[kind]) return;
+  const { [kind]: _removed, ...rest } = store[ownerId];
+  if (Object.keys(rest).length) store[ownerId] = rest;
+  else delete store[ownerId];
+  writeStore(viewerId, store);
+};
+
 export const clearReactionCache = () => removeCacheEntriesByPrefix(STORAGE_KEY_PREFIX);

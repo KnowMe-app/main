@@ -1609,6 +1609,27 @@ await it('друга межа теж межа — навіть адміну', as
   await assertSucceeds(remove(ref(db(SUPERADMIN), `comments/${CARD}/legacyLong`)));
 });
 
+// Версія позначок власника (`multiData/ownerMarksAt/{власник}/{вид}`) —
+// її пише лише тригер функцій (Admin SDK), а читає те саме коло, що й самі
+// памʼятки: власник, адміни, інспектор. Клієнт не може ні записати її (тоді
+// чужий пристрій вважав би свій кеш чинним), ні прочитати чужу.
+await it('версію позначок власника читає власник, але не пише ніхто з клієнтів', async () => {
+  await assertSucceeds(get(ref(db(PROFILE_OWNER), `multiData/ownerMarksAt/${PROFILE_OWNER}`)));
+  await assertSucceeds(get(ref(db(SUPERADMIN), `multiData/ownerMarksAt/${PROFILE_OWNER}`)));
+  await assertFails(get(ref(db(OUTSIDER), `multiData/ownerMarksAt/${PROFILE_OWNER}`)));
+  await assertFails(set(ref(db(PROFILE_OWNER), `multiData/ownerMarksAt/${PROFILE_OWNER}/comments`), Date.now()));
+  await assertFails(set(ref(db(SUPERADMIN), `multiData/ownerMarksAt/${PROFILE_OWNER}/comments`), Date.now()));
+});
+
+// Версія переліку «лише для вподобаних» — окремо й лише для самої читачки:
+// спільний власник не мусить дізнаватись, коли когось із його кола вподобали.
+await it('версію «лише для вподобаних» читає лише сама читачка й адмін', async () => {
+  await assertSucceeds(get(ref(db(PROFILE_OWNER), `multiData/likedAudienceAt/${PROFILE_OWNER}`)));
+  await assertSucceeds(get(ref(db(SUPERADMIN), `multiData/likedAudienceAt/${PROFILE_OWNER}`)));
+  await assertFails(get(ref(db(OUTSIDER), `multiData/likedAudienceAt/${PROFILE_OWNER}`)));
+  await assertFails(set(ref(db(PROFILE_OWNER), `multiData/likedAudienceAt/${PROFILE_OWNER}`), Date.now()));
+});
+
 // Перший відгук під карткою пишеться одним `update` разом із прапорцем
 // `reviewsAt` — мітка зміни відгуків, яку ставить тригер функцій; поле
 // картки, тож правило `$other: false` мусить його знати, інакше перебудова
