@@ -18,7 +18,7 @@ const options = {
   searchKeyFields: [],
 };
 
-const runSearch = async searchFunc => {
+const runSearch = async (searchFunc, { setUsers = jest.fn() } = {}) => {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -28,7 +28,7 @@ const runSearch = async searchFunc => {
       searchFunc,
       search: '@offline_probe_handle',
       setSearch: jest.fn(),
-      setUsers: jest.fn(),
+      setUsers,
       setState: jest.fn(),
       setUserNotFound: jest.fn(),
       enabledSearchKeys: options.enabledSearchKeys,
@@ -70,5 +70,20 @@ describe('офлайнова відповідь пошуку не лягає в 
     setOnline(true);
     await runSearch(searchFunc);
     expect(searchFunc.mock.calls.length).toBeGreaterThan(calls);
+  });
+  // Без мережі видача проходить той самий фільтр поля, що й зі звʼязком.
+  it('без мережі картка, що не несе шуканого поля, на екран не доходить', async () => {
+    setOnline(false);
+    const setUsers = jest.fn();
+    const searchFunc = jest.fn().mockResolvedValue({
+      wrong: { userId: 'wrong', instagram: 'offline_probe_handle' },
+      right: { userId: 'right', telegram: 'offline_probe_handle' },
+    });
+    await runSearch(searchFunc, { setUsers });
+    const shown = setUsers.mock.calls.map(([value]) => value).filter(value => value && typeof value === 'object');
+    const last = shown[shown.length - 1] || {};
+    const ids = Array.isArray(last) ? last.map(card => card.userId) : Object.keys(last);
+    expect(ids).toContain('right');
+    expect(ids).not.toContain('wrong');
   });
 });
