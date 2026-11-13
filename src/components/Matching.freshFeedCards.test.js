@@ -55,7 +55,8 @@ describe('свіжа картка зі сторожа стану', () => {
     const start = source.indexOf('const [cardChangesReady, setCardChangesReady]');
     const sync = source.slice(start, source.indexOf('}, [isAdmin, ownerId]);', start));
     expect(sync).toContain('readChangesSince: readMatchingCardChangesSince,');
-    expect(sync).toContain('forgetCardBodies: forgetCachedCardBodies,');
+    expect(sync).toContain('forgetCachedCardBodies(ids);');
+    expect(sync).toContain('forgetProfileContactsForViewer(ownerId, ids);');
     expect(sync).toContain('CARD_CHANGES_WAIT_MS');
   });
 

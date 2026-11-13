@@ -180,6 +180,7 @@ import {
   upsertStoredFullProfile,
 } from '../utils/cardStore';
 import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
+import { forgetProfileContactsForViewer } from '../utils/matchingContactsCache';
 import { ensureOwnerMarksChecked } from '../utils/ownerMarkVersions';
 import { getWriteOutboxPendingCount, isRetryableOutboxError, subscribeWriteOutbox, WRITE_OUTBOX_REJECTED_EVENT } from '../utils/writeOutbox';
 import { restorePublicComment } from '../utils/publicReviewRollback';
@@ -8499,7 +8500,13 @@ const Matching = () => {
       viewerId: ownerId,
       readChangesSince: readMatchingCardChangesSince,
       readServerNow,
-      forgetCardBodies: forgetCachedCardBodies,
+      // Разом із тілами — і контакти: правка номера ставить картці нову
+      // версію, і журнал про неї каже, а кеш контактів (шість годин) інакше
+      // показував би іншому пристрою й іншим читачам старий номер.
+      forgetCardBodies: ids => {
+        forgetCachedCardBodies(ids);
+        forgetProfileContactsForViewer(ownerId, ids);
+      },
       forgetFeedStateMemo: ({ ids, persistedOnly } = {}) => {
         if (persistedOnly) matchingFeedStateReader.forgetPersisted();
         if (ids) matchingFeedStateReader.forget(ids);

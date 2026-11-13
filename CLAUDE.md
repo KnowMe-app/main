@@ -645,7 +645,11 @@ TTL або одразу з «Почати стрічку заново». Шар�
   пристрої, що вже бачив номер, — щонайпізніше через TTL. Кеш карток контактів
   і далі не тримає (див. нижче); збій мережі в кеш не лягає (`cacheable` у
   `readProfileContacts`); правка контактів картки знімає її запис у всіх
-  читачів пристрою (`forgetProfileContacts` у `fanOutProfileNodes`);
+  читачів пристрою (`forgetProfileContacts` у `fanOutProfileNodes`), а на
+  **інших** пристроях і в інших читачів — журнал змін карток (13.11,
+  `forgetProfileContactsForViewer` поруч із `forgetCachedCardBodies`): правка
+  номера ставить картці нову `rev`, журнал про неї каже, а кеш контактів доти
+  журналу не слухав і тримав старий номер до шести годин;
 - **дати «Відкласти», анкети «лише для вподобаних» і публічні відгуки**
   (`utils/matchingTimedStore.js`, `km.matchingStore.v1:{шар}`;
   `readOwnerPostponeDates`, `fetchLikedAudienceCards`,
