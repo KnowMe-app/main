@@ -76,6 +76,14 @@ describe('перелік опублікованих', () => {
     await expect(readPublishedFeedIndex()).resolves.toBeNull();
     console.warn.mockRestore();
   });
+
+  it('незаповнений перелік не перепитується на кожному виклику', async () => {
+    const read = jest.fn(async () => ({ a: { d: '2026-11-13', r: 'ag' } }));
+    configurePublishedFeedIndex({ read });
+    await readPublishedFeedIndex();
+    await readPublishedFeedIndex();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
 });
 
 // Стрічка донорки (умовчання «Тип профілю» — самі агенції) брала кандидатів з

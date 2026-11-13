@@ -2533,6 +2533,10 @@ const SearchBar = ({
       return undefined;
     }
     const timer = setTimeout(() => {
+      // Enter, натиснутий поки таймер чекав, уже шукав цей текст: перевірка
+      // мусить стояти й тут, а не лише на старті таймера, інакше пошук ішов
+      // удруге, щойно перший закінчився (донорка платила за видачу двічі).
+      if (lastDebouncedQueryRef.current === search) return;
       lastDebouncedQueryRef.current = search;
       void writeDataRef.current(search);
     }, debounceMs);

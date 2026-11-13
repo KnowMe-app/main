@@ -27,9 +27,22 @@ const BUILT_KEY = '_built';
 let readRemote = null;
 let memo = null;
 let inFlight = null;
+// Переліку немає (не заповнений, збій, без мережі) — не перепитуємо його на
+// кожному виклику: стрічка й пошук питали тричі за одне відкриття.
+const UNAVAILABLE_RETRY_MS = 5 * 60 * 1000;
+let unavailableUntil = 0;
 
 export const configurePublishedFeedIndex = ({ read } = {}) => {
   readRemote = typeof read === 'function' ? read : null;
+};
+
+// Що чекати перед читанням: синхронізацію журналу змін у цьому показі стрічки
+// (`Matching`). Журнал забуває перелік, коли якусь картку змінено, і перелік,
+// узятий з пристрою до нього, ховав би щойно опубліковану агенцію до кінця
+// TTL — заміряно наживо, і так робив не один читач, тож чекає сам перелік.
+let freshnessGate = null;
+export const setPublishedFeedIndexGate = gate => {
+  freshnessGate = typeof gate === 'function' ? gate : null;
 };
 
 const isDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -80,13 +93,14 @@ const writeStored = (raw, now = Date.now()) => {
 
 /** Перелік або `null` (немає, неповний, збій чи без мережі). */
 export const readPublishedFeedIndex = async () => {
+  if (freshnessGate) await Promise.resolve().then(freshnessGate).catch(() => null);
   if (memo) return memo;
   const stored = readStored();
   if (stored) {
     memo = stored;
     return memo;
   }
-  if (!readRemote) return null;
+  if (!readRemote || Date.now() < unavailableUntil) return null;
   if (!inFlight) {
     inFlight = (async () => {
       try {
@@ -95,10 +109,13 @@ export const readPublishedFeedIndex = async () => {
         if (parsed) {
           writeStored(raw);
           memo = parsed;
+        } else {
+          unavailableUntil = Date.now() + UNAVAILABLE_RETRY_MS;
         }
         return parsed;
       } catch (error) {
         console.warn('[feedIndex] перелік опублікованих не прочитано', error?.code || error);
+        unavailableUntil = Date.now() + UNAVAILABLE_RETRY_MS;
         return null;
       } finally {
         inFlight = null;
@@ -111,6 +128,7 @@ export const readPublishedFeedIndex = async () => {
 /** Журнал змін каже, що якусь картку змінено, або вихід з акаунта. */
 export const forgetPublishedFeedIndex = () => {
   memo = null;
+  unavailableUntil = 0;
   try {
     localStorage.removeItem(PUBLISHED_FEED_INDEX_STORAGE_KEY);
   } catch {
@@ -153,4 +171,6 @@ export const __resetPublishedFeedIndexForTests = () => {
   memo = null;
   inFlight = null;
   readRemote = null;
+  unavailableUntil = 0;
+  freshnessGate = null;
 };
