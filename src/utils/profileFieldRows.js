@@ -79,3 +79,38 @@ const SINGLE_VALUE_FIELD_NAMES = new Set(['publicComment', 'myComment']);
 
 /** Чи має сенс у цього поля друга версія. */
 export const fieldAcceptsMultipleValues = fieldName => !SINGLE_VALUE_FIELD_NAMES.has(fieldName);
+
+/** Скільки в кінці масиву рядків, доданих «+» і ще не заповнених. */
+const countTrailingUnsavedRows = values => {
+  if (!Array.isArray(values)) return 0;
+  let count = 0;
+  for (let i = values.length - 1; i > 0 && (values[i] === undefined || values[i] === null); i -= 1) {
+    count += 1;
+  }
+  return count;
+};
+
+/**
+ * Свіжа анкета з бекенду поверх форми — без втрати рядків, доданих «+».
+ *
+ * «Усі поля» перечитує анкету й ставить її у форму цілком. Порожній рядок під
+ * «+» у базі не лежить і лежати не мусить (це намір, див. вище), тож заміна
+ * стану мовчки його знімала: адмін додав рядок дати народження, натиснув
+ * «оновити» — і рядка вже немає, наче його стерли. Тут такі рядки (лише
+ * `undefined`/`null` у хвості масиву) переносяться на свіже значення поля.
+ * Порожній рядок `''` — це вже записане стирання, і правду про нього каже база.
+ */
+export const keepUnsavedFieldRows = (current, fresh) => {
+  if (!current || typeof current !== 'object' || !fresh || typeof fresh !== 'object') return fresh;
+  if (String(current.userId || '') !== String(fresh.userId || '')) return fresh;
+  let next = fresh;
+  Object.keys(current).forEach(key => {
+    const unsaved = countTrailingUnsavedRows(current[key]);
+    if (!unsaved) return;
+    let value = fresh[key];
+    for (let i = 0; i < unsaved; i += 1) value = appendEmptyFieldRow(value);
+    if (next === fresh) next = { ...fresh };
+    next[key] = value;
+  });
+  return next;
+};
