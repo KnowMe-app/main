@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -69,6 +69,12 @@ import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
 import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleCode, getRoleLabel } from './profileLayoutConfig';
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
 import { stripSectionEmoji } from '../utils/sectionTitle';
+import {
+  buildCardFormTarget,
+  readCardFormPending,
+  rememberCardFormPending,
+  settleCardFormPending,
+} from '../utils/cardFormPendingEdits';
 import {
   applyOverlayToCard,
   applyOverlaysToCard,
@@ -425,6 +431,16 @@ const DraftBadges = styled.div`display:flex; flex-wrap:wrap; align-items:center;
  * сама картка знімає обидві біди: вона вже вміщає імʼя в рядок і вже однакова
  * скрізь. Палітру стрічки поза нею оголошує `MatchingThemeScope`.
  */
+const subscribeOnlineStatus = listener => {
+  window.addEventListener('online', listener);
+  window.addEventListener('offline', listener);
+  return () => {
+    window.removeEventListener('online', listener);
+    window.removeEventListener('offline', listener);
+  };
+};
+const readOnlineStatus = () => (typeof navigator === 'undefined' ? true : navigator.onLine !== false);
+
 const AutosaveLine = styled.p`
   margin: 6px 4px 0;
   font-size: 12px;
@@ -911,6 +927,10 @@ export const ProfileCreationWorkspace = () => {
   // blur, але мовчки: кнопки «Зберегти» немає, і людина, яка набрала анкету,
   // не знала, чи щось лягло в базу.
   const [autosave, setAutosave] = useState({ state: 'idle', at: 0 });
+  // Ціль, яку форма щойно відкрила (`buildCardFormTarget`): ефект відновлення
+  // незбереженого чекає на неї, а не на будь-яке оновлення форми.
+  const [formLoadedTarget, setFormLoadedTarget] = useState('');
+  const deviceOnline = useSyncExternalStore(subscribeOnlineStatus, readOnlineStatus, () => true);
   const [overlayLoading, setOverlayLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -1058,6 +1078,7 @@ export const ProfileCreationWorkspace = () => {
     // кладе ефект нижче, один на відкриту форму, і саме його знімає «назад».
     setSearchParams({ cardId: mutation.cardId }, { replace: true });
     await refreshDraftOverlays();
+    setFormLoadedTarget(buildCardFormTarget({ draftCardId: mutation.cardId }));
   }, [refreshDraftOverlays, setSearchParams]);
 
   useEffect(() => onAuthStateChanged(auth, async user => {
@@ -1492,6 +1513,7 @@ export const ProfileCreationWorkspace = () => {
     resetDraftOverlayState(null);
     setDraft(nextDraft);
     setOverlayLoading(false);
+    setFormLoadedTarget(buildCardFormTarget({ overlayCardId: profile.userId }));
   };
 
   /**
@@ -1637,6 +1659,11 @@ export const ProfileCreationWorkspace = () => {
     ? 'Профіль уже змінено. Оновіть сторінку.'
     : error?.message === 'DUPLICATE_PROFILE' ? 'Профіль з такими контактами вже існує або очікує перевірки.' : 'Не вдалося зберегти профіль', language);
 
+  const reportSaveErrorRef = useRef(reportSaveError);
+  reportSaveErrorRef.current = reportSaveError;
+  const describeSaveErrorRef = useRef(describeSaveError);
+  describeSaveErrorRef.current = describeSaveError;
+
   const persistDraft = useCallback(nextDraft => {
     const run = async () => {
       if (overlayTarget) {
@@ -1734,15 +1761,47 @@ export const ProfileCreationWorkspace = () => {
       return saved;
     };
 
+    // Набране лягає на пристрій до запису: без звʼязку запис висить у
+    // памʼяті вкладки, і закрита вкладка губила його (`utils/cardFormPendingEdits`).
+    const pendingTarget = buildCardFormTarget({
+      overlayCardId: overlayTarget?.userId,
+      draftCardId: activeMutationRef.current?.cardId,
+    });
+    const pendingAt = rememberCardFormPending(uid, pendingTarget, nextDraft);
+    const settlePending = () => settleCardFormPending(uid, pendingTarget, pendingAt);
+
     setAutosave(previous => (previous.state === 'saving' ? previous : { ...previous, state: 'saving' }));
     const queued = saveQueueRef.current.catch(() => {}).then(run);
     saveQueueRef.current = queued.catch(() => {});
     queued.then(
-      () => setAutosave({ state: 'saved', at: Date.now() }),
-      () => setAutosave(previous => ({ ...previous, state: 'error' })),
+      () => { settlePending(); setAutosave({ state: 'saved', at: Date.now() }); },
+      () => { settlePending(); setAutosave(previous => ({ ...previous, state: 'error' })); },
     );
     return queued;
   }, [overlayTarget, uid]);
+
+  /*
+   * Відкрили картку — незбережене з минулого разу (вкладку закрили, поки
+   * запис висів без звʼязку) лягає поверх того, що прочитано з бази, і
+   * дописується тим самим `persistDraft`. Ефект, а не виклик у завантажувачі:
+   * `persistDraft` бере ціль доповнення зі стану, а той оновиться лише після
+   * рендера.
+   */
+  useEffect(() => {
+    if (!formLoadedTarget || !uid) return;
+    const currentTarget = buildCardFormTarget({
+      overlayCardId: overlayTarget?.userId,
+      draftCardId: activeMutation?.cardId,
+    });
+    if (currentTarget !== formLoadedTarget) return;
+    setFormLoadedTarget('');
+    const pending = readCardFormPending(uid, currentTarget);
+    if (!pending) return;
+    const restored = { ...(draftRef.current || {}), ...pending.draft };
+    draftRef.current = restored;
+    setDraft(restored);
+    persistDraft(restored).catch(error => reportSaveErrorRef.current(error, describeSaveErrorRef.current(error)));
+  }, [activeMutation?.cardId, formLoadedTarget, overlayTarget, persistDraft, uid]);
 
   // Fires on every field blur/chip click - the primary save path now, so a
   // draft is never lost by someone filling the form and never pressing the
@@ -2313,7 +2372,7 @@ export const ProfileCreationWorkspace = () => {
     ? `${String(new Date(autosave.at).getHours()).padStart(2, '0')}:${String(new Date(autosave.at).getMinutes()).padStart(2, '0')}`
     : '';
   const autosaveText = autosave.state === 'saving'
-    ? uiText('Зберігаємо…', language)
+    ? uiText(deviceOnline ? 'Зберігаємо…' : 'Немає звʼязку — збережемо, щойно він зʼявиться', language)
     : autosave.state === 'error'
       ? uiText('Останню зміну не збережено — див. повідомлення вище', language)
       : autosave.state === 'saved'

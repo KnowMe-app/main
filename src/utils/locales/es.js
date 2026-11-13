@@ -461,6 +461,7 @@ const BY_UK = {
   'Прихована': 'Oculto',
   'Додайте виплату': 'Añadir un pago',
   'Зберігаємо…': 'Guardando…',
+  'Немає звʼязку — збережемо, щойно він зʼявиться': 'Sin conexión: se guardará en cuanto vuelva',
   'Збережено': 'Guardado',
   'Поки лише в цьому браузері': 'Por ahora solo en este navegador',
   'Кожна програма — окрема пропозиція: кого шукаєте, де і скільки платите. Решта — за бажанням; порожні розділи читачі не побачать.': 'Cada programa es una oferta independiente: a quién busca, dónde y cuánto paga. Todo lo demás es opcional; las secciones vacías nunca se muestran.',

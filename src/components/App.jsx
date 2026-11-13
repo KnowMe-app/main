@@ -13,6 +13,7 @@ import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, 
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
 import { clearMyProfileCache } from 'utils/myProfileCache';
 import { clearPendingProfileEdits } from 'utils/myProfilePendingEdits';
+import { clearCardFormPending } from 'utils/cardFormPendingEdits';
 import { clearReactionCache } from 'utils/matchingReactionCache';
 import { clearPersistedFeedSnapshot } from 'utils/matchingFeedSnapshot';
 import { clearContactsCache } from 'utils/matchingContactsCache';
@@ -155,6 +156,8 @@ export const App = () => {
         clearMyProfileCache();
         // Незбережені правки анкети — теж памʼять пристрою про читача.
         clearPendingProfileEdits();
+        // І незбережене з форми «Додати картку» / доповнення.
+        clearCardFormPending();
         // Так само реакції й остання дека стрічки: вони теж памʼять пристрою
         // про конкретного читача (`utils/matchingCachePolicy`).
         clearReactionCache();
