@@ -462,6 +462,8 @@ const BY_UK = {
   'Додайте виплату': 'Betaling toevoegen',
   'Зберігаємо…': 'Opslaan…',
   'Немає звʼязку — шукали лише серед анкет, збережених на цьому пристрої': 'Geen verbinding — alleen gezocht in profielen die op dit apparaat zijn opgeslagen',
+  'Немає звʼязку — решта анкет завантажиться, щойно він повернеться': 'Geen verbinding — de overige profielen laden zodra die terug is',
+  'Немає звʼязку — для цих фільтрів анкет на пристрої ще немає. Стрічка завантажиться, щойно звʼязок повернеться.': 'Geen verbinding — voor deze filters staan nog geen profielen op het apparaat. De lijst laadt zodra de verbinding terug is.',
   'Немає звʼязку — збережемо, щойно він зʼявиться': 'Geen verbinding — wordt opgeslagen zodra die terug is',
   'Збережено': 'Opgeslagen',
   'Поки лише в цьому браузері': 'Voorlopig alleen in deze browser',
