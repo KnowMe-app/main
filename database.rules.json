@@ -820,6 +820,11 @@
             }
           }
         }
+      },
+      "ownerMarksAt": {
+        "$ownerId": {
+          ".read": "auth != null && (auth.uid == $ownerId || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('multiDataSourceUserIds').child($ownerId).val() == true))"
+        }
       }
     },
     "comments": {

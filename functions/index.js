@@ -671,3 +671,52 @@ exports.syncPublicReviewFlag = onValueWritten(
     }
   },
 );
+
+/**
+ * Версія позначок власника (`ownerMarks.js`): кожен запис памʼятки, реакції,
+ * дати «Відкласти» чи переліку «лише для вподобаних» ставить
+ * `multiData/ownerMarksAt/{власник}/{вид}`. Пристрій питає її раз на вкладку
+ * й забуває застарілий кеш цього виду — інакше правку з іншого пристрою чи
+ * від спільного власника він показував би лише через шість годин.
+ * Тригер на вид, а не один на `multiData/{вид}/…`: інакше функція
+ * прокидалась би на кожен запис доповнень, програм і решти `multiData`.
+ */
+const {
+  OWNER_MARKS_ROOT,
+  changesOwnerMark,
+  stampOwnerMarkChange,
+} = require('./ownerMarks');
+
+// Імена — явними `exports.…`: `deploy-functions.yml` звіряє розгорнуті
+// функції з рядками `exports.<імʼя>` цього файлу, і згенеровані в циклі
+// експорти він не побачив би — деплой зупинився б як «функція є в проді,
+// а в коді немає».
+const recordOwnerMarkChange = kind => onValueWritten(
+  {
+    ref: `${OWNER_MARKS_ROOT}/${kind}/{ownerId}/{entryId}`,
+    region: DATABASE_REGION,
+    memory: '256MiB',
+    timeoutSeconds: 30,
+    maxInstances: 10,
+    // Загублена версія — це памʼятка чи реакція, яку інший пристрій покаже
+    // старою до TTL; запис ідемпотентний (лише вгору).
+    retry: true,
+  },
+  async event => {
+    if (!changesOwnerMark(event.data.before.val(), event.data.after.val())) return;
+    try {
+      await stampOwnerMarkChange(event.params.ownerId, kind, {
+        updateVersion: (path, updater) => getDatabase().ref(path).transaction(updater),
+      });
+    } catch (error) {
+      logger.error('owner mark version write failed', { kind, ownerId: event.params.ownerId, error: error.message });
+      throw error;
+    }
+  },
+);
+
+exports.recordOwnerCommentsChange = recordOwnerMarkChange('comments');
+exports.recordOwnerFavoritesChange = recordOwnerMarkChange('favorites');
+exports.recordOwnerDislikesChange = recordOwnerMarkChange('dislikes');
+exports.recordOwnerGetInTouchChange = recordOwnerMarkChange('getInTouch');
+exports.recordOwnerLikedAudienceChange = recordOwnerMarkChange('likedAudience');

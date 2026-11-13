@@ -180,6 +180,7 @@ import {
   upsertStoredFullProfile,
 } from '../utils/cardStore';
 import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
+import { ensureOwnerMarksChecked } from '../utils/ownerMarkVersions';
 import { getWriteOutboxPendingCount, isRetryableOutboxError, subscribeWriteOutbox, WRITE_OUTBOX_REJECTED_EVENT } from '../utils/writeOutbox';
 import { restorePublicComment } from '../utils/publicReviewRollback';
 import {
@@ -2530,6 +2531,10 @@ const Matching = () => {
       requestContext.ownersSignature === stableAdditionalSignature(getMatchingMultiDataOwnerIds())
     );
 
+    // Памʼятку могли змінити з іншого пристрою чи спільний власник: версія
+    // позначок (`utils/ownerMarkVersions`, раз на вкладку) спершу забуває
+    // кеш таких власників, і тоді їхні памʼятки читаються з бази.
+    await ensureOwnerMarksChecked(ownOwnerId, owners);
     const cache = loadComments();
     const fetchedEntries = await Promise.all(
       owners.map(async owner => {
@@ -2773,6 +2778,35 @@ const Matching = () => {
     store.apply();
   }), []);
 
+  /*
+   * Мапи реакцій, узяті з кеша пристрою, підписки не мають — тож реакцію з
+   * іншого пристрою чи від спільного власника стрічка побачила б лише через
+   * TTL. Версія позначок (`utils/ownerMarkVersions`) забуває такі мапи, а тут
+   * власника знімаємо з кешованих і перезапускаємо ефект підписок нижче —
+   * він підпишеться на свіжі мапи.
+   */
+  const [reactionResubscribeEpoch, setReactionResubscribeEpoch] = useState(0);
+  useEffect(() => {
+    const viewerId = ownerId;
+    const ownerIds = multiDataOwnerIds;
+    if (!viewerId || !ownerIds.length) return undefined;
+    let cancelled = false;
+    ensureOwnerMarksChecked(viewerId, ownerIds).then(results => {
+      if (cancelled || viewerId !== getOwnerId()) return;
+      const store = reactionSubscriptionsRef.current;
+      let resubscribe = false;
+      Object.entries(results || {}).forEach(([changedOwnerId, kinds]) => {
+        if (!kinds?.some(kind => kind === 'favorites' || kind === 'dislikes')) return;
+        if (!store.cacheServedOwnerIds.has(changedOwnerId)) return;
+        (store.owners.get(changedOwnerId) || []).forEach(unsub => unsub());
+        store.owners.delete(changedOwnerId);
+        resubscribe = true;
+      });
+      if (resubscribe) setReactionResubscribeEpoch(epoch => epoch + 1);
+    });
+    return () => { cancelled = true; };
+  }, [multiDataOwnerIds, ownerId]);
+
   useEffect(() => {
     const ownerIds = getMatchingMultiDataOwnerIds();
     const store = reactionSubscriptionsRef.current;
@@ -2982,7 +3016,7 @@ const Matching = () => {
     // читання: зник власник чи додався, пріоритет реакцій інший.
     applyPrioritizedReactionMaps();
     return undefined;
-  }, [getMatchingMultiDataOwnerIds]);
+  }, [getMatchingMultiDataOwnerIds, reactionResubscribeEpoch]);
 
   /**
    * Гідратація карток для пошуку по індексу `searchKey`.
