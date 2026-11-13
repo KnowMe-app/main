@@ -27,16 +27,17 @@ describe('видача пошуку гортається так само, як �
     );
   });
 
-  it('наступна порція видачі — зсув вікна, а не запит у бекенд', () => {
-    // Усе знайдене вже в руках: платити за порцію треба гідратацією фото,
-    // коментарів і анкети, а не новою сторінкою.
+  it('наступна порція видачі — зсув вікна, а в кінці прочитаного — порція хвоста', () => {
+    // Прочитане вже в руках, і порція — це зсув вікна. Але пошук читає не все
+    // знайдене (`lazyPageSize`): коли вікно дійшло до кінця прочитаного, далі
+    // йде порція недочитаного хвоста, а не вся видача наперед.
     const loader = matching().slice(
       matching().indexOf('const triggerEndOfDeckLoad = React.useCallback('),
       matching().indexOf("if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;"),
     );
 
     expect(loader).toContain("if (viewMode === 'search') {");
-    expect(loader).toContain('setSearchRevealCount(current => Math.min(current + step, searchRevealTargetRef.current));');
+    expect(loader).toContain('if (current + step > searchRevealTargetRef.current) void loadNextSearchPortionRef.current();');
   });
 
   it('перший результат — повний екран, а не дві картки', () => {
@@ -184,7 +185,8 @@ describe('видача пошуку кешується і читається з 
 
   it('видача лягає і в кеш проєкцій, і в список id запиту', () => {
     const source = matching();
-    expect(source).toContain("setIndexIdsForQuery(summaryCacheKey, filtered.map(u => u.userId), { complete: true });");
+    // Уся видача в порядку показу — прочитане й недочитаний хвіст.
+    expect(source).toContain('[...filtered.map(u => u.userId), ...(remainder?.ids || [])],');
     expect(source).toContain('filtered.filter(isMatchingSummaryCard).map(u => [u.userId, u]),');
   });
 
@@ -247,7 +249,7 @@ describe('сховану анкету пошук не віддає й з кеш�
   it('кожна видача Matching — і з кеша, і з бекенду — іде через свіжу перевірку feedDate, крім адмінської', () => {
     expect(matching).toContain('const result = await searchUsersFromCacheOrBackend(params, options);');
     expect(matching).toContain('return isAdmin ? result : filterFeedDeniedSearchResult(result);');
-    expect(matching).toContain('searchUsersOnly(params, { ...options, keepHidden: isAdmin })');
+    expect(matching).toContain('const res = await searchUsersOnly(params, {\n      ...options,\n      keepHidden: isAdmin,');
     expect(matching).toContain('{ keepHidden: isAdmin }');
   });
 

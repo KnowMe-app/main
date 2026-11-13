@@ -1,3 +1,4 @@
+import { compareByFeedDate, readPublishedFeedIndex, roleBucketsOf } from './publishedFeedIndex';
 import { listPaymentBuckets } from './donorPrograms';
 import { cardMatchesPlace } from './profileNormalization';
 import { getCurrentValue } from 'components/getCurrentValue';
@@ -506,6 +507,16 @@ const readMatchingUsersFilterIds = async ({ group, filters }) => {
   return { mode: readMode === 'exclude' ? 'exclude' : 'include', ids, overflowed };
 };
 
+// Картки переліку опублікованих, чия роль серед дозволених бакетів групи.
+const collectFeedIndexRoleIds = (publishedIndex, allowedBuckets) => {
+  const allowed = new Set((allowedBuckets || []).map(String));
+  const ids = new Set();
+  publishedIndex.entries.forEach((entry, id) => {
+    if (roleBucketsOf(entry.roles).some(bucket => allowed.has(bucket))) ids.add(id);
+  });
+  return ids;
+};
+
 const intersectIdSets = sets => {
   const usableSets = (sets || []).filter(set => set instanceof Set);
   if (!usableSets.length) return null;
@@ -675,17 +686,29 @@ export const fetchMatchingIndexedCandidates = async ({
   viewerId = '',
   useIndexIdCache = true,
   maxHydrationPages = 2,
+  readPublishedIndex = readPublishedFeedIndex,
 } = {}) => {
   const filterGroups = buildMatchingIndexFilterGroups({ filters, viewerRole });
+  // Перелік опублікованих (`utils/publishedFeedIndex`): дека — це стрічка, тож
+  // кандидат без дати в стрічці однаково відсіявся б після гідратації, а
+  // порядок задає дата, а не ключ бакета. Без переліку — як доти.
+  const publishedIndex = accessScoped || typeof readPublishedIndex !== 'function'
+    ? null
+    : await Promise.resolve().then(() => readPublishedIndex()).catch(() => null);
   const excludedSet = new Set((Array.isArray(excludeIds) ? excludeIds : [...(excludeIds || [])]).filter(Boolean));
   const safeOffset = normalizeOffset(offset);
   const safeLimit = normalizeLimit(limit);
   const filterSignature = serializeQueryFilters(normalizeSignatureValue(filters || {}));
-  const cacheMeta = buildMatchingIndexCacheMeta({
-    filterSignature,
-    ownerId: String(ownerId || '').trim(),
-    accessUserId: String(accessUserId || '').trim(),
-  });
+  const cacheMeta = {
+    ...buildMatchingIndexCacheMeta({
+      filterSignature,
+      ownerId: String(ownerId || '').trim(),
+      accessUserId: String(accessUserId || '').trim(),
+    }),
+    // Список, зібраний за іншим переліком, — інший список: щойно опублікована
+    // агенція мусить стати нагору, а не чекати, доки протухне кеш.
+    ...(publishedIndex ? { feedIndex: publishedIndex.signature } : {}),
+  };
   const cacheKey = buildMatchingIndexQueryKey({
     accessScoped,
     filters,
@@ -840,14 +863,23 @@ export const fetchMatchingIndexedCandidates = async ({
   // Inverting a read is only worth it when something else names the candidates. With
   // nothing to subtract from, flip the cheapest invertible group back to a forward
   // read rather than hand the whole deck to source pagination.
-  const plannedGroups = filterGroups.some(canGroupNameCandidates)
-    ? filterGroups
-    : invertOneGroupToNameCandidates(filterGroups);
+  // Роль знає сам перелік опублікованих, тож групу ролі він і називає — без
+  // бакета `searchKey`, і будь-який вибір ролі стає списком кандидатів.
+  const groupsWithFeedRole = publishedIndex
+    ? filterGroups.map(group => (group.indexName === 'role'
+      ? { ...group, readMode: 'include', fromFeedIndex: true }
+      : group))
+    : filterGroups;
+  const plannedGroups = groupsWithFeedRole.some(canGroupNameCandidates)
+    ? groupsWithFeedRole
+    : invertOneGroupToNameCandidates(groupsWithFeedRole);
 
   if (!plannedGroups.some(canGroupNameCandidates)) return deferToSourcePagination();
 
   const idSets = await Promise.all(
-    plannedGroups.map(group => readMatchingUsersFilterIds({ group, filters }))
+    plannedGroups.map(group => (group.fromFeedIndex
+      ? { mode: 'include', ids: collectFeedIndexRoleIds(publishedIndex, group.values), overflowed: false }
+      : readMatchingUsersFilterIds({ group, filters })))
   );
 
   // Група, чиє читання впeрлось у межу, лишає надто велику частку бази, щоб
@@ -903,7 +935,11 @@ export const fetchMatchingIndexedCandidates = async ({
   // Заповненість зі стрічки прибрано разом із фільтром: ані окремого читання
   // бакета «порожні», ані перестановки за ним більше немає. Порядок задає
   // `feedDate`, і тільки він.
-  const allMatchingIds = combinedIds;
+  const allMatchingIds = publishedIndex
+    ? combinedIds
+      .filter(id => publishedIndex.entries.has(id))
+      .sort((a, b) => compareByFeedDate(publishedIndex, a, b))
+    : combinedIds;
   const ageGroupIndex = plannedGroups.findIndex(group => group.indexName === 'age');
   const ageDateRangeIdsCount = ageGroupIndex >= 0
     ? (idSets[ageGroupIndex]?.ids?.size || 0)
