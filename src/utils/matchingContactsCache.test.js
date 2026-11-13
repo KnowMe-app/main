@@ -2,6 +2,7 @@ import { MATCHING_CACHE_TTL_MS } from './matchingCachePolicy';
 import {
   clearContactsCache,
   forgetProfileContacts,
+  forgetProfileContactsForViewer,
   readFreshProfileContacts,
   writeProfileContacts,
 } from './matchingContactsCache';
@@ -43,5 +44,31 @@ describe('контакти анкет у памʼяті пристрою', () =>
     writeProfileContacts('viewer', 'card', { allowed: true, contacts: { phone: '380' } });
     clearContactsCache();
     expect(readFreshProfileContacts('viewer', 'card')).toBeNull();
+  });
+});
+
+describe('forgetProfileContactsForViewer (журнал змін карток)', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('забуває контакти змінених карток лише в цього читача', () => {
+    writeProfileContacts('viewer', 'a', { allowed: true, contacts: { phone: '1' } });
+    writeProfileContacts('viewer', 'b', { allowed: true, contacts: { phone: '2' } });
+    writeProfileContacts('other', 'a', { allowed: true, contacts: { phone: '1' } });
+
+    forgetProfileContactsForViewer('viewer', ['a']);
+
+    expect(readFreshProfileContacts('viewer', 'a')).toBeNull();
+    expect(readFreshProfileContacts('viewer', 'b')).toEqual({ allowed: true, contacts: { phone: '2' } });
+    expect(readFreshProfileContacts('other', 'a')).not.toBeNull();
+  });
+
+  it('без переліку забуває всі контакти читача («як уперше»)', () => {
+    writeProfileContacts('viewer', 'a', { allowed: false });
+    writeProfileContacts('viewer', 'b', { allowed: true, contacts: {} });
+
+    forgetProfileContactsForViewer('viewer');
+
+    expect(readFreshProfileContacts('viewer', 'a')).toBeNull();
+    expect(readFreshProfileContacts('viewer', 'b')).toBeNull();
   });
 });
