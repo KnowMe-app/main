@@ -461,6 +461,7 @@ const BY_UK = {
   'Прихована': 'Oculto',
   'Додайте виплату': 'Añadir un pago',
   'Зберігаємо…': 'Guardando…',
+  'Немає звʼязку — шукали лише серед анкет, збережених на цьому пристрої': 'Sin conexión: solo se ha buscado entre los perfiles guardados en este dispositivo',
   'Немає звʼязку — збережемо, щойно він зʼявиться': 'Sin conexión: se guardará en cuanto vuelva',
   'Збережено': 'Guardado',
   'Поки лише в цьому браузері': 'Por ahora solo en este navegador',

@@ -480,6 +480,7 @@ const EN_BY_UK = {
   'Прихована': 'Hidden',
   'Додайте виплату': 'Add a payment',
   'Зберігаємо…': 'Saving…',
+  'Немає звʼязку — шукали лише серед анкет, збережених на цьому пристрої': 'No connection — searched only among profiles saved on this device',
   'Немає звʼязку — збережемо, щойно він зʼявиться': 'No connection — will save as soon as it is back',
   'Збережено': 'Saved',
   'Поки лише в цьому браузері': 'Only in this browser for now',

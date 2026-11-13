@@ -122,6 +122,7 @@ import {
   normalizeQueryKey,
   buildFeedListKey,
   composeCachedCards,
+  listCachedCardIds,
   PROFILE_REVISION_MAX_AGE_MS,
   getQueryEntry,
   setCachedMatchingSummaryCards,
@@ -181,7 +182,8 @@ import {
   upsertStoredFullProfile,
 } from '../utils/cardStore';
 import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
-import { forgetProfileContactsForViewer } from '../utils/matchingContactsCache';
+import { forgetProfileContactsForViewer, readAllCachedProfileContacts } from '../utils/matchingContactsCache';
+import { searchCardsOnDevice } from '../utils/offlineCardSearch';
 import { ensureOwnerMarksChecked } from '../utils/ownerMarkVersions';
 import { getWriteOutboxPendingCount, isRetryableOutboxError, subscribeWriteOutbox, WRITE_OUTBOX_REJECTED_EVENT } from '../utils/writeOutbox';
 import { restorePublicComment } from '../utils/publicReviewRollback';
@@ -1241,6 +1243,8 @@ const Matching = () => {
     }
   }, [searchQuery]);
   const [matchingSearchStatus, setMatchingSearchStatus] = useState('');
+  // Пошук пройшов серед збереженого на пристрої (без звʼязку) — видача неповна.
+  const [searchOfflineNote, setSearchOfflineNote] = useState(false);
   const matchingSearchKeyRef = useRef(null);
   const [expandedRowIds, setExpandedRowIds] = useState(() => new Set());
   // Spec §8: public records about a profile, readable by everyone signed in.
@@ -4759,6 +4763,21 @@ const Matching = () => {
   };
 
   const searchUsersFromCacheOrBackend = async (params, options = {}) => {
+    // Без мережі запит до бази не падає, а висить — і «Шукаю…» стояло без
+    // кінця. Шукаємо серед збереженого на пристрої й кажемо про це
+    // (`utils/offlineCardSearch`); схованість кожної знайденої перевіряє той
+    // самий `filterFeedDeniedSearchResult` (без мережі — «збій», картку лишає).
+    if (typeof navigator !== 'undefined' && navigator.onLine === false && !options?.limitedFields) {
+      const { cards } = composeCachedCards(listCachedCardIds(), { ttlMs: MOUNT_SNAPSHOT_MAX_AGE_MS });
+      const found = searchCardsOnDevice(Object.values(cards), params, {
+        contactsById: readAllCachedProfileContacts(getOwnerId()),
+      }).filter(card => isMatchingCardId(card.userId));
+      setSearchOfflineNote(true);
+      const [key] = Object.keys(params || {});
+      if (found.length === 1 && key !== 'name' && key !== 'names') return found[0];
+      return Object.fromEntries(found.map(card => [card.userId, card]));
+    }
+    setSearchOfflineNote(false);
     const cacheEpoch = getMatchingLocalStorageCacheEpoch();
     const canWriteMatchingCache = () => cacheEpoch === getMatchingLocalStorageCacheEpoch();
     // A limited hit is a projection, not a record. It never touches the shared card
@@ -8745,6 +8764,11 @@ const Matching = () => {
           {matchingSearchStatus && (
             <MatchingSearchStatusMessage aria-live="polite">
               {matchingSearchStatus}
+            </MatchingSearchStatusMessage>
+          )}
+          {isSearching && searchOfflineNote && (
+            <MatchingSearchStatusMessage aria-live="polite" data-testid="search-offline-note">
+              {uiText('Немає звʼязку — шукали лише серед анкет, збережених на цьому пристрої', language)}
             </MatchingSearchStatusMessage>
           )}
           {/* Під час пошуку чіпів колекцій тут немає, і чіпів пошуку теж:

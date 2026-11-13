@@ -1270,6 +1270,15 @@ const isProjectionFreshByJournal = (id, card, cachedAt, now) => (
   && Boolean(projectionFreshnessCheck(id, card))
 );
 
+/**
+ * Усі id карток, що лежать на пристрої (повні анкети й проєкції стрічки), —
+ * для пошуку без звʼязку (`utils/offlineCardSearch`).
+ */
+export const listCachedCardIds = () => [...new Set([
+  ...Object.keys(loadCards() || {}),
+  ...Object.keys(loadMatchingSummaryCards() || {}),
+])];
+
 export const getCachedMatchingSummaryCards = (ids, options = {}) => {
   const { ttlMs = MATCHING_SUMMARY_CARD_TTL_MS } = options || {};
   const uniqueIds = [...new Set((Array.isArray(ids) ? ids : []).filter(Boolean).map(String))];

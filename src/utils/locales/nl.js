@@ -461,6 +461,7 @@ const BY_UK = {
   'Прихована': 'Verborgen',
   'Додайте виплату': 'Betaling toevoegen',
   'Зберігаємо…': 'Opslaan…',
+  'Немає звʼязку — шукали лише серед анкет, збережених на цьому пристрої': 'Geen verbinding — alleen gezocht in profielen die op dit apparaat zijn opgeslagen',
   'Немає звʼязку — збережемо, щойно він зʼявиться': 'Geen verbinding — wordt opgeslagen zodra die terug is',
   'Збережено': 'Opgeslagen',
   'Поки лише в цьому браузері': 'Voorlopig alleen in deze browser',
