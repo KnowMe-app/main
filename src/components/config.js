@@ -32,7 +32,7 @@ import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { formatDateToDisplay, formatDateToServer } from './inputValidations';
 import { getCurrentValue } from './getCurrentValue';
 import toast from 'react-hot-toast';
-import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCachedProfileBody, getCompleteCachedProfile, hasCompleteCachedProfile, incrementMatchingLoadStat, readStoredProfileRevision, removeCard, setProjectionFreshnessCheck } from '../utils/cardIndex';
+import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCachedMatchingSummaryCards, getCachedProfileBody, getCompleteCachedProfile, hasCompleteCachedProfile, incrementMatchingLoadStat, readStoredProfileRevision, removeCard, setProjectionFreshnessCheck } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
 import {
   SEARCH_QUERIES_ROOT_PATH,
@@ -1370,16 +1370,19 @@ export const addMatchingSearchQuery = async searchQuery => {
       await remove(ref2(database, `${ownerPath}/${previous.key}`));
     }
 
-    await runTransaction(ref2(database, `${ownerPath}/${queryKey}`), current => {
-      const stored = typeof current === 'string' ? { query: current } : (current || {});
-      const storedCount = Number(stored.count);
-      const storedCreatedAt = Number(stored.createdAt);
-      return {
-        query: normalizedQuery,
-        createdAt: Number.isFinite(storedCreatedAt) && storedCreatedAt > 0 ? storedCreatedAt : now,
-        updatedAt: now,
-        count: (Number.isFinite(storedCount) && storedCount > 0 ? storedCount : 0) + 1,
-      };
+    // Один запис замість транзакції. Транзакція на вузлі, якого ніхто не
+    // слухає, — це підписка, перший запис «наосліп» поверх `null`, відмова
+    // сервера, другий запис і відписка: на кожен завершений пошук (заміряно
+    // наживо 13.11). Лічильник рахує сама база (`increment`), а дату першого
+    // пошуку пишемо, лише коли історія читача вже прочитана й цього запиту в
+    // ній немає, — інакше лишаємо ту, що лежить.
+    const knownRows = ownSearchQueriesCache.ownerId === owner.uid ? ownSearchQueriesCache.rows : null;
+    const isNewQuery = Array.isArray(knownRows) && !knownRows.some(row => row.queryId === queryKey);
+    await update(ref2(database, `${ownerPath}/${queryKey}`), {
+      query: normalizedQuery,
+      updatedAt: now,
+      count: increment(1),
+      ...(isNewQuery ? { createdAt: now } : {}),
     });
 
     lastRecordedSearchQuery = { ownerId: owner.uid, query: normalizedQuery, key: queryKey, at: now };
@@ -3236,7 +3239,23 @@ export const readProfileContacts = userId => {
       accessLevel,
     });
     if (!privileged) {
-      const card = await readProfileNodePart(PROFILE_NODES.matchingCards, id);
+      // Картку рядка стрічка щойно прочитала, і її стан (`feedDate`,
+      // `audience`) уже лежить у памʼяті вкладки чи перевірений журналом
+      // змін (`matchingFeedStateReader`). Перепитувати картку цілком заради
+      // того самого рішення — друге читання тієї ж картки на кожен рядок з
+      // контактами (заміряно наживо 13.11: холодна стрічка донорки читала
+      // перші чотири картки двічі). Межа від цього не слабшає: рішення лише
+      // вирішує, чи питати контакти, а відкриває їх правило бази.
+      // Береться лише стан, що відкриває (дата або «лише для вподобаних»):
+      // «сховано» й «картки немає» читаються, як раніше, — від них залежить,
+      // чи памʼятати відмову шість годин.
+      const peeked = matchingFeedStateReader.peek(id);
+      const knownState = peeked && (normalizeFeedDateValue(peeked.feedDate) || peeked.audience === 'liked')
+        ? peeked
+        : null;
+      const card = knownState
+        ? { [MATCHING_CARD_FEED_FIELD]: knownState.feedDate ?? null, audience: knownState.audience ?? null }
+        : await readProfileNodePart(PROFILE_NODES.matchingCards, id);
       if (!card) cacheable = false;
       if (!(await mayViewerReadCardPrivateNodes(id, card))) return { allowed: false, contacts: null };
     }
@@ -3712,6 +3731,19 @@ const addSearchHit = async (userId, users) => {
  * заплатити за нього повну ціну.
  */
 const addCardHit = async (userId, users) => {
+  // Свіжа проєкція з кеша пристрою відповідає без бази — за загальним
+  // правилом кеша матчингу, — але лише коли й стан стрічки цієї картки
+  // перевірений (памʼять вкладки чи журнал змін): інакше
+  // `filterFeedDeniedSearchResult` однаково прочитав би картку цілком, і
+  // кеш нічого не заощадив би. Доти кожне влучання читало картку з бази
+  // навіть тоді, коли вона щойно лежала в стрічці.
+  const cachedProjection = matchingFeedStateReader.peek(userId)
+    ? getCachedMatchingSummaryCards([userId]).cards[userId]
+    : null;
+  if (cachedProjection && isCurrentMatchingCardSchema(cachedProjection)) {
+    users[userId] = cachedProjection;
+    return;
+  }
   let expanded = null;
   try {
     const raw = await readMatchingCardRaw(userId);
@@ -6353,16 +6385,20 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
  * неопубліковану вхід не міняє, як не міняла й перебудова. Картки немає
  * зовсім — тоді, як і раніше, повний писач: він її й заведе.
  */
-export const recordDailyLogin = async (userId, todayDash) => {
+// `extraFields` — те, що разом із датою пише вхід поштою (`persistAccountProfile`):
+// згода з умовами й та сама пошта. Жодне з них картку стрічки не міняє, тож і
+// перебудовувати її з пʼяти вузлів заради них нема чого.
+export const recordDailyLogin = async (userId, todayDash, extraFields = {}) => {
   const id = String(userId || '').trim();
   const date = normalizeFeedDateValue(todayDash);
   if (!id || !date) return;
+  const extra = extraFields && typeof extraFields === 'object' ? extraFields : {};
   const card = await readMatchingCardRaw(id);
   if (!card) {
-    await updateDataInRealtimeDB(id, { lastLogin2: date }, 'update');
+    await updateDataInRealtimeDB(id, { ...extra, lastLogin2: date }, 'update', { revisionNeutral: true });
     return;
   }
-  const written = await fanOutProfileNodes(id, { lastLogin2: date });
+  const written = await fanOutProfileNodes(id, { ...extra, lastLogin2: date });
   if (!written) throwProfileWriteFailure(id, 'дата входу');
   if (!normalizeFeedDateValue(card[MATCHING_CARD_FEED_FIELD])) return;
   // Дата переставляється транзакцією й лише поверх дати. Між читанням картки

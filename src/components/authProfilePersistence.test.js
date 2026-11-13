@@ -14,6 +14,18 @@ describe('persistAccountProfile', () => {
   });
 });
 
+describe('вхід поштою', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'authProfilePersistence.js'), 'utf8');
+
+  // Запис самого входу картки не міняє, тож іде точковим `recordDailyLogin`,
+  // а не загальним писачем, який перебудовує картку з пʼяти вузлів.
+  it('пише дату, згоду й пошту точково, а будь-що інше — загальним писачем', () => {
+    expect(source).toContain("const LOGIN_ONLY_FIELDS = new Set(['email', 'areTermsConfirmed', 'lastLogin', 'lastLogin2', 'userId']);");
+    expect(source).toContain("if (mode !== 'set' && revisionNeutral && isLoginOnlyPayload(uploadedInfo)) {");
+    expect(source).toContain('await recordDailyLogin(userId, uploadedInfo.lastLogin2, extra);');
+  });
+});
+
 describe('MyProfile phone autosave', () => {
   const source = fs.readFileSync(path.join(__dirname, 'MyProfile.jsx'), 'utf8');
 

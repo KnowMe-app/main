@@ -241,6 +241,25 @@ describe('щоденний запис дати входу', () => {
     expect(mockRunTransaction).not.toHaveBeenCalled();
   });
 
+  // Вхід поштою пише разом із датою ще згоду з умовами й ту саму пошту
+  // (`persistAccountProfile`). Доти це йшло загальним писачем, і кожен вхід
+  // ще раз читав анкету з усіх вузлів, щоб перебудувати картку, якої вхід не
+  // міняє (заміряно наживо 13.11).
+  it('згода й пошта входу пишуться тим самим точковим шляхом — без перечитування анкети', async () => {
+    mockAuth.currentUser = { uid: CARD_ID };
+    mockServer[FEED_PATH] = '2026-11-01';
+    const requested = serveNodes({ [`matchingCards/${CARD_ID}`]: { name: 'Оксана', feedDate: '2026-11-01' } });
+    await recordDailyLogin(CARD_ID, TODAY, { email: 'oksana@example.com', areTermsConfirmed: '10.11.2026' });
+
+    expect(requested).toEqual([`matchingCards/${CARD_ID}`]);
+    expect(writtenPaths()).toEqual(expect.arrayContaining([
+      `profileTechnical/${CARD_ID}/lastLogin`,
+      `profileTechnical/${CARD_ID}/areTermsConfirmed`,
+      `profileContacts/${CARD_ID}/email`,
+    ]));
+    expect(mockServer[FEED_PATH]).toBe(TODAY);
+  });
+
   it('дата, новіша чи та сама, не відкочується', async () => {
     await loginWith({ name: 'Оксана', feedDate: TODAY });
     expect(mockServer[FEED_PATH]).toBe(TODAY);

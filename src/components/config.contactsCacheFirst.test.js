@@ -22,6 +22,25 @@ describe('контакти: спершу кеш, точкове читання',
     expect(reader).toContain('profileContactsMemo.get(id)');
   });
 
+  // Холодна стрічка донорки читала перші картки двічі: сторінкою, а тоді ще
+  // раз заради рішення, чи питати контакти (заміряно наживо 13.11). Стан,
+  // який відкриває, уже в памʼяті читача стану; «сховано» читається, як було.
+  it('readProfileContacts бере відкритий стан картки з памʼяті, а не читає її вдруге', () => {
+    const reader = sliceBetween(config(), 'export const readProfileContacts = userId =>', '/**\n * Прочитати анкети за id.');
+    expect(reader).toContain('const peeked = matchingFeedStateReader.peek(id);');
+    expect(reader).toContain("normalizeFeedDateValue(peeked.feedDate) || peeked.audience === 'liked'");
+    expect(reader.indexOf('matchingFeedStateReader.peek(id)')).toBeLessThan(reader.indexOf('readProfileNodePart(PROFILE_NODES.matchingCards, id)'));
+  });
+
+  // Видача пошуку стрічки — так само: свіжа проєкція з кешу, коли стан
+  // картки вже перевірено, інакше — читання, як раніше.
+  it('addCardHit бере свіжу проєкцію з кешу, коли стан картки перевірено', () => {
+    const adder = sliceBetween(config(), 'const addCardHit = async (userId, users) => {', 'const resolveSearchHitAdder');
+    expect(adder).toContain('matchingFeedStateReader.peek(userId)');
+    expect(adder).toContain('getCachedMatchingSummaryCards([userId]).cards[userId]');
+    expect(adder.indexOf('getCachedMatchingSummaryCards')).toBeLessThan(adder.indexOf('readMatchingCardRaw(userId)'));
+  });
+
   // Загальне правило кеша матчингу: свіжа відповідь (і контакти, і «закрито»)
   // — з памʼяті пристрою, а в памʼять лягає лише справжня відповідь бази.
   it('readProfileContacts бере свіжу відповідь з пристрою і кладе туди лише справжню', () => {

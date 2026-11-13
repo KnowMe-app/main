@@ -1,4 +1,5 @@
 import {
+  recordDailyLogin,
   syncUserSearchIdIndex,
   syncUserSearchKeyIndex,
   updateDataInRealtimeDB,
@@ -20,7 +21,24 @@ export const isValidAuthEmail = email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email
 // `revisionNeutral` — запис, що анкети не міняє (вхід: дата входу, згода й та
 // сама пошта). Без позначки кожен вхід поштою ставив би нову версію анкети
 // (`rev`) і скидав її кеш у всіх читачів.
+// Запис самого входу (дата, згода, та сама пошта) картки стрічки не міняє, а
+// загальний писач після нього перечитував анкету з усіх вузлів і збирав картку
+// заново — друге повне читання власної анкети на кожному вході (заміряно
+// наживо 13.11: вхід агенції — три повні читання, одне з них саме це). Такий
+// запис іде тим самим точковим шляхом, що й щоденна дата входу.
+const LOGIN_ONLY_FIELDS = new Set(['email', 'areTermsConfirmed', 'lastLogin', 'lastLogin2', 'userId']);
+const isLoginOnlyPayload = payload => Boolean(payload)
+  && typeof payload === 'object'
+  && Boolean(payload.lastLogin2)
+  && Object.keys(payload).every(key => LOGIN_ONLY_FIELDS.has(key));
+
 export const persistAccountProfile = async (userId, uploadedInfo, mode = 'update', { revisionNeutral = false } = {}) => {
+  if (mode !== 'set' && revisionNeutral && isLoginOnlyPayload(uploadedInfo)) {
+    const extra = Object.fromEntries(Object.entries(uploadedInfo)
+      .filter(([key]) => key === 'email' || key === 'areTermsConfirmed'));
+    await recordDailyLogin(userId, uploadedInfo.lastLogin2, extra);
+    return;
+  }
   await updateDataInRealtimeDB(userId, uploadedInfo, mode === 'set' ? undefined : 'update', { revisionNeutral });
 
   // Реєстрація — це поява анкети, тож тут же зʼявляються і її пошукові індекси.

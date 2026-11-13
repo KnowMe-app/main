@@ -402,6 +402,10 @@ const DEBUG_ADDITIONAL_MATCHING_USER_ID = BACKEND_TRAFFIC_TRACKING_TEST_UID;
 const MATCHING_DATA_SOURCE_MODE_KEY = 'matchingDataSourceMode';
 const MATCHING_DEBUG_LOG_MODE_KEY = 'matchingDebugLogMode';
 const LAST_LOGIN_WRITTEN_KEY_PREFIX = 'matchingLastLogin2Written:';
+// Голова стрічки з бази — щонайбільше раз на цей час на список у вкладці
+// (див. `loadInitial`, гілка кешу).
+const FEED_HEAD_RECHECK_MS = 3 * 60 * 1000;
+const feedHeadCheckedAtByList = new Map();
 // Чи пропускає «Тип профілю» анкету цієї ролі — те саме правило, що й для
 // картки цілком (`roleFilterCategoryOf`).
 const allowsAnketaRole = (roleFilter, role) => isRoleCategoryAllowed(roleFilter, roleFilterCategoryOf(role));
@@ -3632,7 +3636,15 @@ const Matching = () => {
         // голови, без курсора, і курсора хвоста не чіпає. Людина вгорі — нове
         // стає нагору одразу; посеред стрічки — чекає на плашку.
         const cachedFeedIds = new Set(filteredCached.map(u => u.userId));
-        void (async () => {
+        // Але не на кожне повернення з пошуку чи колекції в тій самій вкладці:
+        // стрічка складається з кешу заново щоразу, як стерли запит, і кожне
+        // таке повернення перечитувало ту саму голову (заміряно наживо 13.11).
+        // Нове відкриття сторінки памʼять вкладки скидає — там голова й далі
+        // читається щоразу.
+        const headCheckedAt = feedHeadCheckedAtByList.get(feedListKey) || 0;
+        const headIsRecent = Date.now() - headCheckedAt < FEED_HEAD_RECHECK_MS;
+        if (!headIsRecent) feedHeadCheckedAtByList.set(feedListKey, Date.now());
+        if (!headIsRecent) void (async () => {
           try {
             const head = await fetchChunk(INITIAL_LOAD, undefined, exclude);
             if (!canApplyInitialLoadWithFilters()) return;
@@ -3652,6 +3664,7 @@ const Matching = () => {
               setFeedHeadNewUsers(fresh);
             }
           } catch (error) {
+            feedHeadCheckedAtByList.delete(feedListKey);
             console.warn('[loadInitial] feed head refresh failed', error);
           }
         })();
@@ -5968,6 +5981,18 @@ const Matching = () => {
   );
 
   const isSearching = searchQuery.trim().length > 0;
+  // Видача, знайдена без мережі, — лише серед збереженого на пристрої. Коли
+  // звʼязок повернувся, той самий запит іде до бази сам: доти над неповною
+  // видачею так і стояло «шукали лише серед збереженого», доки людина не
+  // перенабере запит. `SearchBar` виконує набране на монтуванні, тож повтор —
+  // це новий ключ.
+  const [searchRerunEpoch, setSearchRerunEpoch] = useState(0);
+  const offlineSearchShownRef = useRef(false);
+  offlineSearchShownRef.current = isSearching && searchOfflineNote;
+  useEffect(() => {
+    if (!deviceOnline || !offlineSearchShownRef.current) return;
+    setSearchRerunEpoch(epoch => epoch + 1);
+  }, [deviceOnline]);
   const navHeaderTarget = usePrimaryNavigationHeaderTarget();
   const placeInNavHeader = element => (navHeaderTarget ? createPortal(element, navHeaderTarget) : element);
   const feedColumnCount = useFeedColumns().list;
@@ -8724,6 +8749,7 @@ const Matching = () => {
             <SearchField>
               <FaSearch aria-hidden="true" />
               <SearchBar
+                key={`matching-search-${searchRerunEpoch}`}
                 searchFunc={searchUsers}
                 search={searchQuery}
                 setSearch={setSearchQuery}
