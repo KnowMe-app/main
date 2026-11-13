@@ -3803,6 +3803,7 @@ const searchBySearchIdUsers = async (
         ids: queue.slice(lazyPageSize),
         matchedFieldsById: Object.fromEntries(queue.slice(lazyPageSize)
           .map(id => [id, matchedFieldsById.get(id) || []])),
+        limitedFields,
       });
     }
   }
@@ -3841,10 +3842,12 @@ export const takeLazySearchRemainder = searchedValue => {
  * Наступна порція хвоста видачі: проєкції з кешу чи бази, тим самим шляхом,
  * що й перша порція (`addCardHit`), з полем збігу з індексу.
  */
-export const readLazySearchPortion = async (ids, matchedFieldsById = {}) => {
+export const readLazySearchPortion = async (ids, matchedFieldsById = {}, { limitedFields = false } = {}) => {
   const users = {};
+  // Читач без повного доступу — тим самим урізаним шляхом, що й перша порція.
+  const addHit = resolveSearchHitAdder({ limitedFields, cardsOnly: true });
   await Promise.all((ids || []).map(async id => {
-    await addCardHit(id, users);
+    await addHit(id, users);
     const matchedFields = matchedFieldsById?.[id];
     if (users[id] && matchedFields?.length) users[id].__searchIdFields = matchedFields;
   }));

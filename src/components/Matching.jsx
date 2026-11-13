@@ -185,7 +185,7 @@ import {
 } from '../utils/cardStore';
 import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
 import { forgetProfileContactsForViewer, readAllCachedProfileContacts } from '../utils/matchingContactsCache';
-import { forgetPublishedFeedIndex, readPublishedFeedIndex } from '../utils/publishedFeedIndex';
+import { forgetPublishedFeedIndex, readPublishedFeedIndex, setPublishedFeedIndexGate } from '../utils/publishedFeedIndex';
 import { searchCardsOnDevice } from '../utils/offlineCardSearch';
 import { resolveOnlineRecovery } from '../utils/feedOnlineRecovery';
 import { ensureOwnerMarksChecked } from '../utils/ownerMarkVersions';
@@ -1130,6 +1130,14 @@ const Matching = () => {
   const [users, setUsers] = useState(() => feedSnapshot?.users || []);
   // Синхронізація журналу змін цього показу стрічки (див. `cardChangesReady`).
   const cardChangesSyncRef = useRef(null);
+  // Завершення синхронізації журналу в цьому показі сторінки (див.
+  // `readPublishedIndexAfterJournal`): обіцянка, яку ефект журналу виконує.
+  const cardChangesDoneRef = useRef(null);
+  if (!cardChangesDoneRef.current) {
+    let resolveDone;
+    const promise = new Promise(resolve => { resolveDone = resolve; });
+    cardChangesDoneRef.current = { promise, resolve: () => resolveDone() };
+  }
   // Нові анкети з голови стрічки, що приїхали, поки людина гортала посеред
   // деки (`utils/matchingFeedHead`): чекають на плашку «Нові анкети: N».
   const [feedHeadNewUsers, setFeedHeadNewUsers] = useState([]);
@@ -3077,15 +3085,25 @@ const Matching = () => {
   // журналу змін: журнал забуває перелік, коли якусь картку змінено (зокрема
   // опубліковано), і прочитаний до нього перелік ховав би щойно опубліковану
   // агенцію до кінця TTL.
+  //
+  // Чекаємо не на посилання (на старті сторінки синхронізацію ще не запущено,
+  // і перелік з пристрою читався повз неї — щойно опублікована агенція не
+  // зʼявлялась, заміряно наживо), а на сам факт її завершення.
+  const waitForCardChangesSync = React.useCallback(() => Promise.race([
+    cardChangesDoneRef.current.promise,
+    new Promise(resolve => setTimeout(resolve, CARD_CHANGES_WAIT_MS)),
+  ]), []);
+  // Кожен читач переліку на цій сторінці — стрічка, дочитування, пошук —
+  // чекає журналу (`setPublishedFeedIndexGate`), а не лише той, кого
+  // попросили.
+  useEffect(() => {
+    setPublishedFeedIndexGate(waitForCardChangesSync);
+    return () => setPublishedFeedIndexGate(null);
+  }, [waitForCardChangesSync]);
   const readPublishedIndexAfterJournal = React.useCallback(async () => {
-    if (cardChangesSyncRef.current) {
-      await Promise.race([
-        cardChangesSyncRef.current.catch(() => null),
-        new Promise(resolve => setTimeout(resolve, CARD_CHANGES_WAIT_MS)),
-      ]);
-    }
+    await waitForCardChangesSync();
     return readPublishedFeedIndex();
-  }, []);
+  }, [waitForCardChangesSync]);
 
   const hydrateMatchingFeedCards = React.useCallback(async ids => {
     const uniqueIds = [...new Set((ids || []).filter(Boolean))];
@@ -4813,7 +4831,11 @@ const Matching = () => {
   // Адмінові сховане не замовчується (див. `orderMatchingSearchResults`).
   const rememberSearchRemainder = remainder => {
     searchRemainderRef.current = remainder && remainder.ids?.length
-      ? { ids: [...remainder.ids], matchedFieldsById: remainder.matchedFieldsById || {} }
+      ? {
+        ids: [...remainder.ids],
+        matchedFieldsById: remainder.matchedFieldsById || {},
+        limitedFields: Boolean(remainder.limitedFields),
+      }
       : null;
     setSearchRemainderCount(searchRemainderRef.current?.ids.length || 0);
   };
@@ -4823,10 +4845,15 @@ const Matching = () => {
   const loadNextSearchPortion = async () => {
     const remainder = searchRemainderRef.current;
     if (!remainder || !remainder.ids.length || searchPortionLoadingRef.current) return;
+    // Без мережі читання бази не падає, а висить: хвіст чекає звʼязку (ефект
+    // на `deviceOnline` дочитає його сам).
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     searchPortionLoadingRef.current = true;
     const ids = remainder.ids.slice(0, MATCHING_FEED_PAGE_SIZE);
     try {
-      const portionMap = await readLazySearchPortion(ids, remainder.matchedFieldsById);
+      const portionMap = await readLazySearchPortion(ids, remainder.matchedFieldsById, {
+        limitedFields: remainder.limitedFields,
+      });
       const allowed = isAdmin ? portionMap : await filterFeedDeniedSearchResult(portionMap);
       // Тим часом почали новий пошук — порція старого не лягає.
       if (searchRemainderRef.current !== remainder) return;
@@ -4955,10 +4982,12 @@ const Matching = () => {
     const res = await searchUsersOnly(params, {
       ...options,
       keepHidden: isAdmin,
-      // Видача читає порцію: опубліковані першими, решта — з прокруткою.
-      lazyPageSize: isLimited ? 0 : MATCHING_FEED_PAGE_SIZE,
+      // Видача читає порцію: опубліковані першими, решта — з прокруткою. І
+      // для читача без повного доступу теж: донорка на «Ольгу» читала всі 487
+      // знайдених (заміряно наживо).
+      lazyPageSize: MATCHING_FEED_PAGE_SIZE,
     });
-    const remainder = isLimited ? null : takeLazySearchRemainder(params);
+    const remainder = takeLazySearchRemainder(params);
     rememberSearchRemainder(remainder);
     if (res && Object.keys(res).length > 0) {
       const arr = Array.isArray(res)
@@ -6080,6 +6109,12 @@ const Matching = () => {
   // видачею так і стояло «шукали лише серед збереженого», доки людина не
   // перенабере запит. `SearchBar` виконує набране на монтуванні, тож повтор —
   // це новий ключ.
+  // Хвіст видачі, який не дочитали без мережі, дочитується з поверненням
+  // звʼязку, якщо вікно показу вже за межею прочитаного.
+  useEffect(() => {
+    if (!deviceOnline || viewMode !== 'search' || !searchRemainderRef.current?.ids?.length) return;
+    if (searchRevealCount > searchRevealTargetRef.current) void loadNextSearchPortionRef.current();
+  }, [deviceOnline, searchRevealCount, viewMode]);
   const [searchRerunEpoch, setSearchRerunEpoch] = useState(0);
   const offlineSearchShownRef = useRef(false);
   offlineSearchShownRef.current = isSearching && searchOfflineNote;
@@ -6936,6 +6971,12 @@ const Matching = () => {
     // анкетою), потребує повного набору попри свій `__photosHydrated`.
     const needsPhotos = user => {
       if (!user?.userId || photoCacheByUserId[user.userId]) return false;
+      // Урізана картка видачі (`__limitedProfile`) — неопублікована анкета,
+      // знайдена читачем без службового доступу: `profileDetails` йому правила
+      // однаково не відкривають, і кожна така картка коштувала відмову
+      // (заміряно наживо: донорка, 14 відмов на порцію видачі). Аватар, якщо
+      // він є, картка несе сама.
+      if (user.__limitedProfile) return false;
       if (!user.__photosHydrated) return true;
       return isMatchingSummaryCard(user) && Boolean(getStoredFullProfile(user.userId));
     };
@@ -8696,7 +8737,7 @@ const Matching = () => {
   const [cardChangesReady, setCardChangesReady] = useState(false);
   useEffect(() => {
     if (ownerId) switchCardStoreViewer(ownerId);
-    if (isAdmin) { setCardChangesReady(true); return undefined; }
+    if (isAdmin) { setCardChangesReady(true); cardChangesDoneRef.current.resolve(); return undefined; }
     if (!ownerId) return undefined;
     let cancelled = false;
     setCardChangesReady(false);
@@ -8723,6 +8764,7 @@ const Matching = () => {
     });
     cardChangesSyncRef.current = sync;
     sync.finally(() => {
+      cardChangesDoneRef.current.resolve();
       clearTimeout(fallback);
       if (!cancelled) setCardChangesReady(true);
     });

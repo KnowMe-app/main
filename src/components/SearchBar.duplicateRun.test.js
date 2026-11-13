@@ -68,6 +68,27 @@ describe('той самий запит не шукається двічі', () =
     });
     expect(props.setUsers).toHaveBeenCalledWith(expect.objectContaining({ a1: expect.anything(), b2: expect.anything() }));
 
+    // Перший пошук уже закінчився, коли таймер debounce спрацював би: повтору
+    // все одно немає (так донорка платила за видачу двічі).
+    searchFunc.mockClear();
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      root.render(React.createElement(SearchBar, { ...props, search: 'Ольга К' }));
+    });
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await flush();
+      resolveSearch({});
+      await flush();
+    });
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      await wait(40);
+      await flush();
+    });
+    expect(searchFunc).toHaveBeenCalledTimes(1);
+
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => root.unmount());
     document.body.removeChild(container);
