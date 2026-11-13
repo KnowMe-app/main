@@ -1,4 +1,5 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import React from 'react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { useFreshFeedStateGate } from './useFreshFeedStateGate';
 import { createFeedStateReader } from '../utils/searchFeedDenial';
@@ -56,5 +57,53 @@ describe('useFreshFeedStateGate', () => {
     rerender({ ready: true });
     await waitFor(() => expect(result.current.pendingCount).toBe(0));
     expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  // Без мережі перевірка чекає на сесію, журнал і тайм-аут читання, і стрічка
+  // стояла скелетоном, хоча дека лежала на пристрої (13.11, телефон).
+  it('стеля очікування показує картки, а пізній стан схованої її ховає', async () => {
+    jest.useFakeTimers();
+    try {
+      let answer;
+      const reader = createFeedStateReader(() => new Promise(resolve => { answer = resolve; }));
+      const { result } = renderHook(() => useFreshFeedStateGate([{ userId: 'deleted' }], { reader, maxWaitMs: 3000 }));
+      expect(result.current.rows).toEqual([]);
+      act(() => { jest.advanceTimersByTime(3000); });
+      expect(result.current.rows.map(row => row.userId)).toEqual(['deleted']);
+      await act(async () => { answer({ feedDate: false }); });
+      expect(result.current.rows).toEqual([]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('картку, показану стелею до журналу, читає, щойно журнал готовий', async () => {
+    jest.useFakeTimers();
+    try {
+      const read = jest.fn(async id => ({ feedDate: id === 'deleted' ? false : '2026-10-01' }));
+      const reader = createFeedStateReader(read);
+      const { result, rerender } = renderHook(({ ready }) => useFreshFeedStateGate(rows, { reader, ready, maxWaitMs: 3000 }), {
+        initialProps: { ready: false },
+      });
+      act(() => { jest.advanceTimersByTime(3000); });
+      expect(result.current.rows.map(row => row.userId)).toEqual(['alive', 'deleted']);
+      expect(read).not.toHaveBeenCalled();
+      rerender({ ready: true });
+      expect(read).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(result.current.rows.map(row => row.userId)).toEqual(['alive']));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  // Прибирання ефекту колись ставило «розмонтовано», і повторне монтування
+  // (подвійне в режимі розробки) відкидало відповідь назавжди.
+  it('у StrictMode відповідь не губиться', async () => {
+    const reader = createFeedStateReader(async () => ({ feedDate: '2026-10-01' }));
+    const { result } = renderHook(() => useFreshFeedStateGate(rows, { reader, maxWaitMs: 0 }), {
+      wrapper: ({ children }) => <React.StrictMode>{children}</React.StrictMode>,
+    });
+    await waitFor(() => expect(result.current.pendingCount).toBe(0));
+    expect(result.current.rows.map(row => row.userId)).toEqual(['alive', 'deleted']);
   });
 });

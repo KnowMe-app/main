@@ -48,10 +48,11 @@ const isRemovedValue = value => value === undefined || value === null || value =
 
 const normalizeMap = value => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
 
-export const readFreshReactionSnapshot = (viewerId, ownerId, kind, { now = Date.now() } = {}) => {
+export const readFreshReactionSnapshot = (viewerId, ownerId, kind, { now = Date.now(), ttlMs } = {}) => {
   if (!viewerId || !ownerId || !KINDS.has(kind)) return null;
   const entry = readStore(viewerId)?.[ownerId]?.[kind];
-  if (!entry || !isMatchingCacheFresh(entry.cachedAt, { now })) return null;
+  // `ttlMs` довший за типовий — лише для показу на старті (знімок деки).
+  if (!entry || !isMatchingCacheFresh(entry.cachedAt, ttlMs ? { now, ttlMs } : { now })) return null;
   return { ...normalizeMap(entry.value) };
 };
 
