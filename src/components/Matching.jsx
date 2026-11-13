@@ -9209,6 +9209,10 @@ const Matching = () => {
                       onCommentSave={handleRowCommentSave}
                       reviewsSlot={buildRowReviewsSlot(user.userId)}
                       reviewsAction={buildRowReviewsAction(user.userId)}
+                      // «Не цікаво» в «Усіх» картку не прибирає до наступної
+                      // деки — тож вона сіріє, щоб дотик було видно. У
+                      // колекції «Не цікаві» сірим було б усе.
+                      dismissed={viewMode !== 'dislikes' && reactionCoversAnketa(dislikeUsers[user.userId], anketaRole)}
                       {...buildRowReactionActions(user, anketaRole)}
                     />
                   ))))}
