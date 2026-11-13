@@ -1198,6 +1198,16 @@ const formatCachedSearchResult = cachedResult => {
   return { ...cachedResult.map };
 };
 
+// Ключ запиту, що летить: параметри й опції пошуку. Функцій і циклів в опціях
+// немає, але якщо колись зʼявляться — такий запит просто не ділиться.
+const buildSearchInFlightKey = (params, options, offline) => {
+  try {
+    return JSON.stringify([params, options, Boolean(offline)]);
+  } catch {
+    return null;
+  }
+};
+
 const SearchBar = ({
   searchFunc,
   setUsers,
@@ -1811,6 +1821,7 @@ const SearchBar = ({
     return { found: foundCombinedResults, results: resultMap };
   };
 
+  const searchInFlightRef = useRef(new Map());
   const cachedSearch = async (params, extraOptions = {}) => {
     const [key, value] = Object.entries(params)[0] || [];
     // A limited search returns a projection of a record, not the record. It stays
@@ -1858,11 +1869,29 @@ const SearchBar = ({
     // звʼязку той самий запит шість годин не доходив би до бази, а наявна
     // анкета лишалась би ненайденою.
     const offlineSearch = typeof navigator !== 'undefined' && navigator.onLine === false;
-    const res = await searchFunc(params, {
+    const searchFuncOptions = {
       ...(searchOptions || {}),
       forceEqualToAllCards: false,
       ...extraOptions,
-    });
+    };
+    // Той самий запит, що вже летить до бази, не відкриваємо вдруге, а чекаємо.
+    // Enter і таймер debounce (а за ними ще й blur) кличуть пошук з тим самим
+    // текстом майже одночасно, і другий — як новіший — робив усю роботу
+    // заново: пошук «Ольга» читав кожну з кількох сотень карток двічі
+    // (1026 читань і 30 с замість половини, заміряно наживо 13.11).
+    const inFlightKey = buildSearchInFlightKey(params, searchFuncOptions, offlineSearch);
+    let pendingSearch = inFlightKey ? searchInFlightRef.current.get(inFlightKey) : null;
+    if (!pendingSearch) {
+      pendingSearch = Promise.resolve().then(() => searchFunc(params, searchFuncOptions));
+      if (inFlightKey) {
+        searchInFlightRef.current.set(inFlightKey, pendingSearch);
+        const forget = () => {
+          if (searchInFlightRef.current.get(inFlightKey) === pendingSearch) searchInFlightRef.current.delete(inFlightKey);
+        };
+        pendingSearch.then(forget, forget);
+      }
+    }
+    const res = await pendingSearch;
     if (perfDebugEnabledRef.current) console.timeEnd(perfLabel);
     if (!res) {
       return res;
@@ -2464,6 +2493,10 @@ const SearchBar = ({
   };
 
   const writeData = async (query = search, options = {}) => {
+    // Enter (чи вибір з історії) — уже пошук цього тексту: таймер debounce,
+    // що ще чекає на нього, мусить знати, інакше за мить запустить той самий
+    // запит удруге.
+    if (options.committed && typeof query === 'string') lastDebouncedQueryRef.current = query;
     const requestId = options.requestId ?? ++activeSearchRequestRef.current;
     try {
       return await executeWriteData(query, { ...options, requestId });
