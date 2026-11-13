@@ -480,6 +480,7 @@ const EN_BY_UK = {
   'Прихована': 'Hidden',
   'Додайте виплату': 'Add a payment',
   'Зберігаємо…': 'Saving…',
+  'Немає звʼязку — збережемо, щойно він зʼявиться': 'No connection — will save as soon as it is back',
   'Збережено': 'Saved',
   'Поки лише в цьому браузері': 'Only in this browser for now',
   'Кожна програма — окрема пропозиція: кого шукаєте, де і скільки платите. Решта — за бажанням; порожні розділи читачі не побачать.': 'Each program is a separate offer: who you are looking for, where, and how much you pay. Everything else is optional; empty sections are never shown.',
