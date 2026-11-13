@@ -184,6 +184,7 @@ import {
 import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
 import { forgetProfileContactsForViewer, readAllCachedProfileContacts } from '../utils/matchingContactsCache';
 import { searchCardsOnDevice } from '../utils/offlineCardSearch';
+import { resolveOnlineRecovery } from '../utils/feedOnlineRecovery';
 import { ensureOwnerMarksChecked } from '../utils/ownerMarkVersions';
 import { getWriteOutboxPendingCount, isRetryableOutboxError, subscribeWriteOutbox, WRITE_OUTBOX_REJECTED_EVENT } from '../utils/writeOutbox';
 import { restorePublicComment } from '../utils/publicReviewRollback';
@@ -1710,6 +1711,10 @@ const Matching = () => {
     timestamp: '',
   });
   const emptyAutoLoadMoreAttemptsRef = useRef(0);
+  // Остання сторінка хвоста відмовила (без мережі). Окремо від кнопки «Показати
+  // ще»: відмова її не вмикає, і подія `online` інакше не знала б, що
+  // дочитувати, — стрічка стояла б, хоч плашка обіцяла дочитати сама.
+  const tailLoadFailedRef = useRef(false);
   const lastCardLoadTriggerSignatureRef = useRef('');
   const lastCardInFlightTriggerSignatureRef = useRef('');
   const matchingProfileStateRef = useRef({
@@ -6965,6 +6970,7 @@ const Matching = () => {
       // Позначка вмикає кнопку «Показати ще» — інакше на короткій стрічці, яку
       // нема куди прокрутити, продовжити не було б чим.
       setLastLoadAddedNothing(visibleAdded === 0);
+      tailLoadFailedRef.current = false;
       countAutoLoadMoreAttempt(visibleAdded);
       const stats = typeof window !== 'undefined' ? window.matchingLoadStats : null;
       if (stats && typeof console.table === 'function') console.table([stats]);
@@ -6975,6 +6981,7 @@ const Matching = () => {
       // ніколи: одна помилка бази перетворювала довантаження на нескінченний
       // цикл запитів. Причину показує вже той, хто вантажив.
       console.warn('[Matching][autoLoadMore] load failed', error);
+      tailLoadFailedRef.current = true;
       countAutoLoadMoreAttempt(0);
     });
   }, [loadMore]);
@@ -7910,12 +7917,24 @@ const Matching = () => {
    * скелетон), і людина мусила здогадатись натиснути «Спробувати ще раз».
    */
   const offlineRecoveryRef = useRef({});
-  offlineRecoveryRef.current = { loadError, hasRows: renderedCardsLength > 0, showFeedRetry, reloadDefault, handleFeedRetry };
+  offlineRecoveryRef.current = { loadError, hasRows: renderedCardsLength > 0, showFeedRetry, deckHasMore, reloadDefault, handleFeedRetry };
   useEffect(() => {
     const handleOnline = () => {
       const state = offlineRecoveryRef.current;
-      if (state.loadError && !state.hasRows) state.reloadDefault();
-      else if (state.showFeedRetry) state.handleFeedRetry();
+      const action = resolveOnlineRecovery({
+        mode: viewModeRef.current,
+        loadError: state.loadError,
+        hasRows: state.hasRows,
+        deckHasMore: state.deckHasMore,
+        showFeedRetry: state.showFeedRetry,
+        tailFailed: tailLoadFailedRef.current,
+      });
+      if (action === 'reload-default') state.reloadDefault();
+      if (action === 'retry-tail') {
+        // `handleFeedRetry` скидає й ліміт порожніх спроб, вичерпаний без звʼязку.
+        tailLoadFailedRef.current = false;
+        state.handleFeedRetry();
+      }
     };
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
