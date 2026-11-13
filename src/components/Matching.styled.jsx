@@ -857,9 +857,13 @@ export const Id = styled.div`
   padding-right: 4px;
 `;
 
+// Колір — явно: успадкований був білим на світлому тлі стрічки, і
+// «Перевіряємо сесію…» на телефоні майже не читався (13.11).
 export const OwnerStatusMessage = styled.p`
   text-align: center;
   padding: 0 10px;
+  color: var(--matching-muted-text, var(--km-muted, #6b6259));
+  font-size: 14px;
 `;
 
 export const ContactIconRow = styled.div`
