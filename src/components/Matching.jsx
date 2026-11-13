@@ -4781,6 +4781,7 @@ const Matching = () => {
       const { cards } = composeCachedCards(listCachedCardIds(), { ttlMs: MOUNT_SNAPSHOT_MAX_AGE_MS });
       const found = searchCardsOnDevice(Object.values(cards), params, {
         contactsById: readAllCachedProfileContacts(getOwnerId()),
+        detectedField: options?.searchIdDetectedField,
       }).filter(card => isMatchingCardId(card.userId));
       setSearchOfflineNote(true);
       const [key] = Object.keys(params || {});

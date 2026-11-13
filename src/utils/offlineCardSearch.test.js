@@ -28,4 +28,12 @@ describe('пошук без звʼязку серед збереженого', (
     expect(searchCardsOnDevice(cards, { name: '' })).toEqual([]);
     expect(searchCardsOnDevice(cards, { name: 'о' })).toEqual([]);
   });
+
+  // Числовий ID Facebook (`searchIdDetectedField: 'facebook'`) — не номер.
+  it('числовий ID соцмережі шукається серед посилань, а не номерів', () => {
+    const contactsById = { b: { facebook: 'https://www.facebook.com/profile.php?id=100012345678901' } };
+    expect(searchCardsOnDevice(cards, { searchId: '100012345678901' }, { contactsById, detectedField: 'facebook' }).map(c => c.userId)).toEqual(['b']);
+    // І без розпізнаного поля число, схоже на номер, знаходить посилання теж.
+    expect(searchCardsOnDevice(cards, { searchId: '100012345678901' }, { contactsById }).map(c => c.userId)).toEqual(['b']);
+  });
 });

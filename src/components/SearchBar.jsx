@@ -1848,6 +1848,12 @@ const SearchBar = ({
 
     const perfLabel = `[SearchPerf][searchFunc] ${JSON.stringify(params)}`;
     if (perfDebugEnabledRef.current) console.time(perfLabel);
+    // Без мережі стрічка шукає лише серед збереженого на пристрої
+    // (`utils/offlineCardSearch`), і її відповідь неповна: ні «нічого немає»,
+    // ні знайдене не можна класти в кеш запитів — інакше після повернення
+    // звʼязку той самий запит шість годин не доходив би до бази, а наявна
+    // анкета лишалась би ненайденою.
+    const offlineSearch = typeof navigator !== 'undefined' && navigator.onLine === false;
     const res = await searchFunc(params, {
       ...(searchOptions || {}),
       forceEqualToAllCards: false,
@@ -1857,6 +1863,7 @@ const SearchBar = ({
     if (!res) {
       return res;
     }
+    if (offlineSearch) return res;
 
     if (Object.keys(res).length === 0) {
       if (key && value && !skipCache) {
