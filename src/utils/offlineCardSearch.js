@@ -47,25 +47,33 @@ export const readOfflineSearchQuery = params => {
  * @param {{ contactsById?: Record<string, object> }} [options]
  * @returns {object[]} знайдені картки, у порядку, в якому їх дали
  */
-export const searchCardsOnDevice = (cards, params, { contactsById = {} } = {}) => {
+export const searchCardsOnDevice = (cards, params, { contactsById = {}, detectedField = '' } = {}) => {
   const query = readOfflineSearchQuery(params);
   if (!query) return [];
   const queryDigits = digitsOf(query.text);
-  const isPhoneQuery = PHONE_KEYS.has(query.key) || (queryDigits.length >= 6 && queryDigits.length >= query.text.replace(/[\s()+-]/g, '').length);
+  // Поле, яке розпізнав `SearchBar` (`searchIdDetectedField`), важить більше за
+  // вигляд набраного: числовий Facebook ID — не номер телефону.
+  const field = String(detectedField || '');
+  const looksNumeric = queryDigits.length >= 6 && queryDigits.length >= query.text.replace(/[\s()+-]/g, '').length;
+  const isPhoneQuery = PHONE_KEYS.has(query.key) || PHONE_KEYS.has(field) || (!field && looksNumeric);
   const needle = normalizeText(query.text);
   if (!isPhoneQuery && needle.length < 2) return [];
 
   return (Array.isArray(cards) ? cards : []).filter(card => {
     if (!card?.userId) return false;
     const contacts = contactsById[card.userId] || {};
-    if (isPhoneQuery) {
-      const phones = [...toValues(card.phone), ...toValues(contacts.phone)];
-      return phones.some(phone => phoneMatches(queryDigits, phone));
-    }
     const texts = [
       ...TEXT_FIELDS.flatMap(field => toValues(card[field])),
       ...CONTACT_TEXT_FIELDS.flatMap(field => toValues(contacts[field])),
     ];
+    if (isPhoneQuery) {
+      const phones = [...toValues(card.phone), ...toValues(contacts.phone)];
+      if (phones.some(phone => phoneMatches(queryDigits, phone))) return true;
+      // Число, яке лише схоже на номер, — це й числовий ID у посиланні
+      // (`profile.php?id=…`), тож ніки й посилання теж питаються.
+      return !PHONE_KEYS.has(query.key) && !PHONE_KEYS.has(field)
+        && texts.some(text => digitsOf(text).includes(queryDigits));
+    }
     return texts.some(text => normalizeText(text).includes(needle));
   });
 };
