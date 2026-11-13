@@ -112,4 +112,16 @@ export const forgetProfileContactsForViewer = (viewerId, cardIds) => {
   if (changed) writeStore(viewerId, store);
 };
 
+/**
+ * Усі відкриті контакти, які пристрій бачив, без огляду на вік, — для пошуку
+ * без звʼязку: шукають номер серед того, що читач уже мав на екрані.
+ */
+export const readAllCachedProfileContacts = viewerId => {
+  const result = {};
+  Object.entries(readStore(viewerId)).forEach(([cardId, entry]) => {
+    if (entry?.allowed === true && entry.contacts && typeof entry.contacts === 'object') result[cardId] = entry.contacts;
+  });
+  return result;
+};
+
 export const clearContactsCache = () => removeCacheEntriesByPrefix(STORAGE_KEY_PREFIX);
