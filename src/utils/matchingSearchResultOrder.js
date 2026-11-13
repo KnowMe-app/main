@@ -56,15 +56,25 @@ export const isSearchResultInFeed = user => Boolean(readSearchResultFeedDate(use
  * якому картки приїхали, а опубліковані ще й ідуть від найновішої дати — так
  * само, як їх сортує сама стрічка.
  */
-export const orderMatchingSearchResults = (users = []) => {
-  const kept = (Array.isArray(users) ? users : [])
-    .filter(user => user && !isFeedDateExplicitlyDenied(user));
+export const orderMatchingSearchResults = (users = [], { keepHidden = false } = {}) => {
+  const list = (Array.isArray(users) ? users : []).filter(Boolean);
 
   const inFeed = [];
   const outsideFeed = [];
-  kept.forEach(user => (isSearchResultInFeed(user) ? inFeed : outsideFeed).push(user));
+  const hidden = [];
+  list.forEach(user => {
+    if (isFeedDateExplicitlyDenied(user)) {
+      // Адмін бачить сховане й у стрічці (`__adminLastLogin`), тож і пошук
+      // йому сховану анкету не замовчує — лише ставить її останньою. Без
+      // цього адмін на /matching діставав «Немає доступних профілів» і
+      // заготовку «Створити» на номер анкети, яка лежить у базі.
+      if (keepHidden) hidden.push(user);
+      return;
+    }
+    (isSearchResultInFeed(user) ? inFeed : outsideFeed).push(user);
+  });
 
   inFeed.sort((a, b) => readSearchResultFeedDate(b).localeCompare(readSearchResultFeedDate(a)));
 
-  return [...inFeed, ...outsideFeed];
+  return [...inFeed, ...outsideFeed, ...hidden];
 };

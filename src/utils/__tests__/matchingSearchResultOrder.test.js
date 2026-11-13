@@ -45,6 +45,17 @@ describe('orderMatchingSearchResults', () => {
     expect(ordered.map(user => user.userId)).toEqual(['shown-1', 'draft-1']);
   });
 
+  it('адмінові лишає сховані — останніми, після неопублікованих', () => {
+    const ordered = orderMatchingSearchResults([
+      hidden('hidden-1'),
+      inFeed('shown-1', '2026-08-19'),
+      hiddenAsProfile('hidden-2'),
+      outsideFeed('draft-1'),
+    ], { keepHidden: true });
+
+    expect(ordered.map(user => user.userId)).toEqual(['shown-1', 'draft-1', 'hidden-1', 'hidden-2']);
+  });
+
   it('зберігає порядок надходження всередині кожної групи', () => {
     const ordered = orderMatchingSearchResults([
       outsideFeed('draft-1'),

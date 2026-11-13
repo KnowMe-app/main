@@ -3976,9 +3976,13 @@ const readFreshFeedDenial = async userId => isFeedStateDeniedForSearch(await mat
 
 export const filterFeedDeniedSearchResult = result => filterFeedDeniedResult(result, { readDenied: readFreshFeedDenial });
 
-export const searchUsersOnly = async (searchedValue, options = {}) => (
-  filterFeedDeniedSearchResult(await searchUsersOnlyUnfiltered(searchedValue, options))
-);
+// `keepHidden` — пошук адміна на /matching: стрічка адміна навмисно показує
+// сховані анкети, і пошук йому їх не замовчує (`orderMatchingSearchResults`
+// ставить їх останніми). Решті читачів сховане не показується ніде.
+export const searchUsersOnly = async (searchedValue, options = {}) => {
+  const result = await searchUsersOnlyUnfiltered(searchedValue, options);
+  return options?.keepHidden ? result : filterFeedDeniedSearchResult(result);
+};
 
 const searchUsersOnlyUnfiltered = async (searchedValue, options = {}) => {
   // `cardsOnly` — опція сторінки matching, а не нова поведінка пошуку.
