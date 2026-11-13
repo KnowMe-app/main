@@ -3894,9 +3894,16 @@ export const readServerNow = () => new Promise(resolve => {
  * Без мережі й на повільній мережі відмовляє одразу (`getFeedCheck`), а
  * відмова означає «нічого не забувати»: лишається TTL.
  */
-export const readOwnerMarkVersions = async ownerId => {
-  const snapshot = await getFeedCheck(ref2(database, `multiData/ownerMarksAt/${ownerId}`));
-  return snapshot.exists() ? snapshot.val() : null;
+export const readOwnerMarkVersions = async (ownerId, viewerId) => {
+  // Версія «лише для вподобаних» лежить окремо (`functions/ownerMarks.js`):
+  // її читає сама читачка, а не спільні власники.
+  const [shared, likedAudience] = await Promise.all([
+    getFeedCheck(ref2(database, `multiData/ownerMarksAt/${ownerId}`)),
+    ownerId === viewerId ? getFeedCheck(ref2(database, `multiData/likedAudienceAt/${ownerId}`)) : null,
+  ]);
+  const versions = shared.exists() && typeof shared.val() === 'object' ? { ...shared.val() } : {};
+  if (likedAudience?.exists()) versions.likedAudience = likedAudience.val();
+  return versions;
 };
 
 configureOwnerMarkVersions({ read: readOwnerMarkVersions });

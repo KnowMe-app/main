@@ -85,7 +85,7 @@ const runCheck = async (viewerId, ownerId, timeoutMs) => {
   if (!readVersions) return [];
   let remote;
   try {
-    remote = await withTimeout(Promise.resolve().then(() => readVersions(ownerId)), timeoutMs);
+    remote = await withTimeout(Promise.resolve().then(() => readVersions(ownerId, viewerId)), timeoutMs);
   } catch {
     return [];
   }

@@ -1621,6 +1621,15 @@ await it('версію позначок власника читає власни
   await assertFails(set(ref(db(SUPERADMIN), `multiData/ownerMarksAt/${PROFILE_OWNER}/comments`), Date.now()));
 });
 
+// Версія переліку «лише для вподобаних» — окремо й лише для самої читачки:
+// спільний власник не мусить дізнаватись, коли когось із його кола вподобали.
+await it('версію «лише для вподобаних» читає лише сама читачка й адмін', async () => {
+  await assertSucceeds(get(ref(db(PROFILE_OWNER), `multiData/likedAudienceAt/${PROFILE_OWNER}`)));
+  await assertSucceeds(get(ref(db(SUPERADMIN), `multiData/likedAudienceAt/${PROFILE_OWNER}`)));
+  await assertFails(get(ref(db(OUTSIDER), `multiData/likedAudienceAt/${PROFILE_OWNER}`)));
+  await assertFails(set(ref(db(PROFILE_OWNER), `multiData/likedAudienceAt/${PROFILE_OWNER}`), Date.now()));
+});
+
 // Перший відгук під карткою пишеться одним `update` разом із прапорцем
 // `reviewsAt` — мітка зміни відгуків, яку ставить тригер функцій; поле
 // картки, тож правило `$other: false` мусить його знати, інакше перебудова

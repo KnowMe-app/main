@@ -34,3 +34,9 @@ test('невідомий вид не пишеться', async () => {
   assert.deepEqual(db.data, {});
   assert.ok(OWNER_MARK_KINDS.includes('likedAudience'));
 });
+
+test('версія «лише для вподобаних» — в окремому вузлі', async () => {
+  const db = memoryVersion();
+  await stampOwnerMarkChange('viewer', 'likedAudience', { ...db, now: () => 5 });
+  assert.deepEqual(db.data, { 'multiData/likedAudienceAt/viewer': 5 });
+});
