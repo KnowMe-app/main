@@ -1,12 +1,12 @@
 {
   "files": {
     "main.css": "/static/css/main.92c0723a.css",
-    "main.js": "/static/js/main.1b4ada7a.js",
+    "main.js": "/static/js/main.0bd5ec87.js",
     "static/js/6153.44375a61.chunk.js": "/static/js/6153.44375a61.chunk.js",
     "static/js/5734.ab729d2b.chunk.js": "/static/js/5734.ab729d2b.chunk.js",
     "static/js/8751.f9f4bfba.chunk.js": "/static/js/8751.f9f4bfba.chunk.js",
     "static/js/8988.cdaf1dab.chunk.js": "/static/js/8988.cdaf1dab.chunk.js",
-    "static/js/3842.5bf6258b.chunk.js": "/static/js/3842.5bf6258b.chunk.js",
+    "static/js/3842.82911270.chunk.js": "/static/js/3842.82911270.chunk.js",
     "static/js/6058.9a847229.chunk.js": "/static/js/6058.9a847229.chunk.js",
     "static/js/3233.c6ba0726.chunk.js": "/static/js/3233.c6ba0726.chunk.js",
     "static/js/4142.21cb0507.chunk.js": "/static/js/4142.21cb0507.chunk.js",
@@ -62,12 +62,12 @@
     "index.html": "/index.html",
     "static/media/clipboard.svg": "/static/media/clipboard.f0e746ddd6f621177e34fed32194e532.svg",
     "main.92c0723a.css.map": "/static/css/main.92c0723a.css.map",
-    "main.1b4ada7a.js.map": "/static/js/main.1b4ada7a.js.map",
+    "main.0bd5ec87.js.map": "/static/js/main.0bd5ec87.js.map",
     "6153.44375a61.chunk.js.map": "/static/js/6153.44375a61.chunk.js.map",
     "5734.ab729d2b.chunk.js.map": "/static/js/5734.ab729d2b.chunk.js.map",
     "8751.f9f4bfba.chunk.js.map": "/static/js/8751.f9f4bfba.chunk.js.map",
     "8988.cdaf1dab.chunk.js.map": "/static/js/8988.cdaf1dab.chunk.js.map",
-    "3842.5bf6258b.chunk.js.map": "/static/js/3842.5bf6258b.chunk.js.map",
+    "3842.82911270.chunk.js.map": "/static/js/3842.82911270.chunk.js.map",
     "6058.9a847229.chunk.js.map": "/static/js/6058.9a847229.chunk.js.map",
     "3233.c6ba0726.chunk.js.map": "/static/js/3233.c6ba0726.chunk.js.map",
     "4142.21cb0507.chunk.js.map": "/static/js/4142.21cb0507.chunk.js.map",
@@ -121,6 +121,6 @@
   },
   "entrypoints": [
     "static/css/main.92c0723a.css",
-    "static/js/main.1b4ada7a.js"
+    "static/js/main.0bd5ec87.js"
   ]
 }
