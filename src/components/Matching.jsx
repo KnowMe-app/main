@@ -56,7 +56,9 @@ import {
   addMatchingSearchQuery,
   filterMain,
   filterFeedDeniedSearchResult,
+  readLazySearchPortion,
   searchUsersOnly,
+  takeLazySearchRemainder,
   fetchUserComments,
   saveMyCardComment,
   addPublicProfileComment,
@@ -183,6 +185,7 @@ import {
 } from '../utils/cardStore';
 import { revokeFeedStateTrust, syncCardChanges } from '../utils/matchingCardChanges';
 import { forgetProfileContactsForViewer, readAllCachedProfileContacts } from '../utils/matchingContactsCache';
+import { forgetPublishedFeedIndex, readPublishedFeedIndex } from '../utils/publishedFeedIndex';
 import { searchCardsOnDevice } from '../utils/offlineCardSearch';
 import { resolveOnlineRecovery } from '../utils/feedOnlineRecovery';
 import { ensureOwnerMarksChecked } from '../utils/ownerMarkVersions';
@@ -1664,6 +1667,12 @@ const Matching = () => {
   // означало б перезапускати сам відлік.
   const searchRevealTargetRef = useRef(0);
   const [searchHasMore, setSearchHasMore] = useState(false);
+  // Недочитаний хвіст видачі (`takeLazySearchRemainder`): id, які пошук знайшов,
+  // але ще не читав. Дочитується порцією, коли вікно показу дійшло до кінця
+  // прочитаного (`loadNextSearchPortion`). Лічильник — щоб «є ще» перерахувалось.
+  const searchRemainderRef = useRef(null);
+  const [searchRemainderCount, setSearchRemainderCount] = useState(0);
+  const searchPortionLoadingRef = useRef(false);
 
   // Видача гортається так само, як стрічка: `hasMore` для неї хибний навмисно
   // (сторінок у мережі більше немає — усе знайдене вже в руках), тож право
@@ -3064,6 +3073,20 @@ const Matching = () => {
    * немає (або вона старої версії) — тобто рівно доти, доки адмін не запустить
    * побудову карток.
    */
+  // Перелік опублікованих (`utils/publishedFeedIndex`) — так само після
+  // журналу змін: журнал забуває перелік, коли якусь картку змінено (зокрема
+  // опубліковано), і прочитаний до нього перелік ховав би щойно опубліковану
+  // агенцію до кінця TTL.
+  const readPublishedIndexAfterJournal = React.useCallback(async () => {
+    if (cardChangesSyncRef.current) {
+      await Promise.race([
+        cardChangesSyncRef.current.catch(() => null),
+        new Promise(resolve => setTimeout(resolve, CARD_CHANGES_WAIT_MS)),
+      ]);
+    }
+    return readPublishedFeedIndex();
+  }, []);
+
   const hydrateMatchingFeedCards = React.useCallback(async ids => {
     const uniqueIds = [...new Set((ids || []).filter(Boolean))];
     if (!uniqueIds.length) return {};
@@ -3516,6 +3539,7 @@ const Matching = () => {
             'profile-hydration',
           ),
           useIndexIdCache: !isBackendOnlyMode,
+          readPublishedIndex: readPublishedIndexAfterJournal,
         }), 'search-index');
         recordInitialLoadDiagnostic({ stage: 'search-index', status: 'completed', count: indexed?.users?.length || 0 });
         if (!canApplyInitialLoadWithFilters()) { console.log('[Matching][indexedProvider] staleIndexedResultIgnored', { requestFiltersSignature, currentFiltersSignature: stableAdditionalSignature(filtersRef.current || {}) }); return; }
@@ -3832,7 +3856,7 @@ const Matching = () => {
         setLoading(false);
       }
     }
-  }, [announcePublicFeedUnavailable, beginInitialRequest, buildFeedCacheSignature, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, programRates, recordInitialLoadDiagnostic, rememberFeedPagination, rememberFeedSummaryCards, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [announcePublicFeedUnavailable, beginInitialRequest, buildFeedCacheSignature, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, programRates, readPublishedIndexAfterJournal, recordInitialLoadDiagnostic, rememberFeedPagination, rememberFeedSummaryCards, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     setLoadError(null);
@@ -4755,6 +4779,8 @@ const Matching = () => {
   }, [reloadDefault, searchQuery]);
 
   const handleSearchCleared = React.useCallback(() => {
+    searchRemainderRef.current = null;
+    setSearchRemainderCount(0);
     setMatchingSearchStatus('');
     matchingSearchKeyRef.current = null;
     setSearchQuery('');
@@ -4785,12 +4811,60 @@ const Matching = () => {
   // тією датою, яку бачив. Свіжу перевірку проходить кожна видача — і з
   // кеша, і з бекенду (`filterFeedDeniedSearchResult`, памʼять таба хвилина).
   // Адмінові сховане не замовчується (див. `orderMatchingSearchResults`).
+  const rememberSearchRemainder = remainder => {
+    searchRemainderRef.current = remainder && remainder.ids?.length
+      ? { ids: [...remainder.ids], matchedFieldsById: remainder.matchedFieldsById || {} }
+      : null;
+    setSearchRemainderCount(searchRemainderRef.current?.ids.length || 0);
+  };
+
+  // Наступна порція хвоста видачі: той самий шлях, що й перша (проєкції з
+  // кешу чи бази, перевірка схованого для не-адміна), і стає в кінець видачі.
+  const loadNextSearchPortion = async () => {
+    const remainder = searchRemainderRef.current;
+    if (!remainder || !remainder.ids.length || searchPortionLoadingRef.current) return;
+    searchPortionLoadingRef.current = true;
+    const ids = remainder.ids.slice(0, MATCHING_FEED_PAGE_SIZE);
+    try {
+      const portionMap = await readLazySearchPortion(ids, remainder.matchedFieldsById);
+      const allowed = isAdmin ? portionMap : await filterFeedDeniedSearchResult(portionMap);
+      // Тим часом почали новий пошук — порція старого не лягає.
+      if (searchRemainderRef.current !== remainder) return;
+      remainder.ids = remainder.ids.slice(ids.length);
+      setSearchRemainderCount(remainder.ids.length);
+      const list = allowed?.userId ? [allowed] : Object.values(allowed || {});
+      const portion = orderMatchingSearchResults(
+        list
+          .filter(user => isMatchingCardId(user?.userId) && !loadedIdsRef.current.has(user.userId))
+          .map(user => (user?.__matchingAccessAllowed === undefined ? { ...user, __matchingAccessAllowed: true } : user)),
+        { keepHidden: isAdmin },
+      );
+      if (!portion.length) {
+        // Уся порція виявилась схованою — одразу наступна, інакше «є ще»
+        // стояло б без жодної нової картки.
+        if (remainder.ids.length) setTimeout(() => { void loadNextSearchPortionRef.current(); }, 0);
+        return;
+      }
+      portion.forEach(user => loadedIdsRef.current.add(user.userId));
+      setUsers(prev => [...prev, ...portion]);
+    } catch (error) {
+      console.warn('[Matching][search] порцію видачі не дочитано', error);
+    } finally {
+      searchPortionLoadingRef.current = false;
+    }
+  };
+  const loadNextSearchPortionRef = useRef(loadNextSearchPortion);
+  loadNextSearchPortionRef.current = loadNextSearchPortion;
+
   const searchUsers = async (params, options = {}) => {
     const result = await searchUsersFromCacheOrBackend(params, options);
     return isAdmin ? result : filterFeedDeniedSearchResult(result);
   };
 
   const searchUsersFromCacheOrBackend = async (params, options = {}) => {
+    // Хвіст попереднього запиту новому не належить: його ставить лише гілка,
+    // що читає порцією.
+    rememberSearchRemainder(null);
     // Без мережі запит до бази не падає, а висить — і «Шукаю…» стояло без
     // кінця. Шукаємо серед збереженого на пристрої й кажемо про це
     // (`utils/offlineCardSearch`); схованість кожної знайденої перевіряє той
@@ -4860,18 +4934,32 @@ const Matching = () => {
       : null;
     if (summaryCacheKey) {
       const cachedEntry = getIndexIdsByQuery(summaryCacheKey);
-      const cachedIds = (cachedEntry?.ids || []).filter(isMatchingCardId);
+      const allCachedIds = (cachedEntry?.ids || []).filter(isMatchingCardId);
+      // Як і з бази — порція, а решта стає хвостом: повтор запиту на сотні
+      // знайдених не дочитує їх усіх наперед.
+      const cachedIds = allCachedIds.slice(0, MATCHING_FEED_PAGE_SIZE);
       if (cachedIds.length > 0) {
         const hydrated = await hydrateMatchingFeedCards(cachedIds);
         const cards = cachedIds.map(id => hydrated?.[id]).filter(Boolean);
         if (cards.length === cachedIds.length) {
           incrementMatchingLoadStat('matchingSearchCacheHits', cards.length);
-          return asSearchResult(cards);
+          const tail = allCachedIds.slice(MATCHING_FEED_PAGE_SIZE);
+          rememberSearchRemainder(tail.length ? { ids: tail, matchedFieldsById: {} } : null);
+          return tail.length
+            ? Object.fromEntries(cards.map(c => [c.userId, c]))
+            : asSearchResult(cards);
         }
       }
     }
 
-    const res = await searchUsersOnly(params, { ...options, keepHidden: isAdmin });
+    const res = await searchUsersOnly(params, {
+      ...options,
+      keepHidden: isAdmin,
+      // Видача читає порцію: опубліковані першими, решта — з прокруткою.
+      lazyPageSize: isLimited ? 0 : MATCHING_FEED_PAGE_SIZE,
+    });
+    const remainder = isLimited ? null : takeLazySearchRemainder(params);
+    rememberSearchRemainder(remainder);
     if (res && Object.keys(res).length > 0) {
       const arr = Array.isArray(res)
         ? res
@@ -4902,7 +4990,13 @@ const Matching = () => {
         setCachedMatchingSummaryCards(Object.fromEntries(
           filtered.filter(isMatchingSummaryCard).map(u => [u.userId, u]),
         ));
-        setIndexIdsForQuery(summaryCacheKey, filtered.map(u => u.userId), { complete: true });
+        // У кеш видачі лягає вся видача в порядку показу — прочитане й
+        // недочитаний хвіст; повтор запиту читає з неї знову лише порцію.
+        setIndexIdsForQuery(
+          summaryCacheKey,
+          [...filtered.map(u => u.userId), ...(remainder?.ids || [])],
+          { complete: true },
+        );
       }
       if (Array.isArray(res)) return filtered;
       if (res.userId) return filtered[0] || {};
@@ -5867,8 +5961,8 @@ const Matching = () => {
   useEffect(() => {
     const total = searchRefinedUsers.length;
     searchRevealTargetRef.current = total;
-    setSearchHasMore(viewMode === 'search' && searchRevealCount < total);
-  }, [searchRefinedUsers, searchRevealCount, viewMode]);
+    setSearchHasMore(viewMode === 'search' && (searchRevealCount < total || searchRemainderCount > 0));
+  }, [searchRefinedUsers, searchRevealCount, searchRemainderCount, viewMode]);
 
   const filteredUsers = useMemo(() => {
     if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers;
@@ -6201,7 +6295,10 @@ const Matching = () => {
     const cardUserIds = feedSourceWithoutOwnEdits
       .map(user => user?.userId)
       .filter(userId => userId && !requested.has(userId))
-      .filter(userId => isSearching || currentOwnerOverlayCardIds.has(userId));
+      // «Пошук» — це видача, яка вже стоїть на екрані (`viewMode`), а не
+      // набраний рядок: поки видача їде, на екрані ще стрічка, і її рядки
+      // коштували по запиту, якого переліком не названо.
+      .filter(userId => viewMode === 'search' || currentOwnerOverlayCardIds.has(userId));
     if (!cardUserIds.length) return undefined;
 
     cardUserIds.forEach(userId => requested.add(userId));
@@ -6226,7 +6323,7 @@ const Matching = () => {
     // доповнення приходило рівно тоді, коли його вже нема кому прийняти.
     // Лишається одна причина не писати в стан — розмонтована сторінка.
     return undefined;
-  }, [feedSourceWithoutOwnEdits, isAdmin, isSearching, ownOverlayCardIds, ownOverlayStateOwnerId, ownerId, remoteOwnOverlayCardIds]);
+  }, [feedSourceWithoutOwnEdits, isAdmin, ownOverlayCardIds, ownOverlayStateOwnerId, ownerId, remoteOwnOverlayCardIds, viewMode]);
 
   const renderedCards = filteredUsers;
   const debugFilterPipelineDiagnostics = useMemo(() => {
@@ -7017,7 +7114,11 @@ const Matching = () => {
     // анкети рівно для того, що зʼявилось на екрані.
     if (viewMode === 'search') {
       const step = Math.max(1, Number(limit) || MATCHING_FEED_PAGE_SIZE);
-      setSearchRevealCount(current => Math.min(current + step, searchRevealTargetRef.current));
+      setSearchRevealCount(current => {
+        // Вікно дійшло до кінця прочитаного — наступна порція хвоста.
+        if (current + step > searchRevealTargetRef.current) void loadNextSearchPortionRef.current();
+        return current + step;
+      });
       return;
     }
     if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
@@ -8021,16 +8122,12 @@ const Matching = () => {
     });
   }, [ownerId, requestPublicComments, storedUsers]);
 
-  // Видача пошуку прапорцю не вірить: відгук, записаний до появи
-  // `hasPublicReview` (або перенесений імпортом), прапорця в картці не має, і
-  // рядок показував порожню доріжку там, де відкрита картка показувала відгук.
-  // Рядків тут десяток (`searchRevealCount`), і вони — відповідь на явний
-  // запит, тож читання на кожен лишається в тій самій межі, що й шари
-  // доповнень адміна вище. Стрічку це не здорожчує: там лишається прапорець.
-  useEffect(() => {
-    if (!ownerId || !isSearching) return;
-    feedSourceWithoutOwnEdits.forEach(user => requestPublicComments(user?.userId));
-  }, [feedSourceWithoutOwnEdits, isSearching, ownerId, requestPublicComments]);
+  // Видача пошуку питає відгуки так само, як стрічка, — за прапорцем
+  // `hasPublicReview` (ефект вище). Тут стояло читання на кожну знайдену
+  // картку: прапорця колись не мали відгуки, записані до нього. 13.11 звірено
+  // наживо: усі 191 картка з відгуками прапорець мають, а тригер функцій
+  // (`syncPublicReviewFlag`) тримає його на кожному записі, — тож порція
+  // видачі коштувала зайвих десять читань порожнечі.
 
   useEffect(() => {
     requestPublicCommentsRef.current = requestPublicComments;
@@ -8614,6 +8711,10 @@ const Matching = () => {
       forgetCardBodies: ids => {
         forgetCachedCardBodies(ids);
         forgetProfileContactsForViewer(ownerId, ids);
+        // Публікацію, приховування й зміну ролі журнал бачить як запис
+        // картки, а котрий саме — не каже: перелік опублікованих (~15 КБ)
+        // перечитується цілком.
+        forgetPublishedFeedIndex();
       },
       forgetFeedStateMemo: ({ ids, persistedOnly } = {}) => {
         if (persistedOnly) matchingFeedStateReader.forgetPersisted();

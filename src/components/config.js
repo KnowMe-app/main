@@ -175,6 +175,7 @@ import {
   isFeedStateDeniedForSearch,
 } from '../utils/searchFeedDenial';
 import { readFreshMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
+import { configurePublishedFeedIndex, readPublishedFeedIndex, splitSearchHitsByFeed } from '../utils/publishedFeedIndex';
 import {
   PHOTO_THUMB_MAX_DIMENSION,
   PHOTO_THUMB_MAX_KB,
@@ -3770,7 +3771,7 @@ const searchBySearchIdUsers = async (
   users,
   searchIdPrefixes,
   options = {},
-  { limitedFields = false, cardsOnly = false } = {},
+  { limitedFields = false, cardsOnly = false, lazyPageSize = 0, lazyKey = '' } = {},
 ) => {
   const searchKeys = buildSearchIdCandidateKeys(modifiedSearchValue, rawSearchValue, options);
   // Звуження до поля більше не вирішує, скільки буде читань: ключ один на
@@ -3781,11 +3782,33 @@ const searchBySearchIdUsers = async (
     exactSearchKey: String(modifiedSearchValue || '').toLowerCase(),
   });
   const addHit = resolveSearchHitAdder({ limitedFields, cardsOnly });
+  const freshIds = userIds.filter(id => !uniqueUserIds.has(id));
+  freshIds.forEach(id => uniqueUserIds.add(id));
+
+  // Видача стрічки (`lazyPageSize`) читає не все знайдене, а порцію: спершу
+  // опубліковані (перелік опублікованих каже, хто вони, без читання карток,
+  // новіші першими), далі решта — і решту дочитує сама стрічка, коли людина
+  // догортала до кінця показаного (`takeLazySearchRemainder`). Доти «Ольга»
+  // читала всі 487 знайдених карток, щоб поставити першими 5 опублікованих.
+  let idsToRead = freshIds;
+  if (lazyPageSize > 0 && freshIds.length > lazyPageSize) {
+    const publishedIndex = await readPublishedFeedIndex().catch(() => null);
+    const { published, others } = publishedIndex
+      ? splitSearchHitsByFeed(publishedIndex, freshIds)
+      : { published: [], others: freshIds };
+    const queue = [...published, ...others];
+    idsToRead = queue.slice(0, lazyPageSize);
+    if (lazyKey) {
+      lazySearchRemainders.set(lazyKey, {
+        ids: queue.slice(lazyPageSize),
+        matchedFieldsById: Object.fromEntries(queue.slice(lazyPageSize)
+          .map(id => [id, matchedFieldsById.get(id) || []])),
+      });
+    }
+  }
 
   await Promise.all(
-    userIds.map(async id => {
-      if (uniqueUserIds.has(id)) return;
-      uniqueUserIds.add(id);
+    idsToRead.map(async id => {
       await addHit(id, users);
       // Поле збігу доносить сам індекс — з картки його не видно: у проєкції
       // немає ані пошти, ані телефона, а прізвище скорочене до ініціала.
@@ -3793,6 +3816,39 @@ const searchBySearchIdUsers = async (
       if (users[id] && matchedFields?.length) users[id].__searchIdFields = matchedFields;
     })
   );
+};
+
+// Недочитаний хвіст видачі пошуку стрічки, за ключем запиту. Бере його рівно
+// той, хто запит робив (`takeLazySearchRemainder`), і рівно раз.
+const lazySearchRemainders = new Map();
+const buildLazySearchKey = searchedValue => {
+  try {
+    return JSON.stringify(searchedValue);
+  } catch {
+    return '';
+  }
+};
+
+/** Хвіст видачі `searchUsersOnly(params, { lazyPageSize })`, або `null`. */
+export const takeLazySearchRemainder = searchedValue => {
+  const key = buildLazySearchKey(searchedValue);
+  const remainder = key ? lazySearchRemainders.get(key) : null;
+  if (key) lazySearchRemainders.delete(key);
+  return remainder && remainder.ids.length ? remainder : null;
+};
+
+/**
+ * Наступна порція хвоста видачі: проєкції з кешу чи бази, тим самим шляхом,
+ * що й перша порція (`addCardHit`), з полем збігу з індексу.
+ */
+export const readLazySearchPortion = async (ids, matchedFieldsById = {}) => {
+  const users = {};
+  await Promise.all((ids || []).map(async id => {
+    await addCardHit(id, users);
+    const matchedFields = matchedFieldsById?.[id];
+    if (users[id] && matchedFields?.length) users[id].__searchIdFields = matchedFields;
+  }));
+  return users;
 };
 
 /**
@@ -3939,6 +3995,15 @@ export const readOwnerMarkVersions = async (ownerId, viewerId) => {
 };
 
 configureOwnerMarkVersions({ read: readOwnerMarkVersions });
+// Перелік опублікованих карток (`utils/publishedFeedIndex`) — вузол цілком,
+// одним запитом. Без мережі й на повільній мережі відмовляє одразу
+// (`getFeedCheck`), і читачі повертаються на шлях, яким ішли доти.
+configurePublishedFeedIndex({
+  read: async () => {
+    const snapshot = await getFeedCheck(ref2(database, 'matchingFeedIndex'));
+    return snapshot.exists() ? snapshot.val() : null;
+  },
+});
 registerOwnerMarkInvalidator('comments', (viewerId, ownerId) => {
   forgetOwnerComments(ownerId);
   invalidateOwnerCommentsCache(ownerId);
@@ -4029,7 +4094,13 @@ const searchUsersOnlyUnfiltered = async (searchedValue, options = {}) => {
     enabledSearchKeys,
     limitedFields = false,
     cardsOnly = false,
+    // Видача стрічки: скільки знайденого читати одразу (див.
+    // `searchBySearchIdUsers`). Лише для `cardsOnly` — решта шляхів пошуку
+    // віддає все, як і доти.
+    lazyPageSize = 0,
   } = options;
+  const lazyKey = cardsOnly && lazyPageSize > 0 ? buildLazySearchKey(searchedValue) : '';
+  if (lazyKey) lazySearchRemainders.delete(lazyKey);
   const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch) && !limitedFields;
   const { searchKey, searchValue, modifiedSearchValue } = makeSearchKeyValue(searchedValue, {
     searchIdPrefixes,
@@ -4079,11 +4150,14 @@ const searchUsersOnlyUnfiltered = async (searchedValue, options = {}) => {
       users,
       searchIdPrefixes,
       searchIdOptions,
-      { limitedFields, cardsOnly },
+      { limitedFields, cardsOnly, lazyPageSize: lazyKey ? lazyPageSize : 0, lazyKey },
     );
+    // Є недочитаний хвіст — відповідь лишається мапою: одна картка з хвостом
+    // це не «знайдено одну».
+    const hasLazyRemainder = Boolean(lazyKey && lazySearchRemainders.get(lazyKey)?.ids?.length);
 
     if (shouldSkipBroadFallback) {
-      if (Object.keys(users).length === 1) {
+      if (Object.keys(users).length === 1 && !hasLazyRemainder) {
         const id = Object.keys(users)[0];
         return users[id];
       }
@@ -4098,7 +4172,7 @@ const searchUsersOnlyUnfiltered = async (searchedValue, options = {}) => {
       await searchUserByPartialUserId(searchValue, users, { cardsOnly });
     }
 
-    if (Object.keys(users).length === 1) {
+    if (Object.keys(users).length === 1 && !hasLazyRemainder) {
       const id = Object.keys(users)[0];
       return users[id];
     }

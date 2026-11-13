@@ -2410,6 +2410,29 @@ await it('писати журнал не може ніхто з клієнтів
   }
 });
 
+describe('перелік опублікованих карток');
+
+// `matchingFeedIndex/{картка}` = { d, r } — дата в стрічці й роль опублікованої
+// картки (`functions/feedIndex.js`). Читає кожен, хто увійшов, — цілком: це ті
+// самі дата й роль, що й у відкритій картці. Пише лише тригер функцій.
+await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), 'matchingFeedIndex'), {
+  [CARD]: { d: '2026-11-13', r: 'ag' },
+  _built: CHANGES_NOW,
+}));
+
+await it('перелік опублікованих читає кожен, хто увійшов, — цілком', async () => {
+  for (const uid of [ORDINARY_VIEWER, OUTSIDER, MATCHING_VIEWER]) {
+    await assertSucceeds(get(ref(db(uid), 'matchingFeedIndex')));
+  }
+  await assertFails(get(ref(testEnv.unauthenticatedContext().database(), 'matchingFeedIndex')));
+});
+
+await it('писати перелік не може ніхто з клієнтів, навіть адмін', async () => {
+  for (const uid of [SUPERADMIN, CARD, ORDINARY_VIEWER]) {
+    await assertFails(set(ref(db(uid), `matchingFeedIndex/${CARD}`), { d: '2026-11-14', r: 'ag' }));
+  }
+});
+
 describe('legacy /users закрито для всіх');
 
 // Вузол видалено з правил: ні читати, ні писати його не може ніхто, зокрема

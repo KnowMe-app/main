@@ -35,7 +35,7 @@ describe('список показує власне доповнення чита
   // наявні позначки під час ледачої міграції.
   it('у стрічці питає лише про картки з переліку власних доповнень', () => {
     expect(source).toContain('if (!currentOwnerOverlayCardIds || !currentRemoteOverlayCardIds) return undefined;');
-    expect(source).toContain('.filter(userId => isSearching || currentOwnerOverlayCardIds.has(userId));');
+    expect(source).toContain(".filter(userId => viewMode === 'search' || currentOwnerOverlayCardIds.has(userId));");
     expect(source).toContain('getOwnOverlayCardIndex(editorUserId)');
   });
 

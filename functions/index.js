@@ -589,6 +589,7 @@ exports.purgeDeletedAccount = onCall(
  * писачі: пропущений писач лишав би картку застарілою в кожного читача.
  */
 const { MATCHING_CARDS_ROOT, recordCardChange } = require('./cardChanges');
+const { syncFeedIndexEntry } = require('./feedIndex');
 
 exports.recordMatchingCardChange = onValueWritten(
   {
@@ -605,14 +606,23 @@ exports.recordMatchingCardChange = onValueWritten(
     retry: true,
   },
   async event => {
+    const before = event.data.before.val();
+    const after = event.data.after.val();
+    const setValue = (path, value) => getDatabase().ref(path).set(value);
     try {
-      await recordCardChange(event.params.cardId, {
-        before: event.data.before.val(),
-        after: event.data.after.val(),
-        setValue: (path, value) => getDatabase().ref(path).set(value),
-      });
+      await recordCardChange(event.params.cardId, { before, after, setValue });
     } catch (error) {
       logger.error('card change journal write failed', { cardId: event.params.cardId, error: error.message });
+      throw error;
+    }
+    // Перелік опублікованих (`feedIndex.js`) — той самий тригер: він уже
+    // бачить кожен запис картки. Збій так само йде на повтор: загублений
+    // запис означав би опубліковану картку, якої пошук і стрічка донорки не
+    // бачать, або сховану, яку вони вважають опублікованою.
+    try {
+      await syncFeedIndexEntry(event.params.cardId, { before, after, setValue });
+    } catch (error) {
+      logger.error('feed index write failed', { cardId: event.params.cardId, error: error.message });
       throw error;
     }
   },
