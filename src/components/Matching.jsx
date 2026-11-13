@@ -122,6 +122,7 @@ import {
   normalizeQueryKey,
   buildFeedListKey,
   composeCachedCards,
+  PROFILE_REVISION_MAX_AGE_MS,
   getQueryEntry,
   setCachedMatchingSummaryCards,
   forgetCachedCardBodies,
@@ -1062,6 +1063,7 @@ const readFeedSnapshot = () => {
  * пускає сюди за памʼяттю сесії (`RequireAuth` з `allowRemembered`), а власні
  * запити стрічки однаково чекають на вхід — їх запускає `onAuthStateChanged`.
  */
+const MOUNT_SNAPSHOT_MAX_AGE_MS = PROFILE_REVISION_MAX_AGE_MS;
 const readPersistedFeedSnapshotForMount = () => {
   let owner = '';
   try {
@@ -1070,15 +1072,20 @@ const readPersistedFeedSnapshotForMount = () => {
     return null;
   }
   if (!owner || readQueryFromUrl().trim()) return null;
-  const persisted = readPersistedFeedSnapshot(owner);
+  // Для показу на старті знімок і картки — до тижня, а не шести годин: TTL
+  // каже «перечитати з бази», а не «не показувати». Відкриття після ночі без
+  // мережі (13.11, телефон) стояло скелетоном, хоча вся дека лежала на
+  // пристрої. Свіже однаково приходить з бази й знімок замінює
+  // (`replacesRestoredDeck`), а схованість кожної картки перевіряє сторож стану.
+  const persisted = readPersistedFeedSnapshot(owner, { ttlMs: MOUNT_SNAPSHOT_MAX_AGE_MS });
   if (!persisted) return null;
-  const { cards } = composeCachedCards(persisted.ids);
+  const { cards } = composeCachedCards(persisted.ids, { ttlMs: MOUNT_SNAPSHOT_MAX_AGE_MS });
   const users = persisted.ids
     .map(id => (cards[id] ? { ...cards[id], userId: cards[id].userId || id } : null))
     .filter(Boolean);
   if (!users.length) return null;
-  const ownFavorites = normalizeReactionMap(readFreshReactionSnapshot(owner, owner, 'favorites') || {});
-  const ownDislikes = normalizeReactionMap(readFreshReactionSnapshot(owner, owner, 'dislikes') || {});
+  const ownFavorites = normalizeReactionMap(readFreshReactionSnapshot(owner, owner, 'favorites', { ttlMs: MOUNT_SNAPSHOT_MAX_AGE_MS }) || {});
+  const ownDislikes = normalizeReactionMap(readFreshReactionSnapshot(owner, owner, 'dislikes', { ttlMs: MOUNT_SNAPSHOT_MAX_AGE_MS }) || {});
   return {
     ownerId: owner,
     at: persisted.cachedAt,

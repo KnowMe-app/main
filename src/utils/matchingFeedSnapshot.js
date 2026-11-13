@@ -24,10 +24,10 @@ export const writePersistedFeedSnapshot = ({ ownerId, ids } = {}) => {
   writeTimedCacheEntry(MATCHING_FEED_SNAPSHOT_KEY, { ownerId: owner, ids: list });
 };
 
-export const readPersistedFeedSnapshot = ownerId => {
+export const readPersistedFeedSnapshot = (ownerId, { ttlMs } = {}) => {
   const owner = String(ownerId || '').trim();
   if (!owner) return null;
-  const entry = readTimedCacheEntry(MATCHING_FEED_SNAPSHOT_KEY);
+  const entry = readTimedCacheEntry(MATCHING_FEED_SNAPSHOT_KEY, ttlMs ? { ttlMs } : undefined);
   if (!entry || entry.ownerId !== owner || !Array.isArray(entry.ids) || !entry.ids.length) return null;
   return { ownerId: owner, ids: entry.ids.map(String), cachedAt: entry.cachedAt };
 };

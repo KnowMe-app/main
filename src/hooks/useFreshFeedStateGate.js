@@ -26,15 +26,30 @@ import { gateRowsByFeedState } from '../utils/searchFeedDenial';
  * @param {object[]} rows
  * @param {{ reader: { read: Function, peek: Function }, enabled?: boolean, skip?: (row: object) => boolean, onFreshStates?: (states: object) => void }} options
  */
-export const useFreshFeedStateGate = (rows, { reader, enabled = true, ready = true, skip, onFreshStates }) => {
+/**
+ * Стеля очікування: картка, яку за цей час не перевірили, показується так
+ * само, як після збою перевірки. Без мережі чи з поганою мережею перевірка
+ * чекає на сесію Firebase, журнал змін і тайм-аут читання, і на телефоні
+ * стрічка стояла скелетоном по десять секунд і більше, хоча дека лежала на
+ * пристрої (13.11). Відповідь, що приїде пізніше, схованої картки однаково не
+ * пропустить: стан ляже в памʼять читача, і рядок зникне.
+ */
+export const FEED_STATE_GATE_MAX_WAIT_MS = 3000;
+
+export const useFreshFeedStateGate = (rows, { reader, enabled = true, ready = true, skip, onFreshStates, maxWaitMs = FEED_STATE_GATE_MAX_WAIT_MS }) => {
   const onFreshStatesRef = useRef(onFreshStates);
   onFreshStatesRef.current = onFreshStates;
+  const readerRef = useRef(reader);
+  readerRef.current = reader;
   // Перевірене в цьому монтуванні: відповідь прийшла (зі станом чи без —
-  // збій читання картку не ховає). Лічильник лише будить рендер.
+  // збій читання картку не ховає) або минула стеля очікування. Лічильник
+  // лише будить рендер.
   const checkedRef = useRef(new Set());
+  // Читання вже запущене. Окремо від «перевірене»: стеля очікування показує
+  // картку, але читання однаково мусить відбутися, щойно журнал готовий, —
+  // інакше схованість картки, показаної до журналу, не перевірилась би ніколи.
+  const startedRef = useRef(new Set());
   const [version, setVersion] = useState(0);
-  const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
 
   const gate = useMemo(() => {
     if (!enabled) return { visible: rows, pendingIds: [] };
@@ -47,25 +62,52 @@ export const useFreshFeedStateGate = (rows, { reader, enabled = true, ready = tr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, enabled, ready, reader, skip, version]);
 
+  const unreadKey = useMemo(() => {
+    if (!enabled || !ready) return '';
+    return gateRowsByFeedState(rows, {
+      peek: reader.peek,
+      isChecked: id => startedRef.current.has(id),
+      skip,
+    }).pendingIds.join('|');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, enabled, ready, reader, skip, version]);
+
   const pendingKey = gate.pendingIds.join('|');
+
   useEffect(() => {
-    // `ready: false` — журнал змін ще не прочитано: перевірені стани пристрою
-    // поки не чинні, і читати кожну картку з бази зарано — більшість із них
-    // журнал зараз підтвердить без запиту.
-    if (!pendingKey || !ready) return;
-    const ids = pendingKey.split('|');
-    let cancelled = false;
+    if (!pendingKey || !(maxWaitMs > 0)) return undefined;
+    const timer = setTimeout(() => {
+      pendingKey.split('|').forEach(id => checkedRef.current.add(id));
+      setVersion(value => value + 1);
+    }, maxWaitMs);
+    return () => clearTimeout(timer);
+  }, [pendingKey, maxWaitMs]);
+
+  useEffect(() => {
+    // Без `ready` (журнал змін ще не прочитано) `unreadKey` порожній:
+    // перевірені стани пристрою поки не чинні, і читати кожну картку з бази
+    // зарано — більшість із них журнал зараз підтвердить без запиту.
+    if (!unreadKey) return;
+    const ids = unreadKey.split('|');
+    ids.forEach(id => startedRef.current.add(id));
     const states = {};
     Promise.all(ids.map(id => reader.read(id).then(state => {
       checkedRef.current.add(id);
       if (state) states[id] = state;
     }))).then(() => {
-      if (cancelled || !mountedRef.current) return;
+      // Відповідь чинна, доки читач той самий, — навіть коли картку вже
+      // показала стеля очікування: пізній стан мусить сховати картку, яку
+      // тим часом сховали в базі. Тут стояв ще прапорець «змонтовано»
+      // (`mountedRef`), який прибирання ставило в `false` і ніщо не вертало
+      // в `true`: React у режимі розробки монтує ефекти двічі, а повторне
+      // монтування буває й у проді, — і відповідь відкидалась назавжди.
+      // Картки висіли «на перевірці», і без мережі стрічка стояла
+      // скелетоном, хоча дека з пристрою була (13.11, телефон).
+      if (readerRef.current !== reader) return;
       if (Object.keys(states).length) onFreshStatesRef.current?.(states);
       setVersion(value => value + 1);
     });
-    return () => { cancelled = true; };
-  }, [pendingKey, reader, ready]);
+  }, [unreadKey, reader]);
 
   return { rows: gate.visible, pendingCount: gate.pendingIds.length };
 };
