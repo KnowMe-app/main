@@ -56,6 +56,7 @@ import { dropCachedPublicComments, readPublicCommentsCached } from 'utils/public
 import { updateCard, clearCardCache } from 'utils/cardsStorage';
 import { getCard } from 'utils/cardIndex';
 import { normalizeLastAction } from 'utils/normalizeLastAction';
+import { keepUnsavedFieldRows } from 'utils/profileFieldRows';
 import { filterOutMedicationPhotos } from 'utils/photoFilters';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
 import { reencodePdfImageDataUrl } from 'utils/pdfImageEncoding';
@@ -1856,7 +1857,9 @@ export const TopBlock = ({
         }
 
         if (setState && !isFromListOfUsers) {
-          setState(backendCard, {
+          // Рядки, які адмін щойно додав «+» і ще не заповнив, у базі не лежать
+          // (`keepUnsavedFieldRows`): без цього перечитування мовчки їх знімало.
+          setState(prevState => keepUnsavedFieldRows(prevState, backendCard), {
             source: 'backend',
             caller: 'renderTopBlock.detailsRefreshButton',
             reason: 'manual-backend-refresh',

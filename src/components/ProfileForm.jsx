@@ -3653,7 +3653,9 @@ ${entries.join('\n')}`;
                     marginLeft: 0,
                   }}
                   onClick={() => {
-                    if (!state.myComment?.trim()) {
+                    // Знімати памʼятку, якої в стані немає зовсім, — це
+                    // окреме збереження (з новою `rev`) на кожен дотик до «+».
+                    if (Object.prototype.hasOwnProperty.call(state, 'myComment') && !state.myComment?.trim()) {
                       handleDelKeyValue('myComment');
                     }
                     // Зберігати нема чого: новий рядок ще порожній. Раніше тут

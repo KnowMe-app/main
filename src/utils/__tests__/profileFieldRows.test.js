@@ -52,12 +52,15 @@ describe('форма не зберігає порожній рядок', () => {
   );
 
   it('«+» лише додає рядок і нічого не надсилає', () => {
-    const buttonBlock = source.slice(
-      source.indexOf('canAppendFieldRow(state[field.name])'),
-      source.indexOf('canAppendFieldRow(state[field.name])') + 1600,
-    );
+    // Вікно — до кінця самої кнопки, а не фіксована кількість знаків:
+    // коментар над рядком інакше виштовхував перевірене за межу.
+    const start = source.indexOf('canAppendFieldRow(state[field.name])');
+    const buttonBlock = source.slice(start, source.indexOf('</Button>', start));
     expect(buttonBlock).toContain('[field.name]: appendEmptyFieldRow(prevState[field.name]),');
     expect(buttonBlock).not.toContain('submitWithNormalization');
+    // Памʼятку, якої в стані немає, «+» не знімає — інакше кожен дотик
+    // ставав окремим збереженням.
+    expect(buttonBlock).toContain("Object.prototype.hasOwnProperty.call(state, 'myComment')");
   });
 });
 
