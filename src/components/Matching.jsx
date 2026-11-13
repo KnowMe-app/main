@@ -2204,7 +2204,8 @@ const Matching = () => {
         .filter(u => isMatchingCardId(u?.userId))
         .map(user => (user?.__matchingAccessAllowed === undefined
           ? { ...user, __matchingAccessAllowed: true }
-          : user))
+          : user)),
+      { keepHidden: isAdmin }
     );
 
     loadInitialVersionRef.current += 1;
@@ -2298,7 +2299,12 @@ const Matching = () => {
    * порожній, і ті самі два фільтри приберуть картку без цього ефекту.
    */
   useEffect(() => {
-    if (viewMode === 'favorites' || viewMode === 'dislikes') {
+    // Видача пошуку — відповідь на «де ось ця людина», а не дека: картку, на
+    // яку читач колись відповів хрестиком, вона мусить показати (з тим самим
+    // хрестиком у ряду рішень). Поки ефект прибирав її й тут, номер, раз
+    // позначений «Не цікаво», шукався як «Немає доступних профілів» із
+    // заготовкою «Створити» — тобто пропозицією завести дубль.
+    if (viewMode === 'favorites' || viewMode === 'dislikes' || viewMode === 'search') {
       return;
     }
     const hiddenRoles = listViewerHiddenCardRoles(donorRestrictionViewerRoleRef.current);
@@ -4746,9 +4752,11 @@ const Matching = () => {
   // анкету (`feedDate: false` — сховали чи видалили акаунт) він віддав би з
   // тією датою, яку бачив. Свіжу перевірку проходить кожна видача — і з
   // кеша, і з бекенду (`filterFeedDeniedSearchResult`, памʼять таба хвилина).
-  const searchUsers = async (params, options = {}) => (
-    filterFeedDeniedSearchResult(await searchUsersFromCacheOrBackend(params, options))
-  );
+  // Адмінові сховане не замовчується (див. `orderMatchingSearchResults`).
+  const searchUsers = async (params, options = {}) => {
+    const result = await searchUsersFromCacheOrBackend(params, options);
+    return isAdmin ? result : filterFeedDeniedSearchResult(result);
+  };
 
   const searchUsersFromCacheOrBackend = async (params, options = {}) => {
     const cacheEpoch = getMatchingLocalStorageCacheEpoch();
@@ -4815,7 +4823,7 @@ const Matching = () => {
       }
     }
 
-    const res = await searchUsersOnly(params, options);
+    const res = await searchUsersOnly(params, { ...options, keepHidden: isAdmin });
     if (res && Object.keys(res).length > 0) {
       const arr = Array.isArray(res)
         ? res

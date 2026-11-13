@@ -242,12 +242,22 @@ describe('сховану анкету пошук не віддає й з кеш�
   const matching = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
   const config = fs.readFileSync(path.join(__dirname, 'config.js'), 'utf8');
 
-  it('кожна видача Matching — і з кеша, і з бекенду — іде через свіжу перевірку feedDate', () => {
-    expect(matching).toContain('filterFeedDeniedSearchResult(await searchUsersFromCacheOrBackend(params, options))');
+  // Виняток один — адмін: його стрічка показує сховане навмисно, і пошук
+  // йому сховану анкету не замовчує (ставить останньою).
+  it('кожна видача Matching — і з кеша, і з бекенду — іде через свіжу перевірку feedDate, крім адмінської', () => {
+    expect(matching).toContain('const result = await searchUsersFromCacheOrBackend(params, options);');
+    expect(matching).toContain('return isAdmin ? result : filterFeedDeniedSearchResult(result);');
+    expect(matching).toContain('searchUsersOnly(params, { ...options, keepHidden: isAdmin })');
+    expect(matching).toContain('{ keepHidden: isAdmin }');
   });
 
-  it('searchUsersOnly (стрічка й форма «Додати картку») фільтрує сам', () => {
-    expect(config).toContain('filterFeedDeniedSearchResult(await searchUsersOnlyUnfiltered(searchedValue, options))');
+  it('видача пошуку не губить картку, на яку читач уже відповів', () => {
+    expect(matching).toContain("if (viewMode === 'favorites' || viewMode === 'dislikes' || viewMode === 'search') {");
+  });
+
+  it('searchUsersOnly (стрічка й форма «Додати картку») фільтрує сам, якщо не просили keepHidden', () => {
+    expect(config).toContain('const result = await searchUsersOnlyUnfiltered(searchedValue, options);');
+    expect(config).toContain('return options?.keepHidden ? result : filterFeedDeniedSearchResult(result);');
   });
 });
 
