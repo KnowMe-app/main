@@ -18,7 +18,7 @@ const options = {
   searchKeyFields: [],
 };
 
-const runSearch = async (searchFunc, { setUsers = jest.fn() } = {}) => {
+const runSearch = async (searchFunc, { setUsers = jest.fn(), search = '@offline_probe_handle', searchOptions = options } = {}) => {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -26,13 +26,13 @@ const runSearch = async (searchFunc, { setUsers = jest.fn() } = {}) => {
   await act(async () => {
     root.render(React.createElement(SearchBar, {
       searchFunc,
-      search: '@offline_probe_handle',
+      search,
       setSearch: jest.fn(),
       setUsers,
       setState: jest.fn(),
       setUserNotFound: jest.fn(),
-      enabledSearchKeys: options.enabledSearchKeys,
-      searchOptions: options,
+      enabledSearchKeys: searchOptions.enabledSearchKeys,
+      searchOptions,
     }));
     await Promise.resolve();
   });
@@ -85,5 +85,26 @@ describe('офлайнова відповідь пошуку не лягає в 
     const ids = Array.isArray(last) ? last.map(card => card.userId) : Object.keys(last);
     expect(ids).toContain('right');
     expect(ids).not.toContain('wrong');
+  });
+  // Набране без поля (`name`) без мережі шукається по всіх полях, і знайдене
+  // за містом не мусить відсіюватись перевіркою `card.name`.
+  it('без мережі запит без поля лишає знайдене в інших полях', async () => {
+    setOnline(false);
+    const setUsers = jest.fn();
+    const searchFunc = jest.fn().mockResolvedValue({
+      a: { userId: 'a', name: 'Оксана', city: 'Київ' },
+      b: { userId: 'b', name: 'Марія', city: 'Київ' },
+    });
+    await runSearch(searchFunc, {
+      setUsers,
+      search: 'київ',
+      searchOptions: { enabledSearchKeys: { name: true, searchId: false, partialUserId: false, searchKey: false, equalToAllCards: true }, equalToKeys: ['name'], searchKeyFields: [] },
+    });
+    expect(searchFunc).toHaveBeenCalled();
+    expect(searchFunc.mock.calls[0][0]).toHaveProperty('name');
+    const shown = setUsers.mock.calls.map(([value]) => value).filter(value => value && typeof value === 'object');
+    const last = shown[shown.length - 1] || {};
+    const ids = Array.isArray(last) ? last.map(card => card.userId) : Object.keys(last);
+    expect(ids.sort()).toEqual(['a', 'b']);
   });
 });

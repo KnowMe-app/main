@@ -1039,6 +1039,10 @@ export const doesCardMatchSearchParams = (card, params = {}, options = {}) => {
   });
 };
 
+// Ключі, які не називають поля: їх пошук без мережі (`utils/offlineCardSearch`)
+// питає по всіх полях, тож і фільтр поля до них не застосовується.
+const OFFLINE_BROAD_SEARCH_KEYS = new Set(['name', 'names', 'searchId']);
+
 export const filterSearchResultByParams = (result, params = {}, options = {}) => {
   const cards = normalizeResultToCards(result);
   if (cards.length === 0) return result;
@@ -1868,6 +1872,10 @@ const SearchBar = ({
     // в Instagram (ревʼю #3395). Пропускаються лише записи в кеш.
     if (offlineSearch) {
       if (Object.keys(res).length === 0) return res;
+      // Набране без розпізнаного поля йде як `name`, і пошук на пристрої
+      // навмисно шукає його по всіх полях (місто, прізвище, ніки): перевірка
+      // самим `card.name` викинула б саме те, заради чого він широкий.
+      if (OFFLINE_BROAD_SEARCH_KEYS.has(key)) return res;
       const filteredOffline = filterSearchResultByParams(res, params, extraOptions);
       if (!filteredOffline || Object.keys(filteredOffline).length === 0) return Array.isArray(res) ? [] : {};
       return filteredOffline;
