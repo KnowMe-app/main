@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaArrowRight, FaChevronDown, FaLock, FaRegTrashAlt, FaMapMarkerAlt, FaPencilAlt, FaRegClock, FaRegCommentDots, FaRegStickyNote } from 'react-icons/fa';
+import { FaArrowRight, FaChevronDown, FaTimes, FaLock, FaRegTrashAlt, FaMapMarkerAlt, FaPencilAlt, FaRegClock, FaRegCommentDots, FaRegStickyNote } from 'react-icons/fa';
 import { LIKED_AUDIENCE_CARD_FLAG } from 'utils/likedAudience';
 import { activityAgeDays, describeCardActivity, parseActivityDate } from '../utils/cardActivity';
 import {
@@ -1302,6 +1302,9 @@ const ProfileRow = ({
   // або реєстрація (`readCardActivity`). Без читача підпису давності немає.
   onRequestActivity,
   deletionPending = false,
+  // Читач щойно сказав «Не цікаво» в цьому ж перегляді: картка лишається на
+  // місці (`keepReactedUserIds`), але сіріє, щоб дотик було видно.
+  dismissed = false,
 }) => {
   // A limited profile is the projection a viewer without full access gets back
   // from a search: surname, name, age, region, city, and the public comment. There
@@ -1740,6 +1743,8 @@ const ProfileRow = ({
   return (
     <S.Card
       $role={rowRole}
+      $dismissed={dismissed}
+      data-dismissed={dismissed || undefined}
       // Якір для відновлення позиції: повернувшись до стрічки, сторінка шукає
       // саме цей рядок, а не піксель (див. `SCROLL_ANCHOR_KEY` у `Matching`).
       data-card-id={user?.userId}
@@ -1758,6 +1763,15 @@ const ProfileRow = ({
           стояли тут карусельлю над іменем, і без плашки агенцію з фото не
           можна було відрізнити від людини; тепер вони в тілі картки
           (`CardRoleBlock`). */}
+      {/* Над шаром знебарвлення, тож лишається читаним. Стоїть по центру
+          верху: лівий кут займає роль, правий — цятка публікації. Без фото
+          слід дотику — сама сіра картка й стрілка «повернути». */}
+      {dismissed && photo && (
+        <S.DismissedBadge data-testid="row-dismissed-badge">
+          <FaTimes size={10} aria-hidden="true" />
+          {uiText('Не цікаво', language)}
+        </S.DismissedBadge>
+      )}
       {photo && (
         <S.Photo
           {...photoSwipe.handlers}
@@ -2072,6 +2086,7 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.isAdmin === next.isAdmin
   && prev.onRequestActivity === next.onRequestActivity
   && prev.deletionPending === next.deletionPending
+  && prev.dismissed === next.dismissed
   && prev.onTogglePublish === next.onTogglePublish
   && prev.primaryAction?.active === next.primaryAction?.active
   && prev.secondaryAction?.active === next.secondaryAction?.active

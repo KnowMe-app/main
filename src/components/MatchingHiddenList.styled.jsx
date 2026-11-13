@@ -82,6 +82,100 @@ export const Card = styled.div`
   cursor: pointer;
   overflow: hidden;
   transition: opacity 200ms ease, transform 200ms ease;
+
+  ${({ $dismissed }) => $dismissed && dismissedCardCss}
+`;
+
+/*
+ * «Не цікаво» в тому самому перегляді: картка лишається на місці
+ * (`keepReactedUserIds`), і без сліду дотику хрестик виглядав таким, що не
+ * спрацював. Картка сіріє й притухає, а пара реакцій лишається кольоровою —
+ * стрілка «повернути» мусить бути помітна саме тут.
+ *
+ * Знебарвлює не `filter` на картці, а шар поверх неї з
+ * `mix-blend-mode: saturation`: фільтр лягає й на всіх нащадків, і
+ * виокремити з нього пару реакцій неможливо, а шар — звичайний сусід за
+ * `z-index`. `isolation` тримає змішування в межах картки.
+ */
+const dismissedFadeIn = keyframes`
+  from { opacity: 0; }
+  to { opacity: 1; }
+`;
+
+const dismissedVeilIn = keyframes`
+  from { opacity: 0; }
+  to { opacity: 0.42; }
+`;
+
+const dismissedCardCss = css`
+  isolation: isolate;
+  box-shadow: none;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    border-radius: inherit;
+    animation: ${dismissedFadeIn} 280ms ease-out both;
+  }
+
+  /* Сірий без жодного відтінку — знебарвлює все під собою. */
+  &::before {
+    background: #808080;
+    mix-blend-mode: saturation;
+  }
+
+  /* Вуаль кольором самої картки: однаково притухає у світлій і темній темі. */
+  &::after {
+    background: var(--matching-card-bg, var(--km-surface, #fff));
+    opacity: 0.42;
+    animation-name: ${dismissedVeilIn};
+  }
+
+  [data-testid='row-reactions'] {
+    position: relative;
+    z-index: 5;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &::before,
+    &::after {
+      animation: none;
+    }
+  }
+`;
+
+export const DismissedBadge = styled.span`
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  z-index: 5;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(32, 32, 32, 0.72);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+  animation: ${dismissedFadeIn} 280ms ease-out both;
+
+  svg {
+    flex: 0 0 auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 `;
 
 export const Top = styled.div`
