@@ -89,4 +89,27 @@ export const forgetProfileContacts = cardId => {
   }
 };
 
+/**
+ * Контакти карток, які назвав журнал змін (`utils/matchingCardChanges`), —
+ * забути в цього читача; без переліку — усі його записи (журнал «як уперше»).
+ *
+ * `forgetProfileContacts` знімає запис лише на пристрої того, хто правив, а
+ * інший пристрій чи інший читач тримав старий номер до шести годин: правка
+ * контактів ставить картці нову версію (`rev`), журнал про неї каже, але кеш
+ * контактів журналу не слухав.
+ */
+export const forgetProfileContactsForViewer = (viewerId, cardIds) => {
+  if (!viewerId) return;
+  if (!cardIds) {
+    try { localStorage.removeItem(buildKey(viewerId)); } catch { /* без сховища кеша немає */ }
+    return;
+  }
+  const store = readStore(viewerId);
+  let changed = false;
+  cardIds.forEach(id => {
+    if (store[id]) { delete store[id]; changed = true; }
+  });
+  if (changed) writeStore(viewerId, store);
+};
+
 export const clearContactsCache = () => removeCacheEntriesByPrefix(STORAGE_KEY_PREFIX);
