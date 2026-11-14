@@ -37,9 +37,11 @@ jobs:
           echo "REACT_APP_STORAGE_BUCKET=${{ secrets.REACT_APP_STORAGE_BUCKET }}" >> .env
           echo "REACT_APP_MESSAGING_SENDER_ID=${{ secrets.REACT_APP_MESSAGING_SENDER_ID }}" >> .env
           echo "REACT_APP_APP_ID=${{ secrets.REACT_APP_APP_ID }}" >> .env
-          echo "REACT_APP_USER1=${{ secrets.REACT_APP_USER1 }}" >> .env
-          echo "REACT_APP_OPENAI_API_KEY=${{ secrets.REACT_APP_OPENAI_API_KEY }}" >> .env
-          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
+          # Сюди не кладіть жодного справжнього секрету: увесь цей `.env` —
+          # публічний JS сайту. Щойно код читає `process.env.X`, якого тут немає,
+          # CRA вшиває в збірку обʼєкт `process.env` цілком, з кожним рядком
+          # файлу. Так ключ OpenAI (коду, що його читав, давно немає) лежав у
+          # `main.*.js` на проді; 14.11 його й `REACT_APP_USER1` звідси прибрано.
           # Імʼя бота входу через Telegram (без @). Не секрет — змінна репозиторію;
           # порожня — кнопки Telegram на вході немає, лишається пошта.
           echo "REACT_APP_TELEGRAM_BOT_USERNAME=${{ vars.REACT_APP_TELEGRAM_BOT_USERNAME }}" >> .env
