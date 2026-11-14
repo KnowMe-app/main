@@ -9,12 +9,16 @@ import {
   fetchUserComment,
   getAllUserPhotos,
   photoComparisonKey,
+  readOwnerMarksForCards,
+  resolveOwnerMarkOwnerIds,
   saveMyCardComment,
   saveComparisonField,
+  transferOwnerMarksBetweenCards,
 } from '../config';
 import { setLocalComment } from '../../utils/commentsStorage';
 import { copyPublicCommentsBetweenCards } from '../../utils/legacyImportCommentMigration';
-import { isAdminUid } from '../../utils/accessLevel';
+import { ADMIN_UIDS, isAdminUid } from '../../utils/accessLevel';
+import { describeOwnerMarks } from '../../utils/ownerMarksTransfer';
 import { OWNER_MULTI_DATA_STRING_FIELDS } from '../../utils/profileNodeSchema';
 import { updateCachedUser } from '../../utils/cache';
 import { isJsonStateCard } from '../../utils/jsonProfileImport';
@@ -176,6 +180,22 @@ export const btnCompare = (
     }
   };
 
+  // Позначки власників (нотатка, реакція, дата дзвінка) переїжджають з
+  // дубля цілком і знімаються з нього — дубль далі видаляють, і лишене під
+  // його id було б сміттям (`transferOwnerMarksBetweenCards`).
+  const moveOwnerMarks = async (sourceUserId, targetUserId) => {
+    try {
+      const { moved, cleared } = await queueCardSave(targetUserId, () => (
+        transferOwnerMarksBetweenCards({ sourceCardId: sourceUserId, targetCardId: targetUserId })
+      ));
+      const movedCount = moved.reduce((sum, item) => sum + item.kinds.length, 0);
+      toast.success(`Позначки власників: перенесено ${movedCount}, знято з ${sourceUserId} — ${cleared}`, { duration: 3500 });
+    } catch (error) {
+      toast.error(`Не вдалося перенести позначки: ${error?.message || error}`);
+    }
+    await refreshComparison();
+  };
+
   const refreshComparison = async (reloadProfiles = false) => {
     const generation = ++refreshGeneration;
     if (reloadProfiles) {
@@ -194,12 +214,24 @@ export const btnCompare = (
     // У анкети з файлу немає ні нотатки, ні відгуків, ні фото в Storage —
     // питати базу про її id нема сенсу.
     const remoteId = user => (isJsonStateCard(user) ? undefined : user.userId);
-    const [currentCommentResult, nextCommentResult, publicByProfile, currentPhotos, nextPhotos] = await Promise.all([
+    const remotePairIds = [remoteId(currentUserRaw), remoteId(nextUserRaw)].filter(Boolean);
+    const loadOwnerMarks = async () => {
+      if (remotePairIds.length !== 2) return { ownerIds: [], marks: {} };
+      try {
+        const ownerIds = await resolveOwnerMarkOwnerIds();
+        return { ownerIds, marks: await readOwnerMarksForCards(remotePairIds, ownerIds) };
+      } catch (error) {
+        console.warn('[btnCompare] позначки власників не прочитано', error);
+        return { ownerIds: [], marks: {}, failed: true };
+      }
+    };
+    const [currentCommentResult, nextCommentResult, publicByProfile, currentPhotos, nextPhotos, ownerMarks] = await Promise.all([
       ownerId && remoteId(currentUserRaw) ? fetchUserComment(ownerId, currentUserRaw.userId) : null,
       ownerId && remoteId(nextUserRaw) ? fetchUserComment(ownerId, nextUserRaw.userId) : null,
       fetchPublicProfileComments([remoteId(currentUserRaw), remoteId(nextUserRaw)].filter(Boolean)),
       remoteId(currentUserRaw) ? getAllUserPhotos(currentUserRaw.userId) : [],
       remoteId(nextUserRaw) ? getAllUserPhotos(nextUserRaw.userId) : [],
+      loadOwnerMarks(),
     ]);
     if (requestId !== latestCompareRequest || generation !== refreshGeneration) return;
 
@@ -291,6 +323,41 @@ export const btnCompare = (
       );
     })();
 
+    // Нотатки, реакції й дати дзвінка кожного власника, видимого адмінові.
+    // Рядок — власник, клітинка — його позначки на картці; дотик переносить
+    // усі позначки з цієї картки на іншу й знімає їх тут. Писати за власника
+    // правила дають лише повним адмінам, інспектор бачить без дотику.
+    const canMoveOwnerMarks = ADMIN_UIDS.includes(auth.currentUser?.uid);
+    const ownerMarkRows = ownerMarks.ownerIds.map(markOwnerId => {
+      const onCurrent = describeOwnerMarks(ownerMarks.marks[markOwnerId]?.[currentUser.userId]);
+      const onNext = describeOwnerMarks(ownerMarks.marks[markOwnerId]?.[nextUser.userId]);
+      if (!onCurrent.length && !onNext.length) return null;
+      const ownerLabel = markOwnerId === ownerId ? 'ви' : markOwnerId;
+      const marksCell = (parts, source, target) => {
+        const canMove = canMoveOwnerMarks && parts.length > 0;
+        return (
+          <td
+            style={{ width: '40%', whiteSpace: 'pre-line', wordBreak: 'break-word', cursor: canMove ? 'pointer' : 'default' }}
+            title={canMove ? `Перенести позначки ${ownerLabel} в ${target.userId} і зняти з ${source.userId}` : undefined}
+            onClick={canMove ? () => moveOwnerMarks(source.userId, target.userId) : undefined}
+          >
+            {parts.join('\n')}
+            {canMove ? <div style={{ fontWeight: 700 }}>→ перенести й зняти тут</div> : null}
+          </td>
+        );
+      };
+      return (
+        <tr key={`owner-marks-${markOwnerId}`}>
+          <td style={{ width: '20%', wordBreak: 'break-word' }}>{`Позначки: ${ownerLabel}`}</td>
+          {marksCell(onCurrent, currentUser, nextUser)}
+          {marksCell(onNext, nextUser, currentUser)}
+        </tr>
+      );
+    }).filter(Boolean);
+    const ownerMarksFailedRow = ownerMarks.failed ? (
+      <tr key="owner-marks-failed"><td colSpan={3}>Позначки власників не прочитано</td></tr>
+    ) : null;
+
     setCompare(
       <div style={{ fontSize: '10px', fontFamily: 'Arial, sans-serif' }}>
         <table border="1" cellSpacing="0" cellPadding="5" style={{ borderCollapse: 'collapse', width: '100%' }}>
@@ -299,7 +366,7 @@ export const btnCompare = (
               {onOpenCard && !isJsonStateCard(user) ? <button type="button" onClick={() => onOpenCard(user.userId, () => refreshComparison(true))}>{user.userId}</button> : user.userId}
             </th>
           ))}</tr></thead>
-          <tbody>{photosRow}{rows}</tbody>
+          <tbody>{ownerMarkRows}{ownerMarksFailedRow}{photosRow}{rows}</tbody>
         </table>
       </div>,
     );
