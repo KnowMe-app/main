@@ -109,6 +109,7 @@ import { describeMatchingCardBloodBackfill } from 'utils/matchingCardBloodBackfi
 import { describeAvatarCacheControlBackfill, describeFeedPhotoThumbsBackfill } from 'utils/photoBackfillReport';
 import { normalizePhoneState } from './inputValidations';
 import { openComparedCard as openComparedCardNavigation, restoreComparedCard } from './comparedCardNavigation';
+import { isBackToCardList, planCardUrlWrite, shouldGoBackInHistory } from './cardListHistory';
 import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import InfoModal, { ModalTitle, ModalText, ModalActionRow, ModalDangerButton, ModalGhostButton } from './InfoModal';
 
@@ -1588,6 +1589,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const [userIdToDelete, setUserIdToDelete] = useState(null);
   const navigate = useNavigate();
   const comparisonReturnRef = useRef(null);
+  // Запис історії списку, поверх якого відкрито картку (`listKey` —
+  // `location.key` списку): «назад» телефона на нього вертає список.
+  const cardListReturnRef = useRef(null);
+  const backToPreviousListRef = useRef(null);
+  const isDuplicateViewRef = useRef(false);
   const comparisonScrollRef = useRef(0);
   const access = resolveAccess({
     uid: auth.currentUser?.uid,
@@ -2510,6 +2516,24 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     const hasSearchParam = params.has('search');
     const urlSearchValue = hasSearchParam ? params.get('search') || '' : null;
 
+    // «Назад» телефона з картки, відкритої зі списку чи видачі пошуку: історія
+    // повернулась на запис списку — список і запит вертає той самий знімок, що
+    // й кнопка «Назад до попереднього списку». Решту цього ефекту не пускаємо:
+    // запис списку не несе `search`, і вона стерла б запит видачі.
+    const cardReturn = cardListReturnRef.current;
+    if (isBackToCardList({
+      cardReturn, locationKey: location.key, urlUserId, activeUserId: stateUserIdRef.current,
+    })) {
+      cardReturn.restoring = true;
+      logProfileRestoreStep('history-back:restore-list', {
+        activeUserId: stateUserIdRef.current,
+        locationKey: location.key,
+      });
+      backToPreviousListRef.current?.();
+      setIsResolvingEditMode(false);
+      return;
+    }
+
     const shouldPreserveInitialEmptyUrlProfile =
       !urlUserId &&
       !hasSearchParam &&
@@ -2550,7 +2574,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setState({});
     }
     setIsResolvingEditMode(false);
-  }, [canAccessAdd, location.search, setSearch, setState]);
+  }, [canAccessAdd, location.key, location.search, setSearch, setState]);
 
   useEffect(() => {
     if (state.userId) {
@@ -2569,17 +2593,31 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     // before the comparison restoration effect clears the active card.
     if (comparisonReturnRef.current?.key === location.key && !currentUserIdInUrl) return;
 
+    const plan = planCardUrlWrite({
+      activeUserId,
+      currentUserIdInUrl,
+      cardReturn: cardListReturnRef.current,
+      locationKey: location.key,
+      ownHistoryEntry: isDuplicateViewRef.current || shouldReturnToMoreActionsRef.current,
+    });
+    if (plan.clearReturn) cardListReturnRef.current = null;
+    if (plan.action === 'skip') return;
+
     if (activeUserId) {
-      if (currentUserIdInUrl === activeUserId) return;
+      const pushListEntry = plan.action === 'push';
       logProfileRestoreStep('url-sync:write-user-id', {
         activeUserId,
         previousUrlUserId: currentUserIdInUrl,
         locationSearch: location.search,
+        pushListEntry,
       });
       params.set('userId', activeUserId);
+      if (pushListEntry) {
+        cardListReturnRef.current = { listKey: location.key, restoring: false };
+      }
       navigate(
         { pathname: location.pathname, search: `?${params.toString()}` },
-        { replace: true }
+        { replace: !pushListEntry }
       );
       return;
     }
@@ -4140,6 +4178,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [, setDuplicates] = useState('');
   const [isDuplicateView, setIsDuplicateView] = useState(false);
+  isDuplicateViewRef.current = isDuplicateView;
   /**
    * «Хто що шукав» — картки читачів разом з їхніми запитами.
    *
@@ -5521,6 +5560,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handleBackToPreviousList = useCallback(() => {
+    // Картку відкрито окремим кроком історії: кнопка робить те саме, що
+    // «назад» телефона, інакше запис картки лишився б в історії й «назад»
+    // після кнопки відкрив би її знову. Список вертає ефект адреси.
+    if (shouldGoBackInHistory({ cardReturn: cardListReturnRef.current, locationKey: location.key })) {
+      navigate(-1);
+      return;
+    }
     logProfileRestoreStep('previous-list:restore-start', {
       activeUserId: state?.userId || '',
       hasMemorySnapshot: Boolean(previousListStateRef.current),
@@ -5618,7 +5664,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       restoredUsersCount: Object.keys(restoredUsers).length,
     });
     setState({});
-  }, [location.pathname, location.search, navigate, setSearch, setState, state?.userId]);
+  }, [location.key, location.pathname, location.search, navigate, setSearch, setState, state?.userId]);
+  backToPreviousListRef.current = handleBackToPreviousList;
 
   useEffect(() => {
     if (!state?.userId) {
