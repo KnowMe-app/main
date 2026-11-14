@@ -40,6 +40,22 @@ const NOTIFYING_LIKER_UIDS = Object.freeze(['3LiD7JGCJTSJoVMU7fdR1ZrcIZH2', '0gh
 
 const isNotifyingLiker = uid => NOTIFYING_LIKER_UIDS.includes(uid);
 
+/**
+ * **Тестовий режим** (14.11, на прохання власниці продукту): поки він `true`,
+ * **кожен** лайк адміна шле сповіщення (без «раз на того, хто вподобав»), а
+ * кожен дизлайк адміна — тестовий push «Не цікаво». Так сценарій можна
+ * перевіряти скільки завгодно разів на тій самій картці.
+ *
+ * Дизлайк іде **лише push**, не в Telegram: push отримує лише та, хто сама
+ * ввімкнула сповіщення в «Моєму профілі», а бот написав би кожній донорці,
+ * що входила через Telegram, — і справжня донорка дізналася б, що адмін
+ * позначив її «Не цікаво».
+ *
+ * Перед відкриттям для всіх — `false`: лишається один раз від акаунта, а
+ * дизлайки не шлють нічого.
+ */
+const ADMIN_TEST_MODE = true;
+
 const DONOR_ROLE = 'ed';
 
 const normalizeRoles = role => {
@@ -66,26 +82,30 @@ const LIKE_TEXTS = Object.freeze({
     ? `Вашу анкету на KnowMe вподобали. Усього вподобань: ${count}.`
     : 'Вашу анкету на KnowMe вподобали.'}\n\nХто саме — не показуємо: реакції в KnowMe анонімні.`,
   button: 'Відкрити KnowMe',
+  // Лише тестовий режим: справжнім доноркам дизлайки не повідомляються.
+  dislikeTitle: 'Тест: «Не цікаво»',
+  dislikeBody: 'Адмін позначив вашу анкету «Не цікаво». Це тестове сповіщення.',
 });
 
 /**
  * Записує, що `likerId` вподобав картку, і віддає нову кількість — або `0`,
  * коли цей читач уже рахувався (повтор чи повтор події).
  */
-const recordLike = async (cardId, likerId, { db, now }) => {
+const recordLike = async (cardId, likerId, { db, now }, { allowRepeat = false } = {}) => {
   let count = 0;
   const result = await db.transaction(`${LIKE_NOTIFICATIONS_ROOT}/${cardId}`, current => {
     const record = current && typeof current === 'object' ? current : {};
     const likers = record.likers && typeof record.likers === 'object' ? record.likers : {};
     if (likers[likerId]) {
-      count = 0;
+      // Тестовий режим: повтор теж шле — з тією самою кількістю.
+      count = allowRepeat ? Object.keys(likers).length : 0;
       return undefined;
     }
     const nextLikers = { ...likers, [likerId]: now };
     count = Object.keys(nextLikers).length;
     return { ...record, likers: nextLikers, count, lastAt: now };
   });
-  return result.committed ? count : 0;
+  return result.committed || allowRepeat ? count : 0;
 };
 
 /** Чат Telegram донорки: приватний чат бота = id акаунта Telegram. */
@@ -102,7 +122,8 @@ const INVALID_TOKEN_CODES = new Set([
 ]);
 
 /** Push на всі зареєстровані пристрої; мертві токени знімаються. */
-const sendPushToAccount = async (uid, count, { db, sendPush }) => {
+const sendPushToAccount = async (uid, count, deps, data = null) => {
+  const { db, sendPush } = deps;
   const tokensNode = await db.get(`${PUSH_TOKENS_ROOT}/${uid}`);
   const tokens = Object.keys(tokensNode && typeof tokensNode === 'object' ? tokensNode : {});
   if (!tokens.length) return { sent: 0, removed: 0 };
@@ -111,7 +132,7 @@ const sendPushToAccount = async (uid, count, { db, sendPush }) => {
   // `notification` тут дав би на частині браузерів друге сповіщення.
   const responses = await sendPush({
     tokens,
-    data: {
+    data: data || {
       kind: 'like',
       title: LIKE_TEXTS.title,
       body: LIKE_TEXTS.body(count),
@@ -142,7 +163,7 @@ const handleFavoriteWrite = async ({ likerId, cardId, before, after }, deps) => 
   const roles = normalizeRoles(await deps.db.get(`matchingCards/${cardId}/role`));
   if (!roles.includes(DONOR_ROLE)) return 'not-donor';
 
-  const count = await recordLike(cardId, likerId, deps);
+  const count = await recordLike(cardId, likerId, deps, { allowRepeat: ADMIN_TEST_MODE });
   if (!count) return 'already-counted';
 
   const outcomes = [];
@@ -168,8 +189,40 @@ const handleFavoriteWrite = async ({ likerId, cardId, before, after }, deps) => 
   return outcomes.length ? outcomes.join(',') : 'no-channel';
 };
 
+/**
+ * Обробка запису `multiData/dislikes/{likerId}/{cardId}` — лише в тестовому
+ * режимі й лише push (див. `ADMIN_TEST_MODE`).
+ */
+const handleDislikeWrite = async ({ likerId, cardId, before, after }, deps) => {
+  if (!ADMIN_TEST_MODE) return 'test-mode-off';
+  if (!isNewLike(before, after)) return 'not-new';
+  if (!isNotifyingLiker(likerId)) return 'liker-not-enabled';
+  if (!likeTargetsDonorAnketa(after)) return 'other-anketa';
+  if (likerId === cardId) return 'self';
+  if (!(await deps.accountExists(cardId))) return 'no-account';
+  const roles = normalizeRoles(await deps.db.get(`matchingCards/${cardId}/role`));
+  if (!roles.includes(DONOR_ROLE)) return 'not-donor';
+  try {
+    const push = await sendPushToAccount(cardId, 0, deps, {
+      kind: 'dislike',
+      title: LIKE_TEXTS.dislikeTitle,
+      body: LIKE_TEXTS.dislikeBody,
+      url: NOTIFICATION_URL,
+    });
+    const outcomes = [];
+    if (push.sent) outcomes.push(`push-${push.sent}`);
+    if (push.removed) outcomes.push(`push-removed-${push.removed}`);
+    return outcomes.length ? outcomes.join(',') : 'no-channel';
+  } catch (error) {
+    return 'push-failed';
+  }
+};
+
 module.exports = {
+  ADMIN_TEST_MODE,
+  DISLIKES_ROOT: 'multiData/dislikes',
   FAVORITES_ROOT,
+  handleDislikeWrite,
   LIKE_NOTIFICATIONS_ROOT,
   LIKE_TEXTS,
   NOTIFYING_LIKER_UIDS,

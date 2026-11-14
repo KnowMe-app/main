@@ -741,58 +741,89 @@ exports.recordOwnerLikedAudienceChange = recordOwnerMarkChange('likedAudience');
  * лічильник у `likeNotifications/{картка}` повтор однаково відкинув би.
  */
 const { getMessaging } = require('firebase-admin/messaging');
-const { FAVORITES_ROOT, handleFavoriteWrite } = require('./likeNotifications');
+const {
+  DISLIKES_ROOT,
+  FAVORITES_ROOT,
+  handleDislikeWrite,
+  handleFavoriteWrite,
+} = require('./likeNotifications');
+
+const buildLikeNotificationDeps = () => {
+  const database = getDatabase();
+  return {
+    db: {
+      ...createAdminDb(database),
+      update: updates => database.ref().update(updates),
+      queryByChild: async (path, child, value) => (
+        await database.ref(path).orderByChild(child).equalTo(value).get()
+      ).val(),
+    },
+    accountExists: async uid => {
+      try {
+        await getAuth().getUser(uid);
+        return true;
+      } catch (error) {
+        if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-uid') return false;
+        throw error;
+      }
+    },
+    sendTelegram: createTelegramSender(TELEGRAM_BOT_TOKEN.value()),
+    sendPush: async ({ tokens, data }) => {
+      const result = await getMessaging().sendEachForMulticast({
+        tokens,
+        data,
+        webpush: { headers: { Urgency: 'high', TTL: String(3 * 24 * 60 * 60) } },
+      });
+      return result.responses.map(response => ({
+        success: response.success,
+        errorCode: response.error ? response.error.code : '',
+      }));
+    },
+    now: Date.now(),
+  };
+};
+
+const LIKE_NOTIFICATION_OPTIONS = {
+  region: DATABASE_REGION,
+  secrets: [TELEGRAM_BOT_TOKEN],
+  memory: '256MiB',
+  timeoutSeconds: 30,
+  maxInstances: 5,
+};
 
 exports.notifyDonorAboutLike = onValueWritten(
-  {
-    ref: `${FAVORITES_ROOT}/{likerId}/{cardId}`,
-    region: DATABASE_REGION,
-    secrets: [TELEGRAM_BOT_TOKEN],
-    memory: '256MiB',
-    timeoutSeconds: 30,
-    maxInstances: 5,
-  },
+  { ...LIKE_NOTIFICATION_OPTIONS, ref: `${FAVORITES_ROOT}/{likerId}/{cardId}` },
   async event => {
     const { likerId, cardId } = event.params;
-    const database = getDatabase();
     try {
       const outcome = await handleFavoriteWrite(
         { likerId, cardId, before: event.data.before.val(), after: event.data.after.val() },
-        {
-          db: {
-            ...createAdminDb(database),
-            update: updates => database.ref().update(updates),
-            queryByChild: async (path, child, value) => (
-              await database.ref(path).orderByChild(child).equalTo(value).get()
-            ).val(),
-          },
-          accountExists: async uid => {
-            try {
-              await getAuth().getUser(uid);
-              return true;
-            } catch (error) {
-              if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-uid') return false;
-              throw error;
-            }
-          },
-          sendTelegram: createTelegramSender(TELEGRAM_BOT_TOKEN.value()),
-          sendPush: async ({ tokens, data }) => {
-            const result = await getMessaging().sendEachForMulticast({
-              tokens,
-              data,
-              webpush: { headers: { Urgency: 'high', TTL: String(3 * 24 * 60 * 60) } },
-            });
-            return result.responses.map(response => ({
-              success: response.success,
-              errorCode: response.error ? response.error.code : '',
-            }));
-          },
-          now: Date.now(),
-        },
+        buildLikeNotificationDeps(),
       );
       logger.info('like notification', { outcome });
     } catch (error) {
       logger.error('like notification failed', { error: error.message });
+    }
+  },
+);
+
+/**
+ * Тестове сповіщення про дизлайк адміна — лише поки `ADMIN_TEST_MODE`
+ * (`likeNotifications.js`) увімкнено, і лише push. Вимкнений режим — функція
+ * нічого не шле; прибрати її з коду можна разом із режимом.
+ */
+exports.notifyDonorAboutDislike = onValueWritten(
+  { ...LIKE_NOTIFICATION_OPTIONS, ref: `${DISLIKES_ROOT}/{likerId}/{cardId}` },
+  async event => {
+    const { likerId, cardId } = event.params;
+    try {
+      const outcome = await handleDislikeWrite(
+        { likerId, cardId, before: event.data.before.val(), after: event.data.after.val() },
+        buildLikeNotificationDeps(),
+      );
+      logger.info('dislike notification', { outcome });
+    } catch (error) {
+      logger.error('dislike notification failed', { error: error.message });
     }
   },
 );

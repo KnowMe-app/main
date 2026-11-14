@@ -3,7 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  ADMIN_TEST_MODE,
   NOTIFYING_LIKER_UIDS,
+  handleDislikeWrite,
   handleFavoriteWrite,
   isNewLike,
   likeTargetsDonorAnketa,
@@ -88,14 +90,48 @@ test('серце адміна — Telegram і push, з кількістю й б�
   assert.equal(data.likeNotifications[DONOR].count, 1);
 });
 
-test('другий адмін — «усього вподобань: 2»; повтор того самого — тиша', async () => {
+test('другий адмін — «усього вподобань: 2»', async () => {
   const { deps, sent } = makeDeps({ data: donorData() });
   await handleFavoriteWrite({ likerId: NOTIFYING_LIKER_UIDS[0], cardId: DONOR, before: null, after: true }, deps);
   await handleFavoriteWrite({ likerId: NOTIFYING_LIKER_UIDS[1], cardId: DONOR, before: null, after: true }, deps);
   assert.match(sent.telegram[1].text, /Усього вподобань: 2/);
-  const again = await handleFavoriteWrite({ likerId: NOTIFYING_LIKER_UIDS[0], cardId: DONOR, before: null, after: 5 }, deps);
-  assert.equal(again, 'already-counted');
-  assert.equal(sent.telegram.length, 2);
+});
+
+test('повтор серця того самого адміна: у тестовому режимі шле знову, без нього — тиша', async () => {
+  const { deps, sent } = makeDeps({ data: donorData() });
+  await handleFavoriteWrite({ likerId: ADMIN, cardId: DONOR, before: null, after: true }, deps);
+  const again = await handleFavoriteWrite({ likerId: ADMIN, cardId: DONOR, before: null, after: 5 }, deps);
+  if (ADMIN_TEST_MODE) {
+    assert.equal(again, 'telegram,push-2');
+    assert.equal(sent.telegram.length, 2);
+    // Кількість не росте від повтору того самого адміна.
+    assert.equal(sent.push[1].payload.count, '1');
+  } else {
+    assert.equal(again, 'already-counted');
+    assert.equal(sent.telegram.length, 1);
+  }
+});
+
+test('дизлайк адміна: у тестовому режимі — лише push, без Telegram', async () => {
+  const { deps, sent } = makeDeps({ data: donorData() });
+  const outcome = await handleDislikeWrite({ likerId: ADMIN, cardId: DONOR, before: null, after: true }, deps);
+  if (!ADMIN_TEST_MODE) {
+    assert.equal(outcome, 'test-mode-off');
+    return;
+  }
+  assert.equal(outcome, 'push-2');
+  assert.equal(sent.telegram.length, 0);
+  assert.equal(sent.push[0].payload.kind, 'dislike');
+  // Кожен дизлайк — новий push.
+  await handleDislikeWrite({ likerId: ADMIN, cardId: DONOR, before: null, after: true }, deps);
+  assert.equal(sent.push.length, 2);
+});
+
+test('дизлайк не адміна чи не донорці — нічого', async () => {
+  const { deps, sent } = makeDeps({ data: { ...donorData(), matchingCards: { [DONOR]: { role: 'ag' } } } });
+  await handleDislikeWrite({ likerId: 'agencyUid000000000000000001', cardId: DONOR, before: null, after: true }, deps);
+  await handleDislikeWrite({ likerId: ADMIN, cardId: DONOR, before: null, after: true }, deps);
+  assert.equal(sent.push.length, 0);
 });
 
 test('серце не адміна поки нічого не шле', async () => {
