@@ -30,6 +30,9 @@ import { auth, database } from './config';
 const VAPID_KEY = process.env.REACT_APP_FIREBASE_VAPID_KEY || '';
 const TOKEN_STORAGE_PREFIX = 'km.pushToken.v1:';
 const REFRESH_STORAGE_PREFIX = 'km.pushTokenCheckedAt.v1:';
+// Токени, чий запис у базі вихід зняти не встиг (без звʼязку): після виходу
+// правила вже не пустять, тож знімає їх наступний вхід того самого акаунта.
+const PENDING_REMOVAL_PREFIX = 'km.pushTokenPendingRemoval.v1:';
 const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const WORKER_WAIT_MS = 4000;
 const SIGN_OUT_CLEANUP_WAIT_MS = 1500;
@@ -136,8 +139,35 @@ export const disablePushNotifications = async uid => {
  * і старий перестає доходити. Лише там, де людина вже дозволила, — діалогу
  * тут не буває.
  */
+const readPendingRemovals = uid => {
+  try {
+    const list = JSON.parse(readStorage(`${PENDING_REMOVAL_PREFIX}${uid}`) || '[]');
+    return Array.isArray(list) ? list.filter(token => typeof token === 'string' && token) : [];
+  } catch {
+    return [];
+  }
+};
+const writePendingRemovals = (uid, tokens) => writeStorage(
+  `${PENDING_REMOVAL_PREFIX}${uid}`,
+  tokens.length ? JSON.stringify([...new Set(tokens)]) : '',
+);
+
+/** Знімає з бази токени, яких не встиг зняти попередній вихід цього акаунта. */
+const flushPendingRemovals = async uid => {
+  const pending = readPendingRemovals(uid);
+  if (!pending.length) return;
+  const left = [];
+  for (const token of pending) {
+    // eslint-disable-next-line no-await-in-loop
+    await removeToken(uid, token).catch(() => left.push(token));
+  }
+  writePendingRemovals(uid, left);
+};
+
 export const refreshPushToken = async uid => {
-  if (!uid || !isPushEnabledOnDevice(uid)) return;
+  if (!uid) return;
+  await flushPendingRemovals(uid).catch(() => {});
+  if (!isPushEnabledOnDevice(uid)) return;
   const checkedAt = Number(readStorage(`${REFRESH_STORAGE_PREFIX}${uid}`)) || 0;
   if (Date.now() - checkedAt < REFRESH_INTERVAL_MS) return;
   try {
@@ -173,8 +203,21 @@ export const installPushSignOutCleanup = () => {
       if (!token) return;
       writeStorage(`${TOKEN_STORAGE_PREFIX}${uid}`, '');
       writeStorage(`${REFRESH_STORAGE_PREFIX}${uid}`, '');
+      // Поки запис не знято точно, токен лежить у черзі: без звʼязку чи за
+      // тайм-аутом запис лишився б у базі назавжди.
+      writePendingRemovals(uid, [...readPendingRemovals(uid), token]);
+      const removed = removeToken(uid, token)
+        .then(() => writePendingRemovals(uid, readPendingRemovals(uid).filter(item => item !== token)))
+        .catch(() => {});
+      // Токен анулюється й на самому пристрої (відписка від push): навіть
+      // коли запис у базі лишився, на цей пристрій — де вже може сидіти
+      // інша людина — функція більше нічого не доставить, а мертвий токен
+      // зніме сама на першій відправці.
+      const invalidated = loadMessaging()
+        .then(({ deleteToken, messaging }) => deleteToken(messaging))
+        .catch(() => {});
       await Promise.race([
-        removeToken(uid, token).catch(() => {}),
+        Promise.all([removed, invalidated]),
         new Promise(resolve => { setTimeout(resolve, SIGN_OUT_CLEANUP_WAIT_MS); }),
       ]);
     });
