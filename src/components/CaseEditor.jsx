@@ -23,6 +23,7 @@ import {
   createChildRecord,
   formatDocumentDate,
   formatPassportNumber,
+  representativeIdentityLabel,
   formatShortNameUk,
   getMaternityHospitalDisplayName,
   getValueByPath,
@@ -40,19 +41,8 @@ const describeSaveError = error => `${error?.code || error?.name || 'error'}: ${
 const isFilled = value => !(value === undefined || value === null || String(value).trim() === '');
 const parseNumberOrBlank = value => (value === '' || value === undefined || value === null ? undefined : Number(value));
 
-// The power of attorney (signing date + apostille date) is now a static fact of the *case*
-// (relations.representativePowerOfAttorney, edited alongside the representative picker below) -
-// the same representative can act under a different POA on another case, and one POA can cover
-// several representatives at once, so a representative record no longer needs its own copy per
-// person/date pairing. Several representatives can still share the exact same full name though, so
-// this is the one line that tells them apart, in the picker and on the overview card alike - a
-// passport number and/or birth date, whichever is filled. Blank when neither is set.
-const representativeIdentityLabel = record => {
-  const parts = [];
-  if (isFilled(record?.passport?.number)) parts.push(`Паспорт ${formatPassportNumber(record.passport.number)}`);
-  if (isFilled(record?.birthDate)) parts.push(`${formatDocumentDate(record.birthDate)} р.н.`);
-  return parts.join(' · ');
-};
+// Як розрізнити представників з однаковим ПІБ — `representativeIdentityLabel` у
+// documentsCatalogUtils (спільний із вибором представників на сторінці документів).
 
 // --- Case switcher strip (spec §1) ---------------------------------------------------------------
 

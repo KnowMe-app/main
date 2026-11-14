@@ -85,6 +85,7 @@ import {
   partyDisplayName,
   plainTextOf,
   REPRESENTATIVE_SLOT_COUNT,
+  representativeIdentityLabel,
   resolveCaseContext,
   resolveEffectiveDocFormatting,
   resolveMergedRecordsForPersistence,
@@ -2676,7 +2677,9 @@ const DocumentsPage = ({ isAdmin }) => {
                             value={String(record.id)}
                             disabled={slotIds.some((id, index) => index !== slotIndex && index < REPRESENTATIVE_SLOT_COUNT && id === String(record.id))}
                           >
-                            {`Представник ${slotIndex + 1}: ${partyDisplayName(record)}`}
+                            {/* Однаковий ПІБ у двох записів — звичайна річ; паспорт і дата
+                                народження кажуть, чий паспорт піде в довіреність. */}
+                            {[`Представник ${slotIndex + 1}: ${partyDisplayName(record)}`, representativeIdentityLabel(record)].filter(Boolean).join(' · ')}
                           </option>
                         ))}
                       </Select>

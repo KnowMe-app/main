@@ -1877,6 +1877,21 @@ export const formatPassportNumber = value => {
   return `${match[1].toUpperCase()} ${match[2]}`;
 };
 
+// Довіреність (дата підписання + дата апостилю) — факт *кейсу*
+// (relations.representativePowerOfAttorney), а не запису представника, тож запис більше не
+// тримає копії на кожну пару «людина + дата». Але ПІБ у кількох представників буває однаковий, і
+// цей рядок — єдине, що їх розрізняє: у редакторі кейсу (вибірник і картка огляду) і в виборі
+// «Представник 1/2» на сторінці документів. Без нього адмін міг поставити в довіреність паспорт
+// іншої людини з тим самим іменем. Паспорт і/або дата народження — що заповнено; порожньо, коли
+// немає ні того, ні іншого.
+export const representativeIdentityLabel = record => {
+  const isFilled = value => !(value === undefined || value === null || String(value).trim() === '');
+  const parts = [];
+  if (isFilled(record?.passport?.number)) parts.push(`Паспорт ${formatPassportNumber(record.passport.number)}`);
+  if (isFilled(record?.birthDate)) parts.push(`${formatDocumentDate(record.birthDate)} р.н.`);
+  return parts.join(' · ');
+};
+
 const resolvePlaceholderValue = (context, path, lang) => {
   let value = getValueByPath(context, path);
   // A path that stops at a bilingual node ({uk, en}) resolves to the requested language; one that
