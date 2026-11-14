@@ -777,32 +777,6 @@ export const nameFormOf = value => {
 };
 
 export const partyDisplayName = record => nameFormOf(record?.name) || record?.id;
-
-// Довіреність (і будь-який шаблон із `representatives.1.*`) називає представників за місцем у
-// кейсі: перший обраний — `representatives.0`, другий — `representatives.1`. Сторінка документів
-// дає вибір саме за місцями («Представник 1», «Представник 2»), тож зміна одного місця не мусить
-// переставляти інше: порожнє друге місце лишається порожнім, а та сама людина двічі не стоїть —
-// інакше довіреність назвала б одного представника двічі. Представники понад два (обрані в
-// редакторі кейсу) зберігаються як були.
-export const REPRESENTATIVE_SLOT_COUNT = 2;
-export const setRepresentativeSlot = (representativeIds, slotIndex, representativeId) => {
-  const ids = toArray(representativeIds).map(String).filter(Boolean);
-  const slots = Array.from({ length: REPRESENTATIVE_SLOT_COUNT }, (_, index) => ids[index] || '');
-  const extras = ids.slice(REPRESENTATIVE_SLOT_COUNT);
-  const nextId = String(representativeId || '');
-  slots[slotIndex] = nextId;
-  if (nextId) {
-    slots.forEach((id, index) => {
-      if (index !== slotIndex && id === nextId) slots[index] = '';
-    });
-  }
-  const seen = new Set();
-  return [...slots, ...extras].filter(id => {
-    if (!id || seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-};
 export const maternityDisplayName = record => getMaternityHospitalDisplayName(record) || record?.id;
 export const coupleDisplayName = record => {
   const names = toArray(record?.partners).map(partner => nameFormOf(partner?.name)).filter(Boolean);
@@ -1880,9 +1854,8 @@ export const formatPassportNumber = value => {
 // Довіреність (дата підписання + дата апостилю) — факт *кейсу*
 // (relations.representativePowerOfAttorney), а не запису представника, тож запис більше не
 // тримає копії на кожну пару «людина + дата». Але ПІБ у кількох представників буває однаковий, і
-// цей рядок — єдине, що їх розрізняє: у редакторі кейсу (вибірник і картка огляду) і в виборі
-// «Представник 1/2» на сторінці документів. Без нього адмін міг поставити в довіреність паспорт
-// іншої людини з тим самим іменем. Паспорт і/або дата народження — що заповнено; порожньо, коли
+// цей рядок — єдине, що їх розрізняє у редакторі кейсу (вибірник і картка огляду). Без нього
+// адмін міг поставити в довіреність паспорт іншої людини з тим самим іменем. Паспорт і/або дата народження — що заповнено; порожньо, коли
 // немає ні того, ні іншого.
 export const representativeIdentityLabel = record => {
   const isFilled = value => !(value === undefined || value === null || String(value).trim() === '');
@@ -3368,7 +3341,7 @@ export const VARIABLE_PICKER_GROUPS = [
     roots: ['representatives.1'],
     predicate: (context, { templateId } = {}) => Boolean(context?.representatives?.[1])
       || templateId === 'surrogacy-power-of-attorney',
-    emptyHint: 'Оберіть другого представника для кейсу',
+    emptyHint: 'Оберіть другого представника в кейсі на сторінці Parties',
   },
   { label: 'Клініка — іноземна', roots: ['clinic'], predicate: context => context?.clinic?.kind === 'foreign' },
   { label: 'Клініка — українська', roots: ['clinic'], predicate: context => context?.clinic?.kind !== 'foreign' },

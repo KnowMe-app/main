@@ -106,3 +106,43 @@ describe('spec: case editor Огляд tab - Представники relation c
     expect(screen.queryByLabelText('Power of attorney apostille date')).not.toBeInTheDocument();
   });
 });
+
+describe('Представники: порядок у кейсі — порядок у довіреності', () => {
+  it('вибірник нумерує обраних, а картка показує їх у порядку вибору', async () => {
+    get.mockImplementation(async path => {
+      if (path === 'documentsBuilder/parties') {
+        const parties = buildParties();
+        parties.representatives['representative-2'] = {
+          id: 'representative-2',
+          name: { uk: { nominative: 'Коваль Ірина Ігорівна', genitive: '' }, en: '' },
+          passport: { number: 'CT314633', issuedBy: { uk: '', en: '' }, issueDate: '' },
+          birthDate: '',
+          address: { uk: '', en: '' },
+        };
+        return { exists: () => true, val: () => parties };
+      }
+      if (path === 'documentsBuilder/cases') return { exists: () => true, val: () => buildCases() };
+      return { exists: () => false, val: () => null };
+    });
+    render(<MemoryRouter><PartiesPage isAdmin /></MemoryRouter>);
+    fireEvent.click(await screen.findByTitle('Edit parties'));
+    await screen.findByText('Огляд');
+
+    fireEvent.click(within(screen.getByLabelText('Представники')).getByRole('button', { name: 'Змінити' }));
+    // Друга в довіднику обирається першою — і першою ж іде в кейс.
+    fireEvent.click(await screen.findByRole('button', { name: /Коваль Ірина Ігорівна/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Коваль Олександр Володимирович/ }));
+    expect(screen.getByRole('button', { name: /Коваль Ірина Ігорівна/ })).toHaveTextContent(/1$/);
+    expect(screen.getByRole('button', { name: /Коваль Олександр Володимирович/ })).toHaveTextContent(/2$/);
+    fireEvent.click(screen.getByRole('button', { name: 'Застосувати' }));
+
+    const card = screen.getByLabelText('Представники');
+    expect(await within(card).findByText(/Представник 1:/)).toHaveTextContent('Представник 1: Коваль Ірина Ігорівна');
+    expect(within(card).getByText(/Представник 2:/)).toHaveTextContent('Представник 2: Коваль Олександр Володимирович');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Зберегти все' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith('documentsBuilder/cases', expect.objectContaining({
+      'case-1/relations': expect.objectContaining({ representativeIds: ['representative-2', 'representative-1'] }),
+    })));
+  });
+});

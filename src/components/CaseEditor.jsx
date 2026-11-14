@@ -672,7 +672,10 @@ const PickerSheet = ({ title, options, multi, selectedIds, onApply, onCancel }) 
                   {option.label}
                   {option.sublabel ? <SheetOptionSub $active={active}>{option.sublabel}</SheetOptionSub> : null}
                 </SheetOptionText>
-                {active ? <b>✓</b> : null}
+                {/* У кількох виборах номер — це місце в документі: довіреність бере першого
+                    обраного як `representatives.0`, другого — як `representatives.1`, тож
+                    галочка мовчала б про те, хто з двох «Представник 1». */}
+                {active ? <b>{multi ? pending.indexOf(option.id) + 1 : '✓'}</b> : null}
               </SheetOption>
             );
           })}
@@ -1343,16 +1346,23 @@ const CaseEditor = ({
                   <RelationCard role="group" aria-label="Представники">
                     <RelationCardLabel>Представники</RelationCardLabel>
                     {(() => {
-                      const selected = catalog.parties.representatives.filter(item => draft.relations.representativeIds.includes(String(item.id)));
+                      // Порядок — той, що в кейсі (representativeIds), а не в довіднику: саме
+                      // за ним документи беруть `representatives.0` і `representatives.1`.
+                      const selected = draft.relations.representativeIds
+                        .map(id => catalog.parties.representatives.find(item => String(item.id) === String(id)))
+                        .filter(Boolean);
                       return (
                         <>
                           {selected.length ? (
                             <RepresentativeList>
-                              {selected.map(record => {
+                              {selected.map((record, index) => {
                                 const sub = representativeIdentityLabel(record);
                                 return (
                                   <div key={record.id}>
-                                    <RepresentativeName>{partyDisplayName(record)}</RepresentativeName>
+                                    <RepresentativeName>
+                                      {selected.length > 1 ? `Представник ${index + 1}: ` : ''}
+                                      {partyDisplayName(record)}
+                                    </RepresentativeName>
                                     {sub ? <RepresentativeSub>{sub}</RepresentativeSub> : null}
                                   </div>
                                 );
