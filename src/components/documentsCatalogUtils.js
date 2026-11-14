@@ -777,6 +777,32 @@ export const nameFormOf = value => {
 };
 
 export const partyDisplayName = record => nameFormOf(record?.name) || record?.id;
+
+// Довіреність (і будь-який шаблон із `representatives.1.*`) називає представників за місцем у
+// кейсі: перший обраний — `representatives.0`, другий — `representatives.1`. Сторінка документів
+// дає вибір саме за місцями («Представник 1», «Представник 2»), тож зміна одного місця не мусить
+// переставляти інше: порожнє друге місце лишається порожнім, а та сама людина двічі не стоїть —
+// інакше довіреність назвала б одного представника двічі. Представники понад два (обрані в
+// редакторі кейсу) зберігаються як були.
+export const REPRESENTATIVE_SLOT_COUNT = 2;
+export const setRepresentativeSlot = (representativeIds, slotIndex, representativeId) => {
+  const ids = toArray(representativeIds).map(String).filter(Boolean);
+  const slots = Array.from({ length: REPRESENTATIVE_SLOT_COUNT }, (_, index) => ids[index] || '');
+  const extras = ids.slice(REPRESENTATIVE_SLOT_COUNT);
+  const nextId = String(representativeId || '');
+  slots[slotIndex] = nextId;
+  if (nextId) {
+    slots.forEach((id, index) => {
+      if (index !== slotIndex && id === nextId) slots[index] = '';
+    });
+  }
+  const seen = new Set();
+  return [...slots, ...extras].filter(id => {
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+};
 export const maternityDisplayName = record => getMaternityHospitalDisplayName(record) || record?.id;
 export const coupleDisplayName = record => {
   const names = toArray(record?.partners).map(partner => nameFormOf(partner?.name)).filter(Boolean);
@@ -3318,6 +3344,17 @@ export const VARIABLE_PICKER_GROUPS = [
   { label: 'Спільне', roots: ['couple', 'surrogacyAgreement'] },
   { label: 'Сурогатна мати', roots: ['surrogateMother'] },
   { label: 'Довірена особа', roots: ['representative'] },
+  // Другий представник довіреності. `collectContextLeafPaths` масиви пропускає, тож без цієї групи
+  // `representatives.1.*` у вибірнику не було зовсім і шаблон писали руками. Корінь — шлях із
+  // індексом (buildVariablePickerGroups розгортає його через getValueByPath). Показується, коли в
+  // кейсі обрано другого представника, і в довіреності — навіть до того (emptyHint каже, що обрати).
+  {
+    label: 'Довірена особа 2',
+    roots: ['representatives.1'],
+    predicate: (context, { templateId } = {}) => Boolean(context?.representatives?.[1])
+      || templateId === 'surrogacy-power-of-attorney',
+    emptyHint: 'Оберіть другого представника для кейсу',
+  },
   { label: 'Клініка — іноземна', roots: ['clinic'], predicate: context => context?.clinic?.kind === 'foreign' },
   { label: 'Клініка — українська', roots: ['clinic'], predicate: context => context?.clinic?.kind !== 'foreign' },
   // Distinct from the `clinic` groups above: the source clinic (spec §3/§4, resolved from the
@@ -3415,7 +3452,7 @@ export const buildVariablePickerGroups = (context, options = {}) => VARIABLE_PIC
   .map(group => ({
     label: group.label,
     items: group.roots
-      .flatMap(root => collectContextLeafPaths(context?.[root], root))
+      .flatMap(root => collectContextLeafPaths(getValueByPath(context, root), root))
       .filter(item => isPrintableLeafPath(item.path)),
     ...(group.emptyHint ? { emptyHint: group.emptyHint } : {}),
   }));
