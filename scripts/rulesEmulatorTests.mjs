@@ -652,8 +652,30 @@ await it('адмін читає чужі лайки — це і є список 
 await it('адмін читає чужі дизлайки', () =>
   assertSucceeds(get(ref(db(SUPERADMIN), `multiData/dislikes/${PROFILE_OWNER}`))));
 
-await it('адмін НЕ ставить реакцію за власницю', () =>
-  assertFails(set(ref(db(SUPERADMIN), `multiData/favorites/${PROFILE_OWNER}/${CARD}`), true)));
+// Дубль картки закривають, і реакції під його id треба перенести на справжню
+// картку й зняти з дубля — за кожного власника, чиї позначки там лежать
+// (порівняння ⇆, `transferOwnerMarksBetweenCards`). Тому повні адміни пишуть
+// реакції за власника, як уже писали нотатки, дату дзвінка й `writer`.
+await it('повний адмін ставить реакцію за власницю (перенос з дубля)', () =>
+  assertSucceeds(set(ref(db(SUPERADMIN), `multiData/favorites/${PROFILE_OWNER}/${CARD}`), true)));
+
+await it('повний адмін знімає реакцію власниці з дубля', () =>
+  assertSucceeds(set(ref(db(SUPERADMIN), `multiData/favorites/${PROFILE_OWNER}/${CARD}`), null)));
+
+await it('другий повний адмін ставить дизлайк за власницю', () =>
+  assertSucceeds(set(ref(db('3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'), `multiData/dislikes/${PROFILE_OWNER}/${CARD}`), true)));
+
+await it('перенос позначок одним записом: реакція, нотатка й дата дзвінка на двох картках', () =>
+  assertSucceeds(update(ref(db(SUPERADMIN)), {
+    [`multiData/dislikes/${PROFILE_OWNER}/${CARD}`]: null,
+    [`multiData/dislikes/${PROFILE_OWNER}/${HIDDEN_CARD}`]: true,
+    [`multiData/comments/${PROFILE_OWNER}/${HIDDEN_CARD}`]: { text: 'мала кількість клітин', updatedAt: 1760000000000 },
+    [`multiData/comments/${PROFILE_OWNER}/${CARD}`]: null,
+    [`multiData/getInTouch/${PROFILE_OWNER}/${HIDDEN_CARD}`]: '2099-99-99',
+  })));
+
+await it('матчинговий переглядач НЕ ставить реакцію за власницю', () =>
+  assertFails(set(ref(db(MATCHING_VIEWER), `multiData/dislikes/${PROFILE_OWNER}/${CARD}`), true)));
 
 await it('делегований читач читає лайки власника', () =>
   assertSucceeds(get(ref(db(DELEGATED_READER), `multiData/favorites/${SUPERADMIN}`))));

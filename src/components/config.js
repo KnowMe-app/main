@@ -32,7 +32,7 @@ import { convertDriveLinkToImage } from '../utils/convertDriveLinkToImage';
 import { formatDateToDisplay, formatDateToServer } from './inputValidations';
 import { getCurrentValue } from './getCurrentValue';
 import toast from 'react-hot-toast';
-import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCachedMatchingSummaryCards, getCachedProfileBody, getCompleteCachedProfile, hasCompleteCachedProfile, incrementMatchingLoadStat, readStoredProfileRevision, removeCard, setProjectionFreshnessCheck } from '../utils/cardIndex';
+import { clearEmptySearchQueryCache, clearMatchingSearchResultCache, getCachedMatchingSummaryCards, getCachedProfileBody, getCompleteCachedProfile, hasCompleteCachedProfile, getCard, incrementMatchingLoadStat, readStoredProfileRevision, removeCard, setProjectionFreshnessCheck } from '../utils/cardIndex';
 import { updateCard } from '../utils/cardsStorage';
 import {
   SEARCH_QUERIES_ROOT_PATH,
@@ -147,6 +147,14 @@ import {
   registerOwnerMarkInvalidator,
 } from '../utils/ownerMarkVersions';
 import { forgetCachedComment, forgetOwnerComments, rememberCommentWrite } from '../utils/commentsStorage';
+import { resolveMatchingMultiDataOwnerIds } from '../utils/multiDataAccess';
+import {
+  OWNER_MARK_KINDS,
+  OWNER_REACTION_KINDS,
+  ownerMarkPath,
+  planOwnerMarksRemoval,
+  planOwnerMarksTransfer,
+} from '../utils/ownerMarksTransfer';
 import {
   configureWriteOutbox,
   enqueueOutboxWrite,
@@ -2369,6 +2377,103 @@ export const fetchAllCommentsByCardId = async (cardId, ownerIds = []) => {
     console.error('Error fetching all comments by cardId:', error);
     return [];
   }
+};
+
+/*
+ * Позначки власників про картку (`utils/ownerMarksTransfer`): нотатка,
+ * обране / «не цікаво», дата дзвінка. Власники — ті самі, чиї нотатки блок
+ * картки показує адмінові (`resolveMatchingMultiDataOwnerIds`: сам читач і
+ * його `multiDataSourceUserIds`), тож перенести й прибрати можна рівно те,
+ * що адмін бачить.
+ */
+export const resolveOwnerMarkOwnerIds = async () => {
+  const viewerId = auth.currentUser?.uid;
+  if (!viewerId) return [];
+  const viewerProfile = getCard(viewerId) || await fetchUserById(viewerId);
+  return resolveMatchingMultiDataOwnerIds({ viewerId, profile: viewerProfile });
+};
+
+/** `{ [ownerId]: { [cardId]: { comments, favorites, dislikes, getInTouch } } }` — точковими читаннями. */
+export const readOwnerMarksForCards = async (cardIds = [], ownerIds = []) => {
+  const cards = [...new Set(cardIds.filter(Boolean))];
+  const owners = [...new Set(ownerIds.filter(Boolean))];
+  noteRealtimeDemand();
+  const reads = owners.flatMap(ownerId => cards.flatMap(cardId => OWNER_MARK_KINDS.map(kind => (
+    get(ref2(database, ownerMarkPath(kind, ownerId, cardId)))
+      .then(snap => ({ ownerId, cardId, kind, value: snap.exists() ? snap.val() : null }))
+  ))));
+  const result = {};
+  (await Promise.all(reads)).forEach(({ ownerId, cardId, kind, value }) => {
+    result[ownerId] = result[ownerId] || {};
+    result[ownerId][cardId] = { ...(result[ownerId][cardId] || {}), [kind]: value };
+  });
+  return result;
+};
+
+// Після запису позначок чужим шляхом (не через чергу пристрою) кеші вкладки
+// мусять дізнатись про зміну самі: нотатки — кеш памʼяток і точкова памʼять,
+// реакції — кеш реакцій читача (для власника, чиї мапи він тримає).
+const syncOwnerMarkCachesAfterPatch = patch => {
+  const viewerId = auth.currentUser?.uid;
+  Object.entries(patch).forEach(([path, value]) => {
+    const [, kind, ownerId, cardId] = path.split('/');
+    if (kind === 'comments') {
+      if (value?.text) rememberCommentWrite(ownerId, cardId, value.text, value.updatedAt || Date.now());
+      else forgetCachedComment(ownerId, cardId);
+      invalidateOwnerCommentsCache(ownerId);
+    } else if (OWNER_REACTION_KINDS.includes(kind) && viewerId) {
+      patchCachedReactionValue(viewerId, ownerId, kind, cardId, value);
+    }
+  });
+};
+
+const applyOwnerMarksPatch = async patch => {
+  if (!Object.keys(patch).length) return;
+  noteRealtimeDemand();
+  // Одним записом від кореня: перенос і зняття з дубля — атомарно, інакше
+  // збій посередині лишав би позначку на обох картках або на жодній.
+  await update(ref2(database), patch);
+  syncOwnerMarkCachesAfterPatch(patch);
+};
+
+/**
+ * Перенести позначки всіх видимих адмінові власників з дубля на картку.
+ * Повертає `{ moved: [{ ownerId, kinds }], cleared }` — що переїхало і скільки
+ * записів знято з дубля.
+ */
+export const transferOwnerMarksBetweenCards = async ({ sourceCardId, targetCardId, ownerIds } = {}) => {
+  if (!sourceCardId || !targetCardId || sourceCardId === targetCardId) return { moved: [], cleared: 0 };
+  const owners = ownerIds || await resolveOwnerMarkOwnerIds();
+  const marks = await readOwnerMarksForCards([sourceCardId, targetCardId], owners);
+  const patch = {};
+  const moved = [];
+  owners.forEach(ownerId => {
+    const plan = planOwnerMarksTransfer({
+      ownerId,
+      sourceCardId,
+      targetCardId,
+      source: marks[ownerId]?.[sourceCardId],
+      target: marks[ownerId]?.[targetCardId],
+    });
+    Object.assign(patch, plan.patch);
+    if (plan.moved.length) moved.push({ ownerId, kinds: plan.moved });
+  });
+  await applyOwnerMarksPatch(patch);
+  const cleared = Object.entries(patch).filter(([path, value]) => value === null && path.endsWith(`/${sourceCardId}`)).length;
+  return { moved, cleared };
+};
+
+/** Прибрати позначки всіх видимих власників про картку (видалення картки). */
+export const removeOwnerMarksOfCard = async (cardId, ownerIds) => {
+  if (!cardId) return { cleared: 0 };
+  const owners = ownerIds || await resolveOwnerMarkOwnerIds();
+  const marks = await readOwnerMarksForCards([cardId], owners);
+  const patch = {};
+  owners.forEach(ownerId => {
+    Object.assign(patch, planOwnerMarksRemoval({ ownerId, cardId, marks: marks[ownerId]?.[cardId] }).patch);
+  });
+  await applyOwnerMarksPatch(patch);
+  return { cleared: Object.keys(patch).length };
 };
 
 const buildFlowRef = ownerId => ref2(database, `multiData/flow/${ownerId}`);
@@ -11496,6 +11601,18 @@ export const removeCardAndSearchId = async userId => {
     // бо видаляє картку й авторка чернетки, а чужі відгуки знімає лише адмін:
     // відмова тут не мусить валити видалення анкети.
     await removePublicCommentsOfDeletedCard(userId);
+
+    // Нотатки, реакції й дати дзвінка про цю картку теж ідуть разом з нею:
+    // вони лежать під власниками, а не під карткою, і лишались сиротами.
+    // Переносити їх на справжню картку треба **до** видалення — порівнянням
+    // (⇆ → «Позначки власників»). Відмова тут видалення не валить.
+    try {
+      const { cleared } = await removeOwnerMarksOfCard(userId);
+      if (cleared) console.log(`Знято позначок власників: ${cleared}`);
+    } catch (error) {
+      console.warn(`Не вдалося зняти позначки власників картки ${userId}`, error);
+      toast.error(`Позначки власників картки ${userId} не знято: ${error?.message || error}`);
+    }
 
     removeCard(userId);
     clearEmptySearchQueryCache();

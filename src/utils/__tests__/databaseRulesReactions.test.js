@@ -37,10 +37,15 @@ describe('особисті вузли власника в database.rules.json', 
         .toContain("root.child('profileTechnical').child(auth.uid).child('multiDataSourceUserIds').child($ownerId).val() == true");
     });
 
-    // Читання — не запис: адмін бачить чужі симпатії й перегляди, але не
-    // проставляє їх за власницю, інакше запис перестав би бути її власним.
-    it(`${node}: пише лише сам власник`, () => {
-      expect(owner.$userId['.write']).toBe('auth != null && auth.uid == $ownerId');
+    // Реакції пишуть власник і двоє повних адмінів: дубль картки закривають,
+    // і реакції під його id адмін переносить на справжню картку й знімає з
+    // дубля (`transferOwnerMarksBetweenCards`). Інспектора й делегата тут
+    // немає. `contactViews` — журнал дотиків, і його пише лише власник.
+    it(`${node}: пишуть ${node === 'contactViews' ? 'лише власник' : 'власник і повні адміни'}`, () => {
+      const expected = node === 'contactViews'
+        ? 'auth != null && auth.uid == $ownerId'
+        : `auth != null && (auth.uid == $ownerId || ${ADMIN_UIDS.map(uid => `auth.uid == '${uid}'`).join(' || ')})`;
+      expect(owner.$userId['.write']).toBe(expected);
     });
 
     // Рівень `matching` дає стрічку, а не чужі особисті списки.
