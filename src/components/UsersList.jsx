@@ -5,6 +5,7 @@ import { TopBlock } from './smallCard/renderTopBlock';
 import { btnCompare } from './smallCard/btnCompare';
 import { btnMore } from './smallCard/btnMore';
 import { renderAllFields } from './ProfileForm';
+import { CardBackendExtras } from './CardBackendExtras';
 // import { btnExportUsers } from './topBtns/btnExportUsers';
 import StimulationSchedule from './StimulationSchedule';
 import { getEffectiveCycleStatus } from 'utils/cycleStatus';
@@ -128,6 +129,7 @@ const UserCard = ({
           setUsers,
           stateUpdater: setState,
         })}
+        <CardBackendExtras cardId={userData.userId} renderFields={value => renderAllFields(value)} />
       </div>
     </div>
   );
