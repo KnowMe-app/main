@@ -2455,6 +2455,43 @@ await it('писати перелік не може ніхто з клієнті
   }
 });
 
+describe('pushTokens — токени push-сповіщень пристроїв');
+
+// Токен пристрою пише й знімає лише власник акаунта; читає вузол лише
+// функція сповіщень (Admin SDK), тож чужі токени не видно нікому.
+const PUSH_TOKEN = 'fcmTokenAbcdefghijklmnopqrstuvwxyz0123456789:APA91b-test_token';
+
+await it('власник пише й знімає свій токен, чужий — ні', async () => {
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}/${PUSH_TOKEN}`), { at: serverTimestamp() }));
+  await assertSucceeds(remove(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}/${PUSH_TOKEN}`)));
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `pushTokens/${OUTSIDER}/${PUSH_TOKEN}`), { at: 1 }));
+  await assertFails(set(ref(db(SUPERADMIN), `pushTokens/${OUTSIDER}/${PUSH_TOKEN}`), { at: 1 }));
+});
+
+await it('токени не читає ніхто з клієнтів, і власник теж', async () => {
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}`)));
+  await assertFails(get(ref(db(SUPERADMIN), 'pushTokens')));
+  await assertFails(get(ref(db(INSPECTOR), `pushTokens/${ORDINARY_VIEWER}`)));
+});
+
+await it('у запис токена лягає лише час', async () => {
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}/${PUSH_TOKEN}`), { at: 1, name: 'Оксана' }));
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}/${PUSH_TOKEN}`), { at: 'x' }));
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}/short`), { at: 1 }));
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}`), { [PUSH_TOKEN]: { at: 1 } }));
+});
+
+describe('сповіщення про лайки й Telegram — лише функції');
+
+await it('likeNotifications і telegramAccounts клієнтам закриті', async () => {
+  for (const uid of [SUPERADMIN, INSPECTOR, ORDINARY_VIEWER]) {
+    await assertFails(get(ref(db(uid), `likeNotifications/${ORDINARY_VIEWER}`)));
+    await assertFails(get(ref(db(uid), 'telegramAccounts')));
+  }
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `likeNotifications/${ORDINARY_VIEWER}/count`), 99));
+  await assertFails(set(ref(db(ORDINARY_VIEWER), 'telegramAccounts/555'), { uid: ORDINARY_VIEWER }));
+});
+
 describe('legacy /users закрито для всіх');
 
 // Вузол видалено з правил: ні читати, ні писати його не може ніхто, зокрема

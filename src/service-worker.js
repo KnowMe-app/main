@@ -121,3 +121,56 @@ registerRoute(
 self.addEventListener('activate', event => {
   event.waitUntil(caches.delete('km-pages'));
 });
+
+// Push-сповіщення (Firebase Cloud Messaging, `functions/likeNotifications.js`).
+//
+// Функція шле лише `data`, а показує сповіщення цей воркер: окремого
+// `firebase-messaging-sw.js` немає — другий воркер на тому самому scope
+// замінив би цей, разом із кешем застосунку. FCM кладе `data` у тіло push
+// як `{ data: {...} }`.
+const readPushData = event => {
+  if (!event.data) return {};
+  try {
+    const payload = event.data.json();
+    return (payload && (payload.data || payload)) || {};
+  } catch {
+    return { body: event.data.text() };
+  }
+};
+
+const isOwnUrl = value => {
+  try {
+    return new URL(value, self.location.origin).origin === self.location.origin;
+  } catch {
+    return false;
+  }
+};
+
+self.addEventListener('push', event => {
+  const data = readPushData(event);
+  const title = data.title || 'KnowMe';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: data.body || '',
+    icon: '/favicon2.ico',
+    // Нове сповіщення про вподобання замінює попереднє, а не складає стос.
+    tag: data.kind ? `km-${data.kind}` : undefined,
+    renotify: Boolean(data.kind),
+    data: { url: isOwnUrl(data.url || '/') ? (data.url || '/') : '/' },
+  }));
+});
+
+// Дотик відкриває застосунок: уже відкриту вкладку — фокусом, інакше нову.
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const existing = windows.find(client => client.url.startsWith(self.location.origin));
+    if (existing) {
+      await existing.focus();
+      if ('navigate' in existing && existing.url !== target) await existing.navigate(target).catch(() => {});
+      return;
+    }
+    await self.clients.openWindow(target);
+  })());
+});

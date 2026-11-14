@@ -730,3 +730,69 @@ exports.recordOwnerFavoritesChange = recordOwnerMarkChange('favorites');
 exports.recordOwnerDislikesChange = recordOwnerMarkChange('dislikes');
 exports.recordOwnerGetInTouchChange = recordOwnerMarkChange('getInTouch');
 exports.recordOwnerLikedAudienceChange = recordOwnerMarkChange('likedAudience');
+
+/**
+ * Сповіщення донорці про нове серце (`likeNotifications.js`): лише кількість,
+ * без того, хто вподобав, — у Telegram (якщо донорка входила через бота) і
+ * push на пристрої, де вона дозволила сповіщення (`pushTokens/{uid}`). Поки
+ * що рахуються лише серця повних адмінів — сценарій тестується.
+ *
+ * Без `retry`: повтор події після вдалої відправки написав би вдруге, а
+ * лічильник у `likeNotifications/{картка}` повтор однаково відкинув би.
+ */
+const { getMessaging } = require('firebase-admin/messaging');
+const { FAVORITES_ROOT, handleFavoriteWrite } = require('./likeNotifications');
+
+exports.notifyDonorAboutLike = onValueWritten(
+  {
+    ref: `${FAVORITES_ROOT}/{likerId}/{cardId}`,
+    region: DATABASE_REGION,
+    secrets: [TELEGRAM_BOT_TOKEN],
+    memory: '256MiB',
+    timeoutSeconds: 30,
+    maxInstances: 5,
+  },
+  async event => {
+    const { likerId, cardId } = event.params;
+    const database = getDatabase();
+    try {
+      const outcome = await handleFavoriteWrite(
+        { likerId, cardId, before: event.data.before.val(), after: event.data.after.val() },
+        {
+          db: {
+            ...createAdminDb(database),
+            update: updates => database.ref().update(updates),
+            queryByChild: async (path, child, value) => (
+              await database.ref(path).orderByChild(child).equalTo(value).get()
+            ).val(),
+          },
+          accountExists: async uid => {
+            try {
+              await getAuth().getUser(uid);
+              return true;
+            } catch (error) {
+              if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-uid') return false;
+              throw error;
+            }
+          },
+          sendTelegram: createTelegramSender(TELEGRAM_BOT_TOKEN.value()),
+          sendPush: async ({ tokens, data }) => {
+            const result = await getMessaging().sendEachForMulticast({
+              tokens,
+              data,
+              webpush: { headers: { Urgency: 'high', TTL: String(3 * 24 * 60 * 60) } },
+            });
+            return result.responses.map(response => ({
+              success: response.success,
+              errorCode: response.error ? response.error.code : '',
+            }));
+          },
+          now: Date.now(),
+        },
+      );
+      logger.info('like notification', { outcome });
+    } catch (error) {
+      logger.error('like notification failed', { error: error.message });
+    }
+  },
+);

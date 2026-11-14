@@ -6,6 +6,7 @@ import { PrimaryNavigationSlotProvider } from './PrimaryNavigationSlot';
 import { RequireAuth, ScreenLoading } from './RequireAuth';
 import { onAuthStateChanged } from 'firebase/auth';
 import { scheduleLatencyProbe } from './latencyProbeRemote';
+import { installPushSignOutCleanup, refreshPushToken } from './pushNotificationsRemote';
 import { startWriteOutbox, stopWriteOutbox } from 'utils/writeOutbox';
 import toast from 'react-hot-toast';
 import { auth, loadViewerProfile, resetViewerAccessLevelCache } from './config';
@@ -108,6 +109,9 @@ export const App = () => {
 
   // Special page for admin
   useEffect(() => {
+    // Вихід знімає токен push цього пристрою ще до виходу
+    // (`pushNotificationsRemote`): після нього правила зняти не пустять.
+    installPushSignOutCleanup();
     const unsubscribe = onAuthStateChanged(auth, async user => {
       setAuthStatus(user ? 'in' : 'out');
       if (user) {
@@ -140,6 +144,9 @@ export const App = () => {
         // Раз на добу з пристрою — скільки йде найменше читання бази
         // (`utils/latencyProbe`): цифри для рішення про регіон бази.
         scheduleLatencyProbe(user.uid);
+        // Токен push раз на добу звіряється з пристроєм — лише там, де людина
+        // вже дозволила сповіщення; діалогу дозволу тут не буває.
+        refreshPushToken(user.uid);
       } else {
         // Черга записів — теж памʼять пристрою про читача (текст памʼяток,
         // кого вподобано), тож стирається разом з рештою (`utils/writeOutbox`).
