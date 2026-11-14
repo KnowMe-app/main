@@ -82,10 +82,13 @@ import {
   paragraphScope,
   parseDocumentsTechnicalInput,
   parseFormattedRuns,
+  partyDisplayName,
   plainTextOf,
+  REPRESENTATIVE_SLOT_COUNT,
   resolveCaseContext,
   resolveEffectiveDocFormatting,
   resolveMergedRecordsForPersistence,
+  setRepresentativeSlot,
   stripUndefinedDeep,
   TITLE_SCOPE,
   toArray,
@@ -1994,6 +1997,33 @@ const DocumentsPage = ({ isAdmin }) => {
     }
   };
 
+  // Представники кейсу за місцями: шаблон довіреності питає `representatives.0.*` і
+  // `representatives.1.*`, а обрати другого можна було лише в редакторі кейсу на /parties — тут
+  // друге місце в документі стояло прочерками, хоч сама людина в довіднику є. Пишемо лише
+  // relations/representativeIds цього кейсу: решту зв'язків (і дати довіреності) не чіпаємо.
+  const handleRepresentativeSlotChange = async (slotIndex, representativeId) => {
+    const caseRecord = catalog.cases.find(item => String(item.id) === selectedCaseId);
+    if (!caseRecord) return;
+    const previousIds = toArray(caseRecord.relations?.representativeIds).map(String);
+    const nextIds = setRepresentativeSlot(previousIds, slotIndex, representativeId);
+    const applyIds = ids => setCatalog(previous => ({
+      ...previous,
+      cases: previous.cases.map(item => (String(item.id) === String(caseRecord.id)
+        ? { ...item, relations: { ...item.relations, representativeIds: ids } }
+        : item)),
+    }));
+    applyIds(nextIds);
+    try {
+      await update(ref(database, DOCUMENTS_CASES_PATH), {
+        [`${caseRecord.id}/relations/representativeIds`]: nextIds.length ? nextIds : null,
+      });
+    } catch (saveError) {
+      console.error('Unable to save case representatives', saveError);
+      applyIds(previousIds);
+      toast.error(describeDocumentSaveError(saveError, 'Не вдалося зберегти представників кейсу.'));
+    }
+  };
+
   const handleDeleteCase = async () => {
     const caseRecord = catalog.cases.find(item => String(item.id) === selectedCaseId);
     if (!caseRecord) return;
@@ -2624,6 +2654,36 @@ const DocumentsPage = ({ isAdmin }) => {
                   <FaTrash /> Delete case
                 </DangerButton>
               </RowLine>
+              {selectedCase ? (
+                <RowLine style={{ marginTop: 8 }} role="group" aria-label="Представники кейсу">
+                  {Array.from({ length: REPRESENTATIVE_SLOT_COUNT }, (_, slotIndex) => {
+                    const slotIds = toArray(selectedCase.relations?.representativeIds).map(String);
+                    const slotValue = slotIds[slotIndex] || '';
+                    return (
+                      <Select
+                        key={slotIndex}
+                        aria-label={`Представник ${slotIndex + 1}`}
+                        value={slotValue}
+                        // Друге місце без першого не має сенсу: довіреність назвала б
+                        // `representatives.0` того, кого обрали «другим».
+                        disabled={slotIndex > 0 && !slotIds[0]}
+                        onChange={event => handleRepresentativeSlotChange(slotIndex, event.target.value)}
+                      >
+                        <option value="">{`Представник ${slotIndex + 1}: — немає —`}</option>
+                        {catalog.parties.representatives.map(record => (
+                          <option
+                            key={record.id}
+                            value={String(record.id)}
+                            disabled={slotIds.some((id, index) => index !== slotIndex && index < REPRESENTATIVE_SLOT_COUNT && id === String(record.id))}
+                          >
+                            {`Представник ${slotIndex + 1}: ${partyDisplayName(record)}`}
+                          </option>
+                        ))}
+                      </Select>
+                    );
+                  })}
+                </RowLine>
+              ) : null}
               {caseChecklistIssues.length ? (
                 <DocSubtitle style={{ marginTop: 8, color: 'var(--km-danger)' }}>
                   Незаповнені обов'язкові поля: {caseChecklistIssues.join(', ')}
