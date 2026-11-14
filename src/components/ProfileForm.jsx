@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { CardBackendExtras } from './CardBackendExtras';
 import styled, { css } from 'styled-components';
 import { revealCss } from '../styles/revealAnimation';
 import { get as firebaseGet, ref as refDb } from 'firebase/database';
@@ -3056,6 +3057,7 @@ ${entries.join('\n')}`;
             setUsers: setState,
             onRemoveKey: handleProfileViewRemove,
           })}
+          <CardBackendExtras cardId={state.userId} renderFields={value => renderAllFields(value)} />
         </div>
       )}
       {isAdmin && isDraftRecord && draftHistory.cardId === state.userId && (

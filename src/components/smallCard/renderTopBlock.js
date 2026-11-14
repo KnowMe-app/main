@@ -38,6 +38,7 @@ import { fieldIMT } from './fieldIMT';
 import { formatValueVersions } from './valueVersions';
 import { normalizeDisplayValue } from '../profileLayoutConfig';
 import { PROFILE_BACKEND_REFRESH_EVENT } from '../../utils/profileBackendRefresh';
+import { loadCardBackendExtras } from 'utils/cardBackendExtras';
 import { formatDateToDisplay } from 'components/inputValidations';
 import { normalizeRegion } from '../normalizeLocation';
 import { getCurrentValue } from '../getCurrentValue';
@@ -1924,7 +1925,12 @@ export const TopBlock = ({
       details.style.color = getContrastColor(bg);
     }
 
-    await refreshCardFromBackend();
+    // Дані поза анкетою (нотатки, відгуки, реакції, доповнення) читаються
+    // разом з анкетою, а не слідом: блок показує обидві половини.
+    await Promise.all([
+      refreshCardFromBackend(),
+      loadCardBackendExtras(cardData.userId),
+    ]);
     // Форма адміна тримає пропозиції редакторів окремо від анкети, і вони
     // так само могли застаріти — хай перечитає і їх.
     if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
