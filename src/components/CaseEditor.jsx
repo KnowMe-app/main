@@ -21,8 +21,6 @@ import {
   buildCaseLabel,
   coupleDisplayName,
   createChildRecord,
-  formatDocumentDate,
-  formatPassportNumber,
   representativeIdentityLabel,
   formatShortNameUk,
   getMaternityHospitalDisplayName,
