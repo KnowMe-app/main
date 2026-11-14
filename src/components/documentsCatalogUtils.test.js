@@ -3878,27 +3878,11 @@ describe('the document gear indent applies to every paragraph', () => {
   });
 });
 
-describe('представники довіреності за місцями', () => {
+describe('вибірник змінних: другий представник довіреності', () => {
   // eslint-disable-next-line global-require
-  const { setRepresentativeSlot, buildVariablePickerGroups } = require('./documentsCatalogUtils');
+  const { buildVariablePickerGroups } = require('./documentsCatalogUtils');
 
-  it('ставить другого представника, не чіпаючи першого', () => {
-    expect(setRepresentativeSlot(['rep-1'], 1, 'rep-2')).toEqual(['rep-1', 'rep-2']);
-  });
-
-  it('заміна першого лишає другого на місці', () => {
-    expect(setRepresentativeSlot(['rep-1', 'rep-2'], 0, 'rep-3')).toEqual(['rep-3', 'rep-2']);
-  });
-
-  it('одна людина не стоїть на обох місцях', () => {
-    expect(setRepresentativeSlot(['rep-1', 'rep-2'], 1, 'rep-1')).toEqual(['rep-1']);
-  });
-
-  it('зняття другого не зачіпає представників понад два', () => {
-    expect(setRepresentativeSlot(['rep-1', 'rep-2', 'rep-3'], 1, '')).toEqual(['rep-1', 'rep-3']);
-  });
-
-  it('вибірник змінних пропонує representatives.1.* другого представника', () => {
+  it('пропонує representatives.1.* другого представника', () => {
     const context = {
       representative: { name: { en: 'Koval Oleksandr' } },
       representatives: [{ name: { en: 'Koval Oleksandr' } }, { name: { en: 'Koval Iryna' }, passport: { number: 'CT314633' } }],
@@ -3910,11 +3894,11 @@ describe('представники довіреності за місцями', 
     ]));
   });
 
-  it('у довіреності група другого представника є й до вибору — з підказкою', () => {
+  it('у довіреності група є й до вибору — з підказкою, де обрати', () => {
     const groups = buildVariablePickerGroups({ representatives: [{ name: { en: 'A' } }] }, { templateId: 'surrogacy-power-of-attorney' });
     const group = groups.find(item => item.label === 'Довірена особа 2');
     expect(group.items).toEqual([]);
-    expect(group.emptyHint).toBe('Оберіть другого представника для кейсу');
+    expect(group.emptyHint).toBe('Оберіть другого представника в кейсі на сторінці Parties');
     expect(buildVariablePickerGroups({ representatives: [{}] }).some(item => item.label === 'Довірена особа 2')).toBe(false);
   });
 });

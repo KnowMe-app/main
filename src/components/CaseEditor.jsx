@@ -23,6 +23,7 @@ import {
   createChildRecord,
   formatDocumentDate,
   formatPassportNumber,
+  representativeIdentityLabel,
   formatShortNameUk,
   getMaternityHospitalDisplayName,
   getValueByPath,
@@ -40,19 +41,8 @@ const describeSaveError = error => `${error?.code || error?.name || 'error'}: ${
 const isFilled = value => !(value === undefined || value === null || String(value).trim() === '');
 const parseNumberOrBlank = value => (value === '' || value === undefined || value === null ? undefined : Number(value));
 
-// The power of attorney (signing date + apostille date) is now a static fact of the *case*
-// (relations.representativePowerOfAttorney, edited alongside the representative picker below) -
-// the same representative can act under a different POA on another case, and one POA can cover
-// several representatives at once, so a representative record no longer needs its own copy per
-// person/date pairing. Several representatives can still share the exact same full name though, so
-// this is the one line that tells them apart, in the picker and on the overview card alike - a
-// passport number and/or birth date, whichever is filled. Blank when neither is set.
-const representativeIdentityLabel = record => {
-  const parts = [];
-  if (isFilled(record?.passport?.number)) parts.push(`Паспорт ${formatPassportNumber(record.passport.number)}`);
-  if (isFilled(record?.birthDate)) parts.push(`${formatDocumentDate(record.birthDate)} р.н.`);
-  return parts.join(' · ');
-};
+// Як розрізнити представників з однаковим ПІБ — `representativeIdentityLabel` у
+// documentsCatalogUtils (спільний із вибором представників на сторінці документів).
 
 // --- Case switcher strip (spec §1) ---------------------------------------------------------------
 
@@ -682,7 +672,10 @@ const PickerSheet = ({ title, options, multi, selectedIds, onApply, onCancel }) 
                   {option.label}
                   {option.sublabel ? <SheetOptionSub $active={active}>{option.sublabel}</SheetOptionSub> : null}
                 </SheetOptionText>
-                {active ? <b>✓</b> : null}
+                {/* У кількох виборах номер — це місце в документі: довіреність бере першого
+                    обраного як `representatives.0`, другого — як `representatives.1`, тож
+                    галочка мовчала б про те, хто з двох «Представник 1». */}
+                {active ? <b>{multi ? pending.indexOf(option.id) + 1 : '✓'}</b> : null}
               </SheetOption>
             );
           })}
@@ -1353,16 +1346,23 @@ const CaseEditor = ({
                   <RelationCard role="group" aria-label="Представники">
                     <RelationCardLabel>Представники</RelationCardLabel>
                     {(() => {
-                      const selected = catalog.parties.representatives.filter(item => draft.relations.representativeIds.includes(String(item.id)));
+                      // Порядок — той, що в кейсі (representativeIds), а не в довіднику: саме
+                      // за ним документи беруть `representatives.0` і `representatives.1`.
+                      const selected = draft.relations.representativeIds
+                        .map(id => catalog.parties.representatives.find(item => String(item.id) === String(id)))
+                        .filter(Boolean);
                       return (
                         <>
                           {selected.length ? (
                             <RepresentativeList>
-                              {selected.map(record => {
+                              {selected.map((record, index) => {
                                 const sub = representativeIdentityLabel(record);
                                 return (
                                   <div key={record.id}>
-                                    <RepresentativeName>{partyDisplayName(record)}</RepresentativeName>
+                                    <RepresentativeName>
+                                      {selected.length > 1 ? `Представник ${index + 1}: ` : ''}
+                                      {partyDisplayName(record)}
+                                    </RepresentativeName>
                                     {sub ? <RepresentativeSub>{sub}</RepresentativeSub> : null}
                                   </div>
                                 );
