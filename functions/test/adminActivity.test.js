@@ -202,3 +202,32 @@ test('налаштування: невідомі ключі й частоти в
   assert.deepEqual(settings.events, { like: 'hourly' });
   assert.deepEqual(settings.channels, { telegram: true, push: false });
 });
+
+test('зведення вміщається в ліміт Telegram, навіть з довгими відгуками', () => {
+  const longName = 'Ім’я'.repeat(10);
+  const events = Array.from({ length: 60 }, (_, index) => ({
+    t: NOON + index * 1000,
+    type: 'public_review',
+    actor: `u${index}`,
+    card: `c${index}`,
+    meta: { text: 'Дуже довгий відгук '.repeat(8) },
+    actorInfo: { name: longName, surname: 'К.', role: 'ag' },
+    cardInfo: { name: longName, surname: 'М.', role: 'ed' },
+  }));
+  const { html } = activity.buildDigestMessage(events, 'daily');
+  assert.ok(html.length <= 4096, `довжина ${html.length}`);
+  assert.match(html, /…і ще \d+ \(старіші\)/);
+  assert.match(html, /подій: 60/);
+});
+
+test('обрізаний рядок зведення не рве HTML-сутності', () => {
+  const events = [{
+    t: NOON, type: 'public_review', actor: 'u1', card: 'c1',
+    meta: { text: '&'.repeat(140) },
+    actorInfo: { name: 'Н'.repeat(40), role: 'ag' },
+    cardInfo: { name: 'М'.repeat(40), role: 'ed' },
+  }];
+  const { html } = activity.buildDigestMessage(events, 'daily');
+  // Кожен `&` у тексті — повна сутність `&amp;`, жодного обірваного.
+  assert.doesNotMatch(html.replace(/&(amp|lt|gt);/g, ''), /&/);
+});

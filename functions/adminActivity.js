@@ -299,6 +299,15 @@ const buildInstantMessage = event => {
   return { html, push };
 };
 
+// Telegram приймає до 4096 знаків тексту; лишаємо запас на розмітку посилання.
+const TELEGRAM_TEXT_BUDGET = 3800;
+
+/**
+ * Зведення. Рядків — не більше `DIGEST_MAX_LINES` і не довше бюджету Telegram:
+ * 25 відгуків з іменами давали ~7 тис. знаків, Telegram такий лист відкидав,
+ * а відлік дайджесту вже пішов далі — і адмін не отримував того проміжку
+ * зовсім. Тепер найновіші рядки беруться, доки влазять, решта — «…і ще N».
+ */
 const buildDigestMessage = (events, frequency) => {
   const title = frequency === 'daily' ? 'Активність за добу' : 'Активність за годину';
   const counts = {};
@@ -306,20 +315,28 @@ const buildDigestMessage = (events, frequency) => {
   const summary = Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
     .map(([type, count]) => `${ADMIN_EVENT_BY_KEY[type].emoji} ${ADMIN_EVENT_BY_KEY[type].label}: ${count}`);
-  const lines = events.slice(-DIGEST_MAX_LINES).map(event => {
+  const head = `📊 <b>${title}</b> · подій: ${events.length}\n${escapeHtml(summary.join('\n'))}\n`;
+  const footer = `<a href="${NOTIFICATIONS_URL}">Усі події</a>`;
+  const hiddenNote = count => `…і ще ${count} (старіші)`;
+  // Запас під «…і ще N» і посилання — щоб хвіст точно вліз.
+  let budget = TELEGRAM_TEXT_BUDGET - head.length - footer.length - hiddenNote(events.length).length - 4;
+  const picked = [];
+  for (let index = events.length - 1; index >= 0 && picked.length < DIGEST_MAX_LINES; index -= 1) {
+    const event = events[index];
     const def = ADMIN_EVENT_BY_KEY[event.type];
     const detail = detailLine(event);
-    return `${kyivParts(event.t).time} ${def.emoji} ${escapeHtml(summarizeEvent(event))}${detail ? ` — ${escapeHtml(detail)}` : ''}`;
-  });
-  const hidden = events.length - lines.length;
-  const html = [
-    `📊 <b>${title}</b> · подій: ${events.length}`,
-    escapeHtml(summary.join('\n')),
-    '',
-    ...lines,
-    hidden > 0 ? `…і ще ${hidden} (старіші)` : '',
-    `<a href="${NOTIFICATIONS_URL}">Усі події</a>`,
-  ].filter(line => line !== null).join('\n').replace(/\n{3,}/g, '\n\n');
+    // Обрізаємо текст до заміни `&`/`<`/`>` на сутності: обрізаний посеред
+    // `&amp;` рядок робив увесь лист невалідним HTML, і Telegram його відкидав.
+    const line = escapeHtml(clip(`${kyivParts(event.t).time} ${def.emoji} ${summarizeEvent(event)}${detail ? ` — ${detail}` : ''}`, 300));
+    if (line.length + 1 > budget) break;
+    budget -= line.length + 1;
+    picked.unshift(line);
+  }
+  const hidden = events.length - picked.length;
+  // Без обрізання готового HTML: воно рвало б сутності й теги. Підсумок видів
+  // обмежений самим каталогом (15 рядків), рядки подій — бюджетом вище.
+  const html = [head, ...picked, hidden > 0 ? hiddenNote(hidden) : '', footer]
+    .filter(Boolean).join('\n').replace(/\n{3,}/g, '\n\n');
   const push = { kind: 'admin-digest', title: `📊 ${title}`, body: summary.slice(0, 4).join(' · ').slice(0, 240), url: NOTIFICATIONS_URL };
   return { html, push };
 };
