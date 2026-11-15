@@ -219,3 +219,15 @@ test('зведення вміщається в ліміт Telegram, навіть
   assert.match(html, /…і ще \d+ \(старіші\)/);
   assert.match(html, /подій: 60/);
 });
+
+test('обрізаний рядок зведення не рве HTML-сутності', () => {
+  const events = [{
+    t: NOON, type: 'public_review', actor: 'u1', card: 'c1',
+    meta: { text: '&'.repeat(140) },
+    actorInfo: { name: 'Н'.repeat(40), role: 'ag' },
+    cardInfo: { name: 'М'.repeat(40), role: 'ed' },
+  }];
+  const { html } = activity.buildDigestMessage(events, 'daily');
+  // Кожен `&` у тексті — повна сутність `&amp;`, жодного обірваного.
+  assert.doesNotMatch(html.replace(/&(amp|lt|gt);/g, ''), /&/);
+});

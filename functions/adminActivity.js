@@ -325,16 +325,18 @@ const buildDigestMessage = (events, frequency) => {
     const event = events[index];
     const def = ADMIN_EVENT_BY_KEY[event.type];
     const detail = detailLine(event);
-    const line = clip(`${kyivParts(event.t).time} ${def.emoji} ${escapeHtml(summarizeEvent(event))}${detail ? ` — ${escapeHtml(detail)}` : ''}`, 300);
+    // Обрізаємо текст до заміни `&`/`<`/`>` на сутності: обрізаний посеред
+    // `&amp;` рядок робив увесь лист невалідним HTML, і Telegram його відкидав.
+    const line = escapeHtml(clip(`${kyivParts(event.t).time} ${def.emoji} ${summarizeEvent(event)}${detail ? ` — ${detail}` : ''}`, 300));
     if (line.length + 1 > budget) break;
     budget -= line.length + 1;
     picked.unshift(line);
   }
   const hidden = events.length - picked.length;
-  let html = [head, ...picked, hidden > 0 ? hiddenNote(hidden) : '', footer]
+  // Без обрізання готового HTML: воно рвало б сутності й теги. Підсумок видів
+  // обмежений самим каталогом (15 рядків), рядки подій — бюджетом вище.
+  const html = [head, ...picked, hidden > 0 ? hiddenNote(hidden) : '', footer]
     .filter(Boolean).join('\n').replace(/\n{3,}/g, '\n\n');
-  // Самий підсумок видів подій теж обмежений (видів 15), але на всяк випадок:
-  if (html.length > 4000) html = `${html.slice(0, 3900)}…\n${footer}`;
   const push = { kind: 'admin-digest', title: `📊 ${title}`, body: summary.slice(0, 4).join(' · ').slice(0, 240), url: NOTIFICATIONS_URL };
   return { html, push };
 };
