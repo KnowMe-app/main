@@ -113,6 +113,7 @@ import SearchBar, { detectSearchParams, getSearchCacheKeyForParams } from './Sea
 import FilterPanel, { getDefaultFilters } from './FilterPanel';
 import MatchingFilterRail from './MatchingFilterRail';
 import CoordinatorRequest from './CoordinatorRequest';
+import { suggestLayoutFix } from '../utils/keyboardLayout';
 import { MATCHING_FILTER_GROUPS, buildMatchingFilterChips } from './SearchFilters';
 import { countMatchingFilterOptions, isDraftFilterCountExact, withUnloadedFilterOptions } from '../utils/matchingFilterCounts';
 import { hasActiveSearchKeyFilterGroup } from '../utils/searchKeyBuckets';
@@ -7855,6 +7856,18 @@ const Matching = () => {
     return ['sm', 'ed'].find(role => isRoleFilterNarrowedToIntent(matchingUiFilters?.userRole, role, roleOptionKeys)) || '';
   }, [isSearching, matchingUiFilters, roleIntentBanner, roleIntentBannerActive, roleOptionKeys, viewMode]);
   const roleIntentRequestShown = Boolean(searchRoleIntent) && activeRoleIntentChoice === 'find' && roleIntentHiddenForViewer;
+  // Порожня видача на запит, набраний не в тій розкладці («Jkmuf» замість
+  // «Ольга»), пропонує той самий запит в іншій — найчастіша причина «нічого»
+  // на телефоні з двома мовами клавіатури. Пропонує, а не перемикає: «Jkmuf»
+  // буває й справжнім ніком (`utils/keyboardLayout`).
+  const searchLayoutFix = isSearching ? suggestLayoutFix(searchQuery) : '';
+  const handleSearchLayoutFix = React.useCallback(() => {
+    if (!searchLayoutFix) return;
+    localStorage.setItem(SEARCH_KEY, searchLayoutFix);
+    setSearchQuery(searchLayoutFix);
+    setSearchRerunEpoch(epoch => epoch + 1);
+  }, [searchLayoutFix]);
+
   // Пошук за імʼям нічого не дав — підказати, що категорію шукають фільтром.
   const handleSuggestRoleFilter = React.useCallback(() => {
     handleSearchCleared();
@@ -9517,6 +9530,11 @@ const Matching = () => {
                 ) : (
                 <FeedNotice>
                   <div>{emptyFeedMessage}</div>
+                  {searchLayoutFix && (
+                    <ActionButton type="button" data-testid="search-layout-fix" onClick={handleSearchLayoutFix}>
+                      {uiText('Можливо, ви мали на увазі «{query}»? (розкладка клавіатури)', language, { query: searchLayoutFix })}
+                    </ActionButton>
+                  )}
                   {/* Імʼя не знайшлось — можливо, людина шукала категорію
                       («донорки з Києва»): її шукають фільтром, а не пошуком. */}
                   {isSearching && !searchRoleIntent && !searchPlace && (

@@ -142,6 +142,7 @@ const EN_BY_UK = {
   'Залишити запит': 'Leave a request',
   'Запит координаторові': 'Request to a coordinator',
   'Шукаєте за категорією? Спробуйте фільтр «Тип профілю»': 'Searching by category? Try the “Profile type” filter',
+  'Можливо, ви мали на увазі «{query}»? (розкладка клавіатури)': 'Did you mean “{query}”? (keyboard layout)',
   'Чому ви йдете? (необовʼязково)': 'Why are you leaving? (optional)',
   'Не знайшла те, що шукала': 'I didn\'t find what I was looking for',
   'Не зрозуміла, як користуватись': 'I didn\'t understand how to use it',
