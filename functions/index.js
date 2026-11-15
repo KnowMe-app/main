@@ -804,6 +804,15 @@ const buildActivityDeps = () => {
           if (old.numChildren() < 500 && oldDedup.numChildren() < 500) break;
         }
       },
+      // Залишки сповіщень донорці (14.11): лічильники лайків і push-токени
+      // не-адмінів. Push тепер отримують лише адміни, тож решта токенів —
+      // мертвий вантаж; знімаються разом із щоденним прибиранням.
+      removeLegacyNotificationData: async staffUids => {
+        const tokens = (await database.ref('pushTokens').get()).val() || {};
+        const updates = { likeNotifications: null };
+        Object.keys(tokens).forEach(uid => { if (!staffUids.includes(uid)) updates[`pushTokens/${uid}`] = null; });
+        await database.ref().update(updates);
+      },
     },
     isExcludedActor: async uid => adminActivity.isExcludedActorUid(uid),
     resolveTelegramChat: async uid => {
@@ -880,6 +889,17 @@ exports.adminNotificationStatus = onCall(
     const uid = request.auth && request.auth.uid;
     if (!uid || !adminActivity.isStaffUid(uid)) throw new HttpsError('permission-denied', 'Admins only.');
     return adminActivity.readNotificationStatus(uid, buildActivityDeps());
+  },
+);
+
+/** «Звіт за тиждень зараз» на сторінці `/notifications`. */
+exports.sendAdminWeeklyReport = onCall(
+  { region: REGION, cors: ALLOWED_ORIGINS, secrets: [TELEGRAM_BOT_TOKEN], memory: '256MiB', timeoutSeconds: 60 },
+  async request => {
+    const uid = request.auth && request.auth.uid;
+    if (!uid || !adminActivity.isStaffUid(uid)) throw new HttpsError('permission-denied', 'Admins only.');
+    const outcomes = await adminActivity.sendWeeklyReportNow(uid, buildActivityDeps());
+    return { outcomes };
   },
 );
 

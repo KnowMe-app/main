@@ -18,6 +18,8 @@ export const fetchAdminNotificationStatus = auth => callFunction(auth, 'adminNot
 
 export const sendAdminTestNotification = auth => callFunction(auth, 'sendAdminTestNotification');
 
+export const sendAdminWeeklyReport = auth => callFunction(auth, 'sendAdminWeeklyReport');
+
 const OUTCOME_TEXTS = {
   telegram: 'Telegram — надіслано',
   'telegram-not-linked': 'Telegram не привʼязано до цього акаунта',

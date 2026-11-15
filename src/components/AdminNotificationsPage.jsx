@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import styled, { css } from 'styled-components';
 import toast from 'react-hot-toast';
 import { get, limitToLast, orderByChild, query, ref, serverTimestamp, set } from 'firebase/database';
-import { FaBell, FaTelegramPlane, FaMobileAlt, FaMoon, FaCheck } from 'react-icons/fa';
+import { FaBell, FaTelegramPlane, FaMobileAlt, FaMoon, FaCheck, FaChartLine } from 'react-icons/fa';
 import { auth, database } from './config';
 import PageNavMenu from './PageNavMenu';
 import BrandLoader from './BrandLoader';
@@ -18,8 +18,9 @@ import {
   matchPreset,
   normalizeNotificationSettings,
 } from '../utils/adminNotificationCatalog';
-import { describeTestOutcomes, fetchAdminNotificationStatus, sendAdminTestNotification } from '../utils/adminNotifications';
+import { describeTestOutcomes, fetchAdminNotificationStatus, sendAdminTestNotification, sendAdminWeeklyReport } from '../utils/adminNotifications';
 import {
+  describePushError,
   disablePushNotifications,
   enablePushNotifications,
   isPushEnabledOnDevice,
@@ -61,6 +62,7 @@ const AdminNotificationsPage = () => {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const [testBusy, setTestBusy] = useState(false);
+  const [weeklyBusy, setWeeklyBusy] = useState(false);
   const [journal, setJournal] = useState(null);
   const [journalError, setJournalError] = useState(false);
   const saveSeqRef = useRef(0);
@@ -108,6 +110,7 @@ const AdminNotificationsPage = () => {
         events: next.events,
         channels: next.channels,
         quietHours: next.quietHours,
+        weeklyReport: next.weeklyReport,
         updatedAt: serverTimestamp(),
       });
       if (saveSeqRef.current === seq) { setSaveState('saved'); setSaved(true); }
@@ -138,7 +141,7 @@ const AdminNotificationsPage = () => {
       fetchAdminNotificationStatus(auth).then(setStatus).catch(() => {});
     } catch (error) {
       console.warn('[admin-notifications] push toggle failed', error);
-      toast.error('Не вдалося змінити push на цьому пристрої');
+      toast.error(describePushError(error), { duration: 12000 });
     } finally {
       setPushBusy(false);
     }
@@ -154,6 +157,19 @@ const AdminNotificationsPage = () => {
       toast.error('Тест не надіслано — функції ще не розгорнуто або немає звʼязку');
     } finally {
       setTestBusy(false);
+    }
+  };
+
+  const sendWeekly = async () => {
+    if (weeklyBusy) return;
+    setWeeklyBusy(true);
+    try {
+      const result = await sendAdminWeeklyReport(auth);
+      toast(describeTestOutcomes(result.outcomes).join('\n'), { icon: '📈', duration: 6000 });
+    } catch (error) {
+      toast.error('Звіт не надіслано — функції ще не розгорнуто або немає звʼязку');
+    } finally {
+      setWeeklyBusy(false);
     }
   };
 
@@ -263,6 +279,34 @@ const AdminNotificationsPage = () => {
             {testBusy ? 'Надсилаю…' : 'Надіслати тестове'}
           </SecondaryButton>
           {noChannel ? <Muted>Увімкніть хоча б один канал.</Muted> : null}
+        </TestRow>
+      </Section>
+
+      <Section>
+        <SectionTitle>Тижневий звіт</SectionTitle>
+        <ChannelRow>
+          <ChannelIcon $color="#2E9B55"><FaChartLine /></ChannelIcon>
+          <ChannelBody>
+            <b>Щопонеділка після 9:00</b>
+            <Muted>
+              Підсумок тижня проти попереднього: нові й опубліковані анкети, лайки, контакти, відгуки,
+              скільки людей діяли, кому найбільше інтересу й що шукали.
+            </Muted>
+          </ChannelBody>
+          <Switch
+            type="button"
+            role="switch"
+            aria-checked={settings.weeklyReport}
+            aria-label="Тижневий звіт"
+            $on={settings.weeklyReport}
+            onClick={() => persist({ ...settings, weeklyReport: !settings.weeklyReport })}
+            data-testid="admin-weekly-toggle"
+          />
+        </ChannelRow>
+        <TestRow>
+          <SecondaryButton type="button" onClick={sendWeekly} disabled={weeklyBusy || noChannel} data-testid="admin-weekly-now">
+            {weeklyBusy ? 'Надсилаю…' : 'Надіслати звіт за 7 днів зараз'}
+          </SecondaryButton>
         </TestRow>
       </Section>
 

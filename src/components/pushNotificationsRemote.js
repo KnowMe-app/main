@@ -2,6 +2,7 @@ import { getApp } from 'firebase/app';
 import { beforeAuthStateChanged } from 'firebase/auth';
 import { ref, remove, serverTimestamp, set } from 'firebase/database';
 import { auth, database } from './config';
+import { isAdminUid } from '../utils/accessLevel';
 import { shouldRegisterServiceWorker } from '../serviceWorkerRegistration';
 
 /**
@@ -103,10 +104,55 @@ const loadMessaging = async () => {
   return { ...messagingModule, messaging: messagingModule.getMessaging(getApp()) };
 };
 
+/**
+ * Помилка вмикання push із назвою кроку, на якому впало: сторінка
+ * сповіщень показує причину словами (`describePushError`), а не загальне
+ * «не вдалося» — інакше збій ключа Firebase, браузера й правил бази виглядав
+ * однаково, і розбиратись не було з чим.
+ */
+const pushStep = async (stage, run) => {
+  try {
+    return await run();
+  } catch (error) {
+    const wrapped = new Error(`[push:${stage}] ${error?.code || ''} ${error?.message || error}`.trim());
+    wrapped.stage = stage;
+    wrapped.code = error?.code || '';
+    wrapped.cause = error;
+    throw wrapped;
+  }
+};
+
 const fetchDeviceToken = async () => {
-  const registration = await waitForWorker();
-  const { getToken, messaging } = await loadMessaging();
-  return getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: registration });
+  const registration = await pushStep('worker', waitForWorker);
+  const { getToken, messaging } = await pushStep('unsupported', loadMessaging);
+  return pushStep('token', () => getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: registration }));
+};
+
+/** Причина збою вмикання push — словами для адміна. */
+export const describePushError = error => {
+  const code = String(error?.code || '');
+  const text = `${code} ${error?.message || ''}`;
+  switch (error?.stage) {
+    case 'worker':
+      return 'Service worker сайту не готовий. Перезавантажте сторінку й спробуйте ще раз.';
+    case 'unsupported':
+      return 'Цей браузер не підтримує push Firebase (приватний режим чи вимкнені cookies?).';
+    case 'save':
+      return `База не прийняла токен пристрою (${code || 'відмова'}).`;
+    case 'token':
+      if (/installations|PERMISSION_DENIED|403|API key|referer|token-subscribe-failed|token-unsubscribe-failed/i.test(text)) {
+        return 'Firebase не видав токен: ключ API сайту не пускає FCM. Google Cloud Console → APIs & Services → Credentials → браузерний ключ → API restrictions: додайте «Firebase Installations API» і «FCM Registration API».';
+      }
+      if (/push service|AbortError|subscribe/i.test(text)) {
+        return 'Браузер не зміг підписатись на push (сервіс push недоступний). Спробуйте Chrome і перевірте, що Google Play Services увімкнені.';
+      }
+      if (/vapid|applicationServerKey|InvalidCharacter/i.test(text)) {
+        return 'Неправильний VAPID-ключ у змінній REACT_APP_FIREBASE_VAPID_KEY.';
+      }
+      return `Firebase не видав токен: ${code || error?.cause?.message || 'невідома помилка'}.`;
+    default:
+      return `Не вдалося змінити push: ${code || error?.message || 'невідома помилка'}.`;
+  }
 };
 
 /**
@@ -152,7 +198,7 @@ export const enablePushNotifications = async uid => {
   if (permission !== 'granted') return permission;
   const token = await fetchDeviceToken();
   const previous = readStorage(`${TOKEN_STORAGE_PREFIX}${uid}`);
-  await writeToken(uid, token);
+  await pushStep('save', () => writeToken(uid, token));
   if (previous && previous !== token) await removeToken(uid, previous).catch(() => {});
   writeStorage(`${TOKEN_STORAGE_PREFIX}${uid}`, token);
   writeStorage(`${REFRESH_STORAGE_PREFIX}${uid}`, String(Date.now()));
@@ -206,6 +252,13 @@ const flushPendingRemovals = async uid => {
 export const refreshPushToken = async uid => {
   if (!uid) return;
   await flushPendingRemovals(uid).catch(() => {});
+  // Push отримують лише адміни. Донорка, що ввімкнула сповіщення в тестові
+  // дні (14.11, «вашу анкету вподобали»), лишила токен на пристрої — він
+  // знімається тут, і правила бази тепер не дадуть записати його знову.
+  if (!isAdminUid(uid)) {
+    if (readStorage(`${TOKEN_STORAGE_PREFIX}${uid}`)) await disablePushNotifications(uid).catch(() => {});
+    return;
+  }
   if (!isPushEnabledOnDevice(uid)) return;
   const checkedAt = Number(readStorage(`${REFRESH_STORAGE_PREFIX}${uid}`)) || 0;
   if (Date.now() - checkedAt < REFRESH_INTERVAL_MS) return;
