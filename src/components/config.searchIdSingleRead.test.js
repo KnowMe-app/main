@@ -76,9 +76,21 @@ describe('пошук читає індекс одним ключем', () => {
   });
 
   it('питає один ключ, а не ключ на кожне поле', async () => {
+    // Номер — не імʼя, тож інших написань у нього немає: рівно одне читання.
+    await searchUsersOnly({ searchId: 'kovalenko_1987' }, searchOptions);
+
+    expect(searchIdReads()).toEqual(['searchId/kovalenko_1987']);
+  });
+
+  it('імʼя додає хіба що свої написання — не ключ на кожне поле', async () => {
     await searchUsersOnly({ searchId: 'Олена' }, searchOptions);
 
-    expect(searchIdReads()).toEqual(['searchId/олена']);
+    // Точний ключ — перший; решта — інші написання того самого імені
+    // (`utils/nameVariants`), а не поля індексу.
+    const reads = searchIdReads();
+    expect(reads[0]).toBe('searchId/олена');
+    expect(reads).toEqual(expect.arrayContaining(['searchId/olena', 'searchId/елена']));
+    expect(reads.every(path => !path.includes('_'))).toBe(true);
   });
 
   it('віддає всі анкети цього значення — з обох полів', async () => {
