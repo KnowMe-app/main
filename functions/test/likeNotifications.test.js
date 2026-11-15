@@ -7,8 +7,8 @@ const {
   NOTIFYING_LIKER_UIDS,
   handleDislikeWrite,
   handleFavoriteWrite,
-  isNewLike,
-  likeTargetsDonorAnketa,
+  isNewDonorReaction,
+  reactionCoversDonor,
 } = require('../likeNotifications');
 
 const ADMIN = NOTIFYING_LIKER_UIDS[0];
@@ -64,18 +64,25 @@ const donorData = () => ({
   pushTokens: { [DONOR]: { tokA: { at: 1 }, tokB: { at: 2 } } },
 });
 
-test('нове серце — лише поява значення', () => {
-  assert.equal(isNewLike(null, true), true);
-  assert.equal(isNewLike(undefined, 1700000000000), true);
-  assert.equal(isNewLike(true, 1700000000000), false);
-  assert.equal(isNewLike(true, null), false);
+test('нове серце — коли реакція вперше покриває донорську анкету', () => {
+  assert.equal(isNewDonorReaction(null, true), true);
+  assert.equal(isNewDonorReaction(undefined, 1700000000000), true);
+  assert.equal(isNewDonorReaction(null, 'ed'), true);
+  assert.equal(isNewDonorReaction(true, 1700000000000), false);
+  assert.equal(isNewDonorReaction(true, null), false);
+  // Донорка-агентка: спершу агентська анкета, потім і донорська.
+  assert.equal(isNewDonorReaction('ag', 1700000000000), true);
+  assert.equal(isNewDonorReaction('ag', 'ed,ag'), true);
+  assert.equal(isNewDonorReaction('ed', 'ed,ag'), false);
+  assert.equal(isNewDonorReaction(null, 'ag'), false);
 });
 
 test('серце на агентську анкету донорки-агентки — не про донорку', () => {
-  assert.equal(likeTargetsDonorAnketa(true), true);
-  assert.equal(likeTargetsDonorAnketa(1700000000000), true);
-  assert.equal(likeTargetsDonorAnketa('ed'), true);
-  assert.equal(likeTargetsDonorAnketa('ag'), false);
+  assert.equal(reactionCoversDonor(true), true);
+  assert.equal(reactionCoversDonor(1700000000000), true);
+  assert.equal(reactionCoversDonor('ed'), true);
+  assert.equal(reactionCoversDonor('ag'), false);
+  assert.equal(reactionCoversDonor(null), false);
 });
 
 test('серце адміна — Telegram і push, з кількістю й без того, хто вподобав', async () => {
@@ -152,6 +159,12 @@ test('не донорка й картка без акаунта — без сп�
 test('донорка-агентка: роль масивом рахується', async () => {
   const { deps } = makeDeps({ data: { ...donorData(), matchingCards: { [DONOR]: { role: ['ag', 'ed'] } } } });
   assert.equal(await handleFavoriteWrite({ likerId: ADMIN, cardId: DONOR, before: null, after: 'ed' }, deps), 'telegram,push-2');
+});
+
+test('донорська анкета вподобана після агентської — сповіщення є', async () => {
+  const { deps } = makeDeps({ data: { ...donorData(), matchingCards: { [DONOR]: { role: ['ed', 'ag'] } } } });
+  assert.equal(await handleFavoriteWrite({ likerId: ADMIN, cardId: DONOR, before: null, after: 'ag' }, deps), 'other-anketa');
+  assert.equal(await handleFavoriteWrite({ likerId: ADMIN, cardId: DONOR, before: 'ag', after: 1700000000000 }, deps), 'telegram,push-2');
 });
 
 test('мертвий токен push знімається', async () => {
