@@ -11,7 +11,7 @@
  * - **Тригери бази** класифікують запис (`classify…`) і віддають події сюди.
  *   Автора дає сама подія бази (`event.authId`): так рахується лише те, що
  *   зробив справжній користувач, а не адмін, інспектор, тестові акаунти
- *   `@example.com` чи самі функції (`isExcludedActor`).
+ *   тестові акаунти (`QA_UIDS`) чи самі функції (`isExcludedActorUid`).
  * - **Журнал** `adminActivity/events/{push}` — кожна подія, 30 днів. Його
  *   показує сторінка `/notifications`, і з нього складаються дайджести.
  * - **Налаштування** кожного адміна — `adminNotificationSettings/{uid}`:
@@ -46,6 +46,20 @@ const INSPECTOR_UID = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
 // йому не шлеться.
 const RECIPIENT_UIDS = FULL_ADMIN_UIDS;
 const STAFF_UIDS = Object.freeze([...FULL_ADMIN_UIDS, INSPECTOR_UID]);
+// Тестові акаунти (CLAUDE.md, «Звичайні тестові акаунти») — переліком uid, а
+// не за поштою `@example.com`: пошту при реєстрації ніхто не перевіряє, і
+// будь-хто з такою адресою інакше зник би з журналу адміна. Новий тестовий
+// акаунт — новий рядок тут.
+const QA_UIDS = Object.freeze([
+  'o8wZo0ZHOJhaE3QH2pS1nAzMnV03', // knowme.qa.10191547.a — донорка
+  'EfOJemQREjZmYybk76WIK3G9aIx2', // knowme.qa.10191547.b — агенція A
+  'rMCqyZH6hRfFckRzo5XTj2s9Fgr2', // knowme.qa.10191547.c — агенція B
+  'yaKVDu4G0xM3RFdtrUkRyUaSPFf1', // knowme.qa.10191547.d — донорка
+  'SmXhwjGkJNRzthWIbd8tACHM1ai1', // km-qa-ed — донорка
+  '8Y4ikBttvEPd49d2lfKxLbRK4H12', // km-qa-ip — біологічні батьки
+  'EQkVFJtUFMbOR8DlPqftmxpP2523', // km-qa-ag — агенція
+]);
+const isExcludedActorUid = uid => STAFF_UIDS.includes(uid) || QA_UIDS.includes(uid);
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -176,7 +190,9 @@ const classifySearchWrite = ({ before, after }) => {
   const prevCount = Number(isPlainObject(before) ? before.count : 0) || 0;
   const nextCount = Number(after.count) || 1;
   if (isPlainObject(before) && nextCount <= prevCount) return [];
-  return [{ type: 'search', card: '', meta: { query: clip(after.query, 80) } }];
+  // Номери — скороченими ще до запису: журнал живе 30 днів і читається з
+  // браузера адміна, а повний номер там нічого не дає.
+  return [{ type: 'search', card: '', meta: { query: maskDigits(clip(after.query, 80)) } }];
 };
 
 /** Доповнення чужої картки: шар редактора `multiData/edits/{картка}/{редактор}`. */
@@ -539,6 +555,7 @@ module.exports = {
   DEDUP_PATH,
   DIGEST_PATH,
   SETTINGS_ROOT,
+  QA_UIDS,
   RECIPIENT_UIDS,
   STAFF_UIDS,
   RETENTION_MS,
@@ -558,6 +575,7 @@ module.exports = {
   flushDueDigests,
   isDigestDue,
   isQuietTime,
+  isExcludedActorUid,
   isStaffUid,
   maskDigits,
   normalizeSettings,

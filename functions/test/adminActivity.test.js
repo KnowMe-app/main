@@ -105,9 +105,16 @@ test('чернетка, доповнення, відгук, посилання, 
   assert.equal(activity.classifyAccountDeletion({ uid: USER, before: null, after: { requestedAt: 1 } })[0].allowSystem, true);
 });
 
-test('номер у тексті пошуку маскується до 4 останніх цифр', () => {
+test('номер у тексті пошуку маскується до 4 останніх цифр — ще до запису в журнал', () => {
   assert.equal(activity.maskDigits('380 50 123 45 67'), '…4567');
   assert.equal(activity.maskDigits('Ольга Київ'), 'Ольга Київ');
+  assert.equal(activity.classifySearchWrite({ before: null, after: { query: '+380501234567', count: 1 } })[0].meta.query, '…4567');
+});
+
+test('виключені — адміни, інспектор і тестові акаунти за uid, а не за поштою', () => {
+  assert.equal(activity.isExcludedActorUid(activity.RECIPIENT_UIDS[0]), true);
+  assert.equal(activity.isExcludedActorUid(activity.QA_UIDS[0]), true);
+  assert.equal(activity.isExcludedActorUid(USER), false);
 });
 
 test('подію записує журнал; миттєва йде в Telegram і push', async () => {

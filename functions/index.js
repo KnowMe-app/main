@@ -757,20 +757,6 @@ exports.recordOwnerLikedAudienceChange = recordOwnerMarkChange('likedAudience');
 const { getMessaging } = require('firebase-admin/messaging');
 const adminActivity = require('./adminActivity');
 
-const qaEmailCache = new Map();
-const isQaAccount = async uid => {
-  if (qaEmailCache.has(uid)) return qaEmailCache.get(uid);
-  let qa = false;
-  try {
-    const user = await getAuth().getUser(uid);
-    qa = /@example\.com$/i.test(user.email || '');
-  } catch (error) {
-    qa = false;
-  }
-  qaEmailCache.set(uid, qa);
-  return qa;
-};
-
 const buildActivityDeps = () => {
   const database = getDatabase();
   return {
@@ -794,7 +780,7 @@ const buildActivityDeps = () => {
         if (Object.keys(updates).length) await database.ref().update(updates);
       },
     },
-    isExcludedActor: async uid => adminActivity.isStaffUid(uid) || isQaAccount(uid),
+    isExcludedActor: async uid => adminActivity.isExcludedActorUid(uid),
     resolveTelegramChat: async uid => {
       const accounts = (await database.ref('telegramAccounts').orderByChild('uid').equalTo(uid).get()).val() || {};
       return Object.keys(accounts).find(key => accounts[key] && accounts[key].uid === uid) || null;

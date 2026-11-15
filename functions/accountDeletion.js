@@ -367,6 +367,29 @@ const buildSharedAccessUpdates = (technicalRoot, uid, cardIds) => {
 };
 
 /** Привʼязки Telegram до цього акаунта (`telegramAccounts/{tgId}`). */
+/**
+ * Журнал адміна (`adminActivity/events`, `functions/adminActivity.js`): події,
+ * де людина — автор або картка, і ключі склейки з її id. Журнал зберігає імена
+ * з картки (`actorInfo`/`cardInfo`), тож «профіль видалено» мусить означати й
+ * їх, а не лише 30-денну ротацію.
+ */
+const buildAdminActivityUpdates = (eventsRoot, ids) => {
+  const updates = {};
+  Object.entries(isPlainObject(eventsRoot) ? eventsRoot : {}).forEach(([key, event]) => {
+    if (isPlainObject(event) && (ids.has(event.actor) || ids.has(event.card))) updates[`adminActivity/events/${key}`] = null;
+  });
+  return updates;
+};
+
+const buildAdminActivityDedupUpdates = (dedupRoot, ids) => {
+  const updates = {};
+  Object.keys(isPlainObject(dedupRoot) ? dedupRoot : {}).forEach(key => {
+    const [, actor, card] = key.split('~');
+    if (ids.has(actor) || ids.has(card)) updates[`adminActivity/dedup/${key}`] = null;
+  });
+  return updates;
+};
+
 const buildTelegramUpdates = (accountsRoot, uid) => {
   const updates = {};
   Object.entries(accountsRoot || {}).forEach(([tgId, account]) => {
@@ -597,6 +620,8 @@ const purgeAccountData = async (deps, uid, { now = Date.now(), dryRun = false } 
     await sweep(node, `multiData/${node}`, root => buildOwnerCardUpdates(node, root, uid, cardIds));
   }
   await sweep('likedAudience', 'multiData/likedAudience', root => buildLikedAudienceUpdates(root, uid, cardIds));
+  await sweep('adminActivity', 'adminActivity/events', root => buildAdminActivityUpdates(root, cardIds));
+  await sweep('adminActivityDedup', 'adminActivity/dedup', root => buildAdminActivityDedupUpdates(root, cardIds));
   await sweep('edits', 'multiData/edits', root => buildEditsUpdates(root, uid, cardIds));
   await sweep('editsByEditor', 'multiData/editsByEditor', root => buildEditsByEditorUpdates(root, uid, cardIds));
   await sweep('editsHistory', 'multiData/editsHistory', root => buildEditsHistoryUpdates(root, uid, cardIds));
@@ -652,6 +677,8 @@ const purgeAccountData = async (deps, uid, { now = Date.now(), dryRun = false } 
 };
 
 module.exports = {
+  buildAdminActivityUpdates,
+  buildAdminActivityDedupUpdates,
   ACCOUNT_DELETIONS_ROOT,
   ADMIN_UIDS,
   canPurgeAccounts,
