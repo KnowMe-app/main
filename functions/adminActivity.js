@@ -414,7 +414,10 @@ const buildWeeklyReport = (events, now) => {
     `📈 <b>${title}</b>`,
     `Діяли людей: <b>${actors}</b> (${delta(actors, previousActors)}) · подій: ${thisWeek.length}`,
     '',
-    ...(thisWeek.length ? rows : ['Подій за тиждень не було.']),
+    // Порожній тиждень проти непорожнього — саме тут порівняння найцінніше
+    // («Лайк: 0 (↓10)»), тож рядки лишаються, а примітка стоїть над ними.
+    ...(thisWeek.length ? [] : ['Подій за тиждень не було.']),
+    ...rows,
   ];
   if (createdCards.size) {
     lines.push('', `Воронка: нових анкет ${createdCards.size} → з них опубліковано ${published} (${Math.round((published / createdCards.size) * 100)}%)`);

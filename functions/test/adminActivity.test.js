@@ -311,3 +311,10 @@ test('автоматичний тижневий звіт у тихі годин�
   assert.equal(weekly[0].options.silent, true);
   assert.equal(sent.push.filter(entry => entry.payload && entry.payload.kind === 'admin-weekly').length, 0);
 });
+
+test('тижневий звіт: порожній тиждень лишає порівняння з попереднім', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const { html } = activity.buildWeeklyReport([{ type: 'like', t: NOON - 9 * DAY, actor: 'u1', card: 'x', meta: {} }], NOON);
+  assert.match(html, /Подій за тиждень не було/);
+  assert.match(html, /Лайк: <b>0<\/b> \(↓1\)/);
+});
