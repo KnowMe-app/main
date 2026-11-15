@@ -45,6 +45,10 @@ jobs:
           # Імʼя бота входу через Telegram (без @). Не секрет — змінна репозиторію;
           # порожня — кнопки Telegram на вході немає, лишається пошта.
           echo "REACT_APP_TELEGRAM_BOT_USERNAME=${{ vars.REACT_APP_TELEGRAM_BOT_USERNAME }}" >> .env
+          # Публічний VAPID-ключ Firebase Cloud Messaging (Project settings →
+          # Cloud Messaging → Web Push certificates). Не секрет — змінна
+          # репозиторію; порожня — кнопки push-сповіщень у «Моєму профілі» немає.
+          echo "REACT_APP_FIREBASE_VAPID_KEY=${{ vars.REACT_APP_FIREBASE_VAPID_KEY }}" >> .env
 
       # Тести стоять між lint і збіркою: червоний тест зупиняє деплой. Доти
       # CI робив лише lint і збірку, і зміна, яка ламала поведінку, доїжджала в

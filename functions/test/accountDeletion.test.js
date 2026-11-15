@@ -186,6 +186,8 @@ test('крок людини: анкета ховається, посилання
     [`matchingCards/${UID}/feedDate`]: false,
     [`matchingCards/${UID}/audience`]: null,
     'profileShares/tokentokentoken1': null,
+    // Видалений акаунт сповіщень не отримує вже зараз, до очищення адміном.
+    [`pushTokens/${UID}`]: null,
   });
   // Сама анкета й решта даних лишаються — їх очищає адмін.
   assert.ok(!Object.keys(updates[0]).some(path => path.startsWith('profileDetails') || path === `matchingCards/${UID}`));
@@ -198,7 +200,10 @@ test('крок людини: картки-привида не заводить, 
     getAuthUser: async () => { throw notFound(); },
   });
   await requestAccountDeletion(deps, UID, { now: 1000 });
-  assert.deepEqual(updates[0], { [`accountDeletions/${UID}`]: { requestedAt: 500, via: 'self' } });
+  assert.deepEqual(updates[0], {
+    [`accountDeletions/${UID}`]: { requestedAt: 500, via: 'self' },
+    [`pushTokens/${UID}`]: null,
+  });
 });
 
 test('крок людини: вимкнений акаунт не чіпається', async () => {

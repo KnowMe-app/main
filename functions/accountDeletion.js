@@ -155,6 +155,8 @@ const buildOwnedPaths = (uid, cardIds = [uid]) => {
       `multiData/edits/${id}`,
       `multiData/editsHistory/${id}`,
       `multiData/programs/${id}`,
+      // Лічильник сповіщень «вашу анкету вподобали» (`likeNotifications.js`).
+      `likeNotifications/${id}`,
       // Публічні відгуки про людину: картки, до якої вони, більше немає.
       `comments/${id}`,
     ]),
@@ -164,6 +166,8 @@ const buildOwnedPaths = (uid, cardIds = [uid]) => {
     `usersIndex/${uid}`,
     // Межі відправок листів підтвердження цього акаунта.
     `emailVerificationSends/byUid/${uid}`,
+    // Токени push-сповіщень пристроїв цього акаунта.
+    `pushTokens/${uid}`,
   ];
 };
 
@@ -469,6 +473,9 @@ const requestAccountDeletion = async (deps, uid, { now = Date.now() } = {}) => {
     updates[`matchingCards/${uid}/audience`] = null;
   }
   listShareTokens(slots).forEach(token => { updates[`profileShares/${token}`] = null; });
+  // Токени push — одразу: видалений акаунт не мусить отримувати сповіщень,
+  // поки адмін дійде до черги.
+  updates[`pushTokens/${uid}`] = null;
   await deps.update(updates);
 
   if (authUser) await deleteAuthAndVerify(deps, uid);

@@ -101,6 +101,12 @@ import {
 } from '../utils/myProfilePendingEdits';
 import { listShareableProfileRoles } from '../utils/profileShare';
 import {
+  disablePushNotifications,
+  enablePushNotifications,
+  isPushEnabledOnDevice,
+  readPushAvailability,
+} from './pushNotificationsRemote';
+import {
   DEFAULT_REWARD_CURRENCY,
   MY_PROFILE_HABIT_CHOICES,
   PROGRAM_PLACE_CHOICES,
@@ -1661,6 +1667,11 @@ export const MyProfile = () => {
   // Скільки живих посилань на анкету (`MyProfileShare`) — для рядка стану в
   // «Публікації»: анкета без стрічки, але з посиланням, не «невидима».
   const [shareCount, setShareCount] = useState(0);
+  // Push-сповіщення про вподобання (`pushNotificationsRemote`): стан пристрою
+  // (`off` — блоку немає) і чи сповіщення ввімкнено саме тут.
+  const [pushAvailability, setPushAvailability] = useState('off');
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
   const sectionRefs = useRef({});
   const tabsRef = useRef(null);
   const stickyProgressRef = useRef(null);
@@ -3704,6 +3715,43 @@ export const MyProfile = () => {
   const likedTexts = LIKED_AUDIENCE_TEXTS[resolveLikedAudienceKind(rolesList)];
   // Посилання — лише на особисту анкету (`listShareableProfileRoles`): картка
   // агенції — це програми, а під них знімку потрібна власна перевірка.
+  // Сповіщення про вподобання — поки лише донорці (`functions/likeNotifications.js`
+  // шле їх лише анкетам з роллю `ed`). Стан читається без діалогу дозволу:
+  // діалог браузер показує лише на дотик до кнопки.
+  const offersLikeNotifications = rolesList.includes('ed') && Boolean(userId);
+  useEffect(() => {
+    if (!offersLikeNotifications) return undefined;
+    let cancelled = false;
+    readPushAvailability()
+      .then(availability => {
+        if (cancelled) return;
+        setPushAvailability(availability);
+        setPushEnabled(isPushEnabledOnDevice(userId));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [offersLikeNotifications, userId]);
+
+  const togglePushNotifications = async () => {
+    if (pushBusy || !userId) return;
+    setPushBusy(true);
+    try {
+      if (pushEnabled) {
+        await disablePushNotifications(userId);
+        setPushEnabled(false);
+      } else {
+        const permission = await enablePushNotifications(userId);
+        setPushEnabled(permission === 'granted');
+        if (permission === 'denied') setPushAvailability('denied');
+      }
+    } catch (error) {
+      console.warn('[push] не вдалося змінити сповіщення', error);
+      toast.error(uiText('Не вдалося увімкнути сповіщення — спробуйте ще раз', language));
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
   const canShareByLink = Boolean(userId) && !profileLoading
     && listShareableProfileRoles({ role: rolesList }, selectedRole).length > 0;
   // Скільки способів показати анкету має ця людина: стрічка завжди, коло
@@ -4440,6 +4488,25 @@ export const MyProfile = () => {
             onSharesChange={setShareCount}
             onFillField={scrollToField}
           />
+        </WayCard>
+      ) : null}
+      {offersLikeNotifications && pushAvailability !== 'off' ? (
+        <WayCard data-testid="publish-push-notifications">
+          <WayHead>
+            <b>{uiText('Сповіщення', language)}</b>
+            {pushEnabled ? <WayTag $current>{uiText('Увімкнено на цьому пристрої', language)}</WayTag> : null}
+          </WayHead>
+          <WayText>{uiText('Повідомимо, коли вашу анкету вподобають. Хто саме — не показуємо: реакції анонімні.', language)}</WayText>
+          {pushAvailability === 'ios-install' ? (
+            <WayText $muted>{uiText('На iPhone сповіщення приходять, лише коли KnowMe додано на початковий екран: «Поділитися» → «На початковий екран». Відкрийте KnowMe звідти — і тут зʼявиться кнопка.', language)}</WayText>
+          ) : pushAvailability === 'denied' && !pushEnabled ? (
+            <WayText $muted>{uiText('Сповіщення заблоковано в налаштуваннях браузера. Дозвольте їх для knowme.pp.ua — і кнопка запрацює.', language)}</WayText>
+          ) : (
+            <LikedAudienceBtn type="button" onClick={togglePushNotifications} disabled={pushBusy} data-testid="push-toggle">
+              {uiText(pushEnabled ? 'Вимкнути на цьому пристрої' : 'Увімкнути сповіщення', language)}
+            </LikedAudienceBtn>
+          )}
+          <WayText $muted>{uiText('Входили через Telegram? Повідомлення прийде й від бота KnowMe.', language)}</WayText>
         </WayCard>
       ) : null}
       {isProfileAccessConfirmed ? (
