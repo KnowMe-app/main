@@ -42,3 +42,10 @@ describe('adminNotificationCatalog', () => {
     expect(settings.quietHours).toBe(true);
   });
 });
+
+test('збережене до тижневого звіту «Вимкнути все» звіту не вмикає', () => {
+  const { normalizeNotificationSettings } = require('../adminNotificationCatalog');
+  expect(normalizeNotificationSettings({ events: { like: 'off' } }).weeklyReport).toBe(false);
+  expect(normalizeNotificationSettings({ events: { like: 'hourly' } }).weeklyReport).toBe(true);
+  expect(normalizeNotificationSettings({ events: { like: 'hourly' }, weeklyReport: false }).weeklyReport).toBe(false);
+});

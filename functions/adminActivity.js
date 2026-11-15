@@ -249,7 +249,11 @@ const normalizeSettings = raw => {
     events,
     channels: { telegram: channels.telegram === true, push: channels.push === true },
     quietHours: raw.quietHours !== false,
-    weeklyReport: raw.weeklyReport !== false,
+    // Тижневий звіт зʼявився пізніше за налаштування: збереженого без поля
+    // читаємо за рештою — хто обрав «Вимкнути все», той і звіту не просив.
+    weeklyReport: typeof raw.weeklyReport === 'boolean'
+      ? raw.weeklyReport
+      : Object.values(events).some(value => value !== 'off'),
   };
 };
 
@@ -357,7 +361,8 @@ const buildDigestMessage = (events, frequency) => {
  */
 const WEEKLY_REPORT_TYPES = [
   'profile_created', 'profile_published', 'profile_hidden', 'account_deleted',
-  'like', 'dislike', 'contact_tap', 'public_review', 'card_suggestion', 'draft_created', 'search', 'share_link_created',
+  'profile_edited', 'card_suggestion', 'draft_created', 'draft_updated',
+  'like', 'dislike', 'contact_tap', 'postpone', 'public_review', 'search', 'share_link_created',
 ];
 
 const buildWeeklyReport = (events, now) => {
@@ -374,8 +379,14 @@ const buildWeeklyReport = (events, now) => {
     .filter(row => row.current || row.previous)
     .map(row => `${ADMIN_EVENT_BY_KEY[row.type].emoji} ${ADMIN_EVENT_BY_KEY[row.type].label}: <b>${row.current}</b> (${delta(row.current, row.previous)})`);
 
+  // Воронка — по когорті: опубліковані з тих карток, що зʼявились цього ж
+  // тижня. Публікація старої анкети чи повторна після приховування — не
+  // конверсія нових (інакше одна нова й дві старі давали 200%).
+  const createdCards = new Set(thisWeek.filter(event => event.type === 'profile_created' && event.card).map(event => event.card));
   const created = count(thisWeek, 'profile_created');
-  const published = count(thisWeek, 'profile_published');
+  const published = new Set(thisWeek
+    .filter(event => event.type === 'profile_published' && createdCards.has(event.card))
+    .map(event => event.card)).size;
   const actors = new Set(thisWeek.map(event => event.actor).filter(Boolean)).size;
   const previousActors = new Set(lastWeek.map(event => event.actor).filter(Boolean)).size;
 
@@ -403,10 +414,10 @@ const buildWeeklyReport = (events, now) => {
     `📈 <b>${title}</b>`,
     `Діяли людей: <b>${actors}</b> (${delta(actors, previousActors)}) · подій: ${thisWeek.length}`,
     '',
-    ...(rows.length ? rows : ['Подій за тиждень не було.']),
+    ...(thisWeek.length ? rows : ['Подій за тиждень не було.']),
   ];
-  if (created) {
-    lines.push('', `Воронка: нових анкет ${created} → опубліковано ${published} (${Math.round((published / created) * 100)}%)`);
+  if (createdCards.size) {
+    lines.push('', `Воронка: нових анкет ${createdCards.size} → з них опубліковано ${published} (${Math.round((published / createdCards.size) * 100)}%)`);
   }
   if (topCards.length) lines.push('', '<b>Найбільше інтересу</b>', ...topCards);
   if (topSearches.length) lines.push('', `<b>Шукали</b>: ${topSearches.join(', ')}`);
@@ -631,7 +642,7 @@ const flushDueDigests = async deps => {
     const since = await claimDigest(`${DIGEST_PATH}/${uid}/weekly`, 'weekly', deps);
     if (since === null) continue;
     // eslint-disable-next-line no-await-in-loop
-    await sendWeeklyReport(uid, settings, deps);
+    await sendWeeklyReport(uid, settings, deps, { quiet: settings.quietHours && isQuietTime(deps.now) });
   }
   // Раз на добу — прибрати журнал старший за 30 днів і старі ключі дублів.
   const cleanupSince = await claimDigest(`${DIGEST_PATH}/_cleanup`, 'daily', deps);
@@ -643,9 +654,11 @@ const flushDueDigests = async deps => {
   }
 };
 
-const sendWeeklyReport = async (uid, settings, deps) => {
+// Автоматичний звіт поважає тихі години (може настати й уночі: перша подія
+// після 22:00 у понеділок чи запасні 7,5 доби); «Надіслати зараз» — ні.
+const sendWeeklyReport = async (uid, settings, deps, { quiet = false } = {}) => {
   const events = await deps.db.queryEventsBetween(deps.now - 14 * DAY, deps.now);
-  return deliverToAdmin(uid, settings, buildWeeklyReport(events, deps.now), deps, { quiet: false });
+  return deliverToAdmin(uid, settings, buildWeeklyReport(events, deps.now), deps, { quiet });
 };
 
 /** «Звіт за тиждень зараз» на сторінці сповіщень — увімкненими каналами викликача. */
