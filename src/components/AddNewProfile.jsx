@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import {
   applyPendingCardSave,
+  clearAdminCardPending,
   countPendingCardSaves,
   listPendingCardSaves,
   rememberPendingCardSave,
@@ -2221,6 +2222,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const handleExit = async () => {
     try {
+      clearAdminCardPending();
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('userEmail');
       localStorage.removeItem('myProfileDraft');

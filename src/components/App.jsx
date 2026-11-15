@@ -16,6 +16,7 @@ import { clearMyProfileCache } from 'utils/myProfileCache';
 import { clearFlowCache } from 'utils/flowOfflineWrites';
 import { clearPendingProfileEdits } from 'utils/myProfilePendingEdits';
 import { clearCardFormPending } from 'utils/cardFormPendingEdits';
+import { clearAdminCardPending } from 'utils/adminCardPendingSaves';
 import { clearReactionCache } from 'utils/matchingReactionCache';
 import { clearPersistedFeedSnapshot } from 'utils/matchingFeedSnapshot';
 import { clearContactsCache } from 'utils/matchingContactsCache';
@@ -171,6 +172,9 @@ export const App = () => {
         clearPendingProfileEdits();
         // І незбережене з форми «Додати картку» / доповнення.
         clearCardFormPending();
+        // І недослані правки карток адміна (`utils/adminCardPendingSaves`): у них
+        // стан картки разом з контактами.
+        clearAdminCardPending();
         // Так само реакції й остання дека стрічки: вони теж памʼять пристрою
         // про конкретного читача (`utils/matchingCachePolicy`).
         clearReactionCache();
