@@ -65,6 +65,6 @@ describe('історія пошуку в database.rules.json', () => {
 
   it('не пускає в ряд історії жодного зайвого поля', () => {
     expect(entry.$field['.validate'])
-      .toBe("$field == 'query' || $field == 'createdAt' || $field == 'updatedAt' || $field == 'count'");
+      .toBe("$field == 'query' || $field == 'createdAt' || $field == 'updatedAt' || $field == 'count' || $field == 'resultsCount' || $field == 'intent' || $field == 'intentChoice'");
   });
 });

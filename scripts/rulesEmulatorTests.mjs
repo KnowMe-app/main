@@ -1709,6 +1709,42 @@ await it('зайве поле в ряді історії не проходить
     query: 'Оксана', updatedAt: 2, ownerNote: 'зайве',
   })));
 
+// Аналітика пошуку (етап 4 «пошук розуміє намір»): кейс 14.11 лишив у ряду
+// самі «Сурогатна мати» й `count: 1`, і причину відходу доводилось гадати.
+await it('ряд історії несе намір, вибір на картці й кількість показаних карток', () =>
+  assertSucceeds(set(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}/сурогатна мати`), {
+    query: 'Сурогатна мати', updatedAt: 2, count: 1, intent: 'sm', intentChoice: 'find', resultsCount: 0,
+  })));
+
+await it('наслідок пошуку дописується в наявний ряд окремим update', async () => {
+  await assertSucceeds(set(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}/сурмама`), {
+    query: 'сурмама', updatedAt: 2, count: 1,
+  }));
+  await assertSucceeds(update(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}/сурмама`), {
+    resultsCount: 9, intentChoice: 'name',
+  }));
+});
+
+await it('невідомий намір, вибір чи відʼємна кількість не проходять', async () => {
+  await assertFails(set(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}/а`), {
+    query: 'а', updatedAt: 2, intent: 'xx',
+  }));
+  await assertFails(set(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}/б`), {
+    query: 'б', updatedAt: 2, intentChoice: 'maybe',
+  }));
+  await assertFails(set(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}/в`), {
+    query: 'в', updatedAt: 2, resultsCount: -1,
+  }));
+  await assertFails(set(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}/г`), {
+    query: 'г', updatedAt: 2, resultsCount: '5',
+  }));
+});
+
+await it('наслідок без ряду (немає тексту запиту) не проходить', () =>
+  assertFails(update(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}/нема`), {
+    resultsCount: 3,
+  })));
+
 await it('ряд без тексту запиту не проходить', () =>
   assertFails(set(ref(db(SELF_SERVE), `multiData/searchQueries/${SELF_SERVE}/пусто`), {
     updatedAt: 2, count: 1,

@@ -60,6 +60,7 @@ import {
   CONTACT_ACTION_OUTBOX_TYPE,
   recordContactAction,
   addMatchingSearchQuery,
+  recordSearchQueryOutcome,
   filterMain,
   filterFeedDeniedSearchResult,
   readLazySearchPortion,
@@ -4791,8 +4792,10 @@ const Matching = () => {
   // Історію пише лише завершений пошук: прогони на паузах у наборі тексту
   // лишили б у базі ланцюг початків одного слова.
   const handleMatchingSearchCommitted = React.useCallback(value => {
-    addMatchingSearchQuery(value);
-    roleIntentCommitRef.current?.(value);
+    // Намір пишеться разом із самим запитом (`intent`): той самий ряд історії
+    // каже потім, що «Сурогатна мати» пошук упізнав як категорію.
+    const intent = roleIntentCommitRef.current?.(value) || undefined;
+    addMatchingSearchQuery(value, { intent });
   }, []);
 
   // Пошук завершився — і далі говорить сам список, а не рядок над ним.
@@ -7778,8 +7781,15 @@ const Matching = () => {
     setSearchRerunEpoch(epoch => epoch + 1);
   }, []);
 
+  // Вибір на картці наміру — завершений запит, навіть без Enter: ряд історії
+  // заводиться, якщо його ще немає (`commitIfMissing`).
+  const recordRoleIntentChoice = React.useCallback((query, intent, intentChoice) => {
+    void recordSearchQueryOutcome(query, { intent, intentChoice }, { commitIfMissing: true });
+  }, []);
+
   const handleRoleIntentFind = React.useCallback(() => {
     if (!searchRoleIntent) return;
+    recordRoleIntentChoice(roleIntentQuery, searchRoleIntent, 'find');
     if (roleIntentHiddenForViewer) {
       // Правила деки цю роль читачеві не показують — фільтр дав би порожню
       // стрічку. Лишаємось у пошуку й кажемо, що робити далі.
@@ -7787,17 +7797,19 @@ const Matching = () => {
       return;
     }
     applyRoleIntentFilter(searchRoleIntent, roleIntentQuery);
-  }, [applyRoleIntentFilter, roleIntentHiddenForViewer, roleIntentQuery, searchRoleIntent]);
+  }, [applyRoleIntentFilter, recordRoleIntentChoice, roleIntentHiddenForViewer, roleIntentQuery, searchRoleIntent]);
 
   const handleRoleIntentBecome = React.useCallback(() => {
     if (!searchRoleIntent) return;
+    recordRoleIntentChoice(roleIntentQuery, searchRoleIntent, 'become');
     setRoleIntentChoice({ query: roleIntentQuery, choice: 'become' });
     navigate('/my-profile', { state: { openRolePicker: true, suggestedRole: searchRoleIntent } });
-  }, [navigate, roleIntentQuery, searchRoleIntent]);
+  }, [navigate, recordRoleIntentChoice, roleIntentQuery, searchRoleIntent]);
 
   const handleRoleIntentName = React.useCallback(() => {
+    recordRoleIntentChoice(roleIntentQuery, searchRoleIntent, 'name');
     runRoleIntentAsName(roleIntentQuery);
-  }, [roleIntentQuery, runRoleIntentAsName]);
+  }, [recordRoleIntentChoice, roleIntentQuery, runRoleIntentAsName, searchRoleIntent]);
 
   // Батькам, агенції й клініці намір одразу стає стрічкою. Але не посеред
   // набору: debounce пошуку — 250 мс, і пауза в «Смирнова» після «См»
@@ -7807,17 +7819,23 @@ const Matching = () => {
   useEffect(() => {
     if (searchRoleIntentFlow !== 'filter' || !searchRoleIntent || roleIntentHiddenForViewer) return undefined;
     if (roleIntentQuery.length < 3) return undefined;
-    const timer = setTimeout(() => applyRoleIntentFilter(searchRoleIntent, roleIntentQuery), ROLE_INTENT_AUTO_APPLY_MS);
+    const timer = setTimeout(() => {
+      // Секунда тиші на назві категорії — теж завершений запит.
+      void recordSearchQueryOutcome(roleIntentQuery, { intent: searchRoleIntent }, { commitIfMissing: true });
+      applyRoleIntentFilter(searchRoleIntent, roleIntentQuery);
+    }, ROLE_INTENT_AUTO_APPLY_MS);
     return () => clearTimeout(timer);
   }, [applyRoleIntentFilter, roleIntentHiddenForViewer, roleIntentQuery, searchRoleIntent, searchRoleIntentFlow]);
 
   roleIntentCommitRef.current = value => {
     const trimmed = String(value || '').trim();
-    if (!trimmed || trimmed === nameSearchOverrideRef.current) return;
+    if (!trimmed || trimmed === nameSearchOverrideRef.current) return null;
     const intent = detectSearchRoleIntent(trimmed);
-    if (resolveRoleIntentFlow({ intent, viewerRole: donorRestrictionViewerRole, isAdmin }) !== 'filter') return;
-    if (listViewerHiddenCardRoles(donorRestrictionViewerRole).includes(intent)) return;
+    if (!intent) return null;
+    if (resolveRoleIntentFlow({ intent, viewerRole: donorRestrictionViewerRole, isAdmin }) !== 'filter') return intent;
+    if (listViewerHiddenCardRoles(donorRestrictionViewerRole).includes(intent)) return intent;
     applyRoleIntentFilter(intent, trimmed);
+    return intent;
   };
 
   const roleIntentBannerActive = Boolean(roleIntentBanner)
@@ -8992,6 +9010,33 @@ const Matching = () => {
   // Той самий ключ набору карток, що й вище: рядки перебудовуються з
   // `feedSource` на кожен рендер.
   const feedRowsRef = useRef(feedRows);
+
+  /*
+   * Скільки карток людина побачила на свій запит (`resultsCount` у ряду
+   * історії). Пишеться, коли видача вже відмалювалась і постояла півтори
+   * секунди: на кожну паузу набору — ні (такого ряду й немає:
+   * `recordSearchQueryOutcome` пише лише в записаний вкладкою запит). Для
+   * наміру це число карток у звуженій стрічці під плашкою.
+   */
+  const resultsCountRecordedRef = useRef('');
+  const resultsCountQuery = roleIntentBannerActive
+    ? roleIntentBanner.query
+    : (isSearching && viewMode === 'search' && !searchRoleIntent ? searchQuery.trim() : '');
+  const resultsCountReady = Boolean(resultsCountQuery)
+    && !loading
+    && feedStatePendingCount === 0
+    && (roleIntentBannerActive || !matchingSearchStatus);
+  const resultsCountShown = feedRows.length;
+  useEffect(() => {
+    if (!resultsCountReady) return undefined;
+    const signature = `${resultsCountQuery}|${resultsCountShown}`;
+    if (resultsCountRecordedRef.current === signature) return undefined;
+    const timer = setTimeout(() => {
+      resultsCountRecordedRef.current = signature;
+      void recordSearchQueryOutcome(resultsCountQuery, { resultsCount: resultsCountShown });
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [resultsCountQuery, resultsCountReady, resultsCountShown]);
   feedRowsRef.current = feedRows;
   const feedRowsIdsKey = feedRows.map(row => row?.userId || '').join('|');
   useEffect(() => {
@@ -9346,7 +9391,14 @@ const Matching = () => {
                       count: `${feedRows.length}${deckHasMore ? '+' : ''}`,
                     })}
                   </RoleIntentBannerText>
-                  <RoleIntentLink type="button" data-testid="role-intent-banner-name" onClick={() => runRoleIntentAsName(roleIntentBanner.query)}>
+                  <RoleIntentLink
+                    type="button"
+                    data-testid="role-intent-banner-name"
+                    onClick={() => {
+                      void recordSearchQueryOutcome(roleIntentBanner.query, { intentChoice: 'name' });
+                      runRoleIntentAsName(roleIntentBanner.query);
+                    }}
+                  >
                     {uiText('Шукати як імʼя', language)}
                   </RoleIntentLink>
                 </RoleIntentBanner>
