@@ -639,6 +639,15 @@ export const updatePendingOutboxMeta = (matches, update) => {
   return changed;
 };
 
+/**
+ * Записи, яких база ще не підтвердила, у порядку постановки — лише їхні
+ * зміни (`patch`). Екран, що показує дані з бази, накладає їх поверх
+ * прочитаного (Flow — `utils/flowOfflineWrites`): відповідь сервера ще не
+ * знає записаного без звʼязку, і без накладки щойно внесене зникало б з
+ * екрана до доставки.
+ */
+export const listPendingOutboxPatches = () => entries.map(entry => entry.patch);
+
 /** Скільки записів ще не підтвердила база. */
 export const getWriteOutboxPendingCount = () => entries.length;
 

@@ -164,6 +164,7 @@ import {
   registerOutboxSuccessHandler,
   updatePendingOutboxMeta,
 } from '../utils/writeOutbox';
+import { clearFlowCache, flowRootPath, listFlowLeaves, readFlowSubtree } from '../utils/flowOfflineWrites';
 import { forgetProfileContacts, readFreshProfileContacts, writeProfileContacts } from '../utils/matchingContactsCache';
 import { MATCHING_DENIED_CARDS_STORE, createMatchingTimedStore } from '../utils/matchingTimedStore';
 import { pickCardActivity } from '../utils/cardActivity';
@@ -2963,7 +2964,35 @@ const formatFlowStoredCurrencyAmount = value => {
   return asNumber.toFixed(2);
 };
 
-export const saveFlowEntry = async ({
+// Записи Flow — через чергу пристрою (`utils/writeOutbox`,
+// `utils/flowOfflineWrites`): без звʼязку прямий `set` висів у памʼяті
+// вкладки, і закрита вкладка губила внесений платіж. Кожен писач повертає
+// `{ patch, delivered }`: `patch` екран одразу накладає на свої дані, а
+// `delivered` — обіцянка доставки (відмова правил — помилка). Чекати на
+// `delivered` перед показом не можна: без звʼязку він не скінчиться, доки
+// звʼязок не повернеться.
+const FLOW_OUTBOX_TYPE = 'flow';
+
+const enqueueFlowPatch = (ownerId, patch) => {
+  if (!ownerId || !patch || !Object.keys(patch).length) {
+    return { patch: {}, delivered: Promise.resolve() };
+  }
+  const delivered = enqueueOutboxWrite({
+    uid: ownerId,
+    patch,
+    meta: { type: FLOW_OUTBOX_TYPE, ownerId: String(ownerId) },
+  });
+  return { patch, delivered };
+};
+
+// Відмова бази для запису, досланого з минулої вкладки: памʼять пристрою
+// несе його як збережений — забуваємо її, наступне відкриття візьме правду
+// з бази.
+registerOutboxRejectionHandler(FLOW_OUTBOX_TYPE, meta => {
+  if (meta?.ownerId) clearFlowCache(meta.ownerId);
+});
+
+const buildFlowEntryWrite = async ({
   ownerId,
   groupPath,
   date,
@@ -2975,9 +3004,9 @@ export const saveFlowEntry = async ({
   rowCustomUsdRate,
   customEurRate,
 }) => {
-  if (!ownerId || !groupPath || !date || !amount) return;
+  if (!ownerId || !groupPath || !date || !amount) return null;
   const datePath = buildFlowDatePath({ groupPath, date });
-  if (!datePath) return;
+  if (!datePath) return null;
   const normalizedAmountUah = normalizeFlowStoredAmount(amount);
   const amountUahNumber = Number(normalizedAmountUah);
   let effectiveRates = applyFlowCustomUsdRate(
@@ -2985,7 +3014,10 @@ export const saveFlowEntry = async ({
     customUsdRate,
     customEurRate
   );
-  if (Number.isFinite(amountUahNumber)) {
+  // Без звʼязку курс НБУ за датою не прочитати, а чекати на нього — значить
+  // не записати платіж зовсім: беремо курс, що вже є на екрані.
+  const deviceOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  if (Number.isFinite(amountUahNumber) && !deviceOffline) {
     try {
       effectiveRates =
         (await fetchFlowExchangeRatesForMode({
@@ -3030,24 +3062,34 @@ export const saveFlowEntry = async ({
         description,
       });
   const entryId = generateFlowEntryId();
-  await set(ref2(database, `multiData/flow/${ownerId}/${datePath}/${entryId}`), value);
+  return { [`${flowRootPath(ownerId)}/${datePath}/${entryId}`]: value };
 };
 
-export const deleteFlowEntry = async ({ ownerId, groupPath, date, amount, description = '', entryId }) => {
-  if (!ownerId || !groupPath || !date || !amount) return;
+export const saveFlowEntry = async params => {
+  const write = await buildFlowEntryWrite(params);
+  if (!write) return { patch: {}, delivered: Promise.resolve() };
+  return enqueueFlowPatch(params.ownerId, write);
+};
+
+const buildFlowEntryRemoval = ({ ownerId, groupPath, date, amount, description = '', entryId }) => {
+  if (!ownerId || !groupPath || !date || !amount) return null;
   const datePath = buildFlowDatePath({ groupPath, date });
-  if (!datePath) return;
-
-  if (entryId) {
-    await remove(ref2(database, `multiData/flow/${ownerId}/${datePath}/${entryId}`));
-    return;
-  }
-
+  if (!datePath) return null;
+  if (entryId) return { [`${flowRootPath(ownerId)}/${datePath}/${entryId}`]: null };
   const legacyPath = buildFlowEntryPath({ groupPath, date, amount, description });
-  if (!legacyPath) return;
-  await remove(ref2(database, `multiData/flow/${ownerId}/${legacyPath}`));
+  if (!legacyPath) return null;
+  return { [`${flowRootPath(ownerId)}/${legacyPath}`]: null };
 };
 
+export const deleteFlowEntry = async params => {
+  const removal = buildFlowEntryRemoval(params);
+  if (!removal) return { patch: {}, delivered: Promise.resolve() };
+  return enqueueFlowPatch(params.ownerId, removal);
+};
+
+// Видалення старого рядка й запис нового — один запис черги, тобто один
+// атомарний `update`: без звʼязку вони не можуть розійтись (старий знято,
+// новий загубився).
 export const updateFlowEntry = async ({
   ownerId,
   groupPath,
@@ -3059,9 +3101,9 @@ export const updateFlowEntry = async ({
   customUsdRate,
   rowCustomUsdRate,
 }) => {
-  if (!ownerId || !groupPath || !prevEntry || !nextEntry) return;
+  if (!ownerId || !groupPath || !prevEntry || !nextEntry) return { patch: {}, delivered: Promise.resolve() };
   const targetGroupPath = nextGroupPath || groupPath;
-  await deleteFlowEntry({
+  const removal = buildFlowEntryRemoval({
     ownerId,
     groupPath,
     entryId: prevEntry.entryId,
@@ -3069,7 +3111,7 @@ export const updateFlowEntry = async ({
     amount: prevEntry.amount,
     description: prevEntry.description,
   });
-  await saveFlowEntry({
+  const write = await buildFlowEntryWrite({
     ownerId,
     groupPath: targetGroupPath,
     date: nextEntry.date,
@@ -3081,43 +3123,72 @@ export const updateFlowEntry = async ({
     rowCustomUsdRate: rowCustomUsdRate ?? nextEntry.customUsdRate,
     customEurRate: nextEntry.customEurRate,
   });
+  return enqueueFlowPatch(ownerId, { ...(removal || {}), ...(write || {}) });
 };
 
-export const clearFlowData = async ownerId => {
-  if (!ownerId) return;
-  await remove(buildFlowRef(ownerId));
+// Очищення знімає кожну групу окремим шляхом: правила пускають запис лише на
+// рівні групи (`multiData/flow/{власник}/{група}`), а не на весь вузол
+// власника. Перелік груп — з того, що показано на екрані (`groups`); без
+// нього — з бази.
+export const clearFlowData = async (ownerId, { groups } = {}) => {
+  if (!ownerId) return { patch: {}, delivered: Promise.resolve() };
+  let keys = Array.isArray(groups) ? groups : null;
+  if (!keys) {
+    const snapshot = await get(buildFlowRef(ownerId));
+    keys = snapshot.exists() ? Object.keys(snapshot.val() || {}) : [];
+  }
+  const patch = Object.fromEntries(
+    keys.filter(Boolean).map(key => [`${flowRootPath(ownerId)}/${key}`, null])
+  );
+  return enqueueFlowPatch(ownerId, patch);
 };
 
 export const deleteFlowCategory = async ({ ownerId, groupPath }) => {
-  if (!ownerId || !groupPath) return;
+  if (!ownerId || !groupPath) return { patch: {}, delivered: Promise.resolve() };
   const safeGroupPath = buildFlowGroupPath(groupPath);
-  if (!safeGroupPath) return;
-  await remove(ref2(database, `multiData/flow/${ownerId}/${safeGroupPath}`));
+  if (!safeGroupPath) return { patch: {}, delivered: Promise.resolve() };
+  return enqueueFlowPatch(ownerId, { [`${flowRootPath(ownerId)}/${safeGroupPath}`]: null });
 };
 
-export const renameFlowCategory = async ({ ownerId, fromGroupPath, toGroupPath }) => {
-  if (!ownerId || !fromGroupPath || !toGroupPath) return;
+// Перейменування переносить кожен запис окремим шляхом — злиттям у цільову
+// групу без читання бази: записи групи екран уже має (`sourceData` — дані
+// Flow на екрані, разом із недосланим). Один `update` не може містити шлях і
+// його предка, тож перенесення групи в її ж підгрупу (і навпаки) лишається
+// на старому шляху з читанням — воно потребує звʼязку.
+export const renameFlowCategory = async ({ ownerId, fromGroupPath, toGroupPath, sourceData }) => {
+  const none = { patch: {}, delivered: Promise.resolve() };
+  if (!ownerId || !fromGroupPath || !toGroupPath) return none;
 
   const safeFromGroupPath = buildFlowGroupPath(fromGroupPath);
   const safeToGroupPath = buildFlowGroupPath(toGroupPath);
-  if (!safeFromGroupPath || !safeToGroupPath || safeFromGroupPath === safeToGroupPath) return;
+  if (!safeFromGroupPath || !safeToGroupPath || safeFromGroupPath === safeToGroupPath) return none;
 
-  const fromRef = ref2(database, `multiData/flow/${ownerId}/${safeFromGroupPath}`);
-  const toRef = ref2(database, `multiData/flow/${ownerId}/${safeToGroupPath}`);
-
-  const fromSnapshot = await get(fromRef);
-  if (!fromSnapshot.exists()) return;
-
-  const toSnapshot = await get(toRef);
-  if (toSnapshot.exists()) {
-    const existing = toSnapshot.val();
-    const next = fromSnapshot.val();
-    await set(toRef, { ...(existing || {}), ...(next || {}) });
-  } else {
-    await set(toRef, fromSnapshot.val());
+  // Група в її ж підгрупу: перенесене лягло б усередину того, що знімається.
+  if (safeToGroupPath.startsWith(`${safeFromGroupPath}/`)) {
+    throw new Error('Не можна перенести групу в її ж підгрупу');
+  }
+  const nested = safeFromGroupPath.startsWith(`${safeToGroupPath}/`);
+  let source = sourceData ? readFlowSubtree(sourceData, safeFromGroupPath) : undefined;
+  if (source === undefined || nested) {
+    const fromSnapshot = await get(ref2(database, `${flowRootPath(ownerId)}/${safeFromGroupPath}`));
+    if (!fromSnapshot.exists()) return none;
+    source = fromSnapshot.val();
   }
 
-  await remove(fromRef);
+  if (nested) {
+    const toRef = ref2(database, `${flowRootPath(ownerId)}/${safeToGroupPath}`);
+    const toSnapshot = await get(toRef);
+    const merged = { ...(toSnapshot.exists() ? toSnapshot.val() || {} : {}), ...(source || {}) };
+    await set(toRef, merged);
+    await remove(ref2(database, `${flowRootPath(ownerId)}/${safeFromGroupPath}`));
+    return { patch: {}, delivered: Promise.resolve(), reload: true };
+  }
+
+  const patch = { [`${flowRootPath(ownerId)}/${safeFromGroupPath}`]: null };
+  listFlowLeaves(source).forEach(([relative, value]) => {
+    patch[`${flowRootPath(ownerId)}/${safeToGroupPath}/${relative}`] = value;
+  });
+  return enqueueFlowPatch(ownerId, patch);
 };
 
 /**

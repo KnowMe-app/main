@@ -1,4 +1,14 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useSyncExternalStore } from 'react';
+import {
+  applyPendingCardSave,
+  clearAdminCardPending,
+  countPendingCardSaves,
+  listPendingCardSaves,
+  rememberPendingCardSave,
+  settlePendingCardSave,
+  subscribePendingCardSaves,
+} from '../utils/adminCardPendingSaves';
+import { isRetryableOutboxError } from '../utils/writeOutbox';
 import { RULES_DEPLOY_HINT } from '../utils/rulesDeployHint';
 import { readLatencySummary } from './latencyProbeRemote';
 import { formatLatencySummary } from '../utils/latencyProbe';
@@ -254,6 +264,26 @@ const normalizeTruthyMap = value =>
   Object.fromEntries(
     Object.entries(value || {}).filter(([, item]) => Boolean(item)),
   );
+
+// Збій, після якого правку картки треба дослати пізніше, а не відкинути:
+// немає звʼязку, запис скасовано, база недоступна. Відмова правил чи
+// конфлікт ревізії чернетки — остаточні.
+const isTransientSaveError = error => {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  if (isRetryableOutboxError(error)) return true;
+  const text = `${error?.code || ''} ${error?.message || ''}`.toLowerCase();
+  return text.includes('failed to fetch') || text.includes('timeout') || text.includes('timed out');
+};
+
+const PendingSavesNote = styled.p`
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--km-fill, #f3efe9);
+  color: var(--km-text, #222);
+  font-size: 13px;
+  line-height: 1.4;
+`;
 
 const Container = styled.div`
   display: flex;
@@ -1527,6 +1557,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   // Serializes the actual backend writes so they land in submission order,
   // regardless of how fast each call's own fetch/merge happens to resolve.
   const syncQueueRef = useRef(Promise.resolve());
+  // Правки, що зараз ідуть у базу з цієї вкладки (`{картка}@{at}`), — щоб
+  // досилання недосланого (`utils/adminCardPendingSaves`) не пустило їх удруге.
+  const pendingSavesInFlightRef = useRef(new Set());
   const logProfileSnapshotUpdate = useCallback((source, payload = {}) => {
     const entry = {
       source,
@@ -1991,9 +2024,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       deletedKeys,
     } = params;
 
+    const { pendingUid, pendingAt } = params;
+    const pendingKey = pendingAt ? `${syncedState.userId}@${pendingAt}` : null;
     const runSync = async () => {
       try {
         await remoteUpdate(params);
+        // База прийняла — правку з пристрою знімаємо (лише свою: новіша
+        // правка тієї самої картки, що чекає далі, лишається).
+        settlePendingCardSave(pendingUid, syncedState.userId, pendingAt);
 
         if (!isAdmin) {
           return;
@@ -2040,7 +2078,20 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       } catch (submitError) {
         const details = submitError?.message || String(submitError);
         console.error('Submit failed', submitError);
-        toast.error(`Збереження не виконано: ${details}`);
+        if (isTransientSaveError(submitError)) {
+          // Звʼязку немає — правка лежить на пристрої й дошлеться сама, щойно
+          // він повернеться (подія `online` або наступне відкриття).
+          toast('Немає звʼязку — правку збережено на пристрої, надішлемо, щойно звʼязок повернеться', {
+            id: 'admin-card-pending-offline',
+          });
+        } else {
+          // Остаточна відмова (правила, чужа новіша ревізія чернетки):
+          // повтор дав би ту саму відповідь, тож запис з пристрою знімаємо.
+          settlePendingCardSave(pendingUid, syncedState.userId, pendingAt);
+          toast.error(`Збереження не виконано: ${details}`);
+        }
+      } finally {
+        if (pendingKey) pendingSavesInFlightRef.current.delete(pendingKey);
       }
     };
 
@@ -2088,18 +2139,30 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     registerHistorySnapshot(syncedState);
 
     const hasNewState = Boolean(newState);
+    const pendingUid = auth.currentUser?.uid;
+    // Правка лягає на пристрій ще до запису: без звʼязку запис висить у
+    // памʼяті вкладки, і закрита вкладка губила б її (`utils/adminCardPendingSaves`).
+    const rememberPending = pendingParams => {
+      const pendingAt = rememberPendingCardSave(pendingUid, pendingParams);
+      if (pendingAt) pendingSavesInFlightRef.current.add(`${syncedState.userId}@${pendingAt}`);
+      return { pendingUid, pendingAt };
+    };
 
     if (!isAdmin) {
-      return enqueueProfileSync({
+      const pendingParams = {
         syncedState,
         overwrite,
         delCondition,
         deletedKeys: [],
-        optimisticCard: localCardState,
         localCardState,
         removeKeys: [],
         hasNewState,
         formattedLastDelivery,
+      };
+      return enqueueProfileSync({
+        ...pendingParams,
+        optimisticCard: localCardState,
+        ...rememberPending(pendingParams),
       });
     }
 
@@ -2134,24 +2197,32 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       setUsers(prev => ({ ...prev, [syncedState.userId]: optimisticCard }));
     }
 
-    return enqueueProfileSync({
+    const pendingParams = {
       syncedState,
       overwrite,
       delCondition,
       deletedKeys,
       removedIndexValues,
-      optimisticCard,
       localCardState,
       removeKeys,
-      saveRequestId,
-      localSaveVersion,
       hasNewState,
       formattedLastDelivery,
+    };
+    return enqueueProfileSync({
+      ...pendingParams,
+      optimisticCard,
+      saveRequestId,
+      localSaveVersion,
+      ...rememberPending(pendingParams),
     });
   };
 
+  const enqueueProfileSyncRef = useRef(enqueueProfileSync);
+  enqueueProfileSyncRef.current = enqueueProfileSync;
+
   const handleExit = async () => {
     try {
+      clearAdminCardPending();
       localStorage.removeItem('isLoggedIn');
       localStorage.removeItem('userEmail');
       localStorage.removeItem('myProfileDraft');
@@ -2183,6 +2254,52 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const [showInfoModal, setShowInfoModal] = useState(false);
   const ownerId = auth.currentUser?.uid;
+
+  // Досилання правок карток, які база ще не прийняла: на відкритті екрана
+  // (минула вкладка могла закритись без звʼязку) і щойно звʼязок повернувся.
+  // Іде тим самим `remoteUpdate` і в тій самій черзі збережень, що й правка
+  // з форми; відповідь стан форми не чіпає (`saveRequestId` немає — для
+  // `runSync` вона «застаріла»), лише знімає правку з пристрою.
+  useEffect(() => {
+    if (!ownerId) return undefined;
+    const replay = () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      listPendingCardSaves(ownerId).forEach(({ cardId, at, params }) => {
+        const key = `${cardId}@${at}`;
+        if (pendingSavesInFlightRef.current.has(key)) return;
+        pendingSavesInFlightRef.current.add(key);
+        const localCardState = params.localCardState || params.syncedState;
+        enqueueProfileSyncRef.current({
+          ...params,
+          localCardState,
+          optimisticCard: localCardState,
+          deletedKeys: params.deletedKeys || [],
+          removeKeys: params.removeKeys || [],
+          pendingUid: ownerId,
+          pendingAt: at,
+        });
+      });
+    };
+    replay();
+    window.addEventListener('online', replay);
+    return () => window.removeEventListener('online', replay);
+  }, [ownerId]);
+
+  const pendingCardSavesCount = useSyncExternalStore(subscribePendingCardSaves, () =>
+    countPendingCardSaves(ownerId)
+  );
+  const [deviceOnline, setDeviceOnline] = useState(
+    () => typeof navigator === 'undefined' || navigator.onLine !== false
+  );
+  useEffect(() => {
+    const update = () => setDeviceOnline(navigator.onLine !== false);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
 
   // Позначку `writer` кожна картка списку читає точково
   // (`readProfileFromNodes` → `readOwnerValueForProfile`). Тут стояло
@@ -2804,7 +2921,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         userId: activeUserId,
         cached: summarizeProfileCardForLog(cached),
       });
-      const cachedProfile = { ...cached, userId: cached.userId || activeUserId };
+      // Правка, якої база ще не має, лежить поверх кеша: кеш карток могла
+      // переписати свіжа сторінка списку.
+      const cachedProfile = applyPendingCardSave(auth.currentUser?.uid, {
+        ...cached,
+        userId: cached.userId || activeUserId,
+      });
       logRenderSource('cache', cachedProfile);
       setState(cachedProfile, {
         source: 'localStorage',
@@ -2865,7 +2987,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               backend: summarizeProfileCardForLog(data),
             });
             updateCard(activeUserId, data);
-            const backendProfile = { ...data, userId: data.userId || activeUserId };
+            // База ще не знає недосланої правки — без накладки відкрита картка
+            // показувала б старе до доставки.
+            const backendProfile = applyPendingCardSave(auth.currentUser?.uid, {
+              ...data,
+              userId: data.userId || activeUserId,
+            });
             rememberDraftRecordRevision(backendProfile);
             logRenderSource('backend', backendProfile);
             setState(backendProfile, {
@@ -6059,6 +6186,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               </div>
             )}
 
+            {pendingCardSavesCount > 0 && !deviceOnline && (
+              <PendingSavesNote data-testid="admin-card-pending" role="status">
+                Немає звʼязку — ще не надіслано правок карток: {pendingCardSavesCount}. Вони збережені
+                на пристрої й надішлються, щойно звʼязок повернеться.
+              </PendingSavesNote>
+            )}
             <ProfileForm
               state={state}
               setState={setState}

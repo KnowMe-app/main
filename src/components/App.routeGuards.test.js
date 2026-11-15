@@ -169,7 +169,7 @@ describe('App route guards', () => {
   it('clears the per-viewer matching caches when Firebase reports no user', () => {
     const source = appSource();
     const outBranch = source.slice(source.indexOf("localStorage.removeItem('isLoggedIn');"));
-    ['clearMyProfileCache();', 'clearReactionCache();', 'clearPersistedFeedSnapshot();'].forEach(call => {
+    ['clearMyProfileCache();', 'clearReactionCache();', 'clearPersistedFeedSnapshot();', 'clearAdminCardPending();', 'clearFlowCache();'].forEach(call => {
       expect(outBranch).toContain(call);
     });
   });
