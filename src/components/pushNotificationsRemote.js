@@ -2,6 +2,7 @@ import { getApp } from 'firebase/app';
 import { beforeAuthStateChanged } from 'firebase/auth';
 import { ref, remove, serverTimestamp, set } from 'firebase/database';
 import { auth, database } from './config';
+import { shouldRegisterServiceWorker } from '../serviceWorkerRegistration';
 
 /**
  * Push-сповіщення на пристрій (Firebase Cloud Messaging).
@@ -35,6 +36,7 @@ const REFRESH_STORAGE_PREFIX = 'km.pushTokenCheckedAt.v1:';
 const PENDING_REMOVAL_PREFIX = 'km.pushTokenPendingRemoval.v1:';
 const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const WORKER_WAIT_MS = 4000;
+const WORKER_REGISTRATION_WAIT_MS = 20000;
 const SIGN_OUT_CLEANUP_WAIT_MS = 1500;
 
 const readStorage = key => {
@@ -73,7 +75,16 @@ export const readPushAvailability = async () => {
   if (!VAPID_KEY || typeof window === 'undefined' || typeof navigator === 'undefined') return 'off';
   const hasPush = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   if (!hasPush) return isIosDevice() && !isStandaloneApp() ? 'ios-install' : 'off';
-  const registration = await navigator.serviceWorker.getRegistration().catch(() => null);
+  // Воркер реєструється аж після `load` (`serviceWorkerRegistration`), а
+  // «Мій профіль» буває готовий раніше — на першому відкритті прод-збірки.
+  // Тоді чекаємо реєстрації, а не ховаємо блок до наступного відкриття.
+  const registration = await navigator.serviceWorker.getRegistration().catch(() => null)
+    || (shouldRegisterServiceWorker()
+      ? await Promise.race([
+        navigator.serviceWorker.ready.catch(() => null),
+        new Promise(resolve => { setTimeout(() => resolve(null), WORKER_REGISTRATION_WAIT_MS); }),
+      ])
+      : null);
   if (!registration) return 'off';
   return window.Notification.permission === 'denied' ? 'denied' : window.Notification.permission;
 };
@@ -96,6 +107,35 @@ const fetchDeviceToken = async () => {
   const registration = await waitForWorker();
   const { getToken, messaging } = await loadMessaging();
   return getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: registration });
+};
+
+/**
+ * Анулює токен на самому пристрої. `deleteToken` бібліотеки без привʼязаного
+ * воркера йде реєструвати `/firebase-messaging-sw.js`, якого в нас немає
+ * (сповіщення показує `src/service-worker.js`), і тихо падає — так буває,
+ * коли за цю вкладку `getToken` ще не кликали (вихід у межах доби після
+ * перезавантаження). Тож воркер привʼязуємо самі: `getMessaging` віддає
+ * сам екземпляр сервісу, а `swRegistration` — те поле, яке ставить і `getToken`.
+ * Не вдалося — пристрій відписується від push напряму: доставка на цю
+ * підписку тоді відмовляє, і функція знімає мертвий токен сама.
+ */
+const invalidateDeviceToken = async () => {
+  const registration = await navigator.serviceWorker.getRegistration().catch(() => null);
+  if (!registration) return;
+  try {
+    const { deleteToken, messaging } = await loadMessaging();
+    if (!messaging.swRegistration) messaging.swRegistration = registration;
+    await deleteToken(messaging);
+    return;
+  } catch {
+    // нижче — запасний шлях
+  }
+  try {
+    const subscription = await registration.pushManager.getSubscription();
+    if (subscription) await subscription.unsubscribe();
+  } catch {
+    // без воркера чи підписки анулювати нічого
+  }
 };
 
 const writeToken = (uid, token) => set(ref(database, `pushTokens/${uid}/${token}`), { at: serverTimestamp() });
@@ -127,8 +167,7 @@ export const disablePushNotifications = async uid => {
   if (!token) return;
   await removeToken(uid, token).catch(() => {});
   try {
-    const { deleteToken, messaging } = await loadMessaging();
-    await deleteToken(messaging);
+    await invalidateDeviceToken();
   } catch {
     // токен у базі вже знято — функція на цей пристрій більше не шле
   }
@@ -213,9 +252,7 @@ export const installPushSignOutCleanup = () => {
       // коли запис у базі лишився, на цей пристрій — де вже може сидіти
       // інша людина — функція більше нічого не доставить, а мертвий токен
       // зніме сама на першій відправці.
-      const invalidated = loadMessaging()
-        .then(({ deleteToken, messaging }) => deleteToken(messaging))
-        .catch(() => {});
+      const invalidated = invalidateDeviceToken().catch(() => {});
       await Promise.race([
         Promise.all([removed, invalidated]),
         new Promise(resolve => { setTimeout(resolve, SIGN_OUT_CLEANUP_WAIT_MS); }),

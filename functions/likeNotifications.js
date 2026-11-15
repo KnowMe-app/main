@@ -63,15 +63,28 @@ const normalizeRoles = role => {
   return list.map(item => String(item || '').trim().toLowerCase()).filter(Boolean);
 };
 
-/**
- * Нове серце: до запису його не було, після — є. Значення — `true`, мітка часу
- * (реакція на людину цілком) або код ролі анкети (`'ed'`).
- */
-const isNewLike = (before, after) => (before === null || before === undefined || before === false)
-  && after !== null && after !== undefined && after !== false;
+// Список ролей анкет у значенні реакції (`utils/anketaReactions.js`):
+// `'ed'`, `'ag'`, `'ed,ag'`. Будь-яке інше непорожнє значення (`true`, мітка
+// часу) — реакція на людину цілком, тобто й на донорську анкету.
+const ROLE_LIST_RE = /^[a-z]{2}(,[a-z]{2})*$/;
 
-/** Серце стосується донорської анкети (або людини цілком). */
-const likeTargetsDonorAnketa = value => typeof value !== 'string' || normalizeRoles(value).includes(DONOR_ROLE);
+/** Чи покриває значення реакції донорську анкету. */
+const reactionCoversDonor = value => {
+  if (value === null || value === undefined || value === false || value === '') return false;
+  if (typeof value === 'string' && ROLE_LIST_RE.test(value.trim())) {
+    return value.trim().split(',').includes(DONOR_ROLE);
+  }
+  return true;
+};
+
+/**
+ * Нове серце донорській анкеті: до запису значення її не покривало, після —
+ * покриває. Не «на картці не було жодної реакції»: донорка-агентка, якій
+ * спершу вподобали агентську анкету (`'ag'`), а потім і донорську, отримує
+ * перехід `'ag'` → мітка часу (обидві анкети, `toggleAnketaReactionValue`), і
+ * перевірка «чи було щось до запису» це серце пропускала.
+ */
+const isNewDonorReaction = (before, after) => !reactionCoversDonor(before) && reactionCoversDonor(after);
 
 const LIKE_TEXTS = Object.freeze({
   title: 'Вашу анкету вподобали 💛',
@@ -155,9 +168,8 @@ const sendPushToAccount = async (uid, count, deps, data = null) => {
  * для журналу (без особистих даних).
  */
 const handleFavoriteWrite = async ({ likerId, cardId, before, after }, deps) => {
-  if (!isNewLike(before, after)) return 'not-new';
   if (!isNotifyingLiker(likerId)) return 'liker-not-enabled';
-  if (!likeTargetsDonorAnketa(after)) return 'other-anketa';
+  if (!isNewDonorReaction(before, after)) return reactionCoversDonor(after) ? 'not-new' : 'other-anketa';
   if (likerId === cardId) return 'self';
   if (!(await deps.accountExists(cardId))) return 'no-account';
   const roles = normalizeRoles(await deps.db.get(`matchingCards/${cardId}/role`));
@@ -195,9 +207,8 @@ const handleFavoriteWrite = async ({ likerId, cardId, before, after }, deps) => 
  */
 const handleDislikeWrite = async ({ likerId, cardId, before, after }, deps) => {
   if (!ADMIN_TEST_MODE) return 'test-mode-off';
-  if (!isNewLike(before, after)) return 'not-new';
   if (!isNotifyingLiker(likerId)) return 'liker-not-enabled';
-  if (!likeTargetsDonorAnketa(after)) return 'other-anketa';
+  if (!isNewDonorReaction(before, after)) return reactionCoversDonor(after) ? 'not-new' : 'other-anketa';
   if (likerId === cardId) return 'self';
   if (!(await deps.accountExists(cardId))) return 'no-account';
   const roles = normalizeRoles(await deps.db.get(`matchingCards/${cardId}/role`));
@@ -229,9 +240,9 @@ module.exports = {
   PUSH_TOKENS_ROOT,
   findTelegramChatId,
   handleFavoriteWrite,
-  isNewLike,
+  isNewDonorReaction,
   isNotifyingLiker,
-  likeTargetsDonorAnketa,
+  reactionCoversDonor,
   recordLike,
   sendPushToAccount,
 };
