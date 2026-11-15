@@ -10,6 +10,8 @@
  * Тут лише чисте зіставлення; звідки взяти картки й контакти, вирішує
  * стрічка (`Matching`).
  */
+import { listNameVariants } from './nameVariants';
+
 const PHONE_KEYS = new Set(['phone', 'phone2', 'viber', 'whatsapp']);
 const TEXT_FIELDS = [
   'name', 'surname', 'fathersname', 'agencyName', 'city', 'region', 'country',
@@ -82,6 +84,9 @@ export const searchCardsOnDevice = (cards, params, { contactsById = {}, detected
     ? query.key
     : '';
   const textFields = ownField ? [ownField] : TEXT_FIELDS;
+  const nameVariants = !isPhoneQuery && (!ownField || ownField === 'name' || ownField === 'surname')
+    ? listNameVariants(query.text)
+    : [];
   const contactTextFields = ownField ? CONTACT_TEXT_FIELDS.filter(field => field === ownField) : CONTACT_TEXT_FIELDS;
 
   return (Array.isArray(cards) ? cards : []).filter(card => {
@@ -99,6 +104,12 @@ export const searchCardsOnDevice = (cards, params, { contactsById = {}, detected
       return !PHONE_KEYS.has(query.key) && !PHONE_KEYS.has(field)
         && texts.some(text => digitsOf(text).includes(queryDigits));
     }
-    return texts.some(text => normalizeText(text).includes(needle));
+    if (texts.some(text => normalizeText(text).includes(needle))) return true;
+    // Інші написання імені («Olga» → «Ольга») — як і пошук зі звʼязком
+    // (`utils/nameVariants`), і так само лише в імені й прізвищі: латинське
+    // «olga» буває й чиїмось ніком.
+    if (!nameVariants.length) return false;
+    const names = ['name', 'surname'].flatMap(nameField => toValues(card[nameField])).map(normalizeText);
+    return names.some(name => nameVariants.some(variant => name.includes(variant)));
   }).map(card => withCachedContacts(card, contactsById[card.userId] || {}));
 };

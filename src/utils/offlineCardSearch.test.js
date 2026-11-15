@@ -49,3 +49,26 @@ describe('пошук без звʼязку серед збереженого', (
     expect(found.instagram).toBe('insta_only');
   });
 });
+
+describe('searchCardsOnDevice — інші написання імені', () => {
+  const cards = [
+    { userId: 'a', name: 'Ольга', city: 'Київ' },
+    { userId: 'b', name: 'Anna', telegram: 'olga' },
+    { userId: 'c', name: 'Наталья' },
+  ];
+
+  it('латиниця знаходить кириличне імʼя, а не нік із тим самим словом', () => {
+    const found = searchCardsOnDevice(cards, { name: 'Olga' }).map(card => card.userId);
+    expect(found).toContain('a');
+    // нік «olga» знаходиться буквальним збігом, як і раніше
+    expect(found).toContain('b');
+  });
+
+  it('українська форма знаходить російську', () => {
+    expect(searchCardsOnDevice(cards, { name: 'Наталія' }).map(card => card.userId)).toEqual(['c']);
+  });
+
+  it('запит у полі ніка варіантів імені не має', () => {
+    expect(searchCardsOnDevice(cards, { telegram: 'Ольга' })).toEqual([]);
+  });
+});
