@@ -82,6 +82,7 @@ import {
   stripPrivilegedProfileFields,
 } from '../utils/accessLevel';
 import { hasFilledProfileDraftData } from '../utils/profileDraftContent';
+import { listNameVariants } from '../utils/nameVariants';
 import { getCardListField, normalizeCardListQuery, readFieldTimestamp } from '../utils/cardListQuery';
 import { flattenOwnerValueToString } from '../utils/ownerValueString';
 import {
@@ -488,7 +489,7 @@ const isSearchIdPermissionDenied = error => {
 
 const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
   const matchedFieldsById = new Map();
-  const { includePrefixMatches = true, fields, exactSearchKey = '' } = options;
+  const { includePrefixMatches = true, fields, exactSearchKey = '', nameVariantKeys = [] } = options;
   const addEntry = entryValue => {
     readSearchIdEntryMatches(entryValue, fields).forEach(({ id, field }) => {
       if (!id) return;
@@ -514,7 +515,34 @@ const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
   // Перша черга — точне набране; друга потрібна лише тоді, коли перша не
   // знайшла нічого. Див. `splitSearchIdCandidateKeys`.
   const { primary, fallback } = splitSearchIdCandidateKeys(searchKeys, exactSearchKey);
-  await readKeys(primary);
+  // Інші написання імені («Olga» → «ольга», «olha») читаються разом із точним
+  // ключем, а не замість нього: «Ольга» й «Olga» — та сама відповідь, і
+  // показати лише ту половину, що збіглась буквально, означало б сховати
+  // решту (`utils/nameVariants`). Поле — лише імʼя чи прізвище: латинське
+  // «olga» в ключі буває й чиїмось ніком, а нік на запит-імʼя не відповідає.
+  const variantKeys = [...new Set(nameVariantKeys)].filter(key => key && !primary.includes(key));
+  const variantFields = (Array.isArray(fields) && fields.length ? fields : ['name', 'surname'])
+    .filter(field => field === 'name' || field === 'surname');
+  const readVariantKeys = async () => {
+    if (!variantKeys.length || !variantFields.length) return;
+    incrementMatchingLoadStat('searchIdKeyReads', variantKeys.length);
+    await Promise.all(variantKeys.map(async variantKey => {
+      try {
+        const snapshot = await get(ref2(database, `${SEARCH_ID_ROOT}/${variantKey}`));
+        if (!snapshot.exists()) return;
+        readSearchIdEntryMatches(snapshot.val(), variantFields).forEach(({ id, field }) => {
+          if (!id) return;
+          const knownFields = matchedFieldsById.get(id) || new Set();
+          if (field) knownFields.add(field);
+          matchedFieldsById.set(id, knownFields);
+        });
+      } catch (error) {
+        // Варіант — необовʼязковий; його відмова не має губити точного.
+        console.warn('[searchId] name variant not read', variantKey, error);
+      }
+    }));
+  };
+  await Promise.all([readKeys(primary), readVariantKeys()]);
   if (!matchedFieldsById.size) await readKeys(fallback);
 
   const uniqueSearchKeys = [...new Set(searchKeys)];
@@ -3998,6 +4026,19 @@ const addCardHit = async (userId, users) => {
   await addSearchHit(userId, users);
 };
 
+// Ключі `searchId` для інших написань імені (`utils/nameVariants`). Лише
+// для запиту-слова, який шукається як імʼя: розпізнаний телефон, нік чи
+// пошта варіантів не мають.
+const NAME_VARIANT_SEARCH_KEYS = new Set(['name', 'surname']);
+const buildNameVariantSearchKeys = (searchKey, searchValue, detectedField) => {
+  const asName = NAME_VARIANT_SEARCH_KEYS.has(searchKey)
+    || (searchKey === 'searchId' && (!detectedField || NAME_VARIANT_SEARCH_KEYS.has(detectedField)));
+  if (!asName) return [];
+  return listNameVariants(searchValue)
+    .map(variant => buildSearchIdValueKey('name', variant))
+    .filter(Boolean);
+};
+
 const resolveSearchHitAdder = ({ limitedFields = false, cardsOnly = false } = {}) => {
   if (limitedFields) return addLimitedUser;
   return cardsOnly ? addCardHit : addSearchHit;
@@ -4355,6 +4396,7 @@ const searchUsersOnlyUnfiltered = async (searchedValue, options = {}) => {
   // означало подвоїти кількість читань індексу на кожен пошук заради ключів,
   // яких у цього читача не буває.
   const includeUkSmVariant = isAdminUid(auth.currentUser?.uid);
+  const nameVariantKeys = buildNameVariantSearchKeys(searchKey, searchValue, searchIdDetectedField);
   const baseSearchIdOptions = shouldSkipBroadFallback
     ? {
       includeVariants: false,
@@ -4372,8 +4414,8 @@ const searchUsersOnlyUnfiltered = async (searchedValue, options = {}) => {
   // and the broad fallback do exactly that, so neither runs for them - the index
   // stays a lookup, never an enumeration.
   const searchIdOptions = limitedFields
-    ? { ...baseSearchIdOptions, includePrefixMatches: false }
-    : baseSearchIdOptions;
+    ? { ...baseSearchIdOptions, includePrefixMatches: false, nameVariantKeys }
+    : { ...baseSearchIdOptions, nameVariantKeys };
   const addHit = resolveSearchHitAdder({ limitedFields, cardsOnly });
   const users = {};
   const uniqueUserIds = new Set();
