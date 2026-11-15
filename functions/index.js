@@ -764,20 +764,45 @@ const buildActivityDeps = () => {
       ...createAdminDb(database),
       update: updates => database.ref().update(updates),
       push: (path, value) => database.ref(path).push(value),
+      // Увесь проміжок сторінками: відлік дайджесту вже посунуто, і подія,
+      // що не влізла б в одну сторінку, не потрапила б ні в цей дайджест, ні
+      // в наступний. Стеля — 20 сторінок (10 тис. подій) на дайджест.
       queryEventsBetween: async (since, until) => {
-        const snapshot = await database.ref(adminActivity.EVENTS_PATH)
-          .orderByChild('t').startAfter(since).endAt(until).limitToLast(500).get();
         const rows = [];
-        snapshot.forEach(child => { rows.push(child.val()); });
+        let cursor = null;
+        for (let page = 0; page < 20; page += 1) {
+          const base = database.ref(adminActivity.EVENTS_PATH).orderByChild('t');
+          const ranged = cursor ? base.startAfter(cursor.t, cursor.key) : base.startAfter(since);
+          // eslint-disable-next-line no-await-in-loop
+          const snapshot = await ranged.endAt(until).limitToFirst(500).get();
+          let count = 0;
+          snapshot.forEach(child => {
+            count += 1;
+            const value = child.val();
+            rows.push(value);
+            cursor = { t: value && value.t, key: child.key };
+          });
+          if (count < 500) break;
+        }
         return rows;
       },
+      // Прибирання — доки не вичищено весь прострочений проміжок, а не одна
+      // порція на день: інакше на жвавій базі журнал з іменами жив би довше
+      // обіцяних 30 днів. Стеля — 20 порцій за прогін.
       removeOlderThan: async (eventsCutoff, dedupCutoff) => {
-        const old = await database.ref(adminActivity.EVENTS_PATH).orderByChild('t').endAt(eventsCutoff).limitToFirst(500).get();
-        const oldDedup = await database.ref(adminActivity.DEDUP_PATH).orderByValue().endAt(dedupCutoff).limitToFirst(500).get();
-        const updates = {};
-        old.forEach(child => { updates[`${adminActivity.EVENTS_PATH}/${child.key}`] = null; });
-        oldDedup.forEach(child => { updates[`${adminActivity.DEDUP_PATH}/${child.key}`] = null; });
-        if (Object.keys(updates).length) await database.ref().update(updates);
+        for (let round = 0; round < 20; round += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          const old = await database.ref(adminActivity.EVENTS_PATH).orderByChild('t').endAt(eventsCutoff).limitToFirst(500).get();
+          // eslint-disable-next-line no-await-in-loop
+          const oldDedup = await database.ref(adminActivity.DEDUP_PATH).orderByValue().endAt(dedupCutoff).limitToFirst(500).get();
+          const updates = {};
+          old.forEach(child => { updates[`${adminActivity.EVENTS_PATH}/${child.key}`] = null; });
+          oldDedup.forEach(child => { updates[`${adminActivity.DEDUP_PATH}/${child.key}`] = null; });
+          if (!Object.keys(updates).length) break;
+          // eslint-disable-next-line no-await-in-loop
+          await database.ref().update(updates);
+          if (old.numChildren() < 500 && oldDedup.numChildren() < 500) break;
+        }
       },
     },
     isExcludedActor: async uid => adminActivity.isExcludedActorUid(uid),
