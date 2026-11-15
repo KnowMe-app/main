@@ -2455,6 +2455,44 @@ await it('писати перелік не може ніхто з клієнті
   }
 });
 
+describe('сповіщення адміна — налаштування й журнал активності');
+
+// Налаштування сповіщень пише й читає лише сам адмін (і інспектор — свої,
+// щоб бачити сторінку); журнал активності пишуть лише функції, читають адміни.
+const ADMIN_NOTIFY_SETTINGS = {
+  events: { like: 'hourly', profile_created: 'instant' },
+  channels: { telegram: true, push: false },
+  quietHours: true,
+  updatedAt: 1,
+};
+
+await it('адмін пише й читає свої налаштування сповіщень, чужі — ні', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), `adminNotificationSettings/${SUPERADMIN}`), ADMIN_NOTIFY_SETTINGS));
+  await assertSucceeds(get(ref(db(SUPERADMIN), `adminNotificationSettings/${SUPERADMIN}`)));
+  await assertSucceeds(set(ref(db(INSPECTOR), `adminNotificationSettings/${INSPECTOR}`), ADMIN_NOTIFY_SETTINGS));
+  await assertFails(get(ref(db(INSPECTOR), `adminNotificationSettings/${SUPERADMIN}`)));
+  await assertFails(set(ref(db(INSPECTOR), `adminNotificationSettings/${SUPERADMIN}`), ADMIN_NOTIFY_SETTINGS));
+});
+
+await it('звичайний користувач налаштувань сповіщень не має', async () => {
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `adminNotificationSettings/${ORDINARY_VIEWER}`), ADMIN_NOTIFY_SETTINGS));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `adminNotificationSettings/${SUPERADMIN}`)));
+});
+
+await it('у налаштування лягають лише відомі частоти й булеві канали', async () => {
+  await assertFails(set(ref(db(SUPERADMIN), `adminNotificationSettings/${SUPERADMIN}`), { ...ADMIN_NOTIFY_SETTINGS, events: { like: 'every-minute' } }));
+  await assertFails(set(ref(db(SUPERADMIN), `adminNotificationSettings/${SUPERADMIN}`), { ...ADMIN_NOTIFY_SETTINGS, channels: { telegram: 'yes' } }));
+  await assertFails(set(ref(db(SUPERADMIN), `adminNotificationSettings/${SUPERADMIN}`), { ...ADMIN_NOTIFY_SETTINGS, chatId: '555' }));
+});
+
+await it('журнал активності читають адміни й інспектор, пише лише сервер', async () => {
+  await assertSucceeds(get(ref(db(SUPERADMIN), 'adminActivity/events')));
+  await assertSucceeds(get(ref(db(INSPECTOR), 'adminActivity/events')));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), 'adminActivity/events')));
+  await assertFails(set(ref(db(SUPERADMIN), 'adminActivity/events/x'), { t: 1, type: 'like' }));
+  await assertFails(set(ref(db(ORDINARY_VIEWER), 'adminActivity/events/x'), { t: 1, type: 'like' }));
+});
+
 describe('pushTokens — токени push-сповіщень пристроїв');
 
 // Токен пристрою пише й знімає лише власник акаунта; читає вузол лише

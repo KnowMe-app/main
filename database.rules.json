@@ -906,6 +906,35 @@
         }
       }
     },
+    "adminNotificationSettings": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1') && auth.uid == $uid",
+        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1') && auth.uid == $uid",
+        ".validate": "newData.hasChildren(['events', 'channels', 'updatedAt'])",
+        "events": {
+          "$event": {
+            ".validate": "$event.matches(/^[a-z_]{1,40}$/) && newData.isString() && newData.val().matches(/^(off|instant|hourly|daily)$/)"
+          }
+        },
+        "channels": {
+          "telegram": { ".validate": "newData.isBoolean()" },
+          "push": { ".validate": "newData.isBoolean()" },
+          "$other": { ".validate": false }
+        },
+        "quietHours": { ".validate": "newData.isBoolean()" },
+        "updatedAt": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+    "adminActivity": {
+      ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1')",
+      "events": {
+        ".indexOn": ["t"]
+      },
+      "dedup": {
+        ".indexOn": [".value"]
+      }
+    },
     "pushTokens": {
       "$uid": {
         "$token": {

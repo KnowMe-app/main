@@ -359,3 +359,17 @@ test('лист «Профіль видалено» — без кнопки, мо
   assert.ok(uk.text.includes('a@example.com'));
   assert.equal(renderAccountDeletedEmail({ email: 'a@example.com', language: 'de' }).subject, 'Your profile has been deleted');
 });
+
+test('очищення знімає події журналу адміна й ключі склейки людини', () => {
+  const { buildAdminActivityUpdates, buildAdminActivityDedupUpdates } = require('../accountDeletion');
+  const ids = new Set([UID]);
+  assert.deepEqual(buildAdminActivityUpdates({
+    a: { actor: UID, card: 'x', type: 'like' },
+    b: { actor: 'other', card: UID, type: 'like' },
+    c: { actor: 'other', card: 'x', type: 'like' },
+  }, ids), { 'adminActivity/events/a': null, 'adminActivity/events/b': null });
+  assert.deepEqual(buildAdminActivityDedupUpdates({
+    [`profile_edited~${UID}~${UID}`]: 1,
+    'search~other~-': 2,
+  }, ids), { [`adminActivity/dedup/profile_edited~${UID}~${UID}`]: null });
+});

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useLocation } from 'react-router-dom';
-import { FaRegUser, FaUsers, FaSignOutAlt, FaTrashAlt, FaEraser, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaMoon, FaSun } from 'react-icons/fa';
+import { FaRegUser, FaUsers, FaSignOutAlt, FaTrashAlt, FaEraser, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaMoon, FaSun, FaBell } from 'react-icons/fa';
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
 import { LanguagePicker } from './LanguagePicker';
@@ -253,6 +253,7 @@ export const ProfileDotsMenu = ({
       icon: <MdPersonAddAlt1 />,
     },
     ...(isAdmin ? [{ path: '/flow', label: 'Flow', icon: <FaProjectDiagram /> }] : []),
+    ...(isAdmin ? [{ path: '/notifications', label: 'Сповіщення', description: 'Що роблять користувачі — у Telegram чи push', icon: <FaBell /> }] : []),
     ...(isAdmin ? [{ path: '/budget', label: 'Budget', description: 'Program budget and other expenses', icon: <FaEuroSign /> }] : []),
     ...(isAdmin ? [{ path: '/invoices', label: 'Invoices', description: 'Create and export client invoices', icon: <FaFileInvoiceDollar /> }] : []),
     ...(isAdmin ? [{ path: '/documents', label: 'Documents', description: 'Generate case documents from templates', icon: <FaFileAlt /> }] : []),

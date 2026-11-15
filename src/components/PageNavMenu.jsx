@@ -33,6 +33,7 @@ const NAV_LINKS = [
   { path: '/matching/create-profile', label: 'Створені мною' },
   { path: '/my-profile', label: 'My profile' },
   { path: '/flow', label: 'Flow', right: 'isAdmin' },
+  { path: '/notifications', label: 'Сповіщення', right: 'isAdmin' },
   { path: '/budget', label: 'Budget', right: 'isAdmin' },
   { path: '/invoices', label: 'Invoice', right: 'canAccessInvoices' },
   { path: '/documents', label: 'Documents', right: 'canAccessInvoices' },

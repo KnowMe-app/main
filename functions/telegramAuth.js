@@ -559,6 +559,8 @@ const createTelegramSender = (token, fetchImpl = fetch) => async (chatId, text, 
       text,
       disable_web_page_preview: true,
       ...(options.html ? { parse_mode: 'HTML' } : {}),
+      // Тихе повідомлення (сповіщення адміна в тихі години): приходить без звуку.
+      ...(options.silent ? { disable_notification: true } : {}),
       ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
     }),
   });
