@@ -111,6 +111,7 @@ import { toggleDislikeUser } from './smallCard/btnDislike';
 import SearchBar, { detectSearchParams, getSearchCacheKeyForParams } from './SearchBar';
 import FilterPanel, { getDefaultFilters } from './FilterPanel';
 import MatchingFilterRail from './MatchingFilterRail';
+import CoordinatorRequest from './CoordinatorRequest';
 import { MATCHING_FILTER_GROUPS, buildMatchingFilterChips } from './SearchFilters';
 import { countMatchingFilterOptions, isDraftFilterCountExact, withUnloadedFilterOptions } from '../utils/matchingFilterCounts';
 import { hasActiveSearchKeyFilterGroup } from '../utils/searchKeyBuckets';
@@ -7824,6 +7825,24 @@ const Matching = () => {
     && !isSearching
     && isRoleFilterNarrowedToIntent(matchingUiFilters?.userRole, roleIntentBanner.role, roleOptionKeys);
 
+  /*
+   * Про яку роль порожня (чи вичерпана) стрічка має запропонувати заявку
+   * координаторові: та, що назвав намір, або «Тип профілю», звужений до самих
+   * СМ чи самих донорок. Умовчання донорки (самі агенції) сюди не потрапляє:
+   * заявка — про кандидаток, а для порожньої стрічки донорки є своє пояснення.
+   */
+  const coordinatorRequestRole = useMemo(() => {
+    if (viewMode !== 'default' || isSearching) return '';
+    if (roleIntentBannerActive) return roleIntentBanner.role;
+    return ['sm', 'ed'].find(role => isRoleFilterNarrowedToIntent(matchingUiFilters?.userRole, role, roleOptionKeys)) || '';
+  }, [isSearching, matchingUiFilters, roleIntentBanner, roleIntentBannerActive, roleOptionKeys, viewMode]);
+  const roleIntentRequestShown = Boolean(searchRoleIntent) && activeRoleIntentChoice === 'find' && roleIntentHiddenForViewer;
+  // Пошук за імʼям нічого не дав — підказати, що категорію шукають фільтром.
+  const handleSuggestRoleFilter = React.useCallback(() => {
+    handleSearchCleared();
+    setOpenFilterGroup('userRole');
+  }, [handleSearchCleared]);
+
   const resetFilterGroup = React.useCallback(filterName => {
     setFilterGroupReset(previous => ({ token: previous.token + 1, name: filterName }));
   }, []);
@@ -9437,9 +9456,22 @@ const Matching = () => {
                   місто · Показати анкети», і «Немає доступних профілів» під нею
                   суперечило їй: анкети з цього місця є, їх показує стрічка. */}
               {!loading && feedStatePendingCount === 0 && feedRows.length === 0 && !loadError && !searchPlace
-                && !(searchRoleIntent && !(activeRoleIntentChoice === 'find' && roleIntentHiddenForViewer)) && (
+                && !(searchRoleIntent && !roleIntentRequestShown) && (
+                (roleIntentRequestShown || coordinatorRequestRole) && !emptyFilterGroup ? (
+                  <CoordinatorRequest
+                    role={roleIntentRequestShown ? searchRoleIntent : coordinatorRequestRole}
+                    language={language}
+                  />
+                ) : (
                 <FeedNotice>
                   <div>{emptyFeedMessage}</div>
+                  {/* Імʼя не знайшлось — можливо, людина шукала категорію
+                      («донорки з Києва»): її шукають фільтром, а не пошуком. */}
+                  {isSearching && !searchRoleIntent && !searchPlace && (
+                    <ActionButton type="button" data-testid="search-role-filter-hint" onClick={handleSuggestRoleFilter}>
+                      {uiText('Шукаєте за категорією? Спробуйте фільтр «Тип профілю»', language)}
+                    </ActionButton>
+                  )}
                   {/* Назвати причину мало: кінець списку тут не видно нікому,
                       тож жодного іншого жесту на цьому екрані не лишається. */}
                   {donorRoleFilterBlocksFeed && (
@@ -9448,6 +9480,7 @@ const Matching = () => {
                     </ActionButton>
                   )}
                 </FeedNotice>
+                )
               )}
               {loadError && feedRows.length === 0 && !deviceOnline && !loading && (
                 <FeedNotice data-testid="feed-offline-empty">
@@ -9490,6 +9523,11 @@ const Matching = () => {
                   жодного фільтра: стрічку насправді зупиняв курсор, який губив
                   картки (`collectFilteredMatchingSourceCards`), а напис
                   звинувачував фільтри, яких читач не ставив. */}
+              {/* Кінець стрічки, звуженої до СМ чи донорок: решта кандидаток
+                  анкету відкрито не публікує, і координатор знайде їх. */}
+              {coordinatorRequestRole && !deckHasMore && feedRows.length > 0 && !loading && !loadError && (
+                <CoordinatorRequest compact role={coordinatorRequestRole} language={language} />
+              )}
               {viewMode === 'default' && !deckHasMore && feedRows.length > 0 && !loading && !loadError && (
                 <FeedEndNotice data-testid="feed-end">
                   <FeedEndHint>

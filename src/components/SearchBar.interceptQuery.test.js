@@ -15,7 +15,7 @@ const flush = async () => {
 
 beforeEach(() => localStorage.clear());
 
-const renderBar = async props => {
+const mountBar = async props => {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -44,7 +44,7 @@ describe('interceptQuery', () => {
 
   it('назва категорії не запускає пошуку, а видача порожня', async () => {
     const props = baseProps();
-    const { container } = await renderBar({ ...props, search: 'Сурогатна мати' });
+    const { container } = await mountBar({ ...props, search: 'Сурогатна мати' });
     const field = container.querySelector('textarea');
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
@@ -60,7 +60,7 @@ describe('interceptQuery', () => {
 
   it('імʼя з прізвищем шукається як раніше', async () => {
     const props = baseProps();
-    await renderBar({ ...props, search: 'Олена Сурогатна' });
+    await mountBar({ ...props, search: 'Олена Сурогатна' });
     expect(props.searchFunc).toHaveBeenCalledWith({ name: 'Олена Сурогатна' }, expect.anything());
   });
 });
