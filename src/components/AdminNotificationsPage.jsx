@@ -7,6 +7,7 @@ import { FaBell, FaTelegramPlane, FaMobileAlt, FaMoon, FaCheck, FaChartLine } fr
 import { auth, database } from './config';
 import PageNavMenu from './PageNavMenu';
 import BrandLoader from './BrandLoader';
+import { ScreenLoading } from './RequireAuth';
 import {
   DEFAULT_NOTIFICATION_SETTINGS,
   NOTIFICATION_EVENT_BY_KEY,
@@ -188,8 +189,11 @@ const AdminNotificationsPage = () => {
   }, [journal]);
   const enabledCount = settings ? Object.values(settings.events).filter(value => value !== 'off').length : 0;
 
+  // Той самий екран очікування, що й на решті сторінок (`ScreenLoading`):
+  // `BrandLoader` сам по собі — `inline-flex` без обгортки, і в `Page` він
+  // ставав у лівий верхній кут.
   if (loading || !settings) {
-    return <Page><BrandLoader size="screen" /></Page>;
+    return <ScreenLoading />;
   }
 
   const noChannel = !settings.channels.telegram && !settings.channels.push;
