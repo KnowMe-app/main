@@ -350,3 +350,39 @@ test('видалення акаунта без причини й пошуку �
   assert.equal(event.meta, undefined);
   assert.equal(activity.describeAccountDeletion({}), 'Причину не вказано\nПошуком не користувалась');
 });
+
+// Кейс 14.11: «Сурогатна мати» → порожня видача → видалений акаунт. Запити без
+// результату адмін бачить у тижневому звіті, а не з причини видалення.
+test('тижневий звіт: запити без результату — з історії пошуку, без адмінів і QA', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const searchQueries = {
+    u1: {
+      k1: { query: 'Сурогатна мати', updatedAt: NOON - DAY, resultsCount: 0, intent: 'sm' },
+      k2: { query: 'Ольга', updatedAt: NOON - DAY, resultsCount: 4 },
+      k3: { query: 'Olga', updatedAt: NOON - 2 * DAY, resultsCount: 0 },
+      k4: { query: 'стара', updatedAt: NOON - 9 * DAY, resultsCount: 0 },
+      k5: { query: 'без наслідку', updatedAt: NOON - DAY },
+    },
+    u2: {
+      k1: { query: 'olga', updatedAt: NOON - DAY, resultsCount: 0 },
+      k2: { query: '+380 50 123 45 67', updatedAt: NOON - DAY, resultsCount: 0 },
+    },
+    [activity.QA_UIDS[0]]: { k1: { query: 'тест', updatedAt: NOON - DAY, resultsCount: 0 } },
+    [activity.STAFF_UIDS[0]]: { k1: { query: 'адмін', updatedAt: NOON - DAY, resultsCount: 0 } },
+  };
+  const summary = activity.collectFailedSearches(searchQueries, NOON - 7 * DAY, NOON);
+  assert.equal(summary.answered, 5);
+  assert.equal(summary.failedTotal, 4);
+  assert.deepEqual(summary.failed[0], { query: 'olga', people: 2, category: false });
+
+  const { html } = activity.buildWeeklyReport([], NOON, { searchQueries });
+  assert.match(html, /<b>Без результату<\/b>: 4 з 5 запитів/);
+  assert.match(html, /«olga» — 2 людей/);
+  assert.match(html, /«сурогатна мати» \(категорія\)/);
+  assert.doesNotMatch(html, /тест|адмін|стара|123 45/);
+});
+
+test('тижневий звіт без історії пошуку — без рядка «Без результату»', () => {
+  const { html } = activity.buildWeeklyReport([], NOON);
+  assert.doesNotMatch(html, /Без результату/);
+});

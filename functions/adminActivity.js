@@ -422,7 +422,46 @@ const WEEKLY_REPORT_TYPES = [
   'like', 'dislike', 'contact_tap', 'postpone', 'public_review', 'search', 'share_link_created',
 ];
 
-const buildWeeklyReport = (events, now) => {
+/**
+ * Запити, на які людина побачила нуль карток (`resultsCount: 0` у ряду
+ * `multiData/searchQueries/{власник}/{запит}`), за тиждень. Кейс 14.11:
+ * «Сурогатна мати» → порожня видача → видалений акаунт, і дізнались про це
+ * лише з причини видалення. Тепер такі запити адмін бачить щопонеділка, ще
+ * до того, як людина пішла. Береться з історії пошуку, а не з журналу подій:
+ * подія «Пошук» пишеться на сам запит, а скільки карток показано, клієнт
+ * дописує окремим записом на 1,5 с пізніше — і повтор того самого ряду
+ * журнал склеює `dedupMs`. Адміни, інспектор і тестові акаунти не
+ * рахуються, як і в журналі.
+ */
+const collectFailedSearches = (searchQueries, weekStart, now) => {
+  const failed = new Map();
+  let answered = 0;
+  if (!isPlainObject(searchQueries)) return { failed: [], answered, failedTotal: 0 };
+  Object.entries(searchQueries).forEach(([ownerId, rows]) => {
+    if (isExcludedActorUid(ownerId) || !isPlainObject(rows)) return;
+    Object.values(rows).forEach(row => {
+      if (!isPlainObject(row) || typeof row.query !== 'string') return;
+      const at = Number(row.updatedAt) || 0;
+      if (at <= weekStart || at > now) return;
+      if (!Number.isInteger(row.resultsCount)) return;
+      answered += 1;
+      if (row.resultsCount !== 0) return;
+      const query = row.query.trim().toLowerCase();
+      if (!query) return;
+      const entry = failed.get(query) || { query, owners: new Set(), category: false };
+      entry.owners.add(ownerId);
+      if (typeof row.intent === 'string' && row.intent) entry.category = true;
+      failed.set(query, entry);
+    });
+  });
+  const list = [...failed.values()]
+    .map(entry => ({ query: entry.query, people: entry.owners.size, category: entry.category }))
+    .sort((a, b) => b.people - a.people || a.query.localeCompare(b.query, 'uk'));
+  const failedTotal = list.reduce((sum, entry) => sum + entry.people, 0);
+  return { failed: list.slice(0, 10), answered, failedTotal };
+};
+
+const buildWeeklyReport = (events, now, { searchQueries = null } = {}) => {
   const weekStart = now - 7 * DAY;
   const thisWeek = events.filter(event => event.t > weekStart && event.t <= now);
   const lastWeek = events.filter(event => event.t > weekStart - 7 * DAY && event.t <= weekStart);
@@ -481,6 +520,18 @@ const buildWeeklyReport = (events, now) => {
   }
   if (topCards.length) lines.push('', '<b>Найбільше інтересу</b>', ...topCards);
   if (topSearches.length) lines.push('', `<b>Шукали</b>: ${topSearches.join(', ')}`);
+  const failedSearches = collectFailedSearches(searchQueries, weekStart, now);
+  if (failedSearches.failed.length) {
+    lines.push(
+      '',
+      `<b>Без результату</b>: ${failedSearches.failedTotal} з ${failedSearches.answered} запитів`,
+      ...failedSearches.failed.map(entry => {
+        const people = entry.people > 1 ? ` — ${entry.people} людей` : '';
+        const category = entry.category ? ' (категорія)' : '';
+        return `• «${escapeHtml(clip(maskDigits(entry.query), 40))}»${category}${people}`;
+      }),
+    );
+  }
   lines.push('', `<a href="${NOTIFICATIONS_URL}">Журнал подій</a>`);
   const html = lines.join('\n');
   const push = {
@@ -717,8 +768,13 @@ const flushDueDigests = async deps => {
 // Автоматичний звіт поважає тихі години (може настати й уночі: перша подія
 // після 22:00 у понеділок чи запасні 7,5 доби); «Надіслати зараз» — ні.
 const sendWeeklyReport = async (uid, settings, deps, { quiet = false } = {}) => {
-  const events = await deps.db.queryEventsBetween(deps.now - 14 * DAY, deps.now);
-  return deliverToAdmin(uid, settings, buildWeeklyReport(events, deps.now), deps, { quiet });
+  const [events, searchQueries] = await Promise.all([
+    deps.db.queryEventsBetween(deps.now - 14 * DAY, deps.now),
+    // Історія пошуку цілком — раз на тиждень, на сервері. Збій читання звіт
+    // не зупиняє: лишається без рядка «Без результату».
+    deps.db.get('multiData/searchQueries').catch(() => null),
+  ]);
+  return deliverToAdmin(uid, settings, buildWeeklyReport(events, deps.now, { searchQueries }), deps, { quiet });
 };
 
 /** «Звіт за тиждень зараз» на сторінці сповіщень — увімкненими каналами викликача. */
@@ -767,6 +823,7 @@ module.exports = {
   RETENTION_MS,
   buildDigestMessage,
   buildWeeklyReport,
+  collectFailedSearches,
   buildInstantMessage,
   classifyAccountDeletion,
   classifyCardWrite,
