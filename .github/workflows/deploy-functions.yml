@@ -82,13 +82,18 @@ jobs:
           grep -oE '^exports\.[A-Za-z0-9_]+' functions/index.js | sed 's/^exports\.//' | sort -u > "$RUNNER_TEMP/code.txt"
           npx --yes firebase-tools@15.34.0 functions:list --project "$PROJECT_ID" --json > "$RUNNER_TEMP/list.json"
           jq -r '.result[]? | (.id // .name // empty)' "$RUNNER_TEMP/list.json" | sed 's#.*/##' | sort -u > "$RUNNER_TEMP/prod.txt"
-          ONLY_PROD="$(comm -13 "$RUNNER_TEMP/code.txt" "$RUNNER_TEMP/prod.txt")"
+          # Свідомо прибрані функції (functions/retiredFunctions.txt) — не помилка:
+          # `--force` нижче видалить їх із проду.
+          grep -vE '^\s*(#|$)' functions/retiredFunctions.txt 2>/dev/null | sort -u > "$RUNNER_TEMP/retired.txt" || true
+          RETIRED="$(comm -12 "$RUNNER_TEMP/retired.txt" "$RUNNER_TEMP/prod.txt")"
+          ONLY_PROD="$(comm -13 "$RUNNER_TEMP/code.txt" "$RUNNER_TEMP/prod.txt" | comm -23 - "$RUNNER_TEMP/retired.txt")"
           ONLY_CODE="$(comm -23 "$RUNNER_TEMP/code.txt" "$RUNNER_TEMP/prod.txt")"
           {
             echo "### Cloud Functions: прод проти коду"
             echo "- У коді й у проді: $(comm -12 "$RUNNER_TEMP/code.txt" "$RUNNER_TEMP/prod.txt" | paste -sd ', ' -)"
             echo "- Лише в коді (буде розгорнуто вперше): ${ONLY_CODE:-немає}" | paste -sd ' ' -
             echo "- Лише в проді (деплой їх видалив би): ${ONLY_PROD:-немає}" | paste -sd ' ' -
+            echo "- Свідомо прибрані (деплой видалить): ${RETIRED:-немає}" | paste -sd ' ' -
           } >> "$GITHUB_STEP_SUMMARY"
           if [ -n "$ONLY_PROD" ]; then
             echo "::error::У проді є функції, яких немає в коді: $(echo $ONLY_PROD). Деплой їх видалив би — зупиняюсь. Видаліть їх свідомо (firebase functions:delete) або поверніть у код."

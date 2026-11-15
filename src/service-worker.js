@@ -122,7 +122,7 @@ self.addEventListener('activate', event => {
   event.waitUntil(caches.delete('km-pages'));
 });
 
-// Push-сповіщення (Firebase Cloud Messaging, `functions/likeNotifications.js`).
+// Push-сповіщення адміна (Firebase Cloud Messaging, `functions/adminActivity.js`).
 //
 // Функція шле лише `data`, а показує сповіщення цей воркер: окремого
 // `firebase-messaging-sw.js` немає — другий воркер на тому самому scope

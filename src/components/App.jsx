@@ -44,6 +44,7 @@ const EditProfile = lazy(() => import('./EditProfile'));
 const MedicationsPage = lazy(() => import('./MedicationsPage'));
 const FlowManager = lazy(() => import('./FlowManager'));
 const BudgetPage = lazy(() => import('./BudgetPage'));
+const AdminNotificationsPage = lazy(() => import('./AdminNotificationsPage'));
 const InvoiceBuilderPage = lazy(() => import('./InvoiceBuilderPage'));
 const DocumentsPage = lazy(() => import('./DocumentsPage'));
 const PartiesPage = lazy(() => import('./PartiesPage'));
@@ -57,7 +58,9 @@ const PartiesPage = lazy(() => import('./PartiesPage'));
 // форма й лише над чужою чернеткою (її автозбереження пише у вузол авторки, а
 // туди правила пускають лише повного адміна): своя картка й доповнення там
 // зберігаються.
-const READ_ONLY_INSPECTOR_WRITABLE_PATHS = ['/matching', '/matching/create-profile', '/my-profile', '/documents', '/parties'];
+// `/notifications` — свої налаштування сповіщень інспектор пише сам (правило
+// `adminNotificationSettings/$uid`), тож «Лише читання» там було б неправдою.
+const READ_ONLY_INSPECTOR_WRITABLE_PATHS = ['/matching', '/matching/create-profile', '/my-profile', '/documents', '/parties', '/notifications'];
 
 export const App = () => {
 
@@ -242,6 +245,8 @@ export const App = () => {
       {isAdmin && <Route path="/medications/:userId" element={<RequireAuth status={authStatus}><MedicationsPage /></RequireAuth>} />}
       {isAdmin && <Route path="/flow" element={<RequireAuth status={authStatus}><FlowManager ownerId={auth.currentUser?.uid} /></RequireAuth>} />}
       {isAdmin && <Route path="/budget" element={<RequireAuth status={authStatus}><BudgetPage isAdmin={isAdmin} /></RequireAuth>} />}
+      {/* Сповіщення адміна про дії користувачів (`functions/adminActivity.js`). */}
+      {isAdmin && <Route path="/notifications" element={<RequireAuth status={authStatus}><AdminNotificationsPage /></RequireAuth>} />}
       {canAccessInvoices && <Route path="/invoices" element={<RequireAuth status={authStatus}><InvoiceBuilderPage isAdmin={canAccessInvoices} /></RequireAuth>} />}
       {canAccessInvoices && <Route path="/documents" element={<RequireAuth status={authStatus}><DocumentsPage isAdmin={canAccessInvoices} /></RequireAuth>} />}
       {canAccessInvoices && <Route path="/parties" element={<RequireAuth status={authStatus}><PartiesPage isAdmin={canAccessInvoices} /></RequireAuth>} />}

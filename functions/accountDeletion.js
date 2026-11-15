@@ -155,7 +155,8 @@ const buildOwnedPaths = (uid, cardIds = [uid]) => {
       `multiData/edits/${id}`,
       `multiData/editsHistory/${id}`,
       `multiData/programs/${id}`,
-      // Лічильник сповіщень «вашу анкету вподобали» (`likeNotifications.js`).
+      // Лічильник колишніх сповіщень донорці «вашу анкету вподобали» (14.11,
+      // прибрано 15.11): записи, що встигли лягти, теж належать людині.
       `likeNotifications/${id}`,
       // Публічні відгуки про людину: картки, до якої вони, більше немає.
       `comments/${id}`,

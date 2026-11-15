@@ -7,9 +7,9 @@ import { shouldRegisterServiceWorker } from '../serviceWorkerRegistration';
 /**
  * Push-сповіщення на пристрій (Firebase Cloud Messaging).
  *
- * Навіщо: донорка дізнається, що її анкету вподобали, навіть коли застосунок
- * закритий (функція `notifyDonorAboutLike`, `functions/likeNotifications.js`;
- * у сповіщенні лише кількість, без того, хто вподобав).
+ * Навіщо: адмін дізнається про дії користувачів, навіть коли застосунок
+ * закритий (`functions/adminActivity.js`, сторінка `/notifications`).
+ * Звичайні користувачі push не отримують і блоку для нього не бачать.
  *
  * Як: дозвіл браузера → токен FCM на нашому ж service worker
  * (`src/service-worker.js`, подія `push`; окремого `firebase-messaging-sw.js`

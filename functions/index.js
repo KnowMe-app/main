@@ -596,6 +596,8 @@ exports.recordMatchingCardChange = onValueWritten(
     ref: `${MATCHING_CARDS_ROOT}/{cardId}`,
     // Тригер бази — у регіоні самої бази (див. `deliverPasswordResetEmail`).
     region: DATABASE_REGION,
+    // Telegram — для сповіщень адміна про нові й опубліковані анкети.
+    secrets: [TELEGRAM_BOT_TOKEN],
     memory: '256MiB',
     timeoutSeconds: 30,
     maxInstances: 10,
@@ -625,6 +627,11 @@ exports.recordMatchingCardChange = onValueWritten(
       logger.error('feed index write failed', { cardId: event.params.cardId, error: error.message });
       throw error;
     }
+    // Після основної роботи: збій тут ковтається, а повтор події (на збій
+    // вище) сюди ще не дійшов би — подія в журналі адміна не задвоїться.
+    await recordActivity(adminActivity.classifyCardWrite({
+      cardId: event.params.cardId, before, after, actor: event.authId || '',
+    }), event, event.params.cardId);
   },
 );
 
@@ -648,6 +655,7 @@ exports.syncPublicReviewFlag = onValueWritten(
   {
     ref: `${PUBLIC_COMMENTS_ROOT}/{profileId}/{commentId}`,
     region: DATABASE_REGION,
+    secrets: [TELEGRAM_BOT_TOKEN],
     memory: '256MiB',
     timeoutSeconds: 30,
     maxInstances: 10,
@@ -679,6 +687,7 @@ exports.syncPublicReviewFlag = onValueWritten(
       logger.error('public review flag sync failed', { profileId, error: error.message });
       throw error;
     }
+    await recordActivity(adminActivity.classifyReviewWrite({ cardId: profileId, before, after }), event);
   },
 );
 
@@ -705,6 +714,7 @@ const recordOwnerMarkChange = kind => onValueWritten(
   {
     ref: `${OWNER_MARKS_ROOT}/${kind}/{ownerId}/{entryId}`,
     region: DATABASE_REGION,
+    secrets: [TELEGRAM_BOT_TOKEN],
     memory: '256MiB',
     timeoutSeconds: 30,
     maxInstances: 10,
@@ -722,6 +732,12 @@ const recordOwnerMarkChange = kind => onValueWritten(
       logger.error('owner mark version write failed', { kind, ownerId: event.params.ownerId, error: error.message });
       throw error;
     }
+    // Лайки, дизлайки й «Відкласти» — у журнал адміна (памʼятки — особисті, ні).
+    const params = { cardId: event.params.entryId, before: event.data.before.val(), after: event.data.after.val(), now: Date.now() };
+    let activity = [];
+    if (kind === 'favorites' || kind === 'dislikes') activity = adminActivity.classifyReactionWrite({ kind, ...params });
+    else if (kind === 'getInTouch') activity = adminActivity.classifyPostponeWrite(params);
+    if (activity.length) await recordActivity(activity, event, event.params.ownerId);
   },
 );
 
@@ -732,58 +748,85 @@ exports.recordOwnerGetInTouchChange = recordOwnerMarkChange('getInTouch');
 exports.recordOwnerLikedAudienceChange = recordOwnerMarkChange('likedAudience');
 
 /**
- * Сповіщення донорці про нове серце (`likeNotifications.js`): лише кількість,
- * без того, хто вподобав, — у Telegram (якщо донорка входила через бота) і
- * push на пристрої, де вона дозволила сповіщення (`pushTokens/{uid}`). Поки
- * що рахуються лише серця повних адмінів — сценарій тестується.
- *
- * Без `retry`: повтор події після вдалої відправки написав би вдруге, а
- * лічильник у `likeNotifications/{картка}` повтор однаково відкинув би.
+ * Сповіщення адміна про дії користувачів (`adminActivity.js`): журнал
+ * `adminActivity/events`, миттєві сповіщення й дайджести за налаштуваннями
+ * `adminNotificationSettings/{uid}` (сторінка `/notifications`). Звичайні
+ * користувачі сповіщень не отримують. Збій тут не валить основну роботу
+ * тригера й не йде на повтор: повтор задвоїв би подію в журналі.
  */
 const { getMessaging } = require('firebase-admin/messaging');
-const {
-  DISLIKES_ROOT,
-  FAVORITES_ROOT,
-  handleDislikeWrite,
-  handleFavoriteWrite,
-} = require('./likeNotifications');
+const adminActivity = require('./adminActivity');
 
-const buildLikeNotificationDeps = () => {
+const qaEmailCache = new Map();
+const isQaAccount = async uid => {
+  if (qaEmailCache.has(uid)) return qaEmailCache.get(uid);
+  let qa = false;
+  try {
+    const user = await getAuth().getUser(uid);
+    qa = /@example\.com$/i.test(user.email || '');
+  } catch (error) {
+    qa = false;
+  }
+  qaEmailCache.set(uid, qa);
+  return qa;
+};
+
+const buildActivityDeps = () => {
   const database = getDatabase();
   return {
     db: {
       ...createAdminDb(database),
       update: updates => database.ref().update(updates),
-      queryByChild: async (path, child, value) => (
-        await database.ref(path).orderByChild(child).equalTo(value).get()
-      ).val(),
+      push: (path, value) => database.ref(path).push(value),
+      queryEventsBetween: async (since, until) => {
+        const snapshot = await database.ref(adminActivity.EVENTS_PATH)
+          .orderByChild('t').startAfter(since).endAt(until).limitToLast(500).get();
+        const rows = [];
+        snapshot.forEach(child => { rows.push(child.val()); });
+        return rows;
+      },
+      removeOlderThan: async (eventsCutoff, dedupCutoff) => {
+        const old = await database.ref(adminActivity.EVENTS_PATH).orderByChild('t').endAt(eventsCutoff).limitToFirst(500).get();
+        const oldDedup = await database.ref(adminActivity.DEDUP_PATH).orderByValue().endAt(dedupCutoff).limitToFirst(500).get();
+        const updates = {};
+        old.forEach(child => { updates[`${adminActivity.EVENTS_PATH}/${child.key}`] = null; });
+        oldDedup.forEach(child => { updates[`${adminActivity.DEDUP_PATH}/${child.key}`] = null; });
+        if (Object.keys(updates).length) await database.ref().update(updates);
+      },
     },
-    accountExists: async uid => {
-      try {
-        await getAuth().getUser(uid);
-        return true;
-      } catch (error) {
-        if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-uid') return false;
-        throw error;
-      }
+    isExcludedActor: async uid => adminActivity.isStaffUid(uid) || isQaAccount(uid),
+    resolveTelegramChat: async uid => {
+      const accounts = (await database.ref('telegramAccounts').orderByChild('uid').equalTo(uid).get()).val() || {};
+      return Object.keys(accounts).find(key => accounts[key] && accounts[key].uid === uid) || null;
     },
-    sendTelegram: createTelegramSender(TELEGRAM_BOT_TOKEN.value()),
+    sendTelegram: (chatId, html, { silent } = {}) => createTelegramSender(TELEGRAM_BOT_TOKEN.value())(chatId, html, null, { html: true, silent }),
     sendPush: async ({ tokens, data }) => {
       const result = await getMessaging().sendEachForMulticast({
         tokens,
         data,
-        webpush: { headers: { Urgency: 'high', TTL: String(3 * 24 * 60 * 60) } },
+        webpush: { headers: { Urgency: 'high', TTL: String(24 * 60 * 60) } },
       });
-      return result.responses.map(response => ({
-        success: response.success,
-        errorCode: response.error ? response.error.code : '',
-      }));
+      return result.responses.map(response => ({ success: response.success, errorCode: response.error ? response.error.code : '' }));
     },
     now: Date.now(),
   };
 };
 
-const LIKE_NOTIFICATION_OPTIONS = {
+/** Події одного запису бази → журнал і сповіщення. Ніколи не кидає. */
+const recordActivity = async (events, event, pathActor = '') => {
+  try {
+    const outcome = await adminActivity.recordAdminEvents(
+      events,
+      { actor: event.authId || '', authType: event.authType || 'unknown', pathActor },
+      buildActivityDeps(),
+    );
+    if (outcome !== 'none') logger.info('admin activity', { outcome });
+  } catch (error) {
+    logger.error('admin activity failed', { error: error.message });
+  }
+};
+
+const ACTIVITY_TRIGGER_OPTIONS = {
   region: DATABASE_REGION,
   secrets: [TELEGRAM_BOT_TOKEN],
   memory: '256MiB',
@@ -791,39 +834,51 @@ const LIKE_NOTIFICATION_OPTIONS = {
   maxInstances: 5,
 };
 
-exports.notifyDonorAboutLike = onValueWritten(
-  { ...LIKE_NOTIFICATION_OPTIONS, ref: `${FAVORITES_ROOT}/{likerId}/{cardId}` },
+const activityTrigger = (ref, classify, actorParam) => onValueWritten(
+  { ...ACTIVITY_TRIGGER_OPTIONS, ref },
   async event => {
-    const { likerId, cardId } = event.params;
-    try {
-      const outcome = await handleFavoriteWrite(
-        { likerId, cardId, before: event.data.before.val(), after: event.data.after.val() },
-        buildLikeNotificationDeps(),
-      );
-      logger.info('like notification', { outcome });
-    } catch (error) {
-      logger.error('like notification failed', { error: error.message });
-    }
+    const events = classify({ ...event.params, before: event.data.before.val(), after: event.data.after.val(), now: Date.now() });
+    if (!events.length) return;
+    await recordActivity(events, event, actorParam ? event.params[actorParam] : '');
   },
 );
 
-/**
- * Тестове сповіщення про дизлайк адміна — лише поки `ADMIN_TEST_MODE`
- * (`likeNotifications.js`) увімкнено, і лише push. Вимкнений режим — функція
- * нічого не шле; прибрати її з коду можна разом із режимом.
- */
-exports.notifyDonorAboutDislike = onValueWritten(
-  { ...LIKE_NOTIFICATION_OPTIONS, ref: `${DISLIKES_ROOT}/{likerId}/{cardId}` },
-  async event => {
-    const { likerId, cardId } = event.params;
-    try {
-      const outcome = await handleDislikeWrite(
-        { likerId, cardId, before: event.data.before.val(), after: event.data.after.val() },
-        buildLikeNotificationDeps(),
-      );
-      logger.info('dislike notification', { outcome });
-    } catch (error) {
-      logger.error('dislike notification failed', { error: error.message });
-    }
+exports.recordAdminActivityEdits = activityTrigger(
+  'multiData/edits/{cardId}/{editorId}', adminActivity.classifyEditsWrite, 'editorId',
+);
+exports.recordAdminActivityDrafts = activityTrigger(
+  'multiData/profileMutations/{authorId}/{cardId}', adminActivity.classifyDraftWrite, 'authorId',
+);
+exports.recordAdminActivityContacts = activityTrigger(
+  'multiData/contactViews/{viewerId}/{cardId}', adminActivity.classifyContactWrite, 'viewerId',
+);
+exports.recordAdminActivitySearches = activityTrigger(
+  'multiData/searchQueries/{ownerId}/{queryKey}', adminActivity.classifySearchWrite, 'ownerId',
+);
+exports.recordAdminActivityShares = activityTrigger(
+  'profileShares/{token}', adminActivity.classifyShareWrite, '',
+);
+exports.recordAdminActivityDeletions = activityTrigger(
+  'accountDeletions/{uid}', adminActivity.classifyAccountDeletion, '',
+);
+
+/** Стан каналів для сторінки `/notifications`: Telegram привʼязано? скільки пристроїв? */
+exports.adminNotificationStatus = onCall(
+  { region: REGION, cors: ALLOWED_ORIGINS, memory: '256MiB', timeoutSeconds: 20 },
+  async request => {
+    const uid = request.auth && request.auth.uid;
+    if (!uid || !adminActivity.isStaffUid(uid)) throw new HttpsError('permission-denied', 'Admins only.');
+    return adminActivity.readNotificationStatus(uid, buildActivityDeps());
+  },
+);
+
+/** «Надіслати тестове» на сторінці `/notifications` — увімкненими каналами викликача. */
+exports.sendAdminTestNotification = onCall(
+  { region: REGION, cors: ALLOWED_ORIGINS, secrets: [TELEGRAM_BOT_TOKEN], memory: '256MiB', timeoutSeconds: 30 },
+  async request => {
+    const uid = request.auth && request.auth.uid;
+    if (!uid || !adminActivity.isStaffUid(uid)) throw new HttpsError('permission-denied', 'Admins only.');
+    const outcomes = await adminActivity.sendTestNotification(uid, buildActivityDeps());
+    return { outcomes };
   },
 );
