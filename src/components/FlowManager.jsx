@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import styled from 'styled-components';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
@@ -22,6 +22,15 @@ import {
 import { useAutoResize } from 'hooks/useAutoResize';
 import { AutoGrowTextarea } from 'components/AutoGrowTextarea';
 import { isFormulaFlowAmount, resolveFlowAmountInput } from 'utils/flowAmountFormula';
+import { listPendingOutboxPatches, subscribeWriteOutbox } from 'utils/writeOutbox';
+import {
+  applyFlowPatch,
+  clearFlowCache,
+  countPendingFlowWrites,
+  overlayPendingFlowWrites,
+  readFlowCache,
+  writeFlowCache,
+} from 'utils/flowOfflineWrites';
 
 const Wrap = styled.div`
   display: flex;
@@ -1259,15 +1268,27 @@ export const FlowManager = ({ ownerId }) => {
     [sortedFlowRows]
   );
 
+  // Дані з бази завжди йдуть із накладеними недосланими записами черги
+  // (`utils/flowOfflineWrites`): сервер їх ще не знає, і без накладки щойно
+  // внесене зникало б з екрана до доставки.
   const reload = useCallback(async () => {
     if (!ownerId) return;
+    // Памʼять пристрою — одразу: без звʼязку `get` висить, і Flow стояв би
+    // порожнім, хоча останній стан лежить тут.
+    const cached = readFlowCache(ownerId);
+    if (cached) {
+      setFlowData(overlayPendingFlowWrites(cached, ownerId, listPendingOutboxPatches()));
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     setLoading(true);
     try {
       const data = await fetchFlowData(ownerId);
-      setFlowData(data || {});
+      const merged = overlayPendingFlowWrites(data || {}, ownerId, listPendingOutboxPatches());
+      setFlowData(merged);
+      writeFlowCache(ownerId, merged);
     } catch (error) {
       console.error('Unable to load flow data', error);
-      toast.error('Не вдалося завантажити Flow');
+      if (!cached) toast.error('Не вдалося завантажити Flow');
     } finally {
       setLoading(false);
     }
@@ -1276,6 +1297,78 @@ export const FlowManager = ({ ownerId }) => {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  const flowDataRef = useRef(flowData);
+  flowDataRef.current = flowData;
+
+  // Скільки записів Flow ще не прийняла база. Коли черга спорожніла —
+  // перечитати з бази: записи могли змінитись і з іншого пристрою.
+  const pendingFlowWrites = useSyncExternalStore(
+    subscribeWriteOutbox,
+    () => countPendingFlowWrites(ownerId, listPendingOutboxPatches())
+  );
+  const prevPendingFlowWritesRef = useRef(pendingFlowWrites);
+  useEffect(() => {
+    const prev = prevPendingFlowWritesRef.current;
+    prevPendingFlowWritesRef.current = pendingFlowWrites;
+    if (prev > 0 && pendingFlowWrites === 0) reload();
+  }, [pendingFlowWrites, reload]);
+
+  const [deviceOnline, setDeviceOnline] = useState(
+    () => typeof navigator === 'undefined' || navigator.onLine !== false
+  );
+  useEffect(() => {
+    const update = () => setDeviceOnline(navigator.onLine !== false);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+
+  // Правка лягає на екран і в памʼять пристрою одразу, ще до бази: запис
+  // уже в черзі пристрою й дошлеться сам, щойно буде звʼязок.
+  const applyLocalFlowPatch = useCallback(
+    patch => {
+      if (!patch || !Object.keys(patch).length) return;
+      setFlowData(prev => {
+        const next = applyFlowPatch(prev, patch, ownerId);
+        writeFlowCache(ownerId, next);
+        return next;
+      });
+    },
+    [ownerId]
+  );
+
+  // Відмова бази (правила) — остаточна: черга запис зняла, а на екрані він
+  // ще стоїть. Кажемо про це й беремо правду з бази.
+  const trackFlowDelivery = useCallback(
+    (delivered, failureText) => {
+      if (!delivered || typeof delivered.catch !== 'function') return;
+      delivered.catch(error => {
+        console.error('Flow write rejected', error);
+        toast.error(`${failureText}: сервер відмовив`);
+        clearFlowCache(ownerId);
+        reload();
+      });
+    },
+    [ownerId, reload]
+  );
+
+  const applyFlowWrite = useCallback(
+    (result, failureText) => {
+      if (!result) return;
+      applyLocalFlowPatch(result.patch);
+      trackFlowDelivery(result.delivered, failureText);
+    },
+    [applyLocalFlowPatch, trackFlowDelivery]
+  );
+
+  const offlineSuffix = () =>
+    typeof navigator !== 'undefined' && navigator.onLine === false
+      ? ' — на пристрої, надішлемо, щойно зʼявиться звʼязок'
+      : '';
 
   useEffect(() => {
     let isMounted = true;
@@ -1533,7 +1626,10 @@ export const FlowManager = ({ ownerId }) => {
           item => item === normalized || item.startsWith(categoryPrefix)
         )
       ) {
-        await deleteFlowCategory({ ownerId, groupPath: normalized });
+        applyFlowWrite(
+          await deleteFlowCategory({ ownerId, groupPath: normalized }),
+          'Групу не видалено'
+        );
       }
       setLocalCategories(prev =>
         prev.filter(item => item !== normalized && !item.startsWith(categoryPrefix))
@@ -1542,8 +1638,7 @@ export const FlowManager = ({ ownerId }) => {
         setSelectedGroup('');
         setSelectedSubgroup('');
       }
-      toast.success(`Групу "${normalized}" видалено`);
-      await reload();
+      toast.success(`Групу "${normalized}" видалено${offlineSuffix()}`);
     } catch (error) {
       console.error('Unable to delete flow category', error);
       toast.error('Не вдалося видалити групу');
@@ -1587,11 +1682,14 @@ export const FlowManager = ({ ownerId }) => {
           item => item === normalizedSource || item.startsWith(sourcePrefix)
         )
       ) {
-        await renameFlowCategory({
+        const renamed = await renameFlowCategory({
           ownerId,
           fromGroupPath: normalizedSource,
           toGroupPath: normalizedTarget,
+          sourceData: flowDataRef.current,
         });
+        if (renamed?.reload) await reload();
+        else applyFlowWrite(renamed, 'Групу не перейменовано');
       }
 
       setLocalCategories(prev => {
@@ -1609,11 +1707,10 @@ export const FlowManager = ({ ownerId }) => {
       }
       cancelCategoryRename();
       toast.success(
-        targetExists
+        (targetExists
           ? `Групи об’єднано в "${normalizedTarget}"`
-          : `Групу перейменовано на "${normalizedTarget}"`
+          : `Групу перейменовано на "${normalizedTarget}"`) + offlineSuffix()
       );
-      await reload();
     } catch (error) {
       console.error('Unable to rename flow category', error);
       toast.error('Не вдалося перейменувати групу');
@@ -1638,7 +1735,7 @@ export const FlowManager = ({ ownerId }) => {
     }
 
     try {
-      await Promise.all(
+      const results = await Promise.all(
         parsedEntries.map(entry => {
           const rowCustomUsdRate = formatCustomUsdRate(entry.customUsdRate);
           const rowCustomEurRate = formatCustomUsdRate(entry.customEurRate);
@@ -1653,6 +1750,7 @@ export const FlowManager = ({ ownerId }) => {
           });
         })
       );
+      results.forEach(result => applyFlowWrite(result, 'Запис Flow не збережено'));
       const lastEntry = parsedEntries[parsedEntries.length - 1];
       setDateYmd(lastEntry.date);
       const selectedPath = splitCategoryPath(lastEntry.groupPath || normalizedCategory);
@@ -1660,11 +1758,10 @@ export const FlowManager = ({ ownerId }) => {
       setSelectedSubgroup(selectedPath.subgroup);
       setEntryInput('');
       toast.success(
-        parsedEntries.length === 1
+        (parsedEntries.length === 1
           ? 'Flow збережено'
-          : `Flow збережено: ${parsedEntries.length} записів`
+          : `Flow збережено: ${parsedEntries.length} записів`) + offlineSuffix()
       );
-      await reload();
     } catch (error) {
       console.error('Unable to save flow entry', error);
       toast.error('Не вдалося зберегти Flow');
@@ -1709,9 +1806,11 @@ export const FlowManager = ({ ownerId }) => {
   const handleClear = async () => {
     if (!ownerId) return;
     try {
-      await clearFlowData(ownerId);
-      setFlowData({});
-      toast.success('Flow очищено');
+      applyFlowWrite(
+        await clearFlowData(ownerId, { groups: Object.keys(flowDataRef.current || {}) }),
+        'Flow не очищено'
+      );
+      toast.success(`Flow очищено${offlineSuffix()}`);
     } catch (error) {
       console.error('Unable to clear flow', error);
       toast.error('Не вдалося очистити Flow');
@@ -1721,7 +1820,7 @@ export const FlowManager = ({ ownerId }) => {
   const handleDeleteRow = async row => {
     if (!ownerId) return;
     try {
-      await deleteFlowEntry({
+      const result = await deleteFlowEntry({
         ownerId,
         groupPath: row.group || 'general',
         date: row.date,
@@ -1729,8 +1828,8 @@ export const FlowManager = ({ ownerId }) => {
         description: row.description,
         entryId: row.entryId,
       });
-      toast.success('Запис видалено');
-      await reload();
+      applyFlowWrite(result, 'Запис не видалено');
+      toast.success(`Запис видалено${offlineSuffix()}`);
     } catch (error) {
       console.error('Unable to delete flow row', error);
       toast.error('Не вдалося видалити запис');
@@ -1743,6 +1842,7 @@ export const FlowManager = ({ ownerId }) => {
 
 
   const handleExit = async () => {
+    clearFlowCache(ownerId);
     await signOut(auth);
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('ownerId');
@@ -1816,7 +1916,7 @@ export const FlowManager = ({ ownerId }) => {
     const effectiveCustomUsdRate = rowCustomUsdRate || customUsdRate;
 
     try {
-      await updateFlowEntry({
+      const result = await updateFlowEntry({
         ownerId,
         groupPath: row.group || 'general',
         prevEntry: {
@@ -1837,9 +1937,9 @@ export const FlowManager = ({ ownerId }) => {
         customUsdRate: effectiveCustomUsdRate,
         rowCustomUsdRate,
       });
-      toast.success('Запис оновлено');
+      applyFlowWrite(result, 'Запис не оновлено');
+      toast.success(`Запис оновлено${offlineSuffix()}`);
       cancelEdit();
-      await reload();
     } catch (error) {
       console.error('Unable to update flow row', error);
       toast.error('Не вдалося оновити запис');
@@ -1862,7 +1962,7 @@ export const FlowManager = ({ ownerId }) => {
     if (nextCategory === row.group) return;
 
     try {
-      await updateFlowEntry({
+      const result = await updateFlowEntry({
         ownerId,
         groupPath: row.group || DEFAULT_FLOW_CATEGORY,
         nextGroupPath: nextCategory,
@@ -1885,8 +1985,8 @@ export const FlowManager = ({ ownerId }) => {
         rowCustomUsdRate: row.customUsdRate,
       });
       setLocalCategories(prev => (prev.includes(nextCategory) ? prev : [...prev, nextCategory]));
-      toast.success(`Платіж перенесено в групу "${nextCategory}"`);
-      await reload();
+      applyFlowWrite(result, 'Платіж не перенесено');
+      toast.success(`Платіж перенесено в групу "${nextCategory}"${offlineSuffix()}`);
     } catch (error) {
       console.error('Unable to change flow row category', error);
       toast.error('Не вдалося змінити групу платежу');
@@ -2276,6 +2376,13 @@ export const FlowManager = ({ ownerId }) => {
       </EventsList>
 
       {loading && <small>Завантаження...</small>}
+      {pendingFlowWrites > 0 && (
+        <small data-testid="flow-outbox-pending" role="status">
+          {deviceOnline
+            ? `Надсилаємо записів: ${pendingFlowWrites}`
+            : `Немає звʼязку — ще не надіслано: ${pendingFlowWrites}. Записи збережено на пристрої й надішлемо, щойно звʼязок повернеться.`}
+        </small>
+      )}
 
       {showInfoModal && (
         <InfoModal

@@ -13,6 +13,7 @@ import { auth, loadViewerProfile, resetViewerAccessLevelCache } from './config';
 import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
 import { clearMyProfileCache } from 'utils/myProfileCache';
+import { clearFlowCache } from 'utils/flowOfflineWrites';
 import { clearPendingProfileEdits } from 'utils/myProfilePendingEdits';
 import { clearCardFormPending } from 'utils/cardFormPendingEdits';
 import { clearReactionCache } from 'utils/matchingReactionCache';
@@ -164,6 +165,8 @@ export const App = () => {
         // Власна анкета з «Мого профілю» (`utils/myProfileCache`) — теж стан
         // входу: на спільному пристрої наступний читач її мати не мусить.
         clearMyProfileCache();
+        // Flow (особисті фінанси) з памʼяті пристрою — так само (`utils/flowOfflineWrites`).
+        clearFlowCache();
         // Незбережені правки анкети — теж памʼять пристрою про читача.
         clearPendingProfileEdits();
         // І незбережене з форми «Додати картку» / доповнення.
