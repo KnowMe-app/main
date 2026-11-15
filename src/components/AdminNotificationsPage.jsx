@@ -123,7 +123,12 @@ const AdminNotificationsPage = () => {
 
   const setFrequency = (key, frequency) => persist({ ...settings, events: { ...settings.events, [key]: frequency } });
   const setChannel = (channel, value) => persist({ ...settings, channels: { ...settings.channels, [channel]: value } });
-  const applyPreset = preset => persist({ ...settings, events: preset.build() });
+  // «Вимкнути все» обіцяє лише журнал — тож гасить і тижневий звіт.
+  const applyPreset = preset => persist({
+    ...settings,
+    events: preset.build(),
+    ...(preset.key === 'none' ? { weeklyReport: false } : {}),
+  });
 
   const togglePush = async () => {
     if (pushBusy) return;

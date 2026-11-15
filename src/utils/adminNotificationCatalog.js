@@ -123,7 +123,10 @@ export const normalizeNotificationSettings = raw => {
     events,
     channels: { telegram: raw.channels?.telegram === true, push: raw.channels?.push === true },
     quietHours: raw.quietHours !== false,
-    weeklyReport: raw.weeklyReport !== false,
+    // Збережене до тижневого звіту — за рештою: «Вимкнути все» звіту не просило.
+    weeklyReport: typeof raw.weeklyReport === 'boolean'
+      ? raw.weeklyReport
+      : Object.values(events).some(value => value !== 'off'),
   };
 };
 

@@ -236,9 +236,12 @@ test('тижневий звіт: тиждень проти попередньо�
   const DAY = 24 * 60 * 60 * 1000;
   const ev = (type, t, extra = {}) => ({ type, t, actor: extra.actor || 'u1', card: extra.card || '', meta: extra.meta || {}, cardInfo: extra.cardInfo || null });
   const events = [
-    ev('profile_created', NOON - DAY, { actor: 'a' }),
-    ev('profile_created', NOON - 2 * DAY, { actor: 'b' }),
-    ev('profile_published', NOON - DAY, { actor: 'a' }),
+    ev('profile_created', NOON - DAY, { actor: 'a', card: 'a' }),
+    ev('profile_created', NOON - 2 * DAY, { actor: 'b', card: 'b' }),
+    ev('profile_published', NOON - DAY, { actor: 'a', card: 'a' }),
+    // Публікація старої анкети й повторна — не конверсія нових.
+    ev('profile_published', NOON - DAY, { actor: 'old', card: 'old' }),
+    ev('profile_published', NOON - DAY / 2, { actor: 'a', card: 'a' }),
     ev('like', NOON - DAY, { card: DONOR, cardInfo: { name: 'Марія', role: 'ed' } }),
     ev('contact_tap', NOON - DAY, { card: DONOR, cardInfo: { name: 'Марія', role: 'ed' } }),
     ev('search', NOON - DAY, { meta: { query: 'Ольга' } }),
@@ -248,7 +251,7 @@ test('тижневий звіт: тиждень проти попередньо�
   const { html, push } = activity.buildWeeklyReport(events, NOON);
   assert.match(html, /Тиждень 08\.11–15\.11/);
   assert.match(html, /Лайк: <b>1<\/b> \(↓1\)/);
-  assert.match(html, /нових анкет 2 → опубліковано 1 \(50%\)/);
+  assert.match(html, /нових анкет 2 → з них опубліковано 1 \(50%\)/);
   assert.match(html, /Марія \(донор ооцитів\) — ❤️ 1 · 📞 1/);
   assert.match(html, /«ольга» ×1/);
   assert.ok(html.length < 4096);
@@ -276,4 +279,42 @@ test('тижневий звіт іде з потоку подій, коли вв
   await activity.recordAdminEvents([{ type: 'like', card: DONOR }], user, deps);
   assert.equal(sent.telegram.length, 1);
   assert.match(sent.telegram[0].html, /Тиждень/);
+});
+
+test('тижневий звіт: тиждень із самих правок не зветься порожнім', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const { html } = activity.buildWeeklyReport([{ type: 'profile_edited', t: NOON - DAY, actor: 'u1', card: 'u1', meta: {} }], NOON);
+  assert.doesNotMatch(html, /Подій за тиждень не було/);
+  assert.match(html, /Правка власної анкети: <b>1<\/b>/);
+});
+
+test('збережене до тижневого звіту «Вимкнути все» звіту не вмикає', () => {
+  const allOff = activity.normalizeSettings({ events: { like: 'off', dislike: 'off' }, channels: { telegram: true } });
+  assert.equal(allOff.weeklyReport, false);
+  const someOn = activity.normalizeSettings({ events: { like: 'hourly' }, channels: { telegram: true } });
+  assert.equal(someOn.weeklyReport, true);
+  assert.equal(activity.normalizeSettings({ events: { like: 'hourly' }, weeklyReport: false }).weeklyReport, false);
+});
+
+test('автоматичний тижневий звіт у тихі години — без звуку й без push', async () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const monday2330 = Date.UTC(2026, 10, 16, 21, 30, 0); // пн 23:30 Київ
+  const { deps, sent, data } = makeDeps({
+    now: monday2330,
+    settings: { events: {}, channels: { telegram: true, push: true }, quietHours: true, weeklyReport: true },
+  });
+  data.adminActivity = { digestState: { [ADMIN]: { weekly: { lastAt: monday2330 - 7 * DAY } } } };
+  data.pushTokens = { [ADMIN]: { tokA: { at: 1 } } };
+  await activity.recordAdminEvents([{ type: 'like', card: DONOR }], user, deps);
+  const weekly = sent.telegram.filter(entry => /Тиждень/.test(entry.html));
+  assert.equal(weekly.length, 1);
+  assert.equal(weekly[0].options.silent, true);
+  assert.equal(sent.push.filter(entry => entry.payload && entry.payload.kind === 'admin-weekly').length, 0);
+});
+
+test('тижневий звіт: порожній тиждень лишає порівняння з попереднім', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const { html } = activity.buildWeeklyReport([{ type: 'like', t: NOON - 9 * DAY, actor: 'u1', card: 'x', meta: {} }], NOON);
+  assert.match(html, /Подій за тиждень не було/);
+  assert.match(html, /Лайк: <b>0<\/b> \(↓1\)/);
 });
