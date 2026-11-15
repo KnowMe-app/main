@@ -95,6 +95,22 @@ const ItemWarning = styled.div`
   color: var(--km-danger, #b3261e);
 `;
 
+// Причина видалення й останні запити пошуку: кейс 14.11 («Сурогатна мати» →
+// порожня видача → видалення) мусить бути видно з самого рядка черги.
+const ItemReason = styled.div`
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+`;
+
+const ItemQueries = styled.ul`
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0.85;
+`;
+
 const Uid = styled.code`
   font-size: 11px;
 `;
@@ -153,6 +169,29 @@ const formatDate = timestamp => {
   } catch (error) {
     return '';
   }
+};
+
+const DELETION_REASON_LABELS = Object.freeze({
+  not_found: 'Не знайшла те, що шукала',
+  confusing: 'Не зрозуміла, як користуватись',
+  not_for_me: 'Платформа не для мене',
+  privacy: 'Турбуюсь про приватність',
+  other: 'Інше',
+});
+const SEARCH_INTENT_LABELS = Object.freeze({ sm: 'СМ', ed: 'донорки', ag: 'агенції', ip: 'батьки', cl: 'клініки' });
+const SEARCH_INTENT_CHOICE_LABELS = Object.freeze({ find: 'шукала', become: 'хотіла стати', name: 'шукала як імʼя' });
+
+export const describeRecentSearchQuery = entry => {
+  const parts = [`«${entry.query}»`];
+  if (entry.intent) {
+    const choice = SEARCH_INTENT_CHOICE_LABELS[entry.intentChoice];
+    parts.push(`категорія: ${SEARCH_INTENT_LABELS[entry.intent] || entry.intent}${choice ? `, ${choice}` : ''}`);
+  } else if (SEARCH_INTENT_CHOICE_LABELS[entry.intentChoice]) {
+    parts.push(SEARCH_INTENT_CHOICE_LABELS[entry.intentChoice]);
+  }
+  if (Number.isFinite(entry.resultsCount)) parts.push(`знайдено ${entry.resultsCount}`);
+  if (entry.updatedAt) parts.push(formatDate(entry.updatedAt));
+  return parts.join(' · ');
 };
 
 const describeRoles = role => String(role || '')
@@ -447,6 +486,19 @@ export const AccountDeletionQueue = () => {
                 {' · '}
                 <Uid>{item.uid}</Uid>
               </ItemMeta>
+              {(item.reason || item.reasonText) && (
+                <ItemReason data-testid="account-deletion-reason">
+                  Причина: {DELETION_REASON_LABELS[item.reason] || 'Інше'}
+                  {item.reasonText ? ` — «${item.reasonText}»` : ''}
+                </ItemReason>
+              )}
+              {item.recentSearchQueries?.length > 0 && (
+                <ItemQueries data-testid="account-deletion-queries" aria-label="Останні запити пошуку">
+                  {item.recentSearchQueries.map(entry => (
+                    <li key={`${entry.query}-${entry.updatedAt}`}>{describeRecentSearchQuery(entry)}</li>
+                  ))}
+                </ItemQueries>
+              )}
               {!item.authDeletedAt && (
                 <ItemWarning>Акаунт входу ще не видалено — очищення видалить і його.</ItemWarning>
               )}

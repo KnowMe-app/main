@@ -452,6 +452,58 @@ const deleteAuthAndVerify = async (deps, uid) => {
 };
 
 /**
+ * Причина видалення — необовʼязкове питання в модалці «Мого профілю».
+ *
+ * Кейс 14.11: людина шукала сурогатну маму, отримала порожню видачу й
+ * видалила акаунт — а черга знала лише час запиту. Тепер у записі черги лежить
+ * причина (код) і, за бажання, кілька слів людини. Відомі лише перелічені
+ * коди; невідомий код — як відсутній (видалення важливіше за анкету про
+ * нього, тож відмови через причину не буває), текст обрізається до 300
+ * знаків і без керівних символів. Текст без коду — це «Інше».
+ */
+const ACCOUNT_DELETION_REASONS = Object.freeze(['not_found', 'confusing', 'not_for_me', 'privacy', 'other']);
+const ACCOUNT_DELETION_REASON_TEXT_MAX = 300;
+
+const normalizeAccountDeletionReason = ({ reason, reasonText } = {}) => {
+  const code = typeof reason === 'string' && ACCOUNT_DELETION_REASONS.includes(reason) ? reason : '';
+  const text = typeof reasonText === 'string'
+    // eslint-disable-next-line no-control-regex
+    ? reasonText.replace(/[\u0000-\u001F\u007F]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, ACCOUNT_DELETION_REASON_TEXT_MAX).trim()
+    : '';
+  if (!code && !text) return {};
+  return { reason: code || 'other', ...(text ? { reasonText: text } : {}) };
+};
+
+/**
+ * Останні запити пошуку людини (`multiData/searchQueries/{uid}`) — для
+ * адмінського списку видалених: разом із причиною вони одразу показують кейс
+ * на кшталт «Сурогатна мати → 0 карток → видалила акаунт».
+ */
+const pickRecentSearchQueries = (root, limit = 3) => (Array.isArray(root) ? root : Object.values(isPlainObject(root) ? root : {}))
+  .map(entry => (typeof entry === 'string'
+    ? { query: entry, updatedAt: 0 }
+    : (isPlainObject(entry) ? entry : null)))
+  .filter(entry => entry && typeof entry.query === 'string' && entry.query.trim())
+  .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0))
+  .slice(0, limit)
+  .map(entry => ({
+    query: entry.query,
+    updatedAt: Number(entry.updatedAt) || 0,
+    ...(Number.isFinite(entry.resultsCount) ? { resultsCount: entry.resultsCount } : {}),
+    ...(typeof entry.intent === 'string' ? { intent: entry.intent } : {}),
+    ...(typeof entry.intentChoice === 'string' ? { intentChoice: entry.intentChoice } : {}),
+  }));
+
+/** Знімок аналітики з наявного запису черги (для повтору). */
+const pickDeletionSnapshot = entry => ({
+  ...(typeof entry.wasPublished === 'boolean' ? { wasPublished: entry.wasPublished } : {}),
+  ...(typeof entry.role === 'string' && entry.role ? { role: entry.role } : {}),
+  ...(Array.isArray(entry.recentSearchQueries) && entry.recentSearchQueries.length
+    ? { recentSearchQueries: pickRecentSearchQueries(entry.recentSearchQueries, 3) }
+    : {}),
+});
+
+/**
  * Крок людини: «Видалити анкету» в «Моєму профілі».
  *
  * Людина видаляє **лише свій акаунт входу** й ховає анкету — повне
@@ -474,13 +526,20 @@ const deleteAuthAndVerify = async (deps, uid) => {
  *
  * @returns {Promise<{ status: 'requested'|'disabled', authDeleted: boolean }>}
  */
-const requestAccountDeletion = async (deps, uid, { now = Date.now() } = {}) => {
+const requestAccountDeletion = async (deps, uid, { now = Date.now(), reason, reasonText } = {}) => {
   const authUser = await readAuthUserOrNull(deps, uid);
   if (authUser && authUser.disabled) return { status: 'disabled', authDeleted: false };
 
   const card = await deps.read(`matchingCards/${uid}`);
   const slots = await deps.read(`multiData/profileShareSlots/${uid}`).catch(() => null);
   const previous = await deps.read(`${ACCOUNT_DELETIONS_ROOT}/${uid}`).catch(() => null);
+  // Аналітика для адміна — у самому записі черги: тригер сповіщень
+  // (`classifyAccountDeletion`) бачить лише його, а очищення бази пізніше
+  // зітре й історію пошуку. Збій читання видалення не зупиняє.
+  const searchQueries = previous ? null : await deps.read(`multiData/searchQueries/${uid}`).catch(() => null);
+  const recentSearchQueries = pickRecentSearchQueries(searchQueries, 3);
+  const cardRoles = isPlainObject(card) ? card.role : null;
+  const role = Array.isArray(cardRoles) ? cardRoles.filter(item => typeof item === 'string').join(',') : (typeof cardRoles === 'string' ? cardRoles : '');
 
   const updates = {
     [`${ACCOUNT_DELETIONS_ROOT}/${uid}`]: {
@@ -488,6 +547,16 @@ const requestAccountDeletion = async (deps, uid, { now = Date.now() } = {}) => {
       // саме за ним.
       requestedAt: isPlainObject(previous) && Number.isFinite(previous.requestedAt) ? previous.requestedAt : now,
       via: 'self',
+      // Повтор без причини не стирає ту, що людина дала першого разу.
+      ...normalizeAccountDeletionReason(isPlainObject(previous) ? { reason: previous.reason, reasonText: previous.reasonText } : {}),
+      ...normalizeAccountDeletionReason({ reason, reasonText }),
+      // Повтор після збою знімка не переписує: перший запит уже прибрав
+      // анкету зі стрічки, і «була опублікована» читалось би як «ні».
+      ...(previous ? pickDeletionSnapshot(previous) : {
+        wasPublished: isPlainObject(card) && typeof card.feedDate === 'string' && card.feedDate !== '',
+        ...(role ? { role } : {}),
+        ...(recentSearchQueries.length ? { recentSearchQueries } : {}),
+      }),
     },
   };
   // Порожньої картки не заводимо: `feedDate` у неіснуючому вузлі створив би
@@ -515,6 +584,8 @@ const listAccountDeletionQueue = queueRoot => Object.entries(isPlainObject(queue
     requestedAt: Number(entry.requestedAt) || 0,
     authDeletedAt: Number(entry.authDeletedAt) || 0,
     lastPurge: isPlainObject(entry.lastPurge) ? entry.lastPurge : null,
+    ...normalizeAccountDeletionReason(entry),
+    ...pickDeletionSnapshot(entry),
   }))
   .sort((a, b) => a.requestedAt - b.requestedAt || a.uid.localeCompare(b.uid));
 
@@ -677,6 +748,9 @@ const purgeAccountData = async (deps, uid, { now = Date.now(), dryRun = false } 
 };
 
 module.exports = {
+  ACCOUNT_DELETION_REASONS,
+  normalizeAccountDeletionReason,
+  pickRecentSearchQueries,
   buildAdminActivityUpdates,
   buildAdminActivityDedupUpdates,
   ACCOUNT_DELETIONS_ROOT,

@@ -39,6 +39,7 @@ import {
   encodeSearchQueryKey,
   isTypingContinuation,
   normalizeSearchQuery,
+  sanitizeSearchQueryAnalytics,
   shouldStoreSearchQuery,
   toSearchQueryRows,
   toSearchQueryOwnerRows,
@@ -1354,7 +1355,23 @@ export const removeMatchingSearchQuery = async ({ ownerId, queryId }) => {
   return true;
 };
 
-export const addMatchingSearchQuery = async searchQuery => {
+/*
+ * Аналітика запиту (`intent`, `intentChoice`, `resultsCount`) — необовʼязкові
+ * поля того самого ряду історії. Кейс 14.11: у ряду лежало «Сурогатна мати»,
+ * `count: 1` — і більше нічого, тож чому людина пішла, можна було лише
+ * гадати. Тепер ряд каже, чи впізнав пошук категорію, що людина обрала на
+ * картці наміру і скільки карток побачила.
+ */
+// Ряди, які ця вкладка вже записала: `ownerId|key` → обіцянка запису. Наслідок
+// пошуку (`recordSearchQueryOutcome`) дописується лише в наявний ряд — інакше
+// правила відхилили б ряд без тексту запиту, — і лише після того, як запис
+// самого запиту доїхав.
+const recordedSearchQueryWrites = new Map();
+
+export const addMatchingSearchQuery = async (searchQuery, analytics = {}) => {
+  let resolveWrite;
+  const writeDone = new Promise(resolve => { resolveWrite = resolve; });
+  let writeKey = '';
   try {
     const owner = auth.currentUser;
     if (!owner) return;
@@ -1387,17 +1404,63 @@ export const addMatchingSearchQuery = async searchQuery => {
     // ній немає, — інакше лишаємо ту, що лежить.
     const knownRows = ownSearchQueriesCache.ownerId === owner.uid ? ownSearchQueriesCache.rows : null;
     const isNewQuery = Array.isArray(knownRows) && !knownRows.some(row => row.queryId === queryKey);
+    writeKey = `${owner.uid}|${queryKey}`;
+    recordedSearchQueryWrites.set(writeKey, writeDone);
     await update(ref2(database, `${ownerPath}/${queryKey}`), {
       query: normalizedQuery,
       updatedAt: now,
       count: increment(1),
       ...(isNewQuery ? { createdAt: now } : {}),
     });
+    resolveWrite(true);
+    // Аналітика — окремим записом, а не в тому самому: правила викочує свій
+    // workflow, і поки прод ще не знає нових полів, відмова забрала б разом із
+    // ними й сам запит. Так запит лишається в історії за будь-яких правил.
+    const analyticsFields = sanitizeSearchQueryAnalytics(analytics);
+    if (Object.keys(analyticsFields).length) {
+      update(ref2(database, `${ownerPath}/${queryKey}`), analyticsFields)
+        .catch(error => console.warn('[searchQueries] analytics not recorded', error));
+    }
 
     lastRecordedSearchQuery = { ownerId: owner.uid, query: normalizedQuery, key: queryKey, at: now };
     rememberSearchQueryLocally(owner.uid, normalizedQuery);
   } catch (error) {
+    if (writeKey && recordedSearchQueryWrites.get(writeKey) === writeDone) recordedSearchQueryWrites.delete(writeKey);
     console.error('Error adding matching search query:', error);
+  } finally {
+    resolveWrite(false);
+  }
+};
+
+/**
+ * Дописати наслідок пошуку в ряд історії: скільки карток показано, що
+ * обрано на картці наміру. Ряд, якого ця вкладка не записувала, — пропуск
+ * (пауза в наборі запиту не пишеться в історію, і наслідок її теж ні), хіба
+ * що `commitIfMissing`: вибір на картці наміру — це завершений запит, навіть
+ * коли людина не натиснула Enter і не вийшла з поля.
+ */
+export const recordSearchQueryOutcome = async (searchQuery, analytics = {}, { commitIfMissing = false } = {}) => {
+  try {
+    const owner = auth.currentUser;
+    if (!owner) return false;
+    const fields = sanitizeSearchQueryAnalytics(analytics);
+    if (!Object.keys(fields).length) return false;
+    const normalizedQuery = normalizeSearchQuery(searchQuery);
+    if (!shouldStoreSearchQuery(normalizedQuery)) return false;
+    const queryKey = encodeSearchQueryKey(normalizedQuery);
+    if (!queryKey) return false;
+    const pending = recordedSearchQueryWrites.get(`${owner.uid}|${queryKey}`);
+    const recorded = pending ? await pending : false;
+    if (!recorded) {
+      if (!commitIfMissing) return false;
+      await addMatchingSearchQuery(normalizedQuery, fields);
+      return true;
+    }
+    await update(ref2(database, `${SEARCH_QUERIES_ROOT_PATH}/${owner.uid}/${queryKey}`), fields);
+    return true;
+  } catch (error) {
+    console.warn('[searchQueries] outcome not recorded', error);
+    return false;
   }
 };
 

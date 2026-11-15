@@ -431,6 +431,7 @@ const {
   isProtectedUid,
   isValidUid,
   listAccountDeletionQueue,
+  pickRecentSearchQueries,
   purgeAccountData,
   requestAccountDeletion,
 } = require('./accountDeletion');
@@ -513,7 +514,12 @@ exports.deleteOwnAccount = onCall(
 
     let result;
     try {
-      result = await requestAccountDeletion(accountDeletionDeps(), uid);
+      // Причина необовʼязкова й перевіряється всередині (лише відомі коди,
+      // текст до 300 знаків): кривий запит видалення не зупиняє.
+      result = await requestAccountDeletion(accountDeletionDeps(), uid, {
+        reason: (request.data || {}).reason,
+        reasonText: (request.data || {}).reasonText,
+      });
     } catch (error) {
       logger.error('account deletion request failed', { uid, error: error.message });
       throw new HttpsError('internal', 'Profile could not be deleted.', { failed: ['request'] });
@@ -537,12 +543,19 @@ exports.listPendingAccountDeletions = onCall(
     // кого саме він стирає, а не самий uid.
     const items = await Promise.all(queue.map(async entry => {
       const card = (await db.ref(`matchingCards/${entry.uid}`).get()).val() || {};
+      // Останні запити пошуку — щоб кейс «шукала й не знайшла» було видно
+      // поруч із причиною. Збій читання списку не валить.
+      const searchQueries = await db.ref(`multiData/searchQueries/${entry.uid}`).get()
+        .then(snapshot => snapshot.val())
+        .catch(() => null);
       const current = value => (Array.isArray(value) ? value.filter(item => item != null).slice(-1)[0] : value);
       return {
         ...entry,
         name: [current(card.name), current(card.surnameShort)].filter(part => typeof part === 'string' && part).join(' '),
         role: Array.isArray(card.role) ? card.role.join(',') : (typeof card.role === 'string' ? card.role : ''),
         hasCard: Boolean(card && Object.keys(card).length),
+        // Знімок у записі черги — перший: він пережив би й очищену історію.
+        recentSearchQueries: entry.recentSearchQueries || pickRecentSearchQueries(searchQueries, 3),
       };
     }));
     return { items, canPurge: canPurgeAccounts(uid) };

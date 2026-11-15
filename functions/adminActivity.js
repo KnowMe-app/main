@@ -231,9 +231,64 @@ const classifyShareWrite = ({ before, after }) => {
 };
 
 /** Запит на видалення акаунта `accountDeletions/{uid}` — його пише сама функція. */
+// Причина й аналітика видалення приходять адмінові разом із подією (15.11, на
+// прохання власниці продукту): кейс 14.11 — «Сурогатна мати» → порожня
+// видача → видалення — мусить бути видно з самого повідомлення.
+const DELETION_REASON_LABELS = Object.freeze({
+  not_found: 'не знайшла те, що шукала',
+  confusing: 'не зрозуміла, як користуватись',
+  not_for_me: 'платформа не для мене',
+  privacy: 'турбується про приватність',
+  other: 'інше',
+});
+const SEARCH_INTENT_LABELS = Object.freeze({ sm: 'СМ', ed: 'донорки', ag: 'агенції', ip: 'батьки', cl: 'клініки' });
+const SEARCH_INTENT_CHOICE_LABELS = Object.freeze({ find: 'шукала', become: 'хотіла стати', name: 'шукала як імʼя' });
+
+const describeDeletionQuery = entry => {
+  const parts = [`«${maskDigits(clip(entry.query, 80))}»`];
+  if (SEARCH_INTENT_LABELS[entry.intent]) {
+    const choice = SEARCH_INTENT_CHOICE_LABELS[entry.intentChoice];
+    parts.push(`категорія ${SEARCH_INTENT_LABELS[entry.intent]}${choice ? `, ${choice}` : ''}`);
+  } else if (SEARCH_INTENT_CHOICE_LABELS[entry.intentChoice]) {
+    parts.push(SEARCH_INTENT_CHOICE_LABELS[entry.intentChoice]);
+  }
+  if (Number.isFinite(entry.resultsCount)) parts.push(`знайдено ${entry.resultsCount}`);
+  return parts.join(' · ');
+};
+
 const classifyAccountDeletion = ({ uid, before, after }) => {
   if (isPlainObject(before) || !isPlainObject(after)) return [];
-  return [{ type: 'account_deleted', card: uid, actor: uid, allowSystem: true }];
+  const queries = (Array.isArray(after.recentSearchQueries) ? after.recentSearchQueries : [])
+    .filter(entry => isPlainObject(entry) && typeof entry.query === 'string' && entry.query)
+    .slice(0, 3)
+    .map(describeDeletionQuery);
+  const meta = {
+    ...(DELETION_REASON_LABELS[after.reason] ? { reason: after.reason } : {}),
+    ...(typeof after.reasonText === 'string' && after.reasonText ? { reasonText: maskDigits(clip(after.reasonText, 300)) } : {}),
+    ...(typeof after.wasPublished === 'boolean' ? { wasPublished: after.wasPublished } : {}),
+    ...(queries.length ? { queries } : {}),
+  };
+  return [{
+    type: 'account_deleted',
+    card: uid,
+    actor: uid,
+    allowSystem: true,
+    ...(Object.keys(meta).length ? { meta } : {}),
+  }];
+};
+
+const describeAccountDeletion = meta => {
+  const lines = [];
+  if (meta.reason || meta.reasonText) {
+    const label = DELETION_REASON_LABELS[meta.reason] || DELETION_REASON_LABELS.other;
+    lines.push(`Причина: ${label}${meta.reasonText ? ` — «${meta.reasonText}»` : ''}`);
+  } else {
+    lines.push('Причину не вказано');
+  }
+  if (typeof meta.wasPublished === 'boolean') lines.push(meta.wasPublished ? 'Анкета була опублікована' : 'Анкету не публікувала');
+  const queries = Array.isArray(meta.queries) ? meta.queries : [];
+  lines.push(queries.length ? `Останні запити:\n${queries.map(query => `• ${query}`).join('\n')}` : 'Пошуком не користувалась');
+  return lines.join('\n');
 };
 
 // --- налаштування ------------------------------------------------------------
@@ -278,6 +333,7 @@ const detailLine = event => {
     case 'card_suggestion': return meta.fields ? `Поля: ${meta.fields}` : '';
     case 'public_review': return meta.text ? `«${meta.text}»` : '';
     case 'postpone': return meta.until ? `До ${meta.until.split('-').reverse().join('.')}` : '';
+    case 'account_deleted': return describeAccountDeletion(meta);
     case 'like':
     case 'dislike': return meta.anketa ? `Анкета: ${normalizeRoles(meta.anketa).map(role => ROLE_LABELS[role] || role).join(', ')}` : '';
     default: return '';
@@ -336,7 +392,8 @@ const buildDigestMessage = (events, frequency) => {
   for (let index = events.length - 1; index >= 0 && picked.length < DIGEST_MAX_LINES; index -= 1) {
     const event = events[index];
     const def = ADMIN_EVENT_BY_KEY[event.type];
-    const detail = detailLine(event);
+    // Багаторядкова подробиця (видалення акаунта) у зведенні — одним рядком.
+    const detail = detailLine(event).replace(/\n•?\s*/g, ' · ');
     // Обрізаємо текст до заміни `&`/`<`/`>` на сутності: обрізаний посеред
     // `&amp;` рядок робив увесь лист невалідним HTML, і Telegram його відкидав.
     const line = escapeHtml(clip(`${kyivParts(event.t).time} ${def.emoji} ${summarizeEvent(event)}${detail ? ` — ${detail}` : ''}`, 300));
@@ -699,6 +756,7 @@ const sendTestNotification = async (uid, deps) => {
 };
 
 module.exports = {
+  describeAccountDeletion,
   EVENTS_PATH,
   DEDUP_PATH,
   DIGEST_PATH,

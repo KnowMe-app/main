@@ -273,3 +273,21 @@ export const buildSearchSuggestions = (entries, typed = '', limit = SEARCH_SUGGE
     .slice(0, Math.max(0, limit))
     .map(row => row.query);
 };
+
+// Необовʼязкові поля аналітики ряду історії (`intent`, `intentChoice`,
+// `resultsCount`): лише відомі значення — ті самі, що пускає `.validate`
+// вузла `multiData/searchQueries` у правилах.
+const SEARCH_QUERY_INTENTS = new Set(['sm', 'ed', 'ag', 'ip', 'cl']);
+const SEARCH_QUERY_INTENT_CHOICES = new Set(['find', 'become', 'name']);
+
+export const sanitizeSearchQueryAnalytics = ({ intent, intentChoice, resultsCount } = {}) => {
+  const fields = {};
+  if (SEARCH_QUERY_INTENTS.has(intent)) fields.intent = intent;
+  if (SEARCH_QUERY_INTENT_CHOICES.has(intentChoice)) fields.intentChoice = intentChoice;
+  const count = Number(resultsCount);
+  if (resultsCount !== undefined && resultsCount !== null && Number.isInteger(count) && count >= 0 && count <= 100000) {
+    fields.resultsCount = count;
+  }
+  return fields;
+};
+
