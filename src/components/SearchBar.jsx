@@ -1241,6 +1241,11 @@ const SearchBar = ({
   // цей самий інпут за id: у полі пошуку кнопка «Завантажити JSON» займала
   // третину рядка, хоч користуються нею вкрай рідко.
   jsonUploadInputId,
+  // Запит, на який відповідає сам екран, а не пошук: `true` — пошуку не буде
+  // взагалі (ні кешу, ні `searchId`), видача порожня, а що показати замість
+  // неї, вирішує екран. Стрічка так ловить назву категорії («Сурогатна
+  // мати»), яку пошук прочитав би як імʼя (`utils/searchRoleIntent`).
+  interceptQuery,
 }) => {
   const activeSearchRequestRef = useRef(0);
   const jsonFileInputRef = useRef(null);
@@ -2276,6 +2281,17 @@ const SearchBar = ({
 
     if (trimmed && !trimmed.startsWith('!') && !suppressHistory && committed) {
       addToHistory(trimmed);
+    }
+
+    // Перехоплене екраном — після історії (запит лишається в підказках і в
+    // `searchQueries`), але до будь-якого читання: жодного запиту до бази й
+    // жодного запису в кеш видачі, інакше негативний кеш на шість годин
+    // заборонив би потім той самий текст шукати як імʼя.
+    if (trimmed && interceptQuery && interceptQuery(trimmed)) {
+      setUserNotFound && setUserNotFound(false);
+      setState && setState({});
+      setUsers && setUsers({});
+      return;
     }
     if (trimmed && trimmed.startsWith('!')) {
       const term = trimmed.slice(1).trim();

@@ -1352,6 +1352,83 @@ export const QueryDraftButton = styled.button`
   &:focus-visible { outline: 2px solid var(--matching-accent); outline-offset: 2px; }
 `;
 
+/* ------------------------------------------------------------------ *
+ * Пошук розуміє намір (`utils/searchRoleIntent`): «Сурогатна мати» — це
+ * категорія, а не імʼя. Картка питає, що саме людина шукає, а плашка над
+ * стрічкою каже, чим її звужено, і веде назад до пошуку за імʼям.
+ * ------------------------------------------------------------------ */
+
+export const RoleIntentCard = styled.section`
+  display: grid;
+  gap: 10px;
+  margin: 2px 0 9px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--matching-accent) 45%, transparent);
+  border-radius: 16px;
+  background: var(--matching-card-bg, #fff);
+  box-sizing: border-box;
+`;
+
+export const RoleIntentActions = styled.div`
+  display: grid;
+  gap: 8px;
+`;
+
+// Перша відповідь — головна (акцентом), решта — рамкою: на картці наміру
+// людина вибирає одну з трьох, і найчастіша має стояти помітно.
+export const RoleIntentButton = styled.button`
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 14px;
+  border: 1px solid var(--matching-accent);
+  border-radius: 12px;
+  background: ${({ $primary }) => ($primary ? 'var(--matching-accent)' : 'transparent')};
+  color: ${({ $primary }) => ($primary ? 'var(--km-on-accent, #fff)' : 'var(--matching-accent)')};
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+
+  &:hover { filter: brightness(0.97); }
+  &:focus-visible { outline: 2px solid var(--matching-accent); outline-offset: 2px; }
+`;
+
+export const RoleIntentBanner = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0 0 9px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--matching-accent) 10%, var(--matching-card-bg, #fff));
+  color: var(--matching-header-text);
+  font-size: 13px;
+  line-height: 1.4;
+`;
+
+export const RoleIntentBannerText = styled.span`
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+`;
+
+export const RoleIntentLink = styled.button`
+  flex: 0 0 auto;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--matching-accent);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+
+  &:focus-visible { outline: 2px solid var(--matching-accent); outline-offset: 2px; }
+`;
+
 // Плашка про відсутній звʼязок з базою: липка, бо читач гортає далі й мусить
 // розуміти, чому розгорнутий рядок не дотягується.
 export const ConnectionNotice = styled.div`

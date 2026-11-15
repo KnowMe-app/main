@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { FiChevronRight, FiPlus, FiTrash2, FiX } from 'react-icons/fi';
 import { FaCheck, FaEye, FaEyeSlash, FaLock } from 'react-icons/fa';
 import styled, { css, keyframes } from 'styled-components';
@@ -829,6 +829,10 @@ const RoleOption = styled.label`
 
   input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
   &:focus-within { box-shadow: 0 0 0 3px var(--km-accent-ring); }
+  /* Роль, яку запропонував пошук («Хочу стати сурогатною мамою»), — рамкою,
+     а не вибором: обирає людина сама, бо нова роль питає «замінити чи
+     додати». */
+  ${({ $suggested, $active }) => ($suggested && !$active ? 'border-color: var(--accent); box-shadow: 0 0 0 3px var(--km-accent-ring);' : '')}
 `;
 const RoleHint = styled.p`margin:12px 0 0;font-size:13px;line-height:1.45;color:var(--muted);`;
 // Межа між двома анкетами однієї людини: друга стоїть під першою, і без
@@ -1612,6 +1616,7 @@ export const MyProfile = () => {
     ? { userRole: 'ed', ...cachedProfileView.loadedProfile, userId: cachedProfileView.uid }
     : readMyProfileDraft() || {}));
   const navigate = useNavigate();
+  const location = useLocation();
   const currentUid = auth.currentUser?.uid || getStoredAuthenticatedOwnerId();
   const access = resolveAccess({
     uid: currentUid,
@@ -1657,7 +1662,17 @@ export const MyProfile = () => {
   // Роль, на яку людина щойно натиснула в «Хто ви», — до її рішення в модалці.
   const [roleChangeTarget, setRoleChangeTarget] = useState('');
   // «Хто ви» розгорнуте — п'ять чипів ролей замість рядка з поточною роллю.
-  const [rolePickerOpen, setRolePickerOpen] = useState(false);
+  const [rolePickerOpen, setRolePickerOpen] = useState(() => Boolean(location.state?.openRolePicker));
+  // Роль, яку запропонувала картка наміру в пошуку стрічки («Хочу стати
+  // сурогатною мамою» → `state.suggestedRole`).
+  const suggestedRole = location.state?.openRolePicker ? String(location.state?.suggestedRole || '') : '';
+  const roleCardRef = useRef(null);
+  // Прийшли з пошуку по «Хочу стати…» — вибір ролі мусить бути перед очима,
+  // а не під шапкою з фото.
+  useEffect(() => {
+    if (!location.state?.openRolePicker) return;
+    roleCardRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [location.state]);
   // Скільки живих посилань на анкету (`MyProfileShare`) — для рядка стану в
   // «Публікації»: анкета без стрічки, але з посиланням, не «невидима».
   const [shareCount, setShareCount] = useState(0);
@@ -4002,7 +4017,7 @@ export const MyProfile = () => {
       </FieldGroup>
     </AuthCard>}
 
-    <RoleCard $open={rolePickerOpen} data-testid="my-profile-role-card">
+    <RoleCard $open={rolePickerOpen} data-testid="my-profile-role-card" ref={roleCardRef}>
       <RoleSummary $open={rolePickerOpen}>
         <RoleCardTitle id="my-profile-role-title">{uiText('Хто ви', language)}</RoleCardTitle>
         {rolePickerOpen ? null : (
@@ -4025,6 +4040,8 @@ export const MyProfile = () => {
           <RoleOption
             key={option.value}
             $active={rolesList.includes(option.value)}
+            $suggested={option.value === suggestedRole}
+            data-suggested={option.value === suggestedRole ? 'true' : undefined}
           >
             <input
               type="checkbox"
