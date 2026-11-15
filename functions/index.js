@@ -554,7 +554,8 @@ exports.listPendingAccountDeletions = onCall(
         name: [current(card.name), current(card.surnameShort)].filter(part => typeof part === 'string' && part).join(' '),
         role: Array.isArray(card.role) ? card.role.join(',') : (typeof card.role === 'string' ? card.role : ''),
         hasCard: Boolean(card && Object.keys(card).length),
-        recentSearchQueries: pickRecentSearchQueries(searchQueries, 3),
+        // Знімок у записі черги — перший: він пережив би й очищену історію.
+        recentSearchQueries: entry.recentSearchQueries || pickRecentSearchQueries(searchQueries, 3),
       };
     }));
     return { items, canPurge: canPurgeAccounts(uid) };

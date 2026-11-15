@@ -127,7 +127,6 @@ const BY_UK = {
   'Не всі анкети опубліковані відкрито. Залиште запит — і координатор надішле добірку': 'Niet alle profielen zijn openbaar. Laat een verzoek achter en een coördinator stuurt u een selectie',
   'Не знайшли потрібну?': 'Niet de juiste gevonden?',
   'Залишити запит': 'Verzoek achterlaten',
-  'Контакт координатора ще не вказано': 'Het contact van de coördinator is nog niet ingesteld',
   'Запит координаторові': 'Verzoek aan een coördinator',
   'Шукаєте за категорією? Спробуйте фільтр «Тип профілю»': 'Zoekt u op categorie? Probeer het filter ‘Profieltype’',
   'Чому ви йдете? (необовʼязково)': 'Waarom vertrekt u? (optioneel)',

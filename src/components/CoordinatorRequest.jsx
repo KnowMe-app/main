@@ -75,10 +75,6 @@ const ContactButton = styled.a`
   text-decoration: none;
   box-sizing: border-box;
 
-  &[aria-disabled='true'] {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
   &:focus-visible { outline: 2px solid var(--matching-accent, var(--km-accent, #C9600F)); outline-offset: 2px; }
 `;
 
@@ -99,37 +95,40 @@ const CompactLink = styled.a`
   text-decoration: underline;
   text-underline-offset: 2px;
 
-  &[aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
 `;
 
-const disabledProps = (href, language) => (href
-  ? { href, target: href.startsWith('http') ? '_blank' : undefined, rel: href.startsWith('http') ? 'noopener noreferrer' : undefined }
-  : {
-    'aria-disabled': 'true',
-    title: uiText('Контакт координатора ще не вказано', language),
-    onClick: event => event.preventDefault(),
-  });
+const linkProps = href => (href.startsWith('http')
+  ? { href, target: '_blank', rel: 'noopener noreferrer' }
+  : { href });
 
 export const CoordinatorContactButtons = ({ language, onContact }) => {
   const telegram = buildCoordinatorTelegramLink();
   const phone = buildCoordinatorPhoneLink();
+  // Невказаний контакт не показується: вимкнена кнопка лише обіцяла б канал,
+  // якого немає.
+  if (!telegram && !phone) return null;
   return (
     <Actions>
-      <ContactButton
-        $primary
-        data-testid="coordinator-telegram"
-        {...disabledProps(telegram, language)}
-        onClickCapture={() => telegram && onContact?.('telegram')}
-      >
-        Telegram
-      </ContactButton>
-      <ContactButton
-        data-testid="coordinator-phone"
-        {...disabledProps(phone, language)}
-        onClickCapture={() => phone && onContact?.('phone')}
-      >
-        {uiText('Подзвонити', language)}
-      </ContactButton>
+      {telegram && (
+        <ContactButton
+          $primary
+          data-testid="coordinator-telegram"
+          {...linkProps(telegram)}
+          onClick={() => onContact?.('telegram')}
+        >
+          Telegram
+        </ContactButton>
+      )}
+      {phone && (
+        <ContactButton
+          $primary={!telegram}
+          data-testid="coordinator-phone"
+          {...linkProps(phone)}
+          onClick={() => onContact?.('phone')}
+        >
+          {uiText('Подзвонити', language)}
+        </ContactButton>
+      )}
     </Actions>
   );
 };
@@ -137,10 +136,11 @@ export const CoordinatorContactButtons = ({ language, onContact }) => {
 const CoordinatorRequest = ({ role = '', language, compact = false, title, text, onContact }) => {
   if (compact) {
     const href = resolveCoordinatorRequestLink();
+    if (!href) return null;
     return (
       <CompactRow data-testid="coordinator-request-compact">
         <span>{uiText('Не знайшли потрібну?', language)}</span>
-        <CompactLink {...disabledProps(href, language)} onClickCapture={() => href && onContact?.('compact')}>
+        <CompactLink {...linkProps(href)} onClick={() => onContact?.('compact')}>
           {uiText('Залишити запит', language)}
         </CompactLink>
       </CompactRow>

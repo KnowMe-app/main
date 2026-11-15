@@ -140,7 +140,6 @@ const EN_BY_UK = {
   'Не всі анкети опубліковані відкрито. Залиште запит — і координатор надішле добірку': 'Not all profiles are published openly. Leave a request and a coordinator will send you a selection',
   'Не знайшли потрібну?': 'Didn\'t find the right one?',
   'Залишити запит': 'Leave a request',
-  'Контакт координатора ще не вказано': 'The coordinator\'s contact hasn\'t been set yet',
   'Запит координаторові': 'Request to a coordinator',
   'Шукаєте за категорією? Спробуйте фільтр «Тип профілю»': 'Searching by category? Try the “Profile type” filter',
   'Чому ви йдете? (необовʼязково)': 'Why are you leaving? (optional)',

@@ -184,7 +184,7 @@ test('крок людини: анкета ховається, посилання
   const result = await requestAccountDeletion(deps, UID, { now: 1000 });
   assert.deepEqual(result, { status: 'requested', authDeleted: true });
   assert.deepEqual(updates[0], {
-    [`accountDeletions/${UID}`]: { requestedAt: 1000, via: 'self' },
+    [`accountDeletions/${UID}`]: { requestedAt: 1000, via: 'self', wasPublished: true },
     [`matchingCards/${UID}/feedDate`]: false,
     [`matchingCards/${UID}/audience`]: null,
     'profileShares/tokentokentoken1': null,
@@ -234,7 +234,7 @@ test('крок людини: причина лягає в запис черги,
   const { deps, updates } = fakeDeps({}, { getAuthUser: async () => { throw notFound(); } });
   await requestAccountDeletion(deps, UID, { now: 1000, reason: 'not_found', reasonText: 'Не знайшла сурогатну маму' });
   assert.deepEqual(updates[0][`accountDeletions/${UID}`], {
-    requestedAt: 1000, via: 'self', reason: 'not_found', reasonText: 'Не знайшла сурогатну маму',
+    requestedAt: 1000, via: 'self', reason: 'not_found', reasonText: 'Не знайшла сурогатну маму', wasPublished: false,
   });
 
   const retry = fakeDeps({ [`accountDeletions/${UID}`]: { requestedAt: 1000, reason: 'not_found', reasonText: 'x' } }, {
@@ -242,6 +242,27 @@ test('крок людини: причина лягає в запис черги,
   });
   await requestAccountDeletion(retry.deps, UID, { now: 2000 });
   assert.deepEqual(retry.updates[0][`accountDeletions/${UID}`], { requestedAt: 1000, via: 'self', reason: 'not_found', reasonText: 'x' });
+});
+
+test('крок людини: знімок аналітики — роль, публікація й останні запити — лягає в запис черги', async () => {
+  const { deps, updates } = fakeDeps({
+    [`matchingCards/${UID}`]: { name: 'Оксана', role: ['ip'] },
+    [`multiData/searchQueries/${UID}`]: {
+      a: { query: 'Сурогатна мати', updatedAt: 5, intent: 'sm', intentChoice: 'find', resultsCount: 0 },
+    },
+  }, { getAuthUser: async () => { throw notFound(); } });
+  await requestAccountDeletion(deps, UID, { now: 1000, reason: 'not_found' });
+  assert.deepEqual(updates[0][`accountDeletions/${UID}`], {
+    requestedAt: 1000,
+    via: 'self',
+    reason: 'not_found',
+    wasPublished: false,
+    role: 'ip',
+    recentSearchQueries: [{ query: 'Сурогатна мати', updatedAt: 5, resultsCount: 0, intent: 'sm', intentChoice: 'find' }],
+  });
+  const [entry] = listAccountDeletionQueue({ [UID]: updates[0][`accountDeletions/${UID}`] });
+  assert.equal(entry.recentSearchQueries.length, 1);
+  assert.equal(entry.wasPublished, false);
 });
 
 test('черга несе причину; останні три запити пошуку — найсвіжіші першими', () => {

@@ -318,3 +318,35 @@ test('тижневий звіт: порожній тиждень лишає по
   assert.match(html, /Подій за тиждень не було/);
   assert.match(html, /Лайк: <b>0<\/b> \(↓1\)/);
 });
+
+// 15.11, на прохання власниці продукту: причина й аналітика видалення — у
+// самому повідомленні адмінові, а не лише в черзі на `AddNewProfile`.
+test('видалення акаунта: причина, публікація й останні запити — у Telegram', () => {
+  const [event] = activity.classifyAccountDeletion({
+    uid: USER,
+    before: null,
+    after: {
+      requestedAt: 1,
+      reason: 'not_found',
+      reasonText: 'Шукала СМ, мій номер 0501234567',
+      wasPublished: false,
+      recentSearchQueries: [
+        { query: 'Сурогатна мати', updatedAt: 5, intent: 'sm', intentChoice: 'find', resultsCount: 0 },
+        { query: 'Олена', updatedAt: 3, resultsCount: 2 },
+      ],
+    },
+  });
+  assert.equal(event.meta.reason, 'not_found');
+  assert.ok(!event.meta.reasonText.includes('0501234567'));
+  const { html } = activity.buildInstantMessage({ ...event, t: 1, actorInfo: { name: 'Оксана', role: 'ip' } });
+  assert.match(html, /Причина: не знайшла те, що шукала — «Шукала СМ/);
+  assert.match(html, /Анкету не публікувала/);
+  assert.match(html, /«Сурогатна мати» · категорія СМ, шукала · знайдено 0/);
+  assert.match(html, /«Олена» · знайдено 2/);
+});
+
+test('видалення акаунта без причини й пошуку — так і сказано', () => {
+  const [event] = activity.classifyAccountDeletion({ uid: USER, before: null, after: { requestedAt: 1 } });
+  assert.equal(event.meta, undefined);
+  assert.equal(activity.describeAccountDeletion({}), 'Причину не вказано\nПошуком не користувалась');
+});

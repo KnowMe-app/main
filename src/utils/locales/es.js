@@ -127,7 +127,6 @@ const BY_UK = {
   'Не всі анкети опубліковані відкрито. Залиште запит — і координатор надішле добірку': 'No todos los perfiles se publican abiertamente. Deje una solicitud y un coordinador le enviará una selección',
   'Не знайшли потрібну?': '¿No encontró a quien busca?',
   'Залишити запит': 'Dejar una solicitud',
-  'Контакт координатора ще не вказано': 'El contacto del coordinador aún no está indicado',
   'Запит координаторові': 'Solicitud al coordinador',
   'Шукаєте за категорією? Спробуйте фільтр «Тип профілю»': '¿Busca por categoría? Pruebe el filtro «Tipo de perfil»',
   'Чому ви йдете? (необовʼязково)': '¿Por qué se va? (opcional)',

@@ -479,7 +479,7 @@ const normalizeAccountDeletionReason = ({ reason, reasonText } = {}) => {
  * адмінського списку видалених: разом із причиною вони одразу показують кейс
  * на кшталт «Сурогатна мати → 0 карток → видалила акаунт».
  */
-const pickRecentSearchQueries = (root, limit = 3) => Object.values(isPlainObject(root) ? root : {})
+const pickRecentSearchQueries = (root, limit = 3) => (Array.isArray(root) ? root : Object.values(isPlainObject(root) ? root : {}))
   .map(entry => (typeof entry === 'string'
     ? { query: entry, updatedAt: 0 }
     : (isPlainObject(entry) ? entry : null)))
@@ -493,6 +493,15 @@ const pickRecentSearchQueries = (root, limit = 3) => Object.values(isPlainObject
     ...(typeof entry.intent === 'string' ? { intent: entry.intent } : {}),
     ...(typeof entry.intentChoice === 'string' ? { intentChoice: entry.intentChoice } : {}),
   }));
+
+/** Знімок аналітики з наявного запису черги (для повтору). */
+const pickDeletionSnapshot = entry => ({
+  ...(typeof entry.wasPublished === 'boolean' ? { wasPublished: entry.wasPublished } : {}),
+  ...(typeof entry.role === 'string' && entry.role ? { role: entry.role } : {}),
+  ...(Array.isArray(entry.recentSearchQueries) && entry.recentSearchQueries.length
+    ? { recentSearchQueries: pickRecentSearchQueries(entry.recentSearchQueries, 3) }
+    : {}),
+});
 
 /**
  * Крок людини: «Видалити анкету» в «Моєму профілі».
@@ -524,6 +533,13 @@ const requestAccountDeletion = async (deps, uid, { now = Date.now(), reason, rea
   const card = await deps.read(`matchingCards/${uid}`);
   const slots = await deps.read(`multiData/profileShareSlots/${uid}`).catch(() => null);
   const previous = await deps.read(`${ACCOUNT_DELETIONS_ROOT}/${uid}`).catch(() => null);
+  // Аналітика для адміна — у самому записі черги: тригер сповіщень
+  // (`classifyAccountDeletion`) бачить лише його, а очищення бази пізніше
+  // зітре й історію пошуку. Збій читання видалення не зупиняє.
+  const searchQueries = previous ? null : await deps.read(`multiData/searchQueries/${uid}`).catch(() => null);
+  const recentSearchQueries = pickRecentSearchQueries(searchQueries, 3);
+  const cardRoles = isPlainObject(card) ? card.role : null;
+  const role = Array.isArray(cardRoles) ? cardRoles.filter(item => typeof item === 'string').join(',') : (typeof cardRoles === 'string' ? cardRoles : '');
 
   const updates = {
     [`${ACCOUNT_DELETIONS_ROOT}/${uid}`]: {
@@ -534,6 +550,13 @@ const requestAccountDeletion = async (deps, uid, { now = Date.now(), reason, rea
       // Повтор без причини не стирає ту, що людина дала першого разу.
       ...normalizeAccountDeletionReason(isPlainObject(previous) ? { reason: previous.reason, reasonText: previous.reasonText } : {}),
       ...normalizeAccountDeletionReason({ reason, reasonText }),
+      // Повтор після збою знімка не переписує: перший запит уже прибрав
+      // анкету зі стрічки, і «була опублікована» читалось би як «ні».
+      ...(previous ? pickDeletionSnapshot(previous) : {
+        wasPublished: isPlainObject(card) && typeof card.feedDate === 'string' && card.feedDate !== '',
+        ...(role ? { role } : {}),
+        ...(recentSearchQueries.length ? { recentSearchQueries } : {}),
+      }),
     },
   };
   // Порожньої картки не заводимо: `feedDate` у неіснуючому вузлі створив би
@@ -562,6 +585,7 @@ const listAccountDeletionQueue = queueRoot => Object.entries(isPlainObject(queue
     authDeletedAt: Number(entry.authDeletedAt) || 0,
     lastPurge: isPlainObject(entry.lastPurge) ? entry.lastPurge : null,
     ...normalizeAccountDeletionReason(entry),
+    ...pickDeletionSnapshot(entry),
   }))
   .sort((a, b) => a.requestedAt - b.requestedAt || a.uid.localeCompare(b.uid));
 
