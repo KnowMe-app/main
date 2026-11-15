@@ -49,10 +49,36 @@ export const classifyAccountDeletionError = error => {
   return 'unavailable';
 };
 
-export const requestOwnAccountDeletion = async ({ auth, language } = {}) => {
+/*
+ * Причина видалення — необовʼязкове питання в модалці «Мого профілю». Коди ті
+ * самі, що приймає функція (`ACCOUNT_DELETION_REASONS` у
+ * `functions/accountDeletion.js`); сервер однаково перевіряє їх сам.
+ */
+export const ACCOUNT_DELETION_REASON_OPTIONS = Object.freeze([
+  { value: 'not_found', label: 'Не знайшла те, що шукала' },
+  { value: 'confusing', label: 'Не зрозуміла, як користуватись' },
+  { value: 'not_for_me', label: 'Платформа не для мене' },
+  { value: 'privacy', label: 'Турбуюсь про приватність' },
+  { value: 'other', label: 'Інше' },
+]);
+export const ACCOUNT_DELETION_REASON_TEXT_MAX = 300;
+
+const buildReasonPayload = ({ reason, reasonText } = {}) => {
+  const code = ACCOUNT_DELETION_REASON_OPTIONS.some(option => option.value === reason) ? reason : '';
+  const text = String(reasonText || '').trim().slice(0, ACCOUNT_DELETION_REASON_TEXT_MAX);
+  return {
+    ...(code ? { reason: code } : {}),
+    ...(text ? { reasonText: text } : {}),
+  };
+};
+
+export const requestOwnAccountDeletion = async ({ auth, language, reason, reasonText } = {}) => {
   if (!auth?.app || !auth?.currentUser) return { status: 'unavailable' };
   try {
-    const data = await callFunction(auth, DELETE_ACCOUNT_FUNCTION_NAME, { language: language || '' });
+    const data = await callFunction(auth, DELETE_ACCOUNT_FUNCTION_NAME, {
+      language: language || '',
+      ...buildReasonPayload({ reason, reasonText }),
+    });
     if (data?.status === 'deleted') return { status: 'deleted', emailSent: Boolean(data.emailSent) };
     return { status: 'unavailable' };
   } catch (error) {

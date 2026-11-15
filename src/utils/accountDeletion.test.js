@@ -26,6 +26,14 @@ describe('accountDeletion', () => {
     expect(mockCall).toHaveBeenCalledWith({ language: 'uk' });
   });
 
+  it('передає причину видалення: лише відомий код і текст до 300 знаків', async () => {
+    mockCall.mockResolvedValue({ data: { status: 'deleted', emailSent: false } });
+    await requestOwnAccountDeletion({ auth, language: 'uk', reason: 'not_found', reasonText: `  ${'а'.repeat(400)}` });
+    expect(mockCall).toHaveBeenLastCalledWith({ language: 'uk', reason: 'not_found', reasonText: 'а'.repeat(300) });
+    await requestOwnAccountDeletion({ auth, language: 'uk', reason: 'hacked', reasonText: '   ' });
+    expect(mockCall).toHaveBeenLastCalledWith({ language: 'uk' });
+  });
+
   it('без входу сервер не кличе', async () => {
     await expect(requestOwnAccountDeletion({ auth: { app: {}, currentUser: null } })).resolves.toEqual({ status: 'unavailable' });
     expect(mockCall).not.toHaveBeenCalled();

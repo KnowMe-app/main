@@ -21,6 +21,8 @@ const {
   isProtectedUid,
   listAccountDeletionQueue,
   listShareTokens,
+  normalizeAccountDeletionReason,
+  pickRecentSearchQueries,
   purgeAccountData,
   requestAccountDeletion,
   verifyDraftCardIds,
@@ -216,6 +218,49 @@ test('крок людини: вимкнений акаунт не чіпаєть
 test('крок людини: акаунт, що лишився після deleteUser, — збій, а не успіх', async () => {
   const { deps } = fakeDeps({}, { deleteAuthUser: async () => {}, getAuthUser: async () => ({ uid: UID }) });
   await assert.rejects(() => requestAccountDeletion(deps, UID), /still exists/);
+});
+
+test('причина видалення: лише відомі коди, текст до 300 знаків, відсутня — нормально', () => {
+  assert.deepEqual(normalizeAccountDeletionReason({ reason: 'not_found' }), { reason: 'not_found' });
+  assert.deepEqual(normalizeAccountDeletionReason({}), {});
+  assert.deepEqual(normalizeAccountDeletionReason({ reason: 'hacked', reasonText: '' }), {});
+  assert.deepEqual(normalizeAccountDeletionReason({ reason: 'hacked', reasonText: ' шукала СМ ' }), { reason: 'other', reasonText: 'шукала СМ' });
+  assert.deepEqual(normalizeAccountDeletionReason({ reason: 'privacy', reasonText: 'рядок\u0000другий\nтретій' }), { reason: 'privacy', reasonText: 'рядок другий третій' });
+  assert.equal(normalizeAccountDeletionReason({ reason: 'other', reasonText: 'а'.repeat(500) }).reasonText.length, 300);
+  assert.deepEqual(normalizeAccountDeletionReason({ reason: ['not_found'], reasonText: 42 }), {});
+});
+
+test('крок людини: причина лягає в запис черги, повтор без причини її не стирає', async () => {
+  const { deps, updates } = fakeDeps({}, { getAuthUser: async () => { throw notFound(); } });
+  await requestAccountDeletion(deps, UID, { now: 1000, reason: 'not_found', reasonText: 'Не знайшла сурогатну маму' });
+  assert.deepEqual(updates[0][`accountDeletions/${UID}`], {
+    requestedAt: 1000, via: 'self', reason: 'not_found', reasonText: 'Не знайшла сурогатну маму',
+  });
+
+  const retry = fakeDeps({ [`accountDeletions/${UID}`]: { requestedAt: 1000, reason: 'not_found', reasonText: 'x' } }, {
+    getAuthUser: async () => { throw notFound(); },
+  });
+  await requestAccountDeletion(retry.deps, UID, { now: 2000 });
+  assert.deepEqual(retry.updates[0][`accountDeletions/${UID}`], { requestedAt: 1000, via: 'self', reason: 'not_found', reasonText: 'x' });
+});
+
+test('черга несе причину; останні три запити пошуку — найсвіжіші першими', () => {
+  const [entry] = listAccountDeletionQueue({ [UID]: { requestedAt: 1, reason: 'confusing', reasonText: 'незрозуміло' } });
+  assert.equal(entry.reason, 'confusing');
+  assert.equal(entry.reasonText, 'незрозуміло');
+  assert.deepEqual(pickRecentSearchQueries({
+    a: { query: 'Олена', updatedAt: 1 },
+    b: { query: 'Сурогатна мати', updatedAt: 5, count: 1, intent: 'sm', resultsCount: 0 },
+    c: 'Марія',
+    d: { query: 'Київ', updatedAt: 3 },
+    e: { query: 'сурмама', updatedAt: 4, intentChoice: 'find' },
+    f: { updatedAt: 9 },
+  }), [
+    { query: 'Сурогатна мати', updatedAt: 5, resultsCount: 0, intent: 'sm' },
+    { query: 'сурмама', updatedAt: 4, intentChoice: 'find' },
+    { query: 'Київ', updatedAt: 3 },
+  ]);
+  assert.deepEqual(pickRecentSearchQueries(null), []);
 });
 
 test('черга: найстаріший запит першим, сміття відкинуто', () => {

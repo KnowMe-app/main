@@ -89,6 +89,7 @@ import { MyProfileCardPreview } from './MyProfileCardPreview';
 import { MyProfileShare } from './MyProfileShare';
 import { getCurrentValue } from './getCurrentValue';
 import { ACCOUNT_DELETION_EMAIL, requestOwnAccountDeletion } from '../utils/accountDeletion';
+import AccountDeletionReason from './AccountDeletionReason';
 import { clearMyProfileCache, patchMyProfileCache, readMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
 import {
   capturePendingProfileGenerations,
@@ -1659,6 +1660,9 @@ export const MyProfile = () => {
   // Самовидалення: '' — питаємо; 'pending' — сервер стирає; решта — причина
   // відмови словом (`classifyAccountDeletionError`).
   const [accountDeletion, setAccountDeletion] = useState('');
+  // Причина видалення (`AccountDeletionReason`): ref, а не стан — набір у полі
+  // не мусить перемальовувати сторінку й модалку разом з нею.
+  const accountDeletionReasonRef = useRef({ reason: '', reasonText: '' });
   // Роль, на яку людина щойно натиснула в «Хто ви», — до її рішення в модалці.
   const [roleChangeTarget, setRoleChangeTarget] = useState('');
   // «Хто ви» розгорнуте — п'ять чипів ролей замість рядка з поточною роллю.
@@ -2402,7 +2406,7 @@ export const MyProfile = () => {
     if (accountDeletion === 'pending') return;
     setAccountDeletion('pending');
     await saveQueueRef.current.catch(() => {});
-    const result = await requestOwnAccountDeletion({ auth, language });
+    const result = await requestOwnAccountDeletion({ auth, language, ...accountDeletionReasonRef.current });
     if (result.status !== 'deleted') {
       setAccountDeletion(result.status);
       return;
@@ -2454,6 +2458,7 @@ export const MyProfile = () => {
       // запасом — без входу й коли функція не відповіла.
       onDeleteProfile={() => {
         setAccountDeletion('');
+        accountDeletionReasonRef.current = { reason: '', reasonText: '' };
         setShowInfoModal(isProfileAccessConfirmed ? 'deleteAccount' : 'delProfile');
       }}
       onSelect={close || (() => setShowInfoModal(false))}
@@ -4156,6 +4161,13 @@ export const MyProfile = () => {
               <ModalText>
                 {uiText('Акаунт і анкету буде видалено: анкета зникне зі стрічки, пошуку й посилань. Повернути їх не вийде.', language)}
               </ModalText>
+            )}
+            {accountDeletion !== 'recent-login' && accountDeletion !== 'protected' && (
+              <AccountDeletionReason
+                language={language}
+                valueRef={accountDeletionReasonRef}
+                disabled={accountDeletion === 'pending'}
+              />
             )}
             <ModalActionRow>
               <ModalGhostButton type="button" disabled={accountDeletion === 'pending'} onClick={() => setShowInfoModal(false)}>
