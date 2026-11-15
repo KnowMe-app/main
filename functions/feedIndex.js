@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * Перелік опублікованих карток: `matchingFeedIndex/{картка}` = `{ d, r }` —
- * дата в стрічці (`feedDate`) і ролі картки. Лише картки з датою: схованих
+ * Перелік опублікованих карток: `matchingFeedIndex/{картка}` = `{ d, r, n }` —
+ * дата в стрічці (`feedDate`), ролі картки й імена для пошуку (див. нижче). Лише картки з датою: схованих
  * (`feedDate: false`, зокрема «лише для вподобаних») і неопублікованих тут
  * немає.
  *
@@ -39,14 +39,47 @@ const normalizeRoles = role => {
     .filter(item => /^[a-z?]{1,8}$/.test(item)))];
 };
 
+// Поточне значення поля картки: масив — історія версій, поточна остання;
+// порожній рядок у кінці — «стерли» (як `getCurrentValue` на клієнті).
+const currentText = value => {
+  if (Array.isArray(value)) {
+    for (let index = value.length - 1; index >= 0; index -= 1) {
+      const item = value[index];
+      if (item === null || item === undefined) continue;
+      return typeof item === 'string' ? item.trim() : '';
+    }
+    return '';
+  }
+  return typeof value === 'string' ? value.trim() : '';
+};
+
+/*
+ * `n` — імена для пошуку на пристрої (15.11): імʼя картки й назва агенції,
+ * малими літерами, через «|». Пошук за частиною імені («Олен») звичайний
+ * читач у `searchId` зробити не може — префіксний скан індексу лише адмінам, —
+ * а серед опублікованих перелік відповідає без жодного запиту. Розкриває він
+ * не більше, ніж сама картка: імʼя опублікованої картки читає кожен, хто
+ * увійшов.
+ */
+const NAME_MAX_LENGTH = 40;
+const buildSearchNames = card => {
+  const names = [currentText(card.name), currentText(card.agencyName)]
+    .map(name => name.toLowerCase().replace(/\s+/g, ' ').replace(/\|/g, ' ').slice(0, NAME_MAX_LENGTH).trim())
+    .filter(Boolean);
+  return [...new Set(names)].join('|');
+};
+
 /** Запис переліку для картки або `null`, коли картки в стрічці немає. */
 const buildFeedIndexEntry = card => {
   if (!card || typeof card !== 'object' || !isDateFeed(card.feedDate)) return null;
-  return { d: card.feedDate, r: normalizeRoles(card.role).join(',') };
+  const entry = { d: card.feedDate, r: normalizeRoles(card.role).join(',') };
+  const names = buildSearchNames(card);
+  if (names) entry.n = names;
+  return entry;
 };
 
 const isSameEntry = (a, b) => (a === null && b === null)
-  || (Boolean(a) && Boolean(b) && a.d === b.d && a.r === b.r);
+  || (Boolean(a) && Boolean(b) && a.d === b.d && a.r === b.r && (a.n || '') === (b.n || ''));
 
 const buildFeedIndexPath = cardId => {
   const id = typeof cardId === 'string' ? cardId.trim() : '';

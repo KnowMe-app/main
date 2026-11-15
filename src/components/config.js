@@ -82,7 +82,7 @@ import {
   stripPrivilegedProfileFields,
 } from '../utils/accessLevel';
 import { hasFilledProfileDraftData } from '../utils/profileDraftContent';
-import { listNameVariants } from '../utils/nameVariants';
+import { isNameLikeQuery, listNameVariants } from '../utils/nameVariants';
 import { getCardListField, normalizeCardListQuery, readFieldTimestamp } from '../utils/cardListQuery';
 import { flattenOwnerValueToString } from '../utils/ownerValueString';
 import {
@@ -186,7 +186,7 @@ import {
   isFeedStateDeniedForSearch,
 } from '../utils/searchFeedDenial';
 import { readFreshMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
-import { configurePublishedFeedIndex, readPublishedFeedIndex, splitSearchHitsByFeed } from '../utils/publishedFeedIndex';
+import { configurePublishedFeedIndex, readPublishedFeedIndex, searchPublishedIndexByName, splitSearchHitsByFeed } from '../utils/publishedFeedIndex';
 import {
   PHOTO_THUMB_MAX_DIMENSION,
   PHOTO_THUMB_MAX_KB,
@@ -4061,8 +4061,19 @@ const searchBySearchIdUsers = async (
     fields: getSearchIdPrefixes(searchIdPrefixes),
     exactSearchKey: String(modifiedSearchValue || '').toLowerCase(),
   });
+  // Видача стрічки на запит-імʼя бере ще й опубліковані картки, чиє імʼя
+  // починається з набраного (`searchPublishedIndexByName`): точний ключ
+  // `searchId` частини імені не знає, а префіксний скан — лише адмінам.
+  // Опубліковані — ті, кого стрічка й так показує всім, тож ні межі, ні
+  // читань це не додає, крім самих карток видачі.
+  let publishedNameIds = [];
+  if (cardsOnly && options.nameVariantKeys?.length && isNameLikeQuery(rawSearchValue)) {
+    const publishedIndex = await readPublishedFeedIndex().catch(() => null);
+    publishedNameIds = searchPublishedIndexByName(publishedIndex, [rawSearchValue, ...listNameVariants(rawSearchValue)])
+      .filter(id => !userIds.includes(id));
+  }
   const addHit = resolveSearchHitAdder({ limitedFields, cardsOnly });
-  const freshIds = userIds.filter(id => !uniqueUserIds.has(id));
+  const freshIds = [...userIds, ...publishedNameIds].filter(id => !uniqueUserIds.has(id));
   freshIds.forEach(id => uniqueUserIds.add(id));
 
   // Видача стрічки (`lazyPageSize`) читає не все знайдене, а порцію: спершу
