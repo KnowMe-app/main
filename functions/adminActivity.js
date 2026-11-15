@@ -108,6 +108,13 @@ const kyivParts = timestamp => {
   return { date: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')), time: `${get('hour')}:${get('minute')}` };
 };
 
+const kyivWeekday = timestamp => new Intl.DateTimeFormat('en-US', { timeZone: KYIV_TZ, weekday: 'short' }).format(new Date(timestamp));
+const kyivShortDate = timestamp => {
+  const { date } = kyivParts(timestamp);
+  const [, month, day] = date.split('-');
+  return `${day}.${month}`;
+};
+
 const isQuietTime = timestamp => {
   const { hour } = kyivParts(timestamp);
   return hour >= QUIET_FROM_HOUR || hour < QUIET_TO_HOUR;
@@ -242,6 +249,7 @@ const normalizeSettings = raw => {
     events,
     channels: { telegram: channels.telegram === true, push: channels.push === true },
     quietHours: raw.quietHours !== false,
+    weeklyReport: raw.weeklyReport !== false,
   };
 };
 
@@ -338,6 +346,78 @@ const buildDigestMessage = (events, frequency) => {
   const html = [head, ...picked, hidden > 0 ? hiddenNote(hidden) : '', footer]
     .filter(Boolean).join('\n').replace(/\n{3,}/g, '\n\n');
   const push = { kind: 'admin-digest', title: `📊 ${title}`, body: summary.slice(0, 4).join(' · ').slice(0, 240), url: NOTIFICATIONS_URL };
+  return { html, push };
+};
+
+/**
+ * Тижневий звіт (щопонеділка): скільки подій кожного виду за 7 днів проти
+ * попередніх 7, воронка «нові → опубліковані», скільки людей діяли, кому
+ * найбільше інтересу (лайки й дотики до контактів) і що шукали. Рахує всі
+ * події журналу незалежно від того, які з них адмін отримує окремо.
+ */
+const WEEKLY_REPORT_TYPES = [
+  'profile_created', 'profile_published', 'profile_hidden', 'account_deleted',
+  'like', 'dislike', 'contact_tap', 'public_review', 'card_suggestion', 'draft_created', 'search', 'share_link_created',
+];
+
+const buildWeeklyReport = (events, now) => {
+  const weekStart = now - 7 * DAY;
+  const thisWeek = events.filter(event => event.t > weekStart && event.t <= now);
+  const lastWeek = events.filter(event => event.t > weekStart - 7 * DAY && event.t <= weekStart);
+  const count = (list, type) => list.filter(event => event.type === type).length;
+  const delta = (current, previous) => {
+    if (current === previous) return '=';
+    return current > previous ? `↑${current - previous}` : `↓${previous - current}`;
+  };
+  const rows = WEEKLY_REPORT_TYPES
+    .map(type => ({ type, current: count(thisWeek, type), previous: count(lastWeek, type) }))
+    .filter(row => row.current || row.previous)
+    .map(row => `${ADMIN_EVENT_BY_KEY[row.type].emoji} ${ADMIN_EVENT_BY_KEY[row.type].label}: <b>${row.current}</b> (${delta(row.current, row.previous)})`);
+
+  const created = count(thisWeek, 'profile_created');
+  const published = count(thisWeek, 'profile_published');
+  const actors = new Set(thisWeek.map(event => event.actor).filter(Boolean)).size;
+  const previousActors = new Set(lastWeek.map(event => event.actor).filter(Boolean)).size;
+
+  const interest = new Map();
+  thisWeek.filter(event => (event.type === 'like' || event.type === 'contact_tap') && event.card).forEach(event => {
+    const entry = interest.get(event.card) || { likes: 0, contacts: 0, info: event.cardInfo };
+    if (event.type === 'like') entry.likes += 1; else entry.contacts += 1;
+    interest.set(event.card, entry);
+  });
+  const topCards = [...interest.values()]
+    .sort((a, b) => (b.likes + b.contacts * 2) - (a.likes + a.contacts * 2))
+    .slice(0, 5)
+    .map(entry => `• ${escapeHtml(clip(describePerson(entry.info) || 'картка', 70))} — ❤️ ${entry.likes} · 📞 ${entry.contacts}`);
+
+  const searches = new Map();
+  thisWeek.filter(event => event.type === 'search' && event.meta && event.meta.query).forEach(event => {
+    const query = String(event.meta.query).toLowerCase();
+    searches.set(query, (searches.get(query) || 0) + 1);
+  });
+  const topSearches = [...searches.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([query, times]) => `«${escapeHtml(clip(maskDigits(query), 40))}» ×${times}`);
+
+  const title = `Тиждень ${kyivShortDate(weekStart + HOUR)}–${kyivShortDate(now)}`;
+  const lines = [
+    `📈 <b>${title}</b>`,
+    `Діяли людей: <b>${actors}</b> (${delta(actors, previousActors)}) · подій: ${thisWeek.length}`,
+    '',
+    ...(rows.length ? rows : ['Подій за тиждень не було.']),
+  ];
+  if (created) {
+    lines.push('', `Воронка: нових анкет ${created} → опубліковано ${published} (${Math.round((published / created) * 100)}%)`);
+  }
+  if (topCards.length) lines.push('', '<b>Найбільше інтересу</b>', ...topCards);
+  if (topSearches.length) lines.push('', `<b>Шукали</b>: ${topSearches.join(', ')}`);
+  lines.push('', `<a href="${NOTIFICATIONS_URL}">Журнал подій</a>`);
+  const html = lines.join('\n');
+  const push = {
+    kind: 'admin-weekly',
+    title: `📈 ${title}`,
+    body: `Діяли людей: ${actors} · нових анкет: ${created} · лайків: ${count(thisWeek, 'like')} · контактів: ${count(thisWeek, 'contact_tap')}`,
+    url: NOTIFICATIONS_URL,
+  };
   return { html, push };
 };
 
@@ -490,8 +570,18 @@ const recordAdminEvents = async (events, { actor, authType, pathActor = '' }, de
 
 // --- дайджести й прибирання --------------------------------------------------
 
+const WEEKLY_REPORT_SLACK_MS = 7 * DAY + 12 * HOUR;
+
 const isDigestDue = (frequency, lastAt, now) => {
   if (frequency === 'hourly') return now - lastAt >= HOUR;
+  if (frequency === 'weekly') {
+    // Щопонеділка після 9:00 за Києвом. Дайджести приходять із першою подією
+    // (планувальника немає), тож якщо в понеділок подій не було, звіт піде
+    // першою подією після 7,5 доби від попереднього.
+    const today = kyivParts(now);
+    const mondayMorning = kyivWeekday(now) === 'Mon' && today.hour >= DAILY_DIGEST_HOUR && kyivParts(lastAt).date !== today.date;
+    return mondayMorning || now - lastAt >= WEEKLY_REPORT_SLACK_MS;
+  }
   const today = kyivParts(now);
   return today.hour >= DAILY_DIGEST_HOUR && kyivParts(lastAt).date !== today.date;
 };
@@ -533,11 +623,36 @@ const flushDueDigests = async deps => {
       });
     }
   }
+  for (const uid of RECIPIENT_UIDS) {
+    // eslint-disable-next-line no-await-in-loop
+    const settings = await (deps.readSettings || readSettings)(uid, deps);
+    if (!settings || !settings.weeklyReport) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const since = await claimDigest(`${DIGEST_PATH}/${uid}/weekly`, 'weekly', deps);
+    if (since === null) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await sendWeeklyReport(uid, settings, deps);
+  }
   // Раз на добу — прибрати журнал старший за 30 днів і старі ключі дублів.
   const cleanupSince = await claimDigest(`${DIGEST_PATH}/_cleanup`, 'daily', deps);
   if (cleanupSince !== null && deps.db.removeOlderThan) {
     await deps.db.removeOlderThan(deps.now - RETENTION_MS, deps.now - DEDUP_RETENTION_MS);
   }
+  if (cleanupSince !== null && deps.db.removeLegacyNotificationData) {
+    await deps.db.removeLegacyNotificationData(STAFF_UIDS).catch(() => {});
+  }
+};
+
+const sendWeeklyReport = async (uid, settings, deps) => {
+  const events = await deps.db.queryEventsBetween(deps.now - 14 * DAY, deps.now);
+  return deliverToAdmin(uid, settings, buildWeeklyReport(events, deps.now), deps, { quiet: false });
+};
+
+/** «Звіт за тиждень зараз» на сторінці сповіщень — увімкненими каналами викликача. */
+const sendWeeklyReportNow = async (uid, deps) => {
+  const settings = normalizeSettings(await deps.db.get(`${SETTINGS_ROOT}/${uid}`))
+    || { channels: { telegram: true, push: true }, events: {}, quietHours: false, weeklyReport: true };
+  return sendWeeklyReport(uid, settings, deps);
 };
 
 // --- callables ---------------------------------------------------------------
@@ -577,6 +692,7 @@ module.exports = {
   STAFF_UIDS,
   RETENTION_MS,
   buildDigestMessage,
+  buildWeeklyReport,
   buildInstantMessage,
   classifyAccountDeletion,
   classifyCardWrite,
@@ -599,4 +715,5 @@ module.exports = {
   readNotificationStatus,
   recordAdminEvents,
   sendTestNotification,
+  sendWeeklyReportNow,
 };

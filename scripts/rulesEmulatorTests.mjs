@@ -2463,6 +2463,7 @@ const ADMIN_NOTIFY_SETTINGS = {
   events: { like: 'hourly', profile_created: 'instant' },
   channels: { telegram: true, push: false },
   quietHours: true,
+  weeklyReport: true,
   updatedAt: 1,
 };
 
@@ -2499,11 +2500,18 @@ describe('pushTokens — токени push-сповіщень пристроїв
 // функція сповіщень (Admin SDK), тож чужі токени не видно нікому.
 const PUSH_TOKEN = 'fcmTokenAbcdefghijklmnopqrstuvwxyz0123456789:APA91b-test_token';
 
-await it('власник пише й знімає свій токен, чужий — ні', async () => {
-  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}/${PUSH_TOKEN}`), { at: serverTimestamp() }));
+// Push отримують лише адміни (сповіщення про активність користувачів), тож
+// записати токен може лише адмін; зняти свій — кожен (токени з тестових днів).
+await it('адмін пише й знімає свій токен, чужий — ні', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), `pushTokens/${SUPERADMIN}/${PUSH_TOKEN}`), { at: serverTimestamp() }));
+  await assertSucceeds(remove(ref(db(SUPERADMIN), `pushTokens/${SUPERADMIN}/${PUSH_TOKEN}`)));
+  await assertFails(set(ref(db(SUPERADMIN), `pushTokens/${OUTSIDER}/${PUSH_TOKEN}`), { at: 1 }));
+});
+
+await it('звичайний користувач токена не записує, але свій старий знімає', async () => {
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}/${PUSH_TOKEN}`), { at: serverTimestamp() }));
   await assertSucceeds(remove(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}/${PUSH_TOKEN}`)));
   await assertFails(set(ref(db(ORDINARY_VIEWER), `pushTokens/${OUTSIDER}/${PUSH_TOKEN}`), { at: 1 }));
-  await assertFails(set(ref(db(SUPERADMIN), `pushTokens/${OUTSIDER}/${PUSH_TOKEN}`), { at: 1 }));
 });
 
 await it('токени не читає ніхто з клієнтів, і власник теж', async () => {
@@ -2513,10 +2521,10 @@ await it('токени не читає ніхто з клієнтів, і вла
 });
 
 await it('у запис токена лягає лише час', async () => {
-  await assertFails(set(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}/${PUSH_TOKEN}`), { at: 1, name: 'Оксана' }));
-  await assertFails(set(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}/${PUSH_TOKEN}`), { at: 'x' }));
-  await assertFails(set(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}/short`), { at: 1 }));
-  await assertFails(set(ref(db(ORDINARY_VIEWER), `pushTokens/${ORDINARY_VIEWER}`), { [PUSH_TOKEN]: { at: 1 } }));
+  await assertFails(set(ref(db(SUPERADMIN), `pushTokens/${SUPERADMIN}/${PUSH_TOKEN}`), { at: 1, name: 'Оксана' }));
+  await assertFails(set(ref(db(SUPERADMIN), `pushTokens/${SUPERADMIN}/${PUSH_TOKEN}`), { at: 'x' }));
+  await assertFails(set(ref(db(SUPERADMIN), `pushTokens/${SUPERADMIN}/short`), { at: 1 }));
+  await assertFails(set(ref(db(SUPERADMIN), `pushTokens/${SUPERADMIN}`), { [PUSH_TOKEN]: { at: 1 } }));
 });
 
 describe('сповіщення про лайки й Telegram — лише функції');

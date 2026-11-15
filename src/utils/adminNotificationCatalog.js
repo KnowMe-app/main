@@ -108,6 +108,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS = () => ({
   events: NOTIFICATION_PRESETS[0].build(),
   channels: { telegram: true, push: false },
   quietHours: true,
+  weeklyReport: true,
 });
 
 /** Збережене з бази → повна форма для сторінки (невідоме відкидається). */
@@ -122,6 +123,7 @@ export const normalizeNotificationSettings = raw => {
     events,
     channels: { telegram: raw.channels?.telegram === true, push: raw.channels?.push === true },
     quietHours: raw.quietHours !== false,
+    weeklyReport: raw.weeklyReport !== false,
   };
 };
 

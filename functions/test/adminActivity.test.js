@@ -231,3 +231,49 @@ test('обрізаний рядок зведення не рве HTML-сутно
   // Кожен `&` у тексті — повна сутність `&amp;`, жодного обірваного.
   assert.doesNotMatch(html.replace(/&(amp|lt|gt);/g, ''), /&/);
 });
+
+test('тижневий звіт: тиждень проти попереднього, воронка, інтерес, пошук', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const ev = (type, t, extra = {}) => ({ type, t, actor: extra.actor || 'u1', card: extra.card || '', meta: extra.meta || {}, cardInfo: extra.cardInfo || null });
+  const events = [
+    ev('profile_created', NOON - DAY, { actor: 'a' }),
+    ev('profile_created', NOON - 2 * DAY, { actor: 'b' }),
+    ev('profile_published', NOON - DAY, { actor: 'a' }),
+    ev('like', NOON - DAY, { card: DONOR, cardInfo: { name: 'Марія', role: 'ed' } }),
+    ev('contact_tap', NOON - DAY, { card: DONOR, cardInfo: { name: 'Марія', role: 'ed' } }),
+    ev('search', NOON - DAY, { meta: { query: 'Ольга' } }),
+    ev('like', NOON - 9 * DAY, { card: 'x' }),
+    ev('like', NOON - 10 * DAY, { card: 'y' }),
+  ];
+  const { html, push } = activity.buildWeeklyReport(events, NOON);
+  assert.match(html, /Тиждень 08\.11–15\.11/);
+  assert.match(html, /Лайк: <b>1<\/b> \(↓1\)/);
+  assert.match(html, /нових анкет 2 → опубліковано 1 \(50%\)/);
+  assert.match(html, /Марія \(донор ооцитів\) — ❤️ 1 · 📞 1/);
+  assert.match(html, /«ольга» ×1/);
+  assert.ok(html.length < 4096);
+  assert.equal(push.kind, 'admin-weekly');
+});
+
+test('тижневий звіт — щопонеділка після 9:00 за Києвом або за 7,5 доби', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const monday930 = Date.UTC(2026, 10, 16, 7, 30, 0); // пн 16.11, 9:30 Київ
+  const sunday = Date.UTC(2026, 10, 15, 10, 0, 0);
+  assert.equal(activity.isDigestDue('weekly', monday930 - 7 * DAY, monday930), true);
+  assert.equal(activity.isDigestDue('weekly', monday930 - 3 * DAY, Date.UTC(2026, 10, 16, 5, 0, 0)), false); // пн 7:00
+  assert.equal(activity.isDigestDue('weekly', sunday - 2 * DAY, sunday), false);
+  assert.equal(activity.isDigestDue('weekly', sunday - 8 * DAY, sunday), true); // пропущений понеділок
+});
+
+test('тижневий звіт іде з потоку подій, коли ввімкнено', async () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const monday930 = Date.UTC(2026, 10, 16, 7, 30, 0);
+  const { deps, sent, data } = makeDeps({
+    now: monday930,
+    settings: { events: {}, channels: { telegram: true, push: false }, quietHours: true, weeklyReport: true },
+  });
+  data.adminActivity = { digestState: { [ADMIN]: { weekly: { lastAt: monday930 - 7 * DAY } } } };
+  await activity.recordAdminEvents([{ type: 'like', card: DONOR }], user, deps);
+  assert.equal(sent.telegram.length, 1);
+  assert.match(sent.telegram[0].html, /Тиждень/);
+});

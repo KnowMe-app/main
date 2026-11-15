@@ -922,6 +922,7 @@
           "$other": { ".validate": false }
         },
         "quietHours": { ".validate": "newData.isBoolean()" },
+        "weeklyReport": { ".validate": "newData.isBoolean()" },
         "updatedAt": { ".validate": "newData.isNumber()" },
         "$other": { ".validate": false }
       }
@@ -938,7 +939,7 @@
     "pushTokens": {
       "$uid": {
         "$token": {
-          ".write": "auth != null && auth.uid == $uid",
+          ".write": "auth != null && auth.uid == $uid && (!newData.exists() || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1')",
           ".validate": "$token.length >= 20 && $token.length <= 400 && newData.hasChildren(['at'])",
           "at": {
             ".validate": "newData.isNumber()"
