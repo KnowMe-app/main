@@ -356,10 +356,11 @@
         }
       },
       "flow": {
+        ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1')",
         "$ownerId": {
-          ".read": "auth != null && auth.uid == $ownerId",
+          ".read": "auth != null && (auth.uid == $ownerId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1')",
           "$userId": {
-            ".write": "auth != null && auth.uid == $ownerId"
+            ".write": "auth != null && (auth.uid == $ownerId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')"
           }
         }
       },
