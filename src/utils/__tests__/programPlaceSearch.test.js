@@ -55,3 +55,10 @@ describe('programMentionsCountry — межі слів (ревʼю #3423)', () =
     expect(programMentionsCountry({ location: 'Georgiana street' }, 'GE')).toBe(false);
   });
 });
+
+describe('programMentionsCountry — чергування приголосних (ревʼю #3423)', () => {
+  it('«Мексиці» — це Мексика', () => {
+    expect(programMentionsCountry({ location: 'Програма в Мексиці' }, 'MX')).toBe(true);
+    expect(programMentionsCountry({ location: 'Мексика' }, 'MX')).toBe(true);
+  });
+});

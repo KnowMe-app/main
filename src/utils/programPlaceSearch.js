@@ -85,11 +85,21 @@ const countryPatterns = code => {
     });
 };
 
+// Чергування приголосних перед «-і» місцевого відмінка: «Мексика» →
+// «Мексиці», «Америка» → «Америці», «Прага» → «Празі» (ревʼю #3423).
+const CONSONANT_ALTERNATIONS = { к: 'ц', г: 'з', х: 'с' };
+
+const cyrillicStems = nameWord => {
+  const stem = stemCyrillic(nameWord);
+  const alternate = CONSONANT_ALTERNATIONS[stem.slice(-1)];
+  return alternate ? [stem, `${stem.slice(0, -1)}${alternate}`] : [stem];
+};
+
 const wordMatches = (textWord, nameWord, isLast) => {
   if (textWord === nameWord) return true;
   if (!isLast || !CYRILLIC_WORD_RE.test(nameWord)) return false;
-  const stem = stemCyrillic(nameWord);
-  return textWord.startsWith(stem) && INFLECTION_RE.test(textWord.slice(stem.length));
+  return cyrillicStems(nameWord)
+    .some(stem => textWord.startsWith(stem) && INFLECTION_RE.test(textWord.slice(stem.length)));
 };
 
 const textMentions = (textWords, pattern) => {
