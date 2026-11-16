@@ -2631,7 +2631,18 @@ const buildFlowEntryValue = ({ amount, description = '' }) => {
   return `${safeAmount}_${safeDescription}`;
 };
 
-const generateFlowEntryId = () => `${Date.now()}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+// Id запису — мілісекунди й три цифри, тобто строго зростаюче число того самого
+// вигляду, що й раніше. Доти три цифри були випадкові: багаторядковий ввід чи
+// імпорт файлу пишуть сотні записів за ту саму мілісекунду, id збігались, і
+// запис у тій самій даті мовчки перезаписував сусіда (імпорт 200 витрат
+// лишав 192). Лічильник вкладки гарантує різні id; між вкладками рознести
+// їх допомагає випадковий старт.
+let lastFlowEntryId = 0;
+export const generateFlowEntryId = () => {
+  const base = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  lastFlowEntryId = Math.max(base, lastFlowEntryId + 1);
+  return String(lastFlowEntryId);
+};
 
 export const fetchFlowData = async ownerId => {
   if (!ownerId) return {};

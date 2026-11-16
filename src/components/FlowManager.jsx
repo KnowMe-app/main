@@ -6,6 +6,8 @@ import { signOut } from 'firebase/auth';
 import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
 import { InfoModal } from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
+import { FaFileImport } from 'react-icons/fa';
+import { buildFlowImportText } from 'utils/flowImport';
 import { readStoredAccessLevel, readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import {
   deleteFlowEntry,
@@ -469,6 +471,18 @@ const ConfirmRowPreview = styled.div`
   font-size: 13px;
   overflow-wrap: anywhere;
   word-break: break-word;
+`;
+
+// Підсумок імпорту — не попередження: червоне тут читалось би як збій.
+const ImportSummary = styled.div`
+  margin-top: 10px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--km-fill);
+  color: var(--km-text);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 `;
 
 const ExchangeModalTitle = styled.div`
@@ -1718,7 +1732,7 @@ export const FlowManager = ({ ownerId }) => {
     }
   };
 
-  const handleSave = async ({ silentValidation = false, rawText } = {}) => {
+  const handleSave = async ({ silentValidation = false, rawText, keepInput = false } = {}) => {
     const normalizedCategory = normalizeCategoryPath(selectedCategoryPath) || DEFAULT_FLOW_CATEGORY;
     const saveText = rawText ?? entryInput;
     const effectiveFallbackDate = resolveFlowFallbackDate(saveText, dateYmd);
@@ -1757,7 +1771,7 @@ export const FlowManager = ({ ownerId }) => {
       const selectedPath = splitCategoryPath(lastEntry.groupPath || normalizedCategory);
       setSelectedGroup(selectedPath.group);
       setSelectedSubgroup(selectedPath.subgroup);
-      setEntryInput('');
+      if (!keepInput) setEntryInput('');
       toast.success(
         (parsedEntries.length === 1
           ? 'Flow збережено'
@@ -1838,6 +1852,43 @@ export const FlowManager = ({ ownerId }) => {
   };
 
   const openClearConfirm = () => setConfirmState({ type: 'clear', row: null, rowKey: null });
+
+  // Імпорт з файлу: файл стає тим самим текстом, що й у полі введення, і
+  // зберігається тим самим `handleSave` — групи, курси за датою й черга
+  // записів пристрою ті самі, що й для набраного вручну. Перед записом —
+  // підтвердження з кількістю й групами: сотні рядків одним дотиком без
+  // нього не відкотити інакше, ніж по одному.
+  const importInputRef = useRef(null);
+  const [importState, setImportState] = useState(null);
+  const [isImporting, setIsImporting] = useState(false);
+
+  const handleImportFile = async event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const fileText = await file.text();
+      const { text, undatedCount, skippedCount } = buildFlowImportText(fileText, { fileName: file.name });
+      const entries = parseFlowEntriesByDatesAndGroups({
+        rawText: text,
+        fallbackDate: todayYmd(),
+        defaultGroup: normalizeCategoryPath(selectedCategoryPath) || DEFAULT_FLOW_CATEGORY,
+      });
+      if (entries.length === 0) {
+        toast.error('У файлі немає записів Flow: потрібні рядки «дата сума опис»');
+        return;
+      }
+      const groups = entries.reduce((acc, entry) => {
+        acc[entry.groupPath] = (acc[entry.groupPath] || 0) + 1;
+        return acc;
+      }, {});
+      setImportState({ fileName: file.name, text, count: entries.length, groups, undatedCount, skippedCount });
+      setConfirmState({ type: 'import', row: null, rowKey: null });
+    } catch (error) {
+      console.error('Unable to read flow import file', error);
+      toast.error(error?.message || 'Не вдалося прочитати файл');
+    }
+  };
   const openDeleteConfirm = (row, rowKey) => setConfirmState({ type: 'row', row, rowKey });
   const closeConfirm = () => setConfirmState({ type: null, row: null, rowKey: null });
 
@@ -1872,6 +1923,18 @@ export const FlowManager = ({ ownerId }) => {
   };
 
   const handleConfirm = async () => {
+    if (confirmState.type === 'import') {
+      if (!importState || isImporting) return;
+      setIsImporting(true);
+      try {
+        await handleSave({ rawText: importState.text, keepInput: true });
+      } finally {
+        setIsImporting(false);
+        setImportState(null);
+        closeConfirm();
+      }
+      return;
+    }
     if (confirmState.type === 'clear') {
       await handleClear();
       closeConfirm();
@@ -2041,6 +2104,23 @@ export const FlowManager = ({ ownerId }) => {
         >
           <ClipboardIcon />
         </CopyBtn>
+        <CopyBtn
+          type="button"
+          onClick={() => importInputRef.current?.click()}
+          aria-label="Імпортувати Flow з файлу"
+          title="Імпортувати з файлу (.json або .txt)"
+          data-testid="flow-import"
+        >
+          <FaFileImport />
+        </CopyBtn>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".json,.txt,application/json,text/plain"
+          onChange={handleImportFile}
+          style={{ display: 'none' }}
+          data-testid="flow-import-input"
+        />
         <DangerBtn type="button" onClick={openClearConfirm}>del</DangerBtn>
         <MenuBtnWrap>
           <MenuBtn
@@ -2466,10 +2546,24 @@ export const FlowManager = ({ ownerId }) => {
         <ConfirmBackdrop onClick={closeConfirm}>
           <ConfirmCard onClick={e => e.stopPropagation()}>
             <div>
-              {confirmState.type === 'clear'
-                ? 'Підтвердьте очищення всього Flow'
-                : 'Підтвердьте видалення цього рядка'}
+              {confirmState.type === 'import'
+                ? `Імпортувати ${importState?.count || 0} записів з «${importState?.fileName || ''}»?`
+                : confirmState.type === 'clear'
+                  ? 'Підтвердьте очищення всього Flow'
+                  : 'Підтвердьте видалення цього рядка'}
             </div>
+            {confirmState.type === 'import' && importState && (
+              <ImportSummary data-testid="flow-import-summary">
+                {Object.entries(importState.groups).map(([group, count]) => (
+                  <div key={group}>{group}: {count}</div>
+                ))}
+                {importState.undatedCount > 0 && (
+                  <div>Без дати: {importState.undatedCount} — дата внесення й «дата оплати не вказана»</div>
+                )}
+                {importState.skippedCount > 0 && <div>Пропущено без суми: {importState.skippedCount}</div>}
+                <div>Записи додаються до наявних, а не замінюють їх.</div>
+              </ImportSummary>
+            )}
             {confirmState.type === 'row' && confirmState.row && (
               <ConfirmRowPreview>
                 {formatDisplayDate(confirmState.row.date)} {confirmState.row.amount} {confirmState.row.description}
@@ -2477,7 +2571,13 @@ export const FlowManager = ({ ownerId }) => {
             )}
             <ConfirmActions>
               <ActionBtn type="button" onClick={closeConfirm}>Скасувати</ActionBtn>
-              <ConfirmDangerBtn type="button" onClick={handleConfirm}>Підтвердити</ConfirmDangerBtn>
+              {confirmState.type === 'import' ? (
+                <ActionBtn type="button" onClick={handleConfirm} disabled={isImporting} data-testid="flow-import-confirm">
+                  {isImporting ? 'Імпортую…' : 'Імпортувати'}
+                </ActionBtn>
+              ) : (
+                <ConfirmDangerBtn type="button" onClick={handleConfirm}>Підтвердити</ConfirmDangerBtn>
+              )}
             </ConfirmActions>
           </ConfirmCard>
         </ConfirmBackdrop>
