@@ -55,6 +55,28 @@ const TopControls = styled.div`
   min-width: 0;
 `;
 
+// Масштаб тексту Flow (16.11, на прохання власниці продукту: «нічого не видно»).
+// Шрифти тут задані пікселями в десятку компонентів, тож масштабується весь
+// вміст під верхнім рядком через `zoom` — і текст, і поля, і мішені дотику
+// разом, як масштаб браузера. Верхній рядок і модалки не масштабуються: кнопки
+// мусять лишатись на своєму місці, а фіксоване в зумі зсувається.
+const FLOW_TEXT_SCALES = [0.9, 1, 1.15, 1.3, 1.5, 1.75];
+const flowTextScaleStorageKey = ownerId => `flow-text-scale:${ownerId || 'anon'}`;
+
+const ScaledContent = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+`;
+
+const TextScaleGroup = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: auto;
+`;
+
 // The "⋮" menu stays on this same row as the other action buttons, but a wider left margin sets
 // it apart from that button cluster instead of sharing its tight 8px gap.
 const MenuBtnWrap = styled.div`
@@ -80,10 +102,15 @@ const TopActionBtn = styled.button`
   cursor: pointer;
   transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: var(--km-accent-light);
     border-color: var(--km-accent);
     color: var(--km-accent);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
 `;
 
@@ -1471,6 +1498,28 @@ export const FlowManager = ({ ownerId }) => {
     }
   }, [ownerId]);
 
+  const [textScale, setTextScale] = useState(1);
+  useEffect(() => {
+    if (!ownerId) return;
+    try {
+      const saved = Number(localStorage.getItem(flowTextScaleStorageKey(ownerId)));
+      setTextScale(FLOW_TEXT_SCALES.includes(saved) ? saved : 1);
+    } catch {
+      setTextScale(1);
+    }
+  }, [ownerId]);
+  const stepTextScale = direction => {
+    const index = Math.max(0, FLOW_TEXT_SCALES.indexOf(textScale));
+    const next = FLOW_TEXT_SCALES[Math.min(FLOW_TEXT_SCALES.length - 1, Math.max(0, index + direction))];
+    setTextScale(next);
+    if (!ownerId) return;
+    try {
+      localStorage.setItem(flowTextScaleStorageKey(ownerId), String(next));
+    } catch (error) {
+      console.error('Unable to persist flow text scale into localStorage', error);
+    }
+  };
+
   // Відкрита група — одна: друга, відкрита дотиком, згортає попередню.
   const [openGroup, setOpenGroup] = useState('');
   useEffect(() => {
@@ -1910,6 +1959,21 @@ export const FlowManager = ({ ownerId }) => {
   };
 
   const openClearConfirm = () => setConfirmState({ type: 'clear', row: null, rowKey: null });
+  // Видалення групи знімає й усі її записи та підгрупи — одним дотиком «×»
+  // поруч із назвою, тож без підтвердження пропадали сотні рядків.
+  const openCategoryDeleteConfirm = category => {
+    const normalized = normalizeCategoryPath(category);
+    if (!normalized) return;
+    const prefix = `${normalized}/`;
+    const rows = flowRows.filter(row => {
+      const group = normalizeCategoryPath(row.group);
+      return group === normalized || group.startsWith(prefix);
+    });
+    const totalUah = rows.reduce((sum, row) => sum + getFlowAmountNumberForTotals({
+      amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate,
+    }), 0);
+    setConfirmState({ type: 'category', row: null, rowKey: null, category: normalized, count: rows.length, totalUah });
+  };
 
   // Імпорт з файлу: файл стає тим самим текстом, що й у полі введення, і
   // зберігається тим самим `handleSave` — групи, курси за датою й черга
@@ -1981,6 +2045,12 @@ export const FlowManager = ({ ownerId }) => {
   };
 
   const handleConfirm = async () => {
+    if (confirmState.type === 'category') {
+      const { category } = confirmState;
+      closeConfirm();
+      await handleDeleteCategory(category);
+      return;
+    }
     if (confirmState.type === 'import') {
       if (!importState || isImporting) return;
       setIsImporting(true);
@@ -2129,6 +2199,30 @@ export const FlowManager = ({ ownerId }) => {
   return (
     <Wrap>
       <TopControls>
+        <TextScaleGroup role="group" aria-label="Розмір тексту">
+          <TopActionBtn
+            type="button"
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => stepTextScale(-1)}
+            disabled={textScale <= FLOW_TEXT_SCALES[0]}
+            aria-label="Зменшити текст"
+            title="Зменшити текст"
+            data-testid="flow-text-smaller"
+          >
+            A−
+          </TopActionBtn>
+          <TopActionBtn
+            type="button"
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => stepTextScale(1)}
+            disabled={textScale >= FLOW_TEXT_SCALES[FLOW_TEXT_SCALES.length - 1]}
+            aria-label="Збільшити текст"
+            title="Збільшити текст"
+            data-testid="flow-text-larger"
+          >
+            A+
+          </TopActionBtn>
+        </TextScaleGroup>
         <CurrencyToggle role="radiogroup" aria-label="Валюта еквівалента в рядках">
           {FLOW_DISPLAY_CURRENCIES.map(currency => (
             <CurrencyToggleBtn
@@ -2192,349 +2286,352 @@ export const FlowManager = ({ ownerId }) => {
         </MenuBtnWrap>
       </TopControls>
 
-      <Row>
-        <Label>
-          Нова група
-          <Input
-            ref={categoryInputRef}
-            value={categoryInput}
-            onChange={e => {
-              setCategoryInput(e.target.value);
-            }}
-            onBlur={addCategory}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                addCategory();
-              }
-            }}
-            placeholder="напр. Тест1"
-          />
-        </Label>
-      </Row>
+      <ScaledContent style={{ zoom: textScale }} data-testid="flow-scaled-content">
 
-      <Row>
-        <Label>
-          Нова підгрупа
-          <Input
-            ref={subCategoryInputRef}
-            value={subCategoryInput}
-            onChange={e => {
-              setSubCategoryInput(e.target.value);
-            }}
-            onBlur={addSubcategory}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                addSubcategory();
-              }
-            }}
-            placeholder="напр. Транспорт"
-          />
-        </Label>
-      </Row>
+        <Row>
+          <Label>
+            Нова група
+            <Input
+              ref={categoryInputRef}
+              value={categoryInput}
+              onChange={e => {
+                setCategoryInput(e.target.value);
+              }}
+              onBlur={addCategory}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addCategory();
+                }
+              }}
+              placeholder="напр. Тест1"
+            />
+          </Label>
+        </Row>
 
-      <Label as="div">
-        <CategoryRowHead>
-          <span>Група витрат</span>
-          <CategoryEditBtn
-            type="button"
-            onClick={() => {
-              setIsCategoryEditMode(prev => !prev);
-              cancelCategoryRename();
-            }}
-            title={isCategoryEditMode ? 'Сховати видалення груп' : 'Редагувати групи'}
-            aria-label={isCategoryEditMode ? 'Сховати видалення груп' : 'Редагувати групи'}
-          >
-            ✏
-          </CategoryEditBtn>
-        </CategoryRowHead>
-        <RadioGroup>
-          {allGroups.map(category => (
-            <RadioLabel key={category}>
-              <input
-                type="radio"
-                name="flow-group"
-                value={category}
-                checked={selectedGroup === category}
-                onChange={e => setSelectedGroup(normalizeCategoryPath(e.target.value))}
-              />
-              {renamingCategory.source === category ? (
-                <CategoryRenameInput
-                  autoFocus
-                  value={renamingCategory.draft}
-                  list="flow-rename-category-options"
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={e => e.stopPropagation()}
-                  onChange={e => setRenamingCategory(prev => ({ ...prev, draft: e.target.value }))}
-                  onBlur={() => submitCategoryRename(category)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      submitCategoryRename(category);
-                    }
-                    if (e.key === 'Escape') {
-                      e.preventDefault();
-                      cancelCategoryRename();
-                    }
-                  }}
+        <Row>
+          <Label>
+            Нова підгрупа
+            <Input
+              ref={subCategoryInputRef}
+              value={subCategoryInput}
+              onChange={e => {
+                setSubCategoryInput(e.target.value);
+              }}
+              onBlur={addSubcategory}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addSubcategory();
+                }
+              }}
+              placeholder="напр. Транспорт"
+            />
+          </Label>
+        </Row>
+
+        <Label as="div">
+          <CategoryRowHead>
+            <span>Група витрат</span>
+            <CategoryEditBtn
+              type="button"
+              onClick={() => {
+                setIsCategoryEditMode(prev => !prev);
+                cancelCategoryRename();
+              }}
+              title={isCategoryEditMode ? 'Сховати видалення груп' : 'Редагувати групи'}
+              aria-label={isCategoryEditMode ? 'Сховати видалення груп' : 'Редагувати групи'}
+            >
+              ✏
+            </CategoryEditBtn>
+          </CategoryRowHead>
+          <RadioGroup>
+            {allGroups.map(category => (
+              <RadioLabel key={category}>
+                <input
+                  type="radio"
+                  name="flow-group"
+                  value={category}
+                  checked={selectedGroup === category}
+                  onChange={e => setSelectedGroup(normalizeCategoryPath(e.target.value))}
                 />
-              ) : <CategoryTitle>{category}</CategoryTitle>}
-              {isCategoryEditMode && (
-                <>
-                  {renamingCategory.source !== category && (
-                    <CategorySmallBtn
+                {renamingCategory.source === category ? (
+                  <CategoryRenameInput
+                    autoFocus
+                    value={renamingCategory.draft}
+                    list="flow-rename-category-options"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => setRenamingCategory(prev => ({ ...prev, draft: e.target.value }))}
+                    onBlur={() => submitCategoryRename(category)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        submitCategoryRename(category);
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cancelCategoryRename();
+                      }
+                    }}
+                  />
+                ) : <CategoryTitle>{category}</CategoryTitle>}
+                {isCategoryEditMode && (
+                  <>
+                    {renamingCategory.source !== category && (
+                      <CategorySmallBtn
+                        type="button"
+                        aria-label={`Перейменувати групу ${category}`}
+                        title={`Перейменувати групу ${category}`}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={e => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          startCategoryRename(category);
+                        }}
+                      >
+                        ✎
+                      </CategorySmallBtn>
+                    )}
+                    <CategoryDeleteBtn
                       type="button"
-                      aria-label={`Перейменувати групу ${category}`}
-                      title={`Перейменувати групу ${category}`}
+                      aria-label={`Видалити групу ${category}`}
+                      title={`Видалити групу ${category}`}
                       onMouseDown={e => e.preventDefault()}
                       onClick={e => {
                         e.preventDefault();
                         e.stopPropagation();
-                        startCategoryRename(category);
+                        openCategoryDeleteConfirm(category);
                       }}
                     >
-                      ✎
-                    </CategorySmallBtn>
-                  )}
+                      ×
+                    </CategoryDeleteBtn>
+                  </>
+                )}
+              </RadioLabel>
+            ))}
+          </RadioGroup>
+          <datalist id="flow-rename-category-options">
+            {renameCategorySuggestions.map(category => (
+              <option key={category} value={category} />
+            ))}
+          </datalist>
+        </Label>
+
+        <Label as="div">
+          <CategoryRowHead>
+            <span>Підгрупа витрат</span>
+          </CategoryRowHead>
+          <RadioGroup>
+            <RadioLabel key={`${selectedGroup}-base`}>
+              <input
+                type="radio"
+                name="flow-subcategory"
+                value=""
+                checked={!selectedSubgroup}
+                onChange={() => setSelectedSubgroup('')}
+              />
+              <CategoryTitle>Без підгрупи</CategoryTitle>
+            </RadioLabel>
+            {subgroupsForSelectedGroup.map(subgroup => (
+              <RadioLabel key={`${selectedGroup}/${subgroup}`}>
+                <input
+                  type="radio"
+                  name="flow-subcategory"
+                  value={subgroup}
+                  checked={selectedSubgroup === subgroup}
+                  onChange={e => setSelectedSubgroup(normalizeCategoryPath(e.target.value))}
+                />
+                <CategoryTitle>{subgroup}</CategoryTitle>
+                {isCategoryEditMode && (
                   <CategoryDeleteBtn
                     type="button"
-                    aria-label={`Видалити групу ${category}`}
-                    title={`Видалити групу ${category}`}
+                    aria-label={`Видалити підгрупу ${subgroup}`}
+                    title={`Видалити підгрупу ${subgroup}`}
                     onMouseDown={e => e.preventDefault()}
                     onClick={e => {
                       e.preventDefault();
                       e.stopPropagation();
-                      handleDeleteCategory(category);
+                      openCategoryDeleteConfirm(buildCategoryPath(selectedGroup, subgroup));
                     }}
                   >
                     ×
                   </CategoryDeleteBtn>
-                </>
-              )}
-            </RadioLabel>
-          ))}
-        </RadioGroup>
-        <datalist id="flow-rename-category-options">
-          {renameCategorySuggestions.map(category => (
-            <option key={category} value={category} />
-          ))}
-        </datalist>
-      </Label>
+                )}
+              </RadioLabel>
+            ))}
+          </RadioGroup>
+        </Label>
 
-      <Label as="div">
-        <CategoryRowHead>
-          <span>Підгрупа витрат</span>
-        </CategoryRowHead>
-        <RadioGroup>
-          <RadioLabel key={`${selectedGroup}-base`}>
-            <input
-              type="radio"
-              name="flow-subcategory"
-              value=""
-              checked={!selectedSubgroup}
-              onChange={() => setSelectedSubgroup('')}
-            />
-            <CategoryTitle>Без підгрупи</CategoryTitle>
-          </RadioLabel>
-          {subgroupsForSelectedGroup.map(subgroup => (
-            <RadioLabel key={`${selectedGroup}/${subgroup}`}>
-              <input
-                type="radio"
-                name="flow-subcategory"
-                value={subgroup}
-                checked={selectedSubgroup === subgroup}
-                onChange={e => setSelectedSubgroup(normalizeCategoryPath(e.target.value))}
-              />
-              <CategoryTitle>{subgroup}</CategoryTitle>
-              {isCategoryEditMode && (
-                <CategoryDeleteBtn
-                  type="button"
-                  aria-label={`Видалити підгрупу ${subgroup}`}
-                  title={`Видалити підгрупу ${subgroup}`}
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={e => {
+        <Divider />
+
+        <Row ref={entryRowRef}>
+          <Label>
+            Дата + сума + опис (підтримка груп і дат у кілька рядків)
+            <EntryInputWrap>
+              <EntryInput
+                ref={entryInputRef}
+                rows={1}
+                value={entryInput}
+                onChange={e => {
+                  const nextValue = e.target.value;
+                  setEntryInput(nextValue);
+                  const effectiveFallbackDate = resolveFlowFallbackDate(nextValue, dateYmd);
+                  const parsed = parseFlowEntriesByDatesAndGroups({
+                    rawText: nextValue,
+                    fallbackDate: effectiveFallbackDate,
+                    defaultGroup: selectedCategoryPath,
+                  })?.[0];
+                  if (parsed?.date) setDateYmd(parsed.date);
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                     e.preventDefault();
-                    e.stopPropagation();
-                    handleDeleteCategory(buildCategoryPath(selectedGroup, subgroup));
+                    handleSave({ rawText: entryInput });
+                    categoryInputRef.current?.focus();
+                  }
+                }}
+                onBlur={e => {
+                  if (entryRowRef.current?.contains(e.relatedTarget)) return;
+                  handleSave({ silentValidation: true });
+                }}
+                placeholder={'Заголовок\n20.01.2026 =100+25*2 кава'}
+                style={{ paddingRight: entryInput ? 34 : 8 }}
+              />
+              {entryInput && (
+                <ClearEntryBtn
+                  type="button"
+                  aria-label="Очистити поле вводу Flow"
+                  title="Очистити"
+                  onClick={() => {
+                    setEntryInput('');
+                    entryInputRef.current?.focus();
                   }}
                 >
                   ×
-                </CategoryDeleteBtn>
+                </ClearEntryBtn>
               )}
-            </RadioLabel>
-          ))}
-        </RadioGroup>
-      </Label>
+            </EntryInputWrap>
+          </Label>
+        </Row>
 
-      <Divider />
-
-      <Row ref={entryRowRef}>
-        <Label>
-          Дата + сума + опис (підтримка груп і дат у кілька рядків)
-          <EntryInputWrap>
-            <EntryInput
-              ref={entryInputRef}
-              rows={1}
-              value={entryInput}
-              onChange={e => {
-                const nextValue = e.target.value;
-                setEntryInput(nextValue);
-                const effectiveFallbackDate = resolveFlowFallbackDate(nextValue, dateYmd);
-                const parsed = parseFlowEntriesByDatesAndGroups({
-                  rawText: nextValue,
-                  fallbackDate: effectiveFallbackDate,
-                  defaultGroup: selectedCategoryPath,
-                })?.[0];
-                if (parsed?.date) setDateYmd(parsed.date);
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  handleSave({ rawText: entryInput });
-                  categoryInputRef.current?.focus();
-                }
-              }}
-              onBlur={e => {
-                if (entryRowRef.current?.contains(e.relatedTarget)) return;
-                handleSave({ silentValidation: true });
-              }}
-              placeholder={'Заголовок\n20.01.2026 =100+25*2 кава'}
-              style={{ paddingRight: entryInput ? 34 : 8 }}
-            />
-            {entryInput && (
-              <ClearEntryBtn
+        <EventsList>
+          {Object.entries(groupedFlowRows).map(([group, entries]) => (
+            <GroupBlock key={group}>
+              <GroupTitle
                 type="button"
-                aria-label="Очистити поле вводу Flow"
-                title="Очистити"
-                onClick={() => {
-                  setEntryInput('');
-                  entryInputRef.current?.focus();
-                }}
+                aria-expanded={openGroup === group}
+                onClick={() => toggleGroup(group)}
+                data-testid="flow-group-toggle"
               >
-                ×
-              </ClearEntryBtn>
-            )}
-          </EntryInputWrap>
-        </Label>
-      </Row>
+                <GroupChevron aria-hidden="true" $open={openGroup === group}>▸</GroupChevron>
+                <span>{formatGroupTitle(group)}</span>
+                <GroupCount>· {entries.length}</GroupCount>
+                <CategorySum>
+                  {(() => {
+                    const categoryTotals = categorySums[group] || { uah: 0, usd: 0, eur: 0 };
+                    const amountUah = categoryTotals.uah || 0;
+                    const amountUahText = `${formatCategorySum(amountUah)} грн`;
+                    if (categoryTotals.usd !== 0 || categoryTotals.eur !== 0) {
+                      return `${amountUahText} / ${formatCurrencyValue(categoryTotals.usd)} $ / ${formatCurrencyValue(categoryTotals.eur)} €`;
+                    }
 
-      <EventsList>
-        {Object.entries(groupedFlowRows).map(([group, entries]) => (
-          <GroupBlock key={group}>
-            <GroupTitle
-              type="button"
-              aria-expanded={openGroup === group}
-              onClick={() => toggleGroup(group)}
-              data-testid="flow-group-toggle"
-            >
-              <GroupChevron aria-hidden="true" $open={openGroup === group}>▸</GroupChevron>
-              <span>{formatGroupTitle(group)}</span>
-              <GroupCount>· {entries.length}</GroupCount>
-              <CategorySum>
-                {(() => {
-                  const categoryTotals = categorySums[group] || { uah: 0, usd: 0, eur: 0 };
-                  const amountUah = categoryTotals.uah || 0;
-                  const amountUahText = `${formatCategorySum(amountUah)} грн`;
-                  if (categoryTotals.usd !== 0 || categoryTotals.eur !== 0) {
-                    return `${amountUahText} / ${formatCurrencyValue(categoryTotals.usd)} $ / ${formatCurrencyValue(categoryTotals.eur)} €`;
-                  }
-
-                  return amountUahText;
-                })()}
-              </CategorySum>
-            </GroupTitle>
-            <Collapsible open={openGroup === group}>
-              <GroupRows>
-                {entries.map(({ row, idx }) => {
-                  const rowKey = getRowKey(row, idx);
-                  const isEditing = editingKey === rowKey;
-                  return (
-                    <EventRow
-                      key={rowKey}
-                      $clickable={!isEditing}
-                      $highlighted={confirmState.type === 'row' && confirmState.rowKey === rowKey}
-                      onClick={!isEditing ? () => beginEdit(row, idx) : undefined}
-                    >
-                      {isEditing ? (
-                        <EditInline>
-                          <EditRowInput
-                            autoFocus
-                            value={editingDraft.line}
-                            onChange={e => setEditingDraft(prev => ({ ...prev, line: e.target.value }))}
-                            onBlur={e => {
-                              if (e.currentTarget.parentElement?.contains(e.relatedTarget)) return;
-                              saveEditedRow(row, idx);
-                            }}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
+                    return amountUahText;
+                  })()}
+                </CategorySum>
+              </GroupTitle>
+              <Collapsible open={openGroup === group}>
+                <GroupRows>
+                  {entries.map(({ row, idx }) => {
+                    const rowKey = getRowKey(row, idx);
+                    const isEditing = editingKey === rowKey;
+                    return (
+                      <EventRow
+                        key={rowKey}
+                        $clickable={!isEditing}
+                        $highlighted={confirmState.type === 'row' && confirmState.rowKey === rowKey}
+                        onClick={!isEditing ? () => beginEdit(row, idx) : undefined}
+                      >
+                        {isEditing ? (
+                          <EditInline>
+                            <EditRowInput
+                              autoFocus
+                              value={editingDraft.line}
+                              onChange={e => setEditingDraft(prev => ({ ...prev, line: e.target.value }))}
+                              onBlur={e => {
+                                if (e.currentTarget.parentElement?.contains(e.relatedTarget)) return;
                                 saveEditedRow(row, idx);
-                              }
-                              if (e.key === 'Escape') {
-                                e.preventDefault();
-                                cancelEdit();
-                              }
-                            }}
-                          />
-                          <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={cancelEdit}>
-                            cancel
-                          </TinyBtn>
-                        </EditInline>
-                      ) : (
-                        <>
-                          <EventText>
-                            {formatDisplayDate(row.date)} {resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate })} {row.description}
-                            {(() => {
-                              const displayAmount = resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate });
-                              const rowCurrency = getFlowRowDisplayCurrency(row, displayCurrency);
-                              const amountInCurrency = calculateFlowRowCurrencyAmount({
-                                row: { ...row, amount: displayAmount },
-                                currency: rowCurrency,
-                                exchangeRateMode,
-                                exchangeRates,
-                                historicalRatesByDate,
-                                customUsdRate,
-                              });
-                              return amountInCurrency !== 0
-                                ? ` / ${formatCurrencyValue(amountInCurrency)} ${FLOW_CURRENCY_SIGNS[rowCurrency]}`
-                                : '';
-                            })()}
-                          </EventText>
-                          <ChangeCategoryBtn
-                            type="button"
-                            aria-label="change-row-category"
-                            title="Змінити групу платежу"
-                            onClick={e => {
-                              e.stopPropagation();
-                              handleChangeRowCategory(row);
-                            }}
-                          >
-                            ✏
-                          </ChangeCategoryBtn>
-                          <DeleteRowBtn
-                            type="button"
-                            aria-label="delete-row"
-                            title="Видалити рядок"
-                            onClick={e => {
-                              e.stopPropagation();
-                              openDeleteConfirm(row, rowKey);
-                            }}
-                          >
-                            ×
-                          </DeleteRowBtn>
-                        </>
-                      )}
-                    </EventRow>
-                  );
-                })}
-              </GroupRows>
-            </Collapsible>
-          </GroupBlock>
-        ))}
-      </EventsList>
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  saveEditedRow(row, idx);
+                                }
+                                if (e.key === 'Escape') {
+                                  e.preventDefault();
+                                  cancelEdit();
+                                }
+                              }}
+                            />
+                            <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={cancelEdit}>
+                              cancel
+                            </TinyBtn>
+                          </EditInline>
+                        ) : (
+                          <>
+                            <EventText>
+                              {formatDisplayDate(row.date)} {resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate })} {row.description}
+                              {(() => {
+                                const displayAmount = resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate });
+                                const rowCurrency = getFlowRowDisplayCurrency(row, displayCurrency);
+                                const amountInCurrency = calculateFlowRowCurrencyAmount({
+                                  row: { ...row, amount: displayAmount },
+                                  currency: rowCurrency,
+                                  exchangeRateMode,
+                                  exchangeRates,
+                                  historicalRatesByDate,
+                                  customUsdRate,
+                                });
+                                return amountInCurrency !== 0
+                                  ? ` / ${formatCurrencyValue(amountInCurrency)} ${FLOW_CURRENCY_SIGNS[rowCurrency]}`
+                                  : '';
+                              })()}
+                            </EventText>
+                            <ChangeCategoryBtn
+                              type="button"
+                              aria-label="change-row-category"
+                              title="Змінити групу платежу"
+                              onClick={e => {
+                                e.stopPropagation();
+                                handleChangeRowCategory(row);
+                              }}
+                            >
+                              ✏
+                            </ChangeCategoryBtn>
+                            <DeleteRowBtn
+                              type="button"
+                              aria-label="delete-row"
+                              title="Видалити рядок"
+                              onClick={e => {
+                                e.stopPropagation();
+                                openDeleteConfirm(row, rowKey);
+                              }}
+                            >
+                              ×
+                            </DeleteRowBtn>
+                          </>
+                        )}
+                      </EventRow>
+                    );
+                  })}
+                </GroupRows>
+              </Collapsible>
+            </GroupBlock>
+          ))}
+        </EventsList>
 
-      {loading && <small>Завантаження...</small>}
+        {loading && <small>Завантаження...</small>}
+      </ScaledContent>
       {pendingFlowWrites > 0 && (
         <small data-testid="flow-outbox-pending" role="status">
           {deviceOnline
@@ -2613,12 +2710,21 @@ export const FlowManager = ({ ownerId }) => {
         <ConfirmBackdrop onClick={closeConfirm}>
           <ConfirmCard onClick={e => e.stopPropagation()}>
             <div>
-              {confirmState.type === 'import'
+              {confirmState.type === 'category'
+                ? `Видалити групу «${confirmState.category}»?`
+                : confirmState.type === 'import'
                 ? `Імпортувати ${importState?.count || 0} записів з «${importState?.fileName || ''}»?`
                 : confirmState.type === 'clear'
                   ? 'Підтвердьте очищення всього Flow'
                   : 'Підтвердьте видалення цього рядка'}
             </div>
+            {confirmState.type === 'category' && (
+              <ConfirmRowPreview data-testid="flow-category-delete-summary">
+                {confirmState.count > 0
+                  ? `Разом із нею зникнуть ${confirmState.count} записів на ${formatCategorySum(confirmState.totalUah)} грн, зокрема в її підгрупах. Відновити їх не можна.`
+                  : 'Записів у групі немає.'}
+              </ConfirmRowPreview>
+            )}
             {confirmState.type === 'import' && importState && (
               <ImportSummary data-testid="flow-import-summary">
                 {Object.entries(importState.groups).map(([group, count]) => (
