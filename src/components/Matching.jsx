@@ -6122,6 +6122,7 @@ const Matching = () => {
   ]);
   // Counted off the already-loaded cache, so every chip tap in the drawer
   // updates the number instantly and without touching Firebase (spec §10).
+  const activeProgramFilter = filters?.program;
   const draftFilteredCount = useMemo(() => {
     if (!showFilters) return 0;
     if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers.length;
@@ -6145,7 +6146,7 @@ const Matching = () => {
     // стрічкою з кандидатками.
     const draftRoleFilter = narrowRoleToProgramType({
       ...appliedFilters,
-      program: appliedFilters?.program || filters?.program,
+      program: appliedFilters?.program || activeProgramFilter,
     }).userRole;
     const roleFilter = viewMode === 'default' && !searchQuery.trim() && hasActiveSearchKeyFilterGroup(draftRoleFilter)
       ? draftRoleFilter
@@ -6159,7 +6160,7 @@ const Matching = () => {
     dislikeUsers,
     draftFilters,
     favoriteUsers,
-    filters?.program,
+    activeProgramFilter,
     reactionTabUsers.length,
     roleIndexSets,
     programRates,
