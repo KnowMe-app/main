@@ -135,7 +135,13 @@ const toCyrillic = (word, variant) => {
   let result = '';
   let position = 0;
   while (position < word.length) {
-    const digraph = LATIN_DIGRAPHS.find(([latin]) => word.startsWith(latin, position));
+    let digraph = null;
+    for (let index = 0; index < LATIN_DIGRAPHS.length; index += 1) {
+      if (word.startsWith(LATIN_DIGRAPHS[index][0], position)) {
+        digraph = LATIN_DIGRAPHS[index];
+        break;
+      }
+    }
     if (digraph) {
       result += digraph[column];
       position += digraph[0].length;

@@ -54,7 +54,10 @@ export const parsePublishedFeedIndex = raw => {
   Object.entries(raw).forEach(([id, value]) => {
     if (!id || id.startsWith('_') || !value || !isDate(value.d)) return;
     const roles = String(value.r || '').split(',').map(role => role.trim()).filter(Boolean);
-    entries.set(id, { date: value.d, roles });
+    const names = typeof value.n === 'string'
+      ? value.n.split('|').map(name => name.trim()).filter(Boolean)
+      : [];
+    entries.set(id, { date: value.d, roles, names });
   });
   return { entries, builtAt: Number(raw[BUILT_KEY]) || 0 };
 };
@@ -165,6 +168,30 @@ export const splitSearchHitsByFeed = (index, ids) => {
   });
   published.sort((a, b) => compareByFeedDate(index, a, b));
   return { published, others };
+};
+
+/**
+ * Опубліковані картки, чиє імʼя (чи назва агенції) починається з набраного
+ * або з одного з його написань (`utils/nameVariants`), — новіші першими.
+ *
+ * Звичайному читачеві `searchId` відповідає лише на значення цілком:
+ * префіксний скан індексу правила дають самим адмінам. Тож «Олен» не
+ * знаходило «Олену», а «Surro» — «Surrohelp». Серед опублікованих перелік
+ * відповідає без жодного запиту (імена в ньому — `n`, з 15.11). Слово
+ * всередині імені теж рахується («kyiv» у «surrohelp kyiv»).
+ */
+export const PUBLISHED_NAME_MIN_LENGTH = 2;
+export const searchPublishedIndexByName = (index, needles) => {
+  const prefixes = [...new Set((needles || [])
+    .map(needle => String(needle || '').trim().toLowerCase())
+    .filter(needle => needle.length >= PUBLISHED_NAME_MIN_LENGTH))];
+  if (!index?.entries || !prefixes.length) return [];
+  const found = [];
+  index.entries.forEach((entry, id) => {
+    const words = (entry.names || []).flatMap(name => [name, ...name.split(/[\s-]+/).slice(1)]);
+    if (words.some(word => prefixes.some(prefix => word.startsWith(prefix)))) found.push(id);
+  });
+  return found.sort((a, b) => compareByFeedDate(index, a, b));
 };
 
 export const __resetPublishedFeedIndexForTests = () => {

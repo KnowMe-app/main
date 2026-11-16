@@ -1,3 +1,5 @@
+import { resolveKnownPlace } from './profileNormalization';
+
 /**
  * Чи набраний у пошуку текст — це не людина, а **категорія анкет**.
  *
@@ -260,4 +262,89 @@ export const isRoleFilterNarrowedToIntent = (roleFilter, role, offeredKeys = [])
   if (!roleFilter[filterKey]) return false;
   const keys = offeredKeys.length ? offeredKeys : Object.keys(roleFilter);
   return keys.every(key => key === filterKey || !roleFilter[key]);
+};
+
+/*
+ * Роль і місце в одному запиті: «Сурогатна мати Київ», «донорка з Харкова»,
+ * «агенції у Львові» (15.11). Доти намір упізнавав саму роль, а місто — саме
+ * місто, і запит з обома падав у пошук імені: «Немає доступних профілів».
+ * Тепер місце (одне-два слова на початку чи в кінці, можна з прийменником і
+ * у відмінку) знімається з запиту, а решта звіряється зі словником ролей.
+ * Стрічка тоді звужується обома чіпами — «Тип профілю» й «Місце».
+ */
+const PLACE_PREPOSITIONS = new Set(['з', 'із', 'зі', 'в', 'у', 'во', 'from', 'in']);
+const PLACE_CASE_ENDINGS = ['ові', 'еві', 'ом', 'ою', 'ах', 'ам', 'а', 'я', 'у', 'ю', 'і', 'и', 'е'];
+const PLACE_NOMINATIVE_ENDINGS = ['', 'а', 'я', 'о', 'и'];
+
+/**
+ * Місто чи область і в непрямому відмінку: «Києва» → Київ, «Харкові» →
+ * Харків, «Одеси» → Одеса, «Дніпра» → Дніпро. Відмінок відкидається, а
+ * основа пробує називні закінчення й чергування «о/е/є → і/ї» (Харков →
+ * Харків, Києв → Київ). Що довідник не знає — `null`.
+ */
+export const resolveInflectedPlace = value => {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  const direct = resolveKnownPlace(text);
+  if (direct) return direct;
+  const words = text.split(/\s+/);
+  const last = words[words.length - 1].toLowerCase();
+  const head = words.slice(0, -1).join(' ');
+  const stems = new Set();
+  PLACE_CASE_ENDINGS.forEach(ending => {
+    if (last.length > ending.length + 2 && last.endsWith(ending)) stems.add(last.slice(0, last.length - ending.length));
+  });
+  const candidates = [];
+  stems.forEach(stem => {
+    PLACE_NOMINATIVE_ENDINGS.forEach(ending => candidates.push(`${stem}${ending}`));
+    const alternated = stem.replace(/о(\S)$/, 'і$1').replace(/е(\S)$/, 'і$1').replace(/є(\S)$/, 'ї$1');
+    if (alternated !== stem) candidates.push(alternated);
+  });
+  for (let index = 0; index < candidates.length; index += 1) {
+    const place = resolveKnownPlace(head ? `${head} ${candidates[index]}` : candidates[index]);
+    if (place) return place;
+  }
+  return null;
+};
+
+const stripPreposition = tokens => (tokens.length > 1 && PLACE_PREPOSITIONS.has(tokens[0].toLowerCase())
+  ? tokens.slice(1)
+  : tokens);
+
+/**
+ * Намір запиту: `{ role, place }`. `role` — як `detectSearchRoleIntent`,
+ * `place` — місце, назване поруч із роллю (або сам лише прийменник із місцем:
+ * «з Києва»). Коли в запиті є щось, крім ролі й місця (імʼя, номер), —
+ * `{ role: null, place: null }`: це пошук людини.
+ */
+export const detectSearchQueryIntent = query => {
+  const empty = { role: null, place: null };
+  const raw = String(query ?? '').trim();
+  if (!raw || looksLikeContact(raw.toLowerCase())) return empty;
+  const wholeRole = detectSearchRoleIntent(raw);
+  if (wholeRole) return { role: wholeRole, place: null };
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  if (tokens.length < 2 || tokens.length > 7) return empty;
+  // Місце — одне-два слова в кінці або на початку, можна з прийменником.
+  const spans = [];
+  for (let size = 1; size <= 3; size += 1) {
+    if (tokens.length - size >= 0) spans.push({ place: tokens.slice(-size), rest: tokens.slice(0, -size) });
+    if (tokens.length - size > 0) spans.push({ place: tokens.slice(0, size), rest: tokens.slice(size) });
+  }
+  for (let index = 0; index < spans.length; index += 1) {
+    const { place: placeTokens, rest } = spans[index];
+    const bare = stripPreposition(placeTokens);
+    if (!bare.length || bare.length > 2) continue;
+    const place = resolveInflectedPlace(bare.join(' '));
+    if (!place) continue;
+    if (!rest.length) {
+      // «з Києва» — місце з прийменником, без ролі; голе «Київ» уже бере
+      // `resolveKnownPlace` на всьому запиті.
+      if (bare.length < placeTokens.length) return { role: null, place };
+      continue;
+    }
+    const role = detectSearchRoleIntent(rest.join(' '));
+    if (role) return { role, place };
+  }
+  return empty;
 };
