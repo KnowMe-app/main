@@ -10,7 +10,7 @@ import { installPushSignOutCleanup, refreshPushToken } from './pushNotifications
 import { startWriteOutbox, stopWriteOutbox } from 'utils/writeOutbox';
 import toast from 'react-hot-toast';
 import { auth, loadViewerProfile, resetViewerAccessLevelCache } from './config';
-import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, persistScreenAccess, resolveAccess } from 'utils/accessLevel';
+import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, persistScreenAccess, resolveAccess, resolveFlowHomeRoute } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
 import { clearMyProfileCache } from 'utils/myProfileCache';
 import { clearFlowCache } from 'utils/flowOfflineWrites';
@@ -243,7 +243,7 @@ export const App = () => {
       {/* Корінь — робочий стіл адміна, решту він веде в «Мій профіль». Поки
           права не прочитані, тут очікування (`catchAllStatus`), а не текст
           угоди, який залогінена людина бачила тут до редиректу. */}
-      <Route path="/" element={<RequireAuth status={catchAllStatus}>{isAdmin ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <Navigate to="/my-profile" replace />}</RequireAuth>} />
+      <Route path="/" element={<RequireAuth status={catchAllStatus}>{isAdmin ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <Navigate to={resolveFlowHomeRoute({ isAdmin, canAccessFlow }) || '/my-profile'} replace />}</RequireAuth>} />
       <Route path="/my-profile" element={<RequireAuth status={authStatus}><MyProfile /></RequireAuth>} />
       <Route path="/my-profile-new" element={<Navigate to="/my-profile" replace />} />
       {canAccessAdd && <Route path="/add" element={<RequireAuth status={authStatus}><AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /></RequireAuth>} />}

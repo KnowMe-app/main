@@ -20,7 +20,9 @@ describe('LoginScreen returns the reader to the link they opened', () => {
     // Без адреси, з якої прийшли, опублікована анкета веде в стрічку, а решта —
     // у «Мій профіль» (`resolveLandingRoute`); адреса завжди важить більше.
     expect(loginSource()).toContain('const target = returnTo || (registered ? MY_PROFILE_ROUTE : await resolveLandingRoute(auth.currentUser?.uid));');
-    expect(loginSource()).toContain('.then(profile => (profile?.publish === true ? MATCHING_ROUTE : MY_PROFILE_ROUTE))');
+    expect(loginSource()).toContain('|| (profile?.publish === true ? MATCHING_ROUTE : MY_PROFILE_ROUTE))');
+    // Не-адмін з відкритим Flow починає з Flow — те саме правило, що й корінь у `App`.
+    expect(loginSource()).toContain('.then(profile => resolveFlowHomeRoute(resolveAccess({');
   });
 
   it('never keeps the sign-in spinner waiting on the database', () => {
