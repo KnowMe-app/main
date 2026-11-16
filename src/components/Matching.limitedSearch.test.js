@@ -54,7 +54,7 @@ describe('limited search projection', () => {
   it('keeps a limited search off the paths its viewer cannot read', () => {
     const config = read('config.js');
     expect(config).toContain("const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch) && !limitedFields;");
-    expect(config).toContain("const searchIdOptions = limitedFields\n    ? { ...baseSearchIdOptions, includePrefixMatches: false, nameVariantKeys, publishedNameHits }");
+    expect(config).toContain("const searchIdOptions = limitedFields\n    ? { ...baseSearchIdOptions, includePrefixMatches: false, nameVariantKeys, publishedNameHits, programCountryHits }");
     // Урізаний читач лишається на урізаній проєкції незалежно від того, що
     // просить сторінка: `limitedFields` перевіряється першим.
     expect(config).toContain('const addHit = resolveSearchHitAdder({ limitedFields, cardsOnly });');

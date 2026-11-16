@@ -29,3 +29,15 @@ describe('programMentionsCountry', () => {
     expect(programMentionsCountry({ location: 'Cyprus' }, 'CY')).toBe(true);
   });
 });
+
+describe('programMentionsCountry — короткі назви у відмінку (ревʼю #3423)', () => {
+  it.each([
+    ['Програма в Чехії', 'CZ'], ['Перенос у Литві', 'LT'], ['Клініка в Індії', 'IN'],
+  ])('%s → %s', (location, code) => {
+    expect(programMentionsCountry({ location }, code)).toBe(true);
+  });
+
+  it('коротка основа не ловить чуже', () => {
+    expect(programMentionsCountry({ location: 'Київ' }, 'US')).toBe(false);
+  });
+});

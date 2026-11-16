@@ -356,15 +356,17 @@ export const extractPersonTraits = query => {
   let rest = ` ${String(query ?? '').trim()} `;
   let age = null;
   let rh = null;
+  // Межі збираються всі й перетинаються: «від 34 до 36» — це 34–36, а не
+  // «до 36», що перезаписав «від 34» (ревʼю #3423).
   for (const pattern of AGE_PATTERNS) {
     const match = rest.match(pattern.re);
     if (!match) continue;
     const buckets = ageBucketsForRange(pattern.range(match));
     if (!buckets) continue;
-    age = buckets;
+    age = age ? age.filter(key => buckets.includes(key)) : buckets;
     rest = rest.replace(match[0], ' ');
-    break;
   }
+  if (age && !age.length) age = null;
   for (const pattern of RH_PATTERNS) {
     const match = rest.match(pattern.re);
     if (!match) continue;
@@ -393,7 +395,8 @@ export const detectSearchQueryIntent = query => {
   if ((traits.age || traits.rh) && traits.rest !== raw) {
     const inner = traits.rest ? detectSearchQueryIntent(traits.rest) : empty;
     if (!inner.role) return empty;
-    return { ...inner, ...(traits.age ? { age: traits.age } : {}), ...(traits.rh ? { rh: traits.rh } : {}) };
+    const age = traits.age && inner.age ? traits.age.filter(key => inner.age.includes(key)) : traits.age || inner.age;
+    return { ...inner, ...(age && age.length ? { age } : {}), ...(traits.rh ? { rh: traits.rh } : {}) };
   }
   if (looksLikeContact(raw.toLowerCase())) return empty;
   const wholeRole = detectSearchRoleIntent(raw);

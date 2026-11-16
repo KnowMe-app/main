@@ -57,7 +57,15 @@ const countryStems = code => [...new Set(listCountryNames(code)
   // Двобуквені аліаси («UK», «US», «РФ») у вільному тексті ловили б що
   // завгодно: «uk» сидить в «ukraine», «us» — в «cyprus».
   .filter(name => name.length >= 3)
-  .map(name => (name.length > 5 ? name.slice(0, -1) : name)))];
+  // Без закінчення — і довгі назви («грузия» → «грузи»), і короткі на
+  // голосну («чехия» → «чехи», «литва» → «литв», «индия» → «инди»): інакше
+  // «Чехії», «Литві», «Індії» в тексті програми не впізнавались (ревʼю #3423).
+  // Основа коротша за чотири знаки не береться — «сша» лишається цілим.
+  .map(name => {
+    if (name.length > 5) return name.slice(0, -1);
+    if (name.length === 5 && /[аеиоуяюь]$/u.test(name)) return name.slice(0, -1);
+    return name;
+  }))];
 
 /** Чи програма — у цій країні (місце програми чи коментар організатора). */
 export const programMentionsCountry = (program, code) => {

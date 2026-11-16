@@ -4063,6 +4063,20 @@ const readOwnerProgramsMemo = async ownerId => {
     return null;
   }
 };
+const programsAdvertisedMemo = new Map();
+const readOwnerProgramsAdvertised = async ownerId => {
+  const cached = programsAdvertisedMemo.get(ownerId);
+  if (cached && Date.now() - cached.at < PROGRAMS_BY_OWNER_TTL_MS) return cached.value;
+  try {
+    noteRealtimeDemand();
+    const snapshot = await get(ref2(database, `${MATCHING_CARDS_ROOT}/${ownerId}/${MATCHING_CARD_PROGRAMS_AT_FIELD}`));
+    const value = Number(snapshot.val()) > 0;
+    programsAdvertisedMemo.set(ownerId, { at: Date.now(), value });
+    return value;
+  } catch {
+    return false;
+  }
+};
 const findPublishedProgramOwnersInCountry = async countryCode => {
   const index = await readPublishedFeedIndex().catch(() => null);
   if (!index?.entries) return [];
@@ -4072,6 +4086,10 @@ const findPublishedProgramOwnersInCountry = async countryCode => {
   });
   owners.sort((a, b) => compareByFeedDate(index, a, b));
   const checked = await Promise.all(owners.slice(0, PROGRAM_OWNERS_READ_LIMIT).map(async ownerId => {
+    // Програми рахуються лише тоді, коли картка їх показує (`programsAt`):
+    // агенція, що сховала агентську анкету, програм не рекламує
+    // (`isProgramsOwnerRoleHidden`), хоч вузол програм лишився (ревʼю #3423).
+    if (!(await readOwnerProgramsAdvertised(ownerId))) return null;
     const programs = listPrograms(await readOwnerProgramsMemo(ownerId));
     return programs.some(program => programMentionsCountry(program, countryCode)) ? ownerId : null;
   }));
@@ -4122,7 +4140,11 @@ const searchBySearchIdUsers = async (
   // донорка шукає умови, а не людину. Першими — вони: точний ключ `searchId`
   // на «грузія» знаходить хіба когось із таким словом в імені.
   let programCountryIds = [];
-  const programCountry = cardsOnly ? detectProgramCountryQuery(rawSearchValue) : null;
+  // Лише текстовий пошук без поля: «Georgia» як прізвище чи нік Telegram —
+  // питання про людину, а не про програми (ревʼю #3423).
+  const programCountry = cardsOnly && namesAllowed && options.programCountryHits
+    ? detectProgramCountryQuery(rawSearchValue)
+    : null;
   if (programCountry) {
     programCountryIds = (await findPublishedProgramOwnersInCountry(programCountry.code))
       .filter(id => !userIds.includes(id) && !publishedNameIds.includes(id));
@@ -4480,9 +4502,11 @@ const searchUsersOnlyUnfiltered = async (searchedValue, options = {}) => {
   // and the broad fallback do exactly that, so neither runs for them - the index
   // stays a lookup, never an enumeration.
   const publishedNameHits = searchKey !== 'surname';
+  const programCountryHits = searchKey === 'name'
+    || (searchKey === 'searchId' && (!searchIdDetectedField || searchIdDetectedField === 'name'));
   const searchIdOptions = limitedFields
-    ? { ...baseSearchIdOptions, includePrefixMatches: false, nameVariantKeys, publishedNameHits }
-    : { ...baseSearchIdOptions, nameVariantKeys, publishedNameHits };
+    ? { ...baseSearchIdOptions, includePrefixMatches: false, nameVariantKeys, publishedNameHits, programCountryHits }
+    : { ...baseSearchIdOptions, nameVariantKeys, publishedNameHits, programCountryHits };
   const addHit = resolveSearchHitAdder({ limitedFields, cardsOnly });
   const users = {};
   const uniqueUserIds = new Set();

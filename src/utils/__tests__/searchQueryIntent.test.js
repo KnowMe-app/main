@@ -64,3 +64,10 @@ describe('detectSearchQueryIntent — вік і резус поруч із ро�
     expect(detectSearchQueryIntent('0501234567')).toEqual({ role: null, place: null });
   });
 });
+
+describe('вік — обидві межі (ревʼю #3423)', () => {
+  it('«від 34 до 36» — лише 34–36', () => {
+    expect(detectSearchQueryIntent('сурогатна мама від 34 до 36 років')).toMatchObject({ role: 'sm', age: ['34_36'] });
+    expect(detectSearchQueryIntent('донорка від 26 до 30')).toMatchObject({ role: 'ed', age: ['26_30'] });
+  });
+});
