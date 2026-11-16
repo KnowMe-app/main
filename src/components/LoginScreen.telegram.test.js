@@ -77,6 +77,11 @@ describe('LoginScreen: вхід через Telegram', () => {
   it('кнопка бота з ключем спроби завершує вхід і без спроби цього браузера', () => {
     const source = loginSource();
     expect(source).toContain("pollTelegramLogin(auth.app, '', code, { key })");
+    // Посилання може надіслати чужа людина: сесії воно не підмінює, а вхід
+    // чекає підтвердження з назвою акаунта Telegram.
+    expect(source).toContain("if (authStatus === 'in') {");
+    expect(source).toContain('setTelegramLinkConfirm({ result, role:');
+    expect(source).toContain('data-testid="telegram-link-confirm"');
     expect(source).toContain("if (result?.status === 'pending' && result.started === false) {");
   });
 });
