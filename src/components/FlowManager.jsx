@@ -305,12 +305,6 @@ const CategoryTitle = styled.span`
   overflow-wrap: anywhere;
 `;
 
-const CategorySum = styled.span`
-  color: #6b7280;
-  font-size: 12px;
-  white-space: nowrap;
-`;
-
 const CategoryDeleteBtn = styled.button`
   border: 1px solid #d7d7d7;
   border-radius: 999px;
@@ -377,8 +371,9 @@ const GroupBlock = styled.li`
 // групи разом ставили суми інших груп за десяток екранів униз.
 const GroupTitle = styled.button`
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   width: 100%;
   min-height: 32px;
   padding: 6px 0;
@@ -390,8 +385,6 @@ const GroupTitle = styled.button`
   color: var(--km-text, #333);
   text-align: left;
   cursor: pointer;
-  overflow-wrap: anywhere;
-  word-break: break-word;
 
   &:focus-visible {
     outline: none;
@@ -400,21 +393,21 @@ const GroupTitle = styled.button`
   }
 `;
 
-const GroupChevron = styled.span`
-  flex: 0 0 auto;
-  display: inline-block;
-  width: 12px;
-  color: var(--km-muted, #777);
-  transition: transform 0.2s ease;
-  transform: rotate(${({ $open }) => ($open ? '90deg' : '0deg')});
-
-  @media (prefers-reduced-motion: reduce) { transition: none; }
+// Назва групи — окремим рядком і переноситься словами; сума — під нею. В
+// одному рядку з сумою (`nowrap`) назва при збільшеному тексті стискалась до
+// колонки в дві літери й розсипалась по буквах (скрин 16.11).
+const GroupName = styled.span`
+  max-width: 100%;
+  overflow-wrap: break-word;
 `;
 
-const GroupCount = styled.span`
-  font-weight: 400;
-  color: var(--km-muted, #777);
+const GroupSum = styled.span`
+  max-width: 100%;
+  font-weight: 600;
+  color: #6b7280;
+  overflow-wrap: break-word;
 `;
+
 
 const GroupRows = styled.ul`
   margin: 0;
@@ -2524,10 +2517,8 @@ export const FlowManager = ({ ownerId }) => {
                 onClick={() => toggleGroup(group)}
                 data-testid="flow-group-toggle"
               >
-                <GroupChevron aria-hidden="true" $open={openGroup === group}>▸</GroupChevron>
-                <span>{formatGroupTitle(group)}</span>
-                <GroupCount>· {entries.length}</GroupCount>
-                <CategorySum>
+                <GroupName>{formatGroupTitle(group)}</GroupName>
+                <GroupSum>
                   {(() => {
                     const categoryTotals = categorySums[group] || { uah: 0, usd: 0, eur: 0 };
                     const amountUah = categoryTotals.uah || 0;
@@ -2538,7 +2529,7 @@ export const FlowManager = ({ ownerId }) => {
 
                     return amountUahText;
                   })()}
-                </CategorySum>
+                </GroupSum>
               </GroupTitle>
               <Collapsible open={openGroup === group}>
                 <GroupRows>
