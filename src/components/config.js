@@ -4067,7 +4067,13 @@ const searchBySearchIdUsers = async (
   // Опубліковані — ті, кого стрічка й так показує всім, тож ні межі, ні
   // читань це не додає, крім самих карток видачі.
   let publishedNameIds = [];
-  if (cardsOnly && options.nameVariantKeys?.length && isNameLikeQuery(rawSearchValue)) {
+  // Перелік знає лише імʼя й назву агенції, тож збіг за ним — це збіг за
+  // імʼям: пошук, звужений до прізвища (поле запиту чи `searchIdPrefixes`),
+  // його не бере — інакше «Koval» віддав би «Коваленко» на імʼя (ревʼю #3419).
+  const allowedFields = getSearchIdPrefixes(searchIdPrefixes);
+  const namesAllowed = options.publishedNameHits !== false
+    && (!allowedFields.length || allowedFields.includes('name'));
+  if (cardsOnly && namesAllowed && options.nameVariantKeys?.length && isNameLikeQuery(rawSearchValue)) {
     const publishedIndex = await readPublishedFeedIndex().catch(() => null);
     publishedNameIds = searchPublishedIndexByName(publishedIndex, [rawSearchValue, ...listNameVariants(rawSearchValue)])
       .filter(id => !userIds.includes(id));
@@ -4424,9 +4430,10 @@ const searchUsersOnlyUnfiltered = async (searchedValue, options = {}) => {
   // index, and may not read either collection's root either. Both the prefix scan
   // and the broad fallback do exactly that, so neither runs for them - the index
   // stays a lookup, never an enumeration.
+  const publishedNameHits = searchKey !== 'surname';
   const searchIdOptions = limitedFields
-    ? { ...baseSearchIdOptions, includePrefixMatches: false, nameVariantKeys }
-    : { ...baseSearchIdOptions, nameVariantKeys };
+    ? { ...baseSearchIdOptions, includePrefixMatches: false, nameVariantKeys, publishedNameHits }
+    : { ...baseSearchIdOptions, nameVariantKeys, publishedNameHits };
   const addHit = resolveSearchHitAdder({ limitedFields, cardsOnly });
   const users = {};
   const uniqueUserIds = new Set();
