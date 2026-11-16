@@ -116,6 +116,15 @@ export const resolveCountryCode = value => COUNTRY_INDEX.get(foldLocationKey(val
 
 export const isUkraineCountry = value => resolveCountryCode(value) === 'UA';
 
+/** Усі відомі написання країни за кодом (`GE` → «Грузія», «Georgia», «Грузия»…). */
+export const listCountryNames = code => {
+  const entry = COUNTRIES.find(item => item.code === code);
+  return entry ? [entry.uk, entry.en, ...entry.aliases] : [];
+};
+
+/** Назва країни українською за кодом або порожній рядок. */
+export const countryNameUk = code => COUNTRIES.find(item => item.code === code)?.uk || '';
+
 /** Назва країни мовою інтерфейсу; незнайома — як написали, без зайвих пробілів. */
 export const formatCountryName = (value, language) => {
   const text = cleanText(value);

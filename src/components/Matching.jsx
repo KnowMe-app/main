@@ -5,7 +5,8 @@ import toast from 'react-hot-toast';
 import { resolveAccess } from 'utils/accessLevel';
 import { keepNotesForIds, mergeNotes } from 'utils/commentsStateMerge';
 import { useFeedColumns } from 'hooks/useFeedColumns';
-import { formatCityName, formatRegionName, resolveKnownPlace } from 'utils/profileNormalization';
+import { formatCityName, formatCountryName, formatRegionName, resolveKnownPlace } from 'utils/profileNormalization';
+import { detectProgramCountryQuery } from 'utils/programPlaceSearch';
 import {
   ActionButton,
   CardWrapper,
@@ -274,6 +275,7 @@ import {
   FEED_ROLE_FILTER_KEYS,
 } from 'utils/matchingPeerVisibility';
 import {
+  AGE_FILTER_BUCKETS,
   detectSearchQueryIntent,
   resolveRoleIntentFlow,
   buildRoleIntentRoleFilter,
@@ -7817,6 +7819,23 @@ const Matching = () => {
     if (!filterKey) return;
     const current = filtersRef.current || {};
     const userRole = buildRoleIntentRoleFilter(current.userRole, role, FEED_ROLE_FILTER_KEYS);
+    // Вік і резус з того самого запиту («донорка до 30 резус негативний»)
+    // стають групами фільтрів про людину — тими самими кошиками, що в панелі
+    // (`AGE_FILTER_BUCKETS`). «Не вказано» (`other`) знімається: хто питав «до
+    // 30», анкет без віку не просив.
+    // Новий запит-намір задає картину заново: вік чи резус, яких він не
+    // назвав, скидаються — інакше «Rh-» з попереднього запиту мовчки звужував
+    // наступний «сурогатна мати з Києва» до нуля (перевірено наживо 16.11).
+    const intent = detectSearchQueryIntent(query);
+    const traitFilters = {
+      age: AGE_FILTER_BUCKETS.reduce(
+        (group, bucket) => ({ ...group, [bucket.key]: intent.age ? intent.age.includes(bucket.key) : true }),
+        { other: !intent.age },
+      ),
+      rh: intent.rh
+        ? { '+': intent.rh === '+', '-': intent.rh === '-', other: false }
+        : { '+': true, '-': true, other: true },
+    };
     // Панель фільтрів, поки йде пошук, не змонтована, і після нього
     // змонтується заново зі збереженого стану (`getInitialFilters`). Тож роль
     // кладемо й туди — інакше перше ж її сповіщення повернуло б старий «Тип
@@ -7825,14 +7844,14 @@ const Matching = () => {
       const storedRaw = localStorage.getItem('matchingFilters');
       const stored = storedRaw ? JSON.parse(storedRaw) : null;
       const { place: _place, program: _program, ...panelFilters } = current;
-      localStorage.setItem('matchingFilters', JSON.stringify({ ...(stored || panelFilters), userRole }));
+      localStorage.setItem('matchingFilters', JSON.stringify({ ...(stored || panelFilters), userRole, ...traitFilters }));
     } catch {
       // Сховище недоступне — фільтр однаково діє до перезавантаження.
     }
     // Місце з того самого запиту («донорка з Харкова») звужує стрічку разом
     // із роллю — тим самим фільтром, що й картка «Схоже на місто».
-    const place = detectSearchQueryIntent(query).place;
-    applyFilters({ ...current, userRole, ...(place ? { place: { kind: place.kind, uk: place.uk } } : {}) });
+    const { place } = intent;
+    applyFilters({ ...current, userRole, ...traitFilters, ...(place ? { place: { kind: place.kind, uk: place.uk } } : {}) });
     setRoleIntentBanner({ role, query });
     setRoleIntentChoice(null);
     localStorage.removeItem(SEARCH_KEY);
@@ -8287,6 +8306,15 @@ const Matching = () => {
     // саме тоді, коли пояснення й потрібне.
     if (!isReactionTab && !isSearching && isDonorViewer(donorRestrictionViewerRole)) {
       return uiText('У стрічці немає анкет агенцій, клінік чи батьків — інших вона донорці не показує. Конкретну людину можна знайти пошуком', language);
+    }
+    // Запит-країна шукав програми (`utils/programPlaceSearch`), і «немає
+    // профілів» тут читалось би як «застосунок порожній»: відповідь — про
+    // програми в цій країні.
+    const programCountry = isSearching ? detectProgramCountryQuery(searchQuery) : null;
+    if (programCountry) {
+      return uiText('Програм у країні «{country}» поки немає', language, {
+        country: formatCountryName(programCountry.uk, language) || programCountry.uk,
+      });
     }
     return uiText('Немає доступних профілів', language);
   };
@@ -9510,7 +9538,7 @@ const Matching = () => {
                   </QueryDraftButton>
                 </QueryDraftCard>
               )}
-              {isSearching && queryDraft && !searchPlace && !searchRoleIntent && (
+              {isSearching && queryDraft && !searchPlace && !searchRoleIntent && !detectProgramCountryQuery(searchQuery) && (
                 <QueryDraftCard data-testid="query-draft-card">
                   <QueryDraftBody>
                     <QueryDraftLabel>{queryDraft.label}</QueryDraftLabel>

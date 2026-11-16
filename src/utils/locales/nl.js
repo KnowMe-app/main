@@ -129,6 +129,7 @@ const BY_UK = {
   'Залишити запит': 'Verzoek achterlaten',
   'Запит координаторові': 'Verzoek aan een coördinator',
   'Шукаєте за категорією? Спробуйте фільтр «Тип профілю»': 'Zoekt u op categorie? Probeer het filter ‘Profieltype’',
+  'Програм у країні «{country}» поки немає': 'Nog geen programma’s in {country}',
   'Можливо, ви мали на увазі «{query}»? (розкладка клавіатури)': 'Bedoelde u ‘{query}’? (toetsenbordindeling)',
   'Чому ви йдете? (необовʼязково)': 'Waarom vertrekt u? (optioneel)',
   'Не знайшла те, що шукала': 'Ik vond niet wat ik zocht',

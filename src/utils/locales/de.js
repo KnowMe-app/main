@@ -129,6 +129,7 @@ const BY_UK = {
   'Залишити запит': 'Anfrage hinterlassen',
   'Запит координаторові': 'Anfrage an die Koordinatorin',
   'Шукаєте за категорією? Спробуйте фільтр «Тип профілю»': 'Suchen Sie nach Kategorie? Probieren Sie den Filter „Profiltyp“',
+  'Програм у країні «{country}» поки немає': 'Noch keine Programme in {country}',
   'Можливо, ви мали на увазі «{query}»? (розкладка клавіатури)': 'Meinten Sie „{query}“? (Tastaturlayout)',
   'Чому ви йдете? (необовʼязково)': 'Warum gehen Sie? (optional)',
   'Не знайшла те, що шукала': 'Ich habe nicht gefunden, was ich gesucht habe',
