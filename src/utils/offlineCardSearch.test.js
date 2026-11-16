@@ -72,3 +72,17 @@ describe('searchCardsOnDevice — інші написання імені', () =>
     expect(searchCardsOnDevice(cards, { telegram: 'Ольга' })).toEqual([]);
   });
 });
+
+describe('searchCardsOnDevice — варіанти лише для імені (ревʼю #3419)', () => {
+  const cards = [{ userId: 'a', name: 'Ольга', surname: 'К.' }];
+
+  it('розпізнаний контакт (посилання Telegram) варіантів імені не має', () => {
+    expect(searchCardsOnDevice(cards, { searchId: 'Olga' }, { detectedField: 'telegram' })).toEqual([]);
+  });
+
+  it('запит за прізвищем звіряє варіанти лише з прізвищем', () => {
+    expect(searchCardsOnDevice(cards, { surname: 'Olga' })).toEqual([]);
+    expect(searchCardsOnDevice([{ userId: 'b', name: 'Анна', surname: 'Коваленко' }], { surname: 'Kovalenko' })
+      .map(card => card.userId)).toEqual(['b']);
+  });
+});
