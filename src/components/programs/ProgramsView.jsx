@@ -10,7 +10,6 @@ import {
   FaGift,
   FaHeadset,
   FaHome,
-  FaMapMarkerAlt,
   FaShieldAlt,
   FaStethoscope,
   FaTshirt,
@@ -22,13 +21,16 @@ import {
   PROGRAM_COVERAGE_PER,
   PROGRAM_FAMILY_OPTIONS,
   PROGRAM_OFFER_LABELS,
+  PROGRAM_TYPE_LABELS,
   describeProgramCoverage,
+  describeProgramHighlights,
   describeProgramRequirements,
+  programGuaranteedMoney,
+  programGuaranteedUsd,
   evaluateProgram,
   formatProgramPlace,
   listProgramDifferences,
   programBreakdown,
-  resolveProgramHighlights,
   summarizeCardPrograms,
 } from '../../utils/donorPrograms';
 import {
@@ -54,6 +56,8 @@ import { revealCss } from '../../styles/revealAnimation';
 import Collapsible, { COLLAPSE_DURATION_MS } from '../Collapsible';
 import CalendarPicker from '../CalendarPicker';
 import { getRoleColor } from '../matchingRoleColors';
+import { readCardProgramsAt } from '../../utils/programsStore';
+import { buildProgramInquiryText, resolveProgramInquiryLink } from '../../utils/programInquiry';
 
 const COLLAPSE_SETTLE_MS = COLLAPSE_DURATION_MS + 60;
 
@@ -820,6 +824,100 @@ const useSelectedBonuses = program => {
   return [selected, toggle];
 };
 
+const SubTitle = styled.p`
+  margin: 10px 0 4px;
+  font-size: 12.5px;
+  color: ${MUTED};
+`;
+
+// Кроки програми — нумерованим списком; тривалість дрібніше під назвою.
+const StepList = styled.ol`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+  color: ${TEXT};
+
+  li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: start; }
+  li > i {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: ${PROGRAM_BG};
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 700;
+  }
+  li small { display: block; font-size: 12px; color: ${MUTED}; }
+`;
+
+const InquiryButton = styled.a`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin-top: 16px;
+  border-radius: 12px;
+  background: ${ACCENT};
+  color: var(--km-on-accent, #fff);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+
+  &:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
+`;
+
+const InquiryHint = styled.p`
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+  color: ${MUTED};
+`;
+
+/**
+ * «Написати про цю програму» — лист уже називає програму
+ * (`utils/programInquiry`). Канал — з контактів картки (`contact.entries`),
+ * дотик рахується як дотик до контакту (`contact.onContactAction`). Без
+ * контактів кнопки немає: обіцяти лист, якого нема куди надіслати, гірше.
+ */
+const ProgramInquiry = ({ program, contact, rates, displayCurrency, language }) => {
+  const [copied, setCopied] = useState(false);
+  const breakdown = programBreakdown(program, { rates });
+  const pay = breakdown.guaranteed.amount > 0 ? presentPayRange(breakdown, displayCurrency, rates).primary : '';
+  const text = buildProgramInquiryText({
+    offer: uiText(PROGRAM_TYPE_LABELS[program.type] || '', language),
+    title: program.location ? formatProgramPlace(program.location) : '',
+    pay,
+  }, language);
+  const link = resolveProgramInquiryLink(contact?.entries, text);
+  if (!link) return null;
+  const onClick = event => {
+    event.stopPropagation();
+    contact.onContactAction?.(link.channel);
+    if (!link.prefilled && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(() => setCopied(true), () => {});
+    }
+  };
+  return (
+    <div data-testid="program-inquiry">
+      <InquiryButton href={link.href} target="_blank" rel="noopener noreferrer" onClick={onClick}>
+        {uiText('Написати про цю програму', language)}
+      </InquiryButton>
+      <InquiryHint>
+        {link.prefilled
+          ? uiText('Лист уже називає програму — лишиться надіслати', language)
+          : uiText(copied ? 'Текст скопійовано — вставте його в чат' : 'Текст про програму скопіюється — вставте його в чат', language)}
+      </InquiryHint>
+    </div>
+  );
+};
+
 /**
  * Деталі програми — під згорнутою частиною того самого контейнера.
  *
@@ -841,6 +939,7 @@ export const ProgramCard = ({
   selectedBonuses: controlledBonuses,
   onToggleBonus,
   timeline = null,
+  contact = null,
 }) => {
   const [ownBonuses, toggleOwnBonus] = useSelectedBonuses(program);
   // У контейнері стрічки вибір тримає згорнута частина: так він переживає
@@ -872,65 +971,98 @@ export const ProgramCard = ({
   // не каже, і без цього рядка воно зникало з картки зовсім.
   const showPaidLines = paidLines.length > 0 && (guaranteedBonuses.length > 0 || additional.length > 0 || Boolean(main && bonusMeta(main)));
 
+  const steps = Array.isArray(program.steps) ? program.steps : [];
+  const showOffer = showPaidLines || additional.length > 0 || coverage.all.length > 0;
+  const showProcess = steps.length > 0 || Boolean(relocation);
+
+  // Деталі відповідають на три питання кандидатки по черзі (15.11, на
+  // прохання власниці продукту): що я отримаю → що від мене треба → як це
+  // відбувається. Доти розділи йшли за полями редактора: «Виплати»,
+  // «Додаткові виплати», «Вимоги», «Переїзд», «Додатково покривається».
   const body = (
     <Details data-testid={framed ? undefined : 'program-card'}>
-      {showPaidLines ? (
-        <Section data-testid="program-payments">
-          <SectionTitle>{uiText('Виплати', language)}</SectionTitle>
-          {paidLines.map(item => {
-            const meta = bonusMeta(item);
-            return (
-              <PaymentLine key={item.key}>
-                <span>
-                  {uiText(item.label, language)}
-                  {item.months ? <small>{monthlyDetail(item, currency, rates, language)}</small> : null}
-                  {meta ? <small>{meta}</small> : null}
-                </span>
-                <b>{item === main ? plainMoney(item.subtotal, currency, rates) : plus(lineMoney(item))}</b>
-              </PaymentLine>
-            );
-          })}
-        </Section>
-      ) : null}
+      {showOffer ? (
+        <Section data-testid="program-offer">
+          <SectionTitle>{uiText('Що ви отримаєте', language)}</SectionTitle>
+          {showPaidLines ? (
+            <div data-testid="program-payments">
+              {paidLines.map(item => {
+                const meta = bonusMeta(item);
+                return (
+                  <PaymentLine key={item.key}>
+                    <span>
+                      {uiText(item.label, language)}
+                      {item.months ? <small>{monthlyDetail(item, currency, rates, language)}</small> : null}
+                      {meta ? <small>{meta}</small> : null}
+                    </span>
+                    <b>{item === main ? plainMoney(item.subtotal, currency, rates) : plus(lineMoney(item))}</b>
+                  </PaymentLine>
+                );
+              })}
+            </div>
+          ) : null}
 
-      {additional.length ? (
-        <Section data-testid="program-bonuses">
-          <SectionTitle>{uiText('Додаткові виплати', language)}</SectionTitle>
-          {additional.map(item => {
-            const meta = bonusMeta(item);
-            return (
-              <BonusRow
-                key={item.key}
-                type="button"
-                role="checkbox"
-                aria-checked={item.selected}
-                $on={item.selected}
-                onClick={event => { event.stopPropagation(); toggleBonus(item.key); }}
-              >
-                <i aria-hidden="true">{item.selected ? '✓' : ''}</i>
-                <span>
-                  {uiText(item.label, language)}
-                  {item.months ? <small>{monthlyDetail(item, currency, rates, language)}</small> : null}
-                  {meta ? <small>{meta}</small> : null}
-                </span>
-                <b>{plus(lineMoney(item))}</b>
-              </BonusRow>
-            );
-          })}
-          {/* Заголовок програми — діапазон «від … до …» і від вибору не
-              міняється; відмічене читачкою рахується тут, під перемикачами. */}
-          {additional.some(item => item.selected) && total.amount > 0 ? (
-            <PaymentLine data-testid="program-selected-total">
-              <span>{uiText('Разом із відміченими', language)}</span>
-              <b>{presentSum(total, currency, rates).primary}</b>
-            </PaymentLine>
+          {additional.length ? (
+            <div data-testid="program-bonuses">
+              <SubTitle>{uiText('Може додатися — відмітьте, що про вас', language)}</SubTitle>
+              {additional.map(item => {
+                const meta = bonusMeta(item);
+                return (
+                  <BonusRow
+                    key={item.key}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={item.selected}
+                    $on={item.selected}
+                    onClick={event => { event.stopPropagation(); toggleBonus(item.key); }}
+                  >
+                    <i aria-hidden="true">{item.selected ? '✓' : ''}</i>
+                    <span>
+                      {uiText(item.label, language)}
+                      {item.months ? <small>{monthlyDetail(item, currency, rates, language)}</small> : null}
+                      {meta ? <small>{meta}</small> : null}
+                    </span>
+                    <b>{plus(lineMoney(item))}</b>
+                  </BonusRow>
+                );
+              })}
+              {/* Заголовок програми — діапазон «від … до …» і від вибору не
+                  міняється; відмічене читачкою рахується тут, під перемикачами. */}
+              {additional.some(item => item.selected) && total.amount > 0 ? (
+                <PaymentLine data-testid="program-selected-total">
+                  <span>{uiText('Разом із відміченими', language)}</span>
+                  <b>{presentSum(total, currency, rates).primary}</b>
+                </PaymentLine>
+              ) : null}
+            </div>
+          ) : null}
+
+          {coverage.all.length ? (
+            <>
+              <SubTitle>{uiText('Додатково покривається', language)}</SubTitle>
+              <CoverList aria-label={uiText('Додатково покривається', language)}>
+                {[...coverage.expenses, ...coverage.support, ...coverage.custom].map(item => {
+                  const Icon = item.custom ? FaGift : COVERAGE_ICONS[item.key] || FaShieldAlt;
+                  const detail = item.custom ? '' : coverageDetailText(item, language, currency, rates);
+                  return (
+                    <li key={item.key}>
+                      <Icon aria-hidden="true" />
+                      <span>
+                        {item.custom ? item.label : uiText(item.label, language)}
+                        {detail ? <small>{detail}</small> : null}
+                      </span>
+                    </li>
+                  );
+                })}
+              </CoverList>
+            </>
           ) : null}
         </Section>
       ) : null}
 
       {requirements.length || wishes.length ? (
         <Section>
-          <SectionTitle>{uiText('Вимоги', language)}</SectionTitle>
+          <SectionTitle>{uiText('Що від вас потрібно', language)}</SectionTitle>
           {verdictText ? <Verdict $state={state}>{uiText(verdictText, language)}</Verdict> : null}
           <Chips>
             {requirements.map(item => {
@@ -948,42 +1080,36 @@ export const ProgramCard = ({
         </Section>
       ) : null}
 
-      {relocation ? (
-        <Section>
-          <SectionTitle>{uiText('Переїзд', language)}</SectionTitle>
-          <PlaceList>
-            {relocation?.when ? <><dt>{uiText('Переїзд', language)}</dt><dd>{relocation.when}</dd></> : null}
-            {familyLabel ? <><dt>{uiText('Сімʼя', language)}</dt><dd>{uiText(familyLabel, language)}</dd></> : null}
-          </PlaceList>
-          {relocation?.note ? <Hint>{relocation.note}</Hint> : null}
-        </Section>
-      ) : null}
-
-      {coverage.all.length ? (
-        <Section>
-          <SectionTitle>{uiText('Додатково покривається', language)}</SectionTitle>
-          <CoverList aria-label={uiText('Додатково покривається', language)}>
-            {[...coverage.expenses, ...coverage.support, ...coverage.custom].map(item => {
-              const Icon = item.custom ? FaGift : COVERAGE_ICONS[item.key] || FaShieldAlt;
-              const detail = item.custom ? '' : coverageDetailText(item, language, currency, rates);
-              return (
-                <li key={item.key}>
-                  <Icon aria-hidden="true" />
+      {showProcess ? (
+        <Section data-testid="program-process">
+          <SectionTitle>{uiText('Як це відбувається', language)}</SectionTitle>
+          {steps.length ? (
+            <StepList data-testid="program-steps">
+              {steps.map((step, index) => (
+                <li key={`${index}-${step.text}`}>
+                  <i aria-hidden="true">{index + 1}</i>
                   <span>
-                    {item.custom ? item.label : uiText(item.label, language)}
-                    {detail ? <small>{detail}</small> : null}
+                    {step.text}
+                    {step.duration ? <small>{step.duration}</small> : null}
                   </span>
                 </li>
-              );
-            })}
-          </CoverList>
+              ))}
+            </StepList>
+          ) : null}
+          {relocation ? (
+            <PlaceList style={steps.length ? { marginTop: 10 } : undefined}>
+              <dt>{uiText('Переїзд', language)}</dt><dd>{relocation.when || uiText('так', language)}</dd>
+              {familyLabel ? <><dt>{uiText('Сімʼя', language)}</dt><dd>{uiText(familyLabel, language)}</dd></> : null}
+            </PlaceList>
+          ) : null}
+          {relocation?.note ? <Hint>{relocation.note}</Hint> : null}
         </Section>
       ) : null}
 
       {program.note ? (
         <Section>
           <SectionTitle>{uiText('Коментар організатора', language)}</SectionTitle>
-          <Note>{program.note}</Note>
+          <Note data-testid="program-organizer-note">{program.note}</Note>
         </Section>
       ) : null}
 
@@ -993,6 +1119,8 @@ export const ProgramCard = ({
           <ProgramTimeline language={language} lastCycle={timeline?.lastCycle} onLastCycleChange={timeline?.onLastCycleChange} />
         </Section>
       ) : null}
+
+      {contact ? <ProgramInquiry program={program} contact={contact} rates={rates} displayCurrency={currency} language={language} /> : null}
     </Details>
   );
 
@@ -1037,7 +1165,6 @@ export const formatPayRange = (finals, displayCurrency, rates) => {
 
 // --- список програм агенції --------------------------------------------------
 
-const RANGE_TYPE_LABELS = Object.freeze({ ed: 'Донорам', sm: 'Сурогатним мамам' });
 
 // «з 2 програм», але «з 1 програми»: після «з» — родовий відмінок.
 const programsGenitive = (count, language) => {
@@ -1066,10 +1193,11 @@ const PanelTitle = styled.h4`
   color: ${TEXT};
 
   span { font-weight: 500; color: ${MUTED}; }
+  small { margin-left: 6px; font-size: 12px; font-weight: 400; color: ${MUTED}; }
 `;
 
 const PanelLine = styled.p`
-  margin: -4px 0 8px;
+  margin: -4px 0 8px 15px;
   font-size: 12.5px;
   color: ${({ $match }) => ($match ? GOOD : MUTED)};
   font-weight: ${({ $match }) => ($match ? 600 : 400)};
@@ -1107,9 +1235,15 @@ const ProgramItem = styled.li`
   border-left: 3px solid ${({ $type, $off }) => typeStripe($type, $off ? 35 : 75)};
   border-radius: 14px;
   background: ${PROGRAM_BG};
+  ${({ $off }) => ($off ? 'opacity: 0.72;' : '')}
+  ${({ $best }) => ($best ? `border-color: color-mix(in srgb, ${ACCENT} 55%, transparent); border-left-color: ${ACCENT};` : '')}
 `;
 
 const ProgramHead = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 10px;
   border-radius: 8px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -1117,115 +1251,9 @@ const ProgramHead = styled.div`
   &:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
 `;
 
-// Кого шукають — заголовком, а скільки — окремим рядком «Винагорода від
-// 28 100 $» під ним. Через тире в одному рядку («Шукаємо сурогатну маму —
-// 28 100 $») сума читалась як ціна, а не як винагорода кандидатці, і не
-// казала, що з додатковими виплатами вона більша.
-const ProgramTitle = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1.3;
-  color: ${TEXT};
-  overflow-wrap: anywhere;
-`;
-
 const Sum = styled.span`
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-`;
-
-// Сума — головне число програми, розміром і вагою як числа смуги показників
-// донорки (зріст, вага — 19/700). Слово «Винагорода» лишається перед нею,
-// дрібніше й сірим: голе «1 500 $» у картці агенції читалось би ціною.
-const Reward = styled.div`
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 1.3;
-  color: ${MUTED};
-
-  ${Sum} { font-size: 19px; font-weight: 700; color: ${TEXT}; }
-  &[data-off] { opacity: 0.6; }
-`;
-
-// Місце й «Деталі програми» — один рядок: окремий рядок розгортання коштував
-// ~40 px на кожну програму, а підписаним розгортання лишається.
-const PlaceRow = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 2px;
-  cursor: pointer;
-
-  /* Мішень дотику — увесь рядок (він теж розгортає), тож кнопці досить
-     28 px: 36 px робили рядок місця вищим за суму над ним. */
-  > button { margin-left: auto; flex: none; min-height: 28px; }
-`;
-
-const Place = styled.div`
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  min-width: 0;
-  font-size: 14px;
-  color: ${TEXT};
-  overflow-wrap: anywhere;
-
-  svg { flex: 0 0 auto; width: 10px; height: 10px; transform: translateY(1px); color: ${MUTED}; }
-`;
-
-const PayLabel = styled.div`
-  margin-top: 1px;
-  font-size: 12.5px;
-  line-height: 1.4;
-  color: ${MUTED};
-
-  strong { font-weight: 600; color: ${TEXT}; }
-`;
-
-const Highlights = styled.ul`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 10px 0 0;
-  padding: 0;
-  list-style: none;
-
-  li {
-    display: inline-flex;
-    align-items: center;
-    min-height: 24px;
-    padding: 0 9px;
-    border-radius: 999px;
-    border: 1px solid ${BORDER};
-    background: ${CARD_BG};
-    font-size: 12.5px;
-    color: ${TEXT};
-  }
-  li.differs { border-color: color-mix(in srgb, ${TEXT} 45%, transparent); font-weight: 600; }
-`;
-
-const CollapsedRequirements = styled(Chips)`
-  margin-top: 6px;
-`;
-
-// Вердикт — перший чіп у ряду вимог, поруч зі своєю причиною. Тонований, а
-// не залитий: залитий червоний «Не підходить» був гучнішим за суму. Стояв він
-// значком 16 px перед заголовком і губився; праворуч від суми — на 390 px
-// переносився в двох програмах із трьох.
-const VerdictChip = styled.li`
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 26px;
-  padding: 0 9px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: ${({ $state }) => tone($state === 'match' ? true : $state === 'mismatch' ? false : null)};
-  background: ${({ $state }) => `color-mix(in srgb, ${tone($state === 'match' ? true : $state === 'mismatch' ? false : null)} 16%, transparent)`};
 `;
 
 // Кого шукають — один раз над програмами цього типу, а не в кожній: три
@@ -1255,22 +1283,6 @@ const ProgramGroupHead = styled.h5`
   }
 
   span { font-weight: 500; color: ${MUTED}; }
-`;
-
-// Коментар організатора в згорнутій картці — три рядки, решта в деталях.
-const OrganizerNote = styled.p`
-  display: -webkit-box;
-  margin: 8px 0 0;
-  overflow: hidden;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: ${MUTED};
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-
-  b { font-weight: 600; color: ${TEXT}; }
 `;
 
 const ProgramBody = styled.div`
@@ -1323,16 +1335,123 @@ const RateNote = styled.p`
   color: ${MUTED};
 `;
 
+// Рядок згорнутої програми: назва — місце і та ознака, якою програма
+// відрізняється від сусідніх того ж типу (`listProgramDifferences`). Самі
+// гроші й покриття сюди не йдуть: сума стоїть праворуч, а покриття — у
+// деталях.
+const TITLE_FEATURE_SKIP = new Set(['bonuses', 'coverage']);
+export const programRowTitle = (program, differs, language) => {
+  const parts = [];
+  if (program?.location) parts.push(formatProgramPlace(program.location));
+  const feature = describeProgramHighlights(program)
+    .find(item => differs?.has(item.key) && !TITLE_FEATURE_SKIP.has(item.key));
+  if (feature) parts.push(highlightText(feature, language));
+  return parts.join(' · ');
+};
+
+// Що з анкети читачки вимогу порушило — числом поруч, щоб було видно, наскільки.
+const FAILED_FACT_TEXT = Object.freeze({
+  age: facts => (facts?.age ? { text: 'вам {value}', variables: { value: facts.age } } : null),
+  bmi: facts => (facts?.bmi ? { text: 'у вас {value}', variables: { value: Math.round(facts.bmi * 10) / 10 } } : null),
+  height: facts => (facts?.heightCm ? { text: 'у вас {value} см', variables: { value: facts.heightCm } } : null),
+});
+
+/**
+ * Висновок згорнутої програми одним рядком — замість ряду чипів усіх вимог.
+ * Читачка з анкетою бачить «підходите» або саме те, що не так; без анкети
+ * (агенція, батьки) — короткий перелік вимог, бо порівнювати нема з чим.
+ */
+export const describeProgramFit = (result, requirements, facts, language) => {
+  const textOf = item => requirementText(item, language);
+  if (!result) {
+    const list = requirements.slice(0, 4).map(textOf);
+    if (!list.length) return uiText('Без особливих вимог', language);
+    const more = requirements.length - list.length;
+    return `${uiText('Вимоги', language)}: ${list.join(' · ')}${more > 0 ? ` · +${more}` : ''}`;
+  }
+  const byKey = new Map(requirements.map(item => [item.key, item]));
+  if (!result.matches) {
+    const failed = result.checks.filter(check => check.ok === false).map(check => {
+      const item = byKey.get(check.key);
+      if (!item) return '';
+      const fact = FAILED_FACT_TEXT[check.key]?.(facts);
+      return fact ? `${textOf(item)} — ${uiText(fact.text, language, fact.variables)}` : textOf(item);
+    }).filter(Boolean);
+    return `✕ ${failed.length ? failed.join(' · ') : uiText('Не підходить', language)}`;
+  }
+  if (result.uncertain) {
+    const unknown = result.checks.filter(check => check.ok === null).map(check => byKey.get(check.key)).filter(Boolean).map(textOf);
+    return `? ${uiText('Може підходити', language)}${unknown.length ? ` · ${uiText('не вказано в анкеті', language)}: ${unknown.join(', ')}` : ''}`;
+  }
+  return result.checks.length
+    ? `✓ ${uiText('Підходите за всіма вимогами', language)}`
+    : `✓ ${uiText('Підходить', language)}`;
+};
+
+const RowTitle = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: ${TEXT};
+  overflow-wrap: anywhere;
+`;
+
+const BestBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--km-accent-text, #9A470A);
+  background: color-mix(in srgb, ${ACCENT} 14%, transparent);
+`;
+
+const RowSum = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+
+  ${Sum} { font-size: 16px; font-weight: 700; color: ${TEXT}; }
+  small { font-size: 11.5px; color: ${MUTED}; }
+  &[data-off] { opacity: 0.6; }
+`;
+
+const FitLine = styled.p`
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  font-weight: ${({ $state }) => ($state ? 600 : 400)};
+  color: ${({ $state }) => tone($state === 'match' ? true : $state === 'mismatch' ? false : $state === 'uncertain' ? null : undefined) || MUTED};
+
+  svg {
+    flex: none;
+    margin-left: auto;
+    width: 10px;
+    height: 10px;
+    color: ${ACCENT};
+    transition: transform 0.15s ease;
+  }
+  svg[data-open] { transform: rotate(180deg); }
+`;
+
 const programFitState = result => {
   if (!result) return '';
   if (!result.matches) return 'mismatch';
   return result.uncertain ? 'uncertain' : 'match';
 };
 
-const FIT_LABELS = Object.freeze({ match: 'Вам підходить', uncertain: 'Може підходити', mismatch: 'Не підходить' });
-const FIT_MARKS = Object.freeze({ match: '✓', uncertain: '?', mismatch: '✕' });
-// На чіпі — коротко: «Вам» тут зайве, чіп стоїть у ряду вимог читачки.
-const FIT_CHIP_LABELS = Object.freeze({ match: 'Підходить', uncertain: 'Може підходити', mismatch: 'Не підходить' });
 
 /**
  * Сума програми — основна плюс гарантовані виплати плюс відмічені читачкою
@@ -1359,22 +1478,17 @@ export const describeProgramOffer = (program, { rates = null, selectedBonusKeys 
  * Розгортання й згортання — плавні (`Collapsible`), і згорнута частина
  * (вимоги, ознаки, коментар) поступається деталям так само плавно.
  */
-const ProgramListItem = ({ program, open, onToggle, facts, rates, language, differs, displayCurrency, timeline = null, heading = true }) => {
+const ProgramListItem = ({ program, open, onToggle, facts, rates, language, differs, displayCurrency, timeline = null, heading = true, best = false, contact = null }) => {
   const result = facts ? evaluateProgram(program, facts) : null;
   const fit = programFitState(result);
   const [selectedBonuses, toggleBonus] = useSelectedBonuses(program);
   const breakdown = useMemo(() => programBreakdown(program, { rates }), [program, rates]);
   const shown = breakdown.guaranteed.amount > 0 ? presentPayRange(breakdown, displayCurrency, rates) : null;
-  const highlights = useMemo(() => {
-    const items = resolveProgramHighlights(program);
-    return items.map(item => ({ ...item, differs: Boolean(differs?.has(item.key)) }));
-  }, [differs, program]);
   const requirements = describeProgramRequirements(program);
-  const wishes = describeProgramWishes(program, language, facts);
-  const checkByKey = new Map((result?.checks || []).map(check => [check.key, check.ok]));
   const bodyId = `program-body-${program.id}`;
   const offerLabel = programHeading(program, language);
-  const place = program.location ? formatProgramPlace(program.location) : '';
+  const title = programRowTitle(program, differs, language);
+  const fitLine = describeProgramFit(result, requirements, facts, language);
   const itemRef = useRef(null);
   const wasOpenRef = useRef(open);
   // Відкрита програма закриває іншу (одна відкрита на список), і та, що
@@ -1394,23 +1508,14 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
     return () => window.clearTimeout(timer);
   }, [open]);
 
-  const toggleControl = (
-    <SectionToggle
-      type="button"
-      $open={open}
-      aria-expanded={open}
-      aria-controls={open ? bodyId : undefined}
-      onClick={event => { event.stopPropagation(); onToggle(); }}
-    >
-      <span>{uiText(open ? 'Згорнути деталі' : 'Деталі програми', language)}</span>
-      <FaChevronDown aria-hidden="true" />
-    </SectionToggle>
-  );
-
+  // Згорнута програма — один рядок (15.11, на прохання власниці продукту):
+  // назва — те, чим програма відрізняється від сусідніх того ж типу
+  // («Тбілісі · 21–28 років»), праворуч — винагорода, під ними — один рядок
+  // висновку («✓ Підходите за всіма вимогами» або саме те, що не так).
+  // Доти тут стояли всі вимоги чипами, ознаки й три рядки коментаря, і
+  // чотири програми агенції займали три екрани телефона.
   return (
-    <ProgramItem ref={itemRef} $type={program.type} $off={fit === 'mismatch'} data-testid="program-list-item" onClick={event => event.stopPropagation()}>
-      {/* Заголовок розгортає деталі, як і кнопка поруч із місцем: по сумі
-          тицяють першою, і мертвий дотик читався як «деталей немає». */}
+    <ProgramItem ref={itemRef} $type={program.type} $off={fit === 'mismatch'} $best={best} data-testid="program-list-item" onClick={event => event.stopPropagation()}>
       <ProgramHead
         role="button"
         tabIndex={0}
@@ -1424,66 +1529,22 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
           onToggle();
         }}
       >
-        {/* У списку агенції «кого шукають» стоїть над групою програм
-            (`ProgramGroupHead`); окрема програма — прев'ю в редакторі —
-            називає себе сама. */}
-        {heading ? (
-          <ProgramTitle data-testid="program-title">
-            <span>{offerLabel}</span>
-          </ProgramTitle>
-        ) : null}
-        {shown?.primary ? (
-          <Reward data-testid="program-reward" data-off={fit === 'mismatch' ? '' : undefined}>
-            {uiText('Винагорода', language)} <Sum>{shown.primary}</Sum>
-          </Reward>
-        ) : null}
-        {shown?.original || !shown?.primary ? (
-          <PayLabel data-testid="program-pay-label">
-            {shown?.primary ? shown.original : uiText('Суму уточнюйте в агенції', language)}
-          </PayLabel>
-        ) : null}
+        <RowTitle data-testid="program-title">
+          {/* У списку агенції «кого шукають» стоїть над групою програм
+              (`ProgramGroupHead`); окрема програма — прев'ю в редакторі —
+              називає себе сама. */}
+          {heading ? <span>{offerLabel}{title ? ` · ${title}` : ''}</span> : <span>{title || uiText(PROGRAM_TYPE_LABELS[program.type] || '', language) || offerLabel}</span>}
+          {best ? <BestBadge data-testid="program-best">{uiText('Найкраща для вас', language)}</BestBadge> : null}
+        </RowTitle>
+        <RowSum data-testid="program-reward" data-off={fit === 'mismatch' ? '' : undefined}>
+          {shown?.primary ? <Sum>{shown.primary}</Sum> : <small>{uiText('Суму уточнюйте в агенції', language)}</small>}
+          {shown?.original ? <small data-testid="program-pay-label">{shown.original}</small> : null}
+        </RowSum>
+        <FitLine $state={fit} data-testid={fit ? 'program-verdict' : 'program-requirements'}>
+          {fitLine}
+          <FaChevronDown aria-hidden="true" data-open={open ? '' : undefined} />
+        </FitLine>
       </ProgramHead>
-      <PlaceRow onClick={event => { event.stopPropagation(); onToggle(); }}>
-        {place ? (
-          <Place>
-            <FaMapMarkerAlt aria-hidden="true" />
-            <span>{place}</span>
-          </Place>
-        ) : null}
-        {toggleControl}
-      </PlaceRow>
-
-      <Collapsible open={!open}>
-        {fit || requirements.length || wishes.length ? (
-          <CollapsedRequirements aria-label={uiText('Вимоги', language)} data-testid="program-requirements">
-            {fit ? (
-              <VerdictChip $state={fit} data-testid="program-verdict" aria-label={uiText(FIT_LABELS[fit], language)}>
-                <span aria-hidden="true">{FIT_MARKS[fit]} {uiText(FIT_CHIP_LABELS[fit], language)}</span>
-              </VerdictChip>
-            ) : null}
-            {requirements.map(item => {
-              const ok = checkByKey.has(item.key) ? checkByKey.get(item.key) : undefined;
-              return (
-                <Chip key={item.key} $ok={ok} className={differs?.has(item.key) ? 'differs' : undefined}>
-                  {ok === true ? <b aria-hidden="true">✓</b> : ok === false ? <b aria-hidden="true">✕</b> : null}
-                  {requirementText(item, language)}
-                </Chip>
-              );
-            })}
-            {wishes.map(item => <WishChip key={`wish-${item.key}`} item={item} />)}
-          </CollapsedRequirements>
-        ) : null}
-        {highlights.length ? (
-          <Highlights aria-label={uiText('Головне', language)}>
-            {highlights.map(item => (
-              <li key={item.key} className={item.differs ? 'differs' : undefined}>{highlightText(item, language)}</li>
-            ))}
-          </Highlights>
-        ) : null}
-        {program.note ? (
-          <OrganizerNote data-testid="program-organizer-note"><b>{uiText('Коментар організатора', language)}:</b> {program.note}</OrganizerNote>
-        ) : null}
-      </Collapsible>
 
       <Collapsible open={open} id={bodyId}>
         <ProgramBody>
@@ -1496,6 +1557,7 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
             selectedBonuses={selectedBonuses}
             onToggleBonus={toggleBonus}
             timeline={timeline}
+            contact={contact}
           />
         </ProgramBody>
       </Collapsible>
@@ -1513,16 +1575,64 @@ export const ProgramPreview = ({ program, rates, language, displayCurrency, defa
   );
 };
 
+// «оновлено сьогодні / вчора / 3 дні тому / 02.10» — коли власниця востаннє
+// зберегла програми (`programsAt` картки). Свіжість — довіра: програма з
+// весни могла вже не діяти.
+export const describeProgramsUpdatedAt = (at, language, now = Date.now()) => {
+  const time = Number(at);
+  if (!Number.isFinite(time) || time <= 0) return '';
+  const startOfDay = value => { const d = new Date(value); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const days = Math.round((startOfDay(now) - startOfDay(time)) / 86400000);
+  if (days <= 0) return uiText('оновлено сьогодні', language);
+  if (days === 1) return uiText('оновлено вчора', language);
+  if (days < 7) return uiText('оновлено {count} дн. тому', language, { count: days });
+  const d = new Date(time);
+  const pad = value => String(value).padStart(2, '0');
+  return uiText('оновлено {date}', language, { date: `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}` });
+};
+
+// Місця програм групи — до трьох, решта числом.
+const summarizePlaces = programs => {
+  const places = [...new Set(programs.map(program => formatProgramPlace(program.location || '')).filter(Boolean))];
+  if (places.length <= 3) return places.join(', ');
+  return `${places.slice(0, 3).join(', ')} +${places.length - 3}`;
+};
+
+const FIT_ORDER = Object.freeze({ match: 0, uncertain: 1, mismatch: 2, '': 0 });
+
+/**
+ * Порядок програм типу читачки — за збігом з її анкетою (15.11, на прохання
+ * власниці продукту): спершу ті, що підходять (найвища винагорода — перша й
+ * позначена «Найкраща для вас»), далі «може підходити», в кінці — що не
+ * підходять. Порядок агенції лишається всередині кожного стану. Читачеві без
+ * анкети (агенція, батьки, адмін) — порядок агенції як є.
+ */
+export const orderProgramsForViewer = (programs, facts, rates) => {
+  if (!facts) return { ordered: programs, bestId: '' };
+  const items = programs.map((program, index) => ({ program, index, fit: programFitState(evaluateProgram(program, facts)) }));
+  const matched = items.filter(item => item.fit === 'match');
+  const best = matched.reduce((top, item) => {
+    const pay = programGuaranteedUsd(item.program, rates) || 0;
+    return !top || pay > top.pay ? { item, pay } : top;
+  }, null)?.item || null;
+  const ordered = [...items].sort((a, b) => {
+    if (best && a === best) return -1;
+    if (best && b === best) return 1;
+    return (FIT_ORDER[a.fit] - FIT_ORDER[b.fit]) || (a.index - b.index);
+  }).map(item => item.program);
+  return { ordered, bestId: best && programs.length > 1 ? best.program.id : '' };
+};
+
 /**
  * Програми агенції в картці стрічки.
  *
- * Заголовок — «Програми · N» з перемикачем валюти поруч; донорці чи СМ під
- * ним — «Вам підходить 1 з 2». Далі групи за типом («Шукаємо донора ооцитів
- * · 3») і контейнер на програму, перші п’ять; решта — «Показати ще». Деталі відкриті в однієї програми: розгорнута
- * згортає ту, що була відкрита до неї.
+ * Заголовок — «Програми · N · оновлено …» з перемикачем валюти поруч. Далі
+ * групи за типом: «Шукаємо донора ооцитів · 3», під ним діапазон і місця
+ * («1 200–2 800 $ · Київ, Харків, Тбілісі») і для донорки чи СМ —
+ * «Вам підходить 2 з 3». Програма — один рядок, відкрита одна на список.
  *
- * Програми чужого типу (донорці — програми СМ) у список не йдуть: вони
- * названі рядком «ще 1 — для сурогатних мам».
+ * Програми чужого типу (донорці — програми СМ) не сховані, а згорнуті в
+ * один рядок з діапазоном: «Також 1 програма для сурогатних мам».
  */
 export const AgencyProgramsPanel = ({
   card,
@@ -1535,54 +1645,42 @@ export const AgencyProgramsPanel = ({
   defaultOpenId = '',
   onOpen,
   timeline = null,
+  contact = null,
 }) => {
   // Відкрита одна програма на список: розгорнуті поспіль дві-три програми
   // робили картку агенції на кілька екранів, і де закінчується одна й
   // починається інша, вже не було видно.
   const [openId, setOpenId] = useState(defaultOpenId || '');
-  const [showAll, setShowAll] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set());
+  const [showAll, setShowAll] = useState(() => new Set());
   const summary = summarizeCardPrograms(card, { viewerType, facts });
   const programs = useMemo(() => (summary ? summary.evaluated.map(item => item.program) : []), [summary]);
   const differences = useMemo(() => listProgramDifferences(programs), [programs]);
   if (!summary) return null;
-  const visible = showAll ? programs : programs.slice(0, VISIBLE_PROGRAMS);
-  const hiddenCount = programs.length - visible.length;
   // Програми одного типу — одна група під «Шукаємо …», навіть коли агенція
   // перемежувала типи: інакше «Шукаємо донора ооцитів» стояло б двічі. Групи
   // йдуть у порядку першої появи (`summarizeCardPrograms` ставить тип читача
-  // першим), а порядок агенції всередині типу не чіпається. Лічильник — усі
-  // програми типу, а не лише видимі до «Показати ще».
-  const groups = visible.reduce((acc, program) => {
+  // першим).
+  const groups = programs.reduce((acc, program) => {
     const group = acc.find(item => item.type === program.type);
     if (group) group.programs.push(program);
     else acc.push({ key: program.type || 'other', type: program.type, programs: [program] });
     return acc;
-  }, []).map(group => ({ ...group, count: programs.filter(program => program.type === group.type).length }));
-  // Діапазон — лише коли частину програм сховано: видимі контейнери й так
-  // називають кожну суму, а діапазон над ними повторив би їх утретє.
-  // Донорські й сурогатні суми різняться на порядок, і спільний діапазон
-  // «1 500–28 100 $» не казав нічого ні донорці, ні СМ — тож за кількох типів
-  // діапазон стоїть окремо на кожен, підписаний, кому він.
-  const rangeParts = hiddenCount > 0
-    ? (summary.byType.length > 1
-      ? summary.byType.map(item => ({
-        type: item.type,
-        label: uiText(RANGE_TYPE_LABELS[item.type] || '', language),
-        text: formatPayRange(item.totals, displayCurrency, rates),
-      })).filter(item => item.text)
-      : [{ type: '', label: '', text: formatPayRange(summary.finals, displayCurrency, rates) }].filter(item => item.text))
-    : [];
-  const range = rangeParts.length ? (
-    <>
-      {rangeParts.map((part, index) => (
-        <React.Fragment key={part.type || 'all'}>
-          {index ? ' · ' : ''}
-          {part.label ? `${part.label}: ` : ''}
-          <em>{part.text}</em>
-        </React.Fragment>
-      ))}
-    </>
-  ) : null;
+  }, []).map(group => {
+    const own = Boolean(viewerType) && group.type === viewerType;
+    const { ordered, bestId } = own ? orderProgramsForViewer(group.programs, facts, rates) : { ordered: group.programs, bestId: '' };
+    return {
+      ...group,
+      own,
+      programs: ordered,
+      bestId,
+      // Чужий тип для донорки чи СМ — згорнутим рядком; решті читачів усі
+      // групи відкриті, як і були.
+      foreign: Boolean(viewerType) && group.type !== viewerType,
+      range: formatPayRange(group.programs.map(program => programGuaranteedMoney(program)).filter(Boolean), displayCurrency, rates),
+      places: summarizePlaces(group.programs),
+    };
+  });
   // Рахується серед програм типу читача: решту видно, але звіряти анкету
   // донорки з вимогами програми СМ (і навпаки) нема сенсу.
   const matchedLine = summary.matched !== null
@@ -1594,6 +1692,7 @@ export const AgencyProgramsPanel = ({
       ? uiText(' · ще {count} може підходити — уточніть анкету', language, { count: summary.uncertain })
       : '')
     : '';
+  const updated = describeProgramsUpdatedAt(readCardProgramsAt(card), language);
   const toggle = id => {
     if (openId === id) {
       setOpenId('');
@@ -1602,6 +1701,12 @@ export const AgencyProgramsPanel = ({
     setOpenId(id);
     onOpen?.(id);
   };
+  const toggleGroup = key => setExpandedGroups(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  });
   // Курс називається один раз — коли бодай одну суму перераховано.
   const converted = Boolean(rates?.rateDate) && displayCurrency
     && programs.some(program => {
@@ -1612,53 +1717,133 @@ export const AgencyProgramsPanel = ({
   return (
     <Panel data-testid="programs-summary" onClick={event => event.stopPropagation()}>
       <PanelHead>
-        <PanelTitle>{uiText('Програми', language)} <span>· {summary.total}</span></PanelTitle>
+        <PanelTitle>
+          {uiText('Програми', language)} <span>· {summary.total}</span>
+          {updated ? <small data-testid="programs-updated">{updated}</small> : null}
+        </PanelTitle>
         {onDisplayCurrencyChange && programs.length ? (
           <ProgramCurrencySwitch value={displayCurrency} onChange={onDisplayCurrencyChange} language={language} />
         ) : null}
       </PanelHead>
-      {matchedLine || range ? (
-        <PanelLine $match={summary.matched > 0}>
-          {matchedLine}
-          {range ? <>{matchedLine ? ' · ' : ''}{range}</> : null}
-        </PanelLine>
-      ) : null}
-      {groups.map(group => (
-        <ProgramGroup key={group.key} data-testid="program-group">
-          <ProgramGroupHead $type={group.type} data-testid="program-group-title">
-            {programHeading({ type: group.type }, language)}
-            {group.count > 1 ? <span>· {group.count}</span> : null}
-          </ProgramGroupHead>
-          <ProgramList>
-            {group.programs.map(program => (
-              <ProgramListItem
-                key={program.id}
-                program={program}
-                open={openId === program.id}
-                onToggle={() => toggle(program.id)}
-                facts={viewerType === program.type ? facts : null}
-                rates={rates}
-                language={language}
-                differs={differences.get(program.id)}
-                displayCurrency={displayCurrency}
-                timeline={timeline}
-                heading={false}
-              />
-            ))}
-          </ProgramList>
-        </ProgramGroup>
-      ))}
-      {hiddenCount > 0 ? (
-        <MoreButton type="button" onClick={event => { event.stopPropagation(); setShowAll(true); }}>
-          {uiText('Показати ще {count}', language, { count: hiddenCount })}
-        </MoreButton>
-      ) : null}
+      {groups.map(group => {
+        if (group.foreign && !expandedGroups.has(group.key)) {
+          return (
+            <ForeignGroupButton key={group.key} type="button" data-testid="program-group-foreign" onClick={event => { event.stopPropagation(); toggleGroup(group.key); }}>
+              <span>
+                <i aria-hidden="true" style={{ background: getRoleColor(group.type) || undefined }} />
+                {uiText(FOREIGN_GROUP_LABELS[group.type] || 'Також програми: {count}', language, { count: group.programs.length })}
+              </span>
+              <b>{group.range}</b>
+              <FaChevronDown aria-hidden="true" />
+            </ForeignGroupButton>
+          );
+        }
+        const limit = showAll.has(group.key) ? group.programs.length : VISIBLE_PROGRAMS;
+        const visible = group.programs.slice(0, limit);
+        const hiddenCount = group.programs.length - visible.length;
+        return (
+          <ProgramGroup key={group.key} data-testid="program-group">
+            <ProgramGroupHead $type={group.type} data-testid="program-group-title">
+              {programHeading({ type: group.type }, language)}
+              {group.programs.length > 1 ? <span>· {group.programs.length}</span> : null}
+              {group.foreign ? (
+                <GroupCollapse type="button" onClick={event => { event.stopPropagation(); toggleGroup(group.key); }}>
+                  {uiText('Згорнути', language)}
+                </GroupCollapse>
+              ) : null}
+            </ProgramGroupHead>
+            {group.range || group.places ? (
+              <GroupFacts data-testid="program-group-facts">
+                {group.range ? <em>{group.range}</em> : null}
+                {group.range && group.places ? ' · ' : ''}
+                {group.places}
+              </GroupFacts>
+            ) : null}
+            {group.own && matchedLine ? <PanelLine $match={summary.matched > 0}>{matchedLine}</PanelLine> : null}
+            <ProgramList>
+              {visible.map(program => (
+                <ProgramListItem
+                  key={program.id}
+                  program={program}
+                  open={openId === program.id}
+                  onToggle={() => toggle(program.id)}
+                  facts={viewerType === program.type ? facts : null}
+                  rates={rates}
+                  language={language}
+                  differs={differences.get(program.id)}
+                  displayCurrency={displayCurrency}
+                  timeline={timeline}
+                  heading={false}
+                  best={group.bestId === program.id}
+                  contact={contact}
+                />
+              ))}
+            </ProgramList>
+            {hiddenCount > 0 ? (
+              <MoreButton type="button" onClick={event => { event.stopPropagation(); setShowAll(prev => new Set(prev).add(group.key)); }}>
+                {uiText('Показати ще {count}', language, { count: hiddenCount })}
+              </MoreButton>
+            ) : null}
+          </ProgramGroup>
+        );
+      })}
       {converted ? (
         <RateNote>{uiText('≈ — за курсом НБУ на {date}', language, { date: formatRateDate(rates.rateDate) })}</RateNote>
       ) : null}
     </Panel>
   );
 };
+
+const FOREIGN_GROUP_LABELS = Object.freeze({
+  sm: 'Також програми для сурогатних мам: {count}',
+  ed: 'Також програми для донорок: {count}',
+});
+
+const ForeignGroupButton = styled.button`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 12px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: ${PROGRAM_BG};
+  color: ${TEXT};
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+
+  span { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: ${MUTED}; }
+  b { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  svg { width: 10px; height: 10px; color: ${ACCENT}; }
+  &:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
+`;
+
+const GroupCollapse = styled.button`
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: ${ACCENT};
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+`;
+
+const GroupFacts = styled.p`
+  margin: -2px 0 8px 15px;
+  font-size: 12.5px;
+  color: ${MUTED};
+
+  em { font-style: normal; font-weight: 700; color: ${TEXT}; font-variant-numeric: tabular-nums; }
+`;
 
 // Стара назва: рядок стрічки звав блок саме так.
 export const ProgramsSummary = AgencyProgramsPanel;

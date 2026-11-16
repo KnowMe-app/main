@@ -2,6 +2,10 @@ import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { FaCheck } from 'react-icons/fa';
 import {
+  MAX_ORG_FEATURES,
+  listOrgFeatureOptions,
+  parseOrgFeatures,
+  toggleOrgFeature,
   PARENT_SEEKING_OPTIONS,
   PARENT_VIA_OPTIONS,
   parseSeekingRoles,
@@ -288,6 +292,32 @@ export const ParentProfileFields = ({ state, onCommit, language, showProgramLoca
           </Segments>
         </FieldLabel>
       ))}
+    </Stack>
+  );
+};
+
+/**
+ * «Чим ви відрізняєтесь» агенції чи клініки — до чотирьох ознак галочками
+ * (`ORG_FEATURE_OPTIONS`). Рядок стрічки показує їх під назвою: до цього
+ * клініку від агенції в стрічці відрізняла лише плашка ролі.
+ */
+export const OrgFeatureFields = ({ state, onCommit, language, roles }) => {
+  const value = parseOrgFeatures(state.orgFeatures);
+  const options = listOrgFeatureOptions(roles);
+  if (!options.length) return null;
+  return (
+    <Stack data-testid="org-features">
+      <FieldLabel>
+        {uiText('Що про вас варто знати одразу — до {max}', language, { max: MAX_ORG_FEATURES })}
+        <Choice
+          options={options}
+          value={value}
+          multiple
+          language={language}
+          onChange={key => onCommit('orgFeatures', toggleOrgFeature(value.join(','), key))}
+        />
+      </FieldLabel>
+      {value.length >= MAX_ORG_FEATURES ? <Hint>{uiText('Обрано найбільше — зніміть одну, щоб обрати іншу', language)}</Hint> : null}
     </Stack>
   );
 };

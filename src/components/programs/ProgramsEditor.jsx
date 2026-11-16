@@ -3,6 +3,9 @@ import styled from 'styled-components';
 import {
   MAX_PROGRAMS,
   MAX_CUSTOM_REQUIREMENTS,
+  MAX_PROGRAM_STEPS,
+  PROGRAM_STEP_MAX_LENGTH,
+  PROGRAM_STEP_DURATION_MAX_LENGTH,
   CUSTOM_REQUIREMENT_MAX_LENGTH,
   MAX_CUSTOM_COVERAGE,
   CUSTOM_COVERAGE_MAX_LENGTH,
@@ -1054,6 +1057,9 @@ const SECTIONS = Object.freeze([
   { key: 'basic', title: 'Основне' },
   { key: 'payments', title: 'Виплати' },
   { key: 'requirements', title: 'Вимоги до кандидатки' },
+  // Кроки програми словами агенції: кандидатка питає «як це відбувається»
+  // одразу після «скільки» й «що від мене треба».
+  { key: 'steps', title: 'Як це відбувається' },
   { key: 'coverage', title: 'Додатково покривається' },
 ]);
 
@@ -1331,6 +1337,10 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
         + requirementDefs.filter(def => requirementFilled(program, def)).length
         + (normalized?.customRequirements?.length || 0);
       return count ? countText(count, WORDS.requirement, language) : uiText('Без вимог', language);
+    })(),
+    steps: (() => {
+      const count = normalized?.steps?.length || 0;
+      return count ? uiText('Кроків: {count}', language, { count }) : uiText('Кроки не описано', language);
     })(),
     coverage: [
       coverageKeys.length ? `${uiText('покриває', language)} ${countText(coverageKeys.length, WORDS.expense, language)}` : '',
@@ -1850,7 +1860,53 @@ const ProgramForm = ({ program, onChange, language, rates, suggestions, saveStat
     );
   };
 
+  // --- як це відбувається ---
+  const steps = program.steps || [];
+  const setSteps = next => set({ steps: next });
+  const stepRow = (item, index) => {
+    const inputId = `${idPrefix}-step-${index}`;
+    const label = uiText('Крок {n}', language, { n: index + 1 });
+    const setItem = patch => setSteps(steps.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)));
+    return (
+      <ReqRow key={inputId} data-testid="program-step">
+        <ReqHead>
+          <label htmlFor={inputId}>{label}</label>
+          <RemoveButton type="button" aria-label={uiText('Прибрати крок: {label}', language, { label: item.text || label })} onClick={() => setSteps(steps.filter((_, i) => i !== index))}>{uiText('Прибрати', language)}</RemoveButton>
+        </ReqHead>
+        <ReqControls>
+          <div className="value" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+            <TextInput
+              id={inputId}
+              value={item.text || ''}
+              maxLength={PROGRAM_STEP_MAX_LENGTH}
+              placeholder={uiText(index === 0 ? 'Наприклад: знайомство й обстеження' : 'Наприклад: стимуляція, уколи вдома', language)}
+              onChange={event => setItem({ text: event.target.value })}
+            />
+            <TextInput
+              value={item.duration || ''}
+              maxLength={PROGRAM_STEP_DURATION_MAX_LENGTH}
+              aria-label={uiText('Скільки триває', language)}
+              placeholder={uiText('Скільки триває: 1–2 дні', language)}
+              onChange={event => setItem({ duration: event.target.value })}
+            />
+          </div>
+        </ReqControls>
+      </ReqRow>
+    );
+  };
+
   const sectionBody = {
+    steps: (
+      <>
+        {steps.map(stepRow)}
+        <Segments>
+          {/* Порожній крок стоїть один: наступний додається, коли цей заповнено. */}
+          {steps.length < MAX_PROGRAM_STEPS && !steps.some(item => !String(item.text || '').trim()) ? (
+            <AddChip type="button" onMouseDown={keepFocus} onClick={() => { setSteps([...steps, { text: '' }]); focusSoon(`${idPrefix}-step-${steps.length}`); }}>+ {uiText('Крок', language)}</AddChip>
+          ) : null}
+        </Segments>
+      </>
+    ),
     basic: (
       <>
         <Field label="Кого шукаєте" language={language}>

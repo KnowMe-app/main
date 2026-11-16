@@ -1,7 +1,7 @@
 import React from 'react';
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { ProgramCard, ProgramsSummary, describeProgramOffer } from './ProgramsView';
+import { ProgramCard, ProgramsSummary, describeProgramOffer, describeProgramsUpdatedAt } from './ProgramsView';
 import { CardRoleBlock, isCounterpartyCard } from './CardRoleBlock';
 import {
   loadOwnPrograms,
@@ -25,21 +25,27 @@ const programs = {
 
 const donorFacts = { age: 27 };
 
+// Деталі програми розгортає дотик до її рядка (`program-head`).
+const openDetails = row => fireEvent.click(within(row).getByTestId('program-head'));
+
 describe('програми в рядку стрічки', () => {
-  it('каже донорці, скільки програм їй підходить, у заголовку «Програми · N»', () => {
+  it('каже донорці, скільки програм їй підходить, під заголовком групи', () => {
     render(<ProgramsSummary card={{ programs }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     const summary = screen.getByTestId('programs-summary');
-    // Програм поки мало: донорка бачить і програму СМ, а «підходить» —
-    // серед донорських.
     expect(summary).toHaveTextContent('Програми · 3');
     expect(summary).toHaveTextContent('Вам підходить 1 з 2 програм');
-    expect(summary).toHaveTextContent('Шукаємо сурогатну маму');
-    // Видимі контейнери самі називають кожну суму — діапазону над ними немає.
-    expect(summary).not.toHaveTextContent('1 600–2 500 $');
-    expect(summary).not.toHaveTextContent('ще 1 — для сурогатних мам');
+    // Під назвою групи — діапазон групи.
+    expect(screen.getByTestId('program-group-facts')).toHaveTextContent('1 600–2 500 $');
+    // Програма СМ донорці — згорнутою групою з діапазоном, а не прихована.
+    const foreign = screen.getByTestId('program-group-foreign');
+    expect(foreign).toHaveTextContent('Також програми для сурогатних мам: 1');
+    expect(foreign).toHaveTextContent('20 000 $');
+    fireEvent.click(foreign);
+    expect(screen.getAllByTestId('program-group')).toHaveLength(2);
+    expect(screen.getAllByTestId('program-group-title')[1]).toHaveTextContent('Шукаємо сурогатну маму');
   });
 
-  it('дотик до заголовка програми розгортає її деталі', () => {
+  it('дотик до рядка програми розгортає її деталі', () => {
     render(<ProgramsSummary card={{ programs }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     const head = screen.getAllByTestId('program-head')[0];
     expect(head).toHaveAttribute('aria-expanded', 'false');
@@ -47,27 +53,38 @@ describe('програми в рядку стрічки', () => {
     expect(head).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('кожна програма — контейнер зі збігом, а «Деталі програми» розгортає саме її', () => {
+  it('програма — один рядок з висновком; найкраща перша, відкрита одна', () => {
     render(<ProgramsSummary card={{ programs }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     const rows = screen.getAllByTestId('program-list-item');
-    expect(rows).toHaveLength(3);
-    expect(within(rows[0]).getByLabelText('Вам підходить')).toBeInTheDocument();
-    expect(within(rows[1]).getByLabelText('Не підходить')).toBeInTheDocument();
-    // Програму іншої аудиторії з анкетою не звіряють — позначки збігу в неї немає.
-    expect(within(rows[2]).queryByLabelText('Вам підходить')).not.toBeInTheDocument();
-    expect(within(rows[2]).queryByLabelText('Не підходить')).not.toBeInTheDocument();
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0]).getByTestId('program-best')).toHaveTextContent('Найкраща для вас');
+    expect(within(rows[0]).getByTestId('program-verdict')).toHaveTextContent('✓ Підходите за всіма вимогами');
+    // Причина відмови — словами й числом з анкети.
+    expect(within(rows[1]).getByTestId('program-verdict')).toHaveTextContent('✕ до 25 років — вам 27');
+    expect(within(rows[1]).queryByTestId('program-best')).not.toBeInTheDocument();
     expect(screen.queryByTestId('program-card')).not.toBeInTheDocument();
-    const toggle = within(rows[0]).getByRole('button', { name: 'Деталі програми' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(toggle);
+    openDetails(rows[0]);
     expect(within(rows[0]).getByTestId('program-card')).toBeInTheDocument();
     expect(within(rows[0]).getByText('Вам підходить')).toBeInTheDocument();
-    expect(within(rows[0]).getByRole('button', { name: 'Згорнути деталі' })).toHaveAttribute('aria-expanded', 'true');
     // Відкрита одна: друга програма згортає першу.
-    fireEvent.click(within(rows[1]).getByRole('button', { name: 'Деталі програми' }));
+    openDetails(rows[1]);
     expect(screen.getAllByTestId('program-card')).toHaveLength(1);
     expect(within(rows[1]).getByTestId('program-card')).toBeInTheDocument();
-    expect(within(rows[0]).getByRole('button', { name: 'Деталі програми' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('програми, що підходять, стоять першими, незалежно від порядку агенції', () => {
+    const ordered = {
+      a: { id: 'a', type: 'ed', order: 0, location: 'Тбілісі', requirements: { ageTo: 25 }, payments: { final: { amount: 2800, currency: 'USD' } } },
+      b: { id: 'b', type: 'ed', order: 1, location: 'Харків', requirements: { ageTo: 32 }, payments: { final: { amount: 1200, currency: 'USD' } } },
+      c: { id: 'c', type: 'ed', order: 2, location: 'Київ', requirements: { ageTo: 30 }, payments: { final: { amount: 1500, currency: 'USD' } } },
+    };
+    render(<ProgramsSummary card={{ programs: ordered }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" language="uk" />);
+    // Найвища винагорода серед тих, що підходять, — перша; що не підходить — у кінці.
+    expect(screen.getAllByTestId('program-title').map(item => item.textContent)).toEqual([
+      'Київ · до 30 роківНайкраща для вас',
+      'Харків · до 32 років',
+      'Тбілісі · до 25 років',
+    ]);
   });
 
   it('прихованої програми не видно, а винагорода — діапазон від основної до максимальної', () => {
@@ -78,88 +95,99 @@ describe('програми в рядку стрічки', () => {
     render(<ProgramsSummary card={{ programs: withBonus }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     expect(screen.getByTestId('programs-summary')).toHaveTextContent('Вам підходить 1 з 1 програми');
     const row = screen.getByTestId('program-list-item');
-    // Кого шукають — над групою програм; у заголовку програми — те, що
-    // отримує кожна; додаткове читачка додає сама.
     expect(screen.getByTestId('program-group-title')).toHaveTextContent(/^Шукаємо донора ооцитів$/);
-    // Діапазон: від основної до максимальної з усіма додатковими.
-    expect(within(row).getByTestId('program-reward')).toHaveTextContent(/^Винагорода 2 500–3 000 \$$/);
-    // Чипа «+1 доплата» під заголовком більше немає — суму несе діапазон.
+    expect(within(row).getByTestId('program-reward')).toHaveTextContent(/^2 500–3 000 \$$/);
+    // Одна програма свого типу — «найкращою» її не називаємо.
+    expect(within(row).queryByTestId('program-best')).not.toBeInTheDocument();
     expect(row).not.toHaveTextContent('доплат');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
-    expect(screen.getByText('Додаткові виплати')).toBeInTheDocument();
+    openDetails(row);
+    expect(screen.getByText('Може додатися — відмітьте, що про вас')).toBeInTheDocument();
     const firstTry = screen.getByRole('checkbox', { name: /Вагітність з першої спроби/ });
     expect(firstTry).toHaveAttribute('aria-checked', 'false');
     expect(within(row).queryByTestId('program-selected-total')).not.toBeInTheDocument();
     fireEvent.click(firstTry);
-    // Відмічене рахується під перемикачами, а заголовок лишається діапазоном.
     expect(within(row).getByTestId('program-selected-total')).toHaveTextContent('3 000 $');
-    expect(within(row).getByTestId('program-reward')).toHaveTextContent(/^Винагорода 2 500–3 000 \$$/);
-    expect(row).not.toHaveTextContent('Сценарій');
+    expect(within(row).getByTestId('program-reward')).toHaveTextContent(/^2 500–3 000 \$$/);
   });
 
   it('діапазон у валюті читача — з одним «≈», оригінал агенції під ним', () => {
     const withBonus = { p1: { ...programs.p1, bonuses: [{ label: 'Досвід', amount: 500, currency: 'USD' }] } };
     render(<ProgramsSummary card={{ programs: withBonus }} rates={rates} displayCurrency="UAH" language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    expect(within(row).getByTestId('program-reward')).toHaveTextContent(/^Винагорода ≈ 102 500–123 000 ₴$/);
+    expect(within(row).getByTestId('program-reward')).toHaveTextContent('≈ 102 500–123 000 ₴');
     expect(within(row).getByTestId('program-pay-label')).toHaveTextContent('2 500–3 000 $');
   });
 
-  it('заголовок — кого шукають, сума окремим рядком «Винагорода», без власної назви й `title`', () => {
+  it('без власної назви й `title`: рядок називає програму місцем і відмінністю', () => {
     render(<ProgramsSummary card={{ programs: { p1: { ...programs.p1, name: 'Донорство в Грузії' } } }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" defaultOpenId="p1" />);
     expect(screen.getByTestId('program-group-title')).toHaveTextContent(/Шукаємо донора ооцитів$/);
-    // Додаткових виплат немає — одне число, без діапазону.
-    expect(screen.getByTestId('program-reward')).toHaveTextContent(/^Винагорода 2 500 \$$/);
+    expect(screen.getByTestId('program-reward')).toHaveTextContent(/^2 500 \$$/);
     expect(screen.queryByText('Київ')).not.toBeInTheDocument();
     expect(screen.queryByText('Донорство в Грузії')).not.toBeInTheDocument();
-    expect(screen.getByTestId('program-list-item')).not.toHaveTextContent('Винагорода донорці');
+    // Ні місця, ні відмінностей — рядок називає тип програми.
+    expect(screen.getByTestId('program-title')).toHaveTextContent('Донор ооцитів');
   });
 
-  it('місце — окремим рядком з великої літери', () => {
+  it('місце — у назві рядка з великої літери, і в зведенні групи', () => {
     const placed = { p1: { id: 'p1', type: 'ed', location: 'київ', payments: { final: { amount: 2500, currency: 'USD' } } } };
     render(<ProgramsSummary card={{ programs: placed }} rates={rates} displayCurrency="USD" language="uk" />);
-    expect(within(screen.getByTestId('program-list-item')).getByText('Київ')).toBeInTheDocument();
+    expect(within(screen.getByTestId('program-list-item')).getByTestId('program-title')).toHaveTextContent(/^Київ$/);
+    expect(screen.getByTestId('program-group-facts')).toHaveTextContent('2 500 $ · Київ');
   });
 
-  it('обрана валюта — сума в заголовку й у доплатах, оригінал поруч', () => {
+  it('обрана валюта — сума в рядку й у доплатах, оригінал поруч', () => {
     const uah = { p1: { id: 'p1', type: 'sm', payments: { final: { amount: 20000, currency: 'USD' }, monthly: { amount: 500, currency: 'USD', months: 9 } } } };
     render(<ProgramsSummary card={{ programs: uah }} rates={rates} displayCurrency="UAH" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    // 24 500 $ × 41 = 1 004 500 ₴, округлено до сотень.
     expect(row).toHaveTextContent('≈ 1 004 500 ₴');
     expect(row).toHaveTextContent('24 500 $');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    openDetails(row);
     expect(within(row).getByTestId('program-payments')).toHaveTextContent('≈ +184 500 ₴');
-    // Курс і дата — один раз, під програмами.
     expect(screen.getAllByText(/курсом НБУ на 30\.09\.2026/)).toHaveLength(1);
   });
 
-  it('згорнута програма показує вимоги, а покриття — лише в деталях', () => {
-    const covered = { p1: { ...programs.p1, requirements: { ageFrom: 21, ageTo: 29, rh: '+', bmiMax: 28, heightFrom: 165 }, coverage: ['travel', 'housing', 'food', 'exams'] } };
-    render(<ProgramsSummary card={{ programs: covered }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" language="uk" />);
+  it('згорнута програма без анкети читача — коротко вимоги, а покриття — лише в деталях', () => {
+    const covered = { p1: { ...programs.p1, requirements: { ageFrom: 21, ageTo: 29, rh: '+', bmiMax: 28, heightFrom: 165, maxBirths: 3 }, coverage: ['travel', 'housing', 'food', 'exams'] } };
+    render(<ProgramsSummary card={{ programs: covered }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    const requirements = within(row).getByTestId('program-requirements');
-    // Першим — вердикт: зросту, ІМТ і резусу в анкеті немає, тож «може».
-    expect(within(requirements).getAllByRole('listitem').map(item => item.textContent)).toEqual(['? Може підходити', '✓21–29 років', 'ІМТ до 28', 'зріст від 165 см', 'лише Rh+']);
-    expect(row).not.toHaveTextContent('Покриває');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    expect(within(row).getByTestId('program-requirements')).toHaveTextContent('Вимоги: 21–29 років · ІМТ до 28 · зріст від 165 см · лише Rh+ · +1');
+    expect(row).not.toHaveTextContent('Проїзд');
+    openDetails(row);
     expect(within(row).getByText('Додатково покривається')).toBeInTheDocument();
   });
 
-  it('коментар організатора видно вже в згорнутій програмі', () => {
+  it('невідоме в анкеті читачки — «може підходити» з переліком того, чого не вказано', () => {
+    const covered = { p1: { ...programs.p1, requirements: { ageFrom: 21, ageTo: 29, rh: '+' } } };
+    render(<ProgramsSummary card={{ programs: covered }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" language="uk" />);
+    expect(screen.getByTestId('program-verdict')).toHaveTextContent('? Може підходити · не вказано в анкеті: лише Rh+');
+  });
+
+  it('коментар організатора — у деталях', () => {
     const noted = { p1: { ...programs.p1, note: 'Житло біля клініки на весь час програми' } };
     render(<ProgramsSummary card={{ programs: noted }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    expect(within(row).getByTestId('program-organizer-note')).toHaveTextContent('Коментар організатора: Житло біля клініки на весь час програми');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
     expect(within(row).queryByTestId('program-organizer-note')).not.toBeInTheDocument();
+    openDetails(row);
     expect(within(row).getByText('Коментар організатора')).toBeInTheDocument();
+    expect(within(row).getByTestId('program-organizer-note')).toHaveTextContent('Житло біля клініки на весь час програми');
   });
 
-  it('читачеві, якому програми не адресовані, — лише кількість у заголовку', () => {
+  it('читачеві, якому програми не адресовані, — усі групи відкриті, без «Вам підходить»', () => {
     render(<ProgramsSummary card={{ programs }} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     expect(screen.getByTestId('programs-summary')).toHaveTextContent('Програми · 3');
     expect(screen.getByTestId('programs-summary')).not.toHaveTextContent('Вам підходить');
+    expect(screen.queryByTestId('program-group-foreign')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('program-list-item')).toHaveLength(3);
+  });
+
+  it('шапка каже, коли програми оновлено', () => {
+    const now = new Date(2026, 10, 15, 12).getTime();
+    expect(describeProgramsUpdatedAt(now - 3600 * 1000, 'uk', now)).toBe('оновлено сьогодні');
+    expect(describeProgramsUpdatedAt(now - 24 * 3600 * 1000, 'uk', now)).toBe('оновлено вчора');
+    expect(describeProgramsUpdatedAt(now - 3 * 24 * 3600 * 1000, 'uk', now)).toBe('оновлено 3 дн. тому');
+    expect(describeProgramsUpdatedAt(new Date(2026, 9, 2).getTime(), 'uk', now)).toBe('оновлено 02.10.2026');
+    render(<ProgramsSummary card={{ programs, programsAt: Date.now() }} rates={rates} displayCurrency="USD" language="uk" />);
+    expect(screen.getByTestId('programs-updated')).toHaveTextContent('оновлено сьогодні');
   });
 });
 
@@ -184,11 +212,9 @@ describe('картка програми — калькулятор заробі�
   it('сума — основна плюс гарантовані, щомісячна — × місяці; додаткові окремо', () => {
     render(<ProgramsSummary card={{ programs: { p2: surrogate } }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    // 23 000 + 4 500 + 200 + 100; КС, двійня й повторна програма — додаткові.
     expect(screen.getByTestId('program-group-title')).toHaveTextContent('Шукаємо сурогатну маму');
-    // Діапазон: до 32 800 $ — з КС, двійнею й повторною програмою.
-    expect(within(row).getByTestId('program-reward')).toHaveTextContent('Винагорода 27 800–32 800 $');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    expect(within(row).getByTestId('program-reward')).toHaveTextContent('27 800–32 800 $');
+    openDetails(row);
     const paid = within(row).getByTestId('program-payments');
     expect(paid).toHaveTextContent('Основна виплата');
     expect(paid).toHaveTextContent('23 000 $');
@@ -196,7 +222,6 @@ describe('картка програми — калькулятор заробі�
     expect(paid).toHaveTextContent('+4 500 $');
     expect(within(paid).queryByRole('checkbox')).not.toBeInTheDocument();
     expect(within(row).getByTestId('program-bonuses')).toHaveTextContent('Кесарів розтин');
-    expect(row).not.toHaveTextContent('Разом за планом');
   });
 
   it('без кількості місяців сума приблизна, а доплата каже чому', () => {
@@ -207,10 +232,10 @@ describe('картка програми — калькулятор заробі�
     expect(describeProgramOffer(program).money.approximate).toBe(true);
   });
 
-  it('відмічені додаткові виплати рахуються під перемикачами, а заголовок лишається діапазоном', () => {
+  it('відмічені додаткові виплати рахуються під перемикачами, а рядок лишається діапазоном', () => {
     render(<ProgramsSummary card={{ programs: { p2: surrogate } }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    openDetails(row);
     fireEvent.click(screen.getByRole('checkbox', { name: /Кесарів розтин/ }));
     fireEvent.click(screen.getByRole('checkbox', { name: /Двійня/ }));
     expect(within(row).getByTestId('program-selected-total')).toHaveTextContent('32 300 $');
@@ -228,20 +253,48 @@ describe('картка програми — калькулятор заробі�
     expect(describeProgramOffer(program, { selectedBonusKeys: ['repeat'] }).money.amount).toBe(2700);
   });
 
-  it('вимоги й покриття підписані окремо', () => {
-    render(<ProgramCard program={{ ...surrogate, requirements: { ageTo: 35 }, coverage: ['travel'] }} rates={rates} language="uk" />);
-    expect(screen.getByText('Вимоги')).toBeInTheDocument();
+  it('деталі — три питання: що отримаєте, що потрібно, як відбувається', () => {
+    const program = {
+      ...surrogate,
+      requirements: { ageTo: 35 },
+      coverage: ['travel'],
+      steps: [{ text: 'Знайомство й обстеження', duration: '1–2 дні' }, { text: 'Перенос ембріона' }],
+    };
+    render(<ProgramCard program={program} rates={rates} language="uk" />);
+    expect(screen.getByText('Що ви отримаєте')).toBeInTheDocument();
     expect(screen.getByText('Додатково покривається')).toBeInTheDocument();
+    expect(screen.getByText('Що від вас потрібно')).toBeInTheDocument();
+    expect(screen.getByText('Як це відбувається')).toBeInTheDocument();
+    expect(within(screen.getByTestId('program-steps')).getAllByRole('listitem').map(item => item.textContent)).toEqual([
+      '1Знайомство й обстеження1–2 дні',
+      '2Перенос ембріона',
+    ]);
+  });
+
+  it('«Написати про цю програму» — лист уже називає програму', () => {
+    const onContactAction = jest.fn();
+    const entries = [{ key: 'phone', value: '+380 50 123 45 67', href: 'tel:+380501234567' }];
+    render(<ProgramCard program={surrogate} rates={rates} language="uk" displayCurrency="USD" contact={{ entries, onContactAction }} />);
+    const link = screen.getByRole('link', { name: 'Написати про цю програму' });
+    const href = link.getAttribute('href');
+    expect(href.startsWith('https://wa.me/380501234567?text=')).toBe(true);
+    expect(decodeURIComponent(href.split('text=')[1]).replace(/\s/g, ' ')).toBe('Вітаю! Мене цікавить ваша програма: Сурогатна мати · Київ · 27 800–32 800 $. Пишу з KnowMe.');
+    fireEvent.click(link);
+    expect(onContactAction).toHaveBeenCalledWith('whatsapp');
+  });
+
+  it('без контактів кнопки звернення немає', () => {
+    render(<ProgramCard program={surrogate} rates={rates} language="uk" contact={{ entries: [] }} />);
+    expect(screen.queryByTestId('program-inquiry')).not.toBeInTheDocument();
   });
 
   it('читачеві без свого типу програми донорок і СМ — кожна своєю групою й контейнером', () => {
     render(<ProgramsSummary card={{ programs: { p1: programs.p1, p2: surrogate } }} rates={rates} displayCurrency="USD" onDisplayCurrencyChange={jest.fn()} language="uk" />);
     const [donor, sm] = screen.getAllByTestId('program-group');
     expect(within(donor).getByTestId('program-group-title')).toHaveTextContent(/^Шукаємо донора ооцитів$/);
-    expect(within(donor).getByTestId('program-reward')).toHaveTextContent('Винагорода 2 500 $');
+    expect(within(donor).getByTestId('program-reward')).toHaveTextContent('2 500 $');
     expect(within(sm).getByTestId('program-group-title')).toHaveTextContent(/^Шукаємо сурогатну маму$/);
-    expect(within(sm).getByTestId('program-reward')).toHaveTextContent('Винагорода 27 800–32 800 $');
-    // Без анкети читача вердикту немає — нема з чим звіряти.
+    expect(within(sm).getByTestId('program-reward')).toHaveTextContent('27 800–32 800 $');
     expect(screen.queryByTestId('program-verdict')).not.toBeInTheDocument();
   });
 
@@ -255,19 +308,8 @@ describe('картка програми — калькулятор заробі�
     render(<ProgramsSummary card={{ programs: mixed }} rates={rates} displayCurrency="USD" language="uk" />);
     const groups = screen.getAllByTestId('program-group');
     expect(groups.map(group => within(group).getByTestId('program-group-title').textContent)).toEqual(['Шукаємо донора ооцитів· 2', 'Шукаємо сурогатну маму']);
-    expect(within(groups[0]).getAllByTestId('program-list-item').map(row => within(row).getByText(/Київ|Тбілісі/).textContent)).toEqual(['Київ', 'Тбілісі']);
-    // У списку агенції програма себе не називає — назва групи над нею.
-    expect(screen.queryByTestId('program-title')).not.toBeInTheDocument();
-  });
-
-  it('вердикт — перший чіп вимог, а причина відмови — поруч', () => {
-    render(<ProgramsSummary card={{ programs }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" language="uk" />);
-    const [fits, misses] = screen.getAllByTestId('program-list-item');
-    expect(within(fits).getByTestId('program-verdict')).toHaveTextContent('✓ Підходить');
-    expect(within(misses).getByTestId('program-verdict')).toHaveTextContent('✕ Не підходить');
-    expect(within(within(misses).getByTestId('program-requirements')).getAllByRole('listitem').map(item => item.textContent)).toEqual(['✕ Не підходить', '✕до 25 років']);
-    // «Деталі програми» — у рядку з місцем, не окремим рядком під програмою.
-    expect(within(fits).getByRole('button', { name: 'Деталі програми' })).toBeInTheDocument();
+    expect(within(groups[0]).getAllByTestId('program-title').map(item => item.textContent)).toEqual(['Київ', 'Тбілісі']);
+    expect(within(groups[0]).getByTestId('program-group-facts')).toHaveTextContent('1 500–2 200 $ · Київ, Тбілісі');
   });
 });
 
@@ -277,7 +319,7 @@ describe('програми з оголошень агенцій', () => {
     render(<ProgramsSummary card={{ programs: { a: program } }} rates={rates} displayCurrency="UAH" language="uk" />);
     const row = screen.getByTestId('program-list-item');
     expect(row).toHaveTextContent('40 000 ₴');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    openDetails(row);
     expect(within(row).queryByTestId('program-bonuses')).not.toBeInTheDocument();
   });
 
@@ -317,7 +359,7 @@ describe('програми з оголошень агенцій', () => {
     const program = { id: 'o', type: 'ed', payments: { final: { amount: 1500, currency: 'USD' } }, coverage: ['travel', 'clothes'] };
     render(<ProgramsSummary card={{ programs: { o: program } }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    openDetails(row);
     expect(row).toHaveTextContent('Проїзд');
     expect(row).not.toHaveTextContent('Одяг');
   });
@@ -334,8 +376,7 @@ describe('програми з оголошень агенцій', () => {
     render(<ProgramsSummary card={{ programs: { e: program } }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
     expect(row).not.toHaveTextContent('2 етапи');
-    expect(row).toHaveTextContent('переїзд із сімʼєю');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    openDetails(row);
     expect(within(row).queryByText('Пункція')).not.toBeInTheDocument();
     expect(within(row).queryByText('Грузія, Тбілісі')).not.toBeInTheDocument();
     expect(within(row).getByText('Можна з сімʼєю')).toBeInTheDocument();
@@ -351,8 +392,8 @@ describe('програми з оголошень агенцій', () => {
     };
     render(<ProgramsSummary card={{ programs: { f: program } }} viewerType="sm" facts={{ age: 38, csections: 1 }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    expect(within(row).getByLabelText('Не підходить')).toBeInTheDocument();
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    expect(within(row).getByTestId('program-verdict')).toHaveTextContent('✕ до 35 років — вам 38');
+    openDetails(row);
     expect(row).not.toHaveTextContent('через 2 роки після операції');
     expect(row).not.toHaveTextContent('без обмежень');
     expect(row).not.toHaveTextContent('бажано');
@@ -362,7 +403,7 @@ describe('програми з оголошень агенцій', () => {
     const program = { id: 'c', type: 'sm', payments: { final: { amount: 20000, currency: 'USD' } }, coverage: ['housing'], customCoverage: ['Подарунок після пологів'] };
     render(<ProgramsSummary card={{ programs: { c: program } }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    openDetails(row);
     const list = within(row).getByLabelText('Додатково покривається');
     expect(list).toHaveTextContent('Житло');
     expect(list).toHaveTextContent('Подарунок після пологів');
@@ -375,7 +416,7 @@ describe('програми з оголошень агенцій', () => {
     const program = { id: 't', type: 'sm', payments: { final: { amount: 20000, currency: 'USD' } } };
     render(<ProgramsSummary card={{ programs: { t: program } }} rates={rates} displayCurrency="USD" language="uk" timeline={{ lastCycle: '2026-10-05', onLastCycleChange }} />);
     const row = screen.getByTestId('program-list-item');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    openDetails(row);
     fireEvent.click(within(row).getByRole('button', { name: 'Приблизний графік програми' }));
     const timeline = within(row).getByTestId('program-timeline');
     expect(within(timeline).getByLabelText('Перший день останньої менструації')).toHaveValue('05.10.2026');
@@ -398,7 +439,7 @@ describe('програми з оголошень агенцій', () => {
     expect(onLastCycleChange).toHaveBeenCalledWith('2026-10-07');
     // Обране за мить до згортання деталей не губиться: запис іде одразу.
     fireEvent.change(within(timeline).getByLabelText('Перший день останньої менструації'), { target: { value: '08.10.2026' } });
-    fireEvent.click(within(row).getByRole('button', { name: 'Згорнути деталі' }));
+    openDetails(row);
     expect(onLastCycleChange).toHaveBeenLastCalledWith('2026-10-08');
     jest.useRealTimers();
   });
@@ -410,7 +451,7 @@ describe('програми з оголошень агенцій', () => {
     const program = { id: 't', type: 'sm', payments: { final: { amount: 20000, currency: 'USD' } } };
     render(<ProgramsSummary card={{ programs: { t: program } }} rates={rates} displayCurrency="USD" language="uk" timeline={{ lastCycle: '', onLastCycleChange }} />);
     const row = screen.getByTestId('program-list-item');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    openDetails(row);
     fireEvent.click(within(row).getByRole('button', { name: 'Приблизний графік програми' }));
     const timeline = within(row).getByTestId('program-timeline');
     // Дати ще немає — календар відкритий одразу, на поточному місяці.
@@ -436,7 +477,7 @@ describe('програми з оголошень агенцій', () => {
     const program = { id: 't', type: 'sm', payments: { final: { amount: 20000, currency: 'USD' } } };
     render(<ProgramsSummary card={{ programs: { t: program } }} rates={rates} displayCurrency="USD" language="uk" timeline={{ lastCycle: '2026-10-05', onLastCycleChange }} />);
     const row = screen.getByTestId('program-list-item');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    openDetails(row);
     fireEvent.click(within(row).getByRole('button', { name: 'Приблизний графік програми' }));
     const timeline = within(row).getByTestId('program-timeline');
     fireEvent.change(within(timeline).getByLabelText('Перший день останньої менструації'), { target: { value: '00.10.2026' } });
@@ -450,11 +491,11 @@ describe('програми з оголошень агенцій', () => {
     const program = { id: 'd', type: 'ed', payments: { final: { amount: 1500, currency: 'USD' } } };
     render(<ProgramsSummary card={{ programs: { d: program } }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    fireEvent.click(within(row).getByRole('button', { name: 'Деталі програми' }));
+    openDetails(row);
     expect(within(row).queryByRole('button', { name: 'Приблизний графік програми' })).not.toBeInTheDocument();
   });
 
-  it('головне в картці — те, що вибрала агенція, у її порядку; вимоги стоять окремо й усі', () => {
+  it('згорнутий рядок без ознак і грошових чипів: вимоги — одним рядком', () => {
     const program = {
       id: 'g',
       type: 'sm',
@@ -465,12 +506,9 @@ describe('програми з оголошень агенцій', () => {
     };
     render(<ProgramsSummary card={{ programs: { g: program } }} rates={rates} displayCurrency="USD" language="uk" />);
     const row = screen.getByTestId('program-list-item');
-    const list = within(row).getByLabelText('Головне');
-    // Грошових ознак («500 $ щомісяця») немає навіть вибраних: суму несе заголовок.
-    expect(within(list).getAllByRole('listitem').map(item => item.textContent.replace(/\s/g, ' '))).toEqual(['старт одразу']);
+    expect(within(row).queryByLabelText('Головне')).not.toBeInTheDocument();
     expect(row).not.toHaveTextContent('щомісяця');
-    const requirements = within(row).getByTestId('program-requirements');
-    expect(within(requirements).getAllByRole('listitem').map(item => item.textContent)).toEqual(['до 35 років', 'можна з 1 КР']);
+    expect(within(row).getByTestId('program-requirements')).toHaveTextContent('Вимоги: до 35 років · можна з 1 КР');
   });
 });
 
@@ -486,25 +524,25 @@ describe('картка агенції й батьків', () => {
 
   it('порожню програму читачам не показує — це чернетка', () => {
     const withDraft = { ...programs, p4: { id: 'p4', type: 'ed', requirements: { rh: 'any' } } };
-    render(<CardRoleBlock card={{ userId: 'AG1', role: 'ag', programs: withDraft }} programsContext={context} language="uk" />);
+    render(<CardRoleBlock card={{ userId: 'AG1', role: 'ag', programs: withDraft }} programsContext={{ ...context, viewerType: '' }} language="uk" />);
     expect(screen.getAllByTestId('program-list-item')).toHaveLength(3);
   });
 
   it('батьки ведуть програми так само, як агенція', () => {
     render(<CardRoleBlock card={{ userId: 'IP1', role: 'ip', seeking: 'ed', programs }} programsContext={context} language="uk" />);
     expect(screen.getByTestId('programs-summary')).toHaveTextContent('Вам підходить 1 з 2 програм');
-    expect(screen.getAllByTestId('program-list-item')).toHaveLength(3);
+    // Донорці програма СМ батьків — згорнутою групою.
+    expect(screen.getAllByTestId('program-list-item')).toHaveLength(2);
+    expect(screen.getByTestId('program-group-foreign')).toBeInTheDocument();
   });
 
-  it('у програм одного типу підсвічує саме те, чим вони різняться', () => {
+  it('у програм одного типу назва рядка — те, чим вони різняться', () => {
     const pair = {
       a: { id: 'a', type: 'ed', location: 'Київ', requirements: { ageTo: 30, rh: '+' }, payments: { final: { amount: 1500, currency: 'USD' } } },
       b: { id: 'b', type: 'ed', location: 'Київ', requirements: { ageTo: 35, rh: '+' }, payments: { final: { amount: 1500, currency: 'USD' } } },
     };
     render(<CardRoleBlock card={{ userId: 'AG3', role: 'ag', programs: pair }} programsContext={{ ...context, viewerType: '' }} language="uk" />);
-    const [first] = screen.getAllByTestId('program-list-item');
-    expect(within(first).getByText('до 30 років')).toHaveClass('differs');
-    expect(within(first).getByText('лише Rh+')).not.toHaveClass('differs');
+    expect(screen.getAllByTestId('program-title').map(item => item.textContent)).toEqual(['Київ · до 30 років', 'Київ · до 35 років']);
   });
 
   it('показує перші п’ять програм, решту — на прохання', () => {
@@ -524,15 +562,28 @@ describe('картка агенції й батьків', () => {
       b: { id: 'b', type: 'ed', location: 'Львів', payments: pay(1700) },
       c: { id: 'c', type: 'sm', location: 'Київ', payments: pay(20000) },
       d: { id: 'd', type: 'sm', location: 'Львів', payments: pay(28000) },
-      // Діапазон стоїть лише тоді, коли частину програм сховано (видно п’ять).
-      e: { id: 'e', type: 'ed', location: 'Одеса', payments: pay(1600) },
-      f: { id: 'f', type: 'ed', location: 'Харків', payments: pay(1650) },
     };
     render(<CardRoleBlock card={{ userId: 'AG5', role: 'ag', programs: mixed }} programsContext={{ ...context, viewerType: '' }} language="uk" />);
-    const summary = screen.getByTestId('programs-summary');
-    expect(summary).toHaveTextContent('Донорам: 1 500–1 700 $');
-    expect(summary).toHaveTextContent('Сурогатним мамам: 20 000–28 000 $');
-    expect(summary).not.toHaveTextContent('1 500–28 000 $');
+    const facts = screen.getAllByTestId('program-group-facts').map(item => item.textContent.replace(/\s/g, ' '));
+    expect(facts).toEqual(['1 500–1 700 $ · Київ, Львів', '20 000–28 000 $ · Київ, Львів']);
+    expect(screen.getByTestId('programs-summary')).not.toHaveTextContent('1 500–28 000 $');
+  });
+
+  it('ознаки організації — чипами під назвою', () => {
+    render(<CardRoleBlock card={{ userId: 'CL1', role: 'cl', orgFeatures: 'ownLab,direct,unknown' }} language="uk" />);
+    expect(within(screen.getByTestId('org-feature-chips')).getAllByRole('listitem').map(item => item.textContent)).toEqual(['Власна лабораторія', 'Без посередників']);
+  });
+
+  it('батьки: «Про нас» одразу й що з побажань збіглось з анкетою донорки', () => {
+    const wishes = { w: { id: 'w', type: 'ed', requirements: { eyeColors: 'Brown', education: 'higher' }, payments: { final: { amount: 2000, currency: 'USD' } } } };
+    render(<CardRoleBlock
+      card={{ userId: 'IP2', role: 'ip', seeking: 'ed', aboutShort: 'Ми разом 9 років', programs: wishes }}
+      programsContext={{ ...context, facts: { ...donorFacts, eyeColor: 'Brown', education: 'Higher' } }}
+      language="uk"
+    />);
+    expect(screen.getByTestId('parent-about-short')).toHaveTextContent('«Ми разом 9 років»');
+    expect(screen.getByTestId('parent-wish-matches')).toHaveTextContent('Що збігається з вами');
+    expect(within(screen.getByTestId('parent-wish-matches')).getAllByRole('listitem').length).toBeGreaterThan(0);
   });
 
   it('програми картки бере спершу з браузера — без запиту', () => {

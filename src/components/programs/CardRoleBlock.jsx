@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import styled from 'styled-components';
-import { PROGRAMS_OWNER_ROLES, parseSeekingRoles, resolveCardPrograms } from '../../utils/donorPrograms';
+import { ORG_FEATURE_OPTIONS, PROGRAMS_OWNER_ROLES, parseOrgFeatures, parseSeekingRoles, resolveCardPrograms } from '../../utils/donorPrograms';
+import { describeProgramWishes } from '../../utils/parentWishes';
 import { listProfileRoles } from '../../utils/matchingPeerVisibility';
 import { getRoleLabel } from '../profileLayoutConfig';
 import { ensureCardPrograms, readCardProgramsAt, useProgramsVersion } from '../../utils/programsStore';
@@ -57,6 +58,50 @@ const Line = styled.div`
   b { color: ${TEXT}; font-weight: 600; }
 `;
 
+// Ознаки організації — світлими чипами під назвою (`orgFeatures`).
+const FeatureChips = styled.ul`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: var(--matching-chip-bg, var(--km-fill, #F0EDE8));
+    font-size: 12.5px;
+    color: ${TEXT};
+  }
+`;
+
+// Перші рядки «Про нас» батьків: без них рядок батьків — імʼя, місто й
+// «Шукають донорку», і сусідні картки нічим не різнились.
+const About = styled.p`
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: ${TEXT};
+  overflow-wrap: anywhere;
+`;
+
+// Що з побажань батьків збіглось з анкетою донорки — нагорі, бо саме це
+// відрізняє одних батьків від інших для неї.
+const MatchBox = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--km-success, #2E9B55) 9%, transparent);
+
+  b { font-size: 13px; font-weight: 600; color: var(--km-success, #2E9B55); }
+`;
+
 const ORGANISATION_ROLES = ['ag', 'cl'];
 const PERSON_ROLES = ['ed', 'sm'];
 
@@ -99,7 +144,7 @@ const pickText = value => {
   return String(raw ?? '').trim();
 };
 
-export const CardRoleBlock = ({ card, programsContext, language, showPrograms = true, accent = '' }) => {
+export const CardRoleBlock = ({ card, programsContext, language, showPrograms = true, accent = '', contact = null }) => {
   const roles = listProfileRoles(card);
   const isOrganisation = roles.some(role => ORGANISATION_ROLES.includes(role));
   const isParent = roles.includes('ip');
@@ -122,7 +167,17 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
   // dedicated organisation name still belongs to that row and must not
   // disappear merely because `isAlsoPerson` is false in the scoped card.
   const agencyName = isOrganisation ? pickText(card?.agencyName) : '';
-  if (!hasParentContent && !(ownsPrograms && programs.length) && !(isOrganisation && agencyName)) return null;
+  const features = isOrganisation ? parseOrgFeatures(card?.orgFeatures) : [];
+  const aboutShort = isParent ? pickText(card?.aboutShort) : '';
+  // Збіги побажань — лише донорці й лише з донорських програм батьків.
+  const matchedWishes = isParent && programsContext?.viewerType === 'ed' && programsContext?.facts
+    ? [...new Map(programs
+      .filter(program => program.type === 'ed')
+      .flatMap(program => describeProgramWishes(program, language, programsContext.facts))
+      .filter(item => item.ok === true)
+      .map(item => [item.key, item])).values()]
+    : [];
+  if (!hasParentContent && !aboutShort && !features.length && !(ownsPrograms && programs.length) && !(isOrganisation && agencyName)) return null;
   const organisationRole = roles.find(role => ORGANISATION_ROLES.includes(role));
 
   return (
@@ -136,10 +191,26 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
           {agencyName ? <AgencyName> · {agencyName}</AgencyName> : null}
         </RoleHeading>
       ) : null}
+      {features.length ? (
+        <FeatureChips data-testid="org-feature-chips" aria-label={uiText('Чим відрізняються', language)}>
+          {features.map(key => (
+            <li key={key}>{uiText(ORG_FEATURE_OPTIONS.find(option => option.key === key)?.label || key, language)}</li>
+          ))}
+        </FeatureChips>
+      ) : null}
       {hasParentContent ? (
         <Line data-testid="parent-seeking">
           <b>{uiText('Шукають', language)}</b> {seekingText}
         </Line>
+      ) : null}
+      {aboutShort ? <About data-testid="parent-about-short">«{aboutShort}»</About> : null}
+      {matchedWishes.length ? (
+        <MatchBox data-testid="parent-wish-matches">
+          <b>{uiText('Що збігається з вами', language)}</b>
+          <FeatureChips>
+            {matchedWishes.map(item => <li key={item.key}>✓ {item.text}</li>)}
+          </FeatureChips>
+        </MatchBox>
       ) : null}
       {showPrograms && ownsPrograms && programs.length && programsContext ? (
         <AgencyProgramsPanel
@@ -152,6 +223,7 @@ export const CardRoleBlock = ({ card, programsContext, language, showPrograms = 
           displayCurrency={programsContext.displayCurrency}
           onDisplayCurrencyChange={programsContext.onDisplayCurrencyChange}
           timeline={programsContext.timeline}
+          contact={contact}
         />
       ) : null}
     </Block>

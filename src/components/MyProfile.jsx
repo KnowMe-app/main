@@ -73,7 +73,7 @@ import { usePrimaryNavigationHeaderTarget, usePrimaryNavigationSlot } from './Pr
 import { KnowMeBrand } from './styles/knowme';
 import { resolveMyProfileFieldText, resolveMyProfileSectionTitle } from '../utils/myProfileRoleTexts';
 import { ProgramsEditor } from './programs/ProgramsEditor';
-import { ParentProfileFields } from './programs/RoleProfileFields';
+import { OrgFeatureFields, ParentProfileFields } from './programs/RoleProfileFields';
 import { buildParentRoleSections, listRequiredSectionFields } from '../utils/myProfileSections';
 import { useProgramDisplayCurrency, useProgramRates } from '../hooks/useProgramRates';
 import {
@@ -2156,8 +2156,11 @@ export const MyProfile = () => {
   const roleSectionsFor = useCallback(role => {
     if (ORGANISATION_ROLES.includes(role)) {
       const programs = { key: 'programs', title: '💶 Програми', fields: ['programs'], custom: 'programs' };
-      if (!hasMixedRoles) return [programs];
-      return [{ key: 'organisation', title: role === 'cl' ? '🏥 Клініка' : '🏢 Агенція', fields: ['agencyName'] }, programs];
+      // «Чим ви відрізняєтесь» — ознаки організації галочками (`orgFeatures`),
+      // необовʼязкові: публікацію вони не тримають.
+      const features = { key: 'orgFeatures', title: 'Чим ви відрізняєтесь', fields: ['orgFeatures'], optionalFields: ['orgFeatures'], custom: 'orgFeatures', featureRole: role };
+      if (!hasMixedRoles) return [features, programs];
+      return [{ key: 'organisation', title: role === 'cl' ? '🏥 Клініка' : '🏢 Агенція', fields: ['agencyName'] }, features, programs];
     }
     if (role === 'ip') {
       return buildParentRoleSections({
@@ -4125,6 +4128,7 @@ export const MyProfile = () => {
               onEditingChange={setEditingProgram}
             />
           ) : null}
+          {section.custom === 'orgFeatures' ? <OrgFeatureFields state={state} onCommit={saveRoleField} language={language} roles={[section.featureRole]} /> : null}
           {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} showProgramLocation={showParentProgramLocation} /> : null}
           {section.custom && section.extraFields?.length ? section.extraFields.map(renderField) : null}
           {!section.custom && section.key === 'social' ? renderSocialFields(section) : null}

@@ -303,6 +303,14 @@ import {
   setPaymentFilterProgramTypes,
 } from '../utils/donorPrograms';
 import { computeBmi, normalizeHeightCm } from '../utils/profileNormalization';
+import { useCardPrograms } from './programs/CardRoleBlock';
+import { ProgramCandidateChip, programFilterLabel } from './programs/ProgramCandidateFilter';
+import {
+  buildProgramFilter,
+  readStoredProgramFilter,
+  refreshProgramFilterSnapshot,
+  storeProgramFilter,
+} from '../utils/programCandidateFilter';
 // Реєструє читача програм для сховища (`utils/programsStore`).
 import './programs/programsRemote';
 import {
@@ -1426,6 +1434,9 @@ const Matching = () => {
   // резус, пологи, КР, сімейний стан). Читається з тієї самої анкети, що й
   // роль, на вході — окремого запиту не коштує.
   const [viewerProgramFacts, setViewerProgramFacts] = useState(null);
+  // Версія власних програм читача (`programsAt` його картки): агенція, клініка
+  // чи батьки обирають з них «Кандидатки під програму».
+  const [viewerProgramsAt, setViewerProgramsAt] = useState(0);
   // Перший день місячних читачки — з нього графік програми СМ рахує перенос
   // і пологи (`ProgramTimeline`). Уведене там пишеться назад у її анкету.
   const [viewerLastCycle, setViewerLastCycle] = useState('');
@@ -1607,7 +1618,8 @@ const Matching = () => {
     displayCurrency: programDisplayCurrency,
     onDisplayCurrencyChange: setProgramDisplayCurrency,
     timeline: programTimeline,
-  }), [programDisplayCurrency, programRates, programTimeline, setProgramDisplayCurrency, viewerProgramFacts, viewerProgramType]);
+    candidateProgram: filters?.program || null,
+  }), [filters?.program, programDisplayCurrency, programRates, programTimeline, setProgramDisplayCurrency, viewerProgramFacts, viewerProgramType]);
   useEffect(() => {
     setPaymentFilterProgramTypes(viewerProgramType ? [viewerProgramType] : null);
   }, [viewerProgramType]);
@@ -2720,6 +2732,7 @@ const Matching = () => {
             // search-key discovery and additional-access refresh asynchronous.
             setMultiDataOwnerIds(resolvedOwnerIds);
             setViewerProgramFacts(extractViewerProgramFacts(profile, PROGRAM_FACT_HELPERS));
+            setViewerProgramsAt(Number(profile?.programsAt) || 0);
             // Дата з графіка, яку база ще не прийняла (`saveViewerLastCycle`
             // кладе її в незбережене «Мого профілю»), стоїть поверх анкети.
             const pendingLastCycle = readPendingProfileEdits(user.uid).fields.lastCycle;
@@ -3975,9 +3988,15 @@ const Matching = () => {
     // Місце з пошуку живе поруч із фільтрами шухляди, а не в ній: панель про
     // нього не знає й присилає свій стан без нього.
     const place = filtersRef.current?.place;
-    const nextFilters = place && incomingFilters && !incomingFilters.place
+    const withPlace = place && incomingFilters && !incomingFilters.place
       ? { ...incomingFilters, place }
       : incomingFilters;
+    // «Кандидатки під програму» — так само поза шухлядою; після
+    // перезавантаження — зі збереженого (`readStoredProgramFilter`).
+    const program = filtersRef.current?.program || readStoredProgramFilter();
+    const nextFilters = program && withPlace && !withPlace.program
+      ? { ...withPlace, program }
+      : withPlace;
     setDraftFilters(nextFilters);
     // Only edits made inside the open drawer are a draft. A change from anywhere
     // else - a chip's ✕, the panel's first notification carrying the stored
@@ -4005,6 +4024,7 @@ const Matching = () => {
     clearCardStore();
     if (!keepFilters) {
       localStorage.removeItem('matchingFilters');
+      storeProgramFilter(null);
       localStorage.removeItem(SEARCH_KEY);
     }
 
@@ -7688,6 +7708,29 @@ const Matching = () => {
     const { place: _place, ...rest } = filtersRef.current || {};
     applyFilters(rest);
   }, [applyFilters]);
+  // «Кандидатки під програму»: власні програми читача (агенція, клініка,
+  // батьки) — з того самого сховища програм, що й картки стрічки.
+  const viewerProgramsCard = useMemo(
+    () => (ownerId && viewerProgramsAt ? { userId: ownerId, programsAt: viewerProgramsAt } : null),
+    [ownerId, viewerProgramsAt],
+  );
+  const { programs: viewerOwnPrograms } = useCardPrograms(viewerProgramsCard, Boolean(viewerProgramsCard));
+  const handleSelectProgramFilter = React.useCallback(program => {
+    const { program: _program, ...rest } = filtersRef.current || {};
+    const next = program ? buildProgramFilter(program, programFilterLabel(program, viewerOwnPrograms, language)) : null;
+    storeProgramFilter(next);
+    applyFilters(next ? { ...rest, program: next } : rest);
+  }, [applyFilters, language, viewerOwnPrograms]);
+  // Агенція змінила вимоги програми чи прибрала її — знімок у фільтрі слідом.
+  useEffect(() => {
+    const current = filtersRef.current?.program;
+    if (!current || !viewerOwnPrograms.length) return;
+    const next = refreshProgramFilterSnapshot(current, viewerOwnPrograms, program => programFilterLabel(program, viewerOwnPrograms, language));
+    if (next === current) return;
+    const { program: _program, ...rest } = filtersRef.current || {};
+    storeProgramFilter(next);
+    applyFilters(next ? { ...rest, program: next } : rest);
+  }, [applyFilters, language, viewerOwnPrograms]);
   const placeFilterLabel = matchingUiFilters?.place?.uk
     ? uiText('Місце: {place}', language, { place: describePlace(matchingUiFilters.place) })
     : '';
@@ -7765,7 +7808,7 @@ const Matching = () => {
     try {
       const storedRaw = localStorage.getItem('matchingFilters');
       const stored = storedRaw ? JSON.parse(storedRaw) : null;
-      const { place: _place, ...panelFilters } = current;
+      const { place: _place, program: _program, ...panelFilters } = current;
       localStorage.setItem('matchingFilters', JSON.stringify({ ...(stored || panelFilters), userRole }));
     } catch {
       // Сховище недоступне — фільтр однаково діє до перезавантаження.
@@ -9279,6 +9322,14 @@ const Matching = () => {
             <MatchingFilterRail
               filters={matchingUiFilters}
               language={language}
+              leading={(
+                <ProgramCandidateChip
+                  programs={viewerOwnPrograms}
+                  value={matchingUiFilters?.program}
+                  onSelect={handleSelectProgramFilter}
+                  language={language}
+                />
+              )}
               roleOptionKeys={roleOptionKeys}
               openGroup={openFilterGroup}
               onOpenGroup={handleOpenFilterGroup}

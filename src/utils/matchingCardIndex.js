@@ -124,8 +124,9 @@ const COPIED_FIELDS = [
   'experience',
   'eyeColor',
   'hairColor',
-  // Копія з `profileDetails` (`MATCHING_CARD_MIRRORED_FIELDS`).
+  // Копії з `profileDetails` (`MATCHING_CARD_MIRRORED_FIELDS`).
   'agencyName',
+  'orgFeatures',
 ];
 
 // Аліаси кесаревого: анкети різних поколінь тримають його під різними іменами,
@@ -357,6 +358,25 @@ const resolveFeedDate = (data, { existingCard } = {}) => {
  * `feedDate`), інакше ключа немає. Те саме питання ставить і разова дописка
  * карткам, опублікованим раніше (`backfillMatchingCardBlood`).
  */
+/**
+ * Перші рядки «Про нас» біологічних батьків для рядка стрічки. Лише в
+ * опублікованої картки й лише коли в людини видима роль батьків: донорці
+ * чи агенції цей текст у картці ні до чого (їх описують смуга показників і
+ * програми), а поза стрічкою текст людини за межею приватності — як `blood`.
+ */
+export const ABOUT_SHORT_MAX_LENGTH = 180;
+export const resolveCardAboutShort = (about, roles, feedDate) => {
+  if (!(typeof feedDate === 'string' && feedDate.trim())) return undefined;
+  if (!(roles || []).some(role => role === 'ip' || role === 'pp')) return undefined;
+  const raw = Array.isArray(about) ? about[about.length - 1] : about;
+  const text = String(raw ?? '').replace(/\s+/g, ' ').trim();
+  if (!text) return undefined;
+  if (text.length <= ABOUT_SHORT_MAX_LENGTH) return text;
+  const cut = text.slice(0, ABOUT_SHORT_MAX_LENGTH - 1);
+  const atSpace = cut.lastIndexOf(' ');
+  return `${(atSpace > ABOUT_SHORT_MAX_LENGTH * 0.6 ? cut.slice(0, atSpace) : cut).replace(/[\s,.;:!?—-]+$/, '')}…`;
+};
+
 export const resolveCardBlood = (blood, feedDate) => (
   typeof feedDate === 'string' && feedDate.trim() ? projectionValue(blood) : undefined
 );
@@ -470,6 +490,8 @@ export const buildMatchingCardProjection = (userId, data, options = {}) => {
   // перебудовує картку, і писач знімає ключ разом з датою.
   const blood = resolveCardBlood(data.blood, feedDate);
   if (blood !== undefined) projection.blood = blood;
+  const aboutShort = resolveCardAboutShort(data.moreInfo_main, listProfileRoles({ ...data, role: projection.role, userRole: projection.role }), feedDate);
+  if (aboutShort) projection.aboutShort = aboutShort;
 
   // Переноситься, а не рахується: `syncMatchingCardIndex` перезаписує картку
   // цілком (`set`) на кожне збереження анкети, а не лише зачеплені поля. Без
