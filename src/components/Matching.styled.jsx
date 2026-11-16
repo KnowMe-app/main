@@ -1483,6 +1483,36 @@ export const FeedNotice = styled.div`
   color: var(--matching-muted-text);
 `;
 
+/*
+ * Текстова дія під поясненням порожньої стрічки чи видачі. Тут стояв
+ * `ActionButton` — кругла кнопка-значок на 35 px, — і довгий текст («Можливо,
+ * ви мали на увазі «Ольга»?», «Шукаєте за категорією?…») вилазив з неї й
+ * лягав на сусідню кнопку: дотик в одну влучав в іншу (перевірено наживо
+ * 16.11 — «Jkmuf → Ольга» відкривав фільтр «Тип профілю»).
+ */
+export const FeedNoticeAction = styled.button`
+  display: block;
+  max-width: 100%;
+  min-height: 40px;
+  margin: 12px auto 0;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--km-fill, var(--matching-action-bg));
+  color: var(--matching-accent, var(--km-accent, #C9600F));
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--matching-accent, #C9600F) 42%, transparent);
+    outline-offset: 2px;
+  }
+`;
+
 /* ------------------------------------------------------------------ *
  * Detail layer (spec §7)
  *
