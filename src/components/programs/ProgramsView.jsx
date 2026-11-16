@@ -886,13 +886,13 @@ const InquiryHint = styled.p`
  * дотик рахується як дотик до контакту (`contact.onContactAction`). Без
  * контактів кнопки немає: обіцяти лист, якого нема куди надіслати, гірше.
  */
-const ProgramInquiry = ({ program, contact, rates, displayCurrency, language }) => {
+const ProgramInquiry = ({ program, title = '', contact, rates, displayCurrency, language }) => {
   const [copied, setCopied] = useState(false);
   const breakdown = programBreakdown(program, { rates });
   const pay = breakdown.guaranteed.amount > 0 ? presentPayRange(breakdown, displayCurrency, rates).primary : '';
   const text = buildProgramInquiryText({
     offer: uiText(PROGRAM_TYPE_LABELS[program.type] || '', language),
-    title: program.location ? formatProgramPlace(program.location) : '',
+    title: title || (program.location ? formatProgramPlace(program.location) : ''),
     pay,
   }, language);
   const link = resolveProgramInquiryLink(contact?.entries, text);
@@ -940,6 +940,9 @@ export const ProgramCard = ({
   onToggleBonus,
   timeline = null,
   contact = null,
+  // Назва рядка програми (місце й відмінність, `programRowTitle`): лист
+  // мусить розрізнити дві київські програми з різним віком.
+  inquiryTitle = '',
 }) => {
   const [ownBonuses, toggleOwnBonus] = useSelectedBonuses(program);
   // У контейнері стрічки вибір тримає згорнута частина: так він переживає
@@ -1120,7 +1123,7 @@ export const ProgramCard = ({
         </Section>
       ) : null}
 
-      {contact ? <ProgramInquiry program={program} contact={contact} rates={rates} displayCurrency={currency} language={language} /> : null}
+      {contact ? <ProgramInquiry program={program} title={inquiryTitle} contact={contact} rates={rates} displayCurrency={currency} language={language} /> : null}
     </Details>
   );
 
@@ -1558,6 +1561,7 @@ const ProgramListItem = ({ program, open, onToggle, facts, rates, language, diff
             onToggleBonus={toggleBonus}
             timeline={timeline}
             contact={contact}
+            inquiryTitle={title}
           />
         </ProgramBody>
       </Collapsible>

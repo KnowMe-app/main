@@ -283,6 +283,19 @@ describe('картка програми — калькулятор заробі�
     expect(onContactAction).toHaveBeenCalledWith('whatsapp');
   });
 
+  it('лист розрізняє програми, що відрізняються лише вимогами', () => {
+    const entries = [{ key: 'phone', value: '+380501234567', href: 'tel:+380501234567' }];
+    const pair = {
+      a: { id: 'a', type: 'ed', location: 'Київ', requirements: { ageTo: 30 }, payments: { final: { amount: 1500, currency: 'USD' } } },
+      b: { id: 'b', type: 'ed', location: 'Київ', requirements: { ageTo: 35 }, payments: { final: { amount: 1500, currency: 'USD' } } },
+    };
+    render(<ProgramsSummary card={{ programs: pair }} rates={rates} displayCurrency="USD" language="uk" contact={{ entries }} />);
+    const rows = screen.getAllByTestId('program-list-item');
+    openDetails(rows[1]);
+    const text = decodeURIComponent(within(rows[1]).getByRole('link', { name: 'Написати про цю програму' }).getAttribute('href').split('text=')[1]);
+    expect(text).toContain('Київ · до 35 років');
+  });
+
   it('без контактів кнопки звернення немає', () => {
     render(<ProgramCard program={surrogate} rates={rates} language="uk" contact={{ entries: [] }} />);
     expect(screen.queryByTestId('program-inquiry')).not.toBeInTheDocument();

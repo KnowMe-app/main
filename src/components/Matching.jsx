@@ -299,11 +299,12 @@ import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMor
 import { useProgramDisplayCurrency, useProgramRates } from '../hooks/useProgramRates';
 import {
   extractViewerProgramFacts,
+  listPrograms,
   resolveViewerProgramType,
   setPaymentFilterProgramTypes,
 } from '../utils/donorPrograms';
 import { computeBmi, normalizeHeightCm } from '../utils/profileNormalization';
-import { useCardPrograms } from './programs/CardRoleBlock';
+import { loadOwnPrograms, useProgramsVersion } from '../utils/programsStore';
 import { ProgramCandidateChip, programFilterLabel } from './programs/ProgramCandidateFilter';
 import {
   buildProgramFilter,
@@ -1434,9 +1435,6 @@ const Matching = () => {
   // резус, пологи, КР, сімейний стан). Читається з тієї самої анкети, що й
   // роль, на вході — окремого запиту не коштує.
   const [viewerProgramFacts, setViewerProgramFacts] = useState(null);
-  // Версія власних програм читача (`programsAt` його картки): агенція, клініка
-  // чи батьки обирають з них «Кандидатки під програму».
-  const [viewerProgramsAt, setViewerProgramsAt] = useState(0);
   // Перший день місячних читачки — з нього графік програми СМ рахує перенос
   // і пологи (`ProgramTimeline`). Уведене там пишеться назад у її анкету.
   const [viewerLastCycle, setViewerLastCycle] = useState('');
@@ -2732,7 +2730,6 @@ const Matching = () => {
             // search-key discovery and additional-access refresh asynchronous.
             setMultiDataOwnerIds(resolvedOwnerIds);
             setViewerProgramFacts(extractViewerProgramFacts(profile, PROGRAM_FACT_HELPERS));
-            setViewerProgramsAt(Number(profile?.programsAt) || 0);
             // Дата з графіка, яку база ще не прийняла (`saveViewerLastCycle`
             // кладе її в незбережене «Мого профілю»), стоїть поверх анкети.
             const pendingLastCycle = readPendingProfileEdits(user.uid).fields.lastCycle;
@@ -7709,12 +7706,26 @@ const Matching = () => {
     applyFilters(rest);
   }, [applyFilters]);
   // «Кандидатки під програму»: власні програми читача (агенція, клініка,
-  // батьки) — з того самого сховища програм, що й картки стрічки.
-  const viewerProgramsCard = useMemo(
-    () => (ownerId && viewerProgramsAt ? { userId: ownerId, programsAt: viewerProgramsAt } : null),
-    [ownerId, viewerProgramsAt],
-  );
-  const { programs: viewerOwnPrograms } = useCardPrograms(viewerProgramsCard, Boolean(viewerProgramsCard));
+  // батьки) — прямо зі сховища програм (`loadOwnPrograms`: раз на вкладку з
+  // бази, далі памʼять і `localStorage`), а не за `programsAt` анкети:
+  // кеш анкети (шість годин) не знає про програму, щойно заведену в «Моєму
+  // профілі», і фільтр лишався б недоступним. `loaded` — відповідь сховища
+  // (порожній перелік тоді справжній), а не ще не прочитане.
+  const programsVersion = useProgramsVersion();
+  const [ownProgramsState, setOwnProgramsState] = useState({ loaded: false, programs: [] });
+  useEffect(() => {
+    if (!ownerId) return undefined;
+    let cancelled = false;
+    loadOwnPrograms(ownerId)
+      .then(entry => {
+        if (!cancelled) setOwnProgramsState({ loaded: true, programs: listPrograms(entry?.items || {}) });
+      })
+      .catch(() => {
+        // Збій читання — не «програм немає»: фільтр лишається, як був.
+      });
+    return () => { cancelled = true; };
+  }, [ownerId, programsVersion]);
+  const viewerOwnPrograms = ownProgramsState.programs;
   const handleSelectProgramFilter = React.useCallback(program => {
     const { program: _program, ...rest } = filtersRef.current || {};
     const next = program ? buildProgramFilter(program, programFilterLabel(program, viewerOwnPrograms, language)) : null;
@@ -7722,15 +7733,19 @@ const Matching = () => {
     applyFilters(next ? { ...rest, program: next } : rest);
   }, [applyFilters, language, viewerOwnPrograms]);
   // Агенція змінила вимоги програми чи прибрала її — знімок у фільтрі слідом.
+  // Остання програма прибрана чи схована — фільтр знімається: чипа без
+  // програм немає, і звуження діяло б невидимо.
   useEffect(() => {
     const current = filtersRef.current?.program;
-    if (!current || !viewerOwnPrograms.length) return;
-    const next = refreshProgramFilterSnapshot(current, viewerOwnPrograms, program => programFilterLabel(program, viewerOwnPrograms, language));
+    if (!current || !ownProgramsState.loaded) return;
+    const next = viewerOwnPrograms.length
+      ? refreshProgramFilterSnapshot(current, viewerOwnPrograms, program => programFilterLabel(program, viewerOwnPrograms, language))
+      : null;
     if (next === current) return;
     const { program: _program, ...rest } = filtersRef.current || {};
     storeProgramFilter(next);
     applyFilters(next ? { ...rest, program: next } : rest);
-  }, [applyFilters, language, viewerOwnPrograms]);
+  }, [applyFilters, language, ownProgramsState.loaded, viewerOwnPrograms]);
   const placeFilterLabel = matchingUiFilters?.place?.uk
     ? uiText('Місце: {place}', language, { place: describePlace(matchingUiFilters.place) })
     : '';
