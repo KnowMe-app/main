@@ -1,6 +1,7 @@
 import { compareByFeedDate, readPublishedFeedIndex, roleBucketsOf } from './publishedFeedIndex';
 import { listPaymentBuckets } from './donorPrograms';
 import { cardMatchesPlace } from './profileNormalization';
+import { cardFitsProgramFilter, isProgramFilterActive } from './programCandidateFilter';
 import { getCurrentValue } from 'components/getCurrentValue';
 import { ensureProgramsForCards } from './programsStore';
 import { getProgramRates } from './programCurrency';
@@ -1319,6 +1320,11 @@ export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = nu
     // Місто чи область, які читач набрав у пошуку й обрав показати стрічкою
     // (`resolveKnownPlace`). Індексу під місто немає — звірка йде по картці.
     if (activeFilters.place?.uk && !cardMatchesPlace(user, activeFilters.place)) return false;
+
+    // «Кандидатки під програму» (`utils/programCandidateFilter`): лише анкети
+    // типу програми, що не порушують жодної її вимоги. Індексу під це немає —
+    // звірка йде по картці, а джерело дочитується, доки сторінка не набереться.
+    if (isProgramFilterActive(activeFilters.program) && !cardFitsProgramFilter(user, activeFilters.program)) return false;
 
     // Виплата — з програм картки й за курсом НБУ (`listPaymentBuckets`).
     // Індексу під неї немає: програми дочитує джерело сторінки

@@ -53,6 +53,7 @@ import {
 import { getRoleColor } from './matchingRoleColors';
 import * as S from './MatchingHiddenList.styled';
 import { CardRoleBlock, isCounterpartyCard } from './programs/CardRoleBlock';
+import { ProgramCandidateNote } from './programs/ProgramCandidateFilter';
 import { isOrganisationAnketaRole } from '../utils/cardAnketas';
 import { buildParentDetailSections } from '../utils/parentWishes';
 import { listProfileRoles } from '../utils/matchingPeerVisibility';
@@ -1403,6 +1404,11 @@ const ProfileRow = ({
     () => (isLimited ? [] : getContactEntries(user).filter(entry => entry.key !== 'vk')),
     [isLimited, user]
   );
+  // Контакти для «Написати про цю програму» в деталях програми: той самий
+  // рядок значків, і дотик рахується так само (`onContactAction`).
+  const programContact = useMemo(() => (contactEntries.length
+    ? { entries: contactEntries, onContactAction: onContactAction ? channel => onContactAction(user, channel) : undefined }
+    : null), [contactEntries, onContactAction, user]);
   const hasLocation = Boolean(location);
   const postponedUntil = postpone && !isLimited && isPostponedUntil(postpone.until) ? readPostponeDate(postpone.until) : '';
 
@@ -1912,7 +1918,12 @@ const ProfileRow = ({
           про людину одне й те саме однаковими словами. */}
       <ProfileStatStrip cells={statCells} />
       <ProfileFactList rows={summaryRows} />
-      {!isLimited && !isPersonAnketa ? <CardRoleBlock card={roleBlockCard} programsContext={programsContext} language={language} accent={roleAccent} /> : null}
+      {/* Стрічку звужено під програму читача — рядок кандидатки каже, чи
+          підходить вона, а чого в анкеті не вказано (`ProgramCandidateNote`). */}
+      {isPersonAnketa && programsContext?.candidateProgram ? (
+        <ProgramCandidateNote card={user} filter={programsContext.candidateProgram} language={language} />
+      ) : null}
+      {!isLimited && !isPersonAnketa ? <CardRoleBlock card={roleBlockCard} programsContext={programsContext} language={language} accent={roleAccent} contact={programContact} /> : null}
 
       {/* «Детальніше» — під коротким описом, посеред картки, а не стрілкою в
           правому кінці ряду рішень: розгортають саме те, що щойно прочитали,

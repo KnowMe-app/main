@@ -234,6 +234,27 @@ await it('картка приймає назву агенції, але не с�
     set(ref(context.database(), `matchingCards/${CARD}/agencyName`), null));
 });
 
+// Ознаки організації — коди через кому; короткий «Про нас» батьків — лише в
+// опублікованої картки (як `blood`): поза стрічкою текст людини закритий.
+await it('картка приймає ознаки організації й «Про нас» лише опублікованою', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/orgFeatures`), 'ownLab,direct'));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/orgFeatures`), 'власна лабораторія'));
+  const feedDate = await testEnv.withSecurityRulesDisabled(async context =>
+    (await get(ref(context.database(), `matchingCards/${CARD}/feedDate`))).val());
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/feedDate`), false));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/aboutShort`), 'Ми разом 9 років'));
+  await testEnv.withSecurityRulesDisabled(context =>
+    set(ref(context.database(), `matchingCards/${CARD}/feedDate`), '2026-11-15'));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/aboutShort`), 'Ми разом 9 років'));
+  await assertFails(set(ref(db(SUPERADMIN), `matchingCards/${CARD}/aboutShort`), 'х'.repeat(201)));
+  await testEnv.withSecurityRulesDisabled(context => update(ref(context.database()), {
+    [`matchingCards/${CARD}/orgFeatures`]: null,
+    [`matchingCards/${CARD}/aboutShort`]: null,
+    [`matchingCards/${CARD}/feedDate`]: feedDate ?? null,
+  }));
+});
+
 const OWNER_PROGRAMS = {
   updatedAt: 1759200000000,
   items: {
@@ -356,6 +377,21 @@ await it('приймає власні вимоги програми й відк�
   await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ customRequirements: [{ text: 'x', level: 'must' }] })));
   await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ customRequirements: [{ text: 'x', secret: 1 }] })));
   await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ customRequirements: { 8: { text: 'x' } } })));
+  await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
+});
+
+// «Як це відбувається» — кроки програми: текст і необовʼязкова тривалість.
+await it('приймає кроки програми й відкидає зайве в них', async () => {
+  const base = `multiData/programs/${PROFILE_OWNER}`;
+  const withProgram = program => ({ updatedAt: 1759200000000, items: { p7: { id: 'p7', type: 'ed', ...program } } });
+  await assertSucceeds(set(ref(db(PROFILE_OWNER), base), withProgram({
+    steps: [{ text: 'Знайомство й обстеження', duration: '1–2 дні' }, { text: 'Пункція' }],
+  })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ steps: [{ text: '' }] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ steps: [{ text: 'x'.repeat(101) }] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ steps: [{ text: 'x', duration: 'x'.repeat(41) }] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ steps: [{ text: 'x', secret: 1 }] })));
+  await assertFails(set(ref(db(PROFILE_OWNER), base), withProgram({ steps: { 6: { text: 'x' } } })));
   await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), base), null));
 });
 

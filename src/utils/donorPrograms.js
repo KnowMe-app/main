@@ -283,6 +283,13 @@ export const listExcludedOblasts = value => [...new Set(String(value || '')
  * можна, тож «підходить» ці вимоги не рахує: вони стоять у картці чіпами.
  */
 export const MAX_CUSTOM_REQUIREMENTS = 8;
+
+// «Як це відбувається» — кроки програми словами агенції («Знайомство й
+// обстеження», «Стимуляція — уколи вдома») з необовʼязковою тривалістю
+// («1–2 дні», «~12 днів»). Порядок — порядок агенції.
+export const MAX_PROGRAM_STEPS = 6;
+export const PROGRAM_STEP_MAX_LENGTH = 100;
+export const PROGRAM_STEP_DURATION_MAX_LENGTH = 40;
 export const CUSTOM_REQUIREMENT_MAX_LENGTH = 80;
 
 export const PROGRAM_REQUIREMENT_LABELS = Object.freeze({
@@ -413,6 +420,38 @@ export const encodeSeekingRoles = keys => {
 export const toggleSeekingRole = (value, key) => {
   const list = parseSeekingRoles(value);
   return encodeSeekingRoles(list.includes(key) ? list.filter(item => item !== key) : [...list, key]);
+};
+
+// Ознаки агенції чи клініки — чим організація відрізняється від сусідньої,
+// галочками, а не вільним текстом (`orgFeatures`, коди через кому; копія в
+// картці стрічки). Рядок стрічки показує їх під назвою. `roles` — кому
+// ознаку пропонують: лабораторія й «без посередників» — про клініку.
+export const ORG_FEATURE_OPTIONS = Object.freeze([
+  { key: 'ownLab', label: 'Власна лабораторія', roles: ['cl'] },
+  { key: 'direct', label: 'Без посередників', roles: ['cl'] },
+  { key: 'freeExams', label: 'Обстеження безкоштовно', roles: ['ag', 'cl'] },
+  { key: 'legal', label: 'Юридичний супровід', roles: ['ag', 'cl'] },
+  { key: 'coordinator', label: 'Особистий координатор', roles: ['ag', 'cl'] },
+  { key: 'housing', label: 'Житло на час програми', roles: ['ag', 'cl'] },
+]);
+export const MAX_ORG_FEATURES = 4;
+
+export const parseOrgFeatures = value => {
+  const raw = Array.isArray(value) ? value[value.length - 1] : value;
+  const keys = new Set(String(raw ?? '').split(',').map(item => item.trim()).filter(Boolean));
+  return ORG_FEATURE_OPTIONS.filter(option => keys.has(option.key)).map(option => option.key);
+};
+
+export const listOrgFeatureOptions = roles => {
+  const list = Array.isArray(roles) ? roles : [roles];
+  return ORG_FEATURE_OPTIONS.filter(option => option.roles.some(role => list.includes(role)));
+};
+
+export const toggleOrgFeature = (value, key) => {
+  const current = parseOrgFeatures(value);
+  if (current.includes(key)) return current.filter(item => item !== key).join(',');
+  if (current.length >= MAX_ORG_FEATURES) return current.join(',');
+  return [...current, key].join(',');
 };
 
 export const PARENT_VIA_OPTIONS = Object.freeze([
@@ -560,6 +599,8 @@ export const normalizeProgram = (raw, id) => {
   if (customRequirements.length) program.customRequirements = customRequirements;
   const customCoverage = normalizeCustomCoverage(raw.customCoverage);
   if (customCoverage.length) program.customCoverage = customCoverage;
+  const steps = normalizeProgramSteps(raw.steps);
+  if (steps.length) program.steps = steps;
   const relocation = normalizeRelocation(familyFromCoverage && !raw.relocation?.family
     ? { ...(raw.relocation || {}), family: 'yes' }
     : raw.relocation);
@@ -630,6 +671,16 @@ const normalizeCustomRequirements = raw => (Array.isArray(raw) ? raw : Object.va
   .filter(Boolean)
   .slice(0, MAX_CUSTOM_REQUIREMENTS);
 
+const normalizeProgramSteps = raw => (Array.isArray(raw) ? raw : Object.values(raw || {}))
+  .map(item => {
+    const value = text(typeof item === 'string' ? item : item?.text, PROGRAM_STEP_MAX_LENGTH);
+    if (!value) return null;
+    const duration = text(item?.duration, PROGRAM_STEP_DURATION_MAX_LENGTH);
+    return duration ? { text: value, duration } : { text: value };
+  })
+  .filter(Boolean)
+  .slice(0, MAX_PROGRAM_STEPS);
+
 const normalizeCustomCoverage = raw => [...new Set((Array.isArray(raw) ? raw : Object.values(raw || {}))
   .map(item => text(typeof item === 'string' ? item : item?.text, CUSTOM_COVERAGE_MAX_LENGTH))
   .filter(Boolean))]
@@ -695,6 +746,7 @@ export const isProgramPresentable = program => {
     || Boolean(String(program.name || '').trim())
     || Boolean(program.customCoverage?.length)
     || Boolean(program.customRequirements?.length)
+    || Boolean(program.steps?.length)
     || hasRequirement;
 };
 

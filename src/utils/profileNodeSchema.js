@@ -71,6 +71,10 @@ export const MATCHING_CARD_DERIVED_FIELDS = Object.freeze({
   // Програм агенцій тут немає: вони лежать окремо (`multiData/programs`), а
   // картка несе лише час їхньої зміни — `programsAt`, `MATCHING_CARD_PROGRAMS_FIELDS`.
   seekingRole: ['seeking'],
+  // Перші рядки «Про нас» біологічних батьків (`resolveCardAboutShort`): без
+  // них рядок батьків у стрічці майже порожній. Лише в опублікованої картки,
+  // як і `blood`: поза стрічкою текст людини за межею приватності.
+  aboutShort: ['moreInfo_main', 'userRole', 'role', 'hiddenRoles'],
 });
 
 /**
@@ -160,7 +164,9 @@ export const MATCHING_CARD_PROGRAMS_FIELDS = Object.freeze(['programsAt']);
 // `blood` — повна група крові, і лише в опублікованої картки
 // (`buildMatchingCardProjection`): без неї рядок стрічки казав «Rh+», і читач не
 // розумів, яка це група.
-export const MATCHING_CARD_MIRRORED_FIELDS = Object.freeze(['agencyName', 'blood']);
+// `orgFeatures` — ознаки агенції чи клініки («Власна лабораторія», «Без
+// посередників»), коди через кому (`ORG_FEATURE_OPTIONS`).
+export const MATCHING_CARD_MIRRORED_FIELDS = Object.freeze(['agencyName', 'blood', 'orgFeatures']);
 
 /**
  * Версія анкети (`rev`, час сервера) — коли востаннє змінилось те, що бачить
@@ -264,6 +270,8 @@ export const PROFILE_DETAIL_FIELDS = Object.freeze([
   // назва агенції чи клініки, коли в анкеті ще й особиста роль: імʼя тоді
   // належить людині (`MyProfile`, `agencyName`)
   'agencyName',
+  // ознаки агенції чи клініки (`ORG_FEATURE_OPTIONS`), копія в картці стрічки
+  'orgFeatures',
   // «Ускладнення здоровʼя, вагітності, пологів» — «Ні» або розповідь
   'healthComplications',
   'blood',

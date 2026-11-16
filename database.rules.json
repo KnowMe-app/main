@@ -122,6 +122,12 @@
           ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now + 600000"
         },
         "agencyName": {},
+        "orgFeatures": {
+          ".validate": "newData.isString() && newData.val().length <= 80 && newData.val().matches(/^[a-zA-Z]+(,[a-zA-Z]+)*$/)"
+        },
+        "aboutShort": {
+          ".validate": "newData.isString() && newData.val().length <= 200 && newData.parent().child('feedDate').isString()"
+        },
         "blood": {
           ".validate": "!newData.exists() || (newData.parent().child('feedDate').isString() && ((newData.isString() && newData.val().length <= 20) || newData.hasChildren()))",
           "$version": {
@@ -644,6 +650,14 @@
               },
               "featured": {
                 ".validate": "newData.val() == 'main' || newData.val() == 'sum' || newData.val() == 'monthly'"
+              },
+              "steps": {
+                "$index": {
+                  ".validate": "$index.matches(/^[0-5]$/) && newData.hasChildren(['text'])",
+                  "text": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100" },
+                  "duration": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40" },
+                  "$other": { ".validate": false }
+                }
               },
               "customRequirements": {
                 "$index": {

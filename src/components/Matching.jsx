@@ -299,10 +299,19 @@ import { collectMatchingIndexedLoadMorePage } from 'utils/matchingIndexedLoadMor
 import { useProgramDisplayCurrency, useProgramRates } from '../hooks/useProgramRates';
 import {
   extractViewerProgramFacts,
+  listPrograms,
   resolveViewerProgramType,
   setPaymentFilterProgramTypes,
 } from '../utils/donorPrograms';
 import { computeBmi, normalizeHeightCm } from '../utils/profileNormalization';
+import { loadOwnPrograms, useProgramsVersion } from '../utils/programsStore';
+import { ProgramCandidateChip, programFilterLabel } from './programs/ProgramCandidateFilter';
+import {
+  buildProgramFilter,
+  readStoredProgramFilter,
+  refreshProgramFilterSnapshot,
+  storeProgramFilter,
+} from '../utils/programCandidateFilter';
 // Реєструє читача програм для сховища (`utils/programsStore`).
 import './programs/programsRemote';
 import {
@@ -1607,7 +1616,8 @@ const Matching = () => {
     displayCurrency: programDisplayCurrency,
     onDisplayCurrencyChange: setProgramDisplayCurrency,
     timeline: programTimeline,
-  }), [programDisplayCurrency, programRates, programTimeline, setProgramDisplayCurrency, viewerProgramFacts, viewerProgramType]);
+    candidateProgram: filters?.program || null,
+  }), [filters?.program, programDisplayCurrency, programRates, programTimeline, setProgramDisplayCurrency, viewerProgramFacts, viewerProgramType]);
   useEffect(() => {
     setPaymentFilterProgramTypes(viewerProgramType ? [viewerProgramType] : null);
   }, [viewerProgramType]);
@@ -3975,9 +3985,15 @@ const Matching = () => {
     // Місце з пошуку живе поруч із фільтрами шухляди, а не в ній: панель про
     // нього не знає й присилає свій стан без нього.
     const place = filtersRef.current?.place;
-    const nextFilters = place && incomingFilters && !incomingFilters.place
+    const withPlace = place && incomingFilters && !incomingFilters.place
       ? { ...incomingFilters, place }
       : incomingFilters;
+    // «Кандидатки під програму» — так само поза шухлядою; після
+    // перезавантаження — зі збереженого (`readStoredProgramFilter`).
+    const program = filtersRef.current?.program || readStoredProgramFilter();
+    const nextFilters = program && withPlace && !withPlace.program
+      ? { ...withPlace, program }
+      : withPlace;
     setDraftFilters(nextFilters);
     // Only edits made inside the open drawer are a draft. A change from anywhere
     // else - a chip's ✕, the panel's first notification carrying the stored
@@ -4005,6 +4021,7 @@ const Matching = () => {
     clearCardStore();
     if (!keepFilters) {
       localStorage.removeItem('matchingFilters');
+      storeProgramFilter(null);
       localStorage.removeItem(SEARCH_KEY);
     }
 
@@ -7688,6 +7705,47 @@ const Matching = () => {
     const { place: _place, ...rest } = filtersRef.current || {};
     applyFilters(rest);
   }, [applyFilters]);
+  // «Кандидатки під програму»: власні програми читача (агенція, клініка,
+  // батьки) — прямо зі сховища програм (`loadOwnPrograms`: раз на вкладку з
+  // бази, далі памʼять і `localStorage`), а не за `programsAt` анкети:
+  // кеш анкети (шість годин) не знає про програму, щойно заведену в «Моєму
+  // профілі», і фільтр лишався б недоступним. `loaded` — відповідь сховища
+  // (порожній перелік тоді справжній), а не ще не прочитане.
+  const programsVersion = useProgramsVersion();
+  const [ownProgramsState, setOwnProgramsState] = useState({ loaded: false, programs: [] });
+  useEffect(() => {
+    if (!ownerId) return undefined;
+    let cancelled = false;
+    loadOwnPrograms(ownerId)
+      .then(entry => {
+        if (!cancelled) setOwnProgramsState({ loaded: true, programs: listPrograms(entry?.items || {}) });
+      })
+      .catch(() => {
+        // Збій читання — не «програм немає»: фільтр лишається, як був.
+      });
+    return () => { cancelled = true; };
+  }, [ownerId, programsVersion]);
+  const viewerOwnPrograms = ownProgramsState.programs;
+  const handleSelectProgramFilter = React.useCallback(program => {
+    const { program: _program, ...rest } = filtersRef.current || {};
+    const next = program ? buildProgramFilter(program, programFilterLabel(program, viewerOwnPrograms, language)) : null;
+    storeProgramFilter(next);
+    applyFilters(next ? { ...rest, program: next } : rest);
+  }, [applyFilters, language, viewerOwnPrograms]);
+  // Агенція змінила вимоги програми чи прибрала її — знімок у фільтрі слідом.
+  // Остання програма прибрана чи схована — фільтр знімається: чипа без
+  // програм немає, і звуження діяло б невидимо.
+  useEffect(() => {
+    const current = filtersRef.current?.program;
+    if (!current || !ownProgramsState.loaded) return;
+    const next = viewerOwnPrograms.length
+      ? refreshProgramFilterSnapshot(current, viewerOwnPrograms, program => programFilterLabel(program, viewerOwnPrograms, language))
+      : null;
+    if (next === current) return;
+    const { program: _program, ...rest } = filtersRef.current || {};
+    storeProgramFilter(next);
+    applyFilters(next ? { ...rest, program: next } : rest);
+  }, [applyFilters, language, ownProgramsState.loaded, viewerOwnPrograms]);
   const placeFilterLabel = matchingUiFilters?.place?.uk
     ? uiText('Місце: {place}', language, { place: describePlace(matchingUiFilters.place) })
     : '';
@@ -7765,7 +7823,7 @@ const Matching = () => {
     try {
       const storedRaw = localStorage.getItem('matchingFilters');
       const stored = storedRaw ? JSON.parse(storedRaw) : null;
-      const { place: _place, ...panelFilters } = current;
+      const { place: _place, program: _program, ...panelFilters } = current;
       localStorage.setItem('matchingFilters', JSON.stringify({ ...(stored || panelFilters), userRole }));
     } catch {
       // Сховище недоступне — фільтр однаково діє до перезавантаження.
@@ -9279,6 +9337,14 @@ const Matching = () => {
             <MatchingFilterRail
               filters={matchingUiFilters}
               language={language}
+              leading={(
+                <ProgramCandidateChip
+                  programs={viewerOwnPrograms}
+                  value={matchingUiFilters?.program}
+                  onSelect={handleSelectProgramFilter}
+                  language={language}
+                />
+              )}
               roleOptionKeys={roleOptionKeys}
               openGroup={openFilterGroup}
               onOpenGroup={handleOpenFilterGroup}
