@@ -397,6 +397,7 @@ exports.completeTelegramLogin = onCall(
         now: Date.now(),
         callerUid: (request.auth && request.auth.uid) || null,
         intent: data.intent === 'link' ? 'link' : '',
+        loginKey: typeof data.key === 'string' ? data.key : '',
       });
     } catch (error) {
       logger.error('telegram login completion failed', { error: error.message });

@@ -56,6 +56,7 @@ const EN_BY_UK = {
   'Невірний код. Залишилось спроб: {count}': 'Wrong code. Attempts left: {count}',
   'Відкрити Telegram ще раз': 'Open Telegram again',
   'Вставити код': 'Paste code',
+  'Вхід через Telegram завершено в іншому браузері. Щоб увійти тут, натисніть «Увійти через Telegram» ще раз': 'Telegram sign-in was completed in another browser. To sign in here, tap «Sign in with Telegram» again',
   'Відкрийте вкладку, де почали вхід через Telegram, і введіть код {code}': 'Open the tab where you started signing in with Telegram and enter code {code}',
   'Не вдалося прочитати буфер обміну. Введіть код вручну': 'Could not read the clipboard. Enter the code manually',
   'У буфері немає коду. Торкніться коду в Telegram, щоб скопіювати його': 'No code in the clipboard. Tap the code in Telegram to copy it',

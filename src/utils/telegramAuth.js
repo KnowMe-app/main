@@ -82,10 +82,12 @@ export const clearTelegramLoginAttempt = () => {
  * функція віддає його рівно один раз.
  * @returns {Promise<{ status: 'pending'|'code-required'|'wrong-code'|'ready'|'expired'|'invalid', started?: boolean, attemptsLeft?: number, token?: string, isNew?: boolean, profile?: object }>}
  */
-export const pollTelegramLogin = async (app, nonce, code = '') => {
+// `key` — ключ спроби з кнопки бота (`#tgk=`) замість `nonce`: так вхід
+// завершує браузер, у якому спроби немає (див. `readTelegramHashParams`).
+export const pollTelegramLogin = async (app, nonce, code = '', { key = '' } = {}) => {
   const { getFunctions, httpsCallable } = await import(/* webpackChunkName: "firebase-functions" */ 'firebase/functions');
   const call = httpsCallable(getFunctions(app, VERIFICATION_FUNCTION_REGION), TELEGRAM_COMPLETE_FUNCTION_NAME, { timeout: 15000 });
-  const { data } = await call({ nonce, code });
+  const { data } = await call(key ? { key, code } : { nonce, code });
   return data || { status: 'pending' };
 };
 
@@ -155,23 +157,32 @@ export const callTelegramLink = async (app, nonce, code = '') => {
 };
 
 // Кнопка бота після номера веде на сайт з кодом у фрагменті (`#tgcode=…`):
-// фрагмент на сервер не йде, а сторінка підставляє код у спробу, що лежить у
-// цьому браузері. Nonce у посиланні немає, тож у браузері без спроби код не
-// робить нічого. Фрагмент знімається з адреси одразу, щоб код не лишався в
-// історії й не їхав далі разом із посиланням.
+// фрагмент на сервер не йде. Поруч лежить ключ спроби (`#tgk=…`, sha256 від
+// nonce — сам nonce у посиланні не їде), і з ним вхід завершує будь-який
+// браузер: Telegram на Android відкриває кнопку у власному браузері, де спроби
+// з Chrome немає, і без ключа сторінка лишалась формою входу (16.11). Старі
+// повідомлення бота ключа не несуть — тоді код підставляється в спробу цього
+// браузера. Фрагмент знімається з адреси одразу, щоб код не лишався в історії
+// й не їхав далі разом із посиланням.
 export const TELEGRAM_CODE_HASH_KEY = 'tgcode';
+export const TELEGRAM_LOGIN_KEY_HASH_KEY = 'tgk';
 
-export const readTelegramCodeFromHash = () => {
-  if (typeof window === 'undefined') return '';
+export const readTelegramHashParams = () => {
+  const empty = { code: '', key: '' };
+  if (typeof window === 'undefined') return empty;
   const hash = String(window.location?.hash || '').replace(/^#/, '');
-  if (!hash) return '';
-  const code = String(new URLSearchParams(hash).get(TELEGRAM_CODE_HASH_KEY) || '').replace(/\D/g, '');
-  if (!/^\d{6}$/.test(code)) return '';
+  if (!hash) return empty;
+  const params = new URLSearchParams(hash);
+  const code = String(params.get(TELEGRAM_CODE_HASH_KEY) || '').replace(/\D/g, '');
+  if (!/^\d{6}$/.test(code)) return empty;
+  const rawKey = String(params.get(TELEGRAM_LOGIN_KEY_HASH_KEY) || '').toLowerCase();
   try {
     const { pathname, search } = window.location;
     window.history.replaceState(window.history.state, '', `${pathname}${search}`);
   } catch {
     // Без History API код просто лишається в адресі.
   }
-  return code;
+  return { code, key: /^[0-9a-f]{64}$/.test(rawKey) ? rawKey : '' };
 };
+
+export const readTelegramCodeFromHash = () => readTelegramHashParams().code;

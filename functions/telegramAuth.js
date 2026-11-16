@@ -56,6 +56,10 @@ const NONCE_PATTERN = /^[A-Za-z0-9_-]{22,64}$/;
 
 const isValidNonce = nonce => typeof nonce === 'string' && NONCE_PATTERN.test(nonce);
 
+// Ключ спроби — sha256 від `nonce` у hex (`hashNonce`).
+const LOGIN_KEY_PATTERN = /^[0-9a-f]{64}$/;
+const isValidLoginKey = key => typeof key === 'string' && LOGIN_KEY_PATTERN.test(key);
+
 const hashNonce = nonce => crypto.createHash('sha256').update(String(nonce)).digest('hex');
 
 const parseStartPayload = text => {
@@ -142,10 +146,23 @@ const returnToAppButton = () => ({
 // кнопка Telegram має рівно одну дію, а копіювати й потім вставляти — два
 // зайві кроки. Код їде у фрагменті (`#tgcode=`), і сторінка підставляє його в
 // спробу цього браузера (`readTelegramCodeFromHash` у src/utils/telegramAuth).
-const buildCodeUrl = (code, url = APP_URL) => `${url}#tgcode=${encodeURIComponent(String(code))}`;
+//
+// Поруч із кодом їде ключ спроби (`tgk`, sha256 від `nonce`), щоб кнопка
+// завершувала вхід і там, де спроби цього браузера немає. Telegram на Android
+// відкриває посилання у **власному** браузері (WebView) зі своїм сховищем, а не
+// в Chrome, де вхід почали: сторінка бачила код без спроби, казала тостом
+// «відкрийте вкладку, де почали» й лишалась формою входу — людина
+// реєструвалась удруге (16.11). Ключ — не секрет: вхід і далі вимагає коду,
+// а кнопку бачить лише власник акаунта Telegram. Привʼязка ключа не несе —
+// її завершує лише акаунт, що її почав, а сесії у WebView Telegram немає.
+const buildCodeUrl = (code, url = APP_URL, key = '') => {
+  const params = new URLSearchParams({ tgcode: String(code) });
+  if (key) params.set('tgk', key);
+  return `${url}#${params.toString()}`;
+};
 
-const codeButtons = (code, url = APP_URL, text = BOT_TEXTS.loginButton) => ({
-  inline_keyboard: [[{ text, url: buildCodeUrl(code, url), style: 'success' }]],
+const codeButtons = (code, url = APP_URL, text = BOT_TEXTS.loginButton, key = '') => ({
+  inline_keyboard: [[{ text, url: buildCodeUrl(code, url, key), style: 'success' }]],
 });
 
 /**
@@ -307,7 +324,7 @@ const handleContact = async ({ message, tgId, chatId }, deps) => {
   });
   await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
   await sendMessage(chatId, BOT_TEXTS.contactReceived, { remove_keyboard: true });
-  await sendMessage(chatId, BOT_TEXTS.done(code), codeButtons(code), { html: true });
+  await sendMessage(chatId, BOT_TEXTS.done(code), codeButtons(code, APP_URL, BOT_TEXTS.loginButton, pointer.key), { html: true });
   const known = await db.get(`${ACCOUNTS_ROOT}/${tgId}`);
   return known && known.uid ? 'signed-in' : 'registered';
 };
@@ -436,15 +453,20 @@ const handleTelegramUpdate = async (update, deps) => {
  * власникові акаунта Telegram, і рівно один раз: спроба видаляється
  * транзакцією. Хибний код рахується; на `MAX_CODE_ATTEMPTS` спроба згорає.
  */
-const completeTelegramLogin = async (nonce, codeInput, { db, auth, now, callerUid = null, intent = '' }) => {
-  if (!isValidNonce(nonce)) return { status: 'invalid' };
-  const key = hashNonce(nonce);
+//
+// Замість `nonce` можна передати ключ спроби (`loginKey`) — його несе кнопка
+// бота поруч із кодом (`buildCodeUrl`), і так вхід завершує браузер, у якому
+// спроби немає. Без коду ключ не дає нічого, привʼязки не починає.
+const completeTelegramLogin = async (nonce, codeInput, { db, auth, now, callerUid = null, intent = '', loginKey = '' }) => {
+  const byKey = !isValidNonce(nonce) && isValidLoginKey(loginKey);
+  if (!isValidNonce(nonce) && !byKey) return { status: 'invalid' };
+  const key = byKey ? loginKey : hashNonce(nonce);
   const path = `${LOGINS_ROOT}/${key}`;
   const record = await db.get(path);
   if (!record) {
     // Початок привʼязки: застосунок, що вже увійшов (поштою), заводить спробу
     // зі своїм uid. Без входу привʼязувати нема до чого.
-    if (intent === 'link') {
+    if (intent === 'link' && !byKey) {
       if (!callerUid) return { status: 'invalid' };
       await db.transaction(path, current => {
         if (current) return undefined;

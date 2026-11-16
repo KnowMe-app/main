@@ -43,6 +43,7 @@ const BY_UK = {
   'Невірний код. Залишилось спроб: {count}': 'Onjuiste code. Resterende pogingen: {count}',
   'Відкрити Telegram ще раз': 'Telegram opnieuw openen',
   'Вставити код': 'Code plakken',
+  'Вхід через Telegram завершено в іншому браузері. Щоб увійти тут, натисніть «Увійти через Telegram» ще раз': 'Inloggen met Telegram is in een andere browser voltooid. Tik nogmaals op «Inloggen met Telegram» om hier in te loggen',
   'Відкрийте вкладку, де почали вхід через Telegram, і введіть код {code}': 'Open het tabblad waar je met Telegram bent begonnen met inloggen en voer code {code} in',
   'Не вдалося прочитати буфер обміну. Введіть код вручну': 'Klembord kon niet worden gelezen. Voer de code handmatig in',
   'У буфері немає коду. Торкніться коду в Telegram, щоб скопіювати його': 'Geen code op het klembord. Tik op de code in Telegram om hem te kopiëren',
