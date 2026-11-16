@@ -83,18 +83,71 @@ export const persistCanCreateProfiles = canCreateProfiles => {
   }
 };
 
-export const clearStoredAccessRights = () => {
+/*
+ * Додаткові екрани, які адмін відкриває окремому користувачеві
+ * (`profileTechnical/{uid}/screenAccess`, рядок кодів через кому — `'flow'`).
+ *
+ * Окреме поле, а не ще один токен у `accessLevel`: правила бази порівнюють
+ * `accessLevel` **точним рядком** (`== 'matching:view&write'`), і дописаний
+ * `,flow` мовчки зняв би людині вже видане право на запис у матчингу.
+ *
+ * Екран тут лише той, чиї дані й так лежать під власником
+ * (`multiData/flow/{uid}` — читає й пише сам власник), тож право відкриває
+ * маршрут і пункт меню, а не чужі дані: у нового користувача Flow порожній і
+ * свій. Новий екран — рядок у цьому переліку, маршрут у `App` і пункт меню.
+ */
+export const SCREEN_ACCESS_OPTIONS = Object.freeze([
+  Object.freeze({ code: 'flow', path: '/flow', label: 'Flow', description: 'Особисті фінанси: доходи, витрати, розрахунки' }),
+]);
+
+const SCREEN_ACCESS_CODES = new Set(SCREEN_ACCESS_OPTIONS.map(option => option.code));
+
+export const parseScreenAccess = value => {
+  const raw = Array.isArray(value) ? value.join(',') : typeof value === 'string' ? value : '';
+  const codes = raw
+    .split(/[\s,;|]+/)
+    .map(code => code.trim().toLowerCase())
+    .filter(code => SCREEN_ACCESS_CODES.has(code));
+  return [...new Set(codes)];
+};
+
+// Порядок — порядок переліку, тож та сама множина дає той самий рядок (і
+// збереження форми без зміни нічого не пише).
+export const encodeScreenAccess = codes => {
+  const selected = new Set(parseScreenAccess(codes));
+  return SCREEN_ACCESS_OPTIONS.map(option => option.code).filter(code => selected.has(code)).join(',');
+};
+
+export const SCREEN_ACCESS_STORAGE_KEY = 'screenAccess';
+
+export const readStoredScreenAccess = () => (
+  typeof localStorage !== 'undefined' ? localStorage.getItem(SCREEN_ACCESS_STORAGE_KEY) || '' : ''
+);
+
+export const persistScreenAccess = screenAccess => {
   if (typeof localStorage !== 'undefined') {
-    localStorage.removeItem(CAN_CREATE_PROFILES_STORAGE_KEY);
+    localStorage.setItem(SCREEN_ACCESS_STORAGE_KEY, encodeScreenAccess(screenAccess));
   }
 };
 
-export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfiles = false } = {}) => {
+export const clearStoredAccessRights = () => {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(CAN_CREATE_PROFILES_STORAGE_KEY);
+    localStorage.removeItem(SCREEN_ACCESS_STORAGE_KEY);
+  }
+};
+
+// `screenAccess` не передали — береться збережене при вході: меню рендеряться
+// всередині чужих сторінок і власної анкети не мають, а розійтись із
+// маршрутами `App` вони не мусять.
+export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfiles = false, screenAccess } = {}) => {
   const isAdmin = isAdminUid(uid);
   const canAccessMatching = isAdmin || canAccessMatchingByLevel(accessLevel) || canAccessMatchingByRole({ role, userRole });
   const canAccessAdd = isAdmin || canAccessAddByLevel(accessLevel);
   const canAccessInvoices = isInvoiceBuilderUid(uid);
   const canCreateProfilesResolved = isAdmin || canCreateProfiles === true;
+  const screens = parseScreenAccess(screenAccess === undefined ? readStoredScreenAccess() : screenAccess);
+  const canAccessFlow = isAdmin || screens.includes('flow');
 
   return {
     isAdmin,
@@ -102,6 +155,7 @@ export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfi
     canAccessAdd,
     canAccessInvoices,
     canCreateProfiles: canCreateProfilesResolved,
+    canAccessFlow,
   };
 };
 
@@ -118,7 +172,7 @@ export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfi
  * збереження, яке везе їх із Firestore (там вони можуть відрізнятися від
  * бази), правила відкинули б цілим вузлом — разом із датою входу й рештою.
  */
-export const PRIVILEGED_PROFILE_FIELDS = Object.freeze(['accessLevel', 'canCreateProfiles', 'multiDataSourceUserIds']);
+export const PRIVILEGED_PROFILE_FIELDS = Object.freeze(['accessLevel', 'canCreateProfiles', 'multiDataSourceUserIds', 'screenAccess']);
 
 export const canGrantProfilePrivileges = uid => !!uid && ADMIN_UIDS.includes(uid);
 

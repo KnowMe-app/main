@@ -32,7 +32,7 @@ const NAV_LINKS = [
   // підпис мусить обіцяти читачеві його власні картки, а не дію «додати».
   { path: '/matching/create-profile', label: 'Створені мною' },
   { path: '/my-profile', label: 'My profile' },
-  { path: '/flow', label: 'Flow', right: 'isAdmin' },
+  { path: '/flow', label: 'Flow', right: 'canAccessFlow' },
   { path: '/notifications', label: 'Сповіщення', right: 'isAdmin' },
   { path: '/budget', label: 'Budget', right: 'isAdmin' },
   { path: '/invoices', label: 'Invoice', right: 'canAccessInvoices' },

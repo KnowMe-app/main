@@ -99,7 +99,7 @@ export const btnCompare = (
     'glasses', 'hairColor', 'hairStructure', 'language', 'lastLogin', 'lipsShape',
     'noseShape', 'profession', 'publish', 'race', 'registrationDate', 'reward',
     'shoeSize', 'street', 'whiteList', 'blackList',
-    'publicComment', 'accessLevel', 'canCreateProfiles', 'additionalAccessRules',
+    'publicComment', 'accessLevel', 'canCreateProfiles', 'screenAccess', 'additionalAccessRules',
   ];
 
   let pairIds = [];

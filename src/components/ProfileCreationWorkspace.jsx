@@ -1092,6 +1092,7 @@ export const ProfileCreationWorkspace = () => {
       accessLevel: profile?.accessLevel,
       userRole: profile?.userRole || profile?.role,
       canCreateProfiles: profile?.canCreateProfiles,
+      screenAccess: profile?.screenAccess || '',
     });
     setUid(user.uid);
     accessRef.current = resolved;
