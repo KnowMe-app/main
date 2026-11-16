@@ -273,7 +273,7 @@ import {
   FEED_ROLE_FILTER_KEYS,
 } from 'utils/matchingPeerVisibility';
 import {
-  detectSearchRoleIntent,
+  detectSearchQueryIntent,
   resolveRoleIntentFlow,
   buildRoleIntentRoleFilter,
   isRoleFilterNarrowedToIntent,
@@ -7661,7 +7661,15 @@ const Matching = () => {
    * знімається чіпом у рейці.
    */
   const searchPlace = useMemo(
-    () => (isSearching ? resolveKnownPlace(searchQuery) : null),
+    () => {
+      if (!isSearching) return null;
+      const direct = resolveKnownPlace(searchQuery);
+      if (direct) return direct;
+      // «з Києва», «у Львові» — місце з прийменником і у відмінку. Коли ж
+      // поруч ще й роль, місце забирає намір ролі (`applyRoleIntentFilter`).
+      const intent = detectSearchQueryIntent(searchQuery);
+      return intent.role ? null : intent.place;
+    },
     [isSearching, searchQuery],
   );
   const describePlace = React.useCallback(place => (
@@ -7726,7 +7734,9 @@ const Matching = () => {
   const roleIntentQuery = isSearching ? searchQuery.trim() : '';
   const searchRoleIntent = useMemo(() => {
     if (!roleIntentQuery || roleIntentQuery === nameSearchOverride) return null;
-    return detectSearchRoleIntent(roleIntentQuery);
+    // Роль упізнається й поруч із місцем: «Сурогатна мати Київ»
+    // (`detectSearchQueryIntent`); місце тоді йде у фільтр разом із роллю.
+    return detectSearchQueryIntent(roleIntentQuery).role;
   }, [nameSearchOverride, roleIntentQuery]);
   const searchRoleIntentFlow = resolveRoleIntentFlow({
     intent: searchRoleIntent,
@@ -7740,7 +7750,7 @@ const Matching = () => {
   const interceptSearchQuery = React.useCallback(query => {
     const trimmed = String(query || '').trim();
     if (!trimmed || trimmed === nameSearchOverrideRef.current) return false;
-    return Boolean(detectSearchRoleIntent(trimmed));
+    return Boolean(detectSearchQueryIntent(trimmed).role);
   }, []);
 
   const applyRoleIntentFilter = React.useCallback((role, query) => {
@@ -7760,7 +7770,10 @@ const Matching = () => {
     } catch {
       // Сховище недоступне — фільтр однаково діє до перезавантаження.
     }
-    applyFilters({ ...current, userRole });
+    // Місце з того самого запиту («донорка з Харкова») звужує стрічку разом
+    // із роллю — тим самим фільтром, що й картка «Схоже на місто».
+    const place = detectSearchQueryIntent(query).place;
+    applyFilters({ ...current, userRole, ...(place ? { place: { kind: place.kind, uk: place.uk } } : {}) });
     setRoleIntentBanner({ role, query });
     setRoleIntentChoice(null);
     localStorage.removeItem(SEARCH_KEY);
@@ -7831,7 +7844,7 @@ const Matching = () => {
   roleIntentCommitRef.current = value => {
     const trimmed = String(value || '').trim();
     if (!trimmed || trimmed === nameSearchOverrideRef.current) return null;
-    const intent = detectSearchRoleIntent(trimmed);
+    const intent = detectSearchQueryIntent(trimmed).role;
     if (!intent) return null;
     if (resolveRoleIntentFlow({ intent, viewerRole: donorRestrictionViewerRole, isAdmin }) !== 'filter') return intent;
     if (listViewerHiddenCardRoles(donorRestrictionViewerRole).includes(intent)) return intent;
