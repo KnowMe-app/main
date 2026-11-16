@@ -99,3 +99,13 @@ describe('«Написати про цю програму» — лише без�
     expect(resolveProgramInquiryLink([{ key: 'email', value: 'a@b.ua' }], 'x').href).toBe('mailto:a@b.ua?body=x');
   });
 });
+
+describe('позначка кандидатки', () => {
+  // eslint-disable-next-line global-require
+  const { describeUnknownRequirements } = require('../components/programs/ProgramsView');
+  it('невідоме називає полем анкети, а не текстом вимоги', () => {
+    const result = evaluateCardForProgram({ role: 'ed' }, buildProgramFilter({ id: 'p', type: 'ed', requirements: { ageTo: 25, rh: '+' } }));
+    expect(describeUnknownRequirements(result.checks, 'uk')).toEqual(['вік', 'резус']);
+    expect(describeUnknownRequirements(result.checks, 'de')[0]).toMatch(/^\p{Lu}/u);
+  });
+});

@@ -21,6 +21,7 @@ import {
   PROGRAM_COVERAGE_PER,
   PROGRAM_FAMILY_OPTIONS,
   PROGRAM_OFFER_LABELS,
+  PROGRAM_REQUIREMENT_LABELS,
   PROGRAM_TYPE_LABELS,
   describeProgramCoverage,
   describeProgramHighlights,
@@ -969,10 +970,11 @@ export const ProgramCard = ({
   const plus = money => plainMoney(money, currency, rates).replace(/^(≈ )?/, (match, approx) => `${approx || ''}+`);
   const lineMoney = item => (item.monthsEstimated ? { ...item.subtotal, approximate: true } : item.subtotal);
   const paidLines = [...(main ? [main] : []), ...guaranteedBonuses];
-  // Одна основна виплата без доплат — та сама сума, що в заголовку, і рядок
-  // її лише повторював би. Але «коли платять» («після народження») заголовок
-  // не каже, і без цього рядка воно зникало з картки зовсім.
-  const showPaidLines = paidLines.length > 0 && (guaranteedBonuses.length > 0 || additional.length > 0 || Boolean(main && bonusMeta(main)));
+  // Доти одна основна виплата без доплат тут не показувалась (та сама сума,
+  // що в заголовку). Основна виплата стоїть першим рядком «Що ви отримаєте» завжди: без неї
+  // розділ починався з «Додатково покривається», і на питання «скільки»
+  // відповідав лише рядок програми над ним (перевірено наживо).
+  const showPaidLines = paidLines.length > 0;
 
   const steps = Array.isArray(program.steps) ? program.steps : [];
   const showOffer = showPaidLines || additional.length > 0 || coverage.all.length > 0;
@@ -1360,6 +1362,20 @@ const FAILED_FACT_TEXT = Object.freeze({
 });
 
 /**
+ * Чого анкета не каже — назвою поля («вік», «резус»), а не текстом вимоги:
+ * «в анкеті не вказано: до 25 років» читалось як «вам не вистачає років»
+ * (перевірено наживо). Німецькі іменники лишаються з великої.
+ */
+export const describeUnknownRequirements = (checks, language) => [...new Set((checks || [])
+  .filter(check => check.ok === null)
+  .map(check => PROGRAM_REQUIREMENT_LABELS[check.key])
+  .filter(Boolean))]
+  .map(label => {
+    const text = uiText(label, language);
+    return language === 'de' ? text : text.charAt(0).toLocaleLowerCase() + text.slice(1);
+  });
+
+/**
  * Висновок згорнутої програми одним рядком — замість ряду чипів усіх вимог.
  * Читачка з анкетою бачить «підходите» або саме те, що не так; без анкети
  * (агенція, батьки) — короткий перелік вимог, бо порівнювати нема з чим.
@@ -1383,7 +1399,7 @@ export const describeProgramFit = (result, requirements, facts, language) => {
     return `✕ ${failed.length ? failed.join(' · ') : uiText('Не підходить', language)}`;
   }
   if (result.uncertain) {
-    const unknown = result.checks.filter(check => check.ok === null).map(check => byKey.get(check.key)).filter(Boolean).map(textOf);
+    const unknown = describeUnknownRequirements(result.checks, language);
     return `? ${uiText('Може підходити', language)}${unknown.length ? ` · ${uiText('не вказано в анкеті', language)}: ${unknown.join(', ')}` : ''}`;
   }
   return result.checks.length
@@ -1756,7 +1772,9 @@ export const AgencyProgramsPanel = ({
                 </GroupCollapse>
               ) : null}
             </ProgramGroupHead>
-            {group.range || group.places ? (
+            {/* Одна програма в групі сама каже суму й місце в своєму рядку —
+                зведення над нею лише повторювало їх (перевірено наживо). */}
+            {group.programs.length > 1 && (group.range || group.places) ? (
               <GroupFacts data-testid="program-group-facts">
                 {group.range ? <em>{group.range}</em> : null}
                 {group.range && group.places ? ' · ' : ''}

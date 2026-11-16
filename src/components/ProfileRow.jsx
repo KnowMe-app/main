@@ -1920,7 +1920,10 @@ const ProfileRow = ({
       <ProfileFactList rows={summaryRows} />
       {/* Стрічку звужено під програму читача — рядок кандидатки каже, чи
           підходить вона, а чого в анкеті не вказано (`ProgramCandidateNote`). */}
-      {isPersonAnketa && programsContext?.candidateProgram ? (
+      {/* Не `isPersonAnketa`: той стоїть лише в розщепленій картці (донорка
+          + агенція), а звичайний рядок донорки `anketaRole` не має — і
+          позначка стояла на одному рядку з десятка (перевірено наживо). */}
+      {!isLimited && !isCounterparty && programsContext?.candidateProgram ? (
         <ProgramCandidateNote card={user} filter={programsContext.candidateProgram} language={language} />
       ) : null}
       {!isLimited && !isPersonAnketa ? <CardRoleBlock card={roleBlockCard} programsContext={programsContext} language={language} accent={roleAccent} contact={programContact} /> : null}
