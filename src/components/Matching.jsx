@@ -6140,8 +6140,15 @@ const Matching = () => {
     // «Показати N» рахує рядки, які стрічка справді намалює: рядок без
     // видимої читачеві анкети дозволеного типу не малюється
     // (`resolveRowAnketaRoles`), і кнопка обіцяла б на одну картку більше.
-    const roleFilter = viewMode === 'default' && !searchQuery.trim() && hasActiveSearchKeyFilterGroup(appliedFilters?.userRole)
-      ? appliedFilters.userRole
+    // Роль — та сама, якою стрічка малює рядки (`effectiveRoleFilter`): під
+    // програмою її задає тип програми, інакше кнопка казала «Показати 0» над
+    // стрічкою з кандидатками.
+    const draftRoleFilter = narrowRoleToProgramType({
+      ...appliedFilters,
+      program: appliedFilters?.program || filters?.program,
+    }).userRole;
+    const roleFilter = viewMode === 'default' && !searchQuery.trim() && hasActiveSearchKeyFilterGroup(draftRoleFilter)
+      ? draftRoleFilter
       : null;
     if (!roleFilter) return passed.length;
     const hiddenRoles = listViewerHiddenCardRoles(donorRestrictionViewerRole);
@@ -6152,6 +6159,7 @@ const Matching = () => {
     dislikeUsers,
     draftFilters,
     favoriteUsers,
+    filters?.program,
     reactionTabUsers.length,
     roleIndexSets,
     programRates,
