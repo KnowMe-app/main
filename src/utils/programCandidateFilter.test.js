@@ -78,3 +78,24 @@ describe('«Про нас» батьків у картці стрічки', () =
     expect(long.endsWith('…')).toBe(true);
   });
 });
+
+describe('«Написати про цю програму» — лише безпечні посилання', () => {
+  // eslint-disable-next-line global-require
+  const { resolveProgramInquiryLink, isSafeInquiryHref } = require('./programInquiry');
+
+  // Схема складається з частин: лінтер вважає рядок `javascript:` eval-ом.
+  const scriptUrl = `${'java'}${'script'}:alert(1)`;
+
+  it('не бере посилань з небезпечною схемою', () => {
+    expect(isSafeInquiryHref(scriptUrl)).toBe(false);
+    expect(isSafeInquiryHref('data:text/html,x')).toBe(false);
+    expect(isSafeInquiryHref('https://t.me/agency')).toBe(true);
+    expect(resolveProgramInquiryLink([{ key: 'otherLink', href: scriptUrl }], 'x')).toBeNull();
+    expect(resolveProgramInquiryLink([{ key: 'telegram', href: scriptUrl }, { key: 'website', href: 'https://a.ua' }], 'x').href).toBe('https://a.ua');
+  });
+
+  it('пошта — лише адреса, без дописаних полів', () => {
+    expect(resolveProgramInquiryLink([{ key: 'email', value: 'a@b.ua?cc=x@y.ua' }], 'x')).toBeNull();
+    expect(resolveProgramInquiryLink([{ key: 'email', value: 'a@b.ua' }], 'x').href).toBe('mailto:a@b.ua?body=x');
+  });
+});
