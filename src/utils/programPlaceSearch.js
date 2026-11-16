@@ -49,31 +49,70 @@ export const detectProgramCountryQuery = query => {
   return code ? { code, uk: countryNameUk(code) } : null;
 };
 
-// Основа назви для звірки з вільним текстом: «грузия» (після згортання
-// `foldLocationKey` «Грузія» й «Грузия» однакові) без закінчення ловить і
-// «Грузії», і «Грузією».
-const countryStems = code => [...new Set(listCountryNames(code)
-  .map(name => foldLocationKey(name))
-  // Двобуквені аліаси («UK», «US», «РФ») у вільному тексті ловили б що
-  // завгодно: «uk» сидить в «ukraine», «us» — в «cyprus».
-  .filter(name => name.length >= 3)
-  // Без закінчення — і довгі назви («грузия» → «грузи»), і короткі на
-  // голосну («чехия» → «чехи», «литва» → «литв», «индия» → «инди»): інакше
-  // «Чехії», «Литві», «Індії» в тексті програми не впізнавались (ревʼю #3423).
-  // Основа коротша за чотири знаки не береться — «сша» лишається цілим.
-  .map(name => {
-    if (name.length > 5) return name.slice(0, -1);
-    if (name.length === 5 && /[аеиоуяюь]$/u.test(name)) return name.slice(0, -1);
-    return name;
-  }))];
+// Назва країни для звірки з вільним текстом — словами, а не рядком: підрядок
+// ловив «usa» в «Lausanne» й «india» в «Indiana» (ревʼю #3423). Кожне слово
+// згортається `foldLocationKey` («Грузія» й «Грузия» однакові). Кирилична
+// назва — основа без закінчення плюс до трьох кириличних літер відмінка
+// («грузи» → «Грузії», «Грузією»; «чехи» → «Чехії»; «кипр» → «Кіпрі»),
+// латинська — лише цілим словом: англійських відмінків немає.
+const CYRILLIC_WORD_RE = /^[а-яґєіїёыэ]+$/u;
+const INFLECTION_RE = /^[а-яґєіїёыэ]{0,3}$/u;
+
+const splitWords = text => String(text ?? '')
+  .toLowerCase()
+  .replace(/[’ʼ`'"«»]/g, '')
+  .split(/[^\p{L}]+/u)
+  .map(word => foldLocationKey(word))
+  .filter(Boolean);
+
+const stemCyrillic = word => {
+  if (word.length > 5) return word.slice(0, -1);
+  if (word.length === 5 && /[аеиоуяюь]$/u.test(word)) return word.slice(0, -1);
+  return word;
+};
+
+const countryPatterns = code => {
+  const seen = new Set();
+  return listCountryNames(code)
+    .map(name => splitWords(name))
+    // Двобуквені аліаси («UK», «US», «РФ») — це й займенники, й частки слів.
+    .filter(words => words.length && words.join('').length >= 3)
+    .filter(words => {
+      const key = words.join(' ');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+};
+
+const wordMatches = (textWord, nameWord, isLast) => {
+  if (textWord === nameWord) return true;
+  if (!isLast || !CYRILLIC_WORD_RE.test(nameWord)) return false;
+  const stem = stemCyrillic(nameWord);
+  return textWord.startsWith(stem) && INFLECTION_RE.test(textWord.slice(stem.length));
+};
+
+const textMentions = (textWords, pattern) => {
+  for (let start = 0; start + pattern.length <= textWords.length; start += 1) {
+    let matched = true;
+    for (let offset = 0; offset < pattern.length; offset += 1) {
+      if (!wordMatches(textWords[start + offset], pattern[offset], offset === pattern.length - 1)) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) return true;
+  }
+  return false;
+};
 
 /** Чи програма — у цій країні (місце програми чи коментар організатора). */
 export const programMentionsCountry = (program, code) => {
   if (!program || !code) return false;
-  const stems = countryStems(code);
-  if (!stems.length) return false;
-  const texts = [program.location, program.note]
+  const patterns = countryPatterns(code);
+  if (!patterns.length) return false;
+  return [program.location, program.note]
     .filter(text => typeof text === 'string' && text.trim())
-    .map(text => foldLocationKey(text));
-  return texts.some(text => stems.some(stem => text.includes(stem)));
+    .map(splitWords)
+    .some(words => patterns.some(pattern => textMentions(words, pattern)));
 };

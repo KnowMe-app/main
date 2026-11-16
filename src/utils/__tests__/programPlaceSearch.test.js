@@ -41,3 +41,17 @@ describe('programMentionsCountry — короткі назви у відмінк
     expect(programMentionsCountry({ location: 'Київ' }, 'US')).toBe(false);
   });
 });
+
+describe('programMentionsCountry — межі слів (ревʼю #3423)', () => {
+  it('назва країни всередині чужого слова не рахується', () => {
+    expect(programMentionsCountry({ location: 'Lausanne, Switzerland' }, 'US')).toBe(false);
+    expect(programMentionsCountry({ location: 'Indiana, United States' }, 'IN')).toBe(false);
+    expect(programMentionsCountry({ location: 'Indiana, United States' }, 'US')).toBe(true);
+  });
+
+  it('відмінок кириличної назви — так, латинська — лише цілим словом', () => {
+    expect(programMentionsCountry({ location: 'на Кіпрі' }, 'CY')).toBe(true);
+    expect(programMentionsCountry({ location: 'Перенос у Грузією' }, 'GE')).toBe(true);
+    expect(programMentionsCountry({ location: 'Georgiana street' }, 'GE')).toBe(false);
+  });
+});
