@@ -311,6 +311,72 @@ const stripPreposition = tokens => (tokens.length > 1 && PLACE_PREPOSITIONS.has(
   ? tokens.slice(1)
   : tokens);
 
+/*
+ * Вік і резус поруч із роллю: «донорка до 30», «СМ 25-30 років», «донор
+ * резус негативний», «сурогатна мама O-» (16.11). Знімаються з запиту до
+ * перевірки на контакт (цифри інакше читались би номером), а решта — роль і
+ * місце, як і без них. Кошики ті самі, що в панелі фільтрів
+ * (`defaultsMatching` у `FilterPanel`): вікові — `le25`, `26_30`, `31_33`,
+ * `34_36`, `37_plus`; групу крові стрічка не фільтрує, тож з «O-» береться
+ * самий резус.
+ */
+export const AGE_FILTER_BUCKETS = Object.freeze([
+  { key: 'le25', min: 0, max: 25 },
+  { key: '26_30', min: 26, max: 30 },
+  { key: '31_33', min: 31, max: 33 },
+  { key: '34_36', min: 34, max: 36 },
+  { key: '37_plus', min: 37, max: 200 },
+]);
+
+// Одиниця — окремим словом: «р» без межі зʼїдав першу літеру «резус».
+const AGE_UNIT = '(?:\\s*(?:років|роки|рік|лет|года|год|years?|y\\.?o\\.?|р\\.?)(?=\\s|$))?';
+const AGE_PATTERNS = [
+  { re: new RegExp(`(\\d{2})\\s*[-–—]\\s*(\\d{2})${AGE_UNIT}`, 'iu'), range: match => [Number(match[1]), Number(match[2])] },
+  { re: new RegExp(`(?:до|молодше|молодші|не старше|under|younger than|<)\\s*(\\d{2})${AGE_UNIT}`, 'iu'), range: match => [0, Number(match[1])] },
+  { re: new RegExp(`(?:від|старше|старші|over|older than|>)\\s*(\\d{2})${AGE_UNIT}`, 'iu'), range: match => [Number(match[1]), 200] },
+  { re: new RegExp(`(\\d{2})\\s*\\+${AGE_UNIT}`, 'iu'), range: match => [Number(match[1]), 200] },
+];
+const RH_PATTERNS = [
+  { re: /(?:резус|rh)[\s-]*(?:негативн\S*|відʼємн\S*|від'ємн\S*|negative|[-−–])(?=\s|$)/iu, rh: '-' },
+  { re: /(?:негативн\S*|negative)\s+(?:резус\S*|rh)/iu, rh: '-' },
+  { re: /(?:резус|rh)[\s-]*(?:позитивн\S*|додатн\S*|positive|\+)(?=\s|$)/iu, rh: '+' },
+  { re: /(?:позитивн\S*|positive)\s+(?:резус\S*|rh)/iu, rh: '+' },
+  // Група крові буквами: «O-», «AB+», «А+» (кирилицею теж).
+  { re: /(?:^|\s)(?:ab|ав|o|о|a|а|b|в)\s?([-−–+])(?=\s|$)/iu, rh: match => (match[1] === '+' ? '+' : '-') },
+];
+
+const ageBucketsForRange = ([from, to]) => {
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from > to || to < 18 || from > 60) return null;
+  const keys = AGE_FILTER_BUCKETS.filter(bucket => bucket.max >= from && bucket.min <= to).map(bucket => bucket.key);
+  return keys.length ? keys : null;
+};
+
+/** Зняти з запиту вік і резус: `{ rest, age: [ключі кошиків] | null, rh: '+'|'-'|null }`. */
+export const extractPersonTraits = query => {
+  let rest = ` ${String(query ?? '').trim()} `;
+  let age = null;
+  let rh = null;
+  for (const pattern of AGE_PATTERNS) {
+    const match = rest.match(pattern.re);
+    if (!match) continue;
+    const buckets = ageBucketsForRange(pattern.range(match));
+    if (!buckets) continue;
+    age = buckets;
+    rest = rest.replace(match[0], ' ');
+    break;
+  }
+  for (const pattern of RH_PATTERNS) {
+    const match = rest.match(pattern.re);
+    if (!match) continue;
+    rh = typeof pattern.rh === 'function' ? pattern.rh(match) : pattern.rh;
+    rest = rest.replace(match[0], ' ');
+    break;
+  }
+  // Сполучники, що лишились між знятими шматками («донорка до 30 і резус -»).
+  rest = rest.replace(/\s(?:і|й|та|and|,)\s/giu, ' ').replace(/\s+/g, ' ').trim();
+  return { rest, age, rh };
+};
+
 /**
  * Намір запиту: `{ role, place }`. `role` — як `detectSearchRoleIntent`,
  * `place` — місце, назване поруч із роллю (або сам лише прийменник із місцем:
@@ -320,7 +386,16 @@ const stripPreposition = tokens => (tokens.length > 1 && PLACE_PREPOSITIONS.has(
 export const detectSearchQueryIntent = query => {
   const empty = { role: null, place: null };
   const raw = String(query ?? '').trim();
-  if (!raw || looksLikeContact(raw.toLowerCase())) return empty;
+  if (!raw) return empty;
+  // Вік і резус мають сенс лише поруч із роллю: «до 30» саме по собі — не
+  // намір, а «Олена до 30» — пошук людини.
+  const traits = extractPersonTraits(raw);
+  if ((traits.age || traits.rh) && traits.rest !== raw) {
+    const inner = traits.rest ? detectSearchQueryIntent(traits.rest) : empty;
+    if (!inner.role) return empty;
+    return { ...inner, ...(traits.age ? { age: traits.age } : {}), ...(traits.rh ? { rh: traits.rh } : {}) };
+  }
+  if (looksLikeContact(raw.toLowerCase())) return empty;
   const wholeRole = detectSearchRoleIntent(raw);
   if (wholeRole) return { role: wholeRole, place: null };
   const tokens = raw.split(/\s+/).filter(Boolean);

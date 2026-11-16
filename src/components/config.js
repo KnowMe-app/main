@@ -116,7 +116,8 @@ import {
   withPublicationDate,
 } from '../utils/matchingCardIndex';
 import { normalizeFeedDateValue } from '../utils/profileFieldDerive';
-import { isProgramsOwnerRoleHidden, resolveProgramsOwnerRole } from '../utils/donorPrograms';
+import { PROGRAMS_OWNER_ROLES, isProgramsOwnerRoleHidden, listPrograms, resolveProgramsOwnerRole } from '../utils/donorPrograms';
+import { detectProgramCountryQuery, programMentionsCountry } from '../utils/programPlaceSearch';
 import { listProfileRoles } from '../utils/matchingPeerVisibility';
 import {
   LIKED_AUDIENCE_EVENT,
@@ -186,7 +187,7 @@ import {
   isFeedStateDeniedForSearch,
 } from '../utils/searchFeedDenial';
 import { readFreshMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
-import { configurePublishedFeedIndex, readPublishedFeedIndex, searchPublishedIndexByName, splitSearchHitsByFeed } from '../utils/publishedFeedIndex';
+import { compareByFeedDate, configurePublishedFeedIndex, readPublishedFeedIndex, searchPublishedIndexByName, splitSearchHitsByFeed } from '../utils/publishedFeedIndex';
 import {
   PHOTO_THUMB_MAX_DIMENSION,
   PHOTO_THUMB_MAX_KB,
@@ -4039,6 +4040,44 @@ const buildNameVariantSearchKeys = (searchKey, searchValue, detectedField) => {
     .filter(Boolean);
 };
 
+/*
+ * Опубліковані власники програм (агенції, клініки, батьки), чия програма —
+ * у названій країні (`utils/programPlaceSearch`). Програми лежать окремо від
+ * картки (`multiData/programs/{uid}`), тож це по читанню на власника — лише
+ * на запит-країну, раз на 10 хв на вкладку.
+ */
+const PROGRAM_OWNERS_READ_LIMIT = 120;
+const PROGRAMS_BY_OWNER_TTL_MS = 10 * 60 * 1000;
+const programsByOwnerMemo = new Map();
+const readOwnerProgramsMemo = async ownerId => {
+  const cached = programsByOwnerMemo.get(ownerId);
+  if (cached && Date.now() - cached.at < PROGRAMS_BY_OWNER_TTL_MS) return cached.items;
+  try {
+    noteRealtimeDemand();
+    const snapshot = await get(ref2(database, `multiData/programs/${ownerId}`));
+    const items = snapshot.exists() ? snapshot.val()?.items || null : null;
+    programsByOwnerMemo.set(ownerId, { at: Date.now(), items });
+    return items;
+  } catch {
+    // Чужі закриті програми («лише для вподобаних») чи збій — просто не збіг.
+    return null;
+  }
+};
+const findPublishedProgramOwnersInCountry = async countryCode => {
+  const index = await readPublishedFeedIndex().catch(() => null);
+  if (!index?.entries) return [];
+  const owners = [];
+  index.entries.forEach((entry, id) => {
+    if ((entry.roles || []).some(role => PROGRAMS_OWNER_ROLES.includes(role))) owners.push(id);
+  });
+  owners.sort((a, b) => compareByFeedDate(index, a, b));
+  const checked = await Promise.all(owners.slice(0, PROGRAM_OWNERS_READ_LIMIT).map(async ownerId => {
+    const programs = listPrograms(await readOwnerProgramsMemo(ownerId));
+    return programs.some(program => programMentionsCountry(program, countryCode)) ? ownerId : null;
+  }));
+  return checked.filter(Boolean);
+};
+
 const resolveSearchHitAdder = ({ limitedFields = false, cardsOnly = false } = {}) => {
   if (limitedFields) return addLimitedUser;
   return cardsOnly ? addCardHit : addSearchHit;
@@ -4078,8 +4117,18 @@ const searchBySearchIdUsers = async (
     publishedNameIds = searchPublishedIndexByName(publishedIndex, [rawSearchValue, ...listNameVariants(rawSearchValue)])
       .filter(id => !userIds.includes(id));
   }
+  // Запит-країна («Грузія», «програми в Польщі») додає опубліковані картки,
+  // у яких є програма в цій країні (`findPublishedProgramOwnersInCountry`):
+  // донорка шукає умови, а не людину. Першими — вони: точний ключ `searchId`
+  // на «грузія» знаходить хіба когось із таким словом в імені.
+  let programCountryIds = [];
+  const programCountry = cardsOnly ? detectProgramCountryQuery(rawSearchValue) : null;
+  if (programCountry) {
+    programCountryIds = (await findPublishedProgramOwnersInCountry(programCountry.code))
+      .filter(id => !userIds.includes(id) && !publishedNameIds.includes(id));
+  }
   const addHit = resolveSearchHitAdder({ limitedFields, cardsOnly });
-  const freshIds = [...userIds, ...publishedNameIds].filter(id => !uniqueUserIds.has(id));
+  const freshIds = [...programCountryIds, ...userIds, ...publishedNameIds].filter(id => !uniqueUserIds.has(id));
   freshIds.forEach(id => uniqueUserIds.add(id));
 
   // Видача стрічки (`lazyPageSize`) читає не все знайдене, а порцію: спершу
