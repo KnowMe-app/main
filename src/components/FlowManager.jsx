@@ -9,7 +9,8 @@ import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { FaFileImport } from 'react-icons/fa';
 import { buildFlowImportText } from 'utils/flowImport';
 import Collapsible from './Collapsible';
-import { readStoredAccessLevel, readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
+import { isAdminUid, readStoredAccessLevel, readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
+import { listFlowOwners } from './flowOwnersRemote';
 import {
   deleteFlowEntry,
   deleteFlowCategory,
@@ -364,7 +365,30 @@ const EventsList = styled.ul`
 
 const GroupBlock = styled.li`
   list-style: none;
-  margin-bottom: 10px;
+  margin-bottom: 2px;
+`;
+
+// Заголовок групи — рядок: назва з сумою (дотик розгортає) і олівець праворуч,
+// що вмикає правку рядків цієї групи. Кнопка в кнопці була б недійсною
+// розміткою, тож це два сусідні елементи.
+const GroupHead = styled.div`
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+`;
+
+const GroupEditToggle = styled.button`
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  margin-top: 2px;
+  border: 1px solid ${({ $active }) => ($active ? 'var(--km-accent, #c9600f)' : 'var(--km-border, #d7d7d7)')};
+  border-radius: 8px;
+  background: ${({ $active }) => ($active ? 'var(--km-accent-light, #fdf0e4)' : 'transparent')};
+  color: ${({ $active }) => ($active ? 'var(--km-accent, #c9600f)' : 'var(--km-muted, #777)')};
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
 `;
 
 // Заголовок групи — кнопка: у людей сотні рядків витрат, і розгорнуті всі
@@ -373,10 +397,12 @@ const GroupTitle = styled.button`
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  gap: 0;
   width: 100%;
-  min-height: 32px;
-  padding: 6px 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 3px 0;
   border: none;
   background: transparent;
   font: inherit;
@@ -409,17 +435,16 @@ const GroupSum = styled.span`
 `;
 
 
+// Без лінії й відступу ліворуч: на телефоні кожен піксель ширини — текст рядка.
 const GroupRows = styled.ul`
-  margin: 0;
+  margin: 0 0 6px;
   padding: 0;
   list-style: none;
-  border-left: 2px solid #e5e5e5;
-  padding-left: 8px;
   min-width: 0;
 `;
 
 const EventRow = styled.li`
-  margin-bottom: 5px;
+  margin-bottom: 3px;
   cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
   display: flex;
   align-items: center;
@@ -1239,7 +1264,7 @@ const sortRowsByGroupAndDate = rows =>
     return String(a.date || '').localeCompare(String(b.date || ''));
   });
 
-export const FlowManager = ({ ownerId }) => {
+export const FlowManager = ({ ownerId, viewerId }) => {
   const navigate = useNavigate();
   const [flowData, setFlowData] = useState({});
   const [dateYmd, setDateYmd] = useState(todayYmd());
@@ -1534,6 +1559,15 @@ export const FlowManager = ({ ownerId }) => {
     }
   }, [ownerId]);
   const toggleGroup = group => rememberOpenGroup(openGroup === group ? '' : group);
+  // «Змінити групу» й «Видалити» біля кожного рядка зʼявляються лише після
+  // олівця біля назви групи: інакше дві кнопки на кожному з сотень рядків
+  // забирали ширину в тексту.
+  const [rowActionsGroup, setRowActionsGroup] = useState('');
+  const toggleRowActions = group => {
+    const next = rowActionsGroup === group ? '' : group;
+    setRowActionsGroup(next);
+    if (next && openGroup !== group) rememberOpenGroup(group);
+  };
 
   const selectDisplayCurrency = currency => {
     const nextCurrency = getValidFlowDisplayCurrency(currency);
@@ -2009,7 +2043,8 @@ export const FlowManager = ({ ownerId }) => {
 
 
   const handleExit = async () => {
-    clearFlowCache(ownerId);
+    // Усі Flow з памʼяті пристрою: адмін міг дивитись і чужі.
+    clearFlowCache();
     await signOut(auth);
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('ownerId');
@@ -2021,7 +2056,7 @@ export const FlowManager = ({ ownerId }) => {
   // бачила б у «⋮» адмінські екрани, на які її однаково не пустить `App`.
   const dotsMenu = () => {
     const access = resolveAccess({
-      uid: ownerId,
+      uid: viewerId || ownerId,
       accessLevel: readStoredAccessLevel(),
       userRole: localStorage.getItem('userRole') || '',
       canCreateProfiles: readStoredCanCreateProfiles(),
@@ -2511,6 +2546,7 @@ export const FlowManager = ({ ownerId }) => {
         <EventsList>
           {Object.entries(groupedFlowRows).map(([group, entries]) => (
             <GroupBlock key={group}>
+              <GroupHead>
               <GroupTitle
                 type="button"
                 aria-expanded={openGroup === group}
@@ -2531,6 +2567,18 @@ export const FlowManager = ({ ownerId }) => {
                   })()}
                 </GroupSum>
               </GroupTitle>
+              <GroupEditToggle
+                type="button"
+                $active={rowActionsGroup === group}
+                aria-pressed={rowActionsGroup === group}
+                aria-label={`Правка рядків групи ${formatGroupTitle(group)}`}
+                title="Змінити групу чи видалити рядки"
+                onClick={() => toggleRowActions(group)}
+                data-testid="flow-group-row-actions"
+              >
+                ✏
+              </GroupEditToggle>
+              </GroupHead>
               <Collapsible open={openGroup === group}>
                 <GroupRows>
                   {entries.map(({ row, idx }) => {
@@ -2588,28 +2636,32 @@ export const FlowManager = ({ ownerId }) => {
                                   : '';
                               })()}
                             </EventText>
-                            <ChangeCategoryBtn
-                              type="button"
-                              aria-label="change-row-category"
-                              title="Змінити групу платежу"
-                              onClick={e => {
-                                e.stopPropagation();
-                                handleChangeRowCategory(row);
-                              }}
-                            >
-                              ✏
-                            </ChangeCategoryBtn>
-                            <DeleteRowBtn
-                              type="button"
-                              aria-label="delete-row"
-                              title="Видалити рядок"
-                              onClick={e => {
-                                e.stopPropagation();
-                                openDeleteConfirm(row, rowKey);
-                              }}
-                            >
-                              ×
-                            </DeleteRowBtn>
+                            {rowActionsGroup === group && (
+                              <>
+                              <ChangeCategoryBtn
+                                type="button"
+                                aria-label="change-row-category"
+                                title="Змінити групу платежу"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  handleChangeRowCategory(row);
+                                }}
+                              >
+                                ✏
+                              </ChangeCategoryBtn>
+                              <DeleteRowBtn
+                                type="button"
+                                aria-label="delete-row"
+                                title="Видалити рядок"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  openDeleteConfirm(row, rowKey);
+                                }}
+                              >
+                                ×
+                              </DeleteRowBtn>
+                              </>
+                            )}
                           </>
                         )}
                       </EventRow>
@@ -2750,4 +2802,118 @@ export const FlowManager = ({ ownerId }) => {
   );
 };
 
-export default FlowManager;
+const OwnerBar = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 0;
+`;
+
+const OwnerSelect = styled.select`
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid var(--km-border, #d7d7d7);
+  border-radius: 10px;
+  background: var(--km-card, #fff);
+  color: var(--km-text, #222);
+  font: inherit;
+  font-size: 14px;
+`;
+
+const OwnerBanner = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--km-accent-light, #fdf0e4);
+  color: var(--km-text, #222);
+  font-size: 13px;
+  font-weight: 600;
+`;
+
+const OwnerBackBtn = styled.button`
+  flex: 0 0 auto;
+  border: 1px solid var(--km-accent, #c9600f);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--km-accent, #c9600f);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  cursor: pointer;
+`;
+
+/*
+ * Flow адміна з вибором учасника (16.11, на прохання власниці продукту): адмін
+ * обирає того, у кого заповнений Flow, і бачить та править саме його. Поки
+ * обрано учасника, власний Flow адміна не показується й не пишеться зовсім —
+ * `FlowManager` монтується наново з ключем власника, тож жоден стан (поле
+ * вводу, відкрита група, рядок у правці) не переходить з одного Flow в інший.
+ * Право на чужий `multiData/flow/{uid}` дають правила лише двом повним адмінам
+ * (інспектор читає, але не пише). Вибір не памʼятається між перезавантаженнями:
+ * відкриття Flow завжди починається з власного, щоб не правити клієнта, думаючи,
+ * що це своє.
+ */
+const FlowScreen = ({ ownerId: viewerId }) => {
+  const isAdmin = isAdminUid(viewerId);
+  const [owners, setOwners] = useState([]);
+  const [ownersError, setOwnersError] = useState('');
+  const [selectedOwnerId, setSelectedOwnerId] = useState('');
+
+  useEffect(() => {
+    if (!isAdmin || !viewerId) return undefined;
+    let cancelled = false;
+    listFlowOwners({ excludeUid: viewerId })
+      .then(list => {
+        if (!cancelled) setOwners(list);
+      })
+      .catch(error => {
+        console.error('Unable to list flow owners', error);
+        if (!cancelled) setOwnersError('Не вдалося прочитати, у кого є Flow');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, viewerId]);
+
+  const shownOwnerId = isAdmin && selectedOwnerId ? selectedOwnerId : viewerId;
+  const selectedOwner = owners.find(owner => owner.uid === selectedOwnerId);
+
+  return (
+    <>
+      {isAdmin && (
+        <OwnerBar>
+          <OwnerSelect
+            aria-label="Чий Flow показати"
+            value={selectedOwnerId}
+            onChange={e => setSelectedOwnerId(e.target.value)}
+            data-testid="flow-owner-select"
+          >
+            <option value="">Мій Flow</option>
+            {owners.map(owner => (
+              <option key={owner.uid} value={owner.uid}>
+                {owner.name || owner.uid}
+              </option>
+            ))}
+          </OwnerSelect>
+          {ownersError && <small>{ownersError}</small>}
+          {selectedOwnerId && (
+            <OwnerBanner data-testid="flow-owner-banner">
+              <span>Ви правите Flow учасника: {selectedOwner?.name || selectedOwnerId}</span>
+              <OwnerBackBtn type="button" onClick={() => setSelectedOwnerId('')}>
+                До свого
+              </OwnerBackBtn>
+            </OwnerBanner>
+          )}
+        </OwnerBar>
+      )}
+      <FlowManager key={shownOwnerId || 'none'} ownerId={shownOwnerId} viewerId={viewerId} />
+    </>
+  );
+};
+
+export default FlowScreen;
