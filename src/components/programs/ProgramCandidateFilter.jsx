@@ -3,10 +3,10 @@ import { createPortal } from 'react-dom';
 import styled from 'styled-components';
 import { FilterRailChip, FilterRailChipClear, FilterRailChipShell } from '../Matching.styled';
 import { evaluateCardForProgram, isProgramFilterActive } from '../../utils/programCandidateFilter';
-import { describeProgramRequirements } from '../../utils/donorPrograms';
+import { PROGRAM_TYPE_LABELS, describeProgramRequirements } from '../../utils/donorPrograms';
 import { uiText } from '../../utils/uiTranslations';
 import { getRoleColor } from '../matchingRoleColors';
-import { programHeading, programRowTitle } from './ProgramsView';
+import { describeUnknownRequirements, programRowTitle } from './ProgramsView';
 
 /*
  * Чип «Під програму» в рейці фільтрів стрічки (`utils/programCandidateFilter`)
@@ -81,12 +81,16 @@ const CloseRow = styled.button`
   cursor: pointer;
 `;
 
-/** Як програма підписана в чипі й у шторці: «Донор ооцитів · Київ · 21–28 років». */
+/**
+ * Як програма підписана в чипі й у шторці: «Донор ооцитів · Київ · 21–28 років».
+ * Тип — коротким словом ролі, а не «Шукаємо донора ооцитів»: у чипі рейки
+ * довга назва обрізалась саме на місці програми (перевірено наживо).
+ */
 export const programFilterLabel = (program, programs, language) => {
   const siblings = (programs || []).filter(item => item.type === program.type && item.id !== program.id);
   const differs = siblings.length ? new Set(['location', 'age']) : null;
   const title = programRowTitle(program, differs, language);
-  return [programHeading(program, language), title].filter(Boolean).join(' · ');
+  return [uiText(PROGRAM_TYPE_LABELS[program.type] || '', language), title].filter(Boolean).join(' · ');
 };
 
 export const ProgramCandidateChip = ({ programs, value, onSelect, language }) => {
@@ -176,9 +180,7 @@ export const ProgramCandidateNote = ({ card, filter, language }) => {
   if (!result.uncertain) {
     return <FitNote data-testid="program-candidate-note">✓ {uiText('Підходить під програму', language)}</FitNote>;
   }
-  const byKey = new Map(describeProgramRequirements({ requirements: filter.requirements }).map(item => [item.key, item]));
-  const unknown = result.checks.filter(check => check.ok === null).map(check => byKey.get(check.key)).filter(Boolean)
-    .map(item => uiText(item.text, language, item.variables));
+  const unknown = describeUnknownRequirements(result.checks, language);
   return (
     <FitNote $uncertain data-testid="program-candidate-note">
       ? {uiText('Може підходити — в анкеті не вказано', language)}{unknown.length ? `: ${unknown.join(', ')}` : ''}

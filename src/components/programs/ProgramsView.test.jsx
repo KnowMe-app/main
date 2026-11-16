@@ -128,11 +128,18 @@ describe('програми в рядку стрічки', () => {
     expect(screen.getByTestId('program-title')).toHaveTextContent('Донор ооцитів');
   });
 
-  it('місце — у назві рядка з великої літери, і в зведенні групи', () => {
+  it('місце — у назві рядка з великої літери; одна програма зведення групи не повторює', () => {
     const placed = { p1: { id: 'p1', type: 'ed', location: 'київ', payments: { final: { amount: 2500, currency: 'USD' } } } };
     render(<ProgramsSummary card={{ programs: placed }} rates={rates} displayCurrency="USD" language="uk" />);
     expect(within(screen.getByTestId('program-list-item')).getByTestId('program-title')).toHaveTextContent(/^Київ$/);
-    expect(screen.getByTestId('program-group-facts')).toHaveTextContent('2 500 $ · Київ');
+    expect(screen.queryByTestId('program-group-facts')).not.toBeInTheDocument();
+  });
+
+  it('«Що ви отримаєте» починається з основної виплати, навіть коли вона одна', () => {
+    const program = { id: 'o', type: 'ed', location: 'Київ', payments: { final: { amount: 10000, currency: 'USD' } }, coverage: ['travel'] };
+    render(<ProgramCard program={program} rates={rates} language="uk" displayCurrency="USD" />);
+    expect(screen.getByTestId('program-payments')).toHaveTextContent('Основна виплата');
+    expect(screen.getByTestId('program-payments')).toHaveTextContent('10 000 $');
   });
 
   it('обрана валюта — сума в рядку й у доплатах, оригінал поруч', () => {
@@ -159,7 +166,7 @@ describe('програми в рядку стрічки', () => {
   it('невідоме в анкеті читачки — «може підходити» з переліком того, чого не вказано', () => {
     const covered = { p1: { ...programs.p1, requirements: { ageFrom: 21, ageTo: 29, rh: '+' } } };
     render(<ProgramsSummary card={{ programs: covered }} viewerType="ed" facts={donorFacts} rates={rates} displayCurrency="USD" language="uk" />);
-    expect(screen.getByTestId('program-verdict')).toHaveTextContent('? Може підходити · не вказано в анкеті: лише Rh+');
+    expect(screen.getByTestId('program-verdict')).toHaveTextContent('? Може підходити · не вказано в анкеті: резус');
   });
 
   it('коментар організатора — у деталях', () => {
