@@ -127,7 +127,9 @@ describe('App route guards', () => {
   it('the root waits for the access level and sends a non-admin straight to My Profile', () => {
     const root = parseRoutes().find(route => route.path === '/');
     expect(root.chunk).toContain('status={catchAllStatus}');
-    expect(root.chunk).toContain('<Navigate to="/my-profile" replace />');
+    // Не-адмін з відкритим Flow — у Flow (ярлик з головного екрана відкриває
+    // корінь), решта — у «Мій профіль».
+    expect(root.chunk).toContain("<Navigate to={resolveFlowHomeRoute({ isAdmin, canAccessFlow }) || '/my-profile'} replace />");
     expect(root.chunk).not.toContain('<PrivacyPolicy');
     expect(appSource()).not.toContain("const isRootRoute = location.pathname === '/';");
   });

@@ -136,4 +136,13 @@ describe('додаткові екрани (screenAccess)', () => {
     expect(encodeScreenAccess([])).toBe('');
     expect(SCREEN_ACCESS_OPTIONS.map(option => option.path)).toContain('/flow');
   });
+
+  it('перший екран: Flow — не-адмінові з відкритим Flow, адмінові — ні', () => {
+    // eslint-disable-next-line global-require
+    const { resolveFlowHomeRoute } = require('./accessLevel');
+    expect(resolveFlowHomeRoute(resolveAccess({ uid: 'viewer', screenAccess: 'flow' }))).toBe('/flow');
+    expect(resolveFlowHomeRoute(resolveAccess({ uid: 'viewer', screenAccess: '' }))).toBeNull();
+    expect(resolveFlowHomeRoute(resolveAccess({ uid: ADMIN_UIDS[0], screenAccess: 'flow' }))).toBeNull();
+    expect(resolveFlowHomeRoute(null)).toBeNull();
+  });
 });

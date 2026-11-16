@@ -172,6 +172,19 @@ export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfi
  * збереження, яке везе їх із Firestore (там вони можуть відрізнятися від
  * бази), правила відкинули б цілим вузлом — разом із датою входу й рештою.
  */
+/*
+ * Перший екран не-адміна з відкритим Flow — сам Flow (16.11, на прохання
+ * власниці продукту). Ярлик на головному екрані телефона відкриває корінь
+ * (`start_url: "."` у маніфесті), а корінь вів не-адміна в «Мій профіль» — і
+ * людина, яка заходить сюди лише рахувати, щоразу проходила через анкету.
+ * Адмінів це не стосується: їхній корінь — робочий стіл `AddNewProfile`.
+ * Одне правило на обидва входи — корінь у `App` і вибір екрана після входу в
+ * `LoginScreen`, — інакше ярлик і форма входу вели б у різні місця.
+ */
+export const FLOW_HOME_ROUTE = '/flow';
+export const resolveFlowHomeRoute = access =>
+  (access && !access.isAdmin && access.canAccessFlow ? FLOW_HOME_ROUTE : null);
+
 export const PRIVILEGED_PROFILE_FIELDS = Object.freeze(['accessLevel', 'canCreateProfiles', 'multiDataSourceUserIds', 'screenAccess']);
 
 export const canGrantProfilePrivileges = uid => !!uid && ADMIN_UIDS.includes(uid);
