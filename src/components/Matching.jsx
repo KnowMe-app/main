@@ -35,6 +35,7 @@ import {
   ConnectionNoticeClose,
   ConnectionNoticeText,
   FeedNotice,
+  FeedNoticeAction,
   FeedSentinel,
   FeedWrap,
   QueryDraftBody,
@@ -9543,24 +9544,29 @@ const Matching = () => {
                 ) : (
                 <FeedNotice>
                   <div>{emptyFeedMessage}</div>
+                  {/* Обидві кнопки не беруть фокус: дотик знімав його з поля
+                      пошуку, той на blur перешукував набране, видача
+                      перемальовувалась між натисканням і відпусканням — і клік
+                      «Jkmuf → Ольга» падав на сусідню «Шукаєте за категорією?»
+                      (перевірено наживо 16.11), як колись на картці місця. */}
                   {searchLayoutFix && (
-                    <ActionButton type="button" data-testid="search-layout-fix" onClick={handleSearchLayoutFix}>
+                    <FeedNoticeAction type="button" data-testid="search-layout-fix" onMouseDown={event => event.preventDefault()} onClick={handleSearchLayoutFix}>
                       {uiText('Можливо, ви мали на увазі «{query}»? (розкладка клавіатури)', language, { query: searchLayoutFix })}
-                    </ActionButton>
+                    </FeedNoticeAction>
                   )}
                   {/* Імʼя не знайшлось — можливо, людина шукала категорію
                       («донорки з Києва»): її шукають фільтром, а не пошуком. */}
                   {isSearching && !searchRoleIntent && !searchPlace && (
-                    <ActionButton type="button" data-testid="search-role-filter-hint" onClick={handleSuggestRoleFilter}>
+                    <FeedNoticeAction type="button" data-testid="search-role-filter-hint" onMouseDown={event => event.preventDefault()} onClick={handleSuggestRoleFilter}>
                       {uiText('Шукаєте за категорією? Спробуйте фільтр «Тип профілю»', language)}
-                    </ActionButton>
+                    </FeedNoticeAction>
                   )}
                   {/* Назвати причину мало: кінець списку тут не видно нікому,
                       тож жодного іншого жесту на цьому екрані не лишається. */}
                   {donorRoleFilterBlocksFeed && (
-                    <ActionButton type="button" onClick={restoreDonorRoleFilter}>
+                    <FeedNoticeAction type="button" onClick={restoreDonorRoleFilter}>
                       {uiText('Увімкнути AG та IP', language)}
-                    </ActionButton>
+                    </FeedNoticeAction>
                   )}
                 </FeedNotice>
                 )
@@ -9574,9 +9580,9 @@ const Matching = () => {
                 <FeedNotice role="alert">
                   <div>{uiText('Не вдалося завантажити профілі.', language)}</div>
                   <div>{loadError.userMessage}</div>
-                  <ActionButton type="button" onClick={reloadDefault} aria-label={uiText('Повторити завантаження', language)}>
+                  <FeedNoticeAction type="button" onClick={reloadDefault} aria-label={uiText('Повторити завантаження', language)}>
                     Спробувати ще раз
-                  </ActionButton>
+                  </FeedNoticeAction>
                 </FeedNotice>
               )}
               {/* Без мережі хвіст не дочитається, і «Завантажую…» чи «Показати
