@@ -382,6 +382,7 @@ import {
   isMatchingCardId,
   isRoleCategoryAllowed,
   isSameMatchingCursor,
+  narrowRoleToProgramType,
   roleFilterCategoryOf,
 } from 'utils/matchingDataProvider';
 import {
@@ -995,7 +996,27 @@ const MATCHING_FILTER_GROUP_NAMES = MATCHING_FILTER_GROUPS.map(group => group.fi
 const MATCHING_SEARCH_DEBOUNCE_MS = 250;
 // Скільки тиші після набору назви категорії, щоб батькам чи агенції
 // перемкнути пошук на стрічку з чіпом ролі (див. `applyRoleIntentFilter`).
+// Перелік колекції в порядку, у якому її вже показано: те, що на екрані,
+// лишається на місці (навіть без реакції), нове — у кінці в порядку
+// `nextIds`. Інший режим — порядок з нуля.
+export const keepDisplayedOrder = (previous, nextIds, viewMode) => {
+  const next = Array.isArray(nextIds) ? nextIds : [];
+  if (!previous || previous.viewMode !== viewMode || !previous.ids?.length) return [...next];
+  const nextSet = new Set(next);
+  const kept = previous.ids.filter(id => nextSet.has(id));
+  const keptSet = new Set(kept);
+  return [...kept, ...next.filter(id => !keptSet.has(id))];
+};
+
 const ROLE_INTENT_AUTO_APPLY_MS = 1000;
+// Фокус у полі набору — людина ще набирає. Поки йде пошук, полем набору на
+// екрані є саме рядок пошуку (`SearchBar`, `textarea`); підпис поля
+// перекладається, тож питаємо тег, а не `aria-label`.
+const isSearchFieldFocused = () => {
+  if (typeof document === 'undefined') return false;
+  const tag = document.activeElement?.tagName;
+  return tag === 'TEXTAREA' || tag === 'INPUT';
+};
 // Слова картки наміру й плашки над стрічкою; ключі — українські рядки
 // `uiTranslations`. «Знайти» й «стати» мають сенс лише для СМ і донорки:
 // решті ролей картка пропонує саму стрічку.
@@ -5911,6 +5932,14 @@ const Matching = () => {
     ownerId,
   ]);
 
+  // Порядок колекції, яким вона стоїть на екрані: `{ viewMode, ids }`.
+  // Скидається разом із набором зі знятою реакцією — зміною режиму чи
+  // фільтрів (ефект нижче); інакше вподобане в «Усіх» поверталось би в
+  // колекцію не вгорі, а після всього, що там уже було.
+  const reactionTabOrderRef = useRef({ viewMode: '', ids: [] });
+  useEffect(() => {
+    reactionTabOrderRef.current = { viewMode: '', ids: [] };
+  }, [viewMode, filters]);
   const reactionTabUsers = useMemo(() => {
     if (viewMode !== 'favorites' && viewMode !== 'dislikes') return [];
 
@@ -5941,7 +5970,15 @@ const Matching = () => {
     // вище (`orderReactionIdsByRecency`). Сортування за датою стрічки тут
     // стояло, поки й сторінки йшли за нею; лишене поверх порядку реакцій, воно
     // вставляло кожну дочитану сторінку посеред уже показаних карток.
-    return reactionIds
+    //
+    // Показане лишається на своєму місці, нове стає в кінець
+    // (`keepDisplayedOrder`): картка зі знятою реакцією випадає з мапи й
+    // переїжджала в кінець переліку (`stickyReactedUserIds` за ним), тож
+    // зняті десять лайків з'їжджали вниз, а дочитана порція ставала над ними
+    // — людина казала «мене перекинуло в кінець списку» (наживо 16.11).
+    const orderedIds = keepDisplayedOrder(reactionTabOrderRef.current, reactionIds, viewMode);
+    reactionTabOrderRef.current = { viewMode, ids: orderedIds };
+    return orderedIds
       .map(id => candidateUsersById.get(id))
       .filter(card => Boolean(card))
       .filter(card => {
@@ -6085,6 +6122,7 @@ const Matching = () => {
   ]);
   // Counted off the already-loaded cache, so every chip tap in the drawer
   // updates the number instantly and without touching Firebase (spec §10).
+  const activeProgramFilter = filters?.program;
   const draftFilteredCount = useMemo(() => {
     if (!showFilters) return 0;
     if (viewMode === 'favorites' || viewMode === 'dislikes') return reactionTabUsers.length;
@@ -6103,8 +6141,15 @@ const Matching = () => {
     // «Показати N» рахує рядки, які стрічка справді намалює: рядок без
     // видимої читачеві анкети дозволеного типу не малюється
     // (`resolveRowAnketaRoles`), і кнопка обіцяла б на одну картку більше.
-    const roleFilter = viewMode === 'default' && !searchQuery.trim() && hasActiveSearchKeyFilterGroup(appliedFilters?.userRole)
-      ? appliedFilters.userRole
+    // Роль — та сама, якою стрічка малює рядки (`effectiveRoleFilter`): під
+    // програмою її задає тип програми, інакше кнопка казала «Показати 0» над
+    // стрічкою з кандидатками.
+    const draftRoleFilter = narrowRoleToProgramType({
+      ...appliedFilters,
+      program: appliedFilters?.program || activeProgramFilter,
+    }).userRole;
+    const roleFilter = viewMode === 'default' && !searchQuery.trim() && hasActiveSearchKeyFilterGroup(draftRoleFilter)
+      ? draftRoleFilter
       : null;
     if (!roleFilter) return passed.length;
     const hiddenRoles = listViewerHiddenCardRoles(donorRestrictionViewerRole);
@@ -6115,6 +6160,7 @@ const Matching = () => {
     dislikeUsers,
     draftFilters,
     favoriteUsers,
+    activeProgramFilter,
     reactionTabUsers.length,
     roleIndexSets,
     programRates,
@@ -7906,12 +7952,17 @@ const Matching = () => {
   // Батькам, агенції й клініці намір одразу стає стрічкою. Але не посеред
   // набору: debounce пошуку — 250 мс, і пауза в «Смирнова» після «См»
   // перемкнула б екран і стерла б набране. Тому — на Enter/blur
-  // (`handleMatchingSearchCommitted`) або після секунди тиші; до того стоїть
-  // картка з тією самою кнопкою. Двох літер («СМ») на тиші не вистачає.
+  // (`handleMatchingSearchCommitted`); до того стоїть картка з тією самою
+  // кнопкою. Секунда тиші перемикає лише тоді, коли фокус уже не в полі
+  // пошуку: поки людина в полі, вона ще набирає. Доти тиша перемикала й
+  // посеред набору — «Сурогатна», пауза на телефоні, і поле очищалось,
+  // клавіатура зникала, а « мама» лягало в порожній рядок (наживо 16.11).
+  // Двох літер («СМ») на тиші не вистачає.
   useEffect(() => {
     if (searchRoleIntentFlow !== 'filter' || !searchRoleIntent || roleIntentHiddenForViewer) return undefined;
     if (roleIntentQuery.length < 3) return undefined;
     const timer = setTimeout(() => {
+      if (isSearchFieldFocused()) return;
       // Секунда тиші на назві категорії — теж завершений запит.
       void recordSearchQueryOutcome(roleIntentQuery, { intent: searchRoleIntent }, { commitIfMissing: true });
       applyRoleIntentFilter(searchRoleIntent, roleIntentQuery);
@@ -8041,6 +8092,18 @@ const Matching = () => {
 
   // Порядок і значки повторюють рішення картки. Видимі підписи пояснюють
   // призначення колекцій і на телефоні, де немає підказки при наведенні.
+  // Число біля колекції — розмір мапи реакцій, поки колекцію не дочитано.
+  // Дочитана колекція рахує те, що вона показує: мапа несе й реакції, яких
+  // показати не можна (анкету сховали чи видалили, реакції спільних
+  // власників на закриті картки), і адмін, знявши всі лайки, бачив «Обране 6»
+  // над порожнім списком (16.11).
+  const countReactionChip = (mode, reactionMap) => {
+    const total = Object.keys(reactionMap || {}).length;
+    if (viewMode !== mode || hasMore || loading) return total;
+    return reactionTabUsers.filter(card => Boolean(reactionMap?.[card.userId])).length;
+  };
+  const favoritesChipCount = countReactionChip('favorites', favoriteUsers);
+  const dislikesChipCount = countReactionChip('dislikes', dislikeUsers);
   const collectionChips = useMemo(() => [
     {
       key: 'default',
@@ -8058,7 +8121,7 @@ const Matching = () => {
       label: uiText('Не цікаві', language),
       icon: <FaTimes size={14} aria-hidden="true" />,
       title: uiText('Показати ті, що не цікаві', language),
-      count: Object.keys(dislikeUsers || {}).length,
+      count: dislikesChipCount,
       onSelect: handleDislikeModeClick,
     },
     {
@@ -8069,12 +8132,12 @@ const Matching = () => {
         : <FaRegHeart size={13} aria-hidden="true" />,
       accent: true,
       title: uiText('Показати обране', language),
-      count: Object.keys(favoriteUsers || {}).length,
+      count: favoritesChipCount,
       onSelect: handleFavoriteModeClick,
     },
   ], [
-    dislikeUsers,
-    favoriteUsers,
+    dislikesChipCount,
+    favoritesChipCount,
     language,
     handleDefaultModeClick,
     handleDislikeModeClick,
@@ -8743,8 +8806,12 @@ const Matching = () => {
   // батьків у картки «батьки + донорка» (її донорську роль фільтр пропускає,
   // бо приховану від донорки опцію тримає ввімкненою). Пошук і колекції чіпи
   // не звужують, тож лише стрічка.
-  const feedRoleFilter = viewMode === 'default' && !isSearching && hasActiveSearchKeyFilterGroup(filters?.userRole)
-    ? filters.userRole
+  // Під «Кандидатками під програму» роль задає програма
+  // (`narrowRoleToProgramType`): інакше рядок кандидатки СМ при збереженому
+  // «Типі профілю» без СМ лишався б без жодної анкети.
+  const effectiveRoleFilter = narrowRoleToProgramType(filters || {}).userRole;
+  const feedRoleFilter = viewMode === 'default' && !isSearching && hasActiveSearchKeyFilterGroup(effectiveRoleFilter)
+    ? effectiveRoleFilter
     : null;
   const resolveRowAnketaRoles = user => {
     const id = user?.userId;
