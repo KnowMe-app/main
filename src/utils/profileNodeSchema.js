@@ -241,6 +241,8 @@ export const PROFILE_TECHNICAL_ACCESS_FIELDS = Object.freeze([
   'multiDataAccessUserIds',
   'multiDataSourceUserIds',
   'additionalAccessRules',
+  // Додаткові екрани (Flow), відкриті адміном (`SCREEN_ACCESS_OPTIONS`).
+  'screenAccess',
 ]);
 
 /** Технічні дані та account metadata. Без device-полів. */
@@ -623,6 +625,7 @@ export const MATCHING_CARD_FORBIDDEN_FIELDS = Object.freeze([
   'publicComment',
   'accessLevel',
   'canCreateProfiles',
+  'screenAccess',
   'additionalAccessRules',
   'multiDataAccessUserIds',
   'deviceWidth',

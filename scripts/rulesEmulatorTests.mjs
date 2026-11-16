@@ -2132,6 +2132,37 @@ await it('обидва адміни видають і знімають прав�
   await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/multiDataSourceUserIds`), null));
 });
 
+const INSPECTOR_FOR_FLOW = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
+
+describe('Flow для не-адміна: екран відкриває адмін, дані — свої');
+
+// Адмін відкриває окремому користувачеві екран Flow полем
+// `profileTechnical/{uid}/screenAccess`. Самому собі його не поставить ніхто,
+// а відкритий Flow пише лише у власний `multiData/flow/{uid}`: розрахунки
+// одного користувача іншому не видно.
+await it('власниця не відкриває собі Flow сама', async () => {
+  await assertFails(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/screenAccess`), 'flow'));
+  await assertFails(update(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}`), { lastLogin: '2026-11-16', screenAccess: 'flow' }));
+  await assertFails(set(ref(db(INSPECTOR_FOR_FLOW), `profileTechnical/${SELF_SERVE}/screenAccess`), 'flow'));
+});
+
+await it('адмін відкриває й закриває Flow, і значення — лише коди екранів', async () => {
+  await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/screenAccess`), 'flow'));
+  // Незмінене значення в звичайному збереженні анкети проходить.
+  await assertSucceeds(update(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}`), { lastLogin: '2026-11-16', screenAccess: 'flow' }));
+  await assertFails(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/screenAccess`), 'Flow; drop'));
+  await assertFails(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/screenAccess`), true));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/screenAccess`), ''));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/screenAccess`), null));
+});
+
+await it('розрахунки Flow — лише свої', async () => {
+  await assertSucceeds(set(ref(db(SELF_SERVE), `multiData/flow/${SELF_SERVE}/rent`), { a1: { amount: 100 } }));
+  await assertSucceeds(get(ref(db(SELF_SERVE), `multiData/flow/${SELF_SERVE}`)));
+  await assertFails(get(ref(db(MATCHING_EDITOR), `multiData/flow/${SELF_SERVE}`)));
+  await assertFails(set(ref(db(MATCHING_EDITOR), `multiData/flow/${SELF_SERVE}/rent`), { a2: { amount: 1 } }));
+});
+
 describe('documentsBuilder: тестовий акаунт читає й пише');
 
 // Тестовий акаунт веб-сесій (MIGRATION_EMAIL) читає й правит шаблони, кейси та сторони — так

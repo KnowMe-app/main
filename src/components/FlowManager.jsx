@@ -6,6 +6,7 @@ import { signOut } from 'firebase/auth';
 import { ReactComponent as ClipboardIcon } from 'assets/icons/clipboard.svg';
 import { InfoModal } from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
+import { readStoredAccessLevel, readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import {
   deleteFlowEntry,
   deleteFlowCategory,
@@ -1849,15 +1850,26 @@ export const FlowManager = ({ ownerId }) => {
     navigate('/');
   };
 
-  const dotsMenu = () => (
-    <ProfileDotsMenu
-      navigate={navigate}
-      isAdmin
-      access={{ canAccessAdd: true, canAccessMatching: true }}
-      onExit={handleExit}
-      onSelect={() => setShowInfoModal(false)}
-    />
-  );
+  // Flow відкривають і не-адмінам (`screenAccess`), тож меню рахує права
+  // читача, а не вважає кожного адміном: інакше людина з одним лише Flow
+  // бачила б у «⋮» адмінські екрани, на які її однаково не пустить `App`.
+  const dotsMenu = () => {
+    const access = resolveAccess({
+      uid: ownerId,
+      accessLevel: readStoredAccessLevel(),
+      userRole: localStorage.getItem('userRole') || '',
+      canCreateProfiles: readStoredCanCreateProfiles(),
+    });
+    return (
+      <ProfileDotsMenu
+        navigate={navigate}
+        isAdmin={access.isAdmin}
+        access={access}
+        onExit={handleExit}
+        onSelect={() => setShowInfoModal(false)}
+      />
+    );
+  };
 
   const handleConfirm = async () => {
     if (confirmState.type === 'clear') {

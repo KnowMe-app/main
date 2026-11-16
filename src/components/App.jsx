@@ -10,7 +10,7 @@ import { installPushSignOutCleanup, refreshPushToken } from './pushNotifications
 import { startWriteOutbox, stopWriteOutbox } from 'utils/writeOutbox';
 import toast from 'react-hot-toast';
 import { auth, loadViewerProfile, resetViewerAccessLevelCache } from './config';
-import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
+import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, persistScreenAccess, resolveAccess } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
 import { clearMyProfileCache } from 'utils/myProfileCache';
 import { clearFlowCache } from 'utils/flowOfflineWrites';
@@ -70,6 +70,10 @@ export const App = () => {
   const [isAdmin, setIsAdmin] = useState(null);
   const [canAccessAdd, setCanAccessAdd] = useState(false);
   const [canAccessInvoices, setCanAccessInvoices] = useState(false);
+  // Flow відкривають не лише адмінам: адмін дає його окремому користувачеві
+  // (`profileTechnical/{uid}/screenAccess`). Дані Flow лежать під власником
+  // (`multiData/flow/{uid}`), тож кожен бачить і пише лише свої розрахунки.
+  const [canAccessFlow, setCanAccessFlow] = useState(false);
   const [isAccessResolved, setIsAccessResolved] = useState(false);
   // Стан входу окремо від рівня доступу: рівень читається з бази, тобто вже
   // після відповіді Firebase, а межа входу мусить спрацювати одразу — інакше
@@ -127,6 +131,7 @@ export const App = () => {
         let accessLevel = '';
         let userRole = '';
         let canCreateProfilesForUser = false;
+        let screenAccess = '';
         try {
           // Права й роль — з анкети в памʼяті пристрою, поки вона свіжа
           // (`loadViewerProfile`, шість годин); інакше з бази.
@@ -134,17 +139,20 @@ export const App = () => {
           accessLevel = profile?.accessLevel || '';
           userRole = profile?.userRole || profile?.role || '';
           canCreateProfilesForUser = profile?.canCreateProfiles === true;
+          screenAccess = profile?.screenAccess || '';
         } catch (error) {
           console.error('Failed to load access profile for routes', error);
         }
 
-        const access = resolveAccess({ uid: user.uid, accessLevel, userRole, canCreateProfiles: canCreateProfilesForUser });
+        const access = resolveAccess({ uid: user.uid, accessLevel, userRole, canCreateProfiles: canCreateProfilesForUser, screenAccess });
         setIsAdmin(access.isAdmin);
         setCanAccessAdd(access.canAccessAdd);
         setCanAccessInvoices(access.canAccessInvoices);
+        setCanAccessFlow(access.canAccessFlow);
         localStorage.setItem('accessLevel', accessLevel);
         localStorage.setItem('userRole', userRole);
         persistCanCreateProfiles(canCreateProfilesForUser);
+        persistScreenAccess(screenAccess);
         setIsAccessResolved(true);
         // Раз на добу з пристрою — скільки йде найменше читання бази
         // (`utils/latencyProbe`): цифри для рішення про регіон бази.
@@ -189,6 +197,7 @@ export const App = () => {
         setIsAdmin(false);
         setCanAccessAdd(false);
         setCanAccessInvoices(false);
+        setCanAccessFlow(false);
         setIsAccessResolved(true);
       }
     });
@@ -250,7 +259,7 @@ export const App = () => {
       <Route path="/matching/create-profile" element={<RequireAuth status={authStatus}><ProfileCreationWorkspace /></RequireAuth>} />
       {isAdmin && <Route path="/edit/:userId" element={<RequireAuth status={authStatus}><EditProfile /></RequireAuth>} />}
       {isAdmin && <Route path="/medications/:userId" element={<RequireAuth status={authStatus}><MedicationsPage /></RequireAuth>} />}
-      {isAdmin && <Route path="/flow" element={<RequireAuth status={authStatus}><FlowManager ownerId={auth.currentUser?.uid} /></RequireAuth>} />}
+      {canAccessFlow && <Route path="/flow" element={<RequireAuth status={authStatus}><FlowManager ownerId={auth.currentUser?.uid} /></RequireAuth>} />}
       {isAdmin && <Route path="/budget" element={<RequireAuth status={authStatus}><BudgetPage isAdmin={isAdmin} /></RequireAuth>} />}
       {/* Сповіщення адміна про дії користувачів (`functions/adminActivity.js`). */}
       {isAdmin && <Route path="/notifications" element={<RequireAuth status={authStatus}><AdminNotificationsPage /></RequireAuth>} />}

@@ -1,7 +1,12 @@
 import {
   ADMIN_UIDS,
   INVOICE_BUILDER_UIDS,
+  SCREEN_ACCESS_OPTIONS,
   canAccessMatchingByRole,
+  clearStoredAccessRights,
+  encodeScreenAccess,
+  parseScreenAccess,
+  persistScreenAccess,
   resolveAccess,
 } from './accessLevel';
 
@@ -30,6 +35,7 @@ describe('accessLevel', () => {
       canAccessAdd: true,
       canAccessInvoices: true,
       canCreateProfiles: true,
+      canAccessFlow: true,
     });
   });
 
@@ -40,6 +46,7 @@ describe('accessLevel', () => {
       canAccessAdd: false,
       canAccessInvoices: false,
       canCreateProfiles: false,
+      canAccessFlow: false,
     });
   });
 
@@ -66,7 +73,7 @@ describe('права видають лише два адміни', () => {
   it('знімає поля прав із запису не-адміна, решту лишає', () => {
     expect(stripPrivilegedProfileFields(payload, 'ordinaryUid')).toEqual({ name: 'Оксана', lastLogin: '2026-10-16' });
     expect(stripPrivilegedProfileFields(payload, '')).toEqual({ name: 'Оксана', lastLogin: '2026-10-16' });
-    expect(PRIVILEGED_PROFILE_FIELDS).toEqual(['accessLevel', 'canCreateProfiles', 'multiDataSourceUserIds']);
+    expect(PRIVILEGED_PROFILE_FIELDS).toEqual(['accessLevel', 'canCreateProfiles', 'multiDataSourceUserIds', 'screenAccess']);
   });
 
   it('адмінові лишає все, інспекторові на читання — ні', () => {
@@ -92,5 +99,41 @@ describe('права видають лише два адміни', () => {
       expect(node.canCreateProfiles['.validate']).toBe(`${admins} || (data.exists() && newData.val() == data.val())`);
       expect(node.multiDataSourceUserIds.$sourceUserId['.validate']).toBe(`${admins} || (data.exists() && newData.val() == data.val())`);
     });
+  });
+
+  it('screenAccess — теж лише адмінське право в правилах, і лише коди екранів', () => {
+    const rules = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'database.rules.json'), 'utf8')).rules;
+    const admins = ADMIN_UIDS.map(uid => `auth.uid == '${uid}'`).join(' || ');
+    const validate = rules.profileTechnical.$uid.screenAccess['.validate'];
+    expect(validate.startsWith(`(${admins} || (data.exists() && newData.val() == data.val()))`)).toBe(true);
+    expect(validate).toContain('newData.isString()');
+  });
+});
+
+describe('додаткові екрани (screenAccess)', () => {
+  afterEach(() => localStorage.clear());
+
+  it('відкриває Flow лише тим, кому його видав адмін', () => {
+    expect(resolveAccess({ uid: 'viewer', screenAccess: '' }).canAccessFlow).toBe(false);
+    expect(resolveAccess({ uid: 'viewer', screenAccess: 'flow' }).canAccessFlow).toBe(true);
+    expect(resolveAccess({ uid: 'viewer', screenAccess: 'Flow, budget' }).canAccessFlow).toBe(true);
+    expect(resolveAccess({ uid: 'viewer', screenAccess: 'workflow' }).canAccessFlow).toBe(false);
+    expect(resolveAccess({ uid: ADMIN_UIDS[0], screenAccess: '' }).canAccessFlow).toBe(true);
+    // Самого лише рівня доступу матчингу для Flow мало.
+    expect(resolveAccess({ uid: 'viewer', accessLevel: 'add+matching:view&write', screenAccess: '' }).canAccessFlow).toBe(false);
+  });
+
+  it('без явного значення бере збережене при вході — як меню на чужих сторінках', () => {
+    persistScreenAccess('flow');
+    expect(resolveAccess({ uid: 'viewer' }).canAccessFlow).toBe(true);
+    clearStoredAccessRights();
+    expect(resolveAccess({ uid: 'viewer' }).canAccessFlow).toBe(false);
+  });
+
+  it('пише лише відомі коди, в сталому порядку', () => {
+    expect(parseScreenAccess('flow,unknown,FLOW')).toEqual(['flow']);
+    expect(encodeScreenAccess(['flow', 'flow'])).toBe('flow');
+    expect(encodeScreenAccess([])).toBe('');
+    expect(SCREEN_ACCESS_OPTIONS.map(option => option.path)).toContain('/flow');
   });
 });
