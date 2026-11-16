@@ -8,6 +8,7 @@ import { InfoModal } from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { FaFileImport } from 'react-icons/fa';
 import { buildFlowImportText } from 'utils/flowImport';
+import Collapsible from './Collapsible';
 import { readStoredAccessLevel, readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import {
   deleteFlowEntry,
@@ -345,16 +346,47 @@ const GroupBlock = styled.li`
   margin-bottom: 10px;
 `;
 
-const GroupTitle = styled.div`
-  display: inline-flex;
+// Заголовок групи — кнопка: у людей сотні рядків витрат, і розгорнуті всі
+// групи разом ставили суми інших груп за десяток екранів униз.
+const GroupTitle = styled.button`
+  display: flex;
   align-items: baseline;
   gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  font: inherit;
   font-size: 12px;
   font-weight: 700;
-  color: #333;
-  margin-bottom: 4px;
+  color: var(--km-text, #333);
+  text-align: left;
+  cursor: pointer;
   overflow-wrap: anywhere;
   word-break: break-word;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--km-accent-ring);
+    border-radius: 6px;
+  }
+`;
+
+const GroupChevron = styled.span`
+  flex: 0 0 auto;
+  display: inline-block;
+  width: 12px;
+  color: var(--km-muted, #777);
+  transition: transform 0.2s ease;
+  transform: rotate(${({ $open }) => ($open ? '90deg' : '0deg')});
+
+  @media (prefers-reduced-motion: reduce) { transition: none; }
+`;
+
+const GroupCount = styled.span`
+  font-weight: 400;
+  color: var(--km-muted, #777);
 `;
 
 const GroupRows = styled.ul`
@@ -1056,6 +1088,8 @@ const flowDraftStorageKey = ownerId => `flow-draft:${ownerId || 'anon'}`;
 const flowLastCategoryStorageKey = ownerId => `flow-last-category:${ownerId || 'anon'}`;
 const flowExchangeRateModeStorageKey = ownerId => `flow-exchange-rate-mode:${ownerId || 'anon'}`;
 const flowDisplayCurrencyStorageKey = ownerId => `flow-display-currency:${ownerId || 'anon'}`;
+// Відкрита група списку — одна на пристрій і власника (порожньо — усі згорнуті).
+const flowOpenGroupStorageKey = ownerId => `flow-open-group:${ownerId || 'anon'}`;
 const flowCustomUsdRateStorageKey = ownerId => `flow-custom-usd-rate:${ownerId || 'anon'}`;
 
 export const flattenFlowEntriesFromBackend = flowNode => {
@@ -1437,6 +1471,28 @@ export const FlowManager = ({ ownerId }) => {
     }
   }, [ownerId]);
 
+  // Відкрита група — одна: друга, відкрита дотиком, згортає попередню.
+  const [openGroup, setOpenGroup] = useState('');
+  useEffect(() => {
+    if (!ownerId) return;
+    try {
+      setOpenGroup(localStorage.getItem(flowOpenGroupStorageKey(ownerId)) || '');
+    } catch {
+      setOpenGroup('');
+    }
+  }, [ownerId]);
+  const rememberOpenGroup = useCallback(group => {
+    const next = group || '';
+    setOpenGroup(next);
+    if (!ownerId) return;
+    try {
+      localStorage.setItem(flowOpenGroupStorageKey(ownerId), next);
+    } catch (error) {
+      console.error('Unable to persist flow open group into localStorage', error);
+    }
+  }, [ownerId]);
+  const toggleGroup = group => rememberOpenGroup(openGroup === group ? '' : group);
+
   const selectDisplayCurrency = currency => {
     const nextCurrency = getValidFlowDisplayCurrency(currency);
     setDisplayCurrency(nextCurrency);
@@ -1768,6 +1824,8 @@ export const FlowManager = ({ ownerId }) => {
       results.forEach(result => applyFlowWrite(result, 'Запис Flow не збережено'));
       const lastEntry = parsedEntries[parsedEntries.length - 1];
       setDateYmd(lastEntry.date);
+      // Щойно внесене має бути видно: відкривається група останнього запису.
+      rememberOpenGroup(normalizeCategoryPath(lastEntry.groupPath) || normalizedCategory);
       const selectedPath = splitCategoryPath(lastEntry.groupPath || normalizedCategory);
       setSelectedGroup(selectedPath.group);
       setSelectedSubgroup(selectedPath.subgroup);
@@ -2364,8 +2422,15 @@ export const FlowManager = ({ ownerId }) => {
       <EventsList>
         {Object.entries(groupedFlowRows).map(([group, entries]) => (
           <GroupBlock key={group}>
-            <GroupTitle>
+            <GroupTitle
+              type="button"
+              aria-expanded={openGroup === group}
+              onClick={() => toggleGroup(group)}
+              data-testid="flow-group-toggle"
+            >
+              <GroupChevron aria-hidden="true" $open={openGroup === group}>▸</GroupChevron>
               <span>{formatGroupTitle(group)}</span>
+              <GroupCount>· {entries.length}</GroupCount>
               <CategorySum>
                 {(() => {
                   const categoryTotals = categorySums[group] || { uah: 0, usd: 0, eur: 0 };
@@ -2379,90 +2444,92 @@ export const FlowManager = ({ ownerId }) => {
                 })()}
               </CategorySum>
             </GroupTitle>
-            <GroupRows>
-              {entries.map(({ row, idx }) => {
-                const rowKey = getRowKey(row, idx);
-                const isEditing = editingKey === rowKey;
-                return (
-                  <EventRow
-                    key={rowKey}
-                    $clickable={!isEditing}
-                    $highlighted={confirmState.type === 'row' && confirmState.rowKey === rowKey}
-                    onClick={!isEditing ? () => beginEdit(row, idx) : undefined}
-                  >
-                    {isEditing ? (
-                      <EditInline>
-                        <EditRowInput
-                          autoFocus
-                          value={editingDraft.line}
-                          onChange={e => setEditingDraft(prev => ({ ...prev, line: e.target.value }))}
-                          onBlur={e => {
-                            if (e.currentTarget.parentElement?.contains(e.relatedTarget)) return;
-                            saveEditedRow(row, idx);
-                          }}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
+            <Collapsible open={openGroup === group}>
+              <GroupRows>
+                {entries.map(({ row, idx }) => {
+                  const rowKey = getRowKey(row, idx);
+                  const isEditing = editingKey === rowKey;
+                  return (
+                    <EventRow
+                      key={rowKey}
+                      $clickable={!isEditing}
+                      $highlighted={confirmState.type === 'row' && confirmState.rowKey === rowKey}
+                      onClick={!isEditing ? () => beginEdit(row, idx) : undefined}
+                    >
+                      {isEditing ? (
+                        <EditInline>
+                          <EditRowInput
+                            autoFocus
+                            value={editingDraft.line}
+                            onChange={e => setEditingDraft(prev => ({ ...prev, line: e.target.value }))}
+                            onBlur={e => {
+                              if (e.currentTarget.parentElement?.contains(e.relatedTarget)) return;
                               saveEditedRow(row, idx);
-                            }
-                            if (e.key === 'Escape') {
-                              e.preventDefault();
-                              cancelEdit();
-                            }
-                          }}
-                        />
-                        <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={cancelEdit}>
-                          cancel
-                        </TinyBtn>
-                      </EditInline>
-                    ) : (
-                      <>
-                        <EventText>
-                          {formatDisplayDate(row.date)} {resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate })} {row.description}
-                          {(() => {
-                            const displayAmount = resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate });
-                            const rowCurrency = getFlowRowDisplayCurrency(row, displayCurrency);
-                            const amountInCurrency = calculateFlowRowCurrencyAmount({
-                              row: { ...row, amount: displayAmount },
-                              currency: rowCurrency,
-                              exchangeRateMode,
-                              exchangeRates,
-                              historicalRatesByDate,
-                              customUsdRate,
-                            });
-                            return amountInCurrency !== 0
-                              ? ` / ${formatCurrencyValue(amountInCurrency)} ${FLOW_CURRENCY_SIGNS[rowCurrency]}`
-                              : '';
-                          })()}
-                        </EventText>
-                        <ChangeCategoryBtn
-                          type="button"
-                          aria-label="change-row-category"
-                          title="Змінити групу платежу"
-                          onClick={e => {
-                            e.stopPropagation();
-                            handleChangeRowCategory(row);
-                          }}
-                        >
-                          ✏
-                        </ChangeCategoryBtn>
-                        <DeleteRowBtn
-                          type="button"
-                          aria-label="delete-row"
-                          title="Видалити рядок"
-                          onClick={e => {
-                            e.stopPropagation();
-                            openDeleteConfirm(row, rowKey);
-                          }}
-                        >
-                          ×
-                        </DeleteRowBtn>
-                      </>
-                    )}
-                  </EventRow>
-                );
-              })}
-            </GroupRows>
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                saveEditedRow(row, idx);
+                              }
+                              if (e.key === 'Escape') {
+                                e.preventDefault();
+                                cancelEdit();
+                              }
+                            }}
+                          />
+                          <TinyBtn type="button" onMouseDown={e => e.preventDefault()} onClick={cancelEdit}>
+                            cancel
+                          </TinyBtn>
+                        </EditInline>
+                      ) : (
+                        <>
+                          <EventText>
+                            {formatDisplayDate(row.date)} {resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate })} {row.description}
+                            {(() => {
+                              const displayAmount = resolveFlowDisplayAmount({ amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate });
+                              const rowCurrency = getFlowRowDisplayCurrency(row, displayCurrency);
+                              const amountInCurrency = calculateFlowRowCurrencyAmount({
+                                row: { ...row, amount: displayAmount },
+                                currency: rowCurrency,
+                                exchangeRateMode,
+                                exchangeRates,
+                                historicalRatesByDate,
+                                customUsdRate,
+                              });
+                              return amountInCurrency !== 0
+                                ? ` / ${formatCurrencyValue(amountInCurrency)} ${FLOW_CURRENCY_SIGNS[rowCurrency]}`
+                                : '';
+                            })()}
+                          </EventText>
+                          <ChangeCategoryBtn
+                            type="button"
+                            aria-label="change-row-category"
+                            title="Змінити групу платежу"
+                            onClick={e => {
+                              e.stopPropagation();
+                              handleChangeRowCategory(row);
+                            }}
+                          >
+                            ✏
+                          </ChangeCategoryBtn>
+                          <DeleteRowBtn
+                            type="button"
+                            aria-label="delete-row"
+                            title="Видалити рядок"
+                            onClick={e => {
+                              e.stopPropagation();
+                              openDeleteConfirm(row, rowKey);
+                            }}
+                          >
+                            ×
+                          </DeleteRowBtn>
+                        </>
+                      )}
+                    </EventRow>
+                  );
+                })}
+              </GroupRows>
+            </Collapsible>
           </GroupBlock>
         ))}
       </EventsList>
