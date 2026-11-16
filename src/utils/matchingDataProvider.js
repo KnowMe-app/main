@@ -240,8 +240,25 @@ export const withoutViewerHiddenRoleBuckets = (filters, viewerRole) => {
   return { ...filters, userRole };
 };
 
+// «Кандидатки під програму» — це ще й «Тип профілю» з однією роллю: тип
+// програми. Пост-фільтр (`cardFitsProgramFilter`) і так лишає лише її, а план
+// індексу без цього не знав про роль, і стрічка йшла звичайною пагінацією
+// джерела. Адмінська стрічка — усі ~21 700 карток за останнім входом, і за
+// одне довантаження джерело читає щонайбільше 500: підхожих СМ серед них
+// часто немає жодної, тож адмін бачив «нікого» під програмою, під яку в
+// стрічці агенції була кандидатка (наживо 16.11). З роллю в плані кандидатки
+// приходять з переліку опублікованих за роллю (`matchingFeedIndex`).
+export const narrowRoleToProgramType = filters => {
+  if (!isProgramFilterActive(filters?.program)) return filters;
+  const type = filters.program.type;
+  return {
+    ...filters,
+    userRole: Object.fromEntries(FEED_ROLE_FILTER_KEYS.map(key => [key, key === type])),
+  };
+};
+
 export const buildMatchingIndexFilterGroups = ({ filters: rawFilters = {}, viewerRole = '' } = {}) => {
-  const filters = withoutViewerHiddenRoleBuckets(rawFilters || {}, viewerRole);
+  const filters = withoutViewerHiddenRoleBuckets(narrowRoleToProgramType(rawFilters || {}), viewerRole);
   const groups = [];
   const roleBuckets = buildRoleBuckets(filters);
   const roleFilters = filters?.userRole || filters?.role;
@@ -1262,7 +1279,9 @@ export const isPersonalFilterExemptCard = (user, roleIndexSets = null) => {
 };
 
 export const applyMatchingSearchKeyFilters = (users, filters, roleIndexSets = null, programRates = getProgramRates()) => {
-  const activeFilters = filters || {};
+  // Програма задає роль і тут: збережений «Тип профілю» адміна з вимкненими
+  // СМ відкидав усіх кандидаток програми СМ ще до звірки з вимогами.
+  const activeFilters = narrowRoleToProgramType(filters || {});
   const roleIndexFilterMeta = isMatchingFilterGroupActive(activeFilters.userRole)
     ? buildAllowedRoleIdsFromSearchKey(activeFilters.userRole, roleIndexSets)
     : null;

@@ -41,8 +41,10 @@ describe('фільтр «Тип профілю» в рядках стрічки'
 
   it('звужує лише стрічку, а «Показати N» рахує ті самі рядки', () => {
     const matching = source();
+    // Під «Кандидатками під програму» роль задає програма (`narrowRoleToProgramType`).
+    expect(matching).toContain('const effectiveRoleFilter = narrowRoleToProgramType(filters || {}).userRole;');
     expect(matching).toContain(
-      "const feedRoleFilter = viewMode === 'default' && !isSearching && hasActiveSearchKeyFilterGroup(filters?.userRole)",
+      "const feedRoleFilter = viewMode === 'default' && !isSearching && hasActiveSearchKeyFilterGroup(effectiveRoleFilter)",
     );
     expect(matching).toContain('listed.filter(role => allowsAnketaRole(feedRoleFilter, role))');
     expect(matching).toContain('cardHasAnketaForRoleFilter(projection, role => allowsAnketaRole(feedRoleFilter, role), feedRowHiddenRoles)');
