@@ -151,7 +151,7 @@
         ".read": "auth != null && (auth.uid == $uid || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || ((root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching'))) || (root.child('matchingCards').child($uid).child('feedDate').isString() && root.child('matchingCards').child($uid).child('feedDate').val().matches(/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/)) || (root.child('matchingCards').child($uid).child('audience').val() == 'liked' && root.child('multiData').child('favorites').child($uid).child(auth.uid).exists()))",
         ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))",
         "$field": {
-          ".validate": "!($field == 'phone' || $field == 'email' || $field == 'instagram' || $field == 'facebook' || $field == 'telegram' || $field == 'telegram2' || $field == 'tiktok' || $field == 'vk' || $field == 'otherLink' || $field == 'other' || $field == 'ameblo' || $field == 'linkedin' || $field == 'twitter' || $field == 'youtube' || $field == 'skype' || $field == 'whatsapp' || $field == 'viber' || $field == 'line' || $field == 'website' || $field == 'street' || $field == 'password' || $field == 'accessLevel' || $field == 'canCreateProfiles' || $field == 'additionalAccessRules' || $field == 'multiDataAccessUserIds' || $field == 'multiDataSourceUserIds' || $field == 'godMode' || $field == 'deviceWidth' || $field == 'deviceHeight' || $field == 'deviceResize' || $field == 'getInTouch' || $field == 'publish' || $field == 'lastLogin' || $field == 'lastLogin2' || $field == 'lastAction' || $field == 'cycleStatus' || $field == 'lastCycle' || $field == 'registrationDate')"
+          ".validate": "!($field == 'phone' || $field == 'email' || $field == 'instagram' || $field == 'facebook' || $field == 'telegram' || $field == 'telegram2' || $field == 'tiktok' || $field == 'vk' || $field == 'otherLink' || $field == 'other' || $field == 'ameblo' || $field == 'linkedin' || $field == 'twitter' || $field == 'youtube' || $field == 'skype' || $field == 'whatsapp' || $field == 'viber' || $field == 'line' || $field == 'website' || $field == 'street' || $field == 'password' || $field == 'accessLevel' || $field == 'canCreateProfiles' || $field == 'screenAccess' || $field == 'additionalAccessRules' || $field == 'multiDataAccessUserIds' || $field == 'multiDataSourceUserIds' || $field == 'godMode' || $field == 'deviceWidth' || $field == 'deviceHeight' || $field == 'deviceResize' || $field == 'getInTouch' || $field == 'publish' || $field == 'lastLogin' || $field == 'lastLogin2' || $field == 'lastAction' || $field == 'cycleStatus' || $field == 'lastCycle' || $field == 'registrationDate')"
         }
       }
     },
@@ -217,6 +217,9 @@
         },
         "accessLevel": {
           ".validate": "auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (data.exists() && newData.val() == data.val())"
+        },
+        "screenAccess": {
+          ".validate": "(auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (data.exists() && newData.val() == data.val())) && newData.isString() && newData.val().length <= 200 && newData.val().matches(/^([a-z]+(,[a-z]+)*)?$/)"
         },
         "canCreateProfiles": {
           ".validate": "auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (data.exists() && newData.val() == data.val())"
@@ -302,7 +305,7 @@
             ".validate": "!newData.exists() || (newData.hasChildren(['cardId', 'operation', 'createdBy', 'status', 'revision']) && newData.child('cardId').val() == $cardId && newData.child('createdBy').val() == $creatorUid)",
             "data": {
               "$field": {
-                ".validate": "auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || !($field == 'accessLevel' || $field == 'canCreateProfiles' || $field == 'additionalAccessRules' || $field == 'multiDataAccessUserIds')"
+                ".validate": "auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || !($field == 'accessLevel' || $field == 'canCreateProfiles' || $field == 'screenAccess' || $field == 'additionalAccessRules' || $field == 'multiDataAccessUserIds')"
               }
             }
           }
@@ -353,10 +356,11 @@
         }
       },
       "flow": {
+        ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1')",
         "$ownerId": {
-          ".read": "auth != null && auth.uid == $ownerId",
+          ".read": "auth != null && (auth.uid == $ownerId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1')",
           "$userId": {
-            ".write": "auth != null && auth.uid == $ownerId"
+            ".write": "auth != null && (auth.uid == $ownerId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')"
           }
         }
       },

@@ -37,7 +37,7 @@ import {
 } from 'utils/multiAccountEdits';
 import { PROFILE_BACKEND_REFRESH_EVENT } from 'utils/profileBackendRefresh';
 import { loadProfileMutationHistory } from 'utils/profileMutations';
-import { isAdminUid } from 'utils/accessLevel';
+import { SCREEN_ACCESS_OPTIONS, encodeScreenAccess, isAdminUid, parseScreenAccess } from 'utils/accessLevel';
 import {
   PROFILE_DRAFT_SAVED_EVENT,
   describeDraftHistoryChange,
@@ -148,6 +148,7 @@ const COMPACT_PROFILE_FIELDS = new Set(['birth', 'region', 'city', 'height', 'we
 const PROFILE_FORM_TECHNICAL_FIELDS = new Set([
   'accessLevel',
   'canCreateProfiles',
+  'screenAccess',
   'additionalAccessRules',
   MULTI_DATA_ACCESS_FIELD,
 ]);
@@ -2063,6 +2064,17 @@ export const ProfileForm = ({
       ];
     }
 
+    if (canManageAccessLevel && !next.some(field => field.name === 'screenAccess')) {
+      next = [
+        ...next,
+        {
+          name: 'screenAccess',
+          placeholder: 'додаткові екрани',
+          ukrainianHint: 'які додаткові екрани (Flow) відкрити користувачу',
+        },
+      ];
+    }
+
     if (canManageAccessLevel && !next.some(field => field.name === ADDITIONAL_ACCESS_FIELD)) {
       next = [
         ...next,
@@ -3389,6 +3401,43 @@ ${entries.join('\n')}`;
                       <option value="false">Створення карток заборонено</option>
                       <option value="true">Дозволити створення карток</option>
                     </AccessLevelSelect>
+                  ) : field.name === 'screenAccess' ? (
+                    // Галочки, а не текст: код екрана, якого немає в переліку,
+                    // нічого не відкрив би, а одруківка мовчки лишила б людину
+                    // без екрана. Зберігається одразу — як і решта прав, і
+                    // лише повним адміном (правило `screenAccess` у базі).
+                    <ScreenAccessList role="group" aria-label="Додаткові екрани">
+                      {SCREEN_ACCESS_OPTIONS.map(option => {
+                        const selected = parseScreenAccess(state[field.name]);
+                        const checked = selected.includes(option.code);
+                        return (
+                          <ScreenAccessOption key={option.code}>
+                            <input
+                              type="checkbox"
+                              name={`${field.name}-${option.code}`}
+                              data-testid={`screen-access-${option.code}`}
+                              checked={checked}
+                              onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
+                              onChange={e => {
+                                const nextCodes = e.target.checked
+                                  ? [...selected, option.code]
+                                  : selected.filter(code => code !== option.code);
+                                const value = encodeScreenAccess(nextCodes);
+                                setState(prevState => {
+                                  const updated = { ...prevState, [field.name]: value };
+                                  submitWithNormalization(updated, 'overwrite');
+                                  return updated;
+                                });
+                              }}
+                            />
+                            <span>
+                              <strong>{option.label}</strong>
+                              {option.description ? ` — ${option.description}` : ''}
+                            </span>
+                          </ScreenAccessOption>
+                        );
+                      })}
+                    </ScreenAccessList>
                   ) : field.name === ADDITIONAL_ACCESS_FIELD ? (
                     <>
                       <InputField
@@ -4306,6 +4355,30 @@ const InputField = styled.input`
   &::placeholder {
     color: ${uiTokens.colors.textSecondary};
     opacity: 0.7;
+  }
+`;
+
+const ScreenAccessList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+`;
+
+const ScreenAccessOption = styled.label`
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 32px;
+  color: ${uiTokens.colors.textPrimary};
+  font-size: ${uiTokens.typography.fontSizeMd};
+  cursor: pointer;
+
+  input {
+    margin-top: 3px;
+    flex: 0 0 auto;
   }
 `;
 

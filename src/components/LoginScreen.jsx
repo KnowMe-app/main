@@ -26,6 +26,7 @@ import {
   persistAccountProfile,
 } from './authProfilePersistence';
 import { readReturnToFromState } from 'utils/authRedirect';
+import { resolveAccess, resolveFlowHomeRoute } from 'utils/accessLevel';
 import { requestPasswordResetEmail, requestVerificationEmail } from 'utils/emailVerification';
 import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
 import { APP_LANGUAGES, getLanguageNativeName } from 'utils/locales';
@@ -688,7 +689,14 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       timer = setTimeout(() => resolve(MY_PROFILE_ROUTE), LANDING_ROUTE_TIMEOUT_MS);
     });
     const read = fetchUserById(uid)
-      .then(profile => (profile?.publish === true ? MATCHING_ROUTE : MY_PROFILE_ROUTE))
+      // Не-адмін з відкритим Flow починає з Flow (`resolveFlowHomeRoute`), як і
+      // ярлик з головного екрана; решта — як було.
+      .then(profile => resolveFlowHomeRoute(resolveAccess({
+        uid,
+        accessLevel: profile?.accessLevel,
+        canCreateProfiles: profile?.canCreateProfiles,
+        screenAccess: profile?.screenAccess || '',
+      })) || (profile?.publish === true ? MATCHING_ROUTE : MY_PROFILE_ROUTE))
       .catch(() => MY_PROFILE_ROUTE);
     try {
       return await Promise.race([read, timeout]);

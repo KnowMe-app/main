@@ -134,6 +134,7 @@ const normalizeAccess = access => ({
   canAccessAdd: Boolean(access?.canAccessAdd),
   canAccessMatching: Boolean(access?.canAccessMatching),
   canCreateProfiles: Boolean(access?.canCreateProfiles),
+  canAccessFlow: Boolean(access?.canAccessFlow),
 });
 
 export const ProfileDotsMenu = ({
@@ -252,7 +253,8 @@ export const ProfileDotsMenu = ({
       description: uiText(isAdmin ? 'Перевірка нових карток' : 'Ваші картки та створення нових', language),
       icon: <MdPersonAddAlt1 />,
     },
-    ...(isAdmin ? [{ path: '/flow', label: 'Flow', icon: <FaProjectDiagram /> }] : []),
+    // Flow — і тим, кому його відкрив адмін (`screenAccess`).
+    ...(isAdmin || resolvedAccess.canAccessFlow ? [{ path: '/flow', label: 'Flow', icon: <FaProjectDiagram /> }] : []),
     ...(isAdmin ? [{ path: '/notifications', label: 'Сповіщення', description: 'Що роблять користувачі — у Telegram чи push', icon: <FaBell /> }] : []),
     ...(isAdmin ? [{ path: '/budget', label: 'Budget', description: 'Program budget and other expenses', icon: <FaEuroSign /> }] : []),
     ...(isAdmin ? [{ path: '/invoices', label: 'Invoices', description: 'Create and export client invoices', icon: <FaFileInvoiceDollar /> }] : []),

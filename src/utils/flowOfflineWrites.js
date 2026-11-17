@@ -18,6 +18,8 @@
  */
 
 const CACHE_KEY_PREFIX = 'km.flowData.v1:';
+// Той самий префікс, що в `utils/flowHistory` (імпорт звідти дав би цикл).
+const FLOW_HISTORY_KEY_PREFIX = 'km.flowHistory.v1:';
 
 export const flowRootPath = ownerId => `multiData/flow/${ownerId}`;
 
@@ -127,8 +129,10 @@ export const clearFlowCache = ownerId => {
       localStorage.removeItem(cacheKey(ownerId));
       return;
     }
+    // Без власника — вихід з акаунта: разом із памʼяттю Flow іде й історія
+    // відміни (`utils/flowHistory`), у ній ті самі суми й описи.
     Object.keys(localStorage)
-      .filter(key => key.startsWith(CACHE_KEY_PREFIX))
+      .filter(key => key.startsWith(CACHE_KEY_PREFIX) || key.startsWith(FLOW_HISTORY_KEY_PREFIX))
       .forEach(key => localStorage.removeItem(key));
   } catch {
     // нічого
