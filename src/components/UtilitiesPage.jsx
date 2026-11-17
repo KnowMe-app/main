@@ -1458,7 +1458,8 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
 
 /*
  * Комуналка адміна з вибором учасника — як Flow (`FlowScreen`): адмін обирає
- * того, у кого комуналка заповнена, і бачить та править саме її. Поки обрано
+ * того, у кого комуналка заповнена або кому видано екран (тоді — «ще
+ * порожня», і адмін заводить квартири сам), і бачить та править саме її. Поки обрано
  * учасника, своя комуналка адміна не показується й не пишеться: менеджер
  * монтується наново з ключем власника. Вибір не памʼятається — відкриття
  * завжди починається зі своєї.
@@ -1486,7 +1487,7 @@ const UtilitiesScreen = ({ ownerId: viewerId }) => {
 
   return (
     <>
-      {isAdmin && (owners.length > 0 || ownersError || selectedOwnerId) && (
+      {isAdmin && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 720, margin: '0 auto', padding: '10px 12px 0', boxSizing: 'border-box' }}>
           <select
             aria-label="Чию комуналку показати"
@@ -1496,7 +1497,7 @@ const UtilitiesScreen = ({ ownerId: viewerId }) => {
             style={{ width: '100%', minHeight: 38, padding: '6px 10px', border: '1px solid var(--km-border, #d7d7d7)', borderRadius: 10, background: 'var(--km-card, #fff)', color: 'var(--km-text, #222)', font: 'inherit', fontSize: 14 }}
           >
             <option value="">Моя комуналка</option>
-            {owners.map(owner => <option key={owner.uid} value={owner.uid}>{owner.name || owner.uid}</option>)}
+            {owners.map(owner => <option key={owner.uid} value={owner.uid}>{owner.name || owner.uid}{owner.empty ? ' — ще порожня' : ''}</option>)}
           </select>
           {ownersError && <small>{ownersError}</small>}
           {selectedOwnerId && (

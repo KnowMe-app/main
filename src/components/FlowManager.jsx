@@ -3063,6 +3063,7 @@ const FlowScreen = ({ ownerId: viewerId }) => {
             {owners.map(owner => (
               <option key={owner.uid} value={owner.uid}>
                 {owner.name || owner.uid}
+                {owner.empty ? ' — ще порожній' : ''}
               </option>
             ))}
           </OwnerSelect>
