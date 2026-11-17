@@ -472,12 +472,27 @@ export const RowList = styled.ul`
   list-style: none;
 `;
 
+// Рядок запису. Звичайно — колонки «дата | опис | сума»; на збільшеному
+// тексті (`$stacked`) колонки лишали опису смужку, і «−112 орен+комун Сер»
+// ламалось на три рядки (скрин 17.11), тож там угорі дата й сума, а опис —
+// під ними на всю ширину. Дії рядка — одна кнопка «⋯» (`$withMore`), а не дві
+// кнопки, що на великому тексті ставали одна під одну й робили рядок на пів
+// екрана. Між записами — волосяна лінія: без неї на довгому списку не видно,
+// де кінчається один запис.
 export const EntryRow = styled.li`
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-columns: ${({ $stacked, $withMore }) =>
+    $stacked
+      ? `minmax(0, 1fr) auto${$withMore ? ' auto' : ''}`
+      : `44px minmax(0, 1fr) auto${$withMore ? ' auto' : ''}`};
+  grid-template-areas: ${({ $stacked, $withMore }) =>
+    $stacked
+      ? `"date amount${$withMore ? ' more' : ''}" "text text${$withMore ? ' text' : ''}"`
+      : `"date text amount${$withMore ? ' more' : ''}"`};
   column-gap: 10px;
+  row-gap: 2px;
   align-items: start;
-  padding: 6px 4px;
+  padding: 7px 4px;
   margin: 0 -4px;
   border-radius: 10px;
   cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
@@ -485,13 +500,20 @@ export const EntryRow = styled.li`
     $highlighted ? 'var(--km-danger-bg, #fbe9e7)' : $editing ? 'var(--km-fill, #f4f0ea)' : 'transparent'};
   transition: background-color 0.2s ease, transform 0.22s ${BOUNCE};
   &:active { transform: ${({ $clickable }) => ($clickable ? 'scale(0.99)' : 'none')}; }
+  & + & {
+    border-top: 1px solid var(--km-border, #f1ece5);
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
   ${({ $editing }) => $editing && css`
     grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "text";
   `}
   ${noMotion}
 `;
 
 export const RowDate = styled.span`
+  grid-area: date;
   font-size: 12px;
   color: var(--km-muted, #8a8177);
   padding-top: 2px;
@@ -499,6 +521,7 @@ export const RowDate = styled.span`
 `;
 
 export const RowBody = styled.span`
+  grid-area: text;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -509,6 +532,22 @@ export const RowText = styled.span`
   font-size: 14px;
   line-height: 1.35;
   overflow-wrap: anywhere;
+`;
+
+export const RowMoreBtn = styled.button`
+  grid-area: more;
+  align-self: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  background: var(--km-fill, #efeae3);
+  color: var(--km-text, #3d3830);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  animation: ${pop} 0.3s ${BOUNCE};
+  ${pressable}
 `;
 
 export const RowGroupTag = styled.span`
@@ -523,9 +562,13 @@ export const RowGroupTag = styled.span`
 `;
 
 export const RowAmount = styled.span`
+  grid-area: amount;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: ${({ $stacked }) => ($stacked ? 'row' : 'column')};
+  align-items: ${({ $stacked }) => ($stacked ? 'baseline' : 'flex-end')};
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0 6px;
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
@@ -536,28 +579,6 @@ export const RowAmount = styled.span`
     font-weight: 500;
     color: var(--km-muted, #8a8177);
   }
-`;
-
-export const RowActions = styled.span`
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  animation: ${rise} 0.28s ${BOUNCE} both;
-  ${noMotion}
-`;
-
-export const RowActionBtn = styled.button`
-  min-height: 30px;
-  padding: 0 10px;
-  border: none;
-  border-radius: 8px;
-  font-weight: 500;
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  background: ${({ $danger }) => ($danger ? 'var(--km-danger-bg, #fbe9e7)' : 'var(--km-fill, #efeae3)')};
-  color: ${({ $danger }) => ($danger ? 'var(--km-danger, #9a1f14)' : 'var(--km-text, #3d3830)')};
-  ${pressable}
 `;
 
 export const EditBox = styled.div`
