@@ -199,4 +199,21 @@ describe('UtilitiesPage', () => {
     expect(patch['multiData/utilities/owner-1/months/a1/2026-11/closed']).toBe(false);
     expect(Object.keys(patch)).not.toContain('multiData/utilities/owner-1/months/a1/2026-10/closed');
   });
+
+  it('імпорт неповного закритого місяця: позначки в самому обʼєкті, без шляху-предка поруч з нащадком', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('utilities-settings-open'));
+    const json = JSON.stringify({ apartments: [{ name: 'кв. 645', months: [{ month: '2026-11', closed: true, budget: 3600 }] }] });
+    const file = new File([json], 'k.json', { type: 'application/json' });
+    if (!file.text) file.text = () => Promise.resolve(json);
+    fireEvent.change(screen.getByTestId('utilities-import-input'), { target: { files: [file] } });
+    await screen.findByTestId('utilities-import-dialog');
+    fireEvent.click(screen.getByTestId('utilities-import-confirm'));
+    const patch = mockEnqueue.mock.calls.pop()[1];
+    const keys = Object.keys(patch);
+    keys.forEach(key => keys.forEach(other => expect(other.startsWith(`${key}/`)).toBe(false)));
+    expect(patch['multiData/utilities/owner-1/months/a1/2026-11']).toMatchObject({ budget: '3600', closed: false });
+    expect(patch['multiData/utilities/owner-1/months/a1/2026-11'].reopenedAt).toEqual(expect.any(Number));
+  });
 });

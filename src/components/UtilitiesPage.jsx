@@ -874,15 +874,48 @@ const withReopenedIncompleteMonths = (before, patch, ownerId) => {
       const missing = listMissing(month, computeMonth(after, month, memo));
       if (!missing.length) return;
       const base = `${root}months/${aptId}/${month.mk}`;
-      extra[`${base}/closed`] = false;
-      extra[`${base}/closedAt`] = null;
-      extra[`${base}/reopenedAt`] = now;
+      extra[base] = { closed: false, closedAt: null, reopenedAt: now };
       reopened.push(`${monthName(month.mk)} (${missing.join(', ')})`);
     });
   });
   if (!reopened.length) return patch;
   toast(`Повернуто в роботу: ${reopened.join('; ')}`, { duration: 7000 });
-  return { ...patch, ...extra };
+  return mergeIntoPatch(patch, extra);
+};
+
+/*
+ * Дописати поля місяця в латку так, щоб у ній не було шляху-предка й
+ * нащадка разом: `update` Firebase відкидає такий запис цілком («path …
+ * is ancestor of another path»). Імпорт пише місяць цілим обʼєктом
+ * (`months/{кв}/{міс}`), і позначки повернення в роботу мусять лягти в
+ * сам обʼєкт, а не поруч окремими шляхами.
+ */
+const mergeIntoPatch = (patch, monthFields) => {
+  const next = { ...patch };
+  Object.entries(monthFields).forEach(([base, fields]) => {
+    const ancestor = Object.keys(next).find(key => base === key || base.startsWith(`${key}/`));
+    if (ancestor) {
+      const value = next[ancestor];
+      if (!value || typeof value !== 'object') return;
+      const copy = JSON.parse(JSON.stringify(value));
+      const rest = base === ancestor ? [] : base.slice(ancestor.length + 1).split('/');
+      let node = copy;
+      rest.forEach(key => {
+        if (!node[key] || typeof node[key] !== 'object') node[key] = {};
+        node = node[key];
+      });
+      Object.entries(fields).forEach(([field, fieldValue]) => {
+        if (fieldValue === null) delete node[field];
+        else node[field] = fieldValue;
+      });
+      next[ancestor] = copy;
+      return;
+    }
+    Object.entries(fields).forEach(([field, fieldValue]) => {
+      next[`${base}/${field}`] = fieldValue;
+    });
+  });
+  return next;
 };
 
 // ---------- екран ----------
