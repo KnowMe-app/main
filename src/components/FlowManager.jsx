@@ -1004,7 +1004,8 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     setFlowHistory(saved);
   }, [ownerId]);
   const historyBatchRef = useRef(null);
-  const recordFlowHistory = useCallback((patch, label) => {
+  const restoreRenameSettingsRef = useRef(null);
+  const recordFlowHistory = useCallback((patch, label, extra) => {
     if (!ownerId || !patch || !Object.keys(patch).length) return;
     if (!historyBatchRef.current) {
       historyBatchRef.current = `${Date.now()}-${Math.random()}`;
@@ -1018,15 +1019,18 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       inverse,
       label,
       batch: historyBatchRef.current,
+      ...(extra || {}),
     }));
   }, [commitFlowHistory, ownerId]);
 
   const applyFlowWrite = useCallback(
-    (result, failureText) => {
+    (result, failureText, historyExtra) => {
       if (!result) return;
       // Службове (перенесення старих записів без дати) в історію не йде:
       // відмінити можна лише те, що людина зробила сама.
-      if (FLOW_HISTORY_LABELS[failureText]) recordFlowHistory(result.patch, FLOW_HISTORY_LABELS[failureText]);
+      if (FLOW_HISTORY_LABELS[failureText]) {
+        recordFlowHistory(result.patch, FLOW_HISTORY_LABELS[failureText], historyExtra);
+      }
       applyLocalFlowPatch(result.patch);
       trackFlowDelivery(result.delivered, failureText);
     },
@@ -1046,6 +1050,11 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       : { undo: [...history.undo, entry], redo: rest });
     const result = applyFlowRawPatch(ownerId, patch);
     applyLocalFlowPatch(result.patch);
+    // Перейменування несе й налаштування, що йшли за назвою групи (група
+    // надходжень, фільтр): без них відмінене «Оренда» → «Rent» повертало
+    // записи, а позначка надходжень лишалась на новій, уже порожній назві —
+    // і надходження рахувались витратами.
+    if (entry.rename) restoreRenameSettingsRef.current?.(entry.rename, direction);
     trackFlowDelivery(result.delivered, direction === 'undo' ? 'Не вдалося відмінити' : 'Не вдалося повторити');
     toast.success(`${direction === 'undo' ? 'Відмінено' : 'Повторено'}: ${entry.label || 'зміна'}`, {
       id: 'flow-history',
@@ -1206,6 +1215,14 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       else localStorage.removeItem(key);
     } catch (error) {
       console.error('Unable to persist flow setting', error);
+    }
+  };
+  restoreRenameSettingsRef.current = (rename, direction) => {
+    const target = direction === 'undo' ? rename.from : rename.to;
+    if (rename.income) selectIncomeGroup(target);
+    if (rename.filter) {
+      setFilterGroup(target);
+      persistSetting(flowFilterStorageKey(ownerId), target);
     }
   };
   const selectIncomeGroup = group => {
@@ -1589,7 +1606,16 @@ export const FlowManager = ({ ownerId, viewerId }) => {
           sourceData: flowDataRef.current,
         });
         if (renamed?.reload) await reload();
-        else applyFlowWrite(renamed, 'Групу не перейменовано');
+        else {
+          applyFlowWrite(renamed, 'Групу не перейменовано', {
+            rename: {
+              from: normalizedSource,
+              to: normalizedTarget,
+              income: normalizedSource === incomeGroup,
+              filter: filterGroup === normalizedSource,
+            },
+          });
+        }
       }
 
       setLocalCategories(prev => {

@@ -41,6 +41,16 @@ describe('flowHistory', () => {
     expect(history.undo).toHaveLength(2);
   });
 
+  it('перейменування несе в кроці назви й налаштування, що йшли за групою', () => {
+    const rename = { from: 'Rent', to: 'Оренда', income: true, filter: false };
+    const history = pushFlowHistoryStep({ undo: [], redo: [] }, {
+      patch: { a: 1 }, inverse: { a: null }, label: 'перейменування групи', batch: 'b', rename,
+    });
+    expect(history.undo[0].rename).toEqual(rename);
+    writeFlowHistory('u1', history);
+    expect(readFlowHistory('u1').undo[0].rename).toEqual(rename);
+  });
+
   it('на пристрої — три дні, старіше відкидається', () => {
     const now = 1_800_000_000_000;
     writeFlowHistory('u1', {
