@@ -5,8 +5,14 @@ import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { InfoModal } from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
-import { FiSearch, FiSettings } from 'react-icons/fi';
+import { FiCornerUpLeft, FiCornerUpRight, FiSearch, FiSettings } from 'react-icons/fi';
 import { buildFlowImportText } from 'utils/flowImport';
+import {
+  buildInverseFlowPatch,
+  pushFlowHistoryStep,
+  readFlowHistory,
+  writeFlowHistory,
+} from 'utils/flowHistory';
 import {
   DEFAULT_FLOW_CURRENCY_LABEL_MODE,
   FLOW_CURRENCY_LABEL_MODES,
@@ -301,6 +307,16 @@ export const getFlowRowDisplayCurrency = (row, defaultCurrency = DEFAULT_FLOW_DI
   return getValidFlowDisplayCurrency(defaultCurrency);
 };
 const FLOW_CURRENCY_SIGNS = { usd: '$', eur: '€' };
+// Які записи потрапляють в історію відміни і як вони звуться в тості.
+const FLOW_HISTORY_LABELS = {
+  'Запис Flow не збережено': 'новий запис',
+  'Запис не оновлено': 'правка запису',
+  'Запис не видалено': 'видалення запису',
+  'Платіж не перенесено': 'перенесення запису',
+  'Групу не видалено': 'видалення групи',
+  'Групу не перейменовано': 'перейменування групи',
+  'Flow не очищено': 'очищення Flow',
+};
 const FLOW_CURRENCY_LABEL_TITLES = { none: 'Без валюти', usd: '$', eur: '€', both: '$ і €' };
 
 // Збережений курс рядка — четверта частина суми: «50.75» (долар) або «50.75EUR».
@@ -780,8 +796,20 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   const [entryInput, setEntryInput] = useState('');
   const [categoryInput, setCategoryInput] = useState('');
   const [subCategoryInput, setSubCategoryInput] = useState('');
-  const [selectedGroup, setSelectedGroup] = useState('');
-  const [selectedSubgroup, setSelectedSubgroup] = useState('');
+  // Група запису читається з пристрою вже в першому рендері: з порожнім
+  // стартом записувачі памʼяті встигали покласти туди «general» раніше, ніж
+  // ефект відновлення її прочитав (у режимі розробки ефекти йдуть двічі), і
+  // після перезавантаження над полем стояло «Група: general».
+  const [initialCategory] = useState(() => {
+    try {
+      const saved = normalizeCategoryPath(localStorage.getItem(flowLastCategoryStorageKey(ownerId)));
+      return saved ? splitCategoryPath(saved) : { group: '', subgroup: '' };
+    } catch {
+      return { group: '', subgroup: '' };
+    }
+  });
+  const [selectedGroup, setSelectedGroup] = useState(initialCategory.group);
+  const [selectedSubgroup, setSelectedSubgroup] = useState(initialCategory.subgroup);
   const [localCategories, setLocalCategories] = useState([DEFAULT_FLOW_CATEGORY]);
   const [loading, setLoading] = useState(false);
   const [loadedFromServer, setLoadedFromServer] = useState(false);
@@ -961,14 +989,73 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     [ownerId, reload]
   );
 
+  // Відміна й повтор (`utils/flowHistory`): кожна дія людини кладе крок з
+  // латкою й латкою навпаки, порахованою з даних до правки. Записи однієї дії
+  // (кілька рядків, імпорт) приходять в одному такті й зливаються в крок.
+  const [flowHistory, setFlowHistory] = useState({ undo: [], redo: [] });
+  const flowHistoryRef = useRef(flowHistory);
+  flowHistoryRef.current = flowHistory;
+  useEffect(() => {
+    setFlowHistory(readFlowHistory(ownerId));
+  }, [ownerId]);
+  const commitFlowHistory = useCallback(next => {
+    const saved = writeFlowHistory(ownerId, next);
+    flowHistoryRef.current = saved;
+    setFlowHistory(saved);
+  }, [ownerId]);
+  const historyBatchRef = useRef(null);
+  const recordFlowHistory = useCallback((patch, label) => {
+    if (!ownerId || !patch || !Object.keys(patch).length) return;
+    if (!historyBatchRef.current) {
+      historyBatchRef.current = `${Date.now()}-${Math.random()}`;
+      queueMicrotask(() => {
+        historyBatchRef.current = null;
+      });
+    }
+    const inverse = buildInverseFlowPatch(flowDataRef.current, patch, ownerId);
+    commitFlowHistory(pushFlowHistoryStep(flowHistoryRef.current, {
+      patch,
+      inverse,
+      label,
+      batch: historyBatchRef.current,
+    }));
+  }, [commitFlowHistory, ownerId]);
+
   const applyFlowWrite = useCallback(
     (result, failureText) => {
       if (!result) return;
+      // Службове (перенесення старих записів без дати) в історію не йде:
+      // відмінити можна лише те, що людина зробила сама.
+      if (FLOW_HISTORY_LABELS[failureText]) recordFlowHistory(result.patch, FLOW_HISTORY_LABELS[failureText]);
       applyLocalFlowPatch(result.patch);
       trackFlowDelivery(result.delivered, failureText);
     },
-    [applyLocalFlowPatch, trackFlowDelivery]
+    [applyLocalFlowPatch, recordFlowHistory, trackFlowDelivery]
   );
+
+  const stepFlowHistory = useCallback(direction => {
+    if (!ownerId) return;
+    const history = flowHistoryRef.current;
+    const from = direction === 'undo' ? history.undo : history.redo;
+    const entry = from[from.length - 1];
+    if (!entry) return;
+    const patch = direction === 'undo' ? entry.inverse : entry.patch;
+    const rest = from.slice(0, -1);
+    commitFlowHistory(direction === 'undo'
+      ? { undo: rest, redo: [...history.redo, entry] }
+      : { undo: [...history.undo, entry], redo: rest });
+    const result = applyFlowRawPatch(ownerId, patch);
+    applyLocalFlowPatch(result.patch);
+    trackFlowDelivery(result.delivered, direction === 'undo' ? 'Не вдалося відмінити' : 'Не вдалося повторити');
+    toast.success(`${direction === 'undo' ? 'Відмінено' : 'Повторено'}: ${entry.label || 'зміна'}`, {
+      id: 'flow-history',
+      // Знизу й коротко: угорі тост лягав на самі кнопки «Назад / Вперед», і
+      // другий дотик підряд не влучав (перевірено наживо).
+      position: 'bottom-center',
+      duration: 1600,
+      style: { marginBottom: 'var(--km-bottom-nav-h, 0px)' },
+    });
+  }, [applyLocalFlowPatch, commitFlowHistory, ownerId, trackFlowDelivery]);
 
   const offlineSuffix = () =>
     typeof navigator !== 'undefined' && navigator.onLine === false
@@ -1177,6 +1264,23 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
+  // Ctrl+Z / Ctrl+Y (і Ctrl+Shift+Z) — як у Word, але не в полі набору: там
+  // вони лишаються відміною набраного тексту.
+  const stepFlowHistoryRef = useRef(null);
+  useEffect(() => {
+    const onKeyDown = event => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const target = event.target;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      const key = String(event.key || '').toLowerCase();
+      const direction = key === 'y' || (key === 'z' && event.shiftKey) ? 'redo' : key === 'z' ? 'undo' : '';
+      if (!direction || !stepFlowHistoryRef.current) return;
+      event.preventDefault();
+      stepFlowHistoryRef.current(direction);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
   const entryCollapseTimerRef = useRef(0);
   useEffect(() => () => window.clearTimeout(entryCollapseTimerRef.current), []);
 
@@ -1185,6 +1289,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   // інспектор читає), і лише після відповіді бази: памʼять пристрою могла
   // нести рядок, якого в базі вже немає, і перенесення його воскресило б.
   const canWriteFlow = Boolean(ownerId) && (!viewerId || viewerId === ownerId || ADMIN_UIDS.includes(viewerId));
+  stepFlowHistoryRef.current = canWriteFlow ? stepFlowHistory : null;
   const legacyUndatedMovedRef = useRef(false);
   useEffect(() => {
     if (!canWriteFlow || !loadedFromServer || legacyUndatedMovedRef.current) return;
@@ -1354,6 +1459,10 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   }, [ownerId, selectedCategoryPath]);
 
   useEffect(() => {
+    // Поки груп з бази чи памʼяті ще немає, збережена група запису не
+    // «зникла» — її просто ще не прочитали; інакше після перезавантаження
+    // вона мовчки ставала «general».
+    if (!categoriesFromDb.length && !loadedFromServer) return;
     if (
       allCategories.length > 0 &&
       (!selectedCategoryPath || !allCategories.includes(selectedCategoryPath))
@@ -1367,7 +1476,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       setSelectedGroup(fallbackPath.group);
       setSelectedSubgroup(fallbackPath.subgroup);
     }
-  }, [allCategories, categoriesFromDb, selectedCategoryPath]);
+  }, [allCategories, categoriesFromDb, loadedFromServer, selectedCategoryPath]);
 
   useEffect(() => {
     if (!selectedGroup) return;
@@ -2025,6 +2134,36 @@ export const FlowManager = ({ ownerId, viewerId }) => {
           A+
         </IconBtn>
         <TopSpacer />
+        {canWriteFlow && (
+          <>
+            <IconBtn
+              type="button"
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => stepFlowHistory('undo')}
+              disabled={!flowHistory.undo.length}
+              aria-label="Відмінити"
+              title={flowHistory.undo.length
+                ? `Відмінити: ${flowHistory.undo[flowHistory.undo.length - 1].label} (Ctrl+Z)`
+                : 'Нічого відміняти'}
+              data-testid="flow-undo"
+            >
+              <FiCornerUpLeft />
+            </IconBtn>
+            <IconBtn
+              type="button"
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => stepFlowHistory('redo')}
+              disabled={!flowHistory.redo.length}
+              aria-label="Повторити"
+              title={flowHistory.redo.length
+                ? `Повторити: ${flowHistory.redo[flowHistory.redo.length - 1].label} (Ctrl+Y)`
+                : 'Нічого повторювати'}
+              data-testid="flow-redo"
+            >
+              <FiCornerUpRight />
+            </IconBtn>
+          </>
+        )}
         <IconBtn
           type="button"
           onClick={() => setSettingsOpen(true)}
