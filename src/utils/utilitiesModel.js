@@ -337,6 +337,9 @@ export const listMissing = (month, computed) => {
     }
     block.zones.forEach(row => {
       const name = block.cat.name + (block.zones.length > 1 ? ` ${row.zone.label.toLowerCase()}` : '');
+      // «Було» з недописаною формулою (`10+`) лишає рядок без нарахування —
+      // закрити такий місяць означало б мовчки пропустити лічильник.
+      if (!isNumber(row.prev.value)) missing.push(`${name} — «було»`);
       if (!isNumber(row.cur)) missing.push(`${name} — показник`);
       else if (row.use < 0) missing.push(`${name} — менше, ніж було`);
       if (!isNumber(row.tariff)) missing.push(`${name} — тариф`);

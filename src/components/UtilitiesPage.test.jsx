@@ -93,6 +93,18 @@ describe('UtilitiesPage', () => {
     expect(screen.getAllByText('без змін').length).toBeGreaterThan(0);
   });
 
+  it('перенесення тапом знімає набране в полі, і blur його не затирає', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    const tariff = screen.getByTestId('utilities-field-vals.light.tDay');
+    fireEvent.change(tariff, { target: { value: '5' } });
+    fireEvent.change(tariff, { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('utilities-carry-vals.light.tDay'));
+    fireEvent.blur(tariff);
+    const writes = mockEnqueue.mock.calls.map(([, patch]) => patch['multiData/utilities/owner-1/months/a1/2026-11/vals/light/tDay']);
+    expect(writes).toEqual(['4.32']);
+  });
+
   it('рахує набране одразу, а пише на blur', async () => {
     renderPage();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());

@@ -246,7 +246,9 @@ const MonthEditor = ({
         type="button"
         $other={item.other}
         onMouseDown={e => e.preventDefault()}
-        onClick={() => onWrite(month, { [field.path]: item.value }, `Перенесено: ${field.label}`)}
+        // Набране в полі (зокрема стерте) знімається: інакше на blur воно
+        // записалось би поверх щойно перенесеного значення.
+        onClick={() => onWrite(month, { [field.path]: item.value }, `Перенесено: ${field.label}`, [editKey(month.aptId, month.mk, field.path)])}
         data-testid={`utilities-carry-${field.path}`}
       >
         ↻ {item.label}
@@ -370,7 +372,8 @@ const MonthEditor = ({
           onClick={() => onWrite(
             month,
             Object.fromEntries(empties.map(field => [field.path, String(getPath(prev, field.path))])),
-            `Перенесено без змін: ${empties.length}`
+            `Перенесено без змін: ${empties.length}`,
+            empties.map(field => editKey(month.aptId, month.mk, field.path))
           )}
         >
           <span>↻ Тарифи й суми без змін — перенести все з {MONTHS_GEN[monthIndex(prev.mk)]}</span>

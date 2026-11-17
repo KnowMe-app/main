@@ -157,6 +157,13 @@ describe('зауваження рецензії', () => {
     expect(listMissing(october, computeMonth(data, october))).toContain('коригування «Сміття» — сума');
   });
 
+  it('недописане «було вручну» не дає закрити місяць', () => {
+    const data = buildData();
+    const october = month(data, '2026-10');
+    october.vals = { ...october.vals, water: { ...october.vals.water, prev: '10+' } };
+    expect(listMissing(october, computeMonth(data, october))).toContain('Вода — «було»');
+  });
+
   it('експорт тримає колонки прибраного блоку', () => {
     const data = buildData();
     data.apartments.a645.cats.water.retiredFrom = '2026-10';
