@@ -845,6 +845,46 @@ const SettingsSheet = ({ data, apartment, currentMk, canWrite, onWriteApartment,
   );
 };
 
+// ---------- закриті місяці, що стали неповними ----------
+
+/*
+ * Правка, після якої закритий місяць неповний, повертає його в роботу. І не
+ * лише той місяць, який правили: показник місяця — «було» наступного,
+ * початкові показники — «було» першого, видалений місяць посередині міняє
+ * «було» наступного. Неповний закритий місяць мовчки рахував би лічильник чи
+ * суму нулем, і зсувались би переплати наступних місяців та експорт. Знову
+ * закрити такий місяць можна лише повним (`listMissing`).
+ */
+const withReopenedIncompleteMonths = (before, patch, ownerId) => {
+  const root = `${utilitiesRootPath(ownerId)}/`;
+  const touched = new Set();
+  Object.keys(patch).forEach(path => {
+    if (!path.startsWith(root)) return;
+    const [section, aptId] = path.slice(root.length).split('/');
+    if ((section === 'months' || section === 'apartments') && aptId) touched.add(aptId);
+  });
+  if (!touched.size) return patch;
+  const after = applyUtilitiesPatch(before, patch, ownerId);
+  const extra = {};
+  const reopened = [];
+  const now = Date.now();
+  touched.forEach(aptId => {
+    const memo = new Map();
+    listClosedMonths(after, aptId).forEach(month => {
+      const missing = listMissing(month, computeMonth(after, month, memo));
+      if (!missing.length) return;
+      const base = `${root}months/${aptId}/${month.mk}`;
+      extra[`${base}/closed`] = false;
+      extra[`${base}/closedAt`] = null;
+      extra[`${base}/reopenedAt`] = now;
+      reopened.push(`${monthName(month.mk)} (${missing.join(', ')})`);
+    });
+  });
+  if (!reopened.length) return patch;
+  toast(`Повернуто в роботу: ${reopened.join('; ')}`, { duration: 7000 });
+  return { ...patch, ...extra };
+};
+
 // ---------- екран ----------
 
 export const UtilitiesManager = ({ ownerId, viewerId }) => {
@@ -927,9 +967,12 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
 
   // ---------- запис ----------
 
-  const sendPatch = useCallback((absolutePatch, label, { record = true } = {}) => {
-    if (!canWrite || !absolutePatch || !Object.keys(absolutePatch).length) return;
+  const sendPatch = useCallback((rawPatch, label, { record = true } = {}) => {
+    if (!canWrite || !rawPatch || !Object.keys(rawPatch).length) return;
     const before = dataRef.current;
+    // Відміна й повтор повертають рівно те, що було; решта правок
+    // перевіряє закриті місяці зачеплених квартир.
+    const absolutePatch = record ? withReopenedIncompleteMonths(before, rawPatch, ownerId) : rawPatch;
     const inverse = buildInverseUtilitiesPatch(before, absolutePatch, ownerId);
     const next = applyUtilitiesPatch(before, absolutePatch, ownerId);
     dataRef.current = next;
@@ -959,22 +1002,6 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
     Object.entries(relPatch).forEach(([rel, value]) => {
       patch[`${base}/${pathToDb(rel)}`] = value === undefined ? null : value;
     });
-    // Правка закритого місяця, після якої він неповний (стерта сума,
-    // недописана формула), повертає його в роботу: інакше закритий місяць
-    // мовчки рахував би нарахування нулем, і зсувались би переплати наступних
-    // місяців та експорт. Знову закрити його можна лише повним.
-    const stored = dataRef.current?.months?.[month.aptId]?.[month.mk];
-    if (stored?.closed === true && relPatch.closed !== true) {
-      const after = applyUtilitiesPatch(dataRef.current, patch, ownerId);
-      const afterMonth = { ...(after?.months?.[month.aptId]?.[month.mk] || {}), mk: month.mk, aptId: month.aptId };
-      const missing = listMissing(afterMonth, computeMonth(after, afterMonth));
-      if (missing.length) {
-        patch[`${base}/closed`] = false;
-        patch[`${base}/closedAt`] = null;
-        patch[`${base}/reopenedAt`] = Date.now();
-        toast(`${capitalize(monthName(month.mk))} повернуто в роботу — бракує: ${missing.join(', ')}`, { duration: 6000 });
-      }
-    }
     if (clearKeys.length) {
       setLocalEdits(prev => {
         const next = { ...prev };
@@ -983,7 +1010,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
       });
     }
     sendPatch(patch, label);
-  }, [ownerId, root, sendPatch]);
+  }, [root, sendPatch]);
 
   const writeApartment = useCallback((relPatch, label) => {
     if (!aptId) return;

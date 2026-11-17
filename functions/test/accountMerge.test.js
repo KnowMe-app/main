@@ -205,3 +205,18 @@ test('лист «Акаунти обʼєднано» називає обидва
   assert.match(en.subject, /merged/);
   assert.throws(() => renderAccountMergedEmail({}));
 });
+
+test('права з переліку застосунку не переносяться, а комуналка переноситься', () => {
+  const { OWNER_MULTIDATA_NODES, PRIVILEGED_TECHNICAL_FIELDS } = require('../accountMerge');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  // Перелік прав застосунку (`PRIVILEGED_PROFILE_FIELDS`) — джерело правди:
+  // злиття не може переносити жодного з них, інакше видані адміном екрани
+  // (`screenAccess`) переходили б на чужий акаунт.
+  const source = fs.readFileSync(path.join(__dirname, '../../src/utils/accessLevel.js'), 'utf8');
+  const match = source.match(/PRIVILEGED_PROFILE_FIELDS = Object\.freeze\(\[([^\]]*)\]\)/);
+  assert.ok(match, 'PRIVILEGED_PROFILE_FIELDS not found');
+  const appFields = [...match[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+  appFields.forEach(field => assert.ok(PRIVILEGED_TECHNICAL_FIELDS.includes(field), `${field} must not be merged`));
+  assert.ok(OWNER_MULTIDATA_NODES.includes('utilities'));
+});

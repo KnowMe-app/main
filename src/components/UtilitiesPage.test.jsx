@@ -177,4 +177,26 @@ describe('UtilitiesPage', () => {
       'multiData/utilities/owner-1/months/a1/2026-11': { budget: '3600', closed: false },
     });
   });
+
+  it('правка показника, що ламає наступний закритий місяць, повертає в роботу й наступний', async () => {
+    const data = JSON.parse(JSON.stringify(DATA));
+    data.months.a1['2026-11'] = {
+      ...JSON.parse(JSON.stringify(data.months.a1['2026-10'])),
+      date: '2026-11-30',
+      vals: { ...data.months.a1['2026-10'].vals, water: { cur: '90', t: '63.792' } },
+    };
+    mockFetch.mockResolvedValue(data);
+    writeUtilitiesCache('owner-1', data);
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('utilities-history-2026-10'));
+    fireEvent.click(screen.getByTestId('utilities-edit-month'));
+    const water = screen.getAllByTestId('utilities-field-vals.water.cur').pop();
+    fireEvent.change(water, { target: { value: '95' } });
+    fireEvent.blur(water);
+    const patch = mockEnqueue.mock.calls.pop()[1];
+    expect(patch['multiData/utilities/owner-1/months/a1/2026-10/vals/water/cur']).toBe('95');
+    expect(patch['multiData/utilities/owner-1/months/a1/2026-11/closed']).toBe(false);
+    expect(Object.keys(patch)).not.toContain('multiData/utilities/owner-1/months/a1/2026-10/closed');
+  });
 });
