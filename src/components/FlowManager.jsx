@@ -1149,6 +1149,34 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   const [entryFocused, setEntryFocused] = useState(false);
   // Дії рядка («⋯» у режимі правки групи): шторка «Інша група» / «Видалити».
   const [rowMenu, setRowMenu] = useState(null);
+  // Escape закриває верхню шторку: з клавіатури інакше вийти з меню рядка
+  // можна було лише через «Перенести» чи «Видалити» — фон не фокусується.
+  const closeTopSheetRef = useRef(null);
+  closeTopSheetRef.current = () => {
+    if (rowMenu) {
+      setRowMenu(null);
+      return true;
+    }
+    if (groupPicker) {
+      setGroupPicker(null);
+      cancelCategoryRename();
+      setIsCategoryEditMode(false);
+      return true;
+    }
+    if (settingsOpen) {
+      setSettingsOpen(false);
+      return true;
+    }
+    return false;
+  };
+  useEffect(() => {
+    const onKeyDown = event => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (closeTopSheetRef.current?.()) event.preventDefault();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
   const entryCollapseTimerRef = useRef(0);
   useEffect(() => () => window.clearTimeout(entryCollapseTimerRef.current), []);
 
@@ -2379,6 +2407,12 @@ export const FlowManager = ({ ownerId, viewerId }) => {
         <Backdrop onClick={() => setRowMenu(null)}>
           <Sheet role="dialog" aria-label="Дії з рядком" onClick={e => e.stopPropagation()} data-testid="flow-row-menu">
             <SheetGrip />
+            <SheetHead>
+              <h2>Запис</h2>
+              <SmallTextBtn type="button" autoFocus onClick={() => setRowMenu(null)} data-testid="flow-row-menu-close">
+                Скасувати
+              </SmallTextBtn>
+            </SheetHead>
             <DialogText>
               <span>
                 {formatShortDate(rowMenu.row.date, true)} · {formatFlowMoney(rowAmountNumber(rowMenu.row))} грн · {rowMenu.row.description}
