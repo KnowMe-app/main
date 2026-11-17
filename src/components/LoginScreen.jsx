@@ -4,7 +4,7 @@ import BrandLoader from './BrandLoader';
 import { FaUser, FaLock, FaEye, FaEyeSlash, FaGlobe, FaChevronDown, FaTelegramPlane, FaEnvelope } from 'react-icons/fa';
 import { FcGoogle } from 'react-icons/fc';
 import toast from 'react-hot-toast';
-import { auth, fetchUserById, hasAccountRegistration } from './config';
+import { auth, fetchUserById, hasAccountRegistration, refreshOwnProfileAfterMerge } from './config';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -37,7 +37,7 @@ import {
   buildTelegramLoginLink,
   buildTelegramProfileData,
   clearTelegramLoginAttempt,
-  readTelegramCodeFromHash,
+  readTelegramHashParams,
   createTelegramLoginNonce,
   isTelegramLoginAvailable,
   pollTelegramLogin,
@@ -47,6 +47,7 @@ import {
   TELEGRAM_LOGIN_TTL_MS,
   TELEGRAM_POLL_INTERVAL_MS,
 } from 'utils/telegramAuth';
+import { settlePrimaryAccount } from 'utils/accountLinks';
 import { buildGoogleProfileData, createGoogleAuthProvider, isGoogleSignInCancelled } from 'utils/googleAuth';
 
 const MATCHING_ROUTE = '/matching';
@@ -535,6 +536,16 @@ const LoadingOverlay = styled.div`
 // (`resolveLandingRoute`).
 const LANDING_ROUTE_TIMEOUT_MS = 4000;
 
+// Хто входить кнопкою бота: імʼя, нік і останні цифри номера — досить, щоб
+// людина впізнала чужий акаунт, і без повного номера на екрані.
+const describeTelegramAccount = (profile = {}) => {
+  const name = [profile.firstName, profile.lastName].map(part => String(part || '').trim()).filter(Boolean).join(' ');
+  const username = String(profile.username || '').trim().replace(/^@/, '');
+  const phone = String(profile.phone || '').replace(/\D/g, '');
+  const parts = [name, username && `@${username}`, phone && `…${phone.slice(-4)}`].filter(Boolean);
+  return parts.length ? `«${parts.join(' · ')}»` : '';
+};
+
 export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   const { language, setLanguage } = useAppSettings();
   const tr = (text, vars) => uiText(text, language, vars);
@@ -590,12 +601,14 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
   if (telegramAttempt) lastTelegramViewRef.current = { attempt: telegramAttempt, codeRequested: telegramCodeRequested };
   const shownTelegramAttempt = telegramAttempt || lastTelegramViewRef.current.attempt;
   const shownTelegramCodeRequested = telegramAttempt ? telegramCodeRequested : lastTelegramViewRef.current.codeRequested;
-  // Код з кнопки бота «Увійти в KnowMe» (`#tgcode=`). Підставляється, щойно
-  // функція скаже, що номер прийшов і чекає коду; без спроби в цьому браузері
-  // він не робить нічого.
-  const telegramHashCodeRef = useRef(null);
-  if (telegramHashCodeRef.current === null) {
-    telegramHashCodeRef.current = telegramAvailable ? readTelegramCodeFromHash() : '';
+  // Код з кнопки бота «Увійти в KnowMe» (`#tgcode=`) і ключ спроби (`#tgk=`).
+  // З ключем вхід завершується одразу, хай би в цьому браузері спроби й не
+  // було (вбудований браузер Telegram на Android); без ключа (старі
+  // повідомлення бота) код підставляється, щойно функція скаже, що номер
+  // прийшов і чекає коду.
+  const telegramHashRef = useRef(null);
+  if (telegramHashRef.current === null) {
+    telegramHashRef.current = telegramAvailable ? readTelegramHashParams() : { code: '', key: '' };
   }
 
   const handleCheckboxChange = () => {
@@ -694,6 +707,10 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
 
   const navigateAfterAuth = async ({ registered = false } = {}) => {
     navigatedAfterAuthRef.current = true;
+    // Вхід міг відкрити другорядний акаунт (`utils/accountLinks`): тоді сесія
+    // перемикається на головний ще до вибору екрана. Щойно зареєстрований
+    // акаунт другорядним бути не може — йому виклик не потрібен.
+    if (!registered) await settlePrimaryAccount(auth, { onMerged: refreshOwnProfileAfterMerge });
     const target = returnTo || (registered ? MY_PROFILE_ROUTE : await resolveLandingRoute(auth.currentUser?.uid));
     navigate(target, { replace: true });
   };
@@ -1009,6 +1026,10 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
         return;
       }
       resetTelegramAttempt();
+      if (result?.status === 'claimed') {
+        toast(tr('Вхід через Telegram завершено в іншому браузері. Щоб увійти тут, натисніть «Увійти через Telegram» ще раз'));
+        return;
+      }
       toast.error(tr('Час на вхід через Telegram минув. Спробуйте ще раз'));
     } catch (error) {
       console.error('[telegram] код не перевірено', error);
@@ -1047,16 +1068,70 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     handleTelegramCodeChange(match[1].replace(/\D/g, ''));
   };
 
+  // Вхід кнопкою бота: ключ спроби й код з адреси. Роль — зі спроби цього
+  // браузера, коли вона є (вкладка «Створити акаунт»); у чужому браузері її
+  // немає, і новий акаунт спитає роль тут же (`telegramSignup`).
+  //
+  // Два запобіжники, бо посилання може надіслати й чужа людина (login CSRF:
+  // своє посилання з бота — і браузер жертви сидить у чужому акаунті, куди
+  // вона потім пише свою анкету): посилання не діє там, де вже увійшли (сесію
+  // воно не підмінює), а перед входом форма показує, у який акаунт Telegram
+  // входимо, і чекає «Увійти» (`telegramLinkConfirm`).
+  const [telegramLinkConfirm, setTelegramLinkConfirm] = useState(null);
+  const claimTelegramFromLink = async ({ code, key }) => {
+    setIsLoading(true);
+    try {
+      const result = await pollTelegramLogin(auth.app, '', code, { key });
+      if (result?.status === 'ready' && result.token) {
+        setTelegramLinkConfirm({ result, role: telegramAttemptRef.current?.role || '' });
+        return;
+      }
+      if (result?.status === 'wrong-code') {
+        toast.error(tr('Невірний код. Залишилось спроб: {count}', { count: result.attemptsLeft }));
+        return;
+      }
+      // Спробу вже забрано (кнопку натиснули вдруге) чи строк минув.
+      toast.error(tr('Час на вхід через Telegram минув. Спробуйте ще раз'));
+    } catch (error) {
+      console.error('[telegram] вхід за посиланням бота не вдався', error);
+      toast.error(tr('Не вдалося увійти через Telegram. Спробуйте ще раз або увійдіть поштою'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const confirmTelegramLinkLogin = async () => {
+    const pending = telegramLinkConfirm;
+    if (!pending) return;
+    setTelegramLinkConfirm(null);
+    await completeTelegramAuth(pending.result, { role: pending.role });
+  };
+
+  // Посилання з кодом чекає на відповідь Firebase: на `pending` ще невідомо,
+  // чи в цьому браузері вже увійшли.
   useEffect(() => {
-    const code = telegramHashCodeRef.current;
-    if (!code) return;
+    const { code, key } = telegramHashRef.current;
+    if (!code || !key || authStatus === 'pending') return;
+    telegramHashRef.current = { code: '', key: '' };
+    if (authStatus === 'in') {
+      toast(tr('Ви вже увійшли в KnowMe. Щоб увійти іншим акаунтом, спершу вийдіть'));
+      return;
+    }
+    void claimTelegramFromLink({ code, key });
+    // Обробник читає лише стан форми на момент відповіді.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authStatus]);
+
+  useEffect(() => {
+    const { code, key } = telegramHashRef.current;
+    if (!code || key) return;
     if (!telegramAttempt) {
-      telegramHashCodeRef.current = '';
+      telegramHashRef.current = { code: '', key: '' };
       toast(tr('Відкрийте вкладку, де почали вхід через Telegram, і введіть код {code}', { code }));
       return;
     }
     if (!telegramCodeRequested) return;
-    telegramHashCodeRef.current = '';
+    telegramHashRef.current = { code: '', key: '' };
     handleTelegramCodeChange(code);
     // Обробник читає лише стан форми на момент підстановки.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1118,6 +1193,12 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
         if (result?.status === 'code-required') {
           cancelled = true;
           setTelegramCodeRequested(true);
+        } else if (result?.status === 'claimed') {
+          // Вкладка лежала у фоні, поки вхід завершили в іншому браузері, —
+          // стану «чекаємо коду» вона так і не побачила.
+          cancelled = true;
+          resetTelegramAttempt();
+          if (!auth.currentUser) toast(tr('Вхід через Telegram завершено в іншому браузері. Щоб увійти тут, натисніть «Увійти через Telegram» ще раз'));
         } else if (result?.status === 'expired' || result?.status === 'invalid') {
           resetTelegramAttempt();
           toast.error(tr('Час на вхід через Telegram минув. Спробуйте ще раз'));
@@ -1140,6 +1221,43 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       window.removeEventListener('focus', tick);
     };
     // Обробники читають лише стан форми на момент відповіді.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [telegramAttempt, telegramCodeRequested]);
+
+  // Поки форма чекає коду, вхід могли завершити деінде: кнопка бота на Android
+  // відкривається у вбудованому браузері Telegram і забирає спробу там. Сесія
+  // тоді живе в тому браузері, а не тут, і поле для коду лише чекало б коду,
+  // який уже не діє. Тож повернення до вкладки питає, чи спроба ще є: немає —
+  // відпускаємо її й кажемо, що сталось.
+  useEffect(() => {
+    if (!telegramAttempt || !telegramCodeRequested) return undefined;
+    let cancelled = false;
+    let busy = false;
+    const check = async () => {
+      if (cancelled || busy || document.visibilityState === 'hidden') return;
+      busy = true;
+      try {
+        const result = await pollTelegramLogin(auth.app, telegramAttempt.nonce);
+        if (cancelled || auth.currentUser) return;
+        if (result?.status === 'claimed' || (result?.status === 'pending' && result.started === false)) {
+          cancelled = true;
+          resetTelegramAttempt();
+          toast(tr('Вхід через Telegram завершено в іншому браузері. Щоб увійти тут, натисніть «Увійти через Telegram» ще раз'));
+        }
+      } catch (error) {
+        console.warn('[telegram] перевірка спроби не вдалася', error?.code || error);
+      } finally {
+        busy = false;
+      }
+    };
+    document.addEventListener('visibilitychange', check);
+    window.addEventListener('focus', check);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', check);
+      window.removeEventListener('focus', check);
+    };
+    // Обробник читає лише стан форми на момент відповіді.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [telegramAttempt, telegramCodeRequested]);
 
@@ -1261,7 +1379,20 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
             <WelcomeDescription>{tr('Знайомтеся з донорками, батьками та агенціями. Зберігайте анкети й знаходьте тих, хто вам підходить.')}</WelcomeDescription>
           </BrandBlock>
 
-          {telegramSignup ? (
+          {telegramLinkConfirm ? (
+            <>
+              <RoleHint data-testid="telegram-link-confirm">
+                {tr('Увійти в KnowMe через акаунт Telegram {who}?', { who: describeTelegramAccount(telegramLinkConfirm.result.profile) })}
+              </RoleHint>
+              <TelegramHint>{tr('Якщо ви щойно не ділились номером з ботом KnowMe, натисніть «Скасувати вхід»: посилання могла надіслати інша людина.')}</TelegramHint>
+              <SubmitButton type="button" onClick={confirmTelegramLinkLogin} disabled={isLoading}>
+                {tr('Увійти')}
+              </SubmitButton>
+              <TelegramWaitingActions>
+                <LinkButton type="button" onClick={() => setTelegramLinkConfirm(null)}>{tr('Скасувати вхід')}</LinkButton>
+              </TelegramWaitingActions>
+            </>
+          ) : telegramSignup ? (
             <>
               <RoleHint>{tr('Майже готово: оберіть, хто ви')}</RoleHint>
               <RoleBlock>

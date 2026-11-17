@@ -11601,6 +11601,25 @@ const fetchUserByIdOnce = async userId => {
  * профіль») відповідає без бази, а прочитана з бази лягає туди ж. Свіжою її
  * тримає й сама правка: «Мій профіль» пише в цей кеш кожне збереження.
  */
+/**
+ * Після злиття акаунтів (`functions/accountMerge.js`) сервер долив у вузли
+ * головної анкети поля другорядної, але картки стрічки й індексу `searchId`
+ * він не перебудовує: це робить застосунок своїми писачами. Тож тут анкета
+ * перечитується з бази, кладеться в памʼять пристрою, а картка (з новою
+ * версією — читачі мусять перечитати) і ключі `searchId` складаються заново:
+ * інакше номер, долитий з Telegram, не знаходився б пошуком.
+ */
+export const refreshOwnProfileAfterMerge = async userId => {
+  const uid = String(userId || '');
+  if (!uid) return null;
+  const profile = await fetchUserByIdOnce(uid);
+  if (!profile) return null;
+  writeMyProfileCache(uid, profile);
+  await syncMatchingCardIndex(uid, profile, { bumpRevision: true });
+  await syncUserSearchIdIndex(uid, {}, profile);
+  return profile;
+};
+
 export const loadViewerProfile = async userId => {
   const uid = String(userId || '');
   if (!uid) return null;

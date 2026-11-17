@@ -10,6 +10,7 @@ const {
   handleTelegramUpdate,
   hashNonce,
   isWebhookSecretValid,
+  maskEmail,
   maybeSweepExpiredLogins,
   normalizeTelegramPhone,
   parseStartPayload,
@@ -124,12 +125,12 @@ test('повний потік: /start → контакт → застосуно�
   // Код бачить лише власник акаунта Telegram — у повідомленні бота.
   assert.match(sent[sent.length - 1].text, /123456/);
   // Після коду треба повернутись на сайт — повідомлення з кодом несе одну
-  // кнопку туди з кодом у фрагменті (без nonce), а клавіатуру «Поділитися
-  // номером» прибирає попереднє.
+  // кнопку туди з кодом і ключем спроби у фрагменті (без самого nonce), а
+  // клавіатуру «Поділитися номером» прибирає попереднє.
   const doneMarkup = sent[sent.length - 1].markup.inline_keyboard;
   assert.equal(doneMarkup.length, 1);
   assert.equal(doneMarkup[0].length, 1);
-  assert.equal(doneMarkup[0][0].url, 'https://knowme.pp.ua/login#tgcode=123456');
+  assert.equal(doneMarkup[0][0].url, `https://knowme.pp.ua/login#tgcode=123456&tgk=${hashNonce(NONCE)}`);
   assert.ok(!doneMarkup[0][0].url.includes(NONCE));
   assert.equal(sent[sent.length - 2].markup.remove_keyboard, true);
   // Без коду браузер, що чекає, токена не отримує.
@@ -140,8 +141,39 @@ test('повний потік: /start → контакт → застосуно�
   assert.match(ready.token, /^token-for-uid/);
   assert.deepEqual(ready.profile, { phone: '380501234567', firstName: 'Оксана', lastName: 'Коваль', username: 'oksana_k' });
 
-  // Другий запит з тим самим nonce сесії не отримує.
+  // Другий запит з тим самим nonce сесії не отримує, а браузер, що чекав,
+  // дізнається, що спробу забрано (і без коду теж).
+  assert.deepEqual(await completeTelegramLogin(NONCE, '123456', deps), { status: 'claimed' });
+  assert.deepEqual(await completeTelegramLogin(NONCE, '', deps), { status: 'claimed' });
+  // Позначка не несе ні коду, ні профілю.
+  const tombstone = deps.db.data.get(`telegramLogins/${hashNonce(NONCE)}`);
+  assert.deepEqual(Object.keys(tombstone).sort(), ['createdAt', 'status', 'tgId']);
+});
+
+test('кнопка бота завершує вхід і в іншому браузері — ключем спроби й кодом', async () => {
+  const { deps, sent } = setup();
+  await handleTelegramUpdate(privateMessage({ text: `/start ${NONCE}` }), deps);
+  await handleTelegramUpdate(contactFrom(TG_ID), deps);
+  const url = new URL(sent[sent.length - 1].markup.inline_keyboard[0][0].url);
+  const params = new URLSearchParams(url.hash.slice(1));
+  const loginKey = params.get('tgk');
+  // Ключ без коду не дає нічого, хибний код рахується як і з nonce.
+  assert.deepEqual(await completeTelegramLogin(undefined, '', { ...deps, loginKey }), { status: 'code-required' });
+  assert.equal((await completeTelegramLogin(undefined, '000000', { ...deps, loginKey })).status, 'wrong-code');
+  const ready = await completeTelegramLogin(undefined, params.get('tgcode'), { ...deps, loginKey });
+  assert.equal(ready.status, 'ready');
+  assert.match(ready.token, /^token-for-uid/);
+  // Спробу забрано: браузер, що її почав, токена вже не отримає.
   assert.notEqual((await completeTelegramLogin(NONCE, '123456', deps)).status, 'ready');
+  // Невалідний ключ — як невалідний nonce.
+  assert.deepEqual(await completeTelegramLogin(undefined, '123456', { ...deps, loginKey: 'abc' }), { status: 'invalid' });
+});
+
+test('ключ спроби не починає привʼязки', async () => {
+  const { deps } = setup();
+  const loginKey = hashNonce('AbCdEfGhIjKlMnOpQrStUv');
+  await completeTelegramLogin(undefined, '', { ...deps, loginKey, intent: 'link', callerUid: 'email-uid' });
+  assert.equal(deps.db.data.has(`telegramLogins/${loginKey}`), false);
 });
 
 test('другий вхід того самого акаунта Telegram — той самий uid, не новий акаунт', async () => {
@@ -404,4 +436,20 @@ test('новий /start тієї самої людини знімає її по�
   await handleTelegramUpdate(privateMessage({ text: `/start ${second}` }), deps);
   assert.equal(await deps.db.get(`telegramLogins/${hashNonce(NONCE)}`), null);
   assert.equal((await deps.db.get(`telegramLogins/${hashNonce(second)}`)).status, 'pending');
+});
+
+test('привʼязка: бот називає акаунт, до якого привʼязують, — пошта з прихованою серединою', async () => {
+  assert.equal(maskEmail('irina@gmail.com'), 'ir***@gmail.com');
+  assert.equal(maskEmail('a@x.com'), 'a***@x.com');
+  assert.equal(maskEmail(''), '');
+  const { deps, sent } = setup();
+  const getUser = deps.auth.getUser;
+  deps.auth.getUser = async uid => (uid === 'email-uid' ? { uid, email: 'irina@gmail.com' } : getUser(uid));
+  const LINK_NONCE = 'N'.repeat(22);
+  await completeTelegramLogin(LINK_NONCE, '', { ...deps, intent: 'link', callerUid: 'email-uid' });
+  await handleTelegramUpdate(privateMessage({ text: `/start ${LINK_NONCE}` }), deps);
+  await handleTelegramUpdate(contactFrom(Number(TG_ID)), deps);
+  const done = sent[sent.length - 1];
+  assert.match(done.text, /ir\*\*\*@gmail\.com/);
+  assert.ok(!done.text.includes('irina@gmail.com'));
 });
