@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { writeUtilitiesCache } from 'utils/utilitiesOfflineWrites';
 
@@ -250,7 +250,7 @@ describe('UtilitiesPage', () => {
     renderPage();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
     fireEvent.click(screen.getByTestId('utilities-settings-open'));
-    const initial = screen.getByTestId('utilities-settings').querySelector('input[data-formula]');
+    const initial = within(screen.getByTestId('utilities-settings')).getByLabelText(/Світло · день/);
     fireEvent.focus(initial);
     fireEvent.change(initial, { target: { value: '100+2' } });
     expect(screen.getByTestId('utilities-formula-result').textContent.replace(/\u00a0/g, ' ')).toBe('= 102,00');
