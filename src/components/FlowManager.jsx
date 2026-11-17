@@ -1605,6 +1605,14 @@ export const FlowManager = ({ ownerId, viewerId }) => {
         setSelectedGroup(normalizedTargetPath.group);
         setSelectedSubgroup(normalizedTargetPath.subgroup);
       }
+      // Група надходжень і фільтр ідуть за перейменованою групою. Інакше
+      // збережена назва вказувала б на порожню групу, а надходження з нової
+      // назви рахувались би витратами — баланс угорі брехав би.
+      if (normalizedSource === incomeGroup) selectIncomeGroup(normalizedTarget);
+      if (filterGroup === normalizedSource) {
+        setFilterGroup(normalizedTarget);
+        persistSetting(flowFilterStorageKey(ownerId), normalizedTarget);
+      }
       cancelCategoryRename();
       toast.success(
         (targetExists
