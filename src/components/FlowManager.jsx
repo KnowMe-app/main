@@ -58,13 +58,12 @@ import {
   PrimaryBtn,
   RateOption,
   ResultsHead,
-  RowActionBtn,
-  RowActions,
   RowAmount,
   RowBody,
   RowDate,
   RowGroupTag,
   RowList,
+  RowMoreBtn,
   RowText,
   ScaledContent,
   SearchBox,
@@ -120,7 +119,8 @@ import {
 // Шрифти тут задані пікселями в десятку компонентів, тож масштабується весь
 // вміст під верхнім рядком через `zoom` — і текст, і поля, і мішені дотику
 // разом, як масштаб браузера. Верхній рядок і шторки не масштабуються.
-const FLOW_TEXT_SCALES = [0.9, 1, 1.15, 1.3, 1.5, 1.75];
+// 175 % прибрано (17.11): на телефоні в рядок уже не вміщалось нічого.
+const FLOW_TEXT_SCALES = [0.9, 1, 1.15, 1.3, 1.5];
 const flowTextScaleStorageKey = ownerId => `flow-text-scale:${ownerId || 'anon'}`;
 
 const normalizeCategoryPath = value =>
@@ -1032,7 +1032,8 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     if (!ownerId) return;
     try {
       const saved = Number(localStorage.getItem(flowTextScaleStorageKey(ownerId)));
-      setTextScale(FLOW_TEXT_SCALES.includes(saved) ? saved : 1);
+      const max = FLOW_TEXT_SCALES[FLOW_TEXT_SCALES.length - 1];
+      setTextScale(saved > max ? max : FLOW_TEXT_SCALES.includes(saved) ? saved : 1);
     } catch {
       setTextScale(1);
     }
@@ -1146,6 +1147,8 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   // перенести рядок (`move`, з самим рядком).
   const [groupPicker, setGroupPicker] = useState(null);
   const [entryFocused, setEntryFocused] = useState(false);
+  // Дії рядка («⋯» у режимі правки групи): шторка «Інша група» / «Видалити».
+  const [rowMenu, setRowMenu] = useState(null);
   const entryCollapseTimerRef = useRef(0);
   useEffect(() => () => window.clearTimeout(entryCollapseTimerRef.current), []);
 
@@ -1884,6 +1887,8 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     return withYear ? `${day}.${month}.${year.slice(2)}` : `${day}.${month}`;
   };
 
+  // З 130 % тексту колонки лишали опису смужку: рядок стає двоповерховим.
+  const stackedRows = textScale >= 1.3;
   const renderRow = ({ row, idx }, { inSearch = false, actions = false } = {}) => {
     const rowKey = getRowKey(row, idx);
     if (editingKey === rowKey) {
@@ -1926,6 +1931,8 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       <EntryRow
         key={rowKey}
         $clickable
+        $stacked={stackedRows}
+        $withMore={actions}
         $highlighted={confirmState.type === 'row' && confirmState.rowKey === rowKey}
         onClick={() => beginEdit(row, idx)}
         data-testid="flow-row"
@@ -1936,36 +1943,25 @@ export const FlowManager = ({ ownerId, viewerId }) => {
           {inSearch && (
             <RowGroupTag $income={isIncomePath(row.group)}>{formatGroupTitle(row.group)}</RowGroupTag>
           )}
-          {actions && (
-            <RowActions>
-              <RowActionBtn
-                type="button"
-                aria-label="change-row-category"
-                onClick={e => {
-                  e.stopPropagation();
-                  setGroupPicker({ mode: 'move', row });
-                }}
-              >
-                Інша група
-              </RowActionBtn>
-              <RowActionBtn
-                type="button"
-                $danger
-                aria-label="delete-row"
-                onClick={e => {
-                  e.stopPropagation();
-                  openDeleteConfirm(row, rowKey);
-                }}
-              >
-                Видалити
-              </RowActionBtn>
-            </RowActions>
-          )}
         </RowBody>
-        <RowAmount $negative={amountNumber < 0}>
+        <RowAmount $negative={amountNumber < 0} $stacked={stackedRows}>
           {formatFlowMoney(amountNumber)}
           {equivalents && <small>{equivalents}</small>}
         </RowAmount>
+        {actions && (
+          <RowMoreBtn
+            type="button"
+            aria-label="Дії з рядком"
+            title="Перенести чи видалити"
+            onClick={e => {
+              e.stopPropagation();
+              setRowMenu({ row, rowKey });
+            }}
+            data-testid="flow-row-more"
+          >
+            ⋯
+          </RowMoreBtn>
+        )}
       </EntryRow>
     );
   };
@@ -2373,6 +2369,42 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                 }}
               >
                 Видалити весь Flow
+              </SheetRow>
+            </SheetSection>
+          </Sheet>
+        </Backdrop>
+      )}
+
+      {rowMenu && (
+        <Backdrop onClick={() => setRowMenu(null)}>
+          <Sheet role="dialog" aria-label="Дії з рядком" onClick={e => e.stopPropagation()} data-testid="flow-row-menu">
+            <SheetGrip />
+            <DialogText>
+              <span>
+                {formatShortDate(rowMenu.row.date, true)} · {formatFlowMoney(rowAmountNumber(rowMenu.row))} грн · {rowMenu.row.description}
+              </span>
+            </DialogText>
+            <SheetSection>
+              <SheetRow
+                type="button"
+                onClick={() => {
+                  const { row } = rowMenu;
+                  setRowMenu(null);
+                  setGroupPicker({ mode: 'move', row });
+                }}
+              >
+                Перенести в іншу групу
+              </SheetRow>
+              <SheetRow
+                type="button"
+                $danger
+                onClick={() => {
+                  const { row, rowKey } = rowMenu;
+                  setRowMenu(null);
+                  openDeleteConfirm(row, rowKey);
+                }}
+              >
+                Видалити запис
               </SheetRow>
             </SheetSection>
           </Sheet>
