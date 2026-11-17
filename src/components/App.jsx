@@ -11,10 +11,11 @@ import { startWriteOutbox, stopWriteOutbox } from 'utils/writeOutbox';
 import toast from 'react-hot-toast';
 import { auth, loadViewerProfile, refreshOwnProfileAfterMerge, resetViewerAccessLevelCache } from './config';
 import { settlePrimaryAccount, shouldRecheckPrimaryAccount } from 'utils/accountLinks';
-import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, persistScreenAccess, resolveAccess, resolveFlowHomeRoute } from 'utils/accessLevel';
+import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, persistScreenAccess, readStoredAccessLevel, readStoredCanCreateProfiles, resolveAccess, resolveSpecialHomeRoute } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
 import { clearMyProfileCache } from 'utils/myProfileCache';
 import { clearFlowCache } from 'utils/flowOfflineWrites';
+import { clearUtilitiesCache } from 'utils/utilitiesOfflineWrites';
 import { clearPendingProfileEdits } from 'utils/myProfilePendingEdits';
 import { clearCardFormPending } from 'utils/cardFormPendingEdits';
 import { clearAdminCardPending } from 'utils/adminCardPendingSaves';
@@ -46,6 +47,7 @@ const AddNewProfile = lazy(pickNamed(() => import('./AddNewProfile'), 'AddNewPro
 const EditProfile = lazy(() => import('./EditProfile'));
 const MedicationsPage = lazy(() => import('./MedicationsPage'));
 const FlowManager = lazy(() => import('./FlowManager'));
+const UtilitiesPage = lazy(() => import('./UtilitiesPage'));
 const BudgetPage = lazy(() => import('./BudgetPage'));
 const AdminNotificationsPage = lazy(() => import('./AdminNotificationsPage'));
 const InvoiceBuilderPage = lazy(() => import('./InvoiceBuilderPage'));
@@ -63,7 +65,9 @@ const PartiesPage = lazy(() => import('./PartiesPage'));
 // зберігаються.
 // `/notifications` — свої налаштування сповіщень інспектор пише сам (правило
 // `adminNotificationSettings/$uid`), тож «Лише читання» там було б неправдою.
-const READ_ONLY_INSPECTOR_WRITABLE_PATHS = ['/matching', '/matching/create-profile', '/my-profile', '/documents', '/parties', '/notifications'];
+// `/utilities` — комуналка лежить під власником (`multiData/utilities/{uid}`),
+// і свою інспектор пише; чужу, обрану в переліку, екран сам показує лише на читання.
+const READ_ONLY_INSPECTOR_WRITABLE_PATHS = ['/matching', '/matching/create-profile', '/my-profile', '/documents', '/parties', '/notifications', '/utilities'];
 
 export const App = () => {
 
@@ -75,6 +79,25 @@ export const App = () => {
   // (`profileTechnical/{uid}/screenAccess`). Дані Flow лежать під власником
   // (`multiData/flow/{uid}`), тож кожен бачить і пише лише свої розрахунки.
   const [canAccessFlow, setCanAccessFlow] = useState(false);
+  // Комуналка — так само (`screenAccess` = `utilities`), дані під власником
+  // (`multiData/utilities/{uid}`).
+  const [canAccessUtilities, setCanAccessUtilities] = useState(false);
+  // Людина з виданими адміном екранами бачить лише їх: звичайні екрани
+  // (стрічка, «Мій профіль») ведуть на перший виданий (`resolveSpecialHomeRoute`).
+  // Перший кадр — із памʼяті пристрою, щоб ярлик не встигав показати анкету.
+  const [specialHomeRoute, setSpecialHomeRoute] = useState(() => {
+    try {
+      const ownerId = localStorage.getItem('ownerId');
+      if (!ownerId) return null;
+      return resolveSpecialHomeRoute(resolveAccess({
+        uid: ownerId,
+        accessLevel: readStoredAccessLevel(),
+        canCreateProfiles: readStoredCanCreateProfiles(),
+      }));
+    } catch {
+      return null;
+    }
+  });
   const [isAccessResolved, setIsAccessResolved] = useState(false);
   // Стан входу окремо від рівня доступу: рівень читається з бази, тобто вже
   // після відповіді Firebase, а межа входу мусить спрацювати одразу — інакше
@@ -150,6 +173,8 @@ export const App = () => {
         setCanAccessAdd(access.canAccessAdd);
         setCanAccessInvoices(access.canAccessInvoices);
         setCanAccessFlow(access.canAccessFlow);
+        setCanAccessUtilities(access.canAccessUtilities);
+        setSpecialHomeRoute(resolveSpecialHomeRoute(access));
         localStorage.setItem('accessLevel', accessLevel);
         localStorage.setItem('userRole', userRole);
         persistCanCreateProfiles(canCreateProfilesForUser);
@@ -188,6 +213,8 @@ export const App = () => {
         clearMyProfileCache();
         // Flow (особисті фінанси) з памʼяті пристрою — так само (`utils/flowOfflineWrites`).
         clearFlowCache();
+        // Комуналка (`utils/utilitiesOfflineWrites`) — так само.
+        clearUtilitiesCache();
         // Незбережені правки анкети — теж памʼять пристрою про читача.
         clearPendingProfileEdits();
         // І незбережене з форми «Додати картку» / доповнення.
@@ -210,6 +237,8 @@ export const App = () => {
         setCanAccessAdd(false);
         setCanAccessInvoices(false);
         setCanAccessFlow(false);
+        setCanAccessUtilities(false);
+        setSpecialHomeRoute(null);
         setIsAccessResolved(true);
       }
     });
@@ -227,6 +256,10 @@ export const App = () => {
   const showsRememberedMatching = authStatus === 'pending'
     && normalizedPathname === '/matching'
     && Boolean(readRememberedViewerId());
+
+  // Звичайний екран для людини з виданими екранами — перехід на її перший
+  // виданий екран (див. `specialHomeRoute`).
+  const regularScreen = element => (specialHomeRoute ? <Navigate to={specialHomeRoute} replace /> : element);
 
   return (
     <PrimaryNavigationSlotProvider>
@@ -255,23 +288,25 @@ export const App = () => {
       {/* Корінь — робочий стіл адміна, решту він веде в «Мій профіль». Поки
           права не прочитані, тут очікування (`catchAllStatus`), а не текст
           угоди, який залогінена людина бачила тут до редиректу. */}
-      <Route path="/" element={<RequireAuth status={catchAllStatus}>{isAdmin ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <Navigate to={resolveFlowHomeRoute({ isAdmin, canAccessFlow }) || '/my-profile'} replace />}</RequireAuth>} />
-      <Route path="/my-profile" element={<RequireAuth status={authStatus}><MyProfile /></RequireAuth>} />
+      <Route path="/" element={<RequireAuth status={catchAllStatus}>{isAdmin ? <AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /> : <Navigate to={specialHomeRoute || '/my-profile'} replace />}</RequireAuth>} />
+      <Route path="/my-profile" element={<RequireAuth status={authStatus}>{regularScreen(<MyProfile />)}</RequireAuth>} />
       <Route path="/my-profile-new" element={<Navigate to="/my-profile" replace />} />
       {canAccessAdd && <Route path="/add" element={<RequireAuth status={authStatus}><AddNewProfile isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} /></RequireAuth>} />}
       {/* Стрічка — єдиний екран, який на 'pending' показують з кеша
           пристрою (`allowRemembered`): свої запити вона однаково запускає з
           `onAuthStateChanged`, а на 'out' межа веде на вхід. Форми правки
           й «Мій профіль» чекають на Firebase, як і раніше. */}
-      <Route path="/matching" element={<RequireAuth status={authStatus} allowRemembered><Matching /></RequireAuth>} />
+      <Route path="/matching" element={<RequireAuth status={authStatus} allowRemembered>{regularScreen(<Matching />)}</RequireAuth>} />
       {/* Заводити й доповнювати картки може кожен, хто увійшов: право
           `canCreateProfiles` більше цього екрана не стереже. За ним лишились
           лише службові читання цілих вузлів (перелік усіх чернеток, усі шари
           картки, перелік заявок) — вони й далі за прапорцем. */}
-      <Route path="/matching/create-profile" element={<RequireAuth status={authStatus}><ProfileCreationWorkspace /></RequireAuth>} />
+      <Route path="/matching/create-profile" element={<RequireAuth status={authStatus}>{regularScreen(<ProfileCreationWorkspace />)}</RequireAuth>} />
       {isAdmin && <Route path="/edit/:userId" element={<RequireAuth status={authStatus}><EditProfile /></RequireAuth>} />}
       {isAdmin && <Route path="/medications/:userId" element={<RequireAuth status={authStatus}><MedicationsPage /></RequireAuth>} />}
       {canAccessFlow && <Route path="/flow" element={<RequireAuth status={authStatus}><FlowManager ownerId={auth.currentUser?.uid} /></RequireAuth>} />}
+      {/* Комуналка: адмінам і тим, кому адмін її відкрив (`screenAccess`). */}
+      {canAccessUtilities && <Route path="/utilities" element={<RequireAuth status={authStatus}><UtilitiesPage ownerId={auth.currentUser?.uid} /></RequireAuth>} />}
       {isAdmin && <Route path="/budget" element={<RequireAuth status={authStatus}><BudgetPage isAdmin={isAdmin} /></RequireAuth>} />}
       {/* Сповіщення адміна про дії користувачів (`functions/adminActivity.js`). */}
       {isAdmin && <Route path="/notifications" element={<RequireAuth status={authStatus}><AdminNotificationsPage /></RequireAuth>} />}
@@ -283,7 +318,7 @@ export const App = () => {
           екран, на який у читача немає прав. Обидва випадки закінчуються
           осмисленим екраном, а не білою сторінкою: незалогінений іде на вхід
           (і адреса їде з ним), залогінений — у «Мій профіль». */}
-      <Route path="*" element={<RequireAuth status={catchAllStatus}><Navigate to="/my-profile" replace /></RequireAuth>} />
+      <Route path="*" element={<RequireAuth status={catchAllStatus}><Navigate to={specialHomeRoute || '/my-profile'} replace /></RequireAuth>} />
       </Routes>
       </Suspense>
       </ScreenErrorBoundary>

@@ -1307,6 +1307,8 @@ const BY_UK = {
   'Мій профіль': 'Mein Profil',
   'Додати анкету': 'Profil hinzufügen',
   'Адмін-додавання профілів': 'Profilerstellung durch Admin',
+  'Комуналка': 'Nebenkosten',
+  'Розрахунок по квартирах': 'Abrechnung pro Wohnung',
   'Пошук і порівняння анкет': 'Profile suchen und vergleichen',
   'Перевірка нових карток': 'Prüfung der neuen Karten',
   'Ваші картки та створення нових': 'Ihre Karten und neue erstellen',

@@ -11,9 +11,9 @@ import { auth, database } from './config';
  * читають лише адміни й інспектор), а імʼя — з картки `matchingCards/{uid}`,
  * яку адмін і так читає.
  */
-export const buildFlowOwnersRestUrl = (databaseURL, idToken) => {
+export const buildFlowOwnersRestUrl = (databaseURL, idToken, node = 'flow') => {
   const url = new URL(databaseURL);
-  url.pathname = `${url.pathname.replace(/\/+$/, '')}/multiData/flow.json`;
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/multiData/${node}.json`;
   url.searchParams.set('shallow', 'true');
   if (idToken) url.searchParams.set('auth', idToken);
   return url.toString();
@@ -34,11 +34,13 @@ const readCardName = async uid => {
   }
 };
 
-export const listFlowOwners = async ({ excludeUid } = {}) => {
+// Той самий перелік для будь-якого вузла «дані під власником»: Flow і
+// комуналка (`multiData/utilities`) читаються однаково.
+export const listDataOwners = async (node, { excludeUid } = {}) => {
   const user = auth.currentUser;
   if (!user) return [];
   const idToken = await user.getIdToken();
-  const response = await fetch(buildFlowOwnersRestUrl(database.app.options.databaseURL, idToken));
+  const response = await fetch(buildFlowOwnersRestUrl(database.app.options.databaseURL, idToken, node));
   if (!response.ok) {
     const error = new Error(response.status === 401 ? 'PERMISSION_DENIED' : `HTTP ${response.status}`);
     error.status = response.status;
@@ -48,3 +50,5 @@ export const listFlowOwners = async ({ excludeUid } = {}) => {
   const owners = await Promise.all(keys.map(async uid => ({ uid, name: await readCardName(uid) })));
   return owners.sort((a, b) => (a.name || a.uid).localeCompare(b.name || b.uid, 'uk'));
 };
+
+export const listFlowOwners = options => listDataOwners('flow', options);

@@ -1378,6 +1378,8 @@ const EN_BY_UK = {
   'Мій профіль': 'My profile',
   'Додати анкету': 'Add a profile',
   'Адмін-додавання профілів': 'Admin profile creation',
+  'Комуналка': 'Utilities',
+  'Розрахунок по квартирах': 'Calculation by apartment',
   'Пошук і порівняння анкет': 'Search and compare profiles',
   'Перевірка нових карток': 'Review of the new cards',
   'Ваші картки та створення нових': 'Your cards, and creating new ones',

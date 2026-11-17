@@ -2177,6 +2177,41 @@ await it('розрахунки Flow — лише свої', async () => {
   await assertFails(set(ref(db(MATCHING_EDITOR), `multiData/flow/${SELF_SERVE}/rent`), { a2: { amount: 1 } }));
 });
 
+describe('Комуналка: екран відкриває адмін, дані — свої');
+
+// `multiData/utilities/{uid}` — квартири й місяці власника (екран
+// «Комуналка», `screenAccess` = `utilities`). Так само, як Flow: пише сам
+// власник і двоє повних адмінів, читають ще й інспектор; вузли — лише
+// `apartments` і `months`.
+await it('адмін відкриває комуналку кодом utilities', async () => {
+  await assertFails(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/screenAccess`), 'utilities'));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/screenAccess`), 'flow,utilities'));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/screenAccess`), null));
+});
+
+await it('власниця пише свою комуналку, чужий — ні', async () => {
+  await assertSucceeds(set(ref(db(SELF_SERVE), `multiData/utilities/${SELF_SERVE}/apartments/a1`), { name: 'кв. 645', payDay: 19 }));
+  await assertSucceeds(update(ref(db(SELF_SERVE)), {
+    [`multiData/utilities/${SELF_SERVE}/months/a1/2026-11/vals/light/tDay`]: '4.32',
+    [`multiData/utilities/${SELF_SERVE}/months/a1/2026-11/date`]: '2026-11-17',
+  }));
+  await assertSucceeds(get(ref(db(SELF_SERVE), `multiData/utilities/${SELF_SERVE}`)));
+  await assertFails(set(ref(db(SELF_SERVE), `multiData/utilities/${SELF_SERVE}/other/x`), 1));
+  await assertFails(set(ref(db(SELF_SERVE), `multiData/utilities/${SELF_SERVE}`), null));
+  await assertFails(get(ref(db(MATCHING_EDITOR), `multiData/utilities/${SELF_SERVE}`)));
+  await assertFails(set(ref(db(MATCHING_EDITOR), `multiData/utilities/${SELF_SERVE}/apartments/a2`), { name: 'x' }));
+  await assertFails(set(ref(db(SELF_SERVE), `multiData/utilities/${MATCHING_EDITOR}/apartments/a1`), { name: 'x' }));
+});
+
+await it('адмін читає й править чужу комуналку, інспектор лише читає', async () => {
+  await assertSucceeds(get(ref(db(SUPERADMIN), 'multiData/utilities')));
+  await assertSucceeds(get(ref(db(INSPECTOR_FOR_FLOW), 'multiData/utilities')));
+  await assertFails(get(ref(db(SELF_SERVE), 'multiData/utilities')));
+  await assertSucceeds(set(ref(db(SUPERADMIN), `multiData/utilities/${SELF_SERVE}/months/a1/2026-11/budget`), '3500'));
+  await assertSucceeds(get(ref(db(INSPECTOR_FOR_FLOW), `multiData/utilities/${SELF_SERVE}`)));
+  await assertFails(set(ref(db(INSPECTOR_FOR_FLOW), `multiData/utilities/${SELF_SERVE}/months/a1/2026-11/budget`), '1'));
+});
+
 describe('documentsBuilder: тестовий акаунт читає й пише');
 
 // Тестовий акаунт веб-сесій (MIGRATION_EMAIL) читає й правит шаблони, кейси та сторони — так

@@ -98,6 +98,7 @@ export const persistCanCreateProfiles = canCreateProfiles => {
  */
 export const SCREEN_ACCESS_OPTIONS = Object.freeze([
   Object.freeze({ code: 'flow', path: '/flow', label: 'Flow', description: 'Особисті фінанси: доходи, витрати, розрахунки' }),
+  Object.freeze({ code: 'utilities', path: '/utilities', label: 'Комуналка', description: 'Розрахунок комунальних платежів по квартирах' }),
 ]);
 
 const SCREEN_ACCESS_CODES = new Set(SCREEN_ACCESS_OPTIONS.map(option => option.code));
@@ -148,6 +149,15 @@ export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfi
   const canCreateProfilesResolved = isAdmin || canCreateProfiles === true;
   const screens = parseScreenAccess(screenAccess === undefined ? readStoredScreenAccess() : screenAccess);
   const canAccessFlow = isAdmin || screens.includes('flow');
+  const canAccessUtilities = isAdmin || screens.includes('utilities');
+  // Видані адміном екрани — особлива інструкція (17.11, на прохання власниці
+  // продукту): людина, якій відкрили Flow чи комуналку, приходить саме по них,
+  // а стрічка й «Мій профіль» для неї — шум. Тож поки в неї є хоч один такий
+  // екран, у меню лише вони, а звичайні екрани ведуть на перший із них.
+  // Без інструкції — звичайний набір (стрічка, «Мій профіль»). Адмінів це не
+  // стосується.
+  const specialScreens = isAdmin ? [] : screens;
+  const specialScreensOnly = specialScreens.length > 0;
 
   return {
     isAdmin,
@@ -156,6 +166,9 @@ export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfi
     canAccessInvoices,
     canCreateProfiles: canCreateProfilesResolved,
     canAccessFlow,
+    canAccessUtilities,
+    specialScreens,
+    specialScreensOnly,
   };
 };
 
@@ -182,8 +195,17 @@ export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfi
  * `LoginScreen`, — інакше ярлик і форма входу вели б у різні місця.
  */
 export const FLOW_HOME_ROUTE = '/flow';
-export const resolveFlowHomeRoute = access =>
-  (access && !access.isAdmin && access.canAccessFlow ? FLOW_HOME_ROUTE : null);
+// Перший виданий екран у порядку `SCREEN_ACCESS_OPTIONS` (Flow, потім
+// комуналка) — і для кореня, і для звичайних екранів такої людини.
+export const resolveSpecialHomeRoute = access => {
+  if (!access || access.isAdmin || !access.specialScreensOnly) return null;
+  const first = SCREEN_ACCESS_OPTIONS.find(option => access.specialScreens.includes(option.code));
+  return first ? first.path : null;
+};
+// Звичайні екрани (стрічка, «Мій профіль», «Створені мною»), яких людина з
+// виданими екранами не бачить: адреса веде на її перший екран.
+export const REGULAR_SCREEN_PATHS = Object.freeze(['/my-profile', '/matching', '/matching/create-profile']);
+export const SPECIAL_SCREEN_PATHS = Object.freeze(SCREEN_ACCESS_OPTIONS.map(option => option.path));
 
 export const PRIVILEGED_PROFILE_FIELDS = Object.freeze(['accessLevel', 'canCreateProfiles', 'multiDataSourceUserIds', 'screenAccess']);
 

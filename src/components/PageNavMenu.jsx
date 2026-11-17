@@ -32,7 +32,8 @@ const NAV_LINKS = [
   // підпис мусить обіцяти читачеві його власні картки, а не дію «додати».
   { path: '/matching/create-profile', label: 'Створені мною' },
   { path: '/my-profile', label: 'My profile' },
-  { path: '/flow', label: 'Flow', right: 'canAccessFlow' },
+  { path: '/flow', label: 'Flow', right: 'canAccessFlow', special: true },
+  { path: '/utilities', label: 'Комуналка', right: 'canAccessUtilities', special: true },
   { path: '/notifications', label: 'Сповіщення', right: 'isAdmin' },
   { path: '/budget', label: 'Budget', right: 'isAdmin' },
   { path: '/invoices', label: 'Invoice', right: 'canAccessInvoices' },
@@ -52,6 +53,10 @@ const visibleLinks = () => {
     canCreateProfiles: readStoredCanCreateProfiles(),
   });
   const rights = { ...access, isAdmin: isAdminUid(ownerId) };
+  // Видані адміном екрани — єдине, що такий читач бачить (`specialScreensOnly`).
+  if (!rights.isAdmin && access.specialScreensOnly) {
+    return NAV_LINKS.filter(link => link.special && rights[link.right]);
+  }
   return NAV_LINKS.filter(link => !link.right || rights[link.right]);
 };
 

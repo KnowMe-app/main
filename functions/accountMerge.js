@@ -45,7 +45,10 @@ const PROTECTED_UIDS = Object.freeze([...ADMIN_UIDS, ...READONLY_ADMIN_UIDS]);
 // Вузли анкети: поле за полем, головне значення перемагає.
 const PROFILE_FIELD_NODES = Object.freeze(['profileDetails', 'profileContacts', 'profileWorkflow', 'profileTechnical']);
 // Права видає лише адмін (`stripPrivilegedProfileFields` у застосунку).
-const PRIVILEGED_TECHNICAL_FIELDS = Object.freeze(['accessLevel', 'canCreateProfiles', 'multiDataSourceUserIds']);
+// `screenAccess` — теж право (видані адміном екрани, і з ними головний акаунт
+// бачив би лише їх): той самий перелік, що `PRIVILEGED_PROFILE_FIELDS` у
+// `src/utils/accessLevel.js`, — збіг стереже тест функцій.
+const PRIVILEGED_TECHNICAL_FIELDS = Object.freeze(['accessLevel', 'canCreateProfiles', 'multiDataSourceUserIds', 'screenAccess']);
 // З картки стрічки — лише те, чого більше ніде немає (`name` живе тільки в
 // ній) і роль. Похідні поля (`surnameShort`, `rh`, `blood`, `avatar`…),
 // публікація й версії перебудовує застосунок (`refreshOwnProfileAfterMerge`).
@@ -56,6 +59,8 @@ const CARD_FILL_FIELDS = Object.freeze(['name', 'role']);
 // доливання: чого немає в головному — копіюється піддеревом.
 const OWNER_MULTIDATA_NODES = Object.freeze([
   'flow',
+  // Комуналка (`/utilities`): квартири й місяці власника.
+  'utilities',
   'favorites',
   'dislikes',
   'getInTouch',
