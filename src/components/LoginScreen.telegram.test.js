@@ -70,4 +70,20 @@ describe('LoginScreen: вхід через Telegram', () => {
     expect(source).toContain('pollTelegramLogin(auth.app, attempt.nonce, code)');
     expect(source).toContain('autoComplete="one-time-code"');
   });
+
+  // Telegram на Android відкриває кнопку бота у власному браузері, де спроби з
+  // Chrome немає (16.11: людина бачила форму входу й реєструвалась удруге).
+  // Ключ спроби з адреси завершує вхід і там — разом із кодом.
+  it('кнопка бота з ключем спроби завершує вхід і без спроби цього браузера', () => {
+    const source = loginSource();
+    expect(source).toContain("pollTelegramLogin(auth.app, '', code, { key })");
+    // Посилання може надіслати чужа людина: сесії воно не підмінює, а вхід
+    // чекає підтвердження з назвою акаунта Telegram.
+    expect(source).toContain("if (authStatus === 'in') {");
+    expect(source).toContain('setTelegramLinkConfirm({ result, role:');
+    expect(source).toContain('data-testid="telegram-link-confirm"');
+    // Вкладка, що лежала у фоні, поки вхід завершили деінде, теж це бачить.
+    expect(source).toContain("} else if (result?.status === 'claimed') {");
+    expect(source).toContain("if (result?.status === 'claimed' || (result?.status === 'pending' && result.started === false)) {");
+  });
 });

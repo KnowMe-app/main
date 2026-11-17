@@ -56,6 +56,10 @@ const NONCE_PATTERN = /^[A-Za-z0-9_-]{22,64}$/;
 
 const isValidNonce = nonce => typeof nonce === 'string' && NONCE_PATTERN.test(nonce);
 
+// Ключ спроби — sha256 від `nonce` у hex (`hashNonce`).
+const LOGIN_KEY_PATTERN = /^[0-9a-f]{64}$/;
+const isValidLoginKey = key => typeof key === 'string' && LOGIN_KEY_PATTERN.test(key);
+
 const hashNonce = nonce => crypto.createHash('sha256').update(String(nonce)).digest('hex');
 
 const parseStartPayload = text => {
@@ -105,7 +109,8 @@ const BOT_TEXTS = Object.freeze({
     + 'Натисніть «📱 Поділитися номером» нижче. Після цього «Увійти через Telegram» '
     + 'відкриватиме ваш наявний акаунт, а не новий.\n\n'
     + 'Якщо ви не відкривали «Мій профіль» щойно — нічого не натискайте.',
-  linkDone: code => `Код для привʼязки Telegram: <code>${code}</code>\n\n`
+  linkDone: (code, target = '') => `Код для привʼязки Telegram: <code>${code}</code>\n\n`
+    + (target ? `Telegram привʼяжеться до акаунта <b>${target}</b>. Якщо це не ваш акаунт — не вводьте код нікуди.\n\n` : '')
     + 'Натисніть «Привʼязати Telegram» нижче — код підставиться сам.\n'
     + 'Почали на іншому пристрої? Торкніться коду, щоб скопіювати, і введіть його там.\n\n'
     + '⚠️ Нікому не повідомляйте цей код. Хто його знає, той привʼяже ваш Telegram до свого акаунта.',
@@ -142,10 +147,23 @@ const returnToAppButton = () => ({
 // кнопка Telegram має рівно одну дію, а копіювати й потім вставляти — два
 // зайві кроки. Код їде у фрагменті (`#tgcode=`), і сторінка підставляє його в
 // спробу цього браузера (`readTelegramCodeFromHash` у src/utils/telegramAuth).
-const buildCodeUrl = (code, url = APP_URL) => `${url}#tgcode=${encodeURIComponent(String(code))}`;
+//
+// Поруч із кодом їде ключ спроби (`tgk`, sha256 від `nonce`), щоб кнопка
+// завершувала вхід і там, де спроби цього браузера немає. Telegram на Android
+// відкриває посилання у **власному** браузері (WebView) зі своїм сховищем, а не
+// в Chrome, де вхід почали: сторінка бачила код без спроби, казала тостом
+// «відкрийте вкладку, де почали» й лишалась формою входу — людина
+// реєструвалась удруге (16.11). Ключ — не секрет: вхід і далі вимагає коду,
+// а кнопку бачить лише власник акаунта Telegram. Привʼязка ключа не несе —
+// її завершує лише акаунт, що її почав, а сесії у WebView Telegram немає.
+const buildCodeUrl = (code, url = APP_URL, key = '') => {
+  const params = new URLSearchParams({ tgcode: String(code) });
+  if (key) params.set('tgk', key);
+  return `${url}#${params.toString()}`;
+};
 
-const codeButtons = (code, url = APP_URL, text = BOT_TEXTS.loginButton) => ({
-  inline_keyboard: [[{ text, url: buildCodeUrl(code, url), style: 'success' }]],
+const codeButtons = (code, url = APP_URL, text = BOT_TEXTS.loginButton, key = '') => ({
+  inline_keyboard: [[{ text, url: buildCodeUrl(code, url, key), style: 'success' }]],
 });
 
 /**
@@ -166,7 +184,7 @@ const handleStart = async ({ nonce, tgId, chatId }, { db, sendMessage, now }) =>
       outcome = 'claimed';
       return undefined;
     }
-    if (current && current.status === 'ready') {
+    if (current && (current.status === 'ready' || current.status === 'claimed')) {
       outcome = 'ready';
       return undefined;
     }
@@ -241,6 +259,29 @@ const resolveAccount = async ({ tgId, displayName }, { db, auth, now }) => {
   return { uid: created.uid, isNew: true };
 };
 
+// Акаунт, до якого привʼязують Telegram, — пошта з прихованою серединою
+// («ir***@gmail.com»): досить, щоб упізнати свій чи чужий, і без повної
+// адреси в чаті. Без пошти чи без відповіді Auth — нічого.
+const maskEmail = email => {
+  const match = /^([^@]+)@(.+)$/.exec(String(email || '').trim());
+  if (!match) return '';
+  const [, name, domain] = match;
+  const visible = name.slice(0, Math.min(2, Math.max(1, name.length - 1)));
+  return `${visible}***@${domain}`;
+};
+
+const escapeTelegramHtml = text => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const describeLinkTarget = async (deps, uid) => {
+  if (!deps.auth || typeof deps.auth.getUser !== 'function') return '';
+  try {
+    const user = await deps.auth.getUser(uid);
+    return escapeTelegramHtml(maskEmail(user && user.email));
+  } catch {
+    return '';
+  }
+};
+
 const handleContact = async ({ message, tgId, chatId }, deps) => {
   const { db, auth, sendMessage, now } = deps;
   const contact = message.contact || {};
@@ -285,7 +326,10 @@ const handleContact = async ({ message, tgId, chatId }, deps) => {
     });
     await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
     await sendMessage(chatId, BOT_TEXTS.contactReceived, { remove_keyboard: true });
-    await sendMessage(chatId, BOT_TEXTS.linkDone(linkCode), codeButtons(linkCode, PROFILE_URL, BOT_TEXTS.linkButton), { html: true });
+    // Назва акаунта, до якого привʼязують: посилання на бота міг підсунути
+    // хтось інший і випитувати код — людина мусить бачити, чий це акаунт.
+    const target = await describeLinkTarget(deps, login.linkUid);
+    await sendMessage(chatId, BOT_TEXTS.linkDone(linkCode, target), codeButtons(linkCode, PROFILE_URL, BOT_TEXTS.linkButton), { html: true });
     return 'link-ready';
   }
 
@@ -307,7 +351,7 @@ const handleContact = async ({ message, tgId, chatId }, deps) => {
   });
   await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
   await sendMessage(chatId, BOT_TEXTS.contactReceived, { remove_keyboard: true });
-  await sendMessage(chatId, BOT_TEXTS.done(code), codeButtons(code), { html: true });
+  await sendMessage(chatId, BOT_TEXTS.done(code), codeButtons(code, APP_URL, BOT_TEXTS.loginButton, pointer.key), { html: true });
   const known = await db.get(`${ACCOUNTS_ROOT}/${tgId}`);
   return known && known.uid ? 'signed-in' : 'registered';
 };
@@ -436,15 +480,20 @@ const handleTelegramUpdate = async (update, deps) => {
  * власникові акаунта Telegram, і рівно один раз: спроба видаляється
  * транзакцією. Хибний код рахується; на `MAX_CODE_ATTEMPTS` спроба згорає.
  */
-const completeTelegramLogin = async (nonce, codeInput, { db, auth, now, callerUid = null, intent = '' }) => {
-  if (!isValidNonce(nonce)) return { status: 'invalid' };
-  const key = hashNonce(nonce);
+//
+// Замість `nonce` можна передати ключ спроби (`loginKey`) — його несе кнопка
+// бота поруч із кодом (`buildCodeUrl`), і так вхід завершує браузер, у якому
+// спроби немає. Без коду ключ не дає нічого, привʼязки не починає.
+const completeTelegramLogin = async (nonce, codeInput, { db, auth, now, callerUid = null, intent = '', loginKey = '' }) => {
+  const byKey = !isValidNonce(nonce) && isValidLoginKey(loginKey);
+  if (!isValidNonce(nonce) && !byKey) return { status: 'invalid' };
+  const key = byKey ? loginKey : hashNonce(nonce);
   const path = `${LOGINS_ROOT}/${key}`;
   const record = await db.get(path);
   if (!record) {
     // Початок привʼязки: застосунок, що вже увійшов (поштою), заводить спробу
     // зі своїм uid. Без входу привʼязувати нема до чого.
-    if (intent === 'link') {
+    if (intent === 'link' && !byKey) {
       if (!callerUid) return { status: 'invalid' };
       await db.transaction(path, current => {
         if (current) return undefined;
@@ -456,6 +505,7 @@ const completeTelegramLogin = async (nonce, codeInput, { db, auth, now, callerUi
   // Спробу привʼязки завершує лише той акаунт, що її почав: інакше хтось
   // інший прочитаним кодом привʼязав би чужий Telegram до себе.
   if (record.linkUid && record.linkUid !== callerUid) return { status: 'invalid' };
+  if (record.status === 'claimed') return { status: 'claimed' };
   if (isExpired(record, now)) {
     await db.set(path, null);
     if (record.tgId) await db.set(`${LOGINS_BY_TG_ROOT}/${record.tgId}`, null);
@@ -489,7 +539,16 @@ const completeTelegramLogin = async (nonce, codeInput, { db, auth, now, callerUi
     if (current.codeHash === hashCode(key, code)) {
       outcome = 'ready';
       claimed = current;
-      return null;
+      // Замість спроби лишається позначка «забрано» без жодного секрету:
+      // браузер, що почав вхід, а завершили його деінде (кнопка бота у
+      // вбудованому браузері Telegram), інакше бачив би «спроби ще немає» й
+      // чекав номера до кінця строку. Позначку знімає прибирання спроб.
+      return {
+        status: 'claimed',
+        createdAt: current.createdAt,
+        ...(current.tgId ? { tgId: current.tgId } : {}),
+        ...(current.linkUid ? { linkUid: current.linkUid } : {}),
+      };
     }
     const attempts = (Number(current.attempts) || 0) + 1;
     attemptsLeft = Math.max(0, MAX_CODE_ATTEMPTS - attempts);
@@ -514,7 +573,9 @@ const completeTelegramLogin = async (nonce, codeInput, { db, auth, now, callerUi
       ...(previousUid ? { previousUid } : {}),
       ...(claimed.profile && claimed.profile.phone ? { contact: { ...claimed.profile, at: now } } : {}),
     });
-    return { status: 'linked', hadOtherAccount: Boolean(previousUid), profile: claimed.profile || {} };
+    // `previousUid` — для злиття акаунтів (`accountMerge.js`, кличе index.js);
+    // застосунку його не віддають.
+    return { status: 'linked', hadOtherAccount: Boolean(previousUid), previousUid, profile: claimed.profile || {} };
   }
   if (outcome === 'ready' && claimed && claimed.token) {
     // Спроба, яку вебхук завів ще до цієї зміни: акаунт і токен уже є.
@@ -580,6 +641,7 @@ const isWebhookSecretValid = (received, expected) => {
 };
 
 module.exports = {
+  maskEmail,
   ACCOUNTS_ROOT,
   BOT_TEXTS,
   LOGINS_BY_TG_ROOT,

@@ -88,7 +88,10 @@ export const writeFlowHistory = (ownerId, history, now = Date.now()) => {
  * знімає їх разом. Для злитого кроку «до» кожного шляху — найперше.
  * Новий крок стирає «Вперед», як у будь-якому редакторі.
  */
-export const pushFlowHistoryStep = (history, { patch, inverse, label = '', batch = null, at = Date.now() }) => {
+export const pushFlowHistoryStep = (
+  history,
+  { patch, inverse, label = '', batch = null, at = Date.now(), rename = null }
+) => {
   const undo = [...(history?.undo || [])];
   const last = undo[undo.length - 1];
   if (batch && last && last.batch === batch) {
@@ -97,9 +100,12 @@ export const pushFlowHistoryStep = (history, { patch, inverse, label = '', batch
       at,
       patch: { ...last.patch, ...patch },
       inverse: { ...inverse, ...last.inverse },
+      ...(rename || last.rename ? { rename: last.rename || rename } : {}),
     };
   } else {
-    undo.push({ at, label, batch, patch, inverse });
+    // `rename` — назва групи до й після перейменування й чи йшли за нею група
+    // надходжень і фільтр: відміна повертає їх разом із записами.
+    undo.push({ at, label, batch, patch, inverse, ...(rename ? { rename } : {}) });
   }
   return { undo: undo.slice(-FLOW_HISTORY_MAX_STEPS), redo: [] };
 };

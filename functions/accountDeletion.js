@@ -169,6 +169,8 @@ const buildOwnedPaths = (uid, cardIds = [uid]) => {
     `emailVerificationSends/byUid/${uid}`,
     // Токени push-сповіщень пристроїв цього акаунта.
     `pushTokens/${uid}`,
+    // Позначка другорядного акаунта (`accountMerge.js`).
+    `accountAliases/${uid}`,
   ];
 };
 

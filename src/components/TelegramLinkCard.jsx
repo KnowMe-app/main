@@ -16,14 +16,20 @@ import {
 
 /**
  * «Вхід через Telegram» у «Моєму профілі» — привʼязка Telegram до акаунта з
- * поштою. Показується лише акаунту з паролем: акаунт, заведений ботом, уже
- * привʼязаний. Спроба лежить у `localStorage`, бо кнопка бота «Повернутися в
- * KnowMe» відкриває сторінку новою вкладкою.
+ * поштою чи Google. Показується лише акаунту з таким входом: акаунт, заведений
+ * ботом (вхід — custom token, `providerData` порожній), уже привʼязаний.
+ * Спроба лежить у `localStorage`, бо кнопка бота «Повернутися в KnowMe»
+ * відкриває сторінку новою вкладкою.
+ *
+ * Якщо цей Telegram уже відкривав інший акаунт, сервер зливає його в цей
+ * (`functions/accountMerge.js`: дані доливаються, той акаунт перемикає на
+ * цей), а картка перебудовує анкету з долитого (`onMerged`).
  */
-const TelegramLinkCard = ({ auth, language }) => {
+const TelegramLinkCard = ({ auth, language, onMerged }) => {
   const user = auth?.currentUser || null;
   const uid = user?.uid || '';
-  const hasPassword = Boolean(user?.providerData?.some(provider => provider?.providerId === 'password'));
+  // Імʼя лишилось від часів, коли привʼязували лише акаунт з паролем.
+  const hasPassword = Boolean(user?.providerData?.some(provider => ['password', 'google.com'].includes(provider?.providerId)));
   const [attempt, setAttempt] = useState(() => (uid ? readTelegramLinkAttempt(uid) : null));
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -72,6 +78,10 @@ const TelegramLinkCard = ({ auth, language }) => {
         reset();
         setLinked(true);
         toast.success(t('Telegram привʼязано. Тепер «Увійти через Telegram» відкриває цей акаунт.'));
+        if (result.merged) {
+          if (onMerged) await Promise.resolve(onMerged(uid)).catch(() => {});
+          toast.success(t('Дані з попереднього акаунта Telegram перенесено в цей акаунт.'));
+        }
         return;
       }
       if (result?.status === 'wrong-code') {

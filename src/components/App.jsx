@@ -9,7 +9,8 @@ import { scheduleLatencyProbe } from './latencyProbeRemote';
 import { installPushSignOutCleanup, refreshPushToken } from './pushNotificationsRemote';
 import { startWriteOutbox, stopWriteOutbox } from 'utils/writeOutbox';
 import toast from 'react-hot-toast';
-import { auth, loadViewerProfile, resetViewerAccessLevelCache } from './config';
+import { auth, loadViewerProfile, refreshOwnProfileAfterMerge, resetViewerAccessLevelCache } from './config';
+import { settlePrimaryAccount, shouldRecheckPrimaryAccount } from 'utils/accountLinks';
 import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, persistScreenAccess, readStoredAccessLevel, readStoredCanCreateProfiles, resolveAccess, resolveSpecialHomeRoute } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
 import { clearMyProfileCache } from 'utils/myProfileCache';
@@ -185,6 +186,17 @@ export const App = () => {
         // Токен push раз на добу звіряється з пристроєм — лише там, де людина
         // вже дозволила сповіщення; діалогу дозволу тут не буває.
         refreshPushToken(user.uid);
+        // Сесія, що вже була, раз на добу питає, чи акаунт досі головний
+        // (`utils/accountLinks`): другий акаунт могли привʼязати з іншого
+        // пристрою, і телефон, що сидів у другорядному, перемикається сам.
+        // Форма входу робить це на кожному вході сама — тут її не дублюємо.
+        // Після перемикання сторінка перезавантажується: змонтовані екрани
+        // тримають дані другорядного.
+        if (window.location.pathname !== '/login' && shouldRecheckPrimaryAccount(user.uid)) {
+          void settlePrimaryAccount(auth, { onMerged: refreshOwnProfileAfterMerge }).then(outcome => {
+            if (outcome === 'redirect') window.location.reload();
+          });
+        }
       } else {
         // Черга записів — теж памʼять пристрою про читача (текст памʼяток,
         // кого вподобано), тож стирається разом з рештою (`utils/writeOutbox`).
