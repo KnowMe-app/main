@@ -546,7 +546,9 @@ const completeTelegramLogin = async (nonce, codeInput, { db, auth, now, callerUi
       ...(previousUid ? { previousUid } : {}),
       ...(claimed.profile && claimed.profile.phone ? { contact: { ...claimed.profile, at: now } } : {}),
     });
-    return { status: 'linked', hadOtherAccount: Boolean(previousUid), profile: claimed.profile || {} };
+    // `previousUid` — для злиття акаунтів (`accountMerge.js`, кличе index.js);
+    // застосунку його не віддають.
+    return { status: 'linked', hadOtherAccount: Boolean(previousUid), previousUid, profile: claimed.profile || {} };
   }
   if (outcome === 'ready' && claimed && claimed.token) {
     // Спроба, яку вебхук завів ще до цієї зміни: акаунт і токен уже є.

@@ -48,6 +48,7 @@ const {
   handleTelegramUpdate,
   isWebhookSecretValid,
 } = require('./telegramAuth');
+const { mergeAccounts, resolveAccountOnSignIn } = require('./accountMerge');
 
 initializeApp();
 
@@ -378,6 +379,17 @@ exports.telegramWebhook = onRequest(
   },
 );
 
+// Залежності злиття акаунтів (`accountMerge.js`).
+const accountMergeDeps = () => ({
+  read: async path => (await getDatabase().ref(path).get()).val(),
+  update: updates => getDatabase().ref().update(updates),
+  createCustomToken: uid => getAuth().createCustomToken(uid),
+  userExists: uid => getAuth().getUser(uid).then(() => true, error => {
+    if (error && error.code === 'auth/user-not-found') return false;
+    throw error;
+  }),
+});
+
 exports.completeTelegramLogin = onCall(
   {
     region: REGION,
@@ -391,7 +403,7 @@ exports.completeTelegramLogin = onCall(
     try {
       // `intent: 'link'` — привʼязка Telegram до акаунта, у який уже увійшли
       // (`request.auth`); вхід без акаунта її не почне й не завершить.
-      return await completeTelegramLogin(data.nonce, data.code, {
+      const result = await completeTelegramLogin(data.nonce, data.code, {
         db: createAdminDb(getDatabase()),
         auth: getAuth(),
         now: Date.now(),
@@ -399,9 +411,95 @@ exports.completeTelegramLogin = onCall(
         intent: data.intent === 'link' ? 'link' : '',
         loginKey: typeof data.key === 'string' ? data.key : '',
       });
+      if (result && result.status === 'linked') {
+        const { previousUid, ...answer } = result;
+        // Telegram відкривав інший акаунт: той стає другорядним, а його дані
+        // доливаються в акаунт, з якого привʼязали (код із Telegram — доказ,
+        // що обидва однієї людини). Збій злиття привʼязку не відкочує:
+        // наступний вхід головного зіллє ще раз (`resolvePrimaryAccount`).
+        if (previousUid) {
+          const merge = await mergeAccounts(accountMergeDeps(), {
+            primaryUid: request.auth.uid,
+            secondaryUid: previousUid,
+            via: 'telegram-link',
+          }).catch(error => {
+            logger.error('account merge after telegram link failed', { error: error.message });
+            return { status: 'failed' };
+          });
+          answer.merged = merge.status === 'merged' || merge.status === 'already-merged';
+        }
+        return answer;
+      }
+      return result;
     } catch (error) {
       logger.error('telegram login completion failed', { error: error.message });
       throw new HttpsError('unavailable', 'Telegram login could not be completed.');
+    }
+  },
+);
+
+/**
+ * Вхід у будь-який акаунт питає, чи він головний (`accountMerge.js`):
+ * другорядний отримує custom token головного й застосунок перемикає сесію;
+ * головний із незлитою давньою привʼязкою Telegram — злиття.
+ */
+exports.resolvePrimaryAccount = onCall(
+  {
+    region: REGION,
+    cors: ALLOWED_ORIGINS,
+    memory: '256MiB',
+    timeoutSeconds: 60,
+    maxInstances: 10,
+  },
+  async request => {
+    const uid = request.auth && request.auth.uid;
+    if (!uid) throw new HttpsError('unauthenticated', 'Sign in first.');
+    try {
+      return await resolveAccountOnSignIn(accountMergeDeps(), uid);
+    } catch (error) {
+      logger.error('primary account resolve failed', { error: error.message });
+      throw new HttpsError('unavailable', 'Account could not be resolved.');
+    }
+  },
+);
+
+// Свіжість входу в другорядний акаунт, яким доводять, що він свій.
+const MERGE_PROOF_MAX_AGE_MS = 10 * 60 * 1000;
+
+/**
+ * Злиття іншого акаунта в поточний. Доказ — свіжий ID-токен того акаунта
+ * (людина щойно в нього увійшла: Google, пошта), поруч із сесією головного.
+ */
+exports.mergeAccountInto = onCall(
+  {
+    region: REGION,
+    cors: ALLOWED_ORIGINS,
+    memory: '256MiB',
+    timeoutSeconds: 60,
+    maxInstances: 5,
+  },
+  async request => {
+    const uid = request.auth && request.auth.uid;
+    if (!uid) throw new HttpsError('unauthenticated', 'Sign in first.');
+    const idToken = String((request.data || {}).secondaryIdToken || '');
+    let secondary;
+    try {
+      secondary = await getAuth().verifyIdToken(idToken, true);
+    } catch (error) {
+      throw new HttpsError('permission-denied', 'The other account could not be verified.');
+    }
+    const authTime = Number(secondary.auth_time) * 1000;
+    if (!authTime || Date.now() - authTime > MERGE_PROOF_MAX_AGE_MS) {
+      throw new HttpsError('failed-precondition', 'Sign in to the other account again.', { reason: 'recent-login' });
+    }
+    if (secondary.uid === uid) return { status: 'already-merged' };
+    try {
+      const result = await mergeAccounts(accountMergeDeps(), { primaryUid: uid, secondaryUid: secondary.uid, via: 'id-token' });
+      logger.info('accounts merged', { status: result.status, reason: result.reason || '' });
+      return { status: result.status, reason: result.reason || '' };
+    } catch (error) {
+      logger.error('account merge failed', { error: error.message });
+      throw new HttpsError('unavailable', 'Accounts could not be merged.');
     }
   },
 );

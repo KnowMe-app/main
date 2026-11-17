@@ -4,7 +4,7 @@ import BrandLoader from './BrandLoader';
 import { FaUser, FaLock, FaEye, FaEyeSlash, FaGlobe, FaChevronDown, FaTelegramPlane, FaEnvelope } from 'react-icons/fa';
 import { FcGoogle } from 'react-icons/fc';
 import toast from 'react-hot-toast';
-import { auth, fetchUserById, hasAccountRegistration } from './config';
+import { auth, fetchUserById, hasAccountRegistration, refreshOwnProfileAfterMerge } from './config';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -46,6 +46,7 @@ import {
   TELEGRAM_LOGIN_TTL_MS,
   TELEGRAM_POLL_INTERVAL_MS,
 } from 'utils/telegramAuth';
+import { settlePrimaryAccount } from 'utils/accountLinks';
 import { buildGoogleProfileData, createGoogleAuthProvider, isGoogleSignInCancelled } from 'utils/googleAuth';
 
 const MATCHING_ROUTE = '/matching';
@@ -698,6 +699,10 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
 
   const navigateAfterAuth = async ({ registered = false } = {}) => {
     navigatedAfterAuthRef.current = true;
+    // Вхід міг відкрити другорядний акаунт (`utils/accountLinks`): тоді сесія
+    // перемикається на головний ще до вибору екрана. Щойно зареєстрований
+    // акаунт другорядним бути не може — йому виклик не потрібен.
+    if (!registered) await settlePrimaryAccount(auth, { onMerged: refreshOwnProfileAfterMerge });
     const target = returnTo || (registered ? MY_PROFILE_ROUTE : await resolveLandingRoute(auth.currentUser?.uid));
     navigate(target, { replace: true });
   };

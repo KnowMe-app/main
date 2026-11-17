@@ -15,6 +15,7 @@ import {
   setOwnLikedAudienceEntries,
   syncUserSearchIdIndex,
   updateProfileRole,
+  refreshOwnProfileAfterMerge,
 } from './config';
 import {
   LIKED_AUDIENCE,
@@ -60,6 +61,7 @@ import { resolveAccess } from 'utils/accessLevel';
 import { getCurrentDate } from './foramtDate';
 import { authNotifications } from './authNotifications';
 import TelegramLinkCard from './TelegramLinkCard';
+import SignInMethodsCard from './SignInMethodsCard';
 import {
   buildAuthProfilePayload,
   buildAuthSessionPayload,
@@ -2429,6 +2431,16 @@ export const MyProfile = () => {
     navigate('/login');
   };
 
+  // Сервер долив у цю анкету дані іншого акаунта: картка стрічки й індекс
+  // перебудовуються з долитого, а сторінка перечитується — порівняння для
+  // наступного збереження (`persistedProfileRef`) мусить бути з бази.
+  const handleAccountMerged = async uid => {
+    await refreshOwnProfileAfterMerge(uid).catch(error => {
+      console.warn('[accounts] анкету після злиття не перебудовано', error);
+    });
+    window.setTimeout(() => window.location.reload(), 1500);
+  };
+
   const handleExit = async () => {
     await saveQueueRef.current.catch(error => {
       console.warn('Failed to finish MyProfile autosave before logout.', error);
@@ -4501,9 +4513,13 @@ export const MyProfile = () => {
           )}
         </ClearAnketaList>
       ) : null}
-      {/* Привʼязка Telegram до акаунта з поштою: без неї вхід через Telegram
-          заводив другий акаунт із порожньою анкетою. */}
-      {isProfileAccessConfirmed ? <TelegramLinkCard auth={auth} language={language} /> : null}
+      {/* Способи входу: Telegram, Google і пошта відкривають один акаунт.
+          Без привʼязки вхід новим способом заводив другий акаунт із
+          порожньою анкетою; спосіб, що вже відкриває інший акаунт, зливає
+          той акаунт у цей (`functions/accountMerge.js`). Після злиття
+          сторінка перечитується: долиті поля прийшли з сервера. */}
+      {isProfileAccessConfirmed ? <TelegramLinkCard auth={auth} language={language} onMerged={handleAccountMerged} /> : null}
+      {isProfileAccessConfirmed ? <SignInMethodsCard auth={auth} language={language} onMerged={handleAccountMerged} /> : null}
     </SubmitWrap>
     {/* Відступу під панель немає: панель ховається, щойно блок «Публікація»
         входить у кадр, а він і є низ сторінки — тож закрити собою вона нічого
