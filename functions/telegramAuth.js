@@ -109,7 +109,8 @@ const BOT_TEXTS = Object.freeze({
     + 'Натисніть «📱 Поділитися номером» нижче. Після цього «Увійти через Telegram» '
     + 'відкриватиме ваш наявний акаунт, а не новий.\n\n'
     + 'Якщо ви не відкривали «Мій профіль» щойно — нічого не натискайте.',
-  linkDone: code => `Код для привʼязки Telegram: <code>${code}</code>\n\n`
+  linkDone: (code, target = '') => `Код для привʼязки Telegram: <code>${code}</code>\n\n`
+    + (target ? `Telegram привʼяжеться до акаунта <b>${target}</b>. Якщо це не ваш акаунт — не вводьте код нікуди.\n\n` : '')
     + 'Натисніть «Привʼязати Telegram» нижче — код підставиться сам.\n'
     + 'Почали на іншому пристрої? Торкніться коду, щоб скопіювати, і введіть його там.\n\n'
     + '⚠️ Нікому не повідомляйте цей код. Хто його знає, той привʼяже ваш Telegram до свого акаунта.',
@@ -258,6 +259,29 @@ const resolveAccount = async ({ tgId, displayName }, { db, auth, now }) => {
   return { uid: created.uid, isNew: true };
 };
 
+// Акаунт, до якого привʼязують Telegram, — пошта з прихованою серединою
+// («ir***@gmail.com»): досить, щоб упізнати свій чи чужий, і без повної
+// адреси в чаті. Без пошти чи без відповіді Auth — нічого.
+const maskEmail = email => {
+  const match = /^([^@]+)@(.+)$/.exec(String(email || '').trim());
+  if (!match) return '';
+  const [, name, domain] = match;
+  const visible = name.slice(0, Math.min(2, Math.max(1, name.length - 1)));
+  return `${visible}***@${domain}`;
+};
+
+const escapeTelegramHtml = text => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const describeLinkTarget = async (deps, uid) => {
+  if (!deps.auth || typeof deps.auth.getUser !== 'function') return '';
+  try {
+    const user = await deps.auth.getUser(uid);
+    return escapeTelegramHtml(maskEmail(user && user.email));
+  } catch {
+    return '';
+  }
+};
+
 const handleContact = async ({ message, tgId, chatId }, deps) => {
   const { db, auth, sendMessage, now } = deps;
   const contact = message.contact || {};
@@ -302,7 +326,10 @@ const handleContact = async ({ message, tgId, chatId }, deps) => {
     });
     await db.set(`${LOGINS_BY_TG_ROOT}/${tgId}`, null);
     await sendMessage(chatId, BOT_TEXTS.contactReceived, { remove_keyboard: true });
-    await sendMessage(chatId, BOT_TEXTS.linkDone(linkCode), codeButtons(linkCode, PROFILE_URL, BOT_TEXTS.linkButton), { html: true });
+    // Назва акаунта, до якого привʼязують: посилання на бота міг підсунути
+    // хтось інший і випитувати код — людина мусить бачити, чий це акаунт.
+    const target = await describeLinkTarget(deps, login.linkUid);
+    await sendMessage(chatId, BOT_TEXTS.linkDone(linkCode, target), codeButtons(linkCode, PROFILE_URL, BOT_TEXTS.linkButton), { html: true });
     return 'link-ready';
   }
 
@@ -614,6 +641,7 @@ const isWebhookSecretValid = (received, expected) => {
 };
 
 module.exports = {
+  maskEmail,
   ACCOUNTS_ROOT,
   BOT_TEXTS,
   LOGINS_BY_TG_ROOT,

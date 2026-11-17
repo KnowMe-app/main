@@ -7,6 +7,7 @@ const {
   mergeAccounts,
   resolveAccountOnSignIn,
   resolvePrimaryUid,
+  unlinkMergedAccount,
 } = require('../accountMerge');
 
 const PRIMARY = 'PrimaryAccountUid0000000001';
@@ -47,6 +48,8 @@ const createDb = (initial = {}) => {
         Object.entries(patch).forEach(([path, value]) => write(path, value));
       },
       createCustomToken: async uid => `token-for-${uid}`,
+      // Акаунти тестів завів бот: інших способів входу немає.
+      listProviders: async () => [],
     },
   };
 };
@@ -113,7 +116,9 @@ test('злиття: дані другорядного доливаються, г
   assert.equal(root.profileDetails[SECONDARY].city, 'Львів');
   // Telegram відкриває головний, а другорядний веде на головний.
   assert.deepEqual(root.telegramAccounts[777], { uid: PRIMARY, previousUid: SECONDARY, createdAt: 1 });
-  assert.deepEqual(root.accountAliases[SECONDARY], { primary: PRIMARY, at: 5, via: 'telegram-link' });
+  assert.deepEqual(root.accountAliases[SECONDARY], {
+    primary: PRIMARY, at: 5, via: 'telegram-link', hiddenFeedDate: '2026-11-16', telegramIds: ['777'],
+  });
 });
 
 test('вхід у другорядний видає токен головного', async () => {
@@ -159,4 +164,44 @@ test('видалений головний не перемикає — сесія
   await mergeAccounts(deps, { primaryUid: PRIMARY, secondaryUid: SECONDARY });
   const gone = { ...deps, userExists: async uid => uid !== PRIMARY };
   assert.deepEqual(await resolveAccountOnSignIn(gone, SECONDARY), { status: 'primary' });
+});
+
+test('злиття за кодом Telegram — лише акаунта, який завів сам бот', async () => {
+  const { deps, root } = createDb(seed());
+  const withPassword = { ...deps, listProviders: async () => ['password'] };
+  assert.deepEqual(
+    await mergeAccounts(withPassword, { primaryUid: PRIMARY, secondaryUid: SECONDARY, requireBotOnlySecondary: true }),
+    { status: 'refused', reason: 'secondary-has-sign-in' },
+  );
+  // Без способу перевірити — теж відмова, а не злиття наосліп.
+  const unknown = { ...deps, listProviders: undefined };
+  assert.equal((await mergeAccounts(unknown, { primaryUid: PRIMARY, secondaryUid: SECONDARY, requireBotOnlySecondary: true })).status, 'refused');
+  assert.equal(root.accountAliases, undefined);
+  const botOnly = { ...deps, listProviders: async () => [] };
+  assert.equal((await mergeAccounts(botOnly, { primaryUid: PRIMARY, secondaryUid: SECONDARY, requireBotOnlySecondary: true })).status, 'merged');
+});
+
+test('розʼєднання повертає Telegram і публікацію другорядного', async () => {
+  const { deps, root } = createDb(seed());
+  await mergeAccounts(deps, { primaryUid: PRIMARY, secondaryUid: SECONDARY, now: 7 });
+  assert.deepEqual(root.accountAliases[SECONDARY], {
+    primary: PRIMARY, at: 7, via: '', hiddenFeedDate: '2026-11-16', telegramIds: ['777'],
+  });
+  assert.deepEqual(await unlinkMergedAccount(deps, SECONDARY), { status: 'unlinked', primaryUid: PRIMARY });
+  assert.equal(root.accountAliases[SECONDARY], undefined);
+  assert.deepEqual(root.telegramAccounts[777], { uid: SECONDARY, createdAt: 1 });
+  assert.equal(root.matchingCards[SECONDARY].feedDate, '2026-11-16');
+  assert.deepEqual(await resolveAccountOnSignIn(deps, SECONDARY), { status: 'primary' });
+  assert.deepEqual(await unlinkMergedAccount(deps, SECONDARY), { status: 'not-merged' });
+});
+
+test('лист «Акаунти обʼєднано» називає обидва акаунти й каже, що робити, якщо це не ви', () => {
+  const { renderAccountMergedEmail } = require('../emails/accountMerged');
+  const uk = renderAccountMergedEmail({ email: 'tg@example.com', primary: 'me@example.com', language: 'uk' });
+  assert.match(uk.text, /tg@example\.com/);
+  assert.match(uk.text, /me@example\.com/);
+  assert.match(uk.text, /розʼєднаємо/);
+  const en = renderAccountMergedEmail({ email: 'tg@example.com', language: 'en' });
+  assert.match(en.subject, /merged/);
+  assert.throws(() => renderAccountMergedEmail({}));
 });

@@ -48,7 +48,8 @@ const {
   handleTelegramUpdate,
   isWebhookSecretValid,
 } = require('./telegramAuth');
-const { mergeAccounts, resolveAccountOnSignIn } = require('./accountMerge');
+const { mergeAccounts, resolveAccountOnSignIn, unlinkMergedAccount } = require('./accountMerge');
+const { renderAccountMergedEmail } = require('./emails/accountMerged');
 
 initializeApp();
 
@@ -388,6 +389,9 @@ const accountMergeDeps = () => ({
     if (error && error.code === 'auth/user-not-found') return false;
     throw error;
   }),
+  // Способи входу акаунта: порожній перелік — акаунт завів бот Telegram
+  // (custom token), іншого входу в нього немає.
+  listProviders: uid => getAuth().getUser(uid).then(user => (user.providerData || []).map(item => item.providerId)),
 });
 
 exports.completeTelegramLogin = onCall(
@@ -422,6 +426,7 @@ exports.completeTelegramLogin = onCall(
             primaryUid: request.auth.uid,
             secondaryUid: previousUid,
             via: 'telegram-link',
+            requireBotOnlySecondary: true,
           }).catch(error => {
             logger.error('account merge after telegram link failed', { error: error.message });
             return { status: 'failed' };
@@ -463,17 +468,52 @@ exports.resolvePrimaryAccount = onCall(
   },
 );
 
-// Свіжість входу в другорядний акаунт, яким доводять, що він свій.
-const MERGE_PROOF_MAX_AGE_MS = 10 * 60 * 1000;
+// Свіжість входу в другорядний акаунт, яким доводять, що він свій. Коротка
+// навмисно: токен довгої сесії (вкрадений, скажімо, з чужого браузера) має
+// давній `auth_time` і злиття не відкриває — потрібен щойно введений пароль
+// чи щойно пройдений вхід Google.
+const MERGE_PROOF_MAX_AGE_MS = 5 * 60 * 1000;
+// Доказом є лише вхід, який людина проходить сама: пароль чи Google. Сесія
+// Telegram (custom token) тут не годиться — для неї є привʼязка з кодом.
+const MERGE_PROOF_PROVIDERS = Object.freeze(['password', 'google.com']);
+
+// Лист на пошту другорядного: про злиття людина дізнається з каналу, якого
+// не тримає той, хто злиття запустив. Збій листа злиття не відкочує.
+const sendAccountMergedEmail = async ({ secondaryUid, primaryUid, language }) => {
+  try {
+    const [secondaryUser, primaryUser] = await Promise.all([
+      getAuth().getUser(secondaryUid).catch(() => null),
+      getAuth().getUser(primaryUid).catch(() => null),
+    ]);
+    const email = secondaryUser && secondaryUser.email;
+    if (!email) return false;
+    const message = renderAccountMergedEmail({ email, primary: (primaryUser && primaryUser.email) || '', language });
+    await sendWithBrevo({
+      apiKey: BREVO_API_KEY.value(),
+      sender: MAIL_SENDER,
+      to: email,
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+      tags: ['account_merged', `lang_${message.language}`],
+    });
+    return true;
+  } catch (error) {
+    logger.warn('account merged email failed', { error: error.message, status: error.status });
+    return false;
+  }
+};
 
 /**
- * Злиття іншого акаунта в поточний. Доказ — свіжий ID-токен того акаунта
- * (людина щойно в нього увійшла: Google, пошта), поруч із сесією головного.
+ * Злиття іншого акаунта в поточний. Доказ — ID-токен того акаунта, щойно
+ * (≤ 5 хв) отриманий паролем чи Google, поруч із сесією головного; про злиття
+ * йде лист на пошту другорядного.
  */
 exports.mergeAccountInto = onCall(
   {
     region: REGION,
     cors: ALLOWED_ORIGINS,
+    secrets: [BREVO_API_KEY],
     memory: '256MiB',
     timeoutSeconds: 60,
     maxInstances: 5,
@@ -488,6 +528,10 @@ exports.mergeAccountInto = onCall(
     } catch (error) {
       throw new HttpsError('permission-denied', 'The other account could not be verified.');
     }
+    const provider = secondary.firebase && secondary.firebase.sign_in_provider;
+    if (!MERGE_PROOF_PROVIDERS.includes(provider)) {
+      throw new HttpsError('permission-denied', 'Sign in to the other account with its password or Google.');
+    }
     const authTime = Number(secondary.auth_time) * 1000;
     if (!authTime || Date.now() - authTime > MERGE_PROOF_MAX_AGE_MS) {
       throw new HttpsError('failed-precondition', 'Sign in to the other account again.', { reason: 'recent-login' });
@@ -496,10 +540,34 @@ exports.mergeAccountInto = onCall(
     try {
       const result = await mergeAccounts(accountMergeDeps(), { primaryUid: uid, secondaryUid: secondary.uid, via: 'id-token' });
       logger.info('accounts merged', { status: result.status, reason: result.reason || '' });
+      if (result.status === 'merged') {
+        await sendAccountMergedEmail({ secondaryUid: secondary.uid, primaryUid: result.primaryUid, language: (request.data || {}).language });
+      }
       return { status: result.status, reason: result.reason || '' };
     } catch (error) {
       logger.error('account merge failed', { error: error.message });
       throw new HttpsError('unavailable', 'Accounts could not be merged.');
+    }
+  },
+);
+
+/**
+ * Розʼєднання злитих акаунтів — лише повний адмін, на скаргу з листа
+ * «Акаунти обʼєднано» (`accountMerge.js`, `unlinkMergedAccount`).
+ */
+exports.unlinkMergedAccount = onCall(
+  { region: REGION, cors: ALLOWED_ORIGINS, memory: '256MiB', timeoutSeconds: 30, maxInstances: 2 },
+  async request => {
+    const uid = request.auth && request.auth.uid;
+    if (!uid || !canPurgeAccounts(uid)) throw new HttpsError('permission-denied', 'Admins only.');
+    const secondaryUid = String((request.data || {}).secondaryUid || '');
+    try {
+      const result = await unlinkMergedAccount(accountMergeDeps(), secondaryUid);
+      logger.info('account unlinked', { status: result.status });
+      return result;
+    } catch (error) {
+      logger.error('account unlink failed', { error: error.message });
+      throw new HttpsError('unavailable', 'Accounts could not be separated.');
     }
   },
 );

@@ -107,7 +107,7 @@ const SignInMethodsCard = ({ auth, language, onMerged }) => {
     if (!pending) return;
     setBusy(true);
     try {
-      const result = await mergeAccountWithCredential(auth, pending.credential);
+      const result = await mergeAccountWithCredential(auth, pending.credential, { language });
       setPendingMerge(null);
       if (result?.status === 'merged' || result?.status === 'already-merged') {
         if (pending.method === 'google') setGoogleLinked(true);

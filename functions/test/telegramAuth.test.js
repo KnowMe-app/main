@@ -10,6 +10,7 @@ const {
   handleTelegramUpdate,
   hashNonce,
   isWebhookSecretValid,
+  maskEmail,
   maybeSweepExpiredLogins,
   normalizeTelegramPhone,
   parseStartPayload,
@@ -435,4 +436,20 @@ test('новий /start тієї самої людини знімає її по�
   await handleTelegramUpdate(privateMessage({ text: `/start ${second}` }), deps);
   assert.equal(await deps.db.get(`telegramLogins/${hashNonce(NONCE)}`), null);
   assert.equal((await deps.db.get(`telegramLogins/${hashNonce(second)}`)).status, 'pending');
+});
+
+test('привʼязка: бот називає акаунт, до якого привʼязують, — пошта з прихованою серединою', async () => {
+  assert.equal(maskEmail('irina@gmail.com'), 'ir***@gmail.com');
+  assert.equal(maskEmail('a@x.com'), 'a***@x.com');
+  assert.equal(maskEmail(''), '');
+  const { deps, sent } = setup();
+  const getUser = deps.auth.getUser;
+  deps.auth.getUser = async uid => (uid === 'email-uid' ? { uid, email: 'irina@gmail.com' } : getUser(uid));
+  const LINK_NONCE = 'N'.repeat(22);
+  await completeTelegramLogin(LINK_NONCE, '', { ...deps, intent: 'link', callerUid: 'email-uid' });
+  await handleTelegramUpdate(privateMessage({ text: `/start ${LINK_NONCE}` }), deps);
+  await handleTelegramUpdate(contactFrom(Number(TG_ID)), deps);
+  const done = sent[sent.length - 1];
+  assert.match(done.text, /ir\*\*\*@gmail\.com/);
+  assert.ok(!done.text.includes('irina@gmail.com'));
 });

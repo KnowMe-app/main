@@ -183,11 +183,19 @@ const buildMergeUpdates = async (deps, primaryUid, secondaryUid, { now, via }) =
   }
 
   // Telegram, що відкривав другорядний акаунт, тепер відкриває головний.
+  // Перелік — і той, що переписала сама привʼязка (`completeTelegramLogin`), —
+  // лягає в позначку: розʼєднання (`unlinkMergedAccount`) повертає саме його.
+  const telegramIds = [];
   const telegramAccounts = (await read(TELEGRAM_ACCOUNTS_ROOT)) || {};
   Object.entries(isPlainObject(telegramAccounts) ? telegramAccounts : {}).forEach(([tgId, account]) => {
-    if (!account || account.uid !== secondaryUid) return;
-    updates[`${TELEGRAM_ACCOUNTS_ROOT}/${tgId}/uid`] = primaryUid;
-    updates[`${TELEGRAM_ACCOUNTS_ROOT}/${tgId}/previousUid`] = secondaryUid;
+    if (!account) return;
+    if (account.uid === secondaryUid) {
+      updates[`${TELEGRAM_ACCOUNTS_ROOT}/${tgId}/uid`] = primaryUid;
+      updates[`${TELEGRAM_ACCOUNTS_ROOT}/${tgId}/previousUid`] = secondaryUid;
+      telegramIds.push(tgId);
+    } else if (account.uid === primaryUid && account.previousUid === secondaryUid) {
+      telegramIds.push(tgId);
+    }
   });
 
   // Посилання, що вели на другорядний, ведуть одразу на головний.
@@ -197,7 +205,19 @@ const buildMergeUpdates = async (deps, primaryUid, secondaryUid, { now, via }) =
       updates[`${ALIASES_ROOT}/${uid}/primary`] = primaryUid;
     }
   });
-  updates[`${ALIASES_ROOT}/${secondaryUid}`] = { primary: primaryUid, at: now, via };
+  // Позначка несе, що повернути при розʼєднанні: дату публікації схованої
+  // картки й привʼязки Telegram. Долите в головний не повертається — воно
+  // доливалось лише туди, де було порожньо, і його вже могли правити.
+  const hiddenFeedDate = isPlainObject(secondaryCard) && typeof secondaryCard.feedDate === 'string'
+    ? secondaryCard.feedDate
+    : null;
+  updates[`${ALIASES_ROOT}/${secondaryUid}`] = {
+    primary: primaryUid,
+    at: now,
+    via,
+    ...(hiddenFeedDate ? { hiddenFeedDate } : {}),
+    ...(telegramIds.length ? { telegramIds } : {}),
+  };
 
   return updates;
 };
@@ -207,9 +227,19 @@ const buildMergeUpdates = async (deps, primaryUid, secondaryUid, { now, via }) =
  * людини, — справа того, хто кличе.
  * @returns {Promise<{ status: 'merged'|'already-merged'|'refused', reason?: string, primaryUid?: string, filled?: number }>}
  */
-const mergeAccounts = async (deps, { primaryUid, secondaryUid, via = '', now = Date.now() }) => {
+//
+// `requireBotOnlySecondary` — для злиття за кодом із Telegram: доказ там лише
+// у тому, що людина бачить код у своєму Telegram, тож зливається тільки
+// акаунт, який сам цей Telegram і завів (жодного іншого способу входу —
+// пошти, Google). Інакше вивідуваний у людини код («скажіть мені код»)
+// забирав би в чужий акаунт і її пошту з паролем разом з даними.
+const mergeAccounts = async (deps, { primaryUid, secondaryUid, via = '', now = Date.now(), requireBotOnlySecondary = false }) => {
   if (!isValidUid(primaryUid) || !isValidUid(secondaryUid)) return { status: 'refused', reason: 'invalid' };
   if (PROTECTED_UIDS.includes(secondaryUid)) return { status: 'refused', reason: 'protected' };
+  if (requireBotOnlySecondary) {
+    const providers = deps.listProviders ? await deps.listProviders(secondaryUid) : null;
+    if (!Array.isArray(providers) || providers.length) return { status: 'refused', reason: 'secondary-has-sign-in' };
+  }
   const primary = await resolvePrimaryUid(deps, primaryUid);
   if (primary === secondaryUid) return { status: 'refused', reason: 'cycle' };
   if (primary === (await resolvePrimaryUid(deps, secondaryUid))) {
@@ -267,10 +297,39 @@ const resolveAccountOnSignIn = async (deps, uid, { now = Date.now() } = {}) => {
   let merged = 0;
   for (const secondaryUid of pending) {
     // eslint-disable-next-line no-await-in-loop
-    const result = await mergeAccounts(deps, { primaryUid: uid, secondaryUid, via: 'telegram-link', now });
+    const result = await mergeAccounts(deps, { primaryUid: uid, secondaryUid, via: 'telegram-link', now, requireBotOnlySecondary: true });
     if (result.status === 'merged') merged += 1;
   }
   return merged ? { status: 'merged', merged } : { status: 'primary' };
+};
+
+/**
+ * Розʼєднання — шлях адміна, коли людина каже, що злиття робила не вона
+ * (лист «Акаунти обʼєднано»). Знімає позначку другорядного, повертає
+ * Telegram, що відкривав другорядний, і дату публікації його картки. Долите
+ * в головний лишається там: воно лягло лише на порожні місця, і другорядний
+ * свої дані не втрачав.
+ * @returns {Promise<{ status: 'unlinked'|'not-merged', primaryUid?: string }>}
+ */
+const unlinkMergedAccount = async (deps, secondaryUid) => {
+  if (!isValidUid(secondaryUid)) return { status: 'not-merged' };
+  const alias = await deps.read(`${ALIASES_ROOT}/${secondaryUid}`);
+  if (!alias || !isValidUid(alias.primary)) return { status: 'not-merged' };
+  const updates = { [`${ALIASES_ROOT}/${secondaryUid}`]: null };
+  for (const tgId of Array.isArray(alias.telegramIds) ? alias.telegramIds : []) {
+    // eslint-disable-next-line no-await-in-loop
+    const account = await deps.read(`${TELEGRAM_ACCOUNTS_ROOT}/${tgId}`);
+    if (account && account.previousUid === secondaryUid) {
+      updates[`${TELEGRAM_ACCOUNTS_ROOT}/${tgId}/uid`] = secondaryUid;
+      updates[`${TELEGRAM_ACCOUNTS_ROOT}/${tgId}/previousUid`] = null;
+    }
+  }
+  if (typeof alias.hiddenFeedDate === 'string') {
+    const feedDate = await deps.read(`matchingCards/${secondaryUid}/feedDate`);
+    if (feedDate === false) updates[`matchingCards/${secondaryUid}/feedDate`] = alias.hiddenFeedDate;
+  }
+  await deps.update(updates);
+  return { status: 'unlinked', primaryUid: alias.primary };
 };
 
 module.exports = {
@@ -284,4 +343,5 @@ module.exports = {
   mergeAccounts,
   resolveAccountOnSignIn,
   resolvePrimaryUid,
+  unlinkMergedAccount,
 };

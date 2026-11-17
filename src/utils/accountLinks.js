@@ -107,17 +107,18 @@ const getSecondaryAuth = async primaryApp => {
  * Зливає з поточним акаунтом інший, у який людина входить цим `credential`
  * (Google чи пошта з паролем, що вже належать іншому акаунту). Вхід у той
  * акаунт іде окремим екземпляром Auth і закінчується одразу: функції досить
- * його свіжого ID-токена.
+ * його ID-токена, отриманого щойно (≤ 5 хв) паролем чи Google. Про злиття
+ * сервер пише на пошту того акаунта (`language` — мова листа).
  * @returns {Promise<{ status: string, reason?: string }>}
  */
-export const mergeAccountWithCredential = async (auth, credential) => {
+export const mergeAccountWithCredential = async (auth, credential, { language } = {}) => {
   const { signInWithCredential, signOut } = await import('firebase/auth');
   const secondaryAuth = await getSecondaryAuth(auth.app);
   try {
     const secondary = await signInWithCredential(secondaryAuth, credential);
     if (secondary.user.uid === auth.currentUser?.uid) return { status: 'already-merged' };
     const idToken = await secondary.user.getIdToken(true);
-    return await callFunction(auth.app, MERGE_ACCOUNT_FUNCTION_NAME, { secondaryIdToken: idToken }, 60000);
+    return await callFunction(auth.app, MERGE_ACCOUNT_FUNCTION_NAME, { secondaryIdToken: idToken, language }, 60000);
   } finally {
     await signOut(secondaryAuth).catch(() => {});
   }
