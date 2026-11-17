@@ -1276,6 +1276,8 @@ const BY_UK = {
   'Мій профіль': 'Mi perfil',
   'Додати анкету': 'Añadir un perfil',
   'Адмін-додавання профілів': 'Creación de perfiles por el administrador',
+  'Комуналка': 'Servicios',
+  'Розрахунок по квартирах': 'Cálculo por apartamento',
   'Пошук і порівняння анкет': 'Buscar y comparar perfiles',
   'Перевірка нових карток': 'Revisión de las tarjetas nuevas',
   'Ваші картки та створення нових': 'Sus tarjetas y la creación de nuevas',

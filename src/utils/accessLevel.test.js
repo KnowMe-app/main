@@ -36,6 +36,9 @@ describe('accessLevel', () => {
       canAccessInvoices: true,
       canCreateProfiles: true,
       canAccessFlow: true,
+      canAccessUtilities: true,
+      specialScreens: [],
+      specialScreensOnly: false,
     });
   });
 
@@ -47,6 +50,9 @@ describe('accessLevel', () => {
       canAccessInvoices: false,
       canCreateProfiles: false,
       canAccessFlow: false,
+      canAccessUtilities: false,
+      specialScreens: [],
+      specialScreensOnly: false,
     });
   });
 
@@ -137,12 +143,27 @@ describe('додаткові екрани (screenAccess)', () => {
     expect(SCREEN_ACCESS_OPTIONS.map(option => option.path)).toContain('/flow');
   });
 
-  it('перший екран: Flow — не-адмінові з відкритим Flow, адмінові — ні', () => {
+  it('перший екран — перший виданий; без виданих і адмінові — звичайний', () => {
     // eslint-disable-next-line global-require
-    const { resolveFlowHomeRoute } = require('./accessLevel');
-    expect(resolveFlowHomeRoute(resolveAccess({ uid: 'viewer', screenAccess: 'flow' }))).toBe('/flow');
-    expect(resolveFlowHomeRoute(resolveAccess({ uid: 'viewer', screenAccess: '' }))).toBeNull();
-    expect(resolveFlowHomeRoute(resolveAccess({ uid: ADMIN_UIDS[0], screenAccess: 'flow' }))).toBeNull();
-    expect(resolveFlowHomeRoute(null)).toBeNull();
+    const { resolveSpecialHomeRoute } = require('./accessLevel');
+    expect(resolveSpecialHomeRoute(resolveAccess({ uid: 'viewer', screenAccess: 'flow' }))).toBe('/flow');
+    expect(resolveSpecialHomeRoute(resolveAccess({ uid: 'viewer', screenAccess: 'utilities' }))).toBe('/utilities');
+    expect(resolveSpecialHomeRoute(resolveAccess({ uid: 'viewer', screenAccess: 'utilities,flow' }))).toBe('/flow');
+    expect(resolveSpecialHomeRoute(resolveAccess({ uid: 'viewer', screenAccess: '' }))).toBeNull();
+    expect(resolveSpecialHomeRoute(resolveAccess({ uid: ADMIN_UIDS[0], screenAccess: 'flow' }))).toBeNull();
+    expect(resolveSpecialHomeRoute(null)).toBeNull();
+  });
+
+  it('комуналка: лише виданим і адмінам; видані екрани ховають звичайні', () => {
+    expect(resolveAccess({ uid: 'viewer', screenAccess: 'utilities' }).canAccessUtilities).toBe(true);
+    expect(resolveAccess({ uid: 'viewer', screenAccess: 'flow' }).canAccessUtilities).toBe(false);
+    expect(resolveAccess({ uid: ADMIN_UIDS[0], screenAccess: '' }).canAccessUtilities).toBe(true);
+    expect(resolveAccess({ uid: 'viewer', screenAccess: 'flow,utilities' })).toMatchObject({
+      specialScreens: ['flow', 'utilities'],
+      specialScreensOnly: true,
+    });
+    expect(resolveAccess({ uid: 'viewer', screenAccess: '' }).specialScreensOnly).toBe(false);
+    expect(resolveAccess({ uid: ADMIN_UIDS[0], screenAccess: 'flow' }).specialScreensOnly).toBe(false);
+    expect(SCREEN_ACCESS_OPTIONS.map(option => option.path)).toContain('/utilities');
   });
 });

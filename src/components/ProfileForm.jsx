@@ -3437,6 +3437,12 @@ ${entries.join('\n')}`;
                           </ScreenAccessOption>
                         );
                       })}
+                      {/* Видані екрани — особлива інструкція: людина з ними
+                          бачить у меню лише їх, без стрічки й «Мого профілю»
+                          (`specialScreensOnly` в `utils/accessLevel`). */}
+                      <small data-testid="screen-access-hint">
+                        Відмічені екрани замінюють стрічку й «Мій профіль»: у меню людини будуть лише вони.
+                      </small>
                     </ScreenAccessList>
                   ) : field.name === ADDITIONAL_ACCESS_FIELD ? (
                     <>

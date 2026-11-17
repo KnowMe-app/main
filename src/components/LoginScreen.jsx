@@ -26,7 +26,7 @@ import {
   persistAccountProfile,
 } from './authProfilePersistence';
 import { readReturnToFromState } from 'utils/authRedirect';
-import { resolveAccess, resolveFlowHomeRoute } from 'utils/accessLevel';
+import { resolveAccess, resolveSpecialHomeRoute } from 'utils/accessLevel';
 import { requestPasswordResetEmail, requestVerificationEmail } from 'utils/emailVerification';
 import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
 import { APP_LANGUAGES, getLanguageNativeName } from 'utils/locales';
@@ -676,9 +676,9 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       timer = setTimeout(() => resolve(MY_PROFILE_ROUTE), LANDING_ROUTE_TIMEOUT_MS);
     });
     const read = fetchUserById(uid)
-      // Не-адмін з відкритим Flow починає з Flow (`resolveFlowHomeRoute`), як і
+      // Не-адмін з виданими екранами починає з першого з них (`resolveSpecialHomeRoute`), як і
       // ярлик з головного екрана; решта — як було.
-      .then(profile => resolveFlowHomeRoute(resolveAccess({
+      .then(profile => resolveSpecialHomeRoute(resolveAccess({
         uid,
         accessLevel: profile?.accessLevel,
         canCreateProfiles: profile?.canCreateProfiles,

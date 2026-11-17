@@ -21,8 +21,8 @@ describe('LoginScreen returns the reader to the link they opened', () => {
     // у «Мій профіль» (`resolveLandingRoute`); адреса завжди важить більше.
     expect(loginSource()).toContain('const target = returnTo || (registered ? MY_PROFILE_ROUTE : await resolveLandingRoute(auth.currentUser?.uid));');
     expect(loginSource()).toContain('|| (profile?.publish === true ? MATCHING_ROUTE : MY_PROFILE_ROUTE))');
-    // Не-адмін з відкритим Flow починає з Flow — те саме правило, що й корінь у `App`.
-    expect(loginSource()).toContain('.then(profile => resolveFlowHomeRoute(resolveAccess({');
+    // Не-адмін з виданими екранами починає з першого — те саме правило, що й корінь у `App`.
+    expect(loginSource()).toContain('.then(profile => resolveSpecialHomeRoute(resolveAccess({');
   });
 
   it('never keeps the sign-in spinner waiting on the database', () => {

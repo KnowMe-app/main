@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useLocation } from 'react-router-dom';
-import { FaRegUser, FaUsers, FaSignOutAlt, FaTrashAlt, FaEraser, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaMoon, FaSun, FaBell } from 'react-icons/fa';
+import { FaRegUser, FaUsers, FaSignOutAlt, FaTrashAlt, FaEraser, FaProjectDiagram, FaEuroSign, FaFileInvoiceDollar, FaFileAlt, FaAddressBook, FaMoon, FaSun, FaBell, FaHome } from 'react-icons/fa';
 import { MdPersonAddAlt1 } from 'react-icons/md';
 import { VerifyEmail } from './VerifyEmail';
 import { LanguagePicker } from './LanguagePicker';
@@ -135,6 +135,8 @@ const normalizeAccess = access => ({
   canAccessMatching: Boolean(access?.canAccessMatching),
   canCreateProfiles: Boolean(access?.canCreateProfiles),
   canAccessFlow: Boolean(access?.canAccessFlow),
+  canAccessUtilities: Boolean(access?.canAccessUtilities),
+  specialScreensOnly: Boolean(access?.specialScreensOnly),
 });
 
 export const ProfileDotsMenu = ({
@@ -236,7 +238,18 @@ export const ProfileDotsMenu = ({
     );
   }
 
-  const navItems = [
+  const flowItem = { path: '/flow', label: 'Flow', icon: <FaProjectDiagram /> };
+  const utilitiesItem = { path: '/utilities', label: uiText('Комуналка', language), description: uiText('Розрахунок по квартирах', language), icon: <FaHome /> };
+  // Людина з виданими адміном екранами (Flow, комуналка) бачить лише їх:
+  // стрічка й «Мій профіль» для неї — шум (`specialScreensOnly`,
+  // `utils/accessLevel`), і `App` однаково веде звичайні адреси на її екран.
+  const specialOnlyItems = !isAdmin && resolvedAccess.specialScreensOnly
+    ? [
+      ...(resolvedAccess.canAccessFlow ? [flowItem] : []),
+      ...(resolvedAccess.canAccessUtilities ? [utilitiesItem] : []),
+    ]
+    : null;
+  const navItems = specialOnlyItems || [
     { path: '/my-profile', label: uiText('Мій профіль', language), icon: <FaRegUser /> },
     ...(canSeePrivilegedNav && (isAdmin || resolvedAccess.canAccessAdd)
       ? [{ path: '/add', label: uiText('Додати анкету', language), description: uiText('Адмін-додавання профілів', language), icon: <MdPersonAddAlt1 /> }]
@@ -254,7 +267,9 @@ export const ProfileDotsMenu = ({
       icon: <MdPersonAddAlt1 />,
     },
     // Flow — і тим, кому його відкрив адмін (`screenAccess`).
-    ...(isAdmin || resolvedAccess.canAccessFlow ? [{ path: '/flow', label: 'Flow', icon: <FaProjectDiagram /> }] : []),
+    ...(isAdmin || resolvedAccess.canAccessFlow ? [flowItem] : []),
+    // Комуналка — так само: адмінам і тим, кому її відкрили (`screenAccess`).
+    ...(isAdmin || resolvedAccess.canAccessUtilities ? [utilitiesItem] : []),
     ...(isAdmin ? [{ path: '/notifications', label: 'Сповіщення', description: 'Що роблять користувачі — у Telegram чи push', icon: <FaBell /> }] : []),
     ...(isAdmin ? [{ path: '/budget', label: 'Budget', description: 'Program budget and other expenses', icon: <FaEuroSign /> }] : []),
     ...(isAdmin ? [{ path: '/invoices', label: 'Invoices', description: 'Create and export client invoices', icon: <FaFileInvoiceDollar /> }] : []),

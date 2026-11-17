@@ -135,3 +135,28 @@ it('omits the primary navigation destinations when asked', () => {
   expect(screen.queryByText('Нові профілі')).toBeNull();
   expect(screen.getByText('Flow')).toBeTruthy();
 });
+
+// Видані адміном екрани (Flow, комуналка) — особлива інструкція: людина з
+// ними бачить у меню лише їх, без стрічки й «Мого профілю» (17.11).
+describe('ProfileDotsMenu: видані адміном екрани', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('appLanguage', 'uk');
+  });
+
+  it('людині з виданими екранами показує лише їх', () => {
+    renderMenu({ access: resolveAccess({ uid: 'user-id', screenAccess: 'flow,utilities' }) });
+    const items = screen.getAllByRole('menuitem').map(item => item.textContent);
+    expect(items.some(text => text.includes('Комуналка'))).toBe(true);
+    expect(items.some(text => text.includes('Flow'))).toBe(true);
+    expect(screen.queryByRole('menuitem', { name: /Мій профіль/ })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Matching/ })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /Створені мною/ })).toBeNull();
+  });
+
+  it('без виданих екранів — звичайний набір, без комуналки', () => {
+    renderMenu({ access: resolveAccess({ uid: 'user-id', screenAccess: '' }) });
+    expect(screen.getByRole('menuitem', { name: /Мій профіль/ })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: /Комуналка/ })).toBeNull();
+  });
+});
