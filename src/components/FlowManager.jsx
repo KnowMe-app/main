@@ -1240,6 +1240,17 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   // можна було лише через «Перенести» чи «Видалити» — фон не фокусується.
   const closeTopSheetRef = useRef(null);
   closeTopSheetRef.current = () => {
+    // Спершу те, що лежить зверху: підтвердження видалення відкривається
+    // поверх шторки груп, і Escape закривав шторку під ним, лишаючи
+    // незворотний діалог висіти, а «Скасувати» в ньому вело вже не до груп.
+    if (confirmState.type) {
+      closeConfirm();
+      return true;
+    }
+    if (isExchangeModalOpen) {
+      setIsExchangeModalOpen(false);
+      return true;
+    }
     if (rowMenu) {
       setRowMenu(null);
       return true;
