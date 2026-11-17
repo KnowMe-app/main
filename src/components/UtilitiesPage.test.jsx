@@ -105,6 +105,34 @@ describe('UtilitiesPage', () => {
     expect(writes).toEqual(['4.32']);
   });
 
+  it('правка, що робить закритий місяць неповним, повертає його в роботу', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('utilities-history-2026-10'));
+    fireEvent.click(screen.getByTestId('utilities-edit-month'));
+    const zhek = screen.getAllByTestId('utilities-field-vals.zhek.e').pop();
+    fireEvent.change(zhek, { target: { value: '250+' } });
+    fireEvent.blur(zhek);
+    const patch = mockEnqueue.mock.calls.pop()[1];
+    expect(patch).toMatchObject({
+      'multiData/utilities/owner-1/months/a1/2026-10/vals/zhek/e': '250+',
+      'multiData/utilities/owner-1/months/a1/2026-10/closed': false,
+    });
+    expect(screen.getByTestId('utilities-open-month').textContent).toContain('Повернуто в роботу — жовтень');
+  });
+
+  it('повна правка закритого місяця лишає його закритим', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('utilities-history-2026-10'));
+    fireEvent.click(screen.getByTestId('utilities-edit-month'));
+    const zhek = screen.getAllByTestId('utilities-field-vals.zhek.e').pop();
+    fireEvent.change(zhek, { target: { value: '800' } });
+    fireEvent.blur(zhek);
+    const patch = mockEnqueue.mock.calls.pop()[1];
+    expect(Object.keys(patch)).not.toContain('multiData/utilities/owner-1/months/a1/2026-10/closed');
+  });
+
   it('рахує набране одразу, а пише на blur', async () => {
     renderPage();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());

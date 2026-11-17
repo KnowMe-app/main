@@ -340,12 +340,15 @@ const MonthEditor = ({
   };
 
   const extras = listExtras(view);
+  const isReopened = isOpenMonth && !month.virtual && Boolean(month.reopenedAt);
 
   return (
     <EditorCard data-testid={isOpenMonth ? 'utilities-open-month' : `utilities-month-${month.mk}`}>
       {isOpenMonth && (
         <EditorHead>
-          <h2>Новий місяць — {MONTHS[monthIndex(month.mk)]}</h2>
+          {/* Місяць, який правка повернула в роботу, — не новий: за ним уже
+              є закриті. */}
+          <h2>{isReopened ? 'Повернуто в роботу' : 'Новий місяць'} — {MONTHS[monthIndex(month.mk)]}</h2>
           <span>платіж {paymentDateLabel(apartment, month.mk)}</span>
         </EditorHead>
       )}
@@ -920,6 +923,22 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
     Object.entries(relPatch).forEach(([rel, value]) => {
       patch[`${base}/${pathToDb(rel)}`] = value === undefined ? null : value;
     });
+    // Правка закритого місяця, після якої він неповний (стерта сума,
+    // недописана формула), повертає його в роботу: інакше закритий місяць
+    // мовчки рахував би нарахування нулем, і зсувались би переплати наступних
+    // місяців та експорт. Знову закрити його можна лише повним.
+    const stored = dataRef.current?.months?.[month.aptId]?.[month.mk];
+    if (stored?.closed === true && relPatch.closed !== true) {
+      const after = applyUtilitiesPatch(dataRef.current, patch, ownerId);
+      const afterMonth = { ...(after?.months?.[month.aptId]?.[month.mk] || {}), mk: month.mk, aptId: month.aptId };
+      const missing = listMissing(afterMonth, computeMonth(after, afterMonth));
+      if (missing.length) {
+        patch[`${base}/closed`] = false;
+        patch[`${base}/closedAt`] = null;
+        patch[`${base}/reopenedAt`] = Date.now();
+        toast(`${capitalize(monthName(month.mk))} повернуто в роботу — бракує: ${missing.join(', ')}`, { duration: 6000 });
+      }
+    }
     if (clearKeys.length) {
       setLocalEdits(prev => {
         const next = { ...prev };
@@ -928,7 +947,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
       });
     }
     sendPatch(patch, label);
-  }, [root, sendPatch]);
+  }, [ownerId, root, sendPatch]);
 
   const writeApartment = useCallback((relPatch, label) => {
     if (!aptId) return;
@@ -1030,7 +1049,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
   };
 
   const closeMonth = month => {
-    writeMonth(month, { closed: true, closedAt: Date.now(), ...(month.virtual ? { date: month.date } : {}) }, `Закрито ${monthName(month.mk)}`);
+    writeMonth(month, { closed: true, closedAt: Date.now(), reopenedAt: null, ...(month.virtual ? { date: month.date } : {}) }, `Закрито ${monthName(month.mk)}`);
     setOpenHistoryMk('');
     toast.success(`${capitalize(monthName(month.mk))} закрито`);
   };
