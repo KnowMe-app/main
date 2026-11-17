@@ -161,4 +161,20 @@ describe('UtilitiesPage', () => {
     expect(screen.getByTestId('utilities-field-vals.zhek.e').readOnly).toBe(true);
     expect(screen.queryByTestId('utilities-close-month')).toBeNull();
   });
+
+  it('імпорт JSON: файл → підтвердження → один запис у чергу', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('utilities-settings-open'));
+    const json = JSON.stringify({ apartments: [{ name: 'кв. 645', months: [{ month: '2026-11', budget: 3600 }] }] });
+    const file = new File([json], 'komunalka.json', { type: 'application/json' });
+    if (!file.text) file.text = () => Promise.resolve(json);
+    fireEvent.change(screen.getByTestId('utilities-import-input'), { target: { files: [file] } });
+    const dialog = await screen.findByTestId('utilities-import-dialog');
+    expect(dialog.textContent).toContain('кв. 645: місяців 1');
+    fireEvent.click(screen.getByTestId('utilities-import-confirm'));
+    expect(mockEnqueue).toHaveBeenCalledWith('owner-1', {
+      'multiData/utilities/owner-1/months/a1/2026-11': { budget: '3600', closed: false },
+    });
+  });
 });

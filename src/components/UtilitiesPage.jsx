@@ -10,6 +10,9 @@ import Collapsible from './Collapsible';
 import {
   Backdrop,
   DangerBtn,
+  Dialog,
+  DialogActions,
+  DialogText,
   GhostBtn,
   IconBtn,
   OfflineNote,
@@ -68,6 +71,7 @@ import {
   Title,
   Trio,
 } from './UtilitiesPage.styled';
+import { UTILITIES_IMPORT_SAMPLE, planUtilitiesImport } from 'utils/utilitiesImport';
 import { enqueueUtilitiesPatch, fetchUtilitiesData, listUtilitiesOwners } from './utilitiesRemote';
 import { ADMIN_UIDS, isAdminUid, readStoredAccessLevel, readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { listPendingOutboxPatches, subscribeWriteOutbox } from 'utils/writeOutbox';
@@ -609,7 +613,9 @@ const WasLine = ({ editable, isManual, manualValue, reading, prevLabel, onManual
 
 // ---------- налаштування квартири ----------
 
-const SettingsSheet = ({ data, apartment, currentMk, canWrite, onWriteApartment, onAddApartment, onDeleteApartment, onExport, exporting, onClose, textScale, onTextScale }) => {
+const SettingsSheet = ({ data, apartment, currentMk, canWrite, onWriteApartment, onAddApartment, onDeleteApartment, onExport, exporting, onImportFile, onClose, textScale, onTextScale }) => {
+  const importInputRef = useRef(null);
+  const [showSample, setShowSample] = useState(false);
   const [catName, setCatName] = useState('');
   const [catUnit, setCatUnit] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -795,7 +801,35 @@ const SettingsSheet = ({ data, apartment, currentMk, canWrite, onWriteApartment,
           <GhostBtn type="button" disabled={exporting || !listApartments(data).length} onClick={onExport} data-testid="utilities-export">
             {exporting ? 'Готуємо файли…' : 'Експорт в Excel — книга на кожну квартиру'}
           </GhostBtn>
-          {canWrite && <GhostBtn type="button" onClick={onAddApartment}>+ Додати квартиру</GhostBtn>}
+          {canWrite && (
+            <>
+              <GhostBtn type="button" onClick={() => importInputRef.current?.click()} data-testid="utilities-import">
+                Імпорт з JSON
+              </GhostBtn>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".json,application/json"
+                style={{ display: 'none' }}
+                data-testid="utilities-import-input"
+                onChange={event => {
+                  const file = event.target.files?.[0];
+                  event.target.value = '';
+                  if (file) onImportFile(file);
+                }}
+              />
+              <LinkBtn type="button" onClick={() => setShowSample(open => !open)} aria-expanded={showSample}>
+                {showSample ? 'Сховати зразок файлу' : 'Який вигляд має файл?'}
+              </LinkBtn>
+              {showSample && (
+                <>
+                  <Hint>Квартира впізнається за назвою: місяці лягають у наявну (той самий місяць замінюється), інакше заводиться нова. Суми й тарифи — числом або формулою. Резервну копію (вузли apartments і months з бази) теж можна імпортувати.</Hint>
+                  <PasteText data-testid="utilities-import-sample">{UTILITIES_IMPORT_SAMPLE}</PasteText>
+                </>
+              )}
+              <GhostBtn type="button" onClick={onAddApartment}>+ Додати квартиру</GhostBtn>
+            </>
+          )}
           {canWrite && apartment && (confirmDelete ? (
             <SettingRow style={{ background: 'var(--km-danger-bg, #fff2f1)', flexWrap: 'wrap' }}>
               <div><b>Видалити {apartment.name}?</b><small>Зникнуть усі її місяці. Відмінити можна кнопкою «Назад» угорі.</small></div>
@@ -826,6 +860,8 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // План імпорту JSON, що чекає підтвердження (`planUtilitiesImport`).
+  const [importPlan, setImportPlan] = useState(null);
   const [history, setHistory] = useState({ undo: [], redo: [] });
   const [textScale, setTextScale] = useState(() => {
     const saved = Number(readStorage(textScaleKey(ownerId)));
@@ -1086,6 +1122,35 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
     }
   };
 
+  const readImportFile = async file => {
+    try {
+      const text = await file.text();
+      const plan = planUtilitiesImport(text, dataRef.current);
+      if (plan.error) {
+        toast.error(plan.error);
+        return;
+      }
+      // Шторка налаштувань закривається: вікно підтвердження лягало під неї
+      // (той самий шар), і текст плану просвічував крізь зразок файлу.
+      setSettingsOpen(false);
+      setImportPlan({ ...plan, fileName: file.name });
+    } catch (error) {
+      console.error('Utilities import read failed', error);
+      toast.error('Не вдалося прочитати файл');
+    }
+  };
+
+  const applyImport = () => {
+    if (!importPlan) return;
+    const patch = Object.fromEntries(Object.entries(importPlan.patch).map(([rel, value]) => [`${root}/${rel}`, value]));
+    sendPatch(patch, `Імпорт ${importPlan.fileName || 'JSON'}`);
+    const first = importPlan.summary[0];
+    if (first) setSelectedAptId(first.aptId);
+    const months = importPlan.summary.reduce((sum, item) => sum + item.monthCount, 0);
+    toast.success(`Імпортовано: квартир ${importPlan.summary.length}, місяців ${months}`);
+    setImportPlan(null);
+  };
+
   const handleExit = async () => {
     clearUtilitiesCache();
     await signOut(auth);
@@ -1295,10 +1360,36 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
           onDeleteApartment={deleteApartment}
           onExport={exportExcel}
           exporting={exporting}
+          onImportFile={readImportFile}
           textScale={textScale}
           onTextScale={changeTextScale}
           onClose={() => setSettingsOpen(false)}
         />
+      )}
+      {importPlan && (
+        <Backdrop $center style={{ zIndex: 1300 }} onClick={() => setImportPlan(null)}>
+          <Dialog role="dialog" aria-label="Імпорт з JSON" onClick={e => e.stopPropagation()} data-testid="utilities-import-dialog">
+            <h2>Імпортувати {importPlan.fileName || 'файл'}?</h2>
+            <DialogText>
+              {importPlan.summary.map(item => (
+                <span key={item.aptId}>
+                  <b>{item.name}</b>{item.isNew ? ' — нова квартира' : ''}: місяців {item.monthCount}
+                  {item.replaced.length ? ` (замінять наявні: ${item.replaced.map(monthName).join(', ')})` : ''}
+                </span>
+              ))}
+              {importPlan.warnings.length > 0 && (
+                <span style={{ color: 'var(--km-danger, #b42318)' }}>
+                  Пропущено: {importPlan.warnings.slice(0, 6).join('; ')}{importPlan.warnings.length > 6 ? ` і ще ${importPlan.warnings.length - 6}` : ''}
+                </span>
+              )}
+              <span>Відмінити можна кнопкою «Назад» угорі.</span>
+            </DialogText>
+            <DialogActions>
+              <GhostBtn type="button" onClick={() => setImportPlan(null)}>Скасувати</GhostBtn>
+              <PrimaryBtn type="button" onClick={applyImport} data-testid="utilities-import-confirm">Імпортувати</PrimaryBtn>
+            </DialogActions>
+          </Dialog>
+        </Backdrop>
       )}
       {showMenu && <InfoModal onClose={() => setShowMenu(false)} text={showMenu} Context={dotsMenu} />}
     </Wrap>

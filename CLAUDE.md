@@ -1240,7 +1240,12 @@ Flow; дані — `multiData/utilities/{uid}` = `{ apartments, months: {ква�
 blur, а розрахунок рахує набране з `localEdits` одразу. «Назад / Вперед» — латки навпаки
 (`buildInverseUtilitiesPatch`), у памʼяті вкладки, через ту саму чергу. **Експорт в
 Excel** (⚙) — книга `.xlsx` на кожну квартиру (`utils/utilitiesExport`, рушій `xlsx`
-вантажиться лише на натискання). Адмін обирає учасника, як у Flow (`listUtilitiesOwners`
+вантажиться лише на натискання). **Імпорт з JSON** (⚙, `utils/utilitiesImport`,
+`planUtilitiesImport`): простий формат (квартири → місяці → `light`/`water`/`zhek`/…,
+зразок — `UTILITIES_IMPORT_SAMPLE`, видно на екрані) або сирий знімок вузла; квартира
+впізнається за назвою, той самий місяць замінюється цілком, налаштувань наявної квартири
+імпорт не чіпає; биті значення пропускаються з поясненням у вікні підтвердження, а весь
+імпорт — одна латка й один крок «Назад». Адмін обирає учасника, як у Flow (`listUtilitiesOwners`
 — `listDataOwners` у `flowOwnersRemote`); правила `multiData/utilities` — як у Flow, плюс
 лише вузли `apartments` і `months` (сценарії «Комуналка» в `npm run test:rules`).
 
