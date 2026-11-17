@@ -1219,8 +1219,13 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   };
   restoreRenameSettingsRef.current = (rename, direction) => {
     const target = direction === 'undo' ? rename.from : rename.to;
-    if (rename.income) selectIncomeGroup(target);
-    if (rename.filter) {
+    const current = direction === 'undo' ? rename.to : rename.from;
+    // Повертаємо лише те, що досі стоїть на назві з перейменування: групу
+    // надходжень чи фільтр могли змінити пізніше в налаштуваннях, і відміна
+    // мовчки перебила б новіший вибір (а надходження тієї групи пішли б у
+    // витрати).
+    if (rename.income && incomeGroup === current) selectIncomeGroup(target);
+    if (rename.filter && filterGroup === current) {
       setFilterGroup(target);
       persistSetting(flowFilterStorageKey(ownerId), target);
     }
