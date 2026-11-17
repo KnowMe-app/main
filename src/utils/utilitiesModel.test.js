@@ -61,6 +61,12 @@ describe('evalUtilityExpr', () => {
     expect(Number.isNaN(evalUtilityExpr('alert(1)'))).toBe(true);
     expect(Number.isNaN(evalUtilityExpr('2+'))).toBe(true);
   });
+
+  it('розуміє знаки з калькулятора: ×, ÷, −, «=» на початку', () => {
+    expect(evalUtilityExpr('1340 − 571,13')).toBeCloseTo(768.87);
+    expect(evalUtilityExpr('299÷31×30')).toBeCloseTo(289.3548, 3);
+    expect(evalUtilityExpr('=250*2')).toBe(500);
+  });
 });
 
 describe('computeMonth', () => {

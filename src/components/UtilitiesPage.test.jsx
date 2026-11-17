@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { writeUtilitiesCache } from 'utils/utilitiesOfflineWrites';
 
@@ -21,6 +21,8 @@ jest.mock('react-hot-toast', () => {
 
 // eslint-disable-next-line import/first
 import { UtilitiesManager } from './UtilitiesPage';
+// eslint-disable-next-line import/first
+import { placeBar } from './UtilitiesFormulaKeys';
 
 const DATA = {
   apartments: {
@@ -215,5 +217,55 @@ describe('UtilitiesPage', () => {
     keys.forEach(key => keys.forEach(other => expect(other.startsWith(`${key}/`)).toBe(false)));
     expect(patch['multiData/utilities/owner-1/months/a1/2026-11']).toMatchObject({ budget: '3600', closed: false });
     expect(patch['multiData/utilities/owner-1/months/a1/2026-11'].reopenedAt).toEqual(expect.any(Number));
+  });
+
+  it('знаки формули під полем: вставляють у місце курсора й показують результат', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    const zhek = screen.getByTestId('utilities-field-vals.zhek.e');
+    fireEvent.focus(zhek);
+    fireEvent.change(zhek, { target: { value: '1340' } });
+    zhek.setSelectionRange(4, 4);
+    const minus = screen.getByRole('button', { name: 'Вставити −' });
+    fireEvent.click(minus);
+    expect(zhek.value).toBe('1340-');
+    fireEvent.change(zhek, { target: { value: '1340-571.13' } });
+    expect(screen.getByTestId('utilities-formula-result').textContent.replace(/\u00a0/g, ' ')).toBe('= 768,87');
+    expect(mockEnqueue).not.toHaveBeenCalled();
+    fireEvent.blur(zhek);
+    await waitFor(() => expect(screen.queryByTestId('utilities-formula-keys')).toBeNull());
+    expect(mockEnqueue).toHaveBeenCalledWith('owner-1', expect.objectContaining({
+      'multiData/utilities/owner-1/months/a1/2026-11/vals/zhek/e': '1340-571.13',
+    }));
+  });
+
+  it('рядок знаків — під полем, а без місця внизу (клавіатура) — над ним', () => {
+    const viewport = { top: 0, left: 0, width: 390, height: 500 };
+    expect(placeBar({ top: 100, bottom: 140, left: 20 }, viewport)).toEqual({ top: 146, left: 20 });
+    expect(placeBar({ top: 440, bottom: 480, left: 20 }, viewport)).toEqual({ top: 390, left: 20 });
+    expect(placeBar({ top: 100, bottom: 140, left: 300 }, viewport).left).toBe(82);
+  });
+
+  it('знаки формули в шторці налаштувань: результат оновлюється від набору', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('utilities-settings-open'));
+    const initial = within(screen.getByTestId('utilities-settings')).getByLabelText(/Світло · день/);
+    fireEvent.focus(initial);
+    fireEvent.change(initial, { target: { value: '100+2' } });
+    expect(screen.getByTestId('utilities-formula-result').textContent.replace(/\u00a0/g, ' ')).toBe('= 102,00');
+  });
+
+  it('прибране з екрана поле забирає з собою й рядок знаків', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    fireEvent.click(screen.getAllByText('змінити')[0]);
+    const manual = await screen.findByLabelText('Було, вручну');
+    fireEvent.focus(manual);
+    expect(screen.getByTestId('utilities-formula-keys')).toBeTruthy();
+    fireEvent.mouseDown(screen.getByText('як було'));
+    fireEvent.click(screen.getByText('як було'));
+    await waitFor(() => expect(screen.queryByLabelText('Було, вручну')).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('utilities-formula-keys')).toBeNull());
   });
 });

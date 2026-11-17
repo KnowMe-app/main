@@ -17,8 +17,16 @@
 
 // Вираз як у клітинці Excel: «1340-571.13», «299/31*30». Власний розбір, а не
 // `Function`: рядок пише людина, і виконувати його як код не можна.
+// Знаки, які люди пишуть руками чи вставляють з калькулятора: «×», «÷», «−»
+// і «=» на початку, як у клітинці Excel.
+const normalizeExprSigns = src => String(src ?? '')
+  .replace(/[×xх·]/gi, '*')
+  .replace(/[÷:]/g, '/')
+  .replace(/[−–—]/g, '-')
+  .replace(/^\s*=/, '');
+
 export const evalUtilityExpr = src => {
-  const s = String(src ?? '').replace(/,/g, '.').replace(/\s+/g, '');
+  const s = normalizeExprSigns(src).replace(/,/g, '.').replace(/\s+/g, '');
   if (!s) return null;
   if (!/^[0-9.+\-*/()]+$/.test(s)) return NaN;
   let i = 0;
@@ -66,7 +74,7 @@ export const evalUtilityExpr = src => {
 
 export const hasValue = value => value !== null && value !== undefined && String(value).trim() !== '';
 export const isNumber = value => typeof value === 'number' && Number.isFinite(value);
-export const isFormula = expr => /[+\-*/()]/.test(String(expr ?? '').trim().replace(/^-/, ''));
+export const isFormula = expr => /[+\-*/()]/.test(normalizeExprSigns(expr).trim().replace(/^-/, ''));
 
 export const getPath = (obj, path) => String(path).split('.').reduce((node, key) => (node == null ? undefined : node[key]), obj);
 
