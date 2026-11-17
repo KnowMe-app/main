@@ -7,6 +7,7 @@ import { auth } from './config';
 import { InfoModal } from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import Collapsible from './Collapsible';
+import { FormulaKeys } from './UtilitiesFormulaKeys';
 import {
   Backdrop,
   DangerBtn,
@@ -183,6 +184,7 @@ const ValueField = ({ month, path, label, ariaLabel, sub, readOnly, localEdits, 
       </FieldLabel>
       <NumInput
         inputMode="decimal"
+        data-formula="1"
         value={value}
         readOnly={readOnly}
         aria-label={ariaLabel || label}
@@ -325,6 +327,7 @@ const MonthEditor = ({
         </FieldLabel>
         <NumInput
           inputMode="decimal"
+          data-formula="1"
           placeholder="зараз"
           readOnly={!editable}
           aria-label={`${block.cat.name} ${zone.label}, зараз`}
@@ -477,6 +480,7 @@ const MonthEditor = ({
               <input
                 data-amount="1"
                 inputMode="decimal"
+                data-formula="1"
                 value={Object.prototype.hasOwnProperty.call(localEdits, amountKey) ? localEdits[amountKey] : (getPath(month, `extras.${extra.id}.e`) ?? '')}
                 placeholder="сума"
                 aria-label="Сума коригування"
@@ -573,6 +577,7 @@ const WasLine = ({ editable, isManual, manualValue, reading, prevLabel, onManual
         <input
           ref={inputRef}
           inputMode="decimal"
+          data-formula="1"
           value={manualValue ?? ''}
           aria-label="Було, вручну"
           style={{ width: 84, border: '1px solid var(--km-accent, #c9600f)', borderRadius: 7, padding: '2px 6px', font: 'inherit', fontSize: 13, background: 'var(--km-card, #fff)', color: 'var(--km-text, #1c1b1a)' }}
@@ -768,6 +773,7 @@ const SettingsSheet = ({ data, apartment, currentMk, canWrite, onWriteApartment,
                       {cat.name}{cat.type === CATEGORY_TYPES.METER2 ? ` · ${zone.label.toLowerCase()}` : ''}
                       <TextInput
                         inputMode="decimal"
+                        data-formula="1"
                         value={fieldValue(key, stored)}
                         readOnly={!canWrite}
                         onChange={e => setDrafts(prev => ({ ...prev, [key]: e.target.value }))}
@@ -922,6 +928,7 @@ const mergeIntoPatch = (patch, monthFields) => {
 
 export const UtilitiesManager = ({ ownerId, viewerId }) => {
   const navigate = useNavigate();
+  const wrapRef = useRef(null);
   const [data, setData] = useState(() => readUtilitiesCache(ownerId) || {});
   const [loaded, setLoaded] = useState(() => Boolean(readUtilitiesCache(ownerId)));
   const [loadError, setLoadError] = useState('');
@@ -1241,7 +1248,8 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
   const memo = new Map();
 
   return (
-    <Wrap data-testid="utilities-page">
+    <Wrap data-testid="utilities-page" ref={wrapRef}>
+      <FormulaKeys containerRef={wrapRef} />
       <TopBar>
         {/* Розмір тексту — у ⚙: шість кнопок разом із назвою не влазили в
             рядок на 390 px, і «⋮» ховався за краєм екрана. */}
