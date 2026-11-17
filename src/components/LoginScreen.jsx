@@ -1013,6 +1013,10 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
         return;
       }
       resetTelegramAttempt();
+      if (result?.status === 'claimed') {
+        toast(tr('Вхід через Telegram завершено в іншому браузері. Щоб увійти тут, натисніть «Увійти через Telegram» ще раз'));
+        return;
+      }
       toast.error(tr('Час на вхід через Telegram минув. Спробуйте ще раз'));
     } catch (error) {
       console.error('[telegram] код не перевірено', error);
@@ -1176,6 +1180,12 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
         if (result?.status === 'code-required') {
           cancelled = true;
           setTelegramCodeRequested(true);
+        } else if (result?.status === 'claimed') {
+          // Вкладка лежала у фоні, поки вхід завершили в іншому браузері, —
+          // стану «чекаємо коду» вона так і не побачила.
+          cancelled = true;
+          resetTelegramAttempt();
+          if (!auth.currentUser) toast(tr('Вхід через Telegram завершено в іншому браузері. Щоб увійти тут, натисніть «Увійти через Telegram» ще раз'));
         } else if (result?.status === 'expired' || result?.status === 'invalid') {
           resetTelegramAttempt();
           toast.error(tr('Час на вхід через Telegram минув. Спробуйте ще раз'));
@@ -1216,7 +1226,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       try {
         const result = await pollTelegramLogin(auth.app, telegramAttempt.nonce);
         if (cancelled || auth.currentUser) return;
-        if (result?.status === 'pending' && result.started === false) {
+        if (result?.status === 'claimed' || (result?.status === 'pending' && result.started === false)) {
           cancelled = true;
           resetTelegramAttempt();
           toast(tr('Вхід через Telegram завершено в іншому браузері. Щоб увійти тут, натисніть «Увійти через Telegram» ще раз'));

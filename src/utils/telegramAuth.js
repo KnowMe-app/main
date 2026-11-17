@@ -80,7 +80,7 @@ export const clearTelegramLoginAttempt = () => {
  * токен віддається лише з кодом, який бот показав людині в Telegram
  * (захист від підсунутого посилання на бота). `ready` несе custom token —
  * функція віддає його рівно один раз.
- * @returns {Promise<{ status: 'pending'|'code-required'|'wrong-code'|'ready'|'expired'|'invalid', started?: boolean, attemptsLeft?: number, token?: string, isNew?: boolean, profile?: object }>}
+ * @returns {Promise<{ status: 'pending'|'code-required'|'wrong-code'|'ready'|'claimed'|'expired'|'invalid', started?: boolean, attemptsLeft?: number, token?: string, isNew?: boolean, profile?: object }>}
  */
 // `key` — ключ спроби з кнопки бота (`#tgk=`) замість `nonce`: так вхід
 // завершує браузер, у якому спроби немає (див. `readTelegramHashParams`).

@@ -82,6 +82,8 @@ describe('LoginScreen: вхід через Telegram', () => {
     expect(source).toContain("if (authStatus === 'in') {");
     expect(source).toContain('setTelegramLinkConfirm({ result, role:');
     expect(source).toContain('data-testid="telegram-link-confirm"');
-    expect(source).toContain("if (result?.status === 'pending' && result.started === false) {");
+    // Вкладка, що лежала у фоні, поки вхід завершили деінде, теж це бачить.
+    expect(source).toContain("} else if (result?.status === 'claimed') {");
+    expect(source).toContain("if (result?.status === 'claimed' || (result?.status === 'pending' && result.started === false)) {");
   });
 });

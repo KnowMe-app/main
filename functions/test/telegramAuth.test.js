@@ -140,8 +140,13 @@ test('повний потік: /start → контакт → застосуно�
   assert.match(ready.token, /^token-for-uid/);
   assert.deepEqual(ready.profile, { phone: '380501234567', firstName: 'Оксана', lastName: 'Коваль', username: 'oksana_k' });
 
-  // Другий запит з тим самим nonce сесії не отримує.
-  assert.notEqual((await completeTelegramLogin(NONCE, '123456', deps)).status, 'ready');
+  // Другий запит з тим самим nonce сесії не отримує, а браузер, що чекав,
+  // дізнається, що спробу забрано (і без коду теж).
+  assert.deepEqual(await completeTelegramLogin(NONCE, '123456', deps), { status: 'claimed' });
+  assert.deepEqual(await completeTelegramLogin(NONCE, '', deps), { status: 'claimed' });
+  // Позначка не несе ні коду, ні профілю.
+  const tombstone = deps.db.data.get(`telegramLogins/${hashNonce(NONCE)}`);
+  assert.deepEqual(Object.keys(tombstone).sort(), ['createdAt', 'status', 'tgId']);
 });
 
 test('кнопка бота завершує вхід і в іншому браузері — ключем спроби й кодом', async () => {

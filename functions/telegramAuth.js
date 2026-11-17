@@ -183,7 +183,7 @@ const handleStart = async ({ nonce, tgId, chatId }, { db, sendMessage, now }) =>
       outcome = 'claimed';
       return undefined;
     }
-    if (current && current.status === 'ready') {
+    if (current && (current.status === 'ready' || current.status === 'claimed')) {
       outcome = 'ready';
       return undefined;
     }
@@ -478,6 +478,7 @@ const completeTelegramLogin = async (nonce, codeInput, { db, auth, now, callerUi
   // Спробу привʼязки завершує лише той акаунт, що її почав: інакше хтось
   // інший прочитаним кодом привʼязав би чужий Telegram до себе.
   if (record.linkUid && record.linkUid !== callerUid) return { status: 'invalid' };
+  if (record.status === 'claimed') return { status: 'claimed' };
   if (isExpired(record, now)) {
     await db.set(path, null);
     if (record.tgId) await db.set(`${LOGINS_BY_TG_ROOT}/${record.tgId}`, null);
@@ -511,7 +512,16 @@ const completeTelegramLogin = async (nonce, codeInput, { db, auth, now, callerUi
     if (current.codeHash === hashCode(key, code)) {
       outcome = 'ready';
       claimed = current;
-      return null;
+      // Замість спроби лишається позначка «забрано» без жодного секрету:
+      // браузер, що почав вхід, а завершили його деінде (кнопка бота у
+      // вбудованому браузері Telegram), інакше бачив би «спроби ще немає» й
+      // чекав номера до кінця строку. Позначку знімає прибирання спроб.
+      return {
+        status: 'claimed',
+        createdAt: current.createdAt,
+        ...(current.tgId ? { tgId: current.tgId } : {}),
+        ...(current.linkUid ? { linkUid: current.linkUid } : {}),
+      };
     }
     const attempts = (Number(current.attempts) || 0) + 1;
     attemptsLeft = Math.max(0, MAX_CODE_ATTEMPTS - attempts);
