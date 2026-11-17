@@ -3017,13 +3017,23 @@ const enqueueFlowPatch = (ownerId, patch) => {
   if (!ownerId || !patch || !Object.keys(patch).length) {
     return { patch: {}, delivered: Promise.resolve() };
   }
+  // Черга належить тому, хто увійшов, а не власникові Flow: адмін правує
+  // Flow учасника, і запис під uid учасника лягав би в чужу чергу, яку після
+  // перезавантаження ніхто не запускає (`App` стартує чергу читача) —
+  // внесене без звʼязку так і не доїхало б до бази. Шляхи й `meta.ownerId`
+  // лишаються учасника.
   const delivered = enqueueOutboxWrite({
-    uid: ownerId,
+    uid: auth.currentUser?.uid || ownerId,
     patch,
     meta: { type: FLOW_OUTBOX_TYPE, ownerId: String(ownerId) },
   });
   return { patch, delivered };
 };
+
+// Готова латка Flow (шляхи від кореня бази) — для перенесення старих записів
+// імпорту без дати на 1 січня (`buildLegacyUndatedFlowPatch`): значення
+// лишаються ті самі, тож курс і суми не перераховуються.
+export const applyFlowRawPatch = (ownerId, patch) => enqueueFlowPatch(ownerId, patch);
 
 // Відмова бази для запису, досланого з минулої вкладки: памʼять пристрою
 // несе його як збережений — забуваємо її, наступне відкриття візьме правду

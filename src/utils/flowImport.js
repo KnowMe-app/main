@@ -7,10 +7,15 @@
 // - текстовий список (.txt) — іде як є;
 // - структурований JSON (`schemaVersion: 1`, `tables[].groupPath`,
 //   `entries[] { date, amount, description, side }`) — так вивантажують
-//   таблиці Excel. Запис без дати отримує технічну дату з `datePolicy`
-//   (інакше — сьогодні) і приписку «(дата оплати не вказана)»: дата внесення
-//   не є датою оплати, і без приписки їх би не розрізнити.
+//   таблиці Excel. Запис без дати (і з неіснуючою датою, як 29.02.2025)
+//   стає на 1 січня року імпорту (рік `datePolicy`, інакше — поточний),
+//   без жодної приписки (17.11, на прохання власниці продукту: приписка
+//   «дата оплати не вказана» на двохстах рядках лише займала місце, а
+//   описи після імпорту правлять руками). Доти такий запис лягав на дату
+//   імпорту й змішувався з платежами поточного місяця.
 
+// Приписка, яку ставив імпорт до 17.11. Нових записів з нею немає; Flow
+// знімає її зі старих (`listLegacyUndatedFlowRows` у FlowManager).
 export const FLOW_IMPORT_UNDATED_NOTE = '(дата оплати не вказана)';
 
 // Витрата й переказ в одній групі склались би в суму, яка нічого не означає
@@ -27,10 +32,24 @@ const pad2 = value => String(value).padStart(2, '0');
 const todayYmd = (now = new Date()) =>
   `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
 
-const toDisplayDate = ymd => {
+// Дата, якої в календарі немає (2025-02-29), — як дата відсутня: поле Flow
+// таку відкинуло б, і весь рядок платежу розібрався б як заголовок групи, а
+// наступні платежі таблиці лягли б у групу з його назвою.
+const isCalendarYmd = ymd => {
   const match = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return match ? `${match[3]}.${match[2]}.${match[1]}` : '';
+  if (!match) return false;
+  const [year, month, day] = match.slice(1).map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 };
+
+const toDisplayDate = ymd => {
+  if (!isCalendarYmd(ymd)) return '';
+  const match = String(ymd).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return `${match[3]}.${match[2]}.${match[1]}`;
+};
+
+export const FLOW_IMPORT_UNDATED_MONTH_DAY = '01.01';
 
 const formatAmount = value => {
   const number = Number(value);
@@ -51,9 +70,10 @@ const isStructuredFlowImport = data =>
   Boolean(data) && typeof data === 'object' && Array.isArray(data.tables);
 
 const buildTextFromStructured = (data, { today } = {}) => {
-  const fallbackYmd = /^\d{4}-\d{2}-\d{2}$/.test(String(data?.datePolicy?.textImportFallbackDate || ''))
+  const fallbackYmd = isCalendarYmd(data?.datePolicy?.textImportFallbackDate)
     ? data.datePolicy.textImportFallbackDate
     : today || todayYmd();
+  const undatedDisplay = `${FLOW_IMPORT_UNDATED_MONTH_DAY}.${fallbackYmd.slice(0, 4)}`;
   const lines = [];
   let entryCount = 0;
   let undatedCount = 0;
@@ -73,12 +93,17 @@ const buildTextFromStructured = (data, { today } = {}) => {
         return;
       }
       const subgroup = splitBySide ? SIDE_SUBGROUPS[entry.side] || cleanGroupPath(entry.side) : '';
-      const path = subgroup ? `${groupPath}/${subgroup}` : groupPath;
+      // Flow знає два рівні («група/підгрупа»): таблиця, що вже має підгрупу
+      // («Дім/Двері»), дописує сторону до її назви, а не третім рівнем —
+      // третій Flow відкинув би, і витрати з переказами злились би знову.
+      const path = !subgroup
+        ? groupPath
+        : groupPath.includes('/')
+          ? `${groupPath} · ${subgroup}`
+          : `${groupPath}/${subgroup}`;
       const dated = toDisplayDate(entry?.date);
       const description = cleanDescription(entry?.description);
-      const line = dated
-        ? `${dated} ${amount}${description ? ` ${description}` : ''}`
-        : `${toDisplayDate(fallbackYmd)} ${amount} ${description ? `${description} ` : ''}${FLOW_IMPORT_UNDATED_NOTE}`;
+      const line = `${dated || undatedDisplay} ${amount}${description ? ` ${description}` : ''}`;
       if (!dated) undatedCount += 1;
       entryCount += 1;
       if (!byPath.has(path)) byPath.set(path, []);
