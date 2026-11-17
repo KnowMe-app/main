@@ -44,5 +44,5 @@ registerOutboxRejectionHandler(UTILITIES_OUTBOX_TYPE, meta => {
   if (meta?.ownerId) clearUtilitiesCache(meta.ownerId);
 });
 
-/** Хто з учасників веде комуналку — для вибору адміном, як у Flow. */
-export const listUtilitiesOwners = options => listDataOwners('utilities', options);
+/** Хто з учасників веде комуналку або має виданий екран — для вибору адміном, як у Flow. */
+export const listUtilitiesOwners = options => listDataOwners('utilities', { screenCode: 'utilities', ...options });
