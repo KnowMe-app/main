@@ -137,6 +137,37 @@ describe('новий місяць', () => {
   });
 });
 
+describe('зауваження рецензії', () => {
+  it('прибраний блок лишається в закритих місяцях, а з поточного зникає', () => {
+    const data = buildData();
+    data.apartments.a645.cats.water.retiredFrom = '2026-11';
+    const october = computeMonth(data, month(data, '2026-10'));
+    expect(october.result).toBeCloseTo(397.3, 2);
+    const open = resolveOpenMonth(data, 'a645', { today: '2026-11-17' });
+    expect(computeMonth(data, open).blocks.map(block => block.cat.key)).not.toContain('water');
+    // Блок, доданий посеред року, минулих місяців не чіпає.
+    data.apartments.a645.cats.gas = { name: 'Газ', type: 'sum', order: 5, since: '2026-11' };
+    expect(computeMonth(data, month(data, '2026-10')).blocks.map(block => block.cat.key)).not.toContain('gas');
+    expect(computeMonth(data, open).blocks.map(block => block.cat.key)).toContain('gas');
+  });
+
+  it('недописане коригування не дає закрити місяць', () => {
+    const data = buildData();
+    const october = { ...month(data, '2026-10'), extras: { x1: { label: 'Сміття', e: '250+', kind: 'charge' } } };
+    expect(listMissing(october, computeMonth(data, october))).toContain('коригування «Сміття» — сума');
+  });
+
+  it('експорт тримає колонки прибраного блоку', () => {
+    const data = buildData();
+    data.apartments.a645.cats.water.retiredFrom = '2026-10';
+    const [header, september, october] = buildApartmentSheets(data, 'a645').months;
+    expect(september.length).toBe(header.length);
+    expect(october.length).toBe(header.length);
+    expect(september[header.indexOf('Вода: сума, ₴')]).toBeCloseTo(574.13, 2);
+    expect(october[header.indexOf('Вода: сума, ₴')]).toBe('');
+  });
+});
+
 describe('utilitiesOfflineWrites', () => {
   const owner = 'u1';
   const root = 'multiData/utilities/u1';

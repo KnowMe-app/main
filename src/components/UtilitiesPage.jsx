@@ -217,7 +217,7 @@ const MonthEditor = ({
   const view = applyLocalEdits(month, localEdits);
   const computed = computeMonth(data, view);
   const prev = computed.prevMonth;
-  const carryFields = listCarryFields(apartment);
+  const carryFields = listCarryFields(apartment, month.mk);
   const empties = carryFields.filter(field => !hasValue(getPath(view, field.path)) && prev && hasValue(getPath(prev, field.path)));
   const missing = listMissing(view, computed);
   const text = buildTenantText(apartment, view, computed);
@@ -603,12 +603,13 @@ const WasLine = ({ editable, isManual, manualValue, reading, prevLabel, onManual
 
 // ---------- налаштування квартири ----------
 
-const SettingsSheet = ({ data, apartment, canWrite, onWriteApartment, onAddApartment, onDeleteApartment, onExport, exporting, onClose, textScale, onTextScale }) => {
+const SettingsSheet = ({ data, apartment, currentMk, canWrite, onWriteApartment, onAddApartment, onDeleteApartment, onExport, exporting, onClose, textScale, onTextScale }) => {
   const [catName, setCatName] = useState('');
   const [catUnit, setCatUnit] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [drafts, setDrafts] = useState({});
-  const cats = listCategories(apartment);
+  // Блоки, що діють у місяці, який зараз заповнюють.
+  const cats = listCategories(apartment, currentMk);
   const fieldValue = (key, stored) => (Object.prototype.hasOwnProperty.call(drafts, key) ? drafts[key] : (stored ?? ''));
   const commit = (key, relPatch, label) => {
     setDrafts(prev => {
@@ -629,7 +630,7 @@ const SettingsSheet = ({ data, apartment, canWrite, onWriteApartment, onAddApart
         </SheetHead>
         {apartment && (
           <>
-            <Hint>Тарифи й суми тут не задаються — вони живуть у кожному місяці й переносяться тапом. Тут лише те, з чого складається місяць.</Hint>
+            <Hint>Блок додається й прибирається з місяця, який зараз заповнюєте ({monthName(currentMk)}): закриті місяці лишаються такими, як були. Тарифи й суми тут не задаються — вони живуть у кожному місяці й переносяться тапом. Тут лише те, з чого складається місяць.</Hint>
             <SheetSection>
               <span>Квартира</span>
               <SettingRow>
@@ -675,7 +676,9 @@ const SettingsSheet = ({ data, apartment, canWrite, onWriteApartment, onAddApart
                     <small>{cat.type === CATEGORY_TYPES.METER2 ? 'два показники (день і ніч) × два тарифи' : cat.type === CATEGORY_TYPES.METER ? `показник × тариф, ${cat.unit || 'од.'}` : 'сума за місяць'}</small>
                   </div>
                   {canWrite && cats.length > 1 && (
-                    <GhostBtn type="button" style={{ minHeight: 34 }} onClick={() => onWriteApartment({ [`cats.${cat.key}`]: null }, `Прибрано блок «${cat.name}»`)}>
+                    // Прибирається з місяця, який зараз заповнюють: закриті
+                    // місяці лишаються зі своїм нарахуванням.
+                    <GhostBtn type="button" style={{ minHeight: 34 }} onClick={() => onWriteApartment({ [`cats.${cat.key}.retiredFrom`]: currentMk }, `Прибрано блок «${cat.name}»`)}>
                       Прибрати
                     </GhostBtn>
                   )}
@@ -703,10 +706,12 @@ const SettingsSheet = ({ data, apartment, canWrite, onWriteApartment, onAddApart
                             return;
                           }
                           const key = newId('c');
-                          const order = cats.reduce((max, cat) => Math.max(max, Number(cat.order) || 0), 0) + 1;
+                          const order = listCategories(apartment).reduce((max, cat) => Math.max(max, Number(cat.order) || 0), 0) + 1;
+                          // Новий блок діє з місяця, який зараз заповнюють:
+                          // закриті місяці без нього не стають «неповними».
                           const cat = option.type === CATEGORY_TYPES.METER
-                            ? { name, type: option.type, unit: catUnit.trim() || 'од.', order }
-                            : { name, type: option.type, order };
+                            ? { name, type: option.type, unit: catUnit.trim() || 'од.', order, since: currentMk }
+                            : { name, type: option.type, order, since: currentMk };
                           const patch = { [`cats.${key}`]: cat };
                           if (option.type === CATEGORY_TYPES.METER) patch[`init.vals.${key}.cur`] = 0;
                           onWriteApartment(patch, `Додано блок «${name}»`);
@@ -1082,7 +1087,10 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
   const closed = aptId ? listClosedMonths(data, aptId) : [];
   const lastClosed = closed[closed.length - 1] || null;
   const lastComputed = lastClosed ? computeMonth(data, lastClosed) : null;
-  const openMonth = aptId && canWrite ? resolveOpenMonth(data, aptId) : null;
+  // Відкритий місяць учасника бачить і той, хто лише читає (інспектор), — але
+  // порожній наступний місяць пропонується лише тому, хто пише.
+  const resolvedOpen = aptId ? resolveOpenMonth(data, aptId) : null;
+  const openMonth = resolvedOpen && (canWrite || !resolvedOpen.virtual) ? resolvedOpen : null;
   const memo = new Map();
 
   return (
@@ -1258,6 +1266,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
         <SettingsSheet
           data={data}
           apartment={apartment}
+          currentMk={resolvedOpen?.mk}
           canWrite={canWrite}
           onWriteApartment={writeApartment}
           onAddApartment={addApartment}

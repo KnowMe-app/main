@@ -50,7 +50,15 @@ export const buildApartmentSheets = (data, aptId) => {
   const rows = listMonths(data, aptId).map(month => {
     const computed = computeMonth(data, month, memo);
     const row = [monthName(month.mk), formatDmy(month.date), month.closed === true ? 'закрито' : 'заповнюється'];
-    computed.blocks.forEach(block => {
+    // Колонки — усі блоки квартири, зокрема прибрані й додані пізніше; у
+    // місяці, де блок не діяв, його клітинки порожні.
+    cats.forEach(cat => {
+      const block = computed.blocks.find(item => item.cat.key === cat.key);
+      if (!block) {
+        const width = cat.type === CATEGORY_TYPES.SUM ? 2 : zonesOf(cat).length * 5;
+        for (let i = 0; i < width; i += 1) row.push('');
+        return;
+      }
       if (block.cat.type === CATEGORY_TYPES.SUM) {
         row.push(round2(block.value), block.expr ?? '');
         return;
@@ -86,7 +94,8 @@ export const buildApartmentSheets = (data, aptId) => {
     ['Блок', 'Вид', 'Одиниця', 'Початковий показник'],
   ];
   cats.forEach(cat => {
-    const kind = cat.type === CATEGORY_TYPES.METER2 ? 'лічильник, день і ніч' : cat.type === CATEGORY_TYPES.METER ? 'лічильник' : 'сума за місяць';
+    const base = cat.type === CATEGORY_TYPES.METER2 ? 'лічильник, день і ніч' : cat.type === CATEGORY_TYPES.METER ? 'лічильник' : 'сума за місяць';
+    const kind = [base, cat.since ? `з ${monthName(cat.since)}` : '', cat.retiredFrom ? `прибрано з ${monthName(cat.retiredFrom)}` : ''].filter(Boolean).join(', ');
     if (cat.type === CATEGORY_TYPES.SUM) {
       settings.push([cat.name, kind, '', '']);
       return;

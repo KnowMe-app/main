@@ -105,4 +105,20 @@ describe('UtilitiesPage', () => {
       'multiData/utilities/owner-1/months/a1/2026-11/vals/light/day/cur': '2500',
     })));
   });
+
+  it('той, хто лише читає, бачить відкритий місяць учасника без правки', async () => {
+    const data = JSON.parse(JSON.stringify(DATA));
+    data.months.a1['2026-11'] = { date: '2026-11-17', closed: false, budget: '3500', vals: { zhek: { e: '700' } } };
+    mockFetch.mockResolvedValue(data);
+    writeUtilitiesCache('owner-1', data);
+    render(
+      <MemoryRouter>
+        <UtilitiesManager ownerId="owner-1" viewerId="inspector" />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    expect(screen.getByTestId('utilities-open-month')).toBeTruthy();
+    expect(screen.getByTestId('utilities-field-vals.zhek.e').readOnly).toBe(true);
+    expect(screen.queryByTestId('utilities-close-month')).toBeNull();
+  });
 });

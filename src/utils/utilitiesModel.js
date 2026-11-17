@@ -144,9 +144,18 @@ export const DEFAULT_CATEGORIES = Object.freeze({
   inet: Object.freeze({ name: 'Інтернет', type: 'sum', order: 4 }),
 });
 
-export const listCategories = apartment => Object.entries(apartment?.cats || {})
+// Блок діє в місяцях від `since` (доданий посеред року) і до `retiredFrom`
+// (прибраний): закриті місяці рахуються з тими блоками, що були тоді. Поки
+// «Прибрати» знімало визначення блоку цілком, зникали й нараховане за ним у
+// минулих місяцях, і переплати, перенесені далі, — історія переписувалась.
+export const isCategoryActive = (cat, mk) => !mk
+  || ((!cat.since || mk >= cat.since) && (!cat.retiredFrom || mk < cat.retiredFrom));
+
+// Без місяця — усі блоки, зокрема прибрані (заголовки експорту).
+export const listCategories = (apartment, mk) => Object.entries(apartment?.cats || {})
   .filter(([, cat]) => cat && typeof cat === 'object' && cat.name)
   .map(([key, cat]) => ({ ...cat, key }))
+  .filter(cat => isCategoryActive(cat, mk))
   .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || a.key.localeCompare(b.key));
 
 export const zonesOf = cat => {
@@ -165,9 +174,9 @@ export const zonesOf = cat => {
 
 // Те, що переноситься тапом з минулого місяця: тарифи, суми, бюджет.
 // Показник «зараз» не переноситься ніколи — його знімають щомісяця.
-export const listCarryFields = apartment => {
+export const listCarryFields = (apartment, mk) => {
   const fields = [];
-  listCategories(apartment).forEach(cat => {
+  listCategories(apartment, mk).forEach(cat => {
     if (cat.type === CATEGORY_TYPES.SUM) {
       fields.push({ path: `vals.${cat.key}.e`, label: cat.name, cat });
     } else {
@@ -261,7 +270,7 @@ export const computeMonth = (data, month, memo = new Map()) => {
   const apt = data?.apartments?.[month.aptId] || {};
   const blocks = [];
   let cost = 0;
-  listCategories(apt).forEach(cat => {
+  listCategories(apt, month.mk).forEach(cat => {
     const block = { cat, zones: [], sum: 0, complete: true };
     if (cat.type === CATEGORY_TYPES.SUM) {
       const expr = getPath(month, `vals.${cat.key}.e`);
@@ -332,6 +341,11 @@ export const listMissing = (month, computed) => {
       else if (row.use < 0) missing.push(`${name} — менше, ніж було`);
       if (!isNumber(row.tariff)) missing.push(`${name} — тариф`);
     });
+  });
+  // Коригування з недописаною формулою (`250+`) не можна рахувати нулем:
+  // місяць закрився б, а нарахування випало б з тексту для орендаря.
+  computed.extras.forEach(extra => {
+    if (!isNumber(extra.value)) missing.push(`коригування «${extra.label || 'без назви'}» — сума`);
   });
   if (!computed.budgetSet) missing.push('бюджет');
   if (computed.prevMonth && month.carry !== true && month.carry !== false) {
