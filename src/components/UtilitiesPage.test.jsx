@@ -245,4 +245,27 @@ describe('UtilitiesPage', () => {
     expect(placeBar({ top: 440, bottom: 480, left: 20 }, viewport)).toEqual({ top: 390, left: 20 });
     expect(placeBar({ top: 100, bottom: 140, left: 300 }, viewport).left).toBe(82);
   });
+
+  it('знаки формули в шторці налаштувань: результат оновлюється від набору', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('utilities-settings-open'));
+    const initial = screen.getByTestId('utilities-settings').querySelector('input[data-formula]');
+    fireEvent.focus(initial);
+    fireEvent.change(initial, { target: { value: '100+2' } });
+    expect(screen.getByTestId('utilities-formula-result').textContent.replace(/\u00a0/g, ' ')).toBe('= 102,00');
+  });
+
+  it('прибране з екрана поле забирає з собою й рядок знаків', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    fireEvent.click(screen.getAllByText('змінити')[0]);
+    const manual = await screen.findByLabelText('Було, вручну');
+    fireEvent.focus(manual);
+    expect(screen.getByTestId('utilities-formula-keys')).toBeTruthy();
+    fireEvent.mouseDown(screen.getByText('як було'));
+    fireEvent.click(screen.getByText('як було'));
+    await waitFor(() => expect(screen.queryByLabelText('Було, вручну')).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('utilities-formula-keys')).toBeNull());
+  });
 });

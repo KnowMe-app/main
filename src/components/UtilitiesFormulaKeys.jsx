@@ -49,10 +49,12 @@ export const insertIntoInput = (input, text) => {
   try { input.setSelectionRange(caret, caret); } catch { /* деякі типи полів не мають виділення */ }
 };
 
+// Поверх шторки налаштувань (1200) і вікна імпорту (1300): поля початкових
+// показників живуть у шторці.
 const Bar = styled.div`
   position: fixed;
   height: ${BAR_HEIGHT}px;
-  z-index: 1200;
+  z-index: 1400;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -113,6 +115,10 @@ const placeFor = input => placeBar(input.getBoundingClientRect(), readViewport()
 export const FormulaKeys = ({ containerRef }) => {
   const [input, setInput] = useState(null);
   const [position, setPosition] = useState(null);
+  // Набір у полі міняє стан не завжди тієї сторінки, що малює рядок (поля
+  // шторки налаштувань тримають свої чернетки), тож рядок перемальовується
+  // від подій самого поля.
+  const [, setTick] = useState(0);
 
   useEffect(() => {
     const root = containerRef.current;
@@ -130,13 +136,33 @@ export const FormulaKeys = ({ containerRef }) => {
         setInput(current => (current === event.target ? null : current));
       }
     };
+    const onValue = event => {
+      if (event.target instanceof HTMLInputElement && event.target.dataset.formula) setTick(tick => tick + 1);
+    };
     root.addEventListener('focusin', onFocusIn);
     root.addEventListener('focusout', onFocusOut);
+    root.addEventListener('input', onValue);
+    root.addEventListener('change', onValue);
     return () => {
       root.removeEventListener('focusin', onFocusIn);
       root.removeEventListener('focusout', onFocusOut);
+      root.removeEventListener('input', onValue);
+      root.removeEventListener('change', onValue);
     };
   }, [containerRef]);
+
+  // Поле, яке прибрали з екрана (наприклад «як було» знімає ручне «було»),
+  // `focusout` не шле — рядок інакше лишився б над порожнім місцем і
+  // вставляв би знаки в невидиме поле.
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!input || !root || typeof MutationObserver === 'undefined') return undefined;
+    const observer = new MutationObserver(() => {
+      if (!input.isConnected) setInput(null);
+    });
+    observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [containerRef, input]);
 
   useEffect(() => {
     if (!input) return undefined;
@@ -158,7 +184,7 @@ export const FormulaKeys = ({ containerRef }) => {
     insertIntoInput(input, text);
   }, [input]);
 
-  if (!input || !position) return null;
+  if (!input || !position || !input.isConnected) return null;
   // Значення читається з самого поля: набір у ньому міняє стан сторінки
   // (`localEdits`), і рядок перемальовується разом з нею.
   const { value } = input;
