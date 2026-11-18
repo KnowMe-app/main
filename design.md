@@ -36,13 +36,21 @@ If references conflict with access rules or existing UX commitments, the access 
 - A visually attractive hidden/profile state is still wrong if it leaks information. Test both allowed and disallowed viewers when visibility may be affected.
 - Do not edit shared QA profile data during visual review. If a task really requires writes, capture the original state, restore it, and document the restoration.
 
+## Creative direction comes before defect fixing
+
+A page can pass every functional/accessibility test and still look generic. For visual-improvement requests, **the default deliverable is three materially different composition concepts**, not a list of QA fixes. Explore design opportunities in hierarchy, page layout, shape language, density, primary-action placement, responsive grouping, and typographic rhythm. Each concept must propose **at least five changes noticeable at a glance** and specify desktop and 390 px behavior. A light/dark variation, button color changes or fixing overflow is **not** a separate creative concept.
+
+Document one preferred concept with a concrete rationale, but seek product-owner approval before a broad UI implementation. Do not change roles, privacy, fields, business rules or routes without explicit approval. Existing visual tokens and shared components are source material for a design, not a prohibition on cohesive redesign. Keep small QA findings separate from art direction. For an explicitly requested QA audit, prioritize observed defects and do not misrepresent it as a creative redesign.
+
+**Decision check:** when placing old and proposed screens side by side, would the owner recognize a deliberate new composition within two seconds? If not, strengthen the concept.
+
 ## Art director review: four gates
 
 ### Gate A — Observe
 Read the relevant `CLAUDE.md` scenario and neighboring flows. Inspect the running local page with the documented QA accounts. Capture baseline PNGs at 390 px and desktop for the relevant state(s). Include a short inventory of the current design tokens and reusable components. No invented screenshots.
 
 ### Gate B — Diagnose and direct
-Write a prioritized visual critique. For each issue: exact location, user impact, evidence from the rendered page, and proposed change. Name the chosen visual direction in 2–3 sentences. Distinguish visual defects from product/behavior changes; seek explicit approval for scope expansions.
+For a creative brief, produce three substantially different structural concepts, each with 5+ high-impact changes, mobile/desktop layout, typography/density and clear trade-offs; recommend one and wait for approval before broad implementation. For an explicitly requested audit, write a prioritized evidence-based defect report. In both modes, distinguish existing behavior and observed facts from hypotheses, and ask approval before changes of scope.
 
 ### Gate C — Implement
 Make coherent, limited changes in the existing architecture. Reuse style tokens and components. Avoid new libraries, unexplained global CSS and needless refactors. Treat preservation of permissions, data and workflows as a hard constraint.
