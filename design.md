@@ -1,0 +1,67 @@
+# KnowMe — visual direction and review contract
+
+## Product posture
+
+KnowMe is a practical, role-aware, Ukrainian-language workspace for profiles, matching and specialist tools. It is **not** a marketing landing page or a decorative dashboard. The visual target is **quiet, precise, premium utility**: enough density to complete a task, calm hierarchy, legible text, and predictable interactions.
+
+This document defines **review criteria**, not a mandate to redesign every screen. Preserve the existing product identity and established decisions described in `CLAUDE.md`. Never replace functional controls, access behavior or terminology merely to satisfy an aesthetic preference.
+
+## Source of truth, in order
+
+1. `CLAUDE.md`: roles, privacy constraints, QA accounts, routes, UX decisions and live-application setup.
+2. Existing components and tokens: inspect the actual styling before suggesting a new palette. In particular, check `--km-font-display`, primary navigation sizing (`TOP_NAV_HEIGHT` / `--km-top-nav-h`), profile presentation and `src/components/matchingRoleColors.js` when relevant.
+3. This document: design principles and quality bar.
+4. Reference screenshots approved by the product owner: use as **inspiration for qualities**, not as permission to copy protected branding or overwrite KnowMe's workflows.
+
+If references conflict with access rules or existing UX commitments, the access and behavior contracts win. If there is a genuine visual-design choice, show the trade-off and recommend one coherent direction.
+
+## Visual principles
+
+1. **Hierarchy before decoration.** Make the primary task, current state and next action visible immediately. Separate page, section, field and metadata levels using layout and typography, not a pile of boxes.
+2. **Composition with intent.** Use a consistent grid, left edges, spacing rhythm, line lengths and alignment. Prefer real content examples and realistic Ukrainian labels over lorem ipsum.
+3. **Disciplined typography.** Readable body size, deliberate display/body contrast, consistent line heights and numeral alignment. Handle long names, status text, errors and empty values without clipping.
+4. **Restraint.** Avoid gratuitous gradients, glassmorphism, ornamental icons, nested cards, oversized roundings, multicolored chips, shadows and motion. A component should earn its visual prominence.
+5. **Information density is a feature.** Users manage many cards and fields. Don't enlarge everything until useful content disappears below the fold. Dense does not mean cramped.
+6. **Semantic color.** Reuse existing colors and role tokens. Color must help explain state, category, risk or action; it must not be the only means of conveying meaning.
+7. **Coherent states.** Design loading, empty, error, partial, disabled, success and offline states alongside the happy path. Don't hide key actions behind hover-only affordances.
+8. **Accessibility.** Readable contrast, visible keyboard focus, clear labels, logical tab sequence, touch-friendly hit areas and reduced-motion behavior. Aim for WCAG AA contrast where applicable.
+9. **Mobile-first, desktop-intentional.** Review real screenshots at **390 px** and at a **desktop width (at least 1280 px)**. Mobile should not be a squeezed desktop, and desktop should not be a giant stretched phone.
+10. **No privacy leaks.** Never use real user profile data in public reference images, exported examples or PR attachments. QA screenshots with sensitive content remain private.
+
+## KnowMe-specific non-negotiables
+
+- Read `CLAUDE.md` before touching a page. Its decisions on `/my-profile`, `/matching`, profile cards, roles, visibility, `PrimaryNavigation`, Flow and Utilities are part of the design contract.
+- On mobile, the shared top navigation is a fixed-height slot. Do not reintroduce duplicated page headings or overflow the 53 px header.
+- Reuse existing role labels, badges, profile facts and shared components; do not create independent versions that contradict matching or profile views.
+- A visually attractive hidden/profile state is still wrong if it leaks information. Test both allowed and disallowed viewers when visibility may be affected.
+- Do not edit shared QA profile data during visual review. If a task really requires writes, capture the original state, restore it, and document the restoration.
+
+## Art director review: four gates
+
+### Gate A — Observe
+Read the relevant `CLAUDE.md` scenario and neighboring flows. Inspect the running local page with the documented QA accounts. Capture baseline PNGs at 390 px and desktop for the relevant state(s). Include a short inventory of the current design tokens and reusable components. No invented screenshots.
+
+### Gate B — Diagnose and direct
+Write a prioritized visual critique. For each issue: exact location, user impact, evidence from the rendered page, and proposed change. Name the chosen visual direction in 2–3 sentences. Distinguish visual defects from product/behavior changes; seek explicit approval for scope expansions.
+
+### Gate C — Implement
+Make coherent, limited changes in the existing architecture. Reuse style tokens and components. Avoid new libraries, unexplained global CSS and needless refactors. Treat preservation of permissions, data and workflows as a hard constraint.
+
+### Gate D — Verify and iterate
+Run relevant existing tests and inspect the actual changed UI, not only CSS/JS source. Capture after PNGs at the **same viewport sizes and UI states** as the baseline, visually compare, and fix blocking issues. Check long Ukrainian text, focus, errors and role-specific content. Reread/update the affected `CLAUDE.md` scenario when behavior or QA steps change. Do not claim a visual pass if no browser session was completed.
+
+## Severity and approval
+
+- **Blocker** — functionality, access/visibility, critical responsiveness, loss of content, overlap that prevents use, broken navigation or inaccessible primary action. Must be fixed before marking ready.
+- **Major** — confusing hierarchy, inconsistent shared component, unreadable text, keyboard/focus failure, disruptive motion, or substantial mobile/desktop degradation. Fix or document with owner approval.
+- **Polish** — visual rhythm, slightly inconsistent whitespace, microcopy or subtle alignment. Resolve when feasible without creating regression.
+
+A good design review is specific: “At 390 px the status wraps into the search control” is useful; “make it prettier” is not.
+
+## Required handoff for every visual change
+
+Report: affected routes and roles; screenshots **before and after** (private PNG links when possible); design direction; meaningful changes; known regressions; tests run; browser/account/viewport verified; and any blocker with the **last verified step** and **next action**. Do not present generated mockups as screenshots or automated tests as manual visual verification.
+
+## Reference collection
+
+When the owner approves references, record their URL, what quality is being borrowed (typography, hierarchy, density, navigation, etc.), and the relevant KnowMe component. Record deliberate rejections too, so Codex doesn't repeatedly propose them. Do not prescribe Linear/Notion/Stripe as a fixed visual identity.
