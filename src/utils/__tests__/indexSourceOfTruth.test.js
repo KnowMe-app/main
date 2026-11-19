@@ -114,7 +114,8 @@ describe('індекси будуються з нових вузлів', () => {
     // стан із новим. Попередній стан дає `fetchUserById`, а він уже читає нові
     // вузли — тож індекс не може розійтися з тим, що показує застосунок.
     const reader = sliceFn('export const fetchUserById', 'export const loadDuplicateUsers');
-    expect(reader).toContain('await readProfileFromNodes(userId');
+    expect(reader).toContain('await fetchUserProfileFields(');
+    expect(reader).toContain('readProfileFromNodes(userId');
   });
 });
 

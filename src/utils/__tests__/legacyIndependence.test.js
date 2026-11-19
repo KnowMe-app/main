@@ -86,7 +86,8 @@ describe('дзеркалення читається і в зворотний б�
   // впиралось у права, яких у звичайного читача на чужий `users/$uid` немає.
   it('анкета читається лише з вузлів', () => {
     const reader = sliceFn('export const fetchUserById =', 'export const loadDuplicateUsers');
-    expect(reader).toContain('await readProfileFromNodes(userId, { includeTechnical: true })');
+    expect(reader).toContain('await fetchUserProfileFields(');
+    expect(reader).toContain('readProfileFromNodes(userId, { includeTechnical: true })');
     expect(reader).not.toContain('withLegacy');
     expect(reader).not.toContain(`users/\${userId}`);
   });
