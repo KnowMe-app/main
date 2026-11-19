@@ -64,6 +64,7 @@ import {
   GroupList,
   GroupName,
   GroupPickerChip,
+  GroupNamePrefix,
   GroupSectionHead,
   GroupSum,
   GroupTitle,
@@ -2558,6 +2559,9 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                       data-testid="flow-group-toggle"
                     >
                       <GroupName $nested={inSection}>
+                        {/* Розгорнута підгрупа знову називає свою групу: заголовок
+                            розділу тоді вже далеко вгорі, за десятками записів. */}
+                        {inSection && open && <GroupNamePrefix>{topGroup}, </GroupNamePrefix>}
                         {inSection ? subgroup || 'Без підгрупи' : formatGroupTitle(group)}
                       </GroupName>
                       <GroupSum>
