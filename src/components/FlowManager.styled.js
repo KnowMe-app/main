@@ -442,6 +442,11 @@ export const GroupName = styled.span`
   overflow-wrap: break-word;
 `;
 
+export const GroupNamePrefix = styled.span`
+  font-weight: 500;
+  color: var(--km-muted, #8a8177);
+`;
+
 export const GroupSum = styled.span`
   margin-left: auto;
   display: flex;
