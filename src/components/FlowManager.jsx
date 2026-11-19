@@ -64,6 +64,7 @@ import {
   GroupList,
   GroupName,
   GroupPickerChip,
+  GroupSectionHead,
   GroupSum,
   GroupTitle,
   IconBtn,
@@ -2138,6 +2139,21 @@ export const FlowManager = ({ ownerId, viewerId }) => {
 
   const visibleGroups = Object.entries(groupedFlowRows).filter(([path]) =>
     activeFilter ? topLevelFlowGroup(path) === activeFilter : !isIncomePath(path));
+  // Розділи списку: шляхи однієї верхньої групи в порядку показу й їхня
+  // сума. Розділ з одного шляху без підгрупи заголовка не має.
+  const flowSectionsByGroup = {};
+  visibleGroups.forEach(([path]) => {
+    const top = splitCategoryPath(path).group;
+    const section = flowSectionsByGroup[top] || (flowSectionsByGroup[top] = { paths: [], totals: { uah: 0, usd: 0, eur: 0 } });
+    section.paths.push(path);
+    const sums = categorySums[path] || {};
+    section.totals.uah += Number(sums.uah) || 0;
+    section.totals.usd += Number(sums.usd) || 0;
+    section.totals.eur += Number(sums.eur) || 0;
+  });
+  Object.values(flowSectionsByGroup).forEach(section => {
+    section.nested = section.paths.length > 1 || Boolean(splitCategoryPath(section.paths[0]).subgroup);
+  });
   const searchActive = searchQuery.trim().length > 0;
   const searchResults = useMemo(
     () => (searchActive
@@ -2511,12 +2527,29 @@ export const FlowManager = ({ ownerId, viewerId }) => {
         ) : (
           <GroupList>
             {visibleGroups.map(([group, entries], groupIndex) => {
+              // Назва групи — один раз над її підгрупами, а не в кожному рядку
+              // («Бережанка 1к, Меблі», «Бережанка 1к, Декор»… — 19.11, на
+              // прохання власниці продукту). Рядок підгрупи несе саму підгрупу.
+              const { group: topGroup, subgroup } = splitCategoryPath(group);
+              const section = flowSectionsByGroup[topGroup];
+              const inSection = Boolean(section?.nested);
+              const sectionStart = inSection && section.paths[0] === group;
               const open = openGroup === group;
               const totals = categorySums[group] || { uah: 0, usd: 0, eur: 0 };
               const equivalents = totalsEquivalentText(totals);
               const editingRows = rowActionsGroup === group;
               return (
-                <GroupItem key={group} $open={open} $index={groupIndex}>
+                <React.Fragment key={group}>
+                {sectionStart && (
+                  <GroupSectionHead data-testid="flow-group-section">
+                    <span>{topGroup}</span>
+                    <GroupSum>
+                      {formatFlowMoney(section.totals.uah)} грн
+                      {totalsEquivalentText(section.totals) && <small>{totalsEquivalentText(section.totals)}</small>}
+                    </GroupSum>
+                  </GroupSectionHead>
+                )}
+                <GroupItem $open={open} $index={groupIndex} $nested={inSection}>
                   <GroupHead>
                     <GroupTitle
                       type="button"
@@ -2524,7 +2557,9 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                       onClick={() => toggleGroup(group)}
                       data-testid="flow-group-toggle"
                     >
-                      <GroupName>{formatGroupTitle(group)}</GroupName>
+                      <GroupName $nested={inSection}>
+                        {inSection ? subgroup || 'Без підгрупи' : formatGroupTitle(group)}
+                      </GroupName>
                       <GroupSum>
                         {formatFlowMoney(totals.uah)} грн
                         {equivalents && <small>{equivalents}</small>}
@@ -2558,6 +2593,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                     ))}
                   </Collapsible>
                 </GroupItem>
+                </React.Fragment>
               );
             })}
             {!visibleGroups.length && !loading && (
