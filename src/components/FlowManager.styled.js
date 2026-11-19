@@ -643,11 +643,12 @@ export const EditBox = styled.div`
   }
 `;
 
-// Дії правки запису: ліворуч — що зробити із записом, праворуч — чим
-// закінчити правку. На вузькому екрані пари стають одна під одною.
+// Дії правки запису — один ряд: «Видалити» й «Зберегти» значками по краях,
+// «Перенести» й «Скасувати» словами посередині. Двома парами слів вони
+// ставали на телефоні у два ряди.
 export const EditActions = styled.div`
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   justify-content: space-between;
 `;
@@ -655,8 +656,24 @@ export const EditActions = styled.div`
 export const EditSideActions = styled.div`
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
-  &:last-child { margin-left: auto; }
+  min-width: 0;
+  > button { padding: 0 12px; }
+`;
+
+export const EditIconBtn = styled.button`
+  flex: 0 0 auto;
+  width: 44px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid ${({ $primary }) => ($primary ? 'transparent' : 'var(--km-border, #ded7cc)')};
+  background: ${({ $primary }) => ($primary ? 'var(--km-accent, #c9600f)' : 'var(--km-card, #fff)')};
+  color: ${({ $primary, $danger }) => ($primary ? 'var(--km-on-accent, #fff)' : $danger ? 'var(--km-danger, #b42318)' : 'var(--km-text, #3d3830)')};
+  font-size: 19px;
+  cursor: pointer;
+  ${pressable}
 `;
 
 export const EmptyNote = styled.p`
