@@ -47,7 +47,11 @@ The product owner rejected the first three `/my-profile` redesign concepts as a 
 
 These are criticisms of the *shown compositions*, not blanket prohibitions on purple, beige, green, steps, previews or column layouts. A future use must be justified and genuinely more refined.
 
-**Default creative deliverable:** show **one well-refined visual direction**, not three unpolished theme variations. The art director may explore multiple internal alternatives, but it should explicitly discard weaker choices. Offer multiple polished concepts only when the owner asks for alternatives or a major choice remains unresolved.
+**Latest owner preference (20 November 2026):** the CURRENT WORKING KnowMe UI is the preferred visual baseline, and the subsequent orange-accented, many-boxed two-column mobile profile concept was also rejected as **a visual regression despite usability gains**. Do not assume a redesign is desirable merely because it is polished.
+
+**Default deliverable for visual-improvement requests:** baseline-first visual refinement. Preserve the existing visual language, identify **3–5 existing strengths**, and propose **at most 3 focused improvements**, with side-by-side evidence. If a proposal does not visibly beat the current design, reject it; reporting **no worthwhile visual changes** is acceptable. Read `.agents/skills/knowme-art-director/BASELINE_FIRST.md` in full. Offer a complete new concept only if the owner explicitly requests a full redesign; multiple concepts only when explicitly requested.
+
+**Fourth rejected proposal (19–20 November 2026):** the orange-accented `/my-profile` mockup with two-column mobile inputs, many rounded nested blocks and repeated accent areas was acknowledged as more usable but still **several steps worse visually than the current product**. Avoid confusing a tidy, compact form with strong art direction. Before judging, compare the *existing UI*, not just the latest concept to the previous mockup.
 
 **State-first composition:** account for no photo, photo present and unavailable photo Storage, as well as incomplete/complete profile data, different roles, long text and publication states. A photo can enrich a header if present; without it, use compact identity treatment (such as initials) and an accessible upload action, avoiding oversized placeholders. Do not assume the same publication requirements for all roles.
 
@@ -63,7 +67,7 @@ These are criticisms of the *shown compositions*, not blanket prohibitions on pu
 Read the relevant `CLAUDE.md` scenario and neighboring flows. Inspect the running local page with the documented QA accounts. Capture baseline PNGs at 390 px and desktop for the relevant state(s). Include a short inventory of the current design tokens and reusable components. No invented screenshots.
 
 ### Gate B — Art-direct and refine
-For requests about visual beauty or redesign, privately explore solutions and bring **one polished, state-aware visual proposal** with realistic 390 px/desktop mockups when feasible. Evaluate it against the negative reference patterns and the live baseline. Reject or revise the composition until it meets the product's visual standard; don't substitute an audit checklist for a design. For explicitly requested QA audits, report observed defects rather than making a concept. Keep hypotheses and factual observations distinct; obtain product-owner approval for broad changes.
+For ordinary requests to improve beauty, begin from the **current approved UI as baseline**; identify strengths and up to three concrete, high-impact refinements, then compare before/proposed images in the same 390 px/desktop roles and states. Only propose a new comprehensive visual concept if explicitly asked for redesign. Reject or revise anything that looks generic, incoherent or worse than the baseline. For explicitly requested QA audits, report observed defects; keep hypotheses and facts separate and obtain owner approval before changes.
 
 ### Gate C — Implement an approved direction
 Only after approval, make coherent changes in the existing architecture. Reuse the right shared components and tokens, but do not let existing poor presentation dictate the new composition. Avoid new libraries, unexplained global CSS and needless refactors. Treat preservation of permissions, data and workflows as a hard constraint.
@@ -81,7 +85,7 @@ A good design review is specific: “At 390 px the status wraps into the search 
 
 ## Required handoff
 
-**Concept-only:** affected routes and roles, baseline screenshots when available, one refined concept mockup at 390 px and desktop (showing no-photo and photo states where relevant), critique and rejected approaches, visual rationale, remaining assumptions and requested approval. No claim of implementation or after screenshots.
+**Visual refinement / concept-only:** affected routes and roles, current baseline screenshots when available, 3–5 observed strengths, up to three narrowly scoped proposals (mockups when feasible), like-for-like comparison at 390 px and desktop including photo/no-photo states where relevant, explicit verdict (better / uncertain / worse) and owner approval or recommendation to keep the current UI. For explicitly requested full redesigns, show the proposed high-fidelity concept and rejected alternatives. No claim of implementation or live "after" screenshots.
 
 **Implementation:** approved visual direction, real before/after PNGs (private links when possible), meaningful changes, regressions, tests run, browser/account/viewport verified, and any blocker with the **last verified step** and **next action**. Never present generated mockups as live-application screenshots or automated tests as manual visual verification.
 
