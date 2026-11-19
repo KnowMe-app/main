@@ -178,6 +178,16 @@ export const ChipRow = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  ${({ $scroll }) => $scroll && css`
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -2px;
+    padding: 0 2px;
+    &::-webkit-scrollbar { display: none; }
+    > button { flex: 0 0 auto; white-space: nowrap; max-width: none; }
+  `}
 `;
 
 export const Chip = styled.button`
@@ -243,8 +253,26 @@ export const SmallTextBtn = styled.button`
   ${pressable}
 `;
 
+// Згорнута — один рядок: чіп групи й поле поруч; дата й підказка
+// з'являються на фокусі, коли картка стає колонкою.
 export const EntryCard = styled(Card)`
   gap: 8px;
+  ${({ $compact }) => $compact && css`
+    flex-direction: row;
+    align-items: center;
+    padding: 6px 10px;
+    > :first-child { flex: 0 1 auto; max-width: 52%; min-width: 0; }
+    > :first-child > button {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      overflow-wrap: normal;
+    }
+    > :nth-child(2) { flex: 1 1 auto; min-width: 0; }
+    /* Поле порожнє — підказка в один рядок, без місця під хрестик. */
+    textarea { padding-right: 0; white-space: nowrap; }
+    textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  `}
   border-color: ${({ $focused }) => ($focused ? 'var(--km-accent, #c9600f)' : 'var(--km-border, #ded7cc)')};
   box-shadow: ${({ $focused }) => ($focused ? '0 6px 20px rgba(0, 0, 0, 0.08)' : 'none')};
   transition: border-color 0.2s ease, box-shadow 0.25s ease;
@@ -405,7 +433,7 @@ export const GroupSectionHead = styled.button`
   align-items: baseline;
   flex-wrap: wrap;
   gap: 2px 12px;
-  padding: 10px 2px;
+  padding: 7px 2px;
   border: none;
   background: transparent;
   color: inherit;
@@ -437,7 +465,7 @@ export const GroupTitle = styled.button`
   align-items: baseline;
   flex-wrap: wrap;
   gap: 2px 12px;
-  padding: 8px 0;
+  padding: 6px 0;
   border: none;
   background: transparent;
   color: inherit;
@@ -481,6 +509,20 @@ export const GroupSum = styled.span`
 `;
 
 // Поле запису в розгорнутій групі: пише просто в неї, без шторки груп.
+export const InlineAddBtn = styled.button`
+  align-self: flex-start;
+  margin: 2px 0 6px;
+  padding: 6px 2px;
+  border: none;
+  background: transparent;
+  color: var(--km-accent, #c9600f);
+  font-weight: 600;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  ${pressable}
+`;
+
 export const InlineEntryRow = styled.div`
   display: flex;
   gap: 8px;
