@@ -64,6 +64,7 @@ import {
   GroupName,
   GroupPickerChip,
   GroupNamePrefix,
+  InlineAddBtn,
   InlineEntryBtn,
   InlineEntryInput,
   InlineEntryRow,
@@ -1835,6 +1836,8 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   }, [groupPicker]);
 
   // Поле запису в розгорнутій групі: група вже відома, шторки не треба.
+  // Поле з'являється лише після «+ Додати запис» (`group` — його група):
+  // розгорнута група починається одразу з записів.
   const [inlineEntry, setInlineEntry] = useState({ group: '', text: '' });
   const inlineSavingRef = useRef(false);
   const saveInlineEntry = async (group, { silent = false } = {}) => {
@@ -2365,15 +2368,28 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                       </GroupName>
                       <GroupSum>
                         {formatFlowMoney(totals.uah)} грн
-                        {equivalents && <small>{equivalents}</small>}
+                        {/* $ / € — лише в розгорнутій групі: у згорнутому
+                            списку другий рядок під кожною сумою подвоював
+                            висоту кожного рядка. */}
+                        {open && equivalents && <small>{equivalents}</small>}
                       </GroupSum>
                     </GroupTitle>
                   </GroupHead>
                   <Collapsible open={open}>
-                    {open && canWriteFlow && (
+                    {open && canWriteFlow && inlineEntry.group !== group && (
+                      <InlineAddBtn
+                        type="button"
+                        onClick={() => setInlineEntry({ group, text: '' })}
+                        data-testid="flow-group-inline-add"
+                      >
+                        + Додати запис
+                      </InlineAddBtn>
+                    )}
+                    {open && canWriteFlow && inlineEntry.group === group && (
                       <InlineEntryRow data-testid="flow-group-inline-entry">
                         <InlineEntryInput
                           type="text"
+                          autoFocus
                           enterKeyHint="done"
                           value={inlineEntry.group === group ? inlineEntry.text : ''}
                           onChange={e => setInlineEntry({ group, text: e.target.value })}
@@ -2385,6 +2401,11 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                           }}
                           onBlur={e => {
                             if (e.currentTarget.parentElement?.contains(e.relatedTarget)) return;
+                            // Порожнє поле згортається назад у «+ Додати запис».
+                            if (!e.currentTarget.value.trim()) {
+                              setInlineEntry(prev => (prev.group === group ? { group: '', text: '' } : prev));
+                              return;
+                            }
                             saveInlineEntry(group, { silent: true });
                           }}
                           placeholder="Напр. 1200 оренда"
@@ -2533,7 +2554,9 @@ export const FlowManager = ({ ownerId, viewerId }) => {
           )}
         </Card>
 
-        <ChipRow role="radiogroup" aria-label="Які групи показати">
+        {/* Один рядок, що гортається вбік (19.11, на прохання власниці
+            продукту): з переносом чіпи займали три рядки над полем запису. */}
+        <ChipRow $scroll role="radiogroup" aria-label="Які групи показати" data-testid="flow-filter-chips">
           <Chip
             type="button"
             role="radio"
@@ -2572,6 +2595,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
           as="div"
           ref={entryRowRef}
           $focused={entryFocused}
+          $compact={!entryFocused && !entryInput}
           onFocus={() => {
             window.clearTimeout(entryCollapseTimerRef.current);
             setEntryFocused(true);
@@ -2605,7 +2629,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
             >
               Група: {formatGroupTitle(selectedCategoryPath)} ▾
             </GroupPickerChip>
-            <span>{formatDisplayDate(dateYmd)}</span>
+            {(entryFocused || entryInput) && <span>{formatDisplayDate(dateYmd)}</span>}
           </EntryMeta>
           <EntryField>
             <EntryTextarea
@@ -2725,7 +2749,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                     <span>{section.top}</span>
                     <GroupSum>
                       {formatFlowMoney(section.totals.uah)} грн
-                      {sectionEquivalents && <small>{sectionEquivalents}</small>}
+                      {sectionOpen && sectionEquivalents && <small>{sectionEquivalents}</small>}
                     </GroupSum>
                   </GroupSectionHead>
                   <Collapsible open={sectionOpen}>
