@@ -111,14 +111,14 @@ describe('кілька ролей у «Моєму профілі»', () => {
     // Опубліковану анкету ховає кнопка «Приховати» в тій самій спаяній парі,
     // що й кошик «Очистити».
     expect(card).toContain("{uiText('Приховати', language)}");
-    expect(card).toContain('<RoleActionPair $primary={!rolePublished}>');
+    expect(card).toContain('<RoleActionPair $primary={!rolePublished && !roleNeedsFields}>');
   });
 
   it('одна анкета — опис і одна кнопка, без назви ролі й кошика', () => {
     const source = read('MyProfile.jsx');
     const card = source.slice(source.indexOf('data-testid="publish-card"'), source.indexOf('</SubmitWrap>'));
     expect(card).toContain('{rolesList.length > 1 ? (');
-    expect(card).toContain("onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати анкету', language)}");
+    expect(card).toMatch(/onClick={\(\) => publishRole\(rolesList\[0\]\)}>\s*{uiText\(feedPublishLabel, language\)}/);
     expect(card).toContain("onClick={() => unpublishRole(rolesList[0])}>{uiText('Приховати анкету', language)}");
   });
 
@@ -151,7 +151,7 @@ describe('кілька ролей у «Моєму профілі»', () => {
   it('остання заповнена анкета стирає й спільні поля, а анкета ролі — лише свої', () => {
     const source = read('MyProfile.jsx');
     expect(source).toContain('if (clearsWholeProfile(role)) {\n      await clearProfileFields();');
-    expect(source).toContain("ORGANISATION_ROLES.includes(role) ? ['agencyName'] : []");
+    expect(source).toContain("ORGANISATION_ROLES.includes(role) ? ['agencyName', 'orgFeatures'] : []");
     expect(source).toContain(".filter(section => !['personal', 'social'].includes(section.key))");
     expect(source).toContain('{clearsWholeProfile(clearRoleTarget)');
   });

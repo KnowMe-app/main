@@ -13,7 +13,7 @@ describe('«Мій профіль» не показує порожньої ан�
 
   it('чекає на анкету, щойно відомо, що людина увійшла', () => {
     expect(source).toContain('const [profileLoading, setProfileLoading] = useState(() => Boolean(auth.currentUser) && !cachedProfileView);');
-    expect(loadBody.indexOf('setProfileLoading(true);')).toBeLessThan(loadBody.indexOf('await fetchUserById(uid)'));
+    expect(loadBody.indexOf('setProfileLoading(true);')).toBeLessThan(loadBody.indexOf('await fetchUserById(uid, { includePhotos: false })'));
   });
 
   // Перезавантаження «Мого профілю» стояло на заставці весь час читання бази,
@@ -22,7 +22,7 @@ describe('«Мій профіль» не показує порожньої ан�
   it('показує анкету з памʼяті пристрою одразу й не ховає її за заставкою', () => {
     expect(source).toContain('const [cachedProfileView] = useState(readCachedMyProfileView);');
     expect(loadBody).toContain('if (!showsCachedProfile) setProfileLoading(true);');
-    expect(loadBody).toContain('writeMyProfileCache(uid, existingData)');
+    expect(loadBody).toContain('writeMyProfileCache(uid, displayedData)');
   });
 
   // `fetchUserById` віддає `null` і на збій мережі — порожнеча не мусить

@@ -186,7 +186,7 @@ import {
   filterFeedDeniedSearchResult as filterFeedDeniedResult,
   isFeedStateDeniedForSearch,
 } from '../utils/searchFeedDenial';
-import { readFreshMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
+import { readFreshMyProfileCache, readMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
 import { compareByFeedDate, configurePublishedFeedIndex, readPublishedFeedIndex, searchPublishedIndexByName, splitSearchHitsByFeed } from '../utils/publishedFeedIndex';
 import {
   PHOTO_THUMB_MAX_DIMENSION,
@@ -6396,7 +6396,12 @@ const normalizePhotoValues = value => {
   return photo ? [photo] : [];
 };
 
-const collectUserStorageAvatarItems = async userId => {
+const storageAvatarItemsInFlight = new Map();
+
+const collectUserStorageAvatarItems = (userId, { retry = false } = {}) => {
+  const pending = storageAvatarItemsInFlight.get(userId);
+  if (pending && !retry) return pending;
+
   const folderRef = ref(storage, `avatar/${userId}`);
   const collectStorageItems = async currentFolderRef => {
     const list = await listAll(currentFolderRef);
@@ -6404,7 +6409,11 @@ const collectUserStorageAvatarItems = async userId => {
     return [...list.items, ...nestedItems.flat()];
   };
 
-  return collectStorageItems(folderRef);
+  const request = collectStorageItems(folderRef).finally(() => {
+    if (storageAvatarItemsInFlight.get(userId) === request) storageAvatarItemsInFlight.delete(userId);
+  });
+  storageAvatarItemsInFlight.set(userId, request);
+  return request;
 };
 
 const getStorageContentTypeFromName = item => {
@@ -6446,28 +6455,31 @@ const isMedicationStorageItem = (item, userId) => String(item?.fullPath || '').s
 // фото вони стали б другою копією кожного знімка.
 const isServiceStorageItem = (item, userId) => isMedicationStorageItem(item, userId) || isPhotoThumbPath(item?.fullPath);
 
-export const getUserStorageAvatarPhotos = async userId => {
-  if (!userId) return [];
+const readStorageAvatarPhotos = async (userId, options) => {
+  if (!userId) return { photos: [], unavailable: false };
 
   try {
-    const items = await collectUserStorageAvatarItems(userId);
+    const items = await collectUserStorageAvatarItems(userId, options);
     const settledUrls = await Promise.allSettled(
       items
         .filter(item => !isServiceStorageItem(item, userId))
         .map(item => getDownloadURL(item))
     );
-    return settledUrls
+    const photos = settledUrls
       .flatMap(result => {
         if (result.status === 'fulfilled') return [result.value];
         console.error('Error loading user photo from Storage:', result.reason);
         return [];
       })
       .filter(Boolean);
+    return { photos, unavailable: settledUrls.some(result => result.status === 'rejected') };
   } catch (error) {
     console.error('Error listing user photos from Storage:', error);
-    return [];
+    return { photos: [], unavailable: true };
   }
 };
+
+export const getUserStorageAvatarPhotos = async userId => (await readStorageAvatarPhotos(userId)).photos;
 
 const blobToDataUrl = blob => new Promise((resolve, reject) => {
   const reader = new FileReader();
@@ -6600,6 +6612,10 @@ const readAllUserPhotos = async (userId, { includeStorage = true, knownPhotos = 
     databaseUrls = fromProfileNode || [];
   }
 
+  return mergeProfilePhotoUrls(userId, databaseUrls, storageUrls);
+};
+
+const mergeProfilePhotoUrls = (userId, databaseUrls, storageUrls) => {
   // Порядок задає анкета: перше фото — головне, і «Зробити головним» пише
   // саме цей перелік. Storage віддає файли за абеткою імен, і поки його
   // половина стояла першою, головним після кожного відкриття ставав
@@ -6618,6 +6634,15 @@ const readAllUserPhotos = async (userId, { includeStorage = true, knownPhotos = 
     seen.add(key);
     return true;
   });
+};
+
+// «Мій профіль» уже має фото з вузлів анкети. Окрема перевірка Storage
+// доповнює їх і повідомляє про відмову, яка не означає порожню галерею.
+export const loadOwnProfilePhotos = async (userId, knownPhotos, { fallbackPhotos = [], retry = false } = {}) => {
+  const { photos: storageUrls, unavailable } = await readStorageAvatarPhotos(userId, { retry });
+  const profileUrls = normalizePhotoValues(knownPhotos);
+  const availableUrls = unavailable ? [...profileUrls, ...normalizePhotoValues(fallbackPhotos)] : profileUrls;
+  return { photos: mergeProfilePhotoUrls(userId, availableUrls, storageUrls), unavailable };
 };
 
 // ---------------------------------------------------------------------------
@@ -11548,6 +11573,7 @@ export const hasAccountRegistration = async userId => {
 // а не відкривають своє. Результат не памʼятається довше за саме читання: після
 // нього анкету могли змінити, і наступний виклик мусить побачити зміну.
 const fetchUserByIdInFlight = new Map();
+const profileFieldsInFlight = new Map();
 const cloneFetchedProfile = profile => {
   if (!profile || typeof profile !== 'object') return profile;
   try {
@@ -11557,8 +11583,9 @@ const cloneFetchedProfile = profile => {
   }
 };
 
-export const fetchUserById = userId => {
+export const fetchUserById = (userId, { includePhotos = true } = {}) => {
   const key = String(userId || '');
+  if (!includePhotos) return fetchUserProfileFields(key).then(cloneFetchedProfile);
   if (!fetchUserByIdInFlight.has(key)) {
     const pending = fetchUserByIdOnce(userId).finally(() => {
       fetchUserByIdInFlight.delete(key);
@@ -11568,6 +11595,19 @@ export const fetchUserById = userId => {
   return fetchUserByIdInFlight.get(key).then(cloneFetchedProfile);
 };
 
+const fetchUserProfileFields = userId => {
+  const pending = profileFieldsInFlight.get(userId);
+  if (pending) return pending;
+  const request = readProfileFromNodes(userId, { includeTechnical: true })
+    .catch(error => {
+      console.error('Помилка під час пошуку користувача: ', error);
+      return null;
+    })
+    .finally(() => profileFieldsInFlight.delete(userId));
+  profileFieldsInFlight.set(userId, request);
+  return request;
+};
+
 const fetchUserByIdOnce = async userId => {
   try {
     // Анкету складають нові вузли, і тільки вони. Legacy-колекція у вебі —
@@ -11575,7 +11615,7 @@ const fetchUserByIdOnce = async userId => {
     // читати її означало показувати те, що веб уже переніс і, бува, навмисно
     // стер, та ще й впиратись у права, яких у звичайного читача на чужий
     // `users/$uid` немає.
-    const fromNodes = await readProfileFromNodes(userId, { includeTechnical: true });
+    const fromNodes = await fetchUserProfileFields(String(userId || ''));
     if (fromNodes) {
       const photos = fromNodes.__photosHydrated ? fromNodes.photos : await getAllUserPhotos(userId);
       return { ...fromNodes, photos: photos || [], __photosHydrated: true };
@@ -11625,8 +11665,13 @@ export const loadViewerProfile = async userId => {
   if (!uid) return null;
   const cached = readFreshMyProfileCache(uid);
   if (cached) return { ...cached, userId: cached.userId || uid };
-  const profile = await fetchUserById(uid);
-  if (profile) writeMyProfileCache(uid, profile);
+  const profile = await fetchUserById(uid, { includePhotos: false });
+  if (profile) {
+    const cachedPhotos = readMyProfileCache(uid)?.photos;
+    const photosFromCache = !profile.__photosHydrated && cachedPhotos?.length
+      && (!profile.photos?.length || profile.photos[0] === cachedPhotos[0]);
+    writeMyProfileCache(uid, photosFromCache ? { ...profile, photos: cachedPhotos } : profile);
+  }
   return profile;
 };
 

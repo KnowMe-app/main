@@ -87,8 +87,8 @@ const PrimaryButton = styled.button`
   padding: 0 16px;
   border: none;
   border-radius: 12px;
-  background: var(--km-accent);
-  color: #fff;
+  background: var(--km-action);
+  color: var(--km-on-accent);
   font: inherit;
   font-size: 15px;
   font-weight: 600;
@@ -140,7 +140,7 @@ const FillFieldLink = styled.button`
   background: none;
   font: inherit;
   font-weight: 600;
-  color: var(--matching-accent, var(--km-accent, #C9600F));
+  color: var(--km-accent-text);
   text-decoration: underline;
   cursor: pointer;
 `;
@@ -239,7 +239,7 @@ const Chips = styled.div`
   gap: 6px;
 `;
 
-// Вибраний чіп — суцільна заливка акцентом з білим текстом і галочкою.
+// Вибраний чіп — акцентна заливка, контрастний текст і галочка.
 const Chip = styled.button`
   display: inline-flex;
   align-items: center;
@@ -248,8 +248,8 @@ const Chip = styled.button`
   padding: 0 12px;
   border: 0;
   border-radius: 999px;
-  background: ${({ $active }) => ($active ? 'var(--km-accent)' : 'var(--km-fill)')};
-  color: ${({ $active }) => ($active ? '#fff' : 'var(--text)')};
+  background: ${({ $active }) => ($active ? 'var(--km-action)' : 'var(--km-fill)')};
+  color: ${({ $active }) => ($active ? 'var(--km-on-accent)' : 'var(--text)')};
   font: inherit;
   font-size: 14px;
   font-weight: 500;

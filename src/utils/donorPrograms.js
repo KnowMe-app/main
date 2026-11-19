@@ -422,10 +422,8 @@ export const toggleSeekingRole = (value, key) => {
   return encodeSeekingRoles(list.includes(key) ? list.filter(item => item !== key) : [...list, key]);
 };
 
-// Ознаки агенції чи клініки — чим організація відрізняється від сусідньої,
-// галочками, а не вільним текстом (`orgFeatures`, коди через кому; копія в
-// картці стрічки). Рядок стрічки показує їх під назвою. `roles` — кому
-// ознаку пропонують: лабораторія й «без посередників» — про клініку.
+// Раніше записані ознаки організації (`orgFeatures`, коди через кому)
+// рядок стрічки показує під назвою.
 export const ORG_FEATURE_OPTIONS = Object.freeze([
   { key: 'ownLab', label: 'Власна лабораторія', roles: ['cl'] },
   { key: 'direct', label: 'Без посередників', roles: ['cl'] },
@@ -434,24 +432,10 @@ export const ORG_FEATURE_OPTIONS = Object.freeze([
   { key: 'coordinator', label: 'Особистий координатор', roles: ['ag', 'cl'] },
   { key: 'housing', label: 'Житло на час програми', roles: ['ag', 'cl'] },
 ]);
-export const MAX_ORG_FEATURES = 4;
-
 export const parseOrgFeatures = value => {
   const raw = Array.isArray(value) ? value[value.length - 1] : value;
   const keys = new Set(String(raw ?? '').split(',').map(item => item.trim()).filter(Boolean));
   return ORG_FEATURE_OPTIONS.filter(option => keys.has(option.key)).map(option => option.key);
-};
-
-export const listOrgFeatureOptions = roles => {
-  const list = Array.isArray(roles) ? roles : [roles];
-  return ORG_FEATURE_OPTIONS.filter(option => option.roles.some(role => list.includes(role)));
-};
-
-export const toggleOrgFeature = (value, key) => {
-  const current = parseOrgFeatures(value);
-  if (current.includes(key)) return current.filter(item => item !== key).join(',');
-  if (current.length >= MAX_ORG_FEATURES) return current.join(',');
-  return [...current, key].join(',');
 };
 
 export const PARENT_VIA_OPTIONS = Object.freeze([

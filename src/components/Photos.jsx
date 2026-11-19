@@ -1,11 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { FiPlus } from 'react-icons/fi';
 import styled, { keyframes } from 'styled-components';
 import BrandLoader from './BrandLoader';
 import {
   deletePhotos,
   uploadAvatarWithThumb,
   getAllUserPhotos,
+  loadOwnProfilePhotos,
   updateDataInRealtimeDB,
 } from './config';
 import { color } from './styles';
@@ -36,7 +38,7 @@ const PhotosWrapper = styled.div`
   flex-wrap: wrap;
   justify-content: ${({ $compact }) => ($compact ? 'flex-start' : 'center')};
   gap: ${({ $compact }) => ($compact ? '12px' : '10px')};
-  padding: ${({ $compact }) => ($compact ? '4px 4px 8px' : 0)};
+  padding: ${({ $compact, $hasPhotos }) => ($compact && $hasPhotos ? '4px 4px 8px' : 0)};
 `;
 
 const PhotoItem = styled.div`
@@ -51,6 +53,33 @@ const PhotoItem = styled.div`
   border-radius: ${({ $compact }) => ($compact ? '50%' : '8px')};
   overflow: ${({ $compact }) => ($compact ? 'visible' : 'hidden')};
   background: ${({ $compact }) => ($compact ? 'var(--km-card, #fff)' : '#fff')};
+`;
+
+const ThumbnailButton = styled.button`
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+  &:focus-visible { outline: 2px solid var(--km-accent-text); outline-offset: 2px; }
+`;
+
+const CoverLabel = styled.span`
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: var(--km-card);
+  border: 1px solid var(--km-border);
+  color: var(--km-text);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
 `;
 
 // Поки файл їде, на його місці — сіра заглушка розміру мініатюри, а не
@@ -87,7 +116,7 @@ const PhotoImage = styled.img`
   transition: opacity 0.15s ease;
 `;
 
-const PhotoThumb = ({ compact, src, alt, onClick }) => {
+const PhotoThumb = ({ compact, src }) => {
   const [loaded, setLoaded] = useState(false);
   const imageRef = useRef(null);
   // Файл із кеша браузера буває готовий ще до того, як React повісив
@@ -103,9 +132,8 @@ const PhotoThumb = ({ compact, src, alt, onClick }) => {
       $compact={compact}
       $loaded={loaded}
       src={src}
-      alt={alt}
+      alt=""
       decoding="async"
-      onClick={onClick}
       onLoad={() => setLoaded(true)}
       onError={e => {
         console.error('Image failed to load', src, e);
@@ -153,42 +181,58 @@ const UploadButtonWrapper = styled.div`
   flex-shrink: 0;
 `;
 
-const UploadButtonLabel = styled.label`
-  display: flex;
+const UploadButton = styled.button`
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: ${({ $compact }) => ($compact ? '72px' : 'auto')};
-  height: ${({ $compact }) => ($compact ? '72px' : 'auto')};
+  gap: 6px;
+  min-height: 44px;
   box-sizing: border-box;
-  padding: ${({ $compact }) => ($compact ? 0 : '10px 20px')};
+  padding: ${({ $compact }) => ($compact ? '0 12px' : '10px 20px')};
   background: ${({ $compact }) => ($compact ? 'var(--km-fill, #F0EDE8)' : color.accent5)};
-  color: ${({ $compact }) => ($compact ? 'var(--km-muted, #7A7A72)' : 'white')};
-  border: ${({ $compact }) => ($compact ? '2px solid transparent' : 'none')};
-  border-radius: ${({ $compact }) => ($compact ? '50%' : '5px')};
+  color: ${({ $compact }) => ($compact ? 'var(--km-text)' : 'white')};
+  border: 0;
+  border-radius: ${({ $compact }) => ($compact ? '10px' : '5px')};
   box-shadow: none;
   cursor: pointer;
   text-align: center;
-  font-size: ${({ $compact }) => ($compact ? '32px' : '16px')};
-  font-weight: ${({ $compact }) => ($compact ? 500 : 'bold')};
-  line-height: 1;
+  font-size: ${({ $compact }) => ($compact ? '14px' : '16px')};
+  font-weight: 600;
   flex-shrink: 0;
-
-  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
 
   &:hover {
     background: ${({ $compact }) => ($compact ? 'var(--km-accent-light, #FFF8F0)' : color.accent)};
-    border-color: ${({ $compact }) => ($compact ? 'var(--km-accent-mid, #F5A24B)' : 'transparent')};
     box-shadow: ${({ $compact }) => ($compact ? 'none' : '0 4px 12px rgba(0, 0, 0, 0.1)')};
-    transform: translateY(-1px);
   }
-
-  &:active {
-    transform: scale(0.96);
-  }
+  &:focus-visible { outline: 2px solid var(--km-accent-text); outline-offset: 2px; }
 `;
 
 const HiddenFileInput = styled.input`
   display: none; /* Ховаємо справжній input */
+`;
+
+const PhotoAvailability = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--km-muted);
+`;
+
+const RetryPhotosButton = styled.button`
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--km-accent-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  &:focus-visible { outline: 2px solid var(--km-accent-text); outline-offset: 1px; }
 `;
 
 
@@ -444,7 +488,25 @@ const cropPhotoToStandardRatio = async (file, cropSettings) => {
 
 // `language` передає лише «Мій профіль»: адмінські екрани кличуть фото без
 // нього й лишаються українськими.
-export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId = 'file-upload', compact = false, maxPhotos = 9, cropAspectRatio = DEFAULT_CROP_ASPECT_RATIO, language }) => {
+const PHOTO_LIST_TIMEOUT_MS = 8000;
+
+const normalizePhotosArray = value => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') return [value];
+  if (value && typeof value === 'object') return Object.values(value);
+  return [];
+};
+
+const arraysEqual = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
+
+const readKnownPhotos = state => {
+  const values = state.photos ? normalizePhotosArray(state.photos) : Object.entries(state)
+    .filter(([key, value]) => key.toLowerCase().startsWith('photo') && typeof value === 'string')
+    .map(([, value]) => value);
+  return filterOutMedicationPhotos(values.map(convertDriveLinkToImage).filter(Boolean), state.userId);
+};
+
+export const Photos = ({ state, setState, photoProfile, onPhotosHydrated, onPhotosSaved, loadStorage = true, hideFirstPhoto = false, uploadInputId = 'file-upload', compact = false, maxPhotos = 9, cropAspectRatio = DEFAULT_CROP_ASPECT_RATIO, language }) => {
   const t = (text, vars) => (language ? uiText(text, language, vars) : text.replace(/\{(\w+)\}/g, (m, k) => (vars && k in vars ? String(vars[k]) : m)));
   const [viewerIndex, setViewerIndex] = useState(null);
   const [pendingCropFiles, setPendingCropFiles] = useState([]);
@@ -458,11 +520,24 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
   const [cropFrameSize, setCropFrameSize] = useState({ width: 0, height: 0 });
   const dragStateRef = useRef(null);
   const cropFrameRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const uploadButtonRef = useRef(null);
+  const retryButtonRef = useRef(null);
+  const firstPhotoRef = useRef(null);
+  const photoEditGenerationRef = useRef(0);
+  const pendingPhotoEditsRef = useRef(0);
+  const savedPhotosRef = useRef(null);
+  const latestStateRef = useRef(state);
+  latestStateRef.current = state;
+  const photoProfileRef = useRef(photoProfile);
+  photoProfileRef.current = photoProfile;
+  const [photoList, setPhotoList] = useState({ uid: '', status: 'loading' });
+  const [photoListAttempt, setPhotoListAttempt] = useState(0);
+  const photoListStatus = photoList.uid === state.userId ? photoList.status : 'loading';
+  const allPhotos = compact ? readKnownPhotos(state) : normalizePhotosArray(state.photos);
   const photoKeys = Object.keys(state).filter(
     k => k.toLowerCase().startsWith('photo') && k !== 'photos'
   );
-  const arraysEqual = (a = [], b = []) =>
-    a.length === b.length && a.every((val, idx) => val === b[idx]);
   const photoValues = photoKeys.map(k => state[k]).join('|');
   const pendingCropFile = pendingCropFiles[0] || null;
   const isCropSaving = isUploadingPhotos || isConfirmingCrop;
@@ -497,28 +572,9 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
     return () => URL.revokeObjectURL(url);
   }, [pendingCropFile]);
 
-  const normalizePhotosArray = value => {
-    if (!value) {
-      return [];
-    }
-
-    if (Array.isArray(value)) {
-      return value;
-    }
-
-    if (typeof value === 'string') {
-      return [value];
-    }
-
-    if (typeof value === 'object') {
-      return Object.values(value);
-    }
-
-    return [];
-  };
-
-  const commitPhotosUpdate = updater => {
+  const commitPhotosUpdate = useCallback(updater => {
     setState(prevState => {
+      if (compact && prevState.userId !== state.userId) return prevState;
       const prevHasPhotos = Object.prototype.hasOwnProperty.call(prevState, 'photos');
       const prevUserId = prevState?.userId;
       const prevPhotosArrayRaw = normalizePhotosArray(prevState.photos);
@@ -533,6 +589,7 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
       );
 
       if (nextPhotosArray.length === 0) {
+        if (compact) return Array.isArray(prevState.photos) && !prevState.photos.length ? prevState : { ...prevState, photos: [] };
         if (!prevHasPhotos) {
           return prevState;
         }
@@ -547,7 +604,44 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
 
       return { ...prevState, photos: nextPhotosArray };
     });
-  };
+  }, [compact, setState, state.userId]);
+
+  // Вузли анкети вже прочитані. Лістинг додає старі файли зі Storage,
+  // а затримка або відмова впливає лише на галерею. Пізня відповідь не
+  // переписує перелік після завантаження, видалення чи зміни головного фото.
+  useEffect(() => {
+    const uid = state.userId;
+    if (!compact || !uid || !loadStorage) return undefined;
+
+    let cancelled = false;
+    const editGeneration = photoEditGenerationRef.current;
+    const editInProgress = pendingPhotoEditsRef.current > 0;
+    const fallbackPhotos = readKnownPhotos(latestStateRef.current);
+    const knownPhotos = savedPhotosRef.current ?? (photoProfileRef.current ? readKnownPhotos(photoProfileRef.current) : fallbackPhotos);
+    setPhotoList({ uid, status: 'loading' });
+    const timeout = window.setTimeout(() => setPhotoList({ uid, status: 'unavailable' }), PHOTO_LIST_TIMEOUT_MS);
+    loadOwnProfilePhotos(uid, knownPhotos, { fallbackPhotos, retry: photoListAttempt > 0 }).then(({ photos, unavailable }) => {
+      if (cancelled) return;
+      if (!unavailable && retryButtonRef.current && document.activeElement === retryButtonRef.current) {
+        (uploadButtonRef.current || firstPhotoRef.current)?.focus();
+      }
+      setPhotoList({ uid, status: unavailable ? 'unavailable' : 'ready' });
+      if (editInProgress || photoEditGenerationRef.current !== editGeneration) return;
+      if (!arraysEqual(photos, normalizePhotosArray(latestStateRef.current.photos))) {
+        commitPhotosUpdate(photos);
+        onPhotosHydrated?.(uid, { photos });
+      }
+    }).catch(error => {
+      if (cancelled) return;
+      console.error('Error loading profile photos:', error);
+      setPhotoList({ uid, status: 'unavailable' });
+    }).finally(() => window.clearTimeout(timeout));
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [compact, commitPhotosUpdate, loadStorage, onPhotosHydrated, photoListAttempt, state.userId]);
 
   // Список фото з бази й Storage читається **один раз на анкету**, а не на
   // кожен запуск ефекту нижче. Ефект залежить від `setState`, а «Мій профіль»
@@ -560,6 +654,7 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
   const remotePhotosRef = useRef({ userId: '', promise: null, applied: false });
 
   useEffect(() => {
+    if (compact) return;
     const load = async () => {
       const remote = remotePhotosRef.current;
       if (state.userId && !(remote.userId === state.userId && remote.applied)) {
@@ -624,7 +719,7 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
 
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.userId, photoValues, setState, isUploadingPhotos]);
+  }, [compact, state.userId, photoValues, setState, isUploadingPhotos]);
 
   // Мініатюри стрічки (`utils/photoThumbs`) пишуться тим самим записом, що й
   // перелік фото: картка стрічки перебудовується з анкети саме після нього, і
@@ -640,14 +735,24 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
     if (hasThumbs) payload.photoThumbs = photoThumbs;
     else if (Object.keys(previousThumbs).length) payload.photoThumbs = null;
     await updateDataInRealtimeDB(state.userId, payload, 'update');
+    savedPhotosRef.current = updatedPhotos;
     if ('photoThumbs' in payload) {
       setState(prevState => ({ ...prevState, photoThumbs: hasThumbs ? photoThumbs : null }));
     }
+    onPhotosSaved?.(state.userId, payload);
+  };
+
+  const startPhotoEdit = () => {
+    photoEditGenerationRef.current += 1;
+    pendingPhotoEditsRef.current += 1;
+    return () => { pendingPhotoEditsRef.current -= 1; };
   };
 
   const handleDeletePhoto = async index => {
-    const currentPhotos = Array.isArray(state.photos) ? state.photos : [];
+    const currentPhotos = allPhotos;
     const photoUrl = currentPhotos[index];
+    if (!photoUrl) return;
+    const finish = startPhotoEdit();
     const newPhotos = currentPhotos.filter((_, i) => i !== index);
 
     commitPhotosUpdate(newPhotos);
@@ -658,6 +763,8 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
     } catch (error) {
       commitPhotosUpdate(currentPhotos);
       console.error('Error deleting photo:', error);
+    } finally {
+      finish();
     }
   };
 
@@ -681,8 +788,9 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
   // «Перше — головне», а змінити головне не було чим, крім як видалити й
   // завантажити наново. Перегляд фото тепер ставить показане першим.
   const handleMakeMain = async index => {
-    const currentPhotos = Array.isArray(state.photos) ? state.photos : [];
+    const currentPhotos = allPhotos;
     if (index <= 0 || index >= currentPhotos.length) return;
+    const finish = startPhotoEdit();
     const newPhotos = [currentPhotos[index], ...currentPhotos.filter((_, i) => i !== index)];
     commitPhotosUpdate(newPhotos);
     try {
@@ -690,11 +798,13 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
     } catch (error) {
       commitPhotosUpdate(currentPhotos);
       console.error('Error reordering photos:', error);
+    } finally {
+      finish();
     }
   };
 
   const handleDeleteFromViewer = async index => {
-    const newLength = state.photos.length - 1;
+    const newLength = allPhotos.length - 1;
     await handleDeletePhoto(index);
     if (newLength <= 0) {
       setViewerIndex(null);
@@ -706,14 +816,17 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
   };
 
   const uploadPreparedPhotos = async files => {
-    const currentPhotos = Array.isArray(state.photos) ? state.photos : [];
+    const currentPhotos = allPhotos;
+    const availableFiles = files.slice(0, Math.max(0, maxPhotos - currentPhotos.length));
+    if (!availableFiles.length) return;
+    const finish = startPhotoEdit();
     setIsUploadingPhotos(true);
-    const previewUrls = files.map(file => URL.createObjectURL(file));
+    const previewUrls = availableFiles.map(file => URL.createObjectURL(file));
     commitPhotosUpdate([...currentPhotos, ...previewUrls]);
 
     try {
       const uploaded = await Promise.all(
-        files.map(photo => uploadAvatarWithThumb(photo, state.userId))
+        availableFiles.map(photo => uploadAvatarWithThumb(photo, state.userId))
       );
       const newUrls = uploaded.map(entry => entry.url);
       const addedThumbs = Object.fromEntries(uploaded
@@ -726,13 +839,14 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
       commitPhotosUpdate(currentPhotos);
       console.error('Error uploading photos:', error);
     } finally {
+      finish();
       previewUrls.forEach(url => URL.revokeObjectURL(url));
       setIsUploadingPhotos(false);
     }
   };
 
   const addPhoto = event => {
-    const currentPhotos = Array.isArray(state.photos) ? state.photos : [];
+    const currentPhotos = allPhotos;
     const availableSlots = Math.max(maxPhotos - currentPhotos.length, 0);
     const photoArray = Array.from(event.target.files).slice(0, availableSlots);
     event.target.value = '';
@@ -857,26 +971,31 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
     setViewerIndex(index);
   };
 
-  const allPhotos = Array.isArray(state.photos) ? state.photos : [];
   const displayedPhotos = hideFirstPhoto ? allPhotos.slice(1) : allPhotos;
   const canUploadMore = allPhotos.length < maxPhotos;
+  const photoListMessage = photoListStatus !== 'unavailable'
+    ? 'Перевіряємо фото…'
+    : allPhotos.length ? 'Не вдалося перевірити всі фото.' : 'Фото тимчасово недоступні.';
 
   const uploadButton = canUploadMore && (
     <UploadButtonWrapper $compact={compact}>
-      <UploadButtonLabel
+      <UploadButton
+        ref={uploadButtonRef}
         $compact={compact}
-        htmlFor={uploadInputId}
-        aria-label={t('Додати фото')}
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
       >
-        {compact ? '+' : t('Додати фото')}
-        <HiddenFileInput
-          id={uploadInputId}
-          type="file"
-          multiple
-          accept="image/*"
-          onChange={addPhoto}
-        />
-      </UploadButtonLabel>
+        {compact ? <FiPlus size={17} aria-hidden="true" /> : null}
+        {t('Додати фото')}
+      </UploadButton>
+      <HiddenFileInput
+        ref={fileInputRef}
+        id={uploadInputId}
+        type="file"
+        multiple
+        accept="image/*"
+        onChange={addPhoto}
+      />
     </UploadButtonWrapper>
   );
 
@@ -942,16 +1061,26 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
 
   return (
     <Container $compact={compact}>
-      <PhotosWrapper $compact={compact}>
+      {compact && state.userId && photoListStatus !== 'ready' ? (
+        <PhotoAvailability>
+          <span role="status" data-testid="profile-photo-status">
+            {t(photoListMessage)}
+          </span>
+        </PhotoAvailability>
+      ) : null}
+      <PhotosWrapper $compact={compact} $hasPhotos={displayedPhotos.length > 0}>
         {displayedPhotos.map((url, index) => {
           const actualIndex = hideFirstPhoto ? index + 1 : index;
           return <PhotoItem $compact={compact} key={`${url}-${actualIndex}`}>
-            <PhotoThumb
-              compact={compact}
-              src={url}
-              alt={`Фото профілю ${actualIndex + 1}`}
+            <ThumbnailButton
+              ref={index === 0 ? firstPhotoRef : undefined}
+              type="button"
+              aria-label={t('Відкрити фото {n}', { n: actualIndex + 1 })}
               onClick={() => handlePhotoClick(url, actualIndex)}
-            />
+            >
+              <PhotoThumb compact={compact} src={url} />
+              {compact && actualIndex === 0 ? <CoverLabel>{t('Головне фото')}</CoverLabel> : null}
+            </ThumbnailButton>
             <DeleteButton
               $compact={compact}
               $armed={armedDeleteIndex === actualIndex}
@@ -964,6 +1093,13 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
           </PhotoItem>;
         })}
         {compact && uploadButton}
+        {compact && state.userId && (photoListStatus === 'unavailable' || (photoListAttempt > 0 && photoListStatus === 'loading')) ? (
+          <RetryPhotosButton ref={retryButtonRef} type="button" aria-label={t('Повторити завантаження')} aria-disabled={photoListStatus === 'loading'} onClick={() => {
+            if (photoListStatus !== 'unavailable') return;
+            setPhotoList({ uid: state.userId, status: 'loading' });
+            setPhotoListAttempt(attempt => attempt + 1);
+          }}>{t('Повторити')}</RetryPhotosButton>
+        ) : null}
       </PhotosWrapper>
       {!compact && displayedPhotos.length === 0 && (
         <NoPhotosText>{t('Додайте свої фото, максимум {max} шт', { max: maxPhotos })}</NoPhotosText>
@@ -972,7 +1108,7 @@ export const Photos = ({ state, setState, hideFirstPhoto = false, uploadInputId 
       {cropModal && typeof document !== 'undefined' ? createPortal(cropModal, document.body) : cropModal}
       {viewerIndex !== null && (
         <PhotoViewer
-          photos={state.photos}
+          photos={allPhotos}
           index={viewerIndex}
           onClose={() => setViewerIndex(null)}
           onDelete={handleDeleteFromViewer}

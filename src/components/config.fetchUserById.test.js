@@ -21,12 +21,18 @@ describe('fetchUserById', () => {
   // її означало показувати те, що веб уже переніс і, бува, навмисно стер, та ще
   // й впиратись у права, яких у звичайного читача на чужий `users/$uid` немає.
   it('reads the profile nodes and nothing else', () => {
-    expect(body).toContain('await readProfileFromNodes(userId, { includeTechnical: true })');
+    expect(body).toContain('readProfileFromNodes(userId, { includeTechnical: true })');
     expect(body).not.toContain('withLegacy');
     expect(body).not.toContain(`users/\${userId}`);
   });
 
   it('hydrates photos on the one path it has', () => {
     expect(body.match(/getAllUserPhotos\(userId\)/g)).toHaveLength(1);
+  });
+
+  it('lets callers that only need fields resolve without hydration', () => {
+    const fieldsOnly = body.indexOf('if (!includePhotos) return fetchUserProfileFields(key)');
+    expect(fieldsOnly).toBeGreaterThan(-1);
+    expect(fieldsOnly).toBeLessThan(body.indexOf('fetchUserByIdOnce(userId)'));
   });
 });
