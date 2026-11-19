@@ -228,6 +228,7 @@ const RetryPhotosButton = styled.button`
   background: transparent;
   color: var(--km-accent-text);
   font: inherit;
+  font-size: 14px;
   font-weight: 600;
   text-decoration: underline;
   cursor: pointer;
@@ -1093,11 +1094,11 @@ export const Photos = ({ state, setState, photoProfile, onPhotosHydrated, onPhot
         })}
         {compact && uploadButton}
         {compact && state.userId && (photoListStatus === 'unavailable' || (photoListAttempt > 0 && photoListStatus === 'loading')) ? (
-          <RetryPhotosButton ref={retryButtonRef} type="button" aria-disabled={photoListStatus === 'loading'} onClick={() => {
+          <RetryPhotosButton ref={retryButtonRef} type="button" aria-label={t('Повторити завантаження')} aria-disabled={photoListStatus === 'loading'} onClick={() => {
             if (photoListStatus !== 'unavailable') return;
             setPhotoList({ uid: state.userId, status: 'loading' });
             setPhotoListAttempt(attempt => attempt + 1);
-          }}>{t('Повторити завантаження')}</RetryPhotosButton>
+          }}>{t('Повторити')}</RetryPhotosButton>
         ) : null}
       </PhotosWrapper>
       {!compact && displayedPhotos.length === 0 && (
