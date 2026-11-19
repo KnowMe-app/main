@@ -75,7 +75,7 @@ import { usePrimaryNavigationHeaderTarget, usePrimaryNavigationSlot } from './Pr
 import { KnowMeBrand } from './styles/knowme';
 import { resolveMyProfileFieldText, resolveMyProfileSectionTitle } from '../utils/myProfileRoleTexts';
 import { ProgramsEditor } from './programs/ProgramsEditor';
-import { OrgFeatureFields, ParentProfileFields } from './programs/RoleProfileFields';
+import { ParentProfileFields } from './programs/RoleProfileFields';
 import { buildParentRoleSections, listRequiredSectionFields } from '../utils/myProfileSections';
 import { useProgramDisplayCurrency, useProgramRates } from '../hooks/useProgramRates';
 import {
@@ -118,7 +118,7 @@ import {
   readYesWithDetails,
 } from '../utils/profileAnswers';
 
-const Page = styled.div`
+const Page = styled.main`
   /* Локальні псевдоніми з глобальних KnowMe-токенів: сторінка автоматично підтримує світлу/темну тему. */
   --accent: var(--km-accent);
   --accent-light: var(--km-accent-light);
@@ -244,7 +244,7 @@ const StickyProgress = styled.div`
      над полями. Лишаються самі вкладки, тонше. */
   ${({ $compact }) => ($compact ? `
     > div:first-child { display: none; }
-    > div:last-child { padding-top: 8px; padding-bottom: 8px; }
+    > nav { padding-block: 8px; }
   ` : '')}
 `;
 const CONTENT_SECTION_TOP_GAP = 18;
@@ -253,8 +253,38 @@ const CONTENT_SECTION_TOP_GAP = 18;
 // прогресу (`getStickyOffset`): інакше розділ ставав би під нього.
 const SECTION_SCROLL_GAP = CONTENT_SECTION_TOP_GAP;
 const SCROLL_ACTIVE_SECTION_GAP = 16;
-const PROGRAMMATIC_SCROLL_FALLBACK_MS = 900;
-const ProgressWrap = styled.div`padding: 10px var(--page-side) 0;`;
+const PROGRAMMATIC_SCROLL_FALLBACK_MS = 1800;
+const CONFIRMATION_TITLE_ID = 'my-profile-confirmation-title';
+const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const scrollBehavior = () => prefersReducedMotion() ? 'auto' : 'smooth';
+const sectionAnchorId = key => `my-profile-section-${key}`;
+const fieldControlId = name => `my-profile-field-${name}`;
+const fieldLabelId = name => `${fieldControlId(name)}-label`;
+const fieldHintId = name => `${fieldControlId(name)}-hint`;
+const ProgressWrap = styled.div`
+  display: grid;
+  gap: 4px;
+  padding: 9px var(--page-side) 0;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--muted);
+`;
+const ProgressLabel = styled.div`
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+
+  b { color: var(--km-accent-text); font-weight: 600; }
+`;
+const ProgressTrack = styled.div`
+  height: 4px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: var(--border);
+
+  > div { height: 100%; border-radius: inherit; background: var(--accent); }
+`;
 const NextFieldsRow = styled.div`
   display: flex;
   flex-wrap: wrap;
@@ -281,13 +311,42 @@ const NextFieldChip = styled.button`
  * одну кнопку, і без підказки не було видно, що з двох означає колір; а
  * емодзі (📷 🏢 💶) єдині на екрані розмовляли іншою мовою, ніж лінійні
  * значки навігації. */
-const Tabs = styled.div`padding:4px var(--page-side) 0;display:flex;gap:20px;overflow:auto;scrollbar-width:none;&::-webkit-scrollbar{display:none;}`;
+const SectionNavigation = styled.nav`
+  position: relative;
+  margin-inline: var(--page-side);
+  &::before, &::after {
+    content: '';
+    position: absolute;
+    inset-block: 4px 0;
+    width: 24px;
+    z-index: 1;
+    pointer-events: none;
+  }
+  &[data-overflow-start]::before {
+    inset-inline-start: 0;
+    background: linear-gradient(to right, var(--card), transparent);
+  }
+  &[data-overflow-end]::after {
+    inset-inline-end: 0;
+    background: linear-gradient(to left, var(--card), transparent);
+  }
+`;
+const Tabs = styled.div`
+  display: flex;
+  gap: 20px;
+  padding-top: 4px;
+  overflow: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+`;
 const Tab = styled.button`
   flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px;
   min-height: 44px; padding: 0; border: 0; background: transparent;
   font-size: 14px; font-weight: ${({ $active }) => ($active ? 600 : 500)};
   color: ${({ $active }) => ($active ? 'var(--text)' : 'var(--muted)')};
   box-shadow: inset 0 -2px 0 ${({ $active }) => ($active ? 'var(--accent)' : 'transparent')};
+  cursor: pointer;
+  &:focus-visible { outline: 2px solid var(--km-accent-text); outline-offset: -2px; border-radius: 4px; }
   svg { color: var(--km-success); flex: 0 0 auto; }
 `;
 const Card = styled.div`
@@ -303,6 +362,7 @@ const Card = styled.div`
 `;
 const FirstContentCard = styled(Card)`margin-top: ${CONTENT_SECTION_TOP_GAP}px;`;
 const Header = styled.div`display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--bg);`;
+const SectionHeading = styled.h2`margin:0;font-size:14px;font-weight:600;`;
 const FieldGroup = styled.div`padding:0 18px;`;
 const fieldHighlight = keyframes`
   0% { opacity: 0; }
@@ -337,11 +397,14 @@ const Field = styled.div`
     pointer-events: none;
   }
   /* Підпис поля — перший нащадок (Label), він теж бере акцент. */
-  &[data-highlight] > div:first-child { color: var(--accent); transition: color .3s; }
+  &[data-highlight] > :first-child { color: var(--km-accent-text); }
+  @media (prefers-reduced-motion: reduce) {
+    &[data-highlight]::before { opacity: 1; animation: none; }
+  }
 `;
 // Підпис поля — звичайним реченням: 11 px великими з розрядкою читались
 // гірше за саме значення й кричали з кожного рядка форми.
-const Label = styled.div`font-size:13px;font-weight:500;color:var(--muted);margin-bottom:6px;`;
+const Label = styled.div`display:block;font-size:13px;font-weight:500;color:var(--muted);margin-bottom:6px;`;
 // Навіщо поле — дрібним рядком під підписом (зараз лише в дня місячних).
 const FieldHint = styled.div`font-size:12px;line-height:1.4;color:var(--muted);margin:-2px 0 8px;`;
 const Input = styled.input`
@@ -408,7 +471,7 @@ const Chip = styled.button`
      таких у «Зовнішності» читалась сіткою рамок, а не відповідями. */
   display: inline-flex; align-items: center; gap: 6px;
   min-height: 36px; padding: 0 13px; border-radius: 99px; font-size: 14px; border: 1px solid ${({ selected }) => (selected ? 'var(--accent)' : 'transparent')};
-  background: ${({ selected }) => (selected ? 'var(--accent)' : 'var(--km-fill)')}; color: ${({ selected }) => (selected ? 'var(--km-on-accent, #fff)' : 'var(--text)')};
+  background: ${({ selected }) => (selected ? 'var(--km-action)' : 'var(--km-fill)')}; color: ${({ selected }) => (selected ? 'var(--km-on-accent, #fff)' : 'var(--text)')};
   cursor: pointer;
   &:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--km-accent-ring); }
   svg { flex: 0 0 auto; }
@@ -443,7 +506,7 @@ const PublishHead = styled.div`
   flex-direction: column;
   gap: 6px;
 
-  > b { font-size: 17px; font-weight: 700; color: var(--text); }
+  > h2 { font-size: 18px; font-weight: 700; color: var(--text); }
   > span { font-size: 13px; line-height: 1.45; color: var(--muted); }
 `;
 const PublishSingleAction = styled.div`margin-top:16px;`;
@@ -475,6 +538,7 @@ const PublishMissingList = styled.div`
 const PublishMissingChip = styled.button`
   border: none;
   border-radius: 999px;
+  min-height: 36px;
   padding: 7px 12px;
   background: var(--km-fill);
   color: var(--km-accent-text, var(--km-accent));
@@ -491,7 +555,7 @@ const PublishMissingChip = styled.button`
  * того, чого бракує.
  * `env(safe-area-inset-bottom)` тут немає з тієї ж причини, що й у нижній
  * навігації: Firefox на Android кладе туди висоту власного тулбара, і під
- * кнопкою «Показати» стояла порожня смуга завбільшки з саму панель.
+ * нижньою дією стояла порожня смуга завбільшки з саму панель.
  */
 const PublishDock = styled.div`
   /* Плаває над нижньою навігацією тією самою пігулкою: суцільна смуга на
@@ -520,15 +584,19 @@ const PublishDock = styled.div`
   :root.km-keyboard-open & { display: none; }
 `;
 const PublishDockButton = styled.button`
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  max-width: 62%;
+  min-height: 44px;
   border: none;
   border-radius: 22px;
-  padding: 10px 18px;
-  background: ${({ $muted }) => ($muted ? 'var(--km-fill)' : 'var(--km-accent)')};
+  padding: 8px 14px;
+  background: ${({ $muted }) => ($muted ? 'var(--km-fill)' : 'var(--km-action)')};
   color: ${({ $muted }) => ($muted ? 'var(--text)' : 'var(--km-on-accent, #fff)')};
   font: inherit;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
   cursor: pointer;
 `;
 /*
@@ -597,7 +665,7 @@ const RolePublishStatus = styled.span`
   gap:6px;
   font-size:12px;
   font-weight:600;
-  color:var(--km-success);
+  color:var(--km-success-text);
 
   &::before { content:''; width:7px; height:7px; border-radius:50%; background:currentColor; }
 `;
@@ -608,11 +676,12 @@ const RoleActionPair = styled.div`
   display:flex;
   flex:none;
   align-items:stretch;
-  height:40px;
+  max-width:58%;
+  min-height:40px;
   border-radius:12px;
   overflow:hidden;
   ${({ $primary }) => ($primary
-    ? 'background:var(--km-accent);'
+    ? 'background:var(--km-action);'
     : 'background:var(--card);border:1.5px solid var(--border);')}
 
   > button {
@@ -624,7 +693,7 @@ const RoleActionPair = styled.div`
     color:${({ $primary }) => ($primary ? 'var(--km-on-accent, #fff)' : 'var(--text)')};
     font-size:14px;
     font-weight:${({ $primary }) => ($primary ? 700 : 600)};
-    white-space:nowrap;
+    overflow-wrap:anywhere;
     cursor:pointer;
   }
 
@@ -632,7 +701,7 @@ const RoleActionPair = styled.div`
     border-left:1px solid ${({ $primary }) => ($primary ? 'rgba(255,255,255,0.4)' : 'var(--border)')};
   }
 `;
-const RolePairMainBtn = styled.button`padding:0 16px;`;
+const RolePairMainBtn = styled.button`min-width:0;padding:6px 16px;`;
 // Зняти з публікації — дія того самого розміру, але не головна: помаранчевий
 // градієнт лишається за «Опублікувати», а не за протилежним.
 const UnpublishBtn = styled.button`
@@ -703,7 +772,7 @@ const WayTag = styled.span`
   border-radius:99px;
   font-size:12px;
   font-weight:600;
-  background:${({ $current }) => ($current ? 'var(--accent)' : 'var(--km-fill)')};
+  background:${({ $current }) => ($current ? 'var(--km-action)' : 'var(--km-fill)')};
   color:${({ $current }) => ($current ? 'var(--km-on-accent, #fff)' : 'var(--muted)')};
 `;
 const WayText = styled.p`
@@ -827,7 +896,7 @@ const RoleOption = styled.label`
   font-weight: 500;
   cursor: pointer;
   border: 1px solid ${({ $active }) => ($active ? 'var(--accent)' : 'transparent')};
-  background: ${({ $active }) => ($active ? 'var(--accent)' : 'var(--km-fill)')};
+  background: ${({ $active }) => ($active ? 'var(--km-action)' : 'var(--km-fill)')};
   color: ${({ $active }) => ($active ? 'var(--km-on-accent, #fff)' : 'var(--text)')};
 
   input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
@@ -866,17 +935,26 @@ const AnketaDivider = styled.div`
 const PhotoSection = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
   margin: ${({ $isFirstContent }) => ($isFirstContent ? `${CONTENT_SECTION_TOP_GAP}px` : '0')} var(--page-side) 20px;
-  padding: 18px;
+  padding: 14px 18px;
   background: var(--card);
   border-radius: var(--radius);
-  border: 1.5px dashed var(--border);
   box-shadow: var(--shadow);
   min-width: 0;
   scroll-margin-top: ${CONTENT_SECTION_TOP_GAP}px;
 `;
-const SubmitBtn = styled.button`width:100%;padding:16px;background:var(--km-accent);color:var(--km-on-accent, #fff);border:none;border-radius:var(--radius);font-size:16px;font-weight:700;`;
+const SubmitBtn = styled.button`
+  width:100%;
+  padding:16px;
+  background:${({ $muted }) => ($muted ? 'var(--km-fill)' : 'var(--km-action)')};
+  color:${({ $muted }) => ($muted ? 'var(--text)' : 'var(--km-on-accent, #fff)')};
+  border:none;
+  border-radius:var(--radius);
+  font-size:16px;
+  font-weight:700;
+  cursor:pointer;
+`;
 const CustomOptionWrap = styled.div`margin-top:10px;`;
 // Підпис уточнення під відповіддю — тихіше за підпис самого питання.
 const FollowUpLabel = styled.div`
@@ -988,7 +1066,7 @@ const StatusBadge = styled.button`
   /* Кольори — з токенів теми: світло-мʼятна пігулка з #EBF8EF у темній темі
      світилась плямою на темній шапці. */
   background: ${({ $published, $error }) => ($error ? 'var(--km-danger-bg)' : $published ? 'var(--km-success-bg)' : 'var(--km-fill)')};
-  color: ${({ $published, $error }) => ($error ? 'var(--km-danger)' : $published ? 'var(--km-success)' : 'var(--muted)')};
+  color: ${({ $published, $error }) => ($error ? 'var(--km-danger)' : $published ? 'var(--km-success-text)' : 'var(--muted)')};
   cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
   /* Лише для обраних — не зелене «опубліковано для всіх»: колір акценту й
      замок, щоб із першого погляду було видно, що коло обмежене. */
@@ -996,8 +1074,8 @@ const StatusBadge = styled.button`
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    background: rgba(201, 96, 15,0.12);
-    color: #C25E0C;
+    background: var(--km-accent-light);
+    color: var(--km-accent-text);
   ` : '')}
 `;
 /*
@@ -1445,7 +1523,7 @@ const buildMyProfileDraft = profileState => {
  * Старий текст форма не перекручує: він стоїть під полем, доки людина не
  * вкаже суму чи не зітре його.
  */
-const RewardField = ({ value, placeholder, language, missing, onCommit }) => {
+const RewardField = ({ value, placeholder, language, missing, hintId, onCommit }) => {
   const parsed = parseRewardValue(value);
   const [amount, setAmount] = useState(parsed.kind === 'amount' ? String(parsed.amount) : '');
   const [currency, setCurrency] = useState(parsed.kind === 'amount' ? parsed.currency : DEFAULT_REWARD_CURRENCY);
@@ -1475,11 +1553,13 @@ const RewardField = ({ value, placeholder, language, missing, onCommit }) => {
     <RewardRow>
       <FieldControl>
         <Input
+          id={fieldControlId('reward')}
           value={amount}
           inputMode="decimal"
           $missing={missing}
           placeholder={placeholder}
-          aria-label={uiText('Сума', language)}
+          aria-describedby={hintId}
+          aria-invalid={missing || undefined}
           onChange={event => setAmount(event.target.value.replace(/[^\d\s.,]/g, ''))}
           onBlur={event => commitAmount(event.target.value, currency)}
         />
@@ -1677,16 +1757,19 @@ export const MyProfile = () => {
   // а не під шапкою з фото.
   useEffect(() => {
     if (!location.state?.openRolePicker) return;
-    roleCardRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    roleCardRef.current?.scrollIntoView?.({ block: 'center', behavior: scrollBehavior() });
   }, [location.state]);
   // Скільки живих посилань на анкету (`MyProfileShare`) — для рядка стану в
   // «Публікації»: анкета без стрічки, але з посиланням, не «невидима».
   const [shareCount, setShareCount] = useState(0);
   const sectionRefs = useRef({});
+  const pageRef = useRef(null);
+  const publishDockRef = useRef(null);
+  const statusBadgeRef = useRef(null);
   const tabsRef = useRef(null);
   const stickyProgressRef = useRef(null);
   const tabRefs = useRef({});
-  const isManualScrollRef = useRef(false);
+  const programmaticScrollTopRef = useRef(null);
   const programmaticScrollTimeoutRef = useRef(null);
   const scrollFrameRef = useRef(null);
   const latestFetchUidRef = useRef('');
@@ -1710,6 +1793,26 @@ export const MyProfile = () => {
   // знімки за посиланнями (`profileSaved`), інакше гість бачив би стару анкету.
   const shareBlockRef = useRef(null);
   const getShareProfile = useCallback(() => stateRef.current, []);
+  const [profilePhotoSource, setProfilePhotoSource] = useState(null);
+  const updatePhotoState = useCallback(updater => {
+    setState(prevState => {
+      const nextState = updater(prevState);
+      stateRef.current = nextState;
+      return nextState;
+    });
+  }, []);
+  const keepPhotoCache = useCallback((uid, patch) => {
+    if (!uid || auth.currentUser?.uid !== uid) return;
+    if (persistedProfileRef.current.uid === uid) {
+      persistedProfileRef.current.data = { ...persistedProfileRef.current.data, ...patch };
+    }
+    patchMyProfileCache(uid, patch);
+  }, []);
+  const handleSavedPhotos = useCallback((uid, patch) => {
+    if (auth.currentUser?.uid !== uid) return;
+    keepPhotoCache(uid, patch);
+    shareBlockRef.current?.profileSaved({ onlyIfLoaded: true });
+  }, [keepPhotoCache]);
   // Незбережені правки — теж «відредаговане»: свіжа анкета з бази не мусить
   // їх перебити (`mergeLoadedProfileData`).
   const editedFieldsRef = useRef(new Set(Object.keys(readPendingProfileEdits(cachedProfileView?.uid).fields)));
@@ -1737,6 +1840,7 @@ export const MyProfile = () => {
     stateRef.current = {};
     setState({});
     setUserId('');
+    setProfilePhotoSource(null);
     setMissing({});
     setHasAgreed(false);
   }, []);
@@ -1812,12 +1916,9 @@ export const MyProfile = () => {
 
     try {
       // Анкета — з вузлів RTDB, тією самою воронкою, що й для всіх
-      // (`readProfileFromNodes` усередині `fetchUserById`); власниця читає свої
-      // вузли без межі приватності. `fetchUserById` ділить читання, яке вже
-      // триває: вхід (`App`) питає ту саму анкету в ту саму мить, і окремий
-      // виклик тут коштував би ще пʼять читань. Службові позначки зведення
-      // (`__…`) у форму не йдуть.
-      const nodesProfile = await fetchUserById(uid);
+      // (`readProfileFromNodes` усередині `fetchUserById`). Вхід ділить
+      // це читання, а `Photos` окремо звіряє галерею зі Storage.
+      const nodesProfile = await fetchUserById(uid, { includePhotos: false });
       const existingData = Object.fromEntries(Object.entries(nodesProfile || {})
         .filter(([key]) => !key.startsWith('__')));
 
@@ -1828,15 +1929,26 @@ export const MyProfile = () => {
       // анкету, якої немає. Порожнеча поверх показаної з кеша анкети стерла б
       // її з екрана через самий лише збій, тож тоді лишається показане.
       if (!nodesProfile && showsCachedProfile) {
+        setProfilePhotoSource({ uid, profile: null });
         setProfileLoading(false);
         return true;
       }
       persistedProfileRef.current = { uid, data: existingData };
-      if (nodesProfile) writeMyProfileCache(uid, existingData);
+      const cachedPhotos = readMyProfileCache(uid)?.photos;
+      const photosFromCache = !nodesProfile?.__photosHydrated && cachedPhotos?.length
+        && (!existingData.photos?.length || existingData.photos[0] === cachedPhotos[0]);
+      const displayedData = photosFromCache ? { ...existingData, photos: cachedPhotos } : existingData;
+      if (nodesProfile) writeMyProfileCache(uid, displayedData);
 
-      const { loadedProfile, roles } = buildMyProfileView(existingData);
+      const { loadedProfile, roles } = buildMyProfileView(displayedData);
       setProfileRoles(roles);
       mergeLoadedProfileData(loadedProfile, uid);
+      setProfilePhotoSource({
+        uid,
+        // Окреме джерело: кеш і аватар картки можна показати під час
+        // очікування, але успішний лістинг мусить прибрати застарілий знімок.
+        profile: nodesProfile ? { ...existingData, photos: nodesProfile.__photosHydrated ? existingData.photos : undefined } : null,
+      });
       setProfileLoading(false);
       // Правки, які минула вкладка не встигла записати (без звʼязку чи
       // закрита посеред запису), дописує той самий `saveState` — тепер, коли
@@ -2158,11 +2270,8 @@ export const MyProfile = () => {
   const roleSectionsFor = useCallback(role => {
     if (ORGANISATION_ROLES.includes(role)) {
       const programs = { key: 'programs', title: '💶 Програми', fields: ['programs'], custom: 'programs' };
-      // «Чим ви відрізняєтесь» — ознаки організації галочками (`orgFeatures`),
-      // необовʼязкові: публікацію вони не тримають.
-      const features = { key: 'orgFeatures', title: 'Чим ви відрізняєтесь', fields: ['orgFeatures'], optionalFields: ['orgFeatures'], custom: 'orgFeatures', featureRole: role };
-      if (!hasMixedRoles) return [features, programs];
-      return [{ key: 'organisation', title: role === 'cl' ? '🏥 Клініка' : '🏢 Агенція', fields: ['agencyName'] }, features, programs];
+      if (!hasMixedRoles) return [programs];
+      return [{ key: 'organisation', title: role === 'cl' ? '🏥 Клініка' : '🏢 Агенція', fields: ['agencyName'] }, programs];
     }
     if (role === 'ip') {
       return buildParentRoleSections({
@@ -2346,6 +2455,7 @@ export const MyProfile = () => {
     ...(!isProfileAccessConfirmed ? [{ key: 'auth', title: '🔐 Доступ до анкети', fields: ['email', 'password', 'terms'], isVirtual: true }] : []),
     { key: 'photo', title: '📷 Фото', fields: ['photos'], isVirtual: true },
     ...visibleSections,
+    { key: 'publish', title: 'Публікація', isVirtual: true },
   ], [isProfileAccessConfirmed, visibleSections]);
 
   useEffect(() => {
@@ -2508,19 +2618,6 @@ export const MyProfile = () => {
     if (name === 'lastDelivery') return readDeliveryDate(value).ok;
     return !PAST_DATE_FIELDS.has(name) || !readPastDateIssue(value);
   }, [ownVisiblePrograms, state]);
-  // Лічильник «3 з 8» поруч із відсотком: самі «8%» не казали, скільки
-  // лишилось, а людина з чотирма фото й поштою не розуміла, звідки така цифра.
-  // Рахуються лише обовʼязкові поля — ті самі, яких вимагає публікація
-  // (`validateRequiredProfileFields`). Порожній «Сайт» тримав готову анкету
-  // агенції на «13 з 14 · 93%», і людина шукала, що ж вона пропустила.
-  const filledStats = useMemo(() => {
-    const keys = visibleSections.flatMap(section => listRequiredSectionFields(section, { optional: optionalProfileFields }));
-    const filled = keys.filter(isFieldFilled).length;
-    return { filled, total: keys.length };
-  }, [isFieldFilled, optionalProfileFields, visibleSections]);
-  const filledPct = filledStats.total ? Math.round((filledStats.filled / filledStats.total) * 100) : 0;
-
-
   const sectionProgress = useMemo(() => visibleSections.reduce((acc, section) => {
     const filled = section.fields.filter(isFieldFilled).length;
     const total = section.fields.length;
@@ -2562,11 +2659,9 @@ export const MyProfile = () => {
 
   // Над смугою прогресу на телефоні ще й липкий рядок навігації.
   const getStickyOffset = useCallback(() => {
-    const progress = stickyProgressRef.current?.getBoundingClientRect().height || 0;
-    const topNav = typeof window === 'undefined'
-      ? 0
-      : parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--km-top-nav-h')) || 0;
-    return progress + topNav;
+    const progress = stickyProgressRef.current;
+    if (!progress) return 0;
+    return progress.getBoundingClientRect().height + (parseFloat(window.getComputedStyle(progress).top) || 0);
   }, []);
 
   const getSectionTargetTop = useCallback((sectionEl) => {
@@ -2592,65 +2687,91 @@ export const MyProfile = () => {
   }, [getSectionEntries, getStickyOffset]);
 
   const finishProgrammaticScroll = useCallback(() => {
-    isManualScrollRef.current = false;
+    programmaticScrollTopRef.current = null;
     if (programmaticScrollTimeoutRef.current) {
       window.clearTimeout(programmaticScrollTimeoutRef.current);
       programmaticScrollTimeoutRef.current = null;
     }
   }, []);
 
-  const scrollToSection = useCallback((sectionKey) => {
-    const sectionEl = sectionRefs.current[sectionKey];
+  const scrollToTarget = useCallback((sectionKey, targetEl, focusEl) => {
+    if (!targetEl) return;
     setActiveTab(sectionKey);
-    if (!sectionEl) return;
-
-    isManualScrollRef.current = true;
-
-    if (programmaticScrollTimeoutRef.current) {
-      window.clearTimeout(programmaticScrollTimeoutRef.current);
-    }
-
-    const targetTop = getSectionTargetTop(sectionEl);
-    window.scrollTo({ top: targetTop, behavior: 'smooth' });
-
+    finishProgrammaticScroll();
+    const maxTop = document.documentElement.scrollHeight - window.innerHeight;
+    programmaticScrollTopRef.current = Math.min(getSectionTargetTop(targetEl), Math.max(0, maxTop));
+    focusEl?.focus({ preventScroll: true });
+    window.scrollTo({ top: programmaticScrollTopRef.current, behavior: scrollBehavior() });
     programmaticScrollTimeoutRef.current = window.setTimeout(() => {
       finishProgrammaticScroll();
     }, PROGRAMMATIC_SCROLL_FALLBACK_MS);
   }, [finishProgrammaticScroll, getSectionTargetTop]);
 
+  const scrollToSection = useCallback((sectionKey, { focus = false } = {}) => {
+    const sectionEl = sectionRefs.current[sectionKey];
+    const focusEl = focus ? sectionEl?.querySelector('[data-section-heading]') || sectionEl : null;
+    scrollToTarget(sectionKey, sectionEl, focusEl);
+  }, [scrollToTarget]);
+
+  // Tab може зупинитися на полі за фіксованою дією, хоча браузер уже вважає
+  // його на екрані. Дивимось на реальні краї панелей, зокрема при переносі тексту.
+  const keepFocusedControlVisible = event => {
+    const control = event.target;
+    if (programmaticScrollTopRef.current !== null || !control.matches(':focus-visible')
+      || control.closest('[role="dialog"]') || stickyProgressRef.current?.contains(control)
+      || publishDockRef.current?.contains(control)) return;
+    window.requestAnimationFrame(() => {
+      if (document.activeElement !== control || programmaticScrollTopRef.current !== null) return;
+      const rect = control.getBoundingClientRect();
+      const top = getStickyOffset() + 8;
+      const navigationHeight = parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--km-bottom-nav-h')) || 0;
+      const dock = publishDockRef.current?.getBoundingClientRect();
+      const bottom = (dock?.height ? dock.top : window.innerHeight - navigationHeight) - 8;
+      if (rect.top < top) window.scrollBy({ top: rect.top - top, behavior: 'auto' });
+      else if (rect.bottom > bottom) window.scrollBy({ top: rect.bottom - bottom, behavior: 'auto' });
+    });
+  };
+
   useEffect(() => {
+    const syncActiveSection = () => {
+      const nextActiveKey = getActiveSectionKeyByScroll();
+      if (nextActiveKey) setActiveTab(nextActiveKey);
+    };
     const handleScroll = () => {
       if (scrollFrameRef.current) return;
 
       scrollFrameRef.current = window.requestAnimationFrame(() => {
         scrollFrameRef.current = null;
 
-        if (isManualScrollRef.current) {
-          const activeSectionEl = sectionRefs.current[activeTab];
-          if (activeSectionEl && Math.abs(window.scrollY - getSectionTargetTop(activeSectionEl)) <= 2) {
+        if (programmaticScrollTopRef.current !== null) {
+          if (Math.abs(window.scrollY - programmaticScrollTopRef.current) <= 2) {
             finishProgrammaticScroll();
           }
           return;
         }
 
-        const nextActiveKey = getActiveSectionKeyByScroll();
-        if (nextActiveKey) {
-          setActiveTab(prev => (prev === nextActiveKey ? prev : nextActiveKey));
-        }
+        syncActiveSection();
       });
+    };
+    const handleScrollEnd = () => {
+      if (programmaticScrollTopRef.current === null) return;
+      finishProgrammaticScroll();
+      syncActiveSection();
     };
 
     handleScroll();
     window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('scrollend', handleScrollEnd);
 
     return () => {
       window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('scrollend', handleScrollEnd);
       if (scrollFrameRef.current) {
         window.cancelAnimationFrame(scrollFrameRef.current);
         scrollFrameRef.current = null;
       }
     };
-  }, [activeTab, finishProgrammaticScroll, getActiveSectionKeyByScroll, getSectionTargetTop]);
+  }, [finishProgrammaticScroll, getActiveSectionKeyByScroll]);
 
 
   useEffect(() => {
@@ -2658,6 +2779,22 @@ export const MyProfile = () => {
     setActiveTab(firstSectionKey);
   }, [activeTab, firstSectionKey, navSections]);
 
+  const updateSectionOverflow = useCallback(() => {
+    const tabs = tabsRef.current;
+    if (!tabs) return;
+    tabs.parentElement.toggleAttribute('data-overflow-start', tabs.scrollLeft > 1);
+    tabs.parentElement.toggleAttribute('data-overflow-end', tabs.scrollWidth - tabs.clientWidth - tabs.scrollLeft > 1);
+  }, []);
+
+  useEffect(() => {
+    updateSectionOverflow();
+    const tabs = tabsRef.current;
+    if (!tabs || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(updateSectionOverflow);
+    observer.observe(tabs);
+    Array.from(tabs.children).forEach(tab => observer.observe(tab));
+    return () => observer.disconnect();
+  }, [language, navSections, updateSectionOverflow]);
 
   useEffect(() => {
     const tabsEl = tabsRef.current;
@@ -2672,21 +2809,22 @@ export const MyProfile = () => {
       - tabsRect.left
       - ((tabsRect.width - activeTabRect.width) / 2);
 
-    tabsEl.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
-  }, [activeTab]);
+    tabsEl.scrollTo?.({ left: Math.max(0, targetLeft), behavior: scrollBehavior() });
+    updateSectionOverflow();
+  }, [activeTab, updateSectionOverflow]);
 
   const handleAuthBadgeClick = () => {
     // Статус у шапці — це вхід у блок «Публікація»: там і пояснення, і дія.
     // Досі він після входу не робив нічого, а «Опублікувати» стояло аж під
     // останньою секцією анкети.
     if (isProfileAccessConfirmed) {
-      const publishEl = sectionRefs.current.publish;
-      if (publishEl) window.scrollTo({ top: getSectionTargetTop(publishEl), behavior: 'smooth' });
+      scrollToSection('publish', { focus: true });
       return;
     }
 
     authHintTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
-    scrollToSection('auth');
+    scrollToSection('auth', { focus: true });
+    if (prefersReducedMotion()) return;
     const sequence = ['email', 'password', 'terms', 'submit'];
     setAuthHintStep('');
     authHintTimersRef.current = sequence.flatMap((step, index) => ([
@@ -2820,7 +2958,7 @@ export const MyProfile = () => {
           auth.currentUser?.uid !== targetUserId
         ) return;
         if (persistedProfileRef.current.uid !== targetUserId) {
-          const nodesProfile = await fetchUserById(targetUserId);
+          const nodesProfile = await fetchUserById(targetUserId, { includePhotos: false });
           persistedProfileRef.current = {
             uid: targetUserId,
             data: Object.fromEntries(Object.entries(nodesProfile || {}).filter(([key]) => !key.startsWith('__'))),
@@ -2849,6 +2987,10 @@ export const MyProfile = () => {
           }
         });
         delete uploadedInfo.password;
+        // Галерея пише окремо. Правка анкети, поки Storage ще відповідає,
+        // не має переписати перелік фото, який інший запит щойно зберіг.
+        delete uploadedInfo.photos;
+        delete uploadedInfo.photoThumbs;
         if (searchIdFields.length > 0) {
           await syncUserSearchIdIndex(targetUserId, existingData, uploadedInfo, searchIdFields);
         }
@@ -2860,7 +3002,7 @@ export const MyProfile = () => {
         if (persistedProfileRef.current.uid === targetUserId) {
           persistedProfileRef.current = {
             uid: targetUserId,
-            data: { ...existingData, ...normalizeStoredDates(uploadedInfo) },
+            data: { ...persistedProfileRef.current.data, ...normalizeStoredDates(uploadedInfo) },
           };
           writeMyProfileCache(targetUserId, persistedProfileRef.current.data);
         }
@@ -2895,22 +3037,19 @@ export const MyProfile = () => {
   // телефон в «Особистих даних» стоїть під іменем, прізвищем, по батькові й
   // поштою, і прокрутка до шапки розділу лишала його за нижньою панеллю —
   // тост казав «заповніть Телефон», а поля на екрані не було.
-  const scrollToField = (fieldName) => {
+  const scrollToField = (fieldName, event) => {
     const sectionKey = getSectionKeyByField(fieldName);
-    const fieldEl = typeof document === 'undefined'
-      ? null
-      : document.querySelector(`[data-profile-field="${fieldName}"]`);
+    const fieldEl = pageRef.current?.querySelector(`[data-profile-field="${fieldName}"]`);
     if (!fieldEl) {
-      scrollToSection(sectionKey);
+      scrollToSection(sectionKey, { focus: true });
       return;
     }
-    setActiveTab(sectionKey);
-    isManualScrollRef.current = true;
-    if (programmaticScrollTimeoutRef.current) {
-      window.clearTimeout(programmaticScrollTimeoutRef.current);
-    }
-    const fieldTop = fieldEl.getBoundingClientRect().top + window.scrollY;
-    window.scrollTo({ top: Math.max(0, Math.round(fieldTop - getStickyOffset() - SECTION_SCROLL_GAP)), behavior: 'smooth' });
+    // На телефоні дотик спершу показує поле. Tab або Enter переносить фокус
+    // від списку пропусків до контрола, з якого треба продовжити заповнення.
+    const keyboardActivation = event ? event.detail === 0 : document.activeElement?.matches(':focus-visible');
+    const shouldFocus = keyboardActivation || !window.matchMedia?.('(pointer: coarse)').matches;
+    const focusEl = shouldFocus ? fieldEl.querySelector('input:not([type="hidden"]):enabled, textarea:enabled, select:enabled, button:enabled') : null;
+    scrollToTarget(sectionKey, fieldEl, focusEl);
     // Підсвітка — на тому самому вузлі, без стану сторінки: перемальовувати
     // всю анкету заради двох секунд кольору не варто. Повторний дотик
     // перезапускає анімацію (знімається атрибут, і браузер бачить новий).
@@ -2919,9 +3058,6 @@ export const MyProfile = () => {
     fieldEl.setAttribute('data-highlight', '');
     window.clearTimeout(fieldEl.__highlightTimer);
     fieldEl.__highlightTimer = window.setTimeout(() => fieldEl.removeAttribute('data-highlight'), 2600);
-    programmaticScrollTimeoutRef.current = window.setTimeout(() => {
-      finishProgrammaticScroll();
-    }, PROGRAMMATIC_SCROLL_FALLBACK_MS);
   };
 
   // Тост «Заповніть обовʼязкове поле» мусить назвати поле так само, як його
@@ -2940,10 +3076,8 @@ export const MyProfile = () => {
     return getFieldLabel(fieldsMap.get(fieldName), language) || fieldName;
   };
 
-  // Усі порожні обовʼязкові поля — для тосту, переліку в «Публікації» й
-  // липкої панелі. Тост колись називав лише перше, і щоб дізнатись про
-  // наступне, треба було натискати «Опублікувати» знову й знову.
-  const listMissingRequiredFields = (onlyRole = '', currentState = stateRef.current || {}) => {
+  // Один перелік для лічильника, підказок і перевірки перед публікацією.
+  const listRequiredProfileFields = (onlyRole = '') => {
     let sectionRole = '';
     const sectionsToValidate = !onlyRole || rolesList.length < 2
       ? visibleSections
@@ -2966,11 +3100,14 @@ export const MyProfile = () => {
       // публікуючи агентську анкету, діставала тост «заповніть дату
       // народження, сімейний стан» і не публікувалась без даних анкети СМ.
       .filter(fieldName => !onlyRole || rolesList.length < 2 || PERSON_ROLES.includes(onlyRole)
-        || !personSharedFieldNames.has(fieldName))
-      .filter(fieldName => fieldName === 'programs'
-        ? ownVisiblePrograms.length === 0
-        : String(currentState[fieldName] || '').trim() === ''))];
+        || !personSharedFieldNames.has(fieldName)))];
   };
+
+  const listMissingRequiredFields = (onlyRole = '', currentState = stateRef.current || {}) => (
+    listRequiredProfileFields(onlyRole).filter(fieldName => fieldName === 'programs'
+      ? ownVisiblePrograms.length === 0
+      : String(currentState[fieldName] || '').trim() === '')
+  );
 
   const validateRequiredProfileFields = (onlyRole = '') => {
     const missingFieldNames = listMissingRequiredFields(onlyRole);
@@ -3255,9 +3392,8 @@ export const MyProfile = () => {
 
   const clearProfileFields = async () => {
     const currentState = stateRef.current || {};
-    // Уточнення (нюанси кесаревого, країни) полями розділів не є, але
-    // належать анкеті так само.
-    const clearableFields = [...visibleSections.flatMap(section => section.fields), ...FOLLOW_UP_FIELD_NAMES]
+    // Уточнення та старі ознаки організації теж належать анкеті.
+    const clearableFields = [...visibleSections.flatMap(section => section.fields), ...FOLLOW_UP_FIELD_NAMES, 'orgFeatures']
       .filter(name => !CLEAR_ALL_PROTECTED_FIELDS.has(name) && name !== 'programs')
       .filter(name => String(currentState[name] ?? '').trim() !== '');
 
@@ -3317,7 +3453,7 @@ export const MyProfile = () => {
       ? [...PARENT_ROLE_FIELDS]
       : PERSON_ROLES.includes(role)
         ? [...DONOR_ROLE_FIELDS]
-        : ORGANISATION_ROLES.includes(role) ? ['agencyName'] : [];
+        : ORGANISATION_ROLES.includes(role) ? ['agencyName', 'orgFeatures'] : [];
     return [...new Set([...fromSections, ...recorded])]
       .filter(name => name !== 'programs' && !CLEAR_ALL_PROTECTED_FIELDS.has(name));
   };
@@ -3432,15 +3568,19 @@ export const MyProfile = () => {
     </ClearFieldButton>
   );
 
-  const renderTextControl = ({ name, field, value, placeholder, multiline = false, inputMode }) => {
+  const renderTextControl = ({ name, field, value, placeholder, multiline = false, inputMode, labelledBy, describedBy }) => {
     const Control = multiline ? TextArea : Input;
     return (
       <FieldControl>
         <Control
+          id={fieldControlId(name)}
           value={value}
           $missing={missing[name]}
           placeholder={placeholder}
           inputMode={inputMode}
+          aria-labelledby={labelledBy}
+          aria-describedby={describedBy}
+          aria-invalid={missing[name] || undefined}
           onChange={e => updateFieldValue(name, e.target.value, field)}
           onBlur={e => saveFieldValue(name, e.target.value, field)}
         />
@@ -3457,7 +3597,7 @@ export const MyProfile = () => {
     const followUpField = { name: followUp.name };
     return (
       <CustomOptionWrap data-profile-field={followUp.name}>
-        <FollowUpLabel>{uiText(followUp.label, language)} <span>{uiText('необовʼязково', language)}</span></FollowUpLabel>
+        <FollowUpLabel as="label" htmlFor={fieldControlId(followUp.name)}>{uiText(followUp.label, language)} <span>{uiText('необовʼязково', language)}</span></FollowUpLabel>
         {renderTextControl({
           name: followUp.name,
           field: followUpField,
@@ -3493,16 +3633,21 @@ export const MyProfile = () => {
     const fieldHint = name === 'lastCycle'
       ? uiText('Це допоможе спрогнозувати дату прийому.', language)
       : roleText.hint ? uiText(roleText.hint, language) : '';
-    const head = <>
-      <Label>{label}</Label>
-      {fieldHint ? <FieldHint>{fieldHint}</FieldHint> : null}
+    const labelId = fieldLabelId(name);
+    const hintId = fieldHint ? fieldHintId(name) : undefined;
+    const head = (forControl = false) => <>
+      <Label id={labelId} as={forControl ? 'label' : undefined} htmlFor={forControl ? fieldControlId(name) : undefined}>{label}</Label>
+      {fieldHint ? <FieldHint id={hintId}>{fieldHint}</FieldHint> : null}
     </>;
+    const groupLabel = { role: 'group', 'aria-labelledby': labelId, 'aria-describedby': hintId };
     // Останні пологи — набрана дата з власним розбором: чому — у
     // `LastDeliveryField`.
     if (name === 'lastDelivery') {
       return <Field key={name} data-profile-field={name}>
-        {head}
+        {head(true)}
         <LastDeliveryField
+          inputId={fieldControlId(name)}
+          describedBy={hintId}
           value={state[name]}
           language={language}
           onCommit={next => saveFieldValue(name, next, field)}
@@ -3514,12 +3659,13 @@ export const MyProfile = () => {
 
     if (name === 'reward') {
       return <Field key={name} data-profile-field={name}>
-        {head}
+        {head(true)}
         <RewardField
           value={getCurrentValue(val) || ''}
           placeholder={fieldPlaceholder}
           language={language}
           missing={missing[name]}
+          hintId={hintId}
           onCommit={next => saveFieldValue(name, next, field)}
         />
       </Field>;
@@ -3529,8 +3675,8 @@ export const MyProfile = () => {
     if (name === 'programPlace') {
       const places = parseProgramPlaces(val);
       return <Field key={name} data-profile-field={name}>
-        {head}
-        <ChipRow role="group" aria-label={label}>
+        {head()}
+        <ChipRow {...groupLabel}>
           {PROGRAM_PLACE_CHOICES.map(choice => {
             const selected = places.includes(choice.value);
             return renderChoiceChip({
@@ -3567,8 +3713,8 @@ export const MyProfile = () => {
       const legacyCustom = !withDetails && String(val).trim() !== '' && !chosen;
       const details = withDetails ? readYesDetails(val) : '';
       return <Field key={name} data-profile-field={name}>
-        {head}
-        <ChipRow>
+        {head()}
+        <ChipRow {...groupLabel}>
           {ownChoices.map(choice => {
             const selected = chosen === choice.value;
             return renderChoiceChip({
@@ -3586,14 +3732,15 @@ export const MyProfile = () => {
         </ChipRow>
         {legacyCustom ? (
           <CustomOptionWrap>
-            {renderTextControl({ name, field, value: val, placeholder: uiText(roleText.detailPlaceholder || 'Введіть свій варіант', language) })}
+            {renderTextControl({ name, field, value: val, placeholder: uiText(roleText.detailPlaceholder || 'Введіть свій варіант', language), labelledBy: labelId, describedBy: hintId })}
           </CustomOptionWrap>
         ) : null}
         {withDetails && chosen === 'Yes' ? (
           <CustomOptionWrap>
-            <FollowUpLabel>{uiText('Що саме?', language)} <span>{uiText('необовʼязково', language)}</span></FollowUpLabel>
+            <FollowUpLabel as="label" htmlFor={fieldControlId(`${name}-details`)}>{uiText('Що саме?', language)} <span>{uiText('необовʼязково', language)}</span></FollowUpLabel>
             <FieldControl>
               <Input
+                id={fieldControlId(`${name}-details`)}
                 value={details}
                 placeholder={uiText(roleText.detailPlaceholder || '', language)}
                 onChange={e => updateFieldValue(name, e.target.value || 'Yes', field)}
@@ -3621,10 +3768,10 @@ export const MyProfile = () => {
       && (Boolean(customOptionMode[name]) || hasCustomValue);
 
     return <Field key={name} data-profile-field={name}>
-      {head}
+      {head(offeredOptions.length === 0)}
       {offeredOptions.length > 0 ? (
         <>
-          <ChipRow>
+          <ChipRow {...groupLabel}>
             {offeredOptions.map(option => {
               const optionValue = getOptionValue(option);
               const selected = String(val) === String(optionValue);
@@ -3650,7 +3797,7 @@ export const MyProfile = () => {
           </ChipRow>
           {canUseCustomOption && customSelected ? (
             <CustomOptionWrap>
-              {renderTextControl({ name, field, value: val, placeholder: uiText(roleText.detailPlaceholder || 'Введіть свій варіант', language) })}
+              {renderTextControl({ name, field, value: val, placeholder: uiText(roleText.detailPlaceholder || 'Введіть свій варіант', language), labelledBy: labelId, describedBy: hintId })}
             </CustomOptionWrap>
           ) : null}
         </>
@@ -3659,6 +3806,7 @@ export const MyProfile = () => {
         field,
         value: val,
         placeholder: fieldPlaceholder,
+        describedBy: hintId,
         multiline: isTextArea,
         // Кількість пологів — число: цифрова клавіатура замість літер.
         inputMode: name === 'ownKids' ? 'numeric' : undefined,
@@ -3693,18 +3841,16 @@ export const MyProfile = () => {
     </>;
   };
 
-  // Коли обовʼязкове заповнено, смужка рахує вже всю анкету: «10 з 10 ·
-  // 100%» на публікаційному мінімумі казало «готово» про анкету, де пологи,
-  // кесарів і «Про себе» ще порожні. Соцмережі сюди не входять: їх часто
-  // свідомо не дають, і порожня мережа не робить анкету гіршою. Під смужкою —
-  // кілька наступних порожніх полів кнопками, які ведуть до самого поля,
-  // найважливіші першими (`NEXT_FIELD_PRIORITY`).
-  //
-  // Сама по собі смужка СМ не зупиняла: перша СМ, яку розбирали 23.10, після
-  // «100%» відповіла ще на ускладнення, досвід і кількість пологів і
-  // обірвалась на даті пологів — полі, яке не приймало звичайного вводу
-  // (`LastDeliveryField`).
+  // Публікаційний мінімум і повнота анкети мають окремі лічильники.
+  // Смужка завжди рахує мінімум: останнє обовʼязкове поле не скидає її до
+  // частки від усієї анкети. При кількох ролях це мінімум основної анкети.
+  const readinessRole = rolesList.length > 1 ? selectedRole : rolesList[0];
+  const requiredFields = listRequiredProfileFields(readinessRole);
+  const missingReadinessFields = listMissingRequiredFields(readinessRole, state);
+  const filledStats = { filled: requiredFields.length - missingReadinessFields.length, total: requiredFields.length };
+  const filledPct = filledStats.total ? Math.round((filledStats.filled / filledStats.total) * 100) : 0;
   const requiredComplete = filledStats.total > 0 && filledStats.filled === filledStats.total;
+  // Соцмережі не впливають на повноту анкети: контакт там можна свідомо не давати.
   const completenessFields = visibleSections
     .filter(section => section.key !== 'social')
     .flatMap(section => section.fields)
@@ -3714,9 +3860,6 @@ export const MyProfile = () => {
     filled: completenessFields.filter(isFieldFilled).length,
     total: completenessFields.length,
   };
-  const progressPct = requiredComplete
-    ? (completeness.total ? Math.round((completeness.filled / completeness.total) * 100) : 100)
-    : filledPct;
   const emptyCompletenessFields = completenessFields.filter(name => !isFieldFilled(name) && !NEXT_FIELD_SKIPPED.has(name));
   const pinnedEmptyFields = ALWAYS_SUGGESTED_FIELDS.filter(name => emptyCompletenessFields.includes(name));
   const nextEmptyFields = [
@@ -3758,12 +3901,17 @@ export const MyProfile = () => {
   // готовою агентською анкетою вимогу заповнити зріст і групу крові.
   const missingPublishFields = (() => {
     if (!awaitingPublication) return [];
-    if (rolesList.length < 2) return listMissingRequiredFields('', state);
+    if (rolesList.length < 2) return missingReadinessFields;
     const byRole = rolesList.map(role => listMissingRequiredFields(role, state));
     if (byRole.some(list => list.length === 0)) return [];
     return byRole[rolesList.indexOf(selectedRole)] || byRole[0];
   })();
-  const scrollToPublishCard = () => scrollToSection('publish');
+  const feedPublishLabel = missingReadinessFields.length ? 'Заповнити обовʼязкові поля' : 'Опублікувати у стрічці';
+  const dockNavigatesToPublication = missingPublishFields.length > 0 || rolesList.length > 1;
+  const dockActionLabel = missingPublishFields.length
+    ? 'Показати поля'
+    : (dockNavigatesToPublication ? 'Публікація' : 'Опублікувати у стрічці');
+  const scrollToPublishCard = () => scrollToSection('publish', { focus: true });
   // Поки сам блок «Публікація» на екрані, панель лише повторює його кнопку.
   // Під «Публікацією» стоїть ще «Поділитися анкетою», і низ сторінки тепер
   // він: панель, що ховалась лише біля «Публікації», лягала на кнопку
@@ -3781,7 +3929,7 @@ export const MyProfile = () => {
     return () => observer.disconnect();
   }, []);
   const publishFromDock = () => {
-    if (missingPublishFields.length || rolesList.length > 1) {
+    if (dockNavigatesToPublication) {
       scrollToPublishCard();
       return;
     }
@@ -3830,6 +3978,8 @@ export const MyProfile = () => {
 
   const publishStatusBadge = (
     <StatusBadge
+      ref={statusBadgeRef}
+      aria-controls={sectionAnchorId(isProfileAccessConfirmed ? 'publish' : 'auth')}
       type="button"
       $clickable
       $published={state.publish === true || isLikedAudience}
@@ -3851,6 +4001,9 @@ export const MyProfile = () => {
   return <>
   {profileLoading ? <ProfileLoadingOverlay><ScreenLoading /></ProfileLoadingOverlay> : null}
   <Page
+    ref={pageRef}
+    aria-label={uiText('Мій профіль', language)}
+    onFocus={keepFocusedControlVisible}
     aria-busy={profileLoading || undefined}
     style={{
       '--km-sticky-offset': `calc(var(--km-top-nav-h, 0px) + ${stickyHeight}px)`,
@@ -3899,19 +4052,13 @@ export const MyProfile = () => {
 
     <StickyProgress ref={stickyProgressRef} $compact={editingProgram}>
       <ProgressWrap>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-        {/* Рахує лише поля, без яких анкету не опублікувати, — так і підписано:
-            голе «Заповнено 8 з 10 · 80%» стояло над розділами «2/13» і «0/13»,
-            які рахують усі поля, і два числа суперечили одне одному. */}
-        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{requiredComplete
-          ? uiText('Анкету заповнено на {filled} з {total}', language, completeness)
-          : uiText('Для публікації заповнено {filled} з {total}', language, filledStats)}</span>
-        <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>{progressPct}%</span>
-      </div>
-      <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
-        <div style={{ width: `${progressPct}%`, height: '100%', borderRadius: 99, background: 'var(--accent)' }} />
-      </div>
-    </ProgressWrap>
+        <ProgressLabel>
+          <span>{uiText('Для публікації заповнено {filled} з {total}', language, filledStats)}</span>
+          <b>{filledPct}%</b>
+        </ProgressLabel>
+        <ProgressTrack aria-hidden="true"><div style={{ width: `${filledPct}%` }} /></ProgressTrack>
+        <span>{uiText('Анкету заповнено на {filled} з {total}', language, completeness)}</span>
+      </ProgressWrap>
     {/* У липкій панелі, а не в шапці: правлять поле внизу сторінки, і плашка
         вгорі була б уже за екраном. Стоїть між смугою й вкладками —
         компактний режим (`$compact`) ховає першу дитину й тоншить останню.
@@ -3923,29 +4070,33 @@ export const MyProfile = () => {
       </PendingEditsNotice>
     ) : null}
 
-      <Tabs ref={tabsRef}>
-        {navSections.map(s => {
-          const info = s.key === 'photo'
-            ? { complete: Array.isArray(state.photos) && state.photos.length > 0 }
-            : sectionProgress[s.key] || {};
-          return <Tab
-            key={s.key}
-            ref={node => { tabRefs.current[s.key] = node; }}
-            $active={activeTab === s.key}
-            $complete={Boolean(info.complete)}
-            type="button"
-            onClick={() => scrollToSection(s.key)}
-          >
-            {stripSectionEmoji(uiText(s.title, language))}
-            {info.complete ? <FaCheck size={11} aria-hidden="true" /> : null}
-          </Tab>;
-        })}
-      </Tabs>
+      <SectionNavigation aria-label={uiText('Розділи анкети', language)}>
+        <Tabs ref={tabsRef} onScroll={updateSectionOverflow}>
+          {navSections.map(s => {
+            const info = s.key === 'photo'
+              ? { complete: Array.isArray(state.photos) && state.photos.length > 0 }
+              : sectionProgress[s.key] || {};
+            return <Tab
+              key={s.key}
+              ref={node => { tabRefs.current[s.key] = node; }}
+              $active={activeTab === s.key}
+              $complete={Boolean(info.complete)}
+              aria-current={activeTab === s.key ? 'location' : undefined}
+              aria-controls={sectionAnchorId(s.key)}
+              type="button"
+              onClick={event => scrollToSection(s.key, { focus: event.detail === 0 })}
+            >
+              {stripSectionEmoji(uiText(s.title, language))}
+              {info.complete ? <FaCheck size={11} aria-hidden="true" /> : null}
+            </Tab>;
+          })}
+        </Tabs>
+      </SectionNavigation>
     </StickyProgress>
 
-    {!isProfileAccessConfirmed && <AuthCard ref={node => { sectionRefs.current.auth = node; }}>
+    {!isProfileAccessConfirmed && <AuthCard id={sectionAnchorId('auth')} ref={node => { sectionRefs.current.auth = node; }}>
       <Header>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>{uiText('Доступ до анкети', language)}</div>
+        <SectionHeading tabIndex={-1} data-section-heading>{uiText('Доступ до анкети', language)}</SectionHeading>
       </Header>
       <FieldGroup>
         <Field>
@@ -3954,9 +4105,10 @@ export const MyProfile = () => {
           </AuthIntro>
         </Field>
         <AuthField $missing={missing.email}>
-          <HighlightableLabel $active={authHintStep === 'email'}>Email</HighlightableLabel>
+          <HighlightableLabel as="label" htmlFor={fieldControlId('email')} $active={authHintStep === 'email'}>Email</HighlightableLabel>
           <FieldControl>
             <Input
+              id={fieldControlId('email')}
               type="email"
               name="email"
               value={state.email || ''}
@@ -3993,9 +4145,10 @@ export const MyProfile = () => {
           </FieldControl>
         </AuthField>
         <AuthField $missing={missing.password}>
-          <HighlightableLabel $active={authHintStep === 'password'}>Password</HighlightableLabel>
+          <HighlightableLabel as="label" htmlFor={fieldControlId('password')} $active={authHintStep === 'password'}>{uiText('Пароль', language)}</HighlightableLabel>
           <FieldControl>
             <Input
+              id={fieldControlId('password')}
               type={showPassword ? 'text' : 'password'}
               name="password"
               value={state.password || ''}
@@ -4078,22 +4231,16 @@ export const MyProfile = () => {
       </> : null}
     </RoleCard>
 
-    <PhotoSection ref={node => { sectionRefs.current.photo = node; }} $isFirstContent={isProfileAccessConfirmed}>
+    <PhotoSection as="section" id={sectionAnchorId('photo')} tabIndex={-1} aria-label={uiText('Фото', language)} ref={node => { sectionRefs.current.photo = node; }} $isFirstContent={isProfileAccessConfirmed}>
       <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>{uiText('Додайте до 5 фото. Перше — головне', language)}</p>
       <Photos
+        key={userId}
         state={{ ...state, userId }}
-        setState={next => {
-          setState(prevState => {
-            const nextState = typeof next === 'function' ? next(prevState) : next;
-            stateRef.current = nextState;
-            return nextState;
-          });
-          // Фото пишуться повз `saveState` (`Photos` сам кличе писача), тож
-          // знімкам за посиланнями про них треба сказати окремо — і лише
-          // тоді, коли перелік посилань уже прочитано: інакше кожне
-          // відкриття сторінки з фото коштувало б ще одного читання.
-          shareBlockRef.current?.profileSaved({ onlyIfLoaded: true });
-        }}
+        setState={updatePhotoState}
+        loadStorage={profilePhotoSource?.uid === userId}
+        photoProfile={profilePhotoSource?.profile}
+        onPhotosHydrated={keepPhotoCache}
+        onPhotosSaved={handleSavedPhotos}
         uploadInputId="my-profile-photo-upload"
         language={language}
         compact
@@ -4116,10 +4263,10 @@ export const MyProfile = () => {
           {hiddenRoles.includes(section.anketaRole) ? <span>{uiText('сховано — у стрічці її не видно', language)}</span> : null}
         </AnketaDivider>
       ) : null}
-      <SectionCard ref={node => { sectionRefs.current[section.key] = node; }}>
+      <SectionCard id={sectionAnchorId(section.key)} ref={node => { sectionRefs.current[section.key] = node; }}>
         <Header>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{stripSectionEmoji(uiText(section.title, language))}</div>
-          <div style={{ marginLeft: 'auto', fontSize: 11, color: sectionProgress[section.key]?.complete ? 'var(--km-success)' : 'var(--muted)', background: sectionProgress[section.key]?.complete ? 'var(--km-success-bg)' : 'var(--border)', padding: '2px 8px', borderRadius: 99 }}>
+          <SectionHeading tabIndex={-1} data-section-heading>{stripSectionEmoji(uiText(section.title, language))}</SectionHeading>
+          <div style={{ marginLeft: 'auto', fontSize: 12, color: sectionProgress[section.key]?.complete ? 'var(--km-success-text)' : 'var(--muted)', background: sectionProgress[section.key]?.complete ? 'var(--km-success-bg)' : 'var(--border)', padding: '2px 8px', borderRadius: 99 }}>
             {/* Програми — це записи, а не поле: «1/1» при трьох програмах
                 казав лише, що поле «programs» не порожнє. Тут — скільки їх. */}
             {section.custom === 'programs'
@@ -4127,7 +4274,7 @@ export const MyProfile = () => {
               : `${sectionProgress[section.key]?.filled || 0}/${sectionProgress[section.key]?.total || section.fields.length}`}
           </div>
         </Header>
-        <FieldGroup>
+        <FieldGroup data-profile-field={section.custom === 'programs' ? 'programs' : undefined}>
           {section.custom === 'programs' ? (
             <ProgramsEditor
               programs={ownPrograms}
@@ -4140,7 +4287,6 @@ export const MyProfile = () => {
               onEditingChange={setEditingProgram}
             />
           ) : null}
-          {section.custom === 'orgFeatures' ? <OrgFeatureFields state={state} onCommit={saveRoleField} language={language} roles={[section.featureRole]} /> : null}
           {section.custom === 'parents' ? <ParentProfileFields state={state} onCommit={saveRoleField} language={language} showProgramLocation={showParentProgramLocation} /> : null}
           {section.custom && section.extraFields?.length ? section.extraFields.map(renderField) : null}
           {!section.custom && section.key === 'social' ? renderSocialFields(section) : null}
@@ -4156,12 +4302,14 @@ export const MyProfile = () => {
     {showInfoModal && (
       <InfoModal
         onClose={() => { if (!isClearingProfile && accountDeletion !== 'pending') setShowInfoModal(false); }}
+        dialogLabelledBy={CONFIRMATION_TITLE_ID}
+        fallbackFocusRef={statusBadgeRef}
         // Підтвердження режиму «лише для вподобаних» малюється тією самою
         // модалкою підтвердження, що й «Очистити анкету».
         text={showInfoModal === 'likedAudienceConfirm' || showInfoModal === 'roleChange' || showInfoModal === 'deleteAccount' ? 'delConfirm' : showInfoModal}
-        DelConfirm={() => (showInfoModal === 'deleteAccount' ? (
+        confirmation={showInfoModal === 'deleteAccount' ? (
           <div data-testid="delete-account-confirm">
-            <ModalTitle>{uiText('Видалити профіль назавжди?', language)}</ModalTitle>
+            <ModalTitle id={CONFIRMATION_TITLE_ID} tabIndex={-1}>{uiText('Видалити профіль назавжди?', language)}</ModalTitle>
             {accountDeletion === 'recent-login' ? (
               <ModalText>{uiText('Ви увійшли надто давно. Вийдіть, увійдіть знову й повторіть видалення — так ми певні, що це ви.', language)}</ModalText>
             ) : accountDeletion === 'protected' ? (
@@ -4186,7 +4334,7 @@ export const MyProfile = () => {
               />
             )}
             <ModalActionRow>
-              <ModalGhostButton type="button" disabled={accountDeletion === 'pending'} onClick={() => setShowInfoModal(false)}>
+              <ModalGhostButton type="button" data-dialog-cancel disabled={accountDeletion === 'pending'} onClick={() => setShowInfoModal(false)}>
                 {uiText('Відмінити', language)}
               </ModalGhostButton>
               {accountDeletion === 'recent-login' ? (
@@ -4202,7 +4350,7 @@ export const MyProfile = () => {
           </div>
         ) : showInfoModal === 'roleChange' && roleChangeTarget ? (
           <div data-testid="role-change-confirm">
-            <ModalTitle>
+            <ModalTitle id={CONFIRMATION_TITLE_ID} tabIndex={-1}>
               {uiText('Ви — {role}?', language, {
                 role: uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === roleChangeTarget)?.label || roleChangeTarget, language),
               })}
@@ -4217,14 +4365,14 @@ export const MyProfile = () => {
               <ModalGhostButton type="button" onClick={() => addUserRole(roleChangeTarget)}>
                 {uiText('Додати ще одну анкету', language)}
               </ModalGhostButton>
-              <ModalGhostButton type="button" onClick={() => { setShowInfoModal(false); setRoleChangeTarget(''); }}>
+              <ModalGhostButton type="button" data-dialog-cancel onClick={() => { setShowInfoModal(false); setRoleChangeTarget(''); }}>
                 {uiText('Відмінити', language)}
               </ModalGhostButton>
             </RoleChangeActions>
           </div>
         ) : showInfoModal === 'likedAudienceConfirm' ? (
           <div data-testid="liked-audience-confirm">
-            <ModalTitle>{uiText('Показувати анкету лише тим, кого ви вподобали?', language)}</ModalTitle>
+            <ModalTitle id={CONFIRMATION_TITLE_ID} tabIndex={-1}>{uiText('Показувати анкету лише тим, кого ви вподобали?', language)}</ModalTitle>
             <ModalText>
               {uiText(likedTexts.modalAfterOk, language)}
             </ModalText>
@@ -4239,7 +4387,7 @@ export const MyProfile = () => {
               {uiText(likedTexts.modalTradeoff, language)}
             </ModalText>
             <ModalActionRow>
-              <ModalGhostButton type="button" onClick={() => setShowInfoModal(false)}>
+              <ModalGhostButton type="button" data-dialog-cancel onClick={() => setShowInfoModal(false)}>
                 {uiText('Відмінити', language)}
               </ModalGhostButton>
               <ModalPrimaryButton type="button" onClick={publishToLikedAudience}>
@@ -4249,7 +4397,7 @@ export const MyProfile = () => {
           </div>
         ) : clearRoleTarget ? (
           <>
-            <ModalTitle>
+            <ModalTitle id={CONFIRMATION_TITLE_ID} tabIndex={-1}>
               {uiText('Очистити дані: {role}?', language, {
                 role: uiText(MY_PROFILE_ROLE_OPTIONS.find(option => option.value === clearRoleTarget)?.label || clearRoleTarget, language),
               })}
@@ -4263,7 +4411,7 @@ export const MyProfile = () => {
                 : uiText('Поля цієї анкети стануть порожніми; у агенції й клініки знімуться програми. Інші анкети, пошта й доступ до акаунта лишаються.', language)}
             </ModalText>
             <ModalActionRow>
-              <ModalGhostButton type="button" onClick={() => { setShowInfoModal(false); setClearRoleTarget(''); }}>
+              <ModalGhostButton type="button" data-dialog-cancel onClick={() => { setShowInfoModal(false); setClearRoleTarget(''); }}>
                 {uiText('Відмінити', language)}
               </ModalGhostButton>
               <ModalDangerButton type="button" onClick={() => clearRoleFields(clearRoleTarget)}>
@@ -4273,7 +4421,7 @@ export const MyProfile = () => {
           </>
         ) : (
           <>
-            <ModalTitle>{uiText('Очистити анкету?', language)}</ModalTitle>
+            <ModalTitle id={CONFIRMATION_TITLE_ID} tabIndex={-1}>{uiText('Очистити анкету?', language)}</ModalTitle>
             <ModalText>
               {uiText(
                 'Усі заповнені поля стануть порожніми, а анкету буде знято з публікації. '
@@ -4284,6 +4432,7 @@ export const MyProfile = () => {
             <ModalActionRow>
               <ModalGhostButton
                 type="button"
+                data-dialog-cancel
                 disabled={isClearingProfile}
                 onClick={() => setShowInfoModal(false)}
               >
@@ -4294,7 +4443,7 @@ export const MyProfile = () => {
               </ModalDangerButton>
             </ModalActionRow>
           </>
-        ))}
+        )}
       />
     )}
 
@@ -4302,9 +4451,9 @@ export const MyProfile = () => {
         (вигляд — у коментарях до `PublishHead` і `WayCard`). «Очистити»
         питає підтвердження тією самою модалкою (`clearRoleTarget`), що й
         пункт меню «⋮». */}
-    <SubmitWrap ref={node => { sectionRefs.current.publish = node; }} data-testid="publish-card">
+    <SubmitWrap id={sectionAnchorId('publish')} ref={node => { sectionRefs.current.publish = node; }} data-testid="publish-card">
       <PublishHead>
-        <b>{uiText('Публікація', language)}</b>
+        <SectionHeading tabIndex={-1} data-section-heading>{uiText('Публікація', language)}</SectionHeading>
         <span data-testid="publish-status">
           {uiText(isLikedAudience
             ? 'Анкету бачать лише ті, кого ви вподобали. Для решти її немає ні в стрічці, ні в пошуку'
@@ -4337,7 +4486,7 @@ export const MyProfile = () => {
               <PublishMissingChip
                 key={fieldName}
                 type="button"
-                onClick={() => scrollToField(fieldName)}
+                onClick={event => scrollToField(fieldName, event)}
               >
                 {resolveRequiredFieldLabel(fieldName)}
               </PublishMissingChip>
@@ -4352,7 +4501,7 @@ export const MyProfile = () => {
         <NextFieldsRow data-testid="profile-next-fields">
           <span>{uiText('Варто дописати:', language)}</span>
           {nextEmptyFields.map(name => (
-            <NextFieldChip key={name} type="button" onClick={() => scrollToField(name)}>
+            <NextFieldChip key={name} type="button" onClick={event => scrollToField(name, event)}>
               {resolveRequiredFieldLabel(name)}
             </NextFieldChip>
           ))}
@@ -4380,6 +4529,7 @@ export const MyProfile = () => {
               || MY_PROFILE_ROLE_OPTIONS.find(option => option.value === role)?.label
               || role;
             const rolePublished = (isPublished || isLikedAudience) && !hiddenRoles.includes(role);
+            const roleNeedsFields = !rolePublished && listMissingRequiredFields(role, state).length > 0;
             return (
               <RoleActionRow key={role} data-testid={`publish-role-${role}`}>
                 <RoleActionMeta>
@@ -4388,14 +4538,14 @@ export const MyProfile = () => {
                     <RolePublishStatus>{uiText(isLikedAudience ? 'Лише обраним' : 'У стрічці', language)}</RolePublishStatus>
                   ) : null}
                 </RoleActionMeta>
-                <RoleActionPair $primary={!rolePublished}>
+                <RoleActionPair $primary={!rolePublished && !roleNeedsFields}>
                   {rolePublished ? (
                     <RolePairMainBtn type="button" onClick={() => unpublishRole(role)}>
                       {uiText('Приховати', language)}
                     </RolePairMainBtn>
                   ) : (
                     <RolePairMainBtn type="button" onClick={() => publishRole(role)}>
-                      {uiText('Опублікувати', language)}
+                      {uiText(roleNeedsFields ? 'Заповнити поля' : 'Опублікувати', language)}
                     </RolePairMainBtn>
                   )}
                 </RoleActionPair>
@@ -4410,16 +4560,22 @@ export const MyProfile = () => {
         <PublishSingleAction data-testid={rolesList[0] ? `publish-role-${rolesList[0]}` : undefined}>
               {rolesList[0] ? (
                 isLikedAudience ? (
-                  <SubmitBtn type="button" onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати для всіх', language)}</SubmitBtn>
+                  <SubmitBtn type="button" $muted={missingReadinessFields.length > 0} onClick={() => publishRole(rolesList[0])}>
+                    {uiText(missingReadinessFields.length ? 'Заповнити обовʼязкові поля' : 'Опублікувати для всіх', language)}
+                  </SubmitBtn>
                 ) : publishedRoleCount > 0 ? (
                   <UnpublishBtn type="button" onClick={() => unpublishRole(rolesList[0])}>{uiText('Приховати анкету', language)}</UnpublishBtn>
                 ) : (
-                  <SubmitBtn type="button" onClick={() => publishRole(rolesList[0])}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
+                  <SubmitBtn type="button" $muted={missingReadinessFields.length > 0} onClick={() => publishRole(rolesList[0])}>
+                    {uiText(feedPublishLabel, language)}
+                  </SubmitBtn>
                 )
               ) : isPublished ? (
                 <UnpublishBtn type="button" onClick={hideProfile}>{uiText('Зняти з публікації', language)}</UnpublishBtn>
               ) : (
-                <SubmitBtn type="button" onClick={publishProfile}>{uiText('Опублікувати анкету', language)}</SubmitBtn>
+                <SubmitBtn type="button" $muted={missingReadinessFields.length > 0} onClick={publishProfile}>
+                  {uiText(feedPublishLabel, language)}
+                </SubmitBtn>
               )}
         </PublishSingleAction>
       )}
@@ -4525,14 +4681,14 @@ export const MyProfile = () => {
         входить у кадр, а він і є низ сторінки — тож закрити собою вона нічого
         не може. Відступ у 76 px стояв під «Публікацією» порожнім місцем. */}
     {awaitingPublication && isProfileAccessConfirmed && !editingProgram && !publishCardInView ? (
-      <PublishDock data-testid="publish-dock">
+      <PublishDock ref={publishDockRef} data-testid="publish-dock">
         <span>
           {missingPublishFields.length
             ? uiText('Щоб опублікувати, бракує полів: {count}', language, { count: missingPublishFields.length })
-            : uiText('Анкету поки не видно в стрічці', language)}
+            : uiText(rolesList.length > 1 ? 'Анкету поки не видно в стрічці' : 'Обовʼязкові поля заповнено', language)}
         </span>
-        <PublishDockButton type="button" $muted={missingPublishFields.length > 0} onClick={publishFromDock}>
-          {uiText(missingPublishFields.length ? 'Показати' : 'Опублікувати', language)}
+        <PublishDockButton type="button" $muted={dockNavigatesToPublication} onClick={publishFromDock}>
+          {uiText(dockActionLabel, language)}
         </PublishDockButton>
       </PublishDock>
     ) : null}

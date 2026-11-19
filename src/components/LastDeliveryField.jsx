@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { FiX } from 'react-icons/fi';
 import {
@@ -97,7 +97,8 @@ const textFromStored = (stored, now) => {
   return read.ok ? formatDeliveryDateForInput(read) : String(stored ?? '').trim();
 };
 
-const LastDeliveryField = ({ value, onCommit, language = 'uk', now: nowProp, placeholder }) => {
+const LastDeliveryField = ({ value, onCommit, language = 'uk', now: nowProp, placeholder, inputId, describedBy }) => {
+  const noteId = useId();
   const now = useMemo(() => nowProp || new Date(), [nowProp]);
   const stored = String(value ?? '').trim();
   const [text, setText] = useState(() => textFromStored(stored, now));
@@ -132,12 +133,14 @@ const LastDeliveryField = ({ value, onCommit, language = 'uk', now: nowProp, pla
     <>
       <Control>
         <Input
+          id={inputId}
           type="text"
           autoComplete="off"
           data-testid="last-delivery-input"
           value={text}
           $error={Boolean(note?.error)}
           aria-invalid={note?.error ? 'true' : undefined}
+          aria-describedby={[describedBy, note && noteId].filter(Boolean).join(' ') || undefined}
           placeholder={placeholder || uiText('Наприклад: 12.05.2019 або 05.2019', language)}
           onFocus={() => { focusedRef.current = true; }}
           onChange={event => setText(event.target.value)}
@@ -156,7 +159,7 @@ const LastDeliveryField = ({ value, onCommit, language = 'uk', now: nowProp, pla
         ) : null}
       </Control>
       {note ? (
-        <Note data-testid="last-delivery-note" role="status" $error={note.error}>{note.text}</Note>
+        <Note id={noteId} data-testid="last-delivery-note" role="status" $error={note.error}>{note.text}</Note>
       ) : null}
     </>
   );

@@ -37,12 +37,12 @@ describe('my-profile publication toggle', () => {
       .toHaveProperty(MATCHING_CARD_FEED_FIELD, '2026-08-19');
   });
 
-  // «Зняти з публікації» — не головна дія: та сама кнопка з помаранчевим
-  // градієнтом лишається за «Опублікувати», а зняття — рамкою.
+  // Головна дія називає наступний крок: заповнення полів або публікацію у стрічці.
   it('shows the action matching the current publication state', () => {
     const card = source.slice(source.indexOf('data-testid="publish-card"'), source.indexOf('</SubmitWrap>'));
     expect(card).toContain("<UnpublishBtn type=\"button\" onClick={hideProfile}>{uiText('Зняти з публікації', language)}</UnpublishBtn>");
-    expect(card).toContain("<SubmitBtn type=\"button\" onClick={publishProfile}>{uiText('Опублікувати анкету', language)}</SubmitBtn>");
+    expect(card).toMatch(/onClick={publishProfile}>\s*{uiText\(feedPublishLabel, language\)}/);
+    expect(source).toContain("missingReadinessFields.length ? 'Заповнити обовʼязкові поля' : 'Опублікувати у стрічці'");
     expect(card).toContain('isPublished ? (');
   });
 

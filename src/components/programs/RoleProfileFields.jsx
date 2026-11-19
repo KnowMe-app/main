@@ -1,11 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import styled from 'styled-components';
 import { FaCheck } from 'react-icons/fa';
 import {
-  MAX_ORG_FEATURES,
-  listOrgFeatureOptions,
-  parseOrgFeatures,
-  toggleOrgFeature,
   PARENT_SEEKING_OPTIONS,
   PARENT_VIA_OPTIONS,
   parseSeekingRoles,
@@ -94,7 +90,7 @@ const Segment = styled.button`
   padding: 0 13px;
   border-radius: 999px;
   border: 1px solid ${({ $on }) => ($on ? 'var(--km-accent, #C9600F)' : 'transparent')};
-  background: ${({ $on }) => ($on ? 'var(--km-accent, #C9600F)' : 'var(--km-fill, #F0EDE8)')};
+  background: ${({ $on }) => ($on ? 'var(--km-action, #B5530D)' : 'var(--km-fill, #F0EDE8)')};
   color: ${({ $on }) => ($on ? 'var(--km-on-accent, #fff)' : 'var(--km-text, inherit)')};
   font: inherit;
   font-size: 14px;
@@ -124,8 +120,8 @@ const BlurInput = ({ value, onCommit, ...rest }) => {
   );
 };
 
-const Choice = ({ options, value, onChange, language, multiple = false }) => (
-  <Segments>
+const Choice = ({ options, value, onChange, language, labelledBy, describedBy, multiple = false }) => (
+  <Segments role="group" aria-labelledby={labelledBy} aria-describedby={describedBy}>
     {options.map(option => {
       const on = multiple ? value.includes(option.key) : value === option.key;
       return (
@@ -189,6 +185,9 @@ const SET_ASIDE_WISHES = [
  * стерли.
  */
 export const ParentProfileFields = ({ state, onCommit, language, showProgramLocation = false }) => {
+  const seekingLabelId = useId();
+  const seekingHintId = useId();
+  const viaLabelId = useId();
   const seeking = String(state.seeking || '');
   const seekingKeys = parseSeekingRoles(seeking);
   const via = String(state.parentVia || '');
@@ -216,7 +215,7 @@ export const ParentProfileFields = ({ state, onCommit, language, showProgramLoca
     return (
       <Grid>
         {recorded.map(field => (
-          <FieldLabel key={field.key}>
+          <FieldLabel as="label" key={field.key}>
             {uiText(field.label, language)}
             <BlurInput value={prefs[group]?.[field.key]} inputMode={field.inputMode} placeholder={uiText(field.placeholder, language)} onCommit={value => setPref(group, field.key, value)} />
           </FieldLabel>
@@ -236,26 +235,28 @@ export const ParentProfileFields = ({ state, onCommit, language, showProgramLoca
 
   return (
     <Stack>
-      <FieldLabel as="div">
-        {uiText('Кого шукаєте', language)}
+      <FieldLabel data-profile-field="seeking">
+        <span id={seekingLabelId}>{uiText('Кого шукаєте', language)}</span>
         {/* Кількох одразу: батьки, які ще нічого не знають, шукають і
             донорку, і агенцію чи клініку, що допоможе. */}
         <Choice
           language={language}
+          labelledBy={seekingLabelId}
+          describedBy={seekingHintId}
           multiple
           options={PARENT_SEEKING_OPTIONS}
           value={seekingKeys}
           onChange={key => onCommit('seeking', toggleSeekingRole(seeking, key) || null)}
         />
-        <Hint>{uiText('Можна кількох. Агенції й клініки побачать це у вашій картці й зможуть написати вам самі.', language)}</Hint>
+        <Hint id={seekingHintId}>{uiText('Можна кількох. Агенції й клініки побачать це у вашій картці й зможуть написати вам самі.', language)}</Hint>
       </FieldLabel>
       {/* Необовʼязкове: повторний дотик знімає вибір. */}
-      <FieldLabel as="div">
-        {uiText('Як шукаєте', language)}
-        <Choice language={language} options={PARENT_VIA_OPTIONS} value={via} onChange={key => onCommit('parentVia', key === via ? null : key)} />
+      <FieldLabel data-profile-field="parentVia">
+        <span id={viaLabelId}>{uiText('Як шукаєте', language)}</span>
+        <Choice language={language} labelledBy={viaLabelId} options={PARENT_VIA_OPTIONS} value={via} onChange={key => onCommit('parentVia', key === via ? null : key)} />
       </FieldLabel>
       {showProgramLocation ? (
-        <FieldLabel>
+        <FieldLabel as="label" data-profile-field="programLocation">
           {uiText('Де програма', language)}
           <BlurInput value={state.programLocation} placeholder={uiText('Наприклад: клініка в Києві', language)} onCommit={value => onCommit('programLocation', value || null)} />
           <Hint>{uiText('Тепер це «Місце програми» в самій програмі', language)}</Hint>
@@ -292,32 +293,6 @@ export const ParentProfileFields = ({ state, onCommit, language, showProgramLoca
           </Segments>
         </FieldLabel>
       ))}
-    </Stack>
-  );
-};
-
-/**
- * «Чим ви відрізняєтесь» агенції чи клініки — до чотирьох ознак галочками
- * (`ORG_FEATURE_OPTIONS`). Рядок стрічки показує їх під назвою: до цього
- * клініку від агенції в стрічці відрізняла лише плашка ролі.
- */
-export const OrgFeatureFields = ({ state, onCommit, language, roles }) => {
-  const value = parseOrgFeatures(state.orgFeatures);
-  const options = listOrgFeatureOptions(roles);
-  if (!options.length) return null;
-  return (
-    <Stack data-testid="org-features">
-      <FieldLabel>
-        {uiText('Що про вас варто знати одразу — до {max}', language, { max: MAX_ORG_FEATURES })}
-        <Choice
-          options={options}
-          value={value}
-          multiple
-          language={language}
-          onChange={key => onCommit('orgFeatures', toggleOrgFeature(value.join(','), key))}
-        />
-      </FieldLabel>
-      {value.length >= MAX_ORG_FEATURES ? <Hint>{uiText('Обрано найбільше — зніміть одну, щоб обрати іншу', language)}</Hint> : null}
     </Stack>
   );
 };

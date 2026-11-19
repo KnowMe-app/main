@@ -159,6 +159,12 @@ const ModalContent = styled.div`
   text-align: center;
   position: relative;
   box-sizing: border-box;
+  ${({ $focusDialog }) => $focusDialog && `
+    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px);
+    overflow: auto;
+    overscroll-behavior: contain;
+  `}
 `;
 
 const LargeModalContent = styled(ModalContent)`
@@ -312,6 +318,9 @@ export const InfoModal = ({
   text,
   Context,
   DelConfirm,
+  confirmation,
+  dialogLabelledBy,
+  fallbackFocusRef,
   CompareCards,
   MoreActions,
   FlowComposer,
@@ -323,6 +332,34 @@ export const InfoModal = ({
   const closeMenuLabel = language ? uiText('Закрити меню', language) : 'Закрити меню';
   const openedAtRef = useRef(Date.now());
   const comparisonContentRef = useRef(null);
+  useEffect(() => {
+    if (!dialogLabelledBy) return undefined;
+    const dialog = comparisonContentRef.current;
+    const opener = document.activeElement;
+    const fallback = fallbackFocusRef?.current;
+    const initial = dialog.querySelector('[data-dialog-cancel]:enabled') || document.getElementById(dialogLabelledBy) || dialog;
+    initial.focus();
+
+    const keepFocusInDialog = event => {
+      if (event.key !== 'Tab' || event.defaultPrevented) return;
+      const controls = Array.from(dialog.querySelectorAll('a[href], button:enabled, input:enabled, select:enabled, textarea:enabled, [tabindex]'))
+        .filter(element => element.tabIndex >= 0 && element.getClientRects().length);
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      const active = document.activeElement;
+      if (!first || !controls.includes(active) || (event.shiftKey ? active === first : active === last)) {
+        event.preventDefault();
+        (event.shiftKey ? last || dialog : first || dialog).focus();
+      }
+    };
+    document.addEventListener('keydown', keepFocusInDialog);
+    return () => {
+      document.removeEventListener('keydown', keepFocusInDialog);
+      const restore = opener !== document.body && opener?.isConnected && !opener.matches(':disabled') ? opener : fallback;
+      restore?.focus({ preventScroll: true });
+    };
+  }, [dialogLabelledBy, fallbackFocusRef]);
+
   useEffect(() => {
     if (text !== 'compareCards') return undefined;
     const body = document.body;
@@ -339,7 +376,7 @@ export const InfoModal = ({
 
   const delProfile = (
     <>
-      <ModalTitle>Видалення анкети</ModalTitle>
+      <ModalTitle id={dialogLabelledBy} tabIndex={dialogLabelledBy ? -1 : undefined}>Видалення анкети</ModalTitle>
       <ModalText>Щоб видалити анкету, відправте запит на пошту</ModalText>
       <a href="mailto:KnowMeEggDonor@gmail.com?subject=Видаліть мою анкету" style={{ color: 'inherit', textDecoration: 'none' }}>
         <OrangeStrong>KnowMeEggDonor@gmail.com</OrangeStrong>
@@ -349,9 +386,8 @@ export const InfoModal = ({
   );
 
   const delConfirm = (
-    <>{DelConfirm && <DelConfirm/>}
-  </>
-);
+    <>{confirmation ?? (DelConfirm && <DelConfirm />)}</>
+  );
 
   const compareCards = (
     <>{CompareCards && <CompareCards/>}
@@ -494,11 +530,12 @@ export const InfoModal = ({
       // Слухач вкладеного вікна ставиться пізніше за цей і спрацьовує після
       // нього, тож саму позначку тут ще не видно — питаємо розмітку.
       if (comparisonContentRef.current?.querySelector('[aria-modal="true"]')) return;
+      if (dialogLabelledBy) event.preventDefault();
       onCloseRef.current?.(event);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [dialogLabelledBy]);
 
   const handleOverlayClick = event => {
     if (Date.now() - openedAtRef.current < 250) {
@@ -514,9 +551,12 @@ export const InfoModal = ({
   return (
     <ModalOverlay $sheet={text === 'dotsMenu'} onClick={handleOverlayClick}>
       <ContentComponent
-        role={text === 'compareCards' ? 'dialog' : undefined}
-        aria-modal={text === 'compareCards' ? true : undefined}
+        $focusDialog={Boolean(dialogLabelledBy)}
+        role={text === 'compareCards' || dialogLabelledBy ? 'dialog' : undefined}
+        aria-modal={text === 'compareCards' || dialogLabelledBy ? true : undefined}
         aria-label={text === 'compareCards' ? 'Порівняти картки' : undefined}
+        aria-labelledby={dialogLabelledBy}
+        tabIndex={dialogLabelledBy ? -1 : undefined}
         ref={comparisonContentRef}
         onScroll={event => {
           if (text === 'compareCards' && comparisonScrollRef) comparisonScrollRef.current = event.currentTarget.scrollTop;

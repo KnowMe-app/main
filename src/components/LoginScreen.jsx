@@ -679,8 +679,8 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
    */
   //
   // Чекати на анкету довше за `LANDING_ROUTE_TIMEOUT_MS` форма не має права:
-  // читання бази без звʼязку не падає, а висить (а `fetchUserById` ще й лістить
-  // фото в Storage), і вхід, який уже відбувся, стояв під спінером без кінця.
+  // читання бази без звʼязку може висіти, і вхід, який уже відбувся, стояв
+  // під спінером без кінця. Для вибору маршруту достатньо полів анкети.
   // Не встигли — «Мій профіль»: він малюється з памʼяті пристрою.
   const resolveLandingRoute = async uid => {
     if (!uid) return MY_PROFILE_ROUTE;
@@ -688,7 +688,7 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
     const timeout = new Promise(resolve => {
       timer = setTimeout(() => resolve(MY_PROFILE_ROUTE), LANDING_ROUTE_TIMEOUT_MS);
     });
-    const read = fetchUserById(uid)
+    const read = fetchUserById(uid, { includePhotos: false })
       // Не-адмін з виданими екранами починає з першого з них (`resolveSpecialHomeRoute`), як і
       // ярлик з головного екрана; решта — як було.
       .then(profile => resolveSpecialHomeRoute(resolveAccess({

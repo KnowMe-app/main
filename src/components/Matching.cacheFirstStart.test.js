@@ -20,8 +20,8 @@ describe('Matching cache-first start', () => {
     const start = config.indexOf('export const loadViewerProfile');
     const body = config.slice(start, config.indexOf('\nexport ', start + 1));
     expect(body.indexOf('readFreshMyProfileCache(uid)')).toBeGreaterThan(-1);
-    expect(body.indexOf('readFreshMyProfileCache(uid)')).toBeLessThan(body.indexOf('fetchUserById(uid)'));
-    expect(body).toContain('writeMyProfileCache(uid, profile)');
+    expect(body.indexOf('readFreshMyProfileCache(uid)')).toBeLessThan(body.indexOf('fetchUserById(uid, { includePhotos: false })'));
+    expect(body).toContain('writeMyProfileCache(uid,');
   });
 
   it('serves fresh reaction maps from the cache and subscribes only when they are stale', () => {

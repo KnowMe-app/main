@@ -1,13 +1,17 @@
 import fs from 'fs';
 import path from 'path';
 
-// Після публікаційного мінімуму смужка рахує всю анкету: «10 з 10 · 100%»
-// казало «готово» про анкету, де пологи, кесарів і «Про себе» ще порожні.
-describe('після обовʼязкового смужка рахує всю анкету', () => {
+// Публікаційний мінімум і повнота не змінюють один одного після останнього
+// обовʼязкового поля: пологи, кесарів і «Про себе» можуть бути ще порожні.
+describe('окремий прогрес публікації та повнота анкети', () => {
   const source = fs.readFileSync(path.join(__dirname, 'MyProfile.jsx'), 'utf8');
 
-  it('перемикає підпис і відсоток на повноту анкети без соцмереж', () => {
-    expect(source).toContain("uiText('Анкету заповнено на {filled} з {total}', language, completeness)");
+  it('показує повноту без соцмереж поруч зі смужкою обовʼязкових полів', () => {
+    const progress = source.slice(source.indexOf('<ProgressWrap>'), source.indexOf('</ProgressWrap>'));
+    expect(progress).toContain("uiText('Для публікації заповнено {filled} з {total}', language, filledStats)");
+    expect(progress).toContain("uiText('Анкету заповнено на {filled} з {total}', language, completeness)");
+    expect(progress).toContain('{filledPct}%');
+    expect(progress).not.toContain('requiredComplete');
     expect(source).toContain(".filter(section => section.key !== 'social')");
     expect(source).toContain(".filter(name => fieldsMap.has(name) || CUSTOM_COMPLETENESS_FIELDS.has(name))");
     // День місячних застаріває щомісяця — повноту анкети він не рахує.

@@ -238,7 +238,7 @@ const RowLabel = styled.span`
 `;
 
 const Status = styled.span`
-  color: var(--km-success, #2e7d4f);
+  color: var(--km-success-text, #247645);
   font-weight: 600;
   font-size: 13px;
 `;
@@ -266,7 +266,7 @@ const Primary = styled.button`
   padding: 10px 18px;
   border: none;
   border-radius: 10px;
-  background: var(--km-accent, #c9600f);
+  background: var(--km-action, #B5530D);
   color: var(--km-on-accent, #fff);
   font-weight: 700;
 `;
@@ -275,7 +275,7 @@ const Link = styled.button`
   border: none;
   background: none;
   padding: 0;
-  color: var(--km-accent, #c9600f);
+  color: var(--km-accent-text, #9A470A);
   font-weight: 600;
   cursor: pointer;
 `;

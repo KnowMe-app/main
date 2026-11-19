@@ -15,9 +15,35 @@ jest.mock('firebase/storage', () => ({
 jest.mock('firebase/database', () => ({ getDatabase: () => ({}), ref: () => ({}) }));
 
 const storageApi = require('firebase/storage');
-const { copyProfilePhotosBetweenCards, storagePathFromDownloadUrl } = require('./config');
+const { copyProfilePhotosBetweenCards, loadOwnProfilePhotos, storagePathFromDownloadUrl } = require('./config');
 
 const storageUrl = path => `https://firebasestorage.googleapis.com/v0/b/proj.appspot.com/o/${encodeURIComponent(path)}?alt=media&token=t`;
+
+describe('loadOwnProfilePhotos', () => {
+  it('uses current field order and omits cached-only URLs after a successful Storage read', async () => {
+    const primary = storageUrl('avatar/A/2.jpg');
+    const second = storageUrl('avatar/A/1.jpg');
+    const cached = storageUrl('avatar/A/deleted.jpg');
+    const recovered = storageUrl('avatar/A/3.jpg');
+    storageApi.listAll.mockResolvedValueOnce({ items: [{ fullPath: 'avatar/A/3.jpg' }], prefixes: [] });
+    storageApi.getDownloadURL.mockResolvedValueOnce(recovered);
+
+    await expect(loadOwnProfilePhotos('A', [primary, second], { fallbackPhotos: [cached] }))
+      .resolves.toEqual({ photos: [primary, second, recovered], unavailable: false });
+  });
+
+  it('keeps the cached list on a failed Storage read', async () => {
+    const cached = storageUrl('avatar/A/cached.jpg');
+    storageApi.listAll.mockRejectedValueOnce(new Error('Storage unavailable'));
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(loadOwnProfilePhotos('A', [], { fallbackPhotos: [cached] }))
+        .resolves.toEqual({ photos: [cached], unavailable: true });
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+});
 
 describe('storagePathFromDownloadUrl', () => {
   it('reads a file path of this project bucket', () => {
