@@ -387,6 +387,25 @@ export const GroupItem = styled.li`
   ${noMotion}
 `;
 
+// Назва верхньої групи над її підгрупами: один раз, а не в кожному рядку.
+export const GroupSectionHead = styled.li`
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  padding: 12px 2px 2px;
+  border-bottom: 1px solid var(--km-border, #ece7df);
+  > span:first-child {
+    flex: 1 1 140px;
+    min-width: 0;
+    font-size: 16px;
+    font-weight: 700;
+    overflow-wrap: break-word;
+  }
+`;
+
 export const GroupHead = styled.div`
   display: flex;
   align-items: center;
@@ -419,7 +438,7 @@ export const GroupName = styled.span`
   flex: 1 1 140px;
   min-width: 0;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: ${({ $nested }) => ($nested ? 500 : 700)};
   overflow-wrap: break-word;
 `;
 
