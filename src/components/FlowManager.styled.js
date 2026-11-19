@@ -479,6 +479,34 @@ export const GroupEditToggle = styled.button`
   ${pressable}
 `;
 
+// Поле запису в розгорнутій групі: пише просто в неї, без шторки груп.
+export const InlineEntryRow = styled.div`
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0 8px;
+`;
+
+export const InlineEntryInput = styled.input`
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--km-fill, #efeae3);
+  color: inherit;
+  font-size: 16px;
+  font-family: inherit;
+  outline: none;
+  &:focus { border-color: var(--km-accent, #c9600f); }
+`;
+
+export const InlineEntryBtn = styled(PrimaryBtn)`
+  flex: 0 0 auto;
+  min-height: 40px;
+`;
+
 export const MonthHead = styled.div`
   display: flex;
   justify-content: space-between;

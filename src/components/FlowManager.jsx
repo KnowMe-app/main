@@ -65,6 +65,9 @@ import {
   GroupName,
   GroupPickerChip,
   GroupNamePrefix,
+  InlineEntryBtn,
+  InlineEntryInput,
+  InlineEntryRow,
   GroupSectionHead,
   GroupSum,
   GroupTitle,
@@ -1735,10 +1738,12 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     }
   };
 
-  const handleSave = async ({ silentValidation = false, rawText, keepInput = false } = {}) => {
-    const normalizedCategory = normalizeCategoryPath(selectedCategoryPath) || DEFAULT_FLOW_CATEGORY;
+  // `groupPath` — запис просто в розгорнуту групу (поле під її назвою): група
+  // поля вводу вгорі й дата там не змінюються (`inline`).
+  const handleSave = async ({ silentValidation = false, rawText, keepInput = false, groupPath, inline = false } = {}) => {
+    const normalizedCategory = normalizeCategoryPath(groupPath || selectedCategoryPath) || DEFAULT_FLOW_CATEGORY;
     const saveText = rawText ?? entryInput;
-    const effectiveFallbackDate = resolveFlowFallbackDate(saveText, dateYmd);
+    const effectiveFallbackDate = resolveFlowFallbackDate(saveText, inline ? todayYmd() : dateYmd);
     const parsedEntries = parseFlowEntriesByDatesAndGroups({
       rawText: saveText,
       fallbackDate: effectiveFallbackDate,
@@ -1749,7 +1754,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       if (!silentValidation) {
         toast.error('Заповніть валідні дані: дата + сума + опис (з групами за потреби)');
       }
-      return;
+      return false;
     }
 
     try {
@@ -1772,21 +1777,53 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       const lastEntry = parsedEntries[parsedEntries.length - 1];
       // Останній запис — найсвіжіший: у нещодавніх він стає першим.
       rememberRecentCategories(parsedEntries.map(entry => entry.groupPath || normalizedCategory));
-      setDateYmd(lastEntry.date);
       // Щойно внесене має бути видно: відкривається група останнього запису.
       rememberOpenGroup(normalizeCategoryPath(lastEntry.groupPath) || normalizedCategory);
-      const selectedPath = splitCategoryPath(lastEntry.groupPath || normalizedCategory);
-      setSelectedGroup(selectedPath.group);
-      setSelectedSubgroup(selectedPath.subgroup);
-      if (!keepInput) setEntryInput('');
+      if (!inline) {
+        setDateYmd(lastEntry.date);
+        const selectedPath = splitCategoryPath(lastEntry.groupPath || normalizedCategory);
+        setSelectedGroup(selectedPath.group);
+        setSelectedSubgroup(selectedPath.subgroup);
+      }
+      if (!keepInput && !inline) setEntryInput('');
       toast.success(
         (parsedEntries.length === 1
           ? 'Flow збережено'
           : `Flow збережено: ${parsedEntries.length} записів`) + offlineSuffix()
       );
+      return true;
     } catch (error) {
       console.error('Unable to save flow entry', error);
       toast.error('Не вдалося зберегти Flow');
+      return false;
+    }
+  };
+
+  // Набране в полі вгорі не зберігається, поки відкрита шторка групи: blur
+  // поля (дотик до чіпа «Група») інакше записував витрату в стару групу, ще
+  // до вибору нової. Збереження відкладається до закриття шторки — і йде вже
+  // з обраною групою (ефект нижче бачить новий `selectedCategoryPath`).
+  const groupPickerOpeningRef = useRef(false);
+  const saveAfterGroupPickerRef = useRef(false);
+  useEffect(() => {
+    if (groupPicker || !saveAfterGroupPickerRef.current) return;
+    saveAfterGroupPickerRef.current = false;
+    handleSave({ silentValidation: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- лише на закриття шторки
+  }, [groupPicker]);
+
+  // Поле запису в розгорнутій групі: група вже відома, шторки не треба.
+  const [inlineEntry, setInlineEntry] = useState({ group: '', text: '' });
+  const inlineSavingRef = useRef(false);
+  const saveInlineEntry = async (group, { silent = false } = {}) => {
+    const text = inlineEntry.group === group ? inlineEntry.text : '';
+    if (!text.trim() || inlineSavingRef.current) return;
+    inlineSavingRef.current = true;
+    try {
+      const saved = await handleSave({ rawText: text, groupPath: group, inline: true, silentValidation: silent });
+      if (saved) setInlineEntry(prev => (prev.group === group && prev.text === text ? { group, text: '' } : prev));
+    } finally {
+      inlineSavingRef.current = false;
     }
   };
 
@@ -2424,7 +2461,17 @@ export const FlowManager = ({ ownerId, viewerId }) => {
               type="button"
               $income={isIncomePath(selectedCategoryPath)}
               onMouseDown={e => e.preventDefault()}
-              onClick={openEntryGroupPicker}
+              onPointerDown={() => {
+                groupPickerOpeningRef.current = true;
+              }}
+              onPointerCancel={() => {
+                groupPickerOpeningRef.current = false;
+              }}
+              onClick={() => {
+                groupPickerOpeningRef.current = false;
+                if (entryInput.trim()) saveAfterGroupPickerRef.current = true;
+                openEntryGroupPicker();
+              }}
               data-testid="flow-entry-group"
             >
               Група: {formatGroupTitle(selectedCategoryPath)} ▾
@@ -2458,6 +2505,10 @@ export const FlowManager = ({ ownerId, viewerId }) => {
               }}
               onBlur={e => {
                 if (entryRowRef.current?.contains(e.relatedTarget)) return;
+                if (groupPickerOpeningRef.current || groupPicker) {
+                  saveAfterGroupPickerRef.current = true;
+                  return;
+                }
                 handleSave({ silentValidation: true });
               }}
               placeholder="Напр. 1200 оренда"
@@ -2584,6 +2635,36 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                     )}
                   </GroupHead>
                   <Collapsible open={open}>
+                    {open && canWriteFlow && (
+                      <InlineEntryRow data-testid="flow-group-inline-entry">
+                        <InlineEntryInput
+                          type="text"
+                          enterKeyHint="done"
+                          value={inlineEntry.group === group ? inlineEntry.text : ''}
+                          onChange={e => setInlineEntry({ group, text: e.target.value })}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              saveInlineEntry(group);
+                            }
+                          }}
+                          onBlur={e => {
+                            if (e.currentTarget.parentElement?.contains(e.relatedTarget)) return;
+                            saveInlineEntry(group, { silent: true });
+                          }}
+                          placeholder={`Сума й опис → «${inSection ? subgroup || 'Без підгрупи' : topGroup}»`}
+                          aria-label={`Новий запис у групу ${formatGroupTitle(group)}`}
+                        />
+                        <InlineEntryBtn
+                          type="button"
+                          disabled={!(inlineEntry.group === group && inlineEntry.text.trim())}
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => saveInlineEntry(group)}
+                        >
+                          Додати
+                        </InlineEntryBtn>
+                      </InlineEntryRow>
+                    )}
                     {groupFlowRowsByMonth(entries, rowAmountNumber).map(month => (
                       <React.Fragment key={month.key}>
                         <MonthHead>
