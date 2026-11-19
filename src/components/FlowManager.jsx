@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { InfoModal } from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
-import { FiCornerUpLeft, FiCornerUpRight, FiSearch, FiSettings } from 'react-icons/fi';
+import { FiCheck, FiCornerUpLeft, FiCornerUpRight, FiSearch, FiSettings, FiTrash2 } from 'react-icons/fi';
 import { buildFlowImportText } from 'utils/flowImport';
 import {
   lastFlowSubgroupFor,
@@ -70,6 +70,7 @@ import {
   GroupSectionHead,
   GroupSectionItem,
   EditSideActions,
+  EditIconBtn,
   GroupSum,
   GroupTitle,
   IconBtn,
@@ -2266,19 +2267,23 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                 продукту): «⋯» біля кожного рядка з'являлись лише після олівця
                 біля назви групи, і їх ніхто не знаходив. */}
             <EditActions data-testid="flow-row-edit-actions">
+              {/* Один ряд: незворотне й головне — значками по краях, щоб їх не
+                  сплутати; посередині — словами те, що не міняє запис. */}
+              <EditIconBtn
+                type="button"
+                $danger
+                aria-label="Видалити запис"
+                title="Видалити"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => {
+                  cancelEdit();
+                  openDeleteConfirm(row, rowKey);
+                }}
+                data-testid="flow-row-delete"
+              >
+                <FiTrash2 aria-hidden="true" />
+              </EditIconBtn>
               <EditSideActions>
-                <GhostBtn
-                  type="button"
-                  $danger
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={() => {
-                    cancelEdit();
-                    openDeleteConfirm(row, rowKey);
-                  }}
-                  data-testid="flow-row-delete"
-                >
-                  Видалити
-                </GhostBtn>
                 <GhostBtn
                   type="button"
                   onMouseDown={e => e.preventDefault()}
@@ -2290,15 +2295,21 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                 >
                   Перенести
                 </GhostBtn>
-              </EditSideActions>
-              <EditSideActions>
                 <GhostBtn type="button" onMouseDown={e => e.preventDefault()} onClick={cancelEdit}>
                   Скасувати
                 </GhostBtn>
-                <PrimaryBtn type="button" onMouseDown={e => e.preventDefault()} onClick={() => saveEditedRow(row, idx)}>
-                  Зберегти
-                </PrimaryBtn>
               </EditSideActions>
+              <EditIconBtn
+                type="button"
+                $primary
+                aria-label="Зберегти запис"
+                title="Зберегти"
+                onMouseDown={e => e.preventDefault()}
+                onClick={() => saveEditedRow(row, idx)}
+                data-testid="flow-row-save"
+              >
+                <FiCheck aria-hidden="true" />
+              </EditIconBtn>
             </EditActions>
           </EditBox>
         </EntryRow>
@@ -2376,7 +2387,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                             if (e.currentTarget.parentElement?.contains(e.relatedTarget)) return;
                             saveInlineEntry(group, { silent: true });
                           }}
-                          placeholder={`Сума й опис → «${inSection ? subgroup || 'Без підгрупи' : topGroup}»`}
+                          placeholder="Напр. 1200 оренда"
                           aria-label={`Новий запис у групу ${formatGroupTitle(group)}`}
                         />
                         <InlineEntryBtn
