@@ -8,6 +8,16 @@ import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { FiCornerUpLeft, FiCornerUpRight, FiSearch, FiSettings } from 'react-icons/fi';
 import { buildFlowImportText } from 'utils/flowImport';
 import {
+  lastFlowSubgroupFor,
+  listFlowRecentShortcuts,
+  pushFlowRecentCategory,
+  readFlowRecentCategories,
+  sortFlowGroupsByRecent,
+  sortFlowPathsByRecent,
+  sortFlowSubgroupsByRecent,
+  writeFlowRecentCategories,
+} from 'utils/flowRecentCategories';
+import {
   buildInverseFlowPatch,
   pushFlowHistoryStep,
   readFlowHistory,
@@ -810,6 +820,20 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   });
   const [selectedGroup, setSelectedGroup] = useState(initialCategory.group);
   const [selectedSubgroup, setSelectedSubgroup] = useState(initialCategory.subgroup);
+  // Нещодавні шляхи груп (utils/flowRecentCategories): порядок у шторці груп
+  // і підгрупа, яку повертає дотик до групи.
+  // Вибір у шторці «Група запису» на момент відкриття: шторка, закрита без
+  // вибору (тло, Escape), повертає його. Доти кожен дотик до групи лишався
+  // діяти й після «скасування», а підгрупа скидалась на «Без підгрупи».
+  const groupPickerSnapshotRef = useRef(null);
+  const [recentCategories, setRecentCategories] = useState(() => readFlowRecentCategories(ownerId));
+  const rememberRecentCategories = paths => {
+    setRecentCategories(prev => {
+      const next = paths.reduce((acc, path) => pushFlowRecentCategory(acc, normalizeCategoryPath(path)), prev);
+      if (next !== prev) writeFlowRecentCategories(ownerId, next);
+      return next;
+    });
+  };
   const [localCategories, setLocalCategories] = useState([DEFAULT_FLOW_CATEGORY]);
   const [loading, setLoading] = useState(false);
   const [loadedFromServer, setLoadedFromServer] = useState(false);
@@ -870,6 +894,17 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   const selectedCategoryPath = useMemo(
     () => buildCategoryPath(selectedGroup, selectedSubgroup),
     [selectedGroup, selectedSubgroup]
+  );
+  // Вибір існує, коли є такий шлях або сама група без підгрупи. Групу, де всі
+  // записи лежать у підгрупах («Бережанка 1к/Меблі»…), окремим шляхом
+  // `allCategories` не знає — і поки перевірка питала лише його, дотик до
+  // такої групи тут же перебивався першою групою абеткою: обрати її було
+  // неможливо.
+  const isExistingCategoryChoice = (group, subgroup) =>
+    allCategories.includes(buildCategoryPath(group, subgroup)) || (!subgroup && allGroups.includes(group));
+  const recentShortcuts = useMemo(
+    () => listFlowRecentShortcuts(recentCategories, [...allCategories, ...allGroups]),
+    [allCategories, allGroups, recentCategories]
   );
   const renameCategorySuggestions = useMemo(() => {
     const sourceCategory = normalizeCategoryPath(renamingCategory.source);
@@ -1245,7 +1280,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       setLocalCategories(prev => (prev.includes(next) ? prev : [...prev, next]));
     }
     setSelectedGroup(next);
-    setSelectedSubgroup('');
+    setSelectedSubgroup(lastFlowSubgroupFor(next, recentCategories, groupedCategories[next] || []) || '');
     const paths = Object.keys(groupedFlowRows).filter(path => topLevelFlowGroup(path) === next);
     if (paths.length === 1) rememberOpenGroup(paths[0]);
   };
@@ -1260,6 +1295,33 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   const [rowMenu, setRowMenu] = useState(null);
   // Escape закриває верхню шторку: з клавіатури інакше вийти з меню рядка
   // можна було лише через «Перенести» чи «Видалити» — фон не фокусується.
+  const openEntryGroupPicker = () => {
+    groupPickerSnapshotRef.current = { group: selectedGroup, subgroup: selectedSubgroup };
+    setGroupPicker({ mode: 'entry' });
+  };
+  const closeGroupPicker = ({ revert = false } = {}) => {
+    const snapshot = groupPickerSnapshotRef.current;
+    if (revert && groupPicker?.mode === 'entry' && snapshot) {
+      // Повертаємо лише те, що досі існує: групу могли перейменувати чи
+      // видалити тут же, у «Керувати».
+      if (isExistingCategoryChoice(snapshot.group, snapshot.subgroup)) {
+        setSelectedGroup(snapshot.group);
+        setSelectedSubgroup(snapshot.subgroup);
+      }
+    }
+    groupPickerSnapshotRef.current = null;
+    setGroupPicker(null);
+    cancelCategoryRename();
+    setIsCategoryEditMode(false);
+  };
+  // Вибір доведено до кінця (підгрупа, група без підгруп, нещодавній шлях):
+  // шторка закривається сама, а скасовувати вже нічого.
+  const pickEntryCategory = (group, subgroup = '') => {
+    setSelectedGroup(group);
+    setSelectedSubgroup(subgroup);
+    groupPickerSnapshotRef.current = { group, subgroup };
+    if (!isCategoryEditMode) closeGroupPicker();
+  };
   const closeTopSheetRef = useRef(null);
   closeTopSheetRef.current = () => {
     // Спершу те, що лежить зверху: підтвердження видалення відкривається
@@ -1278,9 +1340,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       return true;
     }
     if (groupPicker) {
-      setGroupPicker(null);
-      cancelCategoryRename();
-      setIsCategoryEditMode(false);
+      closeGroupPicker({ revert: true });
       return true;
     }
     if (settingsOpen) {
@@ -1496,26 +1556,41 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     // «зникла» — її просто ще не прочитали; інакше після перезавантаження
     // вона мовчки ставала «general».
     if (!categoriesFromDb.length && !loadedFromServer) return;
+    // Службова «general», якої в базі немає, теж не вибір: на новому пристрої
+    // над полем стояло «Група: general», хоча таких записів у Flow не було.
+    const isPhantomDefault = selectedCategoryPath === DEFAULT_FLOW_CATEGORY
+      && !categoriesFromDb.includes(DEFAULT_FLOW_CATEGORY)
+      && categoriesFromDb.length > 0;
     if (
       allCategories.length > 0 &&
-      (!selectedCategoryPath || !allCategories.includes(selectedCategoryPath))
+      (!selectedCategoryPath || !isExistingCategoryChoice(selectedGroup, selectedSubgroup) || isPhantomDefault)
     ) {
       // Службова «general» без жодного запису групою запису не стає: людина
       // бачила б «Група: general» над полем, хоча такої групи не заводила.
+      // Першою — група, яку вживали останньою, а не перша абеткою.
       const fallbackPath = splitCategoryPath(
-        allCategories.find(category => category !== DEFAULT_FLOW_CATEGORY || categoriesFromDb.includes(category))
+        recentCategories.find(category => {
+          const { group, subgroup } = splitCategoryPath(category);
+          return isExistingCategoryChoice(group, subgroup);
+        })
+          || allCategories.find(category => category !== DEFAULT_FLOW_CATEGORY || categoriesFromDb.includes(category))
           || allCategories[0]
       );
       setSelectedGroup(fallbackPath.group);
       setSelectedSubgroup(fallbackPath.subgroup);
     }
-  }, [allCategories, categoriesFromDb, loadedFromServer, selectedCategoryPath]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- isExistingCategoryChoice читає allCategories/allGroups з тих самих залежностей
+  }, [allCategories, allGroups, categoriesFromDb, loadedFromServer, recentCategories, selectedCategoryPath]);
 
   useEffect(() => {
     if (!selectedGroup) return;
+    // До відповіді бази підгруп ще не знає ніхто: без цієї умови збережена
+    // підгрупа («Бережанка 1к/Меблі») скидалась на «Без підгрупи» на кожному
+    // відкритті Flow.
+    if (!categoriesFromDb.length && !loadedFromServer) return;
     if (subgroupsForSelectedGroup.includes(selectedSubgroup)) return;
     setSelectedSubgroup('');
-  }, [selectedGroup, selectedSubgroup, subgroupsForSelectedGroup]);
+  }, [categoriesFromDb.length, loadedFromServer, selectedGroup, selectedSubgroup, subgroupsForSelectedGroup]);
 
   const addCategory = () => {
     const normalized = normalizeCategoryPath(categoryInput);
@@ -1523,6 +1598,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     setLocalCategories(prev => (prev.includes(normalized) ? prev : [...prev, normalized]));
     setSelectedGroup(normalized);
     setSelectedSubgroup('');
+    groupPickerSnapshotRef.current = { group: normalized, subgroup: '' };
     setCategoryInput('');
   };
 
@@ -1534,6 +1610,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     setLocalCategories(prev => (prev.includes(nextPath) ? prev : [...prev, nextPath]));
     setSelectedGroup(normalizedGroup);
     setSelectedSubgroup(normalizedSubgroup);
+    groupPickerSnapshotRef.current = { group: normalizedGroup, subgroup: normalizedSubgroup };
     setSubCategoryInput('');
   };
 
@@ -1691,6 +1768,8 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       );
       results.forEach(result => applyFlowWrite(result, 'Запис Flow не збережено'));
       const lastEntry = parsedEntries[parsedEntries.length - 1];
+      // Останній запис — найсвіжіший: у нещодавніх він стає першим.
+      rememberRecentCategories(parsedEntries.map(entry => entry.groupPath || normalizedCategory));
       setDateYmd(lastEntry.date);
       // Щойно внесене має бути видно: відкривається група останнього запису.
       rememberOpenGroup(normalizeCategoryPath(lastEntry.groupPath) || normalizedCategory);
@@ -2006,6 +2085,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       });
       setLocalCategories(prev => (prev.includes(nextCategory) ? prev : [...prev, nextCategory]));
       applyFlowWrite(result, 'Платіж не перенесено');
+      rememberRecentCategories([nextCategory]);
       toast.success(`Платіж перенесено в групу "${nextCategory}"${offlineSuffix()}`);
     } catch (error) {
       console.error('Unable to change flow row category', error);
@@ -2327,7 +2407,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
               type="button"
               $income={isIncomePath(selectedCategoryPath)}
               onMouseDown={e => e.preventDefault()}
-              onClick={() => setGroupPicker({ mode: 'entry' })}
+              onClick={openEntryGroupPicker}
               data-testid="flow-entry-group"
             >
               Група: {formatGroupTitle(selectedCategoryPath)} ▾
@@ -2635,13 +2715,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       )}
 
       {groupPicker && (
-        <Backdrop
-          onClick={() => {
-            setGroupPicker(null);
-            cancelCategoryRename();
-            setIsCategoryEditMode(false);
-          }}
-        >
+        <Backdrop onClick={() => closeGroupPicker({ revert: true })}>
           <Sheet role="dialog" aria-label="Вибір групи" onClick={e => e.stopPropagation()} data-testid="flow-group-picker">
             <SheetGrip />
             <SheetHead>
@@ -2658,14 +2732,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                     {isCategoryEditMode ? 'Не правити' : 'Керувати'}
                   </SmallTextBtn>
                 )}
-                <SmallTextBtn
-                  type="button"
-                  onClick={() => {
-                    setGroupPicker(null);
-                    cancelCategoryRename();
-                    setIsCategoryEditMode(false);
-                  }}
-                >
+                <SmallTextBtn type="button" onClick={() => closeGroupPicker()}>
                   Готово
                 </SmallTextBtn>
               </InlineRow>
@@ -2675,10 +2742,33 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                 <span>{formatShortDate(groupPicker.row.date, true)} · {formatFlowMoney(rowAmountNumber(groupPicker.row))} · {groupPicker.row.description}</span>
               </DialogText>
             )}
+            {groupPicker.mode === 'entry' && !isCategoryEditMode && recentShortcuts.length > 0 && (
+              <SheetSection>
+                <span>Нещодавні</span>
+                <ChipRow data-testid="flow-recent-groups">
+                  {recentShortcuts.map(path => {
+                    const { group, subgroup } = splitCategoryPath(path);
+                    return (
+                      <Chip
+                        key={path}
+                        type="button"
+                        $selected={selectedCategoryPath === path}
+                        $income={isIncomePath(path)}
+                        onClick={() => pickEntryCategory(group, subgroup)}
+                      >
+                        {formatGroupTitle(path)}
+                      </Chip>
+                    );
+                  })}
+                </ChipRow>
+              </SheetSection>
+            )}
             <SheetSection>
               <span>{groupPicker.mode === 'move' ? 'Оберіть групу' : 'Групи'}</span>
               <ChipRow>
-                {(groupPicker.mode === 'move' ? allCategories : allGroups)
+                {(groupPicker.mode === 'move'
+                  ? sortFlowPathsByRecent(allCategories, recentCategories)
+                  : sortFlowGroupsByRecent(allGroups, recentCategories))
                   .filter(group => group !== DEFAULT_FLOW_CATEGORY || topGroupsWithRows.includes(group))
                   .map(category => {
                     const selected = groupPicker.mode === 'move'
@@ -2720,8 +2810,16 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                               moveRowToCategory(row, category);
                               return;
                             }
-                            setSelectedGroup(normalizeCategoryPath(category));
-                            setSelectedSubgroup('');
+                            const group = normalizeCategoryPath(category);
+                            const subgroups = groupedCategories[group] || [];
+                            // Група без підгруп — вибір завершено. З підгрупами
+                            // повертається та, з якою групу вживали востаннє.
+                            if (!subgroups.length) {
+                              pickEntryCategory(group, '');
+                              return;
+                            }
+                            setSelectedGroup(group);
+                            setSelectedSubgroup(lastFlowSubgroupFor(group, recentCategories, subgroups) || '');
                           }}
                         >
                           {formatGroupTitle(category)}
@@ -2761,15 +2859,15 @@ export const FlowManager = ({ ownerId, viewerId }) => {
               <SheetSection>
                 <span>Підгрупа в «{selectedGroup}»</span>
                 <ChipRow>
-                  <Chip type="button" $selected={!selectedSubgroup} onClick={() => setSelectedSubgroup('')}>
+                  <Chip type="button" $selected={!selectedSubgroup} onClick={() => pickEntryCategory(selectedGroup, '')}>
                     Без підгрупи
                   </Chip>
-                  {subgroupsForSelectedGroup.map(subgroup => (
+                  {sortFlowSubgroupsByRecent(selectedGroup, subgroupsForSelectedGroup, recentCategories).map(subgroup => (
                     <InlineRow key={`${selectedGroup}/${subgroup}`}>
                       <Chip
                         type="button"
                         $selected={selectedSubgroup === subgroup}
-                        onClick={() => setSelectedSubgroup(normalizeCategoryPath(subgroup))}
+                        onClick={() => pickEntryCategory(selectedGroup, normalizeCategoryPath(subgroup))}
                       >
                         {subgroup}
                       </Chip>
