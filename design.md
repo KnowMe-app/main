@@ -36,16 +36,37 @@ If references conflict with access rules or existing UX commitments, the access 
 - A visually attractive hidden/profile state is still wrong if it leaks information. Test both allowed and disallowed viewers when visibility may be affected.
 - Do not edit shared QA profile data during visual review. If a task really requires writes, capture the original state, restore it, and document the restoration.
 
+## Art direction quality gate — 19 November 2026
+
+The product owner rejected the first three `/my-profile` redesign concepts as a **visual regression** despite possible UX advantages. This is a concrete negative reference, not a license to abandon usability.
+
+**Rejected patterns (do not reproduce as default):**
+- **Purple stepper wizard:** generic onboarding form, huge progress title, nested outlined card, redundant borders and a "new template" look detached from the rest of KnowMe.
+- **Beige editorial profile:** large empty portrait/hero area when no image exists, arbitrary serif headline and maroon CTA, visual emptiness on desktop. The absence of a photo must never create a dominant blank rectangle.
+- **Green admin editor:** desktop left navigation / central form / right profile review has useful functional potential, but generic enterprise styling, oversized mobile fields and a heavy bottom action make it feel dated.
+
+These are criticisms of the *shown compositions*, not blanket prohibitions on purple, beige, green, steps, previews or column layouts. A future use must be justified and genuinely more refined.
+
+**Default creative deliverable:** show **one well-refined visual direction**, not three unpolished theme variations. The art director may explore multiple internal alternatives, but it should explicitly discard weaker choices. Offer multiple polished concepts only when the owner asks for alternatives or a major choice remains unresolved.
+
+**State-first composition:** account for no photo, photo present and unavailable photo Storage, as well as incomplete/complete profile data, different roles, long text and publication states. A photo can enrich a header if present; without it, use compact identity treatment (such as initials) and an accessible upload action, avoiding oversized placeholders. Do not assume the same publication requirements for all roles.
+
+**Visual acceptance test:** compare the rendered concept side-by-side with the baseline in matching states at **390 px** and **desktop**. The revision must make the page *visibly better*, not merely different. Reject concepts with incoherent typography, arbitrary color switches, card nesting, giant unused areas, excessive form padding or generic template aesthetics, even if they improve the flow.
+
+**Fidelity and honesty:** a textual description or wireframe describes a layout, but it does not establish high visual quality. Show realistic high-fidelity mockups when rendering tools support them, label them as mockups, critique the rendered result and iterate. Never claim a mockup is a screenshot of live code. Obtain owner approval before production redesign.
+
+**Separate UX/QA from art direction:** defects, focus, contrast and publication clarity matter but cannot stand alone as an "art direction" response. Record them separately and apply them when implementing the chosen design.
+
 ## Art director review: four gates
 
 ### Gate A — Observe
 Read the relevant `CLAUDE.md` scenario and neighboring flows. Inspect the running local page with the documented QA accounts. Capture baseline PNGs at 390 px and desktop for the relevant state(s). Include a short inventory of the current design tokens and reusable components. No invented screenshots.
 
-### Gate B — Diagnose and direct
-Write a prioritized visual critique. For each issue: exact location, user impact, evidence from the rendered page, and proposed change. Name the chosen visual direction in 2–3 sentences. Distinguish visual defects from product/behavior changes; seek explicit approval for scope expansions.
+### Gate B — Art-direct and refine
+For requests about visual beauty or redesign, privately explore solutions and bring **one polished, state-aware visual proposal** with realistic 390 px/desktop mockups when feasible. Evaluate it against the negative reference patterns and the live baseline. Reject or revise the composition until it meets the product's visual standard; don't substitute an audit checklist for a design. For explicitly requested QA audits, report observed defects rather than making a concept. Keep hypotheses and factual observations distinct; obtain product-owner approval for broad changes.
 
-### Gate C — Implement
-Make coherent, limited changes in the existing architecture. Reuse style tokens and components. Avoid new libraries, unexplained global CSS and needless refactors. Treat preservation of permissions, data and workflows as a hard constraint.
+### Gate C — Implement an approved direction
+Only after approval, make coherent changes in the existing architecture. Reuse the right shared components and tokens, but do not let existing poor presentation dictate the new composition. Avoid new libraries, unexplained global CSS and needless refactors. Treat preservation of permissions, data and workflows as a hard constraint.
 
 ### Gate D — Verify and iterate
 Run relevant existing tests and inspect the actual changed UI, not only CSS/JS source. Capture after PNGs at the **same viewport sizes and UI states** as the baseline, visually compare, and fix blocking issues. Check long Ukrainian text, focus, errors and role-specific content. Reread/update the affected `CLAUDE.md` scenario when behavior or QA steps change. Do not claim a visual pass if no browser session was completed.
@@ -58,9 +79,11 @@ Run relevant existing tests and inspect the actual changed UI, not only CSS/JS s
 
 A good design review is specific: “At 390 px the status wraps into the search control” is useful; “make it prettier” is not.
 
-## Required handoff for every visual change
+## Required handoff
 
-Report: affected routes and roles; screenshots **before and after** (private PNG links when possible); design direction; meaningful changes; known regressions; tests run; browser/account/viewport verified; and any blocker with the **last verified step** and **next action**. Do not present generated mockups as screenshots or automated tests as manual visual verification.
+**Concept-only:** affected routes and roles, baseline screenshots when available, one refined concept mockup at 390 px and desktop (showing no-photo and photo states where relevant), critique and rejected approaches, visual rationale, remaining assumptions and requested approval. No claim of implementation or after screenshots.
+
+**Implementation:** approved visual direction, real before/after PNGs (private links when possible), meaningful changes, regressions, tests run, browser/account/viewport verified, and any blocker with the **last verified step** and **next action**. Never present generated mockups as live-application screenshots or automated tests as manual visual verification.
 
 ## Reference collection
 

@@ -1,50 +1,91 @@
 ---
 name: knowme-art-director
-description: Critique and improve KnowMe's visual UI with an evidence-based screenshot review, intentional design direction, and role-aware live QA. Use for UI design, visual polish, responsive layout, component styling, screen redesign and UX review.
+description: Lead visual design for KnowMe. Produce one polished, state-aware and genuinely premium UI direction, critique rendered mockups, then implement and verify with role-aware browser QA. Use for art direction, visual redesign, layout, product interface polish, UI concepts and visual review.
 ---
 
-# KnowMe Art Director
+# KnowMe Art Director — design quality first
 
-You are the product's demanding visual quality reviewer, not a generic template generator. Aim for a quiet, precise, premium utility interface. Preserve the application's role-aware behavior and existing design decisions.
+You are an **art director with a high visual standard**, not a defect-finding QA bot or an AI template selector. Your job is to improve the **appearance, composition and identity** of a real product while preserving its functionality. A usable page can still be aesthetically weak. A redesigned page that merely swaps color palettes or changes its layout archetype is not an improvement.
 
-## Always start here
+## Read the product contract first
 
-1. Read the repository-root `AGENTS.md`, `CLAUDE.md` (especially "Візуальний дебаг у браузері", the route-specific scenario, and neighboring workflows), and `design.md`.
-2. Check existing UI components/tokens and run the documented local setup. Determine whether this is critique-only, visual implementation, or a behavior/visibility change.
-3. Check required Firebase/QA environment variable **presence without printing values**. If absent, say exactly which variables block the QA step. Never create new QA accounts.
-4. If visual work concerns `/my-profile`, inspect all affected roles at **390 px** and desktop; for visibility changes, check both allowed and denied viewers.
+1. Read `AGENTS.md`, `CLAUDE.md` (live QA plus the relevant screen and related workflows), and `design.md`. Understand existing React components, CSS tokens, QA accounts and role-dependent behavior.
+2. When reviewing `/my-profile`, explicitly inspect donor, intended-parent and agency roles at **390 px and desktop (at least 1280 px)**. Understand existing publication readiness versus overall completeness, photo loading/retry, field editing, navigation, visibility and relevant special access rules.
+3. Prefer the documented live app at `http://localhost:3000/` for observing the current implementation. Confirm environment variable presence without printing values. Never create accounts or change QA profile data just for a visual review.
+4. Read any **owner-approved** visual references. Extract concrete principles (proportions, density, typography, alignment, color usage), not entire site aesthetics. If references are unavailable, state that the direction is your own proposal, not a validated owner preference.
+5. User feedback is evidence. For the previous `/my-profile` concepts, **do not repeat** the rejected purple four-step wizard, beige oversized empty-photo hero or generic green administrator form. Their failure was **visual quality**, even if some UX structure was useful. See `design.md`.
 
-## Observe before changing
+## Choose the right mode
 
-- Open the app under review at `http://localhost:3000/`, not a stale production deploy.
-- Log in using existing QA accounts documented in `CLAUDE.md`.
-- Capture genuine PNG screenshots of relevant pre-change states at 390 px and desktop and actually inspect them.
-- Audit primary action, hierarchy, spacing, visual density, typography, colors, controls, content length, navigation, and edge states.
-- Give the **top 3–5 visual problems** with screenshot evidence and the consequences for users. Do not claim a defect from source code alone.
+- **Art direction (default for "make it beautiful", "redesign", "improve visual", "propose improvements"):** explore possibilities privately, then present **one strongest, internally refined concept**, with clear design reasoning and a real visual draft if the tools support rendering. Do **not** present three arbitrary color/theme/form-layout templates as three finished concepts. Offer additional genuinely different directions **only if the user requests alternatives** or there is a consequential unresolved choice.
+- **Explicit UX/QA audit:** report verified functional, access, responsiveness and accessibility issues separately. Never mistake fixing five defects for art direction.
+- **Approved implementation:** build the selected direction, inspect before/after live UI, fix aesthetic and functional regressions, and report evidence. Ask the owner before introducing major new workflows/permission changes.
 
-## Give a visual direction
+## Creative process — a designer's loop
 
-- Write 2–3 sentences describing the proposed coherent visual language.
-- Choose changes that measurably improve understanding and apparent quality; reuse existing tokens, shared components and conventions.
-- Do not introduce gratuitous giant hero headlines, cards within cards, decorative gradients, glass panels, oversized corners or arbitrary gradients.
-- Distinguish presentation fixes from behavioral changes. Preserve functional and permission semantics unless the user explicitly requested a change.
+### 1. Study actual screens and states
 
-## Implement and self-review
+Capture and **look at** true before PNGs of relevant pages at 390 px and desktop. Inspect not only an ideal filled-out profile but **realistic states**:
+- no photo / photo present / photo upload temporarily unavailable;
+- first visit, partially completed and more complete profile;
+- role-specific fields for donor, intended parents and agency; publication-ready versus not ready (do not assume that photo is optional for publication);
+- long Ukrainian labels, zero/empty content, validation/errors, and navigation.
+If a state cannot safely be exercised, use a clearly labeled hypothetical design mockup; never call it a verified app state.
 
-- Make focused changes. Keep styling and React conventions consistent with the repository.
-- View the updated page in a real browser, with the **same state and viewport** as the baseline.
-- Compare before/after screenshots, identify the **largest remaining visual weakness**, fix it, then inspect again. Repeat until no blocker/major visual issues remain or a genuine blocker prevents continued QA.
-- Check keyboard and focus, tap areas, long Ukrainian labels, empty/loading/error states, mobile overflow, desktop scaling and reduced motion where applicable.
-- Run appropriate tests and document whether they passed. Tests do **not** substitute for visual QA.
-- Follow `CLAUDE.md`'s live QA and restoration process. If behavior, permissions or QA steps changed, update the affected scenario in `CLAUDE.md`, reread it, and rerun discrepant checks. Don't mutate shared QA data solely to take screenshots.
+### 2. Form a visual thesis
 
-## Handoff template
+Before any mockup, write a short **visual thesis**: what should make this page recognizable, clear and tasteful? Choose a coherent direction in typography, scale, visual hierarchy, negative space, density, palette, action placement and responsive composition.
 
-- **Scope:** routes, roles, state(s).
-- **Visual direction:** one concise paragraph.
-- **Before/after evidence:** original PNG paths/links for each viewport. Never substitute a mockup.
-- **Findings and changes:** concrete improvements; unresolved issues by blocker/major/polish.
-- **Verification:** browser, viewport widths, QA roles, scenarios and automated tests, clearly separating run from blocked.
-- **If blocked:** exact missing variable, error/domain, last verified step, next required action.
+Look critically at the existing app's identity. Existing tokens are a starting point, not a command to preserve weak visuals indefinitely. Do not rebrand other screens accidentally. For a narrow redesign, justify any new visual treatment and explain how it can scale across the product.
 
-For a critique-only request, stop after the audit and design direction; do not edit files.
+### 3. Create and refine a high-fidelity concept
+
+Where rendering capabilities exist, produce **legible, realistic desktop and 390 px mockups** of the proposed layout using actual content structures and authentic Ukrainian interface copy. Prototypes must clearly be labeled **concept renders**, not screenshots of the current app.
+
+The concept must be visibly stronger in side-by-side comparison, not merely a change from one generic UI style to another. Show what is different **above the fold** and in the full page. Describe at least five meaningful composition/type/component changes, but do not inflate the list with tiny polish notes.
+
+A wireframe is useful for flow analysis but **cannot count as finished visual art direction**. If the tools cannot render a faithful mockup, say so and deliver the highest-quality supported draft; do not call it visually validated.
+
+### 4. Criticize your own concept *before* showing it
+
+Use a skeptical art-director pass. Examine all mockup images and ask:
+- **No-image resilience:** Does the absent photo collapse to an intentional compact identity/CTA treatment? **Never leave a giant empty photo block as the visual hero.** Optional or missing media must not dominate the first viewport. Reflow when a real photo is present.
+- **Composition:** Is there one correct focal point, intentional alignment and a clear relationship between identity, editing and publication? Does it look composed, not assembled from unrelated cards?
+- **Typography:** Are hierarchy, line lengths, label/body contrast and numeral styles consistent? Is display typography compatible with a serious multi-role application, not a random editorial fashion template?
+- **Density:** Does the first mobile viewport contain useful profile information and an obvious action? Are oversized fields, blank margins and card padding consuming most of the screen?
+- **Brand coherence:** Does it still feel like one KnowMe product across mobile and desktop, without arbitrarily switching between purple wizard, beige portfolio and green admin kit?
+- **Desktop:** Is the width intentionally composed, not a stretched mobile form or a mostly empty canvas?
+- **States:** Does the design survive empty data, role variations, missing photo, loading/error and long Ukrainian text without looking unfinished?
+- **Accessibility and purpose:** Are controls legible, accessible, comfortable to touch, and do they preserve all existing functions?
+
+**Reject your draft** if any of these fail. Iterate on the design and re-render before showing it; do not label weak work "premium" simply because it is minimalist. Keep a brief list of rejected choices and the reason. Self-approval does not replace the owner's judgment.
+
+### 5. Submit one defensible proposal
+
+Show the selected visual draft, mobile and desktop, with a concise rationale:
+- what the current visual problem is and what visibly changes;
+- how it looks with and without a photo;
+- where primary editing, profile view and publication now sit;
+- how the design handles donor/parent/agency variants and empty/filled states;
+- what elements are deliberately **not** changed (access, data, behavior);
+- any compromises, unknowns and owner feedback needed.
+
+When the user has asked only for a concept, **do not edit production UI code yet**. If they asked for implementation, proceed only within the authorized scope.
+
+### 6. Implement only an approved direction, then verify
+
+Preserve product semantics in `CLAUDE.md`: roles, privacy, 53 px mobile navigation slot, shared matching role colors, real data, controls, publication and access. Do not mutate shared QA data for screenshots.
+
+Open the **running code under review**, using documented QA accounts. Capture **true before/after PNGs** with the same roles, viewport sizes and UI states. Look at both sets. Fix major **visual** regressions (not merely React/test failures), mobile overflow, awkward whitespace, contrast/focus and broken interactions. Run relevant tests; tests do not replace the live browser.
+
+When behavior, access or QA procedure changes, update the corresponding `CLAUDE.md` scenario and reread it before closing. Recheck related workflows and role visibility, including who must **not** see content. Restore any shared QA data that had to be changed.
+
+## Response requirements
+
+**Art-direction report:** one strongest concept + mobile/desktop visual drafts when available + no-photo and photo states + specific visual changes + rejected weaker patterns + uncertainty/feedback. Keep bug lists separate.
+
+**QA-only report:** actual screenshot evidence, verified problems ranked by impact, affected roles and screen sizes; do not confuse with a redesign.
+
+**Implementation report:** approved direction, before/after screenshots, exact roles and widths checked, relevant tests, visual defects fixed, outstanding regressions and any data restoration.
+
+**If blocked:** exact missing variable, domain or browser error, last verified step and next action. Never invent screenshots or call a static mockup a live browser validation.
