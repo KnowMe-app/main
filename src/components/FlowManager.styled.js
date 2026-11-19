@@ -351,7 +351,7 @@ export const GhostBtn = styled.button`
   border: 1px solid var(--km-border, #ded7cc);
   border-radius: 12px;
   background: var(--km-card, #fff);
-  color: var(--km-text, #3d3830);
+  color: ${({ $danger }) => ($danger ? 'var(--km-danger, #b42318)' : 'var(--km-text, #3d3830)')};
   font-weight: 600;
   font-size: 14px;
   font-family: inherit;
@@ -388,15 +388,32 @@ export const GroupItem = styled.li`
 `;
 
 // Назва верхньої групи над її підгрупами: один раз, а не в кожному рядку.
-export const GroupSectionHead = styled.li`
+// Розділ — верхня група з підгрупами, згорнутий у рядок «назва · сума».
+export const GroupSectionItem = styled.li`
   list-style: none;
+  border-radius: 16px;
+  background: ${({ $open }) => ($open ? 'var(--km-fill, #f3eee7)' : 'transparent')};
+  padding: ${({ $open }) => ($open ? '0 6px 6px' : '0')};
+  transition: background-color 0.25s ease, padding 0.3s ${SOFT_BOUNCE};
+  ${noMotion}
+`;
+
+export const GroupSectionHead = styled.button`
+  width: 100%;
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   flex-wrap: wrap;
   gap: 2px 12px;
-  padding: 12px 2px 2px;
-  border-bottom: 1px solid var(--km-border, #ece7df);
+  padding: 10px 2px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 12px;
+  ${pressable}
   > span:first-child {
     flex: 1 1 140px;
     min-width: 0;
@@ -461,22 +478,6 @@ export const GroupSum = styled.span`
     font-weight: 500;
     color: var(--km-muted, #8a8177);
   }
-`;
-
-export const GroupEditToggle = styled.button`
-  flex: 0 0 auto;
-  min-width: 36px;
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid ${({ $active }) => ($active ? 'var(--km-accent, #c9600f)' : 'var(--km-border, #ded7cc)')};
-  border-radius: 10px;
-  background: ${({ $active }) => ($active ? 'var(--km-accent-light, #f6e6d6)' : 'var(--km-card, #fff)')};
-  color: ${({ $active }) => ($active ? 'var(--km-accent-text, #8a420b)' : 'var(--km-muted, #7a7266)')};
-  font-weight: 600;
-  font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
-  ${pressable}
 `;
 
 // Поле запису в розгорнутій групі: пише просто в неї, без шторки груп.
@@ -586,22 +587,6 @@ export const RowText = styled.span`
   overflow-wrap: anywhere;
 `;
 
-export const RowMoreBtn = styled.button`
-  grid-area: more;
-  align-self: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 999px;
-  background: var(--km-fill, #efeae3);
-  color: var(--km-text, #3d3830);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  animation: ${pop} 0.3s ${BOUNCE};
-  ${pressable}
-`;
-
 export const RowGroupTag = styled.span`
   align-self: flex-start;
   font-size: 11px;
@@ -658,10 +643,20 @@ export const EditBox = styled.div`
   }
 `;
 
+// Дії правки запису: ліворуч — що зробити із записом, праворуч — чим
+// закінчити правку. На вузькому екрані пари стають одна під одною.
 export const EditActions = styled.div`
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  justify-content: flex-end;
+  justify-content: space-between;
+`;
+
+export const EditSideActions = styled.div`
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  &:last-child { margin-left: auto; }
 `;
 
 export const EmptyNote = styled.p`

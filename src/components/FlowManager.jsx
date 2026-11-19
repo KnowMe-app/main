@@ -58,7 +58,6 @@ import {
   EntryRow,
   EntryTextarea,
   GhostBtn,
-  GroupEditToggle,
   GroupHead,
   GroupItem,
   GroupList,
@@ -69,6 +68,8 @@ import {
   InlineEntryInput,
   InlineEntryRow,
   GroupSectionHead,
+  GroupSectionItem,
+  EditSideActions,
   GroupSum,
   GroupTitle,
   IconBtn,
@@ -84,7 +85,6 @@ import {
   RowDate,
   RowGroupTag,
   RowList,
-  RowMoreBtn,
   RowText,
   ScaledContent,
   SearchBox,
@@ -673,6 +673,7 @@ const flowExchangeRateModeStorageKey = ownerId => `flow-exchange-rate-mode:${own
 const flowDisplayCurrencyStorageKey = ownerId => `flow-display-currency:${ownerId || 'anon'}`;
 // Відкрита група списку — одна на пристрій і власника (порожньо — усі згорнуті).
 const flowOpenGroupStorageKey = ownerId => `flow-open-group:${ownerId || 'anon'}`;
+const flowOpenSectionStorageKey = ownerId => `flow-open-section:${ownerId || 'anon'}`;
 const flowIncomeGroupStorageKey = ownerId => `flow-income-group:${ownerId || 'anon'}`;
 const flowFilterStorageKey = ownerId => `flow-filter:${ownerId || 'anon'}`;
 const flowCustomUsdRateStorageKey = ownerId => `flow-custom-usd-rate:${ownerId || 'anon'}`;
@@ -1199,6 +1200,15 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   const rememberOpenGroup = useCallback(group => {
     const next = group || '';
     setOpenGroup(next);
+    if (next) {
+      const section = topLevelFlowGroup(normalizeCategoryPath(next));
+      setOpenSection(section);
+      try {
+        if (ownerId) localStorage.setItem(flowOpenSectionStorageKey(ownerId), section);
+      } catch {
+        // памʼять розділу — зручність, не дані
+      }
+    }
     if (!ownerId) return;
     try {
       localStorage.setItem(flowOpenGroupStorageKey(ownerId), next);
@@ -1207,15 +1217,32 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     }
   }, [ownerId]);
   const toggleGroup = group => rememberOpenGroup(openGroup === group ? '' : group);
-  // «Змінити групу» й «Видалити» біля кожного рядка зʼявляються лише після
-  // олівця біля назви групи: інакше дві кнопки на кожному з сотень рядків
-  // забирали ширину в тексту.
-  const [rowActionsGroup, setRowActionsGroup] = useState('');
-  const toggleRowActions = group => {
-    const next = rowActionsGroup === group ? '' : group;
-    setRowActionsGroup(next);
-    if (next && openGroup !== group) rememberOpenGroup(group);
-  };
+  // Розділ (верхня група з підгрупами) згорнутий, відкритий — один (19.11, на
+  // прохання власниці продукту: розгорнуті розділи з десятками підгруп
+  // робили список нескінченним). Відкриття підгрупи — після збереження,
+  // імпорту чи дотиком — відкриває й її розділ.
+  const [openSection, setOpenSection] = useState('');
+  useEffect(() => {
+    if (!ownerId) return;
+    try {
+      const saved = localStorage.getItem(flowOpenSectionStorageKey(ownerId));
+      const fallback = topLevelFlowGroup(normalizeCategoryPath(localStorage.getItem(flowOpenGroupStorageKey(ownerId)) || ''));
+      setOpenSection(saved ?? fallback ?? '');
+    } catch {
+      setOpenSection('');
+    }
+  }, [ownerId]);
+  const rememberOpenSection = useCallback(section => {
+    const next = section || '';
+    setOpenSection(next);
+    if (!ownerId) return;
+    try {
+      localStorage.setItem(flowOpenSectionStorageKey(ownerId), next);
+    } catch (error) {
+      console.error('Unable to persist flow open section into localStorage', error);
+    }
+  }, [ownerId]);
+  const toggleSection = section => rememberOpenSection(openSection === section ? '' : section);
 
   // Група надходжень і фільтр угорі (17.11, на прохання власниці продукту).
   // Чіп надходжень стоїть завжди, навіть коли записів у групі ще немає: з
@@ -1296,8 +1323,6 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   // перенести рядок (`move`, з самим рядком).
   const [groupPicker, setGroupPicker] = useState(null);
   const [entryFocused, setEntryFocused] = useState(false);
-  // Дії рядка («⋯» у режимі правки групи): шторка «Інша група» / «Видалити».
-  const [rowMenu, setRowMenu] = useState(null);
   // Escape закриває верхню шторку: з клавіатури інакше вийти з меню рядка
   // можна було лише через «Перенести» чи «Видалити» — фон не фокусується.
   const openEntryGroupPicker = () => {
@@ -1338,10 +1363,6 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     }
     if (isExchangeModalOpen) {
       setIsExchangeModalOpen(false);
-      return true;
-    }
-    if (rowMenu) {
-      setRowMenu(null);
       return true;
     }
     if (groupPicker) {
@@ -2189,8 +2210,15 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     section.totals.usd += Number(sums.usd) || 0;
     section.totals.eur += Number(sums.eur) || 0;
   });
-  Object.values(flowSectionsByGroup).forEach(section => {
-    section.nested = section.paths.length > 1 || Boolean(splitCategoryPath(section.paths[0]).subgroup);
+  const flowSectionList = [];
+  visibleGroups.forEach(([path]) => {
+    const top = splitCategoryPath(path).group;
+    const section = flowSectionsByGroup[top];
+    if (!section.top) {
+      section.top = top;
+      section.nested = section.paths.length > 1 || Boolean(splitCategoryPath(section.paths[0]).subgroup);
+      flowSectionList.push(section);
+    }
   });
   const searchActive = searchQuery.trim().length > 0;
   const searchResults = useMemo(
@@ -2210,7 +2238,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
 
   // З 130 % тексту колонки лишали опису смужку: рядок стає двоповерховим.
   const stackedRows = textScale >= 1.3;
-  const renderRow = ({ row, idx }, { inSearch = false, actions = false } = {}) => {
+  const renderRow = ({ row, idx }, { inSearch = false } = {}) => {
     const rowKey = getRowKey(row, idx);
     if (editingKey === rowKey) {
       return (
@@ -2234,13 +2262,43 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                 }
               }}
             />
-            <EditActions>
-              <GhostBtn type="button" onMouseDown={e => e.preventDefault()} onClick={cancelEdit}>
-                Скасувати
-              </GhostBtn>
-              <PrimaryBtn type="button" onMouseDown={e => e.preventDefault()} onClick={() => saveEditedRow(row, idx)}>
-                Зберегти
-              </PrimaryBtn>
+            {/* Дії запису — тут, у самій правці (19.11, на прохання власниці
+                продукту): «⋯» біля кожного рядка з'являлись лише після олівця
+                біля назви групи, і їх ніхто не знаходив. */}
+            <EditActions data-testid="flow-row-edit-actions">
+              <EditSideActions>
+                <GhostBtn
+                  type="button"
+                  $danger
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => {
+                    cancelEdit();
+                    openDeleteConfirm(row, rowKey);
+                  }}
+                  data-testid="flow-row-delete"
+                >
+                  Видалити
+                </GhostBtn>
+                <GhostBtn
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => {
+                    cancelEdit();
+                    setGroupPicker({ mode: 'move', row });
+                  }}
+                  data-testid="flow-row-move"
+                >
+                  Перенести
+                </GhostBtn>
+              </EditSideActions>
+              <EditSideActions>
+                <GhostBtn type="button" onMouseDown={e => e.preventDefault()} onClick={cancelEdit}>
+                  Скасувати
+                </GhostBtn>
+                <PrimaryBtn type="button" onMouseDown={e => e.preventDefault()} onClick={() => saveEditedRow(row, idx)}>
+                  Зберегти
+                </PrimaryBtn>
+              </EditSideActions>
             </EditActions>
           </EditBox>
         </EntryRow>
@@ -2253,7 +2311,6 @@ export const FlowManager = ({ ownerId, viewerId }) => {
         key={rowKey}
         $clickable
         $stacked={stackedRows}
-        $withMore={actions}
         $highlighted={confirmState.type === 'row' && confirmState.rowKey === rowKey}
         onClick={() => beginEdit(row, idx)}
         data-testid="flow-row"
@@ -2269,21 +2326,82 @@ export const FlowManager = ({ ownerId, viewerId }) => {
           {formatFlowMoney(amountNumber)}
           {equivalents && <small>{equivalents}</small>}
         </RowAmount>
-        {actions && (
-          <RowMoreBtn
-            type="button"
-            aria-label="Дії з рядком"
-            title="Перенести чи видалити"
-            onClick={e => {
-              e.stopPropagation();
-              setRowMenu({ row, rowKey });
-            }}
-            data-testid="flow-row-more"
-          >
-            ⋯
-          </RowMoreBtn>
-        )}
       </EntryRow>
+    );
+  };
+
+  // Група списку (шлях): назва, сума, а розгорнута — поле запису й місяці.
+  const renderGroupItem = (group, entries, groupIndex) => {
+    const { group: topGroup, subgroup } = splitCategoryPath(group);
+    const inSection = Boolean(flowSectionsByGroup[topGroup]?.nested);
+    const open = openGroup === group;
+    const totals = categorySums[group] || { uah: 0, usd: 0, eur: 0 };
+    const equivalents = totalsEquivalentText(totals);
+    return (
+                <GroupItem key={group} $open={open} $index={groupIndex} $nested={inSection}>
+                  <GroupHead>
+                    <GroupTitle
+                      type="button"
+                      aria-expanded={open}
+                      onClick={() => toggleGroup(group)}
+                      data-testid="flow-group-toggle"
+                    >
+                      <GroupName $nested={inSection}>
+                        {/* Розгорнута підгрупа знову називає свою групу: заголовок
+                            розділу тоді вже далеко вгорі, за десятками записів. */}
+                        {inSection && open && <GroupNamePrefix>{topGroup}, </GroupNamePrefix>}
+                        {inSection ? subgroup || 'Без підгрупи' : formatGroupTitle(group)}
+                      </GroupName>
+                      <GroupSum>
+                        {formatFlowMoney(totals.uah)} грн
+                        {equivalents && <small>{equivalents}</small>}
+                      </GroupSum>
+                    </GroupTitle>
+                  </GroupHead>
+                  <Collapsible open={open}>
+                    {open && canWriteFlow && (
+                      <InlineEntryRow data-testid="flow-group-inline-entry">
+                        <InlineEntryInput
+                          type="text"
+                          enterKeyHint="done"
+                          value={inlineEntry.group === group ? inlineEntry.text : ''}
+                          onChange={e => setInlineEntry({ group, text: e.target.value })}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              saveInlineEntry(group);
+                            }
+                          }}
+                          onBlur={e => {
+                            if (e.currentTarget.parentElement?.contains(e.relatedTarget)) return;
+                            saveInlineEntry(group, { silent: true });
+                          }}
+                          placeholder={`Сума й опис → «${inSection ? subgroup || 'Без підгрупи' : topGroup}»`}
+                          aria-label={`Новий запис у групу ${formatGroupTitle(group)}`}
+                        />
+                        <InlineEntryBtn
+                          type="button"
+                          disabled={!(inlineEntry.group === group && inlineEntry.text.trim())}
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => saveInlineEntry(group)}
+                        >
+                          Додати
+                        </InlineEntryBtn>
+                      </InlineEntryRow>
+                    )}
+                    {groupFlowRowsByMonth(entries, rowAmountNumber).map(month => (
+                      <React.Fragment key={month.key}>
+                        <MonthHead>
+                          <span>{month.label} · {month.items.length}</span>
+                          <span>{formatFlowMoney(month.total)}</span>
+                        </MonthHead>
+                        <RowList>
+                          {month.items.map(item => renderRow(item))}
+                        </RowList>
+                      </React.Fragment>
+                    ))}
+                  </Collapsible>
+                </GroupItem>
     );
   };
 
@@ -2578,107 +2696,33 @@ export const FlowManager = ({ ownerId, viewerId }) => {
           </Card>
         ) : (
           <GroupList>
-            {visibleGroups.map(([group, entries], groupIndex) => {
-              // Назва групи — один раз над її підгрупами, а не в кожному рядку
-              // («Бережанка 1к, Меблі», «Бережанка 1к, Декор»… — 19.11, на
-              // прохання власниці продукту). Рядок підгрупи несе саму підгрупу.
-              const { group: topGroup, subgroup } = splitCategoryPath(group);
-              const section = flowSectionsByGroup[topGroup];
-              const inSection = Boolean(section?.nested);
-              const sectionStart = inSection && section.paths[0] === group;
-              const open = openGroup === group;
-              const totals = categorySums[group] || { uah: 0, usd: 0, eur: 0 };
-              const equivalents = totalsEquivalentText(totals);
-              const editingRows = rowActionsGroup === group;
+            {flowSectionList.map((section, sectionIndex) => {
+              if (!section.nested) {
+                const [group] = section.paths;
+                return renderGroupItem(group, groupedFlowRows[group] || [], sectionIndex);
+              }
+              const sectionOpen = openSection === section.top || activeFilter === section.top;
+              const sectionEquivalents = totalsEquivalentText(section.totals);
               return (
-                <React.Fragment key={group}>
-                {sectionStart && (
-                  <GroupSectionHead data-testid="flow-group-section">
-                    <span>{topGroup}</span>
+                <GroupSectionItem key={`section:${section.top}`} $open={sectionOpen}>
+                  <GroupSectionHead
+                    type="button"
+                    aria-expanded={sectionOpen}
+                    onClick={() => toggleSection(section.top)}
+                    data-testid="flow-group-section"
+                  >
+                    <span>{section.top}</span>
                     <GroupSum>
                       {formatFlowMoney(section.totals.uah)} грн
-                      {totalsEquivalentText(section.totals) && <small>{totalsEquivalentText(section.totals)}</small>}
+                      {sectionEquivalents && <small>{sectionEquivalents}</small>}
                     </GroupSum>
                   </GroupSectionHead>
-                )}
-                <GroupItem $open={open} $index={groupIndex} $nested={inSection}>
-                  <GroupHead>
-                    <GroupTitle
-                      type="button"
-                      aria-expanded={open}
-                      onClick={() => toggleGroup(group)}
-                      data-testid="flow-group-toggle"
-                    >
-                      <GroupName $nested={inSection}>
-                        {/* Розгорнута підгрупа знову називає свою групу: заголовок
-                            розділу тоді вже далеко вгорі, за десятками записів. */}
-                        {inSection && open && <GroupNamePrefix>{topGroup}, </GroupNamePrefix>}
-                        {inSection ? subgroup || 'Без підгрупи' : formatGroupTitle(group)}
-                      </GroupName>
-                      <GroupSum>
-                        {formatFlowMoney(totals.uah)} грн
-                        {equivalents && <small>{equivalents}</small>}
-                      </GroupSum>
-                    </GroupTitle>
-                    {open && (
-                      <GroupEditToggle
-                        type="button"
-                        $active={editingRows}
-                        aria-pressed={editingRows}
-                        aria-label={`Правка рядків групи ${formatGroupTitle(group)}`}
-                        title="Перенести чи видалити рядки"
-                        onClick={() => toggleRowActions(group)}
-                        data-testid="flow-group-row-actions"
-                      >
-                        {editingRows ? 'Готово' : '✏'}
-                      </GroupEditToggle>
-                    )}
-                  </GroupHead>
-                  <Collapsible open={open}>
-                    {open && canWriteFlow && (
-                      <InlineEntryRow data-testid="flow-group-inline-entry">
-                        <InlineEntryInput
-                          type="text"
-                          enterKeyHint="done"
-                          value={inlineEntry.group === group ? inlineEntry.text : ''}
-                          onChange={e => setInlineEntry({ group, text: e.target.value })}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              saveInlineEntry(group);
-                            }
-                          }}
-                          onBlur={e => {
-                            if (e.currentTarget.parentElement?.contains(e.relatedTarget)) return;
-                            saveInlineEntry(group, { silent: true });
-                          }}
-                          placeholder={`Сума й опис → «${inSection ? subgroup || 'Без підгрупи' : topGroup}»`}
-                          aria-label={`Новий запис у групу ${formatGroupTitle(group)}`}
-                        />
-                        <InlineEntryBtn
-                          type="button"
-                          disabled={!(inlineEntry.group === group && inlineEntry.text.trim())}
-                          onMouseDown={e => e.preventDefault()}
-                          onClick={() => saveInlineEntry(group)}
-                        >
-                          Додати
-                        </InlineEntryBtn>
-                      </InlineEntryRow>
-                    )}
-                    {groupFlowRowsByMonth(entries, rowAmountNumber).map(month => (
-                      <React.Fragment key={month.key}>
-                        <MonthHead>
-                          <span>{month.label} · {month.items.length}</span>
-                          <span>{formatFlowMoney(month.total)}</span>
-                        </MonthHead>
-                        <RowList>
-                          {month.items.map(item => renderRow(item, { actions: editingRows }))}
-                        </RowList>
-                      </React.Fragment>
-                    ))}
+                  <Collapsible open={sectionOpen}>
+                    <GroupList>
+                      {section.paths.map((group, index) => renderGroupItem(group, groupedFlowRows[group] || [], index))}
+                    </GroupList>
                   </Collapsible>
-                </GroupItem>
-                </React.Fragment>
+                </GroupSectionItem>
               );
             })}
             {!visibleGroups.length && !loading && (
@@ -2787,48 +2831,6 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                 }}
               >
                 Видалити весь Flow
-              </SheetRow>
-            </SheetSection>
-          </Sheet>
-        </Backdrop>
-      )}
-
-      {rowMenu && (
-        <Backdrop onClick={() => setRowMenu(null)}>
-          <Sheet role="dialog" aria-label="Дії з рядком" onClick={e => e.stopPropagation()} data-testid="flow-row-menu">
-            <SheetGrip />
-            <SheetHead>
-              <h2>Запис</h2>
-              <SmallTextBtn type="button" autoFocus onClick={() => setRowMenu(null)} data-testid="flow-row-menu-close">
-                Скасувати
-              </SmallTextBtn>
-            </SheetHead>
-            <DialogText>
-              <span>
-                {formatShortDate(rowMenu.row.date, true)} · {formatFlowMoney(rowAmountNumber(rowMenu.row))} грн · {rowMenu.row.description}
-              </span>
-            </DialogText>
-            <SheetSection>
-              <SheetRow
-                type="button"
-                onClick={() => {
-                  const { row } = rowMenu;
-                  setRowMenu(null);
-                  setGroupPicker({ mode: 'move', row });
-                }}
-              >
-                Перенести в іншу групу
-              </SheetRow>
-              <SheetRow
-                type="button"
-                $danger
-                onClick={() => {
-                  const { row, rowKey } = rowMenu;
-                  setRowMenu(null);
-                  openDeleteConfirm(row, rowKey);
-                }}
-              >
-                Видалити запис
               </SheetRow>
             </SheetSection>
           </Sheet>
