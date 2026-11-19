@@ -62,11 +62,11 @@ These are criticisms of the *shown compositions*, not blanket prohibitions on pu
 ### Gate A — Observe
 Read the relevant `CLAUDE.md` scenario and neighboring flows. Inspect the running local page with the documented QA accounts. Capture baseline PNGs at 390 px and desktop for the relevant state(s). Include a short inventory of the current design tokens and reusable components. No invented screenshots.
 
-### Gate B — Diagnose and direct
-Write a prioritized visual critique. For each issue: exact location, user impact, evidence from the rendered page, and proposed change. Name the chosen visual direction in 2–3 sentences. Distinguish visual defects from product/behavior changes; seek explicit approval for scope expansions.
+### Gate B — Art-direct and refine
+For requests about visual beauty or redesign, privately explore solutions and bring **one polished, state-aware visual proposal** with realistic 390 px/desktop mockups when feasible. Evaluate it against the negative reference patterns and the live baseline. Reject or revise the composition until it meets the product's visual standard; don't substitute an audit checklist for a design. For explicitly requested QA audits, report observed defects rather than making a concept. Keep hypotheses and factual observations distinct; obtain product-owner approval for broad changes.
 
-### Gate C — Implement
-Make coherent, limited changes in the existing architecture. Reuse style tokens and components. Avoid new libraries, unexplained global CSS and needless refactors. Treat preservation of permissions, data and workflows as a hard constraint.
+### Gate C — Implement an approved direction
+Only after approval, make coherent changes in the existing architecture. Reuse the right shared components and tokens, but do not let existing poor presentation dictate the new composition. Avoid new libraries, unexplained global CSS and needless refactors. Treat preservation of permissions, data and workflows as a hard constraint.
 
 ### Gate D — Verify and iterate
 Run relevant existing tests and inspect the actual changed UI, not only CSS/JS source. Capture after PNGs at the **same viewport sizes and UI states** as the baseline, visually compare, and fix blocking issues. Check long Ukrainian text, focus, errors and role-specific content. Reread/update the affected `CLAUDE.md` scenario when behavior or QA steps change. Do not claim a visual pass if no browser session was completed.
@@ -79,9 +79,11 @@ Run relevant existing tests and inspect the actual changed UI, not only CSS/JS s
 
 A good design review is specific: “At 390 px the status wraps into the search control” is useful; “make it prettier” is not.
 
-## Required handoff for every visual change
+## Required handoff
 
-Report: affected routes and roles; screenshots **before and after** (private PNG links when possible); design direction; meaningful changes; known regressions; tests run; browser/account/viewport verified; and any blocker with the **last verified step** and **next action**. Do not present generated mockups as screenshots or automated tests as manual visual verification.
+**Concept-only:** affected routes and roles, baseline screenshots when available, one refined concept mockup at 390 px and desktop (showing no-photo and photo states where relevant), critique and rejected approaches, visual rationale, remaining assumptions and requested approval. No claim of implementation or after screenshots.
+
+**Implementation:** approved visual direction, real before/after PNGs (private links when possible), meaningful changes, regressions, tests run, browser/account/viewport verified, and any blocker with the **last verified step** and **next action**. Never present generated mockups as live-application screenshots or automated tests as manual visual verification.
 
 ## Reference collection
 
