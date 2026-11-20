@@ -8380,7 +8380,9 @@ const Matching = () => {
       text: uiText('Анкета в KnowMe', language),
     });
     if (result === 'copied') toast.success(uiText('Посилання на анкету скопійовано', language));
-    else if (result === 'failed') toast(url, { duration: 8000 });
+    // Ні меню, ні буфера (вбудований браузер месенджера) — посилання
+    // показується з поясненням, щоб його можна було виділити й скопіювати.
+    else if (result === 'failed') toast(uiText('Скопіюйте посилання на анкету: {url}', language, { url }), { duration: 12000 });
   }, [language]);
 
   // «Зберегти контакт» — лише з того, що рядок уже показує (кнопка стоїть у
@@ -8406,6 +8408,9 @@ const Matching = () => {
       return;
     }
     handleRowContactAction(user, 'vcard');
+    // Android кладе файл у завантаження мовчки, і без підказки людина не
+    // знала, що контакт ще треба відкрити й додати.
+    toast.success(uiText('Файл контакту завантажено — відкрийте його, щоб додати в телефон', language), { duration: 6000 });
   }, [handleRowContactAction, language]);
 
   // Доповнення картки — це не редагування анкети, і кнопка ця не адмінська:
@@ -9713,7 +9718,7 @@ const Matching = () => {
               )}
               {sharedCard?.status === 'shown' && viewMode === 'search' && !isSearching && (
                 <RoleIntentBanner data-testid="shared-card-banner" role="status">
-                  <RoleIntentBannerText>{uiText('Анкета за посиланням', language)}</RoleIntentBannerText>
+                  <RoleIntentBannerText>{uiText('Вам надіслали цю анкету', language)}</RoleIntentBannerText>
                   <RoleIntentLink type="button" data-testid="shared-card-close" onClick={closeSharedCard}>
                     {uiText('До стрічки', language)}
                   </RoleIntentLink>
