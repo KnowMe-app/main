@@ -6,6 +6,8 @@ import { resolveAccess } from 'utils/accessLevel';
 import { keepNotesForIds, mergeNotes } from 'utils/commentsStateMerge';
 import { useFeedColumns } from 'hooks/useFeedColumns';
 import { formatCityName, formatCountryName, formatRegionName, resolveKnownPlace } from 'utils/profileNormalization';
+import { getCurrentValue } from './getCurrentValue';
+import { resolveFeedPhoto } from 'utils/photoThumbs';
 import { detectProgramCountryQuery } from 'utils/programPlaceSearch';
 import {
   ActionButton,
@@ -264,6 +266,7 @@ import {
   buildProfileCardUrl,
   buildReaderVCard,
   downloadReaderVCard,
+  loadContactPhotoJpegBase64,
   readSharedCardIdFromSearch,
   shareProfileCardLink,
   withSharedCardTimeout,
@@ -961,6 +964,8 @@ const LOAD_MORE = 5;
 // сплеск, а не в тому, щоб різати те, що читач уже прогорнув.
 const FEED_PHOTO_HYDRATION_LIMIT = 24;
 // A stable identity so a row without public comments doesn't re-render on it.
+// Скільки «Зберегти контакт» чекає на повну анкету заради повного прізвища.
+const SAVE_CONTACT_PROFILE_WAIT_MS = 4000;
 const EMPTY_PUBLIC_COMMENTS = [];
 const EMPTY_USERS = [];
 
@@ -8379,18 +8384,46 @@ const Matching = () => {
       title: 'KnowMe',
       text: uiText('Анкета в KnowMe', language),
     });
+    // Посилання, що пішло далі, — така сама дія, як збереження контакту
+    // (20.11): рахується тим самим лічильником, а адмін отримує її окремою
+    // подією «Поділились анкетою». Закрите без вибору меню — не поширення.
+    if (result !== 'cancelled') {
+      handleRowContactAction(user, `share_${result === 'failed' ? 'shown' : result}`);
+    }
     if (result === 'copied') toast.success(uiText('Посилання на анкету скопійовано', language));
     // Ні меню, ні буфера (вбудований браузер месенджера) — посилання
     // показується з поясненням, щоб його можна було виділити й скопіювати.
     else if (result === 'failed') toast(uiText('Скопіюйте посилання на анкету: {url}', language, { url }), { duration: 12000 });
-  }, [language]);
+  }, [handleRowContactAction, language]);
 
   // «Зберегти контакт» — лише з того, що рядок уже показує (кнопка стоїть у
   // рядку контактів), з посиланням на картку замість копії анкети. Збереження
   // — найсильніший знак інтересу, і рахується як дотик до контакту.
-  const handleRowSaveContact = React.useCallback((user, entries, anketaRole) => {
+  //
+  // Імʼя контакту — з повної анкети, а не з проєкції стрічки (20.11): у
+  // згорнутому рядку картка — це проєкція, де прізвище лише ініціал
+  // (`surnameShort`), і в телефон лягало «KM Дікая Л.», хоча розгорнутий рядок
+  // того ж читача показував прізвище повністю. Право на повне прізвище те
+  // саме, що й на контакти, тож анкету дочитує `ensureFullProfile` (з кешу —
+  // без запиту), а не вийшло за 4 с — контакт зберігається з тим, що є.
+  const handleRowSaveContact = React.useCallback(async (user, entries, anketaRole) => {
     if (!user?.userId || !Array.isArray(entries)) return;
-    const name = buildContactCardName(user);
+    if (!getStoredFullProfile(user.userId)) {
+      await Promise.race([
+        ensureFullProfile(user),
+        new Promise(resolve => { setTimeout(resolve, SAVE_CONTACT_PROFILE_WAIT_MS); }),
+      ]).catch(() => {});
+    }
+    const fullProfile = getStoredFullProfile(user.userId);
+    // Власні доповнення читача накладаються ще раз поверх анкети: рядок їх
+    // уже показує (`withOwnEdits`), а анкета зі сховища — канонічна, і без
+    // цього контакт мав би інше імʼя, ніж картка на екрані.
+    const contactSource = fullProfile ? withOwnEdits({ ...user, ...fullProfile }) : user;
+    const name = buildContactCardName(contactSource);
+    // Фото й місто (20.11): мініатюра головного фото стрічки — та сама, що
+    // в рядку, тож зазвичай уже в кеші браузера.
+    const mainPhoto = getProfilePhotos(contactSource)[0] || '';
+    const photoJpegBase64 = await loadContactPhotoJpegBase64(resolveFeedPhoto(mainPhoto, contactSource.photoThumbs));
     const cardRoles = listProfileRoles(user);
     const role = anketaRole || cardRoles[cardRoles.length - 1] || '';
     const vcard = buildReaderVCard({
@@ -8402,6 +8435,12 @@ const Matching = () => {
         .filter(entry => entry.key !== 'phone' && entry.key !== 'email')
         .map(entry => entry.href),
       cardUrl: buildProfileCardUrl(user.userId),
+      photoJpegBase64,
+      address: {
+        city: formatCityName(getCurrentValue(contactSource.city), language),
+        region: formatRegionName(getCurrentValue(contactSource.region), language),
+        country: formatCountryName(getCurrentValue(contactSource.country), language),
+      },
     });
     if (!downloadReaderVCard({ vcard, name })) {
       toast.error(uiText('Не вдалося зберегти контакт', language));
@@ -8411,7 +8450,7 @@ const Matching = () => {
     // Android кладе файл у завантаження мовчки, і без підказки людина не
     // знала, що контакт ще треба відкрити й додати.
     toast.success(uiText('Файл контакту завантажено — відкрийте його, щоб додати в телефон', language), { duration: 6000 });
-  }, [handleRowContactAction, language]);
+  }, [ensureFullProfile, handleRowContactAction, language, withOwnEdits]);
 
   // Доповнення картки — це не редагування анкети, і кнопка ця не адмінська:
   // адмін пише в саму картку (олівцем, `/edit`), а решта читачів складають

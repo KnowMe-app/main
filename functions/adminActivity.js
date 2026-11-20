@@ -189,8 +189,21 @@ const classifyContactWrite = ({ cardId, before, after }) => {
   const prevChannels = isPlainObject(before) && isPlainObject(before.channels) ? before.channels : {};
   const nextChannels = isPlainObject(after) && isPlainObject(after.channels) ? after.channels : {};
   const channel = Object.keys(nextChannels).find(key => (Number(nextChannels[key]) || 0) > (Number(prevChannels[key]) || 0)) || '';
+  // Збереження в контакти й «Поділитися» пишуться тим самим лічильником
+  // (`recordContactAction`), але це інші дії, і адмін обирає їх окремо
+  // (20.11, на прохання власниці продукту): `vcard` — контакт ліг у телефонну
+  // книжку, `share_*` — посилання на картку пішло далі (як саме — у назві каналу).
+  if (channel === 'vcard') return [{ type: 'contact_saved', card: cardId, meta: {} }];
+  if (channel.startsWith('share')) {
+    const via = channel.slice('share_'.length);
+    return [{ type: 'card_shared', card: cardId, meta: via ? { via } : {} }];
+  }
   return [{ type: 'contact_tap', card: cardId, meta: channel ? { channel } : {} }];
 };
+
+const SHARE_RESULT_LABELS = Object.freeze({
+  shared: 'через меню телефона', copied: 'скопіювали посилання', shown: 'посилання показано для копіювання',
+});
 
 /** Пошук: новий рядок історії або повтор того самого запиту. */
 const classifySearchWrite = ({ before, after }) => {
@@ -330,6 +343,7 @@ const detailLine = event => {
   switch (event.type) {
     case 'profile_created': return meta.account ? 'Зареєструвався новий акаунт' : 'Картку завели вручну';
     case 'contact_tap': return meta.channel ? `Канал: ${CONTACT_CHANNEL_LABELS[meta.channel] || meta.channel}` : '';
+    case 'card_shared': return meta.via && SHARE_RESULT_LABELS[meta.via] ? `Як: ${SHARE_RESULT_LABELS[meta.via]}` : '';
     case 'search': return meta.query ? `Запит: «${maskDigits(meta.query)}»` : '';
     case 'card_suggestion': return meta.fields ? `Поля: ${meta.fields}` : '';
     case 'public_review': return meta.text ? `«${meta.text}»` : '';
@@ -420,7 +434,7 @@ const buildDigestMessage = (events, frequency) => {
 const WEEKLY_REPORT_TYPES = [
   'profile_created', 'profile_published', 'profile_hidden', 'account_deleted',
   'profile_edited', 'card_suggestion', 'draft_created', 'draft_updated',
-  'like', 'dislike', 'contact_tap', 'postpone', 'public_review', 'search', 'share_link_created',
+  'like', 'dislike', 'contact_tap', 'contact_saved', 'card_shared', 'postpone', 'public_review', 'search', 'share_link_created',
 ];
 
 /**
@@ -488,7 +502,9 @@ const buildWeeklyReport = (events, now, { searchQueries = null } = {}) => {
   const previousActors = new Set(lastWeek.map(event => event.actor).filter(Boolean)).size;
 
   const interest = new Map();
-  thisWeek.filter(event => (event.type === 'like' || event.type === 'contact_tap') && event.card).forEach(event => {
+  // Збережений у телефон контакт — теж інтерес до звʼязку, і рахується як контакт.
+  const contactTypes = new Set(['contact_tap', 'contact_saved']);
+  thisWeek.filter(event => (event.type === 'like' || contactTypes.has(event.type)) && event.card).forEach(event => {
     const entry = interest.get(event.card) || { likes: 0, contacts: 0, info: event.cardInfo };
     if (event.type === 'like') entry.likes += 1; else entry.contacts += 1;
     interest.set(event.card, entry);
@@ -538,7 +554,7 @@ const buildWeeklyReport = (events, now, { searchQueries = null } = {}) => {
   const push = {
     kind: 'admin-weekly',
     title: `📈 ${title}`,
-    body: `Діяли людей: ${actors} · нових анкет: ${created} · лайків: ${count(thisWeek, 'like')} · контактів: ${count(thisWeek, 'contact_tap')}`,
+    body: `Діяли людей: ${actors} · нових анкет: ${created} · лайків: ${count(thisWeek, 'like')} · контактів: ${count(thisWeek, 'contact_tap') + count(thisWeek, 'contact_saved')}`,
     url: NOTIFICATIONS_URL,
   };
   return { html, push };

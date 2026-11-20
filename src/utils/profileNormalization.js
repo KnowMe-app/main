@@ -355,6 +355,28 @@ export const cardMatchesPlace = (card, place) => {
 };
 
 /** Місто мовою інтерфейсу, якщо довідник його знає; інакше — як написали. */
+// Назву, набрану цілком великими чи цілком малими («МИТРОФАНІВКА»,
+// «мирноград»), показуємо з великої літери (20.11, на прохання власниці
+// продукту): у стрічці вона кричала поруч з областю, набраною звичайно.
+// Змішаний регістр — це вже вибір людини, і його не чіпаємо; записане в базі
+// лишається як є.
+const LOWERCASE_PLACE_PARTICLES = new Set(['на', 'над', 'під', 'біля', 'на-', 'de', 'la', 'del', 'am', 'an', 'der']);
+const capitalizePlaceWord = (word, index) => {
+  if (!word) return word;
+  if (index > 0 && LOWERCASE_PLACE_PARTICLES.has(word)) return word;
+  return word.charAt(0).toLocaleUpperCase('uk') + word.slice(1);
+};
+export const normalizePlaceNameCase = value => {
+  const text = String(value || '');
+  const letters = text.replace(/[^\p{L}]/gu, '');
+  if (letters.length < 2) return text;
+  const isAllUpper = letters === letters.toLocaleUpperCase('uk') && letters !== letters.toLocaleLowerCase('uk');
+  const isAllLower = letters === letters.toLocaleLowerCase('uk') && letters !== letters.toLocaleUpperCase('uk');
+  if (!isAllUpper && !isAllLower) return text;
+  let index = 0;
+  return text.toLocaleLowerCase('uk').replace(/[\p{L}'ʼ’]+/gu, word => capitalizePlaceWord(word, index++));
+};
+
 export const formatCityName = (value, language) => {
   let text = cleanText(value);
   if (!text) return '';
@@ -371,7 +393,7 @@ export const formatCityName = (value, language) => {
     text = text.slice(kept[0].length).trim();
   }
   const known = CITY_INDEX.get(foldLocationKey(text));
-  const name = known ? known[pickLanguage(language)] : text;
+  const name = known ? known[pickLanguage(language)] : normalizePlaceNameCase(text);
   return `${prefix}${name}`.trim();
 };
 

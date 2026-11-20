@@ -91,6 +91,10 @@ test('дотик до контакту — канал, що виріс; пошу
   const tap = activity.classifyContactWrite({ cardId: DONOR, before: { count: 1, channels: { phone: 1 } }, after: { count: 2, channels: { phone: 1, telegram: 1 } } });
   assert.deepEqual(tap[0].meta, { channel: 'telegram' });
   assert.deepEqual(activity.classifyContactWrite({ cardId: DONOR, before: { count: 2 }, after: { count: 2 } }), []);
+  const saved = activity.classifyContactWrite({ cardId: DONOR, before: { count: 2, channels: { phone: 2 } }, after: { count: 3, channels: { phone: 2, vcard: 1 } } });
+  assert.equal(saved[0].type, 'contact_saved');
+  const shared = activity.classifyContactWrite({ cardId: DONOR, before: null, after: { count: 1, channels: { share_copied: 1 } } });
+  assert.deepEqual(shared[0], { type: 'card_shared', card: DONOR, meta: { via: 'copied' } });
   assert.equal(activity.classifySearchWrite({ before: null, after: { query: 'Ольга', count: 1 } })[0].meta.query, 'Ольга');
   assert.deepEqual(activity.classifySearchWrite({ before: { query: 'x', count: 3 }, after: { query: 'x', count: 3, updatedAt: 2 } }), []);
 });
@@ -244,6 +248,7 @@ test('тижневий звіт: тиждень проти попередньо�
     ev('profile_published', NOON - DAY / 2, { actor: 'a', card: 'a' }),
     ev('like', NOON - DAY, { card: DONOR, cardInfo: { name: 'Марія', role: 'ed' } }),
     ev('contact_tap', NOON - DAY, { card: DONOR, cardInfo: { name: 'Марія', role: 'ed' } }),
+    ev('contact_saved', NOON - DAY, { card: DONOR, cardInfo: { name: 'Марія', role: 'ed' } }),
     ev('search', NOON - DAY, { meta: { query: 'Ольга' } }),
     ev('like', NOON - 9 * DAY, { card: 'x' }),
     ev('like', NOON - 10 * DAY, { card: 'y' }),
@@ -252,7 +257,8 @@ test('тижневий звіт: тиждень проти попередньо�
   assert.match(html, /Тиждень 08\.11–15\.11/);
   assert.match(html, /Лайк: <b>1<\/b> \(↓1\)/);
   assert.match(html, /нових анкет 2 → з них опубліковано 1 \(50%\)/);
-  assert.match(html, /Марія \(донор ооцитів\) — ❤️ 1 · 📞 1/);
+  assert.match(html, /Марія \(донор ооцитів\) — ❤️ 1 · 📞 2/);
+  assert.match(push.body, /контактів: 2/);
   assert.match(html, /«ольга» ×1/);
   assert.ok(html.length < 4096);
   assert.equal(push.kind, 'admin-weekly');

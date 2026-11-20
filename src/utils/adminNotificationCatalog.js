@@ -50,6 +50,8 @@ export const NOTIFICATION_GROUPS = [
       { key: 'like', emoji: '❤️', label: 'Лайк', description: 'Хтось вподобав анкету.', defaultFrequency: 'hourly' },
       { key: 'dislike', emoji: '✖️', label: 'Дизлайк («Не цікаво»)', description: 'Анкету відхилили. Багато дизлайків одній анкеті — сигнал її доопрацювати.', defaultFrequency: 'daily' },
       { key: 'contact_tap', emoji: '📞', label: 'Дотик до контакту', description: 'Натиснули дзвінок, Telegram, Viber чи інший контакт — найближче до реальної угоди.', defaultFrequency: 'hourly' },
+      { key: 'contact_saved', emoji: '📇', label: 'Збережено в контакти телефону', description: 'Контакт анкети зберегли в телефонну книжку — сильніший знак інтересу, ніж просто дотик.', defaultFrequency: 'hourly' },
+      { key: 'card_shared', emoji: '📤', label: 'Поділились анкетою', description: 'Посилання на картку відправили в месенджер чи скопіювали — анкету передають комусь далі.', defaultFrequency: 'hourly' },
       { key: 'postpone', emoji: '⏰', label: '«Відкласти» картку', description: 'Картку відклали, щоб повернутись пізніше.', defaultFrequency: 'daily' },
       { key: 'public_review', emoji: '💬', label: 'Публічний відгук', description: 'Новий відгук під анкетою. Його бачать усі — варто глянути одразу.', defaultFrequency: 'instant' },
     ],
@@ -141,6 +143,7 @@ export const describeActivityPerson = info => {
 };
 
 const CONTACT_CHANNEL_LABELS = { phone: 'дзвінок', call: 'дзвінок', telegram: 'Telegram', viber: 'Viber', whatsapp: 'WhatsApp', email: 'пошта' };
+const SHARE_RESULT_LABELS = { shared: 'через меню телефона', copied: 'скопіювали посилання', shown: 'посилання показано для копіювання' };
 
 /** Подробиця події для журналу на сторінці. */
 export const describeActivityDetail = event => {
@@ -148,6 +151,7 @@ export const describeActivityDetail = event => {
   switch (event?.type) {
     case 'profile_created': return meta.account ? 'новий акаунт' : 'картка заведена вручну';
     case 'contact_tap': return meta.channel ? CONTACT_CHANNEL_LABELS[meta.channel] || meta.channel : '';
+    case 'card_shared': return meta.via ? SHARE_RESULT_LABELS[meta.via] || '' : '';
     case 'search': return meta.query ? `«${meta.query}»` : '';
     case 'card_suggestion': return meta.fields || '';
     case 'public_review': return meta.text ? `«${meta.text}»` : '';

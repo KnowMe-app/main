@@ -30,6 +30,8 @@ const ADMIN_EVENTS = Object.freeze([
   { key: 'like', emoji: '❤️', label: 'Лайк', defaultFrequency: 'hourly', dedupMs: 0 },
   { key: 'dislike', emoji: '✖️', label: 'Дизлайк («Не цікаво»)', defaultFrequency: 'daily', dedupMs: 0 },
   { key: 'contact_tap', emoji: '📞', label: 'Дотик до контакту', defaultFrequency: 'hourly', dedupMs: 2 * MINUTE },
+  { key: 'contact_saved', emoji: '📇', label: 'Збережено в контакти телефону', defaultFrequency: 'hourly', dedupMs: 2 * MINUTE },
+  { key: 'card_shared', emoji: '📤', label: 'Поділились анкетою', defaultFrequency: 'hourly', dedupMs: 2 * MINUTE },
   { key: 'postpone', emoji: '⏰', label: '«Відкласти» картку', defaultFrequency: 'daily', dedupMs: 10 * MINUTE },
   { key: 'public_review', emoji: '💬', label: 'Публічний відгук', defaultFrequency: 'instant', dedupMs: 0 },
   { key: 'search', emoji: '🔎', label: 'Пошук', defaultFrequency: 'daily', dedupMs: 10 * MINUTE },
