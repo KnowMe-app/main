@@ -91,6 +91,10 @@ test('дотик до контакту — канал, що виріс; пошу
   const tap = activity.classifyContactWrite({ cardId: DONOR, before: { count: 1, channels: { phone: 1 } }, after: { count: 2, channels: { phone: 1, telegram: 1 } } });
   assert.deepEqual(tap[0].meta, { channel: 'telegram' });
   assert.deepEqual(activity.classifyContactWrite({ cardId: DONOR, before: { count: 2 }, after: { count: 2 } }), []);
+  const saved = activity.classifyContactWrite({ cardId: DONOR, before: { count: 2, channels: { phone: 2 } }, after: { count: 3, channels: { phone: 2, vcard: 1 } } });
+  assert.equal(saved[0].type, 'contact_saved');
+  const shared = activity.classifyContactWrite({ cardId: DONOR, before: null, after: { count: 1, channels: { share_copied: 1 } } });
+  assert.deepEqual(shared[0], { type: 'card_shared', card: DONOR, meta: { via: 'copied' } });
   assert.equal(activity.classifySearchWrite({ before: null, after: { query: 'Ольга', count: 1 } })[0].meta.query, 'Ольга');
   assert.deepEqual(activity.classifySearchWrite({ before: { query: 'x', count: 3 }, after: { query: 'x', count: 3, updatedAt: 2 } }), []);
 });
