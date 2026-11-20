@@ -26,6 +26,7 @@ import {
   persistAccountProfile,
 } from './authProfilePersistence';
 import { readReturnToFromState } from 'utils/authRedirect';
+import { isProfileCardReturnTo } from 'utils/profileCardLink';
 import { resolveAccess, resolveSpecialHomeRoute } from 'utils/accessLevel';
 import { requestPasswordResetEmail, requestVerificationEmail } from 'utils/emailVerification';
 import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
@@ -326,6 +327,18 @@ const RoleHint = styled.p`
   margin: 0 0 10px;
   color: var(--text-muted, var(--text));
   font-size: 13px;
+  line-height: 1.4;
+`;
+
+// Людина прийшла за посиланням на картку (`/matching?card=…`): без пояснення
+// форма входу читалась як «посилання не працює».
+const SharedCardHint = styled.p`
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--km-fill, rgba(0, 0, 0, 0.04));
+  color: var(--text);
+  font-size: 14px;
   line-height: 1.4;
 `;
 
@@ -1429,6 +1442,11 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
             </>
           ) : (
           <>
+          {isProfileCardReturnTo(returnTo) && (
+            <SharedCardHint data-testid="login-shared-card-hint">
+              {tr('Вам надіслали анкету в KnowMe. Увійдіть або створіть акаунт, щоб її побачити.')}
+            </SharedCardHint>
+          )}
           <ModeTabs role="tablist" aria-label={tr('Вхід або реєстрація')}>
             <ModeTab type="button" role="tab" aria-selected={!isRegisterMode} $active={!isRegisterMode} onClick={() => setAuthMode('login')}>
               {tr('Увійти')}

@@ -89,6 +89,7 @@ import {
   fetchMatchingCardsByIds,
   clearMatchingCardsPageInFlight,
   fetchLimitedProfileById,
+  readSharedMatchingCard,
   database,
   auth,
   updateDataInRealtimeDB,
@@ -257,6 +258,16 @@ import {
   MATCHING_SEARCH_QUERY_PARAM,
   MATCHING_SEARCH_STORAGE_KEY,
 } from 'utils/matchingSearchLocation';
+import {
+  MATCHING_CARD_QUERY_PARAM,
+  buildContactCardName,
+  buildProfileCardUrl,
+  buildReaderVCard,
+  downloadReaderVCard,
+  readSharedCardIdFromSearch,
+  shareProfileCardLink,
+  withSharedCardTimeout,
+} from 'utils/profileCardLink';
 import { LOGIN_ROUTE, buildReturnToFromLocation } from 'utils/authRedirect';
 import { useAppSettings } from 'hooks/useAppSettings';
 import { useRealtimeConnection } from 'hooks/useRealtimeConnection';
@@ -322,6 +333,7 @@ import {
   parseBloodValue,
   getProfilePhotos,
   getProfileRole,
+  getRoleLabel,
 } from './profileLayoutConfig';
 import {
   cacheFavoriteUsers,
@@ -1035,6 +1047,26 @@ const readQueryFromUrl = () => {
     return '';
   }
 };
+// Картка за посиланням (`/matching?card={id}`, `utils/profileCardLink`):
+// показується тим самим шляхом, що й видача пошуку, тож знімок деки на
+// старті її не підміняє — як і запит в адресі.
+const readSharedCardIdFromUrl = () => {
+  try {
+    return readSharedCardIdFromSearch(window.location.search);
+  } catch {
+    return '';
+  }
+};
+const removeSharedCardParamFromUrl = () => {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(MATCHING_CARD_QUERY_PARAM)) return;
+    url.searchParams.delete(MATCHING_CARD_QUERY_PARAM);
+    window.history.replaceState(window.history.state, '', url.toString());
+  } catch {
+    // Адреса лишиться з посиланням — картку закрито однаково.
+  }
+};
 
 const MATCHING_INDEXED_LOAD_MORE_MAX_PAGES = 2;
 const MATCHING_AUTO_LOAD_MORE_COOLDOWN_MS = 700;
@@ -1124,7 +1156,7 @@ const readFeedSnapshot = () => {
   }
   if (!owner || lastFeedSnapshot.ownerId !== owner) return null;
   if (Date.now() - lastFeedSnapshot.at > FEED_SNAPSHOT_TTL_MS) return null;
-  if (readQueryFromUrl().trim()) return null;
+  if (readQueryFromUrl().trim() || readSharedCardIdFromUrl()) return null;
   return lastFeedSnapshot;
 };
 
@@ -1144,7 +1176,7 @@ const readPersistedFeedSnapshotForMount = () => {
   } catch {
     return null;
   }
-  if (!owner || readQueryFromUrl().trim()) return null;
+  if (!owner || readQueryFromUrl().trim() || readSharedCardIdFromUrl()) return null;
   // Для показу на старті знімок і картки — до тижня, а не шести годин: TTL
   // каже «перечитати з бази», а не «не показувати». Відкриття після ночі без
   // мережі (13.11, телефон) стояло скелетоном, хоча вся дека лежала на
@@ -1247,6 +1279,11 @@ const Matching = () => {
   // Spec §1-§2: the search input is what switches the screen between the feed and
   // results, and the query lives in the URL so a reload keeps the context.
   const [searchQuery, setSearchQuery] = useState(readQueryFromUrl);
+  const searchQueryRef = useRef(searchQuery);
+  searchQueryRef.current = searchQuery;
+  // Картка за посиланням стоїть у режимі видачі з порожнім запитом — і ефект
+  // «запит стерли → стрічка» не мусить приймати її за стертий пошук.
+  const sharedCardShownRef = useRef(false);
   // Дофільтр: один ключ, одне значення. У пошуку значення живе тут; у стрічці
   // воно виводиться з `filters` — інакше рядок і шухляда розійшлися б, щойно
   // читач відкриє другу.
@@ -4865,6 +4902,7 @@ const Matching = () => {
   // there - the ✕, or the last character being deleted.
   useEffect(() => {
     if (searchQuery.trim() || viewModeRef.current !== 'search') return;
+    if (sharedCardShownRef.current) return;
     setMatchingSearchStatus('');
     matchingSearchKeyRef.current = null;
     reloadDefault();
@@ -4878,6 +4916,87 @@ const Matching = () => {
     setSearchQuery('');
     reloadDefault();
   }, [reloadDefault]);
+
+  /*
+   * Картка за посиланням (`/matching?card={id}`). Посилання — лише адреса:
+   * картка читається тим самим шляхом, що й одне влучання пошуку
+   * (`readSharedMatchingCard`), і показується як видача — з реакціями,
+   * нотатками й контактами рядка, але лише з тим, що читачеві дають правила.
+   * Не знайшли (сховали, видалили, не відкрито) — стрічка лишається, над нею
+   * пояснення без «Створити»: заводити дубль тут нема чого.
+   */
+  const [sharedCard, setSharedCard] = useState(() => {
+    const id = readSharedCardIdFromUrl();
+    return id ? { id, status: 'loading' } : null;
+  });
+  const sharedCardRequestRef = useRef('');
+  useEffect(() => {
+    if (!ownerId || !sharedCard || sharedCard.status !== 'loading') return;
+    if (sharedCardRequestRef.current === sharedCard.id) return;
+    sharedCardRequestRef.current = sharedCard.id;
+    const requestedId = sharedCard.id;
+    let active = true;
+    // Збій мережі — не «анкету приховали»: без звʼязку `get` висить, а
+    // порожня відповідь офлайн нічого не доводить. Тоді — «не вдалося» з
+    // повтором, і посилання лишається в адресі.
+    const fail = () => {
+      if (!active) return;
+      sharedCardRequestRef.current = '';
+      setSharedCard({ id: requestedId, status: 'failed' });
+    };
+    withSharedCardTimeout(readSharedMatchingCard(requestedId, { keepHidden: isAdmin }))
+      .then(result => {
+        if (!active) return;
+        const found = result && Object.keys(result).length > 0;
+        if (!found && typeof navigator !== 'undefined' && navigator.onLine === false) {
+          fail();
+          return;
+        }
+        // Людина встигла почати пошук — її запит важливіший за посилання,
+        // і з адреси воно знімається: перезавантаження інакше повернуло б
+        // картку замість її видачі.
+        if (found && searchQueryRef.current.trim()) {
+          removeSharedCardParamFromUrl();
+          setSharedCard(null);
+          return;
+        }
+        if (found) {
+          sharedCardShownRef.current = true;
+          void applySearchResults(result);
+          setSharedCard({ id: requestedId, status: 'shown' });
+        } else {
+          removeSharedCardParamFromUrl();
+          setSharedCard({ id: requestedId, status: 'missing' });
+        }
+      })
+      .catch(fail);
+    return () => { active = false; };
+    // applySearchResults closes over setters and refs only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, ownerId, sharedCard]);
+
+  const retrySharedCard = React.useCallback(() => {
+    setSharedCard(previous => (previous?.id ? { id: previous.id, status: 'loading' } : previous));
+  }, []);
+
+  const closeSharedCard = React.useCallback(() => {
+    const wasShown = sharedCard?.status === 'shown';
+    sharedCardShownRef.current = false;
+    removeSharedCardParamFromUrl();
+    setSharedCard(null);
+    if (wasShown && viewModeRef.current === 'search' && !searchQueryRef.current.trim()) reloadDefault();
+  }, [reloadDefault, sharedCard]);
+
+  // Будь-який інший перегляд (пошук, колекція, «Почати стрічку заново») —
+  // посилання своє відпрацювало, і з адреси воно знімається, щоб
+  // перезавантаження не повертало чужу картку замість стрічки.
+  useEffect(() => {
+    if (sharedCard?.status !== 'shown') return;
+    if (viewMode === 'search' && !searchQuery.trim()) return;
+    sharedCardShownRef.current = false;
+    removeSharedCardParamFromUrl();
+    setSharedCard(null);
+  }, [searchQuery, sharedCard, viewMode]);
 
   // «Назад» телефона з видачі — у стрічку. Запис пошуку клав ефект адреси
   // (`searchHistoryEntryRef`); тут його зняли. Якщо поточним після «назад»
@@ -5830,6 +5949,17 @@ const Matching = () => {
   const cardStoreVersion = useSyncExternalStore(subscribeCardStore, getCardStoreVersion);
   const outboxPendingCount = useSyncExternalStore(subscribeWriteOutbox, getWriteOutboxPendingCount);
   const deviceOnline = useSyncExternalStore(subscribeDeviceOnline, readDeviceOnline, () => true);
+  // Посилання, яке не відкрилось без звʼязку, відкривається само, щойно
+  // звʼязок повернувся, — як і решта стрічки (`utils/feedOnlineRecovery`).
+  // Лише на переході «без звʼязку → зі звʼязком»: коли мережа є, а база не
+  // відповіла, автоповтор крутив би «Відкриваю…» по колу кожні 10 с —
+  // тоді повторює людина кнопкою.
+  const sharedCardWasOfflineRef = useRef(!deviceOnline);
+  useEffect(() => {
+    const cameBackOnline = deviceOnline && sharedCardWasOfflineRef.current;
+    sharedCardWasOfflineRef.current = !deviceOnline;
+    if (cameBackOnline && sharedCard?.status === 'failed') retrySharedCard();
+  }, [deviceOnline, retrySharedCard, sharedCard]);
   // Відмову бази черга вже відкотила на пристрої; людині лишається сказати,
   // чому серце чи памʼятка зникли. Відмову запису з цієї вкладки показує
   // той, хто його писав, — тут лише дослане з минулої (`replayed`).
@@ -8236,6 +8366,53 @@ const Matching = () => {
     void recordContactAction(user.userId, ownerId, channel);
   }, [ownerId]);
 
+  // «Поділитися»: посилання з id картки, а не з номером (`utils/profileCardLink`).
+  // Отримувач без акаунта потрапить на вхід і повернеться на цю ж картку.
+  const handleRowShare = React.useCallback(async user => {
+    if (!user?.userId) return;
+    const url = buildProfileCardUrl(user.userId);
+    // Без імені в тексті: превʼю месенджера бачить і той, у кого акаунта
+    // немає, а посилання з id саме нічого не розкриває — імʼя побачить лише
+    // той, хто увійшов.
+    const result = await shareProfileCardLink({
+      url,
+      title: 'KnowMe',
+      text: uiText('Анкета в KnowMe', language),
+    });
+    if (result === 'copied') toast.success(uiText('Посилання на анкету скопійовано', language));
+    // Ні меню, ні буфера (вбудований браузер месенджера) — посилання
+    // показується з поясненням, щоб його можна було виділити й скопіювати.
+    else if (result === 'failed') toast(uiText('Скопіюйте посилання на анкету: {url}', language, { url }), { duration: 12000 });
+  }, [language]);
+
+  // «Зберегти контакт» — лише з того, що рядок уже показує (кнопка стоїть у
+  // рядку контактів), з посиланням на картку замість копії анкети. Збереження
+  // — найсильніший знак інтересу, і рахується як дотик до контакту.
+  const handleRowSaveContact = React.useCallback((user, entries, anketaRole) => {
+    if (!user?.userId || !Array.isArray(entries)) return;
+    const name = buildContactCardName(user);
+    const cardRoles = listProfileRoles(user);
+    const role = anketaRole || cardRoles[cardRoles.length - 1] || '';
+    const vcard = buildReaderVCard({
+      name,
+      roleLabel: role ? getRoleLabel(role, language) : '',
+      phones: entries.filter(entry => entry.key === 'phone').map(entry => entry.value),
+      emails: entries.filter(entry => entry.key === 'email').map(entry => entry.value),
+      links: entries
+        .filter(entry => entry.key !== 'phone' && entry.key !== 'email')
+        .map(entry => entry.href),
+      cardUrl: buildProfileCardUrl(user.userId),
+    });
+    if (!downloadReaderVCard({ vcard, name })) {
+      toast.error(uiText('Не вдалося зберегти контакт', language));
+      return;
+    }
+    handleRowContactAction(user, 'vcard');
+    // Android кладе файл у завантаження мовчки, і без підказки людина не
+    // знала, що контакт ще треба відкрити й додати.
+    toast.success(uiText('Файл контакту завантажено — відкрийте його, щоб додати в телефон', language), { duration: 6000 });
+  }, [handleRowContactAction, language]);
+
   // Доповнення картки — це не редагування анкети, і кнопка ця не адмінська:
   // адмін пише в саму картку (олівцем, `/edit`), а решта читачів складають
   // власний оверлей у формі створення — інакше в рядку стояли б дві кнопки з
@@ -9534,6 +9711,44 @@ const Matching = () => {
             />
           ) : (
             <FeedWrap>
+              {sharedCard?.status === 'loading' && (
+                <RoleIntentBanner data-testid="shared-card-loading" role="status">
+                  <RoleIntentBannerText>{uiText('Відкриваю анкету за посиланням…', language)}</RoleIntentBannerText>
+                </RoleIntentBanner>
+              )}
+              {sharedCard?.status === 'shown' && viewMode === 'search' && !isSearching && (
+                <RoleIntentBanner data-testid="shared-card-banner" role="status">
+                  <RoleIntentBannerText>{uiText('Вам надіслали цю анкету', language)}</RoleIntentBannerText>
+                  <RoleIntentLink type="button" data-testid="shared-card-close" onClick={closeSharedCard}>
+                    {uiText('До стрічки', language)}
+                  </RoleIntentLink>
+                </RoleIntentBanner>
+              )}
+              {sharedCard?.status === 'failed' && (
+                <RoleIntentBanner data-testid="shared-card-failed" role="status">
+                  <RoleIntentBannerText>
+                    {uiText(deviceOnline
+                      ? 'Не вдалося відкрити анкету за посиланням.'
+                      : 'Немає звʼязку — анкету за посиланням відкриємо, щойно він зʼявиться.', language)}
+                  </RoleIntentBannerText>
+                  <RoleIntentLink type="button" data-testid="shared-card-retry" onClick={retrySharedCard}>
+                    {uiText('Спробувати ще раз', language)}
+                  </RoleIntentLink>
+                  <RoleIntentLink type="button" data-testid="shared-card-dismiss" onClick={closeSharedCard}>
+                    {uiText('До стрічки', language)}
+                  </RoleIntentLink>
+                </RoleIntentBanner>
+              )}
+              {sharedCard?.status === 'missing' && (
+                <RoleIntentBanner data-testid="shared-card-missing" role="status">
+                  <RoleIntentBannerText>
+                    {uiText('Анкета за посиланням недоступна: її приховали, видалили або вона вам не відкрита.', language)}
+                  </RoleIntentBannerText>
+                  <RoleIntentLink type="button" data-testid="shared-card-dismiss" onClick={closeSharedCard}>
+                    {uiText('Зрозуміло', language)}
+                  </RoleIntentLink>
+                </RoleIntentBanner>
+              )}
               {/* Перший рядок видачі — сама відповідь «такої ще немає»: набране
                   вже розкладене в поле картки, і кнопка веде просто у форму з
                   ним. Доти ця відповідь жила чіпом над видачею, тобто там, де
@@ -9621,7 +9836,11 @@ const Matching = () => {
                   </QueryDraftButton>
                 </QueryDraftCard>
               )}
-              {feedRows.length > 0 && viewLayout === 'list' && (
+              {/* Поки читається картка за посиланням, стрічки під плашкою не
+                  видно: інакше вона мигала й за мить змінювалась однією
+                  карткою. */}
+              {sharedCard?.status === 'loading' && <MatchingSkeleton />}
+              {feedRows.length > 0 && viewLayout === 'list' && sharedCard?.status !== 'loading' && (
                 <>
                 {feedHeadNewUsers.length > 0 && viewMode === 'default' && (
                   <FeedHeadNewButton type="button" data-testid="feed-head-new" onClick={showFeedHeadNewUsers}>
@@ -9653,6 +9872,8 @@ const Matching = () => {
                       onToggleExpand={handleToggleRowExpand}
                       onEditProfile={handleRowEditProfile}
                       onContactAction={handleRowContactAction}
+                      onShare={handleRowShare}
+                      onSaveContact={handleRowSaveContact}
                       // Дека з кеша буває на екрані ще до відповіді Firebase
                       // (`allowRemembered`), а право на контакти рахується від
                       // читача: спитане без нього памʼяталось би як «закрито».
@@ -9685,7 +9906,7 @@ const Matching = () => {
               )}
               {/* Поки свіжий стан карток ще читається, порожня дека — це
                   очікування, а не «нічого немає». */}
-              {(loading || feedStatePendingCount > 0) && feedRows.length === 0 && (deviceOnline ? <MatchingSkeleton /> : (
+              {sharedCard?.status !== 'loading' && (loading || feedStatePendingCount > 0) && feedRows.length === 0 && (deviceOnline ? <MatchingSkeleton /> : (
                 // Без мережі скелетон обіцяв, що картки от-от будуть, — а їх
                 // для цих фільтрів на пристрої немає, і база не відповість.
                 <FeedNotice data-testid="feed-offline-empty">
@@ -9695,7 +9916,7 @@ const Matching = () => {
               {/* Над порожньою видачею за місцем уже стоїть картка «Схоже на
                   місто · Показати анкети», і «Немає доступних профілів» під нею
                   суперечило їй: анкети з цього місця є, їх показує стрічка. */}
-              {!loading && feedStatePendingCount === 0 && feedRows.length === 0 && !loadError && !searchPlace
+              {!loading && feedStatePendingCount === 0 && feedRows.length === 0 && !loadError && !searchPlace && sharedCard?.status !== 'loading'
                 && !(searchRoleIntent && !roleIntentRequestShown) && (
                 (roleIntentRequestShown || coordinatorRequestRole) && !emptyFilterGroup ? (
                   <CoordinatorRequest

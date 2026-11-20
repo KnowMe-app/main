@@ -6,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { FaArrowRight, FaChevronDown, FaTimes, FaLock, FaRegTrashAlt, FaMapMarkerAlt, FaPencilAlt, FaRegClock, FaRegCommentDots, FaRegStickyNote } from 'react-icons/fa';
+import { FaArrowRight, FaChevronDown, FaTimes, FaLock, FaRegTrashAlt, FaMapMarkerAlt, FaPencilAlt, FaRegClock, FaRegCommentDots, FaRegStickyNote, FaShareAlt, FaUserPlus } from 'react-icons/fa';
 import { LIKED_AUDIENCE_CARD_FLAG } from 'utils/likedAudience';
 import { activityAgeDays, describeCardActivity, parseActivityDate } from '../utils/cardActivity';
 import {
@@ -76,6 +76,7 @@ import { NoteClearButton, NoteFieldRow, NoteLane, NoteLaneHead, PublishDot, Shar
 import { isMatchingCardPublished, isMatchingSummaryCard, MATCHING_CARD_REVIEW_FLAG_FIELD } from '../utils/matchingCardIndex';
 import { resolveFeedPhoto } from '../utils/photoThumbs';
 import { isOwnProfileDraftCard } from '../utils/profileVisibilityScope';
+import { isFeedDateExplicitlyDenied } from '../utils/matchingSearchResultOrder';
 import { SectionToggle } from './programs/ProgramsView';
 
 // Чернетку з видачі пошуку несе той самий прапорець `create`, що й власну, —
@@ -304,7 +305,7 @@ export const renderFacts = (user, priorityKeys = [], language) => {
  * дотиком, і саме дотик рахується. Без обробника (шапка форми доповнення, де
  * номер і так стоїть у полі нижче) підказка називає й значення.
  */
-export const ContactLinks = ({ entries, language, onContactAction }) => {
+export const ContactLinks = ({ entries, language, onContactAction, onSaveContact }) => {
   const tracked = typeof onContactAction === 'function';
   const phones = entries.filter(entry => entry.key === 'phone');
   const others = entries.filter(entry => entry.key !== 'phone');
@@ -377,6 +378,22 @@ export const ContactLinks = ({ entries, language, onContactAction }) => {
           </S.ContactIconLink>
         );
       })}
+      {/* «Зберегти в контакти» — з того, що рядок уже показує, і лише коли є
+          номер: контакт без номера телефонній книжці нічого не дає. Імʼя
+          «KM Імʼя Прізвище», посилання — на картку (`utils/profileCardLink`). */}
+      {typeof onSaveContact === 'function' && phones.length > 0 && (
+        <S.ContactIconLink
+          as="button"
+          type="button"
+          data-testid="contact-save-vcard"
+          $action
+          title={uiText('Зберегти в контакти телефону', language)}
+          aria-label={uiText('Зберегти в контакти телефону', language)}
+          onClick={() => onSaveContact(entries)}
+        >
+          <FaUserPlus />
+        </S.ContactIconLink>
+      )}
     </S.ContactIconRow>
   );
 };
@@ -1245,6 +1262,10 @@ const ProfileRow = ({
   onEditProfile,
   // Дотик до будь-якого контакту — дія (`recordContactAction`): `(user, channel)`.
   onContactAction,
+  // «Поділитися» посиланням на картку: `(user)`; «Зберегти контакт» —
+  // `(user, entries, anketaRole)` з контактів, які рядок уже показує.
+  onShare,
+  onSaveContact,
   onRequestContacts,
   // Чи цьому читачеві взагалі є що тут відкривати. Питання вирішує той, хто
   // знає і картку, і читача (`canOfferProfileContacts` у Matching), — рядок
@@ -1902,6 +1923,25 @@ const ProfileRow = ({
             )}
             {/* Олівця тут більше немає: він стоїть у ряду рішень, на місці
                 колишньої стрілки «розгорнути» (див. ряд рішень нижче). */}
+            {/* «Поділитися» — біля імені, бо стосується всієї картки, а не
+                контактів: посилання з id картки, отримувач бачить лише те, що
+                йому дають правила (`utils/profileCardLink`). Чернетки й
+                урізаної картки немає кому показати. */}
+            {/* Сховану анкету й «лише для вподобаних» отримувач однаково не
+                побачить — кнопка обіцяла б посилання, яке відповідає
+                «недоступна». */}
+            {onShare && !preview && !isLimited && !isViewerOwnDraft(user)
+              && !isFeedDateExplicitlyDenied(user) && user?.[LIKED_AUDIENCE_CARD_FLAG] !== true && (
+              <S.RowActionButton
+                type="button"
+                data-testid="row-share-action"
+                title={uiText('Поділитися анкетою', language)}
+                aria-label={uiText('Поділитися анкетою', language)}
+                onClick={e => { e.stopPropagation(); onShare(user); }}
+              >
+                <FaShareAlt size={13} />
+              </S.RowActionButton>
+            )}
           </S.RowActionStack>
         </S.Ctrl>
       </S.Top>
@@ -1943,6 +1983,7 @@ const ProfileRow = ({
             entries={contactEntries}
             language={language}
             onContactAction={onContactAction ? channel => onContactAction(user, channel) : undefined}
+            onSaveContact={onSaveContact && !preview ? entries => onSaveContact(user, entries, anketaRole) : undefined}
           />
         </S.RowContacts>
       )}
@@ -2118,6 +2159,8 @@ export default React.memo(ProfileRow, (prev, next) => (
   && prev.contactsLoading === next.contactsLoading
   && prev.diagnosticsSlot === next.diagnosticsSlot
   && prev.onEnrich === next.onEnrich
+  && prev.onShare === next.onShare
+  && prev.onSaveContact === next.onSaveContact
   && prev.onEditProfile === next.onEditProfile
   && prev.onSwipeRight === next.onSwipeRight
   && prev.onSwipeLeft === next.onSwipeLeft

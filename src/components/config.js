@@ -188,6 +188,7 @@ import {
 } from '../utils/searchFeedDenial';
 import { readFreshMyProfileCache, readMyProfileCache, writeMyProfileCache } from '../utils/myProfileCache';
 import { compareByFeedDate, configurePublishedFeedIndex, readPublishedFeedIndex, searchPublishedIndexByName, splitSearchHitsByFeed } from '../utils/publishedFeedIndex';
+import { isShareableCardId } from '../utils/profileCardLink';
 import {
   PHOTO_THUMB_MAX_DIMENSION,
   PHOTO_THUMB_MAX_KB,
@@ -4464,6 +4465,28 @@ export const primeMatchingFeedState = (userId, rawCard) => {
 const readFreshFeedDenial = async userId => isFeedStateDeniedForSearch(await matchingFeedStateReader.read(userId));
 
 export const filterFeedDeniedSearchResult = result => filterFeedDeniedResult(result, { readDenied: readFreshFeedDenial });
+
+/*
+ * Картка за посиланням (`/matching?card={id}`, `utils/profileCardLink`).
+ * Той самий шлях, що й одне влучання пошуку: картка стрічки, а без неї —
+ * урізана проєкція чи чернетка, і та сама перевірка схованості. Посилання —
+ * лише адреса: хто картку не побачив би пошуком, той не побачить і тут.
+ */
+export const readSharedMatchingCard = async (cardId, { keepHidden = false } = {}) => {
+  if (!isShareableCardId(cardId)) return {};
+  const users = {};
+  try {
+    await addCardHit(cardId, users);
+  } catch (error) {
+    console.warn('[readSharedMatchingCard] failed', error);
+    return {};
+  }
+  if (keepHidden) return users;
+  // Фільтр повертає одне знайдене самим обʼєктом картки — тут завжди мапа.
+  const kept = await filterFeedDeniedSearchResult(users);
+  if (kept && typeof kept.userId === 'string') return { [kept.userId]: kept };
+  return kept || {};
+};
 
 // `keepHidden` — пошук адміна на /matching: стрічка адміна навмисно показує
 // сховані анкети, і пошук йому їх не замовчує (`orderMatchingSearchResults`
