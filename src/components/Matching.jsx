@@ -4957,10 +4957,11 @@ const Matching = () => {
           fail();
           return;
         }
-        // Людина встигла почати пошук — її запит важливіший за посилання,
-        // і з адреси воно знімається: перезавантаження інакше повернуло б
-        // картку замість її видачі.
-        if (found && searchQueryRef.current.trim()) {
+        // Людина встигла перейти деінде — почати пошук чи відкрити «Обране» /
+        // «Не цікаві»: її вибір важливіший за посилання, і пізня відповідь не
+        // мусить підміняти щойно відкриту колекцію карткою. З адреси
+        // посилання знімається: перезавантаження інакше повернуло б картку.
+        if (searchQueryRef.current.trim() || viewModeRef.current !== 'default') {
           removeSharedCardParamFromUrl();
           setSharedCard(null);
           return;
@@ -4995,9 +4996,16 @@ const Matching = () => {
   // Будь-який інший перегляд (пошук, колекція, «Почати стрічку заново») —
   // посилання своє відпрацювало, і з адреси воно знімається, щоб
   // перезавантаження не повертало чужу картку замість стрічки.
+  // Те саме — і поки картка ще читається чи не відкрилась: перехід у колекцію
+  // чи пошук знімає посилання одразу, а зміна стану гасить запит, що летить
+  // (`active` в ефекті читання), — інакше пізня відповідь лягала б поверх
+  // «Обраного», а скелетон картки ховав би видачу пошуку.
   useEffect(() => {
-    if (sharedCard?.status !== 'shown') return;
-    if (viewMode === 'search' && !searchQuery.trim()) return;
+    if (!sharedCard) return;
+    const stillOnLink = sharedCard.status === 'shown'
+      ? viewMode === 'search' && !searchQuery.trim()
+      : viewMode === 'default' && !searchQuery.trim();
+    if (stillOnLink) return;
     sharedCardShownRef.current = false;
     removeSharedCardParamFromUrl();
     setSharedCard(null);
