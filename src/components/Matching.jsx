@@ -6,6 +6,8 @@ import { resolveAccess } from 'utils/accessLevel';
 import { keepNotesForIds, mergeNotes } from 'utils/commentsStateMerge';
 import { useFeedColumns } from 'hooks/useFeedColumns';
 import { formatCityName, formatCountryName, formatRegionName, resolveKnownPlace } from 'utils/profileNormalization';
+import { getCurrentValue } from './getCurrentValue';
+import { resolveFeedPhoto } from 'utils/photoThumbs';
 import { detectProgramCountryQuery } from 'utils/programPlaceSearch';
 import {
   ActionButton,
@@ -264,6 +266,7 @@ import {
   buildProfileCardUrl,
   buildReaderVCard,
   downloadReaderVCard,
+  loadContactPhotoJpegBase64,
   readSharedCardIdFromSearch,
   shareProfileCardLink,
   withSharedCardTimeout,
@@ -8412,7 +8415,12 @@ const Matching = () => {
       ]).catch(() => {});
     }
     const fullProfile = getStoredFullProfile(user.userId);
-    const name = buildContactCardName(fullProfile ? { ...user, ...fullProfile } : user);
+    const contactSource = fullProfile ? { ...user, ...fullProfile } : user;
+    const name = buildContactCardName(contactSource);
+    // Фото й місто (20.11): мініатюра головного фото стрічки — та сама, що
+    // в рядку, тож зазвичай уже в кеші браузера.
+    const mainPhoto = getProfilePhotos(contactSource)[0] || '';
+    const photoJpegBase64 = await loadContactPhotoJpegBase64(resolveFeedPhoto(mainPhoto, contactSource.photoThumbs));
     const cardRoles = listProfileRoles(user);
     const role = anketaRole || cardRoles[cardRoles.length - 1] || '';
     const vcard = buildReaderVCard({
@@ -8424,6 +8432,12 @@ const Matching = () => {
         .filter(entry => entry.key !== 'phone' && entry.key !== 'email')
         .map(entry => entry.href),
       cardUrl: buildProfileCardUrl(user.userId),
+      photoJpegBase64,
+      address: {
+        city: formatCityName(getCurrentValue(contactSource.city), language),
+        region: formatRegionName(getCurrentValue(contactSource.region), language),
+        country: formatCountryName(getCurrentValue(contactSource.country), language),
+      },
     });
     if (!downloadReaderVCard({ vcard, name })) {
       toast.error(uiText('Не вдалося зберегти контакт', language));

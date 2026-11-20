@@ -79,6 +79,16 @@ describe('місто', () => {
     expect(formatCityName('м. Киев', 'uk')).toBe('м. Київ');
     expect(formatCityName('Naivasha', 'uk')).toBe('Naivasha');
   });
+
+  it('незнайоме місто великими чи малими літерами показує з великої', () => {
+    expect(formatCityName('МИТРОФАНІВКА', 'uk')).toBe('Митрофанівка');
+    expect(formatCityName('нова одеса', 'uk')).toBe('Нова Одеса');
+    expect(formatCityName('КАМʼЯНКА-ДНІПРОВСЬКА', 'uk')).toBe('Камʼянка-Дніпровська');
+    expect(formatCityName('с. ДМИТРІВКА', 'uk')).toBe('с. Дмитрівка');
+    expect(formatCityName('ростов-на-дону', 'uk')).toBe('Ростов-на-Дону');
+    // Змішаний регістр — вибір людини.
+    expect(formatCityName('McAllen', 'uk')).toBe('McAllen');
+  });
 });
 
 describe('зріст, вага й ІМТ', () => {

@@ -82,3 +82,32 @@ describe('profileCardLink', () => {
     await expect(withSharedCardTimeout(Promise.resolve({ a: 1 }), 50)).resolves.toEqual({ a: 1 });
   });
 });
+
+describe('контакт телефону: фото й місто', () => {
+  const { buildReaderVCard: build } = require('./profileCardLink');
+
+  it('кладе місто, область і країну в ADR', () => {
+    const vcard = build({ name: 'KM Олена', phones: ['380501112233'], address: { city: 'Митрофанівка', region: 'Кіровоградська обл.', country: 'Україна' } });
+    expect(vcard).toContain('ADR;TYPE=HOME;CHARSET=UTF-8:;;;Митрофанівка;Кіровоградська обл.;;Україна');
+  });
+
+  it('без міста ADR не пише', () => {
+    expect(build({ name: 'KM Олена', phones: ['380501112233'] })).not.toContain('ADR');
+  });
+
+  it('фото — JPEG у base64, складене рядками по 75 знаків', () => {
+    const photo = 'A'.repeat(300);
+    const vcard = build({ name: 'KM Олена', phones: ['380501112233'], photoJpegBase64: photo });
+    const lines = vcard.split('\r\n');
+    const start = lines.findIndex(line => line.startsWith('PHOTO;ENCODING=b;TYPE=JPEG:'));
+    expect(start).toBeGreaterThan(-1);
+    const folded = [lines[start]];
+    for (let index = start + 1; lines[index]?.startsWith(' '); index += 1) folded.push(lines[index]);
+    folded.forEach(line => expect(line.length).toBeLessThanOrEqual(75));
+    expect(folded.map((line, index) => (index ? line.slice(1) : line)).join('')).toBe(`PHOTO;ENCODING=b;TYPE=JPEG:${photo}`);
+  });
+
+  it('не base64 у фото не потрапляє', () => {
+    expect(build({ name: 'KM', phones: ['380501112233'], photoJpegBase64: '<script>' })).not.toContain('PHOTO');
+  });
+});

@@ -18,7 +18,8 @@ describe('контакт у телефон бере імʼя з повної а�
   });
 
   it('складає імʼя з анкети поверх проєкції, а не з самої проєкції', () => {
-    expect(handler).toContain('buildContactCardName(fullProfile ? { ...user, ...fullProfile } : user)');
+    expect(handler).toContain('const contactSource = fullProfile ? { ...user, ...fullProfile } : user;');
+    expect(handler).toContain('buildContactCardName(contactSource)');
     expect(handler).not.toMatch(/const name = buildContactCardName\(user\);/);
   });
 });

@@ -85,11 +85,22 @@ const escapeVCardText = value => String(value ?? '')
 
 const VCARD_URL_PATTERN = /^https?:\/\/[^\s]+$/i;
 
+// vCard 3.0 обмежує рядок 75 октетами; довгий (фото в base64) складається
+// продовженнями з пробілом на початку. Base64 — ASCII, тож символ = октет.
+const foldVCardLine = line => {
+  if (line.length <= 75) return line;
+  const parts = [line.slice(0, 75)];
+  for (let index = 75; index < line.length; index += 74) parts.push(` ${line.slice(index, index + 74)}`);
+  return parts.join('\r\n');
+};
+
 /**
  * vCard 3.0 з того, що читач і так бачить на екрані: номери, пошта, посилання
- * каналів. Опису анкети тут немає (на відміну від адмінського `makeVCard`):
- * у телефонну книжку йде контакт, а анкета — за посиланням, щоб у книжці не
- * лежала копія, яка старіє. Посилання на картку стоїть першим URL.
+ * каналів, головне фото й місто. Опису анкети тут немає (на відміну від
+ * адмінського `makeVCard`): у телефонну книжку йде контакт, а анкета — за
+ * посиланням, щоб у книжці не лежала копія, яка старіє. Фото й місто — на
+ * прохання власниці продукту (20.11): без них у книжці лежав сірий кружок без
+ * жодного знаку, хто це. Посилання на картку стоїть першим URL.
  */
 export const buildReaderVCard = ({
   name = 'KM',
@@ -98,11 +109,22 @@ export const buildReaderVCard = ({
   emails = [],
   links = [],
   cardUrl = '',
+  photoJpegBase64 = '',
+  address = null,
 } = {}) => {
   const lines = ['BEGIN:VCARD', 'VERSION:3.0'];
   lines.push(`FN;CHARSET=UTF-8:${escapeVCardText(name)}`);
   lines.push(`N;CHARSET=UTF-8:${escapeVCardText(name)};;;;`);
   if (roleLabel) lines.push(`TITLE;CHARSET=UTF-8:${escapeVCardText(roleLabel)}`);
+  const city = String(address?.city || '').trim();
+  const region = String(address?.region || '').trim();
+  const country = String(address?.country || '').trim();
+  if (city || region || country) {
+    lines.push(`ADR;TYPE=HOME;CHARSET=UTF-8:;;;${escapeVCardText(city)};${escapeVCardText(region)};;${escapeVCardText(country)}`);
+  }
+  if (/^[A-Za-z0-9+/=]+$/.test(photoJpegBase64 || '')) {
+    lines.push(foldVCardLine(`PHOTO;ENCODING=b;TYPE=JPEG:${photoJpegBase64}`));
+  }
   const seenPhones = new Set();
   phones.forEach(phone => {
     const digits = String(phone || '').replace(/[^\d+]/g, '');
@@ -122,6 +144,39 @@ export const buildReaderVCard = ({
   }
   lines.push('END:VCARD');
   return `${lines.join('\r\n')}\r\n`;
+};
+
+/**
+ * Головне фото для контакту — JPEG до 480 px у base64, або порожньо.
+ *
+ * Береться мініатюра стрічки (вона вже в кеші браузера), перемальовується на
+ * полотні: Android і iOS приймають у vCard JPEG, а мініатюра буває й іншим
+ * форматом, і зайві сотні КБ у файлі контакту нікому не потрібні. Читає байти
+ * `fetch` — бакет пускає домен сайту (`storage.cors.json`); не вийшло за
+ * `timeoutMs` чи впало — контакт зберігається без фото.
+ */
+export const loadContactPhotoJpegBase64 = async (url, { maxSide = 480, timeoutMs = 4000 } = {}) => {
+  if (!/^https?:\/\//i.test(String(url || '')) || typeof fetch !== 'function'
+    || typeof document === 'undefined' || typeof createImageBitmap !== 'function') return '';
+  const work = (async () => {
+    const response = await fetch(url, { mode: 'cors' });
+    if (!response.ok) return '';
+    const bitmap = await createImageBitmap(await response.blob());
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+    return dataUrl.startsWith('data:image/jpeg;base64,') ? dataUrl.slice('data:image/jpeg;base64,'.length) : '';
+  })();
+  const timeout = new Promise(resolve => { setTimeout(() => resolve(''), timeoutMs); });
+  try {
+    return await Promise.race([work, timeout]);
+  } catch {
+    return '';
+  }
 };
 
 // Імʼя файлу — латиницею: Chromium відкидає `download` з кирилицею й називає
