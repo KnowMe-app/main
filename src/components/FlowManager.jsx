@@ -97,6 +97,7 @@ import {
   SheetSection,
   SmallTextBtn,
   StatusNote,
+  SummaryBlock,
   SummaryLine,
   SummaryNote,
   SummaryTotal,
@@ -1765,7 +1766,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       </TopBar>
 
       <ScaledContent style={{ zoom: textScale }} data-testid="flow-scaled-content">
-        <Card aria-live="polite" data-testid="flow-summary">
+        <SummaryBlock aria-live="polite" data-testid="flow-summary">
           {summary.mode === 'balance' ? (
             <>
               <SummaryLine>
@@ -1791,7 +1792,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
               {summaryNote(summary.mode === 'group' ? filteredTotals : expenseTotals)}
             </>
           )}
-        </Card>
+        </SummaryBlock>
 
         {/* Один рядок, що гортається вбік (19.11, на прохання власниці
             продукту): з переносом чіпи займали три рядки над полем запису. */}

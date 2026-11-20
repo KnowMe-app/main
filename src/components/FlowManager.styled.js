@@ -124,6 +124,17 @@ export const Card = styled.section`
   ${noMotion}
 `;
 
+// Підсумок — заголовок екрана, а не ще одна картка (20.11, на прохання
+// власниці продукту): у білій рамці він виглядав полем вводу, і справжнє поле
+// запису під ним губилось. Біла картка з рамкою на екрані тепер одна — поле
+// запису.
+export const SummaryBlock = styled(Card)`
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 4px 2px 2px;
+`;
+
 export const SummaryLine = styled.div`
   display: flex;
   flex-wrap: wrap;
