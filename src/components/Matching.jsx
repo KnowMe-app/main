@@ -961,6 +961,8 @@ const LOAD_MORE = 5;
 // сплеск, а не в тому, щоб різати те, що читач уже прогорнув.
 const FEED_PHOTO_HYDRATION_LIMIT = 24;
 // A stable identity so a row without public comments doesn't re-render on it.
+// Скільки «Зберегти контакт» чекає на повну анкету заради повного прізвища.
+const SAVE_CONTACT_PROFILE_WAIT_MS = 4000;
 const EMPTY_PUBLIC_COMMENTS = [];
 const EMPTY_USERS = [];
 
@@ -8388,9 +8390,23 @@ const Matching = () => {
   // «Зберегти контакт» — лише з того, що рядок уже показує (кнопка стоїть у
   // рядку контактів), з посиланням на картку замість копії анкети. Збереження
   // — найсильніший знак інтересу, і рахується як дотик до контакту.
-  const handleRowSaveContact = React.useCallback((user, entries, anketaRole) => {
+  //
+  // Імʼя контакту — з повної анкети, а не з проєкції стрічки (20.11): у
+  // згорнутому рядку картка — це проєкція, де прізвище лише ініціал
+  // (`surnameShort`), і в телефон лягало «KM Дікая Л.», хоча розгорнутий рядок
+  // того ж читача показував прізвище повністю. Право на повне прізвище те
+  // саме, що й на контакти, тож анкету дочитує `ensureFullProfile` (з кешу —
+  // без запиту), а не вийшло за 4 с — контакт зберігається з тим, що є.
+  const handleRowSaveContact = React.useCallback(async (user, entries, anketaRole) => {
     if (!user?.userId || !Array.isArray(entries)) return;
-    const name = buildContactCardName(user);
+    if (!getStoredFullProfile(user.userId)) {
+      await Promise.race([
+        ensureFullProfile(user),
+        new Promise(resolve => { setTimeout(resolve, SAVE_CONTACT_PROFILE_WAIT_MS); }),
+      ]).catch(() => {});
+    }
+    const fullProfile = getStoredFullProfile(user.userId);
+    const name = buildContactCardName(fullProfile ? { ...user, ...fullProfile } : user);
     const cardRoles = listProfileRoles(user);
     const role = anketaRole || cardRoles[cardRoles.length - 1] || '';
     const vcard = buildReaderVCard({
@@ -8411,7 +8427,7 @@ const Matching = () => {
     // Android кладе файл у завантаження мовчки, і без підказки людина не
     // знала, що контакт ще треба відкрити й додати.
     toast.success(uiText('Файл контакту завантажено — відкрийте його, щоб додати в телефон', language), { duration: 6000 });
-  }, [handleRowContactAction, language]);
+  }, [ensureFullProfile, handleRowContactAction, language]);
 
   // Доповнення картки — це не редагування анкети, і кнопка ця не адмінська:
   // адмін пише в саму картку (олівцем, `/edit`), а решта читачів складають
