@@ -24,7 +24,6 @@ import {
   writeFlowHistory,
 } from 'utils/flowHistory';
 import {
-  DEFAULT_FLOW_CURRENCY_LABEL_MODE,
   FLOW_CURRENCY_LABEL_MODES,
   buildLegacyUndatedFlowPatch,
   compareFlowRowsNewestFirst,
@@ -32,7 +31,6 @@ import {
   formatFlowMoney,
   groupFlowRowsByMonth,
   listFlowLabelCurrencies,
-  normalizeFlowCurrencyLabelMode,
   searchFlowRows,
   summarizeFlow,
   topLevelFlowGroup,
@@ -44,7 +42,6 @@ import {
   ChipRow,
   ChipTools,
   ClearBtn,
-  DangerBtn,
   Dialog,
   DialogActions,
   DialogText,
@@ -109,6 +106,7 @@ import {
   Wrap,
 } from './FlowManager.styled';
 import Collapsible from './Collapsible';
+import { FlowConfirmDialog } from './FlowConfirmDialog';
 import { ADMIN_UIDS, isAdminUid, readStoredAccessLevel, readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
 import { listFlowOwners } from './flowOwnersRemote';
 import {
@@ -120,14 +118,13 @@ import {
   fetchFlowData,
   fetchMonobankUahExchangeRates,
   fetchNbuUahExchangeRatesByDate,
-  resolveFlowExchangeRatesForMode,
   saveFlowEntry,
   updateFlowEntry,
   auth,
 } from './config';
 import { useAutoResize } from 'hooks/useAutoResize';
+import { useDeviceOnline, useFlowDeviceSettings, useFlowOpenState } from 'hooks/useFlowDeviceSettings';
 import { AutoGrowTextarea } from 'components/AutoGrowTextarea';
-import { isFormulaFlowAmount, resolveFlowAmountInput } from 'utils/flowAmountFormula';
 import { listPendingOutboxPatches, subscribeWriteOutbox } from 'utils/writeOutbox';
 import {
   applyFlowPatch,
@@ -137,675 +134,44 @@ import {
   readFlowCache,
   writeFlowCache,
 } from 'utils/flowOfflineWrites';
-
-// Масштаб тексту Flow (16.11, на прохання власниці продукту: «нічого не видно»).
-// Шрифти тут задані пікселями в десятку компонентів, тож масштабується весь
-// вміст під верхнім рядком через `zoom` — і текст, і поля, і мішені дотику
-// разом, як масштаб браузера. Верхній рядок і шторки не масштабуються.
-// 175 % прибрано (17.11): на телефоні в рядок уже не вміщалось нічого.
-const FLOW_TEXT_SCALES = [0.9, 1, 1.15, 1.3, 1.5];
-const flowTextScaleStorageKey = ownerId => `flow-text-scale:${ownerId || 'anon'}`;
-
-const normalizeCategoryPath = value =>
-  String(value || '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/[\\]+/g, '')
-    .replace(/\/+/g, '/')
-    .replace(/^\/+|\/+$/g, '');
-
-const splitCategoryPath = value => {
-  const normalized = normalizeCategoryPath(value);
-  const [group = '', subgroup = ''] = normalized.split('/');
-  return {
-    group: group || 'general',
-    subgroup: subgroup || '',
-  };
-};
-
-const buildCategoryPath = (group, subgroup = '') => {
-  const normalizedGroup = normalizeCategoryPath(group) || 'general';
-  const normalizedSubgroup = normalizeCategoryPath(subgroup);
-  return normalizedSubgroup ? `${normalizedGroup}/${normalizedSubgroup}` : normalizedGroup;
-};
-
-const formatDisplayDate = yyyyMmDd => {
-  const [year, month, day] = String(yyyyMmDd || '').split('-');
-  if (!year || !month || !day) return '';
-  return `${day.padStart(2, '0')}.${month.padStart(2, '0')}.${year}`;
-};
-
-const parseDisplayDate = (display, fallbackYear = new Date().getFullYear()) => {
-  const match = String(display || '')
-    .trim()
-    .match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?$/);
-  if (!match) return '';
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3] || fallbackYear);
-  if (day < 1 || day > 31 || month < 1 || month > 12) return '';
-  const dt = new Date(Date.UTC(year, month - 1, day));
-  if (
-    dt.getUTCFullYear() !== year ||
-    dt.getUTCMonth() !== month - 1 ||
-    dt.getUTCDate() !== day
-  ) {
-    return '';
-  }
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-};
-
-const todayYmd = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const sanitizeAmountChunk = value =>
-  String(value || '')
-    .trim()
-    .replace(/[#$[/\]]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const normalizeFlowAmount = value => {
-  const normalized = String(value || '').replace(/,/g, '.');
-  if (isFormulaFlowAmount(normalized)) {
-    return normalized
-      .trim()
-      .replace(/[#[\]]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-  return sanitizeAmountChunk(normalized);
-};
-const FLOW_DATE_YMD_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-
-const toAmountNumber = value => {
-  const normalized = String(value || '').trim().replace(/,/g, '.');
-  const parsed = Number.parseFloat(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const hasStoredFlowAmount = value => {
-  const normalized = String(value ?? '').trim().replace(/,/g, '.');
-  if (!normalized) return false;
-  return Number.isFinite(Number(normalized));
-};
-
-const formatFlowAmountForClipboard = value => {
-  const normalized = String(value || '').trim().replace(/,/g, '.');
-  const parsed = Number.parseFloat(normalized);
-  if (!Number.isFinite(parsed)) return String(value || '').replace('.', ',');
-  return parsed.toFixed(2).replace('.', ',');
-};
-
-const formatCategorySum = value => {
-  if (!Number.isFinite(value)) return '0';
-  const rounded = Math.round(value * 100) / 100;
-  if (Number.isInteger(rounded)) return String(rounded);
-  return rounded.toFixed(2).replace(/\.?0+$/, '');
-};
-
-const formatCurrencyValue = value => {
-  if (!Number.isFinite(value)) return '0';
-  const formatted = value.toFixed(2).replace(/\.?0+$/, '');
-  return formatted === '-0' ? '0' : formatted;
-};
-
-const normalizeCustomUsdRate = value => {
-  const parsed = Number(String(value || '').trim().replace(',', '.'));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-};
-
-const formatCustomUsdRate = value => {
-  const normalizedRate = normalizeCustomUsdRate(value);
-  return normalizedRate ? formatCurrencyValue(normalizedRate) : '';
-};
-
-const formatCustomUsdRateDisplay = value => {
-  const formattedRate = formatCustomUsdRate(value);
-  return formattedRate ? `1 $ = ${formattedRate} грн` : '';
-};
-
-// Курс у кінці рядка буває доларовий або євровий: «курс 50.75 EUR», «курс 50.75€»,
-// «€ 50.75», «1€=50.75». Без позначки валюти — долар, як і було. Євровий курс
-// лягає лише на євро: долар рядка лишається за курсом джерела (чи глобальним).
-const FLOW_RATE_NUMBER = '(\\d+(?:[.,]\\d+)?)';
-const FLOW_RATE_CURRENCY = '(\\$|usd|дол(?:ар|арів)?|€|eur|євро|евро)';
-const FLOW_RATE_UAH_SUFFIX = '(?:\\s*(?:грн|uah))?';
-const FLOW_RATE_PATTERNS = [
-  new RegExp(
-    `(?:^|\\s)(?:курс|rate)\\s*${FLOW_RATE_CURRENCY}?\\s*[:=]?\\s*${FLOW_RATE_NUMBER}\\s*${FLOW_RATE_CURRENCY}?${FLOW_RATE_UAH_SUFFIX}\\s*$`,
-    'iu'
-  ),
-  new RegExp(
-    `(?:^|\\s)1?\\s*${FLOW_RATE_CURRENCY}\\s*[:=]?\\s*${FLOW_RATE_NUMBER}${FLOW_RATE_UAH_SUFFIX}\\s*$`,
-    'iu'
-  ),
-  new RegExp(`(?:^|\\s)${FLOW_RATE_NUMBER}${FLOW_RATE_UAH_SUFFIX}\\s*\\/\\s*${FLOW_RATE_CURRENCY}\\s*$`, 'iu'),
-];
-const isEurRateToken = token => /^(?:€|eur|євро|евро)$/iu.test(String(token || '').trim());
-
-const extractCustomRateFromText = value => {
-  const rawText = String(value || '').trim();
-  if (!rawText) return { text: '', customUsdRate: '', customEurRate: '' };
-
-  for (const pattern of FLOW_RATE_PATTERNS) {
-    const match = rawText.match(pattern);
-    if (!match) continue;
-    const groups = match.slice(1).filter(item => item !== undefined);
-    const rateToken = groups.find(item => /^\d/.test(item));
-    const formattedRate = formatCustomUsdRate(rateToken);
-    if (!formattedRate) continue;
-    const isEur = groups.some(isEurRateToken);
-    return {
-      text: rawText.slice(0, match.index).trim(),
-      customUsdRate: isEur ? '' : formattedRate,
-      customEurRate: isEur ? formattedRate : '',
-    };
-  }
-
-  return { text: rawText, customUsdRate: '', customEurRate: '' };
-};
-
-// Валюта, в якій рядок показує еквівалент. Курс, вписаний у сам рядок («курс 50.75 €»,
-// «курс 41 $»), — свідомий вибір валюти для цього рядка, і перемикач угорі його не перебиває;
-// решта рядків іде у валюті перемикача.
-export const FLOW_DISPLAY_CURRENCIES = ['usd', 'eur'];
-const DEFAULT_FLOW_DISPLAY_CURRENCY = 'usd';
-const getValidFlowDisplayCurrency = value =>
-  FLOW_DISPLAY_CURRENCIES.includes(value) ? value : DEFAULT_FLOW_DISPLAY_CURRENCY;
-export const getFlowRowDisplayCurrency = (row, defaultCurrency = DEFAULT_FLOW_DISPLAY_CURRENCY) => {
-  if (normalizeCustomUsdRate(row?.customEurRate)) return 'eur';
-  if (normalizeCustomUsdRate(row?.customUsdRate)) return 'usd';
-  return getValidFlowDisplayCurrency(defaultCurrency);
-};
-const FLOW_CURRENCY_SIGNS = { usd: '$', eur: '€' };
-// Які записи потрапляють в історію відміни і як вони звуться в тості.
-const FLOW_HISTORY_LABELS = {
-  'Запис Flow не збережено': 'новий запис',
-  'Запис не оновлено': 'правка запису',
-  'Запис не видалено': 'видалення запису',
-  'Платіж не перенесено': 'перенесення запису',
-  'Групу не видалено': 'видалення групи',
-  'Групу не перейменовано': 'перейменування групи',
-  'Flow не очищено': 'очищення Flow',
-};
-const FLOW_CURRENCY_LABEL_TITLES = { none: 'Без валюти', usd: '$', eur: '€', both: '$ і €' };
-
-// Збережений курс рядка — четверта частина суми: «50.75» (долар) або «50.75EUR».
-export const parseStoredFlowCustomRate = value => {
-  const raw = String(value || '').trim();
-  const eurMatch = raw.match(/^(\d+(?:[.,]\d+)?)\s*EUR$/i);
-  if (eurMatch) return { customUsdRate: '', customEurRate: eurMatch[1] };
-  return { customUsdRate: raw, customEurRate: '' };
-};
-
-const formatGroupTitle = groupPath => {
-  const { group, subgroup } = splitCategoryPath(groupPath);
-  return subgroup ? `${group}, ${subgroup}` : group;
-};
-
-const getFlowRatesForRow = ({
-  row,
-  exchangeRateMode,
-  exchangeRates,
-  historicalRatesByDate,
-  customUsdRate,
-}) => {
-  const baseRates =
-    exchangeRateMode === 'nbu'
-      ? historicalRatesByDate[row.date] || null
-      : resolveFlowExchangeRatesForMode(exchangeRates, exchangeRateMode);
-  const normalizedCustomUsdRate = normalizeCustomUsdRate(row.customUsdRate) || normalizeCustomUsdRate(customUsdRate);
-  const normalizedCustomEurRate = normalizeCustomUsdRate(row.customEurRate);
-  if (!normalizedCustomUsdRate && !normalizedCustomEurRate) return baseRates;
-
-  return {
-    ...(baseRates || {}),
-    ...(normalizedCustomUsdRate ? { usd: normalizedCustomUsdRate, customUsdRate: normalizedCustomUsdRate } : {}),
-    ...(normalizedCustomEurRate ? { eur: normalizedCustomEurRate, customEurRate: normalizedCustomEurRate } : {}),
-  };
-};
-
-export const calculateFlowRowCurrencyAmount = ({
-  row,
-  currency = 'usd',
-  exchangeRateMode,
-  exchangeRates,
-  historicalRatesByDate,
-  customUsdRate,
-}) => {
-  const amountUah = toAmountNumber(row.amount);
-  const rates = getFlowRatesForRow({
-    row,
-    exchangeRateMode,
-    exchangeRates,
-    historicalRatesByDate,
-    customUsdRate,
-  });
-  const rate = Number(rates?.[currency]);
-  if (Number.isFinite(amountUah) && Number.isFinite(rate) && rate > 0) {
-    return amountUah / rate;
-  }
-
-  const storedAmount = toAmountNumber(currency === 'eur' ? row.amountEur : row.amountUsd);
-  return storedAmount;
-};
-
-const makeFlowCurrencyFormulaResolver = rates => name => {
-  const normalizedName = String(name || '').trim().toUpperCase();
-  if (normalizedName === 'USD') return Number(rates?.usd);
-  if (normalizedName === 'EUR') return Number(rates?.eur);
-  return undefined;
-};
-
-const resolveFlowDisplayAmount = ({
-  amount,
-  row,
-  exchangeRateMode,
-  exchangeRates,
-  historicalRatesByDate,
-  customUsdRate,
-}) => {
-  const rawAmount = normalizeFlowAmount(amount);
-  if (!isFormulaFlowAmount(rawAmount)) return rawAmount;
-
-  const rates = getFlowRatesForRow({
-    row: row || {},
-    exchangeRateMode,
-    exchangeRates,
-    historicalRatesByDate,
-    customUsdRate,
-  });
-
-  try {
-    return normalizeFlowAmount(resolveFlowAmountInput(rawAmount, makeFlowCurrencyFormulaResolver(rates)));
-  } catch {
-    return rawAmount;
-  }
-};
-
-const getFlowAmountNumberForTotals = options => toAmountNumber(resolveFlowDisplayAmount(options));
-
-// Підсумок групи в $ і € — баланс у гривнях, переведений за курсом режиму, а не
-// сума еквівалентів рядків. Курс, вписаний у рядок («курс 50.75 €»), фіксує
-// еквівалент *цього* рядка й гривневу суму його формули, але в підсумку
-// лишав залишок: група «Мама» стояла на 0 грн і водночас на 2.48 €, бо один
-// рядок рахувався за 50.75, а решта за 50.98. Глобальний курс «1 $ = … грн»
-// стоїть за режим для всіх рядків, тож у підсумку він лишається.
-export const sumFlowCategoryTotals = ({
-  rows = [],
-  exchangeRateMode,
-  exchangeRates,
-  historicalRatesByDate = {},
-  customUsdRate,
-  defaultCategory = 'general',
-}) =>
-  rows.reduce((acc, row) => {
-    const group = normalizeCategoryPath(row.group) || defaultCategory;
-    if (!acc[group]) {
-      acc[group] = { uah: 0, usd: 0, eur: 0 };
-    }
-    const rateOptions = { exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate };
-    const amountUah = getFlowAmountNumberForTotals({ amount: row.amount, row, ...rateOptions });
-    const totalsRow = {
-      ...row,
-      amount: formatCategorySum(amountUah),
-      customUsdRate: '',
-      customEurRate: '',
-    };
-    acc[group].uah += amountUah;
-    acc[group].usd += calculateFlowRowCurrencyAmount({ row: totalsRow, currency: 'usd', ...rateOptions });
-    acc[group].eur += calculateFlowRowCurrencyAmount({ row: totalsRow, currency: 'eur', ...rateOptions });
-    return acc;
-  }, {});
-
-const FLOW_FORMULA_TOKEN_REGEX = /[0-9.,+\-*/%()\s×xXхХ÷:−–—$]/;
-const FLOW_FORMULA_OPERATOR_END_REGEX = /[+\-*/%(×xXхХ÷:−–—]$/;
-const FLOW_AMOUNT_START_REGEX = /^(?:[+-]?\d+(?:[.,]\d+)?|=)/;
-const normalizeFlowCurrencyFormulaAmount = amount =>
-  String(amount || '').startsWith('=') ? String(amount || '').replace(/\$/g, 'USD') : amount;
-
-const splitFlowAmountAndDescription = value => {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
-
-  if (raw.startsWith('=')) {
-    let index = 1;
-    const canConsumeFormulaValue = () => {
-      const prefix = raw.slice(1, index).trimEnd();
-      if (!prefix) return true;
-      return FLOW_FORMULA_OPERATOR_END_REGEX.test(prefix);
-    };
-
-    while (index < raw.length) {
-      const tail = raw.slice(index);
-      const identifierMatch = tail.match(/^(?:USD|EUR)\b/i);
-      if (identifierMatch) {
-        if (!canConsumeFormulaValue()) break;
-        index += identifierMatch[0].length;
-        continue;
-      }
-      if (raw[index] === '$') {
-        if (!canConsumeFormulaValue()) break;
-        index += 1;
-        continue;
-      }
-      if (FLOW_FORMULA_TOKEN_REGEX.test(raw[index])) {
-        index += 1;
-        continue;
-      }
-      break;
-    }
-    const amountRaw = raw.slice(0, index).trim();
-    const description = raw.slice(index).trim();
-    if (!/(?:\d|\$|\b(?:USD|EUR)\b)/i.test(amountRaw)) return null;
-    return { amountRaw, description };
-  }
-
-  const numberMatch = raw.match(/^([+-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
-  if (!numberMatch) return null;
-  return {
-    amountRaw: numberMatch[1],
-    description: numberMatch[2] || '',
-  };
-};
-
-export const parseFlowEntryLine = (line, fallbackDate = '') => {
-  const trimmedLine = String(line || '').trim();
-  if (!trimmedLine) return null;
-
-  const leadingDateOnlyMatch = trimmedLine.match(/^(\d{1,2}\.\d{1,2}\.\d{4})(?:\s+(.*))?$/);
-  if (leadingDateOnlyMatch) {
-    const rest = String(leadingDateOnlyMatch[2] || '').trim();
-    if (rest && !FLOW_AMOUNT_START_REGEX.test(rest)) {
-      return null;
-    }
-  }
-
-  const lineMatch = trimmedLine.match(/^(?:(\d{1,2}\.\d{1,2}(?:\.\d{4})?)\s+)?(.+)$/);
-  if (!lineMatch) return null;
-
-  const amountParts = splitFlowAmountAndDescription(lineMatch[2]);
-  if (!amountParts) return null;
-
-  const fallbackYear = Number(String(fallbackDate).split('-')[0]) || new Date().getFullYear();
-  const parsedDate = lineMatch[1] ? parseDisplayDate(lineMatch[1], fallbackYear) : fallbackDate;
-  const parsedAmount = normalizeFlowCurrencyFormulaAmount(normalizeFlowAmount(amountParts.amountRaw || ''));
-  const { text: descriptionWithoutCustomRate, customUsdRate, customEurRate } = extractCustomRateFromText(
-    amountParts.description || ''
-  );
-  const parsedDescription = sanitizeEntryKeyChunk(descriptionWithoutCustomRate);
-
-  if (!parsedDate || !parsedAmount) return null;
-  return {
-    date: parsedDate,
-    amount: parsedAmount,
-    description: parsedDescription,
-    customUsdRate,
-    customEurRate,
-  };
-};
-
-const FLOW_DATE_TOKEN_PATTERN = /\b\d{1,2}\.\d{1,2}(?:\.\d{4})?\b/;
-
-const resolveFlowFallbackDate = (rawText, fallbackDate = '') => {
-  const normalizedFallbackDate = /^\d{4}-\d{2}-\d{2}$/.test(String(fallbackDate || ''))
-    ? fallbackDate
-    : '';
-  if (FLOW_DATE_TOKEN_PATTERN.test(String(rawText || ''))) {
-    return normalizedFallbackDate || todayYmd();
-  }
-  return todayYmd();
-};
-
-const parseFlowEntriesByDatesAndGroups = ({
-  rawText,
-  fallbackDate = '',
-  defaultGroup = DEFAULT_FLOW_CATEGORY,
-}) => {
-  const normalizedFallbackDate = /^\d{4}-\d{2}-\d{2}$/.test(String(fallbackDate || ''))
-    ? fallbackDate
-    : todayYmd();
-  const lines = String(rawText || '')
-    .split(/\r?\n/)
-    .map(line => String(line || '').trim())
-    .filter(Boolean);
-  const fallbackYear =
-    Number(String(normalizedFallbackDate).split('-')[0]) || new Date().getFullYear();
-  let currentGroup = normalizeCategoryPath(defaultGroup) || DEFAULT_FLOW_CATEGORY;
-  let currentDate = normalizedFallbackDate;
-  const entries = [];
-
-  lines.forEach(line => {
-    const groupMatch = line.match(/^\[(.+)]$/);
-    if (groupMatch) {
-      currentGroup = normalizeCategoryPath(groupMatch[1]) || currentGroup || DEFAULT_FLOW_CATEGORY;
-      return;
-    }
-
-    const parsedLine = parseFlowEntryLine(line, currentDate || normalizedFallbackDate);
-    if (parsedLine) {
-      currentDate = parsedLine.date;
-      entries.push({
-        groupPath: currentGroup || DEFAULT_FLOW_CATEGORY,
-        ...parsedLine,
-      });
-      return;
-    }
-
-    const parsedDate = parseDisplayDate(line, fallbackYear);
-    if (parsedDate) {
-      currentDate = parsedDate;
-      return;
-    }
-
-    const parsedCategory = normalizeCategoryPath(line);
-    if (parsedCategory) {
-      currentGroup = parsedCategory;
-    }
-  });
-
-  return entries;
-};
-
-const sanitizeEntryKeyChunk = value =>
-  String(value || '')
-    .trim()
-    .replace(/[.#$[\]/]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const DEFAULT_FLOW_CATEGORY = 'general';
-const DEFAULT_FLOW_EXCHANGE_RATE_MODE = 'current';
-const FLOW_EXCHANGE_RATE_OPTIONS = [
-  {
-    value: 'current',
-    label: 'Поточний',
-    description: 'Поточний доступний курс Monobank (за замовчуванням).',
-  },
-  {
-    value: 'nbu',
-    label: 'НБУ',
-    description: 'Офіційний курс НБУ для дати кожного рядка.',
-  },
-  {
-    value: 'sell',
-    label: 'Продаж',
-    description: 'Курс продажу валюти, якщо він доступний у джерелі.',
-  },
-  {
-    value: 'buy',
-    label: 'Купівля',
-    description: 'Курс купівлі валюти, якщо він доступний у джерелі.',
-  },
-  {
-    value: 'average',
-    label: 'Середній',
-    description: 'Середній між курсом купівлі та продажу або крос-курс.',
-  },
-  {
-    value: 'interbank',
-    label: 'Міжбанк',
-    description: 'Крос/середній курс як найближчий доступний еквівалент міжбанку.',
-  },
-  {
-    value: 'highest',
-    label: 'Найвищий',
-    description: 'Найвищий із доступних поточних курсів.',
-  },
-  {
-    value: 'lowest',
-    label: 'Найнижчий',
-    description: 'Найнижчий із доступних поточних курсів.',
-  },
-];
-const FLOW_EXCHANGE_RATE_MODE_VALUES = FLOW_EXCHANGE_RATE_OPTIONS.map(option => option.value);
-const getValidFlowExchangeRateMode = value =>
-  FLOW_EXCHANGE_RATE_MODE_VALUES.includes(value) ? value : DEFAULT_FLOW_EXCHANGE_RATE_MODE;
-const getFlowExchangeRateModeLabel = value =>
-  FLOW_EXCHANGE_RATE_OPTIONS.find(option => option.value === value)?.label || 'Поточний';
-const flowDraftStorageKey = ownerId => `flow-draft:${ownerId || 'anon'}`;
-const flowLastCategoryStorageKey = ownerId => `flow-last-category:${ownerId || 'anon'}`;
-const flowExchangeRateModeStorageKey = ownerId => `flow-exchange-rate-mode:${ownerId || 'anon'}`;
-const flowDisplayCurrencyStorageKey = ownerId => `flow-display-currency:${ownerId || 'anon'}`;
-// Відкрита група списку — одна на пристрій і власника (порожньо — усі згорнуті).
-const flowOpenGroupStorageKey = ownerId => `flow-open-group:${ownerId || 'anon'}`;
-const flowOpenSectionStorageKey = ownerId => `flow-open-section:${ownerId || 'anon'}`;
-const flowIncomeGroupStorageKey = ownerId => `flow-income-group:${ownerId || 'anon'}`;
-const flowFilterStorageKey = ownerId => `flow-filter:${ownerId || 'anon'}`;
-const flowCustomUsdRateStorageKey = ownerId => `flow-custom-usd-rate:${ownerId || 'anon'}`;
-
-export const flattenFlowEntriesFromBackend = flowNode => {
-  if (!flowNode || typeof flowNode !== 'object') return [];
-
-  const isDateKey = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
-  const parseAmountTriplet = rawAmount => {
-    const normalizedRawAmount = String(rawAmount || '').trim();
-    if (!normalizedRawAmount) {
-      return { amountUah: '', amountUsd: '', amountEur: '', customUsdRate: '' };
-    }
-
-    if (isFormulaFlowAmount(normalizedRawAmount)) {
-      return { amountUah: normalizedRawAmount, amountUsd: '', amountEur: '', customUsdRate: '' };
-    }
-
-    const slashSeparated = normalizedRawAmount
-      .split('/')
-      .map(item => String(item || '').trim());
-
-    if (slashSeparated.length >= 2) {
-      const [amountUah = '', amountUsd = '', amountEur = '', customUsdRate = ''] = slashSeparated;
-      return { amountUah, amountUsd, amountEur, customUsdRate };
-    }
-
-    const spaceSeparated = normalizedRawAmount
-      .split(/\s+/)
-      .map(item => String(item || '').trim())
-      .filter(Boolean);
-
-    if (spaceSeparated.length >= 3) {
-      const [amountUah = '', amountUsd = '', amountEur = '', customUsdRate = ''] = spaceSeparated;
-      return { amountUah, amountUsd, amountEur, customUsdRate };
-    }
-
-    return { amountUah: normalizedRawAmount, amountUsd: '', amountEur: '', customUsdRate: '' };
-  };
-
-  const parseEntryValue = value => {
-    if (typeof value === 'string') {
-      const [amount = '', ...rest] = String(value || '').split('_');
-      const { amountUah, amountUsd, amountEur, customUsdRate } = parseAmountTriplet(amount);
-      return {
-        amount: amountUah,
-        amountUsd,
-        amountEur,
-        ...parseStoredFlowCustomRate(customUsdRate),
-        description: rest.join('_'),
-      };
-    }
-
-    if (value && typeof value === 'object') {
-      const rawAmount = value.amount ?? value.sum ?? value.value ?? '';
-      const {
-        amountUah,
-        amountUsd: amountUsdFromAmount,
-        amountEur: amountEurFromAmount,
-        customUsdRate: customUsdRateFromAmount,
-      } = parseAmountTriplet(rawAmount);
-      const storedRate = parseStoredFlowCustomRate(customUsdRateFromAmount);
-      return {
-        amount: amountUah,
-        amountUsd: value.amountUsd ?? value.usd ?? amountUsdFromAmount,
-        amountEur: value.amountEur ?? value.eur ?? amountEurFromAmount,
-        customUsdRate: value.customUsdRate ?? value.usdRate ?? storedRate.customUsdRate,
-        customEurRate: value.customEurRate ?? value.eurRate ?? storedRate.customEurRate,
-        description: value.description ?? value.comment ?? value.note ?? '',
-      };
-    }
-
-    return {
-      amount: '',
-      amountUsd: '',
-      amountEur: '',
-      customUsdRate: '',
-      customEurRate: '',
-      description: '',
-    };
-  };
-
-  const collectEntries = (node, groupPath = DEFAULT_FLOW_CATEGORY) => {
-    if (!node || typeof node !== 'object') return [];
-
-    return Object.entries(node).flatMap(([key, value]) => {
-      if (!value || typeof value !== 'object') return [];
-
-      if (isDateKey(key)) {
-        return Object.entries(value)
-          .map(([entryId, entryValue]) => {
-            const parsed = parseEntryValue(entryValue);
-            const normalizedAmount = normalizeFlowAmount(parsed.amount);
-            if (!normalizedAmount) return null;
-
-            return {
-              entryId,
-              group: normalizeCategoryPath(groupPath) || DEFAULT_FLOW_CATEGORY,
-              date: key,
-              amount: normalizedAmount,
-              amountUsd: normalizeFlowAmount(parsed.amountUsd),
-              amountEur: normalizeFlowAmount(parsed.amountEur),
-              customUsdRate: formatCustomUsdRate(parsed.customUsdRate),
-              customEurRate: formatCustomUsdRate(parsed.customEurRate),
-              description: sanitizeEntryKeyChunk(parsed.description),
-            };
-          })
-          .filter(Boolean);
-      }
-
-      const nestedGroupPath = buildCategoryPath(groupPath, key);
-      return collectEntries(value, nestedGroupPath);
-    });
-  };
-
-  return Object.entries(flowNode).flatMap(([groupPath, groupNode]) => {
-    const normalizedGroupPath = normalizeCategoryPath(groupPath) || DEFAULT_FLOW_CATEGORY;
-    return collectEntries(groupNode, normalizedGroupPath);
-  });
-};
-
-const sortRowsByDate = rows =>
-  [...rows].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-
-const sortRowsByGroupAndDate = rows =>
-  [...rows].sort((a, b) => {
-    const groupCompare = String(a.group || '').localeCompare(String(b.group || ''));
-    if (groupCompare !== 0) return groupCompare;
-    return String(a.date || '').localeCompare(String(b.date || ''));
-  });
+import {
+  DEFAULT_FLOW_CATEGORY,
+  FLOW_CURRENCY_LABEL_TITLES,
+  FLOW_CURRENCY_SIGNS,
+  FLOW_DATE_YMD_REGEX,
+  FLOW_EXCHANGE_RATE_OPTIONS,
+  FLOW_HISTORY_LABELS,
+  FLOW_TEXT_SCALES,
+  buildCategoryPath,
+  calculateFlowRowCurrencyAmount,
+  flattenFlowEntriesFromBackend,
+  flowDraftStorageKey,
+  flowFilterStorageKey,
+  flowIncomeGroupStorageKey,
+  flowLastCategoryStorageKey,
+  formatCustomUsdRate,
+  formatCustomUsdRateDisplay,
+  formatDisplayDate,
+  formatFlowAmountForClipboard,
+  formatGroupTitle,
+  getFlowAmountNumberForTotals,
+  getFlowExchangeRateModeLabel,
+  getFlowRowDisplayCurrency,
+  getValidFlowExchangeRateMode,
+  hasStoredFlowAmount,
+  normalizeCategoryPath,
+  normalizeFlowAmount,
+  parseFlowEntriesByDatesAndGroups,
+  parseFlowEntryLine,
+  resolveFlowDisplayAmount,
+  resolveFlowFallbackDate,
+  sanitizeEntryKeyChunk,
+  sortRowsByDate,
+  sortRowsByGroupAndDate,
+  splitCategoryPath,
+  sumFlowCategoryTotals,
+  todayYmd,
+} from 'utils/flowEntries';
 
 export const FlowManager = ({ ownerId, viewerId }) => {
   const navigate = useNavigate();
@@ -853,12 +219,22 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   const [renamingCategory, setRenamingCategory] = useState({ source: '', draft: '' });
   const [exchangeRates, setExchangeRates] = useState(null);
   const [historicalRatesByDate, setHistoricalRatesByDate] = useState({});
-  const [exchangeRateMode, setExchangeRateMode] = useState(DEFAULT_FLOW_EXCHANGE_RATE_MODE);
   const [isExchangeModalOpen, setIsExchangeModalOpen] = useState(false);
-  const [currencyLabelMode, setCurrencyLabelMode] = useState(DEFAULT_FLOW_CURRENCY_LABEL_MODE);
-  const [customUsdRate, setCustomUsdRate] = useState('');
-  const [customUsdRateDraft, setCustomUsdRateDraft] = useState('');
   const [isCustomUsdRateFocused, setIsCustomUsdRateFocused] = useState(false);
+  const {
+    exchangeRateMode,
+    setExchangeRateMode,
+    currencyLabelMode,
+    selectCurrencyLabelMode,
+    textScale,
+    stepTextScale,
+    customUsdRate,
+    setCustomUsdRate,
+    customUsdRateDraft,
+    setCustomUsdRateDraft,
+  } = useFlowDeviceSettings(ownerId);
+  const { openGroup, openSection, rememberOpenGroup, toggleGroup, toggleSection } =
+    useFlowOpenState(ownerId);
   const entryInputRef = useRef(null);
   const categoryInputRef = useRef(null);
   const subCategoryInputRef = useRef(null);
@@ -990,18 +366,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     if (prev > 0 && pendingFlowWrites === 0) reload();
   }, [pendingFlowWrites, reload]);
 
-  const [deviceOnline, setDeviceOnline] = useState(
-    () => typeof navigator === 'undefined' || navigator.onLine !== false
-  );
-  useEffect(() => {
-    const update = () => setDeviceOnline(navigator.onLine !== false);
-    window.addEventListener('online', update);
-    window.addEventListener('offline', update);
-    return () => {
-      window.removeEventListener('online', update);
-      window.removeEventListener('offline', update);
-    };
-  }, []);
+  const deviceOnline = useDeviceOnline();
 
   // Правка лягає на екран і в памʼять пристрою одразу, ще до бази: запис
   // уже в черзі пристрою й дошлеться сам, щойно буде звʼязок.
@@ -1135,116 +500,6 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     };
   }, []);
 
-  useEffect(() => {
-    if (!ownerId) return;
-    try {
-      const savedMode = localStorage.getItem(flowExchangeRateModeStorageKey(ownerId));
-      setExchangeRateMode(getValidFlowExchangeRateMode(savedMode));
-    } catch (error) {
-      console.error('Unable to restore flow exchange rate mode from localStorage', error);
-      setExchangeRateMode(DEFAULT_FLOW_EXCHANGE_RATE_MODE);
-    }
-  }, [ownerId]);
-
-  useEffect(() => {
-    if (!ownerId) return;
-    try {
-      localStorage.setItem(flowExchangeRateModeStorageKey(ownerId), exchangeRateMode);
-    } catch (error) {
-      console.error('Unable to persist flow exchange rate mode into localStorage', error);
-    }
-  }, [exchangeRateMode, ownerId]);
-
-  useEffect(() => {
-    if (!ownerId) return;
-    try {
-      const savedCurrency = localStorage.getItem(flowDisplayCurrencyStorageKey(ownerId));
-      setCurrencyLabelMode(normalizeFlowCurrencyLabelMode(savedCurrency));
-    } catch (error) {
-      console.error('Unable to restore flow display currency from localStorage', error);
-      setCurrencyLabelMode(DEFAULT_FLOW_CURRENCY_LABEL_MODE);
-    }
-  }, [ownerId]);
-
-  const [textScale, setTextScale] = useState(1);
-  useEffect(() => {
-    if (!ownerId) return;
-    try {
-      const saved = Number(localStorage.getItem(flowTextScaleStorageKey(ownerId)));
-      const max = FLOW_TEXT_SCALES[FLOW_TEXT_SCALES.length - 1];
-      setTextScale(saved > max ? max : FLOW_TEXT_SCALES.includes(saved) ? saved : 1);
-    } catch {
-      setTextScale(1);
-    }
-  }, [ownerId]);
-  const stepTextScale = direction => {
-    const index = Math.max(0, FLOW_TEXT_SCALES.indexOf(textScale));
-    const next = FLOW_TEXT_SCALES[Math.min(FLOW_TEXT_SCALES.length - 1, Math.max(0, index + direction))];
-    setTextScale(next);
-    if (!ownerId) return;
-    try {
-      localStorage.setItem(flowTextScaleStorageKey(ownerId), String(next));
-    } catch (error) {
-      console.error('Unable to persist flow text scale into localStorage', error);
-    }
-  };
-
-  // Відкрита група — одна: друга, відкрита дотиком, згортає попередню.
-  const [openGroup, setOpenGroup] = useState('');
-  useEffect(() => {
-    if (!ownerId) return;
-    try {
-      setOpenGroup(localStorage.getItem(flowOpenGroupStorageKey(ownerId)) || '');
-    } catch {
-      setOpenGroup('');
-    }
-  }, [ownerId]);
-  const rememberOpenGroup = useCallback(group => {
-    const next = group || '';
-    setOpenGroup(next);
-    if (next) {
-      const section = topLevelFlowGroup(normalizeCategoryPath(next));
-      setOpenSection(section);
-      try {
-        if (ownerId) localStorage.setItem(flowOpenSectionStorageKey(ownerId), section);
-      } catch {
-        // памʼять розділу — зручність, не дані
-      }
-    }
-    if (!ownerId) return;
-    try {
-      localStorage.setItem(flowOpenGroupStorageKey(ownerId), next);
-    } catch (error) {
-      console.error('Unable to persist flow open group into localStorage', error);
-    }
-  }, [ownerId]);
-  const toggleGroup = group => rememberOpenGroup(openGroup === group ? '' : group);
-  // Розділ (верхня група з підгрупами) згорнутий, відкритий — один (19.11, на
-  // прохання власниці продукту: розгорнуті розділи з десятками підгруп
-  // робили список нескінченним). Відкриття підгрупи — після збереження,
-  // імпорту чи дотиком — відкриває й її розділ.
-  const [openSection, setOpenSection] = useState('');
-  useEffect(() => {
-    if (!ownerId) return;
-    try {
-      const saved = localStorage.getItem(flowOpenSectionStorageKey(ownerId));
-      const fallback = topLevelFlowGroup(normalizeCategoryPath(localStorage.getItem(flowOpenGroupStorageKey(ownerId)) || ''));
-      setOpenSection(saved ?? fallback ?? '');
-    } catch {
-      setOpenSection('');
-    }
-  }, [ownerId]);
-  const rememberOpenSection = useCallback(section => {
-    const next = section || '';
-    setOpenSection(next);
-    if (!ownerId) return;
-    try {
-      localStorage.setItem(flowOpenSectionStorageKey(ownerId), next);
-    } catch (error) {
-      console.error('Unable to persist flow open section into localStorage', error);
-    }
-  }, [ownerId]);
-  const toggleSection = section => rememberOpenSection(openSection === section ? '' : section);
 
   // Група надходжень і фільтр угорі (17.11, на прохання власниці продукту).
   // Чіп надходжень стоїть завжди, навіть коли записів у групі ще немає: з
@@ -1421,46 +676,6 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     toast.success(`Записи без дати оплати перенесено на 1 січня: ${count}`);
   }, [applyFlowWrite, canWriteFlow, flowData, loadedFromServer, ownerId]);
 
-  // Валюта міток: без валюти, одна ($ чи €) або дві. Ключ той самий, що й у
-  // колишнього перемикача $/€ — збережений вибір лишається.
-  const selectCurrencyLabelMode = mode => {
-    const nextCurrency = normalizeFlowCurrencyLabelMode(mode);
-    setCurrencyLabelMode(nextCurrency);
-    if (!ownerId) return;
-    try {
-      localStorage.setItem(flowDisplayCurrencyStorageKey(ownerId), nextCurrency);
-    } catch (error) {
-      console.error('Unable to persist flow display currency into localStorage', error);
-    }
-  };
-
-  useEffect(() => {
-    if (!ownerId) return;
-    try {
-      const savedRate = localStorage.getItem(flowCustomUsdRateStorageKey(ownerId));
-      const formattedRate = formatCustomUsdRate(savedRate);
-      setCustomUsdRate(formattedRate);
-      setCustomUsdRateDraft(formattedRate);
-    } catch (error) {
-      console.error('Unable to restore custom Flow USD rate from localStorage', error);
-      setCustomUsdRate('');
-      setCustomUsdRateDraft('');
-    }
-  }, [ownerId]);
-
-  useEffect(() => {
-    if (!ownerId) return;
-    try {
-      const formattedRate = formatCustomUsdRate(customUsdRate);
-      if (formattedRate) {
-        localStorage.setItem(flowCustomUsdRateStorageKey(ownerId), formattedRate);
-      } else {
-        localStorage.removeItem(flowCustomUsdRateStorageKey(ownerId));
-      }
-    } catch (error) {
-      console.error('Unable to persist custom Flow USD rate into localStorage', error);
-    }
-  }, [customUsdRate, ownerId]);
 
   useEffect(() => {
     if (!ownerId) return;
@@ -1680,9 +895,11 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     setRenamingCategory({ source: '', draft: '' });
   };
 
-  const submitCategoryRename = async category => {
+  // `target` і `mergeConfirmed` приносить підтвердження злиття: після модалки
+  // назва береться з неї, а не з поля, яке тим часом могли змінити.
+  const submitCategoryRename = async (category, { target, mergeConfirmed = false } = {}) => {
     const normalizedSource = normalizeCategoryPath(category);
-    const normalizedTarget = normalizeCategoryPath(renamingCategory.draft);
+    const normalizedTarget = normalizeCategoryPath(target ?? renamingCategory.draft);
     const sourcePrefix = `${normalizedSource}/`;
 
     if (!normalizedSource || !normalizedTarget) {
@@ -1695,13 +912,24 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       return;
     }
 
-    const targetExists = allGroups.includes(normalizedTarget);
-    if (targetExists) {
-      const shouldMerge = window.confirm(
-        `Група "${normalizedTarget}" вже існує. Об’єднати "${normalizedSource}" в "${normalizedTarget}"?`
-      );
-      if (!shouldMerge) return;
+    // Злиття з наявною групою — та сама модалка, що й видалення групи, з
+    // кількістю записів, які переїдуть (20.11). Тут стояв `window.confirm`:
+    // на телефоні системне вікно іншого вигляду, без жодного числа, і з ним
+    // Escape закривав шторку груп, а не питання.
+    if (!mergeConfirmed && allGroups.includes(normalizedTarget)) {
+      const { count, totalUah } = summarizeCategoryRows(normalizedSource);
+      setConfirmState({
+        type: 'merge',
+        row: null,
+        rowKey: null,
+        category: normalizedSource,
+        target: normalizedTarget,
+        count,
+        totalUah,
+      });
+      return;
     }
+    const targetExists = allGroups.includes(normalizedTarget);
 
     try {
       if (
@@ -1752,8 +980,8 @@ export const FlowManager = ({ ownerId, viewerId }) => {
       cancelCategoryRename();
       toast.success(
         (targetExists
-          ? `Групи об’єднано в "${normalizedTarget}"`
-          : `Групу перейменовано на "${normalizedTarget}"`) + offlineSuffix()
+          ? `Групи обʼєднано в «${normalizedTarget}»`
+          : `Групу перейменовано на «${normalizedTarget}»`) + offlineSuffix()
       );
     } catch (error) {
       console.error('Unable to rename flow category', error);
@@ -1923,9 +1151,9 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   const openClearConfirm = () => setConfirmState({ type: 'clear', row: null, rowKey: null });
   // Видалення групи знімає й усі її записи та підгрупи — одним дотиком «×»
   // поруч із назвою, тож без підтвердження пропадали сотні рядків.
-  const openCategoryDeleteConfirm = category => {
-    const normalized = normalizeCategoryPath(category);
-    if (!normalized) return;
+  // Записи групи разом з її підгрупами: скільки й на яку суму — для
+  // підтверджень видалення й злиття.
+  function summarizeCategoryRows(normalized) {
     const prefix = `${normalized}/`;
     const rows = flowRows.filter(row => {
       const group = normalizeCategoryPath(row.group);
@@ -1934,7 +1162,12 @@ export const FlowManager = ({ ownerId, viewerId }) => {
     const totalUah = rows.reduce((sum, row) => sum + getFlowAmountNumberForTotals({
       amount: row.amount, row, exchangeRateMode, exchangeRates, historicalRatesByDate, customUsdRate,
     }), 0);
-    setConfirmState({ type: 'category', row: null, rowKey: null, category: normalized, count: rows.length, totalUah });
+    return { count: rows.length, totalUah };
+  }
+  const openCategoryDeleteConfirm = category => {
+    const normalized = normalizeCategoryPath(category);
+    if (!normalized) return;
+    setConfirmState({ type: 'category', row: null, rowKey: null, category: normalized, ...summarizeCategoryRows(normalized) });
   };
 
   // Імпорт з файлу: файл стає тим самим текстом, що й у полі введення, і
@@ -2008,6 +1241,12 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   };
 
   const handleConfirm = async () => {
+    if (confirmState.type === 'merge') {
+      const { category, target } = confirmState;
+      closeConfirm();
+      await submitCategoryRename(category, { target, mergeConfirmed: true });
+      return;
+    }
     if (confirmState.type === 'category') {
       const { category } = confirmState;
       closeConfirm();
@@ -2949,6 +2188,10 @@ export const FlowManager = ({ ownerId, viewerId }) => {
                             }
                             if (e.key === 'Escape') {
                               e.preventDefault();
+                              // Питання про злиття закривається разом з
+                              // правкою назви: інакше воно висіло б над
+                              // уже скасованою назвою.
+                              if (confirmState.type === 'merge') closeConfirm();
                               cancelCategoryRename();
                             }
                           }}
@@ -3163,59 +2406,14 @@ export const FlowManager = ({ ownerId, viewerId }) => {
         </Backdrop>
       )}
 
-      {confirmState.type && (
-        <Backdrop $center onClick={closeConfirm}>
-          <Dialog role="dialog" onClick={e => e.stopPropagation()}>
-            <h2>
-              {confirmState.type === 'category'
-                ? `Видалити групу «${confirmState.category}»?`
-                : confirmState.type === 'import'
-                  ? `Імпортувати ${importState?.count || 0} записів?`
-                  : confirmState.type === 'clear'
-                    ? 'Видалити весь Flow?'
-                    : 'Видалити запис?'}
-            </h2>
-            {confirmState.type === 'category' && (
-              <DialogText data-testid="flow-category-delete-summary">
-                {confirmState.count > 0
-                  ? `Разом із нею зникнуть ${confirmState.count} записів на ${formatFlowMoney(confirmState.totalUah)} грн, зокрема в її підгрупах. Відновити їх не можна.`
-                  : 'Записів у групі немає.'}
-              </DialogText>
-            )}
-            {confirmState.type === 'clear' && (
-              <DialogText>Усі групи й записи зникнуть. Відновити їх не можна.</DialogText>
-            )}
-            {confirmState.type === 'import' && importState && (
-              <DialogText data-testid="flow-import-summary">
-                <span>Файл «{importState.fileName}»</span>
-                {Object.entries(importState.groups).map(([group, count]) => (
-                  <span key={group}>{formatGroupTitle(group)}: {count}</span>
-                ))}
-                {importState.undatedCount > 0 && (
-                  <span>Без дати: {importState.undatedCount} — стануть на 1 січня</span>
-                )}
-                {importState.skippedCount > 0 && <span>Пропущено без суми: {importState.skippedCount}</span>}
-                <span>Записи додаються до наявних, а не замінюють їх.</span>
-              </DialogText>
-            )}
-            {confirmState.type === 'row' && confirmState.row && (
-              <DialogText>
-                {formatDisplayDate(confirmState.row.date)} · {formatFlowMoney(rowAmountNumber(confirmState.row))} грн · {confirmState.row.description}
-              </DialogText>
-            )}
-            <DialogActions>
-              <GhostBtn type="button" onClick={closeConfirm}>Скасувати</GhostBtn>
-              {confirmState.type === 'import' ? (
-                <PrimaryBtn type="button" onClick={handleConfirm} disabled={isImporting} data-testid="flow-import-confirm">
-                  {isImporting ? 'Імпортую…' : 'Імпортувати'}
-                </PrimaryBtn>
-              ) : (
-                <DangerBtn type="button" onClick={handleConfirm}>Видалити</DangerBtn>
-              )}
-            </DialogActions>
-          </Dialog>
-        </Backdrop>
-      )}
+      <FlowConfirmDialog
+        state={confirmState}
+        importState={importState}
+        isImporting={isImporting}
+        rowAmountNumber={rowAmountNumber}
+        onCancel={closeConfirm}
+        onConfirm={handleConfirm}
+      />
     </Wrap>
   );
 };

@@ -1,205 +1,168 @@
-import { TextDecoder, TextEncoder } from 'util';
+// Сценарії екрана Flow, які вже ламались (20.11). Чисті функції розбору й
+// сум перевіряє `utils/flowEntries.test.js`; тут — рендер і дотики.
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { writeFlowCache } from 'utils/flowOfflineWrites';
 
-global.TextDecoder = TextDecoder;
-global.TextEncoder = TextEncoder;
+const CONFIG_FNS = [
+  'deleteFlowEntry',
+  'deleteFlowCategory',
+  'renameFlowCategory',
+  'applyFlowRawPatch',
+  'clearFlowData',
+  'fetchFlowData',
+  'fetchMonobankUahExchangeRates',
+  'fetchNbuUahExchangeRatesByDate',
+  'resolveFlowExchangeRatesForMode',
+  'saveFlowEntry',
+  'updateFlowEntry',
+];
 
-jest.mock('./config', () => ({
-  deleteFlowEntry: jest.fn(),
-  deleteFlowCategory: jest.fn(),
-  renameFlowCategory: jest.fn(),
-  clearFlowData: jest.fn(),
-  fetchFlowData: jest.fn(),
-  fetchMonobankUahExchangeRates: jest.fn(),
-  fetchNbuUahExchangeRatesByDate: jest.fn(),
-  resolveFlowExchangeRatesForMode: jest.fn(),
-  saveFlowEntry: jest.fn(),
-  updateFlowEntry: jest.fn(),
-}));
-
-const {
-  calculateFlowRowCurrencyAmount,
-  flattenFlowEntriesFromBackend,
-  getFlowRowDisplayCurrency,
-  parseFlowEntryLine,
-  sumFlowCategoryTotals,
-} = require('./FlowManager');
-
-describe('parseFlowEntryLine', () => {
-  it('keeps dollar-only formulas as a persistable USD formula amount', () => {
-    expect(parseFlowEntryLine('=$ lunch', '2026-07-07')).toMatchObject({
-      amount: '=USD',
-      description: 'lunch',
-    });
+// Фабрика моку піднімається над імпортами, тож функції створює вона сама,
+// а тест бере їх з модуля.
+jest.mock('./config', () => {
+  const fns = {};
+  [
+    'deleteFlowEntry', 'deleteFlowCategory', 'renameFlowCategory', 'applyFlowRawPatch', 'clearFlowData',
+    'fetchFlowData', 'fetchMonobankUahExchangeRates', 'fetchNbuUahExchangeRatesByDate',
+    'resolveFlowExchangeRatesForMode', 'saveFlowEntry', 'updateFlowEntry',
+  ].forEach(name => {
+    fns[name] = jest.fn();
   });
-
-  it('keeps division operators inside formula amounts while parsing a line', () => {
-    expect(parseFlowEntryLine('08.07.2026 =(86000-(86000*6/100)-100) Лена', '2026-07-07')).toMatchObject({
-      date: '2026-07-08',
-      amount: '=(86000-(86000*6/100)-100)',
-      description: 'Лена',
-    });
-  });
-
-  it('keeps division operators inside persisted object formula amounts', () => {
-    expect(
-      flattenFlowEntriesFromBackend({
-        general: {
-          '2026-07-08': {
-            abc: {
-              amount: '=(86000-(86000*6/100)-100)',
-              description: 'Лена',
-            },
-          },
-        },
-      })[0]
-    ).toMatchObject({
-      date: '2026-07-08',
-      amount: '=(86000-(86000*6/100)-100)',
-      description: 'Лена',
-    });
-  });
-
-  it('accepts currency tokens after localized formula operators', () => {
-    expect(parseFlowEntryLine('=100×USD rent', '2026-07-07')).toMatchObject({
-      amount: '=100×USD',
-      description: 'rent',
-    });
-    expect(parseFlowEntryLine('=100÷EUR coffee', '2026-07-07')).toMatchObject({
-      amount: '=100÷EUR',
-      description: 'coffee',
-    });
-  });
+  return { auth: { currentUser: { uid: 'owner-1' } }, ...fns };
+});
+jest.mock('./flowOwnersRemote', () => ({ listFlowOwners: () => Promise.resolve([]) }));
+jest.mock('./ProfileDotsMenu', () => ({ ProfileDotsMenu: () => null }));
+jest.mock('react-hot-toast', () => {
+  const toast = jest.fn();
+  toast.success = jest.fn();
+  toast.error = jest.fn();
+  return { __esModule: true, default: toast };
 });
 
-describe('calculateFlowRowCurrencyAmount', () => {
-  const { resolveFlowExchangeRatesForMode } = require('./config');
+// eslint-disable-next-line import/first
+import { FlowManager } from './FlowManager';
+// eslint-disable-next-line import/first
+import * as config from './config';
 
-  it('converts negative amounts the same way as positive ones', () => {
-    resolveFlowExchangeRatesForMode.mockReturnValue({ usd: 40, eur: 44 });
-    const options = {
-      currency: 'usd',
-      exchangeRateMode: 'mono',
-      exchangeRates: { usd: 40, eur: 44 },
-      historicalRatesByDate: {},
-      customUsdRate: '',
-    };
-    expect(calculateFlowRowCurrencyAmount({ ...options, row: { amount: '500' } })).toBe(12.5);
-    expect(calculateFlowRowCurrencyAmount({ ...options, row: { amount: '-500' } })).toBe(-12.5);
+const mockConfig = Object.fromEntries(CONFIG_FNS.map(name => [name, config[name]]));
+
+const OWNER = 'owner-1';
+// «Дім» має записи лише в підгрупах — саме таку групу колись не вдавалось обрати.
+const DATA = {
+  'Дім': {
+    'Оренда': { '2026-11-03': { e1: '16500_оренда листопад' } },
+    'Комуналка': { '2026-11-12': { e2: '2910_опалення' } },
+  },
+  'Продукти': { '2026-11-02': { e3: '1240_Сільпо' }, '2026-11-06': { e4: '860_ринок' } },
+};
+
+const renderFlow = () => render(
+  <MemoryRouter>
+    <FlowManager ownerId={OWNER} viewerId={OWNER} />
+  </MemoryRouter>,
+);
+
+const openPicker = () => fireEvent.click(screen.getByTestId('flow-entry-group'));
+const picker = () => screen.getByTestId('flow-group-picker');
+
+describe('FlowManager', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    Object.values(mockConfig).forEach(fn => fn.mockReset());
+    mockConfig.fetchFlowData.mockResolvedValue(JSON.parse(JSON.stringify(DATA)));
+    mockConfig.fetchMonobankUahExchangeRates.mockResolvedValue(null);
+    mockConfig.resolveFlowExchangeRatesForMode.mockReturnValue(null);
+    mockConfig.saveFlowEntry.mockResolvedValue({ patch: {}, delivered: Promise.resolve() });
+    mockConfig.renameFlowCategory.mockResolvedValue({ patch: {}, delivered: Promise.resolve() });
+    writeFlowCache(OWNER, JSON.parse(JSON.stringify(DATA)));
+    jest.spyOn(window, 'confirm').mockImplementation(() => true);
   });
 
-  it('keeps stored negative currency amounts when no rate is available', () => {
-    resolveFlowExchangeRatesForMode.mockReturnValue(null);
-    const options = {
-      currency: 'usd',
-      exchangeRateMode: 'mono',
-      exchangeRates: null,
-      historicalRatesByDate: {},
-      customUsdRate: '',
-    };
-    expect(calculateFlowRowCurrencyAmount({ ...options, row: { amount: '-500', amountUsd: '-12.5' } })).toBe(-12.5);
-    expect(calculateFlowRowCurrencyAmount({ ...options, row: { amount: '500', amountUsd: '12.5' } })).toBe(12.5);
-  });
-});
-
-describe('per-row exchange rate currency', () => {
-  const { resolveFlowExchangeRatesForMode } = require('./config');
-
-  it('reads a trailing rate as dollars unless EUR or € follows the number', () => {
-    expect(parseFlowEntryLine('07.10.2026 27981.29 кавоварка курс 50.75', '2026-10-07')).toMatchObject({
-      amount: '27981.29',
-      description: 'кавоварка',
-      customUsdRate: '50.75',
-      customEurRate: '',
-    });
-    ['курс 50.75 EUR', 'курс 50.75€', 'курс 50,75 €', 'курс EUR 50.75', 'курс євро 50.75', '€ 50.75', '1€=50.75', '50.75 грн/€'].forEach(
-      suffix => {
-        expect(parseFlowEntryLine(`07.10.2026 27981.29 кавоварка ${suffix}`, '2026-10-07')).toMatchObject({
-          description: 'кавоварка',
-          customUsdRate: '',
-          customEurRate: '50.75',
-        });
-      }
-    );
-    expect(parseFlowEntryLine('07.10.2026 100 кава курс 41 $', '2026-10-07')).toMatchObject({
-      customUsdRate: '41',
-      customEurRate: '',
-    });
+  afterEach(() => {
+    window.confirm.mockRestore();
   });
 
-  it('applies a EUR rate only to euros and counts every currency from the raw UAH amount', () => {
-    resolveFlowExchangeRatesForMode.mockReturnValue({ usd: 40, eur: 50 });
-    const options = {
-      exchangeRateMode: 'mono',
-      exchangeRates: { usd: 40, eur: 50 },
-      historicalRatesByDate: {},
-      customUsdRate: '',
-    };
-    const eurRow = { amount: '1015', customEurRate: '50.75' };
-    const usdRow = { amount: '1015', customUsdRate: '40.6' };
+  it('asks about merging groups in its own dialog with the count, not window.confirm', async () => {
+    renderFlow();
+    await waitFor(() => expect(mockConfig.fetchFlowData).toHaveBeenCalled());
+    openPicker();
+    fireEvent.click(within(picker()).getByText('Керувати'));
+    fireEvent.click(within(picker()).getByLabelText('Перейменувати групу Продукти'));
+    const input = within(picker()).getByDisplayValue('Продукти');
+    fireEvent.change(input, { target: { value: 'Дім' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
 
-    expect(getFlowRowDisplayCurrency(eurRow)).toBe('eur');
-    expect(getFlowRowDisplayCurrency(usdRow)).toBe('usd');
-    // Курс, вписаний у рядок, — свідомий вибір валюти, і перемикач угорі його не перебиває.
-    expect(getFlowRowDisplayCurrency(eurRow, 'usd')).toBe('eur');
-    expect(getFlowRowDisplayCurrency(usdRow, 'eur')).toBe('usd');
-    expect(getFlowRowDisplayCurrency({ amount: '1015' }, 'eur')).toBe('eur');
-    expect(getFlowRowDisplayCurrency({ amount: '1015' }, 'usd')).toBe('usd');
-    expect(getFlowRowDisplayCurrency({ amount: '1015' })).toBe('usd');
-    expect(calculateFlowRowCurrencyAmount({ ...options, row: eurRow, currency: 'eur' })).toBe(20);
-    expect(calculateFlowRowCurrencyAmount({ ...options, row: eurRow, currency: 'usd' })).toBe(25.375);
-    expect(calculateFlowRowCurrencyAmount({ ...options, row: usdRow, currency: 'usd' })).toBe(25);
-    expect(calculateFlowRowCurrencyAmount({ ...options, row: usdRow, currency: 'eur' })).toBe(20.3);
+    const summary = await screen.findByTestId('flow-category-merge-summary');
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(summary.textContent).toContain('2 записи');
+    expect(summary.textContent).toMatch(/2\s100 грн/);
+    expect(mockConfig.renameFlowCategory).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('flow-category-merge-confirm'));
+    await waitFor(() => expect(mockConfig.renameFlowCategory).toHaveBeenCalledWith(expect.objectContaining({
+      ownerId: OWNER,
+      fromGroupPath: 'Продукти',
+      toGroupPath: 'Дім',
+    })));
   });
 
-  it('restores the EUR rate marker from the stored amount', () => {
-    const rows = flattenFlowEntriesFromBackend({
-      general: {
-        '2026-10-07': {
-          a: '1015 25.38 20.00 50.75EUR_кава',
-          b: '1015 25.00 20.30 40.60_чай',
-        },
-      },
-    });
-    expect(rows.find(row => row.entryId === 'a')).toMatchObject({ customUsdRate: '', customEurRate: '50.75' });
-    expect(rows.find(row => row.entryId === 'b')).toMatchObject({ customUsdRate: '40.6', customEurRate: '' });
-  });
-});
+  it('closes the merge question first on Escape and leaves the group sheet open', async () => {
+    renderFlow();
+    await waitFor(() => expect(mockConfig.fetchFlowData).toHaveBeenCalled());
+    openPicker();
+    fireEvent.click(within(picker()).getByText('Керувати'));
+    fireEvent.click(within(picker()).getByLabelText('Перейменувати групу Продукти'));
+    const input = within(picker()).getByDisplayValue('Продукти');
+    fireEvent.change(input, { target: { value: 'Дім' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await screen.findByTestId('flow-category-merge-summary');
 
-describe('sumFlowCategoryTotals', () => {
-  const { resolveFlowExchangeRatesForMode } = require('./config');
-
-  // Група «Мама» на проді: 0 грн, 0 $ і водночас 2.48 €, бо рядок 07.10 мав
-  // власний курс 50.75 €, а решта йшли за поточним 50.98.
-  it('keeps a per-row rate out of the group total', () => {
-    resolveFlowExchangeRatesForMode.mockReturnValue({ usd: 41.6, eur: 50.98 });
-    const rows = [
-      { group: 'Мама', date: '2026-10-01', amount: '2221.73' },
-      { group: 'Мама', date: '2026-10-02', amount: '48439' },
-      { group: 'Мама', date: '2026-10-07', amount: '27981.29', customEurRate: '50.75' },
-      { group: 'Мама', date: '2026-10-08', amount: '20000' },
-      { group: 'Мама', date: '2026-10-24', amount: '3104' },
-      { group: 'Мама', date: '2026-10-29', amount: '-101746.02' },
-    ];
-    const options = { exchangeRateMode: 'current', exchangeRates: { usd: 41.6, eur: 50.98 }, historicalRatesByDate: {}, customUsdRate: '' };
-    const totals = sumFlowCategoryTotals({ ...options, rows }).Мама;
-    expect(totals.uah).toBeCloseTo(0, 6);
-    expect(totals.usd).toBeCloseTo(0, 6);
-    expect(totals.eur).toBeCloseTo(0, 6);
-    // Еквівалент самого рядка курс і далі тримає.
-    expect(calculateFlowRowCurrencyAmount({ ...options, row: rows[2], currency: 'eur' })).toBeCloseTo(551.36, 2);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('flow-category-merge-summary')).toBeNull();
+    expect(screen.getByTestId('flow-group-picker')).toBeTruthy();
+    expect(mockConfig.renameFlowCategory).not.toHaveBeenCalled();
   });
 
-  it('still totals at the global dollar rate', () => {
-    resolveFlowExchangeRatesForMode.mockReturnValue({ usd: 40, eur: 50 });
-    const totals = sumFlowCategoryTotals({
-      rows: [{ group: 'g', date: '2026-10-01', amount: '1000' }, { group: 'g', date: '2026-10-02', amount: '600', customUsdRate: '30' }],
-      exchangeRateMode: 'current',
-      exchangeRates: { usd: 40, eur: 50 },
-      historicalRatesByDate: {},
-      customUsdRate: '32',
-    }).g;
-    expect(totals.uah).toBe(1600);
-    expect(totals.usd).toBeCloseTo(50, 6);
-    expect(totals.eur).toBeCloseTo(32, 6);
+  it('does not save the typed entry into the old group when the group chip is tapped', async () => {
+    localStorage.setItem(`flow-last-category:${OWNER}`, 'Дім/Оренда');
+    renderFlow();
+    await waitFor(() => expect(mockConfig.fetchFlowData).toHaveBeenCalled());
+    const entry = screen.getByTestId('flow-entry-input');
+    fireEvent.focus(entry);
+    fireEvent.change(entry, { target: { value: '450 хліб' } });
+
+    const chip = screen.getByTestId('flow-entry-group');
+    fireEvent.pointerDown(chip);
+    fireEvent.blur(entry);
+    fireEvent.click(chip);
+    await screen.findByTestId('flow-group-picker');
+    expect(mockConfig.saveFlowEntry).not.toHaveBeenCalled();
+
+    // «Продукти» без підгруп: вибір завершено, шторка закривається й запис іде вже туди.
+    fireEvent.click(within(picker()).getByText('Продукти'));
+    await waitFor(() => expect(mockConfig.saveFlowEntry).toHaveBeenCalledTimes(1));
+    expect(mockConfig.saveFlowEntry.mock.calls[0][0]).toMatchObject({ groupPath: 'Продукти', amount: '450' });
+  });
+
+  it('lets a group whose entries all sit in subgroups be chosen and kept', async () => {
+    localStorage.setItem(`flow-last-category:${OWNER}`, 'Продукти');
+    renderFlow();
+    await waitFor(() => expect(mockConfig.fetchFlowData).toHaveBeenCalled());
+    openPicker();
+    fireEvent.click(within(picker()).getByText('Дім'));
+    fireEvent.click(within(picker()).getByText('Готово'));
+    await waitFor(() => expect(screen.queryByTestId('flow-group-picker')).toBeNull());
+    expect(screen.getByTestId('flow-entry-group').textContent).toContain('Дім');
+    expect(screen.getByTestId('flow-entry-group').textContent).not.toContain('Продукти');
+  });
+
+  it('restores the text scale and currency labels from the device on the first render', async () => {
+    localStorage.setItem(`flow-text-scale:${OWNER}`, '1.3');
+    localStorage.setItem(`flow-display-currency:${OWNER}`, 'eur');
+    renderFlow();
+    expect(screen.getByTestId('flow-scaled-content').style.zoom).toBe('1.3');
+    await waitFor(() => expect(mockConfig.fetchFlowData).toHaveBeenCalled());
+    expect(localStorage.getItem(`flow-display-currency:${OWNER}`)).toBe('eur');
   });
 });
