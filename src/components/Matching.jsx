@@ -8415,7 +8415,10 @@ const Matching = () => {
       ]).catch(() => {});
     }
     const fullProfile = getStoredFullProfile(user.userId);
-    const contactSource = fullProfile ? { ...user, ...fullProfile } : user;
+    // Власні доповнення читача накладаються ще раз поверх анкети: рядок їх
+    // уже показує (`withOwnEdits`), а анкета зі сховища — канонічна, і без
+    // цього контакт мав би інше імʼя, ніж картка на екрані.
+    const contactSource = fullProfile ? withOwnEdits({ ...user, ...fullProfile }) : user;
     const name = buildContactCardName(contactSource);
     // Фото й місто (20.11): мініатюра головного фото стрічки — та сама, що
     // в рядку, тож зазвичай уже в кеші браузера.
@@ -8447,7 +8450,7 @@ const Matching = () => {
     // Android кладе файл у завантаження мовчки, і без підказки людина не
     // знала, що контакт ще треба відкрити й додати.
     toast.success(uiText('Файл контакту завантажено — відкрийте його, щоб додати в телефон', language), { duration: 6000 });
-  }, [ensureFullProfile, handleRowContactAction, language]);
+  }, [ensureFullProfile, handleRowContactAction, language, withOwnEdits]);
 
   // Доповнення картки — це не редагування анкети, і кнопка ця не адмінська:
   // адмін пише в саму картку (олівцем, `/edit`), а решта читачів складають

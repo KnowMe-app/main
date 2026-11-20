@@ -248,6 +248,7 @@ test('тижневий звіт: тиждень проти попередньо�
     ev('profile_published', NOON - DAY / 2, { actor: 'a', card: 'a' }),
     ev('like', NOON - DAY, { card: DONOR, cardInfo: { name: 'Марія', role: 'ed' } }),
     ev('contact_tap', NOON - DAY, { card: DONOR, cardInfo: { name: 'Марія', role: 'ed' } }),
+    ev('contact_saved', NOON - DAY, { card: DONOR, cardInfo: { name: 'Марія', role: 'ed' } }),
     ev('search', NOON - DAY, { meta: { query: 'Ольга' } }),
     ev('like', NOON - 9 * DAY, { card: 'x' }),
     ev('like', NOON - 10 * DAY, { card: 'y' }),
@@ -256,7 +257,8 @@ test('тижневий звіт: тиждень проти попередньо�
   assert.match(html, /Тиждень 08\.11–15\.11/);
   assert.match(html, /Лайк: <b>1<\/b> \(↓1\)/);
   assert.match(html, /нових анкет 2 → з них опубліковано 1 \(50%\)/);
-  assert.match(html, /Марія \(донор ооцитів\) — ❤️ 1 · 📞 1/);
+  assert.match(html, /Марія \(донор ооцитів\) — ❤️ 1 · 📞 2/);
+  assert.match(push.body, /контактів: 2/);
   assert.match(html, /«ольга» ×1/);
   assert.ok(html.length < 4096);
   assert.equal(push.kind, 'admin-weekly');

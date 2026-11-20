@@ -554,7 +554,7 @@ const buildWeeklyReport = (events, now, { searchQueries = null } = {}) => {
   const push = {
     kind: 'admin-weekly',
     title: `📈 ${title}`,
-    body: `Діяли людей: ${actors} · нових анкет: ${created} · лайків: ${count(thisWeek, 'like')} · контактів: ${count(thisWeek, 'contact_tap')}`,
+    body: `Діяли людей: ${actors} · нових анкет: ${created} · лайків: ${count(thisWeek, 'like')} · контактів: ${count(thisWeek, 'contact_tap') + count(thisWeek, 'contact_saved')}`,
     url: NOTIFICATIONS_URL,
   };
   return { html, push };

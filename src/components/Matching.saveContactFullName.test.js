@@ -9,7 +9,7 @@ const matchingSource = () => fs.readFileSync(path.join(__dirname, 'Matching.jsx'
 describe('контакт у телефон бере імʼя з повної анкети', () => {
   const source = matchingSource();
   const start = source.indexOf('const handleRowSaveContact = React.useCallback(');
-  const handler = source.slice(start, source.indexOf('}, [ensureFullProfile, handleRowContactAction, language]);', start));
+  const handler = source.slice(start, source.indexOf('}, [ensureFullProfile, handleRowContactAction, language, withOwnEdits]);', start));
 
   it('спершу дочитує повну анкету, з межею очікування', () => {
     expect(start).toBeGreaterThan(-1);
@@ -18,7 +18,7 @@ describe('контакт у телефон бере імʼя з повної а�
   });
 
   it('складає імʼя з анкети поверх проєкції, а не з самої проєкції', () => {
-    expect(handler).toContain('const contactSource = fullProfile ? { ...user, ...fullProfile } : user;');
+    expect(handler).toContain('const contactSource = fullProfile ? withOwnEdits({ ...user, ...fullProfile }) : user;');
     expect(handler).toContain('buildContactCardName(contactSource)');
     expect(handler).not.toMatch(/const name = buildContactCardName\(user\);/);
   });
