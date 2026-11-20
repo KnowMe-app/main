@@ -1,5 +1,5 @@
 import { buildFlowImportText } from './flowImport';
-import { parseFlowEntryLine } from 'components/FlowManager';
+import { parseFlowEntryLine } from 'utils/flowEntries';
 
 const sample = {
   schemaVersion: 1,
