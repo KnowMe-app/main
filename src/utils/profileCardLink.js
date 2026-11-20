@@ -94,6 +94,22 @@ const foldVCardLine = line => {
   return parts.join('\r\n');
 };
 
+/*
+ * Номер для vCard. «+» дописується лише туди, де код країни видно: номер
+ * міжнародного вигляду без плюса (380…, 11+ цифр і не з нуля). Місцевий
+ * «0501112233» лишається як є — з плюсом він став би неіснуючим міжнародним
+ * номером, а набрати його з книжки вже не вийшло б. Ту саму форму без плюса
+ * приймає рядок контактів (`ProfileRow.phoneFormat.test.js`), тож вгадувати
+ * країну тут не можна.
+ */
+export const normalizeVCardPhone = phone => {
+  const raw = String(phone || '').replace(/[^\d+]/g, '');
+  if (!raw) return '';
+  if (raw.startsWith('+')) return `+${raw.slice(1).replace(/\+/g, '')}`;
+  const digits = raw.replace(/\+/g, '');
+  return digits.length >= 11 && !digits.startsWith('0') ? `+${digits}` : digits;
+};
+
 /**
  * vCard 3.0 з того, що читач і так бачить на екрані: номери, пошта, посилання
  * каналів, головне фото й місто. Опису анкети тут немає (на відміну від
@@ -127,8 +143,7 @@ export const buildReaderVCard = ({
   }
   const seenPhones = new Set();
   phones.forEach(phone => {
-    const digits = String(phone || '').replace(/[^\d+]/g, '');
-    const normalized = digits.startsWith('+') ? digits : (digits ? `+${digits}` : '');
+    const normalized = normalizeVCardPhone(phone);
     if (normalized.length < 6 || seenPhones.has(normalized)) return;
     seenPhones.add(normalized);
     lines.push(`TEL;TYPE=CELL:${normalized}`);

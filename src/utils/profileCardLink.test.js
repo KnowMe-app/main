@@ -1,4 +1,5 @@
 import {
+  normalizeVCardPhone,
   buildContactCardName,
   buildContactFileName,
   withSharedCardTimeout,
@@ -109,5 +110,15 @@ describe('контакт телефону: фото й місто', () => {
 
   it('не base64 у фото не потрапляє', () => {
     expect(build({ name: 'KM', phones: ['380501112233'], photoJpegBase64: '<script>' })).not.toContain('PHOTO');
+  });
+
+  it('keeps local phone numbers dialable instead of inventing a country code', () => {
+    expect(normalizeVCardPhone('0501112233')).toBe('0501112233');
+    expect(normalizeVCardPhone('050 111-22-33')).toBe('0501112233');
+    expect(normalizeVCardPhone('380501112233')).toBe('+380501112233');
+    expect(normalizeVCardPhone('+38 (050) 111 22 33')).toBe('+380501112233');
+    const vcard = buildReaderVCard({ name: 'KM X', phones: ['0501112233'] });
+    expect(vcard).toContain('TEL;TYPE=CELL:0501112233');
+    expect(vcard).not.toContain('+0501112233');
   });
 });
