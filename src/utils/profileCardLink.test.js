@@ -1,5 +1,7 @@
 import {
   buildContactCardName,
+  buildContactFileName,
+  withSharedCardTimeout,
   buildProfileCardPath,
   buildProfileCardUrl,
   buildReaderVCard,
@@ -64,5 +66,19 @@ describe('profileCardLink', () => {
     await expect(shareProfileCardLink({ url: 'u', nav: { clipboard: { writeText } } })).resolves.toBe('copied');
     expect(writeText).toHaveBeenCalledWith('u');
     await expect(shareProfileCardLink({ url: 'u', nav: {} })).resolves.toBe('failed');
+  });
+
+  it('names the vCard file in Latin so the browser keeps the extension', () => {
+    expect(buildContactFileName('KM Вікторія Ш.')).toBe('KM_Viktoriya_Sh.vcf');
+    expect(buildContactFileName('KM 李')).toBe('KnowMe_contact.vcf');
+  });
+
+  it('turns a hanging read into a timeout, not into "card not found"', async () => {
+    jest.useFakeTimers();
+    const pending = withSharedCardTimeout(new Promise(() => {}), 50);
+    jest.advanceTimersByTime(60);
+    await expect(pending).rejects.toMatchObject({ code: 'timeout' });
+    jest.useRealTimers();
+    await expect(withSharedCardTimeout(Promise.resolve({ a: 1 }), 50)).resolves.toEqual({ a: 1 });
   });
 });

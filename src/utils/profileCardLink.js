@@ -126,9 +126,23 @@ export const buildReaderVCard = ({
 
 // Імʼя файлу — латиницею: Chromium відкидає `download` з кирилицею й називає
 // файл «download» без розширення, тож телефон не впізнавав би в ньому контакт.
-// Імʼя самого контакту в книжці дає `FN` усередині файлу, а не назва файлу.
-const contactFileName = name => {
-  const safe = String(name || '')
+// Кирилиця транслітерується (інакше всі файли звались би однаково), а імʼя
+// самого контакту в книжці дає `FN` усередині файлу.
+const FILE_NAME_LATIN = {
+  а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', є: 'ye', ж: 'zh', з: 'z',
+  и: 'y', і: 'i', ї: 'yi', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p',
+  р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch',
+  ь: '', ю: 'yu', я: 'ya', ё: 'yo', ы: 'y', э: 'e', ъ: '',
+};
+const transliterateForFileName = value => Array.from(String(value || '')).map(char => {
+  const lower = char.toLowerCase();
+  const mapped = FILE_NAME_LATIN[lower];
+  if (mapped === undefined) return char;
+  return char !== lower && mapped ? mapped[0].toUpperCase() + mapped.slice(1) : mapped;
+}).join('');
+
+export const buildContactFileName = name => {
+  const safe = transliterateForFileName(name)
     .replace(/[^A-Za-z0-9 _-]+/g, '')
     .trim()
     .replace(/\s+/g, '_')
@@ -147,7 +161,7 @@ export const downloadReaderVCard = ({ vcard, name, doc = typeof document !== 'un
   const url = URL.createObjectURL(blob);
   const link = doc.createElement('a');
   link.href = url;
-  link.download = contactFileName(name);
+  link.download = buildContactFileName(name);
   link.rel = 'noopener';
   doc.body.appendChild(link);
   link.click();
@@ -187,3 +201,18 @@ export const shareProfileCardLink = async ({
   }
   return 'failed';
 };
+
+/**
+ * Відповідь бази з межею часу: без мережі `get` не падає, а висить, і
+ * посилання стояло б на «Відкриваю…» без кінця. `timeout` — окремий
+ * результат, а не «картки немає»: збій мережі не мусить читатись як
+ * «анкету приховали».
+ */
+export const SHARED_CARD_READ_TIMEOUT_MS = 10000;
+export const withSharedCardTimeout = (promise, ms = SHARED_CARD_READ_TIMEOUT_MS) => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { code: 'timeout' })), ms);
+  Promise.resolve(promise).then(
+    value => { clearTimeout(timer); resolve(value); },
+    error => { clearTimeout(timer); reject(error); },
+  );
+});

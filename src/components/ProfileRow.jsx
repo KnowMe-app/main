@@ -76,6 +76,7 @@ import { NoteClearButton, NoteFieldRow, NoteLane, NoteLaneHead, PublishDot, Shar
 import { isMatchingCardPublished, isMatchingSummaryCard, MATCHING_CARD_REVIEW_FLAG_FIELD } from '../utils/matchingCardIndex';
 import { resolveFeedPhoto } from '../utils/photoThumbs';
 import { isOwnProfileDraftCard } from '../utils/profileVisibilityScope';
+import { isFeedDateExplicitlyDenied } from '../utils/matchingSearchResultOrder';
 import { SectionToggle } from './programs/ProgramsView';
 
 // Чернетку з видачі пошуку несе той самий прапорець `create`, що й власну, —
@@ -385,6 +386,7 @@ export const ContactLinks = ({ entries, language, onContactAction, onSaveContact
           as="button"
           type="button"
           data-testid="contact-save-vcard"
+          $action
           title={uiText('Зберегти в контакти телефону', language)}
           aria-label={uiText('Зберегти в контакти телефону', language)}
           onClick={() => onSaveContact(entries)}
@@ -1925,7 +1927,11 @@ const ProfileRow = ({
                 контактів: посилання з id картки, отримувач бачить лише те, що
                 йому дають правила (`utils/profileCardLink`). Чернетки й
                 урізаної картки немає кому показати. */}
-            {onShare && !preview && !isLimited && !isViewerOwnDraft(user) && (
+            {/* Сховану анкету й «лише для вподобаних» отримувач однаково не
+                побачить — кнопка обіцяла б посилання, яке відповідає
+                «недоступна». */}
+            {onShare && !preview && !isLimited && !isViewerOwnDraft(user)
+              && !isFeedDateExplicitlyDenied(user) && user?.[LIKED_AUDIENCE_CARD_FLAG] !== true && (
               <S.RowActionButton
                 type="button"
                 data-testid="row-share-action"

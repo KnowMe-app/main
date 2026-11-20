@@ -947,6 +947,14 @@ export const ContactIconLink = styled.a`
 
   /* Дзвінок лишається головною дією блока, але має той самий компактний
    * розмір, що й решта контактів. */
+  /* Дія над контактом («зберегти в книжку»), а не ще один канал: відступ і
+   * пунктирна рамка, щоб значок не читався як месенджер. */
+  ${({ $action }) => $action && css`
+    margin-left: 6px;
+    border-style: dashed;
+    color: var(--matching-accent, var(--km-accent, #C9600F));
+  `}
+
   ${({ $primary }) => $primary && css`
     color: #FFFFFF;
     background: var(--matching-accent, var(--km-accent, #C9600F));

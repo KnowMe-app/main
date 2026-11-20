@@ -178,6 +178,7 @@ const classifyPostponeWrite = ({ cardId, before, after, now }) => {
 const CONTACT_CHANNEL_LABELS = Object.freeze({
   phone: 'дзвінок', call: 'дзвінок', telegram: 'Telegram', viber: 'Viber', whatsapp: 'WhatsApp',
   instagram: 'Instagram', facebook: 'Facebook', email: 'пошта', tiktok: 'TikTok',
+  vcard: 'збережено в контакти телефону',
 });
 
 /** Дотик до контакту: лічильник `contactViews/{читач}/{картка}/count` виріс. */
