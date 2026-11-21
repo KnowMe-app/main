@@ -124,6 +124,14 @@ import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 
 import InfoModal, { ModalTitle, ModalText, ModalActionRow, ModalDangerButton, ModalGhostButton } from './InfoModal';
 
 import { color, coloredCard, uiTokens } from './styles';
+import { useProfileEditHistory } from 'hooks/useProfileEditHistory';
+import {
+  ProfileHistoryButtons,
+  TopButtons,
+  TopButtonsGroup,
+  TopToggleButton,
+  TopToggleStatus,
+} from './ProfileEditTopBar';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
 import { KmIconButton } from './styles/knowme';
 //import { formatPhoneNumber } from './inputValidations';
@@ -486,81 +494,6 @@ export const ExitButton = styled(SubmitButton)`
 // The "⋮" menu stays on this same row as the other action buttons (never its own row), but as
 // its own flex item pushed to the far right by justify-content: space-between - so it reads as
 // separate from the button group on the left instead of sharing its cluster.
-const TopButtons = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  background: var(--km-card);
-  padding: 6px 0;
-
-  @media (max-width: 768px) {
-    background: ${uiTokens.colors.pageBg};
-  }
-`;
-
-const TopButtonsGroup = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  flex-wrap: wrap;
-`;
-
-const EditActionButton = styled.button`
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  background: none;
-  color: var(--km-accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    color 0.2s ease,
-    transform 0.2s ease;
-
-  &:hover {
-    background-color: var(--km-accent-light);
-    border-color: var(--km-accent-mid);
-    color: var(--km-accent);
-    transform: translateY(-1px);
-  }
-
-  &:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-    transform: none;
-  }
-`;
-
-const EditActionIcon = styled.svg`
-  width: 20px;
-  height: 20px;
-`;
-
-const DownloadSizeToastToggleButton = styled(EditActionButton)`
-  width: auto;
-  min-width: 40px;
-  padding: 0 10px;
-  gap: 6px;
-  color: var(--km-accent);
-  background-color: ${({ $active }) => ($active ? 'var(--km-accent-light)' : 'transparent')};
-  border-color: ${({ $active }) => ($active ? 'var(--km-accent-mid)' : 'transparent')};
-  font-size: 13px;
-  font-weight: 700;
-`;
-
-const DownloadSizeToastStatus = styled.span`
-  font-size: 11px;
-  font-weight: 700;
-`;
-
 // const iconMap = {
 //   user: <FaUser style={{ color: 'orange' }} />,
 //   mail: <FaMailBulk style={{ color: 'orange' }} />,
@@ -1196,51 +1129,6 @@ const applyDeletedKeysToPayload = (payload, deletedKeys = []) => {
 };
 
 export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
-  const cloneProfileState = useCallback(profileState => JSON.parse(JSON.stringify(profileState || {})), []);
-  const toComparableHistoryState = useCallback(profileState => {
-    if (!profileState || typeof profileState !== 'object') return {};
-    const comparable = { ...profileState };
-    delete comparable.lastAction;
-    return comparable;
-  }, []);
-  const areHistorySnapshotsEqual = useCallback(
-    (left, right) => JSON.stringify(toComparableHistoryState(left)) === JSON.stringify(toComparableHistoryState(right)),
-    [toComparableHistoryState],
-  );
-  const registerHistorySnapshot = useCallback(
-    snapshotState => {
-      if (!snapshotState?.userId) return;
-
-      const history = editHistoryRef.current;
-
-      if (history.userId !== snapshotState.userId) {
-        editHistoryRef.current = {
-          userId: snapshotState.userId,
-          current: cloneProfileState(snapshotState),
-          undoStack: [],
-          redoStack: [],
-        };
-        historyNavigationRef.current = false;
-        setHistoryVersion(prev => prev + 1);
-      } else if (!history.current) {
-        history.current = cloneProfileState(snapshotState);
-        historyNavigationRef.current = false;
-        setHistoryVersion(prev => prev + 1);
-      } else if (!areHistorySnapshotsEqual(history.current, snapshotState)) {
-        if (!historyNavigationRef.current) {
-          history.undoStack.push(cloneProfileState(history.current));
-          history.redoStack = [];
-          setHistoryVersion(prev => prev + 1);
-        }
-        history.current = cloneProfileState(snapshotState);
-        historyNavigationRef.current = false;
-      } else if (historyNavigationRef.current) {
-        historyNavigationRef.current = false;
-      }
-    },
-    [areHistorySnapshotsEqual, cloneProfileState],
-  );
-
   const SEARCH_KEY_INDEX_OPTIONS = [
     { key: 'blood', label: 'blood' },
     { key: 'maritalStatus', label: 'maritalStatus' },
@@ -1595,14 +1483,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       return nextState;
     });
   }, [logProfileSnapshotUpdate]);
-  const [, setHistoryVersion] = useState(0);
-  const editHistoryRef = useRef({
-    userId: null,
-    current: null,
-    undoStack: [],
-    redoStack: [],
-  });
-  const historyNavigationRef = useRef(false);
+  // «Назад / Вперед» правок картки — спільна з `/edit/:userId` історія.
+  const {
+    registerSnapshot: registerHistorySnapshot,
+    takeUndo: takeUndoProfileChange,
+    takeRedo: takeRedoProfileChange,
+    canUndo: canUndoChanges,
+    canRedo: canRedoChanges,
+  } = useProfileEditHistory(state);
   const isEditingRef = useRef(false);
   const previousListStateRef = useRef(null);
   const skipInitialEmptyUrlProfileClearRef = useRef(
@@ -5794,37 +5682,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   }, [location.key, location.pathname, location.search, navigate, setSearch, setState, state?.userId]);
   backToPreviousListRef.current = handleBackToPreviousList;
 
-  useEffect(() => {
-    if (!state?.userId) {
-      editHistoryRef.current = {
-        userId: null,
-        current: null,
-        undoStack: [],
-        redoStack: [],
-      };
-      setHistoryVersion(prev => prev + 1);
-      return;
-    }
-
-    const history = editHistoryRef.current;
-
-    if (history.userId !== state.userId) {
-      editHistoryRef.current = {
-        userId: state.userId,
-        current: cloneProfileState(state),
-        undoStack: [],
-        redoStack: [],
-      };
-      setHistoryVersion(prev => prev + 1);
-      return;
-    }
-
-    if (!history.current) {
-      history.current = cloneProfileState(state);
-      setHistoryVersion(prev => prev + 1);
-    }
-  }, [cloneProfileState, state]);
-
   const handleTopBlockSubmitHistorySnapshot = useCallback(
     submittedState => {
       if (!submittedState || typeof submittedState !== 'object') return;
@@ -5833,38 +5690,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     [registerHistorySnapshot],
   );
 
-  const handleUndoProfileChanges = async () => {
-    if (!state?.userId) return;
-    const history = editHistoryRef.current;
-    if (!history.undoStack.length) return;
-
-    const previous = history.undoStack.pop();
-    history.redoStack.push(cloneProfileState(history.current));
-    history.current = cloneProfileState(previous);
-    historyNavigationRef.current = true;
-    setState(previous);
-    setUsers(prev => ({ ...prev, [previous.userId]: previous }));
-    setHistoryVersion(prev => prev + 1);
-    await handleSubmit(previous);
+  const applyHistoryStep = async target => {
+    if (!target) return;
+    setState(target);
+    setUsers(prev => ({ ...prev, [target.userId]: target }));
+    await handleSubmit(target);
   };
-
-  const handleRedoProfileChanges = async () => {
-    if (!state?.userId) return;
-    const history = editHistoryRef.current;
-    if (!history.redoStack.length) return;
-
-    const next = history.redoStack.pop();
-    history.undoStack.push(cloneProfileState(history.current));
-    history.current = cloneProfileState(next);
-    historyNavigationRef.current = true;
-    setState(next);
-    setUsers(prev => ({ ...prev, [next.userId]: next }));
-    setHistoryVersion(prev => prev + 1);
-    await handleSubmit(next);
-  };
-
-  const canUndoChanges = Boolean(state?.userId) && editHistoryRef.current.undoStack.length > 0;
-  const canRedoChanges = Boolean(state?.userId) && editHistoryRef.current.redoStack.length > 0;
+  const handleUndoProfileChanges = () => applyHistoryStep(takeUndoProfileChange());
+  const handleRedoProfileChanges = () => applyHistoryStep(takeRedoProfileChange());
   return (
     <Container>
       <InnerContainer>
@@ -5872,58 +5705,14 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
           <TopButtons>
             <TopButtonsGroup>
             {state.userId && (
-              <>
-                <EditActionButton
-                  type="button"
-                  onClick={handleUndoProfileChanges}
-                  title="Відмінити останню зміну"
-                  aria-label="Відмінити останню зміну"
-                  disabled={!canUndoChanges}
-                >
-                  <EditActionIcon viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path
-                      d="M9 7L5 11L9 15"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M6 11H14C17.314 11 20 13.686 20 17"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </EditActionIcon>
-                </EditActionButton>
-                <EditActionButton
-                  type="button"
-                  onClick={handleRedoProfileChanges}
-                  title="Відмінити відміну"
-                  aria-label="Повернути зміну"
-                  disabled={!canRedoChanges}
-                >
-                  <EditActionIcon viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path
-                      d="M15 7L19 11L15 15"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M18 11H10C6.686 11 4 13.686 4 17"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </EditActionIcon>
-                </EditActionButton>
-              </>
+              <ProfileHistoryButtons
+                onUndo={handleUndoProfileChanges}
+                onRedo={handleRedoProfileChanges}
+                canUndo={canUndoChanges}
+                canRedo={canRedoChanges}
+              />
             )}
-            <DownloadSizeToastToggleButton
+            <TopToggleButton
               type="button"
               $active={extendedMode}
               aria-pressed={extendedMode}
@@ -5932,9 +5721,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               onClick={handleExtendedModeToggle}
             >
               🧭
-              <DownloadSizeToastStatus>{extendedMode ? 'EXT' : 'STD'}</DownloadSizeToastStatus>
-            </DownloadSizeToastToggleButton>
-            <DownloadSizeToastToggleButton
+              <TopToggleStatus>{extendedMode ? 'EXT' : 'STD'}</TopToggleStatus>
+            </TopToggleButton>
+            <TopToggleButton
               type="button"
               $active={downloadSizeToastsEnabled}
               aria-pressed={downloadSizeToastsEnabled}
@@ -5951,8 +5740,8 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               onClick={handleDownloadSizeToastsToggle}
             >
               📦
-              <DownloadSizeToastStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</DownloadSizeToastStatus>
-            </DownloadSizeToastToggleButton>
+              <TopToggleStatus>{downloadSizeToastsEnabled ? 'ON' : 'OFF'}</TopToggleStatus>
+            </TopToggleButton>
             </TopButtonsGroup>
             <KmIconButton
               type="button"
