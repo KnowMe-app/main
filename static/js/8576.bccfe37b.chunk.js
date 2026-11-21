@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkknowme_app=self.webpackChunkknowme_app||[]).push([[8576],{8576:(e,a,n)=>{n.r(a),n.d(a,{ADMIN_CARD_RETURN_BACK_STATE:()=>s,default:()=>c});n(2791);var t=n(7689),r=n(184);const s="adminCardReturnBack",c=()=>{const e=(0,t.UO)().userId,a=(0,t.TH)(),n=Boolean(a.key)&&"default"!==a.key,c="?".concat(new URLSearchParams({userId:e||""}).toString());return(0,r.jsx)(t.Fg,{to:{pathname:"/",search:c},replace:!0,state:n?{[s]:e}:null})}}}]);
+//# sourceMappingURL=8576.bccfe37b.chunk.js.map
