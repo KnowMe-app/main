@@ -1,0 +1,57 @@
+name: Profile field fill stats
+
+# Статистика заповнення полів анкети (`scripts/profileFieldFillStats.mjs`):
+# скільки карток має поточне значення кожного поля — усього й за роллю. Форма
+# картки адміна ставить за нею чіпи «Додати поле» (найчастіші першими) і
+# читає її з вузла `profileFieldStats` (`components/profileFieldStatsRemote.js`).
+#
+# Вивантаження вузлів лягають лише у файли runner-а: репозиторій публічний, і
+# в журнал ідуть самі кількості. Раз на тиждень і вручну.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+
+concurrency:
+  group: profile-field-stats
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: webringitapp
+
+jobs:
+  stats:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Check secret
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: '[ -n "$SA" ] || { echo "::error::Немає секрету FIREBASE_SERVICE_ACCOUNT"; exit 1; }'
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Export profile nodes
+        run: |
+          mkdir -p "$RUNNER_TEMP/dump"
+          for node in matchingCards profileDetails profileContacts profileWorkflow profileTechnical; do
+            npx --yes firebase-tools@15.34.0 database:get "/$node" \
+              --project "$PROJECT_ID" --non-interactive -o "$RUNNER_TEMP/dump/$node.json" > /dev/null
+          done
+          [ -s "$RUNNER_TEMP/dump/matchingCards.json" ] || { echo "::error::Порожнє вивантаження matchingCards"; exit 1; }
+
+      - name: Build and write stats
+        run: |
+          node scripts/profileFieldFillStats.mjs "$RUNNER_TEMP/dump" "$RUNNER_TEMP/stats.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          npx --yes firebase-tools@15.34.0 database:set /profileFieldStats "$RUNNER_TEMP/stats.json" \
+            --project "$PROJECT_ID" --non-interactive --force > /dev/null
+          echo "profileFieldStats записано" >> "$GITHUB_STEP_SUMMARY"

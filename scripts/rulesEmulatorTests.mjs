@@ -2607,6 +2607,31 @@ await it('писати перелік не може ніхто з клієнті
   }
 });
 
+describe('статистика заповнення полів анкети');
+
+// `profileFieldStats` = { generatedAt, totals, fields } — лічильники за назвою
+// поля для чіпів «Додати поле» у формі картки адміна. Пише лише workflow
+// `profile-field-stats.yml` сервісним акаунтом; читають адміни й інспектор.
+await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), 'profileFieldStats'), {
+  generatedAt: '2026-11-21',
+  totals: { all: 10 },
+  fields: { name: { all: 9 } },
+}));
+
+await it('статистику полів читають адміни й інспектор, а звичайний читач — ні', async () => {
+  await assertSucceeds(get(ref(db(SUPERADMIN), 'profileFieldStats')));
+  await assertSucceeds(get(ref(db(INSPECTOR), 'profileFieldStats')));
+  for (const uid of [ORDINARY_VIEWER, MATCHING_VIEWER, CARD]) {
+    await assertFails(get(ref(db(uid), 'profileFieldStats')));
+  }
+});
+
+await it('писати статистику полів не може ніхто з клієнтів, навіть адмін', async () => {
+  for (const uid of [SUPERADMIN, INSPECTOR, ORDINARY_VIEWER]) {
+    await assertFails(set(ref(db(uid), 'profileFieldStats/fields/name'), { all: 1 }));
+  }
+});
+
 describe('сповіщення адміна — налаштування й журнал активності');
 
 // Налаштування сповіщень пише й читає лише сам адмін (і інспектор — свої,

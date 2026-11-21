@@ -61,6 +61,10 @@
       ".read": "auth != null",
       ".write": false
     },
+    "profileFieldStats": {
+      ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+      ".write": false
+    },
     "matchingCardChanges": {
       ".indexOn": ".value",
       ".read": "auth != null && query.orderByValue == true && query.startAt != null && query.limitToFirst <= 2000",
