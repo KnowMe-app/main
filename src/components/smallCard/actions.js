@@ -16,6 +16,18 @@ import { CARD_LIST_FILTER } from "utils/cardListQuery";
 // списку, каже сам екран (`isDateInRange` = `cardListKeepsValue`).
 const removesCardWhenDateLeavesList = currentFilter => currentFilter === CARD_LIST_FILTER;
 
+// Стерте поле лишається в стані порожнім рядком, а не зникає ключем.
+//
+// Картка списку на `AddNewProfile` складається з кешу й стану
+// (`{ ...cachedCard, ...currentUser }`). Поки стирання знімало ключ зі стану,
+// кеш підставляв стару дату назад: на кожну літеру `onChange` (без запису, тож
+// кеш не чіпався) дата знову малювалась у полі, а `onBlur` бачив уже її, а не
+// порожнє поле, і записував стару дату ще раз. Стерти «Get in touch» у списку
+// не виходило ніяк — лише у відкритій окремо картці, де кешу в злитті немає.
+// Порожній рядок перекриває кеш, а в базу стирання й далі йде як `null`
+// (`removeKeys` у `handleSubmit`).
+const CLEARED_FIELD_VALUE = '';
+
 export const handleChange = (
   setUsers,
   setState,
@@ -43,6 +55,18 @@ export const handleChange = (
     if (k === 'lastDelivery') return formatDateToServer(v);
     return v;
   };
+
+  // Одиночна картка (`state`) і список (`users`) живуть поруч в одному екрані.
+  // Правка картки зі списку не мусить лягати в іншу, відкриту окремо картку:
+  // поки `setState` писав у будь-який стан, дата дзвінка однієї картки
+  // переїжджала в чужу відкриту анкету.
+  const belongsToAnotherCard = prev =>
+    Boolean(
+      prev
+      && typeof prev === 'object'
+      && userId
+      && (prev.userId ? prev.userId !== userId : typeof setUsers === 'function'),
+    );
 
   const invokeSetUsers = updater => {
     if (typeof setUsers === 'function') {
@@ -81,13 +105,14 @@ export const handleChange = (
         ? { ...formatted, lastAction: actionTimestamp }
         : formatted;
     const removeKeys = formattedEntries.filter(([k, v]) => shouldDrop(k, v)).map(([k]) => k);
+    removeKeys.forEach(key => {
+      formattedWithAction[key] = CLEARED_FIELD_VALUE;
+    });
 
     if (setState)
       setState(prev => {
+        if (belongsToAnotherCard(prev)) return prev;
         const newState = { ...prev, ...formattedWithAction };
-        removeKeys.forEach(key => {
-          delete newState[key];
-        });
         submitWithoutUsers(newState, removeKeys, clickFlag);
         return newState;
       });
@@ -98,9 +123,6 @@ export const handleChange = (
     const applyUpdates = prevState => {
       return updateUserInState(prevState, userId, currentUser => {
         const updatedUser = { ...currentUser, ...formattedWithAction };
-        removeKeys.forEach(key => {
-          delete updatedUser[key];
-        });
         clickFlag &&
           submitWithHistory(
             { ...updatedUser, userId: userId || updatedUser.userId },
@@ -127,14 +149,12 @@ export const handleChange = (
   const removalKeys =
     (key === 'lastDelivery' || key === 'getInTouch') && !newValue ? [key] : [];
 
+  const stateValue = removalKeys.length ? CLEARED_FIELD_VALUE : newValue;
+
   if (setState)
     setState(prev => {
-      const newState = { ...prev };
-      if ((key === 'lastDelivery' || key === 'getInTouch') && !newValue) {
-        delete newState[key];
-      } else {
-        newState[key] = newValue;
-      }
+      if (belongsToAnotherCard(prev)) return prev;
+      const newState = { ...prev, [key]: stateValue };
       if (click) {
         newState.lastAction = Date.now();
       }
@@ -152,13 +172,7 @@ export const handleChange = (
   if (setState) {
     invokeSetUsers(prevState => {
       return updateUserInState(prevState, userId, currentUser => {
-        const updatedUser =
-          (key === 'lastDelivery' || key === 'getInTouch') && !newValue
-            ? (() => {
-                const { [key]: _, ...rest } = currentUser;
-                return rest;
-              })()
-            : { ...currentUser, [key]: newValue };
+        const updatedUser = { ...currentUser, [key]: stateValue };
         if (click) {
           updatedUser.lastAction = Date.now();
         }
@@ -173,13 +187,7 @@ export const handleChange = (
   } else {
     invokeSetUsers(prevState => {
       return updateUserInState(prevState, userId, currentUser => {
-        const updatedUser =
-          (key === 'lastDelivery' || key === 'getInTouch') && !newValue
-            ? (() => {
-                const { [key]: _, ...rest } = currentUser;
-                return rest;
-              })()
-            : { ...currentUser, [key]: newValue };
+        const updatedUser = { ...currentUser, [key]: stateValue };
         if (click) {
           updatedUser.lastAction = Date.now();
         }
@@ -518,9 +526,22 @@ export const handleSubmit = async (userData, condition, removeKeys = []) => {
         )
       );
 
-  const removalTargets = Array.isArray(removeKeys)
-    ? removeKeys.map(key => String(key)).filter(Boolean)
-    : [];
+  // Явно стерта дата — це видалення, навіть коли викликач не назвав її в
+  // `removeKeys`: ключ є, а значення порожнє чи `undefined` (`fieldLastCycle`
+  // так знімає дату дзвінка, коли картка виходить із вагітності). Без цього
+  // порожнє значення просто випадало з запису: база й кеш тримали стару дату,
+  // і картка списку показувала її знову.
+  const implicitRemovals = ['getInTouch', 'lastDelivery'].filter(key =>
+    Object.prototype.hasOwnProperty.call(userData || {}, key)
+    && (userData[key] === undefined || userData[key] === null || userData[key] === ''),
+  );
+
+  const removalTargets = [
+    ...new Set([
+      ...(Array.isArray(removeKeys) ? removeKeys.map(key => String(key)) : []),
+      ...implicitRemovals,
+    ]),
+  ].filter(Boolean);
 
   const backendPayload = { ...basePayload };
   const nestedRemovalPayload = {};
