@@ -47,7 +47,8 @@ const renderForm = (props = {}) => render(
 const blockToggles = () => screen.getAllByRole('button', { expanded: true })
   .concat(screen.getAllByRole('button', { expanded: false }));
 
-const blockNames = () => blockToggles().map(toggle => toggle.textContent.replace(/\d+$/, ''));
+// Лічильник блоку — «N» або «заповнено з усіх» («2 з 19»), коли є чіпи.
+const blockNames = () => blockToggles().map(toggle => toggle.textContent.replace(/(\d+ з )?\d+$/, ''));
 
 const fieldNames = () => screen.getAllByRole('textbox').map(input => input.getAttribute('name'));
 
@@ -128,7 +129,9 @@ describe('блоки форми анкети', () => {
   });
 
   it('згортає блок і лишає вибір на наступне відкриття форми', () => {
-    const { unmount } = renderForm();
+    // Телефон у картці є: відсутнє поле стоїть чіпом «Додати поле», а не полем.
+    const withPhone = { state: { userId: 'AC00042', name: 'Анна', phone: '+380501110011' } };
+    const { unmount } = renderForm(withPhone);
 
     const contactsToggle = blockToggles().find(toggle => toggle.textContent.includes('profileContacts'));
     expect(hasField('phone')).toBe(true);
@@ -137,8 +140,21 @@ describe('блоки форми анкети', () => {
     expect(hasField('phone')).toBe(false);
 
     unmount();
-    renderForm();
+    renderForm(withPhone);
     expect(hasField('phone')).toBe(false);
+  });
+
+  it('відсутнє поле — чіп «Додати поле», а стерте (порожній рядок) — поле', () => {
+    renderForm({ state: { userId: 'AC00042', name: 'Анна', surname: ['Коваленко', ''] } });
+
+    // Рядки масиву версій звуться `поле-індекс`: стерта остання версія — теж рядок.
+    expect(fieldNames()).toEqual(expect.arrayContaining(['surname-0', 'surname-1']));
+    expect(hasField('phone')).toBe(false);
+    const phoneChip = screen.getAllByRole('button').find(button => button.textContent === '+Телефон');
+    expect(phoneChip).toBeTruthy();
+
+    fireEvent.click(phoneChip);
+    expect(hasField('phone')).toBe(true);
   });
 
   it('розгортає згорнутий блок, коли в ньому є чужа пропозиція', () => {

@@ -23,7 +23,8 @@ describe('ProfileForm technical settings', () => {
     expect(source).not.toContain('TechnicalFieldsTitle');
     expect(source).toContain('aria-expanded={block.isOpen}');
     expect(source).toContain('onClick={() => toggleProfileFormBlock(block.id)}');
-    expect(source).toContain('<ReadOnlyFieldset disabled={Boolean(block.readOnly)}><FieldsGrid>{block.fields.map(');
+    // Полем малюється лише те, що в картці є; решта — чіпами «Додати поле».
+    expect(source).toContain('<ReadOnlyFieldset disabled={Boolean(block.readOnly)}><FieldsGrid>{block.shownFields.map(');
   });
 
   it('зводить блоки за шляхом, тож той самий вузол не малюється двічі', () => {

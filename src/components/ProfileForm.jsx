@@ -87,6 +87,8 @@ import {
   markFieldRowErased,
 } from 'utils/profileFieldRows';
 import { NestedObjectField, isNestedObjectValue } from './NestedObjectField';
+import { PROFILE_FIELD_CHIPS_VISIBLE, splitProfileFormFields } from 'utils/profileFieldChips';
+import { loadProfileFieldStats } from './profileFieldStatsRemote';
 import { ProfileDataTree } from './ProfileDataTree';
 import {
   PROFILE_DATE_FIELDS,
@@ -1099,6 +1101,43 @@ export const ProfileForm = ({
       return next;
     });
   }, []);
+  // Поля, яких у картці немає, стоять чіпами «Додати поле» (21.11, на прохання
+  // власниці продукту): форма з усіма полями була довгою, і заповнене губилось
+  // серед порожнього. Відкрите чіпом поле лишається полем до іншої картки —
+  // інакше стерте зникало б з-під пальця.
+  const [revealedProfileFields, setRevealedProfileFields] = useState(() => new Set());
+  const [expandedChipBlocks, setExpandedChipBlocks] = useState(() => new Set());
+  const [profileFieldStats, setProfileFieldStats] = useState(null);
+  const pendingFieldFocusRef = useRef('');
+  const formRootRef = useRef(null);
+  useEffect(() => {
+    setRevealedProfileFields(new Set());
+    setExpandedChipBlocks(new Set());
+  }, [state?.userId]);
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    let active = true;
+    loadProfileFieldStats().then(stats => {
+      if (active) setProfileFieldStats(stats);
+    });
+    return () => {
+      active = false;
+    };
+  }, [isAdmin]);
+  const revealProfileField = useCallback(fieldName => {
+    pendingFieldFocusRef.current = fieldName;
+    setRevealedProfileFields(previous => new Set(previous).add(fieldName));
+  }, []);
+  useEffect(() => {
+    const fieldName = pendingFieldFocusRef.current;
+    if (!fieldName) return;
+    pendingFieldFocusRef.current = '';
+    const group = formRootRef.current?.querySelector(`[data-profile-field="${String(fieldName).replace(/["\\]/g, '\\$&')}"]`);
+    const control = group?.querySelector('input:not([type="checkbox"]), textarea, select');
+    if (!group) return;
+    group.scrollIntoView?.({ block: 'center' });
+    control?.focus?.({ preventScroll: true });
+  }, [revealedProfileFields]);
   const autoAppliedOverlayForUserRef = useRef('');
   const addEmptyAdditionalFilter = useCallback(() => {
     const used = new Set(additionalRuleBuilder.map(rule => rule.key));
@@ -2800,6 +2839,8 @@ ${entries.join('\n')}`;
         .map(value => value.trim().toLowerCase())
         .filter(Boolean);
   const shouldHideFieldsForClPp = roleTokens.some(role => ['pp', 'cl'].includes(role));
+  // Ролі картки для статистики чіпів: старе `pp` — ті самі біологічні батьки.
+  const cardRolesForStats = [...new Set(roleTokens.map(role => (role === 'pp' ? 'ip' : role)))];
 
   // Поля, які форма справді показує. Перелік потрібен до рендера: з нього
   // складаються блоки, а раніше він фільтрувався просто перед `.map`.
@@ -2876,15 +2917,25 @@ ${entries.join('\n')}`;
       const fields = orderPinnedFieldsWithinBlock(block.fields);
       // Згорнутий блок не має права ховати те, чого від людини чекають: чужу
       // пропозицію, підсвічене поле, стерте оверлеєм значення.
-      const needsAttention = fields.some(field => (
-        highlightedFields.includes(field.name)
-        || deletedOverlayFields.includes(field.name)
-        || getOverlayEntriesForField(field.name).length > 0
-      ));
+      const attentionFields = fields
+        .filter(field => (
+          highlightedFields.includes(field.name)
+          || deletedOverlayFields.includes(field.name)
+          || getOverlayEntriesForField(field.name).length > 0
+        ))
+        .map(field => field.name);
+      const needsAttention = attentionFields.length > 0;
+      const { shown: shownFields, chips: chipFields } = splitProfileFormFields(fields, state, {
+        keepShown: new Set([...revealedProfileFields, ...attentionFields]),
+        stats: profileFieldStats,
+        roles: cardRolesForStats,
+      });
 
       return {
         ...block,
         fields,
+        shownFields,
+        chipFields,
         hint: block.hints.join(' '),
         isOpen: needsAttention || isProfileFormBlockOpen(openProfileFormBlocks, block.id),
       };
@@ -3066,7 +3117,7 @@ ${entries.join('\n')}`;
 
   return (
     <FormPage>
-      <FormCard>
+      <FormCard ref={formRootRef}>
       {state.userId && (
         <div
           id={state.userId}
@@ -3142,7 +3193,9 @@ ${entries.join('\n')}`;
             >
               <BlockChevron $open={block.isOpen} aria-hidden="true">▾</BlockChevron>
               <BlockNodeName>{block.label}</BlockNodeName>
-              <BlockFieldCount>{block.fields.length}</BlockFieldCount>
+              <BlockFieldCount title={block.chipFields.length ? 'заповнено з усіх полів блоку' : undefined}>
+                {block.chipFields.length ? `${block.shownFields.length} з ${block.fields.length}` : block.fields.length}
+              </BlockFieldCount>
             </BlockToggle>
             {isAdmin && block.href && (
               <BlockBackendLink
@@ -3159,7 +3212,7 @@ ${entries.join('\n')}`;
           {block.isOpen && block.hint && <BlockHint>{block.hint}</BlockHint>}
           {/* Поля без вузла збереження відкидає, тож і правити їх нема чого:
               вимкнений `fieldset` вимикає всі інпути й кнопки всередині. */}
-          {block.isOpen && <ReadOnlyFieldset disabled={Boolean(block.readOnly)}><FieldsGrid>{block.fields.map(field => {
+          {block.isOpen && <ReadOnlyFieldset disabled={Boolean(block.readOnly)}><FieldsGrid>{block.shownFields.map(field => {
           const overlayEntries = getOverlayEntriesForField(field.name);
           const hasOverlaySuggestions = overlayEntries.length > 0;
           // Поле, пришпилене до чужого блоку, називає свій справжній вузол саме
@@ -3183,7 +3236,7 @@ ${entries.join('\n')}`;
               ? formatDateToDisplay(state[field.name])
               : state[field.name] || '';
           return (
-            <FieldGroup key={field.name} $compact={COMPACT_PROFILE_FIELDS.has(field.name) && !Array.isArray(state[field.name]) && !hasOverlaySuggestions}>
+            <FieldGroup key={field.name} data-profile-field={field.name} $compact={COMPACT_PROFILE_FIELDS.has(field.name) && !Array.isArray(state[field.name]) && !hasOverlaySuggestions}>
             {foreignNodeLabel && <FieldNodeNote>{foreignNodeLabel}</FieldNodeNote>}
             <PickerContainer
               style={hasOverlaySuggestions ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
@@ -3889,7 +3942,37 @@ ${entries.join('\n')}`;
             </PickerContainer>
             </FieldGroup>
           );
-          })}</FieldsGrid></ReadOnlyFieldset>}
+          })}</FieldsGrid>
+          {block.chipFields.length > 0 && (() => {
+            const expanded = expandedChipBlocks.has(block.id);
+            const visibleChips = expanded ? block.chipFields : block.chipFields.slice(0, PROFILE_FIELD_CHIPS_VISIBLE);
+            const hiddenCount = block.chipFields.length - visibleChips.length;
+            return (
+              <FieldChipsArea data-testid="profile-field-chips">
+                <FieldChipsTitle>
+                  Додати поле
+                  {profileFieldStats && <FieldChipsNote>найчастіші першими</FieldChipsNote>}
+                </FieldChipsTitle>
+                <FieldChipsList>
+                  {visibleChips.map(field => (
+                    <FieldChip key={field.name} type="button" onClick={() => revealProfileField(field.name)}>
+                      <span aria-hidden="true">+</span>
+                      {getFieldDisplayLabel(field)}
+                    </FieldChip>
+                  ))}
+                  {hiddenCount > 0 && (
+                    <FieldChipMore
+                      type="button"
+                      onClick={() => setExpandedChipBlocks(previous => new Set(previous).add(block.id))}
+                    >
+                      Ще {hiddenCount} ▸
+                    </FieldChipMore>
+                  )}
+                </FieldChipsList>
+              </FieldChipsArea>
+            );
+          })()}
+          </ReadOnlyFieldset>}
         </TechnicalFieldsSection>
       ))}
       <KeyValueRow>
@@ -4193,6 +4276,67 @@ const BlockBackendLink = styled.a`
 `;
 
 // Рамки й відступів у `fieldset` немає: він тут лише вимикає поля блоку.
+// Чіпи «Додати поле» — заливкою без рамки, як решта вторинних контролів
+// (`--km-fill`); «Ще N» — рамкою, бо це не поле, а розгортання переліку.
+const FieldChipsArea = styled.div`
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--km-border);
+`;
+
+const FieldChipsTitle = styled.div`
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--km-text);
+  font-size: 12px;
+  font-weight: 600;
+`;
+
+const FieldChipsNote = styled.span`
+  color: var(--km-muted);
+  font-weight: 400;
+`;
+
+const FieldChipsList = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+`;
+
+const FieldChip = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 0 11px 0 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--km-fill);
+  color: var(--km-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+
+  span {
+    color: var(--km-accent);
+    font-weight: 600;
+  }
+
+  &:hover { border-color: var(--km-border); }
+  &:focus-visible { outline: 2px solid ${uiTokens.colors.borderFocus}; outline-offset: 2px; }
+  &:disabled { cursor: default; opacity: 0.6; }
+`;
+
+const FieldChipMore = styled(FieldChip)`
+  border-color: var(--km-border);
+  background: transparent;
+  color: var(--km-muted);
+`;
+
 const ReadOnlyFieldset = styled.fieldset`
   min-width: 0;
   margin: 0;
