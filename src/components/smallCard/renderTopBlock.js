@@ -2349,6 +2349,13 @@ export const TopBlock = ({
               delete nextUser.myComment;
               return nextUser;
             };
+            // Картка списку злита з кешем (`{ ...cachedCard, ...currentUser }`),
+            // тож ключ, знятий лише зі стану, кеш повертав: старий коментар
+            // знову ставав «legacy», перебивав щойно набраний текст і
+            // переносився вдруге на наступному збереженні.
+            if (cardData.userId && getCard(cardData.userId)) {
+              updateCard(cardData.userId, {}, undefined, ['myComment']);
+            }
             if (typeof setUsers === 'function') {
               setUsers(prev => updateUserInState(prev, cardData.userId, removeLegacyComment));
             }
