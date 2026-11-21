@@ -533,10 +533,31 @@ export const normalizeOverlayFields = fields => {
       return acc;
     }
 
+    // Заміна, у якої хоч один бік — список (так шар писали до розкладу
+    // масивів на `added`/`removed`), — це різниця двох наборів. Інакше
+    // `String(['A', 'B'])` давав одну пропозицію «A,B»: адмін бачив два номери
+    // склеєними в одному полі, а «ОК» записав би їх в анкету одним рядком.
+    if (('to' in change || 'from' in change) && (Array.isArray(change.to) || Array.isArray(change.from))) {
+      const toItems = uniq(normalizeArray(change.to).map(item => String(item ?? '').trim()).filter(Boolean));
+      const fromItems = uniq(normalizeArray(change.from).map(item => String(item ?? '').trim()).filter(Boolean));
+      const added = toItems.filter(item => !fromItems.includes(item));
+      const removed = fromItems.filter(item => !toItems.includes(item));
+      if (!added.length && !removed.length) return acc;
+      acc[fieldName] = {
+        ...(added.length ? { added } : {}),
+        ...(removed.length ? { removed } : {}),
+      };
+      return acc;
+    }
+
     acc[fieldName] = change;
     return acc;
   }, {});
 };
+
+// Одна зміна в тій самій формі, що й у шарі (див. `normalizeOverlayFields`):
+// журнал правок зберігає зміни як були записані, зокрема заміни зі списками.
+const normalizeOverlayChange = change => (isPlainObject(change) ? normalizeOverlayFields({ value: change }).value || {} : change);
 
 export const applyOverlayToCard = (canonical, overlayFields = {}) => {
   const merged = { ...(canonical || {}) };
@@ -664,7 +685,8 @@ export const appendOverlayHistory = async ({ cardUserId, editorUserId, action = 
 
 // Every value a change mentions, whatever shape it was stored in. Used to
 // match a settled edit against the journal entries that describe it.
-const changeValueList = change => {
+const changeValueList = rawChange => {
+  const change = normalizeOverlayChange(rawChange);
   if (!isPlainObject(change)) return [];
 
   const values = [];
@@ -679,7 +701,8 @@ const changeValueList = change => {
 // Для звірки журналу це важливо: дві послідовні правки того самого поля
 // мають спільний `from`, і звірка з ним зносила б разом із розсудженою
 // правкою ще й попередню версію, яку адмін іще не бачив.
-const changeProposalValues = change => {
+const changeProposalValues = rawChange => {
+  const change = normalizeOverlayChange(rawChange);
   if (!isPlainObject(change)) return [];
   if ('from' in change || 'to' in change) {
     const to = String(change.to ?? '').trim();
@@ -1229,7 +1252,8 @@ const canonicalValueKeys = (canonical, fieldName) => new Set(
 
 // Значення, які зміна **пропонує внести** в картку: нове значення заміни або
 // дописане в масив.
-const proposedChangeValues = change => {
+const proposedChangeValues = rawChange => {
+  const change = normalizeOverlayChange(rawChange);
   if (!isPlainObject(change)) return [];
   if ('to' in change || 'from' in change) {
     const to = String(change.to ?? '').trim();

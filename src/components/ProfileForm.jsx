@@ -637,6 +637,11 @@ const normalizeAdditionalRulesValueForCompare = raw => {
 };
 
 
+// Сталий порожній обʼєкт: `AddNewProfile` пропозицій не передає, а `= {}` у
+// параметрі — новий обʼєкт на кожен рендер, і ефект відхилених пропозицій
+// крутився без кінця («Maximum update depth exceeded»).
+const EMPTY_OVERLAY_FIELD_ADDITIONS = Object.freeze({});
+
 const sanitizeOverlayValue = value => {
   if (Array.isArray(value)) {
     const normalized = value.map(item => sanitizeOverlayValue(item)).filter(item => item !== '');
@@ -1008,7 +1013,7 @@ export const ProfileForm = ({
   deletedOverlayFields = [],
   isAdmin = false,
   dataSource = '',
-  overlayFieldAdditions = {},
+  overlayFieldAdditions = EMPTY_OVERLAY_FIELD_ADDITIONS,
   refreshOverlayForEditor,
   deletingFieldsRef,
   // Batch 26 §8: whether the per-field backend-navigation arrows (SearchIdBackendButton) show at
@@ -1248,7 +1253,9 @@ export const ProfileForm = ({
   // refresh confirms that entry is gone, forget its signature so a later,
   // identical suggestion from the editor can be reviewed again.
   useEffect(() => {
-    setDismissedOverlayEntries(previous => Object.entries(previous).reduce((next, [fieldName, signatures]) => {
+    setDismissedOverlayEntries(previous => {
+      if (!Object.keys(previous).length) return previous;
+      return Object.entries(previous).reduce((next, [fieldName, signatures]) => {
       const liveSignatures = new Set((overlayFieldAdditions[fieldName] || []).map(entry => {
         const value = sanitizeOverlayValue(entry?.value);
         return `${value}::${entry?.editorUserId || ''}::${entry?.isDeleted ? '1' : '0'}${entry?.superseded ? '::v' : ''}`;
@@ -1256,7 +1263,8 @@ export const ProfileForm = ({
       const stillPresent = signatures.filter(signature => liveSignatures.has(signature));
       if (stillPresent.length) next[fieldName] = stillPresent;
       return next;
-    }, {}));
+      }, {});
+    });
   }, [overlayFieldAdditions]);
 
   const normalizeGetInTouchForSubmit = draftState => {
