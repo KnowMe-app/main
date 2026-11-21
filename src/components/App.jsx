@@ -44,7 +44,7 @@ const MyProfile = lazy(pickNamed(() => import(/* webpackPrefetch: true */ './MyP
 const Matching = lazy(() => import(/* webpackPrefetch: true */ './Matching'));
 const ProfileCreationWorkspace = lazy(() => import(/* webpackPrefetch: true */ './ProfileCreationWorkspace'));
 const AddNewProfile = lazy(pickNamed(() => import('./AddNewProfile'), 'AddNewProfile'));
-const EditProfile = lazy(() => import('./EditProfile'));
+const EditProfileRedirect = lazy(() => import('./EditProfileRedirect'));
 const MedicationsPage = lazy(() => import('./MedicationsPage'));
 const FlowManager = lazy(() => import('./FlowManager'));
 const UtilitiesPage = lazy(() => import('./UtilitiesPage'));
@@ -302,7 +302,7 @@ export const App = () => {
           лише службові читання цілих вузлів (перелік усіх чернеток, усі шари
           картки, перелік заявок) — вони й далі за прапорцем. */}
       <Route path="/matching/create-profile" element={<RequireAuth status={authStatus}>{regularScreen(<ProfileCreationWorkspace />)}</RequireAuth>} />
-      {isAdmin && <Route path="/edit/:userId" element={<RequireAuth status={authStatus}><EditProfile /></RequireAuth>} />}
+      {isAdmin && <Route path="/edit/:userId" element={<RequireAuth status={authStatus}><EditProfileRedirect /></RequireAuth>} />}
       {isAdmin && <Route path="/medications/:userId" element={<RequireAuth status={authStatus}><MedicationsPage /></RequireAuth>} />}
       {canAccessFlow && <Route path="/flow" element={<RequireAuth status={authStatus}><FlowManager ownerId={auth.currentUser?.uid} /></RequireAuth>} />}
       {/* Комуналка: адмінам і тим, кому адмін її відкрив (`screenAccess`). */}

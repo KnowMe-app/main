@@ -2,11 +2,9 @@ import React from 'react';
 import styled from 'styled-components';
 import { uiTokens } from './styles';
 
-// Верхній рядок картки адміна — один на обидва екрани: `AddNewProfile` і
-// `/edit/:userId` (`EditProfile`, куди ведуть посилання з Telegram-сповіщень).
-// Поки в кожного екрана був свій рядок, та сама картка за посиланням мала
-// «← Back» замість «Назад / Вперед» і виглядала інакше, ніж відкрита зі
-// «Списку».
+// Верхній рядок картки адміна на `AddNewProfile`: «Назад / Вперед» (відміна
+// правок, як у Word) і перемикачі. Картку з посилань `/edit/:userId`
+// (Telegram-сповіщення) відкриває той самий екран — `EditProfileRedirect`.
 
 export const TopButtons = styled.div`
   display: flex;
@@ -110,13 +108,4 @@ export const ProfileHistoryButtons = ({ onUndo, onRedo, canUndo, canRedo }) => (
       </EditActionIcon>
     </EditActionButton>
   </>
-);
-
-// Синя кнопка «назад» у шапці картки (`topBlueAction` у `TopBlock`) — та сама
-// стрілка, що на `AddNewProfile`.
-export const BackArrowIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="M11 7L6 12L11 17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M6 12H18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
 );

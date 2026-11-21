@@ -125,6 +125,7 @@ import InfoModal, { ModalTitle, ModalText, ModalActionRow, ModalDangerButton, Mo
 
 import { color, coloredCard, uiTokens } from './styles';
 import { useProfileEditHistory } from 'hooks/useProfileEditHistory';
+import { ADMIN_CARD_RETURN_BACK_STATE } from './EditProfileRedirect';
 import {
   ProfileHistoryButtons,
   TopButtons,
@@ -1492,6 +1493,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     canRedo: canRedoChanges,
   } = useProfileEditHistory(state);
   const isEditingRef = useRef(false);
+  const externalReturnCardIdRef = useRef(String(location.state?.[ADMIN_CARD_RETURN_BACK_STATE] || ''));
   const previousListStateRef = useRef(null);
   const skipInitialEmptyUrlProfileClearRef = useRef(
     initialAccess.canAccessAdd &&
@@ -2825,6 +2827,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (isDraftProfileRecord(cachedProfile)) revalidateDraftRecord(cachedProfile);
     } else {
       if (backendInitialLoadUserIdsRef.current.has(activeUserId)) {
+        // Запит за цією карткою вже летить (повторний запуск ефекту —
+        // `StrictMode` у розробці, перерендер з тим самим id): він і досі
+        // чинний. Піднятий лічильник списав би його відповідь як застарілу,
+        // і картка лишалась би порожньою — саме так відкривалось `/edit/…`.
+        profileFetchRequestRef.current = requestId - 1;
         logProfileSnapshotUpdate('backend', {
           caller: 'profile-data:cache-miss-fetch-backend-start',
           requestId,
@@ -5575,6 +5582,13 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handleBackToPreviousList = useCallback(() => {
+    // Картку відкрили з іншого екрана через `/edit/:userId` — «назад» веде
+    // туди ж (сповіщення, чернетка), а не в список, якого тут не відкривали.
+    if (externalReturnCardIdRef.current && externalReturnCardIdRef.current === state?.userId) {
+      externalReturnCardIdRef.current = '';
+      navigate(-1);
+      return;
+    }
     // Картку відкрито окремим кроком історії: кнопка робить те саме, що
     // «назад» телефона, інакше запис картки лишився б в історії й «назад»
     // після кнопки відкрив би її знову. Список вертає ефект адреси.

@@ -138,7 +138,7 @@ describe('App route guards', () => {
   // словники мов більше не їдуть кожному відвідувачу ще до форми входу.
   it('loads every screen except the login form lazily', () => {
     const source = appSource();
-    ['PrivacyPolicy', 'SharedProfilePage', 'MyProfile', 'AddNewProfile', 'Matching', 'EditProfile', 'MedicationsPage', 'FlowManager',
+    ['PrivacyPolicy', 'SharedProfilePage', 'MyProfile', 'AddNewProfile', 'Matching', 'EditProfileRedirect', 'MedicationsPage', 'FlowManager',
       'BudgetPage', 'InvoiceBuilderPage', 'DocumentsPage', 'PartiesPage', 'ProfileCreationWorkspace'].forEach(screen => {
       expect(source).toMatch(new RegExp(`const ${screen} = lazy\\(`));
       expect(source).not.toMatch(new RegExp(`^import (\\{ )?${screen}( \\})? from`, 'm'));

@@ -63,7 +63,6 @@ describe('перелік навмисно стертих полів', () => {
 
 describe('стерте значення йде з індексу', () => {
   const addNewProfile = fs.readFileSync(path.join(__dirname, 'AddNewProfile.jsx'), 'utf8');
-  const editProfile = fs.readFileSync(path.join(__dirname, 'EditProfile.jsx'), 'utf8');
 
   it('картка передає deletedKeys індексатору', () => {
     // Без четвертого аргументу `syncUserSearchIdIndex` не знімає нічого: у неї
@@ -98,14 +97,10 @@ describe('стерте значення йде з індексу', () => {
     expect(body).toContain('.filter(candidate => !survivingCandidates.has(candidate))');
   });
 
-  it('обидва редактори доносять прибрану версію до індексу', () => {
+  it('редактор картки доносить прибрану версію до індексу', () => {
     expect(addNewProfile).toContain('removedIndexValues = { [fieldName]: [removedValue] };');
     expect(addNewProfile).toContain(
       'await pruneSearchIdValues(syncedState.userId, removedIndexValues, syncedState);',
-    );
-    expect(editProfile).toContain('const capturedRemovedIndexValues = capturedDelCondition');
-    expect(editProfile).toContain(
-      'await pruneSearchIdValues(updatedState.userId, removedIndexValues, updatedState);',
     );
   });
 

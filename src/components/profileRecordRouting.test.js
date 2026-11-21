@@ -38,15 +38,6 @@ describe('екрани адміна над чернеткою', () => {
     expect(source).toContain('if (isDraftProfileRecord(cachedProfile)) revalidateDraftRecord(cachedProfile);');
   });
 
-  it('EditProfile пише чернетку в неї саму раніше за вузли й legacy', () => {
-    const source = read('EditProfile.jsx');
-    const remoteUpdate = source.slice(indexOrFail(source, 'async function remoteUpdate('));
-    const draftBranch = indexOrFail(remoteUpdate, 'if (isDraftProfileRecord(updatedState)) {');
-    expect(draftBranch).toBeLessThan(indexOrFail(remoteUpdate, 'updateProfileNodesInRTDB('));
-    expect(draftBranch).toBeLessThan(indexOrFail(remoteUpdate, 'updateDataInRealtimeDB('));
-    expect(source).toContain('const data = await fetchProfileRecordById(userId);');
-  });
-
   it('«усі поля» перечитують чернетку з її адреси, а не з вузлів готової анкети', () => {
     const source = read('smallCard/renderTopBlock.js');
     const refresh = source.slice(indexOrFail(source, 'const refreshCardFromBackend = async () => {'));
