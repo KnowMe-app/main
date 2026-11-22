@@ -4,7 +4,6 @@ import path from 'path';
 import { formatDateToDisplay, formatDateToServer, calculateAge } from 'components/inputValidations';
 import { utilCalculateAge } from 'components/smallCard/utilCalculateAge';
 import { utilCalculateMonthsAgo } from 'components/smallCard/utilCalculateMonthsAgo';
-import { isUserAllowedByAdditionalAccess, parseAdditionalAccessRules } from '../additionalAccessRules';
 
 const configSource = fs.readFileSync(
   path.join(__dirname, '..', '..', 'components', 'config.js'),
@@ -70,14 +69,6 @@ describe('вік рахується з обох написань', () => {
     const birthday = yearsAgo(30);
     expect(utilCalculateAge(iso(birthday))).toBe(30);
     expect(utilCalculateAge(dotted(birthday))).toBe(30);
-  });
-
-  it('те саме в перевірці правил доступу', () => {
-    const rules = parseAdditionalAccessRules('age: 30');
-    const birthday = yearsAgo(30);
-
-    expect(isUserAllowedByAdditionalAccess({ birth: iso(birthday) }, rules)).toBe(true);
-    expect(isUserAllowedByAdditionalAccess({ birth: dotted(birthday) }, rules)).toBe(true);
   });
 
   it('валідація вводу теж приймає обидва', () => {

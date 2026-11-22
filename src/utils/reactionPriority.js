@@ -279,7 +279,6 @@ export const mergeSharedReactionCandidateUsers = ({
 
 export const mergeMatchingCandidateUsers = ({
   users = [],
-  additionalAccessUsers = [],
   // Картки, які власниці відкрили саме цьому читачеві (публікація «лише для
   // вподобаних», `fetchLikedAudienceCards`). У стрічці їх немає за
   // визначенням — дати в них немає, — тож вони доливаються головою деки:
@@ -288,7 +287,6 @@ export const mergeMatchingCandidateUsers = ({
   sharedReactionCandidateUsers = [],
   isAdmin = false,
   viewMode = 'default',
-  hasAdditionalAccessRules = false,
   ownFavoriteUsers = {},
   ownDislikeUsers = {},
   favoriteUsers = ownFavoriteUsers,
@@ -309,58 +307,24 @@ export const mergeMatchingCandidateUsers = ({
   const isDefaultMode = viewMode === 'default';
   const baseUsers = isAdmin ? users : users.filter(user => canShowMatchingUser(user, { isAdmin }));
 
-  // Правила додаткового доступу нічого не забирають — вони додають. Колекція
-  // одна, і базова дека вже відфільтрована по `publish`; окремо надані картки
-  // просто доливаються до неї.
   const canInjectCandidate = user => canShowMatchingUser(user, { isAdmin });
 
   if (isDefaultMode) {
-    // Надана картка потрапляє в загальний список лише разом зі стрічкою.
-    //
-    // Правила додаткового доступу — це фільтр («ці роки, ця група крові»), а не
-    // перелік окремо відкритих анкет, і читались вони по індексу, який знає всі
-    // анкети, зокрема неопубліковані. Тобто в деку за замовчуванням заїжджали
-    // картки, яких у стрічці немає за визначенням: у `matchingCards` вони без
-    // `feedDate`, і жоден інший читач їх там не побачить. `feedDate` —
-    // допуск до стрічки, і надання доступу не робить із фільтра винятку з
-    // нього: неопублікована анкета лишається тим, що знаходить точковий пошук
-    // за контактом, а не тим, що гортають у загальному списку.
-    const grantedFeedCards = hasAdditionalAccessRules
-      ? additionalAccessUsers.filter(user => (
-        user?.userId && canInjectCandidate(user) && normalizePublish(user.publish)
-      ))
-      : [];
-
-    // Хвіст списку належить пагінації.
-    //
-    // Надані картки вантажаться однією пачкою на вході й доливаються лише тоді,
-    // коли загальна стрічка вичерпалась. Поки вони стояли після деки, кожна
-    // дописана сторінка лягала **над** ними: унизу нічого не змінювалось, і
-    // «Додано 2 картки — вони в кінці списку» було неправдою — приріст
-    // знаходився тільки прокруткою вгору. Тож пачка з входу — це голова деки,
-    // як і власні чернетки, а хвіст лишається за сторінками, які приїжджають
-    // потім (зокрема за наданими картками, дочитаними після кінця стрічки).
+    // Картки «лише для вподобаних» — голова деки, хвіст належить пагінації.
+    // Правил додаткового доступу (надані правилами картки) більше немає (22.11).
     const likedHead = likedAudienceUsers.filter(user => user?.userId && canInjectCandidate(user));
-    const grantedHead = grantedFeedCards.filter(user => user.__matchingAccessInitialBatch === true);
-    const grantedTail = grantedFeedCards.filter(user => user.__matchingAccessInitialBatch !== true);
     const byId = new Map();
-    [...likedHead, ...grantedHead, ...baseUsers, ...grantedTail].forEach(user => {
+    [...likedHead, ...baseUsers].forEach(user => {
       const previous = byId.get(user.userId);
       if (!previous) {
         byId.set(user.userId, user);
         return;
       }
-      // Hydrated public-feed data may be newer, but it must not erase the access
-      // provenance that lets a deliberately granted peer survive the donor rule.
+      // Hydrated public-feed data may be newer, but it must not erase the
+      // liked-audience provenance.
       byId.set(user.userId, {
         ...previous,
         ...user,
-        ...(previous.__matchingAccessAllowed === true || user.__matchingAccessAllowed === true
-          ? { __matchingAccessAllowed: true }
-          : {}),
-        ...(previous.__matchingAccessInitialBatch === true || user.__matchingAccessInitialBatch === true
-          ? { __matchingAccessInitialBatch: true }
-          : {}),
         ...(previous[LIKED_AUDIENCE_CARD_FLAG] === true || user[LIKED_AUDIENCE_CARD_FLAG] === true
           ? { [LIKED_AUDIENCE_CARD_FLAG]: true }
           : {}),

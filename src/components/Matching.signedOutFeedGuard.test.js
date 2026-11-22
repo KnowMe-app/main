@@ -35,7 +35,6 @@ describe('Matching stops the deck when there is no signed-in viewer', () => {
     expect(source).toContain('if (!getOwnerId()) {');
     expect(source).toContain("markBlockedLoadMore('blocked-no-viewer'");
     expect(source).toContain('hasMoreRef.current = false;');
-    expect(source).toContain('additionalHasMoreRef.current = false;');
     expect(source).toContain('setHasMore(false);');
     expect(source).toContain('setLoading(false);');
   });
@@ -57,8 +56,8 @@ describe('Matching stops the deck when there is no signed-in viewer', () => {
   // назад у `true`, сам і заводив цикл запитів без прав.
   it('signing out closes the deck instead of reopening it', () => {
     const source = matchingSource();
-    expect(source).toContain('resetAdditionalMatchingState({ resetHasMore: false, resetLoading: true });');
-    expect(source).not.toContain('resetAdditionalMatchingState({ resetHasMore: true, resetLoading: true });');
+    expect(source).toContain('resetMatchingDeckState({ resetHasMore: false, resetLoading: true });');
+    expect(source).not.toContain('resetMatchingDeckState({ resetHasMore: true, resetLoading: true });');
   });
 
   // Стеля порожніх спроб стереже самохідний цикл — але рахувала лише порожні

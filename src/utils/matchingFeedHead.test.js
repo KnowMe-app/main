@@ -73,12 +73,4 @@ describe('Matching підключає верх стрічки', () => {
     expect(handler).toContain("if (!fresh.length || viewModeRef.current !== 'default') return;");
     expect(handler).toContain('setIdsForQuery(feedListKey, result.map(u => u.userId));');
   });
-
-  // Фільтри лишились тими самими, тож ефект наданого доступу сам не
-  // перезапуститься — а його картки оновлення щойно скинуло.
-  it('«Оновити стрічку» перезапускає картки наданого доступу', () => {
-    const restart = source.slice(source.indexOf('const restartFeed = React.useCallback('), source.indexOf('const resetFiltersAndCache ='));
-    expect(restart).toContain('if (keepFilters) setAccessScopedReloadToken(prev => prev + 1);');
-    expect(source).toContain('  }, [\n    accessScopedReloadToken,\n    announcePublicFeedUnavailable,');
-  });
 });

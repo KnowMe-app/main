@@ -4,11 +4,6 @@ import path from 'path';
 const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
 
 describe('Matching role reload regressions', () => {
-  it('resolves the role before ancillary search-key discovery', () => {
-    expect(source.indexOf('setCurrentUserRoleResolved(true);')).toBeLessThan(
-      source.indexOf('await resolveAdditionalSearchKeySetKeysForMatching(profile, user.uid)')
-    );
-  });
 
   it('invalidates an active initial request before queuing its replacement', () => {
     const overlapBranch = source.slice(

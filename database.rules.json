@@ -23,13 +23,13 @@
       ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
       "$key": {
         ".read": "auth != null",
-        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write') || newData.exists() || (data.isString() && (data.val() == auth.uid || (root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'publishing'))))",
+        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || newData.exists() || (data.isString() && (data.val() == auth.uid || (root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'publishing'))))",
         ".validate": "newData.hasChildren()",
         "$field": {
-          ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write') || newData.exists() || (data.isString() && (data.val() == auth.uid || (root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'publishing'))))",
-          ".validate": "$field.matches(/^(instagram|ameblo|facebook|email|phone|telegram|tiktok|linkedin|youtube|twitter|line|otherLink|other|vk|name|surname)$/) && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write') || (newData.isString() && !data.exists() && newData.val() == auth.uid) || (newData.isString() && !data.exists() && root.child('multiData').child('edits').child(newData.val()).child(auth.uid).exists()) || (newData.isString() && !data.exists() && (root.child('multiData').child('profileMutations').child(auth.uid).child(newData.val()).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child(newData.val()).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child(newData.val()).child('status').val() == 'publishing')) || (newData.isString() && data.hasChildren(['0', '1']) && !data.child('2').exists() && ((data.child('0').val() == auth.uid && data.child('1').val() == newData.val()) || (data.child('1').val() == auth.uid && data.child('0').val() == newData.val()) || (data.child('0').val() == newData.val() && (root.child('multiData').child('profileMutations').child(auth.uid).child(data.child('1').val()).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.child('1').val()).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.child('1').val()).child('status').val() == 'publishing')) || (data.child('1').val() == newData.val() && (root.child('multiData').child('profileMutations').child(auth.uid).child(data.child('0').val()).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.child('0').val()).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.child('0').val()).child('status').val() == 'publishing')))) || (newData.hasChildren() && (!data.isString() || newData.child('0').val() == data.val())))",
+          ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || newData.exists() || (data.isString() && (data.val() == auth.uid || (root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'publishing'))))",
+          ".validate": "$field.matches(/^(instagram|ameblo|facebook|email|phone|telegram|tiktok|linkedin|youtube|twitter|line|otherLink|other|vk|name|surname)$/) && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (newData.isString() && !data.exists() && newData.val() == auth.uid) || (newData.isString() && !data.exists() && root.child('multiData').child('edits').child(newData.val()).child(auth.uid).exists()) || (newData.isString() && !data.exists() && (root.child('multiData').child('profileMutations').child(auth.uid).child(newData.val()).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child(newData.val()).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child(newData.val()).child('status').val() == 'publishing')) || (newData.isString() && data.hasChildren(['0', '1']) && !data.child('2').exists() && ((data.child('0').val() == auth.uid && data.child('1').val() == newData.val()) || (data.child('1').val() == auth.uid && data.child('0').val() == newData.val()) || (data.child('0').val() == newData.val() && (root.child('multiData').child('profileMutations').child(auth.uid).child(data.child('1').val()).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.child('1').val()).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.child('1').val()).child('status').val() == 'publishing')) || (data.child('1').val() == newData.val() && (root.child('multiData').child('profileMutations').child(auth.uid).child(data.child('0').val()).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.child('0').val()).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child(data.child('0').val()).child('status').val() == 'publishing')))) || (newData.hasChildren() && (!data.isString() || newData.child('0').val() == data.val())))",
           "$index": {
-            ".validate": "auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write') || (newData.isString() && ((data.exists() && newData.val() == data.val()) || newData.val() == auth.uid || (data.parent().isString() && newData.val() == data.parent().val()) || root.child('multiData').child('edits').child(newData.val()).child(auth.uid).exists() || (root.child('multiData').child('profileMutations').child(auth.uid).child(newData.val()).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child(newData.val()).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child(newData.val()).child('status').val() == 'publishing')))"
+            ".validate": "auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (newData.isString() && ((data.exists() && newData.val() == data.val()) || newData.val() == auth.uid || (data.parent().isString() && newData.val() == data.parent().val()) || root.child('multiData').child('edits').child(newData.val()).child(auth.uid).exists() || (root.child('multiData').child('profileMutations').child(auth.uid).child(newData.val()).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child(newData.val()).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child(newData.val()).child('status').val() == 'publishing')))"
           }
         }
       }
@@ -40,7 +40,7 @@
         ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
         "$value": {
           "$userId": {
-            ".write": "auth != null && (auth.uid == $userId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write'))",
+            ".write": "auth != null && (auth.uid == $userId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
             ".validate": "newData.val() === true || newData.val() === null"
           }
         }
@@ -50,7 +50,7 @@
           ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
           "$value": {
             "$userId": {
-              ".write": "auth != null && (auth.uid == $userId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write'))",
+              ".write": "auth != null && (auth.uid == $userId || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
               ".validate": "newData.val() === true || newData.val() === null"
             }
           }
@@ -75,10 +75,10 @@
         "feedDate",
         "name"
       ],
-      ".read": "auth != null && ((query.orderByChild == 'feedDate' && query.startAt == '') || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || ((root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching'))) || (root.child('matchingCards').child(auth.uid).child('role').isString() && root.child('matchingCards').child(auth.uid).child('role').val() != '' && root.child('matchingCards').child(auth.uid).child('role').val() != 'ed') || (root.child('matchingCards').child(auth.uid).child('role').child('0').isString() && root.child('matchingCards').child(auth.uid).child('role').child('0').val() != '' && root.child('matchingCards').child(auth.uid).child('role').child('0').val() != 'ed') || (root.child('matchingCards').child(auth.uid).child('role').child('1').isString() && root.child('matchingCards').child(auth.uid).child('role').child('1').val() != '' && root.child('matchingCards').child(auth.uid).child('role').child('1').val() != 'ed') || (root.child('matchingCards').child(auth.uid).child('role').child('2').isString() && root.child('matchingCards').child(auth.uid).child('role').child('2').val() != '' && root.child('matchingCards').child(auth.uid).child('role').child('2').val() != 'ed') || (root.child('matchingCards').child(auth.uid).child('role').child('3').isString() && root.child('matchingCards').child(auth.uid).child('role').child('3').val() != '' && root.child('matchingCards').child(auth.uid).child('role').child('3').val() != 'ed') || (root.child('matchingCards').child(auth.uid).child('role').child('4').isString() && root.child('matchingCards').child(auth.uid).child('role').child('4').val() != '' && root.child('matchingCards').child(auth.uid).child('role').child('4').val() != 'ed') || (root.child('matchingCards').child(auth.uid).child('role').child('5').isString() && root.child('matchingCards').child(auth.uid).child('role').child('5').val() != '' && root.child('matchingCards').child(auth.uid).child('role').child('5').val() != 'ed') || (root.child('profileDetails').child(auth.uid).child('hiddenRoles').isString() && (root.child('profileDetails').child(auth.uid).child('hiddenRoles').val().contains('ag') || root.child('profileDetails').child(auth.uid).child('hiddenRoles').val().contains('cl') || root.child('profileDetails').child(auth.uid).child('hiddenRoles').val().contains('ip') || root.child('profileDetails').child(auth.uid).child('hiddenRoles').val().contains('pp'))))",
+      ".read": "auth != null && ((query.orderByChild == 'feedDate' && query.startAt == '') || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('matchingCards').child(auth.uid).child('role').isString() && root.child('matchingCards').child(auth.uid).child('role').val() != '' && root.child('matchingCards').child(auth.uid).child('role').val() != 'ed') || (root.child('matchingCards').child(auth.uid).child('role').child('0').isString() && root.child('matchingCards').child(auth.uid).child('role').child('0').val() != '' && root.child('matchingCards').child(auth.uid).child('role').child('0').val() != 'ed') || (root.child('matchingCards').child(auth.uid).child('role').child('1').isString() && root.child('matchingCards').child(auth.uid).child('role').child('1').val() != '' && root.child('matchingCards').child(auth.uid).child('role').child('1').val() != 'ed') || (root.child('matchingCards').child(auth.uid).child('role').child('2').isString() && root.child('matchingCards').child(auth.uid).child('role').child('2').val() != '' && root.child('matchingCards').child(auth.uid).child('role').child('2').val() != 'ed') || (root.child('matchingCards').child(auth.uid).child('role').child('3').isString() && root.child('matchingCards').child(auth.uid).child('role').child('3').val() != '' && root.child('matchingCards').child(auth.uid).child('role').child('3').val() != 'ed') || (root.child('matchingCards').child(auth.uid).child('role').child('4').isString() && root.child('matchingCards').child(auth.uid).child('role').child('4').val() != '' && root.child('matchingCards').child(auth.uid).child('role').child('4').val() != 'ed') || (root.child('matchingCards').child(auth.uid).child('role').child('5').isString() && root.child('matchingCards').child(auth.uid).child('role').child('5').val() != '' && root.child('matchingCards').child(auth.uid).child('role').child('5').val() != 'ed') || (root.child('profileDetails').child(auth.uid).child('hiddenRoles').isString() && (root.child('profileDetails').child(auth.uid).child('hiddenRoles').val().contains('ag') || root.child('profileDetails').child(auth.uid).child('hiddenRoles').val().contains('cl') || root.child('profileDetails').child(auth.uid).child('hiddenRoles').val().contains('ip') || root.child('profileDetails').child(auth.uid).child('hiddenRoles').val().contains('pp'))))",
       "$uid": {
-        ".read": "auth != null && (!data.child('feedDate').isBoolean() || auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching')) || (data.child('audience').val() == 'liked' && root.child('multiData').child('favorites').child($uid).child(auth.uid).exists()))",
-        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write'))",
+        ".read": "auth != null && (!data.child('feedDate').isBoolean() || auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (data.child('audience').val() == 'liked' && root.child('multiData').child('favorites').child($uid).child(auth.uid).exists()))",
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
         ".validate": "!newData.exists() || ((root.child('profileDetails').child($uid).exists() || root.child('profileTechnical').child($uid).exists() || root.child('profileContacts').child($uid).exists() || root.child('profileWorkflow').child($uid).exists()) && (!newData.child('blood').exists() || newData.child('feedDate').isString()))",
         "name": {},
         "surnameShort": {
@@ -150,12 +150,12 @@
       ".indexOn": [
         "surname"
       ],
-      ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || ((root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching'))))",
+      ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
       "$uid": {
-        ".read": "auth != null && (auth.uid == $uid || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || ((root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching'))) || (root.child('matchingCards').child($uid).child('feedDate').isString() && root.child('matchingCards').child($uid).child('feedDate').val().matches(/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/)) || (root.child('matchingCards').child($uid).child('audience').val() == 'liked' && root.child('multiData').child('favorites').child($uid).child(auth.uid).exists()))",
-        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))",
+        ".read": "auth != null && (auth.uid == $uid || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('matchingCards').child($uid).child('feedDate').isString() && root.child('matchingCards').child($uid).child('feedDate').val().matches(/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/)) || (root.child('matchingCards').child($uid).child('audience').val() == 'liked' && root.child('multiData').child('favorites').child($uid).child(auth.uid).exists()))",
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
         "$field": {
-          ".validate": "!($field == 'phone' || $field == 'email' || $field == 'instagram' || $field == 'facebook' || $field == 'telegram' || $field == 'telegram2' || $field == 'tiktok' || $field == 'vk' || $field == 'otherLink' || $field == 'other' || $field == 'ameblo' || $field == 'linkedin' || $field == 'twitter' || $field == 'youtube' || $field == 'skype' || $field == 'whatsapp' || $field == 'viber' || $field == 'line' || $field == 'website' || $field == 'street' || $field == 'password' || $field == 'accessLevel' || $field == 'canCreateProfiles' || $field == 'screenAccess' || $field == 'additionalAccessRules' || $field == 'multiDataAccessUserIds' || $field == 'multiDataSourceUserIds' || $field == 'godMode' || $field == 'deviceWidth' || $field == 'deviceHeight' || $field == 'deviceResize' || $field == 'getInTouch' || $field == 'publish' || $field == 'lastLogin' || $field == 'lastLogin2' || $field == 'lastAction' || $field == 'cycleStatus' || $field == 'lastCycle' || $field == 'registrationDate')"
+          ".validate": "!($field == 'phone' || $field == 'email' || $field == 'instagram' || $field == 'facebook' || $field == 'telegram' || $field == 'telegram2' || $field == 'tiktok' || $field == 'vk' || $field == 'otherLink' || $field == 'other' || $field == 'ameblo' || $field == 'linkedin' || $field == 'twitter' || $field == 'youtube' || $field == 'skype' || $field == 'whatsapp' || $field == 'viber' || $field == 'line' || $field == 'website' || $field == 'street' || $field == 'password' || $field == 'screenAccess' || $field == 'multiDataAccessUserIds' || $field == 'multiDataSourceUserIds' || $field == 'godMode' || $field == 'deviceWidth' || $field == 'deviceHeight' || $field == 'deviceResize' || $field == 'getInTouch' || $field == 'publish' || $field == 'lastLogin' || $field == 'lastLogin2' || $field == 'lastAction' || $field == 'cycleStatus' || $field == 'lastCycle' || $field == 'registrationDate')"
         }
       }
     },
@@ -183,8 +183,8 @@
       ],
       ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
       "$uid": {
-        ".read": "auth != null && (auth.uid == $uid || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || ((root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching'))) || (root.child('matchingCards').child($uid).child('feedDate').isString() && root.child('matchingCards').child($uid).child('feedDate').val().matches(/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/)) || (root.child('matchingCards').child($uid).child('audience').val() == 'liked' && root.child('multiData').child('favorites').child($uid).child(auth.uid).exists()))",
-        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || ((root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching') && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('view&write'))) || ((root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('profileContacts') && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('view&write'))) || (root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))"
+        ".read": "auth != null && (auth.uid == $uid || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('matchingCards').child($uid).child('feedDate').isString() && root.child('matchingCards').child($uid).child('feedDate').val().matches(/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/)) || (root.child('matchingCards').child($uid).child('audience').val() == 'liked' && root.child('multiData').child('favorites').child($uid).child(auth.uid).exists()))",
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')"
       }
     },
     "profileWorkflow": {
@@ -195,8 +195,8 @@
       ],
       ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
       "$uid": {
-        ".read": "auth != null && (auth.uid == $uid || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || ((root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching') && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('view&write'))) || (root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))",
-        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || ((root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching') && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('view&write'))) || (root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))",
+        ".read": "auth != null && (auth.uid == $uid || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
         "$other": {
           ".validate": "$other != 'getInTouch' && $other != 'lastLogin' && $other != 'lastLogin2' && $other != 'publish'"
         }
@@ -204,7 +204,6 @@
     },
     "profileTechnical": {
       ".indexOn": [
-        "additionalAccessRules",
         "lastLogin",
         "createdAt",
         "screenAccess"
@@ -212,39 +211,20 @@
       ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
       "$uid": {
         ".read": "auth != null && (auth.uid == $uid || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
-        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write'))",
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
         "$other": {
           ".validate": "$other != 'deviceWidth' && $other != 'deviceHeight' && $other != 'deviceResize' && $other != 'password' && $other != 'godMode'"
         },
         "createdAt": {
-          ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true) || (root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching') && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('view&write')))",
+          ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
           ".validate": "!newData.exists() || newData.isString()"
-        },
-        "accessLevel": {
-          ".validate": "auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (data.exists() && newData.val() == data.val())"
         },
         "screenAccess": {
           ".validate": "(auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (data.exists() && newData.val() == data.val())) && newData.isString() && newData.val().length <= 200 && newData.val().matches(/^([a-z]+(,[a-z]+)*)?$/)"
         },
-        "canCreateProfiles": {
-          ".validate": "auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (data.exists() && newData.val() == data.val())"
-        },
         "multiDataSourceUserIds": {
           "$sourceUserId": {
             ".validate": "auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (data.exists() && newData.val() == data.val())"
-          }
-        }
-      }
-    },
-    "searchKeySets": {
-      ".read": "auth != null",
-      "$keySet": {
-        ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write'))",
-        "$indexName": {
-          "$value": {
-            "$userId": {
-              ".validate": "newData.val() === true || newData.val() === null"
-            }
           }
         }
       }
@@ -301,7 +281,7 @@
         }
       },
       "profileMutations": {
-        ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))",
+        ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
         "$creatorUid": {
           ".read": "auth != null && auth.uid == $creatorUid",
           "$cardId": {
@@ -310,14 +290,14 @@
             ".validate": "!newData.exists() || (newData.hasChildren(['cardId', 'operation', 'createdBy', 'status', 'revision']) && newData.child('cardId').val() == $cardId && newData.child('createdBy').val() == $creatorUid)",
             "data": {
               "$field": {
-                ".validate": "auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || !($field == 'accessLevel' || $field == 'canCreateProfiles' || $field == 'screenAccess' || $field == 'additionalAccessRules' || $field == 'multiDataAccessUserIds')"
+                ".validate": "auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || !($field == 'screenAccess' || $field == 'multiDataAccessUserIds')"
               }
             }
           }
         }
       },
       "profileMutationOwners": {
-        ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))",
+        ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
         "$cardId": {
           ".read": "auth != null",
           ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (newData.isString() && newData.val() == auth.uid && root.child('multiData').child('profileMutations').child(auth.uid).child($cardId).exists()) || (!newData.exists() && data.isString() && data.val() == auth.uid))",
@@ -325,7 +305,7 @@
         }
       },
       "profileIdentityClaims": {
-        ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true))",
+        ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
         "$claimKey": {
           ".read": "auth != null",
           ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || !data.exists() || (data.isString() && root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).exists()))"
@@ -412,7 +392,7 @@
       "edits": {
         ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
         "$cardUserId": {
-          ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || ((root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching'))) || (root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true) || (root.child('multiData').child('profileMutations').child(auth.uid).child($cardUserId).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child($cardUserId).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child($cardUserId).child('status').val() == 'publishing'))",
+          ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('multiData').child('profileMutations').child(auth.uid).child($cardUserId).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child($cardUserId).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child($cardUserId).child('status').val() == 'publishing'))",
           "$editorUserId": {
             ".read": "auth != null && auth.uid == $editorUserId",
             ".write": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == $editorUserId || (!newData.exists() && (root.child('multiData').child('profileMutations').child(auth.uid).child($cardUserId).child('status').val() == 'private' || root.child('multiData').child('profileMutations').child(auth.uid).child($cardUserId).child('status').val() == 'pendingReview' || root.child('multiData').child('profileMutations').child(auth.uid).child($cardUserId).child('status').val() == 'publishing')))",
@@ -455,8 +435,8 @@
       },
       "programs": {
         "$uid": {
-          ".read": "auth != null && (root.child('matchingCards').child($uid).child('audience').val() != 'liked' || auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').isString() && root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching')) || root.child('multiData').child('favorites').child($uid).child(auth.uid).exists())",
-          ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'matching+addNewProfile:view&write') || (root.child('profileTechnical').child(auth.uid).child('accessLevel').val() == 'add+matching:view&write'))",
+          ".read": "auth != null && (root.child('matchingCards').child($uid).child('audience').val() != 'liked' || auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || root.child('multiData').child('favorites').child($uid).child(auth.uid).exists())",
+          ".write": "auth != null && (auth.uid == $uid || auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",
           ".validate": "newData.hasChildren(['updatedAt'])",
           "updatedAt": {
             ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now + 600000"
@@ -673,9 +653,15 @@
               "steps": {
                 "$index": {
                   ".validate": "$index.matches(/^[0-5]$/) && newData.hasChildren(['text'])",
-                  "text": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100" },
-                  "duration": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40" },
-                  "$other": { ".validate": false }
+                  "text": {
+                    ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100"
+                  },
+                  "duration": {
+                    ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
                 }
               },
               "customRequirements": {
@@ -950,23 +936,41 @@
           }
         },
         "channels": {
-          "telegram": { ".validate": "newData.isBoolean()" },
-          "push": { ".validate": "newData.isBoolean()" },
-          "$other": { ".validate": false }
+          "telegram": {
+            ".validate": "newData.isBoolean()"
+          },
+          "push": {
+            ".validate": "newData.isBoolean()"
+          },
+          "$other": {
+            ".validate": false
+          }
         },
-        "quietHours": { ".validate": "newData.isBoolean()" },
-        "weeklyReport": { ".validate": "newData.isBoolean()" },
-        "updatedAt": { ".validate": "newData.isNumber()" },
-        "$other": { ".validate": false }
+        "quietHours": {
+          ".validate": "newData.isBoolean()"
+        },
+        "weeklyReport": {
+          ".validate": "newData.isBoolean()"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": false
+        }
       }
     },
     "adminActivity": {
       ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1')",
       "events": {
-        ".indexOn": ["t"]
+        ".indexOn": [
+          "t"
+        ]
       },
       "dedup": {
-        ".indexOn": [".value"]
+        ".indexOn": [
+          ".value"
+        ]
       }
     },
     "pushTokens": {
@@ -984,7 +988,9 @@
       }
     },
     "telegramAccounts": {
-      ".indexOn": ["uid"]
+      ".indexOn": [
+        "uid"
+      ]
     },
     "profileShares": {
       ".read": "auth != null && (auth.uid == '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2' || auth.uid == 'vtDxkDMjCwYuTDqTUnZsO29bpQr1' || auth.uid == '0ghb1LphfASV0Y3b6J010v4CDyD2')",

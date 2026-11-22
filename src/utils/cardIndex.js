@@ -1,6 +1,5 @@
 import { CACHE_TTL_MS, MATCHING_PERFORMANCE_CACHE_TTL_MS } from './cacheConstants';
 import { normalizeLastAction } from './normalizeLastAction';
-import { readStoredAccessLevel } from './accessLevel';
 import { PROFILE_CONTACT_FIELDS } from './profileNodeSchema';
 import { canReadProfileOutsideFeed } from './profileVisibilityScope';
 import { MATCHING_DENIED_CARDS_STORAGE_KEY } from './matchingTimedStore';
@@ -26,7 +25,10 @@ export const MATCHING_SUMMARY_CARD_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 // запис, а вже збережене чистить лише зміна версії. Версія 6 — ті, що лягли
 // туди проєкцією з реакції в рядку стрічки (`updateCachedUser`): з ініціалом
 // замість прізвища, але без позначки проєкції, тож догідратувати їх було нічим.
-export const CARDS_CACHE_VERSION = 6;
+// Версія 7 (22.11) — анкети з контактами, які клав колишній службовий доступ
+// (`accessLevel`): його прибрано, а збережене під ним інакше показувалось би й
+// далі з кешу (точний пошук за id, кешована видача пошуку).
+export const CARDS_CACHE_VERSION = 7;
 export const MATCHING_CACHE_MAX_CHARS = 4 * 1024 * 1024;
 export const MATCHING_QUERY_MAX_IDS = 2000;
 // Версія 2 скидає списки id, збережені тоді, коли порожній бакет `searchKey`
@@ -718,14 +720,13 @@ const CONTACT_CACHE_KEYS = new Set(PROFILE_CONTACT_FIELDS);
  * бере картку з кеша (стрічка, реакції, пошук, «Схожі»), показував контакти
  * анкети, якої вже нема кому показувати. Перевіряти на читанні означало б
  * питати базу про `feedDate` на кожну картку; дешевше й надійніше не класти
- * туди того, чиє право протухає: службовий читач, власниця анкети й адмін
+ * туди того, чиє право протухає: власниця анкети й адмін
  * тримають контакти в кеші, як і тримали, а решта читає їх щоразу заново — і
  * саме там межу застосує і база, і `scopeProfileNodesToViewer`.
  */
 const mayCacheContacts = profileId => canReadProfileOutsideFeed({
   profileId,
   viewerId: getCardsCacheOwnerId(),
-  accessLevel: readStoredAccessLevel(),
 });
 
 export const sanitizeMatchingCardForCache = (card, profileId) => {
@@ -793,11 +794,10 @@ const hasCachedContactValue = value => {
 };
 
 /*
- * Право «тепер» ще не каже, з яким правом анкету клали. Службовий доступ
- * (`accessLevel`) зʼявляється в `localStorage` лише після мережевого круга, а
- * на холодному старті анкета встигає лягти в кеш раніше — без контактів, бо
- * на ту мить права ще не було. Потім рівень приїжджає, `mayCacheContacts`
- * каже «так», і обрізана анкета віддавалась як повна: з першого відкриття
+ * Право «тепер» ще не каже, з яким правом анкету клали: на холодному старті
+ * анкета встигала лягти в кеш раніше, ніж приїжджали права читача, — без
+ * контактів, — а потім `mayCacheContacts` казав «так», і обрізана анкета
+ * віддавалась як повна: з першого відкриття
  * картки телефон був, з повторного зникав разом із блоком «Показати
  * контакти». Анкета без жодного контакту тому повною не вважається — для
  * картки, в якої контактів справді немає, це коштує одне читання на дотик.

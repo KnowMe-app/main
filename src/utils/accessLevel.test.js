@@ -23,9 +23,11 @@ describe('accessLevel', () => {
     expect(canAccessMatchingByRole({ userRole: '' })).toBe(false);
   });
 
-  it('keeps explicit matching accessLevel access for ed users', () => {
-    expect(resolveAccess({ uid: 'viewer', accessLevel: '', userRole: 'ed' }).canAccessMatching).toBe(false);
-    expect(resolveAccess({ uid: 'viewer', accessLevel: 'matching', userRole: 'ed' }).canAccessMatching).toBe(true);
+  // Рівень доступу прибрано 22.11: колишнє значення нічого не відкриває.
+  it('ignores a leftover accessLevel for ed users', () => {
+    expect(resolveAccess({ uid: 'viewer', userRole: 'ed' }).canAccessMatching).toBe(false);
+    expect(resolveAccess({ uid: 'viewer', accessLevel: 'matching', userRole: 'ed' }).canAccessMatching).toBe(false);
+    expect(resolveAccess({ uid: 'viewer', accessLevel: 'add:view&write' }).canAccessAdd).toBe(false);
   });
 
   it('keeps admin access independent of role', () => {
@@ -34,7 +36,6 @@ describe('accessLevel', () => {
       canAccessMatching: true,
       canAccessAdd: true,
       canAccessInvoices: true,
-      canCreateProfiles: true,
       canAccessFlow: true,
       canAccessUtilities: true,
       specialScreens: [],
@@ -48,7 +49,6 @@ describe('accessLevel', () => {
       canAccessMatching: true,
       canAccessAdd: false,
       canAccessInvoices: false,
-      canCreateProfiles: false,
       canAccessFlow: false,
       canAccessUtilities: false,
       specialScreens: [],
@@ -63,9 +63,9 @@ describe('accessLevel', () => {
     expect(access.canAccessAdd).toBe(false);
   });
 
-  it('grants profile creation only through its explicit permission', () => {
-    expect(resolveAccess({ uid: 'viewer', canCreateProfiles: true }).canCreateProfiles).toBe(true);
-    expect(resolveAccess({ uid: 'viewer', accessLevel: 'matching add' }).canCreateProfiles).toBe(false);
+  // Картку заводить кожен (вона стає чернеткою), окремого права немає.
+  it('no longer exposes a profile-creation permission', () => {
+    expect(resolveAccess({ uid: 'viewer', canCreateProfiles: true })).not.toHaveProperty('canCreateProfiles');
   });
 });
 
@@ -79,13 +79,13 @@ describe('права видають лише два адміни', () => {
   it('знімає поля прав із запису не-адміна, решту лишає', () => {
     expect(stripPrivilegedProfileFields(payload, 'ordinaryUid')).toEqual({ name: 'Оксана', lastLogin: '2026-10-16' });
     expect(stripPrivilegedProfileFields(payload, '')).toEqual({ name: 'Оксана', lastLogin: '2026-10-16' });
-    expect(PRIVILEGED_PROFILE_FIELDS).toEqual(['accessLevel', 'canCreateProfiles', 'multiDataSourceUserIds', 'screenAccess']);
+    expect(PRIVILEGED_PROFILE_FIELDS).toEqual(['multiDataSourceUserIds', 'screenAccess']);
   });
 
-  it('адмінові лишає все, інспекторові на читання — ні', () => {
+  it('адмінові лишає права, а застарілі accessLevel/canCreateProfiles знімає з будь-якого запису', () => {
     ADMIN_UIDS.forEach(uid => {
       expect(canGrantProfilePrivileges(uid)).toBe(true);
-      expect(stripPrivilegedProfileFields(payload, uid)).toBe(payload);
+      expect(stripPrivilegedProfileFields(payload, uid)).toEqual({ name: 'Оксана', lastLogin: '2026-10-16', multiDataSourceUserIds: { x: true } });
     });
     READONLY_ADMIN_UIDS.forEach(uid => expect(canGrantProfilePrivileges(uid)).toBe(false));
   });
@@ -101,8 +101,8 @@ describe('права видають лише два адміни', () => {
     expect(rules.users).toBeUndefined();
     ['profileTechnical'].forEach(root => {
       const node = rules[root].$uid;
-      expect(node.accessLevel['.validate']).toBe(`${admins} || (data.exists() && newData.val() == data.val())`);
-      expect(node.canCreateProfiles['.validate']).toBe(`${admins} || (data.exists() && newData.val() == data.val())`);
+      expect(node.accessLevel).toBeUndefined();
+      expect(node.canCreateProfiles).toBeUndefined();
       expect(node.multiDataSourceUserIds.$sourceUserId['.validate']).toBe(`${admins} || (data.exists() && newData.val() == data.val())`);
     });
   });

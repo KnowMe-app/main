@@ -68,7 +68,6 @@ jest.mock('firebase/database', () => ({
 
 const {
   readProfileFromNodes,
-  resetViewerAccessLevelCache,
   matchingFeedStateReader,
   recordDailyLogin,
 } = require('./config');
@@ -102,7 +101,6 @@ beforeEach(() => {
   mockRunTransaction.mockImplementation(serverTransaction);
   mockTransactionWrites.length = 0;
   Object.keys(mockServer).forEach(key => { delete mockServer[key]; });
-  resetViewerAccessLevelCache();
   matchingFeedStateReader.clear();
   localStorage.clear();
   mockAuth.currentUser = null;
@@ -178,13 +176,15 @@ describe('відкриття чужої анкети не питає служб�
     expect(requested).toContain(`multiData/stimulationSchedule/${ADMIN_ID}/${CARD_ID}`);
   });
 
-  it('той, хто заводить картки, бачить робочі дані — правила йому їх відкривають', async () => {
+  // `canCreateProfiles` прибрано 22.11: заводить картки кожен, а службові
+  // робочі дані чужої анкети бачать лише адміни.
+  it('застаріле `canCreateProfiles` на пристрої робочих даних не відкриває', async () => {
     mockAuth.currentUser = { uid: READER_ID };
     localStorage.setItem('canCreateProfiles', 'true');
     const requested = serveNodes(publishedNodes);
     await readProfileFromNodes(CARD_ID);
 
-    expect(requested).toContain(`profileWorkflow/${CARD_ID}`);
+    expect(requested).not.toContain(`profileWorkflow/${CARD_ID}`);
   });
 
   it('власна анкета читається цілком', async () => {

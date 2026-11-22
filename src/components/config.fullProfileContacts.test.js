@@ -43,7 +43,7 @@ jest.mock('firebase/database', () => ({
   serverTimestamp: jest.fn(),
 }));
 
-const { fetchUsersByIds, resetViewerAccessLevelCache } = require('./config');
+const { fetchUsersByIds } = require('./config');
 const { getCard, resetMatchingLocalStorageCache } = require('../utils/cardIndex');
 
 const AGENCY_ID = 'agencyProfileId00000000000';
@@ -63,7 +63,6 @@ describe('показана анкета доїжджає до екрана з к
   beforeEach(() => {
     mockGet.mockReset();
     mockGet.mockImplementation(async path => snapshotOf(agencyNodes[String(path)] ?? null));
-    resetViewerAccessLevelCache();
     localStorage.clear();
     resetMatchingLocalStorageCache('full profile contacts test');
     // Звичайна читачка: жодного службового доступу, анкета не її.

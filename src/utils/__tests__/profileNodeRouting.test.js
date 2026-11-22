@@ -56,15 +56,13 @@ describe('роутер записів', () => {
   });
 
   it('права акаунта веде у profileTechnical — там тепер їхнє місце', () => {
-    // Другої копії прав це не створює: запис у новий вузол іде додатково до
-    // legacy, як і для решти полів, а правила бази питають обидва джерела.
+    // `accessLevel`, `canCreateProfiles` і `additionalAccessRules` прибрано
+    // 22.11: роутер їх не пише нікуди.
     expect(buildProfileNodePatch('P1', {
       accessLevel: 'matching:view&write',
       canCreateProfiles: true,
-    })).toEqual({
-      'profileTechnical/P1/accessLevel': 'matching:view&write',
-      'profileTechnical/P1/canCreateProfiles': true,
-    });
+      additionalAccessRules: 'age: 21',
+    })).toEqual({});
     // Делегування читання чужого multiData — теж право акаунта, і їде туди ж.
     expect(buildProfileNodePatch('P1', { multiDataSourceUserIds: { X: true } }))
       .toEqual({ 'profileTechnical/P1/multiDataSourceUserIds': { X: true } });
@@ -152,7 +150,7 @@ describe('блоки форми анкети', () => {
     expect(resolveProfileFormBlock('somethingNobodyMapped')).toBe(PROFILE_FORM_BLOCK_IDS.unstored);
     // `publish` писач картки перекладає у `feedDate`: він зберігається.
     expect(resolveProfileFormBlock('publish')).toBe(PROFILE_FORM_BLOCK_IDS.matchingCards);
-    expect(resolveProfileFormBlock('accessLevel')).toBe(PROFILE_FORM_BLOCK_IDS.access);
+    expect(resolveProfileFormBlock('screenAccess')).toBe(PROFILE_FORM_BLOCK_IDS.access);
     // Позначки власника зберігають окремі писачі — вимикати їх не можна.
     ['myComment', 'writer', 'stimulationSchedule'].forEach(field => {
       expect(resolveProfileFormBlock(field)).toBe(PROFILE_FORM_BLOCK_IDS.ownerMarks);

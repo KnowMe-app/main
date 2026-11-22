@@ -22,18 +22,14 @@ describe('Matching loadMore stale pagination guards', () => {
     const source = applySearchResultsSource();
 
     expect(source).toContain('loadInitialVersionRef.current += 1;');
-    expect(source).toContain('additionalLoadMoreFetchVersionRef.current += 1;');
-    expect(source).toContain('additionalMatchingApplyVersionRef.current += 1;');
+    expect(source).toContain('loadMoreFetchVersionRef.current += 1;');
+    expect(source).toContain('loadMoreApplyVersionRef.current += 1;');
     expect(source).toContain('loadingRef.current = false;');
     expect(source).toContain('loadingStateRef.current = false;');
     expect(source).toContain('hasMoreRef.current = false;');
     expect(source).toContain("viewModeRef.current = 'search';");
     expect(source).toContain('setUsers(filtered);');
     expect(source).toContain('loadedIdsRef.current = new Set(filtered.map(u => u.userId).filter(Boolean));');
-    expect(source).toContain('setAdditionalAccessUsers([]);');
-    expect(source).toContain('setAdditionalNextOffset(0);');
-    expect(source).toContain('additionalHasMoreRef.current = false;');
-    expect(source).toContain('setAdditionalHasMore(false);');
     expect(source).toContain('setHasMore(false);');
     expect(source).toContain('setLastKey(null);');
     expect(source).toContain('setLoading(false);');
@@ -41,15 +37,6 @@ describe('Matching loadMore stale pagination guards', () => {
     expect(source).toContain("setViewMode('search');");
   });
 
-  it('limits access-source pagination availability to the default feed', () => {
-    const source = matchingSource();
-
-    // Джерело додаткового доступу лишається справою самої деки; видача пошуку
-    // додає до `deckHasMore` власний прапорець — вона гортається вікном, а не
-    // сторінками з бекенду, тож `hasMore` для неї хибний навмисно.
-    expect(source).toContain("const deckHasMore = hasMore || (viewMode === 'default' && additionalHasMore) || searchHasMore;");
-    expect(loadMoreSource()).toContain("!hasMoreRef.current && !(viewMode === 'default' && additionalHasMoreRef.current)");
-  });
   it('updates reaction cards before async comment loading while preserving stale guards', () => {
     const source = loadMoreSource();
 
@@ -68,21 +55,6 @@ describe('Matching loadMore stale pagination guards', () => {
         setLastKey(null);`);
   });
 
-  it('guards additional-access offset, hasMore, lastKey, and loadedIdsRef writes', () => {
-    const source = loadMoreSource();
-
-    const scopedFetchIndex = source.indexOf('const scopedPage = await fetchAdditionalAccessUsersBySearchIndex({');
-    const scopedGuardIndex = source.indexOf("logStaleLoadMoreResultIgnored('additional-access-page');", scopedFetchIndex);
-    const scopedOffsetWriteIndex = source.indexOf('scopedOffset = nextOffset;', scopedFetchIndex);
-    expect(scopedFetchIndex).toBeGreaterThan(-1);
-    expect(scopedGuardIndex).toBeGreaterThan(scopedFetchIndex);
-    expect(scopedGuardIndex).toBeLessThan(scopedOffsetWriteIndex);
-    expect(source).toContain('setAdditionalHasMore(additionalHasMoreRef.current);');
-    const setAdditionalIndex = source.indexOf('setAdditionalAccessUsers(prev => {');
-    const commentsIndex = source.indexOf('void loadCommentsFor(scopedUsers);', setAdditionalIndex);
-    expect(setAdditionalIndex).toBeGreaterThan(-1);
-    expect(commentsIndex).toBeGreaterThan(setAdditionalIndex);
-  });
 
   it('guards default source pagination writes from stale loadMore requests', () => {
     const source = loadMoreSource();

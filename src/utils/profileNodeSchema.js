@@ -235,12 +235,11 @@ export const PROFILE_WORKFLOW_FIELDS = Object.freeze([
  * з колекції зникає. `/users` при цьому не чіпається — там своя копія лишається
  * як була, і саме тому переїзд нікому не знімає доступ.
  */
+// `accessLevel`, `canCreateProfiles` і `additionalAccessRules` прибрано 22.11:
+// прав вони більше не дають, тож роутер записів їх не пише нікуди.
 export const PROFILE_TECHNICAL_ACCESS_FIELDS = Object.freeze([
-  'accessLevel',
-  'canCreateProfiles',
   'multiDataAccessUserIds',
   'multiDataSourceUserIds',
-  'additionalAccessRules',
   // Додаткові екрани (Flow), відкриті адміном (`SCREEN_ACCESS_OPTIONS`).
   'screenAccess',
 ]);

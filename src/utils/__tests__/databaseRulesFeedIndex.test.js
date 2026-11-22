@@ -57,10 +57,9 @@ describe('правила, без яких стрічка не може чита�
   it('дає редактору право оновити картку, яку він щойно змінив', () => {
     // Дзеркалення живе в писачах анкети: хто може зберегти анкету, той мусить
     // могти оновити і її проєкцію, інакше картка застигає застарілою.
-    expect(rules.matchingCards.$uid['.write']).toBe(rules.profileDetails.$uid['.write']
-      .replace(" || (root.child('profileTechnical').child(auth.uid).child('canCreateProfiles').val() == true)", ''));
-    ["matching:view&write", 'matching+addNewProfile:view&write', 'add+matching:view&write']
-      .forEach(level => expect(rules.matchingCards.$uid['.write']).toContain(level));
+    expect(rules.matchingCards.$uid['.write']).toBe(rules.profileDetails.$uid['.write']);
+    // Рівень доступу прибрано 22.11: анкету й картку пишуть власниця та адміни.
+    expect(rules.matchingCards.$uid['.write']).not.toContain('accessLevel');
   });
 
   it('лишає точковий резолв searchId доступним авторизованому читачеві', () => {

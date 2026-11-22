@@ -133,7 +133,6 @@ const PRIMARY_NAVIGATION_PATHS = ['/my-profile', '/matching', '/matching/create-
 const normalizeAccess = access => ({
   canAccessAdd: Boolean(access?.canAccessAdd),
   canAccessMatching: Boolean(access?.canAccessMatching),
-  canCreateProfiles: Boolean(access?.canCreateProfiles),
   canAccessFlow: Boolean(access?.canAccessFlow),
   canAccessUtilities: Boolean(access?.canAccessUtilities),
   specialScreensOnly: Boolean(access?.specialScreensOnly),

@@ -23,7 +23,7 @@ describe('видача пошуку гортається так само, як �
 
   it('кінець видачі — така сама причина просити наступну порцію, як і кінець стрічки', () => {
     expect(matching()).toContain(
-      "const deckHasMore = hasMore || (viewMode === 'default' && additionalHasMore) || searchHasMore;"
+      'const deckHasMore = hasMore || searchHasMore;'
     );
   });
 
@@ -68,7 +68,7 @@ describe('видача пошуку гортається так само, як �
     // шматок — тобто стерегло не те, про що написане.
     const applier = source.slice(
       source.indexOf('const applySearchResults = async res => {'),
-      source.indexOf('const ensureFreshAdditionalMatchingProfile'),
+      source.indexOf('const ensureFreshViewerProfile'),
     );
 
     expect(applier).not.toContain('setSearchRefineValue(null)');

@@ -14,8 +14,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import {
   isAdminUid,
-  readStoredAccessLevel,
-  readStoredCanCreateProfiles,
   resolveAccess,
 } from 'utils/accessLevel';
 
@@ -48,9 +46,7 @@ const visibleLinks = () => {
   const ownerId = typeof localStorage !== 'undefined' ? localStorage.getItem('ownerId') : null;
   const access = resolveAccess({
     uid: ownerId,
-    accessLevel: readStoredAccessLevel(),
     userRole: typeof localStorage !== 'undefined' ? localStorage.getItem('userRole') : '',
-    canCreateProfiles: readStoredCanCreateProfiles(),
   });
   const rights = { ...access, isAdmin: isAdminUid(ownerId) };
   // Видані адміном екрани — єдине, що такий читач бачить (`specialScreensOnly`).

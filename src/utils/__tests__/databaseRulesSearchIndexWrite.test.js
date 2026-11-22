@@ -101,16 +101,13 @@ describe('права, без яких нова анкета не потрапл�
     });
   });
 
-  it('не заважає адмінам і редакторам перебудовувати індекси', () => {
-    // `.validate` діє на всіх, тож без цієї гілки масова переіндексація
-    // впала б на першому ж записі, який зсуває позиції масиву.
+  it('рівень доступу більше не відкриває запис індексів — лише адміни', () => {
+    // Рівень доступу й індекс наборів `searchKeySets` прибрано 22.11.
     EDITOR_LEVELS.forEach(level => {
-      expect(rules.searchId.$key.$field['.validate']).toContain(level);
-      expect(rules.searchId.$key.$field.$index['.validate']).toContain(level);
-      expect(rules.searchKeySets.$keySet['.write']).toContain(level);
-      // Ті самі права, що вже є на картку стрічки: `makeNewUser` створює
-      // анкету і всі три індекси одним заходом.
-      expect(rules.matchingCards.$uid['.write']).toContain(level);
+      expect(rules.searchId.$key.$field['.validate']).not.toContain(level);
+      expect(rules.searchId.$key.$field.$index['.validate']).not.toContain(level);
+      expect(rules.matchingCards.$uid['.write']).not.toContain(level);
     });
+    expect(rules.searchKeySets).toBeUndefined();
   });
 });

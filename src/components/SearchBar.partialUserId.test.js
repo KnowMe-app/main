@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import SearchBar, { getFreshCachedSearchResult, getSearchCacheKeyForParams, doesCardMatchSearchParams, filterSearchResultByParams, getSelectedAdvancedSearchModes, parseExplicitSearchKeyCandidate, parsePartialUserIdPrefix, parseTelegramSearchValue, resolveExecutionPlan } from './SearchBar';
 import { updateCard } from '../utils/cardsStorage';
 import { resetMatchingLocalStorageCache, setIdsForQuery } from '../utils/cardIndex';
+import { ADMIN_UIDS } from '../utils/accessLevel';
 
 beforeAll(() => {
   window.IS_REACT_ACT_ENVIRONMENT = true;
@@ -233,15 +234,13 @@ describe('SearchBar cache-first search', () => {
   beforeEach(() => {
     resetMatchingLocalStorageCache('SearchBar cache-first test');
     // Пошук з кеша перевіряється на читачеві, який має право тримати там
-    // контакти: у решти вони в кеш не потрапляють узагалі, бо їхнє право на
-    // них тримається на `feedDate` (див. profileVisibilityScope.test.js).
-    localStorage.setItem('ownerId', 'searchbar-viewer');
-    localStorage.setItem('accessLevel', 'matching:view&write');
+    // контакти (адмін): у решти вони в кеш не потрапляють узагалі, бо їхнє
+    // право на них тримається на `feedDate` (див. profileVisibilityScope.test.js).
+    localStorage.setItem('ownerId', ADMIN_UIDS[0]);
   });
 
   afterEach(() => {
     localStorage.removeItem('ownerId');
-    localStorage.removeItem('accessLevel');
   });
 
   it('returns cached cards for repeated partial userId searches without calling the backend search function', async () => {

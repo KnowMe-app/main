@@ -9,9 +9,9 @@ import { scheduleLatencyProbe } from './latencyProbeRemote';
 import { installPushSignOutCleanup, refreshPushToken } from './pushNotificationsRemote';
 import { startWriteOutbox, stopWriteOutbox } from 'utils/writeOutbox';
 import toast from 'react-hot-toast';
-import { auth, loadViewerProfile, refreshOwnProfileAfterMerge, resetViewerAccessLevelCache } from './config';
+import { auth, loadViewerProfile, refreshOwnProfileAfterMerge } from './config';
 import { settlePrimaryAccount, shouldRecheckPrimaryAccount } from 'utils/accountLinks';
-import { clearStoredAccessRights, isReadOnlyAdminUid, persistCanCreateProfiles, persistScreenAccess, readStoredAccessLevel, readStoredCanCreateProfiles, resolveAccess, resolveSpecialHomeRoute } from 'utils/accessLevel';
+import { clearStoredAccessRights, isReadOnlyAdminUid, persistScreenAccess, resolveAccess, resolveSpecialHomeRoute } from 'utils/accessLevel';
 import { applyStoredAppSettings } from 'hooks/useAppSettings';
 import { clearMyProfileCache } from 'utils/myProfileCache';
 import { clearFlowCache } from 'utils/flowOfflineWrites';
@@ -91,8 +91,6 @@ export const App = () => {
       if (!ownerId) return null;
       return resolveSpecialHomeRoute(resolveAccess({
         uid: ownerId,
-        accessLevel: readStoredAccessLevel(),
-        canCreateProfiles: readStoredCanCreateProfiles(),
       }));
     } catch {
       return null;
@@ -152,32 +150,30 @@ export const App = () => {
         // Дослати реакції й памʼятки, які база ще не підтвердила, — зокрема
         // ті, що лишились із вкладки, закритої без звʼязку (`utils/writeOutbox`).
         startWriteOutbox(user.uid);
-        let accessLevel = '';
         let userRole = '';
-        let canCreateProfilesForUser = false;
         let screenAccess = '';
         try {
           // Права й роль — з анкети в памʼяті пристрою, поки вона свіжа
           // (`loadViewerProfile`, шість годин); інакше з бази.
           const profile = await loadViewerProfile(user.uid);
-          accessLevel = profile?.accessLevel || '';
           userRole = profile?.userRole || profile?.role || '';
-          canCreateProfilesForUser = profile?.canCreateProfiles === true;
           screenAccess = profile?.screenAccess || '';
         } catch (error) {
           console.error('Failed to load access profile for routes', error);
         }
 
-        const access = resolveAccess({ uid: user.uid, accessLevel, userRole, canCreateProfiles: canCreateProfilesForUser, screenAccess });
+        const access = resolveAccess({ uid: user.uid, userRole, screenAccess });
         setIsAdmin(access.isAdmin);
         setCanAccessAdd(access.canAccessAdd);
         setCanAccessInvoices(access.canAccessInvoices);
         setCanAccessFlow(access.canAccessFlow);
         setCanAccessUtilities(access.canAccessUtilities);
         setSpecialHomeRoute(resolveSpecialHomeRoute(access));
-        localStorage.setItem('accessLevel', accessLevel);
         localStorage.setItem('userRole', userRole);
-        persistCanCreateProfiles(canCreateProfilesForUser);
+        // Старі збірки клали на пристрій `accessLevel` і `canCreateProfiles`;
+        // прав вони більше не означають (22.11), тож ключі знімаються.
+        localStorage.removeItem('accessLevel');
+        localStorage.removeItem('canCreateProfiles');
         persistScreenAccess(screenAccess);
         setIsAccessResolved(true);
         // Раз на добу з пристрою — скільки йде найменше читання бази
@@ -232,7 +228,6 @@ export const App = () => {
         clearStoredAccessRights();
         // Прочитаний рівень доступу — теж стан входу: без цього наступний
         // читач у тій самій вкладці дістав би обіцянку, видану попередньому.
-        resetViewerAccessLevelCache();
         setIsAdmin(false);
         setCanAccessAdd(false);
         setCanAccessInvoices(false);
@@ -297,10 +292,8 @@ export const App = () => {
           `onAuthStateChanged`, а на 'out' межа веде на вхід. Форми правки
           й «Мій профіль» чекають на Firebase, як і раніше. */}
       <Route path="/matching" element={<RequireAuth status={authStatus} allowRemembered>{regularScreen(<Matching />)}</RequireAuth>} />
-      {/* Заводити й доповнювати картки може кожен, хто увійшов: право
-          `canCreateProfiles` більше цього екрана не стереже. За ним лишились
-          лише службові читання цілих вузлів (перелік усіх чернеток, усі шари
-          картки, перелік заявок) — вони й далі за прапорцем. */}
+      {/* Заводити й доповнювати картки може кожен, хто увійшов: картка стає
+          чернеткою. Службові читання цілих вузлів — лише адмінам. */}
       <Route path="/matching/create-profile" element={<RequireAuth status={authStatus}>{regularScreen(<ProfileCreationWorkspace />)}</RequireAuth>} />
       {isAdmin && <Route path="/edit/:userId" element={<RequireAuth status={authStatus}><EditProfileRedirect /></RequireAuth>} />}
       {isAdmin && <Route path="/medications/:userId" element={<RequireAuth status={authStatus}><MedicationsPage /></RequireAuth>} />}

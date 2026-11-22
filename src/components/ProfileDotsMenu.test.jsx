@@ -1,12 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
-import {
-  clearStoredAccessRights,
-  persistCanCreateProfiles,
-  readStoredCanCreateProfiles,
-  resolveAccess,
-} from 'utils/accessLevel';
+import { clearStoredAccessRights, resolveAccess } from 'utils/accessLevel';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 jest.mock('./VerifyEmail', () => ({ VerifyEmail: () => null }));
@@ -33,42 +28,27 @@ describe('ProfileDotsMenu logout confirmation', () => {
     localStorage.setItem('appLanguage', 'uk');
   });
 
-  it.each([
-    ['false', { canCreateProfiles: false }],
-    ['відсутнє поле', {}],
-  ])('shows profile creation even when the profile permission is %s', (_case, profile) => {
-    // Заводити й доповнювати картки може кожен, хто увійшов; прапорець
-    // `canCreateProfiles` лишився стерегти службові читання цілих вузлів.
-    renderMenu({ access: resolveAccess({ uid: 'user-id', canCreateProfiles: profile.canCreateProfiles === true }) });
-
-    expect(screen.getByRole('menuitem', { name: /Створені мною/ })).toBeTruthy();
-  });
-
-  it('shows profile creation from the persisted page access source and navigates to its route', () => {
+  it('shows profile creation to every signed-in reader and navigates to its route', () => {
+    // Заводити й доповнювати картки може кожен, хто увійшов.
     const navigate = jest.fn();
-    persistCanCreateProfiles(true);
-    const pageAccess = resolveAccess({
-      uid: 'user-id',
-      canCreateProfiles: readStoredCanCreateProfiles(),
-    });
-    renderMenu({ access: pageAccess, navigate });
+    renderMenu({ access: resolveAccess({ uid: 'user-id' }), navigate });
 
     fireEvent.click(screen.getByRole('menuitem', { name: /Створені мною/ }));
 
     expect(navigate).toHaveBeenCalledWith('/matching/create-profile');
   });
 
-  it('прибирає збережене право на виході, хай який екран його потім питає', () => {
-    // Сам пункт меню за цим правом більше не стоїть, але позначка в сховищі —
-    // це стан сесії: лишившись від попереднього читача, вона обіцяла б
-    // наступному службові читання, яких йому не давали.
-    persistCanCreateProfiles(true);
+  it('прибирає з пристрою і старі позначки прав на виході', () => {
+    // Права `accessLevel` і `canCreateProfiles` прибрано (22.11), але
+    // позначки від старої збірки ще лежать у сховищі — вихід їх стирає.
+    localStorage.setItem('accessLevel', 'matching:view');
+    localStorage.setItem('canCreateProfiles', 'true');
     clearStoredAccessRights();
 
-    expect(readStoredCanCreateProfiles()).toBe(false);
-    expect(resolveAccess({ uid: 'user-id', canCreateProfiles: readStoredCanCreateProfiles() }).canCreateProfiles)
-      .toBe(false);
+    expect(localStorage.getItem('accessLevel')).toBeNull();
+    expect(localStorage.getItem('canCreateProfiles')).toBeNull();
   });
+
   it('does not end the session until logout is confirmed', async () => {
     const onExit = jest.fn().mockResolvedValue(undefined);
     const onSelect = jest.fn();

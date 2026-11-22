@@ -105,7 +105,9 @@ describe('блоки форми анкети', () => {
     renderForm();
 
     const names = blockNames();
-    expect(names).toContain('▾profileContacts');
+    expect(names).toContain('▾matchingCards');
+    // Блок без жодного поля в картці не малюється: усе з нього — чіпи.
+    expect(names.some(name => name.includes('profileContacts'))).toBe(false);
     expect(names.some(name => name.includes('AC00042'))).toBe(false);
     // Назви словами більше немає: підпис у блоку один, і це адреса вузла.
     expect(screen.queryByText('Контакти')).toBeNull();
@@ -123,9 +125,9 @@ describe('блоки форми анкети', () => {
 
     expect(fieldNames().filter(name => ['name', 'surname'].includes(name)))
       .toEqual(['name', 'surname']);
-    // Інпут стоїть у картці стрічки, а значення лежить у `profileDetails` —
-    // і поле про це каже саме над собою, окремим підписом (не заголовком блоку).
-    expect(screen.getByText('profileDetails', { selector: 'p' })).toBeTruthy();
+    // Підпису вузла над полем адмінові більше немає (22.11): шлях видно в
+    // «Усі дані картки в базі».
+    expect(screen.queryByText('profileDetails', { selector: 'p' })).toBeNull();
   });
 
   it('згортає блок і лишає вибір на наступне відкриття форми', () => {
@@ -150,15 +152,37 @@ describe('блоки форми анкети', () => {
     // Рядки масиву версій звуться `поле-індекс`: стерта остання версія — теж рядок.
     expect(fieldNames()).toEqual(expect.arrayContaining(['surname-0', 'surname-1']));
     expect(hasField('phone')).toBe(false);
-    const phoneChip = screen.getAllByRole('button').find(button => button.textContent === '+Телефон');
+    // Чіпи всієї форми — одним переліком: видно 15, решта — за «Ще N».
+    const findPhoneChip = () => screen.getAllByRole('button').find(button => button.textContent === '+Телефон');
+    if (!findPhoneChip()) {
+      fireEvent.click(screen.getAllByRole('button').find(button => /^Ще \d+/.test(button.textContent)));
+    }
+    const phoneChip = findPhoneChip();
     expect(phoneChip).toBeTruthy();
 
     fireEvent.click(phoneChip);
     expect(hasField('phone')).toBe(true);
   });
 
+  it('чіп поля зі згорнутого блоку відкриває й сам блок', () => {
+    const withPhone = { state: { userId: 'AC00042', name: 'Анна', phone: '+380501110011' } };
+    const { unmount } = renderForm(withPhone);
+    fireEvent.click(blockToggles().find(toggle => toggle.textContent.includes('profileContacts')));
+    expect(hasField('phone')).toBe(false);
+    unmount();
+
+    renderForm(withPhone);
+    const findChip = () => screen.getAllByRole('button').find(button => button.textContent === '+Email');
+    if (!findChip()) {
+      fireEvent.click(screen.getAllByRole('button').find(button => /^Ще \d+/.test(button.textContent)));
+    }
+    fireEvent.click(findChip());
+    expect(hasField('email')).toBe(true);
+    expect(hasField('phone')).toBe(true);
+  });
+
   it('розгортає згорнутий блок, коли в ньому є чужа пропозиція', () => {
-    renderForm();
+    renderForm({ state: { userId: 'AC00042', name: 'Анна', telegram: 'anna' } });
     fireEvent.click(blockToggles().find(toggle => toggle.textContent.includes('profileContacts')));
     expect(hasField('phone')).toBe(false);
 

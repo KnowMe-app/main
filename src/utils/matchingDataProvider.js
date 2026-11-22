@@ -12,7 +12,6 @@ import { collectFilteredMatchingSourceCards } from './matchingSourceBackfill';
 import { FEED_ROLE_FILTER_KEYS, keepDonorCounterpartyCards, listViewerHiddenCardRoles } from './matchingPeerVisibility';
 import { isCardFullyReacted } from './anketaReactions';
 import { LIKED_AUDIENCE_CARD_FLAG } from './likedAudience';
-import { getIndexedIdsByRules, normalizeSearchKeySetKeys } from './filterSetsIndex';
 import {
   FIELD_COUNT_SEARCH_KEY_INDEX_NAME,
   collectFieldCountIdsFromIndexNode,
@@ -579,8 +578,6 @@ const normalizeSignatureValue = value => {
   }, {});
 };
 
-const buildRawRulesSignature = rawRules => String(rawRules || '').trim();
-
 
 const buildMatchingIndexCacheMeta = ({ filterSignature = '', ownerId = '', accessUserId = '' } = {}) => ({
   filterSignature: String(filterSignature || ''),
@@ -591,19 +588,14 @@ const buildMatchingIndexCacheMeta = ({ filterSignature = '', ownerId = '', acces
 /**
  * Ключ кешу сторінок індексу.
  *
- * Колекції в ключі більше немає — вона одна. Замість неї стоїть `accessScoped`:
- * видача глядача з правилами додаткового доступу залежить від самих правил, і
- * змішувати її з видачею без правил у одному кеші не можна.
+ * Колекції в ключі більше немає — вона одна. Правил додаткового доступу теж
+ * (22.11), тож ключ — це фільтри, режим і читач.
  */
 export const buildMatchingIndexQueryKey = ({
-  accessScoped = false,
   filters = {},
   viewMode = 'default',
   ownerId = '',
   accessUserId = '',
-  rawRules = '',
-  searchKeySetKeys = [],
-  searchKeySetsOfExactUser = searchKeySetKeys,
 } = {}) => {
   const relevantViewMode = viewMode === 'favorites' || viewMode === 'dislikes' ? viewMode : 'default';
   return `matchingIndex:${serializeQueryFilters(normalizeSignatureValue({
@@ -611,13 +603,7 @@ export const buildMatchingIndexQueryKey = ({
     viewMode: relevantViewMode,
     ownerId: String(ownerId || accessUserId || '').trim(),
     accessUserId: String(accessUserId || ownerId || '').trim(),
-    accessSnapshot: accessScoped
-      ? {
-          rawRulesSignature: buildRawRulesSignature(rawRules),
-          searchKeySetKeys: normalizeSearchKeySetKeys(searchKeySetKeys),
-          searchKeySetsOfExactUser: normalizeSearchKeySetKeys(searchKeySetsOfExactUser),
-        }
-      : null,
+    accessSnapshot: null,
   }))}`;
 };
 
@@ -682,22 +668,16 @@ const sliceIndexedBaseIds = ({ ids = [], offset = 0, limit = 1, excludedSet = ne
 /**
  * Сторінка кандидатів із індексу.
  *
- * Два шляхи всередині — не дві колекції, а два способи знайти id: загальний
- * індекс `searchKey` і індекс, звужений правилами додаткового доступу. Другий
- * вмикається `accessScoped`, тобто наявністю правил у глядача, а не тим, на яку
- * колекцію він дивиться: колекція одна.
+ * Id знаходить загальний індекс `searchKey`. Звуженого правилами додаткового
+ * доступу індексу більше немає (22.11).
  */
 export const fetchMatchingIndexedCandidates = async ({
-  accessScoped = false,
   filters = {},
-  rawRules = '',
   accessUserId = '',
-  searchKeySetKeys = [],
   offset = 0,
   limit = 1,
   excludeIds = [],
   hydrateUsersByIds,
-  accessScopedIndexReader = getIndexedIdsByRules,
   viewMode = 'default',
   ownerId = '',
   viewerRole = '',
@@ -710,7 +690,7 @@ export const fetchMatchingIndexedCandidates = async ({
   // Перелік опублікованих (`utils/publishedFeedIndex`): дека — це стрічка, тож
   // кандидат без дати в стрічці однаково відсіявся б після гідратації, а
   // порядок задає дата, а не ключ бакета. Без переліку — як доти.
-  const publishedIndex = accessScoped || typeof readPublishedIndex !== 'function'
+  const publishedIndex = typeof readPublishedIndex !== 'function'
     ? null
     : await Promise.resolve().then(() => readPublishedIndex()).catch(() => null);
   const excludedSet = new Set((Array.isArray(excludeIds) ? excludeIds : [...(excludeIds || [])]).filter(Boolean));
@@ -728,14 +708,10 @@ export const fetchMatchingIndexedCandidates = async ({
     ...(publishedIndex ? { feedIndex: publishedIndex.signature } : {}),
   };
   const cacheKey = buildMatchingIndexQueryKey({
-    accessScoped,
     filters,
     viewMode,
     ownerId,
     accessUserId,
-    rawRules,
-    searchKeySetKeys,
-    searchKeySetsOfExactUser: searchKeySetKeys,
   });
 
   // An index only knows ids, so it cannot account for the donor deck rule until
@@ -780,7 +756,7 @@ export const fetchMatchingIndexedCandidates = async ({
   };
 
   const readCachedPage = () => {
-    if (!useIndexIdCache || accessScoped) return null;
+    if (!useIndexIdCache) return null;
     const cached = getIndexIdsByQuery(cacheKey, {
       requiredComplete: true,
       expectedMeta: cacheMeta,
@@ -818,41 +794,9 @@ export const fetchMatchingIndexedCandidates = async ({
   }
   console.info('[Matching][indexedProvider] cache miss', {
     cacheKey,
-    accessScoped,
     offset: safeOffset,
     limit: safeLimit,
   });
-
-  if (accessScoped) {
-    const indexed = await accessScopedIndexReader({
-      rawRules,
-      accessUserId,
-      searchKeySetsOfExactUser: searchKeySetKeys,
-      fetchMissingBuckets: true,
-      requireSearchKeySetKeys: true,
-      resultOffset: safeOffset,
-      resultLimit: safeLimit,
-      additionalFilterBucketGroups: filterGroups,
-      excludedUserIds: [...excludedSet],
-    });
-    const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
-    const nextOffset = Number.isFinite(Number(indexed?.nextOffset)) ? indexed.nextOffset : safeOffset + userIds.length;
-    const hasMore = Boolean(indexed?.hasMore);
-    const users = await hydrateOrderedUsers({ ids: userIds, hydrateUsersByIds });
-    return {
-      usedIndex: true,
-      usedIndexIdCache: false,
-      cacheKey,
-      userIds,
-      paginationInputIds: userIds,
-      pageIds: userIds,
-      users,
-      nextOffset,
-      hasMore,
-      filterGroups,
-      reason: indexed?.reason,
-    };
-  }
 
   if (!filterGroups.length) {
     return { usedIndex: false, userIds: [], users: [], nextOffset: safeOffset, hasMore: true, filterGroups };
@@ -1597,133 +1541,6 @@ export const getActiveMatchingFiltersDebug = filters => Object.entries(filters |
   if (value) acc[key] = value;
   return acc;
 }, {});
-
-const buildEmptyAdditionalSearchIndexResult = (reason, offset = 0) => ({
-  userIds: [],
-  users: [],
-  nextOffset: Math.max(0, Number(offset) || 0),
-  hasMore: false,
-  reason,
-});
-
-const rethrowMatchingStageError = (error, stage) => {
-  if (error && typeof error === 'object') {
-    error.stage = stage;
-    error.requestLabel = stage;
-    throw error;
-  }
-  const stagedError = new Error(String(error || `Matching request failed at ${stage}`));
-  stagedError.code = 'matching/unknown';
-  stagedError.stage = stage;
-  stagedError.requestLabel = stage;
-  throw stagedError;
-};
-
-export const fetchAdditionalAccessUsersBySearchIndex = async ({
-  rawRules,
-  accessUserId,
-  searchKeySetKeys,
-  filters = {},
-  excludeIds = [],
-  offset = 0,
-  limit = 100,
-  fetchUsersByIds,
-  shouldDebugAdditionalMatching = () => false,
-  debugAdditionalToast = () => {},
-  logAdditionalMatchingDebug = () => {},
-  debugMissingUsersToast = () => {},
-}) => {
-  const normalizedAccessUserId = String(accessUserId || '').trim();
-  const normalizedSearchKeySetKeys = normalizeSearchKeySetKeys(searchKeySetKeys);
-
-  const indexRequestDebugData = {
-    accessUserId: normalizedAccessUserId,
-    rawRules,
-    searchKeySetsOfExactUser: searchKeySetKeys,
-    offset,
-    limit,
-    filterGroups: buildMatchingIndexFilterGroups({ filters }),
-  };
-
-  // Без ключів наборів правила доступу нічого не звужують — а віддати за ними
-  // всю колекцію означало б роздати доступ, якого ніхто не давав.
-  if (normalizedSearchKeySetKeys.length === 0) {
-    const reason = 'no searchKeySets data';
-    console.info('[Matching][additionalAccessUsers] access scope empty', {
-      ...indexRequestDebugData,
-      reason,
-    });
-    debugAdditionalToast(normalizedAccessUserId, 'access scope empty', {
-      ...indexRequestDebugData,
-      reason,
-    });
-    return buildEmptyAdditionalSearchIndexResult(reason, offset);
-  }
-
-  console.info('[Matching][additionalAccessUsers] getIndexedIdsByRules request', indexRequestDebugData);
-  debugAdditionalToast(normalizedAccessUserId, 'before getIndexedIdsByRules', indexRequestDebugData);
-
-  const indexed = await fetchMatchingIndexedCandidates({
-    accessScoped: true,
-    filters,
-    rawRules,
-    accessUserId: normalizedAccessUserId,
-    ownerId: normalizedAccessUserId,
-    searchKeySetKeys,
-    offset,
-    limit,
-    excludeIds,
-    hydrateUsersByIds: async ids => {
-      try {
-        return await fetchUsersByIds(ids);
-      } catch (error) {
-        return rethrowMatchingStageError(error, 'profile-hydration');
-      }
-    },
-    accessScopedIndexReader: async args => {
-      try {
-        return await getIndexedIdsByRules({
-          ...args,
-          fetchMissingBuckets: true,
-          requireSearchKeySetKeys: true,
-          debugMatchingFlow: shouldDebugAdditionalMatching(normalizedAccessUserId),
-          debugToast: (message, data) => debugAdditionalToast(normalizedAccessUserId, message, data),
-        });
-      } catch (error) {
-        return rethrowMatchingStageError(error, 'search-index');
-      }
-    },
-  });
-
-  const userIds = Array.isArray(indexed?.userIds) ? indexed.userIds : [];
-  console.info('[Matching][additionalAccessUsers] indexedUserIdsCount', userIds.length);
-  logAdditionalMatchingDebug(normalizedAccessUserId, 'index response ids', {
-    fetchedIds: userIds,
-    indexedUserIds: userIds,
-    first10IndexedUserIds: userIds.slice(0, 10),
-    hasMore: Boolean(indexed?.hasMore),
-    nextOffset: Number.isFinite(Number(indexed?.nextOffset)) ? indexed.nextOffset : userIds.length,
-  });
-
-  const users = Array.isArray(indexed?.users) ? indexed.users : [];
-  console.info('[Matching][additionalAccessUsers] fetchedUsersCount', users.length);
-  logAdditionalMatchingDebug(normalizedAccessUserId, 'profiles fetch response', {
-    requestedIds: userIds,
-    fetchedUsers: users,
-    first10FetchedUserIds: users.map(user => user.userId).filter(Boolean).slice(0, 10),
-  });
-
-  if (userIds.length > 0 && users.length === 0) {
-    debugMissingUsersToast(normalizedAccessUserId, userIds.length);
-  }
-
-  return {
-    userIds,
-    users,
-    nextOffset: Number.isFinite(Number(indexed?.nextOffset)) ? indexed.nextOffset : userIds.length,
-    hasMore: Boolean(indexed?.hasMore),
-  };
-};
 
 // Скільки анкет просити в джерела на одну сторінку стрічки. Фільтри відсіюють
 // частину, тож запас потрібен — але фіксований, а не такий, що росте зі скролом.

@@ -18,13 +18,6 @@ export const INVOICE_BUILDER_UIDS = ['S0VhDLCYjuTFDNLalRa85u7fPcg2'];
 
 export const isInvoiceBuilderUid = uid => !!uid && (isAdminUid(uid) || INVOICE_BUILDER_UIDS.includes(uid));
 
-const normalize = level =>
-  String(level || '')
-    .toLowerCase()
-    .replace(/\s+/g, '')
-    .replace(/_/g, '')
-    .replace(/&/g, 'and');
-
 export const normalizeRole = role => String(role || '').trim().toLowerCase();
 
 export const isNonEdRole = role => {
@@ -32,64 +25,16 @@ export const isNonEdRole = role => {
   return Boolean(normalizedRole) && normalizedRole !== 'ed';
 };
 
-const parseAccessLevel = accessLevel => {
-  const level = normalize(accessLevel);
-  if (!level) {
-    return { hasMatching: false, hasAdd: false };
-  }
-
-  const hasMatching = level.includes('matching');
-  const hasAdd = level.includes('add') || level.includes('addnewprofile');
-
-  return { hasMatching, hasAdd };
-};
-
-export const canAccessMatchingByLevel = accessLevel => {
-  const { hasMatching } = parseAccessLevel(accessLevel);
-  return hasMatching;
-};
-
+// Рівень доступу (`accessLevel`) і `canCreateProfiles` прибрано 22.11 на
+// прохання власниці продукту: службовий доступ до чужих анкет мають лише
+// адміни, а картку заводить кожен, хто увійшов (вона стає чернеткою). Значення,
+// що лишились у `profileTechnical` старих акаунтів, не читає ні застосунок, ні
+// правила бази.
 export const canAccessMatchingByRole = ({ role, userRole } = {}) => isNonEdRole(userRole || role);
-
-export const canAccessAddByLevel = accessLevel => {
-  const { hasAdd } = parseAccessLevel(accessLevel);
-  return hasAdd;
-};
-
-export const ACCESS_LEVEL_STORAGE_KEY = 'accessLevel';
-
-/**
- * Рівень доступу, збережений при вході.
- *
- * `null` — це не «немає прав», а «застосунок ще не знає»: ключ зникає на виході
- * і зʼявляється назад лише після того, як прочитано власну анкету. Різниця між
- * ним і порожнім рядком (звичайний користувач без жодного рівня) важлива для
- * тих, хто вирішує за цим значенням, що показувати.
- */
-export const readStoredAccessLevel = () => (
-  typeof localStorage !== 'undefined' ? localStorage.getItem(ACCESS_LEVEL_STORAGE_KEY) : null
-);
-
-export const CAN_CREATE_PROFILES_STORAGE_KEY = 'canCreateProfiles';
-
-export const readStoredCanCreateProfiles = () => (
-  typeof localStorage !== 'undefined'
-  && localStorage.getItem(CAN_CREATE_PROFILES_STORAGE_KEY) === 'true'
-);
-
-export const persistCanCreateProfiles = canCreateProfiles => {
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(CAN_CREATE_PROFILES_STORAGE_KEY, String(canCreateProfiles === true));
-  }
-};
 
 /*
  * Додаткові екрани, які адмін відкриває окремому користувачеві
  * (`profileTechnical/{uid}/screenAccess`, рядок кодів через кому — `'flow'`).
- *
- * Окреме поле, а не ще один токен у `accessLevel`: правила бази порівнюють
- * `accessLevel` **точним рядком** (`== 'matching:view&write'`), і дописаний
- * `,flow` мовчки зняв би людині вже видане право на запис у матчингу.
  *
  * Екран тут лише той, чиї дані й так лежать під власником
  * (`multiData/flow/{uid}` — читає й пише сам власник), тож право відкриває
@@ -131,9 +76,13 @@ export const persistScreenAccess = screenAccess => {
   }
 };
 
+// Ключі `accessLevel` і `canCreateProfiles` знімаються теж: їх клали на
+// пристрій старі збірки, а читати їх більше нема кому.
+const LEGACY_ACCESS_STORAGE_KEYS = ['accessLevel', 'canCreateProfiles'];
+
 export const clearStoredAccessRights = () => {
   if (typeof localStorage !== 'undefined') {
-    localStorage.removeItem(CAN_CREATE_PROFILES_STORAGE_KEY);
+    LEGACY_ACCESS_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
     localStorage.removeItem(SCREEN_ACCESS_STORAGE_KEY);
   }
 };
@@ -141,12 +90,11 @@ export const clearStoredAccessRights = () => {
 // `screenAccess` не передали — береться збережене при вході: меню рендеряться
 // всередині чужих сторінок і власної анкети не мають, а розійтись із
 // маршрутами `App` вони не мусять.
-export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfiles = false, screenAccess } = {}) => {
+export const resolveAccess = ({ uid, role, userRole, screenAccess } = {}) => {
   const isAdmin = isAdminUid(uid);
-  const canAccessMatching = isAdmin || canAccessMatchingByLevel(accessLevel) || canAccessMatchingByRole({ role, userRole });
-  const canAccessAdd = isAdmin || canAccessAddByLevel(accessLevel);
+  const canAccessMatching = isAdmin || canAccessMatchingByRole({ role, userRole });
+  const canAccessAdd = isAdmin;
   const canAccessInvoices = isInvoiceBuilderUid(uid);
-  const canCreateProfilesResolved = isAdmin || canCreateProfiles === true;
   const screens = parseScreenAccess(screenAccess === undefined ? readStoredScreenAccess() : screenAccess);
   const canAccessFlow = isAdmin || screens.includes('flow');
   const canAccessUtilities = isAdmin || screens.includes('utilities');
@@ -164,7 +112,6 @@ export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfi
     canAccessMatching,
     canAccessAdd,
     canAccessInvoices,
-    canCreateProfiles: canCreateProfilesResolved,
     canAccessFlow,
     canAccessUtilities,
     specialScreens,
@@ -172,19 +119,6 @@ export const resolveAccess = ({ uid, accessLevel, role, userRole, canCreateProfi
   };
 };
 
-/*
- * Поля, яким правила бази довіряють як правам читача: `accessLevel`
- * (службовий доступ до всіх анкет), `canCreateProfiles` і
- * `multiDataSourceUserIds` (чужі реакції й позначки). Міняти їх може лише
- * двоє адмінів (`ADMIN_UIDS`) — так тепер написано й у `database.rules.json`:
- * поки власник міг писати їх у свій `users/{uid}` чи `profileTechnical/{uid}`
- * сам, будь-хто, хто увійшов, ставив собі `matching:view` і читав контакти
- * будь-якої, навіть схованої, анкети.
- *
- * Писачі анкети знімають ці поля з усього, що пише не адмін: інакше
- * збереження, яке везе їх із Firestore (там вони можуть відрізнятися від
- * бази), правила відкинули б цілим вузлом — разом із датою входу й рештою.
- */
 /*
  * Перший екран не-адміна з відкритим Flow — сам Flow (16.11, на прохання
  * власниці продукту). Ярлик на головному екрані телефона відкриває корінь
@@ -207,15 +141,27 @@ export const resolveSpecialHomeRoute = access => {
 export const REGULAR_SCREEN_PATHS = Object.freeze(['/my-profile', '/matching', '/matching/create-profile']);
 export const SPECIAL_SCREEN_PATHS = Object.freeze(SCREEN_ACCESS_OPTIONS.map(option => option.path));
 
-export const PRIVILEGED_PROFILE_FIELDS = Object.freeze(['accessLevel', 'canCreateProfiles', 'multiDataSourceUserIds', 'screenAccess']);
+/*
+ * Поля, яким правила бази довіряють як правам читача: `multiDataSourceUserIds`
+ * (чужі реакції й позначки) і `screenAccess` (видані екрани). Міняти їх може
+ * лише двоє адмінів (`ADMIN_UIDS`) — так написано й у `database.rules.json`.
+ * Писачі анкети знімають ці поля з усього, що пише не адмін: інакше відмова
+ * правил забрала б увесь вузол — разом із датою входу й рештою. Застарілі
+ * `accessLevel` і `canCreateProfiles` знімаються з будь-якого запису: їх
+ * більше ніхто не пише.
+ */
+export const PRIVILEGED_PROFILE_FIELDS = Object.freeze(['multiDataSourceUserIds', 'screenAccess']);
+export const RETIRED_PROFILE_FIELDS = Object.freeze(['accessLevel', 'canCreateProfiles', 'additionalAccessRules']);
 
 export const canGrantProfilePrivileges = uid => !!uid && ADMIN_UIDS.includes(uid);
 
 export const stripPrivilegedProfileFields = (payload, writerUid) => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
-  if (canGrantProfilePrivileges(writerUid)) return payload;
-  if (!PRIVILEGED_PROFILE_FIELDS.some(field => Object.prototype.hasOwnProperty.call(payload, field))) return payload;
+  const stripped = canGrantProfilePrivileges(writerUid)
+    ? RETIRED_PROFILE_FIELDS
+    : [...RETIRED_PROFILE_FIELDS, ...PRIVILEGED_PROFILE_FIELDS];
+  if (!stripped.some(field => Object.prototype.hasOwnProperty.call(payload, field))) return payload;
   const next = { ...payload };
-  PRIVILEGED_PROFILE_FIELDS.forEach(field => { delete next[field]; });
+  stripped.forEach(field => { delete next[field]; });
   return next;
 };

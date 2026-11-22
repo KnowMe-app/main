@@ -110,7 +110,7 @@ import { OverlayReviewQueue } from './AddNewProfileOverlayReview';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
+import { resolveAccess } from 'utils/accessLevel';
 // Batch 26 §8: тумблер стрілок «перейти до вузла в Firebase». Ключ спільний з тими,
 // хто ці стрілки показує, — див. `utils/backendLinksMode`.
 import { PROFILE_FORM_EXTENDED_MODE_KEY, readBackendLinksEnabled } from 'utils/backendLinksMode';
@@ -211,7 +211,6 @@ import {
 } from 'components/inputValidations';
 import { sortUsersByStimulationSchedule } from 'utils/stimulationScheduleSort';
 import { convertDriveLinkToImage } from 'utils/convertDriveLinkToImage';
-import { rebuildAllFilterSetIndexes } from 'utils/filterSetsIndex';
 import { buildMatchingCardsPayloadFromCollections } from 'utils/matchingCardIndex';
 import {
   LEGACY_IMPORT_COMMENT_OWNER_ID,
@@ -547,11 +546,6 @@ const INDEX_JOB_GROUPS = [
         key: 'searchKeyUsersAll',
         label: 'Усі searchKey для users',
         hint: '→ searchKey/users',
-      },
-      {
-        key: 'searchKeySetReindex',
-        label: 'Набори фільтрів searchKeySet',
-        hint: 'перебудувати з нуля',
       },
       {
         key: 'stimulationShortcuts',
@@ -1150,8 +1144,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const location = useLocation();
   const initialAccess = resolveAccess({
     uid: auth.currentUser?.uid,
-    accessLevel: localStorage.getItem('accessLevel'),
-    canCreateProfiles: readStoredCanCreateProfiles(),
   });
 
   const [userNotFound, setUserNotFound] = useState(false);
@@ -1165,7 +1157,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const defaultSelectedIndexJobs = {
     stimulationShortcuts: true,
     searchKeyUsersAll: false,
-    searchKeySetReindex: false,
     searchLocalIdAndKey: false,
     searchLocalImtHeightWeight: false,
     matchingCardBlood: false,
@@ -1520,8 +1511,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   const comparisonScrollRef = useRef(0);
   const access = resolveAccess({
     uid: auth.currentUser?.uid,
-    accessLevel: state.accessLevel || localStorage.getItem('accessLevel'),
-    canCreateProfiles: readStoredCanCreateProfiles(),
   });
   const isAdmin = access.isAdmin;
   const canAccessAdd = access.canAccessAdd;
@@ -4742,7 +4731,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       !selectedIndexJobs.photoCacheControl &&
       !selectedIndexJobs.feedPhotoThumbs &&
       !selectedIndexJobs.searchKeyUsersAll &&
-      !selectedIndexJobs.searchKeySetReindex &&
       !selectedIndexJobs.searchLocalIdAndKey &&
       !selectedIndexJobs.searchLocalImtHeightWeight &&
       !selectedIndexTypes.length
@@ -4754,32 +4742,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     try {
       if (selectedIndexJobs.stimulationShortcuts) {
         await runStimulationShortcutIndexing();
-      }
-
-      if (selectedIndexJobs.searchKeySetReindex) {
-        const toastId = 'index-searchkey-set-reindex-progress';
-        toast.loading('Перебудова searchKeySet наборів фільтрів...', { id: toastId });
-        const stats = await rebuildAllFilterSetIndexes({
-          onProgress: (stage, payload) => {
-            if (stage === 'searchKey') {
-              toast.loading(`Читаємо searchKey ${payload?.percent || 0}%${payload?.indexName ? ` (${payload.indexName})` : ''}...`, { id: toastId });
-              return;
-            }
-            if (stage === 'owners') {
-              toast.loading('Шукаємо власників правил доступу...', { id: toastId });
-              return;
-            }
-            toast.loading(
-              `Перебудова наборів ${payload?.percent || 0}% (${payload?.processed || 0}/${payload?.total || 0})`,
-              { id: toastId },
-            );
-          },
-        });
-        const failed = stats.errors?.length ? `, помилок: ${stats.errors.length}` : '';
-        toast.success(
-          `searchKeySet оновлено: ${stats.indexedRuleSets}/${stats.totalRuleSets} наборів${failed}.`,
-          { id: toastId },
-        );
       }
 
       if (selectedIndexJobs.profileMutationOwners) {

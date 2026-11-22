@@ -51,12 +51,6 @@ describe('Matching cache-first start', () => {
     expect(matching).not.toContain('viewModeRef.current === startMode && !isAdmin');
   });
 
-  it('caches the additional search-key set keys', () => {
-    const start = matching.indexOf('async function resolveAdditionalSearchKeySetKeysForMatching');
-    const body = matching.slice(start, matching.indexOf('\n}\n', start));
-    expect(body.indexOf('readTimedCacheEntry(cacheKey)')).toBeLessThan(body.indexOf("refDb(database, 'searchKeySets')"));
-    expect(body).toContain('writeTimedCacheEntry(cacheKey, { keys: searchKeySetKeys });');
-  });
 
   // Дека після перезавантаження — з памʼяті пристрою, а перша ж відповідь
   // бекенду її замінює, а не дописується за нею.

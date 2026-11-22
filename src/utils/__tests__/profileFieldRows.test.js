@@ -52,15 +52,17 @@ describe('форма не зберігає порожній рядок', () => {
   );
 
   it('«+» лише додає рядок і нічого не надсилає', () => {
-    // Вікно — до кінця самої кнопки, а не фіксована кількість знаків:
-    // коментар над рядком інакше виштовхував перевірене за межу.
-    const start = source.indexOf('canAppendFieldRow(state[field.name])');
-    const buttonBlock = source.slice(start, source.indexOf('</Button>', start));
-    expect(buttonBlock).toContain('[field.name]: appendEmptyFieldRow(prevState[field.name]),');
-    expect(buttonBlock).not.toContain('submitWithNormalization');
+    // Усі «+» (у полі й спільний для зросту, ваги й крові) кличуть одну
+    // функцію, і вона лише додає рядок у стан.
+    const start = source.indexOf('const appendEmptyRowsTo = fieldNames => {');
+    const body = source.slice(start, source.indexOf('\n  };\n', start));
+    expect(body).toContain('[fieldName]: appendEmptyFieldRow(prevState[fieldName]),');
+    expect(body).not.toContain('submitWithNormalization');
+    expect(body).not.toContain('handleSubmit');
     // Памʼятку, якої в стані немає, «+» не знімає — інакше кожен дотик
     // ставав окремим збереженням.
-    expect(buttonBlock).toContain("Object.prototype.hasOwnProperty.call(state, 'myComment')");
+    expect(body).toContain("Object.prototype.hasOwnProperty.call(state, 'myComment')");
+    expect(source).toContain('onClick={() => appendEmptyRowsTo([field.name])}');
   });
 });
 

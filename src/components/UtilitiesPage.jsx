@@ -74,7 +74,7 @@ import {
 } from './UtilitiesPage.styled';
 import { UTILITIES_IMPORT_SAMPLE, planUtilitiesImport } from 'utils/utilitiesImport';
 import { enqueueUtilitiesPatch, fetchUtilitiesData, listUtilitiesOwners } from './utilitiesRemote';
-import { ADMIN_UIDS, isAdminUid, readStoredAccessLevel, readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
+import { ADMIN_UIDS, isAdminUid, resolveAccess } from 'utils/accessLevel';
 import { listPendingOutboxPatches, subscribeWriteOutbox } from 'utils/writeOutbox';
 import {
   applyUtilitiesPatch,
@@ -1229,9 +1229,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
   const dotsMenu = () => {
     const access = resolveAccess({
       uid: viewerId || ownerId,
-      accessLevel: readStoredAccessLevel(),
       userRole: readStorage('userRole') || '',
-      canCreateProfiles: readStoredCanCreateProfiles(),
     });
     return <ProfileDotsMenu navigate={navigate} isAdmin={access.isAdmin} access={access} onExit={handleExit} onSelect={() => setShowMenu(false)} />;
   };

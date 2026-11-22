@@ -42,7 +42,7 @@ jest.mock('firebase/database', () => ({
   serverTimestamp: jest.fn(),
 }));
 
-const { readProfileFromNodes, resetViewerAccessLevelCache } = require('./config');
+const { readProfileFromNodes } = require('./config');
 
 const CARD_ID = 'hiddenProfileId00000000000';
 
@@ -75,7 +75,6 @@ const readWithCard = async card => {
 describe('поза стрічкою звичайний читач не просить приватних вузлів', () => {
   beforeEach(() => {
     mockGet.mockReset();
-    resetViewerAccessLevelCache();
     localStorage.clear();
   });
 

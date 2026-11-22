@@ -14,10 +14,6 @@ import {
 
 const repoRoot = path.join(__dirname, '..', '..', '..');
 const rules = JSON.parse(fs.readFileSync(path.join(repoRoot, 'database.rules.json'), 'utf8')).rules;
-const profileFormSource = fs.readFileSync(
-  path.join(repoRoot, 'src', 'components', 'ProfileForm.jsx'),
-  'utf8',
-);
 const matchingCardIndexSource = fs.readFileSync(
   path.join(repoRoot, 'src', 'utils', 'matchingCardIndex.js'),
   'utf8',
@@ -52,9 +48,9 @@ const expectFeedGatedRead = read => {
   expect(read).not.toContain('userRole');
   expect(read).not.toContain("child('role')");
   const [beforeGate] = read.split(FEED_GATE);
-  // Службовий доступ від стрічки не залежить — інакше приховану анкету не було б
-  // кому вести до публікації.
-  expect(beforeGate).toContain("contains('matching')");
+  // Від стрічки не залежать лише власниця й адміни: службового доступу
+  // (`accessLevel`) більше немає (22.11).
+  expect(beforeGate).not.toContain('accessLevel');
   expect(beforeGate).toContain('auth.uid == $uid');
   ADMIN_UIDS.forEach(uid => expect(beforeGate).toContain(uid));
 };
@@ -266,24 +262,11 @@ describe('profileContacts — власне правило, і воно йде з
     expect(rules.profileContacts.$uid['.read']).not.toBe(rules.matchingCards['.read']);
   });
 
-  it('редагує той, хто редагує анкету, і власник токена контактів', () => {
+  it('редагує лише власниця й адміни — рівня доступу більше немає', () => {
     const write = rules.profileContacts.$uid['.write'];
-    expect(write).toContain("contains('matching')");
-    expect(write).toContain("contains('profileContacts')");
-    expect(write).toContain("contains('view&write')");
-  });
-
-  it('токен звуження справді можна видати з форми', () => {
-    // Без цього правило запису було б формально коректним і практично мертвим:
-    // жоден рівень доступу не містив би підрядка, який воно шукає.
-    const block = profileFormSource.slice(
-      profileFormSource.indexOf('const accessLevelOptions = ['),
-      profileFormSource.indexOf('];', profileFormSource.indexOf('const accessLevelOptions = [')),
-    );
-    const assignable = [...block.matchAll(/\{ value: '([^']*)'/g)].map(match => match[1]);
-
-    expect(assignable.some(level => level.includes('profileContacts'))).toBe(true);
-    expect(assignable.some(level => level.includes('profileContacts') && level.includes('view&write'))).toBe(true);
+    expect(write).toContain('auth.uid == $uid');
+    expect(write).not.toContain('accessLevel');
+    expect(write).not.toContain('canCreateProfiles');
   });
 });
 
@@ -308,12 +291,12 @@ describe('решта вузлів не стає другим місцем для
     expectFeedGatedRead(rules.profileDetails.$uid['.read']);
   });
 
-  it('перелічити деталі цілою колекцією може лише службовий доступ', () => {
+  it('перелічити деталі цілою колекцією можуть лише адміни', () => {
     // У переліку немає де перевірити картку кожного запису, тож право за роллю
     // з рівня колекції знято: звичайний користувач читає анкету поіменно.
     const read = rules.profileDetails['.read'];
     expect(read).not.toContain('userRole');
-    expect(read).toContain("contains('matching')");
+    expect(read).not.toContain('accessLevel');
     ADMIN_UIDS.forEach(uid => expect(read).toContain(uid));
   });
 
@@ -341,33 +324,21 @@ describe('решта вузлів не стає другим місцем для
       .forEach(field => expect(validate).not.toContain(`$other != '${field}'`));
   });
 
-  it('правила питають про рівень доступу лише profileTechnical', () => {
-    // Legacy `users` закрито й видалено з правил; права всіх акаунтів уже
-    // лежать у `profileTechnical` (звірено перед закриттям).
-    const withAccessCheck = [
-      rules.matchingCards.$uid['.write'],
-      rules.profileDetails.$uid['.write'],
-      rules.profileContacts.$uid['.read'],
-      rules.profileContacts.$uid['.write'],
-      rules.profileWorkflow.$uid['.read'],
-      rules.searchKeySets.$keySet['.write'],
-    ];
-
-    withAccessCheck.forEach(rule => {
-      expect(rule).toContain("root.child('profileTechnical').child(auth.uid).child('accessLevel')");
-      expect(rule).not.toContain("child('users')");
-    });
-
-    expect(rules.multiData.profileMutations['.read'])
-      .toContain("root.child('profileTechnical').child(auth.uid).child('canCreateProfiles')");
+  it('правила не питають ні про рівень доступу, ні про canCreateProfiles', () => {
+    // Обидва права прибрано 22.11; legacy `users` закрито ще раніше.
+    const serialized = JSON.stringify(rules);
+    expect(serialized).not.toContain("child('accessLevel')");
+    expect(serialized).not.toContain("child('canCreateProfiles')");
+    expect(serialized).not.toContain("child('users')");
+    expect(rules.searchKeySets).toBeUndefined();
   });
 
   it('profileWorkflow лишається внутрішнім і не тримає getInTouch/publish/lastLogin', () => {
     ADMIN_UIDS.forEach(uid => expect(rules.profileWorkflow['.read']).toContain(uid));
     expect(rules.profileWorkflow['.read']).not.toContain('accessLevel');
     const read = rules.profileWorkflow.$uid['.read'];
-    expect(read).toContain("contains('matching')");
-    expect(read).toContain("contains('view&write')");
+    expect(read).toContain('auth.uid == $uid');
+    expect(read).not.toContain('accessLevel');
 
     const validate = rules.profileWorkflow.$uid.$other['.validate'];
     ['getInTouch', 'lastLogin', 'lastLogin2', 'publish']

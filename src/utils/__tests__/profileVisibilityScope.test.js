@@ -53,7 +53,7 @@ describe('поза стрічкою видно саму картку', () => {
 
     expect(expanded.feedDate).toBeUndefined();
     expect(isCardInMatchingFeed(expanded)).toBe(true);
-    expect(canOfferProfileContacts({ card: { ...expanded, userId: CARD_ID }, viewerId: ORDINARY, accessLevel: '' }))
+    expect(canOfferProfileContacts({ card: { ...expanded, userId: CARD_ID }, viewerId: ORDINARY }))
       .toBe(true);
   });
 
@@ -61,7 +61,7 @@ describe('поза стрічкою видно саму картку', () => {
     const expanded = expandMatchingCard(CARD_ID, { name: 'Схована', feedDate: false });
 
     expect(isCardInMatchingFeed(expanded)).toBe(false);
-    expect(canOfferProfileContacts({ card: { ...expanded, userId: CARD_ID }, viewerId: ORDINARY, accessLevel: '' }))
+    expect(canOfferProfileContacts({ card: { ...expanded, userId: CARD_ID }, viewerId: ORDINARY }))
       .toBe(false);
   });
 
@@ -69,7 +69,6 @@ describe('поза стрічкою видно саму картку', () => {
     const scoped = scopeProfileNodesToViewer({
       profileId: CARD_ID,
       viewerId: ORDINARY,
-      accessLevel: '',
       parts: parts(shownCard),
     });
 
@@ -82,7 +81,6 @@ describe('поза стрічкою видно саму картку', () => {
     const scoped = scopeProfileNodesToViewer({
       profileId: CARD_ID,
       viewerId: ORDINARY,
-      accessLevel: '',
       parts: parts(hiddenCard),
     });
 
@@ -94,37 +92,20 @@ describe('поза стрічкою видно саму картку', () => {
     expect(scoped.parts.technical).toBeNull();
   });
 
-  it('службовий доступ, власниця анкети й суперадмін від межі не залежать', () => {
+  it('власниця анкети й адмін від межі не залежать, колишній службовий доступ — так', () => {
     const outsideFeed = viewer => canReadProfileOutsideFeed({ profileId: CARD_ID, ...viewer });
 
-    expect(outsideFeed({ viewerId: ADMIN, accessLevel: '' })).toBe(true);
-    expect(outsideFeed({ viewerId: ORDINARY, accessLevel: 'matching:view' })).toBe(true);
-    expect(outsideFeed({ viewerId: ORDINARY, accessLevel: 'add+matching:view&write' })).toBe(true);
-    expect(outsideFeed({ viewerId: CARD_ID, accessLevel: '' })).toBe(true);
-    expect(outsideFeed({ viewerId: ORDINARY, accessLevel: '' })).toBe(false);
-    expect(outsideFeed({ viewerId: ORDINARY, accessLevel: 'addNewProfile:view&write' })).toBe(false);
-  });
-
-  it('непрочитані права — не дозвіл', () => {
-    // Ключ доступу зʼявляється лише після мережевого круга (читання власної
-    // анкети), і доти його значення — `null`. Поки `null` означав «вирішить
-    // база», у цьому вікні жила ціла діра: на холодному відкритті `/matching`
-    // пошук встигав прочитати приховану анкету повністю, покласти її в кеш
-    // карток — і показувати звідти ще годинами, вже після того, як права
-    // стали відомі. Хто справді має право, того назве прочитаний рівень
-    // (`resolveViewerAccessLevel`), а не його відсутність.
-    expect(canReadProfileOutsideFeed({ profileId: CARD_ID, viewerId: ORDINARY, accessLevel: null })).toBe(false);
-    expect(canReadProfileOutsideFeed({ profileId: CARD_ID, viewerId: ORDINARY })).toBe(false);
-    // Власниця анкети й адмін цього круга не чекають: їх упізнають за id.
-    expect(canReadProfileOutsideFeed({ profileId: CARD_ID, viewerId: CARD_ID, accessLevel: null })).toBe(true);
-    expect(canReadProfileOutsideFeed({ profileId: CARD_ID, viewerId: ADMIN, accessLevel: null })).toBe(true);
+    expect(outsideFeed({ viewerId: ADMIN })).toBe(true);
+    expect(outsideFeed({ viewerId: CARD_ID })).toBe(true);
+    expect(outsideFeed({ viewerId: ORDINARY })).toBe(false);
+    // Рівень доступу прибрано 22.11: колишнє значення нічого не відкриває.
+    expect(outsideFeed({ viewerId: ORDINARY, accessLevel: 'matching:view' })).toBe(false);
   });
 
   it('їм анкета лишається цілою', () => {
     const scoped = scopeProfileNodesToViewer({
       profileId: CARD_ID,
-      viewerId: ORDINARY,
-      accessLevel: 'matching:view',
+      viewerId: ADMIN,
       parts: parts(hiddenCard),
     });
 
@@ -148,10 +129,9 @@ describe('межу тримає той, хто складає анкету', () 
     // Один шлях складання анкети — одна межа: сюди сходяться і стрічка, і
     // пошук, і реакції, і гідратація за фільтрами.
     expect(body).toContain('const scoped = scopeProfileNodesToViewer({');
-    // Рівень доступу саме читається, а не береться з localStorage наосліп:
-    // ключа там немає до першого читання власної анкети.
-    expect(body).toContain('resolveViewerAccessLevel(),');
-    expect(body).toContain('accessLevel,');
+    // Рівня доступу більше немає (22.11): межу знає сам id читача.
+    expect(body).not.toContain('resolveViewerAccessLevel');
+    expect(body).not.toContain('accessLevel');
     expect(body).toContain('const merged = mergeProfileNodes({ userId: id, ...parts });');
   });
 
@@ -159,7 +139,7 @@ describe('межу тримає той, хто складає анкету', () 
     const cardIndexSource = fs.readFileSync(path.join(__dirname, '..', 'cardIndex.js'), 'utf8');
     // Анкети, складені до неї, лежать у localStorage разом із контактами, —
     // тож зміна версії їх і прибирає.
-    expect(cardIndexSource).toContain('export const CARDS_CACHE_VERSION = 6;');
+    expect(cardIndexSource).toContain('export const CARDS_CACHE_VERSION = 7;');
     expect(cardIndexSource).toContain('value.ownerId !== getCardsCacheOwnerId()');
     // А нові туди не потрапляють: право на контакти тримається на `feedDate`,
     // і воно протухає без відома браузера.
@@ -178,24 +158,25 @@ describe('межу тримає той, хто складає анкету', () 
     };
 
     localStorage.setItem('ownerId', ORDINARY);
-    localStorage.setItem('accessLevel', '');
     expect(sanitizeMatchingCardForCache(card)).toEqual({
       userId: CARD_ID,
       name: 'Показана',
       city: 'Київ',
     });
 
-    // Службовий читач веде анкету незалежно від стрічки — його кеш лишається
-    // повним.
+    // Колишній службовий доступ кеш повним не робить (22.11).
     localStorage.setItem('accessLevel', 'matching:view&write');
+    expect(sanitizeMatchingCardForCache(card).phone).toBeUndefined();
+    localStorage.removeItem('accessLevel');
+
+    // Адмін веде анкету незалежно від стрічки — його кеш лишається повним.
+    localStorage.setItem('ownerId', ADMIN);
     expect(sanitizeMatchingCardForCache(card)).toEqual(card);
 
-    // Так само власниця анкети: id збігається з анкетою, і рівень тут ні до чого.
+    // Так само власниця анкети: id збігається з анкетою.
     localStorage.setItem('ownerId', CARD_ID);
-    localStorage.setItem('accessLevel', '');
     expect(sanitizeMatchingCardForCache(card)).toEqual(card);
 
     localStorage.removeItem('ownerId');
-    localStorage.removeItem('accessLevel');
   });
 });
