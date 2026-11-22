@@ -184,14 +184,4 @@ describe('Matching initial loading error diagnostics', () => {
       .toBeLessThan(finallyBlock.indexOf('loadInitialVersion === loadInitialVersionRef.current'));
   });
 
-  it('defers a public-feed error until the access-scoped request settles', () => {
-    const initial = section('  const loadInitial = React.useCallback', '  const reloadDefault');
-    const accessLoad = section('// Додаткові правила відкривають окремі анкети', '  const loadInitial = React.useCallback');
-
-    expect(initial).toContain('if (additionalAccessLoadInFlightRef.current)');
-    expect(initial).toContain('if (additionalAccessUsersRef.current.length > 0)');
-    expect(initial).toContain('deferredInitialLoadErrorRef.current = error;');
-    expect(accessLoad).toContain('if (deferredError && !loadedScopedCards)');
-    expect(accessLoad).toContain('setLoadError(null);');
-  });
 });

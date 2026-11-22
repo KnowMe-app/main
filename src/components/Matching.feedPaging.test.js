@@ -222,11 +222,6 @@ describe('перше публічне вікно не змішується з в
     expect(applyFilters).toContain('setInitialPublicWindowComplete(false);');
   });
 
-  it('після вичерпання public добирає scoped-картки в межах тієї самої порції', () => {
-    const source = matching();
-    expect(source).toContain('while (scopedUsers.length < requestedLimit && additionalHasMoreRef.current');
-  });
-
   it('рахує наступну порцію від публічних карток, а не від повної деки', () => {
     const source = matching();
     expect(source).toContain('const publicCardsLength = viewMode === \'default\' ? publicVisibleUsers.length : renderedCardsLength;');

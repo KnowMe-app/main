@@ -706,8 +706,6 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       // ярлик з головного екрана; решта — як було.
       .then(profile => resolveSpecialHomeRoute(resolveAccess({
         uid,
-        accessLevel: profile?.accessLevel,
-        canCreateProfiles: profile?.canCreateProfiles,
         screenAccess: profile?.screenAccess || '',
       })) || (profile?.publish === true ? MATCHING_ROUTE : MY_PROFILE_ROUTE))
       .catch(() => MY_PROFILE_ROUTE);

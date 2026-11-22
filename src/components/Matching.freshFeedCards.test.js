@@ -30,14 +30,12 @@ describe('свіжа картка зі сторожа стану', () => {
     // бачать ту саму версію картки.
     expect(source).toContain('() => resolveStoredProjectionList(users, isMatchingSummaryCard),');
     expect(source).toContain('() => resolveStoredProjectionList(likedAudienceUsers, isMatchingSummaryCard),');
-    expect(source).toContain('() => resolveStoredProjectionList(additionalAccessUsers, isMatchingSummaryCard),');
     expect(source).toContain('() => resolveStoredProjectionList(sharedReactionCandidateUsers, isMatchingSummaryCard),');
     const visible = source.slice(source.indexOf('const visibleUsers = useMemo('), source.indexOf('const reactionTabUsers = useMemo('));
     expect(visible).toContain('placeReturnedCardsFirst({ users: storedUsers, returnedCards: storedReturnedToFeedCards,');
     expect(visible).toContain("viewMode === 'default' ? storedReturnedToFeedCards : EMPTY_USERS");
     expect(source).toContain('() => resolveStoredProjectionList(returnedToFeedCards, isMatchingSummaryCard),');
     expect(visible).toContain('likedAudienceUsers: storedLikedAudienceUsers,');
-    expect(visible).toContain('additionalAccessUsers: storedAdditionalAccessUsers,');
     expect(visible).toContain('sharedReactionCandidateUsers: storedSharedReactionCandidateUsers,');
     const reactionTab = source.slice(source.indexOf('const reactionTabUsers = useMemo('), source.indexOf('const reactionTabUsersRef'));
     expect(reactionTab).toContain('...storedUsers,');

@@ -57,11 +57,11 @@ describe('rankFieldsByFillStats', () => {
 });
 
 describe('splitProfileFormFields', () => {
-  it('ділить на поля й чіпи; відкрите чіпом і керування правами — полем', () => {
-    const fields = ['name', 'height', 'birth', 'accessLevel', 'city'].map(field);
+  it('ділить на поля й чіпи; відкрите чіпом і видані екрани — полем', () => {
+    const fields = ['name', 'height', 'birth', 'screenAccess', 'city'].map(field);
     const state = { name: 'Оля', height: ['168', ''] };
     const { shown, chips } = splitProfileFormFields(fields, state, { keepShown: new Set(['city']) });
-    expect(shown.map(item => item.name)).toEqual(['name', 'height', 'accessLevel', 'city']);
+    expect(shown.map(item => item.name)).toEqual(['name', 'height', 'screenAccess', 'city']);
     expect(chips.map(item => item.name)).toEqual(['birth']);
   });
 });

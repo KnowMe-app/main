@@ -12,10 +12,11 @@
  * (`undefined` / `null`, порожній масив чи обʼєкт).
  */
 
-export const PROFILE_FIELD_CHIPS_VISIBLE = 8;
+// Чіпи всієї форми — одним переліком; видно 15 найчастіше заповнюваних.
+export const PROFILE_FIELD_CHIPS_VISIBLE = 15;
 
-// Керування правами — не дані анкети, а перемикачі адміна: вони стоять завжди.
-export const ALWAYS_SHOWN_PROFILE_FIELDS = new Set(['accessLevel', 'canCreateProfiles', 'screenAccess']);
+// Видані екрани — не дані анкети, а перемикачі адміна: вони стоять завжди.
+export const ALWAYS_SHOWN_PROFILE_FIELDS = new Set(['screenAccess']);
 
 const isHole = value => value === undefined || value === null;
 

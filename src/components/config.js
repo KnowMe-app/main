@@ -75,10 +75,7 @@ import {
   splitSearchIdCandidateKeys,
 } from '../utils/searchKeyUtils';
 import {
-  canAccessAddByLevel,
   isAdminUid,
-  readStoredAccessLevel,
-  readStoredCanCreateProfiles,
   stripPrivilegedProfileFields,
 } from '../utils/accessLevel';
 import { hasFilledProfileDraftData } from '../utils/profileDraftContent';
@@ -3243,56 +3240,6 @@ export const renameFlowCategory = async ({ ownerId, fromGroupPath, toGroupPath, 
 };
 
 /**
- * Рівень доступу читача — прочитаний, а не вгаданий.
- *
- * `localStorage.accessLevel` зʼявляється лише після того, як екран прочитає
- * власну анкету, тобто після мережевого круга. До того ключа немає — і поки
- * межа читала його наосліп, кожне читання в цьому вікні йшло як «права ще не
- * відомі», тобто повним. На холодному відкритті `/matching` туди потрапляв і
- * пошук: прихована анкета встигала приїхати цілою, лягти в кеш карток і
- * лишитись видимою до кінця TTL — уже після того, як права стали відомі.
- *
- * Тому рівень тепер саме читається: власний `profileTechnical/$uid` відкритий
- * кожному на себе, а обіцянка на читача одна на сесію, тож паралельні картки
- * діляться нею, а не множать запити. Невдале читання не запамʼятовується:
- * інакше одна мережева похибка урізала б службовому читачеві видачу до кінця
- * сесії.
- *
- * Legacy `users/$uid` тут більше не питають — як і ніде в коді. Права живуть у
- * `profileTechnical` (`PROFILE_TECHNICAL_ACCESS_FIELDS`), і саме він джерело
- * істини; правила бази й далі приймають обидві копії, тож рівень, який лежить
- * лише в legacy, доступу не втрачає в базі — але код про нього не знає, і
- * такий акаунт треба перенести у вузол.
- */
-const viewerAccessLevelByUid = new Map();
-
-const readOwnAccessLevel = async (node, uid) => {
-  const snapshot = await get(ref2(database, `${node}/${uid}/accessLevel`));
-  return snapshot.exists() ? String(snapshot.val() || '') : '';
-};
-
-export const resolveViewerAccessLevel = async () => {
-  const stored = readStoredAccessLevel();
-  if (stored !== null && stored !== undefined) return stored;
-
-  const uid = String(auth.currentUser?.uid || '').trim();
-  if (!uid) return '';
-
-  if (!viewerAccessLevelByUid.has(uid)) {
-    const pending = readOwnAccessLevel(PROFILE_NODES.profileTechnical, uid)
-      .then(nodeLevel => nodeLevel || '');
-    pending.catch(() => viewerAccessLevelByUid.delete(uid));
-    viewerAccessLevelByUid.set(uid, pending);
-  }
-
-  // Права не прочитались — читач іде далі як той, кому їх не видавали: межу
-  // однаково тримає база, а наступний виклик спробує ще раз.
-  return viewerAccessLevelByUid.get(uid).catch(() => '');
-};
-
-export const resetViewerAccessLevelCache = () => viewerAccessLevelByUid.clear();
-
-/**
  * Читає анкету з нових вузлів.
  *
  * Це єдиний шлях: джерело істини — саме ці пʼять вузлів. З колекцією `users`
@@ -3325,17 +3272,12 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     includeTechnical = false,
   } = options;
 
-  // Картка і рівень доступу читаються першими — і саме тому, що від них
-  // залежить, які вузли взагалі можна питати. Разом вони один круг: рівень
-  // доступу читається раз на сесію і далі приходить з памʼяті
-  // (`resolveViewerAccessLevel`), тож на другій картці це вже одне читання.
-  const [card, accessLevel] = await Promise.all([
-    readProfileNodePart(PROFILE_NODES.matchingCards, id),
-    resolveViewerAccessLevel(),
-  ]);
+  // Картка читається першою — саме від неї залежить, які вузли взагалі можна
+  // питати.
+  const card = await readProfileNodePart(PROFILE_NODES.matchingCards, id);
 
   // Приватні вузли не питають доти, доки право на них не доведене: або читач
-  // має його поза стрічкою (власниця, адмін, службовий доступ), або в картці
+  // має його поза стрічкою (власниця, адмін), або в картці
   // лежить дата `feedDate` — сама лише наявність ключа не рахується, бо `false`
   // означає «сховали», а формат, який не є датою, межу не відкриває.
   //
@@ -3357,18 +3299,17 @@ export const readProfileFromNodes = async (userId, options = {}) => {
   const privileged = canReadProfileOutsideFeed({
     profileId: id,
     viewerId: auth.currentUser?.uid || '',
-    accessLevel,
   });
   const sharedWithViewer = !privileged && !isCardInMatchingFeed(card)
     && isCardSharedWithLikedAudience(card) && await isViewerInLikedAudienceOf(id);
   const mayReadPrivateNodes = privileged || isCardInMatchingFeed(card) || sharedWithViewer;
   // Робочі дані (`profileWorkflow`) і позначки ведення картки (`writer`,
   // `stimulationSchedule`) — службові. Правила відкривають `profileWorkflow`
-  // власниці, адмінам, редакторам матчингу й тим, хто заводить картки, а
+  // власниці й адмінам, а
   // позначки пише лише той, хто картку веде. Звичайний читач чужої анкети тут
   // щоразу отримував відмову й дві порожні відповіді — три з семи запитів на
   // кожне відкриття картки, що нічого не показували.
-  const handlesCardWork = privileged || readStoredCanCreateProfiles() || canAccessAddByLevel(accessLevel);
+  const handlesCardWork = privileged;
 
   const [details, contacts, workflow, technical] = mayReadPrivateNodes
     ? await Promise.all([
@@ -3395,7 +3336,7 @@ export const readProfileFromNodes = async (userId, options = {}) => {
   if (mayReadPrivateNodes && isCardInMatchingFeed(card) && !details) {
     console.warn(
       '[profileNodes] картка в стрічці, а profileDetails порожній — найімовірніше відмова правил',
-      { userId: id, viewerId: auth.currentUser?.uid || '', accessLevel: accessLevel || '(немає)' },
+      { userId: id, viewerId: auth.currentUser?.uid || '' },
     );
   }
 
@@ -3408,7 +3349,6 @@ export const readProfileFromNodes = async (userId, options = {}) => {
   const scoped = scopeProfileNodesToViewer({
     profileId: id,
     viewerId: auth.currentUser?.uid || '',
-    accessLevel,
     sharedWithViewer,
     parts: { card, details, contacts, workflow, technical },
   });
@@ -3523,11 +3463,9 @@ export const readProfileContacts = userId => {
   // шість годин як «контактів немає».
   let cacheable = Boolean(viewerId);
   const promise = (async () => {
-    const accessLevel = await resolveViewerAccessLevel();
     const privileged = canReadProfileOutsideFeed({
       profileId: id,
       viewerId: auth.currentUser?.uid || '',
-      accessLevel,
     });
     if (!privileged) {
       // Картку рядка стрічка щойно прочитала, і її стан (`feedDate`,
@@ -3895,9 +3833,8 @@ const expandProfileDraft = (cardId, mutation) => ({
  *
  * Шлях до чернетки починається з автора, а пошук дає самий лише id картки,
  * тож доти прочитати знайдену **чужу** чернетку можна було єдиним способом:
- * узяти `multiData/profileMutations` цілим вузлом. Право на це має адмін і
- * власник `canCreateProfiles` — тобто рівно ті, кому відкрито «хто що завів по
- * всій базі». Звичайний читач на той самий точний номер бачив «Не знайшов» і
+ * узяти `multiData/profileMutations` цілим вузлом. Право на це має лише адмін
+ * — тобто той, кому відкрито «хто що завів по всій базі». Звичайний читач на той самий точний номер бачив «Не знайшов» і
  * заготовку «Створити нову», а натиснувши її, діставав `DUPLICATE_PROFILE`:
  * номер тримає заявка на унікальність. Пошук казав «такої немає» рівно там, де
  * вона є.
@@ -6130,9 +6067,10 @@ export const updateProfileRole = async (userId, nextRole) => {
 
 export const updateDataInRealtimeDB = async (userId, uploadedInfo, condition, { revisionNeutral = false } = {}) => {
   try {
-    // Права (`accessLevel`, `canCreateProfiles`, `multiDataSourceUserIds`)
-    // видають лише адміни, і правила бази відкидають їх від будь-кого іншого —
-    // разом з усім вузлом. Тож із запису не-адміна вони знімаються ще тут.
+    // Права (`multiDataSourceUserIds`, `screenAccess`) видають лише адміни, і
+    // правила бази відкидають їх від будь-кого іншого — разом з усім вузлом.
+    // Тож із запису не-адміна вони знімаються ще тут, а застарілі
+    // `accessLevel` і `canCreateProfiles` — з будь-якого запису.
     const cleanedUploadedInfo = stripPrivilegedProfileFields(normalizeStoredDates(stripTransientUserDataFields(uploadedInfo, {
       markForRealtimeDeletion: condition === 'update',
     })), auth.currentUser?.uid);
@@ -6230,9 +6168,10 @@ export const updateProfileNodesInRTDB = async (userId, uploadedInfo, condition, 
     console.log('currentUserData :>> ', currentUserData);
 
     // if (condition === 'update' && !(Object.keys(uploadedInfo).length < Object.keys(currentUserData).length)) {
-    // Права (`accessLevel`, `canCreateProfiles`, `multiDataSourceUserIds`)
-    // видають лише адміни, і правила бази відкидають їх від будь-кого іншого —
-    // разом з усім вузлом. Тож із запису не-адміна вони знімаються ще тут.
+    // Права (`multiDataSourceUserIds`, `screenAccess`) видають лише адміни, і
+    // правила бази відкидають їх від будь-кого іншого — разом з усім вузлом.
+    // Тож із запису не-адміна вони знімаються ще тут, а застарілі
+    // `accessLevel` і `canCreateProfiles` — з будь-якого запису.
     const cleanedUploadedInfo = stripPrivilegedProfileFields(normalizeStoredDates(stripTransientUserDataFields(uploadedInfo, {
       markForRealtimeDeletion: condition === 'update',
     })), auth.currentUser?.uid);

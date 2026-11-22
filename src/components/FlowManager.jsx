@@ -108,7 +108,7 @@ import {
 } from './FlowManager.styled';
 import Collapsible from './Collapsible';
 import { FlowConfirmDialog } from './FlowConfirmDialog';
-import { ADMIN_UIDS, isAdminUid, readStoredAccessLevel, readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
+import { ADMIN_UIDS, isAdminUid, resolveAccess } from 'utils/accessLevel';
 import { listFlowOwners } from './flowOwnersRemote';
 import {
   deleteFlowEntry,
@@ -1226,9 +1226,7 @@ export const FlowManager = ({ ownerId, viewerId }) => {
   const dotsMenu = () => {
     const access = resolveAccess({
       uid: viewerId || ownerId,
-      accessLevel: readStoredAccessLevel(),
       userRole: localStorage.getItem('userRole') || '',
-      canCreateProfiles: readStoredCanCreateProfiles(),
     });
     return (
       <ProfileDotsMenu

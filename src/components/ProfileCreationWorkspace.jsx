@@ -1089,9 +1089,7 @@ export const ProfileCreationWorkspace = () => {
     const profile = await fetchUserById(user.uid);
     const resolved = resolveAccess({
       uid: user.uid,
-      accessLevel: profile?.accessLevel,
       userRole: profile?.userRole || profile?.role,
-      canCreateProfiles: profile?.canCreateProfiles,
       screenAccess: profile?.screenAccess || '',
     });
     setUid(user.uid);

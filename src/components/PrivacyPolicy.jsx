@@ -7,7 +7,7 @@ import { uiText } from 'utils/uiTranslations';
 import { KmPage, KmTopbar, KmIconButton, KnowMeBrand } from './styles/knowme';
 import InfoModal from './InfoModal';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
-import { readStoredCanCreateProfiles, resolveAccess } from 'utils/accessLevel';
+import { resolveAccess } from 'utils/accessLevel';
 
 const ContentWrap = styled.main`
   width: min(100%, 760px);
@@ -96,9 +96,7 @@ export const PrivacyPolicy = () => {
   const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
   const access = resolveAccess({
     uid: localStorage.getItem('ownerId') || '',
-    accessLevel: localStorage.getItem('accessLevel') || '',
     userRole: localStorage.getItem('userRole') || '',
-    canCreateProfiles: readStoredCanCreateProfiles(),
   });
 
   const dotsMenu = () => (

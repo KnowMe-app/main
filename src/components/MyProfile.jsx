@@ -1477,7 +1477,6 @@ const CLEAR_ALL_PROTECTED_FIELDS = new Set([
   'role',
   'publish',
   'publishAudience',
-  'accessLevel',
 ]);
 
 // Ким людина заявляє себе в матчингу — той самий перелік, що й на реєстрації
@@ -1703,8 +1702,6 @@ export const MyProfile = () => {
   const currentUid = auth.currentUser?.uid || getStoredAuthenticatedOwnerId();
   const access = resolveAccess({
     uid: currentUid,
-    accessLevel: state.accessLevel || localStorage.getItem('accessLevel'),
-    canCreateProfiles: state.canCreateProfiles === true,
   });
   const isAdmin = access.isAdmin;
   const navHeaderTarget = usePrimaryNavigationHeaderTarget();

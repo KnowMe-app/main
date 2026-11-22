@@ -1,48 +1,14 @@
 const fs = require('fs');
 const path = require('path');
-const { canAccessMatchingByLevel } = require('../accessLevel');
 
 const rules = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database.rules.json'), 'utf8'),
 ).rules;
-const profileFormSource = fs.readFileSync(
-  path.join(__dirname, '..', '..', 'components', 'ProfileForm.jsx'),
-  'utf8',
-);
-
-const assignableAccessLevels = (() => {
-  const block = profileFormSource.slice(
-    profileFormSource.indexOf('const accessLevelOptions = ['),
-    profileFormSource.indexOf('];', profileFormSource.indexOf('const accessLevelOptions = [')),
-  );
-  return [...block.matchAll(/\{ value: '([^']*)'/g)].map(match => match[1]).filter(Boolean);
-})();
-
-// The rules language has no helpers, so the read conditions are asserted by the
-// shape the app depends on: any accessLevel that mentions matching grants read.
-const grantsAccessLevelByContains = (readRule, collection) =>
-  readRule.includes(
-    `root.child('${collection}').child(auth.uid).child('accessLevel').val().contains('matching')`,
-  );
-
 describe('database.rules.json matching read access', () => {
-  it('exposes the access levels the ProfileForm can assign', () => {
-    expect(assignableAccessLevels).toEqual(
-      expect.arrayContaining(['matching:view', 'matching:view&write', 'add+matching:view', 'add+matching:view&write']),
-    );
-  });
-
-  it('lets every matching access level scan the matching cards', () => {
-    const readRule = rules.matchingCards['.read'];
-
-    expect(grantsAccessLevelByContains(readRule, 'profileTechnical')).toBe(true);
-
-    assignableAccessLevels
-      .filter(level => canAccessMatchingByLevel(level))
-      .forEach(level => {
-        // `contains('matching')` covers the level only when it literally carries it.
-        expect(level).toContain('matching');
-      });
+  // Рівень доступу (`accessLevel`) прибрано 22.11: сканувати картки мають
+  // адміни й читачі з роллю, відмінною від `ed`.
+  it('no longer grants scanning by a stored access level', () => {
+    expect(rules.matchingCards['.read']).not.toContain('accessLevel');
   });
 
   // Роль читача правила беруть з його картки стрічки: legacy `users`

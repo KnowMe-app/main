@@ -4,10 +4,10 @@ import path from 'path';
 describe('ProfileForm technical settings', () => {
   const source = fs.readFileSync(path.join(__dirname, 'ProfileForm.jsx'), 'utf8');
 
-  it('provides an admin boolean control for profile creation access', () => {
-    expect(source).toContain("name: 'canCreateProfiles'");
-    expect(source).toContain('aria-label="Дозволити створення карток"');
-    expect(source).toContain("const value = e.target.value === 'true'");
+  it('не має керування знятими правами', () => {
+    // `accessLevel` і `canCreateProfiles` прибрано 22.11 — разом з полями форми.
+    expect(source).not.toContain("name: 'canCreateProfiles'");
+    expect(source).not.toContain('aria-label="Дозволити створення карток"');
   });
 
   it('keeps technical fields admin-only and renders them after regular fields', () => {
@@ -24,7 +24,8 @@ describe('ProfileForm technical settings', () => {
     expect(source).toContain('aria-expanded={block.isOpen}');
     expect(source).toContain('onClick={() => toggleProfileFormBlock(block.id)}');
     // Полем малюється лише те, що в картці є; решта — чіпами «Додати поле».
-    expect(source).toContain('<ReadOnlyFieldset disabled={Boolean(block.readOnly)}><FieldsGrid>{block.shownFields.map(');
+    expect(source).toContain('<ReadOnlyFieldset disabled={Boolean(block.readOnly)}><FieldsGrid>{(() => {');
+    expect(source).toContain('groupMetricRowFields(block.shownFields)');
   });
 
   it('зводить блоки за шляхом, тож той самий вузол не малюється двічі', () => {

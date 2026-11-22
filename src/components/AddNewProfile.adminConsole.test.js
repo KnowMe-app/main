@@ -107,7 +107,7 @@ describe('AddNewProfile admin console', () => {
     expect(groupsBody).toContain("note: 'переписує вузол цілком'");
 
     // Жодна робота не загубилась при перекладанні зі старого стовпчика.
-    ['searchLocalIdAndKey', 'searchLocalImtHeightWeight', 'searchKeyUsersAll', 'searchKeySetReindex', 'stimulationShortcuts']
+    ['searchLocalIdAndKey', 'searchLocalImtHeightWeight', 'searchKeyUsersAll', 'stimulationShortcuts']
       .forEach(job => expect(groupsBody).toContain(`key: '${job}'`));
   });
 });

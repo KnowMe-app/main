@@ -75,10 +75,7 @@ export const PROFILE_FORM_BLOCK_IDS = Object.freeze({
 });
 
 const ACCESS_BLOCK_FIELDS = new Set([
-  'accessLevel',
-  'canCreateProfiles',
   'screenAccess',
-  'additionalAccessRules',
   'multiDataAccessUserIds',
   'multiDataSourceUserIds',
   'godMode',

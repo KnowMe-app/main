@@ -45,7 +45,8 @@ describe('контакти: спершу кеш, точкове читання',
   // — з памʼяті пристрою, а в памʼять лягає лише справжня відповідь бази.
   it('readProfileContacts бере свіжу відповідь з пристрою і кладе туди лише справжню', () => {
     const reader = sliceBetween(config(), 'export const readProfileContacts = userId =>', '/**\n * Прочитати анкети за id.');
-    expect(reader.indexOf('readFreshProfileContacts(viewerId, id)')).toBeLessThan(reader.indexOf('resolveViewerAccessLevel()'));
+    expect(reader).toContain('readFreshProfileContacts(viewerId, id)');
+    expect(reader).not.toContain('resolveViewerAccessLevel()');
     expect(reader).toContain('if (cacheable) writeProfileContacts(viewerId, id, result);');
     expect(reader).toMatch(/catch \(error\) \{\n\s+cacheable = false;/);
   });

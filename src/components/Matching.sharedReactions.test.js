@@ -22,11 +22,9 @@ describe('Matching shared reaction card UI', () => {
     const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
     const ownerInstall = source.indexOf('setMultiDataOwnerIds(resolvedOwnerIds);');
     const roleResolution = source.indexOf('setCurrentUserRoleResolved(true);', ownerInstall);
-    const searchKeyLookup = source.indexOf('await resolveAdditionalSearchKeySetKeysForMatching(profile, user.uid);', roleResolution);
 
     expect(ownerInstall).toBeGreaterThan(-1);
     expect(roleResolution).toBeGreaterThan(ownerInstall);
-    expect(searchKeyLookup).toBeGreaterThan(roleResolution);
     expect(source).toContain('const [currentUserRoleResolved, setCurrentUserRoleResolved] = useState(false);');
   });
 
@@ -100,15 +98,6 @@ describe('Matching shared reaction card UI', () => {
   });
 
 
-  it('requires searchKeySets for additional reaction access instead of falling back to global searchKey', () => {
-    // Додатковий доступ рахує провайдер стрічки, а не сама сторінка.
-    const source = fs.readFileSync(path.join(__dirname, 'Matching.jsx'), 'utf8');
-    const provider = fs.readFileSync(path.join(__dirname, '..', 'utils', 'matchingDataProvider.js'), 'utf8');
-
-    expect(provider).toContain('requireSearchKeySetKeys: true');
-    expect(source).not.toContain("refDb(database, 'searchKey')");
-    expect(source).not.toContain("ref2(database, 'searchKey')");
-  });
 
 
   it('keeps Matching a plain feed without reward, load-more chrome or a detail layer', () => {

@@ -1,4 +1,4 @@
-import { canAccessMatchingByLevel, isAdminUid } from './accessLevel';
+import { isAdminUid } from './accessLevel';
 import { getAvailableContactFields } from 'components/contactMethods';
 import { MATCHING_CARD_FEED_FIELD } from './matchingCardIndex';
 import { normalizeFeedDateValue } from './profileFieldDerive';
@@ -19,8 +19,9 @@ import { LIKED_AUDIENCE_CARD_FLAG } from './likedAudience';
  * - ключ **є** → анкета показана, і читач бачить її як завжди;
  * - ключа **немає** → максимум доступної інформації це `matchingCards`.
  *
- * Службовий доступ (`accessLevel` з `matching`), власник анкети й суперадміни
- * від цієї межі не залежать: саме вони й ведуть анкету до публікації.
+ * Власник анкети й адміни від цієї межі не залежать: саме вони й ведуть
+ * анкету до публікації. Службового доступу (`accessLevel`) більше немає
+ * (22.11): значення, що лишились у старих акаунтів, не відкривають нічого.
  *
  * Справжня межа — у `database.rules.json`, де ті самі три випадки описані
  * правилом читання `profileDetails/$uid` і `profileContacts/$uid`. Тут вона
@@ -41,8 +42,8 @@ import { LIKED_AUDIENCE_CARD_FLAG } from './likedAudience';
  *
  * Поки тут питали сам лише `feedDate`, кожен рядок стрічки виходив «поза
  * стрічкою»: `canOfferProfileContacts` не давав кнопки контактів **жодній**
- * картці, і трубка зникла з усієї стрічки в усіх, крім адмінів і власників
- * службового доступу, яких ця межа не стосується взагалі.
+ * картці, і трубка зникла з усієї стрічки в усіх, крім адмінів, яких ця межа
+ * не стосується взагалі.
  *
  * Суворість формату при цьому лишається тією самою в обох формах: право дає
  * саме **дата** (`normalizeFeedDateValue`), бо так само її питає і правило бази.
@@ -59,20 +60,11 @@ export const isCardInMatchingFeed = card => {
 };
 
 /** Кому анкета відкрита без огляду на те, чи вона в стрічці. */
-export const canReadProfileOutsideFeed = ({ profileId, viewerId, accessLevel } = {}) => {
+export const canReadProfileOutsideFeed = ({ profileId, viewerId } = {}) => {
   const normalizedViewerId = String(viewerId || '').trim();
   const normalizedProfileId = String(profileId || '').trim();
   if (normalizedViewerId && normalizedProfileId && normalizedViewerId === normalizedProfileId) return true;
-  if (isAdminUid(normalizedViewerId)) return true;
-  // Права, яких немає на руках, — це не дозвіл. Раніше `null` («застосунок ще
-  // не знає») відкривав анкету цілком, бо ключ доступу зʼявляється лише після
-  // читання власної анкети, тобто після мережевого круга. Вікно виходило
-  // коротким, але справжнім: на холодному відкритті `/matching` пошук встигав
-  // прочитати приховану анкету повністю — з контактами — і покласти її в кеш
-  // карток, звідки її показували ще годинами. Хто справді має право, того
-  // назве прочитаний рівень (`resolveViewerAccessLevel`), а не його
-  // відсутність.
-  return canAccessMatchingByLevel(accessLevel);
+  return isAdminUid(normalizedViewerId);
 };
 
 /**
@@ -111,11 +103,9 @@ const cardAlreadyCarriesContacts = card => getAvailableContactFields(card).lengt
  * малювання кнопки, а не після читання вузлів. Картка поза стрічкою, на яку
  * читач права не має, контактів не віддасть — ані кнопці, ані розгорнутому
  * блоку, — а сам значок обіцяв, що віддасть: кожне натискання коштувало круга
- * до бази заради напису «Контактів немає або вони закриті». Правила
- * додаткового доступу (`additionalAccessRules`) тут нічого не змінюють: вони
- * доливають картки в деку, а `profileContacts` відкриває лише `feedDate`.
+ * до бази заради напису «Контактів немає або вони закриті».
  */
-export const canOfferProfileContacts = ({ card, viewerId, accessLevel } = {}) => {
+export const canOfferProfileContacts = ({ card, viewerId } = {}) => {
   if (!card || typeof card !== 'object') return false;
   if (isOwnProfileDraftCard(card)) return true;
   if (isCardInMatchingFeed(card)) return true;
@@ -125,7 +115,7 @@ export const canOfferProfileContacts = ({ card, viewerId, accessLevel } = {}) =>
   // база — за самою реакцією.
   if (card[LIKED_AUDIENCE_CARD_FLAG] === true) return true;
   if (cardAlreadyCarriesContacts(card)) return true;
-  return canReadProfileOutsideFeed({ profileId: card.userId, viewerId, accessLevel });
+  return canReadProfileOutsideFeed({ profileId: card.userId, viewerId });
 };
 
 /**
@@ -137,7 +127,6 @@ export const canOfferProfileContacts = ({ card, viewerId, accessLevel } = {}) =>
 export const scopeProfileNodesToViewer = ({
   profileId,
   viewerId,
-  accessLevel,
   // Читач у колі, якому власниця відкрила анкету (публікація «лише для
   // вподобаних»). Довести це картка сама не може — її кореневе правило
   // відкриває й тим, кого не вподобали, — тож доказ приносить викликач
@@ -147,7 +136,7 @@ export const scopeProfileNodesToViewer = ({
 } = {}) => {
   const cappedToCard = !isCardInMatchingFeed(parts.card)
     && !sharedWithViewer
-    && !canReadProfileOutsideFeed({ profileId, viewerId, accessLevel });
+    && !canReadProfileOutsideFeed({ profileId, viewerId });
 
   if (!cappedToCard) return { parts, cappedToCard };
 

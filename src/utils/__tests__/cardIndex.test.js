@@ -1,3 +1,6 @@
+// Адмін — той, чиє право на контакти не залежить від стрічки.
+const ADMIN_VIEWER = '3LiD7JGCJTSJoVMU7fdR1ZrcIZH2';
+
 describe('cardIndex queries', () => {
   const {
     setIdsForQuery,
@@ -28,8 +31,7 @@ describe('cardIndex queries', () => {
   });
 
   it('очищає всі чотири matching-сховища і збільшує epoch', () => {
-    localStorage.setItem('ownerId', 'cache-owner');
-    localStorage.setItem('accessLevel', 'matching:view&write');
+    localStorage.setItem('ownerId', ADMIN_VIEWER);
     updateCard('userId01', { name: 'Повна анкета' });
     setIdsForQuery('default', ['userId01']);
     setIndexIdsForQuery('matchingIndex:role=ag', ['userId01'], { complete: true });
@@ -69,10 +71,9 @@ describe('cardIndex queries', () => {
 
   it('does not share full cards between signed-in viewers', () => {
     resetMatchingLocalStorageCache('account isolation test');
-    localStorage.setItem('ownerId', 'privileged-viewer');
     // Контакти в кеші лишає лише той, чиє право на них не залежить від
-    // стрічки, — тут це службовий доступ (див. profileVisibilityScope.test.js).
-    localStorage.setItem('accessLevel', 'matching:view&write');
+    // стрічки, — тут це адмін (див. profileVisibilityScope.test.js).
+    localStorage.setItem('ownerId', ADMIN_VIEWER);
     updateCard('hidden-profile', { phone: '+380000000000' });
     expect(getCard('hidden-profile')).toMatchObject({ phone: '+380000000000' });
 
@@ -87,35 +88,19 @@ describe('cardIndex queries', () => {
     // кладуть узагалі — і віддати таку анкету означало б, що телефон, видимий з
     // першого відкриття, зникає з другого.
     resetMatchingLocalStorageCache('complete profile cache test');
-    localStorage.setItem('ownerId', 'privileged-viewer');
-    localStorage.setItem('accessLevel', 'matching:view&write');
+    localStorage.setItem('ownerId', ADMIN_VIEWER);
     updateCard('cached-profile', { name: 'A', phone: '+380000000000' });
     expect(getCompleteCachedProfile('cached-profile')).toMatchObject({ phone: '+380000000000' });
 
     localStorage.setItem('ownerId', 'ordinary-viewer');
-    localStorage.setItem('accessLevel', 'ed');
     updateCard('cached-profile', { name: 'A' });
     expect(getCompleteCachedProfile('cached-profile')).toBeNull();
-  });
-
-  it('анкета, покладена в кеш до приїзду рівня доступу, повною не вважається', () => {
-    // Холодний старт: рівня доступу ще немає, і контакти в кеш не лягли.
-    localStorage.setItem('ownerId', 'service-viewer');
-    updateCard('early-profile', { name: 'A', phone: '+380000000000' });
-    // Рівень приїхав — право тепер є, але в кеші телефону немає.
-    localStorage.setItem('accessLevel', 'matching:view&write');
-    expect(getCompleteCachedProfile('early-profile')).toBeNull();
-
-    // Покладена вже з правом — повна.
-    updateCard('early-profile', { name: 'A', phone: '+380000000000' });
-    expect(getCompleteCachedProfile('early-profile')).toMatchObject({ phone: '+380000000000' });
   });
 
   // Тіло анкети без контактів — не повна анкета, але й не порожнеча: «спершу
   // кеш» бере його звідси й дочитує самі контакти.
   it('віддає кешоване тіло анкети навіть без контактів', () => {
     localStorage.setItem('ownerId', 'ordinary-viewer');
-    localStorage.setItem('accessLevel', 'ed');
     updateCard('body-only', { name: 'A', moreInfo_main: 'Про себе', phone: '+380000000000' });
     expect(getCompleteCachedProfile('body-only')).toBeNull();
     const body = getCachedProfileBody('body-only');

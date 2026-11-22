@@ -531,8 +531,10 @@ await it('стороння читає контакти показаної кар
   await assertFails(get(ref(db(OUTSIDER), `profileContacts/${HIDDEN_CARD}`)));
 });
 
-await it('матчинговий редактор пише контакти — так само, як редагував анкету', () =>
-  assertSucceeds(set(ref(db(MATCHING_EDITOR), `profileContacts/${CARD}/telegram`), '@x')));
+// Рівень доступу (`accessLevel`) прибрано цілком (22.11): значення, що лишилось
+// у базі в колишніх редакторів, більше нічого не відкриває.
+await it('колишній матчинговий редактор чужих контактів не пише', () =>
+  assertFails(set(ref(db(MATCHING_EDITOR), `profileContacts/${CARD}/telegram`), '@x')));
 
 await it('матчинговий переглядач без view&write контактів не пише', () =>
   assertFails(set(ref(db(MATCHING_VIEWER), `profileContacts/${CARD}/telegram`), '@nope')));
@@ -560,11 +562,8 @@ await it('правило контактів окреме — звузити йо
   if (rules.profileContacts.$uid['.read'] === rules.matchingCards['.read']) {
     throw new Error('правило контактів не має бути тим самим обʼєктом, що й у стрічки');
   }
-  if (rules.profileContacts['.read'].includes('accessLevel')) {
-    throw new Error('колекцію цілком читає тільки суперадмін');
-  }
-  if (!rules.profileContacts.$uid['.write'].includes("contains('profileContacts')")) {
-    throw new Error('токен звуження зник із правила запису');
+  if (JSON.stringify(rules).includes('accessLevel')) {
+    throw new Error('рівень доступу прибрано з правил цілком');
   }
 });
 
@@ -598,8 +597,8 @@ await it('пароль не приймається в технічний вуз�
 
 describe('profileWorkflow — внутрішні дані');
 
-await it('матчинговий редактор читає workflow', () =>
-  assertSucceeds(get(ref(db(MATCHING_EDITOR), `profileWorkflow/${CARD}`))));
+await it('колишній матчинговий редактор чужого workflow не читає', () =>
+  assertFails(get(ref(db(MATCHING_EDITOR), `profileWorkflow/${CARD}`))));
 
 await it('матчинговий переглядач без view&write workflow не читає', () =>
   assertFails(get(ref(db(MATCHING_VIEWER), `profileWorkflow/${CARD}`))));
@@ -773,14 +772,16 @@ describe('права після переїзду в profileTechnical');
 await it('адмін із правами лише в profileTechnical читає стрічку', () =>
   assertSucceeds(get(ref(db(MIGRATED_EDITOR), `matchingCards/${CARD}`))));
 
-await it('він же редагує картку', () =>
-  assertSucceeds(set(ref(db(MIGRATED_EDITOR), `matchingCards/${CARD}/city`), 'Львів')));
+// Права в `profileTechnical` (рівень доступу, `canCreateProfiles`) прибрано
+// 22.11: чужу анкету правлять лише двоє адмінів, а не той, кому колись видали.
+await it('він же чужої картки не редагує', () =>
+  assertFails(set(ref(db(MIGRATED_EDITOR), `matchingCards/${CARD}/city`), 'Львів')));
 
-await it('він же редагує деталі анкети', () =>
-  assertSucceeds(set(ref(db(MIGRATED_EDITOR), `profileDetails/${CARD}/education`), 'вища')));
+await it('він же чужих деталей анкети не редагує', () =>
+  assertFails(set(ref(db(MIGRATED_EDITOR), `profileDetails/${CARD}/education`), 'вища')));
 
-await it('він же редагує контакти', () =>
-  assertSucceeds(set(ref(db(MIGRATED_EDITOR), `profileContacts/${CARD}/phone`), '+380')));
+await it('він же чужих контактів не редагує', () =>
+  assertFails(set(ref(db(MIGRATED_EDITOR), `profileContacts/${CARD}/phone`), '+380')));
 
 await it('він же створює анкету через profileMutations', () =>
   assertSucceeds(set(
@@ -963,24 +964,24 @@ await it('власниця анкети розкладає власні дані
   }));
 });
 
-await it('редактор матчингу пише деталі й контакти, але не технічне', async () => {
+await it('колишній редактор матчингу не пише жодного вузла чужої анкети', async () => {
   const db1 = db(MATCHING_EDITOR);
-  await assertSucceeds(update(ref(db1, '/'), { [`profileDetails/${CARD}/surname`]: 'Коваленко' }));
-  await assertSucceeds(update(ref(db1, '/'), { [`profileContacts/${CARD}/phone`]: '+380' }));
-  await assertSucceeds(update(ref(db1, '/'), { [`profileWorkflow/${CARD}/lastAction`]: 'дзвінок' }));
-  // Технічні дані чужої анкети — тільки власник і суперадміни.
+  await assertFails(update(ref(db1, '/'), { [`profileDetails/${CARD}/surname`]: 'Коваленко' }));
+  await assertFails(update(ref(db1, '/'), { [`profileContacts/${CARD}/phone`]: '+380' }));
+  await assertFails(update(ref(db1, '/'), { [`profileWorkflow/${CARD}/lastAction`]: 'дзвінок' }));
   await assertFails(update(ref(db1, '/'), { [`profileTechnical/${CARD}/language`]: 'uk' }));
 });
 
 await it('відмова на одному вузлі не тягне за собою решту', async () => {
   // Саме тому розкладка йде вузол за вузлом: в одному патчі ці два шляхи
   // впали б разом, і закрите право на технічне знеструмило б `profileDetails`.
-  const db1 = db(MATCHING_EDITOR);
+  // `screenAccess` власниця собі не пише (видає лише адмін), а деталі — пише.
+  const db1 = db(PROFILE_OWNER);
   await assertFails(update(ref(db1, '/'), {
-    [`profileDetails/${CARD}/education`]: 'вища',
-    [`profileTechnical/${CARD}/language`]: 'uk',
+    [`profileDetails/${PROFILE_OWNER}/education`]: 'вища',
+    [`profileTechnical/${PROFILE_OWNER}/screenAccess`]: 'flow',
   }));
-  await assertSucceeds(update(ref(db1, '/'), { [`profileDetails/${CARD}/education`]: 'вища' }));
+  await assertSucceeds(update(ref(db1, '/'), { [`profileDetails/${PROFILE_OWNER}/education`]: 'вища' }));
 });
 
 await it('видалення поля доїжджає до нового вузла', async () => {
@@ -1051,8 +1052,9 @@ await it('сховану картку сторонній не читає нав�
   // А ті, хто веде анкету, і сама власниця — читають: інакше ані повернути її
   // в стрічку, ані побачити власний стан публікації нема кому.
   await assertSucceeds(get(ref(db(HIDDEN_CARD), `matchingCards/${HIDDEN_CARD}`)));
-  await assertSucceeds(get(ref(db(MATCHING_VIEWER), `matchingCards/${HIDDEN_CARD}`)));
-  await assertSucceeds(get(ref(db(MIGRATED_EDITOR), `matchingCards/${HIDDEN_CARD}`)));
+  // Колишній рівень доступу сховане вже не відкриває.
+  await assertFails(get(ref(db(MATCHING_VIEWER), `matchingCards/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(MIGRATED_EDITOR), `matchingCards/${HIDDEN_CARD}`)));
   await assertSucceeds(get(ref(db(SUPERADMIN), `matchingCards/${HIDDEN_CARD}`)));
   await testEnv.withSecurityRulesDisabled(context =>
     set(ref(context.database(), `matchingCards/${HIDDEN_CARD}/feedDate`), null));
@@ -1932,10 +1934,10 @@ await it('зняття з публікації забирає доступ, пу
   await assertFails(get(ref(db(ORDINARY_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
 });
 
-await it('службовий доступ бачить приховану анкету цілком — інакше її нема кому вести', async () => {
-  await assertSucceeds(get(ref(db(MATCHING_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
-  await assertSucceeds(get(ref(db(MATCHING_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
-  await assertSucceeds(get(ref(db(MIGRATED_EDITOR), `profileDetails/${HIDDEN_CARD}`)));
+await it('приховану анкету цілком бачать лише адміни — колишній службовий доступ ні', async () => {
+  await assertFails(get(ref(db(MATCHING_VIEWER), `profileDetails/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(MATCHING_VIEWER), `profileContacts/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(MIGRATED_EDITOR), `profileDetails/${HIDDEN_CARD}`)));
   await assertSucceeds(get(ref(db(SUPERADMIN), `profileContacts/${HIDDEN_CARD}`)));
 });
 
@@ -2077,10 +2079,10 @@ await it('невподобані не бачать ні програм, ні к�
   await assertFails(get(ref(db(ORDINARY_VIEWER), `profileContacts/${LIKED_ONLY_AGENCY}`)));
 });
 
-await it('свої програми агенція читає й пише, службовий доступ читає', async () => {
+await it('свої програми агенція читає й пише, колишній службовий доступ — ні', async () => {
   await assertSucceeds(get(ref(db(LIKED_ONLY_AGENCY), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
   await assertSucceeds(set(ref(db(LIKED_ONLY_AGENCY), `multiData/programs/${LIKED_ONLY_AGENCY}/updatedAt`), Date.now()));
-  await assertSucceeds(get(ref(db(MATCHING_VIEWER), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
+  await assertFails(get(ref(db(MATCHING_VIEWER), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
   await assertSucceeds(get(ref(db(SUPERADMIN), `multiData/programs/${LIKED_ONLY_AGENCY}`)));
 });
 
@@ -2099,36 +2101,27 @@ await it('опублікована для всіх — програми знов
 
 describe('права доступу видають лише два адміни — не власник анкети й не редактор');
 
-// Правила довіряють `accessLevel`, `canCreateProfiles` і
-// `multiDataSourceUserIds` власного запису читача. Поки власник міг писати ці
-// поля сам, будь-хто, хто увійшов, ставив собі `matching:view` і читав
-// контакти й деталі будь-якої анкети, зокрема схованої.
-await it('власниця не видає собі службового доступу', async () => {
-  await assertFails(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/accessLevel`), 'matching:view'));
-  await assertFails(update(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}`), { lastLogin: '2026-10-16', accessLevel: 'matching:view' }));
-  await assertFails(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/canCreateProfiles`), true));
+// Правила довіряють `multiDataSourceUserIds` і `screenAccess` власного запису
+// читача, тож їх пише лише адмін. `accessLevel` і `canCreateProfiles` прибрано
+// 22.11: записати їх власниця може, але вони не відкривають нічого.
+await it('власниця не видає собі прав', async () => {
   await assertFails(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/multiDataSourceUserIds/${SUPERADMIN}`), true));
+  await assertFails(set(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}/screenAccess`), 'flow'));
+  await testEnv.withSecurityRulesDisabled(context =>
+    update(ref(context.database(), `profileTechnical/${SELF_SERVE}`), { accessLevel: 'matching+profileContacts:view&write', canCreateProfiles: true }));
   await assertFails(get(ref(db(SELF_SERVE), `profileContacts/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(SELF_SERVE), `profileDetails/${HIDDEN_CARD}`)));
+  await assertFails(get(ref(db(SELF_SERVE), 'multiData/profileMutations')));
+  await testEnv.withSecurityRulesDisabled(context =>
+    update(ref(context.database(), `profileTechnical/${SELF_SERVE}`), { accessLevel: null, canCreateProfiles: null }));
 });
 
-await it('редактор матчингу чужих прав не змінює', async () => {
-  await assertFails(set(ref(db(MIGRATED_EDITOR), `profileTechnical/${SELF_SERVE}/accessLevel`), 'matching:view'));
-  await assertFails(set(ref(db(MATCHING_EDITOR), `profileTechnical/${SELF_SERVE}/accessLevel`), 'matching:view'));
-  await assertFails(set(ref(db(MIGRATED_EDITOR), `profileTechnical/${MIGRATED_EDITOR}/accessLevel`), 'matching+profileContacts:view&write'));
-});
-
-await it('звичайне збереження анкети проходить, зокрема з незміненим рівнем доступу', async () => {
+await it('звичайне збереження анкети проходить', async () => {
   await assertSucceeds(update(ref(db(SELF_SERVE), `profileTechnical/${SELF_SERVE}`), { lastLogin: '2026-10-16' }));
-  await assertSucceeds(update(ref(db(MATCHING_EDITOR), `profileTechnical/${MATCHING_EDITOR}`), { lastLogin: '2026-10-16', accessLevel: 'matching:view&write' }));
-  await assertSucceeds(update(ref(db(MIGRATED_EDITOR), `profileTechnical/${MIGRATED_EDITOR}`), { lastLogin: '2026-10-16', accessLevel: 'matching:view&write', canCreateProfiles: true }));
 });
 
 await it('обидва адміни видають і знімають права', async () => {
-  await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/accessLevel`), 'matching:view'));
-  await assertSucceeds(set(ref(db('3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'), `profileTechnical/${SELF_SERVE}/canCreateProfiles`), true));
   await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/multiDataSourceUserIds/${SUPERADMIN}`), true));
-  await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/accessLevel`), null));
-  await assertSucceeds(set(ref(db('3LiD7JGCJTSJoVMU7fdR1ZrcIZH2'), `profileTechnical/${SELF_SERVE}/canCreateProfiles`), null));
   await assertSucceeds(set(ref(db(SUPERADMIN), `profileTechnical/${SELF_SERVE}/multiDataSourceUserIds`), null));
 });
 

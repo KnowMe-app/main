@@ -90,7 +90,6 @@ import {
   fetchMatchingCardsPage,
   fetchMatchingCardsByIds,
   clearMatchingCardsPageInFlight,
-  fetchLimitedProfileById,
   readSharedMatchingCard,
   database,
   auth,
@@ -102,7 +101,7 @@ import {
   fetchLikedAudienceCards,
 } from './config';
 import { LIKED_AUDIENCE_CARD_FLAG, LIKED_AUDIENCE_EVENT } from 'utils/likedAudience';
-import { get as firebaseGet, onValue as firebaseOnValue, ref as refDb, query, orderByKey, startAt, endAt } from 'firebase/database';
+import { get as firebaseGet, onValue as firebaseOnValue, ref as refDb } from 'firebase/database';
 import {
   BACKEND_TRAFFIC_TRACKING_TEST_UID,
   getBackendDownloadToastsEnabled,
@@ -162,7 +161,6 @@ import {
   writeReactionSnapshot,
 } from '../utils/matchingReactionCache';
 import { readPersistedFeedSnapshot, writePersistedFeedSnapshot } from '../utils/matchingFeedSnapshot';
-import { readTimedCacheEntry, writeTimedCacheEntry } from '../utils/matchingCachePolicy';
 import { readRememberedViewerId } from '../utils/rememberedSession';
 import { noteRealtimeDemand, startRealtimeConnectionManager } from '../utils/realtimeConnectionManager';
 import {
@@ -358,13 +356,6 @@ import {
   shouldUseServerComment,
 } from '../utils/commentsStorage';
 import {
-  parseAdditionalAccessRuleGroups,
-} from 'utils/additionalAccessRules';
-import {
-  checkReactionCardMembership,
-  normalizeSearchKeySetKeys,
-} from 'utils/filterSetsIndex';
-import {
   MULTI_DATA_ACCESS_FIELD,
   parseMultiDataAccessUserIds,
   resolveMatchingMultiDataOwnerIds,
@@ -376,7 +367,6 @@ import {
   mergeMatchingCandidateUsers,
   loadReactionCardsPageRecords,
   hasPendingSharedReactionCandidates,
-  normalizePublish,
   normalizeReactionMap,
   orderReactionIdsByRecency,
   readReactionSnapshotMaps,
@@ -389,7 +379,6 @@ import {
   applyMatchingUiFiltersToUsers,
   buildMatchingIndexFilterGroups,
   fetchFilteredMatchingSourceChunk,
-  fetchAdditionalAccessUsersBySearchIndex,
   fetchMatchingIndexedCandidates,
   getActiveMatchingFiltersDebug,
   getMatchingSearchKeyFilterDebugForUser,
@@ -461,7 +450,6 @@ const MATCHING_DEBUG_VERSION = 'autoload-diagnostics-v2';
 const DEBUG_SHARED_OWNER_ID = 'stFMfZ8CqQX05L8vK9Yse6FdYIh1';
 const DEBUG_SHARED_CARD_ID = 'ID0001';
 const ADDITIONAL_PROFILE_CACHE_TTL_MS = 45 * 1000;
-const SEARCH_KEY_SETS_CACHE_PREFIX = 'km.matchingSearchKeySets.v1:';
 const INITIAL_LOAD_ERROR_TOAST_ID = 'matching-initial-load-error';
 const ADDITIONAL_MATCHING_LOG_LIMIT = 300;
 const buildEmptyReactionPagination = () => ({ ids: [], nextOffset: 0, hasMore: false, accessSnapshotKey: '' });
@@ -542,79 +530,6 @@ const buildLoadMoreDebugPayload = ({
   ...extra,
 });
 
-const getAdditionalMatchingLogsStore = () => {
-  if (typeof window === 'undefined') return null;
-  if (!Array.isArray(window.__ADDITIONAL_MATCHING_LOGS)) {
-    window.__ADDITIONAL_MATCHING_LOGS = [];
-  }
-  if (typeof window.downloadAdditionalMatchingLogs !== 'function') {
-    window.downloadAdditionalMatchingLogs = () => {
-      const now = new Date();
-      const pad = value => String(value).padStart(2, '0');
-      const fileStamp = [
-        now.getFullYear(),
-        pad(now.getMonth() + 1),
-        pad(now.getDate()),
-      ].join('-') + `-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-      const body = {
-        userAgent: window.navigator?.userAgent || '',
-        url: window.location?.href || '',
-        timestamp: now.toISOString(),
-        testUserId: DEBUG_ADDITIONAL_MATCHING_USER_ID,
-        logs: Array.isArray(window.__ADDITIONAL_MATCHING_LOGS) ? window.__ADDITIONAL_MATCHING_LOGS : [],
-      };
-      const blob = new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `additional-matching-debug-${fileStamp}.json`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(link.href);
-    };
-  }
-  return window.__ADDITIONAL_MATCHING_LOGS;
-};
-
-const logAdditionalMatchingDebug = (accessUserId, stage, payload = {}, errors = null) => {
-  if (!shouldDebugAdditionalMatching(accessUserId)) return;
-  const store = getAdditionalMatchingLogsStore();
-  if (!store) return;
-  store.push({
-    timestamp: new Date().toISOString(),
-    stage,
-    payload,
-    errors: errors
-      ? {
-          message: errors.message || String(errors),
-          stack: errors.stack || undefined,
-          ...(errors && typeof errors === 'object' ? errors : {}),
-        }
-      : null,
-  });
-  if (store.length > ADDITIONAL_MATCHING_LOG_LIMIT) {
-    store.splice(0, store.length - ADDITIONAL_MATCHING_LOG_LIMIT);
-  }
-};
-
-const formatDebugToastValue = value => {
-  if (Array.isArray(value)) {
-    const preview = value.slice(0, 8).map(item => String(item)).join(', ');
-    return `[${preview}${value.length > 8 ? ', …' : ''}] (${value.length})`;
-  }
-
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value);
-    const preview = entries
-      .slice(0, 6)
-      .map(([entryKey, entryValue]) => `${entryKey}: ${Array.isArray(entryValue) ? `[${entryValue.slice(0, 4).join(', ')}]` : String(entryValue)}`)
-      .join(', ');
-    return `{${preview}${entries.length > 6 ? ', …' : ''}}`;
-  }
-
-  return String(value);
-};
-
 const serializeConsoleArg = value => {
   if (value instanceof Error) {
     return {
@@ -636,22 +551,6 @@ const serializeConsoleArg = value => {
   return value;
 };
 
-const debugAdditionalToast = (accessUserId, message, data = {}) => {
-  if (!shouldDebugAdditionalMatching(accessUserId)) return;
-
-  const compact = Object.entries(data)
-    .map(([key, value]) => `${key}: ${formatDebugToastValue(value)}`)
-    .join(', ');
-
-  if (isMatchingDebugFileMode()) {
-    writeMatchingDebugLog(`additionalMatching:${message}`, { ...data, compact });
-    logAdditionalMatchingDebug(accessUserId, message, data);
-    return;
-  }
-
-  console.info('[ADD access debug]', message, data, compact);
-  logAdditionalMatchingDebug(accessUserId, message, data);
-};
 
 
 const summarizeIdsForDebug = (ids, limit = 25) => {
@@ -768,28 +667,9 @@ const canShowReactionTabCard = (card, { isAdmin = false } = {}) => {
   return card.publish !== false;
 };
 
-// Глядач без повного доступу до матчингу бачить картку додаткового доступу
-// урізаною: рівно ті пʼять полів, які правила відкривають кожному авторизованому.
-// Надані правилами картки перечитувались на кожен перезапуск ефекту доступу —
-// а на старті сторінки він спрацьовує кілька разів поспіль (власник, ключі
-// наборів, фільтри), і та сама пʼятірка карток читалась тричі-чотири рази.
-// Памʼять вкладки тримає прочитане недовго: це проєкція чужої картки, і
-// правка в ній мусить доїхати без перезавантаження.
+// Памʼять вкладки для дати стрічки картки колекції: це проєкція чужої картки,
+// і правка в ній мусить доїхати без перезавантаження.
 const LIMITED_PROFILE_MEMO_TTL_MS = 5 * 60 * 1000;
-const limitedProfileMemo = new Map();
-const fetchLimitedProfileByIdMemo = userId => {
-  const key = String(userId || '');
-  const memo = limitedProfileMemo.get(key);
-  if (memo && Date.now() - memo.at <= LIMITED_PROFILE_MEMO_TTL_MS) {
-    return memo.pending.then(profile => (profile ? { ...profile } : profile));
-  }
-  const pending = Promise.resolve(fetchLimitedProfileById(userId)).catch(error => {
-    limitedProfileMemo.delete(key);
-    throw error;
-  });
-  limitedProfileMemo.set(key, { pending, at: Date.now() });
-  return pending.then(profile => (profile ? { ...profile } : profile));
-};
 
 // Дата стрічки картки колекції, якої не принесла проєкція. Та сама сторінка
 // класифікується з кількох місць (перша порція, довантаження, повтор після
@@ -806,40 +686,6 @@ const readReactionFeedDateMemo = cardId => {
   reactionFeedDateMemo.set(key, { pending, at: Date.now() });
   return pending;
 };
-
-const fetchLimitedProfilesByIdsForMatching = async ids => (
-  await Promise.all((ids || []).map(userId => fetchLimitedProfileByIdMemo(userId)))
-).filter(Boolean);
-
-const ADDITIONAL_SEARCH_KEY_SET_PROFILE_FIELDS = [
-  'searchKeySetsOfExactUser',
-  'searchKeySetKeys',
-  'searchKeySets',
-  'additionalSearchKeySetKeys',
-  'additionalAccessKeySets',
-  'additionalAccessSearchKeySets',
-  'keySets',
-];
-
-const getAdditionalSearchKeySetKeysFromProfile = profile =>
-  normalizeSearchKeySetKeys(
-    ADDITIONAL_SEARCH_KEY_SET_PROFILE_FIELDS.map(fieldName => profile?.[fieldName])
-  );
-
-const sortAdditionalSearchKeySetKeys = keys =>
-  [...keys].sort((a, b) => {
-    const ai = Number(String(a).split('_').pop()) || 0;
-    const bi = Number(String(b).split('_').pop()) || 0;
-    return ai - bi;
-  });
-
-const areSearchKeySetKeysForAccessUserId = (keys, accessUserId) => {
-  const normalizedAccessUserId = String(accessUserId || '').trim();
-  const normalizedKeys = normalizeSearchKeySetKeys(keys);
-  if (!normalizedAccessUserId || normalizedKeys.length === 0) return false;
-  return normalizedKeys.every(key => String(key || '').startsWith(`${normalizedAccessUserId}_`));
-};
-
 
 const stableAdditionalSignature = value => {
   const normalize = input => {
@@ -858,85 +704,12 @@ const stableAdditionalSignature = value => {
   return JSON.stringify(normalize(value));
 };
 
-const getRawRulesSignature = rawRules => stableAdditionalSignature(String(rawRules || ''));
-const getSearchKeySetsOfExactUserSignature = keys =>
-  stableAdditionalSignature(sortAdditionalSearchKeySetKeys(normalizeSearchKeySetKeys(keys)));
-
-const buildAdditionalAccessSnapshotKey = ({
-  accessUserId = '',
-  rawRules = '',
-  searchKeySetKeys = [],
-  searchKeySetsOfExactUser,
-} = {}) => stableAdditionalSignature({
+// Знімок прав, з якими зібрано перелік колекції реакцій. Правил додаткового
+// доступу (`additionalAccessRules`) більше немає (22.11), тож права — це сам
+// читач: інший читач — інший перелік.
+const buildReactionAccessSnapshotKey = ({ accessUserId = '' } = {}) => stableAdditionalSignature({
   accessUserId: String(accessUserId || '').trim(),
-  rawRulesSignature: getRawRulesSignature(rawRules),
-  searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(
-    searchKeySetsOfExactUser ?? searchKeySetKeys
-  ),
 });
-async function resolveAdditionalSearchKeySetKeysForMatching(profile, accessUserId) {
-  const normalizedAccessUserId = String(accessUserId || '').trim();
-  const keysFromProfile = getAdditionalSearchKeySetKeysFromProfile(profile);
-  let keysFromSearchKeySetsRoot = [];
-
-  debugAdditionalToast(normalizedAccessUserId, 'resolve keys: accessUserId', {
-    accessUserId: normalizedAccessUserId,
-  });
-  debugAdditionalToast(normalizedAccessUserId, 'resolve keys: profile keys', {
-    keysFromProfile,
-  });
-
-  if (!normalizedAccessUserId) {
-    debugAdditionalToast(normalizedAccessUserId, 'resolve keys: final', {
-      searchKeySetsOfExactUser: keysFromProfile,
-    });
-    return keysFromProfile;
-  }
-
-  if (keysFromProfile.length && areSearchKeySetKeysForAccessUserId(keysFromProfile, normalizedAccessUserId)) {
-    debugAdditionalToast(normalizedAccessUserId, 'resolve keys: final', {
-      searchKeySetsOfExactUser: keysFromProfile,
-    });
-    return keysFromProfile;
-  }
-
-  if (keysFromProfile.length) {
-    debugAdditionalToast(normalizedAccessUserId, 'resolve keys: ignored profile keys for another owner', {
-      keysFromProfile,
-    });
-  }
-
-  // Ключі наборів міняє лише адмін, а вузол `searchKeySets` віддає разом із
-  // ключами й самі набори — найважче читання старту стрічки. Тож за загальним
-  // правилом кеша матчингу свіжий перелік береться з памʼяті пристрою; ключ
-  // містить `searchKeySets`, тож його стирає й скид кеша матчингу.
-  const cacheKey = `${SEARCH_KEY_SETS_CACHE_PREFIX}${normalizedAccessUserId}`;
-  const cachedKeys = readTimedCacheEntry(cacheKey);
-  if (Array.isArray(cachedKeys?.keys)) return cachedKeys.keys;
-
-  const prefix = `${normalizedAccessUserId}_`;
-  const snap = await get(query(refDb(database, 'searchKeySets'), orderByKey(), startAt(prefix), endAt(`${prefix}\uf8ff`)));
-  if (snap.exists()) {
-    keysFromSearchKeySetsRoot = Object.keys(snap.val() || {})
-      .filter(key => key.startsWith(prefix));
-  }
-  logAdditionalMatchingDebug(normalizedAccessUserId, 'resolve searchKeySetsOfExactUser prefix lookup', {
-    firebasePath: 'searchKeySets',
-    prefix,
-    searchKeySetsOfExactUser: keysFromSearchKeySetsRoot,
-  });
-
-  const searchKeySetKeys = sortAdditionalSearchKeySetKeys(normalizeSearchKeySetKeys(keysFromSearchKeySetsRoot));
-  debugAdditionalToast(normalizedAccessUserId, 'resolve keys: root keys', {
-    keysFromSearchKeySetsRoot,
-  });
-  debugAdditionalToast(normalizedAccessUserId, 'resolve keys: final', {
-    searchKeySetsOfExactUser: searchKeySetKeys,
-  });
-  writeTimedCacheEntry(cacheKey, { keys: searchKeySetKeys });
-
-  return searchKeySetKeys;
-}
 
 const MatchingSkeleton = ({ $small }) => (
   <CardWrapper data-card data-skeleton>
@@ -1241,10 +1014,6 @@ const Matching = () => {
   // Нові анкети з голови стрічки, що приїхали, поки людина гортала посеред
   // деки (`utils/matchingFeedHead`): чекають на плашку «Нові анкети: N».
   const [feedHeadNewUsers, setFeedHeadNewUsers] = useState([]);
-  // Перезапуск завантаження карток наданого доступу без зміни фільтрів:
-  // «Оновити стрічку» скидає їх разом із кешем, а ефект, що їх вантажить,
-  // залежить від фільтрів і правил, яких оновлення не міняє.
-  const [accessScopedReloadToken, setAccessScopedReloadToken] = useState(0);
   const usersRef = useRef(users);
   // Public source readiness is deliberately separate from the rendered deck:
   // own drafts and access-scoped cards must never satisfy the first ten-card
@@ -1489,7 +1258,6 @@ const Matching = () => {
     cacheServedOwnerIds: new Set(),
     apply: () => {},
   });
-  const [currentAccessLevel, setCurrentAccessLevel] = useState(() => localStorage.getItem('accessLevel') || '');
   const [currentUserRole, setCurrentUserRole] = useState(() => localStorage.getItem('userRole') || '');
   // A bare cached role (`localStorage.userRole`) is useful for rendering, but it
   // cannot start a deck: the viewer profile also owns the shared reaction scope
@@ -1511,23 +1279,10 @@ const Matching = () => {
   // рахувався б по картках, які до екрана не доходять (`fetchChunk`).
   const currentUserRoleRef = useRef(currentUserRole);
   currentUserRoleRef.current = currentUserRole;
-  const [currentCanCreateProfiles, setCurrentCanCreateProfiles] = useState(() => localStorage.getItem('canCreateProfiles') === 'true');
-  const [currentAdditionalAccessRules, setCurrentAdditionalAccessRules] = useState(
-    () => localStorage.getItem('additionalAccessRules') || ''
-  );
-  const [currentSearchKeySetKeys, setCurrentSearchKeySetKeys] = useState(() =>
-    normalizeSearchKeySetKeys(localStorage.getItem('additionalSearchKeySetKeys') || '')
-  );
-  const [additionalAccessUsers, setAdditionalAccessUsers] = useState([]);
   // Картки, які донорки чи сурогатні мами відкрили саме цьому читачеві
   // (публікація «лише для вподобаних», `utils/likedAudience`).
   const [likedAudienceUsers, setLikedAudienceUsers] = useState([]);
   const likedAudienceIdsRef = useRef(new Set());
-  const additionalAccessUsersRef = useRef(additionalAccessUsers);
-  const [additionalNextOffset, setAdditionalNextOffset] = useState(0);
-  const additionalNextOffsetRef = useRef(0);
-  const [additionalHasMore, setAdditionalHasMore] = useState(false);
-  const additionalHasMoreRef = useRef(false);
   const [photoCacheByUserId, setPhotoCacheByUserId] = useState({});
   // Власні доповнення до карток: `{ [cardId]: fields }`. Питаються лише про
   // показані картки й лише раз на таб — памʼять запитаних id нижче стереже,
@@ -1597,9 +1352,7 @@ const Matching = () => {
   // ролі, а після входу перебирала їх назад — і стрічка вантажилась двічі.
   const access = resolveAccess({
     uid: auth.currentUser?.uid || readRememberedViewerId(),
-    accessLevel: currentAccessLevel,
     userRole: currentUserRole,
-    canCreateProfiles: currentCanCreateProfiles,
   });
   const isAdmin = access.isAdmin;
   const realtimeConnection = useRealtimeConnection();
@@ -1761,14 +1514,8 @@ const Matching = () => {
   // child paths the rules let them read.
   const hasFullProfileAccess = access.isAdmin || access.canAccessMatching;
 
-  const parsedAdditionalAccessRules = useMemo(
-    () => parseAdditionalAccessRuleGroups(currentAdditionalAccessRules),
-    [currentAdditionalAccessRules]
-  );
   const loadingRef = useRef(false);
   const initialLoadInFlightRef = useRef(false);
-  const additionalAccessLoadInFlightRef = useRef(false);
-  const deferredInitialLoadErrorRef = useRef(null);
   const hasMoreRef = useRef(hasMore);
   const loadingStateRef = useRef(loading);
 
@@ -1791,7 +1538,7 @@ const Matching = () => {
   // Видача гортається так само, як стрічка: `hasMore` для неї хибний навмисно
   // (сторінок у мережі більше немає — усе знайдене вже в руках), тож право
   // показати відлік дає окремий прапорець.
-  const deckHasMore = hasMore || (viewMode === 'default' && additionalHasMore) || searchHasMore;
+  const deckHasMore = hasMore || searchHasMore;
 
   useEffect(() => {
     loadingStateRef.current = loading;
@@ -1809,12 +1556,10 @@ const Matching = () => {
   const pendingDefaultReloadRef = useRef(false);
   const initialRequestIdRef = useRef(0);
   const initialLoadTraceRef = useRef([]);
-  const additionalRulesToastRef = useRef('');
-  const additionalProfileCacheRef = useRef(null);
-  const additionalProfileRequestVersionRef = useRef(0);
-  const additionalMatchingFetchVersionRef = useRef(0);
-  const additionalLoadMoreFetchVersionRef = useRef(0);
-  const additionalMatchingApplyVersionRef = useRef(0);
+  const viewerProfileCacheRef = useRef(null);
+  const viewerProfileRequestVersionRef = useRef(0);
+  const loadMoreFetchVersionRef = useRef(0);
+  const loadMoreApplyVersionRef = useRef(0);
   const reactionLoadVersionRef = useRef(0);
   const sharedReactionCandidateLoadVersionRef = useRef(0);
   const autoLoadMoreLastRunRef = useRef(0);
@@ -1844,19 +1589,10 @@ const Matching = () => {
   const tailLoadFailedRef = useRef(false);
   const lastCardLoadTriggerSignatureRef = useRef('');
   const lastCardInFlightTriggerSignatureRef = useRef('');
-  const matchingProfileStateRef = useRef({
-    ownerId: null,
-    currentAdditionalAccessRules,
-    currentSearchKeySetKeys,
-  });
-  const resetAdditionalMatchingState = React.useCallback(({ resetHasMore = true, resetLoading = false } = {}) => {
-    setAdditionalAccessUsers([]);
-    setAdditionalNextOffset(0);
-    additionalHasMoreRef.current = false;
-    setAdditionalHasMore(false);
+  const matchingProfileStateRef = useRef({ ownerId: null });
+  const resetMatchingDeckState = React.useCallback(({ resetHasMore = true, resetLoading = false } = {}) => {
     setLastKey(null);
     loadedIdsRef.current = new Set();
-    additionalRulesToastRef.current = '';
     if (resetHasMore) setHasMore(true);
     if (resetLoading) {
       loadingRef.current = false;
@@ -1928,19 +1664,6 @@ const Matching = () => {
       id: INITIAL_LOAD_ERROR_TOAST_ID,
     });
   }, []);
-  // Коли загальну стрічку прочитати не вдалось, а картки додаткового доступу
-  // вже є, деку показувати можна — екран помилки забрав би в глядача й те, що
-  // йому таки надали. Але мовчати теж не можна: коротка дека без пояснення
-  // читається як «більше нікого немає», а не як «половина не прочиталась».
-  // Один рядок з кодом помилки називає цю різницю там, де консолі немає.
-  const announcePublicFeedUnavailable = React.useCallback(error => {
-    if (!error) return;
-    const detail = String(error?.code || error?.message || error || '').trim();
-    toast(uiText('Загальна стрічка недоступна{detail}. Показані лише картки з додаткового доступу.', language, { detail: detail ? `: ${detail}` : '' }), {
-      id: 'matching-public-feed-unavailable',
-      icon: '⚠️',
-    });
-  }, [language]);
   const resetReactionPaginationState = React.useCallback((reactionType = null) => {
     if (reactionType === 'favorites' || reactionType === 'dislikes') {
       reactionLoadedIdsRef.current[reactionType] = new Set();
@@ -1968,8 +1691,8 @@ const Matching = () => {
   const invalidateReactionAsyncWork = React.useCallback(() => {
     reactionLoadVersionRef.current += 1;
     sharedReactionCandidateLoadVersionRef.current += 1;
-    additionalLoadMoreFetchVersionRef.current += 1;
-    additionalMatchingApplyVersionRef.current += 1;
+    loadMoreFetchVersionRef.current += 1;
+    loadMoreApplyVersionRef.current += 1;
     loadingRef.current = false;
     setLoading(false);
   }, []);
@@ -2078,12 +1801,8 @@ const Matching = () => {
     setStickyReactedUserIds(previous => (previous.size ? new Set() : previous));
   }, [viewMode, filters]);
   useEffect(() => {
-    matchingProfileStateRef.current = {
-      ownerId,
-      currentAdditionalAccessRules,
-      currentSearchKeySetKeys,
-    };
-  }, [currentAdditionalAccessRules, currentSearchKeySetKeys, ownerId]);
+    matchingProfileStateRef.current = { ownerId };
+  }, [ownerId]);
   useEffect(() => {
     const debugMatchingCache = isAdmin || shouldDebugAdditionalMatching(ownerId);
     const cleanupStats = cleanupMatchingLocalStorageCache({ debug: debugMatchingCache });
@@ -2355,8 +2074,8 @@ const Matching = () => {
     );
 
     loadInitialVersionRef.current += 1;
-    additionalLoadMoreFetchVersionRef.current += 1;
-    additionalMatchingApplyVersionRef.current += 1;
+    loadMoreFetchVersionRef.current += 1;
+    loadMoreApplyVersionRef.current += 1;
     loadingRef.current = false;
     loadingStateRef.current = false;
     hasMoreRef.current = false;
@@ -2364,10 +2083,6 @@ const Matching = () => {
 
     setUsers(filtered);
     loadedIdsRef.current = new Set(filtered.map(u => u.userId).filter(Boolean));
-    setAdditionalAccessUsers([]);
-    setAdditionalNextOffset(0);
-    additionalHasMoreRef.current = false;
-    setAdditionalHasMore(false);
     setHasMore(false);
     setLastKey(null);
     setLoading(false);
@@ -2392,14 +2107,6 @@ const Matching = () => {
   };
 
   useEffect(() => {
-    additionalAccessUsersRef.current = additionalAccessUsers;
-  }, [additionalAccessUsers]);
-
-  useEffect(() => {
-    additionalNextOffsetRef.current = additionalNextOffset;
-  }, [additionalNextOffset]);
-
-  useEffect(() => {
     favoriteUsersRef.current = favoriteUsers;
   }, [favoriteUsers]);
 
@@ -2419,7 +2126,6 @@ const Matching = () => {
     usersRef.current = users;
     const ids = [
       ...users.map(u => u.userId),
-      ...additionalAccessUsers.map(u => u.userId),
       ...sharedReactionCandidateUsers.map(u => u.userId),
     ];
     // Кеш памʼяток на пристрої тут більше не підрізається під деку: він живе
@@ -2429,7 +2135,7 @@ const Matching = () => {
     // самих екранів читала їх з бази заново — по запиту на картку.
     setComments(prev => keepNotesForIds(prev, ids));
     setSharedComments(prev => keepNotesForIds(prev, ids));
-  }, [additionalAccessUsers, sharedReactionCandidateUsers, users]);
+  }, [sharedReactionCandidateUsers, users]);
 
   /*
    * Реакція вичищає картку і з самої деки — але не ту, на яку щойно відповіли.
@@ -2464,210 +2170,58 @@ const Matching = () => {
 
 
 
-  // `prefetchedProfile` і `prefetchedSearchKeySetKeys` — те, що викликач щойно
-  // прочитав сам: вхід у сесію читає анкету й ключі наборів, а тоді кличе цю
-  // функцію, і та перечитувала обидва — пʼять вузлів анкети й `searchKeySets`
-  // удруге за ту саму секунду.
-  const ensureFreshAdditionalMatchingProfile = React.useCallback(async ({
+  // Анкета читача для стрічки: роль і спільні власники реакцій
+  // (`multiDataAccessUserIds`). Памʼять цього шару — 45 секунд, а за нею стоїть
+  // кеш анкети пристрою (`loadViewerProfile`, шість годин). `prefetchedProfile`
+  // — анкета, яку викликач щойно прочитав сам (вхід у сесію): інакше та сама
+  // анкета читалась би вдруге за ту саму секунду.
+  const ensureFreshViewerProfile = React.useCallback(async ({
     accessUserId,
-    reason = 'additional-matching',
     prefetchedProfile,
-    prefetchedSearchKeySetKeys,
   } = {}) => {
     const state = matchingProfileStateRef.current || {};
     const normalizedAccessUserId = String(accessUserId || auth.currentUser?.uid || state.ownerId || '').trim();
     if (!normalizedAccessUserId) return null;
 
-    const now = Date.now();
-    const currentMetadata = {
+    const cached = viewerProfileCacheRef.current;
+    if (
+      cached
+      && cached.accessUserId === normalizedAccessUserId
+      && Date.now() - Number(cached.cachedAt || 0) <= ADDITIONAL_PROFILE_CACHE_TTL_MS
+    ) {
+      return { ...cached, cacheHit: true };
+    }
+
+    const profileRequestVersion = viewerProfileRequestVersionRef.current + 1;
+    viewerProfileRequestVersionRef.current = profileRequestVersion;
+    const fetchedProfile = prefetchedProfile !== undefined
+      ? prefetchedProfile
+      : await loadViewerProfile(normalizedAccessUserId);
+    if (!fetchedProfile || typeof fetchedProfile !== 'object') {
+      return cached ? { ...cached, cacheHit: true, profileRefreshFailed: true } : null;
+    }
+    if (profileRequestVersion !== viewerProfileRequestVersionRef.current) {
+      const latestCache = viewerProfileCacheRef.current;
+      return latestCache ? { ...latestCache, cacheHit: true, staleResponse: true } : null;
+    }
+
+    const profile = fetchedProfile;
+    const userRole = readViewerRolesFromProfile(profile);
+    const freshCache = {
       accessUserId: normalizedAccessUserId,
-      rawRulesSignature: getRawRulesSignature(state.currentAdditionalAccessRules),
-      searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(state.currentSearchKeySetKeys),
+      profile,
+      profileFound: true,
+      cachedAt: Date.now(),
     };
-    const cached = additionalProfileCacheRef.current;
-    const staleReasons = [];
-    const paginationInvalidationReasons = [];
-
-    if (!cached) staleReasons.push('missing-cache');
-    if (cached && cached.accessUserId !== currentMetadata.accessUserId) {
-      staleReasons.push('accessUserId-changed');
-      paginationInvalidationReasons.push('accessUserId-changed');
-    }
-    if (cached && cached.rawRulesSignature !== currentMetadata.rawRulesSignature) {
-      staleReasons.push('rawRulesSignature-changed');
-      paginationInvalidationReasons.push('rawRulesSignature-changed');
-    }
-    if (cached && cached.searchKeySetsOfExactUserSignature !== currentMetadata.searchKeySetsOfExactUserSignature) {
-      staleReasons.push('searchKeySetsOfExactUserSignature-changed');
-      paginationInvalidationReasons.push('searchKeySetsOfExactUserSignature-changed');
-    }
-    if (cached && now - Number(cached.cachedAt || 0) > ADDITIONAL_PROFILE_CACHE_TTL_MS) staleReasons.push('ttl-expired');
-
-    if (cached && staleReasons.length === 0) {
-      logAdditionalMatchingDebug(normalizedAccessUserId, 'profile cache hit', {
-        reason,
-        cachedAt: cached.cachedAt,
-        ttlMs: ADDITIONAL_PROFILE_CACHE_TTL_MS,
-        metadata: currentMetadata,
-        rawRules: cached.rawRules,
-        searchKeySetsOfExactUser: cached.searchKeySetsOfExactUser,
-      });
-      return { ...cached, cacheHit: true, staleReasons: [], paginationInvalidationReasons: [] };
-    }
-
-    logAdditionalMatchingDebug(normalizedAccessUserId, 'profile cache miss/stale', {
-      reason,
-      staleReason: staleReasons,
-      paginationInvalidationReasons,
-      cachedAt: cached?.cachedAt || null,
-      ttlMs: ADDITIONAL_PROFILE_CACHE_TTL_MS,
-      metadata: currentMetadata,
-    });
-
-    const profileRequestVersion = additionalProfileRequestVersionRef.current + 1;
-    additionalProfileRequestVersionRef.current = profileRequestVersion;
-    const profilePath = `loadViewerProfile(${normalizedAccessUserId})`;
-    try {
-      // Памʼять цього шару — 45 секунд, а за нею стоїть кеш анкети пристрою
-      // (`loadViewerProfile`, шість годин): права з правил доступу міняє адмін,
-      // і за загальним правилом кеша матчингу вони доїжджають щонайпізніше
-      // через TTL, а не ціною повної анкети з бази на кожну порцію реакцій.
-      const fetchedProfile = prefetchedProfile !== undefined
-        ? prefetchedProfile
-        : await loadViewerProfile(normalizedAccessUserId);
-      const profileFound = Boolean(fetchedProfile && typeof fetchedProfile === 'object');
-
-      if (!profileFound) {
-        const fallbackSearchKeySetsOfExactUser = areSearchKeySetKeysForAccessUserId(
-          state.currentSearchKeySetKeys,
-          normalizedAccessUserId
-        )
-          ? state.currentSearchKeySetKeys
-          : await resolveAdditionalSearchKeySetKeysForMatching(null, normalizedAccessUserId);
-        const fallbackCache = {
-          accessUserId: normalizedAccessUserId,
-          rawRulesSignature: getRawRulesSignature(state.currentAdditionalAccessRules),
-          searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(fallbackSearchKeySetsOfExactUser),
-          profile: cached?.profile || {},
-          accessLevel: cached?.accessLevel || '',
-          rawRules: state.currentAdditionalAccessRules || '',
-          searchKeySetsOfExactUser: fallbackSearchKeySetsOfExactUser,
-          cachedAt: cached?.cachedAt || Date.now(),
-          profilePath,
-          profileFound: false,
-        };
-
-        logAdditionalMatchingDebug(normalizedAccessUserId, 'profile refetch returned empty; keeping current access state', {
-          firebasePath: profilePath,
-          rawRules: fallbackCache.rawRules,
-          searchKeySetsOfExactUser: fallbackSearchKeySetsOfExactUser,
-          metadata: {
-            accessUserId: fallbackCache.accessUserId,
-            rawRulesSignature: fallbackCache.rawRulesSignature,
-            searchKeySetsOfExactUserSignature: fallbackCache.searchKeySetsOfExactUserSignature,
-          },
-          staleReasons,
-          paginationInvalidationReasons,
-        });
-
-        return {
-          ...fallbackCache,
-          cacheHit: true,
-          profileRefreshFailed: true,
-          staleReasons,
-          paginationInvalidationReasons: [],
-        };
-      }
-
-      const profile = fetchedProfile;
-      const accessLevel = profile?.accessLevel || '';
-      const userRole = readViewerRolesFromProfile(profile);
-      const additionalAccessRules = profile?.additionalAccessRules || '';
-      const searchKeySetsOfExactUser = Array.isArray(prefetchedSearchKeySetKeys)
-        ? prefetchedSearchKeySetKeys
-        : await resolveAdditionalSearchKeySetKeysForMatching(profile, normalizedAccessUserId);
-
-      if (profileRequestVersion !== additionalProfileRequestVersionRef.current) {
-        const latestCache = additionalProfileCacheRef.current;
-        logAdditionalMatchingDebug(normalizedAccessUserId, 'ignored stale profile refetch', {
-          firebasePath: profilePath,
-          requestVersion: profileRequestVersion,
-          latestVersion: additionalProfileRequestVersionRef.current,
-          rawRules: additionalAccessRules,
-          searchKeySetsOfExactUser,
-        });
-        return latestCache
-          ? { ...latestCache, cacheHit: true, staleResponse: true, staleReasons, paginationInvalidationReasons: [] }
-          : null;
-      }
-      const freshMetadata = {
-        accessUserId: normalizedAccessUserId,
-        rawRulesSignature: getRawRulesSignature(additionalAccessRules),
-        searchKeySetsOfExactUserSignature: getSearchKeySetsOfExactUserSignature(searchKeySetsOfExactUser),
-      };
-      const confirmedPaginationInvalidationReasons = [];
-      if (!cached) confirmedPaginationInvalidationReasons.push('missing-cache');
-      if (cached && cached.accessUserId !== freshMetadata.accessUserId) confirmedPaginationInvalidationReasons.push('accessUserId-changed');
-      if (cached && cached.rawRulesSignature !== freshMetadata.rawRulesSignature) confirmedPaginationInvalidationReasons.push('rawRulesSignature-changed');
-      if (cached && cached.searchKeySetsOfExactUserSignature !== freshMetadata.searchKeySetsOfExactUserSignature) {
-        confirmedPaginationInvalidationReasons.push('searchKeySetsOfExactUserSignature-changed');
-      }
-
-      const freshCache = {
-        ...freshMetadata,
-        profile,
-        profileFound: true,
-        accessLevel,
-        rawRules: additionalAccessRules,
-        searchKeySetsOfExactUser,
-        cachedAt: Date.now(),
-        profilePath,
-      };
-
-      additionalProfileCacheRef.current = freshCache;
-      matchingProfileStateRef.current = {
-        ...matchingProfileStateRef.current,
-        ownerId: normalizedAccessUserId,
-        currentAdditionalAccessRules: additionalAccessRules,
-        currentSearchKeySetKeys: searchKeySetsOfExactUser,
-      };
-      setCurrentAccessLevel(prev => (prev === accessLevel ? prev : accessLevel));
-      // Та сама роль у новому масиві — це не зміна ролі: тримаємо попереднє
-      // значення, щоб памʼять про вже зібрану деку (`initialRoleLoadedRef`) і
-      // мемо, що залежать від ролі, не перебудовувались на порожньому місці.
-      setCurrentUserRole(prev => (viewerRoleSignature(prev) === viewerRoleSignature(userRole) ? prev : userRole));
-      setCurrentAdditionalAccessRules(prev => (prev === additionalAccessRules ? prev : additionalAccessRules));
-      setCurrentSearchKeySetKeys(prev => (
-        getSearchKeySetsOfExactUserSignature(prev) === getSearchKeySetsOfExactUserSignature(searchKeySetsOfExactUser)
-          ? prev
-          : searchKeySetsOfExactUser
-      ));
-      localStorage.setItem('accessLevel', accessLevel);
-      localStorage.setItem('userRole', userRole);
-      localStorage.setItem('additionalAccessRules', additionalAccessRules);
-      localStorage.setItem('additionalSearchKeySetKeys', searchKeySetsOfExactUser.join(','));
-      setMultiDataOwnerIds(resolveMatchingMultiDataOwnerIds({ viewerId: normalizedAccessUserId, profile }));
-
-      logAdditionalMatchingDebug(normalizedAccessUserId, 'profile refetched', {
-        firebasePath: profilePath,
-        rawRules: additionalAccessRules,
-        searchKeySetsOfExactUser,
-        metadata: freshMetadata,
-        staleReasons,
-        paginationInvalidationReasons: confirmedPaginationInvalidationReasons,
-      });
-
-      return {
-        ...freshCache,
-        cacheHit: confirmedPaginationInvalidationReasons.length === 0,
-        refreshed: true,
-        staleReasons,
-        paginationInvalidationReasons: confirmedPaginationInvalidationReasons,
-      };
-    } catch (error) {
-      logAdditionalMatchingDebug(normalizedAccessUserId, 'profile refetch failed', { firebasePath: profilePath }, error);
-      throw error;
-    }
+    viewerProfileCacheRef.current = freshCache;
+    matchingProfileStateRef.current = { ...matchingProfileStateRef.current, ownerId: normalizedAccessUserId };
+    // Та сама роль у новому масиві — це не зміна ролі: тримаємо попереднє
+    // значення, щоб памʼять про вже зібрану деку (`initialRoleLoadedRef`) і
+    // мемо, що залежать від ролі, не перебудовувались на порожньому місці.
+    setCurrentUserRole(prev => (viewerRoleSignature(prev) === viewerRoleSignature(userRole) ? prev : userRole));
+    localStorage.setItem('userRole', userRole);
+    setMultiDataOwnerIds(resolveMatchingMultiDataOwnerIds({ viewerId: normalizedAccessUserId, profile }));
+    return { ...freshCache, cacheHit: false, refreshed: true };
   }, [setMultiDataOwnerIds]);
 
   const loadCommentsFor = React.useCallback(async (list, { force = false, activeOnly = true } = {}) => {
@@ -2783,17 +2337,12 @@ const Matching = () => {
             // Свіжа (до шести годин) анкета — з памʼяті пристрою, без бази:
             // роль і спільні власники реакцій з неї ж (`loadViewerProfile`).
             const profile = await loadViewerProfile(user.uid);
-            const accessLevel = profile?.accessLevel || '';
             const userRole = readViewerRolesFromProfile(profile);
-            const canCreateProfiles = profile?.canCreateProfiles === true;
-            const additionalAccessRules = profile?.additionalAccessRules || '';
             const rawMultiDataAccessUserIds = profile?.[MULTI_DATA_ACCESS_FIELD];
             const accessOwnerIds = parseMultiDataAccessUserIds(rawMultiDataAccessUserIds);
             const resolvedOwnerIds = resolveMatchingMultiDataOwnerIds({ viewerId: user.uid, profile });
 
             // The public deck needs the role and the reaction owners together.
-            // Install both before resolving it, while leaving the unrelated
-            // search-key discovery and additional-access refresh asynchronous.
             setMultiDataOwnerIds(resolvedOwnerIds);
             setViewerProgramFacts(extractViewerProgramFacts(profile, PROGRAM_FACT_HELPERS));
             // Дата з графіка, яку база ще не прийняла (`saveViewerLastCycle`
@@ -2815,51 +2364,22 @@ const Matching = () => {
                 comments: `${COMMENTS_ROOT_PATH}/${sharedOwnerId}`,
               })),
             });
-            const searchKeySetKeys = await resolveAdditionalSearchKeySetKeysForMatching(profile, user.uid);
-
-            console.info('[Matching][additionalAccessUsers] resolvedSearchKeySetKeys', searchKeySetKeys);
-
-            setCurrentAccessLevel(accessLevel);
-            setCurrentCanCreateProfiles(canCreateProfiles);
-            setCurrentAdditionalAccessRules(additionalAccessRules);
-            setCurrentSearchKeySetKeys(searchKeySetKeys);
-            localStorage.setItem('accessLevel', accessLevel);
-            localStorage.setItem('canCreateProfiles', canCreateProfiles ? 'true' : 'false');
-            localStorage.setItem('additionalAccessRules', additionalAccessRules);
-            localStorage.setItem('additionalSearchKeySetKeys', searchKeySetKeys.join(','));
-            const freshCache = await ensureFreshAdditionalMatchingProfile({
+            await ensureFreshViewerProfile({
               accessUserId: user.uid,
-              reason: 'auth-state-sync',
               prefetchedProfile: profile || null,
-              prefetchedSearchKeySetKeys: searchKeySetKeys,
             });
-
-            console.info('[Matching][additionalAccessUsers] resolvedSearchKeySetsOfExactUser', freshCache?.searchKeySetsOfExactUser || []);
           } catch (error) {
             console.error('Failed to refresh access profile on Matching', error);
-            const cachedAccessLevel = localStorage.getItem('accessLevel') || '';
             const cachedUserRole = localStorage.getItem('userRole') || '';
-            const cachedAdditionalAccessRules = localStorage.getItem('additionalAccessRules') || '';
-            const cachedSearchKeySetKeys = normalizeSearchKeySetKeys(localStorage.getItem('additionalSearchKeySetKeys') || '');
             setCurrentUserRole(cachedUserRole);
             setCurrentUserRoleResolved(true);
-            const fallbackSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(cachedSearchKeySetKeys, user.uid)
-              ? cachedSearchKeySetKeys
-              : await resolveAdditionalSearchKeySetKeysForMatching(null, user.uid);
-            console.info('[Matching][additionalAccessUsers] resolvedSearchKeySetsOfExactUser', fallbackSearchKeySetKeys);
-            setCurrentAccessLevel(cachedAccessLevel);
-            setCurrentAdditionalAccessRules(cachedAdditionalAccessRules);
-            setCurrentSearchKeySetKeys(fallbackSearchKeySetKeys);
           }
         };
 
         syncAccessProfile();
       } else {
         localStorage.removeItem('ownerId');
-        localStorage.removeItem('accessLevel');
         localStorage.removeItem('userRole');
-        localStorage.removeItem('additionalAccessRules');
-        localStorage.removeItem('additionalSearchKeySetKeys');
         setOwnerId('');
         setMultiDataOwnerIds([]);
         setFavoriteUsers({});
@@ -2869,15 +2389,12 @@ const Matching = () => {
         setSharedReactionIds([]);
         setSharedReactionCandidateUsers([]);
         setSharedComments({});
-        setCurrentAccessLevel('');
         setCurrentUserRole('');
-        setCurrentAdditionalAccessRules('');
-        setCurrentSearchKeySetKeys([]);
         // `resetHasMore` тут саме `false`: вихід із сесії — це не «деку ще не
         // гортали», а «читати більше нема кому». Поки скид ставив `hasMore`
         // назад у `true`, довантаження бачило незакінчену деку й питало базу
         // знову, вже без жодного uid.
-        resetAdditionalMatchingState({ resetHasMore: false, resetLoading: true });
+        resetMatchingDeckState({ resetHasMore: false, resetLoading: true });
         hasMoreRef.current = false;
         setHasMore(false);
         return;
@@ -2908,7 +2425,7 @@ const Matching = () => {
     return () => {
       unsubscribeAuth();
     };
-  }, [ensureFreshAdditionalMatchingProfile, resetAdditionalMatchingState, setMultiDataOwnerIds]);
+  }, [ensureFreshViewerProfile, resetMatchingDeckState, setMultiDataOwnerIds]);
 
   // Підписки на реакції живуть поки живе власник у переліку, а не поки живе
   // сам перелік. Перелік на старті міняється щонайменше раз — спершу сам читач,
@@ -3339,111 +2856,6 @@ const Matching = () => {
     window.addEventListener(LIKED_AUDIENCE_EVENT, handleLikedAudienceChange);
     return () => window.removeEventListener(LIKED_AUDIENCE_EVENT, handleLikedAudienceChange);
   }, [language]);
-
-  // Додаткові правила відкривають окремі анкети, зокрема неопубліковані,
-  // яких за визначенням немає у публічному matchingCards. Тому scoped-індекс
-  // доповнює загальну стрічку, а не підміняє її джерело чи пагінацію.
-  useEffect(() => {
-    const accessUserId = String(ownerId || '').trim();
-    const searchKeySetKeys = normalizeSearchKeySetKeys(currentSearchKeySetKeys);
-    if (!accessUserId || !parsedAdditionalAccessRules.length || !searchKeySetKeys.length) {
-      additionalMatchingFetchVersionRef.current += 1;
-      additionalHasMoreRef.current = false;
-      additionalAccessLoadInFlightRef.current = false;
-      const deferredError = deferredInitialLoadErrorRef.current;
-      deferredInitialLoadErrorRef.current = null;
-      additionalAccessUsersRef.current = [];
-      setAdditionalHasMore(false);
-      setAdditionalAccessUsers([]);
-      setAdditionalNextOffset(0);
-      if (deferredError) reportInitialLoadError(deferredError);
-      return () => {};
-    }
-
-    const requestVersion = additionalMatchingFetchVersionRef.current + 1;
-    additionalMatchingFetchVersionRef.current = requestVersion;
-    // Do not retain cards granted by the previous owner/rule set while its
-    // replacement request is in flight (or if that request fails).
-    additionalHasMoreRef.current = false;
-    additionalAccessLoadInFlightRef.current = true;
-    additionalAccessUsersRef.current = [];
-    setAdditionalHasMore(false);
-    setAdditionalAccessUsers([]);
-    setAdditionalNextOffset(0);
-    let cancelled = false;
-    let loadedScopedCards = false;
-
-    const loadAccessScopedCards = async () => {
-      try {
-        const loaded = await fetchAdditionalAccessUsersBySearchIndex({
-          rawRules: currentAdditionalAccessRules,
-          accessUserId,
-          searchKeySetKeys,
-          filters: filtersRef.current || {},
-          excludeIds: [
-            ...listWholeCardReactionIds(favoriteUsersRef.current),
-            ...listWholeCardReactionIds(dislikeUsersRef.current),
-          ],
-          offset: 0,
-          limit: MATCHING_REFILL_LIMIT,
-          fetchUsersByIds: fetchLimitedProfilesByIdsForMatching,
-          shouldDebugAdditionalMatching,
-          debugAdditionalToast,
-          logAdditionalMatchingDebug,
-        });
-        if (cancelled || requestVersion !== additionalMatchingFetchVersionRef.current) return;
-
-        const publicIds = new Set(usersRef.current.map(user => user?.userId).filter(Boolean));
-        const scopedUsers = (loaded.users || [])
-          .filter(user => user?.userId && !publicIds.has(user.userId))
-          // Пачка з входу — голова деки: вона вже на екрані, коли перша
-          // сторінка стрічки тільки їде. Позначка розводить її з тими наданими
-          // картками, які дочитуються після кінця стрічки, — тим місце в хвості,
-          // де читач і чекає на приріст (`mergeMatchingCandidateUsers`).
-          .map(user => ({ ...user, __matchingAccessAllowed: true, __matchingAccessInitialBatch: true }));
-        loadedScopedCards = scopedUsers.length > 0;
-        additionalAccessUsersRef.current = scopedUsers;
-        setAdditionalAccessUsers(scopedUsers);
-        additionalHasMoreRef.current = Boolean(loaded.hasMore);
-        setAdditionalHasMore(Boolean(loaded.hasMore));
-        setAdditionalNextOffset(Number(loaded.nextOffset) || 0);
-        if (scopedUsers.length) {
-          // Помилка загальної стрічки прийшла раніше за ці картки: екран
-          // помилки знімаємо, але сам факт збою лишаємо сказаним.
-          const droppedError = deferredInitialLoadErrorRef.current;
-          deferredInitialLoadErrorRef.current = null;
-          setLoadError(null);
-          toast.dismiss(INITIAL_LOAD_ERROR_TOAST_ID);
-          announcePublicFeedUnavailable(droppedError);
-        }
-        void loadCommentsFor(scopedUsers);
-      } catch (error) {
-        if (!cancelled) console.error('Failed to load access-scoped matching cards', error);
-      } finally {
-        if (!cancelled && requestVersion === additionalMatchingFetchVersionRef.current) {
-          additionalAccessLoadInFlightRef.current = false;
-          const deferredError = deferredInitialLoadErrorRef.current;
-          deferredInitialLoadErrorRef.current = null;
-          if (deferredError && !loadedScopedCards) {
-            reportInitialLoadError(deferredError);
-          }
-        }
-      }
-    };
-
-    loadAccessScopedCards();
-    return () => { cancelled = true; };
-  }, [
-    accessScopedReloadToken,
-    announcePublicFeedUnavailable,
-    currentAdditionalAccessRules,
-    currentSearchKeySetKeys,
-    loadCommentsFor,
-    ownerId,
-    parsedAdditionalAccessRules.length,
-    filters,
-    reportInitialLoadError,
-  ]);
 
   // Умова, за якої отримано стан пагінації стрічки: фільтри й роль читача
   // вирішують, які картки джерела дійшли до деки, тож курсор, записаний за
@@ -3947,17 +3359,7 @@ const Matching = () => {
     } catch (error) {
       if (canApplyInitialLoad() && initialRequest === initialRequestIdRef.current) {
         recordInitialLoadDiagnostic({ stage: error?.requestLabel || 'unknown', status: 'failed' });
-        if (additionalAccessUsersRef.current.length > 0) {
-          deferredInitialLoadErrorRef.current = null;
-          // Дека лишається на екрані — але коротка, і без пояснення це читається
-          // як «більше нікого немає». Один рядок з кодом помилки називає різницю
-          // між «нікого» і «не прочиталось»: на телефоні консолі немає.
-          announcePublicFeedUnavailable(error);
-        } else if (additionalAccessLoadInFlightRef.current) {
-          deferredInitialLoadErrorRef.current = error;
-        } else {
-          reportInitialLoadError(error);
-        }
+        reportInitialLoadError(error);
       }
       console.error('Failed to load initial matching profiles', error);
     } finally {
@@ -3980,7 +3382,7 @@ const Matching = () => {
         setLoading(false);
       }
     }
-  }, [announcePublicFeedUnavailable, beginInitialRequest, buildFeedCacheSignature, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, programRates, readPublishedIndexAfterJournal, recordInitialLoadDiagnostic, rememberFeedPagination, rememberFeedSummaryCards, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
+  }, [beginInitialRequest, buildFeedCacheSignature, fetchChunk, getMatchingMultiDataOwnerIds, hasMore, hydrateMatchingFeedCards, lastKey, loadCommentsFor, matchingDataSourceMode, programRates, readPublishedIndexAfterJournal, recordInitialLoadDiagnostic, rememberFeedPagination, rememberFeedSummaryCards, reportInitialLoadError, roleIndexSets]); // include fetchChunk to satisfy react-hooks/exhaustive-deps
 
   const reloadDefault = React.useCallback(() => {
     setLoadError(null);
@@ -4038,10 +3440,6 @@ const Matching = () => {
         loadedIdsRef.current = new Set();
         setUsers([]);
       }
-      setAdditionalAccessUsers([]);
-      setAdditionalNextOffset(0);
-      additionalHasMoreRef.current = false;
-      setAdditionalHasMore(false);
       setLastKey(null);
       setHasMore(true);
     }
@@ -4101,12 +3499,10 @@ const Matching = () => {
     initialRequestIdRef.current += 1;
     initialLoadInFlightRef.current = false;
     loadedIdsRef.current = new Set();
-    additionalRulesToastRef.current = '';
-    additionalProfileCacheRef.current = null;
-    additionalProfileRequestVersionRef.current += 1;
-    additionalMatchingFetchVersionRef.current += 1;
-    additionalLoadMoreFetchVersionRef.current += 1;
-    additionalMatchingApplyVersionRef.current += 1;
+    viewerProfileCacheRef.current = null;
+    viewerProfileRequestVersionRef.current += 1;
+    loadMoreFetchVersionRef.current += 1;
+    loadMoreApplyVersionRef.current += 1;
     invalidateReactionAsyncWork();
     resetReactionPaginationState();
     if (!keepFilters) filtersRef.current = {};
@@ -4117,11 +3513,6 @@ const Matching = () => {
     }
     setUsers([]);
     setFeedHeadNewUsers([]);
-    additionalAccessUsersRef.current = [];
-    setAdditionalAccessUsers([]);
-    setAdditionalNextOffset(0);
-    additionalHasMoreRef.current = false;
-    setAdditionalHasMore(false);
     setSharedReactionIds([]);
     setSharedReactionCandidateUsers([]);
     setPhotoCacheByUserId({});
@@ -4132,7 +3523,6 @@ const Matching = () => {
     if (!keepFilters) setFilterResetToken(prev => prev + 1);
     // Надані картки щойно скинуто, а фільтри лишились тими самими — їхній
     // ефект сам не перезапуститься, і неопубліковані надані анкети зникли б.
-    if (keepFilters) setAccessScopedReloadToken(prev => prev + 1);
 
     if (debugMatchingCache) {
       console.info('[Matching cache] reset removed keys:', removedLocalStorageKeys);
@@ -4351,14 +3741,15 @@ const Matching = () => {
     return result;
   }, [hydrateMatchingFeedCards]);
 
+  // Правил додаткового доступу більше немає (22.11), тож кожна реакція —
+  // доступна: класифікація за сховищем лишається (вона ж кладе картки в
+  // памʼять для сторінки колекції), а перевірки за індексом наборів немає.
   const getAccessibleReactionIds = React.useCallback(async (reactionIds, accessSnapshot = {}, knownCards = null) => {
     const uniqueIds = [...new Set((reactionIds || []).map(id => String(id || '').trim()).filter(Boolean))];
     const accessRequestKey = stableAdditionalSignature({
       ids: uniqueIds.slice().sort(),
       withKnownCards: Boolean(knownCards),
       accessUserId: accessSnapshot.accessUserId || ownerId || getOwnerId(),
-      rawRules: accessSnapshot.rawRules ?? currentAdditionalAccessRules,
-      searchKeySetsOfExactUser: accessSnapshot.searchKeySetsOfExactUser ?? currentSearchKeySetKeys,
     });
     if (reactionAccessRequestsRef.current.has(accessRequestKey)) {
       debugReactionFlowLog('getAccessibleReactionIds:dedupe-hit', { inputIds: summarizeIdsForDebug(uniqueIds) });
@@ -4366,82 +3757,8 @@ const Matching = () => {
     }
 
     const accessPromise = (async () => {
-    const {
-      legacyReactionIds,
-      nodeReactionIds,
-      classifications,
-    } = await classifyReactionIdsByStorage(uniqueIds, knownCards);
-
-    debugReactionFlowLog('getAccessibleReactionIds:start', {
-      inputIds: summarizeIdsForDebug(uniqueIds),
-      legacyReactionIds: summarizeIdsForDebug(legacyReactionIds),
-      nodeReactionIds: summarizeIdsForDebug(nodeReactionIds),
-      classifications,
-      viewMode: viewModeRef.current,
-    });
-
-    if (nodeReactionIds.length === 0) {
-      debugReactionFlowLog('getAccessibleReactionIds:legacy-only-result', {
-        reactionIds: summarizeIdsForDebug(legacyReactionIds),
-      });
-      return uniqueIds.filter(id => legacyReactionIds.includes(id));
-    }
-
-    const rawRulesForRequest = accessSnapshot.rawRules ?? currentAdditionalAccessRules;
-    const parsedRulesForRequest = parseAdditionalAccessRuleGroups(rawRulesForRequest);
-    if (parsedRulesForRequest.length === 0) {
-      debugReactionFlowLog('getAccessibleReactionIds:no-rules-result', {
-        reactionIds: summarizeIdsForDebug(uniqueIds),
-      });
+      await classifyReactionIdsByStorage(uniqueIds, knownCards);
       return uniqueIds;
-    }
-
-    const searchKeySetsForRequest = accessSnapshot.searchKeySetsOfExactUser ?? currentSearchKeySetKeys;
-    const viewerId = accessSnapshot.accessUserId || ownerId || getOwnerId();
-    if (!viewerId) {
-      debugReactionFlowLog('getAccessibleReactionIds:no-viewer-result', {
-        reactionIds: summarizeIdsForDebug(legacyReactionIds),
-        blockedNodeReactionIds: summarizeIdsForDebug(nodeReactionIds),
-      });
-      return uniqueIds.filter(id => legacyReactionIds.includes(id));
-    }
-
-    const resolvedSearchKeySetKeys = areSearchKeySetKeysForAccessUserId(searchKeySetsForRequest, viewerId)
-      ? searchKeySetsForRequest
-      : await resolveAdditionalSearchKeySetKeysForMatching(null, viewerId);
-
-    if (!resolvedSearchKeySetKeys.length) {
-      debugReactionFlowLog('getAccessibleReactionIds:no-search-key-sets-result', {
-        viewerId,
-        reactionIds: summarizeIdsForDebug(legacyReactionIds),
-        blockedNodeReactionIds: summarizeIdsForDebug(nodeReactionIds),
-      });
-      return uniqueIds.filter(id => legacyReactionIds.includes(id));
-    }
-
-    debugReactionFlowLog('getAccessibleReactionIds:index-request', {
-      viewerId,
-      candidateUserIds: summarizeIdsForDebug(nodeReactionIds),
-      searchKeySetKeysCount: resolvedSearchKeySetKeys.length,
-    });
-
-    const indexed = await checkReactionCardMembership({
-      candidateUserIds: nodeReactionIds,
-      searchKeySetKeys: resolvedSearchKeySetKeys,
-      debugMatchingFlow: shouldDebugAdditionalMatching(viewerId),
-      debugToast: (message, data) => debugAdditionalToast(viewerId, message, data),
-    });
-    const allowedIds = new Set(Array.isArray(indexed?.userIds) ? indexed.userIds : []);
-    const allowedNodeReactionIds = nodeReactionIds.filter(id => allowedIds.has(id));
-    const blockedNodeReactionIds = nodeReactionIds.filter(id => !allowedIds.has(id));
-    const resultIds = uniqueIds.filter(id => legacyReactionIds.includes(id) || allowedNodeReactionIds.includes(id));
-    debugReactionFlowLog('getAccessibleReactionIds:index-result', {
-      indexedIds: summarizeIdsForDebug(Array.from(allowedIds)),
-      allowedNodeReactionIds: summarizeIdsForDebug(allowedNodeReactionIds),
-      blockedNodeReactionIds: summarizeIdsForDebug(blockedNodeReactionIds),
-      reactionIds: summarizeIdsForDebug(resultIds),
-    });
-    return resultIds;
     })().finally(() => {
       reactionAccessRequestsRef.current.delete(accessRequestKey);
     });
@@ -4450,8 +3767,6 @@ const Matching = () => {
     return accessPromise;
   }, [
     classifyReactionIdsByStorage,
-    currentAdditionalAccessRules,
-    currentSearchKeySetKeys,
     ownerId,
   ]);
 
@@ -4590,8 +3905,8 @@ const Matching = () => {
     const cacheEpoch = getMatchingLocalStorageCacheEpoch();
     const isFavoritesMode = reactionType === 'favorites';
     loadInitialVersionRef.current += 1;
-    additionalLoadMoreFetchVersionRef.current += 1;
-    additionalMatchingApplyVersionRef.current += 1;
+    loadMoreFetchVersionRef.current += 1;
+    loadMoreApplyVersionRef.current += 1;
     reactionLoadVersionRef.current += 1;
     sharedReactionCandidateLoadVersionRef.current += 1;
     const reactionLoadVersion = reactionLoadVersionRef.current;
@@ -4683,12 +3998,8 @@ const Matching = () => {
         ownDislikes: summarizeReactionMapForDebug(ownDislikes),
         sharedReactionIds: summarizeIdsForDebug(nextSharedReactionIds),
       });
-      const reactionAccessSnapshot = {
-        accessUserId: ownerId || getOwnerId(),
-        rawRules: currentAdditionalAccessRules,
-        searchKeySetsOfExactUser: currentSearchKeySetKeys,
-      };
-      const reactionAccessSnapshotKey = buildAdditionalAccessSnapshotKey(reactionAccessSnapshot);
+      const reactionAccessSnapshot = { accessUserId: ownerId || getOwnerId() };
+      const reactionAccessSnapshotKey = buildReactionAccessSnapshotKey(reactionAccessSnapshot);
       // Перелік колекції — сама мапа реакцій у порядку часу реакції. Право на
       // кожну картку перевіряє сторінка (`loadReactionCardsPage`), тож до
       // першої порції база не питається ні про що.
@@ -4795,8 +4106,6 @@ const Matching = () => {
       setLoading(false);
     }
   }, [
-    currentAdditionalAccessRules,
-    currentSearchKeySetKeys,
     loadCommentsFor,
     loadReactionCardsPage,
     ownerId,
@@ -4807,8 +4116,8 @@ const Matching = () => {
   const switchMatchingMode = React.useCallback((nextMode) => {
     if (nextMode === 'favorites' || nextMode === 'dislikes') {
       loadInitialVersionRef.current += 1;
-      additionalLoadMoreFetchVersionRef.current += 1;
-      additionalMatchingApplyVersionRef.current += 1;
+      loadMoreFetchVersionRef.current += 1;
+      loadMoreApplyVersionRef.current += 1;
       reactionLoadVersionRef.current += 1;
       sharedReactionCandidateLoadVersionRef.current += 1;
       loadingRef.current = false;
@@ -5302,15 +4611,13 @@ const Matching = () => {
       markBlockedLoadMore('blocked-no-viewer', { guard: 'no signed-in viewer' });
       writeMatchingDebugLog('loadMore:blocked:noViewer', buildLoadMoreDebugPayload(commonDebug));
       hasMoreRef.current = false;
-      additionalHasMoreRef.current = false;
       setHasMore(false);
-      setAdditionalHasMore(false);
       loadingRef.current = false;
       loadingStateRef.current = false;
       setLoading(false);
       return 0;
     }
-    if (!hasMoreRef.current && !(viewMode === 'default' && additionalHasMoreRef.current)) {
+    if (!hasMoreRef.current) {
       markBlockedLoadMore('blocked-no-hasMore', { guard: 'hasMore === false' });
       writeMatchingDebugLog('loadMore:blocked:noHasMore', buildLoadMoreDebugPayload(commonDebug));
       return;
@@ -5333,24 +4640,24 @@ const Matching = () => {
     console.log('[loadMore] start', { lastKey, hasMore, requestedLimit, targetVisibleCount, currentVisibleCount });
     loadingRef.current = true;
     setLoading(true);
-    const loadMoreVersion = additionalLoadMoreFetchVersionRef.current + 1;
-    const applyVersion = additionalMatchingApplyVersionRef.current + 1;
-    additionalLoadMoreFetchVersionRef.current = loadMoreVersion;
-    additionalMatchingApplyVersionRef.current = applyVersion;
+    const loadMoreVersion = loadMoreFetchVersionRef.current + 1;
+    const applyVersion = loadMoreApplyVersionRef.current + 1;
+    loadMoreFetchVersionRef.current = loadMoreVersion;
+    loadMoreApplyVersionRef.current = applyVersion;
     const requestViewMode = viewMode;
     const requestFiltersSignature = stableAdditionalSignature(filtersRef.current || {});
     const requestFeedCacheSignature = buildFeedCacheSignature();
     const feedListKey = buildFeedListKey(requestFeedCacheSignature);
     const isLatestLoadMore = () => (
-      loadMoreVersion === additionalLoadMoreFetchVersionRef.current &&
-      applyVersion === additionalMatchingApplyVersionRef.current &&
+      loadMoreVersion === loadMoreFetchVersionRef.current &&
+      applyVersion === loadMoreApplyVersionRef.current &&
       cacheEpoch === getMatchingLocalStorageCacheEpoch()
     );
     const canApplyLoadMoreResult = () => (
       isLatestLoadMore() &&
       shouldApplyReactionPageResult({
         requestVersion: applyVersion,
-        currentVersion: additionalMatchingApplyVersionRef.current,
+        currentVersion: loadMoreApplyVersionRef.current,
         requestViewMode,
         currentViewMode: viewModeRef.current,
       })
@@ -5368,9 +4675,9 @@ const Matching = () => {
       if (!isLatestLoadMore()) {
         console.log('[loadMore] stale request finished after a newer request; keeping loading state for active request', {
           loadMoreVersion,
-          latestLoadMoreVersion: additionalLoadMoreFetchVersionRef.current,
+          latestLoadMoreVersion: loadMoreFetchVersionRef.current,
           applyVersion,
-          latestApplyVersion: additionalMatchingApplyVersionRef.current,
+          latestApplyVersion: loadMoreApplyVersionRef.current,
         });
         return;
       }
@@ -5403,26 +4710,11 @@ const Matching = () => {
           });
           return 0;
         }
-        // Права глядача з правилами доступу могли змінитись — перечитуємо їх
-        // перед сторінкою реакцій.
-        const shouldRefreshReactionIds = parsedAdditionalAccessRules.length > 0;
-        const freshProfileCache = shouldRefreshReactionIds
-          ? await ensureFreshAdditionalMatchingProfile({
-            accessUserId: ownerId,
-            reason: `load-more-${viewMode}-reaction-access`,
-          })
-          : null;
-
         if (!canApplyLoadMoreResultWithFilters()) { logStaleLoadMoreResultIgnored('reaction-branch'); return; }
 
-        const reactionAccessSnapshot = {
-          accessUserId: ownerId || getOwnerId(),
-          rawRules: freshProfileCache?.rawRules ?? currentAdditionalAccessRules,
-          searchKeySetsOfExactUser: freshProfileCache?.searchKeySetsOfExactUser ?? currentSearchKeySetKeys,
-        };
-        const reactionAccessSnapshotKey = buildAdditionalAccessSnapshotKey(reactionAccessSnapshot);
+        const reactionAccessSnapshot = { accessUserId: ownerId || getOwnerId() };
+        const reactionAccessSnapshotKey = buildReactionAccessSnapshotKey(reactionAccessSnapshot);
         const didAccessSnapshotChange = Boolean(
-          shouldRefreshReactionIds &&
           currentPagination.ids.length > 0 &&
           currentPagination.accessSnapshotKey !== reactionAccessSnapshotKey
         );
@@ -5438,7 +4730,6 @@ const Matching = () => {
           reactionMapIdsCount: reactionMapIds.length,
           paginationIdsCount: currentPagination.ids.length,
           didAccessSnapshotChange,
-          shouldRefreshReactionIds,
           reactionAccessSnapshotKey,
         });
 
@@ -5519,65 +4810,6 @@ const Matching = () => {
         ...listWholeCardReactionIds(favoriteUsersRef.current),
         ...listWholeCardReactionIds(dislikeUsersRef.current),
       ]);
-
-      // The scoped source is paged just like the public feed. Read only the
-      // next deck-sized page; never drain the entire additional-access index
-      // on initial load or after a filter change.
-      // Public pagination owns its two-card quota. Access-scoped cards are a
-      // separate deck source and may only page after matchingCards is truly
-      // exhausted; otherwise two local/scoped cards could consume a cycle
-      // without adding the two promised public cards.
-      if (!hasMoreRef.current && additionalHasMoreRef.current && parsedAdditionalAccessRules.length > 0) {
-        const scopedUsers = [];
-        const publicIds = new Set(usersRef.current.map(user => user?.userId).filter(Boolean));
-        const scopedIds = new Set(additionalAccessUsersRef.current.map(user => user?.userId).filter(Boolean));
-        let scopedOffset = additionalNextOffsetRef.current;
-        let scopedPageCalls = 0;
-
-        // A sparse index page may hydrate fewer cards than requested. Keep the
-        // same promised batch alive while the scoped source can still advance.
-        while (scopedUsers.length < requestedLimit && additionalHasMoreRef.current && scopedPageCalls < MATCHING_MAX_PAGES_PER_LOAD) {
-          scopedPageCalls += 1;
-          const scopedPage = await fetchAdditionalAccessUsersBySearchIndex({
-            rawRules: currentAdditionalAccessRules,
-            accessUserId: ownerId,
-            searchKeySetKeys: normalizeSearchKeySetKeys(currentSearchKeySetKeys),
-            filters: filtersRef.current || {},
-            excludeIds: [...baseExclude, ...publicIds, ...scopedIds],
-            offset: scopedOffset,
-            limit: requestedLimit - scopedUsers.length,
-            fetchUsersByIds: fetchLimitedProfilesByIdsForMatching,
-            shouldDebugAdditionalMatching,
-            debugAdditionalToast,
-            logAdditionalMatchingDebug,
-          });
-          if (!canApplyLoadMoreResultWithFilters()) {
-            logStaleLoadMoreResultIgnored('additional-access-page');
-            return;
-          }
-
-          const nextOffset = Number(scopedPage.nextOffset) || scopedOffset;
-          additionalHasMoreRef.current = Boolean(scopedPage.hasMore && nextOffset > scopedOffset);
-          (scopedPage.users || []).forEach(user => {
-            if (!user?.userId || !normalizePublish(user.publish) || publicIds.has(user.userId) || scopedIds.has(user.userId)) return;
-            scopedIds.add(user.userId);
-            scopedUsers.push({ ...user, __matchingAccessAllowed: true });
-          });
-          scopedOffset = nextOffset;
-        }
-
-        setAdditionalHasMore(additionalHasMoreRef.current);
-        setAdditionalNextOffset(scopedOffset);
-        if (scopedUsers.length) {
-          setAdditionalAccessUsers(prev => {
-            const byId = new Map(prev.map(user => [user.userId, user]));
-            scopedUsers.forEach(user => byId.set(user.userId, user));
-            return Array.from(byId.values());
-          });
-          void loadCommentsFor(scopedUsers);
-        }
-        return scopedUsers.length;
-      }
 
       const activeIndexFilterGroups = buildMatchingIndexFilterGroups({
         filters: filtersRef.current || {},
@@ -5686,13 +4918,13 @@ const Matching = () => {
           writeMatchingDebugLog('loadMore:blocked:staleRequest', buildLoadMoreDebugPayload({
             ...commonDebug,
             requestVersion: applyVersion,
-            extra: { loadMoreVersion, latestLoadMoreVersion: additionalLoadMoreFetchVersionRef.current },
+            extra: { loadMoreVersion, latestLoadMoreVersion: loadMoreFetchVersionRef.current },
           }));
           console.log('[loadMore] ignored stale default batch result', {
             loadMoreVersion,
-            latestLoadMoreVersion: additionalLoadMoreFetchVersionRef.current,
+            latestLoadMoreVersion: loadMoreFetchVersionRef.current,
             applyVersion,
-            latestApplyVersion: additionalMatchingApplyVersionRef.current,
+            latestApplyVersion: loadMoreApplyVersionRef.current,
           });
           return;
         }
@@ -5847,9 +5079,6 @@ const Matching = () => {
     }
   }, [
     buildFeedCacheSignature,
-    currentAdditionalAccessRules,
-    currentSearchKeySetKeys,
-    ensureFreshAdditionalMatchingProfile,
     fetchChunk,
     hasMore,
     hydrateMatchingFeedCards,
@@ -5860,7 +5089,6 @@ const Matching = () => {
     loadReactionCardsPage,
     reactionPaginationByType,
     reactionPipelineReadyByType,
-    parsedAdditionalAccessRules.length,
     rememberFeedPagination,
     rememberFeedSummaryCards,
     sharedReactionIds,
@@ -5996,10 +5224,6 @@ const Matching = () => {
     () => resolveStoredProjectionList(likedAudienceUsers, isMatchingSummaryCard),
     [likedAudienceUsers, cardStoreVersion],
   );
-  const storedAdditionalAccessUsers = useMemo(
-    () => resolveStoredProjectionList(additionalAccessUsers, isMatchingSummaryCard),
-    [additionalAccessUsers, cardStoreVersion],
-  );
   const storedSharedReactionCandidateUsers = useMemo(
     () => resolveStoredProjectionList(sharedReactionCandidateUsers, isMatchingSummaryCard),
     [sharedReactionCandidateUsers, cardStoreVersion],
@@ -6036,12 +5260,10 @@ const Matching = () => {
           : storedUsers,
         hasMore,
       }),
-    additionalAccessUsers: storedAdditionalAccessUsers,
     likedAudienceUsers: storedLikedAudienceUsers,
     sharedReactionCandidateUsers: storedSharedReactionCandidateUsers,
     isAdmin,
     viewMode,
-    hasAdditionalAccessRules: parsedAdditionalAccessRules.length > 0,
     ownFavoriteUsers,
     ownDislikeUsers,
     favoriteUsers,
@@ -6054,7 +5276,6 @@ const Matching = () => {
     // фільтрів вона просто не доходила.
     keepReactedUserIds: stickyReactedUserIds,
   }), viewMode === 'default' ? storedReturnedToFeedCards : EMPTY_USERS), [
-    storedAdditionalAccessUsers,
     storedLikedAudienceUsers,
     dislikeUsers,
     favoriteUsers,
@@ -6062,7 +5283,6 @@ const Matching = () => {
     ownFavoriteUsers,
     isAdmin,
     initialPublicWindowComplete,
-    parsedAdditionalAccessRules,
     personalDraftSearchMatches,
     hasMore,
     storedSharedReactionCandidateUsers,
@@ -6100,7 +5320,6 @@ const Matching = () => {
     [
       ...storedUsers,
       ...storedLikedAudienceUsers,
-      ...storedAdditionalAccessUsers,
       ...storedSharedReactionCandidateUsers,
       ...personalCreateProfiles,
     ].forEach(user => {
@@ -6131,7 +5350,6 @@ const Matching = () => {
         return true;
       });
   }, [
-    storedAdditionalAccessUsers,
     storedLikedAudienceUsers,
     dislikeUsers,
     favoriteUsers,
@@ -6661,7 +5879,7 @@ const Matching = () => {
     const renderedIdsSet = new Set(renderedIds);
     const visibleCardIds = visibleUsers.map(card => card?.userId).filter(Boolean);
     const visibleCardIdsSet = new Set(visibleCardIds);
-    const loadedPool = [...users, ...additionalAccessUsers, ...sharedReactionCandidateUsers];
+    const loadedPool = [...users, ...sharedReactionCandidateUsers];
     const cardById = new Map();
     loadedPool.forEach(card => {
       if (card?.userId && !cardById.has(card.userId)) cardById.set(card.userId, card);
@@ -6878,7 +6096,6 @@ const Matching = () => {
       filteredOutCards,
     };
   }, [
-    additionalAccessUsers,
     dislikeUsers,
     favoriteUsers,
     filteredUsers,
@@ -6947,7 +6164,6 @@ const Matching = () => {
       hasMore,
       reactionIds: summarizeIdsForDebug(Object.keys(normalizeReactionMap(viewMode === 'favorites' ? favoriteUsers : dislikeUsers))),
       users: summarizeUsersForReactionDebug(users),
-      additionalAccessUsers: summarizeUsersForReactionDebug(additionalAccessUsers),
       sharedReactionCandidateUsers: summarizeUsersForReactionDebug(sharedReactionCandidateUsers),
       reactionTabUsers: summarizeUsersForReactionDebug(reactionTabUsers),
       visibleUsers: summarizeUsersForReactionDebug(visibleUsers),
@@ -6959,7 +6175,6 @@ const Matching = () => {
       reactionPagination: reactionPaginationByType[viewMode],
     });
   }, [
-    additionalAccessUsers,
     dislikeUsers,
     favoriteUsers,
     filteredUsers,
@@ -7282,34 +6497,8 @@ const Matching = () => {
     void loadCommentsFor(source.slice(0, FEED_PHOTO_HYDRATION_LIMIT), { activeOnly: false });
   }, [feedSourceIdsKey, loadCommentsFor]);
 
-  const additionalFiltersDebugSignatureRef = useRef('');
-  useEffect(() => {
-    if (!parsedAdditionalAccessRules.length) return;
-    if (!shouldDebugAdditionalMatching(ownerId)) return;
-
-    const first10FilteredUserIds = filteredUsers.map(user => user.userId).filter(Boolean).slice(0, 10);
-    const signature = JSON.stringify({
-      ownerId,
-      beforeFilters: visibleUsers.length,
-      afterFilters: filteredUsers.length,
-      activeFilters: getActiveMatchingFiltersDebug(filters),
-      first10FilteredUserIds,
-    });
-    if (additionalFiltersDebugSignatureRef.current === signature) return;
-    additionalFiltersDebugSignatureRef.current = signature;
-
-    debugAdditionalToast(ownerId, 'after UI filters', {
-      beforeFilters: visibleUsers.length,
-      afterFilters: filteredUsers.length,
-      activeFilters: getActiveMatchingFiltersDebug(filters),
-      first10FilteredUserIds,
-    });
-  }, [filteredUsers, filters, ownerId, parsedAdditionalAccessRules.length, visibleUsers]);
-
   const runAutoLoadMore = React.useCallback((signature, payload) => {
-    const canPageDeck = hasMoreRef.current || (
-      viewModeRef.current === 'default' && additionalHasMoreRef.current
-    );
+    const canPageDeck = hasMoreRef.current;
     const commonDebug = {
       matchingDebugVersion: MATCHING_DEBUG_VERSION,
       signature,
@@ -7462,7 +6651,6 @@ const Matching = () => {
       loading,
       loadingRefCurrent: loadingRef.current,
       lastKey,
-      additionalNextOffset,
     });
       if (viewMode !== 'default' && viewMode !== 'favorites' && viewMode !== 'dislikes') return;
     const isReactionMode = viewMode === 'favorites' || viewMode === 'dislikes';
@@ -7488,7 +6676,7 @@ const Matching = () => {
       });
       return;
     }
-    const canRefillDeck = hasMore || (viewMode === 'default' && additionalHasMore);
+    const canRefillDeck = hasMore;
     if (!canRefillDeck) {
       console.log('[Matching][refillEffect] blocked', { refillBlockedReason: 'blocked-no-hasMore', reactionPipelineReady, paginationInitialized });
       return;
@@ -7535,7 +6723,6 @@ const Matching = () => {
       viewMode,
       length: filteredUsers.length,
       lastKey,
-      additionalNextOffset,
       filters,
       filtersSignature: stableAdditionalSignature(filters),
       loadedIdsCount: loadedIdsRef.current?.size || 0,
@@ -7545,7 +6732,7 @@ const Matching = () => {
       targetVisibleCount,
       limit: MATCHING_REFILL_LIMIT,
     });
-  }, [additionalHasMore, additionalNextOffset, filteredUsers.length, filters, hasMore, lastKey, loading, ownerId, reactionPaginationByType, reactionPipelineReadyByType, renderedCardsLength, runAutoLoadMore, viewMode]);
+  }, [filteredUsers.length, filters, hasMore, lastKey, loading, ownerId, reactionPaginationByType, reactionPipelineReadyByType, renderedCardsLength, runAutoLoadMore, viewMode]);
 
   useEffect(() => {
     writeMatchingDebugLog('lastCardObserver:mounted', { ownerId, viewMode: viewModeRef.current });
@@ -7674,7 +6861,6 @@ const Matching = () => {
       limit: MATCHING_REFILL_LIMIT,
     });
   }, [
-    additionalNextOffset,
     hasMore,
     lastKey,
     runAutoLoadMore,
@@ -9114,7 +8300,6 @@ const Matching = () => {
     canViewContacts: canOfferProfileContacts({
       card: user,
       viewerId: ownerId,
-      accessLevel: currentAccessLevel,
     }),
     reviewsAction: buildRowReviewsAction(user.userId),
     reviewsSlot: buildRowReviewsSlot(user.userId),
@@ -9928,7 +9113,6 @@ const Matching = () => {
                       canViewContacts={canOfferProfileContacts({
                         card: user,
                         viewerId: ownerId,
-                        accessLevel: currentAccessLevel,
                       })}
                       priorityMetricKeys={priorityMetricKeys}
                       onSwipeRight={() => toggleRowAnketaReaction(user, anketaRole, 'favorites')}

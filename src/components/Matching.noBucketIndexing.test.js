@@ -68,23 +68,7 @@ describe('searchKey `no` bucket is neither written nor read', () => {
     expect(source).toContain("const isBroadSearchKeyPointGroup = group => group?.readMode === 'defer' || group?.readMode === 'range';");
   });
 
-  it('never lets an exclusion plan be read as an inclusion in searchKeySets', () => {
-    const source = fs.readFileSync(path.join(__dirname, '../utils/filterSetsIndex.js'), 'utf8');
 
-    expect(source).toContain("const useExcludeStrategy = readMode === 'exclude';");
-    expect(source).toContain('(useExcludeStrategy && (planBuckets.length === 0 || filterSets.length === 0))');
-    // A drawer filter the index cannot express must widen the deck, never zero an
-    // access rule - so it is dropped, not read.
-    expect(source).toContain("if (readMode === 'none' || readMode === 'defer') {");
-  });
-
-  it('materialises the empty bucket inside searchKeySets, where an access rule names it', () => {
-    const source = fs.readFileSync(path.join(__dirname, '../utils/filterSetsIndex.js'), 'utf8');
-
-    expect(source).toContain('const emptyBucket = getSearchKeyEmptyBucket(fieldName);');
-    expect(source).toContain('result[fieldName][emptyBucket][userId] = true;');
-    expect(source).toContain("collectAgeIdsByFilters(ageFilterMap, [rootPath], { emptyBucketStored: true })");
-  });
 
   it('gives bmi and country a written index instead of leaving them to the post-filter', () => {
     const source = configSource();

@@ -50,23 +50,6 @@ import { removeField } from './smallCard/actions';
 import { FaArrowRight, FaTimes } from 'react-icons/fa';
 import { InfoModal } from './InfoModal';
 import { auth, database } from './config';
-import {
-  ADDITIONAL_ACCESS_FILTER_OPTIONS,
-  ADDITIONAL_ACCESS_TEMPLATE,
-  parseAdditionalAccessRuleGroups,
-  resolveAdditionalAccessSearchKeyBuckets,
-} from 'utils/additionalAccessRules';
-import {
-  buildFilterSetIndex,
-  makeAdditionalRulesSetKey,
-  collectMetricBucketsByUserId,
-  prepareAdditionalAccessBucketMapForSearchKey,
-  resolveImtTokensFromExactMetrics,
-} from 'utils/filterSetsIndex';
-import {
-  getCachedAdditionalRulesPreview,
-  saveCachedAdditionalRulesPreview,
-} from 'utils/searchKeyCache';
 // Перелік індексованих полів і формат ключа беремо з того самого модуля, яким
 // індексується анкета: локальна копія встигла розійтися з ним (не було
 // `ameblo`), а ключ, побудований інакше, вказував би не на той вузол.
@@ -87,7 +70,7 @@ import {
   markFieldRowErased,
 } from 'utils/profileFieldRows';
 import { NestedObjectField, isNestedObjectValue } from './NestedObjectField';
-import { PROFILE_FIELD_CHIPS_VISIBLE, splitProfileFormFields } from 'utils/profileFieldChips';
+import { PROFILE_FIELD_CHIPS_VISIBLE, rankFieldsByFillStats, splitProfileFormFields } from 'utils/profileFieldChips';
 import { loadProfileFieldStats } from './profileFieldStatsRemote';
 import { ProfileDataTree } from './ProfileDataTree';
 import {
@@ -102,28 +85,6 @@ const get = (...args) =>
     source: 'ProfileForm',
     path: args[0],
   });
-
-const getImtAllowedUserIdsFromSearchKey = (searchKeyPayload, imtValues) => {
-  const normalizedImtValues = [...new Set((Array.isArray(imtValues) ? imtValues : []).filter(Boolean))];
-  if (!normalizedImtValues.length || !searchKeyPayload || typeof searchKeyPayload !== 'object') return new Set();
-
-  const heightIdx = searchKeyPayload?.height;
-  const weightIdx = searchKeyPayload?.weight;
-  if (!heightIdx || typeof heightIdx !== 'object' || !weightIdx || typeof weightIdx !== 'object') {
-    return new Set();
-  }
-
-  const { heightByUserId, weightByUserId } = collectMetricBucketsByUserId({ height: heightIdx, weight: weightIdx });
-  const metricUsers = new Set([
-    ...Object.keys(heightByUserId || {}),
-    ...Object.keys(weightByUserId || {}),
-  ]);
-
-  return new Set([...metricUsers].filter(userId => {
-    const imtBuckets = resolveImtTokensFromExactMetrics(heightByUserId[userId], weightByUserId[userId]);
-    return imtBuckets.some(bucket => normalizedImtValues.includes(bucket));
-  }));
-};
 
 export const getFieldsToRender = state => {
   const additionalFields = Object.keys(state).filter(
@@ -145,13 +106,20 @@ export const getFieldsToRender = state => {
   ];
 };
 
-const PROFILE_FORM_FIELDS_TO_HIDE = new Set(['getInTouch']);
-const COMPACT_PROFILE_FIELDS = new Set(['birth', 'region', 'city', 'height', 'weight', 'blood']);
-const PROFILE_FORM_TECHNICAL_FIELDS = new Set([
+// Форма не показує: позначку власника (`getInTouch`), прибрані права
+// (`accessLevel`, `canCreateProfiles`, `additionalAccessRules` — 22.11) і
+// спільних власників реакцій (`multiDataAccessUserIds`): їх правлять у «Усі
+// дані картки в базі», а рядком форми вони лише займали місце.
+const PROFILE_FORM_FIELDS_TO_HIDE = new Set([
+  'getInTouch',
   'accessLevel',
   'canCreateProfiles',
-  'screenAccess',
   'additionalAccessRules',
+  MULTI_DATA_ACCESS_FIELD,
+]);
+const COMPACT_PROFILE_FIELDS = new Set(['birth', 'region', 'city', 'height', 'weight', 'blood']);
+const PROFILE_FORM_TECHNICAL_FIELDS = new Set([
+  'screenAccess',
   MULTI_DATA_ACCESS_FIELD,
 ]);
 
@@ -162,12 +130,30 @@ const buildOverlayPaths = cardUserId => {
   return [`multiData/edits/${normalizedCardId}`];
 };
 
+// Людські назви службових полів (22.11): адмін читав `lastCycle`,
+// `cycleStatus`, `createdAt` сирими ключами бази.
 const PROFILE_FORM_LABELS = {
   lastLogin: 'Останній логін',
   lastLogin2: 'Останній логін',
   publish: 'Опубліковано',
   vk: 'VK',
   clothingSize: 'Розмір одягу',
+  lastCycle: 'Перший день циклу',
+  cycleStatus: 'Стан циклу',
+  createdAt: 'Створено',
+  registrationDate: 'Реєстрація',
+  seekingRole: 'Кого шукають',
+  seeking: 'Кого шукають',
+  programsAt: 'Програми оновлено',
+  hiddenRoles: 'Сховані анкети',
+  healthComplications: 'Ускладнення',
+  street: 'Вулиця',
+  screenAccess: 'Додаткові екрани',
+  multiDataSourceUserIds: 'Спільні дані',
+  agencyName: 'Назва агенції',
+  orgFeatures: 'Ознаки організації',
+  photoThumbs: 'Мініатюри фото',
+  language: 'Мова',
 };
 
 const getFieldDisplayLabel = field => {
@@ -181,7 +167,6 @@ const getFieldPlaceholderText = field => {
 
   return getFieldPlaceholder(field) || PROFILE_FORM_LABELS[fieldName] || getFieldLabel(field) || fieldName;
 };
-
 
 const removeButtonStyle = {
   width: '20px',
@@ -221,11 +206,9 @@ const nestedIndentStyle = {
   marginLeft: '20px',
 };
 
-
 const resolveFieldNameBase = fieldName => String(fieldName || '').replace(/-\d+$/, '');
 
 const BIRTH_DATE_FIELDS = new Set(['birth', 'birthWife', 'birthHusband']);
-
 
 const PROFILE_FORM_RESTORE_LOG_PREFIX = '[ProfileRestore][ProfileForm]';
 
@@ -253,7 +236,6 @@ const logProfileFormRestoreStep = (step, payload = {}) => {
   });
 };
 
-const ADDITIONAL_ACCESS_FIELD = 'additionalAccessRules';
 const PHENOTYPE_FIELDS = [
   'eyeColor',
   'hairColor',
@@ -429,214 +411,6 @@ const searchIdRecordContainsUserId = (recordValue, userId) =>
 const buildUsersBackendUrl = userId => (userId ? buildRtdbConsoleLink(['matchingCards', userId]) : '');
 const buildSearchIdBackendUrl = (searchIdRecordKey, searchIdField) =>
   (searchIdRecordKey ? buildRtdbConsoleLink(['searchId', searchIdRecordKey, searchIdField].filter(Boolean)) : '');
-const SEARCH_KEY_ROOT = 'searchKey';
-const normalizeSearchKeyPayload = payload => {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
-  const wrappedPayload = payload?.[SEARCH_KEY_ROOT];
-  if (wrappedPayload && typeof wrappedPayload === 'object' && !Array.isArray(wrappedPayload)) {
-    return wrappedPayload;
-  }
-  return payload;
-};
-const ADDITIONAL_RULE_LABELS = {
-  age: 'Вік',
-  csection: 'КР',
-  bloodGroup: 'Кров',
-  rh: 'Резус',
-  maritalStatus: 'Сімейний стан',
-  imt: 'ІМТ',
-  role: 'Роль',
-  contact: 'Контакти',
-  userId: 'UserId',
-  reaction: 'Reaction',
-  height: 'Height',
-  weight: 'Weight',
-  ageBirthDate: 'Birth date',
-};
-const ADDITIONAL_RULE_ORDER = Object.keys(ADDITIONAL_RULE_LABELS);
-const ADDITIONAL_RULE_OPTION_LABELS = {
-  le21: '<=21',
-  '22_25': '22-25',
-  '26_30': '26-30',
-  '31_35': '31-35',
-  '36_38': '36-38',
-  '39_41': '39-41',
-  '42_plus': '42+',
-  cs2plus: '>=2',
-  cs1: '1',
-  cs0: '0',
-};
-const ADDITIONAL_RULE_OPTION_DESCRIPTIONS = {
-  age: {
-    le21: 'До 21 року включно',
-    '22_25': '22-25 років',
-    '26_30': '26-30 років',
-    '31_35': '31-35 років',
-    '36_38': '36-38 років',
-    '39_41': '39-41 років',
-    '42_plus': '42 роки і старше',
-    '?': 'Некоректний формат віку',
-    no: 'Вік не вказано',
-  },
-  csection: {
-    cs2plus: '2 і більше КС',
-    cs1: '1 КС',
-    cs0: 'КС не було',
-    '?': 'Невідоме значення',
-    no: 'Поле КС порожнє',
-  },
-  bloodGroup: {
-    '1': 'I група',
-    '2': 'II група',
-    '3': 'III група',
-    '4': 'IV група',
-    '?': 'Некоректне значення',
-    no: 'Група крові не вказана',
-  },
-  rh: {
-    '+': 'Резус позитивний',
-    '-': 'Резус негативний',
-    '?': 'Некоректний резус',
-    no: 'Резус не вказано',
-  },
-  maritalStatus: {
-    '+': 'Заміжня / married',
-    '-': 'Незаміжня / single',
-    '?': 'Інше або некоректне',
-    no: 'Сімейний стан не вказано',
-  },
-  imt: {
-    le28: 'ІМТ до 28',
-    '29_31': 'ІМТ 29-31',
-    '32_35': 'ІМТ 32-35',
-    '36_plus': 'ІМТ 36+',
-    '?': 'ІМТ не вдалося порахувати',
-    no: 'Немає даних для ІМТ',
-  },
-};
-
-const ADDITIONAL_RULE_KEY_ALIASES = {
-  age: 'age',
-  'вік': 'age',
-  csection: 'csection',
-  'кс': 'csection',
-  blood: 'bloodGroup',
-  bloodgroup: 'bloodGroup',
-  'групакрові': 'bloodGroup',
-  'кров': 'bloodGroup',
-  rh: 'rh',
-  'резус': 'rh',
-  maritalstatus: 'maritalStatus',
-  'сімейнийстан': 'maritalStatus',
-  imt: 'imt',
-  'імт': 'imt',
-  bmi: 'imt',
-  role: 'role',
-  contact: 'contact',
-  userid: 'userId',
-  reaction: 'reaction',
-  height: 'height',
-  weight: 'weight',
-  agebirthdate: 'ageBirthDate',
-};
-
-const normalizeAdditionalRuleKey = rawKey => {
-  const normalized = String(rawKey || '').trim().toLowerCase().replace(/\s+/g, '');
-  if (!normalized) return '';
-
-  return ADDITIONAL_RULE_KEY_ALIASES[normalized] || normalized;
-};
-
-const parseAdditionalRulesTextToBuilder = raw => {
-  const lines = String(raw || '')
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean);
-
-  return lines
-    .map(line => {
-      const [keyRaw, ...rest] = line.split(':');
-      if (!keyRaw || rest.length === 0) return null;
-      const key = normalizeAdditionalRuleKey(keyRaw);
-      const rawTokens = rest
-        .join(':')
-        .split(',')
-        .map(token => token.trim())
-        .filter(Boolean);
-
-      const allowedValues = new Set(rawTokens);
-      if (key === 'age') {
-        const numericAges = new Set(
-          rawTokens
-          .map(token => Number.parseInt(token, 10))
-          .filter(age => Number.isFinite(age) && age >= 18)
-        );
-        const normalizedAgeTokens = new Set();
-        if ([18, 19, 20, 21].every(age => numericAges.has(age))) normalizedAgeTokens.add('le21');
-        if ([22, 23, 24, 25].every(age => numericAges.has(age))) normalizedAgeTokens.add('22_25');
-        if ([26, 27, 28, 29, 30].every(age => numericAges.has(age))) normalizedAgeTokens.add('26_30');
-        if ([31, 32, 33, 34, 35].every(age => numericAges.has(age))) normalizedAgeTokens.add('31_35');
-        if ([36, 37, 38].every(age => numericAges.has(age))) normalizedAgeTokens.add('36_38');
-        if ([39, 40, 41].every(age => numericAges.has(age))) normalizedAgeTokens.add('39_41');
-        if (rawTokens.includes('42_plus') || rawTokens.includes('43_plus')) {
-          normalizedAgeTokens.add('42_plus');
-        }
-        if (rawTokens.includes('?')) normalizedAgeTokens.add('?');
-        if (rawTokens.includes('no')) normalizedAgeTokens.add('no');
-        return { key, allowedValues: normalizedAgeTokens };
-      }
-      return { key, allowedValues };
-    })
-    .filter(rule => Boolean(rule?.key));
-};
-
-const buildAdditionalRulesTextFromBuilder = rules =>
-  rules
-    .filter(rule => {
-      const normalizedKey = normalizeAdditionalRuleKey(rule?.key);
-      if (!normalizedKey) return false;
-      if (!Object.prototype.hasOwnProperty.call(ADDITIONAL_ACCESS_FILTER_OPTIONS, normalizedKey)) return false;
-      return rule.allowedValues instanceof Set && rule.allowedValues.size > 0;
-    })
-    .map(rule => {
-      const normalizedKey = normalizeAdditionalRuleKey(rule.key);
-      if (normalizedKey !== 'age') return `${normalizedKey}: ${[...rule.allowedValues].join(',')}`;
-
-      const selected = rule.allowedValues;
-      const numericAges = new Set();
-      if (selected.has('le21')) [18, 19, 20, 21].forEach(age => numericAges.add(age));
-      if (selected.has('22_25')) [22, 23, 24, 25].forEach(age => numericAges.add(age));
-      if (selected.has('26_30')) [26, 27, 28, 29, 30].forEach(age => numericAges.add(age));
-      if (selected.has('31_35')) [31, 32, 33, 34, 35].forEach(age => numericAges.add(age));
-      if (selected.has('36_38')) [36, 37, 38].forEach(age => numericAges.add(age));
-      if (selected.has('39_41')) [39, 40, 41].forEach(age => numericAges.add(age));
-
-      const tokens = [...numericAges].sort((a, b) => a - b).map(age => String(age));
-      if (selected.has('42_plus')) tokens.push('42_plus');
-      if (selected.has('?')) tokens.push('?');
-      if (selected.has('no')) tokens.push('no');
-      return `${normalizedKey}: ${tokens.join(',')}`;
-    })
-    .join('\n');
-
-const additionalRulesTextToInputs = raw => {
-  if (Array.isArray(raw)) {
-    const items = raw.map(item => String(item || ''));
-    return items.length ? items : [''];
-  }
-
-  const text = String(raw || '');
-  if (!text.trim()) return [''];
-  return text.split(/\r?\n\s*\r?\n+/);
-};
-
-const normalizeAdditionalRulesValueForCompare = raw => {
-  const inputs = additionalRulesTextToInputs(raw)
-    .map(item => String(item || '').trim())
-    .filter(Boolean);
-
-  return inputs.join('\n\n');
-};
 
 
 // Сталий порожній обʼєкт: `AddNewProfile` пропозицій не передає, а `= {}` у
@@ -949,7 +723,10 @@ export const renderAllFields = (data, parentKey = '', options = {}) => {
 };
 
 // Перелік полів-дат спільний з формою чернетки — див. `PROFILE_DATE_FIELDS`.
-const PROFILE_FORM_DATE_FIELDS = PROFILE_DATE_FIELDS;
+// `lastCycle` пишеться через ту саму нормалізацію дат (`normalizeStoredDates`),
+// а `createdAt` лише показується — обидва крапками, як решта дат форми.
+const PROFILE_FORM_DATE_FIELDS = new Set([...PROFILE_DATE_FIELDS, 'lastCycle']);
+const PROFILE_FORM_READ_ONLY_DATE_FIELDS = new Set(['createdAt', 'registrationDate']);
 
 /**
  * Блоки, розгорнуті доти, доки їх не згорнули руками.
@@ -1001,6 +778,36 @@ const persistOpenProfileFormBlocks = openBlocks => {
  */
 const PROFILE_FORM_FIELD_DISPLAY_BLOCKS = {
   surname: { blockId: PROFILE_FORM_BLOCK_IDS.matchingCards, after: 'name' },
+  // Кров стоїть одним рядком зі зростом і вагою (`MetricRow`), хоч лежить у
+  // `profileDetails`.
+  blood: { blockId: PROFILE_FORM_BLOCK_IDS.matchingCards, after: 'weight' },
+};
+
+// Короткі значення, що влазять утрьох в один рядок: це лише спосіб показу —
+// збереження й правки ті самі, що в будь-якого поля.
+const METRIC_ROW_FIELDS = ['height', 'weight', 'blood'];
+// Короткі підписи в рядку: «Група крові та резус» на третині ширини телефона
+// переносилось на два рядки й зсувало своє поле нижче сусідів.
+const METRIC_ROW_LABELS = { height: 'Зріст, см', weight: 'Вага, кг', blood: 'Кров' };
+
+const groupMetricRowFields = fields => {
+  const items = [];
+  let pending = [];
+  const flush = () => {
+    if (pending.length > 1) items.push({ metricRow: true, fields: pending });
+    else pending.forEach(field => items.push({ field }));
+    pending = [];
+  };
+  fields.forEach(field => {
+    if (METRIC_ROW_FIELDS.includes(field?.name)) {
+      pending.push(field);
+      return;
+    }
+    flush();
+    items.push({ field });
+  });
+  flush();
+  return items;
 };
 
 export const ProfileForm = ({
@@ -1049,7 +856,7 @@ export const ProfileForm = ({
       return nextState;
     });
   }, [setExternalState]);
-  const canManageAccessLevel = isAdmin;
+  const canManageScreenAccess = isAdmin;
   // Чернетка — інше джерело, ніж готова анкета: один запис у
   // `multiData/profileMutations` з власним журналом. Посилання блоків і
   // історія правок ідуть за ним (див. `utils/profileRecordSource.js`).
@@ -1061,9 +868,6 @@ export const ProfileForm = ({
   const textareaRef = useRef(null);
   const moreInfoRef = useRef(null);
   const ppTechnicalInputRef = useRef(null);
-  const additionalAccessRulesRef = useRef(null);
-  const multiDataAccessUserIdsRef = useRef(null);
-  const [customField, setCustomField] = useState({ key: '', value: '' });
   const [selectedField, setSelectedField] = useState(null);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [ppTechnicalInput, setPpTechnicalInput] = useState('');
@@ -1079,17 +883,6 @@ export const ProfileForm = ({
   // Тримаємо їх у тому самому promise-ланцюжку, що й звичайні збереження
   // анкети: хрестик реагує одразу, а швидкі кліки не перетинають транзакції.
   const overlaySettlementQueueRef = useRef(Promise.resolve());
-  const [showAdditionalRulesModal, setShowAdditionalRulesModal] = useState(false);
-  const [activeAdditionalRuleInputIndex, setActiveAdditionalRuleInputIndex] = useState(0);
-  const [additionalRuleBuilder, setAdditionalRuleBuilder] = useState([]);
-  const [previewAdditionalRulesText, setPreviewAdditionalRulesText] = useState('');
-  const [availableCardsCount, setAvailableCardsCount] = useState(null);
-  const [isLoadingAvailableCards, setIsLoadingAvailableCards] = useState(false);
-  const [isIndexingAdditionalRules, setIsIndexingAdditionalRules] = useState(false);
-  const [showSearchKeySourceModal, setShowSearchKeySourceModal] = useState(false);
-  const [pendingRulesToApply, setPendingRulesToApply] = useState('');
-  const searchKeyFileInputRef = useRef(null);
-  const [localSearchKeyPayload, setLocalSearchKeyPayload] = useState(null);
   // Які блоки анкети розгорнуті. Вибір переживає перезавантаження: анкету
   // відкривають десятки разів на день, і згортати ті самі блоки щоразу заново —
   // це та сама робота, від якої блоки й згортаються.
@@ -1106,13 +899,13 @@ export const ProfileForm = ({
   // серед порожнього. Відкрите чіпом поле лишається полем до іншої картки —
   // інакше стерте зникало б з-під пальця.
   const [revealedProfileFields, setRevealedProfileFields] = useState(() => new Set());
-  const [expandedChipBlocks, setExpandedChipBlocks] = useState(() => new Set());
+  const [chipsExpanded, setChipsExpanded] = useState(false);
   const [profileFieldStats, setProfileFieldStats] = useState(null);
   const pendingFieldFocusRef = useRef('');
   const formRootRef = useRef(null);
   useEffect(() => {
     setRevealedProfileFields(new Set());
-    setExpandedChipBlocks(new Set());
+    setChipsExpanded(false);
   }, [state?.userId]);
   useEffect(() => {
     if (!isAdmin) return undefined;
@@ -1124,6 +917,19 @@ export const ProfileForm = ({
       active = false;
     };
   }, [isAdmin]);
+  // Новий порожній рядок — намір, а не значення (`appendEmptyFieldRow`):
+  // зберігати нема чого, значення поїде в базу з першим набраним символом.
+  const appendEmptyRowsTo = fieldNames => {
+    // Знімати памʼятку, якої в стані немає зовсім, — це окреме збереження
+    // (з новою `rev`) на кожен дотик до «+».
+    if (Object.prototype.hasOwnProperty.call(state, 'myComment') && !state.myComment?.trim()) {
+      handleDelKeyValue('myComment');
+    }
+    setState(prevState => fieldNames.reduce((next, fieldName) => ({
+      ...next,
+      [fieldName]: appendEmptyFieldRow(prevState[fieldName]),
+    }), prevState));
+  };
   const revealProfileField = useCallback(fieldName => {
     pendingFieldFocusRef.current = fieldName;
     setRevealedProfileFields(previous => new Set(previous).add(fieldName));
@@ -1139,141 +945,6 @@ export const ProfileForm = ({
     control?.focus?.({ preventScroll: true });
   }, [revealedProfileFields]);
   const autoAppliedOverlayForUserRef = useRef('');
-  const addEmptyAdditionalFilter = useCallback(() => {
-    const used = new Set(additionalRuleBuilder.map(rule => rule.key));
-    const firstAvailable = ADDITIONAL_RULE_ORDER.find(key => !used.has(key)) || ADDITIONAL_RULE_ORDER[0];
-    if (!firstAvailable) return;
-    setAdditionalRuleBuilder(prev => [...prev, { key: firstAvailable, allowedValues: new Set() }]);
-  }, [additionalRuleBuilder]);
-
-  const additionalRulesDraftText = useMemo(
-    () => buildAdditionalRulesTextFromBuilder(additionalRuleBuilder),
-    [additionalRuleBuilder]
-  );
-  const additionalAccessFieldValue = state?.[ADDITIONAL_ACCESS_FIELD];
-  const additionalRulesInputs = useMemo(() => {
-    const rawValue = additionalAccessFieldValue;
-    if (Array.isArray(rawValue)) {
-      return rawValue.map(item => String(item || ''));
-    }
-    return additionalRulesTextToInputs(rawValue);
-  }, [additionalAccessFieldValue]);
-  const activeAdditionalRulesDraftText = useMemo(() => {
-    const activeInputValue = String(additionalRulesInputs[activeAdditionalRuleInputIndex] || '');
-    if (!activeInputValue.trim()) return additionalRulesDraftText;
-    return activeInputValue;
-  }, [activeAdditionalRuleInputIndex, additionalRulesDraftText, additionalRulesInputs]);
-  useEffect(() => {
-    if (state?.userId) return;
-    autoAppliedOverlayForUserRef.current = '';
-  }, [state?.userId]);
-
-  useEffect(() => {
-    if (!showAdditionalRulesModal) return;
-    const activeInputValue = additionalRulesInputs[activeAdditionalRuleInputIndex] || '';
-    setPreviewAdditionalRulesText(String(activeInputValue || '').trim());
-    const parsed = parseAdditionalRulesTextToBuilder(activeInputValue);
-    if (parsed.length > 0) {
-      setAdditionalRuleBuilder(parsed);
-      return;
-    }
-    setAdditionalRuleBuilder([{ key: ADDITIONAL_RULE_ORDER[0], allowedValues: new Set() }]);
-  }, [activeAdditionalRuleInputIndex, additionalRulesInputs, showAdditionalRulesModal]);
-
-  useEffect(() => {
-    if (!showAdditionalRulesModal) return;
-
-    const builderRulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
-    const effectiveRulesText = builderRulesText.trim()
-      ? builderRulesText
-      : activeAdditionalRulesDraftText.trim()
-        ? activeAdditionalRulesDraftText
-        : previewAdditionalRulesText;
-
-    let cancelled = false;
-    const loadAvailableCards = async () => {
-      const parsedRuleGroups = parseAdditionalAccessRuleGroups(effectiveRulesText);
-      const accessUserId = String(state?.userId || '').trim();
-      const cachedPreview = getCachedAdditionalRulesPreview({
-        rawRules: effectiveRulesText,
-        accessUserId,
-      });
-      if (cachedPreview) {
-        setAvailableCardsCount(cachedPreview.count);
-        return;
-      }
-
-      if (!parsedRuleGroups.length) {
-        setAvailableCardsCount(0);
-        saveCachedAdditionalRulesPreview({ rawRules: effectiveRulesText, accessUserId, count: 0, userIds: [] });
-        return;
-      }
-
-      if (!localSearchKeyPayload || typeof localSearchKeyPayload !== 'object') {
-        setAvailableCardsCount(null);
-        return;
-      }
-
-      setIsLoadingAvailableCards(true);
-      try {
-        const matched = new Set();
-        parsedRuleGroups.forEach(parsedRules => {
-          const { bucketMap, hasImtFilter, imtValues } = prepareAdditionalAccessBucketMapForSearchKey(
-            resolveAdditionalAccessSearchKeyBuckets(parsedRules)
-          );
-          const perFilterSets = Object.entries(bucketMap || {}).reduce((acc, [indexName, values]) => {
-            if (indexName === 'imt' || indexName === 'users') return acc;
-            const indexNode = localSearchKeyPayload?.[indexName];
-            if (!indexNode || typeof indexNode !== 'object') return acc;
-            const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
-            if (!normalizedValues.length) return acc;
-            const idsForFilter = new Set();
-            normalizedValues.forEach(value => {
-              const bucket = indexNode?.[value];
-              if (!bucket || typeof bucket !== 'object') return;
-              Object.keys(bucket).forEach(userId => {
-                if (userId) idsForFilter.add(userId);
-              });
-            });
-            acc.push(idsForFilter);
-            return acc;
-          }, []);
-
-          if (hasImtFilter) {
-            perFilterSets.push(getImtAllowedUserIdsFromSearchKey(localSearchKeyPayload, imtValues));
-          }
-
-          if (!perFilterSets.length || perFilterSets.some(set => set.size === 0)) return;
-
-          const groupIntersection = [...perFilterSets[0]].filter(userId =>
-            perFilterSets.every(set => set.has(userId))
-          );
-          groupIntersection.forEach(userId => matched.add(userId));
-        });
-        const userIds = [...matched];
-        saveCachedAdditionalRulesPreview({ rawRules: effectiveRulesText, accessUserId, count: userIds.length, userIds });
-        if (!cancelled) setAvailableCardsCount(userIds.length);
-      } catch (error) {
-        console.error('Failed to build additional access preview', error);
-        if (!cancelled) setAvailableCardsCount(null);
-      } finally {
-        if (!cancelled) setIsLoadingAvailableCards(false);
-      }
-    };
-
-    loadAvailableCards();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    previewAdditionalRulesText,
-    activeAdditionalRulesDraftText,
-    showAdditionalRulesModal,
-    state?.userId,
-    localSearchKeyPayload,
-    additionalRuleBuilder,
-  ]);
-
   // Відхилене лишається відхиленим до зміни картки. Поки скидання висіло ще й
   // на `overlayFieldAdditions`, воно спрацьовувало на кожному оновленні
   // пропса — а пропс перебудовується щоразу, коли `EditProfile` перечитує
@@ -1326,101 +997,6 @@ export const ProfileForm = ({
     return { ...draftState, getInTouch: normalized };
   };
 
-  const buildMatchedUserIdsBySetKey = useCallback((rawRules, accessUserId, matchedByInputIndex) => {
-    const normalizedAccessUserId = String(accessUserId || '').trim();
-    if (!normalizedAccessUserId || !matchedByInputIndex || typeof matchedByInputIndex !== 'object') return null;
-
-    const ruleInputs = Array.isArray(rawRules)
-      ? rawRules.map(item => String(item || '').trim())
-      : String(rawRules || '')
-        .split(/\r?\n\s*\r?\n+/)
-        .map(item => item.trim());
-
-    const matchedBySetKey = {};
-    ruleInputs.forEach((rulesText, index) => {
-      if (!rulesText) return;
-      const inputIndex = index + 1;
-      const setKey = makeAdditionalRulesSetKey(rulesText, normalizedAccessUserId, inputIndex);
-      if (!setKey) return;
-      const userIds = matchedByInputIndex[inputIndex];
-      if (!Array.isArray(userIds)) return;
-      matchedBySetKey[setKey] = userIds;
-    });
-
-    return Object.keys(matchedBySetKey).length > 0 ? matchedBySetKey : null;
-  }, []);
-
-  const getIndexedMatchedUserIdsByInputIndex = useCallback(async rawRules => {
-    const ruleInputs = Array.isArray(rawRules)
-      ? rawRules.map(item => String(item || '').trim()).filter(Boolean)
-      : String(rawRules || '')
-        .split(/\r?\n\s*\r?\n+/)
-        .map(item => item.trim())
-        .filter(Boolean);
-    if (!ruleInputs.length) {
-      toast.error('Немає правил для індексації');
-      return null;
-    }
-
-    if (!localSearchKeyPayload || typeof localSearchKeyPayload !== 'object') {
-      toast.error('Спершу підвантажте локальний файл searchKey.');
-      return null;
-    }
-
-    const matchedByInputIndex = {};
-
-    for (let index = 0; index < ruleInputs.length; index += 1) {
-      const rulesText = ruleInputs[index];
-      const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
-      const matched = new Set();
-      parsedRuleGroups.forEach(parsedRules => {
-        const { bucketMap, hasImtFilter, imtValues } = prepareAdditionalAccessBucketMapForSearchKey(
-          resolveAdditionalAccessSearchKeyBuckets(parsedRules)
-        );
-        const perFilterSets = Object.entries(bucketMap || {}).reduce((acc, [indexName, values]) => {
-          if (indexName === 'imt' || indexName === 'users') return acc;
-          const indexNode = localSearchKeyPayload?.[indexName];
-          if (!indexNode || typeof indexNode !== 'object') return acc;
-          const normalizedValues = [...new Set(
-            (Array.isArray(values) ? values : [...(values || [])]).filter(Boolean)
-          )];
-          if (!normalizedValues.length) return acc;
-          const idsForFilter = new Set();
-          normalizedValues.forEach(value => {
-            const bucket = indexNode?.[value];
-            if (!bucket || typeof bucket !== 'object') return;
-            Object.keys(bucket).forEach(userId => { if (userId) idsForFilter.add(userId); });
-          });
-          acc.push(idsForFilter);
-          return acc;
-        }, []);
-
-        if (hasImtFilter) {
-          perFilterSets.push(getImtAllowedUserIdsFromSearchKey(localSearchKeyPayload, imtValues));
-        }
-
-        if (!perFilterSets.length || perFilterSets.some(set => set.size === 0)) return;
-
-        const groupIntersection = [...perFilterSets[0]].filter(userId =>
-          perFilterSets.every(set => set.has(userId))
-        );
-        groupIntersection.forEach(userId => matched.add(userId));
-      });
-      matchedByInputIndex[index + 1] = [...matched];
-    }
-
-    return matchedByInputIndex;
-  }, [localSearchKeyPayload]);
-
-  // ProfileForm is shared by multiple host components (EditProfile.jsx,
-  // AddNewProfile.jsx), each supplying its own `handleSubmit` prop. Every
-  // call below passes 'submitWithNormalization' as handleSubmit's 4th
-  // argument, purely as a debug/source label - EditProfile.jsx's
-  // handleSubmit treats it that way. A host must never repurpose that
-  // positional slot as a functional flag (e.g. a truthy value meaning
-  // "skip the write") - a previous host did exactly that, and since this
-  // label is always a truthy string, it silently skipped every write that
-  // went through submitWithNormalization (i.e. every scalar field's blur).
   const submitWithNormalization = useCallback(async (nextState, overwrite, delCondition, options = {}) => {
     const payload =
       nextState && typeof nextState === 'object'
@@ -1438,620 +1014,12 @@ export const ProfileForm = ({
       });
       return undefined;
     };
-    try {
-      const rawRules = payload?.[ADDITIONAL_ACCESS_FIELD];
-      const previousRulesValue = state?.[ADDITIONAL_ACCESS_FIELD];
-      const nextRulesSignature = normalizeAdditionalRulesValueForCompare(rawRules);
-      const previousRulesSignature = normalizeAdditionalRulesValueForCompare(previousRulesValue);
-      const additionalRulesRemovedExplicitly = Boolean(delCondition?.[ADDITIONAL_ACCESS_FIELD] !== undefined);
-      const shouldReindexAfterAdditionalRulesChange =
-        additionalRulesRemovedExplicitly || nextRulesSignature !== previousRulesSignature;
-      if (shouldReindexAfterAdditionalRulesChange) {
-        const accessUserId = String(payload?.userId || state?.userId || '').trim();
-        const hasAnyAdditionalRules =
-          (Array.isArray(rawRules) && rawRules.some(item => String(item || '').trim())) ||
-          (!Array.isArray(rawRules) && String(rawRules || '').trim().length > 0);
-
-        if (!hasAnyAdditionalRules) {
-          await buildFilterSetIndex({
-            rawRules: '',
-            accessUserId,
-            matchedUserIdsBySetKey: {},
-            searchKeyFile:
-              localSearchKeyPayload && typeof localSearchKeyPayload === 'object'
-                ? localSearchKeyPayload
-                : {},
-          });
-          toast('searchKeySets очищено: additional access rules видалено.');
-          return submitProfileChanges();
-        }
-
-        const matchedUserIdsByInputIndex =
-          options?.matchedUserIdsByInputIndex && typeof options.matchedUserIdsByInputIndex === 'object'
-            ? options.matchedUserIdsByInputIndex
-            : await getIndexedMatchedUserIdsByInputIndex(rawRules);
-
-        if (!matchedUserIdsByInputIndex) {
-          return submitProfileChanges();
-        }
-
-        const matchedUserIdsBySetKey = buildMatchedUserIdsBySetKey(
-          rawRules,
-          accessUserId,
-          matchedUserIdsByInputIndex
-        );
-        const indexResult = await buildFilterSetIndex({
-          rawRules: rawRules !== undefined ? rawRules : '',
-          accessUserId,
-          matchedUserIdsBySetKey,
-          searchKeyFile: localSearchKeyPayload,
-        });
-        const lastSetDebug = indexResult?.debug?.lastSetDebug || {};
-        const selectedRulesSummary = Array.isArray(lastSetDebug?.imtValues) && lastSetDebug.imtValues.length
-          ? `imt=${lastSetDebug.imtValues.join(',')}`
-          : 'imt=none';
-        toast(`1/8 Rules parsed: ${selectedRulesSummary}`);
-        const finalAllowedCount = Number(lastSetDebug?.finalAllowedCount ?? lastSetDebug?.allowedUserIdsCount ?? 0);
-        const payloadUsersCount = Number(lastSetDebug?.payloadUsers ?? 0);
-        const payloadRecordsCount = Number(lastSetDebug?.payloadRecords ?? lastSetDebug?.copiedRecords ?? 0);
-        const payloadBucketsCount = Number(lastSetDebug?.payloadBuckets ?? lastSetDebug?.copiedBuckets ?? 0);
-        toast(
-          `Rules: imtAllowed=${lastSetDebug?.imtAllowedCount ?? '-'}, ageAllowed=${lastSetDebug?.ageAllowedCount ?? '-'}, finalAllowed=${finalAllowedCount}`
-        );
-        if (lastSetDebug?.hasImtFilter) {
-          toast(
-            `IMT: allowed=${lastSetDebug?.imtAllowedCount ?? '-'}, skipped derived height/weight buckets=${lastSetDebug?.skippedDerivedMetricBuckets ? 'true' : 'false'}`
-          );
-        }
-        const searchKeyFields = Array.isArray(lastSetDebug?.searchKeyFields) ? lastSetDebug.searchKeyFields : [];
-        toast(`3/8 searchKey fields: ${searchKeyFields.join(', ') || 'none'}`);
-        toast(`Start copying filtered searchKey, finalAllowed=${finalAllowedCount}`);
-        const copiedByField = lastSetDebug?.copiedByField && typeof lastSetDebug.copiedByField === 'object'
-          ? lastSetDebug.copiedByField
-          : {};
-        ['height', 'weight', 'age'].forEach(field => {
-          const stats = copiedByField[field];
-          if (stats) {
-            toast(`5/8 Copied ${field}: buckets=${Number(stats.buckets || 0)}, records=${Number(stats.records || 0)}`);
-          }
-        });
-        if (Array.isArray(lastSetDebug?.skippedFields) && lastSetDebug.skippedFields.includes('imt')) {
-          toast('5/8 Skipped imt field');
-        }
-        toast(
-          `Filtered set ready: payloadUsers=${payloadUsersCount}, finalAllowed=${finalAllowedCount}, buckets=${payloadBucketsCount}, records=${payloadRecordsCount}`
-        );
-        const backendRequests = Array.isArray(lastSetDebug?.backendRequests) ? lastSetDebug.backendRequests : [];
-        const removeCount = backendRequests.filter(item => item?.type === 'remove').length;
-        const setCount = backendRequests.filter(item => item?.type === 'set').length;
-        toast(`Backend requests: remove=${removeCount}, set=${setCount}, payloadUsers=${payloadUsersCount}, payloadRecords=${payloadRecordsCount}`);
-        if (lastSetDebug?.setKey) {
-          toast.success(`Saved searchKeySets/${lastSetDebug.setKey}: users=${payloadUsersCount}, records=${payloadRecordsCount}`);
-        }
-        if (finalAllowedCount === 0) {
-          toast.error('STOP: allowedUserIds=0. Перевір tokens/rules/searchKey.imt');
-        }
-        if (!searchKeyFields.length) {
-          toast.error('STOP: searchKey empty or not loaded');
-        }
-        if ((searchKeyFields.length === 1 && searchKeyFields[0] === 'imt') || !searchKeyFields.includes('height') || !searchKeyFields.includes('weight')) {
-          toast.error('STOP: searchKey missing height/weight fields');
-        }
-        if (payloadRecordsCount === 0 && finalAllowedCount > 0) {
-          toast.error('STOP: copiedRecords=0. allowedUserIds є, але жоден userId не знайдений у searchKey buckets');
-        }
-        if (removeCount > 0 && setCount === 0) {
-          toast.error('STOP: only remove request created. set/update missing');
-        }
-        const hasSetPayload = backendRequests.some(item => item?.type === 'set' && item?.payload && Object.keys(item.payload).length > 0);
-        if (!hasSetPayload) {
-          toast.error('STOP: payload empty before backend write');
-        }
-        if (indexResult && Number(indexResult.writesCount || 0) === 0 && Number(indexResult?.setKeys?.length || 0) === 0) {
-          toast('searchKeySets не оновлено: не знайдено валідних правил.');
-        }
-      }
-    } catch (error) {
-      const code = String(error?.code || '');
-      if (code.includes('PERMISSION_DENIED')) {
-        console.warn('Skipped additional access filter-set index rebuild due to permissions.', error);
-        const details = error?.message || String(error);
-        toast.error(
-          `Немає прав на запис у searchKeySets.\nПеревірте Firebase Rules для цього користувача.\n${details}`
-        );
-      } else if (code.includes('MISSING_SEARCHKEY_FILE')) {
-        toast.error('Спершу підвантажте локальний файл searchKey перед збереженням.');
-      } else if (code.includes('MISSING_SEARCHKEY_INDEX')) {
-        toast.error('Індексів searchKey не знайдено. Спершу запустіть загальну індексацію.');
-      } else if (code.includes('EMPTY_FILTERED_SEARCHKEY_SET')) {
-        const details = error?.message || String(error);
-        toast.error(`Набір очищено, але нові дані не сформовані.\n${details}`);
-      } else if (code.includes('SEARCH_KEY_SET_PAYLOAD_MISMATCH')) {
-        const details = error?.message || String(error);
-        toast.error(details);
-      } else {
-        console.error('Failed to update additional access filter-set index', error);
-        const details = error?.message || String(error);
-        toast.error(`Не вдалося зберегти індексацію наборів фільтрів.\n${details}`);
-      }
-      if (options?.propagateSubmitError) throw error;
-    }
     return submitProfileChanges();
-  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, handleSubmit, localSearchKeyPayload, state]);
-
-  const handleAddCustomField = () => {
-    if (!customField.key) return;
-    if (!state.myComment?.trim()) {
-      handleDelKeyValue('myComment');
-    }
-    setState(prevState => {
-      const newState = { ...prevState, [customField.key]: customField.value };
-      submitWithNormalization(newState, 'overwrite');
-      return newState;
-    });
-    setCustomField({ key: '', value: '' });
-  };
-
-  const handleAdditionalRuleKeyChange = (index, nextKey) => {
-    const defaultAllowedValues =
-      nextKey === 'imt' ? new Set(['le28', '29_31', '32_35', '36_plus']) : new Set();
-
-    setAdditionalRuleBuilder(prev =>
-      prev.map((rule, ruleIndex) =>
-        ruleIndex === index ? { key: nextKey, allowedValues: new Set(defaultAllowedValues) } : rule
-      )
-    );
-  };
-
-  const toggleAdditionalRuleValue = (index, token) => {
-    setAdditionalRuleBuilder(prev =>
-      prev.map((rule, ruleIndex) => {
-        if (ruleIndex !== index) return rule;
-        const next = new Set(rule.allowedValues);
-        if (next.has(token)) {
-          next.delete(token);
-        } else {
-          next.add(token);
-        }
-        return { ...rule, allowedValues: next };
-      })
-    );
-  };
-
-  const removeAdditionalRule = index => {
-    const nextBuilder = additionalRuleBuilder.filter((_, ruleIndex) => ruleIndex !== index);
-    const nextRulesText = buildAdditionalRulesTextFromBuilder(nextBuilder);
-
-    setAdditionalRuleBuilder(
-      nextBuilder.length > 0
-        ? nextBuilder
-        : [{ key: ADDITIONAL_RULE_ORDER[0], allowedValues: new Set() }]
-    );
-
-    setState(prevState => {
-      const currentValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
-      const updated = { ...prevState };
-
-      if (Array.isArray(currentValue)) {
-        const nextValue = currentValue.map((item, idx) => (idx === activeAdditionalRuleInputIndex ? nextRulesText : item));
-        if (nextValue.every(item => !String(item || '').trim())) {
-          delete updated[ADDITIONAL_ACCESS_FIELD];
-        } else {
-          updated[ADDITIONAL_ACCESS_FIELD] = nextValue;
-        }
-      } else if (nextRulesText.trim()) {
-        updated[ADDITIONAL_ACCESS_FIELD] = nextRulesText;
-      } else {
-        delete updated[ADDITIONAL_ACCESS_FIELD];
-      }
-
-      submitWithNormalization(updated, 'overwrite', nextRulesText.trim() ? undefined : { [ADDITIONAL_ACCESS_FIELD]: currentValue });
-      return updated;
-    });
-
-  };
-
-  const handleRemoveAdditionalAccessRuleInput = useCallback((removeIndex = null, action = 'clear') => {
-    const currentInputs = additionalRulesInputs.map(item => String(item || '').trim()).filter(Boolean);
-    const shouldRemoveByIndex = Number.isInteger(removeIndex);
-    const nextInputs = shouldRemoveByIndex
-      ? currentInputs.filter((_, idx) => idx !== removeIndex)
-      : [];
-    const nextActiveIndex = Math.min(
-      shouldRemoveByIndex ? removeIndex : 0,
-      Math.max(nextInputs.length - 1, 0)
-    );
-
-    setActiveAdditionalRuleInputIndex(nextActiveIndex);
-    setPreviewAdditionalRulesText(String(nextInputs[nextActiveIndex] || '').trim());
-
-    setState(prevState => {
-      const updated = { ...prevState };
-      const previousValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
-      const removedValue = shouldRemoveByIndex
-        ? Array.isArray(previousValue)
-          ? previousValue[removeIndex]
-          : previousValue
-        : previousValue;
-
-      if (nextInputs.length === 0) {
-        delete updated[ADDITIONAL_ACCESS_FIELD];
-      } else if (nextInputs.length === 1) {
-        updated[ADDITIONAL_ACCESS_FIELD] = nextInputs[0];
-      } else {
-        updated[ADDITIONAL_ACCESS_FIELD] = nextInputs;
-      }
-
-      const delCondition =
-        action === 'del' || removedValue !== undefined
-          ? { [ADDITIONAL_ACCESS_FIELD]: removedValue }
-          : undefined;
-      submitWithNormalization(updated, 'overwrite', delCondition);
-      return updated;
-    });
-  }, [additionalRulesInputs, setState, submitWithNormalization]);
-
-  const indexAdditionalRulesForUser = useCallback(async rawRules => {
-    const accessUserId = String(state?.userId || '').trim();
-    if (!accessUserId) return null;
-
-    setIsIndexingAdditionalRules(true);
-    const toastId = 'additional-rules-indexing';
-    let stage = 'start';
-    const stageToast = message => toast.loading(message, { id: toastId });
-    stageToast('1/3 Індексація searchKeySets: старт...');
-
-    try {
-      stage = 'load-searchkey';
-      stageToast('2/3 Читання пулів із searchKey...');
-      const matchedUserIdsByInputIndex = await getIndexedMatchedUserIdsByInputIndex(rawRules);
-      if (!matchedUserIdsByInputIndex) {
-        toast('searchKeySets не оновлено: відсутні індекси searchKey.', { id: toastId });
-        return null;
-      }
-
-      const matchedUserIdsBySetKey = buildMatchedUserIdsBySetKey(
-        rawRules,
-        accessUserId,
-        matchedUserIdsByInputIndex
-      );
-      const matchedSetEntries = Object.entries(matchedUserIdsBySetKey || {});
-      const matchedSetsCount = matchedSetEntries.length;
-      const matchedUsersTotal = matchedSetEntries.reduce(
-        (sum, [, ids]) => sum + (Array.isArray(ids) ? ids.length : 0),
-        0
-      );
-      const matchedPreview = matchedSetEntries
-        .slice(0, 2)
-        .map(([setKey, ids]) => `${setKey}: ${(Array.isArray(ids) ? ids.length : 0)} ids`)
-        .join(' | ');
-      toast(
-        `2.5/3 Префільтр searchKey: наборів ${matchedSetsCount}, сумарно userIds ${matchedUsersTotal}${matchedPreview ? ` (${matchedPreview})` : ''}`,
-        { id: `${toastId}-prefilter` }
-      );
-
-      stage = 'write-index';
-      stageToast('3/3 Запис індексів у searchKeySets...');
-      const indexResult = await buildFilterSetIndex({
-        rawRules,
-        accessUserId,
-        matchedUserIdsBySetKey,
-        searchKeyFile: localSearchKeyPayload,
-      });
-      downloadSearchKeySetsWritePreview({
-        accessUserId,
-        rawRules,
-        matchedUserIdsBySetKey,
-        indexResult,
-      });
-
-      const setsCount = Number(indexResult?.setKeys?.length || 0);
-      const matchedCount = Number(indexResult?.userIds?.length || 0);
-      const writesCount = Number(indexResult?.writesCount || 0);
-      const bucketWritesCount = Number(indexResult?.bucketWritesCount || 0);
-      const backendRequests = Array.isArray(indexResult?.debug?.backendRequests)
-        ? indexResult.debug.backendRequests
-        : [];
-      const removedSetsCount = Number(indexResult?.debug?.removedSetKeys?.length || 0);
-      const debugSets = Array.isArray(indexResult?.debug?.sets) ? indexResult.debug.sets : [];
-      const debugPreview = debugSets
-        .slice(0, 2)
-        .map(
-          set =>
-            `${set?.setKey || 'unknown'}: payloadUsers=${Number(set?.debugInfo?.payloadUsers ?? 0)}, finalAllowed=${Number(set?.debugInfo?.finalAllowedCount ?? 0)}, buckets=${Number(
-              set?.debugInfo?.payloadBuckets ?? set?.bucketWritesCount ?? 0
-            )}`
-        )
-        .join(' | ');
-      toast(
-        `3.5/5 Діагностика searchKeySets: очищено наборів ${removedSetsCount}, нових наборів ${debugSets.length}${debugPreview ? ` (${debugPreview})` : ''}`,
-        { id: `${toastId}-debug` }
-      );
-      if (setsCount === 0 && writesCount === 0) {
-        toast('searchKeySets не оновлено: не знайдено валідних правил.', { id: toastId });
-      } else if (
-        backendRequests.length === 1 &&
-        backendRequests[0]?.type === 'remove'
-      ) {
-        toast.error('Набір очищено, але нові дані не сформовані', { id: toastId });
-      } else if (setsCount > 0 && bucketWritesCount === 0) {
-        const bucketPathHints = debugSets
-          .flatMap(set => (Array.isArray(set?.bucketPathsPreview) ? set.bucketPathsPreview : []))
-          .slice(0, 5)
-          .join('\n');
-        toast.error(
-          `searchKeySets порожній після індексації: немає bucket-записів (наборів: ${setsCount}, карток: ${matchedCount}).\n` +
-            `Підказка: перевірте searchKey bucket-и для поточних токенів.\n` +
-            `${bucketPathHints || 'Preview bucket paths: (empty)'}`,
-          { id: toastId }
-        );
-      } else {
-        toast.success(
-          `5/5 Готово: індексацію searchKeySets оновлено (${setsCount} наборів, ${matchedCount} карток, ${writesCount} змін, ${bucketWritesCount} bucket-записів).`,
-          { id: toastId }
-        );
-      }
-
-      return indexResult;
-    } catch (error) {
-      const code = String(error?.code || '');
-      const details = error?.message || String(error);
-      if (code.includes('PERMISSION_DENIED')) {
-        toast.error(
-          `Помилка на етапі "${stage}": немає прав на запис у searchKeySets.\nПеревірте Firebase Rules для цього користувача.\n${details}`,
-          { id: toastId }
-        );
-      } else if (code.includes('MISSING_SEARCHKEY_FILE')) {
-        toast.error('Локальний файл searchKey не підвантажено. Індексація searchKeySets зупинена.', { id: toastId });
-      } else if (code.includes('MISSING_SEARCHKEY_INDEX')) {
-        toast.error('Індексів searchKey не знайдено. Спершу запустіть загальну індексацію.', { id: toastId });
-      } else if (code.includes('EMPTY_FILTERED_SEARCHKEY_SET')) {
-        toast.error(`Набір очищено, але нові дані не сформовані.\n${details}`, { id: toastId });
-      } else if (code.includes('SEARCH_KEY_SET_PAYLOAD_MISMATCH')) {
-        toast.error(details, { id: toastId });
-      } else {
-        toast.error(`Помилка на етапі "${stage}": не вдалося виконати індексацію наборів фільтрів.\n${details}`, { id: toastId });
-      }
-      return null;
-    } finally {
-      setIsIndexingAdditionalRules(false);
-    }
-  }, [buildMatchedUserIdsBySetKey, getIndexedMatchedUserIdsByInputIndex, localSearchKeyPayload, state?.userId]);
-
-  const applyAdditionalRulesWithMatchedIds = async (rulesText, matchedByInputIndex) => {
-    if (!rulesText?.trim()) return;
-    const matchedUserIds = matchedByInputIndex?.[1] || [];
-
-    setState(prevState => {
-      const currentValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
-      const updatedValue = Array.isArray(currentValue)
-        ? currentValue.map((item, idx) => (idx === activeAdditionalRuleInputIndex ? rulesText : item))
-        : rulesText;
-      const updated = {
-        ...prevState,
-        [ADDITIONAL_ACCESS_FIELD]: updatedValue,
-      };
-      submitWithNormalization(updated, 'overwrite', undefined, {
-        matchedUserIdsByInputIndex: {
-          [activeAdditionalRuleInputIndex + 1]: matchedUserIds,
-        },
-      });
-      return updated;
-    });
-    setPreviewAdditionalRulesText(prev => {
-      const nextInputs = additionalRulesTextToInputs(prev);
-      nextInputs[activeAdditionalRuleInputIndex] = rulesText;
-      return String(nextInputs[activeAdditionalRuleInputIndex] || '').trim();
-    });
-  };
-
-  const resolveMatchedIdsFromSearchKeyPayload = useCallback((rulesText, payload) => {
-    const normalizedPayload = normalizeSearchKeyPayload(payload);
-    if (!normalizedPayload) return null;
-
-    const parsedRuleGroups = parseAdditionalAccessRuleGroups(rulesText);
-    if (!parsedRuleGroups.length) return { 1: [] };
-
-    const matched = new Set();
-    parsedRuleGroups.forEach(parsedRules => {
-      const bucketMap = resolveAdditionalAccessSearchKeyBuckets(parsedRules);
-      Object.entries(bucketMap || {}).forEach(([indexName, values]) => {
-        const indexNode = normalizedPayload?.[indexName];
-        if (!indexNode || typeof indexNode !== 'object') return;
-        const normalizedValues = [...new Set((Array.isArray(values) ? values : [...(values || [])]).filter(Boolean))];
-        normalizedValues.forEach(value => {
-          const bucket = indexNode?.[value];
-          if (!bucket || typeof bucket !== 'object') return;
-          Object.keys(bucket).forEach(userId => {
-            if (userId) matched.add(userId);
-          });
-        });
-      });
-    });
-
-    return { 1: [...matched] };
-  }, []);
-
-  const downloadSearchKeyFile = useCallback(async () => {
-    const toastId = 'download-searchkey-file';
-    toast.loading('Готуємо файл searchKey для завантаження...', { id: toastId });
-    try {
-      const snap = await get(refDb(database, SEARCH_KEY_ROOT));
-      if (!snap.exists()) {
-        toast.error('searchKey не знайдено в базі.', { id: toastId });
-        return false;
-      }
-      const payload = snap.val() || {};
-      const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `searchKey-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Файл searchKey завантажено.', { id: toastId });
-      return true;
-    } catch (error) {
-      const details = error?.message || String(error);
-      toast.error(`Не вдалося завантажити searchKey.\n${details}`, { id: toastId });
-      return false;
-    }
-  }, []);
-
-  function downloadSearchKeySetsWritePreview({ accessUserId, rawRules, matchedUserIdsBySetKey, indexResult }) {
-    try {
-      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-      const payload = {
-        backendRequests: Array.isArray(indexResult?.debug?.backendRequests) ? indexResult.debug.backendRequests : [],
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `searchKeySets-write-preview-${accessUserId || 'unknown'}-${stamp}.json`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.warn('Failed to auto-download searchKeySets write preview', error);
-    }
-  }
-
-  const applyAdditionalRulesFromBuilder = async () => {
-    const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
-    if (!rulesText.trim()) {
-      toast.error('Оберіть щонайменше один фільтр перед застосуванням');
-      return;
-    }
-    setPendingRulesToApply(rulesText);
-    setShowSearchKeySourceModal(true);
-  };
-
-  const applyUsingSavedSearchKey = async () => {
-    if (!pendingRulesToApply.trim()) return;
-    if (searchKeyFileInputRef.current) {
-      searchKeyFileInputRef.current.value = '';
-      searchKeyFileInputRef.current.click();
-    }
-  };
-
-  const handleDownloadSearchKeyOnly = async () => {
-    const downloaded = await downloadSearchKeyFile();
-    if (downloaded) {
-      setShowSearchKeySourceModal(false);
-      setPendingRulesToApply('');
-    }
-  };
-
-  const handleSearchKeyFileSelected = async event => {
-    const file = event?.target?.files?.[0];
-    if (!file) return;
-    if (!pendingRulesToApply.trim()) {
-      toast.error('Немає правил для застосування.');
-      return;
-    }
-
-    try {
-      const raw = await file.text();
-      const parsed = JSON.parse(raw);
-      const normalizedPayload = normalizeSearchKeyPayload(parsed);
-      setLocalSearchKeyPayload(normalizedPayload);
-      const matchedByInputIndex = resolveMatchedIdsFromSearchKeyPayload(pendingRulesToApply, normalizedPayload);
-      if (!matchedByInputIndex) {
-        toast.error('Некоректний файл searchKey.');
-        return;
-      }
-      await applyAdditionalRulesWithMatchedIds(pendingRulesToApply, matchedByInputIndex);
-      setShowSearchKeySourceModal(false);
-      setPendingRulesToApply('');
-    } catch (error) {
-      const details = error?.message || String(error);
-      toast.error(`Не вдалося прочитати файл searchKey.\n${details}`);
-    }
-  };
-
-  const indexAdditionalRulesFromBuilder = async () => {
-    const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
-    if (!rulesText.trim()) {
-      toast.error('Оберіть щонайменше один фільтр перед індексацією');
-      return;
-    }
-
-    const currentValue = state?.[ADDITIONAL_ACCESS_FIELD];
-    const updatedValue = Array.isArray(currentValue)
-      ? currentValue.map((item, idx) => (idx === activeAdditionalRuleInputIndex ? rulesText : item))
-      : rulesText;
-
-    setState(prevState => ({
-      ...prevState,
-      [ADDITIONAL_ACCESS_FIELD]: updatedValue,
-    }));
-    const updatedInputs = Array.isArray(updatedValue) ? updatedValue : additionalRulesTextToInputs(updatedValue);
-    setPreviewAdditionalRulesText(String(updatedInputs[activeAdditionalRuleInputIndex] || '').trim());
-
-    await indexAdditionalRulesForUser(updatedValue);
-  };
-
-  const saveAdditionalRulesToSearchKeySets = async () => {
-    const rulesText = buildAdditionalRulesTextFromBuilder(additionalRuleBuilder);
-    if (!rulesText.trim()) {
-      toast.error('Оберіть щонайменше один фільтр перед збереженням');
-      return;
-    }
-
-    const currentValue = state?.[ADDITIONAL_ACCESS_FIELD];
-    const updatedValue = Array.isArray(currentValue)
-      ? currentValue.map((item, idx) => (idx === activeAdditionalRuleInputIndex ? rulesText : item))
-      : rulesText;
-
-    setState(prevState => ({
-      ...prevState,
-      [ADDITIONAL_ACCESS_FIELD]: updatedValue,
-    }));
-
-    await submitWithNormalization(
-      {
-        ...state,
-        [ADDITIONAL_ACCESS_FIELD]: updatedValue,
-      },
-      'overwrite'
-    );
-
-    await indexAdditionalRulesForUser(updatedValue);
-  };
-
-  const handleCombinedAdditionalRulesChange = event => {
-    const nextActiveRulesText = event?.target?.value || '';
-    const nextBuilder = parseAdditionalRulesTextToBuilder(nextActiveRulesText);
-
-    setAdditionalRuleBuilder(
-      nextBuilder.length > 0
-        ? nextBuilder
-        : [{ key: ADDITIONAL_RULE_ORDER[0], allowedValues: new Set() }]
-    );
-
-    setState(prevState => {
-      const currentValue = prevState?.[ADDITIONAL_ACCESS_FIELD];
-      const updatedValue = Array.isArray(currentValue)
-        ? currentValue.map((item, idx) => (idx === activeAdditionalRuleInputIndex ? nextActiveRulesText : item))
-        : nextActiveRulesText;
-      const updated = {
-        ...prevState,
-        [ADDITIONAL_ACCESS_FIELD]: updatedValue,
-      };
-      submitWithNormalization(updated, 'overwrite');
-      return updated;
-    });
-  };
+  }, [handleSubmit]);
 
   const autoResizeMyComment = useAutoResize(textareaRef, state.myComment);
   const autoResizeMoreInfo = useAutoResize(moreInfoRef, state.moreInfo_main);
   const autoResizePpTechnicalInput = useAutoResize(ppTechnicalInputRef, ppTechnicalInput);
-  const autoResizeAdditionalAccessRules = useAutoResize(additionalAccessRulesRef, state[ADDITIONAL_ACCESS_FIELD]);
-  const autoResizeMultiDataAccessUserIds = useAutoResize(multiDataAccessUserIdsRef, state[MULTI_DATA_ACCESS_FIELD]);
 
   const priorityOrder = [
     'birth',
@@ -2075,71 +1043,18 @@ export const ProfileForm = ({
     'role',
   ];
 
-  const accessLevelOptions = [
-    { value: '', label: 'рівень доступу' },
-    { value: 'matching:view', label: 'перегляд matching' },
-    { value: 'matching:view&write', label: 'перегляд і редагування matching' },
-    { value: 'add:view', label: 'перегляд add' },
-    { value: 'add:view&write', label: 'перегляд і редагування add' },
-    { value: 'add+matching:view', label: 'перегляд add і matching' },
-    { value: 'add+matching:view&write', label: 'перегляд і редагування add та matching' },
-    // Контакти живуть окремим вузлом `profileContacts` із власним правом
-    // читання. Правило бази шукає в рівні доступу підрядок `profileContacts`,
-    // тож без цих варіантів право нікому не можна було б видати — вузол
-    // лишався б доступним рівно власнику анкети і суперадмінам.
-    { value: 'matching+profileContacts:view', label: 'перегляд matching і контактів' },
-    { value: 'matching+profileContacts:view&write', label: 'перегляд і редагування matching та контактів' },
-  ];
-
   const fieldsToRender = getFieldsToRender(state);
 
   const normalizedFieldsToRender = (() => {
     let next = fieldsToRender;
 
-    if (canManageAccessLevel && !next.some(field => field.name === 'accessLevel')) {
-      next = [...next, { name: 'accessLevel', placeholder: 'рівень доступу', ukrainian: 'рівень доступу', ukrainianHint: 'рівень доступу' }];
-    }
-
-    if (canManageAccessLevel && !next.some(field => field.name === 'canCreateProfiles')) {
-      next = [
-        ...next,
-        {
-          name: 'canCreateProfiles',
-          placeholder: 'дозвіл на створення карток',
-          ukrainianHint: 'дозволити користувачу створювати нові картки',
-        },
-      ];
-    }
-
-    if (canManageAccessLevel && !next.some(field => field.name === 'screenAccess')) {
+    if (canManageScreenAccess && !next.some(field => field.name === 'screenAccess')) {
       next = [
         ...next,
         {
           name: 'screenAccess',
           placeholder: 'додаткові екрани',
           ukrainianHint: 'які додаткові екрани (Flow) відкрити користувачу',
-        },
-      ];
-    }
-
-    if (canManageAccessLevel && !next.some(field => field.name === ADDITIONAL_ACCESS_FIELD)) {
-      next = [
-        ...next,
-        {
-          name: ADDITIONAL_ACCESS_FIELD,
-          placeholder: 'age: 21,22,23',
-          ukrainianHint: 'додаткові правила доступу до анкет',
-        },
-      ];
-    }
-
-    if (canManageAccessLevel && !next.some(field => field.name === MULTI_DATA_ACCESS_FIELD)) {
-      next = [
-        ...next,
-        {
-          name: MULTI_DATA_ACCESS_FIELD,
-          placeholder: 'userId1, userId2',
-          ukrainianHint: 'один або декілька userId через кому, чиї multiData показувати на matching',
         },
       ];
     }
@@ -2941,6 +1856,16 @@ ${entries.join('\n')}`;
       };
     });
   })();
+  // «Не зберігається» (поля без вузла: `userId`, `cachedAt`, `rev`…) — технічні
+  // залишки зведення, правити їх нема чого, і адмінові вони не потрібні.
+  // Блок без жодного наявного поля теж не малюється: його поля — у чіпах.
+  const storedProfileFormBlocks = profileFormBlocks.filter(block => block.id !== PROFILE_FORM_BLOCK_IDS.unstored);
+  const visibleProfileFormBlocks = storedProfileFormBlocks.filter(block => block.shownFields.length > 0);
+  const allChipFields = rankFieldsByFillStats(
+    storedProfileFormBlocks.flatMap(block => block.chipFields),
+    profileFieldStats,
+    cardRolesForStats,
+  );
 
   const handlePpTechnicalInputSubmit = useCallback(() => {
     const rawValue = String(ppTechnicalInput || '').trim();
@@ -3087,10 +2012,6 @@ ${entries.join('\n')}`;
 
     if (!normalizedPath.includes('.')) {
       const rootValue = state?.[normalizedPath];
-      if (normalizedPath === ADDITIONAL_ACCESS_FIELD) {
-        handleRemoveAdditionalAccessRuleInput(null, 'del');
-        return true;
-      }
       if (Array.isArray(rootValue)) {
         const removeIndex = rootValue.length - 1;
         if (removeIndex >= 0) {
@@ -3104,10 +2025,6 @@ ${entries.join('\n')}`;
 
     const [fieldName, nestedIndex] = normalizedPath.split('.');
     if (/^\d+$/.test(nestedIndex)) {
-      if (fieldName === ADDITIONAL_ACCESS_FIELD) {
-        handleRemoveAdditionalAccessRuleInput(Number(nestedIndex), 'clear');
-        return true;
-      }
       handleClear(fieldName, Number(nestedIndex));
       return true;
     }
@@ -3183,7 +2100,7 @@ ${entries.join('\n')}`;
           казали одне. Лишились адреса вузла — вона ж і кнопка згортання — і
           опис, заради якого блок і підписаний. Поля лежать у
           {sortedFieldsToRender}, згрупованому в profileFormBlocks. */}
-      {profileFormBlocks.map(block => (
+      {visibleProfileFormBlocks.map(block => (
         <TechnicalFieldsSection key={block.path}>
           <BlockHeaderRow>
             <BlockToggle
@@ -3209,35 +2126,45 @@ ${entries.join('\n')}`;
               </BlockBackendLink>
             )}
           </BlockHeaderRow>
-          {block.isOpen && block.hint && <BlockHint>{block.hint}</BlockHint>}
           {/* Поля без вузла збереження відкидає, тож і правити їх нема чого:
               вимкнений `fieldset` вимикає всі інпути й кнопки всередині. */}
-          {block.isOpen && <ReadOnlyFieldset disabled={Boolean(block.readOnly)}><FieldsGrid>{block.shownFields.map(field => {
+          {block.isOpen && <ReadOnlyFieldset disabled={Boolean(block.readOnly)}><FieldsGrid>{(() => {
+          const renderField = (field, fieldOptions = {}) => {
           const overlayEntries = getOverlayEntriesForField(field.name);
           const hasOverlaySuggestions = overlayEntries.length > 0;
-          // Поле, пришпилене до чужого блоку, називає свій справжній вузол саме
-          // тут: інпут стоїть під імʼям, а лежить значення в іншому місці, і
-          // мовчати про це означало б спитати «чому в картці немає прізвища».
-          // У чернетки вузлів немає — усі поля лежать одним записом, і «лежить
-          // в іншому вузлі» про неї неправда.
-          const foreignNodeLabel = PROFILE_FORM_FIELD_DISPLAY_BLOCKS[field.name] && !draftRecordSegments
-            ? buildProfileFormBlockHeader(resolveProfileFormBlock(field.name), {
-                profileId: state?.userId,
-                ownerId: auth.currentUser?.uid,
-              }).label
-            : '';
           const displayValue =
             field.name === 'lastAction'
               ? formatDateToDisplay(normalizeLastAction(state.lastAction))
+              : PROFILE_FORM_READ_ONLY_DATE_FIELDS.has(field.name) && !Array.isArray(state[field.name])
+              ? formatDateToDisplay(state[field.name])
               // У базі дата лежить у `РРРР-ММ-ДД`, а в полі введення людина
               // бачить і набирає крапки. Поки перелік був коротший, дата
               // народження показувалась так, як лежить, — тобто задом наперед.
               : PROFILE_FORM_DATE_FIELDS.has(field.name)
               ? formatDateToDisplay(state[field.name])
               : state[field.name] || '';
+          // «+» стоїть усередині поля, поруч із «×» (22.11, на прохання
+          // власниці продукту): окремою кнопкою праворуч він забирав стовпчик
+          // ширини в кожного поля. У рядку «зріст · вага · кров» він спільний.
+          const hintLabel = (fieldOptions.inMetricRow && METRIC_ROW_LABELS[field.name]) || getFieldDisplayLabel(field);
+          const showAddRow = !fieldOptions.inMetricRow
+            && field.name !== 'lastAction'
+            && fieldAcceptsMultipleValues(field.name)
+            && canAppendFieldRow(state[field.name])
+            && ((Array.isArray(field.options) && field.options.length !== 2 && field.options.length !== 3)
+              || !Array.isArray(field.options));
+          const addRowButton = showAddRow ? (
+            <AddRowButton
+              type="button"
+              aria-label={`Додати значення: ${getFieldDisplayLabel(field)}`}
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => appendEmptyRowsTo([field.name])}
+            >
+              +
+            </AddRowButton>
+          ) : null;
           return (
             <FieldGroup key={field.name} data-profile-field={field.name} $compact={COMPACT_PROFILE_FIELDS.has(field.name) && !Array.isArray(state[field.name]) && !hasOverlaySuggestions}>
-            {foreignNodeLabel && <FieldNodeNote>{foreignNodeLabel}</FieldNodeNote>}
             <PickerContainer
               style={hasOverlaySuggestions ? { flexDirection: 'column', alignItems: 'stretch' } : undefined}
             >
@@ -3255,34 +2182,23 @@ ${entries.join('\n')}`;
                     <InputFieldContainer fieldName={`${field.name}-${idx}`} value={value}>
                       <InputField
                         fieldName={`${field.name}-${idx}`}
-                        as={(field.name === 'moreInfo_main' || field.name === 'myComment' || field.name === MULTI_DATA_ACCESS_FIELD) && 'textarea'}
-                        ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : field.name === MULTI_DATA_ACCESS_FIELD ? multiDataAccessUserIdsRef : null}
+                        as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
+                        ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : null}
                         inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                         name={`${field.name}-${idx}`}
                         aria-label={`${getFieldDisplayLabel(field)} — ${idx + 1}`}
                         placeholder={getFieldPlaceholderText(field)}
-                        value={value || ''}
+                        // Версії дати показуються так само, як одиничне поле:
+                        // дд.мм.рррр, а не `РРРР-ММ-ДД`, як лежать у базі.
+                        value={(PROFILE_FORM_DATE_FIELDS.has(field.name) ? formatDateToDisplay(value) : value) || ''}
                         $isDeletedOverlay={deletedOverlayFields.includes(field.name)}
                         onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
-                        readOnly={field.name === ADDITIONAL_ACCESS_FIELD}
-                        onClick={() => {
-                          if (field.name !== ADDITIONAL_ACCESS_FIELD) return;
-                          setActiveAdditionalRuleInputIndex(idx);
-                          setShowAdditionalRulesModal(true);
-                        }}
                         onChange={e => {
-                          if (field.name === ADDITIONAL_ACCESS_FIELD) return;
                           if (field.name === 'myComment') {
                             autoResizeMyComment(e.target);
                           }
                           if (field.name === 'moreInfo_main') {
                             autoResizeMoreInfo(e.target);
-                          }
-                          if (field.name === ADDITIONAL_ACCESS_FIELD) {
-                            autoResizeAdditionalAccessRules(e.target);
-                          }
-                          if (field.name === MULTI_DATA_ACCESS_FIELD) {
-                            autoResizeMultiDataAccessUserIds(e.target);
                           }
                           const updatedValue =
                             field.name === 'telegram'
@@ -3308,9 +2224,7 @@ ${entries.join('\n')}`;
                           const rows = latestDraft[field.name];
                           // Поля доступу (правила, джерела даних) — переліки, а не
                           // версії: порожній елемент там нічого не «стирає».
-                          const isAccessListField = field.name === ADDITIONAL_ACCESS_FIELD
-                            || field.name === MULTI_DATA_ACCESS_FIELD
-                            || field.name === 'accessLevel';
+                          const isAccessListField = field.name === MULTI_DATA_ACCESS_FIELD;
                           if (!isAccessListField && fieldAcceptsMultipleValues(field.name) && isUnfilledNewFieldRow(rows, idx)) {
                             const nextState = { ...latestDraft, [field.name]: markFieldRowErased(rows, idx) };
                             latestProfileDraftRef.current = nextState;
@@ -3383,19 +2297,16 @@ ${entries.join('\n')}`;
                               idx,
                               valueBeforeClear: state?.[field.name],
                             });
-                            if (field.name === ADDITIONAL_ACCESS_FIELD) {
-                              handleRemoveAdditionalAccessRuleInput(idx, 'clear');
-                              return;
-                            }
                             handleClear(field.name, idx);
                           }}
                         >
                           &times;
                         </ClearButton>
                       )}
+                      {idx === state[field.name].length - 1 && addRowButton}
                     </InputFieldContainer>
 
-                    {field.name !== 'accessLevel' && (
+                    {(
                       <>
                         {/* Підпис стоїть над першим рядком і більше не
                             повторюється: два телефони давали два однакові
@@ -3403,7 +2314,7 @@ ${entries.join('\n')}`;
                             поле, каже перший — решта під ним і так його. */}
                         {idx === 0 && (
                           <Hint fieldName={field.name} isActive={value}>
-                            {getFieldDisplayLabel(field)}
+                            {hintLabel}
                           </Hint>
                         )}
                         <Placeholder isActive={value}>{getFieldPlaceholderText(field)}</Placeholder>
@@ -3429,40 +2340,7 @@ ${entries.join('\n')}`;
             ) : (
               <InputDiv $isHighlighted={highlightedFields.includes(field.name)} $isDeletedOverlay={deletedOverlayFields.includes(field.name)}>
                 <InputFieldContainer fieldName={field.name} value={state[field.name]}>
-                  {field.name === 'accessLevel' ? (
-                    <AccessLevelSelect
-                      name={field.name}
-                      aria-label={getFieldDisplayLabel(field)}
-                      value={state[field.name] || ''}
-                      onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
-                      onChange={e => {
-                        const value = e.target.value;
-                        setState(prevState => ({ ...prevState, [field.name]: value }));
-                      }}
-                      onBlur={() => handleBlur(field.name)}
-                    >
-                      {accessLevelOptions.map(option => (
-                        <option key={option.value || 'placeholder'} value={option.value} disabled={option.value === ''}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </AccessLevelSelect>
-                  ) : field.name === 'canCreateProfiles' ? (
-                    <AccessLevelSelect
-                      name={field.name}
-                      aria-label="Дозволити створення карток"
-                      value={state[field.name] === true ? 'true' : 'false'}
-                      onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
-                      onChange={e => {
-                        const value = e.target.value === 'true';
-                        setState(prevState => ({ ...prevState, [field.name]: value }));
-                      }}
-                      onBlur={() => handleBlur(field.name)}
-                    >
-                      <option value="false">Створення карток заборонено</option>
-                      <option value="true">Дозволити створення карток</option>
-                    </AccessLevelSelect>
-                  ) : field.name === 'screenAccess' ? (
+                  {field.name === 'screenAccess' ? (
                     // Галочки, а не текст: код екрана, якого немає в переліку,
                     // нічого не відкрив би, а одруківка мовчки лишила б людину
                     // без екрана. Зберігається одразу — як і решта прав, і
@@ -3505,28 +2383,11 @@ ${entries.join('\n')}`;
                         Відмічені екрани замінюють стрічку й «Мій профіль»: у меню людини будуть лише вони.
                       </small>
                     </ScreenAccessList>
-                  ) : field.name === ADDITIONAL_ACCESS_FIELD ? (
-                    <>
-                      <InputField
-                        fieldName={field.name}
-                        ref={additionalAccessRulesRef}
-                        name={field.name}
-                        aria-label={getFieldDisplayLabel(field)}
-                        value={displayValue}
-                        placeholder={ADDITIONAL_ACCESS_TEMPLATE}
-                        readOnly
-                        onFocus={() => handleFieldFocus && handleFieldFocus(field.name)}
-                        onClick={() => {
-                          setActiveAdditionalRuleInputIndex(0);
-                          setShowAdditionalRulesModal(true);
-                        }}
-                      />
-                    </>
                   ) : (
                   <InputField
                     fieldName={field.name}
-                    as={(field.name === 'moreInfo_main' || field.name === 'myComment' || field.name === MULTI_DATA_ACCESS_FIELD) && 'textarea'}
-                    ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : field.name === MULTI_DATA_ACCESS_FIELD ? multiDataAccessUserIdsRef : null}
+                    as={(field.name === 'moreInfo_main' || field.name === 'myComment') && 'textarea'}
+                    ref={field.name === 'myComment' ? textareaRef : field.name === 'moreInfo_main' ? moreInfoRef : null}
                     inputMode={field.name === 'phone' ? 'numeric' : 'text'}
                     name={field.name}
                     aria-label={getFieldDisplayLabel(field)}
@@ -3560,7 +2421,7 @@ ${entries.join('\n')}`;
                         handleOpenModal(field.name);
                       }
                     }}
-                    {...(field.name === 'lastAction'
+                    {...(field.name === 'lastAction' || PROFILE_FORM_READ_ONLY_DATE_FIELDS.has(field.name)
                       ? { readOnly: true }
                       : {
                           onChange: e => {
@@ -3569,12 +2430,6 @@ ${entries.join('\n')}`;
                             }
                             if (field.name === 'moreInfo_main') {
                               autoResizeMoreInfo(e.target);
-                            }
-                            if (field.name === ADDITIONAL_ACCESS_FIELD) {
-                              autoResizeAdditionalAccessRules(e.target);
-                            }
-                            if (field.name === MULTI_DATA_ACCESS_FIELD) {
-                              autoResizeMultiDataAccessUserIds(e.target);
                             }
                             let value = e?.target?.value;
                             if (field.name === 'publish') {
@@ -3733,22 +2588,19 @@ ${entries.join('\n')}`;
                           idx: undefined,
                           valueBeforeClear: state?.[field.name],
                         });
-                        if (field.name === ADDITIONAL_ACCESS_FIELD) {
-                          handleRemoveAdditionalAccessRuleInput(null, 'clear');
-                          return;
-                        }
                         handleClear(field.name);
                       }}
                     >
                       &times;
                     </ClearButton>
                   )}
+                  {addRowButton}
                 </InputFieldContainer>
 
-                {field.name !== 'accessLevel' && (
+                {(
                   <>
                     <Hint fieldName={field.name} isActive={state[field.name]}>
-                      {getFieldDisplayLabel(field)}
+                      {hintLabel}
                     </Hint>
                     <Placeholder isActive={state[field.name]}>{getFieldPlaceholderText(field)}</Placeholder>
                   </>
@@ -3756,43 +2608,8 @@ ${entries.join('\n')}`;
               </InputDiv>
             )}
 
-            {field.name !== 'lastAction' &&
-              fieldAcceptsMultipleValues(field.name) &&
-              canAppendFieldRow(state[field.name]) &&
-              ((Array.isArray(field.options) && field.options.length !== 2 && field.options.length !== 3) ||
-                !Array.isArray(field.options)) && (
-                <Button
-                  type="button"
-                  aria-label={`Додати значення: ${getFieldDisplayLabel(field)}`}
-                  style={{
-                    display: Array.isArray(state[field.name]) ? 'block' : 'inline-block',
-                    alignSelf: Array.isArray(state[field.name]) ? 'flex-end' : 'auto',
-                    marginBottom: '2px',
-                    marginLeft: 0,
-                  }}
-                  onClick={() => {
-                    // Знімати памʼятку, якої в стані немає зовсім, — це
-                    // окреме збереження (з новою `rev`) на кожен дотик до «+».
-                    if (Object.prototype.hasOwnProperty.call(state, 'myComment') && !state.myComment?.trim()) {
-                      handleDelKeyValue('myComment');
-                    }
-                    // Зберігати нема чого: новий рядок ще порожній. Раніше тут
-                    // стояв запис, і поле ставало масивом з порожнім хвостом від
-                    // самого лише дотику до «+» — а з того часу, як порожня
-                    // остання версія означає «поле стерли», це коштувало б
-                    // анкеті імені. Значення поїде в базу з першим же
-                    // заповненим символом: інпут зберігається на `blur`.
-                    setState(prevState => ({
-                      ...prevState,
-                      [field.name]: appendEmptyFieldRow(prevState[field.name]),
-                    }));
-                  }}
-                >
-                  +
-                </Button>
-              )}
 
-            {field.name !== ADDITIONAL_ACCESS_FIELD && Array.isArray(field.options) && field.name !== 'education' ? (
+            {Array.isArray(field.options) && field.name !== 'education' ? (
               field.options.length === 2 ? (
                 <ButtonGroup>
                   <Button
@@ -3942,199 +2759,54 @@ ${entries.join('\n')}`;
             </PickerContainer>
             </FieldGroup>
           );
-          })}</FieldsGrid>
-          {block.chipFields.length > 0 && (() => {
-            const expanded = expandedChipBlocks.has(block.id);
-            const visibleChips = expanded ? block.chipFields : block.chipFields.slice(0, PROFILE_FIELD_CHIPS_VISIBLE);
-            const hiddenCount = block.chipFields.length - visibleChips.length;
-            return (
-              <FieldChipsArea data-testid="profile-field-chips">
-                <FieldChipsTitle>
-                  Додати поле
-                  {profileFieldStats && <FieldChipsNote>найчастіші першими</FieldChipsNote>}
-                </FieldChipsTitle>
-                <FieldChipsList>
-                  {visibleChips.map(field => (
-                    <FieldChip key={field.name} type="button" onClick={() => revealProfileField(field.name)}>
-                      <span aria-hidden="true">+</span>
-                      {getFieldDisplayLabel(field)}
-                    </FieldChip>
-                  ))}
-                  {hiddenCount > 0 && (
-                    <FieldChipMore
-                      type="button"
-                      onClick={() => setExpandedChipBlocks(previous => new Set(previous).add(block.id))}
-                    >
-                      Ще {hiddenCount} ▸
-                    </FieldChipMore>
-                  )}
-                </FieldChipsList>
-              </FieldChipsArea>
-            );
-          })()}
+          };
+          return groupMetricRowFields(block.shownFields).map(item => (item.metricRow ? (
+            <MetricRow key={`metric-row-${item.fields.map(field => field.name).join('-')}`} $columns={item.fields.length} data-testid="profile-metric-row">
+              {item.fields.map(field => renderField(field, { inMetricRow: true }))}
+              {item.fields.some(field => canAppendFieldRow(state[field.name])) && (
+                <AddRowButton
+                  type="button"
+                  $standalone
+                  aria-label="Додати рядок: зріст, вага, кров"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => appendEmptyRowsTo(item.fields.map(field => field.name))}
+                >
+                  +
+                </AddRowButton>
+              )}
+            </MetricRow>
+          ) : renderField(item.field)));
+          })()}</FieldsGrid>
           </ReadOnlyFieldset>}
         </TechnicalFieldsSection>
       ))}
-      <KeyValueRow>
-        <CustomInput
-          placeholder="ключ"
-          aria-label="Назва додаткового поля"
-          value={customField.key}
-          onChange={e => setCustomField(prev => ({ ...prev, key: e.target.value }))}
-          onBlur={() => {
-            if (customField.key && customField.value) {
-              handleAddCustomField();
-            }
-          }}
-        />
-        <Colon>:</Colon>
-        <CustomInput
-          placeholder="значення"
-          aria-label="Значення додаткового поля"
-          value={customField.value}
-          onChange={e => setCustomField(prev => ({ ...prev, value: e.target.value }))}
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              handleAddCustomField();
-            }
-          }}
-          onBlur={() => {
-            if (customField.key && customField.value) {
-              handleAddCustomField();
-            }
-          }}
-        />
-        <Button onClick={handleAddCustomField}>+</Button>
-      </KeyValueRow>
-      {(canManageAccessLevel || !isAdmin) && (
-        <OverlayDebugButton type="button" onClick={handleOverlayDebugAlert}>
-          Оверлей
-        </OverlayDebugButton>
+      {/* Чіпи «Додати поле» — одним переліком на всю форму, найчастіше
+          заповнювані першими (21.11, на прохання власниці продукту): по
+          переліку на блок вони займали більше, ніж самі поля. */}
+      {allChipFields.length > 0 && (
+        <FieldChipsArea data-testid="profile-field-chips">
+          <FieldChipsTitle>
+            Додати поле
+            {profileFieldStats && <FieldChipsNote>найчастіші першими</FieldChipsNote>}
+          </FieldChipsTitle>
+          <FieldChipsList>
+            {(chipsExpanded ? allChipFields : allChipFields.slice(0, PROFILE_FIELD_CHIPS_VISIBLE)).map(field => (
+              <FieldChip key={field.name} type="button" onClick={() => revealProfileField(field.name)}>
+                <span aria-hidden="true">+</span>
+                {getFieldDisplayLabel(field)}
+              </FieldChip>
+            ))}
+            {!chipsExpanded && allChipFields.length > PROFILE_FIELD_CHIPS_VISIBLE && (
+              <FieldChipMore type="button" onClick={() => setChipsExpanded(true)}>
+                Ще {allChipFields.length - PROFILE_FIELD_CHIPS_VISIBLE} ▸
+              </FieldChipMore>
+            )}
+          </FieldChipsList>
+        </FieldChipsArea>
       )}
-
-      {showAdditionalRulesModal && (
-        <AdditionalRulesOverlay>
-          <AdditionalRulesModal onClick={e => e.stopPropagation()}>
-            <AdditionalRulesClose type="button" onClick={() => setShowAdditionalRulesModal(false)}>
-              <FaTimes />
-            </AdditionalRulesClose>
-            <h3>Додаткові правила доступу</h3>
-            <small>Оберіть фільтри по групах. Порожня група не застосовується.</small>
-
-            {additionalRuleBuilder.map((rule, index) => {
-              const options = ADDITIONAL_ACCESS_FILTER_OPTIONS[rule.key] || [];
-              return (
-                <AdditionalRuleBlock key={`${rule.key}-${index}`}>
-                  <AdditionalRuleHeader>
-                    <select
-                      value={rule.key}
-                      onChange={event => handleAdditionalRuleKeyChange(index, event.target.value)}
-                    >
-                      {ADDITIONAL_RULE_ORDER.map(key => (
-                        <option key={key} value={key}>
-                          {ADDITIONAL_RULE_LABELS[key]}
-                        </option>
-                      ))}
-                    </select>
-                    <button type="button" onClick={() => removeAdditionalRule(index)}>
-                      <FaTimes />
-                    </button>
-                  </AdditionalRuleHeader>
-                  <AdditionalRuleOptions>
-                    {options.map(option => (
-                      <label key={`${rule.key}-${option}`}>
-                        <input
-                          type="checkbox"
-                          checked={rule.allowedValues.has(option)}
-                          onChange={() => toggleAdditionalRuleValue(index, option)}
-                        />
-                        <AdditionalRuleOptionText>
-                          <span>{ADDITIONAL_RULE_OPTION_LABELS[option] || option}</span>
-                          <small>
-                            {ADDITIONAL_RULE_OPTION_DESCRIPTIONS[rule.key]?.[option] ||
-                              `Токен: ${option}`}
-                          </small>
-                        </AdditionalRuleOptionText>
-                      </label>
-                    ))}
-                  </AdditionalRuleOptions>
-                </AdditionalRuleBlock>
-              );
-            })}
-
-            <AdditionalRuleActions>
-              <button type="button" onClick={addEmptyAdditionalFilter}>+ Фільтр</button>
-              <button type="button" onClick={applyAdditionalRulesFromBuilder}>
-                Оновити правила / підвантажити SearchKey
-              </button>
-              <button
-                type="button"
-                onClick={indexAdditionalRulesFromBuilder}
-                disabled={isIndexingAdditionalRules}
-              >
-                {isIndexingAdditionalRules ? 'Оновлення індексів...' : 'Оновити індекси'}
-              </button>
-              <button
-                type="button"
-                onClick={saveAdditionalRulesToSearchKeySets}
-                disabled={isIndexingAdditionalRules}
-              >
-                {isIndexingAdditionalRules ? 'Збереження...' : 'Зберегти набір у searchKeySets'}
-              </button>
-            </AdditionalRuleActions>
-
-            <AdditionalRulePreview
-              value={activeAdditionalRulesDraftText || ADDITIONAL_ACCESS_TEMPLATE}
-              onChange={handleCombinedAdditionalRulesChange}
-            />
-            <AdditionalCardsTitle>
-              {availableCardsCount === null
-                ? 'Доступні карточки для активного набору: завантажте локальний файл searchKey'
-                : `Доступні карточки для активного набору (${availableCardsCount})`} {isLoadingAvailableCards ? '...завантаження' : ''}
-            </AdditionalCardsTitle>
-            <AdditionalCardsTitle>
-              {localSearchKeyPayload && typeof localSearchKeyPayload === 'object'
-                ? 'Локальний searchKey: файл підвантажено ✅'
-                : 'Локальний searchKey: файл ще не підвантажено'}
-            </AdditionalCardsTitle>
-          </AdditionalRulesModal>
-        </AdditionalRulesOverlay>
-      )}
-
-      {showSearchKeySourceModal && (
-        <AdditionalRulesOverlay>
-          <SearchKeySourceModal onClick={e => e.stopPropagation()}>
-            <h3>Оберіть джерело SearchKey</h3>
-            <p>
-              Щоб зменшити навантаження, backend searchKey завантажується лише за прямої дії адміна.
-            </p>
-            <SearchKeySourceActions>
-              <button type="button" onClick={handleDownloadSearchKeyOnly}>
-                1) Викачати SearchKey
-              </button>
-              <button type="button" onClick={applyUsingSavedSearchKey}>
-                2) Обрати локально збережений файл SearchKey і застосувати
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSearchKeySourceModal(false);
-                  setPendingRulesToApply('');
-                }}
-              >
-                Скасувати
-              </button>
-            </SearchKeySourceActions>
-            <input
-              ref={searchKeyFileInputRef}
-              type="file"
-              accept="application/json,.json"
-              style={{ display: 'none' }}
-              onChange={handleSearchKeyFileSelected}
-            />
-          </SearchKeySourceModal>
-        </AdditionalRulesOverlay>
-      )}
+      <OverlayDebugButton type="button" onClick={handleOverlayDebugAlert}>
+        Оверлей
+      </OverlayDebugButton>
 
       {/* Усе, що база знає про картку поза полями анкети: позначки власника
           (графік стимуляції в форму не доїжджав зовсім), чернетка з журналом,
@@ -4165,7 +2837,6 @@ ${entries.join('\n')}`;
     </FormPage>
   );
 };
-
 
 const FormPage = styled.div`
   background: transparent;
@@ -4276,6 +2947,55 @@ const BlockBackendLink = styled.a`
 `;
 
 // Рамки й відступів у `fieldset` немає: він тут лише вимикає поля блоку.
+// Зріст, вага й кров — одним рядком: значення короткі, а кожне на всю
+// ширину забирало три рядки екрана. Спільний «+» — останньою колонкою.
+const MetricRow = styled.div`
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(${({ $columns }) => $columns || 3}, minmax(0, 1fr)) auto;
+  gap: 8px;
+  align-items: start;
+
+  /* Поле в рядку — одна комірка: «на всю ширину» (FieldGroup) тут
+     поставило б кожне поле окремим рядком. */
+  > div {
+    min-width: 0;
+    grid-column: auto;
+  }
+`;
+
+// «+» усередині поля, поруч із «×»: та сама мішень і той самий тихий вигляд,
+// лише кольором акценту — це дія «додати», а не «прибрати».
+const AddRowButton = styled.button`
+  position: relative;
+  flex: 0 0 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 32px;
+  margin-right: 2px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--km-accent);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  ${({ $standalone }) => ($standalone ? css`
+    align-self: end;
+    width: 34px;
+    height: 38px;
+    border: 1px solid ${uiTokens.colors.border};
+    border-radius: 8px;
+  ` : '')}
+
+  &:hover { background: rgba(201, 96, 15, 0.08); }
+  &:focus-visible { outline: 2px solid ${uiTokens.colors.borderFocus}; outline-offset: -2px; }
+`;
+
 // Чіпи «Додати поле» — заливкою без рамки, як решта вторинних контролів
 // (`--km-fill`); «Ще N» — рамкою, бо це не поле, а розгортання переліку.
 const FieldChipsArea = styled.div`
@@ -4344,12 +3064,6 @@ const ReadOnlyFieldset = styled.fieldset`
   border: 0;
 `;
 
-const BlockHint = styled.p`
-  margin: 4px 0 10px;
-  color: var(--km-muted);
-  font-size: 11px;
-  line-height: 1.45;
-`;
 
 // Журнал чернетки — згорнутий за замовчуванням: його відкривають, коли
 // треба звірити, хто і що міняв, а не щоразу, як відкривають анкету.
@@ -4380,16 +3094,6 @@ const DraftHistoryNote = styled.p`
   margin: 8px 0 0;
   color: var(--km-muted);
 `;
-
-// Поле, показане не у своєму блоці, називає свій вузол просто над собою.
-const FieldNodeNote = styled.p`
-  width: 100%;
-  margin: 0 0 4px;
-  color: var(--km-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
-`;
-
 
 
 const PickerContainer = styled.div`
@@ -4495,7 +3199,7 @@ const InputField = styled.input`
   }
   ${({ as, fieldName }) => {
     const baseFieldName = resolveFieldNameBase(fieldName);
-    if (as === 'textarea' && (baseFieldName === ADDITIONAL_ACCESS_FIELD || baseFieldName === MULTI_DATA_ACCESS_FIELD)) {
+    if (as === 'textarea' && baseFieldName === MULTI_DATA_ACCESS_FIELD) {
       return css`
         min-height: 36px;
         max-height: 84px;
@@ -4537,35 +3241,6 @@ const ScreenAccessOption = styled.label`
   input {
     margin-top: 3px;
     flex: 0 0 auto;
-  }
-`;
-
-const AccessLevelSelect = styled.select`
-  border: none;
-  outline: none;
-  flex: 1;
-  align-items: center;
-  border-radius: 0;
-  max-width: 100%;
-  min-width: 0;
-  width: 100%;
-  padding-left: 10px;
-  padding-right: 24px;
-  background: transparent;
-  min-height: 36px;
-  color: ${({ value }) => (value ? uiTokens.colors.textPrimary : uiTokens.colors.textSecondary)};
-  cursor: pointer;
-  font-size: ${uiTokens.typography.fontSizeMd};
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23666' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-  background-size: 10px 6px;
-
-  option[value=''] {
-    color: ${uiTokens.colors.textSecondary};
   }
 `;
 
@@ -4668,393 +3343,6 @@ const ClearButton = styled.button`
     color: ${uiTokens.colors.textPrimary};
     background: rgba(255, 140, 0, 0.12);
   }
-`;
-
-const AdditionalRulesOverlay = styled.div`
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.65);
-  z-index: 1200;
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-`;
-
-const AdditionalRulesModal = styled.div`
-  background: #111827;
-  color: #e8f0fa;
-  width: min(720px, 100vw);
-  height: 100vh;
-  padding: 20px 16px calc(32px + env(safe-area-inset-bottom, 0px));
-  overflow-y: auto;
-  overflow-x: hidden;
-  position: relative;
-  line-height: 1.45;
-  box-shadow: -4px 0 32px rgba(0, 0, 0, 0.5);
-
-  h3 {
-    font-size: 17px;
-    font-weight: 700;
-    margin: 0 0 4px;
-    color: #e8f0fa;
-  }
-
-  small {
-    font-size: ${({ $compactText }) => ($compactText ? "10px" : "12px")};
-    color: #6b7f9a;
-  }
-`;
-
-const AdditionalRulesClose = styled.button`
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  border: none;
-  background: rgba(255, 255, 255, 0.08);
-  color: #8fa8c0;
-  font-size: 16px;
-  cursor: pointer;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s, color 0.15s;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.16);
-    color: #fff;
-  }
-`;
-
-const AdditionalRuleBlock = styled.div`
-  padding: 12px 14px;
-  margin-top: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-`;
-
-const AdditionalRuleHeader = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-
-  select {
-    flex: 1;
-    padding: 7px 10px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    background: rgba(255, 255, 255, 0.08);
-    color: #e8f0fa;
-    font-size: 14px;
-    font-family: inherit;
-    cursor: pointer;
-    outline: none;
-    appearance: none;
-    -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%238fa8c0' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 10px center;
-    background-size: 10px 6px;
-    padding-right: 30px;
-  }
-
-  button {
-    padding: 7px 10px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(220, 50, 50, 0.15);
-    color: #e57373;
-    cursor: pointer;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 34px;
-    height: 34px;
-    flex-shrink: 0;
-    transition: background 0.15s;
-
-    &:hover {
-      background: rgba(220, 50, 50, 0.28);
-    }
-  }
-`;
-
-const AdditionalRuleOptions = styled.div`
-  margin-top: 10px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 8px 12px;
-
-  label {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    cursor: pointer;
-    padding: 6px 8px;
-    border-radius: 8px;
-    border: 1px solid transparent;
-    transition: background 0.12s, border-color 0.12s;
-
-    &:hover {
-      background: rgba(255, 255, 255, 0.05);
-      border-color: rgba(255, 255, 255, 0.1);
-    }
-
-    input[type='checkbox'] {
-      margin-top: 2px;
-      accent-color: #4a9eda;
-      width: 15px;
-      height: 15px;
-      flex-shrink: 0;
-      cursor: pointer;
-    }
-  }
-`;
-
-const AdditionalRuleOptionText = styled.span`
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-
-  span {
-    font-size: 13px;
-    font-weight: 500;
-    color: #d0e0f0;
-  }
-
-  small {
-    color: #6b7f9a;
-    font-size: 11px;
-    line-height: 1.3;
-  }
-`;
-
-const AdditionalRuleActions = styled.div`
-  margin-top: 16px;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-
-  button {
-    padding: 8px 14px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 500;
-    font-family: inherit;
-    cursor: pointer;
-    transition: background 0.15s, opacity 0.15s;
-
-    &:first-child {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      color: #c8d8ea;
-
-      &:hover {
-        background: rgba(255, 255, 255, 0.14);
-      }
-    }
-
-    &:nth-child(2) {
-      background: linear-gradient(135deg, #1565c0, #1e88e5);
-      border: none;
-      color: #fff;
-      box-shadow: 0 3px 10px rgba(21, 101, 192, 0.4);
-
-      &:hover {
-        filter: brightness(1.1);
-      }
-    }
-
-    &:nth-child(3) {
-      background: rgba(255, 152, 0, 0.15);
-      border: 1px solid rgba(255, 152, 0, 0.3);
-      color: #ffb74d;
-
-      &:hover {
-        background: rgba(255, 152, 0, 0.25);
-      }
-
-      &:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
-      }
-    }
-
-    &:nth-child(4) {
-      background: linear-gradient(135deg, #2e7d32, #388e3c);
-      border: none;
-      color: #fff;
-      box-shadow: 0 3px 10px rgba(46, 125, 50, 0.35);
-
-      &:hover {
-        filter: brightness(1.1);
-      }
-
-      &:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
-        filter: none;
-      }
-    }
-  }
-`;
-
-const AdditionalRulePreview = styled.textarea`
-  margin-top: 14px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #c8daea;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  padding: 12px;
-  white-space: pre-wrap;
-  width: 100%;
-  min-height: 120px;
-  resize: vertical;
-  font-family: 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.6;
-  box-sizing: border-box;
-  outline: none;
-  transition: border-color 0.15s;
-
-  &:focus {
-    border-color: rgba(74, 158, 218, 0.4);
-  }
-`;
-
-const AdditionalCardsTitle = styled.h4`
-  margin-top: 12px;
-  margin-bottom: 6px;
-  font-size: ${({ $compactText }) => ($compactText ? "10px" : "12px")};
-  font-weight: 500;
-  color: #6b7f9a;
-  letter-spacing: 0.3px;
-`;
-
-const SearchKeySourceModal = styled.div`
-  background: #111827;
-  color: #e8f0fa;
-  width: min(480px, calc(100vw - 24px));
-  margin: auto;
-  padding: 22px 18px;
-  border-radius: 16px;
-  line-height: 1.5;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.07);
-
-  h3 {
-    font-size: 16px;
-    font-weight: 700;
-    margin: 0 0 8px;
-    color: #e8f0fa;
-  }
-
-  p {
-    font-size: 13px;
-    color: #6b7f9a;
-    margin: 0 0 4px;
-  }
-`;
-
-const SearchKeySourceActions = styled.div`
-  margin-top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-
-  button {
-    padding: 11px 14px;
-    text-align: left;
-    border-radius: 10px;
-    font-size: 13px;
-    font-weight: 500;
-    font-family: inherit;
-    cursor: pointer;
-    transition: background 0.15s;
-
-    &:nth-child(1) {
-      background: rgba(74, 158, 218, 0.15);
-      border: 1px solid rgba(74, 158, 218, 0.3);
-      color: #4ab3e8;
-
-      &:hover {
-        background: rgba(74, 158, 218, 0.25);
-      }
-    }
-
-    &:nth-child(2) {
-      background: linear-gradient(135deg, #2e7d32, #388e3c);
-      border: none;
-      color: #fff;
-      box-shadow: 0 3px 10px rgba(46, 125, 50, 0.3);
-
-      &:hover {
-        filter: brightness(1.1);
-      }
-    }
-
-    &:nth-child(3) {
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      color: #6b7f9a;
-
-      &:hover {
-        background: rgba(255, 255, 255, 0.1);
-      }
-    }
-  }
-`;
-
-const KeyValueRow = styled.div`
-  display: flex;
-  align-items: center;
-  position: relative;
-  margin: 6px 0;
-  padding: 2px 4px;
-  background-color: ${({ $isDeletedOverlay }) =>
-    $isDeletedOverlay ? uiTokens.colors.mutedBg : uiTokens.colors.cardBg};
-  border: ${({ $isHighlighted, $isDeletedOverlay }) => {
-    if ($isDeletedOverlay) return `1px solid ${uiTokens.colors.danger}`;
-    if ($isHighlighted) return `1px solid ${uiTokens.colors.borderFocus}`;
-    return `1px solid ${uiTokens.colors.border}`;
-  }};
-  border-radius: 8px;
-  box-sizing: border-box;
-  width: 100%;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
-
-  &:focus-within {
-    border-color: ${uiTokens.colors.borderFocus};
-    box-shadow: 0 0 0 3px rgba(201, 96, 15, 0.1);
-  }
-`;
-
-const CustomInput = styled.input`
-  border: none;
-  outline: none;
-  flex: 1;
-  padding-left: 10px;
-  max-width: 100%;
-  min-width: 0;
-  min-height: 36px;
-  background: transparent;
-  color: ${uiTokens.colors.textPrimary};
-  font: inherit;
-  font-size: 14px;
-
-  @media (pointer: coarse) {
-    font-size: 16px;
-  }
-`;
-
-const Colon = styled.span`
-  margin: 0 10px;
 `;
 
 const ButtonGroup = styled.div`

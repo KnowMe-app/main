@@ -45,7 +45,8 @@ describe('доступ до вузла matchingCards', () => {
   it('відкриває сканування службовому доступу й не-донорам, а стрічку — всім авторизованим', () => {
     // Пошук ходить по `matchingCards`: сканувати вузол мають адміни, службовий
     // доступ і читач з роллю, відмінною від `ed` (роль — з його картки).
-    expect(node['.read']).toContain("root.child('profileTechnical').child(auth.uid).child('accessLevel').val().contains('matching')");
+    // Службового доступу (`accessLevel`) більше немає (22.11).
+    expect(node['.read']).not.toContain('accessLevel');
     expect(node['.read']).toContain("root.child('matchingCards').child(auth.uid).child('role').val() != 'ed'");
     // А запит самої стрічки лишається відкритим кожному авторизованому.
     expect(node['.read']).toContain("query.orderByChild == 'feedDate' && query.startAt == ''");
