@@ -930,8 +930,19 @@ export const ProfileForm = ({
       [fieldName]: appendEmptyFieldRow(prevState[fieldName]),
     }), prevState));
   };
-  const revealProfileField = useCallback(fieldName => {
+  // Чіпи стоять одним переліком під усіма блоками, тож блок поля може бути
+  // згорнутим: тоді поле не змонтувалось би, а фокус не знайшов би нічого.
+  // Чіп відкриває й свій блок.
+  const revealProfileField = useCallback((fieldName, blockId) => {
     pendingFieldFocusRef.current = fieldName;
+    if (blockId) {
+      setOpenProfileFormBlocks(previous => {
+        if (isProfileFormBlockOpen(previous, blockId)) return previous;
+        const next = { ...previous, [blockId]: true };
+        persistOpenProfileFormBlocks(next);
+        return next;
+      });
+    }
     setRevealedProfileFields(previous => new Set(previous).add(fieldName));
   }, []);
   useEffect(() => {
@@ -1862,7 +1873,7 @@ ${entries.join('\n')}`;
   const storedProfileFormBlocks = profileFormBlocks.filter(block => block.id !== PROFILE_FORM_BLOCK_IDS.unstored);
   const visibleProfileFormBlocks = storedProfileFormBlocks.filter(block => block.shownFields.length > 0);
   const allChipFields = rankFieldsByFillStats(
-    storedProfileFormBlocks.flatMap(block => block.chipFields),
+    storedProfileFormBlocks.flatMap(block => block.chipFields.map(field => ({ ...field, chipBlockId: block.id }))),
     profileFieldStats,
     cardRolesForStats,
   );
@@ -2791,7 +2802,7 @@ ${entries.join('\n')}`;
           </FieldChipsTitle>
           <FieldChipsList>
             {(chipsExpanded ? allChipFields : allChipFields.slice(0, PROFILE_FIELD_CHIPS_VISIBLE)).map(field => (
-              <FieldChip key={field.name} type="button" onClick={() => revealProfileField(field.name)}>
+              <FieldChip key={field.name} type="button" onClick={() => revealProfileField(field.name, field.chipBlockId)}>
                 <span aria-hidden="true">+</span>
                 {getFieldDisplayLabel(field)}
               </FieldChip>

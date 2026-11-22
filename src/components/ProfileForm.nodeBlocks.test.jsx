@@ -164,6 +164,23 @@ describe('блоки форми анкети', () => {
     expect(hasField('phone')).toBe(true);
   });
 
+  it('чіп поля зі згорнутого блоку відкриває й сам блок', () => {
+    const withPhone = { state: { userId: 'AC00042', name: 'Анна', phone: '+380501110011' } };
+    const { unmount } = renderForm(withPhone);
+    fireEvent.click(blockToggles().find(toggle => toggle.textContent.includes('profileContacts')));
+    expect(hasField('phone')).toBe(false);
+    unmount();
+
+    renderForm(withPhone);
+    const findChip = () => screen.getAllByRole('button').find(button => button.textContent === '+Email');
+    if (!findChip()) {
+      fireEvent.click(screen.getAllByRole('button').find(button => /^Ще \d+/.test(button.textContent)));
+    }
+    fireEvent.click(findChip());
+    expect(hasField('email')).toBe(true);
+    expect(hasField('phone')).toBe(true);
+  });
+
   it('розгортає згорнутий блок, коли в ньому є чужа пропозиція', () => {
     renderForm({ state: { userId: 'AC00042', name: 'Анна', telegram: 'anna' } });
     fireEvent.click(blockToggles().find(toggle => toggle.textContent.includes('profileContacts')));
