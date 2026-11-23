@@ -431,6 +431,10 @@ const buildDigestMessage = (events, frequency) => {
  * найбільше інтересу (лайки й дотики до контактів) і що шукали. Рахує всі
  * події журналу незалежно від того, які з них адмін отримує окремо.
  */
+// «Хто кого вподобав»: рядків і карток у рядку — щоб звіт влазив у 4096 знаків Telegram.
+const WEEKLY_LIKE_ACTORS_MAX = 8;
+const WEEKLY_LIKE_CARDS_MAX = 4;
+
 const WEEKLY_REPORT_TYPES = [
   'profile_created', 'profile_published', 'profile_hidden', 'account_deleted',
   'profile_edited', 'card_suggestion', 'draft_created', 'draft_updated',
@@ -448,32 +452,83 @@ const WEEKLY_REPORT_TYPES = [
  * журнал склеює `dedupMs`. Адміни, інспектор і тестові акаунти не
  * рахуються, як і в журналі.
  */
-const collectFailedSearches = (searchQueries, weekStart, now) => {
-  const failed = new Map();
-  let answered = 0;
-  if (!isPlainObject(searchQueries)) return { failed: [], answered, failedTotal: 0 };
+// Донорка й СМ (лише особисті ролі) не бачать у стрічці ні донорок, ні СМ —
+// так задумано (`listViewerHiddenCardRoles` на клієнті). Нуль на такий
+// запит — межа видимості, а не порожня видача.
+const PERSONAL_ROLES = new Set(['ed', 'sm']);
+const isHiddenForPersonalViewer = (intent, roles) => PERSONAL_ROLES.has(intent)
+  && roles.length > 0 && roles.every(role => PERSONAL_ROLES.has(role));
+
+const forEachSearchRow = (searchQueries, from, to, visit) => {
+  if (!isPlainObject(searchQueries)) return;
   Object.entries(searchQueries).forEach(([ownerId, rows]) => {
     if (isExcludedActorUid(ownerId) || !isPlainObject(rows)) return;
     Object.values(rows).forEach(row => {
       if (!isPlainObject(row) || typeof row.query !== 'string') return;
       const at = Number(row.updatedAt) || 0;
-      if (at <= weekStart || at > now) return;
-      if (!Number.isInteger(row.resultsCount)) return;
-      answered += 1;
-      if (row.resultsCount !== 0) return;
+      if (at <= from || at > to) return;
       const query = row.query.trim().toLowerCase();
-      if (!query) return;
-      const entry = failed.get(query) || { query, owners: new Set(), category: false };
-      entry.owners.add(ownerId);
-      if (typeof row.intent === 'string' && row.intent) entry.category = true;
-      failed.set(query, entry);
+      if (query) visit(ownerId, row, query);
     });
   });
-  const list = [...failed.values()]
-    .map(entry => ({ query: entry.query, people: entry.owners.size, category: entry.category }))
+};
+
+const collectFailedSearches = (searchQueries, weekStart, now, { ownerRoles = () => [] } = {}) => {
+  const failed = new Map();
+  const hidden = new Map();
+  let answered = 0;
+  const add = (map, query, ownerId, category) => {
+    const entry = map.get(query) || { query, owners: new Set(), category: false };
+    entry.owners.add(ownerId);
+    if (category) entry.category = true;
+    map.set(query, entry);
+  };
+  forEachSearchRow(searchQueries, weekStart, now, (ownerId, row, query) => {
+    if (!Number.isInteger(row.resultsCount)) return;
+    const intent = typeof row.intent === 'string' ? row.intent : '';
+    // 23.11: «сурогатна мама» з нулем у донорки — не провал пошуку, а межа
+    // видимості; такий запит іде окремим рядком і в «без результату» не рахується.
+    if (row.resultsCount === 0 && isHiddenForPersonalViewer(intent, normalizeRoles(ownerRoles(ownerId)))) {
+      add(hidden, query, ownerId, true);
+      return;
+    }
+    answered += 1;
+    if (row.resultsCount === 0) add(failed, query, ownerId, Boolean(intent));
+  });
+  const toList = map => [...map.values()]
+    .map(entry => ({ query: entry.query, people: entry.owners.size, owners: [...entry.owners], category: entry.category }))
     .sort((a, b) => b.people - a.people || a.query.localeCompare(b.query, 'uk'));
+  const list = toList(failed);
   const failedTotal = list.reduce((sum, entry) => sum + entry.people, 0);
-  return { failed: list.slice(0, 10), answered, failedTotal };
+  return { failed: list.slice(0, 10), answered, failedTotal, hidden: toList(hidden).slice(0, 10) };
+};
+
+/**
+ * Хто кого — лайки чи дотики до контактів тижня, згруповані за тим, хто діяв
+ * (23.11, на прохання власниці продукту): «агенція X вподобала донорку Y»
+ * підказує, кому з них написати. Найактивніші першими; повтор тієї самої
+ * картки (зняли й поставили знову) рахується раз.
+ */
+const buildActorTargetLines = (events, types) => {
+  const byActor = new Map();
+  events.filter(event => types.has(event.type) && event.card && event.actor && event.card !== event.actor).forEach(event => {
+    const entry = byActor.get(event.actor) || { info: event.actorInfo, cards: new Map() };
+    if (!entry.info && event.actorInfo) entry.info = event.actorInfo;
+    if (!entry.cards.has(event.card)) entry.cards.set(event.card, event.cardInfo);
+    byActor.set(event.actor, entry);
+  });
+  const lines = [...byActor.values()]
+    .sort((a, b) => b.cards.size - a.cards.size)
+    .slice(0, WEEKLY_LIKE_ACTORS_MAX)
+    .map(entry => {
+      const cards = [...entry.cards.values()];
+      const shown = cards.slice(0, WEEKLY_LIKE_CARDS_MAX).map(info => describePerson(info) || 'картка');
+      const rest = cards.length - shown.length;
+      const who = describePerson(entry.info) || 'користувач';
+      return `• ${escapeHtml(clip(`${who} → ${shown.join(', ')}${rest > 0 ? ` і ще ${rest}` : ''}`, 260))}`;
+    });
+  if (byActor.size > lines.length) lines.push(`…і ще ${byActor.size - lines.length}`);
+  return lines;
 };
 
 const buildWeeklyReport = (events, now, { searchQueries = null } = {}) => {
@@ -481,12 +536,24 @@ const buildWeeklyReport = (events, now, { searchQueries = null } = {}) => {
   const thisWeek = events.filter(event => event.t > weekStart && event.t <= now);
   const lastWeek = events.filter(event => event.t > weekStart - 7 * DAY && event.t <= weekStart);
   const count = (list, type) => list.filter(event => event.type === type).length;
-  const delta = (current, previous) => {
-    if (current === previous) return '=';
-    return current > previous ? `↑${current - previous}` : `↓${previous - current}`;
+  // «(↑6)» читалось і як різниця, і як минулий тиждень — тепер пишемо саме
+  // число минулого тижня (23.11, на прохання власниці продукту).
+  const delta = (current, previous) => (current === previous ? 'без змін' : `було ${previous}`);
+
+  // Пошук — з одного джерела з «Без результату»: історії пошуку, рядок на
+  // людину й запит. Подія журналу склеює повтори (`dedupMs`), тож «Пошук: 2»
+  // поруч із «2 з 3 запитів» не сходилось. Без історії — як раніше, з подій.
+  const hasSearchHistory = isPlainObject(searchQueries);
+  const searchRowsCount = (from, to) => {
+    let total = 0;
+    forEachSearchRow(searchQueries, from, to, () => { total += 1; });
+    return total;
   };
+  const rowCounts = type => (type === 'search' && hasSearchHistory
+    ? { current: searchRowsCount(weekStart, now), previous: searchRowsCount(weekStart - 7 * DAY, weekStart) }
+    : { current: count(thisWeek, type), previous: count(lastWeek, type) });
   const rows = WEEKLY_REPORT_TYPES
-    .map(type => ({ type, current: count(thisWeek, type), previous: count(lastWeek, type) }))
+    .map(type => ({ type, ...rowCounts(type) }))
     .filter(row => row.current || row.previous)
     .map(row => `${ADMIN_EVENT_BY_KEY[row.type].emoji} ${ADMIN_EVENT_BY_KEY[row.type].label}: <b>${row.current}</b> (${delta(row.current, row.previous)})`);
 
@@ -509,16 +576,43 @@ const buildWeeklyReport = (events, now, { searchQueries = null } = {}) => {
     if (event.type === 'like') entry.likes += 1; else entry.contacts += 1;
     interest.set(event.card, entry);
   });
+  // Нулі не пишемо: «❤️ 0 · 📞 1» — шум, важить те, що було.
   const topCards = [...interest.values()]
     .sort((a, b) => (b.likes + b.contacts * 2) - (a.likes + a.contacts * 2))
     .slice(0, 5)
-    .map(entry => `• ${escapeHtml(clip(describePerson(entry.info) || 'картка', 70))} — ❤️ ${entry.likes} · 📞 ${entry.contacts}`);
+    .map(entry => {
+      const parts = [entry.likes ? `❤️ ${entry.likes}` : '', entry.contacts ? `📞 ${entry.contacts}` : ''].filter(Boolean);
+      return `• ${escapeHtml(clip(describePerson(entry.info) || 'картка', 70))} — ${parts.join(' · ')}`;
+    });
+
+  const likeLines = buildActorTargetLines(thisWeek, new Set(['like']));
+  const contactLines = buildActorTargetLines(thisWeek, contactTypes);
+
+  // Хто шукав — за подіями тижня: так видно, хто шукав без результату, і
+  // роль, за якою нуль — межа видимості, а не порожня стрічка.
+  const actorInfoByUid = new Map();
+  thisWeek.forEach(event => {
+    if (event.actor && event.actorInfo && !actorInfoByUid.has(event.actor)) actorInfoByUid.set(event.actor, event.actorInfo);
+  });
+  const namePeople = entry => {
+    const named = entry.owners.map(uid => describePerson(actorInfoByUid.get(uid))).filter(Boolean);
+    if (named.length && named.length === entry.people) {
+      return ` — ${clip(named.slice(0, 3).join(', '), 120)}${named.length > 3 ? ` і ще ${named.length - 3}` : ''}`;
+    }
+    return entry.people > 1 ? ` — ${entry.people} людей` : '';
+  };
 
   const searches = new Map();
-  thisWeek.filter(event => event.type === 'search' && event.meta && event.meta.query).forEach(event => {
-    const query = String(event.meta.query).toLowerCase();
-    searches.set(query, (searches.get(query) || 0) + 1);
-  });
+  if (hasSearchHistory) {
+    forEachSearchRow(searchQueries, weekStart, now, (ownerId, row, query) => {
+      searches.set(query, (searches.get(query) || 0) + 1);
+    });
+  } else {
+    thisWeek.filter(event => event.type === 'search' && event.meta && event.meta.query).forEach(event => {
+      const query = String(event.meta.query).toLowerCase();
+      searches.set(query, (searches.get(query) || 0) + 1);
+    });
+  }
   const topSearches = [...searches.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
     .map(([query, times]) => `«${escapeHtml(clip(maskDigits(query), 40))}» ×${times}`);
 
@@ -528,7 +622,7 @@ const buildWeeklyReport = (events, now, { searchQueries = null } = {}) => {
     `Діяли людей: <b>${actors}</b> (${delta(actors, previousActors)}) · подій: ${thisWeek.length}`,
     '',
     // Порожній тиждень проти непорожнього — саме тут порівняння найцінніше
-    // («Лайк: 0 (↓10)»), тож рядки лишаються, а примітка стоїть над ними.
+    // («Лайк: 0 (було 10)»), тож рядки лишаються, а примітка стоїть над ними.
     ...(thisWeek.length ? [] : ['Подій за тиждень не було.']),
     ...rows,
   ];
@@ -536,17 +630,24 @@ const buildWeeklyReport = (events, now, { searchQueries = null } = {}) => {
     lines.push('', `Воронка: нових анкет ${createdCards.size} → з них опубліковано ${published} (${Math.round((published / createdCards.size) * 100)}%)`);
   }
   if (topCards.length) lines.push('', '<b>Найбільше інтересу</b>', ...topCards);
+  if (likeLines.length) lines.push('', '<b>Хто кого вподобав</b>', ...likeLines);
+  if (contactLines.length) lines.push('', '<b>Хто кому писав чи дзвонив</b>', ...contactLines);
   if (topSearches.length) lines.push('', `<b>Шукали</b>: ${topSearches.join(', ')}`);
-  const failedSearches = collectFailedSearches(searchQueries, weekStart, now);
+  const failedSearches = collectFailedSearches(searchQueries, weekStart, now, {
+    ownerRoles: uid => (actorInfoByUid.get(uid) || {}).role,
+  });
   if (failedSearches.failed.length) {
     lines.push(
       '',
       `<b>Без результату</b>: ${failedSearches.failedTotal} з ${failedSearches.answered} запитів`,
-      ...failedSearches.failed.map(entry => {
-        const people = entry.people > 1 ? ` — ${entry.people} людей` : '';
-        const category = entry.category ? ' (категорія)' : '';
-        return `• «${escapeHtml(clip(maskDigits(entry.query), 40))}»${category}${people}`;
-      }),
+      ...failedSearches.failed.map(entry => `• «${escapeHtml(clip(maskDigits(entry.query), 40))}»${entry.category ? ' (категорія)' : ''}${escapeHtml(namePeople(entry))}`),
+    );
+  }
+  if (failedSearches.hidden.length) {
+    lines.push(
+      '',
+      '<b>Не показується цій ролі</b> (донорка й СМ не бачать донорок і СМ)',
+      ...failedSearches.hidden.map(entry => `• «${escapeHtml(clip(maskDigits(entry.query), 40))}»${escapeHtml(namePeople(entry))}`),
     );
   }
   lines.push('', `<a href="${NOTIFICATIONS_URL}">Журнал подій</a>`);

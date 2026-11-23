@@ -255,7 +255,7 @@ test('тижневий звіт: тиждень проти попередньо�
   ];
   const { html, push } = activity.buildWeeklyReport(events, NOON);
   assert.match(html, /Тиждень 08\.11–15\.11/);
-  assert.match(html, /Лайк: <b>1<\/b> \(↓1\)/);
+  assert.match(html, /Лайк: <b>1<\/b> \(було 2\)/);
   assert.match(html, /нових анкет 2 → з них опубліковано 1 \(50%\)/);
   assert.match(html, /Марія \(донор ооцитів\) — ❤️ 1 · 📞 2/);
   assert.match(push.body, /контактів: 2/);
@@ -272,6 +272,53 @@ test('тижневий звіт — щопонеділка після 9:00 за 
   assert.equal(activity.isDigestDue('weekly', monday930 - 3 * DAY, Date.UTC(2026, 10, 16, 5, 0, 0)), false); // пн 7:00
   assert.equal(activity.isDigestDue('weekly', sunday - 2 * DAY, sunday), false);
   assert.equal(activity.isDigestDue('weekly', sunday - 8 * DAY, sunday), true); // пропущений понеділок
+});
+
+// 23.11, на прохання власниці продукту: у звіті — хто кого вподобав.
+test('тижневий звіт: хто кого вподобав і хто шукав без результату', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const agency = { name: 'Surrohelp', role: 'ag' };
+  const like = (actor, actorInfo, card, cardInfo, t = NOON - DAY) => ({ type: 'like', t, actor, card, actorInfo, cardInfo, meta: {} });
+  const events = [
+    like('ag1', agency, 'd1', { name: 'Марія', surname: 'К.', role: 'ed' }),
+    like('ag1', agency, 'd2', { name: 'Олена', role: 'sm' }),
+    // Повторний лайк тієї самої картки — раз.
+    like('ag1', agency, 'd1', { name: 'Марія', surname: 'К.', role: 'ed' }, NOON - DAY / 2),
+    like('ip1', { name: 'Пара з Києва', role: 'ip' }, 'd1', { name: 'Марія', surname: 'К.', role: 'ed' }),
+    // Минулий тиждень у цей блок не йде.
+    like('old', { name: 'Стара', role: 'ag' }, 'd3', { name: 'Інна', role: 'ed' }, NOON - 9 * DAY),
+    { type: 'search', t: NOON - DAY, actor: 'ed1', actorInfo: { name: 'Катя', role: 'ed' }, meta: { query: 'сурогатна мама' } },
+  ];
+  const searchQueries = { ed1: { q1: { query: 'Сурогатна мама', updatedAt: NOON - DAY, resultsCount: 0, intent: 'sm' } } };
+  const { html } = activity.buildWeeklyReport(events, NOON, { searchQueries });
+  assert.match(html, /<b>Хто кого вподобав<\/b>\n• Surrohelp \(агенція\) → Марія К\. \(донор ооцитів\), Олена \(сурогатна мати\)\n• Пара з Києва/);
+  assert.doesNotMatch(html, /Стара/);
+  // Донорка не бачить СМ за задумом — це межа видимості, а не провал пошуку.
+  assert.match(html, /<b>Не показується цій ролі<\/b>[^\n]*\n• «сурогатна мама» — Катя \(донор ооцитів\)/);
+  assert.doesNotMatch(html, /Без результату/);
+});
+
+test('тижневий звіт: хто кому писав, без нулів в інтересі, пошук з історії, «було N»', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const agency = { name: 'Surrohelp', role: 'ag' };
+  const events = [
+    { type: 'contact_tap', t: NOON - DAY, actor: 'ag1', actorInfo: agency, card: 'd1', cardInfo: { name: 'Марія', role: 'ed' }, meta: {} },
+    { type: 'contact_saved', t: NOON - DAY, actor: 'ag1', actorInfo: agency, card: 'd1', cardInfo: { name: 'Марія', role: 'ed' }, meta: {} },
+    { type: 'search', t: NOON - DAY, actor: 'ip1', actorInfo: { name: 'Пара', role: 'ip' }, meta: { query: 'сурогатна' } },
+  ];
+  const searchQueries = {
+    ip1: {
+      q1: { query: 'Сурогатна', updatedAt: NOON - DAY, resultsCount: 0, intent: 'sm' },
+      q2: { query: 'Олена', updatedAt: NOON - DAY, resultsCount: 3 },
+    },
+  };
+  const { html } = activity.buildWeeklyReport(events, NOON, { searchQueries });
+  assert.match(html, /<b>Хто кому писав чи дзвонив<\/b>\n• Surrohelp \(агенція\) → Марія \(донор ооцитів\)/);
+  assert.match(html, /• Марія \(донор ооцитів\) — 📞 2\n/);
+  assert.doesNotMatch(html, /❤️ 0/);
+  assert.match(html, /Пошук: <b>2<\/b> \(було 0\)/);
+  assert.match(html, /<b>Без результату<\/b>: 1 з 2 запитів\n• «сурогатна» \(категорія\) — Пара \(біологічні батьки\)/);
+  assert.match(html, /Діяли людей: <b>2<\/b> \(було 0\)/);
 });
 
 test('тижневий звіт іде з потоку подій, коли ввімкнено', async () => {
@@ -322,7 +369,7 @@ test('тижневий звіт: порожній тиждень лишає по
   const DAY = 24 * 60 * 60 * 1000;
   const { html } = activity.buildWeeklyReport([{ type: 'like', t: NOON - 9 * DAY, actor: 'u1', card: 'x', meta: {} }], NOON);
   assert.match(html, /Подій за тиждень не було/);
-  assert.match(html, /Лайк: <b>0<\/b> \(↓1\)/);
+  assert.match(html, /Лайк: <b>0<\/b> \(було 1\)/);
 });
 
 // 15.11, на прохання власниці продукту: причина й аналітика видалення — у
@@ -379,7 +426,8 @@ test('тижневий звіт: запити без результату — з
   const summary = activity.collectFailedSearches(searchQueries, NOON - 7 * DAY, NOON);
   assert.equal(summary.answered, 5);
   assert.equal(summary.failedTotal, 4);
-  assert.deepEqual(summary.failed[0], { query: 'olga', people: 2, category: false });
+  assert.deepEqual({ ...summary.failed[0], owners: undefined }, { query: 'olga', people: 2, owners: undefined, category: false });
+  assert.equal(summary.failed[0].owners.length, 2);
 
   const { html } = activity.buildWeeklyReport([], NOON, { searchQueries });
   assert.match(html, /<b>Без результату<\/b>: 4 з 5 запитів/);
