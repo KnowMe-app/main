@@ -2,12 +2,14 @@ import { get, push, ref, remove, runTransaction, set, update } from 'firebase/da
 
 import {
   PUBLIC_COMMENTS_ROOT_PATH,
+  auth,
   database,
   removeCardAndSearchId,
   reportSearchIdIndexFailure,
   syncUserSearchKeyIndex,
   syncMatchingCardIndex,
 } from 'components/config';
+import { canGrantProfilePrivileges } from './accessLevel';
 import { buildOverlayFromDraft, getOverlaysForCard, purgeCardOverlays } from './multiAccountEdits';
 import { getProfileMutationOwnerPath } from './profileDraftIndexing';
 import { PROFILE_NODES } from './profileNodeSchema';
@@ -55,6 +57,7 @@ const withProfileSaveStage = async (profileSaveStage, operation) => {
 };
 
 const mutationError = (code, details = {}) => Object.assign(new Error(code), { code, ...details });
+const hasActivePublication = mutation => mutation?.status === 'publishing' && Boolean(mutation.publicationAttemptId);
 
 export const buildProfileRevisionHistory = ({ cardId, actorUid, previousData, nextData, at, revision }) => (
   previousData == null ? [] : Object.entries(buildOverlayFromDraft(previousData, nextData || {}))
@@ -410,10 +413,9 @@ export const saveCreateProfileMutation = async ({
         conflict = 'Profile mutation belongs to another user';
         return undefined;
       }
-      // A previous client/version may have failed after the temporary
-      // publishing transition. Treat the next explicit autosave as recovery
-      // instead of permanently trapping the draft in REVISION_CONFLICT.
-      if (current && current.status !== 'pendingReview' && current.status !== 'private' && current.status !== 'publishing') {
+      // Старі publishing-записи без мітки лишаються відновлюваними. Нову
+      // публікацію інша вкладка не скасовує збереженням старої форми.
+      if (hasActivePublication(current) || (current && !['pendingReview', 'private', 'publishing'].includes(current.status))) {
         conflict = 'REVISION_CONFLICT';
         return undefined;
       }
@@ -626,139 +628,158 @@ export const loadAllCreateProfileMutations = async () => {
   ));
 };
 
+const readCanonicalProfileNodes = cardId => Promise.all(
+  Object.values(PROFILE_NODES).map(node => get(ref(database, `${node}/${cardId}`))),
+);
+
+const ensureCanonicalProfileAbsent = async cardId => {
+  if ((await readCanonicalProfileNodes(cardId)).some(node => node.exists())) {
+    throw mutationError('REVISION_CONFLICT');
+  }
+};
+
+const storedPublicationData = value => {
+  if (value == null) return undefined;
+  if (typeof value !== 'object') return value;
+  const children = Object.entries(value)
+    .map(([key, child]) => [key, storedPublicationData(child)])
+    .filter(([, child]) => child !== undefined);
+  return children.length ? Object.fromEntries(children) : undefined;
+};
+
 export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expectedRevision, finalData }) => {
   if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
-  const acceptedAt = Date.now();
-  let conflict = 'Profile mutation not found';
-  let acceptedProfile = null;
+  const actorUid = auth?.currentUser?.uid;
+  if (!canGrantProfilePrivileges(actorUid)) {
+    throw mutationError('PERMISSION_DENIED', { profileSaveStage: 'mutation-transition' });
+  }
+
   const mutationPath = getProfileMutationPath(creatorUid, cardId);
+  const mutationRef = ref(database, mutationPath);
+  const readMutation = async () => (await get(mutationRef)).val();
   const pendingMutation = await withProfileSaveStage('mutation-transition', async () => {
-    const mutationSnapshot = await get(ref(database, mutationPath));
-    const currentMutation = mutationSnapshot.val();
-    if (!currentMutation) throw new Error(conflict);
+    const currentMutation = await readMutation();
+    if (!currentMutation) throw new Error('Profile mutation not found');
     if (currentMutation.operation !== 'create') throw new Error('Profile mutation is not a create mutation');
     return currentMutation;
   });
   const candidateProfile = { ...cleanObject(finalData || pendingMutation.data), userId: cardId };
-  const { keys: identityKeys, acquiredKeys: acquiredIdentityKeys } = await withProfileSaveStage(
-    'identity-claim',
-    () => claimProfileIdentities({ cardId, data: candidateProfile }),
+  const acceptsCandidate = record => (
+    record?.status === 'accepted'
+    && Number(record.revision) === Number(expectedRevision)
+    && areProposalValuesEqual(storedPublicationData(record.data), storedPublicationData(candidateProfile))
   );
-  const previousIdentityKeys = pendingMutation.identityKeys || [];
-  const restorePendingMutation = () => runTransaction(ref(database, mutationPath), current => (
-    current?.status === 'publishing' && current?.acceptedAt === acceptedAt
-      ? { ...current, status: pendingMutation.status, acceptedAt: null }
-      : current
-  ), { applyLocally: false });
-  let result;
-  try {
-    result = await runTransaction(ref(database, mutationPath), mutation => {
-      // The Web SDK can invoke an updater with null before its local cache has
-      // the value just read from the server. Returning null (rather than
-      // aborting or restoring pendingMutation) lets the transaction compare
-      // that state with the server: an existing value causes a retry, while a
-      // concurrently deleted value remains deleted.
-      if (!mutation) {
-        conflict = 'Profile mutation not found';
-        return null;
-      }
-      if (mutation.operation !== 'create') {
-        conflict = 'Profile mutation is not a create mutation';
-        return undefined;
-      }
-      if (mutation.status !== 'pendingReview' && mutation.status !== 'private' && mutation.status !== 'publishing') {
-        conflict = 'Profile mutation is not publishable';
-        return undefined;
-      }
-      if (Number(mutation.revision) !== Number(expectedRevision)) {
-        conflict = 'REVISION_CONFLICT';
-        return undefined;
-      }
-      acceptedProfile = candidateProfile;
-      return { ...mutation, data: acceptedProfile, identityKeys, status: 'publishing', acceptedAt };
-    }, { applyLocally: false });
-  } catch (error) {
-    await releaseProfileIdentities(cardId, acquiredIdentityKeys).catch(() => {});
-    error.profileSaveStage = 'mutation-transition';
-    throw error;
-  }
-  if (!result.committed || !result.snapshot.val()) {
-    await releaseProfileIdentities(cardId, identityKeys.filter(key => !previousIdentityKeys.includes(key)));
-    const error = new Error(conflict);
-    error.profileSaveStage = 'mutation-transition';
-    throw error;
-  }
-  const mutation = result.snapshot.val();
-  // Finish all fallible index work before the single publication update. A
-  // publishing record is deliberately retryable after an interrupted attempt.
-  try {
-    await withProfileSaveStage(
-      'search-id-index',
-      () => syncProfileSearchIdIndex(cardId, acceptedProfile),
-    );
-    await withProfileSaveStage(
-      'search-key-index',
-      () => syncUserSearchKeyIndex(cardId, {}, acceptedProfile),
-    );
-  } catch (error) {
-    await restorePendingMutation().catch(() => {});
-    throw error;
-  }
-  const pendingOverlays = await getOverlaysForCard(cardId).catch(error => {
-    console.warn('[profileMutations] pending overlays unavailable', error);
-    return {};
+  const finishRetry = async record => withProfileSaveStage('matching-card-index', async () => {
+    const projection = await get(ref(database, `${PROFILE_NODES.matchingCards}/${cardId}`));
+    if (!projection.exists()) throw mutationError('PARTIAL_WRITE');
+    return record.data;
   });
-  // Once the canonical card is published, unresolved proposals are a private
-  // admin review queue. Keep their fields intact and mark only the existing
-  // editor nodes; non-admin profile screens ignore this marker.
-  const pendingOverlayVisibility = Object.keys(pendingOverlays).reduce((updates, editorUserId) => {
-    updates[`multiData/edits/${cardId}/${editorUserId}/adminOnly`] = true;
-    return updates;
-  }, {});
+  if (acceptsCandidate(pendingMutation)) return finishRetry(pendingMutation);
 
-  // Анкета лягає у власні вузли, а не в legacy `/users`. `/users` — вузол
-  // акаунтів, і його дзеркалять для мобільного застосунку; у картки, яку завела
-  // адміністраторка, акаунта немає, тож у `/users` вона лише вдавала б його.
-  // Веб же з legacy не читає взагалі: анкету збирає `readProfileFromNodes`, і
-  // до цієї правки опублікована чернетка не мала в нових вузлах жодного поля.
-  //
-  // Keep the critical atomic publication deliberately small. Optional review
-  // bookkeeping has stricter/legacy rules and must never prevent the profile
-  // nodes from being published together with its mutation.
-  const publishedNodes = buildProfileNodePatch(cardId, acceptedProfile);
-  // Анкета мусить існувати хоча б в одному вузлі: правило картки стрічки питає
-  // саме про це. Чернетка, у якій заповнене лише те, що живе в самій картці
-  // (імʼя, місто, дата народження), власних полів у вузлах не має — тоді вузол
-  // відкриває дата публікації, у тому ж вигляді, у якому її кладе `makeNewUser`.
+  const acceptedAt = Date.now();
+  const publicationAttemptId = push(mutationRef).key;
+  if (!publicationAttemptId) throw mutationError('WRITE_FAILED', { profileSaveStage: 'mutation-transition' });
+  let conflict = 'REVISION_CONFLICT';
+  let acceptedRetry;
+  const claimPublication = current => {
+    if (!current) {
+      // SDK може почати з порожнього кешу. Нехай порівняє null із сервером.
+      conflict = 'Profile mutation not found';
+      return null;
+    }
+    conflict = 'REVISION_CONFLICT';
+    if (acceptsCandidate(current)) {
+      acceptedRetry = current;
+      return undefined;
+    }
+    if (!areProposalValuesEqual(current, pendingMutation)
+      || Number(current.revision) !== Number(expectedRevision)
+      || hasActivePublication(current)
+      || !['pendingReview', 'private', 'publishing'].includes(current.status)) return undefined;
+
+    return { ...current, status: 'publishing', acceptedAt, publicationAttemptId, publicationActorUid: actorUid };
+  };
+  let mutation;
+  try {
+    const result = await withProfileSaveStage('mutation-transition', () => (
+      runTransaction(mutationRef, claimPublication, { applyLocally: false })
+    ));
+    if (result.committed) mutation = result.snapshot.val();
+  } catch (error) {
+    const latest = await readMutation().catch(() => null);
+    // Втрачена відповідь не створює другу спробу, якщо запис першої вже в базі.
+    if (latest?.status !== 'publishing' || latest.publicationAttemptId !== publicationAttemptId
+      || latest.publicationActorUid !== actorUid) throw error;
+    mutation = latest;
+  }
+  if (acceptedRetry) return finishRetry(acceptedRetry);
+  if (!mutation) throw mutationError(conflict, { profileSaveStage: 'mutation-transition' });
+
+  const restorePendingMutation = async () => {
+    const rollback = await runTransaction(mutationRef, current => {
+      if (!current) return null;
+      if (!areProposalValuesEqual(current, mutation)) return undefined;
+      return pendingMutation;
+    }, { applyLocally: false });
+    return rollback.committed && areProposalValuesEqual(rollback.snapshot.val(), pendingMutation);
+  };
+
+  // Правила завершення публікації ще раз звіряють мітку й відсутність
+  // канонічної анкети під цим ID в атомарному записі.
+  const publishedNodes = buildProfileNodePatch(cardId, candidateProfile);
   if (!Object.keys(publishedNodes).length) {
     publishedNodes[`profileTechnical/${cardId}/createdAt`] = new Date(acceptedAt)
       .toISOString()
       .split('T')[0];
   }
+
+  let identityKeys = [];
+  let acquiredIdentityKeys = [];
+  let pendingOverlays = {};
   try {
-    await withProfileSaveStage('publication-update', () => update(ref(database), {
-      ...publishedNodes,
-      [mutationPath]: { ...mutation, status: 'accepted' },
-    }));
+    await withProfileSaveStage('publication-update', () => ensureCanonicalProfileAbsent(cardId));
+    ({ keys: identityKeys, acquiredKeys: acquiredIdentityKeys } = await withProfileSaveStage(
+      'identity-claim',
+      () => claimProfileIdentities({ cardId, data: candidateProfile }),
+    ));
+    await withProfileSaveStage('search-id-index', () => syncProfileSearchIdIndex(cardId, candidateProfile));
+    await withProfileSaveStage('search-key-index', () => syncUserSearchKeyIndex(cardId, {}, candidateProfile));
+    pendingOverlays = await getOverlaysForCard(cardId).catch(error => {
+      console.warn('[profileMutations] pending overlays unavailable', error);
+      return {};
+    });
+
+    await withProfileSaveStage('publication-update', async () => {
+      await ensureCanonicalProfileAbsent(cardId);
+      await update(ref(database), {
+        ...publishedNodes,
+        [mutationPath]: { ...mutation, data: candidateProfile, identityKeys, status: 'accepted' },
+      });
+    });
   } catch (error) {
-    error.profileSaveTargets = ['profile-nodes', 'mutation-status'];
-    error.profileSaveRecovered = Boolean((await restorePendingMutation().catch(() => null))?.committed);
-    throw error;
+    if (error.profileSaveStage === 'publication-update') {
+      error.profileSaveTargets = ['profile-nodes', 'mutation-status'];
+    }
+    // Відповідь могла загубитися після атомарного запису. Перевіряємо саме
+    // свій результат, не відкочуємо опубліковану картку й не пишемо її ще раз.
+    const latest = error.profileSaveStage === 'publication-update' ? await readMutation().catch(() => null) : null;
+    if (!(latest?.publicationAttemptId === publicationAttemptId && acceptsCandidate(latest))) {
+      error.profileSaveRecovered = await restorePendingMutation().catch(() => false);
+      if (error.profileSaveRecovered) await releaseProfileIdentities(cardId, acquiredIdentityKeys).catch(() => {});
+      throw error;
+    }
   }
 
-  // Картка стрічки будується після тіла, а не разом з рештою індексів: правило
-  // `matchingCards/$uid` вимагає, щоб анкета вже десь існувала
-  // (`root.child('profileDetails').child($uid).exists()` і так далі). Поки
-  // проєкція йшла перед публікацією, вона на новій анкеті мовчки відпадала за
-  // правами — `syncMatchingCardIndex` помилок не кидає, — і щойно опублікована
-  // картка не з'являлась ані в стрічці, ані в пошуку за частиною id.
-  await withProfileSaveStage(
-    'matching-card-index',
-    () => syncMatchingCardIndex(cardId, acceptedProfile, { bumpRevision: true }),
-  );
+  // Правило проєкції перевіряє наявність тіла, тож додаємо її після нього.
+  await withProfileSaveStage('matching-card-index', async () => {
+    const projection = await syncMatchingCardIndex(cardId, candidateProfile, { bumpRevision: true, onlyIfMissing: true });
+    if (projection === null) throw mutationError('PARTIAL_WRITE');
+  });
 
-  // Cleanup is best-effort: legacy overlays and child-only history rules must
-  // not roll back a successfully published canonical card.
+  // Нерозглянуті шари лишаються в черзі адмінів після публікації.
+  const pendingOverlayVisibility = Object.fromEntries(Object.keys(pendingOverlays).map(editorUserId => [
+    `multiData/edits/${cardId}/${editorUserId}/adminOnly`, true,
+  ]));
   if (Object.keys(pendingOverlayVisibility).length) {
     update(ref(database), pendingOverlayVisibility).catch(error => {
       console.warn('[profileMutations] overlay visibility cleanup unavailable', error);
@@ -767,8 +788,8 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
   remove(ref(database, `${PROFILE_MUTATION_HISTORY_ROOT}/${cardId}`)).catch(error => {
     console.warn('[profileMutations] revision history cleanup unavailable', error);
   });
-  releaseProfileIdentities(cardId, previousIdentityKeys.filter(key => !identityKeys.includes(key))).catch(() => {});
-  return acceptedProfile;
+  releaseProfileIdentities(cardId, (pendingMutation.identityKeys || []).filter(key => !identityKeys.includes(key))).catch(() => {});
+  return candidateProfile;
 };
 
 export const rejectCreateProfileMutation = async ({ cardId, creatorUid, expectedRevision }) => {

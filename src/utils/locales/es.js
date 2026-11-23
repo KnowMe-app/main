@@ -743,6 +743,7 @@ const BY_UK = {
   '{field} уже є в іншій картці': '{field} ya está en otro perfil',
   'Збережено, але схоже на дубль': 'Guardado, pero parece un duplicado',
   'Не вдалося зберегти профіль': 'No se pudo guardar el perfil',
+  'Профіль уже змінено. Правки збережено на цьому пристрої.': 'El perfil ya se ha modificado. Tus cambios se han guardado en este dispositivo.',
   'Чернетку повернено в режим редагування — можна повторити.': 'El borrador vuelve a ser editable: puede intentarlo de nuevo.',
   'Не вдалося автоматично розблокувати чернетку. Оновіть сторінку.': 'No se pudo desbloquear el borrador automáticamente. Recargue la página.',
   'Перевірте rules для: {targets}.': 'Revise las reglas de: {targets}.',

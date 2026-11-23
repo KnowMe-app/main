@@ -37,6 +37,8 @@ import {
 } from 'utils/multiAccountEdits';
 import { PROFILE_BACKEND_REFRESH_EVENT } from 'utils/profileBackendRefresh';
 import { loadProfileMutationHistory } from 'utils/profileMutations';
+import { approveOverlayValue } from 'utils/profileOverlayReview';
+import { areProposalValuesEqual } from 'utils/profileProposals';
 import { SCREEN_ACCESS_OPTIONS, encodeScreenAccess, isAdminUid, parseScreenAccess } from 'utils/accessLevel';
 import {
   PROFILE_DRAFT_SAVED_EVENT,
@@ -1187,7 +1189,10 @@ export const ProfileForm = ({
     const result = {};
     snapshots.forEach(item => {
       Object.entries(buildOverlayFieldEntries(item.rawValue) || {}).forEach(([fieldName, entries]) => {
-        result[fieldName] = [...(result[fieldName] || []), ...(entries || [])];
+        result[fieldName] = [
+          ...(result[fieldName] || []),
+          ...(entries || []).map(entry => ({ ...entry, expectedCurrent: item.rawValue[entry.editorUserId] })),
+        ];
       });
     });
 
@@ -1291,26 +1296,38 @@ export const ProfileForm = ({
     if (!fieldName || !entry?.editorUserId || !state?.userId) return;
 
     try {
-      // Попередня версія в шарі вже не лежить — рішення про неї підчищає
-      // журнал (і `searchId` при відхиленні), а не шар.
-      const settle = entry.superseded ? settleSupersededOverlayValue : settleOverlayValueForCard;
-      const result = await settle({
+      if (!entry.superseded && !entry.expectedCurrent) {
+        throw Object.assign(new Error('REVISION_CONFLICT'), { code: 'REVISION_CONFLICT' });
+      }
+      const decision = {
         editorUserId: entry.editorUserId,
         cardUserId: state.userId,
         fieldName,
         value: entry.value,
         acceptedValue,
         action,
-      });
+        expectedCurrent: entry.expectedCurrent,
+      };
+      // Попередня версія вже живе лише в журналі. Поточне доповнення
+      // приймається тим самим писачем, що й у черзі доповнень.
+      let result;
+      if (entry.superseded) result = await settleSupersededOverlayValue(decision);
+      else if (action === 'accept') result = await approveOverlayValue(decision);
+      else result = await settleOverlayValueForCard(decision);
       if (!result) throw new Error('Overlay value was not settled');
       // Після запису перечитуємо шари картки: доти список пропозицій жив із
       // пропса, який лишався тим самим, і прибраний рядок повертався на екран
       // з наступним перемальовуванням.
       if (typeof refreshOverlayForEditor === 'function') await refreshOverlayForEditor();
       await reconcileOverlayEntriesFromBackend(state.userId);
-      return true;
-    } catch {
-      toast.error(action === 'accept' ? 'Не вдалося прийняти пропозицію' : 'Не вдалося видалити пропозицію');
+      return result;
+    } catch (error) {
+      if (error?.code === 'REVISION_CONFLICT') {
+        toast.error('Анкету або пропозицію вже змінено. Перевірте оновлені дані.');
+        await reconcileOverlayEntriesFromBackend(state.userId).catch(() => {});
+      } else {
+        toast.error(action === 'accept' ? 'Не вдалося прийняти пропозицію' : 'Не вдалося видалити пропозицію');
+      }
       return false;
     }
   }, [reconcileOverlayEntriesFromBackend, refreshOverlayForEditor, state?.userId]);
@@ -1326,27 +1343,7 @@ export const ProfileForm = ({
     return queuedSettlement;
   }, [settleOverlayEntryInBackend]);
 
-  const removeOverlayValueFromState = useCallback((fieldName, entryValue) => {
-    if (!fieldName) return;
-
-    const currentValue = state?.[fieldName];
-
-    if (Array.isArray(currentValue)) {
-      const entryIndex = currentValue.findIndex(value => value === entryValue);
-      if (entryIndex !== -1) {
-        handleClear(fieldName, entryIndex);
-      }
-      return;
-    }
-
-    if (currentValue === entryValue || (typeof currentValue === 'string' && String(currentValue).trim() === String(entryValue).trim())) {
-      handleDelKeyValue(fieldName);
-    }
-  }, [handleClear, handleDelKeyValue, state]);
-
   const handleOverlayDismiss = async (fieldName, entry) => {
-    // Rejecting a deletion keeps/restores the canonical value; rejecting an
-    // addition removes the proposed value from the form.
     // Рядок ховається до мережевого round trip. Сам запис іде в послідовну
     // чергу, а при відмові рядок повертається без перезавантаження сторінки.
     dismissOverlayEntry(fieldName, entry);
@@ -1360,10 +1357,7 @@ export const ProfileForm = ({
         // Only restore optimistically when even the authoritative read failed.
         restoreOverlayEntry(fieldName, entry);
       }
-      return;
     }
-    if (entry?.isDeleted) adoptOverlayValue(fieldName, entry?.value);
-    else removeOverlayValueFromState(fieldName, entry?.value);
   };
 
   const getOverlayEntryDraftKey = (fieldName, entry) => `${fieldName}::${getOverlayEntrySignature(entry)}`;
@@ -1422,10 +1416,19 @@ export const ProfileForm = ({
       dismissOverlayEntry(fieldName, entry);
       return;
     }
+    const displayedId = state?.userId;
+    const displayedValue = state?.[fieldName];
     const settled = await enqueueOverlaySettlement(fieldName, entry, 'accept', acceptedValue);
     if (!settled) return;
-    if (entry?.isDeleted) removeOverlayValueFromState(fieldName, entry?.value);
-    else adoptOverlayValue(fieldName, acceptedValue);
+    setState(previous => {
+      if (previous?.userId !== displayedId || !areProposalValuesEqual(previous?.[fieldName], displayedValue)) {
+        return previous;
+      }
+      const next = { ...previous };
+      if (settled.value === null) delete next[fieldName];
+      else next[fieldName] = settled.value;
+      return next;
+    }, { source: 'overlayReview', reason: 'accepted-overlay' });
     dismissOverlayEntry(fieldName, entry);
   };
 
@@ -1451,18 +1454,6 @@ export const ProfileForm = ({
     }
 
     return { ...prevState, [fieldName]: [existing, normalizedValue] };
-  };
-
-  const adoptOverlayValue = (fieldName, value) => {
-    if (!fieldName) return;
-
-    setState(prevState => {
-      const mergedState = mergeOverlayValueIntoState(prevState, fieldName, value);
-      if (mergedState === prevState) return prevState;
-
-      submitWithNormalization(mergedState, 'overwrite');
-      return mergedState;
-    });
   };
 
   const collectEditorOverlayReplacements = useCallback(async () => {

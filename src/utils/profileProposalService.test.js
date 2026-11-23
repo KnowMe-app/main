@@ -243,10 +243,15 @@ describe('update draft targets', () => {
     await expect(service.getDraft(locate(proposal))).resolves.toEqual(stored);
   });
 
-  it('saves proposals from two authors concurrently on the same target', async () => {
+  it.each([
+    ['the same field', { city: 'Odesa' }, 'city'],
+    ['different fields', { name: 'Olena' }, 'name'],
+  ])('saves two authors’ proposals for %s on the same target', async (_description, edits, secondField) => {
     const { service, serviceAs } = setup();
     const first = makeProposal('update');
-    const second = makeProposal('update', { createdBy: otherAuthor, city: 'Odesa' });
+    const second = buildUpdateProposal({
+      id: `proposal-${otherAuthor}`, createdBy: otherAuthor, at: 100, targetCardId: cardId, canonical, edits,
+    });
     const [firstSaved, secondSaved] = await Promise.all([
       service.createDraft(first),
       serviceAs(otherAuthor).createDraft(second),
@@ -254,6 +259,8 @@ describe('update draft targets', () => {
 
     expect(firstSaved).toMatchObject({ targetCardId: cardId, createdBy: author, revision: 1 });
     expect(secondSaved).toMatchObject({ targetCardId: cardId, createdBy: otherAuthor, revision: 1 });
+    expect(Object.keys(firstSaved.changes)).toEqual(['city']);
+    expect(Object.keys(secondSaved.changes)).toEqual([secondField]);
     expect(firstSaved.id).not.toBe(secondSaved.id);
     await expect(service.listDrafts()).resolves.toEqual([firstSaved]);
     await expect(serviceAs(otherAuthor).listDrafts()).resolves.toEqual([secondSaved]);

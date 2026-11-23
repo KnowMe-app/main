@@ -93,7 +93,7 @@ const cleanupOverlayIfOnlyTechnicalFields = async ({ editorUserId, cardUserId })
   }
 };
 
-const normalizeEditorNode = (overlay, cardUserId, editorUserId) => {
+const normalizeEditorNode = (overlay, cardUserId, editorUserId, includeRecord = false) => {
   if (!isPlainObject(overlay) || !isPlainObject(overlay.fields)) return null;
 
   return {
@@ -102,6 +102,7 @@ const normalizeEditorNode = (overlay, cardUserId, editorUserId) => {
     cardUserId: overlay.cardUserId || cardUserId,
     editorUserId: overlay.editorUserId || editorUserId,
     ...(overlay.adminOnly === true ? { adminOnly: true } : {}),
+    ...(includeRecord && { expectedCurrent: overlay }),
   };
 };
 
@@ -220,6 +221,7 @@ export const saveOverlayForUserCard = async ({
   }, {});
 
   const usesRevisionCheck = expectedCurrent !== undefined;
+  if (expectedCurrent?.reviewClaim) throw overlayError('REVISION_CONFLICT');
   if (shouldDropOverlayByFieldNames(Object.keys(sanitized))) {
     if (usesRevisionCheck) throw overlayError('INVALID_DRAFT');
     await remove(cardRef);
@@ -464,6 +466,28 @@ export const readOverlayRecord = async ({ editorUserId, cardUserId }) => {
   return snapshot.exists() ? snapshot.val() : null;
 };
 
+export const claimOverlayValueForReview = async ({
+  editorUserId, cardUserId, fieldName, value, acceptedValue, expectedCurrent,
+}) => {
+  const claim = { fieldName, value, ...(acceptedValue !== undefined && { acceptedValue }) };
+  if (!expectedCurrent || (expectedCurrent.reviewClaim && !areProposalValuesEqual(expectedCurrent.reviewClaim, claim))) {
+    throw overlayError('REVISION_CONFLICT');
+  }
+  return replaceOverlayIfUnchanged(
+    ref2(database, `${EDITS_ROOT}/${cardUserId}/${editorUserId}`),
+    expectedCurrent,
+    { ...expectedCurrent, reviewClaim: claim },
+  );
+};
+
+export const releaseOverlayValueReview = ({ editorUserId, cardUserId, claimed }) => {
+  const restored = { ...claimed };
+  delete restored.reviewClaim;
+  return replaceOverlayIfUnchanged(
+    ref2(database, `${EDITS_ROOT}/${cardUserId}/${editorUserId}`), claimed, restored,
+  );
+};
+
 export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
   if (!cardUserId) return null;
 
@@ -496,7 +520,9 @@ export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
  * стирало дописане раніше. Свій шар (`edits/{картка}/{читач}`) правила
  * відкривають кожному, тож на відмові читаємо саме його.
  */
-export const getOverlaysForCard = async (cardUserId, { includeAdminOnly = true, editorUserId = '' } = {}) => {
+export const getOverlaysForCard = async (
+  cardUserId, { includeAdminOnly = true, editorUserId = '', includeRecords = false } = {},
+) => {
   if (!cardUserId) return {};
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return {};
@@ -507,7 +533,7 @@ export const getOverlaysForCard = async (cardUserId, { includeAdminOnly = true, 
   } catch (error) {
     if (!editorUserId) throw error;
     const record = await readOverlayRecord({ editorUserId, cardUserId: normalizedCardId });
-    const own = normalizeEditorNode(record, normalizedCardId, editorUserId);
+    const own = normalizeEditorNode(record, normalizedCardId, editorUserId, includeRecords);
     if (!own || (!includeAdminOnly && own.adminOnly)) return {};
     return { [editorUserId]: own };
   }
@@ -516,7 +542,7 @@ export const getOverlaysForCard = async (cardUserId, { includeAdminOnly = true, 
   const result = {};
   const overlays = snapshot.val();
   Object.entries(overlays).forEach(([editorUserId, overlay]) => {
-    const normalized = normalizeEditorNode(overlay, normalizedCardId, editorUserId);
+    const normalized = normalizeEditorNode(overlay, normalizedCardId, editorUserId, includeRecords);
     if (!normalized) return;
     if (!includeAdminOnly && normalized.adminOnly) return;
     result[editorUserId] = normalized;
@@ -784,6 +810,7 @@ export const removeOverlayForUserCard = async ({ editorUserId, cardUserId, expec
 
   const overlayRef = ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`);
   const usesRevisionCheck = expectedCurrent !== undefined;
+  if (expectedCurrent?.reviewClaim) throw overlayError('REVISION_CONFLICT');
   if (usesRevisionCheck) await replaceOverlayIfUnchanged(overlayRef, expectedCurrent, null);
   else await remove(overlayRef);
 
@@ -908,21 +935,33 @@ export const settleOverlayFieldValue = async ({
   remainingChange,
   historyAction = 'discard',
   purgeHistory = false,
+  expectedCurrent,
+  acceptedOriginal,
 }) => {
   if (!editorUserId || !cardUserId || !fieldName) return;
 
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return;
 
-  const fieldsPath = `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}/fields`;
-
-  if (hasOverlayChangeValues(remainingChange)) {
-    await update(ref2(database, fieldsPath), { [fieldName]: remainingChange });
+  const editorPath = `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`;
+  if (expectedCurrent !== undefined) {
+    if (!expectedCurrent || (expectedCurrent.reviewClaim && historyAction !== 'accept')) {
+      throw overlayError('REVISION_CONFLICT');
+    }
+    const next = buildSettledOverlay({
+      overlay: expectedCurrent, fieldName, remainingChange, acceptedOriginal, guarded: true,
+    });
+    await replaceOverlayIfUnchanged(ref2(database, editorPath), expectedCurrent, next);
+    if (!next) await forgetOwnOverlayCard({ editorUserId, cardUserId: normalizedCardId });
   } else {
-    await remove(ref2(database, `${fieldsPath}/${fieldName}`));
+    const fieldsPath = `${editorPath}/fields`;
+    if (hasOverlayChangeValues(remainingChange)) {
+      await update(ref2(database, fieldsPath), { [fieldName]: remainingChange });
+    } else {
+      await remove(ref2(database, `${fieldsPath}/${fieldName}`));
+    }
+    await cleanupOverlayIfOnlyTechnicalFields({ editorUserId, cardUserId: normalizedCardId });
   }
-
-  await cleanupOverlayIfOnlyTechnicalFields({ editorUserId, cardUserId: normalizedCardId });
 
   if (purgeHistory) {
     await purgeOverlayHistoryEntries({
@@ -930,6 +969,7 @@ export const settleOverlayFieldValue = async ({
       editorUserId,
       fieldName,
       values: changeValueList(settledChange),
+      throwOnError: expectedCurrent !== undefined,
     });
     return;
   }
@@ -1074,6 +1114,28 @@ const isValueStillClaimedByCard = ({ canonical, overlaysByEditor, fieldName, val
   });
 };
 
+const buildSettledOverlay = ({ overlay, fieldName, remainingChange, acceptedOriginal, guarded }) => {
+  const fields = { ...(overlay?.fields || {}) };
+  if (hasOverlayChangeValues(remainingChange)) fields[fieldName] = remainingChange;
+  else delete fields[fieldName];
+  if (shouldDropOverlayByFieldNames(Object.keys(fields))) return null;
+
+  const next = { ...overlay, fields };
+  if (guarded) {
+    delete next.reviewClaim;
+    if (Number.isSafeInteger(next.proposal?.revision)) {
+      next.proposal = { ...next.proposal, revision: next.proposal.revision + 1 };
+      if (acceptedOriginal) {
+        const originals = JSON.parse(next.proposal.originalValues || '{}');
+        if (hasOverlayChangeValues(remainingChange)) originals[fieldName] = acceptedOriginal;
+        else delete originals[fieldName];
+        next.proposal.originalValues = JSON.stringify(originals);
+      }
+    }
+  }
+  return next;
+};
+
 /**
  * Рішення адміна про **одне** значення чужого шару.
  *
@@ -1090,6 +1152,8 @@ export const settleOverlayValueForCard = async ({
   value,
   acceptedValue,
   action = 'discard',
+  expectedCurrent,
+  acceptedOriginal,
 }) => {
   if (!editorUserId || !cardUserId || !fieldName) return null;
 
@@ -1105,34 +1169,46 @@ export const settleOverlayValueForCard = async ({
   // read yet, so that first value is `null`; returning `undefined` below then
   // aborts the transaction before Firebase ever supplies the server value.
   // Prime the cache and fail explicitly when the proposal really disappeared.
-  const editorSnapshot = await get(editorRef);
-  if (!editorSnapshot?.exists?.()) return null;
-  const prefetchedOverlay = editorSnapshot.val();
+  let prefetchedOverlay;
+  if (expectedCurrent === undefined) {
+    const editorSnapshot = await get(editorRef);
+    if (!editorSnapshot?.exists?.()) return null;
+    prefetchedOverlay = editorSnapshot.val();
+  }
 
   let settledChange = null;
   let remainingChange = null;
   let removedEditorOverlay = false;
-  const transaction = await runTransaction(editorRef, currentOverlay => {
-    // `get()` normally primes the cache, but using its value as the first
-    // transaction baseline also makes the behavior explicit and testable.
-    // If the server changed meanwhile, RTDB retries this callback with the
-    // newer value before committing.
-    const effectiveOverlay = currentOverlay || prefetchedOverlay;
+  let remainingOverlay;
+  const removeSelectedValue = effectiveOverlay => {
+    if (effectiveOverlay?.reviewClaim && (expectedCurrent === undefined || action !== 'accept')) return undefined;
     const currentChange = normalizeOverlayFields(effectiveOverlay?.fields)[fieldName];
     const split = splitOverlayChangeByValue(currentChange, value);
     settledChange = split.settledChange;
     remainingChange = split.remainingChange;
     if (!settledChange) return undefined;
 
-    const nextFields = { ...(effectiveOverlay?.fields || {}) };
-    if (hasOverlayChangeValues(remainingChange)) nextFields[fieldName] = remainingChange;
-    else delete nextFields[fieldName];
-
-    removedEditorOverlay = shouldDropOverlayByFieldNames(Object.keys(nextFields));
-    if (removedEditorOverlay) return null;
-    return { ...effectiveOverlay, fields: nextFields };
-  });
-  if (!transaction.committed || !settledChange) return null;
+    const next = buildSettledOverlay({
+      overlay: effectiveOverlay, fieldName, remainingChange, acceptedOriginal,
+      guarded: expectedCurrent !== undefined,
+    });
+    removedEditorOverlay = next === null;
+    return next;
+  };
+  if (expectedCurrent === undefined) {
+    const transaction = await runTransaction(editorRef, currentOverlay => (
+      removeSelectedValue(currentOverlay || prefetchedOverlay)
+    ));
+    if (!transaction.committed || !settledChange) return null;
+  } else {
+    const next = removeSelectedValue(expectedCurrent);
+    if (next === undefined) return null;
+    remainingOverlay = await replaceOverlayIfUnchanged(editorRef, expectedCurrent, next);
+  }
+  const result = {
+    settledChange, remainingChange,
+    ...(expectedCurrent !== undefined && { remainingOverlay }),
+  };
 
   if (removedEditorOverlay) await forgetOwnOverlayCard({ editorUserId, cardUserId: normalizedCardId });
   // Розсуджене значення не лишає по собі нічого: ні рядка «прийнято», ні
@@ -1159,13 +1235,19 @@ export const settleOverlayValueForCard = async ({
       // The overlay claimed the submitted value. If an admin corrects it in
       // the review input, transfer that claim instead of leaving the stale
       // identifier searchable for this card.
-      await updateSearchId(fieldName, normalizedOriginalValue, normalizedCardId, 'remove');
+      const originalStillClaimed = expectedCurrent !== undefined && isValueStillClaimedByCard({
+        canonical: await getCanonicalCard(normalizedCardId),
+        overlaysByEditor: await getOverlaysForCard(normalizedCardId),
+        fieldName,
+        value: normalizedOriginalValue,
+      });
+      if (!originalStillClaimed) await updateSearchId(fieldName, normalizedOriginalValue, normalizedCardId, 'remove');
       await updateSearchId(fieldName, normalizedAcceptedValue, normalizedCardId, 'add');
     }
-    return { settledChange, remainingChange };
+    return result;
   }
 
-  if (!SEARCH_ID_INDEXED_FIELDS.has(fieldName)) return { settledChange, remainingChange };
+  if (!SEARCH_ID_INDEXED_FIELDS.has(fieldName)) return result;
 
   let canonical;
   try {
@@ -1175,7 +1257,7 @@ export const settleOverlayValueForCard = async ({
     // claims the key. Keep the append-only index rather than destructively
     // guessing after a transient/permission failure.
     console.warn('[multiAccountEdits] canonical card unavailable during searchId cleanup', error);
-    return { settledChange, remainingChange };
+    return result;
   }
   const overlaysByEditor = await getOverlaysForCard(normalizedCardId);
   const stillClaimed = isValueStillClaimedByCard({
@@ -1183,11 +1265,11 @@ export const settleOverlayValueForCard = async ({
     overlaysByEditor,
     fieldName,
     value,
-    editorUserId,
+    editorUserId: expectedCurrent === undefined ? editorUserId : '',
   });
   if (!stillClaimed) await updateSearchId(fieldName, value, normalizedCardId, 'remove');
 
-  return { settledChange, remainingChange };
+  return result;
 };
 
 /**
@@ -1604,7 +1686,7 @@ export const readOverlayRecordsForReview = async () => {
   return snapshot.exists() ? snapshot.val() || {} : {};
 };
 
-export const listPendingOverlayCards = async () => {
+export const listPendingOverlayCards = async ({ includeRecords = false } = {}) => {
   const byCard = await readOverlayRecordsForReview();
 
   return Object.entries(byCard)
@@ -1626,7 +1708,10 @@ export const listPendingOverlayCards = async () => {
         0,
       );
 
-      return { cardUserId, overlaysByEditor, editorIds, fieldNames, updatedAt };
+      return {
+        cardUserId, overlaysByEditor, editorIds, fieldNames, updatedAt,
+        ...(includeRecords && { recordsByEditor: editors }),
+      };
     })
     .filter(Boolean)
     .sort((a, b) => b.updatedAt - a.updatedAt || a.cardUserId.localeCompare(b.cardUserId));

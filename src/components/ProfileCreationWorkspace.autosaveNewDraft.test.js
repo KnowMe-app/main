@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom';
+import { profileProposalService } from 'utils/profileProposalRepository';
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
@@ -9,7 +10,6 @@ import {
   loadOwnProfileMutations,
   loadSharedProfileMutations,
   reserveProfileCardId,
-  saveCreateProfileMutation,
 } from 'utils/profileMutations';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
@@ -18,6 +18,10 @@ import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 // a brand new draft that nobody ever blurred a field on was silently lost,
 // never reaching profileMutations at all. Creating the draft must persist it
 // immediately instead of waiting for the first field blur.
+jest.mock('utils/profileProposalRepository', () => ({
+  profileProposalService: { getDraft: jest.fn(), createDraft: jest.fn(), saveDraft: jest.fn(), deleteDraft: jest.fn() },
+}));
+
 jest.mock('firebase/auth', () => ({
   onAuthStateChanged: (_auth, callback) => {
     callback({ uid: 'owner-1' });
@@ -116,16 +120,8 @@ beforeEach(() => {
   loadAllCreateProfileMutations.mockResolvedValue([]);
   findMatchingProfileMutations.mockReturnValue([]);
   reserveProfileCardId.mockReturnValue('new-card-1');
-  saveCreateProfileMutation.mockImplementation(async ({ cardId, data }) => ({
-    cardId,
-    operation: 'create',
-    data,
-    createdBy: 'owner-1',
-    createdAt: 1,
-    updatedAt: 1,
-    revision: 1,
-    status: 'pendingReview',
-  }));
+  localStorage.clear();
+  profileProposalService.createDraft.mockImplementation(async proposal => proposal);
 });
 
 // Ці перевірки описують український бік екрана — мову задаємо явно.
@@ -137,10 +133,10 @@ it('persists a brand new draft immediately, without waiting for a field blur', a
   fireEvent.click(await screen.findByRole('button', { name: 'Шукати (тест)' }));
   fireEvent.click(await screen.findByRole('button', { name: /Створити/ }));
 
-  await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalledWith(expect.objectContaining({
-    cardId: 'new-card-1',
-    creatorUid: 'owner-1',
-    actorUid: 'owner-1',
-    expectedRevision: 0,
+  await waitFor(() => expect(profileProposalService.createDraft).toHaveBeenCalledWith(expect.objectContaining({
+    operation: 'create',
+    reservedCardId: 'new-card-1',
+    createdBy: 'owner-1',
+    revision: 1,
   })));
 });

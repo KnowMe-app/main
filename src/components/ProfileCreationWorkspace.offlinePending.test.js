@@ -1,11 +1,14 @@
 import '@testing-library/jest-dom';
+import { profileProposalService } from 'utils/profileProposalRepository';
 import React from 'react';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import toast from 'react-hot-toast';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import { fetchUserById, fetchUsersByIds } from './config';
 import { getOverlayHistoryForCard, getOverlaysForCard } from 'utils/multiAccountEdits';
-import { loadAllCreateProfileMutations, loadOwnProfileMutations, saveCreateProfileMutation } from 'utils/profileMutations';
+import { acceptCreateProfileMutation, loadAllCreateProfileMutations, loadOwnProfileMutations } from 'utils/profileMutations';
+import { createEditorSnapshot, proposalEditorKey } from 'utils/profileProposalEditor';
 import { readCardFormPending, rememberCardFormPending } from 'utils/cardFormPendingEdits';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 import { renderWithNavigationSlot } from '../testUtils/renderWithNavigationSlot';
@@ -13,6 +16,15 @@ import { renderWithNavigationSlot } from '../testUtils/renderWithNavigationSlot'
 // Без звʼязку запис форми висить у памʼяті вкладки, і закрита вкладка губила
 // набране (`utils/cardFormPendingEdits`, 13.11). Каркас — той самий, що в
 // `closeRefresh`: адмін відкриває чернетку з черги.
+jest.mock('utils/profileProposalRepository', () => ({
+  profileProposalService: { getDraft: jest.fn(), createDraft: jest.fn(), saveDraft: jest.fn(), deleteDraft: jest.fn() },
+}));
+
+jest.mock('react-hot-toast', () => ({
+  __esModule: true,
+  default: Object.assign(jest.fn(), { error: jest.fn(), success: jest.fn() }),
+}));
+
 jest.mock('firebase/auth', () => ({
   onAuthStateChanged: (_auth, callback) => {
     callback({ uid: 'admin-1' });
@@ -70,8 +82,6 @@ const originalDraft = {
   data: { userId: 'card-1', name: "Ім'я6" },
 };
 
-const editedDraft = { ...originalDraft, revision: 4, data: { userId: 'card-1', name: "Ім'я9" } };
-
 jest.mock('utils/profileMutations', () => ({
   acceptCreateProfileMutation: jest.fn(),
   getEffectiveProfile: ({ mutation }) => mutation.data,
@@ -118,33 +128,152 @@ beforeEach(() => {
   getOverlayHistoryForCard.mockResolvedValue([]);
   getOverlaysForCard.mockResolvedValue({});
   loadAllCreateProfileMutations.mockResolvedValue([originalDraft]);
-  saveCreateProfileMutation.mockReset();
+  profileProposalService.saveDraft.mockImplementation(async (proposal, { expected }) => ({ ...proposal, revision: expected.revision + 1 }));
 });
 
 applyUkrainianInterface();
 
-it('незбережене з минулого разу лягає поверх чернетки й дописується', async () => {
-  rememberCardFormPending('admin-1', 'draft:card-1', { userId: 'card-1', name: 'Офлайн' });
-  saveCreateProfileMutation.mockImplementation(async ({ data }) => ({ ...editedDraft, data }));
+const target = 'draft:card-1';
+const expected = createEditorSnapshot(originalDraft);
+const targetKey = proposalEditorKey({ operation: 'create', cardId: 'card-1', createdBy: 'author-1' });
 
+const openEditor = async () => {
   renderWithNavigationSlot(<ProfileCreationWorkspace />);
   fireEvent.click(await screen.findByRole('button', { name: /Відкрити профіль/ }));
+};
 
-  await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
-  expect(saveCreateProfileMutation.mock.calls[0][0].data.name).toBe('Офлайн');
+const typeAndBlur = (input, value) => {
+  fireEvent.change(input, { target: { value } });
+  fireEvent.blur(input);
+};
+
+it('replays a pending edit against the same proposal and field baseline', async () => {
+  rememberCardFormPending('admin-1', target, { userId: 'card-1', name: 'Офлайн' }, {
+    expected, targetKey, basis: originalDraft.data,
+  });
+
+  await openEditor();
   expect(await screen.findByDisplayValue('Офлайн')).toBeInTheDocument();
-  await waitFor(() => expect(readCardFormPending('admin-1', 'draft:card-1')).toBeNull());
+  await waitFor(() => expect(profileProposalService.saveDraft).toHaveBeenCalledWith(
+    expect.objectContaining({ data: { userId: 'card-1', name: 'Офлайн' } }), { expected },
+  ));
+  await waitFor(() => expect(readCardFormPending('admin-1', target)).toBeNull());
 });
 
-it('поки запис висить без звʼязку, набране лежить на пристрої', async () => {
-  saveCreateProfileMutation.mockImplementation(() => new Promise(() => {}));
+it.each([
+  ['an older revision', { expected: { ...expected, revision: 2 }, targetKey, basis: originalDraft.data }],
+  ['a pre-upgrade snapshot', undefined],
+])('does not replay %s against the latest proposal', async (_reason, metadata) => {
+  rememberCardFormPending('admin-1', target, { userId: 'card-1', name: 'Офлайн' }, metadata);
 
-  renderWithNavigationSlot(<ProfileCreationWorkspace />);
-  fireEvent.click(await screen.findByRole('button', { name: /Відкрити профіль/ }));
+  await openEditor();
+  expect(await screen.findByDisplayValue("Ім'я6")).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByTestId('draft-autosave')).toHaveTextContent(/Профіль уже змінено/));
+  expect(profileProposalService.saveDraft).not.toHaveBeenCalled();
+  expect(readCardFormPending('admin-1', target)?.draft?.name).toBe('Офлайн');
+});
+
+it('keeps typed text on the device before blur and while a save waits for the network', async () => {
+  profileProposalService.saveDraft.mockImplementation(() => new Promise(() => {}));
+
+  await openEditor();
   const nameInput = await screen.findByDisplayValue("Ім'я6");
   fireEvent.change(nameInput, { target: { value: 'Без звʼязку' } });
+  expect(profileProposalService.saveDraft).not.toHaveBeenCalled();
+  expect(readCardFormPending('admin-1', target)).toMatchObject({
+    draft: { name: ['Без звʼязку'] }, needsBlur: true, expected,
+  });
   fireEvent.blur(nameInput);
 
-  await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
-  expect(readCardFormPending('admin-1', 'draft:card-1')?.draft?.name).toEqual(['Без звʼязку']);
+  await waitFor(() => expect(profileProposalService.saveDraft).toHaveBeenCalled());
+  expect(readCardFormPending('admin-1', target)).toMatchObject({ draft: { name: ['Без звʼязку'] }, expected });
+  expect(readCardFormPending('admin-1', target)).not.toHaveProperty('needsBlur');
+});
+
+it('restores unblurred text without sending an unnormalized save', async () => {
+  rememberCardFormPending('admin-1', target, { userId: 'card-1', name: ['Ще набираю'] }, {
+    expected, targetKey, basis: originalDraft.data, needsBlur: true,
+  });
+
+  await openEditor();
+  const input = await screen.findByDisplayValue('Ще набираю');
+  expect(profileProposalService.saveDraft).not.toHaveBeenCalled();
+
+  fireEvent.blur(input);
+  await waitFor(() => expect(profileProposalService.saveDraft).toHaveBeenCalledWith(
+    expect.objectContaining({ data: { userId: 'card-1', name: ['Ще набираю'] } }), { expected },
+  ));
+  await waitFor(() => expect(readCardFormPending('admin-1', target)).toBeNull());
+});
+
+it('preserves a newer pending edit until it commits and saves it against the preceding result', async () => {
+  let finishFirst;
+  let finishSecond;
+  profileProposalService.saveDraft
+    .mockImplementationOnce(proposal => new Promise(resolve => {
+      finishFirst = () => resolve({ ...proposal, revision: 4 });
+    }))
+    .mockImplementationOnce(proposal => new Promise(resolve => {
+      finishSecond = () => resolve({ ...proposal, revision: 5 });
+    }));
+
+  await openEditor();
+  const input = await screen.findByDisplayValue("Ім'я6");
+  typeAndBlur(input, 'Перша зміна');
+  await waitFor(() => expect(profileProposalService.saveDraft).toHaveBeenCalledTimes(1));
+  typeAndBlur(input, 'Друга зміна');
+  expect(readCardFormPending('admin-1', target)?.draft?.name).toEqual(['Друга зміна']);
+
+  await act(async () => finishFirst());
+  await waitFor(() => expect(profileProposalService.saveDraft).toHaveBeenCalledTimes(2));
+  expect(profileProposalService.saveDraft.mock.calls[1][1].expected).toMatchObject({
+    data: { name: ['Перша зміна'] }, revision: 4,
+  });
+  expect(screen.getByTestId('draft-autosave')).toHaveTextContent('Зберігаємо');
+  expect(readCardFormPending('admin-1', target)).toMatchObject({
+    draft: { name: ['Друга зміна'] }, expected: { revision: 4 },
+  });
+
+  await act(async () => finishSecond());
+  expect(screen.getByTestId('draft-autosave')).toHaveTextContent('Збережено');
+  expect(readCardFormPending('admin-1', target)).toBeNull();
+});
+
+it('keeps a late acknowledgment scoped to the editor that started the save', async () => {
+  const secondDraft = { ...originalDraft, cardId: 'card-2', data: { name: 'Інша чернетка', userId: 'card-2' } };
+  loadAllCreateProfileMutations.mockResolvedValue([originalDraft, secondDraft]);
+  let finishFirst;
+  profileProposalService.saveDraft.mockImplementationOnce(proposal => new Promise(resolve => {
+    finishFirst = () => resolve({ ...proposal, revision: 4 });
+  }));
+
+  renderWithNavigationSlot(<ProfileCreationWorkspace />);
+  fireEvent.click((await screen.findAllByRole('button', { name: /Відкрити профіль/ }))[0]);
+  typeAndBlur(await screen.findByDisplayValue("Ім'я6"), 'Зміна першої чернетки');
+  await waitFor(() => expect(profileProposalService.saveDraft).toHaveBeenCalledTimes(1));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Назад' }));
+  fireEvent.click((await screen.findAllByRole('button', { name: /Відкрити профіль/ }))[1]);
+  expect(await screen.findByDisplayValue('Інша чернетка')).toBeInTheDocument();
+
+  await act(async () => finishFirst());
+
+  expect(screen.getByDisplayValue('Інша чернетка')).toBeInTheDocument();
+  expect(screen.queryByDisplayValue('Зміна першої чернетки')).not.toBeInTheDocument();
+  expect(screen.getByTestId('draft-autosave')).not.toHaveTextContent('Збережено о');
+  expect(readCardFormPending('admin-1', target)).toBeNull();
+});
+
+it('retains the edit and blocks publication if its last save conflicts', async () => {
+  profileProposalService.saveDraft.mockRejectedValueOnce(Object.assign(new Error('REVISION_CONFLICT'), { code: 'REVISION_CONFLICT' }));
+
+  await openEditor();
+  typeAndBlur(await screen.findByDisplayValue("Ім'я6"), 'Конфлікт');
+  await waitFor(() => expect(screen.getByTestId('draft-autosave')).toHaveTextContent(/Профіль уже змінено/));
+  toast.error.mockClear();
+  fireEvent.click(screen.getByRole('button', { name: 'Зберегти чернетку' }));
+  await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+
+  expect(acceptCreateProfileMutation).not.toHaveBeenCalled();
+  expect(readCardFormPending('admin-1', target)?.draft?.name).toEqual(['Конфлікт']);
 });

@@ -2,8 +2,7 @@
 // значення окремим рядком і вирішувати по ньому, а не по картці цілком.
 //
 // Три речі, заради яких цей тест і стоїть:
-//  1) прийняте значення справді доїжджає до анкети (`persistCanonicalCard`), а
-//     не лише зникає з черги — інакше «прийняв» означало б «загубив»;
+//  1) прийняття перевіряє саме той шар, з якого намальований обраний рядок;
 //  2) рішення ухвалюється тим самим `settleOverlayValueForCard`, що й у формі
 //     редагування: він транзакційний і знімає відхилене значення ще й з
 //     `searchId` — інакше прибраний номер далі знаходився б пошуком;
@@ -22,42 +21,39 @@ jest.mock('./config', () => ({
   fetchMatchingCardsByIds: jest.fn(async () => ({ cards: {}, missingIds: [] })),
 }));
 
-jest.mock('utils/persistCanonicalCard', () => ({
-  persistCanonicalCard: jest.fn(async () => undefined),
+jest.mock('utils/profileOverlayReview', () => ({
+  approveOverlayValue: jest.fn(),
 }));
 
 jest.mock('utils/multiAccountEdits', () => ({
   ...jest.requireActual('utils/multiAccountEdits'),
   listPendingOverlayCards: jest.fn(),
-  getCanonicalCard: jest.fn(),
   settleOverlayValueForCard: jest.fn(),
-  acceptAllOverlaysForCard: jest.fn(),
-  removeAllOverlaysForCard: jest.fn(),
 }));
 
 const {
   listPendingOverlayCards,
-  getCanonicalCard,
   settleOverlayValueForCard,
-  removeAllOverlaysForCard,
 } = require('utils/multiAccountEdits');
-const { persistCanonicalCard } = require('utils/persistCanonicalCard');
+const { approveOverlayValue } = require('utils/profileOverlayReview');
+const { default: toast } = require('react-hot-toast');
 const { fetchMatchingCardsByIds } = require('./config');
 const { OverlayReviewQueue } = require('./AddNewProfileOverlayReview');
+
+const LAYER = {
+  cardUserId: 'CARD1',
+  editorUserId: 'editorA',
+  updatedAt: 1764000000000,
+  fields: { phone: { added: ['380501112233'] } },
+};
 
 const QUEUE_ENTRY = {
   cardUserId: 'CARD1',
   editorIds: ['editorA'],
   fieldNames: ['phone'],
   updatedAt: 1764000000000,
-  overlaysByEditor: {
-    editorA: {
-      cardUserId: 'CARD1',
-      editorUserId: 'editorA',
-      updatedAt: 1764000000000,
-      fields: { phone: { added: ['380501112233'] } },
-    },
-  },
+  overlaysByEditor: { editorA: LAYER },
+  recordsByEditor: { editorA: LAYER },
 };
 
 describe('OverlayReviewQueue', () => {
@@ -66,9 +62,8 @@ describe('OverlayReviewQueue', () => {
     // доживають до тесту — кожен мок ставиться тут заново.
     jest.clearAllMocks();
     listPendingOverlayCards.mockResolvedValue([QUEUE_ENTRY]);
-    getCanonicalCard.mockResolvedValue({ userId: 'CARD1', phone: '380500000000' });
-    settleOverlayValueForCard.mockResolvedValue({ settledChange: {}, remainingChange: null });
-    removeAllOverlaysForCard.mockResolvedValue({});
+    approveOverlayValue.mockResolvedValue({ value: '380501112233', remainingOverlay: null });
+    settleOverlayValueForCard.mockResolvedValue({ settledChange: {}, remainingChange: null, remainingOverlay: null });
     fetchMatchingCardsByIds.mockResolvedValue({
       cards: { CARD1: { userId: 'CARD1', name: 'Оксана', surname: 'Коваленко' } },
       missingIds: [],
@@ -84,23 +79,17 @@ describe('OverlayReviewQueue', () => {
     expect(fetchMatchingCardsByIds).toHaveBeenCalledWith(['CARD1']);
   });
 
-  it('writes an accepted value into the card before taking it off the queue', async () => {
+  it('requires the exact displayed record when approving a value', async () => {
     render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Прийняти' }));
 
-    await waitFor(() => expect(settleOverlayValueForCard).toHaveBeenCalled());
-    // Анкета записується першою: шар після settle уже не існує, і значення,
-    // записане б після нього, не лишило б сліду ніде.
-    expect(persistCanonicalCard.mock.invocationCallOrder[0])
-      .toBeLessThan(settleOverlayValueForCard.mock.invocationCallOrder[0]);
-    expect(persistCanonicalCard.mock.calls[0][0].phone).toEqual(['380500000000', '380501112233']);
-    expect(settleOverlayValueForCard).toHaveBeenCalledWith({
+    await waitFor(() => expect(approveOverlayValue).toHaveBeenCalledWith({
       cardUserId: 'CARD1',
       editorUserId: 'editorA',
       fieldName: 'phone',
       value: '380501112233',
-      action: 'accept',
-    });
+      expectedCurrent: LAYER,
+    }));
   });
 
   it('settles a discarded value through the shared path and never touches the card', async () => {
@@ -114,41 +103,60 @@ describe('OverlayReviewQueue', () => {
       fieldName: 'phone',
       value: '380501112233',
       action: 'discard',
+      expectedCurrent: LAYER,
     });
-    expect(persistCanonicalCard).not.toHaveBeenCalled();
+    expect(approveOverlayValue).not.toHaveBeenCalled();
   });
 
-  it('keeps a replacement a replacement instead of adding a second value', async () => {
-    // Зведена до `added`, заміна дописала б нове значення поруч зі старим — і
-    // в анкеті замість «Львів» стояло б «Київ, Львів».
+  it('passes a replacement with its original value to the guarded review writer', async () => {
+    const record = { ...LAYER, fields: { city: { from: 'Київ', to: 'Львів' } } };
     listPendingOverlayCards.mockResolvedValue([{
-      cardUserId: 'CARD1',
-      editorIds: ['editorA'],
+      ...QUEUE_ENTRY,
       fieldNames: ['city'],
-      updatedAt: 1764000000000,
-      overlaysByEditor: {
-        editorA: {
-          cardUserId: 'CARD1',
-          editorUserId: 'editorA',
-          updatedAt: 1764000000000,
-          fields: { city: { from: 'Київ', to: 'Львів' } },
-        },
-      },
+      overlaysByEditor: { editorA: record },
+      recordsByEditor: { editorA: record },
     }]);
-    getCanonicalCard.mockResolvedValue({ userId: 'CARD1', city: 'Київ' });
 
     render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Прийняти' }));
 
-    await waitFor(() => expect(persistCanonicalCard).toHaveBeenCalled());
-    expect(persistCanonicalCard.mock.calls[0][0].city).toBe('Львів');
+    await waitFor(() => expect(approveOverlayValue).toHaveBeenCalledWith(expect.objectContaining({
+      fieldName: 'city', value: 'Львів', expectedCurrent: record,
+    })));
   });
 
-  it('clears the whole card queue on "Видалити все"', async () => {
+  it('discards all the displayed values through guarded per-value settlement', async () => {
     render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Видалити все' }));
 
-    await waitFor(() => expect(removeAllOverlaysForCard).toHaveBeenCalledWith('CARD1'));
+    await waitFor(() => expect(settleOverlayValueForCard).toHaveBeenCalledWith(expect.objectContaining({
+      cardUserId: 'CARD1', action: 'discard', expectedCurrent: LAYER,
+    })));
+  });
+
+  it('uses only the confirmed remainder when bulk approval moves to a second value', async () => {
+    const secondPhone = '380671112233';
+    const original = { ...LAYER, fields: { phone: { added: ['380501112233', secondPhone] } } };
+    const remaining = { ...LAYER, fields: { phone: { added: [secondPhone] } } };
+    listPendingOverlayCards.mockResolvedValue([{
+      ...QUEUE_ENTRY,
+      overlaysByEditor: { editorA: original },
+      recordsByEditor: { editorA: original },
+    }]);
+    approveOverlayValue.mockResolvedValueOnce({ remainingOverlay: remaining });
+    approveOverlayValue.mockRejectedValueOnce(Object.assign(new Error('stale'), { code: 'REVISION_CONFLICT' }));
+
+    render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Прийняти все' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/вже змінено/)));
+    expect(approveOverlayValue).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      expectedCurrent: original, value: '380501112233',
+    }));
+    expect(approveOverlayValue).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      expectedCurrent: remaining, value: secondPhone,
+    }));
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it('names the reason when the queue cannot be read instead of showing it empty', async () => {

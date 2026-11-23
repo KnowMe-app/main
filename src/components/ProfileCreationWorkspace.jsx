@@ -70,6 +70,7 @@ import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, ge
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
 import { stripSectionEmoji } from '../utils/sectionTitle';
 import {
+  advanceCardFormPending,
   buildCardFormTarget,
   readCardFormPending,
   rememberCardFormPending,
@@ -78,13 +79,12 @@ import {
 import {
   applyOverlayToCard,
   applyOverlaysToCard,
-  getStackedCardViews,
-  buildOverlayFromDraft,
+  claimOverlayValueForReview,
   getOverlayHistoryForCard,
   getOverlaysForCard,
   purgeOverlayHistoryEntries,
+  releaseOverlayValueReview,
   clearCardOverlays,
-  saveOverlayForUserCard,
   settleOverlayFieldValue,
 } from 'utils/multiAccountEdits';
 import {
@@ -106,10 +106,21 @@ import {
   reserveProfileCardId,
   saveCreateProfileMutation,
 } from 'utils/profileMutations';
+import { profileProposalService } from 'utils/profileProposalRepository';
+import { areProposalValuesEqual } from 'utils/profileProposals';
+import {
+  asProfileMutation,
+  createEditorSnapshot,
+  proposalEditorKey,
+  recoverEditorDraft,
+  saveEditorProposal,
+} from 'utils/profileProposalEditor';
 
 // Чернетку й доповнення заповнює не та людина, про яку картка, а підписи
 // «Мого профілю» звертаються до власника: «Про вас», «Як до вас
 // звертатись». На чужій картці це читалось як питання до самого редактора.
+const newEditorSessionId = () => window.crypto?.randomUUID?.() ?? `${Date.now()}:${Math.random()}`;
+
 const THIRD_PERSON_TEXT = Object.freeze({
   'Як до вас звертатись': 'Як звертатись до людини',
   '👤 Про вас': '👤 Про людину',
@@ -960,18 +971,14 @@ export const ProfileCreationWorkspace = () => {
   // це не каже: «читаємо», «не змогли прочитати» й «прочитали, відгуків
   // немає» виглядали б однаково — порожньою доріжкою під полем запису.
   const [publicCommentsState, setPublicCommentsState] = useState({ loading: false, loaded: false });
+  const proposalEditorRef = useRef(null);
+  useEffect(() => () => { proposalEditorRef.current = null; }, []);
   const draftRef = useRef(draft);
-  const persistedDraftRef = useRef(draft);
   // The draft as its author stored it, before anybody's overlay is replayed
   // onto it. Own/admin saves are written against this, never against the
   // stacked view, so another editor's pending value is never silently
   // promoted into the draft itself.
   const draftBaseRef = useRef(null);
-  // What the editor is currently looking at: draftBase + every overlay, in
-  // save order. A shared-draft save is diffed against this (minus the
-  // editor's own overlay) to work out what *they* changed.
-  const stackedDraftRef = useRef(null);
-  const draftOverlaysRef = useRef({});
   const accessRef = useRef(null);
 
   const sortByRecency = items => (
@@ -1006,8 +1013,6 @@ export const ProfileCreationWorkspace = () => {
 
   const resetDraftOverlayState = useCallback(nextBase => {
     draftBaseRef.current = nextBase || null;
-    stackedDraftRef.current = nextBase || null;
-    draftOverlaysRef.current = {};
     setDraftOverlays({});
     setDraftHistory([]);
     setShowDraftHistory(false);
@@ -1019,6 +1024,7 @@ export const ProfileCreationWorkspace = () => {
   // on screen are always the draft's latest state, whoever last touched them.
   const refreshDraftOverlays = useCallback(async () => {
     const current = activeMutationRef.current;
+    const editor = proposalEditorRef.current;
     if (!current?.cardId) return;
 
     const base = draftBaseRef.current
@@ -1027,21 +1033,28 @@ export const ProfileCreationWorkspace = () => {
 
     let overlays = {};
     try {
-      overlays = await getOverlaysForCard(current.cardId, { editorUserId: uidRef.current });
+      overlays = await getOverlaysForCard(current.cardId, {
+        editorUserId: uidRef.current,
+        includeRecords: Boolean(accessRef.current?.isAdmin),
+      });
     } catch (error) {
       console.warn('[ProfileCreationWorkspace] draft overlays unavailable', error);
     }
 
+    if (proposalEditorRef.current !== editor) return;
     const stacked = applyOverlaysToCard(base, overlays);
     draftBaseRef.current = base;
-    draftOverlaysRef.current = overlays;
-    stackedDraftRef.current = stacked;
     // An admin reviews the author's own data with every pending edit shown
     // inline, next to the field it changes - so their form holds the base
     // card. Every other editor keeps working on the stacked card.
     const visible = accessRef.current?.isAdmin ? base : stacked;
+    if (editor) {
+      editor.base = base;
+      editor.rawBase = base;
+      editor.visible = visible;
+      editor.protectContributions = !accessRef.current?.isAdmin && Object.keys(overlays).length > 0;
+    }
     draftRef.current = visible;
-    persistedDraftRef.current = visible;
     setDraftOverlays(overlays);
     setDraft(visible);
 
@@ -1058,6 +1071,7 @@ export const ProfileCreationWorkspace = () => {
         getOverlayHistoryForCard(current.cardId),
         loadProfileMutationHistory(current.cardId),
       ]);
+      if (proposalEditorRef.current !== editor) return;
       setDraftHistory([...overlayHistory, ...revisionHistory]
         .sort((a, b) => Number(b.at || 0) - Number(a.at || 0)));
     } catch (error) {
@@ -1069,16 +1083,37 @@ export const ProfileCreationWorkspace = () => {
   const openMutation = useCallback(async mutation => {
     if (!mutation?.cardId) return;
 
+    const editorUid = uidRef.current;
+    const shared = isSharedDraft(mutation, editorUid, accessRef.current?.isAdmin);
+    const locator = { operation: shared ? 'update' : 'create', createdBy: shared ? editorUid : mutation.createdBy, cardId: mutation.cardId };
+    const editor = {
+      uid: editorUid,
+      sessionId: newEditorSessionId(),
+      locator,
+      target: buildCardFormTarget({ draftCardId: mutation.cardId }),
+      expected: shared || mutation.localOnly ? null : createEditorSnapshot(mutation),
+      targetCreateProposalId: shared ? createEditorSnapshot(mutation)?.id : null,
+    };
+    proposalEditorRef.current = editor;
+    setAutosave({ state: 'idle', at: 0 });
     setOverlayTarget(null);
+    setDraft(null);
+    setOverlayLoading(true);
     activeMutationRef.current = mutation;
     setActiveMutation(mutation);
     setShowDraftHistory(false);
     draftBaseRef.current = getEffectiveProfile({ mutation }) || { userId: mutation.cardId };
-    // Адреса форми — це та сама сторінка, а не новий крок: запис в історії
-    // кладе ефект нижче, один на відкриту форму, і саме його знімає «назад».
     setSearchParams({ cardId: mutation.cardId }, { replace: true });
+    if (shared) {
+      try { editor.expected = await profileProposalService.getDraft(locator); }
+      catch (error) { editor.failure = error; }
+    }
+    if (proposalEditorRef.current !== editor) return;
     await refreshDraftOverlays();
-    setFormLoadedTarget(buildCardFormTarget({ draftCardId: mutation.cardId }));
+    if (proposalEditorRef.current === editor) {
+      setOverlayLoading(false);
+      setFormLoadedTarget(editor.target);
+    }
   }, [refreshDraftOverlays, setSearchParams]);
 
   useEffect(() => onAuthStateChanged(auth, async user => {
@@ -1209,10 +1244,17 @@ export const ProfileCreationWorkspace = () => {
     const requestedCardId = searchParams.get('cardId');
     if (!requestedCardId) return;
     const mutation = [...mutations, ...sharedMutations].find(item => item.cardId === requestedCardId);
-    if (mutation && activeMutation?.cardId !== mutation.cardId) {
+    if (activeMutation?.cardId === requestedCardId || searchParams.get('overlay') === '1') return;
+    if (mutation) {
       openMutation(mutation);
+      return;
     }
-  }, [activeMutation?.cardId, mutations, sharedMutations, searchParams, openMutation]);
+    const locator = { operation: 'create', createdBy: uid, cardId: requestedCardId };
+    const local = readCardFormPending(uid, buildCardFormTarget({ draftCardId: requestedCardId }));
+    if (local?.expected === null && local.targetKey === proposalEditorKey(locator)) {
+      openMutation({ cardId: requestedCardId, createdBy: uid, revision: 0, status: 'pendingReview', localOnly: true, data: local.basis || {} });
+    }
+  }, [activeMutation?.cardId, mutations, sharedMutations, searchParams, openMutation, uid]);
 
   const startNew = (queryText, { allowContactPrefill = true } = {}) => {
     const cardId = reserveProfileCardId();
@@ -1222,6 +1264,12 @@ export const ProfileCreationWorkspace = () => {
     // completely: it never reaches profileMutations, so it cannot even show
     // up in "Ваші картки" or a later search.
     const mutation = { cardId, revision: 0, status: 'pendingReview', createdBy: uid };
+    proposalEditorRef.current = {
+      uid, sessionId: newEditorSessionId(),
+      locator: { operation: 'create', createdBy: uid, cardId },
+      target: buildCardFormTarget({ draftCardId: cardId }),
+      expected: null, visible: null,
+    };
     activeMutationRef.current = mutation;
     setActiveMutation(mutation);
     setOverlayTarget(null);
@@ -1236,7 +1284,6 @@ export const ProfileCreationWorkspace = () => {
       : {};
     const nextDraft = { userId: cardId, ...initialSearchData };
     draftRef.current = nextDraft;
-    persistedDraftRef.current = nextDraft;
     resetDraftOverlayState(nextDraft);
     setDraft(nextDraft);
     setSearchParams({ cardId }, { replace: true });
@@ -1375,6 +1422,7 @@ export const ProfileCreationWorkspace = () => {
   );
 
   const closeEditor = () => {
+    proposalEditorRef.current = null;
     // `replace` тут навмисний: запис історії, яким відкрилась форма, уже знято
     // (див. ефект нижче), і цей перехід стає на його місце замість того, щоб
     // дописати ще один крок «назад» у нікуди.
@@ -1388,6 +1436,7 @@ export const ProfileCreationWorkspace = () => {
     setActiveMutation(null);
     activeMutationRef.current = null;
     setOverlayTarget(null);
+    setOverlayLoading(false);
     resetDraftOverlayState(null);
     setSearchParams({}, { replace: true });
     // The list cards (name, status, revision, updatedAt) were snapshotted
@@ -1475,7 +1524,16 @@ export const ProfileCreationWorkspace = () => {
   const startExistingProfileOverlay = async profile => {
     if (!profile?.userId) return;
 
+    const locator = { operation: 'update', cardId: profile.userId, createdBy: uid };
+    const editor = {
+      uid, sessionId: newEditorSessionId(), locator, additive: true, expected: null,
+      target: buildCardFormTarget({ overlayCardId: profile.userId }),
+    };
+    proposalEditorRef.current = editor;
+    setAutosave({ state: 'idle', at: 0 });
+    activeMutationRef.current = null;
     setActiveMutation(null);
+    setDraft(null);
     setOverlayLoading(true);
     setSearchParams({ cardId: profile.userId, overlay: '1' }, { replace: true });
     let canonical = profile;
@@ -1483,36 +1541,31 @@ export const ProfileCreationWorkspace = () => {
       const full = await readProfileFromNodes(profile.userId, { includeWorkflow: false });
       if (full) canonical = { ...profile, ...full };
     } catch (error) {
-      // Відмова означає лише «більше не видно» — форма відкривається з тим,
-      // що вже принесла видача пошуку.
       console.warn('[ProfileCreationWorkspace] canonical card unavailable', error);
     }
-    const canonicalPrefill = buildOverlayPrefill(canonical, profile.userId, {
+    editor.base = buildOverlayPrefill(canonical, profile.userId, {
       keepAdminTelegram: Boolean(accessRef.current?.isAdmin),
     });
-    let overlays = {};
+    editor.rawBase = canonical;
     try {
-      overlays = await getOverlaysForCard(profile.userId, { editorUserId: uid });
+      editor.expected = await profileProposalService.getDraft(locator);
+      const creator = canonical.__profileMutationCreatedBy;
+      if (canonical.__profileMutationOperation === 'create' && creator) {
+        const parent = await profileProposalService.getDraft({ operation: 'create', cardId: profile.userId, createdBy: creator });
+        editor.targetCreateProposalId = parent?.id;
+      }
     } catch (error) {
-      console.warn('[ProfileCreationWorkspace] existing overlay unavailable', error);
+      editor.failure = error;
     }
-    const { stacked, baseWithoutOwnOverlay } = getStackedCardViews({
-      canonical: canonicalPrefill,
-      overlaysByEditor: overlays,
-      editorUserId: uid,
-    });
-    // `canonical` — це база для порівняння правок, і в ній лише поля форми:
-    // все, чого форма не показує, не має права поїхати в оверлей. Але верхньому
-    // блоку потрібна сама картка — роль, вік, локація, фото, — тож вона їде
-    // поруч і використовується лише на показ.
-    setOverlayTarget({ userId: profile.userId, canonical: baseWithoutOwnOverlay, card: canonical });
-    const nextDraft = stacked;
-    persistedDraftRef.current = nextDraft;
+    if (proposalEditorRef.current !== editor) return;
+    const nextDraft = applyOverlayToCard(editor.base, editor.expected?.changes);
+    editor.visible = nextDraft;
+    setOverlayTarget({ userId: profile.userId, canonical: editor.base, card: canonical });
     draftRef.current = nextDraft;
     resetDraftOverlayState(null);
     setDraft(nextDraft);
     setOverlayLoading(false);
-    setFormLoadedTarget(buildCardFormTarget({ overlayCardId: profile.userId }));
+    setFormLoadedTarget(editor.target);
   };
 
   /**
@@ -1563,11 +1616,6 @@ export const ProfileCreationWorkspace = () => {
   useEffect(() => { draftRef.current = draft; }, [draft]);
   const activeMutationRef = useRef(activeMutation);
   useEffect(() => { activeMutationRef.current = activeMutation; }, [activeMutation]);
-  // Chains saves so two rapid blurs (or a blur racing the Save button) apply
-  // in order against the revision the previous one actually committed,
-  // instead of two saves reading the same stale revision and one of them
-  // failing with a false REVISION_CONFLICT.
-  const saveQueueRef = useRef(Promise.resolve());
 
   // Етапи й цілі збереження — теж напис на екрані, тож ідуть мовою інтерфейсу.
   const safeSaveStageNames = {
@@ -1593,7 +1641,7 @@ export const ProfileCreationWorkspace = () => {
       || message.includes('PERMISSION_DENIED') || message.includes('PERMISSION DENIED')) {
       return 'PERMISSION_DENIED';
     }
-    if (message === 'REVISION_CONFLICT' || message === 'DUPLICATE_PROFILE') return message;
+    if (message === 'DUPLICATE_PROFILE') return message;
     return '';
   };
 
@@ -1654,8 +1702,8 @@ export const ProfileCreationWorkspace = () => {
   const reportDuplicateConflictsRef = useRef(reportDuplicateConflicts);
   reportDuplicateConflictsRef.current = reportDuplicateConflicts;
 
-  const describeSaveError = error => uiText(error?.message === 'REVISION_CONFLICT'
-    ? 'Профіль уже змінено. Оновіть сторінку.'
+  const describeSaveError = error => uiText((error?.code || error?.message) === 'REVISION_CONFLICT'
+    ? 'Профіль уже змінено. Правки збережено на цьому пристрої.'
     : error?.message === 'DUPLICATE_PROFILE' ? 'Профіль з такими контактами вже існує або очікує перевірки.' : 'Не вдалося зберегти профіль', language);
 
   const reportSaveErrorRef = useRef(reportSaveError);
@@ -1664,143 +1712,81 @@ export const ProfileCreationWorkspace = () => {
   describeSaveErrorRef.current = describeSaveError;
 
   const persistDraft = useCallback(nextDraft => {
+    const editor = proposalEditorRef.current;
+    if (!editor) return Promise.reject(new Error('INVALID_DRAFT'));
+    if (editor.recoveryConflict) return Promise.reject(editor.failure);
+    const pendingAt = rememberCardFormPending(editor.uid, editor.target, nextDraft, {
+      expected: editor.expected, targetKey: proposalEditorKey(editor.locator), basis: editor.visible ?? null, sessionId: editor.sessionId,
+    });
+    editor.latestAt = pendingAt;
+    if (editor.failure) {
+      setAutosave({ state: (editor.failure.code || editor.failure.message) === 'REVISION_CONFLICT' ? 'conflict' : 'error', at: 0 });
+      return Promise.reject(editor.failure);
+    }
+    const isActive = () => proposalEditorRef.current === editor && uidRef.current === editor.uid;
+    const isLatest = () => isActive() && editor.latestAt === pendingAt;
+    setAutosave(previous => ({ ...previous, state: 'saving' }));
+
     const run = async () => {
-      if (overlayTarget) {
-        const canonical = overlayTarget.canonical || { userId: overlayTarget.userId };
-        // Compare only fields the editor actually touched. Missing fields in
-        // this deliberately blank form must never become removal operations.
-        const touchedCanonical = Object.keys(nextDraft || {}).reduce((result, fieldName) => {
-          if (Object.prototype.hasOwnProperty.call(canonical, fieldName)) result[fieldName] = canonical[fieldName];
-          return result;
-        }, { userId: overlayTarget.userId });
-        const additiveDraft = Object.entries(nextDraft || {}).reduce((result, [fieldName, value]) => {
-          if (fieldName === 'userId' || !Object.prototype.hasOwnProperty.call(touchedCanonical, fieldName)) {
-            result[fieldName] = value;
-            return result;
-          }
-          const canonicalValues = Array.isArray(touchedCanonical[fieldName])
-            ? touchedCanonical[fieldName]
-            : [touchedCanonical[fieldName]];
-          const enteredValues = Array.isArray(value) ? value : [value];
-          result[fieldName] = [...canonicalValues, ...enteredValues];
-          return result;
-        }, {});
-        const overlayFields = buildOverlayFromDraft(touchedCanonical, additiveDraft);
-        await saveOverlayForUserCard({
-          editorUserId: uid,
-          cardUserId: overlayTarget.userId,
-          fields: overlayFields,
-        });
-        persistedDraftRef.current = nextDraft;
-        return null;
-      }
-      const current = activeMutationRef.current;
-      const base = draftBaseRef.current || getEffectiveProfile({ mutation: current }) || { userId: current.cardId };
-      const overlays = draftOverlaysRef.current || {};
-
-      // Somebody else's draft: nothing this editor types may touch the
-      // author's node. Their whole delta - added values, cleared contacts,
-      // everything - is stored as their own overlay, diffed against the card
-      // as it looks with the *other* editors' overlays already applied, so it
-      // never absorbs (or credits them with) another editor's change.
-      if (isSharedDraft(current, uid, accessRef.current?.isAdmin)) {
-        const baseWithoutOwnOverlay = applyOverlaysToCard(base, overlays, { excludeEditorUserId: uid });
-        await saveOverlayForUserCard({
-          editorUserId: uid,
-          cardUserId: current.cardId,
-          fields: buildOverlayFromDraft(baseWithoutOwnOverlay, nextDraft),
-        });
-
-        let refreshedOverlays = overlays;
-        try {
-          refreshedOverlays = await getOverlaysForCard(current.cardId, { editorUserId: uid });
-        } catch (error) {
-          console.warn('[ProfileCreationWorkspace] draft overlays unavailable after save', error);
+      if (editor.failure) throw editor.failure;
+      if (auth.currentUser?.uid !== editor.uid) throw new Error('PERMISSION_DENIED');
+      const previous = editor.expected;
+      const saved = await saveEditorProposal(profileProposalService, editor, nextDraft);
+      editor.expected = saved;
+      editor.visible = nextDraft;
+      if (saved?.operation === 'create') {
+        editor.base = saved.data;
+        if (isActive()) {
+          const mutation = asProfileMutation(saved);
+          activeMutationRef.current = mutation;
+          draftBaseRef.current = saved.data;
+          setActiveMutation(mutation);
         }
-        draftOverlaysRef.current = refreshedOverlays;
-        stackedDraftRef.current = applyOverlaysToCard(base, refreshedOverlays);
-        setDraftOverlays(refreshedOverlays);
-        persistedDraftRef.current = nextDraft;
-        return null;
       }
-
-      // The author (or an admin) writes into the draft itself. The author sees
-      // the stacked card, so saving it verbatim would quietly promote every
-      // pending overlay into the draft - only an explicit accept may do that.
-      // Persist just the delta this save introduced on top of what was on
-      // screen, applied to the author's own data. An admin's form already
-      // holds that base data, so it is saved as it is.
-      const stacked = stackedDraftRef.current || applyOverlaysToCard(base, overlays);
-      const hasPendingOverlays = Object.keys(overlays).length > 0;
-      const nextData = hasPendingOverlays && !accessRef.current?.isAdmin
-        ? applyOverlayToCard(base, buildOverlayFromDraft(stacked, nextDraft))
-        : nextDraft;
-
-      let saved;
-      try {
-        saved = await saveCreateProfileMutation({
-          cardId: current.cardId,
-          creatorUid: current.createdBy || uid,
-          actorUid: uid,
-          data: nextData,
-          expectedRevision: current.revision,
-        });
-      } catch (error) {
-        if (!error.profileSaveStage) error.profileSaveStage = 'identity-claim-or-mutation';
-        throw error;
+      settleCardFormPending(editor.uid, editor.target, pendingAt, { sessionId: editor.sessionId });
+      advanceCardFormPending(editor.uid, editor.target, previous, saved, pendingAt, {
+        latestAt: editor.latestAt, basis: nextDraft, sessionId: editor.sessionId,
+      });
+      if (isLatest()) {
+        reportDuplicateConflictsRef.current(saved?.duplicateConflicts);
+        setAutosave({ state: 'saved', at: Date.now() });
       }
-      // Через ref: функція бере мову й права з поточного рендера, а
-      // `persistDraft` живе довше за рендер.
-      reportDuplicateConflictsRef.current(saved?.duplicateConflicts);
-      activeMutationRef.current = saved;
-      draftBaseRef.current = saved?.data || nextData;
-      stackedDraftRef.current = applyOverlaysToCard(draftBaseRef.current, overlays);
-      persistedDraftRef.current = nextDraft;
-      setActiveMutation(saved);
       return saved;
     };
 
-    // Набране лягає на пристрій до запису: без звʼязку запис висить у
-    // памʼяті вкладки, і закрита вкладка губила його (`utils/cardFormPendingEdits`).
-    const pendingTarget = buildCardFormTarget({
-      overlayCardId: overlayTarget?.userId,
-      draftCardId: activeMutationRef.current?.cardId,
+    const queued = (editor.tail || Promise.resolve()).then(run).catch(error => {
+      editor.failure = error;
+      if (isLatest()) setAutosave({ state: (error?.code || error?.message) === 'REVISION_CONFLICT' ? 'conflict' : 'error', at: 0 });
+      throw error;
     });
-    const pendingAt = rememberCardFormPending(uid, pendingTarget, nextDraft);
-    const settlePending = () => settleCardFormPending(uid, pendingTarget, pendingAt);
-
-    setAutosave(previous => (previous.state === 'saving' ? previous : { ...previous, state: 'saving' }));
-    const queued = saveQueueRef.current.catch(() => {}).then(run);
-    saveQueueRef.current = queued.catch(() => {});
-    queued.then(
-      () => { settlePending(); setAutosave({ state: 'saved', at: Date.now() }); },
-      () => { settlePending(); setAutosave(previous => ({ ...previous, state: 'error' })); },
-    );
+    editor.lastWrite = queued;
+    editor.tail = queued.catch(() => {});
     return queued;
-  }, [overlayTarget, uid]);
+  }, []);
 
-  /*
-   * Відкрили картку — незбережене з минулого разу (вкладку закрили, поки
-   * запис висів без звʼязку) лягає поверх того, що прочитано з бази, і
-   * дописується тим самим `persistDraft`. Ефект, а не виклик у завантажувачі:
-   * `persistDraft` бере ціль доповнення зі стану, а той оновиться лише після
-   * рендера.
-   */
+  // Відновлюємо лише правку до тієї самої версії й тих самих початкових полів.
   useEffect(() => {
-    if (!formLoadedTarget || !uid) return;
-    const currentTarget = buildCardFormTarget({
-      overlayCardId: overlayTarget?.userId,
-      draftCardId: activeMutation?.cardId,
-    });
-    if (currentTarget !== formLoadedTarget) return;
+    const editor = proposalEditorRef.current;
+    if (!formLoadedTarget || !editor || editor.target !== formLoadedTarget || !uid) return;
     setFormLoadedTarget('');
-    const pending = readCardFormPending(uid, currentTarget);
+    const pending = readCardFormPending(uid, editor.target);
     if (!pending) return;
-    const restored = { ...(draftRef.current || {}), ...pending.draft };
+    const restored = !editor.failure && recoverEditorDraft(editor, pending);
+    if (!restored) {
+      editor.recoveryConflict = true;
+      editor.failure ||= new Error('REVISION_CONFLICT');
+      setAutosave({ state: 'conflict', at: 0 });
+      return;
+    }
     draftRef.current = restored;
     setDraft(restored);
+    if (pending.needsBlur) {
+      editor.latestAt = pending.at;
+      setAutosave({ state: 'idle', at: 0 });
+      return;
+    }
     persistDraft(restored).catch(error => reportSaveErrorRef.current(error, describeSaveErrorRef.current(error)));
-  }, [activeMutation?.cardId, formLoadedTarget, overlayTarget, persistDraft, uid]);
+  }, [formLoadedTarget, persistDraft, uid]);
 
   // Fires on every field blur/chip click - the primary save path now, so a
   // draft is never lost by someone filling the form and never pressing the
@@ -1814,9 +1800,17 @@ export const ProfileCreationWorkspace = () => {
 
   const toFieldValues = value => Array.isArray(value) ? value : [value ?? ''];
   const updateDraftFieldItem = (fieldName, index, value) => {
-    const values = toFieldValues(draftRef.current?.[fieldName]);
+    const values = [...toFieldValues(draftRef.current?.[fieldName])];
     values[index] = value;
     const nextDraft = { ...(draftRef.current || {}), [fieldName]: values };
+    const editor = proposalEditorRef.current;
+    if (editor && !editor.recoveryConflict) {
+      editor.latestAt = rememberCardFormPending(editor.uid, editor.target, nextDraft, {
+        expected: editor.expected, targetKey: proposalEditorKey(editor.locator), basis: editor.visible ?? null,
+        sessionId: editor.sessionId, needsBlur: true,
+      });
+      if (!editor.failure) setAutosave({ state: 'idle', at: 0 });
+    }
     draftRef.current = nextDraft;
     setDraft(nextDraft);
   };
@@ -1919,8 +1913,14 @@ export const ProfileCreationWorkspace = () => {
   //              to the draft, whether the proposal added, replaced or removed
   //              it, and leaves the queue;
   //   видалити - the proposal is dropped, the draft is untouched.
-  const persistDraftData = async (nextData, { skipRevisionHistory = false } = {}) => {
+  const persistDraftData = async (editor, buildNextData, { skipRevisionHistory = false } = {}) => {
+    await editor?.lastWrite;
+    if (!editor || proposalEditorRef.current !== editor || editor.failure
+      || readCardFormPending(editor.uid, editor.target)) throw editor?.failure || new Error('REVISION_CONFLICT');
     const current = activeMutationRef.current;
+    const base = draftBaseRef.current || {};
+    const nextData = buildNextData(base);
+    if (areProposalValuesEqual(base, nextData)) return current;
     const saved = await saveCreateProfileMutation({
       cardId: current.cardId,
       creatorUid: current.createdBy || uid,
@@ -1930,6 +1930,8 @@ export const ProfileCreationWorkspace = () => {
       skipRevisionHistory,
     });
     reportDuplicateConflicts(saved?.duplicateConflicts);
+    if (proposalEditorRef.current !== editor) return saved;
+    if (editor) editor.expected = createEditorSnapshot(saved);
     activeMutationRef.current = saved;
     draftBaseRef.current = saved?.data || nextData;
     setActiveMutation(saved);
@@ -1937,9 +1939,12 @@ export const ProfileCreationWorkspace = () => {
   };
 
   const runOverlayReviewAction = async (action, successMessage, failureMessage) => {
+    const editor = proposalEditorRef.current;
     setSaving(true);
     try {
-      await action();
+      if (!editor || isReadOnlyAdminUid(editor.uid)) throw new Error('PERMISSION_DENIED');
+      await action(editor);
+      if (proposalEditorRef.current !== editor) return;
       await refreshDraftOverlays();
       toast.success(successMessage);
     } catch (error) {
@@ -1952,41 +1957,73 @@ export const ProfileCreationWorkspace = () => {
   // purgeHistory drops the journal entries about the settled value instead of
   // adding one more - the whole point of the two buttons is that a processed
   // edit stops existing in the backend.
-  const settleFieldEdit = (row, { settledChange, remainingChange, historyAction }) => settleOverlayFieldValue({
+  const settleFieldEdit = (cardId, row, {
+    settledChange, remainingChange, historyAction, expectedCurrent, acceptedOriginal,
+  }) => settleOverlayFieldValue({
     editorUserId: row.editorUserId,
-    cardUserId: activeMutationRef.current.cardId,
+    cardUserId: cardId,
     fieldName: row.fieldName,
     settledChange,
     remainingChange,
     historyAction,
     purgeHistory: true,
+    expectedCurrent,
+    acceptedOriginal,
   });
 
   const saveFieldEdit = (row, editedValue, label) => runOverlayReviewAction(
-    async () => {
+    async editor => {
+      const cardId = editor.locator.cardId;
+      const expectedCurrent = draftOverlays[row.editorUserId]?.expectedCurrent;
       const { settled, remaining } = splitOverlayChangeValue(row.change, row);
       const acceptedChange = withEditedValue(settled, row, editedValue);
-      await persistDraftData(
-        applyOverlayToCard(draftBaseRef.current || {}, { [row.fieldName]: acceptedChange }),
-        { skipRevisionHistory: true },
-      );
-      await settleFieldEdit(row, {
-        settledChange: acceptedChange,
-        remainingChange: remaining,
-        historyAction: 'accept',
-      });
+      if (!expectedCurrent || !acceptedChange) throw new Error('REVISION_CONFLICT');
+      const original = JSON.parse(expectedCurrent.proposal?.originalValues || '{}')[row.fieldName];
+      const locator = { editorUserId: row.editorUserId, cardUserId: cardId, fieldName: row.fieldName, value: row.value };
+      const claimed = await claimOverlayValueForReview({ ...locator, expectedCurrent, acceptedValue: editedValue });
+      try {
+        const saved = await persistDraftData(editor, base => {
+          const observed = base[row.fieldName];
+          const before = original
+            ? (original.present ? original.value : undefined)
+            : ('from' in acceptedChange ? acceptedChange.from : observed);
+          const next = applyOverlayToCard({ ...base, [row.fieldName]: before }, { [row.fieldName]: acceptedChange });
+          const matchesOriginal = original
+            ? areProposalValuesEqual(observed, before)
+            : areProposalValuesEqual(observed ?? '', before ?? '');
+          if (!matchesOriginal
+            && !areProposalValuesEqual(observed, next[row.fieldName])) throw new Error('REVISION_CONFLICT');
+          return next;
+        }, { skipRevisionHistory: true });
+        const accepted = saved.data?.[row.fieldName];
+        await settleFieldEdit(cardId, row, {
+          settledChange: acceptedChange,
+          remainingChange: remaining,
+          historyAction: 'accept',
+          expectedCurrent: claimed,
+          acceptedOriginal: accepted === undefined ? { present: false } : { present: true, value: accepted },
+        });
+      } catch (error) {
+        if ((error?.code || error?.message) === 'REVISION_CONFLICT') {
+          await releaseOverlayValueReview({ ...locator, claimed }).catch(() => {});
+        }
+        throw error;
+      }
     },
     uiText('Правку збережено: {label}', language, { label }),
     uiText('Не вдалося зберегти правку', language),
   );
 
   const deleteFieldEdit = (row, label) => runOverlayReviewAction(
-    async () => {
+    async editor => {
+      const expectedCurrent = draftOverlays[row.editorUserId]?.expectedCurrent;
+      if (!expectedCurrent) throw new Error('REVISION_CONFLICT');
       const { settled, remaining } = splitOverlayChangeValue(row.change, row);
-      await settleFieldEdit(row, {
+      await settleFieldEdit(editor.locator.cardId, row, {
         settledChange: settled,
         remainingChange: remaining,
         historyAction: 'discard',
+        expectedCurrent,
       });
     },
     uiText('Правку видалено: {label}', language, { label }),
@@ -1999,12 +2036,15 @@ export const ProfileCreationWorkspace = () => {
   const saveDraftAsCard = async () => {
     setSaving(true);
     let publishing = false;
+    const editor = proposalEditorRef.current;
     try {
       // Clicking the button blurs the focused field. That blur queues an
       // autosave which increments the revision, so publishing must wait for
       // it and then read the refs updated by that save. Using render-state
       // here produced a false REVISION_CONFLICT against our own autosave.
-      await saveQueueRef.current;
+      await editor?.lastWrite;
+      if (!editor || proposalEditorRef.current !== editor || editor.failure
+        || readCardFormPending(editor.uid, editor.target)) throw editor?.failure || new Error('REVISION_CONFLICT');
       publishing = true;
       const current = activeMutationRef.current;
       await acceptCreateProfileMutation({
@@ -2015,6 +2055,7 @@ export const ProfileCreationWorkspace = () => {
         // visible stacked draft may also contain unaccepted editor overlays.
         finalData: draftBaseRef.current || current.data,
       });
+      if (proposalEditorRef.current !== editor) return;
       toast.success(uiText('Чернетку збережено як картку — вона у вузлах анкети і проіндексована', language));
       closeEditor();
       await refresh(uid, access);
@@ -2039,6 +2080,7 @@ export const ProfileCreationWorkspace = () => {
    * так само, як його стирає хрестик у полі.
    */
   async function clearAllDraftFields() {
+    const editor = proposalEditorRef.current;
     const current = draftRef.current || {};
     const nextDraft = Object.entries(current).reduce((result, [fieldName, value]) => {
       if (fieldName === 'userId' || fieldName.startsWith('__') || !hasCurrentValue(value)) return result;
@@ -2050,12 +2092,13 @@ export const ProfileCreationWorkspace = () => {
     setDraft(nextDraft);
     try {
       await persistDraft(nextDraft);
-      const cardId = activeMutationRef.current?.cardId;
+      if (proposalEditorRef.current !== editor) return;
+      const cardId = editor?.locator.cardId;
       // This is a reset of a live draft, not deletion of the card. Remove only
       // pending values and keep history/contributors available to admins.
       if (cardId) await clearCardOverlays(cardId);
-      draftOverlaysRef.current = {};
-      stackedDraftRef.current = draftBaseRef.current || nextDraft;
+      if (proposalEditorRef.current !== editor) return;
+      if (editor) editor.protectContributions = false;
       setDraftOverlays({});
       setConfirmClearDraft(false);
       toast.success(uiText('Усі поля очищено', language));
@@ -2370,7 +2413,9 @@ export const ProfileCreationWorkspace = () => {
   const autosaveTime = autosave.at
     ? `${String(new Date(autosave.at).getHours()).padStart(2, '0')}:${String(new Date(autosave.at).getMinutes()).padStart(2, '0')}`
     : '';
-  const autosaveText = autosave.state === 'saving'
+  const autosaveText = autosave.state === 'conflict'
+    ? uiText('Профіль уже змінено. Правки збережено на цьому пристрої.', language)
+    : autosave.state === 'saving'
     ? uiText(deviceOnline ? 'Зберігаємо…' : 'Немає звʼязку — збережемо, щойно він зʼявиться', language)
     : autosave.state === 'error'
       ? uiText('Останню зміну не збережено — див. повідомлення вище', language)
@@ -2415,7 +2460,7 @@ export const ProfileCreationWorkspace = () => {
           secondaryAction={draftSecondaryAction}
         />
       </DraftPreview>
-      <AutosaveLine data-testid="draft-autosave" aria-live="polite" $error={autosave.state === 'error'}>{autosaveText}</AutosaveLine>
+      <AutosaveLine data-testid="draft-autosave" aria-live="polite" $error={autosave.state === 'error' || autosave.state === 'conflict'}>{autosaveText}</AutosaveLine>
       {hasDraftHeaderExtras && <DraftHeaderCard>
         {/* Стан чернетки — це те, що з нею буде далі, і сказати його є кому лише
             там, де воно щось означає: у власній чернетці й у черзі адміна.

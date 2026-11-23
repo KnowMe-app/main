@@ -1,12 +1,17 @@
 import '@testing-library/jest-dom';
+import { profileProposalService } from 'utils/profileProposalRepository';
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { HistoricalFieldEdit, ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import { buildFieldVersionHistory } from 'utils/draftFieldEdits';
-import { applyOverlayToCard, buildOverlayFromDraft, saveOverlayForUserCard } from 'utils/multiAccountEdits';
+import { applyOverlayToCard, buildOverlayFromDraft } from 'utils/multiAccountEdits';
 import { loadOwnProfileMutations, loadSharedProfileMutations } from 'utils/profileMutations';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
+
+jest.mock('utils/profileProposalRepository', () => ({
+  profileProposalService: { getDraft: jest.fn(), createDraft: jest.fn(), saveDraft: jest.fn(), deleteDraft: jest.fn() },
+}));
 
 jest.mock('firebase/auth', () => ({
   onAuthStateChanged: (_auth, callback) => {
@@ -80,7 +85,7 @@ jest.mock('utils/multiAccountEdits', () => {
   return {
     ...actual,
     getOverlayHistoryForCard: jest.fn(async () => []),
-    getOverlaysForCard: jest.fn(async () => ({})),
+    getOverlaysForCard: async () => ({}),
     saveOverlayForUserCard: jest.fn(async () => undefined),
   };
 });
@@ -110,7 +115,13 @@ const openSharedDraft = async () => {
 };
 
 beforeEach(() => {
+  localStorage.clear();
   jest.clearAllMocks();
+  profileProposalService.getDraft.mockResolvedValue(null);
+  profileProposalService.createDraft.mockImplementation(async proposal => proposal);
+  profileProposalService.saveDraft.mockImplementation(async (proposal, { expected }) => ({
+    ...proposal, revision: expected.revision + 1,
+  }));
 });
 
 // Ці перевірки описують український бік екрана — мову задаємо явно.
@@ -144,8 +155,10 @@ describe('ProfileCreationWorkspace repeatable field behavior', () => {
 
     expect(phoneBoxes()).toHaveLength(1);
     expect(phoneBoxes()[0]).toHaveValue('');
-    await waitFor(() => expect(saveOverlayForUserCard).toHaveBeenCalledTimes(3));
-    const latestFields = saveOverlayForUserCard.mock.calls.at(-1)[0].fields;
+    await waitFor(() => expect(screen.getByTestId('draft-autosave')).toHaveTextContent('Збережено'));
+    expect(profileProposalService.createDraft).toHaveBeenCalledTimes(1);
+    expect(profileProposalService.saveDraft).toHaveBeenCalledTimes(1);
+    const latestFields = profileProposalService.saveDraft.mock.calls.at(-1)[0].changes;
     expect(latestFields.phone.added).toBeUndefined();
     expect(latestFields.phone.removed).toEqual(['111', '222']);
   });
@@ -155,11 +168,12 @@ describe('ProfileCreationWorkspace repeatable field behavior', () => {
 
     fireEvent.click(phoneClearButtons()[0]);
 
-    await waitFor(() => expect(saveOverlayForUserCard).toHaveBeenCalledTimes(1));
-    expect(saveOverlayForUserCard).toHaveBeenCalledWith(expect.objectContaining({
-      cardUserId: 'card-1',
-      editorUserId: 'editor-1',
-      fields: { phone: { removed: ['111'] } },
+    await waitFor(() => expect(profileProposalService.createDraft).toHaveBeenCalledTimes(1));
+    expect(profileProposalService.createDraft).toHaveBeenCalledWith(expect.objectContaining({
+      operation: 'update',
+      targetCardId: 'card-1',
+      createdBy: 'editor-1',
+      changes: { phone: { removed: ['111'] } },
     }));
     expect(phoneBoxes()).toHaveLength(1);
     expect(phoneBoxes()[0]).toHaveValue('222');

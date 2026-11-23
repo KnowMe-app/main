@@ -780,6 +780,7 @@ const EN_BY_UK = {
   'Автор уже оновив чернетку. Перевірте нову версію.': 'The author has updated the draft. Check the new version.',
   'Не вдалося зберегти чернетку як картку': 'Could not save the draft as a card',
   'Профіль уже змінено. Оновіть сторінку.': 'The profile has already changed. Reload the page.',
+  'Профіль уже змінено. Правки збережено на цьому пристрої.': 'The profile has already changed. Your edits are saved on this device.',
   'Профіль з такими контактами вже існує або очікує перевірки.': 'A profile with these contacts already exists or is waiting for review.',
   '{field} уже є в картці {cards}': '{field} is already in profile {cards}',
   '{field} уже є в іншій картці': '{field} is already in another profile',

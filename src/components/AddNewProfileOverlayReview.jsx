@@ -24,16 +24,12 @@ import toast from 'react-hot-toast';
 import styled from 'styled-components';
 
 import {
-  applyOverlayToCard,
   buildOverlayFieldEntries,
-  getCanonicalCard,
   listPendingOverlayCards,
-  normalizeOverlayFields,
-  removeAllOverlaysForCard,
-  acceptAllOverlaysForCard,
   settleOverlayValueForCard,
+  sortOverlaysByAppliedOrder,
 } from 'utils/multiAccountEdits';
-import { persistCanonicalCard } from 'utils/persistCanonicalCard';
+import { approveOverlayValue } from 'utils/profileOverlayReview';
 import { getFieldLabel, pickerFields } from './formFields';
 import { fetchMatchingCardsByIds } from './config';
 import { ToolButton, ToolCount, ToolDrawerNote } from './AddNewProfileAdminPanel.styled';
@@ -163,22 +159,6 @@ const CardActions = styled.footer`
 
 const fieldsMap = new Map((pickerFields || []).map(field => [field?.name, field]));
 
-/**
- * Що саме записати в анкету, приймаючи **одне** значення.
- *
- * Заміна (`{ from, to }`) мусить лишитись заміною: зведена до `added`, вона
- * дописала б нове значення поруч зі старим, і в анкеті замість «Львів» стояло
- * б «Київ, Львів» — тобто прийняття правки додавало б людині друге місто.
- * Дописування й прибирання окремих значень масиву, навпаки, стосуються рівно
- * того значення, на яке натиснули: сусідні пропозиції того ж поля лишаються
- * в черзі.
- */
-const acceptedChangeForEntry = (overlaysByEditor, fieldName, entry) => {
-  const change = normalizeOverlayFields(overlaysByEditor?.[entry.editorUserId]?.fields)[fieldName];
-  if (change && 'to' in change) return { from: change.from ?? '', to: change.to ?? '' };
-  return entry.isDeleted ? { removed: [entry.value] } : { added: [entry.value] };
-};
-
 const labelForField = fieldName => getFieldLabel(fieldsMap.get(fieldName) || { name: fieldName }) || fieldName;
 
 // Кількість дописувачів пишеться словом, а «2 дописувачів» — не слово: рядок
@@ -220,11 +200,39 @@ const describeCard = card => {
  * немає» тоді означало б рівно протилежне до правди.
  */
 export const loadOverlayReviewQueue = async () => {
-  const entries = await listPendingOverlayCards();
+  const entries = await listPendingOverlayCards({ includeRecords: true });
   if (!entries.length) return { entries: [], cards: {} };
 
   const { cards } = await fetchMatchingCardsByIds(entries.map(entry => entry.cardUserId));
   return { entries, cards };
+};
+
+const reviewValue = async (action, decision) => {
+  if (!decision.expectedCurrent) throw Object.assign(new Error('REVISION_CONFLICT'), { code: 'REVISION_CONFLICT' });
+  const result = action === 'accept'
+    ? await approveOverlayValue(decision)
+    : await settleOverlayValueForCard({ ...decision, action });
+  if (!result) throw Object.assign(new Error('REVISION_CONFLICT'), { code: 'REVISION_CONFLICT' });
+  return result;
+};
+
+const reviewAllValues = async (entry, action) => {
+  for (const overlay of sortOverlaysByAppliedOrder(entry.overlaysByEditor)) {
+    const { editorUserId } = overlay;
+    const fields = buildOverlayFieldEntries({ [editorUserId]: overlay });
+    let expectedCurrent = entry.recordsByEditor?.[editorUserId];
+    for (const [fieldName, rows] of Object.entries(fields)) {
+      for (const { value } of rows) {
+        // Наступний рядок спирається на щойно підтверджений залишок того
+        // самого автора, а не на нове читання, що могло б прийняти чужу правку.
+        // eslint-disable-next-line no-await-in-loop
+        const result = await reviewValue(action, {
+          cardUserId: entry.cardUserId, editorUserId, fieldName, value, expectedCurrent,
+        });
+        expectedCurrent = result.remainingOverlay;
+      }
+    }
+  }
 };
 
 const OverlayCard = ({ entry, card, busy, onAcceptValue, onDiscardValue, onAcceptAll, onDiscardAll, onOpen }) => {
@@ -333,7 +341,12 @@ export const OverlayReviewQueue = ({ onOpenCard }) => {
       toast.success(successMessage);
       await refresh();
     } catch (error) {
-      toast.error(`${failureMessage}: ${error?.code || error?.message || 'unknown'}`);
+      if (error?.code === 'REVISION_CONFLICT') {
+        toast.error('Анкету або пропозицію вже змінено. Перевірте оновлені дані.');
+      } else {
+        toast.error(`${failureMessage}: ${error?.code || error?.message || 'unknown'}`);
+      }
+      await refresh();
     } finally {
       setBusy(false);
     }
@@ -350,19 +363,13 @@ export const OverlayReviewQueue = ({ onOpenCard }) => {
    * форми на екрані немає взагалі.
    */
   const acceptValue = useCallback((entry, fieldName, row) => runAction(
-    async () => {
-      const change = acceptedChangeForEntry(entry.overlaysByEditor, fieldName, row);
-      const canonical = await getCanonicalCard(entry.cardUserId);
-      await persistCanonicalCard(applyOverlayToCard(canonical, { [fieldName]: change }));
-      const settled = await settleOverlayValueForCard({
-        editorUserId: row.editorUserId,
-        cardUserId: entry.cardUserId,
-        fieldName,
-        value: row.value,
-        action: 'accept',
-      });
-      if (!settled) throw new Error('Пропозицію не вдалося зняти з черги');
-    },
+    () => reviewValue('accept', {
+      editorUserId: row.editorUserId,
+      cardUserId: entry.cardUserId,
+      fieldName,
+      value: row.value,
+      expectedCurrent: entry.recordsByEditor?.[row.editorUserId],
+    }),
     `Прийнято: ${row.value}`,
     'Не вдалося прийняти доповнення',
   ), [runAction]);
@@ -375,28 +382,25 @@ export const OverlayReviewQueue = ({ onOpenCard }) => {
    * анкеті, ані в чужому шарі на цій картці.
    */
   const discardValue = useCallback((entry, fieldName, row) => runAction(
-    async () => {
-      const settled = await settleOverlayValueForCard({
-        editorUserId: row.editorUserId,
-        cardUserId: entry.cardUserId,
-        fieldName,
-        value: row.value,
-        action: 'discard',
-      });
-      if (!settled) throw new Error('Пропозицію не вдалося зняти з черги');
-    },
+    () => reviewValue('discard', {
+      editorUserId: row.editorUserId,
+      cardUserId: entry.cardUserId,
+      fieldName,
+      value: row.value,
+      expectedCurrent: entry.recordsByEditor?.[row.editorUserId],
+    }),
     `Видалено: ${row.value}`,
     'Не вдалося видалити доповнення',
   ), [runAction]);
 
   const acceptAll = useCallback(entry => runAction(
-    () => acceptAllOverlaysForCard({ cardUserId: entry.cardUserId, persistCard: persistCanonicalCard }),
+    () => reviewAllValues(entry, 'accept'),
     'Усі доповнення картки прийнято',
     'Не вдалося прийняти доповнення',
   ), [runAction]);
 
   const discardAll = useCallback(entry => runAction(
-    () => removeAllOverlaysForCard(entry.cardUserId),
+    () => reviewAllValues(entry, 'discard'),
     'Усі доповнення картки видалено',
     'Не вдалося видалити доповнення',
   ), [runAction]);

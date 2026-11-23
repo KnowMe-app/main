@@ -1,6 +1,7 @@
 import { get, ref } from 'firebase/database';
 
 import { database, fetchProfileDraftById } from 'components/config';
+import { legacyCreateProposalAdapter } from './legacyCreateProposalAdapter';
 
 import { isAdminUid } from './accessLevel';
 import {
@@ -101,12 +102,17 @@ const checkTarget = async (proposal, { current, actorUid } = {}) => {
     if (body.some(isProfileNode)) return;
   }
 
-  if (canUseLegacyDraftTarget(current)) {
+  if (canUseLegacyDraftTarget(current) || proposal.targetCreateProposalId) {
     const target = await fetchProfileDraftById(cardId);
     if (
       target?.userId === cardId && target.__profileMutationOperation === 'create'
       && INDEXABLE_DRAFT_STATUSES.has(target.__profileMutationStatus)
-    ) return;
+    ) {
+      if (canUseLegacyDraftTarget(current)) return;
+      const createdBy = target.__profileMutationCreatedBy;
+      const parent = createdBy && await legacyCreateProposalAdapter.get({ cardId, createdBy });
+      if (parent?.proposal.id === proposal.targetCreateProposalId) return;
+    }
   }
   throw adapterError('TARGET_NOT_FOUND');
 };

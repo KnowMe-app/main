@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { buildEditorProposal } from 'utils/profileProposalEditor';
 
 // Drafts are no longer single-author: any editor may open one, and what they
 // see is every editor's overlay stacked onto the author's data. These
@@ -28,23 +29,36 @@ describe('ProfileCreationWorkspace shared drafts', () => {
 
   it('renders the draft as every editor overlay stacked onto the author data', () => {
     expect(source).toContain('const stacked = applyOverlaysToCard(base, overlays);');
-    expect(source).toContain('stackedDraftRef.current = stacked;');
     expect(source).toContain("const visible = accessRef.current?.isAdmin ? base : stacked;");
     expect(source).toContain('setDraft(visible);');
   });
 
-  it('stores another editor changes as that editor own overlay, never in the author draft', () => {
-    expect(source).toContain('if (isSharedDraft(current, uid, accessRef.current?.isAdmin)) {');
-    expect(source).toContain('const baseWithoutOwnOverlay = applyOverlaysToCard(base, overlays, { excludeEditorUserId: uid });');
-    expect(source).toContain('fields: buildOverlayFromDraft(baseWithoutOwnOverlay, nextDraft),');
-    expect(source).toContain('editorUserId: uid,');
-    expect(source).toContain('cardUserId: current.cardId,');
+  it('stores shared draft edits under the contributing editor and the original target', () => {
+    const proposal = buildEditorProposal({
+      locator: { operation: 'update', cardId: 'draft-1', createdBy: 'editor-1' },
+      base: { userId: 'draft-1', phone: ['111', '222'] },
+      targetCreateProposalId: 'author-draft-1',
+    }, { userId: 'draft-1', phone: ['222'] }, 1);
+
+    expect(proposal).toMatchObject({
+      operation: 'update',
+      targetCardId: 'draft-1',
+      createdBy: 'editor-1',
+      targetCreateProposalId: 'author-draft-1',
+      changes: { phone: { removed: ['111'] } },
+    });
+    expect(proposal).not.toHaveProperty('data');
   });
 
-  it('never lets an author save promote somebody else pending overlay into the draft', () => {
-    expect(source).toContain('const hasPendingOverlays = Object.keys(overlays).length > 0;');
-    expect(source).toContain('? applyOverlayToCard(base, buildOverlayFromDraft(stacked, nextDraft))');
-    expect(source).toContain(': nextDraft;');
+  it('keeps another proposal out of an author save', () => {
+    const proposal = buildEditorProposal({
+      locator: { operation: 'create', cardId: 'draft-1', createdBy: 'author-1' },
+      base: { userId: 'draft-1', phone: '111', name: 'Author' },
+      visible: { userId: 'draft-1', phone: ['111', '222'], name: 'Author' },
+      protectContributions: true,
+    }, { userId: 'draft-1', phone: ['111', '222'], name: 'Edited author' }, 1);
+
+    expect(proposal.data).toEqual({ userId: 'draft-1', phone: '111', name: 'Edited author' });
   });
 
   it('keeps the per-edit review and the history journal admin-only', () => {
@@ -84,7 +98,7 @@ describe('ProfileCreationWorkspace shared drafts', () => {
   });
 
   it('waits for blur autosave and publishes the accepted base at its latest revision', () => {
-    expect(source).toContain('await saveQueueRef.current;');
+    expect(source).toContain('await editor?.lastWrite;');
     expect(source).toContain('const current = activeMutationRef.current;');
     expect(source).toContain('expectedRevision: current.revision,');
     expect(source).toContain('finalData: draftBaseRef.current || current.data,');
@@ -92,8 +106,8 @@ describe('ProfileCreationWorkspace shared drafts', () => {
 
   it('accepting a corrected value stores what the admin typed, not what was proposed', () => {
     expect(source).toContain('const acceptedChange = withEditedValue(settled, row, editedValue);');
-    expect(source).toContain('applyOverlayToCard(draftBaseRef.current || {}, { [row.fieldName]: acceptedChange }),');
-    expect(source).toContain('{ skipRevisionHistory: true },');
+    expect(source).toContain('applyOverlayToCard({ ...base, [row.fieldName]: before }, { [row.fieldName]: acceptedChange });');
+    expect(source).toContain('{ skipRevisionHistory: true });');
     expect(source).toContain('remainingChange: remaining,');
   });
 

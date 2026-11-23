@@ -10,7 +10,8 @@ import {
   DRAFT_CHANGED_ELSEWHERE,
   PROFILE_DRAFT_SAVED_EVENT,
 } from '../profileRecordSource';
-import { buildProfileRevisionHistory, loadProfileMutation, saveCreateProfileMutation } from 'utils/profileMutations';
+import { buildProfileRevisionHistory } from 'utils/profileMutations';
+import { profileProposalService } from 'utils/profileProposalRepository';
 import {
   fetchProfileDraftById,
   fetchUserById,
@@ -20,6 +21,7 @@ import {
 } from 'components/config';
 
 jest.mock('components/config', () => ({
+  auth: { currentUser: { uid: 'admin-1' } },
   fetchProfileDraftById: jest.fn(),
   fetchUserById: jest.fn(),
   setOwnerGetInTouch: jest.fn(async () => undefined),
@@ -29,16 +31,26 @@ jest.mock('components/config', () => ({
   updateSearchId: jest.fn(),
 }));
 
-// Журнал рахує справжня `buildProfileRevisionHistory`: тест має довести, що
-// збереження адміна дає ті самі записи «додано / замінено / видалено», що й
-// збереження автора. Мокаються лише читання й запис чернетки.
-jest.mock('utils/profileMutations', () => ({
-  ...jest.requireActual('utils/profileMutations'),
-  loadProfileMutation: jest.fn(),
-  saveCreateProfileMutation: jest.fn(),
+// Журнал рахує справжня buildProfileRevisionHistory. Для форми замінено
+// тільки читання й збереження через сервіс пропозицій.
+jest.mock('utils/profileProposalRepository', () => ({
+  profileProposalService: { getDraft: jest.fn(), saveDraft: jest.fn() },
 }));
 
+const { getDraft, saveDraft } = profileProposalService;
+
 const DRAFT_DATA = { userId: 'draft-1', name: ['44'], phone: ['380505554409', '380505554416'] };
+const draftProposal = (revision = 28, createdBy = 'author-1') => ({
+  id: `proposal:${createdBy}`,
+  operation: 'create',
+  reservedCardId: 'draft-1',
+  targetCardId: null,
+  createdBy,
+  revision,
+  status: 'pendingReview',
+  data: DRAFT_DATA,
+});
+
 const draftRecord = (overrides = {}) => ({
   ...DRAFT_DATA,
   __profileMutationOperation: 'create',
@@ -124,14 +136,14 @@ describe('draft data built from the admin form', () => {
 
 describe('admin save into the draft', () => {
   const saveFrom = async (submittedPhones, deletedKeys = []) => {
-    loadProfileMutation.mockResolvedValue({ createdBy: 'author-1', revision: 28, data: DRAFT_DATA });
-    saveCreateProfileMutation.mockImplementation(async ({ data }) => ({ revision: 29, data }));
+    getDraft.mockResolvedValue(draftProposal(28));
+    saveDraft.mockImplementation(async ({ data }) => ({ revision: 29, data }));
     await saveDraftProfileRecord({
       submitted: { ...draftRecord(), phone: submittedPhones, lastAction: 1 },
       deletedKeys,
       actorUid: 'admin-1',
     });
-    const [{ data }] = saveCreateProfileMutation.mock.calls.at(-1);
+    const [{ data }] = saveDraft.mock.calls.at(-1);
     return buildProfileRevisionHistory({
       cardId: 'draft-1', actorUid: 'admin-1', previousData: DRAFT_DATA, nextData: data, at: 1, revision: 29,
     });
@@ -140,12 +152,8 @@ describe('admin save into the draft', () => {
   it('writes through the draft writer with the author, the admin and the read revision', async () => {
     await saveFrom(['380505554409', '380505554416']);
 
-    expect(saveCreateProfileMutation).toHaveBeenCalledWith(expect.objectContaining({
-      cardId: 'draft-1',
-      creatorUid: 'author-1',
-      actorUid: 'admin-1',
-      expectedRevision: 28,
-    }));
+    expect(getDraft).toHaveBeenCalledWith({ operation: 'create', cardId: 'draft-1', createdBy: 'author-1' });
+    expect(saveDraft).toHaveBeenCalledWith(draftProposal(), { expected: draftProposal() });
   });
 
   it('records an added contact', async () => {
@@ -176,43 +184,78 @@ describe('admin save into the draft', () => {
   });
 
   it('refuses to overwrite a revision the form never showed', async () => {
-    loadProfileMutation.mockResolvedValue({ createdBy: 'author-1', revision: 30, data: DRAFT_DATA });
+    getDraft.mockResolvedValue(draftProposal(30));
 
     await expect(saveDraftProfileRecord({ submitted: draftRecord(), actorUid: 'admin-1' }))
       .rejects.toMatchObject({ code: DRAFT_CHANGED_ELSEWHERE });
-    expect(saveCreateProfileMutation).not.toHaveBeenCalled();
+    expect(saveDraft).not.toHaveBeenCalled();
   });
 
   it('lets queued saves follow each other: the next one builds on the revision just written', async () => {
     rememberDraftRecordRevision(draftRecord());
-    loadProfileMutation.mockResolvedValueOnce({ createdBy: 'author-1', revision: 28, data: DRAFT_DATA });
-    saveCreateProfileMutation.mockResolvedValueOnce({ revision: 29, data: DRAFT_DATA });
+    getDraft.mockResolvedValueOnce(draftProposal(28));
+    saveDraft.mockResolvedValueOnce({ revision: 29, data: DRAFT_DATA });
     await saveDraftProfileRecord({ submitted: draftRecord(), actorUid: 'admin-1' });
 
     // Стан форми лишився з ревізією 28 — але записав її цей таб, тож друге
     // збереження з черги не відмовляє.
-    loadProfileMutation.mockResolvedValueOnce({ createdBy: 'author-1', revision: 29, data: DRAFT_DATA });
-    saveCreateProfileMutation.mockResolvedValueOnce({ revision: 30, data: DRAFT_DATA });
+    getDraft.mockResolvedValueOnce(draftProposal(29));
+    saveDraft.mockResolvedValueOnce({ revision: 30, data: DRAFT_DATA });
     await expect(saveDraftProfileRecord({ submitted: draftRecord(), actorUid: 'admin-1' })).resolves.toBeTruthy();
-    expect(saveCreateProfileMutation).toHaveBeenLastCalledWith(expect.objectContaining({ expectedRevision: 29 }));
+    expect(saveDraft).toHaveBeenLastCalledWith(draftProposal(29), { expected: draftProposal(29) });
   });
 
   it('trusts the caller base revision over the form memory (accepted overlay built on a fresh read)', async () => {
     rememberDraftRecordRevision(draftRecord());
-    loadProfileMutation.mockResolvedValue({ createdBy: 'author-1', revision: 31, data: DRAFT_DATA });
-    saveCreateProfileMutation.mockResolvedValue({ revision: 32, data: DRAFT_DATA });
+    getDraft.mockResolvedValue(draftProposal(31));
+    saveDraft.mockResolvedValue({ revision: 32, data: DRAFT_DATA });
 
     await expect(saveDraftProfileRecord({
       submitted: draftRecord({ __profileMutationRevision: 31 }), actorUid: 'admin-1', baseRevision: 31,
     })).resolves.toBeTruthy();
   });
 
+  it('does not let a review on a fresh draft rebase an older open form', async () => {
+    rememberDraftRecordRevision(draftRecord());
+    getDraft.mockResolvedValueOnce(draftProposal(28)).mockResolvedValueOnce(draftProposal(29));
+    saveDraft.mockResolvedValueOnce(draftProposal(29));
+
+    await saveDraftProfileRecord({ submitted: draftRecord(), actorUid: 'admin-1', baseRevision: 28 });
+
+    await expect(saveDraftProfileRecord({ submitted: draftRecord(), actorUid: 'admin-1' }))
+      .rejects.toMatchObject({ code: DRAFT_CHANGED_ELSEWHERE });
+    expect(saveDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps queued revisions separate when two authors have colliding card IDs', async () => {
+    const other = draftRecord({ __profileMutationCreatedBy: 'author-2' });
+    rememberDraftRecordRevision(draftRecord());
+    getDraft.mockResolvedValueOnce(draftProposal()).mockResolvedValueOnce(draftProposal(28, 'author-2'));
+    saveDraft.mockResolvedValueOnce(draftProposal(29)).mockResolvedValueOnce(draftProposal(29, 'author-2'));
+
+    await saveDraftProfileRecord({ submitted: draftRecord(), actorUid: 'admin-1' });
+    await saveDraftProfileRecord({ submitted: other, actorUid: 'admin-1' });
+
+    expect(saveDraft).toHaveBeenLastCalledWith(draftProposal(28, 'author-2'), {
+      expected: draftProposal(28, 'author-2'),
+    });
+  });
+
+  it('uses the same conflict wording when a save loses the service transaction', async () => {
+    getDraft.mockResolvedValue(draftProposal());
+    const cause = Object.assign(new Error('proposal changed'), { code: 'REVISION_CONFLICT' });
+    saveDraft.mockRejectedValue(cause);
+
+    await expect(saveDraftProfileRecord({ submitted: draftRecord(), actorUid: 'admin-1' }))
+      .rejects.toMatchObject({ code: DRAFT_CHANGED_ELSEWHERE, cause });
+  });
+
   // Позначка «звʼязатись» — особиста позначка адміна. У готової анкети вона
   // лежить під ним у `multiData/getInTouch`, і чернетка тут не виняток: в її
   // даних її побачив би автор, а журнал записав би як правку анкети.
   it('keeps the admin own marks out of the draft and stores them under the admin', async () => {
-    loadProfileMutation.mockResolvedValue({ createdBy: 'author-1', revision: 28, data: DRAFT_DATA });
-    saveCreateProfileMutation.mockResolvedValue({ revision: 29, data: DRAFT_DATA });
+    getDraft.mockResolvedValue(draftProposal(28));
+    saveDraft.mockResolvedValue({ revision: 29, data: DRAFT_DATA });
 
     await saveDraftProfileRecord({
       submitted: {
@@ -227,15 +270,15 @@ describe('admin save into the draft', () => {
     expect(setOwnerGetInTouch).toHaveBeenCalledWith('admin-1', 'draft-1', '2026-11-01');
     expect(setOwnerWriter).toHaveBeenCalledWith('admin-1', 'draft-1', 'Ірина');
     expect(setOwnerStimulationSchedule).toHaveBeenCalledWith('admin-1', 'draft-1', 'schedule');
-    const [{ data }] = saveCreateProfileMutation.mock.calls.at(-1);
+    const [{ data }] = saveDraft.mock.calls.at(-1);
     expect(data).not.toHaveProperty('getInTouch');
     expect(data).not.toHaveProperty('writer');
     expect(data).not.toHaveProperty('stimulationSchedule');
   });
 
   it('removes owner marks that the admin cleared', async () => {
-    loadProfileMutation.mockResolvedValue({ createdBy: 'author-1', revision: 28, data: DRAFT_DATA });
-    saveCreateProfileMutation.mockResolvedValue({ revision: 29, data: DRAFT_DATA });
+    getDraft.mockResolvedValue(draftProposal(28));
+    saveDraft.mockResolvedValue({ revision: 29, data: DRAFT_DATA });
 
     await saveDraftProfileRecord({
       submitted: draftRecord(),
@@ -251,8 +294,8 @@ describe('admin save into the draft', () => {
   it('tells the open admin form that the draft history changed', async () => {
     const listener = jest.fn();
     window.addEventListener(PROFILE_DRAFT_SAVED_EVENT, listener);
-    loadProfileMutation.mockResolvedValue({ createdBy: 'author-1', revision: 28, data: DRAFT_DATA });
-    saveCreateProfileMutation.mockResolvedValue({ revision: 29, data: DRAFT_DATA });
+    getDraft.mockResolvedValue(draftProposal(28));
+    saveDraft.mockResolvedValue({ revision: 29, data: DRAFT_DATA });
 
     await saveDraftProfileRecord({ submitted: draftRecord(), actorUid: 'admin-1' });
 

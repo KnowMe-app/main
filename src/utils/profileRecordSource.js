@@ -1,4 +1,5 @@
 import {
+  auth,
   fetchProfileDraftById,
   fetchUserById,
   setOwnerGetInTouch,
@@ -6,7 +7,7 @@ import {
   setOwnerWriter,
 } from 'components/config';
 import { OWNER_MULTI_DATA_FIELD_NAMES } from 'utils/profileNodeSchema';
-import { loadProfileMutation, saveCreateProfileMutation } from 'utils/profileMutations';
+import { profileProposalService } from 'utils/profileProposalRepository';
 
 // Чернетку щойно записано (будь-ким у цьому табі): форма адміна перечитує
 // її журнал. Подія окрема від «усі поля», бо та перечитує ще й пропозиції
@@ -63,10 +64,21 @@ export const getDraftRecordDataSegments = record => {
  * наступне мусить знати ревізію, яку записало попереднє.
  */
 const knownDraftRevisions = new Map();
+const draftRevisionKey = (actorUid, creatorUid, cardId) => JSON.stringify([actorUid, creatorUid, cardId]);
+const draftRevision = value => {
+  if (typeof value !== 'number' && !(typeof value === 'string' && value.trim())) return undefined;
+  const revision = Number(value);
+  return Number.isSafeInteger(revision) && revision >= 0 ? revision : undefined;
+};
 
 export const rememberDraftRecordRevision = record => {
-  if (!isDraftProfileRecord(record) || !record?.userId) return;
-  knownDraftRevisions.set(record.userId, Number(record.__profileMutationRevision) || 0);
+  const actorUid = auth.currentUser?.uid;
+  const creatorUid = getDraftRecordCreator(record);
+  const revision = draftRevision(record?.__profileMutationRevision);
+  if (!actorUid || !creatorUid || !isDraftProfileRecord(record) || !record.userId) return;
+  const key = draftRevisionKey(actorUid, creatorUid, record.userId);
+  if (revision === undefined) knownDraftRevisions.delete(key);
+  else knownDraftRevisions.set(key, { displayed: revision, written: revision });
 };
 
 export const forgetDraftRecordRevisions = () => knownDraftRevisions.clear();
@@ -143,9 +155,13 @@ export const buildDraftRecordData = (currentData = {}, submitted = {}, deletedKe
 
 export const DRAFT_CHANGED_ELSEWHERE = 'DRAFT_CHANGED_ELSEWHERE';
 
+const draftChangedElsewhere = cause => Object.assign(new Error(
+  'Чернетку змінили після того, як її відкрили. Перечитайте її («усі поля») і повторіть правку.',
+), { code: DRAFT_CHANGED_ELSEWHERE, ...(cause && { cause }) });
+
 /**
  * Записати правку форми в саму чернетку — тим самим шляхом, яким пише автор
- * (`saveCreateProfileMutation`): ревізія, журнал `profileMutationHistory`,
+ * (`profileProposalService`): ревізія, журнал `profileMutationHistory`,
  * заявки на унікальність і `searchId` чернетки. Дописувати у вузли готової
  * анкети тут нема чого: чернетку публікує окреме рішення адміна.
  */
@@ -161,46 +177,56 @@ export const saveDraftProfileRecord = async ({ submitted, deletedKeys = [], acto
   if (!cardId || !creatorUid || !actorUid) {
     throw new Error('Чернетку не записано: невідомо, чия вона чи хто її править');
   }
+  if (auth.currentUser?.uid !== actorUid) throw new Error('PERMISSION_DENIED');
 
-  const current = await loadProfileMutation(creatorUid, cardId);
-  if (!current) throw new Error('Чернетки вже немає — її видалили або опублікували');
-
-  // Ревізію, записану цим табом, памʼятає модуль; якщо її ще немає (запис
-  // прийшов із видачі пошуку), то ту, з якою запис приїхав у форму.
-  const knownRevision = baseRevision !== undefined
-    ? Number(baseRevision)
-    : knownDraftRevisions.has(cardId)
-    ? knownDraftRevisions.get(cardId)
-    : (Number.isFinite(Number(submitted.__profileMutationRevision)) && submitted.__profileMutationRevision !== undefined
-      ? Number(submitted.__profileMutationRevision)
-      : undefined);
-  if (knownRevision !== undefined && Number(current.revision) !== knownRevision) {
-    const error = new Error(
-      'Чернетку змінили після того, як її відкрили. Перечитайте її («усі поля») і повторіть правку.'
-    );
-    error.code = DRAFT_CHANGED_ELSEWHERE;
-    throw error;
+  const key = draftRevisionKey(actorUid, creatorUid, cardId);
+  const remembered = knownDraftRevisions.get(key);
+  const displayed = draftRevision(baseRevision === undefined ? submitted.__profileMutationRevision : baseRevision);
+  if (displayed === undefined) throw draftChangedElsewhere();
+  // Тільки наступний запис тієї самої форми може продовжити її чергу. Ревізія
+  // іншого знімка, наприклад досилання з пристрою, не успадковує цей дозвіл.
+  const expectedRevision = baseRevision === undefined && remembered?.displayed === displayed
+    ? remembered.written
+    : displayed;
+  const current = await profileProposalService.getDraft({ operation: 'create', cardId, createdBy: creatorUid });
+  if (!current || current.status === 'accepted') throw new Error('Чернетки вже немає — її видалили або опублікували');
+  const formChanged = baseRevision === undefined && knownDraftRevisions.get(key) !== remembered;
+  if (current.revision !== expectedRevision || formChanged) {
+    throw draftChangedElsewhere();
   }
 
+  if (auth.currentUser?.uid !== actorUid) throw new Error('PERMISSION_DENIED');
   const removed = new Set(deletedKeys || []);
   await Promise.all(Object.entries(OWNER_FIELD_WRITERS)
     .filter(([field]) => Object.prototype.hasOwnProperty.call(submitted, field) || removed.has(field))
     .map(([field, write]) => write(actorUid, cardId, removed.has(field) ? null : submitted[field])));
 
-  const saved = await saveCreateProfileMutation({
-    cardId,
-    creatorUid,
-    actorUid,
-    data: buildDraftRecordData(current.data, submitted, deletedKeys),
-    expectedRevision: current.revision,
-  });
-  knownDraftRevisions.set(cardId, Number(saved?.revision) || 0);
+  let saved;
+  try {
+    if (auth.currentUser?.uid !== actorUid) throw new Error('PERMISSION_DENIED');
+    saved = await profileProposalService.saveDraft({
+      ...current,
+      data: buildDraftRecordData(current.data, submitted, deletedKeys),
+    }, { expected: current });
+  } catch (error) {
+    if (error?.code === 'REVISION_CONFLICT') throw draftChangedElsewhere(error);
+    throw error;
+  }
+  // Рішення про доповнення має свою свіжу базу. Воно не робить стару
+  // відкриту форму актуальною, доки та явно не перечитає анкету.
+  if (baseRevision === undefined && knownDraftRevisions.get(key) === remembered) {
+    knownDraftRevisions.set(key, { displayed, written: saved.revision });
+  }
   if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
     window.dispatchEvent(new CustomEvent(PROFILE_DRAFT_SAVED_EVENT, {
       detail: { cardId, revision: Number(saved?.revision) || 0 },
     }));
   }
-  return saved;
+  const record = { ...saved, cardId };
+  if (saved.duplicateConflicts) {
+    Object.defineProperty(record, 'duplicateConflicts', { value: saved.duplicateConflicts });
+  }
+  return record;
 };
 
 const formatHistoryValues = values => (Array.isArray(values) ? values : [values])

@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom';
+import { profileProposalService } from 'utils/profileProposalRepository';
 import React from 'react';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 
@@ -17,11 +18,14 @@ import {
   loadProfileMutationHistory,
   loadSharedProfileMutations,
   reserveProfileCardId,
-  saveCreateProfileMutation,
 } from 'utils/profileMutations';
-import { getOverlayHistoryForCard, getOverlaysForCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
+import { getOverlayHistoryForCard, getOverlaysForCard } from 'utils/multiAccountEdits';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 import { renderWithNavigationSlot } from '../testUtils/renderWithNavigationSlot';
+
+jest.mock('utils/profileProposalRepository', () => ({
+  profileProposalService: { getDraft: jest.fn(), createDraft: jest.fn(), saveDraft: jest.fn(), deleteDraft: jest.fn() },
+}));
 
 jest.mock('firebase/auth', () => ({
   onAuthStateChanged: (_auth, callback) => {
@@ -140,9 +144,9 @@ beforeEach(() => {
   loadProfileMutationHistory.mockResolvedValue([]);
   getOverlaysForCard.mockResolvedValue({});
   getOverlayHistoryForCard.mockResolvedValue([]);
-  saveOverlayForUserCard.mockResolvedValue(undefined);
+  profileProposalService.getDraft.mockResolvedValue(null);
+  profileProposalService.createDraft.mockImplementation(async proposal => proposal);
   reserveProfileCardId.mockReturnValue('new-card');
-  saveCreateProfileMutation.mockResolvedValue({ cardId: 'new-card', revision: 1, createdBy: 'editor-1' });
 });
 
 // Ці перевірки описують український бік екрана — мову задаємо явно.
@@ -219,36 +223,36 @@ describe('доповнення знайденої картки зі стрічк
     const existing = await screen.findByDisplayValue('380930001122');
 
     fireEvent.blur(existing);
-    await waitFor(() => expect(saveOverlayForUserCard).toHaveBeenCalled());
-    expect(saveOverlayForUserCard.mock.calls.at(-1)[0].fields).toEqual({});
+    await waitFor(() => expect(screen.getByTestId('draft-autosave')).toHaveTextContent('Збережено'));
+    expect(profileProposalService.createDraft).not.toHaveBeenCalled();
 
     fireEvent.change(existing, { target: { value: '380670009988' } });
     fireEvent.blur(existing);
 
-    await waitFor(() => expect(saveOverlayForUserCard.mock.calls.length).toBeGreaterThan(1));
-    expect(saveOverlayForUserCard.mock.calls.at(-1)[0]).toEqual(expect.objectContaining({
-      cardUserId: 'card-9',
-      editorUserId: 'editor-1',
-      fields: { phone: { added: ['380670009988'] } },
-    }));
+    await waitFor(() => expect(profileProposalService.createDraft).toHaveBeenCalledWith(expect.objectContaining({
+      operation: 'update',
+      targetCardId: 'card-9',
+      createdBy: 'editor-1',
+      changes: { phone: { added: ['380670009988'] } },
+    })));
   });
 
   it('відновлює власне попереднє доповнення і не стирає його незмінним blur', async () => {
-    getOverlaysForCard.mockResolvedValue({
-      'editor-1': {
-        editorUserId: 'editor-1',
-        fields: { phone: { added: ['380670009988'] } },
-      },
+    profileProposalService.getDraft.mockResolvedValue({
+      operation: 'update',
+      id: 'saved-overlay',
+      targetCardId: 'card-9',
+      createdBy: 'editor-1',
+      changes: { phone: { added: ['380670009988'] } },
     });
     renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     const previousAddition = await screen.findByDisplayValue('380670009988');
     fireEvent.blur(previousAddition);
 
-    await waitFor(() => expect(saveOverlayForUserCard).toHaveBeenCalled());
-    expect(saveOverlayForUserCard.mock.calls.at(-1)[0].fields).toEqual({
-      phone: { added: ['380670009988'] },
-    });
+    await waitFor(() => expect(screen.getByTestId('draft-autosave')).toHaveTextContent('Збережено'));
+    expect(profileProposalService.saveDraft).not.toHaveBeenCalled();
+    expect(profileProposalService.deleteDraft).not.toHaveBeenCalled();
   });
 
   // Оновлена сторінка — той самий намір: адресу форма поставила собі сама.
@@ -352,7 +356,7 @@ describe('створення картки з набраного у стрічц�
 
     expect(await screen.findByDisplayValue('Бугаренко')).toBeInTheDocument();
     expect(reserveProfileCardId).toHaveBeenCalled();
-    await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
+    await waitFor(() => expect(profileProposalService.createDraft).toHaveBeenCalled());
   });
 
   // Контакт, за яким стрічка вже показала картку, зайнятий: підставлений у нову
@@ -361,15 +365,15 @@ describe('створення картки з набраного у стрічц�
     mockLocationState = { createFromQuery: '380501112233', queryMatchedCards: 2 };
     renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
-    await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
-    expect(saveCreateProfileMutation.mock.calls[0][0].data).toEqual({ userId: 'new-card' });
+    await waitFor(() => expect(profileProposalService.createDraft).toHaveBeenCalled());
+    expect(profileProposalService.createDraft.mock.calls[0][0].data).toEqual({ userId: 'new-card' });
   });
 
   it('підставляє контакт, коли пошук нічого не знайшов', async () => {
     mockLocationState = { createFromQuery: '380501112233', queryMatchedCards: 0 };
     renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
-    await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
-    expect(saveCreateProfileMutation.mock.calls[0][0].data).toEqual({ userId: 'new-card', phone: '380501112233' });
+    await waitFor(() => expect(profileProposalService.createDraft).toHaveBeenCalled());
+    expect(profileProposalService.createDraft.mock.calls[0][0].data).toEqual({ userId: 'new-card', phone: '380501112233' });
   });
 });

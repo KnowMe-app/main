@@ -1,11 +1,12 @@
 import '@testing-library/jest-dom';
+import { profileProposalService } from 'utils/profileProposalRepository';
 import React from 'react';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import { fetchUserById, fetchUsersByIds } from './config';
 import { getOverlayHistoryForCard, getOverlaysForCard } from 'utils/multiAccountEdits';
-import { loadAllCreateProfileMutations, loadOwnProfileMutations, saveCreateProfileMutation } from 'utils/profileMutations';
+import { loadAllCreateProfileMutations, loadOwnProfileMutations } from 'utils/profileMutations';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 import { renderWithNavigationSlot } from '../testUtils/renderWithNavigationSlot';
 
@@ -15,6 +16,10 @@ import { renderWithNavigationSlot } from '../testUtils/renderWithNavigationSlot'
 // only updated the open editor's own refs, so the card kept showing the
 // pre-edit name/revision until a full page reload re-ran the auth effect and
 // re-fetched the list. Closing the editor must re-fetch the queue itself.
+jest.mock('utils/profileProposalRepository', () => ({
+  profileProposalService: { getDraft: jest.fn(), createDraft: jest.fn(), saveDraft: jest.fn(), deleteDraft: jest.fn() },
+}));
+
 jest.mock('firebase/auth', () => ({
   onAuthStateChanged: (_auth, callback) => {
     callback({ uid: 'admin-1' });
@@ -125,9 +130,10 @@ beforeEach(() => {
   // re-run more than once - that is a test-harness artifact, not the bug
   // under test, so the fixture tracks real state instead of call counts).
   let saved = false;
-  saveCreateProfileMutation.mockImplementation(async () => {
+  localStorage.clear();
+  profileProposalService.saveDraft.mockImplementation(async proposal => {
     saved = true;
-    return editedDraft;
+    return { ...proposal, revision: editedDraft.revision, data: editedDraft.data };
   });
   loadAllCreateProfileMutations.mockImplementation(async () => [saved ? editedDraft : originalDraft]);
 });
@@ -144,7 +150,7 @@ it('re-fetches the review queue when the editor is closed, so the card reflects 
   const nameInput = await screen.findByDisplayValue("Ім'я6");
   fireEvent.change(nameInput, { target: { value: "Ім'я9" } });
   fireEvent.blur(nameInput);
-  await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
+  await waitFor(() => expect(profileProposalService.saveDraft).toHaveBeenCalled());
 
   const queueCallsBeforeClose = loadAllCreateProfileMutations.mock.calls.length;
   // Кнопки «Закрити» внизу форми не стало — повернення живе стрілкою в шапці,

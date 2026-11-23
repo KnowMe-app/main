@@ -1,8 +1,8 @@
 import '@testing-library/jest-dom';
+import { profileProposalService } from 'utils/profileProposalRepository';
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
-import { saveCreateProfileMutation } from 'utils/profileMutations';
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import {
   addDislikeUser,
@@ -15,6 +15,10 @@ import {
 } from './config';
 import { loadOwnProfileMutations, loadSharedProfileMutations } from 'utils/profileMutations';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
+
+jest.mock('utils/profileProposalRepository', () => ({
+  profileProposalService: { getDraft: jest.fn(), createDraft: jest.fn(), saveDraft: jest.fn(), deleteDraft: jest.fn() },
+}));
 
 jest.mock('firebase/auth', () => ({
   onAuthStateChanged: (_auth, callback) => {
@@ -103,7 +107,7 @@ jest.mock('utils/multiAccountEdits', () => ({
   applyOverlaysToCard: card => card,
   buildOverlayFromDraft: jest.fn(),
   getOverlayHistoryForCard: jest.fn(async () => []),
-  getOverlaysForCard: jest.fn(async () => ({})),
+  getOverlaysForCard: async () => ({}),
   purgeOverlayHistoryEntries: jest.fn(),
   saveOverlayForUserCard: jest.fn(),
   settleOverlayFieldValue: jest.fn(),
@@ -247,20 +251,18 @@ it('говорить мовою інтерфейсу', async () => {
 // збереженням — чернетка лишається, і журнал правок пише кожне стерте значення.
 it('«Очистити все» після підтвердження зберігає чернетку з порожніми полями', async () => {
   await openOwnDraft();
-  saveCreateProfileMutation.mockClear();
-  saveCreateProfileMutation.mockImplementation(async ({ cardId, data }) => ({
-    cardId, createdBy: 'owner-1', status: 'private', revision: 2, updatedAt: 200, data,
+  profileProposalService.saveDraft.mockImplementation(async proposal => ({
+    ...proposal, status: 'private', revision: 2, updatedAt: 200,
   }));
 
   fireEvent.click(screen.getByTestId('clear-draft-button'));
   await screen.findByText('Очистити всі поля?');
   fireEvent.click(screen.getByRole('button', { name: 'Очистити' }));
 
-  await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
-  const { cardId, data } = saveCreateProfileMutation.mock.calls.at(-1)[0];
-  expect(cardId).toBe('draft-card');
+  await waitFor(() => expect(profileProposalService.saveDraft).toHaveBeenCalled());
+  const { reservedCardId, data } = profileProposalService.saveDraft.mock.calls.at(-1)[0];
+  expect(reservedCardId).toBe('draft-card');
   expect(data.name).toBe('');
   // Порожньому нема чого очищати — кнопка зникає разом із заповненим.
   await waitFor(() => expect(screen.queryByTestId('clear-draft-button')).not.toBeInTheDocument());
-  saveCreateProfileMutation.mockReset();
 });

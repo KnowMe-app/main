@@ -1,10 +1,18 @@
 import '@testing-library/jest-dom';
+import { profileProposalService } from 'utils/profileProposalRepository';
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import { fetchUserById, fetchUsersByIds } from './config';
-import { getOverlayHistoryForCard, getOverlaysForCard, purgeOverlayHistoryEntries, settleOverlayFieldValue } from 'utils/multiAccountEdits';
+import {
+  claimOverlayValueForReview,
+  getOverlayHistoryForCard,
+  getOverlaysForCard,
+  purgeOverlayHistoryEntries,
+  releaseOverlayValueReview,
+  settleOverlayFieldValue,
+} from 'utils/multiAccountEdits';
 import {
   loadAllCreateProfileMutations,
   loadOwnProfileMutations,
@@ -14,6 +22,10 @@ import {
   saveCreateProfileMutation,
 } from 'utils/profileMutations';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
+
+jest.mock('utils/profileProposalRepository', () => ({
+  profileProposalService: { getDraft: jest.fn(), createDraft: jest.fn(), saveDraft: jest.fn(), deleteDraft: jest.fn() },
+}));
 
 jest.mock('firebase/auth', () => ({
   onAuthStateChanged: (_auth, callback) => {
@@ -95,10 +107,12 @@ jest.mock('utils/multiAccountEdits', () => {
   const actual = jest.requireActual('utils/multiAccountEdits');
   return {
     ...actual,
+    claimOverlayValueForReview: jest.fn(),
     getOverlayHistoryForCard: jest.fn(),
     getOverlaysForCard: jest.fn(),
     removeAllOverlaysForCard: jest.fn(),
     purgeOverlayHistoryEntries: jest.fn(),
+    releaseOverlayValueReview: jest.fn(),
     saveOverlayForUserCard: jest.fn(),
     settleOverlayFieldValue: jest.fn(),
   };
@@ -119,6 +133,8 @@ const openDraftAsAdmin = async () => {
 // create-react-app resets mock implementations between tests, so every run
 // re-arms the same draft: author data Ім'я6, one pending proposal Ім'я7.
 beforeEach(() => {
+  localStorage.clear();
+  profileProposalService.saveDraft.mockImplementation(async (proposal, { expected }) => ({ ...proposal, revision: expected.revision + 1 }));
   fetchUserById.mockResolvedValue({ canCreateProfiles: true });
   fetchUsersByIds.mockResolvedValue({ 'editor-1': { name: 'Оля', surname: 'Р.' } });
   loadAllCreateProfileMutations.mockResolvedValue([draftMutation]);
@@ -130,9 +146,12 @@ beforeEach(() => {
     { entryId: 'h1', fieldName: 'name', at: 10, action: 'edit', editorUserId: 'author-1', change: { from: '', to: "Ім'я5" } },
     { entryId: 'h2', fieldName: 'name', at: 20, action: 'edit', editorUserId: 'author-1', change: { from: "Ім'я5", to: "Ім'я6" } },
   ]);
-  getOverlaysForCard.mockResolvedValue({
-    'editor-1': { updatedAt: 30, editorUserId: 'editor-1', fields: { name: { from: "Ім'я6", to: "Ім'я7" } } },
-  });
+  const layer = { updatedAt: 30, editorUserId: 'editor-1', fields: { name: { from: "Ім'я6", to: "Ім'я7" } } };
+  getOverlaysForCard.mockResolvedValue({ 'editor-1': { ...layer, expectedCurrent: layer } });
+  claimOverlayValueForReview.mockImplementation(async ({ expectedCurrent, fieldName, value }) => ({
+    ...expectedCurrent, reviewClaim: { fieldName, value },
+  }));
+  releaseOverlayValueReview.mockResolvedValue(undefined);
   settleOverlayFieldValue.mockResolvedValue(undefined);
   purgeOverlayHistoryEntries.mockResolvedValue(undefined);
   purgeProfileMutationHistoryValue.mockResolvedValue(undefined);
@@ -163,10 +182,11 @@ describe('ProfileCreationWorkspace admin review', () => {
     fireEvent.change(comment, { target: { value: 'Виправлений коментар' } });
     fireEvent.blur(comment);
 
-    await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalledWith(
+    await waitFor(() => expect(profileProposalService.saveDraft).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ publicComment: ['Виправлений коментар'] }),
       }),
+      { expected: expect.objectContaining({ revision: draftMutation.revision }) },
     ));
   });
 
@@ -231,6 +251,7 @@ describe('ProfileCreationWorkspace admin review', () => {
       historyAction: 'accept',
       settledChange: { from: "Ім'я6", to: "Ім'я7" },
       purgeHistory: true,
+      expectedCurrent: expect.objectContaining({ reviewClaim: { fieldName: 'name', value: "Ім'я7" } }),
     }));
     expect(screen.getAllByDisplayValue("Ім'я7").some(input => !input.hasAttribute('aria-label'))).toBe(true);
     expect(screen.queryByText(/створено|видалено/i)).not.toBeInTheDocument();
@@ -262,6 +283,21 @@ describe('ProfileCreationWorkspace admin review', () => {
       purgeHistory: true,
     })));
     expect(saveCreateProfileMutation).not.toHaveBeenCalled();
+  });
+
+  it('keeps a contributed replacement pending when its original draft value changed', async () => {
+    loadAllCreateProfileMutations.mockResolvedValue([{
+      ...draftMutation, data: { ...draftMutation.data, name: 'Нове ім’я автора' },
+    }]);
+    await openDraftAsAdmin();
+
+    fireEvent.click(screen.getByLabelText("Зберегти правку: Ім'я"));
+
+    await waitFor(() => expect(releaseOverlayValueReview).toHaveBeenCalled());
+    expect(saveCreateProfileMutation).not.toHaveBeenCalled();
+    expect(settleOverlayFieldValue).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue('Нове ім’я автора')).toBeInTheDocument();
+    expect(screen.getByLabelText("Ім'я: запропоноване значення")).toHaveValue("Ім'я7");
   });
 
   it('puts the current input first and the timeline underneath it', async () => {
@@ -302,8 +338,8 @@ describe('ProfileCreationWorkspace admin review', () => {
     fireEvent.change(await screen.findByLabelText("Ім'я: значення з історії"), { target: { value: " Ім'я8 " } });
     fireEvent.click(screen.getByLabelText(/Зберегти редакцію в анкету/));
 
-    await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
-    expect(saveCreateProfileMutation.mock.calls[0][0].data.name).toEqual(["Ім'я6", "Ім'я8"]);
+    await waitFor(() => expect(profileProposalService.saveDraft).toHaveBeenCalled());
+    expect(profileProposalService.saveDraft.mock.calls[0][0].data.name).toEqual(["Ім'я6", "Ім'я8"]);
     expect(purgeOverlayHistoryEntries).toHaveBeenCalledWith({
       cardUserId: 'card-1', fieldName: 'name', values: ["Ім'я5", "Ім'я8"],
     });

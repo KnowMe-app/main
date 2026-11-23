@@ -90,7 +90,7 @@ jest.mock('utils/multiAccountEdits', () => ({
   applyOverlaysToCard: card => card,
   buildOverlayFromDraft: jest.fn(() => ({})),
   getOverlayHistoryForCard: jest.fn(async () => []),
-  getOverlaysForCard: jest.fn(async () => ({})),
+  getOverlaysForCard: async () => ({}),
   getStackedCardViews: ({ canonical }) => ({ stacked: canonical, baseWithoutOwnOverlay: canonical }),
   purgeOverlayHistoryEntries: jest.fn(),
   saveOverlayForUserCard: jest.fn(),

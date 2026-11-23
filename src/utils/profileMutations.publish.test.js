@@ -10,6 +10,7 @@ jest.mock('firebase/database', () => ({
 }));
 
 jest.mock('components/config', () => ({
+  auth: { currentUser: null },
   database: { app: 'db' },
   syncUserSearchKeyIndex: jest.fn(async () => {}),
   syncMatchingCardIndex: jest.fn(async () => {}),
@@ -23,9 +24,10 @@ jest.mock('./multiAccountEdits', () => {
   };
 });
 
-const { syncUserSearchKeyIndex, syncMatchingCardIndex } = require('components/config');
+const { auth, syncUserSearchKeyIndex, syncMatchingCardIndex } = require('components/config');
 const { getOverlaysForCard } = require('./multiAccountEdits');
-const { acceptCreateProfileMutation } = require('./profileMutations');
+const { ADMIN_UIDS, READONLY_ADMIN_UIDS } = require('./accessLevel');
+const { acceptCreateProfileMutation, saveCreateProfileMutation } = require('./profileMutations');
 
 const snapshotOf = value => ({ exists: () => Boolean(value), val: () => value });
 
@@ -43,31 +45,55 @@ const pendingMutation = {
 // the standard search indexes, and only then gets its feed projection.
 describe('acceptCreateProfileMutation', () => {
   let transactionMutation;
+  let canonicalNodes;
+  const mutationPath = 'multiData/profileMutations/author-1/card-1';
+  const projectionPath = 'matchingCards/card-1';
+  const approve = (overrides = {}) => acceptCreateProfileMutation({
+    cardId: pendingMutation.cardId,
+    creatorUid: pendingMutation.createdBy,
+    expectedRevision: pendingMutation.revision,
+    ...overrides,
+  });
+
+  const simulateTransaction = async (refObject, updater) => {
+    if (refObject.path !== mutationPath) {
+      const next = updater(null);
+      return { committed: next !== undefined, snapshot: snapshotOf(next) };
+    }
+    // SDK може почати з null, а потім повторити транзакцію з даними сервера.
+    const localNext = updater(null);
+    if (localNext === undefined) return { committed: false, snapshot: snapshotOf(null) };
+    const next = transactionMutation === null ? localNext : updater(transactionMutation);
+    if (next !== undefined) transactionMutation = next;
+    return { committed: next !== undefined, snapshot: snapshotOf(transactionMutation) };
+  };
+
+  const simulatePublication = (refObject, changes) => {
+    if (refObject.path || !changes[mutationPath]) return;
+    transactionMutation = changes[mutationPath];
+    canonicalNodes.set('profileTechnical/card-1', { createdAt: '2026-11-23' });
+  };
 
   const resetPublicationMocks = () => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    auth.currentUser = { uid: ADMIN_UIDS[0] };
+    canonicalNodes = new Map();
+    let attempt = 0;
     ref.mockImplementation((db, path) => ({ db, path }));
-    push.mockImplementation(() => ({ key: 'history-entry' }));
+    push.mockImplementation(() => ({ key: `attempt-${++attempt}` }));
     get.mockImplementation(async refObject => snapshotOf(
-      refObject.path.startsWith('multiData/profileMutations') ? pendingMutation : null,
+      refObject.path === mutationPath ? transactionMutation : canonicalNodes.get(refObject.path) ?? null,
     ));
     transactionMutation = pendingMutation;
-    // A transaction may first see an empty local cache. When the updater does
-    // not abort, Firebase compares it with the server and retries with the
-    // stored value if that value differs.
-    runTransaction.mockImplementation(async (refObject, updater) => {
-      if (!refObject.path.startsWith('multiData/profileMutations')) {
-        const next = updater(null);
-        return { committed: next !== undefined, snapshot: snapshotOf(next) };
-      }
-      const localNext = updater(null);
-      if (localNext === undefined) return { committed: false, snapshot: snapshotOf(null) };
-      const next = transactionMutation === null ? localNext : updater(transactionMutation);
-      return { committed: next !== undefined, snapshot: snapshotOf(next) };
-    });
+    runTransaction.mockImplementation(simulateTransaction);
     getOverlaysForCard.mockResolvedValue({});
     syncUserSearchKeyIndex.mockResolvedValue(undefined);
-    update.mockResolvedValue(undefined);
+    syncMatchingCardIndex.mockImplementation(async (cardId, data) => {
+      const projection = { name: data.name, rev: 1 };
+      canonicalNodes.set(`matchingCards/${cardId}`, projection);
+      return projection;
+    });
+    update.mockImplementation(async (...args) => simulatePublication(...args));
     remove.mockResolvedValue(undefined);
   };
 
@@ -92,6 +118,7 @@ describe('acceptCreateProfileMutation', () => {
 
   it('does not recreate a draft deleted after the server read', async () => {
     transactionMutation = null;
+    get.mockResolvedValueOnce(snapshotOf(pendingMutation));
 
     await expect(acceptCreateProfileMutation({
       cardId: 'card-1',
@@ -107,6 +134,7 @@ describe('acceptCreateProfileMutation', () => {
 
   it('returns REVISION_CONFLICT when the draft changes after the server read', async () => {
     transactionMutation = { ...pendingMutation, revision: 4, data: { ...pendingMutation.data, name: 'Olena' } };
+    get.mockResolvedValueOnce(snapshotOf(pendingMutation));
 
     await expect(acceptCreateProfileMutation({
       cardId: 'card-1',
@@ -130,7 +158,7 @@ describe('acceptCreateProfileMutation', () => {
     expect(syncUserSearchKeyIndex).toHaveBeenCalledWith('card-1', {}, finalData);
     // Публікація анкети одразу дає їй урізану картку для стрічки матчингу.
     // Публікація — нова версія анкети (`rev`) для кешу читачів.
-    expect(syncMatchingCardIndex).toHaveBeenCalledWith('card-1', finalData, { bumpRevision: true });
+    expect(syncMatchingCardIndex).toHaveBeenCalledWith('card-1', finalData, { bumpRevision: true, onlyIfMissing: true });
     // searchId index entries are written through a transaction of their own.
     expect(runTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ path: expect.stringMatching(/^searchId\//) }),
@@ -189,18 +217,16 @@ describe('acceptCreateProfileMutation', () => {
     await expect(publish()).rejects.toMatchObject({ profileSaveStage: 'mutation-transition' });
 
     resetPublicationMocks();
-    get.mockResolvedValueOnce(snapshotOf(pendingMutation)).mockRejectedValueOnce(permissionError());
+    const read = get.getMockImplementation();
+    get.mockImplementation(refObject => (
+      refObject.path.startsWith('searchId/') ? Promise.reject(permissionError()) : read(refObject)
+    ));
     await expect(publish()).rejects.toMatchObject({ profileSaveStage: 'identity-claim' });
 
     resetPublicationMocks();
     runTransaction.mockImplementation(async (refObject, updater) => {
       if (refObject.path.startsWith('searchId/')) throw permissionError();
-      if (!refObject.path.startsWith('multiData/profileMutations')) {
-        const next = updater(null);
-        return { committed: next !== undefined, snapshot: snapshotOf(next) };
-      }
-      const next = updater(pendingMutation);
-      return { committed: next !== undefined, snapshot: snapshotOf(next) };
+      return simulateTransaction(refObject, updater);
     });
     await expect(publish()).rejects.toMatchObject({ profileSaveStage: 'search-id-index' });
 
@@ -215,5 +241,105 @@ describe('acceptCreateProfileMutation', () => {
       profileSaveTargets: ['profile-nodes', 'mutation-status'],
       profileSaveRecovered: true,
     });
+    expect(transactionMutation).toEqual(pendingMutation);
+  });
+
+  it('prevents a second administrator and an autosave from replacing an active claim', async () => {
+    let finishIndex;
+    let indexingStarted;
+    const started = new Promise(resolve => { indexingStarted = resolve; });
+    syncUserSearchKeyIndex.mockImplementationOnce(() => new Promise(resolve => {
+      finishIndex = resolve;
+      indexingStarted();
+    }));
+    const first = approve();
+    try {
+      await started;
+      const claim = transactionMutation;
+      expect(claim).toMatchObject({ status: 'publishing', publicationActorUid: ADMIN_UIDS[0] });
+      auth.currentUser = { uid: ADMIN_UIDS[1] };
+      await expect(approve({ finalData: { name: 'Stale admin name' } })).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+      await expect(saveCreateProfileMutation({
+        ...pendingMutation,
+        creatorUid: pendingMutation.createdBy,
+        actorUid: pendingMutation.createdBy,
+        expectedRevision: pendingMutation.revision,
+        data: { name: 'Stale author name' },
+      })).rejects.toThrow('REVISION_CONFLICT');
+      expect(transactionMutation).toEqual(claim);
+      expect(update).not.toHaveBeenCalled();
+    } finally {
+      auth.currentUser = { uid: ADMIN_UIDS[0] };
+      finishIndex?.();
+      await first;
+    }
+    expect(transactionMutation).toMatchObject({ status: 'accepted', data: pendingMutation.data });
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the same accepted result without changing a newer canonical projection or reindexing', async () => {
+    await approve();
+    const newerProjection = { name: 'Updated canonical name', rev: 2 };
+    canonicalNodes.set(projectionPath, newerProjection);
+
+    await expect(approve({ finalData: { ...pendingMutation.data, ignored: null } })).resolves.toEqual(pendingMutation.data);
+    await expect(approve({ finalData: { name: 'Different approval' } })).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+    expect(canonicalNodes.get(projectionPath)).toBe(newerProjection);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(syncMatchingCardIndex).toHaveBeenCalledTimes(1);
+    expect(syncUserSearchKeyIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back its claim if a canonical profile appears while indexes are prepared', async () => {
+    syncUserSearchKeyIndex.mockImplementationOnce(async () => {
+      canonicalNodes.set('profileContacts/card-1', { phone: 'newer' });
+    });
+
+    await expect(approve()).rejects.toMatchObject({ code: 'REVISION_CONFLICT', profileSaveRecovered: true });
+    expect(update).not.toHaveBeenCalled();
+    expect(canonicalNodes.get('profileContacts/card-1')).toEqual({ phone: 'newer' });
+    expect(transactionMutation).toEqual(pendingMutation);
+  });
+
+  it('does not restore the old draft if its claim changed before the rollback', async () => {
+    const replacement = { ...pendingMutation, revision: 4, data: { name: 'Newer' } };
+    syncUserSearchKeyIndex.mockImplementationOnce(async () => {
+      transactionMutation = replacement;
+      throw new Error('index unavailable');
+    });
+
+    await expect(approve()).rejects.toMatchObject({ profileSaveStage: 'search-key-index', profileSaveRecovered: false });
+    expect(transactionMutation).toEqual(replacement);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('recognizes an accepted write whose acknowledgement was lost', async () => {
+    update.mockImplementationOnce(async (...args) => {
+      simulatePublication(...args);
+      throw new Error('connection lost');
+    });
+
+    await expect(approve()).resolves.toEqual(pendingMutation.data);
+    expect(transactionMutation.status).toBe('accepted');
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(syncMatchingCardIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a missing projection after acceptance without replaying canonical or index writes', async () => {
+    syncMatchingCardIndex.mockResolvedValueOnce(null);
+    const partial = { code: 'PARTIAL_WRITE', profileSaveStage: 'matching-card-index' };
+
+    await expect(approve()).rejects.toMatchObject(partial);
+    await expect(approve()).rejects.toMatchObject(partial);
+    expect(transactionMutation.status).toBe('accepted');
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(syncMatchingCardIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it('denies an inspector before claiming a draft', async () => {
+    auth.currentUser = { uid: READONLY_ADMIN_UIDS[0] };
+
+    await expect(approve()).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    expect(runTransaction).not.toHaveBeenCalled();
   });
 });

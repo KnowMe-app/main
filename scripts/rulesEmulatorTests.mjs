@@ -1197,6 +1197,46 @@ await it('у чужу гілку чернеток не пише й чужих ч
   await assertFails(get(ref(db(ORDINARY_VIEWER), 'multiData/profileMutations')));
 });
 
+const makePublicationFixture = cardId => {
+  const path = `multiData/profileMutations/${ORDINARY_VIEWER}/${cardId}`;
+  const pending = { cardId, operation: 'create', createdBy: ORDINARY_VIEWER, status: 'pendingReview', revision: 1 };
+  const publishing = {
+    ...pending, status: 'publishing', publicationAttemptId: 'attempt-1', publicationActorUid: SUPERADMIN,
+  };
+  return { path, pending, publishing };
+};
+
+await it('лише адмін резервує публікацію, і автор не перезаписує або видаляє її ревізію', async () => {
+  const { path, pending, publishing } = makePublicationFixture('publicationCard0001');
+  const author = ref(db(ORDINARY_VIEWER), path);
+  const admin = ref(db(SUPERADMIN), path);
+  await assertSucceeds(set(author, pending));
+  await assertFails(set(author, { ...publishing, publicationActorUid: ORDINARY_VIEWER }));
+  await assertSucceeds(set(admin, publishing));
+  await assertFails(set(author, { ...pending, revision: 2 }));
+  await assertFails(remove(author));
+  await assertFails(set(admin, { ...publishing, publicationAttemptId: 'another-attempt' }));
+  await assertSucceeds(set(admin, pending));
+  await assertSucceeds(set(author, { ...pending, revision: 2 }));
+});
+
+await it('резервована публікація створює канонічні дані один раз і не перезаписує наявну анкету', async () => {
+  const cardId = 'publicationCard0002';
+  const { path, pending, publishing } = makePublicationFixture(cardId);
+  const admin = db(SUPERADMIN);
+  const publicNodePath = `profileDetails/${cardId}/surname`;
+  const publication = { [path]: { ...publishing, status: 'accepted' }, [publicNodePath]: 'Нове прізвище' };
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), path), pending));
+  await assertSucceeds(set(ref(admin, path), publishing));
+  await assertSucceeds(set(ref(admin, publicNodePath), 'Наявне прізвище'));
+  await assertFails(update(ref(admin), publication));
+  const original = await assertSucceeds(get(ref(admin, publicNodePath)));
+  if (original.val() !== 'Наявне прізвище') throw new Error('Concurrent canonical record was overwritten');
+  await assertSucceeds(remove(ref(admin, publicNodePath)));
+  await assertSucceeds(update(ref(admin), publication));
+  await assertFails(update(ref(admin), publication));
+});
+
 await it('заявляє контакт на унікальність — інакше дубль ловити нічим', async () => {
   // Писач читає ключ перед транзакцією, тож читання тут таке саме потрібне,
   // як і запис.
@@ -1235,6 +1275,20 @@ await it('дописує чужу картку власним шаром і чи
   };
   await assertSucceeds(set(ref(db(ORDINARY_VIEWER), `multiData/edits/${CARD}/${ORDINARY_VIEWER}`), overlay));
   await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `multiData/edits/${CARD}/${ORDINARY_VIEWER}/fields`)));
+});
+
+await it('автор не підробляє й не знімає резерв розгляду свого доповнення', async () => {
+  const path = `multiData/edits/${CARD}/${ORDINARY_VIEWER}`;
+  const claim = { fieldName: 'phone', value: '380501110033' };
+  const author = ref(db(ORDINARY_VIEWER), path);
+  const admin = ref(db(SUPERADMIN), path);
+  const original = (await assertSucceeds(get(author))).val();
+  await assertFails(update(author, { reviewClaim: claim }));
+  await assertSucceeds(update(admin, { reviewClaim: claim }));
+  await assertFails(set(author, original));
+  await assertFails(remove(author));
+  await assertSucceeds(update(admin, { reviewClaim: null }));
+  await assertSucceeds(set(author, original));
 });
 
 await it('чужого шару не пише й усіх шарів картки не читає', async () => {

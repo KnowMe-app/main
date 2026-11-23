@@ -743,6 +743,7 @@ const BY_UK = {
   '{field} уже є в іншій картці': '{field} staat al in een ander profiel',
   'Збережено, але схоже на дубль': 'Opgeslagen, maar dit lijkt een dubbel',
   'Не вдалося зберегти профіль': 'Kon het profiel niet opslaan',
+  'Профіль уже змінено. Правки збережено на цьому пристрої.': 'Het profiel is al gewijzigd. Je wijzigingen zijn opgeslagen op dit apparaat.',
   'Чернетку повернено в режим редагування — можна повторити.': 'Het concept is weer bewerkbaar — u kunt het opnieuw proberen.',
   'Не вдалося автоматично розблокувати чернетку. Оновіть сторінку.': 'Kon het concept niet automatisch ontgrendelen. Laad de pagina opnieuw.',
   'Перевірте rules для: {targets}.': 'Controleer de regels voor: {targets}.',

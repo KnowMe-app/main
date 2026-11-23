@@ -6742,6 +6742,7 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
 
   try {
     const existing = options.existingCard !== undefined ? options.existingCard : await readMatchingCardRaw(id);
+    if (options.onlyIfMissing && existing) return existing;
     const knownAvatar = typeof options.avatar === 'string'
       ? options.avatar
       : await resolveMatchingCardAvatar(id, nextData, { includeStorage: options.includeStorageAvatar !== false });
@@ -6820,6 +6821,15 @@ export const syncMatchingCardIndex = async (userId, nextData = {}, options = {})
     // відкидали картку з ними цілком. З 09.11 правила викочує CI разом з
     // кодом, тож відмова — справжня помилка, і картку без полів, які людина
     // щойно заповнила, тихо не пишемо: її ловить `catch` нижче.
+    if (options.onlyIfMissing) {
+      const insertion = await runTransaction(
+        buildMatchingCardRef(id),
+        current => (current ? undefined : projectionPatch),
+        { applyLocally: false },
+      );
+      return insertion.committed ? projection : insertion.snapshot.val();
+    }
+
     await update(buildMatchingCardRef(id), projectionPatch);
     await restoreProgramsVersion();
     return projection;
