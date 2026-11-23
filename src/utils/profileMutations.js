@@ -10,7 +10,9 @@ import {
 } from 'components/config';
 import { buildOverlayFromDraft, getOverlaysForCard, purgeCardOverlays } from './multiAccountEdits';
 import { getProfileMutationOwnerPath } from './profileDraftIndexing';
+import { PROFILE_NODES } from './profileNodeSchema';
 import { buildProfileNodePatch } from './profileNodeWriter';
+import { areProposalValuesEqual } from './profileProposals';
 import {
   SEARCH_ID_INDEXED_FIELDS,
   appendSearchIdEntryId,
@@ -51,6 +53,8 @@ const withProfileSaveStage = async (profileSaveStage, operation) => {
     throw error;
   }
 };
+
+const mutationError = (code, details = {}) => Object.assign(new Error(code), { code, ...details });
 
 export const buildProfileRevisionHistory = ({ cardId, actorUid, previousData, nextData, at, revision }) => (
   previousData == null ? [] : Object.entries(buildOverlayFromDraft(previousData, nextData || {}))
@@ -363,9 +367,16 @@ export const saveCreateProfileMutation = async ({
   actorUid,
   data,
   expectedRevision,
+  expectedCurrent,
+  proposalId,
+  proposalRevision,
   skipRevisionHistory = false,
 }) => {
   if (!cardId || !creatorUid || !actorUid) throw new Error('cardId, creatorUid and actorUid are required');
+  const guarded = expectedCurrent !== undefined;
+  if (guarded && proposalRevision !== undefined && (!Number.isSafeInteger(proposalRevision) || proposalRevision < 1)) {
+    throw mutationError('INVALID_DRAFT');
+  }
   let identityKeys;
   let acquiredIdentityKeys;
   let duplicateConflicts;
@@ -386,9 +397,16 @@ export const saveCreateProfileMutation = async ({
   let result;
   try {
     result = await runTransaction(ref(database, getProfileMutationPath(creatorUid, cardId)), current => {
+      if (guarded && !areProposalValuesEqual(current, expectedCurrent)) {
+        conflict = 'REVISION_CONFLICT';
+        // Порожній кеш SDK має звіритися із сервером. Якщо запис справді
+        // видалено, транзакція не відновить його зі старого знімка.
+        return current === null ? null : undefined;
+      }
       previousIdentityKeys = current?.identityKeys || [];
       previousData = current?.data || {};
-      if (current && current.createdBy !== creatorUid) {
+      const storedCreator = current?.createdBy ?? (guarded ? creatorUid : undefined);
+      if (current && storedCreator !== creatorUid) {
         conflict = 'Profile mutation belongs to another user';
         return undefined;
       }
@@ -404,7 +422,8 @@ export const saveCreateProfileMutation = async ({
         return undefined;
       }
       const now = Date.now();
-      const revision = Number(current?.revision || 0) + 1;
+      const revision = guarded && proposalRevision !== undefined ? proposalRevision : Number(current?.revision || 0) + 1;
+      const retainedProposalId = current?.proposalId ?? proposalId;
       // Use the same normalization/diff representation as editor overlays so
       // both audit streams can be rendered by the same admin UI.
       revisionHistory = skipRevisionHistory ? [] : buildProfileRevisionHistory({
@@ -425,6 +444,7 @@ export const saveCreateProfileMutation = async ({
         revision,
         status: 'pendingReview',
         ...(current?.status === 'publishing' ? { acceptedAt: null } : {}),
+        ...(retainedProposalId ? { proposalId: retainedProposalId } : {}),
         identityKeys,
       };
     }, { applyLocally: false });
@@ -433,10 +453,17 @@ export const saveCreateProfileMutation = async ({
     error.profileSaveStage = 'profile-mutation';
     throw error;
   }
-  if (!result.committed) {
+  if (!result.committed || (guarded && !result.snapshot.val())) {
     // Only keys absent from the durable draft were acquired by this failed save.
     const existing = result.snapshot.val();
-    const newlyClaimed = identityKeys.filter(key => !(existing?.identityKeys || []).includes(key));
+    const newlyClaimed = (guarded ? acquiredIdentityKeys : identityKeys)
+      .filter(key => !(existing?.identityKeys || []).includes(key));
+    if (guarded) {
+      await releaseProfileIdentities(cardId, newlyClaimed).catch(error => {
+        console.warn('[profileMutations] claims not released after conflict', { cardId, error });
+      });
+      throw mutationError('REVISION_CONFLICT', { profileSaveStage: 'profile-mutation' });
+    }
     await releaseProfileIdentities(cardId, newlyClaimed);
     throw new Error(conflict || 'REVISION_CONFLICT');
   }
@@ -448,7 +475,12 @@ export const saveCreateProfileMutation = async ({
       if (key) entries[key] = entry;
       return entries;
     }, {});
-    if (Object.keys(historyUpdates).length) await update(historyRef, historyUpdates);
+    try {
+      if (Object.keys(historyUpdates).length) await update(historyRef, historyUpdates);
+    } catch (error) {
+      if (!guarded) throw error;
+      throw mutationError('PARTIAL_WRITE', { cause: error, profileSaveStage: 'mutation-history' });
+    }
   }
   // Чернетка потрапляє в `searchId` тут, а не аж на публікації.
   //
@@ -788,12 +820,31 @@ export const rejectCreateProfileMutation = async ({ cardId, creatorUid, expected
  * не має лишати персональні дані в усіх інших. Звіт називає, що не доїхало, —
  * мовчазне «видалено» на половині видалених слідів уже коштувало б розбору.
  */
-export const deleteCreateProfileMutation = async ({ cardId, creatorUid }) => {
+export const deleteCreateProfileMutation = async ({ cardId, creatorUid, expectedCurrent }) => {
   if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
 
   const mutationRef = ref(database, getProfileMutationPath(creatorUid, cardId));
-  const snapshot = await get(mutationRef);
-  const mutation = snapshot.exists() ? snapshot.val() : null;
+  const guarded = expectedCurrent !== undefined;
+  let mutation;
+  if (guarded) {
+    if (!expectedCurrent || (expectedCurrent.operation ?? 'create') !== 'create'
+      || (expectedCurrent.createdBy ?? creatorUid) !== creatorUid
+      || (expectedCurrent.cardId ?? cardId) !== cardId
+      || !['pendingReview', 'private'].includes(expectedCurrent.status)) {
+      throw mutationError('INVALID_DRAFT');
+    }
+
+    let matched = false;
+    const result = await runTransaction(mutationRef, current => {
+      matched = areProposalValuesEqual(current, expectedCurrent);
+      return matched || current === null ? null : undefined;
+    }, { applyLocally: false });
+    if (!matched || !result.committed) throw mutationError('REVISION_CONFLICT');
+    mutation = expectedCurrent;
+  } else {
+    const snapshot = await get(mutationRef);
+    mutation = snapshot.exists() ? snapshot.val() : null;
+  }
   const data = mutation?.data || {};
 
   const failures = [];
@@ -804,6 +855,24 @@ export const deleteCreateProfileMutation = async ({ cardId, creatorUid }) => {
       failures.push({ step: name, message: error?.message || String(error) });
     }
   };
+
+  if (guarded) {
+    // Право автора записати чернетку не резервує глобально її cardId.
+    // Не чистимо шляхи за cardId, якщо під ним лишилася інша чернетка або анкета.
+    await step('sharedReferences', async () => {
+      const [drafts, ...profileNodes] = await Promise.all([
+        get(ref(database, PROFILE_MUTATIONS_ROOT)),
+        ...Object.values(PROFILE_NODES).map(node => get(ref(database, `${node}/${cardId}`))),
+      ]);
+      const anotherDraft = Object.values(drafts.val() || {}).some(records => (
+        records != null && Object.prototype.hasOwnProperty.call(records, cardId)
+      ));
+      if (anotherDraft || profileNodes.some(node => node.exists())) {
+        throw new Error('Card ID is still used by another profile record');
+      }
+    });
+    if (failures.length) return { cardId, creatorUid, existed: true, failures };
+  }
 
   // Заявки знімаються за тим переліком, який чернетка сама про себе зберегла;
   // якщо його немає (стара чернетка), виводимо його з даних — так само, як це
@@ -821,14 +890,25 @@ export const deleteCreateProfileMutation = async ({ cardId, creatorUid }) => {
         ref(database, buildSearchIdEntryPath(record.valueKey, record.field)),
         current => removeSearchIdEntryId(current, cardId),
         { applyLocally: false },
-      )),
+      ).then(() => {
+        if (guarded) confirmedDraftSearchIdEntries.delete(`${record.path}|${cardId}`);
+      })),
   ));
 
-  await step('overlays', () => purgeCardOverlays(cardId));
+  await step('overlays', () => (guarded ? purgeCardOverlays(cardId, { throwOnError: true }) : purgeCardOverlays(cardId)));
   await step('publicComments', () => remove(ref(database, `${PUBLIC_COMMENTS_ROOT_PATH}/${cardId}`)));
+  if (guarded) {
+    await step('draftOwner', async () => {
+      const ownerPath = getProfileMutationOwnerPath(cardId);
+      await runTransaction(ref(database, ownerPath), current => (current === creatorUid ? null : undefined), {
+        applyLocally: false,
+      });
+      confirmedDraftOwners.delete(`${ownerPath}|${creatorUid}`);
+    });
+  }
   // Вузли анкети, `searchKey` і проєкція стрічки — там же, де їх чистить
   // звичайне видалення картки. Для неопублікованої чернетки це no-op.
-  await step('profileNodes', () => removeCardAndSearchId(cardId));
+  if (!guarded) await step('profileNodes', () => removeCardAndSearchId(cardId));
   // Журнал ревізій зноситься поштучно: `.write` у правилах стоїть на
   // `profileMutationHistory/$картка/$запис`, а на самій картці його немає, тож
   // один `remove` по вузлу відхиляється цілком — і мовчки, бо кроки тут
@@ -840,9 +920,9 @@ export const deleteCreateProfileMutation = async ({ cardId, creatorUid }) => {
       remove(ref(database, `${getProfileMutationHistoryPath(cardId)}/${entryId}`))
     )));
   });
-  // Сама чернетка йде останньою: поки вона є, за нею можна відновити, що ще не
-  // дочищено. Знята першою, вона забрала б із собою і перелік заявок.
-  await step('mutation', () => remove(mutationRef));
+  // Старий виклик видаляє чернетку останньою. Виклик із ревізією вже зняв
+  // рівно перевірений запис транзакцією, тому тут не видаляємо другу версію.
+  if (!guarded) await step('mutation', () => remove(mutationRef));
 
   return { cardId, creatorUid, existed: Boolean(mutation), failures };
 };

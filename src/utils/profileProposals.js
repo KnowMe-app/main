@@ -51,6 +51,8 @@ const sameProfileValue = (left, right) => {
     && fields.every(field => owns(right, field) && sameProfileValue(left[field], right[field]));
 };
 
+export const areProposalValuesEqual = sameProfileValue;
+
 // Нова пропозиція відв'язана від анкети. Для порівняння списків стара
 // утиліта має отримати ті самі посилання на рівні за вмістом значення.
 const matchProfileValues = (value, original) => {

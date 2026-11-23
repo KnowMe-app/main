@@ -1,9 +1,10 @@
-import { get as firebaseGet, push, ref as ref2, remove, runTransaction, set, update } from 'firebase/database';
+import { get as firebaseGet, onValue, push, ref as ref2, remove, runTransaction, set, update } from 'firebase/database';
 import { withAdminDownloadToast } from 'utils/backendDownloadToast';
 import { applyOverlayToCard, isPlainObject, normalizeArray, normalizeOverlayFields, uniq } from 'utils/profileFieldChanges';
 import { isLongFormatUserId } from 'utils/userIdFormat';
 import { mergeProfileNodes } from 'utils/profileNodeMerge';
 import { PROFILE_NODES } from 'utils/profileNodeSchema';
+import { areProposalValuesEqual } from 'utils/profileProposals';
 import { buildSearchIdValueKey, SEARCH_ID_INDEXED_FIELDS } from 'utils/searchKeyUtils';
 import {
   forgetOwnOverlayCardLocally,
@@ -49,6 +50,26 @@ const areArraysEqual = (a, b) => {
 };
 
 const normalizeCardKey = value => String(value || '').trim();
+const overlayError = (code, cause) => Object.assign(new Error(code), { code, cause });
+
+// Транзакція бере перше значення з кешу SDK. Тримаємо активне читання
+// до завершення транзакції, щоб порожній кеш не виглядав як видалений шар.
+const replaceOverlayIfUnchanged = async (overlayRef, expectedCurrent, nextOverlay) => {
+  let unsubscribe;
+  try {
+    await new Promise((resolve, reject) => {
+      unsubscribe = onValue(overlayRef, resolve, reject);
+    });
+    const result = await runTransaction(overlayRef, current => (
+      areProposalValuesEqual(current, expectedCurrent) ? nextOverlay : undefined
+    ), { applyLocally: false });
+    if (!result.committed) throw overlayError('REVISION_CONFLICT');
+    return result.snapshot.val();
+  } finally {
+    unsubscribe?.();
+  }
+};
+
 const shouldDropOverlayByFieldNames = fieldNames => {
   if (!Array.isArray(fieldNames) || !fieldNames.length) return true;
   return fieldNames.every(fieldName => TECHNICAL_FIELD_NAMES.has(fieldName));
@@ -166,7 +187,9 @@ const indexOverlayValuesInSearchId = async ({ cardUserId, fields }) => {
   }
 };
 
-export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields }) => {
+export const saveOverlayForUserCard = async ({
+  editorUserId, cardUserId, fields, expectedCurrent, proposal, actorUid, updatedAt,
+}) => {
   if (!editorUserId || !cardUserId) return;
 
   const normalizedCardId = normalizeCardKey(cardUserId);
@@ -196,36 +219,65 @@ export const saveOverlayForUserCard = async ({ editorUserId, cardUserId, fields 
     return acc;
   }, {});
 
+  const usesRevisionCheck = expectedCurrent !== undefined;
   if (shouldDropOverlayByFieldNames(Object.keys(sanitized))) {
+    if (usesRevisionCheck) throw overlayError('INVALID_DRAFT');
     await remove(cardRef);
     await forgetOwnOverlayCard({ cardUserId: normalizedCardId, editorUserId });
     return;
   }
 
-  let previousFields = null;
-  try {
-    const previousSnapshot = await get(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}/fields`));
-    previousFields = previousSnapshot?.exists?.() ? previousSnapshot.val() : null;
-  } catch {
-    previousFields = null;
+  let previousFields = expectedCurrent?.fields ?? null;
+  if (!usesRevisionCheck) {
+    try {
+      const previousSnapshot = await get(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}/fields`));
+      previousFields = previousSnapshot?.exists?.() ? previousSnapshot.val() : null;
+    } catch {
+      previousFields = null;
+    }
   }
 
-  await set(cardRef, { fields: sanitized, updatedAt: Date.now(), cardUserId: normalizedCardId, editorUserId });
-
-  await rememberCardContributor({ cardUserId: normalizedCardId, editorUserId });
-
-  await rememberOwnOverlayCard({ cardUserId: normalizedCardId, editorUserId });
-
-  // Після запису оверлея, а не до нього: право дописати id у `searchId` дають
-  // правила саме за наявністю оверлея цього редактора на цій картці.
-  await indexOverlayValuesInSearchId({ cardUserId: normalizedCardId, fields: sanitized });
-
-  await appendOverlayHistory({
+  const overlay = {
+    fields: sanitized,
+    updatedAt: updatedAt ?? Date.now(),
     cardUserId: normalizedCardId,
     editorUserId,
-    action: 'edit',
-    fields: diffOverlayFields(previousFields, sanitized),
-  });
+  };
+  let committed;
+  if (usesRevisionCheck) {
+    committed = await replaceOverlayIfUnchanged(cardRef, expectedCurrent, {
+      ...overlay,
+      ...(expectedCurrent?.adminOnly === true && { adminOnly: true }),
+      ...(proposal && { proposal }),
+    });
+  } else {
+    await set(cardRef, overlay);
+  }
+
+  try {
+    await rememberCardContributor({ cardUserId: normalizedCardId, editorUserId });
+
+    const remembered = await rememberOwnOverlayCard({ cardUserId: normalizedCardId, editorUserId });
+
+    // Після запису оверлея, а не до нього: право дописати id у `searchId` дають
+    // правила саме за наявністю оверлея цього редактора на цій картці.
+    await indexOverlayValuesInSearchId({ cardUserId: normalizedCardId, fields: sanitized });
+
+    await appendOverlayHistory({
+      cardUserId: normalizedCardId,
+      editorUserId,
+      action: 'edit',
+      fields: diffOverlayFields(previousFields, sanitized),
+      actorUid,
+      revision: proposal?.revision,
+      throwOnError: usesRevisionCheck,
+    });
+    if (usesRevisionCheck && !remembered) throw new Error('Overlay author index was not saved');
+  } catch (error) {
+    if (usesRevisionCheck) throw overlayError('PARTIAL_WRITE', error);
+    throw error;
+  }
+  return committed;
 };
 
 /**
@@ -280,7 +332,7 @@ export const forgetOwnOverlayCard = async ({ editorUserId, cardUserId, throwOnEr
  * браузері — зокрема й до того викочування. Відмова читання не порожній
  * список, а просто менше знань: лишається локальна памʼять.
  */
-export const getOwnOverlayCardIndex = async editorUserId => {
+export const getOwnOverlayCardIndex = async (editorUserId, { throwOnError = false } = {}) => {
   if (!editorUserId) return { cardUserIds: [], remoteCardUserIds: [] };
 
   const ids = new Set(readOwnOverlayCardIds(editorUserId));
@@ -297,6 +349,7 @@ export const getOwnOverlayCardIndex = async editorUserId => {
       });
     }
   } catch (error) {
+    if (throwOnError) throw error;
     console.warn('[multiAccountEdits] own overlay index unreadable', error);
   }
 
@@ -330,7 +383,7 @@ export const rememberCardContributor = async ({ cardUserId, editorUserId }) => {
 // Everybody who should keep access to the card once it is published: the
 // roster above, plus whoever still has an unsettled overlay on it (a card
 // edited before the roster existed has only the latter).
-export const getCardContributorIds = async cardUserId => {
+export const getCardContributorIds = async (cardUserId, { throwOnError = false } = {}) => {
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return [];
 
@@ -346,6 +399,7 @@ export const getCardContributorIds = async cardUserId => {
   try {
     Object.keys(await getOverlaysForCard(normalizedCardId)).forEach(editorUserId => contributors.add(editorUserId));
   } catch (error) {
+    if (throwOnError) throw error;
     console.warn('[multiAccountEdits] pending overlays unavailable', error);
   }
 
@@ -402,6 +456,14 @@ export const getOwnOverlayFieldsForCards = async ({
   return Object.fromEntries(entries);
 };
 
+export const readOverlayRecord = async ({ editorUserId, cardUserId }) => {
+  const normalizedCardId = normalizeCardKey(cardUserId);
+  if (!editorUserId || !normalizedCardId) return null;
+
+  const snapshot = await get(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`));
+  return snapshot.exists() ? snapshot.val() : null;
+};
+
 export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
   if (!cardUserId) return null;
 
@@ -409,11 +471,9 @@ export const getOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
   if (!normalizedCardId) return null;
 
   if (editorUserId) {
-    const directSnapshot = await get(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`));
-    if (directSnapshot.exists()) {
-      const normalized = normalizeEditorNode(directSnapshot.val(), normalizedCardId, editorUserId);
-      if (normalized) return normalized;
-    }
+    const record = await readOverlayRecord({ editorUserId, cardUserId: normalizedCardId });
+    const normalized = normalizeEditorNode(record, normalizedCardId, editorUserId);
+    if (normalized) return normalized;
   }
 
   const overlaysByEditor = await getOverlaysForCard(cardUserId);
@@ -446,8 +506,8 @@ export const getOverlaysForCard = async (cardUserId, { includeAdminOnly = true, 
     snapshot = await get(ref2(database, `${EDITS_ROOT}/${normalizedCardId}`));
   } catch (error) {
     if (!editorUserId) throw error;
-    const ownSnapshot = await get(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`));
-    const own = ownSnapshot.exists() ? normalizeEditorNode(ownSnapshot.val(), normalizedCardId, editorUserId) : null;
+    const record = await readOverlayRecord({ editorUserId, cardUserId: normalizedCardId });
+    const own = normalizeEditorNode(record, normalizedCardId, editorUserId);
     if (!own || (!includeAdminOnly && own.adminOnly)) return {};
     return { [editorUserId]: own };
   }
@@ -518,18 +578,24 @@ export const getStackedOverlayFieldNames = (overlaysByEditor = {}) => {
   return Array.from(fieldNames);
 };
 
-const buildHistoryEntries = ({ cardUserId, editorUserId, action, fields, at }) =>
+const buildHistoryEntries = ({ cardUserId, editorUserId, action, fields, at, actorUid, revision }) =>
   Object.entries(fields || {}).reduce((acc, [fieldName, change]) => {
     if (!isPlainObject(change)) return acc;
     if (TECHNICAL_FIELD_NAMES.has(fieldName)) return acc;
-    acc.push({ cardUserId, editorUserId, action, fieldName, change, at });
+    acc.push({
+      cardUserId, editorUserId, action, fieldName, change, at,
+      ...(actorUid && { actorUid }),
+      ...(revision !== undefined && { revision }),
+    });
     return acc;
   }, []);
 
 // Best-effort by design: the journal is an admin-only audit trail, so a
 // failure to append it (rules not deployed yet, offline, ...) must never turn
 // a successful edit into a failed one for the editor who made it.
-export const appendOverlayHistory = async ({ cardUserId, editorUserId, action = 'edit', fields }) => {
+export const appendOverlayHistory = async ({
+  cardUserId, editorUserId, action = 'edit', fields, actorUid, revision, throwOnError = false,
+}) => {
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return [];
 
@@ -540,6 +606,8 @@ export const appendOverlayHistory = async ({ cardUserId, editorUserId, action = 
     action,
     fields,
     at,
+    actorUid,
+    revision,
   });
   if (!entries.length) return [];
 
@@ -556,6 +624,7 @@ export const appendOverlayHistory = async ({ cardUserId, editorUserId, action = 
     }
   } catch (error) {
     console.warn('[multiAccountEdits] failed to append overlay history', error);
+    if (throwOnError) throw error;
   }
 
   return entries;
@@ -707,14 +776,23 @@ const diffOverlayFields = (previousFields, nextFields) => {
   }, {});
 };
 
-export const removeOverlayForUserCard = async ({ editorUserId, cardUserId }) => {
+export const removeOverlayForUserCard = async ({ editorUserId, cardUserId, expectedCurrent }) => {
   if (!editorUserId || !cardUserId) return;
 
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return;
 
-  await remove(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`));
-  await forgetOwnOverlayCard({ cardUserId: normalizedCardId, editorUserId });
+  const overlayRef = ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`);
+  const usesRevisionCheck = expectedCurrent !== undefined;
+  if (usesRevisionCheck) await replaceOverlayIfUnchanged(overlayRef, expectedCurrent, null);
+  else await remove(overlayRef);
+
+  try {
+    await forgetOwnOverlayCard({ cardUserId: normalizedCardId, editorUserId, throwOnError: usesRevisionCheck });
+  } catch (error) {
+    if (!usesRevisionCheck) throw error;
+    throw overlayError('PARTIAL_WRITE', error);
+  }
 };
 
 export const acceptOverlayForUserCard = async ({
@@ -1399,15 +1477,16 @@ export const acceptAllOverlaysForCard = async ({ cardUserId, persistCard }) => {
  * «картка → хто дописував» немає (див. `listPendingOverlayCards`), тож читаємо
  * вузол картки, поки він ще є, і аж потім зносимо.
  */
-export const purgeCardOverlays = async cardUserId => {
+export const purgeCardOverlays = async (cardUserId, { throwOnError = false } = {}) => {
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return { editorUserIds: [] };
 
   // Перелік уже зводить обидва джерела — вузол дописувачів і самі шари — і
   // відмову кожного з них переживає окремо: прочитати їх може не вийти
   // (правила), і це не привід лишити картку напівживою.
-  const editorUserIds = await getCardContributorIds(normalizedCardId);
+  const editorUserIds = await getCardContributorIds(normalizedCardId, { throwOnError });
   const historyEntries = await getOverlayHistoryForCard(normalizedCardId).catch(error => {
+    if (throwOnError) throw error;
     console.warn('[multiAccountEdits] журнал правок не прочитано', error);
     return [];
   });
@@ -1417,19 +1496,30 @@ export const purgeCardOverlays = async cardUserId => {
   // і на `editsHistory/$картка/$запис`, а на самій картці його немає — запис у
   // батьківський вузол відхиляється цілком. Один `remove` по картці виглядав би
   // як «видалено», лишаючи і шари, і журнал на місці.
-  await Promise.allSettled([
+  const [roster, ...results] = await Promise.allSettled([
+    remove(ref2(database, `${EDITS_CONTRIBUTORS_ROOT}/${normalizedCardId}`)),
     ...editorUserIds.map(editorUserId => remove(
       ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`),
     )),
     ...historyEntries.map(entry => remove(
       ref2(database, `${EDITS_HISTORY_ROOT}/${normalizedCardId}/${entry.backendEntryId}`),
     )),
-    remove(ref2(database, `${EDITS_CONTRIBUTORS_ROOT}/${normalizedCardId}`)),
     ...editorUserIds.map(editorUserId => forgetOwnOverlayCard({
       editorUserId,
       cardUserId: normalizedCardId,
+      throwOnError,
     })),
   ]);
+  if (throwOnError) {
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
+    // У старих правил немає дозволу на реєстр. Інші збої очищення цього
+    // вузла важливі, коли він доступний.
+    if (roster.status === 'rejected'
+      && ![roster.reason?.code, roster.reason?.message].some(value => (
+        /permission[-_ ]denied/i.test(value || '')
+      ))) throw roster.reason;
+  }
 
   return { editorUserIds };
 };
@@ -1509,11 +1599,13 @@ export const removeAllOverlaysForCard = async (cardUserId, { historyAction = 'di
  * показати причину (найімовірніша — нерозгорнуті правила), інакше «черга
  * порожня» бреше рівно тоді, коли доповнень найбільше.
  */
-export const listPendingOverlayCards = async () => {
+export const readOverlayRecordsForReview = async () => {
   const snapshot = await get(ref2(database, EDITS_ROOT));
-  if (!snapshot.exists()) return [];
+  return snapshot.exists() ? snapshot.val() || {} : {};
+};
 
-  const byCard = snapshot.val() || {};
+export const listPendingOverlayCards = async () => {
+  const byCard = await readOverlayRecordsForReview();
 
   return Object.entries(byCard)
     .map(([cardUserId, editors]) => {
