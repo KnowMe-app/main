@@ -111,6 +111,7 @@ import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { resolveAccess } from 'utils/accessLevel';
+import { PHOTO_HYDRATION_SOURCE, hasProfileContentBeyondPhotos } from 'utils/profilePhotoHydration';
 // Batch 26 §8: тумблер стрілок «перейти до вузла в Firebase». Ключ спільний з тими,
 // хто ці стрілки показує, — див. `utils/backendLinksMode`.
 import { PROFILE_FORM_EXTENDED_MODE_KEY, readBackendLinksEnabled } from 'utils/backendLinksMode';
@@ -1459,7 +1460,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const changed = nextState !== prevState;
 
       if (changed) {
-        profileSnapshotVersionRef.current += 1;
+        // Фото, дочитані застосунком, — не правка адміна: інакше вони
+        // відкидали б відповідь бази, що ще летить (`utils/profilePhotoHydration`).
+        if (debug.source !== PHOTO_HYDRATION_SOURCE) profileSnapshotVersionRef.current += 1;
         latestProfileSnapshotRef.current = nextState || {};
       }
 
@@ -2771,7 +2774,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         });
     };
 
-    if (Object.keys(currentState).length > 1) {
+    if (hasProfileContentBeyondPhotos(currentState)) {
       if (!currentProfileSource) {
         logProfileRestoreStep('profile-data:state-already-hydrated-set-cache-source', {
           requestId,
@@ -2849,9 +2852,12 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               profileFetchRequestRef.current !== requestId ||
               latestUserId !== activeUserId ||
               profileSnapshotVersionRef.current !== startedVersion ||
-              Object.keys(latestState).length > 1;
+              hasProfileContentBeyondPhotos(latestState);
 
             if (isStaleResponse) {
+              // Відповідь відкинуто — картку можна буде прочитати знову:
+              // інакше id лишався в переліку «вже читали» назавжди.
+              backendInitialLoadUserIdsRef.current.delete(activeUserId);
               logProfileSnapshotUpdate('backend', {
                 caller: 'profile-data:backend-hit-update-cache-and-state',
                 requestId,
@@ -2873,8 +2879,15 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
             updateCard(activeUserId, data);
             // База ще не знає недосланої правки — без накладки відкрита картка
             // показувала б старе до доставки.
+            // Фото, які верхній блок уже дочитав, лишаються, якщо база їх не
+            // принесла.
+            const hydratedPhotos = !(Array.isArray(data.photos) && data.photos.length)
+              && Array.isArray(latestState.photos) && latestState.photos.length
+              ? { photos: latestState.photos, __photosHydrated: true }
+              : null;
             const backendProfile = applyPendingCardSave(auth.currentUser?.uid, {
               ...data,
+              ...hydratedPhotos,
               userId: data.userId || activeUserId,
             });
             rememberDraftRecordRevision(backendProfile);

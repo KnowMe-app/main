@@ -75,6 +75,7 @@ import {
   rememberDraftRecordRevision,
 } from 'utils/profileRecordSource';
 import { buildRtdbConsoleLink } from '../profileFormNodeBlocks';
+import { PHOTO_HYDRATION_SOURCE } from 'utils/profilePhotoHydration';
 
 // The block always draws its own frame now, so it reads as a card wherever it
 // is placed instead of bleeding into the page behind it.
@@ -1591,7 +1592,7 @@ export const TopBlock = ({
 
         if (typeof setState === 'function' && !isFromListOfUsers) {
           setState(prev => updatePhotos(prev), {
-            source: 'userChange',
+            source: PHOTO_HYDRATION_SOURCE,
             caller: 'renderTopBlock.hydrateTopBlockPhotos',
             reason: 'photos-hydrated-on-open',
           });
