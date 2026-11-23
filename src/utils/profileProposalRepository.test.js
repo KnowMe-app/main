@@ -1,6 +1,6 @@
-import { get, onValue, push, ref, remove, runTransaction, set, update } from 'firebase/database';
-import { auth, removeCardAndSearchId, updateSearchId } from 'components/config';
-import { ADMIN_UIDS } from './accessLevel';
+import { get, onValue, push, ref, remove, runTransaction, serverTimestamp, set, update } from 'firebase/database';
+import { auth, removeCardAndSearchId, syncMatchingCardIndex, syncUserSearchIdIndex, updateSearchId } from 'components/config';
+import { ADMIN_UIDS, READONLY_ADMIN_UIDS } from './accessLevel';
 import { getOverlayForUserCard, saveOverlayForUserCard } from './multiAccountEdits';
 import { saveCreateProfileMutation } from './profileMutations';
 import { profileProposalService } from './profileProposalRepository';
@@ -13,6 +13,7 @@ jest.mock('firebase/database', () => ({
   ref: jest.fn(),
   remove: jest.fn(),
   runTransaction: jest.fn(),
+  serverTimestamp: jest.fn(),
   set: jest.fn(),
   update: jest.fn(),
 }));
@@ -21,9 +22,13 @@ jest.mock('components/config', () => ({
   auth: { currentUser: null },
   database: {},
   fetchProfileDraftById: jest.fn(),
+  normalizeStoredDates: data => data,
   PUBLIC_COMMENTS_ROOT_PATH: 'publicComments',
   removeCardAndSearchId: jest.fn(),
   reportSearchIdIndexFailure: jest.fn(),
+  syncMatchingCardIndex: jest.fn(),
+  syncUserSearchIdIndex: jest.fn(),
+  syncUserSearchKeyIndex: jest.fn(),
   updateSearchId: jest.fn(),
 }));
 
@@ -108,6 +113,12 @@ describe('profile proposal service wired to the legacy RTDB adapters', () => {
     set.mockImplementation(async ({ path }, value) => writeAt(path, value));
     remove.mockImplementation(async ({ path }) => writeAt(path, null));
     runTransaction.mockImplementation(transact);
+    serverTimestamp.mockReturnValue(500);
+    syncMatchingCardIndex.mockImplementation(async (cardId, data) => {
+      const projection = { name: data.name };
+      writeAt(`matchingCards/${cardId}`, projection);
+      return projection;
+    });
     update.mockImplementation(async ({ path }, fields) => {
       Object.entries(fields).forEach(([key, value]) => writeAt(path ? `${path}/${key}` : key, value));
     });
@@ -272,5 +283,73 @@ describe('profile proposal service wired to the legacy RTDB adapters', () => {
       revision: null,
       changes: { phone: { added: [phone[0]] } },
     });
+  });
+
+  const reviewCreate = (expected, action = 'accept', finalData = expected.data) => profileProposalService.reviewDraft({
+    operation: 'create', action, cardId: mutationLocation.cardId, creatorUid, expected, finalData,
+  });
+
+  const reviewUpdate = (expectedCurrent, fieldName, value, action = 'accept') => profileProposalService.reviewDraft({
+    operation: 'update', action, cardUserId: overlayLocation.cardId, editorUserId: creatorUid,
+    fieldName, value, expectedCurrent,
+  });
+
+  it('approves a creation with corrections once through the shared service', async () => {
+    const draft = await profileProposalService.createDraft(createDraft({ name: 'Anna', surname: 'Original' }));
+    const corrected = { ...draft.data, surname: 'Corrected' };
+    auth.currentUser = { uid: ADMIN_UIDS[0] };
+    await expect(reviewCreate(draft, 'accept', corrected)).resolves.toEqual(corrected);
+    expect(readAt(`profileDetails/${mutationLocation.cardId}/surname`)).toBe('Corrected');
+    expect(readAt(mutationPath).status).toBe('accepted');
+
+    update.mockClear();
+    runTransaction.mockClear();
+    await expect(reviewCreate(draft, 'accept', corrected)).resolves.toEqual(corrected);
+    expect(update).not.toHaveBeenCalled();
+    expect(runTransaction).not.toHaveBeenCalled();
+  });
+
+  it('returns a create draft to its author with the record and edit history intact', async () => {
+    const draft = await profileProposalService.createDraft(createDraft({ city: 'Lviv' }));
+    const revised = await profileProposalService.saveDraft(createDraft({ city: 'Kyiv' }), { expected: draft });
+    const history = `multiData/profileMutationHistory/${mutationLocation.cardId}`;
+    const previousHistory = readAt(history);
+    auth.currentUser = { uid: ADMIN_UIDS[0] };
+
+    await expect(reviewCreate(revised, 'reject')).resolves.toMatchObject({ status: 'private', revision: 3, data: revised.data });
+    await expect(reviewCreate(revised, 'accept')).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+    await expect(reviewCreate(await profileProposalService.getDraft(mutationLocation), 'accept'))
+      .rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+    expect(readAt(history)).toEqual(previousHistory);
+    expect(readAt(`matchingCards/${mutationLocation.cardId}`)).toBeNull();
+  });
+
+  it('approves and rejects individual values, refreshes the index revision and refuses a stale second reviewer', async () => {
+    const cardId = overlayLocation.cardId;
+    const offered = ['380507700003', '380507700004', '380507700005'];
+    writeAt(`matchingCards/${cardId}`, { name: 'Profile', rev: 8 });
+    writeAt(`profileContacts/${cardId}`, { phone: canonical.phone });
+    await profileProposalService.createDraft(updateDraft({ phone: [...canonical.phone, ...offered], city: 'Lviv' }));
+    const firstReview = readAt(overlayPath);
+    auth.currentUser = { uid: ADMIN_UIDS[0] };
+    await expect(reviewUpdate(firstReview, 'phone', offered[0])).resolves.toMatchObject({ value: [...canonical.phone, offered[0]] });
+
+    auth.currentUser = { uid: ADMIN_UIDS[1] };
+    await expect(reviewUpdate(firstReview, 'phone', offered[0])).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+    await reviewUpdate(readAt(overlayPath), 'phone', offered[1], 'reject');
+    expect(readAt(overlayPath).fields).toEqual({ phone: { added: [offered[2]] }, city: { added: ['Lviv'] } });
+    expect(readAt(`profileContacts/${cardId}/phone`)).toEqual([...canonical.phone, offered[0]]);
+    expect(readAt(`matchingCards/${cardId}/rev`)).toBe(500);
+    expect(syncUserSearchIdIndex).toHaveBeenCalledWith(cardId, { phone: canonical.phone }, { phone: [...canonical.phone, offered[0]] });
+  });
+
+  it.each([creatorUid, anotherEditor, READONLY_ADMIN_UIDS[0]])('denies review decisions to %s', async uid => {
+    const draft = await profileProposalService.createDraft(createDraft({ city: 'Lviv' }));
+    auth.currentUser = { uid };
+    await expect(reviewCreate(draft, 'reject')).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    await expect(reviewCreate(draft)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    await expect(reviewUpdate({}, 'phone', phone[0])).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    await expect(reviewUpdate({}, 'phone', phone[0], 'reject')).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    expect(readAt(mutationPath).status).toBe('pendingReview');
   });
 });

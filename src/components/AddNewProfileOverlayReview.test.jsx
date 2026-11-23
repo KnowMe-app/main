@@ -1,16 +1,6 @@
-// Черга доповнень на `AddNewProfile`: адмін мусить бачити кожне дописане
-// значення окремим рядком і вирішувати по ньому, а не по картці цілком.
-//
-// Три речі, заради яких цей тест і стоїть:
-//  1) прийняття перевіряє саме той шар, з якого намальований обраний рядок;
-//  2) рішення ухвалюється тим самим `settleOverlayValueForCard`, що й у формі
-//     редагування: він транзакційний і знімає відхилене значення ще й з
-//     `searchId` — інакше прибраний номер далі знаходився б пошуком;
-//  3) відмова читання показує причину, а не порожню чергу: найімовірніша
-//     причина — нерозгорнуті правила бази, і тоді «доповнень немає» бреше рівно
-//     тоді, коли їх найбільше.
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 
 jest.mock('react-hot-toast', () => ({
   __esModule: true,
@@ -21,24 +11,21 @@ jest.mock('./config', () => ({
   fetchMatchingCardsByIds: jest.fn(async () => ({ cards: {}, missingIds: [] })),
 }));
 
-jest.mock('utils/profileOverlayReview', () => ({
-  approveOverlayValue: jest.fn(),
+jest.mock('utils/profileProposalRepository', () => ({
+  profileProposalService: { listDrafts: jest.fn(), reviewDraft: jest.fn() },
 }));
 
 jest.mock('utils/multiAccountEdits', () => ({
   ...jest.requireActual('utils/multiAccountEdits'),
   listPendingOverlayCards: jest.fn(),
-  settleOverlayValueForCard: jest.fn(),
+  getCanonicalCard: jest.fn(),
 }));
 
-const {
-  listPendingOverlayCards,
-  settleOverlayValueForCard,
-} = require('utils/multiAccountEdits');
-const { approveOverlayValue } = require('utils/profileOverlayReview');
+const { getCanonicalCard, listPendingOverlayCards } = require('utils/multiAccountEdits');
+const { profileProposalService: { listDrafts, reviewDraft } } = require('utils/profileProposalRepository');
 const { default: toast } = require('react-hot-toast');
 const { fetchMatchingCardsByIds } = require('./config');
-const { OverlayReviewQueue } = require('./AddNewProfileOverlayReview');
+const { ProposalReviewQueue } = require('./AddNewProfileOverlayReview');
 
 const LAYER = {
   cardUserId: 'CARD1',
@@ -56,14 +43,21 @@ const QUEUE_ENTRY = {
   recordsByEditor: { editorA: LAYER },
 };
 
-describe('OverlayReviewQueue', () => {
+const CREATE = {
+  id: 'create-1', operation: 'create', status: 'pendingReview', reservedCardId: 'DRAFT1',
+  createdBy: 'authorA', revision: 3, updatedAt: 1764000000001,
+  data: { name: 'Лада', surname: 'Коваль', city: 'Київ' },
+};
+
+describe('ProposalReviewQueue', () => {
   beforeEach(() => {
     // CRA вмикає `resetMocks`, тож реалізації з фабрики `jest.mock` не
     // доживають до тесту — кожен мок ставиться тут заново.
     jest.clearAllMocks();
     listPendingOverlayCards.mockResolvedValue([QUEUE_ENTRY]);
-    approveOverlayValue.mockResolvedValue({ value: '380501112233', remainingOverlay: null });
-    settleOverlayValueForCard.mockResolvedValue({ settledChange: {}, remainingChange: null, remainingOverlay: null });
+    listDrafts.mockResolvedValue([]);
+    reviewDraft.mockResolvedValue({ value: '380501112233', remainingOverlay: null });
+    getCanonicalCard.mockResolvedValue({ userId: 'CARD1', phone: ['380671111122', '380671111133'] });
     fetchMatchingCardsByIds.mockResolvedValue({
       cards: { CARD1: { userId: 'CARD1', name: 'Оксана', surname: 'Коваленко' } },
       missingIds: [],
@@ -71,7 +65,7 @@ describe('OverlayReviewQueue', () => {
   });
 
   it('shows every pending value with its card, named by the feed card', async () => {
-    render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} />);
 
     expect(await screen.findByText('Оксана Коваленко')).toBeTruthy();
     expect(screen.getByText('380501112233')).toBeTruthy();
@@ -80,10 +74,11 @@ describe('OverlayReviewQueue', () => {
   });
 
   it('requires the exact displayed record when approving a value', async () => {
-    render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Прийняти' }));
 
-    await waitFor(() => expect(approveOverlayValue).toHaveBeenCalledWith({
+    await waitFor(() => expect(reviewDraft).toHaveBeenCalledWith({
+      operation: 'update', action: 'accept',
       cardUserId: 'CARD1',
       editorUserId: 'editorA',
       fieldName: 'phone',
@@ -93,19 +88,19 @@ describe('OverlayReviewQueue', () => {
   });
 
   it('settles a discarded value through the shared path and never touches the card', async () => {
-    render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Видалити' }));
 
-    await waitFor(() => expect(settleOverlayValueForCard).toHaveBeenCalled());
-    expect(settleOverlayValueForCard).toHaveBeenCalledWith({
+    await waitFor(() => expect(reviewDraft).toHaveBeenCalled());
+    expect(reviewDraft).toHaveBeenCalledWith({
       cardUserId: 'CARD1',
       editorUserId: 'editorA',
       fieldName: 'phone',
       value: '380501112233',
-      action: 'discard',
+      operation: 'update', action: 'reject',
       expectedCurrent: LAYER,
     });
-    expect(approveOverlayValue).not.toHaveBeenCalled();
+    expect(reviewDraft).toHaveBeenCalledTimes(1);
   });
 
   it('passes a replacement with its original value to the guarded review writer', async () => {
@@ -117,20 +112,20 @@ describe('OverlayReviewQueue', () => {
       recordsByEditor: { editorA: record },
     }]);
 
-    render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Прийняти' }));
 
-    await waitFor(() => expect(approveOverlayValue).toHaveBeenCalledWith(expect.objectContaining({
+    await waitFor(() => expect(reviewDraft).toHaveBeenCalledWith(expect.objectContaining({
       fieldName: 'city', value: 'Львів', expectedCurrent: record,
     })));
   });
 
   it('discards all the displayed values through guarded per-value settlement', async () => {
-    render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Видалити все' }));
 
-    await waitFor(() => expect(settleOverlayValueForCard).toHaveBeenCalledWith(expect.objectContaining({
-      cardUserId: 'CARD1', action: 'discard', expectedCurrent: LAYER,
+    await waitFor(() => expect(reviewDraft).toHaveBeenCalledWith(expect.objectContaining({
+      cardUserId: 'CARD1', action: 'reject', expectedCurrent: LAYER,
     })));
   });
 
@@ -143,17 +138,17 @@ describe('OverlayReviewQueue', () => {
       overlaysByEditor: { editorA: original },
       recordsByEditor: { editorA: original },
     }]);
-    approveOverlayValue.mockResolvedValueOnce({ remainingOverlay: remaining });
-    approveOverlayValue.mockRejectedValueOnce(Object.assign(new Error('stale'), { code: 'REVISION_CONFLICT' }));
+    reviewDraft.mockResolvedValueOnce({ remainingOverlay: remaining });
+    reviewDraft.mockRejectedValueOnce(Object.assign(new Error('stale'), { code: 'REVISION_CONFLICT' }));
 
-    render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Прийняти все' }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/вже змінено/)));
-    expect(approveOverlayValue).toHaveBeenNthCalledWith(1, expect.objectContaining({
+    expect(reviewDraft).toHaveBeenNthCalledWith(1, expect.objectContaining({
       expectedCurrent: original, value: '380501112233',
     }));
-    expect(approveOverlayValue).toHaveBeenNthCalledWith(2, expect.objectContaining({
+    expect(reviewDraft).toHaveBeenNthCalledWith(2, expect.objectContaining({
       expectedCurrent: remaining, value: secondPhone,
     }));
     expect(toast.success).not.toHaveBeenCalled();
@@ -164,17 +159,116 @@ describe('OverlayReviewQueue', () => {
       Object.assign(new Error('denied'), { code: 'PERMISSION_DENIED' }),
     );
 
-    render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} />);
 
     expect(await screen.findByText(/PERMISSION_DENIED/)).toBeTruthy();
-    expect(screen.queryByText('Нерозсуджених доповнень немає.')).toBeNull();
+    expect(screen.queryByText('Пропозицій на розгляд немає.')).toBeNull();
   });
 
   it('says plainly when there is nothing to review', async () => {
     listPendingOverlayCards.mockResolvedValueOnce([]);
 
-    render(<OverlayReviewQueue onOpenCard={jest.fn()} />);
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} />);
 
-    expect(await screen.findByText('Нерозсуджених доповнень немає.')).toBeTruthy();
+    expect(await screen.findByText('Пропозицій на розгляд немає.')).toBeTruthy();
+  });
+
+  it('shows pending create and update proposals in the same queue and opens the draft editor', async () => {
+    listDrafts.mockResolvedValue([CREATE, { ...CREATE, id: 'returned', status: 'private', data: { name: 'Повернута' } }]);
+    const onOpenDraft = jest.fn();
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} onOpenDraft={onOpenDraft} />);
+
+    expect(await screen.findByRole('heading', { name: /Черга пропозицій/ })).toBeInTheDocument();
+    const [createCard] = await screen.findAllByRole('article');
+    expect(within(createCard).getByText('Лада Коваль')).toBeInTheDocument();
+    expect(within(createCard).getByText(/Нова анкета/)).toBeInTheDocument();
+    expect(within(createCard).getByText(/Автор authorA · Ревізія 3/)).toBeInTheDocument();
+    expect(screen.getByText(/Зміни до анкети/)).toBeInTheDocument();
+    expect(screen.queryByText('Повернута')).not.toBeInTheDocument();
+    fireEvent.click(within(createCard).getByRole('button', { name: 'Відкрити' }));
+    expect(onOpenDraft).toHaveBeenCalledWith('DRAFT1');
+    expect(listDrafts).toHaveBeenCalledWith({ review: true, operation: 'create' });
+  });
+
+  it('publishes a new card through the shared service with the displayed revision', async () => {
+    listDrafts.mockResolvedValue([CREATE]);
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} onOpenDraft={jest.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Створити анкету' }));
+    await waitFor(() => expect(reviewDraft).toHaveBeenCalledWith({
+      operation: 'create', action: 'accept', cardId: 'DRAFT1', creatorUid: 'authorA',
+      expectedRevision: 3, expected: CREATE, finalData: CREATE.data,
+    }));
+  });
+
+  it('returns a new card proposal to its author through the shared service', async () => {
+    listDrafts.mockResolvedValue([CREATE]);
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} onOpenDraft={jest.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Повернути автору' }));
+    await waitFor(() => expect(reviewDraft).toHaveBeenCalledWith({
+      operation: 'create', action: 'reject', cardId: 'DRAFT1', creatorUid: 'authorA',
+      expectedRevision: 3, expected: CREATE,
+    }));
+  });
+
+  it('leaves a duplicate pending and tells the admin to review the match', async () => {
+    listDrafts.mockResolvedValue([CREATE]);
+    reviewDraft.mockRejectedValueOnce(Object.assign(new Error('duplicate'), { code: 'DUPLICATE_PROFILE' }));
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} onOpenDraft={jest.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Створити анкету' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/Перевірте збіг/)));
+    expect(screen.getByText('Лада Коваль')).toBeInTheDocument();
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('loads the actual canonical values on demand and shows the proposal author and revision', async () => {
+    const record = { ...LAYER, proposal: { revision: 7 } };
+    const otherRecord = { ...LAYER, editorUserId: 'editorB', fields: { phone: { added: ['380501113344'] } } };
+    listPendingOverlayCards.mockResolvedValue([{
+      ...QUEUE_ENTRY, editorIds: ['editorA', 'editorB'],
+      recordsByEditor: { editorA: record, editorB: otherRecord },
+      overlaysByEditor: { editorA: record, editorB: otherRecord },
+    }]);
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} />);
+    expect(await screen.findByText(/Автор editorA · Ревізія 7/)).toBeInTheDocument();
+    expect(screen.getByText(/Автор editorB/)).toBeInTheDocument();
+    expect(getCanonicalCard).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Поточні значення' }));
+    expect(await screen.findByText(/380671111122 · 380671111133/)).toBeInTheDocument();
+    expect(getCanonicalCard).toHaveBeenCalledWith('CARD1');
+  });
+
+  it('lets the inspector read both operations with review actions disabled', async () => {
+    listDrafts.mockResolvedValue([CREATE]);
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} onOpenDraft={jest.fn()} readOnly />);
+    expect(await screen.findByRole('button', { name: 'Створити анкету' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Повернути автору' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Прийняти' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Видалити' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Прийняти все' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Поточні значення' })).toBeEnabled();
+    screen.getAllByRole('button', { name: 'Відкрити' }).forEach(button => expect(button).toBeEnabled());
+    expect(reviewDraft).not.toHaveBeenCalled();
+  });
+
+  it('shows the old and new values of a list replacement and submits the pair', async () => {
+    const replacement = { from: '380501110000', to: '380501112233' };
+    const record = {
+      ...LAYER,
+      fields: { phone: { removed: [replacement.from], added: [replacement.to] } },
+      proposal: { replacements: JSON.stringify({ phone: [replacement] }) },
+    };
+    listPendingOverlayCards.mockResolvedValue([{
+      ...QUEUE_ENTRY,
+      recordsByEditor: { editorA: record },
+      overlaysByEditor: { editorA: record },
+    }]);
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} />);
+
+    expect(await screen.findByText(replacement.from)).toBeInTheDocument();
+    expect(screen.getByText(replacement.to)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Прийняти' }));
+    await waitFor(() => expect(reviewDraft).toHaveBeenCalledWith(expect.objectContaining({
+      operation: 'update', action: 'accept', expectedCurrent: record, value: replacement.to, replacement,
+    })));
   });
 });

@@ -1,23 +1,4 @@
-// Черга доповнень: усе, що читачі дописали в чужі картки й що ще ніхто не
-// розсудив.
-//
-// Дописувати картки може кожен, хто увійшов (`multiData/edits/{картка}/{читач}`),
-// а канонічним значення робить лише адмін. Доти шар лежить під карткою й видно
-// його там, де на картку дивляться, — тобто рішення по ньому ухвалюють, лише
-// випадково цю картку відкривши. Черга перевертає це: адмін заходить сюди й
-// бачить **усі** такі картки одразу, з кожним дописаним значенням окремим
-// рядком і двома кнопками — «прийняти» і «видалити».
-//
-// Рішення тут на **значення**, а не на картку цілком: із трьох дописаних
-// телефонів один буває правильний, і «прийняти все» на таку картку записало б
-// у неї два чужі номери. Кнопки на всю картку теж є — коли дописане перевірене
-// й приймається разом, — але вони не єдині.
-//
-// Прийняте потрапляє в анкету тим самим писачем, що й форма
-// (`utils/persistCanonicalCard`), і з журналу прибирається: значення тепер
-// канонічне, і другий запис про нього — це вже не аудит, а шум. Видалене,
-// навпаки, лишається в журналі (`editsHistory`): «чому цього немає в анкеті»
-// — питання, на яке відповідати доводиться.
+// Адмінська черга чернеток нових анкет і доповнень до наявних.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { RULES_DEPLOY_HINT } from '../utils/rulesDeployHint';
 import toast from 'react-hot-toast';
@@ -25,11 +6,12 @@ import styled from 'styled-components';
 
 import {
   buildOverlayFieldEntries,
+  getCanonicalCard,
   listPendingOverlayCards,
-  settleOverlayValueForCard,
   sortOverlaysByAppliedOrder,
 } from 'utils/multiAccountEdits';
-import { approveOverlayValue } from 'utils/profileOverlayReview';
+import { resolveCanonicalFieldName } from 'utils/profileNodeSchema';
+import { profileProposalService } from 'utils/profileProposalRepository';
 import { getFieldLabel, pickerFields } from './formFields';
 import { fetchMatchingCardsByIds } from './config';
 import { ToolButton, ToolCount, ToolDrawerNote } from './AddNewProfileAdminPanel.styled';
@@ -148,6 +130,10 @@ const RemovalMark = styled.span`
   margin-right: 4px;
 `;
 
+const CurrentValues = styled.div`
+  padding: 6px 12px 0;
+`;
+
 const CardActions = styled.footer`
   display: flex;
   gap: 6px;
@@ -193,25 +179,27 @@ const describeCard = card => {
   return values.join(' ');
 };
 
-/**
- * Черга доповнень одним читанням кореня `multiData/edits` плюс картки стрічки
- * для підписів. Відмова не перетворюється на порожню чергу: викликач показує
- * причину, бо найімовірніша з них — нерозгорнуті правила бази, і «доповнень
- * немає» тоді означало б рівно протилежне до правди.
- */
-export const loadOverlayReviewQueue = async () => {
-  const entries = await listPendingOverlayCards({ includeRecords: true });
-  if (!entries.length) return { entries: [], cards: {} };
-
-  const { cards } = await fetchMatchingCardsByIds(entries.map(entry => entry.cardUserId));
+// Доповнення групуються за карткою, щоб адмін бачив усіх авторів разом.
+// Для підписів достатньо карток стрічки. Повну анкету читаємо за запитом.
+export const loadProposalReviewQueue = async () => {
+  const [drafts, overlays] = await Promise.all([
+    profileProposalService.listDrafts({ review: true, operation: 'create' }),
+    listPendingOverlayCards({ includeRecords: true }),
+  ]);
+  const creates = drafts.filter(draft => draft.status === 'pendingReview');
+  const { cards } = overlays.length
+    ? await fetchMatchingCardsByIds(overlays.map(entry => entry.cardUserId))
+    : { cards: {} };
+  const entries = [
+    ...creates.map(entry => ({ operation: 'create', key: entry.id, entry })),
+    ...overlays.map(entry => ({ operation: 'update', key: entry.cardUserId, entry })),
+  ].sort((left, right) => (right.entry.updatedAt ?? 0) - (left.entry.updatedAt ?? 0));
   return { entries, cards };
 };
 
 const reviewValue = async (action, decision) => {
   if (!decision.expectedCurrent) throw Object.assign(new Error('REVISION_CONFLICT'), { code: 'REVISION_CONFLICT' });
-  const result = action === 'accept'
-    ? await approveOverlayValue(decision)
-    : await settleOverlayValueForCard({ ...decision, action });
+  const result = await profileProposalService.reviewDraft({ operation: 'update', action, ...decision });
   if (!result) throw Object.assign(new Error('REVISION_CONFLICT'), { code: 'REVISION_CONFLICT' });
   return result;
 };
@@ -219,15 +207,15 @@ const reviewValue = async (action, decision) => {
 const reviewAllValues = async (entry, action) => {
   for (const overlay of sortOverlaysByAppliedOrder(entry.overlaysByEditor)) {
     const { editorUserId } = overlay;
-    const fields = buildOverlayFieldEntries({ [editorUserId]: overlay });
+    const fields = buildOverlayFieldEntries({ [editorUserId]: overlay }, { recordsByEditor: entry.recordsByEditor });
     let expectedCurrent = entry.recordsByEditor?.[editorUserId];
     for (const [fieldName, rows] of Object.entries(fields)) {
-      for (const { value } of rows) {
+      for (const row of rows) {
         // Наступний рядок спирається на щойно підтверджений залишок того
         // самого автора, а не на нове читання, що могло б прийняти чужу правку.
         // eslint-disable-next-line no-await-in-loop
         const result = await reviewValue(action, {
-          cardUserId: entry.cardUserId, editorUserId, fieldName, value, expectedCurrent,
+          cardUserId: entry.cardUserId, fieldName, ...rowDecision(row), expectedCurrent,
         });
         expectedCurrent = result.remainingOverlay;
       }
@@ -235,13 +223,67 @@ const reviewAllValues = async (entry, action) => {
   }
 };
 
-const OverlayCard = ({ entry, card, busy, onAcceptValue, onDiscardValue, onAcceptAll, onDiscardAll, onOpen }) => {
+const rowDecision = ({ editorUserId, value, replacement }) => ({
+  editorUserId, value, ...(replacement && { replacement }),
+});
+
+const proposalMeta = ({ author, revision, date }) => [
+  author && `Автор ${author}`,
+  Number.isSafeInteger(revision) && `Ревізія ${revision}`,
+  date,
+].filter(Boolean).join(' · ');
+
+const currentValueLabel = value => {
+  const values = (Array.isArray(value) ? value : [value]).filter(item => item !== '' && item != null);
+  return values.length ? values.join(' · ') : 'Порожньо';
+};
+
+const CreateCard = ({ entry, busy, readOnly, onOpen, onAccept, onReject }) => {
+  const { reservedCardId, createdBy, data, revision, updatedAt } = entry;
+  return (
+    <CardShell>
+      <CardHead>
+        <CardHeadText>
+          <CardName>{describeCard(data) || reservedCardId}</CardName>
+          <CardMeta>Нова анкета · {reservedCardId}</CardMeta>
+          <CardMeta>{proposalMeta({ author: createdBy, revision, date: formatUpdatedAt(updatedAt) })}</CardMeta>
+        </CardHeadText>
+        <ToolButton type="button" onClick={() => onOpen(reservedCardId)} disabled={busy}>
+          Відкрити
+        </ToolButton>
+      </CardHead>
+      <CardActions>
+        <ToolButton type="button" $tone="primary" disabled={busy || readOnly} onClick={() => onAccept(entry)}>
+          Створити анкету
+        </ToolButton>
+        <ToolButton type="button" $tone="danger" disabled={busy || readOnly} onClick={() => onReject(entry)}>
+          Повернути автору
+        </ToolButton>
+      </CardActions>
+    </CardShell>
+  );
+};
+
+const OverlayCard = ({ entry, card, busy, readOnly, onAcceptValue, onDiscardValue, onAcceptAll, onDiscardAll, onOpen }) => {
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [current, setCurrent] = useState({ status: 'idle', values: null });
+  useEffect(() => {
+    if (!showCurrent) return undefined;
+    let active = true;
+    setCurrent({ status: 'loading', values: null });
+    getCanonicalCard(entry.cardUserId).then(values => {
+      if (active) setCurrent({ status: 'ready', values });
+    }).catch(() => {
+      if (active) setCurrent({ status: 'error', values: null });
+    });
+    return () => { active = false; };
+  }, [entry, showCurrent]);
   // Та сама розкладка «по значенню», що й у формі редагування
   // (`buildOverlayFieldEntries`): рішення ухвалюють про значення, тож і список
   // мусить бути списком значень, а не полів.
   const pendingByField = useMemo(
-    () => buildOverlayFieldEntries(entry.overlaysByEditor),
-    [entry.overlaysByEditor],
+    () => buildOverlayFieldEntries(entry.overlaysByEditor, { recordsByEditor: entry.recordsByEditor }),
+    [entry.overlaysByEditor, entry.recordsByEditor],
   );
   const fieldNames = Object.keys(pendingByField);
   const title = describeCard(card) || entry.cardUserId;
@@ -253,7 +295,7 @@ const OverlayCard = ({ entry, card, busy, onAcceptValue, onDiscardValue, onAccep
         <CardHeadText>
           <CardName>{title}</CardName>
           <CardMeta>
-            {entry.cardUserId}
+            Зміни до анкети · {entry.cardUserId}
             {' · '}
             {editorCountLabel(entry.editorIds.length)}
             {updatedAt ? ` · ${updatedAt}` : ''}
@@ -264,19 +306,37 @@ const OverlayCard = ({ entry, card, busy, onAcceptValue, onDiscardValue, onAccep
         </ToolButton>
       </CardHead>
 
+      <CurrentValues>
+        <ToolButton type="button" aria-expanded={showCurrent} onClick={() => setShowCurrent(value => !value)}>
+          {showCurrent ? 'Сховати поточні значення' : 'Поточні значення'}
+        </ToolButton>
+        {showCurrent && current.status === 'loading' && <CardMeta role="status">Читаємо анкету…</CardMeta>}
+        {showCurrent && current.status === 'error' && <CardMeta role="status">Не вдалося прочитати анкету.</CardMeta>}
+      </CurrentValues>
       {fieldNames.map(fieldName => (
         <FieldBlock key={fieldName}>
           <FieldName>{labelForField(fieldName)}</FieldName>
+          {showCurrent && current.status === 'ready' && (
+            <CardMeta>
+              Поточне значення · {currentValueLabel(current.values?.[resolveCanonicalFieldName(fieldName)] ?? current.values?.[fieldName])}
+            </CardMeta>
+          )}
           {pendingByField[fieldName].map(row => (
-            <ValueRow key={`${row.editorUserId}::${row.value}`}>
+            <ValueRow key={JSON.stringify([row.editorUserId, row.value, row.isDeleted, row.replacement])}>
               <ValueText>
                 {row.isDeleted && <RemovalMark aria-hidden="true">−</RemovalMark>}
+                {row.previousValue != null && <PreviousValue>{row.previousValue}</PreviousValue>}
                 {row.isDeleted ? <PreviousValue>{row.value}</PreviousValue> : row.value}
+                <CardMeta>{proposalMeta({
+                  author: row.editorUserId,
+                  revision: entry.recordsByEditor?.[row.editorUserId]?.proposal?.revision,
+                  date: formatUpdatedAt(entry.overlaysByEditor?.[row.editorUserId]?.updatedAt),
+                })}</CardMeta>
               </ValueText>
               <ToolButton
                 type="button"
                 $tone="primary"
-                disabled={busy}
+                disabled={busy || readOnly}
                 onClick={() => onAcceptValue(entry, fieldName, row)}
                 title="Записати значення в анкету і прибрати з черги"
               >
@@ -285,7 +345,7 @@ const OverlayCard = ({ entry, card, busy, onAcceptValue, onDiscardValue, onAccep
               <ToolButton
                 type="button"
                 $tone="danger"
-                disabled={busy}
+                disabled={busy || readOnly}
                 onClick={() => onDiscardValue(entry, fieldName, row)}
                 title="Прибрати доповнення, анкету не міняти"
               >
@@ -297,10 +357,10 @@ const OverlayCard = ({ entry, card, busy, onAcceptValue, onDiscardValue, onAccep
       ))}
 
       <CardActions>
-        <ToolButton type="button" $tone="primary" disabled={busy} onClick={() => onAcceptAll(entry)}>
+        <ToolButton type="button" $tone="primary" disabled={busy || readOnly} onClick={() => onAcceptAll(entry)}>
           Прийняти все
         </ToolButton>
-        <ToolButton type="button" $tone="danger" disabled={busy} onClick={() => onDiscardAll(entry)}>
+        <ToolButton type="button" $tone="danger" disabled={busy || readOnly} onClick={() => onDiscardAll(entry)}>
           Видалити все
         </ToolButton>
       </CardActions>
@@ -308,14 +368,14 @@ const OverlayCard = ({ entry, card, busy, onAcceptValue, onDiscardValue, onAccep
   );
 };
 
-export const OverlayReviewQueue = ({ onOpenCard }) => {
+export const ProposalReviewQueue = ({ onOpenCard, onOpenDraft, readOnly = false }) => {
   const [state, setState] = useState({ status: 'idle', entries: [], cards: {}, error: '' });
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     setState(prev => ({ ...prev, status: 'loading', error: '' }));
     try {
-      const { entries, cards } = await loadOverlayReviewQueue();
+      const { entries, cards } = await loadProposalReviewQueue();
       setState({ status: 'ready', entries, cards, error: '' });
     } catch (error) {
       // Відмова читання — не порожня черга. Найчастіша причина в тому, що
@@ -343,6 +403,8 @@ export const OverlayReviewQueue = ({ onOpenCard }) => {
     } catch (error) {
       if (error?.code === 'REVISION_CONFLICT') {
         toast.error('Анкету або пропозицію вже змінено. Перевірте оновлені дані.');
+      } else if (error?.code === 'DUPLICATE_PROFILE') {
+        toast.error('Анкета з такими контактами вже існує. Перевірте збіг перед публікацією.');
       } else {
         toast.error(`${failureMessage}: ${error?.code || error?.message || 'unknown'}`);
       }
@@ -352,41 +414,22 @@ export const OverlayReviewQueue = ({ onOpenCard }) => {
     }
   }, [refresh]);
 
-  /**
-   * Прийняти одне значення: спершу воно стає канонічним в анкеті, і лише
-   * потім іде з черги.
-   *
-   * Порядок саме такий, бо `settleOverlayValueForCard` шар **прибирає** — і
-   * прибране до запису анкети не лишило б сліду ніде: ані в картці, ані в
-   * черзі. Записує його той самий писач, що й форма
-   * (`utils/persistCanonicalCard`): шлях запису анкети мусить бути один, а тут
-   * форми на екрані немає взагалі.
-   */
   const acceptValue = useCallback((entry, fieldName, row) => runAction(
     () => reviewValue('accept', {
-      editorUserId: row.editorUserId,
       cardUserId: entry.cardUserId,
       fieldName,
-      value: row.value,
+      ...rowDecision(row),
       expectedCurrent: entry.recordsByEditor?.[row.editorUserId],
     }),
     `Прийнято: ${row.value}`,
     'Не вдалося прийняти доповнення',
   ), [runAction]);
 
-  /**
-   * Відхилити одне значення. Анкету це не міняє, але `searchId` — так:
-   * ключ туди завів сам шар (`saveOverlayForUserCard`), і поки він там
-   * лишається, прибраний номер далі знаходиться пошуком. Знімає його
-   * `settleOverlayValueForCard`, і лише тоді, коли значення не стоїть ані в
-   * анкеті, ані в чужому шарі на цій картці.
-   */
   const discardValue = useCallback((entry, fieldName, row) => runAction(
-    () => reviewValue('discard', {
-      editorUserId: row.editorUserId,
+    () => reviewValue('reject', {
       cardUserId: entry.cardUserId,
       fieldName,
-      value: row.value,
+      ...rowDecision(row),
       expectedCurrent: entry.recordsByEditor?.[row.editorUserId],
     }),
     `Видалено: ${row.value}`,
@@ -400,16 +443,25 @@ export const OverlayReviewQueue = ({ onOpenCard }) => {
   ), [runAction]);
 
   const discardAll = useCallback(entry => runAction(
-    () => reviewAllValues(entry, 'discard'),
+    () => reviewAllValues(entry, 'reject'),
     'Усі доповнення картки видалено',
     'Не вдалося видалити доповнення',
   ), [runAction]);
+
+  const reviewCreate = (entry, action, successMessage, failureMessage) => runAction(
+    () => profileProposalService.reviewDraft({
+      operation: 'create', action, cardId: entry.reservedCardId, creatorUid: entry.createdBy,
+      expectedRevision: entry.revision, expected: entry, ...(action === 'accept' && { finalData: entry.data }),
+    }),
+    successMessage,
+    failureMessage,
+  );
 
   return (
     <Wrap>
       <QueueHeader>
         <QueueTitle>
-          Черга доповнень
+          Черга пропозицій
           {state.status === 'ready' && state.entries.length > 0 && (
             <ToolCount>{state.entries.length}</ToolCount>
           )}
@@ -420,7 +472,7 @@ export const OverlayReviewQueue = ({ onOpenCard }) => {
         </ToolButton>
       </QueueHeader>
 
-      {state.status === 'loading' && <ToolDrawerNote>Читаємо всі шари доповнень…</ToolDrawerNote>}
+      {state.status === 'loading' && <ToolDrawerNote>Читаємо пропозиції…</ToolDrawerNote>}
 
       {state.status === 'error' && (
         <ToolDrawerNote>
@@ -429,15 +481,26 @@ export const OverlayReviewQueue = ({ onOpenCard }) => {
       )}
 
       {state.status === 'ready' && state.entries.length === 0 && (
-        <ToolDrawerNote>Нерозсуджених доповнень немає.</ToolDrawerNote>
+        <ToolDrawerNote>Пропозицій на розгляд немає.</ToolDrawerNote>
       )}
 
-      {state.entries.map(entry => (
+      {state.entries.map(({ operation, key, entry }) => operation === 'create' ? (
+        <CreateCard
+          key={`${operation}:${key}`}
+          entry={entry}
+          busy={busy}
+          readOnly={readOnly}
+          onOpen={onOpenDraft}
+          onAccept={draft => reviewCreate(draft, 'accept', 'Анкету створено', 'Не вдалося створити анкету')}
+          onReject={draft => reviewCreate(draft, 'reject', 'Чернетку повернуто автору', 'Не вдалося повернути чернетку')}
+        />
+      ) : (
         <OverlayCard
-          key={entry.cardUserId}
+          key={`${operation}:${key}`}
           entry={entry}
           card={state.cards[entry.cardUserId]}
           busy={busy}
+          readOnly={readOnly}
           onAcceptValue={acceptValue}
           onDiscardValue={discardValue}
           onAcceptAll={acceptAll}
@@ -449,4 +512,4 @@ export const OverlayReviewQueue = ({ onOpenCard }) => {
   );
 };
 
-export default OverlayReviewQueue;
+export default ProposalReviewQueue;

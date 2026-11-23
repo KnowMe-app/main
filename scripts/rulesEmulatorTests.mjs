@@ -1206,6 +1206,19 @@ const makePublicationFixture = cardId => {
   return { path, pending, publishing };
 };
 
+await it('автор може повторно подати повернену анкету, а рішення про неї належить адміну', async () => {
+  const { path, pending } = makePublicationFixture('publicationCard0003');
+  const author = ref(db(ORDINARY_VIEWER), path);
+  const admin = ref(db(SUPERADMIN), path);
+  const returned = { ...pending, status: 'private', revision: 2 };
+  await assertSucceeds(set(author, pending));
+  await assertFails(set(author, { ...pending, status: 'accepted' }));
+  await assertFails(set(author, { ...pending, status: 'publishing' }));
+  await assertFails(set(author, returned));
+  await assertSucceeds(set(admin, returned));
+  await assertSucceeds(set(author, { ...pending, revision: 3 }));
+});
+
 await it('лише адмін резервує публікацію, і автор не перезаписує або видаляє її ревізію', async () => {
   const { path, pending, publishing } = makePublicationFixture('publicationCard0001');
   const author = ref(db(ORDINARY_VIEWER), path);
@@ -1289,6 +1302,20 @@ await it('автор не підробляє й не знімає резерв �
   await assertFails(remove(author));
   await assertSucceeds(update(admin, { reviewClaim: null }));
   await assertSucceeds(set(author, original));
+});
+
+await it('інспектор читає чергу пропозицій і не публікує та не повертає чернетки чи доповнення', async () => {
+  const { path, pending, publishing } = makePublicationFixture('publicationCard0004');
+  const inspectorUid = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
+  const inspector = db(inspectorUid);
+  const updatePath = `multiData/edits/${CARD}/${ORDINARY_VIEWER}`;
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), path), pending));
+  await assertSucceeds(get(ref(inspector, 'multiData/profileMutations')));
+  await assertSucceeds(get(ref(inspector, 'multiData/edits')));
+  await assertFails(set(ref(inspector, path), { ...publishing, publicationActorUid: inspectorUid }));
+  await assertFails(update(ref(inspector, path), { status: 'private', revision: 2 }));
+  await assertFails(update(ref(inspector, updatePath), { reviewClaim: { fieldName: 'phone', value: '380501110033' } }));
+  await assertFails(remove(ref(inspector, updatePath)));
 });
 
 await it('чужого шару не пише й усіх шарів картки не читає', async () => {

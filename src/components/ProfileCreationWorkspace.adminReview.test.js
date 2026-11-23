@@ -1,17 +1,14 @@
 import '@testing-library/jest-dom';
 import { profileProposalService } from 'utils/profileProposalRepository';
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import { fetchUserById, fetchUsersByIds } from './config';
 import {
-  claimOverlayValueForReview,
   getOverlayHistoryForCard,
   getOverlaysForCard,
   purgeOverlayHistoryEntries,
-  releaseOverlayValueReview,
-  settleOverlayFieldValue,
 } from 'utils/multiAccountEdits';
 import {
   loadAllCreateProfileMutations,
@@ -19,23 +16,26 @@ import {
   loadProfileMutationHistory,
   purgeProfileMutationHistoryValue,
   loadSharedProfileMutations,
-  saveCreateProfileMutation,
 } from 'utils/profileMutations';
+import { createEditorSnapshot } from 'utils/profileProposalEditor';
+import { READONLY_ADMIN_UIDS } from 'utils/accessLevel';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 
 jest.mock('utils/profileProposalRepository', () => ({
-  profileProposalService: { getDraft: jest.fn(), createDraft: jest.fn(), saveDraft: jest.fn(), deleteDraft: jest.fn() },
+  profileProposalService: { getDraft: jest.fn(), createDraft: jest.fn(), saveDraft: jest.fn(), deleteDraft: jest.fn(), reviewDraft: jest.fn() },
 }));
+
+let mockViewerUid = 'admin-1';
 
 jest.mock('firebase/auth', () => ({
   onAuthStateChanged: (_auth, callback) => {
-    callback({ uid: 'admin-1' });
+    callback({ uid: mockViewerUid });
     return jest.fn();
   },
 }));
 
 jest.mock('./config', () => ({
-  auth: { currentUser: { uid: 'admin-1' } },
+  auth: { get currentUser() { return { uid: mockViewerUid }; } },
   fetchUserById: jest.fn(async () => ({ canCreateProfiles: true })),
   fetchUsersByIds: jest.fn(async () => ({ 'editor-1': { name: 'Оля', surname: 'Р.' } })),
   fetchFavoriteUsers: jest.fn(async () => ({})),
@@ -90,41 +90,64 @@ const draftMutation = {
   data: { userId: 'card-1', name: "Ім'я6" },
 };
 
+const proposedName = {
+  updatedAt: 30,
+  cardUserId: 'card-1',
+  editorUserId: 'editor-1',
+  fields: { name: { from: "Ім'я6", to: "Ім'я7" } },
+};
+const nameOverlay = { ...proposedName, expectedCurrent: proposedName };
+const draftSnapshot = createEditorSnapshot(draftMutation);
+const expectedNameReview = {
+  operation: 'update',
+  cardUserId: 'card-1',
+  editorUserId: 'editor-1',
+  fieldName: 'name',
+  value: "Ім'я7",
+  expectedCurrent: proposedName,
+  expectedDraft: draftSnapshot,
+};
+
+const mockResolvedReview = (draft, remaining = {}) => {
+  profileProposalService.reviewDraft.mockImplementationOnce(async () => {
+    getOverlaysForCard.mockResolvedValue(remaining);
+    return { draft };
+  });
+};
+
 jest.mock('utils/profileMutations', () => ({
-  acceptCreateProfileMutation: jest.fn(),
   getEffectiveProfile: ({ mutation }) => mutation.data,
   loadAllCreateProfileMutations: jest.fn(),
   loadOwnProfileMutations: jest.fn(),
   loadProfileMutationHistory: jest.fn(),
   purgeProfileMutationHistoryValue: jest.fn(),
   loadSharedProfileMutations: jest.fn(),
-  rejectCreateProfileMutation: jest.fn(),
   reserveProfileCardId: jest.fn(() => 'new-card'),
-  saveCreateProfileMutation: jest.fn(),
 }));
 
 jest.mock('utils/multiAccountEdits', () => {
   const actual = jest.requireActual('utils/multiAccountEdits');
   return {
     ...actual,
-    claimOverlayValueForReview: jest.fn(),
     getOverlayHistoryForCard: jest.fn(),
     getOverlaysForCard: jest.fn(),
     removeAllOverlaysForCard: jest.fn(),
     purgeOverlayHistoryEntries: jest.fn(),
-    releaseOverlayValueReview: jest.fn(),
-    saveOverlayForUserCard: jest.fn(),
-    settleOverlayFieldValue: jest.fn(),
   };
 });
 
-jest.mock('react-router-dom', () => ({
-  useNavigate: () => jest.fn(),
-  useLocation: () => ({ pathname: '/create-profile' }),
-  useSearchParams: () => [new URLSearchParams(), jest.fn()],
-}));
+jest.mock('react-router-dom', () => {
+  const navigate = jest.fn();
+  const location = { pathname: '/create-profile' };
+  const searchParams = [new URLSearchParams(), jest.fn()];
+  return {
+    useNavigate: () => navigate,
+    useLocation: () => location,
+    useSearchParams: () => searchParams,
+  };
+});
 
-const openDraftAsAdmin = async () => {
+const openDraftForReview = async () => {
   render(<ProfileCreationWorkspace />);
   fireEvent.click(await screen.findByRole('button', { name: /Відкрити профіль/ }));
   await screen.findByLabelText("Ім'я: запропоноване значення");
@@ -133,6 +156,7 @@ const openDraftAsAdmin = async () => {
 // create-react-app resets mock implementations between tests, so every run
 // re-arms the same draft: author data Ім'я6, one pending proposal Ім'я7.
 beforeEach(() => {
+  mockViewerUid = 'admin-1';
   localStorage.clear();
   profileProposalService.saveDraft.mockImplementation(async (proposal, { expected }) => ({ ...proposal, revision: expected.revision + 1 }));
   fetchUserById.mockResolvedValue({ canCreateProfiles: true });
@@ -141,18 +165,11 @@ beforeEach(() => {
   loadOwnProfileMutations.mockResolvedValue([]);
   loadSharedProfileMutations.mockResolvedValue([]);
   loadProfileMutationHistory.mockResolvedValue([]);
-  saveCreateProfileMutation.mockImplementation(async ({ data }) => ({ ...draftMutation, data, revision: 4 }));
   getOverlayHistoryForCard.mockResolvedValue([
     { entryId: 'h1', fieldName: 'name', at: 10, action: 'edit', editorUserId: 'author-1', change: { from: '', to: "Ім'я5" } },
     { entryId: 'h2', fieldName: 'name', at: 20, action: 'edit', editorUserId: 'author-1', change: { from: "Ім'я5", to: "Ім'я6" } },
   ]);
-  const layer = { updatedAt: 30, editorUserId: 'editor-1', fields: { name: { from: "Ім'я6", to: "Ім'я7" } } };
-  getOverlaysForCard.mockResolvedValue({ 'editor-1': { ...layer, expectedCurrent: layer } });
-  claimOverlayValueForReview.mockImplementation(async ({ expectedCurrent, fieldName, value }) => ({
-    ...expectedCurrent, reviewClaim: { fieldName, value },
-  }));
-  releaseOverlayValueReview.mockResolvedValue(undefined);
-  settleOverlayFieldValue.mockResolvedValue(undefined);
+  getOverlaysForCard.mockResolvedValue({ 'editor-1': nameOverlay });
   purgeOverlayHistoryEntries.mockResolvedValue(undefined);
   purgeProfileMutationHistoryValue.mockResolvedValue(undefined);
 });
@@ -191,7 +208,7 @@ describe('ProfileCreationWorkspace admin review', () => {
   });
 
   it('shows the author value in the field and the proposal right under it', async () => {
-    await openDraftAsAdmin();
+    await openDraftForReview();
 
     // The questionnaire keeps the author's own data - the pending edit is a
     // separate, clearly marked row next to it, not a silent overwrite.
@@ -228,80 +245,147 @@ describe('ProfileCreationWorkspace admin review', () => {
     expect(screen.getAllByLabelText(/Видалити правку/)).toHaveLength(3);
   });
 
+  it('shows the foreign draft and its proposal to an inspector with review controls disabled', async () => {
+    [mockViewerUid] = READONLY_ADMIN_UIDS;
+    await openDraftForReview();
+
+    expect(screen.getByDisplayValue("Ім'я6")).toBeInTheDocument();
+    expect(screen.getByLabelText("Ім'я: запропоноване значення")).toHaveValue("Ім'я7");
+    const accept = screen.getByLabelText("Зберегти правку: Ім'я");
+    const reject = screen.getByLabelText("Видалити правку: Ім'я");
+    const publish = screen.getByRole('button', { name: 'Зберегти чернетку' });
+    const remove = screen.getByRole('button', { name: 'Видалити чернетку' });
+    expect(accept).toBeDisabled();
+    expect(reject).toBeDisabled();
+    expect(publish).toBeDisabled();
+    expect(remove).toBeDisabled();
+
+    fireEvent.click(accept);
+    fireEvent.click(reject);
+    fireEvent.click(publish);
+    fireEvent.click(remove);
+    expect(profileProposalService.reviewDraft).not.toHaveBeenCalled();
+    expect(profileProposalService.deleteDraft).not.toHaveBeenCalled();
+  });
+
   it('uses the user id as the clickable author only when a name is unavailable', async () => {
-    await openDraftAsAdmin();
+    await openDraftForReview();
     fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
 
     expect((await screen.findAllByRole('button', { name: 'author-1' })).length).toBeGreaterThan(0);
     expect(screen.queryByText('правка')).not.toBeInTheDocument();
   });
 
-  it('saves one proposed value into the draft and clears it from the backend', async () => {
-    await openDraftAsAdmin();
+  it('reviews exactly one value against both snapshots and keeps an unrelated proposal visible', async () => {
+    const otherOverlay = {
+      updatedAt: 40,
+      editorUserId: 'editor-2',
+      fields: { phone: { added: ['111'] } },
+    };
+    getOverlaysForCard.mockResolvedValue({ 'editor-1': nameOverlay, 'editor-2': otherOverlay });
+    mockResolvedReview(
+      { ...draftMutation, revision: 4, data: { ...draftMutation.data, name: "Ім'я7" } },
+      { 'editor-2': otherOverlay },
+    );
+    await openDraftForReview();
 
     fireEvent.click(screen.getByLabelText("Зберегти правку: Ім'я"));
 
-    await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
-    expect(saveCreateProfileMutation.mock.calls[0][0].data.name).toBe("Ім'я7");
-    expect(saveCreateProfileMutation.mock.calls[0][0].skipRevisionHistory).toBe(true);
-    expect(settleOverlayFieldValue).toHaveBeenCalledWith(expect.objectContaining({
-      cardUserId: 'card-1',
-      editorUserId: 'editor-1',
-      fieldName: 'name',
-      historyAction: 'accept',
-      settledChange: { from: "Ім'я6", to: "Ім'я7" },
-      purgeHistory: true,
-      expectedCurrent: expect.objectContaining({ reviewClaim: { fieldName: 'name', value: "Ім'я7" } }),
+    await waitFor(() => expect(profileProposalService.reviewDraft).toHaveBeenCalledWith({
+      ...expectedNameReview, action: 'accept', acceptedValue: "Ім'я7", replacement: undefined,
     }));
-    expect(screen.getAllByDisplayValue("Ім'я7").some(input => !input.hasAttribute('aria-label'))).toBe(true);
-    expect(screen.queryByText(/створено|видалено/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByLabelText("Ім'я: запропоноване значення")).not.toBeInTheDocument());
+    expect(screen.getByDisplayValue("Ім'я7")).toBeInTheDocument();
+    expect(screen.getByLabelText('Телефон: запропоноване значення')).toHaveValue('111');
   });
 
-  it('saves the corrected value when the admin edits the proposal first', async () => {
-    await openDraftAsAdmin();
+  it('passes the corrected value while retaining the original proposal identity', async () => {
+    mockResolvedReview({ ...draftMutation, revision: 4, data: { ...draftMutation.data, name: "Ім'я8" } });
+    await openDraftForReview();
 
     fireEvent.change(screen.getByLabelText("Ім'я: запропоноване значення"), { target: { value: "Ім'я8" } });
     fireEvent.click(screen.getByLabelText("Зберегти правку: Ім'я"));
 
-    await waitFor(() => expect(saveCreateProfileMutation).toHaveBeenCalled());
-    expect(saveCreateProfileMutation.mock.calls[0][0].data.name).toBe("Ім'я8");
-    expect(settleOverlayFieldValue).toHaveBeenCalledWith(expect.objectContaining({
-      settledChange: { from: "Ім'я6", to: "Ім'я8" },
-      historyAction: 'accept',
-      purgeHistory: true,
+    await waitFor(() => expect(profileProposalService.reviewDraft).toHaveBeenCalledWith({
+      ...expectedNameReview, action: 'accept', acceptedValue: "Ім'я8", replacement: undefined,
     }));
+    await waitFor(() => expect(screen.queryByLabelText("Ім'я: запропоноване значення")).not.toBeInTheDocument());
+    expect(screen.getByDisplayValue("Ім'я8")).toBeInTheDocument();
   });
 
-  it('deletes a proposal, and its memo, without touching the draft data', async () => {
-    await openDraftAsAdmin();
+  it('rejects one proposal without changing the draft data', async () => {
+    mockResolvedReview(null);
+    await openDraftForReview();
 
     fireEvent.click(screen.getByLabelText("Видалити правку: Ім'я"));
 
-    await waitFor(() => expect(settleOverlayFieldValue).toHaveBeenCalledWith(expect.objectContaining({
-      historyAction: 'discard',
-      settledChange: { from: "Ім'я6", to: "Ім'я7" },
-      purgeHistory: true,
-    })));
-    expect(saveCreateProfileMutation).not.toHaveBeenCalled();
+    await waitFor(() => expect(profileProposalService.reviewDraft).toHaveBeenCalledWith({
+      ...expectedNameReview, action: 'reject', acceptedValue: undefined, replacement: undefined,
+    }));
+    await waitFor(() => expect(screen.queryByLabelText("Ім'я: запропоноване значення")).not.toBeInTheDocument());
+    expect(screen.getByDisplayValue("Ім'я6")).toBeInTheDocument();
+    expect(profileProposalService.saveDraft).not.toHaveBeenCalled();
   });
 
-  it('keeps a contributed replacement pending when its original draft value changed', async () => {
-    loadAllCreateProfileMutations.mockResolvedValue([{
-      ...draftMutation, data: { ...draftMutation.data, name: 'Нове ім’я автора' },
-    }]);
-    await openDraftAsAdmin();
+  it('keeps the displayed draft and proposal after a stale review response', async () => {
+    const newerDraft = { ...draftMutation, revision: 4, data: { ...draftMutation.data, name: 'Нове ім’я автора' } };
+    loadAllCreateProfileMutations.mockResolvedValue([newerDraft]);
+    profileProposalService.reviewDraft.mockRejectedValueOnce(Object.assign(new Error('REVISION_CONFLICT'), {
+      code: 'REVISION_CONFLICT',
+    }));
+    await openDraftForReview();
 
-    fireEvent.click(screen.getByLabelText("Зберегти правку: Ім'я"));
+    const approveField = screen.getByLabelText("Зберегти правку: Ім'я");
+    fireEvent.click(approveField);
+    expect(approveField).toBeDisabled();
+    await waitFor(() => expect(approveField).toBeEnabled());
 
-    await waitFor(() => expect(releaseOverlayValueReview).toHaveBeenCalled());
-    expect(saveCreateProfileMutation).not.toHaveBeenCalled();
-    expect(settleOverlayFieldValue).not.toHaveBeenCalled();
+    expect(profileProposalService.reviewDraft).toHaveBeenCalledWith({
+      ...expectedNameReview,
+      action: 'accept',
+      acceptedValue: "Ім'я7",
+      replacement: undefined,
+      expectedDraft: createEditorSnapshot(newerDraft),
+    });
+    expect(profileProposalService.saveDraft).not.toHaveBeenCalled();
     expect(screen.getByDisplayValue('Нове ім’я автора')).toBeInTheDocument();
     expect(screen.getByLabelText("Ім'я: запропоноване значення")).toHaveValue("Ім'я7");
   });
 
+  it('waits for autosave, then approves the exact create draft without incorporating a pending overlay', async () => {
+    let finishSave;
+    let acceptedDraft;
+    profileProposalService.saveDraft.mockImplementationOnce(proposal => new Promise(resolve => {
+      acceptedDraft = { ...proposal, revision: 4 };
+      finishSave = () => resolve(acceptedDraft);
+    }));
+    profileProposalService.reviewDraft.mockResolvedValueOnce({});
+    await openDraftForReview();
+
+    const name = screen.getByDisplayValue("Ім'я6");
+    fireEvent.change(name, { target: { value: 'Перевірене ім’я' } });
+    fireEvent.blur(name);
+    await waitFor(() => expect(profileProposalService.saveDraft).toHaveBeenCalledTimes(1));
+    const approveDraft = screen.getByRole('button', { name: 'Зберегти чернетку' });
+    fireEvent.click(approveDraft);
+    expect(approveDraft).toBeDisabled();
+    expect(profileProposalService.reviewDraft).not.toHaveBeenCalled();
+
+    await act(async () => finishSave());
+
+    expect(profileProposalService.reviewDraft).toHaveBeenCalledWith({
+      operation: 'create',
+      action: 'accept',
+      cardId: 'card-1',
+      creatorUid: 'author-1',
+      expectedRevision: 4,
+      expected: acceptedDraft,
+      finalData: { userId: 'card-1', name: ['Перевірене ім’я'] },
+    });
+  });
+
   it('puts the current input first and the timeline underneath it', async () => {
-    await openDraftAsAdmin();
+    await openDraftForReview();
 
     fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
 
@@ -325,14 +409,14 @@ describe('ProfileCreationWorkspace admin review', () => {
       { entryId: 'role-b', fieldName: 'role', at: 20, action: 'edit', change: { from: 'A', to: 'B' } },
     ]);
 
-    await openDraftAsAdmin();
+    await openDraftForReview();
     fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
 
     expect(await screen.findByLabelText('Хто це: значення з історії')).toHaveValue('A');
   });
 
   it('restores the value edited directly in the historical input', async () => {
-    await openDraftAsAdmin();
+    await openDraftForReview();
     fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
 
     fireEvent.change(await screen.findByLabelText("Ім'я: значення з історії"), { target: { value: " Ім'я8 " } });
@@ -349,18 +433,18 @@ describe('ProfileCreationWorkspace admin review', () => {
   });
 
   it('deletes the value from both complete backend histories when its cross is clicked', async () => {
-    await openDraftAsAdmin();
+    await openDraftForReview();
     fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
 
     fireEvent.click(await screen.findByLabelText("Видалити з історії: Ім'я5"));
 
-    await waitFor(() => expect(purgeOverlayHistoryEntries).toHaveBeenCalledWith({
+    await waitFor(() => expect(screen.queryByLabelText("Ім'я: значення з історії")).not.toBeInTheDocument());
+    expect(purgeOverlayHistoryEntries).toHaveBeenCalledWith({
       cardUserId: 'card-1', fieldName: 'name', values: ["Ім'я5"],
-    }));
+    });
     expect(purgeProfileMutationHistoryValue).toHaveBeenCalledWith({
       cardId: 'card-1', fieldName: 'name', values: ["Ім'я5"],
     });
-    expect(screen.queryByLabelText("Ім'я: значення з історії")).not.toBeInTheDocument();
   });
 
   it('uses the same whole-history purge for a direct revision', async () => {
@@ -376,7 +460,7 @@ describe('ProfileCreationWorkspace admin review', () => {
       change: { from: '', to: "Ім'я5" },
     }]);
 
-    await openDraftAsAdmin();
+    await openDraftForReview();
     fireEvent.click(screen.getByRole('button', { name: /Історія правок/ }));
     fireEvent.click(await screen.findByLabelText("Видалити з історії: Ім'я5"));
 

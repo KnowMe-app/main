@@ -32,12 +32,11 @@ import {
   getCanonicalCard,
   getOverlayHistoryForCard,
   pruneOverlaysMatchingCanonical,
-  settleOverlayValueForCard,
   settleSupersededOverlayValue,
 } from 'utils/multiAccountEdits';
 import { PROFILE_BACKEND_REFRESH_EVENT } from 'utils/profileBackendRefresh';
 import { loadProfileMutationHistory } from 'utils/profileMutations';
-import { approveOverlayValue } from 'utils/profileOverlayReview';
+import { profileProposalService } from 'utils/profileProposalRepository';
 import { areProposalValuesEqual } from 'utils/profileProposals';
 import { SCREEN_ACCESS_OPTIONS, encodeScreenAccess, isAdminUid, parseScreenAccess } from 'utils/accessLevel';
 import {
@@ -1078,7 +1077,8 @@ export const ProfileForm = ({
 
   const getOverlayEntrySignature = entry => {
     const value = sanitizeOverlayValue(entry?.value);
-    return `${value}::${entry?.editorUserId || ''}::${entry?.isDeleted ? '1' : '0'}`;
+    const replaced = entry?.replacement ? JSON.stringify(entry.replacement.from) : '';
+    return `${value}::${entry?.editorUserId || ''}::${entry?.isDeleted ? '1' : '0'}::${replaced}`;
   };
 
   const getOverlayEntriesForField = fieldName => {
@@ -1300,6 +1300,7 @@ export const ProfileForm = ({
         throw Object.assign(new Error('REVISION_CONFLICT'), { code: 'REVISION_CONFLICT' });
       }
       const decision = {
+        operation: 'update',
         editorUserId: entry.editorUserId,
         cardUserId: state.userId,
         fieldName,
@@ -1307,13 +1308,13 @@ export const ProfileForm = ({
         acceptedValue,
         action,
         expectedCurrent: entry.expectedCurrent,
+        replacement: entry.replacement,
       };
       // Попередня версія вже живе лише в журналі. Поточне доповнення
       // приймається тим самим писачем, що й у черзі доповнень.
       let result;
       if (entry.superseded) result = await settleSupersededOverlayValue(decision);
-      else if (action === 'accept') result = await approveOverlayValue(decision);
-      else result = await settleOverlayValueForCard(decision);
+      else result = await profileProposalService.reviewDraft({ ...decision, action: action === 'accept' ? 'accept' : 'reject' });
       if (!result) throw new Error('Overlay value was not settled');
       // Після запису перечитуємо шари картки: доти список пропозицій жив із
       // пропса, який лишався тим самим, і прибраний рядок повертався на екран
@@ -1427,6 +1428,7 @@ export const ProfileForm = ({
       const next = { ...previous };
       if (settled.value === null) delete next[fieldName];
       else next[fieldName] = settled.value;
+      if (settled.draft) next.__profileMutationRevision = settled.draft.revision;
       return next;
     }, { source: 'overlayReview', reason: 'accepted-overlay' });
     dismissOverlayEntry(fieldName, entry);

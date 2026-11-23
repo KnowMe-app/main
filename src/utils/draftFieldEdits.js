@@ -5,7 +5,7 @@
 // backend shapes (pending overlays and the change journal) into one flat row
 // per value, ordered oldest first.
 
-import { normalizeOverlayFields, sortOverlaysByAppliedOrder } from './multiAccountEdits';
+import { getOverlayListReviewValues, getOverlayReviewFields, sortOverlaysByAppliedOrder } from './multiAccountEdits';
 
 const hasKey = (object, key) => Object.prototype.hasOwnProperty.call(object || {}, key);
 
@@ -37,11 +37,18 @@ export const buildChangeValueRows = change => {
     return [];
   }
 
-  const added = uniq(toValues(change.added ?? change.add));
-  const removed = uniq(toValues(change.removed));
-  const operationKind = added.length && removed.length ? 'replaced' : null;
+  const list = getOverlayListReviewValues({ ...change, added: change.added ?? change.add });
+  const added = uniq(toValues(list.added));
+  const removed = uniq(toValues(list.removed));
+  const operationKind = !list.pairs.length && added.length && removed.length ? 'replaced' : null;
 
   return [
+    ...list.pairs.map(replacement => ({
+      kind: 'replaced',
+      value: String(replacement.to ?? '').trim(),
+      previousValue: String(replacement.from ?? '').trim(),
+      replacement,
+    })),
     ...added.map(value => ({
       kind: operationKind || 'added', sourceKind: 'added', value, previousValue: '',
     })),
@@ -56,11 +63,12 @@ export const buildChangeValueRows = change => {
 // of a field read as a timeline: the last one is the newest proposal.
 export const buildPendingFieldEdits = (overlaysByEditor = {}) => sortOverlaysByAppliedOrder(overlaysByEditor)
   .reduce((result, overlay) => {
-    Object.entries(normalizeOverlayFields(overlay.fields)).forEach(([fieldName, change]) => {
+    Object.entries(getOverlayReviewFields(overlay.expectedCurrent ?? overlay)).forEach(([fieldName, change]) => {
       buildChangeValueRows(change).forEach(row => {
         if (!result[fieldName]) result[fieldName] = [];
+        const replacementKey = row.replacement ? `::${JSON.stringify(row.replacement)}` : '';
         result[fieldName].push({
-          key: `${overlay.editorUserId}::${fieldName}::${row.kind}::${row.value}`,
+          key: `${overlay.editorUserId}::${fieldName}::${row.kind}::${row.value}${replacementKey}`,
           fieldName,
           change,
           editorUserId: overlay.editorUserId,
@@ -93,14 +101,16 @@ export const buildFieldVersionHistory = (entries = []) => {
         // Keep the later transitions on that row, though: revisiting A after
         // A -> B -> A must not lose the backend entries that complete the chain.
         if (!normalizedValue) return;
+        const versionKey = row.replacement ? JSON.stringify(row.replacement) : normalizedValue;
         const transition = {
           backendEntryId: entry.backendEntryId || entry.entryId || '',
           historySource: entry.historySource || 'overlay',
           previousValue: row.previousValue,
           kind: row.kind,
           at: Number(entry.at) || 0,
+          ...(row.replacement && { replacement: row.replacement }),
         };
-        const existing = versionsByValue[fieldName].get(normalizedValue);
+        const existing = versionsByValue[fieldName].get(versionKey);
         if (existing) {
           existing.transitions.push(transition);
           existing.currentKind = row.kind;
@@ -121,7 +131,7 @@ export const buildFieldVersionHistory = (entries = []) => {
           ...row,
           currentKind: row.kind,
         };
-        versionsByValue[fieldName].set(normalizedValue, version);
+        versionsByValue[fieldName].set(versionKey, version);
         result[fieldName].push(version);
       });
 

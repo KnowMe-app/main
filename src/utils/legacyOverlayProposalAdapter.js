@@ -11,10 +11,12 @@ import {
   readOverlayRecordsForReview,
   removeOverlayForUserCard,
   saveOverlayForUserCard,
+  settleOverlayValueForCard,
 } from './multiAccountEdits';
 import { INDEXABLE_DRAFT_STATUSES } from './profileDraftIndexing';
 import { isPlainObject } from './profileFieldChanges';
 import { PROFILE_NODES } from './profileNodeSchema';
+import { approveOverlayValue } from './profileOverlayReview';
 import { normalizeLegacyOverlayProposal } from './profileProposals';
 
 const adapterError = code => Object.assign(new Error(code), { code });
@@ -167,4 +169,18 @@ const history = async ({ cardId, createdBy }) => {
   return entries.filter(entry => entry.editorUserId === createdBy);
 };
 
-export const legacyOverlayProposalAdapter = { get: getDraft, list, save, remove, history, checkTarget };
+const review = async (decision, { locator }) => {
+  const { fieldName, value, expectedCurrent, expectedDraft, acceptedValue, replacement, action } = decision;
+  if (!fieldName || !isPlainObject(expectedCurrent)) throw adapterError('REVISION_CONFLICT');
+  const data = {
+    cardUserId: locator.cardId, editorUserId: locator.createdBy,
+    fieldName, value, expectedCurrent, expectedDraft, acceptedValue, replacement,
+  };
+  const result = action === 'accept'
+    ? await approveOverlayValue(data)
+    : await settleOverlayValueForCard({ ...data, action: 'discard' });
+  if (!result) throw adapterError('REVISION_CONFLICT');
+  return result;
+};
+
+export const legacyOverlayProposalAdapter = { get: getDraft, list, save, remove, review, history, checkTarget };

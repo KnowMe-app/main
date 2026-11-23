@@ -7,7 +7,7 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { ProfileCreationWorkspace } from './ProfileCreationWorkspace';
 import { fetchUserById, fetchUsersByIds } from './config';
 import { getOverlayHistoryForCard, getOverlaysForCard } from 'utils/multiAccountEdits';
-import { acceptCreateProfileMutation, loadAllCreateProfileMutations, loadOwnProfileMutations } from 'utils/profileMutations';
+import { loadAllCreateProfileMutations, loadOwnProfileMutations } from 'utils/profileMutations';
 import { createEditorSnapshot, proposalEditorKey } from 'utils/profileProposalEditor';
 import { readCardFormPending, rememberCardFormPending } from 'utils/cardFormPendingEdits';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
@@ -17,7 +17,7 @@ import { renderWithNavigationSlot } from '../testUtils/renderWithNavigationSlot'
 // набране (`utils/cardFormPendingEdits`, 13.11). Каркас — той самий, що в
 // `closeRefresh`: адмін відкриває чернетку з черги.
 jest.mock('utils/profileProposalRepository', () => ({
-  profileProposalService: { getDraft: jest.fn(), createDraft: jest.fn(), saveDraft: jest.fn(), deleteDraft: jest.fn() },
+  profileProposalService: { getDraft: jest.fn(), createDraft: jest.fn(), saveDraft: jest.fn(), deleteDraft: jest.fn(), reviewDraft: jest.fn() },
 }));
 
 jest.mock('react-hot-toast', () => ({
@@ -83,7 +83,6 @@ const originalDraft = {
 };
 
 jest.mock('utils/profileMutations', () => ({
-  acceptCreateProfileMutation: jest.fn(),
   getEffectiveProfile: ({ mutation }) => mutation.data,
   loadAllCreateProfileMutations: jest.fn(),
   loadOwnProfileMutations: jest.fn(),
@@ -274,6 +273,6 @@ it('retains the edit and blocks publication if its last save conflicts', async (
   fireEvent.click(screen.getByRole('button', { name: 'Зберегти чернетку' }));
   await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
 
-  expect(acceptCreateProfileMutation).not.toHaveBeenCalled();
+  expect(profileProposalService.reviewDraft).not.toHaveBeenCalled();
   expect(readCardFormPending('admin-1', target)?.draft?.name).toEqual(['Конфлікт']);
 });

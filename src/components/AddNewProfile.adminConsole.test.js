@@ -35,7 +35,7 @@ describe('AddNewProfile admin console', () => {
     expect(panel).toContain('filterChips={activeListFilterChips}');
     expect(CARD_LIST_PRIMARY_COLLECTIONS.map(collection => collection.label))
       .toEqual(['Кому дзвонити', 'Обрані', 'Стрічка', 'Усі картки']);
-    ["label: 'Цикл'", "label: 'Доповнення'", "label: 'Хто шукав'"].forEach(label => {
+    ["label: 'Цикл'", "label: 'Пропозиції'", "label: 'Хто шукав'"].forEach(label => {
       expect(source).toContain(label);
     });
     expect(source.indexOf('</CardListPanel>')).toBeLessThan(source.indexOf('<UsersList'));
@@ -83,8 +83,9 @@ describe('AddNewProfile admin console', () => {
     expect(source).toContain('if (currentFilter === OVERLAY_REVIEW_FILTER) {');
   });
 
-  it('черга доповнень — адмінська й показується замість списку анкет', () => {
-    expect(source).toContain('<OverlayReviewQueue onOpenCard={handleOpenProfileById} />');
+  it('черга пропозицій доступна на адмінському екрані й показується замість списку анкет', () => {
+    expect(source).toMatch(/<ProposalReviewQueue\s+onOpenCard=\{handleOpenProfileById\}/);
+    expect(source).toContain('readOnly={!canGrantProfilePrivileges(auth.currentUser?.uid)}');
     // Інакше під чергою малювався б ще й порожній `UsersList` зі своєю пагінацією.
     expect(source).toContain('{!userNotFound && currentFilter !== OVERLAY_REVIEW_FILTER && (');
   });

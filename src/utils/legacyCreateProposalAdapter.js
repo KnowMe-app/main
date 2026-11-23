@@ -1,9 +1,11 @@
 import {
+  acceptCreateProfileMutation,
   deleteCreateProfileMutation,
   loadAllCreateProfileMutations,
   loadOwnProfileMutations,
   loadProfileMutation,
   loadProfileMutationHistory,
+  rejectCreateProfileMutation,
   saveCreateProfileMutation,
 } from './profileMutations';
 import { normalizeLegacyCreateProposal } from './profileProposals';
@@ -76,11 +78,33 @@ const remove = async ({ record, proposal }) => {
   }
 };
 
+const review = async ({ action, expected, expectedRevision, finalData }, { locator, read, compareExpected }) => {
+  const current = await read();
+  if (!current) throw Object.assign(new Error('DRAFT_NOT_FOUND'), { code: 'DRAFT_NOT_FOUND' });
+  const acceptedRetry = action === 'accept' && current.proposal.status === 'accepted';
+  if (!acceptedRetry) {
+    compareExpected(current, expected);
+    if (current.proposal.status !== 'pendingReview') {
+      throw Object.assign(new Error('REVISION_CONFLICT'), { code: 'REVISION_CONFLICT' });
+    }
+  }
+  const options = {
+    cardId: locator.cardId,
+    creatorUid: locator.createdBy,
+    expectedRevision: expected?.revision ?? expectedRevision,
+    expectedCurrent: current.record,
+  };
+  return action === 'accept'
+    ? acceptCreateProfileMutation({ ...options, finalData })
+    : rejectCreateProfileMutation(options);
+};
+
 export const legacyCreateProposalAdapter = {
   get,
   list,
   save,
   remove,
+  review,
   normalizeData,
   history: ({ cardId }) => loadProfileMutationHistory(cardId),
 };

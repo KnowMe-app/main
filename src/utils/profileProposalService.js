@@ -3,7 +3,7 @@ import { areProposalValuesEqual, buildProposalPreview } from './profileProposals
 
 const SERVICE_ERROR_CODES = new Set([
   'INVALID_DRAFT', 'AUTH_REQUIRED', 'PERMISSION_DENIED', 'DRAFT_NOT_FOUND', 'TARGET_NOT_FOUND',
-  'ALREADY_EXISTS', 'REVISION_CONFLICT', 'PARTIAL_WRITE', 'NETWORK_ERROR',
+  'ALREADY_EXISTS', 'DUPLICATE_PROFILE', 'REVISION_CONFLICT', 'PARTIAL_WRITE', 'NETWORK_ERROR',
 ]);
 
 export class ProfileProposalError extends Error {
@@ -12,6 +12,9 @@ export class ProfileProposalError extends Error {
     this.name = 'ProfileProposalError';
     this.code = code;
     if (cause) this.cause = cause;
+    for (const property of ['profileSaveStage', 'profileSaveTargets', 'profileSaveRecovered', 'duplicateConflicts']) {
+      if (cause?.[property] !== undefined) this[property] = cause[property];
+    }
   }
 }
 
@@ -142,14 +145,17 @@ export const createProfileProposalService = ({ handlers, getActorUid, now = Date
       return (await read(checkLocator(locator ?? {}), actorUid))?.proposal ?? null;
     }),
 
-    listDrafts: ({ review = false, createdBy } = {}) => run('READ_FAILED', async () => {
+    listDrafts: ({ review = false, createdBy, operation } = {}) => run('READ_FAILED', async () => {
       const actorUid = requireActor();
-      if (createdBy != null && !isKey(createdBy)) throw new ProfileProposalError('INVALID_DRAFT');
+      if ((createdBy != null && !isKey(createdBy)) || (operation != null && !isDraftOperation(operation))) {
+        throw new ProfileProposalError('INVALID_DRAFT');
+      }
       if ((review || (createdBy && createdBy !== actorUid)) && !isAdminUid(actorUid)) {
         throw new ProfileProposalError('PERMISSION_DENIED');
       }
       const options = { actorUid, createdBy: createdBy ?? (review ? null : actorUid), review };
-      const lists = await Promise.all([handlers.create.list(options), handlers.update.list(options)]);
+      const operations = operation ? [operation] : ['create', 'update'];
+      const lists = await Promise.all(operations.map(type => handlers[type].list(options)));
       return lists.flat().sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.id.localeCompare(b.id));
     }),
 
@@ -200,6 +206,28 @@ export const createProfileProposalService = ({ handlers, getActorUid, now = Date
         actorUid: entry.actorUid ?? entry.editorUserId ?? null,
         revision: entry.revision ?? null,
       }));
+    }),
+
+    reviewDraft: (decision = {}) => run('WRITE_FAILED', async () => {
+      const actorUid = requireActor();
+      if (!canGrantProfilePrivileges(actorUid)) throw new ProfileProposalError('PERMISSION_DENIED');
+      const { action, operation } = decision ?? {};
+      if (!isDraftOperation(operation) || (action !== 'accept' && action !== 'reject')
+        || (operation === 'update' && !isKey(decision.fieldName))) {
+        throw new ProfileProposalError('INVALID_DRAFT');
+      }
+      const locator = checkLocator({
+        operation,
+        cardId: decision.cardId ?? decision.cardUserId,
+        createdBy: decision.creatorUid ?? decision.editorUserId,
+      });
+      const handler = handlers[operation];
+      return handler.review(decision, {
+        locator,
+        actorUid,
+        read: () => read(locator, actorUid),
+        compareExpected,
+      });
     }),
 
     buildDraftPreview: buildProposalPreview,

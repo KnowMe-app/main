@@ -5,6 +5,8 @@ const {
   claimOverlayValueForReview, getCanonicalCard, releaseOverlayValueReview, settleOverlayValueForCard,
 } = require('./multiAccountEdits');
 const { approveOverlayValue } = require('./profileOverlayReview');
+const { loadProfileMutation, saveCreateProfileMutation } = require('./profileMutations');
+const { createEditorSnapshot } = require('./profileProposalEditor');
 
 jest.mock('firebase/database', () => ({
   get: jest.fn(),
@@ -32,7 +34,10 @@ jest.mock('./multiAccountEdits', () => ({
   settleOverlayValueForCard: jest.fn(),
 }));
 
-jest.mock('./persistCanonicalCard', () => ({ persistCanonicalCard: jest.fn() }));
+jest.mock('./profileMutations', () => ({
+  loadProfileMutation: jest.fn(),
+  saveCreateProfileMutation: jest.fn(),
+}));
 
 const cardUserId = 'review-card';
 const editorUserId = 'review-author';
@@ -67,8 +72,10 @@ beforeEach(() => {
     canonicalPhone = next;
     return { committed: true };
   });
-  claimOverlayValueForReview.mockImplementation(async ({ expectedCurrent, fieldName, value, acceptedValue }) => ({
-    ...expectedCurrent, reviewClaim: { fieldName, value, acceptedValue },
+  claimOverlayValueForReview.mockImplementation(async ({
+    expectedCurrent, fieldName, value, acceptedValue, replacement,
+  }) => ({
+    ...expectedCurrent, reviewClaim: { fieldName, value, acceptedValue, ...(replacement && { replacement }) },
   }));
   releaseOverlayValueReview.mockResolvedValue(undefined);
   settleOverlayValueForCard.mockResolvedValue({ remainingOverlay: { fields: { phone: { added: ['380501110002', '380501110003'] } } } });
@@ -89,6 +96,64 @@ it('accepts only the selected value and keeps other phone numbers pending', asyn
 it('replaces a legacy scalar when its original value is current', async () => {
   await expect(approval({ fields: { phone: { from: originalPhone, to: input.value } } })).resolves.toMatchObject({ value: input.value });
   expect(canonicalPhone).toBe(input.value);
+});
+
+it('keeps a different contributor’s accepted addition when the original values still exist', async () => {
+  canonicalPhone = [originalPhone, laterPhone];
+  const expected = [originalPhone, laterPhone, input.value];
+  await expect(approval()).resolves.toMatchObject({ value: expected });
+  expect(canonicalPhone).toEqual(expected);
+});
+
+it('atomically replaces the selected list member and keeps the rest of the canonical field', async () => {
+  const replacement = { from: originalPhone, to: input.value };
+  const retainedPhone = '380501110006';
+  const correctedPhone = '380501110007';
+  canonicalPhone = [originalPhone, retainedPhone];
+  const proposal = {
+    fields: { phone: { added: [input.value, '380501110002'], removed: [originalPhone] } },
+    proposal: {
+      replacements: JSON.stringify({ phone: [replacement] }),
+      originalValues: JSON.stringify({ phone: { present: true, value: canonicalPhone } }),
+    },
+  };
+
+  await expect(approval(proposal, { replacement, acceptedValue: correctedPhone })).resolves.toMatchObject({
+    value: [retainedPhone, correctedPhone],
+  });
+  expect(canonicalPhone).toEqual([retainedPhone, correctedPhone]);
+  expect(runTransaction).toHaveBeenCalledTimes(1);
+  expect(settleOverlayValueForCard).toHaveBeenCalledWith(expect.objectContaining({ replacement }));
+});
+
+it('applies a contribution to the exact unpublished draft without copying reader marks', async () => {
+  const draft = {
+    cardId: cardUserId, createdBy: 'draft-author', revision: 3,
+    operation: 'create', status: 'pendingReview', data: { phone: originalPhone, name: 'Draft' },
+  };
+  getCanonicalCard.mockResolvedValue({
+    userId: cardUserId, ...draft.data, writer: 'Reviewer-only mark',
+    __profileMutationOperation: 'create', __profileMutationCreatedBy: draft.createdBy,
+    __profileMutationRevision: 3,
+  });
+  loadProfileMutation.mockResolvedValue(draft);
+  const next = { ...draft, data: { ...draft.data, phone: [originalPhone, input.value] }, revision: 4 };
+  saveCreateProfileMutation.mockResolvedValue(next);
+
+  await expect(approval(overlay, { expectedDraft: createEditorSnapshot(draft) })).resolves.toMatchObject({ draft: next });
+  expect(saveCreateProfileMutation).toHaveBeenCalledWith({
+    cardId: cardUserId, creatorUid: draft.createdBy, actorUid: ADMIN_UIDS[0],
+    data: next.data, expectedCurrent: draft, skipRevisionHistory: true,
+  });
+  expect(runTransaction).not.toHaveBeenCalled();
+});
+
+it('rejects a draft contribution when the displayed draft became a canonical card', async () => {
+  const expectedDraft = createEditorSnapshot({
+    cardId: cardUserId, createdBy: 'draft-author', data: {}, revision: 3, status: 'pendingReview',
+  });
+  await expect(approval(overlay, { expectedDraft })).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+  expect(claimOverlayValueForReview).not.toHaveBeenCalled();
 });
 
 it('refuses an approval when the proposed canonical field has changed', async () => {

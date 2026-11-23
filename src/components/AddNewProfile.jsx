@@ -106,11 +106,11 @@ import {
   StimulationLabel,
   ToolRow,
 } from './AddNewProfileAdminPanel.styled';
-import { OverlayReviewQueue } from './AddNewProfileOverlayReview';
+import { ProposalReviewQueue } from './AddNewProfileOverlayReview';
 import { makeUploadedInfo } from './makeUploadedInfo';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { resolveAccess } from 'utils/accessLevel';
+import { canGrantProfilePrivileges, resolveAccess } from 'utils/accessLevel';
 import { PHOTO_HYDRATION_SOURCE, hasProfileContentBeyondPhotos } from 'utils/profilePhotoHydration';
 // Batch 26 §8: тумблер стрілок «перейти до вузла в Firebase». Ключ спільний з тими,
 // хто ці стрілки показує, — див. `utils/backendLinksMode`.
@@ -3537,10 +3537,10 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     }
 
     if (currentFilter === OVERLAY_REVIEW_FILTER) {
-      // Черга доповнень читає базу сама (`OverlayReviewQueue`) і списку анкет
+      // Черга пропозицій читає базу сама (`ProposalReviewQueue`) і списку анкет
       // не наповнює: тут лишається тільки зняти скелетон списку, інакше екран
       // показував би вічне «Знайдено …» над чергою.
-      appendLoadDebugLog('reload-effect:branch', { branch: OVERLAY_REVIEW_FILTER, loader: 'OverlayReviewQueue' });
+      appendLoadDebugLog('reload-effect:branch', { branch: OVERLAY_REVIEW_FILTER, loader: 'ProposalReviewQueue' });
       setUsers({});
       setHasMore(false);
       setSearchLoading(false);
@@ -5411,10 +5411,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     ...(isAdmin ? [
       {
         key: 'overlays',
-        label: 'Доповнення',
-        hint: 'Дописане читачами, що чекає вашого рішення: кожне значення окремо.',
-        // Черга рахує себе сама: «Карток немає» над нею означало б, що
-        // доповнень немає, тоді як список анкет тут просто не наповнюється.
+        label: 'Пропозиції',
+        hint: 'Нові анкети та окремі зміни до наявних анкет.',
+        // Черга пропозицій сама показує свій стан поза списком анкет.
         ownStatus: true,
         onSelect: () => openCardCollection(OVERLAY_REVIEW_FILTER),
       },
@@ -6072,7 +6071,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               onChange={handleLocalNodeFilesSelected}
             />
             {currentFilter === OVERLAY_REVIEW_FILTER && (
-              <OverlayReviewQueue onOpenCard={handleOpenProfileById} />
+              <ProposalReviewQueue
+                onOpenCard={handleOpenProfileById}
+                onOpenDraft={cardId => navigate(`/matching/create-profile?cardId=${encodeURIComponent(cardId)}`)}
+                readOnly={!canGrantProfilePrivileges(auth.currentUser?.uid)}
+              />
             )}
             {currentFilter === CARD_LIST_FILTER && !searchListIsolated && !searchLoading && !hasMore
               && countObjectKeys(users) === 0 && (

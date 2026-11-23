@@ -1,4 +1,6 @@
 import { get, push, ref, runTransaction, set, update } from 'firebase/database';
+import { auth } from 'components/config';
+import { ADMIN_UIDS } from './accessLevel';
 import {
   loadProfileMutationHistory,
   rejectCreateProfileMutation,
@@ -16,6 +18,7 @@ jest.mock('firebase/database', () => ({
 }));
 
 jest.mock('components/config', () => ({
+  auth: { currentUser: null },
   database: {},
   reportSearchIdIndexFailure: jest.fn(),
 }));
@@ -33,6 +36,7 @@ describe('create draft lifecycle before publication', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    auth.currentUser = { uid: ADMIN_UIDS[0] };
     stored = new Map();
     let pushed = 0;
     get.mockImplementation(async ({ path }) => snapshot(stored.get(path)));

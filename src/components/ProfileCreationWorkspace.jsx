@@ -79,23 +79,17 @@ import {
 import {
   applyOverlayToCard,
   applyOverlaysToCard,
-  claimOverlayValueForReview,
   getOverlayHistoryForCard,
   getOverlaysForCard,
   purgeOverlayHistoryEntries,
-  releaseOverlayValueReview,
   clearCardOverlays,
-  settleOverlayFieldValue,
 } from 'utils/multiAccountEdits';
 import {
   buildFieldVersionHistory,
   buildPendingFieldEdits,
   dropVersionsPresentIn,
-  splitOverlayChangeValue,
-  withEditedValue,
 } from 'utils/draftFieldEdits';
 import {
-  acceptCreateProfileMutation,
   deleteCreateProfileMutation,
   getEffectiveProfile,
   loadAllCreateProfileMutations,
@@ -104,10 +98,8 @@ import {
   purgeProfileMutationHistoryValue,
   loadSharedProfileMutations,
   reserveProfileCardId,
-  saveCreateProfileMutation,
 } from 'utils/profileMutations';
 import { profileProposalService } from 'utils/profileProposalRepository';
-import { areProposalValuesEqual } from 'utils/profileProposals';
 import {
   asProfileMutation,
   createEditorSnapshot,
@@ -1903,39 +1895,16 @@ export const ProfileCreationWorkspace = () => {
   // Інспектор тут адмін і відкриває чужі чернетки з черги, але їхнє
   // автозбереження пише у вузол авторки, куди правила його не пускають. Своя
   // картка й доповнення зберігаються, тож позначка — лише над чужою чернеткою.
-  const inspectorOnForeignDraft = isReadOnlyAdminUid(uid)
+  const inspectorReview = isReadOnlyAdminUid(uid);
+  const inspectorOnForeignDraft = inspectorReview
     && Boolean(activeMutation?.createdBy) && activeMutation.createdBy !== uid;
 
-  // --- Admin review of the pending overlays on the open draft ----------------
-  // Two decisions per proposed value, and both clear the backend behind them -
-  // a settled edit leaves neither a pending overlay nor a journal memo:
-  //   зберегти - the value (or the admin's corrected version of it) is applied
-  //              to the draft, whether the proposal added, replaced or removed
-  //              it, and leaves the queue;
-  //   видалити - the proposal is dropped, the draft is untouched.
-  const persistDraftData = async (editor, buildNextData, { skipRevisionHistory = false } = {}) => {
+  // Рішення про чернетку має спиратись на останню підтверджену версію цієї форми.
+  const waitForDraftReview = async editor => {
     await editor?.lastWrite;
     if (!editor || proposalEditorRef.current !== editor || editor.failure
       || readCardFormPending(editor.uid, editor.target)) throw editor?.failure || new Error('REVISION_CONFLICT');
-    const current = activeMutationRef.current;
-    const base = draftBaseRef.current || {};
-    const nextData = buildNextData(base);
-    if (areProposalValuesEqual(base, nextData)) return current;
-    const saved = await saveCreateProfileMutation({
-      cardId: current.cardId,
-      creatorUid: current.createdBy || uid,
-      actorUid: uid,
-      data: nextData,
-      expectedRevision: current.revision,
-      skipRevisionHistory,
-    });
-    reportDuplicateConflicts(saved?.duplicateConflicts);
-    if (proposalEditorRef.current !== editor) return saved;
-    if (editor) editor.expected = createEditorSnapshot(saved);
-    activeMutationRef.current = saved;
-    draftBaseRef.current = saved?.data || nextData;
-    setActiveMutation(saved);
-    return saved;
+    return activeMutationRef.current;
   };
 
   const runOverlayReviewAction = async (action, successMessage, failureMessage) => {
@@ -1954,78 +1923,32 @@ export const ProfileCreationWorkspace = () => {
     }
   };
 
-  // purgeHistory drops the journal entries about the settled value instead of
-  // adding one more - the whole point of the two buttons is that a processed
-  // edit stops existing in the backend.
-  const settleFieldEdit = (cardId, row, {
-    settledChange, remainingChange, historyAction, expectedCurrent, acceptedOriginal,
-  }) => settleOverlayFieldValue({
-    editorUserId: row.editorUserId,
-    cardUserId: cardId,
-    fieldName: row.fieldName,
-    settledChange,
-    remainingChange,
-    historyAction,
-    purgeHistory: true,
-    expectedCurrent,
-    acceptedOriginal,
-  });
+  const reviewFieldEdit = async (editor, action, row, acceptedValue) => {
+    const { cardId } = await waitForDraftReview(editor);
+    const result = await profileProposalService.reviewDraft({
+      operation: 'update', action, cardUserId: cardId,
+      editorUserId: row.editorUserId, fieldName: row.fieldName, value: row.value,
+      acceptedValue, replacement: row.replacement,
+      expectedCurrent: draftOverlays[row.editorUserId]?.expectedCurrent,
+      expectedDraft: editor.expected,
+    });
+    const saved = result.draft;
+    if (!saved || proposalEditorRef.current !== editor) return;
+    reportDuplicateConflicts(saved.duplicateConflicts);
+    editor.expected = createEditorSnapshot(saved);
+    activeMutationRef.current = saved;
+    draftBaseRef.current = saved.data;
+    setActiveMutation(saved);
+  };
 
   const saveFieldEdit = (row, editedValue, label) => runOverlayReviewAction(
-    async editor => {
-      const cardId = editor.locator.cardId;
-      const expectedCurrent = draftOverlays[row.editorUserId]?.expectedCurrent;
-      const { settled, remaining } = splitOverlayChangeValue(row.change, row);
-      const acceptedChange = withEditedValue(settled, row, editedValue);
-      if (!expectedCurrent || !acceptedChange) throw new Error('REVISION_CONFLICT');
-      const original = JSON.parse(expectedCurrent.proposal?.originalValues || '{}')[row.fieldName];
-      const locator = { editorUserId: row.editorUserId, cardUserId: cardId, fieldName: row.fieldName, value: row.value };
-      const claimed = await claimOverlayValueForReview({ ...locator, expectedCurrent, acceptedValue: editedValue });
-      try {
-        const saved = await persistDraftData(editor, base => {
-          const observed = base[row.fieldName];
-          const before = original
-            ? (original.present ? original.value : undefined)
-            : ('from' in acceptedChange ? acceptedChange.from : observed);
-          const next = applyOverlayToCard({ ...base, [row.fieldName]: before }, { [row.fieldName]: acceptedChange });
-          const matchesOriginal = original
-            ? areProposalValuesEqual(observed, before)
-            : areProposalValuesEqual(observed ?? '', before ?? '');
-          if (!matchesOriginal
-            && !areProposalValuesEqual(observed, next[row.fieldName])) throw new Error('REVISION_CONFLICT');
-          return next;
-        }, { skipRevisionHistory: true });
-        const accepted = saved.data?.[row.fieldName];
-        await settleFieldEdit(cardId, row, {
-          settledChange: acceptedChange,
-          remainingChange: remaining,
-          historyAction: 'accept',
-          expectedCurrent: claimed,
-          acceptedOriginal: accepted === undefined ? { present: false } : { present: true, value: accepted },
-        });
-      } catch (error) {
-        if ((error?.code || error?.message) === 'REVISION_CONFLICT') {
-          await releaseOverlayValueReview({ ...locator, claimed }).catch(() => {});
-        }
-        throw error;
-      }
-    },
+    editor => reviewFieldEdit(editor, 'accept', row, editedValue),
     uiText('Правку збережено: {label}', language, { label }),
     uiText('Не вдалося зберегти правку', language),
   );
 
   const deleteFieldEdit = (row, label) => runOverlayReviewAction(
-    async editor => {
-      const expectedCurrent = draftOverlays[row.editorUserId]?.expectedCurrent;
-      if (!expectedCurrent) throw new Error('REVISION_CONFLICT');
-      const { settled, remaining } = splitOverlayChangeValue(row.change, row);
-      await settleFieldEdit(editor.locator.cardId, row, {
-        settledChange: settled,
-        remainingChange: remaining,
-        historyAction: 'discard',
-        expectedCurrent,
-      });
-    },
+    editor => reviewFieldEdit(editor, 'reject', row),
     uiText('Правку видалено: {label}', language, { label }),
     uiText('Не вдалося видалити правку', language),
   );
@@ -2042,15 +1965,15 @@ export const ProfileCreationWorkspace = () => {
       // autosave which increments the revision, so publishing must wait for
       // it and then read the refs updated by that save. Using render-state
       // here produced a false REVISION_CONFLICT against our own autosave.
-      await editor?.lastWrite;
-      if (!editor || proposalEditorRef.current !== editor || editor.failure
-        || readCardFormPending(editor.uid, editor.target)) throw editor?.failure || new Error('REVISION_CONFLICT');
+      const current = await waitForDraftReview(editor);
       publishing = true;
-      const current = activeMutationRef.current;
-      await acceptCreateProfileMutation({
+      await profileProposalService.reviewDraft({
+        operation: 'create',
+        action: 'accept',
         cardId: current.cardId,
         creatorUid: current.createdBy,
         expectedRevision: current.revision,
+        expected: editor.expected,
         // The base contains the author's/admin's accepted data only. The
         // visible stacked draft may also contain unaccepted editor overlays.
         finalData: draftBaseRef.current || current.data,
@@ -2063,9 +1986,14 @@ export const ProfileCreationWorkspace = () => {
       // acceptCreateProfileMutation labels every expected phase. Keep an
       // allow-listed fallback for an unexpected publication failure too.
       if (publishing && !error.profileSaveStage) error.profileSaveStage = 'publication-update';
-      reportSaveError(error, error?.message === 'REVISION_CONFLICT'
-        ? uiText('Автор уже оновив чернетку. Перевірте нову версію.', language)
-        : uiText('Не вдалося зберегти чернетку як картку', language));
+      const code = error?.code || error?.message;
+      if (code === 'DUPLICATE_PROFILE') {
+        reportSaveError(error, describeSaveError(error));
+      } else {
+        reportSaveError(error, code === 'REVISION_CONFLICT'
+          ? uiText('Автор уже оновив чернетку. Перевірте нову версію.', language)
+          : uiText('Не вдалося зберегти чернетку як картку', language));
+      }
     } finally { setSaving(false); }
   };
 
@@ -2224,7 +2152,7 @@ export const ProfileCreationWorkspace = () => {
           key={`pending-${row.key}`}
           row={row}
           label={label}
-          disabled={saving}
+          disabled={saving || inspectorReview}
           authorName={describeAuthor(row.editorUserId, historyAuthors)}
           onSave={editedValue => saveFieldEdit(row, editedValue, label)}
           onDelete={() => deleteFieldEdit(row, label)}
@@ -2235,7 +2163,7 @@ export const ProfileCreationWorkspace = () => {
           row={row}
           label={label}
           authorName={describeAuthor(row.editorUserId, historyAuthors)}
-          disabled={saving}
+          disabled={saving || inspectorReview}
           onRestore={value => restoreFieldVersion(row, value)}
           onDelete={() => deleteFieldVersion(row)}
           onOpenAuthor={() => navigate(`/edit/${row.editorUserId}`)}
@@ -2661,14 +2589,14 @@ export const ProfileCreationWorkspace = () => {
           шапці: вихід — це жест «назад», а не дія серед дій анкети. */}
       {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <Card>
         <Actions>
-          <SaveButton disabled={saving || deletingDraft} onClick={saveDraftAsCard}>
+          <SaveButton disabled={saving || deletingDraft || inspectorReview} onClick={saveDraftAsCard}>
             {uiText(saving ? 'Збереження…' : 'Зберегти чернетку', language)}
           </SaveButton>
           {/* Друга відповідь черги: цій чернетці жити не треба. Питання
               підтвердження стоїть окремою модалкою — дія незворотна й
               торкається не одного вузла. */}
           <DeleteDraftButton
-            disabled={saving || deletingDraft}
+            disabled={saving || deletingDraft || inspectorReview}
             onClick={() => setConfirmDeleteDraft(true)}
           >
             {uiText(deletingDraft ? 'Видалення…' : 'Видалити чернетку', language)}

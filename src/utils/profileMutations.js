@@ -647,7 +647,7 @@ const storedPublicationData = value => {
   return children.length ? Object.fromEntries(children) : undefined;
 };
 
-export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expectedRevision, finalData }) => {
+export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expectedRevision, expectedCurrent, finalData }) => {
   if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
   const actorUid = auth?.currentUser?.uid;
   if (!canGrantProfilePrivileges(actorUid)) {
@@ -675,6 +675,9 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
     return record.data;
   });
   if (acceptsCandidate(pendingMutation)) return finishRetry(pendingMutation);
+  if (expectedCurrent !== undefined && !areProposalValuesEqual(pendingMutation, expectedCurrent)) {
+    throw mutationError('REVISION_CONFLICT', { profileSaveStage: 'mutation-transition' });
+  }
 
   const acceptedAt = Date.now();
   const publicationAttemptId = push(mutationRef).key;
@@ -738,10 +741,14 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
   let pendingOverlays = {};
   try {
     await withProfileSaveStage('publication-update', () => ensureCanonicalProfileAbsent(cardId));
-    ({ keys: identityKeys, acquiredKeys: acquiredIdentityKeys } = await withProfileSaveStage(
-      'identity-claim',
-      () => claimProfileIdentities({ cardId, data: candidateProfile }),
-    ));
+    await withProfileSaveStage('identity-claim', async () => {
+      const claims = await claimProfileIdentities({ cardId, data: candidateProfile });
+      identityKeys = claims.keys;
+      acquiredIdentityKeys = claims.acquiredKeys;
+      if (claims.conflicts.length) {
+        throw mutationError('DUPLICATE_PROFILE', { duplicateConflicts: claims.conflicts });
+      }
+    });
     await withProfileSaveStage('search-id-index', () => syncProfileSearchIdIndex(cardId, candidateProfile));
     await withProfileSaveStage('search-key-index', () => syncUserSearchKeyIndex(cardId, {}, candidateProfile));
     pendingOverlays = await getOverlaysForCard(cardId).catch(error => {
@@ -792,21 +799,37 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
   return candidateProfile;
 };
 
-export const rejectCreateProfileMutation = async ({ cardId, creatorUid, expectedRevision }) => {
+export const rejectCreateProfileMutation = async ({ cardId, creatorUid, expectedRevision, expectedCurrent }) => {
   if (!cardId || !creatorUid) throw new Error('cardId and creatorUid are required');
-  let conflict = 'Profile mutation not found';
-  const result = await runTransaction(ref(database, getProfileMutationPath(creatorUid, cardId)), mutation => {
-    if (!mutation) return undefined;
-    if (mutation.status !== 'pendingReview') return undefined;
-    if (Number(mutation.revision) !== Number(expectedRevision)) {
-      conflict = 'REVISION_CONFLICT';
-      return undefined;
+  if (!canGrantProfilePrivileges(auth?.currentUser?.uid)) {
+    throw mutationError('PERMISSION_DENIED', { profileSaveStage: 'mutation-transition' });
+  }
+
+  const mutation = await withProfileSaveStage('mutation-transition', async () => {
+    const mutationRef = ref(database, getProfileMutationPath(creatorUid, cardId));
+    const existing = (await get(mutationRef)).val();
+    if (!existing) throw mutationError('DRAFT_NOT_FOUND');
+    const reviewBase = expectedCurrent === undefined ? existing : expectedCurrent;
+    if (!areProposalValuesEqual(existing, reviewBase) || existing.operation !== 'create'
+      || existing.status !== 'pendingReview' || Number(existing.revision) !== Number(expectedRevision)) {
+      throw mutationError('REVISION_CONFLICT');
     }
-    return { ...mutation, status: 'private', revision: Number(mutation.revision || 0) + 1, updatedAt: Date.now() };
-  }, { applyLocally: false });
-  if (!result.committed) throw new Error(conflict);
-  const mutation = result.snapshot.val();
-  releaseProfileIdentities(cardId, mutation.identityKeys || []).catch(() => {});
+
+    const updatedAt = Date.now();
+    const result = await runTransaction(mutationRef, current => {
+      // Порожній локальний кеш має звіритися з сервером, не відновлюючи
+      // чернетку, яку видалили між читанням і транзакцією.
+      if (current == null) return null;
+      if (!areProposalValuesEqual(current, reviewBase)) return undefined;
+      return { ...current, status: 'private', revision: Number(current.revision || 0) + 1, updatedAt };
+    }, { applyLocally: false });
+    const returned = result.snapshot.val();
+    if (!returned) throw mutationError('DRAFT_NOT_FOUND');
+    if (!result.committed) throw mutationError('REVISION_CONFLICT');
+    return returned;
+  });
+
+  await releaseProfileIdentities(cardId, mutation.identityKeys || []).catch(() => {});
   return mutation;
 };
 

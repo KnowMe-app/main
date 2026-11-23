@@ -6,34 +6,38 @@ import { canGrantProfilePrivileges } from './accessLevel';
 import { buildMatchingCardProjection, MATCHING_CARD_REVISION_FIELD } from './matchingCardIndex';
 import {
   claimOverlayValueForReview, getCanonicalCard, releaseOverlayValueReview,
-  settleOverlayValueForCard, splitOverlayChangeByValue,
+  settleOverlayValueForCard, splitOverlayReviewChange,
 } from './multiAccountEdits';
-import { persistCanonicalCard } from './persistCanonicalCard';
-import { applyOverlayToCard, normalizeOverlayFields } from './profileFieldChanges';
+import { applyOverlayToCard, normalizeArray } from './profileFieldChanges';
+import { loadProfileMutation, saveCreateProfileMutation } from './profileMutations';
 import {
   MATCHING_CARD_DERIVED_FIELDS, MATCHING_CARD_MIRRORED_FIELDS, PROFILE_NODES,
   resolveCanonicalFieldName, resolveFieldOwnerNode,
 } from './profileNodeSchema';
 import { areProposalValuesEqual } from './profileProposals';
-import { isDraftProfileRecord } from './profileRecordSource';
+import { createEditorSnapshot } from './profileProposalEditor';
 import { normalizePhoneForStorage } from './profileValueNormalization';
 
 const fail = code => Object.assign(new Error(code), { code });
 const same = (left, right) => areProposalValuesEqual(left ?? null, right ?? null);
 
-export const selectOverlayApprovalChange = (record, fieldName, value, acceptedValue = value) => {
-  const change = normalizeOverlayFields(record?.fields)[fieldName];
-  if (!change) throw fail('REVISION_CONFLICT');
-  const { settledChange } = splitOverlayChangeByValue(change, value);
+const selectApproval = (record, fieldName, value, acceptedValue, replacement) => {
+  const { settledChange, replacement: pair } = splitOverlayReviewChange(record, fieldName, value, replacement);
   if (!settledChange) throw fail('REVISION_CONFLICT');
 
-  const reviewedValue = fieldName === 'phone' ? normalizePhoneForStorage(acceptedValue) : acceptedValue;
-  if (fieldName === 'phone' && acceptedValue && !reviewedValue) throw fail('INVALID_DRAFT');
-  if ('to' in settledChange) return {
-    ...settledChange, to: settledChange.to === '' ? '' : reviewedValue,
-  };
-  return settledChange.added ? { ...settledChange, added: [reviewedValue] } : settledChange;
+  const selectedValue = pair && acceptedValue === value ? pair.to : acceptedValue;
+  const reviewedValue = fieldName === 'phone' ? normalizePhoneForStorage(selectedValue) : selectedValue;
+  if ((fieldName === 'phone' && acceptedValue && !reviewedValue)
+    || (pair && (reviewedValue == null || reviewedValue === ''))) throw fail('INVALID_DRAFT');
+  let change = settledChange;
+  if ('to' in change && change.to !== '') change = { ...change, to: reviewedValue };
+  if (change.added) change = { ...change, added: [reviewedValue] };
+  return { change, replacement: pair };
 };
+
+export const selectOverlayApprovalChange = (record, fieldName, value, acceptedValue = value, replacement) => (
+  selectApproval(record, fieldName, value, acceptedValue, replacement).change
+);
 
 const readOriginal = (record, fieldName, change, observed) => {
   let original;
@@ -44,9 +48,25 @@ const readOriginal = (record, fieldName, change, observed) => {
   return observed;
 };
 
-const applyField = (fieldName, value, change) => (
-  change.to === '' ? null : applyOverlayToCard({ [fieldName]: value }, { [fieldName]: change })[fieldName] ?? null
-);
+const applyField = (fieldName, value, change) => {
+  if (change.to === '') return null;
+  const baseValues = normalizeArray(value);
+  const matchBaseValues = items => items.map(item => (
+    baseValues.find(base => areProposalValuesEqual(base, item)) ?? item
+  ));
+  const resolved = {
+    ...change,
+    ...(change.added && { added: matchBaseValues(change.added) }),
+    ...(change.removed && { removed: matchBaseValues(change.removed) }),
+  };
+  return applyOverlayToCard({ [fieldName]: value }, { [fieldName]: resolved })[fieldName] ?? null;
+};
+
+const canAppendToCurrent = (change, original, observed) => {
+  if (!change.added?.length || change.removed?.length) return false;
+  const current = normalizeArray(observed);
+  return normalizeArray(original).every(value => current.some(item => same(item, value)));
+};
 
 const writeField = async (fieldRef, original, desired) => {
   let unsubscribe;
@@ -89,44 +109,77 @@ const syncFieldProjection = async (cardId, fieldName, primaryField, previousCard
   await syncUserSearchKeyIndex(cardId, previousCard, latest);
 };
 
-export const approveOverlayValue = async ({ cardUserId, editorUserId, fieldName, value, acceptedValue = value, expectedCurrent }) => {
-  if (!canGrantProfilePrivileges(auth.currentUser?.uid)) throw fail('PERMISSION_DENIED');
-  const change = selectOverlayApprovalChange(expectedCurrent, fieldName, value, acceptedValue);
+export const approveOverlayValue = async ({
+  cardUserId, editorUserId, fieldName, value, acceptedValue = value, replacement,
+  expectedCurrent, expectedDraft,
+}) => {
+  const actorUid = auth.currentUser?.uid;
+  if (!canGrantProfilePrivileges(actorUid)) throw fail('PERMISSION_DENIED');
+  const selection = selectApproval(expectedCurrent, fieldName, value, acceptedValue, replacement);
+  const { change } = selection;
   const canonical = await getCanonicalCard(cardUserId);
   if (Object.keys(canonical || {}).length <= 1) throw fail('TARGET_NOT_FOUND');
-  const isDraft = isDraftProfileRecord(canonical);
+  const isDraft = canonical.__profileMutationOperation === 'create';
+  const creatorUid = isDraft ? canonical.__profileMutationCreatedBy : '';
+  let draft = isDraft ? await loadProfileMutation(creatorUid, cardUserId) : null;
+  // Коментарі й позначки з розгорнутої картки належать читачеві. Беремо
+  // вихідну чернетку й перевіряємо її повний знімок в транзакції.
+  if (isDraft && (!draft || !['private', 'pendingReview', 'publishing'].includes(draft.status)
+    || Number(draft.revision) !== Number(canonical.__profileMutationRevision))) throw fail('REVISION_CONFLICT');
+  if (expectedDraft && (!draft || !areProposalValuesEqual(createEditorSnapshot(draft), expectedDraft))) {
+    throw fail('REVISION_CONFLICT');
+  }
   const primary = resolveCanonicalFieldName(fieldName);
   const node = resolveFieldOwnerNode(fieldName);
   if (!isDraft && !node) throw fail('INVALID_DRAFT');
 
   const fieldRef = isDraft ? null : ref(database, `${node}/${cardUserId}/${primary}`);
-  const observed = isDraft ? canonical[fieldName] ?? null : (await get(fieldRef)).val();
+  const observed = isDraft ? draft.data?.[fieldName] ?? null : (await get(fieldRef)).val();
   const original = readOriginal(expectedCurrent, fieldName, change, observed);
-  let desired = normalizeStoredDates({ [primary]: applyField(fieldName, original, change) })[primary] ?? null;
-  if (node === PROFILE_NODES.matchingCards && desired !== null && !isDraft) {
-    desired = buildMatchingCardProjection(cardUserId, { ...canonical, [primary]: desired })?.[primary] ?? null;
+  const applyTo = base => {
+    const value = normalizeStoredDates({ [primary]: applyField(fieldName, base, change) })[primary] ?? null;
+    if (node !== PROFILE_NODES.matchingCards || value === null || isDraft) return value;
+    return buildMatchingCardProjection(cardUserId, { ...canonical, [primary]: value })?.[primary] ?? null;
+  };
+  let previous = original;
+  let desired = applyTo(original);
+  if (!same(observed, original) && !same(observed, desired)) {
+    // Інший дописувач міг уже додати свій номер до тих самих вихідних значень.
+    // Порівнюємо з новим знімком лише для додавання, яке збереже їх усі.
+    if (!canAppendToCurrent(change, original, observed)) throw fail('REVISION_CONFLICT');
+    previous = observed;
+    desired = applyTo(observed);
   }
-  if (!same(observed, original) && !same(observed, desired)) throw fail('REVISION_CONFLICT');
 
-  const locator = { cardUserId, editorUserId, fieldName, value };
+  const locator = {
+    cardUserId, editorUserId, fieldName, value,
+    ...(selection.replacement && { replacement: selection.replacement }),
+  };
   const claimed = await claimOverlayValueForReview({ ...locator, acceptedValue, expectedCurrent });
   let fieldApplied = false;
   try {
     if (isDraft) {
-      if (!same(observed, desired)) await persistCanonicalCard({ ...canonical, [fieldName]: desired });
+      if (!same(observed, desired)) {
+        const data = { ...draft.data };
+        if (desired === null) delete data[fieldName];
+        else data[fieldName] = desired;
+        draft = await saveCreateProfileMutation({
+          cardId: cardUserId, creatorUid, actorUid, data, expectedCurrent: draft, skipRevisionHistory: true,
+        });
+      }
       fieldApplied = true;
     } else {
-      await writeField(fieldRef, original, desired);
+      await writeField(fieldRef, previous, desired);
       fieldApplied = true;
-      await syncUserSearchIdIndex(cardUserId, { [fieldName]: original }, { [fieldName]: desired });
-      await syncFieldProjection(cardUserId, fieldName, primary, { ...canonical, [primary]: original });
+      await syncUserSearchIdIndex(cardUserId, { [fieldName]: previous }, { [fieldName]: desired });
+      await syncFieldProjection(cardUserId, fieldName, primary, { ...canonical, [primary]: previous });
     }
     const settled = await settleOverlayValueForCard({
       ...locator, action: 'accept', acceptedValue, expectedCurrent: claimed,
       acceptedOriginal: desired === null ? { present: false } : { present: true, value: desired },
     });
     if (!settled) throw fail('REVISION_CONFLICT');
-    return { value: desired, remainingOverlay: settled.remainingOverlay };
+    return { value: desired, remainingOverlay: settled.remainingOverlay, ...(draft && { draft }) };
   } catch (error) {
     if (!fieldApplied && ['REVISION_CONFLICT', 'DRAFT_CHANGED_ELSEWHERE'].includes(error?.code)) {
       await releaseOverlayValueReview({ ...locator, claimed }).catch(() => {});

@@ -27,7 +27,7 @@ jest.mock('./multiAccountEdits', () => {
 const { auth, syncUserSearchKeyIndex, syncMatchingCardIndex } = require('components/config');
 const { getOverlaysForCard } = require('./multiAccountEdits');
 const { ADMIN_UIDS, READONLY_ADMIN_UIDS } = require('./accessLevel');
-const { acceptCreateProfileMutation, saveCreateProfileMutation } = require('./profileMutations');
+const { acceptCreateProfileMutation, rejectCreateProfileMutation, saveCreateProfileMutation } = require('./profileMutations');
 
 const snapshotOf = value => ({ exists: () => Boolean(value), val: () => value });
 
@@ -142,6 +142,25 @@ describe('acceptCreateProfileMutation', () => {
       expectedRevision: 3,
     })).rejects.toThrow('REVISION_CONFLICT');
 
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('rejects approval when the record changed since review without incrementing its revision', async () => {
+    transactionMutation = { ...pendingMutation, data: { ...pendingMutation.data, name: 'Olena' } };
+
+    await expect(approve({ expectedCurrent: pendingMutation })).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+
+    expect(runTransaction).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('rejects an approval when the same revision changes between the read and transaction', async () => {
+    transactionMutation = { ...pendingMutation, data: { ...pendingMutation.data, name: 'Olena' } };
+    get.mockResolvedValueOnce(snapshotOf(pendingMutation));
+
+    await expect(approve({ expectedCurrent: pendingMutation })).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+
+    expect(transactionMutation.data.name).toBe('Olena');
     expect(update).not.toHaveBeenCalled();
   });
 
@@ -282,7 +301,10 @@ describe('acceptCreateProfileMutation', () => {
     const newerProjection = { name: 'Updated canonical name', rev: 2 };
     canonicalNodes.set(projectionPath, newerProjection);
 
-    await expect(approve({ finalData: { ...pendingMutation.data, ignored: null } })).resolves.toEqual(pendingMutation.data);
+    await expect(approve({
+      expectedCurrent: pendingMutation,
+      finalData: { ...pendingMutation.data, ignored: null },
+    })).resolves.toEqual(pendingMutation.data);
     await expect(approve({ finalData: { name: 'Different approval' } })).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
     expect(canonicalNodes.get(projectionPath)).toBe(newerProjection);
     expect(update).toHaveBeenCalledTimes(1);
@@ -341,5 +363,87 @@ describe('acceptCreateProfileMutation', () => {
 
     await expect(approve()).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
     expect(runTransaction).not.toHaveBeenCalled();
+  });
+
+  it('blocks a canonical contact duplicate before changing canonical nodes or search indexes', async () => {
+    const phone = '380671112233';
+    canonicalNodes.set(`searchId/${phone}/phone`, 'existing-card');
+    canonicalNodes.set('matchingCards/existing-card', { name: 'Existing profile' });
+
+    await expect(approve({ finalData: { ...pendingMutation.data, phone } })).rejects.toMatchObject({
+      code: 'DUPLICATE_PROFILE',
+      profileSaveStage: 'identity-claim',
+      profileSaveRecovered: true,
+      duplicateConflicts: [{ field: 'phone', cardIds: ['existing-card'] }],
+    });
+
+    expect(transactionMutation).toEqual(pendingMutation);
+    expect(update).not.toHaveBeenCalled();
+    expect(syncMatchingCardIndex).not.toHaveBeenCalled();
+    expect(syncUserSearchKeyIndex).not.toHaveBeenCalled();
+  });
+
+  it('blocks approval when only another draft’s identity claim is present', async () => {
+    const phone = '380671112233';
+    runTransaction.mockImplementation(async (refObject, updater) => {
+      if (refObject.path !== `multiData/profileIdentityClaims/phone_${phone}`) {
+        return simulateTransaction(refObject, updater);
+      }
+      const current = 'other-draft';
+      const next = updater(current);
+      return { committed: next !== undefined, snapshot: snapshotOf(next ?? current) };
+    });
+
+    await expect(approve({ finalData: { ...pendingMutation.data, phone } })).rejects.toMatchObject({
+      code: 'DUPLICATE_PROFILE',
+      duplicateConflicts: [{ field: 'phone', cardIds: ['other-draft'] }],
+    });
+
+    expect(transactionMutation).toEqual(pendingMutation);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  describe('returning a create draft', () => {
+    const reject = () => rejectCreateProfileMutation({
+      cardId: pendingMutation.cardId,
+      creatorUid: pendingMutation.createdBy,
+      expectedRevision: pendingMutation.revision,
+      expectedCurrent: pendingMutation,
+    });
+
+    it('returns a draft after a local cache miss and leaves its data and history intact', async () => {
+      await expect(reject()).resolves.toMatchObject({
+        status: 'private', revision: 4, data: pendingMutation.data,
+      });
+      await expect(reject()).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+
+      expect(update).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it('does not recreate a draft deleted between the read and the transaction', async () => {
+      transactionMutation = null;
+      get.mockResolvedValueOnce(snapshotOf(pendingMutation));
+
+      await expect(reject()).rejects.toMatchObject({ code: 'DRAFT_NOT_FOUND' });
+      expect(transactionMutation).toBeNull();
+    });
+
+    it('does not return a same-revision draft changed during review', async () => {
+      const newer = { ...pendingMutation, data: { name: 'Newer' } };
+      transactionMutation = newer;
+      get.mockResolvedValueOnce(snapshotOf(pendingMutation));
+
+      await expect(reject()).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+      expect(transactionMutation).toEqual(newer);
+    });
+
+    it.each([READONLY_ADMIN_UIDS[0], pendingMutation.createdBy])('denies role UID %s before reading', async uid => {
+      auth.currentUser = { uid };
+
+      await expect(reject()).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+      expect(get).not.toHaveBeenCalled();
+      expect(runTransaction).not.toHaveBeenCalled();
+    });
   });
 });

@@ -80,35 +80,14 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).not.toContain('Видалити всі');
   });
 
-  it('settles an edit by clearing it from the backend instead of journalling it', () => {
-    expect(source).toContain('purgeHistory: true,');
-  });
-
-  it('keeps only the publish step under the questionnaire, named after what it does', () => {
+  it('keeps draft publication in the admin questionnaire and closes through the back action', () => {
     expect(source).not.toContain('rejectCreateProfileMutation');
     expect(source).toContain('const saveDraftAsCard = async () =>');
-    expect(source).toContain('await acceptCreateProfileMutation({');
+    expect(source).toContain('await profileProposalService.reviewDraft({');
     expect(source).toContain('Зберегти чернетку');
-    // Під анкетою лишилась рівно одна дія — публікація чернетки, і лише в
-    // адміна. «Закрити» переїхало у стрілку в шапці: вихід — це жест «назад»,
-    // а не кнопка серед дій анкети, і тепер його роблять однаково стрілка,
-    // «назад» браузера й апаратна кнопка телефона.
+    // «Закрити» працює через стрілку в шапці, «назад» браузера
+    // й апаратну кнопку телефона.
     expect(source).not.toContain('Закрити</CloseButton>');
-    expect(source).toContain('{!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <Card>');
-  });
-
-  it('waits for blur autosave and publishes the accepted base at its latest revision', () => {
-    expect(source).toContain('await editor?.lastWrite;');
-    expect(source).toContain('const current = activeMutationRef.current;');
-    expect(source).toContain('expectedRevision: current.revision,');
-    expect(source).toContain('finalData: draftBaseRef.current || current.data,');
-  });
-
-  it('accepting a corrected value stores what the admin typed, not what was proposed', () => {
-    expect(source).toContain('const acceptedChange = withEditedValue(settled, row, editedValue);');
-    expect(source).toContain('applyOverlayToCard({ ...base, [row.fieldName]: before }, { [row.fieldName]: acceptedChange });');
-    expect(source).toContain('{ skipRevisionHistory: true });');
-    expect(source).toContain('remainingChange: remaining,');
   });
 
   it('shows every edit inside the questionnaire instead of a separate review list', () => {

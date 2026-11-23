@@ -51,6 +51,49 @@ const areArraysEqual = (a, b) => {
 
 const normalizeCardKey = value => String(value || '').trim();
 const overlayError = (code, cause) => Object.assign(new Error(code), { code, cause });
+const valueLabel = value => String(value ?? '').trim();
+const hasValue = (values, candidate) => values.some(value => areProposalValuesEqual(value, candidate));
+const sameReplacement = (left, right) => (
+  Boolean(left && right) && areProposalValuesEqual(left.from, right.from) && areProposalValuesEqual(left.to, right.to)
+);
+
+const readReplacementMap = proposal => {
+  try {
+    const replacements = JSON.parse(proposal?.replacements || '{}');
+    return isPlainObject(replacements) ? replacements : {};
+  } catch {
+    return {};
+  }
+};
+
+const listChange = (added, removed) => ({
+  ...(added.length && { added }),
+  ...(removed.length && { removed }),
+});
+
+export const getOverlayListReviewValues = change => {
+  const { added, removed, replacements } = change ?? {};
+  const additions = normalizeArray(added);
+  const removals = normalizeArray(removed);
+  const pairs = Array.isArray(replacements) ? replacements.filter(pair => (
+    isPlainObject(pair) && valueLabel(pair.from) && valueLabel(pair.to) && hasValue(removals, pair.from)
+  )) : [];
+  return {
+    pairs,
+    added: additions.filter(value => !pairs.some(pair => areProposalValuesEqual(pair.to, value))),
+    removed: removals.filter(value => !pairs.some(pair => areProposalValuesEqual(pair.from, value))),
+  };
+};
+
+export const getOverlayReviewFields = overlay => {
+  const fields = normalizeOverlayFields(overlay?.fields);
+  const replacementMap = readReplacementMap(overlay?.proposal);
+  return Object.fromEntries(Object.entries(fields).map(([field, change]) => {
+    if ('to' in change || !Array.isArray(replacementMap[field])) return [field, change];
+    const { pairs } = getOverlayListReviewValues({ ...change, replacements: replacementMap[field] });
+    return [field, pairs.length ? { ...change, replacements: pairs } : change];
+  }));
+};
 
 // Транзакція бере перше значення з кешу SDK. Тримаємо активне читання
 // до завершення транзакції, щоб порожній кеш не виглядав як видалений шар.
@@ -265,11 +308,13 @@ export const saveOverlayForUserCard = async ({
     // правила саме за наявністю оверлея цього редактора на цій картці.
     await indexOverlayValuesInSearchId({ cardUserId: normalizedCardId, fields: sanitized });
 
+    const nextHistoryFields = usesRevisionCheck ? getOverlayReviewFields({ fields: sanitized, proposal }) : sanitized;
+    const previousHistoryFields = usesRevisionCheck ? getOverlayReviewFields(expectedCurrent) : previousFields;
     await appendOverlayHistory({
       cardUserId: normalizedCardId,
       editorUserId,
       action: 'edit',
-      fields: diffOverlayFields(previousFields, sanitized),
+      fields: diffOverlayFields(previousHistoryFields, nextHistoryFields),
       actorUid,
       revision: proposal?.revision,
       throwOnError: usesRevisionCheck,
@@ -467,9 +512,13 @@ export const readOverlayRecord = async ({ editorUserId, cardUserId }) => {
 };
 
 export const claimOverlayValueForReview = async ({
-  editorUserId, cardUserId, fieldName, value, acceptedValue, expectedCurrent,
+  editorUserId, cardUserId, fieldName, value, acceptedValue, expectedCurrent, replacement,
 }) => {
-  const claim = { fieldName, value, ...(acceptedValue !== undefined && { acceptedValue }) };
+  const claim = {
+    fieldName, value,
+    ...(acceptedValue !== undefined && { acceptedValue }),
+    ...(replacement && { replacement }),
+  };
   if (!expectedCurrent || (expectedCurrent.reviewClaim && !areProposalValuesEqual(expectedCurrent.reviewClaim, claim))) {
     throw overlayError('REVISION_CONFLICT');
   }
@@ -692,6 +741,20 @@ const changeProposalValues = rawChange => {
 // лишитись нічого не може; масив — може.
 const withoutSettledValues = (change, settledValues) => {
   if (!isPlainObject(change) || 'from' in change || 'to' in change) return null;
+  const { pairs } = getOverlayListReviewValues(change);
+  if (pairs.length) {
+    return {
+      ...listChange(
+        normalizeArray(change.added).filter(value => (
+          !settledValues.has(valueLabel(value)) || pairs.some(pair => areProposalValuesEqual(pair.to, value))
+        )),
+        normalizeArray(change.removed).filter(value => (
+          !settledValues.has(valueLabel(value)) || pairs.some(pair => areProposalValuesEqual(pair.from, value))
+        )),
+      ),
+      replacements: pairs,
+    };
+  }
   const keep = values => uniq(normalizeArray(values)
     .map(value => String(value ?? '').trim())
     .filter(value => value && !settledValues.has(value)));
@@ -704,6 +767,29 @@ const withoutSettledValues = (change, settledValues) => {
   };
 };
 
+const removeHistoricalReplacement = (change, replacement, remainingReplacements) => {
+  const { pairs } = getOverlayListReviewValues(change);
+  if (pairs.length) {
+    if (!pairs.some(pair => sameReplacement(pair, replacement))) return change;
+    const split = splitPairedListChange(change, replacement);
+    return {
+      ...split.remainingChange,
+      ...(split.remainingReplacements.length && { replacements: split.remainingReplacements }),
+    };
+  }
+
+  // Старі записи не позначали пари. Обидва кінці повинні бути в тому самому
+  // записі, інакше можна стерти чуже незалежне додавання або видалення.
+  const added = normalizeArray(change?.added ?? change?.add);
+  const removed = normalizeArray(change?.removed);
+  if (!hasValue(added, replacement.to) || !hasValue(removed, replacement.from)) return change;
+  const targetStillProposed = remainingReplacements.some(pair => areProposalValuesEqual(pair.to, replacement.to));
+  return listChange(
+    added.filter(value => targetStillProposed || !areProposalValuesEqual(value, replacement.to)),
+    removed.filter(value => !areProposalValuesEqual(value, replacement.from)),
+  );
+};
+
 // A settled edit must leave nothing behind: once a value has been saved into
 // the card or thrown away, the journal entries that only described that value
 // are deleted too, so the review queue never grows a tail of memos about work
@@ -714,6 +800,8 @@ export const purgeOverlayHistoryEntries = async ({
   editorUserId,
   fieldName,
   values = [],
+  replacement,
+  remainingReplacements = [],
   throwOnError = false,
 }) => {
   const normalizedCardId = normalizeCardKey(cardUserId);
@@ -730,18 +818,24 @@ export const purgeOverlayHistoryEntries = async ({
       if (!isPlainObject(entry) || entry.fieldName !== fieldName) return acc;
       if (editorUserId && entry.editorUserId && entry.editorUserId !== editorUserId) return acc;
 
-      const entryValues = changeProposalValues(entry.change);
-      if (settledValues.size && entryValues.length && !entryValues.some(value => settledValues.has(value))) return acc;
+      if (!replacement) {
+        const entryValues = changeProposalValues(entry.change);
+        if (settledValues.size && entryValues.length && !entryValues.some(value => settledValues.has(value))) return acc;
+      }
 
-      acc[entryId] = null;
       // Один запис журналу — це одне збереження поля, і несе він усе, що в
       // тому збереженні було: `{ added: [A, B] }`. Розсудили лише A — а B
       // мусить лишитись, інакше він зникає з «попередніх версій» разом із
       // чужим рішенням. Частково переписати запис правила не дають (його
       // можна лише створити й видалити), тож старий знімається, а замість
       // нього пишеться новий — із рештою значень, тим самим автором і часом.
-      const remainingChange = settledValues.size ? withoutSettledValues(entry.change, settledValues) : null;
-      if (remainingChange) {
+      const remainingChange = replacement
+        ? removeHistoricalReplacement(entry.change, replacement, remainingReplacements)
+        : (settledValues.size ? withoutSettledValues(entry.change, settledValues) : null);
+      if ((replacement && remainingChange === entry.change)
+        || (remainingChange && areProposalValuesEqual(remainingChange, entry.change))) return acc;
+      acc[entryId] = null;
+      if (remainingChange && Object.keys(remainingChange).length) {
         const key = push(historyRef).key;
         if (key) acc[key] = { ...entry, change: remainingChange };
       }
@@ -994,17 +1088,20 @@ export const settleOverlayFieldValue = async ({
  * Тому розкладка тут одна на всі екрани: кожне значення — окремий запис із
  * автором, і саме на нього дивиться і кнопка «ОК», і хрестик.
  */
-export const buildOverlayFieldEntries = (overlaysByEditor = {}) => {
+export const buildOverlayFieldEntries = (overlaysByEditor = {}, { recordsByEditor } = {}) => {
   const result = {};
 
   const pushEntry = (fieldName, entry) => {
     const fieldEntries = result[fieldName] || [];
-    if (fieldEntries.some(item => item.value === entry.value && item.editorUserId === entry.editorUserId)) return;
+    if (fieldEntries.some(item => (
+      item.value === entry.value && item.editorUserId === entry.editorUserId
+      && ((!item.replacement && !entry.replacement) || sameReplacement(item.replacement, entry.replacement))
+    ))) return;
     result[fieldName] = [...fieldEntries, entry];
   };
 
   Object.entries(overlaysByEditor || {}).forEach(([editorUserId, overlay]) => {
-    const fields = normalizeOverlayFields(overlay?.fields);
+    const fields = getOverlayReviewFields(recordsByEditor?.[editorUserId] ?? overlay?.expectedCurrent ?? overlay);
 
     Object.entries(fields).forEach(([fieldName, change]) => {
       if (TECHNICAL_FIELD_NAMES.has(fieldName) || fieldName === 'editor') return;
@@ -1023,12 +1120,20 @@ export const buildOverlayFieldEntries = (overlaysByEditor = {}) => {
         return;
       }
 
-      normalizeArray(change.added).forEach(value => {
+      const { pairs, added, removed } = getOverlayListReviewValues(change);
+      pairs.forEach(replacement => pushEntry(fieldName, {
+        value: valueLabel(replacement.to),
+        previousValue: valueLabel(replacement.from),
+        editorUserId,
+        isDeleted: false,
+        replacement,
+      }));
+      added.forEach(value => {
         const normalized = String(value ?? '').trim();
         if (normalized) pushEntry(fieldName, { value: normalized, editorUserId, isDeleted: false });
       });
 
-      normalizeArray(change.removed).forEach(value => {
+      removed.forEach(value => {
         const normalized = String(value ?? '').trim();
         if (normalized) pushEntry(fieldName, { value: normalized, editorUserId, isDeleted: true });
       });
@@ -1085,6 +1190,46 @@ export const splitOverlayChangeByValue = (change, value) => {
   };
 };
 
+const splitPairedListChange = (change, replacement) => {
+  const { pairs } = getOverlayListReviewValues(change);
+  const remainingReplacements = pairs.filter(pair => !sameReplacement(pair, replacement));
+  const added = normalizeArray(change.added).filter(value => (
+    !areProposalValuesEqual(value, replacement.to)
+    || remainingReplacements.some(pair => areProposalValuesEqual(pair.to, value))
+  ));
+  const removed = normalizeArray(change.removed).filter(value => !areProposalValuesEqual(value, replacement.from));
+  return {
+    settledChange: { added: [replacement.to], removed: [replacement.from] },
+    remainingChange: listChange(added, removed),
+    remainingReplacements,
+    replacement,
+  };
+};
+
+export const splitOverlayReviewChange = (record, fieldName, value, replacement) => {
+  const change = getOverlayReviewFields(record)[fieldName];
+  const { pairs, added, removed } = getOverlayListReviewValues(change);
+  if (!pairs.length && !replacement) return splitOverlayChangeByValue(change, value);
+
+  const matches = pairs.filter(pair => (
+    valueLabel(pair.to) === valueLabel(value) && (!replacement || sameReplacement(pair, replacement))
+  ));
+  if (matches.length === 1) return splitPairedListChange(change, matches[0]);
+  if (replacement || matches.length > 1) return { settledChange: null };
+
+  // A replacement's original value must not be settled as a separate removal.
+  const selectedAdded = added.filter(item => valueLabel(item) === valueLabel(value));
+  const selectedRemoved = removed.filter(item => valueLabel(item) === valueLabel(value));
+  if (!selectedAdded.length && !selectedRemoved.length) return { settledChange: null };
+  return {
+    settledChange: listChange(selectedAdded, selectedRemoved),
+    remainingChange: listChange(
+      normalizeArray(change.added).filter(item => !hasValue(selectedAdded, item)),
+      normalizeArray(change.removed).filter(item => !hasValue(selectedRemoved, item)),
+    ),
+  };
+};
+
 /**
  * Чи лишається кому тримати це значення в `searchId` після відхилення.
  *
@@ -1114,7 +1259,9 @@ const isValueStillClaimedByCard = ({ canonical, overlaysByEditor, fieldName, val
   });
 };
 
-const buildSettledOverlay = ({ overlay, fieldName, remainingChange, acceptedOriginal, guarded }) => {
+const buildSettledOverlay = ({
+  overlay, fieldName, remainingChange, acceptedOriginal, remainingReplacements, guarded,
+}) => {
   const fields = { ...(overlay?.fields || {}) };
   if (hasOverlayChangeValues(remainingChange)) fields[fieldName] = remainingChange;
   else delete fields[fieldName];
@@ -1125,7 +1272,13 @@ const buildSettledOverlay = ({ overlay, fieldName, remainingChange, acceptedOrig
     delete next.reviewClaim;
     if (Number.isSafeInteger(next.proposal?.revision)) {
       next.proposal = { ...next.proposal, revision: next.proposal.revision + 1 };
-      if (acceptedOriginal) {
+      if (remainingReplacements) {
+        const replacements = readReplacementMap(next.proposal);
+        if (remainingReplacements.length) replacements[fieldName] = remainingReplacements;
+        else delete replacements[fieldName];
+        next.proposal.replacements = JSON.stringify(replacements);
+      }
+      if (acceptedOriginal || !hasOverlayChangeValues(remainingChange)) {
         const originals = JSON.parse(next.proposal.originalValues || '{}');
         if (hasOverlayChangeValues(remainingChange)) originals[fieldName] = acceptedOriginal;
         else delete originals[fieldName];
@@ -1154,6 +1307,7 @@ export const settleOverlayValueForCard = async ({
   action = 'discard',
   expectedCurrent,
   acceptedOriginal,
+  replacement,
 }) => {
   if (!editorUserId || !cardUserId || !fieldName) return null;
 
@@ -1178,18 +1332,21 @@ export const settleOverlayValueForCard = async ({
 
   let settledChange = null;
   let remainingChange = null;
+  let settledReplacement;
+  let remainingReplacements;
   let removedEditorOverlay = false;
   let remainingOverlay;
   const removeSelectedValue = effectiveOverlay => {
     if (effectiveOverlay?.reviewClaim && (expectedCurrent === undefined || action !== 'accept')) return undefined;
-    const currentChange = normalizeOverlayFields(effectiveOverlay?.fields)[fieldName];
-    const split = splitOverlayChangeByValue(currentChange, value);
+    const split = splitOverlayReviewChange(effectiveOverlay, fieldName, value, replacement);
     settledChange = split.settledChange;
     remainingChange = split.remainingChange;
-    if (!settledChange) return undefined;
+    settledReplacement = split.replacement;
+    remainingReplacements = split.remainingReplacements;
+    if (!settledChange || (settledReplacement && expectedCurrent === undefined)) return undefined;
 
     const next = buildSettledOverlay({
-      overlay: effectiveOverlay, fieldName, remainingChange, acceptedOriginal,
+      overlay: effectiveOverlay, fieldName, remainingChange, acceptedOriginal, remainingReplacements,
       guarded: expectedCurrent !== undefined,
     });
     removedEditorOverlay = next === null;
@@ -1221,29 +1378,35 @@ export const settleOverlayValueForCard = async ({
     editorUserId,
     fieldName,
     values: changeProposalValues(settledChange),
+    replacement: settledReplacement,
+    remainingReplacements,
     throwOnError: true,
   });
 
   if (action === 'accept') {
+    if (!SEARCH_ID_INDEXED_FIELDS.has(fieldName)) return result;
     const normalizedAcceptedValue = String(acceptedValue ?? value ?? '').trim();
-    const normalizedOriginalValue = String(value ?? '').trim();
-    if (
-      SEARCH_ID_INDEXED_FIELDS.has(fieldName) &&
-      normalizedAcceptedValue &&
-      normalizedAcceptedValue !== normalizedOriginalValue
-    ) {
-      // The overlay claimed the submitted value. If an admin corrects it in
-      // the review input, transfer that claim instead of leaving the stale
-      // identifier searchable for this card.
-      const originalStillClaimed = expectedCurrent !== undefined && isValueStillClaimedByCard({
-        canonical: await getCanonicalCard(normalizedCardId),
-        overlaysByEditor: await getOverlaysForCard(normalizedCardId),
-        fieldName,
-        value: normalizedOriginalValue,
-      });
-      if (!originalStillClaimed) await updateSearchId(fieldName, normalizedOriginalValue, normalizedCardId, 'remove');
-      await updateSearchId(fieldName, normalizedAcceptedValue, normalizedCardId, 'add');
+    const submitted = String(value ?? '').trim();
+    const corrected = normalizedAcceptedValue && normalizedAcceptedValue !== submitted
+      && (expectedCurrent === undefined || settledChange.to || settledChange.added?.length);
+    const retired = new Set(corrected ? [submitted] : []);
+    if (expectedCurrent !== undefined) {
+      normalizeArray(settledChange.removed ?? settledChange.from).forEach(oldValue => retired.add(oldValue));
     }
+    if (retired.size && expectedCurrent !== undefined) {
+      const [canonical, overlaysByEditor] = await Promise.all([
+        getCanonicalCard(normalizedCardId), getOverlaysForCard(normalizedCardId),
+      ]);
+      for (const oldValue of retired) {
+        if (!isValueStillClaimedByCard({ canonical, overlaysByEditor, fieldName, value: oldValue })) {
+          // eslint-disable-next-line no-await-in-loop
+          await updateSearchId(fieldName, oldValue, normalizedCardId, 'remove');
+        }
+      }
+    } else if (corrected) {
+      await updateSearchId(fieldName, submitted, normalizedCardId, 'remove');
+    }
+    if (corrected) await updateSearchId(fieldName, normalizedAcceptedValue, normalizedCardId, 'add');
     return result;
   }
 
@@ -1445,7 +1608,7 @@ export const pruneOverlaysMatchingCanonical = async ({ cardUserId, canonical, ov
 
   const redundant = [];
   Object.entries(overlaysByEditor || {}).forEach(([editorUserId, overlay]) => {
-    Object.entries(normalizeOverlayFields(overlay?.fields)).forEach(([fieldName, change]) => {
+    Object.entries(getOverlayReviewFields(overlay?.expectedCurrent ?? overlay)).forEach(([fieldName, change]) => {
       if (!isPlainObject(change) || TECHNICAL_FIELD_NAMES.has(fieldName) || fieldName === 'editor') return;
       const canonicalKeys = canonicalValueKeys(canonical, fieldName);
       if ('to' in change || 'from' in change) {
@@ -1457,13 +1620,14 @@ export const pruneOverlaysMatchingCanonical = async ({ cardUserId, canonical, ov
         }
         return;
       }
-      normalizeArray(change.added ?? change.add).forEach(value => {
+      const { added, removed } = getOverlayListReviewValues(change);
+      added.forEach(value => {
         const trimmed = String(value ?? '').trim();
         if (trimmed && canonicalKeys.has(overlayValueKey(fieldName, trimmed))) {
           redundant.push({ editorUserId, fieldName, value: trimmed });
         }
       });
-      normalizeArray(change.removed).forEach(value => {
+      removed.forEach(value => {
         const trimmed = String(value ?? '').trim();
         if (trimmed && !canonicalKeys.has(overlayValueKey(fieldName, trimmed))) {
           redundant.push({ editorUserId, fieldName, value: trimmed });

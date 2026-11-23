@@ -1,7 +1,8 @@
-const { get, push, ref, remove, runTransaction, update } = require('firebase/database');
+const { get, onValue, push, ref, remove, runTransaction, update } = require('firebase/database');
 
 jest.mock('firebase/database', () => ({
   get: jest.fn(),
+  onValue: jest.fn(),
   push: jest.fn(),
   ref: jest.fn((db, path) => ({ db, path })),
   remove: jest.fn(),
@@ -323,5 +324,61 @@ describe('запис журналу з кількома значеннями', (
 
     const historyUpdate = update.mock.calls.find(([target]) => target.path === 'multiData/editsHistory/card-1');
     expect(historyUpdate[1]).toEqual({ solo: null });
+  });
+});
+
+describe('paired list decisions', () => {
+  const first = { from: '380501110001', to: '380501110003' };
+  const second = { from: '380501110002', to: first.to };
+  const fields = {
+    phone: {
+      added: [first.to, '380501110004'],
+      removed: [first.from, second.from, '380501110005'],
+    },
+  };
+  const record = {
+    ...OVERLAYS.editorA,
+    fields,
+    proposal: { revision: 1, replacements: JSON.stringify({ phone: [first, second] }) },
+  };
+
+  it('settles only the chosen pair and preserves shared targets and unrelated history', async () => {
+    const revised = { ...HISTORY.h2, change: { ...fields.phone, replacements: [first, second] } };
+    const other = { ...HISTORY.h1, change: { added: [first.to] } };
+    mockReads({ overlays: { editorA: record }, history: { revised, other } });
+    onValue.mockImplementation((target, listener) => {
+      listener();
+      return jest.fn();
+    });
+    runTransaction.mockImplementation(async (target, updater) => {
+      const next = updater(record);
+      return { committed: next !== undefined, snapshot: { val: () => next } };
+    });
+
+    const result = await settleOverlayValueForCard({
+      cardUserId: 'card-1', editorUserId: 'editorA', fieldName: 'phone',
+      value: first.to, replacement: first, expectedCurrent: record, action: 'accept',
+    });
+
+    const remaining = { added: fields.phone.added, removed: [second.from, '380501110005'] };
+    expect(result.remainingOverlay).toMatchObject({
+      fields: { phone: remaining },
+      proposal: { revision: 2, replacements: JSON.stringify({ phone: [second] }) },
+    });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/editsHistory/card-1' }),
+      { revised: null, 'entry-new': { ...revised, change: { ...remaining, replacements: [second] } } },
+    );
+  });
+
+  it('does not auto-prune one side of a replacement when the new value is already canonical', async () => {
+    const overlays = { editorA: record };
+    const canonical = { userId: 'card-1', phone: [first.from, second.from, first.to, '380501110005'] };
+    mockReads({ overlays, canonical });
+
+    await expect(pruneOverlaysMatchingCanonical({
+      cardUserId: 'card-1', overlaysByEditor: overlays, canonical,
+    })).resolves.toBe(0);
+    expect(runTransaction).not.toHaveBeenCalled();
   });
 });

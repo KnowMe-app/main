@@ -65,6 +65,23 @@ describe('buildPendingFieldEdits', () => {
       expect.objectContaining({ kind: 'added', value: '380501112233', editorUserId: 'editorA' }),
     ]);
   });
+
+  it('keeps explicit replacements together and labels independent operations separately', () => {
+    const replacement = { from: '111', to: '222' };
+    const fields = { phone: { added: ['222', '333'], removed: ['111', '444'] } };
+    const pending = buildPendingFieldEdits({
+      editorA: {
+        fields,
+        expectedCurrent: { fields, proposal: { replacements: JSON.stringify({ phone: [replacement] }) } },
+      },
+    });
+
+    expect(pending.phone).toEqual([
+      expect.objectContaining({ kind: 'replaced', value: '222', previousValue: '111', replacement }),
+      expect.objectContaining({ kind: 'added', value: '333' }),
+      expect.objectContaining({ kind: 'removed', value: '444' }),
+    ]);
+  });
 });
 
 describe('buildFieldVersionHistory', () => {
