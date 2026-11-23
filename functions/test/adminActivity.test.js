@@ -255,7 +255,7 @@ test('тижневий звіт: тиждень проти попередньо�
   ];
   const { html, push } = activity.buildWeeklyReport(events, NOON);
   assert.match(html, /Тиждень 08\.11–15\.11/);
-  assert.match(html, /Лайк: <b>1<\/b> \(↓1\)/);
+  assert.match(html, /Лайк: <b>1<\/b> \(було 2\)/);
   assert.match(html, /нових анкет 2 → з них опубліковано 1 \(50%\)/);
   assert.match(html, /Марія \(донор ооцитів\) — ❤️ 1 · 📞 2/);
   assert.match(push.body, /контактів: 2/);
@@ -293,7 +293,32 @@ test('тижневий звіт: хто кого вподобав і хто шу
   const { html } = activity.buildWeeklyReport(events, NOON, { searchQueries });
   assert.match(html, /<b>Хто кого вподобав<\/b>\n• Surrohelp \(агенція\) → Марія К\. \(донор ооцитів\), Олена \(сурогатна мати\)\n• Пара з Києва/);
   assert.doesNotMatch(html, /Стара/);
-  assert.match(html, /«сурогатна мама» \(категорія\) — Катя \(донор ооцитів\)/);
+  // Донорка не бачить СМ за задумом — це межа видимості, а не провал пошуку.
+  assert.match(html, /<b>Не показується цій ролі<\/b>[^\n]*\n• «сурогатна мама» — Катя \(донор ооцитів\)/);
+  assert.doesNotMatch(html, /Без результату/);
+});
+
+test('тижневий звіт: хто кому писав, без нулів в інтересі, пошук з історії, «було N»', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const agency = { name: 'Surrohelp', role: 'ag' };
+  const events = [
+    { type: 'contact_tap', t: NOON - DAY, actor: 'ag1', actorInfo: agency, card: 'd1', cardInfo: { name: 'Марія', role: 'ed' }, meta: {} },
+    { type: 'contact_saved', t: NOON - DAY, actor: 'ag1', actorInfo: agency, card: 'd1', cardInfo: { name: 'Марія', role: 'ed' }, meta: {} },
+    { type: 'search', t: NOON - DAY, actor: 'ip1', actorInfo: { name: 'Пара', role: 'ip' }, meta: { query: 'сурогатна' } },
+  ];
+  const searchQueries = {
+    ip1: {
+      q1: { query: 'Сурогатна', updatedAt: NOON - DAY, resultsCount: 0, intent: 'sm' },
+      q2: { query: 'Олена', updatedAt: NOON - DAY, resultsCount: 3 },
+    },
+  };
+  const { html } = activity.buildWeeklyReport(events, NOON, { searchQueries });
+  assert.match(html, /<b>Хто кому писав чи дзвонив<\/b>\n• Surrohelp \(агенція\) → Марія \(донор ооцитів\)/);
+  assert.match(html, /• Марія \(донор ооцитів\) — 📞 2\n/);
+  assert.doesNotMatch(html, /❤️ 0/);
+  assert.match(html, /Пошук: <b>2<\/b> \(було 0\)/);
+  assert.match(html, /<b>Без результату<\/b>: 1 з 2 запитів\n• «сурогатна» \(категорія\) — Пара \(біологічні батьки\)/);
+  assert.match(html, /Діяли людей: <b>2<\/b> \(було 0\)/);
 });
 
 test('тижневий звіт іде з потоку подій, коли ввімкнено', async () => {
@@ -344,7 +369,7 @@ test('тижневий звіт: порожній тиждень лишає по
   const DAY = 24 * 60 * 60 * 1000;
   const { html } = activity.buildWeeklyReport([{ type: 'like', t: NOON - 9 * DAY, actor: 'u1', card: 'x', meta: {} }], NOON);
   assert.match(html, /Подій за тиждень не було/);
-  assert.match(html, /Лайк: <b>0<\/b> \(↓1\)/);
+  assert.match(html, /Лайк: <b>0<\/b> \(було 1\)/);
 });
 
 // 15.11, на прохання власниці продукту: причина й аналітика видалення — у
