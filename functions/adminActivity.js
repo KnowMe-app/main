@@ -431,6 +431,10 @@ const buildDigestMessage = (events, frequency) => {
  * найбільше інтересу (лайки й дотики до контактів) і що шукали. Рахує всі
  * події журналу незалежно від того, які з них адмін отримує окремо.
  */
+// «Хто кого вподобав»: рядків і карток у рядку — щоб звіт влазив у 4096 знаків Telegram.
+const WEEKLY_LIKE_ACTORS_MAX = 8;
+const WEEKLY_LIKE_CARDS_MAX = 4;
+
 const WEEKLY_REPORT_TYPES = [
   'profile_created', 'profile_published', 'profile_hidden', 'account_deleted',
   'profile_edited', 'card_suggestion', 'draft_created', 'draft_updated',
@@ -470,7 +474,7 @@ const collectFailedSearches = (searchQueries, weekStart, now) => {
     });
   });
   const list = [...failed.values()]
-    .map(entry => ({ query: entry.query, people: entry.owners.size, category: entry.category }))
+    .map(entry => ({ query: entry.query, people: entry.owners.size, owners: [...entry.owners], category: entry.category }))
     .sort((a, b) => b.people - a.people || a.query.localeCompare(b.query, 'uk'));
   const failedTotal = list.reduce((sum, entry) => sum + entry.people, 0);
   return { failed: list.slice(0, 10), answered, failedTotal };
@@ -514,6 +518,38 @@ const buildWeeklyReport = (events, now, { searchQueries = null } = {}) => {
     .slice(0, 5)
     .map(entry => `• ${escapeHtml(clip(describePerson(entry.info) || 'картка', 70))} — ❤️ ${entry.likes} · 📞 ${entry.contacts}`);
 
+  // Хто кого вподобав (23.11, на прохання власниці продукту): «Найбільше
+  // інтересу» каже лише, кого вподобали, а не хто, — а саме «агенція X
+  // вподобала донорку Y» підказує, кому з них написати. Групуємо за тим, хто
+  // ставив лайк, найактивніші першими; повторний лайк тієї самої картки
+  // (зняли й поставили знову) рахується раз.
+  const likesByActor = new Map();
+  thisWeek.filter(event => event.type === 'like' && event.card && event.actor).forEach(event => {
+    const entry = likesByActor.get(event.actor) || { info: event.actorInfo, cards: new Map() };
+    if (!entry.info && event.actorInfo) entry.info = event.actorInfo;
+    if (!entry.cards.has(event.card)) entry.cards.set(event.card, event.cardInfo);
+    likesByActor.set(event.actor, entry);
+  });
+  const likeLines = [...likesByActor.values()]
+    .sort((a, b) => b.cards.size - a.cards.size)
+    .slice(0, WEEKLY_LIKE_ACTORS_MAX)
+    .map(entry => {
+      const cards = [...entry.cards.values()];
+      const shown = cards.slice(0, WEEKLY_LIKE_CARDS_MAX).map(info => describePerson(info) || 'картка');
+      const rest = cards.length - shown.length;
+      const who = describePerson(entry.info) || 'користувач';
+      return `• ${escapeHtml(clip(`${who} → ${shown.join(', ')}${rest > 0 ? ` і ще ${rest}` : ''}`, 260))}`;
+    });
+  const hiddenLikeActors = likesByActor.size - likeLines.length;
+
+  // Хто шукав без результату — за подіями тижня: «сурогатна мама» з нулем у
+  // донорки — це межа видимості (донорка не бачить СМ), а в батьків — справді
+  // порожня стрічка. Без імені звіт цих двох випадків не розрізняв.
+  const actorInfoByUid = new Map();
+  thisWeek.forEach(event => {
+    if (event.actor && event.actorInfo && !actorInfoByUid.has(event.actor)) actorInfoByUid.set(event.actor, event.actorInfo);
+  });
+
   const searches = new Map();
   thisWeek.filter(event => event.type === 'search' && event.meta && event.meta.query).forEach(event => {
     const query = String(event.meta.query).toLowerCase();
@@ -536,6 +572,10 @@ const buildWeeklyReport = (events, now, { searchQueries = null } = {}) => {
     lines.push('', `Воронка: нових анкет ${createdCards.size} → з них опубліковано ${published} (${Math.round((published / createdCards.size) * 100)}%)`);
   }
   if (topCards.length) lines.push('', '<b>Найбільше інтересу</b>', ...topCards);
+  if (likeLines.length) {
+    lines.push('', '<b>Хто кого вподобав</b>', ...likeLines);
+    if (hiddenLikeActors > 0) lines.push(`…і ще ${hiddenLikeActors}`);
+  }
   if (topSearches.length) lines.push('', `<b>Шукали</b>: ${topSearches.join(', ')}`);
   const failedSearches = collectFailedSearches(searchQueries, weekStart, now);
   if (failedSearches.failed.length) {
@@ -543,9 +583,12 @@ const buildWeeklyReport = (events, now, { searchQueries = null } = {}) => {
       '',
       `<b>Без результату</b>: ${failedSearches.failedTotal} з ${failedSearches.answered} запитів`,
       ...failedSearches.failed.map(entry => {
-        const people = entry.people > 1 ? ` — ${entry.people} людей` : '';
         const category = entry.category ? ' (категорія)' : '';
-        return `• «${escapeHtml(clip(maskDigits(entry.query), 40))}»${category}${people}`;
+        const named = entry.owners.map(uid => describePerson(actorInfoByUid.get(uid))).filter(Boolean);
+        let people = '';
+        if (named.length && named.length === entry.people) people = ` — ${clip(named.slice(0, 3).join(', '), 120)}${named.length > 3 ? ` і ще ${named.length - 3}` : ''}`;
+        else if (entry.people > 1) people = ` — ${entry.people} людей`;
+        return `• «${escapeHtml(clip(maskDigits(entry.query), 40))}»${category}${escapeHtml(people)}`;
       }),
     );
   }

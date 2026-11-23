@@ -274,6 +274,28 @@ test('тижневий звіт — щопонеділка після 9:00 за 
   assert.equal(activity.isDigestDue('weekly', sunday - 8 * DAY, sunday), true); // пропущений понеділок
 });
 
+// 23.11, на прохання власниці продукту: у звіті — хто кого вподобав.
+test('тижневий звіт: хто кого вподобав і хто шукав без результату', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const agency = { name: 'Surrohelp', role: 'ag' };
+  const like = (actor, actorInfo, card, cardInfo, t = NOON - DAY) => ({ type: 'like', t, actor, card, actorInfo, cardInfo, meta: {} });
+  const events = [
+    like('ag1', agency, 'd1', { name: 'Марія', surname: 'К.', role: 'ed' }),
+    like('ag1', agency, 'd2', { name: 'Олена', role: 'sm' }),
+    // Повторний лайк тієї самої картки — раз.
+    like('ag1', agency, 'd1', { name: 'Марія', surname: 'К.', role: 'ed' }, NOON - DAY / 2),
+    like('ip1', { name: 'Пара з Києва', role: 'ip' }, 'd1', { name: 'Марія', surname: 'К.', role: 'ed' }),
+    // Минулий тиждень у цей блок не йде.
+    like('old', { name: 'Стара', role: 'ag' }, 'd3', { name: 'Інна', role: 'ed' }, NOON - 9 * DAY),
+    { type: 'search', t: NOON - DAY, actor: 'ed1', actorInfo: { name: 'Катя', role: 'ed' }, meta: { query: 'сурогатна мама' } },
+  ];
+  const searchQueries = { ed1: { q1: { query: 'Сурогатна мама', updatedAt: NOON - DAY, resultsCount: 0, intent: 'sm' } } };
+  const { html } = activity.buildWeeklyReport(events, NOON, { searchQueries });
+  assert.match(html, /<b>Хто кого вподобав<\/b>\n• Surrohelp \(агенція\) → Марія К\. \(донор ооцитів\), Олена \(сурогатна мати\)\n• Пара з Києва/);
+  assert.doesNotMatch(html, /Стара/);
+  assert.match(html, /«сурогатна мама» \(категорія\) — Катя \(донор ооцитів\)/);
+});
+
 test('тижневий звіт іде з потоку подій, коли ввімкнено', async () => {
   const DAY = 24 * 60 * 60 * 1000;
   const monday930 = Date.UTC(2026, 10, 16, 7, 30, 0);
@@ -379,7 +401,8 @@ test('тижневий звіт: запити без результату — з
   const summary = activity.collectFailedSearches(searchQueries, NOON - 7 * DAY, NOON);
   assert.equal(summary.answered, 5);
   assert.equal(summary.failedTotal, 4);
-  assert.deepEqual(summary.failed[0], { query: 'olga', people: 2, category: false });
+  assert.deepEqual({ ...summary.failed[0], owners: undefined }, { query: 'olga', people: 2, owners: undefined, category: false });
+  assert.equal(summary.failed[0].owners.length, 2);
 
   const { html } = activity.buildWeeklyReport([], NOON, { searchQueries });
   assert.match(html, /<b>Без результату<\/b>: 4 з 5 запитів/);
