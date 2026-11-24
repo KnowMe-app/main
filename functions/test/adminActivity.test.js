@@ -440,3 +440,66 @@ test('тижневий звіт без історії пошуку — без р
   const { html } = activity.buildWeeklyReport([], NOON);
   assert.doesNotMatch(html, /Без результату/);
 });
+
+test('нова реєстрація з телефоном, що вже є в іншій картці, — «можливий дубль» з посиланням', async () => {
+  const NEW_UID = 'newAccountUid0000000000001';
+  const OLD = 'AB0042';
+  const { deps, data, sent } = makeDeps({
+    settings: settingsWith({ profile_created: 'instant' }),
+    data: {
+      matchingCards: {
+        [NEW_UID]: { name: 'Ирина', surnameShort: 'Р.', role: 'sm' },
+        [OLD]: { name: 'Ирина', surnameShort: 'Р.', role: 'sm' },
+      },
+      // Номер в анкеті з пробілами й нулем на початку — ключ індексу нормалізований.
+      profileContacts: { [NEW_UID]: { phone: '050 123 45 67', email: 'Irina.R@gmail.com' } },
+      searchId: {
+        380501234567: { phone: [OLD, NEW_UID] },
+        'irina_dot_r_at_gmail_dot_com': { email: OLD },
+      },
+    },
+  });
+  await activity.recordAdminEvents(
+    activity.classifyCardWrite({ cardId: NEW_UID, before: null, after: { name: 'Ирина' }, actor: NEW_UID }),
+    { actor: NEW_UID, authType: 'app_user', pathActor: NEW_UID },
+    deps,
+  );
+  const [event] = Object.values(data.adminActivity.events);
+  assert.deepEqual(event.meta.duplicates, [{ id: OLD, fields: 'phone,email', label: 'Ирина Р. (сурогатна мати)' }]);
+  const { html } = sent.telegram[0];
+  assert.match(html, /Можливий дубль:/);
+  assert.match(html, /Ирина Р\. \(сурогатна мати\) — збіг: телефон, пошта/);
+  assert.match(html, /href="https:\/\/knowme\.pp\.ua\/edit\/AB0042">Дубль 1</);
+  assert.match(activity.buildInstantMessage(event).push.body, /можливий дубль/);
+  // У зведенні — одним рядком.
+  const digest = activity.buildDigestMessage([event], 'daily');
+  assert.match(digest.html, /можливий дубль: Ирина Р\. \(сурогатна мати\)/);
+});
+
+test('нова реєстрація без збігів і картка, заведена вручну, — без дубля', async () => {
+  const NEW_UID = 'newAccountUid0000000000002';
+  const { deps, data, sent } = makeDeps({
+    settings: settingsWith({ profile_created: 'instant' }),
+    data: {
+      profileContacts: { [NEW_UID]: { phone: '+380671112233' }, AB0001: { phone: '+380671112244' } },
+      searchId: { 380671112233: { phone: NEW_UID }, 380671112244: { phone: ['AB0001', 'AB0002'] } },
+    },
+  });
+  await activity.recordAdminEvents([{ type: 'profile_created', card: NEW_UID, meta: { account: true } }], { actor: NEW_UID, authType: 'app_user' }, deps);
+  await activity.recordAdminEvents([{ type: 'profile_created', card: 'AB0001', meta: { account: false } }], { actor: USER, authType: 'app_user' }, deps);
+  Object.values(data.adminActivity.events).forEach(event => assert.equal(event.meta.duplicates, undefined));
+  sent.telegram.forEach(message => assert.doesNotMatch(message.html, /дубль/i));
+});
+
+test('контакти ще не записані — читаються вдруге після паузи', async () => {
+  const NEW_UID = 'newAccountUid0000000000003';
+  const { deps, data } = makeDeps({ data: { searchId: { 380931234567: { phone: 'TG0007' } } } });
+  let slept = 0;
+  deps.sleep = async () => {
+    slept += 1;
+    setPath(data, `profileContacts/${NEW_UID}`, { phone: '0931234567' });
+  };
+  const result = await activity.findPossibleDuplicateCards(NEW_UID, deps);
+  assert.equal(slept, 1);
+  assert.deepEqual(result.duplicates.map(item => item.id), ['TG0007']);
+});
