@@ -54,6 +54,7 @@ import { NOTE_TEXT_LINE_HEIGHT, NOTE_TEXT_SIZE } from './noteTypography';
 import { useAutoResize } from '../hooks/useAutoResize';
 import { profileUiText } from 'utils/profileTexts';
 import { useAppSettings } from '../hooks/useAppSettings';
+import { useProfileProposalEditor } from '../hooks/useProfileProposalEditor';
 import { uiText } from 'utils/uiTranslations';
 import { formatDateTime } from 'utils/formatDateTime';
 import { FieldComment } from './smallCard/FieldComment';
@@ -71,13 +72,7 @@ import { PROFILE_ROLE_OPTIONS } from 'utils/profileRoleOptions';
 import { getProfileAge, getProfileLocation, getProfilePhotos, getProfileRole, getRoleCode, getRoleLabel } from './profileLayoutConfig';
 import { normalizeProfileFieldInput } from '../utils/profileNormalization';
 import { stripSectionEmoji } from '../utils/sectionTitle';
-import {
-  advanceCardFormPending,
-  buildCardFormTarget,
-  readCardFormPending,
-  rememberCardFormPending,
-  settleCardFormPending,
-} from '../utils/cardFormPendingEdits';
+import { buildCardFormTarget, readCardFormPending } from '../utils/cardFormPendingEdits';
 import {
   applyOverlayToCard,
   applyOverlaysToCard,
@@ -102,19 +97,11 @@ import {
   reserveProfileCardId,
 } from 'utils/profileMutations';
 import { profileProposalService } from 'utils/profileProposalRepository';
-import {
-  asProfileMutation,
-  createEditorSnapshot,
-  proposalEditorKey,
-  recoverEditorDraft,
-  saveEditorProposal,
-} from 'utils/profileProposalEditor';
+import { asProfileMutation, createEditorSnapshot, proposalEditorKey } from 'utils/profileProposalEditor';
 
 // Чернетку й доповнення заповнює не та людина, про яку картка, а підписи
 // «Мого профілю» звертаються до власника: «Про вас», «Як до вас
 // звертатись». На чужій картці це читалось як питання до самого редактора.
-const newEditorSessionId = () => window.crypto?.randomUUID?.() ?? `${Date.now()}:${Math.random()}`;
-
 const THIRD_PERSON_TEXT = Object.freeze({
   'Як до вас звертатись': 'Як звертатись до людини',
   '👤 Про вас': '👤 Про людину',
@@ -361,7 +348,7 @@ const NoteFieldShell = styled.div`
  * Картки ще немає, тож і підписаних відгуків під нею бути не може: відгук тут
  * — це поле анкети `publicComment`, і хрестик знімає саме його.
  */
-const PlainNoteField = ({ value, placeholder, onChange, onBlur, onClear, clearLabel }) => {
+const PlainNoteField = ({ value, placeholder, readOnly, onChange, onBlur, onClear, clearLabel }) => {
   const ref = useRef(null);
   const autoResize = useAutoResize(ref, value);
   return <NoteFieldRow>
@@ -370,13 +357,14 @@ const PlainNoteField = ({ value, placeholder, onChange, onBlur, onClear, clearLa
       rows={1}
       value={value}
       placeholder={placeholder}
-      onChange={event => {
+      readOnly={readOnly}
+      onChange={readOnly ? undefined : event => {
         onChange(event.target.value);
         autoResize(event.target);
       }}
-      onBlur={onBlur}
+      onBlur={readOnly ? undefined : onBlur}
     />
-    {value && <NoteClearButton type="button" aria-label={clearLabel} title={clearLabel} onMouseDown={event => event.preventDefault()} onClick={onClear}>×</NoteClearButton>}
+    {!readOnly && value && <NoteClearButton type="button" aria-label={clearLabel} title={clearLabel} onMouseDown={event => event.preventDefault()} onClick={onClear}>×</NoteClearButton>}
   </NoteFieldRow>;
 };
 const ReviewCard = styled(Card)`background:color-mix(in srgb, var(--km-accent-mid) 8%, var(--km-card));`;
@@ -451,6 +439,29 @@ const AutosaveLine = styled.p`
   font-size: 12px;
   color: ${({ $error }) => ($error ? 'var(--km-danger, #b42318)' : 'var(--km-muted, #6b655e)')};
 `;
+
+const describeAutosave = (autosave, { deviceOnline, showingExistingCard, language }) => {
+  switch (autosave.state) {
+  case 'conflict':
+    return uiText('Профіль уже змінено. Правки збережено на цьому пристрої.', language);
+  case 'saving':
+    return uiText(deviceOnline ? 'Зберігаємо…' : 'Немає звʼязку — збережемо, щойно він зʼявиться', language);
+  case 'modified':
+    return uiText('Є незбережені правки. Вийдіть із поля, щоб зберегти.', language);
+  case 'error':
+    return uiText('Останню зміну не збережено — див. повідомлення вище', language);
+  case 'saved': {
+    const date = new Date(autosave.at);
+    const time = [date.getHours(), date.getMinutes()].map(part => String(part).padStart(2, '0')).join(':');
+    return uiText('Збережено о {time}', language, { time });
+  }
+  default:
+    return uiText(showingExistingCard
+      ? 'Дані анкети й ваші правки. Зміни анкети потребують розгляду.'
+      : 'Зберігається саме, щойно ви виходите з поля', language);
+  }
+};
+
 const DraftPreview = styled(MatchingThemeScope)`
   max-width:460px; margin:0 auto 16px; border-radius:18px;
 `;
@@ -480,11 +491,11 @@ const PendingFieldEdit = ({ row, label, authorName, disabled, onSave, onDelete, 
         <EditValueInput
           value={value}
           $kind={row.kind}
-          readOnly={isRemoval}
+          readOnly={disabled || isRemoval}
           aria-label={uiText('{label}: запропоноване значення', language, { label })}
-          onChange={event => setValue(event.target.value)}
+          onChange={disabled || isRemoval ? undefined : event => setValue(event.target.value)}
           onKeyDown={event => {
-            if (event.key !== 'Enter') return;
+            if (disabled || event.key !== 'Enter') return;
             event.preventDefault();
             onSave(value);
           }}
@@ -530,10 +541,11 @@ export const HistoricalFieldEdit = ({ row, label, authorName, disabled, onRestor
         <EditValueInput
           value={value}
           $kind={currentKind}
+          readOnly={disabled}
           aria-label={uiText('{label}: значення з історії', language, { label })}
-          onChange={event => setValue(event.target.value)}
+          onChange={disabled ? undefined : event => setValue(event.target.value)}
           onKeyDown={event => {
-            if (event.key !== 'Enter') return;
+            if (disabled || event.key !== 'Enter') return;
             event.preventDefault();
             onRestore(value);
           }}
@@ -928,15 +940,9 @@ export const ProfileCreationWorkspace = () => {
   const [showDraftHistory, setShowDraftHistory] = useState(false);
   const [overlayTarget, setOverlayTarget] = useState(null);
   const [saving, setSaving] = useState(false);
-  // Стан автозбереження для рядка під шапкою. Форма зберігає кожне поле на
-  // blur, але мовчки: кнопки «Зберегти» немає, і людина, яка набрала анкету,
-  // не знала, чи щось лягло в базу.
-  const [autosave, setAutosave] = useState({ state: 'idle', at: 0 });
-  // Ціль, яку форма щойно відкрила (`buildCardFormTarget`): ефект відновлення
-  // незбереженого чекає на неї, а не на будь-яке оновлення форми.
-  const [formLoadedTarget, setFormLoadedTarget] = useState('');
   const deviceOnline = useSyncExternalStore(subscribeOnlineStatus, readOnlineStatus, () => true);
   const [overlayLoading, setOverlayLoading] = useState(false);
+  const [editorUnavailable, setEditorUnavailable] = useState(false);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchExecuted, setSearchExecuted] = useState(false);
@@ -965,15 +971,31 @@ export const ProfileCreationWorkspace = () => {
   // це не каже: «читаємо», «не змогли прочитати» й «прочитали, відгуків
   // немає» виглядали б однаково — порожньою доріжкою під полем запису.
   const [publicCommentsState, setPublicCommentsState] = useState({ loading: false, loaded: false });
-  const proposalEditorRef = useRef(null);
-  useEffect(() => () => { proposalEditorRef.current = null; }, []);
   const draftRef = useRef(draft);
+  const activeMutationRef = useRef(activeMutation);
   // The draft as its author stored it, before anybody's overlay is replayed
   // onto it. Own/admin saves are written against this, never against the
   // stacked view, so another editor's pending value is never silently
   // promoted into the draft itself.
   const draftBaseRef = useRef(null);
   const accessRef = useRef(null);
+  const {
+    editorRef: proposalEditorRef, beginEditor, endEditor, markLoaded, autosave, persistDraft, rememberTyping,
+  } = useProfileProposalEditor({
+    uid,
+    onRestore(restored) {
+      draftRef.current = restored;
+      setDraft(restored);
+    },
+    onCreateSaved(saved) {
+      const mutation = asProfileMutation(saved);
+      activeMutationRef.current = mutation;
+      draftBaseRef.current = saved.data;
+      setActiveMutation(mutation);
+    },
+    onSaved: saved => reportDuplicateConflicts(saved?.duplicateConflicts),
+    onError: error => reportSaveError(error, describeSaveError(error)),
+  });
 
   const sortByRecency = items => (
     [...items].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
@@ -1072,7 +1094,7 @@ export const ProfileCreationWorkspace = () => {
       console.warn('[ProfileCreationWorkspace] draft history unavailable', error);
       setDraftHistory([]);
     }
-  }, []);
+  }, [proposalEditorRef]);
 
   const openMutation = useCallback(async mutation => {
     if (!mutation?.cardId) return;
@@ -1080,16 +1102,15 @@ export const ProfileCreationWorkspace = () => {
     const editorUid = uidRef.current;
     const shared = isSharedDraft(mutation, editorUid, accessRef.current?.isAdmin);
     const locator = { operation: shared ? 'update' : 'create', createdBy: shared ? editorUid : mutation.createdBy, cardId: mutation.cardId };
-    const editor = {
+    const editor = beginEditor({
       uid: editorUid,
-      sessionId: newEditorSessionId(),
       locator,
       target: buildCardFormTarget({ draftCardId: mutation.cardId }),
       expected: shared || mutation.localOnly ? null : createEditorSnapshot(mutation),
       targetCreateProposalId: shared ? createEditorSnapshot(mutation)?.id : null,
-    };
-    proposalEditorRef.current = editor;
-    setAutosave({ state: 'idle', at: 0 });
+      readOnly: isReadOnlyAdminUid(editorUid) && mutation.createdBy !== editorUid,
+    });
+    setEditorUnavailable(false);
     setOverlayTarget(null);
     setDraft(null);
     setOverlayLoading(true);
@@ -1106,9 +1127,9 @@ export const ProfileCreationWorkspace = () => {
     await refreshDraftOverlays();
     if (proposalEditorRef.current === editor) {
       setOverlayLoading(false);
-      setFormLoadedTarget(editor.target);
+      markLoaded(editor);
     }
-  }, [refreshDraftOverlays, setSearchParams]);
+  }, [beginEditor, markLoaded, proposalEditorRef, refreshDraftOverlays, setSearchParams]);
 
   useEffect(() => onAuthStateChanged(auth, async user => {
     if (!user) {
@@ -1234,11 +1255,11 @@ export const ProfileCreationWorkspace = () => {
     rollBackPublicCommentOnRejection(delivered, previousComment, profileId);
   }, [publicComments, rollBackPublicCommentOnRejection]);
 
+  const requestedDraftId = searchParams.get('overlay') === '1' ? '' : searchParams.get('cardId');
   useEffect(() => {
-    const requestedCardId = searchParams.get('cardId');
-    if (!requestedCardId || !uid) return undefined;
+    const requestedCardId = requestedDraftId;
+    if (!requestedCardId || !uid || activeMutation?.cardId === requestedCardId) return undefined;
     const mutation = [...mutations, ...sharedMutations].find(item => item.cardId === requestedCardId);
-    if (activeMutation?.cardId === requestedCardId || searchParams.get('overlay') === '1') return undefined;
     if (mutation) {
       openMutation(mutation);
       return undefined;
@@ -1253,11 +1274,16 @@ export const ProfileCreationWorkspace = () => {
     // Знайдена чужа чернетка має точкову адресу. Загальний перелік для
     // такого дописувача закритий, тож відкриваємо саме дозволений запис.
     Promise.resolve().then(() => fetchProfileDraftMutationById(requestedCardId)).then(found => {
-      if (active && found && uidRef.current === uid) return openMutation(found);
+      if (!active || uidRef.current !== uid) return undefined;
+      if (found) return openMutation(found);
+      setEditorUnavailable(true);
       return undefined;
-    }).catch(error => console.warn('[ProfileCreationWorkspace] draft link unavailable', error));
+    }).catch(error => {
+      if (active && uidRef.current === uid) setEditorUnavailable(true);
+      console.warn('[ProfileCreationWorkspace] draft link unavailable', error);
+    });
     return () => { active = false; };
-  }, [activeMutation?.cardId, mutations, sharedMutations, searchParams, openMutation, uid]);
+  }, [activeMutation?.cardId, mutations, sharedMutations, requestedDraftId, openMutation, uid]);
 
   const startNew = (queryText, { allowContactPrefill = true } = {}) => {
     const cardId = reserveProfileCardId();
@@ -1267,12 +1293,13 @@ export const ProfileCreationWorkspace = () => {
     // completely: it never reaches profileMutations, so it cannot even show
     // up in "Ваші картки" or a later search.
     const mutation = { cardId, revision: 0, status: 'pendingReview', createdBy: uid };
-    proposalEditorRef.current = {
-      uid, sessionId: newEditorSessionId(),
+    beginEditor({
+      uid,
       locator: { operation: 'create', createdBy: uid, cardId },
       target: buildCardFormTarget({ draftCardId: cardId }),
       expected: null, visible: null,
-    };
+    });
+    setEditorUnavailable(false);
     activeMutationRef.current = mutation;
     setActiveMutation(mutation);
     setOverlayTarget(null);
@@ -1425,7 +1452,8 @@ export const ProfileCreationWorkspace = () => {
   );
 
   const closeEditor = () => {
-    proposalEditorRef.current = null;
+    endEditor();
+    setEditorUnavailable(false);
     // `replace` тут навмисний: запис історії, яким відкрилась форма, уже знято
     // (див. ефект нижче), і цей перехід стає на його місце замість того, щоб
     // дописати ще один крок «назад» у нікуди.
@@ -1483,7 +1511,7 @@ export const ProfileCreationWorkspace = () => {
 
   // Відкрита форма кладе в історію рівно один запис; апаратна кнопка «назад»
   // (і «назад» браузера) його знімає — саме це й закриває форму.
-  const formOpen = Boolean(draft) || overlayLoading;
+  const formOpen = Boolean(draft) || overlayLoading || editorUnavailable;
   useEffect(() => {
     if (!formOpen) return undefined;
     window.history.pushState({ profileCreationForm: true }, '');
@@ -1528,26 +1556,33 @@ export const ProfileCreationWorkspace = () => {
     if (!profile?.userId) return;
 
     const locator = { operation: 'update', cardId: profile.userId, createdBy: uid };
-    const editor = {
-      uid, sessionId: newEditorSessionId(), locator, additive: true, expected: null,
+    const editor = beginEditor({
+      uid, locator, additive: true, expected: null,
       target: buildCardFormTarget({ overlayCardId: profile.userId }),
-    };
-    proposalEditorRef.current = editor;
-    setAutosave({ state: 'idle', at: 0 });
+    });
+    setEditorUnavailable(false);
+    setOverlayTarget(null);
     activeMutationRef.current = null;
     setActiveMutation(null);
     setDraft(null);
     setOverlayLoading(true);
     setSearchParams({ cardId: profile.userId, overlay: '1' }, { replace: true });
-    let canonical = { userId: profile.userId };
+    let canonical;
     try {
-      const full = await readProfileFromNodes(profile.userId, { includeWorkflow: false });
-      const fresh = full || await fetchProfileDraftById(profile.userId);
-      if (fresh) canonical = fresh;
+      const full = await readProfileFromNodes(profile.userId, {
+        includeWorkflow: false, requireLikedAudienceAccess: true,
+      });
+      canonical = full || await fetchProfileDraftById(profile.userId);
     } catch (error) {
       console.warn('[ProfileCreationWorkspace] canonical card unavailable', error);
     }
     if (proposalEditorRef.current !== editor || uidRef.current !== uid) return;
+    if (!canonical) {
+      endEditor();
+      setOverlayLoading(false);
+      setEditorUnavailable(true);
+      return;
+    }
     editor.base = buildOverlayPrefill(canonical, profile.userId, {
       keepAdminTelegram: Boolean(accessRef.current?.isAdmin),
     });
@@ -1570,7 +1605,7 @@ export const ProfileCreationWorkspace = () => {
     resetDraftOverlayState(null);
     setDraft(nextDraft);
     setOverlayLoading(false);
-    setFormLoadedTarget(editor.target);
+    markLoaded(editor);
   };
 
   /**
@@ -1619,7 +1654,6 @@ export const ProfileCreationWorkspace = () => {
   // Kept in sync via effects below so the async save path always reads the
   // latest values instead of a stale closure captured at render time.
   useEffect(() => { draftRef.current = draft; }, [draft]);
-  const activeMutationRef = useRef(activeMutation);
   useEffect(() => { activeMutationRef.current = activeMutation; }, [activeMutation]);
 
   // Етапи й цілі збереження — теж напис на екрані, тож ідуть мовою інтерфейсу.
@@ -1704,94 +1738,9 @@ export const ProfileCreationWorkspace = () => {
     );
   };
 
-  const reportDuplicateConflictsRef = useRef(reportDuplicateConflicts);
-  reportDuplicateConflictsRef.current = reportDuplicateConflicts;
-
   const describeSaveError = error => uiText((error?.code || error?.message) === 'REVISION_CONFLICT'
     ? 'Профіль уже змінено. Правки збережено на цьому пристрої.'
     : error?.message === 'DUPLICATE_PROFILE' ? 'Профіль з такими контактами вже існує або очікує перевірки.' : 'Не вдалося зберегти профіль', language);
-
-  const reportSaveErrorRef = useRef(reportSaveError);
-  reportSaveErrorRef.current = reportSaveError;
-  const describeSaveErrorRef = useRef(describeSaveError);
-  describeSaveErrorRef.current = describeSaveError;
-
-  const persistDraft = useCallback(nextDraft => {
-    const editor = proposalEditorRef.current;
-    if (!editor) return Promise.reject(new Error('INVALID_DRAFT'));
-    if (editor.recoveryConflict) return Promise.reject(editor.failure);
-    const pendingAt = rememberCardFormPending(editor.uid, editor.target, nextDraft, {
-      expected: editor.expected, targetKey: proposalEditorKey(editor.locator), basis: editor.visible ?? null, sessionId: editor.sessionId,
-    });
-    editor.latestAt = pendingAt;
-    if (editor.failure) {
-      setAutosave({ state: (editor.failure.code || editor.failure.message) === 'REVISION_CONFLICT' ? 'conflict' : 'error', at: 0 });
-      return Promise.reject(editor.failure);
-    }
-    const isActive = () => proposalEditorRef.current === editor && uidRef.current === editor.uid;
-    const isLatest = () => isActive() && editor.latestAt === pendingAt;
-    setAutosave(previous => ({ ...previous, state: 'saving' }));
-
-    const run = async () => {
-      if (editor.failure) throw editor.failure;
-      if (auth.currentUser?.uid !== editor.uid) throw new Error('PERMISSION_DENIED');
-      const previous = editor.expected;
-      const saved = await saveEditorProposal(profileProposalService, editor, nextDraft);
-      editor.expected = saved;
-      editor.visible = nextDraft;
-      if (saved?.operation === 'create') {
-        editor.base = saved.data;
-        if (isActive()) {
-          const mutation = asProfileMutation(saved);
-          activeMutationRef.current = mutation;
-          draftBaseRef.current = saved.data;
-          setActiveMutation(mutation);
-        }
-      }
-      settleCardFormPending(editor.uid, editor.target, pendingAt, { sessionId: editor.sessionId });
-      advanceCardFormPending(editor.uid, editor.target, previous, saved, pendingAt, {
-        latestAt: editor.latestAt, basis: nextDraft, sessionId: editor.sessionId,
-      });
-      if (isLatest()) {
-        reportDuplicateConflictsRef.current(saved?.duplicateConflicts);
-        setAutosave({ state: 'saved', at: Date.now() });
-      }
-      return saved;
-    };
-
-    const queued = (editor.tail || Promise.resolve()).then(run).catch(error => {
-      editor.failure = error;
-      if (isLatest()) setAutosave({ state: (error?.code || error?.message) === 'REVISION_CONFLICT' ? 'conflict' : 'error', at: 0 });
-      throw error;
-    });
-    editor.lastWrite = queued;
-    editor.tail = queued.catch(() => {});
-    return queued;
-  }, []);
-
-  // Відновлюємо лише правку до тієї самої версії й тих самих початкових полів.
-  useEffect(() => {
-    const editor = proposalEditorRef.current;
-    if (!formLoadedTarget || !editor || editor.target !== formLoadedTarget || !uid) return;
-    setFormLoadedTarget('');
-    const pending = readCardFormPending(uid, editor.target);
-    if (!pending) return;
-    const restored = !editor.failure && recoverEditorDraft(editor, pending);
-    if (!restored) {
-      editor.recoveryConflict = true;
-      editor.failure ||= new Error('REVISION_CONFLICT');
-      setAutosave({ state: 'conflict', at: 0 });
-      return;
-    }
-    draftRef.current = restored;
-    setDraft(restored);
-    if (pending.needsBlur) {
-      editor.latestAt = pending.at;
-      setAutosave({ state: 'idle', at: 0 });
-      return;
-    }
-    persistDraft(restored).catch(error => reportSaveErrorRef.current(error, describeSaveErrorRef.current(error)));
-  }, [formLoadedTarget, persistDraft, uid]);
 
   // Fires on every field blur/chip click - the primary save path now, so a
   // draft is never lost by someone filling the form and never pressing the
@@ -1808,14 +1757,7 @@ export const ProfileCreationWorkspace = () => {
     const values = [...toFieldValues(draftRef.current?.[fieldName])];
     values[index] = value;
     const nextDraft = { ...(draftRef.current || {}), [fieldName]: values };
-    const editor = proposalEditorRef.current;
-    if (editor && !editor.recoveryConflict) {
-      editor.latestAt = rememberCardFormPending(editor.uid, editor.target, nextDraft, {
-        expected: editor.expected, targetKey: proposalEditorKey(editor.locator), basis: editor.visible ?? null,
-        sessionId: editor.sessionId, needsBlur: true,
-      });
-      if (!editor.failure) setAutosave({ state: 'idle', at: 0 });
-    }
+    rememberTyping(nextDraft);
     draftRef.current = nextDraft;
     setDraft(nextDraft);
   };
@@ -1966,9 +1908,8 @@ export const ProfileCreationWorkspace = () => {
     uiText('Не вдалося видалити правку', language),
   );
 
-  // "Зберегти чернетку" is the one action that turns the accepted base draft
-  // into a real card in the profile nodes. Pending editor overlays stay
-  // pending: publishing must neither apply nor remove them.
+  // Публікація переносить основну чернетку у вузли анкети. Кожне
+  // нерозглянуте доповнення лишається в черзі.
   const saveDraftAsCard = async () => {
     setSaving(true);
     let publishing = false;
@@ -2234,6 +2175,7 @@ export const ProfileCreationWorkspace = () => {
               key={`${fieldName}-${optionValue}`}
               type="button"
               $selected={selected}
+              disabled={inspectorOnForeignDraft}
               onClick={() => commitFieldValue(fieldName, selected ? '' : optionValue)}
             >
               {field.optionLabel ? field.optionLabel(option, language) : getOptionLabel(option, language)}
@@ -2247,12 +2189,13 @@ export const ProfileCreationWorkspace = () => {
               <FieldTextArea
                 value={item}
                 placeholder={placeholder ?? examplePlaceholder}
-                onChange={e => updateDraftFieldItem(fieldName, index, e.target.value)}
-                onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
+                readOnly={inspectorOnForeignDraft}
+                onChange={inspectorOnForeignDraft ? undefined : e => updateDraftFieldItem(fieldName, index, e.target.value)}
+                onBlur={inspectorOnForeignDraft ? undefined : () => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
               />
-              {offersClear(item) && <InlineClearButton type="button" aria-label={uiText('Очистити {label}', language, { label })} title={uiText('Очистити рядок', language)} onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>}
+              {!inspectorOnForeignDraft && offersClear(item) && <InlineClearButton type="button" aria-label={uiText('Очистити {label}', language, { label })} title={uiText('Очистити рядок', language)} onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>}
             </InputShell>
-            {canAddAnotherValue && offersAnotherValue(index, item) && <AddValueButton type="button" aria-label={uiText('Додати ще одне значення: {label}', language, { label })} title={uiText('Додати ще один рядок', language)} onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
+            {!inspectorOnForeignDraft && canAddAnotherValue && offersAnotherValue(index, item) && <AddValueButton type="button" aria-label={uiText('Додати ще одне значення: {label}', language, { label })} title={uiText('Додати ще один рядок', language)} onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
           </FieldControl>)}
         </FieldControls>
       ) : (
@@ -2265,16 +2208,17 @@ export const ProfileCreationWorkspace = () => {
                 value={isDateField ? formatDateToDisplay(item) : item}
                 inputMode={isDateField ? 'numeric' : undefined}
                 placeholder={placeholder ?? (isDateField ? uiText('дд.мм.рррр', language) : examplePlaceholder)}
-                onChange={e => updateDraftFieldItem(
+                readOnly={inspectorOnForeignDraft}
+                onChange={inspectorOnForeignDraft ? undefined : e => updateDraftFieldItem(
                   fieldName,
                   index,
                   isDateField ? formatDate(e.target.value, true) : e.target.value,
                 )}
-                onBlur={() => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
+                onBlur={inspectorOnForeignDraft ? undefined : () => commitDraftFieldItems(fieldName, toFieldValues(draftRef.current?.[fieldName]))}
               />
-              {offersClear(item) && <InlineClearButton type="button" aria-label={uiText('Очистити {label}', language, { label })} title={uiText('Очистити рядок', language)} onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>}
+              {!inspectorOnForeignDraft && offersClear(item) && <InlineClearButton type="button" aria-label={uiText('Очистити {label}', language, { label })} title={uiText('Очистити рядок', language)} onMouseDown={e => e.preventDefault()} onClick={() => clearDraftFieldItem(fieldName, index)}><FiX size={16} aria-hidden="true" /></InlineClearButton>}
             </InputShell>
-            {canAddAnotherValue && offersAnotherValue(index, item) && <AddValueButton type="button" aria-label={uiText('Додати ще одне значення: {label}', language, { label })} title={uiText('Додати ще один рядок', language)} onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
+            {!inspectorOnForeignDraft && canAddAnotherValue && offersAnotherValue(index, item) && <AddValueButton type="button" aria-label={uiText('Додати ще одне значення: {label}', language, { label })} title={uiText('Додати ще один рядок', language)} onClick={() => appendDraftFieldItem(fieldName)}><FiPlus aria-hidden="true" /></AddValueButton>}
           </FieldControl>)}
         </FieldControls>
       )}
@@ -2312,9 +2256,8 @@ export const ProfileCreationWorkspace = () => {
   //
   // Стрілка веде туди ж, куди апаратна кнопка телефона: у формі — назад до
   // того, з чого її відкрили, у списку — на попередній екран, коли він є.
-  const editorOpen = Boolean(draft || overlayLoading);
   usePrimaryNavigationSlot({
-    onBack: editorOpen
+    onBack: formOpen
       ? requestCloseEditor
       : (canGoBackInHistory() ? () => goBackOrTo(navigate, MATCHING_PATH) : undefined),
     workspaceLabel: overlayTarget ? 'overlay' : (draft ? 'draft' : ''),
@@ -2351,18 +2294,11 @@ export const ProfileCreationWorkspace = () => {
   // рішення про порожнє місце («Новий профіль» з одним контактом).
   const draftHasName = Boolean(String(getCurrentValue(draft?.name) ?? '').trim());
   const canReactToDraft = !access.isAdmin && !overlayTarget && !editingSharedDraft && Boolean(activeMutation?.updatedAt) && draftHasName;
-  const autosaveTime = autosave.at
-    ? `${String(new Date(autosave.at).getHours()).padStart(2, '0')}:${String(new Date(autosave.at).getMinutes()).padStart(2, '0')}`
-    : '';
-  const autosaveText = autosave.state === 'conflict'
-    ? uiText('Профіль уже змінено. Правки збережено на цьому пристрої.', language)
-    : autosave.state === 'saving'
-    ? uiText(deviceOnline ? 'Зберігаємо…' : 'Немає звʼязку — збережемо, щойно він зʼявиться', language)
-    : autosave.state === 'error'
-      ? uiText('Останню зміну не збережено — див. повідомлення вище', language)
-      : autosave.state === 'saved'
-        ? uiText('Збережено о {time}', language, { time: autosaveTime })
-        : uiText('Зберігається саме, щойно ви виходите з поля', language);
+  const contributionToDraft = editingSharedDraft || overlayTarget?.card?.__profileMutationOperation === 'create';
+  const showingExistingCard = Boolean(overlayTarget) && !contributionToDraft;
+  const proposalKind = contributionToDraft ? 'Доповнення до чернетки' : showingExistingCard ? 'Зміни до анкети' : 'Нова анкета';
+  const awaitingPublication = !contributionToDraft && !showingExistingCard && activeMutation?.status === 'pendingReview';
+  const autosaveText = inspectorOnForeignDraft ? '' : describeAutosave(autosave, { deviceOnline, showingExistingCard, language });
   const draftReactionId = activeMutation?.cardId;
   const draftDisliked = Boolean(draftReactionId && dislikeUsers[draftReactionId]);
   const draftLiked = Boolean(draftReactionId && favoriteUsers[draftReactionId]);
@@ -2401,20 +2337,12 @@ export const ProfileCreationWorkspace = () => {
           secondaryAction={draftSecondaryAction}
         />
       </DraftPreview>
-      <AutosaveLine data-testid="draft-autosave" aria-live="polite" $error={autosave.state === 'error' || autosave.state === 'conflict'}>{autosaveText}</AutosaveLine>
+      <AutosaveLine data-testid="draft-autosave" aria-live="polite" $error={autosave.state === 'error' || autosave.state === 'conflict'}>
+        <strong data-testid="proposal-editor-kind">{uiText(proposalKind, language)}</strong>
+        {awaitingPublication && ` · ${uiText('Очікує публікації', language)}`}
+        {autosaveText && ` · ${autosaveText}`}
+      </AutosaveLine>
       {hasDraftHeaderExtras && <DraftHeaderCard>
-        {/* Стан чернетки — це те, що з нею буде далі, і сказати його є кому лише
-            там, де воно щось означає: у власній чернетці й у черзі адміна.
-            Над доповненням знайденої картки стояв підпис «Власні дані», який не
-            називав ані людини, ані стану, — і разом з памʼяткою про те, як
-            влаштований оверлей, з'їдав увесь перший екран форми. */}
-        {/* «Очікує підтвердження» звідси пішло: воно обіцяло гейт, якого немає.
-            Заведена картка вже лежить у пошуку — її знаходять, читають і
-            пишуть під нею публічні відгуки, — тож чіп над нею казав авторові,
-            що його робота кудись не доїхала, і тим єдиним, що стояло першим
-            рядком чернетки, був цей неправдивий стан. Лишились ті два підписи,
-            які справді щось міняють для того, хто дивиться: спільна чернетка
-            (правки бачить наступний редактор) і приватна картка. */}
         {!overlayTarget && (editingSharedDraft || activeMutation.status === 'private'
           || (reviewingAsAdmin && pendingEditsCount > 0)) && <DraftBadges>
           {editingSharedDraft && <Status $variant="overlay">{uiText('Спільна чернетка', language)}</Status>}
@@ -2435,9 +2363,7 @@ export const ProfileCreationWorkspace = () => {
           </TechnicalMeta>}
         </>}
         {editingSharedDraft && <Meta>{uiText(
-          'Ви бачите останні дані цієї чернетки — правки всіх редакторів накладені одна на одну. '
-          + 'Ваші зміни зберігаються окремо, у вашому оверлеї, і стають видимими наступному редактору. '
-          + 'Рішення про те, які правки залишити, ухвалює адміністратор.',
+          'Ваші правки зберігаються окремо. Адміністратор вирішує, які з них додати до чернетки.',
           language
         )}</Meta>}
       </DraftHeaderCard>}
@@ -2545,6 +2471,7 @@ export const ProfileCreationWorkspace = () => {
                 <PlainNoteField
                   value={String(publicValues[lastIndex] ?? '')}
                   placeholder={profileUiText('publicCommentPlaceholderPlain', language)}
+                  readOnly={inspectorOnForeignDraft}
                   onChange={value => updateDraftFieldItem('publicComment', lastIndex, value)}
                   onBlur={() => commitDraftFieldItems('publicComment', toFieldValues(draftRef.current?.publicComment))}
                   onClear={() => clearDraftFieldItem('publicComment', lastIndex)}
@@ -2567,7 +2494,7 @@ export const ProfileCreationWorkspace = () => {
                 ClearButton={NoteClearButton}
                 userData={{ ...draft, userId: overlayTarget ? overlayTarget.userId : (draft.userId || activeMutation.cardId) }}
                 placeholder={profileUiText('personalNotePlaceholder', language)}
-                onLegacyCommentMigrated={() => commitFieldValue('myComment', '')}
+                onLegacyCommentMigrated={inspectorOnForeignDraft ? undefined : () => commitFieldValue('myComment', '')}
               />
             </NoteFieldShell>
           </NoteLane>
@@ -2580,7 +2507,7 @@ export const ProfileCreationWorkspace = () => {
       {/* «Очистити все» — останнім у формі й лише над власною чернеткою (чи
           над будь-якою — для адміна). Над доповненням знайденої картки його
           немає: там «порожньо» означало б запропонувати стерти чужу анкету. */}
-      {!overlayTarget && !editingSharedDraft && hasFilledProfileDraftData(draft) && <Card>
+      {!overlayTarget && !editingSharedDraft && !inspectorOnForeignDraft && hasFilledProfileDraftData(draft) && <Card>
         <DeleteDraftButton
           type="button"
           data-testid="clear-draft-button"
@@ -2603,7 +2530,7 @@ export const ProfileCreationWorkspace = () => {
       {!overlayTarget && access.isAdmin && activeMutation.revision > 0 && <Card>
         <Actions>
           <SaveButton disabled={saving || deletingDraft || inspectorReview} onClick={saveDraftAsCard}>
-            {uiText(saving ? 'Збереження…' : 'Зберегти чернетку', language)}
+            {uiText(saving ? 'Публікуємо…' : 'Опублікувати анкету', language)}
           </SaveButton>
           {/* Друга відповідь черги: цій чернетці жити не треба. Питання
               підтвердження стоїть окремою модалкою — дія незворотна й
@@ -2645,7 +2572,8 @@ export const ProfileCreationWorkspace = () => {
           </>
         )}
       />}
-    </> : overlayLoading ? <Card><Meta>{uiText('Відкриваємо картку…', language)}</Meta></Card> : <>
+    </> : editorUnavailable ? <Card><Meta role="status">{uiText('Картка недоступна.', language)}</Meta></Card>
+    : overlayLoading ? <Card><Meta>{uiText('Відкриваємо картку…', language)}</Meta></Card> : <>
       {!access.isAdmin && <>
         {/* Екран питає одне — чи є вже така людина, — і має для цього один
             рядок і один рядок пояснення. Розкривний перелік пошукових ключів,

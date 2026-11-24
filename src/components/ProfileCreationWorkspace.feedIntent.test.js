@@ -22,6 +22,7 @@ import {
   reserveProfileCardId,
 } from 'utils/profileMutations';
 import { getOverlayHistoryForCard, getOverlaysForCard } from 'utils/multiAccountEdits';
+import { buildCardFormTarget, readCardFormPending } from 'utils/cardFormPendingEdits';
 import { applyUkrainianInterface } from '../testUtils/interfaceLanguage';
 import { renderWithNavigationSlot } from '../testUtils/renderWithNavigationSlot';
 
@@ -167,6 +168,7 @@ it('відкриває знайдену чужу чернетку за точк�
   renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
   const surname = await screen.findByDisplayValue('Бугаренко');
+  expect(screen.getByTestId('proposal-editor-kind')).toHaveTextContent('Доповнення до чернетки');
   expect(fetchProfileDraftMutationById).toHaveBeenCalledWith('card-9');
   fireEvent.change(surname, { target: { value: 'Оновлено' } });
   fireEvent.blur(surname);
@@ -175,6 +177,17 @@ it('відкриває знайдену чужу чернетку за точк�
     operation: 'update', targetCardId: 'card-9', createdBy: 'editor-1',
     targetCreateProposalId: 'legacy:create:another-author:card-9',
   })));
+});
+
+it('не відкриває редактор за посиланням на недоступну чернетку', async () => {
+  mockSearchParams = 'cardId=card-9';
+  renderWithNavigationSlot(<ProfileCreationWorkspace />);
+
+  expect(await screen.findByText('Картка недоступна.')).toBeInTheDocument();
+  expect(fetchProfileDraftMutationById).toHaveBeenCalledWith('card-9');
+  expect(screen.queryByTestId('draft-card-preview')).not.toBeInTheDocument();
+  expect(profileProposalService.getDraft).not.toHaveBeenCalled();
+  expect(profileProposalService.createDraft).not.toHaveBeenCalled();
 });
 
 describe('доповнення знайденої картки зі стрічки', () => {
@@ -189,7 +202,9 @@ describe('доповнення знайденої картки зі стрічк
     expect(await screen.findByDisplayValue('380930001122')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('380501112233')).not.toBeInTheDocument();
     expect(screen.getByDisplayValue('Бугаренко')).toBeInTheDocument();
-    expect(readProfileFromNodes).toHaveBeenCalledWith('card-9', { includeWorkflow: false });
+    expect(screen.getByTestId('proposal-editor-kind')).toHaveTextContent('Зміни до анкети');
+    expect(screen.getByTestId('draft-autosave')).toHaveTextContent('Зміни анкети потребують розгляду.');
+    expect(readProfileFromNodes).toHaveBeenCalledWith('card-9', { includeWorkflow: false, requireLikedAudienceAccess: true });
   });
 
   it('називає людину іменем, а не ідентифікатором картки й не словом «оверлей»', async () => {
@@ -248,7 +263,9 @@ describe('доповнення знайденої картки зі стрічк
     const existing = await screen.findByDisplayValue('380930001122');
 
     fireEvent.blur(existing);
-    await waitFor(() => expect(screen.getByTestId('draft-autosave')).toHaveTextContent('Збережено'));
+    const target = buildCardFormTarget({ overlayCardId: 'card-9' });
+    await waitFor(() => expect(readCardFormPending('editor-1', target)).toBeNull());
+    expect(screen.getByTestId('draft-autosave')).not.toHaveTextContent('Збережено');
     expect(profileProposalService.createDraft).not.toHaveBeenCalled();
 
     fireEvent.change(existing, { target: { value: '380670009988' } });
@@ -287,7 +304,7 @@ describe('доповнення знайденої картки зі стрічк
     renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     expect(await screen.findByDisplayValue('Бугаренко')).toBeInTheDocument();
-    expect(readProfileFromNodes).toHaveBeenCalledWith('card-9', { includeWorkflow: false });
+    expect(readProfileFromNodes).toHaveBeenCalledWith('card-9', { includeWorkflow: false, requireLikedAudienceAccess: true });
   });
 
   // Форму відкривають із рядка видачі — і повернення мусить вести назад до тих
@@ -356,11 +373,19 @@ describe('доповнення знайденої картки зі стрічк
     expect(screen.getByText(/Київ/)).toBeInTheDocument();
   });
 
-  it('відкриває форму навіть тоді, коли картку прочитати не вдалося', async () => {
-    readProfileFromNodes.mockRejectedValue(new Error('PERMISSION_DENIED'));
+  it.each(['відсутня', 'закрита'])('показує повідомлення, якщо картка %s', async reason => {
+    mockLocationState = {};
+    mockSearchParams = 'cardId=card-9&overlay=1';
+    if (reason === 'закрита') readProfileFromNodes.mockRejectedValue(new Error('PERMISSION_DENIED'));
+    else readProfileFromNodes.mockResolvedValue(null);
     renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
-    expect(await screen.findByText('Картка без імені')).toBeInTheDocument();
+    expect(await screen.findByText('Картка недоступна.')).toBeInTheDocument();
+    expect(screen.queryByTestId('draft-card-preview')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('draft-autosave')).not.toBeInTheDocument();
+    expect(profileProposalService.getDraft).not.toHaveBeenCalled();
+    expect(profileProposalService.createDraft).not.toHaveBeenCalled();
+    expect(profileProposalService.saveDraft).not.toHaveBeenCalled();
   });
 });
 
@@ -380,6 +405,8 @@ describe('створення картки з набраного у стрічц�
     renderWithNavigationSlot(<ProfileCreationWorkspace />);
 
     expect(await screen.findByDisplayValue('Бугаренко')).toBeInTheDocument();
+    expect(screen.getByTestId('proposal-editor-kind')).toHaveTextContent('Нова анкета');
+    expect(screen.getByTestId('draft-autosave')).toHaveTextContent('Очікує публікації');
     expect(reserveProfileCardId).toHaveBeenCalled();
     await waitFor(() => expect(profileProposalService.createDraft).toHaveBeenCalled());
   });

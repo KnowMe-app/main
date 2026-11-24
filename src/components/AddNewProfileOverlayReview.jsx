@@ -10,6 +10,7 @@ import {
   listPendingOverlayCards,
   sortOverlaysByAppliedOrder,
 } from 'utils/multiAccountEdits';
+import { INDEXABLE_DRAFT_STATUSES } from 'utils/profileDraftIndexing';
 import { resolveCanonicalFieldName } from 'utils/profileNodeSchema';
 import { profileProposalService } from 'utils/profileProposalRepository';
 import { getFieldLabel, pickerFields } from './formFields';
@@ -179,6 +180,16 @@ const describeCard = card => {
   return values.join(' ');
 };
 
+const getLinkedCreateDraft = (entry, activeDrafts, cards) => {
+  if (cards[entry.cardUserId]) return null;
+  const draft = activeDrafts.get(entry.cardUserId);
+  if (!draft) return null;
+  const linkedIds = Object.values(entry.recordsByEditor || {})
+    .map(record => record?.proposal?.targetCreateProposalId)
+    .filter(Boolean);
+  return linkedIds.length === 0 || linkedIds.includes(draft.id) ? draft : null;
+};
+
 // Доповнення групуються за карткою, щоб адмін бачив усіх авторів разом.
 // Для підписів достатньо карток стрічки. Повну анкету читаємо за запитом.
 export const loadProposalReviewQueue = async () => {
@@ -190,9 +201,14 @@ export const loadProposalReviewQueue = async () => {
   const { cards } = overlays.length
     ? await fetchMatchingCardsByIds(overlays.map(entry => entry.cardUserId))
     : { cards: {} };
+  const activeDrafts = new Map(drafts.filter(draft => INDEXABLE_DRAFT_STATUSES.has(draft.status))
+    .map(draft => [draft.reservedCardId, draft]));
   const entries = [
     ...creates.map(entry => ({ operation: 'create', key: entry.id, entry })),
-    ...overlays.map(entry => ({ operation: 'update', key: entry.cardUserId, entry })),
+    ...overlays.map(entry => ({
+      operation: 'update', key: entry.cardUserId, entry,
+      targetDraft: getLinkedCreateDraft(entry, activeDrafts, cards),
+    })),
   ].sort((left, right) => (right.entry.updatedAt ?? 0) - (left.entry.updatedAt ?? 0));
   return { entries, cards };
 };
@@ -238,20 +254,30 @@ const currentValueLabel = value => {
   return values.length ? values.join(' · ') : 'Порожньо';
 };
 
+const ProposalCardHeader = ({ title, caption, metadata, busy, onOpen }) => (
+  <CardHead>
+    <CardHeadText>
+      <CardName>{title}</CardName>
+      <CardMeta>{caption}</CardMeta>
+      {metadata && <CardMeta>{metadata}</CardMeta>}
+    </CardHeadText>
+    <ToolButton type="button" onClick={onOpen} disabled={busy}>
+      Відкрити
+    </ToolButton>
+  </CardHead>
+);
+
 const CreateCard = ({ entry, busy, readOnly, onOpen, onAccept, onReject }) => {
   const { reservedCardId, createdBy, data, revision, updatedAt } = entry;
   return (
     <CardShell>
-      <CardHead>
-        <CardHeadText>
-          <CardName>{describeCard(data) || reservedCardId}</CardName>
-          <CardMeta>Нова анкета · {reservedCardId}</CardMeta>
-          <CardMeta>{proposalMeta({ author: createdBy, revision, date: formatUpdatedAt(updatedAt) })}</CardMeta>
-        </CardHeadText>
-        <ToolButton type="button" onClick={() => onOpen(reservedCardId)} disabled={busy}>
-          Відкрити
-        </ToolButton>
-      </CardHead>
+      <ProposalCardHeader
+        title={describeCard(data) || reservedCardId}
+        caption={`Нова анкета · ${reservedCardId}`}
+        metadata={proposalMeta({ author: createdBy, revision, date: formatUpdatedAt(updatedAt) })}
+        busy={busy}
+        onOpen={() => onOpen(reservedCardId)}
+      />
       <CardActions>
         <ToolButton type="button" $tone="primary" disabled={busy || readOnly} onClick={() => onAccept(entry)}>
           Створити анкету
@@ -264,7 +290,9 @@ const CreateCard = ({ entry, busy, readOnly, onOpen, onAccept, onReject }) => {
   );
 };
 
-const OverlayCard = ({ entry, card, busy, readOnly, onAcceptValue, onDiscardValue, onAcceptAll, onDiscardAll, onOpen }) => {
+const OverlayCard = ({
+  entry, card, targetDraft, busy, readOnly, onAcceptValue, onDiscardValue, onAcceptAll, onDiscardAll, onOpen,
+}) => {
   const [showCurrent, setShowCurrent] = useState(false);
   const [current, setCurrent] = useState({ status: 'idle', values: null });
   useEffect(() => {
@@ -286,25 +314,25 @@ const OverlayCard = ({ entry, card, busy, readOnly, onAcceptValue, onDiscardValu
     [entry.overlaysByEditor, entry.recordsByEditor],
   );
   const fieldNames = Object.keys(pendingByField);
-  const title = describeCard(card) || entry.cardUserId;
-  const updatedAt = formatUpdatedAt(entry.updatedAt);
+  const targetsDraft = showCurrent && current.status === 'ready'
+    ? current.values?.__profileMutationOperation === 'create'
+    : Boolean(targetDraft);
+  const targetLocation = targetsDraft ? 'в чернетку' : 'в анкету';
+  const caption = [
+    targetsDraft ? 'Доповнення до чернетки' : 'Зміни до анкети',
+    entry.cardUserId,
+    editorCountLabel(entry.editorIds.length),
+    formatUpdatedAt(entry.updatedAt),
+  ].filter(Boolean).join(' · ');
 
   return (
     <CardShell>
-      <CardHead>
-        <CardHeadText>
-          <CardName>{title}</CardName>
-          <CardMeta>
-            Зміни до анкети · {entry.cardUserId}
-            {' · '}
-            {editorCountLabel(entry.editorIds.length)}
-            {updatedAt ? ` · ${updatedAt}` : ''}
-          </CardMeta>
-        </CardHeadText>
-        <ToolButton type="button" onClick={() => onOpen(entry.cardUserId)} disabled={busy}>
-          Відкрити
-        </ToolButton>
-      </CardHead>
+      <ProposalCardHeader
+        title={describeCard(card ?? targetDraft?.data) || entry.cardUserId}
+        caption={caption}
+        busy={busy}
+        onOpen={() => onOpen(entry.cardUserId)}
+      />
 
       <CurrentValues>
         <ToolButton type="button" aria-expanded={showCurrent} onClick={() => setShowCurrent(value => !value)}>
@@ -338,7 +366,7 @@ const OverlayCard = ({ entry, card, busy, readOnly, onAcceptValue, onDiscardValu
                 $tone="primary"
                 disabled={busy || readOnly}
                 onClick={() => onAcceptValue(entry, fieldName, row)}
-                title="Записати значення в анкету і прибрати з черги"
+                title={`Записати значення ${targetLocation} і прибрати з черги`}
               >
                 Прийняти
               </ToolButton>
@@ -347,7 +375,7 @@ const OverlayCard = ({ entry, card, busy, readOnly, onAcceptValue, onDiscardValu
                 $tone="danger"
                 disabled={busy || readOnly}
                 onClick={() => onDiscardValue(entry, fieldName, row)}
-                title="Прибрати доповнення, анкету не міняти"
+                title="Прибрати запропоноване значення з черги"
               >
                 Видалити
               </ToolButton>
@@ -357,7 +385,13 @@ const OverlayCard = ({ entry, card, busy, readOnly, onAcceptValue, onDiscardValu
       ))}
 
       <CardActions>
-        <ToolButton type="button" $tone="primary" disabled={busy || readOnly} onClick={() => onAcceptAll(entry)}>
+        <ToolButton
+          type="button"
+          $tone="primary"
+          disabled={busy || readOnly}
+          onClick={() => onAcceptAll(entry)}
+          title={`Записати всі запропоновані значення ${targetLocation}`}
+        >
           Прийняти все
         </ToolButton>
         <ToolButton type="button" $tone="danger" disabled={busy || readOnly} onClick={() => onDiscardAll(entry)}>
@@ -484,7 +518,7 @@ export const ProposalReviewQueue = ({ onOpenCard, onOpenDraft, readOnly = false 
         <ToolDrawerNote>Пропозицій на розгляд немає.</ToolDrawerNote>
       )}
 
-      {state.entries.map(({ operation, key, entry }) => operation === 'create' ? (
+      {state.entries.map(({ operation, key, entry, targetDraft }) => operation === 'create' ? (
         <CreateCard
           key={`${operation}:${key}`}
           entry={entry}
@@ -499,6 +533,7 @@ export const ProposalReviewQueue = ({ onOpenCard, onOpenDraft, readOnly = false 
           key={`${operation}:${key}`}
           entry={entry}
           card={state.cards[entry.cardUserId]}
+          targetDraft={targetDraft}
           busy={busy}
           readOnly={readOnly}
           onAcceptValue={acceptValue}

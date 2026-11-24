@@ -84,7 +84,7 @@ describe('ProfileCreationWorkspace shared drafts', () => {
     expect(source).not.toContain('rejectCreateProfileMutation');
     expect(source).toContain('const saveDraftAsCard = async () =>');
     expect(source).toContain('await profileProposalService.reviewDraft({');
-    expect(source).toContain('Зберегти чернетку');
+    expect(source).toContain('Опублікувати анкету');
     // «Закрити» працює через стрілку в шапці, «назад» браузера
     // й апаратну кнопку телефона.
     expect(source).not.toContain('Закрити</CloseButton>');

@@ -95,6 +95,30 @@ describe('поза стрічкою звичайний читач не прос�
     expect(profile.phone).toBeUndefined();
   });
 
+  it('requires the protected node for a liked-only proposal editor even with a readable projection', async () => {
+    const card = { name: 'Тільки для вподобаних', feedDate: false, audience: 'liked' };
+    mockGet.mockImplementation(async path => {
+      if (path === `matchingCards/${CARD_ID}`) return snapshotOf(card);
+      throw new Error('PERMISSION_DENIED');
+    });
+
+    await expect(readProfileFromNodes(CARD_ID, { requireLikedAudienceAccess: true })).rejects.toThrow('PERMISSION_DENIED');
+    expect(mockGet.mock.calls.flat()).toEqual([`matchingCards/${CARD_ID}`, `profileDetails/${CARD_ID}`]);
+  });
+
+  it('opens a liked-only proposal editor for a permitted reader with an empty details node', async () => {
+    const nodes = nodesWith({ name: 'Тільки для вподобаних', feedDate: false, audience: 'liked' });
+    nodes[`profileDetails/${CARD_ID}`] = null;
+    mockGet.mockImplementation(async path => snapshotOf(nodes[path]));
+
+    const profile = await readProfileFromNodes(CARD_ID, { requireLikedAudienceAccess: true });
+
+    expect(profile).toMatchObject({ userId: CARD_ID, email: 'hidden@b.c' });
+    expect(mockGet.mock.calls.flat()).toEqual([
+      `matchingCards/${CARD_ID}`, `profileDetails/${CARD_ID}`, `profileContacts/${CARD_ID}`,
+    ]);
+  });
+
   // `feedDate` відкриває межу датою, а не самою лише наявністю: рядок, який не
   // є датою, база за дату не рахує — і код не має рахувати теж.
   it('рядок, який не є датою, приватних вузлів не відкриває', async () => {

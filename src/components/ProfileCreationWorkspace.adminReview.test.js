@@ -249,11 +249,14 @@ describe('ProfileCreationWorkspace admin review', () => {
     [mockViewerUid] = READONLY_ADMIN_UIDS;
     await openDraftForReview();
 
-    expect(screen.getByDisplayValue("Ім'я6")).toBeInTheDocument();
-    expect(screen.getByLabelText("Ім'я: запропоноване значення")).toHaveValue("Ім'я7");
+    const current = screen.getByDisplayValue("Ім'я6");
+    expect(current).toHaveAttribute('readonly');
+    const proposed = screen.getByLabelText("Ім'я: запропоноване значення");
+    expect(proposed).toHaveValue("Ім'я7");
+    expect(proposed).toHaveAttribute('readonly');
     const accept = screen.getByLabelText("Зберегти правку: Ім'я");
     const reject = screen.getByLabelText("Видалити правку: Ім'я");
-    const publish = screen.getByRole('button', { name: 'Зберегти чернетку' });
+    const publish = screen.getByRole('button', { name: 'Опублікувати анкету' });
     const remove = screen.getByRole('button', { name: 'Видалити чернетку' });
     expect(accept).toBeDisabled();
     expect(reject).toBeDisabled();
@@ -264,8 +267,30 @@ describe('ProfileCreationWorkspace admin review', () => {
     fireEvent.click(reject);
     fireEvent.click(publish);
     fireEvent.click(remove);
+    fireEvent.blur(current);
+    fireEvent.keyDown(proposed, { key: 'Enter' });
     expect(profileProposalService.reviewDraft).not.toHaveBeenCalled();
     expect(profileProposalService.deleteDraft).not.toHaveBeenCalled();
+    expect(profileProposalService.saveDraft).not.toHaveBeenCalled();
+  });
+
+  it('lets an inspector save their own draft while keeping publication disabled', async () => {
+    [mockViewerUid] = READONLY_ADMIN_UIDS;
+    const ownedDraft = { ...draftMutation, createdBy: mockViewerUid };
+    loadAllCreateProfileMutations.mockResolvedValue([ownedDraft]);
+    loadOwnProfileMutations.mockResolvedValue([ownedDraft]);
+
+    await openDraftForReview();
+
+    const current = screen.getByDisplayValue("Ім'я6");
+    expect(current).not.toHaveAttribute('readonly');
+    expect(screen.getByRole('button', { name: 'Опублікувати анкету' })).toBeDisabled();
+    fireEvent.change(current, { target: { value: 'Власна чернетка' } });
+    fireEvent.blur(current);
+    await waitFor(() => expect(profileProposalService.saveDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ createdBy: mockViewerUid, data: { userId: 'card-1', name: ['Власна чернетка'] } }),
+      { expected: createEditorSnapshot(ownedDraft) },
+    ));
   });
 
   it('uses the user id as the clickable author only when a name is unavailable', async () => {
@@ -366,7 +391,7 @@ describe('ProfileCreationWorkspace admin review', () => {
     fireEvent.change(name, { target: { value: 'Перевірене ім’я' } });
     fireEvent.blur(name);
     await waitFor(() => expect(profileProposalService.saveDraft).toHaveBeenCalledTimes(1));
-    const approveDraft = screen.getByRole('button', { name: 'Зберегти чернетку' });
+    const approveDraft = screen.getByRole('button', { name: 'Опублікувати анкету' });
     fireEvent.click(approveDraft);
     expect(approveDraft).toBeDisabled();
     expect(profileProposalService.reviewDraft).not.toHaveBeenCalled();

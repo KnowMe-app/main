@@ -178,6 +178,7 @@ it('keeps typed text on the device before blur and while a save waits for the ne
   await openEditor();
   const nameInput = await screen.findByDisplayValue("Ім'я6");
   fireEvent.change(nameInput, { target: { value: 'Без звʼязку' } });
+  expect(screen.getByTestId('draft-autosave')).toHaveTextContent('Є незбережені правки. Вийдіть із поля, щоб зберегти.');
   expect(profileProposalService.saveDraft).not.toHaveBeenCalled();
   expect(readCardFormPending('admin-1', target)).toMatchObject({
     draft: { name: ['Без звʼязку'] }, needsBlur: true, expected,
@@ -196,6 +197,7 @@ it('restores unblurred text without sending an unnormalized save', async () => {
 
   await openEditor();
   const input = await screen.findByDisplayValue('Ще набираю');
+  expect(screen.getByTestId('draft-autosave')).toHaveTextContent('Є незбережені правки. Вийдіть із поля, щоб зберегти.');
   expect(profileProposalService.saveDraft).not.toHaveBeenCalled();
 
   fireEvent.blur(input);
@@ -270,7 +272,7 @@ it('retains the edit and blocks publication if its last save conflicts', async (
   typeAndBlur(await screen.findByDisplayValue("Ім'я6"), 'Конфлікт');
   await waitFor(() => expect(screen.getByTestId('draft-autosave')).toHaveTextContent(/Профіль уже змінено/));
   toast.error.mockClear();
-  fireEvent.click(screen.getByRole('button', { name: 'Зберегти чернетку' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Опублікувати анкету' }));
   await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
 
   expect(profileProposalService.reviewDraft).not.toHaveBeenCalled();

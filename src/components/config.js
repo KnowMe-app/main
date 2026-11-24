@@ -3256,11 +3256,12 @@ export const renameFlowCategory = async ({ ownerId, fromGroupPath, toGroupPath, 
  * Відмова в правах — не помилка анкети. `profileContacts` може бути закритий
  * для цього читача, і картка має відкритись без контактів, а не впасти.
  */
-const readProfileNodePart = async (node, id) => {
+const readProfileNodePart = async (node, id, { required = false } = {}) => {
   try {
     const snapshot = await get(ref2(database, `${node}/${id}`));
     return snapshot.exists() ? snapshot.val() : null;
   } catch (error) {
+    if (required) throw error;
     console.warn('[profileNodes] вузол не прочитано', { node, userId: id, error });
     return null;
   }
@@ -3274,6 +3275,7 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     includeContacts = true,
     includeWorkflow = true,
     includeTechnical = false,
+    requireLikedAudienceAccess = false,
   } = options;
 
   // Картка читається першою — саме від неї залежить, які вузли взагалі можна
@@ -3304,8 +3306,15 @@ export const readProfileFromNodes = async (userId, options = {}) => {
     profileId: id,
     viewerId: auth.currentUser?.uid || '',
   });
-  const sharedWithViewer = !privileged && !isCardInMatchingFeed(card)
-    && isCardSharedWithLikedAudience(card) && await isViewerInLikedAudienceOf(id);
+  const limitedToLikedAudience = !privileged && isCardSharedWithLikedAudience(card);
+  const verifyAudience = limitedToLikedAudience && requireLikedAudienceAccess;
+  // Форма доповнення мусить довести доступ до цілі: проєкція картки й
+  // обернений індекс можуть лишатися доступними після зняття вподобання.
+  const verifiedDetails = verifyAudience
+    ? await readProfileNodePart(PROFILE_NODES.profileDetails, id, { required: true })
+    : null;
+  const sharedWithViewer = verifyAudience || (limitedToLikedAudience && !isCardInMatchingFeed(card)
+    && await isViewerInLikedAudienceOf(id));
   const mayReadPrivateNodes = privileged || isCardInMatchingFeed(card) || sharedWithViewer;
   // Робочі дані (`profileWorkflow`) і позначки ведення картки (`writer`,
   // `stimulationSchedule`) — службові. Правила відкривають `profileWorkflow`
@@ -3317,7 +3326,7 @@ export const readProfileFromNodes = async (userId, options = {}) => {
 
   const [details, contacts, workflow, technical] = mayReadPrivateNodes
     ? await Promise.all([
-      readProfileNodePart(PROFILE_NODES.profileDetails, id),
+      verifyAudience ? verifiedDetails : readProfileNodePart(PROFILE_NODES.profileDetails, id),
       includeContacts ? readProfileNodePart(PROFILE_NODES.profileContacts, id) : null,
       includeWorkflow && handlesCardWork ? readProfileNodePart(PROFILE_NODES.profileWorkflow, id) : null,
       includeTechnical ? readProfileNodePart(PROFILE_NODES.profileTechnical, id) : null,

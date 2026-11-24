@@ -86,7 +86,7 @@ describe('другий рядок пропонується лише там, де
 
   it('жодна кнопка «+» не малюється без цієї перевірки', () => {
     const addButtons = source.match(/<AddValueButton/g) || [];
-    const guarded = source.match(/\{canAddAnotherValue && (offersAnotherValue\(index, item\) && )?<AddValueButton/g) || [];
+    const guarded = source.match(/\{!inspectorOnForeignDraft && canAddAnotherValue && offersAnotherValue\(index, item\) && <AddValueButton/g) || [];
     expect(addButtons).toHaveLength(guarded.length);
     expect(addButtons.length).toBeGreaterThan(0);
   });

@@ -69,6 +69,9 @@ describe('ProposalReviewQueue', () => {
 
     expect(await screen.findByText('Оксана Коваленко')).toBeTruthy();
     expect(screen.getByText('380501112233')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Прийняти' })).toHaveAttribute(
+      'title', 'Записати значення в анкету і прибрати з черги',
+    );
     // Ім'я береться з картки стрічки, а не з повної анкети: рядків тут десятки.
     expect(fetchMatchingCardsByIds).toHaveBeenCalledWith(['CARD1']);
   });
@@ -188,6 +191,44 @@ describe('ProposalReviewQueue', () => {
     fireEvent.click(within(createCard).getByRole('button', { name: 'Відкрити' }));
     expect(onOpenDraft).toHaveBeenCalledWith('DRAFT1');
     expect(listDrafts).toHaveBeenCalledWith({ review: true, operation: 'create' });
+  });
+
+  it.each([CREATE.id, undefined])('identifies an active create draft as the target of a contribution (%s)', async linkedId => {
+    const record = {
+      ...LAYER,
+      cardUserId: CREATE.reservedCardId,
+      ...(linkedId && { proposal: { targetCreateProposalId: linkedId } }),
+    };
+    listDrafts.mockResolvedValue([{ ...CREATE, status: 'private' }]);
+    listPendingOverlayCards.mockResolvedValue([{
+      ...QUEUE_ENTRY,
+      cardUserId: CREATE.reservedCardId,
+      recordsByEditor: { editorA: record },
+      overlaysByEditor: { editorA: record },
+    }]);
+    fetchMatchingCardsByIds.mockResolvedValue({ cards: {}, missingIds: [CREATE.reservedCardId] });
+    const onOpenCard = jest.fn();
+    render(<ProposalReviewQueue onOpenCard={onOpenCard} />);
+
+    expect(await screen.findByText(/Доповнення до чернетки · DRAFT1/)).toBeInTheDocument();
+    expect(screen.getByText('Лада Коваль')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Прийняти' })).toHaveAttribute(
+      'title', 'Записати значення в чернетку і прибрати з черги',
+    );
+    expect(screen.queryByRole('button', { name: 'Створити анкету' })).toBeNull();
+    expect(getCanonicalCard).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Відкрити' }));
+    expect(onOpenCard).toHaveBeenCalledWith(CREATE.reservedCardId);
+  });
+
+  it('shows an existing canonical projection for an update even when its old draft is present', async () => {
+    listDrafts.mockResolvedValue([{ ...CREATE, reservedCardId: 'CARD1', status: 'publishing' }]);
+
+    render(<ProposalReviewQueue onOpenCard={jest.fn()} />);
+
+    expect(await screen.findByText(/Зміни до анкети · CARD1/)).toBeInTheDocument();
+    expect(screen.getByText('Оксана Коваленко')).toBeInTheDocument();
+    expect(screen.queryByText(/Доповнення до чернетки/)).toBeNull();
   });
 
   it('publishes a new card through the shared service with the displayed revision', async () => {
