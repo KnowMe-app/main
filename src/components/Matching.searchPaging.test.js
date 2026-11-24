@@ -130,14 +130,16 @@ describe('пошук matching просить картку, а не анкету'
     // знімає позначку `__matchingSummary` — тобто догідратувати таку картку вже
     // нема за чим. Та сама сторожа стоїть на всіх шляхах стрічки.
     expect(read('Matching.jsx')).toContain('const cacheable = filtered.filter(shouldCacheMatchingCard);');
-    expect(read('SearchBar.jsx')).toContain('const updatedArr = skipCardCacheWrite ? arr : arr.map(u => updateCard(u.userId, u));');
+    const searchBar = read('SearchBar.jsx');
+    expect(searchBar).toContain('|| Boolean(extraOptions?.cardsOnly ?? searchOptions?.cardsOnly)');
+    expect(searchBar).toContain('const updatedArr = skipCardCacheWrite ? arr : arr.map(');
   });
 
   it('id запиту кешуються лише разом із картками', () => {
     // Інакше наступний той самий запит узяв би з кеша ту частину, що потрапила
     // туди іншим шляхом, і мовчки віддав би менше, ніж знайшов.
-    expect(read('Matching.jsx')).toContain('if (cacheable.length === filtered.length) {');
-    expect(read('SearchBar.jsx')).toContain('if (key && value && !skipCardCacheWrite) {');
+    expect(read('Matching.jsx')).toContain('if (reuseQueryCache && cacheable.length === filtered.length) {');
+    expect(read('SearchBar.jsx')).toContain("if (key && value && !skipCache && !skipCardCacheWrite && !arr.some(u => u.__profileMutationOperation === 'create')) {");
   });
 
   it('урізаний читач лишається на урізаній проєкції попри прохання сторінки', () => {
@@ -154,7 +156,7 @@ describe('пошук matching просить картку, а не анкету'
 });
 
 /**
- * Той самий пошук удруге не коштує нічого.
+ * Запити, для яких дозволено кеш видачі, повторно використовують проєкції.
  *
  * Видача `cardsOnly` — це проєкції, і в загальний кеш карток їх класти не можна
  * (вони замістили б повну анкету десятком полів). Доти, доки в них не було
@@ -173,6 +175,13 @@ describe('видача пошуку кешується і читається з 
 
     expect(searcher).toContain('const cachedEntry = getIndexIdsByQuery(summaryCacheKey);');
     expect(searcher).toContain('const hydrated = await hydrateMatchingFeedCards(cachedIds);');
+  });
+
+  it('запит до searchId звіряє актуальні ідентифікатори перед читанням карток', () => {
+    const source = matching();
+    expect(source).toContain('const reuseQueryCache = !isLimited && !requiresLiveSearchIdLookup(key);');
+    expect(source).toContain('if (reuseQueryCache) {');
+    expect(source).toContain('const summaryCacheKey = isCardsOnly && reuseQueryCache');
   });
 
   it('неповний кеш добирає лише те, чого бракує, а не всю видачу', () => {
@@ -257,9 +266,10 @@ describe('сховану анкету пошук не віддає й з кеш�
     expect(matching).toContain("if (viewMode === 'favorites' || viewMode === 'dislikes' || viewMode === 'search') {");
   });
 
-  it('searchUsersOnly (стрічка й форма «Додати картку») фільтрує сам, якщо не просили keepHidden', () => {
+  it('searchUsersOnly враховує keepHidden лише для адмінського перегляду', () => {
     expect(config).toContain('const result = await searchUsersOnlyUnfiltered(searchedValue, options);');
-    expect(config).toContain('return options?.keepHidden ? result : filterFeedDeniedSearchResult(result);');
+    expect(config).toContain('options?.keepHidden && isAdminUid(viewerId) ? result : await filterFeedDeniedSearchResult(result);');
+    expect(config).toContain('return auth.currentUser?.uid === viewerId ? visible : {};');
   });
 });
 

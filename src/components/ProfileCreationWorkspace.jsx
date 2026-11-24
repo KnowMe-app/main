@@ -18,6 +18,8 @@ import {
   fetchDislikeUsers,
   fetchFavoriteUsers,
   fetchPublicProfileComments,
+  fetchProfileDraftById,
+  fetchProfileDraftMutationById,
   fetchUserById,
   fetchUserComments,
   fetchUsersByIds,
@@ -1234,18 +1236,27 @@ export const ProfileCreationWorkspace = () => {
 
   useEffect(() => {
     const requestedCardId = searchParams.get('cardId');
-    if (!requestedCardId) return;
+    if (!requestedCardId || !uid) return undefined;
     const mutation = [...mutations, ...sharedMutations].find(item => item.cardId === requestedCardId);
-    if (activeMutation?.cardId === requestedCardId || searchParams.get('overlay') === '1') return;
+    if (activeMutation?.cardId === requestedCardId || searchParams.get('overlay') === '1') return undefined;
     if (mutation) {
       openMutation(mutation);
-      return;
+      return undefined;
     }
     const locator = { operation: 'create', createdBy: uid, cardId: requestedCardId };
     const local = readCardFormPending(uid, buildCardFormTarget({ draftCardId: requestedCardId }));
     if (local?.expected === null && local.targetKey === proposalEditorKey(locator)) {
       openMutation({ cardId: requestedCardId, createdBy: uid, revision: 0, status: 'pendingReview', localOnly: true, data: local.basis || {} });
+      return undefined;
     }
+    let active = true;
+    // Знайдена чужа чернетка має точкову адресу. Загальний перелік для
+    // такого дописувача закритий, тож відкриваємо саме дозволений запис.
+    Promise.resolve().then(() => fetchProfileDraftMutationById(requestedCardId)).then(found => {
+      if (active && found && uidRef.current === uid) return openMutation(found);
+      return undefined;
+    }).catch(error => console.warn('[ProfileCreationWorkspace] draft link unavailable', error));
+    return () => { active = false; };
   }, [activeMutation?.cardId, mutations, sharedMutations, searchParams, openMutation, uid]);
 
   const startNew = (queryText, { allowContactPrefill = true } = {}) => {
@@ -1528,13 +1539,15 @@ export const ProfileCreationWorkspace = () => {
     setDraft(null);
     setOverlayLoading(true);
     setSearchParams({ cardId: profile.userId, overlay: '1' }, { replace: true });
-    let canonical = profile;
+    let canonical = { userId: profile.userId };
     try {
       const full = await readProfileFromNodes(profile.userId, { includeWorkflow: false });
-      if (full) canonical = { ...profile, ...full };
+      const fresh = full || await fetchProfileDraftById(profile.userId);
+      if (fresh) canonical = fresh;
     } catch (error) {
       console.warn('[ProfileCreationWorkspace] canonical card unavailable', error);
     }
+    if (proposalEditorRef.current !== editor || uidRef.current !== uid) return;
     editor.base = buildOverlayPrefill(canonical, profile.userId, {
       keepAdminTelegram: Boolean(accessRef.current?.isAdmin),
     });

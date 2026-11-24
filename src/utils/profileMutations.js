@@ -10,7 +10,7 @@ import {
   syncMatchingCardIndex,
 } from 'components/config';
 import { canGrantProfilePrivileges } from './accessLevel';
-import { buildOverlayFromDraft, getOverlaysForCard, purgeCardOverlays } from './multiAccountEdits';
+import { buildOverlayFromDraft, collectOverlaySearchIdValues, getOverlaysForCard, purgeCardOverlays } from './multiAccountEdits';
 import { getProfileMutationOwnerPath } from './profileDraftIndexing';
 import { PROFILE_NODES } from './profileNodeSchema';
 import { buildProfileNodePatch } from './profileNodeWriter';
@@ -20,6 +20,7 @@ import {
   appendSearchIdEntryId,
   buildSearchIdClaimKey,
   buildSearchIdEntryPath,
+  buildSearchIdValueKey,
   describeSearchIdRecord,
   readSearchIdEntryIds,
   removeSearchIdEntryId,
@@ -311,17 +312,42 @@ const indexDraftSearchIdEntries = (cardId, profile) => Promise.all(
 // Without this half of the sync, clearing a draft hid it in the UI but left
 // its old contacts discoverable and (through identity claims) unavailable to
 // a replacement card.
-const removeStaleDraftSearchIdEntries = (cardId, previousProfile, nextProfile) => {
+const removeStaleDraftSearchIdEntries = async (cardId, creatorUid, previousProfile, nextProfile) => {
   const nextPaths = new Set(draftSearchIdRecords(nextProfile).map(record => record.path));
-  return Promise.all(draftSearchIdRecords(previousProfile)
-    .filter(record => !nextPaths.has(record.path))
+  const retired = draftSearchIdRecords(previousProfile).filter(record => !nextPaths.has(record.path));
+  if (!retired.length) return;
+  retired.forEach(record => confirmedDraftSearchIdEntries.delete(`${record.path}|${cardId}`));
+
+  // Після збереження та сама адреса могла вже отримати свіжішу ревізію.
+  // Значення може й далі належати іншому дописувачеві чернетки.
+  let referencedPaths;
+  try {
+    const [draft, overlays, projection] = await Promise.all([
+      get(ref(database, getProfileMutationPath(creatorUid, cardId))),
+      get(ref(database, `multiData/edits/${cardId}`)),
+      get(ref(database, `${PROFILE_NODES.matchingCards}/${cardId}`)),
+    ]);
+    const current = draft.val();
+    if (!current || current.status !== 'pendingReview' || projection.exists()) return;
+    referencedPaths = new Set([
+      ...draftSearchIdRecords(current.data).map(record => record.path),
+      ...Object.values(overlays.val() || {}).flatMap(collectOverlaySearchIdValues).map(({ field, value }) => (
+        buildSearchIdEntryPath(buildSearchIdValueKey(field, value), field)
+      )),
+    ]);
+  } catch (error) {
+    console.warn('[profileMutations] джерела ключів чернетки не прочитано', { cardId, error });
+    return;
+  }
+
+  await Promise.all(retired.filter(record => !referencedPaths.has(record.path))
     .map(record => runTransaction(
       ref(database, record.path),
-      current => removeSearchIdEntryId(current, cardId),
+      current => (current == null || readSearchIdEntryIds(current).includes(cardId)
+        ? removeSearchIdEntryId(current, cardId)
+        : undefined),
       { applyLocally: false },
-    ).then(() => {
-      confirmedDraftSearchIdEntries.delete(`${record.path}|${cardId}`);
-    }).catch(error => {
+    ).catch(error => {
       console.warn('[profileMutations] старий ключ чернетки не знято з searchId', {
         cardId,
         path: record.path,
@@ -503,7 +529,7 @@ export const saveCreateProfileMutation = async ({
   // руками (`npx firebase deploy --only database`), і поки їх немає, кожна
   // нова чернетка тихо лишалась би поза пошуком.
   await Promise.all([
-    removeStaleDraftSearchIdEntries(cardId, previousData, mutation.data),
+    removeStaleDraftSearchIdEntries(cardId, mutation.createdBy || creatorUid, previousData, mutation.data),
     indexDraftSearchIdEntries(cardId, mutation.data),
   ]);
   // Той самий крок, але для «хто автор»: без нього знайдена чернетка

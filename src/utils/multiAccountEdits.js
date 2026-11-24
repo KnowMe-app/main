@@ -12,7 +12,8 @@ import {
   rememberOwnOverlayCardLocally,
 } from 'utils/ownOverlayCardsStorage';
 
-import { database, fetchProfileDraftById, updateSearchId } from 'components/config';
+import { auth, database, fetchProfileDraftById, updateSearchId } from 'components/config';
+import { canGrantProfilePrivileges } from 'utils/accessLevel';
 
 export { applyOverlayToCard, buildOverlayFromDraft, normalizeOverlayFields } from 'utils/profileFieldChanges';
 
@@ -23,7 +24,7 @@ const get = (...args) =>
     path: args[0],
   });
 
-const EDITS_ROOT = 'multiData/edits';
+export const EDITS_ROOT = 'multiData/edits';
 // Append-only journal of every overlay change ever written for a card. The
 // overlay node itself only ever holds an editor's *current* delta (each save
 // rewrites it), so without this log an earlier edit is unrecoverable the
@@ -212,10 +213,15 @@ export const getCanonicalCard = async cardUserId => {
 export const collectOverlayIndexValues = (fields = {}) =>
   Object.entries(normalizeOverlayFields(fields)).flatMap(([fieldName, change]) => {
     if (!isPlainObject(change) || !SEARCH_ID_INDEXED_FIELDS.has(fieldName)) return [];
-    const values = 'to' in change ? [change.to] : normalizeArray(change.added);
+    const values = 'to' in change ? [change.to] : [
+      ...normalizeArray(change.added),
+      ...getOverlayListReviewValues(change).pairs.map(pair => pair.to),
+    ];
     return uniq(values.map(value => String(value ?? '').trim()).filter(Boolean))
       .map(value => ({ field: fieldName, value }));
   });
+
+export const collectOverlaySearchIdValues = overlay => collectOverlayIndexValues(getOverlayReviewFields(overlay));
 
 /**
  * Індексується весь поточний оверлей, а не сама лише різниця цього збереження:
@@ -224,10 +230,10 @@ export const collectOverlayIndexValues = (fields = {}) =>
  * `updateSearchId`, а відмова там не валить збереження — доповнення дорожче за
  * ключ індексу.
  */
-const indexOverlayValuesInSearchId = async ({ cardUserId, fields }) => {
+const indexOverlayValuesInSearchId = async ({ cardUserId, fields, verify }) => {
   for (const { field, value } of collectOverlayIndexValues(fields)) {
     // eslint-disable-next-line no-await-in-loop
-    await updateSearchId(field, value, cardUserId, 'add');
+    await updateSearchId(field, value, cardUserId, 'add', ...(verify ? [{ verify: true }] : []));
   }
 };
 
@@ -306,9 +312,11 @@ export const saveOverlayForUserCard = async ({
 
     // Після запису оверлея, а не до нього: право дописати id у `searchId` дають
     // правила саме за наявністю оверлея цього редактора на цій картці.
-    await indexOverlayValuesInSearchId({ cardUserId: normalizedCardId, fields: sanitized });
-
     const nextHistoryFields = usesRevisionCheck ? getOverlayReviewFields({ fields: sanitized, proposal }) : sanitized;
+    await indexOverlayValuesInSearchId({
+      cardUserId: normalizedCardId, fields: nextHistoryFields, verify: usesRevisionCheck,
+    });
+
     const previousHistoryFields = usesRevisionCheck ? getOverlayReviewFields(expectedCurrent) : previousFields;
     await appendOverlayHistory({
       cardUserId: normalizedCardId,
@@ -736,6 +744,8 @@ const changeProposalValues = rawChange => {
     .filter(Boolean));
 };
 
+const isUnresolvedOverlayHistory = entry => isPlainObject(entry) && (entry.action || 'edit') === 'edit';
+
 // Та сама зміна без розсуджених значень — або `null`, коли пропонувати в ній
 // більше нічого. Заміна (`from`/`to`) несе одне значення, тож від неї
 // лишитись нічого не може; масив — може.
@@ -802,6 +812,7 @@ export const purgeOverlayHistoryEntries = async ({
   values = [],
   replacement,
   remainingReplacements = [],
+  beforeWrite,
   throwOnError = false,
 }) => {
   const normalizedCardId = normalizeCardKey(cardUserId);
@@ -812,9 +823,11 @@ export const purgeOverlayHistoryEntries = async ({
   try {
     const historyRef = ref2(database, `${EDITS_HISTORY_ROOT}/${normalizedCardId}`);
     const snapshot = await get(historyRef);
-    if (!snapshot?.exists?.()) return 0;
+    if (!snapshot?.exists?.() && !beforeWrite) return 0;
 
-    const updates = Object.entries(snapshot.val() || {}).reduce((acc, [entryId, entry]) => {
+    const history = snapshot?.exists?.() ? snapshot.val() || {} : {};
+    const removedAliases = [];
+    const updates = Object.entries(history).reduce((acc, [entryId, entry]) => {
       if (!isPlainObject(entry) || entry.fieldName !== fieldName) return acc;
       if (editorUserId && entry.editorUserId && entry.editorUserId !== editorUserId) return acc;
 
@@ -835,6 +848,9 @@ export const purgeOverlayHistoryEntries = async ({
       if ((replacement && remainingChange === entry.change)
         || (remainingChange && areProposalValuesEqual(remainingChange, entry.change))) return acc;
       acc[entryId] = null;
+      if (beforeWrite && isUnresolvedOverlayHistory(entry)) {
+        removedAliases.push(...collectOverlayIndexValues({ [fieldName]: entry.change }));
+      }
       if (remainingChange && Object.keys(remainingChange).length) {
         const key = push(historyRef).key;
         if (key) acc[key] = { ...entry, change: remainingChange };
@@ -842,6 +858,9 @@ export const purgeOverlayHistoryEntries = async ({
       return acc;
     }, {});
 
+    if (beforeWrite) {
+      await beforeWrite(Object.values({ ...history, ...updates }).filter(Boolean), removedAliases);
+    }
     if (Object.keys(updates).length) await update(historyRef, updates);
     // Лічильник — знятих записів; переписані замість них сюди не входять.
     return Object.values(updates).filter(value => value === null).length;
@@ -905,11 +924,20 @@ export const removeOverlayForUserCard = async ({ editorUserId, cardUserId, expec
   const overlayRef = ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`);
   const usesRevisionCheck = expectedCurrent !== undefined;
   if (expectedCurrent?.reviewClaim) throw overlayError('REVISION_CONFLICT');
+  const canPruneAliases = canGrantProfilePrivileges(auth?.currentUser?.uid);
+  const withdrawn = canPruneAliases ? (
+    usesRevisionCheck ? expectedCurrent : await readOverlayRecord({ cardUserId: normalizedCardId, editorUserId })
+  ) : null;
   if (usesRevisionCheck) await replaceOverlayIfUnchanged(overlayRef, expectedCurrent, null);
   else await remove(overlayRef);
 
   try {
     await forgetOwnOverlayCard({ cardUserId: normalizedCardId, editorUserId, throwOnError: usesRevisionCheck });
+    if (withdrawn) {
+      // Журнал ще доступний для перегляду. Його версії тримають ключ пошуку,
+      // доки адміністратор явно не вирішить про значення.
+      await pruneUnclaimedOverlayAliases(normalizedCardId, collectOverlaySearchIdValues(withdrawn));
+    }
   } catch (error) {
     if (!usesRevisionCheck) throw error;
     throw overlayError('PARTIAL_WRITE', error);
@@ -1230,33 +1258,38 @@ export const splitOverlayReviewChange = (record, fieldName, value, replacement) 
   };
 };
 
-/**
- * Чи лишається кому тримати це значення в `searchId` після відхилення.
- *
- * Ключ індексу веде на картку, а не на шар, тож знімати його можна лише тоді,
- * коли значення не лишилось ані в самій анкеті, ані в чужому шарі на цій
- * картці. Інакше відхилений дубль зносив би з пошуку номер, який в анкеті
- * стоїть.
- */
-const isValueStillClaimedByCard = ({ canonical, overlaysByEditor, fieldName, value, editorUserId }) => {
-  const normalizedValueKey = buildSearchIdValueKey(fieldName, value);
-  if (!normalizedValueKey) return true;
+const aliasKey = ({ field, value }) => {
+  const key = buildSearchIdValueKey(field, value);
+  return key ? JSON.stringify([field, key]) : null;
+};
 
-  // `searchId` owns normalized keys (digits-only phones, normalized social
-  // handles, etc.), so ownership must be compared in exactly that domain.
-  // Comparing display strings can treat two spellings of the same key as
-  // different and remove an index entry still used by the canonical card:
-  // «38 093 112 06 78» в анкеті і «380931120678» у шарі — це один ключ.
-  const matches = candidate => buildSearchIdValueKey(fieldName, candidate) === normalizedValueKey;
-  if (normalizeArray(canonical?.[fieldName]).some(matches)) return true;
+// Ключ `searchId` називає картку. Різні написання контакту в анкеті,
+// залишку шару того самого автора й ще не розсудженому журналі можуть
+// посилатись на цей самий ключ. Відмова читання не доводить відсутності.
+const pruneUnclaimedOverlayAliases = async (cardUserId, aliases, remainingHistory) => {
+  const candidates = new Map(aliases.map(alias => [aliasKey(alias), alias]));
+  candidates.delete(null);
+  if (!candidates.size) return;
 
-  return Object.entries(overlaysByEditor || {}).some(([otherEditorUserId, overlay]) => {
-    if (otherEditorUserId === editorUserId) return false;
-    const change = normalizeOverlayFields(overlay?.fields)[fieldName];
-    if (!isPlainObject(change)) return false;
-    if ('to' in change) return matches(change.to);
-    return normalizeArray(change.added).some(matches);
-  });
+  const [canonical, overlays, history] = await Promise.all([
+    getCanonicalCard(cardUserId),
+    getOverlaysForCard(cardUserId, { includeRecords: true }),
+    remainingHistory ?? getOverlayHistoryForCard(cardUserId),
+  ]);
+  const referenced = new Set([
+    ...Object.values(overlays).flatMap(overlay => collectOverlaySearchIdValues(overlay.expectedCurrent ?? overlay)),
+    ...history.filter(isUnresolvedOverlayHistory).flatMap(entry => (
+      collectOverlayIndexValues({ [entry.fieldName]: entry.change })
+    )),
+  ].map(aliasKey));
+
+  for (const [key, { field, value }] of candidates) {
+    const inCanonical = normalizeArray(canonical?.[field]).some(candidate => aliasKey({ field, value: candidate }) === key);
+    if (!inCanonical && !referenced.has(key)) {
+      // eslint-disable-next-line no-await-in-loop
+      await updateSearchId(field, value, cardUserId, 'remove', { verify: true, throwOnError: true });
+    }
+  }
 };
 
 const buildSettledOverlay = ({
@@ -1368,6 +1401,24 @@ export const settleOverlayValueForCard = async ({
   };
 
   if (removedEditorOverlay) await forgetOwnOverlayCard({ editorUserId, cardUserId: normalizedCardId });
+  const submitted = valueLabel(value);
+  const correctedValue = valueLabel(acceptedValue ?? value);
+  const indexedField = SEARCH_ID_INDEXED_FIELDS.has(fieldName);
+  const corrected = action === 'accept' && indexedField && correctedValue && correctedValue !== submitted
+    && (expectedCurrent === undefined || settledChange.to || settledChange.added?.length);
+  const retired = action === 'accept'
+    ? [
+      ...(corrected ? [submitted] : []),
+      ...(indexedField && expectedCurrent !== undefined ? normalizeArray(settledChange.removed ?? settledChange.from) : []),
+    ].map(oldValue => ({ field: fieldName, value: oldValue }))
+    : collectOverlayIndexValues({ [fieldName]: settledChange });
+  const beforeWrite = retired.length || corrected ? async history => {
+    if (corrected) {
+      await updateSearchId(fieldName, correctedValue, normalizedCardId, 'add', { verify: true, throwOnError: true });
+    }
+    await pruneUnclaimedOverlayAliases(normalizedCardId, retired, history);
+  } : undefined;
+
   // Розсуджене значення не лишає по собі нічого: ні рядка «прийнято», ні
   // рядка «відхилено». Доти кожне рішення адміна дописувало в журнал ще один
   // запис, і журнал, який мав тримати **непрочитані** версії правок, ріс
@@ -1380,57 +1431,9 @@ export const settleOverlayValueForCard = async ({
     values: changeProposalValues(settledChange),
     replacement: settledReplacement,
     remainingReplacements,
+    beforeWrite,
     throwOnError: true,
   });
-
-  if (action === 'accept') {
-    if (!SEARCH_ID_INDEXED_FIELDS.has(fieldName)) return result;
-    const normalizedAcceptedValue = String(acceptedValue ?? value ?? '').trim();
-    const submitted = String(value ?? '').trim();
-    const corrected = normalizedAcceptedValue && normalizedAcceptedValue !== submitted
-      && (expectedCurrent === undefined || settledChange.to || settledChange.added?.length);
-    const retired = new Set(corrected ? [submitted] : []);
-    if (expectedCurrent !== undefined) {
-      normalizeArray(settledChange.removed ?? settledChange.from).forEach(oldValue => retired.add(oldValue));
-    }
-    if (retired.size && expectedCurrent !== undefined) {
-      const [canonical, overlaysByEditor] = await Promise.all([
-        getCanonicalCard(normalizedCardId), getOverlaysForCard(normalizedCardId),
-      ]);
-      for (const oldValue of retired) {
-        if (!isValueStillClaimedByCard({ canonical, overlaysByEditor, fieldName, value: oldValue })) {
-          // eslint-disable-next-line no-await-in-loop
-          await updateSearchId(fieldName, oldValue, normalizedCardId, 'remove');
-        }
-      }
-    } else if (corrected) {
-      await updateSearchId(fieldName, submitted, normalizedCardId, 'remove');
-    }
-    if (corrected) await updateSearchId(fieldName, normalizedAcceptedValue, normalizedCardId, 'add');
-    return result;
-  }
-
-  if (!SEARCH_ID_INDEXED_FIELDS.has(fieldName)) return result;
-
-  let canonical;
-  try {
-    canonical = await getCanonicalCard(normalizedCardId);
-  } catch (error) {
-    // Absence of a readable canonical card is not evidence that it no longer
-    // claims the key. Keep the append-only index rather than destructively
-    // guessing after a transient/permission failure.
-    console.warn('[multiAccountEdits] canonical card unavailable during searchId cleanup', error);
-    return result;
-  }
-  const overlaysByEditor = await getOverlaysForCard(normalizedCardId);
-  const stillClaimed = isValueStillClaimedByCard({
-    canonical,
-    overlaysByEditor,
-    fieldName,
-    value,
-    editorUserId: expectedCurrent === undefined ? editorUserId : '',
-  });
-  if (!stillClaimed) await updateSearchId(fieldName, value, normalizedCardId, 'remove');
 
   return result;
 };
@@ -1507,7 +1510,7 @@ export const buildSupersededOverlayEntries = ({ historyEntries = [], overlaysByE
   const result = {};
   const seen = new Set();
   [...(historyEntries || [])]
-    .filter(entry => isPlainObject(entry) && (entry.action || 'edit') === 'edit')
+    .filter(isUnresolvedOverlayHistory)
     .sort((a, b) => Number(a.at || 0) - Number(b.at || 0))
     .forEach(entry => {
       const { fieldName, editorUserId } = entry;
@@ -1541,8 +1544,8 @@ export const buildSupersededOverlayEntries = ({ historyEntries = [], overlaysByE
  * У шарі цього значення вже немає, тож знімати там нічого: рішення — це
  * підчистити журнал, щоб версія не повертались у форму, і, якщо її
  * відхилили, зняти ключ `searchId`, який шар завів на неї тоді, коли вона
- * була поточною. Ключ знімається лише тоді, коли значення не тримає ні
- * анкета, ні жоден поточний шар.
+ * була поточною. Ключ знімається після перевірки самої анкети, поточних
+ * шарів і нерозсуджених записів журналу.
  */
 export const settleSupersededOverlayValue = async ({
   editorUserId,
@@ -1556,26 +1559,19 @@ export const settleSupersededOverlayValue = async ({
   const normalizedValue = String(value ?? '').trim();
   if (!normalizedCardId || !fieldName || !normalizedValue) return null;
 
-  if (SEARCH_ID_INDEXED_FIELDS.has(fieldName) && action === 'accept') {
-    const normalizedAcceptedValue = String(acceptedValue ?? normalizedValue).trim();
-    if (normalizedAcceptedValue && normalizedAcceptedValue !== normalizedValue) {
-      await updateSearchId(fieldName, normalizedValue, normalizedCardId, 'remove');
-      await updateSearchId(fieldName, normalizedAcceptedValue, normalizedCardId, 'add');
+  const correctedValue = valueLabel(acceptedValue ?? normalizedValue);
+  const corrected = action === 'accept' && correctedValue && correctedValue !== normalizedValue;
+  const beforeWrite = SEARCH_ID_INDEXED_FIELDS.has(fieldName) && (corrected || action === 'discard')
+    ? async (history, removedAliases) => {
+      const selected = aliasKey({ field: fieldName, value: normalizedValue });
+      const retired = removedAliases.filter(alias => aliasKey(alias) === selected);
+      if (!retired.length) return;
+      if (corrected) {
+        await updateSearchId(fieldName, correctedValue, normalizedCardId, 'add', { verify: true, throwOnError: true });
+      }
+      await pruneUnclaimedOverlayAliases(normalizedCardId, retired, history);
     }
-  } else if (SEARCH_ID_INDEXED_FIELDS.has(fieldName)) {
-    const canonical = await getCanonicalCard(normalizedCardId);
-    const overlaysByEditor = await getOverlaysForCard(normalizedCardId);
-    const stillClaimed = isValueStillClaimedByCard({
-      canonical,
-      overlaysByEditor,
-      fieldName,
-      value: normalizedValue,
-      // Порожній автор: тут рахуються всі поточні шари, і власний теж —
-      // версію редактор міг повернути собі наступним збереженням.
-      editorUserId: '',
-    });
-    if (!stillClaimed) await updateSearchId(fieldName, normalizedValue, normalizedCardId, 'remove');
-  }
+    : undefined;
 
   // Індекс перевіряється першим: якщо читання чи зняття ключа не вдалося,
   // журнал лишається видимим і рішення можна безпечно повторити.
@@ -1584,6 +1580,7 @@ export const settleSupersededOverlayValue = async ({
     editorUserId,
     fieldName,
     values: [normalizedValue],
+    beforeWrite,
     throwOnError: true,
   });
   return { settled: true };

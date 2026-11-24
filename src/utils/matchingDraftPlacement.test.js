@@ -33,6 +33,10 @@ describe('власна чернетка в стрічці', () => {
     expect(ids(placeOwnDraftsInFeed({ drafts, users: feed, hasMore: true }))).toEqual(['-y', 'a', 'b', '-x', 'c']);
   });
 
+  it('віддає канонічний рядок, коли попередня чернетка має той самий id', () => {
+    expect(placeOwnDraftsInFeed({ drafts: [draft('a', '2026-09-25')], users: feed })).toEqual(feed);
+  });
+
   it('бере дату створення запису, якщо своєї дати стрічки чернетка не має', () => {
     const createdAt = new Date(2026, 8, 12, 15, 0).getTime();
     expect(resolveDraftFeedOrderDate({}, { createdAt })).toBe('2026-09-12');

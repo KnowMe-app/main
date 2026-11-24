@@ -67,7 +67,8 @@ describe('локальний вхід індексації читає ті са�
     // У `searchKey` і `matchingCards` їм не місце: там живе стрічка, а
     // чернетка в стрічку не потрапляє нізвідки.
     expect(addNewProfileSource).toContain('collectDraftProfilesForIndexing');
-    expect(addNewProfileSource).toContain('drafts ? { ...collectionsMap, drafts } : collectionsMap');
+    expect(addNewProfileSource).toContain('keepProposalAliasesWithTargets(proposalAliases, profiles, drafts)');
+    expect(addNewProfileSource).toContain('{ ...collectionsMap, drafts, aliases }');
     expect(addNewProfileSource).toMatch(
       /buildSearchKeyIndexPayloadFromCollections\(collectionsMap, indexTypes\)/,
     );

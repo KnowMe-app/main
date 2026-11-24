@@ -16,7 +16,7 @@ import {
 } from '../utils/cardIndex';
 import { updateCard, searchCachedCards } from '../utils/cardsStorage';
 import { parseUkTriggerQuery } from '../utils/parseUkTrigger';
-import { SEARCH_ID_INDEXED_FIELDS, normalizeSearchIdInput, normalizeSearchDateComparableValue } from '../utils/searchKeyUtils';
+import { SEARCH_ID_INDEXED_FIELDS, normalizeSearchIdInput, normalizeSearchDateComparableValue, requiresLiveSearchIdLookup } from '../utils/searchKeyUtils';
 import { isMatchingSummaryCard } from '../utils/matchingCardIndex';
 import { buildSearchSuggestions } from '../utils/searchQueryStorage';
 import { fetchOwnSearchQueries } from './config';
@@ -965,7 +965,8 @@ export const doesCardMatchSearchParams = (card, params = {}, options = {}) => {
   // і перевірку пропущено), а `AddNewProfile` на той самий запит відповідав
   // «Не знайшов» — бо читає повну анкету. Тобто адмін, у якого прав більше за
   // всіх, єдиний і не бачив знайденого.
-  if (key === 'searchId') return true;
+  const matchedFields = card?.__searchIdFields;
+  if (key === 'searchId' || (requiresLiveSearchIdLookup(key) && Array.isArray(matchedFields) && matchedFields.includes(key))) return true;
 
   if (key === 'userId') {
     const cardUserId = String(card?.userId || '').trim();
@@ -1140,7 +1141,7 @@ export const getSearchCacheKeyForParams = (key, value, options = {}) => {
 };
 
 export const getFreshCachedSearchResult = (key, value, options = {}) => {
-  if (!key || value === undefined || value === null || String(value).trim() === '') {
+  if (!key || requiresLiveSearchIdLookup(key) || value === undefined || value === null || String(value).trim() === '') {
     return { hit: false, negativeHit: false, cards: [], map: {} };
   }
 
@@ -1173,7 +1174,7 @@ export const getFreshCachedSearchResult = (key, value, options = {}) => {
   }
 
   const cards = ids.map(id => getCard(id)).filter(Boolean);
-  if (cards.length === 0 || cards.length !== ids.length) {
+  if (!cards.length || cards.length !== ids.length || cards.some(card => card.__profileMutationOperation === 'create')) {
     return { hit: false, negativeHit: false, cards: [], map: {} };
   }
 
@@ -1833,12 +1834,13 @@ const SearchBar = ({
     // out of the shared card cache entirely - reading from it could hand back a
     // full card the viewer isn't entitled to, and writing to it would replace real
     // cards with the handful of fields the projection carries.
-    const skipCache = Boolean(extraOptions?.limitedFields ?? searchOptions?.limitedFields);
+    const limited = Boolean(extraOptions?.limitedFields ?? searchOptions?.limitedFields);
+    const skipCache = requiresLiveSearchIdLookup(key) || limited;
     // Картка стрічки — теж проєкція, і писати її в кеш не можна з тієї самої
     // причини: `updateCard` зливає нове поверх старого, тож повне прізвище
     // назавжди стало б ініціалом. Читати з кеша при цьому вільно — там лежить
     // більше, ніж просить сторінка, а не менше.
-    const skipCardCacheWrite = skipCache
+    const skipCardCacheWrite = limited
       || Boolean(extraOptions?.cardsOnly ?? searchOptions?.cardsOnly);
     const cachedResult = skipCache
       ? { hit: false, negativeHit: false, cards: [], map: {} }
@@ -1937,12 +1939,14 @@ const SearchBar = ({
       : 'userId' in filteredRes
         ? [filteredRes]
         : Object.values(filteredRes);
-    const updatedArr = skipCardCacheWrite ? arr : arr.map(u => updateCard(u.userId, u));
+    const updatedArr = skipCardCacheWrite ? arr : arr.map(u => (
+      u.__profileMutationOperation === 'create' ? u : updateCard(u.userId, u)
+    ));
 
     // Id запиту пишуться лише разом із картками: інакше наступний той самий
     // запит узяв би з кеша рівно ту їх частину, яка потрапила туди іншим
     // шляхом, і мовчки віддав би менше, ніж знайшов.
-    if (key && value && !skipCardCacheWrite) {
+    if (key && value && !skipCache && !skipCardCacheWrite && !arr.some(u => u.__profileMutationOperation === 'create')) {
       const cacheKey = getSearchCacheKeyForParams(key, value, extraOptions);
       setIdsForQuery(cacheKey, updatedArr.map(u => u.userId));
     }

@@ -12,15 +12,19 @@ jest.mock('firebase/database', () => ({
 }));
 
 jest.mock('components/config', () => ({
+  auth: { currentUser: null },
   database: { app: 'db' },
   updateSearchId: jest.fn(async () => undefined),
 }));
 
-const { updateSearchId } = require('components/config');
+const { auth, updateSearchId } = require('components/config');
+const { ADMIN_UIDS } = require('../accessLevel');
 
 const {
   buildSupersededOverlayEntries,
+  collectOverlaySearchIdValues,
   pruneOverlaysMatchingCanonical,
+  removeOverlayForUserCard,
   settleOverlayValueForCard,
   settleSupersededOverlayValue,
 } = require('../multiAccountEdits');
@@ -61,6 +65,7 @@ const mockReads = ({ canonical = CANONICAL, overlays = OVERLAYS, history = HISTO
 
 beforeEach(() => {
   jest.clearAllMocks();
+  auth.currentUser = null;
   ref.mockImplementation((db, path) => ({ db, path }));
   push.mockImplementation(() => ({ key: 'entry-new' }));
   runTransaction.mockImplementation(async (refObject, updater) => {
@@ -154,12 +159,15 @@ describe('попередні версії правки', () => {
       expect.objectContaining({ path: 'multiData/editsHistory/card-1' }),
       { h1: null },
     );
-    expect(updateSearchId).toHaveBeenCalledWith('phone', '380503355667', 'card-1', 'remove');
+    expect(updateSearchId).toHaveBeenCalledWith(
+      'phone', '380503355667', 'card-1', 'remove', { verify: true, throwOnError: true },
+    );
   });
 
   it('лишає журнал для повтору, коли перевірка searchId не вдалася', async () => {
     get.mockImplementation(async ({ path }) => {
       if (path === 'profileContacts/card-1') throw new Error('network');
+      if (path === 'multiData/editsHistory/card-1') return { exists: () => true, val: () => HISTORY };
       return { exists: () => false, val: () => null };
     });
 
@@ -175,6 +183,100 @@ describe('попередні версії правки', () => {
       expect.objectContaining({ path: 'multiData/editsHistory/card-1' }),
       expect.anything(),
     );
+  });
+
+  it('leaves a historical alias used by another unresolved author', async () => {
+    const other = { ...HISTORY.h1, editorUserId: 'editorB', change: { added: ['+38 050 335 56 67'] } };
+    mockReads({ history: { ...HISTORY, other } });
+
+    await settleSupersededOverlayValue({
+      editorUserId: 'editorA', cardUserId: 'card-1', fieldName: 'phone',
+      value: '380503355667', action: 'discard',
+    });
+
+    expect(updateSearchId).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'multiData/editsHistory/card-1' }), { h1: null },
+    );
+  });
+
+  it('does not keep a retired alias for an already discarded history entry', async () => {
+    mockReads({ history: { ...HISTORY, terminal: { ...HISTORY.h1, editorUserId: 'editorB', action: 'discard' } } });
+
+    await settleSupersededOverlayValue({
+      editorUserId: 'editorA', cardUserId: 'card-1', fieldName: 'phone',
+      value: '380503355667', action: 'discard',
+    });
+
+    expect(updateSearchId).toHaveBeenCalledWith(
+      'phone', '380503355667', 'card-1', 'remove', { verify: true, throwOnError: true },
+    );
+  });
+
+  it('indexes an accepted correction while retaining the submitted alias used by an active pair', async () => {
+    const pair = { from: '380509677493', to: '+38 050 335 56 67' };
+    const record = {
+      fields: { phone: { removed: [pair.from] } },
+      proposal: { replacements: JSON.stringify({ phone: [pair] }) },
+    };
+    mockReads({ overlays: { ...OVERLAYS, editorB: record } });
+    expect(collectOverlaySearchIdValues(record)).toEqual([{ field: 'phone', value: pair.to }]);
+
+    await settleSupersededOverlayValue({
+      editorUserId: 'editorA', cardUserId: 'card-1', fieldName: 'phone',
+      value: '380503355667', acceptedValue: '380503355668', action: 'accept',
+    });
+
+    expect(updateSearchId.mock.calls).toEqual([
+      ['phone', '380503355668', 'card-1', 'add', { verify: true, throwOnError: true }],
+    ]);
+  });
+
+  it('keeps the historical decision available when the index write fails', async () => {
+    updateSearchId.mockRejectedValueOnce(new Error('index unavailable'));
+
+    await expect(settleSupersededOverlayValue({
+      editorUserId: 'editorA', cardUserId: 'card-1', fieldName: 'phone',
+      value: '380503355667', action: 'discard',
+    })).rejects.toThrow('index unavailable');
+
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('withdrawn overlay aliases', () => {
+  it('lets an administrator remove an unreferenced alias after withdrawing its overlay', async () => {
+    auth.currentUser = { uid: ADMIN_UIDS[0] };
+    const overlays = { ...OVERLAYS };
+    mockReads({ overlays, history: {} });
+    remove.mockImplementation(async ({ path }) => {
+      if (path === 'multiData/edits/card-1/editorA') delete overlays.editorA;
+    });
+
+    await removeOverlayForUserCard({ cardUserId: 'card-1', editorUserId: 'editorA' });
+
+    expect(updateSearchId).toHaveBeenCalledWith(
+      'phone', '380503355666', 'card-1', 'remove', { verify: true, throwOnError: true },
+    );
+  });
+
+  it('keeps the same alias when the withdrawn proposal remains in unresolved history', async () => {
+    auth.currentUser = { uid: ADMIN_UIDS[0] };
+    const overlays = { ...OVERLAYS };
+    mockReads({ overlays });
+    remove.mockImplementation(async ({ path }) => {
+      if (path === 'multiData/edits/card-1/editorA') delete overlays.editorA;
+    });
+
+    await removeOverlayForUserCard({ cardUserId: 'card-1', editorUserId: 'editorA' });
+    expect(updateSearchId).not.toHaveBeenCalled();
+  });
+
+  it('withdraws a non-admin author’s overlay without probing private sources', async () => {
+    auth.currentUser = { uid: 'editorA' };
+    await removeOverlayForUserCard({ cardUserId: 'card-1', editorUserId: 'editorA' });
+    expect(get).not.toHaveBeenCalled();
+    expect(updateSearchId).not.toHaveBeenCalled();
   });
 });
 

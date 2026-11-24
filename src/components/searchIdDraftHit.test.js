@@ -68,10 +68,19 @@ jest.mock('firebase/database', () => ({
   serverTimestamp: () => ({}),
 }));
 
-const { fetchProfileDraftById, searchUsersOnly } = require('./config');
+const { fetchProfileDraftById, fetchProfileDraftMutationById, searchUsersOnly } = require('./config');
+const { ADMIN_UIDS } = require('../utils/accessLevel');
+
+const draftPath = (author, id = DRAFT_CARD_ID) => `multiData/profileMutations/${author}/${id}`;
+const draft = (overrides = {}) => ({
+  cardId: DRAFT_CARD_ID, createdBy: OTHER_UID, operation: 'create', status: 'pendingReview', revision: 1,
+  data: { phone: '380505990799', surname: 'Чернетка' },
+  ...overrides,
+});
 
 describe('пошук показує чернетку, знайдену в searchId', () => {
   beforeEach(() => {
+    mockAuth.currentUser = { uid: VIEWER_UID };
     Object.keys(mockStore).forEach(key => delete mockStore[key]);
     mockReads.length = 0;
     mockStore['searchId/380505990799'] = { phone: DRAFT_CARD_ID };
@@ -136,6 +145,78 @@ describe('пошук показує чернетку, знайдену в search
     };
 
     await expect(searchUsersOnly({ searchId: '380505990799' })).resolves.toEqual({});
+  });
+
+  it('показує приватну чернетку автору, а сторонньому не віддає її навіть за точним ключем', async () => {
+    mockStore[`multiData/profileMutationOwners/${DRAFT_CARD_ID}`] = OTHER_UID;
+    mockStore[draftPath(OTHER_UID)] = draft({ status: 'private' });
+
+    await expect(fetchProfileDraftMutationById(DRAFT_CARD_ID, { creatorUid: OTHER_UID })).resolves.toBeNull();
+    await expect(searchUsersOnly({ searchId: '380505990799' })).resolves.toEqual({});
+    expect(mockReads).not.toContain('multiData/profileMutations');
+
+    mockAuth.currentUser = { uid: OTHER_UID };
+    await expect(searchUsersOnly({ searchId: '380505990799' })).resolves.toMatchObject({
+      userId: DRAFT_CARD_ID,
+      __profileMutationStatus: 'private',
+    });
+  });
+
+  it('перевіряє id й автора при читанні точкової чернетки', async () => {
+    mockStore[`multiData/profileMutationOwners/${DRAFT_CARD_ID}`] = OTHER_UID;
+    mockStore[draftPath(OTHER_UID)] = draft({ createdBy: VIEWER_UID });
+    await expect(fetchProfileDraftMutationById(DRAFT_CARD_ID)).resolves.toBeNull();
+
+    mockStore[draftPath(OTHER_UID)] = draft({ cardId: 'another-card' });
+    await expect(fetchProfileDraftMutationById(DRAFT_CARD_ID)).resolves.toBeNull();
+  });
+
+  it('залишає контактні поля та прибирає старі службові позначки з чужої видачі', async () => {
+    mockStore[draftPath(OTHER_UID)] = draft({ data: {
+      phone: '380505990799', screenAccess: 'flow', accessLevel: 'admin', __searchIdFields: ['telegram'],
+      password: 'legacy-placeholder', myComment: 'private comment', lastAction: 'internal',
+    } });
+    const result = await fetchProfileDraftById(DRAFT_CARD_ID, { creatorUid: OTHER_UID });
+    expect(result).toMatchObject({ phone: '380505990799', __profileMutationCreatedBy: OTHER_UID });
+    expect(result).not.toHaveProperty('screenAccess');
+    expect(result).not.toHaveProperty('accessLevel');
+    expect(result).not.toHaveProperty('__searchIdFields');
+    expect(result).not.toHaveProperty('password');
+    expect(result).not.toHaveProperty('myComment');
+    expect(result).not.toHaveProperty('lastAction');
+  });
+
+  it('адмінський перелік дає стару адресу, а дані щоразу читаються точково', async () => {
+    mockAuth.currentUser = { uid: ADMIN_UIDS[0] };
+    const stored = draft({ status: 'private' });
+    mockStore['multiData/profileMutations'] = { [OTHER_UID]: { [DRAFT_CARD_ID]: stored } };
+    mockStore[draftPath(OTHER_UID)] = stored;
+    await expect(fetchProfileDraftById(DRAFT_CARD_ID)).resolves.toMatchObject({ __profileMutationStatus: 'private' });
+
+    mockStore[draftPath(OTHER_UID)] = { ...stored, status: 'accepted' };
+    await expect(fetchProfileDraftById(DRAFT_CARD_ID)).resolves.toBeNull();
+    expect(mockReads.filter(key => key === 'multiData/profileMutations')).toHaveLength(1);
+
+    mockAuth.currentUser = { uid: VIEWER_UID };
+    mockReads.length = 0;
+    await expect(fetchProfileDraftById(DRAFT_CARD_ID)).resolves.toBeNull();
+    expect(mockReads).not.toContain('multiData/profileMutations');
+    expect(mockReads).not.toContain(draftPath(OTHER_UID));
+  });
+
+  it('накладений ідентифікатор знаходить лише канонічний id і поважає приховану картку', async () => {
+    const canonicalId = 'canonicalAlias0000000000000';
+    mockStore['searchId/380508887777'] = { phone: [canonicalId, canonicalId] };
+    mockStore[`matchingCards/${canonicalId}`] = { name: 'Канонічна' };
+    mockStore[draftPath(OTHER_UID, canonicalId)] = draft({ cardId: canonicalId, operation: 'update' });
+    const result = await searchUsersOnly({ searchId: '380508887777' });
+    expect(result).toMatchObject({ userId: canonicalId, name: 'Канонічна', __searchIdFields: ['phone'] });
+    expect(result).not.toHaveProperty('__profileMutationOperation');
+
+    const hiddenId = 'hiddenAlias0000000000000000';
+    mockStore['searchId/380509997777'] = { phone: hiddenId };
+    mockStore[`matchingCards/${hiddenId}`] = { name: 'Прихована', feedDate: false };
+    await expect(searchUsersOnly({ searchId: '380509997777' }, { keepHidden: true })).resolves.toEqual({});
   });
 
   it('не шукає застарілу чернетку в загальному кеші після промаху за відомим автором', async () => {

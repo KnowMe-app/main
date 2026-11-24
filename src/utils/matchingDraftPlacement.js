@@ -51,7 +51,9 @@ const standsBefore = (draft, card) => compareUsersByLastLogin2(asFeedRow(draft),
 
 export const placeOwnDraftsInFeed = ({ drafts = [], users = [], hasMore = false } = {}) => {
   if (!drafts.length) return users;
-  const pending = [...drafts].sort((a, b) => compareUsersByLastLogin2(asFeedRow(a), asFeedRow(b)));
+  const canonicalIds = new Set(users.map(card => card.userId));
+  const pending = drafts.filter(draft => !canonicalIds.has(draft.userId))
+    .sort((a, b) => compareUsersByLastLogin2(asFeedRow(a), asFeedRow(b)));
   const result = [];
   let next = 0;
   users.forEach(card => {

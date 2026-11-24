@@ -28,7 +28,8 @@ export const MATCHING_SUMMARY_CARD_TTL_MS = MATCHING_PERFORMANCE_CACHE_TTL_MS;
 // Версія 7 (22.11) — анкети з контактами, які клав колишній службовий доступ
 // (`accessLevel`): його прибрано, а збережене під ним інакше показувалось би й
 // далі з кешу (точний пошук за id, кешована видача пошуку).
-export const CARDS_CACHE_VERSION = 7;
+// Попередні записи пошуку могли зберегти дані чернетки без позначки джерела.
+export const CARDS_CACHE_VERSION = 8;
 export const MATCHING_CACHE_MAX_CHARS = 4 * 1024 * 1024;
 export const MATCHING_QUERY_MAX_IDS = 2000;
 // Версія 2 скидає списки id, збережені тоді, коли порожній бакет `searchKey`

@@ -26,6 +26,10 @@ export const getSearchIdIndexedFields = () => [...SEARCH_ID_INDEXED_FIELDS];
 
 export const isSearchIdIndexedField = field => SEARCH_ID_INDEXED_FIELDS.has(field);
 
+// Контакт може належати активній пропозиції. Зміна її стану на іншому
+// пристрої не має залишити влучання або промах у кеші цього запиту.
+export const requiresLiveSearchIdLookup = key => key === 'searchId' || isSearchIdIndexedField(key);
+
 export const getSearchIdPrefixes = searchIdPrefixes => {
   const fallback = getSearchIdIndexedFields();
   if (!Array.isArray(searchIdPrefixes)) {

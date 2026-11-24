@@ -562,9 +562,8 @@ await it('правило контактів окреме — звузити йо
   if (rules.profileContacts.$uid['.read'] === rules.matchingCards['.read']) {
     throw new Error('правило контактів не має бути тим самим обʼєктом, що й у стрічки');
   }
-  if (JSON.stringify(rules).includes('accessLevel')) {
-    throw new Error('рівень доступу прибрано з правил цілком');
-  }
+  const permissions = JSON.stringify(rules, (key, value) => key === '.validate' ? undefined : value);
+  if (permissions.includes('accessLevel')) throw new Error('старий рівень доступу не дає серверних прав');
 });
 
 describe('власниця анкети');
@@ -1572,6 +1571,214 @@ await it('знайдена чужа чернетка читається точк
   // Гілка автора цілком лишається закритою: одна знайдена картка — не
   // «покажіть усе, що ця людина заводила».
   await assertFails(get(ref(db(ORDINARY_VIEWER), `multiData/profileMutations/${CARD_CREATOR}`)));
+});
+
+describe('пропозиції — адресний доступ, права автора й розгляд');
+
+const proposalInspector = 'vtDxkDMjCwYuTDqTUnZsO29bpQr1';
+const proposalOverlay = (cardUserId, editorUserId = ORDINARY_VIEWER) => ({
+  cardUserId, editorUserId, updatedAt: 1764000000000,
+  fields: { phone: { added: ['380509770001'] } },
+});
+
+await it('власні чернетки доступні всім звичайним ролям та інспектору', async () => {
+  const roles = [
+    [SELF_SERVE, 'ed'], [ORDINARY_VIEWER, 'ag'],
+    ['proposalSurrogateUid01', 'sm'], ['proposalParentUid0001', 'ip'],
+    [proposalInspector, 'ag'],
+  ];
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const raw = context.database();
+    await Promise.all(roles.slice(2, 4).map(([uid, role]) => set(ref(raw, `matchingCards/${uid}`), { role })));
+  });
+  for (const [uid, role] of roles) {
+    const cardId = `proposalRole_${uid}`;
+    const path = `multiData/profileMutations/${uid}/${cardId}`;
+    const record = {
+      cardId, operation: 'create', createdBy: uid, status: 'pendingReview', revision: 1,
+      data: { userId: cardId, userRole: role, name: 'Чернетка' },
+    };
+    await assertSucceeds(set(ref(db(uid), path), record));
+    await assertSucceeds(get(ref(db(uid), path)));
+    await assertSucceeds(update(ref(db(uid), path), { revision: 2, 'data/name': 'Виправлена чернетка' }));
+    await assertFails(update(ref(db(OUTSIDER), path), { revision: 3, 'data/name': 'Чужий запис' }));
+    await assertFails(get(ref(testEnv.unauthenticatedContext().database(), path)));
+    await assertSucceeds(remove(ref(db(uid), path)));
+  }
+});
+
+await it('пошук відкриває чужу активну чернетку за id, але не повернену, прийняту чи архівну', async () => {
+  const cardId = 'proposalPointAccess01';
+  const { path, pending, publishing } = makePublicationFixture(cardId);
+  const pointer = `multiData/profileMutationOwners/${cardId}`;
+  const viewer = db(OUTSIDER);
+  const author = db(ORDINARY_VIEWER);
+  const ownerData = { ...pending, data: { userId: cardId, phone: '380509770002' } };
+
+  await assertSucceeds(set(ref(author, path), ownerData));
+  await assertSucceeds(set(ref(author, pointer), ORDINARY_VIEWER));
+  await assertSucceeds(set(ref(author, 'searchId/380509770002/phone'), cardId));
+  await assertSucceeds(get(ref(viewer, 'searchId/380509770002')));
+  await assertSucceeds(get(ref(viewer, pointer)));
+  await assertSucceeds(get(ref(viewer, path)));
+  await assertFails(get(ref(viewer, `multiData/profileMutations/${ORDINARY_VIEWER}`)));
+  await assertFails(get(ref(viewer, 'multiData/profileMutationOwners')));
+  await assertSucceeds(set(ref(db(SUPERADMIN), path), { ...publishing, data: ownerData.data }));
+  await assertSucceeds(get(ref(viewer, path)));
+  await assertSucceeds(get(ref(viewer, pointer)));
+
+  for (const status of ['private', 'accepted', 'archived']) {
+    await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), path), { ...ownerData, status }));
+    await assertFails(get(ref(viewer, path)));
+    await assertFails(get(ref(viewer, pointer)));
+    await assertSucceeds(get(ref(author, path)));
+    await assertSucceeds(get(ref(author, pointer)));
+    await assertSucceeds(get(ref(db(proposalInspector), path)));
+    await assertSucceeds(get(ref(db(SUPERADMIN), pointer)));
+  }
+});
+
+await it('чернетка зі старим статусом не відкриває дані прихованої канонічної анкети', async () => {
+  const { path, pending } = makePublicationFixture(HIDDEN_CARD);
+  const pointer = `multiData/profileMutationOwners/${HIDDEN_CARD}`;
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const raw = context.database();
+    await set(ref(raw, path), { ...pending, data: { phone: '380509770003' } });
+    await set(ref(raw, pointer), ORDINARY_VIEWER);
+  });
+  await assertFails(get(ref(db(OUTSIDER), path)));
+  await assertFails(get(ref(db(OUTSIDER), pointer)));
+  await assertFails(get(ref(db(OUTSIDER), `profileContacts/${HIDDEN_CARD}`)));
+  await assertSucceeds(get(ref(db(proposalInspector), path)));
+});
+
+await it('чернетка не підміняє автора, ревізію, id анкети чи права доступу', async () => {
+  const { path, pending } = makePublicationFixture('proposalOwnedCreate01');
+  const author = db(ORDINARY_VIEWER);
+  const draft = ref(author, path);
+  await assertFails(set(draft, { ...pending, createdBy: OUTSIDER }));
+  await assertFails(set(draft, { ...pending, revision: 2 }));
+  await assertFails(set(draft, { ...pending, data: { userId: CARD } }));
+  await assertFails(set(draft, { ...pending, data: { screenAccess: 'flow' } }));
+  await assertSucceeds(set(draft, { ...pending, data: { userId: pending.cardId, userRole: 'ed' } }));
+  await assertFails(update(draft, { 'data/name': 'без нової ревізії' }));
+  await assertFails(update(draft, { revision: 2, 'data/multiDataSourceUserIds': { [SUPERADMIN]: true } }));
+  await assertFails(update(draft, { revision: 2, 'data/publish': true }));
+  await assertSucceeds(update(draft, { revision: 2, 'data/name': 'Власне редагування' }));
+  await assertFails(set(ref(author, `multiData/profileMutations/${ORDINARY_VIEWER}/${CARD}`), {
+    ...pending, cardId: CARD,
+  }));
+});
+
+await it('інший автор не може зайняти вже зарезервований id чернетки', async () => {
+  const cardId = 'proposalReservedId01';
+  const { path, pending } = makePublicationFixture(cardId);
+  const pointer = `multiData/profileMutationOwners/${cardId}`;
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), path), pending));
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), pointer), ORDINARY_VIEWER));
+  await assertFails(set(ref(db(OUTSIDER), `multiData/profileMutations/${OUTSIDER}/${cardId}`), {
+    ...pending, createdBy: OUTSIDER,
+  }));
+  await assertFails(set(ref(db(OUTSIDER), pointer), OUTSIDER));
+  await assertFails(set(ref(db(OUTSIDER), 'multiData/profileIdentityClaims/phone_380509770004'), cardId));
+  await assertFails(set(ref(db(OUTSIDER), 'multiData/profileIdentityClaims/phone_380509770004'), CARD));
+  await assertFails(set(ref(db(OUTSIDER), 'multiData/profileIdentityClaims/phone_380509770004'), { cardId }));
+});
+
+await it('доповнення не створює канонічні поля, не змінює автора й не присвоює статус рішення', async () => {
+  const dbAuthor = db(SELF_SERVE);
+  const path = `multiData/edits/${CARD}/${SELF_SERVE}`;
+  const layer = ref(dbAuthor, path);
+  const record = proposalOverlay(CARD, SELF_SERVE);
+  const proposal = { id: 'managed-proposal', revision: 1, createdAt: 1, originalValues: '{}', replacements: '{}' };
+  await assertFails(set(layer, { ...record, editorUserId: OUTSIDER }));
+  await assertFails(set(layer, { ...record, cardUserId: HIDDEN_CARD }));
+  await assertFails(set(layer, { ...record, adminOnly: true }));
+  await assertFails(set(layer, { ...record, proposal: { ...proposal, status: 'accepted' } }));
+  await assertFails(set(layer, { ...record, proposal: { ...proposal, approvedBy: SELF_SERVE } }));
+  await assertFails(set(layer, { ...record, proposal: { ...proposal, createdBy: OUTSIDER } }));
+  await assertFails(set(layer, { ...record, fields: { screenAccess: { to: 'flow' } } }));
+  await assertFails(set(layer, { ...record, fields: { feedDate: { to: '2026-08-25' } } }));
+  await assertFails(update(ref(dbAuthor), { [path]: record, [`profileContacts/${CARD}/phone`]: '380509770001' }));
+  await assertSucceeds(set(layer, { ...record, proposal }));
+  await assertSucceeds(get(layer));
+  await assertFails(update(layer, { 'fields/phone': { added: ['380509770005'] } }));
+  await assertFails(set(layer, record));
+  await assertSucceeds(update(layer, {
+    'proposal/revision': 2, 'fields/phone': { added: ['380509770005'] },
+  }));
+  await assertFails(remove(ref(db(OUTSIDER), path)));
+  await assertSucceeds(remove(layer));
+});
+
+await it('пропозиція посилається на наявну картку або активну чернетку, а не на вигадану ціль', async () => {
+  const viewer = db(OUTSIDER);
+  const cardId = 'proposalLinkedDraft01';
+  const { path, pending } = makePublicationFixture(cardId);
+  const linked = ref(viewer, `multiData/edits/${cardId}/${OUTSIDER}`);
+  const record = proposalOverlay(cardId, OUTSIDER);
+  await assertFails(set(linked, record));
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), path), pending));
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), `multiData/profileMutationOwners/${cardId}`), ORDINARY_VIEWER));
+  await assertSucceeds(set(linked, record));
+  await assertSucceeds(get(ref(db(ORDINARY_VIEWER), `multiData/edits/${cardId}`)));
+  await assertSucceeds(update(ref(db(SUPERADMIN), path), { status: 'private', revision: 2 }));
+  await assertFails(update(linked, { updatedAt: 1764000000001 }));
+  await assertSucceeds(remove(linked));
+});
+
+await it('поза стрічкою доповнення не відкриває приватні вузли та поважає аудиторію вподобаних', async () => {
+  const cardId = 'proposalLikedViewCard01';
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const raw = context.database();
+    await set(ref(raw, `matchingCards/${cardId}`), { name: 'Прихована', feedDate: false, audience: 'liked' });
+    await set(ref(raw, `profileContacts/${cardId}`), { phone: '380509770006' });
+    await set(ref(raw, `multiData/favorites/${cardId}/${SELF_SERVE}`), true);
+  });
+  await assertFails(set(ref(db(OUTSIDER), `multiData/edits/${cardId}/${OUTSIDER}`), proposalOverlay(cardId, OUTSIDER)));
+  await assertFails(get(ref(db(OUTSIDER), `profileContacts/${cardId}`)));
+  await assertSucceeds(set(ref(db(SELF_SERVE), `multiData/edits/${cardId}/${SELF_SERVE}`), proposalOverlay(cardId, SELF_SERVE)));
+  await assertSucceeds(get(ref(db(SELF_SERVE), `profileContacts/${cardId}`)));
+  await assertSucceeds(set(ref(db(OUTSIDER), `multiData/edits/${HIDDEN_CARD}/${OUTSIDER}`), proposalOverlay(HIDDEN_CARD, OUTSIDER)));
+  await assertFails(get(ref(db(OUTSIDER), `profileContacts/${HIDDEN_CARD}`)));
+});
+
+await it('автор індексує тільки відповідне поле пропозиції та веде свій перелік', async () => {
+  const author = db(OUTSIDER);
+  const pointer = ref(author, `multiData/editsByEditor/${OUTSIDER}/${CARD}`);
+  await assertFails(set(pointer, 1));
+  await assertSucceeds(set(ref(author, `multiData/edits/${CARD}/${OUTSIDER}`), proposalOverlay(CARD, OUTSIDER)));
+  await assertSucceeds(set(pointer, 1));
+  await assertSucceeds(set(ref(author, 'searchId/380509770001/phone'), CARD));
+  await assertFails(set(ref(author, 'searchId/380509770001/telegram'), CARD));
+  await assertFails(get(ref(author, 'searchId')));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), `multiData/edits/${CARD}/${OUTSIDER}`)));
+});
+
+await it('звичайний автор пише лише власну історію редагування пропозиції', async () => {
+  const { path, pending } = makePublicationFixture('proposalHistoryDraft01');
+  const entry = {
+    cardId: pending.cardId, actorUid: ORDINARY_VIEWER, editorUserId: ORDINARY_VIEWER,
+    action: 'edit', fieldName: 'name', change: { from: '', to: 'Ім’я' }, at: 1, revision: 1,
+  };
+  const history = `multiData/profileMutationHistory/${pending.cardId}`;
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `${history}/before`), entry));
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), path), pending));
+  await assertSucceeds(set(ref(db(ORDINARY_VIEWER), `${history}/own`), entry));
+  await assertFails(set(ref(db(ORDINARY_VIEWER), `${history}/newer`), { ...entry, revision: 2 }));
+  await assertFails(set(ref(db(OUTSIDER), `${history}/foreign`), { ...entry, actorUid: OUTSIDER, editorUserId: OUTSIDER }));
+  await assertFails(get(ref(db(ORDINARY_VIEWER), history)));
+  await assertSucceeds(get(ref(db(proposalInspector), history)));
+
+  const overlayHistory = `multiData/editsHistory/${CARD}`;
+  const layerEntry = {
+    cardUserId: CARD, editorUserId: OUTSIDER, actorUid: OUTSIDER, action: 'edit',
+    fieldName: 'phone', change: { added: ['380509770001'] }, at: 1,
+  };
+  await assertSucceeds(set(ref(db(OUTSIDER), `${overlayHistory}/ownProposal`), layerEntry));
+  await assertFails(set(ref(db(OUTSIDER), `${overlayHistory}/fakeDecision`), { ...layerEntry, action: 'accept' }));
+  await assertFails(set(ref(db(OUTSIDER), `${overlayHistory}/fakeActor`), { ...layerEntry, actorUid: SUPERADMIN }));
+  await assertFails(get(ref(db(OUTSIDER), overlayHistory)));
 });
 
 await it('адмін дописує пари за старі чернетки', async () => {

@@ -69,6 +69,7 @@ import {
   makeSearchKeyValue,
   normalizeSearchIdInput,
   normalizeSearchDateComparableValue,
+  readSearchIdEntryIds,
   readSearchIdEntryMatches,
   removeSearchIdEntryId,
   shouldSkipBroadFallbackForExactSearchId,
@@ -92,7 +93,10 @@ import { resolveProfileFieldCountBucket } from '../utils/fieldCountBuckets';
 import { buildProfileNodePatch } from '../utils/profileNodeWriter';
 import { mergeProfileNodes, hasAnyProfileNode } from '../utils/profileNodeMerge';
 import { mergeProfileNodeCollections, PROFILE_NODE_NAMES } from '../utils/profileNodeCollections';
-import { PROFILE_CONTACT_FIELDS, PROFILE_NODES, resolveFieldOwnerNode, resolveCanonicalFieldName } from '../utils/profileNodeSchema';
+import {
+  ACCESS_CONTROL_FIELDS, OWNER_MULTI_DATA_FIELD_NAMES, PROFILE_CONTACT_FIELDS, PROFILE_NODES,
+  PROFILE_TECHNICAL_FIELDS, PROFILE_WORKFLOW_FIELDS, SECRET_FIELDS, resolveFieldOwnerNode, resolveCanonicalFieldName,
+} from '../utils/profileNodeSchema';
 import {
   MATCHING_CARDS_ROOT,
   MATCHING_CARD_FEED_FIELD,
@@ -3768,65 +3772,70 @@ const readProfileForSearchHit = async userId => readProfileFromNodes(userId);
  * окремий шлях (`personalDraftSearchMatches`); адмінка ж на той самий номер
  * відповідала порожнечею.
  *
- * Читається лише те, що читачеві й так відкрито правилами: спершу власна
- * чернетка (точкове читання `multiData/profileMutations/{читач}/{картка}` —
- * це піддерево відкрите самому авторові), а потім, якщо читач має право на
- * вузол цілком (адмін і службовий доступ), весь перелік. Перелік читається
- * **раз на таб** — і відмова в правах теж запамʼятовується, щоб звичайний
- * читач не платив за нього повторно на кожному влучанні.
+ * Читається власна чернетка або точкова адреса з мапи авторів. Адмін та
+ * інспектор можуть відновити відсутню адресу зі старого загального списку.
+ * У памʼяті від того списку лишаються тільки адреси, а дані й актуальний
+ * статус завжди приходять із точкового читання.
  *
  * Показане звідси несе ту саму позначку, що й власні чернетки в стрічці
  * (`__profileMutationOperation`), — за нею рядок і вирішує, що це чернетка, а
  * не анкета.
  */
-let allProfileDraftsPromise = null;
-const readAllProfileDraftsOnce = () => {
-  if (!allProfileDraftsPromise) {
-    allProfileDraftsPromise = get(ref2(database, PROFILE_DRAFTS_INDEX_NODE))
-      .then(snapshot => (snapshot.exists() ? collectDraftMutationsByCardId(snapshot.val()) : {}))
-      .catch(error => {
-        if (!isSearchIdPermissionDenied(error)) {
-          console.warn('[config] перелік чернеток не прочитано', error);
-        }
-        return {};
-      });
-  }
-  return allProfileDraftsPromise;
-};
-
-const collectDraftMutationsByCardId = (mutationsByCreator = {}) => {
-  const byCardId = {};
-  Object.values(mutationsByCreator || {}).forEach(creatorMutations => {
-    if (!creatorMutations || typeof creatorMutations !== 'object') return;
-    Object.entries(creatorMutations).forEach(([cardId, mutation]) => {
-      if (cardId && isIndexableProfileDraft(mutation)) byCardId[cardId] = mutation;
+let draftOwnerLookup = null;
+const readLegacyDraftOwners = viewerId => {
+  if (draftOwnerLookup?.viewerId === viewerId) return draftOwnerLookup.owners;
+  const owners = get(ref2(database, PROFILE_DRAFTS_INDEX_NODE))
+    .then(snapshot => collectDraftOwnersByCardId(snapshot.val()))
+    .catch(error => {
+      if (draftOwnerLookup?.owners === owners) draftOwnerLookup = null;
+      if (!isSearchIdPermissionDenied(error)) console.warn('[config] перелік чернеток не прочитано', error);
+      return {};
     });
-  });
-  return byCardId;
+  draftOwnerLookup = { viewerId, owners };
+  return owners;
 };
 
-const isIndexableProfileDraft = mutation => Boolean(
-  mutation
-  && typeof mutation === 'object'
-  && mutation.operation === 'create'
+const isActiveCreateDraft = (mutation, creatorUid, cardId) => Boolean(
+  mutation?.operation === 'create'
+  && mutation.cardId === cardId && mutation.createdBy === creatorUid
   && INDEXABLE_DRAFT_STATUSES.has(mutation.status)
-  && mutation.data
-  && typeof mutation.data === 'object',
+  && mutation.data && typeof mutation.data === 'object' && !Array.isArray(mutation.data),
 );
+
+const collectDraftOwnersByCardId = (mutationsByCreator = {}) => {
+  const owners = Object.create(null);
+  for (const [creatorUid, mutations] of Object.entries(mutationsByCreator || {})) {
+    for (const [cardId, mutation] of Object.entries(mutations || {})) {
+      if (isActiveCreateDraft(mutation, creatorUid, cardId)) owners[cardId] = creatorUid;
+    }
+  }
+  return owners;
+};
 
 // Розгорнута чернетка несе з собою адресу свого джерела: хто автор
 // (`multiData/profileMutations/{автор}/{картка}`) і яка ревізія прочитана.
 // Без них екран, що отримав чернетку з видачі, не мав як ні перечитати її, ні
 // записати назад — і писав у вузли готової анкети, яких у чернетки немає
 // (див. `utils/profileRecordSource.js`).
-const expandProfileDraft = (cardId, mutation) => ({
-  ...mutation.data,
-  userId: cardId,
-  __profileMutationOperation: 'create',
-  __profileMutationStatus: mutation.status,
-  __profileMutationCreatedBy: mutation.createdBy || '',
-  __profileMutationRevision: Number(mutation.revision) || 0,
-});
+const privateDraftPreviewFields = new Set([
+  ...ACCESS_CONTROL_FIELDS, ...OWNER_MULTI_DATA_FIELD_NAMES, ...PROFILE_TECHNICAL_FIELDS,
+  ...PROFILE_WORKFLOW_FIELDS, ...SECRET_FIELDS, 'myComment',
+]);
+
+const expandProfileDraft = (cardId, mutation, viewerId) => {
+  const privileged = viewerId === mutation.createdBy || isAdminUid(viewerId);
+  const data = Object.fromEntries(Object.entries(mutation.data).filter(([key]) => (
+    !key.startsWith('__') && (privileged || !privateDraftPreviewFields.has(resolveCanonicalFieldName(key)))
+  )));
+  return {
+    ...(privileged ? data : stripPrivilegedProfileFields(data, viewerId)),
+    userId: cardId,
+    __profileMutationOperation: 'create',
+    __profileMutationStatus: mutation.status,
+    __profileMutationCreatedBy: mutation.createdBy,
+    __profileMutationRevision: Number(mutation.revision) || 0,
+  };
+};
 
 /**
  * Чужа чернетка читається точково — через «хто її завів».
@@ -3839,11 +3848,11 @@ const expandProfileDraft = (cardId, mutation) => ({
  * номер тримає заявка на унікальність. Пошук казав «такої немає» рівно там, де
  * вона є.
  *
- * Тепер автора називає `multiData/profileMutationOwners/{картка}` (ключ
- * відкритий кожному авторизованому, перелік — ні), і читання коштує два
- * точкові запити замість вузла на всю базу. Вузол цілком лишився **запасним
- * шляхом**: чернетки, заведені до появи цієї мапи, автора в ній ще не мають, і
- * службовий читач мусить знаходити їх як і раніше.
+ * Для доступної чернетки автора називає `multiData/profileMutationOwners/{картка}`.
+ * Читання коштує два точкові запити замість вузла на всю базу.
+ * Для адміна й інспектора старий
+ * вузол лишився запасним джерелом адреси до появи мапи авторів. Після цього
+ * сам запис однаково читається точково.
  */
 const readProfileDraftOwnerId = async cardId => {
   try {
@@ -3858,11 +3867,13 @@ const readProfileDraftOwnerId = async cardId => {
   }
 };
 
-const readProfileDraftAt = async (creatorUid, cardId) => {
+const readProfileDraftAt = async (creatorUid, cardId, viewerId) => {
   try {
     const snapshot = await get(ref2(database, `${PROFILE_DRAFTS_INDEX_NODE}/${creatorUid}/${cardId}`));
-    const mutation = snapshot.exists() ? snapshot.val() : null;
-    return isIndexableProfileDraft(mutation) ? mutation : null;
+    const mutation = snapshot.val();
+    if (auth.currentUser?.uid !== viewerId || !isActiveCreateDraft(mutation, creatorUid, cardId)) return null;
+    const mayReadPrivate = creatorUid === viewerId || isAdminUid(viewerId);
+    return mutation.status !== 'private' || mayReadPrivate ? mutation : null;
   } catch (error) {
     if (!isSearchIdPermissionDenied(error)) {
       console.warn('[config] чернетку не прочитано', { cardId, creatorUid, error });
@@ -3875,36 +3886,50 @@ const readProfileDraftAt = async (creatorUid, cardId) => {
 // за старим номером, але показувати нікому, крім адміна, їй нічого: авторка
 // сказала, що тут нікого немає. Адмін бачить її, щоб читати історію правок.
 const showProfileDraftHit = async (cardId, mutation, viewerId) => {
-  if (!isAdminUid(viewerId) && !hasFilledProfileDraftData(mutation?.data)) return null;
-
-  const draft = expandProfileDraft(cardId, mutation);
+  if (auth.currentUser?.uid !== viewerId) return null;
+  const draft = expandProfileDraft(cardId, mutation, viewerId);
+  if (!isAdminUid(viewerId) && !hasFilledProfileDraftData(draft)) return null;
   const [getInTouchMark, writerMark, stimulationScheduleMark] = await Promise.all([
     readOwnerValueForProfile(OWNER_GET_IN_TOUCH_PATH, viewerId, cardId, { hasLegacyGroups: ownerGetInTouchHasLegacyGroups }),
     readOwnerValueForProfile(OWNER_WRITER_PATH, viewerId, cardId),
     readOwnerValueForProfile(OWNER_STIMULATION_SCHEDULE_PATH, viewerId, cardId),
   ]);
+  if (auth.currentUser?.uid !== viewerId) return null;
   if (getInTouchMark.found) draft.getInTouch = getInTouchMark.value;
   if (writerMark.found) draft.writer = writerMark.value;
   if (stimulationScheduleMark.found) draft.stimulationSchedule = stimulationScheduleMark.value;
   return draft;
 };
 
-const readProfileDraftForSearchHit = async cardId => {
-  const viewerId = String(auth.currentUser?.uid || '').trim();
-  if (!viewerId) return null;
-
-  const own = await readProfileDraftAt(viewerId, cardId);
-  if (own) return showProfileDraftHit(cardId, own, viewerId);
+const findProfileDraft = async (cardId, viewerId) => {
+  const own = await readProfileDraftAt(viewerId, cardId, viewerId);
+  if (own) return own;
 
   const ownerId = await readProfileDraftOwnerId(cardId);
   if (ownerId && ownerId !== viewerId) {
-    const foreign = await readProfileDraftAt(ownerId, cardId);
-    if (foreign) return showProfileDraftHit(cardId, foreign, viewerId);
+    if (auth.currentUser?.uid !== viewerId) return null;
+    const foreign = await readProfileDraftAt(ownerId, cardId, viewerId);
+    if (foreign) return foreign;
   }
 
-  const all = await readAllProfileDraftsOnce();
-  const mutation = all[cardId];
-  return mutation ? showProfileDraftHit(cardId, mutation, viewerId) : null;
+  if (!isAdminUid(viewerId) || auth.currentUser?.uid !== viewerId) return null;
+  const owners = await readLegacyDraftOwners(viewerId);
+  const legacyOwner = owners[cardId];
+  if (!legacyOwner || legacyOwner === ownerId || legacyOwner === viewerId || auth.currentUser?.uid !== viewerId) return null;
+  return readProfileDraftAt(legacyOwner, cardId, viewerId);
+};
+
+const readProfileDraftForSearchHit = cardId => fetchProfileDraftById(cardId);
+
+export const fetchProfileDraftMutationById = async (cardId, { creatorUid = '' } = {}) => {
+  const id = String(cardId || '').trim();
+  const viewerId = auth.currentUser?.uid;
+  if (!id || !viewerId) return null;
+  const creator = String(creatorUid || '').trim();
+  const mutation = creator ? await readProfileDraftAt(creator, id, viewerId) : await findProfileDraft(id, viewerId);
+  if (auth.currentUser?.uid !== viewerId || !mutation) return null;
+  if (!isAdminUid(viewerId) && mutation.createdBy !== viewerId && !hasFilledProfileDraftData(mutation.data)) return null;
+  return mutation;
 };
 
 /**
@@ -3913,17 +3938,12 @@ const readProfileDraftForSearchHit = async cardId => {
  * чернетку), це один точковий запит саме за її адресою; інакше — шлях через
  * мапу авторів, як у пошуку.
  */
-export const fetchProfileDraftById = async (cardId, { creatorUid = '' } = {}) => {
+export const fetchProfileDraftById = async (cardId, options) => {
   const id = String(cardId || '').trim();
-  if (!id) return null;
-  const viewerId = String(auth.currentUser?.uid || '').trim();
+  const viewerId = auth.currentUser?.uid;
   if (!viewerId) return null;
-  const creator = String(creatorUid || '').trim();
-  if (creator) {
-    const mutation = await readProfileDraftAt(creator, id);
-    return mutation ? showProfileDraftHit(id, mutation, viewerId) : null;
-  }
-  return readProfileDraftForSearchHit(id);
+  const mutation = await fetchProfileDraftMutationById(id, options);
+  return mutation ? showProfileDraftHit(id, mutation, viewerId) : null;
 };
 
 const addSearchHit = async (userId, users) => {
@@ -4429,8 +4449,10 @@ export const readSharedMatchingCard = async (cardId, { keepHidden = false } = {}
 // сховані анкети, і пошук йому їх не замовчує (`orderMatchingSearchResults`
 // ставить їх останніми). Решті читачів сховане не показується ніде.
 export const searchUsersOnly = async (searchedValue, options = {}) => {
+  const viewerId = auth.currentUser?.uid;
   const result = await searchUsersOnlyUnfiltered(searchedValue, options);
-  return options?.keepHidden ? result : filterFeedDeniedSearchResult(result);
+  const visible = options?.keepHidden && isAdminUid(viewerId) ? result : await filterFeedDeniedSearchResult(result);
+  return auth.currentUser?.uid === viewerId ? visible : {};
 };
 
 const searchUsersOnlyUnfiltered = async (searchedValue, options = {}) => {
@@ -7860,12 +7882,7 @@ export const reportSearchIdIndexFailure = ({ searchIdKey, action, error }) => {
 };
 
 // Функція для оновлення або видалення пар у searchId
-export const updateSearchId = async (searchKey, searchValue, userId, action) => {
-  if (isDev) {
-    console.log('searchKey!!!!!!!!! :>> ', searchKey);
-    console.log('searchValue!!!!!!!!! :>> ', searchValue);
-    console.log('action!!!!!!!!!!! :>> ', action);
-  }
+export const updateSearchId = async (searchKey, searchValue, userId, action, { verify = false, throwOnError = false } = {}) => {
   // Ключ потрібен і в `catch`: без нього тост каже «щось не записалось», а це
   // та сама мовчанка, тільки гучніша.
   let failedSearchIdKey = '';
@@ -7896,50 +7913,38 @@ export const updateSearchId = async (searchKey, searchValue, userId, action) => 
     failedSearchIdKey = `${valueKey}/${searchKey}`;
     if (isDev) console.log('searchIdPath in updateSearchId :>> ', searchIdPath);
 
-    if (action === 'add') {
-      if (confirmedSearchIdEntries.has(entryToken)) return;
+    if (action !== 'add' && action !== 'remove') {
+      console.error('Unknown action provided:', action);
+      return;
+    }
+    if (action === 'add' && !verify && confirmedSearchIdEntries.has(entryToken)) return;
+    confirmedSearchIdEntries.delete(entryToken);
 
-      const searchIdSnapshot = await get(searchIdRef);
-      const existingValue = searchIdSnapshot.exists() ? searchIdSnapshot.val() : null;
-      const updatedValue = appendSearchIdEntryId(existingValue, userId);
-
-      if (JSON.stringify(updatedValue) !== JSON.stringify(existingValue)) {
-        await update(ref2(database, `${SEARCH_ID_ROOT}/${valueKey}`), { [searchKey]: updatedValue });
-        if (isDev) console.log(`Записано ${searchIdPath} :>> `, updatedValue);
-      } else if (isDev) {
-        console.log(`Ключ уже містить userId: ${searchIdPath}`);
-      }
-
-      // Позначка ставиться лише тут — після того, як запис у базі відбувся або
-      // виявився вже наявним. Виняток вище (`catch`) сюди не доходить, тож
-      // ключ, який не записався, наступне збереження спробує знову.
-      rememberConfirmedSearchIdEntry(entryToken);
-    } else if (action === 'remove') {
-      confirmedSearchIdEntries.delete(entryToken);
-
-      const searchIdSnapshot = await get(searchIdRef);
-      if (!searchIdSnapshot.exists()) {
-        if (isDev) console.log(`Ключ не знайдено для видалення: ${searchIdPath}`);
+    // Автор може знову запропонувати значення після рішення адміністратора
+    // в іншій вкладці. Для цього запису підтвердження вкладки вже недостатньо.
+    if (verify || action === 'remove') {
+      const snapshot = await get(searchIdRef);
+      const present = readSearchIdEntryIds(snapshot.val()).includes(userId);
+      if (action === 'remove' && !present) return;
+      if (action === 'add' && present) {
+        rememberConfirmedSearchIdEntry(entryToken);
         return;
       }
-
-      const updatedValue = removeSearchIdEntryId(searchIdSnapshot.val(), userId);
-
-      if (updatedValue === null) {
-        // Порожнє поле знімається цілком; коли полів більше не лишилось, база
-        // прибирає й сам ключ значення.
-        await remove(searchIdRef);
-        if (isDev) console.log(`Видалено ${searchIdPath}`);
-      } else {
-        await update(ref2(database, `${SEARCH_ID_ROOT}/${valueKey}`), { [searchKey]: updatedValue });
-        if (isDev) console.log(`Оновлено ${searchIdPath} :>> `, updatedValue);
-      }
-    } else {
-      console.error('Unknown action provided:', action);
     }
+
+    // Спільне значення може одночасно змінювати й інша анкета. Транзакція
+    // повторює дію з поточним списком, зберігаючи решту ID.
+    await runTransaction(searchIdRef, current => {
+      const present = readSearchIdEntryIds(current).includes(userId);
+      if (action === 'add') return present ? undefined : appendSearchIdEntryId(current, userId);
+      if (current == null) return null; // SDK може спочатку викликати нас без кешу.
+      return present ? removeSearchIdEntryId(current, userId) : undefined;
+    }, { applyLocally: false });
+    if (action === 'add') rememberConfirmedSearchIdEntry(entryToken);
   } catch (error) {
     console.error('Error in updateSearchId:', error);
     reportSearchIdIndexFailure({ searchIdKey: failedSearchIdKey, action, error });
+    if (throwOnError) throw error;
   }
 };
 

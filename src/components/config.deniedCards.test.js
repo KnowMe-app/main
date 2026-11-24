@@ -54,7 +54,7 @@ jest.mock('firebase/database', () => ({
   serverTimestamp: jest.fn(),
 }));
 
-const { fetchMatchingCardsByIds, matchingFeedStateReader } = require('./config');
+const { fetchMatchingCardsByIds, matchingFeedStateReader, updateSearchId } = require('./config');
 
 // Індекс фільтра знає й сховані анкети. Донорці правила їх не відкривають, і
 // відмова на картці — це відповідь «сховано», а не «картки бракує»: інакше
@@ -85,6 +85,35 @@ beforeEach(() => {
 });
 
 afterEach(() => console.warn.mockRestore());
+
+describe('поточні посилання у спільному ключі пошуку', () => {
+  beforeEach(() => {
+    Object.keys(mockServer).forEach(key => { delete mockServer[key]; });
+    mockTransactionWrites.length = 0;
+    mockRunTransaction.mockImplementation(serverTransaction);
+    mockGet.mockImplementation(async target => snapshotOf(mockServer[target] ?? null));
+  });
+
+  it('оновлює лише потрібний id і зберігає одночасно додані анкети', async () => {
+    const key = 'searchId/380501110081/phone';
+    mockServer[key] = 'canonical';
+    await Promise.all([
+      updateSearchId('phone', '380501110081', 'draft', 'add'),
+      updateSearchId('phone', '380501110081', 'other-card', 'add'),
+    ]);
+    await updateSearchId('phone', '380501110081', 'draft', 'remove');
+    expect(mockServer[key]).toEqual(['canonical', 'other-card']);
+    expect(mockTransactionWrites.every(([path]) => path === key)).toBe(true);
+  });
+
+  it('поновлює повторно запропонований ідентифікатор після рішення іншої вкладки', async () => {
+    const key = 'searchId/380501110082/phone';
+    await updateSearchId('phone', '380501110082', 'target', 'add');
+    delete mockServer[key];
+    await updateSearchId('phone', '380501110082', 'target', 'add', { verify: true });
+    expect(mockServer[key]).toBe('target');
+  });
+});
 
 describe('закриті читачеві картки з індексу', () => {
   const nodes = {

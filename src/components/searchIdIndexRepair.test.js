@@ -57,31 +57,29 @@ jest.mock('firebase/database', () => ({
       val: () => mockStore[key],
     };
   },
-  // Запис іде в `searchId/{значення}` дочірнім полем, тож мок мусить зводити
-  // шлях і ключ payload докупи — інакше сховище тесту не відрізнить
-  // `аветісян/surname` від будь-якого іншого `surname`.
-  update: async (path, payload) => {
+  update: async () => {},
+  remove: async () => {},
+  set: () => ({}),
+  push: () => ({}),
+  runTransaction: async (path, updater) => {
+    const key = String(path).replace('searchId/', '');
+    mockReads.push(key);
+    const current = mockStore[key] ?? null;
+    // Перша спроба може бачити порожній кеш. Сервер звіряє її зі своїм
+    // значенням і повторює обчислення на актуальному записі.
+    const local = updater(null);
+    const next = local !== undefined && current !== null ? updater(current) : local;
+    if (next === undefined) return { committed: false, snapshot: { val: () => current } };
     if (mockWriteFailure.error) {
       const failure = mockWriteFailure.error;
       mockWriteFailure.error = null;
       throw failure;
     }
-    const base = String(path).replace(/^searchId\/?/, '');
-    const scoped = Object.entries(payload).reduce((acc, [key, value]) => {
-      acc[base ? `${base}/${key}` : key] = value;
-      return acc;
-    }, {});
-    mockWrites.push(scoped);
-    Object.assign(mockStore, scoped);
+    mockWrites.push({ [key]: next });
+    if (next === null) delete mockStore[key];
+    else mockStore[key] = next;
+    return { committed: true, snapshot: { val: () => next } };
   },
-  remove: async path => {
-    const key = String(path).replace('searchId/', '');
-    mockWrites.push({ [key]: null });
-    delete mockStore[key];
-  },
-  set: () => ({}),
-  push: () => ({}),
-  runTransaction: async () => ({}),
   orderByChild: () => ({}),
   orderByValue: () => ({}),
   orderByKey: () => ({}),

@@ -123,6 +123,12 @@ describe('SearchBar result validation', () => {
     )).toBe(true);
   });
 
+  it('uses the indexed field to validate exact contact queries on canonical results', () => {
+    const result = { userId: 'canonical', name: 'Аліна', __searchIdFields: ['phone'] };
+    expect(doesCardMatchSearchParams(result, { phone: '+380501112233' })).toBe(true);
+    expect(doesCardMatchSearchParams(result, { email: 'example@example.invalid' })).toBe(false);
+  });
+
 
   it('validates UK-trigger telegram searchId results by full value or handle', () => {
     const card = {
@@ -595,7 +601,7 @@ describe('SearchBar cache-first search', () => {
     document.body.removeChild(container);
   });
 
-  it('keeps scoped searchId prefix cache entries isolated for repeated searches', () => {
+  it('rechecks indexed identifiers even when cached prefix scopes differ', () => {
     updateCard('ig-user', { userId: 'ig-user', name: 'Instagram Match' });
     updateCard('tg-user', { userId: 'tg-user', name: 'Telegram Match' });
 
@@ -615,10 +621,8 @@ describe('SearchBar cache-first search', () => {
       searchIdPrefixes: ['telegram'],
     });
 
-    expect(instagramResult.hit).toBe(true);
-    expect(instagramResult.ids).toEqual(['ig-user']);
-    expect(telegramResult.hit).toBe(true);
-    expect(telegramResult.ids).toEqual(['tg-user']);
+    expect(instagramResult.hit).toBe(false);
+    expect(telegramResult.hit).toBe(false);
     expect(getFreshCachedSearchResult('searchId', 'shared-id').hit).toBe(false);
   });
 
@@ -637,18 +641,18 @@ describe('SearchBar cache-first search', () => {
   it('keeps negative cache entries isolated by cache scope', () => {
     const scoped = { cacheScope: { screen: 'admin' } };
     setIdsForQuery(
-      getSearchCacheKeyForParams('instagram', 'collection-only', scoped),
+      getSearchCacheKeyForParams('userId', 'collection-only', scoped),
       [],
       { isNegativeHit: true }
     );
 
-    expect(getFreshCachedSearchResult('instagram', 'collection-only', scoped).negativeHit).toBe(true);
+    expect(getFreshCachedSearchResult('userId', 'collection-only', scoped).negativeHit).toBe(true);
     // Той самий запит без скоупа — це інший ключ, тож негативний кеш на нього
     // не поширюється.
-    expect(getFreshCachedSearchResult('instagram', 'collection-only').negativeHit).toBe(false);
+    expect(getFreshCachedSearchResult('userId', 'collection-only').negativeHit).toBe(false);
   });
 
-  it('caches negative search results so repeated identical searches skip backend calls', async () => {
+  it('rechecks a previously missing identifier on the next search', async () => {
     const searchFunc = jest.fn().mockResolvedValue({});
     const setUserNotFound = jest.fn();
 
@@ -685,7 +689,7 @@ describe('SearchBar cache-first search', () => {
     const cachedResult = getFreshCachedSearchResult('instagram', '_sky.lol_', {
       searchIdPrefixes: ['instagram'],
     });
-    expect(cachedResult.negativeHit).toBe(true);
+    expect(cachedResult.negativeHit).toBe(false);
 
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
@@ -718,7 +722,7 @@ describe('SearchBar cache-first search', () => {
       await Promise.resolve();
     });
 
-    expect(searchFunc).toHaveBeenCalledTimes(1);
+    expect(searchFunc).toHaveBeenCalledTimes(2);
     expect(setUserNotFound).toHaveBeenLastCalledWith(true);
 
     // eslint-disable-next-line testing-library/no-unnecessary-act

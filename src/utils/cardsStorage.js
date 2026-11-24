@@ -122,6 +122,7 @@ const removeNestedValue = (current, segments, depth = 0) => {
  * лягло в сховище.
  */
 export const updateCard = (cardId, data, remoteSave, removeKeys = []) => {
+  if (data?.__profileMutationOperation === 'create') return data;
   const cards = loadCards();
   // Ім'я картки передається окремо: у `data` його може не бути, а без нього
   // власна анкета читалася б як чужа — і власниця втрачала б власні контакти з

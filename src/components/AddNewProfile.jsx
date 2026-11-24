@@ -227,6 +227,12 @@ import {
   PROFILE_DRAFTS_INDEX_NODE,
   collectDraftProfilesForIndexing,
 } from 'utils/profileDraftIndexing';
+import {
+  collectUpdateProposalAliases,
+  keepProposalAliasesWithTargets,
+  PROFILE_PROPOSAL_ALIAS_FILE,
+  PROFILE_UPDATE_PROPOSALS_NODE,
+} from 'utils/profileProposalIndexing';
 import { buildFullCardKeyMap } from 'utils/cardKeyMap';
 
 const get = (...args) =>
@@ -1203,6 +1209,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
    */
   const [localNodeFiles, setLocalNodeFiles] = useState({});
   const [localDraftProfiles, setLocalDraftProfiles] = useState({});
+  const [localProposalAliases, setLocalProposalAliases] = useState({});
   const localNodeFilesInputRef = useRef(null);
   const [selectedIndexJobs, setSelectedIndexJobs] = useState(() => {
     const storedRaw = localStorage.getItem(INDEX_SELECTION_STORAGE_KEY);
@@ -4492,7 +4499,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
    * б хіба що по дірках у пошуку.
    */
   const runLocalSearchIndexesWithCollections = useCallback(
-    async ({ nodeFiles, draftsData, indexTypes }) => {
+    async ({ nodeFiles, draftsData, proposalAliases, indexTypes }) => {
       const { profiles, stats } = mergeProfileNodeCollections(nodeFiles || {});
 
       // Колекція у вебі одна, тож і мапа одна: розділення на деки прибрано.
@@ -4502,8 +4509,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       // бакетами будується стрічка, а чернетка в стрічку не потрапляє — і
       // перебудова індексу не той шлях, яким вона б туди потрапила вперше.
       const drafts = draftsData && Object.keys(draftsData).length ? draftsData : null;
+      const aliases = keepProposalAliasesWithTargets(proposalAliases, profiles, drafts);
       const searchIdPayload = buildSearchIdIndexPayloadFromCollections(
-        drafts ? { ...collectionsMap, drafts } : collectionsMap,
+        { ...collectionsMap, drafts, aliases },
       );
       const searchKeyPayload = buildSearchKeyIndexPayloadFromCollections(collectionsMap, indexTypes);
 
@@ -4560,6 +4568,11 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       downloadJsonFile(`profileMutations-${stamp}.json`, drafts);
       loaded.push(['чернетки', Object.keys(drafts).length]);
 
+      const updateSnapshot = await get(ref(database, PROFILE_UPDATE_PROPOSALS_NODE));
+      const aliases = collectUpdateProposalAliases(updateSnapshot.val());
+      downloadJsonFile(`${PROFILE_PROPOSAL_ALIAS_FILE}-${stamp}.json`, aliases);
+      loaded.push(['ідентифікатори доповнень', Object.keys(aliases).length]);
+
       toast.success(
         `Вузли завантажено — ${loaded.map(([node, count]) => `${node}: ${count}`).join(', ')}`,
         { id: toastId, duration: 8000 },
@@ -4582,19 +4595,25 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
 
     const next = {};
     const nextDrafts = {};
+    const nextProposalAliases = {};
     const unknown = [];
 
     await Promise.all(files.map(async file => {
       // Чернетки — окремий файл і окреме призначення: вони йдуть тільки в
       // `searchId`, тож у мапу вузлів анкет не потрапляють.
       const isDraftsFile = file.name.includes('profileMutations');
-      const node = isDraftsFile ? null : PROFILE_NODE_NAMES.find(name => file.name.includes(name));
-      if (!node && !isDraftsFile) {
+      const isAliasesFile = file.name.includes(PROFILE_PROPOSAL_ALIAS_FILE);
+      const node = isDraftsFile || isAliasesFile ? null : PROFILE_NODE_NAMES.find(name => file.name.includes(name));
+      if (!node && !isDraftsFile && !isAliasesFile) {
         unknown.push(file.name);
         return;
       }
       try {
         const parsed = JSON.parse(await file.text());
+        if (isAliasesFile) {
+          Object.assign(nextProposalAliases, parsed);
+          return;
+        }
         if (isDraftsFile) {
           // Файл може бути і вже зведеною мапою чернеток, і сирим вузлом
           // `{хто завів: {id: мутація}}` — другий зводиться тим самим кодом,
@@ -4614,6 +4633,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     if (Object.keys(nextDrafts).length) {
       setLocalDraftProfiles(current => ({ ...current, ...nextDrafts }));
       toast.success(`Прочитано чернеток: ${Object.keys(nextDrafts).length}`);
+    }
+    if (Object.keys(nextProposalAliases).length) {
+      setLocalProposalAliases(current => ({ ...current, ...nextProposalAliases }));
     }
 
     if (Object.keys(next).length) {
@@ -4657,6 +4679,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       const stats = await runLocalSearchIndexesWithCollections({
         nodeFiles: localNodeFiles,
         draftsData: localDraftProfiles,
+        proposalAliases: localProposalAliases,
         indexTypes: pendingLocalIndexTypes,
       });
       console.info('[localIndex] зібрано анкет', stats);
@@ -4674,6 +4697,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     pendingLocalIndexTypes,
     localNodeFiles,
     localDraftProfiles,
+    localProposalAliases,
     runLocalSearchIndexesWithCollections,
   ]);
 

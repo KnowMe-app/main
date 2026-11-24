@@ -139,7 +139,7 @@ describe('межу тримає той, хто складає анкету', () 
     const cardIndexSource = fs.readFileSync(path.join(__dirname, '..', 'cardIndex.js'), 'utf8');
     // Анкети, складені до неї, лежать у localStorage разом із контактами, —
     // тож зміна версії їх і прибирає.
-    expect(cardIndexSource).toContain('export const CARDS_CACHE_VERSION = 7;');
+    expect(cardIndexSource).toContain('export const CARDS_CACHE_VERSION = 8;');
     expect(cardIndexSource).toContain('value.ownerId !== getCardsCacheOwnerId()');
     // А нові туди не потрапляють: право на контакти тримається на `feedDate`,
     // і воно протухає без відома браузера.

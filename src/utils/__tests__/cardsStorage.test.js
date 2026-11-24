@@ -52,6 +52,14 @@ describe('cardsStorage', () => {
     expect(card.lastAction).toBeUndefined();
   });
 
+  it('preserves the rendered draft without copying it to the shared card cache', () => {
+    updateCard('draft-1', { name: 'Canonical' });
+    const draft = { userId: 'draft-1', name: 'Draft only', __profileMutationOperation: 'create' };
+
+    expect(updateCard('draft-1', draft)).toEqual(draft);
+    expect(loadCards()['draft-1'].name).toBe('Canonical');
+  });
+
   it('пише в localStorage одразу на flush, а не чекає таймера', () => {
     updateCard('1', { title: 'Card 1' });
     flushPendingMatchingCacheWrites();

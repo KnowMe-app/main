@@ -243,7 +243,9 @@ import { FaTimes, FaHeart, FaStethoscope, FaSyncAlt, FaSearch, FaEnvelope } from
 import { FaRegHeart, FaUndoAlt } from 'react-icons/fa';
 import { getContactEntries } from './contactMethods';
 import { ProfileDotsMenu } from './ProfileDotsMenu';
-import { getEffectiveProfile, loadOwnProfileMutations } from 'utils/profileMutations';
+import { profileProposalService } from 'utils/profileProposalRepository';
+import { INDEXABLE_DRAFT_STATUSES } from 'utils/profileDraftIndexing';
+import { requiresLiveSearchIdLookup } from 'utils/searchKeyUtils';
 import { hasFilledProfileDraftData } from 'utils/profileDraftContent';
 import { findMatchingProfileMutations } from 'utils/profileCreationSearch';
 import {
@@ -891,7 +893,8 @@ const MATCHING_VIEW_LAYOUT = 'list';
 // Проєкція `matchingCards` — це те, що показує рядок стрічки, а не картка.
 // Кеш карток обслуговує ще й екран редагування, тож класти туди проєкцію не
 // можна: вона виглядала б там як анкета, з якої зникла половина полів.
-const shouldCacheMatchingCard = user => Boolean(user) && !user.__fromCardCache && !isMatchingSummaryCard(user);
+const shouldCacheMatchingCard = user => Boolean(user) && !user.__fromCardCache
+  && user.__profileMutationOperation !== 'create' && !isMatchingSummaryCard(user);
 
 /**
  * Курсор наступної сторінки, відновлений з останньої картки на екрані.
@@ -1213,7 +1216,11 @@ const Matching = () => {
     if (!ownerId || viewMode !== 'default' || searchQuery.trim() || !feedSnapshotIdsKey) return;
     writePersistedFeedSnapshot({ ownerId, ids: feedSnapshotIdsKey.split('|') });
   }, [feedSnapshotIdsKey, ownerId, searchQuery, viewMode]);
-  const [personalCreateProfiles, setPersonalCreateProfiles] = useState([]);
+  const [readOwnCreateProfiles, setPersonalCreateProfiles] = useState([]);
+  const personalCreateProfiles = useMemo(
+    () => readOwnCreateProfiles.filter(profile => profile.__profileMutationCreatedBy === ownerId),
+    [ownerId, readOwnCreateProfiles],
+  );
   useEffect(() => {
     const syncCopiedComment = event => {
       if (event.detail?.ownerId !== ownerId || !event.detail?.cardId) return;
@@ -1482,23 +1489,25 @@ const Matching = () => {
       setPersonalCreateProfiles([]);
       return () => { active = false; };
     }
-    loadOwnProfileMutations(ownerId)
+    profileProposalService.listDrafts({ operation: 'create', createdBy: ownerId })
       .then(items => {
         if (!active) return;
         // Очищена чернетка («Очистити все») у стрічці не стоїть: заповненого
         // в ній немає нічого, і рядок був би порожньою рамкою.
-        const pendingProfiles = items.filter(mutation => hasFilledProfileDraftData(mutation?.data)).map(mutation => {
-          const profile = getEffectiveProfile({ mutation });
-          return {
-            ...profile,
-            // Місце чернетки в стрічці — за датою, див. `placeOwnDraftsInFeed`.
-            [DRAFT_FEED_ORDER_FIELD]: resolveDraftFeedOrderDate(profile, mutation),
-            publish: true,
-            __matchingAccessAllowed: true,
-            __profileMutationOperation: 'create',
-            __profileMutationStatus: mutation.status,
-          };
-        });
+        const pendingProfiles = items.filter(proposal => (
+          proposal.operation === 'create' && INDEXABLE_DRAFT_STATUSES.has(proposal.status)
+          && hasFilledProfileDraftData(proposal.data)
+        )).map(proposal => ({
+          ...proposal.data,
+          userId: proposal.reservedCardId,
+          // Місце чернетки в стрічці — за датою, див. `placeOwnDraftsInFeed`.
+          [DRAFT_FEED_ORDER_FIELD]: resolveDraftFeedOrderDate(proposal.data, proposal),
+          publish: true,
+          __matchingAccessAllowed: true,
+          __profileMutationOperation: 'create',
+          __profileMutationStatus: proposal.status,
+          __profileMutationCreatedBy: proposal.createdBy,
+        }));
         setPersonalCreateProfiles(pendingProfiles);
       })
       .catch(error => console.error('Failed to load personal create profiles', error));
@@ -4416,7 +4425,7 @@ const Matching = () => {
       const found = searchCardsOnDevice(Object.values(cards), params, {
         contactsById: readAllCachedProfileContacts(getOwnerId()),
         detectedField: options?.searchIdDetectedField,
-      }).filter(card => isMatchingCardId(card.userId));
+      }).filter(card => isMatchingCardId(card.userId) && card.__profileMutationOperation !== 'create');
       setSearchOfflineNote(true);
       const [key] = Object.keys(params || {});
       if (found.length === 1 && key !== 'name' && key !== 'names') return found[0];
@@ -4432,6 +4441,7 @@ const Matching = () => {
     const isLimited = Boolean(options?.limitedFields);
     const isCardsOnly = Boolean(options?.cardsOnly);
     const [key, value] = Object.entries(params)[0] || [];
+    const reuseQueryCache = !isLimited && !requiresLiveSearchIdLookup(key);
     const term = key && value ? `${key}=${value}` : undefined;
     const cacheKey = key && value
       ? getSearchCacheKeyForParams(key, value, options)
@@ -4445,11 +4455,11 @@ const Matching = () => {
       return Object.fromEntries(cards.map(c => [c.userId, c]));
     };
 
-    if (!isLimited) {
+    if (reuseQueryCache) {
       const ids = getIdsByQuery(cacheKey).filter(isMatchingCardId);
       if (ids.length > 0) {
-        const cards = ids.map(id => getCard(id)).filter(c => c && isMatchingCardId(c.userId));
-        if (cards.length > 0) return asSearchResult(cards);
+        const cards = ids.map(id => getCard(id)).filter(c => c && isMatchingCardId(c.userId) && c.__profileMutationOperation !== 'create');
+        if (cards.length === ids.length) return asSearchResult(cards);
       }
     }
 
@@ -4471,7 +4481,7 @@ const Matching = () => {
      * й видалення скидають його цілком (`clearMatchingSearchResultCache`) —
      * інакше щойно заведена анкета не знаходилась би до вечора.
      */
-    const summaryCacheKey = isCardsOnly && !isLimited
+    const summaryCacheKey = isCardsOnly && reuseQueryCache
       ? buildMatchingSearchResultCacheKey(cacheKey)
       : null;
     if (summaryCacheKey) {
@@ -4524,13 +4534,14 @@ const Matching = () => {
         // без карток означало б, що наступний той самий запит візьме з кеша
         // рівно ту їх частину, яка потрапила туди іншим шляхом, — і мовчки
         // віддасть менше, ніж знайшов.
-        if (cacheable.length === filtered.length) {
+        if (reuseQueryCache && cacheable.length === filtered.length) {
           setIdsForQuery(cacheKey, filtered.map(u => u.userId));
         }
       }
       // Проєкції видачі лягають у своє сховище, а список id — під ключ запиту.
       // Обидва записи роблять наступний той самий пошук безкоштовним.
-      if (summaryCacheKey && filtered.length && canWriteMatchingCache()) {
+      if (summaryCacheKey && filtered.length && canWriteMatchingCache()
+        && !filtered.some(card => card.__profileMutationOperation === 'create')) {
         setCachedMatchingSummaryCards(Object.fromEntries(
           filtered.filter(isMatchingSummaryCard).map(u => [u.userId, u]),
         ));

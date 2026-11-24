@@ -198,4 +198,34 @@ describe('чернетка потрапляє в searchId на збережен�
       expectedRevision: 1,
     })).resolves.toEqual(expect.objectContaining({ revision: 2, data: expect.objectContaining({ city: 'Київ' }) }));
   });
+
+  it.each([
+    ['інше доповнення', 'card-overlay', { editor: { fields: { phone: { added: ['380501112299'] } } } }, false],
+    ['канонічна картка', 'card-canonical', null, true],
+    ['жодне джерело', 'card-no-source', null, false],
+  ])('звіряє вилучений ключ з джерелами чернетки (%s)', async (_source, cardId, overlays, canonical) => {
+    const draftPath = `multiData/profileMutations/author-1/${cardId}`;
+    const oldPath = 'searchId/380501112299/phone';
+    const stored = {
+      [draftPath]: {
+        cardId, createdBy: 'author-1', operation: 'create', status: 'pendingReview', revision: 1,
+        data: { phone: '380501112299' },
+      },
+      [`multiData/edits/${cardId}`]: overlays,
+      [`matchingCards/${cardId}`]: canonical ? { name: 'Canonical' } : null,
+      [oldPath]: [cardId, 'another-card'],
+    };
+    get.mockImplementation(async target => snapshotOf(stored[target.path] ?? null));
+    runTransaction.mockImplementation(async (target, updater) => {
+      const next = updater(stored[target.path] ?? null);
+      if (next !== undefined) stored[target.path] = next;
+      return { committed: next !== undefined, snapshot: snapshotOf(stored[target.path]) };
+    });
+
+    await saveCreateProfileMutation({
+      cardId, creatorUid: 'author-1', actorUid: 'author-1', expectedRevision: 1, data: { city: 'Київ' },
+    });
+
+    expect(stored[oldPath]).toEqual(overlays || canonical ? [cardId, 'another-card'] : 'another-card');
+  });
 });

@@ -325,12 +325,15 @@ describe('відхилене значення йде і з шару, і з searc
     editorA: { updatedAt: 1, fields: { phone: { added: ['380501110011', '380501110022'] } } },
   };
 
+  let savedOverlay;
   const mockReads = ({ canonical = { userId: 'card-1', name: 'Ірина' }, overlays = OVERLAY_TWO_PHONES } = {}) => {
     get.mockImplementation(async ({ path }) => {
       if (path === 'multiData/edits/card-1/editorA') {
         return { exists: () => Boolean(overlays.editorA), val: () => overlays.editorA || null };
       }
-      if (path === 'multiData/edits/card-1') return { exists: () => true, val: () => overlays };
+      if (path === 'multiData/edits/card-1') {
+        return { exists: () => true, val: () => ({ ...overlays, editorA: savedOverlay }) };
+      }
       if (path === 'profileContacts/card-1') return { exists: () => true, val: () => canonical };
       return { exists: () => false, val: () => null };
     });
@@ -341,7 +344,7 @@ describe('відхилене значення йде і з шару, і з searc
     ref.mockImplementation((db, path) => ({ db, path }));
     push.mockImplementation(() => ({ key: 'entry-1' }));
     runTransaction.mockImplementation(async (refObject, updater) => {
-      updater(OVERLAY_TWO_PHONES.editorA);
+      savedOverlay = updater(OVERLAY_TWO_PHONES.editorA);
       return { committed: true };
     });
     mockReads();
@@ -371,7 +374,9 @@ describe('відхилене значення йде і з шару, і з searc
     expect(remove).not.toHaveBeenCalledWith(
       expect.objectContaining({ path: 'multiData/edits/card-1/editorA/fields/phone' }),
     );
-    expect(updateSearchId).toHaveBeenCalledWith('phone', '380501110011', 'card-1', 'remove');
+    expect(updateSearchId).toHaveBeenCalledWith(
+      'phone', '380501110011', 'card-1', 'remove', { verify: true, throwOnError: true },
+    );
   });
 
   it('використовує попередньо прочитаний шар, якщо перший transaction callback отримав null', async () => {
@@ -440,16 +445,33 @@ describe('відхилене значення йде і з шару, і з searc
     });
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-    await settleOverlayValueForCard({
+    await expect(settleOverlayValueForCard({
       editorUserId: 'editorA',
       cardUserId: 'card-1',
       fieldName: 'phone',
       value: '380501110011',
       action: 'discard',
-    });
+    })).rejects.toThrow('PERMISSION_DENIED');
 
     expect(updateSearchId).not.toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it('зберігає спільний ключ, коли у цього самого автора лишився інший запис номера', async () => {
+    const record = { fields: { phone: { added: ['380501110011', '+38 (050) 111-00-11'] } } };
+    mockReads({ overlays: { editorA: record } });
+    runTransaction.mockImplementationOnce(async (target, change) => {
+      savedOverlay = change(record);
+      return { committed: true };
+    });
+
+    await settleOverlayValueForCard({
+      editorUserId: 'editorA', cardUserId: 'card-1', fieldName: 'phone',
+      value: '380501110011', action: 'discard',
+    });
+
+    expect(savedOverlay.fields.phone.added).toEqual(['+38 (050) 111-00-11']);
+    expect(updateSearchId).not.toHaveBeenCalled();
   });
 
   it('не запускає транзакцію, якщо пропозицію вже прибрали', async () => {

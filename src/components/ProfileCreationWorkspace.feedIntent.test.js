@@ -8,6 +8,8 @@ import {
   fetchDislikeUsers,
   fetchFavoriteUsers,
   fetchPublicProfileComments,
+  fetchProfileDraftById,
+  fetchProfileDraftMutationById,
   fetchUserById,
   fetchUserComment,
   fetchUsersByIds,
@@ -39,6 +41,8 @@ jest.mock('./config', () => ({
   fetchUserById: jest.fn(async () => ({ canCreateProfiles: true })),
   fetchUsersByIds: jest.fn(async () => ({})),
   readProfileFromNodes: jest.fn(async () => null),
+  fetchProfileDraftById: jest.fn(),
+  fetchProfileDraftMutationById: jest.fn(),
   searchUsersOnly: jest.fn(),
   fetchFavoriteUsers: jest.fn(async () => ({})),
   fetchDislikeUsers: jest.fn(async () => ({})),
@@ -139,6 +143,8 @@ beforeEach(() => {
   fetchUserComment.mockResolvedValue(null);
   fetchPublicProfileComments.mockResolvedValue({});
   readProfileFromNodes.mockResolvedValue(null);
+  fetchProfileDraftById.mockResolvedValue(null);
+  fetchProfileDraftMutationById.mockResolvedValue(null);
   loadOwnProfileMutations.mockResolvedValue([]);
   loadSharedProfileMutations.mockResolvedValue([]);
   loadProfileMutationHistory.mockResolvedValue([]);
@@ -151,6 +157,25 @@ beforeEach(() => {
 
 // Ці перевірки описують український бік екрана — мову задаємо явно.
 applyUkrainianInterface();
+
+it('відкриває знайдену чужу чернетку за точковою адресою і пише доповнення автора правки', async () => {
+  mockSearchParams = 'cardId=card-9';
+  fetchProfileDraftMutationById.mockResolvedValue({
+    cardId: 'card-9', operation: 'create', status: 'pendingReview', createdBy: 'another-author', revision: 2,
+    data: canonicalCard,
+  });
+  renderWithNavigationSlot(<ProfileCreationWorkspace />);
+
+  const surname = await screen.findByDisplayValue('Бугаренко');
+  expect(fetchProfileDraftMutationById).toHaveBeenCalledWith('card-9');
+  fireEvent.change(surname, { target: { value: 'Оновлено' } });
+  fireEvent.blur(surname);
+
+  await waitFor(() => expect(profileProposalService.createDraft).toHaveBeenCalledWith(expect.objectContaining({
+    operation: 'update', targetCardId: 'card-9', createdBy: 'editor-1',
+    targetCreateProposalId: 'legacy:create:another-author:card-9',
+  })));
+});
 
 describe('доповнення знайденої картки зі стрічки', () => {
   beforeEach(() => {

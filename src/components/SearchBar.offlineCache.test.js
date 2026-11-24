@@ -51,14 +51,14 @@ describe('офлайнова відповідь пошуку не лягає в 
   });
   afterEach(() => setOnline(true));
 
-  it('онлайн: порожня відповідь памʼятається, і другий той самий запит базу не питає', async () => {
+  it('онлайн: порожній результат пошуку за індексованим полем перевіряється повторно', async () => {
     setOnline(true);
     const searchFunc = jest.fn().mockResolvedValue({});
     await runSearch(searchFunc);
     const calls = searchFunc.mock.calls.length;
     expect(calls).toBeGreaterThan(0);
     await runSearch(searchFunc);
-    expect(searchFunc.mock.calls.length).toBe(calls);
+    expect(searchFunc.mock.calls.length).toBeGreaterThan(calls);
   });
 
   it('без мережі порожня відповідь не памʼятається: зі звʼязком запит іде в базу знову', async () => {

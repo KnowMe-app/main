@@ -83,10 +83,14 @@ describe('limited search projection', () => {
   });
 
   it('keeps limited hits out of the shared card cache', () => {
-    expect(read('SearchBar.jsx')).toContain(
-      'const skipCache = Boolean(extraOptions?.limitedFields ?? searchOptions?.limitedFields);'
-    );
-    expect(read('Matching.jsx')).toContain('const isLimited = Boolean(options?.limitedFields);');
+    const searchBar = read('SearchBar.jsx');
+    expect(searchBar).toContain('const limited = Boolean(extraOptions?.limitedFields ?? searchOptions?.limitedFields);');
+    expect(searchBar).toContain('const skipCache = requiresLiveSearchIdLookup(key) || limited;');
+    expect(searchBar).toContain('const skipCardCacheWrite = limited');
+    const matching = read('Matching.jsx');
+    expect(matching).toContain('const isLimited = Boolean(options?.limitedFields);');
+    expect(matching).toContain('const reuseQueryCache = !isLimited && !requiresLiveSearchIdLookup(key);');
+    expect(matching).toContain('if (!isLimited && canWriteMatchingCache()) {');
   });
 
   it('asks for the projection exactly when the viewer lacks full access', () => {
