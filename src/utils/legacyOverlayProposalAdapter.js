@@ -17,54 +17,15 @@ import { INDEXABLE_DRAFT_STATUSES } from './profileDraftIndexing';
 import { isPlainObject } from './profileFieldChanges';
 import { PROFILE_NODES } from './profileNodeSchema';
 import { approveOverlayValue } from './profileOverlayReview';
-import { normalizeLegacyOverlayProposal } from './profileProposals';
+import { readLegacyUpdateProposal } from './profileProposalLegacyRecords';
 
 const adapterError = code => Object.assign(new Error(code), { code });
-
-// RTDB прибирає null і порожні контейнери. У вихідних значеннях поля вони
-// відрізняються від відсутнього запису, тож тільки метадані зберігаємо як JSON.
-const readMetadataMap = serialized => {
-  if (typeof serialized !== 'string') return {};
-  try {
-    const parsed = JSON.parse(serialized);
-    return isPlainObject(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-};
-
-const readProposal = (record, cardId, createdBy) => {
-  const normalized = normalizeLegacyOverlayProposal(record, { cardId, editorUid: createdBy });
-  if (!normalized) return null;
-
-  const { proposal: metadata } = record;
-  if (
-    !isPlainObject(metadata) || typeof metadata.id !== 'string' || !metadata.id.trim()
-    || !Number.isSafeInteger(metadata.revision) || metadata.revision < 1
-  ) return normalized;
-
-  const { legacy, ...proposal } = normalized;
-  const replacements = readMetadataMap(metadata.replacements);
-  return {
-    ...proposal,
-    id: metadata.id,
-    createdAt: metadata.createdAt ?? null,
-    revision: metadata.revision,
-    baseCardRevision: metadata.baseCardRevision ?? null,
-    originalValues: readMetadataMap(metadata.originalValues),
-    changes: Object.fromEntries(Object.entries(proposal.changes).map(([field, change]) => [
-      field, Array.isArray(replacements[field]) ? { ...change, replacements: replacements[field] } : change,
-    ])),
-    ...(metadata.targetCreateProposalId && { targetCreateProposalId: metadata.targetCreateProposalId }),
-    ...(legacy.adminOnly && { adminOnly: true }),
-  };
-};
 
 const getDraft = async ({ cardId, createdBy }) => {
   const record = await readOverlayRecord({ cardUserId: cardId, editorUserId: createdBy });
   if (record === null) return null;
 
-  const proposal = readProposal(record, cardId, createdBy);
+  const proposal = readLegacyUpdateProposal(record, { cardId, editorUid: createdBy });
   if (!proposal) throw adapterError('INVALID_DRAFT');
   return { proposal, record };
 };
@@ -75,7 +36,7 @@ const list = async ({ actorUid, createdBy, review }) => {
     return Object.entries(cards).flatMap(([cardId, editors]) => (
       Object.entries(editors || {})
         .filter(([editorId]) => !createdBy || editorId === createdBy)
-        .map(([editorId, record]) => readProposal(record, cardId, editorId))
+        .map(([editorId, record]) => readLegacyUpdateProposal(record, { cardId, editorUid: editorId }))
         .filter(Boolean)
     ));
   }
@@ -150,7 +111,7 @@ const save = async (proposal, { current, actorUid } = {}) => {
       ...(canUseLegacyDraftTarget(current) && { legacyDraftTarget: true }),
     },
   });
-  const saved = readProposal(record, targetCardId, createdBy);
+  const saved = readLegacyUpdateProposal(record, { cardId: targetCardId, editorUid: createdBy });
   if (!saved) throw adapterError('PARTIAL_WRITE');
   return saved;
 };

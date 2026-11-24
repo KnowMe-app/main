@@ -8,17 +8,7 @@ import {
   rejectCreateProfileMutation,
   saveCreateProfileMutation,
 } from './profileMutations';
-import { normalizeLegacyCreateProposal } from './profileProposals';
-
-const normalize = (record, location) => {
-  const proposal = normalizeLegacyCreateProposal(record, location);
-  if (!proposal) return null;
-  if (typeof record.proposalId === 'string' && record.proposalId.trim()) proposal.id = record.proposalId;
-  if (record.duplicateConflicts?.length) {
-    Object.defineProperty(proposal, 'duplicateConflicts', { value: record.duplicateConflicts });
-  }
-  return proposal;
-};
+import { readLegacyCreateProposal } from './profileProposalLegacyRecords';
 
 const invalidDraft = () => Object.assign(new Error('INVALID_DRAFT'), { code: 'INVALID_DRAFT' });
 
@@ -36,7 +26,7 @@ const normalizeData = value => {
 const get = async ({ cardId, createdBy }) => {
   const record = await loadProfileMutation(createdBy, cardId);
   if (!record) return null;
-  const proposal = normalize(record, { creatorUid: createdBy, cardId });
+  const proposal = readLegacyCreateProposal(record, { creatorUid: createdBy, cardId });
   if (!proposal) throw invalidDraft();
   return { proposal, record };
 };
@@ -48,7 +38,7 @@ const list = async ({ actorUid, createdBy, review }) => {
     : await loadOwnProfileMutations(owner, { includeAccepted: true });
   return records
     .filter(record => !review || !createdBy || record.createdBy === createdBy)
-    .map(record => normalize(record, review ? undefined : { creatorUid: owner }))
+    .map(record => readLegacyCreateProposal(record, review ? undefined : { creatorUid: owner }))
     .filter(Boolean);
 };
 
@@ -62,7 +52,7 @@ const save = async (proposal, { current, actorUid }) => {
     proposalId: current ? current.record.proposalId : proposal.id,
     proposalRevision: proposal.revision,
   });
-  const saved = normalize(record, { creatorUid: proposal.createdBy, cardId: proposal.reservedCardId });
+  const saved = readLegacyCreateProposal(record, { creatorUid: proposal.createdBy, cardId: proposal.reservedCardId });
   if (!saved) throw invalidDraft();
   return saved;
 };

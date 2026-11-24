@@ -45,6 +45,8 @@
     "qa:pdf": "NODE_PATH=./src node scripts/pdfQaCheck.js",
     "migrate:representatives": "node scripts/migrateRepresentativePowerOfAttorney.js",
     "migrate:searchQueries": "node scripts/migrateSearchQueries.js",
+    "migrate:profile-proposals": "node scripts/migrateProfileProposals.js",
+    "test:proposal-migration": "node --test scripts/profileProposalMigration.test.js",
     "postinstall": "patch-package"
   },
   "eslintConfig": {

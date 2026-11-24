@@ -1,0 +1,247 @@
+{
+  "matchingCards": {
+    "canonical": { "name": "Fixture Card", "role": "ag", "feedDate": "2026-01-01", "rev": 17 },
+    "canonical-peer": { "name": "Other Fixture Card", "role": "ed", "feedDate": false, "rev": 3 },
+    "published-draft": { "name": "Published Fixture", "role": "ed", "feedDate": "2026-01-02", "rev": 1 }
+  },
+  "profileDetails": {
+    "canonical": { "surname": "Unchanged", "height": 170 },
+    "body-only": { "surname": "NoProjection" },
+    "published-draft": { "surname": "Preserved" }
+  },
+  "profileContacts": {
+    "canonical": { "phone": ["380500000001", "380500000099"], "email": "baseline@example.invalid" },
+    "canonical-peer": { "phone": "380500000003" },
+    "published-draft": { "email": "published@example.invalid" }
+  },
+  "profileWorkflow": {
+    "canonical": { "lastAction": "unchanged fixture workflow" }
+  },
+  "profileTechnical": {
+    "canonical": { "createdAt": "2025-01-01", "lastLogin": "2026-01-01" }
+  },
+  "searchId": {
+    "380500000001": { "phone": "canonical" },
+    "380500000003": { "phone": ["canonical-peer", "canonical"] },
+    "380500000004": { "phone": "canonical" },
+    "380500000099": { "phone": "canonical" },
+    "draft_at_example_dot_invalid": { "email": "pending-draft" },
+    "private_at_example_dot_invalid": { "email": "private-draft" },
+    "email_published_at_example_dot_invalid": "published-draft",
+    "dangling_at_example_dot_invalid": { "email": ["fully-deleted", "unidentified-target", "never-seen"] }
+  },
+  "searchKey": { "role": { "ag": { "canonical": true } } },
+  "accountDeletions": {
+    "fully-deleted": { "requestedAt": 180, "authDeletedAt": 181, "via": "self" }
+  },
+  "multiData": {
+    "profileMutations": {
+      "author-a": {
+        "pending-draft": {
+          "proposalId": "proposal/create.pending#A",
+          "cardId": "pending-draft",
+          "createdBy": "author-a",
+          "operation": "create",
+          "createdAt": 10,
+          "updatedAt": 20,
+          "revision": 2,
+          "status": "pendingReview",
+          "data": { "userId": "pending-draft", "name": "Draft Fixture", "email": "draft@example.invalid" },
+          "identityKeys": ["email_draft_at_example_dot_invalid"]
+        },
+        "private-draft": {
+          "cardId": "private-draft",
+          "createdBy": "author-a",
+          "operation": "create",
+          "createdAt": 11,
+          "updatedAt": 30,
+          "revision": 3,
+          "status": "private",
+          "data": { "userId": "private-draft", "name": "Returned Fixture", "email": "private@example.invalid" }
+        },
+        "published-draft": {
+          "proposalId": "proposal-published",
+          "cardId": "published-draft",
+          "createdBy": "author-a",
+          "operation": "create",
+          "createdAt": 12,
+          "updatedAt": 40,
+          "acceptedAt": 42,
+          "revision": 4,
+          "status": "accepted",
+          "data": { "userId": "published-draft", "name": "Published Fixture", "email": "published@example.invalid" },
+          "identityKeys": ["email_published_at_example_dot_invalid"],
+          "publicationAttemptId": "completed-attempt",
+          "publicationActorUid": "admin-fixture"
+        }
+      },
+      "author-b": {
+        "publishing-draft": {
+          "cardId": "publishing-draft",
+          "createdBy": "author-b",
+          "operation": "create",
+          "status": "publishing",
+          "createdAt": 17,
+          "updatedAt": 41,
+          "acceptedAt": 43,
+          "revision": 1,
+          "data": { "userId": "publishing-draft", "name": "Publication In Progress" },
+          "publicationAttemptId": "in-flight-attempt",
+          "publicationActorUid": "admin-fixture"
+        },
+        "archived-draft": {
+          "cardId": "archived-draft",
+          "createdBy": "author-b",
+          "operation": "create",
+          "status": "archived",
+          "createdAt": 18,
+          "updatedAt": 45,
+          "revision": 3,
+          "data": { "userId": "archived-draft", "name": "Archived Fixture" }
+        },
+        "canonical": {
+          "cardId": "canonical",
+          "createdBy": "author-b",
+          "operation": "update",
+          "status": "draft",
+          "createdAt": 19,
+          "updatedAt": 46,
+          "revision": 1,
+          "data": { "userId": "canonical", "name": "Unattributed Legacy Snapshot" }
+        }
+      }
+    },
+    "profileMutationOwners": {
+      "pending-draft": "author-a",
+      "private-draft": "author-a",
+      "published-draft": "author-a",
+      "publishing-draft": "author-b"
+    },
+    "profileIdentityClaims": {
+      "email_draft_at_example_dot_invalid": "pending-draft",
+      "email_published_at_example_dot_invalid": "published-draft"
+    },
+    "profileMutationHistory": {
+      "pending-draft": {
+        "shared-event-id": {
+          "cardId": "pending-draft",
+          "actorUid": "admin-fixture",
+          "editorUserId": "admin-fixture",
+          "action": "edit",
+          "fieldName": "name",
+          "change": { "from": "First Draft", "to": "Draft Fixture" },
+          "at": 20,
+          "revision": 2
+        }
+      },
+      "history-only-draft": {
+        "archived-event": {
+          "cardId": "history-only-draft",
+          "actorUid": "author-b",
+          "editorUserId": "author-b",
+          "action": "edit",
+          "fieldName": "name",
+          "change": { "from": "", "to": "History Only" },
+          "at": 19,
+          "revision": 2
+        }
+      }
+    },
+    "edits": {
+      "canonical": {
+        "editor-a": {
+          "cardUserId": "canonical",
+          "editorUserId": "editor-a",
+          "updatedAt": 70,
+          "fields": {
+            "phone": { "added": ["380500000003", "380500000004"], "removed": ["380500000001"] },
+            "email": { "from": "baseline@example.invalid", "to": "" }
+          },
+          "proposal": {
+            "id": "proposal/update.editor-a#1",
+            "createdAt": 55,
+            "revision": 4,
+            "baseCardRevision": 16,
+            "originalValues": "{\"phone\":{\"present\":true,\"value\":[\"380500000001\",\"380500000099\"]},\"email\":{\"present\":true,\"value\":\"baseline@example.invalid\"}}",
+            "replacements": "{\"phone\":[{\"from\":\"380500000001\",\"to\":\"380500000003\"}]}"
+          }
+        },
+        "editor-b": {
+          "cardUserId": "canonical",
+          "editorUserId": "editor-b",
+          "updatedAt": 71,
+          "adminOnly": true,
+          "fields": { "phone": { "add": ["380500000004", "380500000006"] } }
+        }
+      },
+      "pending-draft": {
+        "editor-b": {
+          "cardUserId": "pending-draft",
+          "editorUserId": "editor-b",
+          "updatedAt": 72,
+          "fields": { "city": { "from": "", "to": "Draft City" } },
+          "proposal": {
+            "id": "draft-contribution",
+            "createdAt": 71,
+            "revision": 1,
+            "targetCreateProposalId": "proposal/create.pending#A",
+            "originalValues": "{\"city\":{\"present\":false}}",
+            "replacements": "{}"
+          }
+        }
+      },
+      "body-only": {
+        "editor-a": { "cardUserId": "body-only", "editorUserId": "editor-a", "updatedAt": 73, "fields": { "name": { "from": "", "to": "Body-only proposal" } } }
+      },
+      "canonical-peer": {
+        "editor-a": {
+          "cardUserId": "canonical-peer",
+          "editorUserId": "editor-a",
+          "updatedAt": 74,
+          "fields": { "name": { "from": "Other Fixture Card", "to": "Claimed but unconfirmed" } },
+          "reviewClaim": { "fieldName": "name", "value": "Claimed but unconfirmed", "acceptedValue": "Claimed but unconfirmed" }
+        }
+      },
+      "fully-deleted": {
+        "editor-a": { "cardUserId": "fully-deleted", "editorUserId": "editor-a", "updatedAt": 75, "fields": { "city": { "from": "Old City", "to": "Held City" } } }
+      },
+      "unidentified-target": {
+        "editor-a": { "cardUserId": "unidentified-target", "editorUserId": "editor-a", "updatedAt": 76, "fields": { "city": { "from": "City", "to": "No target" } } }
+      }
+    },
+    "editsHistory": {
+      "canonical": {
+        "shared-event-id": {
+          "cardUserId": "canonical", "editorUserId": "editor-a", "actorUid": "admin-fixture",
+          "action": "accept", "fieldName": "phone", "change": { "added": ["380500000099"] }, "at": 67, "revision": 3
+        },
+        "discarded-value": {
+          "cardUserId": "canonical", "editorUserId": "editor-a", "actorUid": "admin-fixture",
+          "action": "discard", "fieldName": "phone", "change": { "added": ["380500000098"] }, "at": 68, "revision": 4
+        },
+        "superseded-value": {
+          "cardUserId": "canonical", "editorUserId": "editor-b",
+          "action": "edit", "fieldName": "phone", "change": { "add": ["380500000097"] }, "at": 65
+        }
+      },
+      "history-only-card": {
+        "former-editor-entry": {
+          "cardUserId": "history-only-card", "editorUserId": "former-editor",
+          "action": "edit", "fieldName": "name", "change": { "from": "", "to": "Preserved journal" }, "at": 60
+        }
+      }
+    },
+    "editsByEditor": {
+      "editor-a": { "canonical": 70, "body-only": 73, "canonical-peer": 74, "fully-deleted": 75, "unidentified-target": 76 },
+      "editor-b": { "canonical": 71, "pending-draft": 72 },
+      "former-editor": { "history-only-card": 59 }
+    },
+    "editsContributors": {
+      "canonical": { "editor-a": 69, "editor-b": 70, "former-editor": 60 },
+      "history-only-card": { "former-editor": 60 },
+      "pending-draft": { "editor-b": 71 }
+    },
+    "otherState": { "preservation-sentinel": true }
+  },
+  "otherRoot": { "preservation-sentinel": true }
+}
