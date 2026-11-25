@@ -63,10 +63,10 @@ jobs:
 
       - name: Build
         env:
-          REACT_APP_PROFILE_PROPOSAL_STORAGE: ${{ vars.REACT_APP_PROFILE_PROPOSAL_STORAGE }}
+          REACT_APP_PROFILE_PROPOSAL_STORAGE: legacy
         run: |
           case "$REACT_APP_PROFILE_PROPOSAL_STORAGE" in
-            ''|legacy|unified) ;;
+            legacy|unified) ;;
             *) echo '::error::REACT_APP_PROFILE_PROPOSAL_STORAGE must be legacy or unified'; exit 1 ;;
           esac
           npm run build
