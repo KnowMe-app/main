@@ -11,7 +11,7 @@ on:
 
 concurrency:
   group: github-pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
@@ -63,7 +63,7 @@ jobs:
 
       - name: Build
         env:
-          REACT_APP_PROFILE_PROPOSAL_STORAGE: legacy
+          REACT_APP_PROFILE_PROPOSAL_STORAGE: unified
         run: |
           case "$REACT_APP_PROFILE_PROPOSAL_STORAGE" in
             legacy|unified) ;;
@@ -71,8 +71,18 @@ jobs:
           esac
           npm run build
 
+      - name: Freeze proposal writes for the empty cutover
+        env:
+          KNOWME_FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node scripts/activateEmptyProfileProposals.js freeze
+
       - name: Deploy 🚀
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages
           folder: build
+
+      - name: Verify publication and activate unified proposals
+        env:
+          KNOWME_FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node scripts/activateEmptyProfileProposals.js activate

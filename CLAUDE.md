@@ -217,9 +217,8 @@ demo-x`, правила — `curl -X PUT "http://127.0.0.1:9099/.settings/rules.
 Пуш у `main` запускає `.github/workflows/deploy.yml`: install → lint → build → gh-pages.
 `.env` збирається з GitHub Secrets, локально його немає.
 GitHub Pages бере `REACT_APP_PROFILE_PROPOSAL_STORAGE` з кроку збірки
-в `deploy.yml`. Початковий реліз збирається з `legacy`. Режим `unified`
-вмикається окремим комітом за погодженою процедурою переключення
-в `docs/profile-proposal-migration.md`.
+в `deploy.yml`. Одноразовий перехід на `unified` з порожнім сховищем
+описано в `docs/profile-proposal-migration.md`.
 
 **Прод живе в корені `https://knowme.pp.ua`** (з 01.11; доти — `knowme-app.github.io/main`).
 `public/CNAME` мусить лежати в репозиторії: деплой чистить `gh-pages`, і `CNAME`, який

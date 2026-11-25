@@ -76,10 +76,12 @@ async function readCutoverSnapshot(token) {
 async function getFirebaseAccessToken() {
   const requireFunctionDependency = createRequire(path.resolve(__dirname, '../functions/package.json'));
   const { GoogleAuth } = requireFunctionDependency('google-auth-library');
-  const auth = new GoogleAuth({
-    scopes: ['https://www.googleapis.com/auth/firebase.database', 'https://www.googleapis.com/auth/userinfo.email'],
-  });
   try {
+    const scopedCredential = process.env.KNOWME_FIREBASE_SERVICE_ACCOUNT;
+    const auth = new GoogleAuth({
+      ...(scopedCredential && { credentials: JSON.parse(scopedCredential) }),
+      scopes: ['https://www.googleapis.com/auth/firebase.database', 'https://www.googleapis.com/auth/userinfo.email'],
+    });
     const token = await auth.getAccessToken();
     if (token) return token;
   } catch (error) {
@@ -89,7 +91,7 @@ async function getFirebaseAccessToken() {
   throw new Error('Unable to authenticate the Firebase service account');
 }
 
-module.exports = { inspectEmptyCutover, readCutoverSnapshot, getFirebaseAccessToken };
+module.exports = { database, inspectEmptyCutover, readCutoverSnapshot, getFirebaseAccessToken };
 
 if (require.main === module) {
   getFirebaseAccessToken().then(readCutoverSnapshot).then(snapshot => {
