@@ -490,6 +490,11 @@ const isSearchIdPermissionDenied = error => {
     || message.includes('permission denied');
 };
 
+// Пошук адміна за початком значення (`searchIdPrefixScan`): «elenazhukova1994»
+// знаходить ключ `elenazhukova1994_at_gmail_dot_com`. Межі — див. сам скан.
+const SEARCH_ID_PREFIX_MIN_LENGTH = 3;
+const SEARCH_ID_PREFIX_SCAN_LIMIT = 50;
+
 const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
   const matchedFieldsById = new Map();
   const { includePrefixMatches = true, fields, exactSearchKey = '', nameVariantKeys = [] } = options;
@@ -558,9 +563,13 @@ const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
   //
   // `try/catch` нижче лишається: права можуть змінитись, і відмова в
   // необовʼязковому кроці не має губити те, що вже знайдено за точним ключем.
+  //
+  // Скан обмежений: ключів із коротким початком («ol») у `searchId` тисячі, і
+  // без межі один запит вивантажував би пів індексу. Надто короткий початок не
+  // сканується зовсім — точний ключ уже прочитано вище.
   if (includePrefixMatches && isAdminUid(auth.currentUser?.uid)) {
     await Promise.all(
-      uniqueSearchKeys.map(async searchKey => {
+      uniqueSearchKeys.filter(searchKey => searchKey.length >= SEARCH_ID_PREFIX_MIN_LENGTH).map(async searchKey => {
         try {
           const prefixMatchesSnapshot = await get(
             query(
@@ -568,6 +577,7 @@ const collectUserIdsBySearchIdKeys = async (searchKeys, options = {}) => {
               orderByKey(),
               startAt(searchKey),
               endAt(`${searchKey}\uf8ff`),
+              limitToFirst(SEARCH_ID_PREFIX_SCAN_LIMIT),
             )
           );
 
@@ -5032,6 +5042,7 @@ export const searchUsersCollectionInRTDB = async (searchedValue, options = {}) =
     forcePartialUserIdSearch = false,
     allowTelegramPrefixMatches = false,
     enabledSearchKeys,
+    searchIdPrefixScan = false,
   } = options;
   const isBroadTextSearchEnabled = Boolean(enabledSearchKeys?.broadTextSearch);
   if (isDev) console.log('searchUsersCollectionInRTDB → searchedValue:', searchedValue);
@@ -5045,7 +5056,11 @@ export const searchUsersCollectionInRTDB = async (searchedValue, options = {}) =
   const searchIdOptions = shouldSkipBroadFallback
     ? {
       includeVariants: false,
-      includePrefixMatches: allowTelegramPrefixMatches,
+      // Пошук `AddNewProfile` (`searchIdPrefixScan`) шукає й за початком
+      // значення: ключ індексу — значення цілком, тож без цього пошту
+      // «elenazhukova1994@gmail.com» знаходив лише повний набір адреси.
+      // Сам скан — лише адмінам (`collectUserIdsBySearchIdKeys`).
+      includePrefixMatches: allowTelegramPrefixMatches || Boolean(searchIdPrefixScan),
       includeAdaptedPhoneVariant: true,
       includeUkSmVariant,
     }

@@ -1296,7 +1296,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     {
       key: 'exact',
       label: 'Точно',
-      hint: 'Індекс searchId і частина ID картки — поле розпізнається саме, один запит.',
+      hint: 'Індекс searchId — точне значення й за його початком (частина пошти чи ніка), і частина ID картки.',
     },
     {
       key: 'date',
@@ -5782,6 +5782,9 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
               searchKeyFields: selectedSearchKeyFields,
               autoOtherFallback: shouldAutoRunOtherFallback,
               enabledSearchKeys,
+              // Адмін шукає в `searchId` і за початком значення: частина пошти
+              // чи ніка знаходить картку (скан — лише адмінам, див. config.js).
+              searchIdPrefixScan: true,
             }}
             searchHistoryLimit={15}
             suppressInitialSearchExecution={Boolean(

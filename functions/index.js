@@ -967,6 +967,8 @@ const adminActivity = require('./adminActivity');
 const buildActivityDeps = () => {
   const database = getDatabase();
   return {
+    // Пауза перед повторним читанням контактів нової реєстрації (пошук дубля).
+    sleep: ms => new Promise(resolve => { setTimeout(resolve, ms); }),
     db: {
       ...createAdminDb(database),
       update: updates => database.ref().update(updates),

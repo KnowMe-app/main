@@ -341,7 +341,11 @@ const describePerson = info => {
 const detailLine = event => {
   const meta = event.meta || {};
   switch (event.type) {
-    case 'profile_created': return meta.account ? 'Зареєструвався новий акаунт' : 'Картку завели вручну';
+    case 'profile_created': {
+      const base = meta.account ? 'Зареєструвався новий акаунт' : 'Картку завели вручну';
+      const duplicates = Array.isArray(meta.duplicates) ? meta.duplicates : [];
+      return duplicates.length ? `${base} · можливий дубль: ${duplicates.map(item => item.label || 'картка без імені').join(', ')}` : base;
+    }
     case 'contact_tap': return meta.channel ? `Канал: ${CONTACT_CHANNEL_LABELS[meta.channel] || meta.channel}` : '';
     case 'card_shared': return meta.via && SHARE_RESULT_LABELS[meta.via] ? `Як: ${SHARE_RESULT_LABELS[meta.via]}` : '';
     case 'search': return meta.query ? `Запит: «${maskDigits(meta.query)}»` : '';
@@ -366,17 +370,28 @@ const summarizeEvent = event => {
 
 const buildInstantMessage = event => {
   const def = ADMIN_EVENT_BY_KEY[event.type];
-  const detail = detailLine(event);
+  const duplicateLines = describeDuplicateLines(event.meta);
+  // У миттєвому листі дублі стоять окремим блоком з посиланнями, тож у рядку
+  // подробиці їх не повторюємо.
+  const detail = duplicateLines.length && event.type === 'profile_created'
+    ? detailLine({ ...event, meta: { ...event.meta, duplicates: [] } })
+    : detailLine(event);
   const lines = [
     `${def.emoji} <b>${escapeHtml(def.label)}</b>`,
     escapeHtml(summarizeEvent(event)),
     detail ? escapeHtml(detail) : '',
   ].filter(Boolean);
-  const html = `${lines.join('\n')}\n<a href="${escapeHtml(cardLink(event))}">Відкрити</a>`;
+  const duplicateLinks = (Array.isArray(event.meta && event.meta.duplicates) ? event.meta.duplicates : [])
+    .map((item, index) => `<a href="${escapeHtml(`${APP_URL}/edit/${encodeURIComponent(item.id)}`)}">Дубль ${index + 1}</a>`);
+  const html = [
+    lines.join('\n'),
+    duplicateLines.length ? escapeHtml(duplicateLines.join('\n')) : '',
+    [`<a href="${escapeHtml(cardLink(event))}">Відкрити</a>`, ...duplicateLinks].join(' · '),
+  ].filter(Boolean).join('\n');
   const push = {
     kind: 'admin',
     title: `${def.emoji} ${def.label}`,
-    body: [summarizeEvent(event), detail].filter(Boolean).join(' · ').slice(0, 240),
+    body: [summarizeEvent(event), detail, duplicateLines.length ? 'можливий дубль' : ''].filter(Boolean).join(' · ').slice(0, 240),
     url: cardLink(event),
   };
   return { html, push };
@@ -739,6 +754,128 @@ const readPersonInfo = async (id, deps) => {
   };
 };
 
+// --- можливий дубль нової реєстрації ----------------------------------------
+
+/*
+ * Нова реєстрація людини, чия анкета вже є (картку завели вручну, або вона
+ * мала акаунт і увійшла іншим способом — Telegram, пошта й Google не
+ * звʼязуються за номером навмисно), виглядала в Telegram адміна як звичайна
+ * «Нова анкета»: 24.11 так прийшла СМ, чия картка стояла в стрічці. Тепер
+ * подія несе картки, що вже тримають телефон чи пошту нового акаунта в
+ * `searchId`, — адмін бачить дубль одразу й може звести картки порівнянням.
+ */
+const DUPLICATE_LOOKUP_FIELDS = Object.freeze(['phone', 'email']);
+const DUPLICATE_MAX = 3;
+const DUPLICATE_CONTACTS_RETRY_MS = 3000;
+
+// Та сама нормалізація, що й `normalizePhoneValue` у застосунку
+// (`src/components/inputValidations.js`): ключ `searchId` пише клієнт.
+const normalizePhoneForSearchId = number => {
+  const digits = String(number ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('00')) return digits;
+  if (/^380380\d{9}$/.test(digits)) return `380${digits.slice(6)}`;
+  if (digits.startsWith('3800')) return `380${digits.slice(4)}`;
+  if (digits.startsWith('380')) return digits;
+  if (digits.startsWith('0')) return `38${digits}`;
+  if (digits.startsWith('80')) return `3${digits}`;
+  return digits;
+};
+
+// `encodeKey` з `src/utils/searchIndexCandidates.js` + нижній регістр
+// (`buildSearchIdValueKey`).
+const encodeSearchIdKey = value => String(value)
+  .replace(/\s/g, '_space_')
+  .replace(/@/g, '_at_')
+  .replace(/\./g, '_dot_')
+  .replace(/#/g, '_hash_')
+  .replace(/\$/g, '_dollar_')
+  .replace(/\//g, '_slash_')
+  .replace(/\[/g, '_lbracket_')
+  .replace(/\]/g, '_rbracket_')
+  .toLowerCase();
+
+const searchIdKeyFor = (field, raw) => {
+  const base = String(raw ?? '').trim();
+  if (!base) return '';
+  const normalized = field === 'phone' ? normalizePhoneForSearchId(base) : base.replace(/\s+/g, ' ');
+  return normalized ? encodeSearchIdKey(normalized) : '';
+};
+
+// Поле анкети — історія версій; дубль шукаємо за всіма, а не лише поточною:
+// стара картка могла лишитись зі старим номером.
+const listFieldValues = value => (Array.isArray(value) ? value : [value])
+  .filter(item => typeof item === 'string' || typeof item === 'number')
+  .map(item => String(item).trim())
+  .filter(Boolean);
+
+const listSearchIdKeysFromContacts = contacts => {
+  if (!isPlainObject(contacts)) return [];
+  const keys = [];
+  DUPLICATE_LOOKUP_FIELDS.forEach(field => {
+    listFieldValues(contacts[field]).forEach(raw => {
+      const valueKey = searchIdKeyFor(field, raw);
+      if (valueKey && !keys.some(entry => entry.valueKey === valueKey && entry.field === field)) {
+        keys.push({ field, valueKey });
+      }
+    });
+  });
+  return keys;
+};
+
+const readSearchIdIds = value => (Array.isArray(value) ? value : [value])
+  .filter(item => typeof item === 'string' && item);
+
+/**
+ * Картки, що вже тримають телефон чи пошту нового акаунта.
+ * Контакти пишуться поруч із карткою (Telegram — до неї, пошта — тим самим
+ * записом), тож порожні контакти читаються ще раз після паузи. Збій читання —
+ * без дублів: сповіщення важливіше за підказку.
+ */
+const findPossibleDuplicateCards = async (cardId, deps) => {
+  let contacts = await deps.db.get(`profileContacts/${cardId}`).catch(() => null);
+  let keys = listSearchIdKeysFromContacts(contacts);
+  if (!keys.length && deps.sleep) {
+    await deps.sleep(DUPLICATE_CONTACTS_RETRY_MS);
+    contacts = await deps.db.get(`profileContacts/${cardId}`).catch(() => null);
+    keys = listSearchIdKeysFromContacts(contacts);
+  }
+  const found = [];
+  for (const { field, valueKey } of keys) {
+    // eslint-disable-next-line no-await-in-loop
+    const entry = await deps.db.get(`searchId/${valueKey}/${field}`).catch(() => null);
+    readSearchIdIds(entry).forEach(id => {
+      if (id === cardId) return;
+      const existing = found.find(item => item.id === id);
+      if (existing) {
+        if (!existing.fields.includes(field)) existing.fields.push(field);
+      } else {
+        found.push({ id, fields: [field] });
+      }
+    });
+  }
+  const picked = found.slice(0, DUPLICATE_MAX);
+  const described = await Promise.all(picked.map(async item => {
+    const info = await readPersonInfo(item.id, deps);
+    return { id: item.id, fields: item.fields.join(','), label: describePerson(info) || '' };
+  }));
+  return { duplicates: described, more: Math.max(0, found.length - picked.length) };
+};
+
+const DUPLICATE_FIELD_LABELS = Object.freeze({ phone: 'телефон', email: 'пошта' });
+
+const describeDuplicateLines = meta => {
+  const duplicates = Array.isArray(meta && meta.duplicates) ? meta.duplicates : [];
+  if (!duplicates.length) return [];
+  const lines = duplicates.map(item => {
+    const fields = String(item.fields || '').split(',').filter(Boolean)
+      .map(field => DUPLICATE_FIELD_LABELS[field] || field).join(', ');
+    return `• ${item.label || 'картка без імені'}${fields ? ` — збіг: ${fields}` : ''}`;
+  });
+  if (meta.duplicatesMore) lines.push(`…і ще ${meta.duplicatesMore}`);
+  return [duplicates.length === 1 ? '⚠️ Можливий дубль:' : '⚠️ Можливі дублі:', ...lines];
+};
+
 /** Однакова подія у вікні `dedupMs` рахується раз. */
 const passesDedup = async (event, actor, deps) => {
   const window = ADMIN_EVENT_BY_KEY[event.type].dedupMs || 0;
@@ -776,12 +913,19 @@ const recordAdminEvents = async (events, { actor, authType, pathActor = '' }, de
       readPersonInfo(eventActor, deps),
       raw.card && raw.card !== eventActor ? readPersonInfo(raw.card, deps) : Promise.resolve(null),
     ]);
+    let meta = raw.meta || {};
+    if (raw.type === 'profile_created' && meta.account && raw.card) {
+      // eslint-disable-next-line no-await-in-loop
+      const { duplicates, more } = await findPossibleDuplicateCards(raw.card, deps)
+        .catch(() => ({ duplicates: [], more: 0 }));
+      if (duplicates.length) meta = { ...meta, duplicates, ...(more ? { duplicatesMore: more } : {}) };
+    }
     const event = {
       t: deps.now,
       type: raw.type,
       actor: eventActor,
       card: raw.card || '',
-      meta: raw.meta || {},
+      meta,
       actorInfo: actorInfo || null,
       cardInfo: raw.card === eventActor ? actorInfo || null : cardInfo || null,
     };
@@ -931,6 +1075,9 @@ const sendTestNotification = async (uid, deps) => {
 
 module.exports = {
   describeAccountDeletion,
+  describeDuplicateLines,
+  findPossibleDuplicateCards,
+  listSearchIdKeysFromContacts,
   EVENTS_PATH,
   DEDUP_PATH,
   DIGEST_PATH,

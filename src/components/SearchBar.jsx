@@ -1101,6 +1101,9 @@ const SEARCH_CACHE_SCOPE_OPTION_KEYS = [
   'forceSearchKeyBucket',
   'forcePartialUserIdSearch',
   'allowTelegramPrefixMatches',
+  // Пошук за початком значення дає іншу видачу, ніж точний ключ, — і старе
+  // «не знайдено» точного пошуку не мусить відповідати за нього.
+  'searchIdPrefixScan',
   'cacheScope',
 ];
 
@@ -1794,6 +1797,7 @@ const SearchBar = ({
             searchIdPrefixes: prefixesToIterate,
             searchIdDetectedField: searchIdPrefixStrategy.detectedField || undefined,
             ...getTelegramPrefixMatchOptions(searchIdInput, prefixesToIterate),
+            ...(searchOptions?.searchIdPrefixScan ? { searchIdPrefixScan: true } : {}),
           },
         )
         : null;
