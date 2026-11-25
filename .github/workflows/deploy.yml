@@ -54,12 +54,21 @@ jobs:
       # CI робив лише lint і збірку, і зміна, яка ламала поведінку, доїжджала в
       # прод мовчки — а на `main` лежало 31 червоний тест, на які вже ніхто не
       # дивився. Тести функцій біжать без мережі (`node --test`).
-      - name: Install, lint, test, build 🔧
+      - name: Install, lint and test 🔧
         run: |
           npm install
           npm run lint:js
           CI=true npx react-scripts test --watchAll=false
           (cd functions && npm ci && npm test)
+
+      - name: Build
+        env:
+          REACT_APP_PROFILE_PROPOSAL_STORAGE: ${{ vars.REACT_APP_PROFILE_PROPOSAL_STORAGE }}
+        run: |
+          case "$REACT_APP_PROFILE_PROPOSAL_STORAGE" in
+            ''|legacy|unified) ;;
+            *) echo '::error::REACT_APP_PROFILE_PROPOSAL_STORAGE must be legacy or unified'; exit 1 ;;
+          esac
           npm run build
 
       - name: Deploy 🚀
