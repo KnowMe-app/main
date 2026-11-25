@@ -1,4 +1,6 @@
 const { planProfileProposalMigration } = require('./profileProposalMigration');
+const { createRequire } = require('node:module');
+const path = require('node:path');
 const { PROFILE_NODES } = require('../src/utils/profileNodeSchema');
 const { readSearchIdEntryMatches } = require('../src/utils/searchKeyUtils');
 
@@ -71,12 +73,26 @@ async function readCutoverSnapshot(token) {
   };
 }
 
-module.exports = { inspectEmptyCutover, readCutoverSnapshot };
+async function getFirebaseAccessToken() {
+  const requireFunctionDependency = createRequire(path.resolve(__dirname, '../functions/package.json'));
+  const { GoogleAuth } = requireFunctionDependency('google-auth-library');
+  const auth = new GoogleAuth({
+    scopes: ['https://www.googleapis.com/auth/firebase.database', 'https://www.googleapis.com/auth/userinfo.email'],
+  });
+  try {
+    const token = await auth.getAccessToken();
+    if (token) return token;
+  } catch (error) {
+    const status = Number(error.response?.status ?? error.code);
+    if (Number.isInteger(status)) throw new Error(`Firebase authentication failed with HTTP ${status}`);
+  }
+  throw new Error('Unable to authenticate the Firebase service account');
+}
+
+module.exports = { inspectEmptyCutover, readCutoverSnapshot, getFirebaseAccessToken };
 
 if (require.main === module) {
-  const token = process.env.KNOWME_CUTOVER_ACCESS_TOKEN;
-  if (!token) throw new Error('Missing Firebase access token');
-  readCutoverSnapshot(token).then(snapshot => {
+  getFirebaseAccessToken().then(readCutoverSnapshot).then(snapshot => {
     const report = inspectEmptyCutover(snapshot);
     console.log(JSON.stringify(report, null, 2));
     if (!report.legacyMode || !report.liveEmpty || report.cleanupInProgress

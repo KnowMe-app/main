@@ -23,15 +23,9 @@ jobs:
         with:
           node-version: '24'
       - run: npm ci
+      - run: npm ci --prefix functions
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
-        id: firebase
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          create_credentials_file: false
-          export_environment_variables: false
-          token_format: access_token
-          access_token_scopes: https://www.googleapis.com/auth/firebase.database,https://www.googleapis.com/auth/userinfo.email
       - name: Report aggregate preflight counts
         run: node scripts/checkEmptyProfileProposalCutover.js | tee -a "$GITHUB_STEP_SUMMARY"
-        env:
-          KNOWME_CUTOVER_ACCESS_TOKEN: ${{ steps.firebase.outputs.access_token }}
