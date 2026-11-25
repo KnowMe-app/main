@@ -3014,6 +3014,229 @@ await it('legacy /users не читає й не пише ніхто', async () =
 await it('корінь бази закритий', () =>
   assertFails(get(ref(db(SUPERADMIN), '/'))));
 
+describe('єдине сховище пропозицій — один чинний писач');
+
+const proposalWriterPath = 'profileProposalControl/activeWriter';
+const liveProposalRoot = 'multiData/profileProposals/live';
+const liveCreatePath = (author, cardId) => `${liveProposalRoot}/heads/create/${author}/${cardId}`;
+const liveUpdatePath = (author, cardId) => `${liveProposalRoot}/heads/update/${cardId}/${author}`;
+const setProposalWriter = value => testEnv.withSecurityRulesDisabled(
+  context => set(ref(context.database(), proposalWriterPath), value),
+);
+const prepareCutover = cardId => {
+  const publication = makePublicationFixture(cardId);
+  return { ...publication, livePath: liveCreatePath(ORDINARY_VIEWER, cardId) };
+};
+
+await it('перемикач може читати лише авторизований клієнт, а змінює його сервер', async () => {
+  const { path, livePath, pending } = prepareCutover('cutoverLegacy01');
+  const author = db(ORDINARY_VIEWER);
+  const admin = db(SUPERADMIN);
+  await setProposalWriter(null);
+  await assertSucceeds(set(ref(author, path), pending));
+  await assertFails(set(ref(author, livePath), pending));
+  await assertFails(get(ref(admin, livePath)));
+  await setProposalWriter('legacy');
+  await assertSucceeds(get(ref(author, proposalWriterPath)));
+  await assertFails(get(ref(testEnv.unauthenticatedContext().database(), proposalWriterPath)));
+  await assertFails(get(ref(admin, 'profileProposalControl')));
+  await assertFails(set(ref(admin, proposalWriterPath), 'unified'));
+  await assertFails(update(ref(author), { [proposalWriterPath]: 'unified', [livePath]: pending }));
+  await assertSucceeds(update(ref(author, path), { revision: 2, 'data/name': 'Стара адреса' }));
+});
+
+await it('пауза блокує старі й нові пропозиції та дозволяє пошук за власним канонічним id', async () => {
+  const { path, livePath, pending } = prepareCutover('cutoverFrozen01');
+  const author = db(ORDINARY_VIEWER);
+  const admin = db(SUPERADMIN);
+  const searchPath = 'searchId/380509781001/phone';
+  const ownerPath = `multiData/profileMutationOwners/${pending.cardId}`;
+  await setProposalWriter('legacy');
+  await assertSucceeds(set(ref(author, path), pending));
+  await assertSucceeds(set(ref(author, ownerPath), ORDINARY_VIEWER));
+  await assertSucceeds(set(ref(author, searchPath), pending.cardId));
+  await setProposalWriter('frozen');
+  await assertSucceeds(get(ref(author, path)));
+  await assertFails(set(ref(admin, path), { ...pending, revision: 2 }));
+  await assertFails(remove(ref(author, path)));
+  await assertFails(remove(ref(author, ownerPath)));
+  await assertFails(set(ref(admin, livePath), pending));
+  await assertFails(update(ref(admin), { [path]: null, [livePath]: pending }));
+  await assertFails(remove(ref(author, searchPath)));
+  await assertFails(set(ref(author, 'searchId/380509781002/phone'), pending.cardId));
+  const canonicalAlias = ref(author, 'searchId/380509781003/phone');
+  await assertSucceeds(set(canonicalAlias, ORDINARY_VIEWER));
+  await assertSucceeds(remove(canonicalAlias));
+});
+
+await it('помилковий стан не відкриває жоден шлях до пропозицій', async () => {
+  const { path, livePath, pending } = prepareCutover('cutoverBadMode01');
+  const admin = db(SUPERADMIN);
+  for (const mode of ['unexpected', { value: 'legacy' }]) {
+    await setProposalWriter(mode);
+    await assertFails(get(ref(admin, path)));
+    await assertFails(get(ref(admin, livePath)));
+    await assertFails(set(ref(admin, path), pending));
+    await assertFails(set(ref(admin, livePath), pending));
+  }
+});
+
+await it('активний шлях відкриває точну чернетку та незалежні права автора й інспектора', async () => {
+  await setProposalWriter('unified');
+  const { path, livePath, pending } = prepareCutover('cutoverCreate01');
+  const author = db(ORDINARY_VIEWER);
+  const inspector = db(proposalInspector);
+  const admin = db(SUPERADMIN);
+  const viewer = db(OUTSIDER);
+  const ownerPath = `${liveProposalRoot}/owners/${pending.cardId}`;
+  const privateCopyPath = 'multiData/profileProposals/records/cutover-private-copy';
+  await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), privateCopyPath), pending));
+  await assertFails(get(ref(admin, path)));
+  await assertFails(set(ref(admin, path), pending));
+  await assertFails(update(ref(admin), { [path]: pending, [livePath]: pending }));
+  await assertFails(get(ref(admin, privateCopyPath)));
+  await assertFails(get(ref(viewer, livePath)));
+  await assertFails(set(ref(author, livePath), { ...pending, operation: 'update', status: 'draft' }));
+  await assertFails(set(ref(author, livePath), { ...pending, createdBy: OUTSIDER }));
+  await assertFails(set(ref(author, livePath), { ...pending, data: { accessLevel: 'admin' } }));
+  await assertSucceeds(set(ref(author, livePath), pending));
+  await assertSucceeds(set(ref(author, ownerPath), ORDINARY_VIEWER));
+  await assertSucceeds(get(ref(viewer, ownerPath)));
+  await assertSucceeds(get(ref(viewer, livePath)));
+  await assertFails(get(ref(viewer, `${liveProposalRoot}/heads/create/${ORDINARY_VIEWER}`)));
+  await assertSucceeds(get(ref(inspector, `${liveProposalRoot}/heads/create`)));
+  await assertFails(update(ref(inspector, livePath), { status: 'private', revision: 2 }));
+  const ownInspector = liveCreatePath(proposalInspector, 'cutoverInspector01');
+  await assertSucceeds(set(ref(inspector, ownInspector), { ...pending, cardId: 'cutoverInspector01', createdBy: proposalInspector }));
+  await assertSucceeds(update(ref(admin, livePath), { status: 'private', revision: 2 }));
+  await assertFails(get(ref(viewer, livePath)));
+  await assertFails(get(ref(viewer, ownerPath)));
+  await assertSucceeds(get(ref(author, livePath)));
+  await assertSucceeds(update(ref(author, livePath), { status: 'pendingReview', revision: 3 }));
+});
+
+await it('автори доповнюють окремі записи і читають лише свої дані та індекси', async () => {
+  await setProposalWriter('unified');
+  const author = db(ORDINARY_VIEWER);
+  const other = db(OUTSIDER);
+  const inspector = db(proposalInspector);
+  const admin = db(SUPERADMIN);
+  const overlay = proposalOverlay(CARD);
+  const proposal = { id: 'cutover-managed', revision: 1, createdAt: 1, originalValues: '{}', replacements: '{}' };
+  const path = liveUpdatePath(ORDINARY_VIEWER, CARD);
+  const rosterPath = `${liveProposalRoot}/contributors/${CARD}`;
+  const indexPath = `${liveProposalRoot}/targetsByEditor/${ORDINARY_VIEWER}/${CARD}`;
+  await assertFails(set(ref(author, `${rosterPath}/${ORDINARY_VIEWER}`), 1));
+  await assertFails(set(ref(author, indexPath), 1));
+  await assertFails(set(ref(author, path), overlay));
+  await assertFails(set(ref(author, path), { ...overlay, proposal: { ...proposal, status: 'accepted' } }));
+  await assertFails(update(ref(author), { [path]: overlay, [`profileContacts/${CARD}/phone`]: '380509781010' }));
+  await assertSucceeds(set(ref(author, path), { ...overlay, proposal }));
+  await assertSucceeds(set(ref(author, indexPath), 1));
+  await assertSucceeds(set(ref(author, `${rosterPath}/${ORDINARY_VIEWER}`), 1));
+  await assertFails(set(ref(author, `${rosterPath}/${OUTSIDER}`), 1));
+  await assertFails(get(ref(author, rosterPath)));
+  await assertSucceeds(get(ref(inspector, rosterPath)));
+  await assertFails(update(ref(author, path), { 'fields/phone': { added: ['380509781010'] } }));
+  await assertSucceeds(update(ref(author, path), {
+    'proposal/revision': 2, 'fields/phone': { added: ['380509781010'] },
+  }));
+  const migratedPath = liveUpdatePath(OUTSIDER, CARD);
+  await testEnv.withSecurityRulesDisabled(context => set(ref(context.database(), migratedPath), proposalOverlay(CARD, OUTSIDER)));
+  await assertSucceeds(get(ref(other, migratedPath)));
+  await assertFails(update(ref(other, migratedPath), { 'fields/phone': { added: ['380509781011'] } }));
+  await assertSucceeds(update(ref(other, migratedPath), {
+    proposal: { ...proposal, id: 'cutover-upgraded' }, 'fields/phone': { added: ['380509781011'] },
+  }));
+  await assertFails(get(ref(other, path)));
+  await assertFails(get(ref(other, `${liveProposalRoot}/targetsByEditor/${ORDINARY_VIEWER}`)));
+  await assertFails(get(ref(other, `${liveProposalRoot}/heads/update/${CARD}`)));
+  await assertSucceeds(get(ref(inspector, `${liveProposalRoot}/heads/update`)));
+  await assertFails(remove(ref(inspector, path)));
+  await assertFails(get(ref(admin, `multiData/edits/${CARD}`)));
+  await assertFails(remove(ref(admin, `multiData/edits/${CARD}/${ORDINARY_VIEWER}`)));
+});
+
+await it('спільний searchId приймає підставу тільки з активного сховища', async () => {
+  await setProposalWriter('unified');
+  const author = db(ORDINARY_VIEWER);
+  const cardId = 'cutoverCreate01';
+  const canonicalAndDraft = ref(author, 'searchId/380509781011/phone');
+  await assertSucceeds(set(canonicalAndDraft, ORDINARY_VIEWER));
+  await assertSucceeds(set(canonicalAndDraft, [ORDINARY_VIEWER, cardId]));
+  await assertSucceeds(set(canonicalAndDraft, ORDINARY_VIEWER));
+  await assertSucceeds(set(ref(author, 'searchId/380509781010/phone'), CARD));
+  await assertFails(set(ref(author, 'searchId/380509781010/telegram'), CARD));
+  const legacyOnly = 'cutoverLegacy01';
+  await assertFails(set(ref(author, 'searchId/380509781012/phone'), legacyOnly));
+  await assertFails(set(canonicalAndDraft, [ORDINARY_VIEWER, legacyOnly]));
+  const claimPath = `${liveProposalRoot}/identityClaims/phone_380509781013`;
+  await assertSucceeds(set(ref(author, claimPath), cardId));
+  await assertFails(set(ref(db(OUTSIDER), claimPath), 'outbid'));
+  await assertFails(set(ref(author, 'multiData/profileIdentityClaims/phone_380509781013'), cardId));
+});
+
+await it('власник активної чернетки керує її дописувачами, а старий покажчик не відкриває ціль', async () => {
+  await setProposalWriter('unified');
+  const author = db(ORDINARY_VIEWER);
+  const contributor = db(OUTSIDER);
+  const cardId = 'cutoverCreate01';
+  const metadata = { id: 'cutover-linked', revision: 1, createdAt: 1, originalValues: '{}', replacements: '{}' };
+  const linked = liveUpdatePath(OUTSIDER, cardId);
+  await assertFails(set(ref(contributor, liveUpdatePath(OUTSIDER, 'cutoverFrozen01')), {
+    ...proposalOverlay('cutoverFrozen01', OUTSIDER), proposal: metadata,
+  }));
+  await assertSucceeds(set(ref(contributor, linked), { ...proposalOverlay(cardId, OUTSIDER), proposal: metadata }));
+  await assertSucceeds(get(ref(author, `${liveProposalRoot}/heads/update/${cardId}`)));
+  await assertSucceeds(set(ref(contributor, `${liveProposalRoot}/contributors/${cardId}/${OUTSIDER}`), 1));
+  await assertSucceeds(get(ref(author, `${liveProposalRoot}/contributors/${cardId}`)));
+  await assertSucceeds(remove(ref(author, linked)));
+  await assertSucceeds(remove(ref(author, `${liveProposalRoot}/contributors/${cardId}`)));
+});
+
+await it('нова історія має операцію й ціль, а старі рішення лишаються закритими', async () => {
+  await setProposalWriter('unified');
+  const author = db(ORDINARY_VIEWER);
+  const inspector = db(proposalInspector);
+  const creation = 'cutoverCreate01';
+  const createLog = `${liveProposalRoot}/history/create/${creation}`;
+  const updateLog = `${liveProposalRoot}/history/update/${CARD}`;
+  const entry = {
+    editorUserId: ORDINARY_VIEWER, actorUid: ORDINARY_VIEWER, action: 'edit',
+    fieldName: 'name', change: { from: '', to: 'Ім’я' }, at: 1, revision: 1,
+  };
+  await assertFails(set(ref(author, `${createLog}/missing-operation`), { ...entry, cardId: creation }));
+  await assertFails(set(ref(author, `${createLog}/wrong-operation`), { ...entry, cardId: creation, operation: 'update' }));
+  await assertSucceeds(set(ref(author, `${createLog}/edit`), { ...entry, cardId: creation, operation: 'create' }));
+  const edit = { ...entry, cardUserId: CARD, cardId: CARD, operation: 'update' };
+  await assertFails(set(ref(author, `${updateLog}/wrong-target`), { ...edit, cardId: creation }));
+  await assertFails(set(ref(author, `${updateLog}/forged-decision`), { ...edit, action: 'accept' }));
+  await assertSucceeds(set(ref(author, `${updateLog}/edit`), edit));
+  await assertFails(get(ref(author, createLog)));
+  await assertSucceeds(get(ref(inspector, createLog)));
+  await assertSucceeds(get(ref(inspector, updateLog)));
+  await assertFails(remove(ref(inspector, `${updateLog}/edit`)));
+  await assertFails(get(ref(db(SUPERADMIN), `multiData/profileMutationHistory/${creation}`)));
+});
+
+await it('у новому сховищі лише повний адмін завершує зарезервовану публікацію один раз', async () => {
+  await setProposalWriter('unified');
+  const { livePath, pending, publishing } = prepareCutover('cutoverPublish01');
+  const author = db(ORDINARY_VIEWER);
+  const admin = db(SUPERADMIN);
+  const publication = {
+    [livePath]: { ...publishing, status: 'accepted' },
+    [`profileDetails/${pending.cardId}/surname`]: 'Нова анкета',
+  };
+  await assertSucceeds(set(ref(author, livePath), pending));
+  await assertFails(set(ref(author, livePath), publishing));
+  await assertFails(set(ref(db(proposalInspector), livePath), publishing));
+  await assertSucceeds(set(ref(admin, livePath), publishing));
+  await assertFails(update(ref(author), publication));
+  await assertSucceeds(update(ref(admin), publication));
+  await assertFails(update(ref(admin), publication));
+});
+
 await testEnv.cleanup();
 
 console.log(results.join('\n'));

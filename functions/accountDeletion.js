@@ -1,5 +1,19 @@
 'use strict';
 
+const {
+  PROFILE_PROPOSAL_ARCHIVE,
+  LEGACY_PROFILE_PROPOSAL_PATHS: legacyProposalPaths,
+  UNIFIED_PROFILE_PROPOSAL_PATHS: unifiedProposalPaths,
+} = require('./profileProposalStorage');
+const {
+  archivedDraftOwners,
+  buildArchiveProposalCleanup,
+  buildContributorUpdates,
+  buildDraftOwnerUpdates,
+  buildLiveProposalCleanup,
+  isHistoryActor,
+} = require('./profileProposalCleanup');
+
 /**
  * Видалення акаунта у два кроки: людина видаляє свій акаунт входу й ховає
  * анкету (`requestAccountDeletion`), а адмін потім очищає базу цілком
@@ -110,23 +124,35 @@ const listDraftCardIds = drafts => Object.keys(isPlainObject(drafts) ? drafts : 
  * - під id немає жодного вузла готової анкети — у чернетки їх немає, а в
  *   прийнятої чи заведеної адміном картки є;
  * - немає Auth-акаунта з таким id;
- * - ніхто інший не має чернетки з тим самим id (обхід усього
- *   `profileMutations`): інакше чужа спільна чернетка пішла б разом з цією.
+ * - ніхто інший не має чернетки або покажчика з тим самим id у старому,
+ *   новому чи архівному сховищі. Чуже доповнення до нашої чернетки саме
+ *   собою не є іншою чернеткою.
  * Не пройшов — знімається лише власний запис людини (`profileMutations/{uid}`
  * іде в `buildOwnedPaths` цілком), а картка й усе навколо лишаються.
  */
-const verifyDraftCardIds = async (deps, uid, drafts) => {
-  const candidates = listDraftCardIds(drafts);
+const verifyDraftCardIds = async (deps, uid, drafts, archive) => {
+  const live = archive?.live;
+  const liveDrafts = live?.heads?.create?.[uid];
+  const candidates = [...new Set([...listDraftCardIds(drafts), ...listDraftCardIds(liveDrafts)])];
   if (!candidates.length) return [];
-  const allMutations = await deps.read('multiData/profileMutations');
+  const [allMutations, owners] = await Promise.all([
+    deps.read(legacyProposalPaths.create), deps.read(legacyProposalPaths.owners),
+  ]);
+  const draftRoots = [allMutations, live?.heads?.create].filter(isPlainObject);
+  const recordedOwners = archivedDraftOwners(archive);
   const verified = [];
   for (const id of candidates) {
-    const record = drafts[id];
     if (id === uid || isProtectedUid(id)) continue;
-    if (!isPlainObject(record) || record.operation !== 'create' || record.createdBy !== uid || record.cardId !== id) continue;
-    const sharedWithOthers = Object.entries(isPlainObject(allMutations) ? allMutations : {})
-      .some(([creator, cards]) => creator !== uid && isPlainObject(cards) && Object.prototype.hasOwnProperty.call(cards, id));
+    const copies = [drafts?.[id], liveDrafts?.[id]].filter(record => record !== null && record !== undefined);
+    if (!copies.length || copies.some(record => (
+      !isPlainObject(record) || record.operation !== 'create' || record.createdBy !== uid || record.cardId !== id
+    ))) continue;
+    const sharedWithOthers = draftRoots.some(root => Object.entries(root)
+      .some(([creator, cards]) => creator !== uid && isPlainObject(cards) && Object.prototype.hasOwnProperty.call(cards, id)));
     if (sharedWithOthers) continue;
+    const foreignPointer = [owners?.[id], live?.owners?.[id], archive?.legacyRelationships?.profileMutationOwners?.[id]]
+      .some(owner => owner != null && owner !== uid);
+    if (foreignPointer || [...(recordedOwners.get(id) || [])].some(owner => owner !== uid)) continue;
     // eslint-disable-next-line no-await-in-loop
     const nodes = await Promise.all(PROFILE_NODE_ROOTS.map(root => deps.read(`${root}/${id}`)));
     if (nodes.some(value => value !== null && value !== undefined)) continue;
@@ -135,7 +161,8 @@ const verifyDraftCardIds = async (deps, uid, drafts) => {
       // eslint-disable-next-line no-await-in-loop
       await deps.getAuthUser(id);
     } catch (error) {
-      if (error && error.code === 'auth/user-not-found') isAccount = false;
+      if (error?.code !== 'auth/user-not-found') throw error;
+      isAccount = false;
     }
     if (isAccount) continue;
     verified.push(id);
@@ -305,14 +332,14 @@ const buildEditsUpdates = (editsRoot, uid, cardIds) => {
 const buildEditsByEditorUpdates = (root, uid, cardIds) => buildOwnerCardUpdates('editsByEditor', root, uid, cardIds);
 
 /** Записи журналу правок, які людина лишила на чужих картках. */
-const buildEditsHistoryUpdates = (historyRoot, uid, cardIds) => {
+const buildEditsHistoryUpdates = (historyRoot, uid, cardIds, path = legacyProposalPaths.updateHistory) => {
   const ids = toIdSet(cardIds);
   const updates = {};
   Object.entries(historyRoot || {}).forEach(([cardId, entries]) => {
     if (ids.has(cardId) || !isPlainObject(entries)) return;
     Object.entries(entries).forEach(([entryId, entry]) => {
-      if (isPlainObject(entry) && entry.editorUserId === uid) {
-        updates[`multiData/editsHistory/${cardId}/${entryId}`] = null;
+      if (isPlainObject(entry) && isHistoryActor(entry, uid)) {
+        updates[`${path}/${cardId}/${entryId}`] = null;
       }
     });
   });
@@ -671,11 +698,40 @@ const purgeAccountData = async (deps, uid, { now = Date.now(), dryRun = false } 
 
   // Спершу те, що треба прочитати, поки воно ще лежить.
   const slots = await read(`multiData/profileShareSlots/${uid}`).catch(() => null);
-  const drafts = await read(`multiData/profileMutations/${uid}`).catch(() => null);
   const shareTokens = listShareTokens(slots);
+  let archive;
+  let drafts;
+  let owners;
   let draftIds = [];
-  await step('drafts', async () => { draftIds = await verifyDraftCardIds(deps, uid, drafts); });
+  await step('drafts', async () => {
+    [drafts, owners, archive] = await Promise.all([
+      read(`${legacyProposalPaths.create}/${uid}`),
+      read(legacyProposalPaths.owners),
+      read(PROFILE_PROPOSAL_ARCHIVE),
+    ]);
+    draftIds = await verifyDraftCardIds(deps, uid, drafts, archive);
+  });
+  // Без обох наборів чернеток видалення могло б стерти доказ, потрібний
+  // для очищення посилань та фото після повторного запуску.
+  if (failed.length) {
+    return dryRun
+      ? { dryRun: true, failed, plan, draftIds }
+      : { failed, counts, complete: false, draftIds };
+  }
   const cardIds = new Set([uid, ...draftIds]);
+
+  // Лишаємо голови та покажчики власника, доки чистяться залежні дані.
+  // Після збою повтор ще може довести, яким чернеткам належать файли та індекси.
+  const live = archive?.live;
+  const liveUpdates = buildLiveProposalCleanup(live, uid, cardIds);
+  const sources = {
+    [`${legacyProposalPaths.create}/${uid}`]: null,
+    ...Object.fromEntries([...cardIds].map(id => [`${legacyProposalPaths.owners}/${id}`, null])),
+    ...buildDraftOwnerUpdates(owners, legacyProposalPaths.owners, uid, cardIds),
+  };
+  const liveSources = Object.fromEntries(Object.entries(liveUpdates).filter(([path]) => (
+    path === `${unifiedProposalPaths.create}/${uid}` || path.startsWith(`${unifiedProposalPaths.owners}/`)
+  )));
 
   await step('auth', async () => {
     if (dryRun) {
@@ -698,6 +754,16 @@ const purgeAccountData = async (deps, uid, { now = Date.now(), dryRun = false } 
   await sweep('edits', 'multiData/edits', root => buildEditsUpdates(root, uid, cardIds));
   await sweep('editsByEditor', 'multiData/editsByEditor', root => buildEditsByEditorUpdates(root, uid, cardIds));
   await sweep('editsHistory', 'multiData/editsHistory', root => buildEditsHistoryUpdates(root, uid, cardIds));
+  await sweep('proposalHistory', legacyProposalPaths.createHistory, root => (
+    buildEditsHistoryUpdates(root, uid, cardIds, legacyProposalPaths.createHistory)
+  ));
+  await sweep('proposalContributors', legacyProposalPaths.contributors, root => (
+    buildContributorUpdates(root, legacyProposalPaths.contributors, uid, cardIds)
+  ));
+  await step('unifiedProposals', async () => apply('unifiedProposals', Object.fromEntries(
+    Object.entries(liveUpdates).filter(([path]) => !Object.hasOwn(liveSources, path)),
+  )));
+  await step('proposalArchive', async () => apply('proposalArchive', buildArchiveProposalCleanup(archive, uid, cardIds)));
   await sweep('publicComments', 'comments', root => buildPublicCommentUpdates(root, uid, cardIds));
   await sweep('sharedAccess', 'profileTechnical', root => buildSharedAccessUpdates(root, uid, cardIds));
   await sweep('telegram', 'telegramAccounts', root => buildTelegramUpdates(root, uid));
@@ -707,7 +773,7 @@ const purgeAccountData = async (deps, uid, { now = Date.now(), dryRun = false } 
     await apply('profileShares', updates);
   });
   await step('nodes', async () => {
-    let paths = [...new Set(buildOwnedPaths(uid, [...cardIds]))];
+    let paths = [...new Set(buildOwnedPaths(uid, [...cardIds]))].filter(path => !Object.hasOwn(sources, path));
     if (dryRun) {
       const present = await Promise.all(paths.map(async path => {
         const value = await read(path);
@@ -737,9 +803,18 @@ const purgeAccountData = async (deps, uid, { now = Date.now(), dryRun = false } 
   });
   if (dryRun) {
     if (deps.listLegacyDocs) await step('legacyDocs', async () => { plan.legacyDocs = await deps.listLegacyDocs(uid); });
+    const presentSources = {
+      ...(drafts != null && { [`${legacyProposalPaths.create}/${uid}`]: null }),
+      ...buildDraftOwnerUpdates(owners, legacyProposalPaths.owners, uid, cardIds),
+      ...liveSources,
+    };
+    await step('proposalSources', async () => apply('proposalSources', presentSources));
     return { dryRun: true, failed, plan, draftIds };
   }
   if (deps.deleteLegacyDocs) await step('legacyDocs', () => deps.deleteLegacyDocs(uid));
+  if (failed.length === 0) {
+    await step('proposalSources', async () => apply('proposalSources', { ...sources, ...liveSources }));
+  }
 
   const queuePath = `${ACCOUNT_DELETIONS_ROOT}/${uid}`;
   await step('queue', () => (failed.length

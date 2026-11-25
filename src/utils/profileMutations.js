@@ -12,6 +12,8 @@ import {
 import { canGrantProfilePrivileges } from './accessLevel';
 import { buildOverlayFromDraft, collectOverlaySearchIdValues, getOverlaysForCard, purgeCardOverlays } from './multiAccountEdits';
 import { getProfileMutationOwnerPath } from './profileDraftIndexing';
+import { appendProfileProposalJournal } from './profileProposalJournal';
+import { profileProposalPaths, usesUnifiedProposalStorage } from './profileProposalStoragePaths';
 import { PROFILE_NODES } from './profileNodeSchema';
 import { buildProfileNodePatch } from './profileNodeWriter';
 import { areProposalValuesEqual } from './profileProposals';
@@ -26,9 +28,9 @@ import {
   removeSearchIdEntryId,
 } from './searchKeyUtils';
 
-export const PROFILE_MUTATIONS_ROOT = 'multiData/profileMutations';
-export const PROFILE_IDENTITY_CLAIMS_ROOT = 'multiData/profileIdentityClaims';
-export const PROFILE_MUTATION_HISTORY_ROOT = 'multiData/profileMutationHistory';
+export const PROFILE_MUTATIONS_ROOT = profileProposalPaths.create;
+export const PROFILE_IDENTITY_CLAIMS_ROOT = profileProposalPaths.identityClaims;
+export const PROFILE_MUTATION_HISTORY_ROOT = profileProposalPaths.createHistory;
 
 export const getProfileMutationPath = (creatorUid, cardId) => (
   `${PROFILE_MUTATIONS_ROOT}/${creatorUid}${cardId ? `/${cardId}` : ''}`
@@ -324,7 +326,7 @@ const removeStaleDraftSearchIdEntries = async (cardId, creatorUid, previousProfi
   try {
     const [draft, overlays, projection] = await Promise.all([
       get(ref(database, getProfileMutationPath(creatorUid, cardId))),
-      get(ref(database, `multiData/edits/${cardId}`)),
+      get(ref(database, `${profileProposalPaths.update}/${cardId}`)),
       get(ref(database, `${PROFILE_NODES.matchingCards}/${cardId}`)),
     ]);
     const current = draft.val();
@@ -497,14 +499,8 @@ export const saveCreateProfileMutation = async ({
   }
   const mutation = result.snapshot.val();
   if (revisionHistory.length) {
-    const historyRef = ref(database, getProfileMutationHistoryPath(cardId));
-    const historyUpdates = revisionHistory.reduce((entries, entry) => {
-      const key = push(historyRef).key;
-      if (key) entries[key] = entry;
-      return entries;
-    }, {});
     try {
-      if (Object.keys(historyUpdates).length) await update(historyRef, historyUpdates);
+      await appendProfileProposalJournal(database, 'create', cardId, revisionHistory);
     } catch (error) {
       if (!guarded) throw error;
       throw mutationError('PARTIAL_WRITE', { cause: error, profileSaveStage: 'mutation-history' });
@@ -811,16 +807,18 @@ export const acceptCreateProfileMutation = async ({ cardId, creatorUid, expected
 
   // Нерозглянуті шари лишаються в черзі адмінів після публікації.
   const pendingOverlayVisibility = Object.fromEntries(Object.keys(pendingOverlays).map(editorUserId => [
-    `multiData/edits/${cardId}/${editorUserId}/adminOnly`, true,
+    `${profileProposalPaths.update}/${cardId}/${editorUserId}/adminOnly`, true,
   ]));
   if (Object.keys(pendingOverlayVisibility).length) {
     update(ref(database), pendingOverlayVisibility).catch(error => {
       console.warn('[profileMutations] overlay visibility cleanup unavailable', error);
     });
   }
-  remove(ref(database, `${PROFILE_MUTATION_HISTORY_ROOT}/${cardId}`)).catch(error => {
-    console.warn('[profileMutations] revision history cleanup unavailable', error);
-  });
+  if (!usesUnifiedProposalStorage) {
+    remove(ref(database, getProfileMutationHistoryPath(cardId))).catch(error => {
+      console.warn('[profileMutations] revision history cleanup unavailable', error);
+    });
+  }
   releaseProfileIdentities(cardId, (pendingMutation.identityKeys || []).filter(key => !identityKeys.includes(key))).catch(() => {});
   return candidateProfile;
 };

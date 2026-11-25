@@ -4,6 +4,7 @@ import { ADMIN_UIDS, READONLY_ADMIN_UIDS } from 'utils/accessLevel';
 import { getCard } from 'utils/cardIndex';
 import { resolveMatchingMultiDataOwnerIds } from 'utils/multiDataAccess';
 import { noteRealtimeDemand } from 'utils/realtimeConnectionManager';
+import { profileProposalPaths } from 'utils/profileProposalStoragePaths';
 
 /*
  * Те, що належить картці, але в анкеті не лежить, — для блоку «усі поля»
@@ -117,11 +118,11 @@ export const buildCardBackendExtraSources = (cardId, viewerId) => {
   }
 
   sources.push(
-    { id: 'edits', group: 'edits', title: 'Доповнення редакторів', path: `multiData/edits/${id}` },
-    { id: 'editsHistory', group: 'edits', title: 'Журнал доповнень', path: `multiData/editsHistory/${id}` },
+    { id: 'edits', group: 'edits', title: 'Доповнення редакторів', path: `${profileProposalPaths.update}/${id}` },
+    { id: 'editsHistory', group: 'edits', title: 'Журнал доповнень', path: `${profileProposalPaths.updateHistory}/${id}` },
     { id: 'programs', group: 'programs', title: 'Програми', path: `multiData/programs/${id}` },
-    { id: 'draftOwner', group: 'draft', title: 'Автор чернетки', path: `multiData/profileMutationOwners/${id}` },
-    { id: 'draftHistory', group: 'draft', title: 'Журнал чернетки', path: `multiData/profileMutationHistory/${id}` },
+    { id: 'draftOwner', group: 'draft', title: 'Автор чернетки', path: `${profileProposalPaths.owners}/${id}` },
+    { id: 'draftHistory', group: 'draft', title: 'Журнал чернетки', path: `${profileProposalPaths.createHistory}/${id}` },
   );
 
   return sources;

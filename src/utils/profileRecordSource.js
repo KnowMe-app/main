@@ -8,6 +8,7 @@ import {
 } from 'components/config';
 import { OWNER_MULTI_DATA_FIELD_NAMES } from 'utils/profileNodeSchema';
 import { profileProposalService } from 'utils/profileProposalRepository';
+import { profileProposalPaths } from 'utils/profileProposalStoragePaths';
 
 // Чернетку щойно записано (будь-ким у цьому табі): форма адміна перечитує
 // її журнал. Подія окрема від «усі поля», бо та перечитує ще й пропозиції
@@ -50,7 +51,7 @@ export const getDraftRecordDataSegments = record => {
   const creator = getDraftRecordCreator(record);
   const cardId = String(record?.userId || '').trim();
   if (!isDraftProfileRecord(record) || !creator || !cardId) return null;
-  return ['multiData', 'profileMutations', creator, cardId, 'data'];
+  return [...profileProposalPaths.create.split('/'), creator, cardId, 'data'];
 };
 
 /*

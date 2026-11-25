@@ -27,11 +27,9 @@ const {
   getCanonicalCard,
   getOverlayForUserCard,
   getOverlaysForCard,
-  patchOverlayField,
   removeOverlayForUserCard,
   removeOverlayHistoryEntry,
   saveOverlayForUserCard,
-  settleOverlayFieldValue,
 } = require('../multiAccountEdits');
 
 describe('multiAccountEdits field history', () => {
@@ -335,39 +333,9 @@ describe('multiAccountEdits storage structure', () => {
 
   });
 
-  it('removes and patches fields in the new path', async () => {
+  it('removes only the selected author’s proposal', async () => {
     await removeOverlayForUserCard({ editorUserId: 'editor-1', cardUserId: 'card-1' });
     expect(remove).toHaveBeenCalledWith(expect.objectContaining({ path: 'multiData/edits/card-1/editor-1' }));
-
-    await patchOverlayField({
-      editorUserId: 'editor-1',
-      cardUserId: 'card-1',
-      fieldName: 'city',
-      change: { from: 'A', to: 'B' },
-    });
-
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({ path: 'multiData/edits/card-1/editor-1/fields' }),
-      { city: { from: 'A', to: 'B' } },
-    );
-  });
-
-  it('deletes overlay when only technical fields remain', async () => {
-    get.mockResolvedValueOnce({
-      exists: () => true,
-      val: () => ({ lastAction: { from: 1, to: 2 }, cachedAt: { from: 1, to: 2 } }),
-    });
-
-    await patchOverlayField({
-      editorUserId: 'editor-1',
-      cardUserId: 'card-1',
-      fieldName: 'lastAction',
-      change: { from: 1, to: 2 },
-    });
-
-    expect(remove).toHaveBeenCalledWith(
-      expect.objectContaining({ path: 'multiData/edits/card-1/editor-1' }),
-    );
   });
 
   it('does not save overlay with technical-only fields', async () => {
@@ -468,72 +436,5 @@ describe('getCanonicalCard', () => {
       name: 'Card',
       getInTouch: '2026-06-19',
     }));
-  });
-});
-
-// The review UI settles an edit by wiping it: the pending change goes, and so
-// do the journal entries that described it. Nothing is left in the backend for
-// an edit that has already been saved into the card or thrown away.
-describe('settleOverlayFieldValue with purgeHistory', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    ref.mockImplementation((db, path) => ({ db, path }));
-    push.mockImplementation(() => ({ key: 'history-entry' }));
-  });
-
-  it('deletes the journal entries about the settled value instead of adding one', async () => {
-    get
-      // cleanupOverlayIfOnlyTechnicalFields reads what is left of the overlay
-      .mockResolvedValueOnce({ exists: () => true, val: () => ({ phone: { added: ['222'] } }) })
-      .mockResolvedValueOnce({
-        exists: () => true,
-        val: () => ({
-          h1: { fieldName: 'name', editorUserId: 'editor-1', change: { from: 'Name6', to: 'Name7' } },
-          h2: { fieldName: 'name', editorUserId: 'editor-1', change: { from: '', to: 'Name5' } },
-          h3: { fieldName: 'name', editorUserId: 'editor-1', change: { discarded: true } },
-          h4: { fieldName: 'phone', editorUserId: 'editor-1', change: { added: ['222'] } },
-        }),
-      });
-
-    await settleOverlayFieldValue({
-      editorUserId: 'editor-1',
-      cardUserId: 'card-1',
-      fieldName: 'name',
-      settledChange: { from: 'Name6', to: 'Name7' },
-      remainingChange: null,
-      historyAction: 'accept',
-      purgeHistory: true,
-    });
-
-    expect(remove).toHaveBeenCalledWith(
-      expect.objectContaining({ path: 'multiData/edits/card-1/editor-1/fields/name' }),
-    );
-    // h1 is the settled value and h3 is a bare bookkeeping marker - both go.
-    // h2 describes a different value of the same field, h4 another field.
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({ path: 'multiData/editsHistory/card-1' }),
-      { h1: null, h3: null },
-    );
-    expect(update).toHaveBeenCalledTimes(1);
-  });
-
-  it('still journals the decision when the caller does not ask for a purge', async () => {
-    get.mockResolvedValue({ exists: () => true, val: () => ({ phone: { added: ['222'] } }) });
-
-    await settleOverlayFieldValue({
-      editorUserId: 'editor-1',
-      cardUserId: 'card-1',
-      fieldName: 'name',
-      settledChange: { from: 'Name6', to: 'Name7' },
-      remainingChange: null,
-      historyAction: 'accept',
-    });
-
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({ path: 'multiData/editsHistory/card-1' }),
-      expect.objectContaining({
-        'history-entry': expect.objectContaining({ action: 'accept', fieldName: 'name' }),
-      }),
-    );
   });
 });

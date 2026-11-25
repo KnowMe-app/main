@@ -37,6 +37,7 @@ import {
 import { PROFILE_BACKEND_REFRESH_EVENT } from 'utils/profileBackendRefresh';
 import { loadProfileMutationHistory } from 'utils/profileMutations';
 import { profileProposalService } from 'utils/profileProposalRepository';
+import { profileProposalPaths } from 'utils/profileProposalStoragePaths';
 import { areProposalValuesEqual } from 'utils/profileProposals';
 import { SCREEN_ACCESS_OPTIONS, encodeScreenAccess, isAdminUid, parseScreenAccess } from 'utils/accessLevel';
 import {
@@ -128,7 +129,7 @@ const buildOverlayPaths = cardUserId => {
   const normalizedCardId = String(cardUserId || '').trim();
   if (!normalizedCardId) return [];
 
-  return [`multiData/edits/${normalizedCardId}`];
+  return [`${profileProposalPaths.update}/${normalizedCardId}`];
 };
 
 // Людські назви службових полів (22.11): адмін читав `lastCycle`,

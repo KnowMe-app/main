@@ -1,4 +1,5 @@
 import { PROFILE_NODES } from 'utils/profileNodeSchema';
+import { profileProposalPaths } from 'utils/profileProposalStoragePaths';
 import { SEARCH_ID_ROOT, buildSearchIdValueKey, getSearchIdIndexedFields } from 'utils/searchKeyUtils';
 import { isLongFormatUserId } from 'utils/userIdFormat';
 
@@ -70,6 +71,10 @@ const ACCOUNT_OWNER_STORES = [
   ['searchQueries', 'Історія пошуку'],
   ['editsByEditor', 'Картки, які доповнював'],
 ];
+const PROPOSAL_ACCOUNT_STORES = {
+  profileMutations: profileProposalPaths.create,
+  editsByEditor: profileProposalPaths.byEditor,
+};
 
 const text = value => String(value ?? '').trim();
 
@@ -125,19 +130,19 @@ export const buildProfileDataSources = ({ cardId, viewerId = '', draftAuthorId =
       id: 'draft:owner',
       group: 'draft',
       title: 'Автор чернетки',
-      segments: ['multiData', 'profileMutationOwners', id],
+      segments: [...profileProposalPaths.owners.split('/'), id],
     },
     ...(author ? [{
       id: `draft:record:${author}`,
       group: 'draft',
       title: 'Запис чернетки',
-      segments: ['multiData', 'profileMutations', author, id],
+      segments: [...profileProposalPaths.create.split('/'), author, id],
     }] : []),
     {
       id: 'draft:history',
       group: 'draft',
       title: 'Журнал чернетки',
-      segments: ['multiData', 'profileMutationHistory', id],
+      segments: [...profileProposalPaths.createHistory.split('/'), id],
     },
   );
 
@@ -153,8 +158,8 @@ export const buildProfileDataSources = ({ cardId, viewerId = '', draftAuthorId =
   }
 
   sources.push(
-    { id: 'edits:layers', group: 'edits', title: 'Шари доповнень', segments: ['multiData', 'edits', id] },
-    { id: 'edits:history', group: 'edits', title: 'Журнал доповнень', segments: ['multiData', 'editsHistory', id] },
+    { id: 'edits:layers', group: 'edits', title: 'Шари доповнень', segments: [...profileProposalPaths.update.split('/'), id] },
+    { id: 'edits:history', group: 'edits', title: 'Журнал доповнень', segments: [...profileProposalPaths.updateHistory.split('/'), id] },
     { id: 'public:comments', group: 'public', title: 'Публічні відгуки', segments: ['comments', id] },
     { id: 'public:programs', group: 'public', title: 'Програми', segments: ['multiData', 'programs', id] },
     ...listSearchIdSourcesForRecord(record),
@@ -168,7 +173,7 @@ export const buildProfileDataSources = ({ cardId, viewerId = '', draftAuthorId =
         id: `account:${store}`,
         group: 'account',
         title,
-        segments: ['multiData', store, id],
+        segments: [...(PROPOSAL_ACCOUNT_STORES[store] || `multiData/${store}`).split('/'), id],
         lazy: true,
       });
     });

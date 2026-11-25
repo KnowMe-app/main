@@ -1,5 +1,7 @@
 'use strict';
 
+const { randomUUID } = require('node:crypto');
+
 /**
  * Cloud Functions KnowMe: власні листи Firebase Auth — підтвердження пошти
  * (`sendVerificationEmail`) і зміна пароля (`sendPasswordResetEmail`).
@@ -50,6 +52,14 @@ const {
 } = require('./telegramAuth');
 const { mergeAccounts, resolveAccountOnSignIn, unlinkMergedAccount } = require('./accountMerge');
 const { renderAccountMergedEmail } = require('./emails/accountMerged');
+const {
+  PROFILE_PROPOSAL_CONTROL,
+  LEGACY_PROFILE_PROPOSAL_PATHS,
+  UNIFIED_PROFILE_PROPOSAL_PATHS,
+  claimProposalCleanup,
+  releaseProposalCleanup,
+  shouldRecordProposalWrite,
+} = require('./profileProposalStorage');
 
 initializeApp();
 
@@ -747,10 +757,27 @@ exports.purgeDeletedAccount = onCall(
     // шляхом не зітре навіть помилковим дотиком.
     if (!queued) throw new HttpsError('not-found', 'This account is not waiting for deletion.');
 
-    const result = await purgeAccountData({
-      ...accountDeletionDeps(),
-      log: (step, error) => logger.error('account purge step failed', { uid, step, dryRun, error: error.message }),
-    }, uid, { dryRun });
+    const control = db.ref(PROFILE_PROPOSAL_CONTROL);
+    const leaseToken = dryRun ? null : randomUUID();
+    if (leaseToken) {
+      const now = Date.now();
+      const result = await control.transaction(current => claimProposalCleanup(current, leaseToken, now));
+      if (!result.committed) throw new HttpsError('unavailable', 'Account cleanup is temporarily unavailable.');
+    }
+
+    let result;
+    try {
+      result = await purgeAccountData({
+        ...accountDeletionDeps(),
+        log: (step, error) => logger.error('account purge step failed', { uid, step, dryRun, error: error.message }),
+      }, uid, { dryRun });
+    } finally {
+      if (leaseToken) {
+        await control.transaction(current => releaseProposalCleanup(current, leaseToken)).catch(error => {
+          logger.warn('account purge lock release failed', { error: error.message });
+        });
+      }
+    }
     if (dryRun) {
       logger.info('account purge analysed', { uid, by: adminUid, steps: result.plan.steps.length, failed: result.failed });
       return { dryRun: true, plan: result.plan, failed: result.failed, draftIds: result.draftIds };
@@ -1034,20 +1061,30 @@ const ACTIVITY_TRIGGER_OPTIONS = {
   maxInstances: 5,
 };
 
-const activityTrigger = (ref, classify, actorParam) => onValueWritten(
+const activityTrigger = (ref, classify, actorParam, writer) => onValueWritten(
   { ...ACTIVITY_TRIGGER_OPTIONS, ref },
   async event => {
     const events = classify({ ...event.params, before: event.data.before.val(), after: event.data.after.val(), now: Date.now() });
     if (!events.length) return;
+    if (writer) {
+      const control = (await getDatabase().ref(PROFILE_PROPOSAL_CONTROL).get()).val();
+      if (!shouldRecordProposalWrite(control, writer, event.time)) return;
+    }
     await recordActivity(events, event, actorParam ? event.params[actorParam] : '');
   },
 );
 
 exports.recordAdminActivityEdits = activityTrigger(
-  'multiData/edits/{cardId}/{editorId}', adminActivity.classifyEditsWrite, 'editorId',
+  `${LEGACY_PROFILE_PROPOSAL_PATHS.update}/{cardId}/{editorId}`, adminActivity.classifyEditsWrite, 'editorId', 'legacy',
 );
 exports.recordAdminActivityDrafts = activityTrigger(
-  'multiData/profileMutations/{authorId}/{cardId}', adminActivity.classifyDraftWrite, 'authorId',
+  `${LEGACY_PROFILE_PROPOSAL_PATHS.create}/{authorId}/{cardId}`, adminActivity.classifyDraftWrite, 'authorId', 'legacy',
+);
+exports.recordAdminActivityUnifiedProposalUpdates = activityTrigger(
+  `${UNIFIED_PROFILE_PROPOSAL_PATHS.update}/{cardId}/{editorId}`, adminActivity.classifyEditsWrite, 'editorId', 'unified',
+);
+exports.recordAdminActivityUnifiedProposalCreates = activityTrigger(
+  `${UNIFIED_PROFILE_PROPOSAL_PATHS.create}/{authorId}/{cardId}`, adminActivity.classifyDraftWrite, 'authorId', 'unified',
 );
 exports.recordAdminActivityContacts = activityTrigger(
   'multiData/contactViews/{viewerId}/{cardId}', adminActivity.classifyContactWrite, 'viewerId',

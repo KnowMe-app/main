@@ -195,6 +195,8 @@ const main = args => {
   else printReport(migration.planProfileProposalMigration(snapshot).report);
 };
 
+module.exports = { CliError, checkOutputDirectory, installArtifact, parseJson, printReport, readFile };
+
 if (require.main === module) {
   try {
     main(process.argv.slice(2));

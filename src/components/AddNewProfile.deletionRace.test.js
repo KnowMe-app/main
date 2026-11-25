@@ -130,15 +130,15 @@ describe("remoteUpdate is serialized through enqueueProfileSync and sends a mini
     );
   });
 
-  it('non-admin overlay write happens inside remoteUpdate, not inline in handleSubmit', () => {
-    expect(remoteUpdateBody).toContain('if (!isAdmin) {');
-    expect(remoteUpdateBody).toContain('saveOverlayForUserCard(');
+  it('the admin-only form cannot create an unguarded proposal', () => {
+    expect(remoteUpdateBody).toContain("if (!isAdmin) throw new Error('PERMISSION_DENIED');");
 
     const handleSubmitBody = source.slice(
       source.indexOf('const handleSubmit = (newState, overwrite, delCondition, removedIndexValues) => {'),
       source.indexOf('const handleExit = async () => {')
     );
-    expect(handleSubmitBody).not.toContain('saveOverlayForUserCard(');
+    expect(handleSubmitBody).toContain('if (!isAdmin) return undefined;');
+    expect(source).not.toContain('saveOverlayForUserCard(');
   });
 
   it('every write is chained onto syncQueueRef so submissions execute in strict order', () => {

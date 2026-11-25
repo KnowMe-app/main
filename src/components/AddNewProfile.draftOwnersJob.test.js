@@ -19,7 +19,7 @@ const addNewProfileSource = fs.readFileSync(path.join(__dirname, 'AddNewProfile.
 describe('бекфіл авторів чернеток запускається з панелі індексації', () => {
   it('має власний чекбокс серед бекендних робіт', () => {
     expect(addNewProfileSource).toContain("key: 'profileMutationOwners'");
-    expect(addNewProfileSource).toContain("hint: '→ multiData/profileMutationOwners'");
+    expect(addNewProfileSource).toContain('hint: `→ ${PROFILE_MUTATION_OWNERS_NODE}`');
   });
 
   it('чекбокс рахується гейтом «оберіть хоча б один індекс»', () => {

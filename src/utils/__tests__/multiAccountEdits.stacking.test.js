@@ -18,8 +18,6 @@ jest.mock('components/config', () => ({
 const { updateSearchId } = require('components/config');
 
 const {
-  acceptAllOverlaysForCard,
-  acceptOverlayFieldForUserCard,
   buildOverlayFieldEntries,
   settleOverlayValueForCard,
   splitOverlayChangeByValue,
@@ -28,7 +26,6 @@ const {
   getOverlayHistoryForCard,
   getStackedCardViews,
   getStackedOverlayFieldNames,
-  removeAllOverlaysForCard,
   saveOverlayForUserCard,
   sortOverlaysByAppliedOrder,
 } = require('../multiAccountEdits');
@@ -209,85 +206,6 @@ describe('overlay history journal', () => {
     expect(history.map(entry => entry.entryId)).toEqual(['newer', 'older']);
   });
 });
-
-describe('admin review actions', () => {
-  const mockCardReads = () => {
-    get.mockImplementation(async ({ path }) => {
-      if (path === 'multiData/edits/card-1') {
-        return { exists: () => true, val: () => OVERLAYS };
-      }
-      // Канонічна анкета лежить у вузлах: legacy-колекцію веб не читає.
-      if (path === 'profileDetails/card-1') {
-        return { exists: () => true, val: () => CANONICAL };
-      }
-      return { exists: () => false, val: () => null };
-    });
-  };
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    ref.mockImplementation((db, path) => ({ db, path }));
-    push.mockImplementation(() => ({ key: 'entry-1' }));
-    mockCardReads();
-  });
-
-  it('accepts a single field and leaves every other pending change alone', async () => {
-    const persistCard = jest.fn();
-
-    const result = await acceptOverlayFieldForUserCard({
-      editorUserId: 'editorA',
-      cardUserId: 'card-1',
-      fieldName: 'city',
-      persistCard,
-    });
-
-    expect(persistCard).toHaveBeenCalledWith(expect.objectContaining({
-      city: 'Львів',
-      // editorA's name change was not part of this approval.
-      name: 'Ірина',
-    }));
-    expect(result.change).toEqual({ from: 'Київ', to: 'Львів' });
-    // Only the accepted field is cleared - editorB's overlay is untouched.
-    expect(remove).toHaveBeenCalledWith(
-      expect.objectContaining({ path: 'multiData/edits/card-1/editorA/fields/city' }),
-    );
-    expect(remove).not.toHaveBeenCalledWith(
-      expect.objectContaining({ path: 'multiData/edits/card-1/editorB' }),
-    );
-  });
-
-  it('accepts everything at once by persisting the stacked card and clearing the queue', async () => {
-    const persistCard = jest.fn();
-
-    await acceptAllOverlaysForCard({ cardUserId: 'card-1', persistCard });
-
-    expect(persistCard).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Ірина Б.',
-      city: 'Львів',
-      phone: ['111', '222'],
-    }));
-    expect(remove).toHaveBeenCalledWith(expect.objectContaining({ path: 'multiData/edits/card-1' }));
-    const journalled = update.mock.calls
-      .flatMap(([, updates]) => Object.values(updates || {}))
-      .filter(entry => entry && typeof entry === 'object' && entry.action);
-    expect(journalled).toEqual([]);
-    expect(get).toHaveBeenCalledWith(expect.objectContaining({ path: 'multiData/editsHistory/card-1' }));
-  });
-
-  it('discards the whole queue without writing anything to the card', async () => {
-    await removeAllOverlaysForCard('card-1');
-
-    expect(set).not.toHaveBeenCalled();
-    expect(remove).toHaveBeenCalledWith(expect.objectContaining({ path: 'multiData/edits/card-1' }));
-
-    const journalled = update.mock.calls
-      .flatMap(([, updates]) => Object.values(updates || {}))
-      .map(entry => entry.action);
-    expect(journalled.every(action => action === 'discard')).toBe(true);
-    expect(journalled.length).toBeGreaterThan(0);
-  });
-});
-
 // Рішення адміна стосується одного значення, а не всієї правки поля. Доти шар
 // із двома дописаними номерами показувався одним інпутом («A, B»), «ОК»
 // записував той склеєний рядок в анкету як один номер, а хрестик зносив геть

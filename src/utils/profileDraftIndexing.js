@@ -1,3 +1,5 @@
+import { profileProposalPaths } from './profileProposalStoragePaths';
+
 /**
  * Чернетки — це теж анкети, і в `searchId` вони мають бути.
  *
@@ -15,7 +17,7 @@
  * Ця мапа містить тільки чернетки створення. Ідентифікатори доповнень
  * збираються окремо в `profileProposalIndexing` і посилаються на ID цілі.
  */
-export const PROFILE_DRAFTS_INDEX_NODE = 'multiData/profileMutations';
+export const PROFILE_DRAFTS_INDEX_NODE = profileProposalPaths.create;
 
 /**
  * «Хто завів цю картку» — окремим вузлом, бо шлях до чернетки починається з
@@ -35,7 +37,7 @@ export const PROFILE_DRAFTS_INDEX_NODE = 'multiData/profileMutations';
  * може лише службовий читач. Точковий ключ доступний власнику й службовому
  * читачу, а іншим читачам лише для активної чернетки без канонічної анкети.
  */
-export const PROFILE_MUTATION_OWNERS_NODE = 'multiData/profileMutationOwners';
+export const PROFILE_MUTATION_OWNERS_NODE = profileProposalPaths.owners;
 
 export const getProfileMutationOwnerPath = cardId => (
   cardId ? `${PROFILE_MUTATION_OWNERS_NODE}/${cardId}` : ''

@@ -5,6 +5,8 @@ import { isLongFormatUserId } from 'utils/userIdFormat';
 import { mergeProfileNodes } from 'utils/profileNodeMerge';
 import { PROFILE_NODES } from 'utils/profileNodeSchema';
 import { areProposalValuesEqual } from 'utils/profileProposals';
+import { appendProfileProposalJournal } from 'utils/profileProposalJournal';
+import { profileProposalPaths, usesUnifiedProposalStorage } from 'utils/profileProposalStoragePaths';
 import { buildSearchIdValueKey, SEARCH_ID_INDEXED_FIELDS } from 'utils/searchKeyUtils';
 import {
   forgetOwnOverlayCardLocally,
@@ -24,25 +26,25 @@ const get = (...args) =>
     path: args[0],
   });
 
-export const EDITS_ROOT = 'multiData/edits';
+export const EDITS_ROOT = profileProposalPaths.update;
 // Append-only journal of every overlay change ever written for a card. The
 // overlay node itself only ever holds an editor's *current* delta (each save
 // rewrites it), so without this log an earlier edit is unrecoverable the
 // moment its author edits the same field again. Only admins read it - other
 // editors see the stacked result, never who changed what or what came before.
-const EDITS_HISTORY_ROOT = 'multiData/editsHistory';
+const EDITS_HISTORY_ROOT = profileProposalPaths.updateHistory;
 // A durable roster of everybody who has ever edited a card. The overlay node
 // is emptied as soon as an edit is settled - and its journal entries are
 // purged with it - so by the time the card is published there is nothing left
 // to tell who worked on it. Those editors must keep access to the card they
 // helped build, so their ids are recorded here once and never removed.
-const EDITS_CONTRIBUTORS_ROOT = 'multiData/editsContributors';
+const EDITS_CONTRIBUTORS_ROOT = profileProposalPaths.contributors;
 // Перелік карток, які доповнював один читач, — під його власним uid.
 //
 // Оверлеї лежать під карткою, тож без цього вузла питання «що я дописував»
 // коштує читання на кожен рядок стрічки. Пишеться він best-effort, як і
 // журнал: доповнення дорожче за свій індекс.
-const EDITS_BY_EDITOR_ROOT = 'multiData/editsByEditor';
+const EDITS_BY_EDITOR_ROOT = profileProposalPaths.byEditor;
 const TECHNICAL_FIELD_NAMES = new Set(['lastAction', 'cachedAt', 'cacheVersion']);
 
 const areArraysEqual = (a, b) => {
@@ -117,24 +119,6 @@ const replaceOverlayIfUnchanged = async (overlayRef, expectedCurrent, nextOverla
 const shouldDropOverlayByFieldNames = fieldNames => {
   if (!Array.isArray(fieldNames) || !fieldNames.length) return true;
   return fieldNames.every(fieldName => TECHNICAL_FIELD_NAMES.has(fieldName));
-};
-
-const cleanupOverlayIfOnlyTechnicalFields = async ({ editorUserId, cardUserId }) => {
-  if (!editorUserId || !cardUserId) return;
-
-  const editorRef = ref2(database, `${EDITS_ROOT}/${cardUserId}/${editorUserId}`);
-  const fieldsSnapshot = await get(ref2(database, `${EDITS_ROOT}/${cardUserId}/${editorUserId}/fields`));
-  if (!fieldsSnapshot?.exists?.()) {
-    await remove(editorRef);
-    await forgetOwnOverlayCard({ cardUserId, editorUserId });
-    return;
-  }
-
-  const fieldNames = Object.keys(fieldsSnapshot.val() || {});
-  if (shouldDropOverlayByFieldNames(fieldNames)) {
-    await remove(editorRef);
-    await forgetOwnOverlayCard({ cardUserId, editorUserId });
-  }
 };
 
 const normalizeEditorNode = (overlay, cardUserId, editorUserId, includeRecord = false) => {
@@ -270,6 +254,7 @@ export const saveOverlayForUserCard = async ({
   }, {});
 
   const usesRevisionCheck = expectedCurrent !== undefined;
+  if (usesUnifiedProposalStorage && !usesRevisionCheck) throw overlayError('INVALID_DRAFT');
   if (expectedCurrent?.reviewClaim) throw overlayError('REVISION_CONFLICT');
   if (shouldDropOverlayByFieldNames(Object.keys(sanitized))) {
     if (usesRevisionCheck) throw overlayError('INVALID_DRAFT');
@@ -695,35 +680,13 @@ export const appendOverlayHistory = async ({
   if (!entries.length) return [];
 
   try {
-    const historyRef = ref2(database, `${EDITS_HISTORY_ROOT}/${normalizedCardId}`);
-    const updates = entries.reduce((acc, entry) => {
-      const key = push(historyRef).key;
-      if (key) acc[key] = entry;
-      return acc;
-    }, {});
-
-    if (Object.keys(updates).length) {
-      await update(historyRef, updates);
-    }
+    await appendProfileProposalJournal(database, 'update', normalizedCardId, entries);
   } catch (error) {
     console.warn('[multiAccountEdits] failed to append overlay history', error);
     if (throwOnError) throw error;
   }
 
   return entries;
-};
-
-// Every value a change mentions, whatever shape it was stored in. Used to
-// match a settled edit against the journal entries that describe it.
-const changeValueList = rawChange => {
-  const change = normalizeOverlayChange(rawChange);
-  if (!isPlainObject(change)) return [];
-
-  const values = [];
-  if ('from' in change || 'to' in change) values.push(change.from, change.to);
-  values.push(...normalizeArray(change.added ?? change.add), ...normalizeArray(change.removed));
-
-  return uniq(values.map(value => String(value ?? '').trim()).filter(Boolean));
 };
 
 // Те, що зміна **пропонує**, без того, від чого вона відштовхувалась: нове
@@ -1004,105 +967,9 @@ export const formatOverlayPreview = ({ fieldName, change, canonicalValue }) => {
   };
 };
 
-export const patchOverlayField = async ({ editorUserId, cardUserId, fieldName, change, historyAction }) => {
-  if (!editorUserId || !cardUserId || !fieldName) return;
-
-  const normalizedCardId = normalizeCardKey(cardUserId);
-  if (!normalizedCardId) return;
-
-  const path = `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}/fields/${fieldName}`;
-  if (!change || (!change.to && !change.from && !change.added && !change.removed)) {
-    await remove(ref2(database, path));
-    await cleanupOverlayIfOnlyTechnicalFields({ editorUserId, cardUserId: normalizedCardId });
-    await appendOverlayHistory({
-      cardUserId: normalizedCardId,
-      editorUserId,
-      action: historyAction || 'discard',
-      fields: { [fieldName]: { discarded: true } },
-    });
-    return;
-  }
-
-  await update(ref2(database, `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}/fields`), {
-    [fieldName]: change,
-  });
-  await cleanupOverlayIfOnlyTechnicalFields({ editorUserId, cardUserId: normalizedCardId });
-  await appendOverlayHistory({
-    cardUserId: normalizedCardId,
-    editorUserId,
-    action: historyAction || 'edit',
-    fields: { [fieldName]: change },
-  });
-};
-
 const hasOverlayChangeValues = change => Boolean(
   change && (change.to || change.from || change.added?.length || change.removed?.length)
 );
-
-// Settles one *value* of an editor's field change - accept or discard - and
-// leaves the rest of that field's change pending. Accepting one of three
-// proposed phone numbers must not throw the other two away, so the caller
-// passes what it settled and what remains; the journal records only the
-// settled part, under the action that settled it.
-//
-// `purgeHistory` inverts that last part: instead of writing one more journal
-// entry, the entries about the settled value are deleted. That is what the
-// review UI's save/delete buttons use - a settled edit disappears from the
-// backend completely rather than turning into another line of history.
-export const settleOverlayFieldValue = async ({
-  editorUserId,
-  cardUserId,
-  fieldName,
-  settledChange,
-  remainingChange,
-  historyAction = 'discard',
-  purgeHistory = false,
-  expectedCurrent,
-  acceptedOriginal,
-}) => {
-  if (!editorUserId || !cardUserId || !fieldName) return;
-
-  const normalizedCardId = normalizeCardKey(cardUserId);
-  if (!normalizedCardId) return;
-
-  const editorPath = `${EDITS_ROOT}/${normalizedCardId}/${editorUserId}`;
-  if (expectedCurrent !== undefined) {
-    if (!expectedCurrent || (expectedCurrent.reviewClaim && historyAction !== 'accept')) {
-      throw overlayError('REVISION_CONFLICT');
-    }
-    const next = buildSettledOverlay({
-      overlay: expectedCurrent, fieldName, remainingChange, acceptedOriginal, guarded: true,
-    });
-    await replaceOverlayIfUnchanged(ref2(database, editorPath), expectedCurrent, next);
-    if (!next) await forgetOwnOverlayCard({ editorUserId, cardUserId: normalizedCardId });
-  } else {
-    const fieldsPath = `${editorPath}/fields`;
-    if (hasOverlayChangeValues(remainingChange)) {
-      await update(ref2(database, fieldsPath), { [fieldName]: remainingChange });
-    } else {
-      await remove(ref2(database, `${fieldsPath}/${fieldName}`));
-    }
-    await cleanupOverlayIfOnlyTechnicalFields({ editorUserId, cardUserId: normalizedCardId });
-  }
-
-  if (purgeHistory) {
-    await purgeOverlayHistoryEntries({
-      cardUserId: normalizedCardId,
-      editorUserId,
-      fieldName,
-      values: changeValueList(settledChange),
-      throwOnError: expectedCurrent !== undefined,
-    });
-    return;
-  }
-
-  await appendOverlayHistory({
-    cardUserId: normalizedCardId,
-    editorUserId,
-    action: historyAction,
-    fields: { [fieldName]: settledChange || { discarded: true } },
-  });
-};
 
 /**
  * Пропозиції редакторів — по одній на **значення**, а не на поле.
@@ -1634,16 +1501,25 @@ export const pruneOverlaysMatchingCanonical = async ({ cardUserId, canonical, ov
   });
 
   let pruned = 0;
+  const currentByEditor = new Map(Object.entries(overlaysByEditor || {}).map(([editorId, overlay]) => (
+    [editorId, overlay?.expectedCurrent ?? overlay]
+  )));
   for (const item of redundant) {
     try {
+      const expectedCurrent = currentByEditor.get(item.editorUserId);
+      if (usesUnifiedProposalStorage && !expectedCurrent) continue;
       // eslint-disable-next-line no-await-in-loop
       const result = await settleOverlayValueForCard({
         ...item,
         cardUserId: normalizedCardId,
         acceptedValue: item.value,
         action: 'accept',
+        ...(usesUnifiedProposalStorage && { expectedCurrent }),
       });
-      if (result) pruned += 1;
+      if (result) {
+        pruned += 1;
+        if (usesUnifiedProposalStorage) currentByEditor.set(item.editorUserId, result.remainingOverlay);
+      }
     } catch (error) {
       console.warn('[multiAccountEdits] failed to prune overlay value present on the card', { ...item, error });
     }
@@ -1651,66 +1527,10 @@ export const pruneOverlaysMatchingCanonical = async ({ cardUserId, canonical, ov
   return pruned;
 };
 
-// ---------------------------------------------------------------------------
-// Admin review operations. An admin is the only role that can turn a pending
-// overlay into canonical data, and the only one who gets to see the journal
-// these write into.
-// ---------------------------------------------------------------------------
-
-// Accept a single field from a single editor: the rest of that editor's
-// overlay - and every other editor's - stays pending.
-export const acceptOverlayFieldForUserCard = async ({
-  editorUserId,
-  cardUserId,
-  fieldName,
-  persistCard,
-}) => {
-  if (!editorUserId || !cardUserId || !fieldName) return null;
-
-  const overlays = await getOverlaysForCard(cardUserId);
-  const change = normalizeOverlayFields(overlays?.[editorUserId]?.fields)[fieldName];
-  if (!change) return null;
-
-  const canonical = await getCanonicalCard(cardUserId);
-  const merged = applyOverlayToCard(canonical, { [fieldName]: change });
-
-  await persistCard(merged);
-  await patchOverlayField({
-    editorUserId,
-    cardUserId,
-    fieldName,
-    change: null,
-    historyAction: 'accept',
-  });
-
-  return { canonical, merged, change };
-};
-
-// Accept everything pending on the card at once: the stacked result is
-// exactly what every editor already sees, so accepting it changes nothing
-// visually - it just makes those values canonical and clears the queue.
-export const acceptAllOverlaysForCard = async ({ cardUserId, persistCard }) => {
-  const overlays = await getOverlaysForCard(cardUserId);
-  const orderedOverlays = sortOverlaysByAppliedOrder(overlays);
-  if (!orderedOverlays.length) return null;
-
-  const canonical = await getCanonicalCard(cardUserId);
-  const merged = applyOverlaysToCard(canonical, overlays);
-
-  await persistCard(merged);
-  await removeAllOverlaysForCard(cardUserId, { historyAction: 'accept' });
-
-  return { canonical, merged, overlays };
-};
-
-// Clears the whole queue for a card in one write. `historyAction` records
-// why: 'accept' when the values were just written to the card, 'discard'
-// when the admin threw them away.
 /**
  * Знести все, що про цю картку знає шар доповнень, — разом із карткою.
  *
- * `removeAllOverlaysForCard` знімає самі шари, але лишає журнал, перелік
- * дописувачів і позначки в переліках самих редакторів: там це сліди правок
+ * Журнал, перелік дописувачів і позначки в переліках редакторів — сліди правок
  * живої картки, і знімати їх при звичайному «розсудили» не можна. А коли
  * картки більше немає, ці сліди вказують у порожнечу: журнал під `cardId`,
  * якого не існує, і рядок у власному переліку доповнень, що відкриває
@@ -1720,7 +1540,7 @@ export const acceptAllOverlaysForCard = async ({ cardUserId, persistCard }) => {
  * «картка → хто дописував» немає (див. `listPendingOverlayCards`), тож читаємо
  * вузол картки, поки він ще є, і аж потім зносимо.
  */
-export const purgeCardOverlays = async (cardUserId, { throwOnError = false } = {}) => {
+export const purgeCardOverlays = async (cardUserId, { throwOnError = false, removeSearchAliases = false } = {}) => {
   const normalizedCardId = normalizeCardKey(cardUserId);
   if (!normalizedCardId) return { editorUserIds: [] };
 
@@ -1733,6 +1553,20 @@ export const purgeCardOverlays = async (cardUserId, { throwOnError = false } = {
     console.warn('[multiAccountEdits] журнал правок не прочитано', error);
     return [];
   });
+
+  // Видалення цілі знімає її ID зі спільного індексу, поки значення ще є у
+  // головних записах і журналі. Відмова лишає джерела доступними для повтору.
+  if (removeSearchAliases) {
+    const overlays = await getOverlaysForCard(normalizedCardId, { includeRecords: true });
+    const candidates = [
+      ...Object.values(overlays).flatMap(overlay => collectOverlaySearchIdValues(overlay.expectedCurrent ?? overlay)),
+      ...historyEntries.flatMap(entry => collectOverlayIndexValues({ [entry.fieldName]: entry.change })),
+    ];
+    const aliases = new Map(candidates.map(candidate => [aliasKey(candidate), candidate]));
+    await Promise.all([...aliases.values()].map(({ field, value }) => (
+      updateSearchId(field, value, normalizedCardId, 'remove', { throwOnError: true })
+    )));
+  }
 
   // Зноситься поіменно, а не вузлом картки, і це не про акуратність, а про
   // права: у `database.rules.json` `.write` стоїть на `edits/$картка/$редактор`
@@ -1785,41 +1619,6 @@ export const clearCardOverlays = async cardUserId => {
 
   const remaining = await getOverlaysForCard(normalizedCardId);
   if (Object.keys(remaining).length) throw new Error('OVERLAY_CLEAR_INCOMPLETE');
-};
-
-export const removeAllOverlaysForCard = async (cardUserId, { historyAction = 'discard' } = {}) => {
-  const normalizedCardId = normalizeCardKey(cardUserId);
-  if (!normalizedCardId) return null;
-
-  const overlays = await getOverlaysForCard(normalizedCardId);
-  const orderedOverlays = sortOverlaysByAppliedOrder(overlays);
-  if (!orderedOverlays.length) return null;
-
-  for (const overlay of orderedOverlays) {
-    if (historyAction === 'accept') {
-      // Accepted values are canonical now. Remove their earlier audit rows
-      // instead of adding another permanent "accept" row to the journal.
-      for (const [fieldName, change] of Object.entries(overlay.fields || {})) {
-        await purgeOverlayHistoryEntries({
-          cardUserId: normalizedCardId,
-          editorUserId: overlay.editorUserId,
-          fieldName,
-          values: changeValueList(change),
-        });
-      }
-      continue;
-    }
-    await appendOverlayHistory({
-      cardUserId: normalizedCardId,
-      editorUserId: overlay.editorUserId,
-      action: historyAction,
-      fields: overlay.fields,
-    });
-  }
-
-  await remove(ref2(database, `${EDITS_ROOT}/${normalizedCardId}`));
-
-  return { overlays };
 };
 
 // ---------------------------------------------------------------------------

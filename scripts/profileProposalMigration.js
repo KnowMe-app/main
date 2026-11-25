@@ -350,6 +350,7 @@ const rollbackProfileProposalMigration = (staged, backup) => {
 
 module.exports = {
   MIGRATION_NODE,
+  profileProposalSnapshotDigest: digest,
   planProfileProposalMigration,
   stageProfileProposalMigration,
   verifyProfileProposalMigration,

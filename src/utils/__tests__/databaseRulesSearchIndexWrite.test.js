@@ -86,7 +86,9 @@ describe('права, без яких нова анкета не потрапл�
       // `pendingReview`, `publishing`). Поведінку стережуть сценарії
       // «searchId — чернетка індексується своїм автором» в `npm run test:rules`.
       expect(write).toContain("data.isString() && (data.val() == auth.uid || ");
-      expect(write).toContain("root.child('multiData').child('profileMutations').child(auth.uid).child(data.val()).child('status').val() == 'private'");
+      expect(write).toContain("root.child('profileProposalControl').child('activeWriter')");
+      expect(write).toContain("'profileProposals/live/heads/create' : 'profileMutations'");
+      expect(write).toContain(".child(auth.uid).child(data.val()).child('status').val() == 'private'");
     });
 
     it('лишає корінь searchId несканованим для тих, хто в нього пише', () => {

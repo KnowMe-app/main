@@ -6980,7 +6980,7 @@ const ORPHAN_COMMENT_LIVENESS_PATHS = [
   PROFILE_NODES.profileContacts,
   PROFILE_NODES.profileWorkflow,
   PROFILE_NODES.profileTechnical,
-  'multiData/profileMutationOwners',
+  PROFILE_MUTATION_OWNERS_NODE,
 ];
 
 const normalizeOrphanCommentText = text => String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -11859,7 +11859,7 @@ const removePublicCommentsOfDeletedCard = async userId => {
   }
 };
 
-export const removeCardAndSearchId = async userId => {
+export const removeCardAndSearchId = async (userId, { purgeProposals = false } = {}) => {
   const db = getDatabase();
 
   try {
@@ -11929,6 +11929,10 @@ export const removeCardAndSearchId = async userId => {
     if (failedPaths.length) {
       throw new Error(`Не вдалося видалити вузли анкети: ${failedPaths.join(', ')}`);
     }
+    if (purgeProposals) {
+      const { purgeCardOverlays } = await import('../utils/multiAccountEdits');
+      await purgeCardOverlays(userId, { throwOnError: true, removeSearchAliases: true });
+    }
     console.log(`Картка користувача та її профільні вузли видалені: ${userId}`);
 
     // Відгуки йдуть разом з карткою: інакше вони лишаються сиротами під id,
@@ -11965,6 +11969,7 @@ export const removeCardAndSearchId = async userId => {
     }
   } catch (error) {
     console.error(`Помилка під час видалення searchId для userId: ${userId}`, error);
+    if (purgeProposals) throw error;
   }
 };
 /**

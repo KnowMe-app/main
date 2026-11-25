@@ -1,7 +1,7 @@
 import { get, ref } from 'firebase/database';
 
 import { database, fetchProfileDraftById } from 'components/config';
-import { legacyCreateProposalAdapter } from './legacyCreateProposalAdapter';
+import { createProfileProposalAdapter } from './createProfileProposalAdapter';
 
 import { isAdminUid } from './accessLevel';
 import {
@@ -73,7 +73,7 @@ const checkTarget = async (proposal, { current, actorUid } = {}) => {
     ) {
       if (canUseLegacyDraftTarget(current)) return;
       const createdBy = target.__profileMutationCreatedBy;
-      const parent = createdBy && await legacyCreateProposalAdapter.get({ cardId, createdBy });
+      const parent = createdBy && await createProfileProposalAdapter.get({ cardId, createdBy });
       if (parent?.proposal.id === proposal.targetCreateProposalId) return;
     }
   }
@@ -144,4 +144,4 @@ const review = async (decision, { locator }) => {
   return result;
 };
 
-export const legacyOverlayProposalAdapter = { get: getDraft, list, save, remove, review, history, checkTarget };
+export const updateProfileProposalAdapter = { get: getDraft, list, save, remove, review, history, checkTarget };

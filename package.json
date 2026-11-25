@@ -46,7 +46,8 @@
     "migrate:representatives": "node scripts/migrateRepresentativePowerOfAttorney.js",
     "migrate:searchQueries": "node scripts/migrateSearchQueries.js",
     "migrate:profile-proposals": "node scripts/migrateProfileProposals.js",
-    "test:proposal-migration": "node --test scripts/profileProposalMigration.test.js",
+    "prepare:profile-proposal-cutover": "node scripts/prepareProfileProposalCutover.js",
+    "test:proposal-migration": "node --test scripts/profileProposalMigration.test.js scripts/prepareProfileProposalCutover.test.js",
     "postinstall": "patch-package"
   },
   "eslintConfig": {

@@ -89,7 +89,7 @@ const review = async ({ action, expected, expectedRevision, finalData }, { locat
     : rejectCreateProfileMutation(options);
 };
 
-export const legacyCreateProposalAdapter = {
+export const createProfileProposalAdapter = {
   get,
   list,
   save,

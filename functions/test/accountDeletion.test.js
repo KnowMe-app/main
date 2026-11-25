@@ -28,6 +28,11 @@ const {
   verifyDraftCardIds,
 } = require('../accountDeletion');
 const { renderAccountDeletedEmail } = require('../emails/accountDeleted');
+const {
+  PROFILE_PROPOSAL_ARCHIVE,
+  LEGACY_PROFILE_PROPOSAL_PATHS: legacyProposals,
+  UNIFIED_PROFILE_PROPOSAL_PATHS: unifiedProposals,
+} = require('../profileProposalStorage');
 
 const UID = 'abcdefghijklmnopqrst1234';
 const DRAFT = '-Ndraft1';
@@ -396,6 +401,113 @@ test('крок адміна: збій лишає запис у черзі з п�
   assert.equal(result.complete, false);
   assert.deepEqual(result.failed, ['nodes']);
   assert.deepEqual(updates[updates.length - 1], { [`accountDeletions/${UID}/lastPurge`]: { at: 7, failed: ['nodes'] } });
+});
+
+test('видалення охоплює старі, нові та архівні пропозиції й захищає чернетки з конфліктом авторства', async () => {
+  const other = 'otherWriterOnAnotherLane';
+  const shared = '-NsharedBetweenStores';
+  const archived = '-NarchivedOtherOwner';
+  const owned = id => ({ operation: 'create', createdBy: UID, cardId: id });
+  const after = `${PROFILE_PROPOSAL_ARCHIVE}/legacyRelationships`;
+  const { deps, updates, files } = fakeDeps({
+    [legacyProposals.create]: { [other]: { [shared]: { operation: 'create', createdBy: other, cardId: shared } } },
+    [legacyProposals.createHistory]: { unrelated: { authored: { actorUid: UID }, kept: { actorUid: other } } },
+    [legacyProposals.contributors]: { unrelated: { [UID]: 1, [other]: 2 } },
+    [PROFILE_PROPOSAL_ARCHIVE]: {
+      live: {
+        heads: {
+          create: { [UID]: { [DRAFT]: owned(DRAFT), [shared]: owned(shared), [archived]: owned(archived) } },
+          update: { [DRAFT]: { [other]: {} }, [shared]: { [UID]: {}, [other]: {} }, unrelated: { [other]: {} } },
+        },
+        history: {
+          create: { [DRAFT]: { a: { actorUid: other } }, unrelated: { own: { actorUid: UID }, kept: { actorUid: other } } },
+          update: { [shared]: { own: { editorUserId: UID }, kept: { editorUserId: other } } },
+        },
+        owners: { [DRAFT]: UID, [shared]: other },
+        identityClaims: { ownClaim: DRAFT, sharedClaim: shared },
+        targetsByEditor: { [UID]: { [shared]: 1 }, [other]: { [DRAFT]: 2, [shared]: 3 } },
+        contributors: { [DRAFT]: { [other]: 1 }, [shared]: { [UID]: 1, [other]: 2 } },
+      },
+      records: {
+        owned: { sourcePath: `${legacyProposals.create}/${UID}/${DRAFT}` },
+        ownedShared: { sourcePath: `${legacyProposals.create}/${UID}/${shared}` },
+        keepsArchivedOwner: { sourcePath: `${legacyProposals.create}/${other}/${archived}` },
+        linked: { sourcePath: `${legacyProposals.update}/${DRAFT}/${other}` },
+        kept: { sourcePath: `${legacyProposals.update}/${shared}/${other}` },
+      },
+      history: {
+        linked: { entryJson: JSON.stringify({ actorUid: other }), proposalKey: 'ownedShared' },
+        authored: { entryJson: JSON.stringify({ actorUid: UID }), cardId: 'unrelated' },
+        target: { sourcePath: `${legacyProposals.updateHistory}/${DRAFT}/event` },
+        kept: { entryJson: JSON.stringify({ actorUid: other }), cardId: shared },
+      },
+      unmapped: { owned: { sourcePath: `${legacyProposals.create}/${UID}/unmapped` } },
+      legacyRelationships: {
+        profileIdentityClaims: { ownClaim: DRAFT, sharedClaim: shared },
+        profileMutationOwners: { [DRAFT]: UID, [shared]: other },
+        editsByEditor: { [other]: { [DRAFT]: 1, [shared]: 2 } },
+        editsContributors: { [shared]: { [UID]: 2, [other]: 3 } },
+      },
+    },
+    searchId: { kept: { email: shared }, removed: { email: DRAFT } },
+  });
+
+  const result = await purgeAccountData(deps, UID);
+  assert.equal(result.complete, true);
+  assert.deepEqual(result.draftIds, [DRAFT]);
+  assert.deepEqual(files, [`avatar/${UID}/`, `avatar/${DRAFT}/`]);
+  const merged = Object.assign({}, ...updates);
+  for (const path of [
+    `${unifiedProposals.create}/${UID}`, `${unifiedProposals.update}/${DRAFT}`, `${unifiedProposals.update}/${shared}/${UID}`,
+    `${unifiedProposals.createHistory}/${DRAFT}`, `${unifiedProposals.createHistory}/unrelated/own`,
+    `${unifiedProposals.updateHistory}/${shared}/own`, `${unifiedProposals.owners}/${DRAFT}`,
+    `${unifiedProposals.identityClaims}/ownClaim`, `${unifiedProposals.byEditor}/${UID}`, `${unifiedProposals.byEditor}/${other}/${DRAFT}`,
+    `${unifiedProposals.contributors}/${shared}/${UID}`, `${legacyProposals.createHistory}/unrelated/authored`,
+    `${legacyProposals.contributors}/unrelated/${UID}`, `${PROFILE_PROPOSAL_ARCHIVE}/records/owned`,
+    `${PROFILE_PROPOSAL_ARCHIVE}/records/ownedShared`, `${PROFILE_PROPOSAL_ARCHIVE}/records/linked`,
+    `${PROFILE_PROPOSAL_ARCHIVE}/history/linked`, `${PROFILE_PROPOSAL_ARCHIVE}/history/authored`,
+    `${PROFILE_PROPOSAL_ARCHIVE}/history/target`, `${PROFILE_PROPOSAL_ARCHIVE}/unmapped/owned`,
+    `${after}/profileIdentityClaims/ownClaim`, `${after}/profileMutationOwners/${DRAFT}`,
+    `${after}/editsByEditor/${other}/${DRAFT}`, `${after}/editsContributors/${shared}/${UID}`, 'searchId/removed/email',
+  ]) assert.equal(merged[path], null, path);
+  for (const path of [
+    `${unifiedProposals.update}/${shared}/${other}`, `${unifiedProposals.owners}/${shared}`,
+    `${unifiedProposals.identityClaims}/sharedClaim`, `${PROFILE_PROPOSAL_ARCHIVE}/records/kept`,
+    `${PROFILE_PROPOSAL_ARCHIVE}/records/keepsArchivedOwner`, `${PROFILE_PROPOSAL_ARCHIVE}/history/kept`,
+    `${after}/profileIdentityClaims/sharedClaim`, `profileDetails/${shared}`, 'searchId/kept/email',
+  ]) assert.equal(Object.hasOwn(merged, path), false, path);
+});
+
+test('помилка перевірки архіву зупиняє видалення до першого запису', async () => {
+  const { deps, updates, log, files } = fakeDeps({}, {
+    read: async path => {
+      if (path === PROFILE_PROPOSAL_ARCHIVE) throw new Error('read failed');
+      return null;
+    },
+  });
+  const result = await purgeAccountData(deps, UID);
+  assert.deepEqual(result.failed, ['drafts']);
+  assert.equal(result.complete, false);
+  assert.deepEqual(updates, []);
+  assert.deepEqual(files, []);
+  assert.deepEqual(log, []);
+});
+
+test('після збою очищення фото лишаються голови й покажчики для доказу під час повтору', async () => {
+  const head = { operation: 'create', createdBy: UID, cardId: DRAFT };
+  const { deps, updates } = fakeDeps({
+    [`${legacyProposals.create}/${UID}`]: { [DRAFT]: head },
+    [legacyProposals.owners]: { [DRAFT]: UID },
+    [PROFILE_PROPOSAL_ARCHIVE]: { live: { heads: { create: { [UID]: { [DRAFT]: head } } }, owners: { [DRAFT]: UID } } },
+  }, { deleteFiles: async () => { throw new Error('storage unavailable'); } });
+
+  const result = await purgeAccountData(deps, UID);
+  assert.deepEqual(result.failed, ['storage']);
+  const merged = Object.assign({}, ...updates);
+  for (const path of [
+    `${legacyProposals.create}/${UID}`, `${unifiedProposals.create}/${UID}`,
+    `${legacyProposals.owners}/${DRAFT}`, `${unifiedProposals.owners}/${DRAFT}`,
+  ]) assert.equal(Object.hasOwn(merged, path), false, path);
 });
 
 test('відповідь знімається лише тоді, коли id відгуку не стоїть під чужим відгуком', () => {

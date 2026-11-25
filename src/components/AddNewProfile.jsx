@@ -121,7 +121,6 @@ import { describeAvatarCacheControlBackfill, describeFeedPhotoThumbsBackfill } f
 import { normalizePhoneState } from './inputValidations';
 import { openComparedCard as openComparedCardNavigation, restoreComparedCard } from './comparedCardNavigation';
 import { isBackToCardList, planCardUrlWrite, shouldGoBackInHistory } from './cardListHistory';
-import { buildOverlayFromDraft, getCanonicalCard, saveOverlayForUserCard } from 'utils/multiAccountEdits';
 import InfoModal, { ModalTitle, ModalText, ModalActionRow, ModalDangerButton, ModalGhostButton } from './InfoModal';
 
 import { color, coloredCard, uiTokens } from './styles';
@@ -225,8 +224,10 @@ import {
 } from 'utils/profileNodeCollections';
 import {
   PROFILE_DRAFTS_INDEX_NODE,
+  PROFILE_MUTATION_OWNERS_NODE,
   collectDraftProfilesForIndexing,
 } from 'utils/profileDraftIndexing';
+import { usesUnifiedProposalStorage } from 'utils/profileProposalStoragePaths';
 import {
   collectUpdateProposalAliases,
   keepProposalAliasesWithTargets,
@@ -565,7 +566,7 @@ const INDEX_JOB_GROUPS = [
         // чернетку відкриває самий лише службовий читач.
         key: 'profileMutationOwners',
         label: 'Автори чернеток',
-        hint: '→ multiData/profileMutationOwners',
+        hint: `→ ${PROFILE_MUTATION_OWNERS_NODE}`,
       },
       {
         // Разова робота: `hasPublicReview` пишуть самі писачі коментарів, але
@@ -1721,21 +1722,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
     hasNewState,
     formattedLastDelivery,
   }) {
-    if (!isAdmin) {
-      if (!syncedState?.userId) {
-        toast.error('Немає userId для збереження правки');
-        return;
-      }
-
-      const canonical = await getCanonicalCard(syncedState.userId);
-      const overlayFields = buildOverlayFromDraft(canonical, syncedState);
-      await saveOverlayForUserCard({
-        editorUserId: auth.currentUser?.uid,
-        cardUserId: syncedState.userId,
-        fields: overlayFields,
-      });
-      return;
-    }
+    if (!isAdmin) throw new Error('PERMISSION_DENIED');
 
     // Чернетка пишеться в себе саму — у дані й журнал правок
     // (`profileMutationHistory`), а не у вузли готової анкети: тих у неї
@@ -1995,6 +1982,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   const handleSubmit = (newState, overwrite, delCondition, removedIndexValues) => {
+    if (!isAdmin) return undefined;
     const now = Date.now();
     const baseState = normalizePhoneState(newState ? { ...newState } : { ...state });
     const updatedState = { ...baseState, lastAction: now };
@@ -2036,24 +2024,6 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
       if (pendingAt) pendingSavesInFlightRef.current.add(`${syncedState.userId}@${pendingAt}`);
       return { pendingUid, pendingAt };
     };
-
-    if (!isAdmin) {
-      const pendingParams = {
-        syncedState,
-        overwrite,
-        delCondition,
-        deletedKeys: [],
-        localCardState,
-        removeKeys: [],
-        hasNewState,
-        formattedLastDelivery,
-      };
-      return enqueueProfileSync({
-        ...pendingParams,
-        optimisticCard: localCardState,
-        ...rememberPending(pendingParams),
-      });
-    }
 
     // Optimistically update the only full-card cache and UI state before syncing with server.
     const removeKeys = normalizeDeletedKeys(delCondition);
@@ -3663,7 +3633,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         setIsDeleting(true);
         const id = userIdToDelete || state.userId;
         if (!id) return;
-        await removeCardAndSearchId(id);
+        await removeCardAndSearchId(id, { purgeProposals: usesUnifiedProposalStorage });
         setUsers(prevUsers => {
           const updatedUsers = { ...prevUsers };
           delete updatedUsers[id];
@@ -3679,6 +3649,7 @@ export const AddNewProfile = ({ isLoggedIn, setIsLoggedIn }) => {
         navigate(readReturnAfterDelete(id) || '/add');
       } catch (error) {
         console.error('Error deleting user:', error);
+        toast.error('Не вдалося завершити видалення профілю');
       } finally {
         setIsDeleting(false);
       }
