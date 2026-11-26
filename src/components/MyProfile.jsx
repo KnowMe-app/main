@@ -115,7 +115,7 @@ import {
   subscribePendingProfileEdits,
 } from '../utils/myProfilePendingEdits';
 import { listShareableProfileRoles } from '../utils/profileShare';
-import { CANDIDATE_ANKETA_ROLES, CANDIDATE_DRAFT_SKIPPED_FIELDS, markCandidateSignup, readCandidateRoleFromSearch } from '../utils/candidateAnketa';
+import { CANDIDATE_ANKETA_ROLES, cleanCandidateDraft, markCandidateSignup, readCandidateRoleFromSearch, rememberCandidateDraftForExistingAccount } from '../utils/candidateAnketa';
 import {
   DEFAULT_REWARD_CURRENCY,
   MY_PROFILE_HABIT_CHOICES,
@@ -1309,6 +1309,7 @@ const TermsButton = styled.button`
   font-weight: 700;
   padding: 0;
   cursor: pointer;
+  text-decoration: none;
 `;
 const AuthActionButton = styled(SubmitBtn)`
   margin: 4px 0 20px;
@@ -1613,43 +1614,29 @@ const readMyProfileDraft = () => {
   }
 };
 
-// `?role=sm` / `?role=ed` у посиланні для кандидаток обирає роль наперед
-// (людина однаково може її змінити) — і лише тоді, коли в чернетці ролі ще
-// немає. Роль лягає і в чернетку пристрою одразу, ще до першого рендера:
-// перша відповідь Firebase («гостя немає») скидає стан і піднімає його саме з
-// чернетки (`resetAuthenticatedProfileState` → `restoreLocalDraft`), тож роль,
-// поставлена ефектом, до неї не доживала.
-
 // Одне нагадування кандидатці, що лишилось для збереження анкети: увійти
-// будь-яким способом угорі й погодитись з умовами.
-const candidateAuthReminder = (miss, email) => {
+// будь-яким способом і погодитись з умовами. Telegram називаємо лише тоді, коли
+// його кнопка є на сторінці (збірка знає бота, `isTelegramLoginAvailable`):
+// без неї тост посилав людину до кнопки, якої не існує.
+const candidateAuthReminder = (miss, email, { telegram = false } = {}) => {
   const parts = [];
   if (miss.email) parts.push(email ? 'правильну пошту' : 'пошту');
   if (miss.password) parts.push('пароль');
+  const providers = telegram ? 'Telegram чи Google' : 'Google';
   const fill = parts.length
-    ? `увійдіть угорі через Telegram чи Google або вкажіть ${parts.join(' і ')}`
+    ? `увійдіть через ${providers} або вкажіть ${parts.join(' і ')}`
     : '';
   const agree = miss.terms ? 'погодьтесь з умовами' : '';
   return `Щоб зберегти анкету, ${[fill, agree].filter(Boolean).join(' та ')}.`;
 };
 
-// Набране кандидаткою, що лягає в нову анкету: без порожнього й службового.
-const cleanCandidateDraft = draft => Object.fromEntries(Object.entries(draft || {})
-  .filter(([name, value]) => !CANDIDATE_DRAFT_SKIPPED_FIELDS.has(name)
-    && !name.startsWith('__')
-    && String(getCurrentValue(value) ?? '').trim() !== ''));
-
-// Кандидатка з посилання вже заповнила анкету, а вхід відкрив наявний
-// акаунт: набране не губимо, але й наявного не переписуємо — лише порожні
-// поля анкети стають незбереженими правками, і «Мій профіль» дописує їх на
-// відкритті (`utils/myProfilePendingEdits`).
-const rememberCandidateDraftForExistingAccount = (uid, existing, draft) => {
-  const base = existing || {};
-  Object.entries(cleanCandidateDraft(draft)).forEach(([name, value]) => {
-    if (String(getCurrentValue(base[name]) ?? '').trim() !== '') return;
-    rememberPendingProfileEdit(uid, name, value, { searchId: isSearchIdIndexedField(name) });
-  });
-};
+// `?role=sm` / `?role=ed` у посиланні для кандидаток обирає роль наперед
+// (людина однаково може її змінити) — і лише тоді, коли в чернетці ролі ще
+// немає: роль, яку людина вже обрала на цьому пристрої, важить більше за
+// посилання (рішення власниці продукту, 26.11). Роль лягає і в чернетку пристрою одразу, ще до першого рендера:
+// перша відповідь Firebase («гостя немає») скидає стан і піднімає його саме з
+// чернетки (`resetAuthenticatedProfileState` → `restoreLocalDraft`), тож роль,
+// поставлена ефектом, до неї не доживала.
 
 const seedCandidateDraftRole = draft => {
   const currentRole = String(draft?.userRole || draft?.role || '').trim().toLowerCase();
@@ -3033,6 +3020,8 @@ export const MyProfile = ({ candidate = false } = {}) => {
 
   const persistUserProfile = persistAccountProfile;
 
+  const [candidateTelegramNonce] = useState(() => (candidate && isTelegramLoginAvailable() ? createTelegramLoginNonce() : ''));
+
   const handleAuthConfirm = async () => {
     const currentState = stateRef.current || {};
     const normalizedEmail = String(currentState.email || '').trim();
@@ -3063,16 +3052,21 @@ export const MyProfile = ({ candidate = false } = {}) => {
 
     // На посиланні для кандидаток роль — частина реєстрації: від неї залежить,
     // яку анкету людина заповнюватиме одразу після входу.
+    // Тост один: спершу роль (без неї анкети під входом немає зовсім), а вже
+    // потім — що лишилось для входу. Обидва під тим самим id, тож повторні
+    // дотики не складають з них вежу. Доти без ролі й пошти вилазило два
+    // тости один над одним, а тост ролі ще й множився з кожним дотиком.
     if (candidate && !candidateRole) {
       miss.candidateRole = true;
-      toast.error(uiText('Оберіть, ким ви хочете стати: сурогатною мамою чи донором ооцитів', language));
-      roleCardRef.current?.scrollIntoView?.({ block: 'center', behavior: scrollBehavior() });
     }
 
     setMissing(miss);
 
-    if (candidate && (miss.email || miss.password || miss.terms)) {
-      toast.error(candidateAuthReminder(miss, normalizedEmail), { id: 'candidate-auth-reminder' });
+    if (candidate && miss.candidateRole) {
+      toast.error(uiText('Оберіть, ким ви хочете стати: сурогатною мамою чи донором ооцитів', language), { id: 'candidate-auth-reminder' });
+      roleCardRef.current?.scrollIntoView?.({ block: 'center', behavior: scrollBehavior() });
+    } else if (candidate && (miss.email || miss.password || miss.terms)) {
+      toast.error(candidateAuthReminder(miss, normalizedEmail, { telegram: Boolean(candidateTelegramNonce) }), { id: 'candidate-auth-reminder' });
       scrollToSection('auth', { focus: true });
     }
 
@@ -3197,7 +3191,7 @@ export const MyProfile = ({ candidate = false } = {}) => {
     if (!Object.keys(miss).length) return true;
     setMissing(prev => ({ ...prev, ...miss }));
     if (miss.candidateRole) {
-      toast.error(uiText('Оберіть, ким ви хочете стати: сурогатною мамою чи донором ооцитів', language));
+      toast.error(uiText('Оберіть, ким ви хочете стати: сурогатною мамою чи донором ооцитів', language), { id: 'candidate-auth-reminder' });
       roleCardRef.current?.scrollIntoView?.({ block: 'center', behavior: scrollBehavior() });
     } else {
       toast.error('Щоб продовжити, погодьтесь з умовами.', { id: 'candidate-auth-reminder' });
@@ -3259,8 +3253,7 @@ export const MyProfile = ({ candidate = false } = {}) => {
   // Telegram — бот у застосунку Telegram, а завершує вхід форма входу: вона
   // чекає номер, питає код і заводить акаунт з роллю зі спроби. Тож тут —
   // лише спроба з роллю, позначка «прийшла з анкети» (форма дописує набране в
-  // нову анкету, `markCandidateSignup`) і перехід на форму, що вже чекає.
-  const [candidateTelegramNonce] = useState(() => (candidate && isTelegramLoginAvailable() ? createTelegramLoginNonce() : ''));
+  // нову анкету, а наявній — у порожні поля, `markCandidateSignup`) і перехід на форму, що вже чекає.
   const handleCandidateTelegram = event => {
     if (!checkCandidateReadyForSignIn()) {
       event.preventDefault();
@@ -4467,7 +4460,10 @@ export const MyProfile = ({ candidate = false } = {}) => {
             />
             <TermsText>
               <label htmlFor="my-profile-terms">{uiText('Я підтверджую згоду з умовами програми. ', language)}</label>
-              <TermsButton type="button" onClick={() => navigate('/policy')}>{uiText('Умови', language)}</TermsButton>
+              {/* Умови — у новій вкладці: перехід у цій вкладці знімав галочку згоди й
+                  стирав пароль (пароль на пристрій не пишеться навмисно), і після
+                  «Назад» людина мусила погоджуватись і вводити його знову. */}
+              <TermsButton as="a" href="/policy" target="_blank" rel="noopener noreferrer" data-testid="my-profile-terms-link">{uiText('Умови', language)}</TermsButton>
             </TermsText>
           </TermsRow>
           {candidate ? (

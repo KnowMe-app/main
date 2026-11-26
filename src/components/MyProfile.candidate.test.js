@@ -25,15 +25,30 @@ describe('«Мій профіль» як посилання для кандид�
     expect(source).toContain("{candidateGuest ? (candidateRole ? candidateSaveCard : null) : <SubmitWrap id={sectionAnchorId('publish')}");
   });
 
+  // Без ролі й пошти тут вилазило два тости один над одним, а тост ролі
+  // (без id) ще й множився з кожним дотиком.
   it('нагадує одним тостом, чого бракує для збереження', () => {
-    expect(confirmBody).toContain("toast.error(candidateAuthReminder(miss, normalizedEmail), { id: 'candidate-auth-reminder' });");
+    expect(confirmBody).toContain("toast.error(candidateAuthReminder(miss, normalizedEmail, { telegram: Boolean(candidateTelegramNonce) }), { id: 'candidate-auth-reminder' });");
+    expect(confirmBody).toContain('} else if (candidate && (miss.email || miss.password || miss.terms)) {');
+    expect(source).not.toMatch(/toast\.error\(uiText\('Оберіть, ким ви хочете стати: сурогатною мамою чи донором ооцитів', language\)\);/);
+  });
+
+  // Telegram у тості — лише коли є його кнопка (збірка знає бота).
+  it('не називає Telegram, якого на сторінці немає', () => {
+    expect(source).toContain("const providers = telegram ? 'Telegram чи Google' : 'Google';");
+    expect(source).not.toContain('увійдіть угорі через Telegram чи Google');
+  });
+
+  // «Умови» в тій самій вкладці знімали галочку згоди й стирали пароль.
+  it('відкриває умови в новій вкладці', () => {
+    expect(source).toContain('<TermsButton as="a" href="/policy" target="_blank" rel="noopener noreferrer"');
+    expect(source).not.toContain("navigate('/policy')");
   });
 
   // Набране кандидаткою не губиться й тоді, коли пошта вже мала акаунт, але
   // наявних полів не переписує.
   it('у наявному акаунті дописує лише порожні поля', () => {
     expect(confirmBody).toContain('rememberCandidateDraftForExistingAccount(userCredential.user.uid, persistedProfileRef.current?.data, draftProfileData);');
-    expect(source).toContain("if (String(getCurrentValue(base[name]) ?? '').trim() !== '') return;");
   });
 
   // Вхід — у самій анкеті: пояснення навіщо, Telegram, Google, пошта з
@@ -76,5 +91,19 @@ describe('«Мій профіль» як посилання для кандид�
     const navigateAt = confirmBody.indexOf("navigate('/my-profile', { replace: true });");
     expect(persistAt).toBeGreaterThan(-1);
     expect(navigateAt).toBeGreaterThan(persistAt);
+  });
+});
+
+// Telegram завершує вхід у формі входу. Наявний акаунт там раніше просто
+// входив, і `markAuthSession` стирав чернетку з набраним на `/anketa`.
+describe('вхід кандидатки наявним акаунтом через Telegram', () => {
+  const login = fs.readFileSync(path.join(__dirname, 'LoginScreen.jsx'), 'utf8');
+  const telegram = login.slice(login.indexOf('const completeTelegramAuth = async'), login.indexOf('const handleGoogleClick = async'));
+
+  it('доливає набране в порожні поля до того, як стерти чернетку', () => {
+    const rememberAt = telegram.indexOf('if (existing) rememberCandidateDraftForExistingAccount(uid, existing, candidateDraft);');
+    const sessionAt = telegram.indexOf("markAuthSession({ email: '', userId: uid });");
+    expect(rememberAt).toBeGreaterThan(-1);
+    expect(sessionAt).toBeGreaterThan(rememberAt);
   });
 });

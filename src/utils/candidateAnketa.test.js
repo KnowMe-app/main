@@ -1,4 +1,5 @@
-import { buildCandidateAnketaLink, CANDIDATE_ANKETA_ROLES, markCandidateSignup, readCandidateDraftFields, readCandidateRoleFromSearch, takeCandidateSignup } from './candidateAnketa';
+import { buildCandidateAnketaLink, CANDIDATE_ANKETA_ROLES, markCandidateSignup, readCandidateDraftFields, readCandidateRoleFromSearch, rememberCandidateDraftForExistingAccount, takeCandidateSignup } from './candidateAnketa';
+import { readPendingProfileEdits } from './myProfilePendingEdits';
 
 describe('посилання на анкету для кандидаток', () => {
   it('пропонує лише донорку й СМ', () => {
@@ -44,5 +45,17 @@ describe('вхід кандидатки через Telegram', () => {
       name: 'Олена', city: '', userRole: 'sm', email: 'x@y.z', password: 'p', surname: ['Стара', 'Нова'],
     }));
     expect(readCandidateDraftFields()).toEqual({ name: 'Олена', surname: ['Стара', 'Нова'] });
+  });
+
+  // Спільне для пошти, Google і Telegram: набране до входу лягає лише в
+  // порожні поля наявного акаунта, роль і службове — ніколи.
+  it('доливає набране в порожні поля наявного акаунта', () => {
+    localStorage.clear();
+    rememberCandidateDraftForExistingAccount('uid-existing', { name: 'Олена', city: '' }, {
+      name: 'Інше імʼя', city: 'Київ', height: '168', userRole: 'sm', role: 'sm', email: 'a@b.c', __x: '1', weight: '',
+    });
+    const pending = readPendingProfileEdits('uid-existing');
+    expect(Object.keys(pending.fields).sort()).toEqual(['city', 'height']);
+    expect(pending.fields.city).toBe('Київ');
   });
 });
