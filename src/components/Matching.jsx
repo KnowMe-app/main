@@ -797,7 +797,15 @@ export const keepDisplayedOrder = (previous, nextIds, viewMode) => {
   const nextSet = new Set(next);
   const kept = previous.ids.filter(id => nextSet.has(id));
   const keptSet = new Set(kept);
-  return [...kept, ...next.filter(id => !keptSet.has(id))];
+  // Нове, що в переліку стоїть вище за все показане, — свіжіша реакція
+  // (`orderReactionIdsByRecency`), і стає нагору. Решта нового — дочитане
+  // старше — у кінець. Доти в кінець ішло все нове, і лайк, що доїхав уже
+  // після показу колекції (мапа з кешу пристрою, потім підписка), опинявся
+  // останнім серед сотні: «щойно вподобала — а вона в самому низу» (26.11).
+  const firstKeptIndex = next.findIndex(id => keptSet.has(id));
+  const newer = firstKeptIndex > 0 ? next.slice(0, firstKeptIndex) : [];
+  const newerSet = new Set(newer);
+  return [...newer, ...kept, ...next.filter(id => !keptSet.has(id) && !newerSet.has(id))];
 };
 
 const ROLE_INTENT_AUTO_APPLY_MS = 1000;
