@@ -510,19 +510,8 @@ const MonthEditor = ({
         {missing.length > 0 && <Missing>Ще не заповнено: {missing.join(', ')}</Missing>}
       </CalcBlock>
 
-      <TemplateTextBlock
-        title="Текст для орендаря"
-        field="tenantTemplate"
-        defaultTemplate={DEFAULT_TENANT_TEMPLATE}
-        tokens={listTenantTemplateTokens(apartment, month.mk)}
-        render={template => buildTenantText(apartment, view, computed, template)}
-        apartment={apartment}
-        canEditTemplate={canWrite}
-        onWriteApartment={onWriteApartment}
-        onCopy={onCopy}
-        testId="utilities-tenant"
-      />
-
+      {/* Розрахунок платежу — першим: по таймлайну спершу платіж наступного
+          місяця, а текст орендарю з показниками — слідом. */}
       <TemplateTextBlock
         title="Розрахунок платежу"
         field="payTemplate"
@@ -535,6 +524,19 @@ const MonthEditor = ({
         onWriteApartment={onWriteApartment}
         onCopy={onCopy}
         testId="utilities-payment"
+      />
+
+      <TemplateTextBlock
+        title="Текст для орендаря"
+        field="tenantTemplate"
+        defaultTemplate={DEFAULT_TENANT_TEMPLATE}
+        tokens={listTenantTemplateTokens(apartment, month.mk)}
+        render={template => buildTenantText(apartment, view, computed, template)}
+        apartment={apartment}
+        canEditTemplate={canWrite}
+        onWriteApartment={onWriteApartment}
+        onCopy={onCopy}
+        testId="utilities-tenant"
       />
 
       {/* Закритий місяць іде в «Попередні місяці» (там його відкривають і

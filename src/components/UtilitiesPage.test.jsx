@@ -120,6 +120,16 @@ describe('UtilitiesPage', () => {
     expect(Object.entries(mockEnqueue.mock.calls.at(-1)[1]).some(([path, value]) => path.endsWith('/apartments/a1/payTemplate') && value === 'До сплати {{платіж}}')).toBe(true);
   });
 
+  it('розрахунок платежу стоїть над текстом для орендаря: по таймлайну спершу платіж', async () => {
+    renderPage();
+    await waitFor(() => expect(mockFetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId('utilities-history-2026-10'));
+    const october = await screen.findByTestId('utilities-month-2026-10');
+    const payment = within(october).getByTestId('utilities-payment');
+    const tenant = within(october).getByTestId('utilities-tenant');
+    expect(payment.compareDocumentPosition(tenant) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('переносить незмінне з минулого місяця одним тапом і пише через чергу', async () => {
     renderPage();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
