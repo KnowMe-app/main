@@ -141,7 +141,7 @@ const EN_BY_UK = {
   "Зворотний зв'язок": 'Feedback',
   'Як звертатись до людини': 'How to address them',
   '👤 Про людину': '👤 About the person',
-  'Чернетка · бачите лише ви': 'Draft · only you can see it',
+  'Чернетка · контакти бачите лише ви': 'Draft · only you see the contacts',
   'Скинути фільтри й завантажити анкети наново': 'Reset filters and load profiles again',
   'Останню зміну не збережено — див. повідомлення вище': 'The last change was not saved — see the message above',
   'Збережено о {time}': 'Saved at {time}',

@@ -128,7 +128,7 @@ const BY_UK = {
   "Зворотний зв'язок": 'Feedback',
   'Як звертатись до людини': 'Wie man die Person anspricht',
   '👤 Про людину': '👤 Über die Person',
-  'Чернетка · бачите лише ви': 'Entwurf · nur für Sie sichtbar',
+  'Чернетка · контакти бачите лише ви': 'Entwurf · Kontakte sehen nur Sie',
   'Скинути фільтри й завантажити анкети наново': 'Filter zurücksetzen und Profile neu laden',
   'Останню зміну не збережено — див. повідомлення вище': 'Die letzte Änderung wurde nicht gespeichert – siehe Meldung oben',
   'Збережено о {time}': 'Gespeichert um {time}',

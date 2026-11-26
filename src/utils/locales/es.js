@@ -128,7 +128,7 @@ const BY_UK = {
   "Зворотний зв'язок": 'Comentarios',
   'Як звертатись до людини': 'Cómo dirigirse a esta persona',
   '👤 Про людину': '👤 Sobre la persona',
-  'Чернетка · бачите лише ви': 'Borrador · solo tú lo ves',
+  'Чернетка · контакти бачите лише ви': 'Borrador · solo tú ves los contactos',
   'Скинути фільтри й завантажити анкети наново': 'Restablecer filtros y volver a cargar los perfiles',
   'Останню зміну не збережено — див. повідомлення вище': 'El último cambio no se guardó: consulta el mensaje de arriba',
   'Збережено о {time}': 'Guardado a las {time}',
