@@ -76,7 +76,7 @@ describe('UtilitiesPage', () => {
     renderPage();
     await waitFor(() => expect(mockFetch).toHaveBeenCalled());
     expect(screen.getByTestId('utilities-summary').textContent).toContain('жовтень 2026');
-    expect(screen.getByTestId('utilities-summary').textContent).toContain('Переплата — зменшує платіж 19.11');
+    expect(screen.getByTestId('utilities-summary').textContent).toContain('Переплата — зменшує платіж 19.12');
     expect(screen.getByTestId('utilities-open-month').textContent).toContain('Листопад 2026');
     expect(screen.getByTestId('utilities-close-month').disabled).toBe(true);
     expect(screen.queryByTestId('utilities-carry-balance-yes')).toBeNull();

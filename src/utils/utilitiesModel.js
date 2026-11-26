@@ -555,6 +555,7 @@ export const PAYMENT_TEMPLATE_TOKENS = Object.freeze([
   { token: 'комуналка', label: 'приблизна комуналка (бюджет)' },
   { token: 'залишок', label: '−переплата або +борг, зі знаком' },
   { token: 'залишок_підпис', label: '«переплата» чи «борг»' },
+  { token: 'залишок_місяць', label: 'за який місяць залишок, «жовтня»' },
   { token: 'платіж', label: 'сума платежу' },
   { token: 'місяць', label: 'місяць платежу' },
   { token: 'дата_платежу', label: 'день платежу, дд.мм' },
@@ -571,7 +572,13 @@ export const buildPaymentValues = (apartment, month, computed) => {
   const rentValue = evalUtilityExpr(month?.rent);
   if (!isNumber(rentValue)) return null;
   const utilities = computed.budgetSet ? computed.budget : 0;
-  const balance = computed.result;
+  // Переплата чи борг — з попереднього, уже порахованого місяця, а не з цього
+  // (26.11, на прохання власниці продукту): рахунок за місяць шлють, коли
+  // його показники ще не зняті, і поточний залишок тоді — недорахована цифра.
+  // Місяць зі старим `carry: true` вже взяв залишок у свій бюджет — удруге
+  // платіж його не коригує.
+  const hasPrevBalance = Boolean(computed.prevMonth) && month?.carry !== true;
+  const balance = hasPrevBalance ? (Number(computed.prevResult) || 0) : 0;
   const payment = rentValue + utilities - balance;
   const zeroBalance = Math.abs(balance) < 0.005;
   // Нульовий залишок — порожні теги, і рядок з ними зникає.
@@ -587,6 +594,7 @@ export const buildPaymentValues = (apartment, month, computed) => {
       // Переплата зменшує платіж (−), борг збільшує (+).
       залишок: zeroBalance ? '' : `${balance > 0 ? '-' : '+'}${formatPlain(Math.abs(balance))}`,
       залишок_підпис: zeroBalance ? '' : balance > 0 ? 'переплата' : 'борг',
+      залишок_місяць: hasPrevBalance ? MONTHS_GEN[monthIndex(computed.prevMonth.mk)] : '',
       платіж: formatPlain(payment),
       місяць: MONTHS[monthIndex(nextMk)],
       дата_платежу: paymentDateLabel(apartment, month.mk),
@@ -596,5 +604,5 @@ export const buildPaymentValues = (apartment, month, computed) => {
 
 export const renderPaymentText = (template, values) => renderTemplateText(template, DEFAULT_PAYMENT_TEMPLATE, {
   tokens: values.tokens,
-  optional: new Set(['залишок', 'залишок_підпис']),
+  optional: new Set(['залишок', 'залишок_підпис', 'залишок_місяць']),
 });
