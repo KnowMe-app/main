@@ -11,6 +11,10 @@
  * створений акаунт. Анонімного входу Firebase тут немає й не буде — для
  * правил така сесія нічим не відрізнялась би від агенції.
  */
+import { getCurrentValue } from '../components/getCurrentValue';
+import { rememberPendingProfileEdit } from './myProfilePendingEdits';
+import { isSearchIdIndexedField } from './searchKeyUtils';
+
 export const CANDIDATE_ANKETA_ROUTE = '/anketa';
 
 export const CANDIDATE_ANKETA_ROLES = Object.freeze(['sm', 'ed']);
@@ -76,15 +80,29 @@ export const CANDIDATE_DRAFT_SKIPPED_FIELDS = new Set([
   'publish', 'publishAudience', 'photos', 'lastLogin', 'lastLogin2', 'registrationDate',
 ]);
 
+export const cleanCandidateDraft = draft => Object.fromEntries(Object.entries(draft || {})
+  .filter(([name, value]) => !CANDIDATE_DRAFT_SKIPPED_FIELDS.has(name)
+    && !name.startsWith('__')
+    && String(getCurrentValue(value) ?? '').trim() !== ''));
+
 export const readCandidateDraftFields = () => {
   try {
-    const draft = JSON.parse(localStorage.getItem('myProfileDraft') || '{}') || {};
-    return Object.fromEntries(Object.entries(draft).filter(([name, value]) => {
-      if (CANDIDATE_DRAFT_SKIPPED_FIELDS.has(name) || name.startsWith('__')) return false;
-      const current = Array.isArray(value) ? value[value.length - 1] : value;
-      return String(current ?? '').trim() !== '';
-    }));
+    return cleanCandidateDraft(JSON.parse(localStorage.getItem('myProfileDraft') || '{}') || {});
   } catch (error) {
     return {};
   }
+};
+
+// Кандидатка з посилання вже заповнила анкету, а вхід відкрив наявний
+// акаунт: набране не губимо, але й наявного не переписуємо — лише порожні
+// поля анкети стають незбереженими правками, і «Мій профіль» дописує їх на
+// відкритті (`utils/myProfilePendingEdits`). Спільне для пошти, Google і
+// Telegram: поки Telegram цього не робив, вхід наявним акаунтом через бота
+// стирав набране разом з чернеткою (`markAuthSession`).
+export const rememberCandidateDraftForExistingAccount = (uid, existing, draft) => {
+  const base = existing || {};
+  Object.entries(cleanCandidateDraft(draft)).forEach(([name, value]) => {
+    if (String(getCurrentValue(base[name]) ?? '').trim() !== '') return;
+    rememberPendingProfileEdit(uid, name, value, { searchId: isSearchIdIndexedField(name) });
+  });
 };

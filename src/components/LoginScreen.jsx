@@ -49,7 +49,7 @@ import {
   TELEGRAM_POLL_INTERVAL_MS,
 } from 'utils/telegramAuth';
 import { settlePrimaryAccount } from 'utils/accountLinks';
-import { CANDIDATE_ANKETA_ROLES, readCandidateDraftFields, takeCandidateSignup } from 'utils/candidateAnketa';
+import { CANDIDATE_ANKETA_ROLES, readCandidateDraftFields, rememberCandidateDraftForExistingAccount, takeCandidateSignup } from 'utils/candidateAnketa';
 import { buildGoogleProfileData, createGoogleAuthProvider, isGoogleSignInCancelled } from 'utils/googleAuth';
 
 const MATCHING_ROUTE = '/matching';
@@ -952,6 +952,17 @@ export const LoginScreen = ({ setIsLoggedIn, authStatus = 'pending' }) => {
       void persistAccountProfile(uid, { ...buildAuthSessionPayload({ todayDays, todayDash }), userId: uid }, 'update').catch(error => {
         console.warn('[telegram] не вдалося записати дату входу', error);
       });
+      // Почали на посиланні для кандидаток (`/anketa`), а бот відкрив наявний
+      // акаунт: набране там лягає в порожні поля анкети незбереженими правками,
+      // як і на вході поштою чи Google. Без цього `markAuthSession` нижче стирав
+      // чернетку, і заповнене до входу пропадало. Анкету не прочитали —
+      // нічого не дописуємо: непрочитане поле не можна вважати порожнім.
+      const candidateSignup = takeCandidateSignup();
+      const candidateDraft = candidateSignup ? readCandidateDraftFields() : {};
+      if (Object.keys(candidateDraft).length) {
+        const existing = await fetchUserById(uid, { includePhotos: false }).catch(() => null);
+        if (existing) rememberCandidateDraftForExistingAccount(uid, existing, candidateDraft);
+      }
       markAuthSession({ email: '', userId: uid });
       setIsLoggedIn(true);
       await navigateAfterAuth();
