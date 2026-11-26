@@ -100,8 +100,7 @@ import {
   DEFAULT_TENANT_TEMPLATE,
   listTenantTemplateTokens,
   listHistoryMonths,
-  findLastCompleteMonth,
-  buildVirtualMonth,
+  findLastClosedMonth,
   DEFAULT_PAYMENT_TEMPLATE,
   PAYMENT_TEMPLATE_TOKENS,
   capitalize,
@@ -126,7 +125,6 @@ import {
   listSuggestions,
   monthIndex,
   monthName,
-  nextMonthKey,
   parseDmy,
   paymentDateLabel,
   prevReading,
@@ -224,7 +222,7 @@ const MonthEditor = ({
   onWrite,
   onWriteApartment,
   onCopy,
-  onStartNext,
+  onClose,
   onToggleEdit,
   onDelete,
   confirmingDelete,
@@ -538,16 +536,20 @@ const MonthEditor = ({
         testId="utilities-payment"
       />
 
-      {/* Закривати місяць не треба: заповнений рахується сам, а після дня
-          платежу на його місце стає наступний. Почати його раніше — тут. */}
+      {/* Закритий місяць іде в «Попередні місяці» (там його відкривають і
+          правлять), а наступний стартує з порожніми показниками. */}
       {canWrite && (isOpenMonth ? (
-        !month.virtual && missing.length === 0 && onStartNext ? (
-          <Foot>
-            <GhostBtn type="button" style={{ flex: 1 }} onClick={() => onStartNext(month)} data-testid="utilities-start-next">
-              + Почати {MONTHS[monthIndex(nextMonthKey(month.mk))]}
-            </GhostBtn>
-          </Foot>
-        ) : null
+        <Foot>
+          <PrimaryBtn
+            type="button"
+            style={{ flex: 1 }}
+            disabled={missing.length > 0}
+            data-testid="utilities-close-month"
+            onClick={() => onClose(month)}
+          >
+            {missing.length ? `Закрити місяць · бракує ${missing.length}` : `Закрити ${MONTHS[monthIndex(month.mk)]} · ${formatSigned(computed.result)} ₴`}
+          </PrimaryBtn>
+        </Foot>
       ) : confirmingDelete ? (
         <Foot style={{ background: 'var(--km-danger-bg, #fff2f1)' }}>
           <Hint style={{ width: '100%' }}>Видалити {monthName(month.mk)}? Наступний місяць візьме «було» з попереднього.</Hint>
@@ -1193,12 +1195,10 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
     setSettingsOpen(false);
   };
 
-  // Наступний місяць до дня платежу: заводиться в базі з датою показників.
-  const startNextMonth = () => {
-    if (!aptId) return;
-    const next = buildVirtualMonth(dataRef.current, aptId);
-    writeMonth(next, { date: next.date }, `Почато ${monthName(next.mk)}`);
+  const closeMonth = month => {
+    writeMonth(month, { closed: true, closedAt: Date.now(), ...(month.virtual ? { date: month.date } : {}) }, `Закрито ${monthName(month.mk)}`);
     setOpenHistoryMk('');
+    toast.success(`${capitalize(monthName(month.mk))} закрито — новий місяць з порожніми показниками`);
   };
 
   const deleteMonth = month => {
@@ -1286,7 +1286,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
   const resolvedOpen = aptId ? resolveOpenMonth(data, aptId) : null;
   const openMonth = resolvedOpen && (canWrite || !resolvedOpen.virtual) ? resolvedOpen : null;
   const pastMonths = aptId ? listHistoryMonths(data, aptId, openMonth?.mk) : [];
-  const lastDone = aptId ? findLastCompleteMonth(data, aptId, memo) : null;
+  const lastDone = aptId ? findLastClosedMonth(data, aptId) : null;
   const lastComputed = lastDone ? computeMonth(data, lastDone, memo) : null;
 
   return (
@@ -1338,7 +1338,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
         {apartments.length > 0 && (
           <AptChips role="group" aria-label="Квартири">
             {apartments.map(apt => {
-              const last = findLastCompleteMonth(data, apt.id, memo);
+              const last = findLastClosedMonth(data, apt.id);
               const result = last ? computeMonth(data, last, memo).result : null;
               return (
                 <AptChip
@@ -1373,7 +1373,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
 
         {lastComputed && (
           <Card aria-live="polite" data-testid="utilities-summary">
-            <SummaryKicker>{apartment.name} · останній заповнений місяць — {monthName(lastDone.mk)}</SummaryKicker>
+            <SummaryKicker>{apartment.name} · останній закритий місяць — {monthName(lastDone.mk)}</SummaryKicker>
             <SummaryBig $negative={lastComputed.result < 0}>{formatSigned(lastComputed.result)} ₴</SummaryBig>
             <div style={{ fontSize: 14 }}>
               {lastComputed.result >= 0 ? 'Переплата — зменшує' : 'Борг — збільшує'} платіж {paymentDateLabel(apartment, lastDone.mk)}
@@ -1400,7 +1400,7 @@ export const UtilitiesManager = ({ ownerId, viewerId }) => {
             onWrite={writeMonth}
             onWriteApartment={writeApartment}
             onCopy={copyText}
-            onStartNext={startNextMonth}
+            onClose={closeMonth}
             canWrite={canWrite}
           />
         )}

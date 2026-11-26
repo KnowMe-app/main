@@ -112,14 +112,12 @@ describe('новий місяць', () => {
     expect(missing).toEqual(expect.arrayContaining(['Світло день — показник', 'ЖЕК', 'бюджет']));
   });
 
-  it('закривати не треба: заповнений місяць лишається поточним до дня платежу', () => {
+  it('закритий місяць іде в попередні, а наступний — порожній', () => {
     const data = buildData();
-    // Жовтень заповнено — до 19.11 він у редакторі, з 20.11 — листопад.
-    expect(resolveOpenMonth(data, 'a645', { today: '2026-11-19' })).toMatchObject({ mk: '2026-10', virtual: false, complete: true });
-    expect(resolveOpenMonth(data, 'a645', { today: '2026-11-20' })).toMatchObject({ mk: '2026-11', virtual: true });
-    // Неповний останній місяць лишається поточним хоч скільки минуло.
-    data.months.a645['2026-10'].budget = '';
-    expect(resolveOpenMonth(data, 'a645', { today: '2027-03-01' })).toMatchObject({ mk: '2026-10', complete: false });
+    expect(resolveOpenMonth(data, 'a645', { today: '2026-11-19' })).toMatchObject({ mk: '2026-11', virtual: true, vals: {} });
+    // Незакритий лишається поточним, хоч і заповнений.
+    data.months.a645['2026-10'].closed = false;
+    expect(resolveOpenMonth(data, 'a645', { today: '2027-03-01' })).toMatchObject({ mk: '2026-10', virtual: false });
     expect(listHistoryMonths(data, 'a645', '2026-10').map(m => m.mk)).toEqual(['2026-09']);
   });
 
